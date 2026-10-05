@@ -1,0 +1,21 @@
+{
+  "name": "@slicerx/farm-example",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Example print farm tool: slices a folder of models with sx and queues the plates on the hub.",
+  "type": "module",
+  "scripts": {
+    "farm": "node src/farm.ts",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "node --test src/farm.test.ts",
+    "smoke": "sh scripts/smoke.sh"
+  },
+  "dependencies": {
+    "@slicerx/contracts": "workspace:*",
+    "@slicerx/link-client": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.0"
+  },
+  "license": "Apache-2.0"
+}

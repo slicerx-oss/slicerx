@@ -1,0 +1,8 @@
+{
+  "name": "layermate-standin",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "LayerMate (stand-in): a tiny host app for the kit eval. Node and HTML only.",
+  "scripts": { "start": "node main.mjs" }
+}

@@ -1,0 +1,25 @@
+<!doctype html>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- Copyright (C) 2026 The SlicerX contributors -->
+<meta charset="utf-8">
+<title>LayerMate (stand-in)</title>
+<style>
+  body { font: 15px system-ui, sans-serif; margin: 2rem; background: #15161a; color: #e8e8ea }
+  li { margin: .5rem 0 }
+  button { font: inherit; padding: .3rem .8rem }
+</style>
+<h1>LayerMate (stand-in)</h1>
+<p>Your print library. Pick a model to slice.</p>
+<ul id="list"></ul>
+<script>
+  fetch('/api/models').then((r) => r.json()).then((names) => {
+    for (const n of names) {
+      const li = document.createElement('li')
+      const b = document.createElement('button')
+      b.textContent = 'Open in slicer'
+      b.onclick = () => fetch('/api/open?model=' + encodeURIComponent(n), { method: 'POST' })
+      li.append(n + ' ', b)
+      list.append(li)
+    }
+  })
+</script>
