@@ -1,0 +1,119 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (C) 2026 The SlicerX contributors
+[workspace]
+resolver = "3"
+members = [
+  "packages/edition-config/rust",
+  "packages/core",
+  "packages/core/wasm",
+  "packages/core/cli",
+  "packages/core/ffi",
+  "packages/settings",
+  "packages/profiles",
+  "packages/geom",
+  "packages/geom/wasm",
+  "packages/sx3mf",
+  "packages/connect",
+  "packages/connect/cpace",
+  "packages/connect/link",
+  "packages/connect/stills",
+  "packages/connect/relay",
+  "packages/pilot/llm",
+  "packages/pilot/permit",
+  "packages/watch",
+  "apps/desktop/src-tauri",
+  "editions/slicerx/packages/cloud/service",
+  "editions/slicerx/packages/cloud/scan",
+]
+# `cargo build` and `cargo test` at the root skip the WASM wrapper, the Orca
+# bridge (needs the prebuilt libslic3r prefix) and the Tauri app. CI passes
+# --workspace and must install what those three need or exclude them.
+default-members = [
+  "packages/edition-config/rust",
+  "packages/core",
+  "packages/core/cli",
+  "packages/core/ffi",
+  "packages/settings",
+  "packages/profiles",
+  "packages/geom",
+  "packages/sx3mf",
+  "packages/connect",
+  "packages/connect/cpace",
+  "packages/connect/link",
+  "packages/connect/stills",
+  "packages/connect/relay",
+  "packages/pilot/llm",
+  "packages/pilot/permit",
+  "packages/watch",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.98"
+license = "Apache-2.0"
+publish = false
+
+[workspace.dependencies]
+sx-core = { path = "packages/core" }
+sx-settings = { path = "packages/settings" }
+sx-profiles = { path = "packages/profiles" }
+sx3mf = { path = "packages/sx3mf" }
+sx-connect = { path = "packages/connect" }
+sx-llm = { path = "packages/pilot/llm" }
+sx-permit = { path = "packages/pilot/permit" }
+
+# Workspace lints. Crates opt in with `[lints] workspace = true`.
+# sx-wasm and the desktop app are FFI or macro-heavy and set their own.
+[workspace.lints.rust]
+# One exception: packages/connect/stills sets its own lints and allows `unsafe`, because the
+# operating system video decoders (VideoToolbox, Media Foundation) are C APIs. Its public API is
+# safe and every unsafe block there carries a SAFETY comment.
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+all = { level = "deny", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+# Crate-prefixed names such as sx_core::SliceResult read better than renames.
+module_name_repetitions = "allow"
+# Too noisy on small accessors; real must-use cases get the attribute by hand.
+must_use_candidate = "allow"
+# Internal items document errors on the crate error enum instead.
+missing_errors_doc = "allow"
+
+# Small debug info keeps the shared target/ directory within the disk budget.
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false
+opt-level = 1
+
+[profile.release]
+lto = "thin"
+
+# Benchmarks and the slicing hill-climb use this profile.
+[profile.bench-release]
+inherits = "release"
+lto = "fat"
+codegen-units = 1
+
+# Sized for download: opt-level 3 was 1272 KB gzip against the 1024 KB budget, most of it generic sort and
+# polygon code instantiated many times; "s" without the name section is 997 KB, the same output bytes, about
+# 15 percent more instructions in V8 ("z" is 861 KB but 40 percent more).
+[profile.wasm-release]
+inherits = "release"
+lto = "fat"
+codegen-units = 1
+opt-level = "s"
+strip = true
+
+# boostvoronoi builds its beach line on cpp_map, whose random node levels made the Voronoi diagram
+# (and so the Arachne walls) differ from run to run. See packages/vendor/cpp_map/SOURCE.md.
+[patch.crates-io]
+cpp_map = { path = "packages/vendor/cpp_map" }
+# i_overlay splits crossing segments in passes; after the first pass it now compares only pairs with a
+# new segment, with the same results. See packages/vendor/i_overlay/SOURCE.md.
+i_overlay = { path = "packages/vendor/i_overlay" }
+# boostvoronoi multiplies its exact integers faster, with the same results. See packages/vendor/boostvoronoi/SOURCE.md.
+boostvoronoi = { path = "packages/vendor/boostvoronoi" }

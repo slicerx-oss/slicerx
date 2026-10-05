@@ -1,0 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (C) 2026 The SlicerX contributors
+edition = "2024"
+max_width = 110
+use_field_init_shorthand = true

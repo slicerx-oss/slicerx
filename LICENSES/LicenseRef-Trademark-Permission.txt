@@ -1,0 +1,6 @@
+These files are trademarks of their owners, taken unaltered from the owners' press kits.
+
+They are not covered by the Apache License, the GNU licenses or any other open license in this
+repository. SlicerX uses them only to identify the owners' printers, with the permission the owners
+gave, and without implying endorsement. Anyone reusing them outside SlicerX needs the trademark
+owner's own permission. See packages/brand-icons/LOGOS.md.

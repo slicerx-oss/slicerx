@@ -1,0 +1,76 @@
+{
+  "version": "v1.0.0",
+  "entity": {
+    "type": "individual",
+    "role": "owner",
+    "name": "Sean Leonard",
+    "email": "hello@suby.dev",
+    "description": "Software engineer who writes metrology software at Verisurf and builds SlicerX, an open source 3D printing slicer and CAD engine.",
+    "webpageUrl": {
+      "url": "https://suby.dev"
+    }
+  },
+  "projects": [
+    {
+      "guid": "slicerx",
+      "name": "SlicerX",
+      "description": "A free, open source slicer for 3D printers with its own Rust engine and a mesh CAD layer. It gives the same G-code natively and in the browser, prints to printers on the local network with no account, and exposes a CLI, a C library, a WebAssembly package and an MCP server so other software can drive it.",
+      "webpageUrl": {
+        "url": "https://slicerx.app"
+      },
+      "repositoryUrl": {
+        "url": "https://github.com/slicerx-oss/slicerx",
+        "wellKnown": "https://github.com/slicerx-oss/slicerx/blob/main/.well-known/funding-manifest-urls"
+      },
+      "licenses": [
+        "spdx:Apache-2.0"
+      ],
+      "tags": [
+        "3d-printing",
+        "slicer",
+        "cad",
+        "geometry",
+        "rust",
+        "webassembly",
+        "manufacturing"
+      ]
+    }
+  ],
+  "funding": {
+    "channels": [
+      {
+        "guid": "github-sponsors",
+        "type": "payment-provider",
+        "address": "https://github.com/sponsors/Subydev",
+        "description": "GitHub Sponsors, no fees for personal accounts."
+      }
+    ],
+    "plans": [
+      {
+        "guid": "hardware-testing",
+        "status": "active",
+        "name": "Printer hardware testing",
+        "description": "Buy and run test printers from each supported family (Prusa, Klipper printers, Snapmaker, Elegoo, Bambu Lab H2 series) so every profile and connector is checked with real prints before release.",
+        "amount": 10000,
+        "currency": "USD",
+        "frequency": "one-time",
+        "channels": [
+          "github-sponsors"
+        ]
+      },
+      {
+        "guid": "maintainer-time",
+        "status": "active",
+        "name": "Maintainer time",
+        "description": "Pay for focused maintenance time: releases for macOS, Windows, Linux and the browser, bug fixes, security fixes, reviews and documentation.",
+        "amount": 60000,
+        "currency": "USD",
+        "frequency": "yearly",
+        "channels": [
+          "github-sponsors"
+        ]
+      }
+    ],
+    "history": []
+  }
+}
