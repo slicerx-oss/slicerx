@@ -1,0 +1,20 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (C) 2026 The SlicerX contributors
+[package]
+name = "sx-geom-wasm"
+version.workspace = true
+edition.workspace = true
+license = "Apache-2.0"
+publish.workspace = true
+description = "sx-geom for a browser Web Worker: one JSON call entry over a plain C ABI"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+# Exports use #[unsafe(no_mangle)], which the workspace's forbid(unsafe_code)
+# rejects, so this crate sets its own lints. No unsafe blocks are used.
+[lints.clippy]
+all = { level = "deny", priority = -1 }
+
+[dependencies]
+sx-geom = { path = ".." }
