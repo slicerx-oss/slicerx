@@ -1,0 +1,751 @@
+{
+  "windows": [
+    {
+      "label": "&File",
+      "items": [
+        {
+          "kind": "command",
+          "id": "project-new",
+          "label": "&New project",
+          "accelerator": "CmdOrCtrl+N"
+        },
+        {
+          "kind": "command",
+          "id": "plate-open",
+          "label": "&Open…",
+          "accelerator": "CmdOrCtrl+O"
+        },
+        {
+          "kind": "command",
+          "id": "project-recent",
+          "label": "Open &recent…"
+        },
+        {
+          "kind": "submenu",
+          "label": "&Import",
+          "items": [
+            {
+              "kind": "command",
+              "id": "library-import",
+              "label": "&Models into the library…"
+            },
+            {
+              "kind": "command",
+              "id": "user-presets",
+              "label": "&Presets…"
+            }
+          ]
+        },
+        {
+          "kind": "separator"
+        },
+        {
+          "kind": "command",
+          "id": "project-save",
+          "label": "&Save",
+          "accelerator": "CmdOrCtrl+S"
+        },
+        {
+          "kind": "command",
+          "id": "project-save-as",
+          "label": "Save &as…",
+          "accelerator": "CmdOrCtrl+Shift+S"
+        },
+        {
+          "kind": "submenu",
+          "label": "&Export",
+          "items": [
+            {
+              "kind": "command",
+              "id": "export-gcode",
+              "label": "&G-code…",
+              "accelerator": "CmdOrCtrl+E"
+            },
+            {
+              "kind": "command",
+              "id": "export-gcode-3mf",
+              "label": "Printer file (.gcode.&3mf)…"
+            },
+            {
+              "kind": "command",
+              "id": "project-export-locked",
+              "label": "&Locked {app} project (.sxlock)…"
+            },
+            {
+              "kind": "command",
+              "id": "export-plate-stl",
+              "label": "Plate as &STL…"
+            },
+            {
+              "kind": "command",
+              "id": "export-plate-obj",
+              "label": "Plate as &OBJ…"
+            }
+          ]
+        },
+        {
+          "kind": "separator"
+        },
+        {
+          "kind": "window",
+          "action": "quit",
+          "label": "E&xit"
+        }
+      ]
+    },
+    {
+      "label": "&Edit",
+      "items": [
+        {
+          "kind": "command",
+          "id": "undo",
+          "label": "&Undo",
+          "accelerator": "CmdOrCtrl+Z",
+          "text": "undo"
+        },
+        {
+          "kind": "command",
+          "id": "redo",
+          "label": "&Redo",
+          "accelerator": "CmdOrCtrl+Shift+Z",
+          "text": "redo"
+        },
+        {
+          "kind": "separator"
+        },
+        {
+          "kind": "native",
+          "item": "cut"
+        },
+        {
+          "kind": "native",
+          "item": "copy"
+        },
+        {
+          "kind": "native",
+          "item": "paste"
+        },
+        {
+          "kind": "command",
+          "id": "plate-remove",
+          "label": "&Delete",
+          "accelerator": "Delete",
+          "text": "delete"
+        },
+        {
+          "kind": "command",
+          "id": "select-all",
+          "label": "Select &all",
+          "accelerator": "CmdOrCtrl+A",
+          "text": "selectAll"
+        },
+        {
+          "kind": "separator"
+        },
+        {
+          "kind": "command",
+          "id": "settings-open",
+          "label": "&Settings…"
+        }
+      ]
+    },
+    {
+      "label": "&View",
+      "items": [
+        {
+          "kind": "command",
+          "id": "open-prepare",
+          "label": "Prepare",
+          "accelerator": "CmdOrCtrl+1"
+        },
+        {
+          "kind": "command",
+          "id": "open-preview",
+          "label": "Preview",
+          "accelerator": "CmdOrCtrl+2"
+        },
+        {
+          "kind": "command",
+          "id": "open-library",
+          "label": "Library",
+          "accelerator": "CmdOrCtrl+3"
+        },
+        {
+          "kind": "separator"
+        },
+        {
+          "kind": "command",
+          "id": "zoom-in",
+          "label": "Zoom &in",
+          "accelerator": "CmdOrCtrl+="
+        },
+        {
+          "kind": "command",
+          "id": "zoom-out",
+          "label": "Zoom &out",
+          "accelerator": "CmdOrCtrl+-"
+        },
+        {
+          "kind": "command",
+          "id": "view-reset",
+          "label": "&Reset view",
+          "accelerator": "CmdOrCtrl+Shift+0"
+        },
+        {
+          "kind": "command",
+          "id": "camera-fit",
+          "label": "Fit to &plate"
+        },
+        {
+          "kind": "separator"
+        },
+        {
+          "kind": "window",
+          "action": "fullscreen",
+          "label": "&Full screen",
+          "accelerator": "F11"
+        }
+      ]
+    },
+    {
+      "label": "&Help",
+      "items": [
+        {
+          "kind": "command",
+          "id": "help-docs",
+          "label": "&Documentation"
+        },
+        {
+          "kind": "command",
+          "id": "help-report",
+          "label": "&Report a bug…"
+        },
+        {
+          "kind": "separator"
+        },
+        {
+          "kind": "command",
+          "id": "help-shortcuts",
+          "label": "&Keyboard shortcuts"
+        },
+        {
+          "kind": "separator"
+        },
+        {
+          "kind": "command",
+          "id": "help-about",
+          "label": "&About {app}"
+        }
+      ]
+    }
+  ],
+  "linux": [
+    {
+      "label": "&File",
+      "items": [
+        {
+          "kind": "command",
+          "id": "project-new",
+          "label": "&New project",
+          "accelerator": "CmdOrCtrl+N"
+        },
+        {
+          "kind": "command",
+          "id": "plate-open",
+          "label": "&Open…",
+          "accelerator": "CmdOrCtrl+O"
+        },
+        {
+          "kind": "command",
+          "id": "project-recent",
+          "label": "Open &recent…"
+        },
+        {
+          "kind": "submenu",
+          "label": "&Import",
+          "items": [
+            {
+              "kind": "command",
+              "id": "library-import",
+              "label": "&Models into the library…"
+            },
+            {
+              "kind": "command",
+              "id": "user-presets",
+              "label": "&Presets…"
+            }
+          ]
+        },
+        {
+          "kind": "separator"
+        },
+        {
+          "kind": "command",
+          "id": "project-save",
+          "label": "&Save",
+          "accelerator": "CmdOrCtrl+S"
+        },
+        {
+          "kind": "command",
+          "id": "project-save-as",
+          "label": "Save &as…",
+          "accelerator": "CmdOrCtrl+Shift+S"
+        },
+        {
+          "kind": "submenu",
+          "label": "&Export",
+          "items": [
+            {
+              "kind": "command",
+              "id": "export-gcode",
+              "label": "&G-code…",
+              "accelerator": "CmdOrCtrl+E"
+            },
+            {
+              "kind": "command",
+              "id": "export-gcode-3mf",
+              "label": "Printer file (.gcode.&3mf)…"
+            },
+            {
+              "kind": "command",
+              "id": "project-export-locked",
+              "label": "&Locked {app} project (.sxlock)…"
+            },
+            {
+              "kind": "command",
+              "id": "export-plate-stl",
+              "label": "Plate as &STL…"
+            },
+            {
+              "kind": "command",
+              "id": "export-plate-obj",
+              "label": "Plate as &OBJ…"
+            }
+          ]
+        },
+        {
+          "kind": "separator"
+        },
+        {
+          "kind": "window",
+          "action": "quit",
+          "label": "&Quit",
+          "accelerator": "CmdOrCtrl+Q"
+        }
+      ]
+    },
+    {
+      "label": "&Edit",
+      "items": [
+        {
+          "kind": "command",
+          "id": "undo",
+          "label": "&Undo",
+          "accelerator": "CmdOrCtrl+Z",
+          "text": "undo"
+        },
+        {
+          "kind": "command",
+          "id": "redo",
+          "label": "&Redo",
+          "accelerator": "CmdOrCtrl+Shift+Z",
+          "text": "redo"
+        },
+        {
+          "kind": "separator"
+        },
+        {
+          "kind": "native",
+          "item": "cut"
+        },
+        {
+          "kind": "native",
+          "item": "copy"
+        },
+        {
+          "kind": "native",
+          "item": "paste"
+        },
+        {
+          "kind": "command",
+          "id": "plate-remove",
+          "label": "&Delete",
+          "text": "delete"
+        },
+        {
+          "kind": "command",
+          "id": "select-all",
+          "label": "Select &all",
+          "accelerator": "CmdOrCtrl+A",
+          "text": "selectAll"
+        },
+        {
+          "kind": "separator"
+        },
+        {
+          "kind": "command",
+          "id": "settings-open",
+          "label": "&Settings…"
+        }
+      ]
+    },
+    {
+      "label": "&View",
+      "items": [
+        {
+          "kind": "command",
+          "id": "open-prepare",
+          "label": "Prepare",
+          "accelerator": "CmdOrCtrl+1"
+        },
+        {
+          "kind": "command",
+          "id": "open-preview",
+          "label": "Preview",
+          "accelerator": "CmdOrCtrl+2"
+        },
+        {
+          "kind": "command",
+          "id": "open-library",
+          "label": "Library",
+          "accelerator": "CmdOrCtrl+3"
+        },
+        {
+          "kind": "separator"
+        },
+        {
+          "kind": "command",
+          "id": "zoom-in",
+          "label": "Zoom &in",
+          "accelerator": "CmdOrCtrl+="
+        },
+        {
+          "kind": "command",
+          "id": "zoom-out",
+          "label": "Zoom &out",
+          "accelerator": "CmdOrCtrl+-"
+        },
+        {
+          "kind": "command",
+          "id": "view-reset",
+          "label": "&Reset view",
+          "accelerator": "CmdOrCtrl+Shift+0"
+        },
+        {
+          "kind": "command",
+          "id": "camera-fit",
+          "label": "Fit to &plate"
+        },
+        {
+          "kind": "separator"
+        },
+        {
+          "kind": "window",
+          "action": "fullscreen",
+          "label": "&Full screen",
+          "accelerator": "F11"
+        }
+      ]
+    },
+    {
+      "label": "&Help",
+      "items": [
+        {
+          "kind": "command",
+          "id": "help-docs",
+          "label": "&Documentation"
+        },
+        {
+          "kind": "command",
+          "id": "help-report",
+          "label": "&Report a bug…"
+        },
+        {
+          "kind": "separator"
+        },
+        {
+          "kind": "command",
+          "id": "help-shortcuts",
+          "label": "&Keyboard shortcuts"
+        },
+        {
+          "kind": "separator"
+        },
+        {
+          "kind": "command",
+          "id": "help-about",
+          "label": "&About {app}"
+        }
+      ]
+    }
+  ],
+  "macos": [
+    {
+      "label": "{app}",
+      "items": [
+        {
+          "kind": "command",
+          "id": "help-about",
+          "label": "About {app}"
+        },
+        {
+          "kind": "separator"
+        },
+        {
+          "kind": "command",
+          "id": "settings-open",
+          "label": "Settings…",
+          "accelerator": "CmdOrCtrl+,"
+        },
+        {
+          "kind": "separator"
+        },
+        {
+          "kind": "native",
+          "item": "hide"
+        },
+        {
+          "kind": "native",
+          "item": "hideOthers"
+        },
+        {
+          "kind": "native",
+          "item": "showAll"
+        },
+        {
+          "kind": "separator"
+        },
+        {
+          "kind": "window",
+          "action": "quit",
+          "label": "Quit {app}",
+          "accelerator": "CmdOrCtrl+Q"
+        }
+      ]
+    },
+    {
+      "label": "&File",
+      "items": [
+        {
+          "kind": "command",
+          "id": "project-new",
+          "label": "&New project",
+          "accelerator": "CmdOrCtrl+N"
+        },
+        {
+          "kind": "command",
+          "id": "plate-open",
+          "label": "&Open…",
+          "accelerator": "CmdOrCtrl+O"
+        },
+        {
+          "kind": "command",
+          "id": "project-recent",
+          "label": "Open &recent…"
+        },
+        {
+          "kind": "submenu",
+          "label": "&Import",
+          "items": [
+            {
+              "kind": "command",
+              "id": "library-import",
+              "label": "&Models into the library…"
+            },
+            {
+              "kind": "command",
+              "id": "user-presets",
+              "label": "&Presets…"
+            }
+          ]
+        },
+        {
+          "kind": "separator"
+        },
+        {
+          "kind": "command",
+          "id": "project-save",
+          "label": "&Save",
+          "accelerator": "CmdOrCtrl+S"
+        },
+        {
+          "kind": "command",
+          "id": "project-save-as",
+          "label": "Save &as…",
+          "accelerator": "CmdOrCtrl+Shift+S"
+        },
+        {
+          "kind": "submenu",
+          "label": "&Export",
+          "items": [
+            {
+              "kind": "command",
+              "id": "export-gcode",
+              "label": "&G-code…",
+              "accelerator": "CmdOrCtrl+E"
+            },
+            {
+              "kind": "command",
+              "id": "export-gcode-3mf",
+              "label": "Printer file (.gcode.&3mf)…"
+            },
+            {
+              "kind": "command",
+              "id": "project-export-locked",
+              "label": "&Locked {app} project (.sxlock)…"
+            },
+            {
+              "kind": "command",
+              "id": "export-plate-stl",
+              "label": "Plate as &STL…"
+            },
+            {
+              "kind": "command",
+              "id": "export-plate-obj",
+              "label": "Plate as &OBJ…"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "label": "&Edit",
+      "items": [
+        {
+          "kind": "command",
+          "id": "undo",
+          "label": "&Undo",
+          "accelerator": "CmdOrCtrl+Z",
+          "text": "undo"
+        },
+        {
+          "kind": "command",
+          "id": "redo",
+          "label": "&Redo",
+          "accelerator": "CmdOrCtrl+Shift+Z",
+          "text": "redo"
+        },
+        {
+          "kind": "separator"
+        },
+        {
+          "kind": "native",
+          "item": "cut"
+        },
+        {
+          "kind": "native",
+          "item": "copy"
+        },
+        {
+          "kind": "native",
+          "item": "paste"
+        },
+        {
+          "kind": "command",
+          "id": "plate-remove",
+          "label": "&Delete",
+          "text": "delete"
+        },
+        {
+          "kind": "command",
+          "id": "select-all",
+          "label": "Select &all",
+          "accelerator": "CmdOrCtrl+A",
+          "text": "selectAll"
+        }
+      ]
+    },
+    {
+      "label": "&View",
+      "items": [
+        {
+          "kind": "command",
+          "id": "open-prepare",
+          "label": "Prepare",
+          "accelerator": "CmdOrCtrl+1"
+        },
+        {
+          "kind": "command",
+          "id": "open-preview",
+          "label": "Preview",
+          "accelerator": "CmdOrCtrl+2"
+        },
+        {
+          "kind": "command",
+          "id": "open-library",
+          "label": "Library",
+          "accelerator": "CmdOrCtrl+3"
+        },
+        {
+          "kind": "separator"
+        },
+        {
+          "kind": "command",
+          "id": "zoom-in",
+          "label": "Zoom &in",
+          "accelerator": "CmdOrCtrl+="
+        },
+        {
+          "kind": "command",
+          "id": "zoom-out",
+          "label": "Zoom &out",
+          "accelerator": "CmdOrCtrl+-"
+        },
+        {
+          "kind": "command",
+          "id": "view-reset",
+          "label": "&Reset view",
+          "accelerator": "CmdOrCtrl+Shift+0"
+        },
+        {
+          "kind": "command",
+          "id": "camera-fit",
+          "label": "Fit to &plate"
+        },
+        {
+          "kind": "separator"
+        },
+        {
+          "kind": "native",
+          "item": "fullscreen"
+        }
+      ]
+    },
+    {
+      "label": "Window",
+      "items": [
+        {
+          "kind": "native",
+          "item": "minimize"
+        },
+        {
+          "kind": "native",
+          "item": "maximize"
+        }
+      ]
+    },
+    {
+      "label": "&Help",
+      "items": [
+        {
+          "kind": "command",
+          "id": "help-docs",
+          "label": "&Documentation"
+        },
+        {
+          "kind": "command",
+          "id": "help-report",
+          "label": "&Report a bug…"
+        },
+        {
+          "kind": "separator"
+        },
+        {
+          "kind": "command",
+          "id": "help-shortcuts",
+          "label": "&Keyboard shortcuts"
+        }
+      ]
+    }
+  ]
+}

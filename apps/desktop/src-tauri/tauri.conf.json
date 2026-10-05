@@ -1,0 +1,123 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "SlicerX",
+  "version": "0.1.0",
+  "identifier": "app.slicerx.desktop",
+  "build": {
+    "frontendDist": "../dist",
+    "devUrl": "http://localhost:5174",
+    "beforeDevCommand": "pnpm dev",
+    "beforeBuildCommand": "pnpm build"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "SlicerX",
+        "width": 1440,
+        "height": 900,
+        "minWidth": 960,
+        "minHeight": 600,
+        "backgroundColor": "#121319",
+        "dragDropEnabled": false
+      }
+    ],
+    "security": {
+      "csp": {
+        "default-src": "'self'",
+        "img-src": "'self' data: blob:",
+        "style-src": "'self' 'unsafe-inline' https://fonts.googleapis.com",
+        "font-src": "'self' https://fonts.gstatic.com",
+        "script-src": "'self' 'wasm-unsafe-eval'",
+        "worker-src": "'self' blob:",
+        "connect-src": "'self' ipc: http://ipc.localhost ws://127.0.0.1:47615"
+      }
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "category": "Utility",
+    "shortDescription": "Fast, open source 3D print slicer",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "fileAssociations": [
+      {
+        "ext": [
+          "3mf"
+        ],
+        "name": "3MF model",
+        "role": "Editor"
+      },
+      {
+        "ext": [
+          "stl"
+        ],
+        "name": "STL model",
+        "role": "Editor"
+      },
+      {
+        "ext": [
+          "obj"
+        ],
+        "name": "OBJ model",
+        "role": "Editor"
+      },
+      {
+        "ext": [
+          "amf"
+        ],
+        "name": "AMF model",
+        "role": "Editor"
+      },
+      {
+        "ext": [
+          "step",
+          "stp"
+        ],
+        "name": "STEP model",
+        "role": "Editor"
+      },
+      {
+        "ext": [
+          "sx3mf"
+        ],
+        "name": "SlicerX 3MF file",
+        "role": "Editor"
+      },
+      {
+        "ext": [
+          "sxlock"
+        ],
+        "name": "Locked SlicerX project",
+        "role": "Editor"
+      },
+      {
+        "ext": [
+          "gcode"
+        ],
+        "name": "G-code",
+        "role": "Viewer"
+      }
+    ],
+    "resources": {
+      "resources/mcp/": "mcp/"
+    },
+    "publisher": "Sean Leonard",
+    "copyright": "Copyright (C) 2026 The SlicerX contributors"
+  },
+  "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": [
+          "slicerx"
+        ]
+      }
+    }
+  }
+}

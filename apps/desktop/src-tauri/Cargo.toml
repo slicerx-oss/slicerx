@@ -1,0 +1,56 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (C) 2026 The SlicerX contributors
+[package]
+name = "slicerx-desktop"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "slicerx"
+path = "src/main.rs"
+
+# Optional features: each edition feature can be left out.
+# `cargo build -p slicerx-desktop --no-default-features` builds the base app.
+[features]
+default = ["store", "pilot", "connect", "cloud"]
+store = []
+pilot = ["dep:sx-llm", "dep:sx-permit", "dep:futures", "dep:base64", "dep:keyring", "dep:zip"]
+connect = ["dep:sx-connect", "dep:sx-permit", "dep:sx-link", "dep:tokio", "dep:tokio-tungstenite", "dep:futures", "dep:keyring", "dep:chacha20poly1305", "dep:getrandom"]
+cloud = []
+
+[build-dependencies]
+tauri-build = { version = "=2.7.0", features = [] }
+
+[dependencies]
+sx-core.workspace = true
+sx-connect = { workspace = true, optional = true }
+sx-llm = { workspace = true, optional = true }
+keyring = { version = "=4.2.0", optional = true }
+chacha20poly1305 = { version = "=0.11.0", default-features = false, features = ["alloc"], optional = true }
+getrandom = { version = "=0.4.3", optional = true }
+futures = { version = "=0.3.34", optional = true }
+base64 = { version = "=0.23.1", optional = true }
+sx-permit = { workspace = true, optional = true }
+sx-link = { path = "../../../packages/connect/link", optional = true }
+tokio = { version = "=1.53.1", features = ["sync", "time"], optional = true }
+tokio-tungstenite = { version = "=0.30.0", optional = true }
+tauri = { version = "=2.12.0", features = [] }
+tauri-plugin-dialog = "=2.8.0"
+tauri-plugin-opener = "=2.7.0"
+tauri-plugin-deep-link = "=2.6.1"
+tauri-plugin-single-instance = { version = "=2.5.2", features = ["deep-link"] }
+serde = { version = "=1.0.229", features = ["derive"] }
+serde_json = "=1.0.151"
+anyhow = "=1.0.104"
+zip = { version = "=8.6.0", default-features = false, features = ["deflate-flate2-zlib-rs"], optional = true }
+
+# Opens a menu by its access key (menu::menu_key) and reads the GPU for local AI (localai.rs). The same version tauri uses.
+[target.'cfg(windows)'.dependencies]
+windows = { version = "=0.62.2", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_Graphics_Dxgi", "Win32_System_SystemInformation"] }
+# Turns off the web view's browser keys (crash::disable_browser_keys). The same version tauri uses.
+webview2-com = "=0.39.1"
+
+[dev-dependencies]
+tokio = { version = "=1.53.1", features = ["macros", "rt-multi-thread", "sync", "net", "io-util"] }

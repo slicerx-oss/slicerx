@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- Copyright (C) 2026 The SlicerX contributors -->
+<!-- Template: install.sh replaces __HOME__ and loads it into the logged-in desktop session. -->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>dev.suby.sign-mac</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/zsh</string>
+    <string>__HOME__/bin/sign-mac-agent</string>
+  </array>
+  <key>WatchPaths</key>
+  <array>
+    <string>__HOME__/Library/Application Support/sign-mac/requests</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin</string>
+  </dict>
+  <key>LimitLoadToSessionType</key>
+  <string>Aqua</string>
+  <key>ProcessType</key>
+  <string>Background</string>
+  <key>ThrottleInterval</key>
+  <integer>5</integer>
+  <key>StandardOutPath</key>
+  <string>__HOME__/Library/Application Support/sign-mac/agent.log</string>
+  <key>StandardErrorPath</key>
+  <string>__HOME__/Library/Application Support/sign-mac/agent.log</string>
+</dict>
+</plist>

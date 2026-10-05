@@ -1,0 +1,30 @@
+#!/bin/zsh
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (C) 2026 The SlicerX contributors
+# Asks the sign-mac LaunchAgent to sign a file under ~/builds and waits for the result. Works over ssh.
+#   sign-mac-request <file.app|dmg|pkg|zip> [--entitlements FILE] [--inherit FILE] [--no-notarize]
+# Prints the result and exits 0 on PASS, 1 on FAIL, 5 if nothing answers within the wait.
+set -uo pipefail
+base=$HOME/Library/Application\ Support/sign-mac
+[[ -d $base/requests ]] || { print -u2 "The sign-mac agent is not installed (see apps/desktop/release/sign-agent/README.md)"; exit 1; }
+[[ $# -ge 1 ]] || { print -u2 "usage: sign-mac-request <file> [--entitlements FILE] [--inherit FILE] [--no-notarize]"; exit 2; }
+target=${1:A}; shift
+id=$(date +%Y%m%d-%H%M%S)-$$
+body="path=$target"
+while (( $# )); do
+  case $1 in
+    --entitlements) body+=$'\n'"entitlements=${2:A}"; shift 2 ;;
+    --inherit) body+=$'\n'"inherit=${2:A}"; shift 2 ;;
+    --no-notarize) body+=$'\nnotarize=0'; shift ;;
+    *) print -u2 "unknown option $1"; exit 2 ;;
+  esac
+done
+print -- "$body" > "$base/requests/.$id.tmp"
+mv "$base/requests/.$id.tmp" "$base/requests/$id.req"
+wait_s=${SIGN_MAC_WAIT:-4000}; waited=0
+until [[ -f $base/results/$id.result ]]; do
+  sleep 3; waited=$((waited + 3))
+  (( waited > wait_s )) && { print -u2 "No answer after ${wait_s}s. Is the agent loaded? Log: $base/agent.log"; exit 5; }
+done
+cat "$base/results/$id.result"; print "full log: $base/results/$id.log"
+[[ $(head -1 "$base/results/$id.result") == PASS ]]
