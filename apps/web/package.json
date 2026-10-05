@@ -1,0 +1,43 @@
+{
+  "name": "@slicerx/web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build && node scripts/bundle-size.mjs",
+    "preview": "vite preview",
+    "typecheck": "tsc -p tsconfig.json",
+    "e2e": "playwright test"
+  },
+  "dependencies": {
+    "@slicerx/app": "workspace:*",
+    "@slicerx/brand-icons": "workspace:*",
+    "@slicerx/cloud": "workspace:*",
+    "@slicerx/connect": "workspace:*",
+    "@slicerx/contracts": "workspace:*",
+    "@slicerx/edition-config": "workspace:*",
+    "@slicerx/fleet-sim": "workspace:*",
+    "@slicerx/link-client": "workspace:*",
+    "@slicerx/pilot": "workspace:*",
+    "@slicerx/settings": "workspace:*",
+    "@slicerx/slicer": "workspace:*",
+    "@slicerx/store": "workspace:*",
+    "@slicerx/ui": "workspace:*",
+    "react": "19.3.0",
+    "react-dom": "19.3.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.1.1",
+    "vite": "8.3.1"
+  },
+  "exports": {
+    "./host": "./src/host/index.ts",
+    "./vite": "./vite.shared.ts",
+    "./host/files": "./src/host/files.ts",
+    "./host/link": "./src/host/link.ts"
+  }
+}

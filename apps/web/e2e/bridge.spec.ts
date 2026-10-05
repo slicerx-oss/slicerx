@@ -1,0 +1,250 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (C) 2026 The SlicerX contributors
+// The app against a real sx-link and the mock printers, end to end: pair, list, camera, send with preflight
+// and approval, and the Print sheet for a Bambu Lab A1 with an AMS lite and an A1 mini with only the
+// external spool (slot choice, the .gcode.3mf start, a refused start with its reason and the plain
+// G-code offer). Runs only when SX_LINK_BIN names a built sx-link (cargo build -p sx-link); otherwise
+// skipped. The app pairs with the hub on its fixed port, so every hub test lives in this one file.
+import { type Locator, type Page } from '@playwright/test'
+import { command, openStudio } from './cad-helpers'
+import { expect, plateReady, test } from './fixtures'
+import { spawn, type ChildProcessByStdio } from 'node:child_process'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import type { Readable } from 'node:stream'
+
+const bin = process.env['SX_LINK_BIN']
+test.skip(!bin, 'SX_LINK_BIN is not set')
+test.describe.configure({ mode: 'serial' })
+test.skip(({ isMobile }) => isMobile, 'The bridge flow runs at desktop width')
+
+let proc: ChildProcessByStdio<null, Readable, Readable> | undefined
+let stopMocks: (() => Promise<void>) | undefined
+let code = ''
+let controlPort = 0
+let admin: { close(): void; addPrinter(c: unknown, i?: unknown): Promise<unknown>; setSecret(n: string, v: string): Promise<void>; status(id: string): Promise<{ state: string }> } | undefined
+let ports: Record<string, number> = {}
+// A throwaway state directory with file secrets: the test never touches the real hub or the keychain.
+let stateDir = ''
+
+const ctl = async (path: string, body?: unknown): Promise<Record<string, unknown>> => {
+  const r = await fetch(`http://127.0.0.1:${controlPort}${path}`, body === undefined ? {} : { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+  return (await r.json()) as Record<string, unknown>
+}
+/** The Bambu mock's request log. */
+const mockLog = async (): Promise<string> => JSON.stringify(await ctl('/state'))
+
+/** Puts the Bambu mock back to idle and waits until the hub has seen it. */
+async function idleAgain(id: string): Promise<void> {
+  await ctl('/set', { mock: 'bambu', state: 'idle' })
+  await expect.poll(async () => (await admin!.status(id)).state, { timeout: 20_000 }).toBe('idle')
+}
+
+async function addBambu(id: string, name: string, model: string): Promise<void> {
+  const { MOCK_SERIAL, MOCK_ACCESS_CODE } = await import('../../../packages/connect/mock-printers/src/bambu.ts')
+  await admin!.setSecret(`${id}-code`, MOCK_ACCESS_CODE)
+  await admin!.addPrinter(
+    { id, name, plugin: 'bambu-lan', host: '127.0.0.1', port: ports['bambu'], serial: MOCK_SERIAL, credentialRef: `${id}-code`, ftpPort: ports['bambu-ftp'], cameraPort: ports['bambu-camera'], pollMs: 200 },
+    { vendor: 'Bambu Lab', model },
+  )
+}
+
+test.beforeAll(async ({}, testInfo) => {
+  // The phone project skips every test here; it must not start a second bridge on the same port as the desktop one.
+  if (testInfo.project.use.isMobile) return
+  const { startMocks } = await import('../../../packages/connect/mock-printers/src/index.ts')
+  const { connectLink } = await import('../../../packages/connect/link-client/src/index.ts')
+  const mocks = await startMocks({ only: ['moonraker', 'bambu'], state: 'idle', camera: true })
+  stopMocks = () => mocks.stop()
+  controlPort = mocks.control
+  ports = mocks.ports
+  // The Bambu mock as an A1 with an AMS lite and white PLA on the side holder.
+  await ctl('/bambu', { model: 'N2S', ams: 'lite', external: { type: 'PLA', color: '#FFFFFF' } })
+  stateDir = mkdtempSync(join(tmpdir(), 'sx-link-e2e-'))
+  proc = spawn(bin!, ['--port', '47615', '--state-dir', stateDir, '--secrets', 'file', '--no-mdns'], { stdio: ['ignore', 'pipe', 'pipe'] })
+  let out = ''
+  const url = await new Promise<string>((resolve, reject) => {
+    proc!.stdout.on('data', (d: Buffer) => {
+      out += d.toString()
+      const u = /ws:\/\/127\.0\.0\.1:\d+/.exec(out)
+      const c = /pairing code: ([A-Z0-9]{4}-[A-Z0-9]{4})/.exec(out)
+      if (u && c) {
+        code = c[1] ?? ''
+        resolve(u[0])
+      }
+    })
+    proc!.once('exit', () => reject(new Error('sx-link exited early')))
+  })
+  const link = await connectLink({ url, code })
+  admin = link as unknown as typeof admin
+  await link.addPrinter({ id: 'voron', name: 'Voron', plugin: 'moonraker', host: '127.0.0.1', port: mocks.ports['moonraker'] ?? 0 }, { vendor: 'Voron', model: '2.4' })
+  await addBambu('a1', 'A1', 'A1')
+})
+
+test.afterAll(async () => {
+  admin?.close()
+  proc?.kill()
+  if (stateDir) rmSync(stateDir, { recursive: true, force: true })
+  await stopMocks?.()
+})
+
+async function seed(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    if (sessionStorage.getItem('sx-e2e')) return
+    sessionStorage.setItem('sx-e2e', '1')
+    localStorage.setItem('slicerx.prefs.v1', JSON.stringify({ workspace: 'prepare', settingsMode: 'advanced', cadTools: true }))
+  })
+  await page.goto('./')
+}
+
+async function connectApp(page: Page): Promise<void> {
+  await seed(page)
+  await plateReady(page)
+  await page.getByRole('button', { name: 'Settings', exact: true }).click()
+  await page.getByRole('navigation', { name: 'Settings sections' }).getByRole('button', { name: 'Printer bridge' }).click()
+  await page.getByLabel('Pairing code').fill(code)
+  await page.getByRole('button', { name: 'Connect' }).click()
+  await expect(page.getByText('Connected', { exact: true })).toBeVisible()
+  await page.keyboard.press('Escape')
+}
+
+test('pairs with the bridge and lists its printer', async ({ page }) => {
+  await connectApp(page)
+  await page.getByRole('button', { name: 'Printers', exact: true }).first().click()
+  await expect(page.getByText('Voron').first()).toBeVisible()
+})
+
+test('a wrong code is refused with a plain message', async ({ page }) => {
+  await seed(page)
+  await page.getByRole('button', { name: 'Settings', exact: true }).click()
+  await page.getByRole('navigation', { name: 'Settings sections' }).getByRole('button', { name: 'Printer bridge' }).click()
+  await page.getByLabel('Pairing code').fill('ZZZZ9999')
+  await page.getByRole('button', { name: 'Connect' }).click()
+  await expect(page.getByRole('alert')).toContainText('That pairing code was not accepted.')
+})
+
+test('the camera player shows live frames from the printer', async ({ page }) => {
+  await connectApp(page)
+  await page.keyboard.press('ControlOrMeta+k')
+  await page.keyboard.type('Open the camera of Voron')
+  await page.locator('.sx-palette-item', { hasText: 'Open the camera of Voron' }).first().click()
+  const dialog = page.getByRole('dialog', { name: /Voron camera/ })
+  await expect(dialog).toBeVisible()
+  await expect(dialog.getByText(/\d+ fps/)).toBeVisible({ timeout: 30_000 })
+  await expect(dialog.getByText('Direct on your network')).toBeVisible()
+})
+
+test('sends a sliced plate with the preflight and an approval, and the printer receives it', async ({ page }) => {
+  test.slow()
+  await connectApp(page)
+  await page.getByRole('button', { name: 'Slice plate' }).click()
+  await expect(page.locator('.sx-tab[aria-current=page]')).toContainText('Preview', { timeout: 90_000 })
+  await page.keyboard.press('ControlOrMeta+k')
+  await page.keyboard.type('Print the plate on Voron')
+  await page.locator('.sx-palette-item', { hasText: 'Print the plate on Voron' }).first().click()
+  // One Print sheet: it checks the file against the printer, and its confirm button is the approval.
+  const sheet = page.locator('dialog.print-sheet[open]')
+  await expect(sheet).toBeVisible()
+  await expect(sheet.locator('.ps-file[data-checked]')).toBeVisible()
+  const go = sheet.getByRole('button', { name: /^Bed is clear, start/ })
+  // Errors from the preflight would keep the button disabled; say what they were.
+  if (await go.isDisabled()) throw new Error(`Start is disabled: ${await sheet.locator('.cl-list').innerText()}`)
+  await go.click()
+  await expect(page.getByText(/started on Voron/)).toBeVisible({ timeout: 30_000 })
+  const state = (await (await fetch(`http://127.0.0.1:${controlPort}/state`)).json()) as Record<string, unknown>
+  expect(JSON.stringify(state)).toMatch(/\.gcode/)
+})
+
+/** Pairs the app, puts one 20 mm box on the plate for `printer`, slices, and opens the Print sheet. */
+async function sheetFor(page: Page, printer: string): Promise<Locator> {
+  await openStudio(page)
+  await page.getByRole('button', { name: 'Settings', exact: true }).click()
+  await page.getByRole('navigation', { name: 'Settings sections' }).getByRole('button', { name: 'Printer bridge' }).click()
+  await page.getByLabel('Pairing code').fill(code)
+  await page.getByRole('button', { name: 'Connect' }).click()
+  await expect(page.getByText('Connected', { exact: true })).toBeVisible()
+  await page.keyboard.press('Escape')
+  await page.getByRole('button', { name: 'Change', exact: true }).click()
+  await page.getByRole('list', { name: 'Choose a printer' }).getByRole('button', { name: new RegExp(`^${printer}\\b`) }).first().click()
+  await page.evaluate(() => (window as unknown as { __sx: { setState(p: unknown): void } }).__sx.setState({ plate: [], selection: null, selectedIds: [] }))
+  await command(page, 'Add a box')
+  await page.getByRole('button', { name: 'Slice plate' }).click()
+  await expect(page.locator('.sx-tab[aria-current=page]')).toContainText('Preview', { timeout: 120_000 })
+  await command(page, `Print the plate on ${printer}`)
+  const sheet = page.locator('dialog.print-sheet[open]')
+  await expect(sheet).toBeVisible()
+  await expect(sheet.locator('.ps-file[data-checked]')).toBeVisible({ timeout: 30_000 })
+  return sheet
+}
+
+async function start(sheet: Locator): Promise<void> {
+  const go = sheet.getByRole('button', { name: /^Bed is clear, start|^Start (print|anyway)/ })
+  if (await go.isDisabled()) throw new Error(`Start is disabled: ${await sheet.innerText()}`)
+  await go.click()
+}
+
+test('A1 with an AMS lite: the sheet sends a .gcode.3mf from the matched slot', async ({ page }) => {
+  test.slow()
+  const sheet = await sheetFor(page, 'A1')
+  // The file and its filaments were decided before the sheet: a summary, no field and no slot picker.
+  await expect(sheet.locator('.ps-file')).toContainText('.gcode.3mf')
+  await expect(sheet.locator('.ps-fil').first()).toContainText(/AMS A\d|External spool/)
+  await expect(sheet.locator('#ps-map-1')).toHaveCount(0)
+  // The options an A1 has, and no first layer inspection.
+  await expect(sheet.getByRole('switch', { name: 'Bed leveling' })).toBeVisible()
+  await expect(sheet.getByRole('switch', { name: 'Vibration compensation' })).toBeVisible()
+  await expect(sheet).not.toContainText('First layer inspection')
+  await start(sheet)
+  await expect(page.getByText(/started on A1/)).toBeVisible({ timeout: 30_000 })
+  const log = await mockLog()
+  expect(log).toMatch(/project_file/)
+  expect(log).toMatch(/\.gcode\.3mf/)
+  expect(log).toMatch(/ams_mapping\\":\[\d+\]/)
+  await idleAgain('a1')
+})
+
+test('A1: a refused start shows the reason and offers plain G-code', async ({ page }) => {
+  test.slow()
+  await ctl('/bambu', { refuse: 'The file could not be parsed (mock)' })
+  try {
+    const sheet = await sheetFor(page, 'A1')
+    await start(sheet)
+    const again = page.locator('dialog.print-sheet[open]')
+    // On a miss, say what the printer was asked to do.
+    await expect(again).toContainText('A1 did not start the print. It said:', { timeout: 30_000 }).catch(async (e: unknown) => {
+      const app = await page.evaluate(() => JSON.stringify((window as unknown as { __sx: { getState(): { toast: unknown } } }).__sx.getState().toast))
+      throw new Error(`${String(e).slice(0, 300)}\napp toast: ${app}\nmock log: ${(await mockLog()).slice(-600)}`)
+    })
+    await expect(again).toContainText('The file could not be parsed (mock)')
+    const plain = again.getByRole('button', { name: 'Send as plain G-code' })
+    await expect(plain).toBeEnabled()
+    await ctl('/bambu', { refuse: null })
+    await plain.click()
+    await expect(page.getByText(/started on A1/)).toBeVisible({ timeout: 30_000 })
+    const log = await mockLog()
+    expect(log).toMatch(/project_file refused/)
+    expect(log).toMatch(/gcode_file|\.gcode\\"/)
+  } finally {
+    await ctl('/bambu', { refuse: null })
+    await idleAgain('a1')
+  }
+})
+
+test('A1 mini with the external spool only: filament 1 goes to the external spool', async ({ page }) => {
+  test.slow()
+  await ctl('/bambu', { model: 'N1', ams: 'none', external: { type: 'PLA', color: '#FFFFFF' } })
+  await addBambu('a1mini', 'A1 mini', 'A1 mini')
+  const sheet = await sheetFor(page, 'A1 mini')
+  await expect(sheet.locator('.ps-fil').first()).toContainText('External spool')
+  const slot = sheet.locator('#ps-map-1')
+  if (await slot.count()) {
+    const opts = (await slot.locator('option').allTextContents()).map((o) => o.trim())
+    expect(opts.filter((o) => /^A\d/.test(o))).toEqual([])
+  }
+  await start(sheet)
+  await expect(page.getByText(/started on A1 mini/)).toBeVisible({ timeout: 30_000 })
+  const log = await mockLog()
+  // The external spool is tray 254 (vt_tray).
+  expect(log).toMatch(/project_file[^\n]*ams_mapping\\":\[254\]|ams_mapping\\":\[-1\]|use_ams\\":false/)
+})
