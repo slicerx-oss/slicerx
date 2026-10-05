@@ -1,0 +1,81 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+/* Copyright (C) 2026 The SlicerX contributors */
+/* Printers as a camera wall. Tiles and the count strip belong to the page and stay flat; only what floats over a
+   camera (the state pill, the time left) is lifted. A tile glows softly on hover and keyboard focus. */
+.wall-h { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-3) var(--s-4); margin-bottom: var(--s-5); }
+.wall-h h1 { flex: 1 1 240px; margin: 0; font-size: 26px; }
+
+.wall-counts { list-style: none; margin: 0 0 var(--s-6); padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(140px, 100%), 1fr)); gap: var(--s-3); }
+.wall-counts li { --tone: var(--dim); display: flex; flex-direction: column; gap: 6px; min-width: 0; padding: 14px 16px; background: var(--ink-1); border: 1px solid var(--line-soft); border-radius: var(--r-md); }
+.wall-counts li[data-tone=run] { --tone: var(--cyan); }
+.wall-counts li[data-tone=warn] { --tone: var(--orange); }
+.wall-counts li[data-tone=ok] { --tone: var(--green); }
+.wall-counts li[data-tone=low] { --tone: var(--purple); }
+.wall-count-label { display: inline-flex; align-items: center; gap: 8px; font-size: var(--fs-md); color: var(--muted); }
+.wall-count-label::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--tone); flex: none; }
+.wall-count-n { font: 600 28px/1 var(--f-body); font-variant-numeric: tabular-nums; }
+.wall-count-sub { font-size: var(--fs-sm); color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
+
+.wall-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(290px, 100%), 1fr)); gap: var(--s-4); }
+.wall-skeleton { min-height: 240px; }
+.wall-bay { display: flex; flex-direction: column; gap: 14px; margin-bottom: var(--s-6); }
+.wall-bay-h { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; padding-bottom: 10px; border-bottom: 1px solid var(--line-soft); }
+.wall-bay-h h2 { margin: 0; font: 600 18px/1.2 var(--f-display); }
+.wall-bay-place { font-size: var(--fs-body); color: var(--muted); }
+.wall-bay-sum { margin-left: auto; font-size: var(--fs-md); color: var(--muted); font-variant-numeric: tabular-nums; }
+.wall-bay .app-empty { padding: 0; }
+
+/* one tile; the whole tile is the button that opens the printer, the menu and tooltips sit above it */
+.pcard { position: relative; display: flex; flex-direction: column; min-width: 0; background: var(--ink-1); border: 1px solid var(--line-soft); border-radius: var(--r-lg); transition: box-shadow var(--t-slow) var(--ease), border-color var(--t-slow) var(--ease); }
+.pcard[data-kind=need] { border-color: color-mix(in srgb, var(--orange) 40%, var(--line-soft)); }
+.pcard:has(> .wall-open):hover { border-color: color-mix(in srgb, var(--accent) 35%, var(--line-soft)); box-shadow: var(--shadow-pop), 0 0 0 1px color-mix(in srgb, var(--accent) 22%, transparent), 0 10px 32px -12px color-mix(in srgb, var(--accent) 40%, transparent); }
+.pcard:has(> .wall-open:focus-visible) { border-color: color-mix(in srgb, var(--accent) 55%, var(--line-soft)); box-shadow: var(--shadow-pop), 0 0 0 2px var(--accent-ring), 0 10px 32px -12px color-mix(in srgb, var(--accent) 45%, transparent); }
+.wall-open { position: absolute; inset: 0; z-index: 1; margin: 0; padding: 0; border: 0; border-radius: inherit; background: none; cursor: pointer; appearance: none; }
+.wall-open:focus-visible { outline: none; }
+
+.wall-cam { position: relative; aspect-ratio: 16 / 9; overflow: hidden; border-radius: calc(var(--r-lg) - 1px) calc(var(--r-lg) - 1px) 0 0; background: color-mix(in srgb, var(--ink-0) 55%, black); }
+.wall-still { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.wall-still[data-old] { filter: grayscale(0.6) brightness(0.6); }
+.wall-cam .cam-idle-line[data-tip-title] { position: relative; z-index: 2; cursor: default; }
+.wall-float { position: absolute; display: inline-flex; align-items: center; padding: 5px 10px; border-radius: var(--r-pill); background: color-mix(in srgb, var(--ink-0) 72%, transparent); box-shadow: var(--shadow-float); backdrop-filter: var(--lift-glass); -webkit-backdrop-filter: var(--lift-glass); }
+.wall-pill { left: 10px; top: 10px; }
+.wall-left { right: 10px; bottom: 12px; border-radius: var(--r-sm); font: 600 var(--fs-body) var(--f-body); font-variant-numeric: tabular-nums; color: var(--fg); }
+.wall-bar { position: absolute; left: 0; right: 0; bottom: 0; height: 4px; background: color-mix(in srgb, var(--ink-4) 80%, transparent); }
+.wall-bar i { display: block; height: 100%; background: var(--cyan); transform-origin: left; transition: transform 0.6s var(--ease); }
+.wall-bar[data-tone=warn] i { background: var(--orange); }
+
+.wall-body { display: flex; flex: 1; flex-direction: column; gap: 8px; min-width: 0; padding: 10px 12px 14px 16px; }
+.wall-name { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.wall-name b { min-width: 0; font: 600 var(--fs-lg) var(--f-body); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wall-mark { display: grid; place-items: center; flex: none; color: var(--fg); }
+.wall-model { flex: 1 1 auto; min-width: 0; font-size: var(--fs-md); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wall-more { position: relative; z-index: 2; flex: none; margin-left: auto; }
+.wall-more:has(.sx-menu) { z-index: var(--z-menu); }
+.wall-more .sx-btn { color: color-mix(in srgb, var(--fg) 70%, var(--muted)); }
+.wall-more .sx-btn .sx-ic { width: 18px; height: 18px; }
+.wall-line { display: -webkit-box; margin: 0; overflow: hidden; font-size: var(--fs-body); color: color-mix(in srgb, var(--fg) 80%, var(--muted)); font-variant-numeric: tabular-nums; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.wall-meta { display: flex; align-items: center; gap: 14px; margin-top: auto; padding-right: 4px; font-size: var(--fs-md); color: var(--muted); }
+.wall-heat { position: relative; z-index: 2; display: inline-flex; gap: 14px; font-variant-numeric: tabular-nums; }
+.wall-heat b { font-weight: 600; color: var(--fg); }
+.wall-slots { position: relative; z-index: 2; display: inline-flex; gap: 6px; margin-left: auto; }
+.wall-slot { display: inline-grid; border-radius: 50%; }
+.wall-slot .swatch.sm { width: 14px; height: 14px; }
+.wall-slot[data-active] { box-shadow: 0 0 0 2px var(--ink-1), 0 0 0 4px var(--accent); }
+
+:root[data-motion="reduced"] .pcard, :root[data-motion="reduced"] .wall-bar i { transition: none; }
+
+/* No printers yet: two ravens on a branch, now and then one glances about. */
+.wall-empty { display: flex; flex-direction: column; align-items: center; gap: var(--s-3); padding-block: var(--s-8); text-align: center; }
+.wall-empty h2 { margin: 0; font: 600 var(--fs-xl) var(--f-display); color: var(--fg); }
+.wall-empty p { margin: 0; max-width: 40ch; color: var(--muted); }
+.wall-empty-acts { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--s-2); margin-top: var(--s-2); }
+.wall-empty-ravens { position: relative; display: flex; gap: 20px; padding: 0 28px 4px; color: var(--muted); }
+.wall-empty-raven { position: relative; z-index: 1; transform-origin: 50% 86%; }
+.wall-empty-raven path:first-child { fill: color-mix(in srgb, var(--ink-0) 20%, black); }
+.wall-empty-raven circle { fill: var(--orange); }
+.wall-empty-ravens > :first-child { animation: wall-glance-l 5s ease-in-out infinite; }
+.wall-empty-ravens > :nth-child(2) { animation: wall-glance-r 5s ease-in-out -2.5s infinite; }
+.wall-empty-branch { position: absolute; left: 0; right: 0; bottom: 0; width: 100%; height: 12px; fill: none; stroke: var(--line); stroke-width: 2; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+@keyframes wall-glance-l { 0%, 40%, 100% { transform: scaleX(-1); } 48%, 60% { transform: scaleX(-1) rotate(-7deg); } 68% { transform: scaleX(-1); } }
+@keyframes wall-glance-r { 0%, 40%, 100% { transform: none; } 48%, 60% { transform: rotate(-7deg); } 68% { transform: none; } }
+:root[data-motion="reduced"] .wall-empty-ravens > * { animation: none; }

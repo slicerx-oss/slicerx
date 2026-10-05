@@ -1,0 +1,54 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+/* Copyright (C) 2026 The SlicerX contributors */
+.cam-idle { --raven-body: color-mix(in srgb, var(--ink-0) 20%, black); position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: var(--s-3); color: var(--dim); text-align: center; }
+.cam-idle p { margin: 0; }
+/* the first look: the picture waits under the battle, then the two cross over 200 ms */
+.cam-idle[data-leaving] { opacity: 0; transition: opacity 200ms var(--ease); }
+.cam-reveal { transition: opacity 200ms var(--ease); }
+.cam-reveal[data-held] { opacity: 0; }
+.cam-idle-line { font-size: var(--fs-md); color: var(--dim); }
+.cam-idle[data-connecting] .cam-idle-line { color: var(--muted); }
+.cam-idle[data-size=lg] .cam-idle-line { font-size: var(--fs-body); }
+.cam-idle-detail { max-width: 44ch; font-size: var(--fs-sm); color: var(--muted); }
+.cam-idle .cam-idle-names { margin-top: -4px; font: 600 10px/1 var(--f-body); letter-spacing: 0.32em; text-transform: uppercase; color: var(--dim); }
+.cam-ravens { display: inline-flex; gap: 2px; }
+/* dimmed by the stroke, not opacity, so the near-black body stays solid over the ground */
+.cam-raven { flex: none; color: color-mix(in srgb, var(--dim) 80%, transparent); }
+.cam-raven path:first-child { fill: color-mix(in srgb, var(--ink-0) 20%, black); }
+/* trying again or away: the resting pair breathes, slow and small */
+.cam-idle[data-breathe] .cam-ravens { animation: cam-breathe 3s ease-in-out infinite; }
+.cam-idle[data-breathe=slow] .cam-ravens { animation-duration: 4.5s; }
+.cam-idle .cam-idle-act { position: relative; z-index: 2; margin-top: 2px; }
+@keyframes cam-breathe { 0%, 100% { transform: none; opacity: 1; } 50% { transform: scale(1.05); opacity: 0.7; } }
+
+/* huginn and muninn spar: a 2.4 s lunge with wing beats, a flash where they meet, the rune ring turning slowly */
+.rb-scene { flex: none; width: auto; aspect-ratio: 5 / 3; overflow: visible; }
+/* on a tile the ring fills the camera ground, clear of the state pill, the time left and the progress edge */
+.cam-idle[data-size=sm][data-connecting] { padding: 0; }
+.cam-idle[data-size=sm] .rb-scene { height: calc(100% - 72px); transform: translateY(-5px); }
+.cam-idle[data-size=sm] .rb-body, .cam-idle[data-size=sm] .rb-wing { stroke-width: 1.3; }
+.cam-idle[data-size=lg] .rb-scene { height: 180px; }
+.rb-ring { transform-box: fill-box; transform-origin: center; animation: rb-spin 36s linear infinite; fill: none; stroke: color-mix(in srgb, var(--dim) 45%, transparent); stroke-width: 0.9; stroke-linecap: round; stroke-linejoin: round; }
+.rb-ring > circle { stroke: color-mix(in srgb, var(--dim) 22%, transparent); stroke-width: 0.6; }
+.rb-ring .rb-sep { fill: color-mix(in srgb, var(--dim) 45%, transparent); stroke: none; }
+.rb-body, .rb-wing { fill: var(--raven-body); stroke: var(--muted); stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
+.rb-eye { fill: var(--orange); }
+.rb-spark path { fill: var(--orange); }
+.rb-spark circle { fill: var(--fg); }
+.rb-bob { animation: rb-bob 2.4s ease-in-out infinite; }
+.rb-lunge { animation: rb-lunge 2.4s cubic-bezier(0.5, 0, 0.3, 1) infinite; }
+.rb-wing { transform-box: fill-box; transform-origin: 0% 80%; animation: rb-flap 0.6s ease-in-out infinite; }
+.rb-late .rb-lunge { animation-delay: -0.04s; }
+.rb-late .rb-wing { animation-delay: -0.3s; }
+.rb-spark { transform-box: fill-box; transform-origin: center; opacity: 0; animation: rb-spark 2.4s ease-out infinite; }
+.rb-glow { opacity: 0.08; animation: rb-glow 2.4s ease-out infinite; }
+.cam-idle[data-paused] * { animation-play-state: paused; }
+
+@keyframes rb-spin { to { transform: rotate(360deg); } }
+@keyframes rb-bob { 0%, 100% { transform: none; } 50% { transform: translateY(-1.1px); } }
+@keyframes rb-lunge { 0%, 100% { transform: none; } 35% { transform: translateX(1.5px); } 52% { transform: translateX(-3.2px); } 60% { transform: translateX(-2.3px); } 78% { transform: none; } }
+@keyframes rb-flap { 0%, 100% { transform: none; } 30% { transform: rotate(-34deg); } 60% { transform: rotate(10deg); } }
+@keyframes rb-spark { 0%, 48% { opacity: 0; transform: scale(0.2); } 54% { opacity: 1; transform: scale(1.15) rotate(20deg); } 72% { opacity: 0; transform: scale(1.6) rotate(40deg); } 100% { opacity: 0; } }
+@keyframes rb-glow { 0%, 48% { opacity: 0.08; } 55% { opacity: 0.5; } 80%, 100% { opacity: 0.08; } }
+
+:root[data-motion="reduced"] .rb-ring, :root[data-motion="reduced"] .rb-bob, :root[data-motion="reduced"] .rb-lunge, :root[data-motion="reduced"] .rb-wing, :root[data-motion="reduced"] .rb-spark, :root[data-motion="reduced"] .rb-glow, :root[data-motion="reduced"] .cam-idle[data-breathe] .cam-ravens { animation: none; }

@@ -1,0 +1,36 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+/* Copyright (C) 2026 The SlicerX contributors */
+/* The assistant's docked panel: a column on the right of the workspace that pushes the content over. */
+.app[data-mimir="open"] .sx-main { padding-right: var(--mimir-w, 380px); }
+.mimir-dock { --t-bg: var(--ink-1); --t-bar: var(--ink-2); --t-fg: var(--fg); --t-sub: var(--muted); --t-mute: var(--muted); --t-chrome: var(--dim); position: absolute; top: 0; right: 0; bottom: 0; width: var(--mimir-w, 380px); display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto; grid-template-columns: minmax(0, 1fr); border-left: 1px solid var(--line-soft); background: var(--ink-1); z-index: 5; }
+.mimir-head { display: flex; align-items: center; gap: 8px; height: 44px; padding: 0 8px 0 14px; border-bottom: 1px solid var(--line-soft); }
+.mimir-mark { display: inline-flex; color: var(--purple); }
+.mimir-mark .sx-ic { width: 18px; height: 18px; }
+.mimir-name { margin: 0; font: 500 var(--fs-md) var(--f-display); letter-spacing: 0.01em; color: var(--fg); }
+.mimir-sp { flex: 1; }
+.mimir-watch { width: 8px; height: 8px; border-radius: 50%; background: var(--cyan); box-shadow: 0 0 0 0 color-mix(in srgb, var(--cyan) 60%, transparent); animation: mimir-breathe 2.4s ease-in-out infinite; }
+@keyframes mimir-breathe { 0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--cyan) 60%, transparent); } 50% { box-shadow: 0 0 0 5px transparent; } }
+:root[data-motion="reduced"] .mimir-watch { animation: none; }
+.mimir-watch[data-attention] { background: var(--orange); animation: none; box-shadow: 0 0 0 3px color-mix(in srgb, var(--orange) 35%, transparent); }
+.mimir-dock .term { min-height: 0; }
+.mimir-dock > .mimir-head { grid-row: 1; }
+.mimir-dock > .cg-compact { grid-row: 2; }
+.mimir-dock > .term, .mimir-dock > .mimir-more, .mimir-dock > .ws-loading { grid-row: 3; }
+.mimir-dock > .mimir-foot { grid-row: 4; }
+.mimir-dock .term-bar { display: none; }
+.mimir-foot { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 4px 12px; padding: 6px 12px; border-top: 1px solid var(--line-soft); font-size: var(--fs-sm); }
+.mimir-more { min-height: 0; overflow: auto; }
+.mimir-dock > .mimir-connect { grid-row: 2 / 5; min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: var(--s-3); padding: 12px; }
+.mimir-connect p { margin: 0; }
+.mimir-dock .insp { border-left: 0; }
+/* The top bar button: the mark, the name, and the watching dot. */
+.mimir-btn { display: inline-flex; align-items: center; gap: 6px; }
+.mimir-btn[aria-pressed="true"] { color: var(--purple); }
+@media (max-width: 1100px) {
+  .app[data-mimir="open"] .sx-main { padding-right: 0; }
+  /* Over the view here, so it is glass: the terminal inside lets the dock's own background show. */
+  .mimir-dock { --t-bg: transparent; background: color-mix(in srgb, var(--ink-1) 92%, transparent); box-shadow: var(--shadow-pop); -webkit-backdrop-filter: var(--lift-glass); backdrop-filter: var(--lift-glass); }
+}
+@media (max-width: 720px) {
+  .mimir-dock { width: 100%; --mimir-w: 100%; }
+}
