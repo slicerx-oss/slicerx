@@ -1,0 +1,37 @@
+[package]
+name = "boostvoronoi"
+version = "0.12.1"
+edition = "2024"
+rust-version = "1.87.0"
+authors = ["eadf <lacklustr@protonmail.com>"]
+description = "Boost voronoi ported to Rust (eadf/boostvoronoi_rs 0.12.1), with faster exact integer products"
+license = "BSL-1.0"
+repository = "https://codeberg.org/eadf/boostvoronoi_rs"
+publish = false
+
+[features]
+ce_corruption_check = []
+console_debug = []
+cpp_console_debug = ["cpp_map/console_debug"]
+# Integrations of the original crate, left out here (their code is never compiled).
+cgmath = []
+geo = []
+glam = []
+mint = []
+nalgebra = []
+serde = []
+
+[lib]
+name = "boostvoronoi"
+path = "src/lib.rs"
+
+[dependencies]
+approx = "0.5.1"
+cpp_map = "0.2.0"
+libm = "0.2.15"
+num-traits = "0.2.19"
+ordered-float = "5.1.0"
+rustc-hash = "2.1"
+smallvec = "1.15.1"
+thiserror = "2.0.17"
+vob = "3.0.6"

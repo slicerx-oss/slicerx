@@ -1,0 +1,21 @@
+[package]
+name = "cpp_map"
+version = "0.2.0"
+edition = "2024"
+rust-version = "1.87.0"
+description = "A simple C++ std::map emulator (eadf/cpp_map_rs 0.2.0), with node levels from a fixed seed"
+license = "MIT OR Apache-2.0"
+repository = "https://codeberg.org/eadf/cpp_map_rs"
+publish = false
+
+[features]
+console_debug = []
+linkedlist_midpoint = []
+
+[lib]
+name = "cpp_map"
+path = "src/lib.rs"
+
+[dependencies]
+smallvec = "1.15.0"
+thiserror = "2.0.17"
