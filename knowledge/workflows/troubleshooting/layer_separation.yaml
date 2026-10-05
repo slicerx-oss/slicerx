@@ -1,0 +1,91 @@
+kind: troubleshoot
+schema_version: 1
+id: layer_separation
+name: Layer separation and cracking
+aliases: [delamination, layer splitting, cracking, layers peeling apart, weak layers, split along layers, part snaps at layer lines]
+camera_signs:
+  - "Clean horizontal cracks along layer lines, often with an upward bend at the edge"
+  - "Layers pulling apart on tall parts, especially on corners and thin walls"
+  - "Gaps between the outer walls and inner walls (perimeter separation) on part of the print"
+  - "Splits get worse higher up the part or near an open window or vent"
+log_signs: []
+tree:
+  start: q_material
+  nodes:
+    q_material: {ask: "Is the material ABS, ASA, PC or nylon (high shrinkage), or printing in a cold room or a draft?", "yes": q_enclosure, "no": q_temp}
+    q_enclosure: {ask: "Is the printer enclosed with the door closed, part fan off or very low, and no draft?", "yes": q_temp, "no": c_cold_environment}
+    q_temp: {ask: "Is the nozzle at the low end of the filament's range, or did you print fast without raising the temperature?", "yes": c_too_cold, "no": q_fan}
+    q_fan: {ask: "Is the part cooling fan high for this material, or did you raise it recently?", "yes": c_too_much_fan, "no": q_flow}
+    q_flow: {ask: "Do the walls have gaps between them or does the surface look thin, with flow not calibrated?", "yes": c_flow_and_stepover, "no": q_wet}
+    q_wet: {ask: "Is the filament wet (popping, rough surface) or a recently opened old spool?", "yes": c_wet_filament, "no": c_hotend_underperforming}
+causes:
+  - id: c_cold_environment
+    name: Cold room, draft or open chamber
+    category: environment
+    likelihood: high
+    checks:
+      - "Prusa says ABS is highly susceptible when cold air blows on the print before it has cooled down."
+      - "Layers crack higher up as the part gets taller and cools faster than the layers below."
+    fixes:
+      - {advice: "Print ABS, ASA, PC and nylon in an enclosure with the door closed and no draft. Prusa suggests fans off completely for ABS. Consider PETG or ASA if the part is large, since ABS is prone to cracking.", kind: environment}
+      - {advice: "Keep a stable ambient temperature. An open window or AC blowing at the printer increases splitting.", kind: environment}
+    filaments: [abs, asa, pc, pa6, pa12, pa_cf, pa_gf]
+    src: [prusa_kb_layer_separation, prusa_kb_warping]
+    confidence: high
+  - id: c_too_cold
+    name: Nozzle temperature too low
+    category: settings
+    likelihood: high
+    checks:
+      - "Prusa says PLA can crack at too low a temperature. Ellis says high speed printing often needs a temperature bump."
+    fixes:
+      - {key: nozzle_temperature, op: increase_by, value: 5, why: "Prusa raises the temperature in 5 C steps until the layers bond well. Stay inside the filament's range.", src: [prusa_kb_layer_separation]}
+      - {advice: "If you raised part fan speed and layers started splitting, raise the nozzle temperature to compensate, per Prusa's warping guide.", kind: material}
+    src: [prusa_kb_layer_separation, prusa_kb_warping, ellis_perimeter_separation]
+    confidence: high
+  - id: c_too_much_fan
+    name: Too much part cooling
+    category: settings
+    likelihood: medium
+    checks:
+      - "Prusa says too high a fan speed can lift the part and reduce layer to layer adhesion."
+    fixes:
+      - {advice: "Lower the maximum part fan in steps. Less cooling keeps layers hot long enough to bond. Bambu's PETG profile runs the fan between 10 and 40 percent, and Prusa suggests turning the fan off completely for ABS.", kind: material}
+      - {advice: "Ellis says constant fan speed avoids banding and inconsistent bonding. Use a stable speed rather than big swings.", kind: material}
+    src: [prusa_kb_layer_separation, prusa_kb_warping, ellis_cooling_layer_times]
+    confidence: medium
+  - id: c_flow_and_stepover
+    name: Low flow or narrow wall lines
+    category: settings
+    likelihood: medium
+    checks:
+      - "Ellis says perimeters separate with narrow line widths, especially with layer heights above 50 percent of the nozzle diameter."
+      - "Under-extruded lines bond less. Prusa says more material creates a stronger bond between layers."
+    fixes:
+      - {key: filament_flow_ratio, op: increase_by, value: 0.05, why: "Prusa raises the extrusion multiplier in 5 percent steps for better layer bonding. Confirm with a flow test so you do not over-extrude.", src: [prusa_kb_layer_separation]}
+      - {advice: "Check the outer wall line width is wide enough. A 100 percent line width does not work well above 50 percent layer height, per Ellis.", kind: workflow}
+      - {advice: "If the gaps are at the bottom, lower or disable elephant foot compensation. Too high a value makes perimeters print over nothing.", kind: workflow}
+    src: [prusa_kb_layer_separation, ellis_perimeter_separation]
+    confidence: medium
+  - id: c_wet_filament
+    name: Wet filament
+    category: material
+    likelihood: medium
+    checks:
+      - "Popping at the nozzle and rough or pitted walls."
+    fixes:
+      - {advice: "Dry the filament for its material. Moisture weakens layer bonds and makes extrusion inconsistent. Bambu notes PETG and engineering materials are more sensitive.", kind: material}
+    src: [bambu_wiki_avoid_clogs, bambu_wiki_warping_p2s]
+    confidence: medium
+  - id: c_hotend_underperforming
+    name: Hotend heat transfer or partial clog
+    category: hardware
+    likelihood: low
+    checks:
+      - "Layers bond poorly even at a correct temperature. Check the heater cartridge and thermistor, and look for a partial clog."
+    fixes:
+      - {advice: "Verify the nozzle temperature with a known good reading and run PID calibration on Klipper. Replace a worn heater cartridge, which Bambu says can cause persistent extrusion issues. Try a new nozzle, per Ellis.", kind: hardware}
+    src: [bambu_wiki_avoid_clogs, ellis_extruder_skipping]
+    confidence: low
+related: [warping, under_extrusion, over_extrusion, bed_adhesion]
+src: [prusa_kb_layer_separation, prusa_kb_warping, ellis_perimeter_separation]

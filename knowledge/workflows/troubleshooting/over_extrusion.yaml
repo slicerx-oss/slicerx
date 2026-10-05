@@ -1,0 +1,90 @@
+kind: troubleshoot
+schema_version: 1
+id: over_extrusion
+name: Over-extrusion
+aliases: [overextrusion, too much plastic, blobby, bulging, rough surface, walls too thick, ridged top surface]
+camera_signs:
+  - "Rough, ridged or bumpy top surface with lines merged together or humped"
+  - "Walls look wider than the design, corners bulge outward, small holes closed up"
+  - "Solid infill lines pushing into the walls from the inside, with bumps on the outer wall"
+  - "Rounded, blobby corners and first layer that looks glassy and squashed with ridges at the edges"
+log_signs: []
+tree:
+  start: q_where
+  nodes:
+    q_where: {ask: "Is the extra plastic mainly on the first layer (squashed, ridged, elephant foot), rather than on every layer?", "yes": c_first_layer_squish, "no": q_corners}
+    q_corners: {ask: "Do bulges show mainly at corners, seams or where the walls change direction, rather than along straight lines?", "yes": c_pressure_advance, "no": q_small_areas}
+    q_small_areas: {ask: "Is it mostly small infill areas, single top layer patches or areas right next to walls?", "yes": c_infill_overlap, "no": q_flow_calibrated}
+    q_flow_calibrated: {ask: "Have you calibrated the flow ratio for this exact filament, and does the extruder distance check out (100 mm requested equals 100 mm extruded)?", "yes": q_temperature, "no": c_flow_ratio_high}
+    q_temperature: {ask: "Is the nozzle running hot for this filament, or is the filament wet so it foams and swells?", "yes": c_hot_or_wet, "no": c_extruder_cal}
+causes:
+  - id: c_first_layer_squish
+    name: First layer squished too hard
+    category: settings
+    likelihood: high
+    checks:
+      - "Bottom layers look glassy with raised ridges at line edges, and the first layer is much wider than the part."
+    fixes:
+      - {advice: "Raise the Z offset slightly (nozzle further from the plate) until the first layer lines just touch without gaps. Ellis says leaning toward slightly more squish is fine, but too much causes ridges and elephant foot. See the first_layer troubleshooter.", kind: hardware}
+      - {key: initial_layer_line_width, op: at_most, value: 0.5, why: "Orca's Bambu profiles use 0.5 mm as the first layer line width for a 0.4 mm nozzle. Ellis suggests 120 percent or more for adhesion, so go wider only if adhesion needs it.", src: ["orca:BBL/process/fdm_process_common.json", ellis_first_layer_squish]}
+    src: [ellis_first_layer_squish, prusa_kb_first_layer, "orca:BBL/process/fdm_process_common.json"]
+    confidence: medium
+  - id: c_pressure_advance
+    name: Pressure advance too low
+    category: settings
+    likelihood: medium
+    checks:
+      - "Bulges at every corner and at line starts, but straight walls look correct."
+    fixes:
+      - {advice: "Run pressure advance (Bambu: flow dynamics) calibration for this filament, temperature and speed. Klipper and Ellis both say to tune pressure advance before the flow ratio.", kind: workflow}
+      - {key: enable_pressure_advance, op: enable, why: "Pressure advance must be on for calibrated values to apply.", src: [klipper_pressure_advance]}
+    printers: [klipper, bambu]
+    src: [klipper_pressure_advance, ellis_pa, ellis_bulging]
+    confidence: medium
+  - id: c_infill_overlap
+    name: Solid infill over-filling small areas
+    category: settings
+    likelihood: medium
+    checks:
+      - "Bumps on the outer wall line up with where solid infill meets it, or small top patches look over-filled. Ellis notes some of this is normal."
+    fixes:
+      - {advice: "Lower the infill and wall overlap. Bambu's layer line guide gives a change from 15 percent to a lower or even negative value as an example, and Ellis suggests roughly 20 to 25 percent encroachment as a floor before infill disconnects from the walls.", kind: workflow}
+      - {advice: "Slow the top surface speed and top surface acceleration. Ellis saw diminishing returns below about 2000 mm/s2 on his printer.", kind: workflow}
+      - {key: wall_sequence, op: set, value: "outer wall/inner wall", why: "Printing the outer wall first can help with bulging layers and extrusion consistency. It can hurt steep overhangs.", src: [ellis_bulging]}
+    src: [ellis_bulging, ellis_small_infill, bambu_wiki_layer_artifacts]
+    confidence: medium
+  - id: c_flow_ratio_high
+    name: Flow ratio too high
+    category: settings
+    likelihood: high
+    checks:
+      - "Print a flow test cube with several top layers and look for ridges on the top surface. Any gaps mean too little flow, ridges and pillows mean too much."
+    fixes:
+      - {key: filament_flow_ratio, op: decrease_by, value: 0.02, why: "Lower flow in 1 to 2 percent steps until top lines just touch. Ellis tunes after pressure advance.", src: [ellis_extrusion_multiplier]}
+      - {advice: "Run the slicer's built in flow rate calibration and keep the result per filament and per brand, or per spool if the diameter varies.", kind: workflow}
+    src: [ellis_extrusion_multiplier, prusa_kb_stringing]
+    confidence: high
+  - id: c_hot_or_wet
+    name: Nozzle too hot or wet filament
+    category: material
+    likelihood: medium
+    checks:
+      - "Popping or steam at the nozzle, or filament that oozes and looks glossy and swollen."
+    fixes:
+      - {key: nozzle_temperature, op: decrease_by, value: 5, why: "Runny plastic spreads wider. Prusa suggests 5 to 10 C lower for stringing, the same fix applies here.", src: [prusa_kb_stringing]}
+      - {advice: "Dry the filament. Moisture vaporizes in the nozzle and causes bubbles and uneven flow.", kind: material}
+    src: [prusa_kb_stringing, bambu_wiki_avoid_clogs]
+    confidence: medium
+  - id: c_extruder_cal
+    name: Extruder not calibrated
+    category: hardware
+    likelihood: low
+    checks:
+      - "Mark 120 mm of filament, extrude 100 mm, and measure what was consumed. Klipper printers use rotation_distance for this."
+    fixes:
+      - {advice: "Calibrate the extruder so 100 mm requested is 100 mm extruded before tuning flow. Ellis says do this first, and adjust backlash or gear wear if patterns repeat along the walls.", kind: hardware}
+    printers: [klipper]
+    src: [ellis_extrusion_multiplier, ellis_extrusion_patterns]
+    confidence: medium
+related: [under_extrusion, elephant_foot, pillowing, seam_zits, dimensional_accuracy]
+src: [ellis_extrusion_multiplier, ellis_bulging, ellis_small_infill]

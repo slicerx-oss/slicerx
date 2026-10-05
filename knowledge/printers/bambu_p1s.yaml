@@ -1,0 +1,95 @@
+kind: printer
+schema_version: 1
+id: bambu_p1s
+name: Bambu Lab P1S
+vendor: Bambu Lab
+status: current
+status_note: "Listed in the Bambu US store in 2026-09."
+status_confidence: medium
+status_src: [bambu_store_collection]
+firmware: bambu
+connections: [bambu_lan_mqtt, bambu_cloud, bambu_connect]
+kinematics: corexy
+build_volume_mm: {x: 256, y: 256, z: 256, printable_z_default: 250, src: [bambu_spec_p1s, bambu_store_p1s, "orca:BBL/machine/Bambu Lab P1S 0.4 nozzle.json"], note: "Studio defaults to 250 mm to protect the heatbed. The collapsible filament cutter stopper can occupy part of the plate when popped out."}
+extruder: {type: direct_drive, gears: steel, src: [bambu_spec_p1s]}
+hotend:
+  max_temp_c: 300
+  nozzle_diameters_mm: [0.2, 0.4, 0.6, 0.8]
+  nozzle_materials: [stainless_steel, hardened_steel]
+  stock_nozzle: {diameter_mm: 0.4, material: stainless_steel}
+  tool_free_swap: false
+  high_flow_option: null
+  max_flow_mm3s: {value: 32, note: "Bambu test: 150 x 150 mm single wall, Bambu ABS at 280 C."}
+  src: [bambu_spec_p1s, bambu_wiki_hotend_x1]
+  note: "Spec says stainless steel nozzle stock and not recommended for carbon or glass fiber. A hardened steel hotend is a separate purchase (shared X1 and P1 hotend page)."
+bed:
+  max_temp_c: 100
+  plates: [bambu_cool_plate, bambu_engineering_plate, bambu_high_temp_plate, textured_pei, bambu_supertack_plate]
+  included_plates: [textured_pei]
+  src: [bambu_spec_p1s, bambu_store_p1s, bambu_wiki_build_plates]
+enclosure:
+  type: enclosed
+  chamber_heating: passive
+  max_chamber_c: null
+  filtration: [activated_carbon]
+  top_glass_removable: true
+  src: [bambu_spec_p1s, bambu_store_p1s]
+  note: "Plastic and glass shell. Auxiliary part fan and carbon filter included. Top lid comes off for PLA, PETG and TPU."
+motion:
+  max_speed_mm_s: 500
+  max_accel_mm_s2: 20000
+  input_shaping: auto
+  src: [bambu_spec_p1s, bambu_wiki_p1_intro, bambu_wiki_printer_calibration]
+  note: "Bambu calls it vibration suppression and lists it in the calibration menu with motor noise cancellation and auto bed leveling."
+power:
+  mains: "100 to 240 V AC, 50/60 Hz"
+  max_w: {value: 1000, note: "At 220 V. 350 W at 110 V.", src: [bambu_spec_p1s], confidence: high}
+  printing_typical_w: {pla: {value: 105}, abs: {value: 140}, pc: {value: 135}, src: [bambu_wiki_power], confidence: medium, note: "Bambu wiki average power over a short test print (about 16 minutes). Power factor 0.45 to 0.64."}
+  idle_w: {range: [5.2, 5.8], src: [bambu_wiki_power], confidence: medium, note: "Bambu wiki reading without network connection. 5.8 to 6 W with Wi-Fi."}
+  measured_examples:
+    - {job: "Bambu wiki test print, PLA, 16 min 8 s", kwh_range: [0.0238, 0.031], src: [bambu_wiki_power]}
+    - {job: "Bambu wiki test print, ABS, 16 min 3 s", kwh_range: [0.032, 0.043], src: [bambu_wiki_power]}
+sensors: [chamber_camera, filament_runout, filament_odometry_with_ams, power_loss_recovery]
+sensors_src: [bambu_spec_p1s, bambu_wiki_p1_intro]
+sensors_note: "Camera is low rate (1280 x 720, 0.5 fps). No lidar, no nozzle camera, no door sensor listed, no spaghetti detection listed on the spec sheet."
+builtin_calibrations:
+  - {id: flow_dynamics, what: "Manual K pattern only. Auto flow dynamics is not available on P1.", src: [bambu_wiki_flow_dynamics]}
+  - {id: bed_leveling, what: "Auto bed leveling and auto Z offset adjustment.", src: [bambu_wiki_p1_intro, bambu_wiki_printer_calibration]}
+  - {id: vibration_compensation, what: "Vibration suppression calibration.", src: [bambu_wiki_printer_calibration]}
+  - {id: motor_noise, what: "Motor noise cancellation.", src: [bambu_wiki_printer_calibration]}
+multi_material:
+  - {system: bambu_ams, max_units: 4, slots_per_unit: 4, needs: "filament buffer for one unit or AMS Hub for more", src: [bambu_wiki_ams_compat]}
+  - {system: bambu_ams_2_pro, max_units: 4, slots_per_unit: 4, needs: "own power adapter per unit for drying", src: [bambu_wiki_ams_compat, bambu_wiki_ams_faq]}
+  - {system: bambu_ams_ht, max_units: 4, slots_per_unit: 1, src: [bambu_wiki_ams_compat]}
+  - {system: bambu_ams_lite, compatible: false, src: [bambu_wiki_amslite_intro]}
+materials:
+  recommended: [pla, pla_plus, pla_silk, pla_matte, petg, abs, asa, tpu_95a, pva, bvoh]
+  possible: [pc, pa6, pa12, tpu_85a, pla_cf, petg_cf, pa_cf, pa_gf]
+  not_recommended: []
+  unlisted: [hips, pp]
+  src: [bambu_spec_p1s, bambu_wiki_material_table]
+  note: "Spec: PLA, PETG, TPU, ABS, ASA, PVA, PET ideal; PA and PC capable; fiber reinforced not recommended with the stock stainless nozzle. Fiber grades need a hardened hotend and are possible with that swap only."
+orca_profile: "orca:BBL/machine/Bambu Lab P1S 0.4 nozzle.json"
+profile_baseline:
+  process: "0.20mm Standard @BBL X1C"
+  values: {wall_loops: 2, top_shell_layers: 5, bottom_shell_layers: 3, sparse_infill_density: "15%", outer_wall_speed: 200, inner_wall_speed: 300, sparse_infill_speed: 270, travel_speed: 500, default_acceleration: 10000, retraction_length: 0.8, z_hop: 0.4}
+  src: ["orca:BBL/process/0.20mm Standard @BBL X1C.json", "orca:BBL/machine/Bambu Lab P1S 0.4 nozzle.json"]
+pilot_notes:
+  - "For PLA, PLA-CF, PVA and TPU with the bed above 45 C, tell the user to remove the top glass lid. For PETG and PETG-CF the threshold is 70 C. ABS and ASA stay closed."
+  - "No lidar. Flow dynamics must be run in manual mode (K pattern). Do not plan an auto calibration."
+  - "Stock nozzle is stainless steel. Block carbon fiber and glass fiber jobs until the user confirms a hardened nozzle."
+  - "The chamber is passive. ABS and ASA are rated ideal by Bambu with the door shut. PA and PC are listed as capable, not ideal."
+  - "Default max height in Studio is 250 mm, not 256 mm."
+  - "Bambu documents the Micro SD card requirement for LAN only printing on X series printers. The P1 section of the same page does not mention it."
+common_issues:
+  - symptom: "PLA jams or the extruder clicks on long prints with the lid on"
+    cause: "Heat creep. The passive chamber warms above PLA's softening point once the bed is hot."
+    fix:
+      - {advice: "Remove the top glass lid and open the door for PLA when the bed is above 45 C, as Bambu recommends. Use a lower bed temperature on a smooth or textured PEI plate.", kind: environment}
+    src: [bambu_wiki_material_table, "orca:OrcaFilamentLibrary/filament/Generic PLA @System.json"]
+  - symptom: "K value from pattern looks wrong or bounces between filaments"
+    cause: "P1 uses manual flow dynamics only."
+    fix:
+      - {advice: "Run the manual K pattern for each spool type and store the value in the filament profile or the AMS slot.", kind: workflow}
+    src: [bambu_wiki_flow_dynamics]
+src: [bambu_spec_p1s, bambu_store_p1s, bambu_wiki_p1_intro, "orca:BBL/machine/Bambu Lab P1S 0.4 nozzle.json"]

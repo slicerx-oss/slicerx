@@ -1,0 +1,703 @@
+{
+  "version": 1,
+  "comment": "Easy controls to Orca keys. Both sx-settings and @slicerx/settings interpret this file. Expressions are JSON arrays: [op, args...]. A string starting with $ reads a control. Control values pass through controls.<name>.aliases first. derived holds controls computed from the others. Ops: linear, round_to, floor, ceil, add, sub, mul, div, min, max, clamp, table, base, ref. base reads the unmodified profile value (first element of a per-extruder list), ref reads a key already written by an earlier rule, then falls back to base. The sleipnir bounds sit around the layer height the Detail slider gives: at least a quarter and at most three quarters of the nozzle, and within half to one and a half times that layer height.",
+  "controls": {
+    "detail": {
+      "label": "Detail",
+      "kind": "range",
+      "min": 0,
+      "max": 100,
+      "step": 10,
+      "ticks": [
+        "0.28",
+        "0.08 mm"
+      ]
+    },
+    "strength": {
+      "label": "Strength",
+      "kind": "range",
+      "min": 0,
+      "max": 100,
+      "step": 5,
+      "ticks": [
+        "2 walls",
+        "6 walls"
+      ]
+    },
+    "speed": {
+      "label": "Speed",
+      "kind": "choice",
+      "values": [
+        "quality",
+        "balanced",
+        "fast",
+        "fastest"
+      ],
+      "labels": {
+        "quality": "Quality",
+        "balanced": "Balanced",
+        "fast": "Fast",
+        "fastest": "Fastest"
+      },
+      "hints": {
+        "quality": "50 percent of the preset speeds",
+        "balanced": "The preset speeds",
+        "fast": "124 percent of the preset speeds",
+        "fastest": "166 percent of the preset speeds"
+      },
+      "aliases": {
+        "silent": "quality",
+        "standard": "balanced",
+        "sport": "fast",
+        "ludicrous": "fastest",
+        "gentle": "quality",
+        "maximum": "fastest"
+      }
+    },
+    "supports": {
+      "label": "Supports",
+      "kind": "choice",
+      "values": [
+        "off",
+        "auto",
+        "painted"
+      ],
+      "labels": {
+        "off": "Off",
+        "auto": "Auto",
+        "painted": "Painted"
+      },
+      "hints": {
+        "off": "No supports",
+        "auto": "Organic tree supports where the model needs them",
+        "painted": "Only where you paint support"
+      },
+      "aliases": {
+        "everywhere": "auto"
+      }
+    },
+    "brim": {
+      "label": "Brim",
+      "kind": "toggle"
+    },
+    "varyLayerHeight": {
+      "label": "sleipnir",
+      "kind": "toggle",
+      "under": "detail",
+      "hint": "Thin layers on curves and fine detail, thick layers on flat walls"
+    }
+  },
+  "goals": {
+    "draft": {
+      "detail": 0,
+      "strength": 10,
+      "speed": "fast",
+      "supports": "auto",
+      "brim": true,
+      "varyLayerHeight": false
+    },
+    "standard": {
+      "detail": 40,
+      "strength": 20,
+      "speed": "balanced",
+      "supports": "auto",
+      "brim": true,
+      "varyLayerHeight": true
+    },
+    "fine": {
+      "detail": 80,
+      "strength": 30,
+      "speed": "balanced",
+      "supports": "auto",
+      "brim": true,
+      "varyLayerHeight": true
+    },
+    "strong": {
+      "detail": 40,
+      "strength": 85,
+      "speed": "balanced",
+      "supports": "auto",
+      "brim": true,
+      "varyLayerHeight": true
+    }
+  },
+  "speed_factors": {
+    "quality": 0.5,
+    "balanced": 1,
+    "fast": 1.24,
+    "fastest": 1.66
+  },
+  "rules": [
+    {
+      "op": "set",
+      "key": "layer_height",
+      "control": "detail",
+      "note": "0.28 to 0.08 mm on a 0.4 mm nozzle, scaled with the nozzle, kept between 0.2 and 0.75 of its diameter.",
+      "expr": [
+        "clamp",
+        [
+          "round_to",
+          [
+            "mul",
+            [
+              "linear",
+              "$detail",
+              0,
+              0.28,
+              100,
+              0.08
+            ],
+            [
+              "div",
+              [
+                "base",
+                "nozzle_diameter",
+                0.4
+              ],
+              0.4
+            ]
+          ],
+          0.02
+        ],
+        [
+          "mul",
+          0.2,
+          [
+            "base",
+            "nozzle_diameter",
+            0.4
+          ]
+        ],
+        [
+          "mul",
+          0.75,
+          [
+            "base",
+            "nozzle_diameter",
+            0.4
+          ]
+        ]
+      ]
+    },
+    {
+      "op": "set",
+      "key": "initial_layer_print_height",
+      "control": "detail",
+      "expr": [
+        "max",
+        [
+          "ref",
+          "layer_height"
+        ],
+        [
+          "mul",
+          0.5,
+          [
+            "base",
+            "nozzle_diameter",
+            0.4
+          ]
+        ]
+      ]
+    },
+    {
+      "op": "set",
+      "key": "top_shell_thickness",
+      "control": "detail",
+      "note": "Top skin in mm. The layer count is derived from it.",
+      "expr": 1.0
+    },
+    {
+      "op": "set",
+      "key": "bottom_shell_thickness",
+      "control": "detail",
+      "note": "Bottom skin in mm. The layer count is derived from it.",
+      "expr": 0.6
+    },
+    {
+      "op": "set",
+      "key": "top_shell_layers",
+      "control": "detail",
+      "note": "Derived: ceil(top shell thickness / layer height).",
+      "expr": [
+        "ceil",
+        [
+          "div",
+          [
+            "ref",
+            "top_shell_thickness"
+          ],
+          [
+            "ref",
+            "layer_height"
+          ]
+        ]
+      ]
+    },
+    {
+      "op": "set",
+      "key": "bottom_shell_layers",
+      "control": "detail",
+      "note": "Derived: ceil(bottom shell thickness / layer height).",
+      "expr": [
+        "ceil",
+        [
+          "div",
+          [
+            "ref",
+            "bottom_shell_thickness"
+          ],
+          [
+            "ref",
+            "layer_height"
+          ]
+        ]
+      ]
+    },
+    {
+      "op": "set",
+      "key": "wall_loops",
+      "control": "strength",
+      "expr": [
+        "add",
+        2,
+        [
+          "min",
+          4,
+          [
+            "floor",
+            [
+              "div",
+              "$strength",
+              25
+            ]
+          ]
+        ]
+      ]
+    },
+    {
+      "op": "set",
+      "key": "sparse_infill_density",
+      "control": "strength",
+      "unit": "percent",
+      "expr": [
+        "round_to",
+        [
+          "linear",
+          "$strength",
+          0,
+          10,
+          100,
+          40
+        ],
+        5
+      ]
+    },
+    {
+      "op": "scale",
+      "control": "speed",
+      "keys": [
+        "outer_wall_speed",
+        "inner_wall_speed",
+        "sparse_infill_speed",
+        "internal_solid_infill_speed",
+        "top_surface_speed",
+        "gap_infill_speed"
+      ],
+      "factor": [
+        "table",
+        "$speed",
+        {
+          "quality": 0.5,
+          "balanced": 1,
+          "fast": 1.24,
+          "fastest": 1.66
+        }
+      ],
+      "min": 5,
+      "round": 1,
+      "flow_cap": {
+        "max_flow_key": "filament_max_volumetric_speed",
+        "height_key": "layer_height",
+        "width_keys": {
+          "outer_wall_speed": "outer_wall_line_width",
+          "inner_wall_speed": "inner_wall_line_width",
+          "sparse_infill_speed": "sparse_infill_line_width",
+          "internal_solid_infill_speed": "internal_solid_infill_line_width",
+          "top_surface_speed": "top_surface_line_width",
+          "gap_infill_speed": "inner_wall_line_width"
+        }
+      }
+    },
+    {
+      "op": "scale",
+      "control": "speed",
+      "keys": [
+        "default_acceleration",
+        "outer_wall_acceleration",
+        "inner_wall_acceleration",
+        "sparse_infill_acceleration",
+        "top_surface_acceleration"
+      ],
+      "factor": [
+        "table",
+        "$speed",
+        {
+          "quality": 0.5,
+          "balanced": 1,
+          "fast": 1.24,
+          "fastest": 1.66
+        }
+      ],
+      "min": 100,
+      "round": 100,
+      "max_key": "machine_max_acceleration_extruding"
+    },
+    {
+      "op": "set",
+      "key": "enable_support",
+      "control": "supports",
+      "expr": [
+        "table",
+        "$supports",
+        {
+          "off": false,
+          "auto": true,
+          "painted": true
+        }
+      ]
+    },
+    {
+      "op": "set",
+      "key": "support_type",
+      "control": "supports",
+      "when": [
+        "ne",
+        "$supports",
+        "off"
+      ],
+      "expr": [
+        "table",
+        "$supports",
+        {
+          "off": "tree(auto)",
+          "auto": "tree(auto)",
+          "painted": "tree(manual)"
+        }
+      ],
+      "note": "Organic tree supports. Painted keeps only the supports the user paints. Style and threshold are Advanced settings."
+    },
+    {
+      "op": "set",
+      "key": "support_on_build_plate_only",
+      "control": "supports",
+      "when": [
+        "ne",
+        "$supports",
+        "off"
+      ],
+      "expr": [
+        "table",
+        "$supports",
+        {
+          "off": false,
+          "auto": true,
+          "painted": false
+        }
+      ]
+    },
+    {
+      "op": "set",
+      "key": "support_threshold_angle",
+      "control": "supports",
+      "when": [
+        "ne",
+        "$supports",
+        "off"
+      ],
+      "expr": [
+        "table",
+        "$supports",
+        {
+          "off": 25,
+          "auto": 25,
+          "painted": 25
+        }
+      ]
+    },
+    {
+      "op": "set",
+      "key": "brim_type",
+      "control": "brim",
+      "expr": [
+        "table",
+        "$brim",
+        {
+          "true": "auto_brim",
+          "false": "no_brim"
+        }
+      ]
+    },
+    {
+      "op": "set",
+      "key": "brim_width",
+      "control": "brim",
+      "when": [
+        "eq",
+        "$brim",
+        true
+      ],
+      "expr": 5
+    },
+    {
+      "op": "set",
+      "key": "sparse_infill_pattern",
+      "control": "strength",
+      "expr": "gyroid",
+      "note": "Gyroid is the default infill: even strength in every direction and no seams between layers."
+    },
+    {
+      "op": "set",
+      "key": "smart_layer",
+      "control": "varyLayerHeight",
+      "expr": "$smartLayerMode",
+      "note": "The sleipnir switch. On means Quality, or Strength when the Strength control is 70 or more."
+    },
+    {
+      "op": "set",
+      "key": "smart_layer_min_height",
+      "control": "varyLayerHeight",
+      "when": [
+        "ne",
+        "$smartLayerMode",
+        "off"
+      ],
+      "note": "At least 20 percent of the nozzle in Quality and 30 percent in Strength, and about three quarters of the layer height the Detail slider gives (0.15 mm at 0.20 mm), at most one step under the thickest layer the nozzle allows.",
+      "expr": [
+        "min",
+        [
+          "max",
+          [
+            "mul",
+            [
+              "ceil",
+              [
+                "div",
+                [
+                  "mul",
+                  [
+                    "table",
+                    "$smartLayerMode",
+                    {
+                      "quality": 0.2,
+                      "strength": 0.3,
+                      "off": 0.2
+                    }
+                  ],
+                  [
+                    "base",
+                    "nozzle_diameter",
+                    0.4
+                  ]
+                ],
+                0.02
+              ]
+            ],
+            0.02
+          ],
+          [
+            "round_to",
+            [
+              "mul",
+              0.75,
+              [
+                "ref",
+                "layer_height"
+              ]
+            ],
+            0.01
+          ]
+        ],
+        [
+          "round_to",
+          [
+            "sub",
+            [
+              "mul",
+              [
+                "floor",
+                [
+                  "div",
+                  [
+                    "mul",
+                    0.5,
+                    [
+                      "base",
+                      "nozzle_diameter",
+                      0.4
+                    ]
+                  ],
+                  0.02
+                ]
+              ],
+              0.02
+            ],
+            0.02
+          ],
+          0.02
+        ]
+      ]
+    },
+    {
+      "op": "set",
+      "key": "smart_layer_max_height",
+      "control": "varyLayerHeight",
+      "when": [
+        "ne",
+        "$smartLayerMode",
+        "off"
+      ],
+      "note": "At most half the nozzle in both modes, and about one and a half times the layer height the Detail slider gives, never closer than one step to the thinnest layer.",
+      "expr": [
+        "max",
+        [
+          "min",
+          [
+            "mul",
+            [
+              "floor",
+              [
+                "div",
+                [
+                  "mul",
+                  0.5,
+                  [
+                    "base",
+                    "nozzle_diameter",
+                    0.4
+                  ]
+                ],
+                0.02
+              ]
+            ],
+            0.02
+          ],
+          [
+            "round_to",
+            [
+              "mul",
+              1.5,
+              [
+                "ref",
+                "layer_height"
+              ]
+            ],
+            0.02
+          ]
+        ],
+        [
+          "add",
+          [
+            "ref",
+            "smart_layer_min_height"
+          ],
+          0.02
+        ]
+      ]
+    }
+  ],
+  "derived": {
+    "smartLayerMode": [
+      "table",
+      [
+        "add",
+        [
+          "mul",
+          2,
+          "$varyLayerHeight"
+        ],
+        [
+          "min",
+          1,
+          [
+            "floor",
+            [
+              "div",
+              "$strength",
+              70
+            ]
+          ]
+        ]
+      ],
+      {
+        "0": "off",
+        "1": "off",
+        "2": "quality",
+        "3": "strength"
+      }
+    ]
+  },
+  "legacy_inputs": "Saved projects and presets carry the old values. speed silent, standard, sport, ludicrous read as quality, balanced, fast, fastest (gentle and maximum, an earlier naming, read the same) (controls.speed.aliases), supports everywhere reads as auto, and smartLayer (off, quality, strength) is used as the smart_layer mode when varyLayerHeight is absent. Write only the new values.",
+  "choices": {
+    "overhangSlowdown": {
+      "label": "Slow down on overhangs",
+      "intent": "quality",
+      "tier": "advanced",
+      "kind": "choice",
+      "labels": {
+        "off": "Off",
+        "on": "On",
+        "careful": "Careful"
+      },
+      "hints": {
+        "off": "Print overhangs at wall speed",
+        "on": "Slow down by how far the wall hangs out",
+        "careful": "Also slow down next to curling walls"
+      },
+      "values": {
+        "off": {
+          "enable_overhang_speed": false,
+          "slowdown_for_curled_perimeters": false
+        },
+        "on": {
+          "enable_overhang_speed": true,
+          "slowdown_for_curled_perimeters": false
+        },
+        "careful": {
+          "enable_overhang_speed": true,
+          "slowdown_for_curled_perimeters": true
+        }
+      }
+    },
+    "unsupportedOverhangs": {
+      "label": "Unsupported overhangs",
+      "intent": "quality",
+      "tier": "advanced",
+      "kind": "choice",
+      "labels": {
+        "none": "None",
+        "loops": "Extra loops",
+        "waves": "Waves"
+      },
+      "hints": {
+        "none": "Print the overhang as it is",
+        "loops": "Grow extra wall loops from the supported side",
+        "waves": "Print rings that grow from the supported edge"
+      },
+      "values": {
+        "none": {
+          "extra_perimeters_on_overhangs": false,
+          "wave_overhangs": false
+        },
+        "loops": {
+          "extra_perimeters_on_overhangs": true,
+          "wave_overhangs": false
+        },
+        "waves": {
+          "extra_perimeters_on_overhangs": false,
+          "wave_overhangs": true
+        }
+      }
+    }
+  }
+}

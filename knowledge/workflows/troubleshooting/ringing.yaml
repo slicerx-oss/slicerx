@@ -1,0 +1,83 @@
+kind: troubleshoot
+schema_version: 1
+id: ringing
+name: Ringing and ghosting
+aliases: [ghosting, echoes, ripples, rippling, waves after corners, vibration marks]
+camera_signs:
+  - "Repeating ripples or echoes of a sharp corner, letter or hole trailing along the wall behind it"
+  - "Ripples follow the shape of the feature and fade over several millimeters"
+  - "Worse on one axis or at the far side of the bed"
+  - "Vertical lines with steady spacing (VFAs) or wood grain that do not follow the feature shape are a different problem"
+log_signs:
+  - "Klipper: no error. Check that [input_shaper] exists in printer.cfg and SHAPER_CALIBRATE or the ringing tower has been run"
+  - "Bambu: none specific. Motion accuracy or vibration compensation calibration can be run from the printer menu"
+tree:
+  start: q_pattern
+  nodes:
+    q_pattern: {ask: "Do the ripples follow the outline of a corner or letter and fade with distance from it?", "yes": q_tight, "no": c_vfa_or_extruder}
+    q_tight: {ask: "Are belts, pulleys, frame screws and the printer feet tight, and is the printer on a firm surface?", "yes": q_speed_accel, "no": c_mechanical_looseness}
+    q_speed_accel: {ask: "Do you print at high speed and acceleration (above what the machine profile normally uses), or with heavy moving mass?", "yes": c_speed_accel, "no": q_shaper}
+    q_shaper: {ask: "Is input shaping, vibration compensation or motion calibration available and already tuned for this printer?", "yes": c_shaper_choice, "no": c_no_input_shaper}
+causes:
+  - id: c_mechanical_looseness
+    name: Loose belts, pulleys or frame
+    category: hardware
+    likelihood: high
+    checks:
+      - "Klipper says ringing usually has a mechanical origin: an insufficiently rigid frame, belts that are loose or too springy, misalignment or heavy moving mass. Fix those before tuning input shaping."
+      - "On Prusa, pluck the belt like a guitar string. It should make a low bass tone. On MK3 style machines the LCD belt status between 240 and 300 is fine."
+    fixes:
+      - {advice: "Set belt tension per the maker's guide, tighten pulley set screws and frame screws, and place the printer on a heavy, stable surface. Ellis warns against over tightening: very tight belts cause VFAs, and CoreXY belts of about 110 Hz over 150 mm are a starting point on Voron machines.", kind: hardware}
+    printers: [prusa, klipper, bambu]
+    src: [klipper_resonance, prusa_kb_ghosting, ellis_vfas]
+    confidence: high
+  - id: c_speed_accel
+    name: Speed or acceleration too high
+    category: settings
+    likelihood: high
+    checks:
+      - "Prusa says ghosting comes from vibrations that grow with print speed. If ringing is only on outer walls, lower acceleration there."
+    fixes:
+      - {advice: "Lower the outer wall acceleration in steps and re-test. Klipper's ringing tower makes ringing worse on purpose by raising acceleration every 5 mm of height, so the same sensitivity shows in normal prints.", kind: workflow}
+      - {advice: "Reduce outer wall speed to see if the ghosting disappears. Prusa says ghosting is caused by vibrations that increase with print speed.", kind: workflow}
+      - {advice: "Ellis lists reducing perimeter accelerations for bulging and ringing at corners. Do not raise Klipper square_corner_velocity above 5 mm/s when using input shaper, since it adds smoothing.", kind: workflow}
+    src: [klipper_resonance, prusa_kb_ghosting, ellis_bulging]
+    confidence: medium
+  - id: c_no_input_shaper
+    name: Input shaping not run
+    category: settings
+    likelihood: high
+    checks:
+      - "No [input_shaper] section in Klipper, or default values that were never measured for this printer."
+    fixes:
+      - {advice: "Klipper: print the ringing tower, measure the ringing frequency on each axis, and set shaper_freq_x and shaper_freq_y. MZV or EI are the usual choices. Compare them on a second tower, then pick max_accel from the ringing and smoothing balance. Re-tune pressure advance afterward.", kind: workflow}
+      - {advice: "Bambu: run the motion or vibration compensation calibration from the printer menu after moving or servicing the machine. Only the wiki page title was confirmed.", kind: workflow}
+      - {advice: "If the resonance frequency is very low (about 20 to 25 Hz), stiffen the printer or reduce moving mass before shaping. Klipper says shaping alone will smooth too much at those frequencies.", kind: hardware}
+    printers: [klipper, bambu]
+    src: [klipper_resonance, bambu_wiki_motion_accuracy]
+    confidence: high
+  - id: c_shaper_choice
+    name: Shaper smoothing or wrong shaper
+    category: settings
+    likelihood: medium
+    checks:
+      - "Klipper: an EI shaper smooths more than MZV. Rounded corners with little ringing mean too much smoothing."
+    fixes:
+      - {advice: "Klipper: choose the shaper by test, not habit. MZV is recommended if no ringing shows, EI is more robust to changing bed mass, and 2HUMP_EI only makes sense above about 50 to 60 Hz. Set max_accel from the point where the 0.15 mm gap in the test wall starts to widen.", kind: workflow}
+      - {advice: "Ellis notes input shaper conflicts can cause bulges at STL vertices. Disable and retune it if you see those.", kind: workflow}
+    printers: [klipper]
+    src: [klipper_resonance, ellis_bulging]
+    confidence: medium
+  - id: c_vfa_or_extruder
+    name: VFAs, extruder patterns or axis mechanics (not true ringing)
+    category: hardware
+    likelihood: medium
+    checks:
+      - "Klipper says if the pattern does not follow the curved notches of the test, it is not ringing. Vertical stripes about 2 mm apart point at belt, pulley or idler teeth."
+    fixes:
+      - {advice: "For vertical stripes, check belt tension (Ellis says belts too tight cause VFAs), belt rubbing on flanges, dirty or poor quality pulleys, idlers and bearings. Diagonal or wood grain patterns can be extruder gear backlash or axis mechanics. See the z_banding troubleshooter.", kind: hardware}
+      - {advice: "Inspect extruder gear backlash and gear wear when the pattern repeats along extrusion lines.", kind: hardware}
+    src: [klipper_resonance, ellis_vfas, ellis_extrusion_patterns]
+    confidence: medium
+related: [z_banding, layer_shift, seam_zits, over_extrusion]
+src: [klipper_resonance, prusa_kb_ghosting, ellis_vfas]

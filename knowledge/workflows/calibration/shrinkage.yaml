@@ -1,0 +1,19 @@
+kind: calibration
+schema_version: 1
+id: shrinkage
+name: Shrinkage
+order: 9
+purpose: "Scale parts to cancel the shrink some materials show as they cool. Matters for ABS, ASA, PC and nylon; rarely for PLA or PETG."
+run_when: ["Large accurate parts in ABS, ASA, PC or nylon", "Parts consistently undersized in XY after flow and tolerance are tuned"]
+prereqs: [flow_ratio, tolerance]
+steps:
+  - "Print a 100 mm reference bar or cube side in the target material with the real profile."
+  - "Let it cool fully, then measure. Shrinkage percent is the measured length over the model length, times 100 (94 percent if 100 mm measures 94 mm)."
+  - "Enter it as the filament's XY shrinkage. The slicer scales the part up to compensate."
+steps_src: ["orca_src:src/libslic3r/PrintConfig.cpp", "orca_wiki:tolerance_calib"]
+caution: "In multi material prints, every filament on the part needs the same shrinkage value."
+caution_src: ["orca_src:src/libslic3r/PrintConfig.cpp"]
+camera_reading: {feasible: no, look_for: "Needs calipers."}
+writes:
+  - {key: filament_shrink, op: set, value_from: {calibration: shrinkage, field: percent}, why: "Measured shrink for this material."}
+src: ["orca_src:src/libslic3r/PrintConfig.cpp", "orca_wiki:tolerance_calib"]

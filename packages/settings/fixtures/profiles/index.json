@@ -1,0 +1,27 @@
+{
+  "comment": "Profiles written for the tests of this package. Not copied from any slicer.",
+  "vendors": {
+    "demo": {
+      "process": {
+        "fdm_demo_process_common": "process/fdm_demo_process_common.json",
+        "fdm_demo_process_single_common": "process/fdm_demo_process_single_common.json",
+        "fdm_demo_process_single_0.20": "process/fdm_demo_process_single_0.20.json",
+        "0.20mm Standard @Demo": "process/0.20mm Standard @Demo.json",
+        "fdm_demo_process_single_0.12": "process/fdm_demo_process_single_0.12.json",
+        "0.12mm Fine @Demo": "process/0.12mm Fine @Demo.json"
+      },
+      "machine": {
+        "fdm_demo_machine_common": "machine/fdm_demo_machine_common.json",
+        "fdm_demo_machine": "machine/fdm_demo_machine.json",
+        "Demo Printer 0.4 nozzle": "machine/Demo Printer 0.4 nozzle.json"
+      },
+      "filament": {
+        "fdm_demo_filament_common": "filament/fdm_demo_filament_common.json",
+        "fdm_demo_pla": "filament/fdm_demo_pla.json",
+        "Demo PLA": "filament/Demo PLA.json",
+        "fdm_demo_petg": "filament/fdm_demo_petg.json",
+        "Demo PETG": "filament/Demo PETG.json"
+      }
+    }
+  }
+}

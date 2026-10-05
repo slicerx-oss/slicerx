@@ -1,0 +1,246 @@
+kind: filament
+schema_version: 1
+id: pla_plus
+name: PLA+ (tough PLA)
+category: standard
+orca_filament_type: PLA
+aliases: [PLA Plus, PLA+, Tough PLA, PLA Tough+, Bambu PLA Tough+, eSUN PLA+, Polymaker PLA Pro, PolyLite PLA Pro, PolyTerra PLA+, PLA Pro, Impact PLA]
+related: [pla, pla_cf, petg]
+summary: >
+  A family of impact modified PLA blends sold as PLA+, Tough, or Pro. PLA+ is
+  not a standard. Each brand uses its own additives, so temperatures, speed and
+  heat resistance differ from spool to spool. Expect somewhat better toughness
+  than plain PLA, with about the same low heat resistance.
+use_for: [parts that take light impact, clips, brackets used indoors, enclosures for electronics, tool holders, printed jigs]
+avoid_for: [parts above about 55 C, outdoor or in a parked car, repeated flexing, anything needing PETG or ABS level heat resistance]
+
+nozzle_temp_c:
+  min: 210
+  max: 250
+  typical: 225
+  confidence: medium
+  src:
+    - "orca:OrcaFilamentLibrary/filament/Bambu/Bambu PLA Tough+ @base.json"
+    - "orca:OrcaFilamentLibrary/filament/eSUN/eSUN PLA+ @System.json"
+    - "orca:OrcaFilamentLibrary/filament/Polymaker/Polymaker PLA Pro @System.json"
+    - esun_tds_pla_plus
+    - polymaker_tds_polylite_pla_pro
+    - bambu_tds_pla_tough_plus
+  note: >
+    Brand dependent. Bambu PLA Tough+ 220 to 250 (profile 245). eSUN PLA+ TDS
+    210 to 230 (Orca profile 220, range 190 to 240). Polymaker PLA Pro 210 to
+    230 in Orca, 210 in the TDS. Read the spool label first. With no label, start at
+    225 and step by 5 C. eSUN states PLA+ prints about 20 C hotter than plain PLA.
+first_layer_nozzle_temp_c:
+  min: 220
+  max: 245
+  typical: 230
+  confidence: low
+  src: ["orca:OrcaFilamentLibrary/filament/Bambu/Bambu PLA Tough+ @base.json", "orca:OrcaFilamentLibrary/filament/eSUN/eSUN PLA+ @System.json", "orca:OrcaFilamentLibrary/filament/Polymaker/PolyTerra PLA+ @base.json"]
+  note: "Bambu Tough+ 245, eSUN 220, PolyTerra PLA+ 230."
+bed_temp_c:
+  min: 35
+  max: 65
+  typical: 55
+  confidence: medium
+  src: [bambu_wiki_material_table, bambu_tds_pla_tough_plus, esun_tds_pla_plus, "orca:OrcaFilamentLibrary/filament/eSUN/eSUN PLA+ @System.json"]
+  note: "Bambu Tough+ 35 to 65. eSUN TDS 45 to 60. Orca profiles use 35 on Cool Plate and 55 on PEI."
+chamber_temp_c: null
+enclosure:
+  level: none
+  confidence: high
+  src: [bambu_wiki_material_table, bambu_tds_pla_tough_plus]
+  note: "Not prone to warping. With the bed above 45 C, open the door or remove the top glass cover. Bambu lists a 25 to 45 C chamber for Tough+."
+
+plates:
+  - {plate: bambu_cool_plate, fit: good, bed_temp_c: {min: 35, max: 45}, release_agent: none, confidence: medium, src: [bambu_wiki_material_table], note: "Follows the PLA row of the Bambu table."}
+  - {plate: bambu_supertack_plate, fit: good, bed_temp_c: {min: 35, max: 45}, release_agent: none, confidence: medium, src: ["orca:OrcaFilamentLibrary/filament/Bambu/Bambu PLA Tough+ @base.json"], note: "Bambu Tough+ profile sets 45 C."}
+  - {plate: bambu_engineering_plate, fit: glue, bed_temp_c: {min: 45, max: 65}, release_agent: glue_stick, confidence: medium, src: [bambu_wiki_material_table], note: "Glue required for PLA on the Engineering Plate."}
+  - {plate: bambu_high_temp_plate, fit: good, bed_temp_c: {min: 45, max: 65}, release_agent: none, confidence: medium, src: [bambu_wiki_material_table], note: "Smooth PEI."}
+  - {plate: smooth_pei, fit: good, bed_temp_c: {min: 55, max: 65}, release_agent: none, confidence: medium, src: [prusa_kb_pla], note: "Prusa recommends smooth or satin PEI for PLA."}
+  - {plate: satin_pei, fit: good, bed_temp_c: {min: 55, max: 65}, release_agent: none, confidence: medium, src: [prusa_kb_pla], note: "Best adhesion per Prusa for PLA."}
+  - {plate: textured_pei, fit: good, bed_temp_c: {min: 45, max: 65}, release_agent: none, confidence: medium, src: [bambu_wiki_material_table], note: "Follows the PLA row of the Bambu table."}
+
+cooling:
+  fan_min_pct: {min: 100, max: 100, typical: 100}
+  fan_max_pct: {min: 100, max: 100, typical: 100}
+  overhang_fan_pct: {typical: 100}
+  no_fan_first_layers: {typical: 1}
+  min_layer_time_s: {min: 4, max: 8, typical: 6}
+  confidence: medium
+  src:
+    - "orca:OrcaFilamentLibrary/filament/Bambu/Bambu PLA Tough+ @base.json"
+    - "orca:OrcaFilamentLibrary/filament/eSUN/eSUN PLA+ @System.json"
+    - "orca:OrcaFilamentLibrary/filament/Polymaker/Polymaker PLA Pro @System.json"
+  note: "All three profiles use 100 percent fan. Layer time is 8 s for Tough+, 6 s for eSUN and 4 s for PLA Pro. Bambu Tough+ adds 80 percent auxiliary fan."
+
+drying:
+  need: recommended
+  oven: {temp_c: 55, hours: 8}
+  ams_2_pro: {temp_c: 55, hours: 8}
+  ams_ht: {temp_c: 55, hours: 8}
+  printer_bed: {temp_c: {min: 65, max: 75}, hours: 12, note: "Enclosed Bambu printers only, spool covered"}
+  keep_dry_in_use: optional
+  confidence: low
+  src: [bambu_tds_pla_tough_plus, bambu_wiki_drying]
+  note: >
+    Drying values come from the Bambu Tough+ data sheet (55 C for 8 h). The
+    Bambu drying page lists 45 to 55 C for PLA types. Other brands may soften
+    earlier, so follow the spool label if it gives a lower temperature.
+
+nozzle:
+  abrasive: false
+  hardened_required: false
+  min_diameter_mm: 0.2
+  orca_required_hrc: 3
+  confidence: high
+  src: [bambu_wiki_material_table, "orca:OrcaFilamentLibrary/filament/Bambu/Bambu PLA Tough+ @base.json"]
+
+extrusion:
+  flow_ratio: {min: 0.95, max: 0.985, typical: 0.98, confidence: medium, src: ["orca:BBL/filament/Bambu PLA Tough+ @BBL X1C.json", "orca:OrcaFilamentLibrary/filament/eSUN/eSUN PLA+ @System.json", "orca:OrcaFilamentLibrary/filament/Polymaker/Polymaker PLA Pro @System.json"], note: "0.98 for Bambu Tough+ and eSUN, 0.985 on X1C high flow, 0.96 for PLA Pro, 0.95 for PolyTerra PLA+. Confirm with a flow test."}
+  max_volumetric_speed_mm3s:
+    standard_hotend: {min: 12, max: 18, typical: 12}
+    high_flow_hotend: {min: 18, max: 25, typical: 25}
+    confidence: medium
+    src:
+      - "orca:OrcaFilamentLibrary/filament/Bambu/Bambu PLA Tough+ @base.json"
+      - "orca:BBL/filament/Bambu PLA Tough+ @BBL X1C.json"
+      - "orca:OrcaFilamentLibrary/filament/eSUN/eSUN PLA+ @System.json"
+      - "orca:OrcaFilamentLibrary/filament/Polymaker/Polymaker PLA Pro @System.json"
+    note: "Bambu Tough+ 12 base, 18 standard and 25 high flow on X1C. eSUN PLA+ 12. Polymaker PLA Pro 15. Start at 12 on an unknown brand."
+  retraction_mm:
+    direct_drive: {min: 0.4, max: 1.0, typical: 0.6}
+    confidence: low
+    src: ["orca:BBL/filament/Bambu PLA Tough+ @BBL X1C.json", bambu_tds_pla_tough_plus]
+    note: "Bambu Tough+ TDS suggests 0.6 to 1.0 mm at 20 to 40 mm/s. The X1C high flow profile uses 0.4 mm."
+    retraction_speed_mm_s: {min: 20, max: 45, typical: 30, confidence: medium, src: [bambu_tds_pla_tough_plus, bambu_tds_pla_basic_v3, "orca:BBL/machine/Bambu Lab X1 Carbon 0.4 nozzle.json", "orca:Prusa/machine/fdm_machine_common_mk4s.json"], note: "Bambu Tough+ TDS suggests 20 to 40 mm/s. The Bambu printer profile uses 30 and Prusa machine profiles 35 to 45."}
+  pressure_advance:
+    direct_drive: {min: 0.02, max: 0.06, typical: 0.036}
+    bowden: {min: 0.3, max: 1.0}
+    confidence: low
+    src: ["orca:Prusa/filament/Generic PLA @Prusa MK4S.json", klipper_pressure_advance, ellis_pa]
+    note: "No PLA+ specific number exists. Prusa's generic PLA M572 S0.036 at 0.4 mm is a starting point. Calibrate per spool since additives shift PA."
+
+layer_height:
+  fraction_of_nozzle: {min: 0.2, max: 0.7, typical: 0.5}
+  at_0_4_mm: {min: 0.08, max: 0.28, typical: 0.2}
+  smart_layer:
+    quality_mode: "Behaves like PLA for detail. Thin layers on curved tops help, and the toughening additives do not change the safe floor of 0.08 mm."
+    strength_mode: "The point of PLA+ is better layer bonding and impact resistance. Keep layers at or under half the nozzle diameter and print hotter than plain PLA; thin layers alone do not add strength."
+    thin_layer_cooling: "PLA+ blends often run 5 to 10 C hotter than PLA, so thin fast layers keep more heat. Watch overhangs on small parts and allow a slightly longer minimum layer time."
+  confidence: low
+  src: ["orca:BBL/machine/fdm_machine_common.json", bambu_wiki_adaptive_layer, cnckitchen_layer_height, bambu_tds_pla_tough_plus]
+  note: "No PLA+ specific layer height data was found. The band follows PLA and Bambu's tested 0.08 to 0.28 mm range for a 0.4 mm nozzle. Toughening additives are brand specific."
+smart_layer:
+  min_ratio: 0.2
+  max_ratio: 0.7
+  modes:
+    quality: {min_ratio: 0.2, max_ratio: 0.5}
+    strength: {min_ratio: 0.3, max_ratio: 0.5}
+  family: pla_family
+  note: "PLA+ (tough PLA) prints well from 0.2 to 0.7 of the nozzle diameter; Quality mode uses 0.2 to 0.5 and Strength mode 0.3 to 0.5, since parts weaken once layers pass half the nozzle."
+  confidence: low
+  src: ["orca:BBL/machine/fdm_machine_common.json", "bambu_wiki_adaptive_layer", "cnckitchen_layer_height", "bambu_tds_pla_tough_plus", "stojkovic_2023_layer_height_annealing"]
+speeds:
+  first_layer_mm_s: {min: 20, max: 50, typical: 40}
+  volumetric_note: "No maker wide speed range exists for PLA+. Follow the brand label and stay under the max volumetric speed in extrusion (start at 12 mm3/s on an unknown brand)."
+  confidence: low
+  src: ["orca:BBL/process/0.20mm Standard @BBL X1C.json", "orca:Prusa/process/0.20mm SPEED @MK4S 0.4.json", bambu_wiki_spaghetti]
+  note: "print_speed_mm_s is left out because PLA+ is a family of brand blends with no shared range."
+first_layer:
+  fan_off_layers: 1
+  speed_mm_s: {typical: 40}
+  bed_first_layer_note: "Bambu Tough+ and eSUN PLA+ use the PLA bed range: 35 to 45 C on Cool Plate, 45 to 65 C on PEI."
+  squish_note: "Same as PLA: 0.2 mm first layer, clean the plate first, then add squish only if lines look round."
+  confidence: medium
+  src: ["orca:BBL/process/fdm_process_common.json", bambu_tds_pla_tough_plus, esun_tds_pla_plus, ellis_first_layer_squish]
+structure:
+  walls: {min: 2, typical: 3, note: "Impact and layer bonding come from walls. Use 3 or 4 for clips and brackets before adding infill."}
+  infill: {pattern_hint: gyroid, density_note: "15 to 25 percent is enough for most parts. Extra infill adds weight and warping risk more than strength."}
+  confidence: low
+  src: [prusa_kb_layers_perimeters, "orca:BBL/process/0.20mm Strength @BBL X1C.json"]
+  note: "Expert rule of thumb: no maker gives a PLA+ wall count."
+supports:
+  interface_materials: ["Bambu Support for PLA", "Bambu Support for PLA/PETG", pva, bvoh]
+  soluble_pairing: {material: pva, dissolve: "room temperature or warm water (under 50 C), several hours"}
+  top_z_distance_mm: {typical: 0.2}
+  interface_layers: {typical: 2}
+  note: "Tougher PLA+ can bond harder to its own supports. Use a support interface filament, or raise the Z gap to 0.25 mm if supports leave scars."
+  confidence: low
+  src: ["orca:BBL/process/0.20mm Standard @BBL X1C.json", bambu_wiki_support_filament_guide, bambu_wiki_pva_guide]
+
+multi_material:
+  bambu_ams: compatible
+  bambu_ams_lite: compatible
+  bambu_ams_ht: compatible
+  confidence: medium
+  src: [bambu_wiki_material_table]
+
+properties:
+  density_g_cm3: {typical: 1.23, min: 1.21, max: 1.25, src: ["orca:OrcaFilamentLibrary/filament/Bambu/Bambu PLA Tough+ @base.json", "orca:OrcaFilamentLibrary/filament/eSUN/eSUN PLA+ @System.json", "orca:OrcaFilamentLibrary/filament/Polymaker/Polymaker PLA Pro @System.json", esun_tds_pla_plus]}
+  softening_temp_c: {typical: 58, min: 53, max: 61, src: [bambu_tds_pla_tough_plus, polymaker_tds_polylite_pla_pro, esun_tds_pla_plus], note: "HDT is 58 to 61 C for Bambu Tough+, 57.6 to 59.3 C for PLA Pro and 53 C for eSUN PLA+. Only a few degrees above plain PLA."}
+  relative:
+    heat: 2
+    impact: 2
+    tensile: 3
+    scale: "1 to 5, Bambu star ratings for PLA Tough (the Bambu table groups it with PLA)"
+    src: [bambu_wiki_material_table]
+safety:
+  fumes: low
+  note: "Ventilate as with any hot plastic. Additives vary by brand."
+food_contact:
+  note: "Additives are not disclosed by most brands, so do not assume food safety. See the plain PLA notes on layer lines, colorants and nozzles."
+  src: [prusa_kb_food_safe]
+
+failure_modes:
+  - id: stringing
+    symptom: Hairs between features
+    causes: [nozzle too hot for this brand, wet filament, retraction too short]
+    fixes:
+      - {key: nozzle_temperature, op: decrease_by, value: 5, why: "PLA+ blends can run hot. Step down 5 C at a time."}
+      - {advice: "Dry the spool at 55 C for 8 h or less if the label says lower.", kind: material}
+      - {key: retraction_length, op: increase_by, value: 0.2, why: "A little more retraction pulls pressure out before travel."}
+  - id: weak_layers
+    symptom: Part splits between layers
+    causes: [nozzle too cold for a tough blend, too much cooling on thin parts]
+    fixes:
+      - {key: nozzle_temperature, op: increase_by, value: 5, why: "Tough blends need more heat to fuse layers. Stay inside the spool's stated range."}
+      - {key: wall_loops, op: at_least, value: 4, why: "Extra walls carry load better than more infill."}
+  - id: heat_creep_clog
+    symptom: Extruder jams in a warm enclosure
+    causes: [chamber too warm, PLA softens in the heat break]
+    fixes:
+      - {advice: "Open the enclosure door or remove the top glass cover when the bed is above 45 C.", kind: environment}
+  - id: settings_do_not_match_brand
+    symptom: Print quality differs from the same settings on plain PLA
+    causes: [PLA+ has no standard formulation]
+    fixes:
+      - {advice: "Read the spool label for temperature range and speed. Run a temperature tower and a max volumetric speed test for each brand.", kind: workflow}
+  - id: droopy_overhangs
+    symptom: Sagging overhangs
+    causes: [low fan, nozzle too hot]
+    fixes:
+      - {key: overhang_fan_speed, op: at_least, value: 100, why: "Maximum air on overhangs."}
+      - {key: slow_down_layer_time, op: at_least, value: 6, why: "Small layers need more cooling time."}
+
+disagreements:
+  - topic: nozzle temperature
+    positions:
+      - {claim: "220 to 250 C, profile 245 C", src: [bambu_tds_pla_tough_plus, "orca:OrcaFilamentLibrary/filament/Bambu/Bambu PLA Tough+ @base.json"]}
+      - {claim: "210 to 230 C", src: [esun_tds_pla_plus, polymaker_tds_polylite_pla_pro]}
+    resolution: "Brand specific. Default to 225 C and ask for the brand when it matters. Bambu Tough+ runs 240 to 245 C in its own profile."
+
+pilot_defaults:
+  nozzle_temperature: 225
+  nozzle_temperature_initial_layer: 230
+  cool_plate_temp: 35
+  textured_plate_temp: 55
+  hot_plate_temp: 55
+  fan_min_speed: 100
+  fan_max_speed: 100
+  overhang_fan_speed: 100
+  close_fan_the_first_x_layers: 1
+  slow_down_layer_time: 6
+  filament_flow_ratio: 0.98
+  filament_max_volumetric_speed: 12
+  retraction_length: 0.6

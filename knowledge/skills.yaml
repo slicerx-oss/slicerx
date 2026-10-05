@@ -1,0 +1,255 @@
+# mimir skill catalog.
+# "Printers" means all of the user's printers. A fleet is an optional group of
+# printers the user makes; skills that take printers also accept a fleet.
+# Each skill is a multi step job mimir can plan and run. Skills call tools;
+# tools are the only way anything reaches the slicer, a printer, a profile,
+# inventory or the network. mimir keeps the jobs a settings panel cannot
+# do: diagnosing failed prints, turning goals into settings and geometry, cited
+# answers, setup help and farm batches. Deterministic checks are plain
+# functions the app calls with no model and no key (app_functions below), and
+# mimir stays silent on them.
+kind: skill_catalog
+schema_version: 1
+id: skills
+
+permissions:
+  read: "Looks only. No approval."
+  slice: "Changes the open project: geometry, plate overrides, slicing. Allowed or ask, per the user's permission settings."
+  queue: "Sends a sliced plate to a printer queue."
+  start: "Heats or moves a printer: start, resume, pause, cancel."
+  profile: "Writes a saved printer, filament or process profile."
+  printer_config: "Changes settings stored on a printer (detection sensitivity, firmware config)."
+  share: "Publishes something outside the app, such as a report link, a notification or a message to a customer."
+
+tools:
+  core: [core.slice, core.estimate, core.orient, core.arrange, core.cut, core.mesh_analyze, core.mesh_edit, core.supports, core.paint, core.layers, core.gcode]
+  settings: [settings.plan, settings.apply, settings.profiles]
+  kb: [kb.filament, kb.printer, kb.intent, kb.workflow, kb.troubleshoot, kb.sources, kb.search]
+  connect: [connect.status, connect.queue, connect.start, connect.control, connect.camera, connect.logs, connect.files, connect.config, connect.ams, connect.discover, connect.test, printer.add]
+  inventory: [spoolman.check, spoolman.link, spoolman.update]
+  content: [store.model, store.search, library.search, share.publish]
+  web: [web.lookup]
+  notes:
+    core.mesh_analyze: "Bounding box, volume, overhang map, thin walls, bridges, holes, flat tops, open edges, contact between parts."
+    core.mesh_edit: "Scale, boolean, emboss, hollow, drain holes, threads, repair, connectors."
+    core.gcode: "Parse G-code into stats (time per feature, flow, temperatures, retractions) and diff two files."
+    connect.config: "Read printer configuration and firmware versions; write only with printer_config approval."
+    library.search: "The user's own model library."
+    store.search: "The creator feed and store listings, with tested profiles where they exist."
+
+skills:
+  # Diagnose and recover
+  - id: check_print
+    name: Check on a print
+    priority: 1
+    purpose: "Take a fresh camera frame of a running print, say what it shows, and propose fan, speed, temperature or pause changes, each behind an approval card."
+    inputs: ["printer, or the only one printing"]
+    outputs: ["the frame in the chat", "a reading of the frame and the status", "bounded changes as approval cards"]
+    tools: [connect.camera, connect.status, connect.control, kb.troubleshoot]
+    approval: start
+    example: "How's the print going?"
+
+  - id: diagnose
+    name: Diagnose a failure
+    priority: 1
+    purpose: "Explain a failed or bad print from photos, camera snapshots and printer logs, and propose fixes."
+    inputs: ["photos or snapshots", "printer logs", "job record"]
+    outputs: ["most likely cause with evidence", "fixes as settings or hardware steps", "questions the evidence could not answer"]
+    tools: [connect.camera, connect.logs, kb.troubleshoot, kb.filament, kb.printer]
+    approval: read
+    kb: [workflows/troubleshooting/*.yaml]
+    example: "Why did Bay 4 fail overnight?"
+
+  - id: tune_from_failure
+    name: Tune a profile from a failed print
+    priority: 2
+    purpose: "Turn a diagnosis into a tested profile change, print a small check part, and save the fix to a new profile version."
+    inputs: [diagnosis, profile]
+    outputs: ["profile diff", "check part result"]
+    tools: [kb.troubleshoot, settings.plan, core.slice, connect.queue, settings.profiles]
+    approval: profile
+    example: "Fix the stringing in my PETG profile for good"
+
+  - id: resume_from_layer
+    name: Resume from a layer
+    priority: 1
+    purpose: "After a failure with the part still on the bed, find the last good layer and build a resume file at the right height."
+    inputs: [job, "failed layer or snapshots"]
+    outputs: ["resume G-code", "height to verify", "steps before starting"]
+    tools: [connect.camera, core.gcode, core.slice, connect.start]
+    approval: start
+    example: "Resume Bay 4 from layer 212"
+
+  # Goals to settings and geometry
+  - id: intent_to_settings
+    name: Settings from a request
+    priority: 1
+    purpose: "Turn a plain request (strong, fast, watertight, by Friday) into a settings diff with reasons and sources."
+    inputs: [request text, model, printer, material]
+    outputs: ["settings diff (before, after, reason, source)", "questions to ask", "caveats"]
+    tools: [kb.intent, kb.filament, kb.printer, settings.plan, settings.apply]
+    approval: slice
+    kb: [intents/*.yaml, filaments/*.yaml]
+    example: "12 functional brackets in PETG, strong, by tomorrow"
+
+  - id: material_recommend
+    name: Recommend a material
+    priority: 1
+    purpose: "Pick the material for a use case (heat, sun, flex, chemicals, food contact) from what the user owns first."
+    inputs: [use case, "optional temperature, load, environment"]
+    outputs: ["ranked materials with reasons", "printer and nozzle requirements", "caveats"]
+    tools: [kb.intent, kb.filament, kb.printer, spoolman.check]
+    approval: read
+    kb: [intents/heat_resistance.yaml, intents/uv_resistance.yaml, intents/food_contact.yaml, filaments/*.yaml]
+    example: "What should I print a car phone mount in? It sits on the dashboard in summer."
+
+  - id: optimize_to_target
+    name: Optimize to a target
+    priority: 1
+    purpose: "Hit a target such as under 2 hours, under 40 g, or strongest within 3 hours by slicing hundreds of real candidates over layer height, walls, infill, speed and orientation, then show the best few with their tradeoffs."
+    inputs: [plate, "target and constraint (time, grams, cost, strength proxy)", "limits the user will not trade (walls, surface)"]
+    outputs: ["best 3 to 5 candidates with time, grams, cost and strength proxy", "settings diff for the chosen one"]
+    tools: [core.slice, core.estimate, core.orient, settings.plan, kb.intent, settings.apply]
+    approval: slice
+    kb: [intents/*.yaml]
+    note: "A slice takes about 35 ms, so a few hundred candidates finish in seconds. Candidates stay inside kb.intent and settings.yaml bounds."
+    example: "Make this under 2 hours but as strong as possible"
+
+  - id: compare_setups
+    name: Compare two setups
+    priority: 3
+    purpose: "Slice the same plate two ways and compare time, grams, strength proxies and risk before choosing."
+    inputs: [plate, "two settings plans"]
+    outputs: ["side by side comparison", "recommendation"]
+    tools: [core.slice, core.estimate, settings.plan]
+    approval: slice
+    example: "Is a 0.6 nozzle worth it for this batch?"
+
+  - id: split_to_fit
+    name: Split to fit the bed
+    priority: 1
+    purpose: "Cut an oversized model into parts that fit the printer, with dovetail, pin or dowel connectors and seams placed where they hide."
+    inputs: [model, printer, "connector type", "optional clearance"]
+    outputs: ["watertight parts", "connector geometry", "seam location preview"]
+    tools: [core.cut, core.mesh_analyze, core.mesh_edit, kb.printer]
+    approval: slice
+    example: "This helmet is too tall for my A1 mini, split it"
+
+  - id: make_model
+    name: Make a multi-color model
+    priority: 1
+    purpose: "Build a multi-color model from a request (boxes, cylinders, extruded text, the SlicerX mark or an SVG), map the colors to filament slots with matching presets, add it to the project on its own plate, slice it and report time and grams per color. Optionally write a 3MF project."
+    inputs: ["parts with colors", "holes", "material"]
+    outputs: ["model in the project", "slot plan", "time and grams per color", "3MF file when asked"]
+    tools: [make_model]
+    approval: slice
+    example: "Build me a SlicerX logo in SlicerX black and X pink"
+
+  - id: text_to_part
+    name: Part from a description
+    priority: 1
+    purpose: "Generate a simple functional part from a description as parametric geometry, show it for review, then slice it."
+    inputs: [description, "optional material and printer"]
+    outputs: ["parametric model with editable dimensions", "preview", "sliced plate after review"]
+    tools: [core.mesh_edit, core.mesh_analyze, kb.intent, core.slice]
+    approval: slice
+    example: "40 mm L bracket, two M3 holes, 3 mm thick"
+
+  # Cited answers and setup help
+  - id: knowledge_answer
+    name: Answer printing questions
+    priority: 1
+    purpose: "Answer material, printer and technique questions from the knowledge base with sources, and fall back to a cited web lookup."
+    inputs: [question]
+    outputs: ["answer with source links"]
+    tools: [kb.search, kb.filament, kb.printer, kb.workflow, kb.sources, web.lookup]
+    approval: read
+    example: "Can the AMS 2 Pro dry nylon?"
+
+  - id: printer_setup
+    name: Printer setup
+    priority: 1
+    purpose: "Walk a new user through adding a printer: optional look and feel, brand, model, nozzle, connection method, test connection, first calibration suggestion. One question at a time, asking before each printer action, never taking access codes in chat."
+    inputs: [brand, model, nozzle, connection]
+    outputs: ["printer added", "first calibration suggestion"]
+    tools: [connect.discover, connect.test, printer.add]
+    approval: printer_config
+    example: "Set up my new printer"
+
+  - id: calibrate
+    name: Calibration suites
+    priority: 1
+    purpose: "Plan and print only the tests a situation needs (temperature, max volumetric speed, pressure advance, flow, retraction, tolerance, shrinkage), then save results to a new profile for that spool."
+    inputs: [spool, printer, "situation: new spool, new nozzle, fit problem"]
+    outputs: ["test plate", "results read from camera or entered by the user", "profile diff"]
+    tools: [kb.workflow, core.slice, connect.queue, connect.start, connect.camera, settings.profiles, spoolman.link]
+    approval: profile
+    kb: [workflows/calibration/*.yaml]
+    example: "Tune a profile for this new PETG spool"
+
+  # Farm batches
+  - id: farm_schedule
+    name: Schedule by due date and cost
+    priority: 1
+    purpose: "Plan plates across the chosen printers (or a saved fleet group) to meet due dates at the lowest machine cost, using printers that already have the material loaded."
+    inputs: [jobs with due dates, "printers or a fleet group (default: all printers)"]
+    outputs: ["schedule per printer", "finish times against due dates", "levers used if a deadline is at risk"]
+    tools: [connect.status, connect.ams, core.estimate, core.arrange, kb.intent, spoolman.check, connect.queue]
+    approval: queue
+    kb: [intents/tradeoffs.yaml]
+    example: "Get these three orders done by Friday, cheapest printers first"
+
+  - id: queue_control
+    name: Queue, start, pause, cancel
+    priority: 1
+    purpose: "Send plates to printers and control running jobs, always behind the approval gate."
+    inputs: [plate or job, printer, action]
+    outputs: ["job state"]
+    tools: [connect.queue, connect.start, connect.control, connect.status]
+    approval: start
+    example: "Send plate 2 to Bay 3 and start it"
+
+# Deterministic jobs that left the skill list. The app runs them as plain
+# functions from @slicerx/pilot/functions (or the named package) and shows the
+# result as UI. mimir does not get these tools.
+app_functions:
+  printer_match: "printerMatch"
+  material_switch: "planSettings (@slicerx/settings)"
+  orient: "orient"
+  supports: "supports"
+  arrange: "arrange (also a mimir tool)"
+  slice: "the slicer host"
+  mesh_repair: "meshRepair"
+  fleet_overview: "fleetOverview"
+  multicolor_assign: "multicolorAssign"
+  ams_mapping: "amsMapping"
+  scale_with_tolerance: "scaleWithTolerance"
+  threads_and_fits: "threadsAndFits"
+  clearance_check: "fitCheck"
+  print_in_place_check: "fitCheck"
+  emboss: "emboss"
+  hollow: "hollow"
+  smart_layer: "smartLayer"
+  gcode_inspect: "gcodeInspect"
+  printer_config_check: "printerConfigCheck"
+  spool_inventory: "spoolInventory"
+  energy_estimate: "energyEstimate"
+  region_modifiers: "regionModifiers"
+  risk_report: "riskReport"
+  orientation_search: "orientationSearch"
+  overnight_readiness: "overnightReadiness"
+  spool_fit: "spoolFit"
+
+# Dropped from mimir, with the reason.
+dropped:
+  first_layer_watch: "needs camera frames, which mimir cannot read yet"
+  spaghetti_policy: "needs camera frames, which mimir cannot read yet"
+  maintenance: "folded into knowledge_answer"
+  drying_planner: "folded into knowledge_answer"
+  print_report: "not needed for v1"
+  profile_manager: "the app manages saved profiles itself"
+  remix: "no core API to apply a remix"
+  find_and_print: "library search is part of the app"
+  notify: "printer alerts come from the hub"
+  learn_from_history: "there is no print history to read yet"
+  profile_certify: "belongs in the library upload scan"

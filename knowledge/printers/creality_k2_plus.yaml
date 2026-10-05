@@ -1,0 +1,87 @@
+kind: printer
+schema_version: 1
+id: creality_k2_plus
+name: Creality K2 Plus
+vendor: Creality
+status: current
+firmware: vendor_klipper
+connections: [moonraker]
+kinematics: corexy
+build_volume_mm: {x: 350, y: 350, z: 350, confidence: high, src: [creality_k2_plus_page, "orca:Creality/machine/Creality K2 Plus 0.4 nozzle.json"]}
+extruder: {type: direct_drive, src: [creality_k2_plus_page]}
+hotend:
+  max_temp_c: 350
+  nozzle_diameters_mm: [0.2, 0.4, 0.6, 0.8]
+  nozzle_materials: [hardened_steel_tip]
+  stock_nozzle: "0.4 mm with hardened steel tip"
+  tool_free_swap: false
+  high_flow_option: false
+  confidence: medium
+  src: [creality_k2_plus_page, "orca:Creality/machine/Creality K2 Plus 0.4 nozzle.json"]
+bed:
+  max_temp_c: 120
+  plates: [textured_pei, smooth_pei]
+  confidence: low
+  note: "Bed maximum is from memory of the Creality spec, not re-verified in this pass."
+  src: [creality_k2_plus_page]
+enclosure:
+  type: enclosed
+  chamber_heating: active
+  max_chamber_c: 60
+  filtration: [air_purifier]
+  confidence: medium
+  note: "Actively heated chamber to 60 C, and an air purifier. The chamber temperature is set in Creality software; Orca profiles mark chamber temperature control as supported."
+  src: [creality_k2_plus_page, creality_k2_chamber_guide, "orca:Creality/machine/Creality K2 Plus 0.4 nozzle.json"]
+motion:
+  max_speed_mm_s: 800
+  max_accel_mm_s2: 30000
+  input_shaping: auto
+  confidence: medium
+  note: "Orca limits 800 mm/s and 30000 mm/s2. Creality quotes a typical 300 mm/s; peak claims run to 600. Built in G-sensor for shaper calibration."
+  src: ["orca:Creality/machine/Creality K2 Plus 0.4 nozzle.json", creality_k2_plus_page]
+power:
+  mains: "100 to 240 V AC, 50/60 Hz"
+  max_w: {value: 1200, note: "Creality rated power.", src: [creality_k2_plus_page], confidence: high}
+  hotend_heater_w: {value: 100, note: "Creality states the high flow hotend is powered by a 100 W heater.", src: [creality_k2_plus_page], confidence: high}
+sensors: [g_sensor_accelerometer, filament_runout, filament_tangle, ai_camera, chamber_thermistor]
+builtin_calibrations:
+  - {id: auto_leveling, what: "Automatic bed leveling and nozzle calibration.", src: [creality_k2_plus_page]}
+  - {id: input_shaper, what: "Built in G-sensor calibration.", src: [creality_k2_plus_page]}
+multi_material:
+  - {system: creality_cfs, slots: 4, note: "CFS holds 4 spools per unit. The K2 Plus supports up to 4 CFS units for 16 colors; Creality states this on the K2 series page, confirm before promising it.", src: [creality_k2_plus_page]}
+materials:
+  recommended: [pla, pla_plus, petg, abs, asa, pa6, pa_cf, pc, tpu_95a]
+  possible: [pla_silk, pla_matte, pa12, pa_gf, petg_cf, pla_cf, tpu_85a, hips, pp, pva, bvoh]
+  not_recommended: []
+  confidence: medium
+  note: "60 C chamber and a 350 C hotend cover ABS, ASA, PC and PA. PLA and TPU need the chamber off and the lid cracked. CFS itself is limited to normal filaments; use the external spool holder for engineering materials."
+  src: [creality_k2_plus_page]
+orca_profile: "orca:Creality/machine/Creality K2 Plus 0.4 nozzle.json"
+profile_baseline:
+  process: "0.20mm Standard @Creality K2 Plus 0.4 nozzle"
+  values: {layer_height: 0.2, initial_layer_print_height: 0.2, outer_wall_speed: 200, inner_wall_speed: 300, sparse_infill_speed: 270, top_surface_speed: 200, initial_layer_speed: 60, travel_speed: 500, default_acceleration: 12000, outer_wall_acceleration: 5000, inner_wall_acceleration: 5000, travel_acceleration: 12000, initial_layer_acceleration: 2000, wall_loops: 2, top_shell_layers: 5, bottom_shell_layers: 3, sparse_infill_density: "15%", bridge_speed: 50, line_width: 0.42, retraction_length: 0.8}
+  confidence: high
+  note: "Orca's default process for this printer is 0.16mm Optimal; the 0.20mm Standard is the closest match to a generic 0.20 profile."
+  src: ["orca:Creality/process/0.20mm Standard @Creality K2 Plus 0.4 nozzle.json", "orca:Creality/machine/Creality K2 Plus 0.4 nozzle.json"]
+pilot_notes:
+  - "Chamber temperature is active. chamber_temperature is valid, capped at 60 C. Do not set it for PLA, PETG or TPU."
+  - "Klipper based Creality OS with Moonraker and Fluidd present. SSH is enabled from the Root account information setting; this is Creality's own switch. Community tooling exists but is not required."
+  - "Creality Print is the vendor slicer and drives CFS material mapping and the K2 G-code most directly. Orca profiles exist and work; flag that CFS color mapping is more complete in Creality Print."
+  - "Creality's Klipper modifications are the subject of open source compliance discussion, so behavior can differ from upstream Klipper. Verify a command exists before relying on it."
+  - "Klipper flavor. Confirm PRINT_START argument names before editing machine_start_gcode."
+common_issues:
+  - symptom: "PLA jams or blobs after the chamber heated"
+    cause: "Chamber heat soaks the extruder."
+    fix:
+      - {key: chamber_temperature, op: at_most, value: 30, why: "Keep the chamber cool for PLA."}
+      - {advice: "Open the lid and door for PLA and TPU.", kind: environment}
+  - symptom: "Warped ABS or ASA corners"
+    cause: "Chamber not warm enough at print start."
+    fix:
+      - {key: chamber_temperature, op: set, value: 50, why: "A warm chamber reduces warping for ABS and ASA."}
+      - {key: fan_max_speed, op: at_most, value: 20, why: "Less cooling keeps layers fused."}
+  - symptom: "Filament tangle or CFS jam"
+    cause: "Spool tangled or unsupported filament in the CFS."
+    fix:
+      - {advice: "Use the external spool holder for TPU, engineering and abrasive filaments.", kind: hardware}
+src: [creality_k2_plus_page, creality_k2_chamber_guide, creality_k2_root_notes, "orca:Creality/machine/Creality K2 Plus 0.4 nozzle.json"]

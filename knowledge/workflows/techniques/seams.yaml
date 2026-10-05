@@ -1,0 +1,26 @@
+kind: guide
+schema_version: 1
+id: seams
+name: Seams
+applies_to: [all]
+summary: >
+  Every layer of a normal print starts and ends somewhere, and that point is the
+  seam. mimir picks where it goes (hidden, at the back, or scattered for
+  strength), whether to scarf it, and how to fix bulges or gaps at it.
+facts:
+  - {text: "Aligned, aligned back and back usually look best. Aligned back keeps the seam off the front of figurines and other models with a clear front.", src: ["orca_wiki:quality_settings_seam"]}
+  - {text: "Random spreads the seam's weak point across layers, which suits parts that need strength, such as a pin through a hole.", src: ["orca_wiki:quality_settings_seam"]}
+  - {text: "Nearest saves travel but scatters seams around the part.", src: ["orca_wiki:quality_settings_seam"]}
+  - {text: "Seam gap of 0 to 15 percent of the nozzle is typical on a printer with tuned pressure advance and retraction. A larger gap reduces bulges; a smaller gap hides the seam.", src: ["orca_wiki:quality_settings_seam"]}
+  - {text: "Scarf joint seams ramp the start and end of a loop to hide the seam and make it stronger. The conditional scarf applies only to loops without sharp corners (threshold 155 degrees by default); default scarf length is 20 mm.", src: ["orca_src:src/libslic3r/PrintConfig.cpp"]}
+  - {text: "Staggered inner seams move inner wall seams away from the outer seam so they do not stack into one weak line.", src: ["orca_wiki:quality_settings_seam"]}
+settings:
+  - {key: seam_position, op: set, value: aligned_back, why: "Hide the seam at the back of display models."}
+  - {key: seam_slope_type, op: set, value: external, why: "Scarf the outer wall seam so it nearly disappears."}
+  - {key: staggered_inner_seams, op: enable, why: "Keeps inner seams from lining up behind the outer one."}
+  - {key: seam_gap, op: set, value: 10%, why: "Middle of the typical 0 to 15 percent range on a tuned printer.", src: ["orca_wiki:quality_settings_seam"]}
+pilot_actions:
+  - "For display models, pick aligned back and scarf seams; offer seam painting when a specific face must stay clean."
+  - "For strength goals, prefer random or staggered seams over aligned ones."
+  - "If the user reports a bulge at the seam, check pressure advance first (see troubleshoot seam_zits), then raise seam gap."
+src: ["orca_wiki:quality_settings_seam", "orca_src:src/libslic3r/PrintConfig.cpp"]

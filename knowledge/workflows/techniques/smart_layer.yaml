@@ -1,0 +1,354 @@
+kind: guide
+schema_version: 1
+id: smart_layer
+name: sleipnir (adaptive layer height)
+applies_to: [all]
+summary: >
+  sleipnir changes the layer height through the part. Thin layers go where
+  the surface is shallow or curved, where stair stepping shows most. Thick
+  layers go on vertical walls, where thin layers only add time. Quality mode
+  spends thin layers on looks. Strength mode keeps layers in the band that
+  bonds best. Every layer stays inside the printer's layer height limits and
+  the material's floor, the first layer is never touched, and cooling
+  slowdowns are recomputed for the new profile.
+
+facts:
+  - {text: "Layer height is the main driver of print time and vertical resolution. It does not change horizontal resolution: embossed text parallel to the bed looks the same at any layer height.", src: [prusa_kb_layers_perimeters], confidence: high}
+  - {text: "Bambu's example print took 1 h 19 min at 0.08 mm, 36 min 14 s at 0.20 mm and 28 min 27 s at 0.28 mm on a 0.4 mm nozzle.", src: [bambu_wiki_layer_height], confidence: high}
+  - {text: "A shallow slope or a dome top shows the stair step most. Lowering the layer height only there keeps the finish while saving most of the time of a thin layer print.", src: [bambu_wiki_adaptive_layer, "orca_wiki:prepare_variable_layer_height"], confidence: high}
+  - {text: "Thinner layers also let overhangs go steeper before they sag, because each layer steps out less.", src: ["orca_wiki:quality_settings_layer_height"], confidence: high}
+  - {text: "Bambu Studio does not support variable layer height with organic tree supports. A prime tower is only allowed when every object on the plate uses the same variable layer height profile.", src: [bambu_wiki_adaptive_layer], confidence: high}
+
+bounds:
+  rule_of_thumb:
+    text: "Keep layer height between about 25 and 75 percent of the nozzle diameter."
+    origin: >
+      The 75 percent ceiling is the fallback that Slic3r, PrusaSlicer and
+      OrcaSlicer use for adaptive layers when a printer profile leaves the
+      maximum layer height unset. A 2023 peer reviewed review gives the same 25
+      to 75 percent band. Printer makers draw the band a little differently:
+      Bambu 20 to 70 percent, the OrcaSlicer wiki 20 to 80, Prusa below 80,
+      Cura warns above 80. SlicerX Easy mode clamps to 20 to 75 percent.
+    src: ["orca_src:src/libslic3r/Slicing.cpp", bouzaglou_2023_mex_review, bambu_wiki_layer_height, "orca_wiki:quality_settings_layer_height", prusa_kb_layers_perimeters, cura_fdmprinter_def]
+    confidence: medium
+  low_end:
+    text: "Below about 20 percent of the nozzle, flow gets uneven and fish scale patterns can show, especially at high speed. Prusa does not suggest going below 0.10 mm on a 0.4 mm nozzle because 0.07 or 0.05 mm layers look only slightly better and take much longer."
+    src: ["orca_wiki:quality_settings_layer_height", prusa_kb_layers_perimeters]
+    confidence: high
+  high_end:
+    text: "Above about 80 percent of the nozzle, layer adhesion and quality suffer. Layer height can never exceed the nozzle diameter."
+    src: ["orca_wiki:quality_settings_layer_height", prusa_kb_layers_perimeters]
+    confidence: high
+  first_layer:
+    text: "Bambu presets use a first layer of 50 percent of the nozzle diameter (0.2 mm on 0.4). Prusa profiles use 0.20 mm. The OrcaSlicer wiki recommends 0.25 mm on 0.4 and a maximum of 65 percent. Variable layer height in Orca starts after the first layer and leaves it fixed."
+    src: [bambu_wiki_layer_height, prusa_kb_layers_perimeters, "orca_wiki:quality_settings_layer_height", "orca_src:src/libslic3r/Slicing.cpp"]
+    confidence: high
+  engine_behavior:
+    - {text: "min_layer_height and max_layer_height live in the printer (extruder) profile and are only used for adaptive or variable layer height.", src: ["orca_wiki:printer_extruder_basic_information", "orca_src:src/libslic3r/PrintConfig.cpp"], confidence: high}
+    - {text: "Orca defaults: min_layer_height 0.07 mm, max_layer_height 0 (unset). An unset max falls back to 0.75 times the nozzle diameter. The minimum is never below 0.01 mm.", src: ["orca_src:src/libslic3r/PrintConfig.cpp", "orca_src:src/libslic3r/Slicing.cpp"], confidence: high}
+    - {text: "Orca widens the limits to include the base layer_height if it lies outside them, and with supports it also applies the support and interface extruders' limits.", src: ["orca_src:src/libslic3r/Slicing.cpp"], confidence: high}
+    - {text: "Bambu says its 0.08 to 0.28 mm range for a 0.4 mm nozzle comes from lab tests and should not be changed.", src: [bambu_wiki_adaptive_layer], confidence: high}
+  vendor_limits:
+    note: "min_layer_height and max_layer_height from OrcaSlicer machine profiles, inheritance resolved. Fractions are of the nozzle diameter."
+    confidence: high
+    by_nozzle:
+      - nozzle: 0.2
+        rows:
+          - {vendor: bambu, printers: "all 14 Bambu machine profiles", min: 0.04, max: 0.14, frac: "0.20 to 0.70", src: ["orca:BBL/machine/Bambu Lab X1 Carbon 0.2 nozzle.json", "orca:BBL/machine/Bambu Lab A1 0.2 nozzle.json"]}
+          - {vendor: voron, printers: "Voron 2.4", min: 0.06, max: 0.20, frac: "0.30 to 1.00", src: ["orca:Voron/machine/Voron 2.4 300 0.2 nozzle.json"]}
+          - {vendor: voron, printers: "Voron Trident, Switchwire, 0.1", min: 0.05, max: 0.16, frac: "0.25 to 0.80", src: ["orca:Voron/machine/Voron Trident 300 0.2 nozzle.json"]}
+          - {vendor: creality, printers: "Creality K2 Plus", min: 0.08, max: 0.30, frac: "0.40 to 1.50", src: ["orca:Creality/machine/Creality K2 Plus 0.2 nozzle.json"], note: "The maximum is above the nozzle diameter, which looks like a profile error. Do not trust it."}
+          - {vendor: prusa, printers: "none", min: null, max: null, note: "Prusa ships 0.25 mm nozzles instead: 0.05 to 0.15 mm on MK4S and Core One.", src: ["orca:Prusa/machine/Prusa MK4S 0.25 nozzle.json"]}
+      - nozzle: 0.4
+        rows:
+          - {vendor: bambu, printers: "all 14 Bambu machine profiles", min: 0.08, max: 0.28, frac: "0.20 to 0.70", src: ["orca:BBL/machine/Bambu Lab X1 Carbon 0.4 nozzle.json", "orca:BBL/machine/Bambu Lab A1 0.4 nozzle.json"]}
+          - {vendor: prusa, printers: "MK4S, Core One, Core One L", min: 0.07, max: 0.30, frac: "0.175 to 0.75", src: ["orca:Prusa/machine/Prusa MK4S 0.4 nozzle.json", "orca:Prusa/machine/Prusa CORE One 0.4 nozzle.json"]}
+          - {vendor: prusa, printers: "MK3S", min: 0.05, max: 0.30, frac: "0.125 to 0.75", src: ["orca:Prusa/machine/Prusa MK3S 0.4 nozzle.json"]}
+          - {vendor: voron, printers: "Voron 2.4, Trident, Switchwire", min: 0.10, max: 0.32, frac: "0.25 to 0.80", src: ["orca:Voron/machine/Voron 2.4 300 0.4 nozzle.json", "orca:Voron/machine/Voron Trident 300 0.4 nozzle.json"]}
+          - {vendor: creality, printers: "K1, K1C, K1 Max, K2 Plus", min: 0.08, max: 0.30, frac: "0.20 to 0.75", src: ["orca:Creality/machine/Creality K1 Max (0.4 nozzle).json", "orca:Creality/machine/Creality K2 Plus 0.4 nozzle.json"]}
+      - nozzle: 0.6
+        rows:
+          - {vendor: bambu, printers: "all 14 Bambu machine profiles", min: 0.12, max: 0.42, frac: "0.20 to 0.70", src: ["orca:BBL/machine/Bambu Lab X1 Carbon 0.6 nozzle.json"]}
+          - {vendor: prusa, printers: "MK4S, Core One, MK3S", min: 0.15, max: 0.40, frac: "0.25 to 0.67", src: ["orca:Prusa/machine/Prusa MK4S 0.6 nozzle.json", "orca:Prusa/machine/Prusa MK3S 0.6 nozzle.json"]}
+          - {vendor: voron, printers: "Voron 2.4", min: 0.15, max: 0.45, frac: "0.25 to 0.75", src: ["orca:Voron/machine/Voron 2.4 300 0.6 nozzle.json"]}
+          - {vendor: voron, printers: "Voron Trident, Switchwire, 0.1", min: 0.15, max: 0.48, frac: "0.25 to 0.80", src: ["orca:Voron/machine/Voron Trident 300 0.6 nozzle.json"]}
+          - {vendor: creality, printers: "K1, K1C, K1 Max", min: 0.12, max: 0.42, frac: "0.20 to 0.70", src: ["orca:Creality/machine/Creality K1 Max (0.6 nozzle).json"]}
+          - {vendor: creality, printers: "K2 Plus", min: 0.08, max: 0.42, frac: "0.13 to 0.70", src: ["orca:Creality/machine/Creality K2 Plus 0.6 nozzle.json"]}
+      - nozzle: 0.8
+        rows:
+          - {vendor: bambu, printers: "all 14 Bambu machine profiles", min: 0.16, max: 0.56, frac: "0.20 to 0.70", src: ["orca:BBL/machine/Bambu Lab X1 Carbon 0.8 nozzle.json"]}
+          - {vendor: prusa, printers: "MK4S, Core One, MK3S", min: 0.20, max: 0.60, frac: "0.25 to 0.75", src: ["orca:Prusa/machine/Prusa MK4S 0.8 nozzle.json", "orca:Prusa/machine/Prusa MK3S 0.8 nozzle.json"]}
+          - {vendor: voron, printers: "Voron 2.4", min: 0.20, max: 0.60, frac: "0.25 to 0.75", src: ["orca:Voron/machine/Voron 2.4 300 0.8 nozzle.json"]}
+          - {vendor: voron, printers: "Voron Trident, Switchwire, 0.1", min: 0.20, max: 0.64, frac: "0.25 to 0.80", src: ["orca:Voron/machine/Voron Trident 300 0.8 nozzle.json"]}
+          - {vendor: creality, printers: "K1, K1C, K1 Max, K2 Plus", min: 0.16, max: 0.56, frac: "0.20 to 0.70", src: ["orca:Creality/machine/Creality K1 Max (0.8 nozzle).json", "orca:Creality/machine/Creality K2 Plus 0.8 nozzle.json"]}
+    takeaway: "Bambu and the Creality K1 family use exactly 20 to 70 percent. Prusa and Voron sit at 25 to 80 percent on larger nozzles, and Prusa allows 0.07 mm on 0.4. The floor is mostly 17.5 to 25 percent (MK3S and K2 Plus 0.6 go to about 13) and the ceiling mostly 67 to 80 percent, with outliers on 0.2 mm nozzles. That brackets the 25 to 75 percent rule."
+  shipped_presets:
+    confidence: high
+    rows:
+      - {nozzle: 0.2, vendor: bambu, layer_heights: [0.06, 0.08, 0.10, 0.12, 0.14], src: ["orca:BBL/process/0.06mm Standard @BBL X1C 0.2 nozzle.json", "orca:BBL/process/0.14mm Standard @BBL X1C 0.2 nozzle.json"]}
+      - {nozzle: 0.4, vendor: bambu, layer_heights: [0.08, 0.12, 0.16, 0.20, 0.24, 0.28], note: "0.20 mm Standard is the default. 0.20 mm Strength keeps the layer height and adds walls (6) and infill (25 percent).", src: ["orca:BBL/process/0.08mm Extra Fine @BBL X1C.json", "orca:BBL/process/0.20mm Standard @BBL X1C.json", "orca:BBL/process/0.20mm Strength @BBL X1C.json", "orca:BBL/process/0.28mm Extra Draft @BBL X1C.json"]}
+      - {nozzle: 0.6, vendor: bambu, layer_heights: [0.18, 0.24, 0.30, 0.36, 0.42], src: ["orca:BBL/process/0.18mm Standard @BBL X1C 0.6 nozzle.json", "orca:BBL/process/0.42mm Standard @BBL X1C 0.6 nozzle.json"]}
+      - {nozzle: 0.8, vendor: bambu, layer_heights: [0.24, 0.32, 0.40, 0.48, 0.56], src: ["orca:BBL/process/0.24mm Standard @BBL X1C 0.8 nozzle.json", "orca:BBL/process/0.56mm Standard @BBL X1C 0.8 nozzle.json"]}
+      - {nozzle: 0.25, vendor: prusa, layer_heights: [0.05, 0.07, 0.12, 0.15], src: ["orca:Prusa/process/0.05mm DETAIL @MK4S 0.25.json", "orca:Prusa/process/0.15mm STRUCTURAL @MK4S 0.25.json"]}
+      - {nozzle: 0.4, vendor: prusa, layer_heights: [0.10, 0.15, 0.20], note: "The 0.4 high flow nozzle adds 0.25 and 0.28 mm. Soluble support presets exist only at 0.20 mm.", src: ["orca:Prusa/process/0.10mm FAST DETAIL @MK4S 0.4.json", "orca:Prusa/process/0.20mm STRUCTURAL @MK4S 0.4.json", "orca:Prusa/process/0.28mm DRAFT @MK4S HF0.4.json", "orca:Prusa/process/0.20mm SOLUBLE FULL @MK4S 0.4.json"]}
+      - {nozzle: 0.6, vendor: prusa, layer_heights: [0.15, 0.20, 0.25, 0.32], note: "The 0.6 high flow nozzle adds 0.40 mm.", src: ["orca:Prusa/process/0.15mm STRUCTURAL @MK4S 0.6.json", "orca:Prusa/process/0.32mm STRUCTURAL @MK4S 0.6.json", "orca:Prusa/process/0.40mm STRUCTURAL @MK4S HF0.6.json"]}
+      - {nozzle: 0.8, vendor: prusa, layer_heights: [0.30, 0.40, 0.55], src: ["orca:Prusa/process/0.30mm DETAIL @MK4S 0.8.json", "orca:Prusa/process/0.55mm DRAFT @MK4S 0.8.json"]}
+  z_step:
+    text: >
+      A full step on a common Z axis (1.8 degree motor, 8 mm per turn
+      leadscrew) is 8 / 200 = 0.04 mm. Prusa's calculator picks layer heights
+      that are whole full steps because a Z motor that is switched off between
+      microsteps jumps to the nearest full step. Klipper's endstop phase feature
+      can put every layer on a full step, but only if the layer height is a
+      multiple of a full step. OrcaSlicer's adaptive code has a Z gradation
+      (rounding) step, but it is commented out, so adaptive heights are not
+      rounded to steps. Cura steps between heights in 0.01 mm increments by
+      default.
+    src: [prusa_blog_reprap_calculator, klipper_endstop_phase, "orca_src:src/libslic3r/Slicing.cpp", cura_fdmprinter_def]
+    confidence: medium
+    why_it_matters: "Full step alignment matters when Z motors are idled mid print or when Klipper endstop phase is in use. Printers that hold Z energized and use microstepping position fine layers well, so full steps are a nice to have there, not a limit. No maker states a Z quantum for Bambu printers."
+    basis: expert
+  disagreements:
+    - {topic: "Upper bound", positions: ["Bambu: 70 percent", "Orca wiki, Prusa, Cura: 80 percent", "Orca engine fallback: 75 percent", "CNC Kitchen: strength drops past 50 percent"], resolution: "Use the printer profile maximum, capped at 75 percent. Strength mode caps at 50 percent.", src: [bambu_wiki_layer_height, "orca_wiki:quality_settings_layer_height", prusa_kb_layers_perimeters, cura_fdmprinter_def, "orca_src:src/libslic3r/Slicing.cpp", cnckitchen_layer_height]}
+    - {topic: "Lower bound", positions: ["Bambu and Orca wiki: 20 percent", "Prusa MK4S profile: 0.07 mm (17.5 percent) on 0.4", "Prusa KB: not below 0.10 mm (25 percent)", "Voron profiles: 25 percent"], resolution: "Use the printer profile minimum, never below 20 percent of the nozzle.", src: [bambu_wiki_layer_height, "orca_wiki:quality_settings_layer_height", "orca:Prusa/machine/Prusa MK4S 0.4 nozzle.json", prusa_kb_layers_perimeters, "orca:Voron/machine/Voron 2.4 300 0.4 nozzle.json"]}
+
+algorithms:
+  cusp_height:
+    text: >
+      Cusp height is the largest gap between the stair stepped print and the
+      true surface. It equals the layer height times the vertical part of the
+      surface normal: zero on a vertical wall, the full layer height on a
+      nearly flat top. The classic adaptive rule picks, for each layer, the
+      tallest height that keeps the cusp under a limit, capped by the printer
+      maximum.
+    formula: "layer height = min(max layer height, cusp limit / nz), where nz is the vertical component of the surface normal (0 for a vertical wall, 1 for a flat top)"
+    limits: "Cusp alone never thins vertical walls, yet FDM walls are rough even when vertical because each bead is rounded (bead height to profile depth about 3.3). Thinner layers still smooth vertical walls, just less."
+    src: [wasserfall_2017_adaptive_slicing, dolenc_makela_1994_slicing]
+    confidence: high
+  prusaslicer:
+    text: "Variable layer height tool with Adaptive (Quality/Speed slider), Smooth (filter radius, can be applied repeatedly), Keep min (thinnest layers are not smoothed) and manual painting. The metric limits the cross section area between the stepped surface and the model. Prusa advises starting from a base profile close to what most of the print will use."
+    src: [prusa_kb_variable_layer_height]
+    confidence: high
+  orcaslicer_and_bambu:
+    text: >
+      Same tool family: Adaptive with a quality and speed slider, Smooth with a
+      Gaussian filter radius, Keep min, and manual raise or lower with the
+      mouse. For each facet the code computes the allowed height from its
+      slope using an error area measure, capped on near vertical surfaces, and
+      takes the smallest over all facets that cross the layer. The slider maps
+      to an allowed deviation that runs from min_layer_height through the base
+      layer_height to max_layer_height. The smoothing radius defaults to 5.
+      The first layer stays fixed. Bambu Studio labels the slider detail and
+      speed.
+    inputs: ["surface slope of every triangle crossing the layer", "quality slider position", "min_layer_height, base layer_height, max_layer_height", "smoothing radius and keep min"]
+    src: ["orca_wiki:prepare_variable_layer_height", "orca_src:src/libslic3r/SlicingAdaptive.cpp", "orca_src:src/libslic3r/Slicing.cpp", "orca_src:src/libslic3r/Slicing.hpp", bambu_wiki_adaptive_layer, wasserfall_2017_adaptive_slicing]
+    confidence: high
+  cura:
+    text: "Adaptive layers vary the height around the base layer height. Maximum variation (default 0.1 mm) sets how far it may move. Variation step size (default 0.01 mm) sets how much one layer may differ from the previous one. Topography size (default 0.2 mm) is the target horizontal distance between the edges of two adjacent layers; a smaller value uses thinner layers. Cura keeps horizontal stepping constant, where Prusa and Orca limit an error area."
+    src: [cura_fdmprinter_def, prusa_kb_variable_layer_height, "orca_src:src/libslic3r/SlicingAdaptive.cpp"]
+    confidence: high
+  lessons:
+    - {text: "Users judged sudden jumps from thin to thick layers as worse than uniform thick layers, so the profile must be smoothed.", src: [wasserfall_2017_adaptive_slicing], confidence: medium}
+    - {text: "Taller layers get wider extrusions in PrusaSlicer's variable layer height, so pick a base profile near the typical height.", src: [prusa_kb_variable_layer_height], confidence: high}
+
+strength_evidence:
+  summary: >
+    Most tests find parts get weaker once layers exceed about half the nozzle
+    diameter, and that going thinner than about 0.15 mm on a 0.4 mm nozzle
+    gains little or nothing. Across 0.05 to 0.3 mm the published drops run
+    from about 5 to 23 percent, and some studies see the opposite trend.
+    Build orientation, temperature and wall count move strength far more than
+    layer height inside the normal band.
+  confidence: medium
+  studies:
+    - {id: cnckitchen_hooks, material: pla, text: "Prusament PLA hooks, 0.4 mm nozzle. Lying hooks from 0.05 to 0.2 mm all failed near 80 kg, 0.3 mm earlier, 0.4 mm far worse. Standing hooks (layer bond): 0.15 mm strongest, 0.3 mm about half, 0.4 mm almost nothing. Thin layers did not bond better. Past a nozzle to layer ratio of 2, strength drops.", src: [cnckitchen_layer_height], confidence: medium, note: "Single hobby test with one filament, weight normalized."}
+    - {id: stojkovic_2023, material: "pla, petg, petg_cf", text: "Average tensile strength at 0.1, 0.2 and 0.3 mm: PLA 32, 30.2, 28.8 MPa; PETG 33.5, 30.4, 29.5 MPa; PETG-CF 28.5, 24.4, 22.5 MPa. Thinner was stronger for all three; the drop from 0.1 to 0.3 mm was about 10 percent for PLA and 12 for PETG.", src: [stojkovic_2023_layer_height_annealing], confidence: high}
+    - {id: frunzaverde_2023, material: pla, text: "Flat PLA tensile bars at 0.05 to 0.20 mm. Strength fell as layers thickened for all four colors, by 4.77 percent (grey) to 23.41 percent (black) across the range. Filament color mattered more than layer height.", src: [frunzaverde_2023_pla_layer_color], confidence: high}
+    - {id: szust_adamski_2022, material: pla, text: "Upright PLA: 0.16 mm layers gave 67 percent more tensile strength than 0.24 mm, at 91 percent more print time.", src: [stojkovic_2023_layer_height_annealing], confidence: medium, note: "Read through the Stojkovic review table, not the original paper."}
+    - {id: tymrak, material: "pla, abs", text: "PLA tensile strength 60.4 MPa at 0.2 mm, 48.5 at 0.3 and 54.9 at 0.4 (a V shape). ABS showed the same trend with a smaller effect.", src: [bouzaglou_2023_mex_review], confidence: low, note: "Read through a review; the review notes the original omitted standard deviations."}
+    - {id: chacon_2017, material: pla, text: "0.06 to 0.24 mm layers. Thicker layers raised tensile strength of upright samples; thinner layers helped flat and on edge samples. Upright samples were weakest overall.", src: [chacon_2017_pla_fdm, megersa_2024_pla_taguchi], confidence: medium}
+    - {id: megersa_2024, material: pla, text: "Build orientation explained 98.16 percent of tensile strength variation. Layer thickness was not significant; the optimum was 0.16 mm.", src: [megersa_2024_pla_taguchi], confidence: high}
+    - {id: aliheidari_2018, material: abs, text: "Layer height significantly affected ABS interlayer fracture resistance. Nozzle temperature was the stronger lever: 20 C hotter raised apparent fracture resistance 38 percent.", src: [aliheidari_2018_abs_fracture], confidence: medium, note: "Direction of the layer height effect not stated in the abstract."}
+    - {id: aldawood_2025, material: "pc, pla", text: "0.4 mm layers on a 0.4 mm nozzle gave up to 36.2 percent higher ultimate strength than 0.2 mm and halved print time.", src: [aldawood_2025_pc_pla], confidence: low, note: "One specimen per condition; authors say it cannot show significance."}
+  disagreements:
+    - topic: "Do thinner layers make stronger parts?"
+      positions:
+        - "Thinner is stronger, most studies (Stojkovic, Frunzaverde, Szust and Adamski)."
+        - "No gain below 0.15 mm on a 0.4 nozzle, and a clear loss above half the nozzle (CNC Kitchen)."
+        - "Thicker helps upright samples or all samples (Chacon for upright, Aldawood with weak statistics), or a V shaped curve (Tymrak)."
+      resolution: "Strength mode keeps layers between 30 and 50 percent of the nozzle. It never goes above 50 percent for load bearing parts and does not chase very thin layers for strength."
+      src: [stojkovic_2023_layer_height_annealing, frunzaverde_2023_pla_layer_color, cnckitchen_layer_height, chacon_2017_pla_fdm, aldawood_2025_pc_pla, bouzaglou_2023_mex_review]
+      confidence: medium
+  no_data:
+    - "No peer reviewed layer height study was found for ASA, nylon, TPU or PVA. Their Strength mode bands are expert rules."
+
+surface_quality:
+  stair_step: "Cusp height = layer height x nz. A 0.2 mm layer on a surface tilted 30 degrees from horizontal (nz about 0.87) leaves a step about 0.17 mm deep; on a 60 degree slope (nz 0.5) about 0.1 mm; on a vertical wall none from stepping."
+  src: [wasserfall_2017_adaptive_slicing]
+  confidence: high
+  diminishing_returns:
+    - {text: "Prusa: below 0.10 mm on 0.4 mm the gain is small for a large time cost.", src: [prusa_kb_layers_perimeters], confidence: high}
+    - {text: "CNC Kitchen: 0.15 mm on 0.4 mm gave the best overhangs and bridges. At 0.05 mm the color went patchy because the plastic stayed molten so long.", src: [cnckitchen_layer_height], confidence: medium}
+    - {text: "Frunzaverde: best dimensional accuracy at 0.10 to 0.15 mm on 0.4 mm; 0.05 mm had larger deviations, likely from many more heat cycles.", src: [frunzaverde_2023_pla_layer_color], confidence: medium}
+    - {text: "Below about 20 percent of the nozzle, flow turns uneven and fish scale patterns appear.", src: ["orca_wiki:quality_settings_layer_height"], confidence: high}
+  vendor_guidance:
+    - {text: "Bambu: lower layers make interlayer lines less visible but take longer; use variable layer height on domes and slopes rather than a thin layer for the whole part.", src: [bambu_wiki_layer_height, bambu_wiki_adaptive_layer], confidence: high}
+    - {text: "Prusa: a standard 0.15 mm profile on 0.4 mm suits most prints; layer height does not affect XY detail.", src: [prusa_kb_variable_layer_height, prusa_kb_layers_perimeters], confidence: high}
+
+cooling:
+  how_it_interacts: >
+    The slicer slows a layer down when its estimated time is under the
+    minimum layer time, but never below the minimum print speed. At a fixed
+    mm/s a thin layer takes about as long as a thick one, so layer time does
+    not drop by itself. It drops when a thin layer is allowed to run faster
+    because it needs less plastic per second, and on small cross sections.
+    Every change to the layer profile needs the slowdown recomputed.
+  src: ["orca_wiki:material_cooling", "orca_src:src/libslic3r/PrintConfig.cpp", bambu_wiki_layer_height]
+  confidence: medium
+  basis: expert
+  facts:
+    - {text: "Orca defaults: minimum layer time 5 s, minimum print speed 10 mm/s. Cura uses the same 5 s and 10 mm/s.", src: ["orca_src:src/libslic3r/PrintConfig.cpp", cura_fdmprinter_def], confidence: high}
+    - {text: "Ellis uses at least 15 s for ABS and says PLA and PETG on open printers can generally use less. Layers printed too fast go down on layers that are still soft.", src: [ellis_cooling_layer_times], confidence: medium}
+    - {text: "Printing several parts at once, spread out, gives each part a break between layers.", src: [ellis_cooling_layer_times], confidence: high}
+    - {text: "Don't slow down outer walls keeps outer wall speed constant when layer time slowdowns kick in, which avoids gloss changes and banding lines.", src: ["orca_wiki:material_cooling"], confidence: high}
+    - {text: "Very low flow lets filament sit in the hotend long enough to soften above the melt zone. Orca warns of heat creep and clogs when ironing for this reason, and PLA is the most prone.", src: ["orca_wiki:quality_settings_ironing", "orca_wiki:material_cooling", prusa_kb_ironing], confidence: high}
+    - {text: "Example of low flow: a 0.08 mm layer, 0.4 mm wide, slowed to Orca's 10 mm/s minimum, extrudes 0.32 mm3/s. At Bambu PLA's 20 mm/s minimum it is 0.64 mm3/s, about 3 percent of that profile's 21 mm3/s limit.", src: ["orca_src:src/libslic3r/PrintConfig.cpp", "orca:BBL/filament/Bambu PLA Basic @BBL X1C.json"], confidence: medium, note: "Simple arithmetic from profile values. No published flow threshold for heat creep was found."}
+  by_family:
+    - {family: pla_family, min_layer_time_s: "4 to 8", slow_down_min_speed_mm_s: "10 to 20", fan: "70 to 100 percent", src: ["orca:OrcaFilamentLibrary/filament/Generic PLA @System.json", "orca:BBL/filament/Bambu PLA Basic @BBL X1C.json", "orca:Prusa/filament/Generic PLA @Prusa MK4S.json", "orca:Prusa/filament/Generic PLA @Prusa CORE One.json"], confidence: high, note: "Silk PLA runs 8 s in Orca generic and 15 s on the Core One with a 0.6 nozzle."}
+    - {family: petg, min_layer_time_s: "8 to 12", slow_down_min_speed_mm_s: "10", fan: "20 to 40 percent on Bambu, up to 100 in Orca generic", src: ["orca:OrcaFilamentLibrary/filament/Generic PETG @System.json", "orca:BBL/filament/Bambu PETG Basic @BBL X1C.json"], confidence: medium}
+    - {family: abs_asa, min_layer_time_s: "3 to 15", slow_down_min_speed_mm_s: "10 to 20", fan: "10 to 80 percent, more on overhangs", src: ["orca:OrcaFilamentLibrary/filament/Generic ABS @System.json", "orca:BBL/filament/Bambu ABS @BBL X1C.json", "orca:OrcaFilamentLibrary/filament/Generic ASA @System.json", ellis_cooling_layer_times], confidence: medium, note: "Orca generic uses 3 s, Bambu 12 s, Ellis at least 15 s."}
+    - {family: pc, min_layer_time_s: "2 to 12", slow_down_min_speed_mm_s: "10 to 20", fan: "10 to 60 percent", src: ["orca:OrcaFilamentLibrary/filament/Generic PC @System.json", "orca:BBL/filament/Bambu PC @BBL X1C.json"], confidence: medium, note: "Orca generic 2 s, Bambu 12 s."}
+    - {family: nylon_and_composites, min_layer_time_s: "2", slow_down_min_speed_mm_s: "10 to 20", fan: "0 to 60 percent, usually low", src: ["orca:OrcaFilamentLibrary/filament/Generic PA @System.json", "orca:BBL/filament/Bambu PA6-CF @BBL X1C.json"], confidence: medium}
+    - {family: tpu, min_layer_time_s: "8 to 20", slow_down_min_speed_mm_s: "10", fan: "30 to 100 percent", src: ["orca:OrcaFilamentLibrary/filament/Generic TPU @System.json", "orca:BBL/filament/Bambu TPU 95A @BBL X1C.json", "orca:OrcaFilamentLibrary/filament/Bambu/Bambu TPU 85A @base.json", prusa_kb_flexible], confidence: medium, note: "Flow is capped near 3.2 to 3.6 mm3/s in Orca and Bambu TPU profiles, so TPU already prints slowly."}
+    - {family: soluble_supports, min_layer_time_s: "4 to 8", slow_down_min_speed_mm_s: "10 to 20", fan: "100 percent", src: ["orca:OrcaFilamentLibrary/filament/Generic PVA @System.json", "orca:BBL/filament/Bambu PVA @BBL X1C.json", "orca:OrcaFilamentLibrary/filament/Generic BVOH @System.json", "orca:OrcaFilamentLibrary/filament/Generic HIPS @System.json"], confidence: medium, note: "PVA flow caps are low (4 mm3/s generic, 6 on Bambu). HIPS uses 6 s and 0 to 60 percent fan."}
+
+modes:
+  frac_note: "Floors and ceilings are fractions of the nozzle diameter. The final bound is the tighter of this, the printer's min_layer_height and max_layer_height, and the SlicerX clamp of 0.2 to 0.75."
+  quality:
+    goal: "Hide stair stepping and layer lines where the eye sees them, and save time where it does not."
+    thin_where: ["shallow slopes and dome tops (surface within about 45 degrees of horizontal)", "curved surfaces and fillets", "the last layers under a top surface", "steep overhangs that need smaller steps"]
+    thick_where: ["vertical walls, where stepping is zero", "straight internal sections with no visible slope"]
+    default_band: {floor: 0.2, ceiling: 0.5}
+    reasoning: "Stair step depth scales with layer height times the surface's vertical normal, so shallow surfaces gain the most. Vertical walls gain only a little from thin layers. Keep the ceiling at the base layer height from the Detail slider so walls do not get coarser than what the user picked, and never above 50 percent of the nozzle."
+    src: [wasserfall_2017_adaptive_slicing, bambu_wiki_adaptive_layer, "orca_wiki:quality_settings_layer_height"]
+    basis: expert
+    confidence: medium
+  strength:
+    goal: "Keep every layer in the band that bonds well and let the rest of the strength come from walls, temperature and orientation."
+    thin_where: ["steep overhangs and bridges where sagging would weaken the section", "small cross sections that would otherwise hit the minimum layer time"]
+    thick_where: ["vertical walls and straight sections, up to half the nozzle"]
+    default_band: {floor: 0.3, ceiling: 0.5}
+    reasoning: "Strength drops past half the nozzle diameter and gains little below about 0.15 mm on 0.4 mm. Orientation and nozzle temperature move strength more than layer height does inside that band. Bambu's own Strength preset keeps 0.20 mm and adds walls and infill instead."
+    src: [cnckitchen_layer_height, stojkovic_2023_layer_height_annealing, megersa_2024_pla_taguchi, aliheidari_2018_abs_fracture, "orca:BBL/process/0.20mm Strength @BBL X1C.json"]
+    basis: expert
+    confidence: medium
+  families:
+    pla_family:
+      applies_to: [pla, pla_plus, pla_matte, pla_silk]
+      quality: {floor: 0.2, ceiling: 0.5}
+      strength: {floor: 0.3, ceiling: 0.5}
+      thin_where: "domes, slopes and top surfaces"
+      thick_where: "vertical walls"
+      cooling_guard: {min_layer_time_s: 4, src: ["orca:OrcaFilamentLibrary/filament/Generic PLA @System.json", "orca:BBL/filament/Bambu PLA Basic @BBL X1C.json"], note: "Use 8 s for silk and on printers whose profiles use it (Prusa Core One)."}
+      reasoning: "PLA takes strong cooling well, so thin layers are safe for looks. CNC Kitchen saw patchy color at 0.05 mm, which the 20 percent floor avoids on 0.4 mm. PLA is the material most prone to heat creep when thin layers get slowed down in a warm enclosure."
+      src: [cnckitchen_layer_height, ellis_cooling_layer_times, "orca_wiki:quality_settings_ironing", "orca:Prusa/filament/Generic PLA @Prusa CORE One.json"]
+      basis: expert
+      confidence: medium
+    petg:
+      applies_to: [petg]
+      quality: {floor: 0.2, ceiling: 0.5}
+      strength: {floor: 0.3, ceiling: 0.5}
+      thin_where: "domes, slopes and top surfaces"
+      thick_where: "vertical walls"
+      cooling_guard: {min_layer_time_s: 8, src: ["orca:OrcaFilamentLibrary/filament/Generic PETG @System.json", "orca:BBL/filament/Bambu PETG Basic @BBL X1C.json"], note: "Bambu uses 12 s."}
+      reasoning: "PETG lost about 12 percent tensile strength from 0.1 to 0.3 mm in one study, a bit more than PLA. Bambu runs it at 20 to 40 percent fan for layer bonding, so short thin layers need the full minimum layer time."
+      src: [stojkovic_2023_layer_height_annealing, "orca:BBL/filament/Bambu PETG Basic @BBL X1C.json"]
+      basis: expert
+      confidence: medium
+    abs_asa:
+      applies_to: [abs, asa]
+      quality: {floor: 0.2, ceiling: 0.5}
+      strength: {floor: 0.3, ceiling: 0.5}
+      thin_where: "curved tops and slopes only"
+      thick_where: "vertical walls and internal sections"
+      cooling_guard: {min_layer_time_s: 12, src: ["orca:BBL/filament/Bambu ABS @BBL X1C.json", ellis_cooling_layer_times], note: "Ellis uses at least 15 s for ABS. Orca generic uses 3 s, which is too short for small parts."}
+      reasoning: "Layer bond in ABS follows heat more than layer height: a hotter nozzle raised fracture resistance far more than any layer height change. Keep fan low and the chamber warm, and let Strength mode avoid very thin layers that stack many cool bonds on small parts."
+      src: [aliheidari_2018_abs_fracture, ellis_cooling_layer_times, bouzaglou_2023_mex_review]
+      basis: expert
+      confidence: low
+    pc:
+      applies_to: [pc]
+      quality: {floor: 0.2, ceiling: 0.5}
+      strength: {floor: 0.35, ceiling: 0.5}
+      thin_where: "curved tops only"
+      thick_where: "everything else"
+      cooling_guard: {min_layer_time_s: 12, src: ["orca:BBL/filament/Bambu PC @BBL X1C.json"], note: "Orca generic uses 2 s."}
+      reasoning: "PC runs low fan (10 to 40 percent on Bambu). The only PC layer height study found favored thicker layers but used one specimen per condition, so Strength mode leans thick without going past half the nozzle."
+      src: [aldawood_2025_pc_pla, "orca:BBL/filament/Bambu PC @BBL X1C.json"]
+      basis: expert
+      confidence: low
+    nylon_and_composites:
+      applies_to: [pa6, pa12, pa_cf, pa_gf, pla_cf, petg_cf]
+      quality: {floor: 0.25, ceiling: 0.5}
+      strength: {floor: 0.35, ceiling: 0.5}
+      absolute_floor_mm: {filled: 0.2, src: [prusa_kb_composites]}
+      min_nozzle_mm: {filled: 0.4, src: [prusa_kb_composites]}
+      thin_where: "avoid thin layers; slopes only when the user asks"
+      thick_where: "everything"
+      cooling_guard: {min_layer_time_s: 2, src: ["orca:OrcaFilamentLibrary/filament/Generic PA @System.json", "orca:BBL/filament/Bambu PA6-CF @BBL X1C.json"]}
+      reasoning: "Prusa asks for at least 0.2 mm layers and a 0.4 mm nozzle with carbon, glass or kevlar filled filament, because higher layers and wider nozzles clog less. PETG-CF lost the most strength with thicker layers in the Stojkovic tests (28.5 to 22.5 MPa from 0.1 to 0.3 mm), so Strength mode stays near the floor for filled PETG. No layer height data was found for unfilled nylon."
+      src: [prusa_kb_composites, stojkovic_2023_layer_height_annealing, bambu_wiki_absgf_pa6gf]
+      basis: expert
+      confidence: low
+    tpu:
+      applies_to: [tpu_85a, tpu_95a]
+      quality: {floor: 0.3, ceiling: 0.5}
+      strength: {floor: 0.3, ceiling: 0.5}
+      thin_where: "rarely; only visible domes"
+      thick_where: "everything"
+      cooling_guard: {min_layer_time_s: 8, src: ["orca:BBL/filament/Bambu TPU 95A @BBL X1C.json"], note: "Bambu TPU 85A uses 20 s."}
+      reasoning: "TPU is flow limited to about 3.2 to 3.6 mm3/s and Prusa's typical speed is 20 mm/s, so thin layers multiply an already long print. Keep a narrow band and let Quality mode add only a few thin layers on visible tops."
+      src: ["orca:OrcaFilamentLibrary/filament/Generic TPU @System.json", "orca:BBL/filament/Bambu TPU 95A @BBL X1C.json", prusa_kb_flexible]
+      basis: expert
+      confidence: low
+    soluble_supports:
+      applies_to: [pva, bvoh, hips]
+      quality: {floor: 0.3, ceiling: 0.5}
+      strength: {floor: 0.3, ceiling: 0.5}
+      thin_where: "follow the model material; supports do not need thin layers"
+      thick_where: "support body when layers are allowed to be independent"
+      cooling_guard: {min_layer_time_s: 7, src: ["orca:BBL/filament/Bambu PVA @BBL X1C.json"], note: "Generic PVA uses 4 s, BVOH 8 s, HIPS 6 s."}
+      reasoning: "Soluble interfaces print with zero Z gap, and Prusa ships its soluble presets only at 0.20 mm on 0.4. With supports enabled Orca also clamps the object's adaptive range to the support extruders' limits. Independent support layer height does not work with a prime tower, which multi material prints usually need, and Bambu needs the same variable profile on every object to keep the prime tower."
+      src: ["orca:Prusa/process/0.20mm SOLUBLE INTERFACE @MK4S 0.4.json", "orca_src:src/libslic3r/Slicing.cpp", "orca_src:src/libslic3r/PrintConfig.cpp", bambu_wiki_adaptive_layer, bambu_wiki_pva_guide]
+      basis: expert
+      confidence: low
+
+settings:
+  - {key: slow_down_for_layer_cooling, op: enable, why: "Thin, fast layers can finish before the last one has cooled. This slows them down to the minimum layer time."}
+
+pilot_rules:
+  - {id: clamp_bounds, rule: "Clamp every sleipnir height to the tightest of: the printer's min_layer_height and max_layer_height, the SlicerX clamp (0.2 to 0.75 of the nozzle), the mode and material band in modes.families, and any absolute material floor. If max_layer_height is 0, treat it as unset and use 0.75 of the nozzle, as Orca does.", src: ["orca_src:src/libslic3r/Slicing.cpp", bambu_wiki_adaptive_layer], basis: sourced}
+  - {id: sanity_check_profile, rule: "Treat a printer max_layer_height above 0.8 of the nozzle as a likely profile error (the Creality K2 Plus 0.2 nozzle profile lists 0.30 mm) and fall back to 0.7 of the nozzle.", src: ["orca:Creality/machine/Creality K2 Plus 0.2 nozzle.json", "orca_wiki:quality_settings_layer_height", prusa_kb_layers_perimeters, bambu_wiki_layer_height], basis: expert}
+  - {id: clamp_base_first, rule: "Clamp the base layer_height from the Detail slider before running sleipnir. Orca widens its adaptive limits to include the base height, so an out of range base height would leak through.", src: ["orca_src:src/libslic3r/Slicing.cpp"], basis: sourced}
+  - {id: keep_first_layer, rule: "Never change the first layer. Keep initial_layer_print_height as the profile sets it (Bambu 50 percent of the nozzle, Prusa 0.20 mm, at most 65 percent per the Orca wiki).", src: [bambu_wiki_layer_height, prusa_kb_layers_perimeters, "orca_wiki:quality_settings_layer_height", "orca_src:src/libslic3r/Slicing.cpp"], basis: sourced}
+  - {id: material_floor, rule: "Never go below the material floor. For carbon, glass or kevlar filled filament that is 0.2 mm absolute on a nozzle of at least 0.4 mm; refuse sleipnir thin zones on a smaller nozzle and suggest a 0.6 mm hardened nozzle.", src: [prusa_kb_composites, bambu_wiki_absgf_pa6gf], basis: sourced}
+  - {id: z_step, rule: "Round each height to 0.01 mm. When the printer's Z full step is known and the user runs Klipper endstop phase or idles Z motors, round to whole full steps instead (0.04 mm on a 1.8 degree motor with an 8 mm lead screw). Re-check the clamp after rounding.", src: [cura_fdmprinter_def, prusa_blog_reprap_calculator, klipper_endstop_phase], basis: expert}
+  - {id: smooth_profile, rule: "Smooth the profile before slicing (Orca's default filter radius is 5) and keep the thinnest layers in Quality mode (keep min). Avoid jumps between neighbors; users see sudden thin to thick changes as worse than uniform layers.", src: ["orca_src:src/libslic3r/Slicing.hpp", prusa_kb_variable_layer_height, wasserfall_2017_adaptive_slicing], basis: sourced}
+  - {id: recompute_cooling, rule: "After building the profile, recompute each layer's speed against filament_max_volumetric_speed, then its time against slow_down_layer_time, using the material's slow_down_min_speed as the floor. Show the new estimated time next to the old one.", src: ["orca_wiki:material_cooling", "orca_src:src/libslic3r/PrintConfig.cpp", bambu_wiki_layer_height], basis: expert}
+  - {id: layer_time_guard, rule: "Apply the family cooling_guard minimum layer time from modes.families, and for ABS offer 15 s. If many thin layers still fall under it, suggest printing more parts at once instead of more slowdown.", src: [ellis_cooling_layer_times, "orca:BBL/filament/Bambu ABS @BBL X1C.json"], basis: sourced}
+  - {id: heat_creep_warning, rule: "Warn when a thin layer combined with a cooling slowdown drops flow to a few percent of the filament's max volumetric speed (see the 0.32 to 0.64 mm3/s example in cooling.facts), especially with PLA, PETG or TPU in a closed printer. No published threshold exists, so this is a warning, not a block. Suggest opening the door or raising slow_down_min_speed.", src: ["orca_wiki:quality_settings_ironing", "orca_wiki:material_cooling", bambu_wiki_heat_creep], basis: expert}
+  - {id: strength_cap, rule: "In Strength mode, cap at half the nozzle diameter and put extra effort into walls, nozzle temperature and orientation rather than thinner layers. Tell the user orientation matters more than layer height.", src: [cnckitchen_layer_height, megersa_2024_pla_taguchi, aliheidari_2018_abs_fracture, "orca:BBL/process/0.20mm Strength @BBL X1C.json"], basis: sourced}
+  - {id: supports_compat, rule: "Before enabling sleipnir on Bambu printers, switch organic tree supports to normal or classic tree, and give every object on a prime tower plate the same layer profile. Keep soluble interfaces synced with object layers.", src: [bambu_wiki_adaptive_layer, "orca_src:src/libslic3r/PrintConfig.cpp"], basis: sourced}
+  - {id: explain_choice, rule: "Tell the user where thin and thick layers went and why, in one line each (for example: thin on the dome top to hide steps, thick on the straight sides to save time).", basis: expert}
+
+disagreements:
+  - {topic: "Upper layer height bound", resolution: "Printer profile maximum capped at 75 percent of the nozzle; 50 percent in Strength mode.", see: bounds.disagreements}
+  - {topic: "Layer height and strength", resolution: "Stay in 30 to 50 percent of the nozzle for strength; thinner is not reliably stronger.", see: strength_evidence.disagreements}
+  - {topic: "Minimum layer time for ABS", positions: ["Orca generic 3 s", "Bambu X1C 12 s", "Ellis at least 15 s"], resolution: "12 s default, offer 15 s on small parts.", src: ["orca:OrcaFilamentLibrary/filament/Generic ABS @System.json", "orca:BBL/filament/Bambu ABS @BBL X1C.json", ellis_cooling_layer_times]}
+
+open_questions:
+  - "No published volumetric flow threshold for heat creep; the warning in pilot_rules is qualitative."
+  - "No maker states the Z full step or leadscrew lead for Bambu printers."
+  - "Orca keys min_layer_height, max_layer_height, dont_slow_down_outer_wall and infill_combination_max_layer_height are not in settings.yaml; mimir can only read or mention them."
+
+src: [bambu_wiki_layer_height, bambu_wiki_adaptive_layer, prusa_kb_variable_layer_height, prusa_kb_layers_perimeters, "orca_wiki:quality_settings_layer_height", "orca_wiki:prepare_variable_layer_height", "orca_src:src/libslic3r/Slicing.cpp", "orca_src:src/libslic3r/SlicingAdaptive.cpp", cura_fdmprinter_def, wasserfall_2017_adaptive_slicing, cnckitchen_layer_height, stojkovic_2023_layer_height_annealing, ellis_cooling_layer_times]

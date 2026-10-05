@@ -1,0 +1,251 @@
+kind: filament
+schema_version: 1
+id: bvoh
+name: BVOH (water soluble support)
+category: support
+orca_filament_type: BVOH
+aliases: [BVOH, Butenediol vinyl alcohol copolymer, water soluble support, BVOH support]
+related: [pva, pla, petg]
+summary: >
+  Water soluble support material, a stiffer and better behaved alternative to
+  PVA. Prusa calls it the better but more expensive option, and it is the only
+  practical soluble support for PETG. It prints cooler than PVA and clogs less,
+  but it is still very hygroscopic and must be kept dry. Dissolves in water in
+  hours. Needs a multi material setup.
+use_for: [support interfaces and bases under PLA and PETG parts, internal cavities, captive parts, tight support contact surfaces]
+avoid_for: [structural parts, single extruder printers, humid rooms without a drybox, long idle time in a hot nozzle]
+
+nozzle_temp_c:
+  min: 190
+  max: 240
+  typical: 215
+  confidence: medium
+  src:
+    - "orca:OrcaFilamentLibrary/filament/Generic BVOH @System.json"
+    - bambu_wiki_material_table
+    - prusa_kb_water_soluble
+  note: "Prusa uses 215 C for BVOH. Orca generic BVOH profile is 190 to 240 with 220 as its default, and the Bambu wiki lists 190 to 240 for dry PVA and BVOH. Match the temperature to the model filament."
+first_layer_nozzle_temp_c:
+  min: 215
+  max: 220
+  typical: 220
+  confidence: low
+  src: ["orca:OrcaFilamentLibrary/filament/Generic BVOH @System.json", prusa_kb_water_soluble]
+  note: "Orca generic uses 220. Prusa's single BVOH value is 215."
+bed_temp_c:
+  min: 40
+  max: 60
+  typical: 55
+  confidence: medium
+  src: ["orca:OrcaFilamentLibrary/filament/Generic BVOH @System.json", prusa_kb_water_soluble]
+  note: "Prusa uses 60 C. Orca generic sets 40 on the Cool Plate and 55 on PEI plates. BVOH sticks better to a PLA raft than to bare PEI."
+chamber_temp_c: null
+enclosure:
+  level: optional
+  confidence: low
+  src: [bambu_wiki_material_table, "orca:OrcaFilamentLibrary/filament/Generic BVOH @System.json"]
+  note: "Not needed for warping. Bambu groups BVOH with PVA (softening below 60 C), so open the door or remove the top cover if the bed is above 45 C."
+
+plates:
+  - {plate: bambu_cool_plate, fit: ok, bed_temp_c: {min: 35, max: 45}, release_agent: none, confidence: low, src: ["orca:OrcaFilamentLibrary/filament/Generic BVOH @System.json", bambu_wiki_material_table], note: "Orca sets 40 C. The plate follows the model filament."}
+  - {plate: bambu_engineering_plate, fit: glue, bed_temp_c: {min: 45, max: 65}, release_agent: glue_stick, confidence: low, src: [bambu_wiki_material_table], note: "Bambu gives no BVOH row, PVA and PLA rows require glue on this plate."}
+  - {plate: bambu_high_temp_plate, fit: good, bed_temp_c: {min: 45, max: 60}, release_agent: none, confidence: low, src: [bambu_wiki_material_table, prusa_kb_water_soluble], note: "Follows the model filament."}
+  - {plate: textured_pei, fit: good, bed_temp_c: {min: 45, max: 60}, release_agent: none, confidence: low, src: [bambu_wiki_material_table, prusa_kb_water_soluble], note: "Follows the model filament."}
+  - {plate: smooth_pei, fit: ok, bed_temp_c: {min: 55, max: 60}, release_agent: none, confidence: low, src: [prusa_kb_water_soluble], note: "Prusa recommends a 1 to 2 layer PLA raft because BVOH sticks much better to PLA than to PEI."}
+
+cooling:
+  fan_min_pct: {min: 100, max: 100, typical: 100}
+  fan_max_pct: {min: 100, max: 100, typical: 100}
+  overhang_fan_pct: {typical: 100}
+  no_fan_first_layers: {typical: 1}
+  min_layer_time_s: {typical: 8}
+  confidence: low
+  src: ["orca:OrcaFilamentLibrary/filament/Generic BVOH @System.json"]
+  note: "Orca generic BVOH uses 100 percent fan and 8 s. No manufacturer cooling guidance was found."
+
+drying:
+  need: required
+  oven: {temp_c: {min: 55, max: 85}, hours: 8, note: "PVA values used as a proxy, see note."}
+  ams_2_pro: null
+  ams_ht: null
+  printer_bed: null
+  keep_dry_in_use: required
+  confidence: low
+  src: [prusa_kb_water_soluble, bambu_wiki_drying, bambu_wiki_pva_guide, bcn3d_bvoh_page]
+  note: >
+    Prusa says BVOH is very hygroscopic and should be kept as dry as possible, ideally
+    printed straight from a dryer or drybox. Bambu's drying tables list PVA but not
+    BVOH, so PVA numbers (55 to 85 C, 8 to 12 h in an oven, humidity below 20 percent RH,
+    calcium chloride desiccant) are a proxy. BCN3D dries its BVOH 4 to 16 h at 60 C in a hot
+    air dryer or vacuum oven and stores it sealed with desiccant. Follow the spool label first.
+
+nozzle:
+  abrasive: false
+  hardened_required: false
+  min_diameter_mm: 0.4
+  orca_required_hrc: 3
+  confidence: medium
+  src: [bambu_wiki_material_table, prusa_kb_water_soluble]
+  note: "Bambu lists dry PVA and BVOH as not compatible with 0.2 mm nozzles. Prusa says it clogs less than PVA but more than standard materials."
+
+extrusion:
+  flow_ratio: {min: 1.0, max: 1.0, typical: 1.0, confidence: low, src: ["orca:OrcaFilamentLibrary/filament/Generic BVOH @System.json"], note: "Orca generic uses 1.0. Confirm with a flow test."}
+  max_volumetric_speed_mm3s:
+    standard_hotend: {min: 4, max: 8, typical: 8}
+    confidence: low
+    src: ["orca:OrcaFilamentLibrary/filament/Generic BVOH @System.json"]
+    note: "Orca generic BVOH is 8, double PVA's 4. Reduce it if the extruder clicks or the interface is rough."
+  retraction_mm:
+    direct_drive: {min: 0.7, max: 0.8, typical: 0.8}
+    confidence: low
+    src: ["orca:BBL/machine/Bambu Lab X1 Carbon 0.4 nozzle.json", "orca:Prusa/machine/fdm_machine_common_mk4s.json"]
+    note: "No BVOH specific figure. This is the printer default (Bambu 0.8 mm, Prusa MK4S 0.7 mm), not material data."
+  retraction_speed_mm_s: {typical: 30, confidence: low, src: ["orca:BBL/machine/Bambu Lab X1 Carbon 0.4 nozzle.json", "orca:Prusa/machine/fdm_machine_common_mk4s.json"], note: "No BVOH specific figure. Bambu machine profiles use 30 mm/s and Prusa MK4S uses 35."}
+  pressure_advance:
+    direct_drive: null
+    bowden: null
+    confidence: low
+    src: [klipper_pressure_advance]
+    note: "No BVOH specific value is published. Use the printer default or the paired filament's value."
+
+layer_height:
+  fraction_of_nozzle: {min: 0.25, max: 0.7, typical: 0.5}
+  at_0_4_mm: {min: 0.15, max: 0.28, typical: 0.2}
+  smart_layer:
+    quality_mode: "BVOH only forms the support interface, so its layer height follows the model. Thin layers under PLA or PETG give a smoother underside, but BVOH under extrudes if forced thin."
+    strength_mode: "Strength does not apply. BVOH is dissolved away, so use the layer height the model needs."
+    thin_layer_cooling: "BCN3D runs the fan at 50 to 100 percent and Orca generic at 100 percent with an 8 s minimum layer time. BVOH softens below 60 C, so keep the chamber cool and the fan on."
+  basis: expert
+  confidence: low
+  src: ["orca:Prusa/machine/fdm_machine_common.json", bcn3d_bvoh_page, "orca:OrcaFilamentLibrary/filament/Generic BVOH @System.json", prusa_kb_water_soluble]
+  note: "BCN3D lists a layer height of 0.15 to 0.4 mm, which exceeds the 0.28 mm Bambu and Orca limit for a 0.4 mm nozzle. Forward AM says nozzle 0.4 mm or larger."
+smart_layer:
+  min_ratio: 0.25
+  max_ratio: 0.7
+  modes:
+    quality: {min_ratio: 0.3, max_ratio: 0.5}
+    strength: {min_ratio: 0.3, max_ratio: 0.5}
+  family: soluble_supports
+  note: "BVOH (water soluble support) prints well from 0.25 to 0.7 of the nozzle diameter; Quality mode uses 0.3 to 0.5 and Strength mode 0.3 to 0.5, since parts weaken once layers pass half the nozzle."
+  confidence: low
+  src: ["orca:Prusa/machine/fdm_machine_common.json", "bcn3d_bvoh_page", "orca:OrcaFilamentLibrary/filament/Generic BVOH @System.json", "prusa_kb_water_soluble", "cnckitchen_layer_height", "stojkovic_2023_layer_height_annealing"]
+speeds:
+  print_speed_mm_s: {min: 20, max: 60}
+  first_layer_mm_s: {typical: 20}
+  volumetric_note: "BCN3D prints BVOH at 20 mm/s and Forward AM at 30 to 60 mm/s. Orca generic allows 8 mm3/s (see extrusion). No source caps outer wall speed. Interface layers run slower than the rest of the support."
+  confidence: low
+  src: [bcn3d_bvoh_page, forward_am_bvoh, "orca:OrcaFilamentLibrary/filament/Generic BVOH @System.json", "orca:Prusa/process/0.20mm SOLUBLE INTERFACE @MK4S 0.4.json"]
+  note: "Prusa's soluble interface preset runs its interface at 40 mm/s with a 40 mm/s first layer on the MK4S."
+first_layer:
+  fan_off_layers: 1
+  speed_mm_s: {typical: 20}
+  bed_first_layer_note: "Prusa runs the bed at 60 C and BCN3D at 45 to 90 C. Follow the model filament's bed temperature. BVOH sticks much better to a 1 to 2 layer PLA raft than to bare PEI."
+  squish_note: "No BVOH specific squish guidance. BCN3D says to use Magigoo adhesive for reliable bed adhesion when BVOH touches the bed."
+  confidence: low
+  src: [prusa_kb_water_soluble, bcn3d_bvoh_page, "orca:OrcaFilamentLibrary/filament/Generic BVOH @System.json"]
+structure:
+  walls: null
+  infill: null
+  basis: expert
+  confidence: low
+  src: [prusa_kb_water_soluble]
+  note: "BVOH is only used as a support interface or base. Wall and infill settings follow the model."
+supports:
+  interface_materials: [bvoh]
+  soluble_pairing: {material: bvoh, dissolve: "water"}
+  supports_models: [pla, petg, pa6, pa12]
+  top_z_distance_mm: {typical: 0}
+  interface_layers: {typical: 3}
+  note: "BVOH dissolves in water about twice as fast as PVA and leaves less residue. Prusa pairs it with PLA and calls it the only practical soluble support for PETG, and BCN3D also lists ABS, PA and PAHT CF15. Warm water speeds dissolving. Keep the spool sealed with desiccant, expect a larger purge on tool changes, and clean the hotend after long BVOH prints. Prusa's soluble interface preset uses a top Z distance of 0, 3 interface layers and 0.1 mm interface spacing."
+  confidence: medium
+  src: [prusa_kb_water_soluble, bcn3d_bvoh_page, bcn3d_bvoh_vs_pva, forward_am_bvoh, bambu_wiki_pva_guide, "orca:Prusa/process/0.20mm SOLUBLE INTERFACE @MK4S 0.4.json"]
+
+multi_material:
+  bambu_ams: compatible
+  bambu_ams_lite: compatible
+  bambu_ams_ht: compatible
+  confidence: low
+  src: [bambu_wiki_material_table]
+  note: "Bambu lists dry PVA and BVOH as compatible and says damp PVA or BVOH is too soft for the AMS path. Use a sealed dry box for the whole print. Prusa notes frequent changes need higher purge volumes to avoid PLA contamination. For PETG, BVOH is practically the only soluble support choice."
+
+properties:
+  density_g_cm3: {typical: 1.13, src: ["orca:OrcaFilamentLibrary/filament/Generic BVOH @System.json"]}
+  softening_temp_c: {typical: 45, src: ["orca:OrcaFilamentLibrary/filament/Generic BVOH @System.json", bambu_wiki_material_table], note: "Orca temperature_vitrification is 45 C. Bambu groups BVOH with PVA as softening below 60 C."}
+  dissolving:
+    water_ratio: "About 20 ml of water per 1 g of BVOH."
+    time: "Hours. Warm water is faster but should not be very hot."
+    src: [prusa_kb_water_soluble]
+    note: "Prusa gives 1 g per 20 ml and says dissolution time depends on temperature and material to water ratio."
+safety:
+  fumes: low
+  note: "Prusa describes it as non toxic and odorless."
+food_contact:
+  note: "Not for food contact."
+  src: [prusa_kb_food_safe]
+
+failure_modes:
+  - id: nozzle_clog
+    symptom: Extrusion stops or clicks, bubbly output
+    causes: [damp filament, filament sat in hot nozzle, too fast]
+    fixes:
+      - {advice: "Dry the spool and print from a sealed dry box or dryer.", kind: material}
+      - {key: filament_max_volumetric_speed, op: at_most, value: 6, why: "A slower flow reduces jams."}
+      - {advice: "Do not leave BVOH parked hot in the nozzle. Purge or retract it during pauses.", kind: workflow}
+  - id: poor_support_adhesion
+    symptom: Support peels off the plate or model
+    causes: [BVOH sticks poorly to PEI]
+    fixes:
+      - {advice: "Print a 1 to 2 layer PLA raft under the soluble support.", kind: workflow}
+      - {key: support_top_z_distance, op: set, value: 0, why: "Prusa recommends 0 mm distance for soluble supports."}
+  - id: purge_contamination
+    symptom: PLA or PETG specks in the soluble support
+    causes: [inadequate flush at material changes]
+    fixes:
+      - {key: flush_multiplier, op: increase_by, value: 0.3, why: "Prusa says frequent changes need larger purge volumes."}
+  - id: stringing
+    symptom: Hairs and bubbles at the interface
+    causes: [wet filament, nozzle hot]
+    fixes:
+      - {advice: "Re-dry the spool and reseal it.", kind: material}
+      - {key: nozzle_temperature, op: decrease_by, value: 5, why: "Less ooze."}
+  - id: petg_pairing
+    symptom: Soluble support fails when paired with PETG
+    causes: [PVA does not survive PETG temperatures]
+    fixes:
+      - {advice: "Use BVOH for PETG supports. Prusa says practically only BVOH works with PETG.", kind: material}
+
+disagreements:
+  - topic: BVOH versus PVA
+    positions:
+      - {claim: "BVOH is stiffer, behaves better, prints at 215 C and clogs less", src: [prusa_kb_water_soluble]}
+      - {claim: "Orca generic profile prints BVOH at 220 C and 8 mm3/s with soluble flag 0", src: ["orca:OrcaFilamentLibrary/filament/Generic BVOH @System.json"]}
+    resolution: "Use 215 to 220 C. Orca's filament_soluble flag is 0 for BVOH but is_support is 1, so it may need to be marked soluble manually in the slicer."
+  - topic: drying data
+    positions:
+      - {claim: "no BVOH row in the drying tables, PVA listed", src: [bambu_wiki_drying]}
+      - {claim: "keep as dry as possible, no numbers", src: [prusa_kb_water_soluble]}
+    resolution: "Use the spool label. If missing, start with the PVA numbers at the low end."
+  - topic: BVOH nozzle temperature ceiling
+    positions:
+      - {claim: "190 to 240 C", src: [bambu_wiki_material_table, "orca:OrcaFilamentLibrary/filament/Generic BVOH @System.json"]}
+      - {claim: "190 to 210 C", src: [bcn3d_bvoh_page, forward_am_bvoh]}
+    resolution: "Use 215 C only when the model filament needs it, as Prusa does. On a cooler model material such as PLA, 195 to 210 C is what the BVOH makers list."
+  - topic: BVOH oven drying
+    positions:
+      - {claim: "55 C for 8 h (Bambu lists PVA and BVOH together)", src: [bambu_wiki_material_table]}
+      - {claim: "60 C for 4 to 16 h in a hot air dryer or vacuum oven", src: [bcn3d_bvoh_page]}
+    resolution: "Use 55 to 60 C for 8 h and keep it under 60 C to avoid softening."
+
+pilot_defaults:
+  nozzle_temperature: 215
+  nozzle_temperature_initial_layer: 220
+  cool_plate_temp: 40
+  textured_plate_temp: 55
+  hot_plate_temp: 55
+  fan_min_speed: 100
+  fan_max_speed: 100
+  overhang_fan_speed: 100
+  close_fan_the_first_x_layers: 1
+  slow_down_layer_time: 8
+  filament_flow_ratio: 1.0
+  filament_max_volumetric_speed: 8

@@ -1,0 +1,25 @@
+kind: calibration
+schema_version: 1
+id: flow_ratio
+name: Flow ratio
+order: 4
+purpose: "Extrude exactly as much plastic as the slicer plans. Too low leaves gaps and weak parts; too high gives rough tops and tight holes."
+run_when: ["New filament brand or type", "Rough or ridged top surfaces", "Holes too small and parts too big together"]
+prereqs: [temperature, pressure_advance]
+orca_test:
+  menu: "Calibration > Flow ratio"
+  methods:
+    - {id: yolo, note: "Recommended. Archimedean chords pattern, eleven blocks. Range -0.05 to +0.05, step 0.01 (perfectionist: -0.04 to +0.035, step 0.005). New ratio = old ratio + modifier.", example: "0.98 + 0.01 = 0.99"}
+    - {id: two_pass, note: "Legacy. Pass 1 nine blocks, pass 2 ten blocks from -9 to 0. New ratio = old ratio * (100 + modifier) / 100.", example: "0.98 * 1.05 = 1.029, then 1.029 * 0.94 = 0.967"}
+  src: ["orca_wiki:flow_ratio_calib"]
+per_firmware:
+  bambu: {method: "X series printers measure flow ratio with the lidar during flow calibration. Other Bambu printers use the Orca or Bambu Studio manual test with the Flow calibration box unchecked.", src: [bambu_wiki_flow_rate_cal, "orca_wiki:flow_ratio_calib"]}
+  klipper: {method: "Orca test. Flow ratio lives in the filament profile, not in Klipper.", src: ["orca_wiki:flow_ratio_calib"]}
+  prusa: {method: "Orca test.", src: ["orca_wiki:flow_ratio_calib"]}
+read_result:
+  - "Pick the block with the smoothest top, no gaps between the arcs, and little or no ridge where the inner spiral meets the outer arcs."
+read_result_src: ["orca_wiki:flow_ratio_calib"]
+camera_reading: {feasible: partial, look_for: "Gaps between lines are visible under raking light; smoothness is easier to judge by touch. Ask the user to confirm."}
+writes:
+  - {key: filament_flow_ratio, op: set, value_from: {calibration: flow_ratio, field: value}, why: "Best block from the flow test."}
+src: ["orca_wiki:flow_ratio_calib", bambu_wiki_flow_rate_cal]

@@ -1,0 +1,15 @@
+kind: calibration
+schema_version: 1
+id: input_shaping
+name: Input shaping
+order: 7
+purpose: "Cancel frame resonance so the printer can accelerate hard without ringing."
+run_when: ["New printer, printer moved, belts tensioned", "Ringing after a mechanical change"]
+per_firmware:
+  bambu: {method: "Vibration compensation runs in the printer's startup calibration. Rerun it after moving the printer.", src: [bambu_wiki_printer_calibration]}
+  prusa: {method: "Input shaping is set at the factory on MK4S, Core One and XL and can be retuned with the accelerometer.", guide: prusa_input_shaping, src: [prusa_kb_input_shaper, prusa_kb_accelerometer]}
+  klipper: {method: "SHAPER_CALIBRATE with an accelerometer, then SAVE_CONFIG. Use the max acceleration it recommends as the ceiling for slicer accelerations.", guide: klipper_input_shaper, src: [klipper_docs_resonance_compensation, klipper_docs_measuring_resonances]}
+  marlin: {method: "Orca's input shaping test (ringing tower per frequency and damping) for Marlin builds with input shaping enabled.", src: ["orca_wiki:input_shaping_calib"]}
+writes:
+  - {key: default_acceleration, op: at_most, value_from: {calibration: input_shaping, field: max_accel_mm_s2}, why: "Stay under the acceleration the shaper recommends, or ringing returns."}
+src: [klipper_docs_resonance_compensation, prusa_kb_input_shaper, bambu_wiki_printer_calibration, "orca_wiki:input_shaping_calib"]

@@ -1,0 +1,13 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (C) 2026 The SlicerX contributors
+[package]
+name = "sx-profiles"
+version.workspace = true
+edition.workspace = true
+# The embedded data files are AGPL-3.0-or-later, and the UltiMaker data from Cura LGPL-3.0-or-later.
+license = "AGPL-3.0-or-later AND LGPL-3.0-or-later"
+publish.workspace = true
+include = ["src", "machine.json", "gcode.json", "process-speeds.json", "cura/ultimaker.json", "LICENSE", "cura/LICENSE", "README.md"]
+
+[lints]
+workspace = true

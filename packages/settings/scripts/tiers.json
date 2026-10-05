@@ -1,0 +1,67 @@
+{
+ "comment": "Tier table for process settings. apply-tiers.mjs writes mode, intent and showWhen into schema.json from this file. simple: the keys the Simple controls drive directly. advanced: the curated list, grouped by intent. hidden: profile keys no user tier shows. Everything else in the process section is expert (develop stays develop).",
+ "simple": ["layer_height", "wall_loops", "sparse_infill_density", "enable_support", "brim_type", "smart_layer"],
+ "advanced": {
+  "quality": [
+   "initial_layer_print_height", "line_width", "outer_wall_line_width", "inner_wall_line_width", "initial_layer_line_width", "sparse_infill_line_width", "top_surface_line_width",
+   "print_flow_ratio", "seam_position", "seam_gap", "seam_slope_conditional", "wall_generator", "wall_sequence", "wall_direction", "precise_outer_wall",
+   "only_one_wall_top", "only_one_wall_first_layer", "elefant_foot_compensation", "xy_contour_compensation", "xy_hole_compensation", "enable_arc_fitting",
+   "thick_bridges", "hole_to_polyhole", "top_surface_pattern", "bottom_surface_pattern", "internal_solid_infill_pattern",
+   "top_bottom_infill_wall_overlap", "max_volumetric_extrusion_rate_slope", "enable_extra_bridge_layer", "counterbore_hole_bridging"
+  ],
+  "strength": [
+   "top_shell_thickness", "bottom_shell_thickness", "sparse_infill_pattern", "top_surface_density", "bottom_surface_density", "infill_direction",
+   "infill_anchor_max", "alternate_extra_wall", "interlocking_beam"
+  ],
+  "speed": ["outer_wall_speed"],
+  "supports": [
+   "support_type", "support_style", "support_threshold_angle", "support_on_build_plate_only", "support_critical_regions_only", "support_object_xy_distance",
+   "support_top_z_distance", "support_bottom_z_distance", "support_interface_top_layers", "support_interface_bottom_layers", "support_base_pattern",
+   "support_interface_pattern", "tree_support_branch_diameter", "tree_support_tip_diameter", "tree_support_branch_angle", "tree_support_wall_count"
+  ],
+  "adhesion": [
+   "brim_width", "brim_object_gap", "skirt_loops", "skirt_distance", "skirt_height", "skirt_type", "min_skirt_length", "raft_layers", "raft_contact_distance",
+   "raft_expansion", "draft_shield", "tree_support_brim_width"
+  ],
+  "multicolor": [
+   "enable_prime_tower", "prime_tower_width", "prime_tower_brim_width", "prime_tower_auto_position", "wipe_tower_rotation_angle", "wipe_tower_extra_spacing",
+   "wipe_tower_no_sparse_layers", "flush_into_infill", "flush_into_objects", "flush_into_support", "support_filament", "support_interface_filament",
+   "ooze_prevention", "standby_temperature_delta"
+  ],
+  "effects": ["fuzzy_skin", "fuzzy_skin_thickness", "spiral_mode", "ironing_type"]
+ },
+ "hiddenProcess": [
+  "inherits", "print_extruder_id", "print_extruder_variant", "compatible_printers", "compatible_printers_condition", "plugins", "slicing_pipeline_plugin",
+  "print_plugin_config_overrides", "wiping_volumes_extruders", "prime_volume"
+ ],
+ "hiddenOther": [
+  "compatible_prints", "compatible_prints_condition", "filament_extruder_compatibility", "filament_extruder_variant", "filament_plugin_config_overrides",
+  "default_filament_profile", "default_print_profile", "extruder_variant_list", "printer_extruder_id", "printer_extruder_variant", "printer_model",
+  "printer_structure", "printer_technology", "printer_variant", "upward_compatible_machine", "use_3mf"
+ ],
+ "develop": ["resolution", "slice_closing_radius"],
+ "intentByGroup": {
+  "quality": "quality", "advanced": "quality", "overhangs": "quality", "strength": "strength", "speed": "speed", "motion": "speed", "retraction": "speed",
+  "support": "supports", "adhesion": "adhesion", "multimaterial": "multicolor", "special": "effects", "gcode": "output", "profile": "output"
+ },
+ "intentByKey": {
+  "enable_mixed_color_sublayer": "multicolor",
+  "tree_support_auto_brim": "supports",
+  "interlocking_boundary_avoidance": "strength", "interlocking_depth": "strength", "interlocking_beam_layer_count": "strength",
+  "interlocking_beam_width": "strength", "interlocking_orientation": "strength",
+  "bridge_no_support": "supports", "combine_brims": "adhesion"
+ },
+ "intentByPrefix": {"ironing_": "effects", "fuzzy_skin": "effects", "spiral_": "effects", "support_ironing": "supports", "mmu_segmented": "multicolor", "wave_overhang": "effects", "zaa_": "quality"},
+ "showWhenMulticolorKeys": ["enable_mixed_color_sublayer"],
+ "showWhenMulticolorPrefix": ["mmu_segmented"],
+ "newKeys": [
+  {"key": "wave_overhangs", "type": "bool", "label": "Wave overhangs", "default": false, "intent": "effects"},
+  {"key": "wave_overhang_line_spacing", "type": "float", "unit": "mm", "label": "Wave overhang line spacing", "default": 0.35, "min": 0.05},
+  {"key": "wave_overhang_perimeter_overlap", "type": "float", "unit": "mm", "label": "Wave overhang wall overlap", "default": 0.1, "min": 0},
+  {"key": "wave_overhang_print_speed", "type": "float", "unit": "mm/s", "label": "Wave overhang speed", "default": 2, "min": 0.1},
+  {"key": "wave_overhang_flow_mm3_per_mm", "type": "float", "label": "Wave overhang flow (mm3 per mm)", "default": 0.16, "min": 0.02, "max": 1.5},
+  {"key": "wave_overhang_min_length", "type": "float", "unit": "mm", "label": "Wave overhang minimum length", "default": 0, "min": 0},
+  {"key": "wave_overhang_min_new_area", "type": "float", "label": "Wave overhang minimum new area (mm2)", "default": 0.01, "min": 0},
+  {"key": "wave_overhang_max_iterations", "type": "int", "label": "Wave overhang maximum rings", "default": 0, "min": 0}
+ ]
+}

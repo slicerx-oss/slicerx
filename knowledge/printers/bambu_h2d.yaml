@@ -1,0 +1,118 @@
+kind: printer
+schema_version: 1
+id: bambu_h2d
+name: Bambu Lab H2D
+vendor: Bambu Lab
+status: current
+status_note: "Listed in the Bambu US store in 2026-09, also sold as an AMS combo and a Laser Full Combo."
+status_confidence: medium
+status_src: [bambu_store_collection]
+firmware: bambu
+connections: [bambu_lan_mqtt, bambu_cloud, bambu_connect]
+kinematics: corexy
+build_volume_mm:
+  x: 350
+  y: 320
+  z: 325
+  single_nozzle: {x: 325, y: 320, z: 325}
+  dual_nozzle: {x: 300, y: 320, z: 325}
+  total_two_nozzles: {x: 350, y: 320, z: 325}
+  src: [bambu_spec_h2d, "orca:BBL/machine/Bambu Lab H2D 0.4 nozzle.json"]
+  note: "Each nozzle reaches a different area. A print that uses both nozzles must fit in the 300 mm wide overlap."
+extruder: {type: direct_drive, gears: hardened_steel, count: 2, motor: "Permanent magnet synchronous motor", src: [bambu_spec_h2d]}
+hotend:
+  max_temp_c: 350
+  nozzle_diameters_mm: [0.2, 0.4, 0.6, 0.8]
+  nozzle_materials: [hardened_steel]
+  stock_nozzle: {diameter_mm: 0.4, material: hardened_steel}
+  count: 2
+  tool_free_swap: false
+  high_flow_option: true
+  high_flow_note: "Standard flow hotend 40 mm3/s, optional high flow hotend 65 mm3/s (Bambu test on ABS at 280 C). A TPU high flow hotend also has an Orca variant."
+  max_flow_mm3s: {standard: 40, high_flow: 65}
+  src: [bambu_spec_h2d, bambu_wiki_hotend_h2, "orca:BBL/machine/Bambu Lab H2D 0.4 nozzle.json"]
+  note: "Replace nozzles on the printer, then sync the nozzle info. Bambu Studio treats the nozzle field as display only."
+bed:
+  max_temp_c: 120
+  plates: [textured_pei, smooth_pei]
+  included_plates: [textured_pei]
+  plate_size_mm: {x: 350, y: 320}
+  src: [bambu_spec_h2d, bambu_wiki_build_plates]
+  note: "Spec lists Textured PEI and Smooth PEI. Bambu also lists the 350 x 320 mm size for H2D and H2S. The bed holds maximum heater power for no more than 3 minutes."
+enclosure:
+  type: enclosed
+  chamber_heating: active
+  max_chamber_c: 65
+  filtration: [g3_prefilter, hepa_h12, activated_carbon]
+  top_glass_removable: true
+  src: [bambu_spec_h2d, "orca:BBL/machine/Bambu Lab H2D 0.4 nozzle.json"]
+  note: "Orca supports chamber temperature control on H2D. It does not flag air filtration support in the machine profile even though Bambu lists the HEPA and carbon path."
+motion:
+  max_speed_mm_s: 1000
+  max_accel_mm_s2: 20000
+  input_shaping: auto
+  src: [bambu_spec_h2d, bambu_wiki_printer_calibration]
+power:
+  mains: "100 to 120 V AC and 200 to 240 V AC, 50/60 Hz"
+  max_w: {value: 2200, note: "At 220 V. 1320 W at 110 V. The bed holds maximum heater power for no more than 3 minutes.", src: [bambu_spec_h2d], confidence: high}
+  printing_typical_w: {pla: {value: 197}, petg: {value: 150}, pc: {value: 395}, src: [bambu_wiki_power], confidence: medium, note: "Bambu wiki average power for a test print. The kWh figures equal the average watts, so the test appears to run about one hour. Duration is not stated."}
+  idle_w: {range: [24.8, 26.7], src: [bambu_wiki_power], confidence: medium, note: "Bambu wiki reading without network connection. 25 to 27 W with Wi-Fi."}
+  measured_examples:
+    - {job: "Bambu wiki PLA test print", kwh: 0.197, src: [bambu_wiki_power]}
+    - {job: "Bambu wiki PETG test print", kwh: 0.15, src: [bambu_wiki_power]}
+    - {job: "Bambu wiki PC test print", kwh: 0.395, src: [bambu_wiki_power]}
+  note: "Chamber heating is active but no chamber heater wattage is published. After Low Power Mode starts, Bambu says H series peak power is about 860 W."
+  disagreements:
+    - {what: "Maximum power", values: ["2200 W at 220 V and 1320 W at 110 V (H2D spec sheet)", "1800 W and 1250 W (Bambu wiki 'H2 Series' column)"], resolution: "Use the H2D spec sheet. The wiki H2 column matches the H2C spec sheet, not the H2D.", src: [bambu_spec_h2d, bambu_wiki_power]}
+    - {what: "Average power", values: ["1050 W at 220 V and 110 V (H2D spec sheet 'Average Power', undefined)", "197 W for PLA (Bambu wiki)"], resolution: "Use the wiki figure for printing. The spec sheet does not say what the average covers.", src: [bambu_spec_h2d, bambu_wiki_power]}
+sensors: [live_view_camera, nozzle_camera, toolhead_camera, door_sensor, filament_runout, tangle_detection, filament_odometry_with_ams, power_loss_recovery, nozzle_clumping_detection, air_printing_detection, spaghetti_detection, force_sensor]
+sensors_src: [bambu_spec_h2d, bambu_wiki_h2_detection, bambu_wiki_flow_dynamics]
+sensors_note: "Nozzle camera reads nozzle clumping, air printing and spaghetti. The Laser Edition adds a BirdsEye camera and flame detection. The toolhead force (eddy current) sensor feeds flow dynamics."
+builtin_calibrations:
+  - {id: flow_dynamics, what: "Auto K value. Purges at the wiper and reads extrusion force with the toolhead eddy current sensor. Bambu sets the auto K higher than a manual pattern value to avoid corner bulging.", src: [bambu_wiki_flow_dynamics]}
+  - {id: nozzle_offset, what: "Nozzle offset calibration measures the offset between the two nozzles with a sensor and compensates bed height. The ideal height difference is 5 mm.", src: [bambu_wiki_nozzle_offset]}
+  - {id: bed_leveling, what: "Bed leveling and print calibration from Settings, Calibration.", src: [bambu_wiki_printer_calibration]}
+multi_material:
+  - {system: bambu_ams_2_pro, max_units: 4, slots_per_unit: 4, note: "Filament buffer is built in. A 4-in-1 PTFE adapter is needed for 3 or more units, or 2 units plus an external spool. One unit can dry from printer power; more need power adapters.", src: [bambu_wiki_ams_compat, bambu_wiki_ams_faq]}
+  - {system: bambu_ams_ht, max_units: 8, slots_per_unit: 1, note: "Needs external power to dry. Up to 25 colors in the extreme case (4 x 4 + 8 x 1 + external spool).", src: [bambu_wiki_ams_compat, bambu_wiki_amsht_intro]}
+  - {system: bambu_ams, compatible: true, note: "The FAQ says AMS and AMS 2 Pro can print together on X1, P1, H2D and H2S.", src: [bambu_wiki_ams_faq]}
+materials:
+  recommended: [pla, pla_plus, pla_silk, pla_matte, pla_cf, petg, petg_cf, abs, asa, pc, pa6, pa12, pa_cf, pa_gf, tpu_95a, tpu_85a, pva, bvoh]
+  possible: []
+  not_recommended: []
+  unlisted: [hips, pp]
+  src: [bambu_spec_h2d, bambu_wiki_material_table]
+  note: "Spec: PLA, PETG, TPU, PVA, BVOH, ABS, ASA, PC, PA, PET and fiber reinforced PLA, PETG, PA, PET, PC, ABS, ASA, PPA-CF/GF, PPS. TPU 85A is not recommended on high flow nozzles per the material table."
+orca_profile: "orca:BBL/machine/Bambu Lab H2D 0.4 nozzle.json"
+profile_baseline:
+  process: "0.20mm Standard @BBL H2D"
+  values: {wall_loops: 2, top_shell_layers: 5, bottom_shell_layers: 3, sparse_infill_density: "15%", sparse_infill_pattern: grid, outer_wall_speed: 200, inner_wall_speed: 300, sparse_infill_speed: 350, top_surface_speed: 200, travel_speed: 1000, default_acceleration: 8000, outer_wall_acceleration: 5000, top_surface_acceleration: 2000, seam_position: aligned, line_width: 0.42, elefant_foot_compensation: 0.15, support_threshold_angle: 30, retraction_length: 0.8, retraction_speed: 30, z_hop: 0.4}
+  note: "Values shown are for the standard flow nozzle. The high flow variants raise outer wall speed to 500, inner wall to 600 and infill to 600."
+  src: ["orca:BBL/process/0.20mm Standard @BBL H2D.json", "orca:BBL/machine/Bambu Lab H2D 0.4 nozzle.json"]
+pilot_notes:
+  - "Two nozzles. Every filament is assigned to the left or right nozzle. The bed moves about 5 mm when the active nozzle changes, so keep filaments on one nozzle where the plan allows."
+  - "A print that uses both nozzles has a 300 mm wide area. Single nozzle prints can use 325 mm."
+  - "Active chamber heating to 65 C. For ABS, ASA, PC, PA and CF grades mimir may set chamber_temperature and activate_chamber_temp_control. Turn it off for PLA, PETG and TPU."
+  - "For PLA and PETG with the chamber warming, Bambu says remove the top glass lid (PLA above 45 C bed, PETG above 70 C)."
+  - "Time-lapse on H2 series: the printer picks a main nozzle per layer and moves to the purge chute for shots from the other nozzle."
+  - "Nozzle camera AI can stop a print for spaghetti, clumping or air printing. Expect pause events."
+  - "Print history and cover images for the LAN tools need Store Sent Files on External Storage plus a USB drive."
+  - "Nozzle swaps are physical. After any nozzle change, sync nozzle info on the printer and rerun flow dynamics."
+common_issues:
+  - symptom: "Wrong or missing colors after a nozzle switch on dual nozzle prints"
+    cause: "Nozzle offset out of calibration."
+    fix:
+      - {advice: "Run Nozzle Offset Calibration from the printer (Settings, Calibration).", kind: workflow}
+    src: [bambu_wiki_nozzle_offset]
+  - symptom: "Filament clogs in the hotend with a warm chamber"
+    cause: "PLA or TPU running with active chamber heating on."
+    fix:
+      - {key: activate_chamber_temp_control, op: disable, why: "Low temperature filaments do not need a heated chamber."}
+      - {advice: "Take the top glass off for PLA above 45 C bed.", kind: environment}
+    src: [bambu_wiki_material_table, bambu_spec_h2d]
+  - symptom: "Auto flow dynamics K value differs from a manual pattern"
+    cause: "Bambu sets the auto K higher on H2D to prevent corner stacking."
+    fix:
+      - {advice: "Trust the auto value first. Compare corner quality before overriding it with a lower manual value.", kind: workflow}
+    src: [bambu_wiki_flow_dynamics]
+src: [bambu_spec_h2d, bambu_wiki_h2d_intro, bambu_wiki_h2_detection, bambu_wiki_timelapse_h2, ha_bambulab_docs, "orca:BBL/machine/Bambu Lab H2D 0.4 nozzle.json"]

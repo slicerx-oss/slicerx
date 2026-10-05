@@ -1,0 +1,60 @@
+kind: guide
+schema_version: 1
+id: bambu_lan_mode
+name: Bambu LAN only mode, Developer Mode and third party access
+applies_to: [bambu_x1c, bambu_x1e, bambu_p1s, bambu_p1p, bambu_a1, bambu_a1_mini, bambu_h2d, bambu_h2s, bambu_h2c, bambu_p2s, bambu_x2d, bambu_a2l]
+summary: >
+  LAN only mode runs a printer without the Bambu cloud. Developer Mode, turned
+  on inside LAN only mode, restores open control over MQTT and FTP for third
+  party software. Since the January 2025 authorization firmware, printers that
+  stay on the cloud give third party tools read access but block commands
+  unless the tool goes through Bambu Connect.
+facts:
+  - text: "LAN only mode works without internet. Remote start from outside the local network, the Bambu Handy app and print history stop working."
+    src: [bambu_wiki_lan_mode]
+  - text: "Enable it on the printer screen (Settings, LAN Only on X, H2, P2S and A series, or WLAN then LAN Only Mode on P1). The printer shows an access code. Bambu Studio finds it in the Device list with a lock icon, then asks for the code."
+    src: [bambu_wiki_lan_mode]
+  - text: "X series printers need a Micro SD card in the printer to start a new print from Studio in LAN only mode."
+    src: [bambu_wiki_lan_mode]
+  - text: "If the printer and computer are on different VLANs, bind with printer IP plus access code. Bambu Studio does not store the IP, so enter both again after every restart."
+    src: [bambu_wiki_lan_mode]
+  - text: "AI spaghetti detection on X series runs locally. In LAN mode it uses the model in the latest installed firmware."
+    src: [bambu_wiki_lan_mode]
+  - text: "Developer Mode is a second switch under LAN only mode. It needs the printer screen and a risk acknowledgment. It does not require authorization, keeps the pre 2025 behavior, and disables cloud connection."
+    src: [bambu_wiki_developer_mode, bambu_wiki_third_party]
+  - text: "Bambu announced an authorization control system on 2025-01-16. A beta firmware (01.08.03.00) followed on 2025-01-17. It restricts third party slicers and tools that start prints, change parameters or view video."
+    src: [hackaday_bambu_auth]
+  - text: "ha-bambulab documents the cutover firmwares: X1C 01.08.05.00, P1 01.08.02.00, A1 01.05.00.00. Read access still works on any firmware. Write actions (temperatures, axis moves) stop working on cloud connected printers unless LAN and Developer Mode are on. Earlier hybrid mode restrictions began around P1 01.07.00.00."
+    src: [ha_bambulab_docs]
+  - text: "SimplyPrint reports the same split: read data continues, while start, stop, move and heat need Developer Mode plus LAN only on new firmware."
+    src: [simplyprint_bambu_auth]
+  - text: "Bambu Connect is a beta desktop tool for Windows and macOS (Linux in development) that logs in to the cloud, discovers LAN printers, imports 3MF or G-code and sends prints. Live view is not supported. Third party software can hand a file to it with bambu-connect://import-file and the parameters path, name and version 1.0.0."
+    src: [bambu_wiki_bambu_connect, bambu_wiki_third_party]
+  - text: "Bambu also offers a Bambu Local Server SDK by application for commercial integrations, deployable as a Docker container. It covers printer discovery, status, control and print tasks."
+    src: [bambu_wiki_third_party]
+  - text: "Local MQTT runs on the printer at port 8883 with TLS. Username is bblp. The password is the LAN access code. Messages are JSON. Topics are device/{serial}/report and device/{serial}/request."
+    src: [openbambuapi_mqtt]
+  - text: "File upload to the printer uses FTPS on port 990 with implicit TLS, user bblp and the same access code."
+    src: [openbambuapi_ftp]
+  - text: "The MQTT and FTP documentation is community reverse engineering, not an official Bambu specification."
+    src: [openbambuapi_mqtt, openbambuapi_ftp]
+  - text: "The OrcaSlicer Bambu networking plugin is optional and based on non free libraries from Bambu."
+    src: [orca_readme]
+steps:
+  - text: "Decide the need. Slicing only: no network mode needed, export a file. Monitoring plus control from SlicerX or another tool: LAN only plus Developer Mode. Cloud features (Handy, remote start): stay on the cloud and send files through Studio or Bambu Connect."
+  - text: "On the printer open Settings, LAN Only, turn it on, note the IP and access code. Turn on Developer Mode if third party control is needed."
+  - text: "For X series, insert a Micro SD card."
+  - text: "Add the printer in the tool by IP address, serial number and access code."
+  - text: "Test read (status) first, then a harmless write such as a light toggle."
+pilot_actions:
+  - "State which of the printer's connection types is available: bambu_lan_mqtt needs LAN only mode, plus Developer Mode for any write. bambu_connect can send files while the printer stays on the cloud. bambu_cloud goes through the Bambu account and the optional Studio network plugin."
+  - "When a control command is refused on a cloud connected printer with recent firmware, explain the authorization change and offer the two paths: Developer Mode with LAN, or Bambu Connect for file sending."
+  - "Never request or store the access code in a project file. Ask the user to enter it in the connection dialog."
+  - "On X series in LAN mode, check that a Micro SD card is present before sending a print."
+  - "Warn that turning on Developer Mode disconnects the printer from the Bambu cloud, so Handy and remote monitoring stop."
+  - "Do not advise downgrading firmware. State the tradeoff and let the user decide."
+settings:
+  - {advice: "Read only monitoring works on any firmware and connection type.", kind: workflow}
+  - {advice: "Commands (start, stop, heat, move) need Developer Mode plus LAN only on firmware from the 2025 authorization update onward.", kind: workflow}
+  - {advice: "Use the printer IP plus access code binding on segmented networks and re-enter it after each Studio restart.", kind: workflow}
+src: [bambu_wiki_lan_mode, bambu_wiki_developer_mode, bambu_wiki_third_party, bambu_wiki_bambu_connect, hackaday_bambu_auth, ha_bambulab_docs, simplyprint_bambu_auth, openbambuapi_mqtt, openbambuapi_ftp, orca_readme]

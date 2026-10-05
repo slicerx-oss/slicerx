@@ -1,0 +1,28 @@
+{
+  "type": "machine",
+  "name": "fdm_demo_machine_common",
+  "from": "system",
+  "instantiation": "false",
+  "gcode_flavor": "marlin",
+  "printable_height": "250",
+  "retraction_length": [
+    "0.8"
+  ],
+  "retraction_speed": [
+    "30"
+  ],
+  "z_hop": [
+    "0.4"
+  ],
+  "machine_max_acceleration_extruding": [
+    "20000",
+    "20000"
+  ],
+  "machine_max_speed_x": [
+    "500",
+    "200"
+  ],
+  "use_relative_e_distances": "1",
+  "machine_min_extruding_rate": "0,0",
+  "machine_min_travel_rate": "0,0"
+}

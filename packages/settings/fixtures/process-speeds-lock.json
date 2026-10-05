@@ -1,0 +1,6 @@
+{
+ "comment": "FNV-1a of packages/profiles/process-speeds.json. Written by js/process-speeds.test.ts (UPDATE_GOLDEN=1) after the private parity check passes.",
+ "orcaCommit": "97700c5a",
+ "bambuStudioCommit": "da8b44e",
+ "file": "f28d9b0e"
+}

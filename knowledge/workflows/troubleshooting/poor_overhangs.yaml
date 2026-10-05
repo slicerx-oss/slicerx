@@ -1,0 +1,84 @@
+kind: troubleshoot
+schema_version: 1
+id: poor_overhangs
+name: Poor overhangs and bridges
+aliases: [drooping overhangs, sagging bridges, curling overhangs, rough underside, messy bridges, overhang droop, support scars]
+camera_signs:
+  - "Underside of an overhang or an arch looks rough, droops or has loose strands"
+  - "Bridges sag in the middle, or bridge lines are separated and stringy"
+  - "Outer edges of steep overhangs curl upward into the nozzle path"
+  - "Surface above supports is rough or has gaps"
+log_signs:
+  - "A print that stops with extrusion resistance or spaghetti detection after a curled overhang is struck by the nozzle"
+tree:
+  start: q_angle
+  nodes:
+    q_angle: {ask: "Is the overhang shallower than about 45 degrees from the bed (more horizontal), with no supports under it?", "yes": c_needs_support, "no": q_bridge}
+    q_bridge: {ask: "Is the problem mainly on flat bridges that span a gap, rather than on angled walls?", "yes": q_bridge_length, "no": q_fan}
+    q_bridge_length: {ask: "Is the bridge long (more than a few centimeters), fast, or printed with high flow?", "yes": c_bridge_settings, "no": q_fan}
+    q_fan: {ask: "Is the part cooling fan weak, blocked or set low on overhangs, or the nozzle above the material's usual range?", "yes": c_cooling, "no": q_curling}
+    q_curling: {ask: "Do the overhang edges curl upward and get hit by the nozzle?", "yes": c_curling, "no": c_above_supports}
+causes:
+  - id: c_needs_support
+    name: Overhang too shallow for no support
+    category: model
+    likelihood: high
+    checks:
+      - "Bambu treats overhang angles below 45 degrees from the bed as needing supports, and above 45 degrees as fine without."
+    fixes:
+      - {key: enable_support, op: enable, why: "Bambu recommends enabling supports when the overhang angle is under 45 degrees.", src: [bambu_wiki_overhang]}
+      - {advice: "Reorient the part so the overhang is steeper, or split the model. Prusa's rule of thumb is to rotate the part until bridges and supports are avoided.", kind: orientation}
+      - {advice: "Use normal supports for heavy overhangs and tree supports for detailed or irregular models, per Bambu's guide.", kind: workflow}
+    src: [bambu_wiki_overhang, prusa_kb_poor_bridging, bambu_wiki_spaghetti]
+    confidence: high
+  - id: c_bridge_settings
+    name: Bridge speed, flow or length
+    category: settings
+    likelihood: medium
+    checks:
+      - "Sag in the middle of a long bridge, or lines pulled apart."
+    fixes:
+      - {advice: "Lower the bridge speed and the bridge flow ratio so the line is pulled taut behind the nozzle. Prusa advises printing a bridging test with several flow values in one plate to find the best value.", kind: workflow}
+      - {advice: "Lower the bridge flow ratio in small steps. Prusa says the first bridging layer should print with lower flow, and to test several values on one plate.", kind: workflow}
+      - {advice: "Lower the bridge speed. Prusa recommends slower bridges and lower bridge flow together.", kind: workflow}
+      - {advice: "For a very long bridge, add a support enforcer partway across so the span is shorter, as Prusa suggests.", kind: workflow}
+    src: [prusa_kb_poor_bridging]
+    confidence: medium
+  - id: c_cooling
+    name: Weak cooling or nozzle too hot on overhangs
+    category: settings
+    likelihood: high
+    checks:
+      - "The fan is running, its duct is clear, and the fan is set high on overhangs. Prusa says to check the fan is working and the shroud is not obstructed."
+    fixes:
+      - {key: overhang_fan_speed, op: at_least, value: 90, why: "Bambu profiles run the overhang fan at 90 percent for PETG and Bambu's overhang guide uses 100 percent for PLA. Keep it high where the material allows.", src: [bambu_wiki_overhang, "orca:OrcaFilamentLibrary/filament/Bambu/Bambu PETG Basic @base.json"]}
+      - {key: nozzle_temperature, op: decrease_by, value: 5, why: "Bambu suggests lowering the nozzle temperature by about 5 to 10 C for steep overhangs, staying inside the filament's range.", src: [bambu_wiki_overhang]}
+      - {key: enable_overhang_speed, op: enable, why: "Bambu's overhang guide recommends slowing down for overhangs so cooling has time to work.", src: [bambu_wiki_overhang]}
+      - {advice: "On Prusa, check the print fan and shroud are not melted or blocked. On Bambu, check the aux fan and door or lid settings.", kind: hardware}
+    src: [bambu_wiki_overhang, prusa_kb_warping]
+    confidence: medium
+  - id: c_curling
+    name: Curling edges strike the nozzle
+    category: settings
+    likelihood: medium
+    checks:
+      - "Edges of overhangs curl up, and the nozzle hits them on the next pass."
+    fixes:
+      - {key: z_hop, op: at_least, value: 0.2, why: "Ellis says about 0.2 to 0.3 mm of z lift is usually enough to clear curling. Too much causes stringing.", src: [ellis_layer_shifting]}
+      - {key: slowdown_for_curled_perimeters, op: enable, why: "Slows the nozzle over curled edges so it is less likely to knock the part."}
+      - {advice: "Cool the layer more and lower the nozzle temperature a little. Ellis also lists overheating as a cause of curling and shifts.", kind: material}
+    src: [ellis_layer_shifting, bambu_wiki_overhang]
+    confidence: low
+  - id: c_above_supports
+    name: Rough surface above supports
+    category: settings
+    likelihood: medium
+    checks:
+      - "Prusa treats the surface above supports like a bridge, so it needs the same care. Check the support z gap, interface layers and fan on the interface."
+    fixes:
+      - {advice: "Tune the support top Z distance and the number of interface layers. A smaller gap and denser interface give a smoother underside but make removal harder. Change one at a time.", kind: workflow}
+      - {advice: "On Prusa, make sure detect bridging perimeters is on and raise the fan on those surfaces. Prusa notes the bridge fan has material limits.", kind: workflow}
+    src: [prusa_kb_poor_bridging, bambu_wiki_spaghetti]
+    confidence: low
+related: [spaghetti, stringing, layer_separation]
+src: [bambu_wiki_overhang, prusa_kb_poor_bridging]

@@ -1,0 +1,56 @@
+kind: guide
+schema_version: 1
+id: bambu_nozzle_swap
+name: Swapping Bambu nozzles and hotends
+applies_to: [bambu_x1c, bambu_x1e, bambu_p1s, bambu_p1p, bambu_a1, bambu_a1_mini, bambu_h2d, bambu_h2s, bambu_h2c, bambu_p2s, bambu_x2d, bambu_a2l]
+summary: >
+  Bambu nozzles come as complete hotends. A series swaps are toolless. X1, P1
+  and H2 series need the front cover off and the printer powered down. In
+  Studio the nozzle field is display only, so a swap is a physical change
+  followed by a sync on the printer and a fresh flow dynamics run.
+facts:
+  - text: "X1 and P1 series hotends come with hardened steel or stainless steel nozzles in 0.2, 0.4, 0.6 and 0.8 mm. The complete hotend assembly is sold in separate X1 (X1 and X1C only, not X1E) and P1 versions."
+    src: [bambu_wiki_hotend_x1]
+  - text: "The A1 hotend is toolless and swaps in a few minutes. A1 offers 0.2, 0.4, 0.6, 0.8 mm hotends plus a high flow hotend."
+    src: [bambu_wiki_hotend_a1]
+  - text: "H2D ships with a 0.4 mm nozzle and takes 0.2, 0.6 and 0.8 mm nozzles plus a high flow hotend. Swap steps include lowering the bed, removing the top glass and the toolhead front cover."
+    src: [bambu_wiki_hotend_h2]
+  - text: "Bambu Studio treats the nozzle information as display only. Studio 02.01.01.52 disabled editing for X1 and P1, and the H2 page says the same, because nozzle replacement must happen on the printer."
+    src: [bambu_wiki_hotend_x1, bambu_wiki_hotend_h2]
+  - text: "After swapping to a different specification, update the nozzle info on the printer screen before printing."
+    src: [bambu_wiki_hotend_a1, bambu_wiki_hotend_h2]
+  - text: "Always power off and let the hotend cool before maintenance to avoid shorting exposed toolhead wires."
+    src: [bambu_wiki_hotend_x1, bambu_wiki_hotend_a1, bambu_wiki_hotend_h2]
+  - text: "Fiber filled filament (PLA-CF, PETG-CF, PA-CF and GF grades, PPS, PPA) needs a hardened steel nozzle. Bambu marks PLA-CF and PETG-CF as not recommended on 0.4 mm high flow nozzles."
+    src: [bambu_wiki_material_table]
+  - text: "0.2 mm nozzles do not accept many wood, marble, PLA-CF, PETG-CF and PA-CF materials. PLA Wood, PLA Marble and PVA are not compatible with 0.2 mm."
+    src: [bambu_wiki_material_table]
+  - text: "TPU 85A is not compatible with 0.4 mm high flow nozzles and not recommended on 0.6 and 0.8 mm high flow. TPU 90A is not recommended on high flow nozzles."
+    src: [bambu_wiki_material_table]
+  - text: "Flush volume depends on nozzle size. A 0.2 mm nozzle extrudes slowly, so each filament change takes much longer."
+    src: [bambu_wiki_reduce_waste]
+  - text: "Recalibrate flow dynamics after replacing a nozzle because of manufacturing tolerances. Bambu says all printers with a 0.2 mm hotend often give inaccurate auto results, so use the manual pattern there."
+    src: [bambu_wiki_flow_dynamics]
+  - text: "H2C swaps hotends with an induction hotend rack. Nozzle offset calibration runs for the toolhead hotend and each rack hotend, so it takes longer with more hotends."
+    src: [bambu_wiki_nozzle_offset]
+  - text: "X2D has a main and an auxiliary hotend. Bambu recommends the main hotend for PLA Silk, PETG-CF, ASA-CF, PA6-CF and TPU for AMS."
+    src: [bambu_spec_x2d]
+steps:
+  - text: "Power off. Let the hotend cool to room temperature. Cut or unload the filament."
+  - text: "Open the covers the printer needs: front cover on A1, top glass and toolhead front cover on H2 series."
+  - text: "A1 series: slide the buckle to unlock and lift out the hotend by its heatsink. Insert the new one at a slight tilt, press it in until the buckle locks."
+  - text: "X1, P1, H2: follow the printer's replace hotend page. Handle the silicone sock and wiring with power off."
+  - text: "Power on. Enter the new nozzle diameter and type on the printer screen."
+  - text: "In Studio pick the matching printer variant (for example 0.6 mm nozzle) so layer height, line width and flow limits match."
+  - text: "Run flow dynamics. Consider flow rate calibration for a very different nozzle."
+pilot_actions:
+  - "Match the slicer printer preset variant to the nozzle in use. Do not edit the nozzle diameter as a stand alone setting."
+  - "Block CF, GF and other abrasive filament unless the user confirms a hardened steel nozzle."
+  - "After a nozzle change, propose flow dynamics calibration."
+  - "When the user moves to a high flow nozzle, use the high flow variant of the filament preset and warn about TPU limits."
+  - "For 0.2 mm nozzles, recommend the manual flow dynamics pattern and warn that multi color prints flush slowly."
+settings:
+  - {advice: "Select the printer preset variant that matches the physical nozzle. Studio no longer lets you edit nozzle info by hand.", kind: hardware}
+  - {advice: "Confirm the nozzle material before abrasive filament. Stainless nozzles wear out on fiber filled filament.", kind: hardware}
+  - {key: layer_height, op: at_most, value: 0.15, why: "With a 0.2 mm nozzle keep layers under 75 percent of the nozzle diameter."}
+src: [bambu_wiki_hotend_x1, bambu_wiki_hotend_a1, bambu_wiki_hotend_h2, bambu_wiki_material_table, bambu_wiki_flow_dynamics, bambu_wiki_nozzle_offset, bambu_spec_x2d]

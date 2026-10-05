@@ -1,0 +1,252 @@
+kind: filament
+schema_version: 1
+id: pva
+name: PVA (water soluble support)
+category: support
+orca_filament_type: PVA
+aliases: [PVA, PVA+, Polyvinyl alcohol, water soluble support, Bambu PVA, Generic PVA, PVA HF]
+related: [bvoh, pla]
+summary: >
+  Water soluble support material for printing complex overhangs and internal
+  voids in PLA. It dissolves in room temperature water over hours. It is
+  extremely sensitive to moisture: it must be bone dry, printed from a dry
+  container, and stored with desiccant. Prints slowly and clogs nozzles more
+  easily than normal filament. Needs a multi material setup (AMS, MMU or dual
+  nozzle).
+use_for: [support interfaces and bases under PLA parts, internal cavities and captive parts, models with tight support contact surfaces]
+avoid_for: [structural parts, single extruder printers, PETG or ABS pairing (BVOH is the usual choice for PETG), humid rooms without a drybox, long idle times in a hot nozzle]
+
+nozzle_temp_c:
+  min: 190
+  max: 250
+  typical: 220
+  confidence: medium
+  src:
+    - "orca:OrcaFilamentLibrary/filament/Generic PVA @System.json"
+    - "orca:OrcaFilamentLibrary/filament/Bambu/Bambu PVA @base.json"
+    - "orca:BBL/filament/Bambu PVA @BBL X1C.json"
+    - bambu_wiki_material_table
+    - prusa_kb_water_soluble
+  note: "Bambu wiki lists 190 to 240 for dry PVA and BVOH. Bambu PVA profile is 210 to 250 with 220 in base and 240 on X1C. Prusa uses 195 C for PVA+. Orca generic uses 220. Match it to the model filament, since PVA should print near PLA temperatures."
+first_layer_nozzle_temp_c:
+  min: 220
+  max: 240
+  typical: 220
+  confidence: low
+  src: ["orca:OrcaFilamentLibrary/filament/Bambu/Bambu PVA @base.json", "orca:BBL/filament/Bambu PVA @BBL X1C.json", "orca:OrcaFilamentLibrary/filament/Generic PVA @System.json"]
+  note: "220 in base and generic profiles, 240 on X1C."
+bed_temp_c:
+  min: 35
+  max: 65
+  typical: 55
+  confidence: medium
+  src: [bambu_wiki_material_table, prusa_kb_water_soluble, "orca:OrcaFilamentLibrary/filament/Bambu/Bambu PVA @base.json"]
+  note: "Bambu lists 35 to 45 on the Cool Plate and 45 to 65 on other plates. Prusa uses 60. PVA sticks better to a PLA raft than to PEI."
+chamber_temp_c: null
+enclosure:
+  level: optional
+  confidence: medium
+  src: [bambu_wiki_material_table, bambu_wiki_pva_guide]
+  note: "Not needed for warping. With the bed above 45 C on an enclosed printer, open the door or remove the top cover, since PVA softens below 60 C. A sealed, dry feed path matters much more than the chamber."
+
+plates:
+  - {plate: bambu_cool_plate, fit: good, bed_temp_c: {min: 35, max: 45}, release_agent: none, confidence: medium, src: [bambu_wiki_material_table], note: "PVA is usually printed as support on a PLA part, so the plate follows the PLA."}
+  - {plate: bambu_engineering_plate, fit: glue, bed_temp_c: {min: 45, max: 65}, release_agent: glue_stick, confidence: medium, src: [bambu_wiki_material_table], note: "Glue required on the Engineering Plate."}
+  - {plate: bambu_high_temp_plate, fit: good, bed_temp_c: {min: 45, max: 65}, release_agent: none, confidence: medium, src: [bambu_wiki_material_table], note: "Smooth PEI."}
+  - {plate: textured_pei, fit: good, bed_temp_c: {min: 45, max: 65}, release_agent: none, confidence: medium, src: [bambu_wiki_material_table], note: "Bambu textured PEI."}
+  - {plate: smooth_pei, fit: ok, bed_temp_c: {min: 55, max: 60}, release_agent: none, confidence: low, src: [prusa_kb_water_soluble], note: "Prusa says PVA and BVOH stick much better to a 1 to 2 layer PLA raft than to bare PEI."}
+
+cooling:
+  fan_min_pct: {min: 100, max: 100, typical: 100}
+  fan_max_pct: {min: 100, max: 100, typical: 100}
+  overhang_fan_pct: {typical: 100}
+  no_fan_first_layers: {typical: 1}
+  min_layer_time_s: {min: 4, max: 7, typical: 7}
+  confidence: medium
+  src: ["orca:OrcaFilamentLibrary/filament/Bambu/Bambu PVA @base.json", "orca:OrcaFilamentLibrary/filament/Generic PVA @System.json", "orca:Prusa/filament/Generic PVA @Prusa MK3.5.json"]
+  note: "Orca Bambu PVA uses 100 percent fan and 7 s. Generic uses 4 s. Prusa MK3.5 uses 7 s."
+
+drying:
+  need: required
+  oven: {temp_c: {min: 55, max: 85}, hours: 8}
+  ams_2_pro: null
+  ams_ht: {temp_c: 85, hours: 18}
+  printer_bed: {temp_c: {min: 90, max: 100}, hours: 12, note: "Enclosed Bambu printers only, spool covered by its box"}
+  keep_dry_in_use: required
+  confidence: medium
+  src: [bambu_wiki_drying, bambu_wiki_material_table, bambu_wiki_pva_guide, prusa_kb_water_soluble]
+  note: >
+    Bambu's material table says 55 C for 8 h in an oven, its drying page says 75 to
+    85 C for 8 to 12 h, and 85 C for 18 h in the AMS HT, which may still not fully
+    dry it. The AMS 2 Pro is not compatible. Put dried PVA into a sealed dry
+    environment right away without letting it cool in open air. Keep below 20 percent
+    RH with calcium chloride desiccant (silica gel is not enough). At about 55 percent
+    RH freshly dried PVA gets damp in 1 to 3 hours. Dry PVA is stiffer than PLA Basic when bent.
+    Damp PVA is soft, sticky and clogs.
+
+nozzle:
+  abrasive: false
+  hardened_required: false
+  min_diameter_mm: 0.4
+  orca_required_hrc: 3
+  confidence: medium
+  src: [bambu_wiki_material_table, prusa_kb_water_soluble]
+  note: "Bambu lists dry PVA and BVOH as not compatible with 0.2 mm nozzles. Prusa warns PVA is more prone to clogging than BVOH. Do not leave PVA sitting in a hot nozzle: purge or retract it when a print pauses."
+
+extrusion:
+  flow_ratio: {min: 0.95, max: 1.0, typical: 0.95, confidence: medium, src: ["orca:OrcaFilamentLibrary/filament/Bambu/Bambu PVA @base.json", "orca:BBL/filament/Bambu PVA @BBL X1C.json", "orca:Prusa/filament/Generic PVA @Prusa MK3.5.json"], note: "Bambu base and generic 0.95, X1C and Prusa MK3.5 1.0."}
+  max_volumetric_speed_mm3s:
+    standard_hotend: {min: 4, max: 6, typical: 4}
+    confidence: medium
+    src: ["orca:OrcaFilamentLibrary/filament/Generic PVA @System.json", "orca:OrcaFilamentLibrary/filament/Bambu/Bambu PVA @base.json", "orca:BBL/filament/Bambu PVA @BBL X1C.json", "orca:Prusa/filament/Generic PVA @Prusa MK3.5.json"]
+    note: "Generic and Bambu base 4, X1C 6, Prusa MK3.5 4. Keep low to avoid clogs and poor interface quality."
+  retraction_mm:
+    direct_drive: null
+    confidence: low
+    src: ["orca:OrcaFilamentLibrary/filament/Bambu/Bambu PVA @base.json"]
+    note: "No PVA specific retraction is defined. Bambu and Orca profiles inherit the printer setting. Keep retraction short and limit travel to reduce oozing and heat soak in the nozzle."
+    retraction_speed_mm_s: {typical: 30, confidence: low, src: ["orca:BBL/machine/Bambu Lab X1 Carbon 0.4 nozzle.json"], note: "No PVA specific value. The Bambu printer profile uses 30 mm/s and filament profiles inherit it."}
+  pressure_advance:
+    direct_drive: null
+    bowden: null
+    confidence: low
+    src: [klipper_pressure_advance]
+    note: "No PVA specific value is published. Use the printer default or the paired PLA value."
+
+layer_height:
+  fraction_of_nozzle: {min: 0.2, max: 0.7, typical: 0.5}
+  at_0_4_mm: {min: 0.08, max: 0.28, typical: 0.2}
+  smart_layer:
+    quality_mode: "PVA is support only, so sleipnir should follow the model filament. Thin layers on the model do not need thin PVA layers away from the interface."
+    strength_mode: "Strength is not a goal for PVA. Keep it at the model layer height so the interface lines up with the model surface."
+    thin_layer_cooling: "PVA runs slow (4 to 6 mm3/s) and keeps a 7 s minimum layer time, so it is rarely the layer time limit on the part. Keep the nozzle from sitting idle, because PVA degrades and clogs if left hot."
+  confidence: low
+  src: ["orca:BBL/machine/fdm_machine_common.json", bambu_wiki_adaptive_layer, "orca:OrcaFilamentLibrary/filament/Bambu/Bambu PVA @base.json", bambu_wiki_pva_guide]
+  note: "No maker states a PVA layer band. It prints with the model layer height, within Bambu's tested 0.08 to 0.28 mm range for a 0.4 mm nozzle. Bambu only lists PVA for 0.4 mm and larger nozzles."
+smart_layer:
+  min_ratio: 0.2
+  max_ratio: 0.7
+  modes:
+    quality: {min_ratio: 0.3, max_ratio: 0.5}
+    strength: {min_ratio: 0.3, max_ratio: 0.5}
+  family: soluble_supports
+  note: "PVA (water soluble support) prints well from 0.2 to 0.7 of the nozzle diameter; Quality mode uses 0.3 to 0.5 and Strength mode 0.3 to 0.5, since parts weaken once layers pass half the nozzle."
+  confidence: low
+  src: ["orca:BBL/machine/fdm_machine_common.json", "bambu_wiki_adaptive_layer", "orca:OrcaFilamentLibrary/filament/Bambu/Bambu PVA @base.json", "bambu_wiki_pva_guide", "cnckitchen_layer_height", "stojkovic_2023_layer_height_annealing"]
+speeds:
+  first_layer_mm_s: {typical: 30}
+  volumetric_note: "Keep PVA at 4 to 6 mm3/s; see extrusion. Prusa's soluble interface profile prints the interface at 40 mm/s and the base at 80 mm/s. Bambu suggests grid supports with speeds set for PVA in its example project files."
+  confidence: low
+  src: ["orca:Prusa/process/0.20mm SOLUBLE INTERFACE @MK4S 0.4.json", bambu_wiki_pva_guide, bambu_wiki_spaghetti]
+  note: "print_speed_mm_s is left out because no maker sheet with a PVA speed range could be fetched. First layer speed is an expert value."
+first_layer:
+  fan_off_layers: 1
+  speed_mm_s: {typical: 30}
+  bed_first_layer_note: "Prusa uses 60 C on smooth PEI or satin sheets. Bambu profiles use 45 C on Cool Plate and 55 C on PEI."
+  squish_note: "Prusa says PVA and BVOH stick much better to PLA than to PEI. Start the support on a 1 to 2 layer PLA raft, or design so PVA never touches the bed."
+  confidence: medium
+  src: [prusa_kb_water_soluble, "orca:OrcaFilamentLibrary/filament/Bambu/Bambu PVA @base.json"]
+structure:
+  walls: {note: "Not applicable. PVA prints only as support base or interface, never as a wall."}
+  infill: {pattern_hint: rectilinear, density_note: "Prusa's soluble profiles use a rectilinear support base at 2 mm spacing with a 0.1 mm interface spacing. Bambu says avoid tree supports with PVA because they are tall, thin and collapse, and use normal grid supports."}
+  confidence: medium
+  src: ["orca:Prusa/process/0.20mm SOLUBLE INTERFACE @MK4S 0.4.json", bambu_wiki_pva_guide]
+supports:
+  interface_materials: [pva]
+  soluble_pairing: {material: pva, dissolve: "water; several hours to a dozen hours, warm water and agitation help, PLA models under 50 C, about 20 ml per gram"}
+  top_z_distance_mm: {typical: 0}
+  interface_layers: {typical: 3}
+  note: "Use PVA for the interface only when possible. Prusa's interface profile uses a top Z gap of 0, 3 interface layers and PVA on the interface; the full profile uses 5 layers and PVA for the whole support. Pairs with PLA (similar temperatures). Bambu says PVA is not compatible as support for PETG, so use BVOH there. Bambu lets you set PVA as both base and interface but advises grid, not tree, supports."
+  confidence: medium
+  src: ["orca:Prusa/process/0.20mm SOLUBLE INTERFACE @MK4S 0.4.json", "orca:Prusa/process/0.20mm SOLUBLE FULL @MK4S 0.4.json", prusa_kb_water_soluble, bambu_wiki_pva_guide, bambu_wiki_petg_guide]
+
+multi_material:
+  bambu_ams: compatible
+  bambu_ams_lite: compatible
+  bambu_ams_ht: compatible
+  confidence: medium
+  src: [bambu_wiki_material_table, bambu_wiki_pva_guide]
+  note: "Only when dry. Bambu says dry PVA is hard enough for AMS and AMS lite, but damp PVA becomes soft and sticky and no longer feeds. Bambu Studio recommends setting PVA as both support base and support interface, using normal (grid) supports rather than tree supports. Expect long purge and flush volumes when changing between PVA and PLA."
+
+properties:
+  density_g_cm3: {typical: 1.27, min: 1.24, max: 1.27, src: ["orca:OrcaFilamentLibrary/filament/Bambu/Bambu PVA @base.json", "orca:OrcaFilamentLibrary/filament/Generic PVA @System.json"]}
+  softening_temp_c: {typical: 45, src: ["orca:OrcaFilamentLibrary/filament/Bambu/Bambu PVA @base.json", bambu_wiki_material_table], note: "Orca temperature_vitrification is 45 C. Bambu groups PVA with filaments that soften below 60 C."}
+  relative:
+    heat: 1
+    impact: 1
+    tensile: 1
+    scale: "1 to 5, Bambu star ratings"
+    src: [bambu_wiki_material_table]
+  dissolving:
+    water_ratio: "About 20 ml of water per 1 g of PVA or BVOH."
+    time: "Hours in room temperature water. Warm water is faster but should not be very hot."
+    src: [prusa_kb_water_soluble, bambu_wiki_pva_guide]
+    note: "Bambu shows a part after a few hours of immersion and then after complete immersion."
+safety:
+  fumes: low
+  note: "Prusa describes PVA and BVOH as non toxic and odorless."
+food_contact:
+  note: "Not for food contact. Dry PVA absorbs water and additives are not disclosed."
+  src: [prusa_kb_food_safe]
+
+failure_modes:
+  - id: nozzle_clog
+    symptom: Extrusion stops, brown or bubbly output, clicking
+    causes: [damp filament, filament sat in the hot nozzle, nozzle too hot, high flow rate]
+    fixes:
+      - {advice: "Dry the spool fully and print from a sealed box with desiccant. Cold pull the nozzle afterward.", kind: material}
+      - {key: filament_max_volumetric_speed, op: at_most, value: 4, why: "Slow flow keeps PVA from clogging."}
+      - {advice: "Do not leave PVA parked hot. Purge or retract it during long pauses.", kind: workflow}
+  - id: stringing
+    symptom: Hairs and bubbles on the interface
+    causes: [wet filament, hot nozzle]
+    fixes:
+      - {advice: "Redry the spool. PVA is damp again in 1 to 3 hours at about 55 percent RH.", kind: material}
+      - {key: nozzle_temperature, op: decrease_by, value: 5, why: "Cooler PVA oozes less."}
+  - id: poor_support_adhesion
+    symptom: Support does not stick to the plate or to the model
+    causes: [PVA bonds poorly to PEI, interface gap too large]
+    fixes:
+      - {advice: "Start the support on a 1 to 2 layer PLA raft. Prusa says PVA sticks much better to PLA than to PEI.", kind: workflow}
+      - {key: support_top_z_distance, op: set, value: 0, why: "Prusa recommends 0 mm distance for water soluble supports. The material dissolves away so there is no clean gap needed."}
+  - id: tall_support_collapse
+    symptom: Tall thin supports fall over
+    causes: [tree supports with PVA]
+    fixes:
+      - {key: support_type, op: set, value: "normal(auto)", why: "Bambu advises normal (grid) supports over tree supports for PVA."}
+  - id: slow_dissolve
+    symptom: Support takes very long to dissolve
+    causes: [too little water, cold water, thick support blocks]
+    fixes:
+      - {advice: "Use about 20 ml of water per gram, refresh the water, and use warm (not very hot) water.", kind: workflow}
+  - id: purge_contamination
+    symptom: PLA specks in PVA or PVA in the PLA part after tool changes
+    causes: [inadequate purge]
+    fixes:
+      - {key: flush_multiplier, op: increase_by, value: 0.3, why: "Prusa says frequent changes need more purge to avoid PLA contamination."}
+
+disagreements:
+  - topic: oven drying temperature
+    positions:
+      - {claim: "55 C for 8 h", src: [bambu_wiki_material_table]}
+      - {claim: "75 to 85 C for 8 to 12 h", src: [bambu_wiki_drying]}
+    resolution: "Both are Bambu figures for their own PVA. Start at 55 C and go up only if the spool label allows. PVA grades differ. AMS HT 85 C for 18 h is a Bambu setting."
+  - topic: nozzle temperature
+    positions:
+      - {claim: "195 C for PVA+", src: [prusa_kb_water_soluble]}
+      - {claim: "210 to 250 C, 220 C default", src: ["orca:OrcaFilamentLibrary/filament/Bambu/Bambu PVA @base.json"]}
+    resolution: "Default 220 C, or the paired PLA temperature. Lower for Prusa PVA+ brands."
+
+pilot_defaults:
+  nozzle_temperature: 220
+  nozzle_temperature_initial_layer: 220
+  cool_plate_temp: 45
+  textured_plate_temp: 55
+  hot_plate_temp: 55
+  fan_min_speed: 100
+  fan_max_speed: 100
+  overhang_fan_speed: 100
+  close_fan_the_first_x_layers: 1
+  slow_down_layer_time: 7
+  filament_flow_ratio: 0.95
+  filament_max_volumetric_speed: 4

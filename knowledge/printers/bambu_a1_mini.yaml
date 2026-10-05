@@ -1,0 +1,95 @@
+kind: printer
+schema_version: 1
+id: bambu_a1_mini
+name: Bambu Lab A1 mini
+vendor: Bambu Lab
+status: current
+status_note: "Listed in the Bambu US store in 2026-09."
+status_confidence: medium
+status_src: [bambu_store_collection]
+firmware: bambu
+connections: [bambu_lan_mqtt, bambu_cloud, bambu_connect]
+kinematics: bedslinger
+build_volume_mm: {x: 180, y: 180, z: 180, src: [bambu_store_a1_mini, "orca:BBL/machine/Bambu Lab A1 mini 0.4 nozzle.json"]}
+extruder: {type: direct_drive, src: [bambu_store_a1_mini]}
+hotend:
+  max_temp_c: 300
+  nozzle_diameters_mm: [0.2, 0.4, 0.6, 0.8]
+  nozzle_materials: [stainless_steel, hardened_steel]
+  stock_nozzle: {diameter_mm: 0.4, material: stainless_steel}
+  tool_free_swap: true
+  high_flow_option: null
+  src: [bambu_store_a1_mini, bambu_wiki_hotend_a1]
+  note: "The A1 hotend page covers the A1 series and its toolless design. A high flow hotend is documented for A1, not stated for the mini."
+bed:
+  max_temp_c: 80
+  plates: [textured_pei, smooth_pei, bambu_supertack_plate]
+  included_plates: [textured_pei]
+  src: [bambu_store_a1_mini, bambu_wiki_build_plates]
+  note: "80 C is low. Do not plan PETG on a hot bed above 80 C or any high temperature filament."
+enclosure:
+  type: open
+  chamber_heating: none
+  max_chamber_c: null
+  filtration: []
+  src: [bambu_store_a1_mini]
+motion:
+  max_speed_mm_s: 500
+  max_accel_mm_s2: 10000
+  input_shaping: auto
+  src: [bambu_store_a1_mini, "orca:BBL/machine/Bambu Lab A1 mini 0.4 nozzle.json", bambu_wiki_printer_calibration]
+  note: "Store says 10000 mm/s2. The Orca machine profile carries 20000. The slicer process profile prints at 6000."
+power:
+  mains: "100 to 240 V AC, 50/60 Hz"
+  max_w: {value: 150, note: "Same figure at 110 V and 220 V. Bambu wiki table only, the store spec page does not list electrical figures.", src: [bambu_wiki_power], confidence: medium}
+  printing_typical_w: {pla: {value: 80}, petg: {value: 75}, src: [bambu_wiki_power], confidence: medium, note: "Bambu wiki average power over a short test print (about 18 to 23 minutes)."}
+  idle_w: {range: [6.1, 7.0], src: [bambu_wiki_power], confidence: medium, note: "Bambu wiki reading without network connection. 6.1 to 7.3 W with Wi-Fi."}
+  measured_examples:
+    - {job: "Bambu wiki test print, PLA, 17 min 54 s", kwh_range: [0.024, 0.025], src: [bambu_wiki_power]}
+    - {job: "Bambu wiki test print, PETG, 23 min 13 s", kwh_range: [0.028, 0.031], src: [bambu_wiki_power]}
+  note: "The wiki lists no voltage range for the A1 mini. Its 150 W limit is the lowest of any printer in this set."
+sensors: [chamber_camera, filament_runout, filament_odometry, tangle_detection, power_loss_recovery, nozzle_clumping_detection, build_plate_detection, force_sensor]
+sensors_src: [bambu_store_a1_mini, bambu_wiki_a1_clumping, bambu_wiki_a_plate_detection]
+builtin_calibrations:
+  - {id: flow_dynamics, what: "Auto K value using the toolhead force (eddy current) sensor at the purge wiper. Needs A series firmware 01.04.00.00 or newer.", src: [bambu_wiki_flow_dynamics]}
+  - {id: bed_leveling, what: "Automatic bed leveling.", src: [bambu_wiki_printer_calibration]}
+  - {id: vibration_compensation, what: "Resonance compensation.", src: [bambu_wiki_printer_calibration]}
+multi_material:
+  - {system: bambu_ams_lite, max_units: 1, slots_per_unit: 4, note: "Shipped tubes in the mini combo are 580 and 700 mm. Keep them short to avoid false tangle alarms.", src: [bambu_wiki_amslite_faq, bambu_wiki_ams_compat]}
+materials:
+  recommended: [pla, pla_plus, pla_silk, pla_matte, petg, tpu_95a, pva, bvoh]
+  possible: [tpu_85a]
+  not_recommended: [abs, asa, pc, pa6, pa12, pa_cf, pa_gf, pla_cf, petg_cf]
+  unlisted: [hips, pp]
+  src: [bambu_store_a1_mini, bambu_wiki_material_table]
+  note: "Store: PLA, PETG, TPU, PVA ideal; ABS, ASA, PC, PA, PET and fiber reinforced not recommended."
+orca_profile: "orca:BBL/machine/Bambu Lab A1 mini 0.4 nozzle.json"
+profile_baseline:
+  process: "0.20mm Standard @BBL A1M"
+  values: {wall_loops: 2, top_shell_layers: 5, bottom_shell_layers: 3, sparse_infill_density: "15%", sparse_infill_pattern: grid, outer_wall_speed: 200, inner_wall_speed: 300, sparse_infill_speed: 270, top_surface_speed: 200, travel_speed: 700, default_acceleration: 6000, outer_wall_acceleration: 5000, top_surface_acceleration: 2000, seam_position: aligned, line_width: 0.42, elefant_foot_compensation: 0, support_threshold_angle: 30, retraction_length: 0.8, retraction_speed: 30, z_hop: 0.4}
+  src: ["orca:BBL/process/0.20mm Standard @BBL A1M.json", "orca:BBL/machine/Bambu Lab A1 mini 0.4 nozzle.json"]
+pilot_notes:
+  - "Build volume is 180 mm on each axis. Check part fit before slicing and suggest splitting or scaling."
+  - "Bed maxes at 80 C. Cap bed temperature at 80 for PETG and use Textured PEI or SuperTack."
+  - "Open frame. Block ABS, ASA, PC, nylon and fiber grades."
+  - "AMS lite limits apply: no soft TPU, no third party CF or GF, no absorbent PVA in the AMS."
+  - "The default process profile has no elephant foot compensation (0), unlike the A1 (0.075)."
+common_issues:
+  - symptom: "Nozzle clumping alarm mid print"
+    cause: "First layer lifted and the nozzle wrapped in filament."
+    fix:
+      - {advice: "Wash the plate or add glue stick. Slow the first layer.", kind: workflow}
+      - {key: initial_layer_speed, op: at_most, value: 30, why: "A slower first layer gives lines time to bond."}
+    src: [bambu_wiki_a1_clumping]
+  - symptom: "Excess purge or false tangle alarms with AMS lite"
+    cause: "Tubes too long for the mini."
+    fix:
+      - {advice: "Cut or reposition the tubes so the AMS lite sits close to the printer.", kind: hardware}
+    src: [bambu_wiki_amslite_faq]
+disagreements:
+  - topic: "max acceleration"
+    positions:
+      - {claim: "10000 mm/s2", src: [bambu_store_a1_mini]}
+      - {claim: "20000 mm/s2 in the Orca machine profile", src: ["orca:BBL/machine/Bambu Lab A1 mini 0.4 nozzle.json"]}
+    resolution: "Use 10000 as the hardware figure."
+src: [bambu_store_a1_mini, "orca:BBL/machine/Bambu Lab A1 mini 0.4 nozzle.json"]

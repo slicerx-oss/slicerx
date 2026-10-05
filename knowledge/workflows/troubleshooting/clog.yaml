@@ -1,0 +1,104 @@
+kind: troubleshoot
+schema_version: 1
+id: clog
+name: Nozzle clog
+aliases: [clogged nozzle, blocked hotend, jam, filament will not extrude, clicking extruder, extruder skipping, partial clog]
+camera_signs:
+  - "Nothing comes out of the nozzle, or the print shows missing layers and gaps that get worse"
+  - "Filament curls sideways or up around the nozzle when extruding by hand"
+  - "A small blob of plastic stuck to the outside of the nozzle or a ball of plastic around the tip"
+  - "Ground or flattened filament visible at the extruder gear, or a thin neck on filament that entered the hotend"
+log_signs:
+  - "Bambu HMS 0300-1A00-0002-0002: the extrusion force sensor repeatedly detected excessive force and judged the nozzle is clogged (A1 series)"
+  - "Bambu HMS 0300-0900-0002-0004: extrusion resistance abnormal (jam in the toolhead, clog, wrong filament type in the slicer, tangled external spool)"
+  - "Bambu HMS 12xx-2000-0002-0006 family: failed to extrude AMS lite filament, extruder may be clogged or filament too thin"
+  - "Klipper: no clog error exists. Look for a print that ran with no extrusion, or heater warnings if the hotend is the problem"
+tree:
+  start: q_manual_extrude
+  nodes:
+    q_manual_extrude: {ask: "Heat the nozzle a little above the filament's usual temperature and extrude by hand. Does the plastic come out straight and steady?", "yes": q_feed, "no": q_high_temp_history}
+    q_high_temp_history: {ask: "Did you recently print a high temperature material (PAHT-CF, PPA, PPS, PC) and then a low temperature one (PLA, PETG, TPU) without a purge?", "yes": c_material_switch, "no": q_chamber_hot}
+    q_chamber_hot: {ask: "Was the chamber or room hot, the bed above 70 C with the top glass on, or is the hotend fan weak or stopping?", "yes": c_heat_creep, "no": q_debris}
+    q_debris: {ask: "Is the filament abrasive, glitter or fiber filled, or a cheap spool with variable diameter, or do you see debris on the filament?", "yes": c_debris_particles, "no": c_worn_nozzle}
+    q_feed: {ask: "Does it extrude fine by hand but still click or under-extrude in the print?", "yes": q_gear, "no": c_wet_filament}
+    q_gear: {ask: "Is the filament worn, dented or ground at the extruder gear, or does the spool or AMS path have drag?", "yes": c_feed_path_or_gear, "no": q_speed}
+    q_speed: {ask: "Do the problems only appear when printing fast, thick layers or a cold nozzle?", "yes": c_flow_limit, "no": c_heat_creep}
+causes:
+  - id: c_material_switch
+    name: Residue from a high temperature material
+    category: material
+    likelihood: high
+    checks:
+      - "Clog appears right after changing from a high temperature filament to PLA, PETG or TPU."
+    fixes:
+      - {advice: "Follow Bambu's switch procedure: set the nozzle to 250 to 300 C, unload the hot material by hand, load the new filament and let it push out the residue while cooling, then lower to 220 to 240 C and keep extruding until it flows cleanly.", kind: workflow}
+    src: [bambu_wiki_avoid_clogs]
+    confidence: high
+  - id: c_heat_creep
+    name: Heat creep
+    category: environment
+    likelihood: high
+    checks:
+      - "Filament is soft or swollen above the heatbreak, and clogs return after warm prints. See the heat_creep troubleshooter."
+    fixes:
+      - {advice: "For PLA and PETG, open the door or remove the top cover, and lower the bed temperature where possible. Bambu recommends keeping the chamber at least 10 C below the filament glass transition.", kind: environment}
+      - {advice: "Check the hotend cooling fan spins at full speed all the time. Replace it if it stops or slows.", kind: hardware}
+    filaments: [pla, petg, tpu_95a, tpu_85a]
+    src: [bambu_wiki_heat_creep, bambu_wiki_avoid_clogs, ellis_extruder_skipping]
+    confidence: high
+  - id: c_debris_particles
+    name: Debris or abrasive particles in the nozzle
+    category: material
+    likelihood: medium
+    checks:
+      - "Partial clog with filament coming out curled. Particulates in carbon fiber or glitter filament can be larger than the nozzle hole."
+    fixes:
+      - {advice: "Clear it with the official procedure for your printer: manual extrude at higher temperature, pin tool, then cold pull. For abrasive filaments use a hardened nozzle and replace it when worn.", kind: hardware}
+      - {advice: "Use quality filament with tight diameter control. Bambu recommends 1.75 plus or minus 0.03 mm and checking the cross section for impurities.", kind: material}
+    src: [bambu_wiki_a1_nozzle_clog, bambu_wiki_avoid_clogs, prusa_kb_clogged_nozzle]
+    confidence: high
+  - id: c_worn_nozzle
+    name: Damaged or worn nozzle or heater
+    category: hardware
+    likelihood: medium
+    checks:
+      - "Repeated clogs after a proper clean, or the same spot that keeps failing."
+    fixes:
+      - {advice: "Replace the nozzle. Ellis says to try a new nozzle first because it is often a partial clog. Bambu notes persistent extrusion problems can point to a worn or damaged heater cartridge.", kind: hardware}
+      - {advice: "On Bambu machines, re-tighten the two hotend screws and check the hotend for skew.", kind: hardware}
+    src: [ellis_extruder_skipping, bambu_wiki_avoid_clogs, bambu_wiki_first_layer_x1]
+    confidence: medium
+  - id: c_wet_filament
+    name: Wet filament
+    category: material
+    likelihood: medium
+    checks:
+      - "Popping at the nozzle, bubbles in the strand or rough walls."
+    fixes:
+      - {advice: "Dry the filament and store it sealed with desiccant. Water vaporizing in the nozzle causes bubbles, stringing and poor flow, and engineering materials with carbon or glass fiber are more sensitive.", kind: material}
+    src: [bambu_wiki_avoid_clogs]
+    confidence: high
+  - id: c_feed_path_or_gear
+    name: Extruder gear or feed path drag
+    category: hardware
+    likelihood: medium
+    checks:
+      - "Feel for drag pulling filament from the spool to the extruder. Check the gear for filament dust or dents."
+    fixes:
+      - {advice: "Clean the feed gear. Replace kinked PTFE, clear a stuck AMS buffer spring and untangle the spool. If several AMS spools have wear marks, clean the internal hub knurled teeth and odometer wheel per the AMS guide.", kind: hardware}
+    printers: [bambu, prusa]
+    src: [prusa_kb_clogged_nozzle, bambu_wiki_ams2pro_loading, bambu_wiki_hms_0700_4000_0002_0004]
+    confidence: medium
+  - id: c_flow_limit
+    name: Printing too fast or too cold for the hotend
+    category: settings
+    likelihood: medium
+    checks:
+      - "Bambu warns printing too fast (for example Ludicrous mode) may not let the plastic melt fully, and printing too cold can under-melt and clog."
+    fixes:
+      - {advice: "Print within the filament's recommended temperature range and lower speed or the filament max volumetric speed until extrusion is steady.", kind: workflow}
+      - {key: nozzle_temperature, op: increase_by, value: 5, why: "A little more heat helps at high flow. Stay inside the filament range.", src: [ellis_perimeter_separation, bambu_wiki_avoid_clogs]}
+    src: [bambu_wiki_avoid_clogs, ellis_perimeter_separation]
+    confidence: medium
+related: [under_extrusion, heat_creep, ams_jam, stringing]
+src: [bambu_wiki_avoid_clogs, bambu_wiki_a1_nozzle_clog, prusa_kb_clogged_nozzle, ellis_extruder_skipping]

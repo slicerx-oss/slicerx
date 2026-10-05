@@ -1,0 +1,25 @@
+kind: calibration
+schema_version: 1
+id: retraction
+name: Retraction
+order: 5
+purpose: "Find the shortest retraction that stops stringing and oozing for this spool."
+run_when: ["Stringing on a dry spool after temperature and pressure advance are tuned"]
+prereqs: [temperature, pressure_advance, flow_ratio]
+before_you_start: "Dry the spool and check the nozzle is not leaking. Wet filament strings at any retraction length."
+orca_test:
+  menu: "Calibration > Retraction test"
+  defaults:
+    direct_drive: {start_mm: 0, end_mm: 2, step_mm: 0.1}
+    bowden: {start_mm: 1, end_mm: 6, step_mm: 0.2}
+  read_value: "Measure the height of the cleanest section and find the Calib_Retraction_tower comment at that height in the G-code preview."
+  src: ["orca_wiki:retraction_calib"]
+read_result:
+  - "The best length is the shortest one that gives the cleanest tower."
+  - "PLA and ABS often look clean from the bottom; 0.2 to 0.4 mm is then enough."
+  - "Stringing all the way up means wet filament or a leaking nozzle, not retraction."
+read_result_src: ["orca_wiki:retraction_calib"]
+camera_reading: {feasible: yes, look_for: "Strings between the two towers at each height. Backlight helps."}
+writes:
+  - {key: retraction_length, op: set, value_from: {calibration: retraction, field: length_mm}, why: "Shortest length that printed clean. Saved as the filament's retraction override."}
+src: ["orca_wiki:retraction_calib", ellis_retraction]

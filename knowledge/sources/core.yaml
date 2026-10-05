@@ -1,0 +1,69 @@
+# Source registry shared by every knowledge file.
+# A citation is either a source id from this directory ("bambu_wiki_material_table")
+# or a prefixed path ("orca:OrcaFilamentLibrary/filament/Generic PETG @System.json"),
+# expanded with the prefix url_template. Each area keeps its own file in
+# knowledge/sources/ so writers do not collide; ids are unique across all files.
+kind: sources
+prefixes:
+  - prefix: orca
+    title: OrcaSlicer bundled printer, process and filament profiles
+    publisher: OrcaSlicer project
+    type: slicer_profile
+    url_template: "https://github.com/SoftFever/OrcaSlicer/blob/7d42ad17a45c1c44d07f382f14244223565e9cb8/resources/profiles/{path}"
+    retrieved: 2026-09-29
+    note: "Values read with inheritance resolved. Bambu per printer overrides live in files named '@BBL <printer>'. List values in newer profiles follow filament_extruder_variant order: Direct Drive Standard, Direct Drive High Flow, Direct Drive Extra High Flow, Bowden Standard, Bowden High Flow, Bowden Extra High Flow."
+  - prefix: orca_src
+    title: OrcaSlicer source code
+    publisher: OrcaSlicer project
+    type: slicer_source
+    url_template: "https://github.com/SoftFever/OrcaSlicer/blob/7d42ad17a45c1c44d07f382f14244223565e9cb8/{path}"
+    retrieved: 2026-09-29
+sources:
+  - id: bambu_wiki_material_table
+    title: "Filament guide: printer, nozzle, AMS and plate compatibility, drying and glue tables"
+    publisher: Bambu Lab
+    type: manufacturer_wiki
+    url: https://wiki.bambulab.com/en/general/filament-guide-material-table
+    retrieved: 2026-09-29
+    note: "Nozzle temperature column is stated as plus or minus 10 C. Relative star ratings for heat deflection, impact and tensile strength."
+  - id: bambu_wiki_drying
+    title: "Filament drying recommendations"
+    publisher: Bambu Lab
+    type: manufacturer_wiki
+    url: https://wiki.bambulab.com/en/filament-acc/filament/dry-filament
+    retrieved: 2026-09-29
+    note: "Appendix I table: bed drying, forced air oven, AMS 2 Pro and AMS HT temperatures and times. AMS 2 Pro drying tops out at 65 C."
+  - id: prusa_kb_petg
+    title: "PETG"
+    publisher: Prusa Research
+    type: manufacturer_kb
+    url: https://help.prusa3d.com/article/petg_2059
+    retrieved: 2026-09-29
+  - id: klipper_pressure_advance
+    title: "Pressure advance"
+    publisher: Klipper project
+    type: firmware_docs
+    url: https://www.klipper3d.org/Pressure_Advance.html
+    retrieved: 2026-09-29
+    note: "Typical values 0.050 to 1.000, high end usually only with bowden. Tuning tower factor 0.005 direct drive, 0.020 bowden. Suggests a small slicer retract such as 0.75 mm after tuning."
+  - id: ellis_pa
+    title: "Ellis' Print Tuning Guide: pressure and linear advance"
+    publisher: Ellis3DP (community)
+    type: community_guide
+    url: https://ellis3dp.com/Print-Tuning-Guide/articles/pressure_linear_advance/introduction.html
+    retrieved: 2026-09-29
+    note: "PA changes with filament brand, nozzle size, large temperature changes, input shaper on or off, and hotend or extruder changes. Calibrate extruder first."
+  - id: orca_wiki_calibration
+    title: "OrcaSlicer calibration tests"
+    publisher: OrcaSlicer project
+    type: slicer_docs
+    url: https://github.com/SoftFever/OrcaSlicer/wiki/Calibration
+    retrieved: 2026-09-29
+    note: "Tests: temperature, volumetric speed, pressure advance (and adaptive PA), flow ratio, retraction, tolerance, cornering, input shaping, VFA."
+  - id: prusa_kb_food_safe
+    title: "Food safe FDM printing"
+    publisher: Prusa Research
+    type: manufacturer_kb
+    url: https://help.prusa3d.com/article/food-safe-fdm-printing_112313
+    retrieved: 2026-09-29
+    note: "Layer grooves harbor bacteria; brass nozzles contain about 2 percent lead; Prusa does not recommend prints as food containers without a food safe coating and a stainless nozzle."

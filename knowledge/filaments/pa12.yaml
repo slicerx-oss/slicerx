@@ -1,0 +1,250 @@
+kind: filament
+schema_version: 1
+id: pa12
+name: Nylon 12 (PA12)
+category: engineering
+orca_filament_type: PA
+aliases: [PA12, Nylon 12, Polyamide 12]
+related: [pa6, pa_cf]
+summary: >
+  Flexible, impact resistant nylon with lower moisture uptake and less warping
+  than PA6 or PA66, so it holds size better in humid air. It still needs dry
+  filament, a glue layer and a closed printer, and it prints slowly with the fan
+  off. Sourced numbers here are thin: most manufacturer data is for the carbon
+  fiber grade, and unfilled PA12 has no sourced data sheet in this base.
+use_for: [flexible clips and hinges, living hinges, tough housings, chemical resistant parts, parts that live in humid places]
+avoid_for: [parts that need high stiffness (use PA12-CF or PA6-CF), first time nylon users who have no dry box, open frame printers in a cold room]
+
+nozzle_temp_c:
+  min: 240
+  max: 300
+  typical: 260
+  confidence: low
+  src: [polymaker_wiki_nylon_types, polymaker_pis_pa12_cf, "orca:OrcaFilamentLibrary/filament/Generic PA @System.json"]
+  note: >
+    Polymaker's wiki gives 240 to 260 C for PA12. Its PA12-CF runs 260 to 300 C
+    and Orca's generic PA allows 260 to 300 (default 280). Start at 260 for
+    unfilled PA12 and follow the spool label.
+first_layer_nozzle_temp_c:
+  min: 255
+  max: 280
+  typical: 260
+  confidence: low
+  src: [polymaker_wiki_nylon_types, "orca:OrcaFilamentLibrary/filament/Generic PA @System.json"]
+  note: "No PA12 specific figure. Use the main nozzle temperature. Orca generic PA uses 280."
+bed_temp_c:
+  min: 25
+  max: 100
+  typical: 50
+  confidence: low
+  src: [polymaker_pis_pa12_cf, polymaker_wiki_by_material, "orca:OrcaFilamentLibrary/filament/Generic PA @System.json"]
+  note: "Polymaker PA12-CF specifies 25 to 50 C and warns not to exceed 50 C. Orca's generic PA uses 100 C. Follow the spool maker, and start cool for Polymaker style grades."
+chamber_temp_c:
+  min: 25
+  max: 50
+  typical: 40
+  confidence: low
+  src: [polymaker_pis_pa12_cf, bambu_wiki_x1e_chamber]
+  note: >
+    Polymaker PA12-CF asks for 25 to 50 C and says not to exceed 50 C, so a
+    passive enclosure is enough and chamber heating above 50 C can hurt that
+    grade. Bambu's X1E guide defaults PA to 60 C chamber for its own high
+    temperature nylons. Do not apply 60 C to a Polymaker style PA12.
+enclosure:
+  level: recommended
+  confidence: low
+  src: [polymaker_pis_pa12_cf, polymaker_wiki_nylon_types, bambu_wiki_material_table]
+  note: "PA12 warps less than PA6 (Polymaker wiki), and its PA12-CF wants only 25 to 50 C ambient. A closed printer still keeps drafts off and helps large parts. Bambu treats all nylons as enclosed printer materials."
+
+plates:
+  - {plate: bambu_cool_plate, fit: avoid, confidence: low, src: [bambu_wiki_material_table], note: "No Bambu Cool Plate route for PA, and glue is needed."}
+  - {plate: bambu_engineering_plate, fit: glue, bed_temp_c: {min: 25, max: 100}, release_agent: glue_stick, confidence: low, src: [bambu_wiki_material_table, polymaker_pis_pa12_cf], note: "Bambu lists the Engineering plate with glue for nylon."}
+  - {plate: textured_pei, fit: glue, bed_temp_c: {min: 25, max: 50}, release_agent: pvp_glue, confidence: low, src: [polymaker_pis_pa12_cf], note: "Polymaker: almost any surface with a thin PVP glue or Magigoo PA coat. A flex plate helps release."}
+  - {plate: garolite_g10, fit: good, release_agent: none, confidence: low, src: [polymaker_wiki_by_material], note: "Polymaker suggests garolite or PVA glue for nylon."}
+
+cooling:
+  fan_min_pct: {min: 0, max: 0, typical: 0}
+  fan_max_pct: {min: 0, max: 60, typical: 0}
+  overhang_fan_pct: {min: 0, max: 30, typical: 30}
+  no_fan_first_layers: {typical: 3}
+  min_layer_time_s: {typical: 2}
+  confidence: low
+  src: [polymaker_pis_pa12_cf, "orca:OrcaFilamentLibrary/filament/Generic PA @System.json"]
+  note: "Polymaker says turn the cooling fan off for PA12-CF and print at 30 to 60 mm/s. Orca generic PA allows 0 to 60 percent with 30 on overhangs."
+
+drying:
+  need: required
+  oven: {temp_c: 80, hours: 12}
+  ams_2_pro: null
+  ams_ht: {temp_c: 85, hours: 12}
+  printer_bed: {temp_c: {min: 90, max: 100}, hours: 12, note: "Enclosed Bambu printers only, spool covered. Bambu PA figure, not a PA12 figure."}
+  keep_dry_in_use: recommended
+  confidence: low
+  src: [polymaker_pis_pa12_cf, bambu_wiki_drying, polymaker_wiki_nylon_types]
+  note: >
+    Polymaker dries PA12-CF at 80 C for 12 h in a convection oven, only if it
+    has absorbed moisture, and says it is less sensitive to moisture and
+    should be stored in a dry box. Bambu's PA figures (80 C for 8 to 12 h, AMS
+    HT 85 C for 12 h) are the safe fallback. AMS 2 Pro is not compatible with
+    nylon drying. Do not over dry: Polymaker says extremely dry filament can
+    hurt processing.
+
+nozzle:
+  abrasive: false
+  hardened_required: false
+  min_diameter_mm: 0.4
+  orca_required_hrc: 3
+  confidence: low
+  src: [polymaker_pis_pa12_cf, "orca:OrcaFilamentLibrary/filament/Generic PA @System.json"]
+  note: "Unfilled PA12 is not abrasive. PA12-CF is: use hardened steel. Orca generic PA lists 40 HRC, probably inherited from the filled profile."
+
+extrusion:
+  flow_ratio: {min: 0.96, max: 1.0, typical: 1.0, confidence: low, src: ["orca:OrcaFilamentLibrary/filament/Generic PA @System.json"], note: "Orca generic PA 1.0. No PA12 specific value. Confirm with a flow test."}
+  max_volumetric_speed_mm3s:
+    standard_hotend: {min: 8, max: 11, typical: 8}
+    high_flow_hotend: {typical: 12}
+    confidence: low
+    src: ["orca:OrcaFilamentLibrary/filament/Generic PA @System.json", "orca:Prusa/filament/Generic PA @Prusa MK3.5.json"]
+    note: "Orca generic PA: 8 standard and 12 high flow. Prusa MK3.5 generic PA: 11. Polymaker PA12-CF prints at 30 to 60 mm/s."
+  retraction_mm:
+    direct_drive: {min: 0.4, max: 1.4, typical: 0.8}
+    confidence: low
+    src: [bambu_tds_pa6_cf_v3]
+    note: "No PA12 source. Bambu's nylon data sheets suggest 0.8 to 1.4 mm. Tune by strings."
+  retraction_speed_mm_s: {min: 20, max: 40, typical: 30, confidence: low, src: [bambu_tds_pa6_cf_v3, "orca:BBL/machine/Bambu Lab X1 Carbon 0.4 nozzle.json"], note: "No PA12 source. Borrowed from Bambu's nylon data sheet (20 to 40 mm/s) and the Bambu machine default of 30."}
+  pressure_advance:
+    direct_drive: {min: 0.02, max: 0.05, typical: 0.02}
+    confidence: low
+    src: ["orca:Prusa/filament/Generic PA @Prusa MK3.5.json", klipper_pressure_advance, ellis_pa]
+    note: "Prusa's generic PA profile stores 0.02 on MK3.5. Klipper and Ellis both say to calibrate per filament."
+
+layer_height:
+  fraction_of_nozzle: {min: 0.25, max: 0.7, typical: 0.5}
+  at_0_4_mm: {min: 0.1, max: 0.28, typical: 0.2}
+  smart_layer:
+    quality_mode: "Unfilled PA12 can print at 0.1 to 0.16 mm for detail and holds thin features better than PA6 because it shrinks less. Dry it first."
+    strength_mode: "PA12 bonds well between layers. Use 0.2 to 0.28 mm for functional parts, and keep the chamber warm rather than adding air."
+    thin_layer_cooling: "Polymaker runs PA12-CF with the fan off. Profiles use a 2 s minimum layer time, so small layers slow down rather than needing fan."
+  basis: expert
+  confidence: low
+  src: ["orca:Prusa/machine/fdm_machine_common.json", "orca:BBL/machine/Bambu Lab X1 Carbon 0.6 nozzle.json", "orca:BBL/process/0.20mm Standard @BBL X1C.json", polymaker_pis_pa12_cf, polymaker_wiki_nylon_types]
+  note: "No maker gives a layer height for PA12. Numbers come from Orca machine limits and the standard 0.4 mm presets. Polymaker says PA12 has fewer warping issues than PA6."
+smart_layer:
+  min_ratio: 0.25
+  max_ratio: 0.7
+  modes:
+    quality: {min_ratio: 0.25, max_ratio: 0.5}
+    strength: {min_ratio: 0.35, max_ratio: 0.5}
+  family: nylon_and_composites
+  note: "Nylon 12 (PA12) prints well from 0.25 to 0.7 of the nozzle diameter; Quality mode uses 0.25 to 0.5 and Strength mode 0.35 to 0.5, since parts weaken once layers pass half the nozzle."
+  confidence: low
+  src: ["orca:Prusa/machine/fdm_machine_common.json", "orca:BBL/machine/Bambu Lab X1 Carbon 0.6 nozzle.json", "orca:BBL/process/0.20mm Standard @BBL X1C.json", "polymaker_pis_pa12_cf", "polymaker_wiki_nylon_types", "cnckitchen_layer_height", "stojkovic_2023_layer_height_annealing"]
+speeds:
+  print_speed_mm_s: {min: 30, max: 60}
+  first_layer_mm_s: {min: 20, max: 50, typical: 40}
+  volumetric_note: "Polymaker gives 30 to 60 mm/s for PA12-CF, used here as a proxy for unfilled PA12. Real speed is capped by max volumetric speed (see extrusion)."
+  confidence: low
+  src: [polymaker_pis_pa12_cf, "orca:BBL/process/0.20mm Standard @BBL X1C.json", "orca:Prusa/process/0.20mm SPEED @MK4S 0.4.json"]
+  note: "First layer: Bambu Standard preset 50 mm/s, Prusa MK4S preset 40 mm/s."
+first_layer:
+  fan_off_layers: 3
+  speed_mm_s: {min: 20, max: 50, typical: 40}
+  bed_first_layer_note: "Polymaker runs PA12-CF with the bed at 25 to 50 C on a garolite sheet or PVP glue. Bambu's general nylon guidance is 100 to 120 C on glued plates. Use the surface's own range."
+  squish_note: "No PA12 specific squish guidance was found. Glue stick or garolite matters more than nozzle height."
+  confidence: low
+  src: ["orca:BBL/process/0.20mm Standard @BBL X1C.json", "orca:Prusa/process/0.20mm SPEED @MK4S 0.4.json", polymaker_pis_pa12_cf, bambu_wiki_material_table]
+structure:
+  walls: {min: 2, typical: 3, note: "PA12 is tough and flexible, so 3 walls suit most functional parts. Extra walls help under bending load."}
+  infill: {pattern_hint: gyroid, density_note: "15 to 30 percent. PA12 warps less than PA6, so denser infill is less risky."}
+  basis: expert
+  confidence: low
+  src: ["orca:BBL/process/0.20mm Standard @BBL X1C.json", "orca:BBL/process/0.20mm Strength @BBL X1C.json"]
+supports:
+  interface_materials: ["Bambu Support for PA/PET", abs, asa]
+  soluble_pairing: {material: bvoh, dissolve: "water"}
+  top_z_distance_mm: {typical: 0.2}
+  interface_layers: {typical: 2}
+  note: "Nylon welds to nylon supports. Bambu lists Support for PA/PET (now discontinued) for CF and GF nylons and PET-CF and names Bambu ABS and ASA as alternatives. Bambu does not list PA12, so treat this as a proxy. BCN3D lists BVOH as compatible with PA, but BVOH must be kept dry and needs a multi material printer."
+  confidence: low
+  src: [bambu_store_support_filaments, bcn3d_bvoh_page, "orca:BBL/process/0.20mm Standard @BBL X1C.json"]
+
+multi_material:
+  bambu_ams: unknown
+  bambu_ams_lite: not_recommended
+  bambu_ams_ht: unknown
+  confidence: low
+  src: [bambu_wiki_material_table]
+  note: "No PA12 rating. Bambu only lists its PA-CF and PAHT-CF as AMS compatible."
+
+properties:
+  density_g_cm3: {typical: 1.04, src: ["orca:OrcaFilamentLibrary/filament/Generic PA @System.json"], note: "Orca generic PA value. Not a PA12 data sheet figure."}
+  heat_deflection_c: {at_1_8_mpa: 105, src: [polymaker_pis_pa12_cf], note: "PA12-CF (carbon filled), annealed at 80 C for 6 h. Unfilled PA12 is lower."}
+  annealing: {temp_c: 80, hours: 6, src: [polymaker_pis_pa12_cf], note: "Polymaker recommends annealing PA12-CF parts at 80 C for 6 h. Tensile strength rises from 43.6 to 71.6 MPa and bending strength from 48.2 to 110 MPa in its test."}
+  moisture: {level: low, src: [polymaker_wiki_nylon_types, polymaker_pis_pa12_cf], note: "Polymaker: lower moisture absorption than PA6 and PA66, and PA12-CF keeps its properties after moisture conditioning. No numeric figure sourced."}
+  relative:
+    heat: 4
+    impact: 3
+    tensile: 4
+    scale: "1 to 5, Bambu star ratings for PA in general, not PA12 specific"
+    src: [bambu_wiki_material_table]
+safety:
+  fumes: medium
+  note: "Prusa says a ventilated room or enclosure is a must for nylon because of odor and ultrafine particles. Ventilate and use activate_air_filtration on Bambu X, P and H series."
+  src: [prusa_kb_nylon, bambu_wiki_x1e_chamber]
+food_contact:
+  note: "Not food safe as printed."
+  src: [prusa_kb_food_safe]
+
+failure_modes:
+  - id: warping
+    symptom: Corners lift or the base curls
+    causes: [bed too hot for this grade, no glue, drafts, cold chamber]
+    fixes:
+      - {key: brim_type, op: set, value: outer_only, why: "A brim adds hold against shrinkage."}
+      - {key: brim_width, op: at_least, value: 8, why: "Wider brims resist corner lift on large nylon parts."}
+      - {key: fan_max_speed, op: at_most, value: 20, why: "Polymaker prints PA12 with the fan off."}
+      - {key: initial_layer_speed, op: at_most, value: 30, why: "A slow first layer bonds better."}
+      - {advice: "Use PVP glue or Magigoo PA. Polymaker PA12-CF wants the bed at 25 to 50 C and not above 50 C. Follow the spool label for other brands.", kind: material}
+  - id: wet_filament
+    symptom: Steam, popping, foamy extrusion, rough walls
+    causes: [wet filament]
+    fixes:
+      - {advice: "Dry at 80 C for 12 h. Store in a dry box.", kind: material}
+  - id: stringing
+    symptom: Strings and ooze
+    causes: [wet filament, too hot, retraction too short]
+    fixes:
+      - {key: nozzle_temperature, op: decrease_by, value: 5, why: "Nylon is runny when hot."}
+      - {key: retraction_length, op: increase_by, value: 0.2, why: "More retraction relieves pressure before travel."}
+  - id: support_fused
+    symptom: Support will not come off cleanly
+    causes: [part left exposed to moist air]
+    fixes:
+      - {advice: "Polymaker says to remove self-support structure right after printing, before the part absorbs moisture and the support bonds hard.", kind: workflow}
+
+disagreements:
+  - topic: bed temperature
+    positions:
+      - {claim: "25 to 50 C, do not exceed 50 C", src: [polymaker_pis_pa12_cf]}
+      - {claim: "100 C (generic nylon profile)", src: ["orca:OrcaFilamentLibrary/filament/Generic PA @System.json"]}
+    resolution: "Use the spool maker's number. No unfilled PA12 data sheet is sourced here, so ask the user for the brand."
+  - topic: chamber temperature
+    positions:
+      - {claim: "25 to 50 C ambient, do not exceed 50 C", src: [polymaker_pis_pa12_cf]}
+      - {claim: "60 C default for PA in Bambu Studio on X1E", src: [bambu_wiki_x1e_chamber]}
+    resolution: "Cap chamber at 50 C unless the spool label says higher."
+
+pilot_defaults:
+  nozzle_temperature: 260
+  nozzle_temperature_initial_layer: 260
+  eng_plate_temp: 50
+  hot_plate_temp: 50
+  textured_plate_temp: 50
+  fan_min_speed: 0
+  fan_max_speed: 0
+  overhang_fan_speed: 30
+  close_fan_the_first_x_layers: 3
+  slow_down_layer_time: 2
+  filament_flow_ratio: 1.0
+  filament_max_volumetric_speed: 8
+  retraction_length: 0.8

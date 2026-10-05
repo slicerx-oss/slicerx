@@ -1,0 +1,174 @@
+# mimir eval scenarios: plain requests to settings.
+# Printer ids follow the demo printers fixture: bay-1 X1 Carbon with AMS, bay-2 P1S with AMS, bay-3 MK4S,
+# bay-4 Voron 2.4 (Klipper), bay-5 K1 Max (offline).
+kind: eval_suite
+schema_version: 1
+id: intent
+evals:
+  - id: ev01_petg_brackets_deadline
+    category: intent
+    prompt: "I want 12 functional brackets in PETG, strong, by tomorrow"
+    context:
+      printers: demo
+      model: bracket.stl
+      loaded: {bay-1: [pla, petg], bay-2: [petg], bay-3: [pla]}
+      nozzle: {bay-1: {diameter_mm: 0.4, material: hardened_steel}, bay-2: {diameter_mm: 0.4, material: stainless_steel}}
+      now: "2026-09-30T14:00"
+      permissions: {slice: allow, queue: ask, start: ask, profile: ask}
+    expect:
+      tools:
+        must: [kb.intent, kb.filament, settings.plan, slice]
+        may: [kb.printer, orient, arrange, estimate, spoolman.check]
+        must_not: ["settings.apply:profile"]
+      goals: [strength, speed]
+      material: petg
+      checks:
+        - {key: wall_loops, is: at_least, value: 4}
+        - {key: sparse_infill_density, is: between, value: [20, 40]}
+        - {key: sparse_infill_pattern, is: one_of, value: [gyroid, grid, cubic, adaptivecubic]}
+        - {key: layer_height, is: between, value: [0.2, 0.28]}
+        - {key: nozzle_temperature, is: between, value: [240, 260]}
+        - {key: fan_max_speed, is: at_most, value: 50}
+        - {key: curr_bed_type, is: one_of, value: [Textured PEI Plate, Engineering Plate]}
+      must_mention: ["orientation so the load runs along the layers", "which printers have PETG loaded", "estimated finish time against the deadline"]
+      must_not: ["lightning infill", "Cool Plate for PETG"]
+      citations: {required: true, any_of: [cnckitchen_extrusion_width, cnckitchen_temp_adhesion, "orca:BBL/process/0.20mm Strength @BBL X1C.json"]}
+      side_effects: {must_request_approval: [queue]}
+    notes: "Splitting 12 parts across bay-1 and bay-2 is the first speed lever before cutting quality (tradeoffs deadline)."
+
+  - id: ev02_silk_vase
+    category: intent
+    prompt: "silky vase in silk PLA"
+    context:
+      printers: demo
+      printer: bay-1
+      model: vase_solid.stl
+      loaded: {bay-1: [pla_silk]}
+      nozzle: {bay-1: {diameter_mm: 0.4, material: hardened_steel}}
+    expect:
+      tools: {must: [kb.intent, kb.filament, settings.plan], may: [slice, estimate]}
+      goals: [vase, surface_finish]
+      material: pla_silk
+      checks:
+        - {key: spiral_mode, is: equals, value: true}
+        - {key: wall_loops, is: equals, value: 1}
+        - {key: sparse_infill_density, is: equals, value: 0}
+        - {key: top_shell_layers, is: equals, value: 0}
+        - {key: bottom_shell_layers, is: at_least, value: 3}
+        - {key: outer_wall_line_width, is: between, value: [0.5, 0.8]}
+        - {key: filament_max_volumetric_speed, is: at_most, value: 12}
+      must_mention: ["single wall is fragile", "one object per plate in vase mode"]
+      citations: {required: true, any_of: [prusa_kb_layers_perimeters]}
+
+  - id: ev03_tpu_phone_case
+    category: intent
+    prompt: "flexible phone case in TPU 95A"
+    context:
+      printers: demo
+      printer: bay-1
+      model: phone_case.stl
+      loaded: {bay-1: [pla]}
+      spools: [{id: 31, material: tpu_95a, location: shelf}]
+    expect:
+      tools: {must: [kb.intent, kb.filament, settings.plan], may: [kb.printer, orient, slice]}
+      goals: [flexibility]
+      material: tpu_95a
+      checks:
+        - {key: wall_loops, is: between, value: [2, 3]}
+        - {key: sparse_infill_pattern, is: equals, value: gyroid}
+        - {key: sparse_infill_density, is: at_most, value: 20}
+        - {key: filament_max_volumetric_speed, is: at_most, value: 3.6}
+        - {key: retraction_length, is: at_most, value: 0.8}
+        - {key: nozzle_temperature, is: between, value: [220, 240]}
+      must_mention: ["feed from the external spool, not the AMS", "dry the spool"]
+      must_ask: ["whether the TPU is a TPU for AMS product or plain TPU 95A"]
+      citations: {required: true, any_of: [bambu_wiki_material_table, bambu_wiki_tpu_guide, "orca:OrcaFilamentLibrary/filament/Generic TPU @System.json"]}
+
+  - id: ev04_outdoor_asa_open_frame
+    category: intent
+    prompt: "Print this outdoor sensor mount in ASA on Bay 3"
+    context:
+      printers: demo
+      printer: bay-3
+      model: sensor_mount.stl
+      loaded: {bay-2: [asa], bay-3: [pla]}
+    expect:
+      tools: {must: [kb.intent, kb.filament, kb.printer], may: [settings.plan, slice]}
+      goals: [uv_resistance, strength]
+      material: asa
+      checks:
+        - {key: fan_max_speed, is: at_most, value: 40}
+        - {key: nozzle_temperature, is: between, value: [250, 270]}
+        - {key: wall_loops, is: at_least, value: 4}
+      must_mention: ["MK4S is open frame; ASA needs an enclosure", "Bay 2 P1S is enclosed and has ASA loaded", "ventilation or filtration"]
+      must_ask: ["move the job to Bay 2 or keep Bay 3"]
+      citations: {required: true, any_of: [bambu_wiki_material_table, prusa_kb_asa]}
+      side_effects: {must_request_approval: [queue]}
+
+  - id: ev05_fast_draft
+    category: intent
+    prompt: "fast draft, I just need to check the fit"
+    context: {printers: demo, printer: bay-1, model: enclosure_lid.stl, loaded: {bay-1: [pla]}}
+    expect:
+      tools: {must: [kb.intent, settings.plan], may: [slice, estimate]}
+      goals: [speed]
+      checks:
+        - {key: layer_height, is: between, value: [0.24, 0.32]}
+        - {key: wall_loops, is: at_most, value: 2}
+        - {key: sparse_infill_pattern, is: one_of, value: [lightning, grid, adaptivecubic]}
+        - {key: sparse_infill_density, is: at_most, value: 15}
+      must_mention: ["lightning infill has no strength (if used)", "time saved versus the standard profile"]
+      must_not: ["raising speeds above the filament's max volumetric speed"]
+
+  - id: ev06_miniature_detail
+    category: intent
+    prompt: "miniature at max detail"
+    context: {printers: demo, printer: bay-1, model: fantasy_figure_28mm.stl, loaded: {bay-1: [pla]}, nozzle: {bay-1: {diameter_mm: 0.4, material: hardened_steel}}}
+    expect:
+      tools: {must: [kb.intent, settings.plan], may: [orient, slice]}
+      goals: [detail]
+      checks:
+        - {key: layer_height, is: at_most, value: 0.1}
+        - {key: outer_wall_speed, is: at_most, value: 80}
+        - {key: wall_generator, is: equals, value: arachne}
+        - {key: support_type, is: one_of, value: ["tree(auto)", "tree(manual)"]}
+        - {key: slow_down_for_layer_cooling, is: equals, value: true}
+      must_ask: ["whether a 0.2 mm nozzle is available"]
+      must_mention: ["tilt the model so the face is not on the support side"]
+
+  - id: ev07_watertight_pla_loaded
+    category: intent
+    prompt: "watertight container for my desk plants"
+    context: {printers: demo, printer: bay-1, model: planter.stl, loaded: {bay-1: [pla, petg]}}
+    expect:
+      tools: {must: [kb.intent, settings.plan], may: [kb.filament, slice]}
+      goals: [watertight]
+      checks:
+        - {key: wall_loops, is: at_least, value: 3}
+        - {key: bottom_shell_layers, is: at_least, value: 5}
+        - {key: filament_flow_ratio, is: between, value: [1.0, 1.1], relative_to_profile: true, note: "Profile ratio times 1.03 to 1.10"}
+        - {key: infill_wall_overlap, is: at_least, value: 25}
+      must_mention: ["PETG is the better choice for something that stays wet", "sealing with epoxy for zero leaks"]
+      citations: {required: true, any_of: [prusa_kb_watertight]}
+
+  - id: ev08_cf_nylon_gear_wrong_nozzle
+    category: intent
+    prompt: "carbon fiber nylon gear on Bay 2"
+    context:
+      printers: demo
+      printer: bay-2
+      model: gear_m1_z40.stl
+      loaded: {bay-2: [pa_cf]}
+      nozzle: {bay-2: {diameter_mm: 0.4, material: stainless_steel}}
+    expect:
+      tools: {must: [kb.filament, kb.printer], may: [kb.intent, settings.plan]}
+      goals: [strength, dimensional_accuracy]
+      material: pa_cf
+      refuse_until: "hardened steel nozzle is fitted or the job moves to bay-1 (hardened stock nozzle)"
+      must_mention: ["PA-CF is abrasive and needs a hardened nozzle", "Bay 1 X1 Carbon has a hardened nozzle", "dry the nylon first"]
+      must_not: ["slicing for bay-2 with the stainless nozzle without a warning"]
+      checks_if_moved_to_bay_1:
+        - {key: nozzle_temperature, is: between, value: [270, 300]}
+        - {key: fan_max_speed, is: at_most, value: 40}
+        - {key: wall_loops, is: at_least, value: 4}
+      citations: {required: true, any_of: [bambu_wiki_material_table]}

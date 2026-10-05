@@ -1,0 +1,28 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (C) 2026 The SlicerX contributors
+[package]
+name = "sx-settings"
+version.workspace = true
+edition.workspace = true
+license = "Apache-2.0"
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+serde = { version = "=1.0.229", features = ["derive"] }
+serde_json = "=1.0.151"
+thiserror = "=2.0.21"
+sx-profiles = { workspace = true, optional = true }
+
+[features]
+# The makers' stock machine settings, G-code and process speeds (packages/profiles, AGPL-3.0-or-later).
+default = ["stock-profiles"]
+stock-profiles = ["dep:sx-profiles"]
+
+[dev-dependencies]
+# The UltiMaker tests slice a plate from the shipped profiles.
+sx-core = { workspace = true }
+# The preset bundle tests open real OrcaSlicer and Bambu Studio bundles, which are zips.
+zip = { version = "=8.6.0", default-features = false, features = ["deflate-flate2-zlib-rs"] }

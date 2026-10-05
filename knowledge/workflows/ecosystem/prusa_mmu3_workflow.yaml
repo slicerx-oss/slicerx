@@ -1,0 +1,35 @@
+kind: guide
+schema_version: 1
+id: prusa_mmu3_workflow
+name: Prusa MMU3 multi material workflow
+applies_to: [prusa_mk4s, prusa_core_one]
+summary: >
+  The MMU3 feeds up to five filaments into one nozzle. It works best with PLA
+  and PETG, relies on the extruder's IR filament sensor and its own FINDA, and
+  makes prime tower and purge settings the main quality lever. Most failures are
+  sensor or path problems, not slicer settings.
+facts:
+  - {text: "The MMU3 is compatible with MK3S+, MK3.5/S, MK3.9/S, MK4/S and CORE One. Up to five filaments.", src: [prusa_kb_mmu3_compat, prusa_blog_mmu3_core_one]}
+  - {text: "PLA and PETG are the materials Prusa officially supports; other polymers may work but are not extensively tested.", src: [prusa_blog_mmu3_core_one]}
+  - {text: "CORE One uses an enclosed MMU3 kit. Orca ships 'Prusa CORE One MMU3' machine profiles and separate '+ MMU3' process profiles.", src: [prusa_blog_mmu3_core_one, "orca:Prusa/machine/Prusa CORE One MMU3.json"]}
+  - {text: "An uncalibrated IR filament sensor can report no filament while filament is present, which can trigger a filament change or spool join mid print.", src: [prusa_kb_mmu3_ir_calibration]}
+  - {text: "Error 04102 means the FINDA stayed triggered after unload, usually debris or a broken piece in the selector. 04103 means the extruder filament sensor did not trigger during load to nozzle. 04104 means the extruder sensor still sees filament after unload.", src: [prusa_kb_mmu3_errors]}
+steps:
+  - {text: "Calibrate the IR filament sensor before the first multi color print and after any extruder service."}
+  - {text: "Load each filament into its slot from the MMU menu and let it feed to the FINDA. Trim the tip flat and clean."}
+  - {text: "Slice with the MMU3 machine and process profile for the printer. Assign colors per object or by painting."}
+  - {text: "Keep the prime tower (wipe tower) enabled and wide enough to purge the color change."}
+  - {text: "If colors bleed, raise the flush multiplier in small steps rather than shrinking the tower."}
+  - {text: "If a load error appears, follow the error code guidance: clear debris for 04102, recalibrate the sensor for 04103 and 04104."}
+pilot_actions:
+  - "Confirm the printer has an MMU3 before applying MMU settings; refuse MMU advice on a single extruder printer."
+  - "Warn when a filament outside PLA and PETG is assigned to a slot, especially TPU or CF filament."
+  - "Enable the prime tower and raise flush_multiplier when the user reports color contamination."
+  - "Map an MMU error code to the causes above and give the fix; do not change slicer settings for a sensor fault."
+  - "Advise recalibrating the IR sensor when spurious filament changes or spool joins appear."
+settings:
+  - {key: enable_prime_tower, op: enable, why: "A single nozzle multi material print needs a tower to purge between colors."}
+  - {key: prime_tower_width, op: at_least, value: 35, why: "A wider tower gives each color change room to purge fully."}
+  - {key: flush_multiplier, op: increase_by, value: 0.3, why: "More flushing removes leftover color from the nozzle."}
+  - {advice: "Keep filament tips clean and flat; a blobbed tip is the most common cause of a load failure.", kind: hardware}
+src: [prusa_kb_mmu3_compat, prusa_blog_mmu3_core_one, prusa_kb_mmu3_errors, prusa_kb_mmu3_ir_calibration]

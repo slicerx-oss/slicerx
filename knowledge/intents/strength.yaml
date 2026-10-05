@@ -1,0 +1,45 @@
+kind: intent_goal
+schema_version: 1
+id: strength
+label: Strong
+summary: >
+  Parts that carry load, get bolted down, snap together or get dropped. Walls
+  and temperature matter more than infill. Orientation matters most of all:
+  layers are the weak direction.
+phrases: [strong, sturdy, durable, tough, functional, load bearing, heavy duty, "won't break", robust, structural, bracket, mount, hook, clamp, gear, tool]
+default_level: standard
+levels:
+  standard:
+    changes:
+      - {key: wall_loops, op: at_least, value: 4, priority: core, why: "Walls carry most of the load. Four walls held 33 kg in CNC Kitchen's hook test where two walls held 20 kg.", src: [cnckitchen_extrusion_width]}
+      - {key: sparse_infill_density, op: at_least, value: 25, priority: core, why: "25 percent infill backs up the walls without much extra time. Bambu's Strength preset uses the same value.", src: ["orca:BBL/process/0.20mm Strength @BBL X1C.json"]}
+      - {key: sparse_infill_pattern, op: set, value: gyroid, priority: supporting, why: "Gyroid is about equally strong in every direction, so the part does not have a weak axis.", src: [prusa_kb_infill_patterns]}
+      - {key: top_shell_layers, op: at_least, value: 5, priority: supporting, why: "Thicker top skins spread point loads from screws and clips.", src: ["orca:BBL/process/0.20mm Strength @BBL X1C.json"]}
+      - {key: bottom_shell_layers, op: at_least, value: 4, priority: supporting, why: "A thicker base stops the first layers from cracking under a bolt head."}
+      - {key: nozzle_temperature, op: set, value_from: {filament_range: nozzle_temp_c, position: 0.75, round_to: 5}, priority: core, why: "Layers bond best near the upper end of the filament's range. PLA peaked at 230 C and PETG at 245 C in layer adhesion tests; hotter than that gets weaker again.", src: [cnckitchen_temp_adhesion]}
+  max:
+    extends: standard
+    changes:
+      - {key: smart_layer, op: set, value: strength, priority: supporting, why: "Keeps every layer between about 30 and 50 percent of the nozzle, the band where layers bond best; parts weaken once layers pass half the nozzle.", src: [cnckitchen_layer_height, stojkovic_2023_layer_height_annealing]}
+      - {key: wall_loops, op: at_least, value: 6, priority: core, why: "Six walls make most small parts nearly solid where it counts. This matches Bambu's Strength preset.", src: ["orca:BBL/process/0.20mm Strength @BBL X1C.json"]}
+      - {key: inner_wall_line_width, op: set, value_from: {nozzle_factor: 1.5}, priority: supporting, why: "Wider inner walls bond better. Layer adhesion peaked near 150 percent of nozzle width, and the outside of the part looks the same.", src: [cnckitchen_extrusion_width]}
+      - {key: sparse_infill_line_width, op: set, value_from: {nozzle_factor: 1.5}, priority: supporting, why: "Wider infill lines are stronger and print in fewer passes.", src: [cnckitchen_extrusion_width]}
+      - {key: sparse_infill_density, op: at_least, value: 40, priority: supporting, why: "Past this point walls give more strength per gram than more infill.", src: [cnckitchen_extrusion_width]}
+      - {key: outer_wall_speed, op: at_most, value: 60, priority: supporting, why: "A slower outer wall lays down a denser, more even skin. Bambu's Strength preset runs it at 60 mm/s.", src: ["orca:BBL/process/0.20mm Strength @BBL X1C.json"]}
+      - {key: alternate_extra_wall, op: enable, priority: supporting, why: "An extra wall every other layer wedges the infill between walls for a stronger bond. Orca requires turning off ensure vertical shell thickness with it.", src: ["orca_src:src/libslic3r/PrintConfig.cpp"]}
+      - {key: ensure_vertical_shell_thickness, op: set, value: none, priority: supporting, why: "Required by alternate extra wall.", src: ["orca_src:src/libslic3r/PrintConfig.cpp"]}
+cooling_rule:
+  applies_to: [petg, abs, asa, pc, pa6, pa12, pa_cf, pa_gf, petg_cf]
+  change: {key: fan_max_speed, op: at_most, value_from: {filament: cooling.fan_max_pct.min}, why: "Less part cooling keeps each layer hot long enough to fuse with the next."}
+  note: "Do not cut fan for PLA family. PLA needs cooling for overhangs, and its bond is already strong at the upper temperature."
+orientation:
+  - {advice: "Lay the part so the load runs along the layers, never across them. Lying samples reached about 60 MPa in PLA while layer to layer bonds peaked at 40 MPa.", kind: orientation, src: [cnckitchen_temp_adhesion]}
+  - {advice: "For brackets and hooks, print on the side so the bend is in the XY plane.", kind: orientation, src: [cnckitchen_temp_adhesion]}
+material_hints:
+  prefer: [petg, pla_plus, asa, pc, pa_cf, pa_gf]
+  note: "PLA is stiff and strong but brittle and creeps under steady load or warmth. PETG is tougher. For heat or long term load, step up to ASA, PC or nylon composites."
+checks:
+  - "In preview, confirm walls reach the requested count on thin features (Arachne may merge them)."
+  - "Estimate time again. More walls and hotter temperatures can push the job past a deadline; see tradeoffs."
+costs: {time: up, filament: up}
+src: [cnckitchen_extrusion_width, cnckitchen_temp_adhesion, prusa_kb_infill_patterns, "orca:BBL/process/0.20mm Strength @BBL X1C.json", "orca_src:src/libslic3r/PrintConfig.cpp"]

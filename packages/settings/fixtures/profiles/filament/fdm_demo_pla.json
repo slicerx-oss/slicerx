@@ -1,0 +1,10 @@
+{
+  "type": "filament",
+  "name": "fdm_demo_pla",
+  "inherits": "fdm_demo_filament_common",
+  "from": "system",
+  "instantiation": "false",
+  "filament_type": [
+    "PLA"
+  ]
+}

@@ -1,0 +1,30 @@
+kind: intent_goal
+schema_version: 1
+id: vase
+label: Spiral vase
+summary: >
+  Single wall prints that spiral up without a seam: vases, lamp shades,
+  planters, cups. Fast and beautiful, but the wall is one line thick, so it is
+  fragile and holds water only if the line is wide enough.
+phrases: [vase, "vase mode", "spiral vase", spiralize, "single wall", "lamp shade", lampshade, "seamless"]
+default_level: standard
+levels:
+  standard:
+    changes:
+      - {key: spiral_mode, op: enable, priority: core, why: "Prints the outer wall as one continuous spiral with no seam.", src: ["orca_src:src/libslic3r/PrintConfig.cpp", prusa_kb_layers_perimeters]}
+      - {key: wall_loops, op: set, value: 1, priority: core, why: "Vase mode prints a single wall.", src: [prusa_kb_layers_perimeters]}
+      - {key: sparse_infill_density, op: set, value: 0, priority: core, why: "There is no inside to fill.", src: [prusa_kb_layers_perimeters]}
+      - {key: top_shell_layers, op: set, value: 0, priority: core, why: "The top stays open.", src: [prusa_kb_layers_perimeters]}
+      - {key: enable_support, op: disable, priority: core, why: "Vase mode cannot print supports.", src: [prusa_kb_layers_perimeters]}
+      - {key: bottom_shell_layers, op: at_least, value: 3, priority: supporting, why: "A solid floor of three or more layers. Raise it for planters or anything holding water.", src: [prusa_kb_layers_perimeters]}
+      - {key: outer_wall_line_width, op: set, value_from: {nozzle_factor: 1.5}, priority: core, why: "A wider single line (0.6 mm on a 0.4 mm nozzle) makes the wall stronger and watertight.", src: [prusa_kb_layers_perimeters, cnckitchen_extrusion_width]}
+      - {key: spiral_mode_smooth, op: enable, priority: supporting, why: "Smooths the XY moves too, so no seam shows even on sloped walls.", src: ["orca_src:src/libslic3r/PrintConfig.cpp"]}
+constraints:
+  - {text: "One object per plate. Multiple objects print one at a time or not at all.", src: [prusa_kb_layers_perimeters]}
+  - {text: "The model must be a solid. A model with its own inner wall prints both surfaces.", src: [prusa_kb_layers_perimeters]}
+  - {text: "Layer time gets short near a narrow top. Keep minimum layer time on so the rim does not sag.", basis: expert}
+material_notes:
+  pla_silk: "Silk PLA is the classic vase material. Keep its low max volumetric speed; the wall speed is capped by melt rate anyway."
+  petg: "Good for planters and outdoor vases. Wide lines seal well."
+costs: {time: down, filament: down}
+src: [prusa_kb_layers_perimeters, "orca_src:src/libslic3r/PrintConfig.cpp", cnckitchen_extrusion_width]

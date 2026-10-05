@@ -1,0 +1,250 @@
+kind: filament
+schema_version: 1
+id: petg_cf
+name: PETG-CF (carbon fiber PETG)
+category: composite
+orca_filament_type: PETG-CF
+aliases: [PETG-CF, PETG CF, PETG Carbon Fiber, Bambu PETG-CF, Fiberon PETG-rCF, PETG-GF, carbon filled PETG]
+related: [petg, pla_cf]
+summary: >
+  PETG filled with chopped carbon fiber. Stiffer than PETG, with a matte finish,
+  less stringing and lower shrink. Layers bond a bit worse than plain PETG. The
+  fibers are abrasive and destroy brass and stainless nozzles, so a hardened
+  steel nozzle is required. Bambu recommends an enclosed printer.
+use_for: [stiff functional brackets, tool handles, drone and RC frames, camera mounts, fixtures and jigs, matte functional parts]
+avoid_for: [any print with a brass or stainless nozzle, 0.2 mm nozzles, parts above about 70 C, parts that must flex or take shock]
+
+nozzle_temp_c:
+  min: 240
+  max: 270
+  typical: 255
+  confidence: medium
+  src:
+    - "orca:OrcaFilamentLibrary/filament/Bambu/Bambu PETG-CF @base.json"
+    - "orca:BBL/filament/Bambu PETG-CF @BBL X1C.json"
+    - "orca:OrcaFilamentLibrary/filament/Generic PETG-CF @System.json"
+    - "orca:OrcaFilamentLibrary/filament/Polymaker/Fiberon PETG-rCF @System.json"
+    - bambu_wiki_material_table
+  note: "Bambu 240 to 270 (profile 255). Orca generic PETG-CF 220 to 260 at 255. Fiberon PETG-rCF 240 to 270 at 270. Start at 255 and move in 5 C steps. Prusa notes a hardened nozzle may need more heat than brass."
+first_layer_nozzle_temp_c:
+  min: 255
+  max: 270
+  typical: 255
+  confidence: medium
+  src: ["orca:BBL/filament/Bambu PETG-CF @BBL X1C.json", "orca:OrcaFilamentLibrary/filament/Polymaker/Fiberon PETG-rCF @System.json"]
+  note: "Bambu and generic use 255. Fiberon uses 270."
+bed_temp_c:
+  min: 60
+  max: 80
+  typical: 70
+  confidence: high
+  src: [bambu_wiki_material_table, "orca:OrcaFilamentLibrary/filament/Bambu/Bambu PETG-CF @base.json"]
+  note: "Bambu lists 60 to 80 on every plate except the Cool Plate. Profile 70."
+chamber_temp_c: null
+enclosure:
+  level: recommended
+  confidence: medium
+  src: [bambu_wiki_material_table]
+  note: "Bambu lists an enclosed printer as recommended for PETG-CF so cold rooms do not weaken layer bonds. Remove the top glass cover when the bed is above 70 C to avoid heat creep. Not needed for warping."
+
+plates:
+  - {plate: bambu_cool_plate, fit: avoid, confidence: high, src: [bambu_wiki_material_table], note: "Listed as not recommended for PETG-CF."}
+  - {plate: bambu_engineering_plate, fit: ok, bed_temp_c: {min: 60, max: 80}, release_agent: glue_stick, confidence: high, src: [bambu_wiki_material_table], note: "Glue stick as a release layer."}
+  - {plate: bambu_high_temp_plate, fit: glue, bed_temp_c: {min: 60, max: 80}, release_agent: glue_stick, confidence: high, src: [bambu_wiki_material_table, prusa_kb_petg], note: "Smooth PEI bonds PETG hard enough to tear the sheet. Use glue stick as a separation layer."}
+  - {plate: smooth_pei, fit: glue, bed_temp_c: {min: 70, max: 90}, release_agent: glue_stick, confidence: medium, src: [prusa_kb_petg], note: "Prusa's PETG guidance: apply glue stick first."}
+  - {plate: textured_pei, fit: good, bed_temp_c: {min: 60, max: 80}, release_agent: none, confidence: high, src: [bambu_wiki_material_table], note: "Best general surface. Releases once cool."}
+
+cooling:
+  fan_min_pct: {min: 0, max: 5, typical: 5}
+  fan_max_pct: {min: 30, max: 40, typical: 40}
+  overhang_fan_pct: {typical: 100}
+  no_fan_first_layers: {typical: 3}
+  min_layer_time_s: {min: 6, max: 8, typical: 6}
+  confidence: medium
+  src:
+    - "orca:BBL/filament/Bambu PETG-CF @BBL X1C.json"
+    - "orca:OrcaFilamentLibrary/filament/Bambu/Bambu PETG-CF @base.json"
+    - "orca:OrcaFilamentLibrary/filament/Generic PETG-CF @System.json"
+  note: "Bambu X1C uses 5 to 40 percent with 100 on overhangs. The Bambu base uses 0 to 30 with 90 on overhangs. Generic uses 5 to 40. Less fan gives stronger layers."
+
+drying:
+  need: recommended
+  oven: {temp_c: {min: 60, max: 70}, hours: 8}
+  ams_2_pro: {temp_c: 65, hours: 12}
+  ams_ht: {temp_c: 65, hours: 12}
+  printer_bed: {temp_c: {min: 75, max: 85}, hours: 12, note: "Enclosed Bambu printers only, spool covered"}
+  keep_dry_in_use: optional
+  confidence: medium
+  src: [bambu_wiki_drying, bambu_wiki_material_table]
+  note: "Bambu's material table says 70 C for 8 h, its drying page says 60 to 65 C for PETG and PETG-CF. Use 65 C."
+
+nozzle:
+  abrasive: true
+  hardened_required: true
+  min_diameter_mm: 0.4
+  orca_required_hrc: 40
+  confidence: high
+  src: [bambu_wiki_material_table, prusa_kb_composites, "orca:OrcaFilamentLibrary/filament/Bambu/Bambu PETG-CF @base.json"]
+  note: "Hardened steel only. Bambu says no 0.2 mm nozzle and rates 0.4 mm hardened as first choice for its own PETG-CF and 0.6 mm for other CF blends. Bambu high flow 0.4 mm is marked not recommended. Prusa says 0.4 mm minimum. Cold pull before printing."
+
+extrusion:
+  flow_ratio: {min: 0.95, max: 1.0, typical: 0.95, confidence: medium, src: ["orca:BBL/filament/Bambu PETG-CF @BBL X1C.json", "orca:OrcaFilamentLibrary/filament/Generic PETG-CF @System.json"], note: "Bambu 0.95, generic 1.0. Confirm with a flow test."}
+  max_volumetric_speed_mm3s:
+    standard_hotend: {min: 10, max: 12, typical: 11.5}
+    high_flow_hotend: {min: 11.5, max: 20, typical: 20}
+    confidence: medium
+    src:
+      - "orca:BBL/filament/Bambu PETG-CF @BBL X1C.json"
+      - "orca:OrcaFilamentLibrary/filament/Bambu/Bambu PETG-CF @base.json"
+      - "orca:OrcaFilamentLibrary/filament/Generic PETG-CF @System.json"
+      - "orca:OrcaFilamentLibrary/filament/Polymaker/Fiberon PETG-rCF @System.json"
+    note: "Bambu PETG-CF on X1C is 11.5 standard and 20 high flow. Bambu base 10, generic 11.5, Fiberon 12. The Bambu high flow 0.4 mm nozzle is not recommended for PETG-CF, so 20 applies to a 0.6 mm or larger high flow nozzle."
+  retraction_mm:
+    direct_drive: {min: 0.4, max: 0.8, typical: 0.8}
+    confidence: low
+    src: ["orca:BBL/filament/Bambu PETG-CF @BBL X1C.json", "orca:BBL/filament/Bambu PETG Basic @BBL X1C.json", klipper_pressure_advance]
+    note: "Bambu X1C high flow profile uses 0.8 mm. PETG Basic uses 0.4 mm. Klipper suggests about 0.75 mm after tuning PA."
+    retraction_speed_mm_s: {min: 20, max: 60, typical: 30, confidence: medium, src: [bambu_tds_petg_cf_v2, bambu_tds_petg_cf_v3, "orca:BBL/machine/Bambu Lab X1 Carbon 0.4 nozzle.json"], note: "Bambu PETG-CF sheet V2 says 20 to 40 mm/s and V3 says 30 to 60 mm/s. The Bambu printer profile uses 30."}
+  pressure_advance:
+    direct_drive: {min: 0.03, max: 0.08, typical: 0.053}
+    bowden: {min: 0.3, max: 1.0}
+    confidence: low
+    src: ["orca:Prusa/filament/Prusament PETG @MK4S.json", klipper_pressure_advance, ellis_pa]
+    note: "No CF specific number exists. Prusa ships M572 S0.053 for PETG at 0.4 mm on MK4S and Core One. Calibrate per spool."
+
+layer_height:
+  fraction_of_nozzle: {min: 0.5, max: 0.7, typical: 0.5}
+  at_0_4_mm: {min: 0.2, max: 0.28, typical: 0.2}
+  smart_layer:
+    quality_mode: "Carbon fiber hides layer lines, so thin layers add little. Keep the floor at 0.2 mm on a 0.4 mm hardened nozzle: Prusa says composites clog more with thinner layers and smaller nozzles. On a 0.6 mm nozzle the same band is about 0.3 to 0.42 mm."
+    strength_mode: "Fibers weaken the bond between layers, and PETG bonding depends on heat. Prefer 0.2 mm or thicker with a hot nozzle and low fan, and orient loads along the layers."
+    thin_layer_cooling: "Bambu sets a 6 s minimum layer time and a fan of 5 to 40 percent (V3 sheet 0 to 60). Thin layers on small parts lose less to cooling than in PLA-CF but will still string if the nozzle waits."
+  confidence: low
+  src: [prusa_kb_composites, bambu_store_petg_cf, "orca:BBL/machine/fdm_machine_common.json"]
+  note: "Prusa gives 0.2 mm on a 0.4 mm nozzle as the lowest optimal setting. A Bambu store excerpt lists 0.12 to 0.28 mm with 0.2 mm typical and prefers a 0.6 mm hardened nozzle; that page could not be fetched directly, so it is low confidence."
+smart_layer:
+  min_ratio: 0.5
+  max_ratio: 0.7
+  modes:
+    quality: {min_ratio: 0.5, max_ratio: 0.5}
+    strength: {min_ratio: 0.5, max_ratio: 0.5}
+  family: nylon_and_composites
+  note: "Prusa gives 0.2 mm on a 0.4 mm nozzle as the lowest optimal layer for carbon fiber PETG, so sleipnir has little room to go thinner."
+  confidence: low
+  src: ["prusa_kb_composites", "bambu_store_petg_cf", "orca:BBL/machine/fdm_machine_common.json", "cnckitchen_layer_height", "stojkovic_2023_layer_height_annealing"]
+speeds:
+  print_speed_mm_s: {max: 200}
+  first_layer_mm_s: {min: 20, max: 40, typical: 30}
+  volumetric_note: "Bambu rates PETG-CF for under 200 mm/s on both TDS versions. The 0.4 mm high flow nozzle is not recommended, so 11.5 mm3/s is the practical cap on a standard 0.4 mm hardened nozzle; see extrusion."
+  confidence: medium
+  src: [bambu_tds_petg_cf_v2, bambu_tds_petg_cf_v3, bambu_wiki_spaghetti, prusa_kb_composites]
+  note: "No maker states a CF specific outer wall cap. First layer speed is a practical default."
+first_layer:
+  fan_off_layers: 3
+  speed_mm_s: {typical: 30}
+  bed_first_layer_note: "Bambu: 65 to 75 C, profile 70 C, with glue. Prusa lists 70 to 110 C for composites depending on the base plastic."
+  squish_note: "Prusa: the first layer must be perfect or the nozzle clogs. PETG-CF still bonds to smooth PEI, so use glue stick on smooth sheets. Cold pull before printing and use a hardened nozzle of 0.4 mm or larger."
+  confidence: medium
+  src: [bambu_tds_petg_cf_v2, bambu_tds_petg_cf_v3, prusa_kb_composites, prusa_kb_petg]
+structure:
+  walls: {min: 2, typical: 3, note: "Fibers align along the walls, so walls add stiffness. Extra infill gives little, and layers bond worse than plain PETG, so orient the load along the layers. Fibers cut warping, so more walls are safe."}
+  infill: {pattern_hint: gyroid, density_note: "15 to 25 percent. Walls and orientation decide stiffness; Bambu's PETG guide advises walls of 6 or fewer and infill of 50 percent or less."}
+  confidence: low
+  src: [prusa_kb_composites, bambu_wiki_petg_guide]
+  note: "Expert rule of thumb built on the Prusa statement that composites bond worse between layers."
+supports:
+  interface_materials: ["Bambu Support for PLA/PETG"]
+  soluble_pairing: null
+  top_z_distance_mm: {typical: 0.25, basis: expert}
+  interface_layers: {typical: 2}
+  note: "Bambu's PETG guide names Support for PLA/PETG for PETG-CF and says PVA is not compatible with PETG. The mutual PLA and PETG interface guide excludes PETG-CF. Use a wider Z gap than for PLA if you support with PETG-CF itself, because it welds to its own supports."
+  confidence: low
+  src: [bambu_wiki_petg_guide, bambu_wiki_pla_petg_mutual_support, "orca:BBL/process/0.20mm Standard @BBL X1C.json"]
+
+multi_material:
+  bambu_ams: compatible
+  bambu_ams_lite: not_recommended
+  bambu_ams_ht: unknown
+  confidence: high
+  src: [bambu_wiki_material_table]
+  note: "AMS compatible, AMS lite not recommended. Abrasive fibers wear the AMS PTFE feed channels over time."
+
+properties:
+  density_g_cm3: {typical: 1.25, min: 1.25, max: 1.3, src: ["orca:OrcaFilamentLibrary/filament/Bambu/Bambu PETG-CF @base.json", "orca:OrcaFilamentLibrary/filament/Generic PETG-CF @System.json", "orca:OrcaFilamentLibrary/filament/Polymaker/Fiberon PETG-rCF @System.json"]}
+  softening_temp_c: {typical: 70, src: ["orca:OrcaFilamentLibrary/filament/Bambu/Bambu PETG-CF @base.json", bambu_wiki_material_table], note: "Orca temperature_vitrification is 70 C. Bambu rates heat deflection at 3 of 5 stars."}
+  relative:
+    heat: 3
+    impact: 3
+    tensile: 3
+    scale: "1 to 5, Bambu star ratings"
+    src: [bambu_wiki_material_table]
+safety:
+  fumes: low
+  note: "Sanding or cutting cured parts releases carbon fiber dust. Wear a mask and avoid dry sanding."
+food_contact:
+  note: "Not for food contact. Fibers and colorants are not certified."
+  src: [prusa_kb_food_safe]
+
+failure_modes:
+  - id: nozzle_clog
+    symptom: Extrusion stops or thin under-extruded lines
+    causes: [small or high flow 0.4 mm nozzle, cold nozzle, fast volumetric speed, residue]
+    fixes:
+      - {advice: "Use a 0.4 mm or larger hardened steel nozzle (0.6 mm is safer) and cold pull before printing.", kind: hardware}
+      - {key: filament_max_volumetric_speed, op: at_most, value: 11, why: "Lower flow lowers jam risk."}
+      - {key: nozzle_temperature, op: increase_by, value: 5, why: "Hotter plastic flows around the fibers."}
+  - id: nozzle_wear
+    symptom: Lines get wider and quality falls after a few spools
+    causes: [brass or stainless nozzle]
+    fixes:
+      - {advice: "Change to a hardened steel nozzle. A worn nozzle cannot be restored.", kind: hardware}
+  - id: weak_layers
+    symptom: Part splits along layers
+    causes: [fibers weaken layer bonding, too much cooling, cold room]
+    fixes:
+      - {key: nozzle_temperature, op: increase_by, value: 5, why: "Hotter plastic fuses better."}
+      - {key: fan_max_speed, op: at_most, value: 30, why: "Less cooling keeps layers hot long enough to bond."}
+      - {advice: "Print in an enclosure or out of drafts. Orient layers parallel to the main load.", kind: environment}
+  - id: stringing
+    symptom: Fuzz and hairs
+    causes: [wet filament, hot nozzle]
+    fixes:
+      - {advice: "Dry the spool at 65 C for 8 to 12 h.", kind: material}
+      - {key: nozzle_temperature, op: decrease_by, value: 5, why: "Less ooze. Stay at or above 240 C."}
+  - id: plate_damage
+    symptom: Part tears chunks out of smooth PEI
+    causes: [PETG bonds chemically to smooth PEI]
+    fixes:
+      - {advice: "Use textured PEI or put glue stick on smooth PEI.", kind: hardware}
+
+disagreements:
+  - topic: oven drying temperature
+    positions:
+      - {claim: "70 C for 8 h", src: [bambu_wiki_material_table]}
+      - {claim: "60 to 65 C for 8 h", src: [bambu_wiki_drying]}
+    resolution: "Use 65 C. Same reasoning as plain PETG."
+  - topic: high flow nozzle use
+    positions:
+      - {claim: "0.4 mm high flow not recommended, 0.6 and 0.8 mm high flow compatible", src: [bambu_wiki_material_table]}
+      - {claim: "X1C profile lists 20 mm3/s for the high flow variant", src: ["orca:BBL/filament/Bambu PETG-CF @BBL X1C.json"]}
+    resolution: "Only trust the higher flow on a 0.6 mm or larger hardened nozzle."
+  - topic: PETG-CF retraction and fan on the Bambu sheets
+    positions:
+      - {claim: "V2 sheet: fan 100 percent, retraction 0.6 to 1.0 mm at 20 to 40 mm/s", src: [bambu_tds_petg_cf_v2]}
+      - {claim: "V3 sheet: fan 0 to 60 percent, retraction 0.8 to 1.4 mm at 30 to 60 mm/s", src: [bambu_tds_petg_cf_v3]}
+    resolution: "Follow the newer profile values in extrusion: fan 5 to 40 percent, retraction near 0.8 mm at 30 mm/s. Lower the fan further if layers split."
+
+pilot_defaults:
+  nozzle_temperature: 255
+  nozzle_temperature_initial_layer: 255
+  textured_plate_temp: 70
+  hot_plate_temp: 70
+  eng_plate_temp: 70
+  fan_min_speed: 5
+  fan_max_speed: 40
+  overhang_fan_speed: 100
+  close_fan_the_first_x_layers: 3
+  slow_down_layer_time: 6
+  filament_flow_ratio: 0.95
+  filament_max_volumetric_speed: 11.5
+  retraction_length: 0.8

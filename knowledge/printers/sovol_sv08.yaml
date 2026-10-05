@@ -1,0 +1,86 @@
+kind: printer
+schema_version: 1
+id: sovol_sv08
+name: Sovol SV08
+vendor: Sovol
+status: current
+firmware: klipper
+connections: [moonraker]
+kinematics: corexy
+build_volume_mm: {x: 350, y: 350, z: 345, confidence: high, src: [sovol_spec_sv08, simplyprint_sv08, "orca:Sovol/machine/Sovol SV08 0.4 nozzle.json"]}
+extruder: {type: direct_drive, note: "Direct drive toolhead. The SV08 is a Voron 2.4 inspired CoreXY.", src: [sovol_spec_sv08, simplyprint_sv08]}
+hotend:
+  max_temp_c: 300
+  nozzle_diameters_mm: [0.2, 0.4, 0.6, 0.8]
+  nozzle_materials: [brass, hardened_steel]
+  stock_nozzle: "0.4 mm, Bambu style"
+  tool_free_swap: false
+  high_flow_option: false
+  confidence: medium
+  note: "Search summaries disagree on whether the stock nozzle is brass or hardened steel. Ask the user before assuming abrasive filament is safe."
+  src: [sovol_spec_sv08, simplyprint_sv08, "orca:Sovol/machine/Sovol SV08 0.4 nozzle.json"]
+bed:
+  max_temp_c: 100
+  plates: [textured_pei, smooth_pei]
+  confidence: medium
+  note: "Sources report 100 C. Some retail listings mention higher; use 100 unless the user's config says otherwise."
+  src: [sovol_spec_sv08, simplyprint_sv08]
+enclosure:
+  type: optional_kit
+  chamber_heating: passive
+  max_chamber_c: null
+  filtration: []
+  confidence: low
+  note: "Sold with a partial enclosure and panels. A SV08 Max variant with heated chamber exists and is a different model. Treat the SV08 as passive."
+  src: [sovol_spec_sv08]
+motion:
+  max_speed_mm_s: 700
+  max_accel_mm_s2: 20000
+  input_shaping: manual
+  confidence: medium
+  note: "Sovol quotes 700 mm/s and 40000 mm/s2. Orca profile caps extruding acceleration at 20000 and travel at 40000. Input shaper is configured but not tuned per unit, so results vary."
+  src: [sovol_spec_sv08, "orca:Sovol/machine/Sovol SV08 0.4 nozzle.json"]
+power:
+  psu_rated_w: {value: 150, note: "24 V supply per the Sovol spec table. The heated bed is an AC bed, so it does not draw from this supply. Bed heater wattage and total maximum draw are not published on the page.", src: [sovol_sv08_store], confidence: medium}
+sensors: [inductive_probe, filament_runout, accelerometer_optional]
+builtin_calibrations:
+  - {id: quad_gantry_level, what: "Four independent Z motors are leveled with QUAD_GANTRY_LEVEL like a Voron 2.4.", src: [simplyprint_sv08]}
+  - {id: bed_mesh, what: "Klipper bed mesh before print.", src: [sovol_spec_sv08]}
+  - {id: shaper_calibrate, what: "Available only if an accelerometer is added.", src: [klipper_docs_measuring_resonances]}
+multi_material: []
+materials:
+  recommended: [pla, pla_plus, petg, tpu_95a]
+  possible: [abs, asa, pa6, pa12, pc, petg_cf, pla_cf, pa_cf, pa_gf, pla_silk, pla_matte, tpu_85a, hips, pp, pva, bvoh]
+  not_recommended: []
+  confidence: low
+  note: "Passive enclosure and 100 C bed make ABS and ASA workable with panels and heat soak. High-temp materials such as PC or PA are limited by the 300 C hotend and chamber."
+  src: [sovol_spec_sv08]
+orca_profile: "orca:Sovol/machine/Sovol SV08 0.4 nozzle.json"
+profile_baseline:
+  process: "0.20mm Standard @Sovol SV08 0.4 nozzle"
+  values: {layer_height: 0.2, initial_layer_print_height: 0.25, outer_wall_speed: 200, inner_wall_speed: 300, sparse_infill_speed: 300, top_surface_speed: 200, initial_layer_speed: 30, travel_speed: 600, default_acceleration: 20000, outer_wall_acceleration: 8000, inner_wall_acceleration: 12000, travel_acceleration: 20000, initial_layer_acceleration: 3000, wall_loops: 2, top_shell_layers: 4, bottom_shell_layers: 3, sparse_infill_density: "10%", bridge_speed: 50, line_width: 0.4, retraction_length: 0.5}
+  confidence: medium
+  note: "Aggressive baseline. Many users lower it after seeing ringing."
+  src: ["orca:Sovol/process/0.20mm Standard @Sovol SV08 0.4 nozzle.json", "orca:Sovol/machine/Sovol SV08 0.4 nozzle.json"]
+pilot_notes:
+  - "Orca's baseline acceleration (20000 default, 8000 outer wall) is aggressive for a printer whose input shaper is not tuned per unit. Expect ringing and suggest lowering accel first."
+  - "Klipper flavor. Pressure advance via SET_PRESSURE_ADVANCE. Sovol ships PRINT_START macros; confirm their argument names before editing machine_start_gcode."
+  - "Bed maximum is 100 C. Do not request 110 C for ABS."
+  - "Print quality varies between units; a stated quality issue may be hardware (loose belts, wobbly gantry). Check the machine before blaming settings."
+  - "Reachable through Moonraker (Mainsail or Fluidd)."
+common_issues:
+  - symptom: "Heavy ringing on outer walls"
+    cause: "High baseline acceleration without a tuned input shaper."
+    fix:
+      - {key: outer_wall_acceleration, op: at_most, value: 5000, why: "Lower outer wall acceleration from 8000 to clean up ringing."}
+      - {key: default_acceleration, op: at_most, value: 10000, why: "Lower general acceleration until the shaper is tuned."}
+      - {advice: "Add an accelerometer and run SHAPER_CALIBRATE.", kind: hardware}
+  - symptom: "Bed or nozzle temperature not reached for ABS"
+    cause: "Bed max is 100 C."
+    fix:
+      - {key: eng_plate_temp, op: at_most, value: 100, why: "Stay inside the bed limit."}
+  - symptom: "Under extrusion at high speed"
+    cause: "Volumetric flow limit of the stock hotend."
+    fix:
+      - {advice: "Run a max volumetric flow test and cap filament_max_volumetric_speed below the failure point.", kind: workflow}
+src: [sovol_spec_sv08, simplyprint_sv08, "orca:Sovol/machine/Sovol SV08 0.4 nozzle.json"]

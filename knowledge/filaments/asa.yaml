@@ -1,0 +1,320 @@
+kind: filament
+schema_version: 1
+id: asa
+name: ASA
+category: engineering
+orca_filament_type: ASA
+aliases: [Acrylonitrile styrene acrylate, ASA Basic, ASA Aero (foamed variant, separate profile)]
+related: [abs, pc]
+summary: >
+  ABS style engineering plastic with an acrylic rubber phase that resists UV and
+  weather. It is the material for parts that live outdoors. It prints like ABS:
+  hot bed, warm enclosure, low fan, styrene fumes. Warps a little less than ABS
+  in practice, but large flat parts still lift without an enclosure.
+use_for: [outdoor parts and signs, garden and car exterior parts, sunlit housings, weatherproof brackets, parts up to about 90 C]
+avoid_for: [open frame printers without an enclosure, unventilated rooms, food contact, parts that need to flex or take shock loads across layers]
+
+nozzle_temp_c:
+  min: 240
+  max: 280
+  typical: 260
+  confidence: high
+  src:
+    - "orca:OrcaFilamentLibrary/filament/Generic ASA @System.json"
+    - "orca:OrcaFilamentLibrary/filament/Bambu/Bambu ASA @base.json"
+    - "orca:BBL/filament/Bambu ASA @BBL X1C.json"
+    - "orca:Prusa/filament/Prusament ASA @CORE One.json"
+    - bambu_wiki_material_table
+    - bambu_tds_asa_v3
+    - prusa_kb_asa
+    - polymaker_pis_polylite_asa
+  note: >
+    Bambu profiles use 270 C and a 270 first layer, Prusa 260, Polymaker 240 to
+    260 and the Bambu TDS 240 to 270. Start at 260 and move in 5 C steps. Cooler
+    ASA gives cleaner detail, hotter ASA gives stronger layers.
+first_layer_nozzle_temp_c:
+  min: 260
+  max: 270
+  typical: 260
+  confidence: medium
+  src: ["orca:OrcaFilamentLibrary/filament/Generic ASA @System.json", "orca:BBL/filament/Bambu ASA @BBL X1C.json", "orca:Prusa/filament/Prusament ASA @CORE One.json"]
+  note: "Bambu 270, Prusa and Orca generic 260."
+bed_temp_c:
+  min: 80
+  max: 110
+  typical: 100
+  confidence: high
+  src: [bambu_wiki_material_table, bambu_tds_asa_v3, prusa_kb_asa, polymaker_pis_polylite_asa, "orca:BBL/filament/Bambu ASA @BBL X1C.json", "orca:Prusa/filament/Prusament ASA @CORE One.json"]
+  note: "Bambu glue table 90 to 100 (TDS 80 to 100), Prusa 105 then 110 C, Polymaker 75 to 95. Use 100 C, and 110 C on smooth PEI for large parts."
+chamber_temp_c:
+  min: 45
+  max: 65
+  typical: 60
+  confidence: medium
+  src:
+    - bambu_tds_asa_v3
+    - bambu_wiki_x1e_chamber
+    - bambu_h2d_tech_specs
+    - prusa_blog_core_one_intro
+    - prusa_kb_asa
+    - "orca:BBL/filament/Bambu ASA @BBL H2D 0.4 nozzle.json"
+    - "orca:BBL/filament/Bambu ASA @BBL P2S 0.4 nozzle.json"
+    - "orca:BBL/filament/Bambu ASA @BBL X1E.json"
+  note: >
+    Passive enclosure (X1C, P1S, P2S, Voron, closed box): the chamber runs
+    well below the active range on bed heat alone (no source gives a figure), so
+    keep the door and lid closed. Bambu's TDS lists 45
+    to 60 C. Active heating: X1E maxes at 60 C, H2D at 65 C, Prusa Core One
+    reaches 55 C at full bed heat. Bambu ships the ASA profile with a 65 C
+    chamber target on H2D and P2S, and 0 on X1C and X1E. On X1E, Bambu
+    suggests 60 C only for large or dense parts, since chamber heating lowers
+    filter performance.
+enclosure:
+  level: required
+  confidence: high
+  src: [bambu_wiki_material_table, bambu_wiki_abs_asa_pc, prusa_kb_asa, polymaker_pis_polylite_asa]
+  note: >
+    Bambu lists ASA as compatible only on enclosed printers. Prusa says an
+    enclosure is necessary for large parts and offers the draft shield as a
+    mitigation. Polymaker recommends one to prevent warping. Small parts with a
+    brim can print on an open printer in a warm room.
+
+plates:
+  - {plate: bambu_cool_plate, fit: avoid, confidence: high, src: [bambu_wiki_abs_asa_pc], note: "Bambu requires glue and lists the low temperature plates as unsuitable for ASA."}
+  - {plate: bambu_engineering_plate, fit: glue, bed_temp_c: {min: 90, max: 100}, release_agent: glue_stick, confidence: high, src: [bambu_wiki_material_table, bambu_tds_asa_v3], note: "TDS lists the Engineering plate with glue at 80 to 100 C."}
+  - {plate: bambu_high_temp_plate, fit: glue, bed_temp_c: {min: 90, max: 100}, release_agent: glue_stick, confidence: high, src: [bambu_wiki_material_table, bambu_tds_asa_v3], note: "Glue helps hold corners and protects the sheet."}
+  - {plate: smooth_pei, fit: glue, bed_temp_c: {min: 100, max: 110}, release_agent: glue_stick, confidence: high, src: [prusa_kb_asa], note: "Prusa: smooth or powder coated PEI with glue stick. Do not put acetone slurry on a powder coated sheet."}
+  - {plate: textured_pei, fit: glue, bed_temp_c: {min: 90, max: 105}, release_agent: glue_stick, confidence: high, src: [bambu_tds_asa_v3, prusa_kb_asa], note: "Works with glue. Releases once the plate is cool."}
+  - {plate: glass, fit: glue, release_agent: acetone_slurry, confidence: low, src: [prusa_kb_asa], note: "Prusa says glass may need a thin layer of ASA or ABS dissolved in acetone."}
+
+cooling:
+  fan_min_pct: {min: 0, max: 25, typical: 10}
+  fan_max_pct: {min: 12, max: 35, typical: 35}
+  overhang_fan_pct: {min: 20, max: 80, typical: 80}
+  no_fan_first_layers: {typical: 3}
+  min_layer_time_s: {min: 10, max: 12, typical: 12}
+  confidence: medium
+  src:
+    - "orca:OrcaFilamentLibrary/filament/Bambu/Bambu ASA @base.json"
+    - "orca:BBL/filament/Bambu ASA @BBL X1C.json"
+    - "orca:BBL/filament/Bambu ASA @BBL H2D 0.4 nozzle.json"
+    - "orca:Prusa/filament/Prusament ASA @CORE One.json"
+    - "orca:Prusa/filament/Prusament ASA @MK4S.json"
+    - polymaker_pis_polylite_asa
+  note: >
+    Bambu holds the fan at 10 to 35 percent (25 to 35 on X1C) with 80 on
+    overhangs. Prusa runs 12 to 25 percent. Orca generic allows up to 80.
+    Polymaker turns the fan off. Keep it low: ASA cracks between layers when
+    cooled hard.
+
+drying:
+  need: recommended
+  oven: {temp_c: {min: 75, max: 85}, hours: 8}
+  ams_2_pro: null
+  ams_ht: {temp_c: 80, hours: 8}
+  printer_bed: {temp_c: {min: 90, max: 100}, hours: 12, note: "Enclosed Bambu printers only, spool covered"}
+  keep_dry_in_use: optional
+  confidence: high
+  src: [bambu_wiki_drying, bambu_wiki_material_table, bambu_wiki_abs_asa_pc, bambu_tds_asa_v3]
+  note: >
+    Bambu marks ASA drying "recommended". AMS 2 Pro is listed as not compatible
+    because it stops at 65 C. Use AMS HT (80 C, 8 h), a forced air oven, or the
+    heated bed. Bambu lists ASA-CF and ABS-GF as needing desiccant in use.
+
+nozzle:
+  abrasive: false
+  hardened_required: false
+  min_diameter_mm: 0.2
+  orca_required_hrc: 3
+  confidence: high
+  src: [bambu_wiki_material_table, "orca:OrcaFilamentLibrary/filament/Generic ASA @System.json"]
+  note: "Bambu lists all nozzle sizes as compatible. ASA Aero foamed ASA is 0.4 mm only. Carbon filled ASA-CF needs hardened steel (see asa_cf)."
+
+extrusion:
+  flow_ratio: {min: 0.926, max: 1.0, typical: 0.95, confidence: medium, src: ["orca:OrcaFilamentLibrary/filament/Bambu/Bambu ASA @base.json", "orca:OrcaFilamentLibrary/filament/Generic ASA @System.json", "orca:Prusa/filament/Prusament ASA @CORE One.json"], note: "Bambu 0.95, Orca generic 0.926, Prusament on Core One 1.0. Confirm with a flow test."}
+  max_volumetric_speed_mm3s:
+    standard_hotend: {min: 12, max: 18, typical: 18}
+    high_flow_hotend: {min: 20, max: 35, typical: 25}
+    confidence: medium
+    src:
+      - "orca:OrcaFilamentLibrary/filament/Generic ASA @System.json"
+      - "orca:BBL/filament/Bambu ASA @BBL X1C.json"
+      - "orca:BBL/filament/Bambu ASA @BBL H2D 0.4 nozzle.json"
+      - "orca:BBL/filament/Bambu ASA @BBL P2S 0.4 nozzle.json"
+      - "orca:Prusa/filament/Prusament ASA @CORE One.json"
+    note: >
+      Bambu ASA on X1C: 18 standard and 25 high flow. H2D 0.4 mm: 20, up to 35
+      on the high flow hotend. P2S: 18, up to 25. Orca generic: 12 standard, 20
+      high flow. Prusament ASA on Core One and MK4S: 15.
+  retraction_mm:
+    direct_drive: {min: 0.4, max: 0.8, typical: 0.4}
+    confidence: medium
+    src: ["orca:BBL/filament/Bambu ASA @BBL X1C.json", "orca:BBL/filament/Bambu ASA @BBL H2D 0.4 nozzle.json", bambu_tds_asa_v3]
+    note: "Bambu profiles use 0.4 mm on X1C, H2D and P2S. Bambu's TDS suggests 0.8 to 1.4 mm for longer feed paths. Bowden values come from the printer profile."
+  retraction_speed_mm_s: {min: 20, max: 40, typical: 30, confidence: medium, src: [bambu_tds_asa_v3, "orca:BBL/machine/Bambu Lab X1 Carbon 0.4 nozzle.json", "orca:Prusa/machine/fdm_machine_common_mk4s.json"], note: "Bambu TDS says 20 to 40 mm/s. Bambu machine profiles use 30, Prusa MK4S uses 35."}
+  pressure_advance:
+    direct_drive: {min: 0.02, max: 0.04, typical: 0.02}
+    confidence: medium
+    src: ["orca:Prusa/filament/Prusament ASA @CORE One.json", "orca:Prusa/filament/Prusament ASA @MK4S.json", klipper_pressure_advance, ellis_pa]
+    note: "Prusa ships M572 S0.02 at 0.4 mm (0.012 at 0.6 mm, 0.01 at 0.8 mm) on Core One and MK4S. Bambu printers calibrate flow dynamics per spool. PA is printer specific; calibrate."
+
+layer_height:
+  fraction_of_nozzle: {min: 0.25, max: 0.7, typical: 0.5}
+  at_0_4_mm: {min: 0.1, max: 0.28, typical: 0.2}
+  smart_layer:
+    quality_mode: "ASA keeps its matte finish and UV stability at 0.12 to 0.16 mm, and thin layers show off curved outdoor parts. Keep the floor near 0.1 mm, because ASA splits between thin layers as easily as ABS."
+    strength_mode: "Bias toward 0.2 to 0.28 mm for outdoor brackets and housings. A thicker bead stays hot longer and needs less fan, which helps layer bonding in a warm chamber."
+    thin_layer_cooling: "Minimum layer time is 10 to 12 s in Bambu and Prusa profiles. Keep the fan at 35 percent or less and add a second part when small layers slow down."
+  basis: expert
+  confidence: medium
+  src: ["orca:Prusa/machine/fdm_machine_common.json", "orca:BBL/machine/Bambu Lab X1 Carbon 0.6 nozzle.json", "orca:BBL/process/0.20mm Standard @BBL X1C.json", "orca:BBL/process/0.28mm Extra Draft @BBL X1C.json", polymaker_pis_polylite_asa, materials_2018_pla_abs_fdm, cnckitchen_layer_height]
+  note: "Same limits as ABS: Bambu presets run 0.08 to 0.28 mm on a 0.4 mm nozzle and Orca allows 0.08 to 0.3 mm. Polymaker tests ASA at 0.1 mm. The tension data comes from ABS and PLA, and ASA is extrapolated."
+smart_layer:
+  min_ratio: 0.25
+  max_ratio: 0.7
+  modes:
+    quality: {min_ratio: 0.25, max_ratio: 0.5}
+    strength: {min_ratio: 0.3, max_ratio: 0.5}
+  family: abs_asa
+  note: "ASA prints well from 0.25 to 0.7 of the nozzle diameter; Quality mode uses 0.25 to 0.5 and Strength mode 0.3 to 0.5, since parts weaken once layers pass half the nozzle."
+  confidence: medium
+  src: ["orca:Prusa/machine/fdm_machine_common.json", "orca:BBL/machine/Bambu Lab X1 Carbon 0.6 nozzle.json", "orca:BBL/process/0.20mm Standard @BBL X1C.json", "orca:BBL/process/0.28mm Extra Draft @BBL X1C.json", "polymaker_pis_polylite_asa", "materials_2018_pla_abs_fdm", "cnckitchen_layer_height", "stojkovic_2023_layer_height_annealing"]
+speeds:
+  print_speed_mm_s: {min: 30, max: 250}
+  first_layer_mm_s: {min: 20, max: 50, typical: 40}
+  volumetric_note: "Bambu lists under 250 mm/s, Polymaker suggests 30 to 50 mm/s. Real speed is capped by max volumetric speed (see extrusion). No source caps outer wall speed for ASA."
+  confidence: medium
+  src: [bambu_tds_asa_v3, polymaker_pis_polylite_asa, "orca:BBL/process/0.20mm Standard @BBL X1C.json", "orca:Prusa/process/0.20mm SPEED @MK4S 0.4.json"]
+  note: "First layer: Bambu Standard preset 50 mm/s, Prusa MK4S preset 40 mm/s."
+first_layer:
+  fan_off_layers: 3
+  speed_mm_s: {min: 20, max: 50, typical: 40}
+  bed_first_layer_note: "Prusa runs the first layer at 105 C and then 110 C. Bambu holds 90 to 100 C. Raise the first layer bed 5 to 10 C if corners lift."
+  squish_note: "Do not squish harder to cure lifting corners (Prusa). A first layer of 0.25 mm or more at 120 percent line width holds better than a thin one (Ellis)."
+  confidence: medium
+  src: ["orca:BBL/process/0.20mm Standard @BBL X1C.json", "orca:Prusa/process/0.20mm SPEED @MK4S 0.4.json", prusa_kb_asa, prusa_kb_first_layer, prusa_kb_warping, ellis_first_layer_squish, bambu_wiki_material_table, "orca:Prusa/filament/Generic ASA @Prusa CORE One.json"]
+  note: "Prusa profiles keep the fan off for 4 layers, Bambu for 3."
+structure:
+  walls: {min: 2, typical: 3, note: "Outdoor parts gain more from 3 to 4 walls than from dense infill, and walls also shield the core from weather."}
+  infill: {pattern_hint: gyroid, density_note: "10 to 20 percent for brackets and housings, 25 percent for the Bambu Strength preset."}
+  basis: expert
+  confidence: low
+  src: ["orca:BBL/process/0.20mm Standard @BBL X1C.json", "orca:BBL/process/0.20mm Strength @BBL X1C.json"]
+supports:
+  interface_materials: ["Bambu Support for ABS", hips]
+  soluble_pairing: {material: hips, dissolve: "limonene"}
+  top_z_distance_mm: {typical: 0.2}
+  interface_layers: {typical: 2}
+  note: "Bambu lists Support for ABS as compatible with ABS only, so test it on a scrap before ASA. Same material ASA supports weld and leave scars. Prusa warns HIPS is not suited to ASA supports because ASA partly dissolves in limonene, and a long dip hurts Prusament ASA layer adhesion."
+  confidence: low
+  src: [bambu_store_support_filaments, bambu_store_support_for_abs, prusa_kb_hips, "orca:BBL/process/0.20mm Standard @BBL X1C.json"]
+
+multi_material:
+  bambu_ams: compatible
+  bambu_ams_lite: not_recommended
+  bambu_ams_ht: compatible
+  confidence: medium
+  src: [bambu_wiki_material_table, bambu_wiki_abs_asa_pc]
+  note: "Material table shows ASA compatible with AMS and AMS lite. Bambu's ABS, ASA and PC guide says these are not compatible with AMS lite, so treat AMS lite as not recommended. AMS HT can dry ASA."
+
+properties:
+  density_g_cm3: {typical: 1.05, min: 1.04, max: 1.07, src: ["orca:OrcaFilamentLibrary/filament/Bambu/Bambu ASA @base.json", "orca:OrcaFilamentLibrary/filament/Generic ASA @System.json", "orca:Prusa/filament/Prusament ASA @CORE One.json", bambu_tds_asa_v3]}
+  softening_temp_c: {typical: 106, src: [bambu_tds_asa_v3, polymaker_pis_polylite_asa], note: "Bambu Vicat 106 C. Polymaker Tg 97.8 C and Vicat 105 C. Orca vitrification 110 C."}
+  heat_deflection_c: {at_0_45_mpa: 100, at_1_8_mpa: 92, src: [bambu_tds_asa_v3], note: "Bambu ASA TDS, annealed specimens. Prusa quotes heat resistance up to 93 C."}
+  annealing: {temp_c: {min: 80, max: 90}, hours: {min: 6, max: 12}, src: [bambu_tds_asa_v3], note: "Suggested by Bambu. Parts can deform and warp, so use a forced air oven and test on a spare part."}
+  uv_resistance: {level: high, src: [prusa_kb_asa, bambu_wiki_abs_asa_pc], note: "Prusa: high UV resistance. Bambu: exceptional UV, weather, mechanical and thermal resistance."}
+  relative:
+    heat: 3
+    impact: 3
+    tensile: 3
+    scale: "1 to 5, Bambu star ratings"
+    src: [bambu_wiki_material_table]
+safety:
+  fumes: high
+  note: >
+    Releases styrene fumes that Prusa flags as potentially dangerous. Print in
+    an enclosure in a ventilated room without drafts on the print. Bambu X, P
+    and H series carry an activated carbon filter; enable
+    activate_air_filtration in the filament profile. Carbon adsorbs less
+    when the chamber is very hot. Bambu's data sheet calls ASA odorless
+    when cold, but the print smells hot.
+  src: [prusa_kb_asa, bambu_wiki_abs_asa_pc, bambu_wiki_x1e_chamber]
+food_contact:
+  note: "ASA is not food safe. Colorants are uncertified and layer lines trap bacteria."
+  src: [prusa_kb_food_safe]
+
+failure_modes:
+  - id: corner_warping
+    symptom: Corners or edges lift off the plate
+    causes: [chamber too cold, bed too cool, drafts, small contact area, no glue]
+    fixes:
+      - {key: brim_type, op: set, value: outer_only, why: "A brim adds contact area so corners hold against ASA shrinkage."}
+      - {key: brim_width, op: at_least, value: 8, why: "Wide brims resist the pull of a large ASA part."}
+      - {key: draft_shield, op: enable, why: "Prusa suggests a draft shield on printers without a housing. It keeps a warmer pocket of air around the part."}
+      - {advice: "Preheat the chamber. Close the door and lid and hold the bed at 100 C for 10 to 15 minutes. On X1E, H2D or Core One set the chamber temperature.", kind: environment}
+      - {key: initial_layer_speed, op: at_most, value: 30, why: "A slow first layer squishes and bonds better."}
+      - {key: fan_max_speed, op: at_most, value: 25, why: "Less cooling reduces the shrinkage difference between layers."}
+      - {advice: "Apply a thin coat of glue stick to the plate. Bambu requires glue for ASA.", kind: material}
+  - id: layer_splitting
+    symptom: Cracks along layer lines
+    causes: [fan too high, chamber too cold, nozzle too cool, drafts]
+    fixes:
+      - {key: nozzle_temperature, op: increase_by, value: 5, why: "Hotter plastic fuses better with the layer below."}
+      - {key: fan_max_speed, op: at_most, value: 25, why: "Bambu names excess cooling and a cold chamber as the cause of layer splitting."}
+      - {key: chamber_temperature, op: at_least, value: 50, why: "A warmer chamber cuts thermal shrinkage stress. Only on printers with active chamber heating."}
+      - {advice: "Keep the door and lid closed and let the part cool inside the printer.", kind: environment}
+  - id: fumes_smell
+    symptom: Strong smell or irritation during printing
+    causes: [styrene release, no filtration, no ventilation]
+    fixes:
+      - {key: activate_air_filtration, op: enable, why: "Runs the activated carbon filter during ASA prints on Bambu X, P and H series."}
+      - {advice: "Ventilate the room or vent the printer outdoors, and avoid sitting next to it for long prints.", kind: environment}
+  - id: bubbles_popping
+    symptom: Popping, bubbles, rough or fuzzy walls
+    causes: [wet filament]
+    fixes:
+      - {advice: "Dry at 80 C for 8 h in a forced air oven or an AMS HT. AMS 2 Pro cannot dry ASA.", kind: material}
+  - id: acetone_smoothing
+    symptom: Visible layer lines on a part that needs a glossy surface
+    causes: [normal FDM surface]
+    fixes:
+      - {advice: "ASA smooths well in acetone vapor and can be wet sanded or welded with acetone. Do this in a ventilated area.", kind: workflow}
+
+disagreements:
+  - topic: bed temperature
+    positions:
+      - {claim: "80 to 100 C", src: [bambu_tds_asa_v3]}
+      - {claim: "105 C first layer, 110 C after", src: [prusa_kb_asa]}
+      - {claim: "75 to 95 C", src: [polymaker_pis_polylite_asa]}
+    resolution: "Default 100 C. Use 110 C on a smooth sheet for big flat parts and 90 C for small parts on textured plates."
+  - topic: nozzle temperature
+    positions:
+      - {claim: "270 C in Bambu printer profiles", src: ["orca:BBL/filament/Bambu ASA @BBL X1C.json"]}
+      - {claim: "240 to 270 C in the Bambu TDS, 260 C at Prusa, 240 to 260 C at Polymaker", src: [bambu_tds_asa_v3, prusa_kb_asa, polymaker_pis_polylite_asa]}
+    resolution: "Default 260 C. Go to 270 C for layer strength, never above 280 C."
+  - topic: AMS lite compatibility
+    positions:
+      - {claim: "Compatible with AMS lite", src: [bambu_wiki_material_table]}
+      - {claim: "Not compatible with AMS lite", src: [bambu_wiki_abs_asa_pc]}
+    resolution: "Treat as not recommended."
+  - topic: soluble support for ASA
+    positions:
+      - {claim: "HIPS dissolves in limonene and is used as a soluble support for ABS and ASA", src: [flashforge_tds_hips]}
+      - {claim: "HIPS supports are not suitable for ABS or ASA because they partly dissolve in limonene", src: [prusa_kb_hips]}
+    resolution: "Use a release interface such as Bambu Support for ABS or the same material with a larger Z gap. Use HIPS only with a dip of 10 to 20 s and after a scrap test."
+
+pilot_defaults:
+  nozzle_temperature: 260
+  nozzle_temperature_initial_layer: 260
+  eng_plate_temp: 100
+  hot_plate_temp: 100
+  textured_plate_temp: 100
+  fan_min_speed: 10
+  fan_max_speed: 35
+  overhang_fan_speed: 80
+  close_fan_the_first_x_layers: 3
+  slow_down_layer_time: 12
+  filament_flow_ratio: 0.95
+  filament_max_volumetric_speed: 18
+  retraction_length: 0.4
+  activate_air_filtration: true

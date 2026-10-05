@@ -1,0 +1,107 @@
+kind: printer
+schema_version: 1
+id: bambu_x1c
+name: Bambu Lab X1 Carbon
+vendor: Bambu Lab
+status: discontinued
+status_note: "Not in the Bambu US store new printer list in 2026-09. Only a refurbished X1C listing remains. Firmware and wiki support continue."
+status_confidence: medium
+status_src: [bambu_store_collection]
+firmware: bambu
+connections: [bambu_lan_mqtt, bambu_cloud, bambu_connect]
+kinematics: corexy
+build_volume_mm: {x: 256, y: 256, z: 256, printable_z_default: 250, src: [bambu_spec_x1c, "orca:BBL/machine/Bambu Lab X1 Carbon 0.4 nozzle.json"], note: "Spec is 256 mm. Bambu Studio and the Orca profile default to 250 mm height to protect the heatbed."}
+extruder: {type: direct_drive, gears: hardened_steel, src: [bambu_spec_x1c, "orca:BBL/machine/Bambu Lab X1 Carbon 0.4 nozzle.json"]}
+hotend:
+  max_temp_c: 300
+  nozzle_diameters_mm: [0.2, 0.4, 0.6, 0.8]
+  nozzle_materials: [hardened_steel, stainless_steel]
+  stock_nozzle: {diameter_mm: 0.4, material: hardened_steel}
+  tool_free_swap: false
+  high_flow_option: null
+  high_flow_note: "The Orca machine profile lists a High Flow variant, but the Bambu hotend page offers only hardened steel and stainless steel hotends. Not confirmed."
+  max_flow_mm3s: {value: 32, note: "Bambu test: 150 x 150 mm single wall, Bambu ABS at 280 C."}
+  src: [bambu_spec_x1c, bambu_wiki_hotend_x1, "orca:BBL/machine/Bambu Lab X1 Carbon 0.4 nozzle.json"]
+bed:
+  max_temp_c: 110
+  max_temp_c_110v: 120
+  plates: [bambu_cool_plate, bambu_engineering_plate, bambu_high_temp_plate, textured_pei, bambu_supertack_plate]
+  included_plates: [bambu_cool_plate, bambu_engineering_plate]
+  note: "110 C on 220 V mains, 120 C on 110 V. Textured PEI and SuperTack work but second generation QR codes are not recognized on X1 (choose Resolved on screen or turn off build plate detection)."
+  src: [bambu_spec_x1c, bambu_wiki_build_plates, bambu_wiki_supertack]
+enclosure:
+  type: enclosed
+  chamber_heating: passive
+  max_chamber_c: null
+  filtration: [activated_carbon]
+  top_glass_removable: true
+  src: [bambu_spec_x1c, bambu_wiki_material_table]
+  note: "No chamber heater. The heatbed warms the chamber. The top glass lid comes off for low temperature filaments (see bambu_plates)."
+motion:
+  max_speed_mm_s: 500
+  max_accel_mm_s2: 20000
+  input_shaping: auto
+  src: [bambu_spec_x1c, bambu_wiki_x1_intro, bambu_wiki_printer_calibration]
+  note: "Bambu calls it vibration compensation. It runs as part of the startup calibration."
+power:
+  mains: "100 to 240 V AC, 50/60 Hz"
+  max_w: {value: 1000, note: "At 220 V. 350 W at 110 V.", src: [bambu_spec_x1c], confidence: high}
+  printing_typical_w: {pla: {value: 105}, abs: {value: 150}, pc: {value: 135}, src: [bambu_wiki_power], confidence: medium, note: "Bambu wiki average power over a short test print (about 15 to 17 minutes). Power factor 0.45 to 0.63."}
+  idle_w: {range: [8.5, 9.7], src: [bambu_wiki_power], confidence: medium, note: "Bambu wiki reading without network connection. 8.7 to 9.9 W with Wi-Fi. Screen state not stated."}
+  measured_examples:
+    - {job: "Bambu wiki test print, PLA, 15 min 24 s", kwh_range: [0.023, 0.031], src: [bambu_wiki_power]}
+    - {job: "Bambu wiki test print, ABS, 17 min 24 s", kwh_range: [0.034, 0.048], src: [bambu_wiki_power]}
+  note: "No chamber heater."
+sensors: [lidar, chamber_camera, door_sensor, filament_runout, filament_odometry_with_ams, spaghetti_detection, first_layer_inspection, power_loss_recovery]
+sensors_src: [bambu_spec_x1c, bambu_wiki_x1_intro]
+builtin_calibrations:
+  - {id: flow_dynamics, what: "Auto pressure advance (K value) by printing lines and scanning them with Micro Lidar. Stored per filament in the printer.", src: [bambu_wiki_flow_dynamics]}
+  - {id: flow_rate, what: "Auto flow ratio calibration with Micro Lidar. X series only.", src: [bambu_wiki_flow_rate_cal, bambu_wiki_lidar_flow]}
+  - {id: bed_leveling, what: "Automatic bed leveling and first layer Z offset check.", src: [bambu_wiki_printer_calibration, bambu_wiki_x1_intro]}
+  - {id: vibration_compensation, what: "Maps resonance to cancel ghosting and ringing. Rerun after moving the printer.", src: [bambu_wiki_printer_calibration]}
+  - {id: motor_noise, what: "Motor noise cancellation calibration.", src: [bambu_wiki_printer_calibration]}
+multi_material:
+  - {system: bambu_ams, max_units: 4, slots_per_unit: 4, needs: "filament buffer for one unit or AMS Hub for two or more", src: [bambu_wiki_ams_compat]}
+  - {system: bambu_ams_2_pro, max_units: 4, slots_per_unit: 4, needs: "same buffer or hub, each unit needs its own power adapter to dry", src: [bambu_wiki_ams_compat, bambu_wiki_ams_faq]}
+  - {system: bambu_ams_ht, max_units: 4, slots_per_unit: 1, needs: "same buffer or hub, external power for drying", src: [bambu_wiki_ams_compat]}
+  - {system: bambu_ams_lite, compatible: false, src: [bambu_wiki_amslite_intro]}
+materials:
+  recommended: [pla, pla_plus, pla_silk, pla_matte, pla_cf, petg, petg_cf, abs, asa, pc, pa6, pa12, pa_cf, pa_gf, tpu_95a, pva, bvoh]
+  possible: [tpu_85a]
+  not_recommended: []
+  unlisted: [hips, pp]
+  src: [bambu_spec_x1c, bambu_wiki_material_table]
+  note: "Spec sheet: PLA, PETG, TPU, ABS, ASA, PET supported; PA and PC ideal; carbon and glass fiber ideal (hardened nozzle stock). TPU 85A is very soft: feed from the external spool, slowly. HIPS and PP are not covered by Bambu's tables."
+orca_profile: "orca:BBL/machine/Bambu Lab X1 Carbon 0.4 nozzle.json"
+profile_baseline:
+  process: "0.20mm Standard @BBL X1C"
+  values: {wall_loops: 2, top_shell_layers: 5, bottom_shell_layers: 3, sparse_infill_density: "15%", sparse_infill_pattern: grid, outer_wall_speed: 200, inner_wall_speed: 300, sparse_infill_speed: 270, top_surface_speed: 200, travel_speed: 500, default_acceleration: 10000, outer_wall_acceleration: 5000, top_surface_acceleration: 2000, seam_position: aligned, line_width: 0.42, elefant_foot_compensation: 0.15, support_threshold_angle: 30, retraction_length: 0.8, retraction_speed: 30, z_hop: 0.4}
+  src: ["orca:BBL/process/0.20mm Standard @BBL X1C.json", "orca:BBL/machine/Bambu Lab X1 Carbon 0.4 nozzle.json"]
+pilot_notes:
+  - "PLA, PLA-CF, PVA and TPU: if the bed is above 45 C, tell the user to take off the top glass lid. For PETG and PETG-CF the threshold is 70 C. Keep the lid and door closed for ABS, ASA, PC and PA."
+  - "The chamber has no heater. For ABS, ASA, PC and PA the bed is the only heat source, so keep the door shut and skip the top lid removal."
+  - "Flow dynamics and flow rate auto calibration use the lidar. They fail on transparent, sparkle, marble, metal and silk filament, and on TPU. Use the manual K pattern or manual flow test for those."
+  - "Starting a print from Bambu Studio in LAN only mode needs a Micro SD card in the printer."
+  - "Bambu Studio treats the nozzle field as display only in recent versions. If the user swaps to a different diameter or material, the change is physical, then sync on the printer."
+  - "Third party plates (SuperTack, textured PEI) are not auto recognized by X1 firmware. If the plate warning appears, choose Resolved on screen. Bambu suggests turning off build plate position detection for SuperTack."
+  - "Purged filament falls down the rear waste chute. Multi color plans need a container and an empty chute."
+  - "After moving the printer, after maintenance or after a firmware update, suggest the printer calibration (bed leveling, vibration compensation)."
+common_issues:
+  - symptom: "Auto flow dynamics gives odd or inconsistent K values"
+    cause: "Damp filament, transparent or metallic finish, dirty or slick plate so the lines do not stick, worn nozzle, or TPU. Results also vary by about 10 percent run to run."
+    fix:
+      - {advice: "Dry the spool, wash the plate (or add glue stick) and rerun. For transparent or sparkle filament use the manual K pattern.", kind: workflow}
+      - {advice: "Ignore differences under about 10 percent between runs. Bambu measured that much jitter.", kind: workflow}
+    src: [bambu_wiki_flow_dynamics, bambu_wiki_lidar_flow]
+  - symptom: "Plate warning or first layer trouble after fitting a SuperTack or textured PEI plate"
+    cause: "X1 firmware does not read second generation plate QR codes."
+    fix:
+      - {advice: "Choose Resolved on the printer screen, or turn off build plate position detection under Controls, Print Options.", kind: workflow}
+    src: [bambu_wiki_build_plates, bambu_wiki_supertack]
+  - symptom: "Purge waste jams the chute on long multi color prints"
+    cause: "Purged filament piles up under the chute or a cover blocks it."
+    fix:
+      - {advice: "Put a large container under the chute, keep it uncovered, and empty it during long prints.", kind: hardware}
+      - {key: flush_multiplier, op: multiply, value: 0.9, why: "Bambu says default flush volumes run slightly high. Test that colors stay clean before going lower."}
+    src: [bambu_wiki_purge_waste, bambu_wiki_reduce_waste]
+src: [bambu_spec_x1c, bambu_wiki_x1_intro, bambu_wiki_hotend_x1, "orca:BBL/machine/Bambu Lab X1 Carbon 0.4 nozzle.json"]

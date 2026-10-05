@@ -1,0 +1,22 @@
+kind: guide
+schema_version: 1
+id: adhesion
+name: Brim, raft and draft shield
+applies_to: [all]
+summary: >
+  How mimir keeps parts on the plate: the right plate and temperature from the
+  filament file first, then brims, mouse ears, rafts and draft shields for
+  warp prone materials and tall thin parts.
+facts:
+  - {text: "Auto brim sizes the brim from part geometry, speed and material. Reference thermal lengths: ABS, PA-CF and PET-CF 100, PC 40, TPU 1000. Adhesion coefficient 2 for PETG and PCTG, 0.5 for TPU. Capped at 20 mm; under 5 mm it adds no brim.", src: ["orca_wiki:others_settings_brim"]}
+  - {text: "Outer brims are easiest to remove. Inner brims hide the removal mark but are harder to remove. Mouse ears add small brims only at corners and sharp features.", src: ["orca_wiki:others_settings_brim"]}
+  - {text: "A draft shield protects ABS and ASA from drafts on open frame printers; enclosed printers rarely need one.", src: ["orca_src:src/libslic3r/PrintConfig.cpp"]}
+  - {text: "Consider a raft for complex models or difficult materials.", src: ["orca_wiki:others_settings_brim"]}
+settings:
+  - {key: brim_type, op: set, value: auto_brim, why: "Lets the slicer size the brim from the part and material."}
+pilot_actions:
+  - "Offer mouse ears (brim_type brim_ears) instead of a full brim on boxy ABS or ASA parts: corners only, less cleanup."
+  - "For ABS, ASA, PC and nylon parts larger than about 100 mm across, suggest a brim or mouse ears and a closed enclosure."
+  - "For tall thin parts, suggest a brim and slower travel."
+  - "Always check the plate choice against the filament file before adding a brim."
+src: ["orca_wiki:others_settings_brim", "orca_src:src/libslic3r/PrintConfig.cpp"]

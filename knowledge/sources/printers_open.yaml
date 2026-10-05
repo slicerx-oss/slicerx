@@ -1,0 +1,275 @@
+kind: sources
+sources:
+  - id: prusa_spec_mk4s
+    title: "Original Prusa MK4S 3D Printer Kit product page"
+    publisher: "Prusa Research"
+    type: manufacturer_spec
+    url: https://www.prusa3d.com/product/original-prusa-mk4s-3d-printer-kit/
+    retrieved: 2026-09-29
+    note: "Build volume, 290 C nozzle, 120 C bed, Nextruder direct drive, Ethernet and optional Wi-Fi, Prusa Connect."
+  - id: prusa_spec_core_one
+    title: "Prusa CORE One technical specifications (press summary of Prusa spec sheet)"
+    publisher: "3D Printing Industry"
+    type: press
+    url: https://3dprintingindustry.com/news/prusa-core-one-technical-specifications-and-pricing-234570/
+    retrieved: 2026-09-29
+    note: "250 x 220 x 270 mm, active chamber control up to 55 C, 290 C nozzle, input shaper. Secondary source; Prusa spec pages returned errors when fetched."
+  - id: prusa_spec_xl
+    title: "Original Prusa XL 5-toolhead product page (spec summary via search)"
+    publisher: "Prusa Research"
+    type: manufacturer_spec
+    url: https://www.prusa3d.com/product/original-prusa-xl-5-toolhead-3d-printer/
+    retrieved: 2026-09-29
+    note: "360 x 360 x 360 mm, 290 C nozzle, 120 C bed, 16 segment bed, load cell, up to 5 toolheads."
+  - id: prusa_kb_input_shaper
+    title: "Input Shaper (CORE One, MK4/S, MK3.9/S, MK3.5/S, XL, MINI/+)"
+    publisher: "Prusa Research"
+    type: manufacturer_kb
+    url: https://help.prusa3d.com/article/input-shaper-core-one-mk4-s-mk3-9-s-mk3-5-s-xl-mini_451816
+    retrieved: 2026-09-29
+    note: "M593 parameters (F, D, T, R), factory calibration, accelerometer optional except on CORE One L and XL, crash detection incompatible."
+  - id: prusa_kb_accelerometer
+    title: "Accelerometer (CORE One, MK4/S, MK3.9/S)"
+    publisher: "Prusa Research"
+    type: manufacturer_kb
+    url: https://help.prusa3d.com/article/accelerometer-core-one-mk4-s-mk3-9-s_729349
+    retrieved: 2026-09-29
+    note: "Optional accelerometer set, calibration from LCD Settings, Input Shaper, Calibration; for experienced users."
+  - id: prusa_kb_phase_stepping
+    title: "Phase Stepping (CORE One L, CORE One)"
+    publisher: "Prusa Research"
+    type: manufacturer_kb
+    url: https://help.prusa3d.com/article/phase-stepping-core-one-l-core-one_914247
+    retrieved: 2026-09-29
+    note: "Phase stepping calibration menu, accelerometer set needed on CORE One, integrated on CORE One L."
+  - id: prusa_blog_phase_stepping
+    title: "Phase Stepping: how we busted vibrations and improved print quality on the XL"
+    publisher: "Prusa Research"
+    type: manufacturer_blog
+    url: https://blog.prusa3d.com/phase-stepping-how-we-busted-vibrations-and-improved-print-quality-on-the-xl-printer-with-just-a-firmware-update_94793/
+    retrieved: 2026-09-29
+    note: "Phase stepping reduces VFAs and motor noise via firmware motor drive signal."
+  - id: prusa_kb_mmu3_compat
+    title: "MMU3 Compatibility"
+    publisher: "Prusa Research"
+    type: manufacturer_kb
+    url: https://help.prusa3d.com/article/mmu3-compatibility_470808
+    retrieved: 2026-09-29
+    note: "MMU3 works with MK3S+, MK3.5/S, MK3.9/S, MK4/S and CORE One."
+  - id: prusa_kb_mmu3_errors
+    title: "MMU3 error code articles: FINDA stuck 04102, filament sensor didn't trigger 04103, fil. stuck 04104"
+    publisher: "Prusa Research"
+    type: manufacturer_kb
+    url: https://help.prusa3d.com/article/filament-sensor-fil-stuck-04104-mmu_394535
+    retrieved: 2026-09-29
+    note: "Error causes for FINDA and extruder IR filament sensor; see also help.prusa3d.com/article/finda-filament-stuck-04102-mmu_394505 and filament-sensor-didnt-trigger-04103-mmu_394514."
+  - id: prusa_kb_mmu3_ir_calibration
+    title: "IR filament sensor calibration (MMU3, MMU2S)"
+    publisher: "Prusa Research"
+    type: manufacturer_kb
+    url: https://help.prusa3d.com/article/ir-filament-sensor-calibration-mmu3-mmu2s_2245
+    retrieved: 2026-09-29
+    note: "Uncalibrated IR sensor gives false readings and can trigger filament change or spool join."
+  - id: prusa_blog_mmu3_core_one
+    title: "The MMU3 for the Prusa CORE One is here"
+    publisher: "Prusa Research"
+    type: manufacturer_blog
+    url: https://blog.prusa3d.com/mmu3-for-the-prusa-core-one-is-here_115073/
+    retrieved: 2026-09-29
+    note: "Enclosed MMU3 for CORE One, up to five filaments, PLA and PETG officially supported."
+  - id: prusa_kb_sending_gcode
+    title: "Sending G-codes to printer via network (Prusa Connect, PrusaLink, OctoPrint)"
+    publisher: "Prusa Research"
+    type: manufacturer_kb
+    url: https://help.prusa3d.com/article/sending-g-codes-to-printer-via-network-prusa-connect-prusalink-octoprint_196761
+    retrieved: 2026-09-29
+    note: "How PrusaSlicer sends files to PrusaLink and Prusa Connect."
+  - id: prusa_blog_connect
+    title: "Complete Overview of Prusa Connect"
+    publisher: "Prusa Research"
+    type: manufacturer_blog
+    url: https://blog.prusa3d.com/prusa-connect-a-network-solution-for-remote-control-of-3d-printers_90364/
+    retrieved: 2026-09-29
+    note: "Prusa Connect upload, queue and remote monitoring."
+  - id: prusalink_openapi
+    title: "PrusaLink Web OpenAPI specification (spec/openapi.yaml)"
+    publisher: "Prusa Research"
+    type: official_api_spec
+    url: https://github.com/prusa3d/Prusa-Link-Web/blob/master/spec/openapi.yaml
+    retrieved: 2026-09-29
+    note: "Endpoints under /api/v1, HTTP digest auth, PUT upload with Print-After-Upload and Overwrite headers."
+  - id: klipper_docs_pressure_advance
+    title: "Klipper Pressure Advance"
+    publisher: "Klipper project"
+    type: official_docs
+    url: https://www.klipper3d.org/Pressure_Advance.html
+    retrieved: 2026-09-29
+    note: "Tuning tower commands, factor 0.005 direct drive and 0.020 bowden, formula, typical 0.05 to 1.0, small retract suggestion."
+  - id: klipper_docs_resonance_compensation
+    title: "Klipper Resonance Compensation"
+    publisher: "Klipper project"
+    type: official_docs
+    url: https://www.klipper3d.org/Resonance_Compensation.html
+    retrieved: 2026-09-29
+    note: "Shaper table, smoothing order, choose min of ringing and smoothing accel."
+  - id: klipper_docs_measuring_resonances
+    title: "Klipper Measuring Resonances"
+    publisher: "Klipper project"
+    type: official_docs
+    url: https://www.klipper3d.org/Measuring_Resonances.html
+    retrieved: 2026-09-29
+    note: "Supported accelerometers, TEST_RESONANCES, SHAPER_CALIBRATE, max_accel suggestion, max_smoothing, recalibration wear caution."
+  - id: klipper_docs_gcodes
+    title: "Klipper G-Codes"
+    publisher: "Klipper project"
+    type: official_docs
+    url: https://www.klipper3d.org/G-Codes.html
+    retrieved: 2026-09-29
+    note: "SET_PRESSURE_ADVANCE, SET_RETRACTION, G10 and G11, EXCLUDE_OBJECT commands, BED_MESH_CALIBRATE ADAPTIVE."
+  - id: klipper_docs_config_reference
+    title: "Klipper Configuration Reference"
+    publisher: "Klipper project"
+    type: official_docs
+    url: https://www.klipper3d.org/Config_Reference.html
+    retrieved: 2026-09-29
+    note: "Defaults for pressure_advance_smooth_time 0.040, firmware_retraction, input_shaper, exclude_object, bed_mesh adaptive_margin."
+  - id: moonraker_docs_intro
+    title: "Moonraker External API introduction"
+    publisher: "Moonraker project"
+    type: official_docs
+    url: https://moonraker.readthedocs.io/en/latest/external_api/introduction/
+    retrieved: 2026-09-29
+    note: "HTTP, websocket, unix socket, MQTT transports."
+  - id: moonraker_docs_job_queue
+    title: "Moonraker Job Queue API"
+    publisher: "Moonraker project"
+    type: official_docs
+    url: https://moonraker.readthedocs.io/en/latest/external_api/job_queue/
+    retrieved: 2026-09-29
+    note: "/server/job_queue endpoints."
+  - id: moonraker_docs_files
+    title: "Moonraker File Management API"
+    publisher: "Moonraker project"
+    type: official_docs
+    url: https://moonraker.readthedocs.io/en/latest/external_api/file_manager/
+    retrieved: 2026-09-29
+    note: "/server/files/upload form fields, roots, metadata."
+  - id: moonraker_docs_webcams
+    title: "Moonraker Webcam API"
+    publisher: "Moonraker project"
+    type: official_docs
+    url: https://moonraker.readthedocs.io/en/latest/external_api/webcams/
+    retrieved: 2026-09-29
+    note: "/server/webcams endpoints and entry fields."
+  - id: voron_docs_home
+    title: "Voron Documentation"
+    publisher: "Voron Design"
+    type: official_docs
+    url: https://docs.vorondesign.com/
+    retrieved: 2026-09-29
+    note: "Build documentation hub for Voron 2.4, Trident and others. Klipper is the supported firmware."
+  - id: voron_comparison_2_4_trident
+    title: "Voron V2.4 or Trident: which one is right for you"
+    publisher: "Voron community retailers (dremc)"
+    type: community_guide
+    url: https://store.dremc.com.au/en-us/blogs/news/voron-v2-4-or-trident-which-one-is-right-for-you
+    retrieved: 2026-09-29
+    note: "Trident: 3 lead screw Z, 250/300/350 by 250 height. 2.4: 4 belted Z, gantry leveling, up to 350 height. Confidence medium."
+  - id: sovol_spec_sv08
+    title: "Sovol SV08 specifications (search summaries of Sovol, Tom's Hardware and SimplyPrint)"
+    publisher: "Sovol"
+    type: manufacturer_spec
+    url: https://www.sovol3d.com/blogs/news/sovol-sv08-klipper-corexy-features-guide-3d-printing
+    retrieved: 2026-09-29
+    note: "350 x 350 x 345, 300 C nozzle, 100 C bed, Klipper, 700 mm/s and 40000 mm/s2 claimed. Confidence medium."
+  - id: simplyprint_sv08
+    title: "Sovol SV08 specs, compatibility and slicer guide"
+    publisher: "SimplyPrint"
+    type: community_database
+    url: https://simplyprint.io/compatibility/sovol-sv08
+    retrieved: 2026-09-29
+    note: "Cross check for SV08 nozzle, bed and firmware."
+  - id: creality_k1_max_page
+    title: "Creality K1 Max product page"
+    publisher: "Creality"
+    type: manufacturer_spec
+    url: https://www.creality.com/products/creality-k1-max-3d-printer
+    retrieved: 2026-09-29
+    note: "300 x 300 x 300 mm, 300 C nozzle, Klipper based."
+  - id: creality_k1c_page
+    title: "Creality K1C product page (spec summary via search)"
+    publisher: "Creality"
+    type: manufacturer_spec
+    url: https://www.3djake.com/creality-3d-printers-spare-parts/k1c
+    retrieved: 2026-09-29
+    note: "220 x 220 x 250 mm, 300 C hotend with hardened steel tip."
+  - id: creality_k1_root_guide
+    title: "Free Remote Access for the Creality K1, K1C and K1 Max (root and Moonraker notes)"
+    publisher: "OctoEverywhere"
+    type: community_guide
+    url: https://blog.octoeverywhere.com/remote-access-for-the-creality-k1-and-k1-max/
+    retrieved: 2026-09-29
+    note: "Root access via printer settings, Moonraker and Fluidd on K1 series. Confidence medium."
+  - id: creality_helper_script
+    title: "Creality Helper Script wiki"
+    publisher: "Guilouz (community)"
+    type: community_guide
+    url: https://guilouz.github.io/Creality-Helper-Script-Wiki/
+    retrieved: 2026-09-29
+    note: "Community tooling for rooted K1 series and K2 series: Moonraker, Fluidd, Mainsail, macros, camera."
+  - id: creality_k2_plus_page
+    title: "Creality K2 Plus Combo product page"
+    publisher: "Creality"
+    type: manufacturer_spec
+    url: https://www.creality.com/products/creality-k2-plus-cfs-combo
+    retrieved: 2026-09-29
+    note: "350 x 350 x 350 mm, 350 C nozzle, actively heated chamber to 60 C, CFS combo."
+  - id: creality_k2_chamber_guide
+    title: "Creality K2 Plus Chamber Temperature Setting Guide"
+    publisher: "Creality"
+    type: manufacturer_wiki
+    url: https://store.creality.com/blogs/tutorial/creality-k2-plus-chamber-temperature-setting-guide
+    retrieved: 2026-09-29
+    note: "Chamber temperature setting behavior on K2 Plus."
+  - id: creality_k2_root_notes
+    title: "Free Remote Access and AI for the Creality K2 Plus (root and Moonraker notes)"
+    publisher: "OctoEverywhere"
+    type: community_guide
+    url: https://blog.octoeverywhere.com/free-remote-access-advanced-ai-for-the-creality-k2-plus/
+    retrieved: 2026-09-29
+    note: "K2 series Klipper with Moonraker and Fluidd, SSH enabled from Root account information setting. Confidence medium."
+  - id: elegoo_n4_pro_page
+    title: "ELEGOO Neptune 4 Pro product page (spec summary via search)"
+    publisher: "Elegoo"
+    type: manufacturer_spec
+    url: https://us.elegoo.com/products/elegoo-neptune-4-pro-fdm-3d-printer
+    retrieved: 2026-09-29
+    note: "225 x 225 x 265 mm, 300 C nozzle, Klipper, 121 point leveling, filament sensor."
+  - id: elegoo_cc_page
+    title: "Elegoo Centauri Carbon product page (spec summary via search)"
+    publisher: "Elegoo"
+    type: manufacturer_spec
+    url: https://us.elegoo.com/products/centauri-carbon
+    retrieved: 2026-09-29
+    note: "256 mm cube, hardened steel nozzle, enclosed, no active chamber heating, bed 110 C."
+  - id: elegoo_cc_review_toms
+    title: "Elegoo Centauri Carbon review"
+    publisher: "Tom's Hardware"
+    type: review
+    url: https://www.tomshardware.com/3d-printing/elegoo-centauri-carbon-review
+    retrieved: 2026-09-29
+    note: "Cross check of Centauri Carbon specs. Confidence medium."
+  - id: opencentauri_docs
+    title: "OpenCentauri documentation (COSMOS and patched firmware)"
+    publisher: "OpenCentauri community"
+    type: community_docs
+    url: https://docs.opencentauri.cc/
+    retrieved: 2026-09-29
+    note: "Alternative firmware: COSMOS full Klipper replacement and patched Elegoo firmware. Community, unofficial."
+  - id: all3dp_cc_firmware
+    title: "Elegoo releases Centauri Carbon firmware code, but questions remain"
+    publisher: "All3DP"
+    type: press
+    url: https://all3dp.com/4/elegoo-releases-centauri-carbon-firmware-code-but-questions-remain/
+    retrieved: 2026-09-29
+    note: "Reported: stock firmware is a heavily modified Klipper; Elegoo published source under community pressure. Read via search snippet only."

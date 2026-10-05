@@ -1,0 +1,96 @@
+kind: troubleshoot
+schema_version: 1
+id: first_layer
+name: First layer problems
+aliases: [bad first layer, uneven first layer, first layer too high, first layer too low, nozzle scraping, gaps in first layer, z offset, first layer inconsistent]
+camera_signs:
+  - "Sparse, thin or see-through lines on the first layer, with gaps between lines"
+  - "Glassy, squashed lines, ridges, or a nozzle that scrapes the plate and leaves scratches"
+  - "One side of the plate good and the other side too high or too low (a tilt or mesh problem)"
+  - "Lines start well then thin out or blob, or the first layer has holes at some spots"
+log_signs:
+  - "Bambu HMS 0300 family: heatbed force sensor prompts such as 0300-0A00-0001-0004 (external disturbance during sensitivity test). Bed leveling or first layer inspection failures"
+  - "Klipper: probe accuracy errors, 'Probe triggered prior to movement', or a bed mesh that looks very different hot and cold"
+tree:
+  start: q_height
+  nodes:
+    q_height: {ask: "Is the first layer too high everywhere (round, spaced lines) or too low everywhere (scraping, glassy, no extrusion)?", "yes": c_z_offset, "no": q_uneven}
+    q_uneven: {ask: "Is the first layer good in some areas of the plate and bad in others (a high or low patch, or a tilt left to right)?", "yes": q_hardware_tight, "no": q_extrusion}
+    q_hardware_tight: {ask: "Are the hotend, nozzle and toolhead screws tight, and is the plate seated with nothing under it?", "yes": q_mesh, "no": c_loose_hardware}
+    q_mesh: {ask: "Was bed leveling or a bed mesh run just before this print, while the bed and chamber were at print temperature?", "yes": c_mechanical_gantry, "no": c_no_mesh}
+    q_extrusion: {ask: "Do lines start and stop with thin spots or blobs, or is the filament wet or the nozzle partly clogged?", "yes": c_extrusion_problem, "no": c_first_layer_settings}
+causes:
+  - id: c_z_offset
+    name: Z offset wrong
+    category: hardware
+    likelihood: high
+    checks:
+      - "Print the square patches from Ellis' squish test. Lines should touch with no gaps, still be visible on the underside, and not fade."
+      - "On Bambu printers the default G29.1 offset is Z-0.04 on textured plates."
+    fixes:
+      - {advice: "Adjust Z live while a squish test prints. On Klipper use SET_GCODE_OFFSET Z_ADJUST=0.01 MOVE=1 or the Tune menu. Ellis leans toward slightly more squish. Prusa uses Live Adjust Z, and warns against squishing to solve adhesion problems.", kind: hardware}
+      - {advice: "On Bambu, edit G29.1 in the printer start G-code as a temporary fix. Suggested ranges are -0.06 to 0 mm on textured plates and -0.01 to 0.01 mm on smooth plates. A value of Z0 on a textured plate raises the nozzle by 0.04 mm from the default. Fix the root cause afterward and restore defaults.", kind: hardware}
+      - {key: initial_layer_print_height, op: at_least, value: 0.25, why: "Ellis prefers a first layer height of 0.25 mm or more because thicker first layers are less sensitive to bed variation.", src: [ellis_first_layer_squish]}
+    printers: [bambu, klipper, prusa]
+    src: [bambu_wiki_first_layer_x1, ellis_first_layer_squish, prusa_kb_first_layer]
+    confidence: medium
+  - id: c_loose_hardware
+    name: Loose hotend, nozzle or plate
+    category: hardware
+    likelihood: medium
+    checks:
+      - "On Bambu, remove the silicone sock and look for a skewed hotend or contamination."
+      - "Look for debris under the plate or a bent sheet."
+    fixes:
+      - {advice: "Re-tighten the two hotend screws on Bambu printers and replace a skewed hotend assembly. On Klipper, make sure everything in the toolhead and across the X extrusion, including hotend and nozzle, is tight.", kind: hardware}
+      - {advice: "Check the back of the plate for filament debris and ensure the plate sits flat. Bambu's HMS page lists an unseated plate and an unstable surface as causes of force sensor prompts.", kind: hardware}
+    src: [bambu_wiki_first_layer_x1, ellis_first_layer_inconsistency, bambu_wiki_hms_0300_0A00_0001_0004]
+    confidence: medium
+  - id: c_no_mesh
+    name: No bed leveling or a stale mesh
+    category: settings
+    likelihood: high
+    checks:
+      - "A cold mesh is different from a hot one. The bed and gantry warp with heat."
+    fixes:
+      - {advice: "On Bambu, run Automatic Bed Leveling from Calibration, Print Calibration after a move, a long storage or a heatbed change, and enable bed leveling in the print preparation screen.", kind: workflow}
+      - {advice: "On Klipper, run BED_MESH_CALIBRATE in the print start macro while the bed is hot. Ellis suggests bicubic for meshes larger than 3 by 3, and a mesh above 5 by 5 is usually overkill. Klipper needs a calibrated probe Z offset before meshing.", kind: workflow}
+    printers: [bambu, klipper]
+    src: [bambu_wiki_first_layer_x1, ellis_first_layer_inconsistency, klipper_bed_mesh]
+    confidence: medium
+  - id: c_mechanical_gantry
+    name: Gantry, bed or Z belts out of square
+    category: hardware
+    likelihood: medium
+    checks:
+      - "A mesh cannot fix mechanical problems. If the pattern stays the same after a fresh mesh, the gantry, bed mounting or Z drive is at fault."
+    fixes:
+      - {advice: "Square and de-rack the gantry. Check bed mounting screws (Ellis heat soaks and hot tightens three of four and leaves the fourth snug), Z belt tensions being equal (about 140 Hz over 150 mm for his machines), and an inductive probe's PEI bubbling.", kind: hardware}
+      - {advice: "Klipper's bed mesh cannot compensate for a skewed axis or an inaccurate probe. Verify the probe accuracy first.", kind: hardware}
+    printers: [klipper]
+    src: [ellis_first_layer_inconsistency, klipper_bed_mesh]
+    confidence: medium
+  - id: c_extrusion_problem
+    name: Inconsistent extrusion on the first layer
+    category: material
+    likelihood: medium
+    checks:
+      - "Popping or bubbles, or a partial clog that gives a thin or inconsistent line."
+    fixes:
+      - {advice: "Dry the filament. Bambu says wet filament makes extrusion uneven and hurts first layer adhesion. Check for a partial clog, since Bambu notes insufficient first layer extrusion can lead to a clogged tip.", kind: material}
+    src: [bambu_wiki_spaghetti, bambu_wiki_first_layer_x1, prusa_kb_first_layer]
+    confidence: medium
+  - id: c_first_layer_settings
+    name: First layer speed, width or temperature
+    category: settings
+    likelihood: medium
+    checks:
+      - "First layer speed is high, line width is narrow, or the first layer temperature is conservative."
+    fixes:
+      - {key: initial_layer_speed, op: at_most, value: 30, why: "Bambu recommends 30 mm/s or less on the first layer.", src: [bambu_wiki_spaghetti]}
+      - {key: initial_layer_line_width, op: at_least, value: 0.5, why: "Orca's Bambu profiles use 0.5 mm for a 0.4 mm nozzle. Ellis suggests 120 percent or wider for grip.", src: ["orca:BBL/process/fdm_process_common.json", ellis_first_layer_squish]}
+      - {advice: "Use standard first layer temperatures if the filament maker's are conservative. Ellis gives about 60 C for PLA, 80 C for PETG and 90 to 100 C for ABS. Prusa suggests 5 to 10 C hotter bed for stubborn materials.", kind: material}
+    src: [bambu_wiki_spaghetti, ellis_first_layer_squish, ellis_build_adhesion, prusa_kb_first_layer]
+    confidence: medium
+related: [bed_adhesion, elephant_foot, warping, under_extrusion]
+src: [bambu_wiki_first_layer_x1, ellis_first_layer_squish, ellis_first_layer_inconsistency, klipper_bed_mesh]

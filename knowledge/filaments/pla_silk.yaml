@@ -1,0 +1,249 @@
+kind: filament
+schema_version: 1
+id: pla_silk
+name: PLA Silk
+category: standard
+orca_filament_type: PLA
+aliases: [Silk PLA, PLA Silk+, Bambu PLA Silk, Panchroma PLA Silk, Shiny PLA, Metallic silk PLA]
+related: [pla, pla_matte, pla_plus]
+summary: >
+  PLA with a glossy, pearly or metallic finish. It prints like PLA but flows
+  more slowly, is weaker between layers, and needs lower speed for a clean
+  surface. Good for decorative parts, poor for anything that carries load.
+use_for: [vases, decorative models, figurines, lamp shades, display pieces, gifts]
+avoid_for: [functional load bearing parts, snap fits, parts above about 55 C, fast draft prints, sharp overhang detail]
+
+nozzle_temp_c:
+  min: 190
+  max: 240
+  typical: 230
+  confidence: medium
+  src:
+    - "orca:OrcaFilamentLibrary/filament/Bambu/Bambu PLA Silk @base.json"
+    - "orca:OrcaFilamentLibrary/filament/Generic PLA Silk @System.json"
+    - "orca:OrcaFilamentLibrary/filament/Polymaker/Panchroma PLA Silk @System.json"
+    - "orca:Prusa/filament/Generic PLA Silk @Prusa CORE One.json"
+    - bambu_wiki_material_table
+  note: "Bambu and Panchroma silk profiles use 230. Orca generic silk uses 220. Prusa Core One silk uses 225. Silk runs 5 to 10 C hotter than Basic to keep the glossy additives flowing."
+first_layer_nozzle_temp_c:
+  min: 220
+  max: 230
+  typical: 230
+  confidence: medium
+  src: ["orca:OrcaFilamentLibrary/filament/Bambu/Bambu PLA Silk @base.json", "orca:OrcaFilamentLibrary/filament/Generic PLA Silk @System.json", "orca:Prusa/filament/Generic PLA Silk @Prusa CORE One.json"]
+  note: "230 for Bambu, Panchroma and Prusa Core One, 220 for Orca generic silk."
+bed_temp_c:
+  min: 35
+  max: 65
+  typical: 55
+  confidence: medium
+  src: [bambu_wiki_material_table, "orca:OrcaFilamentLibrary/filament/Bambu/Bambu PLA Silk @base.json", "orca:Prusa/filament/Generic PLA Silk @Prusa CORE One.json"]
+  note: "Follows PLA. Bambu Cool Plate 35 to 45, PEI 45 to 65 (profile 55). Prusa Core One silk uses 60."
+chamber_temp_c: null
+enclosure:
+  level: none
+  confidence: high
+  src: [bambu_wiki_material_table]
+  note: "Not prone to warping. Open the door or remove the top glass cover when the bed is above 45 C."
+
+plates:
+  - {plate: bambu_cool_plate, fit: good, bed_temp_c: {min: 35, max: 45}, release_agent: none, confidence: medium, src: [bambu_wiki_material_table], note: "Bambu groups silk with PLA."}
+  - {plate: bambu_supertack_plate, fit: avoid, confidence: low, src: ["orca:OrcaFilamentLibrary/filament/Bambu/Bambu PLA Silk @base.json"], note: "Bambu PLA Silk profile sets the SuperTack temperature to 0, meaning not supported. PLA Silk+ sets 35."}
+  - {plate: bambu_engineering_plate, fit: glue, bed_temp_c: {min: 45, max: 65}, release_agent: glue_stick, confidence: medium, src: [bambu_wiki_material_table], note: "Glue required for PLA on the Engineering Plate."}
+  - {plate: bambu_high_temp_plate, fit: good, bed_temp_c: {min: 45, max: 65}, release_agent: none, confidence: medium, src: [bambu_wiki_material_table], note: "Smooth PEI gives a shiny bottom that matches silk."}
+  - {plate: smooth_pei, fit: good, bed_temp_c: {min: 55, max: 65}, release_agent: none, confidence: medium, src: [prusa_kb_pla], note: "Prusa lists smooth or satin PEI as best for PLA."}
+  - {plate: satin_pei, fit: good, bed_temp_c: {min: 55, max: 65}, release_agent: none, confidence: medium, src: [prusa_kb_pla], note: "Best adhesion per Prusa for PLA."}
+  - {plate: textured_pei, fit: good, bed_temp_c: {min: 45, max: 65}, release_agent: none, confidence: medium, src: [bambu_wiki_material_table], note: "Texture dulls the silk sheen on the bottom face only."}
+
+cooling:
+  fan_min_pct: {min: 85, max: 100, typical: 100}
+  fan_max_pct: {min: 100, max: 100, typical: 100}
+  overhang_fan_pct: {typical: 100}
+  no_fan_first_layers: {typical: 1}
+  min_layer_time_s: {min: 4, max: 15, typical: 8}
+  confidence: medium
+  src:
+    - "orca:OrcaFilamentLibrary/filament/Bambu/Bambu PLA Silk @base.json"
+    - "orca:OrcaFilamentLibrary/filament/Generic PLA Silk @System.json"
+    - "orca:Prusa/filament/Generic PLA Silk @Prusa CORE One.json"
+    - "orca:Prusa/filament/Generic PLA Silk @Prusa CORE One 0.6.json"
+  note: "Bambu uses 100 percent fan and 4 s. Orca generic silk uses 8 s. Prusa Core One uses 85 to 100 percent and 8 s, and 15 s on a 0.6 mm nozzle."
+
+drying:
+  need: recommended
+  oven: {temp_c: 55, hours: 8}
+  ams_2_pro: {temp_c: 45, hours: 12}
+  ams_ht: {temp_c: 45, hours: 12}
+  printer_bed: {temp_c: {min: 65, max: 75}, hours: 12, note: "Enclosed Bambu printers only, spool covered, flip every 6 hours"}
+  keep_dry_in_use: optional
+  confidence: high
+  src: [bambu_wiki_drying, bambu_wiki_material_table]
+  note: "Bambu lists PLA Silk on its own row: 55 C oven for 8 h, 45 C in AMS for 12 h. Wet silk shows as dull streaks and bubbles."
+
+nozzle:
+  abrasive: false
+  hardened_required: false
+  min_diameter_mm: 0.2
+  orca_required_hrc: 3
+  confidence: medium
+  src: [bambu_wiki_material_table, "orca:OrcaFilamentLibrary/filament/Generic PLA Silk @System.json"]
+  note: "Bambu lists PLA Silk as standard PLA. Metallic or sparkle silks from other brands may contain particles, so check the label before using a 0.2 mm nozzle."
+
+extrusion:
+  flow_ratio: {min: 0.98, max: 1.0, typical: 0.98, confidence: medium, src: ["orca:OrcaFilamentLibrary/filament/Bambu/Bambu PLA Silk @base.json", "orca:OrcaFilamentLibrary/filament/Generic PLA Silk @System.json", "orca:Prusa/filament/Generic PLA Silk @Prusa CORE One.json"], note: "0.98 for Bambu and generic silk, 1.0 for Prusa Core One. Calibrate; silk is sensitive to flow."}
+  max_volumetric_speed_mm3s:
+    standard_hotend: {min: 7, max: 12, typical: 7.5}
+    high_flow_hotend: {min: 12, max: 12, typical: 12}
+    confidence: medium
+    src:
+      - "orca:OrcaFilamentLibrary/filament/Generic PLA Silk @System.json"
+      - "orca:OrcaFilamentLibrary/filament/Bambu/Bambu PLA Silk @base.json"
+      - "orca:OrcaFilamentLibrary/filament/Polymaker/Panchroma PLA Silk @System.json"
+      - "orca:Prusa/filament/Generic PLA Silk @Prusa CORE One.json"
+    note: "Generic silk is 7.5. Prusa Core One silk is 7 (9 at 0.6 mm). Bambu and Panchroma use 12. No source lists a separate high flow value, so 12 is the ceiling. Slower flow gives better gloss."
+  retraction_mm:
+    direct_drive: {min: 0.4, max: 0.8, typical: 0.5}
+    confidence: low
+    src: ["orca:OrcaFilamentLibrary/filament/Generic PLA Silk @System.json", klipper_pressure_advance]
+    note: "Orca generic silk uses 0.5 mm. Bowden values come from the printer profile."
+    retraction_speed_mm_s: {min: 20, max: 45, typical: 30, confidence: medium, src: [bambu_tds_pla_silk_v3, "orca:BBL/machine/Bambu Lab X1 Carbon 0.4 nozzle.json", "orca:Prusa/machine/Prusa CORE One HF 0.4 nozzle.json"], note: "Bambu silk TDS says 20 to 40 mm/s. The Bambu printer profile uses 30 and Prusa Core One 45."}
+  pressure_advance:
+    direct_drive: {min: 0.02, max: 0.05, typical: 0.03}
+    bowden: {min: 0.3, max: 1.0}
+    confidence: medium
+    src: ["orca:Prusa/filament/Generic PLA Silk @Prusa CORE One.json", klipper_pressure_advance, ellis_pa]
+    note: "Prusa ships M572 S0.03 for a 0.4 mm nozzle on the Core One, 0.022 at 0.5 mm, 0.018 at 0.6 mm and 0.012 at 0.8 mm. Calibrate per spool."
+
+layer_height:
+  fraction_of_nozzle: {min: 0.3, max: 0.5, typical: 0.4}
+  at_0_4_mm: {min: 0.12, max: 0.2, typical: 0.16}
+  smart_layer:
+    quality_mode: "Silk shine hides layer lines, so the stair step shows up as dull bands on curved and sloped surfaces. Use 0.16 mm and let sleipnir go down to 0.12 mm there. Stay above 0.08 mm: at that height and high speed silk shows a fish scale pattern."
+    strength_mode: "Silk layers are weak already (Z tensile about 18 MPa against 27 MPa in plane). Thinner layers do not fix that. Hotter nozzle and slower flow help the bond more than layer height."
+    thin_layer_cooling: "A thin layer that hits the minimum layer time makes the printer slow down and the surface changes from glossy to matte. Enable Don't slow down outer walls or print several parts at once to keep gloss even."
+  confidence: medium
+  src: [bambu_wiki_pla_silk_guide, bambu_wiki_different_gloss, bambu_tds_pla_silk_v3]
+  note: "Bambu recommends 0.16 mm and lists 0.12 to 0.20 mm as the useful band. Bambu supports silk on 0.2 and 0.4 mm nozzles only and advises against 0.6 and 0.8 mm."
+smart_layer:
+  min_ratio: 0.3
+  max_ratio: 0.5
+  modes:
+    quality: {min_ratio: 0.3, max_ratio: 0.5}
+    strength: {min_ratio: 0.3, max_ratio: 0.5}
+  family: pla_family
+  note: "Silk shine hides lines, and Bambu keeps silk between 0.12 and 0.20 mm on a 0.4 mm nozzle."
+  confidence: medium
+  src: ["bambu_wiki_pla_silk_guide", "bambu_wiki_different_gloss", "bambu_tds_pla_silk_v3", "cnckitchen_layer_height", "stojkovic_2023_layer_height_annealing"]
+speeds:
+  print_speed_mm_s: {max: 250}
+  outer_wall_max_mm_s: {value: 60}
+  first_layer_mm_s: {min: 20, max: 50, typical: 40}
+  volumetric_note: "Silk is limited by volumetric speed (7.5 mm3/s generic, 12 Bambu). Speed changes on the outer wall show as gloss bands, so keep the outer wall slow and steady; see extrusion."
+  confidence: medium
+  src: [bambu_wiki_pla_silk_guide, bambu_wiki_different_gloss, bambu_tds_pla_silk_v3, "orca:BBL/process/0.20mm Standard @BBL X1C.json"]
+  note: "Bambu sets outer wall to 40 to 60 mm/s (try 50). TDS says under 250 mm/s overall. Keep the outer wall speed close to the slowest speed on the preview graph."
+first_layer:
+  fan_off_layers: 1
+  speed_mm_s: {typical: 40}
+  bed_first_layer_note: "Bambu TDS: 35 to 45 C on Cool Plate, High Temp Plate or Textured PEI, with glue. Cool Plate SuperTack is not recommended."
+  squish_note: "No silk specific rule. Use the PLA first layer and keep the first layer temperature equal to the print temperature (Bambu sets both to 235 in its silk guide)."
+  confidence: medium
+  src: [bambu_tds_pla_silk_v3, bambu_wiki_pla_silk_guide, bambu_wiki_supertack]
+structure:
+  walls: {min: 2, typical: 2, note: "Walls do not add strength to silk that is weak between layers. Use 2 to 3 and print structural parts in PLA, PLA+ or PETG. Print the outer wall first if surface quality matters more than overhang accuracy."}
+  infill: {pattern_hint: gyroid, density_note: "10 to 15 percent for display parts. Infill shows through thin walls only on translucent or light colors."}
+  confidence: low
+  src: [bambu_wiki_pla_silk_guide, "orca:BBL/process/0.20mm Standard @BBL X1C.json"]
+  note: "Expert rule of thumb. Bambu suggests Archimedean chords or concentric top surfaces and upright orientation of the display face for gloss."
+supports:
+  interface_materials: ["Bambu Support for PLA", pva, bvoh]
+  soluble_pairing: {material: pva, dissolve: "room temperature or warm water (under 50 C), several hours"}
+  top_z_distance_mm: {typical: 0.2}
+  interface_layers: {typical: 2}
+  note: "Bambu lists Support for PLA for silk (55 degree max overhang). Supports leave dull patches on a glossy surface, so orient the display face away from supports and use an interface filament."
+  confidence: medium
+  src: [bambu_tds_pla_silk_v3, "orca:BBL/process/0.20mm Standard @BBL X1C.json", bambu_wiki_pla_silk_guide]
+
+multi_material:
+  bambu_ams: compatible
+  bambu_ams_lite: compatible
+  bambu_ams_ht: compatible
+  confidence: high
+  src: [bambu_wiki_material_table]
+
+properties:
+  density_g_cm3: {typical: 1.31, min: 1.24, max: 1.32, src: ["orca:OrcaFilamentLibrary/filament/Bambu/Bambu PLA Silk @base.json", "orca:OrcaFilamentLibrary/filament/Polymaker/Panchroma PLA Silk @System.json", "orca:OrcaFilamentLibrary/filament/Generic PLA Silk @System.json"]}
+  softening_temp_c: {typical: 55, min: 45, max: 58, src: ["orca:OrcaFilamentLibrary/filament/Bambu/Bambu PLA Silk @base.json", "orca:OrcaFilamentLibrary/filament/Polymaker/Panchroma PLA Silk @System.json"], note: "Orca temperature_vitrification is 45 C for Bambu and 58 C for Panchroma Silk."}
+  relative:
+    heat: 2
+    impact: 2
+    tensile: 3
+    scale: "1 to 5, Bambu star ratings for PLA (the table groups silk with PLA)"
+    src: [bambu_wiki_material_table]
+safety:
+  fumes: low
+  note: "Ventilate as with any hot plastic."
+food_contact:
+  note: "Silk pigments and additives are not certified for food. Do not use for food contact."
+  src: [prusa_kb_food_safe]
+
+failure_modes:
+  - id: dull_or_streaky_surface
+    symptom: Gloss is patchy, streaks along the wall
+    causes: [flow too fast, nozzle too cool, wet filament, fan too low]
+    fixes:
+      - {key: filament_max_volumetric_speed, op: at_most, value: 8, why: "Silk needs slower flow for an even sheen."}
+      - {key: nozzle_temperature, op: increase_by, value: 5, why: "Hotter silk flows and flattens into a smoother gloss."}
+      - {advice: "Dry the spool at 55 C for 8 h.", kind: material}
+  - id: weak_layers
+    symptom: Part splits between layers
+    causes: [silk additives weaken layer bonds, nozzle too cold]
+    fixes:
+      - {key: nozzle_temperature, op: increase_by, value: 5, why: "Better fusion between layers."}
+      - {advice: "Do not use silk for load bearing parts. Print structural parts in PLA, PLA+ or PETG.", kind: material}
+  - id: stringing
+    symptom: Hairs between features
+    causes: [nozzle too hot, wet filament]
+    fixes:
+      - {key: retraction_length, op: increase_by, value: 0.2, why: "Silk is runny. A bit more retraction helps."}
+      - {key: travel_speed, op: at_least, value: 200, why: "Faster travel reduces oozing."}
+  - id: rough_overhangs
+    symptom: Ugly overhangs and bridges, sagging underside
+    causes: [slow speed keeps layers hot, low fan]
+    fixes:
+      - {key: overhang_fan_speed, op: at_least, value: 100, why: "Full air on overhangs."}
+      - {key: slow_down_layer_time, op: at_least, value: 8, why: "Small layers need more cooling time."}
+  - id: visible_layer_lines
+    symptom: Layer lines look strong in a glossy finish
+    causes: [thick layers, high speed]
+    fixes:
+      - {key: layer_height, op: at_most, value: 0.16, why: "Thin layers hide lines under a gloss finish."}
+      - {key: outer_wall_speed, op: at_most, value: 60, why: "A slow outer wall gives a smoother, shinier surface."}
+
+disagreements:
+  - topic: max volumetric speed
+    positions:
+      - {claim: "7 to 7.5 mm3/s", src: ["orca:OrcaFilamentLibrary/filament/Generic PLA Silk @System.json", "orca:Prusa/filament/Generic PLA Silk @Prusa CORE One.json"]}
+      - {claim: "12 mm3/s", src: ["orca:OrcaFilamentLibrary/filament/Bambu/Bambu PLA Silk @base.json", "orca:OrcaFilamentLibrary/filament/Polymaker/Panchroma PLA Silk @System.json"]}
+    resolution: "Default 7.5 for a unknown brand for the best gloss. Raise toward 12 only after a volumetric speed test."
+  - topic: silk nozzle temperature
+    positions:
+      - {claim: "235 C for first layer and other layers", src: [bambu_wiki_pla_silk_guide]}
+      - {claim: "230 C profile, 210 to 240 C range", src: ["orca:OrcaFilamentLibrary/filament/Bambu/Bambu PLA Silk @base.json", bambu_tds_pla_silk_v3]}
+      - {claim: "220 C in Orca generic silk", src: ["orca:OrcaFilamentLibrary/filament/Generic PLA Silk @System.json"]}
+    resolution: "Start at 230 C. Go to 235 C when layers separate and back to 225 C when gloss goes uneven or the nozzle oozes."
+
+pilot_defaults:
+  nozzle_temperature: 230
+  nozzle_temperature_initial_layer: 230
+  cool_plate_temp: 35
+  textured_plate_temp: 55
+  hot_plate_temp: 55
+  fan_min_speed: 100
+  fan_max_speed: 100
+  overhang_fan_speed: 100
+  close_fan_the_first_x_layers: 1
+  slow_down_layer_time: 8
+  filament_flow_ratio: 0.98
+  filament_max_volumetric_speed: 7.5
+  retraction_length: 0.5

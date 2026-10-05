@@ -1,0 +1,45 @@
+kind: guide
+schema_version: 1
+id: bambu_timelapse
+name: Bambu time-lapse (smooth versus traditional)
+applies_to: [bambu_x1c, bambu_x1e, bambu_p1s, bambu_p1p, bambu_a1, bambu_a1_mini, bambu_h2d, bambu_h2s, bambu_h2c, bambu_p2s, bambu_x2d, bambu_a2l]
+summary: >
+  Traditional mode shoots right after each layer and can leave an ooze mark.
+  Smooth mode parks the toolhead at the purge chute for every shot, needs a
+  prime tower, and lengthens the print. A series printers also move the bed to
+  a fixed spot for every shot in both modes.
+facts:
+  - text: "Time-lapse takes a snapshot after each printed layer with the chamber camera and compiles the video at the end."
+    src: [bambu_wiki_timelapse_xp]
+  - text: "Traditional mode shoots directly after each layer. The nozzle pause can let melted filament leak onto the part."
+    src: [bambu_wiki_timelapse_xp, bambu_wiki_timelapse_a]
+  - text: "Smooth mode moves the toolhead to the purge chute for each shot. Because the nozzle pauses there and may leak, a prime tower is required to wipe the nozzle. If none exists on the plate, one is generated."
+    src: [bambu_wiki_timelapse_xp, "orca_src:src/libslic3r/PrintConfig.cpp"]
+  - text: "Smooth mode adds extra travel and purging, so total print time grows."
+    src: [bambu_wiki_timelapse_xp]
+  - text: "Orca stores the mode as timelapse_type: 0 is Traditional and 1 is Smooth. Older project files used 2 for Traditional and it is remapped to 0."
+    src: ["orca_src:src/libslic3r/PrintConfig.cpp"]
+  - text: "On A series printers the bed moves in Y while printing, so the printer parks the bed and the nozzle at fixed positions before every shot, in both modes. Traditional mode tries to hide ooze in infill. If a layer has no infill the defect shows, and Bambu suggests Smooth mode."
+    src: [bambu_wiki_timelapse_a]
+  - text: "On dual nozzle printers the two nozzles differ in height by about 5 mm. To keep the bed steady in the video the printer shoots with a main nozzle per layer and moves to the purge chute to take the picture if another nozzle is active."
+    src: [bambu_wiki_timelapse_h2, bambu_wiki_nozzle_offset]
+  - text: "Time-lapse needs storage in the printer (Micro SD or USB). Studio downloads the video from the Device, Storage page. Enable it in Studio under Others, Special Mode, Timelapse, or on the printer screen at print start."
+    src: [bambu_wiki_timelapse_xp]
+  - text: "An external MakerWorld camera kit plugs into the AMS port. In Smooth mode the firmware waits 500 ms after the photo command. Use the M9711 D parameter for a longer delay in milliseconds."
+    src: [bambu_wiki_timelapse_xp, bambu_wiki_timelapse_a]
+steps:
+  - text: "Choose the mode. Smooth for parts with visible top and side surfaces or no infill on some layers. Traditional to save time when a small ooze mark is fine."
+  - text: "For Smooth, keep the prime tower on. Bambu enables it by default."
+  - text: "Confirm storage is inserted."
+  - text: "Turn Timelapse on at send time in Studio, Handy or on the printer screen."
+  - text: "After the print, download from Device, Storage in Studio or the timelapse folder on the card."
+pilot_actions:
+  - "If the user picks Smooth, set enable_prime_tower to true and warn about the longer print time."
+  - "Recommend Smooth on A series printers when a layer has no infill."
+  - "Do not enable time-lapse for a spiral vase print without warning that every shot pauses the nozzle."
+  - "For multi color plans that already use a prime tower, note that Smooth reuses it."
+settings:
+  - {key: timelapse_type, op: set, value: 1, why: "Smooth mode parks the toolhead at the chute for each shot so ooze lands on the prime tower, not the part."}
+  - {key: enable_prime_tower, op: enable, why: "Smooth time-lapse needs a prime tower to wipe the nozzle after each shot."}
+  - {key: timelapse_type, op: set, value: 0, why: "Traditional mode is faster and shoots right after the layer. Expect a small ooze mark."}
+src: [bambu_wiki_timelapse_xp, bambu_wiki_timelapse_a, bambu_wiki_timelapse_h2, "orca_src:src/libslic3r/PrintConfig.cpp"]

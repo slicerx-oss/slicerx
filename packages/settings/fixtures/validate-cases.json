@@ -1,0 +1,438 @@
+{
+ "comment": "Shared by the Rust and TypeScript validators: partial configs and the issue codes each must report, sorted.",
+ "cases": [
+  {
+   "name": "clean 0.2 mm config has no issues",
+   "config": {
+    "nozzle_diameter": [
+     0.4
+    ],
+    "layer_height": 0.2,
+    "initial_layer_print_height": 0.2,
+    "wall_loops": 2,
+    "sparse_infill_density": 15
+   },
+   "codes": []
+  },
+  {
+   "name": "layer above nozzle",
+   "config": {
+    "nozzle_diameter": [
+     0.4
+    ],
+    "layer_height": 0.5
+   },
+   "codes": [
+    "layer_above_nozzle"
+   ]
+  },
+  {
+   "name": "layer above 75 percent",
+   "config": {
+    "nozzle_diameter": [
+     0.4
+    ],
+    "layer_height": 0.32
+   },
+   "codes": [
+    "layer_over_75pct"
+   ]
+  },
+  {
+   "name": "first layer above nozzle",
+   "config": {
+    "nozzle_diameter": [
+     0.4
+    ],
+    "layer_height": 0.2,
+    "initial_layer_print_height": 0.5
+   },
+   "codes": [
+    "first_layer_above_nozzle"
+   ]
+  },
+  {
+   "name": "layer below printer minimum",
+   "config": {
+    "nozzle_diameter": [
+     0.4
+    ],
+    "layer_height": 0.05,
+    "min_layer_height": [
+     0.08
+    ]
+   },
+   "codes": [
+    "layer_below_min"
+   ]
+  },
+  {
+   "name": "layer above printer maximum",
+   "config": {
+    "nozzle_diameter": [
+     0.4
+    ],
+    "layer_height": 0.3,
+    "max_layer_height": [
+     0.28
+    ]
+   },
+   "codes": [
+    "layer_above_max"
+   ]
+  },
+  {
+   "name": "spiral with supports and extra walls",
+   "config": {
+    "spiral_mode": true,
+    "enable_support": true,
+    "wall_loops": 3,
+    "sparse_infill_density": 15
+   },
+   "codes": [
+    "spiral_infill",
+    "spiral_walls",
+    "spiral_with_support"
+   ]
+  },
+  {
+   "name": "flow limit exceeded",
+   "config": {
+    "nozzle_diameter": [
+     0.4
+    ],
+    "layer_height": 0.2,
+    "outer_wall_speed": [
+     300
+    ],
+    "outer_wall_line_width": "0.42",
+    "filament_max_volumetric_speed": [
+     15
+    ]
+   },
+   "codes": [
+    "flow_limit"
+   ]
+  },
+  {
+   "name": "flow within limit",
+   "config": {
+    "nozzle_diameter": [
+     0.4
+    ],
+    "layer_height": 0.2,
+    "outer_wall_speed": [
+     150
+    ],
+    "outer_wall_line_width": "0.42",
+    "filament_max_volumetric_speed": [
+     15
+    ]
+   },
+   "codes": []
+  },
+  {
+   "name": "temperature outside filament range",
+   "config": {
+    "nozzle_temperature": [
+     300
+    ],
+    "nozzle_temperature_range_low": [
+     190
+    ],
+    "nozzle_temperature_range_high": [
+     240
+    ]
+   },
+   "codes": [
+    "temp_outside_range"
+   ]
+  },
+  {
+   "name": "acceleration above machine limit",
+   "config": {
+    "default_acceleration": [
+     30000
+    ],
+    "machine_max_acceleration_extruding": [
+     20000
+    ]
+   },
+   "codes": [
+    "accel_over_machine"
+   ]
+  },
+  {
+   "name": "arc fitting with rate smoothing",
+   "config": {
+    "enable_arc_fitting": true,
+    "max_volumetric_extrusion_rate_slope": 10
+   },
+   "codes": [
+    "arc_fitting_with_slope"
+   ]
+  },
+  {
+   "name": "line width far from nozzle",
+   "config": {
+    "nozzle_diameter": [
+     0.4
+    ],
+    "outer_wall_line_width": "1.2"
+   },
+   "codes": [
+    "line_width_range"
+   ]
+  },
+  {
+   "name": "percent line width is fine",
+   "config": {
+    "nozzle_diameter": [
+     0.4
+    ],
+    "outer_wall_line_width": "110%"
+   },
+   "codes": []
+  },
+  {
+   "name": "nothing to print",
+   "config": {
+    "wall_loops": 0,
+    "sparse_infill_density": 0,
+    "top_shell_layers": 0,
+    "bottom_shell_layers": 0
+   },
+   "codes": [
+    "nothing_to_print",
+    "outside_recommended_range"
+   ]
+  },
+  {
+   "name": "range and enum errors",
+   "config": {
+    "layer_height": 5,
+    "wall_loops": -1,
+    "sparse_infill_pattern": "swirly",
+    "nozzle_diameter": [
+     0.4
+    ]
+   },
+   "codes": [
+    "bad_enum",
+    "layer_above_nozzle",
+    "out_of_range",
+    "outside_recommended_range"
+   ]
+  },
+  {
+   "name": "wrong type",
+   "config": {
+    "wall_loops": "two"
+   },
+   "codes": [
+    "wrong_type"
+   ]
+  },
+  {
+   "name": "unknown key is info",
+   "config": {
+    "totally_made_up": 1
+   },
+   "codes": [
+    "unknown_key"
+   ]
+  },
+  {
+   "name": "smart layer inside the window is fine",
+   "config": {
+    "nozzle_diameter": [
+     0.4
+    ],
+    "layer_height": 0.2,
+    "smart_layer": "quality",
+    "smart_layer_min_height": 0.1,
+    "smart_layer_max_height": 0.2
+   },
+   "codes": []
+  },
+  {
+   "name": "smart layer off is not judged",
+   "config": {
+    "nozzle_diameter": [
+     0.4
+    ],
+    "smart_layer": "off",
+    "smart_layer_min_height": 0.05,
+    "smart_layer_max_height": 0.7
+   },
+   "codes": []
+  },
+  {
+   "name": "smart layer bounds out of order",
+   "config": {
+    "nozzle_diameter": [
+     0.4
+    ],
+    "smart_layer": "strength",
+    "smart_layer_min_height": 0.3,
+    "smart_layer_max_height": 0.2
+   },
+   "codes": [
+    "smart_layer_bounds_order"
+   ]
+  },
+  {
+   "name": "smart layer thinnest layer under a fifth of the nozzle",
+   "config": {
+    "nozzle_diameter": [
+     0.4
+    ],
+    "smart_layer": "quality",
+    "smart_layer_min_height": 0.06,
+    "smart_layer_max_height": 0.2
+   },
+   "codes": [
+    "smart_layer_min_low"
+   ]
+  },
+  {
+   "name": "smart layer thickest layer over half of the nozzle",
+   "config": {
+    "nozzle_diameter": [
+     0.4
+    ],
+    "smart_layer": "quality",
+    "smart_layer_min_height": 0.1,
+    "smart_layer_max_height": 0.24
+   },
+   "codes": [
+    "smart_layer_max_high"
+   ]
+  },
+  {
+   "name": "smart layer strength keeps to 30 percent of the nozzle or more",
+   "config": {
+    "nozzle_diameter": [
+     0.4
+    ],
+    "smart_layer": "strength",
+    "smart_layer_min_height": 0.1,
+    "smart_layer_max_height": 0.2
+   },
+   "codes": [
+    "smart_layer_min_low"
+   ]
+  },
+  {
+   "name": "smart layer strength inside its band is fine",
+   "config": {
+    "nozzle_diameter": [
+     0.4
+    ],
+    "smart_layer": "strength",
+    "smart_layer_min_height": 0.12,
+    "smart_layer_max_height": 0.2
+   },
+   "codes": []
+  },
+  {
+   "name": "thin layers slowed to the minimum speed risk heat creep",
+   "config": {
+    "nozzle_diameter": [
+     0.4
+    ],
+    "layer_height": 0.08,
+    "slow_down_min_speed": [
+     10
+    ],
+    "filament_max_volumetric_speed": [
+     21
+    ]
+   },
+   "codes": [
+    "heat_creep_thin_layers"
+   ]
+  },
+  {
+   "name": "an ordinary layer at the minimum speed is not heat creep",
+   "config": {
+    "nozzle_diameter": [
+     0.4
+    ],
+    "layer_height": 0.2,
+    "slow_down_min_speed": [
+     10
+    ],
+    "filament_max_volumetric_speed": [
+     21
+    ]
+   },
+   "codes": []
+  },
+  {
+   "name": "thin layers without the cooling slowdown are not heat creep",
+   "config": {
+    "nozzle_diameter": [
+     0.4
+    ],
+    "layer_height": 0.08,
+    "slow_down_for_layer_cooling": [
+     false
+    ],
+    "slow_down_min_speed": [
+     10
+    ],
+    "filament_max_volumetric_speed": [
+     21
+    ]
+   },
+   "codes": []
+  },
+  {
+   "name": "smart layer thin bound counts for heat creep",
+   "config": {
+    "nozzle_diameter": [
+     0.4
+    ],
+    "layer_height": 0.2,
+    "smart_layer": "quality",
+    "smart_layer_min_height": 0.08,
+    "smart_layer_max_height": 0.2,
+    "slow_down_min_speed": [
+     10
+    ],
+    "filament_max_volumetric_speed": [
+     21
+    ]
+   },
+   "codes": [
+    "heat_creep_thin_layers"
+   ]
+  },
+  {
+   "name": "smart layer in vase mode",
+   "config": {
+    "spiral_mode": true,
+    "smart_layer": "quality"
+   },
+   "codes": [
+    "smart_layer_spiral"
+   ]
+  },
+  {
+   "name": "layer height outside the smart layer range",
+   "config": {
+    "nozzle_diameter": [
+     0.4
+    ],
+    "layer_height": 0.28,
+    "smart_layer": "quality",
+    "smart_layer_min_height": 0.1,
+    "smart_layer_max_height": 0.2
+   },
+   "codes": [
+    "smart_layer_outside_layer_height"
+   ]
+  }
+ ]
+}

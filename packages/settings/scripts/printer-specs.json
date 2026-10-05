@@ -1,0 +1,394 @@
+{
+ "comment": "Per catalog model: G-code flavor and the maker's published pages the profile follows. Limits (speed, acceleration, temperatures) come from knowledge/printers where a model has an entry; models without one carry no limits. Flavor follows the maker's firmware as described on the linked page or, for generic printers, the firmware's own documentation.",
+ "models": {
+  "bambu-x1-carbon": {
+   "flavor": "marlin",
+   "sources": [
+    "https://public-cdn.bambulab.com/store/bambulab-X1-carbon-tech-specs.pdf"
+   ]
+  },
+  "bambu-x1": {
+   "flavor": "marlin",
+   "sources": [
+    "https://wiki.bambulab.com/en/x1/manual/intro-x1"
+   ]
+  },
+  "bambu-x1e": {
+   "flavor": "marlin",
+   "sources": [
+    "https://cdn1.bambulab.com/x1e/spec/X1E%20Spec(EN).pdf"
+   ]
+  },
+  "bambu-p1p": {
+   "flavor": "marlin",
+   "sources": [
+    "https://public-cdn.bambulab.com/store/bambulab-P1P-tech-specs.pdf"
+   ]
+  },
+  "bambu-p1s": {
+   "flavor": "marlin",
+   "sources": [
+    "https://store.bblcdn.com/s7/default/9e9c1948dd61491199a52c3f1497b9c7/bambu-lab-P1S-tech-specs.pdf"
+   ]
+  },
+  "bambu-p2s": {
+   "flavor": "marlin",
+   "sources": [
+    "https://store.bblcdn.com/s7/default/2d1a01cd2dca425eb071ccc28c26c9fa/spec.pdf"
+   ]
+  },
+  "bambu-a1": {
+   "flavor": "marlin",
+   "sources": [
+    "https://us.store.bambulab.com/products/a1"
+   ]
+  },
+  "bambu-a1-mini": {
+   "flavor": "marlin",
+   "sources": [
+    "https://us.store.bambulab.com/products/a1-mini"
+   ]
+  },
+  "bambu-h2d": {
+   "flavor": "marlin",
+   "sources": [
+    "https://store.bblcdn.com/4731f4c55a/e8f62a86f5f24c42a764d3d528303526/TDS.pdf"
+   ]
+  },
+  "bambu-h2c": {
+   "flavor": "marlin",
+   "sources": [
+    "https://bambulab.com/en/h2c"
+   ]
+  },
+  "bambu-h2s": {
+   "flavor": "marlin",
+   "sources": [
+    "https://store.bblcdn.com/s7/default/3f91ec86de1a4ce28fe8fb660b95cd3e/h2s.pdf"
+   ]
+  },
+  "prusa-mk4s": {
+   "flavor": "marlin2",
+   "sources": [
+    "https://www.prusa3d.com/product/original-prusa-mk4s-3d-printer-kit/"
+   ]
+  },
+  "prusa-mk4": {
+   "flavor": "marlin2",
+   "sources": [
+    "https://www.prusa3d.com/product/original-prusa-mk4-3d-printer-kit/"
+   ]
+  },
+  "prusa-mk3.9": {
+   "flavor": "marlin2",
+   "sources": [
+    "https://help.prusa3d.com/tag/mk3-9"
+   ]
+  },
+  "prusa-mini-plus": {
+   "flavor": "marlin2",
+   "sources": [
+    "https://www.prusa3d.com/product/original-prusa-mini-semi-assembled-3d-printer/"
+   ]
+  },
+  "prusa-core-one": {
+   "flavor": "marlin2",
+   "sources": [
+    "https://www.prusa3d.com/product/prusa-core-one/"
+   ]
+  },
+  "prusa-xl": {
+   "flavor": "marlin2",
+   "sources": [
+    "https://www.prusa3d.com/product/original-prusa-xl-single-toolhead-3d-printer/"
+   ]
+  },
+  "prusa-xl-5-toolhead": {
+   "flavor": "marlin2",
+   "sources": [
+    "https://www.prusa3d.com/product/original-prusa-xl-5-toolhead-3d-printer/"
+   ]
+  },
+  "creality-k1": {
+   "flavor": "klipper",
+   "sources": [
+    "https://www.creality.com/products/creality-k1-3d-printer"
+   ]
+  },
+  "creality-k1c": {
+   "flavor": "klipper",
+   "sources": [
+    "https://www.3djake.com/creality-3d-printers-spare-parts/k1c"
+   ]
+  },
+  "creality-k1-max": {
+   "flavor": "klipper",
+   "sources": [
+    "https://www.creality.com/products/creality-k1-max-3d-printer"
+   ]
+  },
+  "creality-k1-se": {
+   "flavor": "klipper",
+   "sources": [
+    "https://www.creality.com/products/creality-k1-se-3d-printer"
+   ]
+  },
+  "creality-k2-plus": {
+   "flavor": "klipper",
+   "sources": [
+    "https://www.creality.com/products/creality-k2-plus-cfs-combo"
+   ]
+  },
+  "creality-ender-3-v3": {
+   "flavor": "klipper",
+   "sources": [
+    "https://www.creality.com/products/creality-ender-3-v3"
+   ]
+  },
+  "creality-ender-3-v3-plus": {
+   "flavor": "klipper",
+   "sources": [
+    "https://www.creality.com/products/creality-ender-3-v3-plus"
+   ]
+  },
+  "creality-ender-3-v3-se": {
+   "flavor": "marlin",
+   "sources": [
+    "https://www.creality.com/products/creality-ender-3-v3-se"
+   ]
+  },
+  "creality-ender-3-v3-ke": {
+   "flavor": "klipper",
+   "sources": [
+    "https://www.creality.com/products/creality-ender-3-v3-ke"
+   ]
+  },
+  "creality-hi": {
+   "flavor": "klipper",
+   "sources": [
+    "https://www.creality.com/products/creality-hi-combo"
+   ]
+  },
+  "creality-ender-3-octoprint": {
+   "flavor": "marlin",
+   "sources": [
+    "https://www.creality.com/products/ender-3-3d-printer"
+   ]
+  },
+  "elegoo-centauri-carbon": {
+   "flavor": "klipper",
+   "sources": [
+    "https://www.tomshardware.com/3d-printing/elegoo-centauri-carbon-review"
+   ]
+  },
+  "elegoo-neptune-4": {
+   "flavor": "klipper",
+   "sources": [
+    "https://us.elegoo.com/products/elegoo-neptune-4-fdm-3d-printer"
+   ]
+  },
+  "elegoo-neptune-4-pro": {
+   "flavor": "klipper",
+   "sources": [
+    "https://us.elegoo.com/products/elegoo-neptune-4-pro-fdm-3d-printer"
+   ]
+  },
+  "elegoo-neptune-4-plus": {
+   "flavor": "klipper",
+   "sources": [
+    "https://us.elegoo.com/products/neptune-4-plus"
+   ]
+  },
+  "elegoo-neptune-4-max": {
+   "flavor": "klipper",
+   "sources": [
+    "https://us.elegoo.com/collections/fdm-3d-printers"
+   ]
+  },
+  "anycubic-kobra-x": {
+   "flavor": "klipper",
+   "sources": [
+    "https://www.anycubic.com"
+   ]
+  },
+  "snapmaker-u1": {
+   "flavor": "klipper",
+   "sources": [
+    "https://www.snapmaker.com/snapmaker-u1"
+   ]
+  },
+  "snapmaker-a150": {
+   "flavor": "marlin",
+   "sources": [
+    "https://www.snapmaker.com/snapmaker-2"
+   ]
+  },
+  "snapmaker-a250": {
+   "flavor": "marlin",
+   "sources": [
+    "https://www.snapmaker.com/snapmaker-2"
+   ]
+  },
+  "snapmaker-a350": {
+   "flavor": "marlin",
+   "sources": [
+    "https://www.snapmaker.com/snapmaker-2"
+   ]
+  },
+  "snapmaker-j1": {
+   "flavor": "marlin",
+   "sources": [
+    "https://shop.snapmaker.com/pages/3d-printers-comparison"
+   ]
+  },
+  "snapmaker-artisan": {
+   "flavor": "marlin",
+   "sources": [
+    "https://www.snapmaker.com/snapmaker-artisan"
+   ]
+  },
+  "qidi-q1-pro": {
+   "flavor": "klipper",
+   "sources": [
+    "https://qidi3d.com/products/q1-pro"
+   ]
+  },
+  "qidi-x-plus-4": {
+   "flavor": "klipper",
+   "sources": [
+    "https://qidi3d.com/products/plus4-3d-printer"
+   ]
+  },
+  "voron-0.1": {
+   "flavor": "klipper",
+   "sources": [
+    "https://vorondesign.com/voron0.1"
+   ]
+  },
+  "voron-2.4-250": {
+   "flavor": "klipper",
+   "sources": [
+    "https://vorondesign.com/voron2.4"
+   ]
+  },
+  "voron-2.4-300": {
+   "flavor": "klipper",
+   "sources": [
+    "https://vorondesign.com/voron2.4"
+   ]
+  },
+  "voron-2.4-350": {
+   "flavor": "klipper",
+   "sources": [
+    "https://vorondesign.com/voron2.4"
+   ]
+  },
+  "voron-trident-250": {
+   "flavor": "klipper",
+   "sources": [
+    "https://vorondesign.com/voron_trident"
+   ]
+  },
+  "voron-trident-300": {
+   "flavor": "klipper",
+   "sources": [
+    "https://vorondesign.com/voron_trident"
+   ]
+  },
+  "voron-trident-350": {
+   "flavor": "klipper",
+   "sources": [
+    "https://vorondesign.com/voron_trident"
+   ]
+  },
+  "voron-switchwire-250": {
+   "flavor": "klipper",
+   "sources": [
+    "https://vorondesign.com/voron_switchwire"
+   ]
+  },
+  "sovol-sv08": {
+   "flavor": "klipper",
+   "sources": [
+    "https://www.sovol3d.com/blogs/news/sovol-sv08-klipper-corexy-features-guide-3d-printing"
+   ]
+  },
+  "sovol-sv04": {
+   "flavor": "marlin",
+   "sources": [
+    "https://www.sovol3d.com/products/sv04"
+   ]
+  },
+  "flsun-v400": {
+   "flavor": "klipper",
+   "sources": [
+    "https://www.flsun3d.com/products/v400"
+   ]
+  },
+  "generic-klipper-delta": {
+   "flavor": "klipper",
+   "sources": [
+    "https://www.klipper3d.org/Config_Reference.html"
+   ]
+  },
+  "generic-klipper": {
+   "flavor": "klipper",
+   "sources": [
+    "https://www.klipper3d.org/Config_Reference.html"
+   ]
+  },
+  "generic-octoprint": {
+   "flavor": "marlin",
+   "sources": [
+    "https://octoprint.org/"
+   ]
+  },
+  "generic-duet": {
+   "flavor": "reprapfirmware",
+   "sources": [
+    "https://docs.duet3d.com/"
+   ]
+  },
+  "generic-export": {
+   "flavor": "marlin",
+   "sources": [
+    "https://marlinfw.org/docs/gcode/G000-G001.html"
+   ]
+  },
+  "ultimaker-s3": {
+   "flavor": "griffin",
+   "sources": [
+    "https://github.com/Ultimaker/Cura/blob/5.13.0/resources/definitions/ultimaker_s3.def.json",
+    "https://ultimaker.com/3d-printers/s-series/ultimaker-s3/"
+   ]
+  },
+  "ultimaker-s5": {
+   "flavor": "griffin",
+   "sources": [
+    "https://github.com/Ultimaker/Cura/blob/5.13.0/resources/definitions/ultimaker_s5.def.json",
+    "https://ultimaker.com/3d-printers/s-series/ultimaker-s5/"
+   ]
+  },
+  "ultimaker-s7": {
+   "flavor": "griffin",
+   "sources": [
+    "https://github.com/Ultimaker/Cura/blob/5.13.0/resources/definitions/ultimaker_s7.def.json",
+    "https://ultimaker.com/3d-printers/s-series/ultimaker-s7/"
+   ]
+  },
+  "ultimaker-s6": {
+   "flavor": "cheetah",
+   "sources": [
+    "https://github.com/Ultimaker/Cura/blob/5.13.0/resources/definitions/ultimaker_s6.def.json",
+    "https://ultimaker.com/3d-printers/s-series/ultimaker-s6/"
+   ]
+  },
+  "ultimaker-s8": {
+   "flavor": "cheetah",
+   "sources": [
+    "https://github.com/Ultimaker/Cura/blob/5.13.0/resources/definitions/ultimaker_s8.def.json",
+    "https://ultimaker.com/3d-printers/s-series/ultimaker-s8/"
+   ]
+  }
+ }
+}

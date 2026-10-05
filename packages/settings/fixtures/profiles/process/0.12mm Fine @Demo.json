@@ -1,0 +1,17 @@
+{
+  "type": "process",
+  "name": "0.12mm Fine @Demo",
+  "inherits": "fdm_demo_process_single_0.12",
+  "from": "system",
+  "instantiation": "true",
+  "outer_wall_speed": [
+    "100",
+    "100"
+  ],
+  "inner_wall_speed": [
+    "150",
+    "150"
+  ],
+  "wall_loops": "3",
+  "sparse_infill_density": "20%"
+}

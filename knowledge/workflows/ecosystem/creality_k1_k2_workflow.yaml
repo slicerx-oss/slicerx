@@ -1,0 +1,37 @@
+kind: guide
+schema_version: 1
+id: creality_k1_k2_workflow
+name: Creality K1 and K2 series workflow
+applies_to: [creality_k1_max, creality_k2_plus]
+summary: >
+  K1, K1C, K1 Max and K2 Plus run Creality's own Klipper build with Moonraker
+  and Fluidd. Root access is available through a printer setting, and community
+  tooling adds features. The CFS multi color system has Orca profiles, but
+  Creality Print is the vendor path for CFS color mapping. Read this before
+  changing start G-code or promising multi color on Orca.
+facts:
+  - {text: "K1, K1C and K1 Max use vendor Klipper with Moonraker and Fluidd; the K2 series does too. Guides describe root access as available from the printer's settings rather than needing an exploit.", src: [creality_k1_root_guide, creality_k2_root_notes]}
+  - {text: "On the K2 Plus, tap the settings gear and open Root account information to enable SSH. Default credentials are published in community guides and should be changed.", src: [creality_k2_root_notes]}
+  - {text: "The Creality Helper Script (community) installs Moonraker add ons, macros and camera support on rooted K1 series and other Creality printers. It is unofficial.", src: [creality_helper_script]}
+  - {text: "K1C is 220 x 220 x 250 mm with a 300 C hotend and hardened steel tip. K1 Max is 300 x 300 x 300 mm with a 300 C hotend. K2 Plus is 350 x 350 x 350 mm with 350 C and an actively heated chamber to 60 C.", src: [creality_k1c_page, creality_k1_max_page, creality_k2_plus_page]}
+  - {text: "Orca ships CFS-C variants of K1, K1C, K1 SE and K1 Max, and K2 Plus profiles. CFS on K2 Plus is a combo product.", src: ["orca:Creality/machine/Creality K1 Max_CFS-C.json", "orca:Creality/machine/Creality K1C_CFS-C.json", creality_k2_plus_page]}
+  - {text: "Community users report file transfer over the OctoPrint or Klipper protocol from Orca is faster than Creality Print for the K2 Plus, and Creality Print is the recommended slicer.", src: [creality_k2_root_notes]}
+  - {text: "Creality's Klipper changes are the subject of a forum thread about source release, so vendor Klipper can diverge from upstream commands.", src: [creality_k2_root_notes]}
+  - {text: "Orca's process defaults for these machines run 10000 to 12000 mm/s2 default acceleration and 200 mm/s outer walls; K1C uses 3000 for walls while K1 Max and K2 Plus use 5000.", src: ["orca:Creality/process/0.20mm Standard @Creality K1C 0.4 nozzle.json", "orca:Creality/process/0.20mm Standard @Creality K1 Max_CFS-C 0.4 nozzle.json", "orca:Creality/process/0.20mm Standard @Creality K2 Plus 0.4 nozzle.json"]}
+steps:
+  - {text: "Identify the exact model: K1, K1C, K1 Max, K1 SE, K2, K2 Plus or K2 Pro. Limits and profiles differ."}
+  - {text: "Decide slicer path. For CFS color mapping and vendor features use Creality Print. For general slicing, Orca profiles work and send via Moonraker."}
+  - {text: "If the user wants Moonraker or SSH, walk through the printer's root or SSH switch and warn about warranty and firmware update side effects."}
+  - {text: "Keep the printer's stock PRINT_START. Only edit machine_start_gcode after reading it through Moonraker or SSH."}
+  - {text: "For PLA on any of these, open the lid or turn the chamber off. Set chamber temperature only on the K2 Plus and only for ABS, ASA, PC or PA."}
+pilot_actions:
+  - "Ask which model and whether CFS is fitted before choosing a profile."
+  - "Recommend Creality Print for CFS color mapping and Orca for everything else, with the caveat stated."
+  - "Warn that rooting is a user choice; do not do it without an explicit request."
+  - "Use chamber_temperature only on K2 Plus; K1 series has no chamber control."
+  - "Keep vendor macros; verify a Klipper command exists before calling it."
+settings:
+  - {key: chamber_temperature, op: at_most, value: 60, why: "K2 Plus chamber heater tops out at 60 C. Use it only for ABS, ASA, PC and PA."}
+  - {key: outer_wall_acceleration, op: at_most, value: 3000, why: "Lower outer wall acceleration on the K1C profile baseline for cleaner walls."}
+  - {advice: "Open the lid for PLA and TPU on K1 series printers.", kind: environment}
+src: [creality_k1_root_guide, creality_k2_root_notes, creality_helper_script, creality_k1_max_page, creality_k1c_page, creality_k2_plus_page]

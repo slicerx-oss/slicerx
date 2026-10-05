@@ -1,0 +1,45 @@
+kind: guide
+schema_version: 1
+id: bambu_flow_rate_calibration
+name: Bambu flow rate calibration
+applies_to: [bambu_x1c, bambu_x1e, bambu_p1s, bambu_p1p, bambu_a1, bambu_a1_mini, bambu_h2d, bambu_h2s, bambu_h2c, bambu_p2s, bambu_x2d, bambu_a2l]
+summary: >
+  Flow ratio scales extrusion volume per filament. Only X1 series printers can
+  calibrate it automatically, with Micro Lidar. Every other Bambu printer uses
+  the manual coarse and fine block tests. Run flow dynamics first, and tune
+  flow only when top surfaces still show over or under extrusion.
+facts:
+  - text: "Auto flow rate calibration uses Micro Lidar to measure printed extrusion lines. Only X1 series printers support it."
+    src: [bambu_wiki_flow_rate_cal, bambu_wiki_lidar_flow]
+  - text: "Lidar does not work well on sparkle, marble, metal or silk PLA, on transparent or semi transparent filament, or on TPU (calibration lines cannot be printed)."
+    src: [bambu_wiki_lidar_flow]
+  - text: "Do flow dynamics calibration before flow rate calibration."
+    src: [bambu_wiki_lidar_flow]
+  - text: "Pick the filament preset that matches the real spool. A wrong max volumetric speed in the preset can cause nozzle clogging during the test."
+    src: [bambu_wiki_lidar_flow]
+  - text: "Manual coarse calibration prints blocks from 80 to 120 percent of the preset flow in 5 percent steps. Fine calibration prints blocks around a custom flow ratio."
+    src: [bambu_wiki_flow_rate_cal]
+  - text: "In Studio's developer mode tests, pass 1 makes nine blocks and pass 2 makes ten blocks with modifiers from minus 9 to 0. New flow equals old flow times (100 plus modifier) divided by 100. Example: 0.98 with a plus 5 block becomes 1.029."
+    src: [bambu_wiki_studio_calibration]
+  - text: "For a quick manual check on X1, slice a simple model at 0.2 mm layers, 2 walls, 4 top layers, 3 bottom layers and 15 percent infill. Change flow in steps of 0.03 to 0.05."
+    src: [bambu_wiki_manual_flow_rate]
+  - text: "Over extrusion shows as uneven top layer lines. Under extrusion shows as gaps between top layer lines."
+    src: [bambu_wiki_manual_flow_rate]
+  - text: "Bambu filament presets are pre tuned. Third party, wood and foaming filament (for example LW-PLA) benefit most from calibration."
+    src: [bambu_wiki_manual_flow_rate, bambu_wiki_flow_rate_cal]
+steps:
+  - text: "Confirm the filament is dry, the nozzle is clean and flow dynamics is done."
+  - text: "X1 series with normal opaque filament: Studio, Calibration, Flow Rate, Auto-Calibration. Read the recommended value and save it to the filament preset."
+  - text: "Other printers or lidar unfriendly filament: run the coarse test, pick the smoothest block, then run the fine test around that value."
+  - text: "Apply the formula and save the new flow ratio to the filament preset."
+  - text: "Print a top surface test to confirm."
+pilot_actions:
+  - "Check printer id first. Offer auto calibration only on bambu_x1c and bambu_x1e."
+  - "Block the auto test for transparent, sparkle, marble, metal, silk and TPU spools."
+  - "When the user reports rough top surfaces after flow dynamics is done, propose a flow change of 0.03 to 0.05 rather than a large jump."
+  - "Read the flow ratio and max volumetric speed of the active filament preset before starting a calibration plan."
+settings:
+  - {key: filament_flow_ratio, op: decrease_by, value: 0.03, why: "Uneven or bumpy top lines mean over extrusion. Lower flow in steps of 0.03 to 0.05."}
+  - {key: filament_flow_ratio, op: increase_by, value: 0.03, why: "Gaps between top surface lines mean under extrusion. Raise flow in steps of 0.03 to 0.05."}
+  - {advice: "Run flow dynamics first, then flow rate.", kind: workflow}
+src: [bambu_wiki_flow_rate_cal, bambu_wiki_lidar_flow, bambu_wiki_manual_flow_rate, bambu_wiki_studio_calibration]

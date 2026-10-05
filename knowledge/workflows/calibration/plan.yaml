@@ -1,0 +1,28 @@
+kind: calibration_plan
+schema_version: 1
+id: plan
+name: Calibration plan
+summary: >
+  Which tests to run, in what order, and when. mimir's calibrate skill reads
+  this to plan a session: it picks only the tests the situation needs, prints
+  them on one plate where it can, and writes results to a new copy of the
+  filament profile after the user approves.
+order: [temperature, max_volumetric_speed, pressure_advance, flow_ratio, retraction, cornering, input_shaping, tolerance, shrinkage]
+order_src: ["orca_wiki:calibration_guide"]
+triggers:
+  - {when: "New spool of a brand and type never printed before", run: [temperature, pressure_advance, flow_ratio], optional: [retraction, max_volumetric_speed]}
+  - {when: "Same brand and type, new color", run: [pressure_advance], optional: [flow_ratio], note: "Colors of the same line usually behave alike but not always.", src: [ellis_pa]}
+  - {when: "Nozzle size or hotend changed", run: [pressure_advance, flow_ratio, max_volumetric_speed], src: [ellis_pa]}
+  - {when: "Printing much faster than before or with a high flow hotend", run: [max_volumetric_speed, pressure_advance], note: "Adaptive pressure advance helps most on fast CoreXY machines with high flow nozzles.", src: ["orca_wiki:adaptive_pressure_advance_calib"]}
+  - {when: "Printer moved, belts tensioned, or ringing appeared", run: [input_shaping]}
+  - {when: "Parts do not fit or holes are tight", run: [flow_ratio, tolerance], optional: [shrinkage]}
+  - {when: "Stringing on a tuned spool", run: [], note: "Dry the spool first. Retraction tests on wet filament give wrong answers.", src: ["orca_wiki:retraction_calib"]}
+firmware_notes:
+  bambu: "Flow dynamics calibration measures pressure advance per spool automatically, and X series printers also measure flow ratio with the lidar. mimir uses those first and only prints manual tests when the user asks or results look wrong. In Orca's manual tests on Bambu printers, leave the Flow calibration box unchecked."
+  bambu_src: [bambu_wiki_flow_dynamics, bambu_wiki_flow_rate_cal, "orca_wiki:flow_ratio_calib"]
+  klipper: "Pressure advance and input shaper live in printer.cfg or are set per filament through the slicer; Orca's pressure_advance field emits SET_PRESSURE_ADVANCE."
+  klipper_src: [klipper_pressure_advance, klipper_docs_resonance_compensation]
+  prusa: "MK4S, Core One and XL ship pressure advance per filament and nozzle in the filament start G-code (M572). Input shaping is tuned at the factory and adjustable from the printer menu."
+  prusa_src: ["orca:Prusa/filament/Prusament PETG @MK4S.json", prusa_kb_input_shaper]
+approvals: "Printing a test plate needs the queue and start permissions. Writing results needs the profile permission. Results go into a new filament profile copy linked to the spool, never over the stock profile."
+src: ["orca_wiki:calibration_guide", ellis_pa, bambu_wiki_flow_dynamics]

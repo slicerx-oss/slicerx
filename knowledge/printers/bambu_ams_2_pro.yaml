@@ -1,0 +1,66 @@
+kind: accessory
+schema_version: 1
+id: bambu_ams_2_pro
+name: Bambu Lab AMS 2 Pro
+vendor: Bambu Lab
+compatible_printers: [bambu_x1c, bambu_x1e, bambu_p1s, bambu_p1p, bambu_a1, bambu_a1_mini, bambu_h2d, bambu_h2s, bambu_h2c, bambu_p2s, bambu_x2d, bambu_a2l]
+compatibility_notes: "X1 and P1: buffer or AMS Hub required, up to 4 units. A series: A1 series AMS Hub, firmware 01.07.00.00 or newer. H2 series and X2D: buffer built in, up to 4 AMS 2 Pro plus 8 AMS HT. P2S: P2S buffer needed unless a combo. Use the new 6-pin cable that ships with AMS 2 Pro."
+compatibility_src: [bambu_wiki_ams_compat, bambu_wiki_ams_faq]
+slots: 4
+max_units_per_printer: {x1_p1: 4, a_series: 4, h2_series: 4, x2d: 4, p2s: 4}
+drying:
+  supported: true
+  max_temp_c: 65
+  max_temp_note: "The maximum is reachable only when ambient is 25 C or warmer."
+  heater: "Two drying modules with fans"
+  typical: {pla: {temp_c: 45, hours: 12}, petg: {temp_c: 65, hours: 12}, tpu: {temp_c: 65, hours: 12, note: "May not fully dry TPU. Bambu suggests the bed or AMS HT."}}
+  cannot_dry: [abs, asa, pc, pa6, pa12, pa_cf, pa_gf, pva, bvoh]
+  power: "H2 series, P2S and X2D power one AMS 2 Pro from the printer. Extra units and X1, P1, A1 series and A2L units need the 24 V 4 A Switching Adapter."
+  modes: "Rotating spool drying is recommended and turns each spool 30 degrees every 5 minutes. Static drying is not for PLA, PVA, support for PLA/PETG and TPU."
+  while_printing: "The AMS lowers drying to 45 C if PLA is loaded, or 55 C when PETG is loaded during a print."
+  remove_before_hot_drying: "Pull PLA and TPU out before drying PETG or hotter materials."
+  firmware_for_studio_drying: {h2d: "01.03.00.00", h2s: "01.02.00.00", p2s: "01.02.00.00", x2d: "01.01.00.00", a2l: "01.01.00.00", not_yet: [bambu_p1s, bambu_p1p, bambu_x1c, bambu_a1, bambu_a1_mini]}
+  src: [bambu_wiki_ams_drying, bambu_wiki_drying, bambu_wiki_material_table, bambu_wiki_ams_faq]
+power:
+  standby_w: {value: 1, src: [bambu_wiki_power], confidence: medium}
+  working_w: {value: 12, note: "Feeding filament.", src: [bambu_wiki_power], confidence: medium}
+  drying_w: {value: 80, src: [bambu_wiki_power], confidence: medium}
+material_limits:
+  compatible: [pla, pla_plus, pla_silk, pla_matte, pla_cf, petg, petg_cf, abs, asa, pc, pa_cf, pva, bvoh, tpu_95a]
+  not_compatible: []
+  not_recommended: []
+  notes:
+    - "Same filament rules as the AMS: TPU only in TPU for AMS and TPU 95A HF grades. Feed soft TPU from the external spool or the AMS HT TPU outlet."
+    - "Hot materials (ABS, ASA, PC, PA) load fine but cannot be dried here. Dry them elsewhere or in an AMS HT."
+  src: [bambu_wiki_material_table, bambu_wiki_drying]
+rfid:
+  supported: true
+  detail: "Two RFID coils read official spool tags and feed remaining filament estimation and auto backup."
+  src: [bambu_wiki_ams2pro_intro, bambu_wiki_ams_function]
+features:
+  - "Humidity and temperature sensor in the front of the cabin, shown on the screen, Studio and Handy."
+  - "Color changing silicone desiccant: yellow turns purple when spent."
+  - "Two actively controlled air vents, intake at the bottom and exhaust at the rear. Keep them clear."
+features_src: [bambu_wiki_ams2pro_intro, bambu_wiki_ams_drying]
+known_issues:
+  - symptom: "Drying does not reach 65 C"
+    cause: "Ambient below 25 C, or the printer is feeding or printing while it powers the unit (power drops to about 86 percent on H2 series)."
+    fix:
+      - {advice: "Use the 24 V Switching Adapter and dry in a warmer room or insulate the unit.", kind: environment}
+    src: [bambu_wiki_ams_drying]
+  - symptom: "Filament softens or deforms during hot drying"
+    cause: "PLA or TPU left in the AMS while drying PETG or ABS class materials."
+    fix:
+      - {advice: "Remove all PLA and TPU from the AMS before drying anything hotter.", kind: workflow}
+    src: [bambu_wiki_ams_drying]
+  - symptom: "Unstable communication with the printer"
+    cause: "Older first generation 6-pin cable used with AMS 2 Pro."
+    fix:
+      - {advice: "Use the new 6-pin cable that ships with AMS 2 Pro and AMS HT.", kind: hardware}
+    src: [bambu_wiki_ams_compat]
+  - symptom: "P2S or X2D cannot heat or move during drying"
+    cause: "The printer allocates its power to the AMS when no power adapter is connected."
+    fix:
+      - {advice: "Connect the Switching Adapter so printing can run while drying.", kind: hardware}
+    src: [bambu_wiki_ams_drying]
+src: [bambu_wiki_ams_drying, bambu_wiki_ams2pro_intro, bambu_wiki_ams_compat, bambu_wiki_ams_faq]

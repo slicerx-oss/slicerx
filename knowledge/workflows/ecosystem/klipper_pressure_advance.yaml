@@ -1,0 +1,37 @@
+kind: guide
+schema_version: 1
+id: klipper_pressure_advance
+name: Pressure advance on Klipper
+applies_to: [voron_2_4, voron_trident, sovol_sv08, creality_k1_max, creality_k2_plus, elegoo_neptune_4_pro, elegoo_centauri_carbon]
+summary: >
+  Pressure advance adds extra filament on speed up and removes it on slow down
+  to counter nozzle pressure. It sharpens corners and reduces bulging. Tune it
+  per filament and per nozzle with Klipper's tuning tower. Retraction and
+  pressure advance work together; keep retraction small once PA is set.
+facts:
+  - {text: "Klipper's command is SET_PRESSURE_ADVANCE [EXTRUDER=<name>] [ADVANCE=<value>] [SMOOTH_TIME=<seconds>]. In printer.cfg the extruder options are pressure_advance (default 0, which disables it) and pressure_advance_smooth_time (default 0.040 s).", src: [klipper_docs_gcodes, klipper_docs_config_reference]}
+  - {text: "Typical pressure advance values are 0.050 to 1.000, with the high end normally only on bowden extruders.", src: [klipper_docs_pressure_advance]}
+  - {text: "Tuning tower for direct drive: TUNING_TOWER COMMAND=SET_PRESSURE_ADVANCE PARAMETER=ADVANCE START=0 FACTOR=.005. For bowden: the same with FACTOR=.020.", src: [klipper_docs_pressure_advance]}
+  - {text: "Compute the value as pressure_advance = start + measured_height * factor. Example from the docs: 0 + 12.90 * .020 = .258 for a bowden tower.", src: [klipper_docs_pressure_advance]}
+  - {text: "Klipper suggests a small slicer retraction (for example 0.75 mm), wipe on retract enabled and z lift on retract disabled during and after tuning.", src: [klipper_docs_pressure_advance]}
+  - {text: "Pressure advance is filament and nozzle specific. Prusa ships M572 S0.053 for PETG on MK4S, showing how much values differ from a Klipper default.", src: ["orca:Prusa/filament/Prusament PETG @MK4S.json", klipper_docs_pressure_advance]}
+  - {text: "Orca can emit its own pressure advance value from the filament profile. If the machine's PRINT_START macro also sets it, the later command wins and the two can conflict.", src: [orca_wiki_calibration]}
+steps:
+  - {text: "Set the printer to a fast but normal speed, 0.2 mm layers, and no input shaper changes during the test."}
+  - {text: "Reset PA: SET_PRESSURE_ADVANCE ADVANCE=0. Keep SMOOTH_TIME at the default 0.040 unless a specific problem points at it."}
+  - {text: "Run TUNING_TOWER with the direct drive or bowden command above and print the tower."}
+  - {text: "Measure the height where corners look best. Compute start + height * factor."}
+  - {text: "Store the value in the filament profile in the slicer, not printer.cfg, so each material keeps its own. Re-test on a corner heavy part."}
+  - {text: "Lower retraction to about 0.75 mm and confirm stringing did not worsen."}
+pilot_actions:
+  - "Ask whether the printer is direct drive or bowden before choosing a tower factor. All printers in this list are direct drive."
+  - "Enable pressure advance in the filament profile and write the measured value, within 0 to 1.5."
+  - "Check that start G-code or PRINT_START does not also set pressure advance."
+  - "Reduce retraction length on direct drive once PA is on; do not raise it as the first stringing fix."
+  - "Adaptive pressure advance is an Orca feature that varies PA with flow; only suggest it after a single tuned PA value works."
+settings:
+  - {key: enable_pressure_advance, op: enable, why: "Turns on pressure advance so the tuned value is written to G-code."}
+  - {key: retraction_length, op: at_most, value: 0.75, why: "Klipper suggests a small retract once pressure advance is set."}
+  - {key: wipe, op: enable, why: "Wipe on retract helps stringing while retraction is small."}
+  - {key: z_hop, op: set, value: 0, why: "Klipper advises disabling z lift on retract during tuning."}
+src: [klipper_docs_pressure_advance, klipper_docs_gcodes, klipper_docs_config_reference, klipper_pressure_advance]

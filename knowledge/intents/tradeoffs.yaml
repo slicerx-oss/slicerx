@@ -1,0 +1,83 @@
+kind: intent_tradeoffs
+schema_version: 1
+id: tradeoffs
+summary: >
+  How kb.intent merges several goals into one set of changes. Goals rarely
+  conflict on every key; most conflicts are on a few speed and structure keys.
+  The rules below decide who wins and what mimir tells the user.
+
+precedence:
+  - {rank: 1, what: "Safety and hardware limits", examples: ["printer max hotend and bed temperature", "abrasive filament needs a hardened nozzle", "food contact caveats", "ventilation for ABS, ASA and PC"]}
+  - {rank: 2, what: "Material limits from kb.filament", examples: ["nozzle temperature range", "max volumetric speed", "fan limits for warping materials"]}
+  - {rank: 3, what: "Goals the user stated in words", examples: ["strong", "by tomorrow", "watertight"]}
+  - {rank: 4, what: "Goals mimir inferred from the model or the material", examples: ["bracket shape implies strength", "vase shaped model suggests vase mode"]}
+  - {rank: 5, what: "Printer profile defaults"}
+
+merge_rules:
+  - {id: same_direction, rule: "When two goals move a key the same way, keep the stronger bound (the larger at_least, the smaller at_most)."}
+  - {id: bound_conflict, rule: "When an at_least from one goal is above an at_most from another, the higher ranked goal wins. If both are stated goals, the goal listed first in the conflicts table below wins, and mimir says what it gave up."}
+  - {id: set_conflict, rule: "When two goals set a key to different values, use the pair rule below. If none exists, keep the value from the stated goal and flag it."}
+  - {id: core_beats_supporting, rule: "A change marked priority core in one goal beats a change marked supporting in another."}
+  - {id: clamp, rule: "After merging, clamp every value to settings.yaml bounds and to the filament and printer limits. Report every clamp."}
+
+pairs:
+  - goals: [strength, speed]
+    resolution: >
+      Keep the walls and the temperature from strength (they are cheap in time
+      and carry the load). Take layer height and infill pattern from speed.
+      Infill density goes to the strength floor, not the speed ceiling.
+    keep: {wall_loops: strength, nozzle_temperature: strength, layer_height: speed, sparse_infill_density: strength, sparse_infill_pattern: speed, top_shell_layers: strength}
+    never: "Never use lightning infill for a part that carries load."
+    tell_user: "Kept four walls for strength and used thicker layers to save time."
+  - goals: [strength, surface_finish]
+    resolution: "Both can hold. Slow only the outer wall; inner walls and infill stay fast. Wall order inner, outer, inner still gives strong walls."
+    keep: {wall_loops: strength, outer_wall_speed: surface_finish, layer_height: surface_finish}
+  - goals: [strength, flexibility]
+    resolution: "They pull opposite ways on walls and infill. Ask which matters more. A tough but bendy part usually means TPU 95A with three walls."
+    ask: "Should it bend and spring back, or hold its shape under load?"
+  - goals: [strength, vase]
+    resolution: "Vase mode is one line thick. Refuse the combination unless the user accepts a fragile part; offer a wide line (1.5 times the nozzle) or normal mode with two walls and no top."
+    ask: "Vase mode makes a single wall. Do you want the seamless look or a stronger part?"
+  - goals: [strength, economy]
+    resolution: "Keep walls, cut infill. Walls give the most strength per gram."
+    keep: {wall_loops: strength, sparse_infill_density: economy}
+  - goals: [surface_finish, speed]
+    resolution: "Slow only the outer wall and the top surface. Everything hidden runs at speed. Layer height is the real conflict: offer 0.16 mm as the middle ground."
+    keep: {outer_wall_speed: surface_finish, outer_wall_acceleration: surface_finish, sparse_infill_speed: speed, layer_height: compromise_0_16}
+  - goals: [detail, speed]
+    resolution: "Detail needs thin layers, which are slow. Keep 0.08 to 0.12 mm and save time by batching several models per plate instead."
+    tell_user: "Fine layers take time. Printing several at once is the fastest way to more models."
+  - goals: [dimensional_accuracy, speed]
+    resolution: "Slow only the outer wall. Keep compensation settings; they cost nothing."
+    keep: {outer_wall_speed: dimensional_accuracy, precise_outer_wall: dimensional_accuracy, layer_height: speed}
+  - goals: [watertight, speed]
+    resolution: "Keep walls, flow and temperature from watertight. Vase mode is both fast and seamless if the shape allows it."
+  - goals: [watertight, vase]
+    resolution: "Compatible. Use vase mode with a line width of at least 1.5 times the nozzle and five bottom layers."
+  - goals: [heat_resistance, any]
+    resolution: "Heat resistance picks the material first. If the loaded spool cannot meet the use temperature, stop and propose a material before changing settings."
+  - goals: [uv_resistance, any]
+    resolution: "Same as heat resistance: the material decides. ASA needs an enclosure; check the printer before planning."
+  - goals: [food_contact, any]
+    resolution: "Never drops the caveats. Food contact never unlocks materials outside its prefer list without an explicit user confirmation."
+
+deadline:
+  summary: >
+    "By tomorrow" or "by Friday" is a time budget. mimir slices with the goal
+    settings, estimates wall clock time across the printers that can run the
+    material, and only spends quality when the plan misses the deadline.
+  budget_rules:
+    - "Budget is the time until the deadline minus a 20 percent margin for failures and plate changes, and minus hours nobody can clear a plate (ask if unknown)."
+    - "Count parallel printers: wall clock time is the longest single printer queue, not the sum."
+  levers_in_order:
+    - {lever: parallelize, what: "Spread plates across more idle printers loaded with the same material (or with the material in their AMS)."}
+    - {lever: plate_fill, what: "Fill each plate. One long plate beats several short ones because of heat up, leveling and flow calibration time."}
+    - {lever: layer_height, what: "Raise layer height toward 0.6 to 0.7 times the nozzle diameter."}
+    - {lever: nozzle, what: "Suggest a 0.6 mm nozzle when the printer has one; never swap hardware without approval."}
+    - {lever: infill, what: "Lower infill density down to the floor of the strongest stated goal."}
+    - {lever: top_layers, what: "Drop top and bottom layers to the minimum the layer height allows."}
+    - {lever: speed_goal_level, what: "Move speed from standard to draft only for parts with no stated strength or surface goal."}
+  never_cut: [wall_loops below a stated strength level, first layer settings, material temperature below its range, drying]
+  report: "State the estimate, the deadline, which levers were used and what each cost in quality."
+
+src: [cnckitchen_extrusion_width, prusa_kb_infill_patterns, prusa_kb_layers_perimeters]

@@ -1,0 +1,34 @@
+kind: printer
+schema_version: 1
+id: bambu_p2s
+name: Bambu Lab P2S
+vendor: Bambu Lab
+status: current
+status_confidence: medium
+status_src: [bambu_store_collection]
+detail_level: core_specs_only
+firmware: bambu
+connections: [bambu_lan_mqtt, bambu_cloud, bambu_connect]
+kinematics: corexy
+build_volume_mm: {x: 256, y: 256, z: 256, src: [bambu_spec_p2s, "orca:BBL/machine/Bambu Lab P2S 0.4 nozzle.json"]}
+extruder: {type: direct_drive, gears: hardened_steel, src: [bambu_spec_p2s]}
+hotend: {max_temp_c: 300, nozzle_diameters_mm: [0.2, 0.4, 0.6, 0.8], nozzle_materials: [hardened_steel], stock_nozzle: {diameter_mm: 0.4, material: hardened_steel}, tool_free_swap: false, high_flow_option: null, max_flow_mm3s: {standard: 40}, src: [bambu_spec_p2s]}
+bed: {max_temp_c: 110, plates: [textured_pei, smooth_pei, bambu_supertack_plate], included_plates: [textured_pei], note: "Reads second generation plate QR codes. First generation plates work but are not recognized.", src: [bambu_spec_p2s, bambu_wiki_build_plates]}
+enclosure: {type: enclosed, chamber_heating: passive, max_chamber_c: null, filtration: [activated_carbon], src: [bambu_spec_p2s, "orca:BBL/machine/Bambu Lab P2S 0.4 nozzle.json"]}
+motion: {max_speed_mm_s: 600, max_accel_mm_s2: 20000, input_shaping: auto, src: [bambu_spec_p2s], note: "The Orca machine profile carries 1000 mm/s. Spec sheet says 600."}
+power:
+  mains: "100 to 120 V AC and 200 to 240 V AC, 50/60 Hz"
+  max_w: {value: 1200, note: "At 220 V. 1000 W at 110 V. The bed holds maximum heater power for a short time to reach temperature.", src: [bambu_spec_p2s, bambu_wiki_power], confidence: high}
+  printing_typical_w: {pla: {value: 200}, src: [bambu_spec_p2s, bambu_wiki_power], confidence: high, note: "Bambu lists 200 W steady state for PLA printing at both 220 V and 110 V."}
+  standby_w: {range: [7.3, 7.8], src: [bambu_wiki_power], confidence: medium, note: "Offline standby. 7.8 to 8.2 W with Wi-Fi."}
+sensors: [chamber_camera, door_sensor, filament_runout, tangle_detection, filament_odometry_with_ams, power_loss_recovery]
+sensors_src: [bambu_spec_p2s]
+multi_material:
+  - {system: bambu_ams_2_pro, max_units: 4, slots_per_unit: 4, needs: "P2S filament buffer (included in the P2S Combo). A 4-in-1 adapter for 3 or more units.", src: [bambu_wiki_ams_compat]}
+  - {system: bambu_ams_ht, max_units: 4, slots_per_unit: 1, src: [bambu_wiki_ams_compat]}
+orca_profile: "orca:BBL/machine/Bambu Lab P2S 0.4 nozzle.json"
+pilot_notes:
+  - "Enclosed with a passive chamber and a hardened steel nozzle stock. Fiber filled filament is fine on the stock nozzle."
+  - "When the printer powers an AMS 2 Pro for drying without a power adapter, it cannot heat the bed or hotend or move axes during drying."
+  - "Bambu Studio Print sends the file to internal storage; LAN tools may not read cover images unless the print is sent to a card."
+src: [bambu_spec_p2s, bambu_wiki_ams_drying, bambuddy_repo, "orca:BBL/machine/Bambu Lab P2S 0.4 nozzle.json"]

@@ -1,0 +1,257 @@
+kind: filament
+schema_version: 1
+id: tpu_85a
+name: TPU 85A
+category: flexible
+orca_filament_type: TPU
+aliases: [TPU 85A, Shore 85A TPU, Bambu TPU 85A, soft TPU, TPU 90A, Bambu TPU 90A, Shore 90A TPU]
+related: [tpu_95a]
+summary: >
+  Soft, rubbery TPU that stretches a long way and feels like silicone or shoe
+  foam. It is the hardest flexible material to print: flow must stay very low,
+  feeding is prone to buckling, and it is not for AMS or high flow nozzles. TPU 90A
+  sits between 85A and 95A and is easier, with limits noted below. Bambu does not
+  support TPU softer than 85A.
+use_for: [soft grips, seals and gaskets, shock absorbers, wearable parts, stamps, soft feet, flexible toys]
+avoid_for: [bowden extruders, fast prints, fine bridges and overhangs, AMS feeding, precise dimensions, high flow nozzles]
+
+nozzle_temp_c:
+  min: 200
+  max: 240
+  typical: 225
+  confidence: high
+  src:
+    - "orca:OrcaFilamentLibrary/filament/Bambu/Bambu TPU 85A @base.json"
+    - "orca:BBL/filament/Bambu TPU 90A @BBL X1C.json"
+    - bambu_wiki_material_table
+    - prusa_kb_flexible
+  note: "Bambu profiles for 85A and 90A run 200 to 240 (225 profile). The Bambu table lists 200 to 250 for TPU 85A and 90A. Prusa's flexible guide says 230 to 245 depending on hardness and brand."
+first_layer_nozzle_temp_c:
+  min: 225
+  max: 230
+  typical: 225
+  confidence: medium
+  src: ["orca:OrcaFilamentLibrary/filament/Bambu/Bambu TPU 85A @base.json", "orca:BBL/filament/Bambu TPU 90A @BBL X1C.json"]
+  note: "Both Bambu profiles use 225."
+bed_temp_c:
+  min: 30
+  max: 75
+  typical: 35
+  confidence: medium
+  src: [bambu_wiki_material_table, "orca:OrcaFilamentLibrary/filament/Bambu/Bambu TPU 85A @base.json", prusa_kb_flexible]
+  note: "Bambu 30 to 45 C (profile 35 on PEI, 30 on Engineering plate, no glue needed for 85A and 90A). Prusa runs 60 to 75 C on its sheets."
+chamber_temp_c: null
+enclosure:
+  level: optional
+  confidence: medium
+  src: [bambu_wiki_material_table]
+  note: "Not needed. With the bed above 45 C on an enclosed printer, remove the top glass cover or open the door to keep the filament from softening in the extruder."
+
+plates:
+  - {plate: bambu_cool_plate, fit: avoid, confidence: medium, src: [bambu_wiki_material_table], note: "Bambu's table marks the Cool Plate as not recommended for TPU."}
+  - {plate: bambu_supertack_plate, fit: avoid, confidence: high, src: [bambu_wiki_tpu_guide], note: "Bambu excludes the Cool Plate SuperTack for TPU."}
+  - {plate: bambu_engineering_plate, fit: good, bed_temp_c: {min: 30, max: 35}, release_agent: none, confidence: high, src: [bambu_wiki_material_table], note: "Works at a low temperature."}
+  - {plate: bambu_high_temp_plate, fit: good, bed_temp_c: {min: 35, max: 45}, release_agent: none, confidence: high, src: [bambu_wiki_material_table, bambu_wiki_tpu_85a_90a_x_series], note: "Bambu says glue is not required for 85A and 90A."}
+  - {plate: smooth_pei, fit: glue, bed_temp_c: {min: 60, max: 75}, release_agent: glue_stick, confidence: medium, src: [prusa_kb_flexible], note: "Prusa says smooth and satin sheets need a separator (glue stick or Kapton)."}
+  - {plate: textured_pei, fit: good, bed_temp_c: {min: 35, max: 75}, release_agent: none, confidence: high, src: [bambu_wiki_material_table, prusa_kb_flexible], note: "Powder coated textured sheet needs no separator per Prusa."}
+
+cooling:
+  fan_min_pct: {min: 30, max: 100, typical: 100}
+  fan_max_pct: {min: 30, max: 100, typical: 100}
+  overhang_fan_pct: {typical: 100}
+  no_fan_first_layers: {typical: 1}
+  min_layer_time_s: {min: 10, max: 20, typical: 20}
+  confidence: medium
+  src:
+    - "orca:OrcaFilamentLibrary/filament/Bambu/Bambu TPU 85A @base.json"
+    - "orca:BBL/filament/Bambu TPU 90A @BBL X1C.json"
+    - "orca:Prusa/filament/Generic TPU @Prusa MK4S.json"
+    - prusa_kb_flexible
+  note: "Bambu 85A profile: 100 percent fan and a 20 s minimum layer time. Bambu 90A: 100 percent and 0 s. Prusa uses 30 to 50 percent and says to keep cooling low or off."
+
+drying:
+  need: required
+  oven: {temp_c: 70, hours: 8}
+  ams_2_pro: {temp_c: 65, hours: 12, note: "Bambu says the AMS 2 Pro may not fully dry TPU. Use the heatbed or AMS HT instead."}
+  ams_ht: {temp_c: 75, hours: 18}
+  printer_bed: {temp_c: 90, hours: 16, note: "Enclosed Bambu printers only, spool covered. The spool expands slightly while drying."}
+  keep_dry_in_use: required
+  confidence: medium
+  src: [bambu_wiki_drying, bambu_wiki_material_table, bambu_wiki_tpu_85a_90a_x_series]
+  note: "Bambu groups 85A and 90A: 90 C on the bed for 16 h, 70 C in an oven for 8 h, 75 C in the AMS HT for 18 h. Store with desiccant below 20 percent RH."
+
+nozzle:
+  abrasive: false
+  hardened_required: false
+  min_diameter_mm: 0.6
+  orca_required_hrc: 3
+  confidence: high
+  src: [bambu_wiki_tpu_guide, bambu_wiki_tpu_85a_90a_x_series, bambu_wiki_material_table]
+  note: >
+    Bambu: 85A needs 0.6 mm or 0.8 mm (or the TPU high flow hotend). It is not
+    compatible with 0.2 or 0.4 mm nozzles or the 0.4 mm high flow nozzle, and
+    0.6 and 0.8 mm high flow nozzles are not recommended. 90A works with 0.4,
+    0.6 and 0.8 mm nozzles, not 0.2 mm, and regular high flow nozzles are not
+    recommended. Cold pull before TPU if the nozzle printed carbon fiber.
+
+extrusion:
+  flow_ratio: {min: 1.0, max: 1.029, typical: 1.0, confidence: medium, src: ["orca:OrcaFilamentLibrary/filament/Bambu/Bambu TPU 85A @base.json", "orca:BBL/filament/Bambu TPU 90A @BBL X1C.json"], note: "85A uses 1.0. Bambu 90A uses 1.0, with 1.029 for its first list entry. Confirm with a flow test."}
+  max_volumetric_speed_mm3s:
+    standard_hotend: {min: 2.2, max: 2.8, typical: 2.2}
+    variants:
+      tpu_85a: {typical: 2.2, note: "Bambu TPU 85A profile."}
+      tpu_90a: {typical: 2.8, note: "Bambu TPU 90A on X1C."}
+    confidence: medium
+    src:
+      - "orca:OrcaFilamentLibrary/filament/Bambu/Bambu TPU 85A @base.json"
+      - "orca:BBL/filament/Bambu TPU 85A @BBL X1C.json"
+      - "orca:BBL/filament/Bambu TPU 90A @BBL X1C.json"
+      - prusa_kb_flexible
+    note: "85A is 2.2 mm3/s and 90A is 2.8 mm3/s in Bambu profiles. Prusa says flexible filaments usually print at 20 mm/s with a 30 to 40 mm/s maximum. Slower is better for 85A."
+  retraction_mm:
+    direct_drive: {min: 0, max: 0.8, typical: 0.4}
+    confidence: medium
+    src: ["orca:BBL/filament/Bambu TPU 85A @BBL X1C.json", "orca:BBL/filament/Bambu TPU 90A @BBL X1C.json", prusa_kb_flexible]
+    note: "Bambu uses 0.4 mm for 85A and for 90A (0.8 mm on one variant). Prusa says use low retraction or disable it to avoid clogs."
+    retraction_speed_mm_s: {min: 20, max: 60, typical: 30, confidence: low, src: [bambu_tds_tpu_95a, "orca:Prusa/filament/Generic TPU @Prusa MK4S.json", "orca:BBL/machine/Bambu Lab X1 Carbon 0.4 nozzle.json"], note: "No 85A specific value. Bambu 95A TDS says 20 to 40 mm/s and the Bambu printer profile uses 30. Prusa's TPU profile uses 60 with a 20 mm/s deretraction."}
+  pressure_advance:
+    direct_drive: null
+    bowden: null
+    confidence: low
+    src: [bambu_wiki_tpu_guide]
+    note: "Bambu says to turn off flow dynamics calibration for TPU. Leave PA off unless a calibration shows a clear gain."
+
+layer_height:
+  fraction_of_nozzle: {min: 0.33, max: 0.6, typical: 0.5}
+  at_0_4_mm: null
+  at_0_6_mm: {min: 0.2, max: 0.36, typical: 0.3}
+  smart_layer:
+    quality_mode: "Do not go thin with 85A. Thin layers and poor bridging leave holes (Prusa), and flow is very low. Bambu allows 85A only on 0.6 and 0.8 mm nozzles, so use 0.3 mm on a 0.6 mm nozzle and stay above about 0.2 mm."
+    strength_mode: "Layer bonding in TPU is good. Layer height changes softness only through the wall and infill count. Thicker layers reduce how far the soft filament has to be pushed per mm of travel."
+    thin_layer_cooling: "Flow, not cooling, sets the speed. At 2.2 mm3/s a 0.3 mm layer on a 0.62 mm line prints about 12 mm/s. Bambu's profile uses a 20 s minimum layer time."
+  confidence: low
+  src: [prusa_kb_flexible, bambu_wiki_tpu_guide, "orca:BBL/machine/fdm_machine_common.json"]
+  note: "Bambu says 85A is not compatible with 0.2 or 0.4 mm nozzles, so the 0.4 mm band does not apply. The band is expert, taken as 0.33 to 0.6 of nozzle diameter with a 0.6 mm nozzle (Bambu 0.6 mm machine limit is 0.12 to 0.42 mm). Speed shown is derived from volumetric speed and line width."
+smart_layer:
+  min_ratio: 0.33
+  max_ratio: 0.6
+  modes:
+    quality: {min_ratio: 0.33, max_ratio: 0.5}
+    strength: {min_ratio: 0.33, max_ratio: 0.5}
+  family: tpu
+  note: "Soft TPU feeds poorly at thin layers, so sleipnir stays at a third of the nozzle or more."
+  confidence: low
+  src: ["prusa_kb_flexible", "bambu_wiki_tpu_guide", "orca:BBL/machine/fdm_machine_common.json", "cnckitchen_layer_height", "stojkovic_2023_layer_height_annealing"]
+speeds:
+  print_speed_mm_s: {min: 10, max: 40}
+  first_layer_mm_s: {typical: 15}
+  volumetric_note: "Prusa says flexibles print at about 20 mm/s and never above 30 to 40, and softer TPU is harder. Bambu's 85A limit is 2.2 mm3/s, which is only about 12 mm/s at 0.3 mm layers on a 0.6 mm nozzle; see extrusion."
+  confidence: low
+  src: [prusa_kb_flexible, "orca:OrcaFilamentLibrary/filament/Bambu/Bambu TPU 85A @base.json"]
+  note: "No maker range for 85A. Range and first layer speed are expert values that follow Prusa's statement that the softer the filament, the slower it must print."
+first_layer:
+  fan_off_layers: 1
+  speed_mm_s: {typical: 15}
+  bed_first_layer_note: "Bambu profiles use 30 to 35 C. Prusa lists 60 to 75 C for flexibles, higher for large parts."
+  squish_note: "Print the first layer very slowly with a light squish. Soft TPU deforms under the nozzle if too close, so tune Z on a first layer test. Use glue stick on smooth PEI."
+  confidence: low
+  src: [prusa_kb_flexible, "orca:BBL/process/fdm_process_common.json"]
+structure:
+  walls: {min: 2, typical: 2, note: "Softness depends on walls and infill. Keep walls and top and bottom layers low to preserve the give, and raise them only where the part must resist wear."}
+  infill: {pattern_hint: gyroid, density_note: "10 to 20 percent keeps the part soft. Use rounder patterns that let the walls flex."}
+  confidence: low
+  src: [prusa_kb_flexible]
+  note: "Pattern and density are expert values. Prusa states only the trade off between flexibility and strength."
+supports:
+  interface_materials: ["PLA (separate interface filament)"]
+  soluble_pairing: null
+  top_z_distance_mm: {typical: 0.3}
+  interface_layers: {typical: 2}
+  note: "Prusa asks for a Z gap of 0.3 mm and XY separation of at least 100 percent for flexibles, and lists support removal as difficult. Avoid supports on 85A and design overhangs away. If needed, use PLA and a little alcohol at the joint."
+  confidence: low
+  src: [prusa_kb_flexible, "orca:BBL/process/0.20mm Standard @BBL X1C.json"]
+
+multi_material:
+  bambu_ams: not_compatible
+  bambu_ams_lite: not_compatible
+  bambu_ams_ht: compatible
+  confidence: high
+  src: [bambu_wiki_material_table, bambu_wiki_tpu_guide, bambu_wiki_tpu_85a_90a_x_series]
+  note: "AMS, AMS lite and AMS 2 Pro are incompatible. The AMS HT works only as a sealed drybox with manual feed through its TPU outlet. For 85A, Bambu says to feed straight into the extruder rather than through the PTFE tube. TPU 85A is not supported on the A1 series."
+
+properties:
+  density_g_cm3: {typical: 1.18, min: 1.18, max: 1.24, src: ["orca:OrcaFilamentLibrary/filament/Bambu/Bambu TPU 85A @base.json", "orca:BBL/filament/Bambu TPU 90A @BBL X1C.json"], note: "85A 1.18, 90A 1.24."}
+  softening_temp_c: {typical: 30, src: ["orca:OrcaFilamentLibrary/filament/Bambu/Bambu TPU 85A @base.json", bambu_wiki_material_table], note: "Orca temperature_vitrification is 30 C. Bambu groups TPU with filaments that soften below 60 C."}
+  relative:
+    heat: 1
+    impact: 5
+    tensile: 1
+    scale: "1 to 5, Bambu star ratings for TPU"
+    src: [bambu_wiki_material_table]
+safety:
+  fumes: low
+  note: "Operate in a ventilated area, per Bambu."
+food_contact:
+  note: "Bambu states TPU is not food contact grade. Do not use printed parts for food."
+  src: [bambu_wiki_tpu_guide, prusa_kb_food_safe]
+
+failure_modes:
+  - id: feed_buckling
+    symptom: Filament folds or tangles before the extruder, or no flow
+    causes: [material too soft, feed path resistance, spool too low, bowden path]
+    fixes:
+      - {advice: "Raise the spool holder or drybox above the toolhead so the filament feeds downhill. Open the box's side outlet. Feed 85A by hand directly into the extruder.", kind: hardware}
+      - {key: filament_max_volumetric_speed, op: at_most, value: 2.2, why: "85A jams above about 2 to 3 mm3/s."}
+      - {advice: "Use a direct drive extruder. Softer than 85A is not supported on Bambu printers.", kind: hardware}
+  - id: stringing
+    symptom: Strings and blobs
+    causes: [hot nozzle, wet filament, travel between parts]
+    fixes:
+      - {key: nozzle_temperature, op: decrease_by, value: 5, why: "TPU is very fluid when hot."}
+      - {key: filament_max_volumetric_speed, op: decrease_by, value: 0.4, why: "Bambu pairs a temperature drop with lower flow."}
+      - {key: print_sequence, op: set, value: "by object", why: "Less travel between models."}
+      - {advice: "Dry the spool for the full time.", kind: material}
+  - id: under_extrusion
+    symptom: Gaps and missing layers
+    causes: [feed resistance, speed too high, damp filament, dirty nozzle]
+    fixes:
+      - {key: filament_max_volumetric_speed, op: decrease_by, value: 0.4, why: "Slower flow melts fully."}
+      - {advice: "Cold pull the nozzle. Use a fresh nozzle if it printed carbon fiber.", kind: hardware}
+  - id: wrong_nozzle
+    symptom: Constant jams with 85A on a 0.4 mm nozzle
+    causes: [85A is not compatible with 0.4 mm or 0.4 mm high flow nozzles on Bambu]
+    fixes:
+      - {advice: "Use a 0.6 mm or 0.8 mm nozzle, or Bambu's TPU high flow hotend. Use 90A if you must use 0.4 mm.", kind: hardware}
+  - id: poor_bridges
+    symptom: Sagging bridges and overhangs
+    causes: [soft material]
+    fixes:
+      - {key: bridge_speed, op: at_most, value: 20, why: "Slow bridges give the line time to set."}
+      - {advice: "Use PLA as support and remove it with a little alcohol at the joint.", kind: workflow}
+
+disagreements:
+  - topic: bed temperature
+    positions:
+      - {claim: "30 to 45 C", src: [bambu_wiki_material_table]}
+      - {claim: "60 to 75 C", src: [prusa_kb_flexible]}
+    resolution: "35 C on Bambu plates. Prusa sheets like a warmer bed."
+  - topic: retraction
+    positions:
+      - {claim: "0.4 mm", src: ["orca:BBL/filament/Bambu TPU 85A @BBL X1C.json"]}
+      - {claim: "disable or minimal", src: [prusa_kb_flexible]}
+    resolution: "Default 0.4 mm. Reduce toward zero if the extruder clogs."
+
+pilot_defaults:
+  nozzle_temperature: 225
+  nozzle_temperature_initial_layer: 225
+  eng_plate_temp: 30
+  textured_plate_temp: 35
+  hot_plate_temp: 35
+  fan_min_speed: 100
+  fan_max_speed: 100
+  overhang_fan_speed: 100
+  close_fan_the_first_x_layers: 1
+  slow_down_layer_time: 20
+  filament_flow_ratio: 1.0
+  filament_max_volumetric_speed: 2.2
+  retraction_length: 0.4

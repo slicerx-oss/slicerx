@@ -1,0 +1,99 @@
+kind: troubleshoot
+schema_version: 1
+id: warping
+name: Warping and corner lift
+aliases: [curling, corner lift, lifting, peeling off the bed, bowed base, part popped off]
+camera_signs:
+  - "Corners or edges of the first layers curl up off the plate, leaving a visible gap under the part"
+  - "The base looks bowed or rounded in a side view of a flat part"
+  - "The part sits at an angle or has detached from the plate"
+  - "Bulges on the outer wall above a lifted corner where extra plastic squeezed sideways"
+log_signs:
+  - "Bambu HMS 0300 family prompts about a heatbed force sensor disturbance (for example 0300-0A00-0001-0004) can point at the plate not seated or debris under it, which also causes lift"
+  - "Klipper or Bambu logs may show a print that stops with a nozzle collision or extrusion resistance error after a corner lifts into the nozzle path"
+tree:
+  start: q_material
+  nodes:
+    q_material: {ask: "Is the material a high shrinkage type (ABS, ASA, PC, PA, and carbon fiber filled versions), or is it a large flat part?", "yes": q_enclosed, "no": q_plate_clean}
+    q_enclosed: {ask: "Is the printer enclosed or in a stable warm room, with no draft, open window or air conditioner blowing on it?", "yes": q_plate_clean, "no": c_drafts}
+    q_plate_clean: {ask: "Was the plate washed recently (dish soap and water, or 90 percent IPA) and handled by the edges?", "yes": q_plate_setting, "no": c_dirty_plate}
+    q_plate_setting: {ask: "Does the plate type and bed temperature in the slicer match the plate and filament you are using?", "yes": q_first_layer, "no": c_wrong_plate_temp}
+    q_first_layer: {ask: "Does the first layer look flat, continuous and slightly squished with no gaps between lines?", "yes": q_cooling, "no": c_first_layer_bad}
+    q_cooling: {ask: "Does the lift start at thin corners, small overhangs or supported contact points while the part fan is high?", "yes": c_overcooling, "no": c_no_brim}
+causes:
+  - id: c_drafts
+    name: Drafts or cold chamber air
+    category: environment
+    likelihood: high
+    checks:
+      - "Check for open windows, air conditioning, or a fan pointed at the printer."
+      - "On printers with adaptive airflow (P2S, X2D), cold chamber air blowing straight on the part in cooling mode can drive first layer and support interface warping."
+    fixes:
+      - {advice: "Close the door and top lid for ABS, ASA, PC and PA. Keep PLA and PETG in a cooler, open setup, since they need strong part cooling. Prusa says an enclosure is not a good idea for PLA or PETG.", kind: environment}
+      - {advice: "On P2S and X2D, print and fit the Bambu air deflector when printing PETG, so cold chamber air is not aimed at the part.", kind: hardware}
+      - {key: draft_shield, op: set, value: enabled, why: "A draft shield or skirt holds heat around high shrinkage prints, which Prusa recommends for PC blend, ASA and ABS.", src: [prusa_kb_warping]}
+    filaments: [abs, asa, pc, pa6, pa12, pa_cf, pa_gf]
+    printers: [bambu, prusa]
+    src: [prusa_kb_warping, bambu_wiki_warping_p2s]
+    confidence: medium
+  - id: c_dirty_plate
+    name: Dirty or oily build plate
+    category: environment
+    likelihood: high
+    checks:
+      - "Fingerprints, hand cream, glue residue or dust show as a dull or shiny patch where the part lifted first."
+    fixes:
+      - {advice: "Wash with warm water and dish soap, dry or air dry, and hold the plate by its edges afterward. Ellis notes IPA does not remove oils well. Prusa recommends 90 percent IPA for routine cleaning and a dish soap wash when adhesion fades.", kind: hardware}
+    src: [ellis_build_adhesion, prusa_kb_first_layer, bambu_wiki_warping_p2s]
+    confidence: high
+  - id: c_wrong_plate_temp
+    name: Wrong plate type or bed temperature
+    category: settings
+    likelihood: high
+    checks:
+      - "Bambu heatbed temperature depends on the plate type chosen in the slicer, and a wrong choice leaves the bed too cool."
+    fixes:
+      - {advice: "Set the plate type in the slicer to the plate actually installed, then use that plate's temperature for the filament.", kind: workflow}
+      - {advice: "If the material still lifts, raise the bed temperature slightly. Prusa suggests 5 to 10 C hotter for stubborn materials.", kind: workflow}
+    printers: [bambu]
+    src: [bambu_wiki_warping_p2s, prusa_kb_first_layer, bambu_wiki_layer_artifacts]
+    confidence: medium
+  - id: c_first_layer_bad
+    name: Poor first layer squish
+    category: settings
+    likelihood: high
+    checks:
+      - "Look for sparse, thin or rounded first layer lines. That means the nozzle is too high or the bed is not level at that spot."
+    fixes:
+      - {advice: "Run automatic bed leveling and check the plate is seated flat with nothing under it. See the first_layer troubleshooter for Z offset and mesh steps.", kind: hardware}
+      - {key: initial_layer_speed, op: at_most, value: 30, why: "Bambu recommends a first layer speed of 30 mm/s or less to help bonding.", src: [bambu_wiki_spaghetti]}
+      - {advice: "Do not over squish to fix adhesion. Prusa warns that too low a Z offset can damage the sheet.", kind: hardware}
+    src: [bambu_wiki_warping_p2s, bambu_wiki_spaghetti, prusa_kb_first_layer]
+    confidence: medium
+  - id: c_overcooling
+    name: Too much part cooling on small features
+    category: settings
+    likelihood: medium
+    checks:
+      - "Lift starts high on the part or at thin, tall corners rather than at the very first layer."
+    fixes:
+      - {advice: "Lower the maximum part fan in steps. Prusa warns too much fan can lift the whole object, and suggests 10 to 20 percent fan even for ABS or PC blend when small overhangs warp.", kind: material}
+      - {advice: "If layer bonding weakens after lowering the fan, raise the nozzle temperature a little instead of restoring the fan.", kind: material}
+      - {advice: "Print more parts at once or add a small sacrificial part to lengthen layer time, and use a constant fan speed to avoid banding.", kind: workflow}
+    src: [prusa_kb_warping, ellis_cooling_layer_times]
+    confidence: medium
+  - id: c_no_brim
+    name: No brim or too little contact area
+    category: model
+    likelihood: medium
+    checks:
+      - "Small footprint, sharp corners or tall thin walls on a large part with high shrinkage lift first."
+    fixes:
+      - {key: brim_type, op: set, value: outer_only, why: "A brim adds first layer grip. Bambu recommends an outer brim 5 to 8 mm wide for small contact areas.", src: [bambu_wiki_spaghetti, prusa_kb_warping]}
+      - {key: brim_width, op: at_least, value: 5, why: "Wider brims hold small footprints better. Bambu suggests 5 to 8 mm.", src: [bambu_wiki_spaghetti]}
+      - {advice: "Orient the problem corners toward the center of the bed and slow the print down, since Prusa reports slower speed reduces warping in high shrinkage materials.", kind: orientation}
+      - {advice: "Use a thin layer of glue stick on the plate. Prusa notes it helps adhesion and also acts as a separation layer for PETG, ABS and ASA.", kind: material}
+    src: [bambu_wiki_spaghetti, prusa_kb_warping, bambu_wiki_layer_artifacts]
+    confidence: medium
+related: [bed_adhesion, first_layer, layer_separation, spaghetti]
+src: [prusa_kb_warping, bambu_wiki_warping_p2s, ellis_build_adhesion]

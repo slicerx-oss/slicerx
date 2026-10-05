@@ -1,0 +1,133 @@
+kind: troubleshoot
+schema_version: 1
+id: ams_jam
+name: AMS load and unload failures
+aliases: [AMS jam, AMS lite jam, filament will not load from AMS, unload failed, filament stuck in AMS, buffer jam, AMS not feeding, MMU jam, CFS jam]
+camera_signs:
+  - "Filament stopped partway in the PTFE tube, bent or kinked at the AMS outlet, the buffer or the toolhead inlet"
+  - "Filament stuck at the AMS hub or the AMS lite hub with a tangled or loose loop on the spool"
+  - "Scraped, flattened or dented filament section near the feeder wheel"
+  - "The buffer slider or spring at rest at one end and not moving as filament feeds"
+  - "A spool that has slipped off its holder or an overwound spool that will not turn"
+log_signs:
+  - "Bambu HMS 0700-4000-0002-0004: filament buffer signal abnormal (spring stuck or filament tangled)"
+  - "Bambu HMS 0700-xx00-0002-0014: AMS slot odometer no signal (connector or odometer failure)"
+  - "Bambu HMS 0700-0100-0002-0011: AMS motor assist parameter lost. Pull filament from the hub and restart the AMS"
+  - "Bambu HMS 0700-2x00-0002-0001: slot filament has run out. Not a jam, but the spool may be tangled or stuck when the AMS cannot pull it"
+  - "Bambu HMS 1200-2000-0002-0006 family: failed to extrude AMS lite filament, or air printing detection cut the filament (A1 series)"
+  - "Prusa MMU3 error codes such as 04101 (FINDA did not trigger), 04102 (FINDA filament stuck), 04104 (filament sensor filament stuck), or a load failure into the extruder"
+tree:
+  start: q_system
+  nodes:
+    q_system: {ask: "Is this a Bambu AMS, AMS 2 Pro, AMS HT or AMS lite?", "yes": q_stage, "no": c_other_multi_material}
+    q_stage: {ask: "Does the filament fail to leave the AMS slot or feeder, as opposed to jamming further down the tube or at the toolhead?", "yes": q_slot, "no": q_tube}
+    q_slot: {ask: "Is the filament worn, kinked or flat at its tip, or is the spool tangled or turning hard when you pull by hand?", "yes": c_filament_condition, "no": q_wheel}
+    q_wheel: {ask: "Does the feeder motor turn, but the filament slips and shows dents, or does the LED not change when you insert filament?", "yes": c_feeder_hub, "no": q_odometer}
+    q_odometer: {ask: "Does the printer report an odometer, motor assist or sensor fault (HMS 0700 codes), or is the AMS reading the RFID and then pulling filament back with a clicking sound?", "yes": c_sensor_or_odometer, "no": c_feeder_hub}
+    q_tube: {ask: "Is the PTFE tube between the AMS, buffer and toolhead bent, deformed, loose in a fitting or not fully seated?", "yes": c_ptfe_path, "no": q_buffer}
+    q_buffer: {ask: "Does the buffer spring or slider stick, or does the filament tangle at the buffer or spool?", "yes": c_buffer_stuck, "no": q_toolhead}
+    q_toolhead: {ask: "Does the filament reach the toolhead but not extrude, click at the extruder, or does printing from an external spool also fail?", "yes": c_toolhead_clog, "no": c_extruder_sensor}
+causes:
+  - id: c_filament_condition
+    name: Worn, kinked or poorly wound filament
+    category: material
+    likelihood: high
+    checks:
+      - "Pull the filament out of the slot and look for wear marks, dents or a bent tip."
+      - "Turn the spool by hand. It should spin freely without tangles or an overwound loop."
+    fixes:
+      - {advice: "Cut off the worn section, straighten and trim the tip to a clean angle, and reload. Try a different spool. If several spools show the same wear, clean the feeder or hub next.", kind: material}
+      - {advice: "Rewind or replace a spool with tangles. Check the spool is seated on its holder and the spool holes are not catching.", kind: material}
+    src: [bambu_wiki_ams2pro_loading, bambu_wiki_ams_loading]
+    confidence: high
+  - id: c_feeder_hub
+    name: Slipping feeder wheel or dirty internal hub
+    category: hardware
+    likelihood: medium
+    checks:
+      - "Filament shows dents after a failed attempt and you hear the motor rotating while nothing moves."
+      - "Check the knurled teeth on the hub for debris and confirm the odometer wheel turns freely."
+      - "On AMS, the LED should stay white after filament is inserted and turn off when it is removed."
+    fixes:
+      - {advice: "Try another spool first. Tighten the 4 screws on the hub described in the Bambu guide, and clean the knurled teeth and the odometer wheel. If the hub still slips, replace the extrusion wheel assembly, feeder unit or internal hub as the wiki directs.", kind: hardware}
+      - {advice: "For a feeder unit that does not react when filament is inserted, clean the Hall sensor and check the magnet for grooves.", kind: hardware}
+    printers: [bambu]
+    src: [bambu_wiki_ams_loading, bambu_wiki_ams2pro_loading]
+    confidence: medium
+  - id: c_sensor_or_odometer
+    name: Odometer, sensor or assist motor fault
+    category: hardware
+    likelihood: medium
+    checks:
+      - "Read the HMS code in the printer log. 0700 codes with 0014 mean no odometer signal, 0011 means the motor assist parameter is lost."
+      - "During RFID read the filament is fed out, then pulled back. A clicking feeder with no RFID data points at the odometer."
+    fixes:
+      - {advice: "For a lost motor assist parameter, pull the filament out of the hub and restart the AMS as the HMS page directs.", kind: hardware}
+      - {advice: "For an odometer with no signal, reseat the connector and replace the odometer or hub if it persists. Contact Bambu support with the log if the fault remains.", kind: hardware}
+    printers: [bambu]
+    src: [bambu_wiki_hms_0700_0100_0002_0011, bambu_wiki_hms_0700_2000_0002_0014, bambu_wiki_ams_loading]
+    confidence: medium
+  - id: c_ptfe_path
+    name: Bent, loose or deformed PTFE tube
+    category: hardware
+    likelihood: high
+    checks:
+      - "Disconnect each tube segment and feed filament through by hand. Note where it sticks: between the AMS and the buffer, or between the buffer and the toolhead."
+      - "On AMS lite and the A1, check the 4-in-1 hub adapter is holding the tube."
+    fixes:
+      - {advice: "Replace a bent or deformed PTFE tube and press it fully into the pneumatic fitting. Bambu recommends a new tube if filament sticks between the AMS and buffer or the buffer and toolhead.", kind: hardware}
+      - {advice: "If it sticks at the same spot after replacing the tube, check the AMS internal hub for a piece of broken filament.", kind: hardware}
+      - {advice: "For AMS lite, fix a filament hub or 4-in-1 adapter that will not hold the PTFE using the A1 guide. Route tubes without tight loops.", kind: hardware}
+    printers: [bambu]
+    src: [bambu_wiki_ams2pro_loading, bambu_wiki_ams_lite_hub_tube]
+    confidence: medium
+  - id: c_buffer_stuck
+    name: Stuck or bent AMS buffer, or tangled spool
+    category: hardware
+    likelihood: medium
+    checks:
+      - "Open the buffer window. The slide and spring should move smoothly side to side as filament feeds. The buffer has a hall sensor that detects the slide position."
+    fixes:
+      - {advice: "Pick the spring back into its normal position through the buffer window with a screwdriver so the slide moves freely, as Bambu's HMS page directs. If the error persists, check for tangled filament or a stuck spool and send the log to support.", kind: hardware}
+      - {advice: "Power cycle the printer after clearing the jam, and check the hub PTFE fittings for debris.", kind: hardware}
+    printers: [bambu]
+    src: [bambu_wiki_hms_0700_4000_0002_0004, bambu_wiki_ams2pro_loading]
+    confidence: medium
+  - id: c_toolhead_clog
+    name: Clogged nozzle or extruder
+    category: hardware
+    likelihood: medium
+    checks:
+      - "Bambu suggests removing the AMS from the path and printing from an external spool. If quality is acceptable, look at the AMS internal hub. If it also under-extrudes or cannot extrude, the nozzle is at fault."
+      - "Check the extruder resistance HMS (0300-0900-0002-0004) and the filament type set in the slicer against the real filament."
+    fixes:
+      - {advice: "Clear the clog using the printer's official unclogging guide and replace the nozzle if the external spool test still fails. See the clog troubleshooter.", kind: hardware}
+      - {advice: "Set the filament type in the slicer to the real filament. A mismatch can trigger resistance faults.", kind: workflow}
+    src: [bambu_wiki_ams2pro_loading, bambu_wiki_hms_0300_0900_0002_0004, bambu_wiki_a1_nozzle_clog]
+    confidence: medium
+  - id: c_extruder_sensor
+    name: Extruder sensor, cutter or gripping problem
+    category: hardware
+    likelihood: low
+    checks:
+      - "Filament reaches the toolhead but the printer says it is not detected, or unloading fails because the cutter no longer cuts."
+    fixes:
+      - {advice: "Test the extruder filament sensor with Bambu's sensor inspection guide (Hall switch). For an unload that cannot pull out of the inlet, check for a worn filament cutter blade or a blockage in the extruder.", kind: hardware}
+    printers: [bambu]
+    src: [bambu_wiki_filament_sensor_test, bambu_wiki_ams2pro_loading]
+    confidence: medium
+  - id: c_other_multi_material
+    name: Prusa MMU3 or Creality CFS feed problem
+    category: hardware
+    likelihood: medium
+    checks:
+      - "MMU3: read the error. 04101 is FINDA did not trigger, 04102 is FINDA filament stuck, 04104 is filament sensor filament stuck, and there is a separate load failure into the extruder."
+      - "CFS: check the PTFE between the CFS and the toolhead for kinks and the buffer for a stuck spring or pin, and feed a filament directly to see if the CFS or the buffer is at fault."
+    fixes:
+      - {advice: "MMU3: heat the nozzle, open the idler screw and pull the filament out by hand before retrying. Look for a string or broken filament stuck in the selector if FINDA stays triggered. If FINDA did not trigger, check that the idler and pulley grabbed the filament. Only the Prusa KB summaries were read, so follow the article for the exact code.", kind: hardware}
+      - {advice: "CFS: replace a kinked or collapsed PTFE loop, trim a clean straight tip after any failed print or manual unload, and update the CFS firmware. Community reports, low confidence.", kind: hardware}
+    printers: [prusa, creality]
+    src: [prusa_kb_mmu_finda_stuck, prusa_kb_mmu_finda_no_trigger, prusa_kb_mmu_loading_failed, creality_forum_cfs_buffer]
+    confidence: low
+related: [clog, under_extrusion, heat_creep]
+src: [bambu_wiki_ams_loading, bambu_wiki_ams2pro_loading, bambu_wiki_hms_0700_4000_0002_0004, prusa_kb_mmu_finda_stuck, prusa_kb_mmu_finda_no_trigger, prusa_kb_mmu_loading_failed, creality_forum_cfs_buffer]

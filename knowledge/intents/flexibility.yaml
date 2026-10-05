@@ -1,0 +1,37 @@
+kind: intent_goal
+schema_version: 1
+id: flexibility
+label: Flexible
+summary: >
+  Parts that bend, squeeze or seal: phone cases, gaskets, bumpers, straps, feet.
+  Flexibility comes first from the material (TPU hardness) and second from the
+  geometry: fewer walls and low, even infill make a part softer. Flexible
+  filament prints slowly because it buckles in the extruder.
+phrases: [flexible, flex, bendy, soft, squishy, rubbery, rubber, "phone case", gasket, seal, bumper, strap, grip, "shock absorbing", damper, TPU, TPE]
+default_level: standard
+requires_material_family: [tpu_95a, tpu_85a]
+material_fallback:
+  when: "The loaded material is not TPU"
+  advice: "Real flex needs TPU. PETG bends a little and springs back on thin sections; PLA snaps. Ask before switching material."
+levels:
+  standard:
+    changes:
+      - {key: wall_loops, op: set, value: 2, priority: core, why: "Each extra wall makes TPU stiffer. Two walls keep a phone case soft enough to fit over the edges."}
+      - {key: sparse_infill_pattern, op: set, value: gyroid, priority: core, why: "Gyroid flexes about the same in every direction, so the part does not have a hard axis.", src: [prusa_kb_infill_patterns]}
+      - {key: sparse_infill_density, op: at_most, value: 15, priority: core, why: "Low infill lets the part compress. Raise it for firmer parts."}
+      - {key: filament_max_volumetric_speed, op: at_most, value_from: {filament: extrusion.max_volumetric_speed_mm3s.standard_hotend.typical}, priority: core, why: "TPU buckles if pushed fast. Orca's generic TPU is capped at 3.2 mm3/s and Bambu TPU 85A at 2.2.", src: ["orca:OrcaFilamentLibrary/filament/Generic TPU @System.json", "orca:OrcaFilamentLibrary/filament/Bambu/Bambu TPU 85A @base.json"]}
+      - {key: retraction_length, op: at_most, value: 0.4, priority: core, why: "Long retractions stretch and jam soft filament. Orca's TPU profiles use 0.4 mm.", src: ["orca:OrcaFilamentLibrary/filament/Generic TPU @System.json"]}
+      - {key: travel_speed, op: at_least, value: 200, priority: supporting, why: "With little retraction, fast travel is what keeps strings short.", basis: expert}
+  firm:
+    extends: standard
+    changes:
+      - {key: wall_loops, op: set, value: 3, priority: core, why: "A third wall firms up bumpers and feet that need to hold shape."}
+      - {key: sparse_infill_density, op: set, value: 25, priority: core, why: "More infill for parts that carry weight, like printer feet."}
+hardware_rules:
+  - {advice: "Use a direct drive extruder. Bowden printers struggle with TPU 95A and rarely handle 85A.", kind: hardware}
+  - {advice: "Feed TPU from an external spool holder, not the Bambu AMS or AMS lite. Only products sold as TPU for AMS go through the AMS.", kind: hardware, src: [bambu_wiki_material_table]}
+  - {advice: "Dry TPU before printing; it is marked drying required.", kind: material, src: [bambu_wiki_drying]}
+orientation:
+  - {advice: "Print phone cases standing on the back face so the lip prints as clean walls.", kind: orientation, basis: expert}
+costs: {time: up, filament: none}
+src: [prusa_kb_infill_patterns, "orca:OrcaFilamentLibrary/filament/Generic TPU @System.json", bambu_wiki_material_table, bambu_wiki_drying]

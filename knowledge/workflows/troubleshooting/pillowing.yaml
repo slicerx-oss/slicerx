@@ -1,0 +1,79 @@
+kind: troubleshoot
+schema_version: 1
+id: pillowing
+name: Pillowing and top surface holes
+aliases: [top surface holes, pinholes on top, gaps in top layer, rough top, pillowed top, bumpy top surface, top layer not closed]
+camera_signs:
+  - "Top surface has holes, pits or gaps between lines, with sparse infill pattern showing through"
+  - "Top surface is bumpy or pillow shaped, humping between infill lines"
+  - "Top layer lines look thin or separate, and some areas are shiny while others are rough"
+  - "Ridges and blobs on the top surface, with a rough finish after ironing"
+log_signs: []
+tree:
+  start: q_sparse
+  nodes:
+    q_sparse: {ask: "Are the holes or pillows only over sparse infill, with solid areas fine?", "yes": q_top_layers, "no": q_flow}
+    q_top_layers: {ask: "Are there fewer than 5 top shell layers, or is the infill density very low (under about 15 percent)?", "yes": c_thin_top_shell, "no": q_cooling}
+    q_cooling: {ask: "Is the part cooling fan low, off, or blocked on the top layers, or is the layer time very short?", "yes": c_top_cooling, "no": q_flow}
+    q_flow: {ask: "Do gaps show even over solid areas, with lines that do not touch each other?", "yes": c_flow_low, "no": q_wet}
+    q_wet: {ask: "Is the filament wet, or is the top pattern making bumps or ridges (over-extrusion)?", "yes": c_wet_or_over, "no": c_top_settings}
+causes:
+  - id: c_thin_top_shell
+    name: Too few top layers or too little infill support
+    category: settings
+    likelihood: high
+    checks:
+      - "The first top layers bridge across sparse infill gaps. Bambu's standard 0.20 mm profile uses 5 top layers, the Orca default is 3."
+    fixes:
+      - {key: top_shell_layers, op: at_least, value: 5, why: "Bambu's 0.20 mm Standard profile uses 5 top shell layers, the Orca default is 3. Thinner layers need more of them to cover the same height.", src: ["orca:BBL/process/fdm_process_single_0.20.json", "orca:BBL/process/fdm_process_common.json"]}
+      - {advice: "Raise the infill density or use a pattern with less open area under the top. More top layers and denser infill are the standard cures for pillowing, per vendor guides (low confidence).", kind: workflow}
+    src: ["orca:BBL/process/fdm_process_single_0.20.json", "orca:BBL/process/fdm_process_common.json", anycubic_guide_pillowing]
+    confidence: medium
+  - id: c_top_cooling
+    name: Top layers cooling too slowly
+    category: settings
+    likelihood: high
+    checks:
+      - "Fan is low on the last layers, small tops have very short layer times, or the fan is blocked."
+    fixes:
+      - {advice: "Increase part cooling on the top layers and check the fan and duct are clear. Prusa says to check the print fan works and the shroud is not obstructed or melted.", kind: hardware}
+      - {key: slow_down_layer_time, op: at_least, value: 8, why: "Small tops need time to cool. Bambu PETG and Prusa PETG profiles use a minimum layer time near 8 to 12 seconds.", src: ["orca:BBL/filament/Bambu PETG Basic @BBL X1C.json", "orca:OrcaFilamentLibrary/filament/Generic PETG @System.json"]}
+      - {advice: "Print more parts at once or add a sacrificial part to lengthen layer time. Ellis notes short layers are printed onto soft layers.", kind: workflow}
+    src: [prusa_kb_warping, ellis_cooling_layer_times]
+    confidence: medium
+  - id: c_flow_low
+    name: Flow too low or under-extrusion on top
+    category: settings
+    likelihood: medium
+    checks:
+      - "Gaps between top lines even where solid layers sit underneath. Ellis says there should be no gaps or holes in top solid surfaces."
+    fixes:
+      - {key: filament_flow_ratio, op: increase_by, value: 0.02, why: "Ellis tunes the extrusion multiplier with cubes in 1 to 2 percent steps until the top closes with no gaps.", src: [ellis_extrusion_multiplier]}
+      - {advice: "Check for a partial clog or extruder skipping if the gaps come and go. See the under_extrusion troubleshooter.", kind: hardware}
+    src: [ellis_extrusion_multiplier, ellis_perimeter_separation]
+    confidence: medium
+  - id: c_wet_or_over
+    name: Wet filament or over-extruded top
+    category: material
+    likelihood: medium
+    checks:
+      - "Pockmarks and pits with popping at the nozzle point to moisture. Ridges and humps point to too much flow."
+    fixes:
+      - {advice: "Dry the filament. Ellis says pockmarks are caused by moisture turning to steam and popping, and sealed spools can be wet.", kind: material}
+      - {advice: "Run a flow test and lower the flow ratio if the top is ridged. See the over_extrusion troubleshooter.", kind: workflow}
+    src: [ellis_pockmarks, ellis_extrusion_multiplier]
+    confidence: medium
+  - id: c_top_settings
+    name: Top surface line width, pattern or speed
+    category: settings
+    likelihood: medium
+    checks:
+      - "A monotonic top pattern with a narrow top line width and slow top speed gives the cleanest top, per Ellis' extrusion test setup."
+    fixes:
+      - {key: top_surface_pattern, op: set, value: monotonic, why: "Ellis tests top surfaces with a monotonic pattern, which gives consistent line direction.", src: [ellis_extrusion_multiplier]}
+      - {advice: "Slow the top surface speed. Ellis uses about 60 mm/s for top solid infill in his flow test and says keeping it low to moderate helps surface finish.", kind: workflow}
+      - {advice: "Ironing does not repair a bad top surface. Fix holes and flow first, then use ironing for polish (low confidence vendor guidance).", kind: workflow}
+    src: [ellis_extrusion_multiplier, anycubic_guide_pillowing]
+    confidence: low
+related: [under_extrusion, over_extrusion, seam_zits]
+src: [ellis_extrusion_multiplier, ellis_pockmarks, anycubic_guide_pillowing]

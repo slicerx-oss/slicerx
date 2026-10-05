@@ -1,0 +1,368 @@
+{
+ "comment": "Full validate output for validate-cases.json. Both implementations must produce these issues.",
+ "issues": {
+  "clean 0.2 mm config has no issues": [],
+  "layer above nozzle": [
+   {
+    "code": "layer_above_nozzle",
+    "severity": "error",
+    "keys": [
+     "layer_height",
+     "nozzle_diameter"
+    ],
+    "message": "Layer height 0.5 mm is larger than the 0.4 mm nozzle.",
+    "fix": {
+     "key": "layer_height",
+     "value": 0.3
+    }
+   }
+  ],
+  "layer above 75 percent": [
+   {
+    "code": "layer_over_75pct",
+    "severity": "warning",
+    "keys": [
+     "layer_height",
+     "nozzle_diameter"
+    ],
+    "message": "Layer height 0.32 mm is above 75 percent of the 0.4 mm nozzle; layers bond poorly."
+   }
+  ],
+  "first layer above nozzle": [
+   {
+    "code": "first_layer_above_nozzle",
+    "severity": "error",
+    "keys": [
+     "initial_layer_print_height",
+     "nozzle_diameter"
+    ],
+    "message": "First layer height 0.5 mm is larger than the 0.4 mm nozzle.",
+    "fix": {
+     "key": "initial_layer_print_height",
+     "value": 0.3
+    }
+   }
+  ],
+  "layer below printer minimum": [
+   {
+    "code": "layer_below_min",
+    "severity": "warning",
+    "keys": [
+     "layer_height",
+     "min_layer_height"
+    ],
+    "message": "Layer height 0.05 mm is below the printer minimum 0.08 mm."
+   }
+  ],
+  "layer above printer maximum": [
+   {
+    "code": "layer_above_max",
+    "severity": "warning",
+    "keys": [
+     "layer_height",
+     "max_layer_height"
+    ],
+    "message": "Layer height 0.3 mm is above the printer maximum 0.28 mm."
+   }
+  ],
+  "spiral with supports and extra walls": [
+   {
+    "code": "spiral_with_support",
+    "severity": "warning",
+    "keys": [
+     "spiral_mode",
+     "enable_support"
+    ],
+    "message": "Spiral vase mode prints one continuous wall and cannot use supports.",
+    "fix": {
+     "key": "enable_support",
+     "value": false
+    }
+   },
+   {
+    "code": "spiral_infill",
+    "severity": "info",
+    "keys": [
+     "spiral_mode",
+     "sparse_infill_density"
+    ],
+    "message": "Spiral vase mode has no infill; the infill density is ignored."
+   },
+   {
+    "code": "spiral_walls",
+    "severity": "info",
+    "keys": [
+     "spiral_mode",
+     "wall_loops"
+    ],
+    "message": "Spiral vase mode prints a single wall; extra wall loops are ignored."
+   }
+  ],
+  "flow limit exceeded": [
+   {
+    "code": "flow_limit",
+    "severity": "warning",
+    "keys": [
+     "outer_wall_speed",
+     "filament_max_volumetric_speed"
+    ],
+    "message": "outer_wall_speed of 300 mm/s needs 25.2 mm3/s, above the filament limit of 15 mm3/s; the printer will slow down or under-extrude.",
+    "fix": {
+     "key": "outer_wall_speed",
+     "value": 178
+    }
+   }
+  ],
+  "flow within limit": [],
+  "temperature outside filament range": [
+   {
+    "code": "temp_outside_range",
+    "severity": "warning",
+    "keys": [
+     "nozzle_temperature",
+     "nozzle_temperature_range_low",
+     "nozzle_temperature_range_high"
+    ],
+    "message": "Nozzle temperature 300 C is outside the filament range 190 to 240 C."
+   }
+  ],
+  "acceleration above machine limit": [
+   {
+    "code": "accel_over_machine",
+    "severity": "warning",
+    "keys": [
+     "default_acceleration",
+     "machine_max_acceleration_extruding"
+    ],
+    "message": "Acceleration 30000 mm/s2 is above the machine limit 20000 mm/s2.",
+    "fix": {
+     "key": "default_acceleration",
+     "value": 20000
+    }
+   }
+  ],
+  "arc fitting with rate smoothing": [
+   {
+    "code": "arc_fitting_with_slope",
+    "severity": "warning",
+    "keys": [
+     "enable_arc_fitting",
+     "max_volumetric_extrusion_rate_slope"
+    ],
+    "message": "Arc fitting is turned off while extrusion rate smoothing is on.",
+    "fix": {
+     "key": "enable_arc_fitting",
+     "value": false
+    }
+   }
+  ],
+  "line width far from nozzle": [
+   {
+    "code": "line_width_range",
+    "severity": "warning",
+    "keys": [
+     "outer_wall_line_width",
+     "nozzle_diameter"
+    ],
+    "message": "outer_wall_line_width of 1.2 mm is far from the 0.4 mm nozzle (0.5x to 2x is usable)."
+   }
+  ],
+  "percent line width is fine": [],
+  "nothing to print": [
+   {
+    "code": "nothing_to_print",
+    "severity": "error",
+    "keys": [
+     "wall_loops",
+     "sparse_infill_density",
+     "top_shell_layers",
+     "bottom_shell_layers"
+    ],
+    "message": "No walls, infill or shells: nothing would print."
+   },
+   {
+    "code": "outside_recommended_range",
+    "severity": "warning",
+    "keys": [
+     "wall_loops"
+    ],
+    "message": "Wall loops is 0, outside the usual 1 to 20."
+   }
+  ],
+  "range and enum errors": [
+   {
+    "code": "bad_enum",
+    "severity": "error",
+    "keys": [
+     "sparse_infill_pattern"
+    ],
+    "message": "Infill pattern: \"swirly\" is not one of rectilinear, alignedrectilinear, zigzag, crosszag, lockedzag, line, grid, triangles, tri-hexagon, cubic, adaptivecubic, quartercubic, supportcubic, lightning, honeycomb, 3dhoneycomb, lateral-honeycomb, lateral-lattice, crosshatch, tpmsd, tpmsfk, gyroid, concentric, hilbertcurve, archimedeanchords, octagramspiral."
+   },
+   {
+    "code": "layer_above_nozzle",
+    "severity": "error",
+    "keys": [
+     "layer_height",
+     "nozzle_diameter"
+    ],
+    "message": "Layer height 5 mm is larger than the 0.4 mm nozzle.",
+    "fix": {
+     "key": "layer_height",
+     "value": 0.3
+    }
+   },
+   {
+    "code": "out_of_range",
+    "severity": "error",
+    "keys": [
+     "wall_loops"
+    ],
+    "message": "Wall loops is -1, outside 0 to 1000.",
+    "fix": {
+     "key": "wall_loops",
+     "value": 0
+    }
+   },
+   {
+    "code": "outside_recommended_range",
+    "severity": "warning",
+    "keys": [
+     "layer_height"
+    ],
+    "message": "Layer height is 5, outside the usual 0.04 to 0.8 mm."
+   }
+  ],
+  "wrong type": [
+   {
+    "code": "wrong_type",
+    "severity": "error",
+    "keys": [
+     "wall_loops"
+    ],
+    "message": "Wall loops has the wrong type for int."
+   }
+  ],
+  "unknown key is info": [
+   {
+    "code": "unknown_key",
+    "severity": "info",
+    "keys": [
+     "totally_made_up"
+    ],
+    "message": "totally_made_up is not a known setting."
+   }
+  ],
+  "smart layer inside the window is fine": [],
+  "smart layer off is not judged": [],
+  "smart layer bounds out of order": [
+   {
+    "code": "smart_layer_bounds_order",
+    "severity": "error",
+    "keys": [
+     "smart_layer_min_height",
+     "smart_layer_max_height"
+    ],
+    "message": "sleipnir thinnest layer 0.3 mm is not below the thickest 0.2 mm."
+   }
+  ],
+  "smart layer thinnest layer under a fifth of the nozzle": [
+   {
+    "code": "smart_layer_min_low",
+    "severity": "warning",
+    "keys": [
+     "smart_layer_min_height",
+     "nozzle_diameter"
+    ],
+    "message": "sleipnir thinnest layer 0.06 mm is below 20 percent of the 0.4 mm nozzle; layers that thin print poorly.",
+    "fix": {
+     "key": "smart_layer_min_height",
+     "value": 0.08
+    }
+   }
+  ],
+  "smart layer thickest layer over half of the nozzle": [
+   {
+    "code": "smart_layer_max_high",
+    "severity": "warning",
+    "keys": [
+     "smart_layer_max_height",
+     "nozzle_diameter"
+    ],
+    "message": "sleipnir thickest layer 0.24 mm is above 50 percent of the 0.4 mm nozzle; layers that thick bond poorly.",
+    "fix": {
+     "key": "smart_layer_max_height",
+     "value": 0.2
+    }
+   }
+  ],
+  "smart layer strength keeps to 30 percent of the nozzle or more": [
+   {
+    "code": "smart_layer_min_low",
+    "severity": "warning",
+    "keys": [
+     "smart_layer_min_height",
+     "nozzle_diameter"
+    ],
+    "message": "sleipnir thinnest layer 0.1 mm is below 30 percent of the 0.4 mm nozzle; layers that thin print poorly.",
+    "fix": {
+     "key": "smart_layer_min_height",
+     "value": 0.12
+    }
+   }
+  ],
+  "smart layer strength inside its band is fine": [],
+  "thin layers slowed to the minimum speed risk heat creep": [
+   {
+    "code": "heat_creep_thin_layers",
+    "severity": "warning",
+    "keys": [
+     "slow_down_min_speed",
+     "layer_height",
+     "filament_max_volumetric_speed"
+    ],
+    "message": "Layers of 0.08 mm slowed to 10 mm/s extrude only 0.32 mm3/s, 1.5 percent of the 21 mm3/s filament limit. The filament can soften above the melt zone and clog (heat creep). Open the printer door or raise the minimum print speed. This is an expert rule, not a published limit."
+   }
+  ],
+  "an ordinary layer at the minimum speed is not heat creep": [],
+  "thin layers without the cooling slowdown are not heat creep": [],
+  "smart layer thin bound counts for heat creep": [
+   {
+    "code": "heat_creep_thin_layers",
+    "severity": "warning",
+    "keys": [
+     "slow_down_min_speed",
+     "layer_height",
+     "filament_max_volumetric_speed"
+    ],
+    "message": "Layers of 0.08 mm slowed to 10 mm/s extrude only 0.32 mm3/s, 1.5 percent of the 21 mm3/s filament limit. The filament can soften above the melt zone and clog (heat creep). Open the printer door or raise the minimum print speed. This is an expert rule, not a published limit."
+   }
+  ],
+  "smart layer in vase mode": [
+   {
+    "code": "smart_layer_spiral",
+    "severity": "warning",
+    "keys": [
+     "smart_layer",
+     "spiral_mode"
+    ],
+    "message": "Vase mode prints at one layer height, so sleipnir has no effect.",
+    "fix": {
+     "key": "smart_layer",
+     "value": "off"
+    }
+   }
+  ],
+  "layer height outside the smart layer range": [
+   {
+    "code": "smart_layer_outside_layer_height",
+    "severity": "info",
+    "keys": [
+     "layer_height",
+     "smart_layer_min_height",
+     "smart_layer_max_height"
+    ],
+    "message": "Layer height 0.28 mm is outside the sleipnir range 0.1 to 0.2 mm."
+   }
+  ]
+ }
+}

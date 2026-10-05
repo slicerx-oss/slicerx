@@ -1,0 +1,35 @@
+kind: intent_goal
+schema_version: 1
+id: watertight
+label: Watertight
+summary: >
+  Containers, planters, cups (non food), funnels and enclosures that must hold
+  water or keep it out. Leaks start at gaps between lines and at the seam.
+  More walls, a little more plastic, hotter layers and good overlap close them.
+phrases: [watertight, waterproof, "hold water", "doesn't leak", leakproof, container, planter, pot, vase, cup, bottle, tank, funnel, airtight, "pressure tight"]
+default_level: standard
+levels:
+  standard:
+    changes:
+      - {key: wall_loops, op: at_least, value: 4, priority: core, why: "Prusa recommends 3 to 4 walls for a watertight single wall, more for tricky shapes.", src: [prusa_kb_watertight]}
+      - {key: nozzle_temperature, op: increase_by, value: 5, priority: core, why: "5 to 10 C above the preset fuses lines together with no pinholes. Stay inside the filament's range.", src: [prusa_kb_watertight]}
+      - {key: filament_flow_ratio, op: multiply, value: 1.05, priority: core, why: "About 5 percent more plastic closes the tiny gaps between lines.", src: [prusa_kb_watertight]}
+      - {key: layer_height, op: at_most, value: 0.2, priority: supporting, why: "0.15 to 0.2 mm layers bond most reliably. Keep layers under about 60 percent of the nozzle width.", src: [prusa_kb_watertight]}
+      - {key: infill_wall_overlap, op: at_least, value: 25, priority: supporting, why: "Prusa suggests 25 to 35 percent overlap between infill and walls if a part leaks.", src: [prusa_kb_watertight]}
+      - {key: top_shell_layers, op: at_least, value: 5, priority: supporting, why: "Closes lids and tops fully."}
+      - {key: bottom_shell_layers, op: at_least, value: 5, priority: core, why: "The floor of a container takes the pressure; five solid layers seal it."}
+      - {key: ensure_vertical_shell_thickness, op: set, value: ensure_all, priority: supporting, why: "Adds solid infill under sloped walls so the shell never gets thin.", src: ["orca_src:src/libslic3r/PrintConfig.cpp"]}
+      - {key: seam_slope_type, op: set, value: all, priority: supporting, why: "Scarf seams overlap the start and end of each loop, so the seam is not a weak line where water gets in.", src: ["orca_src:src/libslic3r/PrintConfig.cpp"]}
+vase_option:
+  when: "Single walled, open top shape with no internal features"
+  goal: vase
+  note: "Spiral vase has no seam at all. Widen the line to 0.6 mm or more on a 0.4 mm nozzle so the single wall seals."
+  src: [prusa_kb_layers_perimeters]
+material_hints:
+  prefer: [petg, asa, pp]
+  note: "PETG bonds layers very well and is a common choice. ASA and ABS can also be sealed with an acetone vapor or wipe."
+  src: [prusa_kb_watertight, prusa_kb_infill_patterns]
+post_processing:
+  - {advice: "For anything that must never leak, coat the inside with epoxy or a sealant after printing.", kind: workflow, src: [prusa_kb_food_safe]}
+costs: {time: up, filament: up}
+src: [prusa_kb_watertight, prusa_kb_layers_perimeters, "orca_src:src/libslic3r/PrintConfig.cpp"]

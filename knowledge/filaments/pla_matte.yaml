@@ -1,0 +1,246 @@
+kind: filament
+schema_version: 1
+id: pla_matte
+name: PLA Matte
+category: standard
+orca_filament_type: PLA
+aliases: [Matte PLA, Bambu PLA Matte, eSUN PLA-Matte, Panchroma PLA Matte, PolyTerra PLA]
+related: [pla, pla_silk, pla_plus]
+summary: >
+  PLA with a flat, low glare finish that hides layer lines and small defects.
+  It prints like standard PLA, slightly stiffer and more brittle, and often
+  hides flaws well enough to skip fine tuning. Filled with mineral additives on
+  some brands, so nozzles wear a little faster on 0.2 mm sizes.
+use_for: [display models, enclosures, desk accessories, prototypes that should look finished, painted or sanded parts]
+avoid_for: [load bearing or impact parts, parts above about 55 C, outdoor use]
+
+nozzle_temp_c:
+  min: 190
+  max: 240
+  typical: 220
+  confidence: high
+  src:
+    - "orca:OrcaFilamentLibrary/filament/Bambu/Bambu PLA Matte @base.json"
+    - "orca:OrcaFilamentLibrary/filament/Generic PLA Matte @System.json"
+    - "orca:OrcaFilamentLibrary/filament/Polymaker/Panchroma PLA Matte @System.json"
+    - "orca:OrcaFilamentLibrary/filament/eSUN/eSUN PLA-Matte @System.json"
+    - bambu_wiki_material_table
+  note: "Bambu, Panchroma, eSUN and generic matte all use 220 inside a 190 to 240 range. Bambu lists matte with PLA."
+first_layer_nozzle_temp_c:
+  min: 215
+  max: 230
+  typical: 220
+  confidence: medium
+  src: ["orca:OrcaFilamentLibrary/filament/Bambu/Bambu PLA Matte @base.json", "orca:Prusa/filament/Generic PLA @Prusa MK4S.json"]
+  note: "Bambu matte uses 220. Prusa's generic PLA profile uses 230."
+bed_temp_c:
+  min: 35
+  max: 65
+  typical: 55
+  confidence: medium
+  src: [bambu_wiki_material_table, "orca:OrcaFilamentLibrary/filament/Bambu/Bambu PLA Matte @base.json"]
+  note: "Follows PLA. Bambu Cool Plate 35 to 45, PEI 45 to 65 (profile 55)."
+chamber_temp_c: null
+enclosure:
+  level: none
+  confidence: high
+  src: [bambu_wiki_material_table]
+  note: "Not prone to warping. Open the door or remove the top glass cover when the bed is above 45 C."
+
+plates:
+  - {plate: bambu_cool_plate, fit: good, bed_temp_c: {min: 35, max: 45}, release_agent: none, confidence: medium, src: [bambu_wiki_material_table], note: "Bambu groups matte with PLA."}
+  - {plate: bambu_supertack_plate, fit: good, bed_temp_c: {min: 35, max: 45}, release_agent: none, confidence: medium, src: ["orca:OrcaFilamentLibrary/filament/Bambu/Bambu PLA Matte @base.json"], note: "Bambu profile sets 45 C."}
+  - {plate: bambu_engineering_plate, fit: glue, bed_temp_c: {min: 45, max: 65}, release_agent: glue_stick, confidence: medium, src: [bambu_wiki_material_table], note: "Glue required for PLA on the Engineering Plate."}
+  - {plate: bambu_high_temp_plate, fit: good, bed_temp_c: {min: 45, max: 65}, release_agent: none, confidence: medium, src: [bambu_wiki_material_table], note: "Smooth PEI."}
+  - {plate: smooth_pei, fit: good, bed_temp_c: {min: 55, max: 65}, release_agent: none, confidence: medium, src: [prusa_kb_pla], note: "Prusa lists smooth or satin PEI as best for PLA."}
+  - {plate: satin_pei, fit: good, bed_temp_c: {min: 55, max: 65}, release_agent: none, confidence: medium, src: [prusa_kb_pla], note: "Best adhesion per Prusa for PLA."}
+  - {plate: textured_pei, fit: good, bed_temp_c: {min: 45, max: 65}, release_agent: none, confidence: medium, src: [bambu_wiki_material_table], note: "Adds texture to the bottom face."}
+
+cooling:
+  fan_min_pct: {min: 85, max: 100, typical: 100}
+  fan_max_pct: {min: 100, max: 100, typical: 100}
+  overhang_fan_pct: {typical: 100}
+  no_fan_first_layers: {typical: 1}
+  min_layer_time_s: {min: 4, max: 6, typical: 4}
+  confidence: medium
+  src:
+    - "orca:OrcaFilamentLibrary/filament/Bambu/Bambu PLA Matte @base.json"
+    - "orca:OrcaFilamentLibrary/filament/eSUN/eSUN PLA-Matte @System.json"
+    - "orca:OrcaFilamentLibrary/filament/Generic PLA Matte @System.json"
+  note: "Bambu, generic and Panchroma matte use 100 percent fan and 4 s. eSUN uses 6 s."
+
+drying:
+  need: recommended
+  oven: {temp_c: 50, hours: 8}
+  ams_2_pro: {temp_c: 45, hours: 12}
+  ams_ht: {temp_c: 45, hours: 12}
+  printer_bed: {temp_c: {min: 60, max: 70}, hours: 12, note: "Enclosed Bambu printers only, cover the spool, flip every 6 hours"}
+  keep_dry_in_use: optional
+  confidence: high
+  src: [bambu_wiki_drying, bambu_wiki_material_table]
+  note: "Bambu lists PLA Basic and Matte together at 50 C for 8 h in an oven (its material table says 55 C for PLA). Use 50 C."
+
+nozzle:
+  abrasive: false
+  hardened_required: false
+  min_diameter_mm: 0.2
+  orca_required_hrc: 3
+  confidence: medium
+  src: [bambu_wiki_material_table, "orca:OrcaFilamentLibrary/filament/Bambu/Bambu PLA Matte @base.json"]
+  note: "Bambu counts matte as standard PLA and lists it 0.2 mm compatible. Some brands add mineral fillers, so check the label for other brands."
+
+extrusion:
+  flow_ratio: {min: 0.98, max: 0.99, typical: 0.98, confidence: medium, src: ["orca:OrcaFilamentLibrary/filament/Bambu/Bambu PLA Matte @base.json", "orca:OrcaFilamentLibrary/filament/eSUN/eSUN PLA-Matte @System.json", "orca:OrcaFilamentLibrary/filament/Polymaker/Panchroma PLA Matte @System.json"], note: "0.98 for Bambu and Panchroma, 0.99 for eSUN. On X1C high flow, Bambu uses 0.985."}
+  max_volumetric_speed_mm3s:
+    standard_hotend: {min: 8, max: 22, typical: 12}
+    high_flow_hotend: {min: 19.5, max: 29, typical: 25}
+    confidence: medium
+    src:
+      - "orca:OrcaFilamentLibrary/filament/Generic PLA Matte @System.json"
+      - "orca:BBL/filament/Bambu PLA Matte @BBL X1C.json"
+      - "orca:OrcaFilamentLibrary/filament/Bambu/Bambu PLA Matte @base.json"
+      - "orca:OrcaFilamentLibrary/filament/eSUN/eSUN PLA-Matte @System.json"
+      - "orca:OrcaFilamentLibrary/filament/Polymaker/Panchroma PLA Matte @System.json"
+    note: "Bambu Matte on X1C is 22 standard and 29 high flow. Generic matte is 11 standard and 19.5 high flow. Bambu base 12, Panchroma 16, eSUN 8. Start at 12 for an unknown brand."
+  retraction_mm:
+    direct_drive: {min: 0.4, max: 0.8, typical: 0.4}
+    confidence: medium
+    src: ["orca:BBL/filament/Bambu PLA Matte @BBL X1C.json", "orca:OrcaFilamentLibrary/filament/Generic PLA Matte @System.json", klipper_pressure_advance]
+    note: "Bambu Matte on X1C high flow uses 0.4 mm. Generic PLA Matte uses 0.8 mm."
+    retraction_speed_mm_s: {min: 20, max: 45, typical: 30, confidence: medium, src: [bambu_tds_pla_matte_v2, "orca:BBL/filament/Bambu PLA Matte @BBL X1C.json", "orca:BBL/machine/Bambu Lab X1 Carbon 0.4 nozzle.json"], note: "Bambu matte TDS says 20 to 40 mm/s. The X1C high flow profile uses 40 and the base machine 30."}
+  pressure_advance:
+    direct_drive: {min: 0.02, max: 0.06, typical: 0.036}
+    bowden: {min: 0.3, max: 1.0}
+    confidence: low
+    src: ["orca:Prusa/filament/Generic PLA @Prusa MK4S.json", klipper_pressure_advance, ellis_pa]
+    note: "No matte specific number exists. Prusa's generic PLA M572 S0.036 at 0.4 mm is a starting point. Calibrate per spool."
+
+layer_height:
+  fraction_of_nozzle: {min: 0.2, max: 0.7, typical: 0.5}
+  at_0_4_mm: {min: 0.08, max: 0.28, typical: 0.2}
+  smart_layer:
+    quality_mode: "Matte finish hides layer lines, so a plain 0.2 mm layer looks finished. sleipnir pays off only on shallow slopes where the stair step still shows. Going to 0.08 mm rarely improves what the eye sees."
+    strength_mode: "Same as PLA: keep layers at or under half the nozzle diameter. Matte fillers can lower layer bonding slightly, so favor 0.2 mm over 0.28 mm for parts that carry load."
+    thin_layer_cooling: "Matte PLA prints fast (Bambu rates it under 300 mm/s). Thin fast layers on small parts hit the minimum layer time first, so add parts or accept the slowdown."
+  confidence: medium
+  src: ["orca:BBL/machine/fdm_machine_common.json", bambu_wiki_adaptive_layer, cnckitchen_layer_height, bambu_tds_pla_matte_v2]
+  note: "No matte specific layer range was found. The band follows PLA and Bambu's tested 0.08 to 0.28 mm range for a 0.4 mm nozzle."
+smart_layer:
+  min_ratio: 0.2
+  max_ratio: 0.7
+  modes:
+    quality: {min_ratio: 0.2, max_ratio: 0.5}
+    strength: {min_ratio: 0.3, max_ratio: 0.5}
+  family: pla_family
+  note: "Matte PLA hides layer lines, so thin layers pay off mostly on shallow slopes and domes."
+  confidence: medium
+  src: ["orca:BBL/machine/fdm_machine_common.json", "bambu_wiki_adaptive_layer", "cnckitchen_layer_height", "bambu_tds_pla_matte_v2", "stojkovic_2023_layer_height_annealing"]
+speeds:
+  print_speed_mm_s: {max: 300}
+  first_layer_mm_s: {min: 20, max: 50, typical: 40}
+  volumetric_note: "Bambu rates matte for under 300 mm/s. Speed is capped by max volumetric speed; see extrusion."
+  confidence: medium
+  src: [bambu_tds_pla_matte_v2, "orca:BBL/process/0.20mm Standard @BBL X1C.json", "orca:Prusa/process/0.20mm SPEED @MK4S 0.4.json"]
+  note: "Matte hides speed related surface differences better than silk or standard PLA, so an outer wall cap is not needed."
+first_layer:
+  fan_off_layers: 1
+  speed_mm_s: {typical: 40}
+  bed_first_layer_note: "Bambu TDS: 35 to 45 C with PVP glue. PEI plates take 45 to 65 C."
+  squish_note: "Matte hides first layer blemishes on the visible bottom face less than on side walls. Use the PLA first layer and a clean plate."
+  confidence: medium
+  src: [bambu_tds_pla_matte_v2, "orca:BBL/process/fdm_process_common.json", ellis_first_layer_squish]
+structure:
+  walls: {min: 2, typical: 2, note: "Matte parts are stiff and brittle like PLA. Use 3 or 4 walls for parts that carry load."}
+  infill: {pattern_hint: gyroid, density_note: "15 percent covers display parts. Matte hides infill show through better than glossy PLA."}
+  confidence: low
+  src: ["orca:BBL/process/0.20mm Standard @BBL X1C.json", prusa_kb_layers_perimeters, prusa_kb_ironing]
+  note: "Expert rule of thumb; no maker states a matte wall count. Ironing (Bambu default 10 percent flow, 0.15 mm spacing, 30 mm/s) smooths flat tops but polishes them, which can undo the matte look, so test on scrap first."
+supports:
+  interface_materials: ["Bambu Support for PLA", pva, bvoh]
+  soluble_pairing: {material: pva, dissolve: "room temperature or warm water (under 50 C), several hours"}
+  top_z_distance_mm: {typical: 0.2}
+  interface_layers: {typical: 2}
+  note: "Bambu lists Support for PLA for matte. The Support for PLA/PETG mutual pairing guide does not cover PLA Matte. Contact scars are less visible on a matte surface than on gloss."
+  confidence: medium
+  src: [bambu_tds_pla_matte_v2, "orca:BBL/process/0.20mm Standard @BBL X1C.json", bambu_wiki_pla_petg_mutual_support]
+
+multi_material:
+  bambu_ams: compatible
+  bambu_ams_lite: compatible
+  bambu_ams_ht: compatible
+  confidence: high
+  src: [bambu_wiki_material_table]
+
+properties:
+  density_g_cm3: {typical: 1.31, min: 1.24, max: 1.32, src: ["orca:OrcaFilamentLibrary/filament/Bambu/Bambu PLA Matte @base.json", "orca:OrcaFilamentLibrary/filament/Polymaker/Panchroma PLA Matte @System.json", "orca:OrcaFilamentLibrary/filament/eSUN/eSUN PLA-Matte @System.json"]}
+  softening_temp_c: {typical: 55, min: 45, max: 61, src: ["orca:OrcaFilamentLibrary/filament/Bambu/Bambu PLA Matte @base.json", "orca:OrcaFilamentLibrary/filament/Polymaker/Panchroma PLA Matte @System.json"], note: "Orca temperature_vitrification is 45 C for Bambu and 61 C for Panchroma Matte."}
+  relative:
+    heat: 2
+    impact: 2
+    tensile: 3
+    scale: "1 to 5, Bambu star ratings for PLA (the table groups matte with PLA)"
+    src: [bambu_wiki_material_table]
+safety:
+  fumes: low
+  note: "Ventilate as with any hot plastic."
+food_contact:
+  note: "Matte additives are not certified for food. Do not use for food contact."
+  src: [prusa_kb_food_safe]
+
+failure_modes:
+  - id: stringing
+    symptom: Hairs between features
+    causes: [nozzle too hot, wet filament, retraction too short]
+    fixes:
+      - {key: nozzle_temperature, op: decrease_by, value: 5, why: "Cooler PLA oozes less. Do not go below 200 C."}
+      - {advice: "Dry the spool at 50 C for 8 h.", kind: material}
+      - {key: retraction_length, op: increase_by, value: 0.2, why: "More retraction removes pressure before travel."}
+  - id: nozzle_wear_or_clog
+    symptom: Under-extrusion on small nozzles with mineral filled matte
+    causes: [filler particles, 0.2 mm nozzle]
+    fixes:
+      - {advice: "Use a 0.4 mm or larger nozzle. Perform a cold pull if flow drops.", kind: hardware}
+  - id: shiny_patches
+    symptom: Matte surface shows glossy stripes or patches
+    causes: [uneven cooling, speed changes, ironing]
+    fixes:
+      - {key: fan_max_speed, op: at_least, value: 100, why: "Even, strong cooling keeps the matte finish uniform."}
+      - {key: ironing_type, op: set, value: "no ironing", why: "Ironing polishes top surfaces and makes them glossy."}
+  - id: weak_layers
+    symptom: Part splits between layers
+    causes: [additives make matte more brittle, cold nozzle]
+    fixes:
+      - {key: nozzle_temperature, op: increase_by, value: 5, why: "Better layer fusion."}
+      - {key: wall_loops, op: at_least, value: 4, why: "More walls, more strength."}
+  - id: droopy_overhangs
+    symptom: Sagging overhangs
+    causes: [low fan, hot nozzle]
+    fixes:
+      - {key: overhang_fan_speed, op: at_least, value: 100, why: "Full air on overhangs."}
+
+disagreements:
+  - topic: max volumetric speed
+    positions:
+      - {claim: "8 mm3/s (eSUN)", src: ["orca:OrcaFilamentLibrary/filament/eSUN/eSUN PLA-Matte @System.json"]}
+      - {claim: "11 to 22 mm3/s on standard hotends", src: ["orca:OrcaFilamentLibrary/filament/Generic PLA Matte @System.json", "orca:BBL/filament/Bambu PLA Matte @BBL X1C.json"]}
+    resolution: "Default 12. The lower value is brand and printer specific. Test with a max volumetric speed print."
+  - topic: oven drying temperature
+    positions:
+      - {claim: "50 C for 8 h", src: [bambu_wiki_drying]}
+      - {claim: "55 C for 8 h (PLA row)", src: [bambu_wiki_material_table]}
+    resolution: "Use 50 C, the matte specific row."
+
+pilot_defaults:
+  nozzle_temperature: 220
+  nozzle_temperature_initial_layer: 220
+  cool_plate_temp: 35
+  textured_plate_temp: 55
+  hot_plate_temp: 55
+  fan_min_speed: 100
+  fan_max_speed: 100
+  overhang_fan_speed: 100
+  close_fan_the_first_x_layers: 1
+  slow_down_layer_time: 4
+  filament_flow_ratio: 0.98
+  filament_max_volumetric_speed: 12
+  retraction_length: 0.4

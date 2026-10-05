@@ -1,0 +1,64 @@
+kind: guide
+schema_version: 1
+id: bambu_ams_workflows
+name: Bambu AMS workflows (flushing, mapping, RFID, backup spools)
+applies_to: [bambu_x1c, bambu_x1e, bambu_p1s, bambu_p1p, bambu_a1, bambu_a1_mini, bambu_h2d, bambu_h2s, bambu_h2c, bambu_p2s, bambu_x2d, bambu_a2l]
+summary: >
+  Multi color prints waste filament in flushes and prime towers. Studio and Orca
+  let you scale flush volumes, send waste into infill, support or a sacrificial
+  object, and change fewer times. Mapping ties slicer filaments to AMS slots by
+  type then color, RFID fills in spool data, and auto refill only swaps to an
+  identical spool.
+facts:
+  - text: "A filament change has four stages: flush (purge) the old color, wipe on the wiper, prime on the prime tower, then print. Flush runs at max volumetric speed."
+    src: [bambu_wiki_reduce_waste]
+  - text: "Flush volume depends on the from and to colors. Dark to light needs more than light to dark. Support materials are also handled to avoid sticking."
+    src: [bambu_wiki_reduce_waste]
+  - text: "The Flushing Volumes dialog has a global multiplier. 1.00 is default, and 0.90 cuts every pair by 10 percent. Bambu says defaults run slightly high and 0.8 or 0.9 is a quick saving, but test that colors stay clean. Too low shows discolored layers."
+    src: [bambu_wiki_reduce_waste]
+  - text: "Editing any single pair in the table means Re-calculate resets every pair to the automatic values."
+    src: [bambu_wiki_reduce_waste]
+  - text: "Flush into objects' infill sends purge into hidden infill. It shows through light or translucent colors and thin walls."
+    src: [bambu_wiki_reduce_waste]
+  - text: "Flush into objects' support is on by default and needs the prime tower enabled. Flush into this object is per object and prints the flush as a transition colored part, useful for functional or painted parts."
+    src: [bambu_wiki_reduce_waste]
+  - text: "Orca stores these as flush_into_infill, flush_into_objects and flush_into_support, plus flush_multiplier and enable_prime_tower."
+    src: ["orca_src:src/libslic3r/PrintConfig.cpp"]
+  - text: "The prime tower must reach the highest layer with a filament change. Turning a part so its color changes sit low shrinks the tower. Bambu's example went from 14.76 g to 9.05 g."
+    src: [bambu_wiki_reduce_waste]
+  - text: "Waste tracks the number of filament changes. Raising layer height from 0.20 to 0.28 mm cut changes by 27 percent and waste from 83 g to 61 g in Bambu's example. Printing many identical multicolor parts on one plate spreads tower cost."
+    src: [bambu_wiki_reduce_waste]
+  - text: "Filament mapping picks the slot by preset first (same type, ideally the same model such as CF versus HF), then by color (exact, then closest). Studio does not auto map external spools, and auto map is off with multi device management."
+    src: [bambu_wiki_filament_mapping, bambu_wiki_multicolor]
+  - text: "AMS reads Bambu spool RFID after preloading, on insertion, on startup or per slot on demand. It also estimates remaining filament from the length fed per spool revolution. Reading is unavailable while filament is loaded to the toolhead."
+    src: [bambu_wiki_ams_function]
+  - text: "AMS Auto-Refill (backup spool) switches to another slot with the same brand, type, color and nozzle temperature when a spool runs out. If none matches, the slot shows as empty. Bambu suggests Bambu for Bambu and third party for third party. Pausing and unloading mid print can break the backup."
+    src: [bambu_wiki_ams_function]
+  - text: "When the tail of a spool has left the spool, the AMS cannot retract it, so on a color change it flushes the tail before feeding the next slot."
+    src: [bambu_wiki_ams_function]
+  - text: "Skipping unload and flush between plates of the same filament saves time and waste by editing machine end and start G-code. It hurts RFID reading and can clog, so restore the G-code for any new material."
+    src: [bambu_wiki_ams_no_unload]
+  - text: "Catch purged waste in a large container under the chute, keep the chute uncovered, empty during long prints and do not fit covers or ducts."
+    src: [bambu_wiki_purge_waste]
+steps:
+  - text: "Sync filaments from the printer in Studio or Orca so the project uses the real AMS slots."
+  - text: "Open the flush volumes dialog. Try a multiplier of 0.9. Print a small test to confirm no color bleed."
+  - text: "Enable flush into support. Enable flush into infill only if walls are dark and thick."
+  - text: "Increase layer height and reorient the part if color changes are few and high."
+  - text: "Check the mapping dialog before sending. Confirm type first, then color."
+  - text: "For long jobs load an identical backup spool in another slot and turn on Auto-Refill."
+pilot_actions:
+  - "When the user asks to reduce waste, propose flush_multiplier 0.9 first, then flush into support, then layer height, then orientation. State the risk of color bleed for each."
+  - "Never recommend flush into infill for light or translucent filament or parts with one wall."
+  - "Read AMS slots through the printer connection before mapping and flag type mismatches (for example CF versus non CF)."
+  - "Suggest a backup spool only if an identical brand, type and color spool exists."
+  - "Do not suggest the no unload G-code edit unless the next plate uses the same filament, and remind the user to revert it."
+  - "Check the AMS model limits in the accessory file: no soft TPU in AMS lite, no PET-CF in AMS."
+settings:
+  - {key: flush_multiplier, op: multiply, value: 0.9, why: "Bambu says default flush volumes run slightly high. Test that colors stay clean."}
+  - {key: enable_prime_tower, op: enable, why: "Multi filament single nozzle prints need a prime tower, and flushing into support needs it too."}
+  - {key: layer_height, op: increase_by, value: 0.08, why: "Fewer layers means fewer filament changes. Bambu's example moved from 0.20 to 0.28 mm."}
+  - {advice: "Turn on Flush into objects' support in Process, Multi material.", kind: workflow}
+  - {advice: "Turn on Flush into objects' infill only for parts with thick dark walls.", kind: workflow}
+  - {advice: "Load an identical spool in a second slot and enable AMS Auto-Refill in the AMS settings.", kind: workflow}
+src: [bambu_wiki_reduce_waste, bambu_wiki_filament_mapping, bambu_wiki_multicolor, bambu_wiki_ams_function, bambu_wiki_ams_no_unload, bambu_wiki_purge_waste, "orca_src:src/libslic3r/PrintConfig.cpp"]
