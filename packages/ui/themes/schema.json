@@ -1,0 +1,168 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://slicerx.app/schemas/theme-1.json",
+  "title": "SlicerX theme",
+  "description": "A color theme for SlicerX. Write the base colors only; the app derives panes, hairlines, chips, secondary text and status colors from them.",
+  "type": "object",
+  "required": [
+    "version",
+    "id",
+    "name",
+    "isDark",
+    "background",
+    "surface",
+    "surfaceAlt",
+    "border",
+    "text",
+    "muted",
+    "accent",
+    "ansi"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "version": {
+      "const": 1,
+      "description": "Schema version. Always 1 for now."
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]{0,39}$",
+      "description": "Lowercase slug. A user theme with the id of a bundled theme replaces it."
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 40,
+      "description": "Name shown in the picker."
+    },
+    "isDark": {
+      "type": "boolean",
+      "description": "Dark themes fill the dark slot of Follow system, light themes the light slot."
+    },
+    "background": {
+      "$ref": "#/$defs/hex",
+      "description": "The page and window background."
+    },
+    "surface": {
+      "$ref": "#/$defs/hex",
+      "description": "Panels, cards and dialogs."
+    },
+    "surfaceAlt": {
+      "$ref": "#/$defs/hex",
+      "description": "Raised controls, inputs and hovered rows."
+    },
+    "border": {
+      "$ref": "#/$defs/hex",
+      "description": "Control borders and dividers."
+    },
+    "text": {
+      "$ref": "#/$defs/hex",
+      "description": "Main text. Needs 4.5:1 on background and surface."
+    },
+    "muted": {
+      "$ref": "#/$defs/hex",
+      "description": "Secondary text. Lifted to 4.5:1 by the app if it is too dim."
+    },
+    "accent": {
+      "$ref": "#/$defs/hex",
+      "description": "Selection, focus, links and the primary action."
+    },
+    "selection": {
+      "$ref": "#/$defs/hex",
+      "description": "Selected text and rows. Optional; defaults to border."
+    },
+    "ansi": {
+      "type": "array",
+      "minItems": 16,
+      "maxItems": 16,
+      "items": {
+        "$ref": "#/$defs/hex"
+      },
+      "description": "The 16 terminal colors. Slots used: 1 red, 2 green, 3 yellow, 4 blue, 5 magenta, 6 cyan."
+    },
+    "working": {
+      "$ref": "#/$defs/hex",
+      "description": "Optional ok color. Defaults to ANSI green."
+    },
+    "waiting": {
+      "$ref": "#/$defs/hex",
+      "description": "Optional attention color. Defaults to ANSI yellow turned to orange."
+    },
+    "failed": {
+      "$ref": "#/$defs/hex",
+      "description": "Optional error color. Defaults to ANSI red."
+    },
+    "fonts": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Suggested fonts. The person's own font choice in Settings wins.",
+      "properties": {
+        "ui": {
+          "enum": [
+            "hanken-grotesk",
+            "inter",
+            "ibm-plex-sans",
+            "system"
+          ]
+        },
+        "mono": {
+          "enum": [
+            "jetbrains-mono",
+            "ibm-plex-mono",
+            "system"
+          ]
+        }
+      }
+    },
+    "scene": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "The 3D studio behind the model. Any key left out is derived from the base colors: a dark theme gets a dark studio, a light theme a light one.",
+      "properties": {
+        "top": {
+          "$ref": "#/$defs/hex",
+          "description": "Backdrop gradient, top edge."
+        },
+        "bottom": {
+          "$ref": "#/$defs/hex",
+          "description": "Backdrop gradient, bottom edge."
+        },
+        "glow": {
+          "$ref": "#/$defs/hex",
+          "description": "Soft glow behind the model."
+        },
+        "plate": {
+          "$ref": "#/$defs/hex",
+          "description": "Side of the build plate."
+        },
+        "grid": {
+          "$ref": "#/$defs/hex",
+          "description": "Floor grid lines."
+        },
+        "edge": {
+          "$ref": "#/$defs/hex",
+          "description": "Outline of the model's edges."
+        },
+        "xray": {
+          "$ref": "#/$defs/hex",
+          "description": "Edges in x-ray mode."
+        }
+      }
+    },
+    "credit": {
+      "type": "string",
+      "maxLength": 200,
+      "description": "Where the palette comes from and its license."
+    }
+  },
+  "$defs": {
+    "hex": {
+      "type": "string",
+      "pattern": "^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$",
+      "description": "#rrggbb, or #rrggbbaa."
+    }
+  }
+}
