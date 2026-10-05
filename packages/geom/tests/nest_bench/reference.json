@@ -1,0 +1,145 @@
+{
+ "gapMm": 2,
+ "plates": {
+  "l-brackets": {
+   "ours": 22,
+   "orca": 9,
+   "orcaBest": 9,
+   "bambu": 9,
+   "bambuBest": 9
+  },
+  "rings-washers": {
+   "ours": 34,
+   "orca": 15,
+   "orcaBest": 15,
+   "bambu": 22,
+   "bambuBest": 22
+  },
+  "gears": {
+   "ours": 30,
+   "orca": 20,
+   "orcaBest": 20,
+   "bambu": 20,
+   "bambuBest": 20
+  },
+  "organic": {
+   "ours": 20,
+   "orca": 15,
+   "orcaBest": 15,
+   "bambu": 16,
+   "bambuBest": 16
+  },
+  "mixed": {
+   "ours": 30,
+   "orca": 12,
+   "orcaBest": 12,
+   "bambu": 22,
+   "bambuBest": 22
+  },
+  "crosses-tees": {
+   "ours": 23,
+   "orca": 16,
+   "orcaBest": 16,
+   "bambu": 17,
+   "bambuBest": 17
+  },
+  "c-clips": {
+   "ours": 29,
+   "orca": 17,
+   "orcaBest": 17,
+   "bambu": 16,
+   "bambuBest": 16
+  },
+  "frames": {
+   "ours": 32,
+   "orca": 19,
+   "orcaBest": 19,
+   "bambu": 23,
+   "bambuBest": 23
+  },
+  "stars": {
+   "ours": 19,
+   "orca": 13,
+   "orcaBest": 13,
+   "bambu": 15,
+   "bambuBest": 15
+  },
+  "bars-triangles": {
+   "ours": 28,
+   "orca": 18,
+   "orcaBest": 18,
+   "bambu": 22,
+   "bambuBest": 22
+  },
+  "fill-l60": {
+   "ours": 22,
+   "orca": 16,
+   "orcaBest": 16,
+   "bambu": 16,
+   "bambuBest": 16
+  },
+  "fill-ring70": {
+   "ours": 9,
+   "orca": 9,
+   "orcaBest": 9,
+   "bambu": 9,
+   "bambuBest": 9
+  },
+  "fill-gear24": {
+   "ours": 20,
+   "orca": 17,
+   "orcaBest": 17,
+   "bambu": 17,
+   "bambuBest": 17
+  },
+  "fill-crescent60": {
+   "ours": 25,
+   "orca": 20,
+   "orcaBest": 20,
+   "bambu": 20,
+   "bambuBest": 20
+  },
+  "fill-hook": {
+   "ours": 21,
+   "orca": 14,
+   "orcaBest": 15,
+   "bambu": 15,
+   "bambuBest": 15
+  },
+  "fill-cross60": {
+   "ours": 20,
+   "orca": 16,
+   "orcaBest": 16,
+   "bambu": 16,
+   "bambuBest": 16
+  },
+  "fill-clip50": {
+   "ours": 28,
+   "orca": 23,
+   "orcaBest": 23,
+   "bambu": 25,
+   "bambuBest": 25
+  },
+  "fill-frame80": {
+   "ours": 9,
+   "orca": 9,
+   "orcaBest": 9,
+   "bambu": 9,
+   "bambuBest": 9
+  },
+  "fill-star30": {
+   "ours": 25,
+   "orca": 16,
+   "orcaBest": 16,
+   "bambu": 16,
+   "bambuBest": 16
+  },
+  "fill-tri50": {
+   "ours": 59,
+   "orca": 40,
+   "orcaBest": 40,
+   "bambu": 38,
+   "bambuBest": 38
+  }
+ }
+}

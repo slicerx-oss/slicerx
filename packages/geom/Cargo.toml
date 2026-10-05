@@ -1,0 +1,26 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (C) 2026 The SlicerX contributors
+[package]
+name = "sx-geom"
+version.workspace = true
+edition.workspace = true
+license = "Apache-2.0"
+publish.workspace = true
+description = "Mesh operations for SlicerX: cut, split to fit, repair, orientation, hollowing, emboss, calibration models, resume from layer"
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "sx-geom"
+path = "src/bin/sx-geom.rs"
+
+[dependencies]
+i_overlay = "=9.0.0"
+libm = "=0.2.16"
+manifold-rust = { version = "=0.15.0", default-features = false }
+miniz_oxide = "=0.9.1"
+ttf-parser = { version = "=0.25.1", default-features = false, features = ["std", "opentype-layout"] }
+serde = { version = "=1.0.229", features = ["derive"] }
+serde_json = "=1.0.151"
+thiserror = "=2.0.21"

@@ -1,0 +1,125 @@
+{
+ "slicer": "bambu pos-high",
+ "plates": {
+  "l-brackets": {
+   "wanted": 34,
+   "placed": 9,
+   "utilization": 38.5,
+   "seconds": 0.476
+  },
+  "rings-washers": {
+   "wanted": 46,
+   "placed": 22,
+   "utilization": 34.7,
+   "seconds": 9.205
+  },
+  "gears": {
+   "wanted": 50,
+   "placed": 20,
+   "utilization": 62.9,
+   "seconds": 3.06
+  },
+  "organic": {
+   "wanted": 34,
+   "placed": 16,
+   "utilization": 56.7,
+   "seconds": 1.493
+  },
+  "mixed": {
+   "wanted": 32,
+   "placed": 22,
+   "utilization": 53.2,
+   "seconds": 2.273
+  },
+  "crosses-tees": {
+   "wanted": 44,
+   "placed": 17,
+   "utilization": 45.4,
+   "seconds": 0.659
+  },
+  "c-clips": {
+   "wanted": 57,
+   "placed": 16,
+   "utilization": 36.2,
+   "seconds": 2.88
+  },
+  "frames": {
+   "wanted": 43,
+   "placed": 23,
+   "utilization": 36.6,
+   "seconds": 0.701
+  },
+  "stars": {
+   "wanted": 46,
+   "placed": 15,
+   "utilization": 33.9,
+   "seconds": 0.678
+  },
+  "bars-triangles": {
+   "wanted": 34,
+   "placed": 22,
+   "utilization": 65.5,
+   "seconds": 0.485
+  },
+  "fill-l60": {
+   "wanted": 43,
+   "placed": 16,
+   "utilization": 38.5,
+   "seconds": 0.483
+  },
+  "fill-ring70": {
+   "wanted": 31,
+   "placed": 9,
+   "utilization": 31,
+   "seconds": 1.721
+  },
+  "fill-gear24": {
+   "wanted": 41,
+   "placed": 17,
+   "utilization": 42.7,
+   "seconds": 1.519
+  },
+  "fill-crescent60": {
+   "wanted": 49,
+   "placed": 20,
+   "utilization": 41.8,
+   "seconds": 2.089
+  },
+  "fill-hook": {
+   "wanted": 50,
+   "placed": 15,
+   "utilization": 30.9,
+   "seconds": 1.813
+  },
+  "fill-cross60": {
+   "wanted": 37,
+   "placed": 16,
+   "utilization": 44.8,
+   "seconds": 0.523
+  },
+  "fill-clip50": {
+   "wanted": 67,
+   "placed": 25,
+   "utilization": 38.3,
+   "seconds": 4.536
+  },
+  "fill-frame80": {
+   "wanted": 25,
+   "placed": 9,
+   "utilization": 38.5,
+   "seconds": 0.414
+  },
+  "fill-star30": {
+   "wanted": 57,
+   "placed": 16,
+   "utilization": 29.1,
+   "seconds": 0.642
+  },
+  "fill-tri50": {
+   "wanted": 89,
+   "placed": 38,
+   "utilization": 43.5,
+   "seconds": 1.152
+  }
+ }
+}
