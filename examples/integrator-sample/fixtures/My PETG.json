@@ -1,0 +1,8 @@
+{
+  "name": "My PETG",
+  "inherits": "Bambu PETG HF @BBL A1",
+  "from": "User",
+  "filament_settings_id": ["My PETG"],
+  "nozzle_temperature": ["245"],
+  "nozzle_temperature_initial_layer": ["245"]
+}

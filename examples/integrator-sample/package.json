@@ -1,0 +1,34 @@
+{
+  "name": "spoolhouse-sample",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A sample app that builds SlicerX in the way an outside app does: slicing over MCP, the embedded viewport, a brand theme, the pre-alpha agreement and locked projects.",
+  "type": "module",
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "local-packages": "node scripts/local-packages.mjs",
+    "slice": "node src/main/cli.ts",
+    "build": "vite build",
+    "preview": "vite preview --port 4388 --strictPort --host 127.0.0.1",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "node scripts/integration.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.31.0",
+    "@slicerx/embed": "0.1.0",
+    "@slicerx/mcp": "0.1.0",
+    "react": "19.3.0",
+    "react-dom": "19.3.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0",
+    "@types/node": "24.19.0",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "typescript": "5.9.3",
+    "vite": "8.3.1"
+  }
+}
