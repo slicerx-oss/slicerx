@@ -1,0 +1,14 @@
+{
+  "slicerx": {
+    "command": "npx",
+    "args": ["-y", "@slicerx/mcp@0.1.0"],
+    "env": {
+      "SLICERX_MCP_OUT_DIR": "${CLAUDE_PLUGIN_DATA}/output",
+      "SLICERX_MCP_ALLOW_DIR": "${user_config.model_folders}",
+      "SLICERX_MCP_SX_BIN": "${user_config.sx_path}",
+      "SLICERX_MCP_PRINTERS": "${user_config.printers}",
+      "SLICERX_MCP_LINK_CODE": "${user_config.link_code}",
+      "SLICERX_MCP_POLICY": "${user_config.policy_file}"
+    }
+  }
+}

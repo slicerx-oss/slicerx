@@ -1,0 +1,69 @@
+{
+  "name": "slicerx",
+  "displayName": "SlicerX",
+  "version": "0.1.0",
+  "description": "SlicerX, the AI-ready slicer, in Claude Code: slice and estimate 3D models, plan and check OrcaSlicer settings, diagnose failed prints, calibrate filament, run mimir skills on a project, theme an embedded SlicerX, and read and control printers on your network under a permission policy you set.",
+  "author": {
+    "name": "The SlicerX contributors",
+    "url": "https://github.com/slicerx-oss/slicerx"
+  },
+  "homepage": "https://slicerx.app",
+  "repository": "https://github.com/slicerx-oss/slicerx",
+  "license": "Apache-2.0",
+  "keywords": [
+    "3d-printing",
+    "slicer",
+    "gcode",
+    "orcaslicer",
+    "klipper",
+    "bambu-lab",
+    "prusa",
+    "mcp"
+  ],
+  "userConfig": {
+    "model_folders": {
+      "type": "string",
+      "title": "Model folders",
+      "description": "Folders SlicerX may read models from, separated by colons, such as /Users/you/prints. Empty means any file you can read.",
+      "required": false,
+      "default": ""
+    },
+    "sx_path": {
+      "type": "file",
+      "title": "SlicerX core (sx) path",
+      "description": "Full path to the sx slicer binary. Empty looks for sx on your PATH; without it SlicerX gives rough estimates only.",
+      "required": false,
+      "default": ""
+    },
+    "printers": {
+      "type": "string",
+      "title": "Printers",
+      "description": "demo: five simulated printers. link: your real printers through sx-link on this computer. off: no printer tools.",
+      "required": false,
+      "default": "demo",
+      "options": [
+        "demo",
+        "link",
+        "off"
+      ]
+    },
+    "link_code": {
+      "type": "string",
+      "title": "sx-link pairing code",
+      "description": "The code sx-link prints when it starts. Needed only when Printers is link.",
+      "required": false,
+      "default": "",
+      "sensitive": true
+    },
+    "policy_file": {
+      "type": "file",
+      "title": "Permission policy file",
+      "description": "Path to your permission policy JSON. Empty uses ~/.config/slicerx/mcp-policy.json when it exists, else the defaults (queue, start and profile changes ask first).",
+      "required": false,
+      "default": ""
+    }
+  },
+  "experimental": {
+    "evals": "evals"
+  }
+}

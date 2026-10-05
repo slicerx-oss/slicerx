@@ -1,0 +1,4 @@
+# Generated: development copy with a local server, and eval output
+.dev/
+server/
+evals/results/

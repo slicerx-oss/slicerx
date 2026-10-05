@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
+  "name": "slicerx",
+  "description": "SlicerX plugins for Claude Code",
+  "owner": {
+    "name": "The SlicerX contributors",
+    "url": "https://github.com/slicerx-oss/slicerx"
+  },
+  "plugins": [
+    {
+      "name": "slicerx",
+      "displayName": "SlicerX",
+      "description": "Slice and estimate 3D models, plan and check OrcaSlicer settings, diagnose failed prints, calibrate filament, theme an embedded SlicerX, and read and control printers on your network under a permission policy you set.",
+      "version": "0.1.0",
+      "author": { "name": "The SlicerX contributors" },
+      "source": "./packages/claude-plugin",
+      "category": "productivity",
+      "homepage": "https://slicerx.app",
+      "repository": "https://github.com/slicerx-oss/slicerx",
+      "license": "Apache-2.0",
+      "keywords": ["3d-printing", "slicer", "gcode", "mcp"]
+    }
+  ]
+}
