@@ -1,0 +1,35 @@
+{
+  "config": {
+    "credentialRef": "printer/bay-2/access-code",
+    "host": "192.0.2.12",
+    "id": "bay-2",
+    "name": "Bay 2",
+    "plugin": "bambu-lan",
+    "serial": "01P00A000000000"
+  },
+  "discovered": {
+    "host": "192.0.2.12",
+    "model": "P1S",
+    "name": "Bay 2",
+    "plugin": "bambu-lan",
+    "port": 8883,
+    "serial": "01P00A000000000"
+  },
+  "remote": {
+    "name": "lantern.gcode.3mf",
+    "path": "lantern.gcode.3mf",
+    "printerId": "bay-2"
+  },
+  "start": {
+    "bedLeveling": true,
+    "firstLayerInspection": true,
+    "flowCalibration": false,
+    "plate": 1,
+    "slotMap": {
+      "0": "A1",
+      "2": "A3"
+    },
+    "timelapse": true,
+    "vibrationCompensation": false
+  }
+}

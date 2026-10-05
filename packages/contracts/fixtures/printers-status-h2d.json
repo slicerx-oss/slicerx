@@ -1,0 +1,85 @@
+{
+  "bed": {
+    "current": 55.0,
+    "target": 55.0
+  },
+  "cameraAvailable": true,
+  "chamber": {
+    "current": 32.0,
+    "target": 0.0
+  },
+  "jobName": "Cube 20 mm",
+  "layer": 62,
+  "layerCount": 100,
+  "live": {
+    "activeSlot": "A1",
+    "fans": {
+      "aux": 70,
+      "chamber": 30,
+      "part": 100
+    },
+    "light": true,
+    "nozzleSides": [
+      "right",
+      "left"
+    ],
+    "speedPercent": 100,
+    "units": [
+      {
+        "feeds": "left",
+        "id": "A",
+        "kind": "ams"
+      },
+      {
+        "feeds": "right",
+        "id": "E",
+        "kind": "ams-ht"
+      }
+    ]
+  },
+  "message": "The front door is open. Close it; for materials that need a warm chamber the print waits until it is shut.",
+  "nozzles": [
+    {
+      "current": 31.0,
+      "target": 0.0
+    },
+    {
+      "current": 220.0,
+      "target": 220.0
+    }
+  ],
+  "printerId": "h2d",
+  "progress": 0.62,
+  "slots": [
+    {
+      "color": "#f2f2f2",
+      "id": "A1",
+      "material": "PLA Basic",
+      "remainingPct": 82.0
+    },
+    {
+      "color": "#202020",
+      "id": "A2",
+      "material": "PLA Basic",
+      "remainingPct": 45.0
+    },
+    {
+      "color": "#d9473f",
+      "id": "A3",
+      "material": "PETG HF",
+      "remainingPct": 100.0
+    },
+    {
+      "id": "A4"
+    },
+    {
+      "color": "#3fae8f",
+      "id": "E1",
+      "material": "PLA Matte",
+      "remainingPct": 60.0
+    }
+  ],
+  "state": "printing",
+  "timeLeftS": 840,
+  "updatedAt": "2026-10-05T07:34:00.000Z"
+}

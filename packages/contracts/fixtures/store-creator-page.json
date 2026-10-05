@@ -1,0 +1,390 @@
+{
+  "creator": {
+    "id": "fce36375-8a42-51d1-bcab-8f44ca0a3de0",
+    "handle": "ferro-labs",
+    "displayName": "Ferro Labs",
+    "followers": 7,
+    "ownerId": "172779cd-386f-5bdf-b9b0-986ed6f8ca7c",
+    "status": "active",
+    "trusted": false,
+    "createdAt": "2026-06-05T09:00:00.000Z",
+    "bio": "Gearboxes, compliant mechanisms and test pieces with documented tolerances.",
+    "location": "Tampere, Finland",
+    "logoUrl": "https://example.com/logos/ferro-labs.png",
+    "tagline": "Mechanisms you can print and study",
+    "listingCount": 4,
+    "followedByMe": true
+  },
+  "links": [
+    {
+      "id": "91ee10d4-6922-503c-9543-9285ed8fd26d",
+      "kind": "website",
+      "url": "https://ferro-labs.example.com",
+      "position": 0,
+      "label": "Website"
+    },
+    {
+      "id": "4dbbca10-888e-5bf1-9d80-9183d8b5e062",
+      "kind": "github",
+      "url": "https://github.com/ferrolabs",
+      "position": 1,
+      "label": "Parametric sources"
+    },
+    {
+      "id": "bd32283d-20f3-5724-9cc1-bbb2c10034ab",
+      "kind": "makerworld",
+      "url": "https://makerworld.com/en/@ferrolabs",
+      "position": 2,
+      "label": "MakerWorld"
+    }
+  ],
+  "featured": [
+    {
+      "id": "04b41b28-c776-5f1a-a349-b903e08b3d31",
+      "creatorId": "fce36375-8a42-51d1-bcab-8f44ca0a3de0",
+      "slug": "planetary-gearbox-demo",
+      "title": "Planetary gearbox demo",
+      "license": "cc-by-sa",
+      "status": "approved",
+      "tags": [
+        "mechanism",
+        "print-in-place",
+        "education"
+      ],
+      "createdAt": "2026-06-21T00:00:00.000Z",
+      "description": "Hand-cranked 5:1 planetary gearbox. Prints in place.",
+      "reviewedAt": "2026-06-21T03:00:00.000Z",
+      "publishedAt": "2026-06-21T03:00:00.000Z",
+      "currentVersion": {
+        "id": "d2e816a0-19ce-5eb9-97f3-680d1cd57014",
+        "listingId": "04b41b28-c776-5f1a-a349-b903e08b3d31",
+        "version": "1.1.0",
+        "format": "sx3mf",
+        "sizeBytes": 3140040,
+        "sha256": "25388c233e1f39419d57195d8670ac3f0fe78db3c25a0a08d71682971aab052c",
+        "createdAt": "2026-06-30T01:00:00.000Z",
+        "scanStatus": "clean",
+        "reviewStatus": "approved",
+        "changelog": "Quieter tooth profile",
+        "printProfiles": {
+          "Bambu Lab P1S": {
+            "process": "0.16 mm Standard",
+            "filament": "Prusament PETG",
+            "timeS": 4320,
+            "grams": 9
+          },
+          "Prusa MK4S": {
+            "process": "0.16 mm Standard",
+            "filament": "Bambu PLA Matte",
+            "timeS": 10500,
+            "grams": 99.4
+          }
+        }
+      },
+      "stats": {
+        "likes": 2,
+        "makes": 0,
+        "comments": 3,
+        "downloads": 8
+      },
+      "likedByMe": false
+    },
+    {
+      "id": "25d99ffe-32b2-567e-b637-5e0d615cd78d",
+      "creatorId": "fce36375-8a42-51d1-bcab-8f44ca0a3de0",
+      "slug": "parametric-enclosure",
+      "title": "Parametric enclosure",
+      "license": "cc0",
+      "status": "approved",
+      "tags": [
+        "functional",
+        "electronics"
+      ],
+      "createdAt": "2026-08-10T00:00:00.000Z",
+      "description": "Electronics box with snap lid. Sizes from 40 to 160 mm.",
+      "reviewedAt": "2026-08-10T03:00:00.000Z",
+      "publishedAt": "2026-08-10T03:00:00.000Z",
+      "currentVersion": {
+        "id": "4df56d6e-0620-5aa9-9153-f5291a86d2ee",
+        "listingId": "25d99ffe-32b2-567e-b637-5e0d615cd78d",
+        "version": "1.0.0",
+        "format": "3mf",
+        "sizeBytes": 7144670,
+        "sha256": "72907d6c90c2cea26db77cb98fe5cf7723b0d9bab6e3dc4e8b1b81341e4884c0",
+        "createdAt": "2026-08-10T01:00:00.000Z",
+        "scanStatus": "clean",
+        "reviewStatus": "approved",
+        "changelog": "First release",
+        "printProfiles": {
+          "Voron 2.4 350": {
+            "process": "0.24 mm Draft",
+            "filament": "Bambu PLA Matte",
+            "timeS": 4260,
+            "grams": 123.6
+          },
+          "Bambu Lab X1 Carbon": {
+            "process": "0.16 mm Standard",
+            "filament": "Generic PLA",
+            "timeS": 3780,
+            "grams": 87.8
+          }
+        }
+      },
+      "stats": {
+        "likes": 1,
+        "makes": 0,
+        "comments": 2,
+        "downloads": 5
+      },
+      "likedByMe": false
+    },
+    {
+      "id": "7aeeaa45-5a64-511b-9c29-09587ca3e206",
+      "creatorId": "fce36375-8a42-51d1-bcab-8f44ca0a3de0",
+      "slug": "compliant-gripper",
+      "title": "Compliant gripper",
+      "license": "cc-by",
+      "status": "approved",
+      "tags": [
+        "mechanism",
+        "robotics"
+      ],
+      "createdAt": "2026-09-04T00:00:00.000Z",
+      "description": "Single-piece gripper for small robot arms. Print in PETG.",
+      "reviewedAt": "2026-09-04T03:00:00.000Z",
+      "publishedAt": "2026-09-04T03:00:00.000Z",
+      "currentVersion": {
+        "id": "2d7fe7b1-b5de-5771-a1ad-c8ba790cf87a",
+        "listingId": "7aeeaa45-5a64-511b-9c29-09587ca3e206",
+        "version": "1.0.0",
+        "format": "3mf",
+        "sizeBytes": 5557718,
+        "sha256": "bee66904d907d6954828c5472fc97ad662721a472c59a6d3657819622b53a5f6",
+        "createdAt": "2026-09-04T01:00:00.000Z",
+        "scanStatus": "clean",
+        "reviewStatus": "approved",
+        "changelog": "First release",
+        "printProfiles": {
+          "Prusa MK4S": {
+            "process": "0.20 mm Standard",
+            "filament": "Prusament PETG",
+            "timeS": 7320,
+            "grams": 93.7
+          },
+          "Bambu Lab P1S": {
+            "process": "0.20 mm Standard",
+            "filament": "Bambu PLA Matte",
+            "timeS": 8040,
+            "grams": 143.4
+          }
+        }
+      },
+      "stats": {
+        "likes": 7,
+        "makes": 0,
+        "comments": 2,
+        "downloads": 9
+      },
+      "likedByMe": true
+    }
+  ],
+  "listings": [
+    {
+      "id": "7aeeaa45-5a64-511b-9c29-09587ca3e206",
+      "creatorId": "fce36375-8a42-51d1-bcab-8f44ca0a3de0",
+      "slug": "compliant-gripper",
+      "title": "Compliant gripper",
+      "license": "cc-by",
+      "status": "approved",
+      "tags": [
+        "mechanism",
+        "robotics"
+      ],
+      "createdAt": "2026-09-04T00:00:00.000Z",
+      "description": "Single-piece gripper for small robot arms. Print in PETG.",
+      "reviewedAt": "2026-09-04T03:00:00.000Z",
+      "publishedAt": "2026-09-04T03:00:00.000Z",
+      "currentVersion": {
+        "id": "2d7fe7b1-b5de-5771-a1ad-c8ba790cf87a",
+        "listingId": "7aeeaa45-5a64-511b-9c29-09587ca3e206",
+        "version": "1.0.0",
+        "format": "3mf",
+        "sizeBytes": 5557718,
+        "sha256": "bee66904d907d6954828c5472fc97ad662721a472c59a6d3657819622b53a5f6",
+        "createdAt": "2026-09-04T01:00:00.000Z",
+        "scanStatus": "clean",
+        "reviewStatus": "approved",
+        "changelog": "First release",
+        "printProfiles": {
+          "Prusa MK4S": {
+            "process": "0.20 mm Standard",
+            "filament": "Prusament PETG",
+            "timeS": 7320,
+            "grams": 93.7
+          },
+          "Bambu Lab P1S": {
+            "process": "0.20 mm Standard",
+            "filament": "Bambu PLA Matte",
+            "timeS": 8040,
+            "grams": 143.4
+          }
+        }
+      },
+      "stats": {
+        "likes": 7,
+        "makes": 0,
+        "comments": 2,
+        "downloads": 9
+      },
+      "likedByMe": true
+    },
+    {
+      "id": "25d99ffe-32b2-567e-b637-5e0d615cd78d",
+      "creatorId": "fce36375-8a42-51d1-bcab-8f44ca0a3de0",
+      "slug": "parametric-enclosure",
+      "title": "Parametric enclosure",
+      "license": "cc0",
+      "status": "approved",
+      "tags": [
+        "functional",
+        "electronics"
+      ],
+      "createdAt": "2026-08-10T00:00:00.000Z",
+      "description": "Electronics box with snap lid. Sizes from 40 to 160 mm.",
+      "reviewedAt": "2026-08-10T03:00:00.000Z",
+      "publishedAt": "2026-08-10T03:00:00.000Z",
+      "currentVersion": {
+        "id": "4df56d6e-0620-5aa9-9153-f5291a86d2ee",
+        "listingId": "25d99ffe-32b2-567e-b637-5e0d615cd78d",
+        "version": "1.0.0",
+        "format": "3mf",
+        "sizeBytes": 7144670,
+        "sha256": "72907d6c90c2cea26db77cb98fe5cf7723b0d9bab6e3dc4e8b1b81341e4884c0",
+        "createdAt": "2026-08-10T01:00:00.000Z",
+        "scanStatus": "clean",
+        "reviewStatus": "approved",
+        "changelog": "First release",
+        "printProfiles": {
+          "Voron 2.4 350": {
+            "process": "0.24 mm Draft",
+            "filament": "Bambu PLA Matte",
+            "timeS": 4260,
+            "grams": 123.6
+          },
+          "Bambu Lab X1 Carbon": {
+            "process": "0.16 mm Standard",
+            "filament": "Generic PLA",
+            "timeS": 3780,
+            "grams": 87.8
+          }
+        }
+      },
+      "stats": {
+        "likes": 1,
+        "makes": 0,
+        "comments": 2,
+        "downloads": 5
+      },
+      "likedByMe": false
+    },
+    {
+      "id": "713c8053-ec80-531e-859a-b3b61826c0fb",
+      "creatorId": "fce36375-8a42-51d1-bcab-8f44ca0a3de0",
+      "slug": "print-in-place-wrench-set",
+      "title": "Print-in-place wrench set",
+      "license": "cc-by",
+      "status": "approved",
+      "tags": [
+        "tool",
+        "print-in-place"
+      ],
+      "createdAt": "2026-07-16T00:00:00.000Z",
+      "description": "Adjustable wrench set in three sizes.",
+      "reviewedAt": "2026-07-16T03:00:00.000Z",
+      "publishedAt": "2026-07-16T03:00:00.000Z",
+      "currentVersion": {
+        "id": "9d8e5f5e-d18e-5d8f-8979-d66d857904bc",
+        "listingId": "713c8053-ec80-531e-859a-b3b61826c0fb",
+        "version": "1.0.0",
+        "format": "3mf",
+        "sizeBytes": 4379151,
+        "sha256": "873ae54d1e8e96dde78b00027e3f7392064998a786fa29a9030f1cc083bcadce",
+        "createdAt": "2026-07-16T01:00:00.000Z",
+        "scanStatus": "clean",
+        "reviewStatus": "approved",
+        "changelog": "First release",
+        "printProfiles": {
+          "Voron 2.4 350": {
+            "process": "0.20 mm Standard",
+            "filament": "Prusament PETG",
+            "timeS": 6360,
+            "grams": 92.3
+          },
+          "Bambu Lab X1 Carbon": {
+            "process": "0.20 mm Standard",
+            "filament": "Generic PLA",
+            "timeS": 3960,
+            "grams": 124.1
+          }
+        }
+      },
+      "stats": {
+        "likes": 3,
+        "makes": 0,
+        "comments": 2,
+        "downloads": 6
+      },
+      "likedByMe": false
+    },
+    {
+      "id": "04b41b28-c776-5f1a-a349-b903e08b3d31",
+      "creatorId": "fce36375-8a42-51d1-bcab-8f44ca0a3de0",
+      "slug": "planetary-gearbox-demo",
+      "title": "Planetary gearbox demo",
+      "license": "cc-by-sa",
+      "status": "approved",
+      "tags": [
+        "mechanism",
+        "print-in-place",
+        "education"
+      ],
+      "createdAt": "2026-06-21T00:00:00.000Z",
+      "description": "Hand-cranked 5:1 planetary gearbox. Prints in place.",
+      "reviewedAt": "2026-06-21T03:00:00.000Z",
+      "publishedAt": "2026-06-21T03:00:00.000Z",
+      "currentVersion": {
+        "id": "d2e816a0-19ce-5eb9-97f3-680d1cd57014",
+        "listingId": "04b41b28-c776-5f1a-a349-b903e08b3d31",
+        "version": "1.1.0",
+        "format": "sx3mf",
+        "sizeBytes": 3140040,
+        "sha256": "25388c233e1f39419d57195d8670ac3f0fe78db3c25a0a08d71682971aab052c",
+        "createdAt": "2026-06-30T01:00:00.000Z",
+        "scanStatus": "clean",
+        "reviewStatus": "approved",
+        "changelog": "Quieter tooth profile",
+        "printProfiles": {
+          "Bambu Lab P1S": {
+            "process": "0.16 mm Standard",
+            "filament": "Prusament PETG",
+            "timeS": 4320,
+            "grams": 9
+          },
+          "Prusa MK4S": {
+            "process": "0.16 mm Standard",
+            "filament": "Bambu PLA Matte",
+            "timeS": 10500,
+            "grams": 99.4
+          }
+        }
+      },
+      "stats": {
+        "likes": 2,
+        "makes": 0,
+        "comments": 3,
+        "downloads": 8
+      },
+      "likedByMe": false
+    }
+  ]
+}

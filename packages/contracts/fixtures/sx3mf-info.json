@@ -1,0 +1,12 @@
+{
+  "isSx3mf": true,
+  "modelPart": "/3D/3dmodel.model",
+  "listing": "lst_01J0000000000000000000TEST",
+  "version": "1.2.0",
+  "versionId": "ver_01J0000000000000000000TEST",
+  "creator": "crt_example",
+  "exportedBy": "usr_opaque_reference",
+  "title": "Owl",
+  "designer": "Someone",
+  "application": "BambuStudio-02.03.00.70"
+}

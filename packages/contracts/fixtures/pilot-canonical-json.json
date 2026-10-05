@@ -1,0 +1,92 @@
+{
+  "comment": "Written by packages/pilot/permit/tests/contract_json.rs. canonicalJson and hashParams in packages/contracts/src/pilot.ts must produce `canonical` and `sha256` for each `input`.",
+  "vectors": [
+    {
+      "canonical": "null",
+      "input": null,
+      "sha256": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b"
+    },
+    {
+      "canonical": "{\"printerId\":\"bay-1\"}",
+      "input": {
+        "printerId": "bay-1"
+      },
+      "sha256": "565c40af98755926d99e025033ff34aa0f62ae52baa93123e931a930b354c4ab"
+    },
+    {
+      "canonical": "{\"name\":\"Tidewell harbor lantern.gcode.3mf\",\"opts\":{},\"printerId\":\"bay-2\"}",
+      "input": {
+        "name": "Tidewell harbor lantern.gcode.3mf",
+        "opts": {},
+        "printerId": "bay-2"
+      },
+      "sha256": "60aa3c59a4993ea5894aea541bce9ff303c09ec74666522785fd61e5f2b86a95"
+    },
+    {
+      "canonical": "{\"changes\":{\"fan_min_speed\":35,\"filament_retraction_length\":0.8,\"nozzle_temperature\":[245,240]},\"profileId\":\"petg-basic\"}",
+      "input": {
+        "changes": {
+          "fan_min_speed": 35,
+          "filament_retraction_length": 0.8,
+          "nozzle_temperature": [
+            245,
+            240
+          ]
+        },
+        "profileId": "petg-basic"
+      },
+      "sha256": "fa4717718ca183494e2615d5b788eff558a091e47ecc1ee284522e301ee2f5e5"
+    },
+    {
+      "canonical": "{\"a\":{\"x\":null,\"y\":true},\"z\":[1,0.1,0,1e+21,1.5e-7,250.4,0.30000000000000004,12345678901234567000]}",
+      "input": {
+        "a": {
+          "x": null,
+          "y": true
+        },
+        "z": [
+          1.0,
+          0.1,
+          -0.0,
+          1e+21,
+          1.5e-7,
+          250.4,
+          0.30000000000000004,
+          12345678901234567890
+        ]
+      },
+      "sha256": "43f1aff7ff4469f056c7be543461f16f53db9b69f6f3adca50e8643d13eae7e2"
+    },
+    {
+      "canonical": "{\"line\":\"M117 \\\"hi\\\"\\n\\tG28 \\u0001 \\u001f café   back\\\\slash\",\"printerId\":\"bay-4\"}",
+      "input": {
+        "line": "M117 \"hi\"\n\tG28 \u0001 \u001f café   back\\slash",
+        "printerId": "bay-4"
+      },
+      "sha256": "659177754b24fcb1f966e6ff024aa97a566462460c0f37adebe030a1fde81572"
+    },
+    {
+      "canonical": "{\"\":5,\"B\":3,\"a\":4,\"𝄞\":2,\"～\":1}",
+      "input": {
+        "": 5,
+        "B": 3,
+        "a": 4,
+        "～": 1,
+        "𝄞": 2
+      },
+      "sha256": "94eb3b9dedf47abc1801b64bf068686a33a24f387dbc0e81e63981acfcbbfac6"
+    },
+    {
+      "canonical": "[[],{},\"\",0,-1,false]",
+      "input": [
+        [],
+        {},
+        "",
+        0,
+        -1,
+        false
+      ],
+      "sha256": "d25219714184046188eb94efb3c4bdd5f3755823c149dd1b837ca71b5ed49dfa"
+    }
+  ]
+}
