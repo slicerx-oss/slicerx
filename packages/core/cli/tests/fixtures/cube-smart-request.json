@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "meshes": { "cube": "cube.stl" },
+  "plate": { "objects": [{ "id": "o1", "name": "Cube", "mesh": "cube" }] },
+  "config": { "wall_loops": 2, "sparse_infill_density": 15 },
+  "options": {
+    "flavor": "klipper",
+    "layerTopsMm": [0.2, 0.4, 0.7, 1.2, 1.9, 2.6, 3.3, 4.0, 4.7, 5.4, 6.1, 6.8, 7.5, 8.2, 8.9, 9.6, 10.3]
+  }
+}

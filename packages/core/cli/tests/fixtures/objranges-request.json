@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "meshes": { "c": "cube.stl" },
+  "plate": {
+    "objects": [
+      { "id": "a", "mesh": "c", "transform": [1,0,0,0, 0,1,0,0, 0,0,1,0, 60,100,0,1], "settings": { "filament_flow_ratio": 0.95 } },
+      { "id": "b", "mesh": "c", "transform": [1,0,0,0, 0,1,0,0, 0,0,1,0, 160,100,0,1] }
+    ]
+  },
+  "config": { "print_sequence": "by object", "nozzle_temperature": [215] },
+  "options": {
+    "flavor": "klipper",
+    "heightRanges": [
+      { "zFromMm": 0, "zToMm": 4, "settings": { "nozzle_temperature": 235, "pressure_advance": 0.04, "enable_pressure_advance": true }, "objects": ["b"] },
+      { "zFromMm": 4, "zToMm": 30, "settings": { "nozzle_temperature": 205, "filament_flow_ratio": 1.1 }, "objects": ["a"] }
+    ]
+  }
+}

@@ -1,0 +1,50 @@
+{
+  "name": "@slicerx/slicer",
+  "version": "0.1.0",
+  "private": false,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "build:wasm": "sh scripts/build-wasm.sh",
+    "bench": "node ../bench/web-slice.mjs",
+    "build": "sh scripts/build-wasm.sh && vite build -c vite.lib.config.mjs && cp pkg/sx_wasm.wasm dist/sx_wasm.wasm && tsc -p tsconfig.build.json"
+  },
+  "dependencies": {
+    "@slicerx/contracts": "workspace:*"
+  },
+  "devDependencies": {
+    "playwright": "1.63.0",
+    "vite": "8.3.1"
+  },
+  "description": "SlicerX browser slicer: sx-core in a WASM worker pool",
+  "license": "Apache-2.0",
+  "files": [
+    "dist",
+    "CHANGELOG.md",
+    "README.md"
+  ],
+  "publishConfig": {
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "import": "./dist/index.js"
+      }
+    }
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/slicerx-oss/slicerx",
+    "directory": "packages/core/web"
+  },
+  "keywords": [
+    "3d-printing",
+    "slicer",
+    "gcode",
+    "wasm",
+    "3mf",
+    "stl"
+  ]
+}

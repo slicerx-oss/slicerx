@@ -1,0 +1,20 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (C) 2026 The SlicerX contributors
+[package]
+name = "sx-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "sx"
+path = "src/main.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+sx-core.workspace = true
+rayon = "=1.12.0"
+serde_json = "=1.0.151"

@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "meshes": {
+    "cube": "cube.stl"
+  },
+  "plate": {
+    "bed": {
+      "widthMm": 256,
+      "depthMm": 256,
+      "heightMm": 250
+    },
+    "objects": [
+      {
+        "id": "o1",
+        "name": "Cube",
+        "mesh": "cube"
+      }
+    ]
+  },
+  "config": {
+    "layer_height": 0.2,
+    "wall_loops": 2,
+    "sparse_infill_density": 20,
+    "brim_width": 3,
+    "sparse_infill_pattern": "gyroid"
+  },
+  "options": {
+    "flavor": "klipper",
+    "shards": 2
+  }
+}

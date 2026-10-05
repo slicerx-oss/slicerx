@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "meshes": { "c": "cube.stl", "t": "table.stl" },
+  "plate": {
+    "objects": [
+      { "id": "c1", "mesh": "c", "transform": [1,0,0,0, 0,1,0,0, 0,0,1,0, 90,100,0,1] },
+      { "id": "t1", "mesh": "t", "transform": [1,0,0,0, 0,1,0,0, 0,0,1,0, 170,100,0,1] }
+    ]
+  },
+  "config": {
+    "enable_prime_tower": true, "wipe_tower_x": 15, "wipe_tower_y": 20,
+    "outer_wall_filament_id": 2, "top_surface_filament_id": 3,
+    "enable_support": true, "support_interface_filament": 3
+  },
+  "options": { "flavor": "klipper" }
+}

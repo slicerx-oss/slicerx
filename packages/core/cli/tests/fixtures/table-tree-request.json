@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "meshes": {
+    "t": "table.stl"
+  },
+  "plate": {
+    "objects": [
+      {
+        "id": "t1",
+        "mesh": "t"
+      }
+    ]
+  },
+  "config": {
+    "enable_support": true,
+    "support_type": "normal(auto)",
+    "support_on_build_plate_only": false,
+    "wall_loops": 2,
+    "support_style": "tree_hybrid"
+  },
+  "options": {
+    "flavor": "klipper"
+  }
+}
