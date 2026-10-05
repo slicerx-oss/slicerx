@@ -1,0 +1,87 @@
+{
+  "developerMode": true,
+  "extruders": [
+    {
+      "highFlow": true,
+      "nozzleDiameterMm": 0.6,
+      "nozzleType": "hardened-steel",
+      "position": "left",
+      "tool": 0
+    },
+    {
+      "highFlow": false,
+      "nozzleDiameterMm": 0.4,
+      "nozzleType": "hardened-steel",
+      "position": "right",
+      "tool": 1
+    }
+  ],
+  "filamentUnits": [
+    {
+      "id": "A",
+      "kind": "ams-2-pro",
+      "slots": [
+        {
+          "color": "#f2f2f2",
+          "id": "A1",
+          "material": "PLA Basic",
+          "remainingPct": 82.0
+        },
+        {
+          "color": "#1a1a1a",
+          "id": "A2",
+          "material": "PLA Matte",
+          "remainingPct": 64.0
+        },
+        {
+          "color": "#0a5eb0",
+          "id": "A3",
+          "material": "PETG HF",
+          "remainingPct": 100.0
+        },
+        {
+          "id": "A4"
+        }
+      ],
+      "tool": 1
+    },
+    {
+      "id": "E",
+      "kind": "ams-ht",
+      "slots": [
+        {
+          "color": "#2b2b2b",
+          "id": "E1",
+          "material": "PAHT-CF",
+          "remainingPct": 90.0
+        }
+      ],
+      "tool": 0
+    },
+    {
+      "id": "external-255",
+      "kind": "external",
+      "slots": [
+        {
+          "id": "1"
+        }
+      ],
+      "tool": 1
+    },
+    {
+      "id": "external-254",
+      "kind": "external",
+      "slots": [
+        {
+          "color": "#c0392b",
+          "id": "1",
+          "material": "TPU for AMS"
+        }
+      ],
+      "tool": 0
+    }
+  ],
+  "firmware": "01.03.00.00",
+  "model": "H2D",
+  "sdCard": true
+}

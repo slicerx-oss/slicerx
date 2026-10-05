@@ -1,0 +1,26 @@
+{
+  "actions": [
+    {
+      "action": "printer.upload",
+      "paramsHash": "efb6f85476cf0c474c5b9f4f0ad14b8ad351d12e0f9e9e41200494c0fc69fbaf",
+      "target": "bay-2"
+    },
+    {
+      "action": "printer.start",
+      "paramsHash": "60aa3c59a4993ea5894aea541bce9ff303c09ec74666522785fd61e5f2b86a95",
+      "target": "bay-2"
+    }
+  ],
+  "expiresAt": "2026-09-30T08:05:00.000Z",
+  "id": "apr-7f3a",
+  "lines": [
+    "Bay 2 (P1S with AMS), PETG, 0.4 mm nozzle",
+    "Estimated 2 h 14 m, 38 g"
+  ],
+  "paramsHash": "63d4cff00498d54e03cedb2751d85be60d991b2980fe62dc04f802e7c5cd87f6",
+  "permission": "start",
+  "printerId": "bay-2",
+  "sessionId": "ses-2026-09-30-001",
+  "title": "Send plate 1 to Bay 2 and start printing?",
+  "tool": "printer.send"
+}

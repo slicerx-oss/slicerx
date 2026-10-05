@@ -1,0 +1,68 @@
+{
+  "listing": {
+    "id": "7aeeaa45-5a64-511b-9c29-09587ca3e206",
+    "creatorId": "fce36375-8a42-51d1-bcab-8f44ca0a3de0",
+    "slug": "compliant-gripper",
+    "title": "Compliant gripper",
+    "license": "cc-by",
+    "status": "approved",
+    "tags": [
+      "mechanism",
+      "robotics"
+    ],
+    "createdAt": "2026-09-04T00:00:00.000Z",
+    "description": "Single-piece gripper for small robot arms. Print in PETG.",
+    "reviewedAt": "2026-09-04T03:00:00.000Z",
+    "publishedAt": "2026-09-04T03:00:00.000Z",
+    "currentVersion": {
+      "id": "2d7fe7b1-b5de-5771-a1ad-c8ba790cf87a",
+      "listingId": "7aeeaa45-5a64-511b-9c29-09587ca3e206",
+      "version": "1.0.0",
+      "format": "3mf",
+      "sizeBytes": 5557718,
+      "sha256": "bee66904d907d6954828c5472fc97ad662721a472c59a6d3657819622b53a5f6",
+      "createdAt": "2026-09-04T01:00:00.000Z",
+      "scanStatus": "clean",
+      "reviewStatus": "approved",
+      "changelog": "First release",
+      "printProfiles": {
+        "Prusa MK4S": {
+          "process": "0.20 mm Standard",
+          "filament": "Prusament PETG",
+          "timeS": 7320,
+          "grams": 93.7
+        },
+        "Bambu Lab P1S": {
+          "process": "0.20 mm Standard",
+          "filament": "Bambu PLA Matte",
+          "timeS": 8040,
+          "grams": 143.4
+        }
+      }
+    },
+    "stats": {
+      "likes": 7,
+      "makes": 0,
+      "comments": 2,
+      "downloads": 9
+    },
+    "likedByMe": true
+  },
+  "creator": {
+    "id": "fce36375-8a42-51d1-bcab-8f44ca0a3de0",
+    "handle": "ferro-labs",
+    "displayName": "Ferro Labs",
+    "followers": 7,
+    "ownerId": "172779cd-386f-5bdf-b9b0-986ed6f8ca7c",
+    "status": "active",
+    "trusted": false,
+    "createdAt": "2026-06-05T09:00:00.000Z",
+    "bio": "Gearboxes, compliant mechanisms and test pieces with documented tolerances.",
+    "location": "Tampere, Finland",
+    "logoUrl": "https://example.com/logos/ferro-labs.png",
+    "tagline": "Mechanisms you can print and study",
+    "followedByMe": true
+  },
+  "reason": "following",
+  "makes": 0
+}
