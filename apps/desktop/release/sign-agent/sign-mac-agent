@@ -1,0 +1,61 @@
+#!/bin/zsh
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (C) 2026 The SlicerX contributors
+# Runs sign-mac for requests dropped in ~/Library/Application Support/sign-mac/requests, from a LaunchAgent in the
+# logged-in desktop session, where the login keychain is unlocked. See sign-agent/README.md.
+# A request is a text file named *.req with lines of key=value (read as data, never run):
+#   path=/Users/you/builds/app/Thing.app       required; must resolve under ~/builds and end in .app .dmg .pkg or .zip
+#   entitlements=/Users/you/builds/x.plist     optional, same folder rule
+#   inherit=/Users/you/builds/y.plist          optional, same folder rule
+#   notarize=0                                 optional, skips notarization
+set -uo pipefail
+export PATH=/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin
+base=$HOME/Library/Application\ Support/sign-mac
+req=$base/requests; res=$base/results; lock=$base/lock
+allowed=${HOME:A}/builds
+timeout_s=${SIGN_MAC_TIMEOUT:-3600}
+mkdir -p "$req" "$res"
+
+# One job at a time. A lock left by a process that is gone is cleared.
+if ! mkdir "$lock" 2>/dev/null; then
+  old=$(cat "$lock/pid" 2>/dev/null || true)
+  if [[ -n $old ]] && kill -0 "$old" 2>/dev/null; then exit 0; fi
+  rm -rf "$lock"; mkdir "$lock" || exit 0
+fi
+print $$ > "$lock/pid"
+trap 'rm -rf "$lock"' EXIT
+
+under() { local p=${1:A}; [[ $p == $allowed/* ]]; }
+
+handle() { # request file
+  local f=$1 id=${1:t:r} log=$res/${1:t:r}.log out=$res/${1:t:r}.result
+  local tgt="" ents="" inh="" notar=1 k v line
+  while IFS= read -r line || [[ -n $line ]]; do
+    [[ $line == \#* || -z $line ]] && continue
+    k=${line%%=*}; v=${line#*=}
+    case $k in
+      path) tgt=$v ;; entitlements) ents=$v ;; inherit) inh=$v ;; notarize) notar=$v ;;
+    esac
+  done < "$f"
+  rm -f "$f"
+  fail() { print "FAIL\n$1" > "$out"; print -- "$1" >> "$log"; }
+  : > "$log"
+  [[ -n $tgt && -e $tgt ]] || { fail "request names no existing path"; return; }
+  under "$tgt" || { fail "path is not under $allowed: ${tgt:A}"; return; }
+  case ${tgt:e:l} in app|dmg|pkg|zip) ;; *) fail "unsupported file type"; return ;; esac
+  local args=("${tgt:A}")
+  if [[ -n $ents ]]; then under "$ents" || { fail "entitlements outside $allowed"; return; }; args+=(--entitlements "${ents:A}"); fi
+  if [[ -n $inh ]]; then under "$inh" || { fail "inherit file outside $allowed"; return; }; args+=(--inherit "${inh:A}"); fi
+  [[ $notar == 0 ]] && args+=(--no-notarize)
+  print -- "started $(date '+%F %T') for ${tgt:A}" >> "$log"
+  zsh "$HOME/bin/sign-mac" "${args[@]}" >> "$log" 2>&1 &
+  local pid=$! waited=0
+  while kill -0 $pid 2>/dev/null; do
+    sleep 2; waited=$((waited + 2))
+    if (( waited > timeout_s )); then kill $pid 2>/dev/null; print "timed out after ${timeout_s}s" >> "$log"; break; fi
+  done
+  wait $pid 2>/dev/null; local rc=$?
+  { if (( rc == 0 )); then print PASS; else print "FAIL (exit $rc)"; fi; tail -25 "$log"; } > "$out"
+}
+
+for f in "$req"/*.req(N.om); do handle "$f"; done
