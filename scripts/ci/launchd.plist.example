@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- Copyright (C) 2026 The SlicerX contributors -->
+<!-- The nightly CI run at 02:00 local. Copy to ~/Library/LaunchAgents/app.slicerx.ci-nightly.plist, replace HOME_DIR
+     with the CI user's home, then: launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/app.slicerx.ci-nightly.plist -->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>app.slicerx.ci-nightly</string>
+  <key>ProgramArguments</key>
+  <array><string>/bin/bash</string><string>HOME_DIR/ci/bin/nightly.sh</string></array>
+  <key>StartCalendarInterval</key>
+  <dict><key>Hour</key><integer>2</integer><key>Minute</key><integer>0</integer></dict>
+  <key>StandardOutPath</key><string>HOME_DIR/ci/state/nightly.log</string>
+  <key>StandardErrorPath</key><string>HOME_DIR/ci/state/nightly.log</string>
+</dict>
+</plist>

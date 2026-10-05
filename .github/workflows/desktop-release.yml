@@ -1,0 +1,249 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (C) 2026 The SlicerX contributors
+name: desktop-release
+
+# Builds the desktop app for macOS (universal), Windows (x64) and Linux (x64) and
+# attaches the installers to a draft release. Nothing is published: a maintainer
+# reviews the draft and publishes it by hand.
+#
+# Signing and notarization run only when their secrets exist. Without them the
+# installers are unsigned and the run still succeeds.
+#   macOS:   APPLE_CERTIFICATE (base64 .p12), APPLE_CERTIFICATE_PASSWORD,
+#            APPLE_SIGNING_IDENTITY, APPLE_ID, APPLE_PASSWORD (app-specific), APPLE_TEAM_ID
+#   Windows: WINDOWS_CERTIFICATE (base64 .pfx), WINDOWS_CERTIFICATE_PASSWORD
+# The updater is off: no TAURI_SIGNING_PRIVATE_KEY, no updater artifacts.
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: desktop-release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: v
+        run: echo "version=$(node -p "require('./apps/desktop/src-tauri/tauri.conf.json').version")" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: version
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macos
+            os: macos-latest
+            args: --target universal-apple-darwin --bundles app,dmg
+            targets: aarch64-apple-darwin x86_64-apple-darwin
+          - name: windows
+            os: windows-latest
+            args: --target x86_64-pc-windows-msvc --bundles nsis,msi
+            targets: x86_64-pc-windows-msvc
+          - name: linux
+            os: ubuntu-24.04
+            args: --target x86_64-unknown-linux-gnu --bundles appimage,deb
+            targets: x86_64-unknown-linux-gnu
+    runs-on: ${{ matrix.os }}
+    outputs:
+      release_id: ${{ steps.tauri.outputs.releaseId }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Linux system libraries
+        if: matrix.name == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev \
+            librsvg2-dev libssl-dev libxdo-dev patchelf file
+
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Rust toolchain
+        shell: bash
+        run: |
+          rustup toolchain install
+          rustup target add ${{ matrix.targets }}
+          rustc --version
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: desktop-${{ matrix.name }}
+
+      - run: pnpm install --frozen-lockfile --filter "@slicerx/desktop..." --filter "@slicerx/mcp..."
+      # The engine's WASM build runs binaryen's wasm-opt.
+      - name: binaryen
+        shell: bash
+        run: sh scripts/install-binaryen.sh "$RUNNER_TEMP/binaryen" >> "$GITHUB_PATH"
+      # The app bundles the WASM slicer for the browser fallback path.
+      - run: pnpm --filter @slicerx/slicer build:wasm
+      # The CAD engine runs in a worker from its own WASM module; the bundler only ships it when the file exists at build time.
+      - run: sh packages/geom/wasm/scripts/build.sh
+
+      # Secrets that are absent expand to empty strings. Export a variable only
+      # when it has a value, so the Tauri CLI never sees an empty certificate.
+      - name: Signing environment
+        shell: bash
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+        run: |
+          if [ "${{ matrix.name }}" = "macos" ]; then
+            if [ -n "$APPLE_CERTIFICATE" ] && [ -n "$APPLE_CERTIFICATE_PASSWORD" ] && [ -n "$APPLE_SIGNING_IDENTITY" ]; then
+              {
+                echo "APPLE_CERTIFICATE=$APPLE_CERTIFICATE"
+                echo "APPLE_CERTIFICATE_PASSWORD=$APPLE_CERTIFICATE_PASSWORD"
+                echo "APPLE_SIGNING_IDENTITY=$APPLE_SIGNING_IDENTITY"
+              } >> "$GITHUB_ENV"
+              echo "macOS signing: on"
+              if [ -n "$APPLE_ID" ] && [ -n "$APPLE_PASSWORD" ] && [ -n "$APPLE_TEAM_ID" ]; then
+                {
+                  echo "APPLE_ID=$APPLE_ID"
+                  echo "APPLE_PASSWORD=$APPLE_PASSWORD"
+                  echo "APPLE_TEAM_ID=$APPLE_TEAM_ID"
+                } >> "$GITHUB_ENV"
+                echo "macOS notarization: on"
+              else
+                echo "macOS notarization: skipped (APPLE_ID, APPLE_PASSWORD or APPLE_TEAM_ID missing)"
+              fi
+            else
+              echo "macOS signing: skipped (certificate secrets missing)"
+            fi
+          fi
+          if [ "${{ matrix.name }}" = "windows" ]; then
+            if [ -n "$WINDOWS_CERTIFICATE" ] && [ -n "$WINDOWS_CERTIFICATE_PASSWORD" ]; then
+              echo "WINDOWS_SIGNING=1" >> "$GITHUB_ENV"
+              echo "Windows signing: on"
+            else
+              echo "Windows signing: skipped (certificate secrets missing)"
+            fi
+          fi
+
+      - name: Import Windows certificate
+        if: matrix.name == 'windows' && env.WINDOWS_SIGNING == '1'
+        shell: pwsh
+        env:
+          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+        run: |
+          $pfx = Join-Path $env:RUNNER_TEMP 'sign.pfx'
+          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE))
+          $pw = ConvertTo-SecureString $env:WINDOWS_CERTIFICATE_PASSWORD -AsPlainText -Force
+          $cert = Import-PfxCertificate -FilePath $pfx -CertStoreLocation Cert:\CurrentUser\My -Password $pw
+          Remove-Item $pfx
+          "WINDOWS_CERT_THUMBPRINT=$($cert.Thumbprint)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      # The edition's product name, identifier and deep links, plus the Windows
+      # signing override when a certificate was imported.
+      - name: Tauri config
+        shell: bash
+        run: |
+          pnpm --filter @slicerx/desktop tauri:config
+          node -e '
+            const fs = require("fs")
+            const f = "apps/desktop/src-tauri/gen/edition.conf.json"
+            const c = JSON.parse(fs.readFileSync(f, "utf8"))
+            if (process.env.WINDOWS_CERT_THUMBPRINT) {
+              c.bundle = { ...c.bundle, windows: { ...(c.bundle && c.bundle.windows), certificateThumbprint: process.env.WINDOWS_CERT_THUMBPRINT, digestAlgorithm: "sha256", timestampUrl: "http://timestamp.digicert.com" } }
+            }
+            fs.writeFileSync(f, JSON.stringify(c, null, 2) + "\n")
+          '
+
+      # The MCP server (standalone, runs with plain node) and the print watch sidecar. The watch model is
+      # a release asset: set the repository variable SX_WATCH_MODEL_URL (and SX_WATCH_MODEL_SHA256) to include it.
+      - name: Agent server and print watch
+        shell: bash
+        env:
+          SX_WATCH_MODEL_URL: ${{ vars.SX_WATCH_MODEL_URL }}
+          SX_WATCH_MODEL_SHA256: ${{ vars.SX_WATCH_MODEL_SHA256 }}
+        run: |
+          target="${{ matrix.args }}"
+          target="${target#*--target }"
+          target="${target%% *}"
+          node apps/desktop/release/prepare-sidecars.mjs --target "$target" --config apps/desktop/src-tauri/gen/edition.conf.json
+
+      - uses: tauri-apps/tauri-action@v0
+        id: tauri
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: apps/desktop
+          tagName: v${{ needs.version.outputs.version }}
+          releaseName: SlicerX ${{ needs.version.outputs.version }}
+          releaseBody: See the changelog for this version.
+          releaseDraft: true
+          prerelease: false
+          includeUpdaterJson: false
+          args: --config src-tauri/gen/edition.conf.json ${{ matrix.args }}
+
+      - name: Keep installers for the manifest
+        uses: actions/upload-artifact@v4
+        with:
+          name: installers-${{ matrix.name }}
+          if-no-files-found: error
+          retention-days: 7
+          path: |
+            target/**/release/bundle/dmg/*.dmg
+            target/**/release/bundle/nsis/*.exe
+            target/**/release/bundle/msi/*.msi
+            target/**/release/bundle/appimage/*.AppImage
+            target/**/release/bundle/deb/*.deb
+
+  manifest:
+    needs: [version, build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: installers-*
+          path: installers
+          merge-multiple: true
+      - name: Write manifest and checksums
+        run: |
+          node apps/desktop/release/make-manifest.mjs installers \
+            --version "${{ needs.version.outputs.version }}" \
+            --base-url "https://github.com/${{ github.repository }}/releases/download/v${{ needs.version.outputs.version }}" \
+            --out downloads.json
+          (cd installers && sha256sum * > ../SHA256SUMS.txt)
+          cat downloads.json
+      - name: Attach to the draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          id="${{ needs.build.outputs.release_id }}"
+          for f in downloads.json SHA256SUMS.txt; do
+            gh api --method POST \
+              -H "Content-Type: application/octet-stream" \
+              "https://uploads.github.com/repos/${{ github.repository }}/releases/$id/assets?name=$f" \
+              --input "$f"
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: downloads-manifest
+          path: downloads.json

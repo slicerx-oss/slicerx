@@ -1,0 +1,64 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (C) 2026 The SlicerX contributors
+name: Bug report
+description: Something in SlicerX does not work as expected
+labels: ["bug", "triage"]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what you saw instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      value: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: SlicerX version
+      description: Shown under Help, About. Include the commit hash for source builds.
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - macOS
+        - Windows
+        - Linux
+        - iOS
+        - Android
+        - Browser
+    validations:
+      required: true
+  - type: input
+    id: os-version
+    attributes:
+      label: OS version and GPU
+      description: For example macOS 15.4, Apple M3, or Fedora 42, RTX 4070.
+  - type: input
+    id: printer
+    attributes:
+      label: Printer and profile
+      description: Leave blank if not printer related.
+  - type: textarea
+    id: files
+    attributes:
+      label: Project or model file
+      description: Attach a .3mf or .stl that reproduces the problem, if you can share it. Do not attach files you do not have rights to share.
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Help, Open log folder. Paste the relevant lines.
+      render: shell

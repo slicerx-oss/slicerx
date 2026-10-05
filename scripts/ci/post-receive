@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (C) 2026 The SlicerX contributors
+# Git post-receive hook for the CI's bare repo (installed by scripts/ci/install.sh). A push to the CI branch queues a
+# per-merge run of its new tip, replacing any run still waiting, and starts the worker in the background, so the push
+# returns at once. With SX_CI_REMOTES set in ci.env it also hands the sha to each remote runner (scripts/ci/remote.sh).
+CI_HOME=${SX_CI_HOME:-$HOME/ci}
+[ -f "$CI_HOME/ci.env" ] && . "$CI_HOME/ci.env"
+BRANCH=${SX_CI_BRANCH:-refs/heads/wip/2026-10-01-checkpoint}
+STATE=$CI_HOME/state; mkdir -p "$STATE"
+# Git hands the hook more than stdin and stdout (a sideband pipe on a higher descriptor), and a background child
+# holding any of them keeps the push waiting until the whole run ends. Start children with every one closed.
+detach() { ( for fd in $(seq 3 30); do eval "exec $fd>&-"; done; exec nohup "$@" < /dev/null ) & }
+while read -r old new ref; do
+  [ "$ref" = "$BRANCH" ] || continue
+  [ "$new" = 0000000000000000000000000000000000000000 ] && continue
+  echo "$new" > "$STATE/queued-per-merge.tmp" && mv "$STATE/queued-per-merge.tmp" "$STATE/queued-per-merge"
+  echo "CI: queued per-merge ${new:0:8}"
+  detach "$CI_HOME/bin/worker.sh" > /dev/null 2>&1
+  for r in ${SX_CI_REMOTES:-}; do
+    detach "$CI_HOME/bin/remote.sh" "$r" per-merge "$new" >> "$STATE/remote-$r.log" 2>&1
+  done
+done
+exit 0
