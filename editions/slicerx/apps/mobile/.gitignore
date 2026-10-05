@@ -1,0 +1,15 @@
+# Expo
+.expo/
+expo-env.d.ts
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+*.orig.*
+# Local environment (Supabase URL and key, cloud and relay endpoints)
+.env
+.env.local
+# Native projects come from `expo prebuild`
+/ios
+/android

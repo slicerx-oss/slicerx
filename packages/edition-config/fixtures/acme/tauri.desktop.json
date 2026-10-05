@@ -1,0 +1,129 @@
+{
+  "productName": "Acme Slicer",
+  "identifier": "com.acme.slicer",
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "width": 1440,
+        "height": 900,
+        "minWidth": 960,
+        "minHeight": 600,
+        "backgroundColor": "#121319",
+        "dragDropEnabled": false,
+        "title": "Acme Slicer"
+      }
+    ],
+    "security": {
+      "capabilities": [
+        "default",
+        {
+          "identifier": "edition-links",
+          "description": "The edition's own web pages, opened in the system browser.",
+          "windows": [
+            "main"
+          ],
+          "permissions": [
+            {
+              "identifier": "opener:allow-open-url",
+              "allow": [
+                {
+                  "url": "https://slicer.acme.example/*"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "bundle": {
+    "publisher": "Acme Printers Inc.",
+    "copyright": "Copyright (C) 2026 Acme Printers Inc.",
+    "shortDescription": "The slicer for Acme printers",
+    "homepage": "https://slicer.acme.example",
+    "fileAssociations": [
+      {
+        "ext": [
+          "3mf"
+        ],
+        "name": "3MF model",
+        "role": "Editor"
+      },
+      {
+        "ext": [
+          "stl"
+        ],
+        "name": "STL model",
+        "role": "Editor"
+      },
+      {
+        "ext": [
+          "obj"
+        ],
+        "name": "OBJ model",
+        "role": "Editor"
+      },
+      {
+        "ext": [
+          "amf"
+        ],
+        "name": "AMF model",
+        "role": "Editor"
+      },
+      {
+        "ext": [
+          "step",
+          "stp"
+        ],
+        "name": "STEP model",
+        "role": "Editor"
+      },
+      {
+        "ext": [
+          "sx3mf"
+        ],
+        "name": "Acme Slicer 3MF file",
+        "role": "Editor"
+      },
+      {
+        "ext": [
+          "sxlock"
+        ],
+        "name": "Locked Acme Slicer project",
+        "role": "Editor"
+      },
+      {
+        "ext": [
+          "gcode"
+        ],
+        "name": "G-code",
+        "role": "Viewer"
+      }
+    ],
+    "icon": [
+      "gen/icons/32x32.png",
+      "gen/icons/128x128.png",
+      "gen/icons/128x128@2x.png",
+      "gen/icons/icon.icns",
+      "gen/icons/icon.ico"
+    ]
+  },
+  "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": [
+          "acmeslicer"
+        ]
+      },
+      "mobile": [
+        {
+          "scheme": [
+            "acmeslicer"
+          ],
+          "appLink": false
+        }
+      ]
+    }
+  }
+}

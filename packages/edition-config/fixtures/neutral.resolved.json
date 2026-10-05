@@ -1,0 +1,91 @@
+{
+  "schemaVersion": 1,
+  "id": "reference",
+  "brand": {
+    "name": "Reference Slicer",
+    "shortName": "Slicer",
+    "logo": {
+      "mark": "builtin:generic-mark"
+    },
+    "theme": "nocturne"
+  },
+  "apps": {
+    "web": {},
+    "desktop": {
+      "identifier": "org.example.slicer",
+      "productName": "Reference Slicer"
+    },
+    "deepLinkScheme": "reference-slicer",
+    "universalLinkDomains": []
+  },
+  "backend": {
+    "supabase": null,
+    "cloudApi": null,
+    "relay": null,
+    "linkPort": 47615
+  },
+  "features": {
+    "store": false,
+    "feed": false,
+    "creators": false,
+    "cloudSlicing": false,
+    "phonePairing": false,
+    "pilot": true,
+    "localAi": true,
+    "demoData": false,
+    "printers": {
+      "bambu": true,
+      "moonraker": true,
+      "prusalink": true,
+      "octoprint": true,
+      "duet": true,
+      "creality": true,
+      "elegoo": true,
+      "snapmaker": true,
+      "spoolman": true,
+      "homeassistant": true
+    }
+  },
+  "auth": {
+    "providers": [
+      {
+        "kind": "email"
+      }
+    ]
+  },
+  "ai": {
+    "provider": "openai",
+    "model": "gpt-6-sol",
+    "keySource": "keychain"
+  },
+  "legal": {},
+  "funding": {},
+  "downloads": {},
+  "library": {
+    "moderation": {
+      "mode": "owner-approves-all",
+      "maxFileMb": 100,
+      "allowedFormats": [
+        "3mf",
+        "sx3mf",
+        "stl"
+      ]
+    }
+  },
+  "routes": {
+    "landing": "/",
+    "studio": "/studio",
+    "login": "/login",
+    "creators": "/creators",
+    "creator": "/creators/:handle",
+    "dashboard": "/dashboard",
+    "moderation": "/moderation"
+  },
+  "firstRun": {
+    "defaultLook": "slicerx"
+  },
+  "release": {
+    "stage": "stable"
+  },
+  "links": {}
+}

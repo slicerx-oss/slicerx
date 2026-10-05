@@ -1,0 +1,20 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (C) 2026 The SlicerX contributors
+appId: app.slicerx.mobile
+---
+- launchApp:
+    clearState: true
+- extendedWaitUntil:
+    visible:
+      id: pilot-screen
+    timeout: 60000
+- tapOn:
+    id: pilot-input
+- inputText: Which filament should I use for a phone stand
+- tapOn:
+    id: pilot-send
+# The sent message stays in the transcript whether or not a model answers.
+- extendedWaitUntil:
+    visible: Which filament should I use for a phone stand
+    timeout: 15000
+- takeScreenshot: pilot-chat

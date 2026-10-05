@@ -1,0 +1,29 @@
+{
+ "card": {
+  "width": 1200,
+  "height": 630,
+  "pad": 84
+ },
+ "lockup": {
+  "left": 67.54,
+  "top": 67.54,
+  "width": 292.93,
+  "height": 86.33
+ },
+ "headline": {
+  "size": 54,
+  "baseline": [
+   380,
+   456
+  ],
+  "lineHeight": 76
+ },
+ "tagline": {
+  "size": 30,
+  "baseline": 510
+ },
+ "foot": {
+  "size": 22,
+  "baseline": 570
+ }
+}

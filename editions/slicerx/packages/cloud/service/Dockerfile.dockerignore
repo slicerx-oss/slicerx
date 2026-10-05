@@ -1,0 +1,15 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (C) 2026 The SlicerX contributors
+**/node_modules
+target
+.git
+.locks
+examples
+design
+docs
+knowledge
+apps/web
+editions/slicerx/apps
+**/*.mp4
+**/*.webm
+**/*.mov

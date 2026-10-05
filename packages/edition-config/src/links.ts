@@ -1,0 +1,60 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (C) 2026 The SlicerX contributors
+// What a white-label edition shows in place of SlicerX's: its pages, the credit, its MCP server name, its logo.
+import type { EditionConfig } from './schema.ts'
+
+/** Any edition but SlicerX's own and the unbranded reference build. A fork never sends people to SlicerX's channels. */
+export function isFork(config: EditionConfig): boolean {
+  return config.id !== 'slicerx' && config.id !== 'reference'
+}
+
+/** Whether bug and crash reports can be uploaded: only ever to the edition's own backend. */
+export function reportsUpload(config: EditionConfig): boolean {
+  return config.backend.supabase !== null && !config.features.demoData
+}
+
+/** Whether crash reports leave the computer at all: to the edition's own backend, or to SlicerX when `bugs.upstream` is on. */
+export function crashReportsSent(config: EditionConfig): boolean {
+  return reportsUpload(config) || config.bugs.upstream
+}
+
+/**
+ * SlicerX's public report endpoint (the project URL and its publishable key, which are public by design), for editions
+ * that turn on `bugs.upstream`. Null until SlicerX publishes one; editions then send nothing upstream.
+ */
+export const UPSTREAM_REPORTS: { url: string; anonKey: string } | null = {
+  url: 'https://rsirfakkcogdwyfvehhk.supabase.co',
+  // the project's publishable key: public by design; submit_bug_report is rate limited and nothing can be read
+  anonKey: 'sb_publishable_g6YxMyX9lGssxMwECPgz-g_5n7aDdPf',
+}
+
+/** SlicerX's own pages, for the links an edition leaves unset. */
+export const SLICERX_LINKS = { docs: 'https://slicerx.app/docs', support: 'https://slicerx.app/support', download: 'https://slicerx.app/#download' } as const
+
+/** The credit every edition shows on About (TRADEMARK.md). The check refuses any other text or link. */
+export const POWERED_BY = { text: 'Made possible by SlicerX', url: 'https://slicerx.app/support' } as const
+
+/** The edition's docs, support and download pages, falling back to SlicerX's. */
+export function editionLinks(config: EditionConfig): { docs: string; support: string; download: string } {
+  const own = config.links ?? {}
+  return { docs: own.docs ?? SLICERX_LINKS.docs, support: own.support ?? SLICERX_LINKS.support, download: own.download ?? SLICERX_LINKS.download }
+}
+
+/** The credit an edition shows. Always the standard one: the check refuses any other `legal.attribution`. */
+export function attribution(_config: EditionConfig): { text: string; url: string } {
+  return POWERED_BY
+}
+
+/** The name AI clients list this app's MCP server under: the edition's link scheme, which is its own. */
+export function mcpServerId(config: EditionConfig): string {
+  return config.apps.deepLinkScheme.replace(/[^a-z0-9-]/g, '-')
+}
+
+/**
+ * The edition's mark or wordmark as an image address: an https or data URL, or a file the build copied to
+ * static/brand (editionLogoAssets). Null for `builtin:` artwork, which the app draws itself.
+ */
+export function logoImage(config: EditionConfig, which: 'mark' | 'wordmark'): string | null {
+  const v = config.brand.logo[which]
+  return v && /^(https:|data:image\/|(\.?\/|\/.*\/)static\/brand\/)/.test(v) ? v : null
+}

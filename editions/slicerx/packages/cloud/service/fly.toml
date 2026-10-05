@@ -1,0 +1,80 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (C) 2026 The SlicerX contributors
+# sx-cloud on Fly.io: the API and the slicing worker in one machine that
+# starts on the first request and stops itself when idle. No secret goes in this file; they are set with
+# `fly secrets set` from the macOS Keychain:
+#   SX_CLOUD_SERVICE_KEY   the Supabase secret key (sb_secret_...) or service role key
+# Public settings come from the resolved edition config (sx-cloud.config.json,
+# written next to this file at deploy time, see [[files]]) and from [env].
+
+# Placeholder: Fly app names are global. Change it if the name is taken, and
+# use the same name in SLICERX_CLOUD_API_URL.
+app = "slicerx-cloud"
+# San Jose, the Fly region nearest the Supabase project (West US, Oregon).
+primary_region = "sjc"
+kill_signal = "SIGTERM"
+# A running slice gets this long to finish when the machine is replaced.
+kill_timeout = "120s"
+
+# Build: the runbook deploys a clean export of one commit with the repository
+# root as the context, `--dockerfile` pointing at the Dockerfile next to this
+# file, its Dockerfile.dockerignore copied to the root as .dockerignore, and
+# `--build-arg COMMIT=<sha>` for the source link.
+
+[env]
+  SX_CLOUD_BACKEND = "supabase"
+  SX_CLOUD_BIND = "0.0.0.0:8787"
+  SX_CLOUD_ROLE = "all"
+  SX_CLOUD_WORKERS = "1"
+  # Fly's proxy sets X-Forwarded-For; the token rate limit records that address.
+  SX_CLOUD_TRUST_FORWARDED = "1"
+  # Exit after 5 minutes with no request and no slice running. The proxy starts
+  # the machine again on the next request (about a second, then the service
+  # starts in well under a second).
+  SX_CLOUD_IDLE_EXIT_S = "300"
+  # Runs on every start as well as hourly while up.
+  SX_CLOUD_PURGE_INTERVAL_S = "3600"
+  SLICERX_CONFIG = "/etc/slicerx/config.json"
+
+# The resolved edition config, written by the runbook before each deploy. It
+# holds only public values (brand, source link, project URL, publishable key).
+[[files]]
+  guest_path = "/etc/slicerx/config.json"
+  local_path = "sx-cloud.config.json"
+
+[http_service]
+  internal_port = 8787
+  force_https = true
+  # The service stops itself when idle (SX_CLOUD_IDLE_EXIT_S); the proxy must
+  # not stop it in the middle of a slice nobody is watching.
+  auto_stop_machines = "off"
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ["app"]
+
+  [http_service.concurrency]
+    type = "requests"
+    soft_limit = 50
+    hard_limit = 100
+
+  [[http_service.checks]]
+    grace_period = "10s"
+    interval = "30s"
+    method = "GET"
+    path = "/healthz"
+    timeout = "5s"
+
+# An idle exit is a clean exit (code 0), so the machine stays stopped until
+# the next request; a crash is restarted.
+[[restart]]
+  policy = "on-failure"
+  retries = 5
+  processes = ["app"]
+
+# Slicing is CPU bound and uses every core (rayon); shared CPUs are throttled
+# under sustained load, so the worker runs on dedicated cores. Billed per
+# second while running only.
+[[vm]]
+  size = "shared-cpu-2x"
+  memory = "4gb"
+  processes = ["app"]

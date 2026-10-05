@@ -1,0 +1,14 @@
+{
+  "extends": "expo/tsconfig.base",
+  "compilerOptions": {
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "exactOptionalPropertyTypes": true,
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": false,
+    "types": ["jest", "node"],
+    "paths": { "@/*": ["./src/*"] }
+  },
+  "include": ["app", "src", "app.config.ts", "expo-env.d.ts", ".expo/types/**/*.ts"]
+}

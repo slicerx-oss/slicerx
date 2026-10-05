@@ -1,0 +1,796 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "type": "number",
+      "const": 1
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{1,31}$"
+    },
+    "brand": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40
+        },
+        "shortName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 16
+        },
+        "tagline": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "logo": {
+          "type": "object",
+          "properties": {
+            "mark": {
+              "type": "string",
+              "minLength": 1
+            },
+            "wordmark": {
+              "type": "string",
+              "minLength": 1
+            },
+            "appIcon": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "mark"
+          ]
+        },
+        "theme": {
+          "default": "nocturne",
+          "anyOf": [
+            {
+              "type": "string",
+              "const": "nocturne"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "base": {
+                  "default": "nocturne",
+                  "type": "string",
+                  "const": "nocturne"
+                },
+                "tokens": {
+                  "type": "object",
+                  "properties": {
+                    "colors": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {
+                        "type": "string"
+                      }
+                    },
+                    "fonts": {
+                      "type": "object",
+                      "properties": {
+                        "display": {
+                          "type": "string"
+                        },
+                        "body": {
+                          "type": "string"
+                        },
+                        "mono": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "fontFiles": {
+                      "maxItems": 24,
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "family": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 64,
+                            "pattern": "^[^\"';{}\\\\]+$"
+                          },
+                          "src": {
+                            "type": "string",
+                            "minLength": 1,
+                            "pattern": "\\.(woff2|woff|ttf|otf)$"
+                          },
+                          "weight": {
+                            "type": "string",
+                            "pattern": "^\\d{3}( \\d{3})?$"
+                          },
+                          "style": {
+                            "type": "string",
+                            "enum": [
+                              "normal",
+                              "italic"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "family",
+                          "src"
+                        ]
+                      }
+                    },
+                    "radius": {
+                      "type": "object",
+                      "properties": {
+                        "sm": {
+                          "type": "string"
+                        },
+                        "md": {
+                          "type": "string"
+                        },
+                        "lg": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              "required": [
+                "tokens"
+              ]
+            }
+          ]
+        },
+        "supportEmail": {
+          "type": "string",
+          "format": "email",
+          "pattern": "^(?:[A-Za-z0-9_'+\\-]+\\.)*[A-Za-z0-9_'+\\-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
+        }
+      },
+      "required": [
+        "name",
+        "logo"
+      ]
+    },
+    "apps": {
+      "type": "object",
+      "properties": {
+        "web": {
+          "default": {},
+          "type": "object",
+          "properties": {
+            "origin": {
+              "type": "string",
+              "format": "uri"
+            }
+          }
+        },
+        "desktop": {
+          "type": "object",
+          "properties": {
+            "identifier": {
+              "type": "string",
+              "pattern": "^[a-zA-Z][a-zA-Z0-9-]*(\\.[a-zA-Z][a-zA-Z0-9-]*)+$"
+            },
+            "productName": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 40
+            }
+          },
+          "required": [
+            "identifier",
+            "productName"
+          ]
+        },
+        "ios": {
+          "type": "object",
+          "properties": {
+            "bundleId": {
+              "type": "string",
+              "pattern": "^[a-zA-Z][a-zA-Z0-9-]*(\\.[a-zA-Z][a-zA-Z0-9-]*)+$"
+            },
+            "teamId": {
+              "type": "string",
+              "pattern": "^[A-Z0-9]{10}$"
+            },
+            "appStoreId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "bundleId"
+          ]
+        },
+        "android": {
+          "type": "object",
+          "properties": {
+            "applicationId": {
+              "type": "string",
+              "pattern": "^[a-zA-Z][a-zA-Z0-9-]*(\\.[a-zA-Z][a-zA-Z0-9-]*)+$"
+            },
+            "sha256CertFingerprints": {
+              "default": [],
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "required": [
+            "applicationId"
+          ]
+        },
+        "deepLinkScheme": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9+.-]*$"
+        },
+        "universalLinkDomains": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z]{2,}$"
+          }
+        }
+      },
+      "required": [
+        "desktop",
+        "deepLinkScheme"
+      ]
+    },
+    "backend": {
+      "default": {},
+      "type": "object",
+      "properties": {
+        "supabase": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "url": {
+                  "type": "string",
+                  "format": "uri"
+                },
+                "anonKey": {
+                  "type": "string",
+                  "minLength": 20
+                }
+              },
+              "required": [
+                "url",
+                "anonKey"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cloudApi": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "uri"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "relay": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "uri"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "linkPort": {
+          "default": 47615,
+          "type": "integer",
+          "minimum": 1024,
+          "maximum": 65535
+        }
+      }
+    },
+    "features": {
+      "default": {},
+      "type": "object",
+      "properties": {
+        "store": {
+          "default": false,
+          "type": "boolean"
+        },
+        "feed": {
+          "default": false,
+          "type": "boolean"
+        },
+        "creators": {
+          "default": false,
+          "type": "boolean"
+        },
+        "cloudSlicing": {
+          "default": false,
+          "type": "boolean"
+        },
+        "phonePairing": {
+          "default": false,
+          "type": "boolean"
+        },
+        "pilot": {
+          "default": true,
+          "type": "boolean"
+        },
+        "localAi": {
+          "default": true,
+          "type": "boolean"
+        },
+        "demoData": {
+          "default": false,
+          "type": "boolean"
+        },
+        "printers": {
+          "default": {},
+          "type": "object",
+          "properties": {
+            "bambu": {
+              "default": true,
+              "type": "boolean"
+            },
+            "moonraker": {
+              "default": true,
+              "type": "boolean"
+            },
+            "prusalink": {
+              "default": true,
+              "type": "boolean"
+            },
+            "octoprint": {
+              "default": true,
+              "type": "boolean"
+            },
+            "duet": {
+              "default": true,
+              "type": "boolean"
+            },
+            "creality": {
+              "default": true,
+              "type": "boolean"
+            },
+            "elegoo": {
+              "default": true,
+              "type": "boolean"
+            },
+            "snapmaker": {
+              "default": true,
+              "type": "boolean"
+            },
+            "spoolman": {
+              "default": true,
+              "type": "boolean"
+            },
+            "homeassistant": {
+              "default": true,
+              "type": "boolean"
+            }
+          }
+        }
+      }
+    },
+    "auth": {
+      "default": {},
+      "type": "object",
+      "properties": {
+        "providers": {
+          "default": [
+            {
+              "kind": "email"
+            }
+          ],
+          "type": "array",
+          "items": {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "email"
+                  }
+                },
+                "required": [
+                  "kind"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "github"
+                  },
+                  "clientId": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "kind",
+                  "clientId"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "google"
+                  },
+                  "clientId": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "kind",
+                  "clientId"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "apple"
+                  },
+                  "clientId": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "kind",
+                  "clientId"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "discord"
+                  },
+                  "clientId": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "kind",
+                  "clientId"
+                ]
+              }
+            ]
+          }
+        }
+      }
+    },
+    "ai": {
+      "default": {},
+      "type": "object",
+      "properties": {
+        "provider": {
+          "default": "openai",
+          "type": "string",
+          "enum": [
+            "openai",
+            "anthropic",
+            "openai-compatible",
+            "none"
+          ]
+        },
+        "model": {
+          "default": "gpt-6-sol",
+          "type": "string",
+          "minLength": 1
+        },
+        "baseUrl": {
+          "type": "string",
+          "format": "uri"
+        },
+        "keySource": {
+          "default": "keychain",
+          "type": "string",
+          "enum": [
+            "keychain",
+            "env",
+            "cloud"
+          ]
+        },
+        "allowedLocalModels": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9.-]*$"
+          }
+        }
+      }
+    },
+    "legal": {
+      "default": {},
+      "type": "object",
+      "properties": {
+        "terms": {
+          "type": "string",
+          "format": "uri"
+        },
+        "privacy": {
+          "type": "string",
+          "format": "uri"
+        },
+        "imprint": {
+          "type": "string",
+          "format": "uri"
+        },
+        "sourceUrl": {
+          "type": "string",
+          "pattern": "^https:\\/\\/\\S+$"
+        },
+        "trademarkNotice": {
+          "type": "string",
+          "maxLength": 300
+        },
+        "attribution": {
+          "type": "object",
+          "properties": {
+            "text": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "url": {
+              "type": "string",
+              "format": "uri"
+            }
+          },
+          "required": [
+            "text",
+            "url"
+          ]
+        },
+        "license": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "publisher": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "copyright": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        }
+      }
+    },
+    "funding": {
+      "default": {},
+      "type": "object",
+      "properties": {
+        "payWhatYouWant": {
+          "type": "string",
+          "format": "uri"
+        },
+        "buyMeACoffee": {
+          "type": "string",
+          "format": "uri"
+        },
+        "githubSponsors": {
+          "type": "string",
+          "format": "uri"
+        }
+      }
+    },
+    "downloads": {
+      "default": {},
+      "type": "object",
+      "properties": {
+        "manifestUrl": {
+          "type": "string",
+          "format": "uri"
+        },
+        "appStoreUrl": {
+          "type": "string",
+          "format": "uri"
+        },
+        "googlePlayUrl": {
+          "type": "string",
+          "format": "uri"
+        }
+      }
+    },
+    "library": {
+      "default": {},
+      "type": "object",
+      "properties": {
+        "moderation": {
+          "default": {},
+          "type": "object",
+          "properties": {
+            "mode": {
+              "default": "owner-approves-all",
+              "type": "string",
+              "enum": [
+                "owner-approves-all",
+                "moderators",
+                "trusted-creators",
+                "auto-after-scan"
+              ]
+            },
+            "maxFileMb": {
+              "default": 100,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 500
+            },
+            "allowedFormats": {
+              "default": [
+                "3mf",
+                "sx3mf",
+                "stl"
+              ],
+              "minItems": 1,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "3mf",
+                  "sx3mf",
+                  "stl"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "routes": {
+      "default": {},
+      "type": "object",
+      "properties": {
+        "landing": {
+          "default": "/",
+          "type": "string",
+          "pattern": "^\\/[a-z0-9/:_-]*$"
+        },
+        "studio": {
+          "default": "/studio",
+          "type": "string",
+          "pattern": "^\\/[a-z0-9/:_-]*$"
+        },
+        "login": {
+          "default": "/login",
+          "type": "string",
+          "pattern": "^\\/[a-z0-9/:_-]*$"
+        },
+        "creators": {
+          "default": "/creators",
+          "type": "string",
+          "pattern": "^\\/[a-z0-9/:_-]*$"
+        },
+        "creator": {
+          "default": "/creators/:handle",
+          "type": "string",
+          "pattern": "^\\/[a-z0-9/:_-]*$"
+        },
+        "dashboard": {
+          "default": "/dashboard",
+          "type": "string",
+          "pattern": "^\\/[a-z0-9/:_-]*$"
+        },
+        "moderation": {
+          "default": "/moderation",
+          "type": "string",
+          "pattern": "^\\/[a-z0-9/:_-]*$"
+        }
+      }
+    },
+    "firstRun": {
+      "default": {},
+      "type": "object",
+      "properties": {
+        "defaultLook": {
+          "default": "slicerx",
+          "type": "string",
+          "enum": [
+            "slicerx",
+            "bambu-studio",
+            "prusaslicer",
+            "orcaslicer"
+          ]
+        },
+        "defaultMotion": {
+          "default": "full",
+          "type": "string",
+          "enum": [
+            "system",
+            "full",
+            "reduced"
+          ]
+        }
+      }
+    },
+    "release": {
+      "default": {},
+      "type": "object",
+      "properties": {
+        "stage": {
+          "default": "stable",
+          "type": "string",
+          "enum": [
+            "pre-alpha",
+            "alpha",
+            "beta",
+            "stable"
+          ]
+        },
+        "bugReportsUrl": {
+          "type": "string",
+          "format": "uri"
+        }
+      }
+    },
+    "bugs": {
+      "default": {},
+      "type": "object",
+      "properties": {
+        "upstream": {
+          "default": false,
+          "type": "boolean"
+        }
+      }
+    },
+    "links": {
+      "default": {},
+      "type": "object",
+      "properties": {
+        "docs": {
+          "type": "string",
+          "format": "uri"
+        },
+        "support": {
+          "type": "string",
+          "format": "uri"
+        },
+        "download": {
+          "type": "string",
+          "format": "uri"
+        }
+      }
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "id",
+    "brand",
+    "apps"
+  ]
+}
