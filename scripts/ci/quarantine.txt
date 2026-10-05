@@ -1,0 +1,5 @@
+# Flaky tests that must not fail a CI run. One per line: name (a substring of the failing test's name as the run
+# reports it) | owner | date added | why. A quarantined failure still shows in the summary as a count. Remove the
+# line when the test is fixed; nothing stays here without an owner and a date.
+#
+# test name                                        | owner | added      | why

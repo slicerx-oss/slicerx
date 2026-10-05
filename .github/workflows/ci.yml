@@ -1,0 +1,185 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (C) 2026 The SlicerX contributors
+name: ci
+
+# Runs for outside pull requests too, so it holds to this: pull_request (never pull_request_target), no
+# secrets, read-only token, and only the fast checks. The benchmark, the full e2e run, the integrator
+# sample and the release builds run elsewhere (scripts/ci, desktop-release.yml).
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  detect:
+    runs-on: ubuntu-latest
+    outputs:
+      node: ${{ steps.f.outputs.node }}
+      rust: ${{ steps.f.outputs.rust }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: f
+        run: |
+          [ -f package.json ] && echo "node=true" >> "$GITHUB_OUTPUT" || echo "node=false" >> "$GITHUB_OUTPUT"
+          [ -f Cargo.toml ] && echo "rust=true" >> "$GITHUB_OUTPUT" || echo "rust=false" >> "$GITHUB_OUTPUT"
+
+  web:
+    needs: detect
+    if: needs.detect.outputs.node == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm test:scripts
+
+  rust:
+    needs: detect
+    if: needs.detect.outputs.rust == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        # a pull request gets Linux only; main also gets macOS and Windows
+        os: ${{ github.event_name == 'pull_request' && fromJSON('["ubuntu-latest"]') || fromJSON('["ubuntu-latest","macos-latest","windows-latest"]') }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --all --check
+      - run: cargo clippy --workspace --exclude slicerx-desktop --all-targets -- -D warnings
+      # a pull request runs the unit tests and the G-code goldens; main runs every test
+      - if: github.event_name == 'pull_request'
+        run: cargo test --workspace --exclude slicerx-desktop --lib --bins
+      - if: github.event_name == 'pull_request'
+        run: cargo test -p sx-core --test reference
+      - if: github.event_name != 'pull_request'
+        run: cargo test --workspace --exclude slicerx-desktop
+
+  # The engine's WASM module and its download budget (build-wasm.sh fails over 1024 KB gzip), then the web
+  # bundle's size gate (apps/web/scripts/bundle-size.mjs runs at the end of its build).
+  wasm:
+    needs: detect
+    if: needs.detect.outputs.rust == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: wasm
+      - run: sh scripts/install-binaryen.sh "$RUNNER_TEMP/binaryen" >> "$GITHUB_PATH"
+      - run: sh packages/core/web/scripts/build-wasm.sh
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @slicerx/web build
+
+  # Heavy: builds the engine in release mode and installs a browser. Pushes to main only.
+  devkit:
+    needs: detect
+    if: github.event_name == 'push' && needs.detect.outputs.node == 'true' && needs.detect.outputs.rust == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: cargo build -p sx-cli --release
+      - run: npx -y playwright@1.63.0 install-deps chromium
+      # The integrator sample, installed from packed tarballs the way an outside app gets the packages.
+      - run: node examples/integrator-sample/scripts/integration.mjs
+        env:
+          SLICERX_SX_BIN: ${{ github.workspace }}/target/release/sx
+
+  secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  licenses:
+    needs: detect
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: cargo-deny
+        if: needs.detect.outputs.rust == 'true'
+        uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check licenses bans sources advisories
+      - name: pnpm license check
+        if: needs.detect.outputs.node == 'true'
+        run: |
+          corepack enable
+          pnpm install --frozen-lockfile
+          pnpm dlx license-checker-rseidelsohn --production --summary \
+            --onlyAllow "MIT;ISC;BSD-2-Clause;BSD-3-Clause;Apache-2.0;0BSD;CC0-1.0;MPL-2.0;Unlicense;BlueOak-1.0.0;Python-2.0;CC-BY-4.0;AGPL-3.0-only;AGPL-3.0-or-later;GPL-3.0-only;GPL-3.0-or-later;LGPL-3.0-only;LGPL-3.0-or-later"
+
+  dco:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Check Signed-off-by on every commit
+        run: |
+          base="${{ github.event.pull_request.base.sha }}"
+          head="${{ github.event.pull_request.head.sha }}"
+          bad=0
+          for c in $(git rev-list --no-merges "$base..$head"); do
+            if ! git log -1 --format=%B "$c" | grep -qE '^Signed-off-by: .+ <.+>$'; then
+              echo "Missing Signed-off-by: $(git log -1 --format='%h %s' "$c")"
+              bad=1
+            fi
+          done
+          exit $bad
+
+  hygiene:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: No dashes, emojis, or AI attribution in docs and commits
+        run: |
+          set -u
+          fail=0
+          files=$(git ls-files '*.md' '*.html' '*.tsx' '*.ts' '*.css' ':!LICENSE' ':!CODE_OF_CONDUCT.md' 2>/dev/null || true)
+          if [ -n "$files" ] && echo "$files" | xargs grep -nP '\x{2014}|\x{2013}' ; then
+            echo "Em or en dash found."; fail=1
+          fi
+          if git log --format=%B -n 200 | grep -inE 'co-authored-by: *claude|generated with claude|claude-session|noreply@anthropic'; then
+            echo "AI attribution found in commit history."; fail=1
+          fi
+          exit $fail

@@ -1,0 +1,56 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (C) 2026 The SlicerX contributors
+name: Printer support request
+description: Ask for a new printer, firmware, or connection type
+labels: ["printer", "triage"]
+body:
+  - type: input
+    id: printer
+    attributes:
+      label: Printer make and model
+    validations:
+      required: true
+  - type: input
+    id: firmware
+    attributes:
+      label: Firmware and version
+      description: For example Klipper with Moonraker, Bambu firmware 01.08, Marlin 2.1.
+    validations:
+      required: true
+  - type: dropdown
+    id: connection
+    attributes:
+      label: How you connect today
+      options:
+        - Bambu LAN mode
+        - Bambu cloud
+        - Klipper (Moonraker)
+        - PrusaLink
+        - OctoPrint
+        - Other network API
+        - SD card or USB only
+    validations:
+      required: true
+  - type: textarea
+    id: specs
+    attributes:
+      label: Machine details
+      description: Bed size, nozzle sizes, max temperatures, number of extruders or AMS units, enclosure, and anything unusual about the kinematics.
+    validations:
+      required: true
+  - type: input
+    id: existing-profile
+    attributes:
+      label: Existing profile
+      description: Link to an OrcaSlicer, PrusaSlicer, or vendor profile that works for you, if any.
+  - type: textarea
+    id: docs
+    attributes:
+      label: API or protocol documentation
+      description: Links to public documentation. Do not paste material under NDA.
+  - type: checkboxes
+    id: test
+    attributes:
+      label: Testing
+      options:
+        - label: I can test builds on this printer

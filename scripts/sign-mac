@@ -1,0 +1,197 @@
+#!/bin/zsh
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (C) 2026 The SlicerX contributors
+# Signs, notarizes, staples and verifies a macOS app, disk image, installer package or zip with the Developer ID
+# certificate. Only Apple's tools are used: codesign, productsign, notarytool, stapler, spctl, ditto.
+# Secrets stay in the login keychain. This script never reads, prints or stores one. See scripts/sign-mac.md.
+#
+#   sign-mac <file.app|file.dmg|file.pkg|file.zip|binary> [options]   (binary: a bare Mach-O tool such as sx)
+#   sign-mac --setup        one time, typed by the owner at a terminal: unlock the keychain and let codesign use the key
+#   sign-mac --check        only test that signing and notarizing can run from this session
+#
+# Options:
+#   --entitlements FILE   entitlements for the main executable of an app
+#   --inherit FILE        entitlements for nested helpers and frameworks (Electron helpers need this)
+#   --identity NAME       signing certificate (default $SX_SIGN_IDENTITY or the SlicerX Developer ID Application)
+#   --installer NAME      installer certificate for .pkg (default $SX_INSTALLER_IDENTITY, a Developer ID Installer)
+#   --profile NAME        notarytool keychain profile (default $SX_NOTARY_PROFILE or slicerx-notary)
+#   --no-notarize         sign and verify only
+# Exit status: 0 pass, 1 fail, 2 usage, 3 a needed certificate is missing, 4 the keychain is locked.
+set -uo pipefail
+
+identity=${SX_SIGN_IDENTITY:-"Developer ID Application: SEAN LEONARD (X2928JZ7GJ)"}
+installer=${SX_INSTALLER_IDENTITY:-"Developer ID Installer: SEAN LEONARD (X2928JZ7GJ)"}
+profile=${SX_NOTARY_PROFILE:-slicerx-notary}
+ents=""; inherit=""; notarize=1; target=""; mode=sign
+keychain=$HOME/Library/Keychains/login.keychain-db
+
+die() { print -u2 -- "FAIL: $1"; exit ${2:-1}; }
+step() { print -- "-- $*"; }
+
+while (( $# )); do
+  case $1 in
+    --entitlements) ents=$2; shift 2 ;;
+    --inherit) inherit=$2; shift 2 ;;
+    --identity) identity=$2; shift 2 ;;
+    --installer) installer=$2; shift 2 ;;
+    --profile) profile=$2; shift 2 ;;
+    --no-notarize) notarize=0; shift ;;
+    --setup) mode=setup; shift ;;
+    --check) mode=check; shift ;;
+    -h|--help) sed -n "4,22p" "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -*) die "unknown option $1" 2 ;;
+    *) target=$1; shift ;;
+  esac
+done
+
+locked_hint() {
+  print -u2 -- "The login keychain is locked in this session, so the signing key cannot be used."
+  print -u2 -- "Fix once, typed by you at a terminal (the Mac's own, or an ssh session you type into):"
+  print -u2 -- "    sign-mac --setup"
+  print -u2 -- "Or run sign-mac from Terminal on the Mac's own desktop, where the keychain is already unlocked."
+  exit 4
+}
+
+# Setup: the owner types the keychain password at Apple's own prompt. Nothing is passed on a command line.
+if [[ $mode == setup ]]; then
+  step "unlock the login keychain (type your login password when asked)"
+  security unlock-keychain "$keychain" || die "could not unlock the keychain"
+  step "keep it unlocked while this Mac is awake"
+  security set-keychain-settings "$keychain" || die "could not change the keychain settings"
+  step "allow Apple's signing tools to use the keys without a prompt (type the password again when asked)"
+  security set-key-partition-list -S apple-tool:,apple:,codesign: -s "$keychain" > /dev/null \
+    || die "could not update the key access list"
+  print "PASS: setup done. Run: sign-mac --check"
+  exit 0
+fi
+
+preflight() {
+  security find-identity -v -p codesigning 2>/dev/null | grep -qF "$identity" \
+    || die "certificate not found: $identity" 3
+  local probe; probe=$(mktemp -d)/probe
+  cp /usr/bin/true "$probe"
+  local msg
+  msg=$(codesign --force --sign "$identity" --options runtime --timestamp "$probe" 2>&1) || {
+    [[ $msg == *"User interaction is not allowed"* || $msg == *"errSecInternalComponent"* || $msg == *"locked"* ]] && locked_hint
+    die "codesign cannot use the key: $msg"
+  }
+  if (( notarize )); then
+    msg=$(xcrun notarytool history --keychain-profile "$profile" 2>&1) || {
+      [[ $msg == *keychainLocked* || $msg == *"User interaction"* ]] && locked_hint
+      die "notarytool cannot use the profile $profile: $msg"
+    }
+  fi
+}
+
+if [[ $mode == check ]]; then
+  notarize=1; preflight
+  have_installer=$(security find-identity -v 2>/dev/null | grep -cF "Developer ID Installer")
+  print "PASS: signing and notarizing work from this session."
+  (( have_installer )) || print "note: no Developer ID Installer certificate, so .pkg files cannot be signed yet."
+  exit 0
+fi
+
+[[ -n $target && -e $target ]] || die "give a file to sign (see --help)" 2
+target=${target:A}
+kind=${target:e:l}
+# A command line tool has no extension: a Mach-O file is signed as itself and notarized inside a zip.
+[[ -z $kind && -f $target ]] && file -b "$target" | grep -q 'Mach-O' && kind=bin
+
+submit() { # file
+  step "notarize ${1:t} (waits for Apple)"
+  local log; log=$(xcrun notarytool submit "$1" --keychain-profile "$profile" --wait 2>&1); print -- "$log" | tail -6
+  if ! print -- "$log" | grep -q "status: Accepted"; then
+    local id; id=$(print -- "$log" | awk '/id:/{print $2; exit}')
+    [[ -n $id ]] && xcrun notarytool log "$id" --keychain-profile "$profile" 2>&1 | head -40
+    die "Apple did not accept ${1:t}"
+  fi
+}
+
+sign_file() { # path, entitlements
+  local args=(--force --sign "$identity" --options runtime --timestamp)
+  [[ -n ${2:-} ]] && args+=(--entitlements "$2")
+  codesign "${args[@]}" "$1" || die "codesign failed on $1"
+}
+
+case $kind in
+  app)
+    preflight
+    step "sign the nested code first, then the app"
+    # Deepest paths first, so every container is signed after what it holds.
+    nested=()
+    while IFS= read -r p; do nested+=("$p"); done < <(
+      { find "$target/Contents" -type d \( -name '*.framework' -o -name '*.app' -o -name '*.xpc' -o -name '*.appex' -o -name '*.bundle' -o -name '*.plugin' \) -print
+        # `file` prints one line per slice of a universal binary ("path (for architecture x86_64): ..."); keep the path.
+        find "$target/Contents" -type f -print0 | xargs -0 file 2>/dev/null | grep -F 'Mach-O' | cut -d: -f1 | sed 's/ (for architecture [^)]*)$//'
+      } | awk -F/ '{print NF "\t" $0}' | sort -rn | cut -f2- | awk '!seen[$0]++')
+    for p in "${nested[@]}"; do sign_file "$p" "$inherit"; done
+    sign_file "$target" "$ents"
+    step "verify the signature"
+    codesign --verify --deep --strict --verbose=2 "$target" || die "codesign --verify failed"
+    if (( notarize )); then
+      zip=$(mktemp -d)/${target:t}.zip
+      ditto -c -k --keepParent "$target" "$zip"
+      submit "$zip"
+      xcrun stapler staple "$target" || die "stapling failed"
+      xcrun stapler validate "$target" || die "stapler validate failed"
+      step "Gatekeeper"
+      spctl -a -vvv -t exec "$target" || die "Gatekeeper rejected the app"
+    fi
+    ;;
+  dmg)
+    preflight
+    step "sign the disk image"
+    sign_file "$target"
+    if (( notarize )); then
+      submit "$target"
+      xcrun stapler staple "$target" || die "stapling failed"
+      xcrun stapler validate "$target" || die "stapler validate failed"
+    fi
+    codesign --verify --strict "$target" || die "codesign --verify failed"
+    step "Gatekeeper"
+    spctl -a -vvv -t install "$target" || die "Gatekeeper rejected the disk image"
+    ;;
+  pkg)
+    security find-identity -v 2>/dev/null | grep -qF "$installer" || {
+      print -u2 -- "No installer certificate: $installer"
+      print -u2 -- "A .pkg needs a \"Developer ID Installer\" certificate. Create it at developer.apple.com under"
+      print -u2 -- "Certificates, then install it in the login keychain. The app and dmg paths do not need it."
+      exit 3
+    }
+    preflight
+    step "sign the installer package"
+    out=$(mktemp -d)/${target:t}
+    productsign --sign "$installer" --timestamp "$target" "$out" || die "productsign failed"
+    mv -f "$out" "$target"
+    pkgutil --check-signature "$target" || die "package signature check failed"
+    if (( notarize )); then
+      submit "$target"
+      xcrun stapler staple "$target" || die "stapling failed"
+    fi
+    step "Gatekeeper"
+    spctl -a -vvv -t install "$target" || die "Gatekeeper rejected the package"
+    ;;
+  zip)
+    (( notarize )) || die "a zip is only useful notarized; drop --no-notarize" 2
+    preflight
+    print "A zip holds an app you signed already. This notarizes the zip. A zip cannot be stapled, so"
+    print "Gatekeeper checks the ticket online on first launch. Prefer a dmg."
+    submit "$target"
+    ;;
+  bin)
+    preflight
+    step "sign the binary"
+    sign_file "$target" "$ents"
+    codesign --verify --strict --verbose=2 "$target" || die "codesign --verify failed"
+    if (( notarize )); then
+      # A bare binary cannot be stapled: Apple notarizes it in a zip, and macOS checks the ticket online the
+      # first time a downloaded copy runs. Ship it in a dmg or pkg to staple the ticket instead.
+      zip=$(mktemp -d)/${target:t}.zip
+      ditto -c -k --keepParent "$target" "$zip"
+      submit "$zip"
+    fi
+    ;;
+  *) die "unsupported file type: .$kind (use .app, .dmg, .pkg, .zip or a Mach-O binary)" 2 ;;
+esac
+
+print "PASS: ${target:t}"
