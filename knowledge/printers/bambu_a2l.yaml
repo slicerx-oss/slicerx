@@ -1,0 +1,36 @@
+kind: printer
+schema_version: 1
+id: bambu_a2l
+name: Bambu Lab A2L
+vendor: Bambu Lab
+status: current
+status_confidence: medium
+status_src: [bambu_store_collection]
+detail_level: core_specs_only
+firmware: bambu
+connections: [bambu_lan_mqtt, bambu_cloud, bambu_connect]
+kinematics: bedslinger
+build_volume_mm: {x: 330, y: 320, z: 325, src: [bambu_spec_a2l, "orca:BBL/machine/Bambu Lab A2L 0.4 nozzle.json"]}
+extruder: {type: direct_drive, gears: hardened_steel, motor: "Servo extruder motor", src: [bambu_spec_a2l]}
+hotend: {max_temp_c: 300, nozzle_diameters_mm: [0.2, 0.4, 0.6, 0.8], nozzle_materials: [stainless_steel, hardened_steel], stock_nozzle: {material: stainless_steel}, tool_free_swap: null, high_flow_option: null, max_flow_mm3s: {value: 28, note: "Bambu test: 150 mm round model, single wall, Bambu PLA Basic at 220 C."}, src: [bambu_spec_a2l]}
+bed: {max_temp_c: 80, plates: [textured_pei, bambu_engineering_plate, bambu_supertack_plate], included_plates: [textured_pei], src: [bambu_spec_a2l, bambu_wiki_build_plates]}
+enclosure: {type: open, chamber_heating: none, max_chamber_c: null, filtration: [], src: [bambu_spec_a2l]}
+motion: {max_speed_mm_s: 500, max_accel_mm_s2: 10000, input_shaping: auto, src: [bambu_spec_a2l]}
+power:
+  mains: "High voltage version 200 to 240 V AC, low voltage version 100 to 120 V AC, 50/60 Hz"
+  max_w: {value: 1000, note: "1000 W at 220 V and 1000 W at 110 V. Voltage is fixed per sales region.", src: [bambu_spec_a2l, bambu_wiki_power], confidence: high}
+  standby_w: {range: [4.7, 5.2], src: [bambu_wiki_power], confidence: medium, note: "Offline standby. 5.1 to 5.5 W with Wi-Fi."}
+  printing_typical_w: {pla: {value: 145}, src: [bambu_wiki_power], confidence: medium, note: "Bambu wiki gives 0.145 kWh measured over 1 hour of PLA printing, which is an average of 145 W."}
+  measured_examples:
+    - {job: "Bambu wiki 1 hour PLA print", kwh: 0.145, src: [bambu_wiki_power]}
+  note: "The spec sheet says the heatbed holds maximum power for about 3 minutes to reach temperature quickly."
+sensors: [chamber_camera, filament_runout, tangle_detection, filament_odometry, power_loss_recovery, nozzle_clumping_detection, build_plate_detection]
+sensors_src: [bambu_spec_a2l, bambu_wiki_a_plate_detection]
+multi_material:
+  - {system: bambu_ams, max_units: 4, slots_per_unit: 4, note: "Up to 4 AMS units plus 1 AMS lite, up to 19 colors. A 4-in-1 PTFE adapter for two or more.", src: [bambu_wiki_ams_compat]}
+  - {system: bambu_ams_lite, max_units: 1, slots_per_unit: 4, src: [bambu_wiki_ams_compat]}
+orca_profile: "orca:BBL/machine/Bambu Lab A2L 0.4 nozzle.json"
+pilot_notes:
+  - "Large open frame bedslinger with a 330 x 320 x 325 mm volume and an 80 C bed. Treat like an A1 for filament limits: PLA, PETG, TPU and PVA. PLA-CF and PETG-CF need a hardened nozzle."
+  - "Bambu ships a cutting module for the A2L family. Ignore it for slicing."
+src: [bambu_spec_a2l, "orca:BBL/machine/Bambu Lab A2L 0.4 nozzle.json"]

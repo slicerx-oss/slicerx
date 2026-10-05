@@ -1,0 +1,271 @@
+kind: filament
+schema_version: 1
+id: petg
+name: PETG
+category: standard
+orca_filament_type: PETG
+aliases: [PET-G, PETG Basic, PETG HF, high flow PETG, PETG Translucent, PCTG]
+related: [petg_cf]
+summary: >
+  Tough, slightly flexible polyester with good layer adhesion and moderate heat
+  resistance. The default choice for functional parts that PLA would creep or
+  crack on. Strings more than PLA and bonds very hard to smooth PEI.
+use_for: [functional brackets, outdoor parts in mild climates, snap fits, mechanical clips, containers]
+avoid_for: [parts above about 70 C, fine miniatures, parts that need a glossy crisp surface without stringing]
+
+nozzle_temp_c:
+  min: 230
+  max: 260
+  typical: 245
+  confidence: high
+  src:
+    - "orca:OrcaFilamentLibrary/filament/Generic PETG @System.json"
+    - "orca:OrcaFilamentLibrary/filament/Bambu/Bambu PETG Basic @base.json"
+    - "orca:OrcaFilamentLibrary/filament/Bambu/Bambu PETG HF @base.json"
+    - bambu_wiki_material_table
+    - prusa_kb_petg
+  note: >
+    Orca generic allows 220 to 260 (default 255). Bambu lists 240 to 270 for
+    PETG and 230 to 260 for PETG HF, each plus or minus 10 C. Prusa prints at
+    240 after a 230 first layer. Start at 240 to 245 and move in 5 C steps.
+first_layer_nozzle_temp_c:
+  min: 230
+  max: 255
+  typical: 235
+  confidence: medium
+  src: [prusa_kb_petg, "orca:OrcaFilamentLibrary/filament/Bambu/Bambu PETG HF @base.json", "orca:OrcaFilamentLibrary/filament/Generic PETG @System.json"]
+  note: "Prusa and Bambu PETG HF use 230 for the first layer; Orca generic uses 255."
+bed_temp_c:
+  min: 60
+  max: 90
+  typical: 70
+  confidence: medium
+  src: [bambu_wiki_material_table, prusa_kb_petg, "orca:OrcaFilamentLibrary/filament/Bambu/Bambu PETG Basic @base.json", "orca:Prusa/filament/Prusament PETG @MK4S.json"]
+  note: "Bambu runs 60 to 80 (profile 70). Prusa runs 85 first layer then 90. Both work; the higher value helps on open frame printers in cold rooms."
+chamber_temp_c: null
+enclosure:
+  level: optional
+  confidence: high
+  src: [bambu_wiki_material_table]
+  note: >
+    Not needed to stop warping. Bambu recommends an enclosed printer for PETG
+    so a cold room does not weaken layer bonds, and recommends removing the top
+    glass cover when the bed is above 70 C to avoid heat creep.
+
+plates:
+  - {plate: bambu_cool_plate, fit: avoid, confidence: high, src: [bambu_wiki_material_table], note: "Listed as not recommended for PETG."}
+  - {plate: bambu_engineering_plate, fit: ok, bed_temp_c: {min: 60, max: 80}, release_agent: glue_stick, confidence: high, src: [bambu_wiki_material_table], note: "Glue stick works as a release layer at 60 to 80 C."}
+  - {plate: bambu_high_temp_plate, fit: glue, bed_temp_c: {min: 60, max: 80}, release_agent: glue_stick, confidence: high, src: [bambu_wiki_material_table, prusa_kb_petg], note: "Smooth PEI grips PETG hard enough to tear the sheet. Use glue stick as a separation layer."}
+  - {plate: smooth_pei, fit: glue, bed_temp_c: {min: 70, max: 90}, release_agent: glue_stick, confidence: high, src: [prusa_kb_petg], note: "Prusa warns PETG can damage smooth PEI; apply glue stick first."}
+  - {plate: textured_pei, fit: good, bed_temp_c: {min: 60, max: 90}, release_agent: none, confidence: high, src: [bambu_wiki_material_table, prusa_kb_petg], note: "Best general surface for PETG. Releases once cool."}
+
+cooling:
+  fan_min_pct: {min: 10, max: 30, typical: 10}
+  fan_max_pct: {min: 30, max: 60, typical: 40}
+  overhang_fan_pct: {typical: 90}
+  no_fan_first_layers: {typical: 3}
+  min_layer_time_s: {min: 8, max: 12, typical: 12}
+  confidence: medium
+  src:
+    - "orca:OrcaFilamentLibrary/filament/Bambu/Bambu PETG Basic @base.json"
+    - "orca:OrcaFilamentLibrary/filament/Generic PETG @System.json"
+    - "orca:Prusa/filament/Prusament PETG @MK4S.json"
+    - "orca:Prusa/filament/Generic PETG @Prusa CORE One.json"
+    - prusa_kb_petg
+  note: >
+    Bambu uses 10 to 40 percent with 90 percent on overhangs. Prusa MK4S uses a
+    40 percent max and the Core One 30 to 60. Orca generic allows up to 100.
+    Less fan means stronger layers; more fan means cleaner overhangs and bridges.
+
+drying:
+  need: recommended
+  oven: {temp_c: {min: 60, max: 70}, hours: 8}
+  ams_2_pro: {temp_c: 65, hours: 12}
+  ams_ht: {temp_c: 65, hours: 12}
+  printer_bed: {temp_c: {min: 75, max: 85}, hours: 12, note: "Enclosed Bambu printers only, spool covered"}
+  keep_dry_in_use: optional
+  confidence: medium
+  src: [bambu_wiki_drying, bambu_wiki_material_table]
+  note: >
+    Bambu's material table says 70 C for 8 h in an oven, its drying page says
+    60 to 65 C. PETG HF and translucent PETG are marked drying required.
+    Wet PETG strings, pops and leaves rough walls.
+
+nozzle:
+  abrasive: false
+  hardened_required: false
+  min_diameter_mm: 0.2
+  orca_required_hrc: 3
+  confidence: high
+  src: [bambu_wiki_material_table, "orca:OrcaFilamentLibrary/filament/Generic PETG @System.json"]
+
+extrusion:
+  flow_ratio: {min: 0.95, max: 1.0, typical: 0.95, confidence: medium, src: ["orca:OrcaFilamentLibrary/filament/Bambu/Bambu PETG Basic @base.json", "orca:OrcaFilamentLibrary/filament/Generic PETG @System.json"], note: "Bambu 0.95, Orca generic 1.0. Always confirm with a flow test."}
+  max_volumetric_speed_mm3s:
+    standard_hotend: {min: 10, max: 15, typical: 12}
+    high_flow_hotend: {min: 18, max: 29, typical: 21}
+    confidence: medium
+    src:
+      - "orca:OrcaFilamentLibrary/filament/Generic PETG @System.json"
+      - "orca:BBL/filament/Bambu PETG Basic @BBL X1C.json"
+      - "orca:BBL/filament/Bambu PETG HF @BBL X1C.json"
+      - "orca:Prusa/filament/Prusament PETG @MK4S.json"
+    note: >
+      Generic PETG: 10 standard, 18 high flow. Bambu PETG Basic on X1C: 15.
+      High flow PETG (PETG HF) on X1C: 21 standard hotend, 29 high flow hotend.
+      Prusament PETG on MK4S: 12.
+  retraction_mm:
+    direct_drive: {min: 0.4, max: 1.0, typical: 0.8}
+    confidence: medium
+    src: ["orca:BBL/filament/Bambu PETG Basic @BBL X1C.json", "orca:Prusa/filament/Prusament PETG @MK4S.json", klipper_pressure_advance]
+    note: "Bambu PETG Basic on X1C 0.4 mm, Prusa 0.8 mm, Klipper suggests about 0.75 mm once pressure advance is tuned. Bowden values come from the printer profile, not the filament."
+    retraction_speed_mm_s: {min: 30, max: 60, typical: 30, confidence: medium, src: [bambu_tds_petg_basic_v3, bambu_tds_petg_hf_v1, "orca:BBL/machine/Bambu Lab X1 Carbon 0.4 nozzle.json", "orca:Prusa/machine/fdm_machine_common_mk4s.json"], note: "Bambu PETG Basic and HF TDS say 30 to 60 mm/s. The Bambu printer profile uses 30 and Prusa MK4S 35."}
+  pressure_advance:
+    direct_drive: {min: 0.03, max: 0.08, typical: 0.053}
+    bowden: {min: 0.3, max: 1.0}
+    confidence: medium
+    src: ["orca:Prusa/filament/Prusament PETG @MK4S.json", klipper_pressure_advance, ellis_pa]
+    note: >
+      Prusa ships M572 S0.053 for a 0.4 mm nozzle on MK4S and Core One (0.032
+      at 0.6 mm). Klipper's typical range is 0.05 to 1.0 with the high end for
+      bowden. Bambu printers measure it per spool with flow dynamics
+      calibration instead of a fixed value. PA is printer specific; calibrate.
+
+layer_height:
+  fraction_of_nozzle: {min: 0.2, max: 0.7, typical: 0.5}
+  at_0_4_mm: {min: 0.08, max: 0.28, typical: 0.2}
+  smart_layer:
+    quality_mode: "PETG rounds off fine detail and strings on small features, so very thin layers buy less than in PLA. Use 0.12 to 0.16 mm on curved tops and keep 0.2 mm elsewhere. Bambu uses 0.1 mm with a wider 0.5 mm line for translucent PETG."
+    strength_mode: "PETG layer bonding depends on heat, not layer thinness. Thicker layers (0.2 to 0.28 mm) keep more heat in the stack and tolerate the low fan PETG wants. Stay at or under 0.7 of the nozzle diameter."
+    thin_layer_cooling: "Bambu sets a 12 s minimum layer time for PETG and a low fan, so thin layers on small parts slow down a lot. Printing several parts at once keeps the nozzle moving and reduces blobs."
+  confidence: medium
+  src: ["orca:BBL/machine/fdm_machine_common.json", bambu_wiki_adaptive_layer, bambu_wiki_petg_guide, "orca:Prusa/machine/fdm_machine_common_mk4s.json", "orca:BBL/filament/Bambu PETG Basic @BBL X1C.json"]
+  note: "Bambu tests 0.08 to 0.28 mm on a 0.4 mm nozzle and Prusa allows 0.07 to 0.30 mm on the MK4S. CNC Kitchen tested layer height on PLA only, so the strength rule is carried over from that test with less certainty."
+smart_layer:
+  min_ratio: 0.2
+  max_ratio: 0.7
+  modes:
+    quality: {min_ratio: 0.2, max_ratio: 0.5}
+    strength: {min_ratio: 0.3, max_ratio: 0.5}
+  family: petg
+  note: "PETG prints well from 0.2 to 0.7 of the nozzle diameter; Quality mode uses 0.2 to 0.5 and Strength mode 0.3 to 0.5, since parts weaken once layers pass half the nozzle."
+  confidence: medium
+  src: ["orca:BBL/machine/fdm_machine_common.json", "bambu_wiki_adaptive_layer", "bambu_wiki_petg_guide", "orca:Prusa/machine/fdm_machine_common_mk4s.json", "orca:BBL/filament/Bambu PETG Basic @BBL X1C.json", "cnckitchen_layer_height", "stojkovic_2023_layer_height_annealing"]
+speeds:
+  print_speed_mm_s: {max: 200}
+  first_layer_mm_s: {min: 20, max: 40, typical: 30}
+  volumetric_note: "Bambu PETG Basic is rated under 200 mm/s and PETG HF under 300 mm/s. Speed is capped by max volumetric speed; see extrusion. Bambu suggests about 90 mm/s if the outer wall shows dents from speed changes."
+  confidence: medium
+  src: [bambu_tds_petg_basic_v3, bambu_tds_petg_hf_v1, bambu_wiki_petg_guide, "orca:Prusa/process/0.20mm SPEED @MK4S 0.4.json", bambu_wiki_spaghetti]
+  note: "First layer speed is not stated by a maker. PETG bonds hard to PEI, so a slower first layer of about 30 mm/s is a practical default (Bambu asks for 30 or less when the first layer fails, Prusa MK4S uses 40)."
+first_layer:
+  fan_off_layers: 3
+  speed_mm_s: {typical: 30}
+  bed_first_layer_note: "Prusa runs the bed at 85 C for the first layer and 90 C after, with a 230 C nozzle first layer and 240 C after. Bambu runs 60 to 80 C, profile 70 C, for every layer."
+  squish_note: "Do not squish PETG. Prusa says PETG bonds strongly to smooth PEI and needs glue stick as a separator, and a nozzle that is too low causes blobs and burnt specks. Raise Z offset a little if the first layer looks glassy and rough."
+  confidence: medium
+  src: [prusa_kb_petg, prusa_kb_first_layer, bambu_tds_petg_basic_v3, "orca:BBL/process/fdm_process_common.json"]
+structure:
+  walls: {min: 2, typical: 3, note: "Bambu says raise strength with walls up to 6 and infill up to 50 percent, and warns that more of both raises warping risk. Prusa says use more perimeters instead of more infill for solid parts."}
+  infill: {pattern_hint: gyroid, density_note: "15 to 30 percent is enough for most parts. Above 50 percent adds warping without adding much strength (Bambu)."}
+  confidence: medium
+  src: [bambu_wiki_petg_guide, prusa_kb_petg, prusa_kb_layers_perimeters]
+supports:
+  interface_materials: ["Bambu Support for PLA/PETG", "Bambu PLA Basic (interface only)", "Bambu PETG Basic or PETG HF (own support)", bvoh]
+  soluble_pairing: {material: bvoh, dissolve: "water, several hours; PVA is not compatible with PETG"}
+  top_z_distance_mm: {typical: 0.25, basis: expert}
+  interface_layers: {typical: 2}
+  note: "PETG welds to its own supports, and Bambu says PETG supports on a PETG model are harder to remove and can mark the surface. Raise the top Z gap from the 0.2 mm default to about 0.25 mm (expert value) or use an interface filament with a zero gap: Support for PLA/PETG, or PLA Basic as interface only. Bambu says PVA is not compatible as support for PETG."
+  confidence: medium
+  src: [bambu_wiki_pla_petg_mutual_support, bambu_wiki_petg_guide, bambu_wiki_support_filament_guide, bambu_tds_support_pla_petg_v1, "orca:BBL/process/0.20mm Standard @BBL X1C.json"]
+
+multi_material:
+  bambu_ams: compatible
+  bambu_ams_lite: compatible
+  bambu_ams_ht: compatible
+  confidence: high
+  src: [bambu_wiki_material_table]
+
+properties:
+  density_g_cm3: {typical: 1.27, min: 1.25, max: 1.28, src: ["orca:OrcaFilamentLibrary/filament/Generic PETG @System.json", "orca:OrcaFilamentLibrary/filament/Bambu/Bambu PETG Basic @base.json", "orca:OrcaFilamentLibrary/filament/Bambu/Bambu PETG HF @base.json"]}
+  softening_temp_c: {typical: 70, src: ["orca:OrcaFilamentLibrary/filament/Generic PETG @System.json", prusa_kb_petg], note: "Orca temperature_vitrification 70 C. Prusa says fine for use below 80 C."}
+  relative:
+    heat: 3
+    impact: 3
+    tensile: 2
+    scale: "1 to 5, Bambu star ratings"
+    src: [bambu_wiki_material_table]
+safety:
+  fumes: low
+  note: "No enclosure filtration needed for normal use. Ventilate the room as with any hot plastic."
+food_contact:
+  note: >
+    PETG resin is often called food safe, but no printed part is by default.
+    Layer lines trap bacteria, colorants are usually uncertified, and brass
+    nozzles can contain lead. For food contact use a stainless steel nozzle and
+    a food safe coating, or treat the part as single use.
+  src: [prusa_kb_food_safe]
+
+failure_modes:
+  - id: stringing
+    symptom: Thin hairs between features
+    causes: [nozzle too hot, wet filament, retraction too short, slow travel]
+    fixes:
+      - {key: nozzle_temperature, op: decrease_by, value: 5, why: "Cooler PETG is less runny between moves. Go down 5 C at a time, not below 230 C."}
+      - {advice: "Dry the spool (65 C for 8 to 12 h). Wet PETG strings no matter what the settings are.", kind: material}
+      - {key: retraction_length, op: increase_by, value: 0.2, why: "A little more retraction pulls pressure out of the nozzle before travel. Stay under 1.5 mm on direct drive."}
+      - {key: travel_speed, op: at_least, value: 200, why: "Faster travel gives the nozzle less time to ooze."}
+  - id: plate_damage
+    symptom: Part tears chunks out of a smooth PEI sheet
+    causes: [PETG bonds chemically to smooth PEI]
+    fixes:
+      - {advice: "Switch to textured PEI, or put glue stick on smooth PEI as a release layer.", kind: hardware}
+  - id: nozzle_buildup
+    symptom: Blobs and burnt brown specks on the part
+    causes: [first layer squished too hard, PETG sticks to the nozzle and drops back later]
+    fixes:
+      - {advice: "Raise the Z offset slightly (0.02 to 0.05 mm) and clean the nozzle with a brass brush while hot.", kind: hardware}
+      - {key: fan_max_speed, op: at_most, value: 50, why: "Very high fan can make PETG stick to the nozzle skirt instead of the part."}
+  - id: weak_layers
+    symptom: Part splits along a layer line
+    causes: [too much cooling, nozzle too cold, cold drafts]
+    fixes:
+      - {key: nozzle_temperature, op: increase_by, value: 5, why: "Hotter plastic fuses better with the layer below."}
+      - {key: fan_max_speed, op: at_most, value: 30, why: "Less cooling keeps layers hot long enough to bond."}
+      - {advice: "Print with the enclosure closed or out of drafts.", kind: environment}
+  - id: droopy_overhangs
+    symptom: Sagging overhangs and bridges
+    causes: [low fan, bridges too fast]
+    fixes:
+      - {key: overhang_fan_speed, op: at_least, value: 90, why: "More air only where it is needed keeps the rest of the part strong."}
+      - {key: bridge_speed, op: at_most, value: 40, why: "Slower bridges give each line time to set."}
+
+disagreements:
+  - topic: bed temperature
+    positions:
+      - {claim: "60 to 80 C, profile 70 C", src: [bambu_wiki_material_table]}
+      - {claim: "85 C first layer, 90 C after", src: [prusa_kb_petg]}
+    resolution: "Default 70 C on Bambu plates, 85 to 90 C on Prusa sheets. Both are inside the material's working range."
+  - topic: oven drying temperature
+    positions:
+      - {claim: "70 C for 8 h", src: [bambu_wiki_material_table]}
+      - {claim: "60 to 65 C for 8 h", src: [bambu_wiki_drying]}
+    resolution: "Use 65 C. It sits in both ranges and stays well under the softening point on most spools."
+  - topic: support Z gap for PETG on PETG
+    positions:
+      - {claim: "0.2 mm default gap in Bambu and Prusa profiles", src: ["orca:BBL/process/0.20mm Standard @BBL X1C.json", "orca:Prusa/process/0.20mm SPEED @MK4S 0.4.json"]}
+      - {claim: "PETG supports on PETG bond harder and are harder to remove; use an interface filament with zero gap", src: [bambu_wiki_pla_petg_mutual_support]}
+    resolution: "Use an interface filament when the surface matters. With same material supports use about 0.25 mm, an expert value that needs a test print."
+
+pilot_defaults:
+  nozzle_temperature: 245
+  nozzle_temperature_initial_layer: 235
+  textured_plate_temp: 70
+  fan_min_speed: 10
+  fan_max_speed: 40
+  overhang_fan_speed: 90
+  close_fan_the_first_x_layers: 3
+  slow_down_layer_time: 12
+  filament_flow_ratio: 0.95
+  filament_max_volumetric_speed: 12
+  retraction_length: 0.8

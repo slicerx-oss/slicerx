@@ -1,0 +1,10 @@
+kind: sources
+prefixes:
+  - prefix: orca_wiki
+    title: OrcaSlicer wiki pages
+    publisher: OrcaSlicer project
+    type: slicer_docs
+    url_template: "https://github.com/SoftFever/OrcaSlicer/wiki/{path}"
+    retrieved: 2026-09-30
+    note: "Read from the wiki git repository (SoftFever/OrcaSlicer.wiki.git) at commit 22f3b49, dated 2026-09-28. Paths are page names such as flow_ratio_calib."
+sources: []

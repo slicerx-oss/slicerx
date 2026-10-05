@@ -1,0 +1,81 @@
+kind: troubleshoot
+schema_version: 1
+id: z_banding
+name: Z banding
+aliases: [z wobble, horizontal lines, layer lines that repeat, ribbing, uneven layers, regular ridges, banding]
+camera_signs:
+  - "Horizontal ridges or bands that repeat at a regular height along the Z axis, on all sides of the part"
+  - "Bands only on one side of the part or a single visible line at a fixed height (a cooling or geometry event, not the Z axis)"
+  - "Alternating thick and thin layers, visible on tall smooth walls"
+  - "Sudden ring or ridge right after a bridge, an infill to solid transition or a color change"
+log_signs:
+  - "Klipper: no errors are expected. Check the config for the Z motor rotation_distance, microsteps and lead screw pitch"
+  - "Bambu: none specific. Flow dynamics or bed mesh warnings do not usually explain regular banding"
+tree:
+  start: q_regular
+  nodes:
+    q_regular: {ask: "Do the bands repeat at a steady spacing on every side of the part?", "yes": q_z_hardware, "no": q_one_place}
+    q_z_hardware: {ask: "Does the Z lead screw or rod look bent or dirty, or does the bed or gantry wobble sideways as it moves?", "yes": c_z_axis_mechanics, "no": q_layer_height}
+    q_layer_height: {ask: "Is the layer height not a whole multiple of the Z motor step distance, or is this a Klipper machine with an unverified rotation_distance or lead screw pitch?", "yes": c_z_steps, "no": q_flow_temp}
+    q_one_place: {ask: "Do the ridges start at a fixed feature (after a bridge, where infill turns solid, or where the wall thickness changes)?", "yes": c_cooling_transition, "no": q_flow_temp}
+    q_flow_temp: {ask: "Do the bands look like alternating thick and thin lines regardless of height, with uneven top surfaces?", "yes": c_extrusion_inconsistent, "no": c_temperature_fan}
+causes:
+  - id: c_z_axis_mechanics
+    name: Z axis lead screw or alignment
+    category: hardware
+    likelihood: high
+    checks:
+      - "Remove the lead screw and roll it on a flat surface. Wobble means it is bent."
+      - "Look for dry threads, a loose coupler, or a lead screw nut that binds when the gantry moves."
+    fixes:
+      - {advice: "Replace a bent lead screw, clean and relubricate the screw, and align the Z axis so the screw carries no sideways load. Tighten the coupler and the lead nut mounting.", kind: hardware}
+      - {advice: "On Klipper machines with belts on Z, check Z belt tension is roughly equal across the drives. Ellis tensions his Z belts to 140 Hz over a 150 mm span.", kind: hardware}
+    printers: [klipper, prusa, bambu]
+    src: [anycubic_guide_z_banding, ellis_first_layer_inconsistency]
+    confidence: low
+  - id: c_z_steps
+    name: Layer height not matched to Z motor steps
+    category: settings
+    likelihood: low
+    checks:
+      - "Compare the layer height with the Z motor full step size. A layer height that is not a whole multiple of it makes layers slightly uneven."
+    fixes:
+      - {advice: "Use layer heights that are whole multiples of the Z motor full step distance, and check the lead screw pitch, rotation_distance and microstep values in the printer configuration.", kind: workflow}
+    printers: [klipper]
+    src: [anycubic_guide_z_banding]
+    confidence: low
+  - id: c_cooling_transition
+    name: Cooling and layer time change at a feature
+    category: settings
+    likelihood: medium
+    checks:
+      - "Ridges sit right after a bridge, at an infill to solid layer change, or at the transition from a wide base to thin walls. Prusa's Benchy hull line has the same cause and is usually not hardware."
+    fixes:
+      - {advice: "Lower the overhang and bridge fan speed a bit, use a gyroid or concentric infill, and reduce infill and wall overlap. Bambu reports these reduce the shrinkage ridge but may not remove it.", kind: material}
+      - {advice: "Print several parts at once to lengthen layer time, or add small fillets or chamfers inside a box model so the bridge does not touch the outer wall.", kind: orientation}
+      - {advice: "Use a constant fan speed. Ellis notes varying fan speed during the print causes inconsistent layers and banding.", kind: material}
+    src: [bambu_wiki_layer_artifacts, prusa_kb_benchy_hull_line, ellis_cooling_layer_times]
+    confidence: medium
+  - id: c_extrusion_inconsistent
+    name: Inconsistent extrusion
+    category: hardware
+    likelihood: medium
+    checks:
+      - "Wood grain or repeating patterns along walls, sounds of gear backlash during retractions, or a filament diameter that varies along the spool."
+    fixes:
+      - {advice: "Check extruder gear backlash and gear wear, and the filament tension screw. Ellis says too little backlash wears the plastic gear and causes permanent patterns, too much upsets pressure advance.", kind: hardware}
+      - {advice: "Measure the filament diameter along its length. Bambu recommends 1.75 plus or minus 0.03 mm. Dry the filament if walls are rough or pitted.", kind: material}
+    src: [ellis_extrusion_patterns, bambu_wiki_avoid_clogs, bambu_wiki_layer_artifacts]
+    confidence: medium
+  - id: c_temperature_fan
+    name: Temperature or fan fluctuation
+    category: environment
+    likelihood: low
+    checks:
+      - "Bands line up with a fan that ramps between layer times, a draft, or PID temperature swings."
+    fixes:
+      - {advice: "Stabilize the environment (no drafts) and keep the fan speed constant. If Klipper shows large temperature swings, run PID calibration on the hotend.", kind: environment}
+    src: [ellis_cooling_layer_times, prusa_kb_benchy_hull_line]
+    confidence: low
+related: [ringing, layer_shift, over_extrusion, under_extrusion, seam_zits]
+src: [bambu_wiki_layer_artifacts, ellis_cooling_layer_times, anycubic_guide_z_banding]

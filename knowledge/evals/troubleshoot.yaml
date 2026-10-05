@@ -1,0 +1,81 @@
+# mimir eval scenarios: diagnosis. mimir should walk kb.troubleshoot trees,
+# use camera and log evidence when available, and ask only the questions the
+# evidence cannot answer.
+kind: eval_suite
+schema_version: 1
+id: troubleshoot
+evals:
+  - id: ev20_petg_stringing_wet
+    category: troubleshoot
+    prompt: "My PETG prints on Bay 1 are super stringy all of a sudden"
+    context:
+      printers: demo
+      printer: bay-1
+      spool: {id: 14, material: petg, opened_days: 21, stored: open_shelf}
+      snapshot: "fine strings between towers, rough walls with tiny pits"
+    expect:
+      tools: {must: [kb.troubleshoot], may: [diagnose, kb.filament, spoolman.check]}
+      troubleshoot_id: stringing
+      top_cause: c_wet_filament
+      must_mention: ["dry the spool at about 65 C", "retest before changing retraction"]
+      checks_if_plan_offered:
+        - {key: nozzle_temperature, is: at_most, value: 250}
+      must_not: ["large retraction increases above 1.5 mm on direct drive"]
+      citations: {required: true, any_of: [bambu_wiki_drying, prusa_kb_stringing, ellis_retraction]}
+
+  - id: ev21_abs_warping_p1s
+    category: troubleshoot
+    prompt: "The corners of my ABS box keep lifting on the P1S"
+    context:
+      printers: demo
+      printer: bay-2
+      plate: textured_pei
+      observations: {door: open, bed_c: 90, part: "180 x 120 mm box"}
+    expect:
+      tools: {must: [kb.troubleshoot], may: [kb.filament, settings.plan]}
+      troubleshoot_id: warping
+      must_mention: ["close the door and lid", "brim", "glue stick on the plate", "let the chamber warm before starting"]
+      checks_if_plan_offered:
+        - {key: brim_type, is: one_of, value: [outer_only, auto_brim, brim_ears]}
+        - {key: textured_plate_temp, is: between, value: [95, 100]}
+        - {key: fan_max_speed, is: at_most, value: 40}
+      citations: {required: true, any_of: [bambu_wiki_abs_asa_pc, prusa_kb_warping, prusa_kb_abs]}
+
+  - id: ev22_voron_layer_shift
+    category: troubleshoot
+    prompt: "What happened to Bay 4 overnight?"
+    context:
+      printers: demo
+      printer: bay-4
+      job: {file: slicerx_x_logo_0.16mm_PLA.gcode, failed_layer: 212}
+      snapshots: "layers 208 to 213: diagonal offset of 1.7 mm starting at layer 212"
+      klipper_log: "clean, no MCU or thermal errors"
+      resonance_history: "X resonance down 29 percent since August, Y unchanged"
+    expect:
+      tools: {must: [diagnose, kb.troubleshoot], may: [moonraker.status, slice]}
+      troubleshoot_id: layer_shift
+      top_cause: c_belt_mechanics
+      must_mention: ["diagonal shift on CoreXY points to one belt", "tension the belt before resuming", "resume from layer 212 instead of reprinting"]
+      side_effects: {must_request_approval: [start]}
+
+  - id: ev23_elephant_foot_a1
+    category: troubleshoot
+    prompt: "The bottom edge of my parts flares out on the A1, lids won't fit"
+    context: {printer_owned: bambu_a1, loaded: [pla], plate: textured_pei}
+    expect:
+      tools: {must: [kb.troubleshoot], may: [settings.plan, kb.printer]}
+      troubleshoot_id: elephant_foot
+      checks_if_plan_offered:
+        - {key: elefant_foot_compensation, is: between, value: [0.1, 0.25]}
+      must_mention: ["first layer squish or Z offset", "bed temperature at the low end for PLA"]
+      citations: {required: true, any_of: [bambu_wiki_elephant_foot, orca_wiki_precision, "orca:BBL/process/0.20mm Standard @BBL A1.json"]}
+
+  - id: ev24_ams_lite_cf_jam
+    category: troubleshoot
+    prompt: "My AMS lite keeps failing to load this carbon fiber PLA from another brand"
+    context: {printer_owned: bambu_a1, accessories: [bambu_ams_lite], spool: {material: pla_cf, brand: third_party, spool_type: cardboard}}
+    expect:
+      tools: {must: [kb.troubleshoot], may: [kb.printer, kb.filament]}
+      troubleshoot_id: ams_jam
+      must_mention: ["third party CF can be too brittle or rough for the AMS lite", "feed it from the external spool holder", "cardboard spools can slip or shed in the AMS lite; use an adapter ring or respool"]
+      citations: {required: true, any_of: [bambu_wiki_material_table, bambu_wiki_amslite_faq]}

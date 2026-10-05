@@ -1,0 +1,34 @@
+kind: guide
+schema_version: 1
+id: prusa_input_shaping
+name: Input shaper and phase stepping on Prusa printers
+applies_to: [prusa_mk4s, prusa_core_one, prusa_xl]
+summary: >
+  Prusa firmware ships an input shaper that is factory calibrated, so most users
+  never touch it. An optional accelerometer set recalibrates it after hardware
+  changes. Phase stepping is a separate motor drive feature that cuts noise and
+  fine surface ripples. Both matter mainly when mimir is asked to raise
+  acceleration or diagnose ghosting.
+facts:
+  - {text: "Input shaper reduces ghosting by filtering the motion commands so that resonance vibrations cancel. It is available on the CORE One family, MK4/S, MK3.9/S, MK3.5/S, XL and MINI/+ (firmware 5.0.0 or newer on MK4, 5.1.0 or newer on the others).", src: [prusa_kb_input_shaper]}
+  - {text: "Prusa exposes it as the M593 G-code with F (frequency, default 0 Hz meaning off), D (damping ratio, default 0.1), T (type, ZV through 3HUMP_EI) and R (vibration reduction, default 20).", src: [prusa_kb_input_shaper]}
+  - {text: "The CORE One L and XL have an integrated accelerometer and are pre-calibrated. The MK4S and base CORE One use an optional accelerometer set that is only needed after hardware changes and is meant for experienced users.", src: [prusa_kb_input_shaper, prusa_kb_accelerometer]}
+  - {text: "Prusa says crash detection is not compatible with input shaper. Do not suggest enabling both.", src: [prusa_kb_input_shaper]}
+  - {text: "Belt maintenance comes before calibration. A failed phase stepping calibration usually points to belt tension.", src: [prusa_kb_input_shaper, prusa_kb_phase_stepping]}
+  - {text: "Phase stepping customizes the drive signal for each motor to reduce visible fine artifacts (VFAs) and noise. On the CORE One the calibration option needs the accelerometer set; on the CORE One L the accelerometer is built in.", src: [prusa_blog_phase_stepping, prusa_kb_phase_stepping]}
+  - {text: "Prusa's PrusaSlicer profiles are split into Speed and Structural presets. Speed presets assume input shaper is on; Orca's bundled Prusa process profiles use the Speed values (170 mm/s walls, 4000 mm/s2 on MK4S).", src: [prusa_kb_input_shaper, "orca:Prusa/process/0.20mm SPEED @MK4S 0.4.json"]}
+steps:
+  - {text: "Check belt tension and that the toolhead and bed move freely. Do this before any calibration."}
+  - {text: "On MK4S or CORE One: connect the accelerometer set. On the XL and CORE One L: no hardware is needed."}
+  - {text: "Run the calibration from the LCD menu: Settings, Input Shaper, Calibration. For phase stepping use Settings, Phase Stepping, Calibration."}
+  - {text: "Read the type and frequency shown at the end. Keep the result the firmware stores; do not copy numbers from another printer."}
+  - {text: "Print a ringing tower or a known part at the profile's acceleration. If ghosting remains, lower outer wall acceleration before changing shaper values."}
+pilot_actions:
+  - "Ask whether the printer has had hardware changes (new belts, toolhead swap, new mount) before suggesting recalibration."
+  - "Suggest lowering outer_wall_acceleration first when the user reports ringing. Only suggest the accelerometer calibration when acceleration cannot be lowered."
+  - "Do not write M593 values from a table. Only read them or ask the user to run calibration."
+  - "Never combine advice to use crash detection with input shaper."
+settings:
+  - {key: outer_wall_acceleration, op: at_most, value: 3000, why: "The CORE One Speed profile uses 3000 for outer walls; a lower value cleans up ringing while the shaper is not recalibrated."}
+  - {advice: "Belts and frame rigidity limit input shaper more than any setting does.", kind: hardware}
+src: [prusa_kb_input_shaper, prusa_kb_accelerometer, prusa_kb_phase_stepping, prusa_blog_phase_stepping]

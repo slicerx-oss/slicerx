@@ -1,0 +1,96 @@
+kind: troubleshoot
+schema_version: 1
+id: layer_shift
+name: Layer shift
+aliases: [layer shifting, shifted layers, misaligned layers, step loss, lost steps, skewed print, staircase]
+camera_signs:
+  - "The upper part of the print is offset sideways from the lower part along X, Y or both, as a sharp step on one side"
+  - "Every layer above a certain height is shifted the same way (a single event), or the print drifts each layer (a rubbing belt)"
+  - "A lifted corner or blob at the height where the shift begins, which points to a nozzle strike"
+  - "Purge waste or a cable sitting in the toolhead path in a snapshot"
+log_signs:
+  - "Bambu prints that report step loss and auto-recover (Auto-recovery from step loss option), or repeated motor or axis HMS prompts"
+  - "Bambu HMS 0300 family motor faults such as 0300-0700-0001-0002 (motor short circuit) point at a motor or wiring problem"
+  - "Klipper TMC driver errors such as 'Unable to read tmc uart' or a driver over temperature or reset in klippy.log"
+  - "Klipper 'Lost communication with MCU' during the print, which can also cause a shifted or stopped print"
+tree:
+  start: q_axis
+  nodes:
+    q_axis: {ask: "Look at the shift. Is it a single sharp step at one height (rather than a gradual drift)?", "yes": q_strike, "no": q_gradual}
+    q_strike: {ask: "Is there a curled corner, blob, purge waste or a loose cable at the height where it shifted?", "yes": c_obstruction, "no": q_speed_change}
+    q_speed_change: {ask: "Did you change speed mid print (for example Bambu Ludicrous mode) or print with very high acceleration or in a quiet or stealth mode?", "yes": c_speed_accel, "no": q_belts}
+    q_gradual: {ask: "By hand with the motors off, does one axis feel rougher, or do belts show dust, fraying or rubbing on a pulley flange?", "yes": c_belt_mechanics, "no": q_belts}
+    q_belts: {ask: "Are the belts noticeably loose or very tight, or does a pulley set screw move when you touch it?", "yes": c_belt_mechanics, "no": q_electrical}
+    q_electrical: {ask: "On Klipper or a printer with visible wiring, do the logs show TMC or MCU errors, or is the motor or driver hot to the touch?", "yes": c_electrical, "no": c_rails_dirty}
+causes:
+  - id: c_obstruction
+    name: Nozzle strike or obstruction
+    category: environment
+    likelihood: high
+    checks:
+      - "Move the toolhead by hand through X and Y with the printer off and watch for cable chains, tubes or purge waste in the path."
+      - "Look for a curled part or a blob at the failure height."
+    fixes:
+      - {advice: "Clear purge chute waste and tidy tubes and cables so nothing blocks the toolhead. Bambu lists purge waste, damaged toolhead cable chains and loose tubes as known causes.", kind: hardware}
+      - {key: z_hop, op: at_least, value: 0.2, why: "Ellis says about 0.2 to 0.3 mm of z lift is usually enough to clear curling. Too much causes stringing.", src: [ellis_layer_shifting]}
+      - {advice: "If the model warps, fix the warping first (see the warping troubleshooter). For PETG, drying the filament or enabling the prime tower reduces nozzle sticking.", kind: material}
+    printers: [bambu, klipper, prusa]
+    src: [bambu_wiki_layer_shifts, ellis_layer_shifting]
+    confidence: medium
+  - id: c_speed_accel
+    name: Speed or acceleration too high for the printer
+    category: settings
+    likelihood: medium
+    checks:
+      - "Check whether speed was raised during the print or acceleration is above what the machine can hold."
+      - "Prusa recommends normal mode rather than stealth mode for large or complex prints."
+    fixes:
+      - {advice: "Lower the default and outer wall acceleration in steps and re-test. Ellis and Prusa both point at speed and acceleration when a machine with sound belts still shifts.", kind: workflow}
+      - {advice: "Start the print at the speed profile you want to finish it at. Bambu notes that switching to Ludicrous mode mid print can cause a shift.", kind: workflow}
+      - {advice: "On Bambu printers, enable the Auto-recovery from step loss option so the printer re-homes and continues after a detected shift.", kind: hardware}
+      - {advice: "On Prusa, switch from stealth to normal mode for large prints.", kind: hardware}
+    src: [bambu_wiki_layer_shifts, prusa_kb_layer_shifting, ellis_layer_shifting]
+    confidence: medium
+  - id: c_belt_mechanics
+    name: Belt tension, pulleys or axis binding
+    category: hardware
+    likelihood: high
+    checks:
+      - "Pull each belt and compare resistance. Look for belt dust that indicates rubbing or mis-routing. Belts should not ride against bearing flanges."
+      - "Check each motor pulley set screws. One of the two must sit on the flat of the motor shaft."
+      - "On CoreXY, move the toolhead along both diagonals. A rough diagonal points at that motor or its pulley."
+    fixes:
+      - {advice: "Set belt tension to the maker's method. Ellis measures about 120 Hz over a 150 mm span on Voron style machines and warns most people over tighten belts, while too loose can cause tooth skipping. On Prusa CORE One use the belt adjustment guide and keep the CoreXY square.", kind: hardware}
+      - {advice: "Tighten pulley grub screws with one on the flat of the shaft. Prusa lists loose pulleys as a common cause.", kind: hardware}
+      - {advice: "Loosen the belts, lift them off each bearing stack and spin every bearing by hand to find a rough one.", kind: hardware}
+      - {advice: "On Bambu X1 and P1 printers, clean the carbon rods, which Bambu lists as a way to reduce shifts.", kind: hardware}
+    printers: [prusa, klipper, bambu]
+    src: [ellis_layer_shifting, prusa_kb_layer_shifting, bambu_wiki_layer_shifts]
+    confidence: medium
+  - id: c_electrical
+    name: Motor current, wiring or driver overheating
+    category: hardware
+    likelihood: medium
+    checks:
+      - "Check the Klipper log for TMC errors or MCU disconnects."
+      - "Wiggle-test wires in drag chains. Broken strands inside the insulation are invisible."
+      - "Confirm stepper drivers have heatsinks and airflow."
+    fixes:
+      - {advice: "Check the run_current for the X and Y motors against the motor datasheet and confirm the driver cooling. Ellis recommends high strand count wire of 24 AWG or thicker in drag chains, and checking crimps and continuity.", kind: hardware}
+      - {advice: "If Klipper reports 'Lost communication with MCU', check for host serial interference and cabling before touching print settings.", kind: hardware}
+    printers: [klipper]
+    src: [ellis_layer_shifting, klipper_tmc_drivers, klipper_faq]
+    confidence: medium
+  - id: c_rails_dirty
+    name: Dirty or dry guide rails
+    category: hardware
+    likelihood: low
+    checks:
+      - "The toolhead or bed feels gritty when moved by hand, or makes noise at the same position each pass."
+    fixes:
+      - {advice: "Clean and relubricate rails or rods using the maker's instructions. Bambu lists cleaning the carbon rods on X1 and P1 machines as a way to reduce shifts.", kind: hardware}
+    printers: [bambu]
+    src: [bambu_wiki_layer_shifts, prusa_kb_layer_shifting]
+    confidence: low
+related: [ringing, warping, spaghetti, z_banding]
+src: [bambu_wiki_layer_shifts, prusa_kb_layer_shifting, ellis_layer_shifting]

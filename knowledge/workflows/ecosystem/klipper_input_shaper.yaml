@@ -1,0 +1,38 @@
+kind: guide
+schema_version: 1
+id: klipper_input_shaper
+name: Input shaper on Klipper
+applies_to: [voron_2_4, voron_trident, sovol_sv08, creality_k1_max, creality_k2_plus, elegoo_neptune_4_pro, elegoo_centauri_carbon]
+summary: >
+  Klipper measures resonance with an accelerometer, recommends a shaper type and
+  frequency per axis, and prints a maximum acceleration for each shaper. The
+  slicer's acceleration settings must stay under that maximum or ringing comes
+  back. Creality and Elegoo firmware run their own calibration; Voron and
+  SV08 users run Klipper's directly.
+facts:
+  - {text: "Klipper supports the ADXL345 (SPI), MPU-9250 family and ICM20948 (I2C), and LIS2DW and LIS3DH (SPI or I2C) accelerometers for resonance testing.", src: [klipper_docs_measuring_resonances]}
+  - {text: "TEST_RESONANCES records raw vibration data for an axis. SHAPER_CALIBRATE runs the test and computes the best shaper and frequency, printing a suggested max_accel for each shaper type.", src: [klipper_docs_measuring_resonances]}
+  - {text: "Shapers from least to most smoothing: ZV, MZV, ZVD and EI (about equal), 2HUMP_EI, 3HUMP_EI. More smoothing tolerates a wider frequency error but rounds small features and lowers the usable acceleration. Klipper default type is mzv.", src: [klipper_docs_resonance_compensation, klipper_docs_config_reference]}
+  - {text: "Klipper advises choosing the lower of the acceleration limits from ringing and from smoothing when setting max_accel. At low frequencies (around 25 Hz) even MZV can smooth too much.", src: [klipper_docs_resonance_compensation]}
+  - {text: "The suggested max_accel is printed per shaper, for example 3500 mm/s2, and you may choose a shaper other than the recommended one if you prefer another smoothing trade off.", src: [klipper_docs_measuring_resonances]}
+  - {text: "max_smoothing can be stored in printer.cfg to limit how much smoothing a shaper may add on later recalibrations.", src: [klipper_docs_measuring_resonances]}
+  - {text: "Klipper notes auto calibration creates intense vibration on each axis and recommends against frequent recalibration because of wear.", src: [klipper_docs_measuring_resonances]}
+  - {text: "Disable dynamic acceleration control in the slicer during resonance testing. Damping ratio defaults to 0.1 and needs no tuning.", src: [klipper_docs_resonance_compensation, klipper_docs_config_reference]}
+  - {text: "Orca's stock profiles for these printers use accelerations of 3000 to 12000 mm/s2 for walls and up to 20000 for travel, so they can exceed a small shaper's recommended max.", src: ["orca:Voron/process/0.20mm Standard @Voron.json", "orca:Sovol/process/0.20mm Standard @Sovol SV08 0.4 nozzle.json", "orca:Creality/process/0.20mm Standard @Creality K2 Plus 0.4 nozzle.json"]}
+steps:
+  - {text: "Mount an accelerometer and confirm it reports with ACCELEROMETER_QUERY."}
+  - {text: "Warm up the bed and hotend, home, then run SHAPER_CALIBRATE and SAVE_CONFIG."}
+  - {text: "Read the recommended type and frequency per axis and the suggested max_accel for each shaper."}
+  - {text: "Set the slicer's default, wall, and travel accelerations at or below the lower of the max_accel values for the chosen shaper."}
+  - {text: "Print a ringing test at that acceleration. If ringing remains, lower acceleration rather than selecting a heavier shaper."}
+pilot_actions:
+  - "Read the current input_shaper and max_accel values from Klipper through Moonraker before advising accelerations."
+  - "Cap default_acceleration, outer_wall_acceleration, inner_wall_acceleration and travel_acceleration to the printer's tested limit when the user reports ringing."
+  - "Do not recommend rerunning SHAPER_CALIBRATE more than needed; suggest it after belt, toolhead or frame changes."
+  - "On Creality and Elegoo stock firmware, tell the user the calibration menu is vendor controlled and Klipper commands may not be exposed."
+  - "Never copy shaper frequencies between printers."
+settings:
+  - {key: default_acceleration, op: at_most, value: 5000, why: "Orca's Voron baseline uses 5000; use the printer's tested max_accel if it is lower."}
+  - {key: outer_wall_acceleration, op: at_most, value: 3000, why: "Outer walls show ringing first; 3000 is the Voron baseline."}
+  - {advice: "Pick the accelerometer and mounting location per Klipper's docs; a loose mount ruins the measurement.", kind: hardware}
+src: [klipper_docs_measuring_resonances, klipper_docs_resonance_compensation, klipper_docs_config_reference]

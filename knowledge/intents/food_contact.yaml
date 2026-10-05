@@ -1,0 +1,33 @@
+kind: intent_goal
+schema_version: 1
+id: food_contact
+label: Food contact (caveats)
+summary: >
+  Cookie cutters, cups, bowls, utensils. mimir never calls an FDM print food
+  safe. It explains the risks, applies the watertight settings where they help,
+  and suggests safer options. The caveats are always shown, whatever else the
+  user asks for.
+phrases: [food safe, food, kitchen, cup, mug, bowl, plate, utensil, spoon, "cookie cutter", "drink from", "eat from", baby, dishwasher, coffee]
+implies: [watertight]
+always_show_caveats: true
+caveats:
+  - {text: "Layer lines and gaps trap food and bacteria that washing cannot remove. Prusa does not recommend printed parts as food containers.", src: [prusa_kb_food_safe]}
+  - {text: "Brass nozzles can contain about 2 percent lead. Use a stainless steel nozzle for anything that touches food.", src: [prusa_kb_food_safe]}
+  - {text: "Most filament colorants are not certified for food contact, even when the base resin is.", src: [prusa_kb_food_safe]}
+  - {text: "A food safe epoxy coating seals the surface. Otherwise treat the part as single use, such as a cookie cutter used once.", src: [prusa_kb_food_safe]}
+  - {text: "Hot drinks and dishwashers soften PLA (about 55 C) and can deform PETG near 70 C.", src: [prusament_tds_pla, prusa_kb_petg]}
+default_level: standard
+levels:
+  standard:
+    changes:
+      - {key: wall_loops, op: at_least, value: 4, priority: supporting, why: "Dense walls leave fewer gaps for food to get into.", src: [prusa_kb_watertight]}
+      - {key: filament_flow_ratio, op: multiply, value: 1.05, priority: supporting, why: "Slightly more plastic closes gaps between lines.", src: [prusa_kb_watertight]}
+      - {key: top_surface_pattern, op: set, value: concentric, priority: supporting, why: "Concentric top lines follow the outline of a cutter or rim, leaving fewer crossing grooves.", basis: expert}
+material_hints:
+  prefer: [petg, pla, pp]
+  avoid: [abs, asa, pc, pla_cf, petg_cf, pa_cf, pa_gf]
+  note: "Prefer natural (uncolored) PETG or PLA from a maker that publishes food contact documents. Avoid styrenics and fiber filled materials."
+hardware_rules:
+  - {advice: "Require a stainless steel or hardened nozzle that is certified lead free. Ask if the printer still has a brass nozzle.", kind: hardware, src: [prusa_kb_food_safe]}
+costs: {time: up, filament: up}
+src: [prusa_kb_food_safe, prusa_kb_watertight, prusament_tds_pla, prusa_kb_petg]

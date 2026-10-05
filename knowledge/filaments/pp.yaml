@@ -1,0 +1,245 @@
+kind: filament
+schema_version: 1
+id: pp
+name: Polypropylene (PP)
+category: engineering
+orca_filament_type: PP
+aliases: [Polypropylene, PP, PP-GF (glass filled, no sourced data)]
+related: [petg, pa6]
+summary: >
+  Light, tough, chemical resistant plastic that flexes without cracking and
+  floats on water. It sticks to almost nothing except itself, so it needs a PP
+  sheet or PP tape, and it warps hard, so it needs a wide brim and an
+  enclosure or a warm room. Bambu has no PP data, so settings come from Prusa,
+  Polymaker and Orca generic.
+use_for: [chemical and lab containers, living hinges, engine fluid containers, lightweight tough parts, food storage style boxes (not certified)]
+avoid_for: [printing on bare PEI or glass, large flat parts without a brim, parts that need to be glued, open frame printers in a drafty room, Bambu cool plates without PP tape]
+
+nozzle_temp_c:
+  min: 220
+  max: 270
+  typical: 235
+  confidence: medium
+  src:
+    - "orca:OrcaFilamentLibrary/filament/Generic PP @System.json"
+    - prusa_kb_pp
+    - polymaker_wiki_by_material
+  note: "Orca generic allows 220 to 250 and prints at 235. Polymaker says 220 to 250. Prusa says 220 to 270. Start at 235 and move in 5 C steps."
+first_layer_nozzle_temp_c:
+  min: 230
+  max: 240
+  typical: 235
+  confidence: low
+  src: ["orca:OrcaFilamentLibrary/filament/Generic PP @System.json"]
+  note: "Orca generic uses 235 for the first layer."
+bed_temp_c:
+  min: 55
+  max: 105
+  typical: 85
+  confidence: medium
+  src: [prusa_kb_pp, polymaker_wiki_by_material, "orca:OrcaFilamentLibrary/filament/Generic PP @System.json"]
+  note: "Prusa recommends 85 to 100 C (80 to 105 C by brand) on its PP sheet. Polymaker says 80 to 100 C on PP sheets. Orca generic uses only 55 C on hot and textured plates and 35 C on Cool Plate, probably assuming PP tape on a cooler sheet. Use 85 C for PP sheet and check the spool label."
+chamber_temp_c:
+  min: 45
+  max: 60
+  typical: 45
+  confidence: low
+  src: [simplify3d_pp_guide, prusa_kb_pp]
+  note: "Simplify3D recommends an enclosure or chamber at 45 to 60 C to limit warping. Prusa only says to print in an enclosure. A passive enclosure is the practical target, since no Bambu or Prusa profile heats the chamber for PP."
+enclosure:
+  level: recommended
+  confidence: medium
+  src: [prusa_kb_pp, polymaker_wiki_by_material]
+  note: "Prusa recommends printing in an enclosure because PP is highly prone to warping, and Polymaker recommends one for warping control. A passive enclosure is enough. No chamber heating figure is sourced and chamber heating is not needed. Keep drafts off the print."
+
+plates:
+  - {plate: pp_sheet, fit: good, bed_temp_c: {min: 85, max: 100}, release_agent: none, confidence: high, src: [prusa_kb_pp, polymaker_wiki_by_material], note: "Best adhesion. Prusa sells a PP sheet and Polymaker recommends PP-specific adhesive sheets. Cardboard is a fallback when PP will not stick."}
+  - {plate: smooth_pei, fit: glue, bed_temp_c: {min: 85, max: 100}, release_agent: pp_tape, confidence: high, src: [prusa_kb_pp], note: "Prusa: smooth PEI with PP tape works. Bare PEI gives poor adhesion."}
+  - {plate: satin_pei, fit: ok, bed_temp_c: {min: 85, max: 100}, release_agent: none, confidence: medium, src: [prusa_kb_pp], note: "Prusa says the powder coated satin sheet is possible but might adhere less."}
+  - {plate: textured_pei, fit: avoid, confidence: medium, src: [prusa_kb_pp], note: "Prusa reports poor surface adhesion on PEI without PP tape or a PP sheet."}
+  - {plate: glass, fit: avoid, confidence: low, src: [prusa_kb_pp], note: "No sourced PP route on glass. PP does not stick to it without a PP surface."}
+  - {plate: bambu_cool_plate, fit: avoid, confidence: low, src: [bambu_wiki_material_table], note: "Bambu has no PP row. Bare Cool Plate will not hold PP; apply PP tape."}
+
+cooling:
+  fan_min_pct: {min: 100, max: 100, typical: 100}
+  fan_max_pct: {min: 100, max: 100, typical: 100}
+  overhang_fan_pct: {typical: 100}
+  no_fan_first_layers: {typical: 1}
+  min_layer_time_s: {typical: 4}
+  confidence: low
+  src: ["orca:OrcaFilamentLibrary/filament/Generic PP @System.json"]
+  note: "Orca generic runs the fan at 100 percent with the first layer off and an auxiliary fan at 70 percent. This is a slicer default, not a maker recommendation. Lower the fan to 30 percent or less if the part warps."
+
+drying:
+  need: optional
+  oven: {temp_c: 70, hours: {min: 2, max: 4}, note: "Prusa figure for glass or carbon filled PP, used as a proxy."}
+  ams_2_pro: null
+  ams_ht: null
+  printer_bed: null
+  keep_dry_in_use: optional
+  confidence: low
+  src: [prusa_kb_pp, prusa_kb_drying]
+  note: "No figure for unfilled PP was found in Bambu's table, Prusa's pages or Polymaker's wiki. Prusa's drying table lists only filled PP (70 C for 2 to 4 h), used here as a proxy. Treat drying as optional and follow the spool label. Dry it only if it pops or strings."
+
+nozzle:
+  abrasive: false
+  hardened_required: false
+  min_diameter_mm: 0.4
+  orca_required_hrc: 3
+  confidence: medium
+  src: ["orca:OrcaFilamentLibrary/filament/Generic PP @System.json"]
+  note: "Orca generic requires HRC 3. Glass filled PP is abrasive and needs hardened steel, but no data was sourced."
+
+extrusion:
+  flow_ratio: {typical: 1.0, confidence: low, src: ["orca:OrcaFilamentLibrary/filament/Generic PP @System.json"], note: "Orca generic 1.0. Confirm with a flow test."}
+  max_volumetric_speed_mm3s:
+    standard_hotend: {typical: 12}
+    high_flow_hotend: null
+    confidence: low
+    src: ["orca:OrcaFilamentLibrary/filament/Generic PP @System.json"]
+    note: "Orca generic 12."
+  retraction_mm:
+    direct_drive: {min: 0.7, max: 0.8, typical: 0.8}
+    confidence: low
+    src: ["orca:BBL/machine/Bambu Lab X1 Carbon 0.4 nozzle.json", "orca:Prusa/machine/fdm_machine_common_mk4s.json"]
+    note: "No PP specific figure. This is the printer default (Bambu 0.8 mm, Prusa MK4S 0.7 mm), not material data. Tune by strings."
+  retraction_speed_mm_s: {typical: 30, confidence: low, src: ["orca:BBL/machine/Bambu Lab X1 Carbon 0.4 nozzle.json", "orca:Prusa/machine/fdm_machine_common_mk4s.json"], note: "No PP specific figure. Bambu machine profiles use 30 mm/s and Prusa MK4S uses 35."}
+  pressure_advance:
+    direct_drive: null
+    confidence: low
+    src: [klipper_pressure_advance, ellis_pa]
+    note: "No PP value in Prusa or Bambu profiles. Calibrate."
+
+layer_height:
+  fraction_of_nozzle: {min: 0.25, max: 0.7, typical: 0.5}
+  at_0_4_mm: {min: 0.12, max: 0.28, typical: 0.2}
+  smart_layer:
+    quality_mode: "PP has a waxy, low gloss finish, so thin layers gain little. 0.16 to 0.2 mm is a good detail setting and keeps warping in check."
+    strength_mode: "0.2 to 0.24 mm bonds well and keeps the part flexible. PP fuses to itself well when hot, but very thin layers cool and shrink fast."
+    thin_layer_cooling: "Orca generic runs the fan at 100 percent with a 4 s minimum layer time, and Simplify3D says a fan is required. PP warps when cooled hard, so cut the fan to 30 percent or less if corners lift."
+  basis: expert
+  confidence: low
+  src: ["orca:Prusa/machine/fdm_machine_common.json", "orca:BBL/process/0.20mm Standard @BBL X1C.json", simplify3d_pp_guide, "orca:OrcaFilamentLibrary/filament/Generic PP @System.json"]
+  note: "No PP layer height source. Numbers come from Orca machine limits and the standard 0.4 mm presets."
+smart_layer:
+  min_ratio: 0.25
+  max_ratio: 0.7
+  modes:
+    quality: {min_ratio: 0.25, max_ratio: 0.5}
+    strength: {min_ratio: 0.3, max_ratio: 0.5}
+  family: general
+  note: "Polypropylene (PP) prints well from 0.25 to 0.7 of the nozzle diameter; Quality mode uses 0.25 to 0.5 and Strength mode 0.3 to 0.5, since parts weaken once layers pass half the nozzle."
+  confidence: low
+  src: ["orca:Prusa/machine/fdm_machine_common.json", "orca:BBL/process/0.20mm Standard @BBL X1C.json", "simplify3d_pp_guide", "orca:OrcaFilamentLibrary/filament/Generic PP @System.json", "cnckitchen_layer_height", "stojkovic_2023_layer_height_annealing"]
+speeds:
+  print_speed_mm_s: null
+  first_layer_mm_s: {typical: 20}
+  volumetric_note: "No maker print speed was found. Orca generic allows 12 mm3/s (see extrusion). No source caps outer wall speed. Slow bridges and overhangs, since PP sags and curls."
+  basis: expert
+  confidence: low
+  src: ["orca:OrcaFilamentLibrary/filament/Generic PP @System.json", prusa_kb_pp]
+  note: "The 20 mm/s first layer is a rule of thumb that gives PP time to bond to a PP sheet or tape."
+first_layer:
+  fan_off_layers: 1
+  speed_mm_s: {typical: 20}
+  bed_first_layer_note: "Prusa recommends 85 to 100 C on its PP sheet. PP sticks well only to PP, so use the PP sheet or PP tape on smooth PEI. Simplify3D says PP tape can fuse to a part at high bed temperature, so drop the first layer temperature slightly or add a raft."
+  squish_note: "Recreus suggests a 0.15 mm first layer at 10 C above normal and 10 percent wider lines for its PP, with a brim. Prusa asks for a 5 to 10 mm brim."
+  confidence: low
+  src: [prusa_kb_pp, recreus_pp_adhesion, simplify3d_pp_guide, "orca:OrcaFilamentLibrary/filament/Generic PP @System.json"]
+  note: "Orca generic keeps the fan off for the first layer only."
+structure:
+  walls: {min: 2, typical: 3, note: "Walls set the stiffness of a flexible PP part. Large flat solid areas shrink most, so keep them small."}
+  infill: {pattern_hint: gyroid, density_note: "10 to 20 percent. Sparse infill lowers shrink stress and reduces warping on large parts."}
+  basis: expert
+  confidence: low
+  src: [prusa_kb_pp, "orca:BBL/process/0.20mm Standard @BBL X1C.json"]
+supports:
+  interface_materials: []
+  soluble_pairing: null
+  top_z_distance_mm: {typical: 0.2}
+  interface_layers: {typical: 2}
+  note: "No maker lists a release or soluble support for PP in the sources found. PP sticks well only to itself, so supports fuse to the part where they touch, and PP bridges and overhangs sag because of its shrinkage. Design out overhangs above 45 degrees, keep bridges short, and widen the top Z gap to 0.25 to 0.3 mm for same material supports."
+  basis: expert
+  confidence: low
+  src: [simplify3d_pp_guide, prusa_kb_pp, "orca:BBL/process/0.20mm Standard @BBL X1C.json"]
+
+multi_material:
+  bambu_ams: unknown
+  bambu_ams_lite: unknown
+  bambu_ams_ht: unknown
+  confidence: low
+  src: [bambu_wiki_material_table]
+  note: "Bambu's guide does not list PP."
+
+properties:
+  density_g_cm3: {typical: 0.93, src: ["orca:OrcaFilamentLibrary/filament/Generic PP @System.json"]}
+  softening_temp_c: null
+  relative: null
+  chemical_resistance: {level: high, src: [prusa_kb_pp], note: "Prusa: high chemical resistance and high tenacity. Suitable for lab equipment and engine fluid containers."}
+safety:
+  fumes: low
+  note: "No fume warning in Prusa's or Polymaker's PP guidance. Ventilate as with any hot plastic."
+  src: [prusa_kb_pp]
+food_contact:
+  note: "PP is used for food storage in industry, but a printed part is not food safe by default. Layer lines trap bacteria and colorants are uncertified."
+  src: [prusa_kb_pp, prusa_kb_food_safe]
+
+failure_modes:
+  - id: no_adhesion
+    symptom: First layer does not stick or the part peels off mid print
+    causes: [wrong plate surface, bare PEI or glass, bed too cool]
+    fixes:
+      - {advice: "Use a PP sheet or apply PP tape to smooth PEI. Polymaker says cardboard can work if PP will not stick.", kind: hardware}
+      - {key: initial_layer_speed, op: at_most, value: 20, why: "A slow first layer gives PP time to bond to the PP surface."}
+  - id: warping
+    symptom: Corners curl and lift, large parts bow
+    causes: [high shrinkage, drafts, small contact area, cooling too high]
+    fixes:
+      - {key: brim_type, op: set, value: outer_only, why: "Prusa recommends a brim for PP."}
+      - {key: brim_width, op: at_least, value: 8, why: "Prusa says to set the brim to 5 to 10 mm depending on model size. Use the top of the range for large parts."}
+      - {key: draft_shield, op: enable, why: "Holds a warmer pocket of air around the part on printers without an enclosure."}
+      - {key: fan_max_speed, op: at_most, value: 30, why: "Less cooling slows the shrinkage."}
+      - {advice: "Print in an enclosure or a still room. Prusa recommends an enclosure for PP.", kind: environment}
+  - id: stringing
+    symptom: Strings between features
+    causes: [nozzle too hot, retraction too short]
+    fixes:
+      - {key: nozzle_temperature, op: decrease_by, value: 5, why: "Cooler PP oozes less."}
+      - {key: retraction_length, op: increase_by, value: 0.2, why: "More retraction relieves pressure before travel."}
+  - id: cannot_glue
+    symptom: Glue does not hold printed PP parts together
+    causes: [low surface energy]
+    fixes:
+      - {advice: "PP resists most adhesives. Design for snap fits, screws or heat welding rather than glue.", kind: workflow}
+
+disagreements:
+  - topic: bed temperature
+    positions:
+      - {claim: "85 to 100 C on the PP sheet", src: [prusa_kb_pp]}
+      - {claim: "80 to 100 C on PP sheets", src: [polymaker_wiki_by_material]}
+      - {claim: "55 C on hot and textured plates, 35 C on Cool Plate", src: ["orca:OrcaFilamentLibrary/filament/Generic PP @System.json"]}
+    resolution: "Use 85 C on a PP sheet or PP tape. The Orca generic value is a low default."
+  - topic: nozzle temperature ceiling
+    positions:
+      - {claim: "220 to 250 C", src: ["orca:OrcaFilamentLibrary/filament/Generic PP @System.json", polymaker_wiki_by_material]}
+      - {claim: "220 to 270 C", src: [prusa_kb_pp]}
+    resolution: "Default 235 C and stay under 250 C unless the spool says otherwise."
+  - topic: first layer temperature
+    positions:
+      - {claim: "First layer 10 C above normal printing temperature", src: [recreus_pp_adhesion]}
+      - {claim: "Lower temperature for the first layers so the part does not fuse to PP tape", src: [simplify3d_pp_guide]}
+      - {claim: "First layer at the same 235 C as the rest of the print", src: ["orca:OrcaFilamentLibrary/filament/Generic PP @System.json"]}
+    resolution: "Start at the normal 235 C. Raise it 5 to 10 C if the first layer lacks bonding, and lower it if the part fuses to the tape."
+
+pilot_defaults:
+  nozzle_temperature: 235
+  nozzle_temperature_initial_layer: 235
+  hot_plate_temp: 85
+  textured_plate_temp: 85
+  fan_min_speed: 30
+  fan_max_speed: 30
+  overhang_fan_speed: 100
+  close_fan_the_first_x_layers: 1
+  slow_down_layer_time: 4
+  filament_flow_ratio: 1.0
+  filament_max_volumetric_speed: 12

@@ -1,0 +1,42 @@
+kind: intent_goal
+schema_version: 1
+id: surface_finish
+label: Smooth surface
+summary: >
+  Visible parts where the outside matters: display pieces, gifts, product
+  shells. Slow and gentle outer walls, finer layers, a hidden or scarfed seam,
+  and ironing on flat tops. Inner walls and infill stay fast.
+phrases: [smooth, pretty, nice finish, display, clean, glossy, silky, "no layer lines", showpiece, gift, "looks good", presentation, cosmetic]
+default_level: standard
+levels:
+  standard:
+    changes:
+      - {key: smart_layer, op: set, value: quality, priority: supporting, why: "Thin layers go where stair steps show on curves and shallow slopes; vertical walls stay thicker and faster.", src: [bambu_wiki_adaptive_layer, wasserfall_2017_adaptive_slicing]}
+      - {key: layer_height, op: at_most, value: 0.16, priority: core, why: "Thinner layers make the steps on curves smaller. Bambu's High Quality presets start at 0.16 mm.", src: ["orca:BBL/process/0.16mm High Quality @BBL X1C.json"]}
+      - {key: outer_wall_speed, op: at_most, value: 60, priority: core, why: "A slow outer wall shows fewer ripples and more even gloss. Bambu's High Quality presets use 60 mm/s.", src: ["orca:BBL/process/0.16mm High Quality @BBL X1C.json"]}
+      - {key: outer_wall_acceleration, op: at_most, value: 2000, priority: core, why: "Gentler acceleration on the visible wall cuts ringing near corners.", src: ["orca:BBL/process/0.16mm High Quality @BBL X1C.json"]}
+      - {key: default_acceleration, op: at_most, value: 4000, priority: supporting, why: "Matches Bambu's High Quality presets, which trade time for a calmer surface.", src: ["orca:BBL/process/0.16mm High Quality @BBL X1C.json"]}
+      - {key: top_surface_speed, op: at_most, value: 150, priority: supporting, why: "A slower top skin lies flatter.", src: ["orca:BBL/process/0.16mm High Quality @BBL X1C.json"]}
+      - {key: seam_slope_type, op: set, value: external, priority: core, why: "A scarf seam ramps the start and end of each outer loop so the seam line nearly disappears and gets stronger.", src: ["orca_src:src/libslic3r/PrintConfig.cpp"]}
+      - {key: seam_position, op: set, value: aligned_back, priority: supporting, why: "Lines the seam up toward the back of the part where it is least visible."}
+      - {key: wall_loops, op: at_least, value: 3, priority: supporting, why: "Inner, outer, inner wall order needs at least three walls.", src: ["orca_src:src/libslic3r/PrintConfig.cpp"]}
+      - {key: wall_sequence, op: set, value: "inner-outer-inner wall", priority: supporting, why: "The outer wall prints undisturbed from an inner wall for the best finish. Overhangs get slightly worse, so skip this on parts with steep overhangs.", src: ["orca_src:src/libslic3r/PrintConfig.cpp"]}
+      - {key: top_surface_pattern, op: set, value: monotonicline, priority: supporting, why: "Monotonic lines all run the same way, so the top reflects light evenly.", src: ["orca:BBL/process/0.20mm Standard @BBL X1C.json"]}
+      - {key: only_one_wall_top, op: enable, priority: supporting, why: "Leaves more room for the top pattern on flat faces, so tops look like one continuous sheet.", src: ["orca_src:src/libslic3r/PrintConfig.cpp"]}
+  max:
+    extends: standard
+    changes:
+      - {key: layer_height, op: at_most, value: 0.08, priority: core, why: "0.08 mm layers make lines almost invisible, at a large time cost. Bambu's 0.08 mm High Quality preset.", src: ["orca:BBL/process/0.08mm High Quality @BBL X1C.json"]}
+      - {key: ironing_type, op: set, value: top, priority: core, why: "Ironing runs the hot nozzle over the top surface a second time to smooth it. Works only on flat tops.", src: [prusa_kb_ironing, "orca_src:src/libslic3r/PrintConfig.cpp"]}
+      - {key: ironing_flow, op: set, value: 10, priority: supporting, why: "Orca's default 10 percent flow fills the tiny gaps without ridges.", src: ["orca_src:src/libslic3r/PrintConfig.cpp"]}
+      - {key: ironing_spacing, op: set, value: 0.1, priority: supporting, why: "Orca default spacing, well under the nozzle width.", src: ["orca_src:src/libslic3r/PrintConfig.cpp", prusa_kb_ironing]}
+      - {key: ironing_speed, op: set, value: 20, priority: supporting, why: "Orca default. Slow passes iron best.", src: ["orca_src:src/libslic3r/PrintConfig.cpp", prusa_kb_ironing]}
+rules:
+  - {text: "Only suggest ironing when the model has large flat top faces. It does nothing on curved or organic tops.", src: [prusa_kb_ironing]}
+  - {text: "Silk PLA hides layer lines by itself. Keep its low volumetric limit instead of speeding up the walls.", src: ["orca:OrcaFilamentLibrary/filament/Generic PLA Silk @System.json"]}
+  - {text: "Matte PLA already hides lines and seams. Ironing polishes matte tops and makes them look patchy, so leave it off.", basis: expert}
+orientation:
+  - {advice: "Face the most visible side away from supports and keep it vertical or on top. Support contact always leaves marks.", kind: orientation}
+  - {advice: "For a glossy or textured bottom face, pick the plate for the look: smooth PEI for glossy, textured PEI for a grain.", kind: hardware}
+costs: {time: up, filament: none}
+src: [prusa_kb_ironing, "orca:BBL/process/0.16mm High Quality @BBL X1C.json", "orca:BBL/process/0.08mm High Quality @BBL X1C.json", "orca_src:src/libslic3r/PrintConfig.cpp"]

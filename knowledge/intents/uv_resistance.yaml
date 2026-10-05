@@ -1,0 +1,31 @@
+kind: intent_goal
+schema_version: 1
+id: uv_resistance
+label: Outdoor and UV
+summary: >
+  Parts that live outside: garden fittings, mounts, signs, car exterior parts.
+  Sunlight, heat and water together. ASA is the default outdoor material. It
+  prints like ABS, so it needs an enclosure and good ventilation.
+phrases: [outdoor, outside, garden, sun, sunlight, UV, weatherproof, "weather resistant", exterior, balcony, patio, "car exterior", mailbox, rain]
+implies: [heat_resistance]
+default_level: standard
+levels:
+  standard:
+    changes:
+      - {key: wall_loops, op: at_least, value: 4, priority: core, why: "Thick walls keep water out of the infill and survive years of sun cycling.", src: [prusa_kb_watertight]}
+      - {key: top_shell_layers, op: at_least, value: 5, priority: supporting, why: "A closed top skin stops rain from pooling inside the part."}
+      - {key: bottom_shell_layers, op: at_least, value: 4, priority: supporting, why: "Seals the base against standing water."}
+material_hints:
+  prefer: [asa]
+  acceptable: [petg, pc, pa_cf]
+  avoid: [pla, pla_plus, pla_silk, pla_matte, pla_cf, abs]
+  notes:
+    - {text: "ASA has high UV and weather resistance.", src: [prusa_kb_asa, bambu_wiki_abs_asa_pc]}
+    - {text: "PLA softens in summer sun (about 55 C) and becomes brittle outdoors over time.", src: [prusament_tds_pla]}
+    - {text: "ABS prints like ASA but yellows and weakens in sunlight; prefer ASA for anything outside.", basis: expert}
+    - {text: "PETG is a reasonable outdoor fallback in mild climates up to about 70 C.", src: [prusa_kb_petg]}
+printer_requirements:
+  - {advice: "ASA needs an enclosed printer to avoid warping and cracking between layers.", kind: hardware, src: [bambu_wiki_material_table]}
+  - {advice: "ASA gives off fumes. Use the printer's filter or vent the room.", kind: environment, src: [prusa_kb_asa]}
+costs: {time: up, filament: up}
+src: [prusa_kb_asa, bambu_wiki_abs_asa_pc, bambu_wiki_material_table, prusament_tds_pla, prusa_kb_petg, prusa_kb_watertight]

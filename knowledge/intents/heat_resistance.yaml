@@ -1,0 +1,41 @@
+kind: intent_goal
+schema_version: 1
+id: heat_resistance
+label: Heat resistant
+summary: >
+  Parts that live in a hot car, near a motor, in a printer enclosure or in
+  sunlight. Heat resistance is almost entirely a material choice. Settings
+  cannot make PLA survive a dashboard. mimir picks a material whose softening
+  temperature clears the stated use temperature with margin.
+phrases: [heat resistant, "hot car", dashboard, "engine bay", "near a motor", "inside the printer", enclosure part, "high temperature", "won't melt", "won't warp in heat", dishwasher, sun, summer]
+selection:
+  rule: "Pick filaments with properties.softening_temp_c.typical at least 15 C above the stated use temperature. If none is loaded, propose one and ask."
+  margin_c: 15
+  basis: expert
+  reference_softening_c:
+    pla: {value: 55, src: [prusament_tds_pla, prusa_kb_pla]}
+    petg: {value: 70, src: [prusa_kb_petg]}
+    abs: {value: 94, src: [bambu_tds_abs_v3]}
+    asa: {value: 106, src: [bambu_tds_asa_v3]}
+    pc: {value: 119, src: [bambu_tds_pc_v2]}
+    pa_cf: {value: 170, src: ["orca:OrcaFilamentLibrary/filament/Bambu/Bambu PA6-CF @base.json"], note: "Orca vitrification value. Bambu PAHT-CF lists Vicat 220 C."}
+  use_temperature_hints:
+    - {phrase: "hot car or dashboard", use_c: 80, basis: expert, note: "Closed cars in summer sun routinely pass 70 C on the dash. Treat as 80 C."}
+    - {phrase: "inside an ABS printing enclosure", use_c: 60, basis: expert}
+    - {phrase: "dishwasher", use_c: 70, basis: expert}
+default_level: standard
+levels:
+  standard:
+    changes:
+      - {key: wall_loops, op: at_least, value: 4, priority: supporting, why: "Thicker walls resist sagging and creep when the part is warm.", src: [cnckitchen_extrusion_width]}
+      - {key: sparse_infill_density, op: at_least, value: 25, priority: supporting, why: "Denser infill keeps a warm part from slowly collapsing under load."}
+annealing:
+  pla:
+    advice: "Annealing PLA at 100 C for 45 min raises heat resistance but shrinks the part up to 10 percent in XY and grows it in Z, with unpredictable warping. Choose PETG, ASA or PC instead unless the part is simple and you can scale for it."
+    src: [cnckitchen_annealing_pla]
+material_hints:
+  prefer: [asa, abs, pc, pa_cf, pa_gf, petg]
+  avoid: [pla, pla_plus, pla_silk, pla_matte, pla_cf, tpu_95a, tpu_85a]
+  note: "Carbon fiber does not rescue PLA: PLA-CF softens near 50 C."
+costs: {time: none, filament: up}
+src: [cnckitchen_annealing_pla, prusament_tds_pla, bambu_tds_abs_v3, bambu_tds_asa_v3, bambu_tds_pc_v2, prusa_kb_petg]

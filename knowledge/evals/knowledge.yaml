@@ -1,0 +1,74 @@
+# mimir eval scenarios: knowledge questions. Answers must cite knowledge source
+# ids (or web.lookup URLs when the knowledge base has no answer).
+kind: eval_suite
+schema_version: 1
+id: knowledge
+evals:
+  - id: ev15_petg_plate_p1s
+    category: knowledge
+    prompt: "What plate and bed temperature should I use for PETG on my P1S?"
+    context: {printers: demo, printer: bay-2}
+    expect:
+      tools: {must: [kb.filament], may: [kb.printer, kb.workflow]}
+      answer_facts:
+        - "Textured PEI is the best choice, no glue"
+        - "Bed 60 to 80 C (about 70 C)"
+        - "Not the Cool Plate"
+        - "Smooth PEI or High Temp plate only with glue stick as a release layer"
+      citations: {required: true, any_of: [bambu_wiki_material_table, prusa_kb_petg]}
+      must_not: ["web.lookup for a question the knowledge base answers"]
+
+  - id: ev16_pla_cf_ams_lite_a1
+    category: knowledge
+    prompt: "Can I run PLA-CF through the AMS lite on an A1?"
+    context: {printer_owned: bambu_a1, nozzle: {diameter_mm: 0.4, material: stainless_steel}}
+    expect:
+      tools: {must: [kb.filament], may: [kb.printer]}
+      answer_facts:
+        - "Bambu lists only its own PLA-CF as AMS lite compatible; other brands can be too brittle or rough"
+        - "CF is abrasive: fit a hardened steel nozzle first; the stock A1 nozzle is stainless steel"
+        - "Abrasive filament wears the AMS PTFE feed channels over time"
+        - "Do not use a 0.2 mm nozzle with CF"
+      citations: {required: true, any_of: [bambu_wiki_material_table]}
+
+  - id: ev17_dry_nylon_ams2pro
+    category: knowledge
+    prompt: "How long do I dry nylon, and can my AMS 2 Pro do it?"
+    context: {accessories: [bambu_ams_2_pro]}
+    expect:
+      tools: {must: [kb.filament], may: [kb.printer]}
+      answer_facts:
+        - "Oven at about 80 C for 8 to 12 h"
+        - "AMS HT: 85 C for 12 h"
+        - "AMS 2 Pro tops out at 65 C and is not recommended for nylon"
+        - "Keep nylon in a dry box or sealed AMS while printing"
+      citations: {required: true, any_of: [bambu_wiki_drying, bambu_wiki_material_table]}
+
+  - id: ev18_petg_food_cup
+    category: knowledge
+    prompt: "Is PETG food safe? I want to print a coffee cup."
+    context: {printers: demo}
+    expect:
+      tools: {must: [kb.intent], may: [kb.filament]}
+      goals: [food_contact]
+      answer_facts:
+        - "No printed part is food safe by default: layer lines trap bacteria"
+        - "Brass nozzles can contain lead; use stainless steel"
+        - "Colorants are usually not certified"
+        - "Hot coffee is near PETG's softening point (about 70 C)"
+        - "Food safe epoxy coating is the practical fix"
+      must_not: ["calling the printed cup food safe"]
+      citations: {required: true, any_of: [prusa_kb_food_safe]}
+
+  - id: ev19_klipper_pa_start
+    category: knowledge
+    prompt: "What pressure advance should I start with on my Voron, and how do I tune it?"
+    context: {printers: demo, printer: bay-4}
+    expect:
+      tools: {must: [kb.workflow], may: [kb.printer, kb.filament]}
+      answer_facts:
+        - "Direct drive values are low, typically around 0.02 to 0.06; Klipper's docs give 0.05 to 1.0 overall with the high end for bowden"
+        - "Tuning tower: SET_VELOCITY_LIMIT SQUARE_CORNER_VELOCITY=1 ACCEL=500, then TUNING_TOWER COMMAND=SET_PRESSURE_ADVANCE PARAMETER=ADVANCE START=0 FACTOR=.005"
+        - "Or Orca's pattern test, then save per filament"
+        - "Retune after changing nozzle, filament brand or input shaper"
+      citations: {required: true, any_of: [klipper_pressure_advance, klipper_docs_pressure_advance, "orca_wiki:pressure_advance_calib"]}

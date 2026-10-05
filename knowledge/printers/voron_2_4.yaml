@@ -1,0 +1,90 @@
+kind: printer
+schema_version: 1
+id: voron_2_4
+name: Voron 2.4
+vendor: Voron Design (self built)
+status: current
+firmware: klipper
+connections: [moonraker]
+kinematics: corexy
+build_volume_mm: {x: 300, y: 300, z: 300, confidence: medium, note: "Kit sizes are 250, 300 and 350 cube. This file models the 300. Orca lists 275 mm printable height for the 300 profile to leave room for the bed and nozzle.", src: [voron_comparison_2_4_trident, "orca:Voron/machine/Voron 2.4 300 0.4 nozzle.json"]}
+extruder: {type: direct_drive, note: "Stock design uses the Stealthburner toolhead with a Clockwork 2 extruder. Builders can swap it.", src: [voron_docs_home]}
+hotend:
+  max_temp_c: 300
+  nozzle_diameters_mm: [0.15, 0.2, 0.25, 0.4, 0.5, 0.6, 0.8, 1.0]
+  nozzle_materials: [brass, copper_plated, hardened_steel]
+  stock_nozzle: "0.4 mm, depends on the hotend the builder chose (Rapido, Dragon, Revo and others)"
+  tool_free_swap: false
+  high_flow_option: true
+  confidence: low
+  note: "Hotend is the builder's choice. The 300 C figure is a common all-metal ceiling, not a Voron spec. Read the actual value from the user's printer.cfg max_temp."
+  src: [voron_docs_home, "orca:Voron/machine/Voron 2.4 300 0.4 nozzle.json"]
+bed:
+  max_temp_c: 110
+  plates: [textured_pei, smooth_pei, satin_pei]
+  confidence: low
+  note: "Mains powered silicone or aluminum heater with a magnetic PEI sheet is typical. Max temp depends on the build. 110 C is a conservative typical value."
+  src: [voron_docs_home]
+enclosure:
+  type: enclosed
+  chamber_heating: passive
+  max_chamber_c: null
+  filtration: [activated_carbon_optional]
+  confidence: medium
+  note: "Fully enclosed. Chamber warms passively from the bed. Active chamber heaters and carbon filters are common mods, not stock."
+  src: [voron_docs_home]
+motion:
+  max_speed_mm_s: 500
+  max_accel_mm_s2: 20000
+  input_shaping: manual
+  confidence: medium
+  note: "Orca profile limits are 500 mm/s and 20000 mm/s2. Real limits are set by the resonance test result and the user's tuning. Uses ADXL345 or similar with Klipper SHAPER_CALIBRATE."
+  src: ["orca:Voron/machine/Voron 2.4 300 0.4 nozzle.json", klipper_docs_measuring_resonances]
+power:
+  psu_rated_w: {value: 200, note: "The assembly manual names the Mean Well LRS-200-24. The 200 W rating comes from the model number. Builders may fit a larger 24 V supply.", src: [voron_manual_v24], confidence: medium}
+  note: "Depends on the build. The bed heater runs from mains AC through an SSR, not from the 24 V supply, and the Voron docs give no bed wattage. Ask the user for the heater rating. The manual has a supply voltage selector switch that must match local mains."
+  src: [voron_manual_v24, voron_docs_electrical]
+sensors: [inductive_probe_or_klicky, filament_runout_optional, chamber_thermistor_optional, accelerometer_optional]
+builtin_calibrations:
+  - {id: quad_gantry_level, what: "QUAD_GANTRY_LEVEL levels the gantry with four Z motors before each print.", src: [voron_comparison_2_4_trident]}
+  - {id: z_calibration, what: "Homing and Z offset routines run from the Voron macros.", src: [voron_docs_home]}
+  - {id: shaper_calibrate, what: "Klipper resonance test with an accelerometer.", src: [klipper_docs_measuring_resonances]}
+  - {id: pressure_advance_tower, what: "TUNING_TOWER with SET_PRESSURE_ADVANCE.", src: [klipper_docs_pressure_advance]}
+multi_material: []
+materials:
+  recommended: [pla, pla_plus, petg, abs, asa, pc, pa6, pa12, pa_cf, pa_gf, petg_cf, pla_cf, tpu_95a]
+  possible: [tpu_85a, hips, pp, pla_silk, pla_matte, pva, bvoh]
+  not_recommended: []
+  confidence: low
+  note: "Enclosed and heat capable, which suits ABS, ASA, PC and nylon. Abrasive filaments need a hardened nozzle. Passive chamber means PLA and TPU need the door or lid opened and the exhaust fan considered. Depends on the user's build."
+  src: [voron_docs_home]
+orca_profile: "orca:Voron/machine/Voron 2.4 300 0.4 nozzle.json"
+profile_baseline:
+  process: "0.20mm Standard @Voron"
+  values: {layer_height: 0.2, initial_layer_print_height: 0.2, outer_wall_speed: 120, inner_wall_speed: 200, sparse_infill_speed: 200, top_surface_speed: 100, initial_layer_speed: 50, travel_speed: 350, default_acceleration: 5000, outer_wall_acceleration: 3000, inner_wall_acceleration: 5000, travel_acceleration: 7000, initial_layer_acceleration: 500, wall_loops: 3, top_shell_layers: 4, bottom_shell_layers: 3, sparse_infill_density: "15%", bridge_speed: 25, line_width: 0.4, retraction_length: 0.8}
+  confidence: medium
+  note: "Generic conservative baseline shared by all Orca Voron profiles. Tuned machines usually run higher accelerations."
+  src: ["orca:Voron/process/0.20mm Standard @Voron.json", "orca:Voron/machine/Voron 2.4 300 0.4 nozzle.json"]
+pilot_notes:
+  - "Every Voron is different. Read the user's real limits (max_accel, max_velocity, hotend max_temp, bed max_temp) from the Klipper config via Moonraker before setting speeds or temperatures."
+  - "The printer relies on macros. PRINT_START must accept bed and nozzle temperature arguments and machine_start_gcode in Orca must call it with the right parameter names."
+  - "Klipper G-code flavor. Pressure advance is SET_PRESSURE_ADVANCE, or Orca's pressure_advance setting emits it. Check the macro does not also set it."
+  - "Heat soak ABS and ASA before printing, 10 to 20 minutes with the bed at temperature and the door closed."
+  - "The stock Orca profile is conservative. Do not treat 20000 mm/s2 as the safe print acceleration, use the resonance test recommendation."
+  - "Reachable through Moonraker (API in moonraker_api guide)."
+common_issues:
+  - symptom: "Ringing or ghosting after raising acceleration"
+    cause: "Acceleration above what the shaper can clean up."
+    fix:
+      - {key: outer_wall_acceleration, op: at_most, value: 3000, why: "Baseline Orca outer wall acceleration for this profile."}
+      - {advice: "Rerun SHAPER_CALIBRATE and keep max_accel at or below the recommended value.", kind: hardware}
+  - symptom: "ABS layer splitting or corner lifting"
+    cause: "Chamber not heat soaked; strong part cooling."
+    fix:
+      - {key: fan_max_speed, op: at_most, value: 20, why: "Low fan keeps ABS layers fused in the chamber."}
+      - {advice: "Heat soak the chamber before the print starts.", kind: workflow}
+  - symptom: "Blobs or missing extrusion after the first layer with a bed mesh"
+    cause: "Mesh not adaptive or Z offset drifted with chamber heat."
+    fix:
+      - {advice: "Use adaptive bed mesh and re-run Z offset after heat soak.", kind: workflow}
+src: [voron_docs_home, voron_comparison_2_4_trident, "orca:Voron/machine/Voron 2.4 300 0.4 nozzle.json"]

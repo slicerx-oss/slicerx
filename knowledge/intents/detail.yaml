@@ -1,0 +1,42 @@
+kind: intent_goal
+schema_version: 1
+id: detail
+label: Fine detail
+summary: >
+  Miniatures, figurines, embossed text and small features. The nozzle sets the
+  floor: a 0.2 mm nozzle resolves features a 0.4 mm nozzle cannot. Then thin
+  layers, slow walls, enough cooling time per layer, and gentle supports.
+phrases: [miniature, mini, figurine, tabletop, "max detail", "fine detail", detailed, tiny, small text, "28mm", "32mm", bust, model kit, jewelry]
+default_level: standard
+levels:
+  standard:
+    changes:
+      - {key: smart_layer, op: set, value: quality, priority: supporting, why: "sleipnir keeps the thinnest layers on domes, slopes and faces and prints straight walls thicker, which saves time without losing detail.", src: [bambu_wiki_adaptive_layer, wasserfall_2017_adaptive_slicing]}
+      - {key: layer_height, op: at_most, value: 0.08, priority: core, why: "0.08 mm layers make layer lines almost invisible on small models. Bambu's 0.08 mm High Quality preset.", src: ["orca:BBL/process/0.08mm High Quality @BBL X1C.json"]}
+      - {key: outer_wall_speed, op: at_most, value: 60, priority: core, why: "Slow outer walls keep sharp edges on tiny features.", src: ["orca:BBL/process/0.08mm High Quality @BBL X1C.json"]}
+      - {key: default_acceleration, op: at_most, value: 4000, priority: supporting, why: "Lower acceleration avoids ringing on small, fast direction changes.", src: ["orca:BBL/process/0.08mm High Quality @BBL X1C.json"]}
+      - {key: outer_wall_acceleration, op: at_most, value: 2000, priority: supporting, why: "Gentler motion on the visible wall.", src: ["orca:BBL/process/0.08mm High Quality @BBL X1C.json"]}
+      - {key: wall_generator, op: set, value: arachne, priority: core, why: "Arachne varies line width to fill thin features like swords, fingers and horns that fixed width walls skip.", src: ["orca_src:src/libslic3r/PrintConfig.cpp"]}
+      - {key: detect_thin_wall, op: enable, priority: supporting, why: "Keeps walls thinner than two lines instead of dropping them.", src: ["orca_src:src/libslic3r/PrintConfig.cpp"]}
+      - {key: support_threshold_angle, op: set, value: 15, priority: supporting, why: "Supports only under the steepest overhangs. Fine layers bridge small overhangs on their own. Bambu's 0.08 mm preset uses 15 degrees.", src: ["orca:BBL/process/0.08mm High Quality @BBL X1C.json"]}
+      - {key: support_type, op: set, value: "tree(auto)", priority: supporting, why: "Tree supports touch the model at small points and come off organic shapes more cleanly."}
+      - {key: support_style, op: set, value: organic, priority: supporting, why: "Organic trees grow around the model and are easier to remove from figures."}
+      - {key: slow_down_for_layer_cooling, op: enable, priority: core, why: "Tiny layers finish in seconds. Slowing down gives each layer time to cool so heads and spikes do not melt into blobs."}
+  nozzle_0_2:
+    extends: standard
+    requires: {nozzle_diameter_mm: 0.2}
+    changes:
+      - {key: layer_height, op: set, value: 0.06, priority: core, why: "Bambu's finest 0.2 mm nozzle preset. Minimal layer lines.", src: ["orca:BBL/process/0.06mm Standard @BBL X1C 0.2 nozzle.json"]}
+      - {key: line_width, op: set, value: 0.22, priority: core, why: "Matches the 0.2 mm nozzle.", src: ["orca:BBL/process/0.06mm Standard @BBL X1C 0.2 nozzle.json"]}
+      - {key: wall_loops, op: at_least, value: 4, priority: supporting, why: "Thin lines need more walls for the same shell thickness. Bambu's 0.2 mm presets use four.", src: ["orca:BBL/process/0.06mm Standard @BBL X1C 0.2 nozzle.json"]}
+hardware_levers:
+  - {advice: "Swap to a 0.2 mm nozzle for 28 to 32 mm miniatures when one is available. Do not use it with CF, GF or glow filament: the clog risk is very high.", kind: hardware, src: [bambu_wiki_material_table]}
+material_hints:
+  prefer: [pla, pla_matte]
+  avoid: [petg, tpu_95a, tpu_85a, pla_cf, petg_cf, pa_cf, pa_gf]
+  note: "PLA holds fine detail best. Matte PLA hides layer lines. PETG strings on small travel moves. Filled materials cannot go through a 0.2 mm nozzle."
+orientation:
+  - {advice: "Tilt miniatures back 30 to 45 degrees so faces and details are not on the support side.", kind: orientation, basis: expert}
+  - {advice: "Print several minis per plate. More travel time per layer lets each one cool, the same effect as a minimum layer time.", kind: workflow}
+costs: {time: up, filament: none}
+src: ["orca:BBL/process/0.08mm High Quality @BBL X1C.json", "orca:BBL/process/0.06mm Standard @BBL X1C 0.2 nozzle.json", "orca_src:src/libslic3r/PrintConfig.cpp", bambu_wiki_material_table]

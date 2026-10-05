@@ -1,0 +1,83 @@
+kind: troubleshoot
+schema_version: 1
+id: heat_creep
+name: Heat creep
+aliases: [jam mid print, extruder jam after a while, clog that appears after an hour, soft filament in the extruder, PLA jam in enclosure]
+camera_signs:
+  - "The print starts fine, then under-extrusion or a full stop appears after a period of time"
+  - "Filament above the nozzle is swollen, soft, bent or thicker at the bottom when pulled out"
+  - "Clicking extruder late in the print, gaps in walls, then nothing extruding"
+log_signs:
+  - "Bambu HMS extrusion resistance prompts (for example 0300-0900-0002-0004) or clog detection (0300-1A00-0002-0002) appearing late in a warm print"
+  - "Klipper: hotend fan or heater warnings, or a temperature sensor on the heatsink reading high if you have one"
+tree:
+  start: q_material
+  nodes:
+    q_material: {ask: "Is the filament PLA, TPU or PETG (low glass transition), or PETG with the bed at 70 C or more inside a closed enclosure?", "yes": q_enclosure, "no": q_fan}
+    q_enclosure: {ask: "Is the printer enclosed with the door and top cover on, or in a room that is hot (summer, small closed room)?", "yes": c_chamber_hot, "no": q_fan}
+    q_fan: {ask: "Is the hotend cooling fan spinning at full speed all the time, with clean heatsink fins and an intact duct?", "yes": q_retraction, "no": c_fan_failed}
+    q_retraction: {ask: "Do long retractions or many stop and start retractions sit near the clog, or is the print slow with very little extrusion per minute?", "yes": c_slow_extrusion, "no": q_heatbreak}
+    q_heatbreak: {ask: "Is the heatbreak seated properly with no gap, thermal paste on threads where the maker calls for it, and no cracked or loose heatsink?", "yes": c_bed_temp_or_glass, "no": c_hotend_assembly}
+causes:
+  - id: c_chamber_hot
+    name: Chamber or room too hot for the material
+    category: environment
+    likelihood: high
+    checks:
+      - "Bambu says the most common reason for hotend and extruder clogs on X1 Carbon and P1S is heat buildup in the enclosure."
+      - "Keep the chamber at least 10 C below the filament glass transition."
+    fixes:
+      - {advice: "Open the front door and remove the top glass or lid for PLA, TPU and PETG. Ellis suggests at minimum opening the door, or taking the panels off, for PLA in an enclosure.", kind: environment}
+      - {advice: "Print PLA on a cooler plate at a low bed temperature. Bambu notes the Cool Plate at about 35 C lets PLA print with the door closed.", kind: hardware}
+      - {advice: "In a hot room, add airflow around the printer and avoid printing at the hottest time of day. Bambu names outside heat as a cause.", kind: environment}
+    filaments: [pla, tpu_95a, tpu_85a, petg]
+    printers: [bambu, klipper]
+    src: [bambu_wiki_heat_creep, ellis_pla_overheating, ellis_extruder_skipping]
+    confidence: high
+  - id: c_fan_failed
+    name: Hotend fan weak, stopped or ducted wrong
+    category: hardware
+    likelihood: high
+    checks:
+      - "Watch the fan during a print. A fan that stops and starts can be a wiring fault. Some vendor Klipper configs cap the hotend fan at 40 percent power."
+    fixes:
+      - {advice: "Replace or rewire the fan and run it at 100 percent. Bambu names a malfunctioning hotend cooling fan as a cause of an overheated heatsink.", kind: hardware}
+      - {advice: "Clean dust from the heatsink fins and check the fan duct is seated.", kind: hardware}
+    src: [bambu_wiki_heat_creep, ellis_extruder_skipping]
+    confidence: high
+  - id: c_slow_extrusion
+    name: Slow extrusion lets heat climb the filament
+    category: settings
+    likelihood: medium
+    checks:
+      - "Filament that moves slowly through the hotend has more time to soften above the melt zone."
+    fixes:
+      - {advice: "Extrude faster than the heat can creep up, or improve cooling at the top of the hotend. Reduce very long retractions, which drag molten plastic up into the cold zone.", kind: workflow}
+      - {advice: "Keep retraction at or under 1 mm on direct drive. Ellis notes high retraction can cause skipping and jams.", kind: workflow}
+    src: [ellis_extruder_skipping, ellis_retraction]
+    confidence: low
+  - id: c_bed_temp_or_glass
+    name: Bed temperature and top glass cover
+    category: settings
+    likelihood: medium
+    checks:
+      - "Bed above the guideline for the material with the top glass cover fitted (Bambu table)."
+    fixes:
+      - {advice: "Follow Bambu's table for the top glass. PLA 45 to 60 C, TPU 35 to 45 C, PVA 45 to 60 C should print with the upper glass removed. ABS, PETG, ASA, PC and PA keep the glass on in that table. Bambu recommends removing the top glass for PETG when the bed is above 70 C.", kind: environment}
+      - {advice: "For soft filaments, lower the bed temperature when the plate allows it.", kind: environment}
+    src: [bambu_wiki_heat_creep, bambu_wiki_avoid_clogs, bambu_wiki_material_table]
+    confidence: medium
+  - id: c_hotend_assembly
+    name: Poor heatbreak contact or hotend assembly
+    category: hardware
+    likelihood: medium
+    checks:
+      - "Prusa says stringing and clogs can come from poor heat dissipation between heatbreak and heatsink after a hotend change."
+    fixes:
+      - {advice: "Reassemble the hotend to the maker's instructions. On Prusa hotends, reapply thermal paste on the threads between the heatbreak and the heatsink, and confirm every part is in place.", kind: hardware}
+      - {advice: "On V6 style hotends, do not bottom the nozzle against the heater block. Reseat the heatbreak so it makes full contact.", kind: hardware}
+    printers: [prusa, klipper]
+    src: [prusa_kb_stringing, ellis_retraction]
+    confidence: medium
+related: [clog, under_extrusion, stringing]
+src: [bambu_wiki_heat_creep, ellis_pla_overheating, ellis_extruder_skipping]

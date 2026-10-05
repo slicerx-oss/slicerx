@@ -1,0 +1,112 @@
+kind: troubleshoot
+schema_version: 1
+id: under_extrusion
+name: Under-extrusion
+aliases: [underextrusion, gaps in walls, thin walls, missing layers, weak infill, grinding filament, clicking extruder]
+camera_signs:
+  - "Visible gaps between wall lines, thin or see-through walls, sparse or stringy infill"
+  - "Top surface not fully covered, with gaps between the lines"
+  - "Missing or partial layers at random heights, or a print that gets worse as it goes"
+  - "Filament curling to the side or sticking to the outside of the nozzle when extruding by hand"
+  - "Ground or flattened filament near the extruder gear"
+log_signs:
+  - "Bambu HMS 0300-0900-0002-0004 (extrusion resistance abnormal) and 0300-1A00-0002-0002 (force sensor detects clog) on printers with those sensors"
+  - "Bambu HMS 12xx-2000-0002-0006 family ('failed to extrude AMS filament, extruder may be clogged') on A1 series with AMS lite"
+  - "Klipper heater warnings such as 'not heating at expected rate' point to a temperature problem instead of a flow one"
+  - "Flow dynamics or pressure advance calibration giving very different K values run to run, which Bambu links to an inconsistent flow from a partial clog"
+tree:
+  start: q_extruder
+  nodes:
+    q_extruder: {ask: "Do you hear clicking or see the extruder gear skipping or grinding the filament?", "yes": q_partial_clog, "no": q_wet}
+    q_partial_clog: {ask: "When you extrude by hand at print temperature, does the filament come out curled or sideways, or is there strong resistance?", "yes": c_partial_clog, "no": q_spool_path}
+    q_spool_path: {ask: "Does the spool turn freely, with no tangle, kink in the PTFE tube, or bent buffer or AMS path?", "yes": q_grip, "no": c_feed_path}
+    q_grip: {ask: "Is the filament worn or dented at the gear, or is the extruder tension or idler too loose or too tight?", "yes": c_extruder_grip, "no": q_hotend_fan}
+    q_hotend_fan: {ask: "Is the hotend cooling fan running at full speed, and does it stop and start?", "yes": q_wet, "no": c_heat_creep_fan}
+    q_wet: {ask: "Does the filament pop, or has it been out of dry storage for weeks?", "yes": c_wet_filament, "no": q_speed}
+    q_speed: {ask: "Are you printing fast with thick layers, wide lines or a filament that needs more heat (near the maximum volumetric speed)?", "yes": c_flow_limit, "no": c_flow_ratio}
+causes:
+  - id: c_partial_clog
+    name: Partial nozzle clog
+    category: hardware
+    likelihood: high
+    checks:
+      - "Heat the nozzle a little above the filament's normal temperature and extrude by hand. It should come out straight and steady."
+      - "Bambu notes a partial clog can make flow dynamics calibration give an inconsistent K value."
+    fixes:
+      - {advice: "Clear the nozzle using the printer's official unclogging guide (manual extrude, pin tool, then a cold pull). If it clogs again quickly, replace the nozzle. Ellis says try a new nozzle first, since it is often a partial clog.", kind: hardware}
+      - {advice: "Check the filament diameter with calipers along the length. Bambu recommends 1.75 plus or minus 0.03 mm and clean, impurity free filament.", kind: material}
+    printers: [bambu, prusa, klipper]
+    src: [bambu_wiki_a1_nozzle_clog, prusa_kb_clogged_nozzle, ellis_extruder_skipping, bambu_wiki_avoid_clogs]
+    confidence: high
+  - id: c_feed_path
+    name: Restricted feed path
+    category: hardware
+    likelihood: medium
+    checks:
+      - "Pull filament by hand from the spool to the extruder and feel for drag. Look for kinked or collapsed PTFE, a jammed AMS buffer spring, or a spool catching on a holder."
+      - "With an AMS, print once from an external spool. If quality is fine, the AMS path or internal hub is at fault."
+    fixes:
+      - {advice: "Replace any bent or deformed PTFE tube between the AMS, buffer and toolhead. Check the buffer spring moves freely and the filament is not tangled on the spool.", kind: hardware}
+      - {advice: "Print from an external spool to isolate the AMS. Bambu suggests checking the internal hub if the external spool prints fine.", kind: hardware}
+      - {advice: "With direct drive, use a reverse bowden tube from the spool if pulling from a dry box adds drag.", kind: hardware}
+    printers: [bambu]
+    src: [bambu_wiki_ams2pro_loading, bambu_wiki_hms_0700_4000_0002_0004, ellis_extruder_skipping]
+    confidence: medium
+  - id: c_extruder_grip
+    name: Extruder grip or tension
+    category: hardware
+    likelihood: medium
+    checks:
+      - "Look for filament dust or worn dents at the drive gear."
+      - "Yank on the filament while it feeds. If it slips easily, tension is too loose. Too tight also causes skipping."
+    fixes:
+      - {advice: "Clean debris out of the feed gear grooves. On Prusa, set the idler tension screws so the tips are level with the front of the idler nut. On DIY extruders tighten the tension screw until the filament stops slipping, then about 1 to 2 more turns.", kind: hardware}
+      - {advice: "Check the gear grub screw is tight on the motor shaft. If the motor turns normally but the filament does not move, the gear or screw is the likely fault.", kind: hardware}
+    src: [prusa_kb_clogged_nozzle, ellis_extruder_skipping]
+    confidence: medium
+  - id: c_heat_creep_fan
+    name: Hotend fan not cooling the heatbreak
+    category: hardware
+    likelihood: medium
+    checks:
+      - "Confirm the hotend fan spins at full speed and does not start or stop. Some vendor Klipper configs cap max_power at 0.4 for the hotend fan."
+      - "Touch test the heatsink after a long print. It should not be hot to hold."
+    fixes:
+      - {advice: "Replace or rewire a slow or stopping hotend fan and make sure it runs at 100 percent. See the heat_creep troubleshooter.", kind: hardware}
+    src: [ellis_extruder_skipping, bambu_wiki_heat_creep]
+    confidence: medium
+  - id: c_wet_filament
+    name: Wet filament
+    category: material
+    likelihood: medium
+    checks:
+      - "Extrude in the air and listen for popping or watch for steam. Sealed spools can be wet."
+    fixes:
+      - {advice: "Dry the filament for its material and print from a dry box. Bambu notes moisture vaporizes in the nozzle causing bubbles, poor flow and rough surfaces.", kind: material}
+    src: [bambu_wiki_avoid_clogs, ellis_pockmarks]
+    confidence: high
+  - id: c_flow_limit
+    name: Volumetric flow limit exceeded
+    category: settings
+    likelihood: medium
+    checks:
+      - "Under-extrusion appears only in fast, wide, thick parts such as infill and solid layers, and improves when you slow the same model."
+      - "Bambu warns printing too fast (for example Ludicrous mode) may not leave enough time to melt the plastic."
+    fixes:
+      - {advice: "Lower the filament max volumetric speed, or run a max flow test to find it for this filament and nozzle, so fast thick sections slow down enough for the hotend to keep up.", kind: workflow}
+      - {key: nozzle_temperature, op: increase_by, value: 5, why: "A little more heat lets the filament melt faster at high flow. Stay inside the material range. Ellis notes high speed printing often needs a temperature bump.", src: [ellis_perimeter_separation]}
+    src: [bambu_wiki_avoid_clogs, ellis_perimeter_separation]
+    confidence: medium
+  - id: c_flow_ratio
+    name: Flow ratio too low or pressure advance off
+    category: settings
+    likelihood: medium
+    checks:
+      - "Top surface has gaps even at slow speeds and the extruder sounds normal."
+    fixes:
+      - {key: filament_flow_ratio, op: increase_by, value: 0.02, why: "Nudge flow up. Ellis tunes extrusion multiplier with cubes in 1 to 2 percent steps after calibrating the extruder and pressure advance.", src: [ellis_extrusion_multiplier]}
+      - {advice: "Redo pressure advance (Bambu: flow dynamics) calibration for this filament, since a wrong value causes thin starts and bulged ends of lines.", kind: workflow}
+    src: [ellis_extrusion_multiplier, klipper_pressure_advance]
+    confidence: medium
+related: [clog, heat_creep, over_extrusion, ams_jam, pillowing]
+src: [prusa_kb_clogged_nozzle, bambu_wiki_a1_nozzle_clog, ellis_extruder_skipping]

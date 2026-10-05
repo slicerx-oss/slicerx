@@ -1,0 +1,104 @@
+# Sources for the sleipnir guide (variable layer height): layer height bounds,
+# adaptive layer algorithms, layer height versus strength and surface, cooling limits.
+kind: sources
+sources:
+  # Slicer and printer maker documentation
+  - id: prusa_kb_variable_layer_height
+    title: "Variable layer height function"
+    publisher: Prusa Research
+    type: manufacturer_kb
+    url: https://help.prusa3d.com/article/variable-layer-height-function_1750
+    retrieved: 2026-09-30
+    note: "Adaptive button builds the profile from a Quality/Speed slider. Smooth applies a filter whose radius sets how much the curve is smoothed, and can be pressed repeatedly. Keep min stops the thinnest layers from being smoothed. The metric limits the cross section area between the stepped surface and the model. Pick a base profile close to what most of the print will use; taller layers get wider extrusions."
+  - id: bambu_wiki_layer_height
+    title: "Layer height (Bambu Studio)"
+    publisher: Bambu Lab
+    type: manufacturer_wiki
+    url: https://wiki.bambulab.com/en/software/bambu-studio/layer-height
+    retrieved: 2026-09-30
+    note: "Reasonable range is 20 to 70 percent of the nozzle diameter (0.08 to 0.28 mm on a 0.4 mm nozzle). System presets use a first layer of 50 percent of the nozzle diameter. Example print: 0.08 mm took 1 h 19 min, 0.20 mm 36 min 14 s, 0.28 mm 28 min 27 s. Precise Z height tunes the last 5 layers and is skipped under 6 layers or when it would break the layer height limits."
+  - id: cura_fdmprinter_def
+    title: "Cura fdmprinter.def.json (adaptive layers, minimum layer time, layer height limits)"
+    publisher: UltiMaker
+    type: slicer_source
+    url: https://github.com/Ultimaker/Cura/blob/72521b78f0851e309a067adad260969c5a2c8e0f/resources/definitions/fdmprinter.def.json
+    retrieved: 2026-09-30
+    note: "Adaptive layers maximum variation default 0.1 mm, variation step size 0.01 mm, topography size 0.2 mm (target horizontal distance between adjacent layer edges). Layer height warns above 0.8 times the nozzle size and below 0.04 mm. Minimum layer time 5 s, minimum speed 10 mm/s by default."
+  - id: klipper_endstop_phase
+    title: "Endstop phase"
+    publisher: Klipper project
+    type: firmware_docs
+    url: https://www.klipper3d.org/Endstop_Phase.html
+    retrieved: 2026-09-30
+    note: "The endstop phase system can place every layer on a full step boundary, which requires a slicer layer height that is a multiple of a full step."
+  - id: prusa_blog_reprap_calculator
+    title: "RepRap calculator: optimal layer height for your Z axis"
+    publisher: Prusa Research
+    type: manufacturer_blog
+    url: https://blog.prusa3d.com/calculator_3416/
+    retrieved: 2026-09-30
+    note: "Picks layer heights so Z moves in full step increments. Z is often disabled when idle, and an axis disabled mid microstep jumps to the nearest full step and adds error. Inputs are motor step angle (1.8 degrees shown) and leadscrew pitch (8 mm shown)."
+  # Research
+  - id: wasserfall_2017_adaptive_slicing
+    title: "Adaptive Slicing for the FDM Process Revisited (Wasserfall, Hendrich, Zhang, IEEE CASE 2017, doi 10.1109/COASE.2017.8256074)"
+    publisher: University of Hamburg, TAMS group
+    type: peer_reviewed
+    url: "https://tams.informatik.uni-hamburg.de/publications/2017/Adaptive%20Slicing%20for%20the%20FDM%20Process%20Revisited.pdf"
+    retrieved: 2026-09-30
+    note: "Basis of the Slic3r, PrusaSlicer and OrcaSlicer adaptive layers. Cusp height (Dolenc and Makela) gives layer height = min(max layer, cusp limit / nz) where nz is the vertical part of the surface normal. Cusp alone never thins vertical walls, and FDM walls are rough even when vertical because of the rounded bead (layer to profile height ratio about 3.3). Users found sudden thin to thick jumps look worse than uniform thick layers."
+  - id: dolenc_makela_1994_slicing
+    title: "Slicing procedures for layered manufacturing techniques (Dolenc and Makela, Computer-Aided Design 26(2):119 to 126, 1994, doi 10.1016/0010-4485(94)90032-9)"
+    publisher: Elsevier
+    type: peer_reviewed
+    url: "https://doi.org/10.1016/0010-4485(94)90032-9"
+    retrieved: 2026-09-30
+    note: "Origin of the cusp height measure. Read through its description in wasserfall_2017_adaptive_slicing; the paper itself was not fetched."
+  - id: stojkovic_2023_layer_height_annealing
+    title: "An experimental study on the impact of layer height and annealing parameters on the tensile strength and dimensional accuracy of FDM 3D printed parts (Stojkovic et al., Materials 16:4574, 2023)"
+    publisher: MDPI
+    type: peer_reviewed
+    url: https://doi.org/10.3390/ma16134574
+    retrieved: 2026-09-30
+    note: "Open access, read in full. 0.4 mm nozzle, 75 percent cubic infill, ASTM D638 type 1. Average tensile strength at 0.1, 0.2, 0.3 mm: PLA 32, 30.19, 28.75 MPa; PETG 33.52, 30.37, 29.45 MPa; PETG-CF 28.46, 24.40, 22.52 MPa. Layer height mattered more than annealing. Cites Szust and Adamski (2022): upright PLA gained 67 percent tensile strength going from 0.24 to 0.16 mm, with 91 percent more print time."
+  - id: frunzaverde_2023_pla_layer_color
+    title: "The influence of the layer height and the filament color on the dimensional accuracy and the tensile strength of FDM-printed PLA specimens (Frunzaverde et al., Polymers 15:2377, 2023)"
+    publisher: MDPI
+    type: peer_reviewed
+    url: https://doi.org/10.3390/polym15102377
+    retrieved: 2026-09-30
+    note: "Open access, read in full. PLA at 0.05, 0.10, 0.15, 0.20 mm, 0.4 mm nozzle, flat (YX), 100 percent infill. Strength fell as layers got thicker for all four colors; the drop from 0.05 to 0.20 mm ranged from 4.77 percent (grey) to 23.41 percent (black). Best dimensional accuracy at 0.10 to 0.15 mm. Reviews prior work: most studies find thinner is stronger, some find the opposite or an optimum."
+  - id: bouzaglou_2023_mex_review
+    title: "Process design and parameters interaction in material extrusion 3D printing: a review (Bouzaglou, Golan, Lachman, Polymers 15:2280, 2023)"
+    publisher: MDPI
+    type: peer_reviewed
+    url: https://doi.org/10.3390/polym15102280
+    retrieved: 2026-09-30
+    note: "Open access review. Layer thickness is about 25 to 75 percent of the nozzle diameter. Results on strength vary widely. Tymrak et al. PLA: 60.4 MPa at 0.2 mm, 48.5 at 0.3, 54.9 at 0.4 (V shape, same trend for ABS with smaller effect). Flat samples can favor thicker layers, upright samples thinner ones."
+  - id: chacon_2017_pla_fdm
+    title: "Additive manufacturing of PLA structures using fused deposition modelling: effect of process parameters on mechanical properties and their optimal selection (Chacon et al., Materials and Design 124:143 to 157, 2017)"
+    publisher: Elsevier
+    type: peer_reviewed
+    url: https://doi.org/10.1016/j.matdes.2017.03.065
+    retrieved: 2026-09-30
+    note: "Paywalled; findings read through open access papers that cite it (Megersa et al. 2024, Aldawood et al. 2025). Layer thickness 0.06 to 0.24 mm. Thicker layers and lower feed rate raised tensile strength of upright samples; thinner layers helped flat and on edge samples. Upright samples were weakest overall."
+  - id: megersa_2024_pla_taguchi
+    title: "Investigation of the influence of FDM process parameters on tensile properties of PLA parts using the Taguchi method (Megersa et al., Materials 17:5951, 2024)"
+    publisher: MDPI
+    type: peer_reviewed
+    url: https://doi.org/10.3390/ma17235951
+    retrieved: 2026-09-30
+    note: "Open access. Build orientation explained 98.16 percent of tensile strength variation; layer thickness was not significant. Optimum 0.16 mm layers, flat orientation."
+  - id: aldawood_2025_pc_pla
+    title: "Optimization of mechanical properties using FDM: a systematic investigation of polycarbonate and polylactic acid specimens (Aldawood et al., Polymers 17:2659, 2025)"
+    publisher: MDPI
+    type: peer_reviewed
+    url: https://doi.org/10.3390/polym17192659
+    retrieved: 2026-09-30
+    note: "Open access. PC and PLA at 0.2 and 0.4 mm layers on a 0.4 mm nozzle. Thicker layers raised ultimate strength by up to 36.2 percent and halved print time. One specimen per condition, which the authors say is too few to show significance. Low confidence."
+  - id: aliheidari_2018_abs_fracture
+    title: "Interlayer adhesion and fracture resistance of polymers printed through melt extrusion additive manufacturing process (Aliheidari et al., Materials and Design 156:351 to 361, 2018)"
+    publisher: Elsevier
+    type: peer_reviewed
+    url: https://doi.org/10.1016/j.matdes.2018.07.001
+    retrieved: 2026-09-30
+    note: "Abstract only. ABS double cantilever beam tests. Nozzle and bed temperature and layer height had significant effects on interlayer fracture resistance. A 20 C hotter nozzle raised apparent fracture resistance 38 percent."

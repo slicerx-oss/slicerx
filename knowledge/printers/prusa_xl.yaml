@@ -1,0 +1,84 @@
+kind: printer
+schema_version: 1
+id: prusa_xl
+name: Original Prusa XL
+vendor: Prusa Research
+status: current
+firmware: prusa
+connections: [prusalink, prusa_connect]
+kinematics: corexy
+build_volume_mm: {x: 360, y: 360, z: 360, confidence: high, src: [prusa_spec_xl, "orca:Prusa/machine/Prusa XL 0.4 nozzle.json"]}
+extruder: {type: direct_drive, note: "One Nextruder per toolhead, each with its own load cell.", src: [prusa_spec_xl]}
+hotend:
+  max_temp_c: 290
+  nozzle_diameters_mm: [0.25, 0.3, 0.4, 0.5, 0.6, 0.8]
+  nozzle_materials: [brass, hardened_steel]
+  stock_nozzle: "0.4 mm brass"
+  tool_free_swap: false
+  high_flow_option: false
+  confidence: medium
+  note: "Single toolhead and 5 toolhead (5T) versions. Nozzles are per toolhead."
+  src: [prusa_spec_xl, "orca:Prusa/machine/Prusa XL 5T 0.4 nozzle.json"]
+bed:
+  max_temp_c: 120
+  plates: [smooth_pei, textured_pei, satin_pei]
+  confidence: medium
+  note: "16 segment heatbed; only segments under the part are heated. Magnetic steel sheets."
+  src: [prusa_spec_xl]
+enclosure:
+  type: optional_kit
+  chamber_heating: passive
+  max_chamber_c: null
+  filtration: []
+  confidence: medium
+  note: "Open by default. Prusa sells an enclosure bundle."
+  src: [prusa_spec_xl]
+motion:
+  max_speed_mm_s: 400
+  max_accel_mm_s2: 4000
+  input_shaping: auto
+  confidence: medium
+  note: "Orca limits 400 mm/s and 4000 mm/s2. Toolheads have an integrated accelerometer, factory calibrated, per Prusa KB."
+  src: ["orca:Prusa/machine/Prusa XL 0.4 nozzle.json", prusa_kb_input_shaper]
+power:
+  standby_w: {value: 80, note: "Prusa average power draw on stand-by, 5 toolhead XL.", src: [prusa_spec_xl], confidence: medium}
+  heatup_peak_w: {value: 550, note: "Prusa average power draw while heating up before calibration. This is an average, not a peak.", src: [prusa_spec_xl], confidence: medium}
+  printing_typical_w: {petg: {value: 235}, src: [prusa_spec_xl], confidence: medium, note: "Prusa states 235 W average while printing PETG. The segmented bed heats only the tiles under the part, so small parts draw less."}
+  note: "The XL page shows a 240 W PSU line that matches the MK4S table and cannot power 550 W of heat up, so no PSU rating is recorded. The printer plugs into a standard household socket."
+sensors: [load_cell, filament_runout, nfc_spool_reader, toolhead_accelerometer]
+builtin_calibrations:
+  - {id: tool_offset_calibration, what: "Automatic toolhead offset calibration on the 5T and multi tool setups.", src: [prusa_spec_xl]}
+  - {id: input_shaper_calibration, what: "Integrated accelerometer, factory calibrated.", src: [prusa_kb_input_shaper]}
+  - {id: phase_stepping, what: "Introduced on the XL by firmware update.", src: [prusa_blog_phase_stepping]}
+multi_material:
+  - {system: xl_toolchanger, slots: 5, note: "Up to five toolheads, each with its own filament. Wipe tower is still used to prime idle toolheads; per-toolhead nozzle and temperature settings are independent.", src: [prusa_spec_xl]}
+materials:
+  recommended: [pla, pla_plus, pla_silk, pla_matte, petg, tpu_95a]
+  possible: [asa, abs, pc, pa6, pa12, petg_cf, pla_cf, pa_cf, pa_gf, tpu_85a, pva, hips, pp, bvoh]
+  not_recommended: []
+  confidence: medium
+  note: "Large open bed: ABS, ASA and nylon need the enclosure and warp on big footprints without it. Abrasive filaments need hardened nozzles on every toolhead that uses them."
+  src: [prusa_spec_xl]
+orca_profile: "orca:Prusa/machine/Prusa XL 0.4 nozzle.json"
+profile_baseline:
+  process: "0.20mm Speed @Prusa XL 0.4"
+  values: {layer_height: 0.2, initial_layer_print_height: 0.2, outer_wall_speed: 170, inner_wall_speed: 170, sparse_infill_speed: 200, top_surface_speed: 100, initial_layer_speed: 25, travel_speed: 400, default_acceleration: 2500, outer_wall_acceleration: 2500, inner_wall_acceleration: 3000, travel_acceleration: 5000, initial_layer_acceleration: 500, wall_loops: 2, top_shell_layers: 5, bottom_shell_layers: 4, sparse_infill_density: "15%", bridge_speed: 50, line_width: 0.45, retraction_length: 0.8}
+  confidence: high
+  src: ["orca:Prusa/process/0.20mm Speed @Prusa XL 0.4.json", "orca:Prusa/machine/Prusa XL 0.4 nozzle.json"]
+pilot_notes:
+  - "5T machines use separate Orca profiles (Prusa XL 5T). Confirm which variant the user has before reading limits."
+  - "Do not merge plates that need different tools in a way that forces excessive tool changes without saying so: each change costs time and purge."
+  - "The bed is segmented. Small parts heat only their segments, so a brim or skirt outside heated segments may not stick."
+  - "G-code flavor is marlin2, pressure advance via M572. Sending uses PrusaLink or Prusa Connect."
+common_issues:
+  - symptom: "Large ABS or ASA part warps"
+    cause: "Open frame and big footprint."
+    fix:
+      - {advice: "Fit the enclosure and print with the door closed.", kind: hardware}
+      - {key: brim_width, op: at_least, value: 8, why: "Wide brim on large footprint ABS."}
+  - symptom: "Oozing color contamination after tool change on multi tool prints"
+    cause: "Idle toolhead ooze or too small prime tower."
+    fix:
+      - {key: enable_prime_tower, op: enable, why: "The tower primes each toolhead after a change."}
+      - {key: prime_tower_width, op: at_least, value: 35, why: "A wider tower gives more room to prime."}
+src: [prusa_spec_xl, prusa_kb_input_shaper, "orca:Prusa/machine/Prusa XL 0.4 nozzle.json"]

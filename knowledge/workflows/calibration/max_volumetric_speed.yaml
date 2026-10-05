@@ -1,0 +1,27 @@
+kind: calibration
+schema_version: 1
+id: max_volumetric_speed
+name: Max volumetric speed
+order: 2
+purpose: "Find how many mm3 of this filament per second the hotend melts before walls fail. Every speed setting is capped by this number."
+run_when: ["Printing fast or with a high flow hotend", "Under extrusion that appears only on fast infill or long straight walls", "New hotend or nozzle"]
+prereqs: [temperature]
+orca_test:
+  menu: "Calibration > Max flowrate"
+  defaults: {start_mm3s: 5, end_mm3s: 20, step: 0.5}
+  formula: "max_volumetric_speed = start + height_mm * step"
+  example: "Failure at 19 mm with defaults: 5 + 19 * 0.5 = 14.5 mm3/s."
+  src: ["orca_wiki:volumetric_speed_calib"]
+steps:
+  - "Print the test at the temperature from the tower. Hotter usually allows more flow."
+  - "Measure the height where walls first fail, gap, or change sheen from glossy to matte."
+  - "Compute the value with the formula, or read the flow color at that height in Orca preview."
+read_result:
+  - "The test is a best case. Set the profile 10 to 20 percent below the measured value for real parts."
+  - "Brand and even color change the result for the same material."
+read_result_src: ["orca_wiki:volumetric_speed_calib"]
+camera_reading: {feasible: partial, look_for: "Height where the surface turns matte or rough. Needs a ruler or a known scale in frame."}
+writes:
+  - {key: filament_max_volumetric_speed, op: set, value_from: {calibration: max_volumetric_speed, field: measured_mm3s, factor: 0.85}, why: "Measured limit minus 15 percent headroom so strength and quality hold."}
+typical_results_ref: "kb.filament(type).extrusion.max_volumetric_speed_mm3s"
+src: ["orca_wiki:volumetric_speed_calib"]

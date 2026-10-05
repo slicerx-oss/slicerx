@@ -1,0 +1,73 @@
+kind: troubleshoot
+schema_version: 1
+id: elephant_foot
+name: Elephant foot
+aliases: [elefant foot, first layer flare, bottom bulge, flared base, squished first layer]
+camera_signs:
+  - "The bottom layers flare outward as a lip wider than the layers above, most visible on the first 1 to 3 layers"
+  - "A part sits fine on the plate but a lid or mating part will not seat because of the ridge at the base"
+  - "Shiny, squashed first layer lines with a ridge at the edge"
+log_signs: []
+tree:
+  start: q_squish
+  nodes:
+    q_squish: {ask: "Does the first layer look glassy or squashed, with ridges pushed out at the edge of the lines?", "yes": c_over_squish, "no": q_bed_heat}
+    q_bed_heat: {ask: "Is the bed temperature at the high end for the material, or higher than the plate needs?", "yes": c_bed_hot, "no": q_compensation}
+    q_compensation: {ask: "Is elephant foot compensation set to 0, and do you need tight tolerances at the base?", "yes": c_no_compensation, "no": q_compensation_high}
+    q_compensation_high: {ask: "Is there a step or gap in the wall just above the base (perimeters printing over nothing)?", "yes": c_compensation_too_high, "no": c_large_heavy_part}
+causes:
+  - id: c_over_squish
+    name: Nozzle too close to the plate
+    category: settings
+    likelihood: high
+    checks:
+      - "Print the first layer squish patches. If lines merge with no gaps and ridges at the edges, the nozzle is too close."
+    fixes:
+      - {advice: "Raise the Z offset a little. On Bambu textured plates the default G29.1 Z-0.04 adds pressure. Bambu's suggested range is -0.06 to 0 mm on textured plates and -0.01 to 0.01 mm on smooth plates; a value closer to zero raises the nozzle.", kind: hardware}
+      - {advice: "Lower the flow of the first layer only if the rest of the part is correct, and do not fix adhesion by squishing. Prusa warns that too low a Z offset can damage the sheet.", kind: hardware}
+    printers: [bambu, prusa]
+    src: [bambu_wiki_first_layer_x1, prusa_kb_first_layer, ellis_first_layer_squish]
+    confidence: medium
+  - id: c_bed_hot
+    name: Bed too hot for the first layer
+    category: settings
+    likelihood: medium
+    checks:
+      - "The first layers stay soft while upper layers press on them. Bambu names bed heat as one of the two causes."
+    fixes:
+      - {advice: "Drop the bed temperature toward the low end of the plate and filament range. Keep it high enough for adhesion, since warping is the opposite failure.", kind: material}
+    src: [bambu_wiki_elephant_foot, ellis_build_adhesion]
+    confidence: medium
+  - id: c_no_compensation
+    name: No elephant foot compensation
+    category: settings
+    likelihood: high
+    checks:
+      - "Print a 25 x 25 x 10 mm cube with compensation at 0 and no brim. Let the bed cool to room temperature before removing, then measure the base against the upper walls with calipers."
+    fixes:
+      - {key: elefant_foot_compensation, op: increase_by, value: 0.05, why: "Add a little compensation and re-measure. Bambu's example uses 0.2 mm and the Bambu X1C Standard profile ships 0.15 mm. Use the measured flare for tight parts.", src: [bambu_wiki_elephant_foot, "orca:BBL/process/fdm_process_single_0.20.json"]}
+    src: [bambu_wiki_elephant_foot, orca_wiki_precision, "orca:BBL/process/fdm_process_single_0.20.json"]
+    confidence: medium
+  - id: c_compensation_too_high
+    name: Compensation set too high
+    category: settings
+    likelihood: medium
+    checks:
+      - "A visible groove or a perimeter that prints over nothing above the base. Ellis notes this is common with high values combined with bottom chamfers."
+    fixes:
+      - {key: elefant_foot_compensation, op: decrease_by, value: 0.05, why: "Reduce, disable or fade the compensation. Too much makes the upper perimeters print over an undersized base.", src: [ellis_perimeter_separation]}
+    src: [ellis_perimeter_separation]
+    confidence: medium
+  - id: c_large_heavy_part
+    name: Large or heavy base on soft first layers
+    category: model
+    likelihood: low
+    checks:
+      - "Larger models and wider bases show more flare because more weight sits on the soft base."
+    fixes:
+      - {advice: "Add a small chamfer to the bottom edge of the model in CAD. That removes the flare without touching slicer settings.", kind: orientation}
+      - {advice: "Keep the first layer at the recommended first layer height, and print the first layers slower so the plastic sets. Bambu recommends 30 mm/s or less for the initial layer.", kind: workflow}
+    src: [bambu_wiki_elephant_foot, bambu_wiki_spaghetti]
+    confidence: low
+related: [first_layer, dimensional_accuracy, over_extrusion, bed_adhesion]
+src: [bambu_wiki_elephant_foot, ellis_perimeter_separation, orca_wiki_precision]

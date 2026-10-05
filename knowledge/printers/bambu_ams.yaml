@@ -1,0 +1,57 @@
+kind: accessory
+schema_version: 1
+id: bambu_ams
+name: Bambu Lab AMS (first generation)
+vendor: Bambu Lab
+compatible_printers: [bambu_x1c, bambu_x1e, bambu_p1s, bambu_p1p, bambu_a1, bambu_a1_mini, bambu_h2d, bambu_h2s, bambu_a2l]
+compatibility_notes: "X1 and P1 need a filament buffer for one unit or an AMS Hub for several, up to 4 units. A series needs the A1 series AMS Hub and firmware 01.07.00.00 or newer; do not use the X1 or P1 buffer there. H2 series has the buffer built in."
+compatibility_src: [bambu_wiki_ams_compat, bambu_wiki_ams_faq]
+slots: 4
+max_units_per_printer: 4
+drying:
+  supported: false
+  desiccant: true
+  humidity_display: "Levels A to E, not a percentage."
+  src: [bambu_wiki_ams_humidity, bambu_wiki_ams_function]
+material_limits:
+  compatible: [pla, pla_plus, pla_silk, pla_matte, pla_cf, petg, petg_cf, abs, asa, pc, pa_cf, pva, bvoh]
+  not_compatible: [tpu_85a]
+  not_recommended: []
+  notes:
+    - "Standard TPU is marked not compatible with AMS in the Bambu table. Only TPU for AMS and TPU 95A HF are marked compatible."
+    - "Bambu PA-CF and PAHT-CF are compatible. Third party fiber filled nylon is not listed as compatible."
+    - "PET-CF/GF, PPA-CF/GF and PPS-CF/GF are not compatible."
+    - "PLA Glow is not recommended."
+  src: [bambu_wiki_material_table]
+rfid:
+  supported: true
+  detail: "Two RFID boards read the tags on both sides of Bambu spools. Read on insertion, on startup or manually per slot. The reading also estimates remaining filament. Reading is unavailable while the slot is loaded to the extruder."
+  src: [bambu_wiki_ams_function]
+features_src: [bambu_wiki_ams_function, bambu_wiki_filament_mapping]
+features:
+  - "Preloading pulls filament in to the hub when a spool is inserted."
+  - "Auto mapping matches slicer filaments to AMS slots by type first, then color."
+  - "Auto refill switches to another slot with the same brand, type, color and nozzle temperature when a spool runs out."
+known_issues:
+  - symptom: "Auto refill does not switch to a backup spool"
+    cause: "Backup spool differs in brand, type, color or nozzle temperature, or the user paused and unloaded during the print."
+    fix:
+      - {advice: "Load a spool with the identical brand, type and color in another slot, and enable AMS Auto-Refill in AMS settings. Do not pause and unload mid print.", kind: workflow}
+    src: [bambu_wiki_ams_function]
+  - symptom: "Last piece of filament cannot be pulled back and the next color contaminates"
+    cause: "The tail has left the spool, so the AMS cannot retract it during a color change."
+    fix:
+      - {advice: "The printer flushes the tail before switching slots. Wait for the purge and let the screen prompt finish.", kind: workflow}
+    src: [bambu_wiki_ams_function]
+  - symptom: "RFID is not read after a multi plate run without unloading"
+    cause: "If filament stays in the toolhead the AMS is not idle."
+    fix:
+      - {advice: "Restore the unload G-code, or unload the slot and use Re-Read.", kind: workflow}
+    src: [bambu_wiki_ams_no_unload, bambu_wiki_ams_function]
+  - symptom: "Purged filament jams the chute on long multi color prints"
+    cause: "Waste piles up or a cover blocks the chute."
+    fix:
+      - {advice: "Use a large catch container, keep the chute open and empty it during the print.", kind: hardware}
+      - {key: flush_multiplier, op: multiply, value: 0.9, why: "Bambu says defaults run high. Verify colors stay clean."}
+    src: [bambu_wiki_purge_waste, bambu_wiki_reduce_waste]
+src: [bambu_wiki_ams_function, bambu_wiki_ams_compat, bambu_wiki_material_table]

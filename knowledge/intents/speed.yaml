@@ -1,0 +1,37 @@
+kind: intent_goal
+schema_version: 1
+id: speed
+label: Fast
+summary: >
+  Finish sooner. On modern printers the limit is usually how much plastic the
+  hotend can melt per second (max volumetric speed), not the speed numbers.
+  The real levers are thicker layers, a bigger nozzle, less infill and fewer
+  top layers. Raising mm/s past the melt limit changes nothing.
+phrases: [fast, quick, quickly, asap, rush, draft, prototype, test fit, "by tomorrow", "by tonight", "in an hour", deadline, "as fast as possible", rough]
+default_level: standard
+levels:
+  standard:
+    changes:
+      - {key: layer_height, op: set, value_from: {nozzle_factor: 0.6, round_to: 0.04}, priority: core, why: "Thicker layers mean fewer layers. 0.24 mm on a 0.4 mm nozzle matches Bambu's Draft preset.", src: ["orca:BBL/process/0.24mm Draft @BBL X1C.json"]}
+      - {key: sparse_infill_density, op: at_most, value: 15, priority: core, why: "Infill is hidden, so keep it at the stock 15 percent.", src: ["orca:BBL/process/0.20mm Standard @BBL X1C.json"]}
+      - {key: sparse_infill_pattern, op: set, value: grid, priority: supporting, why: "Grid is one of the fastest patterns and is the Bambu default.", src: [prusa_kb_infill_patterns, "orca:BBL/process/0.20mm Standard @BBL X1C.json"]}
+      - {key: top_shell_layers, op: at_most, value: 4, priority: supporting, why: "Four top layers still close the surface at thicker layer heights, as in Bambu's Draft preset.", src: ["orca:BBL/process/0.24mm Draft @BBL X1C.json"]}
+      - {key: infill_combination, op: enable, priority: supporting, why: "Prints sparse infill every second layer at double height, which saves time inside the part.", src: ["orca_src:src/libslic3r/PrintConfig.cpp"]}
+  draft:
+    extends: standard
+    changes:
+      - {key: layer_height, op: set, value_from: {nozzle_factor: 0.7, round_to: 0.04}, priority: core, why: "0.28 mm on a 0.4 mm nozzle is Bambu's Extra Draft height. Layer lines show, and that is fine for a test fit.", src: ["orca:BBL/process/0.28mm Extra Draft @BBL X1C.json"]}
+      - {key: wall_loops, op: at_most, value: 2, priority: core, why: "Two walls are enough for a shape check."}
+      - {key: sparse_infill_pattern, op: set, value: lightning, priority: core, why: "Lightning infill only holds up the top surfaces and uses the least plastic. Use it for looks only, never for load.", src: [prusa_kb_infill_patterns]}
+      - {key: sparse_infill_density, op: at_most, value: 10, priority: supporting, why: "Lightning at low density is enough to carry the top skin.", src: [prusa_kb_infill_patterns]}
+      - {key: support_threshold_angle, op: set, value: 40, priority: supporting, why: "Only the steepest overhangs get support, as in Bambu's Extra Draft preset.", src: ["orca:BBL/process/0.28mm Extra Draft @BBL X1C.json"]}
+hardware_levers:
+  - {advice: "A 0.6 mm nozzle at 0.30 mm layers moves much more plastic per pass. Bambu ships 0.30 mm Standard and Strength presets for it. Suggest it for large parts when one is available (hardened steel handles every material).", kind: hardware, src: ["orca:BBL/process/0.30mm Standard @BBL X1C 0.6 nozzle.json"]}
+  - {advice: "High flow filament and a high flow hotend raise the melt limit. Bambu PETG HF runs 21 mm3/s on a standard X1C hotend and 29 on the high flow one.", kind: hardware, src: ["orca:BBL/filament/Bambu PETG HF @BBL X1C.json"]}
+  - {advice: "Split the job across idle printers with the same material before cutting quality.", kind: workflow}
+limits:
+  - "Never exceed the filament's max volumetric speed; the slicer caps speeds there anyway, so raising mm/s is pointless."
+  - "Do not raise acceleration above the printer profile. Input shaping and the profile already set the safe ceiling."
+  - "Keep first layer settings. A failed first layer costs more time than it saves."
+costs: {time: down, filament: down, quality: down}
+src: [prusa_kb_infill_patterns, "orca:BBL/process/0.24mm Draft @BBL X1C.json", "orca:BBL/process/0.28mm Extra Draft @BBL X1C.json", "orca_src:src/libslic3r/PrintConfig.cpp"]

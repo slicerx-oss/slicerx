@@ -1,0 +1,101 @@
+# mimir eval scenarios: material, nozzle and printer switches.
+# These exercise settings.plan({from, to}). Every changed key in the plan must
+# carry a reason and at least one source id (checked by the runner).
+kind: eval_suite
+schema_version: 1
+id: settings_switch
+evals:
+  - id: ev09_switch_pla_to_petg
+    category: settings_switch
+    prompt: "Switch this plate from PLA to PETG"
+    context: {printers: demo, printer: bay-1, plate: textured_pei, from: {filament: pla}, to: {filament: petg}}
+    expect:
+      tools: {must: [settings.plan], may: [kb.filament]}
+      checks:
+        - {key: nozzle_temperature, is: between, value: [240, 260]}
+        - {key: textured_plate_temp, is: between, value: [65, 80]}
+        - {key: fan_max_speed, is: at_most, value: 60}
+        - {key: close_fan_the_first_x_layers, is: at_least, value: 2}
+        - {key: filament_flow_ratio, is: between, value: [0.94, 1.0]}
+        - {key: filament_max_volumetric_speed, is: between, value: [10, 16]}
+        - {key: retraction_length, is: between, value: [0.4, 1.0]}
+      every_change_has: [reason, source]
+      must_mention: ["PETG sticks too hard to smooth PEI without glue"]
+      citations: {required: true, any_of: ["orca:OrcaFilamentLibrary/filament/Bambu/Bambu PETG Basic @base.json", bambu_wiki_material_table]}
+      latency_ms: {settings.plan: 50}
+
+  - id: ev10_switch_pla_to_tpu
+    category: settings_switch
+    prompt: "Now make it TPU 95A"
+    context: {printers: demo, printer: bay-1, plate: textured_pei, from: {filament: pla}, to: {filament: tpu_95a}}
+    expect:
+      tools: {must: [settings.plan], may: [kb.filament, kb.printer]}
+      checks:
+        - {key: filament_max_volumetric_speed, is: at_most, value: 3.6}
+        - {key: retraction_length, is: at_most, value: 0.8}
+        - {key: nozzle_temperature, is: between, value: [220, 240]}
+        - {key: textured_plate_temp, is: between, value: [30, 50]}
+      every_change_has: [reason, source]
+      must_mention: ["external spool, not through the AMS", "dry the spool (drying is required for TPU)"]
+      citations: {required: true, any_of: [bambu_wiki_material_table, bambu_wiki_tpu_guide, "orca:BBL/filament/Bambu TPU 95A @BBL X1C.json"]}
+
+  - id: ev11_switch_pla_to_asa_p1s
+    category: settings_switch
+    prompt: "Switch to ASA on the P1S"
+    context: {printers: demo, printer: bay-2, plate: textured_pei, from: {filament: pla}, to: {filament: asa}}
+    expect:
+      tools: {must: [settings.plan], may: [kb.filament, kb.printer]}
+      checks:
+        - {key: nozzle_temperature, is: between, value: [250, 280]}
+        - {key: textured_plate_temp, is: between, value: [90, 100]}
+        - {key: fan_max_speed, is: at_most, value: 50}
+        - {key: close_fan_the_first_x_layers, is: at_least, value: 2}
+      every_change_has: [reason, source]
+      must_mention: ["keep the door and lid closed", "brim or glue for large flat parts", "ventilate the room; ASA gives off fumes"]
+      must_not: ["Cool Plate"]
+      bounds: {textured_plate_temp: {max: 100, why: "P1S bed tops out at 100 C"}}
+      citations: {required: true, any_of: [bambu_wiki_material_table, bambu_wiki_abs_asa_pc, prusa_kb_asa]}
+
+  - id: ev12_switch_pla_to_pa_cf
+    category: settings_switch
+    prompt: "Switch this to PA-CF"
+    context: {printers: demo, printer: bay-1, plate: bambu_engineering_plate, from: {filament: pla}, to: {filament: pa_cf}, nozzle: {diameter_mm: 0.4, material: hardened_steel}}
+    expect:
+      tools: {must: [settings.plan], may: [kb.filament, kb.printer]}
+      checks:
+        - {key: nozzle_temperature, is: between, value: [270, 300]}
+        - {key: eng_plate_temp, is: between, value: [80, 110]}
+        - {key: fan_max_speed, is: at_most, value: 40}
+        - {key: filament_max_volumetric_speed, is: at_most, value: 10}
+      every_change_has: [reason, source]
+      must_mention: ["glue stick on the Engineering Plate", "drying is required (oven about 80 C for 8 to 12 h, or AMS HT 85 C for 12 h; the AMS 2 Pro cannot)", "the stock hardened nozzle on the X1 Carbon is fine for carbon fiber"]
+      citations: {required: true, any_of: [bambu_wiki_drying, bambu_wiki_material_table, "orca:OrcaFilamentLibrary/filament/Bambu/Bambu PA6-CF @base.json"]}
+
+  - id: ev13_switch_nozzle_04_to_06
+    category: settings_switch
+    prompt: "I put a 0.6 nozzle in Bay 1"
+    context: {printers: demo, printer: bay-1, from: {nozzle_mm: 0.4, filament: pla}, to: {nozzle_mm: 0.6, filament: pla}}
+    expect:
+      tools: {must: [settings.plan], may: [kb.printer, kb.workflow]}
+      checks:
+        - {key: layer_height, is: between, value: [0.24, 0.36]}
+        - {key: line_width, is: between, value: [0.6, 0.68]}
+        - {key: outer_wall_line_width, is: between, value: [0.6, 0.68]}
+      every_change_has: [reason, source]
+      must_mention: ["rerun flow dynamics calibration (pressure advance changes with nozzle size)", "set the nozzle size on the printer so it matches the slice"]
+      citations: {required: true, any_of: ["orca:BBL/process/0.30mm Standard @BBL X1C 0.6 nozzle.json", ellis_pa]}
+
+  - id: ev14_switch_x1c_to_mk4s_petg
+    category: settings_switch
+    prompt: "Move this PETG job from Bay 1 to the MK4S"
+    context: {printers: demo, from: {printer: bay-1, filament: petg}, to: {printer: bay-3, filament: petg}}
+    expect:
+      tools: {must: [settings.plan, kb.printer], may: [kb.filament, slice]}
+      checks:
+        - {key: nozzle_temperature, is: between, value: [230, 250]}
+        - {key: hot_plate_temp, is: between, value: [80, 90]}
+        - {key: filament_max_volumetric_speed, is: at_most, value: 15}
+        - {key: fan_max_speed, is: at_most, value: 60}
+      every_change_has: [reason, source]
+      must_mention: ["the MK4S sets pressure advance from the filament profile (M572), there is no flow dynamics scan", "use the textured or satin sheet, glue on smooth PEI", "the plate fits the smaller MK4S bed or needs re-arranging"]
+      citations: {required: true, any_of: ["orca:Prusa/filament/Prusament PETG @MK4S.json", prusa_kb_petg]}

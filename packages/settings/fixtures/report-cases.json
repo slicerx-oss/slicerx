@@ -1,0 +1,52 @@
+{
+ "comment": "Import report cases both implementations run: the layers of a preset (child first, values as the file has them) into one config and the report of what did not carry over. js/report.parity.test.ts writes report-golden.json; tests/preset_bundles.rs checks it. The first case is the Bambu Studio 2.8.2 process preset of fixtures/preset-files/bambu-studio-2.8.2-printer.bbscfg over a cut down parent.",
+ "cases": [
+  {
+   "name": "bambu process over its parent",
+   "section": "process",
+   "family": "orca",
+   "layers": [
+    { "name": "My 0.20mm Standard @BBL A1M", "raw": { "enable_height_slowdown": "1", "from": "User", "inherits": "0.20mm Standard @BBL A1M", "name": "My 0.20mm Standard @BBL A1M", "print_extruder_id": ["1"], "print_extruder_variant": ["Direct Drive Standard"], "print_settings_id": "My 0.20mm Standard @BBL A1M", "sparse_infill_density": "25%", "sparse_infill_pattern": "2dlattice", "top_one_wall_type": "all top", "version": "2.8.0.4", "wall_loops": "3" } },
+    { "name": "0.20mm Standard @BBL A1M", "raw": { "wall_loops": "2", "sparse_infill_density": "15%", "sparse_infill_pattern": "grid", "only_one_wall_top": "1", "outer_wall_speed": ["200"] } }
+   ],
+   "printer": { "name": "Bambu Lab A1 mini", "raw": { "only_one_wall_top": "0", "travel_acceleration": ["10000"] } },
+   "parent": { "name": "0.20mm Standard @BBL A1M", "found": true },
+   "defaulted": 0
+  },
+  {
+   "name": "bambu filament with fork keys and a nil slot",
+   "section": "filament",
+   "family": "orca",
+   "layers": [
+    { "name": "My PLA Basic @BBL A1M", "raw": { "circle_compensation_speed": ["180"], "filament_extruder_variant": ["Direct Drive Standard", "Direct Drive High Flow"], "filament_flow_ratio": ["0.97"], "filament_scarf_seam_type": ["external"], "filament_settings_id": ["My PLA Basic @BBL A1M"], "from": "User", "inherits": "Bambu PLA Basic @BBL A1M", "name": "My PLA Basic @BBL A1M", "nozzle_temperature": ["nil", "225"], "version": "2.8.0.4" } },
+    { "name": "Bambu PLA Basic @BBL A1M", "raw": { "nozzle_temperature": ["220", "230"], "filament_flow_ratio": ["0.98"] } }
+   ],
+   "parent": { "name": "Bambu PLA Basic @BBL A1M", "found": true },
+   "defaulted": 0
+  },
+  {
+   "name": "legacy keys, a percent Orca drops, an obsolete key, bad values",
+   "section": "process",
+   "family": "orca",
+   "layers": [
+    { "name": "Old process", "raw": { "initial_layer_speed": "50%", "max_volumetric_speed": "15", "wipe_tower_width": "wide", "z_hop_type": "Spiral Lift", "seam_position": "corner", "process_notes": "quiet\nprofile for the night", "wall_loops": "three", "ironing_type": "top" } }
+   ],
+   "printer": { "name": "Example printer", "raw": { "initial_layer_speed": ["40"], "seam_position": "back", "wall_loops": "2" } },
+   "defaulted": "count"
+  },
+  {
+   "name": "prusaslicer keys with nearest settings",
+   "section": "filament",
+   "family": "prusa",
+   "layers": [
+    { "name": "My PETG", "raw": { "nozzle_temperature": ["240"], "filament_max_volumetric_speed": ["12"] } }
+   ],
+   "extraDropped": [
+    { "key": "fan_always_on", "value": "1", "reason": "unsupported" },
+    { "key": "filament_spool_weight", "value": "230", "reason": "unsupported" },
+    { "key": "overhang_fan_speed_0", "value": "100", "reason": "unsupported" }
+   ],
+   "defaulted": "count"
+  }
+ ]
+}

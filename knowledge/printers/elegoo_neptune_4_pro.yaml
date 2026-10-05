@@ -1,0 +1,87 @@
+kind: printer
+schema_version: 1
+id: elegoo_neptune_4_pro
+name: Elegoo Neptune 4 Pro
+vendor: Elegoo
+status: current
+firmware: vendor_klipper
+connections: [moonraker]
+kinematics: bedslinger
+build_volume_mm: {x: 225, y: 225, z: 265, confidence: medium, note: "Orca profile uses a 230 x 230 printable area; Elegoo lists 225.", src: [elegoo_n4_pro_page, "orca:Elegoo/machine/EN4SERIES/Elegoo Neptune 4 Pro 0.4 nozzle.json"]}
+extruder: {type: direct_drive, note: "Dual gear direct extruder.", src: [elegoo_n4_pro_page]}
+hotend:
+  max_temp_c: 300
+  nozzle_diameters_mm: [0.2, 0.4, 0.6, 0.8, 1.0]
+  nozzle_materials: [brass]
+  stock_nozzle: "0.4 mm, copper or brass style"
+  tool_free_swap: false
+  high_flow_option: false
+  confidence: medium
+  note: "Elegoo lists 300 C. Hardened steel is not stock; add one before abrasive filaments."
+  src: [elegoo_n4_pro_page, "orca:Elegoo/machine/EN4SERIES/Elegoo Neptune 4 Pro 0.4 nozzle.json"]
+bed:
+  max_temp_c: 110
+  plates: [textured_pei, smooth_pei]
+  confidence: medium
+  note: "Segmented heatbed with a flexible PEI sheet. Bed maximum is from a search summary of the Elegoo page."
+  src: [elegoo_n4_pro_page]
+enclosure:
+  type: open
+  chamber_heating: none
+  max_chamber_c: null
+  filtration: []
+  confidence: high
+  note: "Open frame bedslinger."
+  src: [elegoo_n4_pro_page]
+motion:
+  max_speed_mm_s: 500
+  max_accel_mm_s2: 10000
+  input_shaping: manual
+  confidence: medium
+  note: "Orca limits 500 mm/s and 10000 mm/s2. Elegoo advertises 500 mm/s. Klipper input shaper is configured with default values; recalibration needs an accelerometer."
+  src: ["orca:Elegoo/machine/EN4SERIES/Elegoo Neptune 4 Pro 0.4 nozzle.json", elegoo_n4_pro_page]
+power:
+  mains: "115 or 230 V AC, 50/60 Hz"
+  psu_rated_w: {value: 400, note: "A community owner calls it a 400 W supply. Elegoo does not publish the rating on its store page.", src: [n4pro_power_tests], confidence: low}
+  bed_heater_w: {value: 250, note: "Two zones, 100 W and 150 W. The outer zone turns on only when the model needs it.", src: [elegoo_n4_pro_store], confidence: high}
+  heatup_peak_w: {value: 375, note: "Owner reading with hotend at 200 C and both bed zones at 60 C. Above 80 percent of the supply rating.", src: [n4pro_power_tests], confidence: low}
+  printing_typical_w: {pla: {value: 80}, src: [n4pro_power_tests], confidence: low, note: "Owner reading of the 18 minute supplied Benchy, mostly 78 to 85 W. Bed heaters pushed it to about 230 W for part of the print. One unit, one wattmeter."}
+  idle_w: {value: 11, note: "Booted, steppers not holding. 22.5 W once the steppers hold after homing.", src: [n4pro_power_tests], confidence: low}
+sensors: [filament_runout, bed_mesh_probe, accelerometer_optional]
+builtin_calibrations:
+  - {id: bed_mesh_121_point, what: "121 point automatic bed mesh.", src: [elegoo_n4_pro_page]}
+  - {id: input_shaper, what: "Factory input shaper present; retune needs an accelerometer.", src: [elegoo_n4_pro_page]}
+multi_material: []
+materials:
+  recommended: [pla, pla_plus, pla_silk, pla_matte, petg, tpu_95a]
+  possible: [abs, asa, tpu_85a, pla_cf, petg_cf, pa6, pc, pa12, pa_cf, pa_gf, pva, bvoh, hips, pp]
+  not_recommended: []
+  confidence: medium
+  note: "Open frame: ABS and ASA need an enclosure and a draft free room; nylon and PC are out of practical range. CF and GF need a hardened nozzle."
+  src: [elegoo_n4_pro_page]
+orca_profile: "orca:Elegoo/machine/EN4SERIES/Elegoo Neptune 4 Pro 0.4 nozzle.json"
+profile_baseline:
+  process: "0.20mm Standard @Elegoo N4Pro 0.4 nozzle"
+  values: {layer_height: 0.2, initial_layer_print_height: 0.2, outer_wall_speed: 160, inner_wall_speed: 200, sparse_infill_speed: 200, top_surface_speed: 200, initial_layer_speed: 50, travel_speed: 500, default_acceleration: 6000, outer_wall_acceleration: 5000, initial_layer_acceleration: 500, wall_loops: 2, top_shell_layers: 5, bottom_shell_layers: 4, sparse_infill_density: "15%", bridge_speed: 50, line_width: 0.42, retraction_length: 0.8}
+  confidence: high
+  src: ["orca:Elegoo/process/EN4SERIES/0.20mm Standard @Elegoo N4Pro 0.4 nozzle.json", "orca:Elegoo/machine/EN4SERIES/Elegoo Neptune 4 Pro 0.4 nozzle.json"]
+pilot_notes:
+  - "Bedslinger: high acceleration with a heavy bed moves the part. Tall parts with a small base wobble at high acceleration."
+  - "Klipper flavor, Moonraker and Fluidd available. Pressure advance via SET_PRESSURE_ADVANCE. Confirm PRINT_START argument names."
+  - "Open frame with no enclosure, so no ABS or ASA advice without the user adding one."
+  - "Hotend flow and part cooling cap real speed well below 500 mm/s. Keep filament_max_volumetric_speed at or below the profile."
+common_issues:
+  - symptom: "Ringing or ghosting on walls"
+    cause: "Bedslinger mass and default acceleration."
+    fix:
+      - {key: outer_wall_acceleration, op: at_most, value: 3000, why: "Bedslingers ring sooner; lower outer wall acceleration."}
+      - {key: outer_wall_speed, op: at_most, value: 120, why: "Slower outer walls print cleaner on a bedslinger."}
+  - symptom: "First layer uneven on parts of the bed"
+    cause: "Warped bed or mesh drift."
+    fix:
+      - {advice: "Rerun the bed mesh with the bed hot and check the Z offset.", kind: workflow}
+  - symptom: "Filament grinds or under extrudes at speed"
+    cause: "Hotend cannot melt fast enough."
+    fix:
+      - {advice: "Run a max flow test and cap filament_max_volumetric_speed below the failure point.", kind: workflow}
+src: [elegoo_n4_pro_page, "orca:Elegoo/machine/EN4SERIES/Elegoo Neptune 4 Pro 0.4 nozzle.json"]

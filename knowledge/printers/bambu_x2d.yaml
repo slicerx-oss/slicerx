@@ -1,0 +1,34 @@
+kind: printer
+schema_version: 1
+id: bambu_x2d
+name: Bambu Lab X2D
+vendor: Bambu Lab
+status: current
+status_confidence: medium
+status_src: [bambu_store_collection]
+detail_level: core_specs_only
+firmware: bambu
+connections: [bambu_lan_mqtt, bambu_cloud, bambu_connect]
+kinematics: corexy
+build_volume_mm: {x: 256, y: 256, z: 260, main_nozzle: {x: 256, y: 256, z: 260}, auxiliary_nozzle: {x: 235.5, y: 256, z: 256}, dual_nozzle: {x: 235.5, y: 256, z: 256}, src: [bambu_spec_x2d, "orca:BBL/machine/Bambu Lab X2D 0.4 nozzle.json"]}
+extruder: {type: dual, main: direct_drive, auxiliary: "stepper motor extruder, listed as Bowden in the Orca profile", src: [bambu_spec_x2d, "orca:BBL/machine/Bambu Lab X2D 0.4 nozzle.json"]}
+hotend: {max_temp_c: 300, nozzle_diameters_mm: [0.2, 0.4, 0.6, 0.8], nozzle_materials: [hardened_steel], count: 2, tool_free_swap: false, high_flow_option: null, max_flow_mm3s: {standard: 40}, src: [bambu_spec_x2d]}
+bed: {max_temp_c: 120, plates: [textured_pei, smooth_pei, bambu_supertack_plate, bambu_engineering_plate], included_plates: [textured_pei], src: [bambu_spec_x2d, bambu_wiki_build_plates]}
+enclosure: {type: enclosed, chamber_heating: active, max_chamber_c: 65, filtration: [g3_prefilter, hepa_h12, activated_carbon], src: [bambu_spec_x2d]}
+motion: {max_speed_mm_s: 1000, max_accel_mm_s2: 20000, input_shaping: auto, src: [bambu_spec_x2d]}
+power:
+  mains: "High voltage version 200 to 240 V AC, low voltage version 100 to 120 V AC, 50/60 Hz"
+  max_w: {value: 1600, note: "At 220 V. 1100 W on the 110 V version.", src: [bambu_spec_x2d, bambu_wiki_power], confidence: high}
+  printing_typical_w: {pla: {value: 250}, pc: {value: 550}, src: [bambu_spec_x2d, bambu_wiki_power], confidence: high, note: "Bambu steady state power at 25 C ambient, same at 220 V and 110 V."}
+  standby_w: {range: [7.3, 7.8], src: [bambu_wiki_power], confidence: medium, note: "Offline standby. 7.8 to 8.2 W with Wi-Fi."}
+  note: "Bambu lists a Low Power Mode with approximately 750 W peak. No chamber heater wattage is published."
+sensors: [live_view_camera, toolhead_camera, door_sensor, filament_runout, tangle_detection, filament_odometry_with_ams, power_loss_recovery]
+sensors_src: [bambu_spec_x2d]
+multi_material:
+  - {system: bambu_ams_2_pro, max_units: 4, slots_per_unit: 4, needs: "Filament buffer included. 4-in-1 PTFE adapter II for more than 2 units.", src: [bambu_wiki_ams_compat]}
+  - {system: bambu_ams_ht, max_units: 8, slots_per_unit: 1, src: [bambu_wiki_ams_compat]}
+orca_profile: "orca:BBL/machine/Bambu Lab X2D 0.4 nozzle.json"
+pilot_notes:
+  - "Bambu says to print PLA Silk, PETG-CF, ASA-CF, PA6-CF and TPU for AMS with the main hotend when quality matters. The auxiliary hotend is for the other filaments in the spec list."
+  - "The Bambu material table marks ABS on the auxiliary hotend as not recommended."
+src: [bambu_spec_x2d, bambu_wiki_material_table, "orca:BBL/machine/Bambu Lab X2D 0.4 nozzle.json"]

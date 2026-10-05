@@ -1,0 +1,15 @@
+{
+  "type": "machine",
+  "name": "Demo Printer 0.4 nozzle",
+  "inherits": "fdm_demo_machine",
+  "from": "system",
+  "instantiation": "true",
+  "printer_variant": "0.4",
+  "default_print_profile": "0.20mm Standard @Demo",
+  "max_layer_height": [
+    "0.32"
+  ],
+  "min_layer_height": [
+    "0.08"
+  ]
+}

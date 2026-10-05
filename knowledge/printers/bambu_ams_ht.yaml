@@ -1,0 +1,58 @@
+kind: accessory
+schema_version: 1
+id: bambu_ams_ht
+name: Bambu Lab AMS HT
+vendor: Bambu Lab
+compatible_printers: [bambu_x1c, bambu_x1e, bambu_p1s, bambu_p1p, bambu_a1, bambu_a1_mini, bambu_h2d, bambu_h2s, bambu_h2c, bambu_p2s, bambu_x2d, bambu_a2l]
+compatibility_notes: "Single spool unit. X1 and P1 need a buffer or AMS Hub, A series needs the A1 series AMS Hub. H2 series and X2D take up to 8 AMS HT units. Every unit needs external power for drying, whatever the printer."
+compatibility_src: [bambu_wiki_amsht_intro, bambu_wiki_ams_compat]
+slots: 1
+max_units_per_printer: {x1_p1: 4, a_series: 4, h2_series: 8, x2d: 8, p2s: 4}
+drying:
+  supported: true
+  max_temp_c: 85
+  heater: "170 W heater. Holds 85 C in 10 to 25 C ambient."
+  typical: {pla: {temp_c: 45, hours: 12}, petg: {temp_c: 65, hours: 12}, abs_asa: {temp_c: 80, hours: 8}, pc: {temp_c: 80, hours: 8}, pa: {temp_c: 85, hours: 12}, pa_cf_gf: {temp_c: 85, hours: 12}, pva: {temp_c: 85, hours: 18}, tpu: {temp_c: 75, hours: 12, note: "Appendix table gives 75 C for 18 h; the material table says 12 h."}}
+  cannot_fully_dry: [ppa_cf, pps_cf, pva]
+  power: "Own power cable, included. It never draws printer power."
+  lid_sensor: "Printer warns if the lid opens during drying."
+  src: [bambu_wiki_ams_drying, bambu_wiki_drying, bambu_wiki_material_table, bambu_wiki_amsht_intro]
+power:
+  standby_w: {value: 2.5, src: [bambu_wiki_power], confidence: medium}
+  working_w: {value: 12, note: "Feeding filament.", src: [bambu_wiki_power], confidence: medium}
+  drying_w: {value: 170, note: "Matches the 170 W heater listed under drying.", src: [bambu_wiki_power], confidence: medium}
+material_limits:
+  compatible: [pla, pla_plus, pla_silk, pla_matte, pla_cf, petg, petg_cf, abs, asa, pc, pa6, pa12, pa_cf, pa_gf, pva, bvoh]
+  manual_feed_only: [tpu_85a, tpu_95a]
+  not_compatible: []
+  not_recommended: []
+  notes:
+    - "TPU has a dedicated outlet at the rear of the lid. Auto feed and unload do not work with TPU there. The unit still dries it."
+    - "Bambu does not publish a separate AMS HT column in the filament compatibility table. The list above follows the AMS column plus the AMS HT drying table, which covers PA, PC, PVA and fiber grades."
+  src: [bambu_wiki_amsht_intro, bambu_wiki_material_table]
+rfid:
+  supported: true
+  detail: "RFID coil in the unit. Bambu publishes a coil replacement guide."
+  src: [bambu_wiki_amsht_intro]
+features:
+  - "Front display shows humidity, temperature and remaining drying time."
+  - "Filament release button behind the inlet to pull filament out by hand."
+  - "Outlet hall sensor locates a broken or jammed filament."
+features_src: [bambu_wiki_amsht_intro]
+known_issues:
+  - symptom: "Nylon, PC or PVA still wet after a drying run"
+    cause: "Spool absorbed a lot of moisture, or PVA, PPS-CF or PPA-CF need more heat than 85 C."
+    fix:
+      - {advice: "Use the material table time (for example PA 85 C for 12 h) and repeat. For PPA-CF and PPS-CF use a convection oven or the bed.", kind: workflow}
+    src: [bambu_wiki_drying, bambu_wiki_ams_drying]
+  - symptom: "TPU will not feed from the AMS HT"
+    cause: "Soft filament fails auto feeding."
+    fix:
+      - {advice: "Route TPU out of the rear TPU outlet and push it into the extruder by hand.", kind: material}
+    src: [bambu_wiki_amsht_intro]
+  - symptom: "Unstable communication with the printer"
+    cause: "Older 6-pin cable."
+    fix:
+      - {advice: "Use the new 6-pin cable that ships with AMS HT.", kind: hardware}
+    src: [bambu_wiki_ams_compat]
+src: [bambu_wiki_amsht_intro, bambu_wiki_ams_drying, bambu_wiki_ams_compat, bambu_wiki_drying]

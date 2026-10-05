@@ -1,0 +1,87 @@
+# Sources for the power: blocks in knowledge/printers/.
+kind: sources
+sources:
+  - id: bambu_wiki_power
+    title: "Power consumption of Bambu Lab printers and AMS units"
+    publisher: Bambu Lab
+    type: manufacturer_wiki
+    url: https://wiki.bambulab.com/en/general/power-consumption
+    retrieved: 2026-09-30
+    note: "Maximum power table by voltage, idle and standby readings, average printing power and kWh for PLA, PETG, ABS and PC test prints, AMS standby, working and drying power. Test print duration is listed for X1, P1 and A series and not stated for H2 series. The page notes that H series printers peak near 860 W in Low Power Mode."
+  - id: prusa_kb_faq_power
+    title: "FAQ: What is the power consumption of a PRUSA printer?"
+    publisher: Prusa Research
+    type: manufacturer_kb
+    url: https://help.prusa3d.com/article/faq-frequently-asked-questions_1932
+    retrieved: 2026-09-30
+    note: "States 80 W for generic PLA and 120 W for generic ABS, measured on an MK-series printer at 26 C room temperature."
+  - id: prusa_spec_core_one_page
+    title: "Prusa CORE One product page, technical specification table"
+    publisher: Prusa Research
+    type: manufacturer_spec
+    url: https://www.prusa3d.com/product/prusa-core-one/
+    retrieved: 2026-09-30
+    note: "Lists PSU 240 W with Power Panic and power consumption of 90 W for PLA and 110 W for ABS. The page is titled CORE One+ (Gen 2), so the figures are for the current production unit."
+  - id: creality_k1_max_store
+    title: "Creality K1 Max store page"
+    publisher: Creality
+    type: manufacturer_store
+    url: https://www.creality3dofficial.com/products/k1-max-3d-printer
+    retrieved: 2026-09-30
+    note: "States a wide voltage power supply and an 800 W AC heated bed."
+  - id: top3dshop_k1_max
+    title: "Creality K1 Max product page and FAQ"
+    publisher: Top3DShop
+    type: retailer
+    url: https://top3dshop.com/product/creality-k1-max-3d-printer
+    retrieved: 2026-09-30
+    note: "Retailer copy. Input 100 to 120 V and 200 to 240 V AC, 24 V 6.25 A (150 W) supply for low voltage parts, 220 V AC bed, maximum draw 1000 W. Secondary source, used at medium confidence."
+  - id: elegoo_cc_intro_pdf
+    title: "ELEGOO Centauri Carbon introduction (specification sheet)"
+    publisher: Elegoo
+    type: manufacturer_spec
+    url: https://3dprinteq.dk/wp-content/uploads/ELEGOO-Centauri-Carbon-Intro-EN.pdf
+    retrieved: 2026-09-30
+    note: "Elegoo document mirrored by a reseller. Power 1100 W at 220 V and 350 W at 110 V, 100 to 240 V, 50/60 Hz, AC heated bed 1000 W at 220 V."
+  - id: elegoo_n4_pro_store
+    title: "ELEGOO Neptune 4 Pro FDM 3D Printer store page"
+    publisher: Elegoo
+    type: manufacturer_store
+    url: https://us.elegoo.com/products/elegoo-neptune-4-pro-fdm-3d-printer
+    retrieved: 2026-09-30
+    note: "Voltage 115/230 V 50/60 Hz. Segmented heatbed with a power output of 100 W + 150 W."
+  - id: n4pro_power_tests
+    title: "Elegoo Neptune 4 Pro power usage tests"
+    publisher: petervrc (GitHub)
+    type: community_measurement
+    url: https://github.com/petervrc/neptune-4-pro---power-usage-tests
+    retrieved: 2026-09-30
+    note: "Single owner wattmeter log. Idle, homing, heater and Benchy readings. Also calls the supply a 400 W unit. Low confidence: one unit, method described only informally."
+  - id: sovol_sv08_store
+    title: "Sovol SV08 store page"
+    publisher: Sovol
+    type: manufacturer_store
+    url: https://www.sovol3d.com/products/sovol-sv08-3d-printer
+    retrieved: 2026-09-30
+    note: "Spec table lists Power Supply 150W/24V. Copy also mentions an AC heated bed and ceramic heating block."
+  - id: voron_manual_v24
+    title: "Voron 2.4 r2 assembly manual (mains wiring and PSU chapters)"
+    publisher: Voron Design
+    type: manufacturer_manual
+    url: https://github.com/VoronDesign/Voron-2/blob/Voron2.4/Manual/Assembly_Manual_2.4r2.pdf
+    retrieved: 2026-09-30
+    note: "Names the Mean Well LRS-200-24 PSU with a mains voltage selector switch and states that the bed heater is powered by AC voltage."
+  - id: voron_manual_trident
+    title: "Voron Trident assembly manual (mains wiring and PSU chapters)"
+    publisher: Voron Design
+    type: manufacturer_manual
+    url: https://github.com/VoronDesign/Voron-Trident/blob/main/Manual/Assembly_Manual_Trident.pdf
+    retrieved: 2026-09-30
+    note: "Names the Mean Well LRS-200-24 PSU with a mains voltage selector switch and states that the bed heater is powered by AC voltage."
+  - id: voron_docs_electrical
+    title: "Voron documentation: Electrical wiring"
+    publisher: Voron Design
+    type: manufacturer_docs
+    url: https://docs.vorondesign.com/build/electrical/
+    retrieved: 2026-09-30
+    note: "Guidance for AC powered beds: SSR, mains wire gauge, grounding, thermal fuse. No bed wattage is stated. Printers with two or more independent DC supplies are covered in the assembly guides."

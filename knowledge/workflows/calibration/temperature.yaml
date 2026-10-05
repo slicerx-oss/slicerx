@@ -1,0 +1,30 @@
+kind: calibration
+schema_version: 1
+id: temperature
+name: Temperature tower
+order: 1
+purpose: "Find the nozzle temperature that balances stringing, bridging, overhangs and layer strength for one spool."
+run_when: ["New filament brand or type", "Stringing or weak layers on a spool that used to print well"]
+prereqs: []
+orca_test:
+  menu: "Calibration > Temperature"
+  defaults: "Tower of blocks, one temperature per block, inside the filament's range. Auto scale for nozzle is on: the tower scales to the nozzle and uses half the nozzle diameter as layer height."
+  src: ["orca_wiki:temp_calib"]
+per_firmware:
+  bambu: {method: "Orca or Bambu Studio temperature tower. No automatic equivalent.", src: [bambu_wiki_studio_calibration]}
+  klipper: {method: "Orca temperature tower. The tower changes temperature with M104 per block.", src: ["orca_wiki:temp_calib"]}
+  prusa: {method: "Orca temperature tower with the Prusa printer profile.", src: ["orca_wiki:temp_calib"]}
+steps:
+  - "Take the range from kb.filament(type).nozzle_temp_c, 5 C steps, hottest at the bottom."
+  - "Print with the speeds you plan to use; hotter prints tolerate higher flow."
+  - "Inspect every block: stringing between the pillars, bridge sag, overhang curl, surface."
+read_result:
+  - "Lower blocks string less; higher blocks bond better and flow faster. Too hot sags bridges."
+  - "If several blocks look good, take the middle. If you plan to print fast, take the upper end of the good range."
+  - "For strong parts, lean hot: layer adhesion peaked near 230 C for PLA and 245 C for PETG in CNC Kitchen's tests."
+read_result_src: ["orca_wiki:temp_calib", cnckitchen_temp_adhesion]
+camera_reading: {feasible: partial, look_for: "Strings between pillars and bridge sag per block. Layer strength needs a snap test by hand."}
+writes:
+  - {key: nozzle_temperature, op: set, value_from: {calibration: temperature, field: best_c}, why: "Best block from the tower."}
+  - {key: nozzle_temperature_initial_layer, op: set, value_from: {calibration: temperature, field: best_c}, why: "Start the first layer at the same temperature unless the profile already runs it 5 to 10 C lower."}
+src: ["orca_wiki:temp_calib", cnckitchen_temp_adhesion]

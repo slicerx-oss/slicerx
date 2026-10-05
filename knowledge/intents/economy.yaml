@@ -1,0 +1,27 @@
+kind: intent_goal
+schema_version: 1
+id: economy
+label: Save filament
+summary: >
+  Use less plastic: cheap props, large decorative pieces, test shapes, or a
+  nearly empty spool. Infill is the cheapest thing to cut. Walls give the most
+  strength per gram, so keep two.
+phrases: [cheap, "save filament", "less filament", "low cost", "not much filament left", lightweight, light, hollow, prop, cosplay, decoration, "use what's left"]
+default_level: standard
+levels:
+  standard:
+    changes:
+      - {key: sparse_infill_pattern, op: set, value: adaptivecubic, priority: core, why: "Adaptive cubic gets sparse deep inside the part and uses about a quarter less plastic than rectilinear.", src: [prusa_kb_infill_patterns]}
+      - {key: sparse_infill_density, op: at_most, value: 10, priority: core, why: "Low infill is enough when the part carries no load."}
+      - {key: wall_loops, op: set, value: 2, priority: supporting, why: "Two walls keep the part stiff. Walls are the best strength per gram.", src: [cnckitchen_extrusion_width]}
+  minimal:
+    extends: standard
+    changes:
+      - {key: sparse_infill_pattern, op: set, value: lightning, priority: core, why: "Lightning only supports the top surfaces and uses the least plastic of any pattern.", src: [prusa_kb_infill_patterns]}
+      - {key: top_shell_layers, op: at_most, value: 4, priority: supporting, why: "Four top layers still close the surface.", src: ["orca:BBL/process/0.28mm Extra Draft @BBL X1C.json"]}
+      - {key: support_style, op: set, value: tree_slim, priority: supporting, why: "Slim trees use less support plastic than grid supports."}
+checks:
+  - "Compare grams before and after in the slice summary and report the saving."
+  - "If the loaded spool has less filament than the job needs, say so before slicing further (Spoolman or AMS remaining weight)."
+costs: {time: down, filament: down}
+src: [prusa_kb_infill_patterns, cnckitchen_extrusion_width]

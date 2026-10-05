@@ -1,0 +1,54 @@
+kind: guide
+schema_version: 1
+id: bambu_flow_dynamics
+name: Bambu flow dynamics (automatic pressure advance)
+applies_to: [bambu_x1c, bambu_x1e, bambu_p1s, bambu_p1p, bambu_a1, bambu_a1_mini, bambu_h2d, bambu_h2s, bambu_h2c, bambu_p2s, bambu_x2d, bambu_a2l]
+summary: >
+  Bambu calls pressure advance flow dynamics and its strength the K value. The
+  printer stores one K per printer and filament combination, and Studio writes
+  it per AMS slot. Automatic calibration exists on X1, A1 and H2D class
+  printers. P1 is manual only. Rerun it when the filament brand, nozzle or
+  temperature changes, not on a schedule.
+facts:
+  - text: "Flow dynamics compensates for lag in extrusion pressure. During acceleration it pushes slightly more filament, and during deceleration it pulls back slightly, which cleans up corners and reduces blobs and gaps at speed."
+    src: [bambu_wiki_flow_dynamics]
+  - text: "The K factor is specific to a printer and filament pair. A higher K means more compensation and a more elastic or laggy extrusion path."
+    src: [bambu_wiki_flow_dynamics]
+  - text: "X1 series printers run the calibration by printing lines on the plate and scanning them with Micro Lidar. The K values it finds are smaller than the H2D values."
+    src: [bambu_wiki_flow_dynamics, bambu_wiki_lidar_flow]
+  - text: "A1 and H2D printers purge at the purge wiper and read extrusion force with the toolhead eddy current sensor. A1 series needs firmware 01.04.00.00 or newer for auto mode."
+    src: [bambu_wiki_flow_dynamics]
+  - text: "H2D, X1 and A1 series support auto calibration. P1 supports manual calibration only."
+    src: [bambu_wiki_flow_dynamics]
+  - text: "On H2D the automatic K is set higher than a manual pattern value to prevent corner stacking."
+    src: [bambu_wiki_flow_dynamics]
+  - text: "Bambu measured about 10 percent jitter between repeat calibrations, so small differences are noise."
+    src: [bambu_wiki_flow_dynamics]
+  - text: "Auto results are unreliable with damp filament, transparent filament on X1 (lidar), a plate that is not sticky, a worn or partly blocked nozzle, very soft material such as TPU, or a third party hotend on A1 and H2D."
+    src: [bambu_wiki_flow_dynamics, bambu_wiki_lidar_flow]
+  - text: "All printers with a 0.2 mm hotend often produce inaccurate or failed auto calibration. Bambu recommends the manual pattern for 0.2 mm."
+    src: [bambu_wiki_flow_dynamics]
+  - text: "Recalibrate for a new filament brand or model, a worn nozzle, a replaced nozzle, and when max volumetric speed or print temperature changes in the filament settings."
+    src: [bambu_wiki_flow_dynamics]
+  - text: "Results are saved in the printer. Each result can be named, edited in Manage Results, and picked per slot in the material dialog on the Device page."
+    src: [bambu_wiki_flow_dynamics]
+  - text: "Run flow dynamics before flow rate calibration."
+    src: [bambu_wiki_lidar_flow]
+steps:
+  - text: "Dry the spool and wash the plate. On X1 make sure the calibration lines will stick (glue stick if needed)."
+  - text: "In Bambu Studio open Calibration, Flow Dynamics, then Auto-Calibration. Pick the printer, nozzle, plate type and the filament (or the AMS slot)."
+  - text: "Press Calibrate and wait for the lines (X1) or the purge (A1, H2D)."
+  - text: "Read the recommended K value, press Finish to store it, then check it in Manage Results."
+  - text: "For P1, 0.2 mm nozzles or filaments the lidar cannot read, use the manual pattern mode and pick the best line."
+  - text: "Print a test with sharp corners. Compare against the previous K if quality looks worse."
+pilot_actions:
+  - "Ask whether the filament brand, nozzle or temperature changed since the last calibration. If yes, propose a rerun before any other tuning."
+  - "Before proposing auto calibration, check the printer id: P1S and P1P are manual only. Other Bambu printers are auto capable."
+  - "Refuse auto calibration for TPU, transparent, sparkle, marble, metal or silk filament on X1 series and point to the manual pattern."
+  - "Warn that K is stored in the printer, not in the SlicerX project, and that a K from a lidar printer does not transfer to an eddy current printer."
+  - "If corners look bulged or gappy after a max volumetric speed change, recommend recalibrating instead of hand editing K."
+settings:
+  - {advice: "Recalibrate flow dynamics for each nozzle diameter and each filament brand. Do not copy a K value from a different printer type.", kind: workflow}
+  - {advice: "Keep a filament dry while calibrating. A K measured on wet filament is wrong for dry filament.", kind: material}
+  - {advice: "After changing filament_max_volumetric_speed or the nozzle temperature in a filament preset, rerun flow dynamics. Bambu lists both as recalibration triggers.", kind: workflow}
+src: [bambu_wiki_flow_dynamics, bambu_wiki_lidar_flow]

@@ -1,0 +1,90 @@
+kind: printer
+schema_version: 1
+id: creality_k1_max
+name: Creality K1 Max
+vendor: Creality
+status: unknown
+firmware: vendor_klipper
+connections: [moonraker]
+kinematics: corexy
+build_volume_mm: {x: 300, y: 300, z: 300, confidence: high, note: "K1C is 220 x 220 x 250; K1 is 220 x 220 x 250.", src: [creality_k1_max_page, "orca:Creality/machine/Creality K1 Max (0.4 nozzle).json", creality_k1c_page]}
+extruder: {type: direct_drive, note: "Dual gear direct drive on all K1 series.", src: [creality_k1_max_page]}
+hotend:
+  max_temp_c: 300
+  nozzle_diameters_mm: [0.4, 0.6, 0.8]
+  nozzle_materials: [copper_alloy_hardened_tip, hardened_steel]
+  stock_nozzle: "0.4 mm hardened steel tip copper alloy (K1C and later K1 Max units); early K1 units shipped a brass nozzle"
+  tool_free_swap: false
+  high_flow_option: false
+  confidence: medium
+  note: "K1C states a hardened steel tip stock. Early K1 and K1 Max shipped brass; Creality sold a hardened nozzle kit. Check the user's unit."
+  src: [creality_k1_max_page, creality_k1c_page, "orca:Creality/machine/Creality K1 Max (0.4 nozzle).json"]
+bed:
+  max_temp_c: 100
+  plates: [smooth_pei, textured_pei]
+  confidence: medium
+  note: "Flexible PEI sheet on the 300 x 300 bed."
+  src: [creality_k1_max_page]
+enclosure:
+  type: enclosed
+  chamber_heating: passive
+  max_chamber_c: null
+  filtration: [activated_carbon_optional]
+  confidence: medium
+  note: "Fully enclosed on the K1C; the K1 and K1 Max are open at the top under a clear lid. Open the lid for PLA on any K1."
+  src: [creality_k1_max_page, creality_k1c_page]
+motion:
+  max_speed_mm_s: 800
+  max_accel_mm_s2: 20000
+  input_shaping: auto
+  confidence: medium
+  note: "Orca limits 800 mm/s and 20000 mm/s2. Creality states 600 mm/s and 20000 mm/s2 for typical prints. Built in accelerometer runs an auto shaper calibration."
+  src: ["orca:Creality/machine/Creality K1 Max (0.4 nozzle).json", creality_k1_max_page]
+power:
+  mains: "100 to 120 V AC and 200 to 240 V AC, 50/60 Hz"
+  max_w: {value: 1000, note: "Maximum draw per a retailer FAQ.", src: [top3dshop_k1_max], confidence: medium}
+  psu_rated_w: {value: 150, note: "24 V 6.25 A supply for mainboard, motors, fans and hotend. The bed runs from mains.", src: [top3dshop_k1_max], confidence: medium}
+  bed_heater_w: {value: 800, note: "AC heated bed.", src: [creality_k1_max_store], confidence: high}
+sensors: [built_in_accelerometer, filament_runout, ai_camera, lidar]
+builtin_calibrations:
+  - {id: auto_leveling, what: "Automatic bed leveling before each print.", src: [creality_k1_max_page]}
+  - {id: input_shaper, what: "Built in accelerometer based shaper calibration from the touchscreen.", src: [creality_k1_max_page]}
+  - {id: flow_calibration, what: "Creality Print offers flow and PA calibration tests.", src: [creality_k1_max_page]}
+multi_material:
+  - {system: creality_cfs, slots: 4, note: "Orca has K1 Max_CFS-C profiles. Confirm the printer accepts the CFS firmware.", src: ["orca:Creality/machine/Creality K1 Max_CFS-C.json"]}
+materials:
+  recommended: [pla, pla_plus, petg, tpu_95a]
+  possible: [abs, asa, pa6, pa12, pc, petg_cf, pla_cf, pa_cf, pa_gf, pla_silk, pla_matte, tpu_85a, hips, pp, pva, bvoh]
+  not_recommended: []
+  confidence: low
+  note: "100 C bed and passive chamber suit ABS and ASA only on the K1C or with the lid closed. Do not assume a hardened nozzle."
+  src: [creality_k1_max_page]
+orca_profile: "orca:Creality/machine/Creality K1 Max (0.4 nozzle).json"
+profile_baseline:
+  process: "0.20mm Standard @Creality K1 Max_CFS-C 0.4 nozzle"
+  values: {layer_height: 0.2, initial_layer_print_height: 0.2, outer_wall_speed: 200, inner_wall_speed: 300, sparse_infill_speed: 270, top_surface_speed: 200, initial_layer_speed: 60, travel_speed: 500, default_acceleration: 10000, outer_wall_acceleration: 5000, inner_wall_acceleration: 5000, travel_acceleration: 10000, initial_layer_acceleration: 1000, wall_loops: 2, top_shell_layers: 5, bottom_shell_layers: 3, sparse_infill_density: "15%", bridge_speed: 30, line_width: 0.42, retraction_length: 0.8}
+  confidence: medium
+  note: "Only the CFS-C K1 Max 0.20 Standard profile is bundled in Orca at this commit; K1C has an equivalent (outer wall 200, inner wall 250, accel 10000 with outer wall 3000)."
+  src: ["orca:Creality/process/0.20mm Standard @Creality K1 Max_CFS-C 0.4 nozzle.json", "orca:Creality/process/0.20mm Standard @Creality K1C 0.4 nozzle.json", "orca:Creality/machine/Creality K1 Max (0.4 nozzle).json"]
+pilot_notes:
+  - "K1, K1 Max and K1C use vendor Klipper on an embedded board. Root can be enabled in settings; community helper scripts add Moonraker, Fluidd and macros. Do not assume Moonraker is present on an unrooted printer."
+  - "K1C differs from K1 Max: 220 x 220 x 250 volume, enclosed chamber, hardened tip nozzle, tougher part cooling. K1 (non Max) matches K1C size with an open top."
+  - "Print speed claims (600 to 800 mm/s) are peaks. Real speed is flow limited to roughly what the hotend melts, so keep the max volumetric speed of the filament profile."
+  - "Klipper flavor. Pressure advance via SET_PRESSURE_ADVANCE; Creality macros define PRINT_START. Check the argument names before editing machine_start_gcode."
+  - "Open the lid for PLA and TPU; a closed K1 chamber heats above 40 C quickly and softens PLA."
+common_issues:
+  - symptom: "Ringing on walls at default profile"
+    cause: "High acceleration and a lightweight gantry."
+    fix:
+      - {key: outer_wall_acceleration, op: at_most, value: 3000, why: "The K1C profile uses 3000 for outer walls."}
+      - {advice: "Rerun the built in input shaper calibration.", kind: workflow}
+  - symptom: "Nozzle clog with PLA in a closed chamber"
+    cause: "Heat creep in a hot chamber."
+    fix:
+      - {advice: "Open the lid and remove the top cover for PLA.", kind: environment}
+  - symptom: "Stringing with PETG"
+    cause: "Hot nozzle and long travel at high speed."
+    fix:
+      - {key: nozzle_temperature, op: decrease_by, value: 5, why: "Cooler PETG strings less."}
+      - {key: retraction_length, op: increase_by, value: 0.2, why: "A little more retraction on direct drive."}
+src: [creality_k1_max_page, creality_k1c_page, creality_k1_root_guide, creality_helper_script, "orca:Creality/machine/Creality K1 Max (0.4 nozzle).json"]

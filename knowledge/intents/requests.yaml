@@ -1,0 +1,82 @@
+kind: intent_examples
+schema_version: 1
+id: requests
+summary: >
+  Worked parses of typical requests. mimir's model turns text into an intent
+  (goals with levels, material, quantity, deadline, constraints); kb.intent
+  merges the goals; settings.plan turns the result into a diff. These examples
+  anchor the parse and double as few shot examples in the system prompt.
+intent_shape:
+  goals: "list of {id, level} from knowledge/intents/*.yaml"
+  material: "filament id from knowledge/filaments, or null to use what is loaded"
+  quantity: "integer, default 1"
+  deadline: "ISO time or null"
+  constraints: "printer ids, nozzle, max grams, plates"
+  ask: "questions mimir must ask before planning, if any"
+examples:
+  - text: "I want 12 functional brackets in PETG, strong, by tomorrow"
+    intent:
+      goals: [{id: strength, level: standard}, {id: speed, level: standard}]
+      material: petg
+      quantity: 12
+      deadline: "tomorrow 09:00 local unless the user says otherwise"
+    notes:
+      - "Strength and speed conflict: keep 4 walls, 25 percent gyroid and a hot nozzle; take layer height 0.24 mm from speed (tradeoffs strength and speed)."
+      - "Orient each bracket on its side so the bend is in the layer plane."
+      - "Check PETG stock and which printers have PETG loaded, then spread plates across them before cutting quality."
+      - "Textured PEI, no glue. Smooth PEI only with glue stick."
+  - text: "silky vase in silk PLA"
+    intent:
+      goals: [{id: vase, level: standard}, {id: surface_finish, level: standard}]
+      material: pla_silk
+    notes:
+      - "Vase mode with a 0.6 mm line on a 0.4 mm nozzle, 3 or more bottom layers."
+      - "Silk PLA is limited to about 7.5 mm3/s in Orca's generic profile; keep it. Silk shine hides layer lines, so 0.2 mm layers are fine."
+      - "Surface finish changes that need several walls (inner, outer, inner order) do not apply in vase mode; skip them and say so."
+  - text: "flexible phone case in TPU 95A"
+    intent:
+      goals: [{id: flexibility, level: standard}]
+      material: tpu_95a
+    ask: ["Is the TPU fed from an external spool? It should not go through the AMS unless it is a TPU for AMS product."]
+    notes:
+      - "Two walls, 15 percent gyroid, max volumetric speed about 3.2 mm3/s, retraction 0.4 mm or less."
+      - "Dry the spool first. Print on textured PEI at 35 C or so; TPU sticks hard to smooth PEI."
+  - text: "outdoor part in ASA"
+    intent:
+      goals: [{id: uv_resistance, level: standard}, {id: strength, level: standard}]
+      material: asa
+    notes:
+      - "Needs an enclosed printer. If the target printer is open frame (A1, A1 mini, P1P, MK4S without enclosure), say so and propose an enclosed one."
+      - "Keep fan low for ASA, use a brim on large flat parts, turn on air filtration where the printer has it."
+  - text: "fast draft"
+    intent:
+      goals: [{id: speed, level: draft}]
+    notes:
+      - "0.28 mm layers, 2 walls, lightning infill at 10 percent, support only below 40 degrees."
+      - "Say plainly that lightning infill has no strength."
+  - text: "miniature at max detail"
+    intent:
+      goals: [{id: detail, level: standard}]
+      material: pla
+    ask: ["Is a 0.2 mm nozzle available? It resolves much finer detail than 0.4 mm."]
+    notes:
+      - "0.08 mm layers on 0.4 mm (0.06 mm on 0.2 mm), outer wall 60 mm/s, Arachne, organic tree supports, minimum layer time on."
+      - "Recommend tilting the model so the face is not on the support side."
+  - text: "watertight container"
+    intent:
+      goals: [{id: watertight, level: standard}]
+    notes:
+      - "4 walls, nozzle 5 C hotter, flow up 5 percent, 5 bottom layers, infill and wall overlap 25 percent, scarf seams."
+      - "If the loaded material is PLA, suggest PETG for anything that stays wet or warm."
+      - "If the container is for food, add the food contact caveats."
+  - text: "carbon fiber nylon gear"
+    intent:
+      goals: [{id: strength, level: max}, {id: dimensional_accuracy, level: standard}]
+      material: pa_cf
+    ask: ["Is the nozzle hardened steel? PA-CF wears brass and stainless nozzles quickly.", "Has the spool been dried in the last day? Nylon is marked drying required."]
+    notes:
+      - "Refuse to plan on a non hardened nozzle. Prefer a 0.6 mm hardened nozzle; 0.4 mm works for fine teeth."
+      - "Enclosed printer, Engineering plate or textured PEI with glue, fan low, keep the spool in a dry box while printing."
+      - "Print the gear flat so teeth are in the layer plane. Six walls make the teeth nearly solid."
+      - "Run a tolerance test first if it meshes with other gears or sits on a shaft."
+src: [prusa_kb_layers_perimeters, prusa_kb_infill_patterns, bambu_wiki_material_table, bambu_wiki_drying, "orca:OrcaFilamentLibrary/filament/Generic PLA Silk @System.json", "orca:OrcaFilamentLibrary/filament/Generic TPU @System.json"]

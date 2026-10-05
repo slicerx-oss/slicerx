@@ -1,0 +1,320 @@
+kind: filament
+schema_version: 1
+id: pc
+name: Polycarbonate (PC)
+category: engineering
+orca_filament_type: PC
+aliases: [PC, Polycarbonate, Bambu PC, PC FR (flame retardant, separate profile), Prusament PC Blend]
+related: [abs, asa, pa_cf]
+summary: >
+  Strong, tough, high heat polycarbonate. It needs a 270 to 290 C nozzle, a
+  100 to 115 C bed, a hot enclosure and dry filament, and it warps and cracks
+  easily. Prusament PC Blend is a modified grade that absorbs less moisture and
+  prints more easily than plain PC. Pure PC is the hardest filament in this set
+  for beginners.
+use_for: [high load functional parts, parts that see 100 C, tough housings and brackets, clear or translucent parts, jigs and fixtures]
+avoid_for: [open frame printers, cold rooms (Prusa fails below 18 C ambient), wet filament, large parts with sharp corners and no brim, unfiltered enclosed rooms]
+
+nozzle_temp_c:
+  min: 260
+  max: 290
+  typical: 275
+  confidence: high
+  src:
+    - "orca:OrcaFilamentLibrary/filament/Generic PC @System.json"
+    - "orca:OrcaFilamentLibrary/filament/Bambu/Bambu PC @base.json"
+    - "orca:BBL/filament/Bambu PC @BBL X1C.json"
+    - "orca:Prusa/filament/Prusament PC Blend @CORE One.json"
+    - bambu_wiki_material_table
+    - bambu_tds_pc_v2
+    - prusa_kb_pc
+    - polymaker_wiki_by_material
+  note: >
+    Orca and Bambu profiles allow 260 to 290 and print at 280 after 270 for the
+    first layer. The Bambu TDS says 260 to 280, Prusa says 275 (PC Blend on
+    Core One also 275). Polymaker's wiki quotes 280 to 310 for its own grades.
+    Start at 275 to 280.
+first_layer_nozzle_temp_c:
+  min: 270
+  max: 275
+  typical: 270
+  confidence: medium
+  src: ["orca:BBL/filament/Bambu PC @BBL X1C.json", "orca:Prusa/filament/Prusament PC Blend @CORE One.json"]
+  note: "Bambu 270, Prusa 275."
+bed_temp_c:
+  min: 90
+  max: 120
+  typical: 110
+  confidence: high
+  src: [bambu_wiki_material_table, bambu_tds_pc_v2, prusa_kb_pc, polymaker_wiki_by_material, "orca:BBL/filament/Bambu PC @BBL X1C.json", "orca:Prusa/filament/Prusament PC Blend @CORE One.json"]
+  note: "Bambu glue table 100 to 120 (TDS 90 to 110), Prusa 110 first layer and 115 after, Orca and Bambu X1C 110, Bambu P2S 100. Use 110 C."
+chamber_temp_c:
+  min: 45
+  max: 65
+  typical: 60
+  confidence: medium
+  src:
+    - bambu_tds_pc_v2
+    - bambu_wiki_x1e_chamber
+    - bambu_h2d_tech_specs
+    - prusa_blog_core_one_intro
+    - polymaker_wiki_by_material
+    - "orca:BBL/filament/Bambu PC @BBL X1E.json"
+    - "orca:BBL/filament/Bambu PC @BBL H2D 0.4 nozzle.json"
+    - "orca:BBL/filament/Bambu PC @BBL P2S 0.4 nozzle.json"
+  note: >
+    Passive enclosure (X1C, P1S, P2S closed): the chamber runs well
+    below the active range on bed heat alone (no source gives a figure). Keep
+    the door and lid closed, and expect corner curling on large parts. Bambu's TDS lists 45 to 60 C. Active heating: X1E maxes at 60 C and
+    Bambu's guide turns it on by default for PC. H2D maxes at 65 C. Prusa
+    Core One reaches 55 C at full bed heat. Bambu ships PC profiles with a 60 C
+    chamber target on X1E, H2D and P2S. Polymaker's wiki asks for 50 to 60 C
+    ambient. Chamber heating lowers carbon filter performance, but PC fumes
+    are milder than ABS.
+enclosure:
+  level: required
+  confidence: high
+  src: [bambu_wiki_material_table, bambu_wiki_abs_asa_pc, prusa_kb_pc, polymaker_wiki_by_material]
+  note: >
+    Bambu lists PC as not recommended on open frame printers and compatible
+    with enclosed ones. Prusa says an enclosure helps and that printing fails
+    below 18 C ambient (bed thermal runaway). Polymaker calls an enclosure
+    required at 50 to 60 C.
+
+plates:
+  - {plate: bambu_cool_plate, fit: avoid, confidence: high, src: [bambu_wiki_abs_asa_pc], note: "Glue is required and the Cool Plate cannot take 100 C or more."}
+  - {plate: bambu_engineering_plate, fit: glue, bed_temp_c: {min: 100, max: 110}, release_agent: pvp_glue, confidence: high, src: [bambu_wiki_material_table, bambu_tds_pc_v2], note: "Bambu TDS names Engineering plate with PVP glue. Liquid glue is not recommended for PC in the glue table, glue stick works at 100 to 120 C."}
+  - {plate: bambu_high_temp_plate, fit: glue, bed_temp_c: {min: 100, max: 110}, release_agent: pvp_glue, confidence: medium, src: [bambu_wiki_material_table, bambu_tds_pc_v2], note: "Bambu approves it with glue. Prusa warns PC can damage smooth PEI, so always use a separation layer."}
+  - {plate: smooth_pei, fit: avoid, bed_temp_c: {min: 110, max: 115}, release_agent: glue_stick, confidence: medium, src: [prusa_kb_pc], note: "Prusa says avoid smooth PEI because adhesion can damage it."}
+  - {plate: textured_pei, fit: glue, bed_temp_c: {min: 100, max: 115}, release_agent: glue_stick, confidence: high, src: [bambu_tds_pc_v2, prusa_kb_pc], note: "Best option: Prusa recommends powder coated TXT or satin sheet with glue stick, Bambu lists Textured PEI with PVP glue. PC Blend on satin may work without glue if used occasionally."}
+
+cooling:
+  fan_min_pct: {min: 10, max: 15, typical: 10}
+  fan_max_pct: {min: 25, max: 60, typical: 40}
+  overhang_fan_pct: {min: 25, max: 60, typical: 60}
+  no_fan_first_layers: {typical: 3}
+  min_layer_time_s: {min: 2, max: 20, typical: 12}
+  confidence: medium
+  src:
+    - "orca:OrcaFilamentLibrary/filament/Generic PC @System.json"
+    - "orca:BBL/filament/Bambu PC @BBL X1C.json"
+    - "orca:Prusa/filament/Prusament PC Blend @CORE One.json"
+    - "orca:Prusa/filament/Prusament PC Blend @MK4S.json"
+    - bambu_tds_pc_v2
+  note: >
+    Bambu X1C uses 10 to 40 percent with 60 on overhangs. The Bambu TDS allows
+    0 to 60. Prusa PC Blend runs 12 to 25 percent. Keep the fan low and cool
+    slowly. Polymaker warns slow cooling is crucial or PC prints crack.
+
+drying:
+  need: required
+  oven: {temp_c: 80, hours: 8}
+  ams_2_pro: null
+  ams_ht: {temp_c: 80, hours: 8}
+  printer_bed: {temp_c: {min: 90, max: 100}, hours: 12, note: "Enclosed Bambu printers only, spool covered"}
+  keep_dry_in_use: required
+  confidence: high
+  src: [bambu_wiki_drying, bambu_wiki_material_table, bambu_wiki_abs_asa_pc, bambu_tds_pc_v2, prusa_kb_pc]
+  note: >
+    Bambu marks PC drying and desiccant use required. AMS 2 Pro is not
+    compatible. Use an AMS HT, forced air oven or heated bed and keep it in a
+    sealed box under 20 percent humidity. Prusa says PC is extremely
+    hygroscopic and that PC Blend absorbs much less. Wet PC bubbles, strings
+    and loses layer strength. Bambu's TDS lists saturated water absorption at
+    0.25 percent.
+
+nozzle:
+  abrasive: false
+  hardened_required: false
+  min_diameter_mm: 0.4
+  orca_required_hrc: 3
+  confidence: medium
+  src: [bambu_wiki_material_table, bambu_wiki_abs_asa_pc, "orca:OrcaFilamentLibrary/filament/Generic PC @System.json"]
+  note: "Bambu marks 0.2 mm as not recommended for PC, and P2S and X2D cannot use it at all. All larger sizes are compatible with a brass or stainless nozzle."
+
+extrusion:
+  flow_ratio: {min: 0.94, max: 1.0, typical: 0.94, confidence: medium, src: ["orca:OrcaFilamentLibrary/filament/Bambu/Bambu PC @base.json", "orca:Prusa/filament/Prusament PC Blend @CORE One.json", "orca:Prusa/filament/Prusament PC Blend @MK4S.json"], note: "Bambu 0.94, Prusa 1.0 on Core One and 0.94 on MK4S. Confirm with a flow test."}
+  max_volumetric_speed_mm3s:
+    standard_hotend: {min: 8, max: 18, typical: 12}
+    high_flow_hotend: {min: 20, max: 35, typical: 29}
+    confidence: medium
+    src:
+      - "orca:OrcaFilamentLibrary/filament/Generic PC @System.json"
+      - "orca:BBL/filament/Bambu PC @BBL X1C.json"
+      - "orca:BBL/filament/Bambu PC @BBL X1E.json"
+      - "orca:BBL/filament/Bambu PC @BBL H2D 0.4 nozzle.json"
+      - "orca:Prusa/filament/Prusament PC Blend @CORE One.json"
+      - "orca:Prusa/filament/Prusament PC Blend @MK4S.json"
+    note: >
+      Bambu PC on X1C: 18 standard, 29 high flow. X1E: 18. H2D 0.4 mm: 20, up
+      to 35 on the high flow hotend. Orca generic: 12 standard. Prusament PC
+      Blend: 12 on Core One and 8 on MK4S.
+  retraction_mm:
+    direct_drive: {min: 0.4, max: 0.8, typical: 0.4}
+    confidence: low
+    src: ["orca:BBL/filament/Bambu PC @BBL H2D 0.4 nozzle.json", bambu_tds_pc_v2]
+    note: "Bambu H2D profile 0.4 mm. The Bambu TDS suggests 0.8 to 1.4 mm. X1C and P2S profiles leave it to the printer default."
+  retraction_speed_mm_s: {min: 20, max: 40, typical: 30, confidence: medium, src: [bambu_tds_pc_v2, "orca:BBL/machine/Bambu Lab X1 Carbon 0.4 nozzle.json", "orca:Prusa/machine/fdm_machine_common_mk4s.json"], note: "Bambu TDS says 20 to 40 mm/s. Bambu machine profiles use 30, Prusa MK4S uses 35."}
+  pressure_advance:
+    direct_drive: {min: 0.02, max: 0.05, typical: 0.05}
+    confidence: medium
+    src: ["orca:Prusa/filament/Prusament PC Blend @CORE One.json", "orca:Prusa/filament/Prusament PC Blend @MK4S.json", "orca:Prusa/filament/Generic PC @Prusa MK3.5.json", klipper_pressure_advance, ellis_pa]
+    note: "Prusa ships M572 S0.05 at 0.4 mm and 0.025 at 0.6 mm for PC Blend on Core One, and 0.02 on MK4S. The MK3.5 generic PC profile stores 0.05. Bambu printers calibrate per spool. PA is printer specific; calibrate."
+
+layer_height:
+  fraction_of_nozzle: {min: 0.3, max: 0.7, typical: 0.5}
+  at_0_4_mm: {min: 0.12, max: 0.28, typical: 0.2}
+  smart_layer:
+    quality_mode: "Thin layers (0.12 to 0.16 mm) suit clear or glossy PC and small detail. They cool quickly at 270 to 280 C, so they need a warm chamber to avoid cracking between layers."
+    strength_mode: "Bias toward 0.2 to 0.28 mm. A thicker bead keeps more heat and fuses better, and PC splits between layers when it cools fast or the chamber is cold."
+    thin_layer_cooling: "Bambu PC uses a 2 s minimum layer time and Prusa PC Blend 20 s. Keep the fan at 10 to 25 percent and let small layers slow down instead of adding air."
+  basis: expert
+  confidence: medium
+  src: ["orca:Prusa/machine/fdm_machine_common.json", "orca:BBL/machine/Bambu Lab X1 Carbon 0.6 nozzle.json", "orca:BBL/process/0.20mm Standard @BBL X1C.json", "orca:BBL/process/0.28mm Extra Draft @BBL X1C.json", bambu_wiki_abs_asa_pc, polymaker_wiki_by_material, "orca:Prusa/filament/Prusament PC Blend @CORE One.json", "orca:OrcaFilamentLibrary/filament/Generic PC @System.json"]
+  note: "No maker states a PC layer height. Bambu ships 0.08 to 0.28 mm presets for a 0.4 mm nozzle. Bambu and Polymaker both tie PC layer splitting to fast cooling and a cold room."
+smart_layer:
+  min_ratio: 0.3
+  max_ratio: 0.7
+  modes:
+    quality: {min_ratio: 0.3, max_ratio: 0.5}
+    strength: {min_ratio: 0.35, max_ratio: 0.5}
+  family: pc
+  note: "Polycarbonate (PC) prints well from 0.3 to 0.7 of the nozzle diameter; Quality mode uses 0.3 to 0.5 and Strength mode 0.35 to 0.5, since parts weaken once layers pass half the nozzle."
+  confidence: medium
+  src: ["orca:Prusa/machine/fdm_machine_common.json", "orca:BBL/machine/Bambu Lab X1 Carbon 0.6 nozzle.json", "orca:BBL/process/0.20mm Standard @BBL X1C.json", "orca:BBL/process/0.28mm Extra Draft @BBL X1C.json", "bambu_wiki_abs_asa_pc", "polymaker_wiki_by_material", "orca:Prusa/filament/Prusament PC Blend @CORE One.json", "orca:OrcaFilamentLibrary/filament/Generic PC @System.json", "cnckitchen_layer_height", "stojkovic_2023_layer_height_annealing"]
+speeds:
+  print_speed_mm_s: {max: 300}
+  first_layer_mm_s: {min: 20, max: 50, typical: 40}
+  volumetric_note: "Bambu lists under 300 mm/s. Real speed is capped by max volumetric speed (see extrusion), and Prusa PC Blend runs 8 to 12 mm3/s. No source caps outer wall speed for PC."
+  confidence: medium
+  src: [bambu_tds_pc_v2, "orca:BBL/process/0.20mm Standard @BBL X1C.json", "orca:Prusa/process/0.20mm SPEED @MK4S 0.4.json", "orca:Prusa/filament/Prusament PC Blend @MK4S.json"]
+  note: "No maker gives a lower bound. First layer: Bambu Standard preset 50 mm/s, Prusa MK4S preset 40 mm/s."
+first_layer:
+  fan_off_layers: 3
+  speed_mm_s: {min: 20, max: 50, typical: 40}
+  bed_first_layer_note: "Prusa runs 110 C first layer and 115 C after. Bambu says 100 to 120 C with glue stick on its plates. Use 110 C, and go to 115 to 120 C if corners lift."
+  squish_note: "PC shrinks hard, so a clean, level bed and steady first layer matter more than extra squish (Prusa). Use glue stick as a release layer on PEI."
+  confidence: medium
+  src: ["orca:BBL/process/0.20mm Standard @BBL X1C.json", "orca:Prusa/process/0.20mm SPEED @MK4S 0.4.json", prusa_kb_pc, prusa_kb_first_layer, bambu_wiki_material_table, "orca:Prusa/filament/Prusament PC Blend @CORE One.json"]
+  note: "Prusa profiles keep the fan off for 4 layers, Bambu for 3."
+structure:
+  walls: {min: 2, typical: 3, note: "PC is tough enough that walls carry most of the load. Add walls before adding infill, and avoid large solid blocks that build shrink stress."}
+  infill: {pattern_hint: gyroid, density_note: "15 to 25 percent for functional parts. Solid or very dense infill raises warping in PC."}
+  basis: expert
+  confidence: low
+  src: ["orca:BBL/process/0.20mm Standard @BBL X1C.json", "orca:BBL/process/0.20mm Strength @BBL X1C.json"]
+supports:
+  interface_materials: []
+  soluble_pairing: null
+  top_z_distance_mm: {typical: 0.2}
+  interface_layers: {typical: 2}
+  note: "No maker lists a release or soluble support for PC. Same material PC supports bond hard, so widen the top Z gap to 0.25 to 0.3 mm or use tree supports to limit contact. Bambu names ABS and ASA as its support filaments for nylon and PET based materials, but does not list PC."
+  basis: expert
+  confidence: low
+  src: ["orca:BBL/process/0.20mm Standard @BBL X1C.json", bambu_store_support_filaments]
+
+multi_material:
+  bambu_ams: compatible
+  bambu_ams_lite: not_compatible
+  bambu_ams_ht: compatible
+  confidence: medium
+  src: [bambu_wiki_material_table, bambu_wiki_abs_asa_pc, bambu_wiki_drying]
+  note: "AMS lists PC compatible, but Bambu's ABS, ASA and PC guide says PC is not compatible with AMS lite. AMS HT can dry PC at 80 C for 8 h. Keep PC out of a humid AMS for long."
+
+properties:
+  density_g_cm3: {typical: 1.2, min: 1.185, max: 1.22, src: ["orca:OrcaFilamentLibrary/filament/Bambu/Bambu PC @base.json", "orca:Prusa/filament/Prusament PC Blend @CORE One.json", bambu_tds_pc_v2]}
+  softening_temp_c: {typical: 119, src: [bambu_tds_pc_v2], note: "Bambu TDS Vicat 119 C and Tg 145 C. Orca vitrification 120 C."}
+  heat_deflection_c: {at_0_45_mpa: 117, at_1_8_mpa: 117, src: [bambu_tds_pc_v2, bambu_wiki_abs_asa_pc], note: "The Bambu wiki lists 117 C at 0.45 MPa. The TDS prints 117 C at 1.8 MPa and 112 C at 0.45 MPa, which looks swapped. Expect about 110 to 117 C."}
+  annealing: {temp_c: 80, hours: 12, src: [bambu_tds_pc_v2, polymaker_wiki_by_material], note: "Bambu annealed and dried its PC specimens at 80 C for 12 h but gives no annealing recommendation for prints. Polymaker's wiki suggests an oven treatment after printing. Anneal below the Tg and use a forced air oven."}
+  relative:
+    heat: 4
+    impact: 4
+    tensile: 4
+    scale: "1 to 5, Bambu star ratings"
+    src: [bambu_wiki_material_table]
+  blends:
+    - {name: "PC Blend (Prusament)", note: "Modified PC grade. Prusa says it absorbs much less moisture than other polycarbonates, is significantly easier to print and can print on powder coated satin without a separation layer.", src: [prusa_kb_pc]}
+    - {name: "PC-ABS and PC-PBT", note: "No sourced settings in this knowledge base. Follow the maker's data sheet. Expect settings between ABS and PC.", src: []}
+    - {name: "PC FR (Bambu)", note: "Flame retardant V-0 polycarbonate with its own TDS. Same printer requirements as PC. Heat resistance 113 C at 0.45 MPa.", src: [bambu_wiki_abs_asa_pc]}
+safety:
+  fumes: medium
+  note: >
+    Prints hot with a mild odor and ultrafine particles. Print in a ventilated
+    room, keep the enclosure closed, and enable activate_air_filtration on
+    Bambu X, P and H series if the chamber is not heated to 60 C. Chamber
+    heating reduces carbon filter performance.
+  src: [bambu_wiki_abs_asa_pc, bambu_wiki_x1e_chamber]
+food_contact:
+  note: "Polycarbonate can release bisphenol A. Do not use printed PC for food or drink."
+  src: [prusa_kb_food_safe]
+
+failure_modes:
+  - id: corner_warping
+    symptom: Corners lift or the base curls, especially on large parts
+    causes: [chamber too cold, bed too cool, drafts, sharp corners, dense infill, no glue]
+    fixes:
+      - {key: brim_type, op: set, value: outer_only, why: "Prusa recommends a brim for small contact areas. It also holds corners on large PC parts."}
+      - {key: brim_width, op: at_least, value: 10, why: "A wide brim resists the strong pull of PC."}
+      - {key: sparse_infill_density, op: at_most, value: 20, why: "Prusa notes denser infill raises warping risk on large models."}
+      - {advice: "Preheat the chamber. Keep the door and lid closed and heat the bed to 110 C for 15 to 20 minutes first. On X1E, H2D or Core One set the chamber to 55 to 60 C.", kind: environment}
+      - {advice: "Round sharp corners in the model. Prusa says rounded edges warp less than sharp ones.", kind: orientation}
+      - {key: initial_layer_speed, op: at_most, value: 30, why: "A slow first layer bonds better on a hot bed."}
+      - {advice: "Apply glue stick or PVP glue. Bambu requires glue for PC.", kind: material}
+  - id: layer_cracking
+    symptom: Cracks between layers, often high on the part
+    causes: [chamber cold, fan too high, nozzle too cool, cooling too fast after the print]
+    fixes:
+      - {key: nozzle_temperature, op: increase_by, value: 5, why: "Hotter plastic fuses better with the layer below. Stay under 290 C."}
+      - {key: fan_max_speed, op: at_most, value: 25, why: "Less cooling keeps layers hot long enough to bond."}
+      - {advice: "Let the part cool inside the closed printer. Polymaker warns fast cooling cracks PC.", kind: environment}
+  - id: bubbles_stringing
+    symptom: Popping, bubbles, stringing, rough walls
+    causes: [wet filament]
+    fixes:
+      - {advice: "Dry at 80 C for 8 h in an AMS HT, forced air oven or on the heated bed. AMS 2 Pro cannot dry PC.", kind: material}
+      - {advice: "Print from a sealed box with desiccant. Bambu marks desiccant use as required for PC.", kind: workflow}
+  - id: plate_damage
+    symptom: PC bonds too hard and tears the coating of a smooth PEI sheet
+    causes: [PC bonds strongly to smooth PEI]
+    fixes:
+      - {advice: "Prusa says to avoid smooth PEI. Use textured PEI or the Engineering plate with a glue layer.", kind: hardware}
+  - id: cold_room_failure
+    symptom: Printer stops with a bed thermal runaway error in a cold room
+    causes: [ambient below 18 C]
+    fixes:
+      - {advice: "Prusa printers cannot hold 110 C on the bed below about 18 C ambient. Warm the room or enclosure first.", kind: environment}
+
+disagreements:
+  - topic: heat deflection temperature
+    positions:
+      - {claim: "117 C at 0.45 MPa", src: [bambu_wiki_abs_asa_pc]}
+      - {claim: "117 C at 1.8 MPa and 112 C at 0.45 MPa", src: [bambu_tds_pc_v2]}
+    resolution: "Quote about 112 to 117 C and design parts to stay under 100 C."
+  - topic: smooth PEI
+    positions:
+      - {claim: "High Temperature Plate with glue is approved", src: [bambu_tds_pc_v2, bambu_wiki_material_table]}
+      - {claim: "Avoid smooth PEI, it gets damaged", src: [prusa_kb_pc]}
+    resolution: "Textured PEI with glue is the safe default. Use smooth PEI only with a full glue layer."
+  - topic: nozzle temperature
+    positions:
+      - {claim: "260 to 290 C", src: ["orca:OrcaFilamentLibrary/filament/Bambu/Bambu PC @base.json", bambu_wiki_material_table]}
+      - {claim: "260 to 280 C", src: [bambu_tds_pc_v2]}
+      - {claim: "275 C", src: [prusa_kb_pc]}
+    resolution: "Default 275 to 280 C, and stay under 290 C."
+
+pilot_defaults:
+  nozzle_temperature: 280
+  nozzle_temperature_initial_layer: 270
+  eng_plate_temp: 110
+  hot_plate_temp: 110
+  textured_plate_temp: 110
+  fan_min_speed: 10
+  fan_max_speed: 40
+  overhang_fan_speed: 60
+  close_fan_the_first_x_layers: 3
+  slow_down_layer_time: 12
+  filament_flow_ratio: 0.94
+  filament_max_volumetric_speed: 18
+  retraction_length: 0.4
+  chamber_temperature: 60
+  activate_chamber_temp_control: true

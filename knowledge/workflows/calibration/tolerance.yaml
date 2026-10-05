@@ -1,0 +1,22 @@
+kind: calibration
+schema_version: 1
+id: tolerance
+name: Tolerance and hole fit
+order: 8
+purpose: "Measure how much holes and outlines deviate on this printer, nozzle and spool, then compensate."
+run_when: ["Parts that must mate", "Bolts or bearings do not fit", "After flow ratio is set"]
+prereqs: [flow_ratio]
+orca_test:
+  menu: "Add Handy Model > Orca Tolerance Test"
+  model: "Base with six hexagonal holes at 0.0, 0.05, 0.1, 0.2, 0.3 and 0.4 mm clearance, plus a printed hex tester. A 6 mm Allen key also works."
+  src: ["orca_wiki:tolerance_calib"]
+steps:
+  - "Print with the real profile for the job."
+  - "Find the tightest hole the tester or Allen key enters. Measure holes and tester with calipers."
+  - "Set hole compensation from the hole error and contour compensation from the tester error. Reprint and repeat until close."
+camera_reading: {feasible: no, look_for: "Needs calipers or a fit check by hand. mimir asks the user for measurements."}
+writes:
+  - {key: xy_hole_compensation, op: set, value_from: {calibration: tolerance, field: hole_offset_mm}, why: "Positive values open holes up by the measured error."}
+  - {key: xy_contour_compensation, op: set, value_from: {calibration: tolerance, field: contour_offset_mm}, why: "Corrects outside dimensions by the measured error."}
+related_settings: [precise_outer_wall, precise_z_height, filament_shrink]
+src: ["orca_wiki:tolerance_calib", "orca_src:src/libslic3r/PrintConfig.cpp"]

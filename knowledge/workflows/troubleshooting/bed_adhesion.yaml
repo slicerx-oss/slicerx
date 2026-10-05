@@ -1,0 +1,105 @@
+kind: troubleshoot
+schema_version: 1
+id: bed_adhesion
+name: Bed adhesion failure
+aliases: [not sticking, print will not stick, peeling, prints coming loose, first layer lifting, adhesion, detached from plate, part knocked off]
+camera_signs:
+  - "First layer lines are not attached, lift when touched, or are dragged around by the nozzle"
+  - "Part is loose, shifted or gone from the plate in a snapshot mid print"
+  - "Lines are round, thin, or spaced apart on the first layer, or peel at the corners"
+  - "A dull or shiny patch on the plate where prints keep failing"
+log_signs:
+  - "Bambu HMS prompts that point at the plate: force sensor disturbance (for example 0300-0A00-0001-0004 for a plate not seated or debris under it)"
+  - "Bambu spaghetti detection or first layer inspection alerts"
+  - "Klipper: a print that continues with no part on the bed is not logged as an error. Check the camera"
+tree:
+  start: q_clean
+  nodes:
+    q_clean: {ask: "Was the plate washed with dish soap and water (or 90 percent IPA on Prusa sheets) and handled only by its edges?", "yes": q_plate_match, "no": c_dirty_plate}
+    q_plate_match: {ask: "Does the plate type and temperature selected in the slicer match the plate installed and the filament?", "yes": q_first_layer_look, "no": c_wrong_plate_setting}
+    q_first_layer_look: {ask: "Do first layer lines look round and separated, with gaps, instead of flat and joined?", "yes": c_nozzle_too_high, "no": q_material}
+    q_material: {ask: "Is the material wet, or one that needs glue or a special plate (PETG on smooth PEI, nylon, ABS, PC)?", "yes": c_material_needs_help, "no": q_speed}
+    q_speed: {ask: "Is the first layer speed above 30 mm/s (Bambu's recommended ceiling), or was the print sped up during the first layers?", "yes": c_first_layer_speed, "no": q_plate_condition}
+    q_plate_condition: {ask: "Is the plate old, worn or scratched, or a cheap or fake PEI sheet, with adhesion getting worse over weeks?", "yes": c_plate_worn, "no": c_small_footprint}
+causes:
+  - id: c_dirty_plate
+    name: Grease or residue on the plate
+    category: environment
+    likelihood: high
+    checks:
+      - "Fingerprints, hand cream, glue stick residue or dust on the surface. Water beads on greasy spots."
+    fixes:
+      - {advice: "Wash the plate with warm (not hot) water and dish soap, using a fresh sponge, rinse and air dry or use paper towel. Do not touch the print surface. Ellis notes IPA is fine for maintenance but does not clear oils well. Prusa recommends 90 percent IPA, never acetone on textured or satin sheets.", kind: hardware}
+    src: [ellis_build_adhesion, prusa_kb_first_layer, bambu_wiki_spaghetti]
+    confidence: high
+  - id: c_wrong_plate_setting
+    name: Wrong plate type or temperature in the slicer
+    category: settings
+    likelihood: high
+    checks:
+      - "Bambu says a wrong build plate type selection often causes adhesion failure and lowers the bed temperature."
+    fixes:
+      - {advice: "Set the plate type in the slicer (curr_bed_type) to the plate that is physically installed. Bambu's bed temperature changes with the plate selected.", kind: workflow}
+      - {advice: "Use the plate's recommended temperature for the filament. Ellis lists first layer temperatures around 60 C for PLA, 80 C for PETG and 90 to 100 C for ABS as a rough reference.", kind: material}
+    printers: [bambu]
+    src: [bambu_wiki_spaghetti, bambu_wiki_warping_p2s, ellis_build_adhesion]
+    confidence: medium
+  - id: c_nozzle_too_high
+    name: First layer too high or bed not level
+    category: hardware
+    likelihood: high
+    checks:
+      - "Print the squish test. Lines that are round with gaps mean the nozzle is too far. On Bambu, first layer too high shows sparse lines and poor adhesion."
+    fixes:
+      - {advice: "Run automatic bed leveling (Calibration, Print Calibration, Auto Bed Leveling), check the back of the plate for debris, and confirm the plate lies flat. Then use the first_layer troubleshooter for Z offset.", kind: hardware}
+      - {advice: "Ellis suggests a first layer line width of 120 percent or more, which raises pressure against the surface. Lean toward slightly more squish, but do not over squish.", kind: workflow}
+    src: [bambu_wiki_first_layer_x1, bambu_wiki_spaghetti, ellis_first_layer_squish, ellis_build_adhesion]
+    confidence: medium
+  - id: c_material_needs_help
+    name: Material needs glue or a different surface
+    category: material
+    likelihood: medium
+    checks:
+      - "PETG, ABS, ASA, nylon, PC and other PET based materials bond hard to smooth PEI or barely at all to some surfaces, and wet filament weakens adhesion."
+    fixes:
+      - {advice: "Use a thin layer of PVA glue stick. Prusa recommends it for PETG, ABS, ASA, PC, nylon, flexible and PET based materials, and it also protects the sheet. Bambu uses glue on the Engineering and High Temp plates for these materials.", kind: material}
+      - {advice: "Dry the filament. Bambu notes moisture causes uneven extrusion that hurts first layer adhesion.", kind: material}
+    src: [prusa_kb_first_layer, bambu_wiki_spaghetti, bambu_wiki_material_table]
+    confidence: high
+  - id: c_first_layer_speed
+    name: First layer printed too fast
+    category: settings
+    likelihood: medium
+    checks:
+      - "Speed on the first layer above what the plastic needs to bond."
+    fixes:
+      - {key: initial_layer_speed, op: at_most, value: 30, why: "Bambu recommends an initial layer speed of 30 mm/s or less.", src: [bambu_wiki_spaghetti]}
+      - {key: initial_layer_infill_speed, op: at_most, value: 60, why: "Bambu recommends an initial layer infill speed of 60 mm/s or less.", src: [bambu_wiki_spaghetti]}
+      - {advice: "On Prusa, reduce speed to about 75 percent for the first three layers using the speed knob.", kind: workflow}
+    src: [bambu_wiki_spaghetti, prusa_kb_first_layer]
+    confidence: high
+  - id: c_plate_worn
+    name: Worn, fake or wrong plate
+    category: hardware
+    likelihood: medium
+    checks:
+      - "Adhesion degraded gradually. Clear rather than yellowish PEI is likely fake per Ellis. Some two sided plates are only printable on one side."
+    fixes:
+      - {advice: "Refresh smooth PEI by scuffing with a kitchen scouring pad or fine sandpaper (about 400 to 600 grit on Prusa's guide, 800 to 1000 in Ellis), then wash again. Prusa says acetone once a month restores smooth PEI but never on textured or satin sheets.", kind: hardware}
+      - {advice: "Replace the plate if scratched or from an unknown seller. Use a well known brand.", kind: hardware}
+    src: [ellis_build_adhesion, prusa_kb_first_layer]
+    confidence: medium
+  - id: c_small_footprint
+    name: Small footprint or high shrink part
+    category: model
+    likelihood: medium
+    checks:
+      - "Tall, thin or narrow base part, or a large flat part in ABS, ASA, PC or nylon."
+    fixes:
+      - {key: brim_type, op: set, value: outer_only, why: "A brim adds contact area. Bambu recommends 5 to 8 mm for small footprints.", src: [bambu_wiki_spaghetti]}
+      - {key: brim_width, op: at_least, value: 5, why: "Bambu suggests brim width 5 to 8 mm.", src: [bambu_wiki_spaghetti]}
+      - {advice: "See the warping troubleshooter for enclosure, cooling and drafts.", kind: workflow}
+    src: [bambu_wiki_spaghetti, prusa_kb_warping]
+    confidence: medium
+related: [warping, first_layer, spaghetti, elephant_foot]
+src: [ellis_build_adhesion, prusa_kb_first_layer, bambu_wiki_spaghetti, bambu_wiki_warping_p2s]

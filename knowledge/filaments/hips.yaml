@@ -1,0 +1,243 @@
+kind: filament
+schema_version: 1
+id: hips
+name: HIPS
+category: support
+orca_filament_type: HIPS
+aliases: [High impact polystyrene, HIPS support, Dissolvable HIPS]
+related: [abs, asa]
+summary: >
+  High impact polystyrene. Prints at temperatures close to ABS with much less
+  shrinkage, and dissolves in limonene, so it is used as a soluble support for
+  ABS and ASA on dual extruder or multi material printers. As a model material
+  it is light and easy to sand but soft and low heat. Bambu has no HIPS data
+  in its wiki, so most numbers come from Prusa and Orca generic.
+use_for: [soluble support for ABS and ASA, lightweight prototypes, parts that will be sanded or acetone smoothed, prototype shells]
+avoid_for: [parts above about 90 C, parts in contact with limonene, ABS or ASA parts printed with long limonene dips (Prusa warns they partly dissolve), PETG parts (no maker pairs HIPS with PETG), unventilated rooms]
+
+nozzle_temp_c:
+  min: 220
+  max: 270
+  typical: 240
+  confidence: medium
+  src:
+    - "orca:OrcaFilamentLibrary/filament/Generic HIPS @System.json"
+    - prusa_kb_hips
+  note: "Orca generic allows 220 to 270 and prints at 240. Prusa says 225 to 255. Start at 240 and move in 5 C steps. If used as ABS support, match the ABS temperature within about 10 C."
+first_layer_nozzle_temp_c:
+  min: 235
+  max: 245
+  typical: 240
+  confidence: low
+  src: ["orca:OrcaFilamentLibrary/filament/Generic HIPS @System.json"]
+  note: "Orca generic uses 240."
+bed_temp_c:
+  min: 90
+  max: 110
+  typical: 100
+  confidence: medium
+  src: [prusa_kb_hips, "orca:OrcaFilamentLibrary/filament/Generic HIPS @System.json"]
+  note: "Prusa says 100 to 110 C. Orca generic uses 90 C on the engineering, smooth and textured plates. Use 100 C."
+chamber_temp_c: null
+enclosure:
+  level: recommended
+  confidence: low
+  src: [prusa_kb_hips, prusa_kb_abs, bambu_wiki_material_table]
+  note: >
+    Prusa says HIPS shrinks much less than ABS and its page does not require an
+    enclosure. When HIPS supports an ABS or ASA part, the printer runs in the
+    ABS enclosure anyway. A closed printer still keeps drafts off and helps
+    large parts.
+
+plates:
+  - {plate: bambu_cool_plate, fit: avoid, confidence: low, src: ["orca:OrcaFilamentLibrary/filament/Generic HIPS @System.json"], note: "Orca sets no Cool Plate temperature for HIPS."}
+  - {plate: bambu_engineering_plate, fit: ok, bed_temp_c: {min: 90, max: 100}, release_agent: glue_stick, confidence: low, src: ["orca:OrcaFilamentLibrary/filament/Generic HIPS @System.json", bambu_wiki_material_table], note: "Orca sets 90 C for the engineering plate. Bambu has no HIPS row, so use glue as for ABS."}
+  - {plate: bambu_high_temp_plate, fit: ok, bed_temp_c: {min: 90, max: 100}, release_agent: glue_stick, confidence: low, src: ["orca:OrcaFilamentLibrary/filament/Generic HIPS @System.json"], note: "Orca sets 90 C. Glue is a sensible barrier as for ABS."}
+  - {plate: smooth_pei, fit: good, bed_temp_c: {min: 100, max: 110}, release_agent: none, confidence: high, src: [prusa_kb_hips], note: "Prusa: smooth PEI gives the best adhesion."}
+  - {plate: textured_pei, fit: good, bed_temp_c: {min: 100, max: 110}, release_agent: none, confidence: high, src: [prusa_kb_hips], note: "Prusa: powder coated textured and satin sheets also give the best adhesion."}
+  - {plate: satin_pei, fit: good, bed_temp_c: {min: 100, max: 110}, release_agent: none, confidence: high, src: [prusa_kb_hips], note: "Prusa lists satin sheets among the best surfaces for HIPS."}
+
+cooling:
+  fan_min_pct: {min: 0, max: 0, typical: 0}
+  fan_max_pct: {min: 0, max: 60, typical: 30}
+  overhang_fan_pct: {typical: 80}
+  no_fan_first_layers: {typical: 3}
+  min_layer_time_s: {typical: 6}
+  confidence: low
+  src: ["orca:OrcaFilamentLibrary/filament/Generic HIPS @System.json"]
+  note: "Orca generic runs the fan at 0 to 60 percent, 80 on overhangs, minimum layer time 6 s. When HIPS supports ABS, follow the ABS fan settings since both share the fan."
+
+drying:
+  need: recommended
+  oven: null
+  ams_2_pro: null
+  ams_ht: null
+  printer_bed: null
+  keep_dry_in_use: optional
+  confidence: low
+  src: [prusa_kb_hips]
+  note: "No manufacturer drying figure was found for HIPS. Bambu's drying table does not list it. Start with the ABS figure (80 C for 8 h, AMS HT or oven) only if the filament pops or strings. Prusa asks for at least 24 h of drying after a limonene bath, which is a different matter."
+
+nozzle:
+  abrasive: false
+  hardened_required: false
+  min_diameter_mm: 0.4
+  orca_required_hrc: 3
+  confidence: medium
+  src: ["orca:OrcaFilamentLibrary/filament/Generic HIPS @System.json"]
+  note: "Orca generic requires HRC 3 (brass is fine)."
+
+extrusion:
+  flow_ratio: {typical: 1.0, confidence: low, src: ["orca:OrcaFilamentLibrary/filament/Generic HIPS @System.json"], note: "Orca generic 1.0. Confirm with a flow test."}
+  max_volumetric_speed_mm3s:
+    standard_hotend: {typical: 8}
+    high_flow_hotend: {typical: 13}
+    confidence: low
+    src: ["orca:OrcaFilamentLibrary/filament/Generic HIPS @System.json"]
+    note: "Orca generic: 8 standard and 13 high flow."
+  retraction_mm:
+    direct_drive: {min: 0.7, max: 0.8, typical: 0.8}
+    confidence: low
+    src: ["orca:BBL/machine/Bambu Lab X1 Carbon 0.4 nozzle.json", "orca:Prusa/machine/fdm_machine_common_mk4s.json"]
+    note: "No HIPS specific figure. This is the printer default (Bambu 0.8 mm, Prusa MK4S 0.7 mm), not material data. Tune by strings, and match the ABS value when HIPS supports ABS."
+  retraction_speed_mm_s: {typical: 30, confidence: low, src: ["orca:BBL/machine/Bambu Lab X1 Carbon 0.4 nozzle.json", "orca:Prusa/machine/fdm_machine_common_mk4s.json"], note: "No HIPS specific figure. Bambu machine profiles use 30 mm/s and Prusa MK4S uses 35."}
+  pressure_advance:
+    direct_drive: null
+    confidence: low
+    src: [klipper_pressure_advance, ellis_pa]
+    note: "No HIPS value in Prusa or Bambu profiles. Calibrate."
+
+layer_height:
+  fraction_of_nozzle: {min: 0.25, max: 0.7, typical: 0.5}
+  at_0_4_mm: {min: 0.1, max: 0.28, typical: 0.2}
+  smart_layer:
+    quality_mode: "As a model, HIPS sands well and smooths in acetone, so 0.12 to 0.2 mm is plenty. As a soluble support it follows the layer height of the part it holds."
+    strength_mode: "HIPS is a soft, low heat plastic and rarely the structural choice. When it is a model, 0.2 mm on a 0.4 mm nozzle bonds well and prints faster than thin layers."
+    thin_layer_cooling: "Orca generic runs a 6 s minimum layer time with the fan at 0 to 60 percent. When HIPS supports ABS, follow the ABS fan settings since both share the fan."
+  basis: expert
+  confidence: low
+  src: ["orca:Prusa/machine/fdm_machine_common.json", "orca:BBL/process/0.20mm Standard @BBL X1C.json", "orca:Prusa/process/0.20mm SOLUBLE INTERFACE @MK4S 0.4.json", "orca:OrcaFilamentLibrary/filament/Generic HIPS @System.json"]
+  note: "No HIPS layer height source. Numbers come from Orca machine limits and the standard 0.4 mm presets. Prusa's soluble support presets also run at 0.2 mm."
+smart_layer:
+  min_ratio: 0.25
+  max_ratio: 0.7
+  modes:
+    quality: {min_ratio: 0.3, max_ratio: 0.5}
+    strength: {min_ratio: 0.3, max_ratio: 0.5}
+  family: soluble_supports
+  note: "HIPS prints well from 0.25 to 0.7 of the nozzle diameter; Quality mode uses 0.3 to 0.5 and Strength mode 0.3 to 0.5, since parts weaken once layers pass half the nozzle."
+  confidence: low
+  src: ["orca:Prusa/machine/fdm_machine_common.json", "orca:BBL/process/0.20mm Standard @BBL X1C.json", "orca:Prusa/process/0.20mm SOLUBLE INTERFACE @MK4S 0.4.json", "orca:OrcaFilamentLibrary/filament/Generic HIPS @System.json", "cnckitchen_layer_height", "stojkovic_2023_layer_height_annealing"]
+speeds:
+  print_speed_mm_s: {min: 30, max: 60}
+  first_layer_mm_s: {min: 20, max: 50, typical: 40}
+  volumetric_note: "Flashforge tested HIPS at 50 mm/s and 230 C. Orca generic allows 8 mm3/s on a standard hotend and 13 on a high flow hotend (see extrusion). No source caps outer wall speed. As a support it runs at the speed of the ABS it holds."
+  confidence: low
+  src: [flashforge_tds_hips, "orca:OrcaFilamentLibrary/filament/Generic HIPS @System.json", "orca:BBL/process/0.20mm Standard @BBL X1C.json", "orca:Prusa/process/0.20mm SPEED @MK4S 0.4.json"]
+  note: "The 30 mm/s lower bound is a conservative choice, not a maker figure. First layer: Bambu Standard preset 50 mm/s, Prusa MK4S preset 40 mm/s."
+first_layer:
+  fan_off_layers: 3
+  speed_mm_s: {min: 20, max: 50, typical: 40}
+  bed_first_layer_note: "Prusa recommends 100 to 110 C. All standard Prusa sheets give the best adhesion, and a brim helps on small contact areas."
+  squish_note: "No HIPS specific squish guidance. Treat it like ABS."
+  confidence: low
+  src: ["orca:BBL/process/0.20mm Standard @BBL X1C.json", "orca:Prusa/process/0.20mm SPEED @MK4S 0.4.json", prusa_kb_hips, "orca:OrcaFilamentLibrary/filament/Generic HIPS @System.json"]
+structure:
+  walls: {min: 2, typical: 3, note: "As a model, 3 walls keep the soft plastic from denting. As a support, walls follow the ABS part."}
+  infill: {pattern_hint: gyroid, density_note: "10 to 20 percent as a model. Support structures use their own pattern."}
+  basis: expert
+  confidence: low
+  src: ["orca:BBL/process/0.20mm Standard @BBL X1C.json"]
+supports:
+  interface_materials: [hips]
+  soluble_pairing: {material: hips, dissolve: "limonene"}
+  supports_models: [abs, asa]
+  top_z_distance_mm: {typical: 0.1}
+  interface_layers: {typical: 3}
+  note: "HIPS dissolves in limonene with no residue (10 to 20 s dip, then dry the part 24 h) and prints at ABS temperatures, which is why it is the classic ABS support on dual nozzle or multi material printers. Prusa warns ABS and ASA partly dissolve in limonene and rates printing HIPS supports as challenging. Prusa's soluble interface preset uses a top Z distance of 0 and 3 interface layers, Bambu's default is 0.2 mm. HIPS is not water soluble. Bambu Support for ABS is a non-soluble alternative."
+  confidence: medium
+  src: [prusa_kb_hips, flashforge_tds_hips, bambu_store_support_filaments, "orca:Prusa/process/0.20mm SOLUBLE INTERFACE @MK4S 0.4.json", "orca:BBL/process/0.20mm Standard @BBL X1C.json"]
+
+multi_material:
+  bambu_ams: unknown
+  bambu_ams_lite: unknown
+  bambu_ams_ht: unknown
+  confidence: low
+  src: [prusa_kb_hips]
+  note: "Bambu lists no HIPS row. Prusa rates printing HIPS supports as challenging and warns that ABS and ASA partly dissolve in limonene. Prusa recommends against long limonene exposure of ASA parts because it can hurt layer adhesion."
+
+properties:
+  density_g_cm3: {typical: 1.06, src: ["orca:OrcaFilamentLibrary/filament/Generic HIPS @System.json"]}
+  softening_temp_c: {typical: 100, src: ["orca:OrcaFilamentLibrary/filament/Generic HIPS @System.json"], note: "Orca vitrification temperature. No sourced data sheet HDT."}
+  heat_deflection_c: {at_0_45_mpa: 88, src: [flashforge_tds_hips], note: "Flashforge data sheet, printed at 230 C. Water absorption is 1 percent in 24 h."}
+  solvent: {name: limonene, dip_seconds: {min: 10, max: 20}, dry_hours: 24, src: [prusa_kb_hips], note: "Prusa: 10 to 20 s in limonene is enough to dissolve a support layer, then dry the part for at least 24 h. Long limonene exposure can hurt some filaments such as Prusament ASA."}
+  relative: null
+safety:
+  fumes: medium
+  note: "Prusa's HIPS page has no fume warning. HIPS is a styrene based plastic like ABS, so ventilate the room and use activate_air_filtration on Bambu X, P and H series. This is an inference. Limonene is a solvent: use it in a ventilated area and away from flames."
+  src: [prusa_kb_hips, prusa_kb_abs]
+food_contact:
+  note: "Not food safe as printed. Support material is not certified."
+  src: [prusa_kb_food_safe]
+
+failure_modes:
+  - id: support_wont_dissolve
+    symptom: HIPS support stays stuck after a limonene bath
+    causes: [bath too short, part still dry, solvent old]
+    fixes:
+      - {advice: "Prusa says 10 to 20 s is enough. Agitate, and for thick interfaces repeat the dip. Dry the part 24 h afterwards.", kind: workflow}
+  - id: abs_support_bond
+    symptom: HIPS interface does not bond to the ABS part or peels early
+    causes: [temperature mismatch, wrong interface settings]
+    fixes:
+      - {key: support_top_z_distance, op: set, value: 0.1, why: "A small gap with soluble support gives a clean face. Tune between 0.08 and 0.2 mm."}
+      - {advice: "Match the nozzle temperature and bed temperature to the ABS side, and keep the enclosure closed for the HIPS and ABS combination.", kind: environment}
+  - id: warping
+    symptom: Corners lift
+    causes: [cold chamber, drafts, small contact area]
+    fixes:
+      - {key: brim_type, op: set, value: outer_only, why: "A brim adds hold. HIPS warps far less than ABS but not zero."}
+      - {key: brim_width, op: at_least, value: 5, why: "A modest brim is enough for most HIPS parts."}
+      - {key: fan_max_speed, op: at_most, value: 30, why: "Lower cooling reduces warping."}
+  - id: fumes
+    symptom: Smell during printing
+    causes: [styrene based plastic]
+    fixes:
+      - {key: activate_air_filtration, op: enable, why: "Runs the carbon filter during printing on Bambu X, P and H series."}
+      - {advice: "Ventilate the room.", kind: environment}
+  - id: limonene_damage
+    symptom: Main part weakens or crazes after the limonene bath
+    causes: [main material is attacked by limonene, long exposure]
+    fixes:
+      - {advice: "Prusa warns not to leave ASA parts in limonene too long. Keep the dip short and test a scrap piece first.", kind: workflow}
+
+disagreements:
+  - topic: bed temperature
+    positions:
+      - {claim: "100 to 110 C", src: [prusa_kb_hips]}
+      - {claim: "90 C", src: ["orca:OrcaFilamentLibrary/filament/Generic HIPS @System.json"]}
+    resolution: "Use 100 C. Match the ABS bed if HIPS is a support."
+  - topic: nozzle temperature
+    positions:
+      - {claim: "220 to 270 C, 240 C default", src: ["orca:OrcaFilamentLibrary/filament/Generic HIPS @System.json"]}
+      - {claim: "225 to 255 C", src: [prusa_kb_hips]}
+    resolution: "Use 240 C."
+  - topic: HIPS as support for ABS and ASA
+    positions:
+      - {claim: "HIPS dissolves completely in limonene and works as a support material", src: [flashforge_tds_hips]}
+      - {claim: "Not suitable for ABS or ASA supports because they partly dissolve in limonene", src: [prusa_kb_hips]}
+    resolution: "Keep the dip short (10 to 20 s), test a scrap of the model filament, and prefer Bambu Support for ABS where a dual nozzle is not available."
+
+pilot_defaults:
+  nozzle_temperature: 240
+  nozzle_temperature_initial_layer: 240
+  eng_plate_temp: 90
+  hot_plate_temp: 100
+  textured_plate_temp: 100
+  fan_min_speed: 0
+  fan_max_speed: 30
+  overhang_fan_speed: 80
+  close_fan_the_first_x_layers: 3
+  slow_down_layer_time: 6
+  filament_flow_ratio: 1.0
+  filament_max_volumetric_speed: 8

@@ -1,0 +1,279 @@
+kind: filament
+schema_version: 1
+id: pla
+name: PLA
+category: standard
+orca_filament_type: PLA
+aliases: [PLA Basic, Generic PLA, PLA HF, PLA High Speed, Prusament PLA, Polylactic acid]
+related: [pla_plus, pla_silk, pla_matte, pla_cf, pva]
+summary: >
+  The easiest and cheapest filament to print. Stiff, crisp, low warp and happy
+  on almost any plate. It softens around 55 to 60 C, is brittle under impact,
+  and degrades in sun, so it suits display and prototype parts rather than
+  anything left in a hot car or outdoors.
+use_for: [prototypes, display models, miniatures, jigs and fixtures used indoors, low load brackets, cosplay props]
+avoid_for: [parts above about 50 C, outdoor use, snap fits that flex repeatedly, parts under sustained load (creep)]
+
+nozzle_temp_c:
+  min: 190
+  max: 240
+  typical: 220
+  confidence: high
+  src:
+    - "orca:OrcaFilamentLibrary/filament/Generic PLA @System.json"
+    - "orca:OrcaFilamentLibrary/filament/Bambu/Bambu PLA Basic @base.json"
+    - bambu_wiki_material_table
+    - prusa_kb_pla
+  note: >
+    Orca generic and Bambu list 190 to 240 (profile 220). Prusa prints at 210 to
+    215. Start at 220 and move in 5 C steps. Fast prints need the top of the range
+    to keep up with flow.
+first_layer_nozzle_temp_c:
+  min: 215
+  max: 230
+  typical: 225
+  confidence: medium
+  src: [prusa_kb_pla, "orca:OrcaFilamentLibrary/filament/Generic PLA @System.json", "orca:Prusa/filament/Generic PLA @Prusa MK4S.json"]
+  note: "Orca generic uses 220, Prusa KB 215, the Prusa MK4S profile 230."
+bed_temp_c:
+  min: 35
+  max: 65
+  typical: 55
+  confidence: high
+  src: [bambu_wiki_material_table, prusa_kb_pla, "orca:OrcaFilamentLibrary/filament/Generic PLA @System.json", "orca:Prusa/filament/Generic PLA @Prusa CORE One.json"]
+  note: "Bambu Cool Plate 35 to 45, PEI plates 45 to 65 (profile 55). Prusa uses 60 on PEI sheets."
+chamber_temp_c: null
+enclosure:
+  level: none
+  confidence: high
+  src: [bambu_wiki_material_table]
+  note: >
+    Not prone to warping. On an enclosed printer with the bed above 45 C, open
+    the door or remove the top glass cover so heat does not soften the filament
+    in the extruder.
+
+plates:
+  - {plate: bambu_cool_plate, fit: good, bed_temp_c: {min: 35, max: 45}, release_agent: none, confidence: high, src: [bambu_wiki_material_table], note: "Standard choice for PLA on Bambu printers."}
+  - {plate: bambu_supertack_plate, fit: good, bed_temp_c: {min: 35, max: 45}, release_agent: none, confidence: medium, src: ["orca:OrcaFilamentLibrary/filament/Generic PLA @System.json"], note: "Orca generic sets 45 C for SuperTack. Let the plate cool fully before removing."}
+  - {plate: bambu_textured_cool_plate, fit: good, bed_temp_c: {min: 35, max: 45}, release_agent: none, confidence: low, src: ["orca:OrcaFilamentLibrary/filament/Generic PLA @System.json"], note: "Orca generic sets 35 C. Bambu does not publish a separate row for this plate."}
+  - {plate: bambu_engineering_plate, fit: glue, bed_temp_c: {min: 45, max: 65}, release_agent: glue_stick, confidence: high, src: [bambu_wiki_material_table], note: "Bambu marks glue as required on the Engineering Plate for PLA."}
+  - {plate: bambu_high_temp_plate, fit: good, bed_temp_c: {min: 45, max: 65}, release_agent: none, confidence: high, src: [bambu_wiki_material_table], note: "Smooth PEI. Wait for it to cool and the part releases."}
+  - {plate: smooth_pei, fit: good, bed_temp_c: {min: 55, max: 65}, release_agent: none, confidence: high, src: [prusa_kb_pla], note: "Prusa lists satin or smooth PEI as the best PLA surfaces."}
+  - {plate: satin_pei, fit: good, bed_temp_c: {min: 55, max: 65}, release_agent: none, confidence: high, src: [prusa_kb_pla], note: "Best adhesion per Prusa."}
+  - {plate: textured_pei, fit: good, bed_temp_c: {min: 45, max: 65}, release_agent: none, confidence: high, src: [bambu_wiki_material_table, prusa_kb_pla], note: "Grippy and easy to release once cool. Bottom surface takes the texture."}
+
+cooling:
+  fan_min_pct: {min: 70, max: 100, typical: 100}
+  fan_max_pct: {min: 100, max: 100, typical: 100}
+  overhang_fan_pct: {typical: 100}
+  no_fan_first_layers: {typical: 1}
+  min_layer_time_s: {min: 4, max: 8, typical: 4}
+  confidence: high
+  src:
+    - "orca:OrcaFilamentLibrary/filament/Generic PLA @System.json"
+    - "orca:BBL/filament/Bambu PLA Basic @BBL X1C.json"
+    - "orca:Prusa/filament/Generic PLA @Prusa MK4S.json"
+    - "orca:Prusa/filament/Generic PLA @Prusa CORE One.json"
+  note: >
+    PLA wants strong cooling. Bambu and Orca use 100 percent. Prusa MK4S uses 70
+    to 100 and the Core One 85 to 100. Bambu H2D uses 60 to 80 with a strong
+    auxiliary fan. Minimum layer time is 4 s (Orca and Bambu), 6 s (MK4S), 8 s (Core One).
+
+drying:
+  need: recommended
+  oven: {temp_c: {min: 50, max: 55}, hours: 8}
+  ams_2_pro: {temp_c: 45, hours: 12}
+  ams_ht: {temp_c: 45, hours: 12}
+  printer_bed: {temp_c: {min: 60, max: 70}, hours: 12, note: "Enclosed Bambu printers only, spool covered, flip every 6 hours"}
+  keep_dry_in_use: optional
+  confidence: medium
+  src: [bambu_wiki_drying, bambu_wiki_material_table]
+  note: >
+    Bambu's material table says 55 C for 8 h in an oven, its drying page says 50 C
+    for PLA Basic and Matte. Stay at or under 55 C: PLA softens near 55 to 60 C
+    and a spool can fuse or deform. Static drying in an AMS is not advised for PLA.
+    Wet PLA strings and pops but is more forgiving than PETG or nylon.
+
+nozzle:
+  abrasive: false
+  hardened_required: false
+  min_diameter_mm: 0.2
+  orca_required_hrc: 3
+  confidence: high
+  src: [bambu_wiki_material_table, "orca:OrcaFilamentLibrary/filament/Generic PLA @System.json"]
+
+extrusion:
+  flow_ratio: {min: 0.98, max: 1.0, typical: 0.98, confidence: medium, src: ["orca:OrcaFilamentLibrary/filament/Generic PLA @System.json", "orca:BBL/filament/Bambu PLA Basic @BBL X1C.json", "orca:Prusa/filament/Generic PLA @Prusa CORE One.json"], note: "Orca and Bambu use 0.98, Prusa Core One 1.0. Always confirm with a flow test."}
+  max_volumetric_speed_mm3s:
+    standard_hotend: {min: 12, max: 21, typical: 15}
+    high_flow_hotend: {min: 21, max: 40, typical: 25}
+    confidence: medium
+    src:
+      - "orca:OrcaFilamentLibrary/filament/Generic PLA @System.json"
+      - "orca:BBL/filament/Bambu PLA Basic @BBL X1C.json"
+      - "orca:Prusa/filament/Generic PLA @Prusa MK4S.json"
+    note: >
+      Generic PLA is 12 standard, 21 high flow and 40 extra high flow. Bambu PLA
+      Basic on X1C is 21 standard and 29 high flow. Prusa MK4S and Core One use
+      15. The hotend, not the filament, is usually the limit. PLA High Speed
+      profiles raise generic to 18 and 25.
+  retraction_mm:
+    direct_drive: {min: 0.4, max: 0.8, typical: 0.4}
+    confidence: medium
+    src: ["orca:BBL/filament/Bambu PLA Basic @BBL X1C.json", "orca:BBL/filament/Bambu PLA Basic @BBL H2D.json", "orca:OrcaFilamentLibrary/filament/Generic PLA Matte @System.json", klipper_pressure_advance]
+    note: "Bambu profiles use 0.4 mm. Generic PLA Matte uses 0.8 mm and Klipper suggests about 0.75 mm after tuning PA. Bowden values come from the printer profile."
+    retraction_speed_mm_s: {min: 20, max: 45, typical: 30, confidence: medium, src: [bambu_tds_pla_basic_v3, "orca:BBL/machine/Bambu Lab X1 Carbon 0.4 nozzle.json", "orca:Prusa/machine/Prusa CORE One HF 0.4 nozzle.json", "orca:Prusa/machine/fdm_machine_common_mk4s.json"], note: "Bambu TDS says 20 to 40 mm/s and the Bambu printer profile uses 30. Prusa machine profiles use 35 (MK4S) and 45 (Core One). It is a printer setting; filament profiles rarely override it."}
+  pressure_advance:
+    direct_drive: {min: 0.02, max: 0.06, typical: 0.036}
+    bowden: {min: 0.3, max: 1.0}
+    confidence: medium
+    src: ["orca:Prusa/filament/Generic PLA @Prusa MK4S.json", "orca:Prusa/filament/Generic PLA @Prusa CORE One.json", klipper_pressure_advance, ellis_pa]
+    note: >
+      Prusa ships M572 S0.036 for a 0.4 mm nozzle, 0.025 at 0.5 mm, 0.02 at 0.6 mm
+      (0.022 on Core One) and 0.014 at 0.8 mm. Klipper's typical range is 0.05 to
+      1.0 with the high end for bowden. Bambu printers measure it per spool. PA is
+      printer specific; calibrate.
+
+layer_height:
+  fraction_of_nozzle: {min: 0.2, max: 0.7, typical: 0.5}
+  at_0_4_mm: {min: 0.08, max: 0.28, typical: 0.2}
+  smart_layer:
+    quality_mode: "PLA holds fine detail well, so thin layers (0.08 to 0.12 mm) pay off on domes, slopes and curved tops. Below 0.08 mm on a 0.4 mm nozzle Bambu does not test quality and gains nothing."
+    strength_mode: "Layer adhesion in PLA is weaker than in-layer strength. Keep layers at or under half the nozzle diameter (0.2 mm on a 0.4 nozzle). Going thinner does not bond better, going thicker than 0.3 mm loses about half the layer strength."
+    thin_layer_cooling: "Thin layers on small parts hit the minimum layer time, so the printer slows down. Add a second part or raise the minimum layer time only if overhangs curl."
+  confidence: medium
+  src: ["orca:BBL/machine/fdm_machine_common.json", bambu_wiki_adaptive_layer, cnckitchen_layer_height, "orca:Prusa/machine/fdm_machine_common_mk4s.json"]
+  note: "Bambu tests 0.08 to 0.28 mm on a 0.4 mm nozzle. Prusa MK4S allows 0.07 to 0.30 mm. CNC Kitchen found 0.15 mm strongest in Prusament PLA and a strong drop past half the nozzle diameter."
+smart_layer:
+  min_ratio: 0.2
+  max_ratio: 0.7
+  modes:
+    quality: {min_ratio: 0.2, max_ratio: 0.5}
+    strength: {min_ratio: 0.3, max_ratio: 0.5}
+  family: pla_family
+  note: "PLA prints well from 0.2 to 0.7 of the nozzle diameter; Quality mode uses 0.2 to 0.5 and Strength mode 0.3 to 0.5, since parts weaken once layers pass half the nozzle."
+  confidence: medium
+  src: ["orca:BBL/machine/fdm_machine_common.json", "bambu_wiki_adaptive_layer", "cnckitchen_layer_height", "orca:Prusa/machine/fdm_machine_common_mk4s.json", "stojkovic_2023_layer_height_annealing"]
+speeds:
+  print_speed_mm_s: {max: 300}
+  first_layer_mm_s: {min: 20, max: 50, typical: 40}
+  volumetric_note: "Bambu PLA Basic is rated under 300 mm/s. Real speed is capped by max volumetric speed; see extrusion."
+  confidence: medium
+  src: [bambu_tds_pla_basic_v3, "orca:BBL/process/0.20mm Standard @BBL X1C.json", "orca:Prusa/process/0.20mm SPEED @MK4S 0.4.json", bambu_wiki_spaghetti]
+  note: "First layer: Bambu X1C profile 50, Prusa MK4S 40, Bambu's spaghetti guide asks for 30 or less when the first layer fails."
+first_layer:
+  fan_off_layers: 1
+  speed_mm_s: {typical: 40}
+  bed_first_layer_note: "Bambu profile: 35 C on Cool Plate, 55 C on PEI. Prusa holds 60 C on PEI for every layer."
+  squish_note: "Default first layer height is 0.2 mm on Bambu and Prusa. Ellis suggests 0.25 mm or more with a wider first line for a forgiving first layer. Fix adhesion by cleaning the plate before adding squish."
+  confidence: medium
+  src: ["orca:BBL/process/fdm_process_common.json", prusa_kb_pla, ellis_first_layer_squish, prusa_kb_first_layer]
+structure:
+  walls: {min: 2, typical: 2, note: "Bambu and Prusa default to 2 walls. PLA is stiff and brittle, so load bearing parts want 4 or more walls before more infill."}
+  infill: {pattern_hint: gyroid, density_note: "Bambu default is grid at 15 percent and Prusa uses crosshatch at 15. The Bambu Strength preset goes to 6 walls and 25 percent. Gyroid works for even strength in all directions."}
+  confidence: low
+  src: ["orca:BBL/process/0.20mm Standard @BBL X1C.json", "orca:BBL/process/0.20mm Strength @BBL X1C.json", "orca:Prusa/process/0.20mm SPEED @MK4S 0.4.json", prusa_kb_layers_perimeters]
+supports:
+  interface_materials: ["Bambu Support for PLA", "Bambu Support for PLA/PETG", pva, bvoh]
+  soluble_pairing: {material: pva, dissolve: "room temperature or warm water (under 50 C for PLA), several hours"}
+  top_z_distance_mm: {typical: 0.2}
+  interface_layers: {typical: 2}
+  note: "PLA on PLA supports need a Z gap of about one layer, and they peel off with tools. Bambu Support for PLA and PVA allow a zero gap for a cleaner underside. PLA and PETG do not bond well to each other, so either can serve as the other's interface."
+  confidence: medium
+  src: ["orca:BBL/process/0.20mm Standard @BBL X1C.json", bambu_tds_pla_basic_v3, bambu_wiki_support_filament_guide, bambu_wiki_pla_petg_mutual_support, bambu_wiki_pva_guide]
+
+multi_material:
+  bambu_ams: compatible
+  bambu_ams_lite: compatible
+  bambu_ams_ht: compatible
+  confidence: high
+  src: [bambu_wiki_material_table]
+
+properties:
+  density_g_cm3: {typical: 1.24, min: 1.24, max: 1.26, src: ["orca:OrcaFilamentLibrary/filament/Generic PLA @System.json", "orca:OrcaFilamentLibrary/filament/Bambu/Bambu PLA Basic @base.json"]}
+  softening_temp_c: {typical: 55, min: 45, max: 60, src: ["orca:OrcaFilamentLibrary/filament/Generic PLA @System.json", prusa_kb_pla, prusament_tds_pla, bambu_wiki_material_table], note: "Orca temperature_vitrification is 45 C. Prusament PLA HDT is 55 C. Prusa says it deforms above 60 C. Bambu advises against use near 50 C."}
+  relative:
+    heat: 2
+    impact: 2
+    tensile: 3
+    scale: "1 to 5, Bambu star ratings"
+    src: [bambu_wiki_material_table]
+safety:
+  fumes: low
+  note: "Mild sweet smell. Ventilate the room as with any hot plastic."
+food_contact:
+  note: >
+    PLA itself is a food grade polymer, but a printed part is not automatically
+    food safe. Layer lines trap bacteria, colorants are usually uncertified, and
+    brass nozzles can contain lead. Use a stainless steel nozzle and a food safe
+    coating, or treat the part as single use. PLA also softens in hot drinks and
+    dishwashers.
+  src: [prusa_kb_food_safe]
+
+failure_modes:
+  - id: stringing
+    symptom: Thin hairs between features
+    causes: [nozzle too hot, wet filament, retraction too short, slow travel]
+    fixes:
+      - {key: nozzle_temperature, op: decrease_by, value: 5, why: "Cooler PLA is less runny between moves. Go down 5 C at a time, not below 200 C."}
+      - {advice: "Dry the spool (50 to 55 C for 8 h). Wet PLA strings and pops even with tuned settings.", kind: material}
+      - {key: retraction_length, op: increase_by, value: 0.2, why: "A little more retraction pulls pressure out of the nozzle before travel. Stay under 1.5 mm on direct drive."}
+      - {key: travel_speed, op: at_least, value: 200, why: "Faster travel gives the nozzle less time to ooze."}
+  - id: heat_creep_clog
+    symptom: Extruder clicks or jams a few layers in, mostly with a warm bed and closed enclosure
+    causes: [chamber too warm, PLA softens above the heat break, weak cooling of the cold end]
+    fixes:
+      - {advice: "Open the enclosure door or remove the top glass cover when the bed is above 45 C.", kind: environment}
+      - {key: nozzle_temperature, op: decrease_by, value: 5, why: "Less heat travels up the heat break."}
+  - id: drooping_overhangs
+    symptom: Sagging overhangs, curled edges, rough bridges
+    causes: [not enough cooling, layers too fast for the fan, nozzle too hot]
+    fixes:
+      - {key: fan_max_speed, op: at_least, value: 100, why: "PLA needs full cooling to freeze quickly."}
+      - {key: overhang_fan_speed, op: at_least, value: 100, why: "Maximum air on overhangs and bridges."}
+      - {key: slow_down_layer_time, op: at_least, value: 6, why: "Small layers get more time to cool before the next pass."}
+  - id: elephant_foot_or_lifting
+    symptom: Corners lift, or the first layer does not stick
+    causes: [dirty plate, bed too cold, first layer too fast]
+    fixes:
+      - {advice: "Wash the plate with dish soap and hot water. Do not use acetone on textured PEI.", kind: hardware}
+      - {key: initial_layer_speed, op: at_most, value: 40, why: "A slow first layer squishes and bonds better."}
+  - id: brittle_parts
+    symptom: Part snaps at layer lines or under light flex
+    causes: [PLA is brittle, too few walls, cold nozzle]
+    fixes:
+      - {key: wall_loops, op: at_least, value: 4, why: "Walls carry most of the load. Infill adds little strength."}
+      - {advice: "Use PLA+ or PETG if the part must flex or take impact.", kind: material}
+
+disagreements:
+  - topic: oven drying temperature
+    positions:
+      - {claim: "55 C for 8 h", src: [bambu_wiki_material_table]}
+      - {claim: "50 C for 8 h (PLA Basic and Matte)", src: [bambu_wiki_drying]}
+    resolution: "Use 50 to 55 C. Higher risks deforming spools and softening the filament."
+  - topic: bed and nozzle for Prusa versus Bambu
+    positions:
+      - {claim: "210 to 215 C nozzle, 60 C bed", src: [prusa_kb_pla]}
+      - {claim: "220 C nozzle, 35 to 45 C on Cool Plate, 45 to 65 C on PEI", src: [bambu_wiki_material_table, "orca:OrcaFilamentLibrary/filament/Generic PLA @System.json"]}
+    resolution: "Both fit inside the working range. Default 220 C and 55 C on PEI. Go lower on the nozzle for detail, higher for speed."
+  - topic: first layer speed
+    positions:
+      - {claim: "50 mm/s", src: ["orca:BBL/process/0.20mm Standard @BBL X1C.json"]}
+      - {claim: "40 mm/s", src: ["orca:Prusa/process/0.20mm SPEED @MK4S 0.4.json"]}
+      - {claim: "30 mm/s or less when the first layer fails", src: [bambu_wiki_spaghetti]}
+    resolution: "Default 40 mm/s. Drop to 30 or lower when corners lift or the first layer is uneven."
+
+pilot_defaults:
+  nozzle_temperature: 220
+  nozzle_temperature_initial_layer: 225
+  cool_plate_temp: 35
+  textured_plate_temp: 55
+  hot_plate_temp: 55
+  fan_min_speed: 100
+  fan_max_speed: 100
+  overhang_fan_speed: 100
+  close_fan_the_first_x_layers: 1
+  slow_down_layer_time: 4
+  filament_flow_ratio: 0.98
+  filament_max_volumetric_speed: 15
+  retraction_length: 0.4

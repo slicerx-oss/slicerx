@@ -1,0 +1,88 @@
+kind: printer
+schema_version: 1
+id: prusa_core_one
+name: Prusa CORE One
+vendor: Prusa Research
+status: current
+firmware: prusa
+connections: [prusalink, prusa_connect]
+kinematics: corexy
+build_volume_mm: {x: 250, y: 220, z: 270, confidence: medium, src: [prusa_spec_core_one, "orca:Prusa/machine/Prusa CORE One 0.4 nozzle.json"]}
+extruder: {type: direct_drive, note: "Nextruder derived, load cell probing.", src: [prusa_spec_core_one]}
+hotend:
+  max_temp_c: 290
+  nozzle_diameters_mm: [0.25, 0.3, 0.4, 0.5, 0.6, 0.8]
+  nozzle_materials: [brass, hardened_steel]
+  stock_nozzle: "0.4 mm brass"
+  tool_free_swap: false
+  high_flow_option: true
+  confidence: medium
+  note: "Orca has CORE One HF profiles for the high flow nozzle. CORE One L is a larger sibling with its own profiles and is not covered by this file."
+  src: [prusa_spec_core_one, "orca:Prusa/machine/Prusa CORE One HF.json", "orca:Prusa/machine/Prusa CORE One 0.6 nozzle.json"]
+bed:
+  max_temp_c: 120
+  plates: [smooth_pei, textured_pei, satin_pei]
+  confidence: medium
+  note: "Magnetic steel sheet. Bed maximum is from Prusa's family spec, not re-verified for the CORE One page."
+  src: [prusa_spec_core_one]
+enclosure:
+  type: enclosed
+  chamber_heating: active
+  max_chamber_c: 55
+  filtration: []
+  confidence: medium
+  note: "Actively regulated chamber to 55 C using bed heat and an internal fan and vents. Prusa sells a separate filter; not confirmed here, so treat filtration as unknown."
+  src: [prusa_spec_core_one]
+motion:
+  max_speed_mm_s: 350
+  max_accel_mm_s2: 7000
+  input_shaping: manual
+  confidence: medium
+  note: "Orca machine limits 350 mm/s and 7000 mm/s2. Input shaper is on; recalibration and phase stepping calibration need the accelerometer set on the base CORE One."
+  src: ["orca:Prusa/machine/Prusa CORE One 0.4 nozzle.json", prusa_kb_input_shaper, prusa_kb_accelerometer, prusa_kb_phase_stepping]
+power:
+  psu_rated_w: {value: 240, note: "With Power Panic hardware.", src: [prusa_spec_core_one_page], confidence: high}
+  printing_typical_w: {pla: {value: 90}, abs: {value: 110}, src: [prusa_spec_core_one_page], confidence: medium, note: "Prusa stated power consumption for PLA and ABS settings. Measurement method not given."}
+sensors: [load_cell, filament_runout, nfc_spool_reader, chamber_thermistor]
+builtin_calibrations:
+  - {id: first_layer_calibration, what: "Live Z adjust from the LCD.", src: [prusa_spec_core_one]}
+  - {id: input_shaper_calibration, what: "Accelerometer set required on the base CORE One.", src: [prusa_kb_accelerometer]}
+  - {id: phase_stepping_calibration, what: "LCD Menu, Settings, Phase Stepping, Calibration; needs the accelerometer set on the base CORE One.", src: [prusa_kb_phase_stepping]}
+multi_material:
+  - {system: prusa_mmu3, slots: 5, note: "Enclosed MMU3 kit for CORE One.", src: [prusa_blog_mmu3_core_one, prusa_kb_mmu3_compat]}
+materials:
+  recommended: [pla, pla_plus, pla_silk, pla_matte, petg, asa, abs, tpu_95a]
+  possible: [pc, pa6, pa12, petg_cf, pla_cf, pa_cf, pa_gf, tpu_85a, pva, hips, pp, bvoh]
+  not_recommended: []
+  confidence: medium
+  note: "Enclosed with active chamber, so ABS and ASA are first class. PLA in a hot chamber can soften in the extruder path: open the lid or lower chamber_temperature for PLA. Abrasive filaments need a hardened nozzle."
+  src: [prusa_spec_core_one]
+orca_profile: "orca:Prusa/machine/Prusa CORE One 0.4 nozzle.json"
+profile_baseline:
+  process: "0.20mm SPEED @CORE One 0.4"
+  values: {layer_height: 0.2, initial_layer_print_height: 0.2, outer_wall_speed: 170, inner_wall_speed: 170, sparse_infill_speed: 200, top_surface_speed: 100, initial_layer_speed: 45, travel_speed: 350, default_acceleration: 3000, outer_wall_acceleration: 3000, inner_wall_acceleration: 6000, travel_acceleration: 7000, initial_layer_acceleration: 500, wall_loops: 2, top_shell_layers: 5, bottom_shell_layers: 3, sparse_infill_density: "15%", bridge_speed: 50, line_width: 0.45, retraction_length: 0.7}
+  confidence: high
+  src: ["orca:Prusa/process/0.20mm SPEED @CORE One 0.4.json", "orca:Prusa/machine/Prusa CORE One 0.4 nozzle.json"]
+pilot_notes:
+  - "Chamber temperature is active. chamber_temperature and activate_chamber_temp_control are valid here, capped at 55 C. Let the chamber reach temperature before starting ABS or ASA."
+  - "Do not raise chamber temperature for PLA, PETG or TPU. Warm chambers cause heat creep and soft filament."
+  - "G-code flavor is marlin2, pressure advance via M572."
+  - "Two different inner and outer wall accelerations in the stock profile are intentional. Change them together."
+  - "Sending uses PrusaLink or Prusa Connect."
+common_issues:
+  - symptom: "Extruder jams with PLA after a warm ABS print"
+    cause: "Chamber heat lingers and softens PLA above the heatbreak."
+    fix:
+      - {key: chamber_temperature, op: at_most, value: 30, why: "Keep the chamber cool for PLA."}
+      - {advice: "Open the lid or let the chamber cool before switching to PLA.", kind: environment}
+  - symptom: "ABS warps or cracks on tall parts"
+    cause: "Chamber not up to temperature at start."
+    fix:
+      - {key: chamber_temperature, op: set, value: 45, why: "A warm chamber reduces thermal stress on ABS."}
+      - {key: fan_max_speed, op: at_most, value: 20, why: "Low cooling keeps ABS layers fused."}
+  - symptom: "Ringing on fast small features"
+    cause: "Belts or uncalibrated input shaper."
+    fix:
+      - {advice: "Check belt tension, then run input shaper calibration with the accelerometer set.", kind: hardware}
+      - {key: inner_wall_acceleration, op: at_most, value: 4000, why: "Lower inner wall acceleration from the 6000 baseline."}
+src: [prusa_spec_core_one, prusa_kb_input_shaper, "orca:Prusa/machine/Prusa CORE One 0.4 nozzle.json"]

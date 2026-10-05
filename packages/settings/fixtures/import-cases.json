@@ -1,0 +1,333 @@
+{
+ "comment": "Profile, project and export requests both sx-settings and @slicerx/settings turn into the results in import-golden.json. A `from` case imports a fixtures/profiles file with the whole folder as its parents; `profile` is inline and its parents are the folder unless `parentsOverride` says otherwise.",
+ "cases": [
+  {
+   "name": "0.20mm Standard @Demo",
+   "kind": "profile",
+   "from": "0.20mm Standard @Demo"
+  },
+  {
+   "name": "0.12mm Fine @Demo",
+   "kind": "profile",
+   "from": "0.12mm Fine @Demo"
+  },
+  {
+   "name": "Demo Printer 0.4 nozzle",
+   "kind": "profile",
+   "from": "Demo Printer 0.4 nozzle"
+  },
+  {
+   "name": "Demo PLA",
+   "kind": "profile",
+   "from": "Demo PLA"
+  },
+  {
+   "name": "Demo PETG",
+   "kind": "profile",
+   "from": "Demo PETG"
+  },
+  {
+   "name": "fdm_demo_process_common",
+   "kind": "profile",
+   "from": "fdm_demo_process_common"
+  },
+  {
+   "name": "legacy keys and values",
+   "kind": "profile",
+   "profile": {
+    "name": "old",
+    "type": "process",
+    "enable_wipe_tower": "1",
+    "support_type": "tree",
+    "wall_infill_order": "outer wall/inner wall/infill",
+    "top_solid_layers": "4"
+   }
+  },
+  {
+   "name": "unknown keys and bad values",
+   "kind": "profile",
+   "profile": {
+    "name": "p",
+    "type": "process",
+    "made_up_key": "1",
+    "layer_height": "thick",
+    "wall_loops": "3"
+   }
+  },
+  {
+   "name": "comma strings, percents and a one entry list",
+   "kind": "profile",
+   "profile": {
+    "name": "p",
+    "type": "machine",
+    "machine_min_travel_rate": "0,0",
+    "sparse_infill_density": "25%",
+    "layer_height": [
+     "0.16"
+    ]
+   }
+  },
+  {
+   "name": "a percent on a key Orca drops",
+   "kind": "profile",
+   "profile": {
+    "name": "p",
+    "type": "process",
+    "initial_layer_speed": "50%",
+    "outer_wall_speed": "60"
+   }
+  },
+  {
+   "name": "printer profile with points and nil",
+   "kind": "profile",
+   "profile": {
+    "name": "m",
+    "type": "machine",
+    "printable_area": [
+     "0x0",
+     "100x0",
+     "100x100",
+     "0x100"
+    ],
+    "nozzle_diameter": [
+     "nil"
+    ],
+    "printable_height": "180"
+   }
+  },
+  {
+   "name": "inherits cycle",
+   "kind": "profile",
+   "profile": {
+    "name": "a",
+    "inherits": "b"
+   },
+   "parentsOverride": [
+    {
+     "name": "b",
+     "inherits": "a"
+    },
+    {
+     "name": "a",
+     "inherits": "b"
+    }
+   ]
+  },
+  {
+   "name": "missing parent",
+   "kind": "profile",
+   "profile": {
+    "name": "x",
+    "inherits": "nope"
+   },
+   "parentsOverride": []
+  },
+  {
+   "name": "not an object",
+   "kind": "profile",
+   "profile": [
+    1,
+    2
+   ]
+  },
+  {
+   "name": "project with objects, plates and layer ranges",
+   "kind": "project",
+   "projectSettings": {
+    "name": "project_settings",
+    "from": "project",
+    "version": "02.01.01.52",
+    "print_settings_id": "0.20mm Standard @Demo",
+    "printer_settings_id": "Demo Printer 0.4 nozzle",
+    "filament_settings_id": [
+     "Demo PLA",
+     "Demo PETG"
+    ],
+    "layer_height": "0.2",
+    "wall_loops": "2",
+    "sparse_infill_density": "15%",
+    "nozzle_temperature": [
+     "220",
+     "220"
+    ],
+    "printable_area": [
+     "0x0",
+     "256x0",
+     "256x256",
+     "0x256"
+    ],
+    "filament_retraction_length": [
+     "nil",
+     "0.4"
+    ],
+    "enable_wipe_tower": "1",
+    "wall_infill_order": "outer wall/inner wall/infill",
+    "initial_layer_speed": "50%",
+    "filament_colour": [
+     "#FFFFFF",
+     "#000000"
+    ],
+    "wipe_tower_x": [
+     "15"
+    ],
+    "flush_volumes_matrix": [
+     "0",
+     "140"
+    ],
+    "some_future_studio_key": "1",
+    "enable_height_slowdown": [
+     "0"
+    ],
+    "layer_height_bad": "x",
+    "outer_wall_speed": [
+     "nope"
+    ]
+   },
+   "modelSettings": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<config>\n  <object id=\"8\">\n    <metadata key=\"name\" value=\"Keychain &amp; tag\"/>\n    <metadata key=\"extruder\" value=\"2\"/>\n    <metadata key=\"brim_type\" value=\"outer_only\"/>\n    <part id=\"1\" subtype=\"normal_part\">\n      <metadata key=\"name\" value=\"Face\"/>\n      <metadata key=\"matrix\" value=\"1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1\"/>\n      <metadata key=\"extruder\" value=\"1\"/>\n      <metadata key=\"top_surface_pattern\" value=\"monotonic\"/>\n    </part>\n    <part id=\"2\" subtype=\"modifier\">\n      <metadata key=\"name\" value=\"Denser\"/>\n      <metadata key=\"sparse_infill_density\" value=\"40%\"/>\n      <metadata key=\"made_up_setting\" value=\"1\"/>\n      <metadata key=\"layer_height\" value=\"thick\"/>\n    </part>\n  </object>\n  <object id=\"9\">\n    <metadata key=\"name\" value=\"Second\"/>\n    <metadata key=\"extruder\" value=\"3x\"/>\n  </object>\n  <plate>\n    <metadata key=\"plater_id\" value=\"1\"/>\n    <metadata key=\"plater_name\" value=\"Keychain\"/>\n    <model_instance><metadata key=\"object_id\" value=\"8\"/></model_instance>\n  </plate>\n  <plate>\n    <metadata key=\"locked\" value=\"false\"/>\n  </plate>\n</config>",
+   "layerRanges": "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<objects>\n <!-- one range with two options, one with a bad value -->\n <object id=\"8\">\n  <range min_z=\"0.000\" max_z=\"2.800\">\n   <option opt_key=\"layer_height\">0.12</option>\n   <option opt_key=\"wall_loops\">4</option>\n   <option opt_key=\"not_a_key\">1</option>\n   <option opt_key=\"sparse_infill_density\">dense</option>\n  </range>\n  <range min_z=\"2.8\" max_z=\"x\">\n   <option opt_key=\"layer_height\">0.28</option>\n  </range>\n </object>\n</objects>"
+  },
+  {
+   "name": "project settings alone",
+   "kind": "project",
+   "projectSettings": {
+    "name": "project_settings",
+    "from": "project",
+    "version": "02.01.01.52",
+    "print_settings_id": "0.20mm Standard @Demo",
+    "printer_settings_id": "Demo Printer 0.4 nozzle",
+    "filament_settings_id": [
+     "Demo PLA",
+     "Demo PETG"
+    ],
+    "layer_height": "0.2",
+    "wall_loops": "2",
+    "sparse_infill_density": "15%",
+    "nozzle_temperature": [
+     "220",
+     "220"
+    ],
+    "printable_area": [
+     "0x0",
+     "256x0",
+     "256x256",
+     "0x256"
+    ],
+    "filament_retraction_length": [
+     "nil",
+     "0.4"
+    ],
+    "enable_wipe_tower": "1",
+    "wall_infill_order": "outer wall/inner wall/infill",
+    "initial_layer_speed": "50%",
+    "filament_colour": [
+     "#FFFFFF",
+     "#000000"
+    ],
+    "wipe_tower_x": [
+     "15"
+    ],
+    "flush_volumes_matrix": [
+     "0",
+     "140"
+    ],
+    "some_future_studio_key": "1",
+    "enable_height_slowdown": [
+     "0"
+    ],
+    "layer_height_bad": "x",
+    "outer_wall_speed": [
+     "nope"
+    ]
+   }
+  },
+  {
+   "name": "project with no name fields",
+   "kind": "project",
+   "projectSettings": {
+    "layer_height": "0.2"
+   }
+  },
+  {
+   "name": "project settings that are not an object",
+   "kind": "project",
+   "projectSettings": [
+    1
+   ]
+  },
+  {
+   "name": "export a process profile",
+   "kind": "export",
+   "config": {
+    "layer_height": 0.2,
+    "sparse_infill_density": 15,
+    "enable_support": false,
+    "outer_wall_speed": [
+     200,
+     350
+    ],
+    "printable_area": [
+     [
+      0,
+      0
+     ],
+     [
+      10,
+      0
+     ],
+     [
+      10,
+      10
+     ],
+     [
+      0,
+      10
+     ]
+    ],
+    "nozzle_temperature": [
+     220,
+     220
+    ],
+    "line_width": "0.42",
+    "wall_loops": 2
+   },
+   "meta": {
+    "name": "copy",
+    "section": "process",
+    "inherits": "0.20mm Standard @Demo"
+   }
+  },
+  {
+   "name": "export a printer profile",
+   "kind": "export",
+   "config": {
+    "printable_area": [
+     [
+      0,
+      0
+     ],
+     [
+      256,
+      0
+     ],
+     [
+      256,
+      256
+     ],
+     [
+      0,
+      256
+     ]
+    ],
+    "nozzle_diameter": [
+     0.4
+    ],
+    "printable_height": 250,
+    "layer_height": 0.2
+   },
+   "meta": {
+    "name": "box",
+    "section": "printer"
+   }
+  }
+ ]
+}

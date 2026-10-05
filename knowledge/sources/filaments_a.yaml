@@ -1,0 +1,103 @@
+# Sources for the first filament batch: PLA family, CF composites, TPU, PVA, BVOH.
+# Shared sources (bambu_wiki_material_table, bambu_wiki_drying, prusa_kb_food_safe,
+# klipper_pressure_advance, ellis_pa) live in core.yaml.
+kind: sources
+sources:
+  - id: bambu_wiki_tpu_guide
+    title: "TPU Printing Guide"
+    publisher: Bambu Lab
+    type: manufacturer_wiki
+    url: https://wiki.bambulab.com/en/knowledge-sharing/tpu-printing-guide
+    retrieved: 2026-09-29
+    note: "Covers TPU 85A, 90A, 95A HF and TPU for AMS. Nozzle compatibility, AMS HT manual feed, storage below 20 percent RH, stringing fixes, turn off flow dynamics calibration, PLA as support."
+  - id: bambu_wiki_tpu_85a_90a_x_series
+    title: "Preparations for TPU Printing for X1 Series"
+    publisher: Bambu Lab
+    type: manufacturer_wiki
+    url: https://wiki.bambulab.com/en/filament-acc/filament/tpu-85a-90a-printing-guide-for-x-series
+    retrieved: 2026-09-29
+    note: "Hardware compatibility table for 85A, 90A, 95A HF and TPU for AMS, glue and plate advice, cold pull before TPU after carbon fiber, elevated spool, feed at 250 C."
+  - id: bambu_wiki_pva_guide
+    title: "PVA printing guide"
+    publisher: Bambu Lab
+    type: manufacturer_wiki
+    url: https://wiki.bambulab.com/en/filament-acc/filament/pva-printing-guide
+    retrieved: 2026-09-29
+    note: "PVA is hard and AMS compatible when dry, soft and sticky when damp. Keep below 20 percent RH with calcium chloride desiccant. Damp in 1 to 3 hours at about 55 percent RH. Use PVA for support base and interface, grid supports, avoid tree supports."
+  - id: bambulab_pla_cf_page
+    title: "PLA-CF product page"
+    publisher: Bambu Lab
+    type: manufacturer_kb
+    url: https://bambulab.com/en/filament/pla-cf
+    retrieved: 2026-09-29
+    note: "Page returned HTTP 403 to direct fetch. Values (210 to 240 C, speed under 250 mm/s, fan 50 to 100 percent, 0.4 mm hardened nozzle low clog risk, 0.2 mm not compatible) come from a search result summary of the page. Treat as medium confidence."
+  - id: bambu_tds_pla_tough_plus
+    title: "PLA Tough+ product page and technical data sheet"
+    publisher: Bambu Lab
+    type: manufacturer_tds
+    url: https://us.store.bambulab.com/products/pla-tough-upgrade
+    retrieved: 2026-09-29
+    note: "HDT 58 C at 1.8 MPa and 61 C at 0.45 MPa, 220 to 250 C nozzle, 35 to 65 C bed, retraction 0.6 to 1.0 mm, drying 55 C for 8 h. Read through search result summaries of the TDS, medium confidence."
+  - id: prusa_kb_pla
+    title: "PLA"
+    publisher: Prusa Research
+    type: manufacturer_kb
+    url: https://help.prusa3d.com/article/pla_2062
+    retrieved: 2026-09-29
+    note: "215 C first layer, 210 C after, 60 C bed, satin or smooth PEI best. Softens above 60 C, low UV resistance, weak layer adhesion."
+  - id: prusa_kb_flexible
+    title: "Flexible materials"
+    publisher: Prusa Research
+    type: manufacturer_kb
+    url: https://help.prusa3d.com/article/flexible-materials_2057
+    retrieved: 2026-09-29
+    note: "230 to 245 C nozzle, 60 to 75 C bed, typical 20 mm/s and max 30 to 40 mm/s, reduce or disable retraction, loosen idler, separator on smooth or satin sheets, keep dry, cooling off, support Z gap 0.3 mm."
+  - id: prusa_kb_prusament_tpu95a
+    title: "Prusament TPU 95A material guide"
+    publisher: Prusa Research
+    type: manufacturer_kb
+    url: https://help.prusa3d.com/article/prusament-tpu-95a-material-guide_899653
+    retrieved: 2026-09-29
+    note: "220 to 240 C nozzle, 55 to 75 C bed, dry 4 h at 60 C if needed, PA nylon or satin sheet, loosen idler screws, filament guide on MK4."
+  - id: prusa_kb_water_soluble
+    title: "Water soluble (BVOH/PVA)"
+    publisher: Prusa Research
+    type: manufacturer_kb
+    url: https://help.prusa3d.com/article/water-soluble-bvoh-pva_167012
+    retrieved: 2026-09-29
+    note: "195 C PVA+, 215 C BVOH, 60 C bed. Very hygroscopic. 1 g dissolves in about 20 ml water. Pair with PLA, BVOH for PETG. Support Z distance 0, 1 to 2 layer PLA raft, more purge volume on tool changes. Non-toxic and odorless."
+  - id: prusa_kb_composites
+    title: "Composite materials (filled with carbon, kevlar or glass)"
+    publisher: Prusa Research
+    type: manufacturer_kb
+    url: https://help.prusa3d.com/article/composite-materials-filled-with-carbon-kevlar-or-glass_167387
+    retrieved: 2026-09-29
+    note: "Hardened nozzle required, minimum 0.4 mm, layer height at least 0.2 mm, cold pull before printing. Better dimensional stability, worse layer adhesion, higher clog risk."
+  - id: polymaker_tds_polylite_pla_pro
+    title: "PolyLite PLA Pro technical data sheet"
+    publisher: Polymaker
+    type: manufacturer_tds
+    url: https://wiki.polymaker.com/polymaker-products/more-about-our-products/documents/technical-data-sheets/pla/polylite-tm-pla-pro
+    retrieved: 2026-09-29
+    note: "HDT 57.6 C at 1.8 MPa and 59.3 C at 0.45 MPa, density 1.22, print temperature 210 C."
+  - id: polymaker_tds_pla_cf
+    title: "Polymaker PLA-CF technical data sheet"
+    publisher: Polymaker
+    type: manufacturer_tds
+    url: https://wiki.polymaker.com/polymaker-products/more-about-our-products/documents/technical-data-sheets/pla/pla-cf
+    retrieved: 2026-09-29
+    note: "HDT 50 C at 1.8 MPa and 54 C at 0.45 MPa, density 1.29, nozzle 190 to 230 C, bed 25 to 60 C, speed 50 to 300 mm/s, dry 55 C for 6 h."
+  - id: esun_tds_pla_plus
+    title: "eSUN PLA+ technical data sheet"
+    publisher: eSUN
+    type: manufacturer_tds
+    url: https://www.esun3d.com/uploads/PLA+-TDS-EN-.pdf
+    retrieved: 2026-09-29
+    note: "HDT 53 C at 0.45 MPa, density 1.23, 210 to 230 C nozzle, 45 to 60 C bed. Read through search result summary, medium confidence."
+  - id: prusament_tds_pla
+    title: "Prusament PLA technical data sheet"
+    publisher: Prusa Polymers
+    type: manufacturer_tds
+    url: https://prusament.com/wp-content/uploads/2022/10/PLA_Prusament_TDS_2021_10_EN.pdf
+    retrieved: 2026-09-29
+    note: "HDT 55 C reported at both 0.45 and 1.8 MPa. Read through search result summary, medium confidence."

@@ -1,0 +1,838 @@
+{
+ "comment": "Requests both sx-settings and @slicerx/settings turn into the plans in plan-golden.json. `base: true` uses plan-configs.json base; `target` names an entry there. `base` may also be the name of another entry in plan-configs.json.",
+ "cases": [
+  {
+   "name": "material switch pla to petg",
+   "from": {
+    "printer": "bambu_x1c",
+    "nozzleDiameter": 0.4,
+    "filament": "pla"
+   },
+   "to": {
+    "printer": "bambu_x1c",
+    "nozzleDiameter": 0.4,
+    "filament": "petg"
+   },
+   "base": true,
+   "options": {}
+  },
+  {
+   "name": "material switch without a base config",
+   "from": {
+    "printer": "bambu_x1c",
+    "nozzleDiameter": 0.4,
+    "filament": "pla"
+   },
+   "to": {
+    "printer": "bambu_x1c",
+    "nozzleDiameter": 0.4,
+    "filament": "petg"
+   },
+   "base": false,
+   "options": {}
+  },
+  {
+   "name": "nozzle change 0.4 to 0.6",
+   "from": {
+    "printer": "bambu_x1c",
+    "nozzleDiameter": 0.4,
+    "filament": "pla"
+   },
+   "to": {
+    "printer": "bambu_x1c",
+    "nozzleDiameter": 0.6,
+    "filament": "pla"
+   },
+   "base": true,
+   "options": {}
+  },
+  {
+   "name": "printer switch to the mk4s with tpu",
+   "from": {
+    "printer": "bambu_x1c",
+    "nozzleDiameter": 0.4,
+    "filament": "pla"
+   },
+   "to": {
+    "printer": "prusa_mk4s",
+    "nozzleDiameter": 0.4,
+    "filament": "tpu_95a"
+   },
+   "base": true,
+   "options": {}
+  },
+  {
+   "name": "high flow hotend",
+   "from": {
+    "printer": "bambu_x1c",
+    "nozzleDiameter": 0.4,
+    "filament": "pla"
+   },
+   "to": {
+    "printer": "bambu_x1c",
+    "nozzleDiameter": 0.4,
+    "filament": "petg",
+    "hotend": "high_flow"
+   },
+   "base": true,
+   "options": {}
+  },
+  {
+   "name": "unknown printer and filament",
+   "from": {
+    "printer": "bambu_x1c",
+    "nozzleDiameter": 0.4,
+    "filament": "pla"
+   },
+   "to": {
+    "printer": "nope",
+    "nozzleDiameter": 0.4,
+    "filament": "nada"
+   },
+   "base": true,
+   "options": {}
+  },
+  {
+   "name": "abrasive material on a soft nozzle",
+   "from": {
+    "printer": "bambu_x1c",
+    "nozzleDiameter": 0.4,
+    "filament": "pla"
+   },
+   "to": {
+    "printer": "bambu_p1s",
+    "nozzleDiameter": 0.4,
+    "filament": "pa_cf"
+   },
+   "base": true,
+   "options": {
+    "intent": {
+     "goals": [
+      {
+       "id": "strength",
+       "level": "max"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "name": "brass nozzle fitted",
+   "from": {
+    "printer": "bambu_x1c",
+    "nozzleDiameter": 0.4,
+    "filament": "pla"
+   },
+   "to": {
+    "printer": "bambu_x1c",
+    "nozzleDiameter": 0.4,
+    "filament": "pa_cf",
+    "nozzleMaterial": "brass"
+   },
+   "base": true,
+   "options": {
+    "intent": {
+     "goals": [
+      {
+       "id": "strength"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "name": "request: strong PETG brackets in a hurry",
+   "from": {
+    "printer": "bambu_x1c",
+    "nozzleDiameter": 0.4,
+    "filament": "pla"
+   },
+   "to": {
+    "printer": "bambu_x1c",
+    "nozzleDiameter": 0.4,
+    "filament": "petg"
+   },
+   "base": true,
+   "options": {
+    "intent": {
+     "goals": [
+      {
+       "id": "strength"
+      },
+      {
+       "id": "speed"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "name": "request: silky vase in silk PLA",
+   "from": {
+    "printer": "bambu_x1c",
+    "nozzleDiameter": 0.4,
+    "filament": "pla"
+   },
+   "to": {
+    "printer": "bambu_x1c",
+    "nozzleDiameter": 0.4,
+    "filament": "pla_silk"
+   },
+   "base": true,
+   "options": {
+    "intent": {
+     "goals": [
+      {
+       "id": "vase"
+      },
+      {
+       "id": "surface_finish"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "name": "request: flexible phone case in TPU",
+   "from": {
+    "printer": "bambu_x1c",
+    "nozzleDiameter": 0.4,
+    "filament": "pla"
+   },
+   "to": {
+    "printer": "bambu_x1c",
+    "nozzleDiameter": 0.4,
+    "filament": "tpu_95a"
+   },
+   "base": true,
+   "options": {
+    "intent": {
+     "goals": [
+      {
+       "id": "flexibility"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "name": "request: outdoor ASA on an open printer",
+   "from": {
+    "printer": "bambu_x1c",
+    "nozzleDiameter": 0.4,
+    "filament": "pla"
+   },
+   "to": {
+    "printer": "prusa_mk4s",
+    "nozzleDiameter": 0.4,
+    "filament": "asa"
+   },
+   "base": true,
+   "options": {
+    "intent": {
+     "goals": [
+      {
+       "id": "uv_resistance"
+      },
+      {
+       "id": "strength"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "name": "request: fast draft",
+   "from": {
+    "printer": "bambu_x1c",
+    "nozzleDiameter": 0.4,
+    "filament": "pla"
+   },
+   "to": {
+    "printer": "bambu_x1c",
+    "nozzleDiameter": 0.4,
+    "filament": "pla"
+   },
+   "base": true,
+   "options": {
+    "intent": {
+     "goals": [
+      {
+       "id": "speed",
+       "level": "draft"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "name": "request: miniature at max detail",
+   "from": {
+    "printer": "bambu_x1c",
+    "nozzleDiameter": 0.4,
+    "filament": "pla"
+   },
+   "to": {
+    "printer": "bambu_x1c",
+    "nozzleDiameter": 0.4,
+    "filament": "pla"
+   },
+   "base": true,
+   "options": {
+    "intent": {
+     "goals": [
+      {
+       "id": "detail"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "name": "request: miniature on a 0.2 mm nozzle",
+   "from": {
+    "printer": "bambu_x1c",
+    "nozzleDiameter": 0.4,
+    "filament": "pla"
+   },
+   "to": {
+    "printer": "bambu_x1c",
+    "nozzleDiameter": 0.2,
+    "filament": "pla"
+   },
+   "base": true,
+   "options": {
+    "intent": {
+     "goals": [
+      {
+       "id": "detail"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "name": "request: watertight container in PLA",
+   "from": {
+    "printer": "bambu_x1c",
+    "nozzleDiameter": 0.4,
+    "filament": "pla"
+   },
+   "to": {
+    "printer": "bambu_x1c",
+    "nozzleDiameter": 0.4,
+    "filament": "pla"
+   },
+   "base": true,
+   "options": {
+    "intent": {
+     "goals": [
+      {
+       "id": "watertight"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "name": "request: food contact implies watertight",
+   "from": {
+    "printer": "bambu_x1c",
+    "nozzleDiameter": 0.4,
+    "filament": "pla"
+   },
+   "to": {
+    "printer": "bambu_x1c",
+    "nozzleDiameter": 0.4,
+    "filament": "pla"
+   },
+   "base": true,
+   "options": {
+    "intent": {
+     "goals": [
+      {
+       "id": "food_contact"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "name": "request: carbon fiber nylon gear",
+   "from": {
+    "printer": "bambu_x1c",
+    "nozzleDiameter": 0.4,
+    "filament": "pla"
+   },
+   "to": {
+    "printer": "bambu_x1c",
+    "nozzleDiameter": 0.4,
+    "filament": "pa_cf"
+   },
+   "base": true,
+   "options": {
+    "intent": {
+     "goals": [
+      {
+       "id": "strength",
+       "level": "max"
+      },
+      {
+       "id": "dimensional_accuracy"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "name": "pair: strength and flexibility",
+   "from": {
+    "printer": "bambu_x1c",
+    "nozzleDiameter": 0.4,
+    "filament": "pla"
+   },
+   "to": {
+    "printer": "bambu_x1c",
+    "nozzleDiameter": 0.4,
+    "filament": "tpu_95a"
+   },
+   "base": true,
+   "options": {
+    "intent": {
+     "goals": [
+      {
+       "id": "strength"
+      },
+      {
+       "id": "flexibility"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "name": "pair: strength and vase",
+   "from": {
+    "printer": "bambu_x1c",
+    "nozzleDiameter": 0.4,
+    "filament": "pla"
+   },
+   "to": {
+    "printer": "bambu_x1c",
+    "nozzleDiameter": 0.4,
+    "filament": "pla"
+   },
+   "base": true,
+   "options": {
+    "intent": {
+     "goals": [
+      {
+       "id": "strength"
+      },
+      {
+       "id": "vase"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "name": "pair: strength and a draft",
+   "from": {
+    "printer": "bambu_x1c",
+    "nozzleDiameter": 0.4,
+    "filament": "pla"
+   },
+   "to": {
+    "printer": "bambu_x1c",
+    "nozzleDiameter": 0.4,
+    "filament": "pla"
+   },
+   "base": true,
+   "options": {
+    "intent": {
+     "goals": [
+      {
+       "id": "strength"
+      },
+      {
+       "id": "speed",
+       "level": "draft"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "name": "pair: smooth surface and speed",
+   "from": {
+    "printer": "bambu_x1c",
+    "nozzleDiameter": 0.4,
+    "filament": "pla"
+   },
+   "to": {
+    "printer": "bambu_x1c",
+    "nozzleDiameter": 0.4,
+    "filament": "pla"
+   },
+   "base": true,
+   "options": {
+    "intent": {
+     "goals": [
+      {
+       "id": "surface_finish"
+      },
+      {
+       "id": "speed"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "name": "inferred goal loses to a stated one",
+   "from": {
+    "printer": "bambu_x1c",
+    "nozzleDiameter": 0.4,
+    "filament": "pla"
+   },
+   "to": {
+    "printer": "bambu_x1c",
+    "nozzleDiameter": 0.4,
+    "filament": "pla"
+   },
+   "base": true,
+   "options": {
+    "intent": {
+     "goals": [
+      {
+       "id": "speed",
+       "stated": false
+      },
+      {
+       "id": "strength"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "name": "unknown goal and level",
+   "from": {
+    "printer": "bambu_x1c",
+    "nozzleDiameter": 0.4,
+    "filament": "pla"
+   },
+   "to": {
+    "printer": "bambu_x1c",
+    "nozzleDiameter": 0.4,
+    "filament": "pla"
+   },
+   "base": true,
+   "options": {
+    "intent": {
+     "goals": [
+      {
+       "id": "nonsense"
+      },
+      {
+       "id": "strength",
+       "level": "ultra"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "name": "calibration: pressure advance and max flow",
+   "from": {
+    "printer": "bambu_x1c",
+    "nozzleDiameter": 0.4,
+    "filament": "pla"
+   },
+   "to": {
+    "printer": "prusa_mk4s",
+    "nozzleDiameter": 0.4,
+    "filament": "petg"
+   },
+   "base": true,
+   "options": {
+    "calibrations": [
+     {
+      "id": "pressure_advance",
+      "values": {
+       "value": 0.045
+      },
+      "printer": "prusa_mk4s",
+      "filament": "petg",
+      "nozzleDiameter": 0.4
+     },
+     {
+      "id": "max_volumetric_speed",
+      "values": {
+       "measured_mm3s": 14
+      },
+      "printer": "prusa_mk4s",
+      "filament": "petg"
+     },
+     {
+      "id": "flow_ratio",
+      "values": {
+       "value": 0.93
+      },
+      "printer": "bambu_x1c"
+     }
+    ]
+   }
+  },
+  {
+   "name": "calibration: temperature outside the filament range",
+   "from": {
+    "printer": "bambu_x1c",
+    "nozzleDiameter": 0.4,
+    "filament": "pla"
+   },
+   "to": {
+    "printer": "bambu_x1c",
+    "nozzleDiameter": 0.4,
+    "filament": "petg"
+   },
+   "base": true,
+   "options": {
+    "calibrations": [
+     {
+      "id": "temperature",
+      "values": {
+       "best_c": 275
+      }
+     }
+    ]
+   }
+  },
+  {
+   "name": "calibration: temperature past the printer limit",
+   "from": {
+    "printer": "bambu_x1c",
+    "nozzleDiameter": 0.4,
+    "filament": "pla"
+   },
+   "to": {
+    "printer": "prusa_mk4s",
+    "nozzleDiameter": 0.4,
+    "filament": "pa_cf",
+    "nozzleMaterial": "hardened_steel"
+   },
+   "base": false,
+   "options": {
+    "calibrations": [
+     {
+      "id": "temperature",
+      "values": {
+       "best_c": 305
+      }
+     }
+    ]
+   }
+  },
+  {
+   "name": "calibration beats filament defaults, a goal beats calibration",
+   "from": {
+    "printer": "bambu_x1c",
+    "nozzleDiameter": 0.4,
+    "filament": "pla"
+   },
+   "to": {
+    "printer": "bambu_x1c",
+    "nozzleDiameter": 0.4,
+    "filament": "petg"
+   },
+   "base": true,
+   "options": {
+    "calibrations": [
+     {
+      "id": "temperature",
+      "values": {
+       "best_c": 240
+      }
+     }
+    ],
+    "intent": {
+     "goals": [
+      {
+       "id": "strength"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "name": "plate overrides are kept unless a goal asks",
+   "from": {
+    "printer": "bambu_x1c",
+    "nozzleDiameter": 0.4,
+    "filament": "pla"
+   },
+   "to": {
+    "printer": "prusa_mk4s",
+    "nozzleDiameter": 0.4,
+    "filament": "pla"
+   },
+   "base": true,
+   "options": {
+    "keep": [
+     "outer_wall_speed",
+     "wall_loops"
+    ],
+    "intent": {
+     "goals": [
+      {
+       "id": "strength"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "name": "target profile with a tuned key",
+   "from": {
+    "printer": "bambu_x1c",
+    "nozzleDiameter": 0.4,
+    "filament": "pla"
+   },
+   "to": {
+    "printer": "bambu_x1c",
+    "nozzleDiameter": 0.4,
+    "filament": "petg"
+   },
+   "base": true,
+   "options": {
+    "target": "petg",
+    "tuned": [
+     "filament_max_volumetric_speed"
+    ]
+   }
+  },
+  {
+   "name": "target profile with goals and calibration",
+   "from": {
+    "printer": "bambu_x1c",
+    "nozzleDiameter": 0.4,
+    "filament": "pla"
+   },
+   "to": {
+    "printer": "bambu_x1c",
+    "nozzleDiameter": 0.4,
+    "filament": "petg"
+   },
+   "base": true,
+   "options": {
+    "target": "petg",
+    "intent": {
+     "goals": [
+      {
+       "id": "watertight"
+      }
+     ]
+    },
+    "calibrations": [
+     {
+      "id": "flow_ratio",
+      "values": {
+       "value": 0.97
+      }
+     }
+    ]
+   }
+  },
+  {
+   "name": "smart layer bounds follow a nozzle change to 0.6 mm",
+   "from": {
+    "printer": "bambu_x1c",
+    "nozzleDiameter": 0.4,
+    "filament": "pla"
+   },
+   "to": {
+    "printer": "bambu_x1c",
+    "nozzleDiameter": 0.6,
+    "filament": "pla"
+   },
+   "base": "smart",
+   "options": {}
+  },
+  {
+   "name": "smart layer bounds follow a nozzle change to 0.2 mm",
+   "from": {
+    "printer": "bambu_x1c",
+    "nozzleDiameter": 0.4,
+    "filament": "pla"
+   },
+   "to": {
+    "printer": "bambu_x1c",
+    "nozzleDiameter": 0.2,
+    "filament": "pla"
+   },
+   "base": "smart",
+   "options": {}
+  },
+  {
+   "name": "smart layer left alone when it is off",
+   "from": {
+    "printer": "bambu_x1c",
+    "nozzleDiameter": 0.4,
+    "filament": "pla"
+   },
+   "to": {
+    "printer": "bambu_x1c",
+    "nozzleDiameter": 0.6,
+    "filament": "pla"
+   },
+   "base": true,
+   "options": {}
+  },
+  {
+   "name": "smart layer with a material switch keeps the bounds",
+   "from": {
+    "printer": "bambu_x1c",
+    "nozzleDiameter": 0.4,
+    "filament": "pla"
+   },
+   "to": {
+    "printer": "bambu_x1c",
+    "nozzleDiameter": 0.4,
+    "filament": "petg"
+   },
+   "base": "smart",
+   "options": {}
+  },
+  {
+   "name": "thin layers with supports on a switch to hips",
+   "from": {
+    "printer": "bambu_x1c",
+    "nozzleDiameter": 0.4,
+    "filament": "pla"
+   },
+   "to": {
+    "printer": "bambu_x1c",
+    "nozzleDiameter": 0.4,
+    "filament": "hips"
+   },
+   "base": "thin",
+   "options": {}
+  },
+  {
+   "name": "heat creep from a thin fixed layer height",
+   "from": {
+    "printer": "bambu_x1c",
+    "nozzleDiameter": 0.4,
+    "filament": "pla"
+   },
+   "to": {
+    "printer": "bambu_x1c",
+    "nozzleDiameter": 0.4,
+    "filament": "pla"
+   },
+   "base": "creep",
+   "options": {}
+  }
+ ]
+}

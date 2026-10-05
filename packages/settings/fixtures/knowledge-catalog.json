@@ -1,0 +1,862 @@
+{
+ "comment": "Type and bounds from knowledge/settings.yaml, extracted by orca/scripts/gen-schema.py so both test suites can compare them with schema.json.",
+ "settings": {
+  "accel_to_decel_enable": {
+   "pilot": "edit",
+   "scope": "process",
+   "type": "bool"
+  },
+  "activate_air_filtration": {
+   "pilot": "edit",
+   "scope": "filament",
+   "type": "bool"
+  },
+  "activate_chamber_temp_control": {
+   "pilot": "guarded",
+   "scope": "filament",
+   "type": "bool"
+  },
+  "adaptive_pressure_advance": {
+   "pilot": "guarded",
+   "scope": "filament",
+   "type": "bool"
+  },
+  "additional_cooling_fan_speed": {
+   "pilot": "edit",
+   "scope": "filament",
+   "min": 0.0,
+   "max": 100.0,
+   "type": "percent"
+  },
+  "alternate_extra_wall": {
+   "pilot": "edit",
+   "scope": "process",
+   "type": "bool"
+  },
+  "bottom_shell_layers": {
+   "pilot": "edit",
+   "scope": "process",
+   "min": 0.0,
+   "max": 50.0,
+   "type": "int"
+  },
+  "bottom_shell_thickness": {
+   "pilot": "edit",
+   "scope": "process",
+   "min": 0.0,
+   "max": 10.0,
+   "type": "float"
+  },
+  "bridge_flow": {
+   "pilot": "edit",
+   "scope": "process",
+   "min": 0.5,
+   "max": 1.5,
+   "type": "float"
+  },
+  "bridge_speed": {
+   "pilot": "edit",
+   "scope": "process",
+   "min": 5.0,
+   "max": 300.0,
+   "type": "float"
+  },
+  "brim_object_gap": {
+   "pilot": "edit",
+   "scope": "process",
+   "type": "float"
+  },
+  "brim_type": {
+   "pilot": "edit",
+   "scope": "process",
+   "type": "enum"
+  },
+  "brim_width": {
+   "pilot": "edit",
+   "scope": "process",
+   "min": 0.0,
+   "max": 30.0,
+   "type": "float"
+  },
+  "chamber_temperature": {
+   "pilot": "guarded",
+   "scope": "filament",
+   "min": 0.0,
+   "max": 80.0,
+   "type": "int"
+  },
+  "close_fan_the_first_x_layers": {
+   "pilot": "edit",
+   "scope": "filament",
+   "min": 0.0,
+   "max": 20.0,
+   "type": "int"
+  },
+  "cool_plate_temp": {
+   "pilot": "guarded",
+   "scope": "filament",
+   "min": 0.0,
+   "max": 60.0,
+   "type": "int"
+  },
+  "counterbore_hole_bridging": {
+   "pilot": "edit",
+   "scope": "process",
+   "type": "enum"
+  },
+  "curr_bed_type": {
+   "pilot": "edit",
+   "scope": "plate",
+   "type": "enum"
+  },
+  "default_acceleration": {
+   "pilot": "edit",
+   "scope": "process",
+   "min": 100.0,
+   "max": 50000.0,
+   "type": "float"
+  },
+  "default_jerk": {
+   "pilot": "edit",
+   "scope": "process",
+   "min": 0.0,
+   "max": 50.0,
+   "type": "float"
+  },
+  "deretraction_speed": {
+   "pilot": "guarded",
+   "scope": "machine_or_filament",
+   "min": 0.0,
+   "max": 120.0,
+   "type": "float"
+  },
+  "detect_thin_wall": {
+   "pilot": "edit",
+   "scope": "process",
+   "type": "bool"
+  },
+  "draft_shield": {
+   "pilot": "edit",
+   "scope": "process",
+   "type": "enum"
+  },
+  "elefant_foot_compensation": {
+   "pilot": "edit",
+   "scope": "process",
+   "min": 0.0,
+   "max": 1.0,
+   "type": "float"
+  },
+  "enable_arc_fitting": {
+   "pilot": "edit",
+   "scope": "process",
+   "type": "bool"
+  },
+  "enable_overhang_speed": {
+   "pilot": "edit",
+   "scope": "process",
+   "type": "bool"
+  },
+  "enable_pressure_advance": {
+   "pilot": "guarded",
+   "scope": "filament",
+   "type": "bool"
+  },
+  "enable_prime_tower": {
+   "pilot": "edit",
+   "scope": "process",
+   "type": "bool"
+  },
+  "enable_support": {
+   "pilot": "edit",
+   "scope": "process",
+   "type": "bool"
+  },
+  "eng_plate_temp": {
+   "pilot": "guarded",
+   "scope": "filament",
+   "min": 0.0,
+   "max": 120.0,
+   "type": "int"
+  },
+  "ensure_vertical_shell_thickness": {
+   "pilot": "edit",
+   "scope": "process",
+   "type": "enum"
+  },
+  "extra_perimeters_on_overhangs": {
+   "pilot": "edit",
+   "scope": "process",
+   "type": "bool"
+  },
+  "fan_max_speed": {
+   "pilot": "edit",
+   "scope": "filament",
+   "min": 0.0,
+   "max": 100.0,
+   "type": "percent"
+  },
+  "fan_min_speed": {
+   "pilot": "edit",
+   "scope": "filament",
+   "min": 0.0,
+   "max": 100.0,
+   "type": "percent"
+  },
+  "filament_flow_ratio": {
+   "pilot": "guarded",
+   "scope": "filament",
+   "min": 0.8,
+   "max": 1.2,
+   "type": "float"
+  },
+  "filament_max_volumetric_speed": {
+   "pilot": "guarded",
+   "scope": "filament",
+   "min": 0.5,
+   "max": 80.0,
+   "type": "float"
+  },
+  "filament_shrink": {
+   "pilot": "guarded",
+   "scope": "filament",
+   "min": 95.0,
+   "max": 105.0,
+   "type": "percent"
+  },
+  "flush_multiplier": {
+   "pilot": "edit",
+   "scope": "project",
+   "min": 0.3,
+   "max": 3.0,
+   "type": "float"
+  },
+  "full_fan_speed_layer": {
+   "pilot": "edit",
+   "scope": "filament",
+   "min": 0.0,
+   "max": 50.0,
+   "type": "int"
+  },
+  "fuzzy_skin": {
+   "pilot": "edit",
+   "scope": "process",
+   "type": "enum"
+  },
+  "gap_infill_speed": {
+   "pilot": "edit",
+   "scope": "process",
+   "min": 5.0,
+   "max": 1000.0,
+   "type": "float"
+  },
+  "hole_to_polyhole": {
+   "pilot": "edit",
+   "scope": "process",
+   "type": "bool"
+  },
+  "hot_plate_temp": {
+   "pilot": "guarded",
+   "scope": "filament",
+   "min": 0.0,
+   "max": 120.0,
+   "type": "int"
+  },
+  "independent_support_layer_height": {
+   "pilot": "edit",
+   "scope": "process",
+   "type": "bool"
+  },
+  "infill_combination": {
+   "pilot": "edit",
+   "scope": "process",
+   "type": "bool"
+  },
+  "infill_wall_overlap": {
+   "pilot": "edit",
+   "scope": "process",
+   "min": 0.0,
+   "max": 100.0,
+   "type": "percent"
+  },
+  "initial_layer_acceleration": {
+   "pilot": "edit",
+   "scope": "process",
+   "min": 0.0,
+   "max": 20000.0,
+   "type": "float"
+  },
+  "initial_layer_infill_speed": {
+   "pilot": "edit",
+   "scope": "process",
+   "min": 5.0,
+   "max": 300.0,
+   "type": "float"
+  },
+  "initial_layer_line_width": {
+   "pilot": "edit",
+   "scope": "process",
+   "min": 0.1,
+   "max": 2.0,
+   "type": "percent_or_mm"
+  },
+  "initial_layer_print_height": {
+   "pilot": "edit",
+   "scope": "process",
+   "min": 0.08,
+   "max": 0.8,
+   "type": "float"
+  },
+  "initial_layer_speed": {
+   "pilot": "edit",
+   "scope": "process",
+   "min": 5.0,
+   "max": 300.0,
+   "type": "float"
+  },
+  "inner_wall_acceleration": {
+   "pilot": "edit",
+   "scope": "process",
+   "min": 0.0,
+   "max": 50000.0,
+   "type": "float"
+  },
+  "inner_wall_line_width": {
+   "pilot": "edit",
+   "scope": "process",
+   "min": 0.1,
+   "max": 2.0,
+   "type": "percent_or_mm"
+  },
+  "inner_wall_speed": {
+   "pilot": "edit",
+   "scope": "process",
+   "min": 5.0,
+   "max": 1000.0,
+   "type": "float"
+  },
+  "interface_shells": {
+   "pilot": "edit",
+   "scope": "process",
+   "type": "bool"
+  },
+  "internal_bridge_speed": {
+   "pilot": "edit",
+   "scope": "process",
+   "type": "percent_or_mm_s"
+  },
+  "internal_solid_infill_line_width": {
+   "pilot": "edit",
+   "scope": "process",
+   "min": 0.1,
+   "max": 2.0,
+   "type": "percent_or_mm"
+  },
+  "internal_solid_infill_pattern": {
+   "pilot": "edit",
+   "scope": "process",
+   "type": "enum"
+  },
+  "internal_solid_infill_speed": {
+   "pilot": "edit",
+   "scope": "process",
+   "min": 5.0,
+   "max": 1000.0,
+   "type": "float"
+  },
+  "ironing_flow": {
+   "pilot": "edit",
+   "scope": "process",
+   "min": 0.0,
+   "max": 30.0,
+   "type": "percent"
+  },
+  "ironing_spacing": {
+   "pilot": "edit",
+   "scope": "process",
+   "min": 0.05,
+   "max": 0.5,
+   "type": "float"
+  },
+  "ironing_speed": {
+   "pilot": "edit",
+   "scope": "process",
+   "min": 5.0,
+   "max": 200.0,
+   "type": "float"
+  },
+  "ironing_type": {
+   "pilot": "edit",
+   "scope": "process",
+   "type": "enum"
+  },
+  "layer_height": {
+   "pilot": "edit",
+   "scope": "process",
+   "min": 0.04,
+   "max": 0.8,
+   "type": "float"
+  },
+  "line_width": {
+   "pilot": "edit",
+   "scope": "process",
+   "min": 0.1,
+   "max": 2.0,
+   "type": "percent_or_mm"
+  },
+  "machine_max_acceleration_extruding": {
+   "pilot": "read",
+   "scope": "machine",
+   "type": "float"
+  },
+  "machine_max_speed_x": {
+   "pilot": "read",
+   "scope": "machine",
+   "type": "float"
+  },
+  "make_overhang_printable": {
+   "pilot": "edit",
+   "scope": "process",
+   "type": "bool"
+  },
+  "nozzle_temperature": {
+   "pilot": "guarded",
+   "scope": "filament",
+   "min": 150.0,
+   "max": 350.0,
+   "type": "int"
+  },
+  "nozzle_temperature_initial_layer": {
+   "pilot": "guarded",
+   "scope": "filament",
+   "min": 150.0,
+   "max": 350.0,
+   "type": "int"
+  },
+  "only_one_wall_top": {
+   "pilot": "edit",
+   "scope": "process",
+   "type": "bool"
+  },
+  "outer_wall_acceleration": {
+   "pilot": "edit",
+   "scope": "process",
+   "min": 0.0,
+   "max": 50000.0,
+   "type": "float"
+  },
+  "outer_wall_line_width": {
+   "pilot": "edit",
+   "scope": "process",
+   "min": 0.1,
+   "max": 2.0,
+   "type": "percent_or_mm"
+  },
+  "outer_wall_speed": {
+   "pilot": "edit",
+   "scope": "process",
+   "min": 5.0,
+   "max": 1000.0,
+   "type": "float"
+  },
+  "overhang_fan_speed": {
+   "pilot": "edit",
+   "scope": "filament",
+   "min": 0.0,
+   "max": 100.0,
+   "type": "percent"
+  },
+  "overhang_fan_threshold": {
+   "pilot": "edit",
+   "scope": "filament",
+   "type": "enum"
+  },
+  "precise_outer_wall": {
+   "pilot": "edit",
+   "scope": "process",
+   "type": "bool"
+  },
+  "precise_z_height": {
+   "pilot": "edit",
+   "scope": "process",
+   "type": "bool"
+  },
+  "pressure_advance": {
+   "pilot": "guarded",
+   "scope": "filament",
+   "min": 0.0,
+   "max": 1.5,
+   "type": "float"
+  },
+  "prime_tower_width": {
+   "pilot": "edit",
+   "scope": "process",
+   "type": "float"
+  },
+  "print_sequence": {
+   "pilot": "edit",
+   "scope": "process",
+   "type": "enum"
+  },
+  "raft_layers": {
+   "pilot": "edit",
+   "scope": "process",
+   "min": 0.0,
+   "max": 10.0,
+   "type": "int"
+  },
+  "reduce_crossing_wall": {
+   "pilot": "edit",
+   "scope": "process",
+   "type": "bool"
+  },
+  "reduce_fan_stop_start_freq": {
+   "pilot": "edit",
+   "scope": "filament",
+   "type": "bool"
+  },
+  "reduce_infill_retraction": {
+   "pilot": "edit",
+   "scope": "process",
+   "type": "bool"
+  },
+  "resolution": {
+   "pilot": "edit",
+   "scope": "process",
+   "min": 0.001,
+   "max": 0.1,
+   "type": "float"
+  },
+  "retract_when_changing_layer": {
+   "pilot": "edit",
+   "scope": "machine_or_filament",
+   "type": "bool"
+  },
+  "retraction_length": {
+   "pilot": "guarded",
+   "scope": "machine_or_filament",
+   "min": 0.0,
+   "max": 10.0,
+   "type": "float"
+  },
+  "retraction_minimum_travel": {
+   "pilot": "edit",
+   "scope": "machine_or_filament",
+   "type": "float"
+  },
+  "retraction_speed": {
+   "pilot": "guarded",
+   "scope": "machine_or_filament",
+   "min": 5.0,
+   "max": 120.0,
+   "type": "float"
+  },
+  "seam_gap": {
+   "pilot": "edit",
+   "scope": "process",
+   "type": "percent_or_mm"
+  },
+  "seam_position": {
+   "pilot": "edit",
+   "scope": "process",
+   "type": "enum"
+  },
+  "seam_slope_type": {
+   "pilot": "edit",
+   "scope": "process",
+   "type": "enum"
+  },
+  "skirt_loops": {
+   "pilot": "edit",
+   "scope": "process",
+   "type": "int"
+  },
+  "slow_down_for_layer_cooling": {
+   "pilot": "edit",
+   "scope": "filament",
+   "type": "bool"
+  },
+  "slow_down_layer_time": {
+   "pilot": "edit",
+   "scope": "filament",
+   "min": 0.0,
+   "max": 60.0,
+   "type": "float"
+  },
+  "slow_down_min_speed": {
+   "pilot": "edit",
+   "scope": "filament",
+   "min": 1.0,
+   "max": 100.0,
+   "type": "float"
+  },
+  "slowdown_for_curled_perimeters": {
+   "pilot": "edit",
+   "scope": "process",
+   "type": "bool"
+  },
+  "small_perimeter_speed": {
+   "pilot": "edit",
+   "scope": "process",
+   "type": "percent_or_mm_s"
+  },
+  "smart_layer": {
+   "pilot": "edit",
+   "scope": "process",
+   "type": "enum"
+  },
+  "smart_layer_max_height": {
+   "pilot": "edit",
+   "scope": "process",
+   "min": 0.04,
+   "max": 0.8,
+   "type": "float"
+  },
+  "smart_layer_min_height": {
+   "pilot": "edit",
+   "scope": "process",
+   "min": 0.04,
+   "max": 0.8,
+   "type": "float"
+  },
+  "sparse_infill_acceleration": {
+   "pilot": "edit",
+   "scope": "process",
+   "type": "percent_or_mm_s2"
+  },
+  "sparse_infill_density": {
+   "pilot": "edit",
+   "scope": "process",
+   "min": 0.0,
+   "max": 100.0,
+   "type": "percent"
+  },
+  "sparse_infill_line_width": {
+   "pilot": "edit",
+   "scope": "process",
+   "min": 0.1,
+   "max": 2.0,
+   "type": "percent_or_mm"
+  },
+  "sparse_infill_pattern": {
+   "pilot": "edit",
+   "scope": "process",
+   "type": "enum"
+  },
+  "sparse_infill_speed": {
+   "pilot": "edit",
+   "scope": "process",
+   "min": 5.0,
+   "max": 1000.0,
+   "type": "float"
+  },
+  "spiral_mode": {
+   "pilot": "edit",
+   "scope": "process",
+   "type": "bool"
+  },
+  "spiral_mode_smooth": {
+   "pilot": "edit",
+   "scope": "process",
+   "type": "bool"
+  },
+  "staggered_inner_seams": {
+   "pilot": "edit",
+   "scope": "process",
+   "type": "bool"
+  },
+  "supertack_plate_temp": {
+   "pilot": "guarded",
+   "scope": "filament",
+   "min": 0.0,
+   "max": 80.0,
+   "type": "int"
+  },
+  "support_interface_spacing": {
+   "pilot": "edit",
+   "scope": "process",
+   "type": "float"
+  },
+  "support_interface_top_layers": {
+   "pilot": "edit",
+   "scope": "process",
+   "min": 0.0,
+   "max": 10.0,
+   "type": "int"
+  },
+  "support_object_xy_distance": {
+   "pilot": "edit",
+   "scope": "process",
+   "min": 0.0,
+   "max": 5.0,
+   "type": "float"
+  },
+  "support_on_build_plate_only": {
+   "pilot": "edit",
+   "scope": "process",
+   "type": "bool"
+  },
+  "support_speed": {
+   "pilot": "edit",
+   "scope": "process",
+   "min": 5.0,
+   "max": 1000.0,
+   "type": "float"
+  },
+  "support_style": {
+   "pilot": "edit",
+   "scope": "process",
+   "type": "enum"
+  },
+  "support_threshold_angle": {
+   "pilot": "edit",
+   "scope": "process",
+   "min": 0.0,
+   "max": 90.0,
+   "type": "int"
+  },
+  "support_top_z_distance": {
+   "pilot": "edit",
+   "scope": "process",
+   "min": 0.0,
+   "max": 1.0,
+   "type": "float"
+  },
+  "support_type": {
+   "pilot": "edit",
+   "scope": "process",
+   "type": "enum"
+  },
+  "textured_cool_plate_temp": {
+   "pilot": "guarded",
+   "scope": "filament",
+   "min": 0.0,
+   "max": 60.0,
+   "type": "int"
+  },
+  "textured_plate_temp": {
+   "pilot": "guarded",
+   "scope": "filament",
+   "min": 0.0,
+   "max": 120.0,
+   "type": "int"
+  },
+  "thick_bridges": {
+   "pilot": "edit",
+   "scope": "process",
+   "type": "bool"
+  },
+  "timelapse_type": {
+   "pilot": "edit",
+   "scope": "process",
+   "type": "enum"
+  },
+  "top_shell_layers": {
+   "pilot": "edit",
+   "scope": "process",
+   "min": 0.0,
+   "max": 50.0,
+   "type": "int"
+  },
+  "top_shell_thickness": {
+   "pilot": "edit",
+   "scope": "process",
+   "min": 0.0,
+   "max": 10.0,
+   "type": "float"
+  },
+  "top_surface_acceleration": {
+   "pilot": "edit",
+   "scope": "process",
+   "min": 0.0,
+   "max": 50000.0,
+   "type": "float"
+  },
+  "top_surface_line_width": {
+   "pilot": "edit",
+   "scope": "process",
+   "min": 0.1,
+   "max": 2.0,
+   "type": "percent_or_mm"
+  },
+  "top_surface_pattern": {
+   "pilot": "edit",
+   "scope": "process",
+   "type": "enum"
+  },
+  "top_surface_speed": {
+   "pilot": "edit",
+   "scope": "process",
+   "min": 5.0,
+   "max": 1000.0,
+   "type": "float"
+  },
+  "travel_acceleration": {
+   "pilot": "edit",
+   "scope": "process",
+   "min": 0.0,
+   "max": 50000.0,
+   "type": "float"
+  },
+  "travel_speed": {
+   "pilot": "edit",
+   "scope": "process",
+   "min": 20.0,
+   "max": 1000.0,
+   "type": "float"
+  },
+  "wall_generator": {
+   "pilot": "edit",
+   "scope": "process",
+   "type": "enum"
+  },
+  "wall_loops": {
+   "pilot": "edit",
+   "scope": "process",
+   "min": 1.0,
+   "max": 20.0,
+   "type": "int"
+  },
+  "wall_sequence": {
+   "pilot": "edit",
+   "scope": "process",
+   "type": "enum"
+  },
+  "wipe": {
+   "pilot": "edit",
+   "scope": "machine_or_filament",
+   "type": "bool"
+  },
+  "wipe_distance": {
+   "pilot": "edit",
+   "scope": "machine_or_filament",
+   "type": "float"
+  },
+  "xy_contour_compensation": {
+   "pilot": "edit",
+   "scope": "process",
+   "min": -0.5,
+   "max": 0.5,
+   "type": "float"
+  },
+  "xy_hole_compensation": {
+   "pilot": "edit",
+   "scope": "process",
+   "min": -0.5,
+   "max": 0.5,
+   "type": "float"
+  },
+  "z_hop": {
+   "pilot": "edit",
+   "scope": "machine_or_filament",
+   "min": 0.0,
+   "max": 2.0,
+   "type": "float"
+  },
+  "z_hop_types": {
+   "pilot": "edit",
+   "scope": "machine_or_filament",
+   "type": "enum"
+  }
+ }
+}

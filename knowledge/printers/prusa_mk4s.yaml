@@ -1,0 +1,89 @@
+kind: printer
+schema_version: 1
+id: prusa_mk4s
+name: Original Prusa MK4S
+vendor: Prusa Research
+status: current
+firmware: prusa
+connections: [prusalink, prusa_connect]
+kinematics: bedslinger
+build_volume_mm: {x: 250, y: 210, z: 220, confidence: high, src: [prusa_spec_mk4s, "orca:Prusa/machine/Prusa MK4S 0.4 nozzle.json"]}
+extruder: {type: direct_drive, note: "Nextruder with load cell nozzle probing.", src: [prusa_spec_mk4s]}
+hotend:
+  max_temp_c: 290
+  nozzle_diameters_mm: [0.25, 0.3, 0.4, 0.5, 0.6, 0.8]
+  nozzle_materials: [brass, hardened_steel]
+  stock_nozzle: "0.4 mm brass, E3D V6 compatible thread"
+  tool_free_swap: false
+  high_flow_option: true
+  confidence: medium
+  note: "A separate MK4S HF variant and high flow nozzles exist. Hardened nozzles for abrasive filament are optional accessories, not stock."
+  src: [prusa_spec_mk4s, "orca:Prusa/machine/Prusa MK4S HF.json", "orca:Prusa/machine/Prusa MK4S 0.6 nozzle.json"]
+bed:
+  max_temp_c: 120
+  plates: [smooth_pei, textured_pei, satin_pei]
+  confidence: high
+  note: "Magnetic steel sheets. Prusa ships a smooth or textured PEI sheet depending on the bundle."
+  src: [prusa_spec_mk4s]
+enclosure:
+  type: optional_kit
+  chamber_heating: passive
+  max_chamber_c: null
+  filtration: []
+  confidence: medium
+  note: "Open frame by default. Prusa says an optional enclosure lets it print ABS and similar."
+  src: [prusa_spec_mk4s]
+motion:
+  max_speed_mm_s: 300
+  max_accel_mm_s2: 4000
+  input_shaping: manual
+  confidence: medium
+  note: "Orca machine profile limits are 300 mm/s and 4000 mm/s2 for stealth off, 160 and 2500 for silent mode. Input shaper is factory calibrated; an optional accelerometer set recalibrates it after hardware changes."
+  src: ["orca:Prusa/machine/Prusa MK4S 0.4 nozzle.json", prusa_kb_input_shaper, prusa_kb_accelerometer]
+power:
+  psu_rated_w: {value: 240, note: "Custom Delta supply with Power Panic hardware.", src: [prusa_spec_mk4s], confidence: high}
+  printing_typical_w: {pla: {value: 80}, abs: {value: 120}, src: [prusa_spec_mk4s, prusa_kb_faq_power], confidence: medium, note: "Prusa average measured on an MK series printer at 26 C, with generic PLA and ABS settings."}
+sensors: [load_cell, filament_runout, nfc_spool_reader, thermistor_hotend, thermistor_bed]
+builtin_calibrations:
+  - {id: first_layer_calibration, what: "Adjusts live Z from the LCD using the nozzle load cell probe.", src: [prusa_spec_mk4s]}
+  - {id: mesh_bed_leveling, what: "Load cell tap mesh before each print.", src: [prusa_spec_mk4s]}
+  - {id: input_shaper_calibration, what: "Accelerometer based, needs the optional accelerometer set.", src: [prusa_kb_accelerometer]}
+  - {id: phase_stepping, what: "Firmware motor drive tuning that reduces VFAs and noise. Calibration is listed for CORE One and XL in the Prusa KB; check current firmware notes before promising it on MK4S.", src: [prusa_blog_phase_stepping, prusa_kb_phase_stepping]}
+multi_material:
+  - {system: prusa_mmu3, slots: 5, src: [prusa_kb_mmu3_compat]}
+materials:
+  recommended: [pla, pla_plus, pla_silk, pla_matte, petg, tpu_95a]
+  possible: [asa, abs, pc, pa6, pa12, petg_cf, pla_cf, pa_cf, tpu_85a, pva, hips, pp, bvoh, pa_gf]
+  not_recommended: []
+  confidence: medium
+  note: "Open frame: ABS, ASA, PC and nylons need the enclosure kit or a draft free room, and warp on tall parts otherwise. CF and GF filaments need a hardened nozzle. TPU 85A prints slowly and needs care with the Nextruder gear."
+  src: [prusa_spec_mk4s]
+orca_profile: "orca:Prusa/machine/Prusa MK4S 0.4 nozzle.json"
+profile_baseline:
+  process: "0.20mm SPEED @MK4S 0.4"
+  values: {layer_height: 0.2, initial_layer_print_height: 0.2, outer_wall_speed: 170, inner_wall_speed: 170, sparse_infill_speed: 200, top_surface_speed: 100, initial_layer_speed: 40, travel_speed: 300, default_acceleration: 4000, outer_wall_acceleration: 4000, initial_layer_acceleration: 500, wall_loops: 2, top_shell_layers: 5, bottom_shell_layers: 3, sparse_infill_density: "15%", bridge_speed: 50, line_width: 0.45, retraction_length: 0.7}
+  confidence: high
+  note: "This is the profile Orca lists as default for the MK4S. Prusa's own Quality preset is slower."
+  src: ["orca:Prusa/process/0.20mm SPEED @MK4S 0.4.json", "orca:Prusa/machine/Prusa MK4S 0.4 nozzle.json"]
+pilot_notes:
+  - "G-code flavor is marlin2. Pressure advance is set with M572 in filament start G-code, not SET_PRESSURE_ADVANCE."
+  - "Prusa printers need the vendor filament profile for the right nozzle temperature and PA. Change values as overrides, not by editing the system profile."
+  - "Crash detection and input shaper do not work together per the Prusa KB, so do not suggest enabling both."
+  - "Real speed is limited by the 290 C hotend and volumetric flow. Do not push filament_max_volumetric_speed above the vendor filament profile without a flow test."
+  - "Sending to the printer uses PrusaLink or Prusa Connect, not Moonraker or OctoPrint."
+common_issues:
+  - symptom: "Ghosting or ringing at high accel"
+    cause: "Loose belts or an uncalibrated input shaper after a hardware change."
+    fix:
+      - {advice: "Check belt tension first, then recalibrate input shaper with the accelerometer set.", kind: hardware}
+      - {key: outer_wall_acceleration, op: at_most, value: 3000, why: "Lower outer wall acceleration reduces ringing while the cause is fixed."}
+  - symptom: "PETG or ABS lifts or warps on the open frame"
+    cause: "Cold room drafts on an open frame printer."
+    fix:
+      - {advice: "Use the enclosure kit or block drafts. Use a brim for tall or large-footprint ABS and ASA parts.", kind: environment}
+      - {key: brim_type, op: set, value: outer_only, why: "A brim holds corners of ABS and ASA parts."}
+  - symptom: "Nozzle clog or stringy retraction on TPU"
+    cause: "Too fast and too much retraction."
+    fix:
+      - {key: retraction_length, op: at_most, value: 0.6, why: "TPU compresses instead of retracting cleanly; keep retraction short."}
+src: [prusa_spec_mk4s, prusa_kb_input_shaper, "orca:Prusa/machine/Prusa MK4S 0.4 nozzle.json"]

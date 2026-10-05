@@ -1,0 +1,91 @@
+kind: printer
+schema_version: 1
+id: bambu_x1e
+name: Bambu Lab X1E
+vendor: Bambu Lab
+status: discontinued
+status_note: "Not in the Bambu US store new printer list in 2026-09."
+status_confidence: medium
+status_src: [bambu_store_collection]
+firmware: bambu
+connections: [bambu_lan_mqtt, bambu_cloud, bambu_connect]
+connection_notes: "Also has Ethernet (RJ45, 100 Mbps), a Wi-Fi and Ethernet kill switch, a removable network module and 802.1X support."
+kinematics: corexy
+build_volume_mm: {x: 256, y: 256, z: 256, printable_z_default: 250, src: [bambu_spec_x1e, "orca:BBL/machine/Bambu Lab X1E 0.4 nozzle.json"]}
+extruder: {type: direct_drive, gears: hardened_steel, src: [bambu_spec_x1e]}
+hotend:
+  max_temp_c: 320
+  nozzle_diameters_mm: [0.2, 0.4, 0.6, 0.8]
+  nozzle_materials: [hardened_steel]
+  stock_nozzle: {diameter_mm: 0.4, material: hardened_steel}
+  tool_free_swap: false
+  high_flow_option: null
+  max_flow_mm3s: {value: 32, note: "Bambu test: 150 x 150 mm single wall, Bambu ABS at 280 C."}
+  src: [bambu_spec_x1e, bambu_wiki_hotend_x1]
+  note: "The Bambu complete hotend assembly for X1 series fits X1 and X1C only, not X1E. Buy the X1E specific part."
+bed:
+  max_temp_c: 110
+  max_temp_c_110v: 120
+  plates: [bambu_cool_plate, bambu_high_temp_plate, smooth_pei, textured_pei]
+  included_plates: [smooth_pei]
+  src: [bambu_spec_x1e]
+enclosure:
+  type: enclosed
+  chamber_heating: active
+  max_chamber_c: 60
+  filtration: [g3_prefilter, hepa_h12, activated_carbon]
+  top_glass_removable: true
+  src: [bambu_spec_x1e, "orca:BBL/machine/Bambu Lab X1E 0.4 nozzle.json"]
+  note: "Set chamber_temperature and activate_chamber_temp_control in the filament profile. Orca marks this printer as supporting chamber temperature control and air filtration."
+motion:
+  max_speed_mm_s: 500
+  max_accel_mm_s2: 20000
+  input_shaping: auto
+  src: [bambu_spec_x1e, bambu_wiki_x1_intro]
+power:
+  mains: "100 to 240 V AC, 50/60 Hz"
+  max_w: {value: 1400, note: "At 220 V. 750 W at 110 V (spec sheet).", src: [bambu_spec_x1e], confidence: high}
+  printing_typical_w: {pla: {value: 185}, abs: {value: 260}, pc: {value: 230}, src: [bambu_wiki_power], confidence: medium, note: "Bambu wiki average power over a short test print (about 17 minutes)."}
+  idle_w: {range: [15.3, 16.1], src: [bambu_wiki_power], confidence: medium, note: "Bambu wiki reading without network connection. 15.4 to 16.3 W with Wi-Fi."}
+  measured_examples:
+    - {job: "Bambu wiki test print, PLA, 17 min 4 s", kwh_range: [0.052, 0.053], src: [bambu_wiki_power]}
+    - {job: "Bambu wiki test print, ABS, 16 min 59 s", kwh_range: [0.073, 0.074], src: [bambu_wiki_power]}
+  disagreements:
+    - {what: "Maximum power", values: ["1400 W at 220 V and 750 W at 110 V (spec sheet)", "1350 W and 600 W (Bambu wiki table)"], resolution: "Use the spec sheet. The wiki table may be an older or rounded revision.", src: [bambu_spec_x1e, bambu_wiki_power]}
+sensors: [lidar, chamber_camera, door_sensor, filament_runout, filament_odometry_with_ams, spaghetti_detection, first_layer_inspection, power_loss_recovery]
+sensors_src: [bambu_spec_x1e, bambu_wiki_x1_intro]
+builtin_calibrations:
+  - {id: flow_dynamics, what: "Auto K value with Micro Lidar, stored per filament.", src: [bambu_wiki_flow_dynamics]}
+  - {id: flow_rate, what: "Auto flow ratio with Micro Lidar.", src: [bambu_wiki_flow_rate_cal]}
+  - {id: bed_leveling, what: "Automatic bed leveling.", src: [bambu_wiki_printer_calibration]}
+  - {id: vibration_compensation, what: "Resonance mapping.", src: [bambu_wiki_printer_calibration]}
+multi_material:
+  - {system: bambu_ams, max_units: 4, slots_per_unit: 4, needs: "filament buffer for one unit or AMS Hub for more", src: [bambu_wiki_ams_compat]}
+  - {system: bambu_ams_2_pro, max_units: 4, slots_per_unit: 4, needs: "own power adapter per unit for drying", src: [bambu_wiki_ams_compat, bambu_wiki_ams_faq]}
+  - {system: bambu_ams_ht, max_units: 4, slots_per_unit: 1, src: [bambu_wiki_ams_compat]}
+materials:
+  recommended: [pla, pla_plus, pla_silk, pla_matte, pla_cf, petg, petg_cf, abs, asa, pc, pa6, pa12, pa_cf, pa_gf, pva, bvoh, tpu_95a]
+  possible: [tpu_85a]
+  not_recommended: []
+  unlisted: [hips, pp]
+  src: [bambu_spec_x1e, bambu_wiki_material_table]
+  note: "Spec: PA, PC, ABS, ASA, PET and fiber reinforced grades are superior; PPA-CF/GF and PPS grades are ideal. Bambu's material table lists PPS as X1E and H2 only."
+orca_profile: "orca:BBL/machine/Bambu Lab X1E 0.4 nozzle.json"
+profile_baseline:
+  process: "0.20mm Standard @BBL X1C"
+  values: {wall_loops: 2, top_shell_layers: 5, bottom_shell_layers: 3, sparse_infill_density: "15%", outer_wall_speed: 200, inner_wall_speed: 300, sparse_infill_speed: 270, travel_speed: 500, default_acceleration: 10000, retraction_length: 0.8, z_hop: 0.4}
+  src: ["orca:BBL/process/0.20mm Standard @BBL X1C.json", "orca:BBL/machine/Bambu Lab X1E 0.4 nozzle.json"]
+pilot_notes:
+  - "This is the X1 family printer with a real chamber heater. For ABS, ASA, PC, PA and CF grades mimir may set chamber_temperature (up to 60 C) and turn on activate_chamber_temp_control."
+  - "Use the HEPA and carbon filter path for ABS, ASA and PA by turning on activate_air_filtration in the filament profile."
+  - "Same lidar limits as the X1C: auto flow calibration is unreliable on transparent, sparkle and silk filament and on TPU."
+  - "Ethernet is available. A LAN only, Developer Mode setup is common for X1E because it targets isolated networks."
+  - "Starting a print from Bambu Studio in LAN only mode needs a Micro SD card, as on other X series printers."
+common_issues:
+  - symptom: "PLA or PETG clogs or strings with the chamber heater on"
+    cause: "Chamber heat softens filament above the heatbreak. Orca lists PLA as softening near 45 C."
+    fix:
+      - {key: activate_chamber_temp_control, op: disable, why: "Low temperature filaments do not need a heated chamber."}
+      - {advice: "Open the door and remove the top glass lid for PLA, PLA-CF and TPU. For PETG do so when the bed is above 70 C.", kind: environment}
+    src: [bambu_wiki_material_table, bambu_spec_x1e, "orca:OrcaFilamentLibrary/filament/Generic PLA @System.json"]
+src: [bambu_spec_x1e, bambu_wiki_x1_intro, "orca:BBL/machine/Bambu Lab X1E 0.4 nozzle.json"]

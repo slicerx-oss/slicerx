@@ -1,0 +1,37 @@
+kind: guide
+schema_version: 1
+id: moonraker_api
+name: Moonraker API for SlicerX
+applies_to: [voron_2_4, voron_trident, sovol_sv08, creality_k1_max, creality_k2_plus, elegoo_neptune_4_pro]
+summary: >
+  Moonraker is the web API in front of Klipper. It exposes file upload, a job
+  queue, printer object status, G-code execution and webcams over HTTP and
+  websocket. SlicerX can upload and start prints, read status, manage the queue
+  and read webcam URLs. It is present on Voron and Sovol builds and on Creality
+  and Elegoo stock Klipper firmware, but not on the Elegoo Centauri Carbon's
+  stock firmware.
+facts:
+  - {text: "Moonraker supports HTTP, websocket (/websocket), a unix socket, MQTT and JSON-RPC over HTTP. Successful HTTP responses return {\"result\": ...}.", src: [moonraker_docs_intro]}
+  - {text: "Upload is POST /server/files/upload with form fields file (required), root (default gcodes), path, checksum (SHA256) and print (default false). Roots are gcodes, config, logs, config_examples and docs; only gcodes and config are writable.", src: [moonraker_docs_files]}
+  - {text: "Other file endpoints: GET /server/files/list?root=, GET /server/files/directory?path=, GET /server/files/metadata?filename=, POST /server/files/metascan, GET /server/files/thumbnails, DELETE /server/files/{root}/{filename}.", src: [moonraker_docs_files]}
+  - {text: "Job queue: GET /server/job_queue/status, POST /server/job_queue/job with filenames and reset, DELETE the same to remove by job_ids or all, POST /server/job_queue/pause, /start and /jump.", src: [moonraker_docs_job_queue]}
+  - {text: "Starting the queue loads the next job if Klipper is ready; otherwise it waits and loads after the current job. Pausing prevents the next job from loading.", src: [moonraker_docs_job_queue]}
+  - {text: "Webcams: GET /server/webcams/list, GET and POST /server/webcams/item, POST /server/webcams/test. Entries include stream_url, snapshot_url, target_fps, rotation and flip flags. Cameras defined in moonraker.conf are read only through the API.", src: [moonraker_docs_webcams]}
+  - {text: "Printer state is available through the printer objects query, which returns toolhead position, print statistics and webhooks state. G-code can be sent through the printer G-code script endpoint.", src: [moonraker_docs_intro]}
+  - {text: "Creality K1 series and K2 series run Klipper with Moonraker and Fluidd. Elegoo Neptune 4 series does too. Whether a given Creality printer exposes SSH depends on its Root account switch and firmware.", src: [creality_k1_root_guide, creality_k2_root_notes, elegoo_n4_pro_page]}
+steps:
+  - {text: "Find the Moonraker URL (usually the same host as Fluidd or Mainsail on port 7125, or the vendor's port) and test GET /server/info."}
+  - {text: "Add the printer in SlicerX as a Moonraker host. Use an API key or a trusted client entry in moonraker.conf if the network is not trusted."}
+  - {text: "Upload the sliced G-code with POST /server/files/upload. Set print only after the user confirms the bed is clear."}
+  - {text: "Poll printer objects for progress and temperatures. Use the job queue for batches."}
+pilot_actions:
+  - "Upload G-code and start a print after user confirmation."
+  - "Read status: state, progress, temperatures, current file and layer where exposed."
+  - "Read Klipper config values (max accel, shaper, hotend max temp) to ground advice."
+  - "Enqueue several plates and pause or start the queue on request."
+  - "Fetch a webcam snapshot_url to help diagnose a failing print."
+  - "Write to the config root only with explicit user approval; config edits can stop a printer from starting."
+  - "Do not assume Moonraker exists on a printer with vendor closed firmware such as the stock Elegoo Centauri Carbon."
+settings:
+  - {advice: "Use trusted_clients or an API key in moonraker.conf; do not expose Moonraker to the public internet.", kind: workflow}
+src: [moonraker_docs_intro, moonraker_docs_files, moonraker_docs_job_queue, moonraker_docs_webcams]

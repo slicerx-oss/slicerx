@@ -1,0 +1,38 @@
+kind: guide
+schema_version: 1
+id: klipper_macros
+name: Klipper start and end macros with SlicerX
+applies_to: [voron_2_4, voron_trident, sovol_sv08, creality_k1_max, creality_k2_plus, elegoo_neptune_4_pro]
+summary: >
+  Klipper machines do their heating, leveling, purging and meshing in
+  PRINT_START and PRINT_END macros. The slicer should pass temperatures in as
+  parameters, label objects so exclude_object works, and let the macro run an
+  adaptive bed mesh. Heat soak belongs in the macro for ABS and ASA on enclosed
+  machines.
+facts:
+  - {text: "BED_MESH_CALIBRATE accepts ADAPTIVE=1 to probe only the area covered by the objects defined in the G-code, and ADAPTIVE_MARGIN to pad it. The [bed_mesh] adaptive_margin option sets a default.", src: [klipper_docs_gcodes, klipper_docs_config_reference]}
+  - {text: "Enabling [exclude_object] in printer.cfg lets a print skip individual objects. The slicer must emit EXCLUDE_OBJECT_DEFINE lines and EXCLUDE_OBJECT_START markers around each object.", src: [klipper_docs_gcodes, klipper_docs_config_reference]}
+  - {text: "Firmware retraction uses G10 and G11 with values from [firmware_retraction] (retract_length default 0, retract_speed 20, unretract_extra_length 0, unretract_speed 10). SET_RETRACTION changes them at runtime.", src: [klipper_docs_gcodes, klipper_docs_config_reference]}
+  - {text: "SET_HEATER_TEMPERATURE HEATER=<name> TARGET=<temp> sets a heater target without waiting, and TEMPERATURE_WAIT SENSOR=<name> MINIMUM=<temp> waits. A macro combines them to heat the bed first and wait.", src: [klipper_docs_gcodes]}
+  - {text: "Orca lets machine start G-code use placeholders such as [nozzle_temperature_initial_layer] and [bed_temperature_initial_layer_single], and has options to label objects and to exclude objects for Klipper.", src: [orca_wiki_calibration, "orca_src:src/libslic3r/PrintConfig.cpp"]}
+  - {text: "Pressure advance can be set by the slicer or by the macro; do not do both.", src: [klipper_docs_pressure_advance]}
+  - {text: "Creality and Elegoo stock firmware keep their own start G-code. Changing machine_start_gcode there can break homing or leveling routines.", src: [creality_k1_root_guide]}
+steps:
+  - {text: "In Orca machine start G-code, call the macro with parameters: PRINT_START BED=[bed_temperature_initial_layer_single] EXTRUDER=[nozzle_temperature_initial_layer] CHAMBER=[chamber_temperature]. Match the parameter names the user's macro reads."}
+  - {text: "In the macro, read params.BED, params.EXTRUDER and params.CHAMBER with defaults. Heat the bed, home, level (QGL or Z tilt on Voron), run BED_MESH_CALIBRATE ADAPTIVE=1, then heat the nozzle and prime."}
+  - {text: "Enable object labels in Orca (label objects, Klipper) and add [exclude_object] to printer.cfg."}
+  - {text: "Add heat soak for ABS and ASA on enclosed machines: heat the bed early, close the door, and wait in the macro until the chamber sensor reads the target or a set soak time ends. Community practice is 10 to 20 minutes."}
+  - {text: "If using firmware retraction, enable it in the slicer, add [firmware_retraction] to printer.cfg, and stop the slicer from emitting its own retract lengths."}
+  - {text: "PRINT_END should retract a little, park, turn off heaters and fans, and leave the bed warm only if the user wants it."}
+pilot_actions:
+  - "Read printer.cfg and the macro source through Moonraker before editing machine_start_gcode, and match parameter names."
+  - "Never invent a PRINT_START. If the macro is missing, tell the user and offer a template for review."
+  - "For ABS or ASA on enclosed Klipper machines, recommend heat soak and add chamber temperature only if the printer has an actual chamber control."
+  - "Turn on object labeling and exclusion only if [exclude_object] is enabled."
+  - "When firmware retraction is on, warn that slicer retraction length and z hop values are ignored or conflict."
+settings:
+  - {key: enable_prime_tower, op: disable, why: "Single material prints do not need a tower on Klipper machines."}
+  - {advice: "Enable Orca's label objects and exclude object options for Klipper. They are stored under gcode_label_objects and exclude_object, which the settings catalog does not list yet.", kind: workflow}
+  - {advice: "Enable Orca's firmware retraction (use_firmware_retraction) only when [firmware_retraction] is configured.", kind: workflow}
+  - {advice: "Put machine_start_gcode and machine_end_gcode edits under user review; they change hardware behavior.", kind: workflow}
+src: [klipper_docs_gcodes, klipper_docs_config_reference, klipper_docs_pressure_advance, orca_wiki_calibration]

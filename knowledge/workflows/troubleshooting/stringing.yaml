@@ -1,0 +1,106 @@
+kind: troubleshoot
+schema_version: 1
+id: stringing
+name: Stringing
+aliases: [hairs, cobwebs, oozing, hairy print, strings, wisps]
+camera_signs:
+  - "Thin threads or wisps stretched between separate towers, posts or islands"
+  - "Fine hairs across open gaps, holes or the inside of an arch"
+  - "Small blobs or a fringe of hair at the start of travel moves and at the seam"
+  - "Threads that are worse on one spool or one material (PETG, TPU and wet spools string most)"
+log_signs: []
+tree:
+  start: q_wet
+  nodes:
+    q_wet: {ask: "Did you hear popping or hissing at the nozzle, see tiny bubbles in the strands, or has this spool been open for weeks (more so if it is PETG, nylon or TPU)?", "yes": c_wet_filament, "no": q_idle_ooze}
+    q_idle_ooze: {ask: "When the hot nozzle sits idle, does plastic keep dripping, or is there melted plastic leaking around the nozzle threads or heatbreak?", "yes": c_hotend_leak, "no": q_retraction_on}
+    q_retraction_on: {ask: "Is retraction enabled with a length above zero in the active printer profile (Bambu, Prusa and Orca profiles turn it on by default)?", "yes": q_hot, "no": c_retraction_off}
+    q_hot: {ask: "Is the nozzle temperature in the top half of the filament's range, or above the maker's recommendation?", "yes": c_too_hot, "no": q_travel}
+    q_travel: {ask: "Are the strings mostly across long open travel moves, with a low travel speed or a high minimum travel threshold?", "yes": c_travel_paths, "no": q_extruder_play}
+    q_extruder_play: {ask: "With the nozzle cold and the extruder motor off, is there a dead zone when you reverse the filament by hand, or does the motor shaft turn without moving filament?", "yes": c_extruder_slop, "no": c_pressure_advance}
+causes:
+  - id: c_wet_filament
+    name: Wet filament
+    category: material
+    likelihood: high
+    checks:
+      - "Extrude a few centimeters in the air at the print temperature and listen for popping or watch for steam."
+      - "Look for rough, pitted walls in the same print. Sealed spools can also arrive wet."
+    fixes:
+      - {advice: "Dry the spool using the drying table for its material, then print from a dry box or a sealed AMS slot. Wet filament can cause near unfixable stringing.", kind: material}
+    filaments: [petg, tpu_95a, tpu_85a, pa6, pa12, pa_cf, pa_gf, pla]
+    src: [ellis_retraction, bambu_wiki_avoid_clogs, prusa_kb_stringing]
+    confidence: high
+  - id: c_hotend_leak
+    name: Leaking or loose hotend
+    category: hardware
+    likelihood: medium
+    checks:
+      - "Heat the nozzle and look for plastic seeping at the nozzle to heater block joint or around the heatbreak."
+      - "A nozzle that is bottomed out against the heater block on a V6 style hotend means the heatbreak is not seated far enough."
+    fixes:
+      - {advice: "Hot tighten the nozzle to the maker's torque spec and reseat the heatbreak so it makes full contact. Clean off old plastic first. On Bambu printers, re-tighten the two hotend screws and check the silicone sock area for skew or contamination.", kind: hardware}
+      - {advice: "After many hours of one material such as PETG, clean the nozzle exterior thoroughly. A film of old plastic on the tip drags strings onto the part.", kind: hardware}
+    printers: [prusa, klipper, bambu]
+    src: [ellis_retraction, prusa_kb_stringing, bambu_wiki_first_layer_x1]
+    confidence: medium
+  - id: c_retraction_off
+    name: Retraction disabled or far too low
+    category: settings
+    likelihood: medium
+    checks:
+      - "Check the printer profile retraction length. Zero or a value copied from a bowden profile onto a direct drive machine (or the reverse) is the usual mistake."
+      - "In Klipper, do not use coasting or extra restart distance. Klipper's slicer notes say retract, wipe and wipe on retract are fine."
+    fixes:
+      - {key: retraction_length, op: at_least, value: 0.5, why: "On direct drive Ellis starts at 0.5 mm at 35 mm/s and tries to stay under 1 mm. Bowden machines start near 1 mm.", src: [ellis_retraction]}
+      - {key: wipe, op: enable, why: "Wiping while retracting is recommended by Prusa and helps hide ooze.", src: [prusa_kb_stringing]}
+    src: [ellis_retraction, prusa_kb_stringing, klipper_slicers]
+    confidence: medium
+  - id: c_too_hot
+    name: Nozzle too hot
+    category: settings
+    likelihood: high
+    checks:
+      - "Compare the nozzle temperature with the filament's recommended range. A second spool of the same brand at a lower temperature is the cleanest test."
+    fixes:
+      - {key: nozzle_temperature, op: decrease_by, value: 5, why: "Cooler plastic is less runny while the nozzle travels. Prusa suggests trying 5 to 10 C lower.", src: [prusa_kb_stringing]}
+    src: [prusa_kb_stringing, ellis_retraction]
+    confidence: high
+  - id: c_travel_paths
+    name: Slow travel or long crossing moves
+    category: settings
+    likelihood: medium
+    checks:
+      - "In the slicer preview, look for travel lines crossing open air between the stringing features."
+    fixes:
+      - {key: reduce_crossing_wall, op: enable, why: "Routes travel inside the part where any ooze is hidden. Ellis notes it costs slicing and print time, so it is worth turning on mainly for PETG.", src: [ellis_retraction, prusa_kb_stringing]}
+      - {advice: "Raise travel speed and travel acceleration to what the printer profile allows so the nozzle spends less time oozing. Orca's seam guide says to make travel as fast as the printer can manage.", kind: workflow}
+      - {key: z_hop, op: at_most, value: 0.3, why: "Ellis found z hop above about 0.3 mm makes stringing worse.", src: [ellis_retraction]}
+      - {advice: "A high minimum travel after retraction lets short hops skip the retraction and ooze. Prusa notes a preset of 1 mm is low and that raising it increases oozing.", kind: workflow}
+    src: [ellis_retraction, prusa_kb_stringing, orca_wiki_seam]
+    confidence: medium
+  - id: c_extruder_slop
+    name: Extruder backlash or loose gear
+    category: hardware
+    likelihood: medium
+    checks:
+      - "Turn the extruder by hand and reverse. A clear dead zone points at gear backlash, a loose grub screw or a worn gear."
+      - "Check that the tension screw is not over or under tightened."
+    fixes:
+      - {advice: "Tighten the extruder gear grub screw onto the flat of the motor shaft and set a small amount of gear backlash. Too much backlash upsets retraction and pressure advance.", kind: hardware}
+      - {advice: "On Bambu printers, inspect the extruder idler and feed gear for wear or filament dust and clean it. If the gear is worn, replace the extruder.", kind: hardware}
+    src: [ellis_retraction, ellis_extrusion_patterns]
+    confidence: medium
+  - id: c_pressure_advance
+    name: Pressure advance too low or not calibrated
+    category: settings
+    likelihood: medium
+    checks:
+      - "Bulged corners, or a pressure blob after each corner or seam, suggest pressure is not being controlled."
+    fixes:
+      - {advice: "Run pressure advance (Bambu: flow dynamics) calibration for this exact filament. A too low value leaves excess pressure in the nozzle at the end of each line.", kind: workflow}
+    printers: [klipper, bambu]
+    src: [klipper_pressure_advance, ellis_pa, orca_wiki_seam]
+    confidence: medium
+related: [over_extrusion, seam_zits, under_extrusion, heat_creep]
+src: [ellis_retraction, prusa_kb_stringing, klipper_slicers, orca_wiki_seam]

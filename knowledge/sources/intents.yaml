@@ -1,0 +1,51 @@
+kind: sources
+sources:
+  - id: cnckitchen_extrusion_width
+    title: "Extrusion width vs strength and quality"
+    publisher: CNC Kitchen (Stefan Hermann)
+    type: community_test
+    url: https://www.cnckitchen.com/blog/the-effect-of-extrusion-width-on-strength-and-quality-of-3d-prints
+    retrieved: 2026-09-29
+    note: "0.4 mm nozzle. Hooks: 2 walls at 100 percent width failed at 20 kg, 4 walls at 33 kg, 3 walls at 133 percent at 37 kg, 2 walls at 200 percent at 39 kg. Layer adhesion peaks near 150 percent width. Surface looks unchanged up to 140 percent."
+  - id: cnckitchen_temp_adhesion
+    title: "The influence of extrusion temperature on layer adhesion"
+    publisher: CNC Kitchen (Stefan Hermann)
+    type: community_test
+    url: https://www.cnckitchen.com/blog/the-influence-of-extrusion-temperature-on-layer-adhesion
+    retrieved: 2026-09-29
+    note: "PLA layer adhesion 20 MPa at 190 C, 39 at 210, peak 40 at 230, 32 at 270. PETG 18 MPa at 200 C, peak 32 at 245, 24 at 260. Lying samples reach about 60 MPa (PLA) and 55 MPa (PETG). Print at the low end of the range for looks and the high end for strength."
+  - id: cnckitchen_annealing_pla
+    title: "Annealing PLA prints: what it does and doesn't"
+    publisher: CNC Kitchen (Stefan Hermann)
+    type: community_test
+    url: https://www.cnckitchen.com/blog/better-performing-3d-prints-with-annealing-but-part-1-pla
+    retrieved: 2026-09-29
+    note: "100 C for 45 min. Up to 10 percent shrink in XY and growth in Z, unpredictable warping. Tensile plus 7.5 percent, bending plus 16 percent, layer adhesion unchanged."
+  - id: prusa_kb_watertight
+    title: "Watertight prints"
+    publisher: Prusa Research
+    type: manufacturer_kb
+    url: https://help.prusa3d.com/article/watertight-prints_112324
+    retrieved: 2026-09-29
+    note: "3 to 4 perimeters (5 to 6 for some geometry), nozzle 5 to 10 C above preset, extrusion multiplier or line width plus 5 to 10 percent, 0.15 mm layers best and 0.2 mm fine, stay under 60 to 65 percent of nozzle width, infill and perimeter overlap 25 to 35 percent if leaking."
+  - id: prusa_kb_infill_patterns
+    title: "Infill patterns"
+    publisher: Prusa Research
+    type: manufacturer_kb
+    url: https://help.prusa3d.com/article/infill-patterns_177130
+    retrieved: 2026-09-29
+    note: "Gyroid: equal strength in all directions. Adaptive cubic: about a quarter less material than rectilinear. Support cubic and lightning: least material, no mechanical benefit. Rectilinear: fast, the only choice for 100 percent. Honeycomb: strongest, about 25 percent more material and up to twice the time."
+  - id: prusa_kb_ironing
+    title: "Ironing"
+    publisher: Prusa Research
+    type: manufacturer_kb
+    url: https://help.prusa3d.com/article/ironing_177488
+    retrieved: 2026-09-29
+    note: "Works on flat horizontal tops only (nameplates, lids, badges), not organic shapes. Adds print time. PLA irons well but is prone to heat creep, PETG irons well but can stick to the nozzle, ASA irons very well."
+  - id: prusa_kb_layers_perimeters
+    title: "Layers and perimeters (includes spiral vase)"
+    publisher: Prusa Research
+    type: manufacturer_kb
+    url: https://help.prusa3d.com/article/layers-and-perimeters_1748
+    retrieved: 2026-09-29
+    note: "Spiral vase sets one perimeter, 0 percent infill, no top layers, no supports. Bottom layers stay adjustable. Widen the external perimeter (for example 0.45 to 0.6 mm) for a stronger, watertight vase. One object at a time."

@@ -1,0 +1,59 @@
+kind: guide
+schema_version: 1
+id: bambu_plates
+name: Bambu build plates, glue and top glass removal
+applies_to: [bambu_x1c, bambu_x1e, bambu_p1s, bambu_p1p, bambu_a1, bambu_a1_mini, bambu_h2d, bambu_h2s, bambu_h2c, bambu_p2s, bambu_x2d, bambu_a2l]
+summary: >
+  Pick the plate by filament, set the bed temperature for that plate, and add
+  glue where Bambu says so. On enclosed X1C, X1E and P1S the top glass lid comes
+  off for PLA, TPU and PVA when the bed is above 45 C, and for PETG when it is
+  above 70 C.
+facts:
+  - text: "Bambu's plate types are Textured PEI, Smooth PEI (also sold as High Temperature Plate), Dual-Texture PEI, Engineering Plate and Cool Plate SuperTack. The older Cool Plate is still listed in the filament guide. Orca also offers a Textured Cool Plate option that Bambu's wiki does not document by that name."
+    src: [bambu_wiki_build_plates, bambu_wiki_material_table, "orca_src:src/libslic3r/PrintConfig.cpp"]
+  - text: "Textured PEI is the standard plate. It grips most filaments without glue and prints release once the bed cools to 35 C or lower. PC, PA, ABS and ASA may need a glue stick layer on it."
+    src: [bambu_wiki_build_plates]
+  - text: "Smooth PEI gives a flat matte bottom. Only PLA prints on it without glue. Every other filament needs glue or the PEI sheet can tear."
+    src: [bambu_wiki_build_plates]
+  - text: "The Engineering Plate wants a thin glue layer before any filament. Glue stick or liquid glue depends on the material. Use alcohol at the part edge if a print will not release."
+    src: [bambu_wiki_build_plates]
+  - text: "Cool Plate SuperTack is for PLA and PETG only. It holds PLA at a 40 C bed. Second generation PETG needs 55 to 60 C, but shared X and P series parameters may still use about 65 C."
+    src: [bambu_wiki_build_plates, bambu_wiki_supertack]
+  - text: "Do not print TPU on SuperTack. Bambu PLA Silk sticks too hard and can damage parts. Support for PLA/PETG can damage the plate, so print a raft first. Clean with water and detergent, never acetone."
+    src: [bambu_wiki_supertack]
+  - text: "SuperTack is soft and scratches. Wet the contact area with alcohol before scraping. Warm the plate to about 50 C on the bed to release stubborn prints."
+    src: [bambu_wiki_supertack, bambu_wiki_build_plates]
+  - text: "Bed temperature ranges by plate (Bambu, filament guide): PLA 35 to 45 C on Cool Plate and 45 to 65 C on Engineering, Smooth or Textured PEI. PETG and PETG-CF 60 to 80 C on Engineering, Smooth and Textured, not recommended on the Cool Plate. ABS and ASA 90 to 100 C. PC and PA 100 to 120 C. TPU 30 to 35 C on Engineering and 35 to 45 C on Smooth or Textured."
+    src: [bambu_wiki_material_table]
+  - text: "PLA on the Engineering Plate needs glue. The Cool Plate is not recommended for TPU, PETG, ABS, ASA, PC and PA."
+    src: [bambu_wiki_material_table]
+  - text: "Glue stick and liquid glue ranges: PLA 35 to 65 C, PETG 60 to 80 C, ABS and ASA 90 to 100 C, TPU 30 to 45 C, PET-CF/GF 80 to 100 C (glue stick only), PC 100 to 120 C (glue stick), PA 90 to 110 C (glue stick)."
+    src: [bambu_wiki_material_table]
+  - text: "Top glass cover removal: recommended for PLA, PLA-CF, PVA and TPU when the bed is above 45 C, and for PETG and PETG-CF when the bed is above 70 C. Do not remove it for ABS, ASA, PC, PA or their fiber grades."
+    src: [bambu_wiki_material_table]
+  - text: "256 x 256 mm Textured PEI, Smooth PEI and SuperTack come in two generations that differ by QR code. P2S and X2D read only second generation plates. X1 series cannot identify second generation plates. A and P series accept both."
+    src: [bambu_wiki_build_plates, bambu_wiki_supertack]
+  - text: "Plate sizes: 350 x 320 mm for H2D and H2S, 330 x 320 mm for H2C and A2L, 256 x 256 mm for X2D, P2S, P1, X1 and A1, 180 x 180 mm for A1 mini."
+    src: [bambu_wiki_build_plates]
+steps:
+  - text: "Read the filament type and the printer. Check the printer is enclosed or open (see the printer file)."
+  - text: "Pick the plate: Textured PEI for most PLA, PETG, TPU. SuperTack for PLA and PETG when the user wants no glue and a low bed temperature. Engineering or Smooth PEI with glue for ABS, ASA, PC and PA."
+  - text: "Set the matching bed temperature key for that plate in the filament preset and set the plate type in the process."
+  - text: "Apply glue where the tables ask for it. Keep glue thin and even."
+  - text: "On X1C, X1E and P1S, remove the top glass for PLA, PLA-CF, PVA and TPU above a 45 C bed, and for PETG above 70 C."
+  - text: "Let the bed cool to 35 C or lower before flexing the plate. Use alcohol or a warm 50 C bed for SuperTack."
+pilot_actions:
+  - "Suggest the plate from the filament first. Refuse PETG, ABS, ASA, PC and PA on the Cool Plate and TPU or PLA Silk on SuperTack."
+  - "Set curr_bed_type to match the plate the user says is installed. Then set the matching temperature key only."
+  - "When a plate warning about recognition appears on X1 or P2S, tell the user to pick Resolved or turn off build plate detection instead of changing settings."
+  - "On X1C, X1E and P1S remind the user to take off the top glass when the bed is above 45 C for PLA and above 70 C for PETG."
+  - "Warn that PETG on smooth PEI or the High Temperature Plate needs glue as a release layer."
+settings:
+  - {key: curr_bed_type, op: set, value: "Textured PEI Plate", why: "Textured PEI is Bambu's default plate and grips most filaments without glue."}
+  - {key: cool_plate_temp, op: at_most, value: 45, why: "Bambu lists 35 to 45 C for PLA on the Cool Plate."}
+  - {key: supertack_plate_temp, op: at_most, value: 45, why: "PLA holds on SuperTack at a low bed temperature. Bambu quotes 40 C."}
+  - {key: textured_plate_temp, op: at_most, value: 65, why: "Bambu lists 45 to 65 C for PLA on textured PEI."}
+  - {advice: "PETG on SuperTack: 55 to 60 C on second generation plates. Older shared profiles use about 65 C.", kind: material}
+  - {advice: "Use glue stick on the Engineering Plate and on smooth PEI for anything except PLA.", kind: material}
+  - {advice: "Remove the top glass lid on X1C, X1E and P1S for PLA, PLA-CF, PVA and TPU when the bed is above 45 C, and for PETG when it is above 70 C.", kind: environment}
+src: [bambu_wiki_build_plates, bambu_wiki_supertack, bambu_wiki_material_table]

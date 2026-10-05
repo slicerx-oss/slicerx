@@ -1,0 +1,286 @@
+kind: filament
+schema_version: 1
+id: pa_gf
+name: Glass fiber nylon (PA6-GF, PAHT-GF)
+category: engineering
+orca_filament_type: PA-GF
+aliases: [PA-GF, PA6-GF, PAHT-GF, Nylon GF, Glass fiber nylon]
+related: [pa_cf, pa6]
+summary: >
+  Nylon filled with glass fiber. Stiff, heat resistant (Bambu PA6-GF holds
+  182 C at 0.45 MPa), dimensionally stable and cheaper than carbon nylon, with
+  a matte surface. Glass is abrasive like carbon: use a hardened nozzle, prefer
+  0.6 mm, dry every spool and print in a warm enclosure with glue. Only PA6-GF
+  has a Bambu profile and data sheet. PAHT-GF is covered as a family member and
+  follows PAHT-CF settings.
+use_for: [structural housings, corrosion resistant parts, industrial components, fixtures, parts that need stiffness and heat resistance without carbon cost]
+avoid_for: [brass nozzles, open frame printers, damp storage, parts that need impact toughness across layers, AMS 2 Pro users with no way to dry]
+
+nozzle_temp_c:
+  min: 260
+  max: 300
+  typical: 265
+  confidence: high
+  src:
+    - "orca:OrcaFilamentLibrary/filament/Bambu/Bambu PA6-GF @base.json"
+    - "orca:BBL/filament/Bambu PA6-GF @BBL X1C.json"
+    - bambu_wiki_material_table
+    - bambu_tds_pa6_gf_v1
+    - bambu_tds_paht_cf_v3
+  note: >
+    Bambu profile allows 260 to 300 and prints PA6-GF at 265 on X1C (280 in the
+    base profile). The data sheet lists 260 to 290 and its specimens print at
+    265. Bambu's table groups PAHT-GF with PAHT-CF at 260 to 300 (plus or minus
+    10). For PAHT-GF start at 285 to 290 as for PAHT-CF (that is an inference
+    from the shared row).
+first_layer_nozzle_temp_c:
+  min: 265
+  max: 280
+  typical: 265
+  confidence: medium
+  src: ["orca:BBL/filament/Bambu PA6-GF @BBL X1C.json", "orca:OrcaFilamentLibrary/filament/Bambu/Bambu PA6-GF @base.json"]
+  note: "Bambu X1C 265, base profile 280."
+bed_temp_c:
+  min: 80
+  max: 110
+  typical: 100
+  confidence: high
+  src: [bambu_wiki_material_table, bambu_tds_pa6_gf_v1, "orca:OrcaFilamentLibrary/filament/Bambu/Bambu PA6-GF @base.json"]
+  note: "Bambu TDS 80 to 100, glue table 90 to 110, profile 100."
+chamber_temp_c:
+  min: 45
+  max: 60
+  typical: 60
+  confidence: high
+  src:
+    - bambu_tds_pa6_gf_v1
+    - bambu_wiki_x1e_chamber
+    - bambu_wiki_absgf_pa6gf
+    - bambu_h2d_tech_specs
+    - prusa_blog_core_one_intro
+    - "orca:BBL/filament/Bambu PA6-GF @BBL X1C.json"
+    - "orca:BBL/filament/Bambu PA6-GF @BBL H2D.json"
+  note: >
+    Bambu's data sheet lists 45 to 60 C and ships the PA6-GF profile at a 60 C
+    chamber target on X1C, H2D and other enclosed printers. On a passive enclosure
+    (X1C, P1S, P2S closed) the chamber runs below that target and depends on
+    the bed, so keep the door and lid closed. Active heating (X1E 60 C max,
+    H2D 65 C max, Prusa Core One 55 C at full bed heat) reduces warping
+    and raises interlayer strength. Bambu's guide says glass filled grades
+    warp much less than plain nylon.
+enclosure:
+  level: required
+  confidence: high
+  src: [bambu_wiki_absgf_pa6gf, bambu_wiki_material_table]
+  note: "Bambu: requires an enclosed printer, not compatible with P1P or A1. Glass fiber cuts warping compared with plain nylon but does not remove it."
+
+plates:
+  - {plate: bambu_cool_plate, fit: avoid, confidence: high, src: [bambu_wiki_material_table, bambu_wiki_absgf_pa6gf], note: "Glue is required. Bambu says PA6-GF is not compatible with the Cool Plate SuperTack."}
+  - {plate: bambu_supertack_plate, fit: avoid, confidence: high, src: [bambu_wiki_absgf_pa6gf], note: "Bambu lists PA6-GF as not compatible with the Cool Plate SuperTack."}
+  - {plate: bambu_engineering_plate, fit: glue, bed_temp_c: {min: 80, max: 100}, release_agent: glue_stick, confidence: high, src: [bambu_tds_pa6_gf_v1, bambu_wiki_absgf_pa6gf], note: "Glue stick is required. Liquid glue is not recommended for PA."}
+  - {plate: bambu_high_temp_plate, fit: glue, bed_temp_c: {min: 80, max: 100}, release_agent: glue_stick, confidence: high, src: [bambu_wiki_absgf_pa6gf], note: "Bambu recommends Smooth PEI or High Temp plate with glue applied."}
+  - {plate: smooth_pei, fit: glue, bed_temp_c: {min: 80, max: 100}, release_agent: glue_stick, confidence: high, src: [bambu_wiki_absgf_pa6gf], note: "Recommended by Bambu, with glue."}
+  - {plate: textured_pei, fit: glue, bed_temp_c: {min: 80, max: 100}, release_agent: glue_stick, confidence: high, src: [bambu_tds_pa6_gf_v1], note: "TDS lists Textured PEI with glue."}
+
+cooling:
+  fan_min_pct: {min: 0, max: 10, typical: 10}
+  fan_max_pct: {min: 30, max: 60, typical: 30}
+  overhang_fan_pct: {typical: 40}
+  no_fan_first_layers: {typical: 3}
+  min_layer_time_s: {typical: 2}
+  confidence: medium
+  src: ["orca:OrcaFilamentLibrary/filament/Bambu/Bambu PA6-GF @base.json", "orca:BBL/filament/Bambu PA6-GF @BBL X1C.json", bambu_tds_pa6_gf_v1]
+  note: "Bambu profile runs the fan at 10 to 30 percent with 40 on overhangs. The data sheet allows 0 to 60 percent. Keep it low for interlayer strength and less warping."
+
+drying:
+  need: required
+  oven: {temp_c: 80, hours: {min: 8, max: 12}}
+  ams_2_pro: null
+  ams_ht: {temp_c: 85, hours: 12}
+  printer_bed: {temp_c: {min: 90, max: 100}, hours: 12, note: "Enclosed Bambu printers only, spool covered, flip the spool every 6 h"}
+  keep_dry_in_use: required
+  confidence: high
+  src: [bambu_wiki_drying, bambu_wiki_material_table, bambu_wiki_absgf_pa6gf, bambu_tds_pa6_gf_v1]
+  note: >
+    Bambu: PA6-GF 80 C for 8 to 12 h in a convection oven, 90 to 100 C for 12 h
+    on the heated bed, 85 C for 12 h in AMS HT. AMS 2 Pro is not compatible.
+    Bambu warns wet PA6-GF gives bubbles, stringing and weak layers, and marks
+    desiccant during use as required. Saturated water absorption is 2.56 percent.
+
+nozzle:
+  abrasive: true
+  hardened_required: true
+  min_diameter_mm: 0.4
+  preferred_diameter_mm: 0.6
+  orca_required_hrc: 40
+  confidence: high
+  src: [bambu_wiki_absgf_pa6gf, bambu_wiki_material_table, prusa_kb_composites, "orca:OrcaFilamentLibrary/filament/Bambu/Bambu PA6-GF @base.json"]
+  note: "Bambu: hardened steel or tungsten carbide only. Use 0.6 mm (recommended). 0.4 mm is compatible, 0.4 mm high flow is not recommended and 0.2 mm is not compatible. Prusa: hardened nozzle required, 0.4 mm and 0.2 mm layers minimum."
+
+extrusion:
+  flow_ratio: {typical: 0.96, min: 0.96, max: 1.0, confidence: medium, src: ["orca:OrcaFilamentLibrary/filament/Bambu/Bambu PA6-GF @base.json"], note: "Bambu 0.96. Confirm with a flow test."}
+  max_volumetric_speed_mm3s:
+    standard_hotend: {min: 8, max: 10.5, typical: 10.5}
+    high_flow_hotend: {typical: 10.5}
+    confidence: medium
+    src: ["orca:BBL/filament/Bambu PA6-GF @BBL X1C.json", "orca:BBL/filament/Bambu PA6-GF @BBL H2D.json", bambu_wiki_absgf_pa6gf]
+    note: "Bambu suggests 10.5 mm3/s at speeds under 130 mm/s for PA6-GF. Its X1C and H2D profiles both use 10.5. PAHT-CF equivalents use 8 to 12."
+  retraction_mm:
+    direct_drive: {min: 0.8, max: 1.4, typical: 0.8}
+    confidence: low
+    src: [bambu_tds_pa6_gf_v1]
+    note: "Bambu's data sheet suggests 0.8 to 1.4 mm at 20 to 40 mm/s. The printer profiles inherit the machine default."
+  retraction_speed_mm_s: {min: 20, max: 40, typical: 30, confidence: medium, src: [bambu_tds_pa6_gf_v1, "orca:BBL/machine/Bambu Lab X1 Carbon 0.4 nozzle.json"], note: "Bambu's PA6-GF data sheet says 20 to 40 mm/s and Bambu machine profiles use 30."}
+  pressure_advance:
+    direct_drive: {min: 0.025, max: 0.05, typical: 0.05}
+    confidence: low
+    src: ["orca:Prusa/filament/Prusament PA-CF @CORE One.json", klipper_pressure_advance, ellis_pa]
+    note: "No PA6-GF value sourced. Prusa's PA-CF profile ships M572 S0.05 at 0.4 mm and 0.025 at 0.6 mm on Core One, a sensible starting point. Calibrate."
+
+layer_height:
+  fraction_of_nozzle: {min: 0.375, max: 0.75, typical: 0.5}
+  at_0_4_mm: {min: 0.15, max: 0.3, typical: 0.2}
+  smart_layer:
+    quality_mode: "Glass fiber roughens the surface, so thin layers gain little. Keep the floor at 0.15 mm on a 0.4 mm hardened nozzle. Bambu recommends a 0.6 mm hardened nozzle for PA6-GF."
+    strength_mode: "Push toward 0.2 to 0.3 mm. Glass fibers align along each bead and layer bonds are the weak plane, so fewer thicker layers and a hot, dry spool matter most."
+    thin_layer_cooling: "Bambu PA6-GF uses a 2 s minimum layer time and a fan of 10 to 30 percent. Keep the fan low, since cooling weakens nylon layer bonds."
+  basis: expert
+  confidence: medium
+  src: [bambu_wiki_material_table, bambu_wiki_absgf_pa6gf, prusa_kb_composites, "orca:BBL/machine/Bambu Lab X1 Carbon 0.6 nozzle.json", "orca:BBL/machine/Bambu Lab X1 Carbon 0.8 nozzle.json", "orca:BBL/filament/Bambu PA6-GF @BBL X1C.json"]
+  note: "Bambu says 0.15 to 0.3 mm on a 0.4 mm hardened nozzle for CF and GF filaments and prefers a 0.6 mm hardened nozzle. Prusa says layers of at least 0.2 mm. The X1C allows 0.12 to 0.42 mm on a 0.6 mm nozzle."
+smart_layer:
+  min_ratio: 0.375
+  max_ratio: 0.75
+  modes:
+    quality: {min_ratio: 0.375, max_ratio: 0.5}
+    strength: {min_ratio: 0.375, max_ratio: 0.5}
+  family: nylon_and_composites
+  note: "Glass filled nylon clogs at thin layers; keep at least 0.15 mm on a 0.4 mm nozzle."
+  confidence: medium
+  src: ["bambu_wiki_material_table", "bambu_wiki_absgf_pa6gf", "prusa_kb_composites", "orca:BBL/machine/Bambu Lab X1 Carbon 0.6 nozzle.json", "orca:BBL/machine/Bambu Lab X1 Carbon 0.8 nozzle.json", "orca:BBL/filament/Bambu PA6-GF @BBL X1C.json", "cnckitchen_layer_height", "stojkovic_2023_layer_height_annealing"]
+speeds:
+  print_speed_mm_s: {min: 30, max: 130}
+  first_layer_mm_s: {min: 20, max: 50, typical: 40}
+  volumetric_note: "Bambu's PA6-GF data sheet says under 130 mm/s, while the Bambu wiki caps CF and GF filaments at about 100 mm/s on a 0.4 mm nozzle. Bambu's PA6-GF profile allows 10.5 mm3/s (see extrusion), which sets the real speed. No source caps outer wall speed."
+  confidence: medium
+  src: [bambu_tds_pa6_gf_v1, bambu_wiki_material_table, bambu_wiki_absgf_pa6gf, "orca:BBL/process/0.20mm Standard @BBL X1C.json", "orca:Prusa/process/0.20mm SPEED @MK4S 0.4.json"]
+  note: "Lower bound borrowed from Polymaker's 30 mm/s for fiber nylon. First layer: Bambu Standard preset 50 mm/s, Prusa MK4S preset 40 mm/s."
+first_layer:
+  fan_off_layers: 3
+  speed_mm_s: {min: 20, max: 50, typical: 40}
+  bed_first_layer_note: "Bambu holds 100 C on glued plates and lists glue stick as required. Use the same bed temperature for every layer."
+  squish_note: "Glass fiber nylon bonds hard to glued PEI, so normal nozzle height is enough. Do not squish harder to cure lifting corners (Prusa)."
+  confidence: medium
+  src: ["orca:BBL/process/0.20mm Standard @BBL X1C.json", "orca:Prusa/process/0.20mm SPEED @MK4S 0.4.json", "orca:BBL/filament/Bambu PA6-GF @BBL X1C.json", bambu_wiki_absgf_pa6gf, prusa_kb_first_layer]
+structure:
+  walls: {min: 3, typical: 4, note: "Glass fibers align along each bead, so walls carry the load and infill adds stiffness cheaply but little strength. GF parts gain little from denser infill."}
+  infill: {pattern_hint: gyroid, density_note: "15 to 25 percent. Spend material on walls and shells first."}
+  basis: expert
+  confidence: low
+  src: [prusa_kb_composites, "orca:BBL/process/0.20mm Strength @BBL X1C.json"]
+  note: "No source tests wall versus infill for PA-GF. The advice follows from fiber alignment and Prusa's note that composites gain stiffness but lose layer adhesion."
+supports:
+  interface_materials: ["Bambu Support for PA/PET", abs, asa]
+  soluble_pairing: {material: bvoh, dissolve: "water"}
+  top_z_distance_mm: {typical: 0.2}
+  interface_layers: {typical: 2}
+  note: "Bambu lists Support for PA/PET (280 to 300 C, hardened nozzle, dry required, now discontinued) for PA6-GF and names Bambu ABS and ASA as the alternatives. It is a support interface only. BCN3D lists BVOH as compatible with PA, but BVOH must be kept dry and needs a multi material printer."
+  confidence: medium
+  src: [bambu_store_support_filaments, bcn3d_bvoh_page, "orca:BBL/process/0.20mm Standard @BBL X1C.json", "orca:BBL/filament/Bambu Support For PA PET @base.json"]
+
+multi_material:
+  bambu_ams: unknown
+  bambu_ams_lite: not_compatible
+  bambu_ams_ht: compatible
+  confidence: medium
+  src: [bambu_wiki_absgf_pa6gf, bambu_wiki_material_table, bambu_wiki_drying]
+  note: "Bambu: PA6-GF is not compatible with AMS lite. Bambu's AMS table lists only PA-CF and PAHT-CF as compatible. AMS HT dries PA6-GF at 85 C."
+
+properties:
+  density_g_cm3: {typical: 1.14, src: ["orca:OrcaFilamentLibrary/filament/Bambu/Bambu PA6-GF @base.json", bambu_tds_pa6_gf_v1]}
+  softening_temp_c: {typical: 180, src: ["orca:OrcaFilamentLibrary/filament/Bambu/Bambu PA6-GF @base.json"], note: "Orca vitrification. Bambu Tg 67 C and melt 219 C."}
+  heat_deflection_c: {at_0_45_mpa: 182, at_1_8_mpa: 158, src: [bambu_tds_pa6_gf_v1, bambu_wiki_absgf_pa6gf], note: "Bambu PA6-GF data sheet."}
+  annealing: {temp_c: {min: 80, max: 130}, hours: {min: 6, max: 12}, src: [bambu_tds_pa6_gf_v1], note: "Bambu suggests it and warns parts can deform. Use a forced air oven."}
+  relative:
+    heat: 5
+    impact: 2
+    tensile: 5
+    scale: "1 to 5, Bambu star ratings for PA-CF and GF"
+    src: [bambu_wiki_material_table]
+safety:
+  fumes: medium
+  note: "Prusa says nylon needs ventilation or an enclosure for odor and ultrafine particles. Glass fiber dust from sanding is an irritant, so wear a mask. Enable activate_air_filtration on Bambu X, P and H series if the chamber is not held at 60 C."
+  src: [prusa_kb_nylon, bambu_wiki_x1e_chamber]
+food_contact:
+  note: "Not food safe."
+  src: [prusa_kb_food_safe]
+
+failure_modes:
+  - id: warping
+    symptom: Corners lift or the base curls
+    causes: [chamber too cold, bed too cool, no glue, cooling too high]
+    fixes:
+      - {key: brim_type, op: set, value: outer_only, why: "A brim adds hold against nylon shrinkage."}
+      - {key: brim_width, op: at_least, value: 8, why: "Wide brims resist corner lift."}
+      - {key: initial_layer_speed, op: at_most, value: 30, why: "A slow first layer bonds better."}
+      - {key: fan_max_speed, op: at_most, value: 30, why: "Bambu's PA6-GF profile caps the fan at 30 percent."}
+      - {key: draft_shield, op: enable, why: "Holds a warmer pocket of air when the chamber cannot be heated."}
+      - {advice: "Apply glue stick to the plate (required by Bambu) and close the door and lid. Preheat the chamber to 55 to 60 C if the printer can.", kind: environment}
+  - id: wet_filament
+    symptom: Bubbles, stringing, weak layers, rough surface
+    causes: [wet filament]
+    fixes:
+      - {advice: "Dry at 80 C for 8 to 12 h in an oven, 85 C for 12 h in AMS HT, or on the heated bed at 90 to 100 C for 12 h. AMS 2 Pro cannot dry it.", kind: material}
+      - {advice: "Print from a dry box or AMS HT. Bambu marks desiccant in use as required.", kind: workflow}
+  - id: nozzle_wear
+    symptom: Under extrusion, wandering line width or clog after a few spools
+    causes: [abrasive glass fiber, soft nozzle, small nozzle]
+    fixes:
+      - {advice: "Use hardened steel or tungsten carbide, and 0.6 mm if possible. Bambu says 0.6 mm gives better quality with both glass filled materials.", kind: hardware}
+  - id: weak_layers
+    symptom: Part splits along layers
+    causes: [nozzle too cold, fan too high, wet filament]
+    fixes:
+      - {key: nozzle_temperature, op: increase_by, value: 5, why: "Hotter plastic fuses better with the layer below."}
+      - {key: fan_max_speed, op: at_most, value: 20, why: "Less cooling helps interlayer bonding."}
+      - {advice: "Orient the part so loads run along the layers. Fiber filled materials lose layer adhesion (Prusa).", kind: orientation}
+
+disagreements:
+  - topic: nozzle temperature
+    positions:
+      - {claim: "265 C on X1C", src: ["orca:BBL/filament/Bambu PA6-GF @BBL X1C.json"]}
+      - {claim: "280 C in the base profile", src: ["orca:OrcaFilamentLibrary/filament/Bambu/Bambu PA6-GF @base.json"]}
+      - {claim: "260 to 290 C", src: [bambu_tds_pa6_gf_v1]}
+    resolution: "Default 265 C, raise to 275 to 280 C for layer strength or high flow."
+  - topic: PAHT-GF settings
+    positions:
+      - {claim: "Bambu's material table groups PAHT-CF and PAHT-GF in one row", src: [bambu_wiki_material_table]}
+      - {claim: "No PAHT-GF profile or data sheet in Bambu's Orca profiles", src: ["orca:OrcaFilamentLibrary/filament/Bambu/Bambu PAHT-CF @base.json"]}
+    resolution: "Use pa_cf PAHT-CF settings and the spool label for PAHT-GF."
+  - topic: print speed for glass fiber nylon
+    positions:
+      - {claim: "under 130 mm/s", src: [bambu_tds_pa6_gf_v1]}
+      - {claim: "about 100 mm/s maximum for CF and GF on a 0.4 mm nozzle", src: [bambu_wiki_material_table]}
+    resolution: "Cap at 100 mm/s on a 0.4 mm nozzle and allow up to 130 mm/s on a 0.6 mm hardened nozzle if the extruder keeps up with 10.5 mm3/s."
+  - topic: layer height for glass fiber nylon
+    positions:
+      - {claim: "0.15 to 0.3 mm on a 0.4 mm hardened nozzle", src: [bambu_wiki_material_table]}
+      - {claim: "layer height of at least 0.2 mm", src: [prusa_kb_composites]}
+    resolution: "Use 0.2 mm on a 0.4 mm nozzle, which sits inside both."
+
+pilot_defaults:
+  nozzle_temperature: 265
+  nozzle_temperature_initial_layer: 265
+  eng_plate_temp: 100
+  hot_plate_temp: 100
+  textured_plate_temp: 100
+  fan_min_speed: 10
+  fan_max_speed: 30
+  overhang_fan_speed: 40
+  close_fan_the_first_x_layers: 3
+  slow_down_layer_time: 2
+  filament_flow_ratio: 0.96
+  filament_max_volumetric_speed: 10.5
+  retraction_length: 0.8
+  chamber_temperature: 60
+  activate_chamber_temp_control: true

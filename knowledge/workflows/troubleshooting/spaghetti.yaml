@@ -1,0 +1,89 @@
+kind: troubleshoot
+schema_version: 1
+id: spaghetti
+name: Spaghetti (detached print)
+aliases: [print failure, tangled filament, print came off the bed, spaghetti monster, air printing, failed mid print, mess of filament]
+camera_signs:
+  - "A tangled pile of filament where the part should be, with extrusion continuing in the air"
+  - "The part has fallen over, is loose on the plate or is missing from the plate"
+  - "Corners lifting with the nozzle crashing into them, or a collapsed overhang or support"
+  - "Filament wrapped around the nozzle or a large blob on the hotend"
+log_signs:
+  - "Bambu spaghetti detection alerts and pauses"
+  - "Bambu HMS 1200-2000-0002-0006 family on A1 series with AMS lite: air printing detected, the printer cuts the filament and pauses"
+  - "Bambu HMS 0300-0900-0002-0004: abnormal extrusion resistance during a print"
+  - "Klipper: a print that keeps running after the part fell off has no error. Use the camera or a filament runout sensor"
+tree:
+  start: q_when
+  nodes:
+    q_when: {ask: "Did it fail in the first few layers (rather than after the part had grown for a while)?", "yes": q_first_layer_state, "no": q_mid_cause}
+    q_first_layer_state: {ask: "Did the first layer look loose, thin or dragged around before it failed?", "yes": c_first_layer_adhesion, "no": q_feed}
+    q_feed: {ask: "Did the extruder click or the filament stop feeding when it started to fail?", "yes": c_feed_failure, "no": c_first_layer_adhesion}
+    q_mid_cause: {ask: "Did you see a corner lift or the base peel before it fell?", "yes": c_warp_detach, "no": q_support}
+    q_support: {ask: "Did an overhang, bridge or support collapse (an unsupported or steep part)?", "yes": c_support_collapse, "no": q_clunk}
+    q_clunk: {ask: "Did the nozzle knock the part or a tall thin part topple over (a clunk, or a small contact area)?", "yes": c_nozzle_knock, "no": c_feed_failure}
+causes:
+  - id: c_first_layer_adhesion
+    name: First layer did not stick
+    category: settings
+    likelihood: high
+    checks:
+      - "Bambu says the direct cause of first layer spaghetti is that filament does not stick firmly to the plate."
+      - "Clean the plate, match the plate type, run bed leveling, and check filament moisture."
+    fixes:
+      - {advice: "Wash the plate with warm water and dish soap and handle it by the edges. Confirm the plate type in the slicer matches the plate installed. Run Auto Bed Leveling and check the plate sits flat with no debris behind it.", kind: hardware}
+      - {key: initial_layer_speed, op: at_most, value: 30, why: "Bambu recommends an initial layer speed of 30 mm/s or less.", src: [bambu_wiki_spaghetti]}
+      - {key: initial_layer_infill_speed, op: at_most, value: 60, why: "Bambu recommends 60 mm/s or less for first layer infill.", src: [bambu_wiki_spaghetti]}
+      - {advice: "Dry the filament. Water vapor in the nozzle causes uneven extrusion that hurts first layer adhesion.", kind: material}
+    src: [bambu_wiki_spaghetti]
+    confidence: high
+  - id: c_warp_detach
+    name: Corner lift or detachment mid print
+    category: settings
+    likelihood: high
+    checks:
+      - "Bambu says corners slowly lift and the nozzle finally knocks the model loose. High shrinkage filaments (ABS, ASA, PC, PA) are the most common."
+    fixes:
+      - {key: brim_type, op: set, value: outer_only, why: "A brim gives more first layer adhesion. Bambu recommends it for spaghetti caused by warping.", src: [bambu_wiki_spaghetti]}
+      - {advice: "Clean the plate, verify the plate type, run bed leveling, and see the warping troubleshooter for enclosure and cooling.", kind: workflow}
+    src: [bambu_wiki_spaghetti, prusa_kb_warping]
+    confidence: high
+  - id: c_support_collapse
+    name: Overhang or support collapse
+    category: model
+    likelihood: medium
+    checks:
+      - "Bambu says overhangs with more than 45 degrees of unsupported angle without supports, or with too little cooling, can collapse."
+    fixes:
+      - {key: enable_support, op: enable, why: "Enable supports where overhangs are under 45 degrees from the bed, as Bambu advises.", src: [bambu_wiki_spaghetti, bambu_wiki_overhang]}
+      - {key: enable_overhang_speed, op: enable, why: "Slows the nozzle on overhangs. Bambu lists this as a spaghetti fix.", src: [bambu_wiki_spaghetti]}
+      - {advice: "Slow the support and support interface speeds, and switch to normal (auto) support for a better interface if needed.", kind: workflow}
+    src: [bambu_wiki_spaghetti, bambu_wiki_overhang]
+    confidence: high
+  - id: c_nozzle_knock
+    name: Nozzle knocks the part or the model is unstable
+    category: model
+    likelihood: medium
+    checks:
+      - "A clunk during the print, or a tall thin model or one with a small contact patch that tips over."
+    fixes:
+      - {key: z_hop_types, op: set, value: "Normal Lift", why: "Bambu says a Normal z hop lift can clear the part when the nozzle scrapes it in travel.", src: [bambu_wiki_spaghetti]}
+      - {key: brim_type, op: set, value: outer_only, why: "A brim widens the contact area. Bambu recommends 5 to 8 mm and wider for smaller footprints.", src: [bambu_wiki_spaghetti]}
+      - {key: brim_width, op: at_least, value: 5, why: "Bambu suggests 5 to 8 mm.", src: [bambu_wiki_spaghetti]}
+      - {advice: "For thin or branching parts, paint extra support to stabilize them. Bambu suggests paint-on supports for tall or unstable shapes.", kind: workflow}
+    src: [bambu_wiki_spaghetti, ellis_layer_shifting]
+    confidence: high
+  - id: c_feed_failure
+    name: Feed failure or clog leaving air printing
+    category: hardware
+    likelihood: medium
+    checks:
+      - "The extruder clicks or stops feeding, the spool tangles, or the AMS does not feed. Bambu A1 series with AMS lite detects air printing from the extruder distance and the AMS odometer."
+    fixes:
+      - {advice: "Check the spool for tangles, the PTFE for kinks, and the nozzle for a clog. See the clog and ams_jam troubleshooters.", kind: hardware}
+      - {advice: "Use Skip Objects on Bambu printers to cancel only the failed part on a multi-part plate and let the rest finish.", kind: workflow}
+    printers: [bambu]
+    src: [bambu_wiki_hms_1200_2000_0002_0006, bambu_wiki_hms_0300_0900_0002_0004, bambu_wiki_spaghetti]
+    confidence: medium
+related: [bed_adhesion, warping, clog, ams_jam, poor_overhangs]
+src: [bambu_wiki_spaghetti, prusa_kb_warping]

@@ -1,0 +1,38 @@
+kind: printer
+schema_version: 1
+id: bambu_h2s
+name: Bambu Lab H2S
+vendor: Bambu Lab
+status: current
+status_confidence: medium
+status_src: [bambu_store_collection]
+detail_level: core_specs_only
+firmware: bambu
+connections: [bambu_lan_mqtt, bambu_cloud, bambu_connect]
+kinematics: corexy
+build_volume_mm: {x: 340, y: 320, z: 340, src: [bambu_spec_h2s, "orca:BBL/machine/Bambu Lab H2S 0.4 nozzle.json"]}
+extruder: {type: direct_drive, gears: hardened_steel, src: [bambu_spec_h2s]}
+hotend: {max_temp_c: 350, nozzle_diameters_mm: [0.2, 0.4, 0.6, 0.8], nozzle_materials: [hardened_steel], stock_nozzle: {diameter_mm: 0.4, material: hardened_steel}, count: 1, tool_free_swap: false, high_flow_option: true, max_flow_mm3s: {standard: 40, high_flow: 65}, src: [bambu_spec_h2s]}
+bed: {max_temp_c: 120, plates: [textured_pei, smooth_pei], included_plates: [], src: [bambu_spec_h2s, bambu_wiki_build_plates]}
+enclosure: {type: enclosed, chamber_heating: active, max_chamber_c: 65, filtration: [g3_prefilter, hepa_h12, activated_carbon], src: [bambu_spec_h2s]}
+motion: {max_speed_mm_s: 1000, max_accel_mm_s2: 20000, input_shaping: auto, src: [bambu_spec_h2s]}
+power:
+  mains: "100 to 120 V AC and 200 to 240 V AC, 50/60 Hz"
+  max_w: {value: 2050, note: "At 220 V. 1170 W at 110 V. The bed holds maximum heater power for no more than 3 minutes.", src: [bambu_spec_h2s], confidence: high}
+  printing_typical_w: {pla: {value: 200}, petg: {value: 180}, pc: {value: 330}, src: [bambu_wiki_power], confidence: medium, note: "Bambu wiki average power for a test print. The kWh figures equal the average watts, so the test appears to run about one hour. Duration is not stated."}
+  idle_w: {value: 26, src: [bambu_wiki_power], confidence: medium, note: "Bambu wiki reading without network connection. 26.5 W with Wi-Fi."}
+  measured_examples:
+    - {job: "Bambu wiki PLA test print", kwh: 0.2, src: [bambu_wiki_power]}
+    - {job: "Bambu wiki PETG test print", kwh: 0.18, src: [bambu_wiki_power]}
+    - {job: "Bambu wiki PC test print", kwh: 0.33, src: [bambu_wiki_power]}
+  note: "Bambu says H series peak power is about 860 W once Low Power Mode starts."
+sensors: [live_view_camera, toolhead_camera, door_sensor, filament_runout, tangle_detection, filament_odometry_with_ams, power_loss_recovery]
+sensors_src: [bambu_spec_h2s]
+multi_material:
+  - {system: bambu_ams_2_pro, max_units: 4, slots_per_unit: 4, note: "Single nozzle. Up to 24 colors. Two AMS units need a 4-in-1 PTFE adapter.", src: [bambu_wiki_ams_compat]}
+  - {system: bambu_ams_ht, max_units: 8, slots_per_unit: 1, src: [bambu_wiki_ams_compat]}
+orca_profile: "orca:BBL/machine/Bambu Lab H2S 0.4 nozzle.json"
+pilot_notes:
+  - "Single nozzle H2 series printer. Same chamber heater, filtration and speed class as the H2D but one toolhead."
+  - "Chamber temperature control is supported. Use chamber_temperature only for ABS, ASA, PC, PA and CF grades."
+src: [bambu_spec_h2s, "orca:BBL/machine/Bambu Lab H2S 0.4 nozzle.json"]

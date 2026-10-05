@@ -1,0 +1,106 @@
+kind: printer
+schema_version: 1
+id: bambu_a1
+name: Bambu Lab A1
+vendor: Bambu Lab
+status: current
+status_note: "Listed in the Bambu US store in 2026-09."
+status_confidence: medium
+status_src: [bambu_store_collection]
+firmware: bambu
+connections: [bambu_lan_mqtt, bambu_cloud, bambu_connect]
+kinematics: bedslinger
+build_volume_mm: {x: 256, y: 256, z: 256, src: [bambu_store_a1, "orca:BBL/machine/Bambu Lab A1 0.4 nozzle.json"]}
+extruder: {type: direct_drive, gears: null, src: [bambu_store_a1], note: "Store table does not state the extruder gear material."}
+hotend:
+  max_temp_c: 300
+  nozzle_diameters_mm: [0.2, 0.4, 0.6, 0.8]
+  nozzle_materials: [stainless_steel, hardened_steel]
+  stock_nozzle: {diameter_mm: 0.4, material: stainless_steel}
+  tool_free_swap: true
+  high_flow_option: true
+  src: [bambu_store_a1, bambu_wiki_hotend_a1]
+  note: "Toolless hotend swap in a few minutes. A high flow hotend is sold. Sync the nozzle info on the screen after a swap."
+bed:
+  max_temp_c: 100
+  plates: [textured_pei, smooth_pei, bambu_high_temp_plate, bambu_cool_plate, bambu_supertack_plate]
+  included_plates: [textured_pei]
+  src: [bambu_store_a1, bambu_wiki_build_plates]
+  note: "Store lists Textured PEI (included), Smooth PEI, Dual-Texture PEI, High Temperature Plate and Cool Plate. SuperTack fits per the Bambu plate guide."
+enclosure:
+  type: open
+  chamber_heating: none
+  max_chamber_c: null
+  filtration: []
+  src: [bambu_store_a1, bambu_wiki_material_table]
+motion:
+  max_speed_mm_s: 500
+  max_accel_mm_s2: 10000
+  input_shaping: auto
+  src: [bambu_store_a1, "orca:BBL/machine/Bambu Lab A1 0.4 nozzle.json", bambu_wiki_printer_calibration]
+  note: "Store says 10000 mm/s2. The Orca machine profile carries 12000. Slicer profile default is 6000 for printing."
+power:
+  mains: "100 to 240 V AC, 50/60 Hz"
+  max_w: {value: 1300, note: "At 220 V. 350 W at 110 V. Bambu wiki table only, the store spec page does not list electrical figures.", src: [bambu_wiki_power], confidence: medium}
+  printing_typical_w: {pla: {value: 95}, abs: {value: 200}, pc: {value: 150}, src: [bambu_wiki_power], confidence: medium, note: "Bambu wiki average power over a short test print (about 17 to 19 minutes)."}
+  idle_w: {range: [4.0, 5.4], src: [bambu_wiki_power], confidence: medium, note: "Bambu wiki reading without network connection. 4.1 to 5.4 W with Wi-Fi."}
+  measured_examples:
+    - {job: "Bambu wiki test print, PLA, 16 min 58 s", kwh_range: [0.025, 0.028], src: [bambu_wiki_power]}
+    - {job: "Bambu wiki test print, ABS, 18 min 35 s", kwh_range: [0.058, 0.068], src: [bambu_wiki_power]}
+sensors: [chamber_camera, filament_runout, filament_odometry, tangle_detection, power_loss_recovery, nozzle_clumping_detection, build_plate_detection, force_sensor]
+sensors_src: [bambu_store_a1, bambu_wiki_a1_clumping, bambu_wiki_a_plate_detection]
+sensors_note: "Force sensor is what Bambu calls the extrusion force or eddy current sensor in the toolhead. Camera is low frame rate, up to 1080p."
+builtin_calibrations:
+  - {id: flow_dynamics, what: "Auto K value. The toolhead purges at the wiper and reads extrusion force with its eddy current sensor. Needs firmware 01.04.00.00 or newer.", src: [bambu_wiki_flow_dynamics]}
+  - {id: bed_leveling, what: "Automatic bed leveling and nozzle height.", src: [bambu_wiki_printer_calibration]}
+  - {id: vibration_compensation, what: "Resonance compensation. Rerun after moving the printer.", src: [bambu_wiki_printer_calibration]}
+  - {id: nozzle_clumping_detection, what: "Touch probe test outside the bed that catches a nozzle wrapped in molten filament.", src: [bambu_wiki_a1_clumping]}
+multi_material:
+  - {system: bambu_ams_lite, max_units: 1, slots_per_unit: 4, note: "Cannot be combined with other AMS models.", src: [bambu_wiki_ams_compat, bambu_wiki_amslite_faq]}
+  - {system: bambu_ams, max_units: 4, slots_per_unit: 4, needs: "A1 series AMS Hub, firmware 01.07.00.00 or newer. Do not use the X1 or P1 buffer or hub.", src: [bambu_wiki_ams_compat]}
+  - {system: bambu_ams_2_pro, max_units: 4, slots_per_unit: 4, needs: "A1 series AMS Hub and a power adapter for drying", src: [bambu_wiki_ams_compat, bambu_wiki_ams_faq]}
+  - {system: bambu_ams_ht, max_units: 4, slots_per_unit: 1, needs: "A1 series AMS Hub", src: [bambu_wiki_ams_compat]}
+materials:
+  recommended: [pla, pla_plus, pla_silk, pla_matte, petg, tpu_95a, tpu_85a, pva, bvoh]
+  possible: [pla_cf, petg_cf]
+  not_recommended: [abs, asa, pc, pa6, pa12, pa_cf, pa_gf]
+  unlisted: [hips, pp]
+  src: [bambu_store_a1, bambu_wiki_material_table]
+  note: "Store: PLA, PETG, TPU, PVA ideal; ABS, ASA, PC, PA, PET and fiber reinforced not recommended (open frame). PLA-CF and PETG-CF need a hardened nozzle. TPU feeds from the external spool, not the AMS lite."
+orca_profile: "orca:BBL/machine/Bambu Lab A1 0.4 nozzle.json"
+profile_baseline:
+  process: "0.20mm Standard @BBL A1"
+  values: {wall_loops: 2, top_shell_layers: 5, bottom_shell_layers: 3, sparse_infill_density: "15%", sparse_infill_pattern: grid, outer_wall_speed: 200, inner_wall_speed: 300, sparse_infill_speed: 270, top_surface_speed: 200, travel_speed: 700, default_acceleration: 6000, outer_wall_acceleration: 5000, top_surface_acceleration: 2000, seam_position: aligned, line_width: 0.42, elefant_foot_compensation: 0.075, support_threshold_angle: 30, retraction_length: 0.8, retraction_speed: 30, z_hop: 0.4}
+  src: ["orca:BBL/process/0.20mm Standard @BBL A1.json", "orca:BBL/machine/Bambu Lab A1 0.4 nozzle.json"]
+pilot_notes:
+  - "Open frame bedslinger. Block ABS, ASA, PC and nylon or warn strongly. Bambu rates them not recommended here."
+  - "The bed moves in Y, so tall thin parts wobble more. Keep the model footprint wide and reduce speed or acceleration on tall parts."
+  - "Time-lapse on A series moves the bed and toolhead to a fixed shooting spot every layer. Smooth mode adds a prime tower. Traditional mode hides ooze in infill and needs infill on each layer."
+  - "AMS lite feeds only rigid enough filament: no TPU softer than 77D, no absorbent PVA, no third party CF or GF. Use the external spool for those."
+  - "The nozzle swap is toolless. After a swap to another diameter or the high flow hotend, sync the nozzle on the screen and rerun flow dynamics."
+  - "Auto flow dynamics reads force from the toolhead. A third party hotend and 0.2 mm nozzles can produce bad results."
+  - "Build plate position detection can be turned off in print options if the plate is not recognized."
+common_issues:
+  - symptom: "Nozzle wraps in filament (clumping) and the print stops"
+    cause: "First layer did not stick, so plastic dragged and wrapped the nozzle."
+    fix:
+      - {advice: "Wash the plate, or add glue stick, and rerun. Clumping detection is an aid, not a guarantee.", kind: workflow}
+      - {key: initial_layer_speed, op: at_most, value: 30, why: "A slower first layer gives lines time to bond."}
+    src: [bambu_wiki_a1_clumping]
+  - symptom: "AMS lite tangle alarm or failed loads"
+    cause: "PTFE tube too long or bent, or filament the feeder cannot push."
+    fix:
+      - {advice: "Place the AMS lite about 50 mm from the printer with short tubes. Put heavy spools in slots 2 and 3.", kind: hardware}
+    src: [bambu_wiki_amslite_intro, bambu_wiki_amslite_faq]
+  - symptom: "Flow dynamics calibration fails on 0.2 mm nozzle"
+    cause: "Bambu says all printers with a 0.2 mm hotend often fail auto calibration."
+    fix:
+      - {advice: "Use the manual K pattern with the 0.2 mm nozzle.", kind: workflow}
+    src: [bambu_wiki_flow_dynamics]
+disagreements:
+  - topic: "max acceleration"
+    positions:
+      - {claim: "10000 mm/s2", src: [bambu_store_a1]}
+      - {claim: "12000 mm/s2 in the Orca machine profile", src: ["orca:BBL/machine/Bambu Lab A1 0.4 nozzle.json"]}
+    resolution: "Use 10000 as the hardware figure. The slicer process profile prints at 6000."
+src: [bambu_store_a1, bambu_wiki_hotend_a1, "orca:BBL/machine/Bambu Lab A1 0.4 nozzle.json"]

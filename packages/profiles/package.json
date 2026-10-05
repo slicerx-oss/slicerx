@@ -1,0 +1,19 @@
+{
+  "name": "@slicerx/profiles",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Stock printer, filament and process profile data for SlicerX, from the makers' profiles as OrcaSlicer resolves them.",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    "./gcode.json": "./gcode.json",
+    "./machine.json": "./machine.json",
+    "./process-speeds.json": "./process-speeds.json",
+    "./filaments/*": "./filaments/*",
+    "./resolved/*": "./resolved/*",
+    "./cura/*": "./cura/*",
+    "./printer-images/*": "./printer-images/*"
+  },
+  "files": ["gcode.json", "machine.json", "process-speeds.json", "filaments", "resolved", "cura", "printer-images", "LICENSE", "README.md"],
+  "license": "AGPL-3.0-or-later AND LGPL-3.0-or-later"
+}

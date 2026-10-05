@@ -1,0 +1,24 @@
+kind: guide
+schema_version: 1
+id: ironing
+name: Ironing
+applies_to: [all]
+summary: >
+  A second pass over flat top surfaces with very little flow, which smooths
+  them. Good for nameplates, lids and badges. Useless on curved tops, and it
+  adds time.
+facts:
+  - {text: "Ironing reprints the top at the same height with low flow. Types: top surfaces, topmost surface only, or all solid layers (slowest).", src: ["orca_wiki:quality_settings_ironing"]}
+  - {text: "Orca defaults: 10 percent flow, 0.1 mm line spacing, 20 mm/s.", src: ["orca_src:src/libslic3r/PrintConfig.cpp"]}
+  - {text: "Line spacing should be at or below the nozzle diameter. Lower layer heights may need more ironing flow.", src: ["orca_wiki:quality_settings_ironing"]}
+  - {text: "Filament moves very slowly while ironing, which raises the risk of heat creep and clogs, especially with PLA.", src: ["orca_wiki:quality_settings_ironing", prusa_kb_ironing]}
+  - {text: "PLA irons well, PETG irons well but can stick to the nozzle, ASA irons very well, wood filled filaments iron poorly.", src: [prusa_kb_ironing]}
+settings:
+  - {key: ironing_type, op: set, value: top, why: "Smooths every flat top surface."}
+  - {key: ironing_flow, op: set, value: 10, why: "Orca default.", src: ["orca_src:src/libslic3r/PrintConfig.cpp"]}
+  - {key: ironing_spacing, op: set, value: 0.1, why: "Orca default.", src: ["orca_src:src/libslic3r/PrintConfig.cpp"]}
+  - {key: ironing_speed, op: set, value: 20, why: "Orca default.", src: ["orca_src:src/libslic3r/PrintConfig.cpp"]}
+pilot_actions:
+  - "Suggest ironing only when the model has large flat top faces; say how much time it adds after slicing."
+  - "On an open printer printing PLA in a warm room, mention heat creep risk and keep the enclosure lid open on Bambu enclosed printers."
+src: ["orca_wiki:quality_settings_ironing", prusa_kb_ironing, "orca_src:src/libslic3r/PrintConfig.cpp"]

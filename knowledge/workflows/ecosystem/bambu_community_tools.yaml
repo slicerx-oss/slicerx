@@ -1,0 +1,53 @@
+kind: guide
+schema_version: 1
+id: bambu_community_tools
+name: Bambu community and third party tools
+applies_to: [bambu_x1c, bambu_x1e, bambu_p1s, bambu_p1p, bambu_a1, bambu_a1_mini, bambu_h2d, bambu_h2s, bambu_h2c, bambu_p2s, bambu_x2d, bambu_a2l]
+summary: >
+  Bambu Handy is the official phone app. OrcaSlicer and other tools reach
+  printers through the optional Bambu network plugin, Bambu Connect or LAN plus
+  Developer Mode. Home Assistant, Bambuddy, Spoolman bridges and farm tools
+  mostly read over MQTT, so they keep working read only on new firmware and need
+  Developer Mode for control.
+facts:
+  - text: "Bambu Handy is the official mobile app. It needs the Bambu cloud, so it stops working in LAN only mode."
+    src: [bambu_wiki_lan_mode]
+  - text: "OrcaSlicer supports Bambu Lab printers. The Bambu networking plugin is optional, and is built on non free libraries from Bambu."
+    src: [orca_readme]
+  - text: "Bambu says third party slicers such as OrcaSlicer can reach printer functions and filament mapping through Bambu Connect and a network plugin, and shows an Orca integration demo."
+    src: [bambu_wiki_third_party]
+  - text: "ha-bambulab is an open source (MIT) Home Assistant integration installed through HACS. It can connect through a Bambu cloud account or LAN mode with serial number, IP address and access code. Local mode gives sensor data and P1 and A1 chamber images."
+    src: [ha_bambulab_docs]
+  - text: "ha-bambulab read features work on any firmware. Write actions on locked firmware (X1C 01.08.05.00, P1 01.08.02.00, A1 01.05.00.00 and newer) need LAN mode and Developer Mode, which cuts Bambu cloud access."
+    src: [ha_bambulab_docs]
+  - text: "For H2D, H2S and X2D camera feeds in ha-bambulab, turn on the LAN Only Liveview option on the printer. Cover image, print weight and plate type on newer firmware need Store Sent Files on External Storage and a USB drive or card."
+    src: [ha_bambulab_docs]
+  - text: "Bambuddy (maziggy) is a self hosted command center for Bambu printers, from one A1 to a farm. Its README warns that on H2 series and P2S, Studio's Print button writes to internal storage that Bambuddy cannot read, so archive entries lack thumbnail and filament totals. Start prints from Bambuddy or slice in OrcaSlicer, or use Send to external storage."
+    src: [bambuddy_repo]
+  - text: "Spoolman is a self hosted filament inventory service that tracks spool weight."
+    src: [spoolman_repo]
+  - text: "bambu-spoolman (mrkirby153) syncs Bambu usage to Spoolman by watching prints and estimating usage per layer from the G-code. It needs the printer IP, serial and access code. The author lists LAN only prints, external spools and more than one AMS as untested."
+    src: [bambu_spoolman_repo]
+  - text: "SimplyPrint works with Bambu printers. On the 2025 authorization firmware it reads data, and start, stop, move and heat need Developer Mode plus LAN only."
+    src: [simplyprint_bambu_auth]
+  - text: "Printago connects Bambu printers through Bambu's cloud or through a local Fuse bridge in LAN plus Developer Mode. This is vendor marketing material."
+    src: [printago_bambu]
+  - text: "Bambu has a free print farm manager that works in cloud free LAN mode for an unlimited number of printers. Only the headline was verified."
+    src: [tomshardware_bambu_farm_manager]
+steps:
+  - text: "Ask what the user wants: monitoring, notifications, control, inventory or queueing across several printers."
+  - text: "Monitoring or notifications only: any tool with MQTT read works on any firmware, with the printer on the cloud."
+  - text: "Control from a third party tool: enable LAN only plus Developer Mode on the printer."
+  - text: "Inventory: pair Spoolman with a Bambu bridge, and set AMS slot mapping in the bridge."
+  - text: "Farm queueing: Printago, SimplyPrint or Bambuddy, each with its own connection mode."
+pilot_actions:
+  - "When the user asks for a connected tool, ask whether the printer is on the cloud or in LAN plus Developer Mode before choosing."
+  - "Name limits exactly as sourced. For example, Bambuddy cannot read the file from H2 and P2S when Studio Print sends to internal storage."
+  - "Recommend the self built path first when the user prefers it: MQTT on port 8883 with the LAN access code, per the community MQTT documentation."
+  - "Do not send access codes or account tokens to an outside service. Keep them on the local machine."
+  - "Flag vendor claims from farm tools as unverified unless a Bambu source backs them."
+settings:
+  - {advice: "Need write control from Home Assistant on new firmware: enable LAN only plus Developer Mode. This drops Handy and cloud monitoring.", kind: workflow}
+  - {advice: "For H2 and P2S file based tools: turn on Store Sent Files on External Storage and use Send with External storage, not Print.", kind: workflow}
+  - {advice: "Read only dashboards can stay on the cloud with no change.", kind: workflow}
+src: [bambu_wiki_lan_mode, bambu_wiki_third_party, orca_readme, ha_bambulab_docs, bambuddy_repo, spoolman_repo, bambu_spoolman_repo, simplyprint_bambu_auth, printago_bambu, tomshardware_bambu_farm_manager]

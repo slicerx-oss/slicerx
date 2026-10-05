@@ -1,0 +1,82 @@
+kind: troubleshoot
+schema_version: 1
+id: seam_zits
+name: Seam, blobs and zits
+aliases: [zits, blobs, z seam, seam line, seam visible, pimples, bumps on walls, vertical line, blobs at corners]
+camera_signs:
+  - "A vertical line or row of small bumps (a seam) running up one side of the part"
+  - "Small blobs or pimples at layer starts and ends, or at corners"
+  - "A gap or divot at the seam, or an outward bulge where the loop closes"
+  - "Random pimples scattered across walls (seam set to random, moisture, or a dirty nozzle)"
+log_signs: []
+tree:
+  start: q_random
+  nodes:
+    q_random: {ask: "Are the blobs scattered all over the walls rather than lined up in one column?", "yes": q_wet_nozzle, "no": q_type}
+    q_wet_nozzle: {ask: "Is the seam set to random, or do you hear popping, or is there burnt plastic stuck on the nozzle?", "yes": c_random_wet_dirty, "no": q_type}
+    q_type: {ask: "Is the seam a raised blob at the start of the loop, or a gap or dent where it starts?", "yes": q_pa, "no": c_seam_position}
+    q_pa: {ask: "Has pressure advance (flow dynamics) been calibrated for this filament, and is travel speed and acceleration set high for the printer?", "yes": q_retract_threshold, "no": c_pressure_advance}
+    q_retract_threshold: {ask: "Do small travel moves trigger retraction (minimum travel under about 2 mm), and is wipe before the external wall off?", "yes": c_retraction_settings, "no": c_scarf_or_position}
+causes:
+  - id: c_random_wet_dirty
+    name: Random seam, wet filament or dirty nozzle
+    category: material
+    likelihood: medium
+    checks:
+      - "Ellis says pockmarks come from moisture turning to steam, and that the seam should not be random."
+      - "Look for a burnt brown crust on the nozzle."
+    fixes:
+      - {key: seam_position, op: set, value: aligned, why: "A random seam scatters blobs over the whole wall. Aligned lines them up so they are easier to hide. Orca lists random as best for strength only.", src: [orca_wiki_seam, ellis_pockmarks]}
+      - {advice: "Dry the filament (extrude in the air and listen for popping). Clean the nozzle and replace it if pockmarks persist, as Ellis suggests.", kind: material}
+    src: [ellis_pockmarks, orca_wiki_seam, prusa_kb_stringing]
+    confidence: high
+  - id: c_pressure_advance
+    name: Pressure advance not calibrated
+    category: settings
+    likelihood: high
+    checks:
+      - "Orca says a too low pressure advance leaves excess pressure at the end of the previous extrusion, which increases ooze during travel and makes a blob at the seam start."
+    fixes:
+      - {advice: "Run pressure advance (Bambu: flow dynamics) calibration for this filament. On Klipper, Ellis says tune pressure advance before extrusion multiplier.", kind: workflow}
+      - {key: enable_pressure_advance, op: enable, why: "Calibrated values only apply when pressure advance is on.", src: [klipper_pressure_advance]}
+    src: [orca_wiki_seam, klipper_pressure_advance, ellis_pa]
+    confidence: high
+  - id: c_retraction_settings
+    name: Retraction, wipe and travel around the seam
+    category: settings
+    likelihood: medium
+    checks:
+      - "Orca notes the start of a seam depends on extrusion control after a travel move. Short travels that retract and de-retract add variation."
+      - "Klipper says not to use coasting, which makes blobbing worse. Retract, wipe and wipe on retract are fine."
+    fixes:
+      - {advice: "Raise the travel distance threshold so small moves do not retract, Orca suggests 2 to 4 mm as a starting point when pressure advance is tuned.", kind: workflow}
+      - {key: retraction_minimum_travel, op: at_least, value: 2, why: "Orca suggests a 2 to 4 mm travel threshold so short moves skip retraction.", src: [orca_wiki_seam]}
+      - {advice: "Enable wipe before external perimeters, which moves the de-retraction inside the part so a blob is less visible. Raise travel speed and travel acceleration as far as the printer allows.", kind: workflow}
+      - {key: wipe, op: enable, why: "Wiping while retracting helps hide ooze at the seam.", src: [prusa_kb_stringing]}
+    src: [orca_wiki_seam, klipper_slicers, prusa_kb_stringing]
+    confidence: medium
+  - id: c_scarf_or_position
+    name: Seam position or scarf joint not used
+    category: settings
+    likelihood: medium
+    checks:
+      - "The seam is in a visible spot, or on a curved face where it cannot be hidden."
+    fixes:
+      - {key: seam_slope_type, op: set, value: external, why: "The scarf joint seam ramps the flow at the start and end of each loop for a smoother overlap. Orca documents it as a seam appearance option.", src: [orca_wiki_seam]}
+      - {key: seam_position, op: set, value: aligned_back, why: "Aligned back prefers hidden spots away from the front. Orca says aligned, aligned back or back work best for looks.", src: [orca_wiki_seam]}
+      - {advice: "Use seam painting to place the seam in a concave corner or on the back, and check the wall order since outer wall first or last changes the seam look.", kind: orientation}
+    src: [orca_wiki_seam]
+    confidence: medium
+  - id: c_seam_position
+    name: Seam is where the loop meets itself
+    category: settings
+    likelihood: medium
+    checks:
+      - "A column of bumps is in the same place on every layer. That is normal to some degree, since every loop starts and ends somewhere."
+    fixes:
+      - {advice: "You cannot remove a seam in normal printing, only hide or tune it. Use aligned back, seam painting, or a scarf joint, and consider staggered inner seams if the seam is strong enough to show.", kind: workflow}
+      - {key: staggered_inner_seams, op: enable, why: "Spreads the inner wall seams so they do not stack into a weak line.", src: [orca_wiki_seam]}
+    src: [orca_wiki_seam]
+    confidence: medium
+related: [stringing, over_extrusion, pillowing, z_banding]
+src: [orca_wiki_seam, ellis_pockmarks, klipper_slicers]

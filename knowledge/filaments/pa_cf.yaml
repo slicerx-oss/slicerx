@@ -1,0 +1,330 @@
+kind: filament
+schema_version: 1
+id: pa_cf
+name: Carbon fiber nylon (PA6-CF, PAHT-CF, PA12-CF)
+category: engineering
+orca_filament_type: PA-CF
+aliases: [PA-CF, PA6-CF, PAHT-CF, PA12-CF, PA11-CF, PA612-CF, Nylon CF, Carbon fiber nylon]
+related: [pa6, pa12, pa_gf, pc]
+summary: >
+  Stiff, strong, heat resistant nylon filled with chopped carbon fiber. The
+  fiber cuts warping and shrinkage compared to plain nylon, but the filament
+  still drinks moisture, wears brass nozzles in a few hundred grams, and
+  needs a hot bed, glue and (for Bambu grades) a warm chamber. Use a hardened
+  nozzle, prefer 0.6 mm, and dry every spool.
+use_for: [jigs and fixtures, machine parts, brackets, injection mold inserts, high stiffness and heat parts, motor mounts]
+avoid_for: [brass nozzles, printers that cannot reach 260 to 290 C, parts that must flex or take impact across layers, damp storage, AMS 2 Pro users who cannot dry it]
+
+nozzle_temp_c:
+  min: 260
+  max: 300
+  typical: 280
+  confidence: high
+  src:
+    - "orca:OrcaFilamentLibrary/filament/Bambu/Bambu PA6-CF @base.json"
+    - "orca:OrcaFilamentLibrary/filament/Bambu/Bambu PAHT-CF @base.json"
+    - "orca:BBL/filament/Bambu PAHT-CF @BBL X1C.json"
+    - "orca:BBL/filament/Bambu PA6-CF @BBL X1C.json"
+    - "orca:Prusa/filament/Prusament PA-CF @CORE One.json"
+    - bambu_wiki_material_table
+    - bambu_tds_pa6_cf_v3
+    - bambu_tds_paht_cf_v3
+    - polymaker_pis_pa12_cf
+    - prusa_kb_composites
+  note: >
+    Bambu allows 260 to 300. PA6-CF prints at 275 in its profile, PAHT-CF at
+    290 (280 first layer on some printers, 290 on X1C), and both data sheets
+    list 260 to 290. Prusa's PA11-CF profile prints at 285 after a 275 first
+    layer. Polymaker PA12-CF runs 260 to 300. Prusa says composites cover 240
+    to 285. Start at 275 for PA6-CF and 285 to 290 for PAHT-CF.
+first_layer_nozzle_temp_c:
+  min: 265
+  max: 290
+  typical: 275
+  confidence: medium
+  src: ["orca:OrcaFilamentLibrary/filament/Bambu/Bambu PA6-CF @base.json", "orca:BBL/filament/Bambu PAHT-CF @BBL X1C.json", "orca:Prusa/filament/Prusament PA-CF @CORE One.json"]
+  note: "Bambu PA6-CF 275, PAHT-CF 290 on X1C and 280 in the base profile, Prusa PA-CF 275."
+bed_temp_c:
+  min: 80
+  max: 115
+  typical: 100
+  confidence: high
+  src: [bambu_wiki_material_table, bambu_tds_paht_cf_v3, bambu_tds_pa6_cf_v3, "orca:OrcaFilamentLibrary/filament/Bambu/Bambu PA6-CF @base.json", "orca:Prusa/filament/Prusament PA-CF @CORE One.json", prusa_kb_nylon]
+  note: "Bambu TDS 80 to 100, glue table 90 to 110, profile 100. Prusa uses 100 on the textured sheet and 115 on smooth, and its nylon page says 110. Polymaker PA12-CF is the outlier at 25 to 50 C and not above 50."
+chamber_temp_c:
+  min: 45
+  max: 60
+  typical: 60
+  confidence: high
+  src:
+    - bambu_tds_paht_cf_v3
+    - bambu_tds_pa6_cf_v3
+    - bambu_wiki_x1e_chamber
+    - bambu_h2d_tech_specs
+    - prusa_blog_core_one_intro
+    - polymaker_pis_pa12_cf
+    - "orca:BBL/filament/Bambu PA6-CF @BBL X1E.json"
+    - "orca:BBL/filament/Bambu PA6-CF @BBL H2D.json"
+    - "orca:BBL/filament/Bambu PAHT-CF @BBL P2S.json"
+    - "orca:BBL/filament/Bambu PA6-CF @BBL X1C.json"
+  note: >
+    Passive enclosure (X1C, P1S, P2S closed): Bambu's data sheets list 45 to 60
+    C and the X1C PA6-CF profile leaves the chamber target at 0, so the chamber
+    just follows bed heat. Keep the door and lid closed, cover the top vents
+    if possible, and use glue and a brim. Active heating: Bambu profiles for
+    PA6-CF and PAHT-CF on X1E, H2D and P2S set 60 C (PAHT-CF on X1C also 60).
+    H2D max is 65 C and Prusa Core One reaches 55 C at full bed heat. Chamber
+    heating cuts warping and raises interlayer strength. Exception: Polymaker
+    PA12-CF wants 25 to 50 C and says not to exceed 50.
+enclosure:
+  level: required
+  confidence: high
+  src: [bambu_wiki_material_table, bambu_wiki_asacf_pahtcf, bambu_wiki_absgf_pa6gf, prusa_kb_nylon]
+  note: >
+    Bambu lists PA-CF as an enclosed printer material, recommended on enclosed
+    printers and not recommended on open frames. Prusa says CF nylon does not
+    warp nearly as much as plain nylon and can be printed without an
+    enclosure. For small parts on an open printer with glue and a brim that can
+    work, but larger parts still curl.
+
+plates:
+  - {plate: bambu_cool_plate, fit: avoid, confidence: high, src: [bambu_wiki_material_table, bambu_wiki_absgf_pa6gf], note: "Glue is required and the low temperature plates cannot take 100 C."}
+  - {plate: bambu_engineering_plate, fit: glue, bed_temp_c: {min: 80, max: 100}, release_agent: glue_stick, confidence: high, src: [bambu_tds_paht_cf_v3, bambu_tds_pa6_cf_v3], note: "Bambu TDS names Engineering plate with glue. Liquid glue is not recommended for PA."}
+  - {plate: bambu_high_temp_plate, fit: glue, bed_temp_c: {min: 80, max: 100}, release_agent: glue_stick, confidence: high, src: [bambu_tds_paht_cf_v3, bambu_tds_pa6_cf_v3], note: "Bambu lists High Temperature plate with glue."}
+  - {plate: textured_pei, fit: glue, bed_temp_c: {min: 80, max: 100}, release_agent: glue_stick, confidence: high, src: [bambu_tds_paht_cf_v3, "orca:Prusa/filament/Prusament PA-CF @CORE One.json"], note: "Works with glue. The PAHT-CF TDS lists Textured PEI and Prusa's PA-CF profile prints on it."}
+  - {plate: smooth_pei, fit: glue, bed_temp_c: {min: 100, max: 115}, release_agent: glue_stick, confidence: medium, src: [bambu_wiki_absgf_pa6gf, "orca:Prusa/filament/Prusament PA-CF @CORE One.json"], note: "Bambu recommends Smooth PEI with glue for PA6-GF. Prusa's profile uses 115 C on smooth sheets. Prusa also sells a PA Nylon sheet."}
+
+cooling:
+  fan_min_pct: {min: 0, max: 15, typical: 10}
+  fan_max_pct: {min: 20, max: 60, typical: 30}
+  overhang_fan_pct: {min: 20, max: 40, typical: 40}
+  no_fan_first_layers: {typical: 3}
+  min_layer_time_s: {min: 2, max: 20, typical: 2}
+  confidence: medium
+  src:
+    - "orca:OrcaFilamentLibrary/filament/Bambu/Bambu PA6-CF @base.json"
+    - "orca:OrcaFilamentLibrary/filament/Bambu/Bambu PAHT-CF @base.json"
+    - "orca:Prusa/filament/Prusament PA-CF @CORE One.json"
+    - bambu_tds_paht_cf_v3
+    - bambu_tds_pa6_cf_v3
+    - polymaker_pis_pa12_cf
+  note: >
+    Bambu PA6-CF and PAHT-CF use 10 to 30 percent with 40 on overhangs. The
+    PAHT-CF data sheet allows 0 to 40 and PA6-CF 0 to 60. Prusa PA-CF runs 15
+    to 20. Polymaker PA12-CF says fan off. Keep the fan low; more air raises
+    warping and weakens layers.
+
+drying:
+  need: required
+  oven: {temp_c: {min: 75, max: 85}, hours: {min: 8, max: 12}}
+  ams_2_pro: null
+  ams_ht: {temp_c: 85, hours: 12}
+  printer_bed: {temp_c: {min: 90, max: 100}, hours: 12, note: "Enclosed Bambu printers only, spool covered, flip the spool every 6 h"}
+  keep_dry_in_use: required
+  confidence: high
+  src: [bambu_wiki_drying, bambu_wiki_material_table, bambu_tds_paht_cf_v3, bambu_tds_pa6_cf_v3, polymaker_pis_pa12_cf]
+  note: >
+    Bambu's table for PA6-CF, PAHT-CF and similar: required drying and
+    desiccant. Oven 75 to 85 C for 8 to 12 h (80 C in its material table), AMS HT
+    85 C for 12 h, heated bed 90 to 100 C for 12 h. AMS 2 Pro is not
+    compatible (stops at 65 C). Polymaker PA12-CF dries at 80 C for 12 h and is
+    less moisture sensitive. Bambu's saturated absorption: PAHT-CF 0.88 percent,
+    PA6-CF 2.35 percent. PAHT-CF is the one designed to keep strength when wet.
+
+nozzle:
+  abrasive: true
+  hardened_required: true
+  min_diameter_mm: 0.4
+  preferred_diameter_mm: 0.6
+  orca_required_hrc: 40
+  confidence: high
+  src: [bambu_wiki_material_table, bambu_wiki_asacf_pahtcf, prusa_kb_composites, polymaker_pis_pa12_cf, "orca:OrcaFilamentLibrary/filament/Bambu/Bambu PA6-CF @base.json"]
+  note: >
+    Bambu: hardened steel or tungsten carbide only, 0.6 mm nozzle recommended,
+    0.4 mm compatible, 0.2 mm not compatible, 0.4 mm high flow nozzle not
+    recommended. Prusa requires a hardened nozzle and says 0.4 mm with 0.2 mm
+    layers is the minimum. Polymaker says PA12-CF can wreck a brass nozzle in a
+    few hundred grams. Orca profiles set 40 HRC.
+
+extrusion:
+  flow_ratio: {min: 0.96, max: 1.05, typical: 0.96, confidence: medium, src: ["orca:OrcaFilamentLibrary/filament/Bambu/Bambu PA6-CF @base.json", "orca:OrcaFilamentLibrary/filament/Bambu/Bambu PAHT-CF @base.json", "orca:Prusa/filament/Prusament PA-CF @CORE One.json"], note: "Bambu PA6-CF and PAHT-CF 0.96, Prusa PA11-CF on Core One 1.05. Confirm with a flow test."}
+  max_volumetric_speed_mm3s:
+    standard_hotend: {min: 6.5, max: 10, typical: 8}
+    high_flow_hotend: {min: 10, max: 12, typical: 10}
+    confidence: medium
+    src:
+      - "orca:BBL/filament/Bambu PA6-CF @BBL X1C.json"
+      - "orca:BBL/filament/Bambu PAHT-CF @BBL X1C.json"
+      - "orca:BBL/filament/Bambu PA6-CF @BBL H2D.json"
+      - "orca:Prusa/filament/Prusament PA-CF @CORE One.json"
+      - bambu_wiki_absgf_pa6gf
+    note: >
+      Bambu suggests a maximum of 8 mm3/s for PAHT-CF and speeds under 100 mm/s
+      (PA6-CF TDS says under 100 mm/s). X1C profiles: PA6-CF 8 standard and 10
+      high flow, PAHT-CF 8 and 12. Prusa PA-CF on Core One: 6.5.
+  retraction_mm:
+    direct_drive: {min: 0.6, max: 1.4, typical: 0.8}
+    confidence: medium
+    src: ["orca:BBL/filament/Bambu PA6-CF @BBL X1C.json", "orca:BBL/filament/Bambu PA6-CF @BBL X1C 0.6 nozzle.json", bambu_tds_paht_cf_v3, bambu_tds_pa6_cf_v3]
+    note: "Bambu X1C profile 0.8 mm (0.6 mm on a 0.6 mm nozzle). Data sheets suggest 0.8 to 1.4 mm at 20 to 40 mm/s."
+  retraction_speed_mm_s: {min: 20, max: 40, typical: 30, confidence: medium, src: [bambu_tds_pa6_cf_v3, bambu_tds_paht_cf_v3, "orca:BBL/machine/Bambu Lab X1 Carbon 0.4 nozzle.json"], note: "Bambu data sheets for PA6-CF and PAHT-CF both say 20 to 40 mm/s, and Bambu machine profiles use 30."}
+  pressure_advance:
+    direct_drive: {min: 0.025, max: 0.05, typical: 0.05}
+    confidence: medium
+    src: ["orca:Prusa/filament/Prusament PA-CF @CORE One.json", "orca:Prusa/filament/Generic PA-CF @Prusa MK3.5.json", klipper_pressure_advance, ellis_pa]
+    note: "Prusa ships M572 S0.05 at 0.4 mm and 0.025 at 0.6 mm for PA-CF on Core One, and the MK3.5 generic PA-CF profile stores 0.05. Bambu printers calibrate per spool. PA is printer specific; calibrate."
+
+layer_height:
+  fraction_of_nozzle: {min: 0.375, max: 0.75, typical: 0.5}
+  at_0_4_mm: {min: 0.15, max: 0.3, typical: 0.2}
+  smart_layer:
+    quality_mode: "Chopped fiber limits fine detail and raises clog risk below about 0.15 mm on a 0.4 mm hardened nozzle. Keep the floor at 0.15 mm. A 0.6 mm hardened nozzle at 0.2 to 0.3 mm is Bambu's first choice."
+    strength_mode: "Push toward 0.2 to 0.3 mm. Fibers align along each bead, so layer bonds are the weak plane. Fewer, thicker layers mean fewer bond planes, and hot dry filament matters more than layer height."
+    thin_layer_cooling: "Bambu PA-CF profiles use a 2 s minimum layer time and Prusa PA-CF 20 s. Keep the fan at 30 percent or less, since cooling weakens nylon layer bonds."
+  basis: expert
+  confidence: medium
+  src: [bambu_wiki_material_table, prusa_kb_composites, bambu_wiki_asacf_pahtcf, "orca:BBL/machine/Bambu Lab X1 Carbon 0.6 nozzle.json", "orca:BBL/machine/Bambu Lab X1 Carbon 0.8 nozzle.json", "orca:Prusa/filament/Prusament PA-CF @CORE One.json", "orca:BBL/filament/Bambu PA6-CF @BBL X1C.json"]
+  note: "Bambu says 0.15 to 0.3 mm at about 100 mm/s on a 0.4 mm hardened nozzle and prefers a 0.6 mm hardened nozzle. Prusa says layers of at least 0.2 mm. The X1C allows 0.12 to 0.42 mm on a 0.6 mm nozzle."
+smart_layer:
+  min_ratio: 0.375
+  max_ratio: 0.75
+  modes:
+    quality: {min_ratio: 0.375, max_ratio: 0.5}
+    strength: {min_ratio: 0.375, max_ratio: 0.5}
+  family: nylon_and_composites
+  note: "Fiber filled nylon clogs at thin layers; keep at least 0.15 mm on a 0.4 mm nozzle."
+  confidence: medium
+  src: ["bambu_wiki_material_table", "prusa_kb_composites", "bambu_wiki_asacf_pahtcf", "orca:BBL/machine/Bambu Lab X1 Carbon 0.6 nozzle.json", "orca:BBL/machine/Bambu Lab X1 Carbon 0.8 nozzle.json", "orca:Prusa/filament/Prusament PA-CF @CORE One.json", "orca:BBL/filament/Bambu PA6-CF @BBL X1C.json", "cnckitchen_layer_height", "stojkovic_2023_layer_height_annealing"]
+speeds:
+  print_speed_mm_s: {min: 30, max: 100}
+  first_layer_mm_s: {min: 20, max: 50, typical: 40}
+  volumetric_note: "Bambu PA6-CF and PAHT-CF data sheets say under 100 mm/s, and the Bambu wiki caps CF and GF filaments at about 100 mm/s on a 0.4 mm nozzle. Polymaker gives 30 to 60 mm/s for PA12-CF. Volumetric limits of 6.5 to 10 mm3/s (see extrusion) set the real speed. No source caps outer wall speed."
+  confidence: medium
+  src: [bambu_tds_pa6_cf_v3, bambu_tds_paht_cf_v3, bambu_wiki_material_table, polymaker_pis_pa12_cf, "orca:BBL/process/0.20mm Standard @BBL X1C.json", "orca:Prusa/process/0.20mm SPEED @MK4S 0.4.json"]
+  note: "First layer: Bambu Standard preset 50 mm/s, Prusa MK4S preset 40 mm/s."
+first_layer:
+  fan_off_layers: 3
+  speed_mm_s: {min: 20, max: 50, typical: 40}
+  bed_first_layer_note: "Prusa runs PA-CF at 115 C on smooth PEI and 100 C on textured sheets. Bambu holds 100 C on glued plates. Use glue stick on all PEI."
+  squish_note: "Fiber filled nylon bonds hard to glued PEI, so normal nozzle height is enough. Do not squish harder to cure lifting corners (Prusa)."
+  confidence: medium
+  src: ["orca:BBL/process/0.20mm Standard @BBL X1C.json", "orca:Prusa/process/0.20mm SPEED @MK4S 0.4.json", "orca:Prusa/filament/Prusament PA-CF @CORE One.json", "orca:BBL/filament/Bambu PA6-CF @BBL X1C.json", bambu_wiki_material_table, prusa_kb_first_layer]
+  note: "Bambu keeps the fan off for 3 layers and Prusa for 4."
+structure:
+  walls: {min: 3, typical: 4, note: "Fibers align along each bead, so walls carry the load and infill adds stiffness cheaply but little strength. CF parts gain little from denser infill."}
+  infill: {pattern_hint: gyroid, density_note: "15 to 25 percent. Spend material on walls and top and bottom shells first. Lightweight parts do fine at 10 to 15 percent."}
+  basis: expert
+  confidence: low
+  src: [prusa_kb_composites, "orca:BBL/process/0.20mm Strength @BBL X1C.json"]
+  note: "No source tests wall versus infill for PA-CF. The advice follows from fiber alignment and Prusa's note that composites gain stiffness but lose layer adhesion."
+supports:
+  interface_materials: ["Bambu Support for PA/PET", abs, asa]
+  soluble_pairing: {material: bvoh, dissolve: "water"}
+  top_z_distance_mm: {typical: 0.2}
+  interface_layers: {typical: 2}
+  note: "Bambu lists Support for PA/PET (280 to 300 C, hardened nozzle, dry required, now discontinued) for PAHT-CF and PA6-CF, and names Bambu ABS and ASA as the alternatives. It is a support interface only. BCN3D lists BVOH as compatible with PAHT CF15, but BVOH must be kept dry and needs a multi material printer."
+  confidence: medium
+  src: [bambu_store_support_filaments, bcn3d_bvoh_page, "orca:BBL/process/0.20mm Standard @BBL X1C.json", "orca:BBL/filament/Bambu Support For PA PET @base.json"]
+
+multi_material:
+  bambu_ams: compatible
+  bambu_ams_lite: not_compatible
+  bambu_ams_ht: compatible
+  confidence: medium
+  src: [bambu_wiki_material_table, bambu_wiki_absgf_pa6gf, bambu_wiki_drying]
+  note: "Bambu rates only its PA-CF and PAHT-CF as AMS compatible. Its glass and carbon nylon guides list AMS lite as not compatible. PA6-CF is not on the AMS list, so use AMS HT or an external spool. AMS HT dries PA-CF at 85 C for 12 h. Use Bambu Support for PA/PET as support."
+
+properties:
+  density_g_cm3: {typical: 1.09, min: 1.06, max: 1.11, src: ["orca:OrcaFilamentLibrary/filament/Bambu/Bambu PA6-CF @base.json", "orca:OrcaFilamentLibrary/filament/Bambu/Bambu PAHT-CF @base.json", "orca:Prusa/filament/Prusament PA-CF @CORE One.json"], note: "PA6-CF 1.10 and PAHT-CF 1.06 (Bambu), Prusa PA11-CF 1.11."}
+  softening_temp_c: {typical: 170, src: ["orca:OrcaFilamentLibrary/filament/Bambu/Bambu PA6-CF @base.json", "orca:OrcaFilamentLibrary/filament/Bambu/Bambu PAHT-CF @base.json"], note: "Orca vitrification 170 to 180 C. Bambu PAHT-CF Vicat 220 C, Tg 70 C."}
+  heat_deflection_c: {at_0_45_mpa: 194, at_1_8_mpa: 170, src: [bambu_tds_paht_cf_v3, bambu_tds_pa6_cf_v3, polymaker_pis_pa12_cf], note: "Bambu PAHT-CF 194 and 170 C, PA6-CF 186 and 164 C (0.45 and 1.8 MPa). Polymaker PA12-CF 105 C at 1.8 MPa after annealing at 80 C. PA12-CF is much lower."}
+  annealing: {temp_c: {min: 80, max: 130}, hours: {min: 6, max: 12}, src: [bambu_tds_paht_cf_v3, bambu_tds_pa6_cf_v3, polymaker_pis_pa12_cf], note: "Bambu PAHT-CF and PA6-CF: 80 to 130 C for 6 to 12 h. Polymaker PA12-CF: 80 C for 6 h, which raises tensile strength from 43.6 to 71.6 MPa in its test. Parts can warp, so use a forced air oven and test on a spare."}
+  relative:
+    heat: 5
+    impact: 2
+    tensile: 5
+    scale: "1 to 5, Bambu star ratings for PA-CF and PAHT-CF"
+    src: [bambu_wiki_material_table]
+safety:
+  fumes: medium
+  note: "Prusa says nylon needs a ventilated room or enclosure because of odor and ultrafine particles. Carbon fiber dust from sanding is a lung irritant, so wear a mask. Enable activate_air_filtration on Bambu X, P and H series when the chamber is not held at 60 C."
+  src: [prusa_kb_nylon, bambu_wiki_x1e_chamber]
+food_contact:
+  note: "Not food safe. Carbon fiber and additives are not certified."
+  src: [prusa_kb_food_safe]
+
+failure_modes:
+  - id: warping
+    symptom: Corners lift, base curls, layers split near the bottom
+    causes: [chamber too cold, bed too cool, no glue, cooling too high, drafts]
+    fixes:
+      - {key: brim_type, op: set, value: outer_only, why: "A brim gives nylon more hold against shrinkage."}
+      - {key: brim_width, op: at_least, value: 8, why: "Wide brims resist corner lift."}
+      - {key: draft_shield, op: enable, why: "Holds a warmer pocket of air around the part if the chamber cannot be heated."}
+      - {key: initial_layer_speed, op: at_most, value: 30, why: "A slow first layer squishes and bonds better."}
+      - {key: fan_max_speed, op: at_most, value: 30, why: "Bambu profiles cap the fan at 30 percent for PA-CF."}
+      - {advice: "Glue the plate and keep the door and lid closed. On X1E, H2D, P2S or Core One preheat the chamber to 55 to 60 C (not above 50 C for Polymaker PA12-CF).", kind: environment}
+  - id: wet_filament
+    symptom: Popping, steam, rough or fuzzy surface, weak layers
+    causes: [wet filament]
+    fixes:
+      - {advice: "Dry at 80 C for 8 to 12 h in an oven, 85 C for 12 h in AMS HT, or 90 to 100 C for 12 h on the heated bed. AMS 2 Pro cannot dry PA-CF.", kind: material}
+      - {advice: "Print from a sealed dry box. Bambu marks desiccant during use as required.", kind: workflow}
+  - id: nozzle_wear_clog
+    symptom: Under extrusion or clog after a few spools, or brass nozzle wear
+    causes: [abrasive fiber, small or soft nozzle]
+    fixes:
+      - {advice: "Use a hardened steel or tungsten carbide nozzle, and 0.6 mm if possible. Prusa says a poorly set first layer raises clog risk.", kind: hardware}
+      - {key: nozzle_temperature, op: increase_by, value: 5, why: "Hotter plastic flows more easily through a small nozzle. Stay inside the range."}
+  - id: layer_delamination
+    symptom: Part snaps along layers
+    causes: [nozzle too cold, chamber cold, fan too high, wet filament]
+    fixes:
+      - {key: nozzle_temperature, op: increase_by, value: 5, why: "Hotter plastic fuses better with the layer below."}
+      - {key: fan_max_speed, op: at_most, value: 20, why: "Less cooling helps interlayer bonding. Prusa notes composites lose layer adhesion."}
+      - {advice: "Orient the part so main loads run along the layers, not across them. Prusa says fiber filled materials reduce layer adhesion.", kind: orientation}
+  - id: support_bond
+    symptom: Support fuses to the part
+    causes: [wrong support material]
+    fixes:
+      - {advice: "Bambu recommends its Support for PA/PET as the support material for PAHT-CF. Remove any nylon self-support before the part absorbs water.", kind: material}
+
+disagreements:
+  - topic: enclosure need
+    positions:
+      - {claim: "Enclosed printer required (Bambu)", src: [bambu_wiki_material_table]}
+      - {claim: "CF nylon warps far less than plain nylon and can print without an enclosure", src: [prusa_kb_nylon]}
+    resolution: "Enclose for parts larger than a small bracket. Open printers only for small parts with glue and a brim."
+  - topic: chamber and bed for PA12-CF
+    positions:
+      - {claim: "Bed and chamber 25 to 50 C, do not exceed 50 C (Polymaker PA12-CF)", src: [polymaker_pis_pa12_cf]}
+      - {claim: "Bed 80 to 100 C and chamber 45 to 60 C (Bambu PA6-CF, PAHT-CF)", src: [bambu_tds_paht_cf_v3, bambu_tds_pa6_cf_v3]}
+    resolution: "Each spool follows its maker. Ask which grade before applying Bambu numbers to a Polymaker PA12-CF spool."
+  - topic: oven drying temperature
+    positions:
+      - {claim: "80 C for 8 to 12 h", src: [bambu_wiki_material_table, bambu_tds_pa6_cf_v3]}
+      - {claim: "75 to 85 C for 8 to 12 h", src: [bambu_wiki_drying]}
+      - {claim: "80 C for 12 h for PA12-CF", src: [polymaker_pis_pa12_cf]}
+    resolution: "Use 80 C for 12 h."
+  - topic: layer height for carbon fiber nylon
+    positions:
+      - {claim: "0.15 to 0.3 mm on a 0.4 mm hardened nozzle, about 100 mm/s", src: [bambu_wiki_material_table]}
+      - {claim: "layer height of at least 0.2 mm", src: [prusa_kb_composites]}
+    resolution: "Use 0.2 mm on a 0.4 mm nozzle, which sits inside both, and prefer a 0.6 mm hardened nozzle."
+
+pilot_defaults:
+  nozzle_temperature: 280
+  nozzle_temperature_initial_layer: 280
+  eng_plate_temp: 100
+  hot_plate_temp: 100
+  textured_plate_temp: 100
+  fan_min_speed: 10
+  fan_max_speed: 30
+  overhang_fan_speed: 40
+  close_fan_the_first_x_layers: 3
+  slow_down_layer_time: 2
+  filament_flow_ratio: 0.96
+  filament_max_volumetric_speed: 8
+  retraction_length: 0.8
+  chamber_temperature: 60
+  activate_chamber_temp_control: true

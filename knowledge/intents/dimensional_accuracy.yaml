@@ -1,0 +1,37 @@
+kind: intent_goal
+schema_version: 1
+id: dimensional_accuracy
+label: Accurate fit
+summary: >
+  Parts that must mate with other parts: holes for bolts and bearings, press
+  fits, enclosures, gears. Settings get you close. A tolerance test on the
+  actual printer and spool closes the rest.
+phrases: [accurate, precise, exact, "to size", tolerance, fit, "press fit", "snap fit", "has to fit", bearing, bolt hole, mating, enclosure, "dimensionally accurate", engineering]
+default_level: standard
+levels:
+  standard:
+    changes:
+      - {key: precise_outer_wall, op: enable, priority: core, why: "Adjusts outer wall spacing so the shell lands where the model says, and keeps layers more consistent.", src: ["orca_src:src/libslic3r/PrintConfig.cpp"]}
+      - {key: wall_loops, op: at_least, value: 3, priority: supporting, why: "Needed for inner, outer, inner wall order.", src: ["orca_src:src/libslic3r/PrintConfig.cpp"]}
+      - {key: wall_sequence, op: set, value: "inner-outer-inner wall", priority: core, why: "Orca recommends this order for the best dimensional accuracy: the outer wall is not pushed outward by an inner wall printed after it.", src: ["orca_src:src/libslic3r/PrintConfig.cpp"]}
+      - {key: outer_wall_speed, op: at_most, value: 60, priority: supporting, why: "Slower outer walls track corners and small holes more closely.", src: ["orca:BBL/process/0.16mm High Quality @BBL X1C.json"]}
+      - {key: hole_to_polyhole, op: enable, priority: supporting, why: "Turns round holes into polygons sized for the nozzle, so bolts fit without drilling.", src: ["orca_src:src/libslic3r/PrintConfig.cpp"]}
+      - {key: elefant_foot_compensation, op: at_least, value: 0.15, priority: supporting, why: "Pulls in the first layer so the base is not wider than the part. Bambu's X1 profiles use 0.15 mm.", src: ["orca:BBL/process/0.20mm Standard @BBL X1C.json"]}
+      - {key: precise_z_height, op: enable, priority: supporting, why: "Fine tunes the last layers so the part's total height matches the model.", src: ["orca_src:src/libslic3r/PrintConfig.cpp"]}
+  calibrated:
+    extends: standard
+    changes:
+      - {key: xy_hole_compensation, op: set, value_from: {calibration: tolerance, field: hole_offset_mm}, priority: core, why: "Uses the measured hole error from this printer's tolerance test. Positive values make holes bigger.", src: ["orca_src:src/libslic3r/PrintConfig.cpp", orca_wiki_calibration]}
+      - {key: xy_contour_compensation, op: set, value_from: {calibration: tolerance, field: contour_offset_mm}, priority: core, why: "Uses the measured outside error from the same test.", src: ["orca_src:src/libslic3r/PrintConfig.cpp", orca_wiki_calibration]}
+      - {key: filament_shrink, op: set, value_from: {calibration: shrinkage, field: percent}, priority: core, why: "Scales the part in XY to cancel the shrink this material shows after cooling. Matters most for ABS, ASA, PC and nylon.", src: ["orca_src:src/libslic3r/PrintConfig.cpp"]}
+prerequisites:
+  - {workflow: flow_ratio, why: "Over extrusion makes every wall fat and every hole small. Fix flow before compensating."}
+  - {workflow: tolerance, why: "Measures real hole and contour error for this printer, nozzle and spool."}
+orientation:
+  - {advice: "Print round holes with their axis vertical. Horizontal holes print as teardrops and come out undersized at the top.", kind: orientation}
+  - {advice: "Keep precise faces off supports.", kind: orientation}
+material_hints:
+  prefer: [pla, pla_plus, petg, pla_cf, petg_cf, pa_cf]
+  note: "Filled materials (CF, GF) shrink and warp less. ABS, ASA and unfilled nylon shrink the most; plan on shrink compensation."
+costs: {time: up, filament: none}
+src: ["orca_src:src/libslic3r/PrintConfig.cpp", orca_wiki_calibration, "orca:BBL/process/0.20mm Standard @BBL X1C.json"]

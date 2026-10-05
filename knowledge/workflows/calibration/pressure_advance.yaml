@@ -1,0 +1,35 @@
+kind: calibration
+schema_version: 1
+id: pressure_advance
+name: Pressure advance
+order: 3
+purpose: "Match extrusion pressure to speed changes so corners are sharp, seams close, and lines have even width."
+run_when: ["New filament brand or type", "New nozzle size, hotend or extruder", "Input shaper turned on or off", "Big temperature change"]
+run_when_src: [ellis_pa]
+prereqs: [temperature]
+orca_test:
+  menu: "Calibration > Pressure advance"
+  methods:
+    - {id: tower, note: "Slower, does not depend on first layer quality. PA = start + step * height_mm (for example 0 + 0.002 * 8 = 0.016)."}
+    - {id: pattern, note: "Ellis pattern method. Fast and easy to read; the recommended method for most printers."}
+    - {id: line, note: "Quickest, but depends on a good first layer. Turn on bed mesh."}
+  variants: "Each method has a direct drive and a bowden version. Pick the one matching the extruder."
+  src: ["orca_wiki:pressure_advance_calib", ellis_pa]
+per_firmware:
+  bambu: {method: "Flow dynamics calibration measures the K value per spool before a print or from the calibration menu. Use Orca's manual test only if auto results look wrong.", src: [bambu_wiki_flow_dynamics]}
+  klipper: {method: "Orca test, or TUNING_TOWER COMMAND=SET_PRESSURE_ADVANCE PARAMETER=ADVANCE START=0 FACTOR=.005 (direct drive) or FACTOR=.020 (bowden) after SET_VELOCITY_LIMIT SQUARE_CORNER_VELOCITY=1 ACCEL=500.", src: [klipper_pressure_advance]}
+  prusa: {method: "Stock profiles already set M572 per filament and nozzle (0.053 for Prusament PETG on a 0.4 mm MK4S nozzle). Tune only for third party filament.", src: ["orca:Prusa/filament/Prusament PETG @MK4S.json"]}
+  marlin: {method: "Linear advance (M900) must be enabled in firmware; many stock builds have it off.", src: ["orca_wiki:pressure_advance_calib"]}
+read_result:
+  - "Pick the value with the sharpest corners and no gap or bulge at the corner or seam."
+  - "Typical values run 0.05 to 1.0 on Klipper, with the high end only on bowden printers. Modern direct drive printers often land between 0.02 and 0.06."
+read_result_src: [klipper_pressure_advance, "orca:Prusa/filament/Prusament PETG @MK4S.json"]
+adaptive:
+  summary: "Adaptive pressure advance fits PA to flow and acceleration. It helps most on fast CoreXY printers with high flow nozzles, and is not needed if you print one layer height, speed and acceleration. Tested on Klipper; untested on Marlin and Bambu."
+  never_exceed: "Do not calibrate at accelerations above what the input shaper recommends."
+  src: ["orca_wiki:adaptive_pressure_advance_calib"]
+camera_reading: {feasible: yes, look_for: "Pattern method: the row with the sharpest corner and even line width. Works well from a top down snapshot."}
+writes:
+  - {key: enable_pressure_advance, op: enable, why: "Use the calibrated value from the filament profile."}
+  - {key: pressure_advance, op: set, value_from: {calibration: pressure_advance, field: value}, why: "Best row or height from the test."}
+src: ["orca_wiki:pressure_advance_calib", klipper_pressure_advance, ellis_pa, bambu_wiki_flow_dynamics]

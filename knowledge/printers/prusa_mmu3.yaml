@@ -1,0 +1,43 @@
+kind: accessory
+schema_version: 1
+id: prusa_mmu3
+name: Original Prusa MMU3
+vendor: Prusa Research
+compatible_printers: [prusa_mk4s, prusa_core_one]
+slots: 5
+material_limits:
+  officially_supported: [pla, petg]
+  possible_untested: [asa, abs, pa6, tpu_95a]
+  not_recommended: [tpu_85a, pa_cf, pla_cf, petg_cf]
+  confidence: medium
+  note: "Prusa states PLA and PETG are supported and other polymers are not extensively tested. Flexible and abrasive filaments do not feed reliably through the MMU. Also compatible with MK3S+, MK3.5/S and MK3.9/S (not modeled here)."
+  src: [prusa_blog_mmu3_core_one, prusa_kb_mmu3_compat]
+notes: "CORE One uses the enclosed MMU3 kit. Orca ships 'Prusa CORE One MMU3' machine profiles and separate '+ MMU3' process profiles."
+known_issues:
+  - symptom: "Error 04102, FINDA filament stuck"
+    cause: "The FINDA (SuperFINDA) stays triggered after unload because of debris or a broken filament piece in the selector."
+    fix:
+      - {advice: "Remove the Festo fitting, slide the selector right and clear debris with the 1.5 mm Allen key, then retry.", kind: hardware}
+    src: [prusa_kb_mmu3_errors]
+  - symptom: "Error 04103, filament sensor did not trigger"
+    cause: "The extruder IR filament sensor did not see filament during load to nozzle. Often an uncalibrated sensor or a filament that stops short."
+    fix:
+      - {advice: "Recalibrate the IR filament sensor, then check the PTFE path and that the filament tip is clean.", kind: hardware}
+    src: [prusa_kb_mmu3_errors, prusa_kb_mmu3_ir_calibration]
+  - symptom: "Error 04104, filament sensor still triggered after unload"
+    cause: "Filament remains in the extruder sensor after the MMU unloaded it."
+    fix:
+      - {advice: "Clear the extruder path by hand, check for a broken tip, and recalibrate the IR sensor.", kind: hardware}
+    src: [prusa_kb_mmu3_errors]
+  - symptom: "Random filament change or spool join in mid print"
+    cause: "Uncalibrated IR sensor reports no filament while filament is present."
+    fix:
+      - {advice: "Calibrate the IR filament sensor and keep the sensor clean.", kind: hardware}
+    src: [prusa_kb_mmu3_ir_calibration]
+  - symptom: "Color bleeding between colors"
+    cause: "Purge volume too small or prime tower too narrow."
+    fix:
+      - {key: flush_multiplier, op: increase_by, value: 0.3, why: "More flush moves old color out of the nozzle."}
+      - {key: prime_tower_width, op: at_least, value: 35, why: "Room for full purge lines."}
+    src: [prusa_blog_mmu3_core_one]
+src: [prusa_kb_mmu3_compat, prusa_blog_mmu3_core_one, prusa_kb_mmu3_errors]

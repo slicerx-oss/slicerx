@@ -1,0 +1,27 @@
+kind: guide
+schema_version: 1
+id: supports
+name: Supports
+applies_to: [all]
+summary: >
+  When to add supports, which kind, and how to keep them easy to remove.
+  Orientation comes first: turning the part often removes the need for
+  support entirely.
+facts:
+  - {text: "Normal supports are a grid under overhangs: stable and good for large flat overhangs. Tree supports branch from trunks and use less material.", src: ["orca_wiki:support_settings_support"]}
+  - {text: "Organic is the default tree style and saves material. Tree slim is lighter, tree strong is sturdier for heavy overhangs, and tree hybrid behaves like normal support under large flat overhangs. Snug normal supports reduce scarring.", src: ["orca_wiki:support_settings_support"]}
+  - {text: "Overhangs whose slope is below the threshold angle get support. A smaller threshold means steeper overhangs print without it.", src: ["orca_src:src/libslic3r/PrintConfig.cpp"]}
+  - {text: "Orca's default gaps are 0.2 mm between support top and part, and 0.35 mm in XY.", src: ["orca_src:src/libslic3r/PrintConfig.cpp"]}
+  - {text: "Higher branch density at the tips gives better overhangs but harder removal; use top interface layers instead when a dense surface is needed.", src: ["orca_wiki:support_settings_tree"]}
+  - {text: "Bambu's presets change the threshold with layer height: 15 degrees at 0.08 mm, 30 at 0.20 mm, 40 at 0.28 mm.", src: ["orca:BBL/process/0.08mm Extra Fine @BBL X1C.json", "orca:BBL/process/0.20mm Standard @BBL X1C.json", "orca:BBL/process/0.28mm Extra Draft @BBL X1C.json"]}
+settings:
+  - {key: support_type, op: set, value: "tree(auto)", why: "Trees for figures and organic shapes."}
+  - {key: support_style, op: set, value: organic, why: "Default tree style, least material.", src: ["orca_wiki:support_settings_support"]}
+  - {key: support_on_build_plate_only, op: enable, why: "Stops supports from starting on the part and scarring it, when the geometry allows."}
+material_notes:
+  - {text: "PETG bonds hard to its own supports; raise the top Z gap slightly or use an interface in a different material (Support for PLA/PETG).", basis: expert}
+  - {text: "Soluble PVA or BVOH interfaces give clean undersides on multi material printers; see the pva and bvoh filament files.", basis: expert}
+pilot_actions:
+  - "Run orient with minimum support before enabling supports."
+  - "Report support volume and removal risk; offer manual support painting for critical faces."
+src: ["orca_wiki:support_settings_support", "orca_wiki:support_settings_tree", "orca_src:src/libslic3r/PrintConfig.cpp"]

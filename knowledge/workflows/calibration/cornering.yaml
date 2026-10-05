@@ -1,0 +1,23 @@
+kind: calibration
+schema_version: 1
+id: cornering
+name: Cornering (jerk, junction deviation, square corner velocity)
+order: 6
+purpose: "Find the fastest cornering setting that keeps corners sharp. Optional if corners already look good."
+run_when: ["Ringing or overshoot at corners after input shaping", "Chasing more speed on a Marlin or Klipper printer"]
+prereqs: [pressure_advance]
+orca_test:
+  menu: "Calibration > Cornering"
+  firmware_mapping:
+    klipper: "square_corner_velocity (SET_VELOCITY_LIMIT SQUARE_CORNER_VELOCITY=...)"
+    marlin_2: "Junction deviation if enabled (values 0.0 to 0.3 mm), else classic jerk (usually 1 to 20 mm/s)"
+    reprap: "M566, in mm/min"
+  setup: "Acceleration and speed high enough to show ringing (for example 2000 mm/s2 and 100 mm/s). Glossy opaque filament shows it best."
+  src: ["orca_wiki:cornering_calib"]
+read_result:
+  - "Measure the height where corners start losing sharpness and read the value at that height. Narrow the range and repeat."
+camera_reading: {feasible: partial, look_for: "Corner sharpness per height band from a side view."}
+writes:
+  - {advice: "Save the value in the printer profile's jerk limits, or in firmware (printer.cfg or M205). mimir proposes the change; the user applies firmware edits.", kind: hardware}
+bambu_note: "Bambu firmware manages cornering itself. Skip this test on Bambu printers."
+src: ["orca_wiki:cornering_calib"]

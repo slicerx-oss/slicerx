@@ -1,0 +1,92 @@
+kind: troubleshoot
+schema_version: 1
+id: dimensional_accuracy
+name: Dimensional accuracy
+aliases: [holes too small, parts do not fit, tolerance, shrinkage, undersized, oversized, too tight, too loose, wrong size, screw will not fit]
+camera_signs:
+  - "Holes and shafts that measure smaller than the model, so screws, pins or magnets do not fit"
+  - "Parts that need force or sanding to mate, or that are too loose"
+  - "A flared base (elephant foot) or a bulge on outer walls that changes the measured width"
+  - "Parts that are the wrong size in one axis only, or all sizes wrong by a similar percentage (shrinkage)"
+log_signs: []
+tree:
+  start: q_pattern
+  nodes:
+    q_pattern: {ask: "Are all dimensions off by about the same percentage (large parts wrong the most), rather than just holes or the base?", "yes": c_shrinkage, "no": q_hole}
+    q_hole: {ask: "Are holes undersized while outside dimensions are about right (screws, pins or magnets do not fit)?", "yes": q_extrusion_ok, "no": q_base}
+    q_extrusion_ok: {ask: "Have you calibrated flow and pressure advance for this filament, and is the filament dry?", "yes": c_hole_compensation, "no": c_flow_calibration}
+    q_base: {ask: "Is the base wider than the rest of the part (a flare in the first 1 to 3 layers)?", "yes": c_elephant_foot, "no": q_outer}
+    q_outer: {ask: "Are outside dimensions too large or walls bulging at corners and seams?", "yes": c_over_extrusion, "no": c_machine_geometry}
+causes:
+  - id: c_shrinkage
+    name: Material shrinkage
+    category: material
+    likelihood: high
+    checks:
+      - "Measure a large part in X, Y and Z with calipers. A uniform percentage error points at shrinkage."
+      - "Bambu names material shrinkage as a factor to check before adjusting XY compensation."
+    fixes:
+      - {advice: "Use the filament shrinkage compensation (filament_shrink) only with a value found from a measured calibration part, never a guess. 100 percent means no compensation.", kind: workflow}
+      - {advice: "Print a calibration cube with the same filament, temperature, plate and enclosure conditions as the final part. Measure it and set the compensation to the ratio of the target size to the measured size.", kind: workflow}
+      - {advice: "High shrinkage materials (ABS, ASA, PC, nylon, and carbon fiber filled versions) vary the most. Print them enclosed and use the same conditions every time.", kind: environment}
+    filaments: [abs, asa, pc, pa6, pa12, pa_cf, pa_gf]
+    src: [bambu_wiki_xy_compensation, orca_wiki_precision]
+    confidence: medium
+  - id: c_flow_calibration
+    name: Flow or pressure advance not calibrated, or wet filament
+    category: settings
+    likelihood: high
+    checks:
+      - "Bambu lists moist filament and flow dynamics not tuned as causes to fix before compensating."
+    fixes:
+      - {advice: "Dry the filament, run flow dynamics (pressure advance) calibration, then flow ratio calibration, and only then compensate sizes. Ellis says tune pressure advance first, then the extrusion multiplier.", kind: workflow}
+      - {advice: "Ellis notes the extrusion multiplier is an aesthetics first method. For true to CAD dimensions read the rationale and dimensional accuracy section of his extrusion multiplier page.", kind: workflow}
+    src: [bambu_wiki_xy_compensation, ellis_extrusion_multiplier, ellis_pa]
+    confidence: high
+  - id: c_hole_compensation
+    name: Holes need XY hole compensation
+    category: settings
+    likelihood: high
+    checks:
+      - "Print a hole gauge model with the same profile and filament. Bambu suggests an M6 screw size test where the actual thread diameter is often about 5.9 mm. Holes under 1 mm are hard to tune."
+      - "Add chamfers or lead-in features to holes in CAD, since lack of chamfer is a listed factor."
+    fixes:
+      - {key: xy_hole_compensation, op: increase_by, value: 0.05, why: "Increase the hole compensation in small steps and re-test. Bambu's worked example measured a hole 0.24 mm undersized and applied about half of that as compensation.", src: [bambu_wiki_xy_compensation]}
+      - {key: hole_to_polyhole, op: enable, why: "Polyholes correct the tendency of circular holes to print smaller than modeled.", src: [orca_wiki_precision]}
+      - {advice: "Calibrate per filament and repeat when changing material. The seam can also affect hole precision, so place it away from tight fits.", kind: workflow}
+    src: [bambu_wiki_xy_compensation, orca_wiki_precision]
+    confidence: medium
+  - id: c_elephant_foot
+    name: Elephant foot flare
+    category: settings
+    likelihood: high
+    checks:
+      - "The first layers are wider than the rest. Bambu says this affects fit on assemblies, snaps, rails and shaft holes."
+    fixes:
+      - {advice: "Follow the elephant_foot troubleshooter: measure a test cube and enter the elephant foot compensation. Bambu's X1C Standard profile uses 0.15 mm.", kind: workflow}
+    src: [bambu_wiki_elephant_foot, "orca:BBL/process/fdm_process_single_0.20.json"]
+    confidence: medium
+  - id: c_over_extrusion
+    name: Over-extrusion inflating outer dimensions
+    category: settings
+    likelihood: medium
+    checks:
+      - "Outside dimensions are oversized and walls look wide. Corners bulge."
+    fixes:
+      - {key: filament_flow_ratio, op: decrease_by, value: 0.02, why: "Lower flow in 1 to 2 percent steps after pressure advance is tuned.", src: [ellis_extrusion_multiplier]}
+      - {key: precise_outer_wall, op: enable, why: "Orca's precise wall setting sets the overlap between the outer and adjacent inner wall to zero to improve dimensional accuracy.", src: [orca_wiki_precision]}
+      - {key: xy_contour_compensation, op: decrease_by, value: 0.05, why: "Shrinks the outer contour without changing holes. Calibrate on a measured part, since Bambu treats hole and contour as separate settings.", src: [bambu_wiki_xy_compensation]}
+    src: [ellis_extrusion_multiplier, orca_wiki_precision, bambu_wiki_xy_compensation]
+    confidence: medium
+  - id: c_machine_geometry
+    name: Axis scale, belts or squareness
+    category: hardware
+    likelihood: low
+    checks:
+      - "One axis is consistently wrong, or a square part measures as a parallelogram."
+    fixes:
+      - {advice: "Check belt tension, pulley set screws and gantry squareness, and check rotation_distance and steps per mm on Klipper machines. On Bambu printers run the built in calibrations after a move. Klipper also has skew correction for a printer that is slightly out of square.", kind: hardware}
+    src: [ellis_layer_shifting, prusa_kb_layer_shifting]
+    confidence: low
+related: [elephant_foot, over_extrusion, warping]
+src: [bambu_wiki_xy_compensation, orca_wiki_precision, ellis_extrusion_multiplier]

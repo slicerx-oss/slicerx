@@ -1,0 +1,55 @@
+{
+  "type": "process",
+  "name": "fdm_demo_process_single_common",
+  "inherits": "fdm_demo_process_common",
+  "from": "system",
+  "instantiation": "false",
+  "initial_layer_speed": [
+    "50",
+    "50"
+  ],
+  "gap_infill_speed": [
+    "250",
+    "350"
+  ],
+  "internal_solid_infill_speed": [
+    "250",
+    "350"
+  ],
+  "outer_wall_speed": [
+    "60",
+    "60"
+  ],
+  "inner_wall_speed": [
+    "150",
+    "150"
+  ],
+  "sparse_infill_speed": [
+    "150",
+    "150"
+  ],
+  "top_surface_speed": [
+    "100",
+    "100"
+  ],
+  "default_acceleration": [
+    "6000",
+    "6000"
+  ],
+  "outer_wall_acceleration": [
+    "2000",
+    "2000"
+  ],
+  "inner_wall_acceleration": [
+    "0",
+    "0"
+  ],
+  "sparse_infill_acceleration": [
+    "100",
+    "100"
+  ],
+  "top_surface_acceleration": [
+    "2000",
+    "2000"
+  ]
+}

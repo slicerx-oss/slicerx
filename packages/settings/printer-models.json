@@ -1,0 +1,30 @@
+{
+ "comment": "Printer catalog model id (packages/connect/catalog, hyphenated) to the settings knowledge printer id used in SetupRef.printer (underscored). Models that share a platform share an entry; models with no knowledge entry are absent.",
+ "models": {
+  "bambu-x1-carbon": "bambu_x1c",
+  "bambu-x1e": "bambu_x1e",
+  "bambu-p1p": "bambu_p1p",
+  "bambu-p1s": "bambu_p1s",
+  "bambu-p2s": "bambu_p2s",
+  "bambu-a1": "bambu_a1",
+  "bambu-a1-mini": "bambu_a1_mini",
+  "bambu-h2d": "bambu_h2d",
+  "bambu-h2c": "bambu_h2c",
+  "bambu-h2s": "bambu_h2s",
+  "prusa-mk4s": "prusa_mk4s",
+  "prusa-core-one": "prusa_core_one",
+  "prusa-xl": "prusa_xl",
+  "prusa-xl-5-toolhead": "prusa_xl",
+  "creality-k1-max": "creality_k1_max",
+  "creality-k2-plus": "creality_k2_plus",
+  "elegoo-centauri-carbon": "elegoo_centauri_carbon",
+  "elegoo-neptune-4-pro": "elegoo_neptune_4_pro",
+  "sovol-sv08": "sovol_sv08",
+  "voron-2.4-250": "voron_2_4",
+  "voron-2.4-300": "voron_2_4",
+  "voron-2.4-350": "voron_2_4",
+  "voron-trident-250": "voron_trident",
+  "voron-trident-300": "voron_trident",
+  "voron-trident-350": "voron_trident"
+ }
+}

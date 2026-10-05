@@ -1,0 +1,32 @@
+# mimir eval scenarios: calibration planning and result handling.
+kind: eval_suite
+schema_version: 1
+id: calibration
+evals:
+  - id: ev25_new_petg_spool_mk4s
+    category: calibration
+    prompt: "Tune a profile for this new PETG spool"
+    context:
+      printers: demo
+      printer: bay-3
+      spool: {id: 23, material: petg, vendor_range_c: [230, 250], history: none}
+      permissions: {slice: allow, queue: ask, start: ask, profile: ask}
+    expect:
+      tools: {must: [kb.workflow, calibrate], may: [spoolman.check, kb.filament]}
+      plan_includes: [temperature, flow_ratio]
+      plan_may_include: [pressure_advance, retraction]
+      checks_on_plan:
+        - {what: temperature_tower_range_c, is: between, value: [230, 250]}
+        - {what: temperature_step_c, is: equals, value: 5}
+      side_effects: {must_request_approval: [queue, start, profile]}
+      must_mention: ["results go into a new profile linked to spool 23; the stock profile stays unchanged"]
+
+  - id: ev26_new_pla_x1c_auto_first
+    category: calibration
+    prompt: "Calibrate this new PLA on my X1 Carbon"
+    context: {printers: demo, printer: bay-1, spool: {material: pla, brand: third_party}}
+    expect:
+      tools: {must: [kb.workflow], may: [calibrate, kb.printer]}
+      must_mention: ["flow dynamics calibration measures pressure advance per spool", "the X1 Carbon lidar also calibrates flow ratio", "a temperature tower is the one manual test worth running for a new brand"]
+      must_not: ["asking the user to print a manual pressure advance test first"]
+      citations: {required: true, any_of: [bambu_wiki_flow_dynamics, bambu_wiki_flow_rate_cal]}

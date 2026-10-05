@@ -1,0 +1,64 @@
+kind: accessory
+schema_version: 1
+id: bambu_ams_lite
+name: Bambu Lab AMS lite
+vendor: Bambu Lab
+compatible_printers: [bambu_a1, bambu_a1_mini, bambu_a2l]
+compatibility_notes: "A series only. One AMS lite per printer, and it cannot be mixed with AMS, AMS 2 Pro or AMS HT. Not compatible with X1 or P1. The A2L can run 1 AMS lite plus up to 4 AMS units."
+compatibility_src: [bambu_wiki_amslite_intro, bambu_wiki_amslite_faq, bambu_wiki_ams_compat]
+slots: 4
+max_units_per_printer: 1
+drying:
+  supported: false
+  note: "No heater and no desiccant system. Recommended ambient is 10 to 30 C and under 85 percent humidity."
+  src: [bambu_wiki_amslite_faq]
+material_limits:
+  compatible: [pla, pla_plus, pla_silk, pla_matte, petg, pla_cf, asa, pc]
+  not_compatible: [tpu_85a, tpu_95a, pa_gf]
+  not_recommended: [abs, petg_cf, pva, bvoh, pa_cf]
+  spool_limits: {width_mm: {min: 40, max: 68}, inner_diameter_mm: {min: 53, max: 58}}
+  notes:
+    - "TPU rated 77D, 55D or harder can feed. TPU at 95A, 85A, 83A, 80A or softer cannot."
+    - "Absorbent PVA is not advised. Third party CF and GF filament breaks or damages the feeder channel. Only tougher grades such as Bambu PLA-CF and PETG-CF are compatible."
+    - "The material table lists ABS and ABS-GF as not recommended on AMS lite, and PLA Glow as not recommended. It lists ASA and PC as compatible with AMS and AMS lite, but the A1 series is an open frame printer where Bambu rates them not recommended."
+    - "The material table marks PVA and BVOH compatible while the AMS lite FAQ says avoid absorbent PVA. See disagreements."
+    - "PET-CF and PET-GF are not compatible. Use the external spool for nylon and fiber grades."
+  src: [bambu_wiki_amslite_faq, bambu_wiki_material_table]
+rfid:
+  supported: true
+  detail: "One RFID coil per slot. Reading on insertion is on by default and cannot be turned off."
+  src: [bambu_wiki_amslite_intro]
+features:
+  - "Single stage feeder into the toolhead. No filament buffer is needed."
+  - "Tangle detection module above the toolhead pauses on high feed resistance."
+  - "Each rotary holder turns up to 150 degrees to tighten the spool on unload, so long filament cannot be rewound."
+  - "Filament backup switches to a slot with the same brand, type and color when one runs out."
+features_src: [bambu_wiki_amslite_intro]
+known_issues:
+  - symptom: "False tangle alarms or feeding failures"
+    cause: "PTFE tubes too long or too bent. The feeder pushes up to 1.2 m."
+    fix:
+      - {advice: "Place the AMS lite about 50 mm from the printer. The A1 mini combo tubes are 580 mm and 700 mm; A1 tubes are 730 mm and 850 mm. Cut long tubes shorter.", kind: hardware}
+    src: [bambu_wiki_amslite_intro, bambu_wiki_amslite_faq]
+  - symptom: "AMS lite wobbles or tips during prints"
+    cause: "Heavy spools in the upper slots."
+    fix:
+      - {advice: "Put heavier spools in slots 2 and 3. It cannot be wall mounted.", kind: hardware}
+    src: [bambu_wiki_amslite_faq]
+  - symptom: "Flexible or brittle filament will not load"
+    cause: "The single stage feeder cannot handle soft or brittle material."
+    fix:
+      - {advice: "Print those from the external spool holder.", kind: material}
+    src: [bambu_wiki_amslite_faq]
+disagreements:
+  - topic: "Bambu PETG-CF on AMS lite"
+    positions:
+      - {claim: "Compatible, because Bambu PLA-CF and PETG-CF are tougher grades", src: [bambu_wiki_amslite_faq]}
+      - {claim: "Not recommended on AMS lite, compatible on AMS", src: [bambu_wiki_material_table]}
+    resolution: "List as not recommended. This is the more conservative reading."
+  - topic: "PVA and BVOH on AMS lite"
+    positions:
+      - {claim: "Compatible when dry", src: [bambu_wiki_material_table]}
+      - {claim: "Avoid absorbent PVA in AMS lite", src: [bambu_wiki_amslite_faq]}
+    resolution: "List as not recommended. Use the external spool for PVA."
+src: [bambu_wiki_amslite_intro, bambu_wiki_amslite_faq]

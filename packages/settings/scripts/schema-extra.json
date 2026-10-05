@@ -1,0 +1,1781 @@
+{
+ "group_rules": [
+  [
+   "_gcode$|^thumbnails|^time_lapse|^template_custom|^printing_by_object_gcode|^file_start",
+   "gcode",
+   "printer"
+  ],
+  [
+   "^(print_host|printhost_|host_type|bbl_use_printhost|printer_agent|flashforge)",
+   "network",
+   "printer"
+  ],
+  [
+   "^(printer_model|printer_variant|printer_notes|printer_technology|default_.*_profile|default_print_profile|printer_structure|upward_compatible|use_3mf|extruder_variant_list|printer_extruder)",
+   "profile",
+   "printer"
+  ],
+  [
+   "^(machine_max|machine_min|input_shaping|resonance|min_resonance|max_resonance|emit_machine|silent_mode|machine_bed_mass|machine_prepare|machine_hotend|hotend_)",
+   "motion",
+   "printer"
+  ],
+  [
+   "^(retract|deretract|z_hop|wipe|long_retractions|retraction|use_firmware_retraction|parking_pos)",
+   "retraction",
+   "printer"
+  ],
+  [
+   "^(single_extruder_multi|cooling_tube|extra_loading|machine_load|machine_unload|machine_tool|purge_in|tool_change|enable_filament_ramming|manual_filament|high_current|deretract_speed_extruder|wipe_tower_type|support_object_skip|support_fast_purge|wait_for_temp|nozzle_flush|group_algo|physical_extruder|master_extruder|extruder_max_nozzle)",
+   "multimaterial",
+   "printer"
+  ],
+  [
+   "^(fan_|auxiliary_fan|support_air|support_cooling|support_chamber|cooling_filter|part_cooling|fan_direction|hotend_cooling|support_multi_bed|enable_pre_heating)",
+   "cooling",
+   "printer"
+  ],
+  [
+   "_gcode$",
+   "gcode",
+   "filament"
+  ],
+  [
+   "^(compatible_prints|filament_extruder_variant|filament_extruder_compatibility|filament_vendor|filament_notes)",
+   "profile",
+   "filament"
+  ],
+  [
+   "^filament_dev_",
+   "drying",
+   "filament"
+  ],
+  [
+   "^(nozzle_temperature|.*_plate_temp|chamber_|idle_temperature|temperature_vitrification|filament_pre_cooling|filament_preheat|filament_flush_temp|filament_tower_interface_print_temp)",
+   "temperature",
+   "filament"
+  ],
+  [
+   "(fan|air_filtration|exhaust|slow_down|cooling_layer_time|filament_cooling)",
+   "cooling",
+   "filament"
+  ],
+  [
+   "^(filament_retract|filament_deretract|filament_z_hop|filament_wipe|filament_long_retractions|long_retractions|retraction_distances|retract_)",
+   "retraction",
+   "filament"
+  ],
+  [
+   "(ramming|loading|unloading|multitool|tower|purge|stamping|toolchange|filament_change|prime_volume|filament_minimal_purge|filament_cooling_moves|filament_flush)",
+   "multimaterial",
+   "filament"
+  ],
+  [
+   "(flow_ratio|volumetric|pressure_advance|pellet_flow|filament_shrink|filament_max)",
+   "extrusion",
+   "filament"
+  ],
+  [
+   "^(filament_type|filament_diameter|filament_density|filament_cost|filament_soluble|filament_is_support|filament_printable|filament_adhesiveness|required_nozzle_HRC|default_filament_colour|filament_colour|filament_id)",
+   "filament",
+   "filament"
+  ],
+  [
+   "^(inherits|compatible_printers|print_extruder|plugins|slicing_pipeline_plugin)",
+   "profile",
+   "process"
+  ],
+  [
+   "(^gcode_|_gcode$|^post_process|^filename_format|^notes$|^exclude_object)",
+   "gcode",
+   "process"
+  ],
+  [
+   "^(wipe_tower|prime_tower|prime_volume|flush_into|enable_prime_tower|single_extruder_multi_material_priming|ooze_prevention|standby_temperature|wiping_volumes|.*_filament_id$|wipe_tower_filament|support_filament|support_interface_filament|toolchange_|enable_tower|filament_id)",
+   "multimaterial",
+   "process"
+  ],
+  [
+   "^(skirt_|brim_|min_skirt|single_loop_draft|draft_shield|raft_|first_layer_expansion|tree_support_brim|support_ironing)",
+   "adhesion",
+   "process"
+  ],
+  [
+   "(_acceleration|_jerk|^accel_to_decel|_junction_deviation|^default_jerk)",
+   "motion",
+   "process"
+  ],
+  [
+   "^(spiral_|timelapse_type|print_sequence|print_order|fuzzy_skin|enable_wrapping|preheat_|calib_)",
+   "special",
+   "process"
+  ],
+  [
+   "^(interlocking|mmu_segmented|.*_flow_ratio$|set_other_flow_ratios|small_area_infill|extrusion_rate_smoothing|max_volumetric|spiral_.*flow)",
+   "advanced",
+   "process"
+  ],
+  [
+   "^(overhang|enable_overhang|make_overhang|detect_overhang|bridge_|thick_bridges|extra_perimeters_on_overhangs)",
+   "overhangs",
+   "process"
+  ],
+  [
+   "^(travel_speed_z)",
+   "speed",
+   "process"
+  ]
+ ],
+ "stage_rules": [
+  [
+   "^(nozzle_diameter|layer_height|initial_layer_print_height|min_layer_height|max_layer_height|slicing_mode|precise_z_height|printable_area|printable_height|bed_exclude_area|extruder_offset|extruder_printable)",
+   "layers"
+  ],
+  [
+   "^(xy_hole_compensation|xy_contour_compensation|elefant_foot_compensation|slice_closing_radius|resolution|hole_to_polyhole|filament_shrink|mmu_segmented|interlocking|wall_transition|min_bead|min_feature)",
+   "contours"
+  ],
+  [
+   "^(bed_custom|thumbnails|timelapse_type)",
+   "preview"
+  ],
+  [
+   "^(inherits|compatible_|printer_model|printer_variant|printer_notes|notes$|filament_notes|filament_vendor|default_.*_profile|print_host|printhost_|host_type|printer_agent|plugins|template_custom|.*_extruder_variant|.*_extruder_id|filament_extruder_compatibility|printer_structure|printer_technology|use_3mf|upward_compatible)",
+   "preview"
+  ],
+  [
+   "(_speed|_acceleration|_jerk|_flow_ratio|_flow|_junction_deviation)$",
+   "gcode"
+  ],
+  [
+   "(_line_width)$",
+   "perimeters"
+  ],
+  [
+   "^(wall_(loops|generator|distribution|sequence)|outer_wall|inner_wall|detect_thin_wall|precise_outer_wall|alternate_extra_wall|only_one_wall|extra_perimeters|fuzzy_skin|spiral_mode|is_infill_first|top_one_wall_type|reduce_infill_retraction|enable_wrapping)",
+   "perimeters"
+  ],
+  [
+   "^(top_shell|bottom_shell|ensure_vertical|interface_shells|top_surface_density|bottom_surface_density|top_surface_expansion|internal_bridge)",
+   "surfaces"
+  ],
+  [
+   "^(sparse_infill|infill_|internal_solid_infill|solid_infill|top_surface_pattern|bottom_surface_pattern|top_layer_direction|bottom_layer_direction|fill_multiline|lateral|skin|skeleton|minimum_sparse|gap_infill|ironing_)",
+   "infill"
+  ],
+  [
+   "^(seam_|staggered_inner|support_|enable_support|raft_|brim_|skirt_|min_skirt|draft_shield|single_loop|tree_support|independent_support|ironing|wipe_tower|prime_tower|enable_prime_tower|flush_into|print_sequence|print_order|reduce_crossing|avoid_crossing|travel_|overhang_reverse|make_overhang|bridge_|thick_bridges|detect_overhang|slowdown|enable_overhang|enable_tower)",
+   "paths"
+  ]
+ ],
+ "stage_overrides": {
+  "enable_arc_fitting": "gcode",
+  "top_surface_pattern": "infill",
+  "bottom_surface_pattern": "infill"
+ },
+ "effects": {
+  "layer_height": {
+   "increase": "Thicker layers print faster and show more layer lines",
+   "decrease": "Thinner layers print slower and look smoother"
+  },
+  "initial_layer_print_height": {
+   "increase": "A thicker first layer hides bed unevenness but is harder to squish flat",
+   "decrease": "A thinner first layer needs a level bed"
+  },
+  "wall_loops": {
+   "increase": "More walls make the part stronger and add print time",
+   "decrease": "Fewer walls save time and filament but weaken the part"
+  },
+  "top_shell_layers": {
+   "increase": "Thicker top skin closes sparse infill gaps and adds time",
+   "decrease": "Thinner top skin can show infill pattern through the top"
+  },
+  "bottom_shell_layers": {
+   "increase": "Thicker bottom skin adds strength and time",
+   "decrease": "Thinner bottom skin saves time"
+  },
+  "sparse_infill_density": {
+   "increase": "Denser infill adds strength, filament and time",
+   "decrease": "Sparser infill saves filament and time but weakens the part"
+  },
+  "line_width": {
+   "increase": "Wider lines print faster and bond better",
+   "decrease": "Narrower lines resolve finer detail"
+  },
+  "outer_wall_speed": {
+   "increase": "A faster outer wall saves time and can show ringing",
+   "decrease": "A slower outer wall gives a cleaner surface"
+  },
+  "inner_wall_speed": {
+   "increase": "Faster inner walls save time",
+   "decrease": "Slower inner walls improve bonding"
+  },
+  "sparse_infill_speed": {
+   "increase": "Faster infill saves time, limited by the hotend flow",
+   "decrease": "Slower infill costs time and helps little"
+  },
+  "top_surface_speed": {
+   "increase": "Faster top surfaces save time and roughen the finish",
+   "decrease": "Slower top surfaces look smoother"
+  },
+  "initial_layer_speed": {
+   "increase": "A faster first layer saves time and risks poor adhesion",
+   "decrease": "A slower first layer sticks better"
+  },
+  "travel_speed": {
+   "increase": "Faster travel saves time and can cause vibration",
+   "decrease": "Slower travel is quieter"
+  },
+  "default_acceleration": {
+   "increase": "Higher acceleration saves time and increases ringing",
+   "decrease": "Lower acceleration is quieter and cleaner"
+  },
+  "nozzle_temperature": {
+   "increase": "A hotter nozzle flows more freely and bonds layers better, with more stringing",
+   "decrease": "A cooler nozzle strings less and can under-extrude"
+  },
+  "hot_plate_temp": {
+   "increase": "A hotter bed improves adhesion and can warp the first layers upward if too hot",
+   "decrease": "A cooler bed lowers adhesion"
+  },
+  "textured_plate_temp": {
+   "increase": "A hotter textured plate improves adhesion",
+   "decrease": "A cooler textured plate lowers adhesion"
+  },
+  "cool_plate_temp": {
+   "increase": "A hotter cool plate improves adhesion",
+   "decrease": "A cooler cool plate lowers adhesion"
+  },
+  "eng_plate_temp": {
+   "increase": "A hotter engineering plate improves adhesion and limits warping",
+   "decrease": "A cooler engineering plate raises warping risk"
+  },
+  "chamber_temperature": {
+   "increase": "A warmer chamber reduces warping on ABS and similar materials",
+   "decrease": "A cooler chamber suits PLA"
+  },
+  "fan_min_speed": {
+   "increase": "More part cooling improves overhangs and bridges and can weaken layer bonding",
+   "decrease": "Less part cooling improves layer bonding"
+  },
+  "fan_max_speed": {
+   "increase": "More part cooling improves small features and bridges",
+   "decrease": "Less part cooling improves layer bonding"
+  },
+  "overhang_fan_speed": {
+   "increase": "More fan on overhangs improves them",
+   "decrease": "Less fan on overhangs can curl them"
+  },
+  "close_fan_the_first_x_layers": {
+   "increase": "The fan stays off longer, which helps adhesion",
+   "decrease": "The fan starts sooner, which cools the first layers"
+  },
+  "slow_down_layer_time": {
+   "increase": "Small layers slow down more to cool",
+   "decrease": "Small layers slow down less"
+  },
+  "retraction_length": {
+   "increase": "Longer retraction reduces stringing and risks clogs",
+   "decrease": "Shorter retraction can leave strings"
+  },
+  "retraction_speed": {
+   "increase": "Faster retraction reduces stringing and can grind the filament",
+   "decrease": "Slower retraction can ooze"
+  },
+  "z_hop": {
+   "increase": "More lift avoids scarring on travel and slows printing",
+   "decrease": "No lift is faster and can scar top surfaces"
+  },
+  "pressure_advance": {
+   "increase": "Higher pressure advance sharpens corners and can gap them if too high",
+   "decrease": "Lower pressure advance rounds and bulges corners"
+  },
+  "filament_flow_ratio": {
+   "increase": "More flow fills gaps and can over-extrude",
+   "decrease": "Less flow prevents blobs and can under-extrude"
+  },
+  "filament_max_volumetric_speed": {
+   "increase": "A higher limit allows faster printing while the hotend keeps up",
+   "decrease": "A lower limit slows fast features to protect extrusion"
+  },
+  "enable_support": {
+   "increase": "Supports are added under overhangs",
+   "decrease": "Overhangs print without support"
+  },
+  "support_threshold_angle": {
+   "increase": "Support is added for more gentle overhangs",
+   "decrease": "Support is limited to steeper overhangs"
+  },
+  "support_top_z_distance": {
+   "increase": "Support separates more easily and leaves a rougher underside",
+   "decrease": "Support bonds tighter and leaves a smoother underside"
+  },
+  "brim_width": {
+   "increase": "A wider brim holds the part better and costs more time",
+   "decrease": "A narrower brim frees more bed space"
+  },
+  "skirt_loops": {
+   "increase": "More skirt loops prime the nozzle longer",
+   "decrease": "No skirt skips priming"
+  },
+  "seam_position": {
+   "increase": "Changes where layer starts and ends are placed",
+   "decrease": "Changes where layer starts and ends are placed"
+  },
+  "ironing_type": {
+   "increase": "Ironing smooths chosen top surfaces and adds time",
+   "decrease": "Without ironing top surfaces print faster and rougher"
+  },
+  "enable_prime_tower": {
+   "increase": "A prime tower cleans the nozzle between colors and uses more filament",
+   "decrease": "Without a prime tower colors may bleed"
+  },
+  "spiral_mode": {
+   "increase": "Vase mode prints one continuous outer wall with no infill",
+   "decrease": "Normal layered printing"
+  },
+  "reduce_crossing_wall": {
+   "increase": "Travel detours around walls to cut stringing and adds time",
+   "decrease": "Travel goes straight and can string"
+  },
+  "fuzzy_skin": {
+   "increase": "Fuzzy skin roughens the outer wall for grip and hides layer lines",
+   "decrease": "Smooth outer walls"
+  },
+  "xy_hole_compensation": {
+   "increase": "Holes print larger",
+   "decrease": "Holes print smaller"
+  },
+  "xy_contour_compensation": {
+   "increase": "Outer contours print larger",
+   "decrease": "Outer contours print smaller"
+  },
+  "elefant_foot_compensation": {
+   "increase": "The first layer is pulled in more to counter elephant foot",
+   "decrease": "The first layer flares out more"
+  },
+  "smart_layer": {
+   "increase": "sleipnir changes layer heights along the part",
+   "decrease": "One layer height throughout"
+  },
+  "smart_layer_min_height": {
+   "increase": "Fine areas get thicker layers and less detail",
+   "decrease": "Fine areas get thinner layers and print slower"
+  },
+  "smart_layer_max_height": {
+   "increase": "Plain areas print faster and look coarser",
+   "decrease": "Plain areas print slower and look smoother"
+  },
+  "smart_layer_smoothing": {
+   "increase": "Layer height changes more gradually",
+   "decrease": "Layer height follows the surface more closely"
+  },
+  "smart_layer_max_step_ratio": {
+   "increase": "Layer height may jump more between layers",
+   "decrease": "Layer height changes in smaller steps"
+  }
+ },
+ "enabled_when": {
+  "outer_wall_speed": [
+   {
+    "key": "wall_loops",
+    "op": "gt",
+    "value": 0
+   }
+  ],
+  "inner_wall_speed": [
+   {
+    "key": "wall_loops",
+    "op": "gt",
+    "value": 0
+   }
+  ],
+  "gap_infill_speed": [
+   {
+    "key": "wall_loops",
+    "op": "gt",
+    "value": 0
+   }
+  ],
+  "outer_wall_line_width": [
+   {
+    "key": "wall_loops",
+    "op": "gt",
+    "value": 0
+   }
+  ],
+  "inner_wall_line_width": [
+   {
+    "key": "wall_loops",
+    "op": "gt",
+    "value": 0
+   }
+  ],
+  "outer_wall_acceleration": [
+   {
+    "key": "wall_loops",
+    "op": "gt",
+    "value": 0
+   },
+   {
+    "key": "default_acceleration",
+    "op": "gt",
+    "value": 0
+   }
+  ],
+  "inner_wall_acceleration": [
+   {
+    "key": "wall_loops",
+    "op": "gt",
+    "value": 0
+   },
+   {
+    "key": "default_acceleration",
+    "op": "gt",
+    "value": 0
+   }
+  ],
+  "wall_sequence": [
+   {
+    "key": "wall_loops",
+    "op": "gt",
+    "value": 0
+   }
+  ],
+  "precise_outer_wall": [
+   {
+    "key": "wall_loops",
+    "op": "gt",
+    "value": 0
+   }
+  ],
+  "only_one_wall_top": [
+   {
+    "key": "wall_loops",
+    "op": "gt",
+    "value": 0
+   }
+  ],
+  "sparse_infill_pattern": [
+   {
+    "key": "sparse_infill_density",
+    "op": "gt",
+    "value": 0
+   }
+  ],
+  "sparse_infill_line_width": [
+   {
+    "key": "sparse_infill_density",
+    "op": "gt",
+    "value": 0
+   }
+  ],
+  "sparse_infill_speed": [
+   {
+    "key": "sparse_infill_density",
+    "op": "gt",
+    "value": 0
+   }
+  ],
+  "infill_combination": [
+   {
+    "key": "sparse_infill_density",
+    "op": "gt",
+    "value": 0
+   }
+  ],
+  "infill_anchor_max": [
+   {
+    "key": "sparse_infill_density",
+    "op": "gt",
+    "value": 0
+   },
+   {
+    "key": "sparse_infill_pattern",
+    "op": "ne",
+    "value": "line"
+   }
+  ],
+  "sparse_infill_acceleration": [
+   {
+    "key": "sparse_infill_density",
+    "op": "gt",
+    "value": 0
+   },
+   {
+    "key": "default_acceleration",
+    "op": "gt",
+    "value": 0
+   }
+  ],
+  "sparse_infill_flow_ratio": [
+   {
+    "key": "sparse_infill_density",
+    "op": "gt",
+    "value": 0
+   }
+  ],
+  "infill_direction": [
+   {
+    "key": "sparse_infill_density",
+    "op": "gt",
+    "value": 0
+   }
+  ],
+  "fill_multiline": [
+   {
+    "key": "sparse_infill_density",
+    "op": "gt",
+    "value": 0
+   }
+  ],
+  "top_surface_pattern": [
+   {
+    "key": "top_shell_layers",
+    "op": "gt",
+    "value": 0
+   }
+  ],
+  "top_surface_speed": [
+   {
+    "key": "top_shell_layers",
+    "op": "gt",
+    "value": 0
+   }
+  ],
+  "top_surface_line_width": [
+   {
+    "key": "top_shell_layers",
+    "op": "gt",
+    "value": 0
+   }
+  ],
+  "top_layer_direction": [
+   {
+    "key": "top_shell_layers",
+    "op": "gt",
+    "value": 0
+   }
+  ],
+  "top_surface_density": [
+   {
+    "key": "top_shell_layers",
+    "op": "gt",
+    "value": 0
+   }
+  ],
+  "bottom_surface_pattern": [
+   {
+    "key": "bottom_shell_layers",
+    "op": "gt",
+    "value": 0
+   }
+  ],
+  "bottom_surface_density": [
+   {
+    "key": "bottom_shell_layers",
+    "op": "gt",
+    "value": 0
+   }
+  ],
+  "bottom_layer_direction": [
+   {
+    "key": "bottom_shell_layers",
+    "op": "gt",
+    "value": 0
+   }
+  ],
+  "top_shell_thickness": [
+   {
+    "key": "spiral_mode",
+    "op": "eq",
+    "value": false
+   },
+   {
+    "key": "top_shell_layers",
+    "op": "gt",
+    "value": 0
+   }
+  ],
+  "bottom_shell_thickness": [
+   {
+    "key": "spiral_mode",
+    "op": "eq",
+    "value": false
+   },
+   {
+    "key": "bottom_shell_layers",
+    "op": "gt",
+    "value": 0
+   }
+  ],
+  "spiral_mode_smooth": [
+   {
+    "key": "spiral_mode",
+    "op": "eq",
+    "value": true
+   }
+  ],
+  "spiral_mode_max_xy_smoothing": [
+   {
+    "key": "spiral_mode",
+    "op": "eq",
+    "value": true
+   }
+  ],
+  "spiral_starting_flow_ratio": [
+   {
+    "key": "spiral_mode",
+    "op": "eq",
+    "value": true
+   }
+  ],
+  "spiral_finishing_flow_ratio": [
+   {
+    "key": "spiral_mode",
+    "op": "eq",
+    "value": true
+   }
+  ],
+  "seam_slope_type": [
+   {
+    "key": "spiral_mode",
+    "op": "eq",
+    "value": false
+   }
+  ],
+  "seam_slope_start_height": [
+   {
+    "key": "seam_slope_type",
+    "op": "ne",
+    "value": "none"
+   }
+  ],
+  "seam_slope_steps": [
+   {
+    "key": "seam_slope_type",
+    "op": "ne",
+    "value": "none"
+   }
+  ],
+  "seam_slope_min_length": [
+   {
+    "key": "seam_slope_type",
+    "op": "ne",
+    "value": "none"
+   },
+   {
+    "key": "seam_slope_entire_loop",
+    "op": "eq",
+    "value": false
+   }
+  ],
+  "skirt_distance": [
+   {
+    "key": "skirt_loops",
+    "op": "gt",
+    "value": 0
+   }
+  ],
+  "skirt_speed": [
+   {
+    "key": "skirt_loops",
+    "op": "gt",
+    "value": 0
+   }
+  ],
+  "min_skirt_length": [
+   {
+    "key": "skirt_loops",
+    "op": "gt",
+    "value": 0
+   }
+  ],
+  "skirt_height": [
+   {
+    "key": "skirt_loops",
+    "op": "gt",
+    "value": 0
+   },
+   {
+    "key": "draft_shield",
+    "op": "ne",
+    "value": "enabled"
+   }
+  ],
+  "brim_object_gap": [
+   {
+    "key": "brim_type",
+    "op": "ne",
+    "value": "no_brim"
+   }
+  ],
+  "combine_brims": [
+   {
+    "key": "brim_type",
+    "op": "ne",
+    "value": "no_brim"
+   }
+  ],
+  "brim_flow_ratio": [
+   {
+    "key": "brim_type",
+    "op": "ne",
+    "value": "no_brim"
+   }
+  ],
+  "brim_width": [
+   {
+    "key": "brim_type",
+    "op": "notin",
+    "value": [
+     "no_brim",
+     "auto_brim"
+    ]
+   }
+  ],
+  "support_type": [
+   {
+    "key": "enable_support",
+    "op": "eq",
+    "value": true
+   }
+  ],
+  "support_style": [
+   {
+    "key": "enable_support",
+    "op": "eq",
+    "value": true
+   }
+  ],
+  "support_top_z_distance": [
+   {
+    "key": "enable_support",
+    "op": "eq",
+    "value": true
+   }
+  ],
+  "support_bottom_z_distance": [
+   {
+    "key": "enable_support",
+    "op": "eq",
+    "value": true
+   }
+  ],
+  "support_base_pattern": [
+   {
+    "key": "enable_support",
+    "op": "eq",
+    "value": true
+   }
+  ],
+  "support_base_pattern_spacing": [
+   {
+    "key": "enable_support",
+    "op": "eq",
+    "value": true
+   }
+  ],
+  "support_object_xy_distance": [
+   {
+    "key": "enable_support",
+    "op": "eq",
+    "value": true
+   }
+  ],
+  "support_on_build_plate_only": [
+   {
+    "key": "enable_support",
+    "op": "eq",
+    "value": true
+   }
+  ],
+  "support_interface_top_layers": [
+   {
+    "key": "enable_support",
+    "op": "eq",
+    "value": true
+   }
+  ],
+  "support_interface_bottom_layers": [
+   {
+    "key": "enable_support",
+    "op": "eq",
+    "value": true
+   }
+  ],
+  "support_expansion": [
+   {
+    "key": "enable_support",
+    "op": "eq",
+    "value": true
+   }
+  ],
+  "support_speed": [
+   {
+    "key": "enable_support",
+    "op": "eq",
+    "value": true
+   }
+  ],
+  "support_line_width": [
+   {
+    "key": "enable_support",
+    "op": "eq",
+    "value": true
+   }
+  ],
+  "support_flow_ratio": [
+   {
+    "key": "enable_support",
+    "op": "eq",
+    "value": true
+   }
+  ],
+  "support_interface_spacing": [
+   {
+    "key": "enable_support",
+    "op": "eq",
+    "value": true
+   },
+   {
+    "key": "enable_support",
+    "op": "eq",
+    "value": true
+   }
+  ],
+  "support_interface_pattern": [
+   {
+    "key": "enable_support",
+    "op": "eq",
+    "value": true
+   },
+   {
+    "key": "enable_support",
+    "op": "eq",
+    "value": true
+   }
+  ],
+  "support_interface_speed": [
+   {
+    "key": "enable_support",
+    "op": "eq",
+    "value": true
+   },
+   {
+    "key": "enable_support",
+    "op": "eq",
+    "value": true
+   }
+  ],
+  "support_threshold_angle": [
+   {
+    "key": "enable_support",
+    "op": "eq",
+    "value": true
+   },
+   {
+    "key": "support_type",
+    "op": "in",
+    "value": [
+     "normal(auto)",
+     "tree(auto)"
+    ]
+   }
+  ],
+  "support_threshold_overlap": [
+   {
+    "key": "enable_support",
+    "op": "eq",
+    "value": true
+   },
+   {
+    "key": "support_type",
+    "op": "in",
+    "value": [
+     "normal(auto)",
+     "tree(auto)"
+    ]
+   },
+   {
+    "key": "support_threshold_angle",
+    "op": "eq",
+    "value": 0
+   }
+  ],
+  "tree_support_branch_angle": [
+   {
+    "key": "enable_support",
+    "op": "eq",
+    "value": true
+   },
+   {
+    "key": "support_type",
+    "op": "in",
+    "value": [
+     "tree(auto)",
+     "tree(manual)"
+    ]
+   }
+  ],
+  "tree_support_branch_distance": [
+   {
+    "key": "enable_support",
+    "op": "eq",
+    "value": true
+   },
+   {
+    "key": "support_type",
+    "op": "in",
+    "value": [
+     "tree(auto)",
+     "tree(manual)"
+    ]
+   }
+  ],
+  "tree_support_branch_diameter": [
+   {
+    "key": "enable_support",
+    "op": "eq",
+    "value": true
+   },
+   {
+    "key": "support_type",
+    "op": "in",
+    "value": [
+     "tree(auto)",
+     "tree(manual)"
+    ]
+   }
+  ],
+  "tree_support_wall_count": [
+   {
+    "key": "enable_support",
+    "op": "eq",
+    "value": true
+   },
+   {
+    "key": "support_type",
+    "op": "in",
+    "value": [
+     "tree(auto)",
+     "tree(manual)"
+    ]
+   }
+  ],
+  "tree_support_tip_diameter": [
+   {
+    "key": "enable_support",
+    "op": "eq",
+    "value": true
+   },
+   {
+    "key": "support_type",
+    "op": "in",
+    "value": [
+     "tree(auto)",
+     "tree(manual)"
+    ]
+   }
+  ],
+  "tree_support_auto_brim": [
+   {
+    "key": "enable_support",
+    "op": "eq",
+    "value": true
+   },
+   {
+    "key": "support_type",
+    "op": "in",
+    "value": [
+     "tree(auto)",
+     "tree(manual)"
+    ]
+   }
+  ],
+  "tree_support_brim_width": [
+   {
+    "key": "enable_support",
+    "op": "eq",
+    "value": true
+   },
+   {
+    "key": "support_type",
+    "op": "in",
+    "value": [
+     "tree(auto)",
+     "tree(manual)"
+    ]
+   },
+   {
+    "key": "tree_support_auto_brim",
+    "op": "eq",
+    "value": false
+   }
+  ],
+  "support_ironing": [
+   {
+    "key": "enable_support",
+    "op": "eq",
+    "value": true
+   }
+  ],
+  "ironing_flow": [
+   {
+    "key": "ironing_type",
+    "op": "ne",
+    "value": "no ironing"
+   }
+  ],
+  "ironing_spacing": [
+   {
+    "key": "ironing_type",
+    "op": "ne",
+    "value": "no ironing"
+   }
+  ],
+  "ironing_speed": [
+   {
+    "key": "ironing_type",
+    "op": "ne",
+    "value": "no ironing"
+   }
+  ],
+  "ironing_pattern": [
+   {
+    "key": "ironing_type",
+    "op": "ne",
+    "value": "no ironing"
+   }
+  ],
+  "ironing_inset": [
+   {
+    "key": "ironing_type",
+    "op": "ne",
+    "value": "no ironing"
+   }
+  ],
+  "prime_tower_width": [
+   {
+    "key": "enable_prime_tower",
+    "op": "eq",
+    "value": true
+   }
+  ],
+  "prime_volume": [
+   {
+    "key": "enable_prime_tower",
+    "op": "eq",
+    "value": true
+   }
+  ],
+  "wipe_tower_rotation_angle": [
+   {
+    "key": "enable_prime_tower",
+    "op": "eq",
+    "value": true
+   }
+  ],
+  "wipe_tower_cone_angle": [
+   {
+    "key": "enable_prime_tower",
+    "op": "eq",
+    "value": true
+   }
+  ],
+  "wipe_tower_extra_spacing": [
+   {
+    "key": "enable_prime_tower",
+    "op": "eq",
+    "value": true
+   }
+  ],
+  "wipe_tower_extra_flow": [
+   {
+    "key": "enable_prime_tower",
+    "op": "eq",
+    "value": true
+   }
+  ],
+  "wipe_tower_no_sparse_layers": [
+   {
+    "key": "enable_prime_tower",
+    "op": "eq",
+    "value": true
+   }
+  ],
+  "prime_tower_brim_width": [
+   {
+    "key": "enable_prime_tower",
+    "op": "eq",
+    "value": true
+   }
+  ],
+  "prime_tower_infill_gap": [
+   {
+    "key": "enable_prime_tower",
+    "op": "eq",
+    "value": true
+   }
+  ],
+  "wipe_tower_max_purge_speed": [
+   {
+    "key": "enable_prime_tower",
+    "op": "eq",
+    "value": true
+   }
+  ],
+  "standby_temperature_delta": [
+   {
+    "key": "ooze_prevention",
+    "op": "eq",
+    "value": true
+   }
+  ],
+  "fuzzy_skin_thickness": [
+   {
+    "key": "fuzzy_skin",
+    "op": "ne",
+    "value": "none"
+   }
+  ],
+  "fuzzy_skin_point_distance": [
+   {
+    "key": "fuzzy_skin",
+    "op": "ne",
+    "value": "none"
+   }
+  ],
+  "fuzzy_skin_first_layer": [
+   {
+    "key": "fuzzy_skin",
+    "op": "ne",
+    "value": "none"
+   }
+  ],
+  "fuzzy_skin_noise_type": [
+   {
+    "key": "fuzzy_skin",
+    "op": "ne",
+    "value": "none"
+   }
+  ],
+  "fuzzy_skin_mode": [
+   {
+    "key": "fuzzy_skin",
+    "op": "ne",
+    "value": "none"
+   }
+  ],
+  "min_bead_width": [
+   {
+    "key": "wall_generator",
+    "op": "eq",
+    "value": "arachne"
+   }
+  ],
+  "min_feature_size": [
+   {
+    "key": "wall_generator",
+    "op": "eq",
+    "value": "arachne"
+   }
+  ],
+  "wall_transition_angle": [
+   {
+    "key": "wall_generator",
+    "op": "eq",
+    "value": "arachne"
+   }
+  ],
+  "wall_transition_length": [
+   {
+    "key": "wall_generator",
+    "op": "eq",
+    "value": "arachne"
+   }
+  ],
+  "wall_distribution_count": [
+   {
+    "key": "wall_generator",
+    "op": "eq",
+    "value": "arachne"
+   }
+  ],
+  "wall_transition_filter_deviation": [
+   {
+    "key": "wall_generator",
+    "op": "eq",
+    "value": "arachne"
+   }
+  ],
+  "detect_thin_wall": [
+   {
+    "key": "wall_generator",
+    "op": "ne",
+    "value": "arachne"
+   }
+  ],
+  "top_surface_acceleration": [
+   {
+    "key": "default_acceleration",
+    "op": "gt",
+    "value": 0
+   }
+  ],
+  "initial_layer_acceleration": [
+   {
+    "key": "default_acceleration",
+    "op": "gt",
+    "value": 0
+   }
+  ],
+  "travel_acceleration": [
+   {
+    "key": "default_acceleration",
+    "op": "gt",
+    "value": 0
+   }
+  ],
+  "accel_to_decel_factor": [
+   {
+    "key": "accel_to_decel_enable",
+    "op": "eq",
+    "value": true
+   }
+  ],
+  "overhang_1_4_speed": [
+   {
+    "key": "enable_overhang_speed",
+    "op": "eq",
+    "value": true
+   }
+  ],
+  "overhang_2_4_speed": [
+   {
+    "key": "enable_overhang_speed",
+    "op": "eq",
+    "value": true
+   }
+  ],
+  "overhang_3_4_speed": [
+   {
+    "key": "enable_overhang_speed",
+    "op": "eq",
+    "value": true
+   }
+  ],
+  "overhang_4_4_speed": [
+   {
+    "key": "enable_overhang_speed",
+    "op": "eq",
+    "value": true
+   }
+  ],
+  "pressure_advance": [
+   {
+    "key": "enable_pressure_advance",
+    "op": "eq",
+    "value": true
+   }
+  ],
+  "adaptive_pressure_advance": [
+   {
+    "key": "enable_pressure_advance",
+    "op": "eq",
+    "value": true
+   }
+  ],
+  "adaptive_pressure_advance_model": [
+   {
+    "key": "enable_pressure_advance",
+    "op": "eq",
+    "value": true
+   }
+  ],
+  "adaptive_pressure_advance_overhangs": [
+   {
+    "key": "enable_pressure_advance",
+    "op": "eq",
+    "value": true
+   }
+  ],
+  "adaptive_pressure_advance_bridges": [
+   {
+    "key": "enable_pressure_advance",
+    "op": "eq",
+    "value": true
+   }
+  ],
+  "slow_down_min_speed": [
+   {
+    "key": "slow_down_for_layer_cooling",
+    "op": "eq",
+    "value": true
+   }
+  ],
+  "slow_down_layer_time": [
+   {
+    "key": "slow_down_for_layer_cooling",
+    "op": "eq",
+    "value": true
+   }
+  ],
+  "overhang_fan_speed": [
+   {
+    "key": "enable_overhang_bridge_fan",
+    "op": "eq",
+    "value": true
+   }
+  ],
+  "retraction_length": [
+   {
+    "key": "use_firmware_retraction",
+    "op": "eq",
+    "value": false
+   }
+  ],
+  "retraction_speed": [
+   {
+    "key": "use_firmware_retraction",
+    "op": "eq",
+    "value": false
+   }
+  ],
+  "deretraction_speed": [
+   {
+    "key": "use_firmware_retraction",
+    "op": "eq",
+    "value": false
+   }
+  ],
+  "retraction_minimum_travel": [
+   {
+    "key": "use_firmware_retraction",
+    "op": "eq",
+    "value": false
+   }
+  ],
+  "retract_restart_extra": [
+   {
+    "key": "use_firmware_retraction",
+    "op": "eq",
+    "value": false
+   }
+  ],
+  "retract_when_changing_layer": [
+   {
+    "key": "use_firmware_retraction",
+    "op": "eq",
+    "value": false
+   }
+  ],
+  "wipe": [
+   {
+    "key": "use_firmware_retraction",
+    "op": "eq",
+    "value": false
+   }
+  ],
+  "z_hop": [
+   {
+    "key": "use_firmware_retraction",
+    "op": "eq",
+    "value": false
+   }
+  ],
+  "wipe_distance": [
+   {
+    "key": "wipe",
+    "op": "eq",
+    "value": true
+   }
+  ],
+  "retract_before_wipe": [
+   {
+    "key": "wipe",
+    "op": "eq",
+    "value": true
+   }
+  ],
+  "z_hop_types": [
+   {
+    "key": "z_hop",
+    "op": "gt",
+    "value": 0
+   }
+  ],
+  "retract_lift_above": [
+   {
+    "key": "z_hop",
+    "op": "gt",
+    "value": 0
+   }
+  ],
+  "retract_lift_below": [
+   {
+    "key": "z_hop",
+    "op": "gt",
+    "value": 0
+   }
+  ],
+  "input_shaping_freq_x": [
+   {
+    "key": "input_shaping_emit",
+    "op": "eq",
+    "value": true
+   }
+  ],
+  "input_shaping_freq_y": [
+   {
+    "key": "input_shaping_emit",
+    "op": "eq",
+    "value": true
+   }
+  ],
+  "input_shaping_damp_x": [
+   {
+    "key": "input_shaping_emit",
+    "op": "eq",
+    "value": true
+   }
+  ],
+  "input_shaping_damp_y": [
+   {
+    "key": "input_shaping_emit",
+    "op": "eq",
+    "value": true
+   }
+  ],
+  "input_shaping_type": [
+   {
+    "key": "input_shaping_emit",
+    "op": "eq",
+    "value": true
+   }
+  ],
+  "max_resonance_avoidance_speed": [
+   {
+    "key": "resonance_avoidance",
+    "op": "eq",
+    "value": true
+   }
+  ],
+  "min_resonance_avoidance_speed": [
+   {
+    "key": "resonance_avoidance",
+    "op": "eq",
+    "value": true
+   }
+  ],
+  "ironing_angle": [
+   {
+    "key": "ironing_type",
+    "op": "ne",
+    "value": "no ironing"
+   }
+  ],
+  "smart_layer_min_height": [
+   {
+    "key": "smart_layer",
+    "op": "ne",
+    "value": "off"
+   }
+  ],
+  "smart_layer_max_height": [
+   {
+    "key": "smart_layer",
+    "op": "ne",
+    "value": "off"
+   }
+  ],
+  "smart_layer_smoothing": [
+   {
+    "key": "smart_layer",
+    "op": "ne",
+    "value": "off"
+   }
+  ],
+  "smart_layer_max_step_ratio": [
+   {
+    "key": "smart_layer",
+    "op": "ne",
+    "value": "off"
+   }
+  ]
+ },
+ "overrides": {
+  "slicing_mode": {
+   "group": "quality"
+  },
+  "filament_type": {
+   "group": "filament",
+   "label": "Filament type"
+  },
+  "nozzle_temperature_range_low": {
+   "label": "Nozzle temperature range minimum"
+  },
+  "nozzle_temperature_range_high": {
+   "label": "Nozzle temperature range maximum"
+  },
+  "filament_density": {
+   "label": "Filament density"
+  },
+  "filament_retraction_length": {
+   "label": "Filament retraction length"
+  },
+  "filament_z_hop": {
+   "label": "Filament Z hop height"
+  },
+  "smart_layer": {
+   "group": "quality",
+   "pilot": "edit",
+   "invalidates": "layers"
+  },
+  "smart_layer_min_height": {
+   "group": "quality",
+   "pilot": "edit",
+   "invalidates": "layers"
+  },
+  "smart_layer_max_height": {
+   "group": "quality",
+   "pilot": "edit",
+   "invalidates": "layers"
+  },
+  "smart_layer_smoothing": {
+   "group": "quality",
+   "pilot": "edit",
+   "invalidates": "layers"
+  },
+  "smart_layer_max_step_ratio": {
+   "group": "quality",
+   "pilot": "edit",
+   "invalidates": "layers"
+  }
+ },
+ "synthetic": [
+  {
+   "key": "machine_max_speed_x",
+   "section": "printer",
+   "type": "floats",
+   "unit": "mm/s",
+   "default": [
+    500,
+    200
+   ],
+   "min": 0,
+   "label": "Maximum speed X",
+   "help": "Maximum speed X. Written to the G-code when machine limits are emitted."
+  },
+  {
+   "key": "machine_max_acceleration_x",
+   "section": "printer",
+   "type": "floats",
+   "unit": "mm/s2",
+   "default": [
+    1000,
+    1000
+   ],
+   "min": 0,
+   "label": "Maximum acceleration X",
+   "help": "Maximum acceleration X. Written to the G-code when machine limits are emitted."
+  },
+  {
+   "key": "machine_max_jerk_x",
+   "section": "printer",
+   "type": "floats",
+   "unit": "mm/s",
+   "default": [
+    10,
+    10
+   ],
+   "min": 0,
+   "label": "Maximum jerk X",
+   "help": "Maximum jerk X. Written to the G-code when machine limits are emitted."
+  },
+  {
+   "key": "machine_max_speed_y",
+   "section": "printer",
+   "type": "floats",
+   "unit": "mm/s",
+   "default": [
+    500,
+    200
+   ],
+   "min": 0,
+   "label": "Maximum speed Y",
+   "help": "Maximum speed Y. Written to the G-code when machine limits are emitted."
+  },
+  {
+   "key": "machine_max_acceleration_y",
+   "section": "printer",
+   "type": "floats",
+   "unit": "mm/s2",
+   "default": [
+    1000,
+    1000
+   ],
+   "min": 0,
+   "label": "Maximum acceleration Y",
+   "help": "Maximum acceleration Y. Written to the G-code when machine limits are emitted."
+  },
+  {
+   "key": "machine_max_jerk_y",
+   "section": "printer",
+   "type": "floats",
+   "unit": "mm/s",
+   "default": [
+    10,
+    10
+   ],
+   "min": 0,
+   "label": "Maximum jerk Y",
+   "help": "Maximum jerk Y. Written to the G-code when machine limits are emitted."
+  },
+  {
+   "key": "machine_max_speed_z",
+   "section": "printer",
+   "type": "floats",
+   "unit": "mm/s",
+   "default": [
+    12,
+    12
+   ],
+   "min": 0,
+   "label": "Maximum speed Z",
+   "help": "Maximum speed Z. Written to the G-code when machine limits are emitted."
+  },
+  {
+   "key": "machine_max_acceleration_z",
+   "section": "printer",
+   "type": "floats",
+   "unit": "mm/s2",
+   "default": [
+    500,
+    200
+   ],
+   "min": 0,
+   "label": "Maximum acceleration Z",
+   "help": "Maximum acceleration Z. Written to the G-code when machine limits are emitted."
+  },
+  {
+   "key": "machine_max_jerk_z",
+   "section": "printer",
+   "type": "floats",
+   "unit": "mm/s",
+   "default": [
+    0.2,
+    0.4
+   ],
+   "min": 0,
+   "label": "Maximum jerk Z",
+   "help": "Maximum jerk Z. Written to the G-code when machine limits are emitted."
+  },
+  {
+   "key": "machine_max_speed_e",
+   "section": "printer",
+   "type": "floats",
+   "unit": "mm/s",
+   "default": [
+    120,
+    120
+   ],
+   "min": 0,
+   "label": "Maximum speed E",
+   "help": "Maximum speed E. Written to the G-code when machine limits are emitted."
+  },
+  {
+   "key": "machine_max_acceleration_e",
+   "section": "printer",
+   "type": "floats",
+   "unit": "mm/s2",
+   "default": [
+    5000,
+    5000
+   ],
+   "min": 0,
+   "label": "Maximum acceleration E",
+   "help": "Maximum acceleration E. Written to the G-code when machine limits are emitted."
+  },
+  {
+   "key": "machine_max_jerk_e",
+   "section": "printer",
+   "type": "floats",
+   "unit": "mm/s",
+   "default": [
+    2.5,
+    2.5
+   ],
+   "min": 0,
+   "label": "Maximum jerk E",
+   "help": "Maximum jerk E. Written to the G-code when machine limits are emitted."
+  },
+  {
+   "key": "smart_layer",
+   "section": "process",
+   "type": "enum",
+   "default": "off",
+   "label": "sleipnir",
+   "help": "Automatic variable layer height. Off keeps one layer height. Quality thins layers where curved and detailed surfaces need it; Strength thins layers where the part carries load and keeps them thick elsewhere.",
+   "mode": "simple",
+   "enumValues": [
+    "off",
+    "quality",
+    "strength"
+   ],
+   "enumLabels": [
+    "Off",
+    "sleipnir: Quality",
+    "sleipnir: Strength"
+   ]
+  },
+  {
+   "key": "smart_layer_min_height",
+   "section": "process",
+   "type": "float",
+   "default": 0.15,
+   "label": "sleipnir thinnest layer",
+   "help": "The thinnest layer sleipnir may use. Keep it at least a quarter of the nozzle diameter unless the material's research says otherwise.",
+   "mode": "simple",
+   "unit": "mm",
+   "min": 0.04,
+   "max": 0.8
+  },
+  {
+   "key": "smart_layer_max_height",
+   "section": "process",
+   "type": "float",
+   "default": 0.3,
+   "label": "sleipnir thickest layer",
+   "help": "The thickest layer sleipnir may use. Keep it at most three quarters of the nozzle diameter unless the material's research says otherwise.",
+   "mode": "simple",
+   "unit": "mm",
+   "min": 0.04,
+   "max": 0.8
+  },
+  {
+   "key": "smart_layer_smoothing",
+   "section": "process",
+   "type": "percent",
+   "default": 50,
+   "label": "sleipnir smoothing",
+   "help": "How strongly neighboring layer heights are blended. 0 follows the surface exactly, 100 gives the gentlest change.",
+   "mode": "simple",
+   "unit": "%",
+   "min": 0,
+   "max": 100
+  },
+  {
+   "key": "smart_layer_max_step_ratio",
+   "section": "process",
+   "type": "float",
+   "default": 0.25,
+   "label": "sleipnir largest step",
+   "help": "The biggest change in layer height from one layer to the next, as a fraction of the previous layer. Smaller steps look smoother.",
+   "mode": "simple",
+   "min": 0.05,
+   "max": 1
+  }
+ ],
+ "hidden_keys": []
+}

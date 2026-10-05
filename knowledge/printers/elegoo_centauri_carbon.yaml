@@ -1,0 +1,86 @@
+kind: printer
+schema_version: 1
+id: elegoo_centauri_carbon
+name: Elegoo Centauri Carbon
+vendor: Elegoo
+status: current
+firmware: vendor_klipper
+connections: [elegoo_lan, moonraker_via_opencentauri_only]
+kinematics: corexy
+build_volume_mm: {x: 256, y: 256, z: 256, confidence: high, src: [elegoo_cc_page, elegoo_cc_review_toms, "orca:Elegoo/machine/ECC/Elegoo Centauri Carbon 0.4 nozzle.json"]}
+extruder: {type: direct_drive, src: [elegoo_cc_page]}
+hotend:
+  max_temp_c: 320
+  nozzle_diameters_mm: [0.2, 0.4, 0.6, 0.8]
+  nozzle_materials: [hardened_steel]
+  stock_nozzle: "0.4 mm hardened steel"
+  tool_free_swap: false
+  high_flow_option: false
+  confidence: medium
+  note: "Search summaries of the Elegoo page and reviews say 320 C. Some listings say 300 C; use 300 for safety in profiles unless the user has confirmed 320."
+  src: [elegoo_cc_page, elegoo_cc_review_toms, "orca:Elegoo/machine/ECC/Elegoo Centauri Carbon 0.4 nozzle.json"]
+bed:
+  max_temp_c: 110
+  plates: [textured_pei, smooth_pei]
+  confidence: medium
+  note: "Dual sided flexible PEI plate."
+  src: [elegoo_cc_page, elegoo_cc_review_toms]
+enclosure:
+  type: enclosed
+  chamber_heating: passive
+  max_chamber_c: null
+  filtration: [activated_carbon]
+  confidence: medium
+  note: "Fully enclosed steel, aluminum and glass shell. No heated chamber."
+  src: [elegoo_cc_page, elegoo_cc_review_toms]
+motion:
+  max_speed_mm_s: 500
+  max_accel_mm_s2: 20000
+  input_shaping: auto
+  confidence: medium
+  note: "Orca limits 500 mm/s and 20000 mm/s2. Elegoo firmware runs its own calibration at start."
+  src: ["orca:Elegoo/machine/ECC/Elegoo Centauri Carbon 0.4 nozzle.json", elegoo_cc_page]
+power:
+  mains: "100 to 240 V AC, 50/60 Hz"
+  max_w: {value: 1100, note: "At 220 V. 350 W at 110 V.", src: [elegoo_cc_intro_pdf], confidence: high}
+  bed_heater_w: {value: 1000, note: "AC heated bed, 1000 W at 220 V. The 110 V figure is not stated.", src: [elegoo_cc_intro_pdf], confidence: high}
+sensors: [filament_runout, camera, chamber_thermistor]
+builtin_calibrations:
+  - {id: auto_leveling, what: "Automatic bed leveling and nozzle calibration before print.", src: [elegoo_cc_page]}
+  - {id: vibration_calibration, what: "Vendor firmware vibration compensation; procedure and accelerometer details not verified.", src: [elegoo_cc_page]}
+multi_material:
+  - {system: elegoo_canvas, slots: 4, note: "Elegoo's CANVAS multicolor add on. Orca support is limited; details not verified.", src: [elegoo_cc_review_toms]}
+materials:
+  recommended: [pla, pla_plus, pla_matte, pla_silk, petg, abs, asa, tpu_95a]
+  possible: [pa6, pa12, pc, petg_cf, pla_cf, pa_cf, pa_gf, tpu_85a, hips, pp, pva, bvoh]
+  not_recommended: []
+  confidence: medium
+  note: "Hardened nozzle and enclosure allow ABS, ASA and CF filaments. No chamber heater and a 110 C bed limit PC and warp prone nylon. Open the lid for PLA."
+  src: [elegoo_cc_page, elegoo_cc_review_toms]
+orca_profile: "orca:Elegoo/machine/ECC/Elegoo Centauri Carbon 0.4 nozzle.json"
+profile_baseline:
+  process: "0.20mm Standard @Elegoo CC 0.4 nozzle"
+  values: {layer_height: 0.2, initial_layer_print_height: 0.2, outer_wall_speed: 160, inner_wall_speed: 200, sparse_infill_speed: 200, top_surface_speed: 200, initial_layer_speed: 50, travel_speed: 500, default_acceleration: 10000, outer_wall_acceleration: 5000, initial_layer_acceleration: 500, wall_loops: 2, top_shell_layers: 5, bottom_shell_layers: 3, sparse_infill_density: "15%", bridge_speed: 50, line_width: 0.42, retraction_length: 0.8}
+  confidence: high
+  note: "Orca's Elegoo profile sets inner wall and travel acceleration to 0, which means fall back to the default of 10000."
+  src: ["orca:Elegoo/process/ECC/0.20mm Standard @Elegoo CC 0.4 nozzle.json", "orca:Elegoo/machine/ECC/Elegoo Centauri Carbon 0.4 nozzle.json"]
+pilot_notes:
+  - "Firmware status is contested and I could only confirm it through reporting and community docs, not a manufacturer statement. Reported: stock Elegoo OS is a heavily modified Klipper; Elegoo released source only after community pressure and the release raised license questions (All3DP). Moonraker, Fluidd and macro access are not offered by stock firmware."
+  - "Community firmware exists: OpenCentauri COSMOS (full Klipper and Kalico replacement on the stock mainboard) and a patched Elegoo firmware. These are unofficial, flashing carries brick and warranty risk, and mimir must not walk a user through flashing without saying so."
+  - "On stock firmware do not offer Klipper macro or Moonraker automation. Print start behavior is fixed; send G-code from Orca using Elegoo's LAN protocol or file transfer."
+  - "Slicer G-code flavor is klipper in Orca but stock start G-code is vendor controlled. Keep machine_start_gcode unchanged unless the user runs COSMOS."
+  - "No chamber heater: do not set chamber_temperature."
+common_issues:
+  - symptom: "Ringing or ghosting on fast prints"
+    cause: "Default accelerations are high for the lightweight gantry."
+    fix:
+      - {key: outer_wall_acceleration, op: at_most, value: 3000, why: "Lower outer wall acceleration to clean up ringing."}
+  - symptom: "PLA jams after long ABS runs"
+    cause: "Enclosed chamber heat soak."
+    fix:
+      - {advice: "Open the lid and let the chamber cool for PLA.", kind: environment}
+  - symptom: "Cannot reach Moonraker or Fluidd"
+    cause: "Stock firmware does not expose them."
+    fix:
+      - {advice: "Use Elegoo's own app or LAN upload. Moonraker access needs community firmware such as OpenCentauri COSMOS, at the user's own risk.", kind: workflow}
+src: [elegoo_cc_page, elegoo_cc_review_toms, opencentauri_docs, all3dp_cc_firmware, "orca:Elegoo/machine/ECC/Elegoo Centauri Carbon 0.4 nozzle.json"]

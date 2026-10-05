@@ -1,0 +1,83 @@
+{
+  "type": "filament",
+  "name": "Demo PLA",
+  "inherits": "fdm_demo_pla",
+  "from": "system",
+  "instantiation": "true",
+  "filament_type": [
+    "PLA"
+  ],
+  "nozzle_temperature": [
+    "220",
+    "220"
+  ],
+  "nozzle_temperature_initial_layer": [
+    "220",
+    "220"
+  ],
+  "nozzle_temperature_range_low": [
+    "190"
+  ],
+  "nozzle_temperature_range_high": [
+    "240"
+  ],
+  "filament_flow_ratio": [
+    "0.98",
+    "0.98"
+  ],
+  "filament_max_volumetric_speed": [
+    "21",
+    "29"
+  ],
+  "pressure_advance": [
+    "0.036"
+  ],
+  "filament_density": [
+    "1.26"
+  ],
+  "filament_retraction_length": [
+    "nil",
+    "0.4"
+  ],
+  "filament_z_hop": [
+    "nil",
+    "0.6"
+  ],
+  "filament_wipe": [
+    "nil",
+    "1"
+  ],
+  "filament_retraction_speed": [
+    "nil",
+    "30"
+  ],
+  "filament_deretraction_speed": [
+    "nil",
+    "30"
+  ],
+  "filament_retraction_minimum_travel": [
+    "nil",
+    "1"
+  ],
+  "filament_retract_when_changing_layer": [
+    "nil",
+    "1"
+  ],
+  "filament_retract_before_wipe": [
+    "nil",
+    "70%"
+  ],
+  "filament_wipe_distance": [
+    "nil",
+    "2"
+  ],
+  "filament_z_hop_types": [
+    "nil",
+    "Normal Lift"
+  ],
+  "filament_retract_restart_extra": [
+    "nil",
+    "0"
+  ],
+  "filament_vendor": "Demo"
+}

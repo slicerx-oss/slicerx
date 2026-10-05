@@ -1,0 +1,264 @@
+kind: filament
+schema_version: 1
+id: pla_cf
+name: PLA-CF (carbon fiber PLA)
+category: composite
+orca_filament_type: PLA-CF
+aliases: [PLA-CF, PLA CF, PLA Carbon Fiber, Bambu PLA-CF, PLA-GF, Polymaker PLA-CF, carbon filled PLA]
+related: [pla, petg_cf, pla_plus]
+summary: >
+  PLA filled with chopped carbon fiber. Stiffer and more dimensionally stable
+  than PLA, with a matte finish that hides layer lines and very little
+  warping. The fibers are abrasive and wear brass and stainless nozzles in
+  hours to days, so a hardened steel nozzle is required. Layers bond worse than
+  plain PLA, so parts are stiff but brittle.
+use_for: [stiff jigs and fixtures, drone and RC frames, camera mounts, matte looking prototypes, parts that must hold shape]
+avoid_for: [any print with a brass or stainless nozzle, 0.2 mm nozzles, parts that take impact, parts above about 55 C, snap fits]
+
+nozzle_temp_c:
+  min: 210
+  max: 250
+  typical: 230
+  confidence: medium
+  src:
+    - "orca:OrcaFilamentLibrary/filament/Bambu/Bambu PLA-CF @base.json"
+    - "orca:BBL/filament/Bambu PLA-CF @BBL X1C.json"
+    - "orca:OrcaFilamentLibrary/filament/Generic PLA-CF @System.json"
+    - bambu_wiki_material_table
+    - polymaker_tds_pla_cf
+    - prusa_kb_composites
+  note: >
+    Bambu PLA-CF profile 210 to 250, printing at 230 on X1C, and its wiki table
+    says 210 to 240. Orca generic PLA-CF 190 to 240 at 220. Polymaker PLA-CF
+    TDS 190 to 230. Prusa's composite guide notes a hardened nozzle may need a
+    few degrees more than brass.
+first_layer_nozzle_temp_c:
+  min: 220
+  max: 230
+  typical: 230
+  confidence: medium
+  src: ["orca:BBL/filament/Bambu PLA-CF @BBL X1C.json", "orca:OrcaFilamentLibrary/filament/Generic PLA-CF @System.json"]
+  note: "230 on X1C, 220 in the generic profile."
+bed_temp_c:
+  min: 45
+  max: 65
+  typical: 55
+  confidence: medium
+  src: [bambu_wiki_material_table, "orca:OrcaFilamentLibrary/filament/Bambu/Bambu PLA-CF @base.json", polymaker_tds_pla_cf]
+  note: "Bambu lists 45 to 65 on all its plates including the Cool Plate (profile 45 there, 55 on PEI). Polymaker TDS says 25 to 60."
+chamber_temp_c: null
+enclosure:
+  level: none
+  confidence: high
+  src: [bambu_wiki_material_table]
+  note: "Low warp. Open the door or remove the top glass cover when the bed is above 45 C."
+
+plates:
+  - {plate: bambu_cool_plate, fit: good, bed_temp_c: {min: 45, max: 65}, release_agent: none, confidence: high, src: [bambu_wiki_material_table], note: "Bambu's table gives PLA-CF a higher Cool Plate temperature than PLA."}
+  - {plate: bambu_supertack_plate, fit: good, bed_temp_c: {min: 45, max: 50}, release_agent: none, confidence: medium, src: ["orca:OrcaFilamentLibrary/filament/Bambu/Bambu PLA-CF @base.json"], note: "Bambu profile sets 50 C."}
+  - {plate: bambu_engineering_plate, fit: glue, bed_temp_c: {min: 45, max: 65}, release_agent: glue_stick, confidence: high, src: [bambu_wiki_material_table], note: "Glue required on the Engineering Plate."}
+  - {plate: bambu_high_temp_plate, fit: good, bed_temp_c: {min: 45, max: 65}, release_agent: none, confidence: high, src: [bambu_wiki_material_table], note: "Smooth PEI."}
+  - {plate: smooth_pei, fit: good, bed_temp_c: {min: 55, max: 65}, release_agent: none, confidence: low, src: [prusa_kb_pla], note: "Prusa's PLA guidance. No composite specific plate note."}
+  - {plate: textured_pei, fit: good, bed_temp_c: {min: 45, max: 65}, release_agent: none, confidence: high, src: [bambu_wiki_material_table], note: "Good bond, easy release once cool."}
+
+cooling:
+  fan_min_pct: {min: 100, max: 100, typical: 100}
+  fan_max_pct: {min: 50, max: 100, typical: 100}
+  overhang_fan_pct: {typical: 100}
+  no_fan_first_layers: {typical: 1}
+  min_layer_time_s: {min: 4, max: 10, typical: 8}
+  confidence: medium
+  src:
+    - "orca:BBL/filament/Bambu PLA-CF @BBL X1C.json"
+    - "orca:OrcaFilamentLibrary/filament/Generic PLA-CF @System.json"
+    - "orca:Prusa/filament/Generic PLA-CF @Prusa MK3.5.json"
+    - bambulab_pla_cf_page
+  note: "Bambu uses 100 percent fan, 8 s layer time and turns the auxiliary fan off. Bambu's page lists 50 to 100 percent. Prusa MK3.5 uses 10 s."
+
+drying:
+  need: recommended
+  oven: {temp_c: {min: 50, max: 60}, hours: 8}
+  ams_2_pro: {temp_c: 45, hours: 12}
+  ams_ht: {temp_c: 45, hours: 12}
+  printer_bed: {temp_c: {min: 65, max: 75}, hours: 12, note: "Enclosed Bambu printers only, spool covered"}
+  keep_dry_in_use: optional
+  confidence: medium
+  src: [bambu_wiki_drying, bambu_wiki_material_table, polymaker_tds_pla_cf]
+  note: "Bambu's table says 55 C for 8 h, its drying page 50 to 60 C. Polymaker says 55 C for 6 h. Wet CF PLA strings and shows rough walls."
+
+nozzle:
+  abrasive: true
+  hardened_required: true
+  min_diameter_mm: 0.4
+  orca_required_hrc: 40
+  confidence: high
+  src: [bambu_wiki_material_table, prusa_kb_composites, "orca:OrcaFilamentLibrary/filament/Bambu/Bambu PLA-CF @base.json", bambulab_pla_cf_page]
+  note: >
+    Carbon fiber wears brass and stainless nozzles quickly. Use hardened steel.
+    Bambu says never use 0.2 mm, prefers 0.6 mm hardened for most composites, and
+    lists a 0.4 mm hardened nozzle as first choice for its own PLA-CF (layer height
+    0.15 to 0.3 mm, about 100 mm/s maximum). Prusa says 0.4 mm minimum and layer
+    height at least 0.2 mm. Do a cold pull before printing. The nozzle and extruder
+    gears need more frequent maintenance.
+
+extrusion:
+  flow_ratio: {min: 0.95, max: 0.98, typical: 0.98, confidence: medium, src: ["orca:BBL/filament/Bambu PLA-CF @BBL X1C.json", "orca:OrcaFilamentLibrary/filament/Generic PLA-CF @System.json"], note: "Bambu 0.98, X1C high flow 0.975, generic 0.95. Confirm with a flow test."}
+  max_volumetric_speed_mm3s:
+    standard_hotend: {min: 12, max: 18, typical: 15}
+    high_flow_hotend: {min: 18, max: 25, typical: 25}
+    confidence: medium
+    src:
+      - "orca:BBL/filament/Bambu PLA-CF @BBL X1C.json"
+      - "orca:BBL/filament/Bambu PLA-CF @BBL X1C 0.8 nozzle.json"
+      - "orca:OrcaFilamentLibrary/filament/Generic PLA-CF @System.json"
+      - "orca:Prusa/filament/Generic PLA-CF @Prusa MK3.5.json"
+    note: "Bambu PLA-CF on X1C is 15 standard and 25 high flow. On a 0.8 mm nozzle it is 18 and 25. Bambu base is 12. Generic is 12 standard and 18 high flow. Prusa MK3.5 uses 12. Small nozzles clog above these."
+  retraction_mm:
+    direct_drive: {min: 0.4, max: 0.8, typical: 0.8}
+    confidence: low
+    src: ["orca:BBL/filament/Bambu PLA-CF @BBL X1C.json", klipper_pressure_advance]
+    note: "Bambu X1C high flow profile uses 0.8 mm. Keep retraction short to avoid pulling fibers back into the melt zone and jamming."
+    retraction_speed_mm_s: {min: 20, max: 45, typical: 30, confidence: medium, src: [bambu_tds_pla_cf, "orca:BBL/machine/Bambu Lab X1 Carbon 0.4 nozzle.json", "orca:Prusa/machine/Prusa CORE One HF 0.4 nozzle.json"], note: "Bambu PLA-CF TDS says 20 to 40 mm/s. The Bambu printer profile uses 30 and Prusa Core One 45."}
+  pressure_advance:
+    direct_drive: {min: 0.02, max: 0.06, typical: 0.036}
+    bowden: {min: 0.3, max: 1.0}
+    confidence: low
+    src: ["orca:Prusa/filament/Generic PLA @Prusa MK4S.json", klipper_pressure_advance, ellis_pa]
+    note: "Prusa has no CF PLA specific PA. Prusa's generic PLA M572 S0.036 at 0.4 mm is a starting point. Calibrate per spool."
+
+layer_height:
+  fraction_of_nozzle: {min: 0.375, max: 0.7, typical: 0.5}
+  at_0_4_mm: {min: 0.15, max: 0.28, typical: 0.2}
+  smart_layer:
+    quality_mode: "Carbon fiber gives a matte finish with almost invisible layer lines, so thin layers gain little. Do not go below 0.15 mm on a 0.4 mm nozzle: Prusa says composites clog more with thin layers and small nozzles."
+    strength_mode: "Fibers weaken the bond between layers, so keep layers near 0.2 mm and print hot. Thicker layers on a 0.6 mm hardened nozzle (0.3 to 0.4 mm) help feed and clog less."
+    thin_layer_cooling: "PLA-CF needs full fan except where Bambu turns the auxiliary fan off. Thin fast layers on small parts hit the minimum layer time, so allow 8 s or more."
+  confidence: medium
+  src: [bambulab_pla_cf_page, prusa_kb_composites, "orca:BBL/machine/fdm_machine_common.json"]
+  note: "Bambu gives 0.15 to 0.3 mm for its 0.4 mm hardened nozzle, capped at 0.28 mm by its machine profile. Prusa says layer height should be at least 0.2 mm on a 0.4 mm nozzle. The higher the layer and the wider the nozzle, the lower the clog risk."
+smart_layer:
+  min_ratio: 0.375
+  max_ratio: 0.7
+  modes:
+    quality: {min_ratio: 0.375, max_ratio: 0.5}
+    strength: {min_ratio: 0.375, max_ratio: 0.5}
+  family: nylon_and_composites
+  note: "Carbon fiber PLA clogs and gains little below about 0.15 mm on a 0.4 mm nozzle."
+  confidence: medium
+  src: ["bambulab_pla_cf_page", "prusa_kb_composites", "orca:BBL/machine/fdm_machine_common.json", "cnckitchen_layer_height", "stojkovic_2023_layer_height_annealing"]
+speeds:
+  print_speed_mm_s: {max: 200}
+  first_layer_mm_s: {min: 20, max: 40, typical: 30}
+  volumetric_note: "Bambu rates PLA-CF for under 200 mm/s and its product page says about 100 mm/s maximum for best results. Speed is also capped by max volumetric speed; see extrusion."
+  confidence: medium
+  src: [bambu_tds_pla_cf, bambulab_pla_cf_page, bambu_wiki_spaghetti, prusa_kb_composites]
+  note: "TDS 200 mm/s and product page 100 mm/s disagree; see disagreements. Prusa says the first layer must be perfect or the nozzle clogs, so run it slower than plain PLA."
+first_layer:
+  fan_off_layers: 1
+  speed_mm_s: {typical: 30}
+  bed_first_layer_note: "Bambu lists 35 to 45 C with glue on Cool Plate, and profiles use 45 on Cool Plate and 55 on PEI."
+  squish_note: "Prusa: the first layer should be perfectly fine, otherwise the nozzle clogs. Do a cold pull before printing and use a hardened steel nozzle of 0.4 mm or larger."
+  confidence: medium
+  src: [bambu_tds_pla_cf, prusa_kb_composites, bambu_wiki_spaghetti]
+structure:
+  walls: {min: 2, typical: 3, note: "Fibers align along the walls, so walls carry the stiffness. Extra infill adds little to a CF part. Layers bond worse than plain PLA, so orient the load along the layers."}
+  infill: {pattern_hint: gyroid, density_note: "15 to 20 percent is enough. Walls and orientation decide stiffness, not infill density."}
+  confidence: low
+  src: [prusa_kb_composites, bambulab_pla_cf_page]
+  note: "Expert rule of thumb built on the Prusa statement that composites are stiffer but bond worse between layers."
+supports:
+  interface_materials: ["Bambu Support for PLA", pva, bvoh]
+  soluble_pairing: {material: pva, dissolve: "room temperature or warm water (under 50 C), several hours"}
+  top_z_distance_mm: {typical: 0.2}
+  interface_layers: {typical: 2}
+  note: "Bambu TDS lists Support for PLA. A CF surface hides support marks well. The mutual PLA and PETG support guide does not cover PLA-CF."
+  confidence: medium
+  src: [bambu_tds_pla_cf, "orca:BBL/process/0.20mm Standard @BBL X1C.json", bambu_wiki_pla_petg_mutual_support]
+
+multi_material:
+  bambu_ams: compatible
+  bambu_ams_lite: compatible
+  bambu_ams_ht: unknown
+  confidence: medium
+  src: [bambu_wiki_material_table]
+  note: "Bambu lists only its own PLA-CF as AMS and AMS lite compatible. Other CF brands can be too rough or brittle for the feed path. Abrasive fibers wear the AMS PTFE channels over time."
+
+properties:
+  density_g_cm3: {typical: 1.22, min: 1.22, max: 1.29, src: ["orca:OrcaFilamentLibrary/filament/Bambu/Bambu PLA-CF @base.json", polymaker_tds_pla_cf, "orca:OrcaFilamentLibrary/filament/Generic PLA-CF @System.json"]}
+  softening_temp_c: {typical: 52, min: 45, max: 54, src: [polymaker_tds_pla_cf, "orca:OrcaFilamentLibrary/filament/Bambu/Bambu PLA-CF @base.json"], note: "Polymaker PLA-CF HDT is 50 C at 1.8 MPa and 54 C at 0.45 MPa. Orca temperature_vitrification is 45 C. Carbon fiber does not raise heat resistance much."}
+  relative:
+    heat: 2
+    impact: 2
+    tensile: 4
+    scale: "1 to 5, Bambu star ratings"
+    src: [bambu_wiki_material_table]
+safety:
+  fumes: low
+  note: "Sanding or cutting cured parts releases carbon fiber dust. Wear a mask and avoid dry sanding."
+food_contact:
+  note: "Not for food contact. Fibers and colorants are not certified."
+  src: [prusa_kb_food_safe]
+
+failure_modes:
+  - id: nozzle_clog
+    symptom: Extrusion stops, clicking extruder, thin under-extruded lines
+    causes: [fibers jam in a 0.2 mm or small nozzle, cold nozzle, fast volumetric speed, residue from prior filament]
+    fixes:
+      - {advice: "Use a 0.4 mm or larger hardened steel nozzle and do a cold pull before printing.", kind: hardware}
+      - {key: filament_max_volumetric_speed, op: at_most, value: 12, why: "Lower flow reduces jam risk on small nozzles."}
+      - {key: nozzle_temperature, op: increase_by, value: 5, why: "Hotter plastic flows better around the fibers."}
+  - id: nozzle_wear
+    symptom: Nozzle bore grows, lines get wider, quality drops after a few spools
+    causes: [brass or stainless nozzle with abrasive fill]
+    fixes:
+      - {advice: "Switch to a hardened steel nozzle now. A worn brass nozzle cannot be restored.", kind: hardware}
+  - id: weak_layers
+    symptom: Part snaps easily along layers, even though it feels stiff
+    causes: [fibers reduce layer bonding, too much cooling]
+    fixes:
+      - {key: nozzle_temperature, op: increase_by, value: 5, why: "More heat improves layer fusion."}
+      - {key: wall_loops, op: at_least, value: 4, why: "More walls give more bonded perimeter."}
+      - {advice: "Print with layers parallel to the load. CF PLA is weak across layers.", kind: orientation}
+  - id: stringing
+    symptom: Fuzz and hairs on the surface
+    causes: [wet filament, hot nozzle]
+    fixes:
+      - {advice: "Dry the spool at 55 C for 8 h.", kind: material}
+      - {key: nozzle_temperature, op: decrease_by, value: 5, why: "Less ooze."}
+  - id: ams_wear
+    symptom: AMS feed jams or PTFE tube grinds down
+    causes: [abrasive fibers rub the feed path]
+    fixes:
+      - {advice: "Feed CF spools from an external spool holder when the AMS is not rated for them. Only Bambu PLA-CF is listed as AMS compatible.", kind: hardware}
+
+disagreements:
+  - topic: nozzle temperature range
+    positions:
+      - {claim: "210 to 250 C profile, 210 to 240 C wiki table", src: ["orca:OrcaFilamentLibrary/filament/Bambu/Bambu PLA-CF @base.json", bambu_wiki_material_table]}
+      - {claim: "190 to 230 C", src: [polymaker_tds_pla_cf]}
+    resolution: "Default 230 C. Polymaker's CF PLA is printed cooler. Follow the spool label for non Bambu brands."
+  - topic: preferred nozzle size
+    positions:
+      - {claim: "0.4 mm hardened first choice for Bambu PLA-CF, 0.6 mm hardened for composites in general", src: [bambu_wiki_material_table]}
+      - {claim: "0.4 mm minimum for composites", src: [prusa_kb_composites]}
+    resolution: "Use 0.4 mm hardened minimum, 0.6 mm for fast or high fill parts. Never 0.2 mm."
+  - topic: PLA-CF maximum print speed
+    positions:
+      - {claim: "under 200 mm/s", src: [bambu_tds_pla_cf]}
+      - {claim: "about 100 mm/s maximum", src: [bambulab_pla_cf_page]}
+    resolution: "Plan around 100 mm/s on a 0.4 mm nozzle and treat 200 mm/s as an upper limit for a larger hardened nozzle."
+
+pilot_defaults:
+  nozzle_temperature: 230
+  nozzle_temperature_initial_layer: 230
+  cool_plate_temp: 45
+  textured_plate_temp: 55
+  hot_plate_temp: 55
+  fan_min_speed: 100
+  fan_max_speed: 100
+  overhang_fan_speed: 100
+  close_fan_the_first_x_layers: 1
+  slow_down_layer_time: 8
+  filament_flow_ratio: 0.98
+  filament_max_volumetric_speed: 15
+  retraction_length: 0.8
