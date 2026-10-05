@@ -1,0 +1,7 @@
+{
+  "name": "arrange",
+  "version": "1.6.2",
+  "description": "Packs parts onto plates by printer, material and bed size.",
+  "permission": "slice",
+  "entry": "index.ts"
+}

@@ -1,0 +1,7 @@
+{
+  "name": "estimate",
+  "version": "1.0.0",
+  "description": "Totals time, filament and cost and checks the deadline.",
+  "permission": "read",
+  "entry": "index.ts"
+}

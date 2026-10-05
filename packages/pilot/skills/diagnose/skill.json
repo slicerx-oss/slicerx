@@ -1,0 +1,7 @@
+{
+  "name": "diagnose",
+  "version": "0.8.5",
+  "description": "Reads printer status and the troubleshooting guides to explain a failed print.",
+  "permission": "read",
+  "entry": "index.ts"
+}

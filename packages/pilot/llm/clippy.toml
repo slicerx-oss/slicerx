@@ -1,0 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (C) 2026 The SlicerX contributors
+# The provider's name is not a code identifier; ".." keeps clippy's default list.
+doc-valid-idents = ["OpenAI", "ChatGPT", "OpenID", "SlicerX", ".."]
