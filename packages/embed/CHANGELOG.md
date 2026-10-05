@@ -1,0 +1,27 @@
+# Changelog
+
+All notable changes to `@slicerx/embed` are listed here. The format follows Keep a Changelog, and the package uses semantic versioning (0.x: a breaking change bumps the minor version).
+
+## [Unreleased]
+
+### Fixed
+
+- `tokenKeys` sends a publishable key (`sb_publishable_`) only as `apikey`, since it is not a JWT; the account token stays in the body. A legacy anon JWT is still also sent as the bearer.
+
+### Added
+
+- `LocalAiSetup` and `useLocalAi`: Set up local AI as one piece or a hook, themed like the other pieces, with the models an edition allows.
+
+- The pre-alpha agreement for apps that build SlicerX in: `Agreement` (React) and `<sx-agreement>`, with `agreementNeeded`, `readAgreement` and `acceptAgreement`, which records the version and date. `RELEASE` gives the release stage and the bug reports link to pass through. The version is the app's, so both ask again at the same time.
+- The theme API without a second package: `createTheme`, `nocturne`, `nocturneLight`, `themeToCss` and the `Theme` types.
+- The 3D scene follows the surrounding theme (its accent, and a light studio for a light theme). `<Viewport sceneTheme>` and the `sceneTheme` property of `<sx-viewport>` set any scene, toolpath or heat ramp color.
+- `toolColors` on `Viewport` and `<sx-viewport>`: the filament color per slot.
+- A `theme` property on the elements that takes a full theme. `<Viewport onError>` and an `error` event on `<sx-viewport>` for crash reports.
+- The module can be imported where `HTMLElement` does not exist, such as a server render.
+- `@slicerx/embed/sxlock`: `openSxlock`, `sealSxlock`, `readSxlockHeader` and `tokenKeys` (open with `sxlock_open`, lock with `sxlock_seal`) for locked projects (`.sxlock`), `lockSxlock`, `unlockSxlock` and `resealSxlock` for copies of an open locked file, and `SxlockError` with a code and a message for each refusal.
+- Packaging for npm: a library build (`dist/index.js`, `dist/mesh.js`) with React, zod and `@slicerx/viewport` external and the settings schema bundled, and self-contained type declarations.
+- `<Viewport>`: `@slicerx/viewport` as a React component (plate, SXPV preview, look, color mode, layer, view, pick events).
+- `<SettingsPanel>`: Easy and Advanced settings over `@slicerx/settings`, reporting the resolved Orca config on every change.
+- `defineSlicerXElements()`: the same two pieces as `<sx-viewport>` and `<sx-settings-panel>` custom elements, each in its own shadow root.
+- `decodeStl` and `decodeQuantized` model decoders (`@slicerx/embed/mesh`).
+- `EmbedTheme` and a `theme` attribute on both elements (`dark` or `light`); any `@slicerx/ui` theme works with the React pieces.

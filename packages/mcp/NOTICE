@@ -1,0 +1,51 @@
+SlicerX
+Copyright (C) 2026 The SlicerX contributors
+
+Made possible by SlicerX: https://slicerx.app/support
+
+Everything the SlicerX contributors wrote, including the engine, the CAD
+layer, mimir, the apps and the SlicerX edition (editions/slicerx/), is
+licensed under the Apache License 2.0 (LICENSE-APACHE). Each file's SPDX
+header states its license.
+
+Attribution. Under section 4(d) of the Apache License, anyone who
+redistributes SlicerX or a work built on it must pass on this NOTICE. Show
+the line "Made possible by SlicerX" with the link above wherever your product shows
+third-party credits, such as an About screen, a credits page or the
+documentation. If your product shows no such credits, put it in a NOTICE or
+credits file that ships with it.
+
+The stock printer, filament and process profiles in packages/profiles/ come
+from the profile resources of OrcaSlicer and Bambu Studio and are licensed
+under the GNU Affero General Public License, version 3 or later
+(LICENSES/AGPL-3.0-or-later.txt), as is
+packages/core/bench/compare/orca_base.json. REUSE.toml lists these paths. The
+engine, the sx command line tool and the C ABI do not use them. The SlicerX
+app ships them, so the app as distributed is covered by the AGPL as a whole.
+docs/licensing.md has the details.
+
+SlicerX is its own slicer. Its slicing engine and user interface are written
+for SlicerX and contain no code or help text from OrcaSlicer, Bambu Studio,
+PrusaSlicer or Slic3r. Setting key names follow the ones those slicers use so
+that profiles and project files interchange, and SlicerX reads a user's own
+OrcaSlicer, Bambu Studio and PrusaSlicer profile and 3MF files.
+
+Third-party code, data and fonts keep their own licenses. THIRD-PARTY.md lists
+what ships and under which terms, including the three libraries vendored in
+packages/vendor with our changes (i_overlay, boostvoronoi, cpp_map), the STEP
+reader built from occt-import-js and Open CASCADE Technology (LGPL-2.1; SlicerX
+makes use of facilities provided by the Open CASCADE Technology software; the
+source offer is in packages/vendor/occt-import-js/SOURCE.md), Cisco's OpenH264
+binary, which is downloaded on Linux and never bundled, and the SigLIP2 model
+weights used by the print watch. The full per-version list is generated at
+release time into THIRD_PARTY_LICENSES and shipped with every build.
+
+The aegis wall generator follows the method of preFlight's Athena walls, with
+thanks to the preFlight authors. SlicerX contains none of their code.
+
+"SlicerX", the SlicerX logo, and the Nocturne theme artwork are trademarks or
+reserved brand assets of the SlicerX project. The open source license grants
+no rights in them beyond the "Made possible by SlicerX" credit above. A fork must not
+call itself SlicerX. TRADEMARK.md explains what a white-label edition may
+and may not do with the name. Printer maker names and logos belong to their
+owners and are used only to identify their printers.
