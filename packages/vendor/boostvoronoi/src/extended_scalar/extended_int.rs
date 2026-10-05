@@ -1,0 +1,686 @@
+// SPDX-License-Identifier:BSL-1.0
+
+// Boost.Polygon library detail/voronoi_structures.hpp header file
+
+//          Copyright Andrii Sydorchuk 2010-2012.
+// Distributed under the Boost Software License, Version 1.0.
+//    (See accompanying file LICENSE_1_0.txt or copy at
+//          http://www.boost.org/LICENSE_1_0.txt)
+
+// See http://www.boost.org for updates, documentation, and revision history of C++ code..
+
+// Ported from C++ boost 1.76.0 to Rust in 2020/2021 by Eadf (github.com/eadf)
+
+//! Utilities for big integers. Supports next set of arithmetic operations: +, -, *.
+
+use crate::cast;
+use num_traits::PrimInt as InputType;
+use num_traits::{One, Zero};
+use std::cmp;
+use std::fmt;
+use std::num::Wrapping;
+use std::ops;
+
+#[cfg(test)]
+mod extendedint_tests;
+
+/// the default size of the SmallVec inside ExtendedInt (in units of u32)
+const EXTENDED_INT_VEC_SIZE: usize = 12;
+/// Results up to this many chunks are worked out in a buffer on the stack and copied in at once.
+const FAST_CHUNKS: usize = 24;
+
+/// Stack allocated big integer class.
+/// Supports next set of arithmetic operations: +, -, *.
+/// Ported from voronoi_ctypes.hpp
+#[derive(Clone)]
+pub struct ExtendedInt {
+    chunks_: smallvec::SmallVec<[Wrapping<u32>; EXTENDED_INT_VEC_SIZE]>,
+    count_: i32,
+}
+
+impl<I: InputType> From<I> for ExtendedInt {
+    #[inline]
+    ///```
+    /// # use boostvoronoi::extended_scalar::extended_int::ExtendedInt;
+    ///
+    /// let aa = 41231332_f64;
+    /// let a = ExtendedInt::from(aa as i32);
+    /// approx::assert_ulps_eq!(a.d(), aa);
+    /// ```
+    fn from(that: I) -> Self {
+        let that = cast::<I, i64>(that);
+        if that == 0 {
+            return Self::zero();
+        }
+        // The magnitude's low and high chunks, written straight into the inline chunks.
+        let c = that.unsigned_abs();
+        let mut inline = [Wrapping(0_u32); EXTENDED_INT_VEC_SIZE];
+        inline[0] = Wrapping(c as u32);
+        inline[1] = Wrapping((c >> 32) as u32);
+        let n: i32 = if inline[1].0 != 0 { 2 } else { 1 };
+        Self {
+            chunks_: smallvec::SmallVec::from_buf_and_len(inline, n as usize),
+            count_: if that < 0 { -n } else { n },
+        }
+    }
+}
+
+impl One for ExtendedInt {
+    #[inline]
+    fn one() -> Self {
+        Self::from(1_i32)
+    }
+}
+
+impl Zero for ExtendedInt {
+    #[inline]
+    fn zero() -> Self {
+        Self {
+            chunks_: smallvec::SmallVec::<[Wrapping<u32>; EXTENDED_INT_VEC_SIZE]>::default(),
+            count_: 0,
+        }
+    }
+    #[inline]
+    fn is_zero(&self) -> bool {
+        unimplemented!()
+    }
+}
+
+impl ExtendedInt {
+    /// Sets the chunks of a fresh value to `buf[..n]`, inline without a copy when they fit. The inline copy
+    /// takes a fixed number of chunks (the ones past `n` are not part of the value), so it is a few moves
+    /// rather than a call to copy `n` of them.
+    #[inline(always)]
+    fn set_chunks(&mut self, buf: &[Wrapping<u32>; FAST_CHUNKS], n: usize) {
+        if n <= EXTENDED_INT_VEC_SIZE {
+            let mut inline = [Wrapping(0_u32); EXTENDED_INT_VEC_SIZE];
+            inline.copy_from_slice(&buf[..EXTENDED_INT_VEC_SIZE]);
+            self.chunks_ = smallvec::SmallVec::from_buf_and_len(inline, n);
+        } else {
+            self.chunks_.extend_from_slice(&buf[..n]);
+        }
+    }
+
+    /// Return the mantissa and exponent components of this integer.
+    /// `value` ≈ `mantissa` * 2^`exponent`
+    pub fn p(&self) -> (f64, i32) {
+        let sep = 0x100000000_u64 as f64;
+        let c = self.chunks_.as_slice();
+        let mut rv = match c.len() {
+            0 => return (0.0, 0),
+            1 => (f64::from(c[0].0), 0),
+            2 => (f64::from(c[1].0) * sep + f64::from(c[0].0), 0),
+            n => {
+                // The top three chunks, each step rounded as the loop of the original rounds it.
+                let mut m = f64::from(c[n - 1].0);
+                m *= sep;
+                m += f64::from(c[n - 2].0);
+                m *= sep;
+                m += f64::from(c[n - 3].0);
+                (m, ((n - 3) << 5) as i32)
+            }
+        };
+        if self.count_ < 0 {
+            rv.0 = -rv.0;
+        }
+        rv
+    }
+
+    #[inline(always)]
+    pub fn is_pos(&self) -> bool {
+        self.count_ > 0
+    }
+
+    #[inline(always)]
+    pub fn is_neg(&self) -> bool {
+        self.count_ < 0
+    }
+
+    #[inline(always)]
+    pub fn is_zero(&self) -> bool {
+        self.count_ == 0
+    }
+
+    #[inline(always)]
+    /// converts to f64
+    pub fn d(&self) -> f64 {
+        let p = self.p();
+        libm::ldexp(p.0, p.1)
+    }
+
+    #[inline(always)]
+    /// return the number of words in 'self.count'
+    pub fn size(&self) -> usize {
+        self.chunks_.len()
+    }
+
+    /// this method assumes self is an empty object
+    fn add_others(&mut self, e1: &Self, e2: &Self) {
+        if e1.count_ == 0 {
+            self.count_ = e2.count_;
+            self.chunks_ = e2.chunks_.clone();
+            return;
+        }
+        if e2.count_ == 0 {
+            self.count_ = e1.count_;
+            self.chunks_ = e1.chunks_.clone();
+            return;
+        }
+        if (e1.count_ > 0) ^ (e2.count_ > 0) {
+            self.dif_slice(&e1.chunks_, e1.size(), &e2.chunks_, e2.size(), false);
+        } else {
+            self.add_slice(&e1.chunks_, e1.size(), &e2.chunks_, e2.size());
+        }
+        if e1.count_ < 0 {
+            self.count_ = -self.count_;
+        }
+    }
+
+    fn add_slice(&mut self, c1: &[Wrapping<u32>], sz1: usize, c2: &[Wrapping<u32>], sz2: usize) {
+        if sz1 < sz2 {
+            self.add_slice(c2, sz2, c1, sz1);
+            return;
+        }
+        self.count_ = sz1 as i32;
+        let mut temp = 0_u64;
+
+        if self.chunks_.is_empty() && sz1 < FAST_CHUNKS {
+            // A fresh result: the sum goes to a buffer and into the chunks at once.
+            let mut buf = [Wrapping(0_u32); FAST_CHUNKS];
+            for i in 0..sz2 {
+                temp += (c1[i].0 as u64) + (c2[i].0 as u64);
+                buf[i] = Wrapping(temp as u32);
+                temp >>= 32;
+            }
+            for i in sz2..sz1 {
+                temp += c1[i].0 as u64;
+                buf[i] = Wrapping(temp as u32);
+                temp >>= 32;
+            }
+            let mut n = sz1;
+            if temp != 0 {
+                buf[n] = Wrapping(temp as u32);
+                n += 1;
+                self.count_ += 1;
+            }
+            self.set_chunks(&buf, n);
+            return;
+        }
+        for _i in self.chunks_.len()..sz1 {
+            self.chunks_.push(Wrapping(0));
+        }
+        for i in 0..sz2 {
+            temp += (c1[i].0 as u64) + (c2[i].0 as u64);
+            self.chunks_[i] = Wrapping(temp as u32);
+            temp >>= 32;
+        }
+        for (i, c1_i) in c1.iter().enumerate().take(sz1).skip(sz2) {
+            temp += c1_i.0 as u64;
+            self.chunks_[i] = Wrapping(temp as u32);
+            temp >>= 32;
+        }
+        if temp != 0 {
+            if self.chunks_.len() <= self.count_ as usize {
+                self.chunks_.push(Wrapping(temp as u32));
+            } else {
+                self.chunks_[self.count_ as usize] = Wrapping(temp as u32);
+            }
+            self.count_ += 1;
+        }
+    }
+
+    /// this method assumes self is an empty object
+    fn dif_other(&mut self, e1: &Self, e2: &Self) {
+        if e1.count_ == 0 {
+            self.count_ = e2.count_;
+            self.chunks_ = e2.chunks_.clone();
+            self.count_ = -self.count_;
+            return;
+        }
+        if e2.count_ == 0 {
+            self.count_ = e1.count_;
+            self.chunks_ = e1.chunks_.clone();
+            return;
+        }
+        if (e1.count_ > 0) ^ (e2.count_ > 0) {
+            self.add_slice(&e1.chunks_, e1.size(), &e2.chunks_, e2.size());
+        } else {
+            self.dif_slice(&e1.chunks_, e1.size(), &e2.chunks_, e2.size(), false);
+        }
+        if e1.count_ < 0 {
+            self.count_ = -self.count_;
+        }
+    }
+
+    fn dif_slice(
+        &mut self,
+        c1: &[Wrapping<u32>],
+        sz1: usize,
+        c2: &[Wrapping<u32>],
+        sz2: usize,
+        rec: bool,
+    ) {
+        let mut sz2 = sz2;
+        let mut sz1 = sz1;
+        if sz1 < sz2 {
+            self.dif_slice(c2, sz2, c1, sz1, true);
+            self.count_ = -self.count_;
+            return;
+        } else if (sz1 == sz2) && !rec {
+            loop {
+                sz1 -= 1;
+                match c1[sz1].cmp(&c2[sz1]) {
+                    cmp::Ordering::Less => {
+                        sz1 += 1;
+                        self.dif_slice(c2, sz1, c1, sz1, true);
+                        self.count_ = -self.count_;
+                        return;
+                    }
+                    cmp::Ordering::Greater => {
+                        sz1 += 1;
+                        break;
+                    }
+                    _ => (),
+                }
+                if sz1 == 0 {
+                    break;
+                }
+            }
+            if sz1 == 0 {
+                self.count_ = 0;
+                return;
+            }
+            sz2 = sz1;
+        }
+        self.count_ = (sz1 - 1) as i32;
+        let mut flag = false;
+
+        if self.chunks_.is_empty() && sz1 < FAST_CHUNKS {
+            // A fresh result: the difference goes to a buffer, less its top chunk when that is zero.
+            let mut buf = [Wrapping(0_u32); FAST_CHUNKS];
+            for i in 0..sz2 {
+                buf[i] = c1[i] - c2[i] - if flag { Wrapping(1) } else { Wrapping(0) };
+                flag = (c1[i] < c2[i]) || ((c1[i] == c2[i]) && flag);
+            }
+            for i in sz2..sz1 {
+                buf[i] = c1[i] - if flag { Wrapping(1) } else { Wrapping(0) };
+                flag = (c1[i].0 == 0) && flag;
+            }
+            let n = if buf[sz1 - 1].0 != 0 {
+                self.count_ += 1;
+                sz1
+            } else {
+                sz1 - 1
+            };
+            self.set_chunks(&buf, n);
+            return;
+        }
+        for _i in self.chunks_.len()..sz1 {
+            self.chunks_.push(Wrapping(0));
+        }
+
+        for i in 0..sz2 {
+            self.chunks_[i] = c1[i] - c2[i] - if flag { Wrapping(1) } else { Wrapping(0) };
+            flag = (c1[i] < c2[i]) || ((c1[i] == c2[i]) && flag);
+        }
+        for (i, c1_i) in c1.iter().enumerate().take(sz1).skip(sz2) {
+            self.chunks_[i] = c1_i - if flag { Wrapping(1) } else { Wrapping(0) };
+            flag = (c1_i.0 == 0) && flag;
+        }
+        if self.chunks_[self.count_ as usize].0 != 0 {
+            self.count_ += 1;
+            if (self.count_ as usize) > self.chunks_.len() {
+                self.chunks_.push(Wrapping(0));
+            }
+        }
+        if (self.count_ as usize) < self.chunks_.len() {
+            let _ = self.chunks_.pop();
+        }
+    }
+
+    fn mul_other(&mut self, e1: &Self, e2: &Self) {
+        if e1.count_ == 0 || e2.count_ == 0 {
+            self.count_ = 0;
+            return;
+        }
+        self.mul_slice(&e1.chunks_, e1.size(), &e2.chunks_, e2.size());
+        if (e1.count_ > 0) ^ (e2.count_ > 0) {
+            self.count_ = -self.count_;
+        }
+    }
+
+    /// The product of the magnitudes, `sz1 + sz2 - 1` chunks and one more when the last carry is not zero
+    /// (the same chunks the schoolbook loop of the original writes). Operands of up to two chunks multiply
+    /// in one 128-bit product; longer ones take the loop with its bounds worked out up front.
+    fn mul_slice(&mut self, c1: &[Wrapping<u32>], sz1: usize, c2: &[Wrapping<u32>], sz2: usize) {
+        let count = sz1 + sz2 - 1;
+        if !self.chunks_.is_empty() || count + 1 > FAST_CHUNKS {
+            self.mul_slice_in_place(c1, sz1, c2, sz2);
+            return;
+        }
+        if sz1 <= 2 && sz2 <= 2 {
+            // One 128-bit product, written straight into the inline chunks: the chunks past `count` are zero.
+            let value = |c: &[Wrapping<u32>], sz: usize| -> u128 {
+                if sz == 2 {
+                    (u128::from(c[1].0) << 32) | u128::from(c[0].0)
+                } else {
+                    u128::from(c[0].0)
+                }
+            };
+            let p = value(c1, sz1) * value(c2, sz2);
+            let mut inline = [Wrapping(0_u32); EXTENDED_INT_VEC_SIZE];
+            inline[0] = Wrapping(p as u32);
+            inline[1] = Wrapping((p >> 32) as u32);
+            inline[2] = Wrapping((p >> 64) as u32);
+            inline[3] = Wrapping((p >> 96) as u32);
+            let n = if inline[count].0 != 0 { count + 1 } else { count };
+            self.count_ = n as i32;
+            self.chunks_ = smallvec::SmallVec::from_buf_and_len(inline, n);
+            return;
+        }
+        let mut buf = [Wrapping(0_u32); FAST_CHUNKS];
+        let mut n = count;
+        {
+            let mut cur: u64 = 0;
+            for shift in 0..count {
+                let mut nxt: u64 = 0;
+                for first in shift.saturating_sub(sz2 - 1)..=shift.min(sz1 - 1) {
+                    let tmp = (c1[first].0 as u64) * (c2[shift - first].0 as u64);
+                    cur += tmp & 0xFFFF_FFFF;
+                    nxt += tmp >> 32;
+                }
+                buf[shift] = Wrapping((cur & 0xFFFF_FFFF) as u32);
+                cur = nxt + (cur >> 32);
+            }
+            if cur != 0 {
+                buf[count] = Wrapping(cur as u32);
+                n += 1;
+            }
+        }
+        self.count_ = n as i32;
+        self.set_chunks(&buf, n);
+    }
+
+    /// The schoolbook product of the original, for a result that already holds chunks.
+    fn mul_slice_in_place(&mut self, c1: &[Wrapping<u32>], sz1: usize, c2: &[Wrapping<u32>], sz2: usize) {
+        let mut cur: u64 = 0;
+        let mut nxt: u64;
+        let mut tmp: u64;
+
+        self.count_ = (sz1 + sz2 - 1_usize) as i32;
+
+        for _i in self.chunks_.len()..(self.count_ as usize) {
+            self.chunks_.push(Wrapping(0));
+        }
+
+        for shift in 0..(self.count_ as usize) {
+            nxt = 0;
+            for (first, c1_first) in c1.iter().enumerate().take(shift + 1) {
+                if first >= sz1 {
+                    break;
+                }
+                let second = shift - first;
+                if second >= sz2 {
+                    continue;
+                }
+
+                tmp = (c1_first.0 as u64) * (c2[second].0 as u64);
+                cur += tmp & 0xFFFF_FFFF;
+                nxt += tmp >> 32;
+            }
+
+            self.chunks_[shift] = Wrapping((cur & 0xFFFF_FFFF) as u32);
+            cur = nxt + (cur >> 32);
+        }
+        if cur != 0 {
+            self.chunks_.push(Wrapping(cur as u32));
+            self.count_ += 1;
+        }
+    }
+}
+
+#[cfg(test)]
+impl ExtendedInt {
+    /// A value of the given chunks, negative when `neg`, for comparisons in tests.
+    pub(crate) fn from_chunks_for_test(chunks: &[u32], neg: bool) -> Self {
+        let mut v = Self::zero();
+        v.chunks_.extend(chunks.iter().map(|c| Wrapping(*c)));
+        let n = chunks.len() as i32;
+        v.count_ = if neg { -n } else { n };
+        v
+    }
+
+    /// The chunks and the signed count, for comparisons in tests.
+    pub(crate) fn chunks_and_count_for_test(&self) -> (Vec<u32>, i32) {
+        (self.chunks_.iter().map(|c| c.0).collect(), self.count_)
+    }
+}
+
+impl Default for ExtendedInt {
+    fn default() -> Self {
+        Self::zero()
+    }
+}
+
+impl ops::Add for ExtendedInt {
+    type Output = Self;
+    /// Adds `self` to `that` returning a new object containing the result
+    /// ```
+    /// # use boostvoronoi::extended_scalar::extended_int::ExtendedInt;
+    ///
+    /// let aa = 472_f64;
+    /// let bb = 147_f64;
+    /// let a = ExtendedInt::from(aa as i64);
+    /// let b = ExtendedInt::from(bb as i64);
+    /// let c = a+b;
+    /// approx::assert_ulps_eq!(c.d(), aa+bb);
+    ///```
+    fn add(self, that: Self) -> Self {
+        let mut rv = ExtendedInt::default();
+        rv.add_others(&self, &that);
+        rv
+    }
+}
+
+impl<'b> ops::Add<&'b ExtendedInt> for &ExtendedInt {
+    type Output = ExtendedInt;
+    /// Adds `self` to `that` returning a new object containing the result
+    /// ```
+    /// # use boostvoronoi::extended_scalar::extended_int::ExtendedInt;
+    ///
+    /// let aa = 472_f64;
+    /// let bb = 147_f64;
+    /// let a = ExtendedInt::from(aa as i64);
+    /// let b = ExtendedInt::from(bb as i64);
+    /// let c = &a+&b;
+    /// approx::assert_ulps_eq!(c.d(), aa+bb);
+    ///```
+    fn add(self, that: &'b ExtendedInt) -> ExtendedInt {
+        let mut rv = ExtendedInt::default();
+        rv.add_others(self, that);
+        rv
+    }
+}
+
+impl<'b> ops::Add<&'b ExtendedInt> for ExtendedInt {
+    type Output = ExtendedInt;
+    /// Adds `self` to `that` returning a new object containing the result
+    /// ```
+    /// # use boostvoronoi::extended_scalar::extended_int::ExtendedInt;
+    ///
+    /// let aa = 472_f64;
+    /// let bb = 147_f64;
+    /// let a = ExtendedInt::from(aa as i64);
+    /// let b = ExtendedInt::from(bb as i64);
+    /// let c = a+&b;
+    /// approx::assert_ulps_eq!(c.d(), aa+bb);
+    ///```
+    fn add(self, that: &'b ExtendedInt) -> ExtendedInt {
+        let mut rv = ExtendedInt::default();
+        rv.add_others(&self, that);
+        rv
+    }
+}
+
+impl ops::Sub for ExtendedInt {
+    type Output = Self;
+    /// Subtracts `that` from `self` returning a new object containing the result
+    /// ```
+    /// # use boostvoronoi::extended_scalar::extended_int::ExtendedInt;
+    ///
+    /// let aa = 4727377593577731_f64;
+    /// let bb = 759935777381_f64;
+    /// let a = ExtendedInt::from(aa as i64);
+    /// let b = ExtendedInt::from(bb as i64);
+    /// let c = a-b;
+    /// approx::assert_ulps_eq!(c.d(), aa-bb);
+    ///```
+    fn sub(self, that: Self) -> Self {
+        let mut rv = ExtendedInt::default();
+        rv.dif_other(&self, &that);
+        rv
+    }
+}
+
+impl<'b> ops::Sub<&'b ExtendedInt> for &ExtendedInt {
+    type Output = ExtendedInt;
+    /// Subtracts `that` from `self` returning a new object containing the result
+    /// ```
+    /// # use boostvoronoi::extended_scalar::extended_int::ExtendedInt;
+    ///
+    /// let aa = 4727377593577731_f64;
+    /// let bb = 759935777381_f64;
+    /// let a = ExtendedInt::from(aa as i64);
+    /// let b = ExtendedInt::from(bb as i64);
+    /// let c = &a-&b;
+    /// approx::assert_ulps_eq!(c.d(), aa-bb);
+    ///```
+    fn sub(self, that: &'b ExtendedInt) -> ExtendedInt {
+        let mut rv = ExtendedInt::default();
+        rv.dif_other(self, that);
+        rv
+    }
+}
+
+impl<'b> ops::Sub<&'b ExtendedInt> for ExtendedInt {
+    type Output = ExtendedInt;
+    /// Subtracts `that` from `self` returning a new object containing the result
+    /// ```
+    /// # use boostvoronoi::extended_scalar::extended_int::ExtendedInt;
+    ///
+    /// let aa = 4727377593577731_f64;
+    /// let bb = 759935777381_f64;
+    /// let a = ExtendedInt::from(aa as i64);
+    /// let b = ExtendedInt::from(bb as i64);
+    /// let c = a-&b;
+    /// approx::assert_ulps_eq!(c.d(), aa-bb);
+    ///```
+    fn sub(self, that: &'b ExtendedInt) -> ExtendedInt {
+        let mut rv = ExtendedInt::default();
+        rv.dif_other(&self, that);
+        rv
+    }
+}
+
+impl ops::Mul for ExtendedInt {
+    type Output = Self;
+    /// Multiplies `self` with `that` returning a new object containing the result
+    /// ```
+    /// # use boostvoronoi::extended_scalar::extended_int::ExtendedInt;
+    ///
+    /// let aa = 4727377593577731_f64;
+    /// let bb = 759935777381_f64;
+    /// let a = ExtendedInt::from(aa as i64);
+    /// let b = ExtendedInt::from(bb as i64);
+    /// let c = a*b;
+    /// approx::assert_ulps_eq!(c.d(), aa*bb);
+    ///```
+    fn mul(self, that: Self) -> Self {
+        let mut rv = ExtendedInt::default();
+        rv.mul_other(&self, &that);
+        rv
+    }
+}
+
+impl<'b> ops::Mul<&'b ExtendedInt> for &ExtendedInt {
+    type Output = ExtendedInt;
+    /// Multiplies `self` with `that` returning a new object containing the result
+    /// ```
+    /// # use boostvoronoi::extended_scalar::extended_int::ExtendedInt;
+    ///
+    /// let aa = 4727377593577731_f64;
+    /// let bb = 759935777381_f64;
+    /// let a = ExtendedInt::from(aa as i64);
+    /// let b = ExtendedInt::from(bb as i64);
+    /// let c = &a*&b;
+    /// approx::assert_ulps_eq!(c.d(), aa*bb);
+    ///```
+    fn mul(self, that: &'b ExtendedInt) -> ExtendedInt {
+        let mut rv = ExtendedInt::default();
+        rv.mul_other(self, that);
+        rv
+    }
+}
+
+impl<'b> ops::Mul<&'b ExtendedInt> for ExtendedInt {
+    type Output = ExtendedInt;
+    /// Multiplies `self` with `that` returning a new object containing the result
+    /// ```
+    /// # use boostvoronoi::extended_scalar::extended_int::ExtendedInt;
+    ///
+    /// let aa = 4727377593577731_f64;
+    /// let bb = 759935777381_f64;
+    /// let a = ExtendedInt::from(aa as i64);
+    /// let b = ExtendedInt::from(bb as i64);
+    /// let c = a*&b;
+    /// approx::assert_ulps_eq!(c.d(), aa*bb);
+    ///```
+    fn mul(self, that: &'b ExtendedInt) -> ExtendedInt {
+        let mut rv = ExtendedInt::default();
+        rv.mul_other(&self, that);
+        rv
+    }
+}
+
+impl ops::Mul<i32> for ExtendedInt {
+    type Output = ExtendedInt;
+    /// Multiplies `self` with `that` returning a new object containing the result
+    /// ```
+    /// # use boostvoronoi::extended_scalar::extended_int::ExtendedInt;
+    ///
+    /// let aa = 4727377593577731_f64;
+    /// let bb = 759935_f64;
+    /// let a = ExtendedInt::from(aa as i64);
+    /// let b = bb as i32;
+    /// let c = a*b;
+    /// approx::assert_ulps_eq!(c.d(), aa*bb);
+    ///```
+    fn mul(self, that: i32) -> ExtendedInt {
+        let mut rv = ExtendedInt::default();
+        let that = ExtendedInt::from(that);
+        rv.mul_other(&self, &that);
+        rv
+    }
+}
+
+impl ops::Neg for ExtendedInt {
+    type Output = Self;
+    /// Negates the value of `self`
+    /// ```
+    /// # use boostvoronoi::extended_scalar::extended_int::ExtendedInt;
+    ///
+    /// let aa = 4727377593577731_f64;
+    /// let a = -ExtendedInt::from(aa as i64);
+    /// approx::assert_ulps_eq!(a.d(), -aa);
+    ///```
+    fn neg(mut self) -> Self {
+        self.count_ = -self.count_;
+        self
+    }
+}
+
+impl fmt::Debug for ExtendedInt {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:.0}", self.d())
+    }
+}

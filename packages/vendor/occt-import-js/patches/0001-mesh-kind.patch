@@ -1,0 +1,52 @@
+diff --git a/occt-import-js/src/importer-xcaf.cpp b/occt-import-js/src/importer-xcaf.cpp
+index 820f3a7..52558b1 100644
+--- a/occt-import-js/src/importer-xcaf.cpp
++++ b/occt-import-js/src/importer-xcaf.cpp
+@@ -132,6 +132,11 @@ public:
+         return GetShapeName (shape, shapeTool);
+     }
+ 
++    virtual std::string GetKind () const override
++    {
++        return shape.ShapeType () == TopAbs_SOLID ? "solid" : "shell";
++    }
++
+     virtual bool GetColor (Color& color) const override
+     {
+         return GetShapeColor (shape, shapeTool, colorTool, color);
+@@ -175,6 +180,11 @@ public:
+         return std::string ();
+     }
+ 
++    virtual std::string GetKind () const override
++    {
++        return "faces";
++    }
++
+     virtual bool GetColor (Color&) const override
+     {
+         return false;
+diff --git a/occt-import-js/src/importer.hpp b/occt-import-js/src/importer.hpp
+index 2ef8616..68eb840 100644
+--- a/occt-import-js/src/importer.hpp
++++ b/occt-import-js/src/importer.hpp
+@@ -42,6 +42,7 @@ public:
+     virtual ~Mesh ();
+ 
+     virtual std::string GetName () const = 0;
++    virtual std::string GetKind () const { return std::string (); }
+     virtual bool GetColor (Color& color) const = 0;
+     virtual void EnumerateFaces (const std::function<void (const Face& face)>& onFace) const = 0;
+ };
+diff --git a/occt-import-js/src/js-interface.cpp b/occt-import-js/src/js-interface.cpp
+index bb382e8..2260c2a 100644
+--- a/occt-import-js/src/js-interface.cpp
++++ b/occt-import-js/src/js-interface.cpp
+@@ -45,6 +45,7 @@ private:
+         node->EnumerateMeshes ([&](const Mesh& mesh) {
+             emscripten::val meshObj (emscripten::val::object ());
+             meshObj.set ("name", mesh.GetName ());
++            meshObj.set ("kind", mesh.GetKind ());
+ 
+             int vertexCount = 0;
+             int normalCount = 0;

@@ -1,0 +1,28 @@
+[package]
+name = "i_overlay"
+version = "9.0.0"
+edition = "2024"
+rust-version = "1.88"
+authors = ["Nail Sharipov <nailxsharipov@gmail.com>"]
+description = "Boolean operations for 2D polygons (iShape-Rust/iOverlay 9.0.0), with a list split that compares only new segments after its first pass"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/iShape-Rust/iOverlay"
+publish = false
+
+[features]
+allow_multithreading = ["dep:rayon", "i_key_sort/allow_multithreading"]
+default = []
+glam = ["i_float/glam"]
+serde = ["i_float/serde", "i_shape/serde"]
+variable_stroke_debug = []
+
+[lib]
+name = "i_overlay"
+path = "src/lib.rs"
+
+[dependencies]
+i_float = "^5.0.0"
+i_key_sort = "^0.11.0"
+i_shape = "^5.0.0"
+i_tree = "^0.19.0"
+rayon = { version = "^1.10", optional = true }
