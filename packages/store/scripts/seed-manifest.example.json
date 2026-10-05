@@ -1,0 +1,34 @@
+{
+  "creators": [
+    {
+      "handle": "example-studio",
+      "email": "example-studio@example.com",
+      "displayName": "Example Studio",
+      "tagline": "Small useful prints",
+      "bio": "A sample creator page. Replace with real details in the manifest that sits next to your model files.",
+      "location": "Anywhere",
+      "logoUrl": "https://example.com/logo.png",
+      "trusted": true,
+      "links": [
+        { "kind": "website", "label": "Website", "url": "https://example.com" },
+        { "kind": "printables", "url": "https://www.printables.com/@example" }
+      ],
+      "featured": ["sample-keychain"]
+    }
+  ],
+  "listings": [
+    {
+      "creator": "example-studio",
+      "slug": "sample-keychain",
+      "title": "Sample keychain",
+      "description": "One line about the model.",
+      "license": "cc-by",
+      "tags": ["keychain"],
+      "version": "1.0.0",
+      "file": "sample-keychain.3mf",
+      "printProfiles": [
+        { "printerModel": "Generic 256 mm printer", "process": "0.20 mm Standard", "filament": "PLA", "layerHeightMm": 0.2, "nozzleMm": 0.4, "timeS": 1800, "grams": 6.5, "plates": 1 }
+      ]
+    }
+  ]
+}

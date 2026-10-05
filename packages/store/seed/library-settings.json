@@ -1,0 +1,12 @@
+[
+ {
+  "id": true,
+  "moderation_mode": "owner-approves-all",
+  "max_file_mb": 100,
+  "allowed_formats": [
+   "3mf",
+   "sx3mf",
+   "stl"
+  ]
+ }
+]

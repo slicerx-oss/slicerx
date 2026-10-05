@@ -1,0 +1,67 @@
+[
+ {
+  "id": "675a68e5-5777-5c47-b235-0a8802180e2a",
+  "owner_id": "3ada9529-a1d3-5ebc-a29a-d5d7f9931e42",
+  "handle": "marrow-works",
+  "display_name": "Marrow Works",
+  "tagline": "Articulated fossils and desk skeletons",
+  "bio": "Print-in-place fossils with tuned joint clearances for 0.4 mm nozzles.",
+  "location": "Rotterdam, Netherlands",
+  "logo_url": "https://example.com/logos/marrow-works.png",
+  "status": "active",
+  "trusted": true,
+  "created_at": "2026-06-01T09:00:00Z"
+ },
+ {
+  "id": "ff42f091-2c8b-5c83-b06c-566be3a52a79",
+  "owner_id": "4b0efd41-e186-596f-88c0-c1c0e248a5ee",
+  "handle": "tidewell-studio",
+  "display_name": "Tidewell Studio",
+  "tagline": "Coastal pieces for the home",
+  "bio": "Planters, dishes and lamp shades with textured surfaces that hide layer lines.",
+  "location": "Portland, Oregon",
+  "logo_url": "https://example.com/logos/tidewell-studio.png",
+  "status": "active",
+  "trusted": false,
+  "created_at": "2026-06-02T09:00:00Z"
+ },
+ {
+  "id": "84d2d8c4-53ce-5950-be88-6840a99439d4",
+  "owner_id": "6afcb6f6-be38-568f-b63c-5f80e2f82ff9",
+  "handle": "kestrel-parts",
+  "display_name": "Kestrel Parts",
+  "tagline": "Functional parts for the workshop",
+  "bio": "Workshop parts designed for PETG and ASA, with load notes on every listing.",
+  "location": null,
+  "logo_url": "https://example.com/logos/kestrel-parts.png",
+  "status": "active",
+  "trusted": false,
+  "created_at": "2026-06-03T09:00:00Z"
+ },
+ {
+  "id": "be3d4661-1f20-5342-a042-0dcac15f68e9",
+  "owner_id": "951c496e-f5d0-5724-9c07-ed45fccbf30f",
+  "handle": "oddfellow-minis",
+  "display_name": "Oddfellow Minis",
+  "tagline": "Tabletop miniatures and terrain",
+  "bio": "Miniatures sliced for 0.12 mm layers with supports placed by hand.",
+  "location": null,
+  "logo_url": "https://example.com/logos/oddfellow-minis.png",
+  "status": "active",
+  "trusted": false,
+  "created_at": "2026-06-04T09:00:00Z"
+ },
+ {
+  "id": "fce36375-8a42-51d1-bcab-8f44ca0a3de0",
+  "owner_id": "172779cd-386f-5bdf-b9b0-986ed6f8ca7c",
+  "handle": "ferro-labs",
+  "display_name": "Ferro Labs",
+  "tagline": "Mechanisms you can print and study",
+  "bio": "Gearboxes, compliant mechanisms and test pieces with documented tolerances.",
+  "location": "Tampere, Finland",
+  "logo_url": "https://example.com/logos/ferro-labs.png",
+  "status": "active",
+  "trusted": false,
+  "created_at": "2026-06-05T09:00:00Z"
+ }
+]

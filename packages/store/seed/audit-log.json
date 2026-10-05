@@ -1,0 +1,353 @@
+[
+ {
+  "id": 1,
+  "at": "2026-06-01T08:00:00Z",
+  "actor_id": "3c5b1fc1-0eff-51de-a6fb-c782145fb99d",
+  "action": "role_change",
+  "target_kind": "user",
+  "target_id": "29ff504e-980a-5803-93ef-3839221a1074",
+  "reason": "Volunteer moderator",
+  "detail": {
+   "from": "member",
+   "to": "moderator"
+  }
+ },
+ {
+  "id": 2,
+  "at": "2026-06-01T08:05:00Z",
+  "actor_id": "3c5b1fc1-0eff-51de-a6fb-c782145fb99d",
+  "action": "set_moderation_mode",
+  "target_kind": "setting",
+  "target_id": null,
+  "reason": null,
+  "detail": {
+   "from": "owner-approves-all",
+   "to": "moderators"
+  }
+ },
+ {
+  "id": 3,
+  "at": "2026-06-03T03:00:00Z",
+  "actor_id": "29ff504e-980a-5803-93ef-3839221a1074",
+  "action": "approve",
+  "target_kind": "listing",
+  "target_id": "dd6937ab-b238-571b-8491-2463ebc044d3",
+  "reason": null,
+  "detail": {
+   "title": "Articulated fossil fish"
+  }
+ },
+ {
+  "id": 4,
+  "at": "2026-06-07T03:00:00Z",
+  "actor_id": "29ff504e-980a-5803-93ef-3839221a1074",
+  "action": "approve",
+  "target_kind": "listing",
+  "target_id": "8026a9a5-1d82-5315-a7e2-463ffa46fc8f",
+  "reason": null,
+  "detail": {
+   "title": "Tide pool planter"
+  }
+ },
+ {
+  "id": 5,
+  "at": "2026-06-10T09:00:00Z",
+  "actor_id": "3c5b1fc1-0eff-51de-a6fb-c782145fb99d",
+  "action": "trust",
+  "target_kind": "creator",
+  "target_id": "675a68e5-5777-5c47-b235-0a8802180e2a",
+  "reason": null,
+  "detail": {}
+ },
+ {
+  "id": 6,
+  "at": "2026-06-11T03:00:00Z",
+  "actor_id": "29ff504e-980a-5803-93ef-3839221a1074",
+  "action": "approve",
+  "target_kind": "listing",
+  "target_id": "ce2c8e45-d051-5e75-b454-a7f8aa29f7c8",
+  "reason": null,
+  "detail": {
+   "title": "Filament spool holder"
+  }
+ },
+ {
+  "id": 7,
+  "at": "2026-06-18T03:00:00Z",
+  "actor_id": "29ff504e-980a-5803-93ef-3839221a1074",
+  "action": "approve",
+  "target_kind": "listing",
+  "target_id": "cd0aeb13-cd3d-55d3-86a0-861d469718dd",
+  "reason": null,
+  "detail": {
+   "title": "Lantern keeper miniature"
+  }
+ },
+ {
+  "id": 8,
+  "at": "2026-06-21T03:00:00Z",
+  "actor_id": "29ff504e-980a-5803-93ef-3839221a1074",
+  "action": "approve",
+  "target_kind": "listing",
+  "target_id": "04b41b28-c776-5f1a-a349-b903e08b3d31",
+  "reason": null,
+  "detail": {
+   "title": "Planetary gearbox demo"
+  }
+ },
+ {
+  "id": 9,
+  "at": "2026-06-28T03:00:00Z",
+  "actor_id": "29ff504e-980a-5803-93ef-3839221a1074",
+  "action": "approve",
+  "target_kind": "listing",
+  "target_id": "1855a791-9d12-5b5c-94c2-d533d185c9fe",
+  "reason": null,
+  "detail": {
+   "title": "Desk skull planter"
+  }
+ },
+ {
+  "id": 10,
+  "at": "2026-07-03T03:00:00Z",
+  "actor_id": "29ff504e-980a-5803-93ef-3839221a1074",
+  "action": "approve",
+  "target_kind": "listing",
+  "target_id": "5a9e9396-2b40-59b5-a9e8-2fd0983625f3",
+  "reason": null,
+  "detail": {
+   "title": "Wave dish"
+  }
+ },
+ {
+  "id": 11,
+  "at": "2026-07-08T03:00:00Z",
+  "actor_id": "29ff504e-980a-5803-93ef-3839221a1074",
+  "action": "approve",
+  "target_kind": "listing",
+  "target_id": "2b4b325c-6759-58f7-955d-f8dd994f5276",
+  "reason": null,
+  "detail": {
+   "title": "Hinged cable clip set"
+  }
+ },
+ {
+  "id": 12,
+  "at": "2026-07-12T03:00:00Z",
+  "actor_id": "29ff504e-980a-5803-93ef-3839221a1074",
+  "action": "approve",
+  "target_kind": "listing",
+  "target_id": "f5f62164-acce-5f68-8845-9c2ed17de222",
+  "reason": null,
+  "detail": {
+   "title": "Mossback toad"
+  }
+ },
+ {
+  "id": 13,
+  "at": "2026-07-16T03:00:00Z",
+  "actor_id": "29ff504e-980a-5803-93ef-3839221a1074",
+  "action": "approve",
+  "target_kind": "listing",
+  "target_id": "713c8053-ec80-531e-859a-b3b61826c0fb",
+  "reason": null,
+  "detail": {
+   "title": "Print-in-place wrench set"
+  }
+ },
+ {
+  "id": 14,
+  "at": "2026-07-22T03:00:00Z",
+  "actor_id": "29ff504e-980a-5803-93ef-3839221a1074",
+  "action": "approve",
+  "target_kind": "listing",
+  "target_id": "dbde849b-6b6e-5a8f-ab19-7bdc5ba9b5c8",
+  "reason": null,
+  "detail": {
+   "title": "Spine cable organizer"
+  }
+ },
+ {
+  "id": 15,
+  "at": "2026-07-28T03:00:00Z",
+  "actor_id": "29ff504e-980a-5803-93ef-3839221a1074",
+  "action": "approve",
+  "target_kind": "listing",
+  "target_id": "97200403-c87f-52e1-bb82-eec5e4dd0827",
+  "reason": null,
+  "detail": {
+   "title": "Lighthouse lamp shade"
+  }
+ },
+ {
+  "id": 16,
+  "at": "2026-08-01T03:00:00Z",
+  "actor_id": "29ff504e-980a-5803-93ef-3839221a1074",
+  "action": "approve",
+  "target_kind": "listing",
+  "target_id": "f566db85-3287-553b-a22a-551625cb1ba8",
+  "reason": null,
+  "detail": {
+   "title": "Bench vise jaw pads"
+  }
+ },
+ {
+  "id": 17,
+  "at": "2026-08-01T13:00:00Z",
+  "actor_id": "29ff504e-980a-5803-93ef-3839221a1074",
+  "action": "approve",
+  "target_kind": "listing",
+  "target_id": "ba386153-6e7f-5c2a-98ce-de9ecc8933e7",
+  "reason": null,
+  "detail": {
+   "title": "Gear tooth test strip"
+  }
+ },
+ {
+  "id": 18,
+  "at": "2026-08-05T03:00:00Z",
+  "actor_id": "29ff504e-980a-5803-93ef-3839221a1074",
+  "action": "approve",
+  "target_kind": "listing",
+  "target_id": "36e158a3-1baf-5ac9-9a0f-3afd3741b897",
+  "reason": null,
+  "detail": {
+   "title": "Dungeon door set"
+  }
+ },
+ {
+  "id": 19,
+  "at": "2026-08-10T03:00:00Z",
+  "actor_id": "29ff504e-980a-5803-93ef-3839221a1074",
+  "action": "approve",
+  "target_kind": "listing",
+  "target_id": "25d99ffe-32b2-567e-b637-5e0d615cd78d",
+  "reason": null,
+  "detail": {
+   "title": "Parametric enclosure"
+  }
+ },
+ {
+  "id": 20,
+  "at": "2026-08-10T13:00:00Z",
+  "actor_id": "29ff504e-980a-5803-93ef-3839221a1074",
+  "action": "approve",
+  "target_kind": "listing",
+  "target_id": "67875486-0502-50eb-9238-fb4f30bd0f22",
+  "reason": null,
+  "detail": {
+   "title": "Logo keychain"
+  }
+ },
+ {
+  "id": 21,
+  "at": "2026-08-17T03:00:00Z",
+  "actor_id": "29ff504e-980a-5803-93ef-3839221a1074",
+  "action": "approve",
+  "target_kind": "listing",
+  "target_id": "2343230e-3682-5295-a974-a8d9fcb52942",
+  "reason": null,
+  "detail": {
+   "title": "Ribcage pen holder"
+  }
+ },
+ {
+  "id": 22,
+  "at": "2026-08-20T03:00:00Z",
+  "actor_id": "29ff504e-980a-5803-93ef-3839221a1074",
+  "action": "approve",
+  "target_kind": "listing",
+  "target_id": "1889a2aa-d27e-5904-a1e3-0e426b14d5ec",
+  "reason": null,
+  "detail": {
+   "title": "Shell tealight holder"
+  }
+ },
+ {
+  "id": 23,
+  "at": "2026-08-27T03:00:00Z",
+  "actor_id": "29ff504e-980a-5803-93ef-3839221a1074",
+  "action": "approve",
+  "target_kind": "listing",
+  "target_id": "cdbd0b6b-fc86-5551-8031-ba4df10a4477",
+  "reason": null,
+  "detail": {
+   "title": "Drawer label frames"
+  }
+ },
+ {
+  "id": 24,
+  "at": "2026-09-01T03:00:00Z",
+  "actor_id": "29ff504e-980a-5803-93ef-3839221a1074",
+  "action": "approve",
+  "target_kind": "listing",
+  "target_id": "885ba06f-1308-549b-936e-0ee9483d8a1d",
+  "reason": null,
+  "detail": {
+   "title": "Tavern furniture kit"
+  }
+ },
+ {
+  "id": 25,
+  "at": "2026-09-04T03:00:00Z",
+  "actor_id": "29ff504e-980a-5803-93ef-3839221a1074",
+  "action": "approve",
+  "target_kind": "listing",
+  "target_id": "7aeeaa45-5a64-511b-9c29-09587ca3e206",
+  "reason": null,
+  "detail": {
+   "title": "Compliant gripper"
+  }
+ },
+ {
+  "id": 26,
+  "at": "2026-09-05T14:00:00Z",
+  "actor_id": "29ff504e-980a-5803-93ef-3839221a1074",
+  "action": "remove",
+  "target_kind": "listing",
+  "target_id": "67875486-0502-50eb-9238-fb4f30bd0f22",
+  "reason": "Uses a trademarked logo. Taken down after a report.",
+  "detail": {
+   "title": "Logo keychain",
+   "was": "approved"
+  }
+ },
+ {
+  "id": 27,
+  "at": "2026-09-10T12:00:00Z",
+  "actor_id": "29ff504e-980a-5803-93ef-3839221a1074",
+  "action": "ban",
+  "target_kind": "user",
+  "target_id": "47173fd9-98a7-51bf-9a48-636445f84d02",
+  "reason": "Repeated spam in comments",
+  "detail": {
+   "role": "member"
+  }
+ },
+ {
+  "id": 28,
+  "at": "2026-09-16T12:00:00Z",
+  "actor_id": "29ff504e-980a-5803-93ef-3839221a1074",
+  "action": "reject",
+  "target_kind": "listing",
+  "target_id": "9da50706-15d8-53ed-8cff-b0c70482742c",
+  "reason": "The preview images show a model from a commercial game. Upload only models you made or have the right to share, then resubmit.",
+  "detail": {
+   "title": "Wizard tower terrain",
+   "was": "pending"
+  }
+ },
+ {
+  "id": 29,
+  "at": "2026-09-28T09:00:00Z",
+  "actor_id": "3c5b1fc1-0eff-51de-a6fb-c782145fb99d",
+  "action": "set_moderation_mode",
+  "target_kind": "setting",
+  "target_id": null,
+  "reason": null,
+  "detail": {
+   "from": "moderators",
+   "to": "owner-approves-all"
+  }
+ }
+]

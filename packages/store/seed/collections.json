@@ -1,0 +1,23 @@
+[
+ {
+  "id": "600dc6d6-a913-5227-9f1e-fa0056006ef1",
+  "owner_id": "1832dedf-8c8e-51cb-b929-c0baad95dfae",
+  "name": "Desk upgrades",
+  "is_public": true,
+  "created_at": "2026-09-03T00:00:00Z"
+ },
+ {
+  "id": "2194fcc4-047d-56d2-8752-a850e2bb6246",
+  "owner_id": "1832dedf-8c8e-51cb-b929-c0baad95dfae",
+  "name": "Tabletop night",
+  "is_public": false,
+  "created_at": "2026-09-03T00:00:00Z"
+ },
+ {
+  "id": "2cb18f1f-c88f-5267-aa4d-ca03ce73e77b",
+  "owner_id": "a784e62e-7308-546c-991e-18908d920ad2",
+  "name": "Workshop",
+  "is_public": true,
+  "created_at": "2026-09-03T00:00:00Z"
+ }
+]

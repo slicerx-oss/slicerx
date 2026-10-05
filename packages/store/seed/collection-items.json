@@ -1,0 +1,47 @@
+[
+ {
+  "collection_id": "600dc6d6-a913-5227-9f1e-fa0056006ef1",
+  "listing_id": "dd6937ab-b238-571b-8491-2463ebc044d3",
+  "added_at": "2026-09-04T00:00:00Z"
+ },
+ {
+  "collection_id": "600dc6d6-a913-5227-9f1e-fa0056006ef1",
+  "listing_id": "dbde849b-6b6e-5a8f-ab19-7bdc5ba9b5c8",
+  "added_at": "2026-09-05T00:00:00Z"
+ },
+ {
+  "collection_id": "600dc6d6-a913-5227-9f1e-fa0056006ef1",
+  "listing_id": "2343230e-3682-5295-a974-a8d9fcb52942",
+  "added_at": "2026-09-06T00:00:00Z"
+ },
+ {
+  "collection_id": "2194fcc4-047d-56d2-8752-a850e2bb6246",
+  "listing_id": "cd0aeb13-cd3d-55d3-86a0-861d469718dd",
+  "added_at": "2026-09-04T00:00:00Z"
+ },
+ {
+  "collection_id": "2194fcc4-047d-56d2-8752-a850e2bb6246",
+  "listing_id": "36e158a3-1baf-5ac9-9a0f-3afd3741b897",
+  "added_at": "2026-09-05T00:00:00Z"
+ },
+ {
+  "collection_id": "2194fcc4-047d-56d2-8752-a850e2bb6246",
+  "listing_id": "885ba06f-1308-549b-936e-0ee9483d8a1d",
+  "added_at": "2026-09-06T00:00:00Z"
+ },
+ {
+  "collection_id": "2cb18f1f-c88f-5267-aa4d-ca03ce73e77b",
+  "listing_id": "f566db85-3287-553b-a22a-551625cb1ba8",
+  "added_at": "2026-09-04T00:00:00Z"
+ },
+ {
+  "collection_id": "2cb18f1f-c88f-5267-aa4d-ca03ce73e77b",
+  "listing_id": "cdbd0b6b-fc86-5551-8031-ba4df10a4477",
+  "added_at": "2026-09-05T00:00:00Z"
+ },
+ {
+  "collection_id": "2cb18f1f-c88f-5267-aa4d-ca03ce73e77b",
+  "listing_id": "713c8053-ec80-531e-859a-b3b61826c0fb",
+  "added_at": "2026-09-06T00:00:00Z"
+ }
+]

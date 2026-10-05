@@ -1,0 +1,596 @@
+[
+ {
+  "id": "04499eab-bf37-5b3b-9bf8-cc942086a904",
+  "version_id": "da8a958f-d9e2-5c4e-ae1a-4741ed727e80",
+  "name": "articulated-fossil-fish-1.0.0.3mf",
+  "role": "model",
+  "format": "3mf",
+  "size_bytes": 4640460,
+  "sha256": "d84a73d7ffaf444e7d914f575a7478ce02a023d3de44720c9382a4f94f66f526"
+ },
+ {
+  "id": "ea4f7ba4-acc7-55ef-95eb-3bbd536385f6",
+  "version_id": "da8a958f-d9e2-5c4e-ae1a-4741ed727e80",
+  "name": "cover.webp",
+  "role": "image",
+  "format": null,
+  "size_bytes": 54182,
+  "sha256": "a3192937632d2d6e62700023a244047a8fa50dfded55c97fd9ec3ea8bb1cfa2a"
+ },
+ {
+  "id": "f0c17fac-0a8c-5eb3-8400-619bfe4d5084",
+  "version_id": "1d9a9c06-6ddc-55de-9134-33d821725a00",
+  "name": "articulated-fossil-fish-1.1.0.3mf",
+  "role": "model",
+  "format": "3mf",
+  "size_bytes": 5626426,
+  "sha256": "385fe6d3f36ea74f6fdc1c5da4ed5dc1b7c327ef987af1f998f68d40b74f5b56"
+ },
+ {
+  "id": "9b7d92f0-1a86-50c3-b2b8-7318f343d12b",
+  "version_id": "1d9a9c06-6ddc-55de-9134-33d821725a00",
+  "name": "cover.webp",
+  "role": "image",
+  "format": null,
+  "size_bytes": 55173,
+  "sha256": "0293e359226231febefa3c239e0bee847d8204f7d9d453401194ecc6b5c2bb71"
+ },
+ {
+  "id": "e357ae7e-ed99-5627-bbb6-3f6875788731",
+  "version_id": "5234cee4-afb6-50b1-b920-2e3144a24064",
+  "name": "desk-skull-planter-1.0.0.3mf",
+  "role": "model",
+  "format": "3mf",
+  "size_bytes": 2292840,
+  "sha256": "84cc0026109b30e1d53b01e8416c312f6d99fd805aee10b524e0583e1397b50b"
+ },
+ {
+  "id": "b3efb9e8-cb44-5030-ab6b-feeb13c00733",
+  "version_id": "5234cee4-afb6-50b1-b920-2e3144a24064",
+  "name": "cover.webp",
+  "role": "image",
+  "format": null,
+  "size_bytes": 84678,
+  "sha256": "c7a6711eff0c7376b70f32378fa5305fec9bba40ee17a112b473a0a2b6ffbbf0"
+ },
+ {
+  "id": "6901af0e-c9a5-572b-9850-b45a38f4ec7f",
+  "version_id": "03027603-7e2d-5dff-bf15-59e9023a1215",
+  "name": "spine-cable-organizer-1.0.0.3mf",
+  "role": "model",
+  "format": "3mf",
+  "size_bytes": 8462889,
+  "sha256": "4930d7f24f2b9627bdb8637cbba322a9194d0ee7d085366b075229f6ce9a117a"
+ },
+ {
+  "id": "a7178f18-933a-56c8-80bc-b5883491bc58",
+  "version_id": "03027603-7e2d-5dff-bf15-59e9023a1215",
+  "name": "cover.webp",
+  "role": "image",
+  "format": null,
+  "size_bytes": 64892,
+  "sha256": "4bda28e1ace58cf54329da06a4167e1264d489a403725c838519a2f8e2bf77df"
+ },
+ {
+  "id": "313089ff-7d11-5302-a98d-61c0e5ac7b3d",
+  "version_id": "ba919515-090b-51c6-bf41-34fdccdb202e",
+  "name": "spine-cable-organizer-1.2.0.3mf",
+  "role": "model",
+  "format": "3mf",
+  "size_bytes": 7726081,
+  "sha256": "6b131436c01bffa5d905262d720dcdbed29ce27f5c62eff39d721107138c1c8b"
+ },
+ {
+  "id": "e76866e0-cbf3-5948-a491-280bc80a17a3",
+  "version_id": "ba919515-090b-51c6-bf41-34fdccdb202e",
+  "name": "cover.webp",
+  "role": "image",
+  "format": null,
+  "size_bytes": 73061,
+  "sha256": "1165eab3ecc7338adb835c1c262185255b01d611a8ce88f2c785ba9e344ae47d"
+ },
+ {
+  "id": "60f47abe-d662-52fe-b3f6-4061c5605821",
+  "version_id": "ea367271-660c-532e-9228-ffdcde12ae83",
+  "name": "ribcage-pen-holder-1.0.0.3mf",
+  "role": "model",
+  "format": "3mf",
+  "size_bytes": 8435001,
+  "sha256": "e6c5aa52101345f5af393f5959efd0fe73e110b951b28cf567c780a745941ceb"
+ },
+ {
+  "id": "b094d805-d26a-5b06-91d7-f87a7329fb79",
+  "version_id": "ea367271-660c-532e-9228-ffdcde12ae83",
+  "name": "cover.webp",
+  "role": "image",
+  "format": null,
+  "size_bytes": 43885,
+  "sha256": "f468f39396973c563ee6d3d75c191c12e304a8c79f9c0884258639ec591e99af"
+ },
+ {
+  "id": "4db25040-d0fd-5607-9e9e-4b7f03d10d38",
+  "version_id": "0637e6e7-0839-5079-a86d-2bd66663fd48",
+  "name": "trilobite-coaster-set-1.0.0.3mf",
+  "role": "model",
+  "format": "3mf",
+  "size_bytes": 7445700,
+  "sha256": "4497db87604ab1ffed2683f8c9fbe980b73cae7b3c65e3156a831506e1da5868"
+ },
+ {
+  "id": "5058cc4a-6339-5280-a627-5f12154611d8",
+  "version_id": "0637e6e7-0839-5079-a86d-2bd66663fd48",
+  "name": "cover.webp",
+  "role": "image",
+  "format": null,
+  "size_bytes": 71481,
+  "sha256": "3059e008c87d789bdc81d4f824a54c6b40b9ed324e3f95c5dbf3f36ed5758b99"
+ },
+ {
+  "id": "866b11aa-3e24-508a-8059-6b96f8168ab6",
+  "version_id": "ccd029fb-968f-5bf8-a441-af76fe1ecd75",
+  "name": "tide-pool-planter-1.0.0.3mf",
+  "role": "model",
+  "format": "3mf",
+  "size_bytes": 5417927,
+  "sha256": "a6dfc3d2b1df4eb72af59e903df513f5704516e4f192ec220f7c4c068eabb6c0"
+ },
+ {
+  "id": "f6eb9a16-8a6a-5556-a486-2bdfd807e49f",
+  "version_id": "ccd029fb-968f-5bf8-a441-af76fe1ecd75",
+  "name": "cover.webp",
+  "role": "image",
+  "format": null,
+  "size_bytes": 48662,
+  "sha256": "868396c44f3e983e24cdbb82ed70b578f889504d3795ffbec8930478078fab8b"
+ },
+ {
+  "id": "5d7e210a-d083-5370-b0aa-5d00bd57af7a",
+  "version_id": "3bb047d9-dd63-5302-9045-40b6f696b46d",
+  "name": "wave-dish-1.0.0.3mf",
+  "role": "model",
+  "format": "3mf",
+  "size_bytes": 2843825,
+  "sha256": "57ddf2213a413665459fd04628031402ff2eb710ad565ea9ad63bb8cff1b5235"
+ },
+ {
+  "id": "6e7a7c32-241a-5faf-9b80-0d13d1e0fe8e",
+  "version_id": "3bb047d9-dd63-5302-9045-40b6f696b46d",
+  "name": "cover.webp",
+  "role": "image",
+  "format": null,
+  "size_bytes": 60312,
+  "sha256": "f7c947c0ccefbd76f1759c98ca53662eee7914c9e21b200db3e58aedbf87be29"
+ },
+ {
+  "id": "aa411b6f-7495-541b-95f0-e4280b240b5c",
+  "version_id": "a5bcee79-a985-51e4-9c4b-fbeb90720476",
+  "name": "lighthouse-lamp-shade-1.0.0.3mf",
+  "role": "model",
+  "format": "3mf",
+  "size_bytes": 7355461,
+  "sha256": "bda9db4d17409178187c66cbb2952cfec68288ef376e1562b0d74551413bd8dc"
+ },
+ {
+  "id": "81572866-df7d-5962-b9a6-18a8e78c59ac",
+  "version_id": "a5bcee79-a985-51e4-9c4b-fbeb90720476",
+  "name": "cover.webp",
+  "role": "image",
+  "format": null,
+  "size_bytes": 95398,
+  "sha256": "16b7fd309ad5cb065fd6d49ad3b4e2ac265563f0142df195273c73c91544e1ac"
+ },
+ {
+  "id": "ee4df151-e0c7-502d-8882-f0b3460861cf",
+  "version_id": "e0b3b26e-6994-5e96-8fff-be7146d83289",
+  "name": "lighthouse-lamp-shade-2.0.0.3mf",
+  "role": "model",
+  "format": "3mf",
+  "size_bytes": 4474528,
+  "sha256": "4449c07fe7f1345909452a03aafdde25045e414ee61585cb723ee88990752c0c"
+ },
+ {
+  "id": "93864297-5835-5bd1-8d65-f61f86d65f59",
+  "version_id": "e0b3b26e-6994-5e96-8fff-be7146d83289",
+  "name": "cover.webp",
+  "role": "image",
+  "format": null,
+  "size_bytes": 46279,
+  "sha256": "6af12675ef63090c931091511682be2896830c0ee8181114a69246ebd8095bf1"
+ },
+ {
+  "id": "1600a246-cd6a-524a-abd2-18ed30b848e1",
+  "version_id": "4f353bfa-7578-53f6-bfe7-da0fc5aa8203",
+  "name": "shell-tealight-holder-1.0.0.3mf",
+  "role": "model",
+  "format": "3mf",
+  "size_bytes": 2957705,
+  "sha256": "428b521e78f17a96396b670e03114f86b9d6044b0c49f6b80853280cbdccdaff"
+ },
+ {
+  "id": "86db46d5-c231-5c6d-b698-cad77272906f",
+  "version_id": "4f353bfa-7578-53f6-bfe7-da0fc5aa8203",
+  "name": "cover.webp",
+  "role": "image",
+  "format": null,
+  "size_bytes": 89018,
+  "sha256": "8fef6ca2f4056131e1a8ed109a42e0833d12689418e148b06c34c9cb49c7e9ef"
+ },
+ {
+  "id": "321b1bed-7500-5be5-9f21-269a983a8692",
+  "version_id": "99fc88ca-ab79-5f25-91da-7ef9235f6916",
+  "name": "anchor-cabinet-pull-1.0.0.3mf",
+  "role": "model",
+  "format": "3mf",
+  "size_bytes": 3920852,
+  "sha256": "49d14b5492a726198cf5cac65783a78bc4f216f8effabf7df02ab605db221f80"
+ },
+ {
+  "id": "9984564d-1757-581e-a7e9-d15fe93aff0c",
+  "version_id": "99fc88ca-ab79-5f25-91da-7ef9235f6916",
+  "name": "cover.webp",
+  "role": "image",
+  "format": null,
+  "size_bytes": 47957,
+  "sha256": "0b144b6833db51c9b8395da380f647027e362dd50d068c04e8616f2d9b51cefc"
+ },
+ {
+  "id": "7bc05e8a-d365-5ee5-b145-355159e0553e",
+  "version_id": "8b5a39f6-e74d-50fc-835b-c0866f4cf98c",
+  "name": "filament-spool-holder-1.0.0.3mf",
+  "role": "model",
+  "format": "3mf",
+  "size_bytes": 8168736,
+  "sha256": "75d06984e49f209bbe86756d2fc93c72af3d8deb39c44089ea421d087cbbd06a"
+ },
+ {
+  "id": "1701c6a3-5ae6-58d5-bbcb-7c71362cf207",
+  "version_id": "8b5a39f6-e74d-50fc-835b-c0866f4cf98c",
+  "name": "cover.webp",
+  "role": "image",
+  "format": null,
+  "size_bytes": 57643,
+  "sha256": "7ee42a8d79310caae2ed8766e538a141074ed10761bcde0c7afc5d3c1c0e5237"
+ },
+ {
+  "id": "50c40d2e-bf2c-5492-8268-ffc1ad80f67d",
+  "version_id": "641f86f9-d180-558c-8fa5-29007a3a6a75",
+  "name": "filament-spool-holder-1.1.0.3mf",
+  "role": "model",
+  "format": "3mf",
+  "size_bytes": 578851,
+  "sha256": "53902fa4710a17439923f073bbb9c8942a34d12eaca2a9042b0dadfcad9bd5d6"
+ },
+ {
+  "id": "b266d167-4141-5538-bf92-d6d08cb5228f",
+  "version_id": "641f86f9-d180-558c-8fa5-29007a3a6a75",
+  "name": "cover.webp",
+  "role": "image",
+  "format": null,
+  "size_bytes": 67824,
+  "sha256": "8121de675a0894018c98420557b10863a2ea9c1f123559a32335b1c293ea747e"
+ },
+ {
+  "id": "db1f9288-ed15-5030-995e-7d5b2f549fe3",
+  "version_id": "35375079-c2bc-51c5-8973-84347ef85588",
+  "name": "filament-spool-holder-1.2.0.3mf",
+  "role": "model",
+  "format": "3mf",
+  "size_bytes": 7194641,
+  "sha256": "3c36bb6b3842689f1f7e286c1b0afb988c52ae0cee2f96aeb0571176d22a29d4"
+ },
+ {
+  "id": "dd85ddb9-6df7-5487-a9ef-17ce199d0ef0",
+  "version_id": "35375079-c2bc-51c5-8973-84347ef85588",
+  "name": "cover.webp",
+  "role": "image",
+  "format": null,
+  "size_bytes": 84244,
+  "sha256": "14ed97d01d9730b05c2d47e05557e080d46cc8de97e6aa144c7c8fb60ff6ed7c"
+ },
+ {
+  "id": "14778541-073f-5db4-9f1e-df6d0c56f798",
+  "version_id": "9fa3d7e2-9c48-593c-b351-a76930ba09b7",
+  "name": "hinged-cable-clip-set-1.0.0.3mf",
+  "role": "model",
+  "format": "3mf",
+  "size_bytes": 7706181,
+  "sha256": "7cd99abf9c1158a6d95a04f13992c6e8ca7d6e038f7f2d4304977094419533d4"
+ },
+ {
+  "id": "07ff28e3-8141-5fea-855d-fbbc03e32cb5",
+  "version_id": "9fa3d7e2-9c48-593c-b351-a76930ba09b7",
+  "name": "cover.webp",
+  "role": "image",
+  "format": null,
+  "size_bytes": 81584,
+  "sha256": "490d2d0b15f47987156ecd0b4997998749109d4922ce3313227254b949acfae3"
+ },
+ {
+  "id": "7a233774-d90b-5d28-b190-dd6752b8573b",
+  "version_id": "2c160ade-a51b-5dc9-a285-64966b88b381",
+  "name": "bench-vise-jaw-pads-1.0.0.3mf",
+  "role": "model",
+  "format": "3mf",
+  "size_bytes": 8184803,
+  "sha256": "896e14c83f9599d8fd1da6904be62b80663fbe871e85719534c15ea24c7b91b0"
+ },
+ {
+  "id": "4acdda8d-44af-57bf-a828-3139e64a9c0b",
+  "version_id": "2c160ade-a51b-5dc9-a285-64966b88b381",
+  "name": "cover.webp",
+  "role": "image",
+  "format": null,
+  "size_bytes": 41018,
+  "sha256": "00243cd9be2f5d01ea7a8c8a5471ed526fcfc9043999caaf4278f389142ef022"
+ },
+ {
+  "id": "c506fd33-71ee-5cc7-9317-6ed127ff6f25",
+  "version_id": "490770df-6481-5fdb-adc2-24160044db12",
+  "name": "drawer-label-frames-1.0.0.3mf",
+  "role": "model",
+  "format": "3mf",
+  "size_bytes": 4473082,
+  "sha256": "8aeda2c61b6cf352f999d924681888b03c7f8e1c5e2c9c967781fe5615d2ecdc"
+ },
+ {
+  "id": "8e05d345-85f7-58be-9f77-d176d4850a8d",
+  "version_id": "490770df-6481-5fdb-adc2-24160044db12",
+  "name": "cover.webp",
+  "role": "image",
+  "format": null,
+  "size_bytes": 97169,
+  "sha256": "a028fbef3ecb7b469fc41ad701279a7ea8bd0b5b64727cd0eb54bfb2279bc839"
+ },
+ {
+  "id": "5e780fee-4e09-5df3-9513-b49505628688",
+  "version_id": "4e44372f-7242-537b-9e23-2c3062250864",
+  "name": "chain-link-cable-guide-0.9.0.stl",
+  "role": "model",
+  "format": "stl",
+  "size_bytes": 6681671,
+  "sha256": "3250189f60a91964cc1ef87e9ee7f985fdbdc2aff79a68fa78ce271072e98d45"
+ },
+ {
+  "id": "4478770a-8694-5b9a-b0b7-d8d7725bc447",
+  "version_id": "4e44372f-7242-537b-9e23-2c3062250864",
+  "name": "cover.webp",
+  "role": "image",
+  "format": null,
+  "size_bytes": 74698,
+  "sha256": "343091c2ab233d24bf1dceaf200e62495d5baa9f6ab021d1a92cdd209ec7566e"
+ },
+ {
+  "id": "ebdd9b98-281c-59fe-92b4-47fc1175759a",
+  "version_id": "58cee525-e3ee-55f3-a9fc-cfc8d2dc6f1e",
+  "name": "lantern-keeper-1.0.0.3mf",
+  "role": "model",
+  "format": "3mf",
+  "size_bytes": 8541324,
+  "sha256": "fc7cacc95627f98d7c355c4cd66e09080fe19646887d91c774d8be91f344b910"
+ },
+ {
+  "id": "ed7dd81e-f771-5f71-b59c-67c3af9090ac",
+  "version_id": "58cee525-e3ee-55f3-a9fc-cfc8d2dc6f1e",
+  "name": "cover.webp",
+  "role": "image",
+  "format": null,
+  "size_bytes": 98111,
+  "sha256": "c51a697eac58cf74e3efc5f38aad63f9af282738f7f2e5a0f5a5d7d5ad7f154d"
+ },
+ {
+  "id": "801ffda6-0e9e-5d19-acfd-4926a27cc999",
+  "version_id": "cc4f0593-bfa0-5145-a4ff-e6861710d250",
+  "name": "lantern-keeper-1.0.1.3mf",
+  "role": "model",
+  "format": "3mf",
+  "size_bytes": 4320642,
+  "sha256": "2ece7ca0da8f572e60baaab294fb813c9271f7bda2142b3edb300b47eb55d7c4"
+ },
+ {
+  "id": "6ff852d4-169d-566d-8ea3-eafcf7c61e45",
+  "version_id": "cc4f0593-bfa0-5145-a4ff-e6861710d250",
+  "name": "cover.webp",
+  "role": "image",
+  "format": null,
+  "size_bytes": 97963,
+  "sha256": "1bd76ac07dc746c8a99ce180cf8ccd8873272e5a19429708d386987fb9e3212d"
+ },
+ {
+  "id": "730692dd-a0f0-51e3-996e-ea9d0a9889a3",
+  "version_id": "ca2c7504-0ca6-5b9b-a8a9-a664ae2318fb",
+  "name": "mossback-toad-1.0.0.3mf",
+  "role": "model",
+  "format": "3mf",
+  "size_bytes": 9315402,
+  "sha256": "749e6e6b485ab4f662d655b95e128f247fdef78125ae616c107827d74a08b13a"
+ },
+ {
+  "id": "e881e301-b0d7-5198-b61b-63ed2e4d0174",
+  "version_id": "ca2c7504-0ca6-5b9b-a8a9-a664ae2318fb",
+  "name": "cover.webp",
+  "role": "image",
+  "format": null,
+  "size_bytes": 71536,
+  "sha256": "199fed2eb1b9504989fc435521dafe328d5ec7237e84c620c3fd00e3302701e0"
+ },
+ {
+  "id": "f5d0bca0-db8c-59b1-b3c8-b9715d94ec60",
+  "version_id": "6668f440-dcd3-578c-92fa-c37f284100b3",
+  "name": "dungeon-door-set-1.0.0.3mf",
+  "role": "model",
+  "format": "3mf",
+  "size_bytes": 3607303,
+  "sha256": "06739a9348f0970f8c7362cdc2f06f516c52f94d4697413f42c69af668032284"
+ },
+ {
+  "id": "7ea04b12-4b12-58be-9129-8186649b022a",
+  "version_id": "6668f440-dcd3-578c-92fa-c37f284100b3",
+  "name": "cover.webp",
+  "role": "image",
+  "format": null,
+  "size_bytes": 97898,
+  "sha256": "1841fc723c8ec5a8f5f32fb5d13c166f1b96a2fc53d7c67695a1e733dde083b9"
+ },
+ {
+  "id": "487fb14c-3786-5387-815b-43fb3ea23130",
+  "version_id": "d182df8b-b2af-5135-aab9-a9d7c994c769",
+  "name": "tavern-furniture-kit-1.0.0.stl",
+  "role": "model",
+  "format": "stl",
+  "size_bytes": 7832809,
+  "sha256": "75c61657b4a1620f514bc392902cb7caa63316df39c0b55d32fc15d4ad0fb656"
+ },
+ {
+  "id": "207a3c05-f63d-50c2-a4b5-2f2132f253e6",
+  "version_id": "d182df8b-b2af-5135-aab9-a9d7c994c769",
+  "name": "cover.webp",
+  "role": "image",
+  "format": null,
+  "size_bytes": 62309,
+  "sha256": "5b187dc4f92a2b038585ff9827b7a95f746c1c99178ce9ed2e19f73d4df90249"
+ },
+ {
+  "id": "1abdc19a-38ba-5490-b539-a1ebd73e44e1",
+  "version_id": "a8263c83-4fd5-5fbc-87d7-a8e0a024ebdf",
+  "name": "wizard-tower-terrain-1.0.0.3mf",
+  "role": "model",
+  "format": "3mf",
+  "size_bytes": 3282922,
+  "sha256": "77c06d2d21cf3d4c36c0b50a60cfe56b74128fa39f69ddae5101521cba7a0011"
+ },
+ {
+  "id": "84c073b7-63a1-5ae9-aa58-147f4d394d21",
+  "version_id": "a8263c83-4fd5-5fbc-87d7-a8e0a024ebdf",
+  "name": "cover.webp",
+  "role": "image",
+  "format": null,
+  "size_bytes": 88594,
+  "sha256": "44f75782115cb1a927dd32eb7276d4c0bcf62e9cd3c08e757fbc1845108ab8ac"
+ },
+ {
+  "id": "a0e15c15-4b64-58d4-9d68-a50ef6ed51cf",
+  "version_id": "174c901e-8fbb-5e53-bbb4-d5c1a3431b8c",
+  "name": "logo-keychain-1.0.0.3mf",
+  "role": "model",
+  "format": "3mf",
+  "size_bytes": 502637,
+  "sha256": "778d0d9c5db3724c323598ad180be77df3edb126381ef098e64da58e2dbee430"
+ },
+ {
+  "id": "546b6158-112a-5f6c-9d36-b1abd8778f9f",
+  "version_id": "174c901e-8fbb-5e53-bbb4-d5c1a3431b8c",
+  "name": "cover.webp",
+  "role": "image",
+  "format": null,
+  "size_bytes": 82382,
+  "sha256": "261c7af1f857f0fc051e3641db55bc4c493faa6f2be93ce8da8aee7fb85c78f8"
+ },
+ {
+  "id": "123c07a1-610f-5d9d-8a44-4e3db9778401",
+  "version_id": "099aa9d2-f0c3-5306-a93b-32a01062a874",
+  "name": "planetary-gearbox-demo-1.0.0.sx3mf",
+  "role": "model",
+  "format": "sx3mf",
+  "size_bytes": 3346579,
+  "sha256": "d29fbae67247a6d578914a11d849562272aaea56803d0e6f857cf1df77eb15e6"
+ },
+ {
+  "id": "872b7561-e73e-59a4-9827-f210f8324ed5",
+  "version_id": "099aa9d2-f0c3-5306-a93b-32a01062a874",
+  "name": "cover.webp",
+  "role": "image",
+  "format": null,
+  "size_bytes": 57956,
+  "sha256": "a56625f8973978359269dbd8a036861524e7ee18659f76da2a23405e6b5bd89c"
+ },
+ {
+  "id": "967b55ff-ffa3-5387-9aab-c87133730e09",
+  "version_id": "d2e816a0-19ce-5eb9-97f3-680d1cd57014",
+  "name": "planetary-gearbox-demo-1.1.0.sx3mf",
+  "role": "model",
+  "format": "sx3mf",
+  "size_bytes": 3140040,
+  "sha256": "b3995744158048601d10ca89bb09d5ad23d63225c2a9c8adec13c8eb0d6c3263"
+ },
+ {
+  "id": "6676abea-e487-5506-a0f8-468ea209f862",
+  "version_id": "d2e816a0-19ce-5eb9-97f3-680d1cd57014",
+  "name": "cover.webp",
+  "role": "image",
+  "format": null,
+  "size_bytes": 66360,
+  "sha256": "4ba136341a018607f27527bda3d5978e7d29d262d394bcf99290bbdb3c2dd540"
+ },
+ {
+  "id": "e485e6d7-d1d0-5807-a93e-56339c6be8e3",
+  "version_id": "9d8e5f5e-d18e-5d8f-8979-d66d857904bc",
+  "name": "print-in-place-wrench-set-1.0.0.3mf",
+  "role": "model",
+  "format": "3mf",
+  "size_bytes": 4379151,
+  "sha256": "37218161384747b216c5b9a019a37f7373a435f6edb456ab5bbfc819c5afab44"
+ },
+ {
+  "id": "f99daf54-c315-5144-9b3f-cf0d21b7911d",
+  "version_id": "9d8e5f5e-d18e-5d8f-8979-d66d857904bc",
+  "name": "cover.webp",
+  "role": "image",
+  "format": null,
+  "size_bytes": 80920,
+  "sha256": "b2fd65347362d0aa1da8cf86dc377a18f99661095ff1e1e84e6e38d8e809b839"
+ },
+ {
+  "id": "a42fa19c-f4ae-51a7-ba7d-c0aeeafc9095",
+  "version_id": "4df56d6e-0620-5aa9-9153-f5291a86d2ee",
+  "name": "parametric-enclosure-1.0.0.3mf",
+  "role": "model",
+  "format": "3mf",
+  "size_bytes": 7144670,
+  "sha256": "ebfdada894b8a39769763a261633341932def75d3d87d8739ff2db9b90abf4b5"
+ },
+ {
+  "id": "78b6bbfd-0526-540a-878e-9b81fa1ef476",
+  "version_id": "4df56d6e-0620-5aa9-9153-f5291a86d2ee",
+  "name": "cover.webp",
+  "role": "image",
+  "format": null,
+  "size_bytes": 52999,
+  "sha256": "08c39cde501891f0331b7f526bc0727c56fac41b2f995c61e0099384996a0bfe"
+ },
+ {
+  "id": "50eadcfb-f980-5194-8a8b-717563e15c1a",
+  "version_id": "2d7fe7b1-b5de-5771-a1ad-c8ba790cf87a",
+  "name": "compliant-gripper-1.0.0.3mf",
+  "role": "model",
+  "format": "3mf",
+  "size_bytes": 5557718,
+  "sha256": "618f55c51b22329773da7c0f09771b5dac37cca3b8c802f1a2894cbab67682e8"
+ },
+ {
+  "id": "880dfa2a-9b54-52a3-bac1-dd1129982598",
+  "version_id": "2d7fe7b1-b5de-5771-a1ad-c8ba790cf87a",
+  "name": "cover.webp",
+  "role": "image",
+  "format": null,
+  "size_bytes": 76560,
+  "sha256": "c11dd767fc73c8cd4cde6d4971b072e3eb822f2e75fd77fcc3079a7f5d78c2ad"
+ },
+ {
+  "id": "5f2d3a96-e09e-517e-8b26-c7a7f495cc4f",
+  "version_id": "464fdd41-c3f4-59ba-b9b0-c525bc0ba1de",
+  "name": "gear-tooth-test-strip-1.0.0.3mf",
+  "role": "model",
+  "format": "3mf",
+  "size_bytes": 1194668,
+  "sha256": "ddb9ebb82fb499b2663752f0943a20fa7bf80a8c6f20578471d9d0ea65018de2"
+ },
+ {
+  "id": "1081aac1-4f28-5d8b-987d-ef79c7d42833",
+  "version_id": "464fdd41-c3f4-59ba-b9b0-c525bc0ba1de",
+  "name": "cover.webp",
+  "role": "image",
+  "format": null,
+  "size_bytes": 41115,
+  "sha256": "4e1ee0dfa838abe891e26ead77c4259ace5a4ccb4f51e01bd39d270352968bd3"
+ }
+]
