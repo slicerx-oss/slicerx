@@ -1,0 +1,114 @@
+[
+ {
+  "id": "b1755de7-0f58-55c4-b33a-465d4d17ce7e",
+  "creator_id": "675a68e5-5777-5c47-b235-0a8802180e2a",
+  "kind": "website",
+  "label": "Website",
+  "url": "https://marrow-works.example.com",
+  "position": 0
+ },
+ {
+  "id": "b9f17566-b8a2-5602-bb32-3a83fa6159e7",
+  "creator_id": "675a68e5-5777-5c47-b235-0a8802180e2a",
+  "kind": "printables",
+  "label": "Printables",
+  "url": "https://www.printables.com/@marrowworks",
+  "position": 1
+ },
+ {
+  "id": "504eb648-89d5-5e9d-9dee-1e340475f6e1",
+  "creator_id": "675a68e5-5777-5c47-b235-0a8802180e2a",
+  "kind": "youtube",
+  "label": "Build videos",
+  "url": "https://www.youtube.com/@marrowworks",
+  "position": 2
+ },
+ {
+  "id": "3b752a22-ac3e-5d88-a7cc-06eaf0875140",
+  "creator_id": "ff42f091-2c8b-5c83-b06c-566be3a52a79",
+  "kind": "website",
+  "label": "Website",
+  "url": "https://tidewell.example.com",
+  "position": 0
+ },
+ {
+  "id": "e522fc65-6c9a-57a4-b76d-a6407ed53d81",
+  "creator_id": "ff42f091-2c8b-5c83-b06c-566be3a52a79",
+  "kind": "instagram",
+  "label": "Instagram",
+  "url": "https://www.instagram.com/tidewellstudio",
+  "position": 1
+ },
+ {
+  "id": "92d182ac-dcc5-5fc7-8647-853a4853f851",
+  "creator_id": "84d2d8c4-53ce-5950-be88-6840a99439d4",
+  "kind": "website",
+  "label": "Website",
+  "url": "https://kestrel-parts.example.com",
+  "position": 0
+ },
+ {
+  "id": "21277293-c4e0-509d-8168-0420a4afc62e",
+  "creator_id": "84d2d8c4-53ce-5950-be88-6840a99439d4",
+  "kind": "github",
+  "label": "Sources",
+  "url": "https://github.com/kestrelparts",
+  "position": 1
+ },
+ {
+  "id": "af77509f-4366-57f3-94ad-dba3f8bc9ccf",
+  "creator_id": "84d2d8c4-53ce-5950-be88-6840a99439d4",
+  "kind": "kofi",
+  "label": "Support the work",
+  "url": "https://ko-fi.com/kestrelparts",
+  "position": 2
+ },
+ {
+  "id": "77cf49dc-cf72-5b52-b20a-86518ab734df",
+  "creator_id": "be3d4661-1f20-5342-a042-0dcac15f68e9",
+  "kind": "website",
+  "label": "Website",
+  "url": "https://oddfellow-minis.example.com",
+  "position": 0
+ },
+ {
+  "id": "53feaf03-f0f4-53a2-9524-eb47762ea7e6",
+  "creator_id": "be3d4661-1f20-5342-a042-0dcac15f68e9",
+  "kind": "discord",
+  "label": "Discord",
+  "url": "https://discord.gg/oddfellowminis",
+  "position": 1
+ },
+ {
+  "id": "3ada3d8d-aeae-5871-b69c-eccaa2e8e936",
+  "creator_id": "be3d4661-1f20-5342-a042-0dcac15f68e9",
+  "kind": "cults3d",
+  "label": "Cults",
+  "url": "https://cults3d.com/en/users/oddfellow",
+  "position": 2
+ },
+ {
+  "id": "91ee10d4-6922-503c-9543-9285ed8fd26d",
+  "creator_id": "fce36375-8a42-51d1-bcab-8f44ca0a3de0",
+  "kind": "website",
+  "label": "Website",
+  "url": "https://ferro-labs.example.com",
+  "position": 0
+ },
+ {
+  "id": "4dbbca10-888e-5bf1-9d80-9183d8b5e062",
+  "creator_id": "fce36375-8a42-51d1-bcab-8f44ca0a3de0",
+  "kind": "github",
+  "label": "Parametric sources",
+  "url": "https://github.com/ferrolabs",
+  "position": 1
+ },
+ {
+  "id": "bd32283d-20f3-5724-9cc1-bbb2c10034ab",
+  "creator_id": "fce36375-8a42-51d1-bcab-8f44ca0a3de0",
+  "kind": "makerworld",
+  "label": "MakerWorld",
+  "url": "https://makerworld.com/en/@ferrolabs",
+  "position": 2
+ }
+]

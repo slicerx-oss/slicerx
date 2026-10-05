@@ -1,0 +1,31 @@
+{
+  "name": "@slicerx/store",
+  "version": "0.1.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./auth": "./src/auth/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "seed:write": "tsx scripts/write-seed.ts",
+    "gen:types": "sh scripts/gen-types.sh",
+    "supabase:config": "tsx scripts/supabase-config.ts",
+    "library:seed": "tsx scripts/seed-library.ts",
+    "library:settings": "tsx scripts/apply-library-settings.ts"
+  },
+  "dependencies": {
+    "@slicerx/contracts": "workspace:*",
+    "@slicerx/edition-config": "workspace:*",
+    "@supabase/supabase-js": "2.117.2",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.0",
+    "tsx": "4.23.15",
+    "vitest": "5.0.2"
+  }
+}

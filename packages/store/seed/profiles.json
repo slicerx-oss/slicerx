@@ -1,0 +1,182 @@
+[
+ {
+  "id": "3c5b1fc1-0eff-51de-a6fb-c782145fb99d",
+  "handle": "owner",
+  "display_name": "Site owner",
+  "avatar_url": null,
+  "role": "owner",
+  "banned_at": null,
+  "ban_reason": null
+ },
+ {
+  "id": "29ff504e-980a-5803-93ef-3839221a1074",
+  "handle": "moderator",
+  "display_name": "Moderator",
+  "avatar_url": null,
+  "role": "moderator",
+  "banned_at": null,
+  "ban_reason": null
+ },
+ {
+  "id": "3ada9529-a1d3-5ebc-a29a-d5d7f9931e42",
+  "handle": "marrow",
+  "display_name": "Marrow Works",
+  "avatar_url": null,
+  "role": "creator",
+  "banned_at": null,
+  "ban_reason": null
+ },
+ {
+  "id": "4b0efd41-e186-596f-88c0-c1c0e248a5ee",
+  "handle": "tidewell",
+  "display_name": "Tidewell Studio",
+  "avatar_url": null,
+  "role": "creator",
+  "banned_at": null,
+  "ban_reason": null
+ },
+ {
+  "id": "6afcb6f6-be38-568f-b63c-5f80e2f82ff9",
+  "handle": "kestrel",
+  "display_name": "Kestrel Parts",
+  "avatar_url": null,
+  "role": "creator",
+  "banned_at": null,
+  "ban_reason": null
+ },
+ {
+  "id": "951c496e-f5d0-5724-9c07-ed45fccbf30f",
+  "handle": "oddfellow",
+  "display_name": "Oddfellow Minis",
+  "avatar_url": null,
+  "role": "creator",
+  "banned_at": null,
+  "ban_reason": null
+ },
+ {
+  "id": "172779cd-386f-5bdf-b9b0-986ed6f8ca7c",
+  "handle": "ferro",
+  "display_name": "Ferro Labs",
+  "avatar_url": null,
+  "role": "creator",
+  "banned_at": null,
+  "ban_reason": null
+ },
+ {
+  "id": "1832dedf-8c8e-51cb-b929-c0baad95dfae",
+  "handle": "rv",
+  "display_name": "RV",
+  "avatar_url": null,
+  "role": "member",
+  "banned_at": null,
+  "ban_reason": null
+ },
+ {
+  "id": "a784e62e-7308-546c-991e-18908d920ad2",
+  "handle": "ash",
+  "display_name": "Ash P.",
+  "avatar_url": null,
+  "role": "member",
+  "banned_at": null,
+  "ban_reason": null
+ },
+ {
+  "id": "71244e3a-a381-5c1d-a061-704ff2c47268",
+  "handle": "bo",
+  "display_name": "Bo L.",
+  "avatar_url": null,
+  "role": "member",
+  "banned_at": null,
+  "ban_reason": null
+ },
+ {
+  "id": "4a740856-d4e4-51bf-81bd-843a9f2d3dd3",
+  "handle": "cam",
+  "display_name": "Cam D.",
+  "avatar_url": null,
+  "role": "member",
+  "banned_at": null,
+  "ban_reason": null
+ },
+ {
+  "id": "c90758f2-4a11-51cd-861e-ad79c5085446",
+  "handle": "dee",
+  "display_name": "Dee M.",
+  "avatar_url": null,
+  "role": "member",
+  "banned_at": null,
+  "ban_reason": null
+ },
+ {
+  "id": "6c398dc7-d8df-5c90-babb-9dd20e5dac85",
+  "handle": "eli",
+  "display_name": "Eli S.",
+  "avatar_url": null,
+  "role": "member",
+  "banned_at": null,
+  "ban_reason": null
+ },
+ {
+  "id": "988f7689-8126-5a81-8772-85b61edb39be",
+  "handle": "fen",
+  "display_name": "Fen K.",
+  "avatar_url": null,
+  "role": "member",
+  "banned_at": null,
+  "ban_reason": null
+ },
+ {
+  "id": "3e174747-9bb5-518e-9936-8e56fc94089f",
+  "handle": "gus",
+  "display_name": "Gus R.",
+  "avatar_url": null,
+  "role": "member",
+  "banned_at": null,
+  "ban_reason": null
+ },
+ {
+  "id": "8cb73c27-488c-5ed0-8b94-eea08fafbc57",
+  "handle": "hal",
+  "display_name": "Hal O.",
+  "avatar_url": null,
+  "role": "member",
+  "banned_at": null,
+  "ban_reason": null
+ },
+ {
+  "id": "1d2d5149-9631-528a-b083-6359fb9f109a",
+  "handle": "ivy",
+  "display_name": "Ivy T.",
+  "avatar_url": null,
+  "role": "member",
+  "banned_at": null,
+  "ban_reason": null
+ },
+ {
+  "id": "e4981593-7245-533a-b8a6-a8f72e7b9e5e",
+  "handle": "jo",
+  "display_name": "Jo W.",
+  "avatar_url": null,
+  "role": "member",
+  "banned_at": null,
+  "ban_reason": null
+ },
+ {
+  "id": "ba2c5a8c-2e5f-56c7-891e-3f4add6d2301",
+  "handle": "kit",
+  "display_name": "Kit N.",
+  "avatar_url": null,
+  "role": "member",
+  "banned_at": null,
+  "ban_reason": null
+ },
+ {
+  "id": "47173fd9-98a7-51bf-9a48-636445f84d02",
+  "handle": "zed",
+  "display_name": "Zed Q.",
+  "avatar_url": null,
+  "role": "member",
+  "banned_at": "2026-09-10T12:00:00Z",
+  "ban_reason": "Repeated spam in comments"
+ }
+]

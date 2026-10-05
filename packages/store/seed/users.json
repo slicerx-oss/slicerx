@@ -1,0 +1,122 @@
+[
+ {
+  "id": "3c5b1fc1-0eff-51de-a6fb-c782145fb99d",
+  "email": "owner@example.com",
+  "handle": "owner",
+  "display_name": "Site owner"
+ },
+ {
+  "id": "29ff504e-980a-5803-93ef-3839221a1074",
+  "email": "moderator@example.com",
+  "handle": "moderator",
+  "display_name": "Moderator"
+ },
+ {
+  "id": "3ada9529-a1d3-5ebc-a29a-d5d7f9931e42",
+  "email": "marrow@example.com",
+  "handle": "marrow",
+  "display_name": "Marrow Works"
+ },
+ {
+  "id": "4b0efd41-e186-596f-88c0-c1c0e248a5ee",
+  "email": "tidewell@example.com",
+  "handle": "tidewell",
+  "display_name": "Tidewell Studio"
+ },
+ {
+  "id": "6afcb6f6-be38-568f-b63c-5f80e2f82ff9",
+  "email": "kestrel@example.com",
+  "handle": "kestrel",
+  "display_name": "Kestrel Parts"
+ },
+ {
+  "id": "951c496e-f5d0-5724-9c07-ed45fccbf30f",
+  "email": "oddfellow@example.com",
+  "handle": "oddfellow",
+  "display_name": "Oddfellow Minis"
+ },
+ {
+  "id": "172779cd-386f-5bdf-b9b0-986ed6f8ca7c",
+  "email": "ferro@example.com",
+  "handle": "ferro",
+  "display_name": "Ferro Labs"
+ },
+ {
+  "id": "1832dedf-8c8e-51cb-b929-c0baad95dfae",
+  "email": "rv@example.com",
+  "handle": "rv",
+  "display_name": "RV"
+ },
+ {
+  "id": "a784e62e-7308-546c-991e-18908d920ad2",
+  "email": "ash@example.com",
+  "handle": "ash",
+  "display_name": "Ash P."
+ },
+ {
+  "id": "71244e3a-a381-5c1d-a061-704ff2c47268",
+  "email": "bo@example.com",
+  "handle": "bo",
+  "display_name": "Bo L."
+ },
+ {
+  "id": "4a740856-d4e4-51bf-81bd-843a9f2d3dd3",
+  "email": "cam@example.com",
+  "handle": "cam",
+  "display_name": "Cam D."
+ },
+ {
+  "id": "c90758f2-4a11-51cd-861e-ad79c5085446",
+  "email": "dee@example.com",
+  "handle": "dee",
+  "display_name": "Dee M."
+ },
+ {
+  "id": "6c398dc7-d8df-5c90-babb-9dd20e5dac85",
+  "email": "eli@example.com",
+  "handle": "eli",
+  "display_name": "Eli S."
+ },
+ {
+  "id": "988f7689-8126-5a81-8772-85b61edb39be",
+  "email": "fen@example.com",
+  "handle": "fen",
+  "display_name": "Fen K."
+ },
+ {
+  "id": "3e174747-9bb5-518e-9936-8e56fc94089f",
+  "email": "gus@example.com",
+  "handle": "gus",
+  "display_name": "Gus R."
+ },
+ {
+  "id": "8cb73c27-488c-5ed0-8b94-eea08fafbc57",
+  "email": "hal@example.com",
+  "handle": "hal",
+  "display_name": "Hal O."
+ },
+ {
+  "id": "1d2d5149-9631-528a-b083-6359fb9f109a",
+  "email": "ivy@example.com",
+  "handle": "ivy",
+  "display_name": "Ivy T."
+ },
+ {
+  "id": "e4981593-7245-533a-b8a6-a8f72e7b9e5e",
+  "email": "jo@example.com",
+  "handle": "jo",
+  "display_name": "Jo W."
+ },
+ {
+  "id": "ba2c5a8c-2e5f-56c7-891e-3f4add6d2301",
+  "email": "kit@example.com",
+  "handle": "kit",
+  "display_name": "Kit N."
+ },
+ {
+  "id": "47173fd9-98a7-51bf-9a48-636445f84d02",
+  "email": "zed@example.com",
+  "handle": "zed",
+  "display_name": "Zed Q."
+ }
+]

@@ -1,0 +1,502 @@
+[
+ {
+  "id": "dd6937ab-b238-571b-8491-2463ebc044d3",
+  "creator_id": "675a68e5-5777-5c47-b235-0a8802180e2a",
+  "slug": "articulated-fossil-fish",
+  "title": "Articulated fossil fish",
+  "description": "Print-in-place fish skeleton with 22 linked segments. Tested at 0.20 mm.",
+  "license": "cc-by",
+  "status": "approved",
+  "tags": [
+   "articulated",
+   "print-in-place",
+   "desk"
+  ],
+  "cover_url": null,
+  "review_note": null,
+  "reviewed_by": "29ff504e-980a-5803-93ef-3839221a1074",
+  "reviewed_at": "2026-06-03T03:00:00Z",
+  "published_at": "2026-06-03T03:00:00Z",
+  "created_at": "2026-06-03T00:00:00Z"
+ },
+ {
+  "id": "1855a791-9d12-5b5c-94c2-d533d185c9fe",
+  "creator_id": "675a68e5-5777-5c47-b235-0a8802180e2a",
+  "slug": "desk-skull-planter",
+  "title": "Desk skull planter",
+  "description": "Small planter with a drainage insert. Prints without supports.",
+  "license": "cc-by-sa",
+  "status": "approved",
+  "tags": [
+   "planter",
+   "home"
+  ],
+  "cover_url": null,
+  "review_note": null,
+  "reviewed_by": "29ff504e-980a-5803-93ef-3839221a1074",
+  "reviewed_at": "2026-06-28T03:00:00Z",
+  "published_at": "2026-06-28T03:00:00Z",
+  "created_at": "2026-06-28T00:00:00Z"
+ },
+ {
+  "id": "dbde849b-6b6e-5a8f-ab19-7bdc5ba9b5c8",
+  "creator_id": "675a68e5-5777-5c47-b235-0a8802180e2a",
+  "slug": "spine-cable-organizer",
+  "title": "Spine cable organizer",
+  "description": "Flexible vertebra chain that holds six cables along a desk edge.",
+  "license": "cc-by",
+  "status": "approved",
+  "tags": [
+   "desk",
+   "organizer",
+   "functional"
+  ],
+  "cover_url": null,
+  "review_note": null,
+  "reviewed_by": "29ff504e-980a-5803-93ef-3839221a1074",
+  "reviewed_at": "2026-07-22T03:00:00Z",
+  "published_at": "2026-07-22T03:00:00Z",
+  "created_at": "2026-07-22T00:00:00Z"
+ },
+ {
+  "id": "2343230e-3682-5295-a974-a8d9fcb52942",
+  "creator_id": "675a68e5-5777-5c47-b235-0a8802180e2a",
+  "slug": "ribcage-pen-holder",
+  "title": "Ribcage pen holder",
+  "description": "Pen cup shaped like a ribcage, split for AMS color changes.",
+  "license": "cc-by-nc",
+  "status": "approved",
+  "tags": [
+   "desk",
+   "multicolor"
+  ],
+  "cover_url": null,
+  "review_note": null,
+  "reviewed_by": "29ff504e-980a-5803-93ef-3839221a1074",
+  "reviewed_at": "2026-08-17T03:00:00Z",
+  "published_at": "2026-08-17T03:00:00Z",
+  "created_at": "2026-08-17T00:00:00Z"
+ },
+ {
+  "id": "3e7b8a47-2956-5335-a454-31b7f37928c5",
+  "creator_id": "675a68e5-5777-5c47-b235-0a8802180e2a",
+  "slug": "trilobite-coaster-set",
+  "title": "Trilobite coaster set",
+  "description": "Four coasters with a raised trilobite pattern. Print flat, no supports.",
+  "license": "cc-by",
+  "status": "pending",
+  "tags": [
+   "home",
+   "desk"
+  ],
+  "cover_url": null,
+  "review_note": null,
+  "reviewed_by": null,
+  "reviewed_at": null,
+  "published_at": null,
+  "created_at": "2026-09-25T10:00:00Z"
+ },
+ {
+  "id": "8026a9a5-1d82-5315-a7e2-463ffa46fc8f",
+  "creator_id": "ff42f091-2c8b-5c83-b06c-566be3a52a79",
+  "slug": "tide-pool-planter",
+  "title": "Tide pool planter",
+  "description": "Three-pocket planter with a textured rock surface.",
+  "license": "cc-by-sa",
+  "status": "approved",
+  "tags": [
+   "planter",
+   "home",
+   "texture"
+  ],
+  "cover_url": null,
+  "review_note": null,
+  "reviewed_by": "29ff504e-980a-5803-93ef-3839221a1074",
+  "reviewed_at": "2026-06-07T03:00:00Z",
+  "published_at": "2026-06-07T03:00:00Z",
+  "created_at": "2026-06-07T00:00:00Z"
+ },
+ {
+  "id": "5a9e9396-2b40-59b5-a9e8-2fd0983625f3",
+  "creator_id": "ff42f091-2c8b-5c83-b06c-566be3a52a79",
+  "slug": "wave-dish",
+  "title": "Wave dish",
+  "description": "Shallow key dish with a vase-mode wave rim.",
+  "license": "cc0",
+  "status": "approved",
+  "tags": [
+   "home",
+   "vase-mode"
+  ],
+  "cover_url": null,
+  "review_note": null,
+  "reviewed_by": "29ff504e-980a-5803-93ef-3839221a1074",
+  "reviewed_at": "2026-07-03T03:00:00Z",
+  "published_at": "2026-07-03T03:00:00Z",
+  "created_at": "2026-07-03T00:00:00Z"
+ },
+ {
+  "id": "97200403-c87f-52e1-bb82-eec5e4dd0827",
+  "creator_id": "ff42f091-2c8b-5c83-b06c-566be3a52a79",
+  "slug": "lighthouse-lamp-shade",
+  "title": "Lighthouse lamp shade",
+  "description": "Lamp shade for E14 bulbs. Print in translucent PETG at 0.16 mm.",
+  "license": "cc-by-nc",
+  "status": "approved",
+  "tags": [
+   "lamp",
+   "home"
+  ],
+  "cover_url": null,
+  "review_note": null,
+  "reviewed_by": "29ff504e-980a-5803-93ef-3839221a1074",
+  "reviewed_at": "2026-07-28T03:00:00Z",
+  "published_at": "2026-07-28T03:00:00Z",
+  "created_at": "2026-07-28T00:00:00Z"
+ },
+ {
+  "id": "1889a2aa-d27e-5904-a1e3-0e426b14d5ec",
+  "creator_id": "ff42f091-2c8b-5c83-b06c-566be3a52a79",
+  "slug": "shell-tealight-holder",
+  "title": "Shell tealight holder",
+  "description": "Tealight holder with a heat shield ring. LED candles recommended.",
+  "license": "cc-by",
+  "status": "approved",
+  "tags": [
+   "home",
+   "gift"
+  ],
+  "cover_url": null,
+  "review_note": null,
+  "reviewed_by": "29ff504e-980a-5803-93ef-3839221a1074",
+  "reviewed_at": "2026-08-20T03:00:00Z",
+  "published_at": "2026-08-20T03:00:00Z",
+  "created_at": "2026-08-20T00:00:00Z"
+ },
+ {
+  "id": "98212024-c838-5d00-934e-dbd8c35706fc",
+  "creator_id": "ff42f091-2c8b-5c83-b06c-566be3a52a79",
+  "slug": "anchor-cabinet-pull",
+  "title": "Anchor cabinet pull",
+  "description": "Cabinet pull shaped like an anchor. Takes an M4 screw.",
+  "license": "cc-by",
+  "status": "pending",
+  "tags": [
+   "home",
+   "hardware"
+  ],
+  "cover_url": null,
+  "review_note": null,
+  "reviewed_by": null,
+  "reviewed_at": null,
+  "published_at": null,
+  "created_at": "2026-09-26T10:00:00Z"
+ },
+ {
+  "id": "ce2c8e45-d051-5e75-b454-a7f8aa29f7c8",
+  "creator_id": "84d2d8c4-53ce-5950-be88-6840a99439d4",
+  "slug": "filament-spool-holder",
+  "title": "Filament spool holder",
+  "description": "Bearing spool holder for 200 mm spools. Uses two 608 bearings.",
+  "license": "cc-by-sa",
+  "status": "approved",
+  "tags": [
+   "functional",
+   "printer-upgrade"
+  ],
+  "cover_url": null,
+  "review_note": null,
+  "reviewed_by": "29ff504e-980a-5803-93ef-3839221a1074",
+  "reviewed_at": "2026-06-11T03:00:00Z",
+  "published_at": "2026-06-11T03:00:00Z",
+  "created_at": "2026-06-11T00:00:00Z"
+ },
+ {
+  "id": "2b4b325c-6759-58f7-955d-f8dd994f5276",
+  "creator_id": "84d2d8c4-53ce-5950-be88-6840a99439d4",
+  "slug": "hinged-cable-clip-set",
+  "title": "Hinged cable clip set",
+  "description": "Print-in-place hinged clips for 4 to 12 mm cables.",
+  "license": "cc0",
+  "status": "approved",
+  "tags": [
+   "functional",
+   "print-in-place"
+  ],
+  "cover_url": null,
+  "review_note": null,
+  "reviewed_by": "29ff504e-980a-5803-93ef-3839221a1074",
+  "reviewed_at": "2026-07-08T03:00:00Z",
+  "published_at": "2026-07-08T03:00:00Z",
+  "created_at": "2026-07-08T00:00:00Z"
+ },
+ {
+  "id": "f566db85-3287-553b-a22a-551625cb1ba8",
+  "creator_id": "84d2d8c4-53ce-5950-be88-6840a99439d4",
+  "slug": "bench-vise-jaw-pads",
+  "title": "Bench vise jaw pads",
+  "description": "Magnetic soft jaws for 100 mm vises. Print in TPU 95A.",
+  "license": "cc-by",
+  "status": "approved",
+  "tags": [
+   "functional",
+   "workshop",
+   "tpu"
+  ],
+  "cover_url": null,
+  "review_note": null,
+  "reviewed_by": "29ff504e-980a-5803-93ef-3839221a1074",
+  "reviewed_at": "2026-08-01T03:00:00Z",
+  "published_at": "2026-08-01T03:00:00Z",
+  "created_at": "2026-08-01T00:00:00Z"
+ },
+ {
+  "id": "cdbd0b6b-fc86-5551-8031-ba4df10a4477",
+  "creator_id": "84d2d8c4-53ce-5950-be88-6840a99439d4",
+  "slug": "drawer-label-frames",
+  "title": "Drawer label frames",
+  "description": "Snap-in label frames for common parts drawers.",
+  "license": "cc-by",
+  "status": "approved",
+  "tags": [
+   "organizer",
+   "workshop"
+  ],
+  "cover_url": null,
+  "review_note": null,
+  "reviewed_by": "29ff504e-980a-5803-93ef-3839221a1074",
+  "reviewed_at": "2026-08-27T03:00:00Z",
+  "published_at": "2026-08-27T03:00:00Z",
+  "created_at": "2026-08-27T00:00:00Z"
+ },
+ {
+  "id": "2b218d13-1696-550e-91b2-e4d22c057ccf",
+  "creator_id": "84d2d8c4-53ce-5950-be88-6840a99439d4",
+  "slug": "chain-link-cable-guide",
+  "title": "Chain link cable guide",
+  "description": "Snap-together chain links that guide a cable bundle along a bench.",
+  "license": "cc-by",
+  "status": "pending",
+  "tags": [
+   "functional",
+   "workshop",
+   "organizer"
+  ],
+  "cover_url": null,
+  "review_note": null,
+  "reviewed_by": null,
+  "reviewed_at": null,
+  "published_at": null,
+  "created_at": "2026-09-27T10:00:00Z"
+ },
+ {
+  "id": "cd0aeb13-cd3d-55d3-86a0-861d469718dd",
+  "creator_id": "be3d4661-1f20-5342-a042-0dcac15f68e9",
+  "slug": "lantern-keeper",
+  "title": "Lantern keeper miniature",
+  "description": "32 mm scale figure with a separate lantern arm.",
+  "license": "cc-by-nc",
+  "status": "approved",
+  "tags": [
+   "miniature",
+   "tabletop"
+  ],
+  "cover_url": null,
+  "review_note": null,
+  "reviewed_by": "29ff504e-980a-5803-93ef-3839221a1074",
+  "reviewed_at": "2026-06-18T03:00:00Z",
+  "published_at": "2026-06-18T03:00:00Z",
+  "created_at": "2026-06-18T00:00:00Z"
+ },
+ {
+  "id": "f5f62164-acce-5f68-8845-9c2ed17de222",
+  "creator_id": "be3d4661-1f20-5342-a042-0dcac15f68e9",
+  "slug": "mossback-toad",
+  "title": "Mossback toad",
+  "description": "Large toad mount with a textured back. Supports included.",
+  "license": "cc-by-nc-sa",
+  "status": "approved",
+  "tags": [
+   "miniature",
+   "creature"
+  ],
+  "cover_url": null,
+  "review_note": null,
+  "reviewed_by": "29ff504e-980a-5803-93ef-3839221a1074",
+  "reviewed_at": "2026-07-12T03:00:00Z",
+  "published_at": "2026-07-12T03:00:00Z",
+  "created_at": "2026-07-12T00:00:00Z"
+ },
+ {
+  "id": "36e158a3-1baf-5ac9-9a0f-3afd3741b897",
+  "creator_id": "be3d4661-1f20-5342-a042-0dcac15f68e9",
+  "slug": "dungeon-door-set",
+  "title": "Dungeon door set",
+  "description": "Four doors with working hinges for 28 mm terrain.",
+  "license": "cc-by",
+  "status": "approved",
+  "tags": [
+   "terrain",
+   "tabletop",
+   "print-in-place"
+  ],
+  "cover_url": null,
+  "review_note": null,
+  "reviewed_by": "29ff504e-980a-5803-93ef-3839221a1074",
+  "reviewed_at": "2026-08-05T03:00:00Z",
+  "published_at": "2026-08-05T03:00:00Z",
+  "created_at": "2026-08-05T00:00:00Z"
+ },
+ {
+  "id": "885ba06f-1308-549b-936e-0ee9483d8a1d",
+  "creator_id": "be3d4661-1f20-5342-a042-0dcac15f68e9",
+  "slug": "tavern-furniture-kit",
+  "title": "Tavern furniture kit",
+  "description": "Tables, stools, barrels and a bar counter on one plate.",
+  "license": "cc0",
+  "status": "approved",
+  "tags": [
+   "terrain",
+   "tabletop"
+  ],
+  "cover_url": null,
+  "review_note": null,
+  "reviewed_by": "29ff504e-980a-5803-93ef-3839221a1074",
+  "reviewed_at": "2026-09-01T03:00:00Z",
+  "published_at": "2026-09-01T03:00:00Z",
+  "created_at": "2026-09-01T00:00:00Z"
+ },
+ {
+  "id": "9da50706-15d8-53ed-8cff-b0c70482742c",
+  "creator_id": "be3d4661-1f20-5342-a042-0dcac15f68e9",
+  "slug": "wizard-tower-terrain",
+  "title": "Wizard tower terrain",
+  "description": "Modular tower with a spiral stair.",
+  "license": "cc-by",
+  "status": "rejected",
+  "tags": [
+   "terrain",
+   "tabletop"
+  ],
+  "cover_url": null,
+  "review_note": "The preview images show a model from a commercial game. Upload only models you made or have the right to share, then resubmit.",
+  "reviewed_by": "29ff504e-980a-5803-93ef-3839221a1074",
+  "reviewed_at": "2026-09-16T12:00:00Z",
+  "published_at": null,
+  "created_at": "2026-09-15T10:00:00Z"
+ },
+ {
+  "id": "67875486-0502-50eb-9238-fb4f30bd0f22",
+  "creator_id": "be3d4661-1f20-5342-a042-0dcac15f68e9",
+  "slug": "logo-keychain",
+  "title": "Logo keychain",
+  "description": "Keychain with a company logo.",
+  "license": "custom",
+  "status": "removed",
+  "tags": [
+   "gift"
+  ],
+  "cover_url": null,
+  "review_note": "Uses a trademarked logo. Taken down after a report.",
+  "reviewed_by": "29ff504e-980a-5803-93ef-3839221a1074",
+  "reviewed_at": "2026-09-05T14:00:00Z",
+  "published_at": "2026-08-10T13:00:00Z",
+  "created_at": "2026-08-10T10:00:00Z"
+ },
+ {
+  "id": "04b41b28-c776-5f1a-a349-b903e08b3d31",
+  "creator_id": "fce36375-8a42-51d1-bcab-8f44ca0a3de0",
+  "slug": "planetary-gearbox-demo",
+  "title": "Planetary gearbox demo",
+  "description": "Hand-cranked 5:1 planetary gearbox. Prints in place.",
+  "license": "cc-by-sa",
+  "status": "approved",
+  "tags": [
+   "mechanism",
+   "print-in-place",
+   "education"
+  ],
+  "cover_url": null,
+  "review_note": null,
+  "reviewed_by": "29ff504e-980a-5803-93ef-3839221a1074",
+  "reviewed_at": "2026-06-21T03:00:00Z",
+  "published_at": "2026-06-21T03:00:00Z",
+  "created_at": "2026-06-21T00:00:00Z"
+ },
+ {
+  "id": "713c8053-ec80-531e-859a-b3b61826c0fb",
+  "creator_id": "fce36375-8a42-51d1-bcab-8f44ca0a3de0",
+  "slug": "print-in-place-wrench-set",
+  "title": "Print-in-place wrench set",
+  "description": "Adjustable wrench set in three sizes.",
+  "license": "cc-by",
+  "status": "approved",
+  "tags": [
+   "tool",
+   "print-in-place"
+  ],
+  "cover_url": null,
+  "review_note": null,
+  "reviewed_by": "29ff504e-980a-5803-93ef-3839221a1074",
+  "reviewed_at": "2026-07-16T03:00:00Z",
+  "published_at": "2026-07-16T03:00:00Z",
+  "created_at": "2026-07-16T00:00:00Z"
+ },
+ {
+  "id": "25d99ffe-32b2-567e-b637-5e0d615cd78d",
+  "creator_id": "fce36375-8a42-51d1-bcab-8f44ca0a3de0",
+  "slug": "parametric-enclosure",
+  "title": "Parametric enclosure",
+  "description": "Electronics box with snap lid. Sizes from 40 to 160 mm.",
+  "license": "cc0",
+  "status": "approved",
+  "tags": [
+   "functional",
+   "electronics"
+  ],
+  "cover_url": null,
+  "review_note": null,
+  "reviewed_by": "29ff504e-980a-5803-93ef-3839221a1074",
+  "reviewed_at": "2026-08-10T03:00:00Z",
+  "published_at": "2026-08-10T03:00:00Z",
+  "created_at": "2026-08-10T00:00:00Z"
+ },
+ {
+  "id": "7aeeaa45-5a64-511b-9c29-09587ca3e206",
+  "creator_id": "fce36375-8a42-51d1-bcab-8f44ca0a3de0",
+  "slug": "compliant-gripper",
+  "title": "Compliant gripper",
+  "description": "Single-piece gripper for small robot arms. Print in PETG.",
+  "license": "cc-by",
+  "status": "approved",
+  "tags": [
+   "mechanism",
+   "robotics"
+  ],
+  "cover_url": null,
+  "review_note": null,
+  "reviewed_by": "29ff504e-980a-5803-93ef-3839221a1074",
+  "reviewed_at": "2026-09-04T03:00:00Z",
+  "published_at": "2026-09-04T03:00:00Z",
+  "created_at": "2026-09-04T00:00:00Z"
+ },
+ {
+  "id": "ba386153-6e7f-5c2a-98ce-de9ecc8933e7",
+  "creator_id": "fce36375-8a42-51d1-bcab-8f44ca0a3de0",
+  "slug": "gear-tooth-test-strip",
+  "title": "Gear tooth test strip",
+  "description": "A strip of gear teeth at five clearances, for tuning a printer.",
+  "license": "cc0",
+  "status": "archived",
+  "tags": [
+   "education",
+   "calibration"
+  ],
+  "cover_url": null,
+  "review_note": null,
+  "reviewed_by": "29ff504e-980a-5803-93ef-3839221a1074",
+  "reviewed_at": "2026-08-01T13:00:00Z",
+  "published_at": "2026-08-01T13:00:00Z",
+  "created_at": "2026-08-01T10:00:00Z"
+ }
+]
