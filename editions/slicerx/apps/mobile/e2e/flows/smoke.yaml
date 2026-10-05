@@ -1,0 +1,8 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (C) 2026 The SlicerX contributors
+appId: app.slicerx.mobile
+---
+- runFlow: launch.yaml
+- runFlow: pilot-chat.yaml
+- runFlow: pairing.yaml
+- runFlow: printers.yaml

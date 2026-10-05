@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "id": "harbor",
+  "brand": {
+    "name": "Harbor Slice",
+    "shortName": "Harbor",
+    "tagline": "Slicing and print management for Harbor Print Co. customers",
+    "logo": { "mark": "brand/harbor-mark.svg", "wordmark": "brand/harbor-wordmark.svg", "appIcon": "brand/harbor-icon.png" },
+    "theme": { "base": "nocturne", "tokens": { "colors": { "purple": "#4fb3bf", "pink": "#f2a65a" }, "fonts": { "display": "Space Grotesk" } } },
+    "supportEmail": "support@harborprint.example"
+  },
+  "apps": {
+    "web": { "origin": "https://slice.harborprint.example" },
+    "desktop": { "identifier": "com.harborprint.slice", "productName": "Harbor Slice" },
+    "ios": { "bundleId": "com.harborprint.slice", "teamId": "ABCDE12345" },
+    "android": { "applicationId": "com.harborprint.slice", "sha256CertFingerprints": ["AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99:AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99"] },
+    "deepLinkScheme": "harborslice",
+    "universalLinkDomains": ["slice.harborprint.example"]
+  },
+  "backend": {
+    "supabase": { "url": "https://abcdefghijklmnop.supabase.co", "anonKey": "public-anon-key-from-the-supabase-dashboard" },
+    "cloudApi": "https://cloud.harborprint.example",
+    "relay": null
+  },
+  "features": {
+    "store": true,
+    "feed": false,
+    "creators": false,
+    "cloudSlicing": true,
+    "phonePairing": false,
+    "pilot": true,
+    "printers": { "duet": false, "snapmaker": false, "homeassistant": false }
+  },
+  "auth": { "providers": [{ "kind": "email" }, { "kind": "google", "clientId": "1234567890-abc.apps.googleusercontent.com" }] },
+  "ai": { "provider": "openai-compatible", "model": "llama-4-scout", "baseUrl": "https://llm.harborprint.example/v1", "keySource": "cloud" },
+  "legal": {
+    "terms": "https://harborprint.example/terms",
+    "privacy": "https://harborprint.example/privacy",
+    "sourceUrl": "https://git.harborprint.example/harbor-slice/tree/{commit}",
+    "trademarkNotice": "Harbor Slice is built on SlicerX. SlicerX is a trademark of its owners and is not affiliated with Harbor Print Co."
+  }
+}

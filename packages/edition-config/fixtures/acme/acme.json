@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "id": "acme",
+  "brand": {
+    "name": "Acme Slicer",
+    "shortName": "Acme",
+    "tagline": "Slicing for Acme printers",
+    "description": "The slicer for Acme printers",
+    "logo": { "mark": "mark.svg", "appIcon": "icon.png" }
+  },
+  "apps": {
+    "web": { "origin": "https://slicer.acme.example" },
+    "desktop": { "identifier": "com.acme.slicer", "productName": "Acme Slicer" },
+    "deepLinkScheme": "acmeslicer"
+  },
+  "links": {
+    "docs": "https://slicer.acme.example/docs",
+    "support": "https://slicer.acme.example/help",
+    "download": "https://slicer.acme.example/download"
+  },
+  "legal": {
+    "sourceUrl": "https://git.acme.example/slicer/tree/{commit}",
+    "publisher": "Acme Printers Inc.",
+    "copyright": "Copyright (C) 2026 Acme Printers Inc."
+  }
+}

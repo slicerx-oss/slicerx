@@ -1,0 +1,19 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (C) 2026 The SlicerX contributors
+appId: app.slicerx.mobile
+---
+- launchApp:
+    clearState: true
+- extendedWaitUntil:
+    visible:
+      id: pilot-screen
+    timeout: 60000
+- assertVisible:
+    id: tab-index
+- assertVisible:
+    id: tab-printers
+- assertVisible:
+    id: tab-library
+- assertVisible:
+    id: tab-account
+- takeScreenshot: launch

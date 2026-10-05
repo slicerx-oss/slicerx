@@ -1,0 +1,30 @@
+{
+  "name": "@slicerx/edition-config",
+  "version": "0.1.0",
+  "private": true,
+  "description": "One typed configuration for every SlicerX edition surface: endpoints, branding, feature toggles, auth, AI and legal links",
+  "license": "Apache-2.0",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts",
+    "./node": "./src/node.ts",
+    "./schema.json": "./schema/edition-config.schema.json"
+  },
+  "bin": {
+    "edition-config": "./src/cli.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "schema": "node src/cli.ts schema > schema/edition-config.schema.json",
+    "neutral": "node src/cli.ts neutral > src/neutral.generated.ts"
+  },
+  "dependencies": {
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.0",
+    "vitest": "5.0.2"
+  }
+}

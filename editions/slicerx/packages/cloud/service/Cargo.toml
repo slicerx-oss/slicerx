@@ -1,0 +1,35 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (C) 2026 The SlicerX contributors
+[package]
+name = "sx-cloud"
+version.workspace = true
+edition.workspace = true
+license = "Apache-2.0"
+publish.workspace = true
+
+[[bin]]
+name = "sx-cloud"
+path = "src/main.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+async-trait = "=0.1.92"
+axum = { version = "=0.8.9", default-features = false, features = ["http1", "json", "query", "tokio"] }
+reqwest = { version = "=0.13.5", default-features = false, features = ["json", "query", "rustls-no-provider"] }
+rustls = { version = "=0.23.45", default-features = false, features = ["ring", "std", "tls12"] }
+serde = { version = "=1.0.229", features = ["derive"] }
+serde_json = "=1.0.151"
+sha2 = "=0.11.0"
+sx-core.workspace = true
+sx-upload-scan = { path = "../scan" }
+sx-edition-config = { path = "../../../../../packages/edition-config/rust" }
+thiserror = "=2.0.21"
+tokio = { version = "=1.53.1", features = ["rt-multi-thread", "net", "macros", "time", "sync", "signal"] }
+
+[dev-dependencies]
+tower = { version = "=0.5.3", features = ["util"] }
+http-body-util = "=0.1.5"
+sx3mf.workspace = true
+zip = { version = "=8.6.0", default-features = false, features = ["deflate-flate2-zlib-rs"] }
