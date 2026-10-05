@@ -1,0 +1,71 @@
+# CAD history
+
+An object edited with the CAD tools keeps what was done to it as an ordered list of steps. The person can open a step, change a number or the sketch, suppress or delete it, and the steps after it replay. It is one flat list per object: no nesting, no dependency view.
+
+## Model
+
+`PlateEntry.history` (absent on objects nobody has modeled on):
+
+```
+History = { version: 1, base: MeshPart[], steps: Step[], ended?: string }
+Step    = { id, op, part, transform: Mat4, params, follow?, suppressed?, broken? }
+```
+
+- `base` is the object's parts at the moment the first step was recorded (as imported or created). A body made by a sketch or a shape with "New body" has an empty base and the extrude as step 1, so its sketch stays editable.
+- `op` names the engine call; `params` are exactly the request that call took, in world millimeters as they were when the step ran. `transform` is the object's transform at that moment. Replay sends `{mesh: <current local mesh>, transform}` with the same params, and the engine answers in the part's local frame, so moving, turning or scaling the object later never disturbs a step.
+- `part` is the part index the step works on, or -1 for every part (hollow, repair, simplify, merged array).
+- Geometry references live inside `params` in the engine's own terms: a face is a pick `{at, normal}` (the triangle index is found again on the current mesh at replay: the triangle that contains `at` within 0.01 mm and faces within 0.01 degrees of `normal`); an edge is the `EdgeRef {a, b, face}` from `edge.pick` (docs/cad-fillet.md), which the engine finds again itself; a sketch or shape plane is its `FaceFrame`.
+- `follow`: when a reference sat on the face that an earlier push or one-sided extrude moved (its end cap), the step records `{step, distanceMm}`. If that earlier step's distance changes, the reference moves along that cap's normal by the difference. This keeps "pull the top 5 mm, then sketch on the new top" working after the 5 becomes 8. A fillet or chamfer step can follow several caps, one per direction, and `follow` is then a list. `points` lists the references that sat on the cap when only some did, two per edge (`a`, then `b`). An edge with both ends on a cap moves with it. An edge with one end there keeps its line, and that end slides along it.
+
+Per step result, shown in the list: done, broken (with the engine's sentence, or "The face this step pulled is gone." when a pick cannot be found), skipped (after a broken step), or suppressed.
+
+## Replay
+
+- The object's current mesh is the replay of its steps on its base. Editing step k replays from k; suppressing or deleting replays without it.
+- A failing step is marked broken with the message; every later step is skipped, and the object shows the result just before the broken step. Never a half-applied result.
+- Replay runs inside the geometry worker (op `history.replay` in geom-worker.ts, same code as tests): meshes stay in the worker between steps, and the worker keeps the input of each step from the last replay, so an edit of step k starts at k. It yields between steps and stops when a newer edit for the same object arrives.
+- Editing a step rolls the view back: the object shows the result before that step and the step's own tool panel opens filled in (sketch steps reopen sketch mode with the saved sketch). The tools' own previews do the live part: the push prism while dragging, the outline while typing, the fillet preview. Apply replaces the step and replays the rest.
+- Looking back: a step's number shows the object as it was right after that step, rolled back the same quiet way as an edit, with no tool open and the later steps dimmed. Clicking the number again, Back to the latest, or opening any step puts the object back. The last step's number is the object as it is.
+- Moving a step: the arrows run a step one place earlier or later and replay the whole list. A step that followed the end face of a step it now comes before keeps its reference where it is (as when that step is deleted). A step that no longer works in its new place is marked broken like any other; undo puts the order back.
+- Kept dimensions follow: after a replay, dimension.evaluate runs on the object, with a move for an edited push.
+- Undo and redo are unchanged: the history is part of the plate entry, and each history edit is one store update, so one undo step. The rollback while a step is open is not an edit and never reaches undo or autosave.
+
+## Push beside a round
+
+A push or pull of a face that a fillet or chamfer in the history rounds does not cut the rounded body. The round was made for the edge where it was, and a cut around it would leave its strip standing at full height. The push goes into the history just before the first fillet or chamfer step that rounds an edge of that face, and the steps from there run again: the push moves the face of the body as it was before the round, and the round is made again on the moved edge.
+
+- A step counts when one of its edges lies on the rim of the picked face, as that face was before the step. A round that only ends on the face, such as a rounded vertical corner when the top is pushed, does not count. The face's outline already has that round in it, and the push keeps it.
+- References of the later steps that sat on the face follow the new push from distance 0. They move as far as the face did, and again when the push is edited.
+- The engine finds a moved edge along its line (`moved` on the `EdgeRef`, docs/cad-fillet.md), so an edge that runs into the pushed face is found at its new length.
+- A push that goes through the part, such as a pocket floor pushed out the bottom, leaves no face behind. The edges that sat on that face go with it, and a step left with no edges changes nothing.
+- The mesh is the result of the replay, so undo, redo and any later replay give the same bytes. If a step after the push no longer works (a round too big for the shorter face, say), the push still lands, that step is marked broken, and the message names the step and the reason.
+- A top rounded all the way round is still a face to pick: it meets only strips much narrower than itself.
+- Limit: a side face that leans in under the pushed face moves the edge sideways. That round breaks with a message and needs its edge picked again.
+
+## Per tool
+
+| Tool | Decision |
+| --- | --- |
+| Push and pull | step `face.push`, face pick |
+| Sketch extrude, shape, text and SVG on a face | step `shape.extrude` with the typed shape, sketch or SVG; "New body" starts a new object with history |
+| Sketch revolve | step `sketch.revolve` |
+| Subtract a shape (hole from the top) | step `subtract`, the solid kept in world coordinates of its transform; the result keeps the object's frame instead of being stood up again |
+| Hollow, repair, simplify | steps `hollow`, `repair`, `simplify` on every part (simplify ratio is editable) |
+| Merge objects, add a part | step `parts.add`: the added meshes, in this object's frame, are stored with the history; the other object's own history is not kept |
+| Array merged into one object | step `array.merged`; copies (instances) are not mesh edits and record nothing |
+| Fillet, chamfer | steps `edge.fillet`, `edge.chamfer` with EdgeRefs; sketch corner fillets are part of the sketch |
+| Plane cut | ends history: the pieces are new objects and start without one; the cut panel says so first |
+| Split to parts | ends history: the parts become the new base and the list starts with "History ends here: the object was split into parts." |
+| Split to objects | ends history, as plane cut |
+| Paint, move, rotate, scale, mirror, orient | not steps; paint is per triangle and is dropped by a replay, as by every mesh edit today |
+
+## Storage
+
+- `Metadata/slicerx_history.json`, written only when an object has history: `{version: 1, objects: [{object, base, ended?, steps}]}`, `object` the 3MF object id as in slicerx_dimensions.json. Readers ignore a higher version and objects that are missing; a project without the part opens as before; other slicers ignore it.
+- The model part keeps the current mesh, so the file prints the same anywhere and opening needs no replay.
+- Base meshes and `parts.add` meshes go in one binary part each, `Metadata/slicerx_history/<object>-<n>.bin` (little endian: magic `SXHM`, version, part count, then per part vertex count, triangle count, float32 positions, uint32 indices), named from the JSON. A binary part rather than a second model object, so no slicer can show or print the base. The size cost is measured in tests and reported with the commit.
+- Text steps store the font name, not the font: fonts may not allow embedding. A text step whose custom font is not loaded on this computer replays as broken ("Pick the font again: Foo is not loaded."), fixed by editing the step.
+
+## Limits
+
+No constraint solver and no parametric expressions between steps. References are found again by position, so a step whose face an earlier edit removed or moved sideways breaks in words rather than guessing.

@@ -1,0 +1,25 @@
+# SlicerX integrator kit
+
+> SlicerX is a 3D printing slicer (pre-alpha). The main path for a slicer product is to make your own edition (white-label): one edition.config.ts in a clone of the SlicerX repository sets the name, identifiers, theme, fonts and features, and `pnpm edition:build <config> --target desktop` builds a separate app from it with no SlicerX account. Apps can also add pieces in two ways: they start the SlicerX MCP server (@slicerx/mcp) as a child process to slice models, read 3MF projects and list printer, filament and process profiles, and they embed the SlicerX 3D viewport, settings panel and pre-alpha agreement from @slicerx/embed as React components or custom elements, themed with the app's brand. The default path is local: no SlicerX account, no tokens. Cloud slicing and locked projects are optional.
+
+Coding agents: read AGENTS.md first, choose a path (A: your own edition, B: embed and drive pieces, C: an installed SlicerX), then follow its steps in order (packages, MCP connection, interview, build, agreement, theming, checks). Build the local path first; read the optional cloud and locked-projects section only if the user asks. An AI client never approves a print start, a resume, raw G-code or a printer adjustment. Tokens never go in code.
+
+## Docs
+
+- [AGENTS.md](AGENTS.md): step-by-step instructions for coding agents, with MCP setup per client, the interview, recipes, theming and the rules
+- [Credit kit](credit-kit/README.md): "Made possible by SlicerX" badges, a Support SlicerX button, copy to paste, usage rules and screenshots
+- [../integrating.md](../integrating.md): the long guide to building your own edition, with a worked example
+- [quickstart.md](quickstart.md): the reference for the server options, tools, settings layers, result fields, progress, token scopes and error codes
+
+## Packages
+
+- @slicerx/mcp: the MCP server; `node_modules/@slicerx/mcp/dist/cli.js`, or `require.resolve('@slicerx/mcp/cli')`. Local AI tools: `slicerx_local_ai_check` (read), `slicerx_local_ai_setup` (always asks the user; downloads through Ollama), `slicerx_local_ai_status` (read)
+- @slicerx/embed: Viewport, SettingsPanel, Agreement, LocalAiSetup and useLocalAi (Set up local AI), EmbedTheme, createTheme, the custom elements, and `@slicerx/embed/sxlock` for optional locked projects
+- @slicerx/viewport: the three.js viewport under Viewport
+
+## Optional
+
+- [Embedding the engine](../embedding.md): the Rust crate, the sx CLI, the C ABI and WebAssembly
+- [MCP server reference](../../packages/mcp/README.md): every tool, the permission policy and every option
+- [Theming reference](../../packages/ui/THEMING.md): every theme token
+- [Sample app](../../examples/integrator-sample/README.md): Spoolhouse, a working app that follows the quickstart
