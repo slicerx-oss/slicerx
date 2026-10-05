@@ -1,0 +1,390 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (C) 2026 The SlicerX contributors
+// The browser slicer: a pool of Web Workers, each with its own sx-wasm
+// instance. A slice is split into one layer range per worker; the core
+// guarantees that the chunks concatenate into the same bytes as a single run.
+import { sliceClock } from './clock'
+import type {
+  GcodeExport,
+  GcodeTarget,
+  MeshHandle,
+  MeshPart,
+  ProjectMetadata,
+  SliceProgress,
+  SliceRequest,
+  SliceResult,
+  SliceStage,
+  SliceWarning,
+  SliceWarningCode,
+  SlicerHost,
+} from '@slicerx/contracts'
+import type { FromWorker, MeshInfo, ShardInfo, ToWorker } from './protocol'
+import { decodeParts, encodeParts } from './parts'
+import { stitchPreview } from './stitch'
+
+/** A time the caller set on the request wins over the clock (tests and reproducible runs). */
+function pickClock(o: unknown): { nowUnix?: number; nowOffsetMinutes?: number } {
+  const r = (o ?? {}) as { nowUnix?: number; nowOffsetMinutes?: number }
+  return { ...(typeof r.nowUnix === 'number' ? { nowUnix: r.nowUnix } : {}), ...(typeof r.nowOffsetMinutes === 'number' ? { nowOffsetMinutes: r.nowOffsetMinutes } : {}) }
+}
+
+export interface PoolOptions {
+  /**
+   * Most workers the pool grows to; defaults to navigator.hardwareConcurrency, at most 16.
+   * The pool starts with one worker and adds the rest when a slice has shards for them.
+   */
+  workers?: number
+  /** URL of sx_wasm.wasm, or an already compiled module. */
+  wasm: string | URL | WebAssembly.Module
+  /** Creates a worker; the default loads ./worker.ts as a module worker. */
+  createWorker?: () => Worker
+  /** Layer ranges per worker for one slice; more ranges balance better and repeat more halo layers. */
+  shardsPerWorker?: number
+  /** Slice a small cube in every worker at start-up so the first real slice runs optimized code. Default true. */
+  warmUp?: boolean
+}
+
+interface Pending {
+  resolve: (msg: FromWorker) => void
+  reject: (e: Error) => void
+}
+
+interface StoredSlice {
+  gcode: ArrayBuffer[]
+  /** `bgcode` when the profile asked for binary G-code. */
+  format: 'gcode' | 'bgcode'
+  preview: ArrayBuffer | null
+  previewChunks: ArrayBuffer[]
+  /** The name `filename_format` gives the file, when the engine returned one. */
+  fileName?: string
+  /** 1-based line of each layer marker (`;LAYER_CHANGE`, `; CHANGE_LAYER` on a Bambu Lab printer) in the finished file, for the preview's G-code lines. */
+  layerLines: number[]
+  /** 1-based lines of the progress lines finalize added, which the preview's line count skips. */
+  progressLines: number[]
+  /** The layers' seconds as the finished file reads them, for the preview's time table. */
+  layerTimeS: number[]
+}
+
+class PoolWorker {
+  readonly worker: Worker
+  private readonly pending = new Map<number, Pending>()
+  private nextCall = 1
+  readonly ready: Promise<void>
+  /** Meshes this worker has loaded. */
+  readonly meshIds = new Set<string>()
+
+  constructor(worker: Worker, module: WebAssembly.Module, warmUp: boolean) {
+    this.worker = worker
+    this.ready = new Promise((resolve, reject) => {
+      worker.onmessage = (ev: MessageEvent<FromWorker>) => {
+        const msg = ev.data
+        if (msg.type === 'ready') {
+          resolve()
+          return
+        }
+        if (msg.type === 'error' && msg.call === 0) {
+          reject(new Error(`Worker start failed: ${msg.message}`))
+          return
+        }
+        const p = this.pending.get(msg.call)
+        if (!p) return
+        this.pending.delete(msg.call)
+        if (msg.type === 'error') p.reject(new Error(msg.message))
+        else p.resolve(msg)
+      }
+      worker.onerror = (ev) => reject(new Error(ev.message))
+    })
+    this.send({ type: 'init', module, warmUp })
+  }
+
+  send(msg: ToWorker, transfer: Transferable[] = []): void {
+    this.worker.postMessage(msg, transfer)
+  }
+
+  call(build: (call: number) => ToWorker, transfer: Transferable[] = []): Promise<FromWorker> {
+    const call = this.nextCall++
+    return new Promise((resolve, reject) => {
+      this.pending.set(call, { resolve, reject })
+      this.send(build(call), transfer)
+    })
+  }
+}
+
+const WARNING_CODES: readonly SliceWarningCode[] = ['open_edges', 'thin_wall', 'floating_region', 'long_bridge', 'outside_bed', 'unsupported_setting', 'manual_step']
+
+function toWarning(w: ShardInfo['warnings'][number]): SliceWarning {
+  const code = WARNING_CODES.find((c) => c === w.code) ?? 'unsupported_setting'
+  const out: SliceWarning = { code, message: w.message }
+  if (w.layer !== undefined) out.layer = w.layer
+  return out
+}
+
+
+async function sha256Hex(parts: ArrayBuffer[]): Promise<{ hex: string; bytes: number }> {
+  const total = parts.reduce((n, p) => n + p.byteLength, 0)
+  const all = new Uint8Array(total)
+  let o = 0
+  for (const p of parts) {
+    all.set(new Uint8Array(p), o)
+    o += p.byteLength
+  }
+  const digest = await crypto.subtle.digest('SHA-256', all)
+  return { hex: Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join(''), bytes: total }
+}
+
+export async function createWasmSlicer(opts: PoolOptions): Promise<SlicerHost> {
+  const module =
+    opts.wasm instanceof WebAssembly.Module ? opts.wasm : await WebAssembly.compileStreaming(fetch(opts.wasm))
+  const count = Math.max(1, Math.min(16, opts.workers ?? (globalThis.navigator?.hardwareConcurrency || 4)))
+  const make = opts.createWorker ?? (() => new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' }))
+  const shardsPerWorker = Math.max(1, Math.min(8, opts.shardsPerWorker ?? 8))
+  const warmUp = opts.warmUp ?? true
+  // One worker at start; the others start when a slice has shards for them and load the meshes already
+  // in the pool before they take a shard. A worker joins `workers` only once it holds every mesh.
+  const workers: PoolWorker[] = [new PoolWorker(make(), module, warmUp)]
+  let starting = 0
+  await workers[0]?.ready
+
+  const meshes = new Map<string, MeshHandle>()
+  const slices = new Map<string, StoredSlice>()
+  let nextId = 1
+
+  const load = async (data: Uint8Array, fileName: string): Promise<MeshHandle> => {
+    const meshId = `mesh-${nextId++}`
+    const send = (w: PoolWorker) => {
+      const copy = data.slice().buffer
+      w.meshIds.add(meshId)
+      return w.call((call) => ({ type: 'load', call, meshId, fileName, data: copy }), [copy])
+    }
+    const results = await Promise.all(workers.map(send))
+    // A worker that joined while this mesh was loading gets it too.
+    for (let late = workers.filter((w) => !w.meshIds.has(meshId)); late.length > 0; late = workers.filter((w) => !w.meshIds.has(meshId))) {
+      await Promise.all(late.map(send))
+    }
+    const first = results[0]
+    if (!first || first.type !== 'loaded') throw new Error('Mesh load failed')
+    const info: MeshInfo = first.info
+    const handle: MeshHandle = {
+      id: meshId,
+      hash: info.hash,
+      name: fileName,
+      triangles: info.triangles,
+      bboxMm: info.bboxMm,
+      openEdges: 0,
+      parts: info.parts.map((p) => (p.color ? { name: p.name, slot: p.slot, triangles: p.triangles, color: p.color } : { name: p.name, slot: p.slot, triangles: p.triangles })),
+    }
+    meshes.set(meshId, handle)
+    return handle
+  }
+
+  /** Gives a new worker every mesh in the pool, then adds it to `workers`. */
+  const join = async (w: PoolWorker): Promise<void> => {
+    await w.ready
+    for (let todo = [...meshes.keys()].filter((id) => !w.meshIds.has(id)); todo.length > 0; todo = [...meshes.keys()].filter((id) => !w.meshIds.has(id))) {
+      for (const id of todo) {
+        const handle = meshes.get(id)
+        const w0 = workers[0]
+        if (!handle || !w0) continue
+        const r = await w0.call((call) => ({ type: 'parts', call, meshId: id }))
+        if (r.type !== 'parts') throw new Error('Mesh parts failed')
+        const copy = r.data.slice(0)
+        w.meshIds.add(id)
+        await w.call((call) => ({ type: 'load', call, meshId: id, fileName: handle.name, data: copy }), [copy])
+      }
+    }
+    workers.push(w)
+  }
+
+  /** Starts workers until `want` are running or starting; returns the ones started now, each resolving when it has joined. */
+  const grow = (want: number): Promise<PoolWorker | null>[] => {
+    const out: Promise<PoolWorker | null>[] = []
+    while (workers.length + starting < Math.min(count, want)) {
+      starting++
+      const w = new PoolWorker(make(), module, warmUp)
+      out.push(
+        join(w)
+          .then(() => w as PoolWorker | null)
+          .catch(() => {
+            w.worker.terminate()
+            return null
+          })
+          .finally(() => {
+            starting--
+          }),
+      )
+    }
+    return out
+  }
+
+  return {
+    loadModel(data: ArrayBuffer, fileName: string): Promise<MeshHandle> {
+      return load(new Uint8Array(data), fileName)
+    },
+    loadParts(name: string, parts: MeshPart[]): Promise<MeshHandle> {
+      return load(encodeParts(parts), name)
+    },
+    async meshParts(id: string): Promise<MeshPart[]> {
+      const w = workers[0]
+      if (!meshes.has(id) || !w) throw new Error(`Unknown mesh ${id}`)
+      const r = await w.call((call) => ({ type: 'parts', call, meshId: id }))
+      if (r.type !== 'parts') throw new Error('Mesh parts failed')
+      return decodeParts(new Uint8Array(r.data))
+    },
+    async projectMetadata(data: ArrayBuffer, fileName: string): Promise<ProjectMetadata> {
+      const w = workers[0]
+      if (!w) throw new Error('No worker')
+      const copy = data.slice(0)
+      const r = await w.call((call) => ({ type: 'metadata', call, fileName, data: copy }), [copy])
+      if (r.type !== 'metadata') throw new Error('Project metadata failed')
+      return r.info as ProjectMetadata
+    },
+    async slice(req: SliceRequest, o?: { onProgress?: (p: SliceProgress) => void; signal?: AbortSignal }): Promise<SliceResult> {
+      const started = performance.now()
+      // Options the engine reads: the dialect, sleipnir tops, resume, height ranges and per-layer G-code.
+      const { flavor, layerTopsMm, resumeFromLayer, resumeZ, heightRanges, machineLimits, trustedGcode, layerGcode } = (req.options ?? {}) as Record<string, unknown>
+      const clock = sliceClock()
+      const options = { flavor, layerTopsMm, resumeFromLayer, resumeZ, heightRanges, machineLimits, trustedGcode, layerGcode, ...clock, ...pickClock(req.options) }
+      // The thumbnail image goes to the joining step, not to every shard: { width, height, rgba } of raw RGBA bytes.
+      const thumbnail = (req.options as Record<string, unknown> | undefined)?.thumbnail as
+        | { width: number; height: number; rgba: Uint8Array | ArrayBuffer }
+        | undefined
+      const request = JSON.stringify({ plate: req.plate, config: req.config, options })
+      const shards = Math.max(1, Math.min(req.options?.shards ?? count * shardsPerWorker, 64))
+      let done = 0
+      const stage: SliceStage = 'paths'
+      // Shards go to whichever worker is free next, so a worker that drew
+      // heavy layers (solid bottoms and tops) does not hold up the rest.
+      const results: FromWorker[] = new Array<FromWorker>(shards)
+      let next = 0
+      const drain = async (w: PoolWorker): Promise<void> => {
+        while (next < shards) {
+          const s = next++
+          const r = await w.call((call) => ({ type: 'slice', call, request, shard: s, shards }))
+          results[s] = r
+          done++
+          o?.onProgress?.({ stage, fraction: done / shards })
+        }
+      }
+      // The workers running now take shards at once; new ones take shards as soon as they hold the meshes.
+      const joining = grow(shards).map((p) => p.then((w) => (w ? drain(w) : undefined)))
+      const jobs = Promise.all([...workers.map(drain), ...joining])
+      const aborted = new Promise<never>((_, reject) => {
+        if (o?.signal?.aborted) reject(new DOMException('Slice canceled', 'AbortError'))
+        o?.signal?.addEventListener('abort', () => reject(new DOMException('Slice canceled', 'AbortError')))
+      })
+      await Promise.race([jobs, aborted])
+      const parts = results.filter((r): r is Extract<FromWorker, { type: 'sliced' }> => r.type === 'sliced')
+      const infos = parts.map((p) => p.info)
+      const layerCount = infos[0]?.layerCount ?? 0
+      const layerZ = new Float32Array(infos.flatMap((i) => i.layerZ))
+      const layerTimeS = new Float32Array(infos.flatMap((i) => i.layerTimeS))
+      const slots = Math.max(1, ...infos.map((i) => i.stats.filament_mm.length))
+      const sum = (pick: (i: ShardInfo) => number[]) =>
+        Array.from({ length: slots }, (_, k) => infos.reduce((acc, i) => acc + (pick(i)[k] ?? 0), 0))
+      const stageMicros: SliceResult['stageMicros'] = {}
+      for (const i of infos) {
+        for (const [k, v] of Object.entries(i.stageMicros)) {
+          const key = k as SliceStage
+          stageMicros[key] = (stageMicros[key] ?? 0) + v
+        }
+      }
+      const seen = new Set<string>()
+      const warnings: SliceWarning[] = []
+      for (const w of infos.flatMap((i) => i.warnings)) {
+        if (seen.has(w.message)) continue
+        seen.add(w.message)
+        warnings.push(toWarning(w))
+      }
+      const id = `slice-${nextId++}`
+      // The shards carry marker lines; joined, a worker turns them into progress and totals.
+      let gcode = parts.map((p) => p.gcode)
+      let format: 'gcode' | 'bgcode' = 'gcode'
+      // The whole file's time once finalized (the shards' own sums leave out the joins).
+      let finalTime: number | undefined
+      let layerLines: number[] = []
+      let progressLines: number[] = []
+      let finalLayerTimes: number[] = []
+      let prepareS = 0
+      let fileName: string | undefined
+      const w0 = workers[0]
+      if (w0 && gcode.length > 0) {
+        try {
+          const joined = new Uint8Array(gcode.reduce((n, g) => n + g.byteLength, 0))
+          let at = 0
+          for (const g of gcode) {
+            joined.set(new Uint8Array(g), at)
+            at += g.byteLength
+          }
+          const buf = joined.buffer as ArrayBuffer
+          const rgba = thumbnail ? new Uint8Array(thumbnail.rgba instanceof ArrayBuffer ? thumbnail.rgba : thumbnail.rgba.buffer.slice(thumbnail.rgba.byteOffset, thumbnail.rgba.byteOffset + thumbnail.rgba.byteLength)).slice().buffer : undefined
+          const r = await w0.call(
+            (call) => ({ type: 'finalize', call, data: buf, request, ...(thumbnail && rgba ? { thumbnail: { width: thumbnail.width, height: thumbnail.height, rgba } } : {}) }),
+            rgba ? [buf, rgba] : [buf],
+          )
+          if (r.type === 'finalized') {
+            gcode = [r.data]
+            format = r.format
+            finalTime = r.timeS
+            if (r.layerTimeS?.length === layerCount && layerCount > 0) {
+              finalLayerTimes = r.layerTimeS
+              prepareS = r.prepareS ?? 0
+            }
+            layerLines = r.layerLines ?? []
+            progressLines = r.progressLines ?? []
+            fileName = r.fileName
+          }
+        } catch {
+          // Left as written: the markers are comments, only the progress lines and footer are missing.
+        }
+      }
+      slices.set(id, { gcode, format, ...(fileName ? { fileName } : {}), preview: null, previewChunks: parts.map((p) => p.sxpv), layerLines, progressLines, layerTimeS: finalLayerTimes })
+      return {
+        id,
+        engine: 'sx',
+        layerCount,
+        layerZ,
+        layerTimeS: finalLayerTimes.length ? new Float32Array(finalLayerTimes) : layerTimeS,
+        stats: {
+          timeS: finalTime ?? infos.reduce((a, i) => a + i.stats.time_s, 0),
+          ...(prepareS > 0 ? { prepareS } : {}),
+          filamentMm: sum((i) => i.stats.filament_mm),
+          filamentG: sum((i) => i.stats.filament_g),
+          cost: infos.reduce((a, i) => a + i.stats.cost, 0),
+          toolChanges: infos.reduce((a, i) => a + i.stats.tool_changes, 0),
+        },
+        stageMicros,
+        wallMs: performance.now() - started,
+        warnings,
+        ...(format === 'bgcode' ? { gcodeFormat: 'bgcode' as const } : {}),
+        ...(fileName ? { fileName } : {}),
+        ...(infos[0]?.primeTower ? { primeTower: infos[0].primeTower } : {}),
+        ...(infos[0]?.varyLayerCost ? { varyLayerCost: infos[0].varyLayerCost } : {}),
+        ...(infos[0]?.filamentMap ? { filamentMap: infos[0].filamentMap } : {}),
+      }
+    },
+    getPreview(sliceId: string): Promise<ArrayBuffer> {
+      const s = slices.get(sliceId)
+      if (!s) return Promise.reject(new Error(`Unknown slice ${sliceId}`))
+      s.preview ??= stitchPreview(s.previewChunks, s.layerLines, s.progressLines, s.layerTimeS)
+      s.previewChunks = []
+      s.layerLines = []
+      s.progressLines = []
+      s.layerTimeS = []
+      return Promise.resolve(s.preview.slice(0))
+    },
+    async exportGcode(sliceId: string, target: GcodeTarget): Promise<GcodeExport> {
+      const s = slices.get(sliceId)
+      if (!s) throw new Error(`Unknown slice ${sliceId}`)
+      const { hex, bytes } = await sha256Hex(s.gcode)
+      const out: GcodeExport = { fileName: s.fileName ?? `${sliceId}.${s.format}`, bytes, sha256: hex }
+      if (target.kind === 'blob') out.blob = new Blob(s.gcode, { type: s.format === 'bgcode' ? 'application/octet-stream' : 'text/x-gcode' })
+      else out.path = target.path
+      return out
+    },
+    release(id: string): void {
+      if (meshes.delete(id)) for (const w of workers) w.send({ type: 'release', meshId: id })
+      slices.delete(id)
+    },
+  }
+}
+

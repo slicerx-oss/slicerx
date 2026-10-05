@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "meshes": {
+    "cube": "cube.stl"
+  },
+  "plate": {
+    "bed": {
+      "widthMm": 256,
+      "depthMm": 256,
+      "heightMm": 250
+    },
+    "objects": [
+      {
+        "id": "o1",
+        "name": "Cube",
+        "mesh": "cube"
+      }
+    ]
+  },
+  "config": {
+    "layer_height": 0.2,
+    "wall_loops": 2,
+    "sparse_infill_density": 15,
+    "brim_width": 3,
+    "machine_start_gcode": "; start {layer_z}\nG28\nM109 S{first_layer_temperature[0]}",
+    "machine_end_gcode": "; end {max_layer_z}\nM104 S0",
+    "layer_change_gcode": "; layer [layer_num] of [total_layer_count]",
+    "before_layer_change_gcode": "; before [layer_num]",
+    "filament_type": [
+      "PLA"
+    ]
+  },
+  "options": {
+    "flavor": "klipper",
+    "shards": 2,
+    "layerGcode": [
+      {
+        "layer": 5,
+        "kind": "pause"
+      },
+      {
+        "layer": 9,
+        "kind": "custom",
+        "gcode": "M117 {layer_z}"
+      }
+    ]
+  }
+}

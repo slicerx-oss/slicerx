@@ -1,0 +1,64 @@
+{
+  "schemaVersion": 1,
+  "meshes": {
+    "x": "../../../bench/models/x-mark.stl"
+  },
+  "plate": {
+    "objects": [
+      {
+        "id": "x1",
+        "mesh": "x"
+      }
+    ]
+  },
+  "config": {
+    "layer_height": 0.2,
+    "initial_layer_print_height": 0.2,
+    "wall_loops": 2,
+    "top_shell_layers": 5,
+    "bottom_shell_layers": 3,
+    "sparse_infill_density": 15,
+    "sparse_infill_pattern": "rectilinear",
+    "line_width": 0.42,
+    "infill_wall_overlap": 15,
+    "brim_type": "outer_only",
+    "brim_width": 5,
+    "enable_support": false,
+    "nozzle_diameter": [
+      0.4
+    ],
+    "nozzle_temperature": [
+      220
+    ],
+    "hot_plate_temp": 55,
+    "filament_diameter": 1.75,
+    "filament_density": [
+      1.24
+    ],
+    "printable_area": [
+      [
+        0,
+        0
+      ],
+      [
+        256,
+        0
+      ],
+      [
+        256,
+        256
+      ],
+      [
+        0,
+        256
+      ]
+    ],
+    "printable_height": 250,
+    "gcode_flavor": "marlin2",
+    "seam_position": "aligned",
+    "overhang_2_4_speed": 60
+  },
+  "options": {
+    "flavor": "klipper"
+  }
+}

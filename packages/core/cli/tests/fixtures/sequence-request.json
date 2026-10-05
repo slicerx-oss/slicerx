@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "meshes": { "c": "cube.stl", "t": "table.stl" },
+  "plate": {
+    "objects": [
+      { "id": "t1", "mesh": "t", "transform": [1,0,0,0, 0,1,0,0, 0,0,1,0, 60,100,0,1] },
+      { "id": "c1", "mesh": "c", "transform": [1,0,0,0, 0,1,0,0, 0,0,1,0, 160,100,0,1] }
+    ]
+  },
+  "config": { "print_sequence": "by object", "enable_support": true, "wall_loops": 2 },
+  "options": { "flavor": "klipper" }
+}

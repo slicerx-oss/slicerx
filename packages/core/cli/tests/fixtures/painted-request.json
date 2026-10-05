@@ -1,0 +1,7 @@
+{
+  "schemaVersion": 1,
+  "meshes": { "p": "painted.3mf" },
+  "plate": { "objects": [{ "id": "p1", "mesh": "p" }] },
+  "config": { "enable_prime_tower": true, "wipe_tower_x": 15, "wipe_tower_y": 20 },
+  "options": { "flavor": "klipper" }
+}

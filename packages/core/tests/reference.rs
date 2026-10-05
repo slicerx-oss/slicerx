@@ -1,0 +1,154 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (C) 2026 The SlicerX contributors
+//! The reference plate through the whole pipeline: layer count, the G-code
+//! validator, shard determinism and golden output hashes. A change that alters
+//! output updates `tests/golden.json` in the same change and says why.
+
+use sx_core::validate::validate_gcode;
+use sx_core::{Mesh, Plate, PrintConfig, SliceSession, preview};
+
+fn fnv(bytes: &[u8]) -> String {
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    for b in bytes {
+        h ^= u64::from(*b);
+        h = h.wrapping_mul(0x0100_0000_01b3);
+    }
+    format!("{h:016x}")
+}
+
+fn reference() -> (Plate, PrintConfig) {
+    let root = concat!(env!("CARGO_MANIFEST_DIR"), "/../..");
+    let model = std::fs::read(format!("{root}/packages/core/bench/models/x-mark.stl")).unwrap();
+    let bench: serde_json::Value = serde_json::from_slice(
+        &std::fs::read(format!("{root}/packages/core/bench/configs/reference-0.20.json")).unwrap(),
+    )
+    .unwrap();
+    let config = PrintConfig::from_value(&bench["config"]).unwrap();
+    (Plate::single(Mesh::load(&model, "x-mark.stl").unwrap()), config)
+}
+
+/// G-code and stitched SXPV for `shards` equal layer ranges.
+fn sharded(session: &SliceSession, config: &PrintConfig, shards: u32) -> (Vec<u8>, Vec<u8>) {
+    let n = session.layer_count();
+    let mut gcode = Vec::new();
+    let mut chunks = Vec::new();
+    for s in 0..shards {
+        let out = session
+            .slice_range_with(config, n * s / shards..n * (s + 1) / shards, &sx_core::NoProgress)
+            .unwrap();
+        sx_core::emit_gcode(&out, config, config.gcode_flavor, &mut gcode).unwrap();
+        chunks.push(sx_core::preview_buffers(&out));
+    }
+    let refs: Vec<&[u8]> = chunks.iter().map(Vec::as_slice).collect();
+    (gcode, preview::stitch(&refs).unwrap())
+}
+
+#[test]
+fn reference_plate_gates() {
+    let (plate, config) = reference();
+    let session = SliceSession::new(&plate, &config).unwrap();
+    assert_eq!(session.layer_count(), 427);
+
+    let (gcode, sxpv) = sharded(&session, &config, 1);
+    let report = validate_gcode(
+        &gcode,
+        config.bed_rect(),
+        config.printable_height,
+        config.retraction_length + 0.001,
+    );
+    assert!(report.ok(), "validator: {:?}", report.errors);
+    assert_eq!(report.layers, 427);
+    let info = preview::read_info(&sxpv).unwrap();
+    assert_eq!(info.layers, 427);
+
+    for shards in [4, 11] {
+        let (g, p) = sharded(&session, &config, shards);
+        assert!(g == gcode, "G-code differs with {shards} shards");
+        assert!(p == sxpv, "SXPV differs with {shards} shards");
+    }
+
+    let golden: serde_json::Value = serde_json::from_str(include_str!("golden.json")).unwrap();
+    assert_eq!(
+        fnv(&gcode),
+        golden["reference_gcode_fnv"].as_str().unwrap(),
+        "G-code golden changed"
+    );
+    assert_eq!(
+        fnv(&sxpv),
+        golden["reference_sxpv_fnv"].as_str().unwrap(),
+        "SXPV golden changed"
+    );
+}
+
+/// Layer tops that cycle through thin and thick layers until they clear `top`.
+fn varied_tops(top: f64) -> Vec<f64> {
+    let cycle = [0.12, 0.2, 0.28, 0.2, 0.16];
+    let mut tops = vec![0.2];
+    let mut i = 0;
+    while tops.last().copied().unwrap_or(0.0) < top + 0.3 {
+        let last = tops.last().copied().unwrap_or(0.0);
+        tops.push(last + cycle[i % cycle.len()]);
+        i += 1;
+    }
+    tops
+}
+
+#[test]
+fn smart_layer_tops_gates() {
+    let (plate, config) = reference();
+    let (_, hi) = plate.objects[0].mesh.bounds().unwrap();
+    let tops = varied_tops(f64::from(hi[2]));
+    let session = SliceSession::with_layer_tops(&plate, &config, Some(&tops)).unwrap();
+    let n = session.layer_count();
+    let uniform = SliceSession::new(&plate, &config).unwrap();
+    assert!(n > uniform.layer_count(), "thin layers dominate this cycle");
+
+    let (gcode, sxpv) = sharded(&session, &config, 1);
+    let report = validate_gcode(
+        &gcode,
+        config.bed_rect(),
+        config.printable_height,
+        config.retraction_length + 0.001,
+    );
+    assert!(report.ok(), "validator: {:?}", report.errors);
+    assert_eq!(report.layers, n);
+    assert_eq!(preview::read_info(&sxpv).unwrap().layers, n as usize);
+
+    // Layer tops in the output are the requested ones.
+    let out = session
+        .slice_range_with(&config, 0..n, &sx_core::NoProgress)
+        .unwrap();
+    for (l, t) in out.layers.iter().zip(&tops) {
+        assert!(
+            (f64::from(l.z) - t).abs() < 1e-4,
+            "layer {} z {} vs {t}",
+            l.index,
+            l.z
+        );
+    }
+
+    for shards in [3, 7] {
+        let (g, p) = sharded(&session, &config, shards);
+        assert!(g == gcode, "G-code differs with {shards} shards");
+        assert!(p == sxpv, "SXPV differs with {shards} shards");
+    }
+
+    // The same part needs about the same filament, whatever the layer heights.
+    let mut g0 = Vec::new();
+    let out0 = uniform
+        .slice_range_with(&config, 0..uniform.layer_count(), &sx_core::NoProgress)
+        .unwrap();
+    let s0 = sx_core::emit_gcode(&out0, &config, config.gcode_flavor, &mut g0).unwrap();
+    let mut g1 = Vec::new();
+    let s1 = sx_core::emit_gcode(&out, &config, config.gcode_flavor, &mut g1).unwrap();
+    let (a, b) = (s0.filament_mm[0], s1.filament_mm[0]);
+    assert!((a - b).abs() / a < 0.05, "filament {a} vs {b} mm");
+}
+
+#[test]
+fn smart_layer_tops_rejects_bad_input() {
+    let (plate, config) = reference();
+    for tops in [vec![0.2, 0.3], vec![0.2, 0.2, 90.0], vec![0.2, f64::NAN]] {
+        assert!(SliceSession::with_layer_tops(&plate, &config, Some(&tops)).is_err());
+    }
+}

@@ -1,0 +1,7 @@
+{
+  "schemaVersion": 1,
+  "meshes": { "c": "cube.stl" },
+  "plate": { "objects": [{ "id": "c1", "mesh": "c" }] },
+  "config": { "sparse_infill_pattern": "lightning", "sparse_infill_density": 15 },
+  "options": { "flavor": "klipper" }
+}

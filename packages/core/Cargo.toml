@@ -1,0 +1,47 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (C) 2026 The SlicerX contributors
+[package]
+name = "sx-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[features]
+default = ["parallel", "import"]
+# Per-layer parallelism on rayon. The WASM build turns it off and shards in
+# Web Workers instead.
+parallel = ["dep:rayon"]
+# OBJ and AMF loading through sx-geom. The browser build leaves it out and loads
+# those formats with the separate sx-geom module.
+import = ["dep:sx-geom"]
+
+[dependencies]
+sx-geom = { path = "../geom", optional = true }
+i_overlay = "=9.0.0"
+# The time estimate takes its trigonometry from here so native and WASM builds round alike.
+libm = "=0.2.16"
+boostvoronoi = { version = "=0.12.1", default-features = false }
+miniz_oxide = "=0.9.1"
+rayon = { version = "=1.12.0", optional = true }
+serde = { version = "=1.0.229", features = ["derive"] }
+serde_json = "=1.0.151"
+# The output hash. 0.11 takes the CPU's SHA-256 instructions where it has them (ARMv8 SHA2 or x86 SHA, found at run
+# time); 0.10 needs its `asm` feature for that.
+sha2 = { version = "=0.11.0", default-features = false }
+thiserror = "=2.0.21"
+
+[build-dependencies]
+serde_json = "=1.0.151"
+
+[dev-dependencies]
+criterion = { version = "=0.8.2", default-features = false, features = ["cargo_bench_support"] }
+# Small thread pools for the tests that check the parallel stages cannot hang.
+rayon = "=1.12.0"
+
+[[bench]]
+name = "slice"
+harness = false
