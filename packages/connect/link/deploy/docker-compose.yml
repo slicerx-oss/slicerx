@@ -1,0 +1,22 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (C) 2026 The SlicerX contributors
+#
+# docker compose -f packages/connect/link/deploy/docker-compose.yml up -d
+# Then read the codes with:
+#   docker compose -f packages/connect/link/deploy/docker-compose.yml exec sx-link sx-link code --state-dir /var/lib/slicerx-hub
+services:
+  sx-link:
+    build:
+      context: ../../../..
+      dockerfile: packages/connect/link/deploy/Dockerfile
+    image: slicerx/sx-link
+    # Host networking: printers on the LAN, mDNS, and the control socket on the host's 127.0.0.1.
+    network_mode: host
+    restart: unless-stopped
+    volumes:
+      - sx-link-state:/var/lib/slicerx-hub
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+volumes:
+  sx-link-state:

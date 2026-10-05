@@ -1,0 +1,73 @@
+{
+  "print": {
+    "command": "push_status",
+    "sequence_id": "2",
+    "msg": 0,
+    "gcode_state": "IDLE",
+    "mc_percent": 0,
+    "mc_remaining_time": 0,
+    "subtask_name": "",
+    "print_error": 0,
+    "bed_temper": 24.1,
+    "bed_target_temper": 0,
+    "chamber_temper": 26,
+    "nozzle_diameter": "0.4",
+    "nozzle_type": "hardened_steel",
+    "home_flag": 0,
+    "fun": "3EC18FFF9CFF",
+    "sdcard": true,
+    "hms": [],
+    "ipcam": { "ipcam_dev": "1", "rtsp_url": "rtsps://192.0.2.52/streaming/live/1" },
+    "device": {
+      "type": 1,
+      "extruder": {
+        "state": 2,
+        "info": [
+          { "id": 0, "temp": 25, "hnow": 0, "htar": 0, "snow": 0, "star": 0, "stat": 0 },
+          { "id": 1, "temp": 26, "hnow": 0, "htar": 0, "snow": 0, "star": 0, "stat": 0 }
+        ]
+      },
+      "nozzle": {
+        "exist": 3,
+        "state": 0,
+        "info": [
+          { "id": 0, "type": "HS01", "diameter": 0.4, "wear": 0, "tm": 0 },
+          { "id": 1, "type": "HH01", "diameter": 0.6, "wear": 0, "tm": 0 }
+        ]
+      }
+    },
+    "ams": {
+      "ams_exist_bits": "10001",
+      "tray_exist_bits": "1000f",
+      "tray_now": "255",
+      "version": 4,
+      "ams": [
+        {
+          "id": "0",
+          "info": "1003",
+          "humidity": "4",
+          "temp": "26.0",
+          "tray": [
+            { "id": "0", "tray_type": "PLA", "tray_sub_brands": "PLA Basic", "tray_color": "F2F2F2FF", "remain": 82 },
+            { "id": "1", "tray_type": "PLA", "tray_sub_brands": "PLA Matte", "tray_color": "1A1A1AFF", "remain": 64 },
+            { "id": "2", "tray_type": "PETG", "tray_sub_brands": "PETG HF", "tray_color": "0A5EB0FF", "remain": 100 },
+            { "id": "3", "tray_type": "", "remain": -1 }
+          ]
+        },
+        {
+          "id": "128",
+          "info": "1104",
+          "humidity": "3",
+          "temp": "45.0",
+          "tray": [
+            { "id": "0", "tray_type": "PAHT-CF", "tray_sub_brands": "PAHT-CF", "tray_color": "2B2B2BFF", "remain": 90 }
+          ]
+        }
+      ]
+    },
+    "vir_slot": [
+      { "id": "255", "tray_type": "", "tray_color": "00000000", "remain": -1 },
+      { "id": "254", "tray_type": "TPU", "tray_sub_brands": "TPU for AMS", "tray_color": "C0392BFF", "remain": -1 }
+    ]
+  }
+}

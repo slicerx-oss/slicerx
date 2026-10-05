@@ -1,0 +1,58 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (C) 2026 The SlicerX contributors
+#
+# sx-link as a system service on Linux, for a box with no desktop session (a Raspberry Pi, a NAS).
+# Install (bzip2 unpacks Cisco's OpenH264 for stills from H.264-only cameras, fetched at first use):
+#   sudo apt install bzip2
+#   sudo install -m 0755 sx-link /usr/local/bin/sx-link
+#   sudo useradd --system --home-dir /var/lib/slicerx-hub --shell /usr/sbin/nologin slicerx
+#   sudo install -m 0644 sx-link.service /etc/systemd/system/sx-link.service
+#   sudo systemctl daemon-reload && sudo systemctl enable --now sx-link
+#   sudo -u slicerx sx-link code --state-dir /var/lib/slicerx-hub
+# On a desktop Linux machine, `sx-link service install` sets up a user service instead.
+
+[Unit]
+Description=SlicerX printer hub (sx-link)
+Documentation=https://slicerx.app/docs
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=slicerx
+Group=slicerx
+# systemd makes /var/lib/slicerx-hub (mode 0700, owned by slicerx).
+StateDirectory=slicerx-hub
+StateDirectoryMode=0700
+ExecStart=/usr/local/bin/sx-link --headless --secrets file --state-dir /var/lib/slicerx-hub
+Restart=on-failure
+RestartSec=5
+UMask=0077
+
+# The hub needs the network (printers, mDNS, the cloud inbox when enabled) and its state
+# directory, nothing else.
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+# AF_NETLINK lists network interfaces for the phone listener's addresses and mDNS.
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
+
+[Install]
+WantedBy=multi-user.target

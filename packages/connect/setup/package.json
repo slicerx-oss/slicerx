@@ -1,0 +1,23 @@
+{
+  "name": "@slicerx/connect",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "node --test src/index.test.ts"
+  },
+  "dependencies": {
+    "@slicerx/contracts": "workspace:*",
+    "@slicerx/link-client": "workspace:*",
+    "@slicerx/printer-catalog": "workspace:*"
+  },
+  "devDependencies": {
+    "@slicerx/mock-printers": "workspace:*",
+    "@types/node": "24.19.0"
+  },
+  "license": "Apache-2.0"
+}

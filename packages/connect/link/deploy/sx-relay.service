@@ -1,0 +1,48 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (C) 2026 The SlicerX contributors
+#
+# sx-relay, the hosted pairing relay, behind Caddy on one small VM. Steps are in README.md next to
+# this file ("Hosted relay"). The relay keeps nothing on disk: it reads the signing keys at start
+# and holds routes, queued frames and quota counters in memory only.
+
+[Unit]
+Description=SlicerX pairing relay (sx-relay)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+DynamicUser=yes
+# Optional: SX_RELAY_JWT_SECRET=<HS256 secret for relay tokens>, only if the minting function signs with one.
+# A new random secret used only for relay tokens. Never the Supabase project's JWT secret.
+EnvironmentFile=-/etc/sx-relay/env
+ExecStart=/usr/local/bin/sx-relay --listen 127.0.0.1:8787 --trust-proxy --jwks /etc/sx-relay/jwks.json --issuer https://PROJECT.supabase.co/functions/v1/relay-token
+Restart=always
+RestartSec=2
+LimitNOFILE=65536
+MemoryMax=1500M
+
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+
+[Install]
+WantedBy=multi-user.target

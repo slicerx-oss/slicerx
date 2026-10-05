@@ -1,0 +1,21 @@
+{
+  "name": "@slicerx/fleet-sim",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./contract-suite": "./src/contract-suite.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "node --test src/index.test.ts src/fixtures.test.ts"
+  },
+  "dependencies": {
+    "@slicerx/contracts": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.0"
+  },
+  "license": "Apache-2.0"
+}

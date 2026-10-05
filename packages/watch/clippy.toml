@@ -1,0 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (C) 2026 The SlicerX contributors
+# Names that are words in prose, not code.
+doc-valid-idents = ["SigLIP2", "ChatGPT", ".."]

@@ -1,0 +1,71 @@
+{
+  "print": {
+    "command": "push_status",
+    "msg": 0,
+    "sequence_id": "3120",
+    "gcode_state": "RUNNING",
+    "subtask_name": "Cube 20 mm",
+    "gcode_file": "/data/Metadata/plate_1.gcode",
+    "mc_percent": 62,
+    "mc_remaining_time": 14,
+    "layer_num": 62,
+    "total_layer_num": 100,
+    "print_error": 0,
+    "print_type": "local",
+    "hms": [{ "attr": 50370048, "code": 196609 }],
+    "bed_temper": 55.0,
+    "bed_target_temper": 55.0,
+    "chamber_temper": 32.0,
+    "cooling_fan_speed": "15",
+    "big_fan1_speed": "11",
+    "big_fan2_speed": "5",
+    "spd_lvl": 2,
+    "spd_mag": 100,
+    "lights_report": [{ "node": "chamber_light", "mode": "on" }],
+    "device": {
+      "type": 1,
+      "extruder": {
+        "state": 18,
+        "info": [
+          { "id": 0, "temp": 31, "snow": 32768, "info": 8 },
+          { "id": 1, "temp": 14418140, "snow": 0, "info": 14 }
+        ]
+      },
+      "nozzle": {
+        "exist": 3,
+        "state": 0,
+        "info": [
+          { "id": 0, "type": "HS01", "diameter": 0.4 },
+          { "id": 1, "type": "HS01", "diameter": 0.4 }
+        ]
+      }
+    },
+    "ipcam": { "ipcam_dev": "1", "rtsp_url": "rtsps://192.0.2.52/streaming/live/1" },
+    "ams": {
+      "ams_exist_bits": "10001",
+      "tray_exist_bits": "10007",
+      "tray_now": "0",
+      "ams": [
+        {
+          "id": "0",
+          "info": "1101",
+          "humidity": "4",
+          "temp": "27.0",
+          "tray": [
+            { "id": "0", "tray_type": "PLA", "tray_sub_brands": "PLA Basic", "tray_color": "F2F2F2FF", "remain": 82 },
+            { "id": "1", "tray_type": "PLA", "tray_sub_brands": "PLA Basic", "tray_color": "202020FF", "remain": 45 },
+            { "id": "2", "tray_type": "PETG", "tray_sub_brands": "PETG HF", "tray_color": "D9473FFF", "remain": 100 },
+            { "id": "3", "tray_type": "", "remain": -1 }
+          ]
+        },
+        {
+          "id": "128",
+          "info": "1004",
+          "humidity": "3",
+          "temp": "45.0",
+          "tray": [{ "id": "0", "tray_type": "PLA", "tray_sub_brands": "PLA Matte", "tray_color": "3FAE8FFF", "remain": 60 }]
+        }
+      ]
+    }
+  }
+}
