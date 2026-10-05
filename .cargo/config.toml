@@ -1,0 +1,7 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (C) 2026 The SlicerX contributors
+# The WASM build has no operating system to ask for random numbers. Some dependencies (the Voronoi
+# diagram of the variable-width walls keeps a randomized skip list) link `getrandom`, which then
+# needs a backend; sx-wasm provides one that returns a fixed pseudo-random sequence.
+[target.wasm32-unknown-unknown]
+rustflags = ["--cfg", 'getrandom_backend="custom"']

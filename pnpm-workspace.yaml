@@ -1,0 +1,20 @@
+packages:
+  - "apps/*"
+  - "packages/*"
+  - "packages/ui/viewport"
+  - "packages/core/web"
+  - "packages/connect/sim"
+  - "packages/connect/mock-printers"
+  - "packages/connect/link-client"
+  - "packages/connect/catalog"
+  - "packages/connect/setup"
+  - "editions/slicerx/packages/cloud"
+  - "editions/slicerx/apps/mobile"
+  - "examples/farm"
+# pnpm blocks dependency build scripts unless listed here. Add a package only
+# when it needs its build step, and say why in the pull request.
+onlyBuiltDependencies: []
+# One @types/node for the whole workspace (Node 24 is the engine). Two versions in one TypeScript program
+# conflict, and which one pnpm hoists for packages like undici-types differs from install to install.
+overrides:
+  "@types/node": "24.19.0"

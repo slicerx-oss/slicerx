@@ -1,0 +1,25 @@
+{
+  "name": "slicerx",
+  "private": true,
+  "packageManager": "pnpm@10.18.1",
+  "engines": {
+    "node": ">=24"
+  },
+  "type": "module",
+  "scripts": {
+    "dev": "pnpm --filter @slicerx/web dev",
+    "dev:desktop": "pnpm --filter @slicerx/desktop tauri dev",
+    "dev:site": "pnpm --filter @slicerx/site dev",
+    "build": "pnpm -r build",
+    "lint": "pnpm -r lint && node scripts/check-dashes.mjs",
+    "lint:dashes": "node scripts/check-dashes.mjs",
+    "test:scripts": "node --test scripts/check-dashes.test.mjs scripts/edition-build.test.mjs",
+    "edition:build": "node scripts/edition-build.mjs",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "bench": "cargo run -p sx-cli --profile bench-release -- bench --config packages/core/bench/configs/reference-0.20.json"
+  },
+  "devDependencies": {
+    "typescript": "^5"
+  }
+}

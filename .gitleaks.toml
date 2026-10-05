@@ -1,0 +1,22 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (C) 2026 The SlicerX contributors
+# The default gitleaks rules, minus test fixtures whose keys and tokens are made up for the tests
+# (packages/connect/tests/fixtures/README.md) and the Supabase publishable key, which is public by design.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Test fixtures and public client keys"
+paths = [
+  '''^packages/connect/tests/fixtures/[^/]+\.pem$''',
+  '''^packages/connect/cpace/vectors\.json$''',
+  '''^packages/pair/test/vectors\.json$''',
+  '''^packages/app/test/(bug-reports|agent-install|pilot-connect)\.test\.ts$''',
+  '''^packages/edition-config/test/config\.test\.ts$''',
+  '''^supabase/seed/store\.sql$''',
+]
+regexes = [
+  '''sb_publishable_[A-Za-z0-9_-]+''',
+  '''sb_secret_0123456789abcdefghijklmnop''',
+  '''eyJhbGciOiJIUzI1NiJ9\.eyJyb2xlIjoic2VydmljZV9yb2xlIn0\.sig''',
+]
