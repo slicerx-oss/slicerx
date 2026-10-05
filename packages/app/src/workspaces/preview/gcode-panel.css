@@ -1,0 +1,20 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+/* Copyright (C) 2026 The SlicerX contributors */
+/* The G-code line view, docked to the right of Preview above the playback bar. */
+.gc-panel { position: absolute; z-index: 3; top: 60px; right: 12px; width: min(380px, calc(100% - 24px)); display: flex; flex-direction: column; border-radius: var(--r-md); border: 1px solid var(--line); box-shadow: var(--shadow-pop); overflow: hidden; }
+.gc-head { display: flex; align-items: center; gap: 8px; padding: 8px 8px 8px 12px; border-bottom: 1px solid var(--line-soft); }
+.gc-head > div { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 8px; }
+.gc-head b { font-size: var(--fs-md); font-weight: 600; }
+.gc-head span { font-size: var(--fs-xs); color: var(--muted); }
+.gc-goto input { width: 84px; height: 26px; font-size: var(--fs-xs); }
+.gc-note { margin: 0; padding: 10px 12px; display: flex; align-items: center; gap: 6px; }
+.gc-scroll { position: relative; flex: 1; min-height: 120px; overflow-y: auto; overflow-x: hidden; }
+.gc-scroll:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset-inset); }
+.gc-rows { position: sticky; top: 0; overflow: hidden; contain: strict; }
+.gc-row { position: absolute; left: 0; right: 0; height: 18px; display: grid; grid-template-columns: 64px 1fr; gap: 10px; align-items: center; padding-right: 10px; font: 400 11.5px/18px var(--f-mono); color: var(--fg); white-space: pre; cursor: pointer; }
+.gc-row:hover { background: var(--ink-3); }
+.gc-row.on { background: color-mix(in srgb, var(--cyan) 18%, transparent); box-shadow: inset 2px 0 0 var(--cyan); }
+.gc-no { text-align: right; color: var(--dim); font-variant-numeric: tabular-nums; }
+.gc-text { overflow: hidden; text-overflow: ellipsis; }
+.gc-text b { font-weight: 600; color: var(--cyan); }
+.gc-text i { font-style: normal; color: var(--muted); }

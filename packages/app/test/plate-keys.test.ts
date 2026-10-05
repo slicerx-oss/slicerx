@@ -1,0 +1,41 @@
+// @vitest-environment jsdom
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (C) 2026 The SlicerX contributors
+// Digit keys are view keys (1 is top) except while sketching, where they type an exact size.
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { bindPlateKeys } from '../src/plate/keys'
+import { setCameraBus } from '../src/plate/tools'
+import { set } from '../src/state/store'
+
+describe('plate keys and the sketch size field', () => {
+  const view = vi.fn()
+  let off: () => void = () => undefined
+  beforeEach(() => {
+    view.mockClear()
+    setCameraBus({ view } as unknown as Parameters<typeof setCameraBus>[0])
+    set({ workspace: 'prepare', objectTool: null, setup: null })
+    off = bindPlateKeys(() => ({ id: 'slicerx' }) as unknown as Parameters<typeof bindPlateKeys>[0] extends () => infer C ? C : never)
+  })
+  afterEach(() => {
+    off()
+    set({ objectTool: null })
+  })
+  const press = (key: string) => {
+    const e = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true })
+    window.dispatchEvent(e)
+    return e
+  }
+
+  it('turns the view on a digit outside the sketch tool', () => {
+    const e = press('1')
+    expect(view).toHaveBeenCalledWith('top', { animate: true })
+    expect(e.defaultPrevented).toBe(true)
+  })
+
+  it('leaves digits to the sketch while it is open', () => {
+    set({ objectTool: 'sketch' })
+    const e = press('1')
+    expect(view).not.toHaveBeenCalled()
+    expect(e.defaultPrevented).toBe(false)
+  })
+})

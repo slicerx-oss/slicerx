@@ -1,0 +1,14 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+/* Copyright (C) 2026 The SlicerX contributors */
+/* norn: the card beside a clicked toolpath and the before and after bar at the top of Preview. */
+.norn-card { position: absolute; z-index: 4; display: flex; flex-direction: column; gap: 10px; padding: 12px 14px; border-radius: var(--r-md); border: 1px solid var(--line); box-shadow: var(--shadow-pop); max-height: 60%; overflow: auto; }
+.norn-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.norn-head b { display: block; font-size: var(--fs-md); font-weight: 600; }
+.norn-head span { font-size: var(--fs-xs); color: var(--muted); }
+.norn-fields { display: flex; flex-direction: column; gap: 8px; }
+.norn-scope { display: flex; gap: 4px; flex-wrap: wrap; }
+.norn-foot { margin: 0; padding-top: 8px; border-top: 1px solid var(--line-soft); }
+.norn-bar { position: absolute; z-index: 3; top: 12px; right: 64px; display: flex; align-items: center; gap: 14px; padding: 6px 8px 6px 14px; border-radius: var(--r-md); border: 1px solid var(--line); box-shadow: var(--shadow-float); white-space: nowrap; max-width: calc(100% - 340px); overflow-x: auto; }
+.norn-stat { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-md); }
+.norn-stat .sx-ic { color: var(--cyan); }
+.norn-stat small { color: var(--muted); font-size: var(--fs-sm); }

@@ -1,0 +1,28 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+/* Copyright (C) 2026 The SlicerX contributors */
+/* The pre-alpha agreement, on the first-run frame. Tokens only, both themes. */
+
+.fra { z-index: 46; }
+.fr-body > .fra-col { max-width: 760px; }
+.fra-points { display: grid; gap: var(--s-3); }
+.fra-point {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr);
+  align-items: center;
+  gap: var(--s-3);
+  padding: var(--s-4);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--r-md);
+  /* part of the page, not floating: flat, no lift */
+  background: color-mix(in srgb, var(--ink-1) 60%, transparent);
+}
+.fra-point-ic { display: inline-flex; align-items: center; justify-content: center; align-self: center; width: 40px; height: 40px; color: var(--accent); }
+.fra-point-title { margin: 0 0 var(--s-1); font: 600 var(--fs-lg) / var(--lh-tight) var(--f-body); }
+.fra-point p { margin: 0 0 var(--s-2); color: var(--muted); font-size: var(--fs-md); max-width: 68ch; }
+.fra-point p:last-child { margin-bottom: 0; }
+.fra-point a { color: var(--accent); overflow-wrap: anywhere; }
+.fra-more { padding: 0; border: 0; background: none; color: var(--accent); font: inherit; text-decoration: underline dotted; text-underline-offset: 3px; cursor: help; }
+.fra-list { margin: 0 0 var(--s-2); padding-left: 1.2em; color: var(--muted); font-size: var(--fs-md); columns: 2 220px; }
+.fra-check { margin-top: var(--s-5); align-items: flex-start; }
+.fra-check input { margin-top: 2px; flex: none; }
+.fra-foot { margin: 0; color: var(--dim); font-size: var(--fs-xs); }

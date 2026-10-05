@@ -1,0 +1,35 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (C) 2026 The SlicerX contributors
+import type { FleetRow } from './queries'
+import { useFleet } from './queries'
+import { useApp } from '../state/store'
+import { isExportOnly } from './hand-printers'
+
+/** The printer the sidebar shows: the selected one, else the first idle one, else the first. */
+export function usePrinter(): { rows: FleetRow[]; printer: FleetRow | undefined } {
+  const fleet = useFleet()
+  const printerId = useApp((s) => s.printerId)
+  const rows = fleet.data ?? []
+  return { rows, printer: shownPrinter(rows, printerId) }
+}
+
+export function shownPrinter(rows: FleetRow[], printerId: string | null): FleetRow | undefined {
+  return rows.find((r) => r.id === printerId) ?? rows.find((r) => r.status.state === 'idle') ?? rows[0]
+}
+
+/**
+ * The printer Print sends to. The plate is sliced for the chosen printer, so that printer when it can take a job (idle, or
+ * finished, where the Print sheet asks about the plate). Only an idle printer of the same make and model stands in for it:
+ * any other printer would get G-code made for a different machine. Undefined when none can.
+ */
+export function printTarget(printer: FleetRow | undefined, rows: FleetRow[]): FleetRow | undefined {
+  // A printer with no connection takes no jobs: Print exports for it instead.
+  if (!printer || isExportOnly(printer)) return undefined
+  if (printer.status.state === 'idle' || printer.status.state === 'finished') return printer
+  return rows.find((p) => !isExportOnly(p) && p.status.state === 'idle' && p.vendor === printer.vendor && p.model === printer.model)
+}
+
+/** The plate name a Print button shows under its label: the active plate's, only when the project has several. */
+export function printPlateLabel(plates: readonly { id: string; name: string }[], activePlate: string): string | null {
+  return plates.length > 1 ? (plates.find((p) => p.id === activePlate)?.name ?? null) : null
+}

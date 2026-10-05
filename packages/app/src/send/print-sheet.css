@@ -1,0 +1,77 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+/* Copyright (C) 2026 The SlicerX contributors */
+/* The Print sheet. One column: a flat summary of what will print, the checks, the printer's own steps,
+   and the confirm button with its menu. */
+.print-sheet { width: min(520px, calc(100vw - 2 * var(--gutter))); }
+.print-sheet .sx-dialog-h { padding-top: 14px; }
+.print-sheet .sx-dialog-h h2 { display: grid; gap: 6px; font-size: var(--fs-xl); }
+.ps-printer { display: flex; align-items: center; gap: 8px; font: 500 var(--fs-sm) var(--f-body); color: var(--muted); }
+.ps-printer .sx-ic { color: var(--dim); }
+.ps-printer-name { color: var(--fg); font-weight: 600; }
+.ps-printer-model { font-size: 12px; font-weight: 400; }
+.ps-title { font: 600 var(--fs-xl) / var(--lh-tight) var(--f-body); color: var(--fg); }
+
+/* What will print: a flat card with the picture, the file, time and weight, and each filament on its slot. */
+.ps-summary { display: grid; gap: 10px; margin: 6px 0 10px; padding: 12px; border: 1px solid var(--line-soft); border-radius: var(--r-md); background: var(--ink-1); }
+.ps-sum-top { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 12px; align-items: center; }
+.ps-thumb { display: grid; place-items: center; width: 64px; height: 64px; border-radius: var(--r-sm); background: var(--ink-2); color: var(--dim); object-fit: contain; }
+.ps-sum-text { display: grid; gap: 6px; min-width: 0; }
+.ps-file { margin: 0; font: 500 var(--fs-md) var(--f-mono); color: var(--fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ps-meta { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 0; font: 500 var(--fs-sm) var(--f-mono); font-variant-numeric: tabular-nums; color: var(--muted); }
+.ps-meta span { display: inline-flex; align-items: center; gap: 5px; }
+.ps-meta .sx-ic { color: var(--dim); }
+
+/* While the file is checked, one quiet line with a spinner. Afterwards only what needs a look shows (check-lines.css). */
+.ps-checking { display: flex; align-items: center; gap: 7px; margin: 0 0 12px; font-size: var(--fs-sm); color: var(--dim); min-height: 18px; }
+.ps-spin { width: 12px; height: 12px; border-radius: 50%; border: 1.5px solid var(--line); border-top-color: var(--accent); animation: ps-spin 0.9s linear infinite; flex: none; }
+@keyframes ps-spin { to { transform: rotate(360deg); } }
+:root[data-motion="reduced"] .ps-spin { animation: none; border-top-color: var(--line); }
+.print-sheet .cl-list { margin: 0 0 12px; }
+
+/* The body under the checks: a slot picker when one is needed, the printer's own steps, the queue time. */
+.ps-body { display: grid; gap: 12px; }
+.ps-when { padding: 0; }
+
+/* Filaments: swatch, material, the slot it feeds from. A slot picker shows only when one is needed. */
+.ps-fils { display: grid; gap: 6px; margin: 0; padding: 10px 0 0; border-top: 1px solid var(--line-soft); list-style: none; }
+.ps-fil { display: grid; grid-template-columns: 12px auto minmax(0, 1fr) auto; gap: 8px; align-items: center; font-size: var(--fs-md); }
+.ps-fil-type { font-weight: 600; color: var(--fg); }
+.ps-fil .sx-muted { font-size: var(--fs-sm); }
+.ps-fil-slot { font: 500 var(--fs-sm) var(--f-mono); color: var(--muted); }
+.ps-swatch { display: inline-block; width: 12px; height: 12px; border-radius: 50%; border: 1px solid color-mix(in srgb, var(--fg) 25%, transparent); flex: none; }
+.ps-map { display: grid; gap: 8px; margin: 0; padding: 10px 12px; border: 1px solid var(--line-soft); border-radius: var(--r-md); }
+.ps-map-head { display: flex; align-items: center; gap: 7px; margin: 0; font-weight: 600; }
+.ps-map-head .sx-ic { color: var(--orange); }
+.ps-map-row { display: grid; grid-template-columns: 12px minmax(0, 1fr) auto; gap: 10px; align-items: center; font-size: var(--fs-md); }
+.ps-map-row label { color: var(--fg); font-weight: 500; }
+.ps-row-warn { margin: 0; font-size: var(--fs-sm); color: var(--orange); }
+/* The printer's steps before the print: shown as toggles, each with its tooltip. */
+.ps-opts { display: grid; gap: 2px; padding: 8px 12px; border: 1px solid var(--line-soft); border-radius: var(--r-md); background: var(--ink-1); }
+.ps-opts-head { margin: 0 0 4px; font: 600 var(--fs-xs) var(--f-body); letter-spacing: 0.02em; color: var(--dim); }
+.ps-opt { display: grid; grid-template-columns: auto 18px minmax(0, 1fr) auto; gap: 6px; align-items: center; min-height: 34px; }
+.ps-opt label { font: 500 var(--fs-md) var(--f-body); color: var(--fg); cursor: pointer; }
+.ps-opt .sx-switch { grid-column: 4; }
+.ps-opt .ps-tip-btn { width: 18px; height: 18px; }
+
+/* Tooltip anchors: the app's tooltip opens on hover, focus, click or tap (data-tip-click). */
+.ps-tip-btn { display: inline-grid; place-items: center; padding: 0; border: 0; background: none; color: var(--dim); font: inherit; cursor: help; vertical-align: middle; }
+.ps-tip-btn:hover, .ps-tip-btn[aria-describedby~="sx-tip"] { color: var(--accent); }
+.ps-tip-btn:focus-visible { border-radius: 3px; }
+
+.ps-note { margin: 12px 0 0; font-size: var(--fs-sm); line-height: 1.5; color: var(--dim); }
+
+/* Footer: Cancel at the left, the confirm button with its menu at the right. */
+.print-sheet .sx-dialog-foot { justify-content: space-between; align-items: center; }
+.ps-go { display: flex; align-items: stretch; }
+.ps-go .ps-go-main { border-top-right-radius: 0; border-bottom-right-radius: 0; padding-right: 16px; }
+.ps-go .ps-go-more { border-top-left-radius: 0; border-bottom-left-radius: 0; width: 38px; padding: 0; box-shadow: inset 1px 0 0 color-mix(in srgb, var(--on-grad) 22%, transparent); }
+.ps-go .ps-go-more[aria-expanded="true"] { background: color-mix(in srgb, var(--accent) 80%, var(--fg)); }
+.ps-go .sx-menu { min-width: 190px; }
+.ps-go[data-mode="upload"] .ps-go-main, .ps-go[data-mode="queue"] .ps-go-main { background: var(--ink-4); color: var(--fg); border-color: var(--line); }
+.ps-go[data-mode="upload"] .ps-go-more, .ps-go[data-mode="queue"] .ps-go-more { background: var(--ink-4); color: var(--fg); border-color: var(--line); box-shadow: inset 1px 0 0 var(--line); }
+
+@media (max-width: 560px) {
+  .print-sheet .sx-dialog-foot { flex-wrap: wrap; }
+  .ps-go { width: 100%; }
+  .ps-go .ps-go-main { flex: 1; }
+}
