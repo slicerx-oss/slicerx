@@ -1,0 +1,51 @@
+{
+  "name": "@slicerx/pilot",
+  "version": "0.1.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./name": "./src/name.ts",
+    "./ui": "./ui/index.ts",
+    "./ui/pilot.css": "./ui/pilot.css",
+    "./reduce": "./ui/reduce.ts",
+    "./format": "./ui/format.ts",
+    "./run": "./ui/use-pilot-run.ts",
+    "./node": "./src/node/index.ts",
+    "./functions": "./src/functions.ts",
+    "./kb.json": "./src/kb/generated/kb.json",
+    "./local-models.json": "./llm/local-models.json",
+    "./local-ai": "./src/local-ai.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "kb:build": "tsx scripts/build-kb.ts",
+    "eval": "tsx evals/cli.ts"
+  },
+  "dependencies": {
+    "@slicerx/contracts": "workspace:*",
+    "@slicerx/printer-catalog": "workspace:*",
+    "@slicerx/settings": "workspace:*",
+    "@slicerx/ui": "workspace:*",
+    "zod": "4.6.5"
+  },
+  "peerDependencies": {
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@slicerx/fleet-sim": "workspace:*",
+    "@testing-library/react": "16.3.3",
+    "@types/node": "24.19.0",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "jsdom": "30.1.1",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "tsx": "4.23.15",
+    "vitest": "5.0.2",
+    "yaml": "2.9.1"
+  }
+}

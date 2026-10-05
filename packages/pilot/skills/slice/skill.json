@@ -1,0 +1,7 @@
+{
+  "name": "slice",
+  "version": "2.3.1",
+  "description": "Slices with the current settings and reports time, grams and cost per plate.",
+  "permission": "slice",
+  "entry": "index.ts"
+}

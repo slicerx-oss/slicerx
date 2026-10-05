@@ -1,0 +1,7 @@
+{
+  "name": "calibrate",
+  "version": "0.9.3",
+  "description": "Plans temperature and flow tests from the filament knowledge.",
+  "permission": "read",
+  "entry": "index.ts"
+}

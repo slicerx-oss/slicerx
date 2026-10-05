@@ -1,0 +1,7 @@
+{
+  "name": "check_print",
+  "version": "1.0.0",
+  "description": "Takes a fresh camera frame of a running print, reads it with the printer's status, and proposes bounded changes as approval cards.",
+  "permission": "read",
+  "entry": "index.ts"
+}

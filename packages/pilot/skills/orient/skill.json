@@ -1,0 +1,7 @@
+{
+  "name": "orient",
+  "version": "1.4.0",
+  "description": "Finds the rotation with the least support and the cleanest visible surfaces.",
+  "permission": "slice",
+  "entry": "index.ts"
+}

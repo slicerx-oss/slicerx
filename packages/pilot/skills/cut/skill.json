@@ -1,0 +1,7 @@
+{
+  "name": "cut",
+  "version": "1.2.0",
+  "description": "Checks fit against a build volume and plans a scale or a split.",
+  "permission": "slice",
+  "entry": "index.ts"
+}
