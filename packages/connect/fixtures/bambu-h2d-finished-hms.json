@@ -1,0 +1,43 @@
+{
+  "print": {
+    "command": "push_status",
+    "msg": 0,
+    "sequence_id": "2016",
+    "gcode_state": "FINISH",
+    "subtask_name": "Bracket",
+    "gcode_file": "/data/Metadata/plate_1.gcode",
+    "gcode_start_time": "1759600000",
+    "mc_percent": 100,
+    "mc_remaining_time": 0,
+    "layer_num": 937,
+    "total_layer_num": 937,
+    "print_error": 0,
+    "mc_print_stage": "1",
+    "print_type": "local",
+    "hms": [{ "attr": 83887360, "code": 65543 }],
+    "bed_temper": 31.0,
+    "bed_target_temper": 0.0,
+    "chamber_temper": 29.0,
+    "device": {
+      "extruder": {
+        "info": [
+          { "id": 0, "temp": 30, "info": 0 },
+          { "id": 1, "temp": 31, "info": 0 }
+        ],
+        "state": 0
+      }
+    },
+    "ipcam": { "ipcam_dev": "1", "ipcam_record": "enable" },
+    "ams": {
+      "ams": [
+        {
+          "id": "0",
+          "tray": [
+            { "id": "0", "tray_type": "PLA", "tray_sub_brands": "PLA Basic", "tray_color": "000000FF", "remain": 62 },
+            { "id": "1", "tray_type": "PLA", "tray_sub_brands": "PLA Basic", "tray_color": "FFFFFFFF", "remain": 85 }
+          ]
+        }
+      ]
+    }
+  }
+}

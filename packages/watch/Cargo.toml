@@ -1,0 +1,39 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (C) 2026 The SlicerX contributors
+[package]
+name = "sx-watch"
+description = "The print watch's failure detector: frames from sx-link in, findings out."
+version.workspace = true
+edition.workspace = true
+license = "Apache-2.0"
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "sx-watch"
+path = "src/main.rs"
+
+[features]
+default = ["siglip", "huginn"]
+# The local model (SigLIP2 through ONNX Runtime). Without it the watch runs the stub.
+siglip = ["dep:ort"]
+# Confirming a suspicion with huginn on the person's ChatGPT plan (opt-in per printer).
+huginn = ["dep:sx-llm"]
+
+[dependencies]
+base64 = "=0.23.1"
+futures = "=0.3.34"
+image-webp = "=0.2.4"
+ort = { version = "=2.0.0-rc.13", default-features = false, features = ["std", "download-binaries", "tls-rustls", "copy-dylibs", "api-24"], optional = true }
+png = "=0.18.1"
+ring = "=0.17.14"
+serde = { version = "=1.0.229", features = ["derive"] }
+serde_json = "=1.0.151"
+sx-llm = { path = "../pilot/llm", optional = true }
+# The code exchange with sx-link (CPace).
+sx-cpace = { path = "../connect/cpace" }
+tokio = { version = "=1.53.1", features = ["rt", "net", "macros", "time", "sync"] }
+tokio-tungstenite = "=0.30.0"
+zune-jpeg = "=0.5.15"

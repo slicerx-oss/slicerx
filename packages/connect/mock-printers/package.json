@@ -1,0 +1,21 @@
+{
+  "name": "@slicerx/mock-printers",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "start": "node src/cli.ts",
+    "test": "node --test src/mock.test.ts"
+  },
+  "dependencies": {
+    "@slicerx/contracts": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.0"
+  },
+  "license": "Apache-2.0"
+}

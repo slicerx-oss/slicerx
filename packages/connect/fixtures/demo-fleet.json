@@ -1,0 +1,393 @@
+{
+  "version": 1,
+  "note": "Demo data: five printers, nine spools and one example fleet. Hosts use the TEST-NET-1 documentation range (RFC 5737). No real addresses or access codes.",
+  "printers": [
+    {
+      "id": "bay-1",
+      "name": "Bay 1",
+      "vendor": "Bambu Lab",
+      "model": "X1 Carbon",
+      "plugin": "bambu-lan",
+      "host": "192.0.2.11",
+      "nozzleCount": 1,
+      "filamentSystem": "ams",
+      "cameraAvailable": true,
+      "state": "printing",
+      "nozzles": [
+        {
+          "current": 249.6,
+          "target": 250
+        }
+      ],
+      "bed": {
+        "current": 79.8,
+        "target": 80
+      },
+      "chamber": {
+        "current": 38,
+        "target": 0
+      },
+      "slots": [
+        {
+          "id": "A1",
+          "material": "PLA",
+          "color": "#f2f2f2",
+          "remainingPct": 82,
+          "spoolmanId": 1
+        },
+        {
+          "id": "A2",
+          "material": "PLA",
+          "color": "#1a1a1f",
+          "remainingPct": 64,
+          "spoolmanId": 2
+        },
+        {
+          "id": "A3",
+          "material": "PETG",
+          "color": "#3b82f6",
+          "remainingPct": 41,
+          "spoolmanId": 3
+        },
+        {
+          "id": "A4",
+          "material": "TPU",
+          "color": "#f97316",
+          "remainingPct": 12,
+          "spoolmanId": 4
+        }
+      ],
+      "job": {
+        "name": "Tidewell harbor lantern.gcode.3mf",
+        "progress": 0.62,
+        "layer": 148,
+        "layerCount": 238,
+        "timeLeftS": 5040
+      },
+      "live": {
+        "fans": {
+          "part": 100,
+          "aux": 60,
+          "chamber": 30
+        },
+        "speedPercent": 100,
+        "light": true,
+        "activeSlot": "A1",
+        "units": [
+          {
+            "id": "A",
+            "kind": "ams"
+          }
+        ]
+      }
+    },
+    {
+      "id": "bay-2",
+      "name": "Bay 2",
+      "vendor": "Bambu Lab",
+      "model": "P1S",
+      "plugin": "bambu-lan",
+      "host": "192.0.2.12",
+      "nozzleCount": 1,
+      "filamentSystem": "ams",
+      "cameraAvailable": true,
+      "state": "idle",
+      "nozzles": [
+        {
+          "current": 27,
+          "target": 0
+        }
+      ],
+      "bed": {
+        "current": 26,
+        "target": 0
+      },
+      "slots": [
+        {
+          "id": "A1",
+          "material": "PLA",
+          "color": "#a855f7",
+          "remainingPct": 90,
+          "spoolmanId": 5
+        },
+        {
+          "id": "A2",
+          "material": "PLA",
+          "color": "#22c55e",
+          "remainingPct": 55,
+          "spoolmanId": 6
+        },
+        {
+          "id": "A3",
+          "material": "ASA",
+          "color": "#e5e7eb",
+          "remainingPct": 70,
+          "spoolmanId": 7
+        },
+        {
+          "id": "A4"
+        }
+      ]
+    },
+    {
+      "id": "bay-3",
+      "name": "Bay 3",
+      "vendor": "Prusa Research",
+      "model": "MK4S",
+      "plugin": "prusalink",
+      "host": "192.0.2.13",
+      "nozzleCount": 1,
+      "cameraAvailable": false,
+      "state": "paused",
+      "nozzles": [
+        {
+          "current": 215,
+          "target": 215
+        }
+      ],
+      "bed": {
+        "current": 60,
+        "target": 60
+      },
+      "slots": [
+        {
+          "id": "1",
+          "material": "PLA",
+          "color": "#ef4444",
+          "remainingPct": 33,
+          "spoolmanId": 8
+        }
+      ],
+      "job": {
+        "name": "Kestrel Parts bracket set.bgcode",
+        "progress": 0.31,
+        "layer": 62,
+        "layerCount": 200,
+        "timeLeftS": 6300
+      },
+      "message": "Filament change requested"
+    },
+    {
+      "id": "bay-4",
+      "name": "Bay 4",
+      "vendor": "Voron Design",
+      "model": "Voron 2.4 350",
+      "plugin": "moonraker",
+      "host": "192.0.2.14",
+      "nozzleCount": 1,
+      "cameraAvailable": true,
+      "state": "finished",
+      "nozzles": [
+        {
+          "current": 48,
+          "target": 0
+        }
+      ],
+      "bed": {
+        "current": 41,
+        "target": 0
+      },
+      "chamber": {
+        "current": 44,
+        "target": 0
+      },
+      "slots": [
+        {
+          "id": "1",
+          "material": "ABS",
+          "color": "#111827",
+          "remainingPct": 58,
+          "spoolmanId": 9
+        }
+      ],
+      "job": {
+        "name": "Ferro Labs duct adapter.gcode",
+        "progress": 1,
+        "layer": 312,
+        "layerCount": 312,
+        "timeLeftS": 0
+      }
+    },
+    {
+      "id": "bay-5",
+      "name": "Bay 5",
+      "vendor": "Creality",
+      "model": "K1 Max",
+      "plugin": "creality",
+      "host": "192.0.2.15",
+      "nozzleCount": 1,
+      "cameraAvailable": false,
+      "state": "offline",
+      "nozzles": [
+        {
+          "current": 0,
+          "target": 0
+        }
+      ],
+      "slots": []
+    },
+    {
+      "id": "bay-6",
+      "name": "Bay 6",
+      "vendor": "Bambu Lab",
+      "model": "H2C",
+      "plugin": "bambu-lan",
+      "host": "192.0.2.16",
+      "nozzleCount": 2,
+      "filamentSystem": "ams",
+      "cameraAvailable": true,
+      "state": "idle",
+      "nozzles": [
+        {
+          "current": 28,
+          "target": 0
+        },
+        {
+          "current": 28,
+          "target": 0
+        }
+      ],
+      "bed": {
+        "current": 27,
+        "target": 0
+      },
+      "slots": [
+        {
+          "id": "A1",
+          "material": "PLA",
+          "color": "#ff79c6",
+          "remainingPct": 80
+        },
+        {
+          "id": "A2",
+          "material": "PLA",
+          "color": "#8be9fd",
+          "remainingPct": 65
+        },
+        {
+          "id": "A3",
+          "material": "PLA",
+          "color": "#f1fa8c",
+          "remainingPct": 40
+        },
+        {
+          "id": "A4",
+          "material": "PLA",
+          "color": "#50fa7b",
+          "remainingPct": 95
+        }
+      ],
+      "live": {
+        "light": false,
+        "speedPercent": 100,
+        "nozzleSides": [
+          "right",
+          "left"
+        ],
+        "units": [
+          {
+            "id": "A",
+            "kind": "ams-2-pro",
+            "feeds": "left"
+          }
+        ]
+      }
+    }
+  ],
+  "fleets": [
+    {
+      "id": "workshop",
+      "name": "Workshop",
+      "printerIds": [
+        "bay-1",
+        "bay-2",
+        "bay-3"
+      ],
+      "color": "purple",
+      "icon": "printer"
+    }
+  ],
+  "spools": [
+    {
+      "id": 1,
+      "material": "PLA",
+      "vendor": "Northpine",
+      "name": "Bone white",
+      "color": "#f2f2f2",
+      "remainingG": 820,
+      "initialG": 1000
+    },
+    {
+      "id": 2,
+      "material": "PLA",
+      "vendor": "Northpine",
+      "name": "Ink black",
+      "color": "#1a1a1f",
+      "remainingG": 640,
+      "initialG": 1000
+    },
+    {
+      "id": 3,
+      "material": "PETG",
+      "vendor": "Northpine",
+      "name": "Harbor blue",
+      "color": "#3b82f6",
+      "remainingG": 410,
+      "initialG": 1000
+    },
+    {
+      "id": 4,
+      "material": "TPU",
+      "vendor": "Northpine",
+      "name": "Ember orange",
+      "color": "#f97316",
+      "remainingG": 60,
+      "initialG": 500
+    },
+    {
+      "id": 5,
+      "material": "PLA",
+      "vendor": "Northpine",
+      "name": "Violet",
+      "color": "#a855f7",
+      "remainingG": 900,
+      "initialG": 1000
+    },
+    {
+      "id": 6,
+      "material": "PLA",
+      "vendor": "Northpine",
+      "name": "Fern",
+      "color": "#22c55e",
+      "remainingG": 550,
+      "initialG": 1000
+    },
+    {
+      "id": 7,
+      "material": "ASA",
+      "vendor": "Northpine",
+      "name": "Chalk",
+      "color": "#e5e7eb",
+      "remainingG": 700,
+      "initialG": 1000
+    },
+    {
+      "id": 8,
+      "material": "PLA",
+      "vendor": "Northpine",
+      "name": "Signal red",
+      "color": "#ef4444",
+      "remainingG": 330,
+      "initialG": 1000
+    },
+    {
+      "id": 9,
+      "material": "ABS",
+      "vendor": "Northpine",
+      "name": "Graphite",
+      "color": "#111827",
+      "remainingG": 580,
+      "initialG": 1000
+    }
+  ]
+}

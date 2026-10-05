@@ -1,0 +1,9 @@
+# packages/connect/fixtures
+
+`demo-fleet.json`: the demo data, five printers (Bay 1 Bambu Lab X1 Carbon with AMS, Bay 2 Bambu Lab P1S with AMS, Bay 3 Prusa MK4S, Bay 4 Voron 2.4 350 on Klipper, Bay 5 Creality K1 Max offline), one example fleet named Workshop (Bays 1 to 3), nine spools and jobs. `mock-printers` and `sim` both read it. Hosts use the documentation range 192.0.2.0/24. No real hostnames, LAN addresses or access codes.
+
+`bambu-h2d-pushall.json`: a Bambu Lab H2D `push_status` report as an answer to `pushall`, with a 0.4 mm hardened steel nozzle on the right, a 0.6 mm high flow hardened steel nozzle on the left, an AMS 2 Pro on the right nozzle, an AMS HT on the left and TPU on the left external spool. The layout follows the fields Bambu Studio's `DevNozzleSystem` and `DevFilaSystem` read (`device.nozzle.info`, the hex `info` of each AMS, `vir_slot`); the values are made up. The Rust driver tests and the Bambu fake (`model: "O1D"`) use it.
+`bambu-h2d-printing.json`: a Bambu Lab H2D `push_status` report mid print (Cube 20 mm, layer 62 of 100) with the left nozzle printing from AMS slot A1, an AMS on the left nozzle and an AMS HT on the right, fan gears, the speed level, the chamber light and a current front door HMS code. The values are made up. The Bambu driver test reads it, and `tests/contract_json.rs` writes what the driver makes of it to `packages/contracts/fixtures/printers-status-h2d.json` for the app's device view tests.
+`bambu-h2d-finished-hms.json`: a Bambu Lab H2D `push_status` report after a finished job (Bracket, layer 937 of 937) that still lists main board HMS code 0500_0500_0001_0007 from that job. It is rebuilt from what the printer showed, with no serial, address or access code. The Bambu driver's tests read it: the leftover code must not read as a stopped print.
+
+The JSON shapes the Rust crate and the TS contracts must agree on are in `packages/contracts/fixtures/printers-*.json`.

@@ -1,0 +1,1402 @@
+[
+  {
+    "id": "bambu-lan",
+    "name": "Bambu Lab LAN",
+    "version": "0.1.0",
+    "kind": "printer",
+    "protocols": [
+      "mqtt-tls",
+      "ftps",
+      "ssdp"
+    ],
+    "capabilities": [
+      "status",
+      "events",
+      "upload",
+      "start",
+      "pause",
+      "resume",
+      "cancel",
+      "camera",
+      "filament_slots",
+      "gcode_console"
+    ],
+    "tools": [
+      {
+        "name": "bambu-lan.status",
+        "description": "Read the normalized status of one printer.",
+        "permission": "read",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "printerId": {
+              "type": "string",
+              "description": "Printer id, such as bay-1"
+            }
+          },
+          "required": [
+            "printerId"
+          ]
+        }
+      },
+      {
+        "name": "bambu-lan.queue",
+        "description": "Upload a sliced file to the printer without starting it.",
+        "permission": "queue",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "printerId": {
+              "type": "string",
+              "description": "Printer id, such as bay-1"
+            },
+            "file": {
+              "type": "string",
+              "description": "Project file id"
+            }
+          },
+          "required": [
+            "printerId",
+            "file"
+          ]
+        }
+      },
+      {
+        "name": "bambu-lan.start",
+        "description": "Start an uploaded file. Heats the printer.",
+        "permission": "start",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "printerId": {
+              "type": "string",
+              "description": "Printer id, such as bay-1"
+            },
+            "path": {
+              "type": "string"
+            },
+            "plate": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          "required": [
+            "printerId",
+            "path"
+          ]
+        }
+      },
+      {
+        "name": "bambu-lan.pause",
+        "description": "Pause the running job.",
+        "permission": "start",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "printerId": {
+              "type": "string",
+              "description": "Printer id, such as bay-1"
+            }
+          },
+          "required": [
+            "printerId"
+          ]
+        }
+      },
+      {
+        "name": "bambu-lan.resume",
+        "description": "Resume a paused job.",
+        "permission": "start",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "printerId": {
+              "type": "string",
+              "description": "Printer id, such as bay-1"
+            }
+          },
+          "required": [
+            "printerId"
+          ]
+        }
+      },
+      {
+        "name": "bambu-lan.cancel",
+        "description": "Cancel the running job.",
+        "permission": "start",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "printerId": {
+              "type": "string",
+              "description": "Printer id, such as bay-1"
+            }
+          },
+          "required": [
+            "printerId"
+          ]
+        }
+      },
+      {
+        "name": "bambu-lan.gcode",
+        "description": "Send one G-code line to the printer.",
+        "permission": "start",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "printerId": {
+              "type": "string",
+              "description": "Printer id, such as bay-1"
+            },
+            "line": {
+              "type": "string",
+              "maxLength": 200
+            }
+          },
+          "required": [
+            "printerId",
+            "line"
+          ]
+        }
+      }
+    ],
+    "network": [
+      "lan:8883",
+      "lan:990",
+      "lan:322",
+      "lan:1900",
+      "lan:2021"
+    ]
+  },
+  {
+    "id": "moonraker",
+    "name": "Moonraker (Klipper)",
+    "version": "0.1.0",
+    "kind": "printer",
+    "protocols": [
+      "http",
+      "websocket-jsonrpc"
+    ],
+    "capabilities": [
+      "status",
+      "events",
+      "upload",
+      "start",
+      "pause",
+      "resume",
+      "cancel",
+      "camera",
+      "gcode_console"
+    ],
+    "tools": [
+      {
+        "name": "moonraker.status",
+        "description": "Read the normalized status of one printer.",
+        "permission": "read",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "printerId": {
+              "type": "string",
+              "description": "Printer id, such as bay-1"
+            }
+          },
+          "required": [
+            "printerId"
+          ]
+        }
+      },
+      {
+        "name": "moonraker.queue",
+        "description": "Upload a sliced file to the printer without starting it.",
+        "permission": "queue",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "printerId": {
+              "type": "string",
+              "description": "Printer id, such as bay-1"
+            },
+            "file": {
+              "type": "string",
+              "description": "Project file id"
+            }
+          },
+          "required": [
+            "printerId",
+            "file"
+          ]
+        }
+      },
+      {
+        "name": "moonraker.start",
+        "description": "Start an uploaded file. Heats the printer.",
+        "permission": "start",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "printerId": {
+              "type": "string",
+              "description": "Printer id, such as bay-1"
+            },
+            "path": {
+              "type": "string"
+            },
+            "plate": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          "required": [
+            "printerId",
+            "path"
+          ]
+        }
+      },
+      {
+        "name": "moonraker.pause",
+        "description": "Pause the running job.",
+        "permission": "start",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "printerId": {
+              "type": "string",
+              "description": "Printer id, such as bay-1"
+            }
+          },
+          "required": [
+            "printerId"
+          ]
+        }
+      },
+      {
+        "name": "moonraker.resume",
+        "description": "Resume a paused job.",
+        "permission": "start",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "printerId": {
+              "type": "string",
+              "description": "Printer id, such as bay-1"
+            }
+          },
+          "required": [
+            "printerId"
+          ]
+        }
+      },
+      {
+        "name": "moonraker.cancel",
+        "description": "Cancel the running job.",
+        "permission": "start",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "printerId": {
+              "type": "string",
+              "description": "Printer id, such as bay-1"
+            }
+          },
+          "required": [
+            "printerId"
+          ]
+        }
+      },
+      {
+        "name": "moonraker.gcode",
+        "description": "Send one G-code line to the printer.",
+        "permission": "start",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "printerId": {
+              "type": "string",
+              "description": "Printer id, such as bay-1"
+            },
+            "line": {
+              "type": "string",
+              "maxLength": 200
+            }
+          },
+          "required": [
+            "printerId",
+            "line"
+          ]
+        }
+      }
+    ],
+    "network": [
+      "lan:7125",
+      "lan:80",
+      "lan:443"
+    ]
+  },
+  {
+    "id": "prusalink",
+    "name": "PrusaLink",
+    "version": "0.1.0",
+    "kind": "printer",
+    "protocols": [
+      "http"
+    ],
+    "capabilities": [
+      "status",
+      "events",
+      "upload",
+      "start",
+      "pause",
+      "resume",
+      "cancel",
+      "camera"
+    ],
+    "tools": [
+      {
+        "name": "prusalink.status",
+        "description": "Read the normalized status of one printer.",
+        "permission": "read",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "printerId": {
+              "type": "string",
+              "description": "Printer id, such as bay-1"
+            }
+          },
+          "required": [
+            "printerId"
+          ]
+        }
+      },
+      {
+        "name": "prusalink.queue",
+        "description": "Upload a sliced file to the printer without starting it.",
+        "permission": "queue",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "printerId": {
+              "type": "string",
+              "description": "Printer id, such as bay-1"
+            },
+            "file": {
+              "type": "string",
+              "description": "Project file id"
+            }
+          },
+          "required": [
+            "printerId",
+            "file"
+          ]
+        }
+      },
+      {
+        "name": "prusalink.start",
+        "description": "Start an uploaded file. Heats the printer.",
+        "permission": "start",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "printerId": {
+              "type": "string",
+              "description": "Printer id, such as bay-1"
+            },
+            "path": {
+              "type": "string"
+            },
+            "plate": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          "required": [
+            "printerId",
+            "path"
+          ]
+        }
+      },
+      {
+        "name": "prusalink.pause",
+        "description": "Pause the running job.",
+        "permission": "start",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "printerId": {
+              "type": "string",
+              "description": "Printer id, such as bay-1"
+            }
+          },
+          "required": [
+            "printerId"
+          ]
+        }
+      },
+      {
+        "name": "prusalink.resume",
+        "description": "Resume a paused job.",
+        "permission": "start",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "printerId": {
+              "type": "string",
+              "description": "Printer id, such as bay-1"
+            }
+          },
+          "required": [
+            "printerId"
+          ]
+        }
+      },
+      {
+        "name": "prusalink.cancel",
+        "description": "Cancel the running job.",
+        "permission": "start",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "printerId": {
+              "type": "string",
+              "description": "Printer id, such as bay-1"
+            }
+          },
+          "required": [
+            "printerId"
+          ]
+        }
+      }
+    ],
+    "network": [
+      "lan:80",
+      "lan:443"
+    ]
+  },
+  {
+    "id": "octoprint",
+    "name": "OctoPrint",
+    "version": "0.1.0",
+    "kind": "printer",
+    "protocols": [
+      "http",
+      "websocket-sockjs"
+    ],
+    "capabilities": [
+      "status",
+      "events",
+      "upload",
+      "start",
+      "pause",
+      "resume",
+      "cancel",
+      "camera",
+      "gcode_console"
+    ],
+    "tools": [
+      {
+        "name": "octoprint.status",
+        "description": "Read the normalized status of one printer.",
+        "permission": "read",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "printerId": {
+              "type": "string",
+              "description": "Printer id, such as bay-1"
+            }
+          },
+          "required": [
+            "printerId"
+          ]
+        }
+      },
+      {
+        "name": "octoprint.queue",
+        "description": "Upload a sliced file to the printer without starting it.",
+        "permission": "queue",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "printerId": {
+              "type": "string",
+              "description": "Printer id, such as bay-1"
+            },
+            "file": {
+              "type": "string",
+              "description": "Project file id"
+            }
+          },
+          "required": [
+            "printerId",
+            "file"
+          ]
+        }
+      },
+      {
+        "name": "octoprint.start",
+        "description": "Start an uploaded file. Heats the printer.",
+        "permission": "start",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "printerId": {
+              "type": "string",
+              "description": "Printer id, such as bay-1"
+            },
+            "path": {
+              "type": "string"
+            },
+            "plate": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          "required": [
+            "printerId",
+            "path"
+          ]
+        }
+      },
+      {
+        "name": "octoprint.pause",
+        "description": "Pause the running job.",
+        "permission": "start",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "printerId": {
+              "type": "string",
+              "description": "Printer id, such as bay-1"
+            }
+          },
+          "required": [
+            "printerId"
+          ]
+        }
+      },
+      {
+        "name": "octoprint.resume",
+        "description": "Resume a paused job.",
+        "permission": "start",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "printerId": {
+              "type": "string",
+              "description": "Printer id, such as bay-1"
+            }
+          },
+          "required": [
+            "printerId"
+          ]
+        }
+      },
+      {
+        "name": "octoprint.cancel",
+        "description": "Cancel the running job.",
+        "permission": "start",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "printerId": {
+              "type": "string",
+              "description": "Printer id, such as bay-1"
+            }
+          },
+          "required": [
+            "printerId"
+          ]
+        }
+      },
+      {
+        "name": "octoprint.gcode",
+        "description": "Send one G-code line to the printer.",
+        "permission": "start",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "printerId": {
+              "type": "string",
+              "description": "Printer id, such as bay-1"
+            },
+            "line": {
+              "type": "string",
+              "maxLength": 200
+            }
+          },
+          "required": [
+            "printerId",
+            "line"
+          ]
+        }
+      }
+    ],
+    "network": [
+      "lan:5000",
+      "lan:80",
+      "lan:443"
+    ]
+  },
+  {
+    "id": "duet",
+    "name": "Duet (RepRapFirmware)",
+    "version": "0.1.0",
+    "kind": "printer",
+    "protocols": [
+      "http"
+    ],
+    "capabilities": [
+      "status",
+      "events",
+      "upload",
+      "start",
+      "pause",
+      "resume",
+      "cancel",
+      "gcode_console"
+    ],
+    "tools": [
+      {
+        "name": "duet.status",
+        "description": "Read the normalized status of one printer.",
+        "permission": "read",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "printerId": {
+              "type": "string",
+              "description": "Printer id, such as bay-1"
+            }
+          },
+          "required": [
+            "printerId"
+          ]
+        }
+      },
+      {
+        "name": "duet.queue",
+        "description": "Upload a sliced file to the printer without starting it.",
+        "permission": "queue",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "printerId": {
+              "type": "string",
+              "description": "Printer id, such as bay-1"
+            },
+            "file": {
+              "type": "string",
+              "description": "Project file id"
+            }
+          },
+          "required": [
+            "printerId",
+            "file"
+          ]
+        }
+      },
+      {
+        "name": "duet.start",
+        "description": "Start an uploaded file. Heats the printer.",
+        "permission": "start",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "printerId": {
+              "type": "string",
+              "description": "Printer id, such as bay-1"
+            },
+            "path": {
+              "type": "string"
+            },
+            "plate": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          "required": [
+            "printerId",
+            "path"
+          ]
+        }
+      },
+      {
+        "name": "duet.pause",
+        "description": "Pause the running job.",
+        "permission": "start",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "printerId": {
+              "type": "string",
+              "description": "Printer id, such as bay-1"
+            }
+          },
+          "required": [
+            "printerId"
+          ]
+        }
+      },
+      {
+        "name": "duet.resume",
+        "description": "Resume a paused job.",
+        "permission": "start",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "printerId": {
+              "type": "string",
+              "description": "Printer id, such as bay-1"
+            }
+          },
+          "required": [
+            "printerId"
+          ]
+        }
+      },
+      {
+        "name": "duet.cancel",
+        "description": "Cancel the running job.",
+        "permission": "start",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "printerId": {
+              "type": "string",
+              "description": "Printer id, such as bay-1"
+            }
+          },
+          "required": [
+            "printerId"
+          ]
+        }
+      },
+      {
+        "name": "duet.gcode",
+        "description": "Send one G-code line to the printer.",
+        "permission": "start",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "printerId": {
+              "type": "string",
+              "description": "Printer id, such as bay-1"
+            },
+            "line": {
+              "type": "string",
+              "maxLength": 200
+            }
+          },
+          "required": [
+            "printerId",
+            "line"
+          ]
+        }
+      }
+    ],
+    "network": [
+      "lan:80"
+    ]
+  },
+  {
+    "id": "creality",
+    "name": "Creality",
+    "version": "0.1.0",
+    "kind": "printer",
+    "protocols": [
+      "http",
+      "websocket-jsonrpc",
+      "websocket"
+    ],
+    "capabilities": [
+      "status",
+      "events",
+      "upload",
+      "start",
+      "pause",
+      "resume",
+      "cancel",
+      "camera",
+      "gcode_console"
+    ],
+    "tools": [
+      {
+        "name": "creality.status",
+        "description": "Read the normalized status of one printer.",
+        "permission": "read",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "printerId": {
+              "type": "string",
+              "description": "Printer id, such as bay-1"
+            }
+          },
+          "required": [
+            "printerId"
+          ]
+        }
+      },
+      {
+        "name": "creality.queue",
+        "description": "Upload a sliced file to the printer without starting it.",
+        "permission": "queue",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "printerId": {
+              "type": "string",
+              "description": "Printer id, such as bay-1"
+            },
+            "file": {
+              "type": "string",
+              "description": "Project file id"
+            }
+          },
+          "required": [
+            "printerId",
+            "file"
+          ]
+        }
+      },
+      {
+        "name": "creality.start",
+        "description": "Start an uploaded file. Heats the printer.",
+        "permission": "start",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "printerId": {
+              "type": "string",
+              "description": "Printer id, such as bay-1"
+            },
+            "path": {
+              "type": "string"
+            },
+            "plate": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          "required": [
+            "printerId",
+            "path"
+          ]
+        }
+      },
+      {
+        "name": "creality.pause",
+        "description": "Pause the running job.",
+        "permission": "start",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "printerId": {
+              "type": "string",
+              "description": "Printer id, such as bay-1"
+            }
+          },
+          "required": [
+            "printerId"
+          ]
+        }
+      },
+      {
+        "name": "creality.resume",
+        "description": "Resume a paused job.",
+        "permission": "start",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "printerId": {
+              "type": "string",
+              "description": "Printer id, such as bay-1"
+            }
+          },
+          "required": [
+            "printerId"
+          ]
+        }
+      },
+      {
+        "name": "creality.cancel",
+        "description": "Cancel the running job.",
+        "permission": "start",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "printerId": {
+              "type": "string",
+              "description": "Printer id, such as bay-1"
+            }
+          },
+          "required": [
+            "printerId"
+          ]
+        }
+      },
+      {
+        "name": "creality.gcode",
+        "description": "Send one G-code line to the printer.",
+        "permission": "start",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "printerId": {
+              "type": "string",
+              "description": "Printer id, such as bay-1"
+            },
+            "line": {
+              "type": "string",
+              "maxLength": 200
+            }
+          },
+          "required": [
+            "printerId",
+            "line"
+          ]
+        }
+      }
+    ],
+    "network": [
+      "lan:7125",
+      "lan:4408",
+      "lan:9999",
+      "lan:8080",
+      "lan:80"
+    ]
+  },
+  {
+    "id": "elegoo",
+    "name": "Elegoo",
+    "version": "0.1.0",
+    "kind": "printer",
+    "protocols": [
+      "sdcp-websocket",
+      "udp-discovery",
+      "http"
+    ],
+    "capabilities": [
+      "status",
+      "events",
+      "upload",
+      "start",
+      "pause",
+      "resume",
+      "cancel",
+      "camera"
+    ],
+    "tools": [
+      {
+        "name": "elegoo.status",
+        "description": "Read the normalized status of one printer.",
+        "permission": "read",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "printerId": {
+              "type": "string",
+              "description": "Printer id, such as bay-1"
+            }
+          },
+          "required": [
+            "printerId"
+          ]
+        }
+      },
+      {
+        "name": "elegoo.queue",
+        "description": "Upload a sliced file to the printer without starting it.",
+        "permission": "queue",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "printerId": {
+              "type": "string",
+              "description": "Printer id, such as bay-1"
+            },
+            "file": {
+              "type": "string",
+              "description": "Project file id"
+            }
+          },
+          "required": [
+            "printerId",
+            "file"
+          ]
+        }
+      },
+      {
+        "name": "elegoo.start",
+        "description": "Start an uploaded file. Heats the printer.",
+        "permission": "start",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "printerId": {
+              "type": "string",
+              "description": "Printer id, such as bay-1"
+            },
+            "path": {
+              "type": "string"
+            },
+            "plate": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          "required": [
+            "printerId",
+            "path"
+          ]
+        }
+      },
+      {
+        "name": "elegoo.pause",
+        "description": "Pause the running job.",
+        "permission": "start",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "printerId": {
+              "type": "string",
+              "description": "Printer id, such as bay-1"
+            }
+          },
+          "required": [
+            "printerId"
+          ]
+        }
+      },
+      {
+        "name": "elegoo.resume",
+        "description": "Resume a paused job.",
+        "permission": "start",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "printerId": {
+              "type": "string",
+              "description": "Printer id, such as bay-1"
+            }
+          },
+          "required": [
+            "printerId"
+          ]
+        }
+      },
+      {
+        "name": "elegoo.cancel",
+        "description": "Cancel the running job.",
+        "permission": "start",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "printerId": {
+              "type": "string",
+              "description": "Printer id, such as bay-1"
+            }
+          },
+          "required": [
+            "printerId"
+          ]
+        }
+      }
+    ],
+    "network": [
+      "lan:3030",
+      "lan:3000",
+      "lan:7125"
+    ]
+  },
+  {
+    "id": "snapmaker",
+    "name": "Snapmaker",
+    "version": "0.1.0",
+    "kind": "printer",
+    "protocols": [
+      "http",
+      "websocket-jsonrpc"
+    ],
+    "capabilities": [
+      "status",
+      "events",
+      "upload",
+      "start",
+      "pause",
+      "resume",
+      "cancel",
+      "camera",
+      "gcode_console"
+    ],
+    "tools": [
+      {
+        "name": "snapmaker.status",
+        "description": "Read the normalized status of one printer.",
+        "permission": "read",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "printerId": {
+              "type": "string",
+              "description": "Printer id, such as bay-1"
+            }
+          },
+          "required": [
+            "printerId"
+          ]
+        }
+      },
+      {
+        "name": "snapmaker.queue",
+        "description": "Upload a sliced file to the printer without starting it.",
+        "permission": "queue",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "printerId": {
+              "type": "string",
+              "description": "Printer id, such as bay-1"
+            },
+            "file": {
+              "type": "string",
+              "description": "Project file id"
+            }
+          },
+          "required": [
+            "printerId",
+            "file"
+          ]
+        }
+      },
+      {
+        "name": "snapmaker.start",
+        "description": "Start an uploaded file. Heats the printer.",
+        "permission": "start",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "printerId": {
+              "type": "string",
+              "description": "Printer id, such as bay-1"
+            },
+            "path": {
+              "type": "string"
+            },
+            "plate": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          "required": [
+            "printerId",
+            "path"
+          ]
+        }
+      },
+      {
+        "name": "snapmaker.pause",
+        "description": "Pause the running job.",
+        "permission": "start",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "printerId": {
+              "type": "string",
+              "description": "Printer id, such as bay-1"
+            }
+          },
+          "required": [
+            "printerId"
+          ]
+        }
+      },
+      {
+        "name": "snapmaker.resume",
+        "description": "Resume a paused job.",
+        "permission": "start",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "printerId": {
+              "type": "string",
+              "description": "Printer id, such as bay-1"
+            }
+          },
+          "required": [
+            "printerId"
+          ]
+        }
+      },
+      {
+        "name": "snapmaker.cancel",
+        "description": "Cancel the running job.",
+        "permission": "start",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "printerId": {
+              "type": "string",
+              "description": "Printer id, such as bay-1"
+            }
+          },
+          "required": [
+            "printerId"
+          ]
+        }
+      },
+      {
+        "name": "snapmaker.gcode",
+        "description": "Send one G-code line to the printer.",
+        "permission": "start",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "printerId": {
+              "type": "string",
+              "description": "Printer id, such as bay-1"
+            },
+            "line": {
+              "type": "string",
+              "maxLength": 200
+            }
+          },
+          "required": [
+            "printerId",
+            "line"
+          ]
+        }
+      }
+    ],
+    "network": [
+      "lan:80",
+      "lan:8080",
+      "lan:7125"
+    ]
+  },
+  {
+    "id": "spoolman",
+    "name": "Spoolman",
+    "version": "0.1.0",
+    "kind": "inventory",
+    "protocols": [
+      "http"
+    ],
+    "capabilities": [],
+    "network": [
+      "lan:7912",
+      "lan:8000"
+    ],
+    "tools": [
+      {
+        "name": "spoolman.list_spools",
+        "description": "List spools with material, color and remaining weight.",
+        "permission": "read",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "material": {
+              "type": "string"
+            },
+            "includeArchived": {
+              "type": "boolean"
+            }
+          },
+          "required": []
+        }
+      },
+      {
+        "name": "spoolman.get_spool",
+        "description": "Read one spool.",
+        "permission": "read",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "id"
+          ]
+        }
+      },
+      {
+        "name": "spoolman.record_usage",
+        "description": "Subtract used filament from a spool.",
+        "permission": "profile",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "integer"
+            },
+            "grams": {
+              "type": "number",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "id",
+            "grams"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "id": "home-assistant",
+    "name": "Home Assistant",
+    "version": "0.1.0",
+    "kind": "home",
+    "protocols": [
+      "http",
+      "websocket"
+    ],
+    "capabilities": [],
+    "network": [
+      "lan:8123"
+    ],
+    "tools": [
+      {
+        "name": "home-assistant.list_entities",
+        "description": "List switches, sensors and lights, such as printer power plugs and enclosure fans.",
+        "permission": "read",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "domain": {
+              "type": "string"
+            }
+          },
+          "required": []
+        }
+      },
+      {
+        "name": "home-assistant.call_service",
+        "description": "Call a Home Assistant service, such as turning a printer power plug on or off.",
+        "permission": "start",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "domain": {
+              "type": "string"
+            },
+            "service": {
+              "type": "string"
+            },
+            "entityId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "domain",
+            "service",
+            "entityId"
+          ]
+        }
+      }
+    ]
+  }
+]

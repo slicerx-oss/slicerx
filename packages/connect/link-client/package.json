@@ -1,0 +1,23 @@
+{
+  "name": "@slicerx/link-client",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "node --test src/index.test.ts src/camera.test.ts src/hub.test.ts src/cpace.test.ts"
+  },
+  "dependencies": {
+    "@noble/curves": "2.4.0",
+    "@noble/hashes": "2.4.0",
+    "@slicerx/contracts": "workspace:*"
+  },
+  "devDependencies": {
+    "@slicerx/mock-printers": "workspace:*",
+    "@types/node": "24.19.0"
+  },
+  "license": "Apache-2.0"
+}

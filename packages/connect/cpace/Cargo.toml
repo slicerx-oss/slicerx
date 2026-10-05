@@ -1,0 +1,24 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (C) 2026 The SlicerX contributors
+[package]
+name = "sx-cpace"
+description = "CPace (CFRG draft, ristretto255 and SHA-512) for pairing with a short code, over curve25519-dalek."
+version.workspace = true
+edition.workspace = true
+license = "Apache-2.0"
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+# The group (ristretto255: element derivation, encoding, scalar multiplication) comes from dalek; this
+# crate only lays out the draft's hash inputs.
+curve25519-dalek = "=5.0.0"
+hmac = "=0.13.0"
+sha2 = "=0.11.0"
+# Scalars and session keys are wiped when a run ends.
+zeroize = "=1.9.0"
+
+[dev-dependencies]
+serde_json = "=1.0.151"

@@ -1,0 +1,13 @@
+# Context for packages/connect/link/deploy/Dockerfile: sources only.
+**/node_modules
+**/target
+.git
+.locks
+examples
+apps/web/dist
+editions/slicerx/apps/mobile
+knowledge
+design
+**/*.stl
+**/*.3mf
+!apps/desktop/src-tauri/src/testdata/*.3mf

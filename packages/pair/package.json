@@ -1,0 +1,32 @@
+{
+  "name": "@slicerx/pair",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "Apache-2.0",
+  "exports": {
+    ".": "./src/index.ts",
+    "./host": "./src/host.ts",
+    "./client": "./src/client.ts",
+    "./relay": "./src/relay.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@noble/ciphers": "2.4.0",
+    "@noble/curves": "2.4.0",
+    "@noble/hashes": "2.4.0",
+    "@slicerx/contracts": "workspace:*",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@slicerx/fleet-sim": "workspace:*",
+    "@slicerx/link-client": "workspace:*",
+    "@slicerx/mock-printers": "workspace:*",
+    "@slicerx/pilot": "workspace:*",
+    "@types/node": "24.19.0",
+    "vitest": "5.0.2"
+  }
+}

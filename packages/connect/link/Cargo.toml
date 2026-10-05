@@ -1,0 +1,52 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (C) 2026 The SlicerX contributors
+[package]
+name = "sx-link"
+version.workspace = true
+edition.workspace = true
+license = "Apache-2.0"
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+base64 = "=0.23.1"
+# The pairing session's AEAD (XChaCha20-Poly1305) and key exchange (X25519), as in packages/pair.
+chacha20poly1305 = { version = "=0.11.0", default-features = false, features = ["alloc"] }
+futures = "=0.3.34"
+getrandom = "=0.4.3"
+if-addrs = "=0.15.0"
+ring = "=0.17.14"
+reqwest = { version = "=0.13.5", default-features = false, features = ["json", "rustls-no-provider", "stream"] }
+rustls = { version = "=0.23.45", default-features = false, features = ["ring", "std", "tls12"] }
+# The relay connection for remote access (wss), checked against the system's trust store.
+rustls-platform-verifier = "=0.7.1"
+serde = { version = "=1.0.229", features = ["derive"] }
+serde_json = "=1.0.151"
+sha2 = "=0.11.0"
+socket2 = { version = "=0.6.5", features = ["all"] }
+sx-connect.workspace = true
+# The code exchange for pairing (CPace), shared with sx-watch and pinned to the TypeScript client.
+sx-cpace = { path = "../cpace" }
+sx-permit.workspace = true
+# One still from H.264-only cameras through the OS decoder (or Cisco's binary on Linux).
+sx-stills = { path = "../stills" }
+tokio = { version = "=1.53.1", features = ["rt-multi-thread", "net", "macros", "time", "sync", "io-util", "signal"] }
+tokio-rustls = { version = "=0.26.6", default-features = false, features = ["ring", "tls12"] }
+tokio-tungstenite = "=0.30.0"
+x25519-dalek = { version = "=3.0.0", features = ["static_secrets"] }
+curve25519-dalek = "=5.0.0"
+# Direct WebRTC video from the hub to a phone away from home (sans-IO, pure Rust crypto).
+str0m = { version = "=0.24.0", default-features = false, features = ["rust-crypto"] }
+# Shrinks camera JPEGs for the remote 1 frame a second fallback (pure Rust decoder).
+zune-jpeg = "=0.5.15"
+
+[dev-dependencies]
+# Tests only: encodes H.264 test frames (the shipped decoder is the OS one, through sx-stills).
+openh264 = { version = "=0.9.8" }
+sha2 = "=0.11.0"
+# The relay for remote access tests.
+sx-relay = { path = "../relay" }
+tokio = { version = "=1.53.1", features = ["process", "test-util"] }
+tokio-tungstenite = "=0.30.0"
