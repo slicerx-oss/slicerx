@@ -1,0 +1,73 @@
+{
+  "name": "@slicerx/viewport",
+  "version": "0.1.0",
+  "private": false,
+  "description": "Framework-free three.js viewport for SlicerX: models on a printer bed, painting and modeling tools, and SXPV toolpath previews",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/slicerx-oss/slicerx.git",
+    "directory": "packages/ui/viewport"
+  },
+  "homepage": "https://github.com/slicerx-oss/slicerx/tree/main/packages/ui/viewport#readme",
+  "keywords": [
+    "3d-printing",
+    "slicer",
+    "gcode",
+    "three",
+    "viewport",
+    "toolpath"
+  ],
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts",
+    "./palette": "./src/palette.ts",
+    "./summary": "./src/summary.ts"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "THEMING.md",
+    "CHANGELOG.md",
+    "LICENSE-APACHE",
+    "NOTICE"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "import": "./dist/index.js"
+      },
+      "./palette": {
+        "types": "./dist/palette.d.ts",
+        "import": "./dist/palette.js"
+      },
+      "./summary": {
+        "types": "./dist/summary.d.ts",
+        "import": "./dist/summary.js"
+      },
+      "./package.json": "./package.json"
+    }
+  },
+  "scripts": {
+    "dev": "vite demo --port 5190",
+    "build": "vite build -c vite.lib.config.mjs && node ../../../scripts/emit-types.mjs . index=src/index.ts palette=src/palette.ts summary=src/summary.ts",
+    "build:demo": "vite build demo",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "prepack": "pnpm run build"
+  },
+  "dependencies": {
+    "@types/three": "0.186.0",
+    "three": "0.186.1"
+  },
+  "devDependencies": {
+    "@slicerx/contracts": "workspace:*",
+    "playwright-core": "1.63.0",
+    "typescript": "5.9.3",
+    "vite": "8.3.1",
+    "vitest": "5.0.2"
+  }
+}

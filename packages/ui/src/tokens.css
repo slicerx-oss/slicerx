@@ -1,0 +1,126 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+/* Copyright (C) 2026 The SlicerX contributors */
+/* Nocturne, the default theme: the Dracula palette pushed one step deeper, with the purple to
+   pink filament gradient as the signature. Every color, space, radius, type and motion value in
+   the app and the site comes from here. Themes override these variables (see THEMING.md). */
+:root {
+  color-scheme: dark;
+
+  /* surfaces, darkest first */
+  --ink-0: #282a36;
+  --ink-1: #2c2e3c;
+  --ink-2: #2f3241;
+  --ink-3: #343746;
+  --ink-4: #3c3f50;
+  --line: #44475a;
+  --line-soft: #3c3e4f;
+
+  /* text */
+  --fg: #f8f8f2;
+  --muted: #9aa4c1;
+  --dim: #8f9abb;
+
+  /* meaning: purple accent and focus, pink creators and Vault, cyan progress and live data,
+     green ok, orange attention, red error, yellow only for string literals in code views */
+  --purple: #bd93f9;
+  --pink: #ff79c6;
+  --cyan: #8be9fd;
+  --green: #50fa7b;
+  --orange: #fab570;
+  --yellow: #f1fa8c;
+  --red: #ff5555;
+  /* the viewport gizmo's axis colors, shared with the X, Y and Z number fields */
+  --axis-x: #ff6b6b;
+  --axis-y: #51cf66;
+  --axis-z: #4dabf7;
+  --grad-from: var(--purple);
+  --grad-to: var(--pink);
+  --grad-angle: 135deg;
+  /* the gradient belongs to the layered X mark and at most one hero moment per surface */
+  --grad: linear-gradient(var(--grad-angle), var(--grad-from), var(--grad-to));
+  --on-grad: #1e2029;
+
+  /* tints for chips, selection and glows */
+  --purple-tint: color-mix(in srgb, var(--purple) 14%, transparent);
+  --purple-ring: color-mix(in srgb, var(--purple) 45%, transparent);
+  /* interactive accent: selection, focus, primary action. Look and feel presets repoint it. */
+  --accent: var(--purple);
+  --accent-tint: color-mix(in srgb, var(--accent) 14%, transparent);
+  --accent-ring: color-mix(in srgb, var(--accent) 45%, transparent);
+  /* keyboard focus, one treatment everywhere (:focus-visible only). A control gets --focus-ring and --focus-offset as an outline, which
+     follows its own radius; inside a scroll pane or a tight group use --focus-offset-inset so the ring is not clipped. A field draws the
+     border in --accent plus --focus-field, on the field itself and not its inner input. */
+  --focus-ring: 2px solid var(--accent);
+  --focus-offset: 2px;
+  --focus-offset-inset: -2px;
+  --focus-field: 0 0 0 3px var(--accent-tint);
+  --pink-tint: color-mix(in srgb, var(--pink) 13%, transparent);
+  --cyan-tint: color-mix(in srgb, var(--cyan) 12%, transparent);
+  --green-tint: color-mix(in srgb, var(--green) 12%, transparent);
+  --orange-tint: color-mix(in srgb, var(--orange) 13%, transparent);
+  --red-tint: color-mix(in srgb, var(--red) 13%, transparent);
+  --overlay: color-mix(in srgb, var(--ink-1) 92%, transparent);
+
+  /* type */
+  --f-display: "Unbounded Variable", "Unbounded", "Arial Black", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --f-body: "Hanken Grotesk Variable", "Hanken Grotesk", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --f-mono: "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --fs-xs: 11px;
+  --fs-sm: 12px;
+  --fs-md: 13px;
+  --fs-body: 14px;
+  --fs-lg: 16px;
+  --fs-xl: 20px;
+  --fs-title: 28px;
+  --lh-tight: 1.2;
+  --lh-body: 1.5;
+
+  /* 8px grid */
+  --s-1: 4px;
+  --s-2: 8px;
+  --s-3: 12px;
+  --s-4: 16px;
+  --s-5: 24px;
+  --s-6: 32px;
+  --s-7: 48px;
+  --s-8: 64px;
+  --gutter: 16px;
+
+  /* radius */
+  --r-xs: 4px;
+  --r-sm: 6px;
+  --r-md: 10px;
+  --r-lg: 16px;
+  --r-pill: 999px;
+
+  /* control heights */
+  --h-sm: 28px;
+  --h-md: 34px;
+  --h-lg: 44px;
+  --h-bar: 52px;
+  --h-status: 28px;
+  --w-rail: 48px;
+  --w-side: 264px;
+
+  /* elevation and motion */
+  --shadow-color: rgb(0 0 0 / 70%);
+  /* Flat vs lifted: --shadow-float and --shadow-pop (and --lift-glass) are only for surfaces that float over the page: dialogs, popovers, menus, toasts, HUD and overlay bars, the command bar, floating panels. Cards and rows that belong to a page (explanations, checklists, setup steps, settings sections, empty states, summaries) stay flat: a soft border and a light background. Icons beside text are plain, with no tinted chip behind them, about 24 to 28 px, in accent or fg. Links show readable text, never a raw URL. Card text stays short, one or two plain sentences; lists, fine print and full explanations go in a tooltip behind a small "Details" link (see .fra-more in first-run/agreement.css). */
+  /* lifted surfaces: a thin top highlight, a tight contact shadow, a soft key shadow and a wide ambient one */
+  --lift-edge: inset 0 1px 0 rgb(255 255 255 / 7%), inset 0 0 0 1px rgb(255 255 255 / 2%);
+  --shadow-float: 0 1px 2px rgb(0 0 0 / 35%), 0 4px 10px -2px rgb(0 0 0 / 40%), 0 12px 24px -10px var(--shadow-color), var(--lift-edge);
+  --shadow-pop: 0 1px 2px rgb(0 0 0 / 32%), 0 6px 14px -4px rgb(0 0 0 / 28%), 0 18px 36px -14px color-mix(in srgb, var(--shadow-color) 50%, transparent), var(--lift-edge);
+  --lift-glass: blur(18px) saturate(150%);
+  --t-fast: 120ms;
+  --t-base: 160ms;
+  --t-slow: 260ms;
+  --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+
+  /* stacking */
+  --z-hud: 2;
+  --z-rail-peek: 20;
+  --z-menu: 40;
+  --z-toast: 50;
+  --z-dialog: 60;
+  --z-tip: 65;
+  --z-palette: 70;
+}

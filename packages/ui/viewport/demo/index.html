@@ -1,0 +1,68 @@
+<!doctype html>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- Copyright (C) 2026 The SlicerX contributors -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Viewport demo</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="./demo.css">
+</head>
+<body>
+<main class="stage">
+  <canvas id="vp"></canvas>
+  <div class="hud" id="hud" aria-live="polite"></div>
+</main>
+<aside class="panel" aria-label="Viewport controls">
+  <h1>Viewport</h1>
+  <fieldset>
+    <legend>Workspace</legend>
+    <label><input type="radio" name="mode" value="prepare" checked> Prepare</label>
+    <label><input type="radio" name="mode" value="preview"> Preview</label>
+  </fieldset>
+  <fieldset id="prep">
+    <legend>Look</legend>
+    <select id="look" aria-label="Render mode">
+      <option value="studio">Studio</option><option value="clay">Clay</option><option value="xray">X-ray</option>
+      <option value="overhang">Overhang</option><option value="filament">Filament</option>
+    </select>
+    <label for="oh">Overhang <output id="oh-v">55 deg</output></label>
+    <input id="oh" type="range" min="20" max="80" value="55">
+    <label><input id="print" type="checkbox" checked> Print look</label>
+    <label for="tool">Tool</label>
+    <select id="tool"><option value="select">Select</option><option value="move">Move</option><option value="rotate">Rotate</option></select>
+    <div class="row"><button id="arrange" type="button">Arrange</button></div>
+  </fieldset>
+  <fieldset>
+    <legend>View</legend>
+    <div class="row">
+      <button type="button" data-view="iso">Iso</button><button type="button" data-view="top">Top</button>
+      <button type="button" data-view="front">Front</button><button type="button" data-view="fit">Fit</button>
+    </div>
+  </fieldset>
+  <fieldset id="prev">
+    <legend>Preview</legend>
+    <select id="cm" aria-label="Color by">
+      <option value="feature">Feature</option><option value="tool">Filament</option><option value="speed">Speed</option>
+      <option value="flow">Flow</option><option value="layerTime">Layer time</option>
+    </select>
+    <label for="hi">Top layer <output id="hi-v"></output></label>
+    <input id="hi" type="range" min="0" max="1" value="1">
+    <label for="lo">Bottom layer <output id="lo-v"></output></label>
+    <input id="lo" type="range" min="0" max="1" value="0">
+    <label for="mv">Moves <output id="mv-v">all</output></label>
+    <input id="mv" type="range" min="0" max="1000" value="1000">
+    <label><input id="trav" type="checkbox"> Travels</label>
+    <div class="row"><button id="play" type="button">Build up</button></div>
+    <ul id="legend" class="legend"></ul>
+  </fieldset>
+  <fieldset>
+    <legend>Benchmark</legend>
+    <div class="row"><button id="orbit" type="button">Orbit 10 s</button></div>
+    <pre id="stats"></pre>
+  </fieldset>
+</aside>
+<script type="module" src="./main.ts"></script>
+</body>
+</html>

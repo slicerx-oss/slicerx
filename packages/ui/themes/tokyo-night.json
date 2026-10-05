@@ -1,0 +1,42 @@
+{
+  "$schema": "./schema.json",
+  "version": 1,
+  "id": "tokyo-night",
+  "name": "Tokyo Night",
+  "isDark": true,
+  "background": "#1a1b26",
+  "surface": "#222430",
+  "surfaceAlt": "#292b39",
+  "border": "#353747",
+  "text": "#c0caf5",
+  "muted": "#565f89",
+  "accent": "#7aa2f7",
+  "selection": "#283457",
+  "ansi": [
+    "#15161e",
+    "#f7768e",
+    "#9ece6a",
+    "#e0af68",
+    "#7aa2f7",
+    "#bb9af7",
+    "#7dcfff",
+    "#a9b1d6",
+    "#414868",
+    "#f7768e",
+    "#9ece6a",
+    "#e0af68",
+    "#7aa2f7",
+    "#bb9af7",
+    "#7dcfff",
+    "#c0caf5"
+  ],
+  "scene": {
+    "top": "#222430",
+    "bottom": "#15161e",
+    "glow": "#2d2f3e",
+    "plate": "#2d2f3e",
+    "grid": "#808ab4",
+    "edge": "#0e0f15"
+  },
+  "credit": "Palette from Tokyo Night by enkia (MIT)."
+}

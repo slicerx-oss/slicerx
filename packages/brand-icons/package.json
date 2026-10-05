@@ -1,0 +1,25 @@
+{
+  "name": "@slicerx/brand-icons",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "peerDependencies": {
+    "react": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "vitest": "5.0.2"
+  },
+  "license": "Apache-2.0 AND CC0-1.0 AND MIT AND GPL-3.0-only",
+  "description": "Third-party printer, ecosystem and AI client logos for \"works with\" use. Each logo keeps its own license; see README.md and TRADEMARKS.md."
+}

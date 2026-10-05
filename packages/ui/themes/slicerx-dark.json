@@ -1,0 +1,42 @@
+{
+  "$schema": "./schema.json",
+  "version": 1,
+  "id": "slicerx-dark",
+  "name": "SlicerX dark",
+  "isDark": true,
+  "background": "#282a36",
+  "surface": "#2f3241",
+  "surfaceAlt": "#343746",
+  "border": "#44475a",
+  "text": "#f8f8f2",
+  "muted": "#6272a4",
+  "accent": "#bd93f9",
+  "selection": "#44475a",
+  "ansi": [
+    "#21222c",
+    "#ff5555",
+    "#50fa7b",
+    "#f1fa8c",
+    "#bd93f9",
+    "#ff79c6",
+    "#8be9fd",
+    "#f8f8f2",
+    "#6272a4",
+    "#ff6e6e",
+    "#69ff94",
+    "#ffffa5",
+    "#d6acff",
+    "#ff92df",
+    "#a4ffff",
+    "#ffffff"
+  ],
+  "scene": {
+    "top": "#2f3241",
+    "bottom": "#20222b",
+    "glow": "#3c3f50",
+    "plate": "#3c3f50",
+    "grid": "#9aa4c1",
+    "edge": "#16171e"
+  },
+  "credit": "Based on the Dracula palette (MIT, draculatheme.com)."
+}
