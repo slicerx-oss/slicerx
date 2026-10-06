@@ -146,6 +146,26 @@ fn temperatures_above_the_limits_are_lowered_and_reported() {
 }
 
 #[test]
+fn carbon_fiber_on_the_stock_stainless_nozzle_is_reported() {
+    let mut c = base_config();
+    c["required_nozzle_HRC"] = json!(["40"]);
+    c["nozzle_hrc"] = json!(0);
+    c["nozzle_type"] = json!(["stainless_steel"]);
+    let r = run(&request(c.clone(), json!({}), [0.0; 3])).unwrap();
+    assert!(
+        r.report
+            .warnings
+            .iter()
+            .any(|w| w.message.contains("HRC 40") && w.message.contains("HRC 20")),
+        "{:?}",
+        r.report.warnings
+    );
+    c["nozzle_type"] = json!(["hardened_steel"]);
+    let r = run(&request(c, json!({}), [0.0; 3])).unwrap();
+    assert!(!r.report.warnings.iter().any(|w| w.message.contains("HRC")));
+}
+
+#[test]
 fn the_plate_type_bed_temperature_is_held_to_the_bed_limit() {
     let mut c = base_config();
     c["curr_bed_type"] = json!("Textured PEI Plate");

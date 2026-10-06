@@ -421,6 +421,9 @@ fn cmd_slice(args: &[String]) -> Res<ExitCode> {
     for w in &out.warnings {
         eprintln!("warning: {}", w.message);
     }
+    if let Some(i) = sx_core::preflight::nozzle_hardness(&config, &stats.filament_mm) {
+        eprintln!("warning: {}", i.message);
+    }
     eprintln!(
         "{} layers, {:.1} ms, {} bytes of G-code, {:.0} s estimated, filament {:?} mm, {} tool changes, file name {file_name}",
         out.layer_count,

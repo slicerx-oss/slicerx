@@ -642,32 +642,75 @@ fn plate_temps(cfg: &mut PrintConfig) -> Vec<Issue> {
     issues
 }
 
-/// Material and hardware rules: a nozzle hard enough for the filament, and a PTFE-lined hotend
-/// kept below the temperature where the liner breaks down.
+/// Hardness of a nozzle type in HRC, 0 when unknown: the table Orca falls back to in
+/// `Print::get_hrc_by_nozzle_type` (Print.cpp).
+fn nozzle_type_hrc(t: &str) -> f64 {
+    match t {
+        "hardened_steel" => 55.0,
+        "stainless_steel" => 20.0,
+        "tungsten_carbide" => 85.0,
+        "brass" => 2.0,
+        _ => 0.0,
+    }
+}
+
+/// Abrasive filament on a soft nozzle, checked after slicing against the filaments the print uses
+/// (`filament_mm`, per slot; empty counts every filament). Orca only warns (GCodeProcessor.cpp,
+/// `process_filaments`, the `NOZZLE_HRC_CHECKER` warning): the nozzle's hardness is `nozzle_hrc`, or
+/// when that is 0 the hardness of its `nozzle_type`, and a nozzle still at 0 is not checked. With
+/// several nozzles the softest one counts.
+pub fn nozzle_hardness(cfg: &PrintConfig, filament_mm: &[f64]) -> Option<Issue> {
+    let used = |i: usize| filament_mm.is_empty() || filament_mm.get(i).is_some_and(|mm| *mm > 0.0);
+    let required = match cfg.raw.get("required_nozzle_HRC") {
+        Some(Value::Array(a)) => a
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| used(*i))
+            .filter_map(|(_, v)| number(v))
+            .fold(0.0, f64::max),
+        Some(v) if used(0) => number(v).unwrap_or(0.0),
+        _ => 0.0,
+    };
+    if required <= 0.0 {
+        return None;
+    }
+    let by_type = match cfg.raw.get("nozzle_type") {
+        Some(Value::Array(a)) => a
+            .iter()
+            .filter_map(Value::as_str)
+            .map(nozzle_type_hrc)
+            .reduce(f64::min),
+        Some(Value::String(s)) => Some(nozzle_type_hrc(s)),
+        _ => None,
+    };
+    let hrc = match raw_number(cfg, "nozzle_hrc") {
+        Some(h) if h > 0.0 => Some(h),
+        Some(_) => Some(by_type.unwrap_or(0.0)),
+        None => by_type,
+    };
+    match hrc {
+        Some(h) if h >= required || h <= 0.0 => None,
+        Some(h) => Some(Issue::new(
+            "nozzle_too_soft",
+            Severity::Warning,
+            format!(
+                "the filament needs a nozzle of hardness HRC {required} or more and this printer has HRC {h}; fit a hardened nozzle or change filament"
+            ),
+        )),
+        None => Some(Issue::new(
+            "nozzle_hardness_unknown",
+            Severity::Warning,
+            format!(
+                "the filament needs a nozzle of hardness HRC {required} or more and the printer's nozzle is not known; check it before printing"
+            ),
+        )),
+    }
+}
+
+/// Material and hardware rules: a PTFE-lined hotend kept below the temperature where the liner
+/// breaks down. The nozzle hardness waits for the slice, see [`nozzle_hardness`].
 fn check_materials(cfg: &PrintConfig, limits: &Limits) -> Vec<Issue> {
     let mut issues = Vec::new();
-    // Abrasive filament on a soft nozzle. Orca only warns (GCodeProcessor.cpp, `process_filaments`, the
-    // `NOZZLE_HRC_CHECKER` warning), and only when the printer's nozzle hardness is set (not 0) and below
-    // the filament's; a printer that reports 0 gets no warning at all.
-    let required = cfg.raw.get("required_nozzle_HRC").map_or(0.0, |v| match v {
-        Value::Array(a) => a.iter().filter_map(number).fold(0.0, f64::max),
-        v => number(v).unwrap_or(0.0),
-    });
-    if required > 0.0 {
-        match raw_number(cfg, "nozzle_hrc") {
-            Some(h) if h >= required || h == 0.0 => {}
-            Some(h) => issues.push(Issue::new(
-                "nozzle_too_soft",
-                Severity::Warning,
-                format!("the filament needs a nozzle of hardness HRC {required} or more and this printer has HRC {h}; fit a hardened nozzle or change filament"),
-            )),
-            None => issues.push(Issue::new(
-                "nozzle_hardness_unknown",
-                Severity::Warning,
-                format!("the filament needs a nozzle of hardness HRC {required} or more and the printer's nozzle is not known; check it before printing"),
-            )),
-        }
-    }
     // PTFE-lined hotends.
     if limits.ptfe_lined == Some(true) {
         let hottest = cfg
@@ -946,6 +989,40 @@ mod tests {
     }
 
     #[test]
+    fn the_nozzle_hardness_check_follows_the_nozzle_type_and_the_filaments_used() {
+        let code = |v: Value, used: &[f64]| nozzle_hardness(&cfg(v), used).map(|i| i.code);
+        // Hardness 0 with no nozzle type is not checked, as in Orca; a known softer nozzle warns.
+        assert_eq!(
+            code(json!({ "required_nozzle_HRC": ["40"], "nozzle_hrc": 0 }), &[]),
+            None
+        );
+        assert_eq!(
+            code(json!({ "required_nozzle_HRC": ["40"], "nozzle_hrc": 20 }), &[]),
+            Some("nozzle_too_soft")
+        );
+        assert_eq!(
+            code(json!({ "required_nozzle_HRC": ["40"] }), &[]),
+            Some("nozzle_hardness_unknown")
+        );
+        assert_eq!(
+            code(json!({ "required_nozzle_HRC": ["40"], "nozzle_hrc": 55 }), &[]),
+            None
+        );
+        // The stock Bambu Lab profiles leave nozzle_hrc at 0: the hardness comes from the nozzle type.
+        let p1s = |req: Value| json!({ "required_nozzle_HRC": req, "nozzle_hrc": 0, "nozzle_type": ["stainless_steel"] });
+        assert_eq!(code(p1s(json!(["40"])), &[]), Some("nozzle_too_soft"));
+        assert_eq!(code(p1s(json!(["3"])), &[]), None);
+        let hardened = json!({ "required_nozzle_HRC": ["40"], "nozzle_type": "hardened_steel" });
+        assert_eq!(code(hardened, &[]), None);
+        // Only filaments the print uses count: a carbon fiber spool loaded in slot 2 and not printed is fine.
+        assert_eq!(code(p1s(json!(["3", "40"])), &[1200.0, 0.0]), None);
+        assert_eq!(
+            code(p1s(json!(["3", "40"])), &[1200.0, 35.0]),
+            Some("nozzle_too_soft")
+        );
+    }
+
+    #[test]
     fn plate_type_sets_the_bed_temperature_and_material_rules_apply() {
         let mut c = cfg(
             json!({ "curr_bed_type": "Cool Plate", "cool_plate_temp": ["35"], "hot_plate_temp": ["60"], "cool_plate_temp_initial_layer": ["40"] }),
@@ -960,17 +1037,6 @@ mod tests {
             clamp_config(&mut c, &Limits::default())[0].code,
             "plate_unsupported"
         );
-        // A printer that reports hardness 0 is not checked, as in Orca; a known softer nozzle warns.
-        let mut c = cfg(json!({ "required_nozzle_HRC": ["40"], "nozzle_hrc": 0 }));
-        assert!(clamp_config(&mut c, &Limits::default()).is_empty());
-        let mut c = cfg(json!({ "required_nozzle_HRC": ["40"], "nozzle_hrc": 20 }));
-        let i = clamp_config(&mut c, &Limits::default());
-        assert!(!blocks(&i) && i[0].code == "nozzle_too_soft");
-        let mut c = cfg(json!({ "required_nozzle_HRC": ["40"] }));
-        let i = clamp_config(&mut c, &Limits::default());
-        assert!(!blocks(&i) && i[0].code == "nozzle_hardness_unknown");
-        let mut c = cfg(json!({ "required_nozzle_HRC": ["40"], "nozzle_hrc": 55 }));
-        assert!(clamp_config(&mut c, &Limits::default()).is_empty());
         let mut c = PrintConfig {
             nozzle_temperature: vec![270.0],
             ..PrintConfig::default()
