@@ -16,7 +16,7 @@ import { listen } from './http-util.ts'
 import { MockMachine } from './machine.ts'
 import { MOCK_MOONRAKER_LOGIN, startMoonraker, type MoonrakerControl } from './moonraker.ts'
 import { startOctoPrint } from './octoprint.ts'
-import { startSnapmakerLuban } from './snapmaker.ts'
+import { startSnapmakerLuban, type LubanExtra } from './snapmaker.ts'
 import { startPrusaLink, type PrusaStorage } from './prusalink.ts'
 import { MOCK_HA_TOKEN, startHomeAssistant, startSpoolman } from './services.ts'
 
@@ -96,7 +96,12 @@ export async function startMocks(opts: StartOptions = {}): Promise<RunningMocks>
     ports['creality-http'] = c.ports.http
     ports['creality-camera'] = c.ports.camera
   }
-  if (only.includes('snapmaker-luban')) add('snapmaker-luban', await startSnapmakerLuban(machine('snapmaker-luban')))
+  let lubanExtra: LubanExtra | undefined
+  if (only.includes('snapmaker-luban')) {
+    const l = await startSnapmakerLuban(machine('snapmaker-luban'))
+    lubanExtra = l.extra
+    add('snapmaker-luban', l)
+  }
   let cloudOffer: ((spec: import('./cloud.ts').OfferSpec) => string) | undefined
   if (only.includes('cloud')) {
     const c = await startCloud(log)
@@ -211,6 +216,16 @@ export async function startMocks(opts: StartOptions = {}): Promise<RunningMocks>
       const b = req.json() as { remainingMemory?: number }
       if (b.remainingMemory !== undefined) elegooExtra.remainingMemory = b.remainingMemory
       return { json: { remainingMemory: elegooExtra.remainingMemory } }
+    }
+    // POST /snapmaker {drop?, decline?, forget?}: the Snapmaker 2.0 fake drops the next `drop` status
+    // requests with a 401, answers pairing prompts with a refusal, or forgets every token.
+    if (req.path === '/snapmaker' && req.method === 'POST') {
+      if (!lubanExtra) return { status: 404 }
+      const b = req.json() as { drop?: number; decline?: boolean; forget?: boolean }
+      if (b.drop !== undefined) lubanExtra.drop = b.drop
+      if (b.decline !== undefined) lubanExtra.decline = b.decline
+      if (b.forget) lubanExtra.forget()
+      return { json: { drop: lubanExtra.drop, decline: lubanExtra.decline } }
     }
     // POST /prusalink {storage}: what the PrusaLink fake lists as writable (`usb`, `local` or `none`).
     if (req.path === '/prusalink' && req.method === 'POST') {

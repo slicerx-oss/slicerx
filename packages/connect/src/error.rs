@@ -55,6 +55,10 @@ pub enum LoginNeed {
     KeyWrong,
     /// The server wants a user login (`force_logins`, Fluidd accounts, Snapmaker U1 Require Login).
     LoginRequired,
+    /// The printer forgot its pairing (a Snapmaker 2.0 loses its tokens when powered off).
+    PairAgain,
+    /// The request was turned down on the printer's own screen.
+    Declined,
 }
 
 impl LoginNeed {
@@ -67,6 +71,10 @@ impl LoginNeed {
             LoginNeed::LoginRequired => {
                 "asks for a user login: enter its API key, which works with logins required"
             }
+            LoginNeed::PairAgain => {
+                "forgot its pairing with this computer (it was turned off): pair it again on its touchscreen"
+            }
+            LoginNeed::Declined => "turned the connection down on its touchscreen",
         }
     }
 }

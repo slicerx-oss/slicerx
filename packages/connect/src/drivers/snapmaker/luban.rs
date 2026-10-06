@@ -3,6 +3,7 @@
 //! Snapmaker 2.0 (A150, A250, A350) over the HTTP API on port 8080 that Snapmaker Luban uses.
 //! Pairing needs a tap on the printer's touchscreen; see [`LubanClient::authorize`]. See README.md
 //! for sources and what is untested on hardware.
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
@@ -13,13 +14,13 @@ use reqwest::{Client, Response};
 use serde_json::Value;
 
 use crate::PrinterSession;
-use crate::error::{Error, Result};
+use crate::error::{Error, LoginNeed, Result};
 use crate::gate::{Action, ApprovalGate, ApprovalToken, params};
 use crate::http::{self, f64_at, str_at};
 use crate::poll::poll_events;
 use crate::types::{
-    Capabilities, Capability, Image, JobFile, PrinterConfig, PrinterEvent, PrinterState, PrinterStatus,
-    RemoteFile, Secrets, StartOptions, Temp, now_iso, secs,
+    Capabilities, Capability, ExtruderInfo, Image, JobFile, Motion, PrinterConfig, PrinterEvent,
+    PrinterHardware, PrinterState, PrinterStatus, RemoteFile, Secrets, StartOptions, Temp, now_iso, secs,
 };
 
 /// Tool head types Luban reports in `headType` that print: single extruder and dual extruder.
@@ -32,13 +33,40 @@ pub(crate) struct LubanClient {
     base: String,
 }
 
+/// Rejections in a row after which the stored token counts as invalid. The A350 drops idle sessions
+/// with a 401 now and then (ifnull/homeassistant-snapmaker PR 1), and a token it forgot keeps
+/// failing for minutes.
+const MAX_REJECTIONS: u32 = 10;
+
+/// The least time between two reconnects, so a printer that keeps refusing is not asked in a loop.
+const RECONNECT_GAP: Duration = Duration::from_secs(10);
+
 struct Session {
-    api: LubanClient,
-    token: String,
+    state: Arc<State>,
     dual: bool,
+    /// The machine the printer names in its connect reply (`series`), such as A350.
+    series: Option<String>,
     gate: Arc<dyn ApprovalGate>,
     /// The file most recently sent with `prepare_print`, the only one `start_print` can start.
     prepared: Mutex<Option<String>>,
+}
+
+/// What the session and its event poll share: the token, which a reconnect replaces.
+struct State {
+    api: LubanClient,
+    token: Mutex<String>,
+    /// Status requests carry the token in the body: set when the query form was refused and the body
+    /// form got in (newer notes say body only).
+    token_in_body: AtomicBool,
+    rejections: AtomicU32,
+    last_reconnect: Mutex<Option<tokio::time::Instant>>,
+}
+
+/// The `POST /api/v1/connect` reply.
+struct Connected {
+    token: String,
+    head: i64,
+    series: Option<String>,
 }
 
 impl LubanClient {
@@ -55,8 +83,8 @@ impl LubanClient {
     }
 
     /// `POST /api/v1/connect`. Sends the stored token, or nothing for a first pairing. Returns the
-    /// token the printer answers with and its head type.
-    async fn connect(&self, token: &str) -> Result<(String, i64)> {
+    /// token the printer answers with, its head type and its series.
+    async fn connect(&self, token: &str) -> Result<Connected> {
         let body = if token.is_empty() {
             Vec::new()
         } else {
@@ -74,18 +102,39 @@ impl LubanClient {
             .get("token")
             .and_then(Value::as_str)
             .ok_or_else(|| Error::protocol(self.id(), "connect reply without token"))?;
-        Ok((
-            new.to_owned(),
-            v.get("headType").and_then(Value::as_i64).unwrap_or(1),
-        ))
+        Ok(Connected {
+            token: new.to_owned(),
+            head: v.get("headType").and_then(Value::as_i64).unwrap_or(1),
+            series: v
+                .get("series")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(str::to_owned),
+        })
+    }
+
+    /// `POST /api/v1/disconnect`, which also clears a pairing prompt left on the touchscreen.
+    async fn disconnect(&self, token: &str) {
+        let _ = self
+            .client
+            .post(format!("{}/api/v1/disconnect", self.base))
+            .form(&[("token", token)])
+            .timeout(Duration::from_secs(3))
+            .send()
+            .await;
     }
 
     /// `GET /api/v1/status`. `None` means 204: the printer is waiting for the tap on its screen.
-    async fn status_raw(&self, token: &str) -> Result<Option<Value>> {
-        let rb = self
-            .client
-            .get(format!("{}/api/v1/status", self.base))
-            .query(&[("token", token)]);
+    /// Luban sends the token in the query; `in_body` sends it as a form body instead. Error text never
+    /// carries the URL, so the token stays out of logs.
+    async fn status_raw(&self, token: &str, in_body: bool) -> Result<Option<Value>> {
+        let rb = self.client.get(format!("{}/api/v1/status", self.base));
+        let rb = if in_body {
+            rb.form(&[("token", token)])
+        } else {
+            rb.query(&[("token", token)])
+        };
         let resp: Response = rb
             .send()
             .await
@@ -106,17 +155,32 @@ impl LubanClient {
         }
     }
 
-    /// Pairing: asks for a token and waits until the user confirms on the touchscreen.
+    /// Pairing: asks for a token and waits until the user confirms on the touchscreen. A refusal on
+    /// the screen (401) stops at once; a timeout clears the prompt with `disconnect`, so it does not
+    /// stay on the screen. Polled every second, as Luban does.
     pub(crate) async fn authorize(cfg: &PrinterConfig, timeout: Duration) -> Result<Option<String>> {
         let api = Self::new(cfg)?;
-        let (token, head) = api.connect("").await?;
-        Self::check_head(head)?;
+        let c = api.connect("").await?;
+        Self::check_head(c.head)?;
+        let token = c.token;
         let deadline = tokio::time::Instant::now() + timeout;
         loop {
-            if api.status_raw(&token).await?.is_some() {
-                return Ok(Some(token));
+            match api.status_raw(&token, false).await {
+                Ok(Some(_)) => return Ok(Some(token)),
+                Ok(None) => {}
+                Err(Error::Auth { .. }) => {
+                    return Err(Error::Login {
+                        printer: cfg.id.clone(),
+                        need: LoginNeed::Declined,
+                    });
+                }
+                Err(e) => {
+                    api.disconnect(&token).await;
+                    return Err(e);
+                }
             }
             if tokio::time::Instant::now() >= deadline {
+                api.disconnect(&token).await;
                 return Err(Error::Auth {
                     printer: cfg.id.clone(),
                 });
@@ -139,48 +203,137 @@ impl LubanClient {
             .ok_or_else(|| Error::Auth {
                 printer: cfg.id.clone(),
             })?;
-        let (token, head) = api.connect(&stored).await?;
-        Self::check_head(head)?;
-        if api.status_raw(&token).await?.is_none() {
-            // Still waiting for the tap, or the printer forgot the token.
-            return Err(Error::Auth {
-                printer: cfg.id.clone(),
-            });
+        let c = api.connect(&stored).await?;
+        Self::check_head(c.head)?;
+        let state = State {
+            api,
+            token: Mutex::new(c.token.clone()),
+            token_in_body: AtomicBool::new(false),
+            rejections: AtomicU32::new(0),
+            last_reconnect: Mutex::new(None),
+        };
+        match state.status_once(&c.token).await {
+            Ok(Some(_)) => {}
+            // The printer raised a pairing prompt: it forgot the token (powered off). Clear the
+            // prompt rather than leave it waiting for a tap nobody asked for.
+            Ok(None) => {
+                state.api.disconnect(&c.token).await;
+                return Err(Error::Login {
+                    printer: cfg.id.clone(),
+                    need: LoginNeed::PairAgain,
+                });
+            }
+            Err(e) => return Err(e),
         }
         Ok(Box::new(Session {
-            api,
-            token,
-            dual: head == DUAL_EXTRUDER,
+            state: Arc::new(state),
+            dual: c.head == DUAL_EXTRUDER,
+            series: c.series,
             gate,
             prepared: Mutex::new(None),
         }))
     }
 }
 
-impl Session {
+impl State {
     fn id(&self) -> &str {
         self.api.id()
     }
 
-    async fn fetch_status(&self) -> Result<PrinterStatus> {
-        let v = self
-            .api
-            .status_raw(&self.token)
-            .await?
-            .ok_or_else(|| Error::Auth {
+    fn token(&self) -> String {
+        self.token.lock().unwrap_or_else(PoisonError::into_inner).clone()
+    }
+
+    /// One status request with `token`, in the query, or in the body once the query was refused and
+    /// the body got in.
+    async fn status_once(&self, token: &str) -> Result<Option<Value>> {
+        let in_body = self.token_in_body.load(Ordering::Relaxed);
+        match self.api.status_raw(token, in_body).await {
+            Err(Error::Auth { .. }) if !in_body => {
+                let r = self.api.status_raw(token, true).await;
+                if matches!(r, Ok(Some(_))) {
+                    self.token_in_body.store(true, Ordering::Relaxed);
+                }
+                r
+            }
+            r => r,
+        }
+    }
+
+    /// The status, with a dropped session (401, or 204 from an approved token) reconnected with the
+    /// stored token and asked once more. A token the printer forgot (it raises the pairing prompt
+    /// again) clears the prompt and says to pair again; ten rejections in a row mean the same.
+    async fn status_value(&self) -> Result<Value> {
+        match self.status_once(&self.token()).await {
+            Ok(Some(v)) => {
+                self.rejections.store(0, Ordering::Relaxed);
+                return Ok(v);
+            }
+            Ok(None) | Err(Error::Auth { .. }) => {}
+            Err(e) => return Err(e),
+        }
+        let n = self.rejections.fetch_add(1, Ordering::Relaxed) + 1;
+        if n >= MAX_REJECTIONS {
+            return Err(Error::Login {
                 printer: self.id().to_owned(),
-            })?;
+                need: LoginNeed::PairAgain,
+            });
+        }
+        let now = tokio::time::Instant::now();
+        {
+            let mut last = self.last_reconnect.lock().unwrap_or_else(PoisonError::into_inner);
+            if last.is_some_and(|t| now.duration_since(t) < RECONNECT_GAP) {
+                return Err(Error::unreachable(
+                    self.id(),
+                    "the printer dropped the session; reconnecting",
+                ));
+            }
+            *last = Some(now);
+        }
+        let c = self.api.connect(&self.token()).await?;
+        match self.status_once(&c.token).await {
+            Ok(Some(v)) => {
+                *self.token.lock().unwrap_or_else(PoisonError::into_inner) = c.token;
+                self.rejections.store(0, Ordering::Relaxed);
+                Ok(v)
+            }
+            Ok(None) => {
+                self.api.disconnect(&c.token).await;
+                Err(Error::Login {
+                    printer: self.id().to_owned(),
+                    need: LoginNeed::PairAgain,
+                })
+            }
+            // Still refused: counted, and tried again after the gap.
+            Err(Error::Auth { .. }) => Err(Error::unreachable(
+                self.id(),
+                "the printer dropped the session; reconnecting",
+            )),
+            Err(e) => Err(e),
+        }
+    }
+}
+
+impl Session {
+    fn id(&self) -> &str {
+        self.state.id()
+    }
+
+    async fn fetch_status(&self) -> Result<PrinterStatus> {
+        let v = self.state.status_value().await?;
         Ok(parse_status(self.id(), &v, self.dual))
     }
 
     async fn post(&self, path: &str, extra: &[(&str, &str)]) -> Result<()> {
-        let mut form = vec![("token", self.token.as_str())];
+        let token = self.state.token();
+        let mut form = vec![("token", token.as_str())];
         form.extend_from_slice(extra);
         http::send(
             self.id(),
-            self.api
+            self.state
+                .api
                 .client
-                .post(format!("{}{path}", self.api.base))
+                .post(format!("{}{path}", self.state.api.base))
                 .form(&form),
         )
         .await?;
@@ -208,9 +361,17 @@ pub(crate) fn parse_status(id: &str, v: &Value, dual: bool) -> PrinterStatus {
         .and_then(Value::as_str)
         .filter(|f| !f.is_empty());
     // Luban reports progress as a fraction; a percentage is accepted too.
+    // Without a progress, the G-code line counter (Luban's getGcodePrintingInfo reads the same).
+    let lines = match (f64_at(v, &["currentLine"]), f64_at(v, &["totalLines"])) {
+        (Some(c), Some(t)) if t > 0.0 => Some(c / t),
+        _ => None,
+    };
     let progress = f64_at(v, &["progress"])
         .map(|p| if p > 1.0 { p / 100.0 } else { p })
+        .or(lines)
         .map(|p| p.clamp(0.0, 1.0));
+    let mut stopped = false;
+    // IDLE, RUNNING and PAUSED are the documented values; STOPPED is read as a stop, in case.
     let state = match str_at(v, &["status"])
         .unwrap_or("IDLE")
         .to_ascii_uppercase()
@@ -218,6 +379,10 @@ pub(crate) fn parse_status(id: &str, v: &Value, dual: bool) -> PrinterStatus {
     {
         "RUNNING" => PrinterState::Printing,
         "PAUSED" => PrinterState::Paused,
+        "STOPPED" => {
+            stopped = true;
+            PrinterState::Idle
+        }
         _ if file.is_some() && progress.is_some_and(|p| p >= 1.0) => PrinterState::Finished,
         _ => PrinterState::Idle,
     };
@@ -240,6 +405,8 @@ pub(crate) fn parse_status(id: &str, v: &Value, dual: bool) -> PrinterStatus {
         Some("Enclosure door is open".to_owned())
     } else if v.get("isFilamentOut").and_then(Value::as_bool) == Some(true) {
         Some("Filament ran out".to_owned())
+    } else if stopped {
+        Some("The print was stopped".to_owned())
     } else {
         None
     };
@@ -282,31 +449,33 @@ impl PrinterSession for Session {
     }
 
     fn events(&self) -> BoxStream<'static, PrinterEvent> {
-        // The session owns a token and a client; the event stream gets its own copies.
-        let api = LubanClient {
-            cfg: self.api.cfg.clone(),
-            client: self.api.client.clone(),
-            base: self.api.base.clone(),
-        };
-        let (token, dual) = (self.token.clone(), self.dual);
+        let (state, dual) = (self.state.clone(), self.dual);
         // The touchscreen firmware is slow; poll every two seconds unless the config says otherwise.
-        let interval = Duration::from_millis(self.api.cfg.poll_ms.unwrap_or(2000).max(50));
+        let interval = Duration::from_millis(self.state.api.cfg.poll_ms.unwrap_or(2000).max(50));
         let id = self.id().to_owned();
-        let api = Arc::new(api);
         poll_events(
             id.clone(),
             interval,
             Arc::new(move || {
-                let (api, token, id) = (api.clone(), token.clone(), id.clone());
+                let (state, id) = (state.clone(), id.clone());
                 async move {
-                    let v = api
-                        .status_raw(&token)
-                        .await?
-                        .ok_or_else(|| Error::Auth { printer: id.clone() })?;
+                    let v = state.status_value().await?;
                     Ok(parse_status(&id, &v, dual))
                 }
             }),
         )
+    }
+
+    /// The machine from the connect reply's `series` and one or two nozzles from the head type.
+    /// Serial and firmware are not in the replies.
+    async fn hardware(&self) -> Result<Option<PrinterHardware>> {
+        Ok(Some(luban_hardware(self.series.as_deref(), self.dual)))
+    }
+
+    /// Head position and whether it is homed, from the status (`x`, `y`, `z`, `homed`).
+    async fn motion(&self) -> Result<Motion> {
+        let v = self.state.status_value().await?;
+        Ok(luban_motion(&v))
     }
 
     /// Sends the file with `prepare_print`, which also loads it on the printer's screen. Only the
@@ -322,7 +491,7 @@ impl PrinterSession for Session {
             return Err(Error::protocol(self.id(), "unsafe file name"));
         }
         let form = Form::new()
-            .text("token", self.token.clone())
+            .text("token", self.state.token())
             .text("type", "3DP")
             .part(
                 "file",
@@ -330,9 +499,10 @@ impl PrinterSession for Session {
             );
         http::send(
             self.id(),
-            self.api
+            self.state
+                .api
                 .client
-                .post(format!("{}/api/v1/prepare_print", self.api.base))
+                .post(format!("{}/api/v1/prepare_print", self.state.api.base))
                 .multipart(form),
         )
         .await?;
@@ -411,6 +581,41 @@ impl PrinterSession for Session {
     }
 }
 
+/// The model name in a connect reply's `series`: A150, A250 or A350 when it names one, else as given.
+pub(crate) fn model_from_series(series: &str) -> String {
+    let up = series.to_ascii_uppercase();
+    ["A150", "A250", "A350"]
+        .into_iter()
+        .find(|m| up.contains(m))
+        .map_or_else(|| series.to_owned(), str::to_owned)
+}
+
+pub(crate) fn luban_hardware(series: Option<&str>, dual: bool) -> PrinterHardware {
+    let tools: u8 = if dual { 2 } else { 1 };
+    PrinterHardware {
+        model: series.map(model_from_series),
+        extruders: (0..tools)
+            .map(|tool| ExtruderInfo {
+                tool,
+                ..ExtruderInfo::default()
+            })
+            .collect(),
+        ..PrinterHardware::default()
+    }
+}
+
+pub(crate) fn luban_motion(v: &Value) -> Motion {
+    let pos = (f64_at(v, &["x"]), f64_at(v, &["y"]), f64_at(v, &["z"]));
+    Motion {
+        homed: v.get("homed").and_then(Value::as_bool).map(|h| [h; 3]),
+        position: match pos {
+            (Some(x), Some(y), Some(z)) => Some([x, y, z]),
+            _ => None,
+        },
+        ..Motion::default()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -448,5 +653,25 @@ mod tests {
             true,
         );
         assert_eq!(dual.nozzles.len(), 2);
+        let stopped = parse_status("x", &json!({ "status": "STOPPED" }), false);
+        assert_eq!(stopped.state, PrinterState::Idle);
+        assert_eq!(stopped.message.as_deref(), Some("The print was stopped"));
+        let by_lines = parse_status(
+            "x",
+            &json!({ "status": "RUNNING", "fileName": "a", "currentLine": 250, "totalLines": 1000 }),
+            false,
+        );
+        assert_eq!(by_lines.progress, Some(0.25));
+    }
+
+    #[test]
+    fn hardware_and_motion() {
+        let h = luban_hardware(Some("A350"), true);
+        assert_eq!(h.model.as_deref(), Some("A350"));
+        assert_eq!(h.extruders.len(), 2);
+        assert_eq!(model_from_series("Snapmaker 2.0 a250"), "A250");
+        let m = luban_motion(&json!({ "x": 1.0, "y": 2.0, "z": 3.5, "homed": true }));
+        assert_eq!(m.position, Some([1.0, 2.0, 3.5]));
+        assert_eq!(m.homed, Some([true; 3]));
     }
 }

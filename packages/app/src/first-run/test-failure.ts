@@ -32,7 +32,7 @@ export function failureKind(o: TestOutcome): FailureKind {
   return 'other'
 }
 
-/** The words for a refused sign-in when the printer said why (Moonraker). */
+/** The words for a refused sign-in when the printer said why (Moonraker, and printers paired on their own screen). */
 const NEED_COPY: Record<AuthNeed, { title: string; body: string; tips: string[] }> = {
   not_trusted: {
     title: 'The printer doesn\'t trust this computer.',
@@ -48,6 +48,16 @@ const NEED_COPY: Record<AuthNeed, { title: string; body: string; tips: string[] 
     title: 'The printer asks for a user login.',
     body: 'Logins are required on this printer (Fluidd or Mainsail accounts, or Require Login on a Snapmaker U1). Enter its API key instead, which works with logins on, then try once more.',
     tips: ['From a computer that is signed in, curl http://PRINTER_IP:7125/access/api_key shows the key.'],
+  },
+  pair_again: {
+    title: 'The printer forgot this computer.',
+    body: 'It loses its pairing when it is turned off. Pair it again, then tap Yes on its touchscreen within a minute.',
+    tips: [],
+  },
+  declined: {
+    title: 'The connection was turned down on the printer.',
+    body: 'Pair again, and tap Yes or Allow on the printer\'s screen when it asks.',
+    tips: [],
   },
 }
 
