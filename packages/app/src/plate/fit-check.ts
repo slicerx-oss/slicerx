@@ -6,25 +6,16 @@
 // different slots touch on purpose (a multi-color object), parts on one slot that touch were
 // meant to move.
 import { useEffect } from 'react'
-import { fitCheck, gapFromHoleTolerance, type FitGap, type FitReport } from '../geom/cad'
+import { fitCheck, type FitGap, type FitReport } from '../geom/cad'
 import { toGeom } from '../geom/client'
-import { measuredHoleClearance, tuneContext } from '../calibration/tuned'
-import { resolveSlots } from '../filament/slots'
+import { clearanceFor } from './clearance'
 import { resolveConfig } from '../adapters/settings'
 import { get, useApp, type PlateEntry } from '../state/store'
 import { keepFits, setFit } from './fit-state'
 
-/**
- * The smallest side-by-side gap the printer keeps open, per side: half the clearance the hole tolerance test
- * measured for this filament, printer and nozzle (the first used slot that has one), else half the nozzle.
- */
+/** The smallest side-by-side gap the printer keeps open, per side: the fit clearance (`clearance.ts`). */
 export function minGapFor(s: ReturnType<typeof get>): number {
-  const { printerId, nozzleMm } = tuneContext(s)
-  for (const slot of resolveSlots(s)) {
-    const measured = measuredHoleClearance(s.userPresets, slot, printerId, nozzleMm)
-    if (measured !== undefined) return gapFromHoleTolerance(measured)
-  }
-  return Math.max(0.1, nozzleMm / 2)
+  return clearanceFor(s).mm
 }
 
 export function describeGap(g: FitGap, partNames: readonly string[], layerHeightMm: number): string {

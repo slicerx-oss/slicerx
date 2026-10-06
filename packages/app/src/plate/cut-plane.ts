@@ -6,6 +6,8 @@
 // is kept through the point of it nearest the object's center.
 import { createStore, useStore } from 'zustand'
 import type { Vec3 } from './transform'
+import type { get } from '../state/store'
+import { clearanceFor } from './clearance'
 
 export interface CutPlane {
   objectId: string
@@ -25,6 +27,8 @@ export interface CutConnectors {
   diameterMm: number
   depthMm: number
   toleranceMm: number
+  /** The tolerance was typed; until then it is the fit clearance (`connectorTolerance`). */
+  toleranceSet?: boolean
   /** Where pins and dowels go, on the plane in bed coordinates (mm); empty places them automatically. */
   points: Vec3[]
   /** A click on the plane in the view adds a connector there, or takes away the one it lands on. */
@@ -32,6 +36,11 @@ export interface CutConnectors {
 }
 
 export const NO_CONNECTORS: CutConnectors = { kind: 'none', diameterMm: 5, depthMm: 6, toleranceMm: 0.2, points: [], placing: false }
+
+/** The connectors' tolerance: as typed, or the fit clearance from the hole test (half the nozzle without one). */
+export function connectorTolerance(c: Pick<CutConnectors, 'toleranceMm' | 'toleranceSet'>, s: ReturnType<typeof get>): number {
+  return c.toleranceSet ? c.toleranceMm : clearanceFor(s).mm
+}
 
 export const cutStore = createStore<{ plane: CutPlane | null; keep: CutKeep; connectors: CutConnectors }>()(() => ({ plane: null, keep: 'both', connectors: NO_CONNECTORS }))
 
