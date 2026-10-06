@@ -1250,6 +1250,14 @@ impl SliceSession {
             .collect();
         slots.sort_unstable();
         slots.dedup();
+        // A vase layer is one outline in one filament; Orca refuses an object of several (`Print::validate`).
+        if crate::spiral::enabled(config) && slots.len() > 1 {
+            return Err(Error::Config {
+                key: "spiral_mode",
+                reason: "spiral vase prints one filament; remove the painted colors or the second filament, or turn off spiral vase"
+                    .to_owned(),
+            });
+        }
         let tool_count = slots.last().copied().unwrap_or(1);
         let (top_shell, bottom_shell) = config.shell_layers(config.layer_height.max(0.01));
         let (tool_order, any_top, within_top) = plan_tools(
