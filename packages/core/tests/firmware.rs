@@ -42,6 +42,11 @@ fn base_config() -> Value {
 
 /// Two copies of the reference part, centered on (70, 128) and (186, 128).
 fn two_objects(config: Value, options: Value) -> SliceRun {
+    two_objects_result(config, options).unwrap()
+}
+
+/// [`two_objects`], or the error the request gives.
+fn two_objects_result(config: Value, options: Value) -> api::Result<SliceRun> {
     let m = mesh();
     let (lo, hi) = m.bounds().unwrap();
     let at = |cx: f64, cy: f64| {
@@ -64,7 +69,7 @@ fn two_objects(config: Value, options: Value) -> SliceRun {
         "options": options,
     }))
     .unwrap();
-    common::run_request(&req, &move |_: &str| Ok(m.clone())).unwrap()
+    common::run_request(&req, &move |_: &str| Ok(m.clone()))
 }
 
 fn text(r: &SliceRun) -> String {
@@ -1189,6 +1194,26 @@ fn absolute_extrusion_survives_custom_gcode_that_switches_to_relative() {
         "absolute {absolute} mm, relative {relative} mm"
     );
     assert!(most < 5.0, "one move pushes {most} mm");
+}
+
+/// Spiral vase prints one outline per layer, the largest, so a second object printed layer by layer lost every wall
+/// above its base. Orca refuses that plate (`Print::validate`) and asks for print by object; so does the engine.
+#[test]
+fn spiral_vase_with_two_objects_needs_print_by_object() {
+    let mut c = base_config();
+    for (k, v) in [
+        ("spiral_mode", json!(true)),
+        ("wall_loops", json!(1)),
+        ("top_shell_layers", json!(0)),
+        ("sparse_infill_density", json!(0)),
+    ] {
+        c[k] = v;
+    }
+    let err = two_objects_result(c, json!({}))
+        .err()
+        .map(|e| e.to_string())
+        .unwrap_or_default();
+    assert!(err.contains("spiral_mode") && err.contains("by object"), "{err}");
 }
 
 /// Every `gcode_flavor` Orca 2.4.2 offers writes its own dialect (`GCodeWriter`: preamble, temperatures, fan,
