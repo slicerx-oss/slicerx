@@ -2,7 +2,8 @@
 // Copyright (C) 2026 The SlicerX contributors
 //! The print watch: `sx-watch` runs beside the app as a sidecar and reads camera frames from the hub on this
 //! computer. The release build puts the program next to the app's executable and the local model
-//! (`sx-watch-siglip2.onnx`) in the resources folder. Without the program or the model nothing starts.
+//! (`sx-watch-siglip2.onnx`) in the resources folder. Without the program or the model nothing starts, and
+//! nothing starts on Intel Macs, where ONNX Runtime has no build and the bundled watch is arm64 only.
 
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
@@ -19,6 +20,9 @@ fn exe_name() -> &'static str {
 
 /// The sidecar and the model, when this build has them.
 pub fn locate(exe_dir: Option<PathBuf>, resources: Option<PathBuf>) -> Option<(PathBuf, PathBuf)> {
+    if cfg!(all(target_os = "macos", target_arch = "x86_64")) {
+        return None;
+    }
     let program = exe_dir.map(|d| d.join(exe_name())).filter(|p| p.is_file())?;
     let model = resources
         .iter()
@@ -74,6 +78,7 @@ mod tests {
     use super::*;
 
     #[test]
+    #[cfg(not(all(target_os = "macos", target_arch = "x86_64")))]
     fn nothing_starts_without_both_the_program_and_the_model() {
         let d = std::env::temp_dir().join(format!("sx-watch-find-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&d);

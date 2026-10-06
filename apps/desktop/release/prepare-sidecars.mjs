@@ -39,16 +39,15 @@ if (haveModel && process.env.SX_WATCH_MODEL_SHA256) {
   if (sum !== process.env.SX_WATCH_MODEL_SHA256.toLowerCase()) throw new Error('The watch model does not match SX_WATCH_MODEL_SHA256')
 }
 
-// Without the model the watch is not bundled, so it is not built either. (ONNX Runtime ships no x86_64 macOS binary,
-// so a universal build with the model cannot link the watch for Intel yet.)
+// Without the model the watch is not bundled, so it is not built either. ONNX Runtime ships no x86_64 macOS binary,
+// so a universal build carries an arm64 watch, and the app leaves it off on Intel Macs.
 if (haveModel) {
   const exe = target.includes('windows') ? '.exe' : ''
   mkdirSync(join(tauri, 'binaries'), { recursive: true })
   const built = (triple) => join(resolve(repo, process.env.CARGO_TARGET_DIR ?? 'target'), triple, 'release', `sx-watch${exe}`)
   if (target === 'universal-apple-darwin') {
-    const triples = ['aarch64-apple-darwin', 'x86_64-apple-darwin']
-    for (const t of triples) run('cargo', ['build', '--release', '-p', 'sx-watch', '--target', t])
-    run('lipo', ['-create', ...triples.map(built), '-output', join(tauri, 'binaries', `sx-watch-${target}`)])
+    run('cargo', ['build', '--release', '-p', 'sx-watch', '--target', 'aarch64-apple-darwin'])
+    copyFileSync(built('aarch64-apple-darwin'), join(tauri, 'binaries', `sx-watch-${target}`))
   } else {
     run('cargo', ['build', '--release', '-p', 'sx-watch', '--target', target])
     copyFileSync(built(target), join(tauri, 'binaries', `sx-watch-${target}${exe}`))
