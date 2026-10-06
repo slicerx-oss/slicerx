@@ -2,6 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 // Reads the CAD history parts of a project (docs/cad-history.md, "Storage"), written by
 // history-file.ts. Untrusted: a bad step or mesh drops that object's history, never the project.
+import { HISTORY_FILE_VERSION } from './history-file'
 import { followField, type Follow, type History, type HistoryMesh, type Step, type StepParams } from '../cad/history/model'
 import { BIN_VERSION, MAGIC } from './history-file'
 
@@ -59,6 +60,9 @@ function readFollows(f: unknown): Pick<Step, 'follow'> {
 }
 
 /** Whether stored params have the fields the app reads; the engine checks the rest on replay. */
+/** A face key (absent, or a whole number below 2^52). */
+const keyOk = (v: unknown) => v === undefined || (Number.isInteger(v) && (v as number) > 0 && (v as number) < 2 ** 52)
+
 /** A feature pattern (cad/pattern.ts): its kind and the numbers that kind needs. */
 function patternOk(v: unknown): boolean {
   if (!obj(v)) return false
@@ -77,7 +81,7 @@ function patternOk(v: unknown): boolean {
 function paramsOk(p: Record<string, unknown>): boolean {
   switch (p['op']) {
     case 'face.push':
-      return vec3(p['at']) && vec3(p['normal']) && isNum(p['distanceMm'])
+      return vec3(p['at']) && vec3(p['normal']) && isNum(p['distanceMm']) && keyOk(p['faceKey'])
     case 'shape.extrude':
       return obj(p['shape']) && typeof p['shape']['type'] === 'string' && obj(p['spec']) && isNum(p['spec']['distanceMm']) && frameOk(p['frame']) && (p['font'] === undefined || typeof p['font'] === 'string') && (p['pattern'] === undefined || patternOk(p['pattern']))
     case 'sketch.revolve':
@@ -101,7 +105,7 @@ function paramsOk(p: Record<string, unknown>): boolean {
     case 'hole.apply':
       return obj(p['hole']) && vec3(p['hole']['entry']) && vec3(p['hole']['axis']) && isNum(p['hole']['diameterMm']) && isNum(p['hole']['depthMm']) && typeof p['hole']['through'] === 'boolean' && obj(p['spec']) && isNum(p['spec']['diameterMm']) && typeof p['label'] === 'string'
     case 'shell':
-      return Array.isArray(p['open']) && p['open'].length <= 64 && p['open'].every((o: unknown) => obj(o) && vec3(o['at']) && vec3(o['normal'])) && isNum(p['wallMm'])
+      return Array.isArray(p['open']) && p['open'].length <= 64 && p['open'].every((o: unknown) => obj(o) && vec3(o['at']) && vec3(o['normal']) && keyOk(o['key'])) && isNum(p['wallMm'])
     case 'thread.apply':
       return obj(p['thread']) && vec3(p['thread']['start']) && vec3(p['thread']['axis']) && isNum(p['thread']['diameterMm']) && isNum(p['thread']['lengthMm']) && typeof p['thread']['internal'] === 'boolean' && typeof p['thread']['openEnd'] === 'boolean' && obj(p['spec']) && typeof p['spec']['size'] === 'string' && isNum(p['spec']['clearanceMm']) && typeof p['label'] === 'string'
     default:
@@ -154,7 +158,7 @@ export function parseHistories(files: ReadonlyMap<string, Uint8Array>, objectIds
   } catch {
     return out
   }
-  if (!obj(j) || j['version'] !== 1 || !Array.isArray(j['objects'])) return out
+  if (!obj(j) || (j['version'] !== 1 && j['version'] !== HISTORY_FILE_VERSION) || !Array.isArray(j['objects'])) return out
   for (const o of j['objects']) {
     if (!obj(o) || typeof o['object'] !== 'string' || !objectIds.has(o['object']) || out.has(o['object'])) continue
     try {
@@ -165,4 +169,22 @@ export function parseHistories(files: ReadonlyMap<string, Uint8Array>, objectIds
     }
   }
   return out
+}
+
+/**
+ * The sentence to show when the project's histories come from a newer SlicerX than this one reads: the objects
+ * open, without their history. Null when there is nothing to say.
+ */
+export function historyNewer(files: ReadonlyMap<string, Uint8Array>): string | null {
+  const bytes = files.get('Metadata/slicerx_history.json')
+  if (!bytes) return null
+  try {
+    const v = (JSON.parse(new TextDecoder().decode(bytes)) as { version?: unknown }).version
+    if (typeof v === 'number' && v > HISTORY_FILE_VERSION) {
+      return `This project's CAD history was saved by a newer SlicerX (history version ${v}). Its objects open without their history; update SlicerX to edit it.`
+    }
+  } catch {
+    // A damaged part opens without histories, as before.
+  }
+  return null
 }

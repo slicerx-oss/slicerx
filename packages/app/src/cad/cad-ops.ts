@@ -8,7 +8,7 @@ import type { MeshHandle, MeshPart } from '@slicerx/contracts'
 import { arrayCopies, arrayMerged, extrudeShape, revolveSketch, type ArraySpec, type ExtrudeReport, type ExtrudeSpec, type FaceFrame, type Feature, type FreeShape, type Measurement, type MeshResult, type Placement, type Polygon, type RevolveRequest, type Shape, type Vec2, type Vec3 } from '../geom/cad'
 import { fromGeom, toGeom, type GeomMesh } from '../geom/client'
 import { bake } from '../plate/mesh-ops'
-import { bodyHistory, historyField, rememberFont, withStep } from './history/record'
+import { bodyHistory, historyField, rememberFont, reserveStepId, withStep } from './history/record'
 import type { StepParams } from './history/model'
 import { sourceId } from '../plate/object-settings'
 import { bounds, compose, identity, type Mat4 } from '../plate/transform'
@@ -69,6 +69,7 @@ export interface ExtrudeInput {
 export async function applyExtrude(host: Loader, input: ExtrudeInput): Promise<{ message: string; warn: boolean }> {
   const operation = input.spec.operation ?? 'new'
   const target = targetOf(input.target, operation)
+  reserveStepId()
   const r = await extrudeShape({
     frame: input.frame,
     shape: input.shape,
@@ -102,6 +103,7 @@ export async function applyRevolve(host: Loader, input: RevolveInput): Promise<{
   const operation = input.operation ?? 'new'
   const target = targetOf(input.target, operation)
   const { target: _t, name, ...req } = input
+  reserveStepId()
   const r = await revolveSketch({ ...req, ...(target ? { target: { mesh: toGeom(target.part), transform: target.entry.transform } } : {}) })
   return land(host, r, operation, input.target, name, revolveParams(input))
 }
@@ -196,6 +198,7 @@ export async function applyArray(host: Loader, objectId: string, spec: ArraySpec
   const e = get().plate.find((p) => p.id === objectId)
   if (!e) throw new Error('Select an object first.')
   if (merge) {
+    reserveStepId()
     let count = 0
     const parts: MeshPart[] = []
     for (const p of e.parts) {

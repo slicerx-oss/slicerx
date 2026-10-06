@@ -52,6 +52,12 @@ export async function wasmGeom(recorded?: Recorded[]) {
   }
 }
 
+const saltless = (r: unknown): unknown => {
+  if (r === null || typeof r !== 'object' || Array.isArray(r)) return r
+  const { keySalt: _salt, ...rest } = r as Record<string, unknown>
+  return rest
+}
+
 function replayGeom(file: string) {
   const replies = existsSync(file) ? (JSON.parse(readFileSync(file, 'utf8')) as Recorded[]) : []
   let next = 0
@@ -60,7 +66,9 @@ function replayGeom(file: string) {
       const r = replies[next++]
       if (!r) throw new Error(`no recorded reply for ${op}: build the engine and record with SX_GEOM_RECORD=1`)
       expect(r.op).toBe(op)
-      expect(r.request).toEqual(JSON.parse(JSON.stringify(request)))
+      // A step's key salt comes from its id, which has the time in it; the face keys it makes come back in the
+      // recorded replies, so the rest of every later request still matches.
+      expect(saltless(r.request)).toEqual(saltless(JSON.parse(JSON.stringify(request))))
       if (r.error !== undefined) throw new Error(r.error)
       return r.reply as T
     },

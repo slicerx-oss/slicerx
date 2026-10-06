@@ -71,6 +71,8 @@ export interface MeshFaces {
   /** One per triangle, an index into `table`. */
   ids: Uint32Array
   table: FaceSurface[]
+  /** A key per face in `table` that history steps name the face by; absent when the engine gave none. */
+  keys?: number[]
 }
 
 /** Raw geometry for hosts that take buffers directly (tests, the benchmark, Pilot's cut skill). */

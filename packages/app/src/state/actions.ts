@@ -123,6 +123,7 @@ async function addProject(host: Host, data: ArrayBuffer, name: string): Promise<
     project.dimensions
       .filter((d) => d.a.object === fileId)
       .map((d) => ({ ...d, a: { ...d.a, object: idOf.get(d.a.object)! }, ...(d.b ? { b: { ...d.b, object: idOf.get(d.b.object)! } } : {}) }))
+  if (project.historyNote) toast(project.historyNote, 'warn')
   // Named values come with the project; a name the open project already has keeps its own value.
   if (project.namedValues.length) {
     set((s) => ({ namedValues: [...s.namedValues, ...project.namedValues.filter((v) => !s.namedValues.some((o) => o.name === v.name))] }))

@@ -3,6 +3,8 @@
 // How the tools write history: the object's history with one more step, built from the entry as it
 // was before the tool changed it, for the tool's own store update. Ending a history (a split) keeps a
 // note and makes the new parts the base. No engine calls in here.
+import { setKeySalt } from '../../geom/client'
+import { stepSalt } from './salt'
 import type { MeshPart } from '@slicerx/contracts'
 import type { PlateEntry } from '../../state/store'
 import { bindFor } from '../values'
@@ -16,6 +18,24 @@ export function rememberFont(name: string, base64: string): void {
 }
 export function sessionFonts(): Record<string, string> {
   return Object.fromEntries(fonts)
+}
+
+// The id of the step a tool is about to record, reserved before its engine calls so the faces they make get the
+// step's keys (salt.ts); used once by the next recorded step.
+let reserved: string | null = null
+
+/** Reserves the id of the next step this tool records, and gives the engine its salt until then. */
+export function reserveStepId(): string {
+  reserved = stepId()
+  setKeySalt(stepSalt(reserved))
+  return reserved
+}
+
+function takeId(): string {
+  const id = reserved ?? stepId()
+  reserved = null
+  setKeySalt(null)
+  return id
 }
 
 // What the person typed for the main number of the step a tool is about to record (bindNext), used once.
@@ -53,14 +73,14 @@ export function settle(steps: readonly Step[]): Step[] {
 export function withStep(before: Pick<PlateEntry, 'parts' | 'history' | 'transform'>, part: number, params: StepParams, transform: number[] = before.transform): History {
   const h = historyOf(before)
   const steps = settle(h.steps)
-  const step: Step = { id: stepId(), part, transform: [...transform], params, ...takeBind(params) }
+  const step: Step = { id: takeId(), part, transform: [...transform], params, ...takeBind(params) }
   const follow = followFor(steps, step)
   return { ...h, steps: [...steps, follow ? { ...step, follow } : step] }
 }
 
 /** A new body made by a step: empty base, the step first. `transform` is the new object's transform. */
 export function bodyHistory(params: StepParams, transform: number[]): History {
-  return { version: HISTORY_VERSION, base: [], steps: [{ id: stepId(), part: 0, transform: [...transform], params }] }
+  return { version: HISTORY_VERSION, base: [], steps: [{ id: takeId(), part: 0, transform: [...transform], params, ...takeBind(params) }] }
 }
 
 /** After an edit that is not a step: no history, or a fresh one starting from `parts` with the reason shown. */

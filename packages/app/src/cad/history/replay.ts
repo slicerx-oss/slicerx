@@ -6,7 +6,8 @@
 // every later one is skipped, and the parts are the result just before it. The parts after each step
 // are kept from the last replays, so an edit of step k starts at k.
 import type { MovedFace } from '../../geom/cad'
-import { bakeMesh, findTriangle, followed, followsOf, hasFaceOn, invert, type History, type HistoryMesh, type ReplayResult, type Step, type StepStatus } from './model'
+import { bakeMesh, findByKey, findTriangle, followed, followsOf, hasFaceOn, invert, keyOfTriangle, type History, type HistoryMesh, type ReplayResult, type Step, type StepStatus } from './model'
+import { stepSalt } from './salt'
 
 export type EngineCall = (op: string, request: unknown) => Promise<unknown>
 
@@ -23,14 +24,24 @@ export interface ReplayOptions {
   yieldStep?: () => Promise<void>
 }
 
+type Faces = NonNullable<HistoryMesh['faces']>
+
 interface Flat {
   name: string
   slot: number
   positions: number[]
   indices: number[]
+  /** The engine's faces with their keys, carried from step to step as the tools carry them. */
+  faces?: Faces
 }
 
-const flat = (m: HistoryMesh): Flat => ({ name: m.name, slot: m.slot, positions: Array.from(m.positions), indices: Array.from(m.indices) })
+const flat = (m: HistoryMesh): Flat => ({ name: m.name, slot: m.slot, positions: Array.from(m.positions), indices: Array.from(m.indices), ...(m.faces ? { faces: m.faces } : {}) })
+
+/** The part with a step's result mesh, its faces with it. */
+const next = (part: Flat, m: { positions: number[]; indices: number[]; faces?: Faces }): Flat => {
+  const { faces: _old, ...rest } = part
+  return { ...rest, positions: m.positions, indices: m.indices, ...(m.faces ? { faces: m.faces } : {}) }
+}
 
 // Parts after each step, by a hash of the base and every step up to it. Bounded by the numbers held.
 const cache = new Map<string, Flat[]>()
@@ -94,7 +105,7 @@ function meshHash(parts: readonly HistoryMesh[]): string {
 
 class Broken extends Error {}
 
-const meshOf = (p: Flat) => ({ positions: p.positions, indices: p.indices })
+const meshOf = (p: Flat) => ({ positions: p.positions, indices: p.indices, ...(p.faces ? { faces: p.faces } : {}) })
 
 /**
  * The edges of a fillet or chamfer step that are still there: an edge whose ends both sat on a face a
@@ -105,8 +116,16 @@ function keptEdges<E>(s: Step, edges: readonly E[], gone: ReadonlySet<string>): 
   return edges.filter((_, i) => !through.some((f) => !f.points || (f.points.includes(2 * i) && f.points.includes(2 * i + 1))))
 }
 
-async function runStep(call: EngineCall, s: Step, parts: Flat[], fonts: Record<string, string>, moved: Record<string, MovedFace>, gone: Set<string>): Promise<Flat[]> {
+/** What a step found its faces by on this replay, and what it noticed. */
+interface Found {
+  keys: Record<string, { faceKey?: number; openKeys?: number[] }>
+  notes: Record<string, string>
+}
+
+async function runStep(engine: EngineCall, s: Step, parts: Flat[], fonts: Record<string, string>, moved: Record<string, MovedFace>, gone: Set<string>, found: Found): Promise<Flat[]> {
   const p = s.params
+  // Every call of the step makes its faces' keys from the step's own salt, as when the tool first ran it.
+  const call: EngineCall = (op, r) => engine(op, { ...(r as object), keySalt: stepSalt(s.id), withFaces: true })
   const targets = s.part === -1 ? parts.map((_, i) => i) : [s.part]
   const out = parts.slice()
   const item = (f: Flat) => ({ mesh: meshOf(f), transform: s.transform })
@@ -127,11 +146,16 @@ async function runStep(call: EngineCall, s: Step, parts: Flat[], fonts: Record<s
     if (!part) throw new Broken('The part this step works on is gone.')
     switch (p.op) {
       case 'face.push': {
-        const triangle = findTriangle(part, s.transform, p.at, p.normal)
+        // By the face's key first, then by where it was.
+        const byKey = p.faceKey ? findByKey(part, s.transform, p.faceKey, p.at) : null
+        const triangle = byKey ? byKey.triangle : findTriangle(part, s.transform, p.at, p.normal)
         if (triangle < 0) throw new Broken('The face this step moved is gone.')
-        const r = (await call('face.push', { mesh: item(part), triangle, at: p.at, distanceMm: p.distanceMm })) as { mesh: Flat; moved: MovedFace }
+        if (byKey?.split) found.notes[s.id] = 'The face this step moved was split in two; picked the larger part.'
+        const key = keyOfTriangle(part, triangle)
+        if (key && key !== p.faceKey) found.keys[s.id] = { faceKey: key }
+        const r = (await call('face.push', { mesh: item(part), triangle, at: byKey ? byKey.at : p.at, distanceMm: p.distanceMm })) as { mesh: Flat; moved: MovedFace }
         moved[s.id] = r.moved
-        out[i] = { ...part, positions: r.mesh.positions, indices: r.mesh.indices }
+        out[i] = next(part, r.mesh)
         // No face is left where it moved to: it went through the part, and the edges on it with it.
         const l = Math.hypot(...p.normal) || 1
         const cap: [number, number, number] = [p.at[0] + (p.normal[0] / l) * p.distanceMm, p.at[1] + (p.normal[1] / l) * p.distanceMm, p.at[2] + (p.normal[2] / l) * p.distanceMm]
@@ -143,7 +167,7 @@ async function runStep(call: EngineCall, s: Step, parts: Flat[], fonts: Record<s
         const req = p.op === 'shape.extrude' ? { frame: p.frame, shape: p.shape, placement: p.placement ?? {}, spec: p.spec, target: item(part), ...(p.font ? { fontBase64: font(p.font, fonts) } : {}), ...(p.pattern ? { pattern: p.pattern } : {}) } : { frame: p.frame, loops: p.loops, axis: p.axis, angleDeg: p.angleDeg, operation: p.operation, target: item(part) }
         const r = (await call(p.op, req)) as { mesh: Flat; report: { touches: boolean } }
         if (!r.report.touches) throw new Broken('The shape no longer reaches the part.')
-        out[i] = { ...part, positions: r.mesh.positions, indices: r.mesh.indices }
+        out[i] = next(part, r.mesh)
         break
       }
       case 'subtract': {
@@ -158,12 +182,12 @@ async function runStep(call: EngineCall, s: Step, parts: Flat[], fonts: Record<s
       case 'simplify': {
         const options = p.op === 'hollow' ? { wallMm: p.wallMm } : p.op === 'simplify' ? { targetRatio: p.targetRatio } : {}
         const r = (await call(p.op, { mesh: meshOf(part), options })) as { mesh: Flat }
-        out[i] = { ...part, positions: r.mesh.positions, indices: r.mesh.indices }
+        out[i] = next(part, r.mesh)
         break
       }
       case 'array.merged': {
         const r = (await call('array', { mesh: item(part), spec: p.spec, merge: true, options: {} })) as { mesh: Flat }
-        out[i] = { ...part, positions: r.mesh.positions, indices: r.mesh.indices }
+        out[i] = next(part, r.mesh)
         break
       }
       case 'hole.apply': {
@@ -175,19 +199,21 @@ async function runStep(call: EngineCall, s: Step, parts: Flat[], fonts: Record<s
           const why = (err instanceof Error ? err.message : String(err)).replace(/^hole: /, '')
           throw new Broken(why.charAt(0).toUpperCase() + why.slice(1))
         }
-        out[i] = { ...part, positions: r.mesh.positions, indices: r.mesh.indices }
+        out[i] = next(part, r.mesh)
         break
       }
       case 'shell': {
-        // The open faces are found again by their place and normal on the part as it is now.
-        let r: { mesh: Flat }
+        // The open faces are found again by their keys, or by their place and normal, on the part as it is now.
+        let r: { mesh: Flat; report: { openKeys?: number[] } }
         try {
-          r = (await call('shell', { mesh: item(part), open: p.open, wallMm: p.wallMm })) as { mesh: Flat }
+          r = (await call('shell', { mesh: item(part), open: p.open, wallMm: p.wallMm })) as { mesh: Flat; report: { openKeys?: number[] } }
         } catch (err) {
           const why = (err instanceof Error ? err.message : String(err)).replace(/^(shell|open|wallMm): /, '')
           throw new Broken(why.charAt(0).toUpperCase() + why.slice(1))
         }
-        out[i] = { ...part, positions: r.mesh.positions, indices: r.mesh.indices }
+        const keys = r.report.openKeys ?? []
+        if (keys.some((k, j) => k && k !== p.open[j]?.key)) found.keys[s.id] = { openKeys: keys }
+        out[i] = next(part, r.mesh)
         break
       }
       case 'thread.apply': {
@@ -199,7 +225,7 @@ async function runStep(call: EngineCall, s: Step, parts: Flat[], fonts: Record<s
           const why = (err instanceof Error ? err.message : String(err)).replace(/^(thread|hole): /, '')
           throw new Broken(why.charAt(0).toUpperCase() + why.slice(1))
         }
-        out[i] = { ...part, positions: r.mesh.positions, indices: r.mesh.indices }
+        out[i] = next(part, r.mesh)
         break
       }
       case 'edge.fillet':
@@ -208,7 +234,7 @@ async function runStep(call: EngineCall, s: Step, parts: Flat[], fonts: Record<s
         const edges = keptEdges(s, p.edges, gone)
         if (!edges.length) break
         const r = (await call(p.op, { mesh: item(part), ...rest, edges })) as { mesh: Flat }
-        out[i] = { ...part, positions: r.mesh.positions, indices: r.mesh.indices }
+        out[i] = next(part, r.mesh)
         break
       }
     }
@@ -228,6 +254,7 @@ export async function replayHistory(call: EngineCall, req: ReplayRequest, o: Rep
   const steps = history.steps
   const status: StepStatus[] = steps.map((s) => (s.suppressed ? { state: 'suppressed' } : { state: 'skipped' }))
   const moved: Record<string, MovedFace> = {}
+  const found: Found = { keys: {}, notes: {} }
   // Pushes whose face went through the part.
   let gone = new Set<string>()
   // Keys after each step; a step's key covers everything that can change its result.
@@ -264,8 +291,9 @@ export async function replayHistory(call: EngineCall, req: ReplayRequest, o: Rep
     }
     if (o.yieldStep) await o.yieldStep()
     try {
-      parts = await runStep(call, s, parts, fonts, moved, gone)
-      status[i] = { state: 'done' }
+      parts = await runStep(call, s, parts, fonts, moved, gone, found)
+      const note = found.notes[s.id]
+      status[i] = note ? { state: 'done', note } : { state: 'done' }
       remember(keys[i]!, parts, gone)
     } catch (e) {
       if ((e as { name?: string }).name === 'AbortError') throw e
@@ -274,5 +302,5 @@ export async function replayHistory(call: EngineCall, req: ReplayRequest, o: Rep
       break
     }
   }
-  return { parts, status, moved, ...(before ? { before } : {}) }
+  return { parts, status, moved, ...(Object.keys(found.keys).length ? { found: found.keys } : {}), ...(before ? { before } : {}) }
 }

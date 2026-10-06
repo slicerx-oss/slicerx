@@ -68,6 +68,8 @@ Meshes are flat (`{positions: [x, y, z, ...], indices: [a, b, c, ...]}`) or base
 | `thread.apply` | `mesh`, `thread` (as `thread.find` returns it), `spec` (`size`, optional `lengthMm`, `clearanceMm` a side, at most a quarter of the pitch) | mesh in the item's frame, `report` (size, pitch, major and minor diameter as cut, length, `maxLayerMm`, volume change, watertight, shells); a hole is first sized to the thread's minor diameter, and a thread stops half a pitch short of a closed end |
 | `resume` | `meshes` (every object with its transform) or `mesh`, `measuredHeightMm` or `failedLayer`, layer heights or `layerTopsMm` | layer to resume at, printed height, resume Z, warnings, optionally the part left to print |
 
+A request may carry `keySalt` (a history step's, up to 2^52): the faces the operation makes get keys from it, a mesh that comes without keys gets a base's keys, and every mesh that comes back has its faces' keys in `faces.keys` (docs/cad-history.md, "Face keys"). `shell` takes an optional `key` per open face and reports `openKeys`.
+
 Errors come back as a message the UI can show as is, for example "the cut removes the whole body".
 
 Bundle size: the worker's wasm is under 3 MB (under 1 MB gzip). manifold-rust and its exact arithmetic add about 880 KB of code, and ttf-parser about 68 KB plus the 24.5 KB font. The main app bundle does not include it.
@@ -78,7 +80,7 @@ The optional parts of sx-geom are cargo features, all on by default: `cad` (face
 
 The browser gets two builds (`packages/geom/wasm/scripts/build.sh`). The worker loads `sx_geom_core.wasm` first: every feature but `cad`, `holes`, `threads` and `shell`, 772 KB gzip, within the 1024 KB budget for each wasm. It loads `sx_geom_wasm.wasm`, the full engine, the first time a call needs an operation the core lacks or sends a mesh with face ids, then sends it every call after that (`packages/app/src/geom/modules.ts`). The full engine has a budget of its own, 1536 KB gzip, and the heavier modules (threads, the shell, and the sketch solver still to come) go there only. Someone who never uses a modeling tool never downloads it. The desktop app runs the full engine natively.
 
-An edition turns the modeling tools off with `features.cad: false` in its config. The app then leaves their commands and menu items out, and `edition-build` builds the worker with every feature but `cad`, `holes`, `threads` and `shell` (set `SX_GEOM_FEATURES` to build `packages/geom/wasm` with any other list). Worker sizes, gzip: the core alone 610 KB, without the modeling tools 772 KB, everything 968 KB. Each feature on top of the core: `cad` with text and SVG 214 KB, `holes` 7 KB more, `threads` 6 KB more, `shell` 7 KB more (patterns are part of `cad`, 2.5 KB), `calib` 59 KB, `svg` 23 KB, `nest` 71 KB, `hollow` 12 KB, `text` under 1 KB.
+An edition turns the modeling tools off with `features.cad: false` in its config. The app then leaves their commands and menu items out, and `edition-build` builds the worker with every feature but `cad`, `holes`, `threads` and `shell` (set `SX_GEOM_FEATURES` to build `packages/geom/wasm` with any other list). Worker sizes, gzip: the core alone 610 KB, without the modeling tools 772 KB, everything 972 KB. Each feature on top of the core: `cad` with text and SVG 214 KB, `holes` 7 KB more, `threads` 6 KB more, `shell` 7 KB more (patterns are part of `cad`, 2.5 KB; face keys 4.3 KB), `calib` 59 KB, `svg` 23 KB, `nest` 71 KB, `hollow` 12 KB, `text` under 1 KB.
 
 ## 3. Print rescue
 

@@ -9,7 +9,7 @@ import { parseValues } from './values-file'
 import type { MeshPart } from '@slicerx/contracts'
 import type { Dimension, DimensionAnchor, Feature } from '../geom/cad'
 import type { History } from '../cad/history/model'
-import { parseHistories } from './history-read'
+import { historyNewer, parseHistories } from './history-read'
 import type { VolumeRole } from '../state/store'
 import { areaOrigin } from '../plate/bed-origin'
 
@@ -179,6 +179,8 @@ export interface ImportedProject {
   histories: Map<string, History>
   /** Named values from Metadata/slicerx_values.json. */
   namedValues: NamedValue[]
+  /** Why the histories did not open, when a newer SlicerX saved them. */
+  historyNote?: string
 }
 
 const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v)
@@ -637,5 +639,6 @@ export async function readProject(bytes: Uint8Array, bed: { widthMm: number; dep
   }
   const dimensions = parseDimensions(files.get('Metadata/slicerx_dimensions.json'), new Set(plates.flatMap((p) => p.objects.map((o) => o.fileId))))
   const fileIds = new Set(plates.flatMap((p) => p.objects.map((o) => o.fileId)))
-  return { plates, colors, settings, settingsFrom, dimensions, histories: parseHistories(files, fileIds), namedValues: parseValues(files) }
+  const note = historyNewer(files)
+  return { plates, colors, settings, settingsFrom, dimensions, histories: parseHistories(files, fileIds), namedValues: parseValues(files), ...(note ? { historyNote: note } : {}) }
 }

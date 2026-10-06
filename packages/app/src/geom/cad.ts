@@ -468,6 +468,8 @@ export function holeApply(mesh: MeshItem, hole: Hole, spec: HoleSpec, signal?: A
 export interface OpenFace {
   at: Vec3
   normal: Vec3
+  /** The face's key, looked for first (docs/cad-history.md, "Face keys"). */
+  key?: number
 }
 
 export interface ShellReport {
@@ -475,6 +477,8 @@ export interface ShellReport {
   exact: boolean
   note?: string
   openFaces: number
+  /** The key of each open face as found (0 when it has none). */
+  openKeys: number[]
   volumeChangeMm3: number
   watertight: boolean
   shells: number

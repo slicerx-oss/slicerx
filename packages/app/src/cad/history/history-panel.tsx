@@ -148,6 +148,7 @@ function StepRow(props: {
       <Button size="sm" variant="ghost" icon={s.suppressed ? 'hide' : 'show'} data-tip="history.suppress" aria-label={s.suppressed ? `Turn ${name} back on` : `Suppress ${name}`} pressed={Boolean(s.suppressed)} disabled={busy} onClick={props.onSuppress} />
       <Button size="sm" variant="ghost" icon="delete" data-tip="history.delete" aria-label={`Delete ${name}`} disabled={busy} onClick={props.onDelete} />
       {state === 'broken' ? <p className="cad-step-why"><Icon name="alert" size={13} /> {s.broken}</p> : state === 'skipped' ? <p className="cad-step-why sx-muted">Skipped: a step before it is broken.</p> : null}
+      {state === 'done' && s.note ? <p className="cad-step-why sx-muted" data-testid="step-note"><Icon name="info" size={13} /> {s.note}</p> : null}
       {s.bind !== undefined ? <p className="cad-step-why sx-muted" data-testid="step-bind">Follows {s.bind}</p> : null}
       {props.open && number ? <NumberEdit label={number.label} unit={number.unit} value={s.bind ?? String(number.value)} onApply={props.onNumber} /> : null}
     </li>

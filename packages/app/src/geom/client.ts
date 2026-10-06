@@ -53,9 +53,22 @@ function workerProvider(): GeomProvider {
 }
 
 let own: GeomProvider | null = null
+// The salt of the history step a tool is about to record (cad/history/record.ts, reserveStepId): every call meanwhile
+// gives it to the engine, so the faces the step makes get the keys a replay of the step will give them.
+let keySalt: number | null = null
+
+export function setKeySalt(salt: number | null): void {
+  keySalt = salt
+}
 
 export function geom(): GeomProvider {
-  return (provider ??= own = workerProvider())
+  const p = (provider ??= own = workerProvider())
+  const salt = keySalt
+  if (salt === null) return p
+  return {
+    call: <T,>(op: string, request: unknown, signal?: AbortSignal) =>
+      p.call<T>(op, request !== null && typeof request === 'object' && !Array.isArray(request) && !('keySalt' in request) ? { ...request, keySalt: salt } : request, signal),
+  }
 }
 
 /** Whether calls go to the app's own worker, which also runs jobs written in TypeScript (history.replay). */
@@ -67,18 +80,19 @@ export function usesWorker(): boolean {
 export interface GeomMesh {
   positions: number[]
   indices: number[]
-  faces?: { ids: number[]; table: FaceSurface[] }
+  /** `keys` name the faces for history steps (docs/cad-history.md, "Face keys"). */
+  faces?: { ids: number[]; table: FaceSurface[]; keys?: number[] }
 }
 
 export function toGeom(part: Pick<MeshPart, 'positions' | 'indices' | 'faces'>): GeomMesh {
   const mesh: GeomMesh = { positions: Array.from(part.positions), indices: Array.from(part.indices) }
-  if (part.faces) mesh.faces = { ids: Array.from(part.faces.ids), table: part.faces.table }
+  if (part.faces) mesh.faces = { ids: Array.from(part.faces.ids), table: part.faces.table, ...(part.faces.keys?.length ? { keys: part.faces.keys } : {}) }
   return mesh
 }
 
 export function fromGeom(mesh: GeomMesh, name: string, slot: number): MeshPart {
   const part: MeshPart = { name, slot, positions: new Float32Array(mesh.positions), indices: new Uint32Array(mesh.indices) }
-  if (mesh.faces) part.faces = { ids: new Uint32Array(mesh.faces.ids), table: mesh.faces.table }
+  if (mesh.faces) part.faces = { ids: new Uint32Array(mesh.faces.ids), table: mesh.faces.table, ...(mesh.faces.keys?.length ? { keys: mesh.faces.keys } : {}) }
   return part
 }
 
