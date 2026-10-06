@@ -2445,7 +2445,10 @@ fn emit_layer(
             && !in_infill
             && !in_support
             && !within_tower;
-        if accel_on {
+        // Orca's GCode::_extrude calls travel_to, which writes the travel's acceleration and jerk, only when the
+        // nozzle is not already at the path's first point or a layer change still owes its lift: paths that
+        // join end to start (a zig-zag fill) get no travel lines between them.
+        if accel_on && (cursor != Some(start) || pending_lift.is_some()) {
             // A travel shorter than the retraction minimum is short whether or not it retracts.
             let short = dist < rc.retraction_minimum_travel;
             let lines = motion.travel_lines(short, p.feature, &mut motion_now);
