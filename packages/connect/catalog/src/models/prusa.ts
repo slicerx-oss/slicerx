@@ -5,7 +5,7 @@ import { find, rect } from './util.ts'
 
 const FIND_PRUSALINK = find({
   ip: 'On the printer screen, open Settings, then Network. The status of the Wi-Fi or Ethernet connection shows the IP address.',
-  credential: 'In Settings, Network, open PrusaLink. It shows the user name (maker) and the password or API key to use. Menu names depend on the firmware version.',
+  credential: 'In Settings > Network > PrusaLink, turn PrusaLink on. It shows the password; the user name is maker. Needs firmware 4.7.0 or later (5.1.0 or later on the MINI).',
 })
 
 const NOZZLES = [0.25, 0.4, 0.6, 0.8]

@@ -116,12 +116,12 @@ describe('connection validation', () => {
     expect(inAddress.errors.host).toBeTruthy()
   })
 
-  it('accepts a PrusaLink API key or a user name and password', () => {
+  it('asks PrusaLink for the password only, the user name being maker unless typed', () => {
     const m = connectionMethod('prusalink')
     const f = pickModel(pickBrand(EMPTY_FORM, 'prusa'), 'prusa-mk4s')
     const host = { ...f, fields: { ...f.fields, host: '192.168.1.9' } }
-    expect(checkConnection(host, m).errors.apiKey).toBeTruthy()
-    expect(checkConnection({ ...host, secretLengths: { apiKey: 20 } }, m).ready).toBe(true)
+    expect(checkConnection(host, m).errors.password).toBeTruthy()
+    expect(checkConnection({ ...host, secretLengths: { password: 15 } }, m).ready).toBe(true)
     expect(checkConnection({ ...host, fields: { ...host.fields, username: 'maker' }, secretLengths: { password: 8 } }, m).ready).toBe(true)
   })
 

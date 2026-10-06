@@ -75,11 +75,10 @@ export const CONNECTION_METHODS: readonly ConnectionMethod[] = [
     },
     fields: [
       host,
-      apiKey(false),
+      { key: 'password', label: 'Password', secret: true, required: true, placeholder: 'Shown in Settings > Network > PrusaLink' },
       { key: 'username', label: 'User name', secret: false, required: false, placeholder: 'maker' },
-      { key: 'password', label: 'Password', secret: true, required: false },
     ],
-    summary: 'Prusa printers with PrusaLink. Enter the API key, or the user name and password the printer shows.',
+    summary: 'Prusa printers with PrusaLink. Enter the password the printer shows; the user name is maker. An API key from older firmware goes in the same field.',
   },
   {
     id: 'duet',
