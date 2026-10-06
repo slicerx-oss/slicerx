@@ -187,7 +187,37 @@ fn profile(spec: &HoleSpec, bottom: f64, top: f64) -> Result<Vec<V2>> {
     Ok(ring)
 }
 
-/// The hole made to `spec` in place: a larger one cut around it, a smaller one cut after the old one is filled.
+/// The hole `hole` describes, found again on `mesh`: a hole wall on the same axis line with the same diameter,
+/// with its depth and ends as they are now (an earlier step may have made the part thicker).
+pub fn locate(mesh: &TriMesh, hole: &Hole) -> Result<Hole> {
+    let gone = || Error::invalid("hole", "the hole is not there any more; pick it again");
+    let axis = vec3::normalize(hole.axis).ok_or_else(gone)?;
+    let faces = mesh
+        .faces
+        .clone()
+        .filter(|f| f.fit(mesh))
+        .unwrap_or_else(|| crate::faces::recognize(mesh));
+    let size = mesh.bounds().map_or(1.0, |b| b.diagonal());
+    let tol = (size * 1e-5).max(1e-3);
+    let on_line = |origin: V3, a: V3, r: f64| {
+        let d = vec3::sub(hole.entry, origin);
+        let off = vec3::len(vec3::sub(d, vec3::scale(a, vec3::dot(d, a))));
+        vec3::dot(a, axis).abs() > 0.9999 && off < tol && (2.0 * r - hole.diameter_mm).abs() < tol
+    };
+    let t = faces
+        .ids
+        .iter()
+        .position(|&f| matches!(faces.table.get(f as usize), Some(&Surface::Cylinder { origin, axis: a, radius }) if on_line(origin, a, radius)))
+        .ok_or_else(gone)?;
+    let found = find(mesh, u32::try_from(t).map_err(|_| gone())?, hole.entry)?;
+    if vec3::dot(found.axis, axis) < 0.9999 {
+        return Err(gone());
+    }
+    Ok(found)
+}
+
+/// The hole made to `spec` in place: a larger one cut around it, a smaller one cut after the old one is filled. The
+/// hole is found again first, so a replay works on it as it is now.
 pub fn apply(
     mesh: &TriMesh,
     hole: &Hole,
@@ -195,6 +225,7 @@ pub fn apply(
     opts: &BooleanOptions,
 ) -> Result<(TriMesh, HoleReport)> {
     mesh.validate("hole")?;
+    let hole = &locate(mesh, hole)?;
     let axis = vec3::normalize(hole.axis).ok_or_else(|| Error::invalid("hole.axis", "must not be zero"))?;
     let new_r = positive("diameterMm", spec.diameter_mm)? / 2.0;
     let old_r = hole.diameter_mm / 2.0;
@@ -407,6 +438,43 @@ mod tests {
                 .to_string()
                 .contains("not both")
         );
+    }
+
+    #[test]
+    fn a_hole_is_found_again_on_a_thicker_part_and_not_where_it_is_gone() {
+        let thin = plate_minus(post(3.0, -1.0, 6.0));
+        let (t, at) = wall(&thin);
+        let h = find(&thin, t, at).unwrap();
+        let thick = {
+            let plate = build::box_mesh([0.0; 3], [30.0, 20.0, 7.0]);
+            boolean::boolean(
+                &[plate],
+                &[post(3.0, -1.0, 8.0)],
+                BoolOp::Difference,
+                &BooleanOptions::default(),
+            )
+            .unwrap()
+            .0
+        };
+        let spec = HoleSpec {
+            diameter_mm: 3.4,
+            depth_mm: None,
+            counterbore: None,
+            countersink: None,
+        };
+        let (out, r) = apply(&thick, &h, &spec, &BooleanOptions::default()).unwrap();
+        assert!(r.watertight);
+        let hole = PI * 1.7 * 1.7 * 7.0;
+        assert!(
+            (out.volume() - (30.0 * 20.0 * 7.0 - hole)).abs() < 0.02 * hole,
+            "{}",
+            out.volume()
+        );
+        let solid = build::box_mesh([0.0; 3], [30.0, 20.0, 5.0]);
+        let err = apply(&solid, &h, &spec, &BooleanOptions::default())
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("not there any more"), "{err}");
     }
 
     #[test]
