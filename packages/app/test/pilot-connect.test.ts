@@ -127,6 +127,8 @@ describe('mimir transport', () => {
   it('keeps local models on this computer or the home network', async () => {
     expect(localAllowed('http://localhost:11434/v1/chat/completions')).toBe(true)
     expect(localAllowed('http://192.168.1.20:1234/v1')).toBe(true)
+    expect(localAllowed('http://100.101.102.103:8080/v1')).toBe(true)
+    expect(localAllowed('http://100.128.0.1:8080/v1')).toBe(false)
     expect(localAllowed('https://example.com/v1')).toBe(false)
     expect((await testConnection({ provider: 'local', baseUrl: 'https://example.com/v1' }, null)).ok).toBe(false)
   })

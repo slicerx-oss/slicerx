@@ -134,7 +134,7 @@ export function ConnectPanel({ onConnected, idPrefix = 'pc', withLocal = true }:
                   placeholder="http://192.168.1.50:8080/v1"
                   onChange={(e) => setBaseUrl(e.target.value)}
                   data-tip-title="Any server with an OpenAI-compatible API"
-                  data-tip-body="llama.cpp (llama-server), LocalAI, vLLM, LiteLLM or Ollama, on this computer or another one on your home network. Use http and include /v1. Addresses outside your home network are refused."
+                  data-tip-body="llama.cpp (llama-server), LocalAI, vLLM, LiteLLM or Ollama, on this computer, your home network or your Tailscale network. Use http and include /v1. Other addresses are refused."
                 />
               </Field>
               <Field
