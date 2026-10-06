@@ -753,6 +753,29 @@ button.reset:hover { color: var(--fg); background: var(--ink-3); }
 .layer-mark[data-kind="custom"] { color: var(--cyan); }
 .layer-mark:hover { background: var(--ink-2); }
 
+/* heimdall: the strike, where the machine would meet a printed part. Red for a hit, orange for a close call. */
+.app-tag.strike-tag { color: var(--red); }
+.strikes { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.strikes li { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; gap: 8px; align-items: start; padding: 8px; border-radius: var(--r-md); border: 1px solid transparent; }
+.strikes li.sel { border-color: color-mix(in srgb, var(--red) 55%, transparent); background: color-mix(in srgb, var(--red) 8%, transparent); }
+.strikes li > .sx-ic { color: var(--red); margin-top: 1px; }
+.strikes li[data-severity="close"] > .sx-ic { color: var(--orange); }
+.strikes b { font: 600 13px var(--f-body); color: var(--fg); display: block; }
+.strikes p { margin: 2px 0 4px; font-size: 12px; color: var(--muted); line-height: 1.45; }
+.strike-when { font-size: 11.5px; color: var(--dim); font-variant-numeric: tabular-nums; }
+.strike-fixes-h { margin: 12px 0 6px; font: 600 11px var(--f-body); color: var(--dim); text-transform: none; }
+.strike-fixes { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.strike-fixes li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; }
+.strike-fixes b { font: 600 12.5px var(--f-body); color: var(--fg); }
+.strike-fixes p { margin: 2px 0 0; font-size: 12px; color: var(--muted); line-height: 1.45; }
+.layer-mark.strike-mark { color: var(--red); background: color-mix(in srgb, var(--red) 16%, var(--ink-3)); }
+.layer-mark.strike-mark[data-severity="close"] { color: var(--orange); background: color-mix(in srgb, var(--orange) 16%, var(--ink-3)); }
+.lstrike { position: absolute; right: calc(100% + 4px); width: 18px; height: 18px; margin-top: -9px; padding: 0; display: grid; place-items: center; border: 0; border-radius: 50%; background: color-mix(in srgb, var(--red) 16%, var(--ink-3)); color: var(--red); cursor: pointer; }
+.lstrike[data-severity="close"] { color: var(--orange); background: color-mix(in srgb, var(--orange) 16%, var(--ink-3)); }
+.strike-rail { position: relative; min-width: 0; }
+.strike-tick { position: absolute; top: -12px; transform: translateX(-50%); width: 16px; height: 16px; padding: 0; display: grid; place-items: center; border: 0; border-radius: 50%; background: color-mix(in srgb, var(--red) 16%, var(--ink-3)); color: var(--red); cursor: pointer; }
+.strike-tick[data-severity="close"] { color: var(--orange); background: color-mix(in srgb, var(--orange) 16%, var(--ink-3)); }
+
 
 /* Goal chips: the icon sits over the label so four fit in a narrow sidebar. */
 .sx-seg.goal-seg > button { flex-direction: column; height: 48px; gap: 3px; padding: 0 4px; min-width: 0; font-size: 11.5px; }

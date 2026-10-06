@@ -1,18 +1,26 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// Print by object on a plate arranged by layer: the boxes sit a few millimeters apart, too close for the toolhead, so
-// Print is held back with a message that names them. Arranged again by object they are kept the extruder clearance
-// apart, the background slice finishes and Print is ready.
+// Print by object on a plate arranged by layer: the boxes sit a few millimeters apart, too close for the toolhead. The
+// slice runs and heimdall strikes it: the collision list names the hit, the layer slider carries the strike, Print
+// waits. A jump goes to the moment, and printing by layer, one click away, clears it.
 import { expect, test } from '@playwright/test'
 import { plateReady } from './fixtures'
 import { command } from './cad-helpers'
 
+type Collision = { title: string; layer: number; severity: string }
 type Sx = {
-  getState(): { plate: { id: string }[]; plates: { id: string; settings: Record<string, unknown> }[]; activePlate: string; slice: { status: string; stale?: boolean; message?: string } }
+  getState(): {
+    plate: { id: string }[]
+    plates: { id: string; settings: Record<string, unknown> }[]
+    activePlate: string
+    layerHi: number
+    strikePick: number | null
+    slice: { status: string; stale?: boolean; message?: string; result?: { collisions?: Collision[] } }
+  }
   setState(p: unknown): void
 }
 
-test('a plate too close to print by object holds Print back until it is arranged', async ({ page, isMobile }) => {
+test('heimdall strikes a plate too close to print by object, and printing by layer clears it', async ({ page, isMobile }) => {
   test.skip(isMobile, 'Runs at desktop width')
   test.slow()
   await page.addInitScript(() => {
@@ -23,33 +31,51 @@ test('a plate too close to print by object holds Print back until it is arranged
   })
   await page.goto('./')
   await plateReady(page)
-  const state = () => page.evaluate(() => { const s = (window as unknown as { __sx: Sx }).__sx.getState(); return { n: s.plate.length, status: s.slice.status, stale: s.slice.stale ?? false, message: s.slice.message ?? null } })
+  const sx = () => page.evaluate(() => { const s = (window as unknown as { __sx: Sx }).__sx.getState(); return { n: s.plate.length, status: s.slice.status, stale: s.slice.stale ?? false, collisions: s.slice.result?.collisions ?? [], layerHi: s.layerHi, pick: s.strikePick } })
+  const workspace = (w: string) => page.evaluate((ws) => (window as unknown as { __sx: Sx }).__sx.setState({ workspace: ws }), w)
   await page.evaluate(() => (window as unknown as { __sx: Sx }).__sx.setState({ plate: [], selection: null, selectedIds: [] }))
   for (const n of [1, 2]) {
     await command(page, 'Add a box')
-    await expect.poll(async () => (await state()).n).toBe(n)
+    await expect.poll(async () => (await sx()).n).toBe(n)
   }
   await command(page, 'Arrange all objects')
-  await expect.poll(async () => (await state()).n).toBe(2)
   const print = page.getByRole('button', { name: 'Print', exact: true })
-  await expect.poll(async () => { const s = await state(); return s.status === 'done' && !s.stale }, { timeout: 120_000 }).toBe(true)
+  await expect.poll(async () => { const s = await sx(); return s.status === 'done' && !s.stale }, { timeout: 120_000 }).toBe(true)
   await expect(print).toBeEnabled()
 
-  // The plate prints by object: the boxes are too close for the toolhead.
+  // By object the boxes stand inside the toolhead's reach: the slice runs and heimdall strikes it.
   await page.evaluate(() => {
     const st = (window as unknown as { __sx: Sx }).__sx
     const s = st.getState()
     st.setState({ plates: s.plates.map((p) => (p.id === s.activePlate ? { ...p, settings: { ...p.settings, sequence: 'by-object' } } : p)) })
   })
-  const alert = page.getByRole('alert').filter({ hasText: 'Printing by object is not safe' })
-  await expect(alert.first()).toBeVisible()
-  await expect(alert.first()).toContainText(/mm apart; printing by object needs \d+ mm between objects/)
+  await command(page, 'Slice the plate')
+  await expect.poll(async () => { const s = await sx(); return s.status === 'done' && !s.stale && s.collisions.some((c) => c.severity === 'hit') }, { timeout: 120_000 }).toBe(true)
+  await expect(page.getByRole('alert').filter({ hasText: 'heimdall found' }).first()).toBeVisible()
+  await workspace('prepare')
   await expect(print).toBeDisabled()
-  await expect.poll(async () => (await state()).message ?? '').toMatch(/^Printing by object is not safe/)
 
-  // Arranged by object, they keep the clearance: the slice runs and Print is ready.
-  await command(page, 'Arrange all objects')
-  await expect(alert).toHaveCount(0)
-  await expect.poll(async () => { const s = await state(); return s.status === 'done' && !s.stale }, { timeout: 120_000 }).toBe(true)
+  // Preview lists the strikes, marks them on the layer slider, and offers the fixes.
+  await workspace('preview')
+  const list = page.locator('[data-section="collisions"]')
+  await expect(list).toBeVisible()
+  await expect(list.locator('.strike-tag')).toContainText(/strikes? on this plate/)
+  const first = list.locator('.strikes li').first()
+  await expect(first).toContainText(/hits/)
+  await expect(first.locator('.sx-ic')).toBeVisible()
+  await expect(page.locator('.layer-mark.strike-mark').first()).toBeVisible()
+  await first.getByRole('button', { name: /^Jump to:/ }).click()
+  const { collisions } = await sx()
+  await expect.poll(async () => (await sx()).pick).toBe(0)
+  // Playback runs up to the strike and stops on its layer.
+  await expect.poll(async () => (await sx()).layerHi).toBe((collisions[0]?.layer ?? 0) + 1)
+
+  // Print by layer clears it in one click.
+  const byLayer = list.locator('.strike-fixes li', { hasText: 'Print by layer' })
+  await expect(byLayer).toBeVisible()
+  await byLayer.getByRole('button', { name: 'Apply' }).click()
+  await expect.poll(async () => { const s = await sx(); return s.status === 'done' && !s.stale && s.collisions.length === 0 }, { timeout: 120_000 }).toBe(true)
+  await expect(list).toHaveCount(0)
+  await workspace('prepare')
   await expect(print).toBeEnabled()
 })

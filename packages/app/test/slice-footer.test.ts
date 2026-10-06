@@ -29,9 +29,9 @@ describe('slice footer', () => {
   for (const compact of [true, false]) {
     it(`shows a refused slice's reason ${compact ? 'in the sidebar footer' : 'in the estimate block'}`, () => {
       const box = { id: 'b', name: 'Box', parts: [], colors: [], transform: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1] }
-      set({ plate: [box] as never, autoSlice: true, slice: { status: 'error', message: 'Printing by object is not safe: Box and Box are 11.3 mm apart.' } as never })
+      set({ plate: [box] as never, autoSlice: true, slice: { status: 'error', message: 'The slicer stopped: Box has no walls.' } as never })
       const el = footer(compact)
-      expect([...el.querySelectorAll('.app-err')].map((p) => p.textContent)).toContain('Printing by object is not safe: Box and Box are 11.3 mm apart.')
+      expect([...el.querySelectorAll('.app-err')].map((p) => p.textContent)).toContain('The slicer stopped: Box has no walls.')
       el.remove()
     })
   }

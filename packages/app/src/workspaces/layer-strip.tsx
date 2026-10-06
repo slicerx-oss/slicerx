@@ -3,9 +3,10 @@
 // Layer heights along the model, bottom to top, from the last slice. In Preview it is the vertical
 // layer slider: drag the two handles for the lowest and highest drawn layer, use the arrow keys, or
 // click a layer. In Prepare it only shows the heights the slice used.
-import { tipAttrs } from '@slicerx/ui'
+import { Icon, tipAttrs } from '@slicerx/ui'
 import { HEAT_RAMP } from '@slicerx/viewport/palette'
 import { useMemo, useRef, type KeyboardEvent, type PointerEvent } from 'react'
+import { collisionsOf, jumpToCollision } from '../plate/heimdall'
 import { get, set, useApp } from '../state/store'
 import { layerKeyStep, stepLayer } from './preview/layer-step'
 
@@ -16,6 +17,7 @@ export function LayerStrip() {
   const layerHi = useApp((s) => s.layerHi)
   const layerLoRaw = useApp((s) => s.layerLo)
   const mode = useApp((s) => s.workspace)
+  const strikes = useApp(collisionsOf)
   const track = useRef<HTMLDivElement>(null)
   const drag = useRef<Handle | null>(null)
   const data = useMemo(() => {
@@ -136,6 +138,13 @@ export function LayerStrip() {
           ))}
         </svg>
         {interactive ? [handle('lo'), handle('hi')] : null}
+        {interactive
+          ? strikes.map((c, i) => (
+              <button key={`strike-${i}`} type="button" className="lstrike" data-severity={c.severity} style={{ top: `${fromTop(zTop(Math.min(n, c.layer + 1))) * 100}%` }} aria-label={`${c.title}, layer ${c.layer + 1}`} {...tipAttrs({ title: c.title, body: `Layer ${c.layer + 1}. Click to jump there.` })} onPointerDown={(e) => e.stopPropagation()} onClick={() => jumpToCollision(i)}>
+                <Icon name="strike" size={14} />
+              </button>
+            ))
+          : null}
       </div>
       <span className="sx-mono lend">{interactive ? (lo === 1 ? '\u00a0' : 1) : min.toFixed(2)}</span>
       <figcaption className="sx-mono">{uniform ? `${max.toFixed(2)} mm` : <>{min.toFixed(2)} to {max.toFixed(2)} mm<br />sleipnir</>}</figcaption>

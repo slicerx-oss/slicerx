@@ -15,6 +15,7 @@ import { PLAYBACK_SPEEDS } from '../../state/prefs'
 import { setGcodePanel, useGcodeView } from './gcode-file'
 import { MARKERS, setMarkerShown, useMarkers } from './markers'
 import { purgeReadout, usePurgeView, type PlayPurge } from './purge-view'
+import { collisionsOf, collisionTime, jumpToCollision } from '../../plate/heimdall'
 
 /** Heights in px the playback bar snaps between: slim (transport only), medium and full. */
 const DOCK = { min: 56, max: 240, full: 190 } as const
@@ -115,6 +116,10 @@ export function LayerDock() {
   const stats = useApp((s) => (s.slice.status === 'done' ? s.slice.result.stats : null))
   const timeline = useMemo(() => (preview ? buildTimeline(preview, changer, fitOf(stats)) : null), [preview, changer, stats])
   const toolChange = useApp((s) => s.toolChange)
+  // heimdall: a jump to a strike plays the seconds before it and stops on it.
+  const strikeJump = useApp((s) => s.strikeJump)
+  const strikes = useApp(collisionsOf)
+  const stopAt = useRef<number | null>(null)
   // The purge at the chute (Bambu printers), read from the G-code once the preview is up.
   const purges = usePurgeView((s) => (s.timeline === timeline ? s.plans : NO_PURGES))
   // Playback and scrubbing keep their own float clock; the store only holds the layer and move share it maps
@@ -152,11 +157,16 @@ export function LayerDock() {
       if (!playingRef.current) return
       clockRef.current = Math.min(timeline.total, clockRef.current + ((now - last) / 1000) * speedRef.current)
       last = now
+      if (stopAt.current !== null && clockRef.current >= stopAt.current) {
+        clockRef.current = stopAt.current
+        stopAt.current = null
+        setPlaying(false)
+      }
       setClockT(clockRef.current)
       const pos = positionAt(timeline, preview, clockRef.current)
       const s = get()
       if (pos.layerHi !== s.layerHi || pos.moveCut !== s.moveCut || (pos.change ?? null) !== s.toolChange) set({ layerHi: pos.layerHi, moveCut: pos.moveCut, toolChange: pos.change ?? null })
-      if (clockRef.current >= timeline.total) {
+      if (clockRef.current >= timeline.total || !playingRef.current) {
         setPlaying(false)
         return
       }
@@ -174,7 +184,20 @@ export function LayerDock() {
     if (!playing && !synced(clockRef.current)) clockRef.current = t
   })
 
+  useEffect(() => {
+    if (!strikeJump || !timeline || !preview) return
+    // Two seconds of playback at the chosen speed lead up to the strike.
+    const lead = 2 * Math.max(0.25, speedRef.current)
+    stopAt.current = strikeJump.timeS
+    seek(Math.max(timeline.lead, strikeJump.timeS - lead))
+    setPlaying(true)
+    // Taken: a later mount of the bar does not play it again.
+    set({ strikeJump: null })
+    // Only a new jump starts this; the timeline and preview it reads are the current ones then.
+  }, [strikeJump?.seq])
+
   const toggle = () => {
+    stopAt.current = null
     if (!timeline) return
     if (!playing && clockRef.current >= timeline.total - 0.001) seek(0)
     else if (!playing) clockRef.current = now
@@ -306,13 +329,14 @@ export function LayerDock() {
       </div>
       <div className="dock-row">
         <label htmlFor="pv-time">Time</label>
-        <Range
+        <div className="strike-rail">
+          <Range
           id="pv-time"
           min={0}
           max={Math.max(1, timeline.total)}
           step={0.001}
           value={sliderOf(timeline, now)}
-          onChange={(v) => seek(timeOfSlider(timeline, v))}
+          onChange={(v) => ((stopAt.current = null), seek(timeOfSlider(timeline, v)))}
           onKeyDown={(e) => {
             // The track is in fine steps for dragging; the keys step by print time.
             const by = e.key === 'ArrowRight' || e.key === 'ArrowUp' ? 1 : e.key === 'ArrowLeft' || e.key === 'ArrowDown' ? -1 : e.key === 'PageUp' ? 60 : e.key === 'PageDown' ? -60 : 0
@@ -325,7 +349,16 @@ export function LayerDock() {
             }
           }}
           aria-valuetext={`${clock(now)} of ${clock(timeline.total)}`}
-        />
+          />
+          {strikes.map((c, i) => {
+            const at = collisionTime(get(), c)
+            return at === null ? null : (
+              <button key={i} type="button" className="strike-tick" data-severity={c.severity} style={{ left: `${(sliderOf(timeline, at) / Math.max(1, timeline.total)) * 100}%` }} aria-label={`${c.title}, ${clock(at)}`} {...tipAttrs({ title: c.title, body: `${clock(at)}. Click to jump there.` })} onClick={() => jumpToCollision(i)}>
+                <Icon name="strike" size={12} />
+              </button>
+            )
+          })}
+        </div>
         <output className="sx-mono" htmlFor="pv-time">
           {clock(now)} / {clock(timeline.total)}
         </output>
@@ -340,6 +373,7 @@ export function LayerDock() {
       {advanced ? (
         <div className="dock-row">
           <label htmlFor="pv-moves">Moves</label>
+          <div className="strike-rail">
           <Range
             id="pv-moves"
             className="thin"
@@ -348,6 +382,7 @@ export function LayerDock() {
             step={0.01}
             value={1000 * movesOf(timeline, preview, top, moveCut, toolChange)}
             onChange={(v) => {
+              stopAt.current = null
               setPlaying(false)
               // A tool change inside the layer has its own stretch of this track: dragging through it plays it.
               const at = movesAt(timeline, preview, top, v / 1000)
@@ -355,6 +390,14 @@ export function LayerDock() {
             }}
             aria-valuetext={`${moves} of ${segs} moves`}
           />
+          {strikes.map((c, i) =>
+            c.layer === top - 1 ? (
+              <button key={i} type="button" className="strike-tick" data-severity={c.severity} style={{ left: `${movesOf(timeline, preview, top, segs > 0 ? c.segment / segs : 0) * 100}%` }} aria-label={`${c.title}, move ${c.segment + 1}`} {...tipAttrs({ title: c.title, body: `Move ${c.segment + 1} of this layer. Click to jump there.` })} onClick={() => jumpToCollision(i)}>
+                <Icon name="strike" size={12} />
+              </button>
+            ) : null,
+          )}
+          </div>
           <output className="sx-mono" htmlFor="pv-moves">
             {moves} / {segs}
           </output>

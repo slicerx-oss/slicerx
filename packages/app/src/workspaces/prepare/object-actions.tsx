@@ -10,7 +10,7 @@ import { addPrimitive, mergeSelected, splitSelectedToObjects, splitSelectedToPar
 import type { PrimitiveShape } from '../../plate/mesh-ops'
 import { toast, useApp } from '../../state/store'
 import { ObjectTools } from './object-tools'
-import { sequenceProblem } from '../../plate/sequence-check'
+import { printBlock } from '../../plate/heimdall'
 import { exportAllPlates, exportGcode3mf, saveProject } from '../../export/actions'
 import { appName } from '../../edition'
 
@@ -24,8 +24,8 @@ const SHAPES: { shape: PrimitiveShape; label: string; icon: IconName }[] = [
 export function ObjectActions() {
   const host = useHost()
   const hasSel = useApp((s) => s.selection !== null)
-  // By object, a plate too close or too tall is not exported; the item says why.
-  const unsafe = useApp(sequenceProblem)
+  // A plate with a strike in its slice is not exported; the item says why.
+  const unsafe = useApp(printBlock)
   const multi = useApp((s) => s.selectedIds.length > 1 && s.selection !== null && s.selectedIds.includes(s.selection))
   const [menu, setMenu] = useState<'add' | 'object' | 'export' | null>(null)
   const plates = useApp((s) => s.plates.length)

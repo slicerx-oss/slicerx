@@ -9,7 +9,7 @@ import { gcodeView, pickGcodeFile, setGcodePanel } from '../workspaces/preview/g
 import { cancelSlice, clearPlate, exportGcode, loadDefaultPlate, loadDemoModel, openModelFiles, removeSelected, slicePlate } from '../state/actions'
 import { get, markStale, openSettings, set, setCamera, setRail, setWorkspace, type CameraView, type ColorMode, type Goal, type PrepareLook } from '../state/store'
 import { DEMO_MODELS } from '../lib/demo-models'
-import { sequenceProblem } from '../plate/sequence-check'
+import { printBlock } from '../plate/heimdall'
 import { helpLinks, openLink } from '../lib/links'
 import { newProject } from '../project/new'
 import { appName, currentEdition } from '../edition'
@@ -32,8 +32,8 @@ function setEasy(patch: Partial<EasySettings>, goal: Goal = 'custom'): void {
 
 const hasPlate = () => get().plate.length > 0
 const sliced = () => get().slice.status === 'done'
-/** A slice whose plate can still print: not one from before objects were moved too close or too tall by object. */
-const exportable = () => sliced() && sequenceProblem(get()) === null
+/** A slice whose plate can print: no strike in it, and not from before objects were moved too close or too tall by object. */
+const exportable = () => sliced() && printBlock(get()) === null
 
 export function builtinCommands(host: Host, workspaces: readonly { id: string; label: string }[]): CommandSpec[] {
   const out: CommandSpec[] = []

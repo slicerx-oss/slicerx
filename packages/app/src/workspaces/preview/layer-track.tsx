@@ -7,6 +7,7 @@ import { Button, Dialog, Field, Icon, Menu, MenuAnchor, MenuItem, MenuSeparator,
 import { useState, type KeyboardEvent } from 'react'
 import { addMark, customGcodeProblem, MARK_LABEL, removeMark, type LayerMark, type MarkKind } from '../../plate/layer-marks'
 import { toast, useApp } from '../../state/store'
+import { collisionsOf, jumpToCollision } from '../../plate/heimdall'
 
 const EMPTY: LayerMark[] = []
 const ICON: Record<MarkKind, IconName> = { pause: 'pause-marker', color_change: 'color-change-marker', custom: 'terminal' }
@@ -25,6 +26,7 @@ function layerOf(m: LayerMark, layerZ: ArrayLike<number>): number {
 export function LayerTrack({ id, n, top, layerZ, onChange, onKeyDown }: { id: string; n: number; top: number; layerZ: ArrayLike<number>; onChange: (layer: number) => void; onKeyDown?: (e: KeyboardEvent<HTMLInputElement>) => void }) {
   const plateId = useApp((s) => s.activePlate)
   const marks = useApp((s) => s.layerMarks[plateId]) ?? EMPTY
+  const strikes = useApp(collisionsOf)
   const [menu, setMenu] = useState<string | null>(null)
   const [custom, setCustom] = useState<{ text: string; z: number } | null>(null)
   const z = layerZ[top - 1] ?? 0
@@ -42,6 +44,11 @@ export function LayerTrack({ id, n, top, layerZ, onChange, onKeyDown }: { id: st
       <div className="layer-track-rail">
         <Range id={id} className="thin" min={1} max={n} value={top} onChange={onChange} onKeyDown={onKeyDown} aria-valuetext={`Layer ${top} of ${n}, ${z.toFixed(2)} mm`} />
         <div className="layer-marks">
+          {strikes.map((c, i) => (
+            <button key={`strike-${i}`} type="button" className="layer-mark strike-mark" data-kind="strike" data-severity={c.severity} style={{ left: `${share(c.layer + 1)}%` }} aria-label={`${c.title}, layer ${c.layer + 1}`} {...tipAttrs({ title: c.title, body: `Layer ${c.layer + 1}. Click to jump there.` })} onClick={() => jumpToCollision(i)}>
+              <Icon name="strike" size={14} />
+            </button>
+          ))}
           {marks.map((m) => {
             const layer = layerOf(m, layerZ)
             return (

@@ -229,6 +229,10 @@ export interface AppState {
   moveCut: number
   /** Playback is inside the tool change before `segment`, `seconds` into it (`fixed`: the firmware's seconds of it). */
   toolChange: { segment: number; seconds: number; fixed: number } | null
+  /** heimdall: the collision the list has selected (index into the slice's collisions). */
+  strikePick: number | null
+  /** heimdall: playback runs up to this print time and stops on it; `seq` tells two jumps to one moment apart. */
+  strikeJump: { timeS: number; seq: number } | null
   shortcutsOpen: boolean
   /** A prompt handed to the Pilot workspace by a command; it clears it once started. */
   pilotPrompt: string | null
@@ -501,6 +505,8 @@ export const appStore = createStore<AppState>()(() => ({
   layerLo: 1,
   moveCut: 1,
   toolChange: null,
+  strikePick: null,
+  strikeJump: null,
   shortcutsOpen: false,
   pilotPrompt: null,
   fleetRefresh: 0,

@@ -286,6 +286,7 @@ export const ICON_PATHS = {
   "atlas": "<path d=\"M8 3.5h8v15.5H8z\"/><path d=\"M8 7.5h8M8 11.5h8M8 15.5h8\"/><path d=\"M4.5 21.5h15\"/>",
   "huginn": "<path d=\"M2 9.6L8.2 5.8C9.6 5 11 5.3 12 6.3l3.6 3.7c1.6 1.6 3.8 3.1 6.4 4.4l-1 1.6-4.6-.7c-1.8 2.6-6.4 3.1-8.4.3-.6-.9-.9-1.9-1.1-3l-.8-.3.6-.8-.7-.3.4-.8z\"/><path d=\"M10.6 9.8c2.8 1 5.4 3.2 7.2 6.4\"/><circle cx=\"9.4\" cy=\"7.6\" r=\"0.85\" fill=\"currentColor\" stroke=\"none\"/><path d=\"M11 18.3v2.2M13.8 17.9v2.6M8 20.5h8.5\"/>",
   "muninn": "<path d=\"M22.5 12l-5.9 -3.4c-1.3 -0.7 -2.8 -0.6 -3.9 0.2 -2.1 1.3 -4.5 2 -6.7 2.3l-4.5 -1.3 0.8 3.2 3.9 0.5c2 2 6.1 2.6 8.6 0.8 0.4 -0.3 0.8 -0.7 1.1 -1.1l0.8 -0.1 -0.4 -0.6z\"/><path d=\"M13 9.1C12.4 5.6 9.8 2.6 4.5 1.5l0.7 1.8 -1.6 -0.3 1 1.9 -1.3 0.1 1.6 2.2c1 1.4 2.4 2.8 4 3.9\"/><circle cx=\"15.1\" cy=\"10.5\" r=\"0.85\" fill=\"currentColor\" stroke=\"none\"/>",
+  "strike": "<path d=\"M4.3 5.95L9.8 11.45M13.65 14.2L18.05 19.15M5.95 4.3L11.45 9.8M14.2 13.65L19.15 18.05\"/><path d=\"M18.05 4.3L13.65 9.25M9.8 13.65L4.3 18.6M19.7 5.95L14.75 10.35M10.35 14.75L5.95 19.7\"/><circle cx=\"12\" cy=\"12\" r=\"1.1\" fill=\"currentColor\" stroke=\"none\"/>",
   "printer-bed-slinger": "<path d=\"M7.5 13V4h9v9\"/><path d=\"M10.5 7h3l-.75 3h-1.5z\"/><path d=\"M6.5 13.5h14.5l-3 4.5H3.5z\"/><path d=\"M7 21.5h10M9 20l-2 1.5L9 23M15 20l2 1.5-2 1.5\"/>",
   "printer-corexy-open": "<path d=\"M4.5 20.5V4.5h15v16\"/><path d=\"M4.5 9h15\"/><path d=\"M4.5 8.5l3-4M19.5 8.5l-3-4\"/><path d=\"M10.5 9h3l-.75 3h-1.5z\"/><path d=\"M8 17h8\"/>",
   "printer-corexy-enclosed": "<rect x=\"3.5\" y=\"3.5\" width=\"17\" height=\"17\" rx=\"2\"/><path d=\"M3.5 8h17M14.5 8v12.5\"/><path d=\"M12.5 12.5v3\"/><path d=\"M6.5 11.5h3l-.75 3h-1.5z\"/>",
@@ -407,7 +408,7 @@ export const ICON_GROUPS: Readonly<Record<string, readonly IconName[]>> = {
   "Integrations": ["mcp","server","api","plugin-slot","webhook","key","token","shield","lock","unlock","permission","approval-required"],
   "Views": ["fullscreen","exit-fullscreen","zoom-in","zoom-out","fit","home-view","top-view","front-view","side-view","iso-view","wireframe","x-ray","clay","hide","show","isolate"],
   "Actions": ["undo","redo","copy","paste","duplicate","delete","rename","import","export","open","save","settings","settings-reset","history","star","star-off","tag","pin","share","comment"],
-  "Named features": ["slicerx","slicerx-mark","mimir","aegis","sleipnir","atlas","huginn","muninn"],
+  "Named features": ["slicerx","slicerx-mark","mimir","aegis","sleipnir","atlas","huginn","muninn","strike"],
   "Printers": ["printer-bed-slinger","printer-corexy-open","printer-corexy-enclosed","printer-cartesian-gantry","printer-delta","printer-idex","printer-toolchanger","printer-resin","printer-custom","printer-idle","printer-printing","printer-paused","printer-error","printer-offline"],
   "Nozzle": ["nozzle-0-2","nozzle-0-4","nozzle-0-6","nozzle-0-8","nozzle-1-0","nozzle-brass","nozzle-hardened","nozzle-stainless","nozzle-ruby","nozzle-high-flow","nozzle-copper","nozzle-clog","nozzle-swap","nozzle-custom","hotend-volcano","extruder-dual","part-fan"],
   "Filament": ["color-change","color-change-marker","pause-marker","spool-external","spool-refill","spool-rfid","spool-third-party","spool-weight","flush-volume","filament-tangle"],
@@ -418,4 +419,4 @@ export const ICON_GROUPS: Readonly<Record<string, readonly IconName[]>> = {
   "Community": ["donate-coffee","donate-heart-hand","sponsor","creator-badge","role-owner","role-moderator","role-creator","role-member","queue-review","flag","report","reject","scan-clean","scan-flagged","archive-unsafe","file-mesh","file-3mf","file-stl","upload","globe"],
 }
 
-export const ICON_COUNT = 380
+export const ICON_COUNT = 381

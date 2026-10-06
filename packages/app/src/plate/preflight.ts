@@ -5,7 +5,7 @@
 // The facts it returns go on the approval card, with the file's SHA-256.
 import { formatDuration } from '../lib/preview-stats'
 import { degC } from '../lib/temp'
-import type { PrinterInfo, PrinterStatus, SettingValue } from '@slicerx/contracts'
+import type { Collision, PrinterInfo, PrinterStatus, SettingValue } from '@slicerx/contracts'
 import { PRINTER_MODELS, type PrinterModel } from '@slicerx/printer-catalog'
 import { appName } from '../edition'
 
@@ -19,6 +19,8 @@ export interface PreflightInput {
   /** The bed the plate was laid out on. */
   plateBed: { widthMm: number; depthMm: number; heightMm: number }
   file: { name: string; sha256: string; layers: number; timeS: number; grams: number }
+  /** heimdall's collisions of the slice: a hit blocks the send, a close call needs the person's yes. */
+  collisions?: readonly Collision[]
 }
 
 export interface Preflight {
@@ -103,6 +105,12 @@ export function preflight(input: PreflightInput): Preflight {
   const hot = num(config['nozzle_temperature'])
   const bed = num(config['hot_plate_temp'])
   if (hot !== null && hot > 300) warnings.push(`The nozzle heats to ${degC(hot)}. Most hotends are rated to ${degC(300)}.`)
+
+  // heimdall: the head, gantry or tool changer would meet a printed part.
+  for (const c of input.collisions ?? []) {
+    if (c.severity === 'hit') errors.push(`${c.title}, layer ${c.layer + 1}. ${c.detail} Fix it in Preview and slice again.`)
+    else warnings.push(`${c.title}. ${c.detail}`)
+  }
 
   const facts = [
     `${file.name}, SHA-256 ${file.sha256.slice(0, 16)}`,
