@@ -384,6 +384,7 @@ mod tests {
             face,
             moved: true,
             center: None,
+            keys: None,
         }
     }
 

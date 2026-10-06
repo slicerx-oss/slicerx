@@ -51,6 +51,10 @@ pub struct EdgeRef {
     /// corner of the circle and `b` the same point
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub center: Option<V3>,
+    /// The keys of the two faces either side (faces.rs), the one `face` faces first: the edge is found again
+    /// between those faces before it is looked for at `a` and `b` (docs/cad-history.md, "Face keys").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub keys: Option<[u64; 2]>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -113,6 +117,8 @@ struct Tools {
     pub join: Vec<TriMesh>,
     pub edges: Vec<EdgeInfo>,
     pub corners: Vec<Corner>,
+    pub refs: Vec<EdgeRef>,
+    pub notes: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -130,6 +136,10 @@ pub struct EdgeResult {
     pub report: EdgeReport,
     pub edges: Vec<EdgeInfo>,
     pub corners: Vec<Corner>,
+    /// Each edge as it was found, with its faces' keys, for the history step to keep.
+    pub refs: Vec<EdgeRef>,
+    /// What was found another way than asked, in words ("edge 1 was split in two; ...").
+    pub notes: Vec<String>,
 }
 
 struct Region {
@@ -621,6 +631,7 @@ pub fn pick_edge(mesh: &TriMesh, triangle: u32, at: V3) -> Result<EdgePick> {
             face: rim.normal,
             moved: false,
             center: Some(rim.center),
+            keys: None,
         };
         let floor = |w: f64| (w * 1000.0 + 1e-6).floor() / 1000.0;
         let room = rim.room.map(floor);
@@ -651,6 +662,7 @@ pub fn pick_edge(mesh: &TriMesh, triangle: u32, at: V3) -> Result<EdgePick> {
         face: faces.regions[r].normal,
         moved: false,
         center: None,
+        keys: None,
     };
     let mut out = EdgePick {
         edge,
@@ -710,6 +722,7 @@ pub fn pick_edge(mesh: &TriMesh, triangle: u32, at: V3) -> Result<EdgePick> {
         face: faces.regions[r].normal,
         moved: false,
         center: None,
+        keys: None,
     };
     if out.supported && n > 1 {
         let mut fwd = Vec::new();
@@ -1196,6 +1209,25 @@ fn tools(mesh: &TriMesh, edges: &[EdgeRef], profile: Profile) -> Result<Tools> {
         return Err(Error::invalid("edges", "pick at least one edge"));
     }
     let faces = Faces::new(mesh);
+    // A straight edge with its faces' keys is found between those faces first, then by place as before.
+    let mut notes = Vec::new();
+    let found: Vec<EdgeRef> = edges
+        .iter()
+        .enumerate()
+        .map(|(i, e)| match relocate(mesh, e) {
+            Some((r, split)) => {
+                if split {
+                    notes.push(format!(
+                        "edge {} was split in two; rounded its longer part",
+                        i + 1
+                    ));
+                }
+                r
+            }
+            None => keyed(mesh, e),
+        })
+        .collect();
+    let edges = found.as_slice();
     // Round edges get their own tools; the straight ones go on as before, numbered as the request numbers them.
     let mut rims = Vec::new();
     let mut straight = Vec::new();
@@ -1275,7 +1307,11 @@ fn tools(mesh: &TriMesh, edges: &[EdgeRef], profile: Profile) -> Result<Tools> {
             }
         }
     }
-    let mut out = Tools::default();
+    let mut out = Tools {
+        refs: found.clone(),
+        notes: std::mem::take(&mut notes),
+        ..Tools::default()
+    };
     for &(n, ref r) in &rims {
         let widths = r.widths(profile);
         for (side, &w) in widths.iter().enumerate() {
@@ -1357,6 +1393,142 @@ fn tools(mesh: &TriMesh, edges: &[EdgeRef], profile: Profile) -> Result<Tools> {
     Ok(out)
 }
 
+/// The two faces' keys at the middle of edge `e`, the face `e.face` faces first, or none when the mesh's faces have
+/// no keys there.
+fn keys_at(mesh: &TriMesh, e: &EdgeRef) -> Option<[u64; 2]> {
+    let f = mesh.faces.as_ref().filter(|f| !f.keys.is_empty())?;
+    let mid = vec3::scale(vec3::add(e.a, e.b), 0.5);
+    let face = vec3::normalize(e.face)?;
+    let size = mesh.bounds().map_or(1.0, |b| b.diagonal());
+    let tol = REF_MM.max(size * 1e-7);
+    let mut sides: Vec<(u64, f64)> = Vec::new();
+    for (t, tri) in mesh.triangles.iter().enumerate() {
+        let c = tri.map(|v| mesh.positions[v as usize]);
+        let on = (0..3).any(|j| dist_to_segment(mid, c[j], c[(j + 1) % 3]) < tol);
+        if !on {
+            continue;
+        }
+        let k = f.keys.get(f.ids[t] as usize).copied().unwrap_or(0);
+        let n = vec3::normalize(mesh.normal(*tri)).unwrap_or([0.0; 3]);
+        if k != 0 && !sides.iter().any(|(x, _)| *x == k) {
+            sides.push((k, vec3::dot(n, face)));
+        }
+    }
+    if sides.len() != 2 {
+        return None;
+    }
+    sides.sort_by(|a, b| b.1.total_cmp(&a.1));
+    Some([sides[0].0, sides[1].0])
+}
+
+/// The reference with its faces' keys added when it has none and the mesh has them.
+pub fn keyed(mesh: &TriMesh, e: &EdgeRef) -> EdgeRef {
+    if e.keys.is_some() {
+        return *e;
+    }
+    EdgeRef {
+        keys: keys_at(mesh, e),
+        ..*e
+    }
+}
+
+/// The vertex a run of edges is known by (a union find without ranks).
+fn run_root(p: &mut HashMap<u32, u32>, v: u32) -> u32 {
+    let mut r = v;
+    while let Some(&q) = p.get(&r) {
+        if q == r {
+            break;
+        }
+        r = q;
+    }
+    r
+}
+
+/// A straight edge found again between the faces with its keys: its ends as the mesh has them now, and whether the
+/// boundary between those faces came apart (then its longest run). None when it has no keys or the faces no longer
+/// meet.
+fn relocate(mesh: &TriMesh, e: &EdgeRef) -> Option<(EdgeRef, bool)> {
+    let [k0, k1] = e.keys?;
+    if e.center.is_some() {
+        return None;
+    }
+    let f = mesh.faces.as_ref().filter(|f| !f.keys.is_empty())?;
+    let key = |t: usize| f.keys.get(f.ids[t] as usize).copied().unwrap_or(0);
+    let mut by_edge: HashMap<(u32, u32), Vec<usize>> = HashMap::new();
+    for (t, tri) in mesh.triangles.iter().enumerate() {
+        for j in 0..3 {
+            let (u, v) = (tri[j], tri[(j + 1) % 3]);
+            by_edge.entry((u.min(v), u.max(v))).or_default().push(t);
+        }
+    }
+    let segs: Vec<(u32, u32)> = by_edge
+        .iter()
+        .filter(|(_, ts)| {
+            let [t0, t1] = ts[..] else { return false };
+            let (a, b) = (key(t0), key(t1));
+            (a == k0 && b == k1) || (a == k1 && b == k0)
+        })
+        .map(|(&uv, _)| uv)
+        .collect();
+    if segs.is_empty() {
+        return None;
+    }
+    // Runs: segments joined through shared vertices.
+    let mut parent: HashMap<u32, u32> = HashMap::new();
+    for &(u, v) in &segs {
+        parent.entry(u).or_insert(u);
+        parent.entry(v).or_insert(v);
+        let (ru, rv) = (run_root(&mut parent, u), run_root(&mut parent, v));
+        parent.insert(ru, rv);
+    }
+    let mut runs: HashMap<u32, Vec<(u32, u32)>> = HashMap::new();
+    for &(u, v) in &segs {
+        let r = run_root(&mut parent, u);
+        runs.entry(r).or_default().push((u, v));
+    }
+    let span = |run: &[(u32, u32)]| -> Option<(V3, V3, f64)> {
+        let (u, v) = *run.first()?;
+        let (p, q) = (mesh.positions[u as usize], mesh.positions[v as usize]);
+        let d = vec3::normalize(vec3::sub(q, p))?;
+        let pts = run
+            .iter()
+            .flat_map(|&(u, v)| [mesh.positions[u as usize], mesh.positions[v as usize]]);
+        let (mut lo, mut hi) = ((f64::INFINITY, p), (f64::NEG_INFINITY, p));
+        for x in pts {
+            let t = vec3::dot(vec3::sub(x, p), d);
+            if t < lo.0 {
+                lo = (t, x);
+            }
+            if t > hi.0 {
+                hi = (t, x);
+            }
+        }
+        Some((lo.1, hi.1, hi.0 - lo.0))
+    };
+    let spans: Vec<(V3, V3, f64)> = runs.values().filter_map(|r| span(r)).collect();
+    let &(a, b, _) = spans.iter().max_by(|x, y| x.2.total_cmp(&y.2))?;
+    // The normal of the face `face` faced, as it is now.
+    let t0 = mesh.triangles.iter().enumerate().find(|&(t, _)| key(t) == k0)?.1;
+    let face = vec3::normalize(mesh.normal(*t0))?;
+    // Keep the ends in the order the reference had them.
+    let (a, b) = if vec3::dot(vec3::sub(b, a), vec3::sub(e.b, e.a)) < 0.0 {
+        (b, a)
+    } else {
+        (a, b)
+    };
+    Some((
+        EdgeRef {
+            a,
+            b,
+            face,
+            moved: false,
+            center: None,
+            keys: e.keys,
+        },
+        spans.len() > 1,
+    ))
+}
+
 pub fn apply(
     mesh: &TriMesh,
     edges: &[EdgeRef],
@@ -1404,6 +1576,8 @@ pub fn apply(
         mesh: out,
         edges: t.edges,
         corners: t.corners,
+        refs: t.refs,
+        notes: t.notes,
     })
 }
 
@@ -1473,6 +1647,7 @@ mod tests {
             face,
             moved: false,
             center: None,
+            keys: None,
         }
     }
 
@@ -1515,6 +1690,82 @@ mod tests {
         assert!(p.ring.iter().all(|l| l.supported));
         assert_eq!(p.chain.len(), 1);
         assert_eq!(p.ring[0].edge, p.edge);
+    }
+
+    /// A 40 by 30 by 20 box with keys, and a 6 mm slot across it from z 10 up, starting at `x`: two requests, as the
+    /// worker runs them.
+    fn slotted(x: f64) -> TriMesh {
+        let mut b = build::box_mesh([0.0; 3], [40.0, 30.0, 20.0]);
+        crate::faces::with_key_salt(Some(1), || crate::faces::base_keys(&mut b));
+        let slot = build::box_mesh([x, -1.0, 10.0], [x + 6.0, 31.0, 21.0]);
+        crate::faces::with_key_salt(Some(2), || {
+            boolean::boolean(&[b], &[slot], BoolOp::Difference, &BooleanOptions::default())
+                .unwrap()
+                .0
+        })
+    }
+
+    #[test]
+    fn an_edge_is_found_by_its_faces_keys_after_it_moved() {
+        let m = slotted(20.0);
+        // The edge where the top meets the slot's near wall.
+        let e = keyed(&m, &pick(&m, [0.0, 0.0, 1.0], [19.9, 15.0, 20.0]).edge);
+        assert!(e.keys.is_some());
+        assert!((e.a[0] - 20.0).abs() < 1e-9 && (e.b[0] - 20.0).abs() < 1e-9);
+        // The slot moved 5 mm: the edge is found by its faces, its old place is empty.
+        let moved = slotted(25.0);
+        let r = apply(&moved, &[e], chamfer(1.0), &BooleanOptions::default()).unwrap();
+        assert!(r.report.watertight && r.notes.is_empty());
+        assert!(
+            (r.report.volume_change_mm3 + 15.0).abs() < 1e-6,
+            "{}",
+            r.report.volume_change_mm3
+        );
+        assert!((r.refs[0].a[0] - 25.0).abs() < 1e-9 && r.refs[0].keys == e.keys);
+        let by_place = EdgeRef { keys: None, ..e };
+        let err = apply(&moved, &[by_place], chamfer(1.0), &BooleanOptions::default()).unwrap_err();
+        assert!(err.to_string().contains("no sharp edge"), "{err}");
+    }
+
+    #[test]
+    fn an_edge_split_in_two_is_found_by_its_longer_run_and_says_so() {
+        let mut b = build::box_mesh([0.0; 3], [40.0, 30.0, 20.0]);
+        crate::faces::with_key_salt(Some(1), || crate::faces::base_keys(&mut b));
+        // The top front edge, picked before a notch cut it in two.
+        let e = keyed(&b, &pick(&b, [0.0, 0.0, 1.0], [20.0, 0.1, 20.0]).edge);
+        assert!(e.keys.is_some());
+        let notch = build::box_mesh([10.0, -1.0, 10.0], [14.0, 5.0, 21.0]);
+        let m = crate::faces::with_key_salt(Some(2), || {
+            boolean::boolean(&[b], &[notch], BoolOp::Difference, &BooleanOptions::default())
+                .unwrap()
+                .0
+        });
+        let r = apply(&m, &[e], chamfer(1.0), &BooleanOptions::default()).unwrap();
+        assert!(r.notes[0].contains("split in two"), "{:?}", r.notes);
+        let (lo, hi) = (
+            r.refs[0].a[0].min(r.refs[0].b[0]),
+            r.refs[0].a[0].max(r.refs[0].b[0]),
+        );
+        assert!((lo - 14.0).abs() < 1e-9 && (hi - 40.0).abs() < 1e-9, "{lo} {hi}");
+        assert!(
+            (r.report.volume_change_mm3 + 13.0).abs() < 1e-6,
+            "{}",
+            r.report.volume_change_mm3
+        );
+    }
+
+    #[test]
+    fn a_reference_without_keys_gets_them_from_the_mesh_and_works_by_place() {
+        let m = slotted(20.0);
+        let e = pick(&m, [0.0, 0.0, 1.0], [19.9, 15.0, 20.0]).edge;
+        let r = apply(
+            &m,
+            &[EdgeRef { keys: None, ..e }],
+            chamfer(1.0),
+            &BooleanOptions::default(),
+        )
+        .unwrap();
+        assert!(r.refs[0].keys.is_some() && r.notes.is_empty());
     }
 
     #[test]

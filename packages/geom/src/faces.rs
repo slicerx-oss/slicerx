@@ -699,6 +699,7 @@ mod tests {
             face: [0.0, 0.0, 1.0],
             moved: false,
             center: None,
+            keys: None,
         };
         let profile = crate::edge::Profile::Fillet {
             radius: 2.0,
