@@ -317,6 +317,8 @@ pub async fn serve_with_approvals(
     secrets: Arc<dyn SecretStore>,
     broker: Option<Arc<ApprovalBroker>>,
 ) -> std::io::Result<Link> {
+    // A connection test's credential lives for one test: keep it out of the keychain, which can refuse writes.
+    let secrets: Arc<dyn SecretStore> = Arc::new(sx_connect::ScratchSecrets::new(secrets));
     let listener = TcpListener::bind(("127.0.0.1", cfg.port)).await?;
     let addr = listener.local_addr()?;
     let code = match &cfg.fixed_code {
