@@ -77,6 +77,7 @@ impl PrinterConnector for PrusaLinkConnector {
             serial: None,
             firmware,
             lan_only: None,
+            ..DiscoveredPrinter::default()
         };
         if r.status() == reqwest::StatusCode::UNAUTHORIZED {
             let digest = r

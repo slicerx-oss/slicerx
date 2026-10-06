@@ -151,6 +151,7 @@ fn config_fixture() {
             serial: Some("01P00A000000000".into()),
             firmware: None,
             lan_only: None,
+            ..DiscoveredPrinter::default()
         },
         remote: RemoteFile {
             printer_id: "bay-2".into(),

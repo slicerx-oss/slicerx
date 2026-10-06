@@ -184,6 +184,7 @@ pub fn parse_discovery(text: &str) -> Option<DiscoveredPrinter> {
             .and_then(Value::as_str)
             .map(str::to_owned),
         lan_only: None,
+        ..DiscoveredPrinter::default()
     })
 }
 

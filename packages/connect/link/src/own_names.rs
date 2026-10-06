@@ -58,6 +58,7 @@ mod tests {
             serial: Some("v1".into()),
             firmware: None,
             lan_only: None,
+            ..DiscoveredPrinter::default()
         };
         names.remember(&[blank, other]);
         assert_eq!((names.get("01P00A000000002"), names.get("v1")), (None, None));

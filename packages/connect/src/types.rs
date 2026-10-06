@@ -342,7 +342,7 @@ impl PrinterConfig {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DiscoveredPrinter {
     pub plugin: String,
@@ -361,6 +361,17 @@ pub struct DiscoveredPrinter {
     /// Bambu Lab: true while LAN Only Mode is on, false while the printer uses Bambu Cloud.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lan_only: Option<bool>,
+    /// Bambu Lab: true while the printer is bound to a Bambu account (SSDP `DevBind` `occupied`),
+    /// false while it is free.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bound: Option<bool>,
+    /// The announcement offers HTTPS on `port` (Moonraker's `https_port`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tls: Option<bool>,
+    /// An identity that survives an address change, for printers that announce one without a
+    /// serial number (Moonraker's instance `uuid`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub uid: Option<String>,
 }
 
 /// What a printer reports about its own hardware: read once, when it is added, so setup asks for
@@ -385,6 +396,22 @@ pub struct PrinterHardware {
     /// Bambu Lab: whether a micro SD card is in. An X1 needs one to start a print over the network.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sd_card: Option<bool>,
+    /// The printable volume, X, Y and Z in mm, from the printer's own travel limits (Klipper).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub build_volume_mm: Option<[f64; 3]>,
+    /// The diameter of a round bed in mm (delta printers).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bed_diameter_mm: Option<f64>,
+    /// Klipper's kinematics: `cartesian`, `corexy`, `delta` and so on.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kinematics: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_velocity_mm_s: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_accel_mm_s2: Option<f64>,
+    /// The name the printer has on the network, which outlives an address change.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hostname: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -409,7 +436,8 @@ pub struct ExtruderInfo {
 pub struct FilamentUnit {
     /// The slot letter the unit's slots use (`A` for slots A1 to A4), or `external`.
     pub id: String,
-    /// `ams`, `ams-lite`, `ams-2-pro`, `ams-ht`, `mmu` or `external`.
+    /// `ams`, `ams-lite`, `ams-2-pro`, `ams-ht`, `mmu`, `qidi-box`, `cfs` (Creality), `toolchanger`
+    /// (one spool per toolhead, Snapmaker U1) or `external`.
     pub kind: String,
     /// The tool the unit feeds, when the printer has more than one.
     #[serde(default, skip_serializing_if = "Option::is_none")]

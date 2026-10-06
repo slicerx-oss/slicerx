@@ -37,6 +37,8 @@ test('a scan result keeps what the printer announced, and drops the usual port',
   const h2d = foundPrinter({ plugin: 'bambu-lan', host: '192.168.1.52', port: 8883, name: 'Workshop H2D', model: 'H2D', serial: '0948AA000000001', firmware: '01.03.00.00', lanOnly: false })
   assert.deepEqual(h2d, { id: '0948AA000000001', name: 'Workshop H2D', family: 'bambu-lan', address: '192.168.1.52', model: 'H2D', serial: '0948AA000000001', firmware: '01.03.00.00', lanOnly: false })
   assert.equal(foundPrinter({ plugin: 'moonraker', host: '192.168.1.9', port: 7126 }).address, '192.168.1.9:7126')
+  // A Moonraker announcement's uuid keeps the printer the same one when its address changes.
+  assert.equal(foundPrinter({ plugin: 'moonraker', host: '192.168.1.9', port: 7125, uid: 'f0e1d2c3' }).id, 'f0e1d2c3')
   // A bridge without `probe` answers an empty list.
   const setup = createPrinterSetup({} as never)
   assert.deepEqual(await setup.probe('192.168.1.52'), [])
@@ -167,4 +169,9 @@ test('credentials go to the secret store under a per-printer name and are remove
 
   await setup.testConnection(bambu)
   assert.equal(secrets.size, 1, 'a test uses a temporary secret and removes it')
+
+  // An address alone is enough: the printer's certificate names its serial number.
+  fail = false
+  await setup.addPrinter({ profileId: 'bambu-a1', nozzleMm: 0.4, connection: { family: 'bambu', address: '192.168.1.10', credential: '12345678' } })
+  assert.equal((calls.at(-1) as [Record<string, unknown>])[0].serial, undefined)
 })
