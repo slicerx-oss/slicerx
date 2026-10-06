@@ -59,6 +59,8 @@ pub enum LoginNeed {
     PairAgain,
     /// The request was turned down on the printer's own screen.
     Declined,
+    /// The printer is in cloud mode and takes no local connection (Anycubic LAN Mode is off).
+    LanModeOff,
 }
 
 impl LoginNeed {
@@ -75,6 +77,9 @@ impl LoginNeed {
                 "forgot its pairing with this computer (it was turned off): pair it again on its touchscreen"
             }
             LoginNeed::Declined => "turned the connection down on its touchscreen",
+            LoginNeed::LanModeOff => {
+                "is in cloud mode: turn on LAN Mode in its network settings (this removes it from the maker's cloud account)"
+            }
         }
     }
 }

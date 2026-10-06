@@ -429,6 +429,31 @@ fn client_config(
     Ok(Arc::new(cfg))
 }
 
+/// The LAN config for a printer that wants the client certificate it handed out itself (Anycubic
+/// LAN Mode gives one with the MQTT login): the PEM certificate chain and key are presented, and any
+/// server certificate is accepted, as for the other LAN printers.
+pub(crate) fn lan_client_auth_config(cert_pem: &str, key_pem: &str) -> Result<Arc<ClientConfig>> {
+    use rustls::pki_types::PrivateKeyDer;
+    use rustls::pki_types::pem::PemObject;
+    let certs = CertificateDer::pem_slice_iter(cert_pem.as_bytes())
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .map_err(|e| Error::Config(format!("client certificate: {e}")))?;
+    let key = PrivateKeyDer::from_pem_slice(key_pem.as_bytes())
+        .map_err(|e| Error::Config(format!("client key: {e}")))?;
+    let provider = Arc::new(ring::default_provider());
+    let cfg = ClientConfig::builder_with_provider(provider.clone())
+        .with_protocol_versions(rustls::DEFAULT_VERSIONS)
+        .map_err(|e| Error::Config(e.to_string()))?
+        .dangerous()
+        .with_custom_certificate_verifier(Arc::new(AcceptSelfSigned {
+            provider,
+            observe: None,
+        }))
+        .with_client_auth_cert(certs, key)
+        .map_err(|e| Error::Config(e.to_string()))?;
+    Ok(Arc::new(cfg))
+}
+
 /// A client config that trusts no certificate at all. Plain `http://` printers never use it;
 /// it exists so an `https://` redirect or URL fails instead of being trusted by accident.
 pub(crate) fn no_trust_config() -> Result<Arc<ClientConfig>> {

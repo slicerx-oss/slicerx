@@ -53,6 +53,7 @@ const FLAVORS: Record<string, readonly string[]> = {
   elegoo: ['klipper', 'marlin2', 'marlin'],
   snapmaker: ['marlin', 'marlin2'],
   ultimaker: ['griffin'],
+  anycubic: ['klipper', 'marlin2', 'marlin'],
 }
 
 export function preflight(input: PreflightInput): Preflight {

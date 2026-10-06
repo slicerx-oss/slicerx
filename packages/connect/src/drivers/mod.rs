@@ -7,6 +7,7 @@ use std::sync::Arc;
 use crate::PrinterConnector;
 use crate::gate::ApprovalGate;
 
+pub mod anycubic;
 pub mod bambu;
 pub mod creality;
 pub mod duet;
@@ -17,6 +18,7 @@ pub mod prusalink;
 pub mod snapmaker;
 pub mod ultimaker;
 
+pub use anycubic::AnycubicConnector;
 pub use bambu::BambuConnector;
 pub use creality::CrealityConnector;
 pub use duet::DuetConnector;
@@ -40,6 +42,7 @@ pub(crate) fn all(
         Box::new(CrealityConnector::new(gate.clone())),
         Box::new(ElegooConnector::new(gate.clone()).with_discovery_bind(discovery_bind)),
         Box::new(SnapmakerConnector::new(gate.clone()).with_discovery_bind(discovery_bind)),
-        Box::new(UltiMakerConnector::new(gate)),
+        Box::new(UltiMakerConnector::new(gate.clone())),
+        Box::new(AnycubicConnector::new(gate)),
     ]
 }

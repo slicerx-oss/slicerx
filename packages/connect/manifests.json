@@ -1423,6 +1423,98 @@
     ]
   },
   {
+    "id": "anycubic",
+    "name": "Anycubic LAN Mode",
+    "version": "0.1.0",
+    "kind": "printer",
+    "protocols": [
+      "http",
+      "mqtt-tls"
+    ],
+    "capabilities": [
+      "status",
+      "events",
+      "pause",
+      "resume",
+      "cancel",
+      "filament_slots"
+    ],
+    "tools": [
+      {
+        "name": "anycubic.status",
+        "description": "Read the normalized status of one printer.",
+        "permission": "read",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "printerId": {
+              "type": "string",
+              "description": "Printer id, such as bay-1"
+            }
+          },
+          "required": [
+            "printerId"
+          ]
+        }
+      },
+      {
+        "name": "anycubic.pause",
+        "description": "Pause the running job.",
+        "permission": "start",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "printerId": {
+              "type": "string",
+              "description": "Printer id, such as bay-1"
+            }
+          },
+          "required": [
+            "printerId"
+          ]
+        }
+      },
+      {
+        "name": "anycubic.resume",
+        "description": "Resume a paused job.",
+        "permission": "start",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "printerId": {
+              "type": "string",
+              "description": "Printer id, such as bay-1"
+            }
+          },
+          "required": [
+            "printerId"
+          ]
+        }
+      },
+      {
+        "name": "anycubic.cancel",
+        "description": "Cancel the running job.",
+        "permission": "start",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "printerId": {
+              "type": "string",
+              "description": "Printer id, such as bay-1"
+            }
+          },
+          "required": [
+            "printerId"
+          ]
+        }
+      }
+    ],
+    "network": [
+      "lan:18910",
+      "lan:9883"
+    ]
+  },
+  {
     "id": "spoolman",
     "name": "Spoolman",
     "version": "0.1.0",

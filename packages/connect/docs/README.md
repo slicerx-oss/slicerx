@@ -13,6 +13,7 @@ SlicerX talks to printers and to two home services through connectors that share
 | [duet.md](duet.md) | Duet boards running RepRapFirmware 3 |
 | [elegoo.md](elegoo.md) | Elegoo Centauri Carbon (SDCP) |
 | [ultimaker.md](ultimaker.md) | UltiMaker S series and UM3 (experimental) |
+| [anycubic.md](anycubic.md) | Anycubic Kobra 3, S1 and Kobra X in LAN Mode (experimental) |
 | [camera.md](camera.md) | Live camera video: what each printer gives, quality, and the stream protocol |
 | [export.md](export.md) | Printers with no supported connection: save G-code and carry it over |
 | [finding-printers.md](finding-printers.md) | How scanning finds printers, what it sends, and what to do when it finds nothing |

@@ -11,7 +11,11 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+# AES-128-CBC for the credentials an Anycubic printer hands out in LAN Mode.
+aes = "=0.9.3"
 async-trait = "=0.1.92"
+base64 = "=0.22.1"
+cbc = { version = "=0.2.1", features = ["alloc"] }
 futures = "=0.3.34"
 getrandom = "=0.4.3"
 # The computer's network interfaces, so discovery asks on each network (see src/netif.rs).

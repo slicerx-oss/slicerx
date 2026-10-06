@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url'
 import type { DemoFleet, PrinterState } from '@slicerx/contracts'
 import { startOnvif } from './onvif.ts'
 import { startRtsp } from './rtsp.ts'
+import { startAnycubic, type AnycubicExtra } from './anycubic.ts'
 import { startBambu, MOCK_ACCESS_CODE, MOCK_SERIAL, type BambuExtra } from './bambu.ts'
 import { MOCK_CLOUD_TOKEN, startCloud } from './cloud.ts'
 import { startCreality, type CrealityControl } from './creality.ts'
@@ -30,11 +31,11 @@ export const MOCK_DIGEST = { user: 'maker', password: 'mock-digest-pass' }
 /** Login of the generic RTSP camera mock (`rtsp://HOST:PORT/live`, Basic). */
 export const MOCK_RTSP_CAMERA = { user: 'cam', password: 'cam-pass', path: '/live' }
 
-export type MockName = 'moonraker' | 'prusalink' | 'octoprint' | 'duet' | 'elegoo' | 'creality' | 'snapmaker-luban' | 'ultimaker' | 'cloud' | 'bambu' | 'spoolman' | 'home-assistant' | 'rtsp-camera'
-export const ALL_MOCKS: MockName[] = ['moonraker', 'prusalink', 'octoprint', 'duet', 'elegoo', 'creality', 'snapmaker-luban', 'ultimaker', 'cloud', 'bambu', 'spoolman', 'home-assistant', 'rtsp-camera']
+export type MockName = 'moonraker' | 'prusalink' | 'octoprint' | 'duet' | 'elegoo' | 'creality' | 'snapmaker-luban' | 'ultimaker' | 'anycubic' | 'cloud' | 'bambu' | 'spoolman' | 'home-assistant' | 'rtsp-camera'
+export const ALL_MOCKS: MockName[] = ['moonraker', 'prusalink', 'octoprint', 'duet', 'elegoo', 'creality', 'snapmaker-luban', 'ultimaker', 'anycubic', 'cloud', 'bambu', 'spoolman', 'home-assistant', 'rtsp-camera']
 
 /** Which fixture printer backs each protocol. */
-const BACKING: Record<string, string> = { moonraker: 'bay-4', prusalink: 'bay-3', octoprint: 'bay-2', duet: 'bay-4', elegoo: 'bay-4', creality: 'bay-5', 'snapmaker-luban': 'bay-2', ultimaker: 'bay-4', bambu: 'bay-1' }
+const BACKING: Record<string, string> = { moonraker: 'bay-4', prusalink: 'bay-3', octoprint: 'bay-2', duet: 'bay-4', elegoo: 'bay-4', creality: 'bay-5', 'snapmaker-luban': 'bay-2', ultimaker: 'bay-4', anycubic: 'bay-4', bambu: 'bay-1' }
 
 export interface StartOptions {
   only?: MockName[]
@@ -52,7 +53,7 @@ export interface StartOptions {
 }
 
 export interface RunningMocks {
-  /** Ports by mock name. `ultimaker-camera` is the UltiMaker camera (mjpg-streamer). `rtsp-camera` (Basic login) and `rtsp-open` (none) are generic RTSP cameras. Bambu has five: `bambu` (MQTT), `bambu-ftp`, `bambu-camera` (JPEG stream), `bambu-rtsps` (X1 and H2 video), `bambu-ssdp` (UDP, answers searches). */
+  /** Ports by mock name. `anycubic` is the Anycubic /info port, `anycubic-mqtt` its broker. `ultimaker-camera` is the UltiMaker camera (mjpg-streamer). `rtsp-camera` (Basic login) and `rtsp-open` (none) are generic RTSP cameras. Bambu has five: `bambu` (MQTT), `bambu-ftp`, `bambu-camera` (JPEG stream), `bambu-rtsps` (X1 and H2 video), `bambu-ssdp` (UDP, answers searches). */
   ports: Record<string, number>
   control: number
   stop(): Promise<void>
@@ -107,6 +108,14 @@ export async function startMocks(opts: StartOptions = {}): Promise<RunningMocks>
     const u = await startUltiMaker(machine('ultimaker'))
     add('ultimaker', u.api)
     add('ultimaker-camera', u.camera)
+  }
+  let anycubicExtra: AnycubicExtra | undefined
+  if (only.includes('anycubic')) {
+    const a = await startAnycubic(machine('anycubic'), log)
+    anycubicExtra = a.extra
+    add('anycubic', a.http)
+    servers.push(a.mqtt)
+    ports['anycubic-mqtt'] = a.mqttPort
   }
   let cloudOffer: ((spec: import('./cloud.ts').OfferSpec) => string) | undefined
   if (only.includes('cloud')) {
@@ -232,6 +241,15 @@ export async function startMocks(opts: StartOptions = {}): Promise<RunningMocks>
       if (b.decline !== undefined) lubanExtra.decline = b.decline
       if (b.forget) lubanExtra.forget()
       return { json: { drop: lubanExtra.drop, decline: lubanExtra.decline } }
+    }
+    // POST /anycubic {cloud?, rotate?}: the Anycubic fake turns LAN Mode off (cloud: true), or changes its broker
+    // login as a restart does (rotate: true), which drops the connected clients.
+    if (req.path === '/anycubic' && req.method === 'POST') {
+      if (!anycubicExtra) return { status: 404 }
+      const b = req.json() as { cloud?: boolean; rotate?: boolean }
+      if (b.cloud !== undefined) anycubicExtra.cloud = b.cloud
+      if (b.rotate) anycubicExtra.rotate()
+      return { json: { cloud: anycubicExtra.cloud } }
     }
     // POST /prusalink {storage}: what the PrusaLink fake lists as writable (`usb`, `local` or `none`).
     if (req.path === '/prusalink' && req.method === 'POST') {

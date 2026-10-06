@@ -358,7 +358,8 @@ pub struct DiscoveredPrinter {
     /// Firmware version, when the announcement says.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub firmware: Option<String>,
-    /// Bambu Lab: true while LAN Only Mode is on, false while the printer uses Bambu Cloud.
+    /// Bambu Lab: true while LAN Only Mode is on, false while the printer uses Bambu Cloud. Anycubic:
+    /// true while LAN Mode is on.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lan_only: Option<bool>,
     /// Bambu Lab: true while the printer is bound to a Bambu account (SSDP `DevBind` `occupied`),
@@ -441,7 +442,7 @@ pub struct FilamentUnit {
     /// The slot letter the unit's slots use (`A` for slots A1 to A4), or `external`.
     pub id: String,
     /// `ams`, `ams-lite`, `ams-2-pro`, `ams-ht`, `mmu`, `qidi-box`, `cfs` (Creality), `toolchanger`
-    /// (one spool per toolhead, Snapmaker U1) or `external`.
+    /// (one spool per toolhead, Snapmaker U1), `ace` (Anycubic ACE) or `external`.
     pub kind: String,
     /// The tool the unit feeds, when the printer has more than one.
     #[serde(default, skip_serializing_if = "Option::is_none")]

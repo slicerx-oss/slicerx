@@ -59,6 +59,11 @@ const NEED_COPY: Record<AuthNeed, { title: string; body: string; tips: string[] 
     body: 'Pair again, and tap Yes or Allow on the printer\'s screen when it asks.',
     tips: [],
   },
+  lan_mode_off: {
+    title: 'LAN Mode is off on the printer.',
+    body: 'The printer is in cloud mode and takes no local connection. In its Settings > Network, turn on LAN Mode, then try once more.',
+    tips: ['Turning on LAN Mode removes the printer from your Anycubic account for good. Turning it off later does not bring it back; you would pair it again in the Anycubic app.', 'A printer can drop back to cloud mode on its own. If it worked before, check LAN Mode again.'],
+  },
 }
 
 /** The panel's words for a failed test of the printer at `address`. */
