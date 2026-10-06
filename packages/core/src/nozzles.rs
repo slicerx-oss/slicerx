@@ -188,6 +188,28 @@ impl Usage {
                 }
             }
         }
+        // A plate of one filament prints its skirt with it too: the skirt runs skirt_distance past the parts and
+        // their brim, so the map must keep that within the extruder's reach. (Orca's geometric check reads only the
+        // objects' walls and fills, PrintObject::detect_extruder_geometric_unprintables, and its skirt can land out
+        // of reach.)
+        let used: Vec<usize> = boxes
+            .iter()
+            .enumerate()
+            .filter(|(_, b)| b.is_some())
+            .map(|(i, _)| i)
+            .collect();
+        if let [only] = used.as_slice()
+            && cfg.skirt_loops > 0
+            && let Some(Some(b)) = boxes.get_mut(*only)
+        {
+            let brim = if crate::brim::Kind::of(cfg) == crate::brim::Kind::Off {
+                0.0
+            } else {
+                cfg.brim_width
+            };
+            let margin = brim + cfg.skirt_distance + f64::from(cfg.skirt_loops) * cfg.line_width;
+            *b = [b[0] - margin, b[1] - margin, b[2] + margin, b[3] + margin];
+        }
         if cfg.enable_support {
             for key in ["support_filament", "support_interface_filament"] {
                 #[allow(

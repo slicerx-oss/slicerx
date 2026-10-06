@@ -476,3 +476,20 @@ fn a_model_that_cannot_fit_is_refused_before_slicing() {
     let m5 = m.clone();
     assert!(common::run_request(&scaled(1.0, [100.0, 100.0]), &move |_: &str| Ok(m5.clone())).is_ok());
 }
+
+#[test]
+fn the_auto_map_gives_a_skirt_to_an_extruder_that_reaches_it() {
+    // One filament at x 40 with a 15 mm brim and three skirt loops 6 mm out: the map counted only the part, gave
+    // it to the right extruder (x 25 to 350), and the skirt at x 23.4 stopped the slice. The left extruder
+    // (x 0 to 325) reaches all of it.
+    let mut c = h2d();
+    c["brim_type"] = json!("outer_only");
+    c["brim_width"] = json!(15);
+    c["skirt_loops"] = json!(3);
+    c["skirt_distance"] = json!(6);
+    let m = Arc::new(Mesh::load(&cube_stl([20.0, 20.0, 20.0]), "cube.stl").unwrap());
+    let req = request(c, json!({}), [40.0, 150.0, 0.0]);
+    let run = common::run_request(&req, &move |_: &str| Ok(m.clone())).unwrap();
+    let map = run.report.filament_map.as_ref().expect("a filament map");
+    assert_eq!(map.extruders, [1], "the left extruder prints it");
+}
