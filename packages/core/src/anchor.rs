@@ -198,7 +198,10 @@ pub(crate) fn connect(lines: Vec<Vec<Point>>, region: &Shapes, p: Params) -> Vec
     // loops close and so how many strokes are left. Rounding noise used to decide it (a grid on the block
     // left four strokes); Orca's integer lengths decide it there, by luck as often as not.
     let tier = |l: f64| -> i64 {
-        #[allow(clippy::cast_possible_truncation, reason = "arc length in steps of TIE, far inside i64")]
+        #[allow(
+            clippy::cast_possible_truncation,
+            reason = "arc length in steps of TIE, far inside i64"
+        )]
         {
             (l / TIE).round() as i64
         }
