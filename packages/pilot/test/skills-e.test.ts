@@ -116,7 +116,8 @@ describe('stages', () => {
     expect(conn.ask.options?.map((o) => o.id)).toEqual(['bambu-lan', 'export'])
     const details = await stage({ ...base, brand: 'Bambu Lab', model: 'P1S', nozzleMm: 0.4, connection: 'bambu-lan' })
     expect(details.stage).toBe('details')
-    expect(details.ask.options?.map((o) => o.id)).toEqual(['host', 'serial'])
+    // the serial is optional: a printer added by address reads it from its certificate
+    expect(details.ask.options?.map((o) => o.id)).toEqual(['host'])
     expect(details.ask.options?.find((o) => o.id === 'host')?.note).toMatch(/WLAN/)
     const test = await stage({ ...base, brand: 'Bambu Lab', model: 'P1S', nozzleMm: 0.4, connection: 'bambu-lan', host: '10.0.0.5', serial: 'X' })
     expect(test.stage).toBe('test')
