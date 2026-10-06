@@ -165,6 +165,78 @@ const ARC_TURN_DEG: f64 = 30.0;
 /// straight side, one cylinder for a run of sides along an arc. Outer rings run counterclockwise and holes
 /// clockwise, so the outward side is on the right of each side in both.
 fn side_faces(ring: &[V2], frame: &Frame, h0: f64, up: f64, f: &mut Faces) -> Vec<u32> {
+    ring_faces(
+        ring,
+        f,
+        |(center, radius)| Surface::Cylinder {
+            origin: frame.at(center, h0),
+            axis: frame.w,
+            radius,
+        },
+        |a, b| {
+            let d = [b[0] - a[0], b[1] - a[1]];
+            let out2 = [d[1] * up, -d[0] * up];
+            let normal = vec3::normalize(vec3::add(
+                vec3::scale(frame.u, out2[0]),
+                vec3::scale(frame.v, out2[1]),
+            ))
+            .unwrap_or(frame.u);
+            Surface::Plane {
+                normal,
+                offset: vec3::dot(normal, frame.at(a, h0)),
+            }
+        },
+    )
+}
+
+/// The face of each side of the closed `ring`, pushed to `f`: a run of sides along a tessellated arc is one face,
+/// `arc` of its circle (center and radius); any other side is a face of its own, `straight` of its two ends.
+pub(crate) fn ring_faces(
+    ring: &[V2],
+    f: &mut Faces,
+    arc: impl Fn((V2, f64)) -> Surface,
+    straight: impl Fn(V2, V2) -> Surface,
+) -> Vec<u32> {
+    let len = ring.len();
+    let at = |k: usize| ring[k % len];
+    let (on_arc, tol) = arcs(ring);
+    let same = |a: Circle, b: Circle| same_circle(a, b, tol);
+    let mut ids = Vec::with_capacity(len);
+    let mut last: Option<((V2, f64), u32)> = None;
+    for (k, side) in on_arc.iter().enumerate() {
+        let id = if let Some(c) = *side {
+            match last {
+                Some((lc, id)) if same(lc, c) => id,
+                _ => {
+                    let id = f.push(arc(c));
+                    last = Some((c, id));
+                    id
+                }
+            }
+        } else {
+            last = None;
+            f.push(straight(at(k), at(k + 1)))
+        };
+        ids.push(id);
+    }
+    // A ring that is all one arc may have started a second face for the same circle at side 0.
+    if let (Some(c0), Some(cn)) = (on_arc[0], on_arc[len - 1])
+        && same(c0, cn)
+        && ids[0] != ids[len - 1]
+    {
+        let (keep, drop) = (ids[len - 1], ids[0]);
+        for id in &mut ids {
+            if *id == drop {
+                *id = keep;
+            }
+        }
+    }
+    ids
+}
+
+/// For each side of the closed `ring`, the circle (center and radius) of the tessellated arc it lies on, if any,
+/// and a test for two circles being the same within the ring's tolerance.
+fn arcs(ring: &[V2]) -> (Vec<Option<Circle>>, f64) {
     let len = ring.len();
     let at = |k: usize| ring[k % len];
     let size = ring
@@ -191,73 +263,32 @@ fn side_faces(ring: &[V2], frame: &Frame, h0: f64, up: f64, f: &mut Faces) -> Ve
         circumcenter(a, b, c).map(|o| (o, (a[0] - o[0]).m_hypot(a[1] - o[1])))
     };
     let circles: Vec<Option<(V2, f64)>> = (0..len).map(circle).collect();
-    let same = |x: Option<(V2, f64)>, y: Option<(V2, f64)>| match (x, y) {
-        (Some((o1, r1)), Some((o2, r2))) => {
-            (o1[0] - o2[0]).m_hypot(o1[1] - o2[1]) <= tol * 10.0 && (r1 - r2).abs() <= tol * 10.0
-        }
-        _ => false,
-    };
+    let same = |a: Circle, b: Circle| same_circle(a, b, tol);
+    let same_opt =
+        |x: Option<(V2, f64)>, y: Option<(V2, f64)>| matches!((x, y), (Some(a), Some(b)) if same(a, b));
     // Side k is on an arc when the circle through it and the next side matches the one through the previous side
     // and it, or it is the first or last side of such a run.
-    let on_arc: Vec<Option<(V2, f64)>> = (0..len)
+    let on_arc = (0..len)
         .map(|k| {
             let prev = circles[(k + len - 1) % len];
             let here = circles[k];
-            if same(prev, here) || same(here, circles[(k + 1) % len]) {
+            if same_opt(prev, here) || same_opt(here, circles[(k + 1) % len]) {
                 here
-            } else if same(circles[(k + len - 2) % len], prev) {
+            } else if same_opt(circles[(k + len - 2) % len], prev) {
                 prev
             } else {
                 None
             }
         })
         .collect();
-    let mut ids = Vec::with_capacity(len);
-    let mut last: Option<((V2, f64), u32)> = None;
-    for (k, arc) in on_arc.iter().enumerate() {
-        let id = if let Some(c) = *arc {
-            match last {
-                Some((lc, id)) if same(Some(lc), Some(c)) => id,
-                _ => {
-                    let id = f.push(Surface::Cylinder {
-                        origin: frame.at(c.0, h0),
-                        axis: frame.w,
-                        radius: c.1,
-                    });
-                    last = Some((c, id));
-                    id
-                }
-            }
-        } else {
-            last = None;
-            let (a, b) = (at(k), at(k + 1));
-            let d = [b[0] - a[0], b[1] - a[1]];
-            let out2 = [d[1] * up, -d[0] * up];
-            let normal = vec3::normalize(vec3::add(
-                vec3::scale(frame.u, out2[0]),
-                vec3::scale(frame.v, out2[1]),
-            ))
-            .unwrap_or(frame.u);
-            f.push(Surface::Plane {
-                normal,
-                offset: vec3::dot(normal, frame.at(a, h0)),
-            })
-        };
-        ids.push(id);
-    }
-    // A ring that is all one arc may have started a second cylinder for the same circle at side 0.
-    if let (Some(c0), Some(cn)) = (on_arc[0], on_arc[len - 1])
-        && same(Some(c0), Some(cn))
-        && ids[0] != ids[len - 1]
-    {
-        let (keep, drop) = (ids[len - 1], ids[0]);
-        for id in &mut ids {
-            if *id == drop {
-                *id = keep;
-            }
-        }
-    }
-    ids
+    (on_arc, tol)
+}
+
+/// A circle in the plane: center and radius.
+type Circle = (V2, f64);
+
+fn same_circle((o1, r1): Circle, (o2, r2): Circle, tol: f64) -> bool {
+    (o1[0] - o2[0]).m_hypot(o1[1] - o2[1]) <= tol * 10.0 && (r1 - r2).abs() <= tol * 10.0
 }
 
 pub fn cylinder(frame: &Frame, r: f64, h0: f64, h1: f64, segments: usize) -> TriMesh {
