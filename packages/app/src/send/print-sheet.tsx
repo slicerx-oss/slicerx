@@ -54,6 +54,13 @@ export interface PrintSheetAsk {
    * "Send as plain G-code" button would send, and the person's last choices, which the sheet opens with.
    */
   refusal?: { reason: string; plainSha256: string; last: SendChoice }
+  /**
+   * A Bambu Lab printer can also print through Bambu Connect: `open` hands the file to it, `save` saves the file where
+   * Bambu Connect cannot be opened from here (Linux, the browser). Offered after a refusal.
+   */
+  bambuConnect?: 'open' | 'save'
+  /** The printer has Developer Mode off: Bambu Connect is the only way to print, and the sheet offers nothing else. */
+  connectOnly?: boolean
   resolve: (choice: SendChoice | null) => void
 }
 
@@ -102,15 +109,17 @@ export function PrintSheet() {
   // order and offers no choice it would ignore.
   const follows = ask ? followsSlotMap(ask.printer.plugin, fileName) : false
   const map: Record<number, string> = { ...(ask?.auto ?? {}), ...(follows ? edits : {}) }
-  const mapping = Boolean(ask && ask.filaments.length > 0 && ask.slots.length > 0 && mode !== 'upload')
+  const mapping = Boolean(ask && !(ask.connectOnly && !ask.refusal) && ask.filaments.length > 0 && ask.slots.length > 0 && mode !== 'upload')
   // Slots are picked here only when the automatic match leaves a filament without one or two on the same slot. The
   // choice stays open once shown, so a pick does not make the control vanish under the pointer.
-  const pick = useMemo(() => Boolean(ask && follows && ask.filaments.length > 0 && ask.slots.length > 0 && (ask.filaments.some((f) => ask.auto[f.index] === undefined) || duplicateTargets(ask.auto).length > 0)), [ask, follows])
+  const pick = useMemo(() => Boolean(ask && follows && !(ask.connectOnly && !ask.refusal) && ask.filaments.length > 0 && ask.slots.length > 0 && (ask.filaments.some((f) => ask.auto[f.index] === undefined) || duplicateTargets(ask.auto).length > 0)), [ask, follows])
   const dups = mapping ? duplicateTargets(map) : []
   const unmapped = mapping && ask ? ask.filaments.filter((f) => map[f.index] === undefined) : []
   const errors = ask?.check?.errors ?? []
   const warnings = ask?.check?.warnings ?? []
   const checking = Boolean(ask && ask.check === null)
+  // Developer Mode off: Bambu Connect is the only way to print, and it maps the slots and starts the print itself.
+  const via = ask?.connectOnly && ask.bambuConnect && !ask.refusal ? ask.bambuConnect : null
   const start = mode === 'start'
   // A filament with no slot would go out as unmapped, and the printer would pick one: the person picks it here instead.
   const blocked = busy || checking || errors.length > 0 || dups.length > 0 || (follows && unmapped.length > 0)
@@ -137,15 +146,36 @@ export function PrintSheet() {
     setBusy(true)
     finish({ options: value, start: true, name: withEnding(name, '.gcode'), plainGcode: true })
   }
+  // Hands the file to Bambu Connect: the main button while Developer Mode is off, a second button after a refusal.
+  const sendConnect = () => {
+    if (!ask?.bambuConnect || busy || checking || errors.length > 0) return
+    setBusy(true)
+    finish({ options: value, start: true, name: fileName, bambuConnect: true })
+  }
+  const connectLabel = ask?.bambuConnect === 'save' ? 'Save file' : 'Open in Bambu Connect'
   const slotName = (id: string) => (id === EXTERNAL_SLOT ? 'External spool' : id)
   // A warning never blocks: the button says the print goes ahead anyway. An error disables it until fixed.
   const anyway = start && errors.length === 0 && warnings.length > 0
   const go: { label: string; icon: IconName } = start ? { label: anyway ? (ask?.bed === 'clear' ? 'Start anyway' : 'Bed is clear, start anyway') : startLabel(ask?.bed ?? 'unknown'), icon: ask?.bed === 'clear' ? 'play' : 'bed-plate' } : mode === 'upload' ? { label: 'Upload only', icon: 'upload' } : { label: 'Add to queue', icon: 'queue' }
-  const footer = (
+  const footer = via ? (
     <>
       <Button variant="ghost" onClick={() => finish(null)}>
         Cancel
       </Button>
+      <Button variant="primary" size="lg" icon="export" disabled={busy || checking || errors.length > 0} {...(errors.length ? { tip: { title: connectLabel, reason: errors.length === 1 ? 'Fix the problem above to print.' : 'Fix the problems above to print.' } } : {})} onClick={sendConnect}>
+        {connectLabel}
+      </Button>
+    </>
+  ) : (
+    <>
+      <Button variant="ghost" onClick={() => finish(null)}>
+        Cancel
+      </Button>
+      {ask?.refusal && start && ask.bambuConnect ? (
+        <Button variant="default" icon="export" disabled={busy || checking || errors.length > 0} onClick={sendConnect}>
+          {connectLabel}
+        </Button>
+      ) : null}
       {ask?.refusal && start ? (
         <Button variant="default" icon="export" disabled={busy || checking || errors.length > 0} onClick={sendPlain}>
           Send as plain G-code
@@ -227,7 +257,7 @@ export function PrintSheet() {
               ) : null}
             </div>
           ) : null}
-          {ask.specs.length > 0 && start ? (
+          {ask.specs.length > 0 && start && !via ? (
             <section className="ps-opts" aria-label="Before the print">
               <p className="ps-opts-head">Before the print</p>
               {ask.specs.map((s) => (
@@ -249,7 +279,13 @@ export function PrintSheet() {
             </div>
           ) : null}
         </div>
-        {errors.length ? null : (
+        {errors.length ? null : via ? (
+        <p className="ps-note">
+          {via === 'open'
+            ? `Developer Mode is off on ${ask.printer.name}, so the print goes through Bambu Connect, Bambu Lab's app for printing from other software. Press Print there.`
+            : `Developer Mode is off on ${ask.printer.name}, and Bambu Connect can't be opened from here, so the file is saved for you to print.`}
+        </p>
+        ) : (
         <p className="ps-note">
           {start
             ? ask.bed === 'clear'

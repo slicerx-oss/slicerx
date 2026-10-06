@@ -6,6 +6,8 @@
 
 #[cfg(feature = "pilot")]
 mod agents;
+#[cfg(feature = "connect")]
+mod bambu_connect;
 mod brand;
 #[cfg(feature = "pilot")]
 mod chatgpt;
@@ -117,6 +119,8 @@ fn main() {
             pairdoc::pair_doc_read,
             #[cfg(feature = "connect")]
             pairdoc::pair_doc_write,
+            #[cfg(feature = "connect")]
+            bambu_connect::bambu_connect_open,
             themes::themes_list,
             themes::themes_open_folder,
             probe::probe_enabled,

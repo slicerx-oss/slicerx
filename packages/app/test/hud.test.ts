@@ -293,6 +293,28 @@ describe('device view of a printing H2D', () => {
   })
 })
 
+describe('device view of a Bambu Lab printer with Developer Mode off', () => {
+  it('shows its status and rests every control, saying why', async () => {
+    const WATCH: PrinterStatus = { ...H2D_STATUS, live: { ...H2D_STATUS.live, monitorOnly: true } }
+    const { host, calls } = fakeHost()
+    ;(host as unknown as { printers: { status: () => Promise<PrinterStatus> } }).printers.status = async () => WATCH
+    selected.id = 'h2d'
+    set({ printerSlots: H2D_STATUS.slots })
+    await show({ ...H2D, status: WATCH }, host)
+    expect(el!.textContent).toContain(H2D_STATUS.jobName ?? '')
+    for (const name of ['Pause', 'Stop', 'Light']) expect(button(name)?.getAttribute('aria-disabled'), name).toBe('true')
+    expect(button('Pause')?.getAttribute('data-tip-reason')).toBe('Developer Mode is off on Tawain #1, so SlicerX shows its status only. Use the printer\'s screen or Bambu Connect.')
+    expect((q('.ph-speed select') as HTMLSelectElement).disabled).toBe(true)
+    await click(button('Pause'))
+    await click(button('Light'))
+    expect(get().approval).toBeNull()
+    expect(calls.pause).not.toHaveBeenCalled()
+    expect(calls.light).not.toHaveBeenCalled()
+    await click(button('Show filament'))
+    expect(button('Edit slots')?.getAttribute('aria-disabled')).toBe('true')
+  })
+})
+
 describe('device view of a printer with less', () => {
   it('hides the filament tab, the fans, the light and the speed, and shows a quiet picture for no camera', async () => {
     const { host } = fakeHost(false)

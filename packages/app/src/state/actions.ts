@@ -27,7 +27,9 @@ import { sequenceProblem } from '../plate/sequence-check'
 import { confirmDiscard, markClean } from '../project/unsaved'
 import { isExportOnly } from '../lib/hand-printers'
 import { get, markStale, set, toast, type AppState, type PlateEntry, type PlateMeta, selectedIds, type PendingApproval, type ModelSource, type PlateVolumeEntry } from './store'
-import { brandAccent, objectPalette } from '../edition'
+import { appName, brandAccent, objectPalette } from '../edition'
+import { handOffCopy, handToBambuConnect, onLinux, printRoute } from '../send/bambu-connect'
+import { openLink } from '../lib/links'
 
 
 let sliceAbort: AbortController | null = null
@@ -581,6 +583,10 @@ export async function sendToPrinter(host: Host, printer: PrinterInfo): Promise<v
   const grams = s.result.stats.filamentG.reduce((a, b) => a + b, 0)
   const [{ bedStateFor, localPrintHost }, { preflight }, { bounds }] = await Promise.all([import('../send/bed-state'), import('../plate/preflight'), import('../plate/transform')])
   const bed = await bedStateFor(host, printer.id, status)
+  // A Bambu Lab printer with Developer Mode off sends status but takes no print from here: the plate goes through
+  // Bambu Connect (send/bambu-connect.ts). Any Bambu Lab printer offers it after a refusal too.
+  const connectHow = printer.plugin === 'bambu-lan' ? (host.bambuConnect && !onLinux() ? 'open' as const : 'save' as const) : null
+  const connectOnly = printRoute(printer, status) === 'bambu-connect'
   // The sheet opens at once with the estimate; the file is exported and checked while it is open.
   let check0: PrintSheetAsk['check'] = null
   let thumb0: string | undefined
@@ -600,6 +606,8 @@ export async function sendToPrinter(host: Host, printer: PrinterInfo): Promise<v
     check: check0,
     ...(thumb0 ? { thumb: thumb0 } : {}),
     bed,
+    ...(connectHow ? { bambuConnect: connectHow } : {}),
+    ...(connectOnly ? { connectOnly } : {}),
   })
   const choice = new Promise<SendChoice | null>((resolve) => set({ printSheet: { ...sheetAsk(), resolve } }))
   const out = await exportPlateGcode(host, s.result.id)
@@ -661,6 +669,7 @@ export async function sendToPrinter(host: Host, printer: PrinterInfo): Promise<v
 
   /** Sends one choice from the sheet. 'done' when it went (or failed in a way the toast already said), else the printer's refusal. */
   async function sendPicked(picked: SendChoice): Promise<'done' | { refused: string }> {
+    if (picked.bambuConnect) return viaBambuConnect(picked)
     let opts: SendOptions = picked.options
     if (specs.length) set((cur) => ({ sendChoices: { ...cur.sendChoices, [printer.id]: Object.fromEntries(specs.map((sp) => [sp.id, Boolean(picked.options[sp.id])])) } }))
     // "Send as plain G-code" sends the G-code itself, under the same name with a .gcode ending.
@@ -732,6 +741,25 @@ export async function sendToPrinter(host: Host, printer: PrinterInfo): Promise<v
       toast(e instanceof Error ? e.message : `Could not reach ${printer.name}`, 'error')
       return 'done'
     }
+  }
+
+  /** Opens the plate's .gcode.3mf in Bambu Connect, or saves it where that cannot happen, and says which in one line. */
+  async function viaBambuConnect(picked: SendChoice): Promise<'done'> {
+    const name = withEnding(picked.name, '.gcode.3mf')
+    const check = checkFor(name)
+    if (check.errors.length) {
+      toast(check.errors[0]!, 'error')
+      return 'done'
+    }
+    try {
+      const handed = await handToBambuConnect(host, { name, data: sent }, plateName)
+      const copy = handOffCopy(handed, appName())
+      const link = copy.download
+      toast(copy.text, copy.tone, link ? { label: 'Get Bambu Connect', run: () => void openLink(link) } : undefined)
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'Could not open Bambu Connect', 'error')
+    }
+    return 'done'
   }
 }
 

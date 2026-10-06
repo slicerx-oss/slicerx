@@ -8,6 +8,7 @@ import { Button, Icon, Pill, tipAttrs } from '@slicerx/ui'
 import { lazy, Suspense, useEffect, useId, useRef, useState, type KeyboardEvent } from 'react'
 import type { FilamentSlot } from '@slicerx/contracts'
 import { useHost } from '../../host'
+import { appName } from '../../edition'
 import { lastStillOf, useCamera } from '../../camera/use-camera'
 import { noteViewClosing } from '../../camera/closing'
 import { CameraIdle, CameraProblem, FirstLookCover, useFirstLook } from '../../camera/idle'
@@ -260,6 +261,9 @@ export function PrinterHud({ row, onClose }: { row: FleetRow; onClose: () => voi
   const reported = speedProfile(st.live?.speedPercent)
   const showSpeed = !isExportOnly(row) && isRunning && (st.live?.speedPercent !== undefined || hub !== null)
   const lightOn = st.live?.light
+  // Developer Mode off on a Bambu Lab printer: status comes through, commands do not, so the controls rest.
+  const watchOnly = st.live?.monitorOnly === true
+  const watchTip = (title: string) => ({ title, reason: `Developer Mode is off on ${row.name}, so ${appName()} shows its status only. Use the printer's screen or Bambu Connect.` })
   const mine = target?.id === row.id
   const editIndex = Math.max(1, printerSlots.findIndex((s) => s.id === (st.live?.activeSlot ?? st.slots[0]?.id)) + 1)
 
@@ -395,8 +399,8 @@ export function PrinterHud({ row, onClose }: { row: FleetRow; onClose: () => voi
             <Button
               className="ph-edit"
               icon="ams-slot"
-              disabled={!mine}
-              tip={{ title: 'Edit slots', body: 'Set what each slot holds, and write it back to the printer.', ...(mine ? {} : { reason: `Choose ${row.name} as the printer in Prepare first.` }) }}
+              disabled={!mine || watchOnly}
+              tip={{ title: 'Edit slots', body: 'Set what each slot holds, and write it back to the printer.', ...(watchOnly ? { reason: watchTip('Edit slots').reason } : mine ? {} : { reason: `Choose ${row.name} as the printer in Prepare first.` }) }}
               onClick={() => {
                 set({ slotDialog: editIndex })
                 setEditing(true)
@@ -422,8 +426,8 @@ export function PrinterHud({ row, onClose }: { row: FleetRow; onClose: () => voi
                 <select
                   className="sx-select"
                   value={reported ? String(reported.percent) : ''}
-                  disabled={!hub || busy}
-                  {...tipAttrs(hub ? undefined : { title: 'Speed', reason: 'Speed changes need the SlicerX link on your network.' })}
+                  disabled={!hub || busy || watchOnly}
+                  {...tipAttrs(watchOnly ? watchTip('Speed') : hub ? undefined : { title: 'Speed', reason: 'Speed changes need the SlicerX link on your network.' })}
                   onChange={(e) => {
                     const v = Number(e.currentTarget.value)
                     setBusy(true)
@@ -443,24 +447,24 @@ export function PrinterHud({ row, onClose }: { row: FleetRow; onClose: () => voi
               <Button
                 icon="led"
                 pressed={lightOn}
-                disabled={!hub?.adjust.light || st.state === 'offline'}
-                tip={hub?.adjust.light ? 'Chamber light' : { title: 'Light', reason: 'The light switches from the SlicerX app on your network.' }}
+                disabled={!hub?.adjust.light || st.state === 'offline' || watchOnly}
+                tip={watchOnly ? watchTip('Light') : hub?.adjust.light ? 'Chamber light' : { title: 'Light', reason: 'The light switches from the SlicerX app on your network.' }}
                 onClick={() => void setLight(host, row, !lightOn)}
               >
                 Light
               </Button>
             ) : null}
             {st.state === 'printing' ? (
-              <Button variant="primary" icon="pause" disabled={busy} onClick={() => void act('pause')}>
+              <Button variant="primary" icon="pause" disabled={busy || watchOnly} {...(watchOnly ? { tip: watchTip('Pause') } : {})} onClick={() => void act('pause')}>
                 Pause
               </Button>
             ) : st.state === 'paused' ? (
-              <Button variant="primary" icon="play" disabled={busy} onClick={() => void act('resume')}>
+              <Button variant="primary" icon="play" disabled={busy || watchOnly} {...(watchOnly ? { tip: watchTip('Resume') } : {})} onClick={() => void act('resume')}>
                 Resume
               </Button>
             ) : null}
             {isRunning ? (
-              <Button variant="danger" icon="stop" disabled={busy} onClick={() => void act('cancel')}>
+              <Button variant="danger" icon="stop" disabled={busy || watchOnly} {...(watchOnly ? { tip: watchTip('Stop') } : {})} onClick={() => void act('cancel')}>
                 Stop
               </Button>
             ) : null}
