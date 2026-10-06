@@ -76,6 +76,12 @@ pub trait PrinterConnector: Send + Sync {
     async fn authorize(&self, _cfg: &PrinterConfig, _timeout: Duration) -> Result<Option<String>> {
         Ok(None)
     }
+
+    /// True when the credential comes from [`Self::authorize`] (pairing on the printer's screen), not from
+    /// the person typing it: before pairing there is none, and that is not a code to ask for.
+    fn pairs(&self) -> bool {
+        false
+    }
 }
 
 /// A live connection to one printer. Every call with a side effect takes an approval token

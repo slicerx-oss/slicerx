@@ -235,6 +235,10 @@ impl PrinterConnector for UltiMakerConnector {
         Ok(Box::new(UltiMakerSession { inner }))
     }
 
+    fn pairs(&self) -> bool {
+        true
+    }
+
     /// Pairing for the printer API: `POST /api/v1/auth/request`, then `GET /api/v1/auth/check/{id}`
     /// every second until someone allows it on the touchscreen. Returns `id:key` to keep in the
     /// keychain. Jobs and print cores need no pairing; only control without the cluster API does.

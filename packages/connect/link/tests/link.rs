@@ -2563,3 +2563,32 @@ async fn a_keychain_that_refuses_keeps_the_credential_for_the_session() {
     .await;
     assert_eq!(r["result"]["kept"], "stored", "{r}");
 }
+
+#[tokio::test]
+async fn a_printer_whose_code_is_gone_asks_for_it_instead_of_failing() {
+    // The keychain kept the code only for the last session (it refused to store it): after a restart the
+    // printer names a credential the store does not have.
+    let link = start(Arc::new(MemoryGate::new())).await;
+    let mut ws = paired(&link).await;
+    let cfg = json!({ "id": "p1s", "name": "P1S", "plugin": "bambu-lan", "host": "127.0.0.1", "port": 1,
+        "serial": "01P00A000000000", "credentialRef": "printer-p1s" });
+    let r = call(&mut ws, 1, "printers.add", json!({ "config": cfg })).await;
+    assert!(r.get("error").is_none(), "{r}");
+    let st = call(&mut ws, 2, "status", json!({ "printerId": "p1s" })).await;
+    // A status the printers list can show, not an error that fails the whole list.
+    assert_eq!(st["result"]["state"], "offline", "{st}");
+    assert_eq!(st["result"]["needsCode"], true, "{st}");
+    // The name to store the code under (a name, never a secret).
+    assert_eq!(st["result"]["codeRef"], "printer-p1s", "{st}");
+    // Once the code is given again, the printer is tried as usual (nothing listens on port 1 here).
+    let r = call(
+        &mut ws,
+        3,
+        "secrets.set",
+        json!({ "name": "printer-p1s", "value": "12345678" }),
+    )
+    .await;
+    assert_eq!(r["result"]["ok"], true, "{r}");
+    let st = call(&mut ws, 4, "status", json!({ "printerId": "p1s" })).await;
+    assert!(st["result"].get("needsCode").is_none(), "{st}");
+}
