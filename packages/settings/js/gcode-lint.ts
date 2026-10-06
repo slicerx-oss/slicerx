@@ -67,11 +67,21 @@ const DENIED: [string, string, string][] = [
   ['SET_HEATER_PWM', 'drives a heater without a temperature control', 'heater_raw'],
   ['SET_PIN', 'drives a pin directly', 'pin_write'],
   ['M42', 'drives a pin directly', 'pin_write'],
+  // RepRapFirmware: a file could lock the owner out or take the printer off the network.
+  ['M551', "sets the printer's password", 'network_change'],
+  ['M552', "changes the printer's network connection", 'network_change'],
+  ['M553', "changes the printer's network mask", 'network_change'],
+  ['M554', "changes the printer's network gateway", 'network_change'],
+  ['M587', 'adds a Wi-Fi network to the printer', 'network_change'],
+  ['M588', 'removes a Wi-Fi network from the printer', 'network_change'],
+  ['M589', "changes the printer's access point", 'network_change'],
+  ['M98', 'runs a macro file on the printer', 'macro_file'],
   ['M43', 'changes pin state', 'pin_write'],
 ]
 
 /** Findings of DENIED that the makers' own start G-code uses: only warnings for trusted text. */
-const MAKER_SETUP = new Set(['eeprom_write', 'eeprom_load', 'endstops'])
+// Duet start G-code calls its own macros with `M98`, so a profile may too.
+const MAKER_SETUP = new Set(['eeprom_write', 'eeprom_load', 'endstops', 'macro_file'])
 
 const WARNED: [string, string, string][] = [
   ['M413', 'changes power loss recovery', 'power_loss'],

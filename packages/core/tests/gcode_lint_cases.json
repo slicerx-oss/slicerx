@@ -736,6 +736,99 @@
      "error"
     ]
    ]
+  },
+  {
+   "text": "M552 S0",
+   "section": "start",
+   "trust": "untrusted",
+   "limits": {
+    "nozzleMaxC": 300,
+    "bedMaxC": 110,
+    "chamberMaxC": 60
+   },
+   "expect": [
+    [
+     1,
+     "network_change",
+     "error"
+    ]
+   ]
+  },
+  {
+   "text": "M551 P\"letmein\"\nM587 S\"home\" P\"secret\"\nM588 S\"*\"\nM589 S\"ap\"\nM553 P255.255.255.0\nM554 P192.168.1.1",
+   "section": "start",
+   "trust": "trusted",
+   "limits": {
+    "nozzleMaxC": 300,
+    "bedMaxC": 110,
+    "chamberMaxC": 60
+   },
+   "expect": [
+    [
+     1,
+     "network_change",
+     "error"
+    ],
+    [
+     2,
+     "network_change",
+     "error"
+    ],
+    [
+     3,
+     "network_change",
+     "error"
+    ],
+    [
+     4,
+     "network_change",
+     "error"
+    ],
+    [
+     5,
+     "network_change",
+     "error"
+    ],
+    [
+     6,
+     "network_change",
+     "error"
+    ]
+   ]
+  },
+  {
+   "text": "M98 P\"0:/macros/print_start.g\"",
+   "section": "start",
+   "trust": "untrusted",
+   "limits": {
+    "nozzleMaxC": 300,
+    "bedMaxC": 110,
+    "chamberMaxC": 60
+   },
+   "expect": [
+    [
+     1,
+     "macro_file",
+     "error"
+    ]
+   ]
+  },
+  {
+   "text": "M98 P\"0:/macros/print_start.g\"",
+   "section": "start",
+   "trust": "trusted",
+   "limits": {
+    "nozzleMaxC": 300,
+    "bedMaxC": 110,
+    "chamberMaxC": 60
+   },
+   "expect": [
+    [
+     1,
+     "macro_file",
+     "warning"
+    ]
+   ]
   }
  ]
 }
