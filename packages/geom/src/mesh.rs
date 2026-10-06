@@ -230,7 +230,9 @@ impl TriMesh {
     }
 
     pub fn translate(&mut self, d: V3) {
+        let faces = self.faces.take();
         self.map_positions(|p| vec3::add(p, d));
+        self.faces = faces.map(|f| f.transformed(&crate::xform::translation(d)));
     }
 
     pub fn flip(&mut self) {

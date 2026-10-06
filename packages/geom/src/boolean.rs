@@ -339,7 +339,6 @@ mod tests {
     use crate::build;
     use crate::faces::Surface;
     use crate::fm::Fm as _;
-    use crate::vec3;
 
     fn cube(min: [f64; 3], s: f64) -> TriMesh {
         build::box_mesh(min, [min[0] + s, min[1] + s, min[2] + s])
@@ -437,30 +436,6 @@ mod tests {
         assert!(Solid::new(&m).is_err());
     }
 
-    /// Every triangle lies on the plane of its face and faces the way the plane does.
-    fn on_their_planes(m: &TriMesh) -> usize {
-        let f = m.faces.as_ref().expect("the result has faces");
-        f.check("result", m.triangles.len()).unwrap();
-        for (t, &id) in f.ids.iter().enumerate() {
-            let Surface::Plane { normal, offset } = f.table[id as usize] else {
-                panic!("face {id} is not a plane: {:?}", f.table[id as usize])
-            };
-            let [a, b, c] = m.corners(m.triangles[t]);
-            for p in [a, b, c] {
-                assert!(
-                    (vec3::dot(normal, p) - offset).abs() < 1e-6,
-                    "triangle {t} is off its plane"
-                );
-            }
-            let n = vec3::normalize(vec3::tri_normal(a, b, c)).unwrap();
-            assert!(
-                vec3::dot(n, normal) > 0.9999,
-                "triangle {t} faces away from its plane"
-            );
-        }
-        f.table.len()
-    }
-
     #[test]
     fn a_union_keeps_the_faces_of_both_boxes() {
         let (u, _) = boolean(
@@ -470,7 +445,7 @@ mod tests {
             &BooleanOptions::default(),
         )
         .unwrap();
-        assert_eq!(on_their_planes(&u), 12);
+        assert_eq!(crate::faces::check::faces_agree(&u), 12);
     }
 
     #[test]
@@ -484,7 +459,7 @@ mod tests {
         )
         .unwrap();
         // The block's six sides, the hole's four walls and its floor, each wall facing into the hole.
-        assert_eq!(on_their_planes(&d), 11);
+        assert_eq!(crate::faces::check::faces_agree(&d), 11);
         let f = d.faces.unwrap();
         let walls = f
             .table
@@ -504,7 +479,7 @@ mod tests {
         )
         .unwrap();
         // A 20 by 10 by 10 block: six faces, not ten.
-        assert_eq!(on_their_planes(&u), 6);
+        assert_eq!(crate::faces::check::faces_agree(&u), 6);
     }
 
     #[test]
@@ -518,6 +493,6 @@ mod tests {
             &BooleanOptions::default(),
         )
         .unwrap();
-        assert_eq!(on_their_planes(&u), 12);
+        assert_eq!(crate::faces::check::faces_agree(&u), 12);
     }
 }

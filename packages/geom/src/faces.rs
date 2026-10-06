@@ -15,6 +15,7 @@
 use crate::error::{Error, Result};
 use crate::mesh::TriMesh;
 use crate::vec3::{self, V3};
+use crate::xform::{self, Mat4};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -58,6 +59,85 @@ impl Surface {
                 offset: -offset,
             },
             s => s,
+        }
+    }
+}
+
+impl Surface {
+    /// The surface after the affine map `m`. Planes follow any map; cylinders, cones and spheres follow a rigid
+    /// move or a uniform scale and become `Other` under a stretch, which no longer leaves them round.
+    #[must_use]
+    pub fn transformed(self, m: &Mat4) -> Self {
+        let mirror = xform::det(m) < 0.0;
+        match self {
+            Self::Plane { normal, offset } => {
+                let t1 = vec3::any_perpendicular(normal);
+                let t2 = vec3::cross(normal, t1);
+                let n = vec3::cross(xform::apply_dir(m, t1), xform::apply_dir(m, t2));
+                let Some(n) = vec3::normalize(if mirror { vec3::scale(n, -1.0) } else { n }) else {
+                    return Self::Other;
+                };
+                let p = xform::apply(m, vec3::scale(normal, offset));
+                Self::Plane {
+                    normal: n,
+                    offset: vec3::dot(n, p),
+                }
+            }
+            Self::Other => Self::Other,
+            round => {
+                let Some(s) = similarity_scale(m) else {
+                    return Self::Other;
+                };
+                let axis_of = |a: V3| vec3::normalize(xform::apply_dir(m, a));
+                match round {
+                    Self::Cylinder { origin, axis, radius } => {
+                        axis_of(axis).map_or(Self::Other, |axis| Self::Cylinder {
+                            origin: xform::apply(m, origin),
+                            axis,
+                            radius: radius * s,
+                        })
+                    }
+                    Self::Cone {
+                        apex,
+                        axis,
+                        half_angle,
+                    } => axis_of(axis).map_or(Self::Other, |axis| Self::Cone {
+                        apex: xform::apply(m, apex),
+                        axis,
+                        half_angle,
+                    }),
+                    Self::Sphere { center, radius } => Self::Sphere {
+                        center: xform::apply(m, center),
+                        radius: radius * s,
+                    },
+                    other => other,
+                }
+            }
+        }
+    }
+}
+
+/// The scale of a map that is a rigid move times a uniform scale (and maybe a mirror), or none.
+fn similarity_scale(m: &Mat4) -> Option<f64> {
+    let cols = [[m[0], m[1], m[2]], [m[4], m[5], m[6]], [m[8], m[9], m[10]]];
+    let lens = cols.map(vec3::len);
+    let s = lens[0];
+    let close = |a: f64, b: f64| (a - b).abs() <= 1e-9 * s.max(1.0);
+    let square = close(lens[1], s)
+        && close(lens[2], s)
+        && close(vec3::dot(cols[0], cols[1]), 0.0)
+        && close(vec3::dot(cols[1], cols[2]), 0.0)
+        && close(vec3::dot(cols[0], cols[2]), 0.0);
+    (square && s > 0.0).then_some(s)
+}
+
+impl Faces {
+    /// The faces after the affine map `m`, each surface moved with it.
+    #[must_use]
+    pub fn transformed(&self, m: &Mat4) -> Self {
+        Self {
+            ids: self.ids.clone(),
+            table: self.table.iter().map(|s| s.transformed(m)).collect(),
         }
     }
 }
@@ -336,6 +416,49 @@ pub fn same_plane(a: Surface, b: Surface, tol: f64) -> bool {
             },
         ) => vec3::dot(na, nb) > 0.999_998 && (oa - ob).abs() < tol,
         _ => false,
+    }
+}
+
+/// Checks for tests: the faces a mesh carries agree with its geometry.
+#[cfg(test)]
+pub(crate) mod check {
+    use super::*;
+
+    /// Every triangle of a plane face lies on that plane and faces the way it does; every triangle of a cylinder
+    /// face has its corners at the radius. Returns the number of faces.
+    pub(crate) fn faces_agree(m: &TriMesh) -> usize {
+        let f = m.faces.as_ref().expect("the mesh has faces");
+        f.check("mesh", m.triangles.len()).unwrap();
+        for (t, &id) in f.ids.iter().enumerate() {
+            let [a, b, c] = m.corners(m.triangles[t]);
+            match f.table[id as usize] {
+                Surface::Plane { normal, offset } => {
+                    for p in [a, b, c] {
+                        assert!(
+                            (vec3::dot(normal, p) - offset).abs() < 1e-6,
+                            "triangle {t} is off its plane"
+                        );
+                    }
+                    let n = vec3::normalize(vec3::tri_normal(a, b, c)).unwrap();
+                    assert!(
+                        vec3::dot(n, normal) > 0.9999,
+                        "triangle {t} faces away from its plane"
+                    );
+                }
+                Surface::Cylinder { origin, axis, radius } => {
+                    for p in [a, b, c] {
+                        let d = vec3::sub(p, origin);
+                        let r = vec3::len(vec3::sub(d, vec3::scale(axis, vec3::dot(d, axis))));
+                        assert!(
+                            (r - radius).abs() < 1e-6,
+                            "triangle {t} is off its cylinder: {r} against {radius}"
+                        );
+                    }
+                }
+                _ => {}
+            }
+        }
+        f.table.len()
     }
 }
 

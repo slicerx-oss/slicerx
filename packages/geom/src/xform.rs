@@ -105,6 +105,7 @@ pub fn rotation_about(center: V3, axis: V3, angle: f64) -> Mat4 {
 pub fn transformed(mesh: &TriMesh, m: &Mat4) -> TriMesh {
     let mut out = mesh.clone();
     out.map_positions(|p| apply(m, p));
+    out.faces = mesh.faces.as_ref().map(|f| f.transformed(m));
     if det(m) < 0.0 {
         out.flip();
     }
@@ -114,6 +115,59 @@ pub fn transformed(mesh: &TriMesh, m: &Mat4) -> TriMesh {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn faces_move_with_a_rigid_move_and_a_mirror() {
+        let cut = crate::boolean::boolean(
+            &[crate::build::box_mesh([0.0; 3], [10.0; 3])],
+            &[crate::build::box_mesh([3.0, 3.0, 2.0], [7.0, 7.0, 10.0])],
+            crate::boolean::BoolOp::Difference,
+            &crate::boolean::BooleanOptions::default(),
+        )
+        .unwrap()
+        .0;
+        let turn = mul(
+            &rotation_about([1.0, 2.0, 3.0], [0.3, -0.5, 0.8], 1.1),
+            &translation([4.0, -7.0, 2.5]),
+        );
+        let mirror = [
+            -1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+        ];
+        for m in [turn, mirror, mul(&turn, &mirror)] {
+            let moved = transformed(&cut, &m);
+            assert_eq!(crate::faces::check::faces_agree(&moved), 11);
+        }
+    }
+
+    #[test]
+    fn a_stretch_keeps_planes_and_forgets_cylinders() {
+        use crate::faces::Surface;
+        let s = Surface::Cylinder {
+            origin: [0.0; 3],
+            axis: [0.0, 0.0, 1.0],
+            radius: 2.0,
+        };
+        let stretch = [
+            2.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+        ];
+        assert_eq!(s.transformed(&stretch), Surface::Other);
+        let grow = [
+            3.0, 0.0, 0.0, 0.0, 0.0, 3.0, 0.0, 0.0, 0.0, 0.0, 3.0, 0.0, 1.0, 1.0, 1.0, 1.0,
+        ];
+        assert_eq!(
+            s.transformed(&grow),
+            Surface::Cylinder {
+                origin: [1.0, 1.0, 1.0],
+                axis: [0.0, 0.0, 1.0],
+                radius: 6.0
+            }
+        );
+        let block = crate::build::box_mesh([0.0; 3], [1.0; 3]);
+        assert_eq!(
+            crate::faces::check::faces_agree(&transformed(&block, &stretch)),
+            6
+        );
+    }
 
     #[test]
     fn invert_round_trip() {
