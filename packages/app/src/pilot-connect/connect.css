@@ -91,3 +91,17 @@
 .la-fail { display: flex; flex-direction: column; align-items: flex-start; gap: var(--s-2); }
 .la-fail p { margin: 0; display: flex; gap: 6px; align-items: flex-start; font-size: var(--fs-md); }
 .la-fail > p .sx-ic { color: var(--orange); flex: none; margin-top: 2px; }
+
+/* Manual server disclosure, attached under the local model card */
+.pc-more { border: 1px solid var(--line-soft); border-radius: var(--r-md); background: var(--ink-1); margin-top: calc(var(--s-2) - var(--s-4)); overflow: hidden; }
+.pc-more-btn { display: flex; align-items: center; gap: 10px; width: 100%; padding: 12px var(--s-4); background: none; border: 0; color: var(--fg); font: 600 var(--fs-md) var(--f-body); text-align: left; cursor: pointer; }
+.pc-more-btn:hover { background: var(--ink-2); }
+.pc-more-btn > span { flex: 1; min-width: 0; }
+.pc-more-btn .sx-ic { flex: none; color: var(--muted); transition: transform var(--t-base) var(--ease); }
+.pc-more-btn[aria-expanded="true"] > .sx-ic:last-child { transform: rotate(180deg); }
+.pc-more-btn:focus-visible { outline-offset: var(--focus-offset-inset); }
+.pc-more-body { display: flex; flex-direction: column; gap: var(--s-4); border-top: 1px solid var(--line-soft); padding: var(--s-4); }
+
+/* Connect your AI agent is its own section, apart from the model setup above it */
+.ag-sec { display: flex; flex-direction: column; gap: var(--s-3); margin-top: var(--s-6); padding-top: var(--s-5); border-top: 1px solid var(--line-soft); }
+.ag-h { margin: 0; font: 600 var(--fs-lg) var(--f-body); color: var(--fg); }
