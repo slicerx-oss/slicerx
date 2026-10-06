@@ -49,6 +49,9 @@ struct End {
 /// Lengths below this count as nothing, mm.
 const EPS: f64 = 1e-4;
 
+/// Arcs this close in length count as the same length when choosing which to take first, mm.
+const TIE: f64 = 0.005;
+
 impl End {
     fn consume_next(&mut self) {
         self.free_next = 0.0;
@@ -186,12 +189,30 @@ pub(crate) fn connect(lines: Vec<Vec<Point>>, region: &Shapes, p: Params) -> Vec
 
     let mut parent: Vec<usize> = (0..lines.len()).collect();
     let half = 0.5 * p.spacing;
-    // Arcs, shortest first.
+    // Arcs, shortest first. Arcs within `TIE` of each other count as one length and are taken in order along
+    // their ring: a regular pattern gives many arcs of one length, and the order among them decides which
+    // loops close and so how many strokes are left. Rounding noise used to decide it (a grid on the block
+    // left four strokes); Orca's integer lengths decide it there, by luck as often as not.
+    let tier = |l: f64| -> i64 {
+        #[allow(clippy::cast_possible_truncation, reason = "arc length in steps of TIE, far inside i64")]
+        {
+            (l / TIE).round() as i64
+        }
+    };
     let mut arcs: Vec<(f64, usize)> = (0..ends.len())
         .filter(|&i| ends.get(i).is_some_and(|e| e.next != i) && could_connect(&ends, i, true))
         .map(|i| (ends.get(i).map_or(0.0, |e| e.arc_next), i))
         .collect();
-    crate::sorting::sort_by(&mut arcs, |a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
+    crate::sorting::sort_by(&mut arcs, |a, b| {
+        let at = |i: usize| ends.get(i).map_or((0, 0.0), |e| (e.ring, e.pos));
+        let (ra, pa) = at(a.1);
+        let (rb, pb) = at(b.1);
+        tier(a.0)
+            .cmp(&tier(b.0))
+            .then(ra.cmp(&rb))
+            .then(pa.total_cmp(&pb))
+            .then(a.1.cmp(&b.1))
+    });
     for (len, i) in arcs {
         let Some(nx) = ends.get(i).map(|e| e.next) else {
             continue;
