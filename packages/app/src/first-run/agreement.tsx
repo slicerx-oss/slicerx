@@ -21,16 +21,7 @@ export { AGREEMENT_VERSION, DEFAULT_BUG_REPORTS_URL }
 
 export { bugReportsOff, bugReportsUrl } from '../bugs/where'
 
-/**
- * Whether the agreement must be shown: a pre-alpha build, not embedded in another app, and not accepted in
- * this version. A build for the end-to-end tests (`build.e2e`, set by SLICERX_E2E=1) skips it, so the specs
- * start at the app.
- */
-export function needsAgreement(edition: EditionConfig, host: Pick<Host, 'kind'> & { build?: Pick<Host['build'], 'e2e'> }, accepted: { version: number } | null): boolean {
-  if (!crashReportsRequired(edition) || host.kind === 'embedded') return false
-  if (host.build?.e2e) return false
-  return accepted?.version !== AGREEMENT_VERSION
-}
+export { needsAgreement } from './agreement-check'
 
 /** Records acceptance and closes the agreement. */
 export function acceptAgreement(now = new Date()): void {

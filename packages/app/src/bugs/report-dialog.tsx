@@ -6,7 +6,7 @@
 import { Button, Dialog, Field, Icon, Input, Textarea } from '@slicerx/ui'
 import { useEffect, useMemo, useState } from 'react'
 import { useEdition } from '../edition'
-import { bugReportsUrl } from '../first-run/agreement'
+import { bugReportsUrl } from './where'
 import { openLink } from '../lib/links'
 import { get, set, useApp } from '../state/store'
 import { logTail } from './log'
