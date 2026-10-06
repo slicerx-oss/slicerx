@@ -29,7 +29,7 @@ Dependencies: tauri 2.12.0, tauri-build 2.7.0, tauri-plugin-dialog 2.8.0, serde 
 
 `.github/workflows/desktop-release.yml` builds macOS (universal dmg), Windows (x64 NSIS and MSI) and Linux (x64 AppImage and deb) on a `v*` tag or by hand, and attaches them to a draft release together with `downloads.json` and `SHA256SUMS.txt`. It never publishes. Signing and notarization use these secrets and are skipped when they are absent: `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID` (macOS) and `WINDOWS_CERTIFICATE`, `WINDOWS_CERTIFICATE_PASSWORD` (Windows). The updater is off.
 
-`release/whats-changed.mjs` writes the "What changed" list for a release's notes from `User-note:` commit trailers and merged pull requests with the `user-facing` label (their "For users" line); `Reported-in:` names the bug report a change fixes.
+`release/whats-changed.mjs` writes the "What changed" list for a release's notes from `User-note:` commit trailers and merged pull requests with the `user-facing` label (their "For users" line); `Reported-in:` names the bug report a change fixes, and `Urgent:` (or the `urgent` label) marks a hotfix that asks everyone to update; only those releases ping in Discord.
 
 `release/downloads.json` is the manifest the site reads (empty until a release exists); `release/make-manifest.mjs` writes it from a folder of installers. `release/check-windows.sh` type-checks the Windows target from macOS or Linux.
 
