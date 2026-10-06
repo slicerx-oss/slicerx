@@ -20,6 +20,16 @@ function named(p: PrinterInfo, status: PrinterStatus): FleetRow {
   return { ...p, name: printerName(p, status), status }
 }
 
+/** A printer's status, or offline with the reason when asking fails: one printer's error (a wrong code, a driver
+ * failure) shows on its own tile instead of failing the whole list. */
+async function statusOrOffline(printers: PrinterHost, id: string): Promise<PrinterStatus> {
+  try {
+    return await printers.status(id)
+  } catch (e) {
+    return { printerId: id, state: 'offline', nozzles: [], slots: [], cameraAvailable: false, message: e instanceof Error ? e.message : String(e), updatedAt: new Date().toISOString() }
+  }
+}
+
 /** The fleet with each printer's status. With no printer host (connect feature off) it is empty. */
 export function fleetQuery(printers: PrinterHost | undefined, epoch = 0) {
   return queryOptions({
@@ -28,7 +38,7 @@ export function fleetQuery(printers: PrinterHost | undefined, epoch = 0) {
     queryFn: async (): Promise<FleetRow[]> => {
       if (!printers) return []
       const list = await printers.list()
-      return Promise.all(list.map(async (p) => named(p, await printers.status(p.id))))
+      return Promise.all(list.map(async (p) => named(p, await statusOrOffline(printers, p.id))))
     },
     staleTime: 30_000,
   })
