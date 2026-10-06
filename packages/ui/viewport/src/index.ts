@@ -12,6 +12,7 @@ export { ChangeClock, changeSequence, moveDistance, moveTime, poseAt, rackStateB
 export { CHUTE, blobAt, blobShape, flushOf, flushedShare, meshVolume, purgeFromTools, purgeGrams, purgeVolume, purgeWindow, totalSeconds, type BlobState, type Flush, type FlushStep, type PurgePlan, type PurgeWindow } from './purge'
 export { changePoints } from './toolpaths'
 export { HEAD_MODELS, headFor, type HeadModel } from './heads'
+export type { StrikeMark } from './strikes'
 export { COLORBLIND_THEME, FEATURE_COLORS, HEAT_RAMP, DEFAULT_TOOL_COLORS, SCENE, resolveTheme, themeProblems, type FeatureStyle, type SceneColors, type ViewportTheme } from './palette'
 export { applyInsets, freeArea, NO_INSETS, type Insets } from './camera'
 export type * from './types'
