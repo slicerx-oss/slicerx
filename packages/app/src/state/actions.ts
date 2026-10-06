@@ -23,7 +23,7 @@ import { sliceHandle } from '../plate/painted'
 import { nameOptions, plateConfig } from '../plate/plates'
 import { plateSequence } from '../plate/plate-sequence'
 import { layerHeightConflict, objectOverrides, partOverridesOf } from '../plate/object-settings'
-import { sequenceProblem } from '../plate/sequence-check'
+import { printBlock } from '../plate/heimdall'
 import { confirmDiscard, markClean } from '../project/unsaved'
 import { isExportOnly } from '../lib/hand-printers'
 import { get, markStale, set, toast, type AppState, type PlateEntry, type PlateMeta, selectedIds, type PendingApproval, type ModelSource, type PlateVolumeEntry } from './store'
@@ -372,14 +372,6 @@ export async function slicePlate(host: Host, opts: { auto?: boolean } = {}): Pro
     set({ slice: { status: 'error', message: conflict } })
     return
   }
-  // By object, a plate the toolhead or gantry would hit is not sliced at all.
-  const unsafe = sequenceProblem(s)
-  if (unsafe) {
-    sliceAbort?.abort()
-    set({ slice: { status: 'error', message: unsafe } })
-    if (!opts.auto) toast(unsafe, 'error')
-    return
-  }
   sliceAbort?.abort()
   const abort = new AbortController()
   sliceAbort = abort
@@ -409,7 +401,7 @@ export async function slicePlate(host: Host, opts: { auto?: boolean } = {}): Pro
             objects,
           },
           config,
-          options: { emitGcode: true, emitPreview: true, shards: host.kind === 'desktop' ? 1 : host.capabilities.threads, ...trustOptions(s), ...nameOptions(s), ...(layerTopsMm ? { layerTopsMm } : {}), ...(s.calibration[s.activePlate] ? { heightRanges: s.calibration[s.activePlate]!.ranges } : {}), ...(layerGcode.length ? { layerGcode } : {}), ...(s.resume ? resumeSliceOptions(s.resume.plan, s.resume.declareZ) : {}) },
+          options: { emitGcode: true, emitPreview: true, shards: host.kind === 'desktop' ? 1 : host.capabilities.threads, ...trustOptions(s), ...nameOptions(s), ...(s.profile?.printerId ? { printerId: s.profile.printerId } : {}), ...(layerTopsMm ? { layerTopsMm } : {}), ...(s.calibration[s.activePlate] ? { heightRanges: s.calibration[s.activePlate]!.ranges } : {}), ...(layerGcode.length ? { layerGcode } : {}), ...(s.resume ? resumeSliceOptions(s.resume.plan, s.resume.declareZ) : {}) },
         },
         {
           signal: abort.signal,
@@ -427,7 +419,7 @@ export async function slicePlate(host: Host, opts: { auto?: boolean } = {}): Pro
     const raw = await host.slicer.getPreview(result.id)
     const preview = readPreview(raw)
     const cur = get()
-    set({ slice: { status: 'done', result, stale: false }, preview, ...layersAfterSlice(cur, preview.layerCount, cur.norn.before !== null) })
+    set({ slice: { status: 'done', result, stale: false }, preview, strikePick: null, strikeJump: null, ...layersAfterSlice(cur, preview.layerCount, cur.norn.before !== null) })
   } catch (e) {
     if (abort.signal.aborted) {
       // A newer slice may already be running; its state is not ours to reset.
@@ -471,8 +463,8 @@ export async function exportGcode(host: Host): Promise<void> {
     toast('Slice the plate first')
     return
   }
-  // A slice from before the objects moved must not leave as the plate's G-code.
-  const unsafe = sequenceProblem(get())
+  // A slice with a strike, or from before the objects moved, must not leave as the plate's G-code.
+  const unsafe = printBlock(get())
   if (unsafe) {
     toast(unsafe, 'error')
     return
@@ -571,7 +563,7 @@ export async function sendToPrinter(host: Host, printer: PrinterInfo): Promise<v
     toast('Slice the plate first')
     return
   }
-  const unsafe = sequenceProblem(get())
+  const unsafe = printBlock(get())
   if (unsafe) {
     toast(unsafe, 'error')
     return
@@ -633,7 +625,7 @@ export async function sendToPrinter(host: Host, printer: PrinterInfo): Promise<v
   // The config the plate was sliced with, filament slots included, so the material, nozzle and flow checks see what is in the file.
   const config = plateSliceConfig(st, st.plates.find((p) => p.id === st.activePlate)) as Record<string, SettingValue | undefined>
   // Preflight: the file against the printer as it is now (docs/safety.md). Shown in the sheet before the person decides.
-  const checkFor = (name: string, hash = sha256) => preflight({ printer, status, config, plateBounds, plateBed: st.bed, file: { name, sha256: hash, layers: s.result.layerCount, timeS: s.result.stats.timeS, grams } })
+  const checkFor = (name: string, hash = sha256) => preflight({ printer, status, config, plateBounds, plateBed: st.bed, file: { name, sha256: hash, layers: s.result.layerCount, timeS: s.result.stats.timeS, grams }, ...(s.result.collisions ? { collisions: s.result.collisions } : {}) })
   const first = checkFor(withEnding(s.result.fileName ?? gcodeName(plateName), ending))
   check0 = { errors: first.errors, warnings: first.warnings.map((text) => ({ text })), sha256 }
   // The plate's picture, from the thumbnails the engine wrote into the G-code.

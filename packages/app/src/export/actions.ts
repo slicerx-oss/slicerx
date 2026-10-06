@@ -9,7 +9,7 @@ import { exportPlateGcode } from '../calibration/gcode'
 import { slotConfig } from '../filament/slots'
 import { currentMap, mapExtruders, masterExtruder, pickedMap } from '../filament/nozzle-map'
 import { activeMeta, allPlates, projectBase, switchPlate } from '../plate/plates'
-import { sequenceProblem } from '../plate/sequence-check'
+import { printBlock } from '../plate/heimdall'
 import { markClean } from '../project/unsaved'
 import { slicePlate } from '../state/actions'
 import { get, set, toast, type PlateEntry, type PlateMeta } from '../state/store'
@@ -110,10 +110,9 @@ export async function exportGcode3mf(host: Host): Promise<boolean> {
   const s = get()
   const resliced = s.slice.status !== 'done' || s.slice.stale
   if (resliced) await slicePlate(host)
-  const unsafe = sequenceProblem(get())
+  const unsafe = printBlock(get())
   if (unsafe) {
-    // The slice already said why when it refused; a current slice from before the check says it here.
-    if (!resliced) toast(unsafe, 'error')
+    toast(unsafe, 'error')
     return false
   }
   const text = await gcodeText(host)
