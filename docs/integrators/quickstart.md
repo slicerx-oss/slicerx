@@ -11,15 +11,13 @@ Everything in this guide runs locally with no SlicerX account and no token, exce
 
 ## Before you start
 
-Until the packages are on npm, pack them from a clone and install the tarballs in your app:
+Install the packages in your app, and get the `sx` engine from an [engine release](https://github.com/slicerx-oss/slicerx/releases) (the archive for your platform has it in `bin/`; `SHA256SUMS.txt` has the checksums):
 
 ```sh
-pnpm install
-node scripts/pack-integrator-kit.mjs /path/to/kit   # builds and packs @slicerx/viewport, @slicerx/embed and @slicerx/mcp
-cargo build -p sx-cli --release                      # target/release/sx, the slicing engine
+npm install @slicerx/mcp@0.1.0 @slicerx/embed@0.1.0 react@19 react-dom@19 three@0.186
 ```
 
-The pack script prints the `npm install` line for the three tarballs. Your app also needs `@modelcontextprotocol/sdk` (1.31.0) to talk to the server, and React 19 for the React components. [AGENTS.md](AGENTS.md) walks a coding agent through the whole integration, and `examples/integrator-sample` is a working app that does everything in this guide.
+To try a build that is not released yet, run `node scripts/pack-integrator-kit.mjs /path/to/kit` in a clone and install the tarballs it lists, and build the engine with `cargo build -p sx-cli --release`. Your app also needs `@modelcontextprotocol/sdk` (1.31.0) to talk to the server, and React 19 for the React components. [AGENTS.md](AGENTS.md) walks a coding agent through the whole integration, and `examples/integrator-sample` is a working app that does everything in this guide.
 
 Ship `sx` (or `sx.exe`) with your app and point the server at it. Without it the server falls back to a stub engine that only estimates STL files and writes G-code nobody can print.
 
