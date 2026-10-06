@@ -5,6 +5,7 @@
 // they were when it ran, plus the object's transform at that moment; replaying it with the current
 // local mesh and that transform gives the same result wherever the object has moved since. No
 // React, no store and no engine calls in here, so the geometry worker can load it too.
+import { copyCount, type Pattern } from '../pattern'
 import type { ArraySpec, ExtrudeSpec, FaceFrame, FreeShape, Hole, HoleSpec, MovedFace, OpenFace, Placement, Polygon, Shape, SketchLoop, ThreadPlace, ThreadSpec, Vec2, Vec3 } from '../../geom/cad'
 
 export type Mat4 = number[]
@@ -30,7 +31,7 @@ export interface HistoryMesh {
 
 export type StepParams =
   | { op: 'face.push'; at: Vec3; normal: Vec3; distanceMm: number }
-  | { op: 'shape.extrude'; frame?: FaceFrame; shape: Shape | FreeShape; placement?: Placement; spec: ExtrudeSpec; font?: string; name?: string }
+  | { op: 'shape.extrude'; frame?: FaceFrame; shape: Shape | FreeShape; placement?: Placement; spec: ExtrudeSpec; font?: string; name?: string; pattern?: Pattern }
   | { op: 'sketch.revolve'; frame?: FaceFrame; loops: SketchLoop[]; axis: { point: Vec2; direction: Vec2 }; angleDeg?: number; operation?: 'new' | 'join' | 'cut'; name?: string }
   | { op: 'subtract'; solids: SolidSpec[]; label: string }
   | { op: 'hollow'; wallMm: number }
@@ -440,10 +441,11 @@ export function stepName(s: Pick<Step, 'params'>): string {
     case 'shape.extrude': {
       const op = p.spec.operation ?? 'new'
       const d = `${n2(p.spec.distanceMm)} mm`
-      if (p.shape.type === 'circle' && op === 'cut') return `Hole ${n2(p.shape.diameterMm)} mm`
-      if (p.shape.type === 'sketch') return op === 'cut' ? `Sketch cut ${d}` : `Sketch extrude ${d}`
-      if (p.shape.type === 'text') return `Text "${p.shape.text.length > 16 ? `${p.shape.text.slice(0, 15)}...` : p.shape.text}" ${op === 'cut' ? 'cut' : 'raised'} ${d}`
-      return `${SHAPE_WORDS[p.shape.type] ?? 'Shape'} ${op === 'cut' ? 'cut' : 'extrude'} ${d}`
+      const copies = p.pattern ? `, ${copyCount(p.pattern)} copies` : ''
+      if (p.shape.type === 'circle' && op === 'cut') return `Hole ${n2(p.shape.diameterMm)} mm${copies}`
+      if (p.shape.type === 'sketch') return `${op === 'cut' ? `Sketch cut ${d}` : `Sketch extrude ${d}`}${copies}`
+      if (p.shape.type === 'text') return `Text "${p.shape.text.length > 16 ? `${p.shape.text.slice(0, 15)}...` : p.shape.text}" ${op === 'cut' ? 'cut' : 'raised'} ${d}${copies}`
+      return `${SHAPE_WORDS[p.shape.type] ?? 'Shape'} ${op === 'cut' ? 'cut' : 'extrude'} ${d}${copies}`
     }
     case 'sketch.revolve':
       return `Sketch revolve ${n2(p.angleDeg ?? 360)}°`

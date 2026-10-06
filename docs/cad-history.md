@@ -47,7 +47,7 @@ A push or pull of a face that a fillet or chamfer in the history rounds does not
 | Tool | Decision |
 | --- | --- |
 | Push and pull | step `face.push`, face pick |
-| Sketch extrude, shape, text and SVG on a face | step `shape.extrude` with the typed shape, sketch or SVG; "New body" starts a new object with history |
+| Sketch extrude, shape, text and SVG on a face | step `shape.extrude` with the typed shape, sketch or SVG, and its `pattern` when it is repeated (one step for every copy); "New body" starts a new object with history |
 | Sketch revolve | step `sketch.revolve` |
 | Subtract a shape (hole from the top) | step `subtract`, the solid kept in world coordinates of its transform; the result keeps the object's frame instead of being stood up again |
 | Hollow, repair, simplify | steps `hollow`, `repair`, `simplify` on every part (simplify ratio is editable) |

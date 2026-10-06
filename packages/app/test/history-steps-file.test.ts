@@ -13,6 +13,7 @@ const STEPS: StepParams[] = [
   { op: 'hole.apply', hole: { entry: [0, 0, 5], axis: [0, 0, 1], diameterMm: 6, depthMm: 5, through: true }, spec: { diameterMm: 3.4 }, label: 'M3 clearance' },
   { op: 'thread.apply', thread: { start: [0, 0, 5], axis: [0, 0, 1], diameterMm: 6.8, lengthMm: 5, internal: true, openEnd: true }, spec: { size: 'M8', clearanceMm: 0.1 }, label: 'M8 thread' },
   { op: 'shell', open: [{ at: [0, 0, 5], normal: [0, 0, 1] }], wallMm: 2 },
+  { op: 'shape.extrude', frame: { origin: [0, 0, 5], normal: [0, 0, 1], u: [1, 0, 0], v: [0, 1, 0] }, shape: { type: 'circle', diameterMm: 4 }, placement: {}, spec: { distanceMm: 5, operation: 'cut' }, pattern: { kind: 'circular', count: 6, center: [10, 0] } },
 ]
 
 function roundTrip(params: StepParams): History | undefined {
@@ -29,6 +30,7 @@ describe('history steps in the project file', () => {
   }
 
   it('drops a step whose parameters are wrong', () => {
+    expect(roundTrip({ op: 'shape.extrude', frame: { origin: [0, 0, 5], normal: [0, 0, 1], u: [1, 0, 0], v: [0, 1, 0] }, shape: { type: 'circle', diameterMm: 4 }, placement: {}, spec: { distanceMm: 5, operation: 'cut' }, pattern: { kind: 'spiral', count: 3 } } as unknown as StepParams)).toBeUndefined()
     expect(roundTrip({ op: 'shell', open: [{ at: [0, 0], normal: [0, 0, 1] }], wallMm: 2 } as unknown as StepParams)).toBeUndefined()
     expect(roundTrip({ op: 'thread.apply', thread: { start: [0, 0, 5] }, spec: { size: 8 }, label: 'x' } as unknown as StepParams)).toBeUndefined()
     expect(roundTrip({ op: 'hole.apply', hole: {}, spec: { diameterMm: 'big' }, label: 'x' } as unknown as StepParams)).toBeUndefined()
@@ -43,5 +45,12 @@ describe('a shell step', () => {
     expect(mainNumber(step.params)).toMatchObject({ label: 'Wall', value: 2, unit: 'mm' })
     expect(withNumber(step.params, 3)).toMatchObject({ op: 'shell', wallMm: 3 })
     expect(withNumber(step.params, 0)).toMatch(/more than 0/)
+  })
+})
+
+describe('a patterned step', () => {
+  it('names its copies', async () => {
+    const { stepName } = await import('../src/cad/history/model')
+    expect(stepName({ params: STEPS[3]! })).toBe('Hole 4 mm, 6 copies')
   })
 })

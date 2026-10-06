@@ -212,6 +212,8 @@ export interface ExtrudeRequest {
   /** The body to join to or cut from. */
   target?: MeshItem
   fontBase64?: string
+  /** Copies of the shape on its face, made in the same step (cad/pattern.ts). */
+  pattern?: import('../cad/pattern').Pattern
 }
 
 /**

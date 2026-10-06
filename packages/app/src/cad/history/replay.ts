@@ -115,7 +115,7 @@ async function runStep(call: EngineCall, s: Step, parts: Flat[], fonts: Record<s
   if (p.op === 'parts.add') return [...out, ...p.parts.map(flat)]
   if (newBody) {
     const name = (p.op === 'shape.extrude' || p.op === 'sketch.revolve') && p.name ? p.name : 'Body'
-    const req = p.op === 'shape.extrude' ? { frame: p.frame, shape: p.shape, placement: p.placement ?? {}, spec: p.spec, ...(p.font ? { fontBase64: font(p.font, fonts) } : {}) } : { frame: p.frame, loops: p.loops, axis: p.axis, angleDeg: p.angleDeg, operation: 'new' }
+    const req = p.op === 'shape.extrude' ? { frame: p.frame, shape: p.shape, placement: p.placement ?? {}, spec: p.spec, ...(p.font ? { fontBase64: font(p.font, fonts) } : {}), ...(p.pattern ? { pattern: p.pattern } : {}) } : { frame: p.frame, loops: p.loops, axis: p.axis, angleDeg: p.angleDeg, operation: 'new' }
     const r = (await call(p.op, req)) as { mesh: { positions: number[]; indices: number[] } }
     const body = local(r.mesh, { name, slot: out[s.part]?.slot ?? 1 })
     if (s.part < out.length) out[s.part] = body
@@ -140,7 +140,7 @@ async function runStep(call: EngineCall, s: Step, parts: Flat[], fonts: Record<s
       }
       case 'shape.extrude':
       case 'sketch.revolve': {
-        const req = p.op === 'shape.extrude' ? { frame: p.frame, shape: p.shape, placement: p.placement ?? {}, spec: p.spec, target: item(part), ...(p.font ? { fontBase64: font(p.font, fonts) } : {}) } : { frame: p.frame, loops: p.loops, axis: p.axis, angleDeg: p.angleDeg, operation: p.operation, target: item(part) }
+        const req = p.op === 'shape.extrude' ? { frame: p.frame, shape: p.shape, placement: p.placement ?? {}, spec: p.spec, target: item(part), ...(p.font ? { fontBase64: font(p.font, fonts) } : {}), ...(p.pattern ? { pattern: p.pattern } : {}) } : { frame: p.frame, loops: p.loops, axis: p.axis, angleDeg: p.angleDeg, operation: p.operation, target: item(part) }
         const r = (await call(p.op, req)) as { mesh: Flat; report: { touches: boolean } }
         if (!r.report.touches) throw new Broken('The shape no longer reaches the part.')
         out[i] = { ...part, positions: r.mesh.positions, indices: r.mesh.indices }
