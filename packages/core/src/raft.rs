@@ -125,11 +125,14 @@ pub(crate) fn plan(cfg: &PrintConfig) -> Option<Plan> {
             });
         }
         top += thick;
+        // Orca (SupportCommon.cpp generate_support_layers): a contacts-only layer takes the interface id of the
+        // layer under it plus one, so it turns from that layer. Under it is the last interface layer
+        // (`interface_count - 2`), or with none the first layer (id 0).
         layers.push(Layer {
             kind: Kind::Contact,
             top,
             height: thick,
-            interface_id: interface_count.saturating_sub(1),
+            interface_id: interface_count.saturating_sub(1).max(1),
         });
         contact_top = top;
     }
@@ -335,11 +338,9 @@ pub(crate) fn layer_paths(
                 work.support = lines(&cols, cfg.support.base_spacing + spacing, base_angle);
             }
             // The interface is spaced by `support_interface_spacing` (a solid layer when it is zero).
-            let angle = if plan.layers.len() == 1 {
-                90.0
-            } else {
-                turn(layer.interface_id)
-            };
+            // A one-layer raft is only its contact layer, which Orca prints at raft_interface_angle too (90
+            // degrees and the turn of 45 for interface 0: 135), not at the bare 90.
+            let angle = turn(layer.interface_id);
             work.support_interface = lines(&area, cfg.support.interface_spacing + spacing, angle);
         }
     }
