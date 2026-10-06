@@ -1190,6 +1190,15 @@ impl PrintConfig {
                 range(key, v, 0.1, 2.0)?;
             }
         }
+        // Orca sets no upper limit, but a compensation of meters overflows the scaled outlines; the settings
+        // offer at most 1 mm, so 5 mm either way turns away only nonsense.
+        for key in [
+            "elefant_foot_compensation",
+            "xy_hole_compensation",
+            "xy_contour_compensation",
+        ] {
+            range(key, self.raw_number(key, 0.0), -5.0, 5.0)?;
+        }
         // Orca's limits (PrintConfig.cpp): the print flow ratio 0.01 to 2, the ratios by role 0 to 2.
         range(
             "print_flow_ratio",
@@ -2108,6 +2117,25 @@ mod tests {
         assert!((pct.line_width - 0.44).abs() < 1e-9);
         let mm = PrintConfig::from_json(br#"{"line_width":"0.45"}"#).unwrap();
         assert!((mm.line_width - 0.45).abs() < 1e-9);
+    }
+
+    #[test]
+    fn compensations_turn_away_only_nonsense() {
+        use serde_json::json;
+        // These overflowed the scaled outlines (or ran for minutes at 1000 mm) instead of slicing.
+        for key in [
+            "elefant_foot_compensation",
+            "xy_hole_compensation",
+            "xy_contour_compensation",
+        ] {
+            for bad in [json!("inf"), json!(1e9), json!(1000), json!(-6)] {
+                let err = PrintConfig::from_value(&json!({ key: bad })).unwrap_err();
+                assert!(err.to_string().contains(key), "{key} {bad}: {err}");
+            }
+            for ok in [json!(0.15), json!("-0.1"), json!(0), json!(5)] {
+                assert!(PrintConfig::from_value(&json!({ key: ok })).is_ok(), "{key} {ok}");
+            }
+        }
     }
 
     #[test]
