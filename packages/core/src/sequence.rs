@@ -9,9 +9,7 @@
 
 use crate::config::PrintConfig;
 use crate::error::Result;
-use crate::fm::Fm as _;
 use crate::output::{PathInfo, SliceOutput, StageMicros};
-use crate::plate::{Plate, PlateObject};
 use crate::session::SliceSession;
 use crate::{Progress, Stage};
 use std::ops::Range;
@@ -98,9 +96,13 @@ pub(crate) fn slice_range(
                     l.prev_cfg += base;
                 }
             }
+            if let Some(model) = session.collide() {
+                out.collisions = crate::collide::walk::object_layers(model, k, &out.layers, cfg.travel_speed);
+            }
             match merged.as_mut() {
                 None => merged = Some(out),
                 Some(m) => {
+                    m.collisions.merge(std::mem::take(&mut out.collisions));
                     m.layers.append(&mut out.layers);
                     m.configs.append(&mut out.configs);
                     m.plate_top_z = m.plate_top_z.max(out.plate_top_z);
@@ -165,188 +167,6 @@ fn carry_flow(paths: &mut [PathInfo], own: &PrintConfig, writer: &PrintConfig, f
             }
         }
     }
-}
-
-/// Problems of a by-object plate: objects closer than the extruder clearance, and objects that
-/// stand taller than the gantry clears while another prints after them. Bambu Studio's
-/// `sequential_print_clearance_valid`, the printer maker's own rule for the A1 and its kin.
-pub(crate) fn clearance_problems(objects: &[&PlateObject], config: &PrintConfig) -> Vec<String> {
-    let radius = config.raw_number("extruder_clearance_radius", 40.0);
-    let rod = config.raw_number("extruder_clearance_height_to_rod", 40.0);
-    let lid = config.raw_number("extruder_clearance_height_to_lid", 120.0);
-    let to_rod = config.raw_number("extruder_clearance_dist_to_rod", 40.0);
-    let plate = Plate {
-        objects: objects.iter().map(|o| (*o).clone()).collect(),
-        ..Plate::default()
-    };
-    let hulls = crate::firmware::footprints(&plate);
-    let heights: Vec<f64> = objects
-        .iter()
-        .map(|o| {
-            o.mesh
-                .parts
-                .iter()
-                .flat_map(|p| p.positions.iter())
-                .map(|&v| o.apply(v)[2])
-                .fold(0.0, f64::max)
-        })
-        .collect();
-    let name = |i: usize| objects.get(i).map_or("object", |o| o.name.as_str()).to_owned();
-    // objects under the nozzle height never meet the hotend, only the nozzle (orca's is_all_objects_are_short)
-    let short = heights
-        .iter()
-        .all(|&h| h < config.raw_number("nozzle_height", 2.5));
-    let skirt = skirt_offset(config, short);
-    // each hull grows by half of this less 0.1 mm, so placing exactly at the radius passes
-    let need = if short {
-        2.0 * (skirt.max(0.5 * MAX_OUTER_NOZZLE_DIAMETER) - 0.1)
-    } else {
-        radius + 2.0 * skirt - 0.2
-    };
-    let mut out = Vec::new();
-    for i in 0..hulls.len() {
-        for j in i + 1..hulls.len() {
-            let (Some(a), Some(b)) = (hulls.get(i), hulls.get(j)) else {
-                continue;
-            };
-            let gap = hull_distance(&a.hull, &b.hull);
-            if gap < need {
-                out.push(format!(
-                    "{} and {} are {gap:.1} mm apart; printing by object needs {:.0} mm between objects so the toolhead clears them",
-                    name(i),
-                    name(j),
-                    need.ceil()
-                ));
-            }
-        }
-    }
-    // the gantry passes over an earlier object while a later one prints in a band of y around it
-    let band = |i: usize| {
-        hulls.get(i).map(|h| {
-            let ys = h.hull.iter().map(|p| p[1]);
-            let lo = ys.clone().fold(f64::INFINITY, f64::min);
-            let hi = ys.fold(f64::NEG_INFINITY, f64::max);
-            (lo - 0.5 * to_rod, hi + 0.5 * to_rod)
-        })
-    };
-    let last = heights.len().saturating_sub(1);
-    for (i, h) in heights.iter().enumerate().take(last) {
-        let under = band(i).is_some_and(|(lo, hi)| {
-            (i + 1..heights.len()).any(|j| band(j).is_some_and(|(l, u)| hi.min(u) - lo.max(l) > 0.0))
-        });
-        let (limit, what) = if under {
-            (rod, "the gantry")
-        } else {
-            (lid, "the lid")
-        };
-        if *h > limit {
-            out.push(format!(
-                "{} is {h:.1} mm tall and prints before another object; {what} clears {limit:.0} mm, so print it last or lower it",
-                name(i)
-            ));
-        }
-    }
-    out
-}
-
-/// Orca's `MAX_OUTER_NOZZLE_DIAMETER`, mm.
-const MAX_OUTER_NOZZLE_DIAMETER: f64 = 4.0;
-
-/// Orca's `object_skirt_offset`: how far a skirt around each object reaches past the clearance
-/// the objects already keep, mm.
-fn skirt_offset(config: &PrintConfig, short: bool) -> f64 {
-    let per_object =
-        matches!(config.raw.get("skirt_type"), Some(serde_json::Value::String(t)) if t == "perobject");
-    if !per_object || config.skirt_loops == 0 {
-        return 0.0;
-    }
-    let width =
-        config.line_width + f64::from(config.skirt_loops - 1) * crate::session::skirt_spacing_mm(config);
-    let shield =
-        matches!(config.raw.get("draft_shield"), Some(serde_json::Value::String(t)) if t == "enabled");
-    let layer = config.raw_number("max_layer_height", 0.0);
-    if short {
-        config.skirt_distance + width
-    } else if shield || f64::from(config.skirt_height) * layer > config.raw_number("nozzle_height", 2.5) {
-        config.skirt_distance + config.line_width
-    } else if config.skirt_distance + width > config.raw_number("extruder_clearance_radius", 40.0) / 2.0 {
-        config.skirt_distance + width - config.raw_number("extruder_clearance_radius", 40.0) / 2.0
-    } else {
-        0.0
-    }
-}
-
-/// Distance between two convex polygons, 0 when they touch or overlap.
-fn hull_distance(a: &[[f64; 2]], b: &[[f64; 2]]) -> f64 {
-    if a.is_empty() || b.is_empty() {
-        return f64::INFINITY;
-    }
-    if a.iter().any(|&p| contains(b, p)) || b.iter().any(|&p| contains(a, p)) || crosses(a, b) {
-        return 0.0;
-    }
-    let edges = |poly: &[[f64; 2]]| -> Vec<([f64; 2], [f64; 2])> {
-        (0..poly.len())
-            .filter_map(|k| Some((*poly.get(k)?, *poly.get((k + 1) % poly.len())?)))
-            .collect()
-    };
-    let mut best = f64::INFINITY;
-    for &p in a {
-        for (s, e) in edges(b) {
-            best = best.min(point_segment(p, s, e));
-        }
-    }
-    for &p in b {
-        for (s, e) in edges(a) {
-            best = best.min(point_segment(p, s, e));
-        }
-    }
-    best
-}
-
-fn point_segment(p: [f64; 2], a: [f64; 2], b: [f64; 2]) -> f64 {
-    let (dx, dy) = (b[0] - a[0], b[1] - a[1]);
-    let len2 = dx * dx + dy * dy;
-    let t = if len2 <= 0.0 {
-        0.0
-    } else {
-        (((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / len2).clamp(0.0, 1.0)
-    };
-    (p[0] - (a[0] + t * dx)).m_hypot(p[1] - (a[1] + t * dy))
-}
-
-/// Inside test for a convex polygon of either winding.
-fn contains(poly: &[[f64; 2]], p: [f64; 2]) -> bool {
-    let (mut pos, mut neg) = (false, false);
-    for k in 0..poly.len() {
-        let (Some(a), Some(b)) = (poly.get(k), poly.get((k + 1) % poly.len())) else {
-            continue;
-        };
-        let cross = (b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0]);
-        pos |= cross > 0.0;
-        neg |= cross < 0.0;
-    }
-    !(pos && neg)
-}
-
-fn crosses(a: &[[f64; 2]], b: &[[f64; 2]]) -> bool {
-    let orient =
-        |p: [f64; 2], q: [f64; 2], r: [f64; 2]| (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0]);
-    for i in 0..a.len() {
-        let (Some(&p1), Some(&p2)) = (a.get(i), a.get((i + 1) % a.len())) else {
-            continue;
-        };
-        for j in 0..b.len() {
-            let (Some(&q1), Some(&q2)) = (b.get(j), b.get((j + 1) % b.len())) else {
-                continue;
-            };
-            let (d1, d2) = (orient(p1, p2, q1), orient(p1, p2, q2));
-            let (d3, d4) = (orient(q1, q2, p1), orient(q1, q2, p2));
-            if d1 * d2 < 0.0 && d3 * d4 < 0.0 {
-                return true;
-            }
-        }
-    }
-    false
 }
 
 /// Objects that print layer by layer with settings of their own: every layer holds the paths of

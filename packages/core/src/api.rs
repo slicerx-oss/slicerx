@@ -281,6 +281,10 @@ pub struct RequestOptions {
     pub plate_number: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model_name: Option<String>,
+    /// The printer profile id the plate is sliced for (`bambu-h2d`): heimdall's collision check takes the head,
+    /// gantry and tool changer of that printer, else of the settings' `printer_model`, else a generic head.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub printer_id: Option<String>,
 }
 
 /// What `filename_format` reads from a request besides the settings.
@@ -341,6 +345,12 @@ pub struct SliceReport {
     /// The filament map the print uses, on a printer with two extruders fed by their own AMS.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub filament_map: Option<FilamentMapReport>,
+    /// By object: every place the head, gantry or tool changer would meet a printed object, in print order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub collisions: Vec<crate::collide::Collision>,
+    /// Fixes for the collisions, with what they cost.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub collision_fixes: Vec<crate::collide::CollisionFix>,
 }
 
 /// Which extruder and nozzle print each filament (Bambu Studio's `filament_maps`).
@@ -564,6 +574,9 @@ pub fn build_session(req: &SliceRequest, plate: &Plate, config: &PrintConfig) ->
         .collect();
     let mut session =
         SliceSession::with_options(plate, config, req.options.layer_tops_mm.as_deref(), &ranges)?;
+    if let Some(m) = collide_model(req, plate, config, &session) {
+        session.set_collide(Arc::new(m));
+    }
     for k in req.plate.objects.iter().flat_map(|o| o.settings.keys()) {
         if !crate::config::READ_KEYS.contains(&k.as_str()) && !crate::config::FUZZY_KEYS.contains(&k.as_str())
         {
@@ -616,6 +629,53 @@ pub fn build_session(req: &SliceRequest, plate: &Plate, config: &PrintConfig) ->
         });
     }
     Ok(session)
+}
+
+/// heimdall's model of a by-object plate with two objects or more: the plate's objects (before any shrinkage
+/// compensation, a fraction of a percent the head's 2 mm margin covers), the request's printer and the session's
+/// filament map.
+fn collide_model(
+    req: &SliceRequest,
+    plate: &Plate,
+    config: &PrintConfig,
+    session: &SliceSession,
+) -> Option<crate::collide::Model> {
+    if !config.print_by_object() {
+        return None;
+    }
+    let printable: Vec<&PlateObject> = plate
+        .objects
+        .iter()
+        .filter(|o| o.mesh.parts.iter().any(|p| !p.triangles.is_empty()))
+        .collect();
+    if printable.len() < 2 {
+        return None;
+    }
+    let map = session
+        .filament_map()
+        .map(|m| m.extruder.iter().map(|&e| usize::from(e)).collect());
+    Some(crate::collide::Model::new(
+        &printable,
+        config,
+        req.options.printer_id.as_deref(),
+        map,
+        session.by_layer_blocker(config).unwrap_or_default(),
+    ))
+}
+
+/// The collision report of a sliced request: `hits` from its layer ranges, the layers' seconds and the start before
+/// them as the finished file reads them. Empty on a plate without a collision model.
+pub fn collision_report(
+    meta: Option<&crate::collide::Meta>,
+    hits: &crate::collide::Hits,
+    layer_s: &[f32],
+    prepare_s: f64,
+) -> crate::collide::report::Report {
+    let Some(meta) = meta else {
+        return crate::collide::report::Report::default();
+    };
+    let layer_s: Vec<f64> = layer_s.iter().map(|&t| f64::from(t)).collect();
+    crate::collide::report(meta, &hits.0, &layer_s, prepare_s)
 }
 
 /// Slices one layer range of a prepared request and writes its G-code to
@@ -791,6 +851,7 @@ pub fn run_request_with(
     let mut renderer: Option<crate::thumbnail::Renderer> = None;
     let resume_at = req.options.resume_from_layer.filter(|&r| r > 0).unwrap_or(0);
     let mut extras: Vec<(u32, crate::extras::LayerExtras)> = Vec::new();
+    let mut hits = crate::collide::Hits::default();
     let draw = want_gcode && given.is_none() && !thumb_specs.is_empty();
     for s in 0..shards {
         if progress.cancelled() {
@@ -801,7 +862,8 @@ pub fn run_request_with(
         let mut sink = Vec::new();
         let target: &mut Vec<u8> = if want_gcode { &mut run.gcode } else { &mut sink };
         let before = target.len();
-        let out = slice_shard_paths(req, &session, &config, lo..hi, progress)?;
+        let mut out = slice_shard_paths(req, &session, &config, lo..hi, progress)?;
+        hits.merge(std::mem::take(&mut out.collisions));
         let drawing = if draw {
             let side = thumb_specs
                 .iter()
@@ -966,6 +1028,14 @@ pub fn run_request_with(
         }
         gcode_sha = sha;
     }
+    let collisions = collision_report(
+        session.collide_meta(),
+        &hits,
+        &report.layer_time_s,
+        report.stats.prepare_s,
+    );
+    report.collisions = collisions.collisions;
+    report.collision_fixes = collisions.fixes;
     for skipped in &thumb_skipped {
         report.warnings.push(SliceWarning {
             code: WarningCode::UnsupportedSetting,
@@ -1057,7 +1127,8 @@ pub const REQUEST_SCHEMA: &str = r#"{
         "layerTopsMm": { "type": "array", "items": { "type": "number", "exclusiveMinimum": 0 }, "minItems": 1, "description": "sleipnir: top of every layer in mm, ascending, first entry is the first layer's top" },
         "plateName": { "type": "string", "description": "For filename_format: {plate_name}" },
         "plateNumber": { "type": "integer", "minimum": 1, "description": "For filename_format: {plate_number}, from 1" },
-        "modelName": { "type": "string", "description": "For filename_format: {model_name}, the project's name" }
+        "modelName": { "type": "string", "description": "For filename_format: {model_name}, the project's name" },
+        "printerId": { "type": "string", "description": "Printer profile id (bambu-h2d): the head, gantry and tool changer the collision check uses" }
       }
     },
     "meshes": { "type": "object", "additionalProperties": { "type": "string" }, "description": "sx CLI only: mesh reference to file path" }

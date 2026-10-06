@@ -31,6 +31,8 @@ struct State {
     finish_names: sx_core::outname::NameInfo,
     /// The image for the next `sx_finalize`, set by `sx_set_thumbnail`.
     thumb: Option<sx_core::thumbnail::Thumb>,
+    /// The collision model's facts and every shard's hits for the next `sx_finalize`, set by `sx_set_collisions`.
+    collide: Option<(sx_core::collide::Meta, sx_core::collide::Hits)>,
     /// What the safety preflight lowered in the request's settings, reported with shard 0.
     config_issues: Vec<String>,
     /// 0: G-code, 1: SXPV, 2: JSON info, 3: mesh parts in the raw format.
@@ -240,6 +242,7 @@ pub extern "C" fn sx_slice_shard(shard: u32, shards: u32) -> u32 {
             "primeTower": out.prime_tower,
             "varyLayerCost": out.vary_layer_cost,
             "filamentMap": out.filament_map.as_ref().map(api::FilamentMapReport::from),
+            "collide": session.collide_meta().map(|m| serde_json::json!({"meta": if shard == 0 { m.to_json() } else { serde_json::Value::Null }, "hits": out.collisions.to_numbers()})),
         });
         s.out = [
             gcode,
@@ -267,6 +270,12 @@ pub extern "C" fn sx_finalize() -> u32 {
         let thumb = s.thumb.take();
         let cfg = s.finish_config.take();
         let (text, timing) = sx_core::firmware::finalize_timed(&s.input, thumb.as_ref(), cfg.as_ref());
+        // The collisions at the times the finished file reads.
+        let collisions = s.collide.take().map(|(meta, hits)| {
+            #[allow(clippy::cast_possible_truncation, reason = "seconds of a layer")]
+            let layer_s: Vec<f32> = timing.layer_s.iter().map(|&t| t as f32).collect();
+            api::collision_report(Some(&meta), &hits, &layer_s, timing.prepare_s)
+        });
         // The finished file's time (the footer's), which the shards' own sums cannot know.
         let time_s = sx_core::firmware::footer_time(&text);
         let binary = cfg
@@ -306,7 +315,8 @@ pub extern "C" fn sx_finalize() -> u32 {
             Some(c) if binary => sx_core::bgcode::encode(&String::from_utf8_lossy(&text), &c),
             _ => text,
         };
-        s.out[2] = serde_json::to_vec(&serde_json::json!({"format": if binary { "bgcode" } else { "gcode" }, "timeS": time_s, "prepareS": timing.prepare_s, "layerTimeS": timing.layer_s, "fileName": file_name, "layerLines": layer_lines, "progressLines": progress_lines})).unwrap_or_default();
+        let (list, fixes) = collisions.map(|r| (r.collisions, r.fixes)).unwrap_or_default();
+        s.out[2] = serde_json::to_vec(&serde_json::json!({"format": if binary { "bgcode" } else { "gcode" }, "timeS": time_s, "prepareS": timing.prepare_s, "layerTimeS": timing.layer_s, "fileName": file_name, "layerLines": layer_lines, "progressLines": progress_lines, "collisions": list, "collisionFixes": fixes})).unwrap_or_default();
     });
     0
 }
@@ -319,6 +329,30 @@ pub extern "C" fn sx_set_request() -> u32 {
         let req: api::SliceRequest = serde_json::from_slice(&s.input).map_err(|e| format!("request: {e}"))?;
         s.finish_config = Some(api::request_config(&req).map_err(|e| e.to_string())?);
         s.finish_names = api::name_info(&req);
+        Ok(())
+    });
+    match result {
+        Ok(()) => 0,
+        Err(e) => fail(e),
+    }
+}
+
+/// Keeps the collision model's facts and the shards' hits in the input buffer (`{"meta": ..., "hits": [...]}`: the
+/// `collide` of shard 0's JSON with every shard's hit numbers joined) for the next `sx_finalize`, which reports them at
+/// the finished file's times.
+/// Returns 0.
+#[unsafe(no_mangle)]
+pub extern "C" fn sx_set_collisions() -> u32 {
+    let result = with(|s| -> Result<(), String> {
+        let v: serde_json::Value =
+            serde_json::from_slice(&s.input).map_err(|e| format!("collisions: {e}"))?;
+        let meta = sx_core::collide::Meta::from_json(v.get("meta").unwrap_or(&serde_json::Value::Null));
+        let numbers: Vec<f64> = v
+            .get("hits")
+            .and_then(serde_json::Value::as_array)
+            .map(|a| a.iter().filter_map(serde_json::Value::as_f64).collect())
+            .unwrap_or_default();
+        s.collide = Some((meta, sx_core::collide::Hits::from_numbers(&numbers)));
         Ok(())
     });
     match result {

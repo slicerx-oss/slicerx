@@ -6,9 +6,10 @@
 //! Writes the keys whose type is a percent (`percent` and `percents` in `packages/settings/schema.json`,
 //! Orca's `coPercent` and `coPercents`), one per line, so the configuration block writes them with their `%`,
 //! and the whole number keys (`int` and `ints`, Orca's `coInt` and `coInts`), which the placeholder language
-//! reads as integers, and copies `packages/settings/defaults.json` next to them.
+//! reads as integers, and copies `packages/settings/defaults.json` next to them, with the head shapes the
+//! collision check uses (`packages/ui/viewport/data/head-shapes.json`).
 //!
-//! The published crate has no `packages/settings`, so it reads the copies in `data/` instead.
+//! The published crate has neither folder, so it reads the copies in `data/` instead.
 //! `tests/published_data.rs` checks that they match; `SX_UPDATE_CORE_DATA=1` rewrites them.
 
 use std::path::Path;
@@ -45,6 +46,13 @@ fn main() {
         for file in ["percent_keys.txt", "int_keys.txt", "defaults.json"] {
             copy(&here.join("data").join(file), &out.join(file));
         }
+    }
+    // heimdall's heads, racks and docks, generated from the ones Preview draws.
+    let shapes = here.join("../ui/viewport/data/head-shapes.json");
+    if shapes.exists() {
+        copy(&shapes, &out.join("head-shapes.json"));
+    } else {
+        copy(&here.join("data/head-shapes.json"), &out.join("head-shapes.json"));
     }
 
     println!("cargo:rerun-if-env-changed=SOURCE_DATE_EPOCH");

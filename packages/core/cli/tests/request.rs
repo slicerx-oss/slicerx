@@ -111,32 +111,46 @@ fn metadata_of_a_plain_3mf_is_empty() {
 fn a_3mf_plate_slices_as_its_objects() {
     let dir = std::env::temp_dir().join(format!("sx-cli-3mf-objects-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
-    let run = |radius: u32| {
+    let run = |radius: u32, rod: u32, allow: bool| {
         let req = serde_json::json!({
             "schemaVersion": 1,
             "meshes": {"p": fixture("two-boxes.3mf")},
             "plate": {"objects": [{"id": "p", "mesh": "p"}]},
             "config": {
                 "print_sequence": "by object", "layer_height": 0.2, "initial_layer_print_height": 0.2,
-                "brim_width": 0, "skirt_loops": 0, "extruder_clearance_radius": radius
+                "brim_width": 0, "skirt_loops": 0, "extruder_clearance_radius": radius,
+                "extruder_clearance_height_to_rod": rod
             },
         });
-        let path = dir.join(format!("request-{radius}.json"));
+        let path = dir.join(format!("request-{radius}-{rod}.json"));
         std::fs::write(&path, req.to_string()).unwrap();
-        sx().args(["slice", "--request"]).arg(&path).output().unwrap()
+        let mut cmd = sx();
+        cmd.args(["slice", "--request"]).arg(&path);
+        if allow {
+            cmd.arg("--allow-collisions");
+        }
+        cmd.output().unwrap()
     };
     // a 10 mm and a 4 mm box, 80 mm apart: one after the other, so 50 and 20 layers
-    let out = run(40);
+    let out = run(40, 40, false);
     assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
     let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
     assert_eq!(v["layerCount"], 70);
-    let out = run(90);
+    assert!(v.get("collisions").is_none());
+    // closer than a 90 mm radius, but the head itself clears: sliced, with the close call listed
+    let out = run(90, 40, false);
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(v["collisions"][0]["severity"], "close");
+    // a gantry 3 mm over the nozzle passes through the 10 mm box while the 4 mm one prints: refused
+    let out = run(40, 3, false);
     assert_eq!(out.status.code(), Some(3));
     let err = String::from_utf8_lossy(&out.stderr);
     assert!(
-        err.contains("printing by object is not safe: tall and short are 80.0 mm apart"),
+        err.contains("printing by object is not safe: The gantry hits tall."),
         "{err}"
     );
+    assert!(run(40, 3, true).status.success());
     let _ = std::fs::remove_dir_all(dir);
 }
 

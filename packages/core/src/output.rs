@@ -347,6 +347,8 @@ pub struct SliceOutput {
     pub vary_layer_cost: Option<VaryLayerCost>,
     /// The filament map, on a printer with two extruders fed by their own AMS.
     pub filament_map: Option<crate::nozzles::Map>,
+    /// By object: what these layers' moves and tool changes meet of the other objects (`collide`).
+    pub collisions: crate::collide::Hits,
 }
 
 /// The plate's first layer as the start G-code variables read it.

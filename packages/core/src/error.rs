@@ -17,7 +17,8 @@ pub enum Error {
     Unsupported(&'static str),
     #[error("blocked by the safety preflight: {0}")]
     Blocked(String),
-    /// A by-object plate the toolhead or gantry would run into.
+    /// A by-object plate the toolhead, gantry or tool changer would run into (the command line's refusal of a slice
+    /// with collisions; the engine itself reports them).
     #[error("printing by object is not safe: {0}")]
     Clearance(String),
     #[error("slicing was canceled")]

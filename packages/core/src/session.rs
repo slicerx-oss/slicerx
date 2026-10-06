@@ -257,6 +257,8 @@ pub struct SliceSession {
     /// The filament map on a printer with two extruders fed by their own AMS (`nozzles.rs`); the session's
     /// settings carry it as `filament_map`.
     nozzle_map: Option<crate::nozzles::Map>,
+    /// heimdall's model of a by-object plate: its objects as obstacles and the machine among them (`collide`).
+    collide: Option<std::sync::Arc<crate::collide::Model>>,
     /// The tower's rows before the saves of a type 2 tower (`tower::plan_rows_unsaved`), which the saves are
     /// measured on.
     tower_rows0: f64,
@@ -1030,14 +1032,8 @@ impl SliceSession {
             }
         }
         first.objects = crate::firmware::footprints(plate);
-        if config.print_by_object() {
-            // Orca refuses to slice these, and so does a print that would run the nozzle or
-            // gantry into a finished object.
-            let problems = crate::sequence::clearance_problems(&printable, config);
-            if !problems.is_empty() {
-                return Err(Error::Clearance(problems.join("; ")));
-            }
-        }
+        // Orca refuses a by-object plate whose objects stand closer than the clearance radius or taller than the
+        // gantry; here it slices, and the collision check (`collide`) reports every move that would meet a part.
         first.object_settings = sliced.iter().map(|o| o.settings.clone()).collect();
         first.interleave = !config.print_by_object();
         if first.interleave {
@@ -1476,6 +1472,7 @@ impl SliceSession {
             instances: Vec::new(),
             whole_plate: None,
             nozzle_map: None,
+            collide: None,
             tower_rows0: 1.0,
         };
         if crate::spiral::enabled(config) {
@@ -1849,6 +1846,36 @@ impl SliceSession {
 
     pub(crate) fn is_interleaved(&self) -> bool {
         self.interleave
+    }
+
+    /// Gives a by-object plate its collision model (`api::build_session` makes it).
+    pub(crate) fn set_collide(&mut self, model: std::sync::Arc<crate::collide::Model>) {
+        self.collide = Some(model);
+    }
+
+    pub(crate) fn collide(&self) -> Option<&crate::collide::Model> {
+        self.collide.as_deref()
+    }
+
+    /// What the collision report needs besides the hits, on a by-object plate.
+    pub fn collide_meta(&self) -> Option<&crate::collide::Meta> {
+        self.collide.as_deref().map(|m| &m.meta)
+    }
+
+    /// Why the objects of this by-object plate could not print layer by layer instead; None when they can.
+    pub(crate) fn by_layer_blocker(&self, config: &PrintConfig) -> Option<String> {
+        if crate::spiral::enabled(config) {
+            return Some("spiral vase prints one object at a time".to_owned());
+        }
+        let (h, f, c) = (self.plan.height, self.plan.first_height, &self.plan.custom);
+        self.followers
+            .iter()
+            .any(|s| {
+                (s.plan.height - h).abs() > 1e-9
+                    || (s.plan.first_height - f).abs() > 1e-9
+                    || s.plan.custom != *c
+            })
+            .then(|| "the objects use different layer heights".to_owned())
     }
 
     /// The settings of the `k`th object of the sequence: the plate's plus its own overrides.
@@ -3095,6 +3122,7 @@ impl SliceSession {
                 .and_then(|p| p.report(config, self.tool_count)),
             vary_layer_cost: self.vary_cost,
             filament_map: self.nozzle_map.clone(),
+            collisions: crate::collide::Hits::default(),
             configs,
             stage_micros: StageMicros {
                 layers: self.prep_micros,
