@@ -258,6 +258,50 @@ mod tests {
     }
 
     #[test]
+    fn pushing_a_floor_by_its_thickness_opens_the_bottom() {
+        let outer = build::box_mesh([0.0; 3], [20.0, 20.0, 10.0]);
+        let inner = build::box_mesh([2.0, 2.0, 2.0], [18.0, 18.0, 11.0]);
+        let cup = boolean::boolean(&[outer], &[inner], BoolOp::Difference, &BooleanOptions::default())
+            .unwrap()
+            .0;
+        let floor = cup
+            .triangles
+            .iter()
+            .position(|&t| cup.corners(t).iter().all(|p| (p[2] - 2.0).abs() < 1e-9) && cup.normal(t)[2] > 0.0)
+            .unwrap();
+        let c = cup.corners(cup.triangles[floor]);
+        let at = vec3::scale(vec3::add(vec3::add(c[0], c[1]), c[2]), 1.0 / 3.0);
+        let r = push_face(
+            &cup,
+            u32::try_from(floor).unwrap(),
+            at,
+            -2.0,
+            &BooleanOptions::default(),
+        )
+        .unwrap();
+        assert!(r.report.watertight);
+        let area_at_bottom = |up: bool| -> f64 {
+            r.mesh
+                .triangles
+                .iter()
+                .map(|&t| r.mesh.corners(t))
+                .filter(|c| c.iter().all(|p| p[2].abs() < 1e-9))
+                .map(|c| vec3::tri_normal(c[0], c[1], c[2]))
+                .filter(|n| (n[2] > 0.0) == up)
+                .map(|n| vec3::len(n) * 0.5)
+                .sum()
+        };
+        // The bottom keeps only its rim, and no skin of no thickness covers the opening (the face shape tool's
+        // cut needed a fix for this; the push prism's walls on the face's own corners already open it).
+        assert!(
+            (area_at_bottom(false) - (400.0 - 256.0)).abs() < 1e-6,
+            "{}",
+            area_at_bottom(false)
+        );
+        assert!(area_at_bottom(true) < 1e-9, "{}", area_at_bottom(true));
+    }
+
+    #[test]
     fn coplanar_region_of_two_joined_blocks_moves_as_one() {
         let a = build::box_mesh([0.0; 3], [20.0, 10.0, 5.0]);
         let b = build::box_mesh([0.0, 10.0, 0.0], [10.0, 30.0, 5.0]);
