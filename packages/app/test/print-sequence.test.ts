@@ -116,7 +116,7 @@ describe('a plate placed too close or too tall by object', () => {
     set({ plate: [entry('a', 'Cube A', 100, 118, 10), entry('b', 'Cube B', 170, 118, 10)], slice: { status: 'done', result: struck, stale: false }, toast: null })
     await exportGcode(host)
     expect(saved).toEqual([])
-    expect(get().toast).toMatchObject({ tone: 'error', text: expect.stringMatching(/^heimdall found a collision: The gantry hits Cube A\./) })
+    expect(get().toast).toMatchObject({ tone: 'error', text: expect.stringMatching(/^heimdall found a collision on this plate\./) })
     set({ toast: null })
     expect(await exportGcode3mf(host)).toBe(false)
     expect(get().toast).toMatchObject({ tone: 'error', text: expect.stringMatching(/^heimdall found a collision/) })

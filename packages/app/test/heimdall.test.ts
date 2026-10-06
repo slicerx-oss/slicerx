@@ -7,7 +7,8 @@ import { flushSync } from 'react-dom'
 import { createRoot } from 'react-dom/client'
 import { describe, expect, it, vi } from 'vitest'
 import { SXPV_HEADER_BYTES, SXPV_MAGIC, SXPV_SEGMENT_BYTES, SXPV_VERSION, readPreview, type Collision, type CollisionFix, type Host, type PreviewBuffers, type SliceResult } from '@slicerx/contracts'
-import { applyCollisionFix, closeCalls, collisionsOf, collisionTime, fixesOf, jumpToCollision, printBlock, strikeMarks } from '../src/plate/heimdall'
+import { applyCollisionFix, closeCalls, collisionsOf, fixesOf, jumpToCollision, printBlock, strikeMarks } from '../src/plate/heimdall'
+import { collisionTime } from '../src/plate/heimdall-jump'
 import { preflight } from '../src/plate/preflight'
 import { get, set } from '../src/state/store'
 import { HostContext } from '../src/host'
@@ -61,7 +62,7 @@ function entry(id: string, name: string) {
 describe('heimdall in the app', () => {
   it('holds Print back on a hit and only warns on a close call', () => {
     set({ plate: [entry('tall', 'Tall'), entry('low', 'Low')], slice: { status: 'done', result: result([hit, close]), stale: false } })
-    expect(printBlock(get())).toBe('heimdall found a collision: The gantry hits Tall. Apply a fix in Preview, or change the plate, and slice again.')
+    expect(printBlock(get())).toBe('heimdall found a collision on this plate. See it in Preview, apply a fix or change the plate, and slice again.')
     set({ slice: { status: 'done', result: result([close]), stale: false } })
     expect(printBlock(get())).toBeNull()
     expect(closeCalls(get())).toEqual(["Low passes within the printer profile's clearance of Tall. The head's own shape clears it."])
@@ -78,15 +79,15 @@ describe('heimdall in the app', () => {
     expect(strikeMarks(get())).toEqual([{ x: 21, y: 41, z: 40.6 }, { x: 30, y: 30, z: 3, close: true, selected: true }])
   })
 
-  it('jumps to the moment: the layer, the move in it, the head shown and the playback stop', () => {
+  it('jumps to the moment: the layer, the move in it, the head shown and the playback stop', async () => {
     set({ slice: { status: 'done', result: result([hit]), stale: false }, preview: preview(4, 10), showToolhead: false, layerLo: 3, strikePick: null, strikeJump: null, profile: null })
-    jumpToCollision(0)
+    await jumpToCollision(0)
     const s = get()
     expect(s).toMatchObject({ strikePick: 0, showToolhead: true, layerLo: 1, layerHi: 3, moveCut: 0.55, toolChange: null })
     // Two layers of 10 s and the middle of the third layer's sixth move.
     expect(s.strikeJump?.timeS).toBeCloseTo(25.5, 6)
     expect(collisionTime(s, hit)).toBeCloseTo(25.5, 6)
-    jumpToCollision(0)
+    await jumpToCollision(0)
     expect(get().strikeJump?.seq).toBeGreaterThan(s.strikeJump!.seq)
   })
 
@@ -119,7 +120,7 @@ describe('heimdall in the app', () => {
     expect(r.warnings).toContain("The toolhead passes close to Tall. While Low prints, the nozzle comes within 18.0 mm of Tall. The printer profile asks for 40 mm around the nozzle; the head's own shape clears Tall, so this is the profile's margin, not a hit, layers 3 to 4.")
   })
 
-  it('lists the strikes with when and how deep, a jump for each, and the fixes with their cost', () => {
+  it('lists the strikes with when and how deep, a jump for each, and the fixes with their cost', async () => {
     set({ plate: [entry('tall', 'Tall'), entry('low', 'Low')], slice: { status: 'done', result: result([hit, close], [reorder, byLayer, spread]), stale: false }, preview: preview(4, 10), strikePick: null })
     const el = document.createElement('div')
     document.body.append(el)
@@ -137,7 +138,7 @@ describe('heimdall in the app', () => {
     // Only the safe fixes have a button.
     expect(fixes.map((f) => f.querySelector('button') !== null)).toEqual([true, true, false])
     flushSync(() => (items[0]!.querySelector('button') as HTMLButtonElement).click())
-    expect(get().strikePick).toBe(0)
+    await vi.waitFor(() => expect(get().strikePick).toBe(0))
     flushSync(() => root.unmount())
     el.remove()
   })

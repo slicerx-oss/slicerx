@@ -3,21 +3,26 @@
 // The words for heimdall's collisions and fixes. The engine reports codes, numbers and object ids; every sentence the
 // person reads is written here, in one place, ready for translation.
 import type { Collision, CollisionFix } from '@slicerx/contracts'
-import type { ToolChangerKind } from '@slicerx/viewport'
 
 /** The plate's object names by id. */
 export type Names = (id: string) => string
+
+/** Object names and the tool changer's station of the app's plate and printer. */
+export function wordsOf(s: { plate: readonly { id: string; name: string }[]; profile: { printerId: string } | null }): { name: Names; station: string } {
+  return { name: namesOf(s.plate), station: stationOf(s.profile?.printerId) }
+}
 
 export function namesOf(plate: readonly { id: string; name: string }[]): Names {
   return (id) => plate.find((p) => p.id === id)?.name ?? 'an object'
 }
 
-/** What the head goes to during a tool change, by the changer's kind. */
-export function stationOf(kind: ToolChangerKind | null | undefined): string {
-  if (kind === 'hotend-rack') return 'hotend rack'
-  if (kind === 'tool-rack' || kind === 'xl-dock') return 'tool dock'
-  if (kind === 'lift-switch') return 'switch bay'
-  return kind ? 'purge chute' : 'tool changer'
+/** What the head goes to during a tool change, by the printer profile id (the changers `toolChangerSpec` models). */
+export function stationOf(printerId: string | null | undefined): string {
+  const id = printerId ?? ''
+  if (id.startsWith('bambu-h2c')) return 'hotend rack'
+  if (id === 'snapmaker-u1' || id.startsWith('prusa-xl')) return 'tool dock'
+  if (id.startsWith('ultimaker-s')) return 'switch bay'
+  return id.startsWith('bambu-') ? 'purge chute' : 'tool changer'
 }
 
 const mm = (v: number, digits = 1) => `${v.toFixed(digits)} mm`
@@ -28,9 +33,10 @@ export function collisionTitle(c: Collision, name: Names, station = 'tool change
   if (c.severity === 'close') return `The toolhead passes close to ${b}`
   if (c.kind === 'gantry') return `The ${c.part === 'lid' ? 'frame' : 'gantry'} hits ${b}`
   if (c.kind === 'nozzle_travel_through_part') return `A travel runs through ${b}`
-  if (c.kind === 'hotend') return c.part === 'nozzle' ? `The nozzle prints into ${b}` : `The toolhead hits ${b}`
   if (c.kind === 'tool_change') return `A tool change crosses ${b}`
-  return `The ${station} meets ${b}`
+  if (c.kind === 'dock') return `The ${station} meets ${b}`
+  // What is left prints: the nozzle or the toolhead.
+  return c.part === 'nozzle' ? `The nozzle prints into ${b}` : `The toolhead hits ${b}`
 }
 
 /** Why it happens, with the numbers. */
@@ -46,11 +52,12 @@ export function collisionDetail(c: Collision, name: Names, station = 'tool chang
   if (c.kind === 'gantry' && c.part === 'lid') return `${b} is ${mm(c.hitHeightMm)} tall. Over the whole bed the printer clears ${mm(limit)} above the nozzle, so ${b} is in the way while ${a} prints${r}.`
   if (c.kind === 'gantry') return `${b} is ${mm(c.hitHeightMm)} tall. The gantry clears ${mm(limit)} above the nozzle, and it passes over ${b} while ${a} prints${r}.`
   if (c.kind === 'nozzle_travel_through_part') return `Moving across ${a} at ${z}, the nozzle passes through ${tall}`
-  if (c.kind === 'hotend' && c.part === 'nozzle') return `A move of ${a} at ${z} passes through ${tall}`
-  if (c.kind === 'hotend') return `While ${a} prints at ${z}, the toolhead reaches ${mm(Math.max(0.1, c.pushMm ?? 0))} into ${tall}`
   const piece = c.part === 'gantry' ? 'gantry' : c.part === 'nozzle' ? 'nozzle' : 'toolhead'
   if (c.kind === 'tool_change') return `On the way to the ${station} at ${z}, the ${piece} passes through ${tall}`
-  return `At the ${station}, with ${a} at ${z}, the ${piece} reaches ${tall}`
+  if (c.kind === 'dock') return `At the ${station}, with ${a} at ${z}, the ${piece} reaches ${tall}`
+  // What is left prints: the nozzle or the toolhead.
+  if (c.part === 'nozzle') return `A move of ${a} at ${z} passes through ${tall}`
+  return `While ${a} prints at ${z}, the toolhead reaches ${mm(Math.max(0.1, c.pushMm ?? 0))} into ${tall}`
 }
 
 /** How many of the list a fix clears. */

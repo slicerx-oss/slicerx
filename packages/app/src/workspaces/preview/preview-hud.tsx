@@ -15,7 +15,8 @@ import { PLAYBACK_SPEEDS } from '../../state/prefs'
 import { setGcodePanel, useGcodeView } from './gcode-file'
 import { MARKERS, setMarkerShown, useMarkers } from './markers'
 import { purgeReadout, usePurgeView, type PlayPurge } from './purge-view'
-import { collisionsOf, collisionTime, jumpToCollision } from '../../plate/heimdall'
+import { collisionsOf, jumpToCollision } from '../../plate/heimdall'
+import { collisionTime } from '../../plate/heimdall-jump'
 import { collisionTitle, namesOf } from '../../plate/heimdall-words'
 
 /** Heights in px the playback bar snaps between: slim (transport only), medium and full. */
@@ -355,7 +356,7 @@ export function LayerDock() {
           {strikes.map((c, i) => {
             const at = collisionTime(get(), c)
             return at === null ? null : (
-              <button key={i} type="button" className="strike-tick" data-severity={c.severity} style={{ left: `${(sliderOf(timeline, at) / Math.max(1, timeline.total)) * 100}%` }} aria-label={`${collisionTitle(c, names)}, ${clock(at)}`} {...tipAttrs({ title: collisionTitle(c, names), body: `${clock(at)}. Click to jump there.` })} onClick={() => jumpToCollision(i)}>
+              <button key={i} type="button" className="strike-tick" data-severity={c.severity} style={{ left: `${(sliderOf(timeline, at) / Math.max(1, timeline.total)) * 100}%` }} aria-label={`${collisionTitle(c, names)}, ${clock(at)}`} {...tipAttrs({ title: collisionTitle(c, names), body: `${clock(at)}. Click to jump there.` })} onClick={() => void jumpToCollision(i)}>
                 <Icon name="strike" size={12} />
               </button>
             )
@@ -394,7 +395,7 @@ export function LayerDock() {
           />
           {strikes.map((c, i) =>
             c.layer === top - 1 ? (
-              <button key={i} type="button" className="strike-tick" data-severity={c.severity} style={{ left: `${movesOf(timeline, preview, top, segs > 0 ? c.segment / segs : 0) * 100}%` }} aria-label={`${collisionTitle(c, names)}, move ${c.segment + 1}`} {...tipAttrs({ title: collisionTitle(c, names), body: `Move ${c.segment + 1} of this layer. Click to jump there.` })} onClick={() => jumpToCollision(i)}>
+              <button key={i} type="button" className="strike-tick" data-severity={c.severity} style={{ left: `${movesOf(timeline, preview, top, segs > 0 ? c.segment / segs : 0) * 100}%` }} aria-label={`${collisionTitle(c, names)}, move ${c.segment + 1}`} {...tipAttrs({ title: collisionTitle(c, names), body: `Move ${c.segment + 1} of this layer. Click to jump there.` })} onClick={() => void jumpToCollision(i)}>
                 <Icon name="strike" size={12} />
               </button>
             ) : null,
