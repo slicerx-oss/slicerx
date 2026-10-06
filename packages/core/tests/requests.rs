@@ -2650,6 +2650,25 @@ fn painted_run(mesh: Mesh) -> SliceRun {
     r
 }
 
+/// A spiral vase lays one outline per layer in one filament. With a painted side each filament's region printed
+/// its own outline, the wall between them included, with a tool change on every layer. Orca refuses such an
+/// object (`Print::validate`), and so does the engine.
+#[test]
+fn spiral_vase_refuses_a_painted_object() {
+    let mesh = Arc::new(painted_box(false));
+    let req: SliceRequest = serde_json::from_value(json!({
+        "plate": {"objects": [{"mesh": "p", "transform": [1,0,0,0, 0,1,0,0, 0,0,1,0, 100,100,0,1]}]},
+        "config": {"brim_width": 0, "spiral_mode": true, "wall_loops": 1, "top_shell_layers": 0, "sparse_infill_density": 0},
+        "options": {"flavor": "marlin2"},
+    }))
+    .unwrap();
+    let err = common::run_request(&req, &move |_: &str| Ok(mesh.clone()))
+        .err()
+        .map(|e| e.to_string())
+        .unwrap_or_default();
+    assert!(err.contains("spiral_mode") && err.contains("filament"), "{err}");
+}
+
 /// Extrusion points of one tool on one layer (1-based), by x.
 fn tool_xs(g: &str, layer: usize, tool: u8) -> Vec<f64> {
     let mut out = Vec::new();
