@@ -69,6 +69,8 @@ export type PatternFields =
   | { kind: 'line'; count: string; step: string; angle: string }
   | { kind: 'grid'; count: string; step: string; count2: string; step2: string }
   | { kind: 'circle'; count: string; centerX: string; centerY: string; sweep: string }
+  // A pattern at points has no fields: it is kept as it is until another mode is picked.
+  | { kind: 'points'; pattern: Extract<Pattern, { kind: 'points' }> }
 
 export function patternFromFields(f: PatternFields): Pattern | null {
   switch (f.kind) {
@@ -84,5 +86,7 @@ export function patternFromFields(f: PatternFields): Pattern | null {
       return { kind: 'linear', count: num(f.count), stepMm: [num(f.step), 0], count2: num(f.count2), step2Mm: [0, num(f.step2)] }
     case 'circle':
       return { kind: 'circular', count: num(f.count), center: [num(f.centerX), num(f.centerY)], angleDeg: num(f.sweep) }
+    case 'points':
+      return f.pattern
   }
 }
