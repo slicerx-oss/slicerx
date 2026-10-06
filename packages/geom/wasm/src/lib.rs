@@ -7,7 +7,7 @@
 //! zero byte and the request JSON into linear memory, then calls `geom_call`.
 //! On success (0) the response JSON is at `geom_out_ptr` and `geom_out_len`;
 //! otherwise (1) the message is at `geom_error_ptr` and `geom_error_len`. The
-//! operation names are `sx_geom::json::OPERATIONS`, listed by `geom_ops`.
+//! operation names are `sx_geom::json::operations()`, the ones this build has, listed by `geom_ops`.
 //! Meshes travel in the flat form (`positions`, `indices`) or as base64 STL;
 //! there is no file access, so `stlPath` requests fail. No unsafe code: the
 //! only unsafe item is the `no_mangle` export attribute.
@@ -102,7 +102,7 @@ pub extern "C" fn geom_ops() -> u32 {
     with(|s| {
         s.out = format!(
             "[{}]",
-            sx_geom::json::OPERATIONS
+            sx_geom::json::operations()
                 .iter()
                 .map(|o| format!("\"{o}\""))
                 .collect::<Vec<_>>()
