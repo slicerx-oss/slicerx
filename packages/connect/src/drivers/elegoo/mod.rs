@@ -22,8 +22,9 @@ use crate::gate::{Action, ApprovalGate, ApprovalToken, params};
 use crate::http;
 use crate::manifest::{PluginManifest, manifest};
 use crate::types::{
-    Capabilities, Capability, DiscoveredPrinter, Image, JobFile, PrinterConfig, PrinterEvent, PrinterState,
-    PrinterStatus, RemoteFile, Secrets, StartOptions, Temp, hex, now_iso,
+    Capabilities, Capability, DiscoveredPrinter, ExtruderInfo, Image, JobFile, PrinterConfig, PrinterEvent,
+    PrinterHardware, PrinterState, PrinterStatus, RemoteFile, Secrets, StartOptions, StoredFile, Temp, hex,
+    now_iso,
 };
 use crate::wslink::{OnLink, OnText, WsLink, WsLinkSpec};
 use crate::{PrinterConnector, PrinterSession};
@@ -192,6 +193,10 @@ struct Shared {
     cfg: PrinterConfig,
     /// Merged `Status` object from `sdcp/status` messages.
     state: Mutex<Value>,
+    /// The last `Attributes` object from `sdcp/attributes` (Cmd 1): model, firmware, build size,
+    /// camera, free storage.
+    attributes: Mutex<Value>,
+    have_attributes: watch::Sender<bool>,
     mainboard: Mutex<String>,
     connected: AtomicBool,
     events: broadcast::Sender<PrinterEvent>,
@@ -205,9 +210,17 @@ impl Shared {
         if !self.connected.load(Ordering::Relaxed) {
             return PrinterStatus::offline(&self.cfg.id);
         }
+        let camera = self
+            .attributes
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get("CameraStatus")
+            .and_then(Value::as_i64)
+            .is_none_or(|c| c == 1);
         parse_status(
             &self.cfg.id,
             &self.state.lock().unwrap_or_else(PoisonError::into_inner),
+            camera,
         )
     }
 
@@ -233,6 +246,28 @@ impl Shared {
                 }
                 return;
             }
+        }
+        if let Some(a) = v.get("Attributes").filter(|a| a.is_object()) {
+            *self.attributes.lock().unwrap_or_else(PoisonError::into_inner) = a.clone();
+            let _ = self.have_attributes.send(true);
+            self.publish_changes();
+            return;
+        }
+        if let Some(topic) = v.get("Topic").and_then(Value::as_str)
+            && topic.starts_with("sdcp/error/")
+        {
+            let code = v
+                .get("Data")
+                .and_then(|d| d.get("Data"))
+                .and_then(|d| d.get("ErrorCode"))
+                .map(|c| c.as_str().map_or_else(|| c.to_string(), str::to_owned))
+                .unwrap_or_default();
+            let _ = self.events.send(PrinterEvent::Error {
+                printer_id: self.cfg.id.clone(),
+                code: format!("sdcp_{code}"),
+                message: sdcp_error_words(&code).to_owned(),
+            });
+            return;
         }
         let Some(status) = v.get("Status").and_then(Value::as_object) else {
             return;
@@ -293,16 +328,91 @@ impl Shared {
     }
 }
 
+/// The words for an `sdcp/error` code (SDCP V3.0.0, ErrorCode).
+fn sdcp_error_words(code: &str) -> &'static str {
+    match code {
+        "1" => "The file failed its MD5 check on the printer. Send it again.",
+        "2" => "The printer does not accept the file format.",
+        _ => "The printer reported an error.",
+    }
+}
+
+/// The words for `PrintInfo.ErrorNumber` (SDCP V3.0.0 and OpenCentauri). `None` for 0, no error.
+fn print_error_words(n: i64) -> Option<&'static str> {
+    match n {
+        0 => None,
+        1 => Some("The file failed its MD5 check"),
+        2 => Some("The printer could not read the file"),
+        3 => Some("The file does not match this printer's resolution"),
+        4 => Some("The printer does not recognize the file format"),
+        5 => Some("The file was sliced for another printer model"),
+        _ => Some("The printer reported a print error"),
+    }
+}
+
 /// Maps the merged SDCP `Status` object to the normalized status.
-pub(crate) fn parse_status(id: &str, s: &Value) -> PrinterStatus {
+///
+/// `PrintInfo.Status` codes conflict between the SDCP spec (6 paused, 8 stopped, 9 complete, 10
+/// file checking) and what a Centauri Carbon was seen sending (5 pausing, 8 preparing, 9 starting,
+/// 10 paused, 13 printing, 20 resuming). The machine status `CurrentStatus` (0 idle, 1 printing, 2
+/// file transfer, 3 calibrating, 4 self check) settles it: while the machine prints, the Centauri
+/// Carbon codes apply; once it is idle, the sub status keeps its last value, so 9 reads as complete
+/// and 8 as stopped, as the spec says. A printer that sends no `CurrentStatus` gets the Centauri
+/// Carbon codes alone.
+pub(crate) fn parse_status(id: &str, s: &Value, camera: bool) -> PrinterStatus {
     let info = s.get("PrintInfo").cloned().unwrap_or(Value::Null);
-    let state = match info.get("Status").and_then(Value::as_i64).unwrap_or(0) {
-        13 | 20 => PrinterState::Printing,
-        5 | 10 => PrinterState::Paused,
-        8 | 9 => PrinterState::Preparing,
-        _ => PrinterState::Idle,
+    let sub = info.get("Status").and_then(Value::as_i64).unwrap_or(0);
+    let machine: Option<Vec<i64>> = s
+        .get("CurrentStatus")
+        .and_then(Value::as_array)
+        .map(|a| a.iter().filter_map(Value::as_i64).collect());
+    let running = |sub: i64| match sub {
+        5 | 6 | 10 => PrinterState::Paused,
+        1 | 8 | 9 => PrinterState::Preparing,
+        _ => PrinterState::Printing,
     };
-    let active = state != PrinterState::Idle;
+    let mut message = None;
+    let state = match machine {
+        Some(m) if m.contains(&1) => running(sub),
+        Some(m) => {
+            if m.contains(&2) {
+                message = Some("Receiving a file".to_owned());
+            } else if m.contains(&3) {
+                message = Some("Calibrating".to_owned());
+            } else if m.contains(&4) {
+                message = Some("Running a self check".to_owned());
+            }
+            match sub {
+                9 => PrinterState::Finished,
+                8 => {
+                    message.get_or_insert_with(|| "The print was stopped".to_owned());
+                    PrinterState::Idle
+                }
+                _ => PrinterState::Idle,
+            }
+        }
+        None => match sub {
+            13 | 20 => PrinterState::Printing,
+            5 | 10 => PrinterState::Paused,
+            8 | 9 => PrinterState::Preparing,
+            _ => PrinterState::Idle,
+        },
+    };
+    let error = info
+        .get("ErrorNumber")
+        .and_then(Value::as_i64)
+        .and_then(print_error_words);
+    let state = match error {
+        Some(e) if state != PrinterState::Printing => {
+            message = Some(e.to_owned());
+            PrinterState::Error
+        }
+        _ => state,
+    };
+    let active = matches!(
+        state,
+        PrinterState::Printing | PrinterState::Paused | PrinterState::Preparing
+    );
     let num = |k: &str| s.get(k).and_then(Value::as_f64);
     let temp = |cur: &str, tgt: &str| {
         num(cur).map(|c| Temp {
@@ -344,8 +454,8 @@ pub(crate) fn parse_status(id: &str, s: &Value) -> PrinterStatus {
         bed: temp("TempOfHotbed", "TempTargetHotbed"),
         chamber: temp("TempOfBox", "TempTargetBox"),
         slots: Vec::new(),
-        camera_available: true,
-        message: None,
+        camera_available: camera,
+        message,
         updated_at: now_iso(),
         live: None,
     }
@@ -373,9 +483,12 @@ impl ElegooSession {
         let url = format!("ws://{}:{}/websocket", cfg.host, cfg.port.unwrap_or(3030));
         let (events, _) = broadcast::channel(64);
         let (have_state, mut have_rx) = watch::channel(false);
+        let (have_attributes, _) = watch::channel(false);
         let shared = Arc::new(Shared {
             cfg: cfg.clone(),
             state: Mutex::new(json!({})),
+            attributes: Mutex::new(Value::Null),
+            have_attributes,
             mainboard: Mutex::new(String::new()),
             connected: AtomicBool::new(false),
             events,
@@ -388,7 +501,13 @@ impl ElegooSession {
             subprotocol: None,
             greeting: {
                 let shared = shared.clone();
-                Arc::new(move || vec![envelope(&shared, 0, &json!({}), &rand_hex(8))])
+                // Status, then the attributes (model, firmware, camera, free storage).
+                Arc::new(move || {
+                    vec![
+                        envelope(&shared, 0, &json!({}), &rand_hex(8)),
+                        envelope(&shared, 1, &json!({}), &rand_hex(8)),
+                    ]
+                })
             },
             // The printer closes idle sockets after 60 seconds.
             keepalive: Some((Duration::from_secs(20), "ping".to_owned())),
@@ -412,7 +531,11 @@ impl ElegooSession {
         let link = WsLink::start(&cfg.id, spec, on_text, on_link).await?;
         let got = tokio::time::timeout(Duration::from_secs(8), have_rx.wait_for(|v| *v)).await;
         if !matches!(got, Ok(Ok(_))) {
-            return Err(Error::protocol(&cfg.id, "no SDCP status after connecting"));
+            // The printer serves few clients at once, and a refused one is just left without status.
+            return Err(Error::protocol(
+                &cfg.id,
+                "no SDCP status after connecting. The printer may already be serving its limit of apps: close ElegooSlicer and the Elegoo phone app, then try again",
+            ));
         }
         Ok(Box::new(ElegooSession {
             cfg,
@@ -457,15 +580,22 @@ impl ElegooSession {
             .unwrap_or(Value::Null);
         match body.get("Ack").and_then(Value::as_i64) {
             Some(0) | None => Ok(body),
-            Some(2) => Err(Error::NotFound {
-                printer: self.id().to_owned(),
-                what: "file".to_owned(),
-            }),
-            Some(n) => Err(Error::protocol(
-                self.id(),
-                format!("command {cmd} refused with code {n}"),
-            )),
+            Some(n) => Err(ack_error(self.id(), cmd, n)),
         }
+    }
+
+    /// Asks for the attributes (Cmd 1) and waits up to three seconds for them.
+    async fn attributes(&self) -> Value {
+        let mut rx = self.shared.have_attributes.subscribe();
+        if !*rx.borrow() {
+            let _ = self.command(1, json!({})).await;
+            let _ = tokio::time::timeout(Duration::from_secs(3), rx.wait_for(|v| *v)).await;
+        }
+        self.shared
+            .attributes
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
     }
 
     fn require(&self, action: &str, ok: &[PrinterState]) -> Result<()> {
@@ -482,6 +612,51 @@ impl ElegooSession {
                 action: action.to_owned(),
             })
         }
+    }
+}
+
+/// A nonzero `Ack` in words (SDCP V3.0.0, `sdcp_print_ctrl_ack_t`). The file codes belong to a start.
+fn ack_error(printer: &str, cmd: u32, ack: i64) -> Error {
+    let refused = |reason: &str| Error::Refused {
+        printer: printer.to_owned(),
+        reason: reason.to_owned(),
+    };
+    match (cmd, ack) {
+        (_, 1) => Error::BadState {
+            printer: printer.to_owned(),
+            state: "busy".to_owned(),
+            action: format!("run command {cmd}"),
+        },
+        (_, 2) => Error::NotFound {
+            printer: printer.to_owned(),
+            what: "file".to_owned(),
+        },
+        (128, 3) => refused("the file failed its MD5 check; send it again"),
+        (128, 4) => refused("the printer could not read the file"),
+        (128, 5) => refused("the file does not match this printer's resolution"),
+        (128, 6) => refused("the printer does not recognize the file format"),
+        (128, 7) => refused("the file was sliced for another printer model"),
+        (_, n) => Error::protocol(printer, format!("command {cmd} refused with code {n}")),
+    }
+}
+
+/// Why an upload chunk was refused, from the reply's `messages` (SDCP V3.0.0 HTTP error codes).
+fn chunk_error(v: &Value) -> String {
+    let code = v
+        .get("messages")
+        .and_then(Value::as_array)
+        .and_then(|m| {
+            m.iter()
+                .find(|e| e.get("field").and_then(Value::as_str) == Some("common_field"))
+        })
+        .and_then(|e| e.get("message"))
+        .and_then(|c| c.as_i64().or_else(|| c.as_str().and_then(|s| s.parse().ok())));
+    match code {
+        Some(-1) => "upload refused: the file offset is invalid".to_owned(),
+        Some(-2) => "upload refused: the offset does not match the file on the printer".to_owned(),
+        Some(-3) => "upload refused: the printer could not open the file (storage full or busy)".to_owned(),
+        Some(n) => format!("upload refused with code {n}"),
+        None => "upload chunk refused".to_owned(),
     }
 }
 
@@ -548,9 +723,26 @@ impl PrinterSession for ElegooSession {
         if file.name.contains(['/', '\\']) || file.name.is_empty() {
             return Err(Error::protocol(self.id(), "unsafe file name"));
         }
+        let total = file.data.len();
+        // The attributes report free storage in bytes (OpenCentauri; the spec says bits).
+        if let Some(free) = self
+            .attributes()
+            .await
+            .get("RemainingMemory")
+            .and_then(Value::as_u64)
+            && free < total as u64
+        {
+            return Err(Error::Refused {
+                printer: self.id().to_owned(),
+                reason: format!(
+                    "the printer has {} MB free and the file needs {} MB; delete files on the printer",
+                    free / 1_000_000,
+                    (total as u64).div_ceil(1_000_000)
+                ),
+            });
+        }
         let md5 = hex(&Md5::digest(&file.data));
         let uuid = rand_hex(16);
-        let total = file.data.len();
         let client = http::client(&self.cfg)?;
         let url = format!(
             "http://{}:{}/uploadFile/upload",
@@ -571,7 +763,7 @@ impl PrinterSession for ElegooSession {
             let resp = http::send(self.id(), client.post(&url).multipart(form)).await?;
             let v = http::json(self.id(), resp).await?;
             if v.get("success").and_then(Value::as_bool) != Some(true) {
-                return Err(Error::protocol(self.id(), "upload chunk refused"));
+                return Err(Error::protocol(self.id(), chunk_error(&v)));
             }
             if end >= total {
                 break;
@@ -672,10 +864,63 @@ impl PrinterSession for ElegooSession {
         Ok(http::mjpeg_frame(&client, &url).await)
     }
 
+    /// The model, firmware and mainboard id from the attributes (Cmd 1). Nozzle size is not reported.
+    async fn hardware(&self) -> Result<Option<PrinterHardware>> {
+        let a = self.attributes().await;
+        if !a.is_object() {
+            return Ok(None);
+        }
+        Ok(Some(elegoo_hardware(&a)))
+    }
+
+    /// Files in the printer's own storage (Cmd 258, `/local/`). Read only.
+    async fn list_files(&self) -> Result<Vec<StoredFile>> {
+        let body = self.command(258, json!({ "Url": "/local/" })).await?;
+        Ok(parse_file_list(&body))
+    }
+
     /// SDCP has no G-code console.
     async fn send_gcode(&self, _line: &str, _token: &ApprovalToken) -> Result<()> {
         Err(Error::not_supported("elegoo", "the G-code console"))
     }
+}
+
+/// The hardware in an SDCP `Attributes` object.
+pub(crate) fn elegoo_hardware(a: &Value) -> PrinterHardware {
+    let text = |k: &str| {
+        a.get(k)
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_owned)
+    };
+    PrinterHardware {
+        model: text("MachineName"),
+        firmware: text("FirmwareVersion"),
+        serial: text("MainboardID"),
+        extruders: vec![ExtruderInfo::default()],
+        ..PrinterHardware::default()
+    }
+}
+
+/// The files (`type` 1) in a Cmd 258 reply.
+pub(crate) fn parse_file_list(body: &Value) -> Vec<StoredFile> {
+    body.get("FileList")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter(|f| f.get("type").and_then(Value::as_i64) == Some(1))
+        .filter_map(|f| {
+            let path = f.get("name").and_then(Value::as_str)?.to_owned();
+            let name = path.rsplit('/').next().unwrap_or(&path).to_owned();
+            Some(StoredFile {
+                path,
+                name,
+                size: None,
+                modified: None,
+            })
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -721,15 +966,78 @@ mod tests {
             "CurrentStatus": [1], "TempOfNozzle": 219.0, "TempTargetNozzle": 220, "TempOfHotbed": 60.0, "TempTargetHotbed": 60, "TempOfBox": 35.0,
             "PrintInfo": { "Status": 13, "CurrentLayer": 40, "TotalLayer": 200, "CurrentTicks": 600, "TotalTicks": 3600, "Filename": "/local/lantern.gcode", "Progress": 20 }
         });
-        let st = parse_status("bay-6", &s);
+        let st = parse_status("bay-6", &s, true);
         assert_eq!(st.state, PrinterState::Printing);
         assert_eq!(st.job_name.as_deref(), Some("lantern.gcode"));
         assert_eq!(st.progress, Some(0.2));
         assert_eq!(st.time_left_s, Some(3000));
         assert_eq!(st.chamber.map(|c| c.current), Some(35.0));
         assert_eq!(
-            parse_status("x", &json!({ "PrintInfo": { "Status": 10 } })).state,
+            parse_status("x", &json!({ "PrintInfo": { "Status": 10 } }), true).state,
             PrinterState::Paused
+        );
+    }
+
+    #[test]
+    fn the_machine_status_settles_the_sub_status() {
+        let st = |machine: i64, sub: i64, err: i64| {
+            parse_status(
+                "x",
+                &json!({ "CurrentStatus": [machine], "PrintInfo": { "Status": sub, "ErrorNumber": err, "Filename": "/local/a.gcode" } }),
+                true,
+            )
+        };
+        // While printing, the Centauri Carbon codes.
+        assert_eq!(st(1, 9, 0).state, PrinterState::Preparing);
+        assert_eq!(st(1, 13, 0).state, PrinterState::Printing);
+        assert_eq!(st(1, 20, 0).state, PrinterState::Printing);
+        assert_eq!(st(1, 10, 0).state, PrinterState::Paused);
+        assert_eq!(st(1, 6, 0).state, PrinterState::Paused);
+        // Idle: the spec's last sub status.
+        assert_eq!(st(0, 9, 0).state, PrinterState::Finished);
+        let stopped = st(0, 8, 0);
+        assert_eq!(stopped.state, PrinterState::Idle);
+        assert_eq!(stopped.message.as_deref(), Some("The print was stopped"));
+        let busy = st(2, 0, 0);
+        assert_eq!(
+            (busy.state, busy.message.as_deref()),
+            (PrinterState::Idle, Some("Receiving a file"))
+        );
+        let failed = st(0, 0, 5);
+        assert_eq!(failed.state, PrinterState::Error);
+        assert_eq!(
+            failed.message.as_deref(),
+            Some("The file was sliced for another printer model")
+        );
+        assert!(!parse_status("x", &json!({}), false).camera_available);
+    }
+
+    #[test]
+    fn refusals_say_why() {
+        assert_eq!(ack_error("p", 129, 1).code(), crate::ErrorCode::BadState);
+        assert_eq!(ack_error("p", 128, 2).code(), crate::ErrorCode::NotFound);
+        let e = ack_error("p", 128, 7);
+        assert_eq!(e.code(), crate::ErrorCode::Refused);
+        assert!(e.to_string().contains("another printer model"), "{e}");
+        assert!(ack_error("p", 128, 3).to_string().contains("MD5"));
+        let v = json!({ "success": false, "messages": [{ "field": "common_field", "message": -2 }] });
+        assert!(chunk_error(&v).contains("offset does not match"));
+        assert_eq!(chunk_error(&json!({ "success": false })), "upload chunk refused");
+    }
+
+    #[test]
+    fn attributes_and_file_list() {
+        let a = json!({ "MachineName": "Centauri Carbon", "FirmwareVersion": "V1.1.29", "MainboardID": "000000000001d354", "XYZsize": "256x256x256" });
+        let h = elegoo_hardware(&a);
+        assert_eq!(h.model.as_deref(), Some("Centauri Carbon"));
+        assert_eq!(h.serial.as_deref(), Some("000000000001d354"));
+        let files = parse_file_list(&json!({ "Ack": 0, "FileList": [
+            { "name": "/local/cube.gcode", "type": 1 }, { "name": "/local/dir", "type": 0 }
+        ]}));
+        assert_eq!(files.len(), 1);
+        assert_eq!(
+            (files[0].path.as_str(), files[0].name.as_str()),
+            ("/local/cube.gcode", "cube.gcode")
         );
     }
 }

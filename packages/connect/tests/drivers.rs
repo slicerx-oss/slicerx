@@ -848,6 +848,50 @@ async fn prusalink_digest_login_passes_the_contract() {
     run_contract(session.as_ref(), &case).await;
 }
 
+// The attributes (Cmd 1) name the model, firmware and mainboard id, the file list (Cmd 258) reads
+// back what was sent, and an upload larger than the free storage is refused before it starts.
+#[tokio::test]
+async fn elegoo_reads_attributes_files_and_free_storage() {
+    let gate = Arc::new(MemoryGate::new());
+    let mocks = Mocks::start("elegoo", &[]).await;
+    let cfg = config("bay-6", "elegoo", mocks.port("elegoo"));
+    let s = ElegooConnector::new(gate.clone())
+        .connect(&cfg, &secrets(&[]))
+        .await
+        .unwrap();
+    let hw = s.hardware().await.unwrap().unwrap();
+    assert_eq!(hw.model.as_deref(), Some("Centauri Carbon"));
+    assert_eq!(hw.firmware.as_deref(), Some("V1.1.29"));
+    assert_eq!(hw.serial.as_deref(), Some("000000000001d354"));
+    let f = job_file("cube.gcode", JobKind::Gcode);
+    let t = gate.mint(
+        sx_connect::Action::Upload,
+        "bay-6",
+        &sx_connect::params::upload("bay-6", &f.name, &f.sha256),
+    );
+    s.upload(f, &t).await.unwrap();
+    let files = s.list_files().await.unwrap();
+    assert!(files.iter().any(|f| f.name == "cube.gcode"), "{files:?}");
+
+    mocks
+        .control("/elegoo", serde_json::json!({ "remainingMemory": 100 }))
+        .await;
+    // A new session reads the lowered free storage.
+    let s = ElegooConnector::new(gate.clone())
+        .connect(&cfg, &secrets(&[]))
+        .await
+        .unwrap();
+    let f = job_file("big.gcode", JobKind::Gcode);
+    let t = gate.mint(
+        sx_connect::Action::Upload,
+        "bay-6",
+        &sx_connect::params::upload("bay-6", &f.name, &f.sha256),
+    );
+    let e = s.upload(f, &t).await.err().unwrap();
+    assert_eq!(e.code(), ErrorCode::Refused);
+    assert!(e.to_string().contains("free"), "{e}");
+}
+
 // One secret field: a printer that answers 401 with no Digest challenge takes it as an API key.
 // Uploads go to the storage the printer lists as writable, a printer without one says a USB drive
 // is needed, and a 409 says the printer is busy.

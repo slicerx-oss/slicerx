@@ -11,7 +11,7 @@ import { startBambu, MOCK_ACCESS_CODE, MOCK_SERIAL, type BambuExtra } from './ba
 import { MOCK_CLOUD_TOKEN, startCloud } from './cloud.ts'
 import { startCreality, type CrealityControl } from './creality.ts'
 import { startDuet } from './duet.ts'
-import { startElegoo } from './elegoo.ts'
+import { startElegoo, type ElegooExtra } from './elegoo.ts'
 import { listen } from './http-util.ts'
 import { MockMachine } from './machine.ts'
 import { MOCK_MOONRAKER_LOGIN, startMoonraker, type MoonrakerControl } from './moonraker.ts'
@@ -85,7 +85,8 @@ export async function startMocks(opts: StartOptions = {}): Promise<RunningMocks>
   if (only.includes('prusalink')) add('prusalink', await startPrusaLink(machine('prusalink'), { ...(opts.digest ? { digest: MOCK_DIGEST } : apiKey ? { apiKey } : {}), extra: prusaExtra }))
   if (only.includes('octoprint')) add('octoprint', await startOctoPrint(machine('octoprint'), apiKey ? { apiKey } : {}))
   if (only.includes('duet')) add('duet', await startDuet(machine('duet'), opts.auth ? { password: MOCK_DUET_PASSWORD } : {}))
-  if (only.includes('elegoo')) add('elegoo', await startElegoo(machine('elegoo')))
+  const elegooExtra: ElegooExtra = { remainingMemory: 8_000_000_000 }
+  if (only.includes('elegoo')) add('elegoo', await startElegoo(machine('elegoo'), elegooExtra))
   let crealityControl: CrealityControl | undefined
   if (only.includes('creality')) {
     const c = await startCreality(machine('creality'), { log })
@@ -204,6 +205,12 @@ export async function startMocks(opts: StartOptions = {}): Promise<RunningMocks>
       if (b.message !== undefined) moonrakerControl.message = b.message
       if (b.expireTokens) moonrakerControl.tokens.clear()
       return { json: { variant: moonrakerControl.variant ?? null, klippy: moonrakerControl.klippy } }
+    }
+    // POST /elegoo {remainingMemory}: the free storage the Elegoo fake's attributes report, in bytes.
+    if (req.path === '/elegoo' && req.method === 'POST') {
+      const b = req.json() as { remainingMemory?: number }
+      if (b.remainingMemory !== undefined) elegooExtra.remainingMemory = b.remainingMemory
+      return { json: { remainingMemory: elegooExtra.remainingMemory } }
     }
     // POST /prusalink {storage}: what the PrusaLink fake lists as writable (`usb`, `local` or `none`).
     if (req.path === '/prusalink' && req.method === 'POST') {
