@@ -5453,6 +5453,7 @@ dependencies = [
  "getrandom 0.4.3",
  "if-addrs",
  "keyring",
+ "keyring-core",
  "md-5",
  "reqwest",
  "rumqttc",

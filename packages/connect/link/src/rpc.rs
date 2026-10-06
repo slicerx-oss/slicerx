@@ -1001,8 +1001,13 @@ async fn dispatch(
         "secrets.set" => {
             let name = str_arg(&p, "name")?;
             let value = str_arg(&p, "value")?;
-            b.secrets.set(&name, &value)?;
-            Ok(json!({ "ok": true }))
+            // A keychain that refuses the write does not stop the caller: the bridge keeps the value for
+            // the session and says so (`kept`), for the app to tell the person.
+            let kept = match b.secrets.set_kept(&name, &value)? {
+                sx_connect::Kept::Stored => "stored",
+                sx_connect::Kept::Session => "session",
+            };
+            Ok(json!({ "ok": true, "kept": kept }))
         }
         "secrets.has" => Ok(json!({ "has": b.secrets.has(&str_arg(&p, "name")?) })),
         "secrets.delete" => {
