@@ -3,6 +3,7 @@
 //! JSON in, JSON out
 
 use crate::error::{Error, Result};
+use crate::faces::Faces;
 use crate::mesh::TriMesh;
 use crate::poly2d::Polygon;
 use crate::solids::SolidSpec;
@@ -516,6 +517,8 @@ fn info(m: &TriMesh) -> Value {
 #[derive(Clone, Copy)]
 pub(crate) enum MeshOut {
     Flat,
+    /// Flat, with the faces when the mesh has them (the request's `withFaces`).
+    FlatFaces,
     StlBase64,
 }
 
@@ -523,6 +526,7 @@ impl MeshOut {
     fn from_request(req: &Value) -> Self {
         match req.get("meshOutput").and_then(Value::as_str) {
             Some("stlBase64") => Self::StlBase64,
+            _ if req.get("withFaces").and_then(Value::as_bool) == Some(true) => Self::FlatFaces,
             _ => Self::Flat,
         }
     }
@@ -533,7 +537,7 @@ impl MeshOut {
     )]
     pub(crate) fn mesh(self, m: &TriMesh) -> Value {
         match self {
-            Self::Flat => {
+            Self::Flat | Self::FlatFaces => {
                 let positions: Vec<f64> = m
                     .positions
                     .iter()
@@ -541,7 +545,12 @@ impl MeshOut {
                     .map(|&c| f64::from(c as f32))
                     .collect();
                 let indices: Vec<u32> = m.triangles.iter().flatten().copied().collect();
-                json!({ "positions": positions, "indices": indices })
+                match (&m.faces, self) {
+                    (Some(f), Self::FlatFaces) => {
+                        json!({ "positions": positions, "indices": indices, "faces": f })
+                    }
+                    _ => json!({ "positions": positions, "indices": indices }),
+                }
             }
             Self::StlBase64 => json!({ "stlBase64": base64_encode(&m.to_stl("sx-geom")) }),
         }
@@ -552,20 +561,20 @@ impl MeshOut {
 #[serde(untagged)]
 pub(crate) enum MeshIn {
     #[serde(rename_all = "camelCase")]
-    Stl {
-        stl_base64: String,
-    },
+    Stl { stl_base64: String },
     #[serde(rename_all = "camelCase")]
-    Path {
-        stl_path: String,
-    },
+    Path { stl_path: String },
     Flat {
         positions: Vec<f64>,
         indices: Vec<u32>,
+        #[serde(default)]
+        faces: Option<Faces>,
     },
     Nested {
         positions: Vec<V3>,
         triangles: Vec<[u32; 3]>,
+        #[serde(default)]
+        faces: Option<Faces>,
     },
 }
 
@@ -583,9 +592,23 @@ pub(crate) fn mesh_value(v: &Value, key: &str, files: FileLoader<'_>) -> Result<
             TriMesh::from_stl(&bytes, key)?
         }
         MeshIn::Path { stl_path } => TriMesh::from_stl(&files(&stl_path)?, &stl_path)?,
-        MeshIn::Flat { positions, indices } => TriMesh::from_flat(&positions, &indices)?,
-        MeshIn::Nested { positions, triangles } => {
-            let m = TriMesh::new(positions, triangles);
+        MeshIn::Flat {
+            positions,
+            indices,
+            faces,
+        } => {
+            let mut m = TriMesh::from_flat(&positions, &indices)?;
+            m.faces = faces;
+            m.validate(key)?;
+            m
+        }
+        MeshIn::Nested {
+            positions,
+            triangles,
+            faces,
+        } => {
+            let mut m = TriMesh::new(positions, triangles);
+            m.faces = faces;
             m.validate(key)?;
             m
         }

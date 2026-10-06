@@ -505,6 +505,45 @@ mod tests {
     }
 
     #[test]
+    fn faces_go_in_and_come_out_when_asked() {
+        let tagged = |min: [f64; 3], s: f64| {
+            MeshOut::FlatFaces.mesh(&build::box_mesh(min, [min[0] + s, min[1] + s, min[2] + s]))
+        };
+        assert_eq!(
+            tagged([0.0; 3], 1.0)["faces"]["table"].as_array().unwrap().len(),
+            6
+        );
+        let req = |with: bool| {
+            json!({
+                "op": "difference",
+                "a": [{ "mesh": tagged([0.0; 3], 10.0), "transform": translate([100.0, 0.0, 0.0]) }],
+                "b": { "mesh": tagged([3.0, 3.0, 2.0], 4.0), "transform": translate([100.0, 0.0, 5.0]) },
+                "withFaces": with,
+            })
+        };
+        let out = run("boolean", &req(true));
+        // The block's six sides, the pocket's four walls and its floor, in the first item's frame.
+        let faces = &out["mesh"]["faces"];
+        assert_eq!(faces["table"].as_array().unwrap().len(), 11, "{faces}");
+        assert_eq!(
+            faces["ids"].as_array().unwrap().len() * 3,
+            out["mesh"]["indices"].as_array().unwrap().len()
+        );
+        let floor = faces["table"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|s| {
+                s["kind"] == "plane"
+                    && s["normal"][2].as_f64().unwrap() > 0.5
+                    && s["offset"].as_f64().unwrap() < 9.0
+            })
+            .unwrap();
+        assert!((floor["offset"].as_f64().unwrap() - 7.0).abs() < 1e-6, "{floor}");
+        assert!(run("boolean", &req(false))["mesh"].get("faces").is_none());
+    }
+
+    #[test]
     fn array_transforms_and_merge() {
         let req = json!({
             "mesh": { "mesh": cube([0.0; 3], 10.0), "transform": translate([0.0, 0.0, 0.0]) },
