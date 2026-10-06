@@ -432,3 +432,47 @@ fn a_brim_stays_inside_its_extruders_reach_as_orca_clips_it() {
     assert!(min_x < f64::MAX, "a brim is printed");
     assert!(min_x >= 24.9, "the brim reaches x {min_x}");
 }
+
+#[test]
+fn a_model_that_cannot_fit_is_refused_before_slicing() {
+    // A cube scaled 100 times (2 m, like a file in the wrong units) sliced for minutes before the toolpath check
+    // refused it. The reference config's bed is the usual 256 mm one.
+    let m = Arc::new(Mesh::load(&cube_stl([20.0, 20.0, 20.0]), "cube.stl").unwrap());
+    let scaled = |s: f32, at: [f32; 2]| {
+        let mut req = request(base_config(), json!({}), [0.0; 3]);
+        req.plate.objects[0].transform = Some(vec![
+            s, 0.0, 0.0, 0.0, 0.0, s, 0.0, 0.0, 0.0, 0.0, s, 0.0, at[0], at[1], 0.0, 1.0,
+        ]);
+        req
+    };
+    let started = std::time::Instant::now();
+    let m2 = m.clone();
+    let big = blocked_or_error(common::run_request(
+        &scaled(100.0, [0.0, 0.0]),
+        &move |_: &str| Ok(m2.clone()),
+    ));
+    assert!(
+        started.elapsed().as_secs_f64() < 5.0,
+        "refused at once, not after slicing"
+    );
+    assert!(big.contains("cube.stl") && big.contains("larger than"), "{big}");
+    assert!(big.contains("scale"), "a hint at the units: {big}");
+    // Taller than the printer builds.
+    let mut tall = scaled(1.0, [100.0, 100.0]);
+    tall.plate.objects[0].transform = Some(vec![
+        1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 30.0, 0.0, 100.0, 100.0, 0.0, 1.0,
+    ]);
+    let m3 = m.clone();
+    let t = blocked_or_error(common::run_request(&tall, &move |_: &str| Ok(m3.clone())));
+    assert!(t.contains("tall"), "{t}");
+    // Wholly off the bed.
+    let m4 = m.clone();
+    let off = blocked_or_error(common::run_request(
+        &scaled(1.0, [-500.0, 100.0]),
+        &move |_: &str| Ok(m4.clone()),
+    ));
+    assert!(off.contains("wholly outside the printable area"), "{off}");
+    // On the bed it slices as before.
+    let m5 = m.clone();
+    assert!(common::run_request(&scaled(1.0, [100.0, 100.0]), &move |_: &str| Ok(m5.clone())).is_ok());
+}

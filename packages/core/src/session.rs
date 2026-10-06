@@ -331,6 +331,47 @@ fn check_extent(plate: &Plate) -> Result<()> {
     Ok(())
 }
 
+/// Refuses a model that cannot print where it stands before anything is sliced: wider or deeper than the bed,
+/// taller than the printer builds, or wholly off the bed. Each of these would slice in full and only then be
+/// refused by the toolpath check, which took minutes for a model in the wrong units. A model partly over an edge
+/// is left to that check, which knows whether its toolpaths leave the bed.
+fn check_fits(extents: &[(&str, [f64; 4], f64)], config: &PrintConfig) -> Result<()> {
+    const TOL: f64 = 0.05;
+    let bed = config.bed_rect();
+    let (bw, bd, bh) = (bed[2] - bed[0], bed[3] - bed[1], config.printable_height);
+    for &(name, b, top) in extents {
+        let (w, d) = (b[2] - b[0], b[3] - b[1]);
+        // The scale a file in other units would have needed: tenths, inches, thousandths.
+        let hint = [
+            (10.0, "a tenth"),
+            (25.4, "1/25.4 (inches)"),
+            (1000.0, "a thousandth"),
+        ]
+        .iter()
+        .find(|(f, _)| w / f <= bw && d / f <= bd && top / f <= bh)
+        .map_or(String::new(), |(_, what)| {
+            format!("; at {what} of its size it would fit, so check the file's units or the object's scale")
+        });
+        // The same error and words as the toolpath check that would have refused it later.
+        if w > bw + TOL || d > bd + TOL {
+            return Err(Error::Blocked(format!(
+                "{name} is {w:.0} x {d:.0} mm, larger than the {bw:.0} x {bd:.0} mm printable area{hint}"
+            )));
+        }
+        if top > bh + TOL {
+            return Err(Error::Blocked(format!(
+                "{name} is {top:.0} mm tall, above the {bh:.0} mm printable height{hint}"
+            )));
+        }
+        if b[2] < bed[0] - TOL || b[0] > bed[2] + TOL || b[3] < bed[1] - TOL || b[1] > bed[3] + TOL {
+            return Err(Error::Blocked(format!(
+                "{name} lies wholly outside the printable area; move it onto the bed"
+            )));
+        }
+    }
+    Ok(())
+}
+
 const LAYER_WIDE_KEYS: [&str; 7] = [
     "nozzle_temperature",
     "enable_pressure_advance",
@@ -1088,8 +1129,11 @@ impl SliceSession {
         let mut xy = [f64::MAX, f64::MAX, f64::MIN, f64::MIN];
         // Each object's height, for the automatic brim (sized per object, as Orca sizes it).
         let mut object_heights: Vec<f64> = Vec::with_capacity(plate.objects.len());
+        // Each object's footprint and top, to refuse one that cannot fit before anything is sliced.
+        let mut extents: Vec<(&str, [f64; 4], f64)> = Vec::with_capacity(plate.objects.len());
         for obj in &plate.objects {
             let (mut lo, mut hi) = (f64::MAX, f64::MIN);
+            let mut oxy = [f64::MAX, f64::MAX, f64::MIN, f64::MIN];
             for part in &obj.mesh.parts {
                 if part.triangles.is_empty() {
                     continue;
@@ -1099,6 +1143,12 @@ impl SliceSession {
                 for v in &verts {
                     lo = lo.min(v[2]);
                     hi = hi.max(v[2]);
+                    oxy = [
+                        oxy[0].min(v[0]),
+                        oxy[1].min(v[1]),
+                        oxy[2].max(v[0]),
+                        oxy[3].max(v[1]),
+                    ];
                 }
                 if let Some((_, s)) = obj.part_settings.iter().find(|(n, _)| *n == part.name)
                     && s.as_object().is_some_and(|m| !m.is_empty())
@@ -1136,10 +1186,19 @@ impl SliceSession {
                 raw.push((slot, verts, tris, paint));
             }
             object_heights.push(if hi >= lo { hi - lo.max(0.0) } else { 0.0 });
+            if hi >= lo {
+                let name = if obj.mesh.name.is_empty() {
+                    &obj.name
+                } else {
+                    &obj.mesh.name
+                };
+                extents.push((name.as_str(), oxy, hi));
+            }
         }
         if raw.is_empty() || max_z <= 0.0 {
             return Err(Error::EmptyPlate);
         }
+        check_fits(&extents, config)?;
         let mut warnings = Vec::new();
         let bed = config.bed_rect();
         if xy[0] < bed[0]
