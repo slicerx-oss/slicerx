@@ -2,7 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { checkEditionConfig, crashReportsRequired, crashReportsSent, defineEditionConfig, DESKTOP_CONNECT_SRC, envLayer, mergeLayers, NEUTRAL_EDITION, tauriConfig, viteDefines, wellKnown } from '../src/index.ts'
+import { checkEditionConfig, crashReportsRequired, crashReportsSent, defineEditionConfig, DESKTOP_CONNECT_SRC, envLayer, geomFeatures, mergeLayers, NEUTRAL_EDITION, parseEditionConfig, tauriConfig, viteDefines, wellKnown } from '../src/index.ts'
 
 const harbor = JSON.parse(readFileSync(new URL('../fixtures/fork-harbor.json', import.meta.url), 'utf8')) as unknown
 const issues = (input: unknown) => {
@@ -84,6 +84,14 @@ describe('edition config', () => {
     expect(secret).toMatch(/Supabase secret key/)
     const publishable = issues(mergeLayers(harbor, { backend: { supabase: { anonKey: 'sb_publishable_0123456789abcdefghijklmnop' } } })).join('\n')
     expect(publishable).not.toMatch(/secret key/)
+  })
+
+  it('keeps the modeling tools by default, and leaves them out of the geometry engine when told to', () => {
+    const on = parseEditionConfig(harbor)
+    expect(on.features.cad).toBe(true)
+    expect(geomFeatures(on)).toBeNull()
+    const off = parseEditionConfig(mergeLayers(harbor, { features: { cad: false } }))
+    expect(geomFeatures(off)).toEqual(['text', 'svg', 'nest', 'calib', 'hollow'])
   })
 
   it('applies environment overrides', () => {

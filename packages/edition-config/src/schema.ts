@@ -94,6 +94,12 @@ export const featuresSchema = z.object({
   cloudSlicing: z.boolean().default(false),
   phonePairing: z.boolean().default(false),
   pilot: z.boolean().default(true),
+  /**
+   * The modeling tools: the face shape tool and text on a face, free sketch, push and pull, fillet and chamfer, the
+   * hole tool and kept dimensions. Off leaves them out of the app and out of the geometry engine the build ships
+   * (measure, arrays, booleans, cut, repair and the other mesh tools stay).
+   */
+  cad: z.boolean().default(true),
   /** Set up local AI in mimir's settings and first run: picks, downloads and checks a model that runs on the user's computer. */
   localAi: z.boolean().default(true),
   /** Store and feed serve the bundled demo catalog instead of a backend (demos, screenshots, offline development). */
