@@ -47,7 +47,8 @@ pub fn start(app: &AppHandle, hub_url: &str) {
     let Some((program, model)) = locate(exe_dir, app.path().resource_dir().ok()) else {
         return;
     };
-    let child = Command::new(program)
+    let mut watch = Command::new(program);
+    let child = crate::launch::no_window(&mut watch)
         .arg("--url")
         .arg(hub_url)
         .arg("--model")

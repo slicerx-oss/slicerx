@@ -482,8 +482,7 @@ pub async fn agent_run(
     };
     let (program, args) = (program.clone(), args.to_vec());
     tauri::async_runtime::spawn_blocking(move || {
-        let out = std::process::Command::new(&program)
-            .args(&args)
+        let out = crate::launch::no_window(std::process::Command::new(&program).args(&args))
             .output()
             .map_err(|e| format!("{program} did not start: {e}. Is it installed and on your PATH?"))?;
         if out.status.success() {
