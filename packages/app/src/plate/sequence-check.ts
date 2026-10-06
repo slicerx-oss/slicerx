@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// Print by object: whether the toolhead or the gantry would hit an object that is already printed. The rule is the
-// engine's (Bambu Studio's sequential_print_clearance_valid, packages/core/src/sequence.rs), run on the plate as it
-// sits, so Print and Export are held back the moment an object is placed too close or too tall, before any slice. The
-// engine checks every slice again, including the per-object skirt case this leaves to it.
+// Print by object: whether the objects keep the clearance the printer profile asks for (Bambu Studio's
+// sequential_print_clearance_valid), run on the plate as it sits. It is a heads-up before slicing; the slice itself runs
+// heimdall's check of every move against the head's real shape (packages/core/src/collide), which decides. A slice made
+// before objects moved is held to this rule until it is sliced again.
 import type { SettingValue } from '@slicerx/contracts'
 import { resolveConfig } from '../adapters/config'
 import { plateConfig } from './plates'
@@ -126,8 +126,8 @@ type Inputs = Pick<AppState, 'plate' | 'plates' | 'activePlate' | 'easy' | 'over
 let cached: { plate: unknown; plates: unknown; activePlate: unknown; easy: unknown; overrides: unknown; text: string | null } | null = null
 
 /**
- * Why the active plate cannot print by object as it sits, as one message, or null when it can or prints by layer.
- * Print, Export and the slice are held back while it is set.
+ * Why the active plate may collide by object as it sits, as one message, or null when it keeps the profile's clearance
+ * or prints by layer.
  */
 export function sequenceProblem(s: Inputs): string | null {
   if (cached && cached.plate === s.plate && cached.plates === s.plates && cached.activePlate === s.activePlate && cached.easy === s.easy && cached.overrides === s.overrides) return cached.text
@@ -138,7 +138,7 @@ export function sequenceProblem(s: Inputs): string | null {
   if (plateSequence(meta, base) === 'by-object' && printable.length > 1) {
     const cfg = { ...base, ...plateConfig(meta) } as unknown as Record<string, SettingValue>
     const problems = clearanceProblems(printable, cfg)
-    if (problems.length) text = `Printing by object is not safe: ${problems.join('; ')}. Move the objects apart, print the tall one last, or print by layer.`
+    if (problems.length) text = `Printing by object may collide: ${problems.join('; ')}. Slice to see where heimdall finds a strike, or move the objects apart, print the tall one last, or print by layer.`
   }
   cached = { plate: s.plate, plates: s.plates, activePlate: s.activePlate, easy: s.easy, overrides: s.overrides, text }
   return text

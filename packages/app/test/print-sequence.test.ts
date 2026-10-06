@@ -1,15 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// Print by object on a bed slinger: objects placed too close for the toolhead, or too tall for the gantry, are
-// refused on the plate as it sits, and the slice, Print and Export are held back until they are moved.
+// Print by object on a bed slinger: objects placed closer or taller than the printer profile allows get a heads-up on
+// the plate as it sits; the slice goes ahead, heimdall's strikes in it hold Print and Export back, and a slice from
+// before the objects moved is held to the profile's rule.
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { Host, SliceResult } from '@slicerx/contracts'
+import type { Collision, Host, SliceResult } from '@slicerx/contracts'
 import { arrangePlate } from '../src/plate/edit'
 import { installPrintMargins } from '../src/plate/footprint'
 import { clearanceProblems, hullDistance, sequenceProblem } from '../src/plate/sequence-check'
 import { exportGcode3mf } from '../src/export/actions'
 import { exportGcode, sendToPrinter, slicePlate } from '../src/state/actions'
 import { get, set } from '../src/state/store'
+
+// The printer layer is the profile these tests set by hand; the sync that would rebuild it from a printer stays out.
+vi.mock('../src/state/profile-sync', async (load) => ({ ...(await load<typeof import('../src/state/profile-sync')>()), profileReady: async () => {} }))
 
 /** A closed box, `w` by `d` by `h` mm, its footprint's corner at the origin. */
 function box(w: number, d: number, h: number) {
@@ -53,6 +57,8 @@ describe('the by-object clearance check', () => {
 
 const plates = (sequence: 'by-object' | 'by-layer') => [{ id: 'p1', name: 'Plate 1', objects: [], settings: { sequence } }] as never
 const result = { id: 'r1', engine: 'sx', layerCount: 10, layerZ: new Float32Array(), layerTimeS: new Float32Array(), stats: { timeS: 600, filamentMm: [100], filamentG: [3], cost: 0, toolChanges: 0 }, stageMicros: {}, wallMs: 1, warnings: [] } as SliceResult
+const strike: Collision = { kind: 'gantry', severity: 'hit', part: 'gantry', title: 'The gantry hits Cube A', detail: 'Cube A is 30.0 mm tall.', objectId: 'b', hitId: 'a', layer: 5, segment: 0, timeS: 300, lastLayer: 9, at: [0, 0, 1], point: [0, 0, 26], worstLayer: 5, worstPoint: [0, 0, 26], depthMm: 4 }
+const struck = { ...result, collisions: [strike], collisionFixes: [] } as SliceResult
 
 describe('a plate placed too close or too tall by object', () => {
   beforeEach(() =>
@@ -72,19 +78,20 @@ describe('a plate placed too close or too tall by object', () => {
   )
 
   it('names the objects and the fix, and says nothing by layer or once they are apart', () => {
-    expect(sequenceProblem(get())).toMatch(/^Printing by object is not safe: Cube A and Cube B are 30\.0 mm apart.*Move the objects apart, print the tall one last, or print by layer\.$/)
+    expect(sequenceProblem(get())).toMatch(/^Printing by object may collide: Cube A and Cube B are 30\.0 mm apart.*Slice to see where heimdall finds a strike, or move the objects apart, print the tall one last, or print by layer\.$/)
     set({ plates: plates('by-layer') })
     expect(sequenceProblem(get())).toBeNull()
     set({ plates: plates('by-object'), plate: [entry('a', 'Cube A', 100, 118, 10), entry('b', 'Cube B', 170, 118, 10)] })
     expect(sequenceProblem(get())).toBeNull()
   })
 
-  it('is not sliced', async () => {
-    const slice = vi.fn(async () => result)
-    await slicePlate({ kind: 'web', capabilities: { threads: 1 }, slicer: { slice, loadParts: async () => ({ id: 'm' }) } } as unknown as Host)
-    expect(slice).not.toHaveBeenCalled()
+  it('is sliced, so heimdall checks every move, and says which printer it slices for', async () => {
+    const slice = vi.fn(async (_req: unknown) => struck)
+    set({ profile: { printerId: 'bambu-a1', nozzle: 0.4, nozzles: [0.4], nozzleFrom: 'default', tier: 'standard', source: 'orca', shippedGcode: true, gcodeKeys: [], limits: {} } })
+    await slicePlate({ kind: 'web', capabilities: { threads: 1 }, slicer: { slice, loadParts: async () => ({ id: 'm' }), getPreview: async () => new ArrayBuffer(0) } } as unknown as Host).catch(() => {})
     const s = get().slice
-    expect(s.status === 'error' && s.message).toMatch(/Printing by object is not safe/)
+    expect(slice, s.status === 'error' ? s.message : s.status).toHaveBeenCalledTimes(1)
+    expect((slice.mock.calls[0]![0] as { options: { printerId?: string } }).options.printerId).toBe('bambu-a1')
   })
 
   it('exports no G-code and sends nothing, even from the slice before the move', async () => {
@@ -103,16 +110,16 @@ describe('a plate placed too close or too tall by object', () => {
     expect(saved).toHaveLength(1)
   })
 
-  it('writes no .gcode.3mf', async () => {
-    const slice = vi.fn(async () => result)
-    const host = { kind: 'web', capabilities: { threads: 1 }, files: { save: vi.fn() }, slicer: { slice, loadParts: async () => ({ id: 'm' }), exportGcode: vi.fn() } } as unknown as Host
+  it('exports nothing from a slice with a strike in it, and says what heimdall found', async () => {
+    const saved: string[] = []
+    const host = { kind: 'web', capabilities: { threads: 1 }, files: { save: async (n: string) => void saved.push(n) }, slicer: { exportGcode: vi.fn() } } as unknown as Host
+    set({ plate: [entry('a', 'Cube A', 100, 118, 10), entry('b', 'Cube B', 170, 118, 10)], slice: { status: 'done', result: struck, stale: false }, toast: null })
+    await exportGcode(host)
+    expect(saved).toEqual([])
+    expect(get().toast).toMatchObject({ tone: 'error', text: expect.stringMatching(/^heimdall found a collision: The gantry hits Cube A\./) })
+    set({ toast: null })
     expect(await exportGcode3mf(host)).toBe(false)
-    expect(slice).not.toHaveBeenCalled()
-    expect(get().toast).toMatchObject({ tone: 'error', text: expect.stringMatching(/Cube A and Cube B are 30\.0 mm apart/) })
-    // A current slice from before the check is not exported either, and the refusal says why.
-    set({ slice: { status: 'done', result, stale: false }, toast: null })
-    expect(await exportGcode3mf(host)).toBe(false)
-    expect(get().toast).toMatchObject({ tone: 'error', text: expect.stringMatching(/^Printing by object is not safe/) })
+    expect(get().toast).toMatchObject({ tone: 'error', text: expect.stringMatching(/^heimdall found a collision/) })
   })
 })
 
@@ -147,8 +154,8 @@ describe('one print sequence for the plate', () => {
     set({ plate: two, plates: [{ id: 'p1', name: 'Plate 1', objects: [], settings: {} }], activePlate: 'p1', overrides: { ...A1, print_sequence: 'by object' } })
     expect(plateConfig(get().plates[0])).not.toHaveProperty('print_sequence')
     expect(plateSliceConfig(get(), get().plates[0])['print_sequence']).toBe('by object')
-    // By object from the settings alone holds the plate back as the plate's own choice does.
-    expect(sequenceProblem(get())).toMatch(/^Printing by object is not safe/)
+    // By object from the settings alone gets the heads-up as the plate's own choice does.
+    expect(sequenceProblem(get())).toMatch(/^Printing by object may collide/)
     set({ plates: [{ id: 'p1', name: 'Plate 1', objects: [], settings: { sequence: 'by-layer' } }] })
     expect(plateSliceConfig(get(), get().plates[0])['print_sequence']).toBe('by layer')
     expect(sequenceProblem(get())).toBeNull()

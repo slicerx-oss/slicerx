@@ -21,6 +21,7 @@ import { effectiveSlot } from '../../filament/slots'
 import { useFits } from '../../plate/fit-state'
 import { useFitWatch } from '../../plate/fit-check'
 import { moveObject, objectWarnings, renameObject, searchObjects, setPartSlot, toggleLock, togglePrintable } from '../../plate/object-list'
+import { printBlock } from '../../plate/heimdall'
 import { sequenceProblem } from '../../plate/sequence-check'
 import { removeVolume, ROLE_LABEL } from '../../plate/volumes'
 import { AmsPanel } from '../../filament/ams-panel'
@@ -426,8 +427,10 @@ export function SliceBlock({ label = 'Slice plate', compact }: { label?: string;
   const plate = useApp((s) => s.plate)
   const auto = useApp((s) => s.autoSlice)
   const done = slice.status === 'done' ? slice : null
-  // By object, objects too close or too tall hold Print and Export back until they are moved.
-  const unsafe = useApp(sequenceProblem)
+  // A strike in the slice holds Print and Export back. Before a slice, objects closer or taller than the printer
+  // profile allows by object are a heads-up: heimdall checks every move when the plate slices.
+  const unsafe = useApp(printBlock)
+  const heads = useApp(sequenceProblem)
   const fresh = done !== null && !done.stale && unsafe === null
   const { printer, rows } = usePrinter()
   const target = printTarget(printer, rows)
@@ -453,10 +456,12 @@ export function SliceBlock({ label = 'Slice plate', compact }: { label?: string;
   // Why Print or Export is held back: the by-object check, and a slice that failed. Both footers show them.
   const problems = (
     <>
-      {unsafe !== null && !(slice.status === 'error' && slice.message === unsafe) ? (
+      {unsafe !== null ? (
         <p className="app-err" role="alert">
           {unsafe}
         </p>
+      ) : heads !== null && !done ? (
+        <p className="app-note">{heads}</p>
       ) : null}
       {slice.status === 'error' ? <p className="app-err">{slice.message}</p> : null}
     </>

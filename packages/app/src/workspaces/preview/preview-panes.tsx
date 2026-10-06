@@ -10,7 +10,7 @@ import { loadSettings, settingsIfLoaded, type SettingsApi } from '../../adapters
 import { useHost } from '../../host'
 import { formatCost, formatDuration, formatGrams, previewStats, timeRows } from '../../lib/preview-stats'
 import { Swatch } from '../../parts'
-import { sequenceProblem } from '../../plate/sequence-check'
+import { printBlock } from '../../plate/heimdall'
 import { exportGcode, recordSpoolUse, sendToPrinter } from '../../state/actions'
 import { setWorkspace, useApp } from '../../state/store'
 import { useTabLabel } from '../../first-run/look'
@@ -21,6 +21,7 @@ import { featureStyle } from './preview-hud'
 import { fixApplies, jumpToWarning, runWarningFix, warningFix } from '../../lib/warning-actions'
 import { repairSelected } from '../../plate/geom-ops'
 import { closeGcodeFile, setGcodePanel, useGcodeView } from './gcode-file'
+import { CollisionList } from './collision-list'
 
 /** A G-code file opened on its own: what it is, and the way back to the plate. */
 function GcodeFileBlock() {
@@ -105,6 +106,7 @@ export function PreviewLeft() {
   const totalStage = SLICE_STAGES.reduce((a, st) => a + (r.stageMicros[st] ?? 0), 0) || 1
   return (
     <>
+      <CollisionList />
       <Block title="Sliced plate" aside={<span className="fil-aside"><span className={slice.stale ? 'app-tag stale' : 'app-tag'}>{slice.stale ? 'Settings changed' : 'Current'}</span><MoreButton id="preview" /></span>} data-section="result">
         <p className="result-line">
           <Icon name="check" />
@@ -195,8 +197,8 @@ export function PreviewRight() {
   const { printer, rows } = usePrinter()
   const spools = useSpools(host)
   const links = useApp((s) => s.spoolLinks)
-  // By object, objects moved too close or too tall since the slice: its G-code is not the plate's any more.
-  const unsafe = useApp(sequenceProblem)
+  // A strike in the slice, or by object objects moved too close or too tall since it: Print and Export wait.
+  const unsafe = useApp(printBlock)
   if (slice.status !== 'done') {
     return (
       <Block title="Filament use" data-section="filament">
