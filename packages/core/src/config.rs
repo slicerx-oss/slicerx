@@ -1190,6 +1190,17 @@ impl PrintConfig {
                 range(key, v, 0.1, 2.0)?;
             }
         }
+        // Geometry tolerances and overlaps Orca bounds only from below (internal_bridge_flow 0 to 2 as Orca
+        // has it): values far past anything the settings offer overflow the scaled outlines.
+        for (key, default, lo, hi) in [
+            ("internal_bridge_flow", 1.0, 0.0, 2.0),
+            ("resolution", 0.01, 0.0, 10.0),
+            ("slice_closing_radius", 0.049, 0.0, 10.0),
+            ("min_feature_size", 25.0, 0.0, 500.0),
+            ("top_bottom_infill_wall_overlap", 25.0, -100.0, 100.0),
+        ] {
+            range(key, self.raw_number(key, default), lo, hi)?;
+        }
         // Orca sets no upper limit, but a compensation of meters overflows the scaled outlines; the settings
         // offer at most 1 mm, so 5 mm either way turns away only nonsense.
         for key in [
@@ -2135,6 +2146,31 @@ mod tests {
         assert!((pct.line_width - 0.44).abs() < 1e-9);
         let mm = PrintConfig::from_json(br#"{"line_width":"0.45"}"#).unwrap();
         assert!((mm.line_width - 0.45).abs() < 1e-9);
+    }
+
+    #[test]
+    fn tolerances_and_overlaps_turn_away_only_nonsense() {
+        use serde_json::json;
+        // Each of these crashed the slice at 1e9 or "inf" (overflow in the scaled outlines or the
+        // extrusion total).
+        for (key, ok) in [
+            ("internal_bridge_flow", [json!(0), json!(1.2), json!(2)]),
+            ("resolution", [json!(0), json!(0.0125), json!(10)]),
+            ("slice_closing_radius", [json!(0), json!(0.049), json!(10)]),
+            ("min_feature_size", [json!(0), json!("25%"), json!(500)]),
+            (
+                "top_bottom_infill_wall_overlap",
+                [json!(-100), json!("25%"), json!(100)],
+            ),
+        ] {
+            for v in [json!(1e9), json!(-1e9), json!("inf")] {
+                let err = PrintConfig::from_value(&json!({ key: v })).unwrap_err();
+                assert!(err.to_string().contains(key), "{key} {v}: {err}");
+            }
+            for v in ok {
+                assert!(PrintConfig::from_value(&json!({ key: v })).is_ok(), "{key} {v}");
+            }
+        }
     }
 
     #[test]
