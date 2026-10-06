@@ -17,6 +17,7 @@ Add printer, then Scan, lists the printers SlicerX can see. It only lists them. 
 | Elegoo Centauri Carbon | It answers one broadcast on UDP port 3000. | One broadcast, sent when you start the scan and never in the background. |
 | Snapmaker A150, A250, A350, J1 and Artisan | They answer one broadcast of `discover` on UDP port 20054 with their name, address and model. The J1 and Artisan are listed, but SlicerX does not connect to them yet. | One broadcast, sent when you start the scan and never in the background. |
 | Duet | It does not announce itself. | Nothing. Enter the IP address. |
+| Anycubic in LAN Mode | No announcement is documented. A typed address is asked for `GET /info` on port 18910, which names the model and whether LAN Mode is on. | Nothing during a scan. |
 
 A scan takes about three seconds. It lists only printers on your own network; anything else is dropped.
 

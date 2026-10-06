@@ -151,6 +151,20 @@ export const CONNECTION_METHODS: readonly ConnectionMethod[] = [
     summary: 'UltiMaker S series and UM3 printers with firmware 4.0 or later. No code or password: jobs go through the printer\'s local cluster API. Experimental, untested on hardware.',
   },
   {
+    id: 'anycubic',
+    startOptions: [],
+    name: 'Anycubic LAN Mode',
+    plugin: 'anycubic',
+    guide: 'anycubic.md',
+    defaultPort: 18910,
+    discovery: {
+      kind: 'manual',
+      detail: 'Anycubic printers are not known to announce themselves in LAN Mode. Enter the IP address; SlicerX asks it on port 18910 for its model and whether LAN Mode is on.',
+    },
+    fields: [host],
+    summary: 'Experimental, untested on a printer. Turn on LAN Mode on the printer first: that removes it from your Anycubic account for good. Status, ACE slots, pause, resume and stop; files go over USB.',
+  },
+  {
     id: 'export',
     startOptions: [],
     name: 'Save G-code',

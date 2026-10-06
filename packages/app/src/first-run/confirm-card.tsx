@@ -20,6 +20,7 @@ const UNIT_LABELS: Record<FilamentUnit['kind'], string> = {
   'qidi-box': 'QIDI Box',
   cfs: 'CFS',
   toolchanger: 'Toolheads',
+  ace: 'ACE',
   external: 'External spool',
 }
 

@@ -218,12 +218,19 @@ async fn paired_client_drives_a_printer_with_approval_tokens() {
     );
     let all = call(&mut ws, 2, "plugins", json!({ "includeExperimental": true })).await;
     let all = all["result"].as_array().unwrap();
-    assert_eq!(all.len(), 11);
+    assert_eq!(all.len(), 12);
     assert!(
         all.iter()
             .filter(|m| m["experimental"] == true)
             .map(|m| m["id"].as_str().unwrap())
-            .eq(["duet", "creality", "snapmaker", "ultimaker", "home-assistant"])
+            .eq([
+                "duet",
+                "creality",
+                "snapmaker",
+                "ultimaker",
+                "anycubic",
+                "home-assistant"
+            ])
     );
 
     // Printers outside the local network are refused.

@@ -69,6 +69,12 @@ The script cannot see the printer. After each run, check these yourself:
 - A scan finds the machine (UDP 20054) and the reply names it; the J1 and Artisan say SACP is not supported.
 - An A350 left idle drops its session and comes back on its own; after a power cycle, connecting says to pair again and the touchscreen shows no stray prompt.
 
+### Anycubic (Kobra 3, S1, LAN Mode)
+
+- The handshake: `/info`, the signed `/ctrl` and the decrypted login, and whether the broker on 9883 asks for the client certificate.
+- Status words during a print, after it completes and after a stop; the ACE slot colors; pause, resume and stop.
+- After a printer restart the session comes back on its own; with LAN Mode off, connecting says so.
+
 ### UltiMaker (S series)
 
 - A scan finds the printer by multicast DNS with its model and firmware.

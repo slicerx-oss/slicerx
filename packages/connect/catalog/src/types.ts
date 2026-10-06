@@ -24,6 +24,7 @@ export type ConnectionId =
   | 'snapmaker'
   | 'elegoo'
   | 'ultimaker'
+  | 'anycubic'
   | 'export'
 
 export interface Brand {

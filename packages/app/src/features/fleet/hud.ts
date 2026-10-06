@@ -98,7 +98,7 @@ export function fans(live: PrinterLive | undefined): Fan[] {
   return rows
 }
 
-const UNIT_KIND: Record<string, string> = { ams: 'AMS', 'ams-lite': 'AMS lite', 'ams-2-pro': 'AMS 2 Pro', 'ams-ht': 'AMS HT', mmu: 'MMU', 'qidi-box': 'QIDI Box', cfs: 'CFS', toolchanger: 'Toolheads' }
+const UNIT_KIND: Record<string, string> = { ams: 'AMS', 'ams-lite': 'AMS lite', 'ams-2-pro': 'AMS 2 Pro', 'ams-ht': 'AMS HT', mmu: 'MMU', 'qidi-box': 'QIDI Box', cfs: 'CFS', toolchanger: 'Toolheads', ace: 'ACE' }
 
 export interface SlotGroup {
   /** The slot letter (`A`), or `external`. */

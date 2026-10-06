@@ -4,8 +4,8 @@ import type { PrinterModel } from '../types.ts'
 import { find, rect } from './util.ts'
 
 const FIND_KOBRA = find({
-  ip: 'On the touchscreen, open Settings, then the network page. Your router\'s device list shows the address as well.',
-  credential: 'None. SlicerX does not connect to this printer yet.',
+  ip: 'On the touchscreen, open Settings, then Network. Your router\'s device list shows the address as well.',
+  credential: 'No code. In Settings > Network, turn on LAN Mode. This removes the printer from your Anycubic account for good; turning it off later does not bring it back, so you would pair it again in the Anycubic app.',
 })
 
 export const ANYCUBIC: PrinterModel[] = [
@@ -19,8 +19,8 @@ export const ANYCUBIC: PrinterModel[] = [
     nozzles: [0.4],
     defaultNozzle: 0.4,
     nozzleCount: 1,
-    connections: ['export'],
+    connections: ['anycubic', 'export'],
     find: FIND_KOBRA,
-    note: 'SlicerX does not speak the printer\'s network protocol yet. Save the G-code and carry it over on a USB drive.',
+    note: 'Experimental: the LAN Mode connection is untested on a printer, and the Kobra X may use an older handshake. Files go over a USB drive.',
   },
 ]

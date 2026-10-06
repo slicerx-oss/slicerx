@@ -7,9 +7,9 @@ mod common;
 use std::sync::Arc;
 use std::time::Duration;
 
-use common::{Case, Mocks, config, expect_code, job_file, run_contract, secrets};
+use common::{Case, Mocks, config, expect_code, job_file, run_contract, secrets, wait_state};
 use sx_connect::drivers::{
-    BambuConnector, CrealityConnector, DuetConnector, ElegooConnector, MoonrakerConnector,
+    AnycubicConnector, BambuConnector, CrealityConnector, DuetConnector, ElegooConnector, MoonrakerConnector,
     OctoPrintConnector, PrusaLinkConnector, SnapmakerConnector, UltiMakerConnector,
 };
 use sx_connect::{ErrorCode, JobKind, MemoryGate, PrinterConnector, StartOptions};
@@ -1164,4 +1164,91 @@ async fn ultimaker_holds_the_file_until_start_and_drives_the_job() {
         .await,
         ErrorCode::NotSupported,
     );
+}
+
+// Anycubic LAN Mode: the signed handshake hands out the broker login and a client certificate, which
+// the broker asks for. A restart changes the login, and the session shakes hands again by itself.
+// With LAN Mode off, the connection says so. Files cannot be sent in LAN Mode.
+#[tokio::test]
+async fn anycubic_lan_mode_handshake_status_and_control() {
+    use sx_connect::{Action, LoginNeed, PrinterState, params};
+    let gate = Arc::new(MemoryGate::new());
+    let mocks = Mocks::start("anycubic", &[]).await;
+    let port = mocks.port("anycubic");
+    let connector = AnycubicConnector::new(gate.clone()).with_probe_port(port);
+    let found = connector
+        .probe("127.0.0.1", Duration::from_secs(2))
+        .await
+        .unwrap();
+    assert_eq!(
+        (found.model.as_deref(), found.lan_only),
+        (Some("Kobra 3"), Some(true))
+    );
+    let cfg = config("bay-8", "anycubic", port);
+    let s = connector.connect(&cfg, &secrets(&[])).await.unwrap();
+    let st = s.status().await.unwrap();
+    assert_eq!(st.state, PrinterState::Idle);
+    assert!(!st.nozzles.is_empty());
+    let hw = s.hardware().await.unwrap().unwrap();
+    assert_eq!(
+        (hw.model.as_deref(), hw.serial.as_deref()),
+        (Some("Kobra 3"), Some("MOCKCN0001"))
+    );
+    // The ACE answers its getInfo.
+    for _ in 0..50 {
+        if !s.status().await.unwrap().slots.is_empty() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert_eq!(
+        s.status().await.unwrap().slots[0].material.as_deref(),
+        Some("PLA")
+    );
+
+    mocks.set_state("anycubic", "printing").await;
+    wait_state(s.as_ref(), PrinterState::Printing).await;
+    s.pause(&gate.mint(Action::Pause, "bay-8", &params::printer("bay-8")))
+        .await
+        .unwrap();
+    wait_state(s.as_ref(), PrinterState::Paused).await;
+    s.cancel(&gate.mint(Action::Cancel, "bay-8", &params::printer("bay-8")))
+        .await
+        .unwrap();
+    wait_state(s.as_ref(), PrinterState::Idle).await;
+
+    let f = job_file("cube.gcode", JobKind::Gcode);
+    let t = gate.mint(
+        Action::Upload,
+        "bay-8",
+        &params::upload("bay-8", &f.name, &f.sha256),
+    );
+    expect_code(s.upload(f, &t).await, ErrorCode::NotSupported);
+
+    // A restart: new login, dropped connection, a new handshake on its own.
+    mocks
+        .control("/anycubic", serde_json::json!({ "rotate": true }))
+        .await;
+    let mut back = false;
+    for _ in 0..100 {
+        let st = mocks.state().await;
+        let handshakes = st["log"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|l| *l == "anycubic handshake")
+            .count();
+        if handshakes >= 2 && s.status().await.unwrap().state != PrinterState::Offline {
+            back = true;
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert!(back, "the session did not come back after the login changed");
+
+    mocks
+        .control("/anycubic", serde_json::json!({ "cloud": true }))
+        .await;
+    let e = connector.connect(&cfg, &secrets(&[])).await.err().unwrap();
+    assert_eq!(e.login_need(), Some(LoginNeed::LanModeOff), "{e}");
 }

@@ -297,7 +297,7 @@ export interface DiscoveredPrinter {
   serial?: string
   /** Firmware version, when the announcement says. */
   firmware?: string
-  /** Bambu Lab: true while LAN Only Mode is on, false while the printer uses Bambu Cloud. */
+  /** Bambu Lab: true while LAN Only Mode is on, false while the printer uses Bambu Cloud. Anycubic: true while LAN Mode is on. */
   lanOnly?: boolean
   /** Bambu Lab: true while the printer is bound to a Bambu account (SSDP `DevBind` `occupied`). */
   bound?: boolean
@@ -345,8 +345,8 @@ export interface ExtruderInfo {
 export interface FilamentUnit {
   /** The letter the unit's slots use (`A` for A1 to A4), or `external`. */
   id: string
-  /** `qidi-box` is a QIDI Box, `cfs` a Creality CFS, `toolchanger` one spool per toolhead (Snapmaker U1). */
-  kind: 'ams' | 'ams-lite' | 'ams-2-pro' | 'ams-ht' | 'mmu' | 'qidi-box' | 'cfs' | 'toolchanger' | 'external'
+  /** `qidi-box` is a QIDI Box, `cfs` a Creality CFS, `toolchanger` one spool per toolhead (Snapmaker U1), `ace` an Anycubic ACE. */
+  kind: 'ams' | 'ams-lite' | 'ams-2-pro' | 'ams-ht' | 'mmu' | 'qidi-box' | 'cfs' | 'toolchanger' | 'ace' | 'external'
   /** The tool the unit feeds, when the printer has more than one. */
   tool?: number
   slots: FilamentSlot[]
