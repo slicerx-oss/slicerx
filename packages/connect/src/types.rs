@@ -412,6 +412,10 @@ pub struct PrinterHardware {
     /// The name the printer has on the network, which outlives an address change.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hostname: Option<String>,
+    /// The serial number or board id the printer reports, so a printer whose address changed is still
+    /// the same one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub serial: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
