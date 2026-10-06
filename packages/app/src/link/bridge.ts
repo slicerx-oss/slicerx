@@ -103,6 +103,7 @@ function explain(e: unknown): string {
 
 let stopCards: (() => void) | null = null
 let stopFinished: (() => void) | null = null
+let stopGuard: (() => void) | null = null
 
 /** Cards the hub raises (an AI agent's start, a queued plate whose turn came) show in the approval dialog. Loaded with the first connection. */
 function watchCards(bridge: ConnectedBridge): void {
@@ -150,6 +151,10 @@ async function connect(host: Host, code?: string): Promise<boolean> {
     // One saved by hand with an address the bridge can reach without a code becomes a real connection.
     void promoteHandPrinters((input) => bridge.setup.addPrinter(input))
     watchCards(bridge)
+    // The camera guard brings a tripped printer's card up on the Printers tab.
+    void import('../features/fleet/guard').then((g) => {
+      if (live?.bridge === bridge) stopGuard = g.watchGuard(host)
+    })
     // A finished print offers to subtract its filament from the linked Spoolman spools.
     void Promise.all([import('../inventory/usage'), import('../state/actions')]).then(([u, a]) => {
       if (live?.bridge === bridge) stopFinished = u.watchFinishedPrints(host, a.recordSpoolUse)
@@ -188,6 +193,8 @@ export function disconnectBridge(host: Host): void {
   stopCards = null
   stopFinished?.()
   stopFinished = null
+  stopGuard?.()
+  stopGuard = null
   setRemoteAccess(null)
   setPairSource(null)
   setPhoneAccess(null)
