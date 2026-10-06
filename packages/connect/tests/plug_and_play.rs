@@ -10,7 +10,7 @@ use std::sync::Arc;
 use common::{Mocks, config, expect_code, job_file, secrets};
 use std::time::Duration;
 
-use sx_connect::drivers::{BambuConnector, MoonrakerConnector, SnapmakerConnector};
+use sx_connect::drivers::{BambuConnector, CrealityConnector, MoonrakerConnector, SnapmakerConnector};
 use sx_connect::{
     Action, ErrorCode, JobKind, MemoryGate, PrinterConnector, PrinterSession, PrinterState, StartOptions,
     params,
@@ -300,4 +300,142 @@ async fn a_snapmaker_u1_is_found_and_connected_by_address() {
             .await
             .is_none()
     );
+}
+
+/// A native Creality session to the fake, after `/creality` made it `printer`.
+async fn creality(
+    printer: serde_json::Value,
+    key: Option<&str>,
+) -> (Mocks, Arc<MemoryGate>, Box<dyn PrinterSession>) {
+    let gate = Arc::new(MemoryGate::new());
+    let mocks = Mocks::start("creality", &[]).await;
+    mocks.control("/creality", printer).await;
+    let mut cfg = config("bay-5", "creality", 0);
+    cfg.port = None;
+    cfg.protocol = Some("native".to_owned());
+    cfg.ws_port = Some(mocks.port("creality"));
+    cfg.http_port = Some(mocks.port("creality-http"));
+    cfg.camera_port = Some(mocks.port("creality-camera"));
+    let sec = match key {
+        Some(k) => {
+            cfg.credential_ref = Some("k".to_owned());
+            secrets(&[("k", k.to_owned())])
+        }
+        None => secrets(&[]),
+    };
+    let s = CrealityConnector::new(gate.clone())
+        .connect(&cfg, &sec)
+        .await
+        .unwrap();
+    (mocks, gate, s)
+}
+
+fn mock_log(state: &serde_json::Value) -> Vec<String> {
+    state["log"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|l| l.as_str().map(str::to_owned))
+        .collect()
+}
+
+// A K2 Plus names itself by board code, its CFS spools are slots, its camera is WebRTC, and an
+// upload leaves out the folder field as OrcaSlicer does for CFS models.
+#[tokio::test]
+async fn a_creality_k2_reads_its_cfs_and_board_code() {
+    let (mocks, gate, s) = creality(
+        serde_json::json!({ "model": "F008", "modelVersion": "Printer HW Ver: F008; Printer SW Ver: 1.1.2.10", "cfs": true }),
+        Some("creality-key"),
+    )
+    .await;
+    assert_eq!(s.reported_model().as_deref(), Some("K2 Plus"));
+    let mut slots = Vec::new();
+    for _ in 0..50 {
+        slots = s.status().await.unwrap().slots;
+        if !slots.is_empty() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    let got: Vec<(&str, Option<&str>, Option<&str>)> = slots
+        .iter()
+        .map(|x| (x.id.as_str(), x.material.as_deref(), x.color.as_deref()))
+        .collect();
+    assert_eq!(
+        got,
+        [
+            ("A1", Some("PLA"), Some("#ff0000")),
+            ("A2", Some("PETG"), Some("#0000ff")),
+            ("A3", None, None),
+            ("A4", None, None),
+        ]
+    );
+    let hw = s.hardware().await.unwrap().unwrap();
+    assert_eq!(hw.firmware.as_deref(), Some("1.1.2.10"));
+    assert_eq!(hw.hostname.as_deref(), Some("mock-creality"));
+    assert_eq!(hw.filament_units[0].kind, "cfs");
+    assert!(
+        s.stream().await.unwrap().is_none(),
+        "a K2 streams WebRTC, not MJPEG"
+    );
+    let file = job_file("cube.gcode", JobKind::Gcode);
+    let t = gate.mint(
+        Action::Upload,
+        "bay-5",
+        &params::upload("bay-5", &file.name, &file.sha256),
+    );
+    s.upload(file, &t).await.unwrap();
+    let log = mock_log(&mocks.state().await);
+    assert!(
+        log.iter()
+            .any(|l| l == "creality upload path=null name=cube.gcode"),
+        "{log:?}"
+    );
+    assert!(
+        log.iter().any(|l| l == "creality authorization Bearer"),
+        "{log:?}"
+    );
+}
+
+// A printer that refuses the wsslicer subprotocol is asked again without one, as OrcaSlicer connects.
+#[tokio::test]
+async fn a_creality_that_refuses_the_subprotocol_still_connects() {
+    let (mocks, _gate, s) = creality(serde_json::json!({ "refuseSubprotocol": true }), None).await;
+    assert_eq!(s.status().await.unwrap().state, PrinterState::Idle);
+    let log = mock_log(&mocks.state().await);
+    assert!(log.iter().any(|l| l == "creality subprotocol refused"), "{log:?}");
+    assert!(log.iter().any(|l| l == "creality subprotocol "), "{log:?}");
+    assert_eq!(s.motion().await.unwrap().position, Some([100.0, 100.0, 10.0]));
+    let live = s.status().await.unwrap().live.unwrap();
+    assert_eq!(live.light, Some(true));
+}
+
+// A K1 on firmware that reports webrtcSupport streams WebRTC, not MJPEG on 8080.
+#[tokio::test]
+async fn a_creality_k1_with_webrtc_firmware_has_no_mjpeg() {
+    let (_mocks, _gate, s) = creality(serde_json::json!({ "model": "K1C", "webrtc": true }), None).await;
+    assert!(s.snapshot().await.unwrap().is_none());
+    let (_mocks, _gate, s) = creality(serde_json::json!({ "model": "K1C" }), None).await;
+    assert!(s.snapshot().await.unwrap().is_some());
+}
+
+// "Enter IP instead": `/info` names the model and the MAC.
+#[tokio::test]
+async fn creality_probe_reads_info() {
+    let mocks = Mocks::start("creality", &[]).await;
+    let conn = CrealityConnector::new(Arc::new(MemoryGate::new()))
+        .with_probe_ports(mocks.port("creality-http"), mocks.port("creality"));
+    let p = conn.probe("127.0.0.1", Duration::from_millis(800)).await.unwrap();
+    assert_eq!(p.plugin, "creality");
+    assert_eq!(p.model.as_deref(), Some("CR-K1 Max"));
+    assert_eq!(p.uid.as_deref(), Some("A1B2C3D4E5F6"));
+    assert_eq!(p.name.as_deref(), Some("mock-creality"));
+    // Only the WebSocket answers: still a Creality printer, model unknown.
+    let ws_only =
+        CrealityConnector::new(Arc::new(MemoryGate::new())).with_probe_ports(1, mocks.port("creality"));
+    let p = ws_only
+        .probe("127.0.0.1", Duration::from_millis(800))
+        .await
+        .unwrap();
+    assert_eq!(p.model, None);
 }

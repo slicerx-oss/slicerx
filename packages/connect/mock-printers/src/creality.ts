@@ -14,11 +14,46 @@ const STATE_CODE: Record<string, number> = { idle: 0, finished: 0, error: 0, off
 
 const dataRoot = (model: string) => (model.toUpperCase().includes('K1') ? '/usr/data' : '/mnt/UDISK')
 
-function telemetry(m: MockMachine, model: string): Record<string, unknown> {
+/** What `POST /creality` on the control server changes: the model `/info` and the telemetry report,
+ * the board and firmware string (`modelVersion`), `webrtcSupport`, whether a CFS with two spools answers
+ * `boxsInfo`, and whether the WebSocket refuses the `wsslicer` subprotocol (as OrcaSlicer connects, with none). */
+export interface CrealityControl {
+  model: string
+  modelVersion?: string
+  webrtc?: boolean
+  cfs?: boolean
+  refuseSubprotocol?: boolean
+}
+
+function boxes(): Record<string, unknown> {
+  return {
+    boxsInfo: {
+      materialBoxs: [
+        { id: 0, state: 1, type: 1, materials: [{ id: 0, state: 1, vendor: 'Creality', type: 'PLA', color: '#0FFFFFF' }] },
+        { id: 1, state: 1, type: 0, materials: [
+          { id: 0, state: 1, vendor: 'Creality', type: 'PLA', name: 'Hyper PLA', color: '#0FF0000' },
+          { id: 1, state: 2, vendor: 'Generic', type: 'PETG', name: 'PETG', color: '#00000FF' },
+          { id: 2, state: 0, vendor: '', type: '', color: '#0000000' },
+          { id: 3, state: 0, vendor: '', type: '', color: '#0000000' },
+        ] },
+      ],
+    },
+  }
+}
+
+function telemetry(m: MockMachine, c: CrealityControl): Record<string, unknown> {
+  const model = c.model
   const n = m.fx.nozzles[0]
   const active = m.state === 'printing' || m.state === 'paused'
   const t: Record<string, unknown> = {
     model,
+    ...(c.modelVersion ? { modelVersion: c.modelVersion } : {}),
+    ...(c.webrtc ? { webrtcSupport: 1 } : {}),
+    curPosition: `X:${m.position[0].toFixed(2)} Y:${m.position[1].toFixed(2)} Z:${m.position[2].toFixed(2)}`,
+    modelFanPct: active ? 100 : 0,
+    caseFanPct: 20,
+    auxiliaryFanPct: 0,
+    lightSw: 1,
     hostname: 'mock-creality',
     nozzleTemp: n?.current ?? 0,
     targetNozzleTemp: n?.target ?? 0,
@@ -39,20 +74,26 @@ function telemetry(m: MockMachine, model: string): Record<string, unknown> {
 }
 
 export async function startCreality(m: MockMachine, opts: { model?: string; log: string[] }) {
-  const model = opts.model ?? MOCK_CREALITY_MODEL
+  const control: CrealityControl = { model: opts.model ?? MOCK_CREALITY_MODEL }
   const sockets = new Set<Socket>()
-  const broadcast = () => { const f = frame(JSON.stringify(telemetry(m, model))); for (const s of sockets) s.write(f) }
+  const broadcast = () => { const f = frame(JSON.stringify(telemetry(m, control))); for (const s of sockets) s.write(f) }
   let heartbeats = 0
 
   // WebSocket on its own port (9999 on a printer).
   const wsServer = createServer((_req, res) => res.writeHead(404).end())
   wsServer.on('upgrade', (req: IncomingMessage, sock: Socket) => {
+    const offered = String(req.headers['sec-websocket-protocol'] ?? '')
+    if (control.refuseSubprotocol && offered) {
+      opts.log.push('creality subprotocol refused')
+      sock.end('HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n')
+      return
+    }
     acceptWebSocket(req, sock, 'wsslicer')
-    opts.log.push(`creality subprotocol ${String(req.headers['sec-websocket-protocol'] ?? '')}`)
+    opts.log.push(`creality subprotocol ${offered}`)
     sockets.add(sock)
     sock.on('error', () => undefined)
     sock.on('close', () => sockets.delete(sock))
-    sock.write(frame(JSON.stringify(telemetry(m, model))))
+    sock.write(frame(JSON.stringify(telemetry(m, control))))
     const ping = () => sock.write(frame(JSON.stringify({ ModeCode: 'heart_beat' })))
     const first = setTimeout(ping, 200)
     const beat = setInterval(ping, 1000)
@@ -67,12 +108,16 @@ export async function startCreality(m: MockMachine, opts: { model?: string; log:
         const text = f.data.toString('utf8')
         if (text === 'ok') { if (heartbeats++ === 0) opts.log.push('creality heartbeat answered'); continue }
         const msg = JSON.parse(text) as { method?: string; params?: Record<string, unknown> }
-        if (msg.method === 'get') { sock.write(frame(JSON.stringify(telemetry(m, model)))); continue }
+        if (msg.method === 'get') {
+          if (msg.params && 'boxsInfo' in msg.params) { if (control.cfs) sock.write(frame(JSON.stringify(boxes()))); continue }
+          sock.write(frame(JSON.stringify(telemetry(m, control))))
+          continue
+        }
         if (msg.method !== 'set') continue
         const p = msg.params ?? {}
         try {
           if (typeof p.opGcodeFile === 'string') {
-            const prefix = `printprt:${dataRoot(model)}/printer_data/gcodes/`
+            const prefix = `printprt:${dataRoot(control.model)}/printer_data/gcodes/`
             if (!p.opGcodeFile.startsWith(prefix)) throw new MockError(404, 'wrong data root')
             m.start(p.opGcodeFile.slice(prefix.length))
           } else if ('pause' in p) {
@@ -91,7 +136,8 @@ export async function startCreality(m: MockMachine, opts: { model?: string; log:
 
   // REST on its own port (80): /info and /upload/<name>.
   const http = await listen(async (req) => {
-    if (req.path === '/info') return { json: { model, hostname: 'mock-creality' } }
+    if (req.headers.authorization) opts.log.push(`creality authorization ${String(req.headers.authorization).split(' ')[0]}`)
+    if (req.path === '/info') return { json: { model: control.model, hostname: 'mock-creality', mac: 'a1b2c3d4e5f6' } }
     const up = /^\/upload\/(.+)$/.exec(req.path)
     if (up && req.method === 'POST') {
       const f = await readFilePart(req)
@@ -112,6 +158,7 @@ export async function startCreality(m: MockMachine, opts: { model?: string; log:
   await new Promise<void>((r) => cam.listen(0, '127.0.0.1', r))
 
   return {
+    control,
     servers: [wsServer, http.server, cam],
     ports: { ws: (wsServer.address() as AddressInfo).port, http: http.port, camera: (cam.address() as AddressInfo).port },
   }

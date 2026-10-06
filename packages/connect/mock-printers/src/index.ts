@@ -9,7 +9,7 @@ import { startOnvif } from './onvif.ts'
 import { startRtsp } from './rtsp.ts'
 import { startBambu, MOCK_ACCESS_CODE, MOCK_SERIAL, type BambuExtra } from './bambu.ts'
 import { MOCK_CLOUD_TOKEN, startCloud } from './cloud.ts'
-import { startCreality } from './creality.ts'
+import { startCreality, type CrealityControl } from './creality.ts'
 import { startDuet } from './duet.ts'
 import { startElegoo } from './elegoo.ts'
 import { listen } from './http-util.ts'
@@ -85,8 +85,10 @@ export async function startMocks(opts: StartOptions = {}): Promise<RunningMocks>
   if (only.includes('octoprint')) add('octoprint', await startOctoPrint(machine('octoprint'), apiKey ? { apiKey } : {}))
   if (only.includes('duet')) add('duet', await startDuet(machine('duet'), opts.auth ? { password: MOCK_DUET_PASSWORD } : {}))
   if (only.includes('elegoo')) add('elegoo', await startElegoo(machine('elegoo')))
+  let crealityControl: CrealityControl | undefined
   if (only.includes('creality')) {
     const c = await startCreality(machine('creality'), { log })
+    crealityControl = c.control
     servers.push(...c.servers)
     ports.creality = c.ports.ws
     ports['creality-http'] = c.ports.http
@@ -184,6 +186,12 @@ export async function startMocks(opts: StartOptions = {}): Promise<RunningMocks>
       if (b.external) bambuExtra.external = b.external
       else if (b.external === null) delete bambuExtra.external
       return { json: { refuse: bambuExtra.refuse ?? null, model: bambuExtra.model ?? null, ams: bambuExtra.ams ?? 'ams' } }
+    }
+    // POST /creality {model?, modelVersion?, webrtc?, cfs?, refuseSubprotocol?}: see CrealityControl.
+    if (req.path === '/creality' && req.method === 'POST') {
+      if (!crealityControl) return { status: 404 }
+      Object.assign(crealityControl, req.json() as Partial<CrealityControl>)
+      return { json: crealityControl }
     }
     // POST /moonraker {variant?, klippy?, message?, expireTokens?}: see MoonrakerControl.
     if (req.path === '/moonraker' && req.method === 'POST') {
