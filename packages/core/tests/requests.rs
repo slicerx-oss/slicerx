@@ -3176,6 +3176,21 @@ fn adaptive_cubic_infill_is_denser_near_the_surface_than_in_the_middle() {
     );
 }
 
+/// A branch angle of 0 is in the setting's range; the slow angle was clamped to a range that ends below 0
+/// (`f64::clamp` panics on that), so the slice crashed.
+#[test]
+fn organic_trees_take_a_branch_angle_of_zero() {
+    let mesh = Arc::new(table());
+    let req: SliceRequest = serde_json::from_value(json!({
+        "plate": {"objects": [{"mesh": "t", "transform": [1,0,0,0, 0,1,0,0, 0,0,1,0, 100,100,0,1]}]},
+        "config": {"enable_support": true, "support_type": "tree(auto)", "support_style": "organic",
+            "tree_support_branch_angle_organic": 0},
+    }))
+    .unwrap();
+    let r = common::run_request(&req, &move |_: &str| Ok(mesh.clone()));
+    assert!(r.is_ok(), "{:?}", r.err());
+}
+
 #[test]
 fn painted_supports_ask_for_support_and_keep_it_out() {
     // The table's slab underside, painted over the middle of the gap (x 10 to 30, y 2 to 18 in object space).
