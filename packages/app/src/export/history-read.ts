@@ -85,6 +85,8 @@ function paramsOk(p: Record<string, unknown>): boolean {
       return edgesOk(p['edges']) && isNum(p['distanceMm'])
     case 'hole.apply':
       return obj(p['hole']) && vec3(p['hole']['entry']) && vec3(p['hole']['axis']) && isNum(p['hole']['diameterMm']) && isNum(p['hole']['depthMm']) && typeof p['hole']['through'] === 'boolean' && obj(p['spec']) && isNum(p['spec']['diameterMm']) && typeof p['label'] === 'string'
+    case 'shell':
+      return Array.isArray(p['open']) && p['open'].length <= 64 && p['open'].every((o: unknown) => obj(o) && vec3(o['at']) && vec3(o['normal'])) && isNum(p['wallMm'])
     case 'thread.apply':
       return obj(p['thread']) && vec3(p['thread']['start']) && vec3(p['thread']['axis']) && isNum(p['thread']['diameterMm']) && isNum(p['thread']['lengthMm']) && typeof p['thread']['internal'] === 'boolean' && typeof p['thread']['openEnd'] === 'boolean' && obj(p['spec']) && typeof p['spec']['size'] === 'string' && isNum(p['spec']['clearanceMm']) && typeof p['label'] === 'string'
     default:

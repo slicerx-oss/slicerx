@@ -460,6 +460,29 @@ export function holeApply(mesh: MeshItem, hole: Hole, spec: HoleSpec, signal?: A
   return geom().call<MeshResult & { report: { volumeChangeMm3: number; watertight: boolean; shells: number } }>('hole.apply', { mesh, hole, spec }, signal)
 }
 
+// Shell (sx-geom shell.rs)
+
+/** A face to leave open: a point on it and its outward normal, world. */
+export interface OpenFace {
+  at: Vec3
+  normal: Vec3
+}
+
+export interface ShellReport {
+  /** Every face moved in by the wall; otherwise `note` says why the voxel wall was used. */
+  exact: boolean
+  note?: string
+  openFaces: number
+  volumeChangeMm3: number
+  watertight: boolean
+  shells: number
+}
+
+/** The body hollowed to `wallMm` with the faces at `open` left open. The result is in the item's frame. */
+export function shellBody(mesh: MeshItem, open: OpenFace[], wallMm: number, signal?: AbortSignal) {
+  return geom().call<MeshResult & { report: ShellReport }>('shell', { mesh, open, wallMm }, signal)
+}
+
 // Threads (sx-geom thread.rs)
 
 /** An ISO coarse size. */

@@ -67,6 +67,7 @@ export function ObjectTools() {
               <MenuItem icon="shapes" data-tip="cad.fillet" onClick={() => pick('fillet')}>Fillet and chamfer</MenuItem>
               <MenuItem icon="shapes" onClick={() => pick('holefit')}>Hole for a screw or insert</MenuItem>
               <MenuItem icon="shapes" onClick={() => pick('thread')}>Thread</MenuItem>
+              <MenuItem icon="hollow" onClick={() => pick('shell')}>Shell with open faces</MenuItem>
               <MenuItem icon="settings" onClick={() => pick('values')}>Named values</MenuItem>
             </>
           ) : null}

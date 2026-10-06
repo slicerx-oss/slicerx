@@ -130,6 +130,7 @@ export function toolFor(p: StepParams): CadTool | null {
   if (p.op === 'edge.fillet' || p.op === 'edge.chamfer') return 'fillet'
   if (p.op === 'hole.apply') return 'holefit'
   if (p.op === 'thread.apply') return 'thread'
+  if (p.op === 'shell') return 'shell'
   return null
 }
 

@@ -266,6 +266,28 @@ test('the thread tool cuts an M8 thread in a tapped hole, from the full engine',
   expect(await pointsAround(page, id, [cx, cy], before.min[2], [4.0, 4.3])).toBeGreaterThan(8)
 })
 
+test('the shell tool hollows a box with its top left open, from the full engine', async ({ page }) => {
+  test.slow()
+  await openStudio(page)
+  const id = await freshBox(page)
+  const before = await bounds(page, id)
+  await command(page, 'Shell: hollow with faces left open')
+  const tool = toolPanel(page)
+  await expect(tool).toContainText('Click the flat faces to leave open')
+  await pick(page, await facePick(page, id, [0, 0, 1]))
+  await expect(tool).toContainText('1 open face')
+  await tool.locator('#shell-wall').fill('2')
+  await tool.getByRole('button', { name: 'Make shell' }).click()
+  await expect.poll(() => steps(page), { timeout: 60_000 }).toEqual([{ name: 'Shell, 2 mm walls, 1 open face', state: 'done' }])
+  // The outside is unchanged and the box is open at the top: the floor inside sits 2 mm up, inside the walls.
+  const after = await bounds(page, id)
+  expect(after.max[2]).toBeCloseTo(before.max[2], 3)
+  expect(after.triangles).toBeGreaterThan(before.triangles)
+  const cx = (before.min[0] + before.max[0]) / 2
+  const cy = (before.min[1] + before.max[1]) / 2
+  expect(await pointsAround(page, id, [cx, cy], before.min[2] + 2, [0, 0.7 * (before.max[0] - before.min[0])])).toBeGreaterThan(3)
+})
+
 test('fillet rounds one edge and adds a history step', async ({ page }) => {
   test.slow()
   await openStudio(page)
