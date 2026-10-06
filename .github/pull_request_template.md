@@ -6,6 +6,12 @@
 
 <!-- The problem or the reason for the approach. -->
 
+## For users
+
+<!-- If people using SlicerX will notice this: one plain line for the release notes, and add the user-facing label.
+     If it fixes a reported bug, add a line: Reported-in: <link to the Discord thread or issue>
+     Leave this section empty for changes nobody will notice. -->
+
 ## How it was tested
 
 <!-- Commands run, printers used, files sliced. For slicing changes, give slice time before and after on the reference plate. -->
