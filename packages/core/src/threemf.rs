@@ -74,6 +74,7 @@ pub(crate) fn load_plate_objects(bytes: &[u8], name: &str) -> Result<Vec<(u32, V
     let scale = main.unit_scale;
     let mut plates: std::collections::BTreeMap<u32, Vec<Mesh>> = std::collections::BTreeMap::new();
     let mut work = MAX_WORK;
+    let mut costs = HashMap::new();
     for item in &main.build {
         let plate = plate_of.get(&item.object).copied().unwrap_or(1);
         let mut parts = Vec::new();
@@ -85,6 +86,12 @@ pub(crate) fn load_plate_objects(bytes: &[u8], name: &str) -> Result<Vec<(u32, V
             name,
             work: &mut work,
         };
+        // the whole item is costed from its object tree first, so a repeating file is refused before any copy
+        let cost = ctx.cost(&main, &root, item.object, 0, &mut costs)?;
+        *ctx.work = ctx
+            .work
+            .checked_sub(cost)
+            .ok_or_else(|| Error::mesh(name, "3MF components repeat their meshes too many times to load"))?;
         ctx.object(&main, &root, item.object, item.transform, item.object, 0)?;
         if parts.is_empty() {
             continue;
@@ -489,11 +496,55 @@ struct Resolve<'a> {
     parts: &'a mut Vec<MeshPart>,
     slots: &'a HashMap<u32, u8>,
     name: &'a str,
-    /// What is left of [`MAX_WORK`] for the whole file.
+    /// What is left of [`MAX_WORK`] for the whole file, charged per build item before it is placed.
     work: &'a mut u64,
 }
 
 impl Resolve<'_> {
+    /// The work placing object `id` asks for: one unit per object visited plus its vertices and triangles,
+    /// summed over every copy its components place. Each object is costed once, so this is quick however
+    /// many copies the file asks for.
+    fn cost(
+        &mut self,
+        model: &Model,
+        path: &str,
+        id: u32,
+        depth: u32,
+        memo: &mut HashMap<(String, u32), u64>,
+    ) -> Result<u64> {
+        if depth > MAX_DEPTH {
+            return Err(Error::mesh(self.name, "3MF components nest too deep"));
+        }
+        if let Some(&c) = memo.get(&(path.to_owned(), id)) {
+            return Ok(c);
+        }
+        let Some(obj) = model.objects.get(&id) else {
+            return Err(Error::mesh(
+                self.name,
+                format!("3MF object {id} is missing in {path}"),
+            ));
+        };
+        let mut total = 1 + (obj.positions.len() + obj.triangles.len()) as u64;
+        for (child, child_path, _) in &obj.components {
+            let c = if child_path.is_empty() || child_path == path {
+                self.cost(model, path, *child, depth + 1, memo)?
+            } else {
+                if !self.models.contains_key(child_path) {
+                    let bytes = self.zip.read(child_path).map_err(|e| Error::mesh(self.name, e))?;
+                    let m = parse_model(&bytes);
+                    self.models.insert(child_path.clone(), m);
+                }
+                let sub = self.models.remove(child_path).unwrap_or_default();
+                let r = self.cost(&sub, child_path, *child, depth + 1, memo);
+                self.models.insert(child_path.clone(), sub);
+                r?
+            };
+            total = total.saturating_add(c);
+        }
+        memo.insert((path.to_owned(), id), total);
+        Ok(total)
+    }
+
     fn object(
         &mut self,
         model: &Model,
@@ -512,13 +563,6 @@ impl Resolve<'_> {
                 format!("3MF object {id} is missing in {path}"),
             ));
         };
-        let cost = 1 + (obj.positions.len() + obj.triangles.len()) as u64;
-        *self.work = self.work.checked_sub(cost).ok_or_else(|| {
-            Error::mesh(
-                self.name,
-                "3MF components repeat their meshes too many times to load",
-            )
-        })?;
         if !obj.triangles.is_empty() {
             let slot = self
                 .slots
@@ -966,7 +1010,7 @@ mod tests {
         let t = std::time::Instant::now();
         let err = Mesh::load(&bytes, "bomb.3mf").unwrap_err().to_string();
         assert!(err.contains("too many"), "{err}");
-        assert!(t.elapsed().as_secs() < 5);
+        assert!(t.elapsed().as_secs() < 2);
         // Empty objects repeated the same way cost time without memory, and are refused too.
         let empty = model.replace(
             CUBE_OBJECT,
