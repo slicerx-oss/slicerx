@@ -4,7 +4,7 @@
 # Publishes a desktop release from installers already built and signed on their own machines.
 #   apps/desktop/release/publish.sh <version> <installers dir> <notes.md> <commit>
 # Writes downloads.json, SHA256SUMS.txt and whats-changed.json into the folder, puts the "What changed" list
-# after the first paragraph of the notes, and creates desktop-v<version> as the latest release at <commit>.
+# after the first paragraph of the notes ({{version}} and {{commit}} filled in; release/notes.md is the standard text), and creates desktop-v<version> as the latest release at <commit>.
 # The release bot reads whats-changed.json for the fixed-in replies.
 set -eu
 [ $# -eq 4 ] || { echo "usage: publish.sh <version> <installers dir> <notes.md> <commit>" >&2; exit 2; }
@@ -28,11 +28,12 @@ body=$(mktemp)
   node -e '
     const fs = require("node:fs")
     const changed = fs.readFileSync(0, "utf8").trim()
-    const notes = fs.readFileSync(process.argv[1], "utf8").trimEnd()
+    const [, file, version, commit] = process.argv
+    const notes = fs.readFileSync(file, "utf8").trimEnd().replaceAll("{{version}}", version).replaceAll("{{commit}}", commit.slice(0, 7))
     const cut = notes.indexOf("\n\n")
     // the list goes after the first paragraph
     const out = !changed ? notes : cut < 0 ? `${notes}\n\n${changed}` : `${notes.slice(0, cut)}\n\n${changed}${notes.slice(cut)}`
-    process.stdout.write(out + "\n")' "$notes" > "$body"
+    process.stdout.write(out + "\n")' "$notes" "$version" "$commit" > "$body"
 
 gh release create "$tag" --target "$commit" --title "SlicerX $version (pre-alpha)" --notes-file "$body" --latest \
   "$dir"/SlicerX_* "$dir/SHA256SUMS.txt" "$dir/downloads.json" "$dir/whats-changed.json"
