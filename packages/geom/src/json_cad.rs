@@ -487,7 +487,17 @@ fn edge_pick_op(req: &Value, files: FileLoader<'_>) -> Result<Value> {
     let it = item_field(req, "mesh", files)?;
     let triangle: u32 = field(req, "triangle")?;
     let at = field(req, "at")?;
-    to_value(&edge::pick_edge(&it.world(), triangle, at)?)
+    let world = it.world();
+    let mut p = edge::pick_edge(&world, triangle, at)?;
+    // Every reference names its two faces by key too, so a history step finds it after an earlier step changes.
+    p.edge = edge::keyed(&world, &p.edge);
+    for e in &mut p.chain {
+        *e = edge::keyed(&world, e);
+    }
+    for l in &mut p.ring {
+        l.edge = edge::keyed(&world, &l.edge);
+    }
+    to_value(&p)
 }
 
 #[cfg(feature = "holes")]
@@ -576,6 +586,8 @@ fn edge_op(req: &Value, enc: MeshOut, files: FileLoader<'_>, fillet: bool) -> Re
     insert(&mut v, "report", to_value(&r.report)?);
     insert(&mut v, "edges", to_value(&r.edges)?);
     insert(&mut v, "corners", to_value(&r.corners)?);
+    insert(&mut v, "refs", to_value(&r.refs)?);
+    insert(&mut v, "notes", to_value(&r.notes)?);
     Ok(v)
 }
 
