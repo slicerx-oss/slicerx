@@ -4,12 +4,12 @@ import type { PrinterModel } from '../types.ts'
 import { find, rect } from './util.ts'
 
 const FIND_CC = find({
-  ip: 'On the touchscreen, open Settings, then Network. The connected Wi-Fi network shows the IP address. Your router\'s device list shows it too.',
-  credential: 'None. If your firmware has a network control setting, turn it on.',
+  ip: 'The touchscreen\'s network settings show the IP address of the connected network. Your router\'s device list shows it too.',
+  credential: 'None. The printer serves only a few apps at once, so close ElegooSlicer and the Elegoo phone app if it does not connect.',
 })
 
 const FIND_NEPTUNE = find({
-  ip: 'On the touchscreen, open Settings, then the network page. Your router\'s device list shows the address as well.',
+  ip: 'On the touchscreen, open Advance Settings; the network page shows the address. Your router\'s device list shows it as well.',
   credential: 'Usually none. Neptune 4 printers run Klipper with Moonraker; see the Moonraker guide if the connection is rejected.',
 })
 
@@ -25,6 +25,7 @@ const NEPTUNE = (id: string, name: string, x: number, y: number, z: number): Pri
   nozzleCount: 1,
   connections: ['moonraker', 'export'],
   find: FIND_NEPTUNE,
+  note: 'Moonraker answers on port 7125. The web page is Fluidd on port 80 or 4408, or Mainsail on 4409.',
 })
 
 export const ELEGOO: PrinterModel[] = [

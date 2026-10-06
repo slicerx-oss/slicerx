@@ -10,7 +10,24 @@ import { acceptWebSocket, frame, readFrames } from './ws-server.ts'
 
 export const MOCK_MAINBOARD = '000000000001d354'
 
-const PRINT_STATUS: Record<string, number> = { idle: 0, finished: 0, error: 0, offline: 0, preparing: 8, printing: 13, paused: 10 }
+// Centauri Carbon codes while printing; once idle the sub status keeps its last value (9 complete).
+const PRINT_STATUS: Record<string, number> = { idle: 0, finished: 9, error: 0, offline: 0, preparing: 8, printing: 13, paused: 10 }
+
+/** Free storage the attributes report, in bytes. Tests lower it through `extra`. */
+export interface ElegooExtra { remainingMemory: number }
+
+function attributesMessage(m: MockMachine, extra: ElegooExtra): string {
+  return JSON.stringify({
+    Attributes: {
+      Name: m.fx.name, MachineName: 'Centauri Carbon', BrandName: 'ELEGOO', ProtocolVersion: 'V3.0.0', FirmwareVersion: 'V1.1.29',
+      XYZsize: '256x256x256', MainboardIP: '127.0.0.1', MainboardID: MOCK_MAINBOARD, NetworkStatus: 'wlan', UsbDiskStatus: 0,
+      Capabilities: ['FILE_TRANSFER', 'PRINT_CONTROL', 'VIDEO_STREAM'], CameraStatus: m.fx.cameraAvailable ? 1 : 0, RemainingMemory: extra.remainingMemory,
+    },
+    MainboardID: MOCK_MAINBOARD,
+    TimeStamp: Date.now(),
+    Topic: `sdcp/attributes/${MOCK_MAINBOARD}`,
+  })
+}
 
 function statusMessage(m: MockMachine): string {
   const n = m.fx.nozzles[0]
@@ -37,7 +54,7 @@ function statusMessage(m: MockMachine): string {
   })
 }
 
-export async function startElegoo(m: MockMachine) {
+export async function startElegoo(m: MockMachine, extra: ElegooExtra = { remainingMemory: 8_000_000_000 }) {
   const sockets = new Set<Socket>()
   const uploads = new Map<string, { name: string; chunks: Buffer[]; got: number }>()
   const broadcast = () => { const f = frame(statusMessage(m)); for (const s of sockets) s.write(f) }
@@ -55,6 +72,11 @@ export async function startElegoo(m: MockMachine) {
     const args = msg.Data?.Data ?? {}
     try {
       if (cmd === 0) return void sock.write(frame(statusMessage(m)))
+      if (cmd === 1) {
+        respond(sock, cmd, rid, { Ack: 0 })
+        return void sock.write(frame(attributesMessage(m, extra)))
+      }
+      if (cmd === 258) return respond(sock, cmd, rid, { Ack: 0, FileList: [...m.files.values()].map((f) => ({ name: `/local/${f.name}`, usedSize: f.size, totalSize: 0, storageType: 0, type: 1 })) })
       if (cmd === 128) m.start(String(args.Filename).replace(/^\/local\//, ''))
       else if (cmd === 129) m.pause()
       else if (cmd === 130) m.cancel()
