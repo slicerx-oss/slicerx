@@ -58,12 +58,29 @@ export interface ProjectMetadata {
   layerRanges?: string
 }
 
+/** The surface a face of a part lies on (sx-geom `faces.rs`). Plane normals point out of the part. */
+export type FaceSurface =
+  | { kind: 'plane'; normal: [number, number, number]; offset: number }
+  | { kind: 'cylinder'; origin: [number, number, number]; axis: [number, number, number]; radius: number }
+  | { kind: 'cone'; apex: [number, number, number]; axis: [number, number, number]; halfAngle: number }
+  | { kind: 'sphere'; center: [number, number, number]; radius: number }
+  | { kind: 'other' }
+
+/** Which face each triangle belongs to, and the surface of each face. */
+export interface MeshFaces {
+  /** One per triangle, an index into `table`. */
+  ids: Uint32Array
+  table: FaceSurface[]
+}
+
 /** Raw geometry for hosts that take buffers directly (tests, the benchmark, Pilot's cut skill). */
 export interface MeshPart {
   name: string
   slot: number
   positions: Float32Array
   indices: Uint32Array
+  /** The part's faces, when the geometry engine knows them. Code that changes the triangles leaves them out. */
+  faces?: MeshFaces
 }
 
 export interface Bed {

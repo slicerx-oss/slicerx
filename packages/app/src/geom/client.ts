@@ -3,7 +3,7 @@
 // The geometry engine (sx-geom) for the app: cut, repair, simplify, hollow, emboss, orient and
 // booleans. Loads on first use in a worker. A host can provide its own (for example native code in
 // the desktop app) with setGeomProvider.
-import type { MeshPart } from '@slicerx/contracts'
+import type { FaceSurface, MeshPart } from '@slicerx/contracts'
 
 export interface GeomProvider {
   call<T = unknown>(op: string, request: unknown, signal?: AbortSignal): Promise<T>
@@ -63,16 +63,26 @@ export function usesWorker(): boolean {
   return provider === null || provider === own
 }
 
-/** The engine's mesh shape: flat arrays. */
+/** The engine's mesh shape: flat arrays, and the faces when the engine sent them. */
 export interface GeomMesh {
   positions: number[]
   indices: number[]
+  faces?: { ids: number[]; table: FaceSurface[] }
 }
 
-export function toGeom(part: Pick<MeshPart, 'positions' | 'indices'>): GeomMesh {
-  return { positions: Array.from(part.positions), indices: Array.from(part.indices) }
+export function toGeom(part: Pick<MeshPart, 'positions' | 'indices' | 'faces'>): GeomMesh {
+  const mesh: GeomMesh = { positions: Array.from(part.positions), indices: Array.from(part.indices) }
+  if (part.faces) mesh.faces = { ids: Array.from(part.faces.ids), table: part.faces.table }
+  return mesh
 }
 
 export function fromGeom(mesh: GeomMesh, name: string, slot: number): MeshPart {
-  return { name, slot, positions: new Float32Array(mesh.positions), indices: new Uint32Array(mesh.indices) }
+  const part: MeshPart = { name, slot, positions: new Float32Array(mesh.positions), indices: new Uint32Array(mesh.indices) }
+  if (mesh.faces) part.faces = { ids: new Uint32Array(mesh.faces.ids), table: mesh.faces.table }
+  return part
+}
+
+/** The request with the engine asked to send each mesh's faces (the app's worker asks on every call). */
+export function askFaces(request: unknown): unknown {
+  return request !== null && typeof request === 'object' && !Array.isArray(request) ? { ...request, withFaces: true } : request
 }
