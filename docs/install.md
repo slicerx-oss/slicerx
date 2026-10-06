@@ -62,7 +62,7 @@ To come back later, open Settings > Look and feel, use Add printer in Printers, 
 
 ## sx CLI
 
-Download the archive for your platform from an [engine release](https://github.com/slicerx-oss/slicerx/releases) (tags `engine-v*`; `SHA256SUMS.txt` has the checksums) and put `bin/sx` on your `PATH`. The binaries are not signed yet: on macOS, run `xattr -d com.apple.quarantine bin/*` after a browser download. Or build it:
+Download the archive for your platform from an [engine release](https://github.com/slicerx-oss/slicerx/releases) (tags `engine-v*`; `SHA256SUMS.txt` has the checksums) and put `bin/sx` on your `PATH`. The macOS binaries are signed and notarized; the Windows and Linux ones are not signed yet. Or build it:
 
 ```sh
 cargo build -p sx-cli --release

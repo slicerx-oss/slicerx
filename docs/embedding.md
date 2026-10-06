@@ -55,7 +55,7 @@ The typed way is `load_mesh`, then `slice` or `slice_range` on a `Plate`, then `
 
 ## CLI
 
-Running `sx` as a separate process is the simplest way to use SlicerX from any language. Each [engine release](https://github.com/slicerx-oss/slicerx/releases) (tags `engine-v*`) has an archive per platform, `slicerx-engine-<version>-macos-universal.tar.gz`, `-linux-x64.tar.gz` and `-windows-x64.zip`, with `sx`, `sx-geom` and `sx-link` in `bin/`, and `SHA256SUMS.txt` next to them. The binaries are not signed yet, so on macOS clear the quarantine flag after a browser download: `xattr -d com.apple.quarantine bin/*`. To build them yourself, run `cargo build -p sx-cli --release`.
+Running `sx` as a separate process is the simplest way to use SlicerX from any language. Each [engine release](https://github.com/slicerx-oss/slicerx/releases) (tags `engine-v*`) has an archive per platform, `slicerx-engine-<version>-macos-universal.tar.gz`, `-linux-x64.tar.gz` and `-windows-x64.zip`, with `sx`, `sx-geom` and `sx-link` in `bin/`, and `SHA256SUMS.txt` next to them. The macOS binaries are signed and notarized; the Windows and Linux ones are not signed yet. To build them yourself, run `cargo build -p sx-cli --release`.
 
 ```sh
 sx slice x-mark.stl --config config.json -o x-mark.gcode --preview x-mark.sxpv
