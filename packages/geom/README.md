@@ -101,7 +101,7 @@ Release build on the development Mac, procedural meshes of 30,000 triangles (`ca
 
 ## In the browser
 
-`packages/geom/wasm` builds `sx-geom` for a Web Worker as one call entry over a plain C ABI (no wasm-bindgen): `sh packages/geom/wasm/scripts/build.sh` writes `packages/geom/wasm/pkg/sx_geom_wasm.wasm` (1.4 MB, 450 KB gzip). `packages/geom/wasm/geom.mjs` wraps it:
+`packages/geom/wasm` builds `sx-geom` for a Web Worker as one call entry over a plain C ABI (no wasm-bindgen): `sh packages/geom/wasm/scripts/build.sh` writes `packages/geom/wasm/pkg/sx_geom_wasm.wasm`, the full engine (3.2 MB, 958 KB gzip), and `sx_geom_core.wasm`, the core the app loads first (2.6 MB, 772 KB gzip; docs/cad-engine.md section 2). `packages/geom/wasm/geom.mjs` wraps it:
 
 ```js
 import { createGeom } from './geom.mjs'

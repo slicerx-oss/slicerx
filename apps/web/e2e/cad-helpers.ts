@@ -176,3 +176,45 @@ export async function placeAt(page: Page, x: number, y: number): Promise<void> {
     await field.blur()
   }
 }
+
+type PlateEntry = { id: string; transform: number[]; parts: { positions: Float32Array; indices: Uint32Array }[] }
+
+/** A triangle of a round hole's wall or a rod's side around the vertical axis through `c`: upright, its middle
+ * within `r` of the axis. */
+export function roundWall(page: Page, objectId: string, c: [number, number], r: number): Promise<{ objectId: string; partIndex: number; triangle: number; point: V3 }> {
+  return page.evaluate(({ id, c, r }) => {
+    const e = (window as unknown as { __sx: { getState(): { plate: PlateEntry[] } } }).__sx.getState().plate.find((p) => p.id === id)!
+    const m = e.transform
+    const p = e.parts[0]!.positions
+    const w = (i: number) => [0, 1, 2].map((k) => m[k]! * p[i * 3]! + m[4 + k]! * p[i * 3 + 1]! + m[8 + k]! * p[i * 3 + 2]! + m[12 + k]!)
+    const ix = e.parts[0]!.indices
+    for (let t = 0; t < ix.length / 3; t++) {
+      const [a, b, d] = [w(ix[t * 3]!), w(ix[t * 3 + 1]!), w(ix[t * 3 + 2]!)]
+      const n = [(b[1]! - a[1]!) * (d[2]! - a[2]!) - (b[2]! - a[2]!) * (d[1]! - a[1]!), (b[2]! - a[2]!) * (d[0]! - a[0]!) - (b[0]! - a[0]!) * (d[2]! - a[2]!), (b[0]! - a[0]!) * (d[1]! - a[1]!) - (b[1]! - a[1]!) * (d[0]! - a[0]!)]
+      const mid = [0, 1, 2].map((k) => (a[k]! + b[k]! + d[k]!) / 3)
+      if (Math.abs(n[2]!) < 1e-6 * Math.hypot(n[0]!, n[1]!, n[2]!) && Math.hypot(mid[0]! - c[0], mid[1]! - c[1]) < r) return { objectId: id, partIndex: 0, triangle: t, point: mid as V3 }
+    }
+    throw new Error('no wall')
+  }, { id: objectId, c, r })
+}
+
+/** How many vertices of the object sit at height `z` with their distance from the vertical axis through `c` in
+ * `range`. */
+export function pointsAround(page: Page, objectId: string, c: [number, number], z: number, range: [number, number]): Promise<number> {
+  return page.evaluate(({ id, c, z, range }) => {
+    const e = (window as unknown as { __sx: { getState(): { plate: PlateEntry[] } } }).__sx.getState().plate.find((p) => p.id === id)!
+    const m = e.transform
+    let n = 0
+    for (const part of e.parts) {
+      const p = part.positions
+      for (let i = 0; i < p.length; i += 3) {
+        const x = m[0]! * p[i]! + m[4]! * p[i + 1]! + m[8]! * p[i + 2]! + m[12]!
+        const y = m[1]! * p[i]! + m[5]! * p[i + 1]! + m[9]! * p[i + 2]! + m[13]!
+        const h = m[2]! * p[i]! + m[6]! * p[i + 1]! + m[10]! * p[i + 2]! + m[14]!
+        const r = Math.hypot(x - c[0], y - c[1])
+        if (Math.abs(h - z) < 0.01 && r > range[0] && r < range[1]) n++
+      }
+    }
+    return n
+  }, { id: objectId, c, z, range })
+}

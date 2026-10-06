@@ -127,6 +127,7 @@ export function toolFor(p: StepParams): CadTool | null {
   if (p.op === 'shape.extrude') return p.shape.type === 'sketch' ? 'sketch' : p.shape.type === 'text' ? 'facetext' : p.shape.type === 'svg' ? 'facesvg' : 'shape'
   if (p.op === 'edge.fillet' || p.op === 'edge.chamfer') return 'fillet'
   if (p.op === 'hole.apply') return 'holefit'
+  if (p.op === 'thread.apply') return 'thread'
   return null
 }
 
