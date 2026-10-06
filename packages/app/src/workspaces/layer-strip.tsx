@@ -13,6 +13,19 @@ import { layerKeyStep, stepLayer } from './preview/layer-step'
 
 type Handle = 'hi' | 'lo'
 
+/**
+ * Each layer's height from the layer tops. Printed by object the tops start again from the bed with every object, so
+ * a top below the one before is the first layer of the next object and its height is its own top.
+ */
+export function layerHeights(z: ArrayLike<number>): number[] {
+  const h: number[] = []
+  for (let i = 0; i < z.length; i++) {
+    const d = (z[i] ?? 0) - (i ? (z[i - 1] ?? 0) : 0)
+    h.push(d > 1e-6 ? d : (z[i] ?? 0))
+  }
+  return h
+}
+
 export function LayerStrip() {
   const slice = useApp((s) => s.slice)
   const layerHi = useApp((s) => s.layerHi)
@@ -25,11 +38,10 @@ export function LayerStrip() {
   const data = useMemo(() => {
     if (slice.status !== 'done') return null
     const z = slice.result.layerZ
-    const h: number[] = []
-    for (let i = 0; i < z.length; i++) h.push((z[i] ?? 0) - (i ? (z[i - 1] ?? 0) : 0))
+    const h = layerHeights(z)
     const min = Math.min(...h)
     const max = Math.max(...h)
-    return { h, z, min, max, top: z[z.length - 1] ?? 1 }
+    return { h, z, min, max, top: z.reduce((a, v) => Math.max(a, v), 0) || 1 }
   }, [slice])
   if (!data || data.h.length === 0) return null
   const { h, z, min, max, top } = data
