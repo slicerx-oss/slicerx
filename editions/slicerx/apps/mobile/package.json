@@ -11,7 +11,7 @@
     "prebuild": "expo prebuild --clean",
     "config": "expo config --type public",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "NODE_OPTIONS=--experimental-vm-modules jest",
+    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
     "web": "expo start --web",
     "export:web": "expo export --platform web"
   },
