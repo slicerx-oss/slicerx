@@ -86,7 +86,7 @@ export function menuModel(commands: readonly CommandSpec[], o: { platform: MenuP
   if (mac) {
     sections.push({
       label: app,
-      items: tidy([cmd('help-about', `About ${app}`), sep, cmd('settings-open', 'Settings…', { accelerator: 'CmdOrCtrl+,' }), sep, { kind: 'native', item: 'hide' }, { kind: 'native', item: 'hideOthers' }, { kind: 'native', item: 'showAll' }, sep, { kind: 'window', action: 'quit', label: `Quit ${app}`, accelerator: 'CmdOrCtrl+Q' }]),
+      items: tidy([cmd('help-about', `About ${app}`), cmd('help-updates', 'Check for updates…'), sep, cmd('settings-open', 'Settings…', { accelerator: 'CmdOrCtrl+,' }), sep, { kind: 'native', item: 'hide' }, { kind: 'native', item: 'hideOthers' }, { kind: 'native', item: 'showAll' }, sep, { kind: 'window', action: 'quit', label: `Quit ${app}`, accelerator: 'CmdOrCtrl+Q' }]),
     })
   }
   sections.push({
@@ -122,7 +122,7 @@ export function menuModel(commands: readonly CommandSpec[], o: { platform: MenuP
     items: tidy([...tabs, sep, cmd('zoom-in', 'Zoom &in'), cmd('zoom-out', 'Zoom &out'), cmd('view-reset', '&Reset view'), cmd('camera-fit', 'Fit to &plate'), sep, mac ? { kind: 'native', item: 'fullscreen' } : { kind: 'window', action: 'fullscreen', label: '&Full screen', accelerator: 'F11' }]),
   })
   if (mac) sections.push({ label: 'Window', items: [{ kind: 'native', item: 'minimize' }, { kind: 'native', item: 'maximize' }] })
-  sections.push({ label: '&Help', items: tidy([cmd('help-docs', '&Documentation'), cmd('help-report', '&Report a bug…'), sep, cmd('help-shortcuts', '&Keyboard shortcuts'), ...(mac ? [] : [sep, cmd('help-about', `&About ${app}`)])]) })
+  sections.push({ label: '&Help', items: tidy([cmd('help-docs', '&Documentation'), cmd('help-report', '&Report a bug…'), sep, cmd('help-shortcuts', '&Keyboard shortcuts'), ...(mac ? [] : [sep, cmd('help-updates', 'Check for &updates…'), cmd('help-about', `&About ${app}`)])]) })
   return sections.filter((s) => s.items.length > 0)
 }
 

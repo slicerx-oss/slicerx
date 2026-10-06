@@ -31,6 +31,7 @@ import { addFileRefs } from './state/actions'
 import { isDirty, startDirtyTracking } from './project/unsaved'
 import { useFolderThemes } from './theme/folder'
 import { get, pilotState, pushRecent, set, toast, useApp } from './state/store'
+import { updaterRegistered } from './updates/hold'
 import { toolStore } from './plate/tools'
 import { startReadySignal } from './lib/ready-signal'
 import { startBugReports } from './bugs/reports'
@@ -58,6 +59,8 @@ const SvgImportDialog = lazy(() => import('./cad/svg-dialog').then((m) => ({ def
 const ResumeDialog = lazy(() => import('./plate/resume-dialog').then((m) => ({ default: m.ResumeDialog })))
 const Agreement = lazy(() => import('./first-run/agreement').then((m) => ({ default: m.Agreement })))
 const BugReportDialog = lazy(() => import('./bugs/report-dialog').then((m) => ({ default: m.BugReportDialog })))
+// In-app updates load only where the desktop shell registered an updater.
+const UpdatesRoot = lazy(() => import('./updates/root').then((m) => ({ default: m.UpdatesRoot })))
 const PilotDock = lazy(() => import('./features/pilot/dock').then((m) => ({ default: m.PilotDock })))
 
 /**
@@ -255,6 +258,11 @@ function Shell() {
       {cameraOpen ? (
         <Suspense fallback={null}>
           <CameraPlayer />
+        </Suspense>
+      ) : null}
+      {updaterRegistered() ? (
+        <Suspense fallback={null}>
+          <UpdatesRoot />
         </Suspense>
       ) : null}
       {unsavedOpen ? (

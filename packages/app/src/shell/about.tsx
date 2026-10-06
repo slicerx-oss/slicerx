@@ -9,6 +9,7 @@ import { useEdition } from '../edition'
 import { useHost } from '../host'
 import { formatShortcut } from '../lib/keys'
 import { set, useApp } from '../state/store'
+import { checkForUpdates, updaterRegistered } from '../updates/updates'
 
 function Diagnostics() {
   const host = useHost()
@@ -37,7 +38,28 @@ export function AboutDialog() {
   const credit = attribution(edition)
   const close = () => set({ aboutOpen: false })
   return (
-    <Dialog open={open} onClose={close} title={`About ${edition.brand.name}`} footer={<Button onClick={close}>Close</Button>}>
+    <Dialog
+      open={open}
+      onClose={close}
+      title={`About ${edition.brand.name}`}
+      splitFooter={updaterRegistered()}
+      footer={
+        <>
+          {updaterRegistered() ? (
+            <Button
+              variant="ghost"
+              onClick={() => {
+                close()
+                void checkForUpdates({ manual: true })
+              }}
+            >
+              Check for updates
+            </Button>
+          ) : null}
+          <Button onClick={close}>Close</Button>
+        </>
+      }
+    >
       <div className="about">
         {/* An edition's own logo comes through the logo slot (SlicerXApp); SlicerX shows its lockup. */}
         <Logo size="lg" tagline={edition.id === 'slicerx'} />

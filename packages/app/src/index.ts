@@ -36,4 +36,6 @@ export { connectPinned, shellLinkOptions, HUB_MISMATCH, HubMismatchError, localH
 export { setBridgeConnector, type BridgeConnector, type BridgeSetup, type ConnectedBridge } from './link/bridge'
 export { confirmDiscard, isDirty, onDirtyChange } from './project/unsaved'
 export { registerShellGpu } from './viewport/shell-gpu'
+export { holdUpdates, registerUpdater } from './updates/hold'
+export type { FoundUpdate, UpdaterHost } from './updates/updates'
 export { registerCrashHost, type CrashHost, type NativeCrash, type NativeCrashes } from './bugs/reports'

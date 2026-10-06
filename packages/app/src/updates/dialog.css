@@ -1,0 +1,64 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+/* Copyright (C) 2026 The SlicerX contributors */
+/* the update dialog: the lifted dialog surface, the ravens straight on it, a centered head, the highlights below */
+.upd { --raven-body: color-mix(in srgb, var(--ink-0) 20%, black); width: min(440px, calc(100vw - 2 * var(--gutter))); overflow: auto; }
+.upd .sx-dialog-h { position: relative; padding: 18px 20px 0; }
+.upd .sx-dialog-close { position: absolute; top: 10px; right: 10px; }
+.upd .sx-dialog-h h2 { flex: 1; min-width: 0; }
+.upd-head { display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center; }
+.upd-tag { font: 500 11px/1.2 var(--f-mono); letter-spacing: 0.16em; text-transform: uppercase; color: var(--purple); }
+.upd-title { font: 800 22px/1.15 var(--f-body); letter-spacing: -0.01em; color: var(--green); text-wrap: balance; }
+.upd-body { display: grid; gap: 12px; }
+.upd-line { margin: 0; text-align: center; color: var(--muted); }
+.upd-held { color: var(--orange); }
+.upd-title[data-tone="error"] { color: var(--orange); }
+
+.upd-notes { display: grid; gap: 8px; padding-top: 4px; }
+.upd-notes-h { margin: 0; font: 600 11px/1 var(--f-body); letter-spacing: 0.12em; text-transform: uppercase; color: var(--dim); }
+.upd-notes ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 6px; }
+.upd-notes li { position: relative; padding-left: 16px; font-size: var(--fs-md); line-height: 1.45; color: var(--fg); }
+.upd-notes li::before { content: ""; position: absolute; left: 3px; top: 0.6em; width: 5px; height: 5px; border-radius: 50%; background: var(--purple); }
+.upd-more { justify-self: start; font-size: var(--fs-md); color: var(--cyan); text-underline-offset: 3px; }
+.upd-more:hover { color: color-mix(in srgb, var(--cyan) 80%, var(--fg)); }
+
+.upd-progress { height: 6px; border-radius: 3px; background: var(--ink-4); overflow: hidden; }
+.upd-progress > span { display: block; height: 100%; width: 0; border-radius: inherit; background: var(--cyan); transition: width 240ms var(--ease); }
+.upd-progress[data-indeterminate] > span { width: 30%; animation: upd-slide 1.4s ease-in-out infinite; }
+@keyframes upd-slide { from { transform: translateX(-100%); } to { transform: translateX(340%); } }
+
+/* huginn and muninn spar: a 2.4 s lunge with wing beats and a flash where they meet, the rune ring turning slowly */
+.upd-ravens { display: block; width: auto; height: 112px; aspect-ratio: 1; overflow: visible; }
+.upd-ring { transform-box: fill-box; transform-origin: center; animation: upd-spin 36s linear infinite; fill: none; stroke: color-mix(in srgb, var(--dim) 45%, transparent); stroke-width: 0.9; stroke-linecap: round; stroke-linejoin: round; }
+.upd-ring > circle { stroke: color-mix(in srgb, var(--dim) 22%, transparent); stroke-width: 0.6; }
+.upd-ring .upd-sep { fill: color-mix(in srgb, var(--dim) 45%, transparent); stroke: none; }
+.upd-rbody, .upd-rwing { fill: var(--raven-body); stroke: var(--muted); stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.upd-eye { fill: var(--orange); }
+.upd-spark path { fill: var(--orange); }
+.upd-spark circle { fill: var(--fg); }
+.upd-bob { animation: upd-bob 2.4s ease-in-out infinite; }
+.upd-lunge { animation: upd-lunge 2.4s cubic-bezier(0.5, 0, 0.3, 1) infinite; }
+.upd-rwing { transform-box: fill-box; transform-origin: 0% 80%; animation: upd-flap 0.6s ease-in-out infinite; }
+.upd-late .upd-lunge { animation-delay: -0.04s; }
+.upd-late .upd-rwing { animation-delay: -0.3s; }
+.upd-spark { transform-box: fill-box; transform-origin: center; opacity: 0; animation: upd-spark 2.4s ease-out infinite; }
+
+@keyframes upd-spin { to { transform: rotate(360deg); } }
+@keyframes upd-bob { 0%, 100% { transform: none; } 50% { transform: translateY(-1.1px); } }
+@keyframes upd-lunge { 0%, 100% { transform: none; } 35% { transform: translateX(1.5px); } 52% { transform: translateX(-3.2px); } 60% { transform: translateX(-2.3px); } 78% { transform: none; } }
+@keyframes upd-flap { 0%, 100% { transform: none; } 30% { transform: rotate(-34deg); } 60% { transform: rotate(10deg); } }
+@keyframes upd-spark { 0%, 48% { opacity: 0; transform: scale(0.2); } 54% { opacity: 1; transform: scale(1.15) rotate(20deg); } 72% { opacity: 0; transform: scale(1.6) rotate(40deg); } 100% { opacity: 0; } }
+
+/* a short window keeps the buttons in view: smaller ravens, a tighter head */
+@media (max-height: 620px) {
+  .upd-ravens { height: 72px; }
+  .upd .sx-dialog-h { padding-top: 12px; }
+  .upd-title { font-size: 19px; }
+}
+@media (max-width: 420px) {
+  .upd-title { font-size: 19px; }
+  .upd .sx-dialog-foot { flex-wrap: wrap; }
+  .upd .sx-dialog-foot .sx-btn[data-variant="primary"] { flex: 1 1 auto; }
+}
+
+/* reduced motion: the ravens hold one still frame */
+:root[data-motion="reduced"] .upd-ring, :root[data-motion="reduced"] .upd-bob, :root[data-motion="reduced"] .upd-lunge, :root[data-motion="reduced"] .upd-rwing, :root[data-motion="reduced"] .upd-spark, :root[data-motion="reduced"] .upd-progress > span { animation: none; transition: none; }

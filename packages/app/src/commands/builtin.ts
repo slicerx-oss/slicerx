@@ -14,6 +14,7 @@ import { helpLinks, openLink } from '../lib/links'
 import { newProject } from '../project/new'
 import { appName, currentEdition } from '../edition'
 import { bugReportsOff } from '../bugs/where'
+import { updaterRegistered } from '../updates/hold'
 
 /** Focuses an element once a lazy workspace has rendered it. */
 export function focusWhenReady(id: string, tries = 30): void {
@@ -126,6 +127,7 @@ export function builtinCommands(host: Host, workspaces: readonly { id: string; l
     // Developer mode only: a real crash report, through the same capture path as any other.
     { id: 'dev-test-crash', title: 'Developer: trigger a test crash', section: 'help', keywords: ['crash', 'error', 'bug report', 'test'], enabled: () => get().settingsMode === 'developer', run: () => void import('../bugs/reports').then((m) => m.triggerTestCrash()) },
     { id: 'dev-test-panic', title: 'Developer: trigger a test panic in the desktop shell', section: 'help', keywords: ['crash', 'panic', 'rust', 'bug report', 'test'], enabled: () => get().settingsMode === 'developer' && host.kind === 'desktop', run: () => import('../bugs/reports').then((m) => m.triggerTestPanic()) },
+    ...(updaterRegistered() ? [{ id: 'help-updates', title: 'Check for updates', section: 'help', keywords: ['update', 'upgrade', 'new version', 'release', 'download'], run: () => void import('../updates/updates').then((m) => m.checkForUpdates({ manual: true })) } satisfies CommandSpec] : []),
     { id: 'help-about', title: `About ${appName()} and its source code`, section: 'help', keywords: ['version', 'license', 'agpl', 'commit'], run: () => set({ aboutOpen: true }) },
   )
   return out
