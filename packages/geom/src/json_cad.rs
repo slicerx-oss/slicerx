@@ -4,28 +4,42 @@
 
 use crate::array::{self, ArraySpec};
 use crate::boolean::{self, BoolOp, BooleanOptions};
+#[cfg(feature = "cad")]
 use crate::build;
+#[cfg(feature = "cad")]
 use crate::dimension;
+#[cfg(feature = "cad")]
 use crate::edge;
 use crate::error::{Error, Result};
+#[cfg(feature = "cad")]
 use crate::face::{self, ExtrudeSpec, FaceFrame, Placement, Shape};
 use crate::fit::{self, FitOptions};
+#[cfg(feature = "holes")]
 use crate::hole::{self, Hole, HoleSpec};
 use crate::import::auto::{self, AutoOptions};
+#[cfg(feature = "cad")]
+use crate::json::base64_decode;
 use crate::json::{
-    FileLoader, MeshOut, base64_decode, field, field_or, field_or_default, mesh_report, mesh_value, parse,
-    read_model, to_value,
+    FileLoader, MeshOut, field, field_or, field_or_default, mesh_report, mesh_value, parse, read_model,
+    to_value,
 };
 use crate::measure::{self, Feature, Pick};
 use crate::mesh::TriMesh;
+#[cfg(feature = "cad")]
 use crate::outline::{self, TextOptions};
+#[cfg(feature = "cad")]
 use crate::poly2d::Polygon;
+#[cfg(feature = "cad")]
 use crate::push;
+#[cfg(feature = "cad")]
 use crate::sketch;
+#[cfg(feature = "cad")]
 use crate::sketch_corner;
+#[cfg(feature = "cad")]
 use crate::vec3::V2;
 use crate::xform::{self, IDENTITY, Mat4};
 use serde_json::{Value, json};
+#[cfg(feature = "cad")]
 use std::collections::HashMap;
 
 struct Item {
@@ -97,6 +111,7 @@ pub(crate) fn plate_mesh(req: &Value, files: FileLoader<'_>) -> Result<TriMesh> 
     Ok(item_field(req, "mesh", files)?.world())
 }
 
+#[cfg(feature = "cad")]
 fn font(req: &Value) -> Result<Option<Vec<u8>>> {
     let b64: Option<String> = field_or(req, "fontBase64", None)?;
     b64.map(|s| base64_decode(&s).ok_or_else(|| Error::invalid("fontBase64", "bad base64")))
@@ -115,28 +130,49 @@ pub(crate) fn call(op: &str, req: &Value, enc: MeshOut, files: FileLoader<'_>) -
         "array" => array_op(req, enc, files),
         "measure" => measure_op(req),
         "measure.feature" => feature_op(req, files),
+        #[cfg(feature = "cad")]
         "face.pick" => face_pick_op(req, files),
+        #[cfg(feature = "cad")]
         "shape.profile" => profile_op(req),
+        #[cfg(feature = "cad")]
         "shape.extrude" => extrude_op(req, enc, files),
+        #[cfg(feature = "cad")]
         "text.mesh" => text_op(req, enc),
         "import.auto" => import_auto_op(req, enc, files),
         "fit.check" => fit_op(req, files),
+        #[cfg(feature = "cad")]
         "face.push" => push_op(req, enc, files),
+        #[cfg(feature = "cad")]
         "face.push.preview" => push_preview_op(req, enc),
+        #[cfg(feature = "cad")]
         "sketch.check" => loops(req).and_then(|l| to_value(&sketch::check(&l))),
+        #[cfg(feature = "cad")]
         "sketch.revolve" => sketch_revolve_op(req, enc, files),
+        #[cfg(feature = "cad")]
         "sketch.snaps" => sketch_snaps_op(req, files),
+        #[cfg(feature = "cad")]
         "sketch.offset" => sketch_offset_op(req),
+        #[cfg(feature = "cad")]
         "dimension.anchor" => dimension_anchor_op(req, files),
+        #[cfg(feature = "cad")]
         "dimension.evaluate" => dimension_evaluate_op(req, files),
+        #[cfg(feature = "cad")]
         "edge.pick" => edge_pick_op(req, files),
+        #[cfg(feature = "cad")]
         "edge.chamfer" => edge_op(req, enc, files, false),
+        #[cfg(feature = "cad")]
         "edge.fillet" => edge_op(req, enc, files, true),
+        #[cfg(feature = "cad")]
         "edge.chamfer.preview" => edge_preview_op(req, enc, files, false),
+        #[cfg(feature = "cad")]
         "edge.fillet.preview" => edge_preview_op(req, enc, files, true),
+        #[cfg(feature = "holes")]
         "hole.find" => hole_find_op(req, files),
+        #[cfg(feature = "holes")]
         "hole.apply" => hole_apply_op(req, enc, files),
+        #[cfg(feature = "cad")]
         "sketch.fillet" => sketch_corner_op(req, true),
+        #[cfg(feature = "cad")]
         "sketch.chamfer" => sketch_corner_op(req, false),
         _ => return None,
     })
@@ -204,6 +240,7 @@ fn feature_op(req: &Value, files: FileLoader<'_>) -> Result<Value> {
     Ok(json!({ "feature": to_value(&f)? }))
 }
 
+#[cfg(feature = "cad")]
 fn face_pick_op(req: &Value, files: FileLoader<'_>) -> Result<Value> {
     let it = item_field(req, "mesh", files)?;
     let triangle: u32 = field(req, "triangle")?;
@@ -211,6 +248,7 @@ fn face_pick_op(req: &Value, files: FileLoader<'_>) -> Result<Value> {
     to_value(&face::pick_face(&it.world(), triangle, at)?)
 }
 
+#[cfg(feature = "cad")]
 fn profile_op(req: &Value) -> Result<Value> {
     let shape: Shape = field(req, "shape")?;
     let at: Placement = field_or_default(req, "placement")?;
@@ -219,6 +257,7 @@ fn profile_op(req: &Value) -> Result<Value> {
     Ok(json!({ "polygons": to_value(&polys)? }))
 }
 
+#[cfg(feature = "cad")]
 fn extrude_op(req: &Value, enc: MeshOut, files: FileLoader<'_>) -> Result<Value> {
     let frame: FaceFrame = field_or(req, "frame", FaceFrame::bed([0.0, 0.0]))?;
     let shape: Shape = field(req, "shape")?;
@@ -234,6 +273,7 @@ fn extrude_op(req: &Value, enc: MeshOut, files: FileLoader<'_>) -> Result<Value>
     tool_reply(r, target.as_ref(), spec.operation, enc)
 }
 
+#[cfg(feature = "cad")]
 fn tool_reply(
     r: face::ExtrudeResult,
     target: Option<&Item>,
@@ -251,6 +291,7 @@ fn tool_reply(
     Ok(v)
 }
 
+#[cfg(feature = "cad")]
 fn dimension_anchor_op(req: &Value, files: FileLoader<'_>) -> Result<Value> {
     let object: String = field(req, "object")?;
     let it = item_field(req, "mesh", files)?;
@@ -263,6 +304,7 @@ fn dimension_anchor_op(req: &Value, files: FileLoader<'_>) -> Result<Value> {
     Ok(json!({ "anchor": to_value(&anchor)?, "feature": to_value(&feature)? }))
 }
 
+#[cfg(feature = "cad")]
 fn dimension_evaluate_op(req: &Value, files: FileLoader<'_>) -> Result<Value> {
     let dims: Vec<dimension::Dimension> = field(req, "dimensions")?;
     let moves: Vec<dimension::ObjectMove> = field_or_default(req, "moves")?;
@@ -287,10 +329,12 @@ fn dimension_evaluate_op(req: &Value, files: FileLoader<'_>) -> Result<Value> {
     Ok(json!({ "dimensions": to_value(&dimension::evaluate(&dims, &objects, &moves))? }))
 }
 
+#[cfg(feature = "cad")]
 fn loops(req: &Value) -> Result<Vec<sketch::Loop>> {
     field(req, "loops")
 }
 
+#[cfg(feature = "cad")]
 fn sketch_revolve_op(req: &Value, enc: MeshOut, files: FileLoader<'_>) -> Result<Value> {
     #[derive(serde::Deserialize)]
     struct Axis {
@@ -312,6 +356,7 @@ fn sketch_revolve_op(req: &Value, enc: MeshOut, files: FileLoader<'_>) -> Result
     tool_reply(r, target.as_ref(), op, enc)
 }
 
+#[cfg(feature = "cad")]
 fn sketch_snaps_op(req: &Value, files: FileLoader<'_>) -> Result<Value> {
     let frame: FaceFrame = field(req, "frame")?;
     let outline: Vec<Polygon> = field_or_default(req, "outline")?;
@@ -320,6 +365,7 @@ fn sketch_snaps_op(req: &Value, files: FileLoader<'_>) -> Result<Value> {
     to_value(&sketch::snaps(&frame.checked()?, &outline, &meshes, near))
 }
 
+#[cfg(feature = "cad")]
 fn sketch_offset_op(req: &Value) -> Result<Value> {
     let polys: Vec<Polygon> = if req.get("loops").is_some() {
         sketch::polygons(&loops(req)?)?
@@ -333,6 +379,7 @@ fn sketch_offset_op(req: &Value) -> Result<Value> {
     Ok(json!({ "polygons": to_value(&out)?, "areaMm2": area }))
 }
 
+#[cfg(feature = "cad")]
 fn text_op(req: &Value, enc: MeshOut) -> Result<Value> {
     let text: String = field(req, "text")?;
     let height: f64 = field(req, "heightMm")?;
@@ -391,6 +438,7 @@ fn fit_op(req: &Value, files: FileLoader<'_>) -> Result<Value> {
     to_value(&fit::fit_check(&m, &opts)?)
 }
 
+#[cfg(feature = "cad")]
 fn push_op(req: &Value, enc: MeshOut, files: FileLoader<'_>) -> Result<Value> {
     let it = item_field(req, "mesh", files)?;
     let triangle: u32 = field(req, "triangle")?;
@@ -406,6 +454,7 @@ fn push_op(req: &Value, enc: MeshOut, files: FileLoader<'_>) -> Result<Value> {
     Ok(v)
 }
 
+#[cfg(feature = "cad")]
 fn push_preview_op(req: &Value, enc: MeshOut) -> Result<Value> {
     let frame: FaceFrame = field(req, "frame")?;
     let outline: Vec<Polygon> = field(req, "outline")?;
@@ -414,6 +463,7 @@ fn push_preview_op(req: &Value, enc: MeshOut) -> Result<Value> {
     Ok(json!({ "tool": enc.mesh(&tool), "operation": op }))
 }
 
+#[cfg(feature = "cad")]
 fn edge_pick_op(req: &Value, files: FileLoader<'_>) -> Result<Value> {
     let it = item_field(req, "mesh", files)?;
     let triangle: u32 = field(req, "triangle")?;
@@ -421,6 +471,7 @@ fn edge_pick_op(req: &Value, files: FileLoader<'_>) -> Result<Value> {
     to_value(&edge::pick_edge(&it.world(), triangle, at)?)
 }
 
+#[cfg(feature = "holes")]
 fn hole_find_op(req: &Value, files: FileLoader<'_>) -> Result<Value> {
     let it = item_field(req, "mesh", files)?;
     let triangle: u32 = field(req, "triangle")?;
@@ -428,6 +479,7 @@ fn hole_find_op(req: &Value, files: FileLoader<'_>) -> Result<Value> {
     to_value(&hole::find(&it.world(), triangle, at)?)
 }
 
+#[cfg(feature = "holes")]
 fn hole_apply_op(req: &Value, enc: MeshOut, files: FileLoader<'_>) -> Result<Value> {
     let it = item_field(req, "mesh", files)?;
     let h: Hole = field(req, "hole")?;
@@ -439,6 +491,7 @@ fn hole_apply_op(req: &Value, enc: MeshOut, files: FileLoader<'_>) -> Result<Val
     Ok(v)
 }
 
+#[cfg(feature = "cad")]
 fn edge_profile(req: &Value, fillet: bool) -> Result<edge::Profile> {
     if fillet {
         let radius: f64 = field(req, "radiusMm")?;
@@ -451,6 +504,7 @@ fn edge_profile(req: &Value, fillet: bool) -> Result<edge::Profile> {
     }
 }
 
+#[cfg(feature = "cad")]
 fn edge_op(req: &Value, enc: MeshOut, files: FileLoader<'_>, fillet: bool) -> Result<Value> {
     let it = item_field(req, "mesh", files)?;
     let edges: Vec<edge::EdgeRef> = field(req, "edges")?;
@@ -464,6 +518,7 @@ fn edge_op(req: &Value, enc: MeshOut, files: FileLoader<'_>, fillet: bool) -> Re
     Ok(v)
 }
 
+#[cfg(feature = "cad")]
 fn edge_preview_op(req: &Value, enc: MeshOut, files: FileLoader<'_>, fillet: bool) -> Result<Value> {
     let it = item_field(req, "mesh", files)?;
     let edges: Vec<edge::EdgeRef> = field(req, "edges")?;
@@ -472,6 +527,7 @@ fn edge_preview_op(req: &Value, enc: MeshOut, files: FileLoader<'_>, fillet: boo
     Ok(json!({ "cut": enc.mesh(&cut), "join": enc.mesh(&join) }))
 }
 
+#[cfg(feature = "cad")]
 fn sketch_corner_op(req: &Value, fillet: bool) -> Result<Value> {
     let lps = loops(req)?;
     let corners: Vec<sketch_corner::CornerRef> = field(req, "corners")?;
@@ -484,7 +540,7 @@ fn sketch_corner_op(req: &Value, fillet: bool) -> Result<Value> {
     to_value(&sketch_corner::corners(&lps, &corners, cut)?)
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "cad", feature = "holes"))]
 mod tests {
     use crate::build;
     use crate::fm::Fm as _;

@@ -16,12 +16,14 @@ use crate::error::{Error, Result};
 use crate::mesh::TriMesh;
 use crate::vec3::{self, V3};
 use crate::xform::{self, Mat4};
+#[cfg(feature = "cad")]
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 /// The surface a face lies on. Plane normals point out of the solid; the other kinds say nothing about the side.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "camelCase")]
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "cad", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "cad", serde(tag = "kind", rename_all = "camelCase"))]
 pub enum Surface {
     /// Points `p` with `dot(normal, p) == offset`.
     Plane {
@@ -38,7 +40,7 @@ pub enum Surface {
     Cone {
         apex: V3,
         axis: V3,
-        #[serde(rename = "halfAngle")]
+        #[cfg_attr(feature = "cad", serde(rename = "halfAngle"))]
         half_angle: f64,
     },
     Sphere {
@@ -143,7 +145,8 @@ impl Faces {
 }
 
 /// A face id for each triangle and the surface of each face.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq)]
+#[cfg_attr(feature = "cad", derive(Serialize, Deserialize))]
 pub struct Faces {
     /// One per triangle, an index into `table`.
     pub ids: Vec<u32>,
@@ -198,6 +201,7 @@ impl Faces {
     /// True when these faces can belong to `mesh`: one id per triangle, every id in the table, and the first
     /// triangle of each plane face on that plane. A caller that changed the triangles or moved the vertices
     /// without the faces fails this, and its faces are better found again.
+    #[cfg(feature = "cad")]
     pub fn fit(&self, mesh: &TriMesh) -> bool {
         if self.check("mesh", mesh.triangles.len()).is_err() {
             return false;
@@ -237,19 +241,24 @@ impl Faces {
 }
 
 /// Neighbors closer to parallel than this belong to one flat face.
+#[cfg(feature = "cad")]
 const FLAT_COS: f64 = 0.999_999;
 /// Neighbors closer to parallel than this belong to one smooth face (about 25 degrees, finer than any corner a
 /// part is drawn with and coarser than the facets of a tessellated round).
+#[cfg(feature = "cad")]
 const SMOOTH_COS: f64 = 0.906;
 /// A flat group in a smooth region is a plane of its own when its area is this many times the region's median
 /// group (a facet strip of a round is about the median; the flat top beside the round is far larger).
+#[cfg(feature = "cad")]
 const PLANE_OVER_FACET: f64 = 4.0;
 /// A smooth face is a cylinder when its corners fit one to within this share of the radius: a tessellated
 /// cylinder's corners lie on it exactly; a round that turns a corner into a sphere does not fit.
+#[cfg(feature = "cad")]
 const CYLINDER_FIT: f64 = 1e-4;
 
 /// Faces found from the mesh alone: coplanar neighbors across an edge form a plane, and the facets of a round
 /// (neighbors that meet at a shallow angle, none much larger than the others) form one smooth face.
+#[cfg(feature = "cad")]
 pub fn recognize(mesh: &TriMesh) -> Faces {
     let n = mesh.triangles.len();
     let normals: Vec<Option<V3>> = mesh
@@ -346,6 +355,7 @@ pub fn recognize(mesh: &TriMesh) -> Faces {
 }
 
 /// Numbers the faces in order of first use, each with its surface: the plane of a flat group, or none known.
+#[cfg(feature = "cad")]
 fn number(
     mesh: &TriMesh,
     normals: &[Option<V3>],
@@ -506,7 +516,7 @@ pub(crate) mod check {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "cad"))]
 mod tests {
     use super::*;
     use crate::build;

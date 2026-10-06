@@ -37,7 +37,8 @@ pub struct TriMesh {
     pub triangles: Vec<[u32; 3]>,
     /// The face each triangle belongs to and what surface it is, when known (`faces.rs`). Ops that make geometry
     /// tag it; ops that only move or drop triangles carry it along; the rest leave it out.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "cad", serde(default, skip_serializing_if = "Option::is_none"))]
+    #[cfg_attr(not(feature = "cad"), serde(skip))]
     pub faces: Option<Faces>,
 }
 

@@ -3,11 +3,14 @@
 //! booleans on closed meshes
 
 use crate::error::{Error, Result};
-use crate::faces::{self, Faces, Surface};
+use crate::faces::Surface;
+#[cfg(feature = "cad")]
+use crate::faces::{self, Faces};
 use crate::mesh::{self, TriMesh};
 use manifold_rust::manifold::Manifold;
 use manifold_rust::types::{BooleanEngine, Error as MfError, MeshGL64, OpType, WindingRule};
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "cad")]
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -67,19 +70,12 @@ impl Solid {
             });
         }
         let mut w = mesh.weld(mesh::weld_tolerance(mesh.bounds()));
-        // A mesh without faces gets them by recognition, so the result has faces wherever it came from.
-        let f = w.faces.take().unwrap_or_else(|| faces::recognize(&w));
         let mut gl = to_gl(&w);
-        gl.face_id = f.ids.iter().map(|&i| u64::from(i)).collect();
-        // One run under an id of our own, which every output triangle from this mesh reports back.
-        let id = Manifold::reserve_ids(1);
-        gl.run_original_id = vec![id];
-        gl.run_index = vec![0, gl.tri_verts.len() as u64];
-        let table = Arc::new(f.table);
+        let tables = tag(&mut w, &mut gl);
         let with = |m: Manifold, soup: bool| Self {
             m,
             soup,
-            tables: vec![(id, Arc::clone(&table))],
+            tables: tables.clone(),
         };
         let m = Manifold::from_mesh_gl64(&gl);
         match m.status() {
@@ -115,13 +111,16 @@ impl Solid {
 
     pub fn to_mesh(&self) -> TriMesh {
         let gl = self.m.get_mesh_gl64(-1);
+        #[allow(unused_mut, reason = "faces are added only in builds with the cad feature")]
         let mut out = from_gl(&gl);
-        if !out.triangles.is_empty() {
+        #[cfg(feature = "cad")]
+        if !out.triangles.is_empty() && !self.tables.is_empty() {
             out.faces = Some(faces::merge_meeting_planes(&out, self.faces_of(&gl)));
         }
         out
     }
 
+    #[cfg(feature = "cad")]
     /// The face of each output triangle: its input mesh's face, seen from the other side in a run the kernel
     /// marks as a back side (a subtracted body), numbered in order of first use.
     #[allow(
@@ -210,6 +209,24 @@ impl Solid {
             robust,
         ))
     }
+}
+
+/// The face ids of a boolean input, sent with it: a mesh without faces gets them by recognition, so the result has
+/// faces wherever it came from. Each input runs under an id of its own, which every output triangle from it reports
+/// back with its face. Builds without the cad feature send none, and their results carry no faces.
+#[cfg(feature = "cad")]
+fn tag(w: &mut TriMesh, gl: &mut MeshGL64) -> Vec<(u32, Arc<Vec<Surface>>)> {
+    let f = w.faces.take().unwrap_or_else(|| faces::recognize(w));
+    gl.face_id = f.ids.iter().map(|&i| u64::from(i)).collect();
+    let id = Manifold::reserve_ids(1);
+    gl.run_original_id = vec![id];
+    gl.run_index = vec![0, gl.tri_verts.len() as u64];
+    vec![(id, Arc::new(f.table))]
+}
+
+#[cfg(not(feature = "cad"))]
+fn tag(_: &mut TriMesh, _: &mut MeshGL64) -> Vec<(u32, Arc<Vec<Surface>>)> {
+    Vec::new()
 }
 
 fn not_closed() -> Error {
@@ -333,7 +350,7 @@ pub fn boolean_solids(
     Ok((out, report))
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "cad"))]
 mod tests {
     use super::*;
     use crate::build;

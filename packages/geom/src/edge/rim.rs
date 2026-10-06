@@ -243,6 +243,7 @@ impl Ctx<'_> {
 
 /// The cylinder face of triangle `t` and every rim where it meets a flat face, or none when `t` is not on a
 /// cylinder.
+#[cfg(feature = "holes")]
 pub(crate) fn rims_on(mesh: &TriMesh, t: usize) -> Option<(Surface, Vec<Rim>)> {
     let cx = Ctx::new(mesh);
     let cf = *cx.faces.ids.get(t)?;

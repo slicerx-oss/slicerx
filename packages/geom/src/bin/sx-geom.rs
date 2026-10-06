@@ -29,7 +29,7 @@ fn run(args: &[String]) -> sx_geom::Result<Value> {
         ));
     };
     if op == "ops" || op == "--help" || op == "-h" {
-        return Ok(Value::from(json::OPERATIONS.to_vec()));
+        return Ok(Value::from(json::operations()));
     }
     let out_dir = args
         .iter()
