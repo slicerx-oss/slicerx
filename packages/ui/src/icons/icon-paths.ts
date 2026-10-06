@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// Generated from icons/base.mjs and icons/extra.mjs by scripts/gen-icons.mjs. Do not edit by hand.
+// Generated from icons/*.mjs by scripts/gen-icons.mjs. Do not edit by hand.
+
+import type { IconName } from './icon-names'
 
 /** Inner SVG markup for each icon, drawn on a 24px grid at stroke 1.75 in currentColor. */
 export const ICON_PATHS = {
@@ -384,9 +386,9 @@ export const ICON_PATHS = {
   "upload": "<path d=\"M4 15v3.5a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V15\"/><path d=\"M12 15V4M8 8l4-4 4 4\"/>",
   "globe": "<circle cx=\"12\" cy=\"12\" r=\"8.5\"/><path d=\"M3.5 12h17\"/><path d=\"M12 3.5c2.4 2.4 3.5 5.2 3.5 8.5s-1.1 6.1-3.5 8.5c-2.4-2.4-3.5-5.2-3.5-8.5S9.6 5.9 12 3.5z\"/>",
   "calibration": "<circle cx=\"12\" cy=\"12\" r=\"6\"/><path d=\"M12 3v4M12 17v4M3 12h4M17 12h4\"/><path d=\"M12 12h.01\"/>",
-} as const
+} as const satisfies Record<IconName, string>
 
-export type IconName = keyof typeof ICON_PATHS
+export type { IconName } from './icon-names'
 
 /** The icon names by group, in the order the icon pages show them. */
 export const ICON_GROUPS: Readonly<Record<string, readonly IconName[]>> = {

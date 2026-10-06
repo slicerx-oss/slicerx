@@ -70,7 +70,8 @@ Helper classes: `sx-mono`, `sx-display`, `sx-eyebrow`, `sx-dim`, `sx-muted`, `sx
 
 ## Scripts
 
-- `pnpm gen:icons` regenerates `src/icons/icon-paths.ts` from `icons/base.mjs` and `icons/extra.mjs`. It fails if a name is drawn in both, if a group lists a name with no drawing, or if a drawing is in no group.
+- `pnpm gen:icons` regenerates `src/icons/icon-paths.ts` (the full table), `src/icons/icon-names.ts` (the names) and `src/icons/icon-startup.ts` from `icons/base.mjs`, `icons/extra.mjs` and `icons/hardware.mjs`. It fails if a name is drawn twice, if a group lists a name with no drawing, if a drawing is in no group, or if `icons/startup.mjs` lists an icon that is not drawn.
+- Only the icons in `icons/startup.mjs` load with the web shell. `Icon` draws any other as an empty box of its size until the full table, a chunk of its own, has loaded (when the page is idle, or at the first such icon); `iconsReady()` resolves once it has. The web build (apps/web/scripts/bundle-size.mjs) fails when a startup chunk names an icon missing from `icons/startup.mjs`, and apps/web/e2e/icons.spec.ts checks that the first frame of each workspace draws every icon without the full table. To use a new icon at startup, add it to `icons/startup.mjs` and run `pnpm gen:icons`.
 - `node scripts/icon-sheet.mjs <out.html>` writes a contact sheet of every icon at 24px and 48px for review.
 - `pnpm test` (vitest): token parity with the `nocturne` theme, icon parity with `icons/base.mjs`, icon markup limited to plain shapes inside the 24px grid, no hard-coded color or font in any component, theme merging and runtime switching, and a server render of every primitive. `GALLERY_OUT=<dir> pnpm test` also writes `gallery.html`, `gallery-palette.html`, `gallery-light.html` and `gallery-forge.html` for review screenshots.
 - `pnpm typecheck`.

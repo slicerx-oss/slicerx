@@ -36,19 +36,50 @@ if (twice.length) throw new Error('icons listed in more than one group: ' + twic
 const loose = names.filter((n) => !grouped.includes(n))
 if (loose.length) throw new Error('icons drawn but not in any group: ' + loose.join(', '))
 
-const lines = [
+const { STARTUP_ICONS } = await import(pathToFileURL(resolve(here, '../icons/startup.mjs')).href)
+const undrawn = STARTUP_ICONS.filter((n) => !Object.hasOwn(icons, n))
+if (undrawn.length) throw new Error('icons/startup.mjs lists icons that are not drawn: ' + undrawn.join(', '))
+
+const header = [
   // REUSE-IgnoreStart
   '// SPDX-License-Identifier: Apache-2.0',
   // REUSE-IgnoreEnd
   '// Copyright (C) 2026 The SlicerX contributors',
-  '// Generated from icons/base.mjs and icons/extra.mjs by scripts/gen-icons.mjs. Do not edit by hand.',
+  '// Generated from icons/*.mjs by scripts/gen-icons.mjs. Do not edit by hand.',
+  '',
+]
+// The names alone, for the type and isIconName, as one string so a startup chunk carries no quoted icon names.
+writeFileSync(resolve(here, '../src/icons/icon-names.ts'), [
+  ...header,
+  'export type IconName =',
+  ...names.map((n) => `  | ${JSON.stringify(n)}`),
+  '',
+  '/** Every icon name. */',
+  `export const ICON_NAMES: ReadonlySet<string> = new Set(${JSON.stringify(names.join(' '))}.split(' '))`,
+  '',
+].join('\n'))
+// The markup of the icons in icons/startup.mjs, which loads with the shell; the full table loads on first use.
+writeFileSync(resolve(here, '../src/icons/icon-startup.ts'), [
+  ...header,
+  "import type { IconName } from './icon-names'",
+  '',
+  '/** Inner SVG markup of the icons the shell can draw at its first paint (icons/startup.mjs). */',
+  'export const STARTUP_ICON_PATHS: Partial<Record<IconName, string>> = {',
+  ...STARTUP_ICONS.map((n) => `  ${JSON.stringify(n)}: ${JSON.stringify(icons[n])},`),
+  '}',
+  '',
+].join('\n'))
+
+const lines = [
+  ...header,
+  "import type { IconName } from './icon-names'",
   '',
   '/** Inner SVG markup for each icon, drawn on a 24px grid at stroke 1.75 in currentColor. */',
   'export const ICON_PATHS = {',
   ...names.map((n) => `  ${JSON.stringify(n)}: ${JSON.stringify(icons[n])},`),
-  '} as const',
+  '} as const satisfies Record<IconName, string>',
   '',
-  'export type IconName = keyof typeof ICON_PATHS',
+  "export type { IconName } from './icon-names'",
   '',
   '/** The icon names by group, in the order the icon pages show them. */',
   'export const ICON_GROUPS: Readonly<Record<string, readonly IconName[]>> = {',
@@ -59,4 +90,4 @@ const lines = [
   '',
 ]
 writeFileSync(resolve(here, '../src/icons/icon-paths.ts'), lines.join('\n'))
-console.log(`wrote ${names.length} icons (${Object.keys(SX_ICONS).length} from icons/base.mjs, ${Object.keys(EXTRA_ICONS).length} from icons/extra.mjs, ${Object.keys(HARDWARE_ICONS).length} from icons/hardware.mjs) in ${Object.keys(groups).length} groups`)
+console.log(`wrote ${names.length} icons, ${STARTUP_ICONS.length} of them in the startup table (${Object.keys(SX_ICONS).length} from icons/base.mjs, ${Object.keys(EXTRA_ICONS).length} from icons/extra.mjs, ${Object.keys(HARDWARE_ICONS).length} from icons/hardware.mjs) in ${Object.keys(groups).length} groups`)
