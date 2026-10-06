@@ -460,6 +460,51 @@ export function holeApply(mesh: MeshItem, hole: Hole, spec: HoleSpec, signal?: A
   return geom().call<MeshResult & { report: { volumeChangeMm3: number; watertight: boolean; shells: number } }>('hole.apply', { mesh, hole, spec }, signal)
 }
 
+// Threads (sx-geom thread.rs)
+
+/** An ISO coarse size. */
+export interface ThreadSize {
+  name: string
+  majorMm: number
+  pitchMm: number
+}
+
+/** A round surface a thread can go on (world): where it starts, the way out through that end, its size and length. */
+export interface ThreadTarget {
+  start: Vec3
+  axis: Vec3
+  diameterMm: number
+  lengthMm: number
+  /** A hole's wall, not a boss or rod. */
+  internal: boolean
+  /** Open at the far end too; otherwise the thread stops half a pitch short of it. */
+  openEnd: boolean
+  /** The size that suits it, and every size there is. */
+  suggested: string
+  sizes: ThreadSize[]
+}
+
+/** Where a thread goes, as a history step keeps it. */
+export type ThreadPlace = Omit<ThreadTarget, 'suggested' | 'sizes'>
+
+export interface ThreadSpec {
+  size: string
+  /** From the start; the whole surface when absent. */
+  lengthMm?: number
+  /** Per side: an external thread this much smaller, an internal one this much larger. */
+  clearanceMm: number
+}
+
+/** The hole, boss or rod the pick is on, starting at the end nearest the pick. */
+export function threadFind(mesh: MeshItem, pick: Pick, signal?: AbortSignal) {
+  return geom().call<ThreadTarget>('thread.find', { mesh, triangle: pick.triangle, at: pick.at }, signal)
+}
+
+/** The thread cut in place. The result is in the item's frame. */
+export function threadApply(mesh: MeshItem, thread: ThreadPlace, spec: ThreadSpec, signal?: AbortSignal) {
+  return geom().call<MeshResult & { report: { volumeChangeMm3: number; watertight: boolean; shells: number; lengthMm: number; maxLayerMm: number } }>('thread.apply', { mesh, thread, spec }, signal)
+}
+
 /** A sketch corner: vertex i of a loop is where segment i starts (points[i] for point loops). Counts from 0. */
 export interface SketchCorner {
   loop: number

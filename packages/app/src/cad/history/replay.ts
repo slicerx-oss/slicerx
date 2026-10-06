@@ -178,6 +178,18 @@ async function runStep(call: EngineCall, s: Step, parts: Flat[], fonts: Record<s
         out[i] = { ...part, positions: r.mesh.positions, indices: r.mesh.indices }
         break
       }
+      case 'thread.apply': {
+        // A hole's wall is found again on the part as it is now; a rod or boss keeps its place.
+        let r: { mesh: Flat }
+        try {
+          r = (await call('thread.apply', { mesh: item(part), thread: p.thread, spec: p.spec })) as { mesh: Flat }
+        } catch (err) {
+          const why = (err instanceof Error ? err.message : String(err)).replace(/^(thread|hole): /, '')
+          throw new Broken(why.charAt(0).toUpperCase() + why.slice(1))
+        }
+        out[i] = { ...part, positions: r.mesh.positions, indices: r.mesh.indices }
+        break
+      }
       case 'edge.fillet':
       case 'edge.chamfer': {
         const { op: _op, ...rest } = p
