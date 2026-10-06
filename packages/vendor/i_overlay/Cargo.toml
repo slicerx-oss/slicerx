@@ -1,13 +1,17 @@
 [package]
-name = "i_overlay"
+name = "sx-i-overlay"
 version = "9.0.0"
 edition = "2024"
 rust-version = "1.88"
-authors = ["Nail Sharipov <nailxsharipov@gmail.com>"]
-description = "Boolean operations for 2D polygons (iShape-Rust/iOverlay 9.0.0), with a list split that compares only new segments after its first pass"
+authors = ["Nail Sharipov <nailxsharipov@gmail.com>", "The SlicerX contributors"]
+description = "Fork of i_overlay 9.0.0 (boolean operations for 2D polygons) for SlicerX: a faster list split and fill sweep with the same results"
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/iShape-Rust/iOverlay"
-publish = false
+repository = "https://github.com/slicerx-oss/slicerx"
+homepage = "https://github.com/slicerx-oss/slicerx/tree/main/packages/vendor/i_overlay"
+readme = "README.md"
+keywords = ["polygon", "boolean", "overlay", "clipping", "geometry"]
+categories = ["algorithms", "graphics", "mathematics"]
+include = ["/src/**", "/README.md", "/SOURCE.md", "/LICENSE-APACHE", "/LICENSE-MIT"]
 
 [features]
 allow_multithreading = ["dep:rayon", "i_key_sort/allow_multithreading"]

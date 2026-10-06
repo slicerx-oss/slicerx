@@ -1,13 +1,17 @@
 [package]
-name = "boostvoronoi"
+name = "sx-boostvoronoi"
 version = "0.12.1"
 edition = "2024"
 rust-version = "1.87.0"
-authors = ["eadf <lacklustr@protonmail.com>"]
-description = "Boost voronoi ported to Rust (eadf/boostvoronoi_rs 0.12.1), with faster exact integer products"
+authors = ["eadf <lacklustr@protonmail.com>", "The SlicerX contributors"]
+description = "Fork of boostvoronoi 0.12.1 (Boost voronoi ported to Rust) for SlicerX: faster exact integer products with the same results, on the deterministic sx-cpp-map"
 license = "BSL-1.0"
-repository = "https://codeberg.org/eadf/boostvoronoi_rs"
-publish = false
+repository = "https://github.com/slicerx-oss/slicerx"
+homepage = "https://github.com/slicerx-oss/slicerx/tree/main/packages/vendor/boostvoronoi"
+readme = "README.md"
+keywords = ["voronoi", "geometry", "fortune", "segment"]
+categories = ["algorithms", "graphics", "mathematics"]
+include = ["/src/**", "/README.md", "/SOURCE.md", "/LICENSE"]
 
 [features]
 ce_corruption_check = []
@@ -27,7 +31,8 @@ path = "src/lib.rs"
 
 [dependencies]
 approx = "0.5.1"
-cpp_map = "0.2.0"
+# sx-cpp-map: cpp_map with node levels from a fixed seed, so the diagram repeats from run to run.
+cpp_map = { package = "sx-cpp-map", version = "=0.2.0", path = "../cpp_map" }
 libm = "0.2.15"
 num-traits = "0.2.19"
 ordered-float = "5.1.0"

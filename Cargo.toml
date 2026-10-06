@@ -25,6 +25,9 @@ members = [
   "editions/slicerx/packages/cloud/service",
   "editions/slicerx/packages/cloud/scan",
 ]
+# The vendored forks build as path dependencies of sx-core and sx-geom, outside the workspace's
+# lints and formatting, and are published on their own (packages/vendor/*/SOURCE.md).
+exclude = ["packages/vendor"]
 # `cargo build` and `cargo test` at the root skip the WASM wrapper, the Orca
 # bridge (needs the prebuilt libslic3r prefix) and the Tauri app. CI passes
 # --workspace and must install what those three need or exclude them.
@@ -107,13 +110,3 @@ lto = "fat"
 codegen-units = 1
 opt-level = "s"
 strip = true
-
-# boostvoronoi builds its beach line on cpp_map, whose random node levels made the Voronoi diagram
-# (and so the Arachne walls) differ from run to run. See packages/vendor/cpp_map/SOURCE.md.
-[patch.crates-io]
-cpp_map = { path = "packages/vendor/cpp_map" }
-# i_overlay splits crossing segments in passes; after the first pass it now compares only pairs with a
-# new segment, with the same results. See packages/vendor/i_overlay/SOURCE.md.
-i_overlay = { path = "packages/vendor/i_overlay" }
-# boostvoronoi multiplies its exact integers faster, with the same results. See packages/vendor/boostvoronoi/SOURCE.md.
-boostvoronoi = { path = "packages/vendor/boostvoronoi" }

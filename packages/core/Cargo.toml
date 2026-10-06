@@ -4,8 +4,16 @@
 name = "sx-core"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
-publish.workspace = true
+description = "The SlicerX slicing engine: 3MF and STL in, G-code with time and filament estimates and preview buffers out, natively and in WebAssembly"
+repository = "https://github.com/slicerx-oss/slicerx"
+homepage = "https://slicerx.app"
+documentation = "https://docs.rs/sx-core"
+readme = "README.md"
+keywords = ["slicer", "3d-printing", "gcode", "3mf", "stl"]
+categories = ["graphics", "rendering::data-formats", "science", "wasm"]
+include = ["/src/**", "/data/**", "/build.rs", "/README.md", "/CHANGELOG.md", "/LICENSE-APACHE", "/NOTICE"]
 
 [lints]
 workspace = true
@@ -20,11 +28,12 @@ parallel = ["dep:rayon"]
 import = ["dep:sx-geom"]
 
 [dependencies]
-sx-geom = { path = "../geom", optional = true }
-i_overlay = "=9.0.0"
+sx-geom = { path = "../geom", version = "=0.1.0", optional = true }
+# Forks published with SlicerX; each keeps the original library name. See packages/vendor/*/SOURCE.md.
+i_overlay = { package = "sx-i-overlay", path = "../vendor/i_overlay", version = "=9.0.0" }
 # The time estimate takes its trigonometry from here so native and WASM builds round alike.
 libm = "=0.2.16"
-boostvoronoi = { version = "=0.12.1", default-features = false }
+boostvoronoi = { package = "sx-boostvoronoi", path = "../vendor/boostvoronoi", version = "=0.12.1", default-features = false }
 miniz_oxide = "=0.9.1"
 rayon = { version = "=1.12.0", optional = true }
 serde = { version = "=1.0.229", features = ["derive"] }

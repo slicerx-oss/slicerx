@@ -1,3 +1,11 @@
+# sx-i-overlay
+
+A fork of [i_overlay 9.0.0](https://github.com/iShape-Rust/iOverlay) by Nail Sharipov, published for the SlicerX slicing engine ([sx-core](https://crates.io/crates/sx-core)). SOURCE.md lists every change. The library name stays `i_overlay`, so code that uses the original builds unchanged with `i_overlay = { package = "sx-i-overlay", version = "=9.0.0" }`. License: MIT OR Apache-2.0, the same as the original.
+
+The original README follows.
+
+---
+
 # iOverlay
 
 [![crates.io version](https://img.shields.io/crates/v/i_overlay.svg)](https://crates.io/crates/i_overlay)

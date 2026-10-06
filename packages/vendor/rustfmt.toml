@@ -1,0 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (C) 2026 The SlicerX contributors
+# The vendored forks keep their upstream formatting, so their diffs against upstream stay small.
+disable_all_formatting = true

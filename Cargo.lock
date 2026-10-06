@@ -548,21 +548,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "boostvoronoi"
-version = "0.12.1"
-dependencies = [
- "approx",
- "cpp_map",
- "libm",
- "num-traits",
- "ordered-float",
- "rustc-hash",
- "smallvec",
- "thiserror 2.0.21",
- "vob",
-]
-
-[[package]]
 name = "brotli"
 version = "9.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1040,14 +1025,6 @@ dependencies = [
  "bitflags 2.13.2",
  "core-foundation",
  "libc",
-]
-
-[[package]]
-name = "cpp_map"
-version = "0.2.0"
-dependencies = [
- "smallvec",
- "thiserror 2.0.21",
 ]
 
 [[package]]
@@ -2585,16 +2562,6 @@ name = "i_key_sort"
 version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7c6c58d0c60705e66264ce0f788a69a2f21472aeb8188559e7c8c619dbdc10fa"
-
-[[package]]
-name = "i_overlay"
-version = "9.0.0"
-dependencies = [
- "i_float",
- "i_key_sort",
- "i_shape",
- "i_tree",
-]
 
 [[package]]
 name = "i_shape"
@@ -5429,6 +5396,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "sx-boostvoronoi"
+version = "0.12.1"
+dependencies = [
+ "approx",
+ "libm",
+ "num-traits",
+ "ordered-float",
+ "rustc-hash",
+ "smallvec",
+ "sx-cpp-map",
+ "thiserror 2.0.21",
+ "vob",
+]
+
+[[package]]
 name = "sx-cli"
 version = "0.1.0"
 dependencies = [
@@ -5487,16 +5469,16 @@ dependencies = [
 name = "sx-core"
 version = "0.1.0"
 dependencies = [
- "boostvoronoi",
  "criterion",
- "i_overlay",
  "libm",
  "miniz_oxide 0.9.1",
  "rayon",
  "serde",
  "serde_json",
  "sha2 0.11.0",
+ "sx-boostvoronoi",
  "sx-geom",
+ "sx-i-overlay",
  "thiserror 2.0.21",
 ]
 
@@ -5509,6 +5491,14 @@ dependencies = [
  "serde_json",
  "sha2 0.11.0",
  "zeroize",
+]
+
+[[package]]
+name = "sx-cpp-map"
+version = "0.2.0"
+dependencies = [
+ "smallvec",
+ "thiserror 2.0.21",
 ]
 
 [[package]]
@@ -5533,12 +5523,12 @@ dependencies = [
 name = "sx-geom"
 version = "0.1.0"
 dependencies = [
- "i_overlay",
  "libm",
  "manifold-rust",
  "miniz_oxide 0.9.1",
  "serde",
  "serde_json",
+ "sx-i-overlay",
  "thiserror 2.0.21",
  "ttf-parser",
 ]
@@ -5548,6 +5538,16 @@ name = "sx-geom-wasm"
 version = "0.1.0"
 dependencies = [
  "sx-geom",
+]
+
+[[package]]
+name = "sx-i-overlay"
+version = "9.0.0"
+dependencies = [
+ "i_float",
+ "i_key_sort",
+ "i_shape",
+ "i_tree",
 ]
 
 [[package]]
