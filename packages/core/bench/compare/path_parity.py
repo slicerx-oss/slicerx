@@ -13,8 +13,17 @@ G-code file, per feature, this reads: the number of extruding moves, the number 
 a histogram of move directions (18 bins of 10 degrees, folded so a line and its reverse share a
 bin, weighted by length). A feature passes when its bounding boxes agree within 2 mm, its
 direction histograms differ by less than 0.25 (half the summed absolute difference of the
-normalized bins) and its move and stroke counts agree within the case's tolerance. Exit code 1
-when any case fails. Standard library only.
+normalized bins), its move count agrees within the case's tolerance and it has no more strokes
+than Orca beyond that tolerance (fewer strokes for the same lines means fewer travels). So that
+fewer strokes cannot hide bad joins, sparse infill also measures its connectors: extruding moves
+within 1 mm of a wall of the same layer and within 20 degrees of parallel to it (the joins and
+anchor hooks that follow the boundary), runs of them in one stroke counting as one connector. The
+longest connector must not exceed Orca's by more than 5 percent plus 0.5 mm, and the total by more
+than 5 percent plus 1 mm plus one connector of Orca's mean length for each stroke fewer than Orca:
+each join that saves a stroke adds a connector, so the total may grow by what the joins explain,
+not more. Infill lines that happen to run beside a wall count too; both slicers draw the same
+lines, so they mostly cancel. Exit code 1 when any case
+fails. Standard library only.
 """
 import argparse
 import json
@@ -32,6 +41,15 @@ from gcode import is_layer_mark, plain
 BINS = 18
 BBOX_MM = 2.0
 HIST_MAX = 0.25
+# Connectors: infill moves this close to a wall and this near parallel to it.
+CONNECTOR_MM = 1.0
+CONNECTOR_DEG = 20.0
+# Connectors may exceed Orca's by this share, plus the slack in mm (total, longest).
+CONNECTOR_MARGIN = 0.05
+CONNECTOR_SLACK = (1.0, 0.5)
+WALLS = ("Outer wall", "Inner wall")
+# The features joined along their boundary (anchor.rs); solid infill lines often run beside a wall.
+CONNECTED = ("Sparse infill",)
 
 # name, model, overrides, features, count tolerance (relative), note
 PATH_CASES = []
@@ -109,6 +127,11 @@ def parse_paths(path):
     kind = "unlabeled"
     feats = {}
     stroke_open = False
+    layer = 0
+    stroke_id = 0
+    # Per layer: wall segments, and the infill segments of the connected features with their stroke.
+    walls = {}
+    infill = {}
     with open(path, errors="replace") as f:
         for ln in f:
             if ln[0] == ";":
@@ -118,6 +141,7 @@ def parse_paths(path):
                     stroke_open = False
                 elif is_layer_mark(ln):
                     stroke_open = False
+                    layer += 1
                 continue
             words = ln.split(";", 1)[0].split()
             if not words:
@@ -153,6 +177,11 @@ def parse_paths(path):
                 if not stroke_open:
                     d["strokes"] += 1
                     stroke_open = True
+                    stroke_id += 1
+                if kind in WALLS:
+                    walls.setdefault(layer, []).append((x, y, nx, ny))
+                elif kind in CONNECTED:
+                    infill.setdefault(layer, []).append((kind, stroke_id, x, y, nx, ny))
                 d["mm"] += delta
                 dx, dy = nx - x, ny - y
                 ln_ = math.hypot(dx, dy)
@@ -166,7 +195,54 @@ def parse_paths(path):
             else:
                 stroke_open = False
             x, y = nx, ny
+    for kind, (total, longest, runs) in connectors(walls, infill).items():
+        if kind in feats:
+            feats[kind]["connector_mm"] = total
+            feats[kind]["connector_max"] = longest
+            feats[kind]["connector_mean"] = total / runs if runs else 0.0
     return feats
+
+
+def connectors(walls, infill):
+    """Per feature: total length of the moves that follow a wall (joins and anchor hooks), the longest run of them in one stroke, and the number of runs."""
+    cell = 5.0
+    out = {}
+    cos_max = math.cos(math.radians(CONNECTOR_DEG))
+    for layer, segs in infill.items():
+        grid = {}
+        for w in walls.get(layer, []):
+            x0, x1 = sorted((w[0], w[2]))
+            y0, y1 = sorted((w[1], w[3]))
+            for cx in range(int((x0 - CONNECTOR_MM) // cell), int((x1 + CONNECTOR_MM) // cell) + 1):
+                for cy in range(int((y0 - CONNECTOR_MM) // cell), int((y1 + CONNECTOR_MM) // cell) + 1):
+                    grid.setdefault((cx, cy), []).append(w)
+        run_key, run_len = None, 0.0
+        for kind, stroke, ax, ay, bx, by in segs:
+            ln_ = math.hypot(bx - ax, by - ay)
+            hit = False
+            if ln_ > 1e-6:
+                mx, my = (ax + bx) / 2, (ay + by) / 2
+                ux, uy = (bx - ax) / ln_, (by - ay) / ln_
+                for w in grid.get((int(mx // cell), int(my // cell)), []):
+                    wx, wy = w[2] - w[0], w[3] - w[1]
+                    wl = math.hypot(wx, wy)
+                    if wl < 1e-6 or abs(ux * wx + uy * wy) / wl < cos_max:
+                        continue
+                    t = max(0.0, min(1.0, ((mx - w[0]) * wx + (my - w[1]) * wy) / (wl * wl)))
+                    if math.hypot(mx - (w[0] + t * wx), my - (w[1] + t * wy)) <= CONNECTOR_MM:
+                        hit = True
+                        break
+            tot = out.setdefault(kind, [0.0, 0.0, 0])
+            if hit:
+                tot[0] += ln_
+                if run_key != (kind, stroke):
+                    tot[2] += 1
+                run_len = run_len + ln_ if run_key == (kind, stroke) else ln_
+                run_key = (kind, stroke)
+                tot[1] = max(tot[1], run_len)
+            else:
+                run_key, run_len = None, 0.0
+    return {k: (v[0], v[1], v[2]) for k, v in out.items()}
 
 
 def normalized(h):
@@ -197,12 +273,22 @@ def compare_paths(case, a, b):
                "bbox_delta": [round(p - q, 2) for p, q in zip(fa["bbox"], fb["bbox"])],
                "hist_distance": round(hist_distance(fa["hist"], fb["hist"]), 3)}
         good_moves = abs(fa["moves"] - fb["moves"]) <= max(tol * fb["moves"], 10)
-        good_strokes = abs(fa["strokes"] - fb["strokes"]) <= max(tol * fb["strokes"], 5)
+        # One-sided: fewer strokes than Orca for the same lines is better, as long as the joins are no longer.
+        good_strokes = fa["strokes"] - fb["strokes"] <= max(tol * fb["strokes"], 5)
         good_bbox = max(abs(v) for v in row["bbox_delta"]) <= BBOX_MM
         good_hist = row["hist_distance"] <= HIST_MAX
-        row["ok"] = good_moves and good_strokes and good_bbox and good_hist
+        good_joins = True
+        if feat in CONNECTED:
+            ta, tb = fa.get("connector_mm", 0.0), fb.get("connector_mm", 0.0)
+            la, lb = fa.get("connector_max", 0.0), fb.get("connector_max", 0.0)
+            row["connector_mm"] = [round(ta, 1), round(tb, 1)]
+            row["connector_max"] = [round(la, 2), round(lb, 2)]
+            gained = max(0, fb["strokes"] - fa["strokes"]) * fb.get("connector_mean", 0.0)
+            good_joins = (ta <= tb * (1 + CONNECTOR_MARGIN) + CONNECTOR_SLACK[0] + gained
+                          and la <= lb * (1 + CONNECTOR_MARGIN) + CONNECTOR_SLACK[1])
+        row["ok"] = good_moves and good_strokes and good_bbox and good_hist and good_joins
         row["failed"] = [n for n, g in (("moves", good_moves), ("strokes", good_strokes), ("bbox", good_bbox),
-                                        ("direction", good_hist)) if not g]
+                                        ("direction", good_hist), ("joins", good_joins)) if not g]
         rows.append(row)
         ok &= row["ok"]
     return {"name": case["name"], "ok": ok, "rows": rows, "note": case["note"]}
@@ -266,7 +352,9 @@ def main():
                 continue
             bad = f"  <-- {', '.join(r['failed'])}" if r["failed"] else ""
             print(f"       {r['feature']:<22} moves {r['moves'][0]:>6}/{r['moves'][1]:<6} strokes {r['strokes'][0]:>5}/{r['strokes'][1]:<5} "
-                  f"mm {r['mm'][0]:>7}/{r['mm'][1]:<7} dir {r['hist_distance']:.2f} bbox {max(abs(v) for v in r['bbox_delta']):.1f}{bad}")
+                  f"mm {r['mm'][0]:>7}/{r['mm'][1]:<7} dir {r['hist_distance']:.2f} bbox {max(abs(v) for v in r['bbox_delta']):.1f}"
+                  + (f" joins {r['connector_mm'][0]}/{r['connector_mm'][1]} mm, longest {r['connector_max'][0]}/{r['connector_max'][1]}" if "connector_mm" in r else "")
+                  + bad)
     json.dump({"cases": results}, open(a.out, "w"), indent=1)
     return 0 if all(r.get("ok") for r in results) else 1
 
