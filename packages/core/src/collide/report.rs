@@ -63,8 +63,10 @@ pub enum FixKind {
     Spread,
     /// Lift the nozzle higher on travels.
     RaiseLift,
-    /// Move one object out of the tool changer's way.
+    /// Move one object out of the tool changer's way, or out of a keep-out zone.
     MoveObject,
+    /// Arrange the plate again, so no paths cross.
+    Arrange,
 }
 
 /// A fix for some of the collisions (`CollisionFix` in the contract).
@@ -129,7 +131,9 @@ pub fn report(meta: &Meta, hits: &[Hit], layer_s: &[f64], prepare_s: f64) -> Rep
     // Hits first; the profile's radius only where the head itself clears that pair.
     let mut kept: Vec<(f64, &Hit)> = Vec::new();
     for h in hits {
-        if h.obstacle < h.mover && h.severity == Severity::Hit {
+        // A crossing or a keep-out zone counts in any order; the machine meets only objects printed before.
+        let any_order = matches!(h.kind, Kind::PathConflict | Kind::KeepOut);
+        if (any_order || h.obstacle < h.mover) && h.severity == Severity::Hit {
             kept.push((time_of(layer_s, prepare_s, h.first.layer, h.first.share), h));
         }
     }
@@ -190,11 +194,18 @@ pub fn report(meta: &Meta, hits: &[Hit], layer_s: &[f64], prepare_s: f64) -> Rep
 }
 
 impl Meta {
+    /// An object's id; after the objects, the prime tower and the keep-out zones by kind.
     fn id(&self, i: u32) -> String {
-        self.objects
-            .get(i as usize)
-            .map(|o| o.id.clone())
-            .unwrap_or_default()
+        let n = self.objects.len();
+        let i = i as usize;
+        match self.objects.get(i) {
+            Some(o) => o.id.clone(),
+            None if i == n => "prime-tower".to_owned(),
+            None => match self.zones.get(i.saturating_sub(n + 1)) {
+                Some(&super::plate::ZONE_WRAP_CHECK) => "wrap-check-zone".to_owned(),
+                _ => "exclusion-area".to_owned(),
+            },
+        }
     }
 }
 
@@ -241,6 +252,7 @@ fn fixes(meta: &Meta, hits: &[Hit], kept: &[&Hit], collisions: &[Collision]) -> 
         return out;
     }
     let n = meta.objects.len();
+    let machine = |k: Kind| !matches!(k, Kind::PathConflict | Kind::KeepOut);
     let index = |pred: &dyn Fn(&Collision) -> bool| -> Vec<u32> {
         let mut v = Vec::new();
         for (i, c) in collisions.iter().enumerate() {
@@ -254,7 +266,7 @@ fn fixes(meta: &Meta, hits: &[Hit], kept: &[&Hit], collisions: &[Collision]) -> 
     let mut best: Option<(Vec<usize>, Vec<u32>)> = None;
     for with_close in [true, false] {
         let mut before = Vec::new();
-        for h in hits {
+        for h in hits.iter().filter(|h| machine(h.kind)) {
             if with_close || h.severity == Severity::Hit {
                 before.push((h.mover as usize, h.obstacle as usize));
             }
@@ -272,13 +284,16 @@ fn fixes(meta: &Meta, hits: &[Hit], kept: &[&Hit], collisions: &[Collision]) -> 
         let at = |i: u32| pos.get(i as usize).copied().unwrap_or(0);
         let mut clears = Vec::new();
         for (i, h) in kept.iter().enumerate() {
-            if at(h.obstacle) > at(h.mover) {
+            if machine(h.kind) && at(h.obstacle) > at(h.mover) {
                 clears.push(u32::try_from(i).unwrap_or(u32::MAX));
             }
         }
-        let new = hits
-            .iter()
-            .any(|h| h.severity == Severity::Hit && h.obstacle > h.mover && at(h.obstacle) < at(h.mover));
+        let new = hits.iter().any(|h| {
+            machine(h.kind)
+                && h.severity == Severity::Hit
+                && h.obstacle > h.mover
+                && at(h.obstacle) < at(h.mover)
+        });
         if !new && !clears.is_empty() && best.as_ref().is_none_or(|(_, c)| clears.len() > c.len()) {
             best = Some((order, clears));
         }
@@ -291,9 +306,10 @@ fn fixes(meta: &Meta, hits: &[Hit], kept: &[&Hit], collisions: &[Collision]) -> 
             .collect();
         out.push(f);
     }
-    if meta.by_layer {
+    let by_object = index(&|c| machine(c.kind));
+    if meta.by_layer && !by_object.is_empty() {
         let (extra, moves) = by_layer_cost(meta);
-        let mut f = fix(FixKind::ByLayer, extra, index(&|_| true), true);
+        let mut f = fix(FixKind::ByLayer, extra, by_object, true);
         f.moves = u32::try_from(moves).unwrap_or(u32::MAX);
         out.push(f);
     }
@@ -341,6 +357,21 @@ fn fixes(meta: &Meta, hits: &[Hit], kept: &[&Hit], collisions: &[Collision]) -> 
         let clears = index(&|x| matches!(x.kind, Kind::ToolChange | Kind::Dock) && x.hit_id == c.hit_id);
         let mut f = fix(FixKind::MoveObject, 0.0, clears, false);
         f.object_id = Some(c.hit_id.clone());
+        out.push(f);
+    }
+    let crossings = index(&|c| c.kind == Kind::PathConflict);
+    if !crossings.is_empty() {
+        out.push(fix(FixKind::Arrange, 0.0, crossings, true));
+    }
+    let mut kept_out: Vec<&str> = Vec::new();
+    for c in collisions {
+        if c.kind != Kind::KeepOut || kept_out.contains(&c.object_id.as_str()) {
+            continue;
+        }
+        kept_out.push(&c.object_id);
+        let clears = index(&|x| x.kind == Kind::KeepOut && x.object_id == c.object_id);
+        let mut f = fix(FixKind::MoveObject, 0.0, clears, false);
+        f.object_id = Some(c.object_id.clone());
         out.push(f);
     }
     out
@@ -445,6 +476,7 @@ mod tests {
             retract_s: 0.1,
             z_hop: 0.4,
             by_layer: true,
+            zones: Vec::new(),
         }
     }
 

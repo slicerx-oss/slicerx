@@ -74,6 +74,10 @@ export async function applyCollisionFix(host: Host, fix: CollisionFix): Promise<
   if (fix.kind === 'reorder' && fix.order) {
     if (!reorder(fix.order)) return
     toast('The objects print in the new order. Slicing again.', 'info')
+  } else if (fix.kind === 'arrange') {
+    const { arrangePlate } = await import('./edit')
+    await arrangePlate('all')
+    toast('The plate is arranged again. Slicing again.', 'info')
   } else if (fix.kind === 'by_layer') {
     setPlateSettings(get().activePlate, { sequence: 'by-layer' })
     toast('This plate prints by layer now. Slicing again.', 'info')
