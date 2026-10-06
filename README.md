@@ -1,7 +1,7 @@
 <p align="center">
   <picture>
     <source media="(prefers-reduced-motion: reduce)" srcset="docs/readme-assets/banner.png">
-    <img alt="SlicerX, a slicer for the gods. The AI-ready slicer, free and open source: hand-written Rust core, WebAssembly, every printer, MCP server. Two ravens, huginn and muninn, spar inside a ring of runes." src="docs/readme-assets/banner.gif" width="100%">
+    <img alt="SlicerX, a slicer for the gods. The AI-ready slicer: a CAD engine and slicer, free and open source, on a hand-written Rust core, with WebAssembly and an MCP server. Two ravens, huginn and muninn, spar inside a ring of runes." src="docs/readme-assets/banner.gif" width="100%">
   </picture>
 </p>
 
@@ -11,10 +11,10 @@
   <!-- Add https://img.shields.io/npm/v/@slicerx/slicer and https://img.shields.io/crates/v/sx-core once the packages are published. -->
 </p>
 
-<h3 align="center">An open source slicer on a hand-written Rust core, for builders and makers.</h3>
+<h3 align="center">An open source CAD engine and slicer on a hand-written Rust core, for builders and makers.</h3>
 <p align="center"><b>The AI-ready slicer</b></p>
 
-SlicerX is a free, fully open source slicer for FFF 3D printers, built to be driven by other software as much as by people. An AI assistant can plan settings, slice, and send a job to a printer through its MCP server, under a permission policy the user controls. A web page can slice in the browser with the WebAssembly core, and a print farm tool can call the CLI or link the Rust crate. The slicing core is hand-written Rust, compiles to native code and WebAssembly, and uses the setting names OrcaSlicer, Bambu Studio and PrusaSlicer share, so existing profiles carry over. It contains no code from those projects. The base kit is Apache-2.0, so you can build it into your own product, open or closed, as long as you keep the "Made possible by SlicerX" credit.
+SlicerX is a free, fully open source CAD engine and slicer for FFF 3D printers, built to be driven by other software as much as by people. An AI assistant can plan settings, slice, and send a job to a printer through its MCP server, under a permission policy the user controls. A web page can slice in the browser with the WebAssembly core, and a print farm tool can call the CLI or link the Rust crate. The slicing core is hand-written Rust, compiles to native code and WebAssembly, and uses the setting names OrcaSlicer, Bambu Studio and PrusaSlicer share, so existing profiles carry over. It contains no code from those projects. The base kit is Apache-2.0, so you can build it into your own product, open or closed, as long as you keep the "Made possible by SlicerX" credit.
 
 <p align="center">
   <picture>
