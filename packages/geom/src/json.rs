@@ -598,8 +598,7 @@ pub(crate) fn mesh_value(v: &Value, key: &str, files: FileLoader<'_>) -> Result<
             faces,
         } => {
             let mut m = TriMesh::from_flat(&positions, &indices)?;
-            m.faces = faces;
-            m.validate(key)?;
+            m.faces = faces.filter(|f| f.fit(&m));
             m
         }
         MeshIn::Nested {
@@ -608,8 +607,8 @@ pub(crate) fn mesh_value(v: &Value, key: &str, files: FileLoader<'_>) -> Result<
             faces,
         } => {
             let mut m = TriMesh::new(positions, triangles);
-            m.faces = faces;
             m.validate(key)?;
+            m.faces = faces.filter(|f| f.fit(&m));
             m
         }
     })
