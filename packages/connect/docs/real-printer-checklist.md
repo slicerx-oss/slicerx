@@ -72,7 +72,7 @@ The script cannot see the printer. After each run, check these yourself:
 ### Anycubic (Kobra 3, S1, LAN Mode)
 
 - The handshake: `/info`, the signed `/ctrl` and the decrypted login, and whether the broker on 9883 asks for the client certificate.
-- Status words during a print, after it completes and after a stop; the ACE slot colors; pause, resume and stop.
+- Status words during a print, after it completes and after a stop; the ACE slot colors; upload, start, pause, resume and stop.
 - After a printer restart the session comes back on its own; with LAN Mode off, connecting says so.
 
 ### UltiMaker (S series)

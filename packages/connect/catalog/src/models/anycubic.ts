@@ -21,6 +21,6 @@ export const ANYCUBIC: PrinterModel[] = [
     nozzleCount: 1,
     connections: ['anycubic', 'export'],
     find: FIND_KOBRA,
-    note: 'Experimental: the LAN Mode connection is untested on a printer, and the Kobra X may use an older handshake. Files go over a USB drive.',
+    note: 'Experimental: the LAN Mode connection is untested on a printer.',
   },
 ]

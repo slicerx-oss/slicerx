@@ -162,7 +162,7 @@ export const CONNECTION_METHODS: readonly ConnectionMethod[] = [
       detail: 'Anycubic printers are not known to announce themselves in LAN Mode. Enter the IP address; SlicerX asks it on port 18910 for its model and whether LAN Mode is on.',
     },
     fields: [host],
-    summary: 'Experimental, untested on a printer. Turn on LAN Mode on the printer first: that removes it from your Anycubic account for good. Status, ACE slots, pause, resume and stop; files go over USB.',
+    summary: 'Experimental, untested on a printer. Turn on LAN Mode on the printer first: that removes it from your Anycubic account for good. No code or password.',
   },
   {
     id: 'export',

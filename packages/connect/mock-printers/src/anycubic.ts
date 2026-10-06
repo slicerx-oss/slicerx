@@ -25,6 +25,8 @@ export async function startAnycubic(m: MockMachine, log: string[]) {
   const device = throwawayCert('anycubic-device')
   const broker = throwawayCert('anycubic-broker')
   const deviceFingerprint = new X509Certificate(device.cert).fingerprint256
+  const uploadToken = randomBytes(16).toString('hex')
+  let httpPort = 0
   const subscribers = new Set<TLSSocket>()
   let login = { user: `u${randomBytes(4).toString('hex')}`, pass: randomBytes(12).toString('hex') }
   const extra: AnycubicExtra = {
@@ -43,6 +45,7 @@ export async function startAnycubic(m: MockMachine, log: string[]) {
     const job = m.job ?? { name: 'cube.gcode', progress: 0.4, layer: 12, layerCount: 100, timeLeftS: 1800 }
     return {
       printerName: m.fx.name, model: 'Anycubic Kobra 3', version: '2.3.5.3', ip: '127.0.0.1', state: busy ? 'busy' : 'free',
+      urls: { fileUploadurl: `http://127.0.0.1:${httpPort}/gcode_upload?s=${uploadToken}`, rtspUrl: 'http://127.0.0.1:18088/flv' },
       temp: { curr_nozzle_temp: n?.current ?? 25, target_nozzle_temp: n?.target ?? 0, curr_hotbed_temp: m.fx.bed?.current ?? 24, target_hotbed_temp: m.fx.bed?.target ?? 0 },
       ...(busy ? { project: { state: 'printing', pause: m.state === 'paused' ? 1 : 0, progress: Math.round(job.progress * 100), curr_layer: job.layer, total_layers: job.layerCount, remain_time: Math.round(job.timeLeftS / 60), filename: `/useremain/app/gk/gcodes/${job.name}` } } : {}),
     }
@@ -75,12 +78,16 @@ export async function startAnycubic(m: MockMachine, log: string[]) {
           const pub = parsePublish(p)
           if (pub.id !== undefined) sock.write(puback(pub.id))
           const msg = JSON.parse(pub.payload.toString('utf8')) as { type: string; action: string; data: unknown }
-          if (!pub.topic.startsWith(`${PREFIX}/web/printer/${MOCK_ANYCUBIC_MODEL}/${deviceId}/`)) continue
+          const web = pub.topic.startsWith(`${PREFIX}/web/printer/${MOCK_ANYCUBIC_MODEL}/${deviceId}/`)
+          const slicer = pub.topic.startsWith(`${PREFIX}/slicer/printer/${MOCK_ANYCUBIC_MODEL}/${deviceId}/`)
+          if (!web && !slicer) continue
           try {
             if (msg.type === 'info' && msg.action === 'query') sock.write(report('info', infoData()))
             else if (msg.type === 'multiColorBox' && msg.action === 'getInfo') sock.write(report('multiColorBox', ace()))
             else if (msg.type === 'print') {
-              if (msg.action === 'pause') m.pause()
+              // A start is taken from the slicer sender only (kobra-connect).
+              if (msg.action === 'start' && slicer) m.start(String((msg.data as { filename?: string }).filename))
+              else if (msg.action === 'pause') m.pause()
               else if (msg.action === 'resume') m.resume()
               else if (msg.action === 'stop') m.cancel()
               log.push(`anycubic print ${msg.action}`)
@@ -99,8 +106,18 @@ export async function startAnycubic(m: MockMachine, log: string[]) {
   await new Promise<void>((r) => mqtt.listen(0, '127.0.0.1', r))
   const mqttPort = (mqtt.address() as AddressInfo).port
 
-  let httpPort = 0
-  const handler: Handler = (req) => {
+  const handler: Handler = async (req) => {
+    if (req.path === '/gcode_upload' && req.method === 'POST') {
+      if (req.query.get('s') !== uploadToken) return { status: 403 }
+      const form = await req.form()
+      const file = form.get('gcode')
+      const name = form.get('filename')
+      if (!(file instanceof File) || typeof name !== 'string') return { status: 400 }
+      const data = new Uint8Array(await file.arrayBuffer())
+      if (Number(req.headers['x-file-length']) !== data.byteLength) return { status: 400 }
+      m.upload(name, data)
+      return { json: { code: 200 } }
+    }
     if (req.path === '/info' && req.method === 'GET') {
       if (extra.cloud) return { json: { ctrlType: 'cloud', modelId: MOCK_ANYCUBIC_MODEL, modelName: 'Anycubic Kobra 3', cn: 'MOCKCN0001' } }
       return { json: { ctrlType: 'lan', token, ctrlInfoUrl: `http://127.0.0.1:${httpPort}/ctrl`, modelId: MOCK_ANYCUBIC_MODEL, modelName: 'Anycubic Kobra 3', cn: 'MOCKCN0001', deviceType: 'fdm', usn: 'uuid:fdm:AA-BB-CC-DD-EE-FF' } }

@@ -1434,6 +1434,8 @@
     "capabilities": [
       "status",
       "events",
+      "upload",
+      "start",
       "pause",
       "resume",
       "cancel",
@@ -1454,6 +1456,53 @@
           },
           "required": [
             "printerId"
+          ]
+        }
+      },
+      {
+        "name": "anycubic.queue",
+        "description": "Upload a sliced file to the printer without starting it.",
+        "permission": "queue",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "printerId": {
+              "type": "string",
+              "description": "Printer id, such as bay-1"
+            },
+            "file": {
+              "type": "string",
+              "description": "Project file id"
+            }
+          },
+          "required": [
+            "printerId",
+            "file"
+          ]
+        }
+      },
+      {
+        "name": "anycubic.start",
+        "description": "Start an uploaded file. Heats the printer.",
+        "permission": "start",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "printerId": {
+              "type": "string",
+              "description": "Printer id, such as bay-1"
+            },
+            "path": {
+              "type": "string"
+            },
+            "plate": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          "required": [
+            "printerId",
+            "path"
           ]
         }
       },
