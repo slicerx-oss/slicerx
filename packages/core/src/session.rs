@@ -8194,7 +8194,7 @@ fn plan_tools(
     let layers_of = |lo: f64, hi: f64| -> Option<(usize, usize)> {
         let a = plan.first_at_or_above(lo);
         let b = plan.first_at_or_above(hi);
-        (b > a).then_some((a, b - 1))
+        (b > a).then(|| (a, b - 1))
     };
     for p in parts {
         let (lo, hi) = p
