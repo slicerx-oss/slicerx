@@ -20,7 +20,7 @@ import { VendorMark } from '../../lib/vendor-mark'
 import { printPlateLabel } from '../../lib/use-printer'
 import { lastStillOf, rememberStill } from '../../camera/use-camera'
 import { CameraIdle, FirstLookCover, useFirstLook } from '../../camera/idle'
-import { OfflineIdle } from './offline'
+import { CodeNeeded, OfflineIdle } from './offline'
 import { openSetup, useTabLabel } from '../../first-run/look'
 import { gauges, printingSlot, slotName } from './hud'
 import { bayGroups, progressOf, statusLine, timeLeftText, wallCounts, wallKind, wallOrder, wallPill, type WallCount } from './wall'
@@ -202,6 +202,7 @@ function TileCamera({ r, now }: { r: FleetRow; now: number }) {
   }, [on, r.id, printers])
   // the first connect shows the ravens for one clash; a tile that opens on a remembered still does not
   const look = useFirstLook(Boolean(url), r.id, on && !lastStillOf(r.id))
+  if (!exportOnly && st.state === 'offline' && st.needsCode && st.codeRef) return <CodeNeeded codeRef={st.codeRef} name={r.name} />
   if (!exportOnly && st.state === 'offline') return <OfflineIdle printerId={r.id} now={now} />
   if (url)
     return (
