@@ -11,7 +11,7 @@ import { z } from 'zod'
 import type { SettingValue } from '@slicerx/contracts'
 import { hashParams, PERMISSION_LABELS } from '@slicerx/contracts'
 import type { PilotTool } from '@slicerx/pilot'
-import { ORCA_COMMIT } from '@slicerx/settings'
+import { gcodeLabel, ORCA_COMMIT, printerForProfile } from '@slicerx/settings'
 import type { DataStore, KnowledgeKind } from './data'
 import { isGcodeKey, resolveSliceConfig, SHIPPED_GCODE_SOURCES, type ExtraLayers, type SlotLayer } from './config'
 import { gcode3mf, PLATE_THUMBNAILS } from './gcode3mf'
@@ -51,15 +51,15 @@ function ok(data: object, text?: string): CallToolResult {
 }
 
 /** A refused call: `Error: <code>: <message>` as text, and `{ error: { code, message } }` for clients that read structured content. */
-export function fail(message: string, code: ErrorCode = 'invalid_input'): CallToolResult {
-  return { isError: true, content: [{ type: 'text', text: `Error: ${code}: ${message}` }], structuredContent: { error: { code, message } } }
+export function fail(message: string, code: ErrorCode = 'invalid_input', details?: Record<string, unknown>): CallToolResult {
+  return { isError: true, content: [{ type: 'text', text: `Error: ${code}: ${message}` }], structuredContent: { error: { code, message, ...(details ? { details } : {}) } } }
 }
 
 async function guard(fn: () => Promise<CallToolResult> | CallToolResult): Promise<CallToolResult> {
   try {
     return await fn()
   } catch (e) {
-    if (e instanceof ToolInputError) return fail(e.message, e.code)
+    if (e instanceof ToolInputError) return fail(e.message, e.code, e.details)
     const code = typeof e === 'object' && e !== null && 'code' in e ? `${String((e as { code: unknown }).code)}: ` : ''
     return fail(`${code}${e instanceof Error ? e.message : String(e)}`, 'internal_error')
   }
@@ -79,6 +79,12 @@ const sliceInput = {
     .boolean()
     .default(false)
     .describe("Start from the 3MF or .sx3mf project's own print settings (as saved by Bambu Studio, OrcaSlicer or SlicerX), then apply profiles, profile_files and overrides on top"),
+  project_gcode: z
+    .enum(['review', 'profile'])
+    .default('review')
+    .describe(
+      "With project_settings: what to do with the project's printer G-code (start, end, layer change and the rest) when it is not the printer's stock text. review (the default): refuse with error code project_gcode_review and the diff and flagged lines in structuredContent.error.details, for the person to see. profile: slice with the printer profile's G-code instead. Stock text is always used as it is. Only a person can choose a project's own G-code, in SlicerX; no tool call can.",
+    ),
   profiles: z
     .array(z.string())
     .max(8)
@@ -126,6 +132,8 @@ const summaryShape = {
   gcode_3mf_path: z.string().optional(),
   preview_path: z.string().optional(),
   applied: z.array(z.string()),
+  /** How the project's own printer G-code was used (project_settings). */
+  project_gcode: z.array(z.object({ key: z.string(), slot: z.number().optional(), use: z.enum(['project', 'profile']), message: z.string() })).optional(),
   warnings: z.array(z.string()),
   note: z.string().optional(),
 }
@@ -166,7 +174,7 @@ export function createSlicerxServer(ctx: ServerContext, opts: SlicerxServerOptio
   const { store, profiles } = ctx
 
   type SlotArg = { slot: number; profile?: string | undefined; file?: string | undefined; color?: string | undefined }
-  type SliceArgs = { model: string; plate?: number | undefined; project_settings: boolean; profiles: string[]; profile_files: string[]; filaments?: SlotArg[] | undefined; overrides?: Record<string, unknown> | undefined; output?: 'gcode' | 'gcode.3mf'; preview?: boolean }
+  type SliceArgs = { model: string; plate?: number | undefined; project_settings: boolean; project_gcode: 'review' | 'profile'; profiles: string[]; profile_files: string[]; filaments?: SlotArg[] | undefined; overrides?: Record<string, unknown> | undefined; output?: 'gcode' | 'gcode.3mf'; preview?: boolean }
 
   /** The filament of each slot entry, as a layer for resolveSliceConfig. Profiles must be prepared first. */
   const slotLayers = async (slots: SlotArg[]): Promise<SlotLayer[]> => {
@@ -214,13 +222,18 @@ export function createSlicerxServer(ctx: ServerContext, opts: SlicerxServerOptio
       }
       // Bambu Studio and Orca keep a print sequence per plate, over the project's.
       const seq = (read.summary.plates.find((p) => p.index === args.plate) ?? read.summary.plates[0])?.print_sequence
-      if (args.project_settings) project = { name: basename(modelPath), config: { ...read.config, ...(seq ? { print_sequence: seq } : {}) } }
+      const printer = read.summary.presets.printer ? printerForProfile(read.summary.presets.printer)?.printerId : undefined
+      if (args.project_settings) project = { name: basename(modelPath), config: { ...read.config, ...(seq ? { print_sequence: seq } : {}) }, model: printer, gcode: args.project_gcode }
     }
     await progress(0.1, 'Resolving settings')
     await profiles.prepare([...args.profiles, ...(args.filaments ?? []).flatMap((s) => (s.profile ? [s.profile] : []))])
     const presets = args.profile_files.length ? await readPresetFiles(ctx.policy, args.profile_files) : undefined
     const slots = args.filaments?.length ? await slotLayers(args.filaments) : undefined
-    const { config, explicit, applied, trustedGcode } = resolveSliceConfig(store, profiles, args.profiles, args.overrides, { project, presets, slots })
+    const { config, explicit, applied, trustedGcode, gcodeKept, gcodeReplaced } = resolveSliceConfig(store, profiles, args.profiles, args.overrides, { project, presets, slots })
+    const projectGcode = [
+      ...gcodeKept.map((k) => ({ key: k.key, ...(k.slot !== undefined ? { slot: k.slot } : {}), use: 'project' as const, message: `The project's ${k.label} ${k.message}.` })),
+      ...gcodeReplaced.map((k) => ({ key: k, use: 'profile' as const, message: `Used the printer profile's ${gcodeLabel(k)} instead of the project's.` })),
+    ]
     // A .gcode.3mf carries the plate picture: ask the engine to draw one when the settings name no thumbnail sizes.
     if (asked3mf && explicit['thumbnails'] === undefined) explicit['thumbnails'] = config['thumbnails'] = PLATE_THUMBNAILS
     await progress(0.2, 'Slicing')
@@ -254,7 +267,7 @@ export function createSlicerxServer(ctx: ServerContext, opts: SlicerxServerOptio
       ...result.warnings.map((w) => `Warning: ${w}`),
       ...(result.note ? [result.note] : []),
     ]
-    return ok({ ...result, applied }, lines.join('\n'))
+    return ok({ ...result, applied, ...(projectGcode.length ? { project_gcode: projectGcode } : {}) }, [...lines, ...projectGcode.map((g) => g.message)].join('\n'))
   }
 
   server.registerTool(

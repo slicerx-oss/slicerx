@@ -496,6 +496,7 @@ A refused tool call has `isError: true` and `structuredContent.error` with a sta
 | `unknown_profile` | Re-list profiles; the id changed or was mistyped. |
 | `engine_unavailable` | `sx` is missing or the stub engine was asked for G-code. |
 | `slice_failed`, `preflight_blocked` | Show the message. `preflight_blocked` means the engine's safety checks refused a setting or custom G-code. |
+| `project_gcode_review` | The project's printer G-code is not the printer's stock text. Show `details.changes` (the diff and each flagged line with its reason) to the person. If they want the printer profile's G-code, call again with `project_gcode: "profile"`. Never choose the project's G-code for them: no tool can, and the person does it in SlicerX. |
 | `sequence_clearance` | The plate prints by object and the toolhead or gantry would hit a finished object. Show the message (it names the objects); move them apart, print the tall one last, or print by layer. |
 | `not_configured`, `auth_failed`, `not_invited`, `quota_exceeded`, `rate_limited`, `service_error` | Optional account and cloud features only. A local slice never returns them. |
 | `sxlock_<reason>` | Optional locked projects; `@slicerx/embed/sxlock` throws `SxlockError` with the same reason as `code`. |

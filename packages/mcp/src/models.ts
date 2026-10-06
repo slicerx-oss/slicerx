@@ -38,6 +38,7 @@ export const ERROR_CODES = [
   'engine_unavailable',
   'slice_failed',
   'preflight_blocked',
+  'project_gcode_review',
   'sequence_clearance',
   'not_configured',
   'auth_failed',
@@ -53,9 +54,12 @@ export type ErrorCode = (typeof ERROR_CODES)[number] | `sxlock_${string}`
 export class ToolInputError extends Error {
   override readonly name = 'ToolInputError'
   readonly code: ErrorCode
-  constructor(message: string, code: ErrorCode = 'invalid_input') {
+  /** Structured facts for the integrating app, sent as `structuredContent.error.details`. */
+  readonly details: Record<string, unknown> | undefined
+  constructor(message: string, code: ErrorCode = 'invalid_input', details?: Record<string, unknown>) {
     super(message)
     this.code = code
+    this.details = details
   }
 }
 
