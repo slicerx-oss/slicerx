@@ -995,12 +995,13 @@ impl PrinterSession for MoonrakerSession {
         let info = i.call_json(|i| i.get("/printer/info")).await.ok();
         let server = i.call_json(|i| i.get("/server/info")).await.ok();
         let qidi = i.qidi.lock().unwrap_or_else(PoisonError::into_inner).clone();
-        Ok(Some(moonraker_hardware_with(
-            q.as_ref(),
-            info.as_ref(),
-            server.as_ref(),
-            &qidi,
-        )))
+        let mut hw = moonraker_hardware_with(q.as_ref(), info.as_ref(), server.as_ref(), &qidi);
+        // A Creality K2 reports its CFS on its own WebSocket, not through Moonraker.
+        if i.plugin == "creality" {
+            hw.filament_units
+                .extend(crate::drivers::creality::query_boxes(&i.cfg).await);
+        }
+        Ok(Some(hw))
     }
 
     fn reported_model(&self) -> Option<String> {
@@ -1137,11 +1138,25 @@ impl PrinterSession for MoonrakerSession {
         )))
     }
 
+    /// The file's metadata, or its entry in the file list where the metadata answers 404 (QIDI's
+    /// Moonraker on the Q2 and X-Max 4 does for every file).
     async fn file_info(&self, path: &str) -> Result<Option<FileInfo>> {
-        let v = self
+        let meta = self
             .inner
             .call_json(|i| i.get("/server/files/metadata").query(&[("filename", path)]))
-            .await?;
+            .await;
+        let v = match meta {
+            Err(Error::NotFound { .. }) => {
+                let list = self.list_files().await?;
+                return Ok(list.into_iter().find(|f| f.path == path).and_then(|f| {
+                    Some(FileInfo {
+                        size: f.size?,
+                        modified: f.modified,
+                    })
+                }));
+            }
+            r => r?,
+        };
         let r = v.get("result");
         let field = |k: &str| r.and_then(|r| r.get(k));
         Ok(field("size")

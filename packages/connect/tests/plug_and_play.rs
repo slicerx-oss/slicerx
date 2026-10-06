@@ -140,7 +140,16 @@ async fn moonraker_reports_the_bed_and_kinematics() {
 // dictionary; the model is the `machine_name` QIDI's Moonraker reports.
 #[tokio::test]
 async fn a_qidi_box_reads_as_slots() {
-    let (_mocks, s) = moonraker(&[], serde_json::json!({ "variant": "qidi" })).await;
+    let gate = Arc::new(MemoryGate::new());
+    let mocks = Mocks::start("moonraker", &[]).await;
+    mocks
+        .control("/moonraker", serde_json::json!({ "variant": "qidi" }))
+        .await;
+    let cfg = config("bay-4", "moonraker", mocks.port("moonraker"));
+    let s = MoonrakerConnector::new(gate.clone())
+        .connect(&cfg, &secrets(&[]))
+        .await
+        .unwrap();
     let st = s.status().await.unwrap();
     let slots: Vec<(&str, Option<&str>, Option<&str>)> = st
         .slots
@@ -159,6 +168,16 @@ async fn a_qidi_box_reads_as_slots() {
     let hw = s.hardware().await.unwrap().unwrap();
     assert_eq!(hw.model.as_deref(), Some("X-Max 4"));
     assert_eq!(hw.filament_units[0].kind, "qidi-box");
+    // The metadata answers 404 there; the file list still gives the size.
+    assert!(s.file_info("missing.gcode").await.unwrap().is_none());
+    let file = job_file("cube.gcode", JobKind::Gcode);
+    let t = gate.mint(
+        Action::Upload,
+        "bay-4",
+        &params::upload("bay-4", &file.name, &file.sha256),
+    );
+    let rf = s.upload(file, &t).await.unwrap();
+    assert_eq!(s.file_info(&rf.path).await.unwrap().map(|f| f.size), Some(4096));
 }
 
 // A Snapmaker U1 names itself through `print_task_config`, and each toolhead's spool is a slot.
@@ -438,4 +457,27 @@ async fn creality_probe_reads_info() {
         .await
         .unwrap();
     assert_eq!(p.model, None);
+}
+
+// A K2 on stock firmware is reached through Moonraker, and its CFS spools still come from its own
+// WebSocket, as OrcaSlicer's CrealityPrintAgent reads them.
+#[tokio::test]
+async fn a_creality_over_moonraker_still_reports_its_cfs() {
+    let mocks = Mocks::start("moonraker,creality", &[]).await;
+    mocks
+        .control("/creality", serde_json::json!({ "model": "F008", "cfs": true }))
+        .await;
+    let mut cfg = config("bay-5", "creality", mocks.port("moonraker"));
+    cfg.ws_port = Some(mocks.port("creality"));
+    let s = CrealityConnector::new(Arc::new(MemoryGate::new()))
+        .connect(&cfg, &secrets(&[]))
+        .await
+        .unwrap();
+    let hw = s.hardware().await.unwrap().unwrap();
+    let cfs = hw
+        .filament_units
+        .iter()
+        .find(|u| u.kind == "cfs")
+        .expect("the CFS");
+    assert_eq!(cfs.slots[0].material.as_deref(), Some("PLA"));
 }

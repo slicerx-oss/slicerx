@@ -337,6 +337,37 @@ pub(crate) fn cfs_units(boxes: Option<&Value>) -> Vec<FilamentUnit> {
         .collect()
 }
 
+/// The CFS boxes asked for once over a short WebSocket on 9999, for a printer reached through
+/// Moonraker (a K2 on stock firmware), as OrcaSlicer's CrealityPrintAgent reads them beside Moonraker.
+/// Empty when the printer does not answer within three seconds.
+pub(crate) async fn query_boxes(cfg: &PrinterConfig) -> Vec<FilamentUnit> {
+    use futures::{SinkExt, StreamExt};
+    use tokio_tungstenite::tungstenite::Message;
+    let url = format!("ws://{}:{}/", cfg.host, cfg.ws_port.unwrap_or(9999));
+    let ask = async {
+        let (mut ws, _) = tokio_tungstenite::connect_async(url).await.ok()?;
+        ws.send(Message::text(REQUEST_BOXES)).await.ok()?;
+        while let Some(Ok(msg)) = ws.next().await {
+            let Message::Text(t) = msg else { continue };
+            let Ok(v) = serde_json::from_str::<Value>(t.as_str()) else {
+                continue;
+            };
+            if v.get("ModeCode").and_then(Value::as_str) == Some("heart_beat") {
+                let _ = ws.send(Message::text("ok")).await;
+            } else if let Some(b) = v.get("boxsInfo") {
+                let _ = ws.close(None).await;
+                return Some(cfs_units(Some(b)));
+            }
+        }
+        None
+    };
+    tokio::time::timeout(Duration::from_secs(3), ask)
+        .await
+        .ok()
+        .flatten()
+        .unwrap_or_default()
+}
+
 /// `curPosition`, `X:10.00 Y:20.00 Z:3.40`.
 pub(crate) fn position(text: &str) -> Option<[f64; 3]> {
     let axis = |a: &str| {

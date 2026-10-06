@@ -8,6 +8,8 @@
 //!   K1C, K2 Plus, Ender-3 V3 and Hi.
 mod native;
 
+pub(crate) use native::query_boxes;
+
 use std::sync::Arc;
 use std::time::Duration;
 

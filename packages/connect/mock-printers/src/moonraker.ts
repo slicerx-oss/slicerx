@@ -155,6 +155,8 @@ export async function startMoonraker(m: MockMachine, opts: { apiKey?: string; fo
     if (p === '/server/files/list') return { json: { result: [...m.files.values()].map((f) => ({ path: f.name, modified: f.modified, size: f.size, permissions: 'rw' })) } }
     if (p === '/server/history/list') return { json: { result: { count: m.history.length, jobs: m.history } } }
     if (p === '/server/files/metadata') {
+      // QIDI's Moonraker on the Q2 and X-Max 4 answers 404 for every file.
+      if (control.variant === 'qidi') throw new MockError(404, 'not in the metadata whitelist')
       const f = m.files.get(req.query.get('filename') ?? '')
       if (!f) throw new MockError(404, 'no such file')
       return { json: { result: { filename: f.name, size: f.size, modified: f.modified } } }
