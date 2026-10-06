@@ -11,7 +11,8 @@ name: desktop-release
 #   macOS:   APPLE_CERTIFICATE (base64 .p12), APPLE_CERTIFICATE_PASSWORD,
 #            APPLE_SIGNING_IDENTITY, APPLE_ID, APPLE_PASSWORD (app-specific), APPLE_TEAM_ID
 #   Windows: WINDOWS_CERTIFICATE (base64 .pfx), WINDOWS_CERTIFICATE_PASSWORD
-# The updater is off: no TAURI_SIGNING_PRIVATE_KEY, no updater artifacts.
+# No updater artifacts or TAURI_SIGNING_PRIVATE_KEY here: update bundles are signed on the release Mac
+# (apps/desktop/release/updates.md).
 
 on:
   push:

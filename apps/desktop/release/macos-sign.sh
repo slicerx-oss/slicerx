@@ -2,7 +2,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright (C) 2026 The SlicerX contributors
 # Builds the universal macOS app, then hands it and the disk image to scripts/sign-mac, which signs inside-out with the
-# hardened runtime, notarizes, staples and checks the result the way Gatekeeper does.
+# hardened runtime, notarizes, staples and checks the result the way Gatekeeper does. The stapled app also goes into
+# the update bundle (.app.tar.gz) for in-app updates.
 #
 # Run it from a Terminal window in the Mac's own desktop session (not over ssh): the signing key and the notary
 # credentials sit in the login keychain, which only that session can unlock. No secret passes through this script.
@@ -66,6 +67,11 @@ ln -s /Applications "$stage/Applications"
 rm -f "$dmg"
 hdiutil create -volname "$name" -srcfolder "$stage" -fs HFS+ -format UDZO -ov "$dmg"
 "${signer[@]}" "$dmg"
+
+say "update bundle"
+# the stapled app as the in-app updater installs it: a tar.gz with the .app at its root. sign-updates.sh signs it.
+upd=$out/${name}_${version}_universal.app.tar.gz
+COPYFILE_DISABLE=1 tar -C "${app:h}" -czf "$upd" "${app:t}"
 
 cp -R "$app" "$out/"
 (cd "$out" && shasum -a 256 "${dmg:t}" > "${dmg:t}.sha256")
