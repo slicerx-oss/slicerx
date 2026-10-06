@@ -3408,6 +3408,36 @@ fn spiral_radius(rc: &PrintConfig, hop_mm: f64) -> f64 {
     hop_mm / (std::f64::consts::TAU * slope.m_atan())
 }
 
+/// Whether the turn of a spiral lift from `from` around the point `ij` (mm) away stays on the printable area.
+/// Orca leaves this check as a to-do (`GCodeWriter::travel_to_xyz`), so a part near the edge sends the nozzle
+/// past it, which Klipper refuses as a move out of range. The center must be on the bed and the circle clear
+/// of every edge; an unknown bed always fits.
+fn spiral_fits(rc: &PrintConfig, from: Point, ij: [f64; 2]) -> bool {
+    let bed = &rc.printable_area;
+    if bed.len() < 3 {
+        return true;
+    }
+    let (cx, cy) = (from.x_mm() + ij[0], from.y_mm() + ij[1]);
+    let r = ij[0].m_hypot(ij[1]);
+    let mut inside = false;
+    for (a, b) in bed.iter().zip(bed.iter().cycle().skip(1)) {
+        let (dx, dy) = (b[0] - a[0], b[1] - a[1]);
+        let l2 = dx * dx + dy * dy;
+        let t = if l2 > 0.0 {
+            (((cx - a[0]) * dx + (cy - a[1]) * dy) / l2).clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        if (a[0] + dx * t - cx).m_hypot(a[1] + dy * t - cy) < r {
+            return false;
+        }
+        if (a[1] > cy) != (b[1] > cy) && cx < dx * (cy - a[1]) / dy + a[0] {
+            inside = !inside;
+        }
+    }
+    inside
+}
+
 /// Orca's spiral lift (`GCodeWriter::_spiral_travel_to_z`): one counterclockwise turn from `from` around the
 /// point `ij` (mm) away, climbing from `z_from` to `z_to` (thousandths) at the Z feed rate. With arc fitting on
 /// it is one `G3 ... P1` arc; otherwise short moves round the circle, their count set by the profile's
@@ -3506,7 +3536,12 @@ fn write_lift(
         Lift::Spiral if len > 0.0 => {
             #[allow(clippy::cast_precision_loss, reason = "z in thousandths")]
             let r = spiral_radius(rc, hop as f64 / 1000.0);
-            write_spiral_lift(b, rc, from, [-dy / len * r, dx / len * r], [z, z + hop], z_feed);
+            let ij = [-dy / len * r, dx / len * r];
+            if spiral_fits(rc, from, ij) {
+                write_spiral_lift(b, rc, from, ij, [z, z + hop], z_feed);
+            } else {
+                write_normal_lift(b, z + hop, z_feed);
+            }
             None
         }
         Lift::Slope if len > 0.0 => match slope_point(rc, from, to) {
@@ -3541,12 +3576,10 @@ fn write_eager_lift(
     hop: i64,
     z_feed: i64,
 ) {
-    match at.filter(|_| kind == Lift::Spiral) {
-        Some(from) => {
-            #[allow(clippy::cast_precision_loss, reason = "z in thousandths")]
-            let r = spiral_radius(rc, hop as f64 / 1000.0);
-            write_spiral_lift(b, rc, from, [r, 0.0], [z, z + hop], z_feed);
-        }
+    #[allow(clippy::cast_precision_loss, reason = "z in thousandths")]
+    let r = spiral_radius(rc, hop as f64 / 1000.0);
+    match at.filter(|&from| kind == Lift::Spiral && spiral_fits(rc, from, [r, 0.0])) {
+        Some(from) => write_spiral_lift(b, rc, from, [r, 0.0], [z, z + hop], z_feed),
         None => write_normal_lift(b, z + hop, z_feed),
     }
 }
@@ -4082,6 +4115,51 @@ mod tests {
 
     fn near(a: f64, b: f64) -> bool {
         (a - b).abs() < 1e-9
+    }
+
+    #[test]
+    fn a_spiral_lift_that_would_leave_the_bed_lifts_straight_up() {
+        // A part 4 mm from the front edge: the turn of a 2 mm spiral lift (about 6 mm across its radius) reached
+        // Y -5, which Klipper refuses as a move out of range. Orca leaves this as a to-do in GCodeWriter.
+        let rc = PrintConfig {
+            printable_area: vec![[0.0, 0.0], [250.0, 0.0], [250.0, 210.0], [0.0, 210.0]],
+            ..PrintConfig::default()
+        };
+        let lowest_y = |g: &str| {
+            g.split_whitespace()
+                .filter_map(|w| w.strip_prefix('Y'))
+                .filter_map(|v| v.parse::<f64>().ok())
+                .fold(f64::MAX, f64::min)
+        };
+        let lift = |from: Point, to: Point, kind: Lift| {
+            let mut b = Vec::new();
+            write_lift(&mut b, &rc, kind, from, to, 200, 2000, 18_000, 600);
+            String::from_utf8(b).unwrap()
+        };
+        let edge = lift(Point::from_mm(80.6, 4.2), Point::from_mm(30.0, 4.2), Lift::Spiral);
+        assert!(lowest_y(&edge) >= 0.0, "{edge}");
+        assert!(edge.contains("Z2.2"), "{edge}");
+        let middle = lift(
+            Point::from_mm(125.0, 105.0),
+            Point::from_mm(175.0, 105.0),
+            Lift::Spiral,
+        );
+        assert!(
+            middle.lines().count() > 3,
+            "the turn stays where it fits: {middle}"
+        );
+        let mut b = Vec::new();
+        write_eager_lift(
+            &mut b,
+            &rc,
+            Lift::Spiral,
+            Some(Point::from_mm(248.0, 105.0)),
+            200,
+            2000,
+            600,
+        );
+        let eager = String::from_utf8(b).unwrap();
+        assert_eq!(eager, "G1 Z2.2 F600\n");
     }
 
     #[test]
