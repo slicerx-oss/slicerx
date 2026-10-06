@@ -91,6 +91,30 @@ pub(crate) fn check(out: &SliceOutput, zones: &[(u8, Vec<[f64; 2]>)], crossings:
             })
         })
         .collect();
+    // Objects whose footprints, with room for a brim and support around them, stand apart cannot cross; only a prime
+    // tower near one can.
+    let room = 10.0;
+    let feet: Vec<[f64; 4]> = out
+        .objects
+        .iter()
+        .map(|o| {
+            o.hull
+                .iter()
+                .fold([f64::MAX, f64::MAX, f64::MIN, f64::MIN], |b, p| {
+                    [
+                        b[0].min(p[0] - room),
+                        b[1].min(p[1] - room),
+                        b[2].max(p[0] + room),
+                        b[3].max(p[1] + room),
+                    ]
+                })
+        })
+        .collect();
+    let meets = |a: &[f64; 4], b: &[f64; 4]| a[0] <= b[2] && b[0] <= a[2] && a[1] <= b[3] && b[1] <= a[3];
+    let objects_meet = feet
+        .iter()
+        .enumerate()
+        .any(|(i, a)| feet.iter().skip(i + 1).any(|b| meets(a, b)));
     for l in &out.layers {
         // Most layers meet no zone and have one owner: a box test and a feature scan decide that before any segment.
         let lb = l
@@ -103,7 +127,18 @@ pub(crate) fn check(out: &SliceOutput, zones: &[(u8, Vec<[f64; 2]>)], crossings:
         let near_zone = boxes
             .iter()
             .any(|b| b[0] <= lb[2] && lb[0] <= b[2] && b[1] <= lb[3] && lb[1] <= b[3]);
-        let owners = n > 1 || l.paths.iter().any(|p| p.feature == Feature::PrimeTower);
+        let tower = l
+            .paths
+            .iter()
+            .filter(|p| p.feature == Feature::PrimeTower)
+            .flat_map(|p| l.path_points(p))
+            .fold(None::<[f64; 4]>, |b, p| {
+                let q = mm(*p);
+                Some(b.map_or([q[0], q[1], q[0], q[1]], |b| {
+                    [b[0].min(q[0]), b[1].min(q[1]), b[2].max(q[0]), b[3].max(q[1])]
+                }))
+            });
+        let owners = objects_meet || tower.is_some_and(|t| feet.iter().any(|f| meets(&t, f)));
         if !(near_zone || (crossings && owners)) {
             continue;
         }
@@ -174,7 +209,6 @@ pub(crate) fn check(out: &SliceOutput, zones: &[(u8, Vec<[f64; 2]>)], crossings:
                 None => owners.push((s.owner, b)),
             }
         }
-        let meets = |a: &[f64; 4], b: &[f64; 4]| a[0] <= b[2] && b[0] <= a[2] && a[1] <= b[3] && b[1] <= a[3];
         let close: Vec<u32> = owners
             .iter()
             .filter(|(o, b)| owners.iter().any(|(p, c)| p != o && meets(b, c)))
