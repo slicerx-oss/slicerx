@@ -8,6 +8,10 @@
 # {{version}} and {{commit}} filled in (release/notes.md is the standard text). A changed.md in the folder replaces
 # the generated list when a release has many small lines.
 # The release bot reads whats-changed.json for the fixed-in replies.
+# In-app updates: when the folder holds update bundles with their .sig files (sign-updates.sh, on the release Mac), it
+# also writes latest.json, attaches it, then replaces latest.json on the fixed desktop-updates release, which is the
+# feed the app reads (editions/slicerx/edition.config.ts). That release is never the latest one, so engine and model
+# releases cannot take the feed over.
 set -eu
 [ $# -eq 4 ] || { echo "usage: publish.sh <version> <installers dir> <notes.md> <commit>" >&2; exit 2; }
 version=$1 dir=$2 notes=$3
@@ -25,6 +29,17 @@ node "$here/make-manifest.mjs" "$dir" --version "$version" \
   --base-url "https://github.com/$slug/releases/download/$tag" --out "$dir/downloads.json"
 (cd "$dir" && $sum SlicerX_* > SHA256SUMS.txt)
 (cd "$repo" && node "$here/whats-changed.mjs" --since "$since" --to "$commit" --json) > "$dir/whats-changed.json"
+updates=
+if ls "$dir"/SlicerX_"$version"_*.sig >/dev/null 2>&1; then
+  pubkey=$(node "$repo/packages/edition-config/src/cli.ts" resolve "$repo/editions/slicerx/edition.config.ts" |
+    node -e 'let s = ""; process.stdin.on("data", (d) => (s += d)).on("end", () => process.stdout.write(JSON.parse(s).release.updates?.pubkey ?? ""))')
+  [ -n "$pubkey" ] || { echo "update bundles are signed, but the edition config has no release.updates.pubkey" >&2; exit 1; }
+  changes=$dir/whats-changed.json
+  [ -f "$dir/changed.md" ] && changes=$dir/changed.md
+  node "$here/latest-json.mjs" "$dir" --version "$version" --base-url "https://github.com/$slug/releases/download/$tag" \
+    --release-url "https://github.com/$slug/releases/tag/$tag" --pubkey "$pubkey" --notes "$changes" --out "$dir/latest.json"
+  updates=$dir/latest.json
+fi
 body=$(mktemp)
 # a hand-written changed.md in the folder replaces the generated list when a release has many small lines
 if [ -f "$dir/changed.md" ]; then cat "$dir/changed.md"; else (cd "$repo" && node "$here/whats-changed.mjs" --since "$since" --to "$commit" 2>/dev/null || true); fi |
@@ -39,5 +54,12 @@ if [ -f "$dir/changed.md" ]; then cat "$dir/changed.md"; else (cd "$repo" && nod
     process.stdout.write(out + "\n")' "$notes" "$version" "$commit" > "$body"
 
 gh release create "$tag" --target "$commit" --title "SlicerX $version (pre-alpha)" --notes-file "$body" --latest \
-  "$dir"/SlicerX_* "$dir/SHA256SUMS.txt" "$dir/downloads.json" "$dir/whats-changed.json"
+  "$dir"/SlicerX_* "$dir/SHA256SUMS.txt" "$dir/downloads.json" "$dir/whats-changed.json" ${updates:+"$updates"}
 rm -f "$body"
+# the feed moves only once the release it points at is up
+if [ -n "$updates" ]; then
+  gh release view desktop-updates >/dev/null 2>&1 ||
+    gh release create desktop-updates --title "Desktop updates" --prerelease --latest=false \
+      --notes "The update feed the SlicerX desktop app reads. Each desktop release replaces latest.json here; the downloads are on the desktop-v releases."
+  gh release upload desktop-updates "$updates" --clobber
+fi
