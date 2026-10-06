@@ -1200,6 +1200,8 @@ impl PrintConfig {
             ("top_bottom_infill_wall_overlap", 25.0, -100.0, 100.0),
             // -1 is Orca's automatic width; 100 mm is brim_width's ceiling.
             ("prime_tower_brim_width", 3.0, -1.0, 100.0),
+            // Degrees; Orca sets no limit and angles past a turn wrap around.
+            ("wipe_tower_rotation_angle", 0.0, -3600.0, 3600.0),
         ] {
             range(key, self.raw_number(key, default), lo, hi)?;
         }
@@ -2148,6 +2150,26 @@ mod tests {
         assert!((pct.line_width - 0.44).abs() < 1e-9);
         let mm = PrintConfig::from_json(br#"{"line_width":"0.45"}"#).unwrap();
         assert!((mm.line_width - 0.45).abs() < 1e-9);
+    }
+
+    #[test]
+    fn the_prime_tower_rotation_is_a_number() {
+        use serde_json::json;
+        // An infinite rotation never finished slicing on a two-extruder plate.
+        for v in [json!("inf"), json!("nan"), json!(1e9), json!(-4000)] {
+            let err = PrintConfig::from_value(&json!({ "wipe_tower_rotation_angle": v })).unwrap_err();
+            assert!(
+                err.to_string().contains("wipe_tower_rotation_angle"),
+                "{v}: {err}"
+            );
+        }
+        // Angles past a turn wrap around, as they do in Orca.
+        for v in [json!(0), json!(-90), json!("45"), json!(720)] {
+            assert!(
+                PrintConfig::from_value(&json!({ "wipe_tower_rotation_angle": v })).is_ok(),
+                "{v}"
+            );
+        }
     }
 
     #[test]
