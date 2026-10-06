@@ -724,39 +724,219 @@ fn prepare_outline(
     let step1 = perimeters::offset(outline, -eps_units);
     let step2 = perimeters::offset(&step1, eps_units * 2);
     let step3 = perimeters::offset(&step2, -eps_units);
-    let mut shapes: Vec<Vec<Vec<P>>> = Vec::new();
+    // one list of rings, outer counter-clockwise, holes clockwise, as orca's WallToolPaths::generate works on them
+    let mut rings: Vec<Vec<P>> = Vec::new();
     for shape in &step3 {
-        let mut rings: Vec<Vec<P>> = Vec::new();
         for (k, ring) in shape.iter().enumerate() {
             let mut r = ring_to_nm(ring);
-            // Orientation: outer counter-clockwise, holes clockwise.
-            let ccw = area2(&r) > 0;
-            if ccw != (k == 0) {
+            if (area2(&r) > 0) != (k == 0) {
                 r.reverse();
-            }
-            simplify_ring(&mut r, smallest * smallest, allowed * allowed);
-            remove_degenerate_vertices(&mut r);
-            remove_colinear(&mut r, 0.005);
-            remove_degenerate_vertices(&mut r);
-            #[allow(clippy::cast_precision_loss, reason = "areas in nm squared")]
-            let too_small = (area2(&r).abs() as f64) / 2.0 < small_area_length * small_area_length;
-            if r.len() < 3 || (too_small && k == 0) {
-                if k == 0 {
-                    rings.clear();
-                    break;
-                }
-                continue;
-            }
-            if too_small {
-                continue;
             }
             rings.push(r);
         }
-        if !rings.is_empty() {
-            shapes.push(rings);
+    }
+    clean_rings(rings, epsilon, smallest, allowed, small_area_length)
+}
+
+/// The rings simplified for the voronoi diagram, with no crossings left: simplifying can fold a thin
+/// sliver so that one side crosses the other.
+fn clean_rings(
+    mut rings: Vec<Vec<P>>,
+    epsilon: i64,
+    smallest: i64,
+    allowed: i64,
+    small_area_length: f64,
+) -> Vec<Vec<Vec<P>>> {
+    for r in &mut rings {
+        simplify_ring(r, smallest * smallest, allowed * allowed);
+    }
+    rings.retain(|r| r.len() >= 3);
+    fix_self_intersections(epsilon, &mut rings);
+    for r in &mut rings {
+        remove_degenerate_vertices(r);
+        remove_colinear(r, 0.005);
+    }
+    // removing collinear points can make new crossings
+    fix_self_intersections(epsilon, &mut rings);
+    for r in &mut rings {
+        remove_degenerate_vertices(r);
+    }
+    remove_small_areas(&mut rings, small_area_length * small_area_length);
+    // the steps above can still leave rings that cross each other, which the voronoi builder cannot take
+    union_rings(&rings)
+}
+
+/// Rings smaller than `min_area` (nm squared): outer rings with the holes that start inside them, and
+/// small holes.
+fn remove_small_areas(rings: &mut Vec<Vec<P>>, min_area: f64) {
+    #[allow(clippy::cast_precision_loss, reason = "areas in nm squared")]
+    let small = |r: &[P]| (area2(r).abs() as f64) / 2.0 < min_area;
+    let gone: Vec<Vec<P>> = rings
+        .iter()
+        .filter(|r| r.len() < 3 || (small(r) && area2(r) > 0))
+        .cloned()
+        .collect();
+    rings.retain(|r| r.len() >= 3 && !small(r));
+    if !gone.is_empty() {
+        rings.retain(|r| area2(r) > 0 || !gone.iter().any(|o| contains(o, r[0])));
+    }
+}
+
+/// Even-odd containment of `p` in ring `r`.
+fn contains(r: &[P], p: P) -> bool {
+    let n = r.len();
+    let mut inside = false;
+    for i in 0..n {
+        let (a, b) = (r[i], r[(i + 1) % n]);
+        if (a.y > p.y) != (b.y > p.y) {
+            let lhs = i128::from(p.x - a.x) * i128::from(b.y - a.y);
+            let rhs = i128::from(b.x - a.x) * i128::from(p.y - a.y);
+            if (lhs < rhs) == (b.y > a.y) {
+                inside = !inside;
+            }
         }
     }
-    shapes
+    inside
+}
+
+/// Grid cell size for [`fix_self_intersections`], nm.
+const FIX_CELL: i64 = 2_000_000;
+
+/// Orca's `fixSelfIntersections`: points closer than half of `epsilon` to another segment move a little off
+/// it, then the rings are resolved even-odd.
+fn fix_self_intersections(epsilon: i64, rings: &mut Vec<Vec<P>>) {
+    if epsilon >= 1 {
+        let half = (epsilon + 1) / 2;
+        let move_dist = (half - 2).max(2);
+        let cell = |v: i64| v.div_euclid(FIX_CELL);
+        let mut grid: std::collections::HashMap<(i64, i64), Vec<(usize, usize)>> =
+            std::collections::HashMap::new();
+        for (ri, r) in rings.iter().enumerate() {
+            let n = r.len();
+            for i in 0..n {
+                let (a, b) = (r[i], r[(i + 1) % n]);
+                for cx in cell(a.x.min(b.x))..=cell(a.x.max(b.x)) {
+                    for cy in cell(a.y.min(b.y))..=cell(a.y.max(b.y)) {
+                        grid.entry((cx, cy)).or_default().push((ri, i));
+                    }
+                }
+            }
+        }
+        let mut near: Vec<(usize, usize)> = Vec::new();
+        for ri in 0..rings.len() {
+            let n = rings[ri].len();
+            for i in 0..n {
+                let pt = rings[ri][i];
+                near.clear();
+                for cx in cell(pt.x - epsilon)..=cell(pt.x + epsilon) {
+                    for cy in cell(pt.y - epsilon)..=cell(pt.y + epsilon) {
+                        if let Some(v) = grid.get(&(cx, cy)) {
+                            near.extend_from_slice(v);
+                        }
+                    }
+                }
+                near.sort_unstable();
+                near.dedup();
+                let mut pt = pt;
+                for &(rj, j) in &near {
+                    let m = rings[rj].len();
+                    if ri == rj && (i == j || i == (j + 1) % m) {
+                        continue;
+                    }
+                    let (a, b) = (rings[rj][j], rings[rj][(j + 1) % m]);
+                    let c = closest_on_segment(pt, a, b);
+                    let d = pt.minus(c);
+                    if i128::from(d.x) * i128::from(d.x) + i128::from(d.y) * i128::from(d.y)
+                        > i128::from(half) * i128::from(half)
+                    {
+                        continue;
+                    }
+                    let other = rings[ri][(i + 1) % n];
+                    let ab = b.minus(a);
+                    let left = i128::from(ab.x) * i128::from(other.y - a.y)
+                        - i128::from(ab.y) * i128::from(other.x - a.x)
+                        > 0;
+                    let v = if left { ab } else { a.minus(b) };
+                    let len = v.len();
+                    if len > 0 {
+                        pt.x += -v.y * move_dist / len;
+                        pt.y += v.x * move_dist / len;
+                    }
+                }
+                rings[ri][i] = pt;
+            }
+        }
+    }
+    *rings = overlay_rings(rings, i_overlay::core::fill_rule::FillRule::EvenOdd)
+        .into_iter()
+        .flatten()
+        .collect();
+}
+
+/// The point of segment `ab` nearest `p`.
+fn closest_on_segment(p: P, a: P, b: P) -> P {
+    let ab = b.minus(a);
+    let l2 = i128::from(ab.x) * i128::from(ab.x) + i128::from(ab.y) * i128::from(ab.y);
+    if l2 == 0 {
+        return a;
+    }
+    let t = i128::from(p.x - a.x) * i128::from(ab.x) + i128::from(p.y - a.y) * i128::from(ab.y);
+    if t <= 0 {
+        return a;
+    }
+    if t >= l2 {
+        return b;
+    }
+    #[allow(clippy::cast_possible_truncation, reason = "a point on the segment")]
+    P::new(
+        a.x + (i128::from(ab.x) * t / l2) as i64,
+        a.y + (i128::from(ab.y) * t / l2) as i64,
+    )
+}
+
+/// Orca's final `union_` of the prepared outline (non-zero), as shapes: outer ring counter-clockwise first,
+/// holes clockwise.
+fn union_rings(rings: &[Vec<P>]) -> Vec<Vec<Vec<P>>> {
+    overlay_rings(rings, i_overlay::core::fill_rule::FillRule::NonZero)
+        .into_iter()
+        .map(|shape| {
+            shape
+                .into_iter()
+                .enumerate()
+                .map(|(k, mut r)| {
+                    if (area2(&r) > 0) != (k == 0) {
+                        r.reverse();
+                    }
+                    r
+                })
+                .collect::<Vec<_>>()
+        })
+        .filter(|s: &Vec<Vec<P>>| !s.is_empty())
+        .collect()
+}
+
+/// The rings resolved with `rule`, as shapes in nm.
+fn overlay_rings(rings: &[Vec<P>], rule: i_overlay::core::fill_rule::FillRule) -> Vec<Vec<Vec<P>>> {
+    use i_overlay::core::overlay::IntOverlayOptions;
+    use i_overlay::core::simplify::Simplify;
+    let input: Vec<Vec<IntPoint<i64>>> = rings
+        .iter()
+        .filter(|r| r.len() >= 3)
+        .map(|r| r.iter().map(|p| IntPoint::new(p.x, p.y)).collect())
+        .collect();
+    if input.is_empty() {
+        return Vec::new();
+    }
+    input
+        .simplify(rule, IntOverlayOptions::default())
+        .into_iter()
+        .map(|shape| {
+            shape
+                .into_iter()
+                .map(|r| r.into_iter().map(|p| P::new(p.x, p.y)).collect())
+                .collect()
+        })
+        .collect()
 }
 
 /// Removes points of a ring that cut off little: points on short segments when the shortcut stays
@@ -976,6 +1156,67 @@ mod tests {
 
     fn count_walls(r: &Walls) -> usize {
         r.lines.iter().map(|l| l.inset).max().map_or(0, |m| m + 1)
+    }
+
+    /// Proper crossings between the segments of `rings`, neighbors in a ring left out.
+    fn crossings(rings: &[Vec<P>]) -> usize {
+        let segs: Vec<(usize, usize, P, P)> = rings
+            .iter()
+            .enumerate()
+            .flat_map(|(ri, r)| (0..r.len()).map(move |i| (ri, i, r[i], r[(i + 1) % r.len()])))
+            .collect();
+        let side = |a: P, b: P, c: P| {
+            (i128::from(b.x - a.x) * i128::from(c.y - a.y) - i128::from(b.y - a.y) * i128::from(c.x - a.x))
+                .signum()
+        };
+        let mut n = 0;
+        for (k, s) in segs.iter().enumerate() {
+            for t in &segs[k + 1..] {
+                let m = rings[s.0].len();
+                if s.0 == t.0 && ((s.1 + 1) % m == t.1 || (t.1 + 1) % m == s.1) {
+                    continue;
+                }
+                if side(s.2, s.3, t.2) * side(s.2, s.3, t.3) < 0
+                    && side(t.2, t.3, s.2) * side(t.2, t.3, s.3) < 0
+                {
+                    n += 1;
+                }
+            }
+        }
+        n
+    }
+
+    /// a thin sliver left by the slice: a stepped lower side, an upper side a few hundredths of a mm
+    /// above, whose step corners sit just past the line from end to end
+    fn sliver() -> Vec<P> {
+        let mm = |x: f64, y: f64| P::new((x * 1e6).round() as i64, (y * 1e6).round() as i64);
+        vec![
+            mm(0.362, 0.293),
+            mm(0.0, 0.0),
+            mm(0.010, -0.028),
+            mm(0.080, -0.030),
+            mm(0.380, 0.272),
+            mm(0.480, 0.268),
+            mm(0.680, 0.472),
+            mm(0.780, 0.468),
+            mm(0.955, 0.646),
+            mm(0.940, 0.668),
+            mm(0.655, 0.494),
+        ]
+    }
+
+    #[test]
+    fn a_folded_sliver_is_resolved_before_the_voronoi_diagram() {
+        let (smallest, allowed) = (to_nm(0.5), to_nm(0.025));
+        assert_eq!(crossings(&[sliver()]), 0);
+        // simplifying alone drops the upper side and folds the ring across its own steps
+        let mut folded = sliver();
+        simplify_ring(&mut folded, smallest * smallest, allowed * allowed);
+        assert!(crossings(&[folded]) > 0);
+        let shapes = clean_rings(vec![sliver()], allowed / 2 - 1, smallest, allowed, 100.0);
+        let rings: Vec<Vec<P>> = shapes.into_iter().flatten().collect();
+        assert!(!rings.is_empty());
+        assert_eq!(crossings(&rings), 0, "{rings:?}");
     }
 
     #[test]
