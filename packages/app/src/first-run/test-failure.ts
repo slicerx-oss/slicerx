@@ -81,7 +81,8 @@ export function failureCopy(o: TestOutcome, ctx: { address: string; family: stri
       return { kind, title: bambu ? 'The access code didn\'t work.' : 'The printer didn\'t accept the key.', body: 'Enter it again, then try once more.', tips, actions: ['retry'] }
     }
     case 'no-answer': {
-      const tips = bambu ? ['If it still doesn\'t answer, turn on LAN Only Mode on the printer.', `Developer Mode isn't needed to connect. It's optional, for printing directly from ${appName()}.`] : []
+      // Normal mode with the access code comes first; when that gets no answer, LAN Only Mode is the one thing to try.
+      const tips = bambu ? [`Turn on LAN Only Mode on the printer, then test again. ${fam ? bambuGuide(fam).lanOnly : 'It is on the LAN Only page of the printer\'s settings.'}`] : []
       return { kind, title: `No answer from ${ctx.address || 'the printer'}.`, body: 'Check the printer is on and on the same network as this computer.', tips, actions: ['retry'] }
     }
     default:

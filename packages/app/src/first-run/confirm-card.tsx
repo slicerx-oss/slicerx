@@ -7,7 +7,7 @@ import type { ExtruderInfo, FilamentUnit, PrinterHardware } from '@slicerx/contr
 import { listPrinterProfiles } from '@slicerx/settings'
 import { Chip, Icon, Input, Seg } from '@slicerx/ui'
 import { bambuFamily, bambuGuide } from './bambu-lan'
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { buildVolumeText, currentModel, EMPTY_FORM, filamentText, modelLabel, NOZZLE_SIZES, NOZZLE_TYPE_LABELS, nozzleText, type NozzleType, type PrinterForm } from './printer-form'
 import { appName } from '../edition'
 
@@ -116,17 +116,26 @@ export function ConfirmCard({ form, setForm, hardware, reportedNozzle, reportedF
   const units = shownUnits(hardware)
   const family = bambuFamily(model?.name ?? hardware?.model)
   const devOff = hardware?.developerMode === false
+  const [direct, setDirect] = useState(false)
   const noCard = family === 'x1' && hardware?.sdCard === false
   return (
     <>
     {devOff ? (
-      <p className="fr-info-box" role="status">
+      <div className="fr-info-box" role="status">
         <Icon name="info" size={16} />
         <span>
-          <b>Prints go through Bambu Connect.</b> Developer Mode is off, so {appName()} shows this printer's status, and prints open in Bambu Connect, Bambu Lab's app, where you press Print. To print directly from {appName()} (optional), turn on Developer Mode:{' '}
-          {family ? `${bambuGuide(family).developerWhere} ${bambuGuide(family).developer}` : 'it is on the LAN Only page of the printer\'s settings.'}
+          <b>Prints go through Bambu Connect.</b> {appName()} shows this printer's status, and prints open in Bambu Connect, Bambu Lab's app, where you press Print.{' '}
+          <button type="button" className="fr-codecard-more" aria-expanded={direct} onClick={() => setDirect(!direct)}>
+            Direct printing (optional)
+          </button>
+          {direct ? (
+            <span className="fr-info-more">
+              To print straight from {appName()}, turn on LAN Only Mode and then Developer Mode.{' '}
+              {family ? `${bambuGuide(family).developerWhere} ${bambuGuide(family).developer}` : 'Both are on the LAN Only page of the printer\'s settings.'}
+            </span>
+          ) : null}
         </span>
-      </p>
+      </div>
     ) : null}
     {noCard ? (
       <p className="fr-warn fr-warn-box" role="alert">
