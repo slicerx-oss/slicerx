@@ -24,7 +24,7 @@ SlicerX is a free, fully open source CAD engine and slicer for FFF 3D printers, 
 </p>
 
 > [!NOTE]
-> SlicerX is pre-alpha. The engine continues work its author began in 2021; this app and repository started in September 2026, and several surfaces below are still being built.
+> SlicerX is pre-alpha and started in September 2026. It borrows a few ideas from a small slicing prototype its author wrote in 2021; nearly all of today's code is new. Several surfaces below are still being built.
 
 ## The base kit
 
