@@ -100,6 +100,7 @@ if (!el) throw new Error('index.html is missing #root')
 const config = editionFromBuild()
 const [host, list] = await Promise.all([createDesktopHost(), features()])
 if (__SX_FEATURE_CONNECT__) host.bambuConnect = (await import('./host/bambu-connect')).createTauriBambuConnect()
+if (__SX_FEATURE_CONNECT__) host.firewall = (await import('./host/firewall')).createTauriFirewall()
 if (__SX_FEATURE_STORE__) {
   const { lazyStore } = await import('../../web/src/host/store')
   const edition: EditionHost = host
