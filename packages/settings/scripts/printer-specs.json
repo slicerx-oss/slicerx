@@ -389,6 +389,36 @@
     "https://github.com/Ultimaker/Cura/blob/5.13.0/resources/definitions/ultimaker_s8.def.json",
     "https://ultimaker.com/3d-printers/s-series/ultimaker-s8/"
    ]
+  },
+  "qidi-x-max-3": {
+   "flavor": "klipper",
+   "sources": [
+    "https://github.com/OrcaSlicer/OrcaSlicer/blob/v2.4.2/resources/profiles/Qidi/machine/Qidi%20X-Max%203%200.4%20nozzle.json"
+   ]
+  },
+  "qidi-x-plus-3": {
+   "flavor": "klipper",
+   "sources": [
+    "https://github.com/OrcaSlicer/OrcaSlicer/blob/v2.4.2/resources/profiles/Qidi/machine/Qidi%20X-Plus%203%200.4%20nozzle.json"
+   ]
+  },
+  "qidi-x-smart-3": {
+   "flavor": "klipper",
+   "sources": [
+    "https://github.com/OrcaSlicer/OrcaSlicer/blob/v2.4.2/resources/profiles/Qidi/machine/Qidi%20X-Smart%203%200.4%20nozzle.json"
+   ]
+  },
+  "qidi-q2": {
+   "flavor": "klipper",
+   "sources": [
+    "https://github.com/OrcaSlicer/OrcaSlicer/blob/v2.4.2/resources/profiles/Qidi/machine/Qidi%20Q2%200.4%20nozzle.json"
+   ]
+  },
+  "qidi-x-max-4": {
+   "flavor": "klipper",
+   "sources": [
+    "https://github.com/OrcaSlicer/OrcaSlicer/blob/v2.4.2/resources/profiles/Qidi/machine/Qidi%20X-Max%204%200.4%20nozzle.json"
+   ]
   }
  }
 }

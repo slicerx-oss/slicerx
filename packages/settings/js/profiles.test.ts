@@ -13,14 +13,14 @@ const catalogPath = fileURLToPath(new URL('../../connect/catalog/src/index.ts', 
 describe('printer profiles', () => {
   it('has one per catalog model, with a maker source and a flavor', () => {
     const ps = listPrinterProfiles()
-    expect(ps).toHaveLength(64)
+    expect(ps).toHaveLength(69)
     for (const p of ps) {
       expect(p.sources.length, p.id).toBeGreaterThan(0)
       for (const s of p.sources) expect(s, p.id).toMatch(/^https:\/\//)
       expect(['marlin', 'marlin2', 'klipper', 'reprapfirmware', 'griffin', 'cheetah'], p.id).toContain(p.flavor)
       expect(p.nozzles, p.id).toContain(p.defaultNozzle)
     }
-    expect(new Set(ps.map((p) => p.id)).size).toBe(64)
+    expect(new Set(ps.map((p) => p.id)).size).toBe(69)
   })
   it('agrees with the printer catalog when it is present', async () => {
     if (!existsSync(catalogPath)) return

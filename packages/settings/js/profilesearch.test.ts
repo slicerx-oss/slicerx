@@ -31,7 +31,7 @@ describe('searchProfiles', () => {
   })
   it('finds nothing for nonsense and lists everything for an empty query', async () => {
     expect(await names('zzzzqqqq')).toEqual([])
-    expect((await searchProfiles('')).length).toBe(64)
+    expect((await searchProfiles('')).length).toBe(69)
   })
   it('uses an installed provider, and returns an empty list when it throws', async () => {
     setProfileProvider(() => [{ id: 'mine', vendor: 'Acme', model: 'Rocket 3000', nozzles: [0.4] }])

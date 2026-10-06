@@ -1376,6 +1376,141 @@
    ]
   },
   {
+   "id": "qidi-x-max-3",
+   "brand": "qidi",
+   "vendor": "Qidi",
+   "model": "X-Max 3",
+   "kinematics": "corexy",
+   "enclosed": true,
+   "buildVolume": {
+    "shape": "rectangular",
+    "x": 325,
+    "y": 325,
+    "z": 315
+   },
+   "nozzles": [
+    0.2,
+    0.4,
+    0.6,
+    0.8
+   ],
+   "defaultNozzle": 0.4,
+   "nozzleCount": 1,
+   "flavor": "klipper",
+   "limits": {},
+   "sources": [
+    "https://github.com/OrcaSlicer/OrcaSlicer/blob/v2.4.2/resources/profiles/Qidi/machine/Qidi%20X-Max%203%200.4%20nozzle.json"
+   ]
+  },
+  {
+   "id": "qidi-x-plus-3",
+   "brand": "qidi",
+   "vendor": "Qidi",
+   "model": "X-Plus 3",
+   "kinematics": "corexy",
+   "enclosed": true,
+   "buildVolume": {
+    "shape": "rectangular",
+    "x": 280,
+    "y": 280,
+    "z": 270
+   },
+   "nozzles": [
+    0.2,
+    0.4,
+    0.6,
+    0.8
+   ],
+   "defaultNozzle": 0.4,
+   "nozzleCount": 1,
+   "flavor": "klipper",
+   "limits": {},
+   "sources": [
+    "https://github.com/OrcaSlicer/OrcaSlicer/blob/v2.4.2/resources/profiles/Qidi/machine/Qidi%20X-Plus%203%200.4%20nozzle.json"
+   ]
+  },
+  {
+   "id": "qidi-x-smart-3",
+   "brand": "qidi",
+   "vendor": "Qidi",
+   "model": "X-Smart 3",
+   "kinematics": "corexy",
+   "enclosed": true,
+   "buildVolume": {
+    "shape": "rectangular",
+    "x": 175,
+    "y": 180,
+    "z": 170
+   },
+   "nozzles": [
+    0.2,
+    0.4,
+    0.6,
+    0.8
+   ],
+   "defaultNozzle": 0.4,
+   "nozzleCount": 1,
+   "flavor": "klipper",
+   "limits": {},
+   "sources": [
+    "https://github.com/OrcaSlicer/OrcaSlicer/blob/v2.4.2/resources/profiles/Qidi/machine/Qidi%20X-Smart%203%200.4%20nozzle.json"
+   ]
+  },
+  {
+   "id": "qidi-q2",
+   "brand": "qidi",
+   "vendor": "Qidi",
+   "model": "Q2",
+   "kinematics": "corexy",
+   "enclosed": true,
+   "buildVolume": {
+    "shape": "rectangular",
+    "x": 270,
+    "y": 270,
+    "z": 256
+   },
+   "nozzles": [
+    0.2,
+    0.4,
+    0.6,
+    0.8
+   ],
+   "defaultNozzle": 0.4,
+   "nozzleCount": 1,
+   "flavor": "klipper",
+   "limits": {},
+   "sources": [
+    "https://github.com/OrcaSlicer/OrcaSlicer/blob/v2.4.2/resources/profiles/Qidi/machine/Qidi%20Q2%200.4%20nozzle.json"
+   ]
+  },
+  {
+   "id": "qidi-x-max-4",
+   "brand": "qidi",
+   "vendor": "Qidi",
+   "model": "X-Max 4",
+   "kinematics": "corexy",
+   "enclosed": true,
+   "buildVolume": {
+    "shape": "rectangular",
+    "x": 390,
+    "y": 390,
+    "z": 340
+   },
+   "nozzles": [
+    0.2,
+    0.4,
+    0.6,
+    0.8
+   ],
+   "defaultNozzle": 0.4,
+   "nozzleCount": 1,
+   "flavor": "klipper",
+   "limits": {},
+   "sources": [
+    "https://github.com/OrcaSlicer/OrcaSlicer/blob/v2.4.2/resources/profiles/Qidi/machine/Qidi%20X-Max%204%200.4%20nozzle.json"
+   ]
+  },
+  {
    "id": "voron-0.1",
    "brand": "voron",
    "vendor": "Voron Design",

@@ -12279,6 +12279,936 @@
     "vendor": "Qidi"
    }
   },
+  "qidi-q2": {
+   "machine": {
+    "auxiliary_fan": "1",
+    "bed_exclude_area": [
+     "0x0",
+     "11x0",
+     "11x16",
+     "0x16"
+    ],
+    "cooling_tube_length": "0",
+    "cooling_tube_retraction": "0",
+    "deretraction_speed": [
+     "30"
+    ],
+    "enable_long_retraction_when_cut": "2",
+    "extra_loading_move": "5",
+    "extruder_clearance_dist_to_rod": "47",
+    "extruder_clearance_height_to_lid": "152",
+    "extruder_clearance_height_to_rod": "47",
+    "extruder_clearance_max_radius": "75",
+    "extruder_clearance_radius": "65",
+    "extruder_colour": [
+     "#FCE94F"
+    ],
+    "extruder_offset": [
+     "0x0"
+    ],
+    "gcode_flavor": "klipper",
+    "is_support_multi_box": "0",
+    "machine_load_filament_time": "35",
+    "machine_max_acceleration_e": [
+     "5000",
+     "5000"
+    ],
+    "machine_max_acceleration_extruding": [
+     "20000",
+     "20000"
+    ],
+    "machine_max_acceleration_retracting": [
+     "5000",
+     "5000"
+    ],
+    "machine_max_acceleration_travel": [
+     "9000",
+     "9000"
+    ],
+    "machine_max_acceleration_x": [
+     "20000",
+     "20000"
+    ],
+    "machine_max_acceleration_y": [
+     "20000",
+     "20000"
+    ],
+    "machine_max_acceleration_z": [
+     "500",
+     "500"
+    ],
+    "machine_max_jerk_e": [
+     "4",
+     "4"
+    ],
+    "machine_max_jerk_x": [
+     "9",
+     "9"
+    ],
+    "machine_max_jerk_y": [
+     "9",
+     "9"
+    ],
+    "machine_max_jerk_z": [
+     "4",
+     "4"
+    ],
+    "machine_max_speed_e": [
+     "30",
+     "30"
+    ],
+    "machine_max_speed_x": [
+     "600",
+     "600"
+    ],
+    "machine_max_speed_y": [
+     "600",
+     "600"
+    ],
+    "machine_max_speed_z": [
+     "20",
+     "20"
+    ],
+    "machine_min_extruding_rate": [
+     "0",
+     "0"
+    ],
+    "machine_min_travel_rate": [
+     "0",
+     "0"
+    ],
+    "machine_switch_extruder_time": "0",
+    "machine_unload_filament_time": "35",
+    "max_layer_height": [
+     "0.32"
+    ],
+    "min_layer_height": [
+     "0.08"
+    ],
+    "nozzle_diameter": [
+     "0.4"
+    ],
+    "nozzle_type": [
+     "stainless_steel"
+    ],
+    "nozzle_volume": [
+     "125"
+    ],
+    "parking_pos_retraction": "0",
+    "printable_area": [
+     "0x0",
+     "270x0",
+     "270x270",
+     "0x270"
+    ],
+    "printable_height": "256",
+    "printer_agent": "qidi",
+    "printer_structure": "corexy",
+    "printer_technology": "FFF",
+    "retract_before_wipe": [
+     "0%"
+    ],
+    "retract_length_toolchange": [
+     "2"
+    ],
+    "retract_lift_below": [
+     "259"
+    ],
+    "retract_restart_extra": [
+     "0"
+    ],
+    "retract_restart_extra_toolchange": [
+     "0"
+    ],
+    "retract_when_changing_layer": [
+     "1"
+    ],
+    "retraction_length": [
+     "0.8"
+    ],
+    "retraction_minimum_travel": [
+     "1"
+    ],
+    "retraction_speed": [
+     "30"
+    ],
+    "single_extruder_multi_material": "1",
+    "support_air_filtration": [
+     "1"
+    ],
+    "support_chamber_temp_control": "1",
+    "thumbnails": [
+     "380x380/COLPIC",
+     "210x210/COLPIC",
+     "110x110/PNG"
+    ],
+    "thumbnails_format": "PNG",
+    "use_3mf": "1",
+    "wipe": [
+     "1"
+    ],
+    "wipe_distance": [
+     "2"
+    ],
+    "wipe_tower_type": "type1",
+    "z_hop": [
+     "0.4"
+    ],
+    "z_hop_types": [
+     "Auto Lift"
+    ]
+   },
+   "noGcodeInOrca": [
+    "change_extrusion_role_gcode",
+    "printing_by_object_gcode",
+    "template_custom_gcode",
+    "toolchange_gcode",
+    "wrapping_detection_gcode"
+   ],
+   "nozzles": {
+    "0.2": {
+     "differs": {
+      "max_layer_height": [
+       "0.14"
+      ],
+      "min_layer_height": [
+       "0.04"
+      ],
+      "nozzle_diameter": [
+       "0.2"
+      ],
+      "retraction_length": [
+       "0.4"
+      ]
+     },
+     "orcaProfile": "Qidi Q2 0.2 nozzle"
+    },
+    "0.6": {
+     "differs": {
+      "max_layer_height": [
+       "0.42"
+      ],
+      "min_layer_height": [
+       "0.12"
+      ],
+      "nozzle_diameter": [
+       "0.6"
+      ],
+      "retraction_length": [
+       "1.4"
+      ],
+      "retraction_minimum_travel": [
+       "3"
+      ]
+     },
+     "orcaProfile": "Qidi Q2 0.6 nozzle"
+    },
+    "0.8": {
+     "differs": {
+      "max_layer_height": [
+       "0.56"
+      ],
+      "min_layer_height": [
+       "0.16"
+      ],
+      "nozzle_diameter": [
+       "0.8"
+      ],
+      "retract_length_toolchange": [
+       "3"
+      ],
+      "retraction_length": [
+       "3"
+      ]
+     },
+     "orcaProfile": "Qidi Q2 0.8 nozzle"
+    }
+   },
+   "orca": {
+    "checked": "97700c5",
+    "profile": "Qidi Q2 0.4 nozzle",
+    "vendor": "Qidi"
+   }
+  },
+  "qidi-x-max-3": {
+   "machine": {
+    "auxiliary_fan": "1",
+    "deretraction_speed": [
+     "0"
+    ],
+    "extruder_clearance_height_to_lid": "118",
+    "extruder_clearance_height_to_rod": "30",
+    "extruder_clearance_radius": "70",
+    "extruder_colour": [
+     ""
+    ],
+    "extruder_offset": [
+     "0x0"
+    ],
+    "gcode_flavor": "klipper",
+    "machine_max_acceleration_e": [
+     "5000"
+    ],
+    "machine_max_acceleration_extruding": [
+     "20000"
+    ],
+    "machine_max_acceleration_retracting": [
+     "5000"
+    ],
+    "machine_max_acceleration_x": [
+     "20000"
+    ],
+    "machine_max_acceleration_y": [
+     "20000"
+    ],
+    "machine_max_acceleration_z": [
+     "500"
+    ],
+    "machine_max_jerk_e": [
+     "2"
+    ],
+    "machine_max_jerk_x": [
+     "9"
+    ],
+    "machine_max_jerk_y": [
+     "9"
+    ],
+    "machine_max_jerk_z": [
+     "3"
+    ],
+    "machine_max_speed_e": [
+     "30"
+    ],
+    "machine_max_speed_x": [
+     "600"
+    ],
+    "machine_max_speed_y": [
+     "600"
+    ],
+    "machine_max_speed_z": [
+     "10"
+    ],
+    "machine_min_extruding_rate": [
+     "0"
+    ],
+    "machine_min_travel_rate": [
+     "0"
+    ],
+    "max_layer_height": [
+     "0.32"
+    ],
+    "min_layer_height": [
+     "0.08"
+    ],
+    "nozzle_diameter": [
+     "0.4"
+    ],
+    "nozzle_type": "hardened_steel",
+    "printable_area": [
+     "0x0",
+     "325x0",
+     "325x325",
+     "0x325"
+    ],
+    "printable_height": "315",
+    "printer_technology": "FFF",
+    "retract_before_wipe": [
+     "0%"
+    ],
+    "retract_length_toolchange": [
+     "2"
+    ],
+    "retract_restart_extra": [
+     "0"
+    ],
+    "retract_restart_extra_toolchange": [
+     "0"
+    ],
+    "retract_when_changing_layer": [
+     "1"
+    ],
+    "retraction_length": [
+     "1"
+    ],
+    "retraction_minimum_travel": [
+     "1"
+    ],
+    "retraction_speed": [
+     "30"
+    ],
+    "single_extruder_multi_material": "1",
+    "support_chamber_temp_control": "1",
+    "thumbnails": [
+     "380x380/COLPIC",
+     "210x210/COLPIC",
+     "110x110/PNG"
+    ],
+    "wipe": [
+     "1"
+    ],
+    "wipe_distance": [
+     "2"
+    ],
+    "wipe_tower_type": "type1",
+    "z_hop": [
+     "0.4"
+    ],
+    "z_hop_types": [
+     "Auto Lift"
+    ]
+   },
+   "noGcodeInOrca": [
+    "change_extrusion_role_gcode",
+    "change_filament_gcode",
+    "printing_by_object_gcode",
+    "template_custom_gcode",
+    "toolchange_gcode",
+    "wrapping_detection_gcode"
+   ],
+   "nozzles": {
+    "0.2": {
+     "differs": {
+      "max_layer_height": [
+       "0.14"
+      ],
+      "min_layer_height": [
+       "0.04"
+      ],
+      "nozzle_diameter": [
+       "0.2"
+      ],
+      "retraction_length": [
+       "0.4"
+      ]
+     },
+     "orcaProfile": "Qidi X-Max 3 0.2 nozzle"
+    },
+    "0.6": {
+     "differs": {
+      "max_layer_height": [
+       "0.42"
+      ],
+      "min_layer_height": [
+       "0.12"
+      ],
+      "nozzle_diameter": [
+       "0.6"
+      ],
+      "retraction_length": [
+       "1.4"
+      ],
+      "retraction_minimum_travel": [
+       "3"
+      ]
+     },
+     "orcaProfile": "Qidi X-Max 3 0.6 nozzle"
+    },
+    "0.8": {
+     "differs": {
+      "max_layer_height": [
+       "0.56"
+      ],
+      "min_layer_height": [
+       "0.16"
+      ],
+      "nozzle_diameter": [
+       "0.8"
+      ],
+      "retract_length_toolchange": [
+       "10"
+      ],
+      "retraction_length": [
+       "3"
+      ]
+     },
+     "orcaProfile": "Qidi X-Max 3 0.8 nozzle"
+    }
+   },
+   "orca": {
+    "checked": "97700c5",
+    "profile": "Qidi X-Max 3 0.4 nozzle",
+    "vendor": "Qidi"
+   }
+  },
+  "qidi-x-max-4": {
+   "machine": {
+    "auxiliary_fan": "1",
+    "bed_exclude_area": [
+     "0x0",
+     " 16x0",
+     " 16x13",
+     " 0x13",
+     " 0x0",
+     " 0x0",
+     " 0x0",
+     " 0x0",
+     " 0x13",
+     " 6x13",
+     " 6x23",
+     " 0x23",
+     " 0x13",
+     " 0x13",
+     " 0x13",
+     " 0x13",
+     " 0x387",
+     " 53x387",
+     " 53x390",
+     " 0x390",
+     " 0x387",
+     " 0x387",
+     " 0x397",
+     " 0x390",
+     " 338x390",
+     " 338x384",
+     " 390x384",
+     " 390x390",
+     " 0x390"
+    ],
+    "cooling_filter_enabled": "0",
+    "deretraction_speed": [
+     "30"
+    ],
+    "enable_long_retraction_when_cut": "2",
+    "extruder_clearance_dist_to_rod": "45",
+    "extruder_clearance_height_to_lid": "168",
+    "extruder_clearance_height_to_rod": "45",
+    "extruder_clearance_max_radius": "80",
+    "extruder_clearance_radius": "65",
+    "extruder_colour": [
+     "#FCE94F"
+    ],
+    "extruder_max_nozzle_count": [
+     "1"
+    ],
+    "extruder_offset": [
+     "0x0"
+    ],
+    "fan_direction": "left",
+    "gcode_flavor": "klipper",
+    "group_algo_with_time": "0",
+    "is_support_multi_box": "1",
+    "machine_hotend_change_time": "0",
+    "machine_load_filament_time": "35",
+    "machine_max_acceleration_e": [
+     "5000",
+     "5000"
+    ],
+    "machine_max_acceleration_extruding": [
+     "20000",
+     "20000"
+    ],
+    "machine_max_acceleration_retracting": [
+     "5000",
+     "5000"
+    ],
+    "machine_max_acceleration_travel": [
+     "9000",
+     "9000"
+    ],
+    "machine_max_acceleration_x": [
+     "30000",
+     "30000"
+    ],
+    "machine_max_acceleration_y": [
+     "30000",
+     "30000"
+    ],
+    "machine_max_acceleration_z": [
+     "500",
+     "500"
+    ],
+    "machine_max_jerk_e": [
+     "4",
+     "4"
+    ],
+    "machine_max_jerk_x": [
+     "9",
+     "9"
+    ],
+    "machine_max_jerk_y": [
+     "9",
+     "9"
+    ],
+    "machine_max_jerk_z": [
+     "4",
+     "4"
+    ],
+    "machine_max_speed_e": [
+     "30",
+     "30"
+    ],
+    "machine_max_speed_x": [
+     "800",
+     "800"
+    ],
+    "machine_max_speed_y": [
+     "800",
+     "800"
+    ],
+    "machine_max_speed_z": [
+     "20",
+     "20"
+    ],
+    "machine_min_extruding_rate": [
+     "0",
+     "0"
+    ],
+    "machine_min_travel_rate": [
+     "0",
+     "0"
+    ],
+    "machine_switch_extruder_time": "0",
+    "machine_unload_filament_time": "35",
+    "max_layer_height": [
+     "0.28"
+    ],
+    "min_layer_height": [
+     "0.08"
+    ],
+    "nozzle_diameter": [
+     "0.4"
+    ],
+    "nozzle_type": [
+     "hardened_steel"
+    ],
+    "nozzle_volume": [
+     "150"
+    ],
+    "printable_area": [
+     "0x0",
+     "390x0",
+     "390x390",
+     "0x390"
+    ],
+    "printable_height": "340",
+    "printer_agent": "qidi",
+    "printer_structure": "corexy",
+    "printer_technology": "FFF",
+    "retract_before_wipe": [
+     "0%"
+    ],
+    "retract_length_toolchange": [
+     "2"
+    ],
+    "retract_lift_below": [
+     "339"
+    ],
+    "retract_restart_extra": [
+     "0"
+    ],
+    "retract_restart_extra_toolchange": [
+     "0"
+    ],
+    "retract_when_changing_layer": [
+     "1"
+    ],
+    "retraction_length": [
+     "0.8"
+    ],
+    "retraction_minimum_travel": [
+     "1"
+    ],
+    "retraction_speed": [
+     "30"
+    ],
+    "single_extruder_multi_material": "1",
+    "support_air_filtration": [
+     "1"
+    ],
+    "support_chamber_temp_control": "1",
+    "support_cooling_filter": "0",
+    "thumbnails": [
+     "380x380/COLPIC",
+     "210x210/COLPIC",
+     "110x110/PNG"
+    ],
+    "use_3mf": "1",
+    "wipe": [
+     "1"
+    ],
+    "wipe_distance": [
+     "2"
+    ],
+    "wipe_tower_type": "type1",
+    "z_hop": [
+     "0.4"
+    ],
+    "z_hop_types": [
+     "Auto Lift"
+    ]
+   },
+   "noGcodeInOrca": [
+    "change_extrusion_role_gcode",
+    "printing_by_object_gcode",
+    "template_custom_gcode",
+    "toolchange_gcode",
+    "wrapping_detection_gcode"
+   ],
+   "nozzles": {
+    "0.2": {
+     "differs": {
+      "max_layer_height": [
+       "0.14"
+      ],
+      "min_layer_height": [
+       "0.04"
+      ],
+      "nozzle_diameter": [
+       "0.2"
+      ],
+      "retraction_length": [
+       "0.4"
+      ]
+     },
+     "orcaProfile": "Qidi X-Max 4 0.2 nozzle"
+    },
+    "0.6": {
+     "differs": {
+      "max_layer_height": [
+       "0.42"
+      ],
+      "min_layer_height": [
+       "0.12"
+      ],
+      "nozzle_diameter": [
+       "0.6"
+      ],
+      "retraction_length": [
+       "1.4"
+      ],
+      "retraction_minimum_travel": [
+       "3"
+      ]
+     },
+     "orcaProfile": "Qidi X-Max 4 0.6 nozzle"
+    },
+    "0.8": {
+     "differs": {
+      "max_layer_height": [
+       "0.56"
+      ],
+      "min_layer_height": [
+       "0.16"
+      ],
+      "nozzle_diameter": [
+       "0.8"
+      ],
+      "retract_length_toolchange": [
+       "3"
+      ],
+      "retraction_length": [
+       "3"
+      ]
+     },
+     "orcaProfile": "Qidi X-Max 4 0.8 nozzle"
+    }
+   },
+   "orca": {
+    "checked": "97700c5",
+    "profile": "Qidi X-Max 4 0.4 nozzle",
+    "vendor": "Qidi"
+   }
+  },
+  "qidi-x-plus-3": {
+   "machine": {
+    "auxiliary_fan": "1",
+    "deretraction_speed": [
+     "0"
+    ],
+    "extruder_clearance_height_to_lid": "140",
+    "extruder_clearance_height_to_rod": "36",
+    "extruder_clearance_radius": "65",
+    "extruder_colour": [
+     ""
+    ],
+    "extruder_offset": [
+     "0x0"
+    ],
+    "gcode_flavor": "klipper",
+    "machine_max_acceleration_e": [
+     "5000"
+    ],
+    "machine_max_acceleration_extruding": [
+     "20000"
+    ],
+    "machine_max_acceleration_retracting": [
+     "5000"
+    ],
+    "machine_max_acceleration_x": [
+     "20000"
+    ],
+    "machine_max_acceleration_y": [
+     "20000"
+    ],
+    "machine_max_acceleration_z": [
+     "500"
+    ],
+    "machine_max_jerk_e": [
+     "2"
+    ],
+    "machine_max_jerk_x": [
+     "9"
+    ],
+    "machine_max_jerk_y": [
+     "9"
+    ],
+    "machine_max_jerk_z": [
+     "3"
+    ],
+    "machine_max_speed_e": [
+     "30"
+    ],
+    "machine_max_speed_x": [
+     "600"
+    ],
+    "machine_max_speed_y": [
+     "600"
+    ],
+    "machine_max_speed_z": [
+     "10"
+    ],
+    "machine_min_extruding_rate": [
+     "0"
+    ],
+    "machine_min_travel_rate": [
+     "0"
+    ],
+    "max_layer_height": [
+     "0.32"
+    ],
+    "min_layer_height": [
+     "0.08"
+    ],
+    "nozzle_diameter": [
+     "0.4"
+    ],
+    "nozzle_type": "hardened_steel",
+    "printable_area": [
+     "0x0",
+     "280x0",
+     "280x280",
+     "0x280"
+    ],
+    "printable_height": "270",
+    "printer_technology": "FFF",
+    "retract_before_wipe": [
+     "0%"
+    ],
+    "retract_length_toolchange": [
+     "2"
+    ],
+    "retract_restart_extra": [
+     "0"
+    ],
+    "retract_restart_extra_toolchange": [
+     "0"
+    ],
+    "retract_when_changing_layer": [
+     "1"
+    ],
+    "retraction_length": [
+     "1"
+    ],
+    "retraction_minimum_travel": [
+     "1"
+    ],
+    "retraction_speed": [
+     "30"
+    ],
+    "single_extruder_multi_material": "1",
+    "support_chamber_temp_control": "1",
+    "thumbnails": [
+     "380x380/COLPIC",
+     "210x210/COLPIC",
+     "110x110/PNG"
+    ],
+    "wipe": [
+     "1"
+    ],
+    "wipe_distance": [
+     "2"
+    ],
+    "wipe_tower_type": "type1",
+    "z_hop": [
+     "0.4"
+    ],
+    "z_hop_types": [
+     "Auto Lift"
+    ]
+   },
+   "noGcodeInOrca": [
+    "change_extrusion_role_gcode",
+    "change_filament_gcode",
+    "printing_by_object_gcode",
+    "template_custom_gcode",
+    "toolchange_gcode",
+    "wrapping_detection_gcode"
+   ],
+   "nozzles": {
+    "0.2": {
+     "differs": {
+      "max_layer_height": [
+       "0.14"
+      ],
+      "min_layer_height": [
+       "0.04"
+      ],
+      "nozzle_diameter": [
+       "0.2"
+      ],
+      "retraction_length": [
+       "0.4"
+      ]
+     },
+     "orcaProfile": "Qidi X-Plus 3 0.2 nozzle"
+    },
+    "0.6": {
+     "differs": {
+      "max_layer_height": [
+       "0.42"
+      ],
+      "min_layer_height": [
+       "0.12"
+      ],
+      "nozzle_diameter": [
+       "0.6"
+      ],
+      "retraction_length": [
+       "1.4"
+      ],
+      "retraction_minimum_travel": [
+       "3"
+      ]
+     },
+     "orcaProfile": "Qidi X-Plus 3 0.6 nozzle"
+    },
+    "0.8": {
+     "differs": {
+      "max_layer_height": [
+       "0.56"
+      ],
+      "min_layer_height": [
+       "0.16"
+      ],
+      "nozzle_diameter": [
+       "0.8"
+      ],
+      "retract_length_toolchange": [
+       "10"
+      ],
+      "retraction_length": [
+       "3"
+      ]
+     },
+     "orcaProfile": "Qidi X-Plus 3 0.8 nozzle"
+    }
+   },
+   "orca": {
+    "checked": "97700c5",
+    "profile": "Qidi X-Plus 3 0.4 nozzle",
+    "vendor": "Qidi"
+   }
+  },
   "qidi-x-plus-4": {
    "machine": {
     "auxiliary_fan": "1",
@@ -12464,6 +13394,206 @@
    "orca": {
     "checked": "97700c5",
     "profile": "Qidi X-Plus 4 0.4 nozzle",
+    "vendor": "Qidi"
+   }
+  },
+  "qidi-x-smart-3": {
+   "machine": {
+    "auxiliary_fan": "1",
+    "deretraction_speed": [
+     "0"
+    ],
+    "extruder_clearance_height_to_lid": "140",
+    "extruder_clearance_height_to_rod": "36",
+    "extruder_clearance_radius": "65",
+    "extruder_colour": [
+     ""
+    ],
+    "extruder_offset": [
+     "0x0"
+    ],
+    "gcode_flavor": "klipper",
+    "machine_max_acceleration_e": [
+     "5000"
+    ],
+    "machine_max_acceleration_extruding": [
+     "20000"
+    ],
+    "machine_max_acceleration_retracting": [
+     "5000"
+    ],
+    "machine_max_acceleration_x": [
+     "20000"
+    ],
+    "machine_max_acceleration_y": [
+     "20000"
+    ],
+    "machine_max_acceleration_z": [
+     "500"
+    ],
+    "machine_max_jerk_e": [
+     "2"
+    ],
+    "machine_max_jerk_x": [
+     "9"
+    ],
+    "machine_max_jerk_y": [
+     "9"
+    ],
+    "machine_max_jerk_z": [
+     "3"
+    ],
+    "machine_max_speed_e": [
+     "30"
+    ],
+    "machine_max_speed_x": [
+     "600"
+    ],
+    "machine_max_speed_y": [
+     "600"
+    ],
+    "machine_max_speed_z": [
+     "10"
+    ],
+    "machine_min_extruding_rate": [
+     "0"
+    ],
+    "machine_min_travel_rate": [
+     "0"
+    ],
+    "max_layer_height": [
+     "0.32"
+    ],
+    "min_layer_height": [
+     "0.07"
+    ],
+    "nozzle_diameter": [
+     "0.4"
+    ],
+    "nozzle_type": "hardened_steel",
+    "printable_area": [
+     "0x0",
+     "175x0",
+     "175x180",
+     "0x180"
+    ],
+    "printable_height": "170",
+    "printer_technology": "FFF",
+    "retract_before_wipe": [
+     "0%"
+    ],
+    "retract_length_toolchange": [
+     "2"
+    ],
+    "retract_restart_extra": [
+     "0"
+    ],
+    "retract_restart_extra_toolchange": [
+     "0"
+    ],
+    "retract_when_changing_layer": [
+     "1"
+    ],
+    "retraction_length": [
+     "0.8"
+    ],
+    "retraction_minimum_travel": [
+     "1"
+    ],
+    "retraction_speed": [
+     "30"
+    ],
+    "single_extruder_multi_material": "1",
+    "support_chamber_temp_control": "1",
+    "thumbnails": [
+     "205x205/COLPIC",
+     "140x140/COLPIC",
+     "110x110/PNG"
+    ],
+    "wipe": [
+     "1"
+    ],
+    "wipe_distance": [
+     "2"
+    ],
+    "wipe_tower_type": "type1",
+    "z_hop": [
+     "0.4"
+    ],
+    "z_hop_types": [
+     "Auto Lift"
+    ]
+   },
+   "noGcodeInOrca": [
+    "change_extrusion_role_gcode",
+    "change_filament_gcode",
+    "printing_by_object_gcode",
+    "template_custom_gcode",
+    "toolchange_gcode",
+    "wrapping_detection_gcode"
+   ],
+   "nozzles": {
+    "0.2": {
+     "differs": {
+      "max_layer_height": [
+       "0.14"
+      ],
+      "min_layer_height": [
+       "0.04"
+      ],
+      "nozzle_diameter": [
+       "0.2"
+      ],
+      "retraction_length": [
+       "0.4"
+      ]
+     },
+     "orcaProfile": "Qidi X-Smart 3 0.2 nozzle"
+    },
+    "0.6": {
+     "differs": {
+      "max_layer_height": [
+       "0.42"
+      ],
+      "min_layer_height": [
+       "0.12"
+      ],
+      "nozzle_diameter": [
+       "0.6"
+      ],
+      "retraction_length": [
+       "1.4"
+      ],
+      "retraction_minimum_travel": [
+       "3"
+      ]
+     },
+     "orcaProfile": "Qidi X-Smart 3 0.6 nozzle"
+    },
+    "0.8": {
+     "differs": {
+      "max_layer_height": [
+       "0.56"
+      ],
+      "min_layer_height": [
+       "0.16"
+      ],
+      "nozzle_diameter": [
+       "0.8"
+      ],
+      "retract_length_toolchange": [
+       "3"
+      ],
+      "retraction_length": [
+       "3"
+      ]
+     },
+     "orcaProfile": "Qidi X-Smart 3 0.8 nozzle"
+    }
+   },
+   "orca": {
+    "checked": "97700c5",
+    "profile": "Qidi X-Smart 3 0.4 nozzle",
     "vendor": "Qidi"
    }
   },

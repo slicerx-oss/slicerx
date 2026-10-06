@@ -19,7 +19,7 @@ const num = (c: unknown, k: string): number[] => ((c as Record<string, unknown>)
 describe('process tier speeds', () => {
   it('follow the maker for each printer and tier', () => {
     const models = listPrinterProfiles().map((p) => p.id).filter((id) => processSpeedSource(id, 'standard'))
-    expect(models).toHaveLength(56)
+    expect(models).toHaveLength(61)
     expect(PROCESS_SPEED_SOURCES.bambuStudio).toMatch(/^[0-9a-f]{7,}$/)
     expect(processSpeedSource('bambu-p2s', 'fine')).toBe('Bambu Studio/BBL/0.12mm High Quality @BBL P2S')
     expect(processSpeedSource('bambu-p2s', 'strong')).toBe(processSpeedSource('bambu-p2s', 'standard'))
