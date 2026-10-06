@@ -123,6 +123,13 @@ if ($File) {
     Write-Host "not signed (a WiX build tool, not shipped): $File"
     exit 0
   }
+  # Microsoft's redistributables (DirectML.dll, which ships with the print watch) already carry Microsoft's signature;
+  # signing over it would leave Microsoft's as the primary one, so they ship as they are.
+  $own = Get-AuthenticodeSignature -LiteralPath $File
+  if ($own.Status -eq 'Valid' -and $own.SignerCertificate.Subject -match '(^|,\s*)O=Microsoft Corporation(,|$)') {
+    Write-Host "keeps its own signature (a Microsoft redistributable): $File"
+    exit 0
+  }
   Sign-One $File | Format-List
   exit 0
 }
