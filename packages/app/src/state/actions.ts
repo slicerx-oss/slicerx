@@ -18,6 +18,7 @@ import { bake } from '../plate/mesh-ops'
 import { bounds, compose } from '../plate/transform'
 import { requestVolumes } from '../plate/volumes'
 import { areaOrigin, objectToMachine, towerToPlate } from '../plate/bed-origin'
+import { holdUpdates } from '../updates/hold'
 import { exportPlateGcode, sha256Hex } from '../calibration/gcode'
 import { sliceHandle } from '../plate/painted'
 import { nameOptions, plateConfig } from '../plate/plates'
@@ -554,6 +555,16 @@ function plateBoundsOf(st: AppState, bounds: (parts: PlateEntry['parts'], t: num
  * exact upload and start parameters. Remote, mimir, queued and scheduled starts keep the approval card.
  */
 export async function sendToPrinter(host: Host, printer: PrinterInfo): Promise<void> {
+  // Restart to update waits while a print is on its way (updates/updates.ts).
+  const release = holdUpdates()
+  try {
+    await sendNow(host, printer)
+  } finally {
+    release()
+  }
+}
+
+async function sendNow(host: Host, printer: PrinterInfo): Promise<void> {
   // A printer added without a connection gets the file to carry over instead.
   if (isExportOnly(printer)) return exportGcode(host)
   const conn = connected(host)
@@ -782,6 +793,15 @@ export function refusalReason(e: unknown): string | null {
 
 /** Starts a queued plate: the same approval card and bed-clear question as a send, on the file already on the printer. */
 export async function startQueued(host: Host, item: QueueItem): Promise<void> {
+  const release = holdUpdates()
+  try {
+    await startQueuedNow(host, item)
+  } finally {
+    release()
+  }
+}
+
+async function startQueuedNow(host: Host, item: QueueItem): Promise<void> {
   const conn = connected(host)
   if (!conn) return
   const { removeFromQueue } = await import('../queue/queue')
