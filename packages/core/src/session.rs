@@ -852,6 +852,15 @@ impl SliceSession {
             .iter()
             .filter(|o| o.mesh.parts.iter().any(|p| !p.triangles.is_empty()))
             .collect();
+        // A vase layer prints only its largest outline, so a second object printed layer by layer would lose its
+        // walls. Orca refuses the plate too (`Print::validate`).
+        if crate::spiral::enabled(config) && printable.len() > 1 && !config.print_by_object() {
+            return Err(Error::Config {
+                key: "spiral_mode",
+                reason: "spiral vase prints one object at a time; print by object, or keep one object on the plate"
+                    .to_owned(),
+            });
+        }
         for (i, r) in ranges.iter().enumerate() {
             if let Some(id) = r
                 .objects
