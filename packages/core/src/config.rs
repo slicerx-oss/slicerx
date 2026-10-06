@@ -1199,6 +1199,24 @@ impl PrintConfig {
         ] {
             range(key, self.raw_number(key, 0.0), -5.0, 5.0)?;
         }
+        // Densities that spread solid lines apart, in Orca's limits (PrintConfig.cpp). A top density of 0
+        // leaves the top open; one just above 0 would space the lines meters apart, so it starts at 1.
+        range(
+            "bottom_surface_density",
+            self.raw_number("bottom_surface_density", 100.0),
+            10.0,
+            100.0,
+        )?;
+        range(
+            "elefant_foot_layers_density",
+            self.raw_number("elefant_foot_layers_density", 100.0),
+            50.0,
+            100.0,
+        )?;
+        let top = self.raw_number("top_surface_density", 100.0);
+        if top.abs() > 0.0 || !top.is_finite() {
+            range("top_surface_density", top, 1.0, 100.0)?;
+        }
         // Orca's limits (PrintConfig.cpp): the print flow ratio 0.01 to 2, the ratios by role 0 to 2.
         range(
             "print_flow_ratio",
@@ -2117,6 +2135,38 @@ mod tests {
         assert!((pct.line_width - 0.44).abs() < 1e-9);
         let mm = PrintConfig::from_json(br#"{"line_width":"0.45"}"#).unwrap();
         assert!((mm.line_width - 0.45).abs() < 1e-9);
+    }
+
+    #[test]
+    fn surface_densities_keep_to_orcas_ranges() {
+        use serde_json::json;
+        // A bottom density of 1e-6 spread the lines past the scaled range and crashed; a foot density of
+        // 1e9 squeezed them to nothing and never finished.
+        for (key, bad, ok) in [
+            (
+                "bottom_surface_density",
+                [json!(1e-6), json!(9), json!(101), json!("inf")],
+                [json!(10), json!("80%"), json!(100)],
+            ),
+            (
+                "elefant_foot_layers_density",
+                [json!(1e9), json!(49), json!(-1), json!("nan")],
+                [json!(50), json!("75%"), json!(100)],
+            ),
+            (
+                "top_surface_density",
+                [json!(1e-6), json!(0.5), json!(101), json!(-1)],
+                [json!(0), json!(1), json!("100%")],
+            ),
+        ] {
+            for v in bad {
+                let err = PrintConfig::from_value(&json!({ key: v })).unwrap_err();
+                assert!(err.to_string().contains(key), "{key} {v}: {err}");
+            }
+            for v in ok {
+                assert!(PrintConfig::from_value(&json!({ key: v })).is_ok(), "{key} {v}");
+            }
+        }
     }
 
     #[test]
