@@ -1562,6 +1562,23 @@ mod tests {
     }
 
     #[test]
+    fn an_anchor_limit_under_a_twentieth_of_a_mm_joins_nothing() {
+        // Orca reads `infill_anchor_max` under 0.05 mm as "do not connect" (`FillParams::dont_connect`): no
+        // joins and no hooks, rather than ones a few microns long.
+        let region = square(30.0);
+        let with = |connect_mm: f64| {
+            sparse(&SparseIn {
+                connect_mm,
+                anchor_mm: connect_mm,
+                ..test_in(InfillPattern::Grid, &region, 0.15, 2.0, 4)
+            })
+        };
+        let off = with(0.0);
+        assert_eq!(with(0.04), off);
+        assert_ne!(with(0.05), off);
+    }
+
+    #[test]
     fn layers_differ_where_the_pattern_moves_with_height() {
         let region = square(40.0);
         let a = sparse(&test_in(InfillPattern::Cubic, &region, 0.2, 1.0, 5));
