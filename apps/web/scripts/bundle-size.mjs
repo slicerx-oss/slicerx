@@ -2,7 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 // Checks the browser build against its budgets: the JS that
 // loads before the viewport and WASM (the entry chunk and its static imports)
-// at most 254 KB gzip, and each WASM module at most 1.0 MB gzip. The STEP reader (OpenCASCADE, loaded
+// at most 252 KB gzip, and each WASM module at most 1.0 MB gzip. The STEP reader (OpenCASCADE, loaded
 // only when a STEP file opens) has a budget of its own and must not be reachable from the shell. It
 // also fails when printer, filament or G-code profile data lands in a startup chunk.
 import { readdirSync, readFileSync, statSync } from 'node:fs'
@@ -11,7 +11,7 @@ import { gzipSync } from 'node:zlib'
 
 const dist = join(import.meta.dirname, '..', 'dist')
 const manifest = JSON.parse(readFileSync(join(dist, '.vite', 'manifest.json'), 'utf8'))
-const SHELL_KB = 254
+const SHELL_KB = 252
 const WASM_KB = 1024
 const STEP_WASM_KB = 3584
 const isStepReader = (file) => /occt-import-js/.test(file)
