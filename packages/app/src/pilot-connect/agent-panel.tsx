@@ -73,9 +73,12 @@ export function AgentPanel({ idPrefix = 'ag' }: { idPrefix?: string }) {
   }
 
   return (
-    <div className="ag">
+    <section className="ag-sec" aria-labelledby={`${idPrefix}-h`}>
+      <h4 className="ag-h" id={`${idPrefix}-h`}>
+        Connect your AI agent
+      </h4>
+      <div className="ag">
       <div className="ag-head">
-        <b>Connect your AI agent</b>
         <small>Give the assistant you already use what {ASSISTANT_NAME} can do: watch your printers, slice and estimate, plan settings, queue jobs.</small>
       </div>
       <p className="ag-lbl" id={`${idPrefix}-lbl`}>
@@ -134,6 +137,7 @@ export function AgentPanel({ idPrefix = 'ag' }: { idPrefix?: string }) {
           Details
         </button>
       </p>
-    </div>
+      </div>
+    </section>
   )
 }

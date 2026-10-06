@@ -12,6 +12,7 @@ import { AgentPanel } from './agent-panel'
 import { ChatGptCard } from './chatgpt-card'
 import { chatGptFor, useChatGpt } from './chatgpt'
 import { LocalAiCard } from './local-ai-card'
+import { detectRunners, useLocalAi } from './local-ai'
 import { pilotState, set, useApp, type PilotPref } from '../state/store'
 import { keyStoreFor, PROVIDERS, type PilotProvider } from './keys'
 import { hostLocalFetch, testConnection, type TestResult } from './transport'
@@ -38,12 +39,27 @@ export function ConnectPanel({ onConnected, idPrefix = 'pc', withLocal = true }:
   // A server on another computer is the one case that needs an address typed in.
   const [manual, setManual] = useState(!localAi || Boolean(pref?.provider === 'local' && pref.baseUrl && !/^http:\/\/127\.0\.0\.1:(11434|1234)\//.test(pref.baseUrl)))
   const keyRef = useRef<HTMLInputElement>(null)
+  const net = useLocalAi().net
+  // Once the person has opened or closed the manual fields, detection no longer decides for them.
+  const touched = useRef(false)
   const [hasLocalKey, setHasLocalKey] = useState(false)
   const info = PROVIDERS[provider]
   const store = keyStoreFor(host)
   const saved = pref?.mode === 'on' && pref.provider === provider
   // The optional key of a model server on the network, asked for beside the address.
   const localKey = provider === 'local' && manual
+  // Nothing running on this computer: the address fields are the way in, so show them.
+  useEffect(() => {
+    if (provider !== 'local' || !localAi) return
+    let live = true
+    void detectRunners(net).then(
+      (found) => live && !touched.current && found.length === 0 && setManual(true),
+      () => undefined,
+    )
+    return () => {
+      live = false
+    }
+  }, [provider, localAi, net])
   useEffect(() => {
     if (provider === 'local') void store.has('local').then(setHasLocalKey, () => setHasLocalKey(false))
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -119,62 +135,75 @@ export function ConnectPanel({ onConnected, idPrefix = 'pc', withLocal = true }:
       ) : (
         <>
           <LocalAiCard />
-          {localAi ? (
-            <LinkButton icon="server" expanded={manual} aria-controls={`${idPrefix}-base`} onClick={() => setManual(!manual)}>
-              Use a model server on another computer
-            </LinkButton>
-          ) : null}
-          {manual ? (
-            <>
-              <Field htmlFor={`${idPrefix}-base`} label="Server address" hint={info.where}>
-                <Input
-                  id={`${idPrefix}-base`}
-                  mono
-                  value={baseUrl}
-                  placeholder="http://192.168.1.50:8080/v1"
-                  onChange={(e) => setBaseUrl(e.target.value)}
-                  data-tip-title="Any server with an OpenAI-compatible API"
-                  data-tip-body="llama.cpp (llama-server), LocalAI, vLLM, LiteLLM or Ollama, on this computer, your home network or your Tailscale network. Use http and include /v1. Other addresses are refused."
-                />
-              </Field>
-              <Field
-                htmlFor={`${idPrefix}-key`}
-                label="API key (if your server needs one)"
-                hint={host.capabilities.secureStorage ? 'Stored in your system keychain.' : 'Stored encrypted in this browser.'}
-                aside={
-                  <>
-                    {hasLocalKey ? (
-                      <button
-                        type="button"
-                        className="fr-textbtn"
-                        onClick={() => {
-                          void store.delete('local').then(() => setHasLocalKey(false))
-                        }}
-                      >
-                        Remove
-                      </button>
-                    ) : null}
-                    <button type="button" className="fr-textbtn" aria-pressed={shown} aria-controls={`${idPrefix}-key`} onClick={() => setShown(!shown)}>
-                      {shown ? 'Hide' : 'Show'}
-                    </button>
-                  </>
-                }
+          <div className="pc-more" data-open={manual || !localAi ? true : undefined}>
+            {localAi ? (
+              <button
+                type="button"
+                className="pc-more-btn"
+                aria-expanded={manual}
+                aria-controls={`${idPrefix}-more`}
+                onClick={() => {
+                  touched.current = true
+                  setManual(!manual)
+                }}
               >
-                <input
-                  id={`${idPrefix}-key`}
-                  ref={keyRef}
-                  className="sx-input"
-                  data-mono="true"
-                  type={shown ? 'text' : 'password'}
-                  autoComplete="off"
-                  spellCheck={false}
-                  placeholder={hasLocalKey ? 'A key is stored. Paste a new one to replace it.' : 'Leave empty if there is none'}
-                  data-tip-title="Optional server key"
-                  data-tip-body="For servers started with a key, such as llama-server --api-key, LiteLLM or a vLLM proxy. It is sent as an Authorization Bearer header to this server only. It is never put in the address, never logged and never saved with your preferences."
-                />
-              </Field>
-            </>
-          ) : null}
+                <Icon name="server" size={20} />
+                <span>Use a model server on another computer</span>
+                <Icon name="chevron-down" size={18} />
+              </button>
+            ) : null}
+            {manual ? (
+              <div className="pc-more-body" id={`${idPrefix}-more`}>
+                <Field htmlFor={`${idPrefix}-base`} label="Server address" hint={info.where}>
+                  <Input
+                    id={`${idPrefix}-base`}
+                    mono
+                    value={baseUrl}
+                    placeholder="http://192.168.1.50:8080/v1"
+                    onChange={(e) => setBaseUrl(e.target.value)}
+                    data-tip-title="Any server with an OpenAI-compatible API"
+                    data-tip-body="llama.cpp (llama-server), LocalAI, vLLM, LiteLLM or Ollama, on this computer, your home network or your Tailscale network. Use http and include /v1. Other addresses are refused."
+                  />
+                </Field>
+                <Field
+                  htmlFor={`${idPrefix}-key`}
+                  label="API key (if your server needs one)"
+                  hint={host.capabilities.secureStorage ? 'Stored in your system keychain.' : 'Stored encrypted in this browser.'}
+                  aside={
+                    <>
+                      {hasLocalKey ? (
+                        <button
+                          type="button"
+                          className="fr-textbtn"
+                          onClick={() => {
+                            void store.delete('local').then(() => setHasLocalKey(false))
+                          }}
+                        >
+                          Remove
+                        </button>
+                      ) : null}
+                      <button type="button" className="fr-textbtn" aria-pressed={shown} aria-controls={`${idPrefix}-key`} onClick={() => setShown(!shown)}>
+                        {shown ? 'Hide' : 'Show'}
+                      </button>
+                    </>
+                  }
+                >
+                  <input
+                    id={`${idPrefix}-key`}
+                    ref={keyRef}
+                    className="sx-input"
+                    data-mono="true"
+                    type={shown ? 'text' : 'password'}
+                    autoComplete="off"
+                    spellCheck={false}
+                    placeholder={hasLocalKey ? 'A key is stored. Paste a new one to replace it.' : 'Leave empty if there is none'}
+                    data-tip-title="Optional server key"
+                    data-tip-body="For servers started with a key, such as llama-server --api-key, LiteLLM or a vLLM proxy. It is sent as an Authorization Bearer header to this server only. It is never put in the address, never logged and never saved with your preferences."
+                  />
+                </Field>
+              </div>
+            ) : null}
+          </div>
         </>
       )}
       {info.needsKey || manual ? (
