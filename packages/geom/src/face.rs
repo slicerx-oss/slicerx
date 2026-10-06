@@ -522,7 +522,12 @@ pub fn tool_body(
     font: Option<&[u8]>,
     spec: &ExtrudeSpec,
 ) -> Result<TriMesh> {
-    let f = frame.checked()?;
+    let (a, b) = ends(spec)?;
+    body(frame, shape, at, font, spec, a, b)
+}
+
+/// Where the tool body starts and ends along the face normal, mm from the face.
+fn ends(spec: &ExtrudeSpec) -> Result<(f64, f64)> {
     let d = spec.distance_mm;
     if !(d.is_finite() && d.abs() > 1e-6 && d.abs() <= 10_000.0) {
         return Err(Error::invalid(
@@ -561,6 +566,19 @@ pub fn tool_body(
             b = OVERLAP_MM;
         }
     }
+    Ok((a, b))
+}
+
+fn body(
+    frame: &FaceFrame,
+    shape: &Shape,
+    at: &Placement,
+    font: Option<&[u8]>,
+    spec: &ExtrudeSpec,
+    a: f64,
+    b: f64,
+) -> Result<TriMesh> {
+    let f = frame.checked()?;
     let tan = spec.taper_deg.to_radians().m_tan();
     if tan == 0.0 || a >= 0.0 || b <= 0.0 {
         return piece(shape, at, font, &f, a, b, tan);
@@ -596,8 +614,60 @@ pub fn extrude(
     spec: &ExtrudeSpec,
     target: Option<&TriMesh>,
 ) -> Result<ExtrudeResult> {
-    let tool = tool_body(frame, shape, at, font, spec)?;
+    let (a, b) = ends(spec)?;
+    let mut tool = body(frame, shape, at, font, spec, a, b)?;
+    // A cut whose far end lands flush on a face of the body would leave a skin of no thickness there: the
+    // kernel keeps the two coincident faces. Such an end goes a hair past the face, as the near end does; an
+    // end inside the body (a blind pocket) stays exactly where it was asked.
+    if let (Operation::Cut, Some(t)) = (spec.operation, target) {
+        let f = frame.checked()?;
+        let far = |h: f64| h != 0.0 && h.abs() != OVERLAP_MM && flush(t, &tool, &f, h);
+        let (ea, eb) = (far(a), far(b));
+        if ea || eb {
+            let (a2, b2) = (
+                if ea { a - OVERLAP_MM } else { a },
+                if eb { b + OVERLAP_MM } else { b },
+            );
+            tool = body(frame, shape, at, font, spec, a2, b2)?;
+        }
+    }
     apply(tool, spec.operation, target)
+}
+
+/// True when the end cap of `tool` at height `h` above the face frame `f` lies on a face of `target`: some
+/// triangle of the target in that plane holds a point of the cap.
+pub(crate) fn flush(target: &TriMesh, tool: &TriMesh, f: &Frame, h: f64) -> bool {
+    const TOL: f64 = 1e-5;
+    let height = |p: V3| vec3::dot(f.w, vec3::sub(p, f.origin)) - h;
+    let flat = |tri: [u32; 3], m: &TriMesh| m.corners(tri).iter().all(|&p| height(p).abs() < TOL);
+    let local = |p: V3| {
+        let q = vec3::sub(p, f.origin);
+        [vec3::dot(q, f.u), vec3::dot(q, f.v)]
+    };
+    let caps: Vec<V2> = tool
+        .triangles
+        .iter()
+        .filter(|&&t| flat(t, tool))
+        .map(|&t| {
+            let c = tool.corners(t);
+            local(vec3::scale(vec3::add(vec3::add(c[0], c[1]), c[2]), 1.0 / 3.0))
+        })
+        .collect();
+    if caps.is_empty() {
+        return false;
+    }
+    target.triangles.iter().filter(|&&t| flat(t, target)).any(|&t| {
+        let [a, b, c] = target.corners(t).map(local);
+        caps.iter().any(|&p| in_triangle(p, a, b, c))
+    })
+}
+
+/// True when `p` is inside the triangle `a b c` or on its edges, in either winding.
+fn in_triangle(p: V2, a: V2, b: V2, c: V2) -> bool {
+    let side = |o: V2, q: V2| (q[0] - o[0]) * (p[1] - o[1]) - (q[1] - o[1]) * (p[0] - o[0]);
+    let (d1, d2, d3) = (side(a, b), side(b, c), side(c, a));
+    let eps = 1e-12;
+    !((d1 < -eps || d2 < -eps || d3 < -eps) && (d1 > eps || d2 > eps || d3 > eps))
 }
 
 pub fn apply(tool: TriMesh, operation: Operation, target: Option<&TriMesh>) -> Result<ExtrudeResult> {
@@ -685,6 +755,73 @@ mod tests {
             .unwrap();
         let s = pick_face(&m, side, [40.0, 10.0, 2.0]).unwrap();
         assert!(s.frame.v[2] > 0.999 && s.frame.u[2].abs() < 1e-12);
+    }
+
+    /// Area of the triangles of `m` that lie in the plane z = `z` and face `up` or down.
+    fn area_at(m: &TriMesh, z: f64, up: bool) -> f64 {
+        m.triangles
+            .iter()
+            .map(|&t| m.corners(t))
+            .filter(|c| c.iter().all(|p| (p[2] - z).abs() < 1e-9))
+            .map(|c| vec3::tri_normal(c[0], c[1], c[2]))
+            .filter(|n| (n[2] > 0.0) == up)
+            .map(|n| vec3::len(n) * 0.5)
+            .sum()
+    }
+
+    fn cut_circle(depth: f64) -> ExtrudeResult {
+        let m = build::box_mesh([0.0; 3], [40.0, 20.0, 5.0]);
+        let p = top_pick(&m);
+        let spec = ExtrudeSpec {
+            distance_mm: depth,
+            operation: Operation::Cut,
+            ..ExtrudeSpec::default()
+        };
+        let at = Placement {
+            center: [-10.0, 0.0],
+            rotation_deg: 0.0,
+        };
+        extrude(
+            &p.frame,
+            &Shape::Circle { diameter_mm: 6.0 },
+            &at,
+            None,
+            &spec,
+            Some(&m),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn a_cut_as_deep_as_the_body_opens_the_far_side() {
+        let r = cut_circle(5.0);
+        let hole = -r.report.volume_change_mm3 / 5.0;
+        assert!((hole - PI * 9.0).abs() < 0.02 * PI * 9.0, "{hole}");
+        assert!(r.report.watertight);
+        // No zero-thickness skin over the far end: the bottom loses the hole's area and nothing faces up there.
+        assert!(
+            (area_at(&r.mesh, 0.0, false) - (800.0 - hole)).abs() < 1e-6,
+            "{}",
+            area_at(&r.mesh, 0.0, false)
+        );
+        assert!(
+            area_at(&r.mesh, 0.0, true) < 1e-9,
+            "{}",
+            area_at(&r.mesh, 0.0, true)
+        );
+    }
+
+    #[test]
+    fn a_blind_pocket_keeps_its_exact_depth() {
+        let r = cut_circle(3.0);
+        let floor = area_at(&r.mesh, 2.0, true);
+        assert!(floor > 0.9 * PI * 9.0, "{floor}");
+        assert!(
+            (-r.report.volume_change_mm3 - floor * 3.0).abs() < 1e-6,
+            "{:?}",
+            r.report
+        );
+        assert!((area_at(&r.mesh, 0.0, false) - 800.0).abs() < 1e-9);
     }
 
     #[test]
