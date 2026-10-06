@@ -21,21 +21,8 @@ fn endpoints() -> Result<Endpoints, String> {
 
 /// Opens an https URL in the system browser. Only https: nothing else may reach the shell.
 pub fn open_in_browser(url: &str) -> Result<(), String> {
-    if !url.starts_with("https://") {
-        return Err("only https links open in the browser".into());
-    }
-    let (program, args): (&str, Vec<&str>) = if cfg!(target_os = "macos") {
-        ("open", vec![url])
-    } else if cfg!(target_os = "windows") {
-        ("cmd", vec!["/C", "start", "", url])
-    } else {
-        ("xdg-open", vec![url])
-    };
-    std::process::Command::new(program)
-        .args(args)
-        .spawn()
-        .map(|_| ())
-        .map_err(|e| e.to_string())
+    // Never `cmd /C start`, which ran a second command from an `&` in the link (launch.rs).
+    crate::launch::open_https_with(url, crate::launch::open_url)
 }
 
 #[tauri::command]

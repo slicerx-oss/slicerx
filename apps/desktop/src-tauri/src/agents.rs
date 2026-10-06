@@ -207,25 +207,8 @@ pub async fn agent_bundle(app: AppHandle, hub_key: String, link_url: String) -> 
     tauri::async_runtime::spawn_blocking(move || pack_mcpb(&manifest, &server_dir, &packed))
         .await
         .map_err(|e| e.to_string())??;
-    let (program, args): (&str, Vec<String>) = if cfg!(target_os = "macos") {
-        ("open", vec![out.to_string_lossy().into_owned()])
-    } else if cfg!(target_os = "windows") {
-        (
-            "cmd",
-            vec![
-                "/C".into(),
-                "start".into(),
-                String::new(),
-                out.to_string_lossy().into_owned(),
-            ],
-        )
-    } else {
-        ("xdg-open", vec![out.to_string_lossy().into_owned()])
-    };
-    std::process::Command::new(program)
-        .args(args)
-        .spawn()
-        .map_err(|e| e.to_string())?;
+    // Opened by the system's handler for .mcpb files, never through `cmd /C start` (launch.rs).
+    crate::launch::open_path(&out)?;
     Ok(out.to_string_lossy().into_owned())
 }
 
@@ -522,18 +505,8 @@ pub fn open_deeplink(url: String) -> Result<(), String> {
     if !url.starts_with("cursor://") {
         return Err("only client install links open here".to_owned());
     }
-    let (program, args): (&str, Vec<&str>) = if cfg!(target_os = "macos") {
-        ("open", vec![url.as_str()])
-    } else if cfg!(target_os = "windows") {
-        ("cmd", vec!["/C", "start", "", url.as_str()])
-    } else {
-        ("xdg-open", vec![url.as_str()])
-    };
-    std::process::Command::new(program)
-        .args(args)
-        .spawn()
-        .map(|_| ())
-        .map_err(|e| e.to_string())
+    // Never `cmd /C start`, which ran a second command from an `&` in the link (launch.rs).
+    crate::launch::open_url(&url)
 }
 
 #[cfg(test)]

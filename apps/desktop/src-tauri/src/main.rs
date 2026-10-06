@@ -16,6 +16,7 @@ mod crash;
 mod files;
 mod gpu;
 mod header;
+mod launch;
 mod link;
 #[cfg(feature = "pilot")]
 mod llm;
