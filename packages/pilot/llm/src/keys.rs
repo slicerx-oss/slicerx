@@ -17,6 +17,13 @@ pub const ANTHROPIC_KEYCHAIN_ACCOUNT: &str = "slicerx";
 /// Environment variables checked, in order, when the keychain has no Anthropic key.
 pub const ANTHROPIC_KEY_ENV: [&str; 2] = ["SLICERX_ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY"];
 
+/// Keychain service name of the optional key for a local model server (llama-server
+/// `--api-key`, `LiteLLM`, a `vLLM` proxy). Its own slot, so the OpenAI key never goes to a
+/// local server.
+pub const LOCAL_KEYCHAIN_SERVICE: &str = "slicerx-local-api-key";
+/// Keychain account name of the local server key.
+pub const LOCAL_KEYCHAIN_ACCOUNT: &str = "slicerx";
+
 /// Where keys come from. [`SystemKeySource`] is the real one; tests inject their own so
 /// they never touch the user's keychain or the process environment.
 pub trait KeySource: Send + Sync {
@@ -70,8 +77,9 @@ pub(crate) enum Provider {
     OpenAi,
     /// `anthropic`: api.anthropic.com over https, with the user's key sent as `x-api-key`.
     Anthropic,
-    /// `openai-compatible`: a local server (Ollama, LM Studio) on loopback over http. No
-    /// key is sent, so a local process can never receive the OpenAI key.
+    /// `openai-compatible`: a model server (Ollama, LM Studio, llama.cpp, vLLM) on loopback
+    /// or the home network over http. Only the optional local key is sent, so a local
+    /// process can never receive the OpenAI key.
     OpenAiCompatible,
 }
 
@@ -117,4 +125,10 @@ pub(crate) fn anthropic_key(src: &(impl KeySource + ?Sized)) -> Option<ApiKey> {
         ANTHROPIC_KEYCHAIN_ACCOUNT,
         &ANTHROPIC_KEY_ENV,
     )
+}
+
+/// The optional local server key: keychain only, no environment fallback. Blank counts as
+/// missing, and most servers need none.
+pub(crate) fn local_key(src: &(impl KeySource + ?Sized)) -> Option<ApiKey> {
+    lookup(src, LOCAL_KEYCHAIN_SERVICE, LOCAL_KEYCHAIN_ACCOUNT, &[])
 }

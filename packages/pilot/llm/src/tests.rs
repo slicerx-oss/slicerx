@@ -29,6 +29,14 @@ impl FakeKeys {
         self
     }
 
+    fn with_local_key(mut self, value: &str) -> Self {
+        self.keychain.insert(
+            (LOCAL_KEYCHAIN_SERVICE.into(), LOCAL_KEYCHAIN_ACCOUNT.into()),
+            value.into(),
+        );
+        self
+    }
+
     fn with_env(mut self, name: &str, value: &str) -> Self {
         self.env.insert(name.into(), value.into());
         self
@@ -192,7 +200,7 @@ async fn one_shot(status: &str, body: &str) -> (String, tokio::task::JoinHandle<
 }
 
 #[tokio::test]
-async fn local_stream_returns_the_body_and_sends_no_key() {
+async fn local_stream_returns_the_body_and_sends_no_key_when_none_is_set() {
     let (url, server) = one_shot("200 OK", "data: {\"delta\":\"hi\"}\n\n").await;
     let keys = FakeKeys::default().with_keychain(FAKE_KEY);
     let mut body = Vec::new();
@@ -208,11 +216,66 @@ async fn local_stream_returns_the_body_and_sends_no_key() {
     let seen = server.await.unwrap().to_ascii_lowercase();
     assert!(seen.starts_with("post /v1/chat/completions"), "{seen}");
     assert!(!seen.contains("authorization"), "{seen}");
+    // Only the local slot is read, never the OpenAI key.
     assert_eq!(
         keys.reads.load(Ordering::SeqCst),
-        0,
-        "key was read for a local server"
+        1,
+        "more than the local slot was read"
     );
+}
+
+#[tokio::test]
+async fn local_stream_sends_the_local_key_as_bearer_and_never_the_openai_key() {
+    let (url, server) = one_shot("200 OK", "ok").await;
+    let keys = FakeKeys::default()
+        .with_keychain(FAKE_KEY)
+        .with_local_key("lan-secret");
+    let mut s = std::pin::pin!(
+        stream_with(&keys, request("openai-compatible", &url))
+            .await
+            .unwrap()
+    );
+    while s.next().await.is_some() {}
+    let seen = server.await.unwrap().to_ascii_lowercase();
+    assert!(seen.contains("authorization: bearer lan-secret"), "{seen}");
+    assert!(!seen.contains("sk-test"), "{seen}");
+}
+
+#[tokio::test]
+async fn local_models_sends_the_local_key_only_when_set() {
+    let (url, server) = get_once("/v1/models", r#"{"data":[]}"#).await;
+    let base = url.trim_end_matches("/models").to_owned();
+    let keys = FakeKeys::default()
+        .with_keychain(FAKE_KEY)
+        .with_local_key("lan-secret");
+    assert_eq!(local_models_with(&keys, &base).await.unwrap(), r#"{"data":[]}"#);
+    let seen = server.await.unwrap().to_ascii_lowercase();
+    assert!(seen.starts_with("get /v1/models"), "{seen}");
+    assert!(seen.contains("authorization: bearer lan-secret"), "{seen}");
+    assert!(!seen.contains("sk-test"), "{seen}");
+
+    let (url, server) = get_once("/v1/models", r#"{"data":[]}"#).await;
+    let base = url.trim_end_matches("/models").to_owned();
+    local_models_with(&FakeKeys::default(), &base).await.unwrap();
+    let seen = server.await.unwrap().to_ascii_lowercase();
+    assert!(!seen.contains("authorization"), "{seen}");
+}
+
+#[tokio::test]
+async fn local_models_refuses_public_hosts() {
+    for base in [
+        "https://api.openai.com/v1",
+        "http://8.8.8.8/v1",
+        "http://example.com/v1",
+    ] {
+        assert!(
+            matches!(
+                local_models_with(&FakeKeys::default().with_local_key("k"), base).await,
+                Err(Error::UrlNotAllowed { .. })
+            ),
+            "{base}"
+        );
+    }
 }
 
 #[tokio::test]

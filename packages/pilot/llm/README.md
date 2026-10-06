@@ -12,7 +12,7 @@ Blank values count as missing. The key is never cached to disk or logged, and no
 
 Provider `anthropic` reads its key the same way (Keychain service `slicerx-anthropic-api-key`, account `slicerx`, then `SLICERX_ANTHROPIC_API_KEY`, then `ANTHROPIC_API_KEY`) and sends it as `x-api-key` with `anthropic-version: 2023-06-01`, only to `https://api.anthropic.com`. The two keys are never mixed up.
 
-Provider `openai-compatible` (Ollama, LM Studio) is local and gets no key, so a process listening on a local port can never receive the OpenAI key.
+Provider `openai-compatible` (Ollama, LM Studio, llama.cpp, LocalAI, vLLM) is a model server on this computer or the home network. It gets no key unless the person saved one for it in its own keychain item (`slicerx-local-api-key`, for servers started with an API key), so a process listening on a local port can never receive the OpenAI key.
 
 ## Sign in with ChatGPT
 
@@ -57,7 +57,7 @@ The Model setting stores `automatic` (the default, shown as "Automatic (huginn f
 These run before the key is read:
 
 - The provider must be `openai`, `anthropic` or `openai-compatible`.
-- The URL must match the provider's allowlist: `https://api.openai.com` (default port) for `openai`, `https://api.anthropic.com` (default port) for `anthropic`, and `http://127.0.0.1` or `http://localhost` on any port for `openai-compatible`. URLs with user info are refused.
+- The URL must match the provider's allowlist: `https://api.openai.com` (default port) for `openai`, `https://api.anthropic.com` (default port) for `anthropic`, and for `openai-compatible` `http://127.0.0.1`, `http://localhost`, a private IPv4 address (10/8, 172.16/12, 192.168/16) or a `.local` name on any port. The auto-detect probe (`local_get`) stays loopback only. URLs with user info are refused.
 - The request must not carry an `authorization`, `proxy-authorization`, `x-api-key` or `anthropic-version` header in any letter case.
 
 Redirects are not followed and no proxy is used, so the `Authorization` header only goes to the allowed host.

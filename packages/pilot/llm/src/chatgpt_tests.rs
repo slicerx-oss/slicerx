@@ -398,6 +398,13 @@ fn api_keys_are_checked_before_they_are_saved() {
     assert!(set_api_key(&store, "openai", "short").is_err());
     assert!(set_api_key(&store, "openai", "sk-has space 0123456789abcdef").is_err());
     assert!(set_api_key(&store, "gemini", "sk-test-0123456789abcdefghij").is_err());
+    assert!(set_api_key(&store, "local", "").is_err());
+    assert!(set_api_key(&store, "local", "has space").is_err());
+    set_api_key(&store, "local", " short-key ").unwrap();
+    assert!(has_api_key(&store, "local").unwrap());
+    assert!(!has_api_key(&store, "openai").unwrap());
+    clear_api_key(&store, "local").unwrap();
+    assert!(!has_api_key(&store, "local").unwrap());
     set_api_key(&store, "openai", "  sk-test-0123456789abcdefghij \n").unwrap();
     assert_eq!(
         store
