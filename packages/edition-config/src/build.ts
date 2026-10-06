@@ -96,6 +96,10 @@ export function tauriConfig(config: EditionConfig, target: 'desktop' | 'mobile')
     },
   }
   if (mobile) return { productName: config.brand.shortName ?? config.brand.name, identifier, plugins }
+  // In-app updates (apps/desktop/src-tauri/src/updates.rs): on only for an edition with its own feed and key. The
+  // signature must name the version the feed announces, so an old signed build cannot pass as a new one.
+  const updates = config.release.updates
+  const updater = updates ? { updater: { endpoints: updates.endpoints, pubkey: updates.pubkey, requireSignedVersion: true, windows: { installMode: 'passive' } } } : {}
   // The desktop page calls Supabase itself (the library, bug reports), so its origin joins connect-src.
   // Tauri merges this over the CSP directives in tauri.conf.json; only connect-src changes.
   const supabase = config.backend.supabase ? new URL(config.backend.supabase.url).origin : null
@@ -123,7 +127,7 @@ export function tauriConfig(config: EditionConfig, target: 'desktop' | 'mobile')
       fileAssociations: desktopFileTypes(config),
       ...(config.brand.logo.appIcon ? { icon: DESKTOP_ICONS.map((f) => `${DESKTOP_ICON_DIR}/${f}`) } : {}),
     },
-    plugins,
+    plugins: { ...plugins, ...updater },
   }
 }
 
