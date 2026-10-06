@@ -113,7 +113,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: cargo build -p sx-cli --release
-      - run: npx -y playwright@1.63.0 install-deps chromium
+      - run: pnpm --filter @slicerx/web exec playwright install --with-deps chromium
       # The integrator sample, installed from packed tarballs the way an outside app gets the packages.
       - run: node examples/integrator-sample/scripts/integration.mjs
         env:
@@ -125,9 +125,11 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: gitleaks/gitleaks-action@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # the gitleaks CLI is free for organizations; the action needs a paid license
+      - name: gitleaks
+        run: |
+          curl -sSfL https://github.com/gitleaks/gitleaks/releases/download/v8.18.4/gitleaks_8.18.4_linux_x64.tar.gz | tar xz gitleaks
+          ./gitleaks detect --source . --redact --verbose --exit-code 1
 
   licenses:
     needs: detect
@@ -175,7 +177,7 @@ jobs:
         run: |
           set -u
           fail=0
-          files=$(git ls-files '*.md' '*.html' '*.tsx' '*.ts' '*.css' ':!LICENSE' ':!CODE_OF_CONDUCT.md' 2>/dev/null || true)
+          files=$(git ls-files '*.md' '*.html' '*.tsx' '*.ts' '*.css' ':!LICENSE' ':!CODE_OF_CONDUCT.md' ':!packages/vendor/**' 2>/dev/null || true)
           if [ -n "$files" ] && echo "$files" | xargs grep -nP '\x{2014}|\x{2013}' ; then
             echo "Em or en dash found."; fail=1
           fi

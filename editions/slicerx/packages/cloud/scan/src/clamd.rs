@@ -8,6 +8,7 @@
 //! `MaxFileSize` and `MaxScanSize` to match. When the daemon refuses a stream
 //! the scan is reported as unavailable and the upload stays in quarantine.
 
+#[cfg(unix)]
 use std::path::PathBuf;
 use std::time::Duration;
 
