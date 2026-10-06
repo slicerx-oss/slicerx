@@ -26,10 +26,13 @@ build() {
     --config 'profile.wasm-release.package.compiler_builtins.opt-level=3'
 }
 out="${CARGO_TARGET_DIR:-target}"/wasm32-unknown-unknown/wasm-release/sx_wasm.wasm
-mkdir -p "$here/pkg"
+# relative to the repository root, the working directory: native Windows tools (wasm-opt, node) cannot open
+# the /c/... paths of Git's sh when its path conversion is off (MSYS_NO_PATHCONV)
+pkg=packages/core/web/pkg
+mkdir -p "$pkg"
 if [ "${SX_WASM_OPT:-1}" = 0 ]; then
   build
-  cp "$out" "$here/pkg/sx_wasm.wasm"
+  cp "$out" "$pkg/sx_wasm.wasm"
 else
   command -v wasm-opt >/dev/null || {
     echo "build-wasm: wasm-opt not found; install binaryen 133, or set SX_WASM_OPT=0 for a larger module" >&2
@@ -40,11 +43,11 @@ else
   # binaryen's inlining makes the module compress worse, so it is skipped. ordering functions by their
   # mangled names puts the copies of each generic side by side, about 40 KB less gzip.
   wasm-opt "$out" --strip-debug --strip-producers -O2 --skip-pass=inlining-optimizing --converge \
-    --reorder-functions-by-name -o "$here/pkg/sx_wasm.wasm"
+    --reorder-functions-by-name -o "$pkg/sx_wasm.wasm"
 fi
 # gzip level 9 in node's zlib, as apps/web/scripts/bundle-size.mjs measures it
-gz=$(node -e 'console.log(require("node:zlib").gzipSync(require("node:fs").readFileSync(process.argv[1]), { level: 9 }).length)' "$here/pkg/sx_wasm.wasm")
-echo "pkg/sx_wasm.wasm: $(wc -c < "$here/pkg/sx_wasm.wasm") bytes, $gz gzip"
+gz=$(node -e 'console.log(require("node:zlib").gzipSync(require("node:fs").readFileSync(process.argv[1]), { level: 9 }).length)' "$pkg/sx_wasm.wasm")
+echo "pkg/sx_wasm.wasm: $(wc -c < "$pkg/sx_wasm.wasm") bytes, $gz gzip"
 if [ "$gz" -gt $((1024 * 1024)) ]; then
   echo "build-wasm: $gz bytes gzip is over the 1024 KB budget" >&2
   exit 1
