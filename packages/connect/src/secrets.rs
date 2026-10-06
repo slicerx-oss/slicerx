@@ -62,6 +62,62 @@ impl SecretStore for MemorySecrets {
     }
 }
 
+/// Names of the credentials a connection test writes, uses once and deletes
+/// (`packages/connect/setup` `testConnection`).
+pub const TEST_SECRET_PREFIX: &str = "printer-test-";
+
+/// A store whose connection test credentials ([`TEST_SECRET_PREFIX`]) stay in memory and everything
+/// else goes to `inner`. A test's credential lives for one test, so it never needs the keychain, and a
+/// keychain that refuses writes (Windows Credential Manager error 8 on one user's PC) no longer stops
+/// the test before it reaches the printer.
+pub struct ScratchSecrets {
+    inner: std::sync::Arc<dyn SecretStore>,
+    scratch: MemorySecrets,
+}
+
+impl ScratchSecrets {
+    pub fn new(inner: std::sync::Arc<dyn SecretStore>) -> Self {
+        Self {
+            inner,
+            scratch: MemorySecrets::new(),
+        }
+    }
+}
+
+impl std::fmt::Debug for ScratchSecrets {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ScratchSecrets").finish_non_exhaustive()
+    }
+}
+
+impl Secrets for ScratchSecrets {
+    fn get(&self, name: &str) -> Option<String> {
+        if name.starts_with(TEST_SECRET_PREFIX) {
+            self.scratch.get(name)
+        } else {
+            self.inner.get(name)
+        }
+    }
+}
+
+impl SecretStore for ScratchSecrets {
+    fn set(&self, name: &str, value: &str) -> Result<()> {
+        if name.starts_with(TEST_SECRET_PREFIX) {
+            self.scratch.set(name, value)
+        } else {
+            self.inner.set(name, value)
+        }
+    }
+
+    fn delete(&self, name: &str) -> Result<()> {
+        if name.starts_with(TEST_SECRET_PREFIX) {
+            self.scratch.delete(name)
+        } else {
+            self.inner.delete(name)
+        }
+    }
+}
+
 /// The OS keychain (macOS Keychain, Windows Credential Manager, Secret Service). Calls
 /// block briefly, and macOS may show an access prompt on first use.
 #[derive(Debug, Clone)]
@@ -209,6 +265,36 @@ pub fn write_private(path: &std::path::Path, body: &[u8]) -> std::io::Result<()>
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A keychain that refuses every write, as Windows Credential Manager did for a user (error 8).
+    struct Refusing;
+    impl Secrets for Refusing {
+        fn get(&self, _: &str) -> Option<String> {
+            None
+        }
+    }
+    impl SecretStore for Refusing {
+        fn set(&self, _: &str, _: &str) -> Result<()> {
+            Err(Error::Config(
+                "keychain write failed: Platform failure: Windows error code 8".into(),
+            ))
+        }
+        fn delete(&self, _: &str) -> Result<()> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn a_connection_test_credential_never_needs_the_keychain() {
+        let s = ScratchSecrets::new(std::sync::Arc::new(Refusing));
+        // The test's credential is written, read once and deleted: it works with a keychain that refuses.
+        s.set("printer-test-0b8f0d3e", "12345678").unwrap();
+        assert_eq!(s.get("printer-test-0b8f0d3e").as_deref(), Some("12345678"));
+        s.delete("printer-test-0b8f0d3e").unwrap();
+        assert_eq!(s.get("printer-test-0b8f0d3e"), None);
+        // A saved printer's credential still goes to the keychain, and its refusal still reaches the caller.
+        assert!(s.set("printer-p1s-x1y2", "12345678").is_err());
+    }
 
     #[test]
     fn file_store_persists_privately_and_redacts() {
