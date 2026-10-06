@@ -151,7 +151,7 @@ pub fn save_file_to(request: Request<'_>, state: State<'_, OpenFiles>) -> Result
             crate::brand::get().name
         ));
     }
-    std::fs::write(&path, bytes).map_err(|e| format!("{}: {e}", path.display()))?;
+    replace_file(&path, bytes).map_err(|e| format!("{}: {e}", path.display()))?;
     let size = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
     let name = path
         .file_name()
@@ -163,6 +163,26 @@ pub fn save_file_to(request: Request<'_>, state: State<'_, OpenFiles>) -> Result
         size,
         path: path.to_string_lossy().into_owned(),
     }))
+}
+
+/// Where [`replace_file`] writes the new bytes before they take the file's place: beside it, so the
+/// rename stays on one volume.
+fn staging(path: &std::path::Path) -> std::path::PathBuf {
+    let mut name = std::ffi::OsString::from(".");
+    name.push(path.file_name().unwrap_or_default());
+    name.push(".saving");
+    path.with_file_name(name)
+}
+
+/// Writes `bytes` over `path` so the old file stays whole until the new one is: written beside it, then
+/// renamed over it. A save that fails partway (a full disk, a drive pulled out) loses nothing.
+fn replace_file(path: &std::path::Path, bytes: &[u8]) -> std::io::Result<()> {
+    let tmp = staging(path);
+    let written = std::fs::write(&tmp, bytes).and_then(|()| std::fs::rename(&tmp, path));
+    if written.is_err() {
+        let _ = std::fs::remove_file(&tmp);
+    }
+    written
 }
 
 /// Save without a dialog only writes over SlicerX projects.
@@ -182,5 +202,21 @@ mod tests {
         assert!(writable_in_place(std::path::Path::new("C:/x/B.SX3MF")));
         assert!(!writable_in_place(std::path::Path::new("/tmp/a.3mf")));
         assert!(!writable_in_place(std::path::Path::new("/tmp/a.stl")));
+    }
+
+    #[test]
+    fn a_failed_save_leaves_the_project_as_it_was() {
+        let d = std::env::temp_dir().join(format!("sx-replace-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        let p = d.join("lid.sx3mf");
+        std::fs::write(&p, b"first").unwrap();
+        replace_file(&p, b"second").unwrap();
+        assert_eq!(std::fs::read(&p).unwrap(), b"second");
+        // The new bytes cannot be written (a folder stands where they go): the saved project stays whole.
+        std::fs::create_dir_all(staging(&p)).unwrap();
+        assert!(replace_file(&p, b"third").is_err());
+        assert_eq!(std::fs::read(&p).unwrap(), b"second");
+        let _ = std::fs::remove_dir_all(&d);
     }
 }
