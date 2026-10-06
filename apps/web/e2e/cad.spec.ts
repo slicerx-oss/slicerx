@@ -112,6 +112,49 @@ test('a circle sketched on the top face cuts a hole through the part', async ({ 
   expect(await height(page, id)).toBe(20)
 })
 
+test('a hole cut through the part gets its rim rounded', async ({ page }) => {
+  test.slow()
+  await openStudio(page)
+  const id = await freshBox(page)
+  const before = await bounds(page, id)
+  const cx = (before.min[0] + before.max[0]) / 2
+  const cy = (before.min[1] + before.max[1]) / 2
+  await command(page, 'Sketch on the bed or a face')
+  const panel = toolPanel(page)
+  await expect(panel).toContainText('Click the bed or a flat face')
+  await pick(page, await facePick(page, id, [0, 0, 1]))
+  await expect(panel).toContainText('A face of')
+  await panel.getByRole('radiogroup', { name: 'Drawing tool' }).getByRole('radio', { name: 'Circle' }).click()
+  await sketchAt(page, 'hover', [5, 0])
+  await page.locator('body').press('0')
+  const field = page.getByRole('group', { name: 'Exact size' })
+  await field.getByLabel('X mm').fill('0')
+  await field.getByLabel('Y mm').fill('0')
+  await field.getByLabel('Y mm').press('Enter')
+  await sketchAt(page, 'hover', [5, 0])
+  await page.locator('body').press('8')
+  await field.getByLabel('Diameter mm').press('Enter')
+  await panel.getByRole('radiogroup', { name: 'Result' }).getByRole('radio', { name: 'Cut' }).click()
+  await panel.locator('#sk-dist').fill('25')
+  await panel.getByRole('button', { name: 'Extrude' }).click()
+  await expect.poll(() => steps(page), { timeout: 30_000 }).toEqual([{ name: 'Sketch cut 25 mm', state: 'done' }])
+  const cut = await bounds(page, id)
+  // A click on the top face just outside the 8 mm hole picks its rim, a round edge.
+  await command(page, 'Fillet or chamfer edges')
+  const tool = toolPanel(page)
+  await expect(tool).toContainText('No edge yet')
+  await pick(page, await facePick(page, id, [0, 0, 1], [cx + 4.3, cy, before.max[2]]))
+  await expect(tool).toContainText('1 edge')
+  await tool.locator('#edge-size').fill('1')
+  await tool.getByRole('button', { name: 'Round' }).click()
+  await expect.poll(() => steps(page), { timeout: 30_000 }).toEqual([
+    { name: 'Sketch cut 25 mm', state: 'done' },
+    { name: 'Fillet 1 mm', state: 'done' },
+  ])
+  expect((await bounds(page, id)).triangles).toBeGreaterThan(cut.triangles)
+  expect(await height(page, id)).toBe(20)
+})
+
 test('fillet rounds one edge and adds a history step', async ({ page }) => {
   test.slow()
   await openStudio(page)

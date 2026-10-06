@@ -17,7 +17,7 @@ import { toGeom } from '../geom/client'
 import { useHost } from '../host'
 import { cameraBus } from '../plate/tools'
 import { get, set, toast, type PlateEntry } from '../state/store'
-import { addEdge, applyEdges, edgeDistance, edgeParams, sameEdge, type Kind } from './edges'
+import { addEdge, applyEdges, edgeDistance, edgeLines, edgeParams, sameEdge, type Kind } from './edges'
 import { followed } from './history/model'
 import { editing, nowOf, saveEdit } from './history/ops'
 import { close, errorText, num, Num, Shell, useProbe } from './panel-kit'
@@ -37,7 +37,7 @@ function editState(): { index: number; picked: Picked; kind: Kind; size: string;
   const now = nowOf(ed.step, ed.entry.transform)
   // Where the edges are now, after the faces they sit on moved.
   const q = followed(ed.step, ed.entry.history?.steps ?? []).params
-  const edges = (q.op === 'edge.fillet' || q.op === 'edge.chamfer' ? q.edges : p.edges).map((e) => ({ a: now.point(e.a), b: now.point(e.b), face: now.dir(e.face) }))
+  const edges = (q.op === 'edge.fillet' || q.op === 'edge.chamfer' ? q.edges : p.edges).map((e) => ({ a: now.point(e.a), b: now.point(e.b), face: now.dir(e.face), ...(e.center ? { center: now.point(e.center) } : {}) }))
   return {
     index: ed.index,
     picked: { objectId: ed.entry.id, partIndex: Math.max(0, ed.step.part), edges, last: null },
@@ -64,12 +64,12 @@ export function FilletTool() {
 
   const entryOf = (id: string): PlateEntry | undefined => get().plate.find((p) => p.id === id)
 
-  // Guides: picked edges as lines, the hovered one with its end points.
+  // Guides: picked edges as lines (a round edge as its circle), the hovered one with its end points.
   const draw = useCallback(() => {
     const l = live.current
-    const lines = (l.picked?.edges ?? []).map((e) => ({ from: e.a, to: e.b }))
+    const lines = (l.picked?.edges ?? []).flatMap(edgeLines)
     const h = l.hover
-    if (h && !l.picked?.edges.some((e) => sameEdge(e, h))) lines.push({ from: h.a, to: h.b })
+    if (h && !l.picked?.edges.some((e) => sameEdge(e, h))) lines.push(...edgeLines(h))
     cameraBus()?.guides?.({ lines, points: h ? [h.a, h.b] : [] })
   }, [])
   useEffect(draw, [picked, draw])

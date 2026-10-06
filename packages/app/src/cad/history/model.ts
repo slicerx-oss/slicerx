@@ -9,13 +9,15 @@ import type { ArraySpec, ExtrudeSpec, FaceFrame, FreeShape, MovedFace, Placement
 
 export type Mat4 = number[]
 
-/** A straight edge between two flat faces, as edge.pick returns it (docs/cad-fillet.md). World at the step's transform. */
+/** An edge as edge.pick returns it (docs/cad-fillet.md): straight between two flat faces, or round where a flat face meets a cylinder. World at the step's transform. */
 export interface EdgeRef {
   a: Vec3
   b: Vec3
   face: Vec3
   /** Set on a replay when an end moved with a face it lies on; the engine then finds the edge along its line. */
   moved?: boolean
+  /** A round edge: the center of its circle; `a` is a corner of it and `b` the same. */
+  center?: Vec3
 }
 
 /** A mesh in the engine's flat form, with the part's name and filament slot. */
@@ -361,7 +363,11 @@ export function followed(s: Step, steps: readonly Step[]): Step {
       const db = Math.hypot(sb[0], sb[1], sb[2]) >= 1e-9
       if (!da && !db) return e
       any = true
-      return { ...e, a: da ? mv(e.a, direction(s.transform, sa)) : e.a, b: db ? mv(e.b, direction(s.transform, sb)) : e.b, moved: true }
+      const a = da ? mv(e.a, direction(s.transform, sa)) : e.a
+      const b = db ? mv(e.b, direction(s.transform, sb)) : e.b
+      // A round edge's circle moves with its corner.
+      const center = e.center && da ? { center: mv(e.center, direction(s.transform, sa)) } : {}
+      return { ...e, a, b, ...center, moved: true }
     })
     return any ? { ...s, params: { ...p, edges } } : s
   }
