@@ -522,3 +522,35 @@ fn a_skirt_goes_to_a_filament_whose_extruder_reaches_it() {
     let map = run.unwrap().report.filament_map.expect("a filament map");
     assert_eq!(map.extruders, [1, 2], "two filaments, one on each extruder");
 }
+
+#[test]
+fn keys_a_caller_checked_as_stock_are_linted_as_trusted_and_the_rest_are_not() {
+    let mut config = base_config();
+    config["machine_start_gcode"] = json!("G28\nM500 ; save cali data\n");
+    config["machine_end_gcode"] = json!("M104 S0\nM500\n");
+    let mut req = request(config.clone(), json!({}), [0.0; 3]);
+    req.options.stock_gcode_keys = vec!["machine_start_gcode".to_owned()];
+    // The start runs; the end, which no one checked, still blocks.
+    let m = blocked(run(&req));
+    assert!(m.contains("M500"), "{m}");
+    config["machine_end_gcode"] = json!("M104 S0\n");
+    let mut req = request(config.clone(), json!({}), [0.0; 3]);
+    req.options.stock_gcode_keys = vec!["machine_start_gcode".to_owned()];
+    assert!(run(&req).is_ok());
+    // A line no one can approve blocks even in stock text.
+    config["machine_start_gcode"] = json!("G28\nM502\n");
+    let mut req = request(config, json!({}), [0.0; 3]);
+    req.options.stock_gcode_keys = vec!["machine_start_gcode".to_owned()];
+    let m = blocked(run(&req));
+    assert!(m.contains("M502"), "{m}");
+}
+
+#[test]
+fn stock_keys_cannot_be_claimed_in_the_request_json() {
+    let req = request(
+        base_config(),
+        json!({ "stockGcodeKeys": ["machine_start_gcode"] }),
+        [0.0; 3],
+    );
+    assert!(req.options.stock_gcode_keys.is_empty());
+}

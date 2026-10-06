@@ -264,6 +264,11 @@ pub struct RequestOptions {
     /// file or a tool call. Off by default: imported text gets the strict linter.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub trusted_gcode: Option<bool>,
+    /// Custom G-code keys of `config` whose text the native caller found to be the printer maker's stock text
+    /// (`sx` checks them against the stock fingerprints): linted as trusted even when the rest is not. Never read
+    /// from the request JSON, so a request cannot claim it.
+    #[serde(skip)]
+    pub stock_gcode_keys: Vec<String>,
     /// Setting overrides by height. Only wall count, temperature, flow,
     /// pressure advance, speeds and retraction can change by height.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -524,6 +529,9 @@ pub fn request_config_checked(req: &SliceRequest) -> Result<(PrintConfig, Vec<cr
         .map(|t| (t, req.options.now_offset_minutes.unwrap_or(0)));
     config.limits = req.options.machine_limits.unwrap_or_default();
     config.untrusted_gcode = !req.options.trusted_gcode.unwrap_or(false);
+    config
+        .trusted_gcode_keys
+        .clone_from(&req.options.stock_gcode_keys);
     let limits = config.limits;
     let issues = crate::preflight::clamp_config(&mut config, &limits);
     if crate::preflight::blocks(&issues) {

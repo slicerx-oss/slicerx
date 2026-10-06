@@ -634,7 +634,7 @@ pub(crate) fn context<'a>(cfg: &'a PrintConfig, out: &SliceOutput) -> Context<'a
 pub(crate) fn render(cfg: &PrintConfig, ctx: &Context<'_>, key: &str) -> Result<Option<String>, String> {
     let Some(t) = text(cfg, key) else { return Ok(None) };
     let rendered = template::render(t, ctx).map_err(|e| format!("{key}: {e}"))?;
-    vet(section_of(key), &rendered, cfg)?;
+    vet(key, &rendered, cfg)?;
     Ok(Some(rendered))
 }
 
@@ -649,7 +649,7 @@ pub(crate) fn render_slot(
         return Ok(None);
     };
     let rendered = template::render(&t, ctx).map_err(|e| format!("{key}: {e}"))?;
-    vet(section_of(key), &rendered, cfg)?;
+    vet(key, &rendered, cfg)?;
     Ok(Some(rendered))
 }
 
@@ -667,11 +667,26 @@ fn section_of(key: &str) -> crate::gcode_lint::Section {
     }
 }
 
-/// Runs the G-code linter over rendered text. A finding that blocks is reported as
-/// `safety: ...`, which the writer turns into a blocked slice.
-fn vet(section: crate::gcode_lint::Section, text: &str, cfg: &PrintConfig) -> Result<(), String> {
+/// Runs the G-code linter over the rendered text of `key`, as trusted when the caller checked the key's text is
+/// the maker's stock text. A finding that blocks is reported as `safety: ...`, which the writer turns into a
+/// blocked slice.
+fn vet(key: &str, text: &str, cfg: &PrintConfig) -> Result<(), String> {
+    let trust = if cfg.untrusted_gcode && !cfg.trusted_gcode_keys.iter().any(|k| k == key) {
+        crate::gcode_lint::Trust::Untrusted
+    } else {
+        crate::gcode_lint::Trust::Trusted
+    };
+    vet_section(section_of(key), text, trust, cfg)
+}
+
+fn vet_section(
+    section: crate::gcode_lint::Section,
+    text: &str,
+    trust: crate::gcode_lint::Trust,
+    cfg: &PrintConfig,
+) -> Result<(), String> {
     // The inner reason only: the writer wraps it in `Error::Blocked` again, whose text names the preflight.
-    crate::preflight::vet_custom(section, text, cfg).map_err(|e| match e {
+    crate::preflight::vet_text(section, text, trust, &cfg.limits).map_err(|e| match e {
         crate::error::Error::Blocked(why) => format!("safety: {why}"),
         other => format!("safety: {other}"),
     })
@@ -682,9 +697,10 @@ pub(crate) fn render_text(t: &str, ctx: &Context<'_>, what: &str) -> Result<Stri
     let rendered = template::render(t, ctx).map_err(|e| format!("{what}: {e}"))?;
     // Text from a request is never the person's own settings, so it is linted as untrusted.
     // (The default settings treat custom G-code as untrusted.)
-    vet(
+    vet_section(
         crate::gcode_lint::Section::LayerChange,
         &rendered,
+        crate::gcode_lint::Trust::Untrusted,
         &PrintConfig::default(),
     )?;
     Ok(rendered)
@@ -759,7 +775,7 @@ pub(crate) fn role_change(
             continue;
         };
         let rendered = template::render(&t, ctx).map_err(|e| format!("{key}: {e}"))?;
-        vet(section_of(key), &rendered, cfg)?;
+        vet(key, &rendered, cfg)?;
         out.push_str(&rendered);
         out.push('\n');
     }

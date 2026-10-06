@@ -500,6 +500,9 @@ pub struct PrintConfig {
     /// Custom G-code came from somewhere other than the person's own settings
     /// (a project, a shared preset, a library file or a tool call).
     pub untrusted_gcode: bool,
+    /// Custom G-code keys linted as trusted even when `untrusted_gcode` is set: the caller checked their text
+    /// is the printer maker's stock text.
+    pub trusted_gcode_keys: Vec<String>,
     /// Lift the nozzle by this much on travels that retract, mm; 0 is off.
     pub z_hop: f64,
     /// Lift only when the nozzle is above / below these heights (below 0 means no limit).
@@ -634,6 +637,7 @@ impl PrintConfig {
             now: None,
             limits: crate::gcode_lint::Limits::default(),
             untrusted_gcode: true,
+            trusted_gcode_keys: Vec::new(),
             z_hop: 0.0,
             retract_lift_above: 0.0,
             retract_lift_below: 0.0,
