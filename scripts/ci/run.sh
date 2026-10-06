@@ -149,7 +149,7 @@ vitest_opts=(--no-bail --workspace-concurrency=2)
 
 step install pnpm install --frozen-lockfile || true
 
-# The engine module and its 1024 KB gzip budget; the geom module the app tests load.
+# The engine module and its 1040 KB gzip budget; the geom module the app tests load.
 if [ "$tier" = nightly ] || [ -z "$base" ] || touched '^(packages/core/|packages/geom/|Cargo\.lock|rust-toolchain\.toml)'; then
   if command -v wasm-opt >/dev/null; then
     step wasm-size-gate sh packages/core/web/scripts/build-wasm.sh
