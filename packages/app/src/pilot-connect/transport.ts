@@ -66,7 +66,8 @@ export function browserTransport(store: KeyStore, config: () => ConnectConfig | 
       const c = config()
       if (!c) throw new Error(`${ASSISTANT_NAME} is not connected.`)
       if (c.provider === 'local' && !localAllowed(req.url)) throw new Error('A local model must run on this computer or your home network.')
-      const key = PROVIDERS[c.provider].needsKey ? await store.get(c.provider) : null
+      // A local server's key is optional; the desktop host adds it itself and reads null here.
+      const key = PROVIDERS[c.provider].needsKey || c.provider === 'local' ? await store.get(c.provider) : null
       if (PROVIDERS[c.provider].needsKey && !key) throw new Error(`No key is stored for ${ASSISTANT_NAME}. Connect it again in Settings.`)
       const res = await fetch(req.url, { method: req.method, headers: { ...req.headers, ...authHeaders(c.provider, key) }, body: req.body, ...(signal ? { signal } : {}) })
       if (!res.ok) throw await failure(res, key)
@@ -78,6 +79,23 @@ export function browserTransport(store: KeyStore, config: () => ConnectConfig | 
         if (value) yield value
       }
     },
+  }
+}
+
+/**
+ * A fetch that asks the desktop host for a local server's model listing, so the webview needs no
+ * network access and never holds the server's key. HTTP failures come back as that status.
+ */
+export function hostLocalFetch(localModels: (baseUrl: string) => Promise<string>): typeof fetch {
+  return async (input) => {
+    const base = String(input).replace(/\/models$/, '')
+    try {
+      return new Response(await localModels(base), { status: 200 })
+    } catch (e) {
+      const status = /^(\d{3}): /.exec(e instanceof Error ? e.message : String(e))?.[1]
+      if (status) return new Response(null, { status: Number(status) })
+      throw e
+    }
   }
 }
 
@@ -110,7 +128,7 @@ export async function testConnection(config: ConnectConfig, key: string | null, 
   } catch {
     return {
       ok: false,
-      message: config.provider === 'local' ? 'Nothing answered at that address. Start Ollama or LM Studio, and allow this page as an origin in its settings.' : `Could not reach ${p.label}. Check the network connection.`,
+      message: config.provider === 'local' ? 'Nothing answered at that address. Check the address and that the server is running. A server in a browser also needs to allow this page as an origin.' : `Could not reach ${p.label}. Check the network connection.`,
     }
   }
 }

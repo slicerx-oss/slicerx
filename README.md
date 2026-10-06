@@ -45,7 +45,7 @@ Settings everywhere use the shared slicer key names, so existing profiles and kn
 
 mimir is the assistant built into SlicerX. It plans multi-step jobs (pick printers with the right filament, arrange plates, adjust settings for a material, slice, queue) and cites the knowledge base for every setting it changes.
 
-mimir runs on a model you choose: sign in with your ChatGPT plan, paste your own OpenAI or Anthropic API key, or point it at a local model through Ollama or LM Studio. Keys stay in your operating system's keychain and go only to the provider they belong to.
+mimir runs on a model you choose: sign in with your ChatGPT plan, paste your own OpenAI or Anthropic API key, or point it at a local model through Ollama, LM Studio, llama.cpp, LocalAI or vLLM, on this computer or another one on your home network (with an optional server key). Keys stay in your operating system's keychain and go only to the provider they belong to.
 
 The MCP server gives other AI tools the same tools and the same rules:
 

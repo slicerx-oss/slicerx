@@ -5,7 +5,7 @@ import type { Host } from '@slicerx/contracts'
 import { registerChatGpt, type ChatGptHost } from '../src/pilot-connect/chatgpt'
 import { browserStore, keyStoreFor } from '../src/pilot-connect/keys'
 import { pilotModel } from '../src/pilot-connect/llm'
-import { authHeaders, browserTransport, localAllowed, testConnection } from '../src/pilot-connect/transport'
+import { authHeaders, browserTransport, hostLocalFetch, localAllowed, testConnection } from '../src/pilot-connect/transport'
 import { NEUTRAL } from '../src/edition'
 
 function memStorage(): Storage {
@@ -43,6 +43,9 @@ describe('mimir keys', () => {
       expect(await store.has('anthropic')).toBe(true)
       expect(await store.has('openai')).toBe(false)
       expect(await store.get('anthropic')).toBeNull()
+      await store.set('local', 'lan')
+      expect(written[1]).toEqual(['local', 'lan'])
+      expect(await store.get('local')).toBeNull()
     } finally {
       registerChatGpt(null)
     }
@@ -54,6 +57,57 @@ describe('mimir transport', () => {
     expect(authHeaders('openai', 'k')).toEqual({ authorization: 'Bearer k' })
     expect(authHeaders('anthropic', 'k')).toMatchObject({ 'x-api-key': 'k', 'anthropic-version': '2023-06-01' })
     expect(authHeaders('local', null)).toEqual({})
+    expect(authHeaders('local', 'k')).toEqual({ authorization: 'Bearer k' })
+  })
+
+  it('sends the local key as a Bearer header only when set, in the test and in runtime calls', async () => {
+    const LOCAL = 'lan-key-1'
+    const headers: (Record<string, string> | undefined)[] = []
+    const fetcher = (async (_u: string, init?: RequestInit) => {
+      headers.push(init?.headers as Record<string, string> | undefined)
+      return new Response(JSON.stringify({ data: [{ id: 'm' }] }), { status: 200 })
+    }) as typeof fetch
+    const config = { provider: 'local' as const, baseUrl: 'http://192.168.1.50:8080/v1' }
+    await testConnection(config, null, fetcher)
+    await testConnection(config, LOCAL, fetcher)
+    expect(headers[0]).toEqual({})
+    expect(headers[1]).toEqual({ authorization: `Bearer ${LOCAL}` })
+
+    const ls = memStorage()
+    const store = browserStore(ls)
+    const orig = globalThis.fetch
+    const seen: Record<string, string>[] = []
+    globalThis.fetch = (async (_u: string, init?: RequestInit) => {
+      seen.push(init?.headers as Record<string, string>)
+      return new Response('data: hi\n\n', { status: 200 })
+    }) as typeof fetch
+    const req = { provider: 'openai-compatible', url: 'http://192.168.1.50:8080/v1/chat/completions', method: 'POST' as const, headers: { 'content-type': 'application/json' }, body: '{}' }
+    try {
+      const t = browserTransport(store, () => config)
+      expect(await t.available('openai-compatible')).toBe(true)
+      for await (const _ of t.stream(req)) void _
+      await store.set('local', LOCAL)
+      for await (const _ of t.stream(req)) void _
+      expect(seen[0]?.['authorization']).toBeUndefined()
+      expect(seen[1]?.['authorization']).toBe(`Bearer ${LOCAL}`)
+      // Stored encrypted under its own slot, never beside the preferences or the address.
+      expect(ls.getItem('slicerx.pilot.key.local') ?? '').not.toContain(LOCAL)
+      expect(await store.has('openai')).toBe(false)
+      expect(JSON.stringify(pilotModel(NEUTRAL, { mode: 'on', provider: 'local', baseUrl: config.baseUrl }))).not.toContain(LOCAL)
+    } finally {
+      globalThis.fetch = orig
+    }
+  })
+
+  it('asks the desktop host for a local listing and maps its HTTP errors to a refused key', async () => {
+    const asked: string[] = []
+    const ok = await testConnection({ provider: 'local', baseUrl: 'http://192.168.1.50:8080/v1/' }, null, hostLocalFetch(async (b) => (asked.push(b), '{"data":[{"id":"m"}]}')))
+    expect(ok.ok).toBe(true)
+    expect(asked).toEqual(['http://192.168.1.50:8080/v1'])
+    const refused = await testConnection({ provider: 'local', baseUrl: 'http://192.168.1.50:8080/v1' }, null, hostLocalFetch(async () => { throw new Error('401: Unauthorized') }))
+    expect(refused.message).toMatch(/The key was refused/)
+    const down = await testConnection({ provider: 'local', baseUrl: 'http://192.168.1.50:8080/v1' }, null, hostLocalFetch(async () => { throw new Error('timed out') }))
+    expect(down.message).toMatch(/Nothing answered/)
   })
 
   it('tests a connection with one call and explains failures without the key', async () => {
@@ -67,7 +121,7 @@ describe('mimir transport', () => {
     expect(refused.message).not.toContain(KEY)
     expect((await testConnection({ provider: 'anthropic' }, null)).message).toBe('Paste the API key first.')
     const down = await testConnection({ provider: 'local', baseUrl: 'http://localhost:11434/v1' }, null, (async () => { throw new TypeError('fetch failed') }) as typeof fetch)
-    expect(down.message).toMatch(/Start Ollama or LM Studio/)
+    expect(down.message).toMatch(/Check the address/)
   })
 
   it('keeps local models on this computer or the home network', async () => {

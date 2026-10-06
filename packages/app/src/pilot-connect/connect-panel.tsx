@@ -5,16 +5,16 @@
 // stored; it never enters React state, the app store or a log.
 import { ASSISTANT_NAME } from '@slicerx/pilot/name'
 import { Button, Field, Icon, Input, LinkButton } from '@slicerx/ui'
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useEdition } from '../edition'
 import { useHost } from '../host'
 import { AgentPanel } from './agent-panel'
 import { ChatGptCard } from './chatgpt-card'
-import { useChatGpt } from './chatgpt'
+import { chatGptFor, useChatGpt } from './chatgpt'
 import { LocalAiCard } from './local-ai-card'
 import { pilotState, set, useApp, type PilotPref } from '../state/store'
 import { keyStoreFor, PROVIDERS, type PilotProvider } from './keys'
-import { testConnection, type TestResult } from './transport'
+import { hostLocalFetch, testConnection, type TestResult } from './transport'
 import './connect.css'
 
 const ORDER: PilotProvider[] = ['openai', 'anthropic', 'local']
@@ -38,21 +38,32 @@ export function ConnectPanel({ onConnected, idPrefix = 'pc', withLocal = true }:
   // A server on another computer is the one case that needs an address typed in.
   const [manual, setManual] = useState(!localAi || Boolean(pref?.provider === 'local' && pref.baseUrl && !/^http:\/\/127\.0\.0\.1:(11434|1234)\//.test(pref.baseUrl)))
   const keyRef = useRef<HTMLInputElement>(null)
+  const [hasLocalKey, setHasLocalKey] = useState(false)
   const info = PROVIDERS[provider]
   const store = keyStoreFor(host)
   const saved = pref?.mode === 'on' && pref.provider === provider
+  // The optional key of a model server on the network, asked for beside the address.
+  const localKey = provider === 'local' && manual
+  useEffect(() => {
+    if (provider === 'local') void store.has('local').then(setHasLocalKey, () => setHasLocalKey(false))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [provider])
 
   const connect = async () => {
     setBusy(true)
     setResult(null)
     try {
       const typed = keyRef.current?.value.trim() ?? ''
-      const key = info.needsKey ? typed || (await store.get(provider)) : null
+      const key = info.needsKey || localKey ? typed || (await store.get(provider)) : null
       const config = { provider, ...(baseUrl.trim() ? { baseUrl: baseUrl.trim() } : {}), ...(model.trim() ? { model: model.trim() } : {}) }
-      const r = await testConnection(config, key)
+      const viaHost = provider === 'local' ? chatGptFor(host)?.localModels : undefined
+      const r = await testConnection(config, key, viaHost ? hostLocalFetch(viaHost) : undefined)
       setResult(r)
       if (!r.ok) return
-      if (info.needsKey && typed) await store.set(provider, typed)
+      if ((info.needsKey || localKey) && typed) {
+        await store.set(provider, typed)
+        if (provider === 'local') setHasLocalKey(true)
+      }
       if (keyRef.current) keyRef.current.value = ''
       const next: PilotPref = { mode: 'on', provider, ...(config.baseUrl ? { baseUrl: config.baseUrl } : {}), ...(config.model ? { model: config.model } : {}) }
       set({ pilot: next })
@@ -114,9 +125,55 @@ export function ConnectPanel({ onConnected, idPrefix = 'pc', withLocal = true }:
             </LinkButton>
           ) : null}
           {manual ? (
-            <Field htmlFor={`${idPrefix}-base`} label="Server address" hint={info.where}>
-              <Input id={`${idPrefix}-base`} mono value={baseUrl} placeholder="http://192.168.1.20:11434/v1" onChange={(e) => setBaseUrl(e.target.value)} />
-            </Field>
+            <>
+              <Field htmlFor={`${idPrefix}-base`} label="Server address" hint={info.where}>
+                <Input
+                  id={`${idPrefix}-base`}
+                  mono
+                  value={baseUrl}
+                  placeholder="http://192.168.1.50:8080/v1"
+                  onChange={(e) => setBaseUrl(e.target.value)}
+                  data-tip-title="Any server with an OpenAI-compatible API"
+                  data-tip-body="llama.cpp (llama-server), LocalAI, vLLM, LiteLLM or Ollama, on this computer or another one on your home network. Use http and include /v1. Addresses outside your home network are refused."
+                />
+              </Field>
+              <Field
+                htmlFor={`${idPrefix}-key`}
+                label="API key (if your server needs one)"
+                hint={host.capabilities.secureStorage ? 'Stored in your system keychain.' : 'Stored encrypted in this browser.'}
+                aside={
+                  <>
+                    {hasLocalKey ? (
+                      <button
+                        type="button"
+                        className="fr-textbtn"
+                        onClick={() => {
+                          void store.delete('local').then(() => setHasLocalKey(false))
+                        }}
+                      >
+                        Remove
+                      </button>
+                    ) : null}
+                    <button type="button" className="fr-textbtn" aria-pressed={shown} aria-controls={`${idPrefix}-key`} onClick={() => setShown(!shown)}>
+                      {shown ? 'Hide' : 'Show'}
+                    </button>
+                  </>
+                }
+              >
+                <input
+                  id={`${idPrefix}-key`}
+                  ref={keyRef}
+                  className="sx-input"
+                  data-mono="true"
+                  type={shown ? 'text' : 'password'}
+                  autoComplete="off"
+                  spellCheck={false}
+                  placeholder={hasLocalKey ? 'A key is stored. Paste a new one to replace it.' : 'Leave empty if there is none'}
+                  data-tip-title="Optional server key"
+                  data-tip-body="For servers started with a key, such as llama-server --api-key, LiteLLM or a vLLM proxy. It is sent as an Authorization Bearer header to this server only. It is never put in the address, never logged and never saved with your preferences."
+                />
+              </Field>
+            </>
           ) : null}
         </>
       )}
