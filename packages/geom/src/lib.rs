@@ -33,6 +33,7 @@ pub mod faces;
 pub mod fit;
 pub mod fm;
 pub mod font;
+pub mod hole;
 pub mod hollow;
 pub mod import;
 pub mod json;

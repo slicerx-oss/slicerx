@@ -10,6 +10,7 @@ use crate::edge;
 use crate::error::{Error, Result};
 use crate::face::{self, ExtrudeSpec, FaceFrame, Placement, Shape};
 use crate::fit::{self, FitOptions};
+use crate::hole::{self, Hole, HoleSpec};
 use crate::import::auto::{self, AutoOptions};
 use crate::json::{
     FileLoader, MeshOut, base64_decode, field, field_or, field_or_default, mesh_report, mesh_value, parse,
@@ -133,6 +134,8 @@ pub(crate) fn call(op: &str, req: &Value, enc: MeshOut, files: FileLoader<'_>) -
         "edge.fillet" => edge_op(req, enc, files, true),
         "edge.chamfer.preview" => edge_preview_op(req, enc, files, false),
         "edge.fillet.preview" => edge_preview_op(req, enc, files, true),
+        "hole.find" => hole_find_op(req, files),
+        "hole.apply" => hole_apply_op(req, enc, files),
         "sketch.fillet" => sketch_corner_op(req, true),
         "sketch.chamfer" => sketch_corner_op(req, false),
         _ => return None,
@@ -418,6 +421,24 @@ fn edge_pick_op(req: &Value, files: FileLoader<'_>) -> Result<Value> {
     to_value(&edge::pick_edge(&it.world(), triangle, at)?)
 }
 
+fn hole_find_op(req: &Value, files: FileLoader<'_>) -> Result<Value> {
+    let it = item_field(req, "mesh", files)?;
+    let triangle: u32 = field(req, "triangle")?;
+    let at = field(req, "at")?;
+    to_value(&hole::find(&it.world(), triangle, at)?)
+}
+
+fn hole_apply_op(req: &Value, enc: MeshOut, files: FileLoader<'_>) -> Result<Value> {
+    let it = item_field(req, "mesh", files)?;
+    let h: Hole = field(req, "hole")?;
+    let spec: HoleSpec = field(req, "spec")?;
+    let opts: BooleanOptions = field_or_default(req, "options")?;
+    let (m, r) = hole::apply(&it.world(), &h, &spec, &opts)?;
+    let mut v = mesh_report(&it.to_local(&m)?, enc);
+    insert(&mut v, "report", to_value(&r)?);
+    Ok(v)
+}
+
 fn edge_profile(req: &Value, fillet: bool) -> Result<edge::Profile> {
     if fillet {
         let radius: f64 = field(req, "radiusMm")?;
@@ -466,6 +487,7 @@ fn sketch_corner_op(req: &Value, fillet: bool) -> Result<Value> {
 #[cfg(test)]
 mod tests {
     use crate::build;
+    use crate::fm::Fm as _;
     use crate::json::{MeshOut, base64_encode, call};
     use serde_json::{Value, json};
 
@@ -569,6 +591,62 @@ mod tests {
                 .unwrap();
             assert!((side["offset"].as_f64().unwrap() - right).abs() < 1e-6, "{side}");
         }
+    }
+
+    #[test]
+    fn a_hole_found_and_made_smaller_through_the_worker() {
+        let plate = build::box_mesh([0.0; 3], [30.0, 20.0, 5.0]);
+        let f = crate::vec3::Frame {
+            origin: [15.0, 10.0, 0.0],
+            ..crate::vec3::Frame::WORLD
+        };
+        let bore = build::cylinder(&f, 3.0, -1.0, 6.0, 48);
+        let m = crate::boolean::boolean(
+            &[plate],
+            &[bore],
+            crate::boolean::BoolOp::Difference,
+            &crate::boolean::BooleanOptions::default(),
+        )
+        .unwrap()
+        .0;
+        let t = m
+            .triangles
+            .iter()
+            .position(|&t| {
+                let c = m.corners(t);
+                m.normal(t)[2].abs() < 1e-6 && c.iter().all(|p| (p[0] - 15.0).m_hypot(p[1] - 10.0) < 3.5)
+            })
+            .unwrap();
+        let c = m.corners(m.triangles[t]);
+        let at = [c[0][0], c[0][1], 4.9];
+        let item = json!({ "mesh": MeshOut::Flat.mesh(&m), "transform": translate([100.0, 0.0, 0.0]) });
+        let world_at = [at[0] + 100.0, at[1], at[2]];
+        let found = run(
+            "hole.find",
+            &json!({ "mesh": item, "triangle": t, "at": world_at }),
+        );
+        assert_eq!(found["through"], true);
+        assert!(
+            (found["diameterMm"].as_f64().unwrap() - 6.0).abs() < 1e-6,
+            "{found}"
+        );
+        assert!(
+            (found["entry"][0].as_f64().unwrap() - 115.0).abs() < 1e-6,
+            "{found}"
+        );
+        let out = run(
+            "hole.apply",
+            &json!({ "mesh": item, "hole": found, "spec": { "diameterMm": 3.4 } }),
+        );
+        assert_eq!(out["watertight"], true);
+        let hole = std::f64::consts::PI * 1.7 * 1.7 * 5.0;
+        assert!(
+            (out["volumeMm3"].as_f64().unwrap() - (3000.0 - hole)).abs() < 0.02 * hole,
+            "{}",
+            out["volumeMm3"]
+        );
+        // In the item's own frame, as other ops reply.
+        assert!(out["bounds"]["min"][0].as_f64().unwrap().abs() < 1e-6);
     }
 
     #[test]
