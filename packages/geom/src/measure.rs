@@ -317,6 +317,42 @@ fn fit_circle_2d(pts: &[V2]) -> Option<(V2, f64, f64)> {
     Some((c, r, err))
 }
 
+/// The cylinder the triangles `region` of `mesh` lie on, as a point on its axis, the unit axis and the radius,
+/// when every normal is nearly square to one axis and the corners fit a circle around it to within `rel` of the
+/// radius.
+pub(crate) fn fit_cylinder(mesh: &TriMesh, region: &[u32], rel: f64) -> Option<(V3, V3, f64)> {
+    let mut cov = [[0.0; 3]; 3];
+    let mut normals = Vec::with_capacity(region.len());
+    for &r in region {
+        let [a, b, c] = mesh.corners(*mesh.triangles.get(r as usize)?);
+        let n = vec3::tri_normal(a, b, c);
+        let w = vec3::len(n);
+        let n = vec3::normalize(n)?;
+        for i in 0..3 {
+            for j in 0..3 {
+                cov[i][j] += w * n[i] * n[j];
+            }
+        }
+        normals.push(n);
+    }
+    let axis = smallest_eigenvector(cov);
+    if !normals.iter().all(|&n| vec3::dot(n, axis).abs() < 0.12) {
+        return None;
+    }
+    let frame = Frame::from_normal([0.0; 3], axis, None)?;
+    let mut pts = Vec::new();
+    let mut seen = HashSet::new();
+    for &r in region {
+        for p in mesh.corners(mesh.triangles[r as usize]) {
+            if seen.insert(key(p)) {
+                pts.push(frame.project(p));
+            }
+        }
+    }
+    let (c, r, err) = fit_circle_2d(&pts)?;
+    (err < rel * r).then(|| (frame.at(c, 0.0), axis, r))
+}
+
 fn fit_circle_3d(pts: &[V3], closed: bool) -> Option<Feature> {
     if pts.len() < 5 {
         return None;
@@ -510,42 +546,13 @@ impl Topology<'_> {
             return plane();
         }
         let region = self.grow(t, |_, _, a, b| !self.is_sharp(a, b));
-        let mut cov = [[0.0; 3]; 3];
-        for &r in &region {
-            let n = self.normals[r as usize];
-            let [a, b, c] = self.corners(r);
-            let w = vec3::len(vec3::tri_normal(a, b, c));
-            for i in 0..3 {
-                for j in 0..3 {
-                    cov[i][j] += w * n[i] * n[j];
-                }
-            }
-        }
-        let axis = smallest_eigenvector(cov);
-        let square = region
-            .iter()
-            .all(|&r| vec3::dot(self.normals[r as usize], axis).abs() < 0.12);
-        if square && let Some(frame) = Frame::from_normal([0.0; 3], axis, None) {
-            let mut pts = Vec::new();
-            let mut seen = HashSet::new();
-            for &r in &region {
-                for p in self.corners(r) {
-                    if seen.insert(key(p)) {
-                        pts.push(frame.project(p));
-                    }
-                }
-            }
-            if let Some((c, r, err)) = fit_circle_2d(&pts)
-                && err < 0.02 * r
-            {
-                let h = frame.height(at);
-                return Feature::Cylinder {
-                    point: frame.at(c, h),
-                    axis,
-                    radius: r,
-                    triangles: region,
-                };
-            }
+        if let Some((origin, axis, radius)) = fit_cylinder(self.mesh, &region, 0.02) {
+            return Feature::Cylinder {
+                point: vec3::add(origin, vec3::scale(axis, vec3::dot(vec3::sub(at, origin), axis))),
+                axis,
+                radius,
+                triangles: region,
+            };
         }
         if flat.len() > 2 {
             return plane();

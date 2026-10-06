@@ -220,6 +220,9 @@ const SMOOTH_COS: f64 = 0.906;
 /// A flat group in a smooth region is a plane of its own when its area is this many times the region's median
 /// group (a facet strip of a round is about the median; the flat top beside the round is far larger).
 const PLANE_OVER_FACET: f64 = 4.0;
+/// A smooth face is a cylinder when its corners fit one to within this share of the radius: a tessellated
+/// cylinder's corners lie on it exactly; a round that turns a corner into a sphere does not fit.
+const CYLINDER_FIT: f64 = 1e-4;
 
 /// Faces found from the mesh alone: coplanar neighbors across an edge form a plane, and the facets of a round
 /// (neighbors that meet at a shallow angle, none much larger than the others) form one smooth face.
@@ -330,6 +333,7 @@ fn number(
     let mut ids = Vec::with_capacity(n);
     let mut table = Vec::new();
     let mut map: HashMap<u32, u32> = HashMap::new();
+    let mut round: Vec<Vec<u32>> = Vec::new();
     for t in 0..n {
         let f = root(face, group[t]);
         let id = *map.entry(f).or_insert_with(|| {
@@ -344,9 +348,19 @@ fn number(
                 _ => Surface::Other,
             };
             table.push(surface);
+            round.push(Vec::new());
             (table.len() - 1) as u32
         });
+        round[id as usize].push(t as u32);
         ids.push(id);
+    }
+    // A smooth face whose facets all lie on one cylinder is that cylinder (a hole, a boss, a rounded edge).
+    for (id, tris) in round.iter().enumerate() {
+        if matches!(table[id], Surface::Other)
+            && let Some((origin, axis, radius)) = crate::measure::fit_cylinder(mesh, tris, CYLINDER_FIT)
+        {
+            table[id] = Surface::Cylinder { origin, axis, radius };
+        }
     }
     Faces { ids, table }
 }
@@ -494,7 +508,7 @@ mod tests {
     }
 
     #[test]
-    fn a_cylinder_is_two_caps_and_one_smooth_side() {
+    fn a_cylinder_is_two_caps_and_one_round_side() {
         let m = build::cylinder(&crate::vec3::Frame::WORLD, 5.0, 0.0, 10.0, 48);
         let f = recognize(&m);
         let planes = f
@@ -502,12 +516,28 @@ mod tests {
             .iter()
             .filter(|s| matches!(s, Surface::Plane { .. }))
             .count();
-        let others = f.table.iter().filter(|s| matches!(s, Surface::Other)).count();
-        assert_eq!((planes, others), (2, 1), "{:?}", f.table);
+        let round: Vec<Surface> = f
+            .table
+            .iter()
+            .filter(|s| !matches!(s, Surface::Plane { .. }))
+            .copied()
+            .collect();
+        assert_eq!(planes, 2, "{:?}", f.table);
+        let [Surface::Cylinder { origin, axis, radius }] = round[..] else {
+            panic!("not one cylinder: {round:?}")
+        };
+        assert!(
+            (radius - 5.0).abs() < 1e-6 && axis[2].abs() > 0.999_999,
+            "{round:?}"
+        );
+        assert!(origin[0].abs() < 1e-6 && origin[1].abs() < 1e-6, "{origin:?}");
+        let mut m = m;
+        m.faces = Some(f);
+        check::faces_agree(&m);
     }
 
     #[test]
-    fn a_rounded_edge_is_one_face_and_the_flat_sides_beside_it_stay_planes() {
+    fn a_rounded_edge_is_one_cylinder_and_the_flat_sides_beside_it_stay_planes() {
         let m = build::box_mesh([0.0; 3], [20.0, 10.0, 5.0]);
         let edge = crate::edge::EdgeRef {
             a: [0.0, 0.0, 5.0],
@@ -526,8 +556,20 @@ mod tests {
             .iter()
             .filter(|s| matches!(s, Surface::Plane { .. }))
             .count();
-        let others = f.table.iter().filter(|s| matches!(s, Surface::Other)).count();
-        assert_eq!((planes, others), (6, 1), "{:?}", f.table);
+        let round: Vec<Surface> = f
+            .table
+            .iter()
+            .filter(|s| !matches!(s, Surface::Plane { .. }))
+            .copied()
+            .collect();
+        assert_eq!(planes, 6, "{:?}", f.table);
+        let [Surface::Cylinder { radius, axis, .. }] = round[..] else {
+            panic!("not one cylinder: {round:?}")
+        };
+        assert!(
+            (radius - 2.0).abs() < 1e-6 && axis[0].abs() > 0.999_999,
+            "{round:?}"
+        );
     }
 
     #[test]
