@@ -8,7 +8,7 @@ export { decodeTree, encodeTree, paintTexts, readPaintTexts, leavesOf, type Pain
 export { layerCoordAt, layerHeightStats, layerThicknesses, layerTopsProblems } from './layerheights'
 export { facePatch, layOnFaceTransform, rotationBetween } from './faces'
 export { summarizePreview, type PreviewSummary } from './summary'
-export { ChangeClock, changeSequence, moveDistance, moveTime, poseAt, rackStateBefore, toolChangerSpec, type ChangeSequence, type Phase, type Pose, type ToolChangerKind, type ToolChangerSpec } from './toolchanger'
+export { ChangeClock, changeSequence, printedTop, moveDistance, moveTime, poseAt, rackStateBefore, toolChangerSpec, type ChangeSequence, type Phase, type Pose, type ToolChangerKind, type ToolChangerSpec } from './toolchanger'
 export { CHUTE, blobAt, blobShape, flushOf, flushedShare, meshVolume, purgeFromTools, purgeGrams, purgeVolume, purgeWindow, totalSeconds, type BlobState, type Flush, type FlushStep, type PurgePlan, type PurgeWindow } from './purge'
 export { changePoints } from './toolpaths'
 export { HEAD_MODELS, headFor, type HeadModel } from './heads'

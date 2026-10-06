@@ -5,7 +5,7 @@
 // first use (it reads the G-code text); the viewport draws the blob from the plans and the playback bar
 // reads out the grams (purge-view.ts).
 import { SXPV_SEGMENT, SXPV_SEGMENT_BYTES, type Host, type PreviewBuffers } from '@slicerx/contracts'
-import { changeSequence, flushOf, purgeFromTools, purgeGrams, purgeVolume, purgeWindow, type ToolChangerSpec } from '@slicerx/viewport'
+import { changeSequence, flushOf, printedTop, purgeFromTools, purgeGrams, purgeVolume, purgeWindow, type ToolChangerSpec } from '@slicerx/viewport'
 import type { Timeline } from '../../lib/preview-timeline'
 import { lineOfSegment, lineText, type LineIndex } from './gcode-lines'
 import { currentText } from './gcode-source'
@@ -92,7 +92,7 @@ export function plansFromText(ix: LineIndex, p: PreviewBuffers, tl: Timeline, sp
     const r = c.segment * 8
     const at: [number, number, number] = [seg[q + 2] ?? 0, seg[q + 3] ?? 0, seg[q + 4] ?? 0]
     const resume: [number, number, number] = [seg[r] ?? 0, seg[r + 1] ?? 0, seg[r + 4] ?? 0]
-    const seq = changeSequence(spec, c.from, c.to, at, resume, c.fixed, hist)
+    const seq = changeSequence(spec, c.from, c.to, at, resume, c.fixed, hist, printedTop(p, c.segment))
     const window = purgeWindow(seq, flush.seconds)
     if (!window) return
     const volume = purgeVolume(flush.e, diameter[c.to] ?? diameter[0] ?? 1.75)

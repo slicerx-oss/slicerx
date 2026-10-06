@@ -22,7 +22,7 @@
 // so the head never jumps. The firmware's own work (cutting, loading, flushing, latching) is a dwell of
 // the seconds the slicer counts for the change (`fixedSeconds`, from `ChangeClock`), spent where the
 // machine spends it. Positions are bed coordinates in mm, origin at the front left corner, z up.
-import type { Bed } from '@slicerx/contracts'
+import type { Bed, PreviewBuffers } from '@slicerx/contracts'
 
 export type V3 = [number, number, number]
 
@@ -48,6 +48,11 @@ export interface ToolChangerSpec {
   dock: MotionLimits
   /** Height the head lifts above the top layer for the change, mm. */
   liftMm: number
+  /**
+   * The change G-code lifts over the highest layer printed so far (`max_layer_z`), as the makers' own do, so a change
+   * printed by object clears the finished objects (the engine's collision check reads the same).
+   */
+  liftOverPrint?: boolean
   /** Fixed seconds the profile gives the firmware's work: the switch, a load and an unload. */
   seconds: { switch: number; load: number; unload: number }
   /** Bambu: the purge chute and nozzle wiper, where the nozzle flushes over it, and the Y stops of the exit moves written after the change. */
@@ -203,6 +208,7 @@ export function toolChangerSpec(printerId: string | undefined, cfg: Settings, be
     z: { speed: Math.max(5, num(cfg['machine_max_speed_z'], 20)), accel: Math.max(50, num(cfg['machine_max_acceleration_z'], 500)) },
     dock: { speed: 60, accel: 2000 },
     liftMm: 3,
+    ...(String(Array.isArray(cfg['change_filament_gcode']) ? cfg['change_filament_gcode'][0] : (cfg['change_filament_gcode'] ?? '')).includes('max_layer_z') ? { liftOverPrint: true } : {}),
     seconds: { switch: Math.max(0, sw), load: Math.max(0, num(cfg['machine_load_filament_time'], 0)), unload: Math.max(0, num(cfg['machine_unload_filament_time'], 0)) },
   }
   if (kind === 'dual-nozzle' || kind === 'hotend-rack') {
@@ -509,14 +515,36 @@ function hotendPlan(spec: ToolChangerSpec, from: number, to: number, slots: numb
   return { parkSlot, pickSlot, slotsAfter: after, inHeadAfter: to, rowAfter: Math.floor(pickSlot / 3) }
 }
 
+const printedTops = new WeakMap<PreviewBuffers, Float32Array>()
+
+/** The highest layer top printed up to the layer of `segment` (the G-code's `max_layer_z` there), mm. */
+export function printedTop(b: PreviewBuffers, segment: number): number {
+  let tops = printedTops.get(b)
+  if (!tops) {
+    tops = new Float32Array(b.layerCount)
+    let m = 0
+    for (let l = 0; l < b.layerCount; l++) tops[l] = m = Math.max(m, b.layerZ[l] ?? 0)
+    printedTops.set(b, tops)
+  }
+  let lo = 0
+  let hi = b.layerCount - 1
+  while (lo < hi) {
+    const mid = (lo + hi + 1) >> 1
+    if ((b.layerStart[mid] ?? 0) <= segment) lo = mid
+    else hi = mid - 1
+  }
+  return tops[lo] ?? 0
+}
+
 /**
  * The sequence of one change from tool `from` to tool `to`, starting with the nozzle at `at` (the end
  * of the last move before the change) and ending at `resume` (the start of the first move after it).
  * `fixed` is the firmware's seconds for this change (`ChangeClock.change`). `history` lists the
- * changes before this one (racks keep state across changes).
+ * changes before this one (racks keep state across changes). `printed` is the highest layer printed so far, which a
+ * change G-code that lifts over `max_layer_z` clears.
  */
-export function changeSequence(spec: ToolChangerSpec, from: number, to: number, at: V3, resume: V3, fixed: number, history: readonly [number, number][] = []): ChangeSequence {
-  const top = Math.max(at[2], resume[2])
+export function changeSequence(spec: ToolChangerSpec, from: number, to: number, at: V3, resume: V3, fixed: number, history: readonly [number, number][] = [], printed = 0): ChangeSequence {
+  const top = Math.max(at[2], resume[2], spec.liftOverPrint ? printed : 0)
   const up = top + spec.liftMm
   const lifted: V3 = [at[0], at[1], up]
   const back: V3 = [resume[0], resume[1], up]
