@@ -5,6 +5,7 @@
 // the validated mesh
 #![allow(clippy::indexing_slicing)]
 
+use crate::array::{self, ArraySpec};
 use crate::boolean::{self, BoolOp, BooleanOptions, BooleanReport};
 use crate::build;
 use crate::error::{Error, Result};
@@ -16,6 +17,7 @@ use crate::poly2d::{self, Polygon};
 use crate::sketch;
 use crate::svg;
 use crate::vec3::{self, Frame, V2, V3};
+use crate::xform::{self, Mat4};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::f64::consts::PI;
@@ -606,6 +608,82 @@ pub struct ExtrudeReport {
     pub boolean: Option<BooleanReport>,
 }
 
+/// Copies of the shape on its face, made in one step: a line or a grid along the face's `u` and `v`, a circle
+/// about a point of the face, or points of the face, each an offset from the shape. The copies' tools are joined
+/// first and changed the body in one boolean.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum Pattern {
+    #[serde(rename_all = "camelCase")]
+    Linear {
+        count: usize,
+        /// Between neighbors along the face, mm (`u`, `v`).
+        step_mm: V2,
+        #[serde(default)]
+        count2: Option<usize>,
+        #[serde(default)]
+        step2_mm: Option<V2>,
+    },
+    #[serde(rename_all = "camelCase")]
+    Circular {
+        count: usize,
+        /// The center on the face, mm (`u`, `v`).
+        center: V2,
+        /// The sweep, 360 by default (copies spread evenly all round).
+        #[serde(default)]
+        angle_deg: Option<f64>,
+    },
+    #[serde(rename_all = "camelCase")]
+    Points {
+        /// Each copy's offset from the shape on the face, mm (`u`, `v`); the shape itself stays.
+        offsets: Vec<V2>,
+    },
+}
+
+/// Where each copy goes, the shape itself first.
+fn pattern_transforms(frame: &FaceFrame, p: &Pattern) -> Result<Vec<Mat4>> {
+    let f = frame.checked()?;
+    let on = |d: V2| vec3::add(vec3::scale(f.u, d[0]), vec3::scale(f.v, d[1]));
+    match p {
+        Pattern::Linear {
+            count,
+            step_mm,
+            count2,
+            step2_mm,
+        } => array::transforms(&ArraySpec::Linear {
+            count: *count,
+            step: on(*step_mm),
+            count2: *count2,
+            step2: step2_mm.map(on),
+        }),
+        Pattern::Circular {
+            count,
+            center,
+            angle_deg,
+        } => array::transforms(&ArraySpec::Circular {
+            count: *count,
+            center: vec3::add(f.origin, on(*center)),
+            axis: Some(f.w),
+            angle_deg: *angle_deg,
+            rotate_copies: Some(true),
+        }),
+        Pattern::Points { offsets } => {
+            if offsets.len() >= array::MAX_COPIES {
+                return Err(Error::invalid(
+                    "offsets",
+                    format!("at most {} copies", array::MAX_COPIES),
+                ));
+            }
+            if !offsets.iter().flatten().all(|c| c.is_finite()) {
+                return Err(Error::invalid("offsets", "must be finite"));
+            }
+            Ok(std::iter::once(xform::IDENTITY)
+                .chain(offsets.iter().map(|&d| xform::translation(on(d))))
+                .collect())
+        }
+    }
+}
+
 pub fn extrude(
     frame: &FaceFrame,
     shape: &Shape,
@@ -613,6 +691,19 @@ pub fn extrude(
     font: Option<&[u8]>,
     spec: &ExtrudeSpec,
     target: Option<&TriMesh>,
+) -> Result<ExtrudeResult> {
+    extrude_pattern(frame, shape, at, font, spec, target, None)
+}
+
+/// [`extrude`], repeated by `pattern` when there is one.
+pub fn extrude_pattern(
+    frame: &FaceFrame,
+    shape: &Shape,
+    at: &Placement,
+    font: Option<&[u8]>,
+    spec: &ExtrudeSpec,
+    target: Option<&TriMesh>,
+    pattern: Option<&Pattern>,
 ) -> Result<ExtrudeResult> {
     let (a, b) = ends(spec)?;
     let mut tool = body(frame, shape, at, font, spec, a, b)?;
@@ -630,6 +721,14 @@ pub fn extrude(
             );
             tool = body(frame, shape, at, font, spec, a2, b2)?;
         }
+    }
+    if let Some(p) = pattern {
+        // Overlapping copies join into one tool, so the body changes once.
+        let copies: Vec<TriMesh> = pattern_transforms(frame, p)?
+            .iter()
+            .map(|m| xform::transformed(&tool, m))
+            .collect();
+        tool = boolean::boolean(&copies, &[], BoolOp::Union, &BooleanOptions::default())?.0;
     }
     apply(tool, spec.operation, target)
 }
@@ -735,6 +834,108 @@ mod tests {
         let c = m.corners(m.triangles[t as usize]);
         let at = vec3::scale(vec3::add(vec3::add(c[0], c[1]), c[2]), 1.0 / 3.0);
         pick_face(m, t, at).unwrap()
+    }
+
+    fn plate_cut(pattern: Option<&Pattern>, seed: V2) -> Result<ExtrudeResult> {
+        let m = build::box_mesh([0.0; 3], [60.0, 40.0, 5.0]);
+        let p = top_pick(&m);
+        let spec = ExtrudeSpec {
+            distance_mm: 5.0,
+            operation: Operation::Cut,
+            ..ExtrudeSpec::default()
+        };
+        let at = Placement {
+            center: seed,
+            rotation_deg: 0.0,
+        };
+        extrude_pattern(
+            &p.frame,
+            &Shape::Circle { diameter_mm: 4.0 },
+            &at,
+            None,
+            &spec,
+            Some(&m),
+            pattern,
+        )
+    }
+
+    #[test]
+    fn a_pattern_cuts_every_copy_in_one_step() {
+        let one = 12_000.0 - plate_cut(None, [-20.0, -10.0]).unwrap().mesh.volume();
+        assert!(one > 60.0 && one < 63.0, "{one}");
+        let removed = |r: ExtrudeResult| {
+            assert!(r.report.watertight && r.report.shells == 1);
+            12_000.0 - r.mesh.volume()
+        };
+        // A 3 by 2 grid along the face.
+        let grid = Pattern::Linear {
+            count: 3,
+            step_mm: [20.0, 0.0],
+            count2: Some(2),
+            step2_mm: Some([0.0, 20.0]),
+        };
+        assert!((removed(plate_cut(Some(&grid), [-20.0, -10.0]).unwrap()) - 6.0 * one).abs() < 1e-6);
+        // Six round a point of the face.
+        let ring = Pattern::Circular {
+            count: 6,
+            center: [0.0, 0.0],
+            angle_deg: None,
+        };
+        assert!((removed(plate_cut(Some(&ring), [12.0, 0.0]).unwrap()) - 6.0 * one).abs() < 1e-3);
+        // The seed and each point.
+        let points = Pattern::Points {
+            offsets: vec![[10.0, 0.0], [0.0, 10.0]],
+        };
+        assert!((removed(plate_cut(Some(&points), [-20.0, -10.0]).unwrap()) - 3.0 * one).abs() < 1e-6);
+    }
+
+    #[test]
+    fn overlapping_copies_join_as_one_body_and_too_many_are_refused() {
+        let m = build::box_mesh([0.0; 3], [60.0, 40.0, 5.0]);
+        let p = top_pick(&m);
+        let spec = ExtrudeSpec {
+            distance_mm: 4.0,
+            operation: Operation::Join,
+            ..ExtrudeSpec::default()
+        };
+        let boss = Shape::Circle { diameter_mm: 10.0 };
+        let row = Pattern::Linear {
+            count: 3,
+            step_mm: [5.0, 0.0],
+            count2: None,
+            step2_mm: None,
+        };
+        let r = extrude_pattern(
+            &p.frame,
+            &boss,
+            &Placement::default(),
+            None,
+            &spec,
+            Some(&m),
+            Some(&row),
+        )
+        .unwrap();
+        assert!(r.report.watertight && r.report.shells == 1 && r.report.touches);
+        let added = r.mesh.volume() - 12_000.0;
+        let single = std::f64::consts::PI * 25.0 * 4.0;
+        assert!(added > 1.5 * single && added < 3.0 * single, "{added}");
+        let many = Pattern::Linear {
+            count: 100,
+            step_mm: [0.5, 0.0],
+            count2: Some(30),
+            step2_mm: Some([0.0, 0.5]),
+        };
+        let e = extrude_pattern(
+            &p.frame,
+            &boss,
+            &Placement::default(),
+            None,
+            &spec,
+            Some(&m),
+            Some(&many),
+        )
+        .unwrap_err();
+        assert!(e.to_string().contains("copies"), "{e}");
     }
 
     #[test]

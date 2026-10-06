@@ -277,9 +277,18 @@ fn extrude_op(req: &Value, enc: MeshOut, files: FileLoader<'_>) -> Result<Value>
         None | Some(Value::Null) => None,
         Some(v) => Some(item(v, "target", files)?),
     };
+    let pattern: Option<face::Pattern> = field_or_default(req, "pattern")?;
     let font = font(req)?;
     let world = target.as_ref().map(Item::world);
-    let r = face::extrude(&frame, &shape, &at, font.as_deref(), &spec, world.as_ref())?;
+    let r = face::extrude_pattern(
+        &frame,
+        &shape,
+        &at,
+        font.as_deref(),
+        &spec,
+        world.as_ref(),
+        pattern.as_ref(),
+    )?;
     tool_reply(r, target.as_ref(), spec.operation, enc)
 }
 
@@ -761,6 +770,36 @@ mod tests {
             "{}",
             out["bounds"]
         );
+    }
+
+    #[test]
+    fn a_pattern_of_holes_in_one_extrude_call() {
+        let m = build::box_mesh([0.0; 3], [60.0, 40.0, 5.0]);
+        let item = json!({ "mesh": MeshOut::Flat.mesh(&m), "transform": translate([100.0, 0.0, 0.0]) });
+        let frame =
+            json!({ "origin": [130.0, 20.0, 5.0], "normal": [0, 0, 1], "u": [1, 0, 0], "v": [0, 1, 0] });
+        let req = |pattern: Value| {
+            json!({ "frame": frame, "shape": { "type": "circle", "diameterMm": 4 }, "placement": { "center": [-20, -10] },
+                "spec": { "distanceMm": 5, "operation": "cut" }, "target": item, "pattern": pattern })
+        };
+        let one = 12_000.0
+            - run("shape.extrude", &req(Value::Null))["volumeMm3"]
+                .as_f64()
+                .unwrap();
+        let out = run(
+            "shape.extrude",
+            &req(json!({ "kind": "linear", "count": 3, "stepMm": [20, 0], "count2": 2, "step2Mm": [0, 20] })),
+        );
+        assert_eq!(out["watertight"], true);
+        let removed = 12_000.0 - out["volumeMm3"].as_f64().unwrap();
+        assert!((removed - 6.0 * one).abs() < 1e-3, "{removed} vs {}", 6.0 * one);
+        let bad = call(
+            "shape.extrude",
+            &req(json!({ "kind": "spiral", "count": 3 })).to_string(),
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(bad.contains("pattern"), "{bad}");
     }
 
     #[test]
