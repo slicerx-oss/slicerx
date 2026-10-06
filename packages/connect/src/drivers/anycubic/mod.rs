@@ -979,7 +979,7 @@ mod tests {
 
     #[test]
     fn the_signature_follows_the_documented_recipe() {
-        let token = "0123456789abcdefFEDCBA9876543210";
+        let token = "0123456789abcdefFEDCBA9876543210"; // gitleaks:allow (a made-up test token)
         let first = hex(&Md5::digest(b"0123456789abcdef"));
         let want = hex(&Md5::digest(format!("{first}1700000000000aB3dE9").as_bytes()));
         assert_eq!(sign(token, 1_700_000_000_000, "aB3dE9"), want);
@@ -988,7 +988,7 @@ mod tests {
     #[test]
     fn the_credentials_decrypt() {
         use aes::cipher::{BlockModeEncrypt, KeyIvInit, block_padding::Pkcs7};
-        let token = "0123456789abcdefFEDCBA9876543210";
+        let token = "0123456789abcdefFEDCBA9876543210"; // gitleaks:allow (a made-up test token)
         let local = "localtoken";
         let plain = br#"{"broker":"mqtts://192.0.2.5:9883","username":"u","password":"p","deviceId":"d"}"#;
         let mut iv = [0_u8; 16];
