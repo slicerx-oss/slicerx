@@ -3412,8 +3412,14 @@ fn spiral_radius(rc: &PrintConfig, hop_mm: f64) -> f64 {
 fn write_spiral_lift(b: &mut Vec<u8>, rc: &PrintConfig, from: Point, ij: [f64; 2], z: [i64; 2], z_feed: i64) {
     let [i, j] = ij;
     let [z_from, z_to] = z;
+    // Orca's wording with `gcode_comments` (GCodeWriter::_spiral_travel_to_z).
+    let comments = crate::firmware::truthy(rc, "gcode_comments");
     if crate::firmware::truthy(rc, "enable_arc_fitting") {
-        b.extend_from_slice(b"G17\nG3 Z");
+        b.extend_from_slice(if comments {
+            b"G17 ; XY plane for arc\nG3 Z"
+        } else {
+            b"G17\nG3 Z"
+        });
         put_fixed(b, z_to, 3);
         #[allow(
             clippy::cast_possible_truncation,
@@ -3426,6 +3432,9 @@ fn write_spiral_lift(b: &mut Vec<u8>, rc: &PrintConfig, from: Point, ij: [f64; 2
         put_fixed(b, tj, 3);
         b.extend_from_slice(b" P1 F");
         put_int(b, z_feed);
+        if comments {
+            b.extend_from_slice(b" ; spiral lift Z");
+        }
         b.push(b'\n');
         return;
     }
@@ -3438,6 +3447,9 @@ fn write_spiral_lift(b: &mut Vec<u8>, rc: &PrintConfig, from: Point, ij: [f64; 2
     let (cx, cy) = (px + i, py + j);
     let radius = i.m_hypot(j);
     let a0 = (py - cy).m_atan2(px - cx);
+    if comments {
+        b.extend_from_slice(b";spiral lift Z\n");
+    }
     b.extend_from_slice(b"G1 F");
     put_int(b, z_feed);
     b.push(b'\n');
@@ -3943,6 +3955,8 @@ fn add_comments(chunk: &[u8]) -> Vec<u8> {
     let mut travel: Vec<usize> = Vec::new();
     let mut walls = false;
     let mut lifted = false;
+    // Inside a spiral lift's segments, which Orca leaves without a comment of their own.
+    let mut spiral = false;
     let class = |walls: bool| {
         if walls {
             "move to first perimeter point"
@@ -3954,6 +3968,18 @@ fn add_comments(chunk: &[u8]) -> Vec<u8> {
         let body = line.trim_end_matches('\n');
         if body.contains(';') && !body.starts_with(';') {
             continue;
+        }
+        if body == ";spiral lift Z" {
+            spiral = true;
+            continue;
+        }
+        if spiral {
+            if body.starts_with("G1 F")
+                || (body.starts_with("G1 X") && body.contains(" Z") && !body.contains(" E"))
+            {
+                continue;
+            }
+            spiral = false;
         }
         if let Some(t) = body.strip_prefix(";TYPE:") {
             walls = matches!(t, "Outer wall" | "Inner wall" | "Overhang wall");

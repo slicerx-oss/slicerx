@@ -60,7 +60,7 @@ def main():
     check("slope lift: ramps per retraction", abs(ro - rs) <= 0.35, f"orca {ro:.2f} sx {rs:.2f}")
 
     og, sg = both(a, work, a.model, {"z_hop_types": "Spiral Lift"}, {"z_hop": 0.4, "retract_lift_above": 0, "gcode_comments": 1},
-                  {"z_hop": 0.4, "retract_lift_above": 0, "z_hop_types": "Spiral Lift"})
+                  {"z_hop": 0.4, "retract_lift_above": 0, "z_hop_types": "Spiral Lift", "gcode_comments": True})
     spirals = lambda g: g.count(";spiral lift Z")
     check("spiral lift: spirals per retraction", abs(spirals(og) / max(retr(og), 1) - spirals(sg) / max(retr(sg), 1)) <= 0.35, f"orca {spirals(og)}/{retr(og)} sx {spirals(sg)}/{retr(sg)}")
 
