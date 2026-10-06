@@ -5,7 +5,7 @@
 // they were when it ran, plus the object's transform at that moment; replaying it with the current
 // local mesh and that transform gives the same result wherever the object has moved since. No
 // React, no store and no engine calls in here, so the geometry worker can load it too.
-import type { ArraySpec, ExtrudeSpec, FaceFrame, FreeShape, Hole, HoleSpec, MovedFace, Placement, Polygon, Shape, SketchLoop, ThreadPlace, ThreadSpec, Vec2, Vec3 } from '../../geom/cad'
+import type { ArraySpec, ExtrudeSpec, FaceFrame, FreeShape, Hole, HoleSpec, MovedFace, OpenFace, Placement, Polygon, Shape, SketchLoop, ThreadPlace, ThreadSpec, Vec2, Vec3 } from '../../geom/cad'
 
 export type Mat4 = number[]
 
@@ -42,6 +42,7 @@ export type StepParams =
   | { op: 'edge.chamfer'; edges: EdgeRef[]; distanceMm: number; distance2Mm?: number }
   | { op: 'hole.apply'; hole: Hole; spec: HoleSpec; label: string }
   | { op: 'thread.apply'; thread: ThreadPlace; spec: ThreadSpec; label: string }
+  | { op: 'shell'; open: OpenFace[]; wallMm: number }
 
 export type StepOp = StepParams['op']
 
@@ -450,6 +451,8 @@ export function stepName(s: Pick<Step, 'params'>): string {
       return p.label
     case 'hollow':
       return `Hollow, ${n2(p.wallMm)} mm walls`
+    case 'shell':
+      return `Shell, ${n2(p.wallMm)} mm walls${p.open.length ? `, ${p.open.length} open face${p.open.length === 1 ? '' : 's'}` : ''}`
     case 'repair':
       return 'Repair'
     case 'simplify':
@@ -489,6 +492,8 @@ export function mainNumber(p: StepParams): { label: string; value: number; unit:
       return { label: 'Diameter', value: p.spec.diameterMm, unit: 'mm', min: 0 }
     case 'thread.apply':
       return { label: 'Length', value: p.spec.lengthMm ?? p.thread.lengthMm, unit: 'mm', min: 0 }
+    case 'shell':
+      return { label: 'Wall', value: p.wallMm, unit: 'mm', min: 0 }
     case 'subtract': {
       const s = p.solids.length === 1 ? p.solids[0]! : null
       if (s?.type === 'cylinder') return { label: 'Diameter', value: s.diameterMm, unit: 'mm', min: 0 }
@@ -522,6 +527,8 @@ export function withNumber(p: StepParams, v: number): StepParams | string {
       return v > 0 ? { ...p, spec: { ...p.spec, diameterMm: v }, label: `Hole ${n2(v)} mm` } : 'The diameter must be more than 0 mm.'
     case 'thread.apply':
       return v > 0 ? { ...p, spec: { ...p.spec, lengthMm: v } } : 'The length must be more than 0 mm.'
+    case 'shell':
+      return v > 0 ? { ...p, wallMm: v } : 'The wall must be more than 0 mm.'
     case 'subtract': {
       const s = p.solids.length === 1 ? p.solids[0]! : null
       if (!(v > 0) || !s) return 'The size must be more than 0 mm.'

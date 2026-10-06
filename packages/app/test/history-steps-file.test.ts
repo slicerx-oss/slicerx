@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// Every kind of history step the tools record comes back from the project file, so a project with a hole or a
-// thread opens with its whole history (export/history-read.ts checks each step's parameters).
+// Every kind of history step the tools record comes back from the project file, so a project with a hole, a
+// thread or a shell opens with its whole history (export/history-read.ts checks each step's parameters).
 import { describe, expect, it } from 'vitest'
 import type { History, StepParams } from '../src/cad/history/model'
 import { historyFiles } from '../src/export/history-file'
@@ -12,6 +12,7 @@ const T = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
 const STEPS: StepParams[] = [
   { op: 'hole.apply', hole: { entry: [0, 0, 5], axis: [0, 0, 1], diameterMm: 6, depthMm: 5, through: true }, spec: { diameterMm: 3.4 }, label: 'M3 clearance' },
   { op: 'thread.apply', thread: { start: [0, 0, 5], axis: [0, 0, 1], diameterMm: 6.8, lengthMm: 5, internal: true, openEnd: true }, spec: { size: 'M8', clearanceMm: 0.1 }, label: 'M8 thread' },
+  { op: 'shell', open: [{ at: [0, 0, 5], normal: [0, 0, 1] }], wallMm: 2 },
 ]
 
 function roundTrip(params: StepParams): History | undefined {
@@ -28,7 +29,19 @@ describe('history steps in the project file', () => {
   }
 
   it('drops a step whose parameters are wrong', () => {
+    expect(roundTrip({ op: 'shell', open: [{ at: [0, 0], normal: [0, 0, 1] }], wallMm: 2 } as unknown as StepParams)).toBeUndefined()
     expect(roundTrip({ op: 'thread.apply', thread: { start: [0, 0, 5] }, spec: { size: 8 }, label: 'x' } as unknown as StepParams)).toBeUndefined()
     expect(roundTrip({ op: 'hole.apply', hole: {}, spec: { diameterMm: 'big' }, label: 'x' } as unknown as StepParams)).toBeUndefined()
+  })
+})
+
+describe('a shell step', () => {
+  it('is named by its wall and open faces, and its wall is the number a person changes', async () => {
+    const { mainNumber, stepName, withNumber } = await import('../src/cad/history/model')
+    const step = { id: 's', part: 0, transform: T, params: STEPS[2]! }
+    expect(stepName(step)).toBe('Shell, 2 mm walls, 1 open face')
+    expect(mainNumber(step.params)).toMatchObject({ label: 'Wall', value: 2, unit: 'mm' })
+    expect(withNumber(step.params, 3)).toMatchObject({ op: 'shell', wallMm: 3 })
+    expect(withNumber(step.params, 0)).toMatch(/more than 0/)
   })
 })
