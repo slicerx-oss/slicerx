@@ -48,12 +48,14 @@ thiserror = "=2.0.21"
 # offer (docs/cad-engine.md, section 2). Booleans, arrays, measure, cut, split, repair, import, orient, emboss,
 # simplify, fit check and print rescue are always there.
 [features]
-default = ["cad", "holes", "text", "svg", "nest", "calib", "hollow"]
+default = ["cad", "holes", "threads", "text", "svg", "nest", "calib", "hollow"]
 # The modeling tools: the face shape tool, free sketch, push and pull, fillet and chamfer, kept dimensions, and the
 # faces that make them work (found on meshes without them, and sent in the JSON).
 cad = ["text", "svg"]
 # The hole tool.
 holes = ["cad"]
+# ISO metric threads on a hole, boss or rod; only in the full engine the app loads when a call needs it.
+threads = ["holes"]
 # TrueType and OpenType text bodies and outlines, with the built-in font.
 text = ["dep:ttf-parser"]
 # SVG outlines as bodies.

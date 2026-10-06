@@ -35,6 +35,8 @@ use crate::push;
 use crate::sketch;
 #[cfg(feature = "cad")]
 use crate::sketch_corner;
+#[cfg(feature = "threads")]
+use crate::thread::{self, ThreadSpec, ThreadTarget};
 #[cfg(feature = "cad")]
 use crate::vec3::V2;
 use crate::xform::{self, IDENTITY, Mat4};
@@ -170,6 +172,10 @@ pub(crate) fn call(op: &str, req: &Value, enc: MeshOut, files: FileLoader<'_>) -
         "hole.find" => hole_find_op(req, files),
         #[cfg(feature = "holes")]
         "hole.apply" => hole_apply_op(req, enc, files),
+        #[cfg(feature = "threads")]
+        "thread.find" => thread_find_op(req, files),
+        #[cfg(feature = "threads")]
+        "thread.apply" => thread_apply_op(req, enc, files),
         #[cfg(feature = "cad")]
         "sketch.fillet" => sketch_corner_op(req, true),
         #[cfg(feature = "cad")]
@@ -491,6 +497,35 @@ fn hole_apply_op(req: &Value, enc: MeshOut, files: FileLoader<'_>) -> Result<Val
     Ok(v)
 }
 
+/// The round surface under a pick, with the size that suits it and every size there is.
+#[cfg(feature = "threads")]
+fn thread_find_op(req: &Value, files: FileLoader<'_>) -> Result<Value> {
+    let it = item_field(req, "mesh", files)?;
+    let triangle: u32 = field(req, "triangle")?;
+    let at = field(req, "at")?;
+    let t = thread::find(&it.world(), triangle, at)?;
+    let mut v = to_value(&t)?;
+    insert(&mut v, "suggested", json!(thread::suggest(&t)));
+    let sizes: Vec<Value> = thread::ISO_COARSE
+        .iter()
+        .map(|(name, major, pitch)| json!({ "name": name, "majorMm": major, "pitchMm": pitch }))
+        .collect();
+    insert(&mut v, "sizes", Value::Array(sizes));
+    Ok(v)
+}
+
+#[cfg(feature = "threads")]
+fn thread_apply_op(req: &Value, enc: MeshOut, files: FileLoader<'_>) -> Result<Value> {
+    let it = item_field(req, "mesh", files)?;
+    let target: ThreadTarget = field(req, "thread")?;
+    let spec: ThreadSpec = field(req, "spec")?;
+    let opts: BooleanOptions = field_or_default(req, "options")?;
+    let (m, r) = thread::apply(&it.world(), &target, &spec, &opts)?;
+    let mut v = mesh_report(&it.to_local(&m)?, enc);
+    insert(&mut v, "report", to_value(&r)?);
+    Ok(v)
+}
+
 #[cfg(feature = "cad")]
 fn edge_profile(req: &Value, fillet: bool) -> Result<edge::Profile> {
     if fillet {
@@ -647,6 +682,46 @@ mod tests {
                 .unwrap();
             assert!((side["offset"].as_f64().unwrap() - right).abs() < 1e-6, "{side}");
         }
+    }
+
+    #[cfg(feature = "threads")]
+    #[test]
+    fn a_rod_found_and_threaded_through_the_worker() {
+        let f = crate::vec3::Frame::WORLD;
+        let m = build::cylinder(&f, 4.0, 0.0, 20.0, 64);
+        let t = m
+            .triangles
+            .iter()
+            .position(|&t| m.normal(t)[2].abs() < 1e-6)
+            .unwrap();
+        let c = m.corners(m.triangles[t]);
+        let item = json!({ "mesh": MeshOut::Flat.mesh(&m), "transform": translate([100.0, 0.0, 0.0]) });
+        let at = [c[0][0] + 100.0, c[0][1], 19.0];
+        let found = run("thread.find", &json!({ "mesh": item, "triangle": t, "at": at }));
+        assert_eq!(found["internal"], false);
+        assert_eq!(found["suggested"], "M8");
+        assert_eq!(found["sizes"].as_array().unwrap().len(), 11);
+        assert_eq!(
+            found["sizes"][4],
+            json!({ "name": "M8", "majorMm": 8.0, "pitchMm": 1.25 })
+        );
+        assert!(
+            (found["start"][0].as_f64().unwrap() - 100.0).abs() < 1e-6,
+            "{found}"
+        );
+        let out = run(
+            "thread.apply",
+            &json!({ "mesh": item, "thread": found, "spec": { "size": "M8", "clearanceMm": 0.1 } }),
+        );
+        assert_eq!(out["watertight"], true);
+        assert_eq!(out["report"]["size"], "M8");
+        assert!((out["report"]["maxLayerMm"].as_f64().unwrap() - 0.3125).abs() < 1e-9);
+        // In the item's own frame, as other ops reply.
+        assert!(
+            (out["bounds"]["min"][0].as_f64().unwrap() + 3.9).abs() < 0.01,
+            "{}",
+            out["bounds"]
+        );
     }
 
     #[test]
