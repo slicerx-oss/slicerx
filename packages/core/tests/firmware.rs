@@ -1138,6 +1138,59 @@ fn last_e(g: &str) -> f64 {
     e
 }
 
+/// Filament a Marlin printer pushes for a file, and the largest single push: `M82` and `M83`, `G90` and `G91`
+/// (which makes E relative too) and `G92 E` as the firmware reads them, indented lines included.
+fn fed_by_firmware(g: &str) -> (f64, f64) {
+    let (mut e_rel, mut all_rel, mut pos, mut fed, mut most) = (false, false, 0.0f64, 0.0, 0.0f64);
+    for l in g.lines() {
+        let l = l.split(';').next().unwrap().trim();
+        let mut w = l.split_whitespace();
+        match w.next() {
+            Some("M82") => e_rel = false,
+            Some("M83") => e_rel = true,
+            Some("G90") => all_rel = false,
+            Some("G91") => all_rel = true,
+            Some("G92") => {
+                if let Some(v) = w.find_map(|t| t.strip_prefix('E')) {
+                    pos = v.parse().unwrap();
+                }
+            }
+            Some("G0" | "G1" | "G2" | "G3") => {
+                if let Some(v) = w.find_map(|t| t.strip_prefix('E')) {
+                    let v: f64 = v.parse().unwrap();
+                    let d = if e_rel || all_rel { v } else { v - pos };
+                    pos += d;
+                    if d > 0.0 {
+                        fed += d;
+                        most = most.max(d);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    (fed, most)
+}
+
+/// A maker's layer change G-code written for relative extrusion (Bambu Lab's A1 timelapse block switches to `M83`
+/// and zeroes the extruder, indented inside its `M622` condition) leaves an absolute-extrusion file feeding what
+/// the relative file feeds, with no long push.
+#[test]
+fn absolute_extrusion_survives_custom_gcode_that_switches_to_relative() {
+    let block = "M622 J1\n    G92 E0\n    G90\n    M83\n    G1 E-0.5 F1800\n    G91\n    G1 Z0.4 E0.2\n    G90\n    G1 E0.3 F1800\nM623\n";
+    let mut c = base_config();
+    c["layer_change_gcode"] = json!(block);
+    c["use_relative_e_distances"] = json!(true);
+    let (relative, _) = fed_by_firmware(&cube(c.clone(), 1));
+    c["use_relative_e_distances"] = json!(false);
+    let (absolute, most) = fed_by_firmware(&cube(c, 1));
+    assert!(
+        (absolute - relative).abs() < 0.01 * relative,
+        "absolute {absolute} mm, relative {relative} mm"
+    );
+    assert!(most < 5.0, "one move pushes {most} mm");
+}
+
 /// Every `gcode_flavor` Orca 2.4.2 offers writes its own dialect (`GCodeWriter`: preamble, temperatures, fan,
 /// retraction, progress, postamble) and joins shards to the same bytes.
 #[test]
