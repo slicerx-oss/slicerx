@@ -230,7 +230,7 @@ jobs:
             --version "${{ needs.version.outputs.version }}" \
             --base-url "https://github.com/${{ github.repository }}/releases/download/v${{ needs.version.outputs.version }}" \
             --out downloads.json
-          (cd installers && sha256sum * > ../SHA256SUMS.txt)
+          (cd installers && sha256sum -- * > ../SHA256SUMS.txt)
           cat downloads.json
       - name: Attach to the draft release
         env:

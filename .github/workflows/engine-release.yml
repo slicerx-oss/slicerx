@@ -1,0 +1,181 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (C) 2026 The SlicerX contributors
+name: engine-release
+
+# Builds the engine for apps that use it without the desktop app: the sx, sx-geom and sx-link
+# command line tools and libslicerx (the C ABI, as a shared library with include/slicerx.h) for
+# macOS (universal), Windows (x64) and Linux (x64). Each platform is one archive; SHA256SUMS.txt
+# lists them all. They go to a draft release that a maintainer reviews and publishes by hand.
+#
+# Tag engine-v<version> (the workspace version in Cargo.toml), or run it by hand with that tag.
+# The binaries are not signed: macOS marks them quarantined when a browser downloads them
+# (xattr -d com.apple.quarantine <file>), and Windows SmartScreen may ask once.
+
+on:
+  push:
+    tags: ['engine-v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag, such as engine-v0.1.0
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: engine-release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.v.outputs.tag }}
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: v
+        shell: bash
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          tag="${INPUT_TAG:-$GITHUB_REF_NAME}"
+          version="${tag#engine-v}"
+          want=$(sed -n '/^\[workspace.package\]/,/^\[/s/^version = "\(.*\)"/\1/p' Cargo.toml)
+          if [ "$version" != "$want" ]; then
+            echo "tag $tag does not match the workspace version $want" >&2
+            exit 1
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: version
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macos-universal
+            os: macos-latest
+            targets: aarch64-apple-darwin x86_64-apple-darwin
+          - name: windows-x64
+            os: windows-latest
+            targets: x86_64-pc-windows-msvc
+          # The oldest supported runner, so the binaries run on older glibc versions too.
+          - name: linux-x64
+            os: ubuntu-22.04
+            targets: x86_64-unknown-linux-gnu
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.version.outputs.tag }}
+
+      - name: Rust toolchain
+        shell: bash
+        run: |
+          rustup toolchain install
+          rustup target add ${{ matrix.targets }}
+          rustc --version
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: engine-${{ matrix.name }}
+
+      - name: Build
+        shell: bash
+        run: |
+          for t in ${{ matrix.targets }}; do
+            cargo build --locked --release --target "$t" -p sx-cli -p sx-geom -p sx-link -p sx-ffi
+          done
+
+      - name: Package
+        shell: bash
+        run: |
+          name="slicerx-engine-${{ needs.version.outputs.version }}-${{ matrix.name }}"
+          stage="dist/$name"
+          mkdir -p "$stage/bin" "$stage/lib" "$stage/include"
+          bins="sx sx-geom sx-link"
+          case "${{ matrix.name }}" in
+            macos-universal)
+              for b in $bins; do
+                lipo -create -output "$stage/bin/$b" "target/aarch64-apple-darwin/release/$b" "target/x86_64-apple-darwin/release/$b"
+              done
+              lipo -create -output "$stage/lib/libslicerx.dylib" \
+                target/aarch64-apple-darwin/release/libslicerx.dylib target/x86_64-apple-darwin/release/libslicerx.dylib
+              install_name_tool -id @rpath/libslicerx.dylib "$stage/lib/libslicerx.dylib"
+              lipo -info "$stage/bin/sx" "$stage/lib/libslicerx.dylib"
+              ;;
+            windows-x64)
+              out=target/x86_64-pc-windows-msvc/release
+              for b in $bins; do cp "$out/$b.exe" "$stage/bin/"; done
+              cp "$out/slicerx.dll" "$out/slicerx.dll.lib" "$stage/lib/"
+              ;;
+            linux-x64)
+              out=target/x86_64-unknown-linux-gnu/release
+              for b in $bins; do cp "$out/$b" "$stage/bin/"; done
+              cp "$out/libslicerx.so" "$stage/lib/"
+              ;;
+          esac
+          cp packages/core/ffi/include/slicerx.h "$stage/include/"
+          cp LICENSE-APACHE NOTICE THIRD-PARTY.md "$stage/"
+          cp packages/core/ffi/README.md "$stage/README-libslicerx.md"
+          cp packages/core/cli/README.md "$stage/README-sx.md"
+          cd dist
+          if [ "${{ matrix.name }}" = windows-x64 ]; then
+            7z a -tzip "$name.zip" "$name" > /dev/null
+          else
+            tar -czf "$name.tar.gz" "$name"
+          fi
+          ls -l
+
+      - name: Smoke test
+        shell: bash
+        run: |
+          dir="dist/slicerx-engine-${{ needs.version.outputs.version }}-${{ matrix.name }}/bin"
+          "$dir/sx" schema request > /dev/null
+          "$dir/sx" slice packages/core/bench/models/x-mark.stl -o "$RUNNER_TEMP/x-mark.gcode"
+          test -s "$RUNNER_TEMP/x-mark.gcode"
+          "$dir/sx-geom" ops > /dev/null
+          "$dir/sx-link" --help > /dev/null
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: engine-${{ matrix.name }}
+          if-no-files-found: error
+          retention-days: 7
+          path: |
+            dist/*.tar.gz
+            dist/*.zip
+
+  release:
+    needs: [version, build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: engine-*
+          path: assets
+          merge-multiple: true
+      - name: Checksums
+        run: |
+          cd assets
+          sha256sum -- * > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+      - name: Draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.version.outputs.tag }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            gh release upload "$TAG" assets/* --clobber --repo "$GITHUB_REPOSITORY"
+          else
+            gh release create "$TAG" assets/* --repo "$GITHUB_REPOSITORY" --draft \
+              --title "SlicerX engine $VERSION" \
+              --notes "The sx, sx-geom and sx-link command line tools and libslicerx (the C ABI, with include/slicerx.h) for macOS (universal), Windows (x64) and Linux (x64). SHA256SUMS.txt has the checksums. The binaries are not signed."
+          fi
