@@ -36,6 +36,11 @@ pub trait Detector: Send + Sync {
     fn whole_image(&self) -> bool {
         false
     }
+    /// How sure the model is, 0 to 1, that something was left on an empty plate. `None` for a
+    /// model without that question; the plate check then compares pictures only.
+    fn debris(&self, _frame: &Rgb) -> Option<f64> {
+        None
+    }
 }
 
 /// Finds nothing. Used when the model file is missing, so the frame loop, masks and reports
@@ -64,5 +69,9 @@ impl<T: Detector + ?Sized> Detector for Box<T> {
 
     fn whole_image(&self) -> bool {
         (**self).whole_image()
+    }
+
+    fn debris(&self, frame: &Rgb) -> Option<f64> {
+        (**self).debris(frame)
     }
 }

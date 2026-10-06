@@ -6,7 +6,8 @@
 //! `provenance.jsonl` and the Python scores in `siglip2-reference.json`). Point `SX_WATCH_MODEL`
 //! and `SX_WATCH_FRAMES` at them to run these; without both they pass without checking anything.
 //! The frames stay out of the repository because their datasets cannot say where most images
-//! were first taken.
+//! were first taken. `SX_WATCH_HAND_FRAMES` points at frames with a hand (`hand*.jpg`) and the
+//! same scenes without one (`clean*.jpg`) for the hand question; without it that test is skipped.
 #![cfg(feature = "siglip")]
 use std::path::PathBuf;
 
@@ -16,7 +17,7 @@ use serde_json::{Value, json};
 use sx_watch::decode::decode_sniffed;
 use sx_watch::policy::Config;
 use sx_watch::protocol::Kind;
-use sx_watch::session::Session;
+use sx_watch::session::{Out, Session};
 use sx_watch::siglip::Siglip2;
 
 fn inputs() -> Option<(Siglip2, PathBuf)> {
@@ -70,12 +71,12 @@ fn a_normal_print_stays_quiet_until_spaghetti_appears() {
     let mut reports = Vec::new();
     let mut t = 0;
     for _ in 0..20 {
-        reports.extend(s.on_event(&frame(t, &normal)));
+        reports.extend(s.on_event(&frame(t, &normal)).into_iter().filter_map(Out::report));
         t += 10;
     }
     assert!(reports.is_empty(), "{reports:?}");
     for _ in 0..5 {
-        reports.extend(s.on_event(&frame(t, &failed)));
+        reports.extend(s.on_event(&frame(t, &failed)).into_iter().filter_map(Out::report));
         t += 10;
     }
     assert_eq!(reports.len(), 1, "{reports:?}");
@@ -85,4 +86,43 @@ fn a_normal_print_stays_quiet_until_spaghetti_appears() {
         s.latest_frame("bay-1")
             .is_some_and(|(t, b)| t == "image/jpeg" && b == failed.as_slice())
     );
+}
+
+/// The hand question on frames with and without a hand: every hand frame clears the policy's
+/// bar, no clean frame does.
+#[test]
+fn hands_clear_the_bar_and_empty_printers_do_not() {
+    let (Some(model), Some(dir)) = (
+        std::env::var_os("SX_WATCH_MODEL"),
+        std::env::var_os("SX_WATCH_HAND_FRAMES"),
+    ) else {
+        eprintln!("SX_WATCH_MODEL or SX_WATCH_HAND_FRAMES not set; skipped");
+        return;
+    };
+    let model = Siglip2::load(std::path::Path::new(&model), 2).unwrap();
+    let bar = Config::default().hand.threshold;
+    let (mut hands, mut clean) = (Vec::new(), Vec::new());
+    for e in std::fs::read_dir(dir).unwrap() {
+        let path = e.unwrap().path();
+        let name = path.file_name().unwrap().to_string_lossy().into_owned();
+        let Ok(rgb) = decode_sniffed(&std::fs::read(&path).unwrap()) else {
+            continue;
+        };
+        let hand = f64::from(
+            model
+                .scores(&rgb)
+                .unwrap()
+                .hand
+                .expect("a model with the hand question"),
+        );
+        if name.starts_with("hand") {
+            hands.push((name, hand));
+        } else if name.starts_with("clean") {
+            clean.push((name, hand));
+        }
+    }
+    eprintln!("hands {hands:?}\nclean {clean:?}");
+    assert!(!hands.is_empty() && !clean.is_empty());
+    assert!(hands.iter().all(|(_, h)| *h >= bar), "{hands:?}");
+    assert!(clean.iter().all(|(_, h)| *h < bar), "{clean:?}");
 }
