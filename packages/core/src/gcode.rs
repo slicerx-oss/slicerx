@@ -3913,35 +3913,60 @@ pub(crate) fn carry_e(gcode: &[u8]) -> Vec<u8> {
 
 /// Rewrites the relative extrusion of one layer chunk as absolute distances counted from the reset
 /// line `reset` at the start of the chunk, so chunks still concatenate.
+///
+/// Custom G-code in the chunk is often written for relative extrusion (the Bambu Lab blocks switch to `M83`
+/// and zero the extruder, indented inside their conditions), so indented lines count, an `M83` becomes `M82`
+/// since every later distance is rewritten as a position, and moves between `G91` and `G90`, where the
+/// firmware moves E relatively whatever the mode, stay as written.
 fn absolute_e(chunk: &[u8], reset: &[u8]) -> Vec<u8> {
     let mut out = Vec::with_capacity(chunk.len() + 16);
     out.extend_from_slice(reset);
     let mut pos = 0i64;
+    let mut all_relative = false;
     for line in chunk.split_inclusive(|&c| c == b'\n') {
         let text = std::str::from_utf8(line).unwrap_or("");
-        let is_move = text.starts_with("G1 ")
-            || text.starts_with("G0 ")
-            || text.starts_with("G2 ")
-            || text.starts_with("G3 ");
-        if text.starts_with("G92 E") {
-            pos = parse_e(
-                text.trim_end()
-                    .trim_start_matches("G92 E")
-                    .split_whitespace()
-                    .next()
-                    .unwrap_or("0"),
-            )
-            .unwrap_or(0);
-        } else if is_move && let Some(i) = text.find(" E") {
-            let rest = text.get(i + 2..).unwrap_or("");
-            let end = rest.find([' ', ';', '\n']).unwrap_or(rest.len());
-            if let Some(v) = rest.get(..end).and_then(parse_e) {
-                pos += v;
-                out.extend_from_slice(text.get(..i + 2).unwrap_or("").as_bytes());
-                put_fixed(&mut out, pos, 5);
-                out.extend_from_slice(rest.get(end..).unwrap_or("").as_bytes());
+        let body = text.trim_start_matches([' ', '\t']);
+        let indent = text.get(..text.len() - body.len()).unwrap_or("");
+        let code = body.split(';').next().unwrap_or("");
+        let cmd = code.split_whitespace().next().unwrap_or("");
+        // The E word of the line's code, as (start, end) in `body`.
+        let e_word = || {
+            let i = code.find(" E")? + 2;
+            let end = code
+                .get(i..)?
+                .find([' ', '\t', '\r', '\n'])
+                .map_or(code.len(), |n| i + n);
+            Some((i, end))
+        };
+        match cmd {
+            "G91" => all_relative = true,
+            "G90" => all_relative = false,
+            "M83" => {
+                out.extend_from_slice(indent.as_bytes());
+                out.extend_from_slice(b"M82");
+                out.extend_from_slice(body.get(3..).unwrap_or("").as_bytes());
                 continue;
             }
+            "G92" => {
+                if let Some(v) = e_word().and_then(|(i, end)| body.get(i..end)).and_then(parse_e) {
+                    pos = v;
+                }
+            }
+            "G0" | "G1" | "G2" | "G3" => {
+                if let Some((i, end)) = e_word()
+                    && let Some(v) = body.get(i..end).and_then(parse_e)
+                {
+                    pos += v;
+                    if !all_relative {
+                        out.extend_from_slice(indent.as_bytes());
+                        out.extend_from_slice(body.get(..i).unwrap_or("").as_bytes());
+                        put_fixed(&mut out, pos, 5);
+                        out.extend_from_slice(body.get(end..).unwrap_or("").as_bytes());
+                        continue;
+                    }
+                }
+            }
+            _ => {}
         }
         out.extend_from_slice(line);
     }
