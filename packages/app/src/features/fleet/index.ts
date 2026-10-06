@@ -7,6 +7,7 @@ import { registerCommands } from '../../commands/registry'
 import { printerAction, sendToPrinter } from '../../state/actions'
 import { appStore, get, set, setWorkspace } from '../../state/store'
 import { isExportOnly } from '../../lib/hand-printers'
+import { statusOrOffline } from '../../lib/queries'
 
 function printerCommands(host: Host, p: PrinterInfo, s: PrinterStatus): CommandSpec[] {
   if (isExportOnly(p)) return []
@@ -63,7 +64,8 @@ function syncPrinterCommands(host: Host): void {
     if (!printers) return
     void printers.list().then(async (list) => {
       for (const p of list) {
-        const st = await printers.status(p.id)
+        // One printer that cannot be read must not leave the others without their commands.
+        const st = await statusOrOffline(printers, p.id)
         if (mine !== round) return
         status.set(p.id, { info: p, status: st })
         unsubscribe.push(
