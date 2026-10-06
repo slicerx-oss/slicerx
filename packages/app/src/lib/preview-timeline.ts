@@ -8,7 +8,7 @@
 // it opens with the start before the first layer (heating, homing, the purge line) while the bed is empty, and
 // the layers, with their tool changes, fill the rest, so its end is the same figure the estimate shows.
 import { SXPV_SEGMENT, SXPV_SEGMENT_BYTES, type PreviewBuffers } from '@slicerx/contracts'
-import { ChangeClock, changePoints, changeSequence, type ToolChangerSpec } from '@slicerx/viewport'
+import { ChangeClock, changePoints, changeSequence, printedTop, type ToolChangerSpec } from '@slicerx/viewport'
 
 export interface ChangeEvent {
   /** The first segment of the new tool; the change plays before it. */
@@ -84,7 +84,7 @@ export function buildTimeline(p: PreviewBuffers, changer: ToolChangerSpec | null
       const r = c.segment * 8
       const at: [number, number, number] = [seg[q + 2] ?? 0, seg[q + 3] ?? 0, seg[q + 4] ?? 0]
       const resume: [number, number, number] = [seg[r] ?? 0, seg[r + 1] ?? 0, seg[r + 4] ?? 0]
-      const duration = changeSequence(changer, c.from, c.to, at, resume, fixed, history).duration
+      const duration = changeSequence(changer, c.from, c.to, at, resume, fixed, history, printedTop(p, c.segment)).duration
       history.push([c.from, c.to])
       pending.set(c.segment, { segment: c.segment, from: c.from, to: c.to, start: 0, duration, fixed })
     }

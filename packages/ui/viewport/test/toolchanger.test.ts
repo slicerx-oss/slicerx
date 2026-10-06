@@ -3,7 +3,7 @@
 // The tool change model: each printer's sequence, its timing and the continuity of the head's motion.
 import { describe, expect, it } from 'vitest'
 import { FEATURE } from '@slicerx/contracts'
-import { ChangeClock, SPARE, changeSequence, moveDistance, moveTime, poseAt, rackStateBefore, toolChangerSpec, type ToolChangerSpec, type V3 } from '../src/toolchanger'
+import { ChangeClock, SPARE, changeSequence, moveDistance, moveTime, poseAt, printedTop, rackStateBefore, toolChangerSpec, type ToolChangerSpec, type V3 } from '../src/toolchanger'
 import { Toolpaths, changePoints } from '../src/toolpaths'
 import { buildPreview, type Seg } from './sxpv-fixture'
 
@@ -220,5 +220,26 @@ describe('filament swap at the chute (Bambu Lab, one nozzle)', () => {
     expect(seq.phases[1]!.to.slice(0, 2)).toEqual([70, 265])
     expect(seq.phases[3]!.to.slice(0, 2)).toEqual([54, 265])
     expect(seq.phases[5]!.to.slice(0, 2)).toEqual([70, 265])
+  })
+})
+
+describe('change lift over the print', () => {
+  const spec = (gcode: string) =>
+    toolChangerSpec('snapmaker-u1', { nozzle_diameter: ['0.4', '0.4', '0.4', '0.4'], change_filament_gcode: gcode, travel_speed: '350' }, { widthMm: 270, depthMm: 270, heightMm: 270 }, 4)!
+
+  it('lifts over the highest layer printed so far when the change G-code says max_layer_z, as the engine checks it', () => {
+    const at: [number, number, number] = [50, 50, 0.6]
+    const over = changeSequence(spec('G1 Z{max_layer_z + 2}'), 0, 1, at, at, 5, [], 30)
+    const own = changeSequence(spec('T[next_extruder]'), 0, 1, at, at, 5, [], 30)
+    const high = (s: typeof over) => Math.max(...s.phases.map((p) => p.to[2]))
+    expect(high(over)).toBeCloseTo(30 + 3.5)
+    expect(high(own)).toBeCloseTo(0.6 + 3.5)
+  })
+
+  it('reads the highest layer top printed up to a segment, objects printed one after the other included', () => {
+    const b = { layerCount: 4, layerZ: new Float32Array([0.2, 30, 0.2, 0.4]), layerStart: new Uint32Array([0, 10, 20, 30, 40]) } as unknown as Parameters<typeof printedTop>[0]
+    expect(printedTop(b, 5)).toBeCloseTo(0.2)
+    expect(printedTop(b, 25)).toBeCloseTo(30)
+    expect(printedTop(b, 35)).toBeCloseTo(30)
   })
 })
