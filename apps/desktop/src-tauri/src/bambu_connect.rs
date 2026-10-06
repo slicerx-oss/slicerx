@@ -37,13 +37,7 @@ pub async fn bambu_connect_open(app: AppHandle, request: Request<'_>) -> Result<
     let InvokeBody::Raw(bytes) = request.body() else {
         return Err("bambu_connect_open expects raw bytes".into());
     };
-    let header = |k: &str| {
-        request
-            .headers()
-            .get(k)
-            .and_then(|v| v.to_str().ok())
-            .map(percent_decode)
-    };
+    let header = |k: &str| crate::header::text(&request, k);
     let name = safe_file_name(&header("x-sx-name").unwrap_or_default());
     let title = header("x-sx-title").unwrap_or_else(|| name.clone());
     if !installed() {
@@ -85,27 +79,6 @@ fn encode_uri_component(s: &str) -> String {
         }
     }
     out
-}
-
-/// Undoes `encodeURIComponent`; text that is not a valid escape stays as it is.
-fn percent_decode(s: &str) -> String {
-    let b = s.as_bytes();
-    let mut out = Vec::with_capacity(b.len());
-    let mut i = 0;
-    while i < b.len() {
-        let hex = |c: u8| char::from(c).to_digit(16);
-        if b[i] == b'%'
-            && i + 2 < b.len()
-            && let (Some(h), Some(l)) = (hex(b[i + 1]), hex(b[i + 2]))
-        {
-            out.push(u8::try_from(h * 16 + l).unwrap_or(b'?'));
-            i += 3;
-            continue;
-        }
-        out.push(b[i]);
-        i += 1;
-    }
-    String::from_utf8_lossy(&out).into_owned()
 }
 
 /// A plain file name: no folders, nothing a file system refuses, and a .gcode.3mf ending.
@@ -210,8 +183,6 @@ mod tests {
             "C%3A%5CUsers%5CAna%20Lee%5Ca%26b%3Dc%20(1).gcode.3mf"
         );
         assert_eq!(encode_uri_component("Würfel"), "W%C3%BCrfel");
-        assert_eq!(percent_decode("W%C3%BCrfel%20plate"), "Würfel plate");
-        assert_eq!(percent_decode("100%"), "100%");
     }
 
     #[test]

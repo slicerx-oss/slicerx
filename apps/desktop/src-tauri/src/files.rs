@@ -116,12 +116,7 @@ pub async fn save_file(
     let InvokeBody::Raw(bytes) = request.body() else {
         return Err("save_file expects raw bytes".into());
     };
-    let name = request
-        .headers()
-        .get("x-sx-name")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("plate.gcode")
-        .to_owned();
+    let name = crate::header::text(&request, "x-sx-name").unwrap_or_else(|| "plate.gcode".to_owned());
     let Some(fp) = app.dialog().file().set_file_name(&name).blocking_save_file() else {
         return Ok(None);
     };

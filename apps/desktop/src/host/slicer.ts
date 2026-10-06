@@ -80,7 +80,8 @@ async function sha256Hex(bytes: ArrayBuffer): Promise<string> {
 }
 
 async function load(bytes: Uint8Array, name: string): Promise<MeshHandle> {
-  const info = parseMeshInfo(await invoke('load_mesh', bytes, { headers: { 'x-sx-name': name } }))
+  // Header values take only Latin-1, so the name goes percent-encoded; the shell decodes it.
+  const info = parseMeshInfo(await invoke('load_mesh', bytes, { headers: { 'x-sx-name': encodeURIComponent(name) } }))
   return {
     id: String(info.id),
     hash: info.hash,

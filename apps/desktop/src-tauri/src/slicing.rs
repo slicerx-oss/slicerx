@@ -42,12 +42,7 @@ pub fn load_mesh(request: Request<'_>, state: State<'_, Slicer>) -> Result<serde
     let InvokeBody::Raw(bytes) = request.body() else {
         return Err("load_mesh expects raw bytes".into());
     };
-    let name = request
-        .headers()
-        .get("x-sx-name")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("model.stl")
-        .to_owned();
+    let name = crate::header::text(&request, "x-sx-name").unwrap_or_else(|| "model.stl".to_owned());
     let mesh = Mesh::load(bytes, &name).map_err(|e| e.to_string())?;
     let id = state.id();
     let (lo, hi) = mesh.bounds().unwrap_or(([0.0; 3], [0.0; 3]));
