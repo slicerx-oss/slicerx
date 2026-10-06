@@ -825,6 +825,53 @@ mod tests {
     }
 
     #[test]
+    fn a_circle_cut_through_a_block_leaves_a_round_hole_face() {
+        use crate::faces::Surface;
+        let m = build::box_mesh([0.0; 3], [40.0, 20.0, 5.0]);
+        let p = top_pick(&m);
+        // Deeper than the block: a cut that ends flush with the far side leaves a zero-thickness skin there.
+        let spec = ExtrudeSpec {
+            distance_mm: 6.0,
+            operation: Operation::Cut,
+            ..ExtrudeSpec::default()
+        };
+        let at = Placement {
+            center: [-10.0, 0.0],
+            rotation_deg: 0.0,
+        };
+        let r = extrude(
+            &p.frame,
+            &Shape::Circle { diameter_mm: 6.0 },
+            &at,
+            None,
+            &spec,
+            Some(&m),
+        )
+        .unwrap();
+        // Six sides of the block and the wall of the hole.
+        assert_eq!(crate::faces::check::faces_agree(&r.mesh), 7);
+        let f = r.mesh.faces.unwrap();
+        let walls: Vec<_> = f
+            .table
+            .iter()
+            .filter(|s| matches!(s, Surface::Cylinder { .. }))
+            .collect();
+        assert_eq!(walls.len(), 1);
+        let Surface::Cylinder { origin, axis, radius } = *walls[0] else {
+            unreachable!()
+        };
+        assert!(
+            (radius - 3.0).abs() < 1e-6 && axis[2].abs() > 0.999_999,
+            "{:?}",
+            walls[0]
+        );
+        assert!(
+            (origin[0] - 10.0).abs() < 1e-6 && (origin[1] - 10.0).abs() < 1e-6,
+            "{origin:?}"
+        );
+    }
+
+    #[test]
     fn join_cut_and_new() {
         let m = build::box_mesh([0.0; 3], [40.0, 20.0, 5.0]);
         let p = top_pick(&m);
