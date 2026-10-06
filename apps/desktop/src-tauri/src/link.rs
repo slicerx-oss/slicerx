@@ -54,10 +54,17 @@ pub async fn link_start(app: tauri::AppHandle, state: State<'_, Bridge>) -> Resu
         crate::watch::start(&app, &format!("ws://{}", link.addr()));
         return Ok(info(link));
     }
-    let secrets = Arc::new(KeychainSecrets::new("slicerx-printers"));
+    let data = app.path().app_data_dir().ok();
+    // Printer codes go to the keychain; on Windows, one it refuses is sealed with DPAPI in the app's data
+    // folder instead of lasting only until the app closes (vault.rs).
+    let keychain: Arc<dyn sx_connect::SecretStore> = Arc::new(KeychainSecrets::new("slicerx-printers"));
+    let secrets: Arc<dyn sx_connect::SecretStore> = match &data {
+        Some(d) => Arc::new(crate::vault::KeychainOrFile::new(keychain, d.join("vault"))),
+        None => keychain,
+    };
     // The printers, fleets and settings added through the bridge live in the app's own data folder, so
     // they are there at the next start. A standalone sx-link keeps its own (%APPDATA%\SlicerX\hub).
-    let state = app.path().app_data_dir().ok().map(|d| d.join("hub"));
+    let state = data.map(|d| d.join("hub"));
     let link = start_bridge(DEFAULT_PORT, secrets, state).await?;
     let out = info(&link);
     crate::watch::start(&app, &out.url);
