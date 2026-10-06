@@ -136,6 +136,21 @@ export const CONNECTION_METHODS: readonly ConnectionMethod[] = [
     summary: 'No code or password. Elegoo printers that run Klipper use the Moonraker connection instead.',
   },
   {
+    id: 'ultimaker',
+    startOptions: [],
+    name: 'UltiMaker',
+    plugin: 'ultimaker',
+    guide: 'ultimaker.md',
+    defaultPort: 80,
+    discovery: {
+      kind: 'mdns',
+      service: '_ultimaker._tcp',
+      detail: 'Asks the network for UltiMaker printers with one multicast DNS query, as UltiMaker Cura does.',
+    },
+    fields: [host],
+    summary: 'UltiMaker S series and UM3 printers with firmware 4.0 or later. No code or password: jobs go through the printer\'s local cluster API. Experimental, untested on hardware.',
+  },
+  {
     id: 'export',
     startOptions: [],
     name: 'Save G-code',

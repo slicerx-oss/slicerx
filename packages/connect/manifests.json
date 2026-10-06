@@ -1281,6 +1281,148 @@
     ]
   },
   {
+    "id": "ultimaker",
+    "name": "UltiMaker",
+    "version": "0.1.0",
+    "kind": "printer",
+    "protocols": [
+      "http",
+      "mdns"
+    ],
+    "capabilities": [
+      "status",
+      "events",
+      "upload",
+      "start",
+      "pause",
+      "resume",
+      "cancel",
+      "camera",
+      "filament_slots"
+    ],
+    "tools": [
+      {
+        "name": "ultimaker.status",
+        "description": "Read the normalized status of one printer.",
+        "permission": "read",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "printerId": {
+              "type": "string",
+              "description": "Printer id, such as bay-1"
+            }
+          },
+          "required": [
+            "printerId"
+          ]
+        }
+      },
+      {
+        "name": "ultimaker.queue",
+        "description": "Hold a sliced file for the printer without starting it. The file is sent with the start, since the printer prints a file as soon as it arrives.",
+        "permission": "queue",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "printerId": {
+              "type": "string",
+              "description": "Printer id, such as bay-1"
+            },
+            "file": {
+              "type": "string",
+              "description": "Project file id"
+            }
+          },
+          "required": [
+            "printerId",
+            "file"
+          ]
+        }
+      },
+      {
+        "name": "ultimaker.start",
+        "description": "Start an uploaded file. Heats the printer.",
+        "permission": "start",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "printerId": {
+              "type": "string",
+              "description": "Printer id, such as bay-1"
+            },
+            "path": {
+              "type": "string"
+            },
+            "plate": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          "required": [
+            "printerId",
+            "path"
+          ]
+        }
+      },
+      {
+        "name": "ultimaker.pause",
+        "description": "Pause the running job.",
+        "permission": "start",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "printerId": {
+              "type": "string",
+              "description": "Printer id, such as bay-1"
+            }
+          },
+          "required": [
+            "printerId"
+          ]
+        }
+      },
+      {
+        "name": "ultimaker.resume",
+        "description": "Resume a paused job.",
+        "permission": "start",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "printerId": {
+              "type": "string",
+              "description": "Printer id, such as bay-1"
+            }
+          },
+          "required": [
+            "printerId"
+          ]
+        }
+      },
+      {
+        "name": "ultimaker.cancel",
+        "description": "Cancel the running job.",
+        "permission": "start",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "printerId": {
+              "type": "string",
+              "description": "Printer id, such as bay-1"
+            }
+          },
+          "required": [
+            "printerId"
+          ]
+        }
+      }
+    ],
+    "network": [
+      "lan:80",
+      "lan:8080"
+    ]
+  },
+  {
     "id": "spoolman",
     "name": "Spoolman",
     "version": "0.1.0",

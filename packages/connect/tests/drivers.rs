@@ -10,7 +10,7 @@ use std::time::Duration;
 use common::{Case, Mocks, config, expect_code, job_file, run_contract, secrets};
 use sx_connect::drivers::{
     BambuConnector, CrealityConnector, DuetConnector, ElegooConnector, MoonrakerConnector,
-    OctoPrintConnector, PrusaLinkConnector, SnapmakerConnector,
+    OctoPrintConnector, PrusaLinkConnector, SnapmakerConnector, UltiMakerConnector,
 };
 use sx_connect::{ErrorCode, JobKind, MemoryGate, PrinterConnector, StartOptions};
 
@@ -1071,4 +1071,97 @@ async fn moonraker_says_why_a_sign_in_was_refused() {
     let cfg = config("bay-4", "moonraker", forced.port("moonraker"));
     let login = conn.connect(&cfg, &secrets(&[])).await.err().unwrap();
     assert_eq!(login.login_need(), Some(LoginNeed::LoginRequired));
+}
+
+// An UltiMaker: found by its system reply, paired on its screen, and driven through the cluster API.
+// Upload holds the file in SlicerX (the printer prints whatever arrives), so the printer sees nothing
+// until the approved start.
+#[tokio::test]
+async fn ultimaker_holds_the_file_until_start_and_drives_the_job() {
+    use sx_connect::{Action, Capability, PrinterState, params};
+    let gate = Arc::new(MemoryGate::new());
+    let mocks = Mocks::start("ultimaker", &["--camera"]).await;
+    let port = mocks.port("ultimaker");
+    let found = UltiMakerConnector::new(gate.clone())
+        .with_probe_port(port)
+        .probe("127.0.0.1", Duration::from_secs(2))
+        .await
+        .unwrap();
+    assert_eq!(
+        (found.model.as_deref(), found.firmware.as_deref()),
+        (Some("S5"), Some("7.4.1"))
+    );
+    let mut cfg = config("bay-7", "ultimaker", port);
+    cfg.camera_port = Some(mocks.port("ultimaker-camera"));
+    cfg.poll_ms = Some(100);
+    let connector = UltiMakerConnector::new(gate.clone());
+    // Pairing waits for Allow on the screen and returns id:key, which then signs in.
+    let pair = connector
+        .authorize(&cfg, Duration::from_secs(20))
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(pair.contains(':'));
+    cfg.credential_ref = Some("um".to_owned());
+    expect_code(
+        connector
+            .connect(&cfg, &secrets(&[("um", "id:wrong".to_owned())]))
+            .await,
+        ErrorCode::Auth,
+    );
+    let s = connector.connect(&cfg, &secrets(&[("um", pair)])).await.unwrap();
+    assert!(s.capabilities().contains(&Capability::FilamentSlots));
+    let st = s.status().await.unwrap();
+    assert_eq!(st.state, PrinterState::Idle);
+    assert_eq!(st.slots[0].material.as_deref(), Some("PLA"));
+    let hw = s.hardware().await.unwrap().unwrap();
+    assert_eq!(hw.model.as_deref(), Some("S5"));
+    assert_eq!(hw.extruders.len(), 2);
+
+    let file = job_file("cube.gcode", JobKind::Gcode);
+    let t = gate.mint(
+        Action::Upload,
+        "bay-7",
+        &params::upload("bay-7", &file.name, &file.sha256),
+    );
+    let rf = s.upload(file.clone(), &t).await.unwrap();
+    let files = mocks.state().await["ultimaker"]["files"].clone();
+    assert_eq!(
+        files.as_array().unwrap().len(),
+        0,
+        "nothing reaches the printer before the start"
+    );
+    let opts = StartOptions::default();
+    let t = gate.mint(Action::Start, "bay-7", &params::start("bay-7", &rf, &opts));
+    s.start(&rf, opts, &t).await.unwrap();
+    let state = mocks.state().await;
+    assert!(
+        state["ultimaker"]["files"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|f| f["sha256"] == file.sha256.as_str())
+    );
+    assert_eq!(s.status().await.unwrap().state, PrinterState::Printing);
+    s.pause(&gate.mint(Action::Pause, "bay-7", &params::printer("bay-7")))
+        .await
+        .unwrap();
+    assert_eq!(s.status().await.unwrap().state, PrinterState::Paused);
+    s.resume(&gate.mint(Action::Resume, "bay-7", &params::printer("bay-7")))
+        .await
+        .unwrap();
+    s.cancel(&gate.mint(Action::Cancel, "bay-7", &params::printer("bay-7")))
+        .await
+        .unwrap();
+    assert_eq!(s.status().await.unwrap().state, PrinterState::Idle);
+    let img = s.snapshot().await.unwrap().expect("a frame");
+    assert!(img.data.starts_with(&[0xff, 0xd8]));
+    expect_code(
+        s.send_gcode(
+            "M105",
+            &gate.mint(Action::Gcode, "bay-7", &params::gcode("bay-7", "M105")),
+        )
+        .await,
+        ErrorCode::NotSupported,
+    );
 }

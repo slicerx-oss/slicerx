@@ -19,12 +19,13 @@ Subfolders:
 | --- | --- | --- |
 | Bambu Lab LAN (`bambu-lan`) | real protocol | MQTT over TLS, FTPS upload, AMS slots and mapping, camera on port 6000, SSDP search and announcements, hardware readout (nozzles per extruder, AMS units, firmware). X1, P1, A1 and H2D message shapes; discovery checked on a real H2D. |
 | Moonraker (`moonraker`) | real protocol | HTTP API, polled events. |
-| PrusaLink (`prusalink`) | real protocol | `/api/v1`, `X-Api-Key` or HTTP digest login. |
+| PrusaLink (`prusalink`) | real protocol | `/api/v1`, HTTP digest login as `maker`, `X-Api-Key` on firmware that takes one. |
 | OctoPrint (`octoprint`) | real protocol | REST, polled events. |
 | Duet (`duet`) | real protocol | RepRapFirmware `rr_` endpoints. |
 | Elegoo (`elegoo`) | real protocol | Centauri Carbon over SDCP V3. Klipper models use the Moonraker plugin. |
 | Creality (`creality`) | real protocol, two of them | Moonraker for Klipper models, and the native WebSocket interface Creality Print uses for stock K1, K1 Max, K1C, K2 Plus, Ender-3 V3 and Hi. Picked by probing. |
-| Snapmaker (`snapmaker`) | real protocol, two of them | Moonraker for the U1, and the Luban HTTP API with touchscreen pairing for 2.0 machines (A150, A250, A350). J1 and Artisan (SACP) are not covered. |
+| Snapmaker (`snapmaker`) | real protocol, two of them | Moonraker for the U1, and the Luban HTTP API with touchscreen pairing for 2.0 machines (A150, A250, A350), found by a UDP 20054 broadcast. The J1 and Artisan (SACP) are found but not connected. |
+| UltiMaker (`ultimaker`) | real protocol, experimental | Cura's local API: `_ultimaker._tcp` discovery, the cluster API for jobs, print cores and materials, the printer API for temperatures; optional touchscreen pairing for Digest. |
 | Live camera | streams | See `docs/camera.md`. JPEG and MJPEG on most printers, H.264 over RTSPS on Bambu Lab X1 and H2, generic RTSP. Nothing has seen a real camera. |
 | Spoolman (`spoolman`) | real protocol | Service plugin. |
 | Home Assistant (`home-assistant`) | real protocol | Service plugin, allow-list of domains. |
@@ -52,7 +53,7 @@ The drivers are written from public protocol documentation and from the observab
 - Credentials come from `Secrets` (OS keychain through `KeychainSecrets`) and are never logged or returned. `Debug` output hides them.
 - Bambu Lab printers present self-signed certificates, so those connections skip certificate validation but still verify handshake signatures. The LAN access code is the credential. Pinning the certificate on first use is a follow-up.
 - Camera URLs that a printer reports must point at the printer's own host.
-- Discovery runs only when the user starts a scan. It sends one SSDP search and listens for announcements (Bambu Lab), asks with one multicast DNS query (Moonraker, OctoPrint, PrusaLink) or, for Elegoo, sends one UDP broadcast, each out of every local network interface. See `docs/finding-printers.md`.
+- Discovery runs only when the user starts a scan. It sends one SSDP search and listens for announcements (Bambu Lab), asks with one multicast DNS query (Moonraker, OctoPrint, PrusaLink, UltiMaker) or, for Elegoo and Snapmaker, sends one UDP broadcast, each out of every local network interface. See `docs/finding-printers.md`.
 - `sx-link` only accepts printers on the local network (see `link/README.md`).
 
 ## Dependencies

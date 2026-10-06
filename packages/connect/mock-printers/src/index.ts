@@ -18,6 +18,7 @@ import { MOCK_MOONRAKER_LOGIN, startMoonraker, type MoonrakerControl } from './m
 import { startOctoPrint } from './octoprint.ts'
 import { startSnapmakerLuban, type LubanExtra } from './snapmaker.ts'
 import { startPrusaLink, type PrusaStorage } from './prusalink.ts'
+import { startUltiMaker } from './ultimaker.ts'
 import { MOCK_HA_TOKEN, startHomeAssistant, startSpoolman } from './services.ts'
 
 export { MOCK_ACCESS_CODE, MOCK_SERIAL, MOCK_HA_TOKEN, MOCK_CLOUD_TOKEN, MOCK_MOONRAKER_LOGIN }
@@ -29,11 +30,11 @@ export const MOCK_DIGEST = { user: 'maker', password: 'mock-digest-pass' }
 /** Login of the generic RTSP camera mock (`rtsp://HOST:PORT/live`, Basic). */
 export const MOCK_RTSP_CAMERA = { user: 'cam', password: 'cam-pass', path: '/live' }
 
-export type MockName = 'moonraker' | 'prusalink' | 'octoprint' | 'duet' | 'elegoo' | 'creality' | 'snapmaker-luban' | 'cloud' | 'bambu' | 'spoolman' | 'home-assistant' | 'rtsp-camera'
-export const ALL_MOCKS: MockName[] = ['moonraker', 'prusalink', 'octoprint', 'duet', 'elegoo', 'creality', 'snapmaker-luban', 'cloud', 'bambu', 'spoolman', 'home-assistant', 'rtsp-camera']
+export type MockName = 'moonraker' | 'prusalink' | 'octoprint' | 'duet' | 'elegoo' | 'creality' | 'snapmaker-luban' | 'ultimaker' | 'cloud' | 'bambu' | 'spoolman' | 'home-assistant' | 'rtsp-camera'
+export const ALL_MOCKS: MockName[] = ['moonraker', 'prusalink', 'octoprint', 'duet', 'elegoo', 'creality', 'snapmaker-luban', 'ultimaker', 'cloud', 'bambu', 'spoolman', 'home-assistant', 'rtsp-camera']
 
 /** Which fixture printer backs each protocol. */
-const BACKING: Record<string, string> = { moonraker: 'bay-4', prusalink: 'bay-3', octoprint: 'bay-2', duet: 'bay-4', elegoo: 'bay-4', creality: 'bay-5', 'snapmaker-luban': 'bay-2', bambu: 'bay-1' }
+const BACKING: Record<string, string> = { moonraker: 'bay-4', prusalink: 'bay-3', octoprint: 'bay-2', duet: 'bay-4', elegoo: 'bay-4', creality: 'bay-5', 'snapmaker-luban': 'bay-2', ultimaker: 'bay-4', bambu: 'bay-1' }
 
 export interface StartOptions {
   only?: MockName[]
@@ -51,7 +52,7 @@ export interface StartOptions {
 }
 
 export interface RunningMocks {
-  /** Ports by mock name. `rtsp-camera` (Basic login) and `rtsp-open` (none) are generic RTSP cameras. Bambu has five: `bambu` (MQTT), `bambu-ftp`, `bambu-camera` (JPEG stream), `bambu-rtsps` (X1 and H2 video), `bambu-ssdp` (UDP, answers searches). */
+  /** Ports by mock name. `ultimaker-camera` is the UltiMaker camera (mjpg-streamer). `rtsp-camera` (Basic login) and `rtsp-open` (none) are generic RTSP cameras. Bambu has five: `bambu` (MQTT), `bambu-ftp`, `bambu-camera` (JPEG stream), `bambu-rtsps` (X1 and H2 video), `bambu-ssdp` (UDP, answers searches). */
   ports: Record<string, number>
   control: number
   stop(): Promise<void>
@@ -101,6 +102,11 @@ export async function startMocks(opts: StartOptions = {}): Promise<RunningMocks>
     const l = await startSnapmakerLuban(machine('snapmaker-luban'))
     lubanExtra = l.extra
     add('snapmaker-luban', l)
+  }
+  if (only.includes('ultimaker')) {
+    const u = await startUltiMaker(machine('ultimaker'))
+    add('ultimaker', u.api)
+    add('ultimaker-camera', u.camera)
   }
   let cloudOffer: ((spec: import('./cloud.ts').OfferSpec) => string) | undefined
   if (only.includes('cloud')) {

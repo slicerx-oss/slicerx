@@ -51,7 +51,8 @@ The script cannot see the printer. After each run, check these yourself:
 
 ### PrusaLink (MK4, MK3.9, XL, Core One)
 
-- Digest login with the user name and password from the printer's network menu.
+- Digest login with the password from the printer's network menu and no user name typed (`maker`).
+- The storages `/api/v1/storage` lists, with and without a USB drive.
 - Upload to the USB drive, start, pause, resume, cancel.
 - Mid-print changes answer "not supported" (PrusaLink has no G-code console). That is expected.
 - The still from the printer's camera endpoint where a camera is fitted.
@@ -59,8 +60,20 @@ The script cannot see the printer. After each run, check these yourself:
 ### Elegoo (Centauri Carbon, SDCP)
 
 - Discovery by broadcast, start, pause, resume, stop over the WebSocket.
+- The status codes during a print, after it completes and after a stop (`CurrentStatus` and `PrintInfo.Status`), and the attributes reply (model, firmware, `RemainingMemory`).
 - The camera stream URL from command 386 gives a still.
 - Mid-print changes answer "not supported" until the SDCP command reference is confirmed.
+
+### Snapmaker 2.0, J1 and Artisan
+
+- A scan finds the machine (UDP 20054) and the reply names it; the J1 and Artisan say SACP is not supported.
+- An A350 left idle drops its session and comes back on its own; after a power cycle, connecting says to pair again and the touchscreen shows no stray prompt.
+
+### UltiMaker (S series)
+
+- A scan finds the printer by multicast DNS with its model and firmware.
+- Start sends the file and the printer prints it; pause, resume and cancel through the cluster API; the build plate prompt after the print.
+- Print cores and materials read per extruder, and a camera still from port 8080.
 
 ## The hub itself
 

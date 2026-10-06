@@ -208,7 +208,7 @@ pub trait ServicePlugin: Send + Sync {
 /// Connectors that have not passed the real-printer check yet (packages/connect/docs/real-printer-checklist.md).
 /// Hubs hide them unless the user turns on experimental connectors. Creality printers that run
 /// Moonraker can use the `moonraker` connector instead.
-pub const EXPERIMENTAL_PLUGINS: [&str; 4] = ["duet", "snapmaker", "creality", "home-assistant"];
+pub const EXPERIMENTAL_PLUGINS: [&str; 5] = ["duet", "snapmaker", "creality", "home-assistant", "ultimaker"];
 
 /// Whether a plugin id is in [`EXPERIMENTAL_PLUGINS`].
 pub fn is_experimental(plugin: &str) -> bool {

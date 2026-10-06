@@ -13,6 +13,7 @@ Add printer, then Scan, lists the printers SlicerX can see. It only lists them. 
 | Creality on stock firmware | It announces a service type of its own, `_Creality-<id>._udp` (as OrcaSlicer finds it). | The same multicast DNS question, which also asks for the list of service types. |
 | OctoPrint | It announces `_octoprint._tcp`. | One multicast DNS question. |
 | PrusaLink | It may announce `_prusalink._tcp`. This has not been seen on a printer yet. | One multicast DNS question. |
+| UltiMaker | It announces `_ultimaker._tcp` with its model (a BOM number), firmware and name, as UltiMaker Cura reads it. | One multicast DNS question. |
 | Elegoo Centauri Carbon | It answers one broadcast on UDP port 3000. | One broadcast, sent when you start the scan and never in the background. |
 | Snapmaker A150, A250, A350, J1 and Artisan | They answer one broadcast of `discover` on UDP port 20054 with their name, address and model. The J1 and Artisan are listed, but SlicerX does not connect to them yet. | One broadcast, sent when you start the scan and never in the background. |
 | Duet | It does not announce itself. | Nothing. Enter the IP address. |
