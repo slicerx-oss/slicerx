@@ -29,6 +29,7 @@ pub mod edge;
 pub mod emboss;
 mod error;
 pub mod face;
+pub mod faces;
 pub mod fit;
 pub mod fm;
 pub mod font;

@@ -6,6 +6,7 @@
 #![allow(clippy::indexing_slicing)]
 
 use crate::error::{Error, Result};
+use crate::faces::Faces;
 use crate::vec3::{self, V3};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -34,6 +35,10 @@ impl Aabb {
 pub struct TriMesh {
     pub positions: Vec<V3>,
     pub triangles: Vec<[u32; 3]>,
+    /// The face each triangle belongs to and what surface it is, when known (`faces.rs`). Ops that make geometry
+    /// tag it; ops that only move or drop triangles carry it along; the rest leave it out.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub faces: Option<Faces>,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -56,13 +61,18 @@ pub fn weld_tolerance(bounds: Option<Aabb>) -> f64 {
 
 impl TriMesh {
     pub fn new(positions: Vec<V3>, triangles: Vec<[u32; 3]>) -> Self {
-        Self { positions, triangles }
+        Self {
+            positions,
+            triangles,
+            faces: None,
+        }
     }
 
     pub fn from_f32(positions: &[[f32; 3]], triangles: &[[u32; 3]]) -> Result<Self> {
         let m = Self {
             positions: positions.iter().map(|p| p.map(f64::from)).collect(),
             triangles: triangles.to_vec(),
+            faces: None,
         };
         m.validate("mesh")?;
         Ok(m)
@@ -78,6 +88,7 @@ impl TriMesh {
         let m = Self {
             positions: positions.as_chunks::<3>().0.to_vec(),
             triangles: indices.as_chunks::<3>().0.to_vec(),
+            faces: None,
         };
         m.validate("mesh")?;
         Ok(m)
@@ -112,6 +123,9 @@ impl TriMesh {
                 name,
                 format!("triangle {t} points past the vertex list"),
             ));
+        }
+        if let Some(f) = &self.faces {
+            f.check(name, self.triangles.len())?;
         }
         Ok(())
     }
@@ -175,6 +189,17 @@ impl TriMesh {
     )]
     pub fn append(&mut self, other: &TriMesh) {
         let base = self.positions.len() as u32;
+        // Faces stay when both sides have them (or this side is empty); otherwise the result has none.
+        self.faces = match (self.triangles.is_empty(), self.faces.take(), &other.faces) {
+            (true, _, f) => f.clone(),
+            (false, Some(mut a), Some(b)) => {
+                let shift = a.table.len() as u32;
+                a.ids.extend(b.ids.iter().map(|&id| id + shift));
+                a.table.extend_from_slice(&b.table);
+                Some(a)
+            }
+            _ => None,
+        };
         self.positions.extend_from_slice(&other.positions);
         self.triangles
             .extend(other.triangles.iter().map(|t| t.map(|i| i + base)));
@@ -186,14 +211,19 @@ impl TriMesh {
         (self.positions.len() - 1) as u32
     }
 
+    /// Adds a triangle with no face, so the mesh's faces are dropped.
     pub fn push_triangle(&mut self, a: V3, b: V3, c: V3) {
+        self.faces = None;
         let i = self.push_vertex(a);
         let j = self.push_vertex(b);
         let k = self.push_vertex(c);
         self.triangles.push([i, j, k]);
     }
 
+    /// Moves every vertex. The surfaces of the faces cannot follow an arbitrary map, so they are dropped; a
+    /// rigid transform keeps them through `xform`.
     pub fn map_positions(&mut self, f: impl Fn(V3) -> V3) {
+        self.faces = None;
         for p in &mut self.positions {
             *p = f(*p);
         }
@@ -254,15 +284,17 @@ impl TriMesh {
                 j
             });
         }
-        let triangles = self
+        let mapped: Vec<[u32; 3]> = self
             .triangles
             .iter()
             .map(|t| t.map(|i| remap[i as usize]))
-            .filter(|t| t[0] != t[1] && t[1] != t[2] && t[0] != t[2])
             .collect();
+        let keep = |t: &[u32; 3]| t[0] != t[1] && t[1] != t[2] && t[0] != t[2];
+        let faces = self.faces.as_ref().map(|f| f.retained(|i| keep(&mapped[i])));
         TriMesh {
             positions: out,
-            triangles,
+            triangles: mapped.into_iter().filter(keep).collect(),
+            faces,
         }
     }
 
@@ -316,9 +348,9 @@ impl TriMesh {
                 }
             }
         }
-        let mut groups: HashMap<u32, Vec<[u32; 3]>> = HashMap::new();
+        let mut groups: HashMap<u32, Vec<usize>> = HashMap::new();
         let mut order = Vec::new();
-        for t in &self.triangles {
+        for (i, t) in self.triangles.iter().enumerate() {
             let r = find(&mut parent, t[0]);
             groups
                 .entry(r)
@@ -326,17 +358,33 @@ impl TriMesh {
                     order.push(r);
                     Vec::new()
                 })
-                .push(*t);
+                .push(i);
         }
         let mut out: Vec<TriMesh> = order
             .into_iter()
             .filter_map(|r| groups.remove(&r))
-            .map(|tris| self.subset(&tris))
+            .map(|idx| self.subset_of(&idx))
             .collect();
         out.sort_by_key(|m| std::cmp::Reverse(m.triangles.len()));
         out
     }
 
+    /// The triangles at `idx` (in that order) with only the vertices they use, and their faces.
+    #[must_use]
+    pub fn subset_of(&self, idx: &[usize]) -> TriMesh {
+        let tris: Vec<[u32; 3]> = idx.iter().map(|&i| self.triangles[i]).collect();
+        let mut out = self.subset(&tris);
+        out.faces = self.faces.as_ref().map(|f| {
+            Faces {
+                ids: idx.iter().map(|&i| f.ids[i]).collect(),
+                table: f.table.clone(),
+            }
+            .compacted()
+        });
+        out
+    }
+
+    /// These triangles with only the vertices they use. They carry no faces; `subset_of` keeps them.
     #[must_use]
     pub fn subset(&self, tris: &[[u32; 3]]) -> TriMesh {
         let mut remap: HashMap<u32, u32> = HashMap::new();
@@ -367,6 +415,7 @@ impl TriMesh {
                 })
                 .collect(),
             positions: soup,
+            faces: None,
         };
         Ok(m.weld(0.0))
     }
