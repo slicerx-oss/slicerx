@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // Bundles the server into dist/cli.js (workspace packages inlined, npm
-// dependencies external) and copies the data files it reads into data/.
+// dependencies external, the @noble crypto libraries too, since the type declarations
+// name them) and copies the data files it reads into data/.
 // With --standalone <dir> it writes one self-contained file with every
 // dependency inlined, <dir>/slicerx-mcp.mjs (plus chunks), and the data into <dir>/data/,
 // for bundles such as the Claude Code plugin that ship without node_modules.
@@ -16,6 +17,7 @@ const repo = join(pkg, '..', '..')
 
 const flag = process.argv.indexOf('--standalone')
 const standalone = flag >= 0 ? resolve(process.argv[flag + 1] ?? '') : undefined
+const external = ['@modelcontextprotocol/sdk', 'zod', 'yaml', '@noble/*']
 const outFile = standalone ? join(standalone, 'slicerx-mcp.mjs') : join(pkg, 'dist', 'cli.js')
 
 if (!standalone) rmSync(join(pkg, 'dist'), { recursive: true, force: true })
@@ -28,7 +30,7 @@ await build({
   platform: 'node',
   format: 'esm',
   target: 'node24',
-  external: standalone ? [] : ['@modelcontextprotocol/sdk', 'zod', 'yaml'],
+  external: standalone ? [] : external,
   // Bundled CommonJS dependencies call require(); give the ESM output one.
   ...(standalone ? { banner: { js: "import { createRequire as __sxCreateRequire } from 'node:module'; const require = __sxCreateRequire(import.meta.url);" } } : {}),
   legalComments: standalone ? 'eof' : 'inline',
@@ -45,7 +47,7 @@ if (!standalone) {
     platform: 'node',
     format: 'esm',
     target: 'node24',
-    external: ['@modelcontextprotocol/sdk', 'zod', 'yaml'],
+    external,
     legalComments: 'inline',
     logLevel: 'warning',
   })

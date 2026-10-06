@@ -125,7 +125,7 @@ A locked project (`.sxlock`, format in `packages/sx3mf/SPEC-sxlock.md`) is an `.
 
 ## Install
 
-With npm (once `@slicerx/mcp` is published), no clone needed:
+With npm, no clone needed:
 
 ```sh
 npx -y @slicerx/mcp@0.1.0 --allow-dir ~/prints
@@ -136,7 +136,7 @@ From a clone:
 ```sh
 pnpm install
 pnpm --filter @slicerx/mcp build        # writes packages/mcp/dist/cli.js and packages/mcp/data/
-cargo build -p sx-cli --release         # optional: the real slicer instead of the stub
+cargo build -p sx-cli --release         # optional: the real slicer instead of the stub (or download sx from an engine release)
 ```
 
 The commands below use `/path/to/slicerx`; replace it with your clone.
@@ -272,7 +272,7 @@ npx @modelcontextprotocol/inspector node packages/mcp/dist/cli.js
 
 Tests that need the real core run when `target/release/sx` exists and are skipped otherwise.
 
-Packaging: `pnpm --filter @slicerx/mcp pack` runs the build (bundles, data, self-contained declarations from `scripts/emit-types.mjs`) and writes the tarball. Pack and publish with pnpm, which applies `publishConfig.exports` (the `dist/` entries with their types) and drops the `workspace:` ranges; `npm pack --dry-run <tarball>` lists what the registry would get.
+Packaging: `pnpm --filter @slicerx/mcp pack` runs the build (bundles, data, self-contained declarations from `scripts/emit-types.mjs`) and writes the tarball. Pack and publish with pnpm, which applies `publishConfig.exports` (the `dist/` entries with their types) and drops the `workspace:` ranges; `npm pack --dry-run <tarball>` lists what the registry would get. Publish with `pnpm publish --access public`; `prepublishOnly` stops a plain `npm publish` from the folder, which would ship the workspace manifest.
 
 Dependencies:
 

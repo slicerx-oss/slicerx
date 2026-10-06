@@ -61,10 +61,13 @@
     "build": "node scripts/build.mjs",
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run",
-    "prepack": "node scripts/build.mjs && node ../../scripts/copy-integrator-docs.mjs ."
+    "prepack": "node scripts/build.mjs && node ../../scripts/copy-integrator-docs.mjs .",
+    "prepublishOnly": "node ../../scripts/publish-guard.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.31.0",
+    "@noble/curves": "2.4.0",
+    "@noble/hashes": "2.4.0",
     "yaml": "2.9.1",
     "zod": "4.6.5"
   },

@@ -160,7 +160,16 @@ function rewrite(file) {
     return `${pre}${q}${rel}${q}`
   })
   // Relative imports written with a .ts or .tsx extension point at the emitted .d.ts files.
-  const fixed = next.replace(/(from\s+|import\(\s*)(['"])(\.{1,2}\/[^'"]+?)\.tsx?\2/g, '$1$2$3.js$2')
+  // Extensionless ones get the extension Node's ESM resolution (moduleResolution node16 and nodenext) needs.
+  const fixed = next
+    .replace(/(from\s+|import\(\s*)(['"])(\.{1,2}\/[^'"]+?)\.tsx?\2/g, '$1$2$3.js$2')
+    .replace(/(from\s+|import\(\s*)(['"])(\.{1,2}(?:\/[^'"]*)?)\2/g, (all, pre, q, spec) => {
+      if (/\.(js|json)$/.test(spec)) return all
+      const base = join(dirname(file), spec)
+      if (existsSync(base + '.d.ts')) return `${pre}${q}${spec}.js${q}`
+      if (existsSync(join(base, 'index.d.ts'))) return `${pre}${q}${spec.replace(/\/$/, '')}/index.js${q}`
+      return all
+    })
   if (fixed !== text) writeFileSync(file, fixed)
 }
 function walk(dir) {
@@ -185,31 +194,47 @@ if (unresolved) {
 
 // 4. Check the result the way a consumer sees it: only the declarations and the package's npm
 // dependencies, no workspace sources.
-const check = mkdtempSync(join(tmpdir(), 'sx-types-check-'))
-writeFileSync(
-  join(check, 'tsconfig.json'),
-  JSON.stringify({
-    compilerOptions: {
-      target: 'ES2023',
-      lib: ['ES2023', 'DOM', 'DOM.Iterable'],
-      module: 'ESNext',
-      moduleResolution: 'bundler',
-      strict: true,
-      noEmit: true,
-      skipLibCheck: false,
-      jsx: 'react-jsx',
-      types: nodeTypes,
-      typeRoots: [join(pkgDir, 'node_modules', '@types'), join(repo, 'node_modules', '@types')],
-    },
-    files: entries.map((e) => join(out, `${e.name}.d.ts`)),
-  }),
-)
-try {
-  execFileSync(process.execPath, [tsc, '-p', join(check, 'tsconfig.json')], { cwd: pkgDir, stdio: 'inherit' })
-} catch {
-  console.error('emit-types: the declarations do not type-check on their own')
-  process.exit(1)
-} finally {
-  rmSync(check, { recursive: true, force: true })
+// Both the bundler resolution and Node's own (nodenext), which needs explicit extensions. A kept
+// package resolves to its own built declarations, as it does once installed from npm; without them
+// (not built yet) only the bundler check runs.
+const keptPaths = {}
+let keptBuilt = true
+for (const name of keep) {
+  const dir = workspace.get(name)?.dir
+  if (!dir || !existsSync(join(dir, 'dist', 'index.d.ts'))) keptBuilt = false
+  else Object.assign(keptPaths, { [name]: [join(dir, 'dist', 'index.d.ts')], [name + '/*']: [join(dir, 'dist', '*.d.ts')] })
+}
+const checks = [['ESNext', 'bundler', {}]]
+if (keptBuilt) checks.push(['NodeNext', 'NodeNext', keptPaths])
+else console.error('emit-types: a --keep package has no built declarations, so the nodenext check is skipped')
+for (const [module, moduleResolution, checkPaths] of checks) {
+  const check = mkdtempSync(join(tmpdir(), 'sx-types-check-'))
+  writeFileSync(
+    join(check, 'tsconfig.json'),
+    JSON.stringify({
+      compilerOptions: {
+        target: 'ES2023',
+        lib: ['ES2023', 'DOM', 'DOM.Iterable'],
+        module,
+        moduleResolution,
+        strict: true,
+        noEmit: true,
+        skipLibCheck: false,
+        jsx: 'react-jsx',
+        types: nodeTypes,
+        typeRoots: [join(pkgDir, 'node_modules', '@types'), join(repo, 'node_modules', '@types')],
+        paths: checkPaths,
+      },
+      files: entries.map((e) => join(out, `${e.name}.d.ts`)),
+    }),
+  )
+  try {
+    execFileSync(process.execPath, [tsc, '-p', join(check, 'tsconfig.json')], { cwd: pkgDir, stdio: 'inherit' })
+  } catch {
+    console.error(`emit-types: the declarations do not type-check on their own (moduleResolution ${moduleResolution})`)
+    process.exit(1)
+  } finally {
+    rmSync(check, { recursive: true, force: true })
+  }
 }
 console.log(`emit-types: ${entries.map((e) => `${e.name}.d.ts`).join(', ')} in ${relative(repo, out)}`)
