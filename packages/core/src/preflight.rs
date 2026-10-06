@@ -17,7 +17,7 @@ use crate::config::PrintConfig;
 use crate::fm::Fm;
 use crate::gcode_lint::{Limits, Severity};
 use crate::geom::SCALE;
-use crate::output::SliceOutput;
+use crate::output::{Feature, SliceOutput};
 use serde_json::Value;
 
 /// One finding of the preflight.
@@ -215,6 +215,7 @@ struct Zone {
 /// printable height of each layer's settings.
 pub fn check_toolpaths(out: &SliceOutput, base: &PrintConfig) -> Vec<Issue> {
     let mut outside = Count::default();
+    let mut outside_feature = None;
     let mut in_zone = Count::default();
     let mut too_tall = Count::default();
     let mut bed_cache: Vec<BedCache> = Vec::new();
@@ -249,6 +250,9 @@ pub fn check_toolpaths(out: &SliceOutput, base: &PrintConfig) -> Vec<Issue> {
                     && y >= bb[1] - EDGE_TOL_MM
                     && y <= bb[3] + EDGE_TOL_MM;
                 if !in_bbox || (!*rect && !near_or_inside(poly, x, y, EDGE_TOL_MM)) {
+                    if outside.n == 0 {
+                        outside_feature = Some(p.feature);
+                    }
                     outside.hit(l.index, x, y, 0.0);
                     continue;
                 }
@@ -273,11 +277,14 @@ pub fn check_toolpaths(out: &SliceOutput, base: &PrintConfig) -> Vec<Issue> {
             "outside_bed",
             Severity::Error,
             format!(
-                "{} toolpath points lie outside the printable area, first at layer {} (X{:.1} Y{:.1})",
+                "{} toolpath points lie outside the printable area, first at layer {} (X{:.1} Y{:.1}, {})",
                 outside.n,
                 outside.layer + 1,
                 outside.x,
-                outside.y
+                outside.y,
+                outside_feature
+                    .map_or("toolpath", Feature::gcode_label)
+                    .to_lowercase()
             ),
         );
         i.layer = Some(outside.layer);
@@ -745,6 +752,11 @@ mod tests {
         assert!(check_toolpaths(&output_with(&[(100.0, 100.0), (150.0, 120.0)], 0.2), &c).is_empty());
         let issues = check_toolpaths(&output_with(&[(100.0, 100.0), (190.0, 190.0)], 0.2), &c);
         assert_eq!(issues.iter().map(|i| i.code).collect::<Vec<_>>(), ["outside_bed"]);
+        assert!(
+            issues[0].message.ends_with("(X190.0 Y190.0, outer wall)"),
+            "{}",
+            issues[0].message
+        );
         assert!(blocks(&issues));
     }
 
