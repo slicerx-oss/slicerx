@@ -22,7 +22,8 @@ export interface TestStep {
 }
 
 /** The contract's causes. */
-export type SetupCause = 'unreachable' | 'auth' | 'timeout' | 'protocol' | 'not_supported' | 'bad_request'
+/** `local`: the test stopped on this computer (the keychain, the bridge) before it reached the printer. */
+export type SetupCause = 'unreachable' | 'auth' | 'timeout' | 'protocol' | 'not_supported' | 'bad_request' | 'local'
 
 export type AuthNeed = 'not_trusted' | 'key_wrong' | 'login_required' | 'pair_again' | 'declined' | 'lan_mode_off'
 const AUTH_NEEDS = ['not_trusted', 'key_wrong', 'login_required', 'pair_again', 'declined', 'lan_mode_off'] as const
@@ -93,7 +94,8 @@ export interface AppSetupHost extends PrinterSetupHost {
   /** Asks one IP address whether a printer is there, for "Enter IP instead". Absent when the host cannot ask. */
   probe?(host: string, opts?: { timeoutMs?: number; signal?: AbortSignal }): Promise<FoundPrinter[]>
   testConnection(connection: PrinterConnection, onStep?: (steps: TestStep[]) => void, opts?: { signal?: AbortSignal; trustFingerprint?: string }): Promise<TestOutcome>
-  addPrinter(input: { profileId: string; nozzleMm: number; connection?: PrinterConnection; name?: string }): Promise<{ printerId: string }>
+  /** `credentialKept: 'session'`: the system keychain refused the code, so it lasts until the app closes. */
+  addPrinter(input: { profileId: string; nozzleMm: number; connection?: PrinterConnection; name?: string }): Promise<{ printerId: string; credentialKept?: 'session' }>
 }
 
 export type SetupFactory = (host: Host) => AppSetupHost

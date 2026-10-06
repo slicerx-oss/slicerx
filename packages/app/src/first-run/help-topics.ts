@@ -156,7 +156,7 @@ export interface FailureHelp {
   action: string
 }
 
-export type TestCause = 'unreachable' | 'auth' | 'lan-mode-off' | 'timeout' | 'wrong-port' | 'certificate' | 'protocol' | 'not_supported' | 'bad_request'
+export type TestCause = 'unreachable' | 'auth' | 'lan-mode-off' | 'timeout' | 'wrong-port' | 'certificate' | 'protocol' | 'not_supported' | 'bad_request' | 'local'
 
 export const FAILURE_HELP: Readonly<Record<TestCause, FailureHelp>> = {
   unreachable: {
@@ -172,4 +172,5 @@ export const FAILURE_HELP: Readonly<Record<TestCause, FailureHelp>> = {
   protocol: { title: 'Unexpected answer', cause: 'Something answered, but it does not look like this kind of printer.', action: 'Check the connection type. A Klipper printer uses Moonraker even if the maker also sells a cloud app.' },
   not_supported: { title: 'Not supported yet', cause: 'This connection type cannot be tested from this build.', action: 'Continue without testing, or use the desktop app, which can reach printers on your network.' },
   bad_request: { title: 'Check the address', cause: 'The address is not a printer on your own network.', action: 'Use the local IP address shown on the printer, such as 192.168.1.50.' },
+  local: { title: 'The test did not run', cause: 'Something on this computer stopped the test before it reached the printer, so this says nothing about the printer or its network.', action: 'Test again. If it keeps happening, save the printer without the test and send us the details.' },
 }

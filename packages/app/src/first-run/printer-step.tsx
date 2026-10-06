@@ -7,7 +7,7 @@
 // a mini stepper. Secret fields are uncontrolled inputs whose values live in a ref for the length
 // of the screen: they never enter React state, the store or logs.
 import { listPrinterProfiles } from '@slicerx/settings'
-import { get, set } from '../state/store'
+import { get, set, toast } from '../state/store'
 import { connectionMethod, type ConnectionId, type ConnectionMethod, type FieldKey, type PrinterModel } from '@slicerx/printer-catalog'
 import { Button, Chip, Field, Icon, Input, LinkButton, Pill, Seg, Select, type IconName } from '@slicerx/ui'
 import { useCallback, useEffect, useMemo, useRef, useState, type FocusEvent, type ReactNode } from 'react'
@@ -188,7 +188,8 @@ export function usePrinterController(host: AppSetupHost): PrinterController {
           if (!ac.signal.aborted) setTest({ status: 'testing', steps })
         }, { signal: ac.signal })
       } catch (e) {
-        outcome = { ok: false, steps: TEST_STEPS.map(({ id }) => ({ id, ok: id === 'reach' ? false : null })), cause: 'unreachable', message: e instanceof Error ? e.message : String(e) }
+        // A throw is not the printer's answer: the test stopped on this computer (the keychain, the bridge), so no step ran.
+        outcome = { ok: false, steps: TEST_STEPS.map(({ id }) => ({ id, ok: null })), cause: 'local', message: e instanceof Error ? e.message : String(e) }
       }
       if (!ac.signal.aborted) setTest({ status: 'done', outcome })
       return outcome
@@ -224,12 +225,13 @@ export function usePrinterController(host: AppSetupHost): PrinterController {
       const { brand, model } = modelLabel(f)
       const nozzle = nozzleMm(f.nozzles[0] ?? EMPTY_FORM.nozzles[0]!) ?? 0.4
       const connected = m !== null && m.id !== 'export'
-      const { printerId } = await host.addPrinter({ profileId: profileIdOf(f), nozzleMm: nozzle, name: f.name?.trim() || (model === 'Set up by hand' ? `${brand} printer` : model), ...(connected ? { connection: connectionInput(f, secretFor(m, f)) } : {}) })
+      const { printerId, credentialKept } = await host.addPrinter({ profileId: profileIdOf(f), nozzleMm: nozzle, name: f.name?.trim() || (model === 'Set up by hand' ? `${brand} printer` : model), ...(connected ? { connection: connectionInput(f, secretFor(m, f)) } : {}) })
       // The slice follows this size: it picks the presets that match the nozzle. A printer with more than one
       // nozzle keeps each, so every extruder slices with its own.
       const extruders = extruderNozzles(f)
       set((s) => ({ printerNozzles: { ...s.printerNozzles, [printerId]: nozzle }, ...(extruders ? { printerExtruders: { ...s.printerExtruders, [printerId]: extruders } } : {}) }))
       secrets.current.clear()
+      if (credentialKept === 'session') toast(`${appName()} could not store the access code in your system keychain, so it is kept only until ${appName()} closes. You will be asked for it again next time.`, 'warn')
       return { printerId, brand, model, nozzle: nozzleText(f), connection: m?.name ?? 'Save G-code', state: !connected ? 'none' : verified ? 'verified' : 'unverified', filamentSystem: filamentText(f) }
     },
     [host],

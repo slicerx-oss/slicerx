@@ -175,3 +175,22 @@ test('credentials go to the secret store under a per-printer name and are remove
   await setup.addPrinter({ profileId: 'bambu-a1', nozzleMm: 0.4, connection: { family: 'bambu', address: '192.168.1.10', credential: '12345678' } })
   assert.equal((calls.at(-1) as [Record<string, unknown>])[0].serial, undefined)
 })
+
+test('a code the keychain refuses still saves the printer, and the result says it is kept for the session', async () => {
+  const link = {
+    discover: async () => [],
+    // The bridge's answer when Windows Credential Manager refuses the write.
+    setSecret: async () => ({ kept: 'session' as const }),
+    deleteSecret: async () => undefined,
+    removePrinter: async () => undefined,
+    authorizePrinter: async () => ({ stored: true }),
+    testPrinter: async () => ({ ok: true, steps: [] }),
+    addPrinter: async () => ({}) as never,
+  } as unknown as Parameters<typeof createPrinterSetup>[0]
+  const setup = createPrinterSetup(link)
+  const bambu = { family: 'bambu', address: '192.168.1.231', serial: '01P00A000000000', credential: '12345678' }
+  const added = await setup.addPrinter({ profileId: 'bambu-p1s', nozzleMm: 0.4, connection: bambu })
+  assert.equal(added.credentialKept, 'session')
+  const plain = createPrinterSetup({ ...link, setSecret: async () => ({ kept: 'stored' as const }) })
+  assert.equal((await plain.addPrinter({ profileId: 'bambu-p1s', nozzleMm: 0.4, connection: bambu })).credentialKept, undefined)
+})

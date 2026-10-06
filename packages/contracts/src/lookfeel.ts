@@ -117,8 +117,8 @@ export interface PrinterSetupHost {
   testConnection(connection: PrinterConnection): Promise<{
     ok: boolean
     state?: string
-    /** Why it failed: unreachable, auth, timeout, protocol, not_supported or bad_request (not a local address). */
-    cause?: 'unreachable' | 'auth' | 'timeout' | 'protocol' | 'not_supported' | 'bad_request'
+    /** Why it failed: unreachable, auth, timeout, protocol, not_supported, bad_request (not a local address) or local (it stopped on this computer before reaching the printer). */
+    cause?: 'unreachable' | 'auth' | 'timeout' | 'protocol' | 'not_supported' | 'bad_request' | 'local'
     message?: string
     /** How far it got. `ok: null` means an earlier step failed, so this one never ran. */
     steps: { id: 'reach' | 'sign_in' | 'read_state' | 'read_temperatures'; ok: boolean | null }[]
