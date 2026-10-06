@@ -345,6 +345,13 @@ export interface AppState {
   projectsDialog: 'recover' | 'recent' | null
   /** Asking whether to save before something replaces the project. `what` finishes "before you ...". */
   unsavedPrompt: { what: string } | null
+  /**
+   * Printer G-code an opened project carries that is not the printer's stock text, waiting for a person to choose it or
+   * the profile's (`asking` while the dialog is open). Until then the plate slices with the profile's.
+   */
+  projectGcode: { source: string; changes: import('@slicerx/settings').GcodeChange[]; asking: boolean } | null
+  /** G-code overrides a person chose from a project, by key, as they chose them. An edit since makes the key untrusted again. */
+  vouchedGcode: Record<string, SettingValue>
   /** The .sx3mf file the project was opened from or last saved to, where Save writes without asking. */
   projectFile: FileRef | null
   /** The object tool whose dialog is open (cut, hollow and so on). */
@@ -558,6 +565,8 @@ export const appStore = createStore<AppState>()(() => ({
   norn: { pick: null, before: null, ghost: false },
   projectsDialog: null,
   unsavedPrompt: null,
+  projectGcode: null,
+  vouchedGcode: {},
   projectFile: null,
   objectTool: null,
   historyEdit: null,

@@ -1,0 +1,28 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+/* Copyright (C) 2026 The SlicerX contributors */
+.pg-body { display: flex; flex-direction: column; gap: var(--s-4); }
+.pg-lede { margin: 0; color: var(--muted); font-size: var(--fs-md); }
+.pg-block { margin: 0; padding: 8px 12px; border-radius: var(--r-sm); background: var(--red-tint); color: var(--fg); font-size: var(--fs-md); }
+.pg-change { display: flex; flex-direction: column; gap: var(--s-2); }
+.pg-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--s-3); }
+.pg-head h3 { margin: 0; font-size: var(--fs-md); font-weight: 600; }
+.pg-count { color: var(--dim); font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
+.pg-flags { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: var(--fs-md); }
+.pg-flags li { display: flex; gap: 8px; align-items: baseline; }
+.pg-tag { flex: none; padding: 0 6px; border-radius: var(--r-pill); font-size: var(--fs-xs); line-height: 18px; color: var(--orange); background: var(--orange-tint); }
+.pg-flags li[data-severity="error"] .pg-tag { color: var(--red); background: var(--red-tint); }
+.pg-none { margin: 0; color: var(--muted); font-size: var(--fs-md); }
+.pg-diff { max-height: 320px; overflow: auto; border: 1px solid var(--line-soft); border-radius: var(--r-md); background: var(--ink-1); font: 400 var(--fs-sm) / 1.55 var(--f-mono); font-variant-numeric: tabular-nums; }
+.pg-row { display: grid; grid-template-columns: 44px 16px minmax(0, 1fr); border-left: 2px solid transparent; }
+.pg-row[data-kind="added"] { background: var(--green-tint); }
+.pg-row[data-kind="removed"] { background: var(--red-tint); color: var(--muted); }
+.pg-row[data-flag="warning"] { border-left-color: var(--orange); background: var(--orange-tint); }
+.pg-row[data-flag="error"] { border-left-color: var(--red); background: var(--red-tint); }
+.pg-num { padding-right: 8px; text-align: right; color: var(--dim); user-select: none; }
+.pg-sign { color: var(--dim); user-select: none; }
+.pg-row[data-kind="added"] .pg-sign { color: var(--green); }
+.pg-row[data-kind="removed"] .pg-sign { color: var(--red); }
+.pg-text { white-space: pre-wrap; overflow-wrap: anywhere; padding-right: 8px; }
+.pg-why { display: block; font-family: var(--f-body); color: var(--orange); }
+.pg-row[data-flag="error"] .pg-why { color: var(--red); }
+.pg-skip { padding: 2px 8px 2px 60px; color: var(--dim); font-family: var(--f-body); background: var(--ink-2); }

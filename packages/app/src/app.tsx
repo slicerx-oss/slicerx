@@ -41,6 +41,7 @@ import './styles/app.css'
 
 const CalibrationDialog = lazy(() => import('./calibration/dialog').then((m) => ({ default: m.CalibrationDialog })))
 const UnsavedDialog = lazy(() => import('./project/unsaved-dialog').then((m) => ({ default: m.UnsavedDialog })))
+const ProjectGcodeDialog = lazy(() => import('./project/gcode-dialog').then((m) => ({ default: m.ProjectGcodeDialog })))
 const ProjectsDialog = lazy(() => import('./project/projects-dialog').then((m) => ({ default: m.ProjectsDialog })))
 const CameraPlayer = lazy(() => import('./camera/player').then((m) => ({ default: m.CameraPlayer })))
 const Studio = lazy(() => import('./workspaces/studio').then((m) => ({ default: m.Studio })))
@@ -146,6 +147,7 @@ function Shell() {
   }, [])
   const projectsOpen = useApp((s) => s.projectsDialog !== null)
   const unsavedOpen = useApp((s) => s.unsavedPrompt !== null)
+  const projectGcodeOpen = useApp((s) => s.projectGcode?.asking === true)
   const settingsOpen = useApp((s) => s.settingsOpen)
   const printSheetOpen = useApp((s) => s.printSheet !== null)
   const aboutOpen = useApp((s) => s.aboutOpen)
@@ -258,6 +260,11 @@ function Shell() {
       {unsavedOpen ? (
         <Suspense fallback={null}>
           <UnsavedDialog />
+        </Suspense>
+      ) : null}
+      {projectGcodeOpen ? (
+        <Suspense fallback={null}>
+          <ProjectGcodeDialog />
         </Suspense>
       ) : null}
       {projectsOpen ? (
