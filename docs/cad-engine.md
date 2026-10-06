@@ -19,6 +19,7 @@ SlicerX is a slicer, and its modeling tools cover what people need to make or fi
 | Fillet and chamfer | Round or bevel straight edges between flat faces, with sphere corners, and the round edge where a flat face meets a cylinder square to it (a hole's rim, a boss's root) | `edge.rs`, `edge/rim.rs`, docs/cad-fillet.md |
 | Hole tool | Find a round hole from a pick (through or blind, its depth and diameter) and make it another size in place, with a counterbore or a countersink at its entry | `hole.rs` |
 | Thread tool | Cut an ISO metric coarse thread, M3 to M30, into a picked hole or onto a rod or boss, with the measured fit as clearance; in the full engine only | `thread.rs` |
+| Named values | A project's table of named sizes (`wall = 2`, `lip = wall * 1.5`, the built-in `clearance` and `nozzle`) that any typed size takes; a step typed with one follows it when it changes | app (`packages/app/src/cad/values.ts`), docs/cad-history.md |
 | Editable history | Each object keeps its CAD steps; editing a step replays the ones after it | app (`packages/app/src/cad/history`), docs/cad-history.md |
 | STEP import | STEP files tessellated by occt-import-js in a worker, then repaired like any import | app (`step-worker.ts`) |
 
