@@ -550,7 +550,7 @@ pub struct PrintConfig {
 }
 
 /// The settings schema's defaults (`packages/settings/defaults.json`: key to `[group, value]`), embedded once.
-pub(crate) const SCHEMA_DEFAULTS: &str = include_str!("../../settings/defaults.json");
+pub(crate) const SCHEMA_DEFAULTS: &str = include_str!(concat!(env!("OUT_DIR"), "/defaults.json"));
 
 /// The process keys of the schema defaults as one object. Printer and filament keys come from their profiles.
 fn process_defaults() -> Value {

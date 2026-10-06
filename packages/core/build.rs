@@ -6,33 +6,45 @@
 //! Writes the keys whose type is a percent (`percent` and `percents` in `packages/settings/schema.json`,
 //! Orca's `coPercent` and `coPercents`), one per line, so the configuration block writes them with their `%`,
 //! and the whole number keys (`int` and `ints`, Orca's `coInt` and `coInts`), which the placeholder language
-//! reads as integers.
+//! reads as integers, and copies `packages/settings/defaults.json` next to them.
+//!
+//! The published crate has no `packages/settings`, so it reads the copies in `data/` instead.
+//! `tests/published_data.rs` checks that they match; `SX_UPDATE_CORE_DATA=1` rewrites them.
 
 use std::path::Path;
 
 fn main() {
-    let schema = Path::new(env!("CARGO_MANIFEST_DIR")).join("../settings/schema.json");
-    println!("cargo:rerun-if-changed={}", schema.display());
-    let text =
-        std::fs::read_to_string(&schema).unwrap_or_else(|e| panic!("reading {}: {e}", schema.display()));
-    let parsed: serde_json::Value =
-        serde_json::from_str(&text).unwrap_or_else(|e| panic!("parsing {}: {e}", schema.display()));
-    for (types, file) in [
-        (["percent", "percents"], "percent_keys.txt"),
-        (["int", "ints"], "int_keys.txt"),
-    ] {
-        let mut keys: Vec<&str> = parsed["settings"]
-            .as_array()
-            .map(Vec::as_slice)
-            .unwrap_or_default()
-            .iter()
-            .filter(|d| d["type"].as_str().is_some_and(|t| types.contains(&t)))
-            .filter_map(|d| d["key"].as_str())
-            .collect();
-        keys.sort_unstable();
-        keys.dedup();
-        let out = Path::new(&std::env::var("OUT_DIR").unwrap_or_default()).join(file);
-        std::fs::write(&out, keys.join("\n")).unwrap_or_else(|e| panic!("writing {}: {e}", out.display()));
+    let here = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let out = Path::new(&std::env::var("OUT_DIR").unwrap_or_default()).to_path_buf();
+    let settings = here.join("../settings");
+    let schema = settings.join("schema.json");
+    if schema.exists() {
+        println!("cargo:rerun-if-changed={}", schema.display());
+        let text =
+            std::fs::read_to_string(&schema).unwrap_or_else(|e| panic!("reading {}: {e}", schema.display()));
+        let parsed: serde_json::Value =
+            serde_json::from_str(&text).unwrap_or_else(|e| panic!("parsing {}: {e}", schema.display()));
+        for (types, file) in [
+            (["percent", "percents"], "percent_keys.txt"),
+            (["int", "ints"], "int_keys.txt"),
+        ] {
+            let mut keys: Vec<&str> = parsed["settings"]
+                .as_array()
+                .map(Vec::as_slice)
+                .unwrap_or_default()
+                .iter()
+                .filter(|d| d["type"].as_str().is_some_and(|t| types.contains(&t)))
+                .filter_map(|d| d["key"].as_str())
+                .collect();
+            keys.sort_unstable();
+            keys.dedup();
+            write(&out.join(file), keys.join("\n").as_bytes());
+        }
+        copy(&settings.join("defaults.json"), &out.join("defaults.json"));
+    } else {
+        for file in ["percent_keys.txt", "int_keys.txt", "defaults.json"] {
+            copy(&here.join("data").join(file), &out.join(file));
+        }
     }
 
     println!("cargo:rerun-if-env-changed=SOURCE_DATE_EPOCH");
@@ -46,6 +58,16 @@ fn main() {
         });
     let (y, m, d) = civil(secs.div_euclid(86_400));
     println!("cargo:rustc-env=SX_BUILD_DATE={y:04}-{m:02}-{d:02}");
+}
+
+fn copy(from: &Path, to: &Path) {
+    println!("cargo:rerun-if-changed={}", from.display());
+    let bytes = std::fs::read(from).unwrap_or_else(|e| panic!("reading {}: {e}", from.display()));
+    write(to, &bytes);
+}
+
+fn write(to: &Path, bytes: &[u8]) {
+    std::fs::write(to, bytes).unwrap_or_else(|e| panic!("writing {}: {e}", to.display()));
 }
 
 /// Days since 1970-01-01 to a calendar date (Howard Hinnant's `civil_from_days`).
