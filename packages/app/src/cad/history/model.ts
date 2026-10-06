@@ -27,10 +27,12 @@ export interface HistoryMesh {
   slot: number
   positions: ArrayLike<number>
   indices: ArrayLike<number>
+  /** The engine's faces, with the keys steps name them by (docs/cad-history.md, "Face keys"); a replay keeps them. */
+  faces?: { ids: ArrayLike<number>; table: unknown[]; keys?: number[] }
 }
 
 export type StepParams =
-  | { op: 'face.push'; at: Vec3; normal: Vec3; distanceMm: number }
+  | { op: 'face.push'; at: Vec3; normal: Vec3; distanceMm: number; faceKey?: number }
   | { op: 'shape.extrude'; frame?: FaceFrame; shape: Shape | FreeShape; placement?: Placement; spec: ExtrudeSpec; font?: string; name?: string; pattern?: Pattern }
   | { op: 'sketch.revolve'; frame?: FaceFrame; loops: SketchLoop[]; axis: { point: Vec2; direction: Vec2 }; angleDeg?: number; operation?: 'new' | 'join' | 'cut'; name?: string }
   | { op: 'subtract'; solids: SolidSpec[]; label: string }
@@ -73,6 +75,8 @@ export interface Step {
   suppressed?: boolean
   /** The plain sentence from the last replay when the step failed there. */
   broken?: string
+  /** What the last replay noticed about a step that went through, such as a face found by its larger part. */
+  note?: string
   /** The expression over named values the step's main number follows (`height + 2`); see cad/values.ts. */
   bind?: string
 }
@@ -91,6 +95,8 @@ export type StepState = 'done' | 'broken' | 'skipped' | 'suppressed'
 export interface StepStatus {
   state: StepState
   message?: string
+  /** A step that went through but found its face another way than it was saved: "split in two; picked the larger". */
+  note?: string
 }
 
 export interface ReplayResult {
@@ -98,6 +104,9 @@ export interface ReplayResult {
   status: StepStatus[]
   /** The face each push step moved on this replay, by step id (world at that step's transform). */
   moved: Record<string, MovedFace>
+  /** The face keys steps found their faces by on this replay, by step id, for steps to keep (a step saved
+   * without them, from a version 1 file, gets them this way). */
+  found?: Record<string, { faceKey?: number; openKeys?: number[] }>
 }
 
 export const HISTORY_VERSION = 1
@@ -169,6 +178,70 @@ export function bakeMesh(m: HistoryMesh, t: Mat4): HistoryMesh {
     for (let k = 0; k + 2 < indices.length; k += 3) [indices[k + 1], indices[k + 2]] = [indices[k + 2]!, indices[k + 1]!]
   }
   return { name: m.name, slot: m.slot, positions, indices }
+}
+
+/** The key of face of triangle `t`, or 0 when the mesh's faces have no keys. */
+export function keyOfTriangle(mesh: Pick<HistoryMesh, 'faces'>, t: number): number {
+  const f = mesh.faces
+  if (!f?.keys?.length || t < 0) return 0
+  return f.keys[f.ids[t] ?? -1] ?? 0
+}
+
+/** The key of the face that holds the world point `at` facing `normal` (findTriangle), or undefined. */
+export function faceKeyAt(mesh: Pick<HistoryMesh, 'positions' | 'indices' | 'faces'>, t: Mat4, at: Vec3, normal: Vec3): number | undefined {
+  const k = keyOfTriangle(mesh, findTriangle(mesh, t, at, normal))
+  return k > 0 ? k : undefined
+}
+
+/**
+ * The face with key `key`, found again on a mesh an earlier step changed: a triangle of it nearest the world
+ * point `at` and a point on that triangle. A face split in two (or more) is found by its larger part, and `split`
+ * says so. Null when no face has the key.
+ */
+export function findByKey(mesh: Pick<HistoryMesh, 'positions' | 'indices' | 'faces'>, t: Mat4, key: number, at: Vec3): { triangle: number; at: Vec3; split: boolean } | null {
+  const f = mesh.faces
+  if (!f?.keys?.length || !key) return null
+  const p = mesh.positions
+  const ix = mesh.indices
+  const tris: number[] = []
+  for (let k = 0; k < ix.length / 3; k++) if (f.keys[f.ids[k] ?? -1] === key) tris.push(k)
+  if (!tris.length) return null
+  // The parts of the face: triangles joined through shared vertices.
+  const parent = new Map<number, number>()
+  const root = (v: number): number => {
+    let r = v
+    while (parent.has(r) && parent.get(r) !== r) r = parent.get(r)!
+    return r
+  }
+  for (const k of tris) {
+    const [a, b, c] = [ix[3 * k]!, ix[3 * k + 1]!, ix[3 * k + 2]!]
+    for (const v of [a, b, c]) if (!parent.has(v)) parent.set(v, v)
+    parent.set(root(b), root(a))
+    parent.set(root(c), root(a))
+  }
+  const area = new Map<number, number>()
+  const corners = (k: number) => [0, 1, 2].map((j) => point(t, p, 3 * ix[3 * k + j]!)) as [Vec3, Vec3, Vec3]
+  for (const k of tris) {
+    const [a, b, c] = corners(k)
+    const e1: Vec3 = [b[0] - a[0], b[1] - a[1], b[2] - a[2]]
+    const e2: Vec3 = [c[0] - a[0], c[1] - a[1], c[2] - a[2]]
+    const r = root(ix[3 * k]!)
+    area.set(r, (area.get(r) ?? 0) + Math.hypot(e1[1] * e2[2] - e1[2] * e2[1], e1[2] * e2[0] - e1[0] * e2[2], e1[0] * e2[1] - e1[1] * e2[0]) / 2)
+  }
+  let largest = -1
+  let most = -1
+  for (const [r, a] of area) if (a > most) [largest, most] = [r, a]
+  let best = -1
+  let bestD = Infinity
+  let bestAt: Vec3 = at
+  for (const k of tris) {
+    if (root(ix[3 * k]!) !== largest) continue
+    const [a, b, c] = corners(k)
+    const m: Vec3 = [(a[0] + b[0] + c[0]) / 3, (a[1] + b[1] + c[1]) / 3, (a[2] + b[2] + c[2]) / 3]
+    const d = Math.hypot(m[0] - at[0], m[1] - at[1], m[2] - at[2])
+    if (d < bestD) [best, bestD, bestAt] = [k, d, m]
+  }
+  return best < 0 ? null : { triangle: best, at: bestAt, split: area.size > 1 }
 }
 
 /**

@@ -8,7 +8,7 @@ import { fromGeom, toGeom } from '../geom/client'
 import { get, markStale, set } from '../state/store'
 import { edgeOp, type EdgeRef } from './edge-api'
 import type { StepParams } from './history/model'
-import { withStep } from './history/record'
+import { reserveStepId, withStep } from './history/record'
 
 type Loader = { loadParts(name: string, parts: MeshPart[]): Promise<MeshHandle> }
 
@@ -84,6 +84,7 @@ export async function applyEdges(host: Loader, objectId: string, partIndex: numb
   const part = e?.parts[partIndex]
   if (!e || !part) throw new Error('That object is gone.')
   const profile = params.op === 'edge.fillet' ? { kind: 'fillet' as const, radiusMm: params.radiusMm } : { kind: 'chamfer' as const, distanceMm: params.distanceMm, ...(params.distance2Mm !== undefined ? { distance2Mm: params.distance2Mm } : {}) }
+  reserveStepId()
   const r = await edgeOp({ mesh: { mesh: toGeom(part), transform: e.transform }, edges: params.edges, profile })
   const parts = e.parts.map((p, i) => (i === partIndex ? fromGeom(r.mesh, p.name, p.slot) : p))
   const handle = await host.loadParts(e.name, parts)

@@ -5,6 +5,8 @@
 // Metadata/slicerx_history/. Both are optional parts other slicers ignore; the model part keeps the
 // current mesh, so the file prints the same anywhere. Reading is in history-read.ts, loaded with the
 // project reader.
+// Version 2 names faces by key (docs/cad-history.md, "Face keys"); version 1 files still open.
+export const HISTORY_FILE_VERSION = 2
 import type { History, HistoryMesh } from '../cad/history/model'
 import type { ZipEntry } from './zip'
 
@@ -59,5 +61,5 @@ export function historyFiles(objects: readonly { id: string; history?: History; 
     out.push({ object: String(id), base, ...(h.ended ? { ended: h.ended } : {}), steps })
   }
   if (!out.length) return []
-  return [{ name: 'Metadata/slicerx_history.json', data: JSON.stringify({ version: 1, objects: out }) }, ...files]
+  return [{ name: 'Metadata/slicerx_history.json', data: JSON.stringify({ version: HISTORY_FILE_VERSION, objects: out }) }, ...files]
 }

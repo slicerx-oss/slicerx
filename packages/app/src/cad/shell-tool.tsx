@@ -14,6 +14,7 @@ import { cameraBus } from '../plate/tools'
 import { get, set, toast } from '../state/store'
 import { loopsOf } from './cad-ops'
 import { applyShell } from './holes'
+import { keyOfTriangle } from './history/model'
 import { editing, nowOf, saveEdit } from './history/ops'
 import { bindNext } from './history/record'
 import { close, errorText, num, Num, pickWords, Shell, useProbe } from './panel-kit'
@@ -36,7 +37,7 @@ export function ShellTool() {
   const [picked, setPicked] = useState<Picked | null>(() => {
     if (!edit) return null
     const now = nowOf(edit.step, edit.entry.transform)
-    return { objectId: edit.objectId, partIndex: edit.partIndex, faces: edit.params.open.map((o) => ({ at: now.point(o.at), normal: now.dir(o.normal), lines: [] })) }
+    return { objectId: edit.objectId, partIndex: edit.partIndex, faces: edit.params.open.map((o) => ({ at: now.point(o.at), normal: now.dir(o.normal), ...(o.key ? { key: o.key } : {}), lines: [] })) }
   })
   const [wall, setWall] = useState(edit ? String(edit.params.wallMm) : '2')
   const [note, setNote] = useState<string | null>(null)
@@ -58,7 +59,8 @@ export function ShellTool() {
     setNote(null)
     pickFace({ mesh: toGeom(part), transform: e.transform }, { triangle: hit.triangle, at: hit.point }).then(
       (f) => {
-        const face = { at: hit.point!, normal: f.frame.normal, lines: loopsOf(f.frame, f.outline) }
+        const key = keyOfTriangle(part, hit.triangle!)
+        const face = { at: hit.point!, normal: f.frame.normal, ...(key ? { key } : {}), lines: loopsOf(f.frame, f.outline) }
         setPicked((was) => {
           // Another object starts over; the same face again closes it.
           const faces = was && was.objectId === objectId && was.partIndex === partIndex ? was.faces : []
@@ -87,7 +89,7 @@ export function ShellTool() {
     setBusy(true)
     setNote(null)
     try {
-      const params = { op: 'shell' as const, open: target.faces.map(({ at, normal }) => ({ at, normal })), wallMm }
+      const params = { op: 'shell' as const, open: target.faces.map(({ at, normal, key }) => ({ at, normal, ...(key ? { key } : {}) })), wallMm }
       bindNext(wall)
       if (edit) {
         await saveEdit(host.slicer, params)

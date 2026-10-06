@@ -36,11 +36,16 @@ export async function runReplay(req: ReplayRequest, signal?: AbortSignal): Promi
 const toPart = (m: HistoryMesh): MeshPart => ({ name: m.name, slot: m.slot, positions: m.positions instanceof Float32Array ? m.positions : new Float32Array(m.positions), indices: m.indices instanceof Uint32Array ? m.indices : new Uint32Array(m.indices) })
 
 /** The steps with each one's broken message from a replay, kept so the list shows it after a reload. */
-export function withStatus(steps: readonly Step[], status: readonly StepStatus[]): Step[] {
+export function withStatus(steps: readonly Step[], status: readonly StepStatus[], found: ReplayResult['found'] = {}): Step[] {
   return steps.map((s, i) => {
     const st = status[i]
-    const { broken: _b, ...rest } = s
-    return st?.state === 'broken' ? { ...rest, broken: st.message ?? 'This step failed.' } : rest
+    const { broken: _b, note: _n, ...rest } = s
+    const f = found[s.id]
+    // The keys a step found its faces by are kept with it, so a step from a version 1 file has them from now on.
+    const params = f?.faceKey && rest.params.op === 'face.push' ? { ...rest.params, faceKey: f.faceKey } : f?.openKeys && rest.params.op === 'shell' ? { ...rest.params, open: rest.params.open.map((o, j) => (f.openKeys![j] ? { ...o, key: f.openKeys![j]! } : o)) } : rest.params
+    const kept = { ...rest, params }
+    if (st?.state === 'broken') return { ...kept, broken: st.message ?? 'This step failed.' }
+    return st?.note ? { ...kept, note: st.note } : kept
   })
 }
 
@@ -92,7 +97,7 @@ export async function applyHistory(host: Loader, objectId: string, next: History
     const parts = r.parts.map(toPart)
     const handle = await host.loadParts(current.name, parts)
     if (ac.signal.aborted) throw abortError()
-    const history: History = { ...next, steps: withStatus(next.steps, r.status) }
+    const history: History = { ...next, steps: withStatus(next.steps, r.status, r.found) }
     const { instanceOf: _was, paint: _paint, ...rest } = current
     const colors = parts.map((_, i) => current.colors[i] ?? current.colors[current.colors.length - 1] ?? brandAccent())
     let entry: PlateEntry = { ...rest, handle, parts, colors, history }

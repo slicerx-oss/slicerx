@@ -11,9 +11,9 @@ import { pickFace, pushFace, type FaceFrame, type FacePick, type MovedFace, type
 import { fromGeom, toGeom } from '../geom/client'
 import { applyMat } from './cad-ops'
 import { followPush } from './dimensions'
-import { findTriangle, followed, followsOf, onFlatFace, stepName, type StepParams } from './history/model'
+import { findTriangle, followed, followsOf, keyOfTriangle, onFlatFace, stepName, type StepParams } from './history/model'
 import { applyHistory, nowOf, runReplay } from './history/ops'
-import { settle, withPushBefore, withStep } from './history/record'
+import { reserveStepId, settle, withPushBefore, withStep } from './history/record'
 import { get, markStale, set, type PlateEntry } from '../state/store'
 
 type Loader = { loadParts(name: string, parts: MeshPart[]): Promise<MeshHandle> }
@@ -175,8 +175,11 @@ export async function applyPush(host: Loader, face: PushFace, distanceMm: number
   const entry = get().plate.find((p) => p.id === face.objectId)
   const part = entry?.parts[face.partIndex]
   if (!entry || !part) throw new Error('That object is gone. Pick a face again.')
-  const params: PushParams = { op: 'face.push', at: face.pick.at, normal: face.frame.normal, distanceMm }
+  // The step names the face by its key too, so it finds it after an earlier step changes (docs/cad-history.md).
+  const faceKey = keyOfTriangle(part, face.pick.triangle)
+  const params: PushParams = { op: 'face.push', at: face.pick.at, normal: face.frame.normal, distanceMm, ...(faceKey ? { faceKey } : {}) }
   const rounded = await roundedFrom(entry, face)
+  reserveStepId()
   if (rounded) return pushBeforeRound(host, entry, face, params, rounded)
   const r = await pushFace({ mesh: { mesh: toGeom(part), transform: entry.transform }, pick: face.pick, distanceMm })
   const parts = entry.parts.map((p, i) => (i === face.partIndex ? fromGeom(r.mesh, p.name, p.slot) : p))

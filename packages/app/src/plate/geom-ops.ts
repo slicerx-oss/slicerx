@@ -56,6 +56,8 @@ async function replace(host: Loader, e: PlateEntry, parts: MeshPart[], transform
 const nonEmpty = (m: GeomMesh | undefined): m is GeomMesh => Boolean(m && m.indices.length >= 3)
 
 export async function repairSelected(host: Loader): Promise<string> {
+  // The faces this makes get the keys of the history step it records.
+  void (await import('../cad/history/record')).reserveStepId()
   const e = need()
   const entries: RepairEntry[] = []
   const parts: MeshPart[] = []
@@ -73,6 +75,8 @@ export async function repairSelected(host: Loader): Promise<string> {
 }
 
 export async function simplifySelected(host: Loader, targetRatio: number): Promise<string> {
+  // The faces this makes get the keys of the history step it records.
+  void (await import('../cad/history/record')).reserveStepId()
   const e = need()
   let before = 0, after = 0
   const parts: MeshPart[] = []
@@ -89,6 +93,8 @@ export async function simplifySelected(host: Loader, targetRatio: number): Promi
 }
 
 export async function hollowSelected(host: Loader, wallMm: number): Promise<string> {
+  // The faces this makes get the keys of the history step it records.
+  void (await import('../cad/history/record')).reserveStepId()
   const e = need()
   let saved = 0
   const parts: MeshPart[] = []
@@ -200,6 +206,8 @@ export interface HoleSpec {
 
 /** Boolean subtract: cuts a box or cylinder into the selected object from the top. */
 export async function subtractFromSelected(host: Loader, spec: HoleSpec): Promise<string> {
+  // The faces this makes get the keys of the history step it records.
+  void (await import('../cad/history/record')).reserveStepId()
   const e = need()
   const world = worldParts(e)
   const b = bounds(world, identity())
