@@ -265,16 +265,15 @@ impl Hits {
 /// Numbers per hit in [`Hits::to_numbers`].
 const HIT_NUMBERS: usize = 33;
 
-/// An object of the plate as the report names it.
+/// An object of the plate as the report needs it.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct MetaObject {
     pub id: String,
-    pub name: String,
     pub height: f32,
     pub center: [f32; 2],
 }
 
-/// What the report needs besides the hits: the objects in print order and the settings its messages and fixes read.
+/// What the report needs besides the hits: the objects in print order and the settings its fixes read.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Meta {
     pub objects: Vec<MetaObject>,
@@ -287,20 +286,18 @@ pub struct Meta {
     /// Seconds of one retraction and its recovery.
     pub retract_s: f32,
     pub z_hop: f32,
-    /// The tool changer's station, for messages; empty without one.
-    pub station: String,
-    /// Why the plate cannot print by layer instead; empty when it can.
-    pub no_by_layer: String,
+    /// The objects could print layer by layer instead (one layer plan, no spiral vase).
+    pub by_layer: bool,
 }
 
 impl Meta {
-    /// The facts as JSON, for a layer range's JSON in the browser build: the objects as `[id, name, height, x, y]`,
-    /// then the numbers and the two texts.
+    /// The facts as JSON, for a layer range's JSON in the browser build: the objects as `[id, height, x, y]`, then
+    /// the numbers.
     pub fn to_json(&self) -> serde_json::Value {
         let objects: Vec<serde_json::Value> = self
             .objects
             .iter()
-            .map(|o| serde_json::json!([o.id, o.name, o.height, o.center[0], o.center[1]]))
+            .map(|o| serde_json::json!([o.id, o.height, o.center[0], o.center[1]]))
             .collect();
         let numbers = [
             self.radius,
@@ -311,8 +308,9 @@ impl Meta {
             self.z_speed,
             self.retract_s,
             self.z_hop,
+            if self.by_layer { 1.0 } else { 0.0 },
         ];
-        serde_json::json!([objects, numbers, self.station, self.no_by_layer])
+        serde_json::json!([objects, numbers])
     }
 
     /// [`Self::to_json`] read back.
@@ -334,9 +332,8 @@ impl Meta {
                 a.iter()
                     .map(|o| MetaObject {
                         id: text(o.get(0)),
-                        name: text(o.get(1)),
-                        height: num(o.get(2)),
-                        center: [num(o.get(3)), num(o.get(4))],
+                        height: num(o.get(1)),
+                        center: [num(o.get(2)), num(o.get(3))],
                     })
                     .collect()
             })
@@ -352,8 +349,7 @@ impl Meta {
             z_speed: n(5),
             retract_s: n(6),
             z_hop: n(7),
-            station: text(v.get(2)),
-            no_by_layer: text(v.get(3)),
+            by_layer: n(8) > 0.5,
         }
     }
 }
@@ -408,7 +404,7 @@ impl Model {
         config: &PrintConfig,
         printer_id: Option<&str>,
         extruder_of: Option<Vec<usize>>,
-        no_by_layer: String,
+        by_layer: bool,
     ) -> Self {
         let model = config.raw.get("printer_model").and_then(|v| match v {
             serde_json::Value::String(s) => Some(s.as_str()),
@@ -449,7 +445,6 @@ impl Model {
             #[allow(clippy::cast_possible_truncation, reason = "plate positions in mm")]
             listed.push(MetaObject {
                 id: o.id.clone(),
-                name: o.name.clone(),
                 height: top as f32,
                 center: [f.center[0] as f32, f.center[1] as f32],
             });
@@ -491,11 +486,7 @@ impl Model {
             z_speed: config.raw_number("machine_max_speed_z", 12.0).max(1.0) as f32,
             retract_s: (2.0 * config.retraction_length / config.retraction_speed.max(1.0)) as f32,
             z_hop: config.z_hop as f32,
-            station: changer
-                .as_ref()
-                .map(|c| c.station().to_owned())
-                .unwrap_or_default(),
-            no_by_layer,
+            by_layer,
         };
         let lift_mm = changer.as_ref().map_or(3.0, |c| c.lift_mm);
         Self {
@@ -598,7 +589,6 @@ mod tests {
         let meta = Meta {
             objects: vec![MetaObject {
                 id: "a".into(),
-                name: "Box".into(),
                 height: 20.0,
                 center: [10.0, 20.0],
             }],
@@ -610,8 +600,7 @@ mod tests {
             z_speed: 12.0,
             retract_s: 0.1,
             z_hop: 0.4,
-            station: "tool dock".into(),
-            no_by_layer: String::new(),
+            by_layer: true,
         };
         assert_eq!(Meta::from_json(&meta.to_json()), meta);
     }

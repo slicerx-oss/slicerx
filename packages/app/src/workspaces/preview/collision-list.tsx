@@ -7,8 +7,9 @@ import { Block, Button, Icon } from '@slicerx/ui'
 import { useState } from 'react'
 import { useHost } from '../../host'
 import { clock } from '../../lib/preview-timeline'
-import { applyCollisionFix, collisionsOf, fixesOf, jumpToCollision } from '../../plate/heimdall'
-import { useApp } from '../../state/store'
+import { applyCollisionFix, collisionsOf, fixesOf, jumpToCollision, wordsOf } from '../../plate/heimdall'
+import { collisionDetail, collisionTitle, fixDetail, fixTitle } from '../../plate/heimdall-words'
+import { get, useApp } from '../../state/store'
 
 const KIND: Record<Collision['kind'], string> = {
   gantry: 'Gantry',
@@ -35,6 +36,9 @@ export function CollisionList() {
   const fixes = useApp(fixesOf)
   const pick = useApp((s) => s.strikePick)
   const stale = useApp((s) => s.slice.status === 'done' && s.slice.stale)
+  // The names follow the plate; the station follows the printer, read when the list draws.
+  const plate = useApp((s) => s.plate)
+  const { name, station } = wordsOf(get())
   const [busy, setBusy] = useState(false)
   if (!list.length) return null
   const hits = list.filter((c) => c.severity === 'hit').length
@@ -46,11 +50,11 @@ export function CollisionList() {
           <li key={`${c.kind}-${c.objectId}-${c.hitId}-${i}`} className={pick === i ? 'sel' : undefined} data-severity={c.severity}>
             <Icon name="strike" size={18} />
             <div>
-              <b>{c.title}</b>
-              <p>{c.detail}</p>
+              <b>{collisionTitle(c, name, station)}</b>
+              <p>{collisionDetail(c, name, station)}</p>
               <span className="strike-when">{when(c)}</span>
             </div>
-            <Button size="sm" variant="ghost" aria-label={`Jump to: ${c.title}`} tip={{ title: 'Jump', body: 'Move the sliders to this moment and play the toolhead up to it.' }} onClick={() => jumpToCollision(i)}>
+            <Button size="sm" variant="ghost" aria-label={`Jump to: ${collisionTitle(c, name, station)}`} tip={{ title: 'Jump', body: 'Move the sliders to this moment and play the toolhead up to it.' }} onClick={() => jumpToCollision(i)}>
               Jump
             </Button>
           </li>
@@ -63,13 +67,13 @@ export function CollisionList() {
             {fixes.map((f, i) => (
               <li key={`${f.kind}-${i}`}>
                 <div>
-                  <b>{f.title}</b>
+                  <b>{fixTitle(f, name, plate.map((p) => p.id), station)}</b>
                   <p>
-                    {f.detail} <span className="sx-dim">{cost(f)}</span>
+                    {fixDetail(f, name, list.length, station)} <span className="sx-dim">{cost(f)}</span>
                   </p>
                 </div>
                 {f.oneClick ? (
-                  <Button size="sm" disabled={busy || stale} tip={{ title: f.title, body: 'Apply it and slice again. Undo puts the plate back.', ...(stale ? { reason: 'Slice again first: the plate changed since this slice.' } : {}) }} onClick={() => { setBusy(true); void applyCollisionFix(host, f).finally(() => setBusy(false)) }}>
+                  <Button size="sm" disabled={busy || stale} tip={{ title: fixTitle(f, name, plate.map((p) => p.id), station), body: 'Apply it and slice again. Undo puts the plate back.', ...(stale ? { reason: 'Slice again first: the plate changed since this slice.' } : {}) }} onClick={() => { setBusy(true); void applyCollisionFix(host, f).finally(() => setBusy(false)) }}>
                     Apply
                   </Button>
                 ) : null}

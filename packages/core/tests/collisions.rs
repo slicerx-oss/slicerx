@@ -106,7 +106,10 @@ fn the_gantry_clips_a_tall_object_printed_first_and_printing_it_last_clears_it()
         )]
     );
     let c = &r.report.collisions[0];
-    assert!(c.title.contains("gantry hits tall"), "{}", c.title);
+    assert!(
+        (c.limit_mm - 10.0).abs() < 1e-6 && (c.hit_height_mm - 20.0).abs() < 0.1,
+        "{c:?}"
+    );
     // 20 mm against a beam 10 mm over the first layer's nozzle: about 9.8 mm deep, from the low box's first layer.
     assert!((c.depth_mm - 9.8).abs() < 0.3, "{}", c.depth_mm);
     assert!(c.time_s > 0.0 && c.time_s < r.report.stats.time_s);
@@ -118,7 +121,6 @@ fn the_gantry_clips_a_tall_object_printed_first_and_printing_it_last_clears_it()
         .iter()
         .find(|f| f.kind == FixKind::Reorder)
         .unwrap();
-    assert_eq!(order.title, "Print tall last");
     assert_eq!(order.order, ["low", "tall"]);
     assert!(order.one_click && order.clears == [0]);
     assert!(
@@ -163,7 +165,7 @@ fn the_gantry_counts_only_within_its_reach_and_the_frame_counts_everywhere() {
             "first".into()
         )]
     );
-    assert!(r.report.collisions[0].title.contains("frame hits first"));
+    assert!((r.report.collisions[0].limit_mm - 15.0).abs() < 1e-6);
     // 30 mm apart in y is within it
     let near = [
         ("first", block(20.0, 20.0, 20.0), 60.0, 40.0),
@@ -209,11 +211,7 @@ fn objects_under_the_hotend_need_no_clearance_and_taller_ones_inside_the_radius_
             "tall".into()
         )]
     );
-    assert!(
-        r.report.collisions[0].detail.contains("40 mm"),
-        "{}",
-        r.report.collisions[0].detail
-    );
+    assert!((r.report.collisions[0].limit_mm - 40.0).abs() < 1e-6);
     assert!(
         r.report
             .collision_fixes
@@ -337,11 +335,7 @@ fn a_tool_change_to_the_u1_dock_crosses_a_box_printed_before_unless_the_change_l
         .unwrap_or_else(|| panic!("{:?}", kinds(&r)));
     assert_eq!((trip.object_id.as_str(), trip.hit_id.as_str()), ("front", "back"));
     assert!(trip.change.is_some());
-    assert!(
-        trip.title.contains("tool change crosses back") || trip.title.contains("dock"),
-        "{}",
-        trip.title
-    );
+    assert!(trip.hit_height_mm > 29.0, "{trip:?}");
     assert!(
         r.report
             .collision_fixes
@@ -500,7 +494,7 @@ fn no_strike_on_plates_the_makers_rules_accept() {
             .collisions
             .iter()
             .filter(|c| c.severity == Severity::Hit)
-            .map(|c| c.title.clone())
+            .map(|c| format!("{:?} {:?} {}", c.kind, c.part, c.hit_id))
             .collect();
         assert!(hits.is_empty(), "{id}: {hits:?}");
         checked += 1;
