@@ -218,6 +218,14 @@ pub fn check_toolpaths(out: &SliceOutput, base: &PrintConfig) -> Vec<Issue> {
     let mut outside_feature = None;
     let mut in_zone = Count::default();
     let mut too_tall = Count::default();
+    // On a printer with two extruders, each filament's paths stay inside its extruder's reach
+    // (`extruder_printable_area`), as Orca's GCodeProcessor::check_multi_extruder_gcode_valid requires.
+    let reach = out.filament_map.as_ref().map(|m| {
+        let ext = crate::nozzles::extruders(base);
+        (m, crate::nozzles::reach_boxes(base, ext))
+    });
+    let mut unreachable = Count::default();
+    let mut unreachable_by = (0u8, 0usize, Feature::OuterWall);
     let mut bed_cache: Vec<BedCache> = Vec::new();
     for l in &out.layers {
         if !bed_cache.iter().any(|(k, ..)| *k == l.cfg) {
@@ -256,6 +264,20 @@ pub fn check_toolpaths(out: &SliceOutput, base: &PrintConfig) -> Vec<Issue> {
                     outside.hit(l.index, x, y, 0.0);
                     continue;
                 }
+                if let Some((m, boxes)) = &reach {
+                    let e = m.extruder_of(p.tool);
+                    if let Some(Some(r)) = boxes.get(e)
+                        && (x < r[0] - EDGE_TOL_MM
+                            || x > r[2] + EDGE_TOL_MM
+                            || y < r[1] - EDGE_TOL_MM
+                            || y > r[3] + EDGE_TOL_MM)
+                    {
+                        if unreachable.n == 0 {
+                            unreachable_by = (p.tool, e, p.feature);
+                        }
+                        unreachable.hit(l.index, x, y, 0.0);
+                    }
+                }
                 for z in zones {
                     // Only points clearly inside a zone: touching its edge is allowed.
                     if x > z.bbox[0] + EDGE_TOL_MM
@@ -288,6 +310,25 @@ pub fn check_toolpaths(out: &SliceOutput, base: &PrintConfig) -> Vec<Issue> {
             ),
         );
         i.layer = Some(outside.layer);
+        issues.push(i);
+    }
+    if unreachable.n > 0 {
+        let (slot, e, feature) = unreachable_by;
+        let mut i = Issue::new(
+            "outside_extruder_reach",
+            Severity::Error,
+            format!(
+                "{} toolpath points of filament {} lie outside the reach of extruder {}, first at layer {} (X{:.1} Y{:.1}, {}); map the filament to the other extruder or move the part",
+                unreachable.n,
+                slot,
+                e + 1,
+                unreachable.layer + 1,
+                unreachable.x,
+                unreachable.y,
+                feature.gcode_label().to_lowercase()
+            ),
+        );
+        i.layer = Some(unreachable.layer);
         issues.push(i);
     }
     if in_zone.n > 0 {
@@ -780,6 +821,46 @@ mod tests {
             check_toolpaths(&output_with(&[(10.0, 10.0)], 99.5), &hop)[0].code,
             "over_height"
         );
+    }
+
+    #[test]
+    fn a_path_past_its_extruders_reach_blocks() {
+        // H2D: the left nozzle reaches x 0 to 325, the right one 25 to 350, on a 350 mm bed.
+        let c = cfg(json!({
+            "printable_area": ["0x0", "350x0", "350x320", "0x320"],
+            "nozzle_diameter": [0.4, 0.4],
+            "extruder_printable_area": [
+                ["0x0", "325x0", "325x320", "0x320"],
+                ["25x0", "350x0", "350x320", "25x320"]
+            ]
+        }));
+        let mapped = |e: u8, pts: &[(f64, f64)]| {
+            let mut out = output_with(pts, 0.2);
+            out.filament_map = Some(crate::nozzles::Map {
+                extruder: vec![e],
+                nozzle: vec![0],
+                auto: false,
+            });
+            out
+        };
+        assert!(check_toolpaths(&mapped(1, &[(100.0, 100.0), (30.0, 100.0)]), &c).is_empty());
+        let issues = check_toolpaths(&mapped(1, &[(100.0, 100.0), (10.0, 100.0)]), &c);
+        assert_eq!(
+            issues.iter().map(|i| i.code).collect::<Vec<_>>(),
+            ["outside_extruder_reach"]
+        );
+        assert!(
+            issues[0].message.contains("filament 1") && issues[0].message.contains("extruder 2"),
+            "{}",
+            issues[0].message
+        );
+        assert!(blocks(&issues));
+        assert_eq!(
+            check_toolpaths(&mapped(0, &[(100.0, 100.0), (340.0, 100.0)]), &c)[0].code,
+            "outside_extruder_reach"
+        );
+        // No map, no per-extruder check: the bed alone bounds the path.
+        assert!(check_toolpaths(&output_with(&[(10.0, 100.0), (340.0, 100.0)], 0.2), &c).is_empty());
     }
 
     #[test]

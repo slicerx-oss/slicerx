@@ -95,7 +95,7 @@ fn master(cfg: &PrintConfig, extruders: usize) -> usize {
 
 /// The printable box `[min x, min y, max x, max y]` of each extruder (`extruder_printable_area`), when
 /// the profile gives one per extruder.
-fn reach_boxes(cfg: &PrintConfig, extruders: usize) -> Vec<Option<[f64; 4]>> {
+pub(crate) fn reach_boxes(cfg: &PrintConfig, extruders: usize) -> Vec<Option<[f64; 4]>> {
     let num = |v: &serde_json::Value| {
         v.as_f64()
             .or_else(|| v.as_str().and_then(|t| t.trim().parse().ok()))
