@@ -21,10 +21,11 @@ sx-geom = { path = "..", default-features = false }
 
 # The engine's optional parts, all on by default; scripts/build.sh takes SX_GEOM_FEATURES to pick some.
 [features]
-default = ["cad", "holes", "threads", "text", "svg", "nest", "calib", "hollow"]
+default = ["cad", "holes", "threads", "shell", "text", "svg", "nest", "calib", "hollow"]
 cad = ["sx-geom/cad"]
 holes = ["sx-geom/holes"]
 threads = ["sx-geom/threads"]
+shell = ["sx-geom/shell"]
 text = ["sx-geom/text"]
 svg = ["sx-geom/svg"]
 nest = ["sx-geom/nest"]

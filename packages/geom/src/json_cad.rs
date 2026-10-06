@@ -31,6 +31,8 @@ use crate::outline::{self, TextOptions};
 use crate::poly2d::Polygon;
 #[cfg(feature = "cad")]
 use crate::push;
+#[cfg(feature = "shell")]
+use crate::shell::{self, OpenFace};
 #[cfg(feature = "cad")]
 use crate::sketch;
 #[cfg(feature = "cad")]
@@ -172,6 +174,8 @@ pub(crate) fn call(op: &str, req: &Value, enc: MeshOut, files: FileLoader<'_>) -
         "hole.find" => hole_find_op(req, files),
         #[cfg(feature = "holes")]
         "hole.apply" => hole_apply_op(req, enc, files),
+        #[cfg(feature = "shell")]
+        "shell" => shell_op(req, enc, files),
         #[cfg(feature = "threads")]
         "thread.find" => thread_find_op(req, files),
         #[cfg(feature = "threads")]
@@ -497,6 +501,19 @@ fn hole_apply_op(req: &Value, enc: MeshOut, files: FileLoader<'_>) -> Result<Val
     Ok(v)
 }
 
+/// The body hollowed to `wallMm` with the faces at `open` (world points and normals) left open.
+#[cfg(feature = "shell")]
+fn shell_op(req: &Value, enc: MeshOut, files: FileLoader<'_>) -> Result<Value> {
+    let it = item_field(req, "mesh", files)?;
+    let open: Vec<OpenFace> = field_or_default(req, "open")?;
+    let wall: f64 = field(req, "wallMm")?;
+    let opts: BooleanOptions = field_or_default(req, "options")?;
+    let (m, r) = shell::shell(&it.world(), &open, wall, &opts)?;
+    let mut v = mesh_report(&it.to_local(&m)?, enc);
+    insert(&mut v, "report", to_value(&r)?);
+    Ok(v)
+}
+
 /// The round surface under a pick, with the size that suits it and every size there is.
 #[cfg(feature = "threads")]
 fn thread_find_op(req: &Value, files: FileLoader<'_>) -> Result<Value> {
@@ -682,6 +699,28 @@ mod tests {
                 .unwrap();
             assert!((side["offset"].as_f64().unwrap() - right).abs() < 1e-6, "{side}");
         }
+    }
+
+    #[cfg(feature = "shell")]
+    #[test]
+    fn a_box_shelled_open_at_the_top_through_the_worker() {
+        let m = build::box_mesh([0.0; 3], [40.0, 30.0, 20.0]);
+        let item = json!({ "mesh": MeshOut::Flat.mesh(&m), "transform": translate([100.0, 0.0, 0.0]) });
+        let out = run(
+            "shell",
+            &json!({ "mesh": item, "open": [{ "at": [105.0, 5.0, 20.0], "normal": [0, 0, 1] }], "wallMm": 2 }),
+        );
+        assert_eq!(out["watertight"], true);
+        assert_eq!(out["report"]["exact"], true);
+        assert_eq!(out["report"]["openFaces"], 1);
+        let want = 40.0 * 30.0 * 20.0 - 36.0 * 26.0 * 18.0;
+        assert!(
+            (out["volumeMm3"].as_f64().unwrap() - want).abs() < 1e-3,
+            "{}",
+            out["volumeMm3"]
+        );
+        // In the item's own frame, as other ops reply.
+        assert!(out["bounds"]["min"][0].as_f64().unwrap().abs() < 1e-6);
     }
 
     #[cfg(feature = "threads")]
