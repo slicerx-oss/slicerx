@@ -14,7 +14,7 @@ import { addPrimitive, mergeSelected, splitSelectedToObjects, splitSelectedToPar
 import { history } from './history'
 import { addPlate, duplicatePlate, removePlate, switchPlate } from './plates'
 import { cameraBus, getPaintBus, setTool } from './tools'
-import { appName } from '../edition'
+import { appName, editionHasCad, MODELING_COMMANDS } from '../edition'
 
 const hasSelection = () => get().selection !== null
 
@@ -168,5 +168,7 @@ export function plateCommands(choice: () => LookAndFeelChoice, full?: Host): Com
   ]
   // Drawing commands exist only when the drawing tools are on. Measure, arrays, hollow, repair and simplify always do.
   const cad = new Set(['object-text', 'object-shape', 'object-subtract', 'add-box', 'add-cylinder', 'add-sphere', 'add-cone'])
-  return list.map((c) => (cad.has(c.id) ? { ...c, enabled: c.enabled ? () => cadOn() && c.enabled!() : cadOn } : c))
+  // An edition without the modeling tools has none of their commands: its geometry engine cannot run them.
+  const shipped = editionHasCad() ? list : list.filter((c) => !MODELING_COMMANDS.has(c.id))
+  return shipped.map((c) => (cad.has(c.id) ? { ...c, enabled: c.enabled ? () => cadOn() && c.enabled!() : cadOn } : c))
 }

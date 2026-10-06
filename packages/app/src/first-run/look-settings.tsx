@@ -4,6 +4,7 @@
 import { LOOK_OPTIONS } from '@slicerx/contracts'
 import { Button, SwitchRow } from '@slicerx/ui'
 import { useEffect, useState } from 'react'
+import { editionHasCad, useEdition } from '../edition'
 import { ThemeSettingsSection } from '../shell/theme-settings'
 import { get, set, useApp } from '../state/store'
 import { openSetup, resumeSetup, useLookChoice } from './look'
@@ -43,6 +44,7 @@ export function LookSettingsSection() {
   const firstRun = useApp((s) => s.firstRun)
   const tips = useApp((s) => s.tooltips)
   const cad = useApp((s) => s.cadTools)
+  const modeling = editionHasCad(useEdition())
   const autoSlice = useApp((s) => s.autoSlice)
   const palette = useApp((s) => s.toolpathPalette)
   const custom = Boolean(choice.overrides && Object.keys(choice.overrides).length)
@@ -81,7 +83,7 @@ export function LookSettingsSection() {
       <ElectricityFields />
       <div className="set-group">
         <h4>Modeling</h4>
-        <SwitchRow id="set-cad" icon="shapes" label="Drawing tools" detail="Draw a shape or text on a face or the bed and extrude it, add basic shapes, subtract a shape. Measure, arrays, repair and simplify are always on." checked={cad} onChange={(v) => set({ cadTools: v })} />
+        <SwitchRow id="set-cad" icon="shapes" label="Drawing tools" detail={modeling ? 'Draw a shape or text on a face or the bed and extrude it, add basic shapes, subtract a shape. Measure, arrays, repair and simplify are always on.' : 'Add basic shapes and subtract a shape. Measure, arrays, repair and simplify are always on.'} checked={cad} onChange={(v) => set({ cadTools: v })} />
       </div>
       <div className="set-group">
         <h4>Setup</h4>

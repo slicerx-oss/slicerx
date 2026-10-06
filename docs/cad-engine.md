@@ -66,6 +66,12 @@ Errors come back as a message the UI can show as is, for example "the cut remove
 
 Bundle size: the worker's wasm is under 3 MB (under 1 MB gzip). manifold-rust and its exact arithmetic add about 880 KB of code, and ttf-parser about 68 KB plus the 24.5 KB font. The main app bundle does not include it.
 
+### Engine features
+
+The optional parts of sx-geom are cargo features, all on by default: `cad` (face picks, the shape and text tools, sketches, push and pull, edge rounds, kept dimensions, and face ids on meshes and booleans), `holes` (the hole tool, which needs `cad`), `text`, `svg`, `nest`, `calib` and `hollow`. The core (booleans, cut, arrays, measure, repair, simplify, import, fit check, resume) is always in. An operation a build leaves out answers "X is not in this build; it leaves out F", and `operations()` lists only the ones a build has.
+
+An edition turns the modeling tools off with `features.cad: false` in its config. The app then leaves their commands and menu items out, and `edition-build` builds the worker with every feature but `cad` and `holes` (set `SX_GEOM_FEATURES` to build `packages/geom/wasm` with any other list). Worker sizes, gzip: the core alone 610 KB, without the modeling tools 772 KB, everything 952 KB. Each feature on top of the core: `cad` with text and SVG 214 KB, `holes` 7 KB more, `calib` 59 KB, `svg` 23 KB, `nest` 71 KB, `hollow` 12 KB, `text` under 1 KB.
+
 ## 3. Print rescue
 
 "Print the rest from this height". The person measures the part left on the bed, or reads the layer number off the printer. `resume.rs` turns that into the first layer to print again: the last layer whose top is at or below the measurement (within half the thinnest layer) counts as done, and a layer number from the printer is printed again because it is likely incomplete. When both are given and disagree by more than a layer, the measurement wins and a warning says so. Jobs that varied their layer height pass their layer tops, so the plan matches the layers that were printed.
