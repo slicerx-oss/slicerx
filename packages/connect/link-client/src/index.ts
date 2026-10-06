@@ -51,6 +51,9 @@ export class LinkError extends Error implements Omit<PrinterError, 'code'> {
 }
 
 /** A file the cloud inbox delivered to the bridge and that waits for the user's approval. */
+/** Where the bridge put a secret: in the keychain, or in memory for the session when the keychain refused it. */
+export type SecretKept = { kept: 'stored' | 'session' }
+
 export interface InboxDelivery {
   deliveryId: string
   jobId: string
@@ -662,8 +665,9 @@ export interface LinkHost extends PrinterHost {
   listServices(): Promise<ServiceEntry[]>
   /** Forgets a service. Resolves false when it was not configured. */
   removeService(pluginId: string): Promise<boolean>
-  /** Write only. The bridge stores it in the OS keychain and never sends it back. */
-  setSecret(name: string, value: string): Promise<void>
+  /** Write only. The bridge stores it in the OS keychain and never sends it back. `kept: 'session'` means the
+   * keychain refused it and the bridge keeps it in memory until it quits (an older bridge answers nothing). */
+  setSecret(name: string, value: string): Promise<SecretKept | void>
   hasSecret(name: string): Promise<boolean>
   deleteSecret(name: string): Promise<void>
   /** Send a G-code line (needs a `gcode` approval token). */
@@ -979,7 +983,7 @@ export async function connectLink(opts: ConnectOptions): Promise<LinkHost> {
     configureService: async (pluginId, baseUrl, secretRef) => void (await call('services.configure', { pluginId, baseUrl, ...(secretRef ? { secretRef } : {}) })),
     listServices: () => call<ServiceEntry[]>('services.list'),
     removeService: async (pluginId) => (await call<{ removed: boolean }>('services.remove', { pluginId })).removed,
-    setSecret: async (name, value) => void (await call('secrets.set', { name, value })),
+    setSecret: async (name, value) => ({ kept: (await call<{ kept?: string }>('secrets.set', { name, value })).kept === 'session' ? 'session' : 'stored' }),
     hasSecret: async (name) => (await call<{ has: boolean }>('secrets.has', { name })).has,
     deleteSecret: async (name) => void (await call('secrets.delete', { name })),
     sendGcode: async (printerId, line, token) => void (await call('gcode', { printerId, line, token })),

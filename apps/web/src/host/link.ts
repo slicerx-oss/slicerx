@@ -37,7 +37,7 @@ export function wrapLink(link: LinkHost, relay?: string | null): ConnectedBridge
     pair: link.pair,
     camera: link.camera as unknown as NonNullable<ConnectedBridge['camera']>,
     push: link.push,
-    secrets: { has: (n) => link.hasSecret(n), set: (n, v) => link.setSecret(n, v), delete: (n) => link.deleteSecret(n) },
+    secrets: { has: (n) => link.hasSecret(n), set: async (n, v) => void (await link.setSecret(n, v)), delete: (n) => link.deleteSecret(n) },
     ...(link.hubKey ? { hubKey: link.hubKey } : {}),
     close: () => link.close(),
   }

@@ -68,7 +68,8 @@ export interface PrinterSetup extends Omit<PrinterSetupHost, 'searchProfiles'> {
   discover(opts?: DiscoverOptions): Promise<FoundSetupPrinter[]>
   /** Asks one IP address whether a printer is there (for "Enter IP instead"). Empty when nothing answered or the bridge cannot ask. */
   probe(host: string, opts?: DiscoverOptions): Promise<FoundSetupPrinter[]>
-  addPrinter(input: SetupAddInput): Promise<{ printerId: string }>
+  /** `credentialKept: 'session'`: the keychain refused the code, so it is kept until the bridge quits. */
+  addPrinter(input: SetupAddInput): Promise<{ printerId: string; credentialKept?: 'session' }>
   /** Tries a connection before saving it. Nothing is registered or changed on the printer. */
   testConnection(input: { family: string; address: string; serial?: string; credential?: string; username?: string }): Promise<PrinterTestResult>
   /** Printers added without a connection ("save G-code"). The host persists them. */
@@ -197,7 +198,7 @@ export function createPrinterSetup(link: SetupLink): PrinterSetup {
       const c = input.connection
       const ref = c.credential ? secretName(printerId) : undefined
       const config = buildConfig(printerId, name, family, c, ref)
-      if (ref && c.credential) await link.setSecret(ref, c.credential)
+      const kept = ref && c.credential ? await link.setSecret(ref, c.credential) : undefined
       try {
         const brand = model ? brandById(model.brand)?.name : undefined
         await link.addPrinter(config, {
@@ -211,7 +212,8 @@ export function createPrinterSetup(link: SetupLink): PrinterSetup {
         if (ref) await link.deleteSecret(ref).catch(() => undefined)
         throw e
       }
-      return { printerId }
+      // The keychain refused the code: the printer is saved, and the code lasts until the bridge quits.
+      return kept && kept.kept === 'session' ? { printerId, credentialKept: 'session' } : { printerId }
     },
 
     localPrinters: () => local,
