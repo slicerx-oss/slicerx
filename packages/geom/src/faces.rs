@@ -140,6 +140,7 @@ impl Faces {
         Self {
             ids: self.ids.clone(),
             table: self.table.iter().map(|s| s.transformed(m)).collect(),
+            keys: self.keys.clone(),
         }
     }
 }
@@ -151,6 +152,10 @@ pub struct Faces {
     /// One per triangle, an index into `table`.
     pub ids: Vec<u32>,
     pub table: Vec<Surface>,
+    /// A key for each face in `table` that says where the face came from, the same in every replay of a history
+    /// (see `with_key_salt`); empty when the faces have none. 0 is no key.
+    #[cfg_attr(feature = "cad", serde(default, skip_serializing_if = "Vec::is_empty"))]
+    pub keys: Vec<u64>,
 }
 
 impl Faces {
@@ -160,6 +165,9 @@ impl Faces {
         }
         if self.ids.iter().any(|&i| i as usize >= self.table.len()) {
             return Err(Error::mesh(what, "a face id is not in the face table"));
+        }
+        if !self.keys.is_empty() && self.keys.len() != self.table.len() {
+            return Err(Error::mesh(what, "faces must have one key per face, or none"));
         }
         Ok(())
     }
@@ -176,6 +184,7 @@ impl Faces {
                 .map(|(_, &id)| id)
                 .collect(),
             table: self.table.clone(),
+            keys: self.keys.clone(),
         }
         .compacted()
     }
@@ -185,17 +194,21 @@ impl Faces {
     pub fn compacted(self) -> Self {
         let mut map: HashMap<u32, u32> = HashMap::new();
         let mut table = Vec::new();
+        let mut keys = Vec::new();
         let ids = self
             .ids
             .iter()
             .map(|&id| {
                 *map.entry(id).or_insert_with(|| {
                     table.push(self.table[id as usize]);
+                    if let Some(&k) = self.keys.get(id as usize) {
+                        keys.push(k);
+                    }
                     (table.len() - 1) as u32
                 })
             })
             .collect();
-        Self { ids, table }
+        Self { ids, table, keys }
     }
 
     /// True when these faces can belong to `mesh`: one id per triangle, every id in the table, and the first
@@ -396,7 +409,11 @@ fn number(
             table[id] = Surface::Cylinder { origin, axis, radius };
         }
     }
-    Faces { ids, table }
+    Faces {
+        ids,
+        table,
+        keys: Vec::new(),
+    }
 }
 
 fn root(p: &mut [u32], mut i: u32) -> u32 {
@@ -438,11 +455,114 @@ pub fn merge_meeting_planes(mesh: &TriMesh, f: Faces) -> Faces {
             }
         }
     }
+    let ids: Vec<u32> = f.ids.iter().map(|&id| root(&mut parent, id)).collect();
+    // A merged face keeps the smallest key of the faces it was made of.
+    let mut keys = f.keys.clone();
+    if !keys.is_empty() {
+        for id in 0..f.table.len() as u32 {
+            let r = root(&mut parent, id) as usize;
+            let k = f.keys[id as usize];
+            if k != 0 && (keys[r] == 0 || k < keys[r]) {
+                keys[r] = k;
+            }
+        }
+    }
     Faces {
-        ids: f.ids.iter().map(|&id| root(&mut parent, id)).collect(),
+        ids,
         table: f.table,
+        keys,
     }
     .compacted()
+}
+
+#[cfg(feature = "cad")]
+/// Keys are 52 bits, so a JSON number carries them exactly.
+const KEY_BITS: u64 = (1 << 52) - 1;
+#[cfg(feature = "cad")]
+/// The salt of the keys a mesh gets when it comes in without any (a history's base).
+const BASE_SALT: u64 = 0x5eed_ba5e;
+
+#[cfg(feature = "cad")]
+struct KeyScope {
+    salt: u64,
+    /// Meshes the step made so far, and meshes that came in without keys.
+    next: u64,
+    base_next: u64,
+}
+
+#[cfg(feature = "cad")]
+thread_local! {
+    static KEYS: std::cell::RefCell<Option<KeyScope>> = const { std::cell::RefCell::new(None) };
+}
+
+/// Runs `f` with face keys on: a step's own faces (its tools') get keys from `salt`, numbered in the order the
+/// step makes them, so a replay of the step makes the same keys. `None` runs without new keys; keys already on a
+/// mesh are carried either way.
+#[cfg(feature = "cad")]
+pub fn with_key_salt<R>(salt: Option<u64>, f: impl FnOnce() -> R) -> R {
+    let before = KEYS.with(|k| {
+        k.replace(salt.map(|salt| KeyScope {
+            salt,
+            next: 0,
+            base_next: 0,
+        }))
+    });
+    let out = f();
+    KEYS.with(|k| k.replace(before));
+    out
+}
+
+#[cfg(feature = "cad")]
+fn key(salt: u64, ordinal: u64, face: u64) -> u64 {
+    // splitmix64 of the three, cut to KEY_BITS and never 0
+    let mut z = salt ^ ordinal.wrapping_mul(0x9e37_79b9_7f4a_7c15) ^ face.wrapping_mul(0xbf58_476d_1ce4_e5b9);
+    z = (z ^ (z >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+    z = (z ^ (z >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
+    z ^= z >> 31;
+    (z & KEY_BITS).max(1)
+}
+
+/// Keys for the `n` faces of a mesh the current step made, or none outside `with_key_salt`.
+#[cfg(feature = "cad")]
+pub(crate) fn fresh_keys(n: usize) -> Vec<u64> {
+    KEYS.with(|k| {
+        let mut k = k.borrow_mut();
+        let Some(scope) = k.as_mut() else {
+            return Vec::new();
+        };
+        scope.next += 1;
+        (0..n as u64).map(|i| key(scope.salt, scope.next, i)).collect()
+    })
+}
+
+/// Gives a mesh that came in without face keys the keys of a history's base, in face order (inside
+/// `with_key_salt` only): the same mesh, in the same place among a request's meshes, always gets the same keys,
+/// whatever step it comes to.
+#[cfg(feature = "cad")]
+pub fn base_keys(mesh: &mut TriMesh) {
+    if mesh.triangles.is_empty()
+        || mesh
+            .faces
+            .as_ref()
+            .is_some_and(|f| f.fit(mesh) && !f.keys.is_empty() && f.keys.len() == f.table.len())
+    {
+        return;
+    }
+    let Some(ordinal) = KEYS.with(|k| {
+        k.borrow_mut().as_mut().map(|scope| {
+            scope.base_next += 1;
+            scope.base_next - 1
+        })
+    }) else {
+        return;
+    };
+    // Faces from recognition, not any the mesh came with: a base saved without its faces and opened again gets the
+    // same faces in the same order, so the same keys.
+    let mut f = recognize(mesh);
+    f.keys = (0..f.table.len() as u64)
+        .map(|i| key(BASE_SALT, ordinal, i))
+        .collect();
+    mesh.faces = Some(f);
 }
 
 /// The plane of a box face along `axis` (0, 1 or 2), on its `max` side or not.

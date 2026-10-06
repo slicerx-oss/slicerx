@@ -56,8 +56,11 @@ pub struct Solid {
     pub soup: bool,
     /// The face table of each input mesh in this solid, by the kernel's id for that mesh: each output
     /// triangle names its input mesh and the face it came from.
-    tables: Vec<(u32, Arc<Vec<Surface>>)>,
+    tables: Vec<Table>,
 }
+
+/// An input mesh's kernel id, its face surfaces and their keys (empty when it has none).
+type Table = (u32, Arc<Vec<Surface>>, Arc<Vec<u64>>);
 
 impl Solid {
     pub fn new(mesh: &TriMesh) -> Result<Self> {
@@ -129,9 +132,10 @@ impl Solid {
     )]
     fn faces_of(&self, gl: &MeshGL64) -> Faces {
         let n = gl.tri_verts.len() / 3;
-        let tables: HashMap<u32, &Arc<Vec<Surface>>> = self.tables.iter().map(|(id, t)| (*id, t)).collect();
+        let tables: HashMap<u32, &Table> = self.tables.iter().map(|t| (t.0, t)).collect();
         let mut ids = vec![0u32; n];
         let mut table = Vec::new();
+        let mut keys = Vec::new();
         let mut seen: HashMap<(u32, bool, u64), u32> = HashMap::new();
         let starts: Vec<usize> = gl
             .run_index
@@ -146,16 +150,29 @@ impl Solid {
             for (t, slot) in ids.iter_mut().enumerate().take(end).skip(start) {
                 let face = gl.face_id.get(t).copied().unwrap_or(0);
                 *slot = *seen.entry((original, back, face)).or_insert_with(|| {
+                    let at = usize::try_from(face).ok();
                     let s = source
-                        .and_then(|tab| usize::try_from(face).ok().and_then(|i| tab.get(i)))
+                        .and_then(|(_, tab, _)| at.and_then(|i| tab.get(i)))
                         .copied()
                         .unwrap_or(Surface::Other);
                     table.push(if back { s.flipped() } else { s });
+                    keys.push(
+                        source
+                            .and_then(|(_, _, k)| at.and_then(|i| k.get(i)))
+                            .copied()
+                            .unwrap_or(0),
+                    );
                     (table.len() - 1) as u32
                 });
             }
         }
-        Faces { ids, table }
+        // Keys only when some input had them.
+        let keys = if keys.iter().any(|&k| k != 0) {
+            keys
+        } else {
+            Vec::new()
+        };
+        Faces { ids, table, keys }
     }
 
     pub fn rebuilt(&self, keep_inverted: bool) -> Result<Self> {
@@ -215,17 +232,23 @@ impl Solid {
 /// faces wherever it came from. Each input runs under an id of its own, which every output triangle from it reports
 /// back with its face. Builds without the cad feature send none, and their results carry no faces.
 #[cfg(feature = "cad")]
-fn tag(w: &mut TriMesh, gl: &mut MeshGL64) -> Vec<(u32, Arc<Vec<Surface>>)> {
+fn tag(w: &mut TriMesh, gl: &mut MeshGL64) -> Vec<Table> {
     let f = w.faces.take().unwrap_or_else(|| faces::recognize(w));
     gl.face_id = f.ids.iter().map(|&i| u64::from(i)).collect();
     let id = Manifold::reserve_ids(1);
     gl.run_original_id = vec![id];
     gl.run_index = vec![0, gl.tri_verts.len() as u64];
-    vec![(id, Arc::new(f.table))]
+    // A mesh with keys keeps them; one the current step made (a tool) gets the step's own.
+    let keys = if !f.keys.is_empty() && f.keys.len() == f.table.len() {
+        f.keys
+    } else {
+        faces::fresh_keys(f.table.len())
+    };
+    vec![(id, Arc::new(f.table), Arc::new(keys))]
 }
 
 #[cfg(not(feature = "cad"))]
-fn tag(_: &mut TriMesh, _: &mut MeshGL64) -> Vec<(u32, Arc<Vec<Surface>>)> {
+fn tag(_: &mut TriMesh, _: &mut MeshGL64) -> Vec<Table> {
     Vec::new()
 }
 
@@ -404,6 +427,76 @@ mod tests {
         let (d, r) = boolean(&[a], &[hole], BoolOp::Difference, &BooleanOptions::default()).unwrap();
         assert!((d.volume() - (1000.0 - 128.0)).abs() < 1e-6);
         assert!(r.watertight);
+    }
+
+    /// The key of the face under each point, which must be on the mesh's surface.
+    fn key_at(m: &TriMesh, p: [f64; 3]) -> u64 {
+        let f = m.faces.as_ref().unwrap();
+        let t = m
+            .triangles
+            .iter()
+            .position(|&t| {
+                let c = m.corners(t);
+                let n = crate::vec3::normalize(m.normal(t)).unwrap();
+                crate::vec3::dot(crate::vec3::sub(p, c[0]), n).abs() < 1e-6 && {
+                    (0..3).all(|i| {
+                        let e = crate::vec3::sub(c[(i + 1) % 3], c[i]);
+                        crate::vec3::dot(crate::vec3::sub(p, c[i]), crate::vec3::cross(n, e)) >= -1e-9
+                    })
+                }
+            })
+            .unwrap_or_else(|| panic!("no triangle at {p:?}"));
+        f.keys[f.ids[t] as usize]
+    }
+
+    /// A 20 mm cube with a 4 mm square hole down its middle, cut under `salt`.
+    fn cut(salt: u64, hole_x: f64) -> TriMesh {
+        crate::faces::with_key_salt(Some(salt), || {
+            let mut a = cube([0.0; 3], 20.0);
+            crate::faces::base_keys(&mut a);
+            let hole = build::box_mesh([hole_x, 8.0, -1.0], [hole_x + 4.0, 12.0, 21.0]);
+            boolean(&[a], &[hole], BoolOp::Difference, &BooleanOptions::default())
+                .unwrap()
+                .0
+        })
+    }
+
+    #[test]
+    fn face_keys_follow_faces_and_stay_when_an_earlier_number_changes() {
+        let m = cut(7, 8.0);
+        let top = key_at(&m, [2.0, 2.0, 20.0]);
+        let wall = key_at(&m, [8.0, 10.0, 10.0]);
+        assert!(top != 0 && wall != 0 && top != wall);
+        // Every face has a key, and the cube's top keeps the one it had before the cut.
+        let mut a = cube([0.0; 3], 20.0);
+        crate::faces::with_key_salt(Some(7), || crate::faces::base_keys(&mut a));
+        assert_eq!(key_at(&a, [2.0, 2.0, 20.0]), top);
+        // The same cut under the same salt gives the same keys; the hole moved gives the same keys too, so a later
+        // step that names the hole's wall still finds it.
+        assert_eq!(key_at(&cut(7, 8.0), [8.0, 10.0, 10.0]), wall);
+        assert_eq!(key_at(&cut(7, 5.0), [5.0, 10.0, 10.0]), wall);
+        // Another step's cut makes other keys for its own faces, and the base keeps its own.
+        let other = cut(8, 8.0);
+        assert_eq!(key_at(&other, [2.0, 2.0, 20.0]), top);
+        assert_ne!(key_at(&other, [8.0, 10.0, 10.0]), wall);
+        // Without a salt nothing gets a key.
+        let mut plain = cube([0.0; 3], 20.0);
+        crate::faces::base_keys(&mut plain);
+        assert!(plain.faces.as_ref().is_none_or(|f| f.keys.is_empty()));
+    }
+
+    #[test]
+    fn a_face_split_in_two_keeps_its_key_on_both_pieces() {
+        crate::faces::with_key_salt(Some(3), || {
+            let mut a = cube([0.0; 3], 20.0);
+            crate::faces::base_keys(&mut a);
+            let top = key_at(&a, [2.0, 2.0, 20.0]);
+            // A slot right across the top splits it in two.
+            let slot = build::box_mesh([8.0, -1.0, 15.0], [12.0, 21.0, 21.0]);
+            let (m, _) = boolean(&[a], &[slot], BoolOp::Difference, &BooleanOptions::default()).unwrap();
+            assert_eq!(key_at(&m, [2.0, 2.0, 20.0]), top);
+            assert_eq!(key_at(&m, [18.0, 2.0, 20.0]), top);
+        });
     }
 
     #[test]

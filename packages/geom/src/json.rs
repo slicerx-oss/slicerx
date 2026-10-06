@@ -130,11 +130,23 @@ pub fn call(op: &str, request: &str) -> Result<String> {
     serde_json::to_string(&out).map_err(|e| Error::Json(e.to_string()))
 }
 
+/// Runs one operation. A request with `keySalt` (a history step's, the same in every replay of it) gives the faces
+/// it makes keys from that salt, and a mesh that comes in without keys the keys of a base (faces.rs).
+pub fn call_value(op: &str, req: &Value, files: FileLoader<'_>) -> Result<Value> {
+    #[cfg(feature = "cad")]
+    {
+        let salt = req.get("keySalt").and_then(Value::as_u64);
+        crate::faces::with_key_salt(salt, || run(op, req, files))
+    }
+    #[cfg(not(feature = "cad"))]
+    run(op, req, files)
+}
+
 #[allow(
     clippy::too_many_lines,
     reason = "one short arm per operation reads best as a table"
 )]
-pub fn call_value(op: &str, req: &Value, files: FileLoader<'_>) -> Result<Value> {
+fn run(op: &str, req: &Value, files: FileLoader<'_>) -> Result<Value> {
     let enc = MeshOut::from_request(req);
     match op {
         "info" => {
@@ -649,7 +661,11 @@ pub(crate) fn mesh_field(req: &Value, key: &str, files: FileLoader<'_>) -> Resul
 }
 
 pub(crate) fn mesh_value(v: &Value, key: &str, files: FileLoader<'_>) -> Result<TriMesh> {
-    Ok(match parse::<MeshIn>(v)? {
+    #[allow(
+        unused_mut,
+        reason = "face keys are added only in builds with the cad feature"
+    )]
+    let mut m = match parse::<MeshIn>(v)? {
         MeshIn::Stl { stl_base64 } => {
             let bytes = base64_decode(&stl_base64).ok_or_else(|| Error::mesh(key, "bad base64"))?;
             TriMesh::from_stl(&bytes, key)?
@@ -684,7 +700,10 @@ pub(crate) fn mesh_value(v: &Value, key: &str, files: FileLoader<'_>) -> Result<
             }
             m
         }
-    })
+    };
+    #[cfg(feature = "cad")]
+    crate::faces::base_keys(&mut m);
+    Ok(m)
 }
 
 #[derive(Deserialize)]
