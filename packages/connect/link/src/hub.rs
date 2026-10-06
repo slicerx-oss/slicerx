@@ -175,6 +175,15 @@ pub(crate) struct HubSettings {
     /// drawn by the person in the app.
     #[serde(default)]
     pub watch_masks: BTreeMap<String, Vec<[f64; 2]>>,
+    /// Printers the camera guard does not watch (hand pause, plate check). On for every other.
+    #[serde(default)]
+    pub watch_guard_off: Vec<String>,
+    /// When each printer's empty-plate picture was taken, ms. The picture is in `plates/`.
+    #[serde(default)]
+    pub watch_plates: BTreeMap<String, u64>,
+    /// Spots on each printer's plate the person said are fine, left, top, right, bottom from 0 to 1.
+    #[serde(default)]
+    pub watch_plate_ignore: BTreeMap<String, Vec<[f64; 4]>>,
 }
 
 fn agent_role() -> crate::roles::Role {
@@ -523,6 +532,8 @@ pub(crate) struct Hub {
     /// Detector subscriptions: id to the printers they cover (`None`: all).
     watchers: StdMutex<HashMap<u64, Option<Vec<String>>>>,
     next_watcher: std::sync::atomic::AtomicU64,
+    /// The camera guard's frames, trips and plate checks.
+    pub guard: crate::guard::GuardState,
 }
 
 /// A finding keeps a printer at `attention` this long.
@@ -592,6 +603,7 @@ impl Hub {
             auto_paused: StdMutex::new(HashMap::new()),
             observed: StdMutex::new(HashMap::new()),
             next_watcher: std::sync::atomic::AtomicU64::new(1),
+            guard: crate::guard::GuardState::default(),
         };
         (
             hub,
@@ -618,10 +630,11 @@ impl Hub {
         self.dirty.swap(false, Ordering::Relaxed)
     }
 
-    /// Notes a printer's state and returns the alert the change calls for, if any.
-    pub(crate) fn alert(&self, st: &PrinterStatus) -> Option<&'static str> {
+    /// Notes a printer's state and returns the alert the change calls for, if any, and the
+    /// state before.
+    pub(crate) fn alert(&self, st: &PrinterStatus) -> (Option<&'static str>, Option<PrinterState>) {
         let prev = lock(&self.last_state).insert(st.printer_id.clone(), st.state);
-        alert_for(prev, st.state)
+        (alert_for(prev, st.state), prev)
     }
 
     /// The hub started a job itself: the next reading that shows it ended raises an alert even if
@@ -767,6 +780,11 @@ impl Hub {
 
     pub(crate) fn remove_watcher(&self, id: u64) {
         lock(&self.watchers).remove(&id);
+    }
+
+    /// True while a detector is subscribed to frames.
+    pub(crate) fn has_watchers(&self) -> bool {
+        !lock(&self.watchers).is_empty()
     }
 
     pub(crate) fn note_finding(&self, printer: &str, now: u64) {

@@ -26,6 +26,7 @@ mod camera;
 mod device;
 mod feeds;
 mod fleets;
+mod guard;
 mod h264;
 mod hub;
 mod hub_rpc;

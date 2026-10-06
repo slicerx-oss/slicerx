@@ -364,6 +364,38 @@ export interface PrinterIssue {
   stale?: boolean
 }
 
+/**
+ * The camera guard tripped on a printer (`watch.guard`): a hand while it printed, or something on the plate before a
+ * print. `state` is `paused` (the hub paused it), `alert` (it could not: `monitorOnly` when the printer takes no
+ * commands, a Bambu Lab printer with Developer Mode off), `blocked` (a start from SlicerX was held), or `clear` (the
+ * card is answered). The frame is read with `watch.evidence`.
+ */
+export interface GuardTrip {
+  printerId: string
+  kind?: 'hand' | 'plate'
+  state: 'paused' | 'alert' | 'blocked' | 'clear'
+  at: string
+  /** The spot, left, top, right, bottom from 0 to 1, when the guard could tell. */
+  box?: [number, number, number, number]
+  note?: string
+  confidence?: number
+  monitorOnly?: boolean
+  /** A plate check: who started the print. */
+  startedBy?: 'slicerx' | 'printer'
+  /** A plate check: when the empty-plate picture it compared with was taken. */
+  plateFrom?: string
+  /** When the frame behind the trip was taken. */
+  capturedAt?: string
+}
+
+/** What the guard knows: current trips, printers it is off for, empty-plate picture times, and whether a detector is connected. */
+export interface GuardState {
+  trips: Record<string, GuardTrip>
+  off: string[]
+  plates: Record<string, string>
+  detector: boolean
+}
+
 /** A still the print watch hands a failure detector while a printer prints. */
 export interface WatchFrame {
   subscription: number
@@ -502,9 +534,10 @@ export interface LinkHost extends PrinterHost {
    * The person pressed Print in the Print sheet: uploads and starts in one call, with no approval
    * card (the click is the approval). Rejects with `LinkError('bed_check')` when the sheet has to ask
    * "Is the build plate clear?" first (check `bed.state(printerId).askOnPrint` to ask up front);
-   * call again with `bedClear: true` once the person says yes. Rejects with `busy` while a job runs.
+   * call again with `bedClear: true` once the person says yes. Rejects with `busy` while a job runs, and with
+   * `plate_check` when the camera guard saw something on the plate (`plateOk: true` is "start anyway").
    */
-  printLocal(printerId: string, file: JobFile, opts?: StartOptions, bedClear?: boolean, objects?: PrintObject[]): Promise<LocalPrintResult>
+  printLocal(printerId: string, file: JobFile, opts?: StartOptions, bedClear?: boolean, objects?: PrintObject[], plateOk?: boolean): Promise<LocalPrintResult>
   bed: {
     state(printerId: string): Promise<BedInfo>
     /** "Plate removed": the person cleared the plate. Rejects with `busy` while a job runs. */
@@ -589,7 +622,7 @@ export interface LinkHost extends PrinterHost {
     objects(printerId: string): Promise<PrintObject[]>
     jog(printerId: string, axis: 'x' | 'y' | 'z', distanceMm: number, feedMmMin?: number): Promise<void>
     skipObject(printerId: string, id: string, epoch: number): Promise<void>
-    startFile(printerId: string, path: string, o?: { opts?: StartOptions; bedClear?: boolean; unverifiedOk?: boolean }): Promise<LocalPrintResult>
+    startFile(printerId: string, path: string, o?: { opts?: StartOptions; bedClear?: boolean; unverifiedOk?: boolean; plateOk?: boolean }): Promise<LocalPrintResult>
   }
   /**
    * Changes to a running print. `apply` needs a token from a card with a `printer.adjust` action
@@ -615,7 +648,7 @@ export interface LinkHost extends PrinterHost {
      * A detector saw something. Pauses the print only when huginn confirmed it (`confirmed: true`),
      * confidence is at least 0.8 and the person turned on watchAutoPause; otherwise it notifies.
      */
-    report(f: { printerId: string; kind: 'spaghetti' | 'first_layer' | 'detached' | 'nozzle_blob' | 'other'; confidence: number; confirmed?: boolean; note?: string }): Promise<{ paused: boolean }>
+    report(f: { printerId: string; kind: 'spaghetti' | 'first_layer' | 'detached' | 'nozzle_blob' | 'hand' | 'other'; confidence: number; confirmed?: boolean; note?: string; box?: [number, number, number, number] }): Promise<{ paused: boolean }>
     onFinding(cb: (f: { printerId: string; kind: string; confidence: number; confirmed?: boolean; note?: string; at: string }) => void): () => void
     /** The printers huginn double-checks. Detectors read it. */
     huginnPrinters(): Promise<string[]>
@@ -630,6 +663,20 @@ export interface LinkHost extends PrinterHost {
     onDismissed(cb: (d: { printerId: string; kind: string; at: string }) => void): () => void
     /** App only: let the watch pause this printer on a failure (standing permission, off by default). */
     setAutoPause(printerId: string, enabled: boolean): Promise<void>
+    /** The camera guard tripped, or a trip was answered (`state: 'clear'`). */
+    onGuard(cb: (t: GuardTrip) => void): () => void
+    /** App only: the guard's trips and settings. */
+    guardState(): Promise<GuardState>
+    /** App only: the frame behind a printer's trip, or null. `fresh` takes a new still first. */
+    evidence(printerId: string, fresh?: boolean): Promise<{ contentType: string; data: Uint8Array; capturedAt: string } | null>
+    /** App only, audited: whether the guard watches this printer (on by default). */
+    setGuard(printerId: string, enabled: boolean): Promise<void>
+    /** App only: "This plate is clear". Takes the printer's empty-plate picture now. */
+    plateClear(printerId: string): Promise<{ plateFrom: string }>
+    /** App only: checks the plate now. `checked` is false without a detector or a picture. */
+    plateCheck(printerId: string): Promise<{ checked: boolean; clear?: boolean }>
+    /** App only: "It's fine". Remembers the flagged spot as a plate mark (or, without one, the picture as the empty plate). */
+    plateIgnore(printerId: string): Promise<{ remembered: 'spot' | 'plate' | 'nothing' }>
   }
   /** Show and allow the connectors not yet tested on real printers (Duet, Snapmaker, Creality WebSocket, Home Assistant). */
   settings: {
@@ -744,6 +791,7 @@ export async function connectLink(opts: ConnectOptions): Promise<LinkHost> {
   const quotaListeners = new Set<(q: RemoteQuota) => void>()
   const revokedListeners = new Set<(pairingId: string) => void>()
   const findingListeners = new Set<(f: { printerId: string; kind: string; confidence: number; note?: string; at: string }) => void>()
+  const guardListeners = new Set<(t: GuardTrip) => void>()
   const alertListeners = new Set<(a: HubAlert) => void>()
   const requestListeners = new Set<(r: ApprovalRequest) => void>()
   ws.binaryType = 'arraybuffer'
@@ -821,6 +869,10 @@ export async function connectLink(opts: ConnectOptions): Promise<LinkHost> {
     }
     if (msg.event === 'watch.dismissed' && msg.data) {
       for (const cb of dismissedListeners) cb(msg.data as unknown as { printerId: string; kind: string; at: string })
+      return
+    }
+    if (msg.event === 'watch.guard' && msg.data) {
+      for (const cb of guardListeners) cb(msg.data as unknown as GuardTrip)
       return
     }
     if (msg.event === 'watch.finding' && msg.data) {
@@ -1026,8 +1078,8 @@ export async function connectLink(opts: ConnectOptions): Promise<LinkHost> {
       approvalDoneListeners.add(cb)
       return () => void approvalDoneListeners.delete(cb)
     },
-    printLocal: (printerId, file, startOptions, bedClear, objects) =>
-      call<LocalPrintResult>('print.local', { printerId, file: encodeFile(file), ...(startOptions ? { opts: startOptions } : {}), ...(bedClear ? { bedClear: true } : {}), ...(objects?.length ? { objects } : {}) }),
+    printLocal: (printerId, file, startOptions, bedClear, objects, plateOk) =>
+      call<LocalPrintResult>('print.local', { printerId, file: encodeFile(file), ...(startOptions ? { opts: startOptions } : {}), ...(bedClear ? { bedClear: true } : {}), ...(objects?.length ? { objects } : {}), ...(plateOk ? { plateOk: true } : {}) }),
     bed: {
       state: (printerId) => call<BedInfo>('bed.state', { printerId }),
       confirmClear: (printerId) => call<BedInfo>('bed.confirmClear', { printerId }),
@@ -1088,7 +1140,7 @@ export async function connectLink(opts: ConnectOptions): Promise<LinkHost> {
       jog: async (printerId, axis, distanceMm, feedMmMin) => void (await call('jog', { printerId, axis, distanceMm, ...(feedMmMin ? { feedMmMin } : {}) })),
       skipObject: async (printerId, id, epoch) => void (await call('objects.skip', { printerId, id, epoch })),
       startFile: (printerId, path, o = {}) =>
-        call<LocalPrintResult>('files.start', { printerId, path, ...(o.opts ? { opts: o.opts } : {}), ...(o.bedClear ? { bedClear: true } : {}), ...(o.unverifiedOk ? { unverifiedOk: true } : {}) }),
+        call<LocalPrintResult>('files.start', { printerId, path, ...(o.opts ? { opts: o.opts } : {}), ...(o.bedClear ? { bedClear: true } : {}), ...(o.unverifiedOk ? { unverifiedOk: true } : {}), ...(o.plateOk ? { plateOk: true } : {}) }),
     },
     adjust: {
       limits: (printerId) => call<AdjustLimits>('adjust.limits', { printerId }),
@@ -1134,6 +1186,19 @@ export async function connectLink(opts: ConnectOptions): Promise<LinkHost> {
         return () => void dismissedListeners.delete(cb)
       },
       setAutoPause: async (printerId, enabled) => void (await call('watch.autoPause', { printerId, enabled })),
+      onGuard: (cb) => {
+        guardListeners.add(cb)
+        return () => void guardListeners.delete(cb)
+      },
+      guardState: () => call<GuardState>('watch.guardState'),
+      evidence: async (printerId, fresh) => {
+        const r = await call<{ contentType: string; dataBase64: string; capturedAt: string } | null>('watch.evidence', { printerId, ...(fresh ? { fresh: true } : {}) })
+        return r ? { contentType: r.contentType, data: base64ToBytes(r.dataBase64), capturedAt: r.capturedAt } : null
+      },
+      setGuard: async (printerId, enabled) => void (await call('watch.guard', { printerId, enabled })),
+      plateClear: (printerId) => call<{ plateFrom: string }>('watch.plateClear', { printerId }),
+      plateCheck: (printerId) => call<{ checked: boolean; clear?: boolean }>('watch.plateCheck', { printerId }),
+      plateIgnore: (printerId) => call<{ remembered: 'spot' | 'plate' | 'nothing' }>('watch.plateIgnore', { printerId }),
     },
     settings: {
       get: () => call<HubSettings>('settings.get'),

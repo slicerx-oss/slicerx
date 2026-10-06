@@ -223,6 +223,7 @@ pub(crate) async fn feed(
             let Ok(Some(still)) = grab(&b, &id).await else {
                 continue;
             };
+            crate::guard::note_still(&b, &id, &still);
             let mut ev = still.to_json();
             if let Some(o) = ev.as_object_mut() {
                 o.insert("subscription".into(), json!(subscription));
@@ -262,9 +263,10 @@ pub(crate) fn subscribe_args(p: &Value) -> Rpc<(Duration, Option<Vec<String>>)> 
     Ok((Duration::from_millis(every), only))
 }
 
-/// `watch.report {printerId, kind, confidence, note?}`: a detector saw something. The hub tells the
-/// app (`watch.finding`), alerts the phones (content-free push), and pauses the print when the
-/// person turned on `watchAutoPause` and the confidence is at least `WATCH_PAUSE_AT`.
+/// `watch.report {printerId, kind, confidence, note?, box?}`: a detector saw something. The hub
+/// tells the app (`watch.finding`), alerts the phones (content-free push), and pauses the print
+/// when the person turned on `watchAutoPause` and the confidence is at least `WATCH_PAUSE_AT`. A
+/// hand is the guard's (`crate::guard`): it pauses without confirmation or that permission.
 pub(crate) async fn report(b: &Arc<Bridge>, p: &Value) -> Rpc<Value> {
     let printer = str_arg(p, "printerId")?;
     if !b.has_printer(&printer).await {
@@ -273,11 +275,11 @@ pub(crate) async fn report(b: &Arc<Bridge>, p: &Value) -> Rpc<Value> {
     let kind = str_arg(p, "kind")?;
     if !matches!(
         kind.as_str(),
-        "spaghetti" | "first_layer" | "detached" | "nozzle_blob" | "other"
+        "spaghetti" | "first_layer" | "detached" | "nozzle_blob" | "hand" | "other"
     ) {
         return Err(RpcError::new(
             "bad_request",
-            "kind is spaghetti, first_layer, detached, nozzle_blob or other",
+            "kind is spaghetti, first_layer, detached, nozzle_blob, hand or other",
         ));
     }
     let confidence = p
@@ -315,6 +317,12 @@ pub(crate) async fn report(b: &Arc<Bridge>, p: &Value) -> Rpc<Value> {
         );
         crate::push::alert(b, "watch", Some(&printer), None);
     }
+    if kind == "hand" {
+        let bbox: Option<[f64; 4]> =
+            serde_json::from_value(p.get("box").cloned().unwrap_or(Value::Null)).ok();
+        let paused = crate::guard::hand(b, &printer, confidence, bbox, note.as_deref()).await;
+        return Ok(json!({ "recorded": true, "paused": paused, "confirmed": confirmed }));
+    }
     let printing = b.hub.state_of(&printer) == Some(sx_connect::PrinterState::Printing);
     let auto = crate::hub::lock(&b.hub.settings)
         .watch_auto_pause_printers
@@ -328,7 +336,7 @@ pub(crate) async fn report(b: &Arc<Bridge>, p: &Value) -> Rpc<Value> {
 }
 
 /// Pauses under a token the hub mints for the watch (origin `watch`, a pause and nothing else).
-async fn auto_pause(b: &Arc<Bridge>, printer: &str, kind: &str) -> Rpc<()> {
+pub(crate) async fn auto_pause(b: &Arc<Bridge>, printer: &str, kind: &str) -> Rpc<()> {
     let broker = b
         .broker
         .as_ref()
@@ -463,6 +471,7 @@ pub(crate) fn dismiss_call(b: &Arc<Bridge>, p: &Value) -> Rpc<Value> {
     let kind = str_arg(p, "kind")?;
     let at = iso(now_ms());
     b.hub.clear_finding(&printer);
+    crate::guard::clear(b, &printer);
     b.hub.audit(
         json!({ "origin": "local_click", "action": "watch.dismiss", "printerId": printer, "kind": kind }),
     );

@@ -58,6 +58,13 @@ const APP_ONLY: &[&str] = &[
     "watch.huginn",
     "watch.mask",
     "watch.dismiss",
+    // The camera guard: its settings, the empty-plate picture and the frames it keeps.
+    "watch.guard",
+    "watch.guardState",
+    "watch.evidence",
+    "watch.plateClear",
+    "watch.plateCheck",
+    "watch.plateIgnore",
     "services.configure",
     "services.list",
     "services.remove",
@@ -79,6 +86,8 @@ const WATCH_METHODS: &[&str] = &[
     "watch.report",
     "watch.masks",
     "watch.huginnPrinters",
+    "watch.grab",
+    "watch.plateResult",
 ];
 
 /// The role a client may ask for at pairing, given the role its code or key gives: the same or a
@@ -131,9 +140,10 @@ pub(crate) fn may_answer(role: Role, own: bool, needs_person: bool) -> bool {
 /// Whether a connection with `role` gets a hub event addressed to no one in particular.
 pub(crate) fn sees_broadcast(role: Role, event: &str) -> bool {
     match role {
-        Role::App => true,
+        // Plate checks carry two pictures for the detector; the app gets the guard's own events.
+        Role::App => event != "watch.plate",
         Role::Agent => false,
-        Role::Watch => event == "watch.dismissed",
+        Role::Watch => matches!(event, "watch.dismissed" | "watch.plate"),
     }
 }
 
@@ -203,5 +213,7 @@ mod tests {
         assert_eq!(narrowed(Role::Agent, Some("app")), Role::Agent);
         assert_eq!(narrowed(Role::App, Some("watch")), Role::Watch);
         assert!(sees_broadcast(Role::Watch, "watch.dismissed") && !sees_broadcast(Role::Watch, "bed"));
+        assert!(sees_broadcast(Role::Watch, "watch.plate") && !sees_broadcast(Role::App, "watch.plate"));
+        assert!(!sees_broadcast(Role::Watch, "watch.guard") && sees_broadcast(Role::App, "watch.guard"));
     }
 }
