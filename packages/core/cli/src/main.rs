@@ -4,7 +4,7 @@
 //!
 //! sx slice <model> [--plate N] [--config <json>] [-o out.gcode | -o -] [--preview out.sxpv]
 //! sx time <file.gcode> --config <json> [--trace [--at <line prefix>]]
-//! sx slice --request <req.json | -> [--out-dir <dir>]
+//! sx slice --request <req.json | -> [--out-dir <dir>] [--allow-collisions]
 //! sx schema [request | result]
 //! sx metadata <project.3mf>
 //! sx bench --config <bench.json> [--runs 15] [--warmup 3] [--threads N]
@@ -20,7 +20,9 @@
 //! top-level `meshes` map (reference to file path) or file paths themselves,
 //! relative to the request file; `file.3mf#2` picks plate 2 of a project.
 //! With `--out-dir`, the G-code and SXPV are
-//! written there as `slice.gcode` and `slice.sxpv`.
+//! written there as `slice.gcode` and `slice.sxpv`. A by-object plate where the head, gantry or tool changer would meet
+//! a printed part (the result's `collisions`) is refused with exit code 3, unless `--allow-collisions` asks for it
+//! anyway; close calls inside the profile's clearance radius pass with the result listing them.
 //!
 //! Exit codes: 0 success, 1 slicing failed, 2 usage error, 3 invalid input
 //! (unreadable request or mesh, bad JSON or config).
@@ -54,7 +56,7 @@ fn main() -> ExitCode {
         Some("time") => cmd_time(&args[1..]),
         _ => {
             eprintln!(
-                "usage: sx metadata <project.3mf>\n       sx slice <model> [--plate N] [--config <json>] [-o out.gcode] [--preview out.sxpv]\n       sx slice --request <req.json | -> [--out-dir <dir>]\n       sx schema [request | result]\n       sx bench --config <bench.json> [--runs N] [--warmup N] [--threads N] [--append file] [--change text] [--ab <baseline sx>] [--write-baseline] [--json]\n       sx time <file.gcode> --config <json> [--trace [--at <line prefix>]]"
+                "usage: sx metadata <project.3mf>\n       sx slice <model> [--plate N] [--config <json>] [-o out.gcode] [--preview out.sxpv]\n       sx slice --request <req.json | -> [--out-dir <dir>] [--allow-collisions]\n       sx schema [request | result]\n       sx bench --config <bench.json> [--runs N] [--warmup N] [--threads N] [--append file] [--change text] [--ab <baseline sx>] [--write-baseline] [--json]\n       sx time <file.gcode> --config <json> [--trace [--at <line prefix>]]"
             );
             return ExitCode::from(2);
         }
@@ -267,6 +269,9 @@ fn cmd_request(args: &[String]) -> ExitCode {
         }
         Err(e) => return fail(EXIT_SLICE, e.to_string()),
     };
+    if let Some(why) = collision_refusal(&run.report, args) {
+        return fail(EXIT_INPUT, why);
+    }
     let mut out = match serde_json::to_value(&run.report) {
         Ok(v) => v,
         Err(e) => return fail(EXIT_SLICE, e.to_string()),
@@ -299,6 +304,19 @@ fn cmd_request(args: &[String]) -> ExitCode {
     }
     println!("{out}");
     ExitCode::SUCCESS
+}
+
+/// Why a slice is refused when its head, gantry or tool changer would meet a printed part, unless
+/// `--allow-collisions` asks for it anyway.
+fn collision_refusal(report: &sx_core::api::SliceReport, args: &[String]) -> Option<String> {
+    let hits: Vec<String> = report
+        .collisions
+        .iter()
+        .filter(|c| c.severity == sx_core::collide::Severity::Hit)
+        .map(|c| format!("{}. {}", c.title, c.detail))
+        .collect();
+    (!hits.is_empty() && !args.iter().any(|a| a == "--allow-collisions"))
+        .then(|| sx_core::Error::Clearance(hits.join(" ")).to_string())
 }
 
 /// Prints a 3MF project's settings entries as JSON (`projectSettings`,

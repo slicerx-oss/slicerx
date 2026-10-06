@@ -82,6 +82,8 @@ mod brick;
 mod bridging;
 mod brim;
 mod classify;
+#[doc(hidden)]
+pub mod collide;
 mod compensate;
 #[doc(hidden)]
 pub mod config;

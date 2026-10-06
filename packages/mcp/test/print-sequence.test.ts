@@ -2,7 +2,8 @@
 // Copyright (C) 2026 The SlicerX contributors
 // Print by object through the integrator path: a multi-object 3MF sliced with print_sequence "by object", read back
 // as G-code. Each object must finish before the next starts, the nozzle must clear what is already printed before it
-// travels on, and a plate the toolhead or gantry would hit must be refused with a stable error code.
+// travels on, and a plate the toolhead or gantry would hit must be refused with a stable error code. A plate only closer
+// than the profile's clearance radius, where the head itself clears, slices.
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -253,17 +254,26 @@ describe.skipIf(!existsSync(sxBin))('print by object with the real sx CLI', () =
     expect(checkByObject(readFileSync(data<{ gcode_path: string }>(r).gcode_path, 'utf8'), apart, 256).lifts[0]).toBeGreaterThan(30)
   })
 
-  it('refuses objects too close or too tall with sequence_clearance', async () => {
+  it('slices objects closer than the clearance radius when the head itself clears them', async () => {
+    const h = await connect({ engine: 'sx', sxBin })
+    // 30 and 25 mm apart, under the A1's 73 mm radius; the A1 head reaches 21 mm to the side, over 10 mm boxes less.
+    for (const [boxes, profiles] of [
+      [[{ name: 'Cube A', x: 100, y: 128, w: 20, d: 20, h: 10 }, { name: 'Cube B', x: 150, y: 128, w: 20, d: 20, h: 10 }], A1],
+      [[{ name: 'Cube A', x: 50, y: 90, w: 20, d: 20, h: 10 }, { name: 'Cube B', x: 95, y: 90, w: 20, d: 20, h: 10 }], A1_MINI],
+    ] as [Box[], string[]][]) {
+      const r = await h.call('slicerx_slice_file', { model: project(join(h.dir, 'close.3mf'), boxes), profiles, overrides: { print_sequence: 'by object' } })
+      expect(r.isError, text(r)).toBeFalsy()
+    }
+  })
+
+  it('refuses objects the gantry or the frame would hit with sequence_clearance', async () => {
     const h = await connect({ engine: 'sx', sxBin })
     const cases: { boxes: Box[]; profiles: string[]; overrides?: Record<string, unknown>; says: RegExp }[] = [
-      // 30 mm apart, under the 40 mm clearance radius.
-      { boxes: [{ name: 'Cube A', x: 100, y: 128, w: 20, d: 20, h: 10 }, { name: 'Cube B', x: 150, y: 128, w: 20, d: 20, h: 10 }], profiles: A1, says: /Cube A and Cube B are 30\.0 mm apart.*needs 40 mm/ },
-      { boxes: [{ name: 'Cube A', x: 50, y: 90, w: 20, d: 20, h: 10 }, { name: 'Cube B', x: 95, y: 90, w: 20, d: 20, h: 10 }], profiles: A1_MINI, says: /25\.0 mm apart/ },
       // 30 mm tall, printed first, beside the next one: the gantry rod is at 25 mm.
-      { boxes: [{ name: 'Tower', x: 60, y: 128, w: 20, d: 20, h: 30 }, { name: 'Base', x: 140, y: 128, w: 20, d: 20, h: 6 }], profiles: A1, says: /Tower is 30\.0 mm tall.*gantry clears 25 mm/ },
-      { boxes: [{ name: 'Tower', x: 40, y: 90, w: 20, d: 20, h: 30 }, { name: 'Base', x: 120, y: 90, w: 20, d: 20, h: 6 }], profiles: A1_MINI, says: /gantry clears 25 mm/ },
+      { boxes: [{ name: 'Tower', x: 60, y: 128, w: 20, d: 20, h: 30 }, { name: 'Base', x: 140, y: 128, w: 20, d: 20, h: 6 }], profiles: A1, says: /The gantry hits Tower\. Tower is 30\.0 mm tall\. The gantry clears 25\.0 mm/ },
+      { boxes: [{ name: 'Tower', x: 40, y: 90, w: 20, d: 20, h: 30 }, { name: 'Base', x: 120, y: 90, w: 20, d: 20, h: 6 }], profiles: A1_MINI, says: /gantry clears 25\.0 mm/ },
       // Far apart in y the lid is the limit.
-      { boxes: [{ name: 'Tower', x: 128, y: 50, w: 20, d: 20, h: 30 }, { name: 'Base', x: 128, y: 170, w: 20, d: 20, h: 6 }], profiles: A1, overrides: { extruder_clearance_height_to_lid: 28 }, says: /lid clears 28 mm/ },
+      { boxes: [{ name: 'Tower', x: 128, y: 50, w: 20, d: 20, h: 30 }, { name: 'Base', x: 128, y: 170, w: 20, d: 20, h: 6 }], profiles: A1, overrides: { extruder_clearance_height_to_lid: 28 }, says: /The frame hits Tower.*clears 28\.0 mm/ },
     ]
     for (const c of cases) {
       const file = project(join(h.dir, 'close.3mf'), c.boxes)

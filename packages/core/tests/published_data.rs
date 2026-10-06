@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-//! The published crate builds from the copies in `data/` (it has no `packages/settings`). In the
-//! workspace they must match what build.rs makes from the settings schema. `SX_UPDATE_CORE_DATA=1`
+//! The published crate builds from the copies in `data/` (it has no `packages/settings` or
+//! `packages/ui`). In the workspace they must match what build.rs makes from the settings schema and
+//! copies from the viewport's head shapes. `SX_UPDATE_CORE_DATA=1`
 //! rewrites them.
 
 use std::path::Path;
@@ -22,6 +23,10 @@ fn data_copies_match_the_settings_schema() {
         (
             "defaults.json",
             include_str!(concat!(env!("OUT_DIR"), "/defaults.json")),
+        ),
+        (
+            "head-shapes.json",
+            include_str!(concat!(env!("OUT_DIR"), "/head-shapes.json")),
         ),
     ] {
         let path = data.join(file);
