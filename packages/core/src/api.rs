@@ -574,8 +574,27 @@ pub fn build_session(req: &SliceRequest, plate: &Plate, config: &PrintConfig) ->
         .collect();
     let mut session =
         SliceSession::with_options(plate, config, req.options.layer_tops_mm.as_deref(), &ranges)?;
-    if let Some(m) = collide_model(req, plate, config, &session) {
+    let zones = crate::collide::plate::zones(config);
+    let kinds: Vec<u8> = zones.iter().map(|z| z.0).collect();
+    if let Some(m) = collide_model(req, plate, config, &session, kinds.clone()) {
         session.set_collide(Arc::new(m));
+    } else if plate.objects.len() > 1 || !kinds.is_empty() {
+        // no model (by layer, or one object): paths may still cross, and print paths may enter a keep-out zone
+        #[allow(clippy::cast_possible_truncation, reason = "plate positions in mm")]
+        let objects = session
+            .footprints()
+            .iter()
+            .map(|f| crate::collide::MetaObject {
+                id: f.id.clone(),
+                height: 0.0,
+                center: [f.center[0] as f32, f.center[1] as f32],
+            })
+            .collect();
+        session.set_collide_meta(crate::collide::Meta {
+            objects,
+            zones: kinds,
+            ..crate::collide::Meta::default()
+        });
     }
     for k in req.plate.objects.iter().flat_map(|o| o.settings.keys()) {
         if !crate::config::READ_KEYS.contains(&k.as_str()) && !crate::config::FUZZY_KEYS.contains(&k.as_str())
@@ -639,6 +658,7 @@ fn collide_model(
     plate: &Plate,
     config: &PrintConfig,
     session: &SliceSession,
+    zones: Vec<u8>,
 ) -> Option<crate::collide::Model> {
     if !config.print_by_object() {
         return None;
@@ -660,6 +680,7 @@ fn collide_model(
         req.options.printer_id.as_deref(),
         map,
         session.could_print_by_layer(config),
+        zones,
     ))
 }
 
@@ -703,9 +724,14 @@ fn slice_shard_paths(
     layers: Range<u32>,
     progress: &dyn Progress,
 ) -> Result<SliceOutput> {
-    let out = session.slice_range_with(config, layers, progress)?;
+    let mut out = session.slice_range_with(config, layers, progress)?;
     if progress.cancelled() {
         return Err(Error::Cancelled);
+    }
+    if session.collide_meta().is_some() {
+        let zones = crate::collide::plate::zones(config);
+        let found = crate::collide::plate::check(&out, &zones, !config.print_by_object());
+        out.collisions.merge(found);
     }
     if let Some(z) = req.options.resume_z.as_ref().map(|z| z.z_mm)
         && req.options.resume_from_layer.is_some_and(|r| r > 0)

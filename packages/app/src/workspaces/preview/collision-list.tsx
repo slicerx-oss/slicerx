@@ -15,13 +15,16 @@ const KIND: Record<Collision['kind'], string> = {
   gantry: 'Gantry',
   hotend: 'Toolhead',
   nozzle_travel_through_part: 'Travel',
+  path_conflict: 'Crossing paths',
+  keep_out: 'Keep-out zone',
   tool_change: 'Tool change',
   dock: 'Dock',
 }
 
 function when(c: Collision): string {
   const layers = c.lastLayer > c.layer ? `layers ${c.layer + 1} to ${c.lastLayer + 1}` : `layer ${c.layer + 1}`
-  return `${KIND[c.kind]}, from ${clock(c.timeS)}, ${layers}, ${c.depthMm.toFixed(1)} mm ${c.severity === 'close' ? 'inside the margin' : 'deep'}`
+  const depth = c.depthMm > 0 ? `, ${c.depthMm.toFixed(1)} mm ${c.severity === 'close' ? 'inside the margin' : 'deep'}` : ''
+  return `${KIND[c.kind]}, from ${clock(c.timeS)}, ${layers}${depth}`
 }
 
 function cost(f: CollisionFix): string {
@@ -67,13 +70,13 @@ export function CollisionList() {
             {fixes.map((f, i) => (
               <li key={`${f.kind}-${i}`}>
                 <div>
-                  <b>{fixTitle(f, name, plate.map((p) => p.id), station)}</b>
+                  <b>{fixTitle(f, name, plate.map((p) => p.id), station, list)}</b>
                   <p>
-                    {fixDetail(f, name, list.length, station)} <span className="sx-dim">{cost(f)}</span>
+                    {fixDetail(f, name, list.length, station, list)} <span className="sx-dim">{cost(f)}</span>
                   </p>
                 </div>
                 {f.oneClick ? (
-                  <Button size="sm" disabled={busy || stale} tip={{ title: fixTitle(f, name, plate.map((p) => p.id), station), body: 'Apply it and slice again. Undo puts the plate back.', ...(stale ? { reason: 'Slice again first: the plate changed since this slice.' } : {}) }} onClick={() => { setBusy(true); void applyCollisionFix(host, f).finally(() => setBusy(false)) }}>
+                  <Button size="sm" disabled={busy || stale} tip={{ title: fixTitle(f, name, plate.map((p) => p.id), station, list), body: 'Apply it and slice again. Undo puts the plate back.', ...(stale ? { reason: 'Slice again first: the plate changed since this slice.' } : {}) }} onClick={() => { setBusy(true); void applyCollisionFix(host, f).finally(() => setBusy(false)) }}>
                     Apply
                   </Button>
                 ) : null}

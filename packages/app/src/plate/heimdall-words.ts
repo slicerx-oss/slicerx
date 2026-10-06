@@ -12,8 +12,11 @@ export function wordsOf(s: { plate: readonly { id: string; name: string }[]; pro
   return { name: namesOf(s.plate), station: stationOf(s.profile?.printerId) }
 }
 
+/** What the engine names besides the plate's objects. */
+const OTHERS: Record<string, string> = { 'prime-tower': 'the prime tower', 'exclusion-area': 'an exclusion area', 'wrap-check-zone': 'the nozzle wrap check corner' }
+
 export function namesOf(plate: readonly { id: string; name: string }[]): Names {
-  return (id) => plate.find((p) => p.id === id)?.name ?? 'an object'
+  return (id) => plate.find((p) => p.id === id)?.name ?? OTHERS[id] ?? 'an object'
 }
 
 /** What the head goes to during a tool change, by the printer profile id (the changers `toolChangerSpec` models). */
@@ -30,6 +33,8 @@ const mm = (v: number, digits = 1) => `${v.toFixed(digits)} mm`
 /** One line naming what meets what. */
 export function collisionTitle(c: Collision, name: Names, station = 'tool changer'): string {
   const b = name(c.hitId)
+  if (c.kind === 'path_conflict') return `Paths of ${name(c.objectId)} cross ${b}`
+  if (c.kind === 'keep_out') return `${name(c.objectId)} prints into ${b}`
   if (c.severity === 'close') return `The toolhead passes close to ${b}`
   if (c.kind === 'gantry') return `The ${c.part === 'lid' ? 'frame' : 'gantry'} hits ${b}`
   if (c.kind === 'nozzle_travel_through_part') return `A travel runs through ${b}`
@@ -47,6 +52,9 @@ export function collisionDetail(c: Collision, name: Names, station = 'tool chang
   const r = c.lastLayer > c.layer ? `, layers ${c.layer + 1} to ${c.lastLayer + 1}` : `, on layer ${c.layer + 1}`
   const tall = `${b}, which stands ${mm(c.hitHeightMm)} tall${r}.`
   const limit = c.limitMm ?? 0
+  if (c.kind === 'path_conflict') return `The paths of ${a} and ${b} cross where they overlap on the plate${r}.`
+  if (c.kind === 'keep_out')
+    return c.hitId === 'wrap-check-zone' ? `The printer checks this corner for filament wrapped round the nozzle, and ${a} prints into it${r}.` : `${a} prints into an area the printer keeps clear${r}.`
   if (c.severity === 'close')
     return `While ${a} prints, the nozzle comes within ${mm(Math.max(0, limit - c.depthMm))} of ${b}. The printer profile asks for ${limit.toFixed(0)} mm around the nozzle; the head's own shape clears ${b}, so this is the profile's margin, not a hit${r}.`
   if (c.kind === 'gantry' && c.part === 'lid') return `${b} is ${mm(c.hitHeightMm)} tall. Over the whole bed the printer clears ${mm(limit)} above the nozzle, so ${b} is in the way while ${a} prints${r}.`
@@ -68,7 +76,10 @@ function clears(n: number, total: number): string {
 }
 
 /** The fix as a short instruction. `order` is the plate's current order of object ids. */
-export function fixTitle(f: CollisionFix, name: Names, order: readonly string[] = [], station = 'tool changer'): string {
+/** The fix clears paths in a keep-out zone (a move out of the zone, not out of the tool changer's way). */
+const zone = (f: CollisionFix, list: readonly Collision[]) => f.clears.some((i) => list[i]?.kind === 'keep_out')
+
+export function fixTitle(f: CollisionFix, name: Names, order: readonly string[] = [], station = 'tool changer', list: readonly Collision[] = []): string {
   if (f.kind === 'reorder') {
     const next = f.order ?? []
     const last = next[next.length - 1]
@@ -78,11 +89,13 @@ export function fixTitle(f: CollisionFix, name: Names, order: readonly string[] 
   if (f.kind === 'by_layer') return 'Print by layer'
   if (f.kind === 'spread') return `Space the objects ${(f.mm ?? 0).toFixed(0)} mm wider`
   if (f.kind === 'raise_lift') return `Lift ${(f.mm ?? 0).toFixed(1)} mm on travels`
+  if (f.kind === 'arrange') return 'Arrange the plate'
+  if (zone(f, list)) return `Move ${name(f.objectId ?? '')} out of the zone`
   return `Move ${name(f.objectId ?? '')} out of the way to the ${station}`
 }
 
 /** What the fix does and clears. `total` is the number of collisions. */
-export function fixDetail(f: CollisionFix, name: Names, total: number, station = 'tool changer'): string {
+export function fixDetail(f: CollisionFix, name: Names, total: number, station = 'tool changer', list: readonly Collision[] = []): string {
   const n = f.clears.length
   const strikes = n === 1 ? 'strike' : 'strikes'
   if (f.kind === 'reorder') return `Order: ${(f.order ?? []).map(name).join(', ')}. Clears ${clears(n, total)}.`
@@ -92,6 +105,8 @@ export function fixDetail(f: CollisionFix, name: Names, total: number, station =
   }
   if (f.kind === 'spread') return `Clears ${clears(n, total)} the toolhead ${strikes}. Move them apart in Prepare, or arrange the plate with more space.`
   if (f.kind === 'raise_lift') return `Set Z hop to ${(f.mm ?? 0).toFixed(1)} mm. Clears the travel ${strikes}.`
+  if (f.kind === 'arrange') return `Clears ${clears(n, total)}. Places every object apart, so no paths cross.`
   const b = name(f.objectId ?? '')
+  if (zone(f, list)) return `Place ${b} where the printer does not need the plate clear. Clears ${clears(n, total)}.`
   return `The toolhead crosses ${b} on its way to the ${station}. Place ${b} where the head does not pass, toward the front, or print it last.`
 }

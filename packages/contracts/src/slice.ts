@@ -274,7 +274,12 @@ export interface VaryLayerCost {
 }
 
 /** What of the machine meets a printed part. */
-export type CollisionKind = 'gantry' | 'hotend' | 'nozzle_travel_through_part' | 'tool_change' | 'dock'
+/**
+ * What of the machine meets a printed part; or `path_conflict`, the paths of two objects (or of an object and the prime
+ * tower, `prime-tower`) crossing on one layer; or `keep_out`, a print path in a zone the printer keeps clear
+ * (`exclusion-area`, `wrap-check-zone`).
+ */
+export type CollisionKind = 'gantry' | 'hotend' | 'nozzle_travel_through_part' | 'tool_change' | 'dock' | 'path_conflict' | 'keep_out'
 
 /**
  * One place where the machine would meet a part already printed (heimdall, print by object). `hit` is the head's own
@@ -311,7 +316,7 @@ export interface Collision {
   change?: [number, number, number]
 }
 
-export type CollisionFixKind = 'reorder' | 'by_layer' | 'spread' | 'raise_lift' | 'move_object'
+export type CollisionFixKind = 'reorder' | 'by_layer' | 'spread' | 'raise_lift' | 'move_object' | 'arrange'
 
 /** A way to clear some of the collisions, with the print time it adds. */
 export interface CollisionFix {
@@ -319,7 +324,7 @@ export interface CollisionFix {
   costS: number
   /** Indices into the collisions it clears. */
   clears: number[]
-  /** Safe to apply with one click (a new order, print by layer); the others are explained. */
+  /** Safe to apply with one click (a new order, print by layer, arrange the plate); the others are explained. */
   oneClick: boolean
   /** reorder: the plate object ids in the new print order. */
   order?: string[]

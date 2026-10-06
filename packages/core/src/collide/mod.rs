@@ -14,6 +14,7 @@
 //! it whose head shape clears is reported as close, not as a hit.
 
 pub(crate) mod grid;
+pub(crate) mod plate;
 pub mod report;
 pub(crate) mod shapes;
 pub(crate) mod walk;
@@ -47,6 +48,10 @@ pub enum Kind {
     ToolChange,
     /// The toolhead at the rack, dock or switch bay.
     Dock,
+    /// The paths of two objects, or of an object and the prime tower, cross on one layer.
+    PathConflict,
+    /// A print path in a zone the printer keeps clear: an exclusion area, or the nozzle wrap check's corner.
+    KeepOut,
 }
 
 /// A hit with the head's own shape, or only inside the profile's clearance radius.
@@ -230,7 +235,9 @@ impl Hits {
                 1 => Kind::Hotend,
                 2 => Kind::NozzleTravelThroughPart,
                 3 => Kind::ToolChange,
-                _ => Kind::Dock,
+                4 => Kind::Dock,
+                5 => Kind::PathConflict,
+                _ => Kind::KeepOut,
             };
             let part = match part as u8 {
                 0 => Part::Nozzle,
@@ -288,6 +295,9 @@ pub struct Meta {
     pub z_hop: f32,
     /// The objects could print layer by layer instead (one layer plan, no spiral vase).
     pub by_layer: bool,
+    /// The keep-out zones, by kind ([`plate::ZONE_EXCLUSION`], [`plate::ZONE_WRAP_CHECK`]); hits name zone `k` as
+    /// obstacle `objects.len() + 1 + k`, after the prime tower at `objects.len()`.
+    pub zones: Vec<u8>,
 }
 
 impl Meta {
@@ -310,7 +320,7 @@ impl Meta {
             self.z_hop,
             if self.by_layer { 1.0 } else { 0.0 },
         ];
-        serde_json::json!([objects, numbers])
+        serde_json::json!([objects, numbers, self.zones])
     }
 
     /// [`Self::to_json`] read back.
@@ -350,6 +360,11 @@ impl Meta {
             retract_s: n(6),
             z_hop: n(7),
             by_layer: n(8) > 0.5,
+            zones: v
+                .get(2)
+                .and_then(serde_json::Value::as_array)
+                .map(|a| a.iter().map(|z| u8::from(z.as_u64() == Some(1))).collect())
+                .unwrap_or_default(),
         }
     }
 }
@@ -405,6 +420,7 @@ impl Model {
         printer_id: Option<&str>,
         extruder_of: Option<Vec<usize>>,
         by_layer: bool,
+        zones: Vec<u8>,
     ) -> Self {
         let model = config.raw.get("printer_model").and_then(|v| match v {
             serde_json::Value::String(s) => Some(s.as_str()),
@@ -487,6 +503,7 @@ impl Model {
             retract_s: (2.0 * config.retraction_length / config.retraction_speed.max(1.0)) as f32,
             z_hop: config.z_hop as f32,
             by_layer,
+            zones,
         };
         let lift_mm = changer.as_ref().map_or(3.0, |c| c.lift_mm);
         Self {
@@ -601,6 +618,7 @@ mod tests {
             retract_s: 0.1,
             z_hop: 0.4,
             by_layer: true,
+            zones: vec![0, 1],
         };
         assert_eq!(Meta::from_json(&meta.to_json()), meta);
     }

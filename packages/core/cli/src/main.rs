@@ -334,8 +334,17 @@ fn collision_refusal(
                 (Kind::Hotend, _) => ("The toolhead hits", ""),
                 (Kind::ToolChange, _) => ("A tool change crosses", ""),
                 (Kind::Dock, _) => ("The tool changer meets", ""),
+                (Kind::PathConflict, _) => ("Paths cross with", ""),
+                (Kind::KeepOut, _) => ("A print path enters", ""),
             };
             let b = name(&c.hit_id);
+            if matches!(c.kind, Kind::PathConflict | Kind::KeepOut) {
+                return format!(
+                    "{what} {b} from layer {}, printing {}.",
+                    c.layer + 1,
+                    name(&c.object_id)
+                );
+            }
             let clears = if piece.is_empty() {
                 String::new()
             } else {
