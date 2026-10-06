@@ -30,6 +30,8 @@ mod probe;
 mod slicing;
 mod themes;
 #[cfg(feature = "connect")]
+mod vault;
+#[cfg(feature = "connect")]
 mod watch;
 
 fn main() {
