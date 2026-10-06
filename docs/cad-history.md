@@ -59,6 +59,14 @@ A push or pull of a face that a fillet or chamfer in the history rounds does not
 | Split to objects | ends history, as plane cut |
 | Paint, move, rotate, scale, mirror, orient | not steps; paint is per triangle and is dropped by a replay, as by every mesh edit today |
 
+## Named values
+
+A project keeps a table of named values (Tools, Named values; `cad/values-panel.tsx`): a name and a sum for each, such as `wall = 2` and `lip = wall * 1.5`. Sums take numbers, names, `+ - * /` and parentheses, nothing else (`cad/values.ts`). `clearance` (the measured fit a side, from the hole test or half the nozzle) and `nozzle` are built in. A value may use other values but not itself through a loop, and the table says what each comes to or what is wrong with it.
+
+Any typed size in the modeling tools and the Tools dialogs takes a name or a sum. When the main number of a step was typed that way (the push distance, an extrude's distance, a revolve's angle, a fillet's radius or a chamfer's distance, a hole's diameter, a thread's length, a hollow's wall), the step keeps the text as `bind` and follows it. Changing a value, or something a built-in reads, gives each such step the number its sum gives now and replays the objects that changed, on the plate in view and on each other plate when it is shown (`cad/value-ops.ts`). A step whose sum no longer works keeps its number, and a toast says why. A value a step uses cannot be removed. In the history list, a step without a tool panel takes a sum in its number field too; a plain number there ends the binding.
+
+The table is saved as `Metadata/slicerx_values.json`, `{ "version": 1, "values": [{ "name", "expr" }] }`, and each step's `bind` with its history. Both are read as untrusted: a newer version is ignored, and a bad or built-in name, a repeated one or a sum over 200 characters is left out. Opening a project into one that already has values adds only the names it does not have.
+
 ## Storage
 
 - `Metadata/slicerx_history.json`, written only when an object has history: `{version: 1, objects: [{object, base, ended?, steps}]}`, `object` the 3MF object id as in slicerx_dimensions.json. Readers ignore a higher version and objects that are missing; a project without the part opens as before; other slicers ignore it.
