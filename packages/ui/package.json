@@ -10,6 +10,7 @@
     "./gallery": "./src/gallery.tsx",
     "./theme": "./src/theme-entry.ts",
     "./icons": "./src/icons-entry.ts",
+    "./app-mark": "./src/icons/app-mark.tsx",
     "./look": "./src/look-entry.ts",
     "./themes/*": "./themes/*"
   },

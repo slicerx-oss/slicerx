@@ -4,7 +4,6 @@
 // dev-only route; the render test proves each component renders on the server.
 import {
   AppBar,
-  AppMark,
   Avatar,
   Block,
   Button,
@@ -41,6 +40,7 @@ import {
   ToastProvider,
   WORKSPACE_TABS,
 } from './index'
+import { AppMark } from './icons/app-mark'
 import { MakerTile, MAKERS, type MakerSlug } from './components/maker-tile'
 import { tipAttrs } from './components/tooltip'
 import { ThemeProvider } from './theme-provider'

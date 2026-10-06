@@ -11,8 +11,6 @@ export type { IconName } from './icons/icon-paths'
 export { Icon, isIconName } from './icons/icon'
 export type { IconProps } from './icons/icon'
 export { Mark, Logo, MARK_PATH, MARK_CUTS, markRings, markCutFor } from './icons/mark'
-export { AppMark, perchShapes, perchCutFor } from './icons/app-mark'
-export type { AppMarkProps, PerchCut, PerchShapes } from './icons/app-mark'
 export type { MarkCut } from './icons/mark'
 export type { MarkProps, LogoProps } from './icons/mark'
 
