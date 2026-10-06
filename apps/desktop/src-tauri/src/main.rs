@@ -14,6 +14,8 @@ mod chatgpt;
 mod closing;
 mod crash;
 mod files;
+#[cfg(feature = "connect")]
+mod firewall;
 mod gpu;
 mod header;
 mod launch;
@@ -125,6 +127,10 @@ fn main() {
             pairdoc::pair_doc_write,
             #[cfg(feature = "connect")]
             bambu_connect::bambu_connect_open,
+            #[cfg(feature = "connect")]
+            firewall::firewall_inbound,
+            #[cfg(feature = "connect")]
+            firewall::firewall_open_settings,
             themes::themes_list,
             themes::themes_open_folder,
             probe::probe_enabled,

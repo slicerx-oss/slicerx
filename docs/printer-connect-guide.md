@@ -24,6 +24,8 @@ Paths in "Gaps in sx-connect" are relative to the repo root.
 | Generic Klipper (Moonraker) | mDNS `_moonraker._tcp.local`, probe `GET :7125/server/info` | `trusted_clients`, `X-Api-Key`, JWT, one-shot token | API key only on 401 | Moonraker config changes need a restart. 7125 versus 80, 4408, 4409 |
 | OctoPrint, Repetier-Server, Duet, Marlin USB serial | Not researched | Not researched | Not researched | Not researched |
 
+On Windows, discovery that listens for announcements (SSDP, mDNS, UDP broadcast replies) needs Windows Firewall to allow the listening program inbound on private networks; closing the prompt Windows shows on the first scan leaves a Block rule. When a scan finds nothing, the desktop app reads the enabled inbound rules for its own program (`Get-NetFirewallApplicationFilter` and `Get-NetFirewallRule`, no admin rights, enum names that are not translated, unlike `netsh` output; apps/desktop/src-tauri/src/firewall.rs) and says whether the firewall blocks it, has no rule for it, or allows it. When it does not allow it, "Allow in Windows Firewall" opens Windows' own Allowed apps page; the app never adds a rule itself. A standalone sx-link is a separate program with its own rules and is not checked. Entering the IP address connects outward and works either way. OrcaSlicer, Bambu Studio and PrusaSlicer do not check.
+
 ## 2. Brands
 
 ### Bambu Lab

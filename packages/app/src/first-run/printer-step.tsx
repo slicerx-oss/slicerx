@@ -10,9 +10,9 @@ import { listPrinterProfiles } from '@slicerx/settings'
 import { get, set, toast } from '../state/store'
 import { connectionMethod, type ConnectionId, type ConnectionMethod, type FieldKey, type PrinterModel } from '@slicerx/printer-catalog'
 import { Button, Chip, Field, Icon, Input, LinkButton, Pill, Seg, Select, type IconName } from '@slicerx/ui'
-import { useCallback, useEffect, useMemo, useRef, useState, type FocusEvent, type ReactNode } from 'react'
+import { useCallback, useContext, useEffect, useMemo, useRef, useState, type FocusEvent, type ReactNode } from 'react'
 import { useEdition, appName } from '../edition'
-import { useHost } from '../host'
+import { HostContext, useHost } from '../host'
 import { openLink } from '../lib/links'
 import { EXPORT_PLUGIN } from '../lib/hand-printers'
 import { degC } from '../lib/temp'
@@ -75,11 +75,43 @@ import {
 import { displayCause, TEST_STEPS, type AppSetupHost, type FoundPrinter, type TestOutcome, type TestStep } from './setup-host'
 
 // ---------------------------------------------------------------------------
+type Inbound = 'allowed' | 'blocked' | 'none' | 'unsupported'
+
 /** What to check when a scan found nothing. On Windows the listener for printer announcements needs the firewall's
- * allowance: a prompt that was closed or denied blocks the scan, though entering the IP address still works. */
-export function noAnswerHint(windows: boolean): string {
+ * allowance: a prompt that was closed or denied blocks the scan, though entering the IP address still works. With the
+ * firewall's rules for the app read (`inbound`), the hint says which it is instead of what it may be. */
+export function noAnswerHint(windows: boolean, inbound?: Inbound): string {
   const base = "Check that the printer is on and on the same network as this computer (not a guest network). Klipper printers need Moonraker. Then scan again, or enter the printer's IP address."
-  return windows ? `${base} On Windows, a firewall prompt for ${appName()} that was closed or denied also stops the scan; entering the IP address still works.` : base
+  if (!windows || inbound === 'allowed') return base
+  if (inbound === 'blocked') return `Windows Firewall blocks ${appName()} from hearing printers on this network, so the scan cannot find them. Allow it in Windows Firewall and scan again, or enter the printer's IP address, which works either way.`
+  if (inbound === 'none') return `Windows Firewall does not let ${appName()} hear printers on this network yet, so the scan cannot find them. Allow it in Windows Firewall and scan again, or enter the printer's IP address, which works either way.`
+  return `${base} On Windows, a firewall prompt for ${appName()} that was closed or denied also stops the scan; entering the IP address still works.`
+}
+
+/** The hint after an empty scan. On Windows with the desktop's firewall check, it reads the app's rules (no change,
+ * no admin rights) and, when they keep printers out, offers Windows' own page to allow the app. */
+export function NoAnswerHint({ windows }: { windows: boolean }) {
+  const firewall = useContext(HostContext)?.firewall
+  const [inbound, setInbound] = useState<Inbound | undefined>()
+  useEffect(() => {
+    if (!windows || !firewall) return
+    let live = true
+    firewall.inbound().then((v) => live && setInbound(v), () => live && setInbound('unsupported'))
+    return () => {
+      live = false
+    }
+  }, [windows, firewall])
+  const blocked = inbound === 'blocked' || inbound === 'none'
+  return (
+    <>
+      <p>{noAnswerHint(windows, inbound)}</p>
+      {blocked && firewall ? (
+        <Button size="sm" variant="ghost" icon="external" onClick={() => void firewall.openSettings().catch(() => undefined)}>
+          Allow in Windows Firewall
+        </Button>
+      ) : null}
+    </>
+  )
 }
 
 const onWindows = () => typeof navigator !== 'undefined' && /Windows/.test(navigator.userAgent)
@@ -1079,7 +1111,7 @@ function FoundList({ ctl, picked, onPick, onClear, enterIp }: { ctl: PrinterCont
         <Icon name="connect-fail" size={22} />
         <div>
           <b>No printer answered.</b>
-          <p>{noAnswerHint(onWindows())}</p>
+          <NoAnswerHint windows={onWindows()} />
           {enterIp}
         </div>
       </div>

@@ -82,6 +82,20 @@ export interface BambuConnectHost {
 }
 
 /**
+ * Windows Firewall, as it applies to hearing printers: discovery listens for their announcements on inbound UDP,
+ * which the firewall allows or blocks per program. Desktop on Windows only.
+ */
+export interface FirewallHost {
+  /**
+   * What the enabled inbound rules for the app say for private networks: `allowed`, `blocked` (a Block rule, as a
+   * closed prompt leaves), `none` (no rule, so nothing gets in), or `unsupported` when they could not be read. Reads only.
+   */
+  inbound(): Promise<'allowed' | 'blocked' | 'none' | 'unsupported'>
+  /** Opens Windows' own "Allow an app through Windows Firewall" page. Changes nothing itself. */
+  openSettings(): Promise<void>
+}
+
+/**
  * The base members are always present. Optional members exist only when the
  * matching feature is compiled in; code checks for them instead of assuming
  * them. Editions extend this interface with their own members.
@@ -103,6 +117,8 @@ export interface Host {
   approvals?: ApprovalHost
   /** Feature `connect`, desktop only: prints for a Bambu Lab printer with Developer Mode off. */
   bambuConnect?: BambuConnectHost
+  /** Feature `connect`, desktop only: whether Windows Firewall lets the app hear printers. */
+  firewall?: FirewallHost
 }
 
 /** Base workspaces are 'prepare', 'preview' and 'library'; features add their own, such as 'printers' and 'pilot'. */
