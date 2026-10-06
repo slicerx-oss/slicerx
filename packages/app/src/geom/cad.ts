@@ -429,6 +429,37 @@ export function edgePreview(req: EdgeRequest, signal?: AbortSignal) {
   return geom().call<{ cut: GeomMesh; join: GeomMesh }>(`${op}.preview`, body, signal)
 }
 
+// Holes (sx-geom hole.rs)
+
+/** A round hole: its entry center (world) and the way out through it, its size and depth. */
+export interface Hole {
+  entry: Vec3
+  axis: Vec3
+  diameterMm: number
+  depthMm: number
+  /** Open at the far end too. */
+  through: boolean
+}
+
+/** What a hole becomes, mm. A counterbore or a countersink is at the entry. */
+export interface HoleSpec {
+  diameterMm: number
+  /** A blind hole's new depth; its own depth when absent. A through hole stays through. */
+  depthMm?: number
+  counterbore?: { diameterMm: number; depthMm: number }
+  countersink?: { diameterMm: number; angleDeg: number }
+}
+
+/** The hole whose wall the pick is on, entered from the end nearest the pick. */
+export function holeFind(mesh: MeshItem, pick: Pick, signal?: AbortSignal) {
+  return geom().call<Hole>('hole.find', { mesh, triangle: pick.triangle, at: pick.at }, signal)
+}
+
+/** The hole made to `spec` in place, found again on the mesh first. The result is in the item's frame. */
+export function holeApply(mesh: MeshItem, hole: Hole, spec: HoleSpec, signal?: AbortSignal) {
+  return geom().call<MeshResult & { report: { volumeChangeMm3: number; watertight: boolean; shells: number } }>('hole.apply', { mesh, hole, spec }, signal)
+}
+
 /** A sketch corner: vertex i of a loop is where segment i starts (points[i] for point loops). Counts from 0. */
 export interface SketchCorner {
   loop: number
