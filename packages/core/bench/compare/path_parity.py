@@ -17,7 +17,8 @@ normalized bins), its move count agrees within the case's tolerance and it has n
 than Orca beyond that tolerance (fewer strokes for the same lines means fewer travels). So that
 fewer strokes cannot hide bad joins, sparse infill also measures its connectors: extruding moves
 within 1 mm of a wall of the same layer and within 20 degrees of parallel to it (the joins and
-anchor hooks that follow the boundary), runs of them in one stroke counting as one connector. The
+anchor hooks that follow the boundary), runs of them in one stroke counting as one connector; a
+stroke of a single move is a lone line and has none. The
 longest connector must not exceed Orca's by more than 5 percent plus 0.5 mm, and the total by more
 than 5 percent plus 1 mm plus one connector of Orca's mean length for each stroke fewer than Orca:
 each join that saves a stroke adds a connector, so the total may grow by what the joins explain,
@@ -216,11 +217,16 @@ def connectors(walls, infill):
             for cx in range(int((x0 - CONNECTOR_MM) // cell), int((x1 + CONNECTOR_MM) // cell) + 1):
                 for cy in range(int((y0 - CONNECTOR_MM) // cell), int((y1 + CONNECTOR_MM) // cell) + 1):
                     grid.setdefault((cx, cy), []).append(w)
+        # A stroke of one straight move is a lone line, never a join or a hook (stubs in a gear's teeth run
+        # beside the wall).
+        per_stroke = {}
+        for kind, stroke, *_ in segs:
+            per_stroke[(kind, stroke)] = per_stroke.get((kind, stroke), 0) + 1
         run_key, run_len = None, 0.0
         for kind, stroke, ax, ay, bx, by in segs:
             ln_ = math.hypot(bx - ax, by - ay)
             hit = False
-            if ln_ > 1e-6:
+            if ln_ > 1e-6 and per_stroke[(kind, stroke)] > 1:
                 mx, my = (ax + bx) / 2, (ay + by) / 2
                 ux, uy = (bx - ax) / ln_, (by - ay) / ln_
                 for w in grid.get((int(mx // cell), int(my // cell)), []):
