@@ -22,7 +22,7 @@ function named(p: PrinterInfo, status: PrinterStatus): FleetRow {
 
 /** A printer's status, or offline with the reason when asking fails: one printer's error (a wrong code, a driver
  * failure) shows on its own tile instead of failing the whole list. */
-async function statusOrOffline(printers: PrinterHost, id: string): Promise<PrinterStatus> {
+export async function statusOrOffline(printers: PrinterHost, id: string): Promise<PrinterStatus> {
   try {
     return await printers.status(id)
   } catch (e) {
