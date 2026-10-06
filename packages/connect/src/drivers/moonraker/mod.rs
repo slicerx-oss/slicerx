@@ -14,6 +14,7 @@ use reqwest::multipart::{Form, Part};
 use reqwest::{Client, RequestBuilder, Response};
 use serde_json::{Value, json};
 
+pub(crate) use filament::hex_color;
 use filament::{QIDI_SLOTS, QidiDict};
 
 use crate::camera::{self, FrameStream};
