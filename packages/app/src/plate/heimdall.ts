@@ -10,8 +10,14 @@ import { cameraBus } from './tools'
 import { get, markStale, set, toast, type AppState } from '../state/store'
 import { setPlateSettings } from './plates'
 import { sequenceProblem } from './sequence-check'
+import { collisionTitle, fixTitle, namesOf, stationOf, type Names } from './heimdall-words'
 
 const NONE: Collision[] = []
+
+/** Object names and the tool changer's station, for the words of the collisions (heimdall-words.ts). */
+export function wordsOf(s: AppState): { name: Names; station: string } {
+  return { name: namesOf(s.plate), station: stationOf(toolChangerFor(s)?.kind) }
+}
 
 /** The collisions of the slice on screen. */
 export function collisionsOf(s: Pick<AppState, 'slice'>): Collision[] {
@@ -35,7 +41,7 @@ export function printBlock(s: Pick<AppState, 'slice' | 'plate' | 'plates' | 'act
   const hits = collisionsOf(s).filter((c) => c.severity === 'hit')
   if (hits.length) {
     const first = hits[0]!
-    return `heimdall found ${hits.length === 1 ? 'a collision' : `${hits.length} collisions`}: ${first.title}${hits.length > 1 ? `, and ${hits.length - 1} more` : ''}. Apply a fix in Preview, or change the plate, and slice again.`
+    return `heimdall found ${hits.length === 1 ? 'a collision' : `${hits.length} collisions`}: ${collisionTitle(first, namesOf(s.plate))}${hits.length > 1 ? `, and ${hits.length - 1} more` : ''}. Apply a fix in Preview, or change the plate, and slice again.`
   }
   if (s.slice.status === 'done' && s.slice.stale) return sequenceProblem(s)
   return null
@@ -111,7 +117,7 @@ export async function applyCollisionFix(host: Host, fix: CollisionFix): Promise<
   if (!fix.oneClick) return
   if (fix.kind === 'reorder' && fix.order) {
     if (!reorder(fix.order)) return
-    toast(`${fix.title}. Slicing again.`, 'info')
+    toast(`${fixTitle(fix, namesOf(get().plate), get().plate.map((p) => p.id))}. Slicing again.`, 'info')
   } else if (fix.kind === 'by_layer') {
     setPlateSettings(get().activePlate, { sequence: 'by-layer' })
     toast('This plate prints by layer now. Slicing again.', 'info')

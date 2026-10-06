@@ -8,6 +8,7 @@ import { degC } from '../lib/temp'
 import type { Collision, PrinterInfo, PrinterStatus, SettingValue } from '@slicerx/contracts'
 import { PRINTER_MODELS, type PrinterModel } from '@slicerx/printer-catalog'
 import { appName } from '../edition'
+import { collisionDetail, collisionTitle } from './heimdall-words'
 
 export interface PreflightInput {
   printer: PrinterInfo
@@ -21,6 +22,8 @@ export interface PreflightInput {
   file: { name: string; sha256: string; layers: number; timeS: number; grams: number }
   /** heimdall's collisions of the slice: a hit blocks the send, a close call needs the person's yes. */
   collisions?: readonly Collision[]
+  /** The plate's object names by id, for the collisions' words. */
+  objectNames?: Readonly<Record<string, string>>
 }
 
 export interface Preflight {
@@ -107,9 +110,10 @@ export function preflight(input: PreflightInput): Preflight {
   if (hot !== null && hot > 300) warnings.push(`The nozzle heats to ${degC(hot)}. Most hotends are rated to ${degC(300)}.`)
 
   // heimdall: the head, gantry or tool changer would meet a printed part.
+  const name = (id: string) => input.objectNames?.[id] ?? 'an object'
   for (const c of input.collisions ?? []) {
-    if (c.severity === 'hit') errors.push(`${c.title}, layer ${c.layer + 1}. ${c.detail} Fix it in Preview and slice again.`)
-    else warnings.push(`${c.title}. ${c.detail}`)
+    if (c.severity === 'hit') errors.push(`${collisionTitle(c, name)}, layer ${c.layer + 1}. ${collisionDetail(c, name)} Fix it in Preview and slice again.`)
+    else warnings.push(`${collisionTitle(c, name)}. ${collisionDetail(c, name)}`)
   }
 
   const facts = [

@@ -7,6 +7,7 @@ import { Icon, tipAttrs } from '@slicerx/ui'
 import { HEAT_RAMP } from '@slicerx/viewport/palette'
 import { useMemo, useRef, type KeyboardEvent, type PointerEvent } from 'react'
 import { collisionsOf, jumpToCollision } from '../plate/heimdall'
+import { collisionTitle, namesOf } from '../plate/heimdall-words'
 import { get, set, useApp } from '../state/store'
 import { layerKeyStep, stepLayer } from './preview/layer-step'
 
@@ -18,6 +19,7 @@ export function LayerStrip() {
   const layerLoRaw = useApp((s) => s.layerLo)
   const mode = useApp((s) => s.workspace)
   const strikes = useApp(collisionsOf)
+  const names = namesOf(useApp((s) => s.plate))
   const track = useRef<HTMLDivElement>(null)
   const drag = useRef<Handle | null>(null)
   const data = useMemo(() => {
@@ -140,7 +142,7 @@ export function LayerStrip() {
         {interactive ? [handle('lo'), handle('hi')] : null}
         {interactive
           ? strikes.map((c, i) => (
-              <button key={`strike-${i}`} type="button" className="lstrike" data-severity={c.severity} style={{ top: `${fromTop(zTop(Math.min(n, c.layer + 1))) * 100}%` }} aria-label={`${c.title}, layer ${c.layer + 1}`} {...tipAttrs({ title: c.title, body: `Layer ${c.layer + 1}. Click to jump there.` })} onPointerDown={(e) => e.stopPropagation()} onClick={() => jumpToCollision(i)}>
+              <button key={`strike-${i}`} type="button" className="lstrike" data-severity={c.severity} style={{ top: `${fromTop(zTop(Math.min(n, c.layer + 1))) * 100}%` }} aria-label={`${collisionTitle(c, names)}, layer ${c.layer + 1}`} {...tipAttrs({ title: collisionTitle(c, names), body: `Layer ${c.layer + 1}. Click to jump there.` })} onPointerDown={(e) => e.stopPropagation()} onClick={() => jumpToCollision(i)}>
                 <Icon name="strike" size={14} />
               </button>
             ))

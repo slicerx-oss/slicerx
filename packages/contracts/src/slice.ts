@@ -278,15 +278,14 @@ export type CollisionKind = 'gantry' | 'hotend' | 'nozzle_travel_through_part' |
 
 /**
  * One place where the machine would meet a part already printed (heimdall, print by object). `hit` is the head's own
- * shape; `close` is only inside the printer profile's clearance radius, with the head itself clearing.
+ * shape; `close` is only inside the printer profile's clearance radius, with the head itself clearing. Codes, numbers
+ * and object ids: the app writes the words.
  */
 export interface Collision {
   kind: CollisionKind
   severity: 'hit' | 'close'
   /** The piece of the machine: the nozzle, the toolhead, the gantry beam or the frame over the bed (the profile's lid height). */
   part: 'nozzle' | 'toolhead' | 'gantry' | 'lid'
-  title: string
-  detail: string
   /** The plate object printing, and the one it meets. */
   objectId: string
   hitId: string
@@ -302,6 +301,10 @@ export interface Collision {
   worstLayer: number
   worstPoint: [number, number, number]
   depthMm: number
+  /** How tall the object it meets stands, mm. */
+  hitHeightMm: number
+  /** The clearance it breaks, mm: the rod height (gantry), the lid height (lid), the clearance radius (close call). */
+  limitMm?: number
   /** The extra spacing that clears a toolhead strike sideways, mm. */
   pushMm?: number
   /** During a tool change: the tools (0-based) and how far along the trip, 0 to 1. */
@@ -313,8 +316,6 @@ export type CollisionFixKind = 'reorder' | 'by_layer' | 'spread' | 'raise_lift' 
 /** A way to clear some of the collisions, with the print time it adds. */
 export interface CollisionFix {
   kind: CollisionFixKind
-  title: string
-  detail: string
   costS: number
   /** Indices into the collisions it clears. */
   clears: number[]
@@ -326,6 +327,8 @@ export interface CollisionFix {
   mm?: number
   /** move_object: which object. */
   objectId?: string
+  /** by_layer: the most extra travel moves on one layer. */
+  moves?: number
 }
 
 export interface SliceResult {
