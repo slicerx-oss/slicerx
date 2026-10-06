@@ -383,6 +383,7 @@ mod tests {
             b,
             face,
             moved: true,
+            center: None,
         }
     }
 

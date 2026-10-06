@@ -2,7 +2,7 @@
 
 Engine contract for rounding and beveling edges, in sx-geom (`packages/geom`) and the typed calls in `packages/app/src/geom/cad.ts`. Same rules as `docs/cad-engine.md` sections 2 and 7: JSON in and out, world millimeters, angles in degrees, meshes flat or `{mesh, transform}`. A mesh that replaces an input comes back in that input's local frame. Errors are thrown as one plain sentence of the form `field: what is wrong`, ready to show. This file only grows; nothing in it is renamed or removed.
 
-The tool is meant for brackets, boxes and plates: round or bevel the straight edge where two flat faces meet. Left out on purpose: variable radius, setback and vertex blends beyond the simple sphere corner, edges on curved faces, and anything that needs a B-rep.
+The tool is meant for brackets, boxes and plates: round or bevel the straight edge where two flat faces meet, and the round edge where a flat face meets a cylinder square to it (a hole's rim, the root of a boss, the rim of a round plate). Left out on purpose: variable radius, setback and vertex blends beyond the simple sphere corner, edges between other curved faces, and anything that needs a B-rep.
 
 Shared shapes, as in section 7: `Vec2`, `Vec3`, `MeshResult`, `BooleanOptions`, `FaceFrame`, `SketchLoop`.
 
@@ -15,6 +15,16 @@ EdgeRef = { a: Vec3, b: Vec3, face: Vec3, moved?: boolean }
 ```
 
 `a` and `b` are the end points (world). `face` is the outward normal of the first face, the one that takes `distanceMm` in a two distance chamfer. The ops find the edge again from these, so an `EdgeRef` from `edge.pick` can be stored and sent back as it is.
+
+### Round edges
+
+A round edge is the closed circle where a flat face meets a cylinder whose axis is square to it, all the way round: the rim of a hole, the root of a boss, the rim of a round plate. The faces come from the mesh's face ids, or are found from the mesh when it has none (a cylinder is recognized when its facets lie on one). Its reference adds the circle's center:
+
+```
+EdgeRef = { a: Vec3, b: Vec3, face: Vec3, center: Vec3 }
+```
+
+`face` is the flat face's outward normal, `a` a corner of the circle (the same one whichever triangle was picked) and `b` the same point; the radius is `a`'s distance from the axis through `center` along `face`. `edge.pick` returns it with `lengthMm` the circumference, `chain` the edge alone and `loop` the edge alone. `maxDistanceMm` is how far the flat face reaches from the rim (to its nearest other edge on that side of the circle, or to the middle) and how far the cylinder runs from it. A chamfer's `distanceMm` is on the flat face and `distance2Mm` down the cylinder. The tool is the straight edge's cross section turned once around the axis, in as many steps as the rim has sides and starting at one of its corners, so it follows the hole's own facets. A chamfer's bevel comes out as a cone face. A size that would reach past the middle of the circle fails as `edges: edge 1 is a round edge 8.000 mm across; this size reaches past its middle`; a round edge that is gone (a history replay changed the part) as `edges: edge 1 is a round edge that is not there any more; pick it again`. When the face a rim sits on moves in a replay, its corner and center move with it.
 
 `moved` is set by history replays when the ends moved with a face they lie on (docs/cad-history.md). When no edge matches the ends exactly, the ops take the sharp edge on the line through `a` and `b` that overlaps them, end to end, with `face` naming its first face as before. None fails as `edges: edge 2 moved with the face beside it and is not there any more; pick it again`, two or more as `more than one edge matches there`. `edge.pick` never sets it.
 
