@@ -1198,6 +1198,8 @@ impl PrintConfig {
             ("slice_closing_radius", 0.049, 0.0, 10.0),
             ("min_feature_size", 25.0, 0.0, 500.0),
             ("top_bottom_infill_wall_overlap", 25.0, -100.0, 100.0),
+            // -1 is Orca's automatic width; 100 mm is brim_width's ceiling.
+            ("prime_tower_brim_width", 3.0, -1.0, 100.0),
         ] {
             range(key, self.raw_number(key, default), lo, hi)?;
         }
@@ -2146,6 +2148,23 @@ mod tests {
         assert!((pct.line_width - 0.44).abs() < 1e-9);
         let mm = PrintConfig::from_json(br#"{"line_width":"0.45"}"#).unwrap();
         assert!((mm.line_width - 0.45).abs() < 1e-9);
+    }
+
+    #[test]
+    fn the_prime_tower_brim_is_held_to_a_bed_sized_width() {
+        use serde_json::json;
+        // An infinite tower brim never finished slicing on a two-extruder plate.
+        for v in [json!("inf"), json!(1e9), json!(101), json!(-2)] {
+            let err = PrintConfig::from_value(&json!({ "prime_tower_brim_width": v })).unwrap_err();
+            assert!(err.to_string().contains("prime_tower_brim_width"), "{v}: {err}");
+        }
+        // -1 is Orca's automatic width.
+        for v in [json!(-1), json!(0), json!(3), json!("10"), json!(100)] {
+            assert!(
+                PrintConfig::from_value(&json!({ "prime_tower_brim_width": v })).is_ok(),
+                "{v}"
+            );
+        }
     }
 
     #[test]
