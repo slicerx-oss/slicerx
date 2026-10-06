@@ -75,6 +75,15 @@ import {
 import { displayCause, TEST_STEPS, type AppSetupHost, type FoundPrinter, type TestOutcome, type TestStep } from './setup-host'
 
 // ---------------------------------------------------------------------------
+/** What to check when a scan found nothing. On Windows the listener for printer announcements needs the firewall's
+ * allowance: a prompt that was closed or denied blocks the scan, though entering the IP address still works. */
+export function noAnswerHint(windows: boolean): string {
+  const base = "Check that the printer is on and on the same network as this computer (not a guest network). Klipper printers need Moonraker. Then scan again, or enter the printer's IP address."
+  return windows ? `${base} On Windows, a firewall prompt for ${appName()} that was closed or denied also stops the scan; entering the IP address still works.` : base
+}
+
+const onWindows = () => typeof navigator !== 'undefined' && /Windows/.test(navigator.userAgent)
+
 // Controller: form state, secrets, test and scan. Lives in the flow so the setup skill can apply cards.
 
 export type TestState =
@@ -1070,7 +1079,7 @@ function FoundList({ ctl, picked, onPick, onClear, enterIp }: { ctl: PrinterCont
         <Icon name="connect-fail" size={22} />
         <div>
           <b>No printer answered.</b>
-          <p>Check that the printer is on and on the same network as this computer (not a guest network). Klipper printers need Moonraker. Then scan again, or enter the printer's IP address.</p>
+          <p>{noAnswerHint(onWindows())}</p>
           {enterIp}
         </div>
       </div>
