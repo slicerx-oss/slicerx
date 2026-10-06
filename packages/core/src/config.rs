@@ -1280,6 +1280,9 @@ impl PrintConfig {
             ("prime_tower_brim_width", 3.0, -1.0, 100.0),
             // Degrees; Orca sets no limit and angles past a turn wrap around.
             ("wipe_tower_rotation_angle", 0.0, -3600.0, 3600.0),
+            // Speeds read raw, held like the others to 2000 mm/s; 0 is Orca's "use the usual speed".
+            ("skirt_speed", 50.0, 0.0, 2000.0),
+            ("travel_speed_z", 0.0, 0.0, 2000.0),
             // Orca's limits; a point distance of 0 divides each wall without end (Orca's own note).
             ("fuzzy_skin_point_distance", 0.3, 0.01, 5.0),
             ("fuzzy_skin_thickness", 0.2, 0.0, 2.0),
@@ -2234,6 +2237,22 @@ mod tests {
         assert!((pct.line_width - 0.44).abs() < 1e-9);
         let mm = PrintConfig::from_json(br#"{"line_width":"0.45"}"#).unwrap();
         assert!((mm.line_width - 0.45).abs() < 1e-9);
+    }
+
+    #[test]
+    fn skirt_and_z_travel_speeds_stay_within_the_speed_range() {
+        use serde_json::json;
+        // 1e9 went into the G-code as F60000000000.
+        for key in ["skirt_speed", "travel_speed_z"] {
+            for bad in [json!(1e9), json!(2001), json!(-1), json!("inf")] {
+                let err = PrintConfig::from_value(&json!({ key: bad })).unwrap_err();
+                assert!(err.to_string().contains(key), "{key} {bad}: {err}");
+            }
+            // 0 is Orca's "use the usual speed".
+            for ok in [json!(0), json!(50), json!([12]), json!(2000)] {
+                assert!(PrintConfig::from_value(&json!({ key: ok })).is_ok(), "{key} {ok}");
+            }
+        }
     }
 
     #[test]
