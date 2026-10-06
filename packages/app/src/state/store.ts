@@ -61,8 +61,8 @@ export interface NornState {
 }
 
 /** Modeling tools that work in the 3D view; their panel sits in the sidebar while one is on. */
-export type CadTool = 'shape' | 'facetext' | 'array' | 'measure' | 'push' | 'sketch' | 'facesvg' | 'fillet'
-export const CAD_TOOLS: readonly CadTool[] = ['shape', 'facetext', 'array', 'measure', 'push', 'sketch', 'facesvg', 'fillet']
+export type CadTool = 'shape' | 'facetext' | 'array' | 'measure' | 'push' | 'sketch' | 'facesvg' | 'fillet' | 'holefit'
+export const CAD_TOOLS: readonly CadTool[] = ['shape', 'facetext', 'array', 'measure', 'push', 'sketch', 'facesvg', 'fillet', 'holefit']
 export const isCadTool = (t: string | null): t is CadTool => t !== null && (CAD_TOOLS as readonly string[]).includes(t)
 
 export interface PlateEntry {

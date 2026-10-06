@@ -166,6 +166,18 @@ async function runStep(call: EngineCall, s: Step, parts: Flat[], fonts: Record<s
         out[i] = { ...part, positions: r.mesh.positions, indices: r.mesh.indices }
         break
       }
+      case 'hole.apply': {
+        // The engine finds the hole again on the part as it is now, or says it is gone.
+        let r: { mesh: Flat }
+        try {
+          r = (await call('hole.apply', { mesh: item(part), hole: p.hole, spec: p.spec })) as { mesh: Flat }
+        } catch (err) {
+          const why = (err instanceof Error ? err.message : String(err)).replace(/^hole: /, '')
+          throw new Broken(why.charAt(0).toUpperCase() + why.slice(1))
+        }
+        out[i] = { ...part, positions: r.mesh.positions, indices: r.mesh.indices }
+        break
+      }
       case 'edge.fillet':
       case 'edge.chamfer': {
         const { op: _op, ...rest } = p
