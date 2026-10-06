@@ -14,13 +14,13 @@ import { startDuet } from './duet.ts'
 import { startElegoo } from './elegoo.ts'
 import { listen } from './http-util.ts'
 import { MockMachine } from './machine.ts'
-import { startMoonraker } from './moonraker.ts'
+import { MOCK_MOONRAKER_LOGIN, startMoonraker, type MoonrakerControl } from './moonraker.ts'
 import { startOctoPrint } from './octoprint.ts'
 import { startSnapmakerLuban } from './snapmaker.ts'
 import { startPrusaLink } from './prusalink.ts'
 import { MOCK_HA_TOKEN, startHomeAssistant, startSpoolman } from './services.ts'
 
-export { MOCK_ACCESS_CODE, MOCK_SERIAL, MOCK_HA_TOKEN, MOCK_CLOUD_TOKEN }
+export { MOCK_ACCESS_CODE, MOCK_SERIAL, MOCK_HA_TOKEN, MOCK_CLOUD_TOKEN, MOCK_MOONRAKER_LOGIN }
 
 export const MOCK_API_KEY = 'mock-api-key'
 export const MOCK_DUET_PASSWORD = 'mock-reprap'
@@ -75,7 +75,12 @@ export async function startMocks(opts: StartOptions = {}): Promise<RunningMocks>
   const apiKey = opts.auth ? MOCK_API_KEY : undefined
   const add = (name: string, r: { server: Server; port: number }) => { servers.push(r.server); ports[name] = r.port }
 
-  if (only.includes('moonraker')) add('moonraker', await startMoonraker(machine('moonraker'), { ...(apiKey ? { apiKey } : {}), ...(opts.forceLogins ? { forceLogins: true } : {}) }))
+  let moonrakerControl: MoonrakerControl | undefined
+  if (only.includes('moonraker')) {
+    const r = await startMoonraker(machine('moonraker'), { ...(apiKey ? { apiKey } : {}), ...(opts.forceLogins ? { forceLogins: true } : {}) })
+    moonrakerControl = r.control
+    add('moonraker', r)
+  }
   if (only.includes('prusalink')) add('prusalink', await startPrusaLink(machine('prusalink'), opts.digest ? { digest: MOCK_DIGEST } : apiKey ? { apiKey } : {}))
   if (only.includes('octoprint')) add('octoprint', await startOctoPrint(machine('octoprint'), apiKey ? { apiKey } : {}))
   if (only.includes('duet')) add('duet', await startDuet(machine('duet'), opts.auth ? { password: MOCK_DUET_PASSWORD } : {}))
@@ -179,6 +184,17 @@ export async function startMocks(opts: StartOptions = {}): Promise<RunningMocks>
       if (b.external) bambuExtra.external = b.external
       else if (b.external === null) delete bambuExtra.external
       return { json: { refuse: bambuExtra.refuse ?? null, model: bambuExtra.model ?? null, ams: bambuExtra.ams ?? 'ams' } }
+    }
+    // POST /moonraker {variant?, klippy?, message?, expireTokens?}: see MoonrakerControl.
+    if (req.path === '/moonraker' && req.method === 'POST') {
+      if (!moonrakerControl) return { status: 404 }
+      const b = req.json() as { variant?: MoonrakerControl['variant'] | null; klippy?: MoonrakerControl['klippy']; message?: string; expireTokens?: boolean }
+      if (b.variant === null) delete moonrakerControl.variant
+      else if (b.variant) moonrakerControl.variant = b.variant
+      if (b.klippy) moonrakerControl.klippy = b.klippy
+      if (b.message !== undefined) moonrakerControl.message = b.message
+      if (b.expireTokens) moonrakerControl.tokens.clear()
+      return { json: { variant: moonrakerControl.variant ?? null, klippy: moonrakerControl.klippy } }
     }
     // POST /motion {mock, homed?, position?, failG90?}: where the head is and which axes are homed.
     if (req.path === '/motion' && req.method === 'POST') {
