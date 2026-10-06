@@ -5,7 +5,11 @@ Plugin id `snapmaker`. Two protocols, picked by probing when the config does not
 1. Moonraker, for the Snapmaker U1 (Klipper with a modified Moonraker that nginx serves on port 80, LAN clients trusted by default). The driver is the Moonraker driver (`../moonraker/README.md`) with this plugin id.
 2. The HTTP API Snapmaker Luban uses on the 2.0 machines (A150, A250, A350), in `luban.rs`, on port 8080.
 
-`protocol: "moonraker"` or `protocol: "luban"` skips the probe. J1 and Artisan speak SACP over TCP 8888, which is not implemented.
+`protocol: "moonraker"`, `"luban"` or `"sacp"` skips the probe. J1, J1S and Artisan speak SACP over TCP 8888 (`sacp.rs`): a config with that protocol, or with port 8888 and no protocol, gets `not_supported` in words that say SACP is not supported yet.
+
+## Discovery
+
+`discover.rs`: the ASCII string `discover` broadcast to UDP 20054 on each local network (and sent to one address by `probe`). Replies are `NAME@IP|key:value|...`; `model` and `SACP` are read, and a J1 or Artisan is listed on port 8888, a 2.0 machine on 8080.
 
 ## Luban API
 
@@ -22,6 +26,8 @@ Plugin id `snapmaker`. Two protocols, picked by probing when the config does not
 - Snapmaker Luban, HTTP channel: https://github.com/Snapmaker/Luban (`src/server/services/machine/channels/SstpHttpChannel.ts`, `src/server/services/task-manager/workers/heartBeat.ts`)
 - Notes on newer A-series connections (token only in request bodies, confirmation on the touchscreen): https://github.com/James-Jennison/nozzle-it-all/pull/46
 - Snapmaker U1 Moonraker: https://github.com/Snapmaker/u1-moonraker
+- UDP discovery: https://forum.snapmaker.com/t/documentation-of-the-web-api/20976, https://github.com/macdylan/sm2uploader
+- SACP: https://github.com/Snapmaker/Snapmaker-SACP
 
 ## Source licenses
 

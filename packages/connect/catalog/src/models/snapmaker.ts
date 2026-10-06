@@ -56,8 +56,8 @@ export const SNAPMAKER: PrinterModel[] = [
     defaultNozzle: 0.4,
     nozzleCount: 2,
     connections: ['export'],
-    find: find({ ip: 'Not needed. The J1 uses a protocol SlicerX does not speak yet (SACP over TCP 8888).' }),
-    note: 'Not connectable yet. Save G-code and carry it over on USB.',
+    find: find({ ip: 'Not needed yet. A scan finds the J1, but it uses a protocol SlicerX does not speak yet (SACP over TCP 8888).' }),
+    note: 'Found by a scan, not connectable yet. Save G-code and carry it over on USB.',
   },
   {
     id: 'snapmaker-artisan',
@@ -72,7 +72,7 @@ export const SNAPMAKER: PrinterModel[] = [
     // and its slicer profile (fdm_a400, from fdm_linear2_dual) say.
     nozzleCount: 2,
     connections: ['export'],
-    find: find({ ip: 'Not needed. The Artisan uses a protocol SlicerX does not speak yet (SACP over TCP 8888).' }),
-    note: 'Not connectable yet. Save G-code and carry it over on USB.',
+    find: find({ ip: 'Not needed yet. A scan finds the Artisan, but it uses a protocol SlicerX does not speak yet (SACP over TCP 8888).' }),
+    note: 'Found by a scan, not connectable yet. Save G-code and carry it over on USB.',
   },
 ]

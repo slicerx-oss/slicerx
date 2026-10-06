@@ -1,6 +1,6 @@
 # Snapmaker
 
-Connects to the Snapmaker U1 and to Snapmaker 2.0 machines (A150, A250, A350) in their 3D printing configuration: status, temperatures, uploads, start, pause, resume, cancel and G-code lines. J1 and Artisan are not supported yet.
+Connects to the Snapmaker U1 and to Snapmaker 2.0 machines (A150, A250, A350) in their 3D printing configuration: status, temperatures, uploads, start, pause, resume, cancel and G-code lines. A scan finds the 2.0 machines, the J1 and the Artisan; the J1, J1S and Artisan cannot be connected yet.
 
 ## For users
 
@@ -15,7 +15,7 @@ The U1 runs Klipper with Moonraker, so all four toolheads are read. See the Moon
 ### Snapmaker 2.0 (A150, A250, A350)
 
 1. On the touchscreen, open Settings, then the Wi-Fi or Network page, and connect the machine. Note the IP address shown there.
-2. In SlicerX, add a printer, choose Snapmaker, and enter the IP address. Choose Pair.
+2. In SlicerX, add a printer and choose Scan: the machine answers with its name and model. If it does not appear, choose Snapmaker and enter the IP address. Choose Pair.
 3. Look at the machine's touchscreen: it asks whether to allow the connection. Tap to confirm within a minute. SlicerX stores the token the machine gives it in your keychain, so you do this once per machine (or again after the machine forgets the pairing).
 
 What works: the 3D printing head, single or dual extruder. Laser and CNC heads are refused. Status shows temperatures, job name, progress and time left, and warnings when the enclosure door is open or filament has run out.
@@ -24,7 +24,7 @@ Sending a file loads it on the machine's screen. Only the file you sent last can
 
 ### Network and firewall
 
-TCP 8080 for the 2.0 machines, TCP 80 for the U1.
+TCP 8080 for the 2.0 machines, TCP 80 for the U1, UDP 20054 for scanning.
 
 ### Common problems
 
@@ -37,7 +37,8 @@ TCP 8080 for the 2.0 machines, TCP 80 for the U1.
 | Offline for a moment, then back | The A350 drops idle sessions. SlicerX reconnects with the stored token, at most every 10 seconds. |
 | "laser and CNC tool heads is not supported" | The machine has a laser or CNC module attached. Attach the 3D printing head. |
 | Start says the prepared file was not found | You sent a different file after this one. Send it again, then start. |
-| J1 or Artisan does not connect | These machines use a different protocol (SACP over TCP 8888), which is not supported yet. |
+| "the J1, J1S and Artisan protocol (SACP) is not supported" | These machines use a different protocol (SACP over TCP 8888), which is not supported yet. Save the G-code and print from a USB drive. |
+| A scan finds nothing | The broadcast on UDP 20054 is blocked: another network, a guest Wi-Fi, a VLAN, client isolation, or a firewall on the computer. Enter the IP address. |
 | "is unreachable" | Wrong IP, machine off, or Wi-Fi disabled on the touchscreen. |
 
 ### Untested on hardware
@@ -46,9 +47,19 @@ The 2.0 driver was built from Snapmaker Luban's public source and community note
 
 ## For integrators
 
-Plugin id `snapmaker`. Capabilities: status, events, upload, start, pause, resume, cancel, camera (U1 only when a webcam exists), G-code console. Network: `lan:80`, `lan:8080`, `lan:7125`.
+Plugin id `snapmaker`. Capabilities: status, events, upload, start, pause, resume, cancel, camera (U1, when Moonraker lists a webcam), G-code console. Network: `lan:80`, `lan:8080`, `lan:7125`, UDP 20054.
 
-Printer config: `host`, optional `port`, `credentialRef` (keychain entry that holds the pairing token, or the Moonraker API key), `protocol` (`moonraker` or `luban`; probed when unset: Moonraker on the configured port or 80, otherwise Luban on 8080), `pollMs` (default 2000 for 2.0 machines).
+The U1's internal RTSP streams on 8554 and 8555 exist only on the community extended firmware. Which camera the stock firmware offers, and where, is unconfirmed; SlicerX shows one only when Moonraker's webcam list names it.
+
+Printer config: `host`, optional `port`, `credentialRef` (keychain entry that holds the pairing token, or the Moonraker API key), `protocol` (`moonraker`, `luban` or `sacp`; probed when unset: port 8888 means SACP, else Moonraker on the configured port or 80, otherwise Luban on 8080), `pollMs` (default 2000 for 2.0 machines).
+
+### Discovery
+
+`discover` broadcasts the ASCII string `discover` to UDP 20054 from each local network, three times across the window, and reads the pipe separated replies, such as `A350-3DP@192.168.1.100|model:A350|status:IDLE`: the name and address before `|`, then `key:value` pairs. Only `model` and `SACP` are used; the key names are community knowledge. A reply without an address takes the sender's. A J1 or Artisan (by model or name, or `SACP:1`) is listed with port 8888, a 2.0 machine with 8080. `probe` sends the same string to a typed address alone.
+
+### SACP
+
+J1, J1S and Artisan speak SACP, a binary protocol on TCP 8888. `connect` and `authorize` for them return `not_supported` with words that say so, so setup can offer saving the G-code instead of reporting an unreachable 2.0 machine.
 
 ### Pairing
 
@@ -70,8 +81,8 @@ Polled every `pollMs` (default 2000). The screen firmware is slow; keep it at tw
 
 ### Testing
 
-`snapmaker_luban_pairs_and_passes_the_contract`, `snapmaker_starts_only_the_file_sent_last` and `snapmaker_luban_recovers_a_dropped_session_and_says_when_to_pair_again` in `tests/drivers.rs`, against a fake that confirms a new token after two status polls (`--only snapmaker-luban`). Its control port takes `POST /snapmaker {drop, decline, forget}` to drop sessions, refuse prompts and forget tokens. The link test `pairing_a_snapmaker_stores_the_token_without_returning_it` covers `printers.authorize`.
+`snapmaker_luban_pairs_and_passes_the_contract`, `snapmaker_starts_only_the_file_sent_last`, `snapmaker_luban_recovers_a_dropped_session_and_says_when_to_pair_again` and `snapmaker_sacp_machines_say_they_are_not_supported_yet` in `tests/drivers.rs`, and the discovery tests in `src/drivers/snapmaker/discover.rs`,, against a fake that confirms a new token after two status polls (`--only snapmaker-luban`). Its control port takes `POST /snapmaker {drop, decline, forget}` to drop sessions, refuse prompts and forget tokens. The link test `pairing_a_snapmaker_stores_the_token_without_returning_it` covers `printers.authorize`.
 
 ### Sources
 
-Snapmaker Luban: https://github.com/Snapmaker/Luban (`SstpHttpChannel.ts`, `heartBeat.ts`). Newer A-series connection notes: https://github.com/James-Jennison/nozzle-it-all/pull/46. U1 Moonraker: https://github.com/Snapmaker/u1-moonraker.
+Snapmaker Luban: https://github.com/Snapmaker/Luban (`SstpHttpChannel.ts`, `heartBeat.ts`). Newer A-series connection notes: https://github.com/James-Jennison/nozzle-it-all/pull/46. UDP discovery: https://forum.snapmaker.com/t/documentation-of-the-web-api/20976 and https://github.com/macdylan/sm2uploader. SACP: https://github.com/Snapmaker/Snapmaker-SACP. U1 Moonraker: https://github.com/Snapmaker/u1-moonraker.

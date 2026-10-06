@@ -93,7 +93,7 @@ test('discovery is listed only where a protocol allows it, and says what it send
     prusalink: 'mdns',
     duet: 'manual',
     creality: 'mdns',
-    snapmaker: 'manual',
+    snapmaker: 'udp-broadcast',
     elegoo: 'udp-broadcast',
     export: 'manual',
   })

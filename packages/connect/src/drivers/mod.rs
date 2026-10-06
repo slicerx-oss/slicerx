@@ -37,6 +37,6 @@ pub(crate) fn all(
         Box::new(DuetConnector::new(gate.clone())),
         Box::new(CrealityConnector::new(gate.clone())),
         Box::new(ElegooConnector::new(gate.clone()).with_discovery_bind(discovery_bind)),
-        Box::new(SnapmakerConnector::new(gate)),
+        Box::new(SnapmakerConnector::new(gate).with_discovery_bind(discovery_bind)),
     ]
 }

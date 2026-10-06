@@ -113,7 +113,10 @@ export const CONNECTION_METHODS: readonly ConnectionMethod[] = [
     plugin: 'snapmaker',
     guide: 'snapmaker.md',
     defaultPort: 8080,
-    discovery: { kind: 'manual', detail: 'Snapmaker machines are not found automatically. Enter the IP address.' },
+    discovery: {
+      kind: 'udp-broadcast',
+      detail: 'Sends one UDP broadcast on port 20054 when you start a scan; the A150, A250, A350, J1 and Artisan answer it. Never runs in the background.',
+    },
     fields: [host, { key: 'pairing', label: 'Pair on the touchscreen', secret: true, required: false }],
     pairsOnPrinter: true,
     summary: 'The U1 needs only its address. Snapmaker 2.0 machines ask you to confirm on their touchscreen once.',
