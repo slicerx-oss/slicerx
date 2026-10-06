@@ -20,6 +20,8 @@ use std::f64::consts::PI;
 
 mod rim;
 
+pub(crate) use rim::{Rim, rims_on};
+
 const MARGIN_MM: f64 = 0.01;
 const MAX_MM: f64 = 1000.0;
 pub const DEFAULT_TOLERANCE_MM: f64 = 0.01;

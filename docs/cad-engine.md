@@ -16,7 +16,8 @@ SlicerX is a slicer, and its modeling tools cover what people need to make or fi
 | Free sketch | Lines, arcs and circles with typed sizes on the bed or a face, checked for closure and crossings, with corner fillets and chamfers; extruded or revolved as a new body, joined or cut | `sketch.rs`, `sketch_corner.rs`, `face.rs` |
 | Push and pull | Move a flat face along its normal, adding or cutting material | `push.rs` |
 | Kept dimensions | Dimensions anchored to the model that follow later edits | `dimension.rs` |
-| Fillet and chamfer | Round or bevel straight edges between flat faces, with sphere corners | `edge.rs`, docs/cad-fillet.md |
+| Fillet and chamfer | Round or bevel straight edges between flat faces, with sphere corners, and the round edge where a flat face meets a cylinder square to it (a hole's rim, a boss's root) | `edge.rs`, `edge/rim.rs`, docs/cad-fillet.md |
+| Hole tool | Find a round hole from a pick (through or blind, its depth and diameter) and make it another size in place, with a counterbore or a countersink at its entry | `hole.rs` |
 | Editable history | Each object keeps its CAD steps; editing a step replays the ones after it | app (`packages/app/src/cad/history`), docs/cad-history.md |
 | STEP import | STEP files tessellated by occt-import-js in a worker, then repaired like any import | app (`step-worker.ts`) |
 
@@ -57,6 +58,8 @@ Meshes are flat (`{positions: [x, y, z, ...], indices: [a, b, c, ...]}`) or base
 | `text.mesh` | `text`, `heightMm`, `options` (size, spacing, align, kerning), `frame`, `fontBase64` | mesh, text bounds, characters the font lacks |
 | `import.auto` | `data` (`base64`), `name`, `format`, `auto` (repair, split, declared unit) | objects with parts and repair counts, unit suggestion, summary sentences, warnings |
 | `fit.check` | `mesh` or `meshes`, `minGapMm`, `minVerticalGapMm`, `layerHeightMm` | parts, gaps (size, limit, horizontal, vertical or fused, end points), warning sentences |
+| `hole.find` | `mesh`, `triangle`, `at` (a pick on the hole's wall) | `entry` (center on the entry face, world), `axis` (out through the entry), `diameterMm`, `depthMm`, `through`; the entry is the end nearest `at` |
+| `hole.apply` | `mesh`, `hole` (as `hole.find` returns it), `spec` (`diameterMm`, optional `depthMm` for a blind hole, optional `counterbore` `{diameterMm, depthMm}` or `countersink` `{diameterMm, angleDeg}`, 90 by default) | mesh in the item's frame, `report` (volume change, watertight, shells); a smaller hole or a shallower blind one first fills the old one flush with its ends |
 | `resume` | `meshes` (every object with its transform) or `mesh`, `measuredHeightMm` or `failedLayer`, layer heights or `layerTopsMm` | layer to resume at, printed height, resume Z, warnings, optionally the part left to print |
 
 Errors come back as a message the UI can show as is, for example "the cut removes the whole body".

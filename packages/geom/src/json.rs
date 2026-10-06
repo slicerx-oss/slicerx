@@ -60,6 +60,8 @@ pub const OPERATIONS: &[&str] = &[
     "edge.fillet.preview",
     "sketch.fillet",
     "sketch.chamfer",
+    "hole.find",
+    "hole.apply",
     "nest.footprint",
     "nest.arrange",
     "nest.start",

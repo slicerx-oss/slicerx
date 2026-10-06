@@ -19,7 +19,7 @@ use std::f64::consts::PI;
 
 /// A closed circular edge between a plane and a cylinder square to it.
 #[derive(Clone, Copy, Debug)]
-pub(super) struct Rim {
+pub(crate) struct Rim {
     pub center: V3,
     /// The plane face's outward normal, along the cylinder's axis.
     pub normal: V3,
@@ -29,9 +29,9 @@ pub(super) struct Rim {
     /// Sides of the rim.
     pub steps: usize,
     /// 1 when the flat face lies outside the circle (a hole, a boss's root), -1 inside (a round plate's rim).
-    out: f64,
+    pub out: f64,
     /// 1 when the cylinder runs from the rim along the plane's normal (a boss), -1 against it (a hole).
-    along: f64,
+    pub along: f64,
     pub convex: bool,
     /// How far the flat face reaches from the rim, and the cylinder runs from it, mm.
     pub room: [f64; 2],
@@ -241,6 +241,39 @@ impl Ctx<'_> {
     }
 }
 
+/// The cylinder face of triangle `t` and every rim where it meets a flat face, or none when `t` is not on a
+/// cylinder.
+pub(crate) fn rims_on(mesh: &TriMesh, t: usize) -> Option<(Surface, Vec<Rim>)> {
+    let cx = Ctx::new(mesh);
+    let cf = *cx.faces.ids.get(t)?;
+    let cyl = cx.faces.table[cf as usize];
+    if !matches!(cyl, Surface::Cylinder { .. }) {
+        return None;
+    }
+    let mut planes: Vec<u32> = cx
+        .edges
+        .values()
+        .filter_map(|tris| {
+            let [t1, t2] = tris[..] else { return None };
+            let (f1, f2) = (cx.face_of(t1), cx.face_of(t2));
+            let other = if f1 == cf {
+                f2
+            } else if f2 == cf {
+                f1
+            } else {
+                return None;
+            };
+            matches!(cx.faces.table[other as usize], Surface::Plane { .. }).then_some(other)
+        })
+        .collect();
+    planes.sort_unstable();
+    planes.dedup();
+    Some((
+        cyl,
+        planes.into_iter().filter_map(|pf| cx.rim(pf, cf, None)).collect(),
+    ))
+}
+
 /// The rim the mesh edge `a b` lies on, if it is one, starting at its first corner in a fixed order.
 pub(super) fn at_edge(mesh: &TriMesh, a: V3, b: V3) -> Option<Rim> {
     let cx = Ctx::new(mesh);
@@ -292,7 +325,7 @@ pub(super) fn of_ref(mesh: &TriMesh, e: &super::EdgeRef, n: usize) -> Result<Rim
 }
 
 impl Rim {
-    pub fn length(&self) -> f64 {
+    pub(super) fn length(&self) -> f64 {
         2.0 * PI * self.radius
     }
 
@@ -303,7 +336,7 @@ impl Rim {
     }
 
     /// The edge's geometry at its start corner, as a straight edge's would be there.
-    pub fn geom(&self) -> Geom {
+    pub(super) fn geom(&self) -> Geom {
         let e_r = self.radial_at(self.start);
         let ta = vec3::scale(e_r, self.out);
         let tb = vec3::scale(self.normal, self.along);
@@ -328,12 +361,12 @@ impl Rim {
         }
     }
 
-    pub fn dihedral_deg(&self) -> f64 {
+    pub(super) fn dihedral_deg(&self) -> f64 {
         self.geom().dihedral_deg()
     }
 
     /// The widest bevel on the flat face and on the cylinder, and the largest round, that fit.
-    pub fn widths(&self, profile: Profile) -> [f64; 2] {
+    pub(super) fn widths(&self, profile: Profile) -> [f64; 2] {
         match profile {
             Profile::Chamfer { d1, d2 } => [d1, d2],
             Profile::Fillet { radius, .. } => [setback(&self.geom(), radius); 2],
@@ -341,7 +374,7 @@ impl Rim {
     }
 
     /// The body to take away (a convex rim) or add (a concave one).
-    pub fn tool(&self, profile: Profile, n: usize) -> Result<TriMesh> {
+    pub(super) fn tool(&self, profile: Profile, n: usize) -> Result<TriMesh> {
         let g = self.geom();
         // Past the hole's sides by more than a side bulges inside the circle, so no sliver of wall is left.
         let sagitta = self.radius * (1.0 - (PI / self.steps as f64).m_cos());
