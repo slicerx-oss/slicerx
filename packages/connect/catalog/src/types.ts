@@ -23,6 +23,7 @@ export type ConnectionId =
   | 'creality'
   | 'snapmaker'
   | 'elegoo'
+  | 'ultimaker'
   | 'export'
 
 export interface Brand {

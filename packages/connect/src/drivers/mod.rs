@@ -15,6 +15,7 @@ pub mod moonraker;
 pub mod octoprint;
 pub mod prusalink;
 pub mod snapmaker;
+pub mod ultimaker;
 
 pub use bambu::BambuConnector;
 pub use creality::CrealityConnector;
@@ -24,6 +25,7 @@ pub use moonraker::MoonrakerConnector;
 pub use octoprint::OctoPrintConnector;
 pub use prusalink::PrusaLinkConnector;
 pub use snapmaker::SnapmakerConnector;
+pub use ultimaker::UltiMakerConnector;
 
 pub(crate) fn all(
     gate: Arc<dyn ApprovalGate>,
@@ -37,6 +39,7 @@ pub(crate) fn all(
         Box::new(DuetConnector::new(gate.clone())),
         Box::new(CrealityConnector::new(gate.clone())),
         Box::new(ElegooConnector::new(gate.clone()).with_discovery_bind(discovery_bind)),
-        Box::new(SnapmakerConnector::new(gate).with_discovery_bind(discovery_bind)),
+        Box::new(SnapmakerConnector::new(gate.clone()).with_discovery_bind(discovery_bind)),
+        Box::new(UltiMakerConnector::new(gate)),
     ]
 }

@@ -7,11 +7,12 @@ SlicerX talks to printers and to two home services through connectors that share
 | [bambu-lan.md](bambu-lan.md) | Bambu Lab X1, P1, A1 and H2D in LAN mode |
 | [moonraker.md](moonraker.md) | Klipper printers with Moonraker |
 | [creality.md](creality.md) | Creality K1, K1 Max, K1C, K2 Plus, Ender-3 V3 series and Hi, on stock firmware or Klipper |
-| [snapmaker.md](snapmaker.md) | Snapmaker U1 and Snapmaker 2.0 (A150, A250, A350) |
+| [snapmaker.md](snapmaker.md) | Snapmaker U1 and Snapmaker 2.0 (A150, A250, A350); J1 and Artisan are found but not connected |
 | [prusalink.md](prusalink.md) | Prusa printers with PrusaLink (MK4S, MK3.9, MINI+, XL, Core One) |
 | [octoprint.md](octoprint.md) | OctoPrint servers |
 | [duet.md](duet.md) | Duet boards running RepRapFirmware 3 |
 | [elegoo.md](elegoo.md) | Elegoo Centauri Carbon (SDCP) |
+| [ultimaker.md](ultimaker.md) | UltiMaker S series and UM3 (experimental) |
 | [camera.md](camera.md) | Live camera video: what each printer gives, quality, and the stream protocol |
 | [export.md](export.md) | Printers with no supported connection: save G-code and carry it over |
 | [finding-printers.md](finding-printers.md) | How scanning finds printers, what it sends, and what to do when it finds nothing |

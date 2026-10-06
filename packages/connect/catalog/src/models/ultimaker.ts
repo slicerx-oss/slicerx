@@ -4,7 +4,8 @@ import type { PrinterModel } from '../types.ts'
 import { find, rect } from './util.ts'
 
 const FIND = find({
-  ip: 'Not needed yet. SlicerX does not speak the S series network API, so save G-code and carry it over on a USB stick.',
+  ip: 'A scan finds it. Otherwise your router\'s device list, or the network settings on the printer\'s touchscreen, show the IP address.',
+  credential: 'None. Jobs go through the printer\'s local cluster API, which needs no login. The printer and this computer must be on the same network.',
 })
 
 /**
@@ -21,9 +22,9 @@ const s = (id: string, name: string, x: number, y: number, z: number, enclosed: 
   nozzles: [0.25, 0.4, 0.6, 0.8],
   defaultNozzle: 0.4,
   nozzleCount: 2,
-  connections: ['export'],
+  connections: ['ultimaker', 'export'],
   find: FIND,
-  note: 'Not connectable yet. Save G-code and carry it over on a USB stick.',
+  note: 'Experimental: the UltiMaker connection is untested on a printer. Needs firmware 4.0 or later.',
 })
 
 export const ULTIMAKER: PrinterModel[] = [

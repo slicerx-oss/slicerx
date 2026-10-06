@@ -65,7 +65,7 @@ mod tests {
     #[test]
     fn manifests_parse() {
         let all: Vec<PluginManifest> = serde_json::from_str(MANIFESTS).unwrap();
-        assert_eq!(all.len(), 10);
+        assert_eq!(all.len(), 11);
         for m in &all {
             for t in &m.tools {
                 assert!(t.name.starts_with(&format!("{}.", m.id)), "{} prefix", t.name);

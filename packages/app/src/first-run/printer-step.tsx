@@ -262,7 +262,7 @@ const SUBSTEPS = [
 ] as const
 type SubstepId = (typeof SUBSTEPS)[number]['id']
 
-const CONNECTION_ICON: Partial<Record<ConnectionId, IconName>> = { export: 'sd-card', 'bambu-lan': 'wifi', moonraker: 'server', octoprint: 'server', prusalink: 'link', duet: 'ethernet', creality: 'wifi', elegoo: 'wifi', snapmaker: 'wifi' }
+const CONNECTION_ICON: Partial<Record<ConnectionId, IconName>> = { export: 'sd-card', 'bambu-lan': 'wifi', moonraker: 'server', octoprint: 'server', prusalink: 'link', duet: 'ethernet', creality: 'wifi', elegoo: 'wifi', snapmaker: 'wifi', ultimaker: 'wifi' }
 const NOZZLE_ICON: Record<number, IconName> = { 0.2: 'nozzle-0-2', 0.4: 'nozzle-0-4', 0.6: 'nozzle-0-6', 0.8: 'nozzle-0-8' }
 
 /** Brings a section into view without scrolling past the one being edited: only as far as needed, with 24 px to spare. */
@@ -966,7 +966,7 @@ export function adoptFound(form: PrinterForm, p: FoundPrinter): PrinterForm {
   return { ...next, ...named, fields: { ...next.fields, host: a?.host ?? p.address ?? '', port, serial: p.serial ?? '' } }
 }
 
-const CONNECTION_METHOD_IDS = new Set<string>(['bambu-lan', 'moonraker', 'octoprint', 'prusalink', 'duet', 'creality', 'snapmaker', 'elegoo'])
+const CONNECTION_METHOD_IDS = new Set<string>(['bambu-lan', 'moonraker', 'octoprint', 'prusalink', 'duet', 'creality', 'snapmaker', 'elegoo', 'ultimaker'])
 
 function filamentFor(system: 'ams' | 'mmu' | 'toolchanger', slots?: number): PrinterForm['filament'] {
   if (system === 'ams') {
