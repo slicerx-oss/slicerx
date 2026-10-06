@@ -55,9 +55,7 @@ claude mcp add slicerx -- npx -y @slicerx/mcp --allow-dir ~/prints
 
 Other clients, the policy file and the tool list are in [packages/mcp/README.md](packages/mcp/README.md). Claude Code users can also install the [SlicerX plugin](packages/claude-plugin/README.md) with `/plugin marketplace add slicerx-oss/slicerx`.
 
-## Features
-
-### The gods
+## The gods
 
 Each name marks something SlicerX does its own way, or better than the slicers it learned from.
 
@@ -70,26 +68,6 @@ Each name marks something SlicerX does its own way, or better than the slicers i
 | **atlas** | A prime tower that places and sizes itself. |
 | **norn** | Edit from Preview: click a toolpath, change the setting behind it, and see before and after. |
 | **heimdall** | Preview playback that runs the print as the machine will, tool changes and all. |
-
-### Working today
-
-- A native Rust slicing core (`sx-core`): Arachne, classic and aegis walls, the common infill patterns, tree and normal supports, brim, raft, seams, fuzzy skin and multi-material. It writes G-code for Marlin 2, Klipper and RepRapFirmware, and reads STL, OBJ, AMF and Bambu Lab or OrcaSlicer 3MF projects. The 508-layer reference plate slices in 17.1 ms (median of 15 runs on an 11-core Apple M3 Pro).
-- The same core in the browser through WebAssembly, with G-code identical to the native build.
-- The `sx` command line tool, and a C ABI (`libslicerx` and `slicerx.h`).
-- More than 700 settings with units, limits and help text, profile import, validation, and an Easy mode. Printer, filament and process presets ship with the app.
-- The MCP server with mimir's tools, the sx-geom mesh tools, and a permission policy with approvals and an action log.
-- The browser and desktop app: Prepare, Preview, Library, Printers and mimir, with calibration by need and the Print sheet, where your click is the approval.
-- CAD tools: STEP import, sketches with typed sizes, push and pull, fillet and chamfer, dimensions that stay on the model, and an editable history.
-- A print knowledge base with cited sources.
-
-In progress, working in tests and not yet proven on real hardware:
-
-- Print watch: a local detector (SigLIP2 plus frame-change signals, run on your machine) looks at the printer camera during a print. Three suspicious frames out of five send a push with no image content. Auto-pause is off by default per printer and needs mimir's confirmation of one frame. Ask mimir "how is my print going?" for a fresh capture and its reading. The model file ships beside the `sx-watch` binary.
-- Connect your AI agent: Settings, mimir, with one-click setup of the SlicerX MCP server and skills for Claude Desktop, Claude Code, ChatGPT, Codex and Cursor, each with its own agent code. An agent can watch, slice and queue. Only a person starts a print.
-- Remote access: a self-hosted relay, not deployed. The code and the phone pairing (QR code, no account needed) exist and are tested against mock printers. Nothing runs on a public server today, and you would host the relay yourself. The relay carries sealed bytes (WebRTC between your phone and your computer, with a 1 fps fallback).
-- Printer connectors against real hardware, and the desktop app (runs on macOS; Windows and Linux builds are set up in CI and not yet proven). Printer setup guides for each supported printer are in [packages/connect/docs](packages/connect/docs/README.md).
-
-Planned: a free, moderated model library that anyone can upload to, with creator pages that link out to their own sites, published npm and crates.io packages, mobile apps and hosted cloud slicing.
 
 ## Quick start
 
@@ -156,25 +134,6 @@ The core takes bytes and returns bytes, which is why the same code runs natively
 ## For people who print
 
 The SlicerX app, working in the browser and running on macOS as a desktop app so far, is built from the same base kit: Prepare, Preview, Library, Printers and mimir in one window with a command bar. It slices as you edit, sends a print through the Print sheet, picks calibration tests by what your spool and printer need, and can watch a print through the printer camera (in progress). The SlicerX edition, layered on top of the base kit, holds the code for accounts, cloud slicing and the free model library with creator pages. None of those services is hosted yet. All of it is open source and free to use. The base kit builds and runs without the edition.
-
-## Project status
-
-| Surface | State |
-| --- | --- |
-| Slicing core and `sx` CLI | Working: STL and 3MF, classic, Arachne and aegis walls, infill, supports, shells, brim, raft, seams, multi-material, G-code, preview buffer, JSON requests |
-| WebAssembly worker pool | Working in Chrome; npm package not yet published |
-| C ABI | Working; not yet published |
-| Settings, profiles and knowledge base | Working |
-| MCP server and Claude Code plugin | Working with simulated printers; real printers through `sx-link` as the connectors land |
-| Browser app, viewport and embeddable UI | Working |
-| Printer connectors | In progress; tested against mock printers, not yet on hardware |
-| Print watch | In progress; detector and push built, not yet tested on a real printer |
-| Connect your AI agent | In progress; install mechanics and panel built |
-| Remote access | Self-hosted relay, not deployed; phone pairing built |
-| Phone app | In progress |
-| Desktop app | In progress; runs on macOS, Windows and Linux builds not yet proven |
-| Theming | UI and viewport theming working |
-| Open `.sx3mf` container format | Working |
 
 <p align="center">
   <a href="docs/integrators/credit-kit">
