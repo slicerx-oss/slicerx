@@ -19,6 +19,10 @@ use std::collections::HashMap;
 const MAX_ENTRY: usize = 1 << 30;
 /// Deepest component nesting followed.
 const MAX_DEPTH: u32 = 16;
+/// Work one file may ask of the component resolver: one unit per object visited, plus its vertices and
+/// triangles for every copy placed. Components can repeat a mesh at every level, so a few lines of XML can
+/// otherwise ask for billions of copies. The 1.2 million triangle benchmark mesh costs about 1.8 million.
+const MAX_WORK: u64 = 40_000_000;
 
 /// Loads the first plate of a Bambu or Orca project, or every build item of
 /// a plain 3MF.
@@ -69,6 +73,7 @@ pub(crate) fn load_plate_objects(bytes: &[u8], name: &str) -> Result<Vec<(u32, V
     let names = object_names(&settings);
     let scale = main.unit_scale;
     let mut plates: std::collections::BTreeMap<u32, Vec<Mesh>> = std::collections::BTreeMap::new();
+    let mut work = MAX_WORK;
     for item in &main.build {
         let plate = plate_of.get(&item.object).copied().unwrap_or(1);
         let mut parts = Vec::new();
@@ -78,6 +83,7 @@ pub(crate) fn load_plate_objects(bytes: &[u8], name: &str) -> Result<Vec<(u32, V
             parts: &mut parts,
             slots: &slots,
             name,
+            work: &mut work,
         };
         ctx.object(&main, &root, item.object, item.transform, item.object, 0)?;
         if parts.is_empty() {
@@ -483,6 +489,8 @@ struct Resolve<'a> {
     parts: &'a mut Vec<MeshPart>,
     slots: &'a HashMap<u32, u8>,
     name: &'a str,
+    /// What is left of [`MAX_WORK`] for the whole file.
+    work: &'a mut u64,
 }
 
 impl Resolve<'_> {
@@ -504,6 +512,13 @@ impl Resolve<'_> {
                 format!("3MF object {id} is missing in {path}"),
             ));
         };
+        let cost = 1 + (obj.positions.len() + obj.triangles.len()) as u64;
+        *self.work = self.work.checked_sub(cost).ok_or_else(|| {
+            Error::mesh(
+                self.name,
+                "3MF components repeat their meshes too many times to load",
+            )
+        })?;
         if !obj.triangles.is_empty() {
             let slot = self
                 .slots
@@ -926,6 +941,40 @@ mod tests {
         let (lo, hi) = mesh.bounds().unwrap();
         assert_eq!(lo[0], 0.0);
         assert_eq!(hi[0], 30.0);
+    }
+
+    #[test]
+    fn components_that_repeat_a_mesh_without_end_are_refused() {
+        use std::fmt::Write as _;
+        // Each level holds the level below four times: 4^15 cubes from a file under 2 KB.
+        let mut objects = CUBE_OBJECT.to_owned();
+        for id in 3..18 {
+            let parts = format!(
+                r#"<component objectid="{}" transform="1 0 0 0 1 0 0 0 1 0 0 0"/>"#,
+                id - 1
+            )
+            .repeat(4);
+            let _ = write!(
+                objects,
+                r#"<object id="{id}" type="model"><components>{parts}</components></object>"#
+            );
+        }
+        let model = format!(
+            r#"<model unit="millimeter"><resources>{objects}</resources><build><item objectid="17"/></build></model>"#
+        );
+        let bytes = zip(&[("3D/3dmodel.model", model.as_bytes(), true)]);
+        let t = std::time::Instant::now();
+        let err = Mesh::load(&bytes, "bomb.3mf").unwrap_err().to_string();
+        assert!(err.contains("too many"), "{err}");
+        assert!(t.elapsed().as_secs() < 5);
+        // Empty objects repeated the same way cost time without memory, and are refused too.
+        let empty = model.replace(
+            CUBE_OBJECT,
+            r#"<object id="2" type="model"><mesh><vertices/><triangles/></mesh></object>"#,
+        );
+        let bytes = zip(&[("3D/3dmodel.model", empty.as_bytes(), true)]);
+        assert!(Mesh::load(&bytes, "bomb.3mf").is_err());
+        assert!(t.elapsed().as_secs() < 10);
     }
 
     #[test]
