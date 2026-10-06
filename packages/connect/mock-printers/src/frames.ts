@@ -1,0 +1,65 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (C) 2026 The SlicerX contributors
+// Camera pictures the mocks can send instead of their tiny placeholder JPEG. Drawn for these tests, not photographed:
+// `HAND_FRAME` is a 320 by 180 chamber with a print on the plate and a hand reaching in from the lower left, for the camera
+// guard's tests (a detector stand-in reports the hand; no model runs here).
+
+/** A JPEG of a hand reaching into a printer. */
+export const HAND_FRAME: Buffer = Buffer.from(
+  '/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAkGBwgHBgkIBwgKCgkLDRYPDQwMDRsUFRAWIB0iIiAdHx8kKDQsJCYxJx8fLT0tMTU3' +
+  'Ojo6Iys/RD84QzQ5Ojf/2wBDAQoKCg0MDRoPDxo3JR8lNzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3' +
+  'Nzc3Nzc3Nzf/wAARCAC0AUADASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUF' +
+  'BAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVW' +
+  'V1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi' +
+  '4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAEC' +
+  'AxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVm' +
+  'Z2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq' +
+  '8vP09fb3+Pn6/9oADAMBAAIRAxEAPwDyiiiirJCiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKK' +
+  'KACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAoopVUswUdScC' +
+  'gBKK3l8H60yhha8EZHzCl/4Q3W/+fT/x4UAYFFb/APwhut/8+n/jwo/4Q3W/+fT/AMeFAGBRW/8A8Idrf/Pp/wCPCsS4hkt53hlG' +
+  'HQ7WHoaAI6KKKACiiigAooooAKKKKACiiigAooooAKKKKAF2N/dP5UbG/un8q6zYv90flRsX+6PyoA5PY390/lRsb+6fyrrNi/3R' +
+  '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' +
+  'ST1NFFACUUUUAf/Z',
+  'base64',
+)

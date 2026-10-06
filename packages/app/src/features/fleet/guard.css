@@ -1,0 +1,51 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+/* Copyright (C) 2026 The SlicerX contributors */
+/* The guard's card above the camera wall: the frame it acted on with the strike, then what happened and what to do.
+   Red while the print is paused, orange while it runs on or a start is on hold. Frame beside the words on a wide
+   screen, above them on a phone. */
+.guard-list { display: flex; flex-direction: column; gap: var(--s-4); margin-bottom: var(--s-6); }
+.guard-card { --tone: var(--orange); display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); min-width: 0; overflow: hidden; background: var(--ink-1); border: 1px solid color-mix(in srgb, var(--tone) 55%, var(--line-soft)); border-radius: var(--r-lg); box-shadow: 0 0 0 1px color-mix(in srgb, var(--tone) 18%, transparent), 0 14px 40px -18px color-mix(in srgb, var(--tone) 55%, transparent); }
+.guard-card[data-state=paused] { --tone: var(--red); }
+.guard-card:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--accent-ring), 0 14px 40px -18px color-mix(in srgb, var(--tone) 55%, transparent); }
+
+.guard-frame { position: relative; aspect-ratio: 16 / 9; min-width: 0; background: color-mix(in srgb, var(--ink-0) 55%, black); }
+.guard-frame img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.guard-noframe { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); font-size: var(--fs-md); }
+/* the spot: corner brackets around it, the strike at its center */
+.guard-spot { position: absolute; display: grid; place-items: center; background: color-mix(in srgb, var(--tone) 8%, transparent); }
+.guard-spot::before { content: ""; position: absolute; inset: 0; --k: 14px; --w: 2.5px; background:
+  linear-gradient(var(--tone), var(--tone)) top left / var(--k) var(--w), linear-gradient(var(--tone), var(--tone)) top left / var(--w) var(--k),
+  linear-gradient(var(--tone), var(--tone)) top right / var(--k) var(--w), linear-gradient(var(--tone), var(--tone)) top right / var(--w) var(--k),
+  linear-gradient(var(--tone), var(--tone)) bottom left / var(--k) var(--w), linear-gradient(var(--tone), var(--tone)) bottom left / var(--w) var(--k),
+  linear-gradient(var(--tone), var(--tone)) bottom right / var(--k) var(--w), linear-gradient(var(--tone), var(--tone)) bottom right / var(--w) var(--k);
+  background-repeat: no-repeat; }
+.guard-spot:not([data-marked])::before { opacity: 0; }
+.guard-tag { position: absolute; left: 0; bottom: calc(100% + 6px); padding: 3px 8px; border-radius: var(--r-sm); background: var(--tone); color: color-mix(in srgb, var(--tone) 12%, black); font: 600 var(--fs-sm) var(--f-body); letter-spacing: 0.04em; text-transform: uppercase; white-space: nowrap; box-shadow: var(--shadow-float); }
+.guard-spot:not([data-marked]) .guard-tag { display: none; }
+
+.strike { overflow: visible; filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.45)); }
+.strike-ring { fill: none; stroke: var(--tone); stroke-width: 2; transform-origin: center; }
+.strike[data-pulse] .strike-ring { animation: guard-pulse 1.8s ease-out infinite; }
+.strike-core { fill: color-mix(in srgb, var(--tone) 18%, transparent); }
+.strike-x path { fill: none; stroke: var(--tone); stroke-width: 2.6; stroke-linecap: round; }
+.strike-crack path { stroke: color-mix(in srgb, var(--tone) 25%, white); stroke-width: 1.6; stroke-linecap: round; }
+.strike-dot { fill: #fff; }
+@keyframes guard-pulse { 0% { transform: scale(0.82); opacity: 1; } 100% { transform: scale(1.25); opacity: 0; } }
+:root[data-motion="reduced"] .strike[data-pulse] .strike-ring { animation: none; }
+
+.guard-body { display: flex; flex-direction: column; gap: 10px; min-width: 0; padding: 16px 18px 18px; }
+.guard-top { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; min-width: 0; }
+.guard-name { font: 600 var(--fs-lg) var(--f-body); }
+.guard-model { flex: 1 1 auto; min-width: 0; font-size: var(--fs-md); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.guard-body h3 { margin: 2px 0 0; font: 600 var(--fs-xl) / 1.25 var(--f-display); color: var(--fg); }
+.guard-text { margin: 0; color: color-mix(in srgb, var(--fg) 85%, var(--muted)); line-height: 1.5; }
+.guard-banner { margin: 0; padding: 10px 12px; border-radius: var(--r-md); background: color-mix(in srgb, var(--orange) 12%, transparent); border: 1px solid color-mix(in srgb, var(--orange) 40%, transparent); color: var(--fg); line-height: 1.45; }
+.guard-stats { margin: 0; font-size: var(--fs-md); color: var(--muted); font-variant-numeric: tabular-nums; }
+.guard-acts { display: flex; flex-wrap: wrap; gap: var(--s-2); margin-top: 4px; }
+.guard-note { margin: 0; font-size: var(--fs-sm); color: var(--dim); }
+
+@media (max-width: 760px) {
+  .guard-card { grid-template-columns: minmax(0, 1fr); }
+  .guard-body { padding: 14px 14px 16px; }
+  .guard-acts > * { flex: 1 1 auto; }
+}

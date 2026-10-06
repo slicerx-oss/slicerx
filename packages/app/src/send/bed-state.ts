@@ -24,7 +24,7 @@ interface BedInfo {
 /** The hub methods the sheet uses when the printer host is a connected bridge. */
 export interface LocalPrintHost {
   /** `objects`: the plate's labeled objects, kept by the hub for printers that cannot list them (Bambu Lab). */
-  printLocal(printerId: string, file: JobFile, opts?: StartOptions, bedClear?: boolean, objects?: { id: string; name: string; skipped: false; polygon: [number, number][] }[]): Promise<unknown>
+  printLocal(printerId: string, file: JobFile, opts?: StartOptions, bedClear?: boolean, objects?: { id: string; name: string; skipped: false; polygon: [number, number][] }[], plateOk?: boolean): Promise<unknown>
   bed: { state(printerId: string): Promise<BedInfo> }
 }
 

@@ -7,6 +7,7 @@ import { readFileSync } from 'node:fs'
 import { createServer as createTlsServer, type TLSSocket } from 'node:tls'
 import { fileURLToPath } from 'node:url'
 import type { AddressInfo, Server, Socket } from 'node:net'
+import { HAND_FRAME } from './frames.ts'
 import { JPEG, type MockMachine } from './machine.ts'
 import { connack, pingresp, PacketReader, parseConnect, parsePublish, parseSubscribe, publish, puback, suback } from './mqtt.ts'
 import { startRtsp, type RunningRtsp } from './rtsp.ts'
@@ -24,6 +25,8 @@ export interface BambuExtra {
   lastJob?: string
   /** When set, the next project starts are refused with this reason (`POST /bambu {refuse}`). */
   refuse?: string
+  /** `hand`: the JPEG camera sends a picture of a hand reaching into the printer (`POST /bambu {cameraFrame}`). */
+  cameraFrame?: 'hand'
   /** The model code `get_version` and the SSDP answer report (`N2S` A1, `N1` A1 mini, `O1D` H2D; default `BL-P001`, X1 Carbon). An H2D reports the two nozzles, AMS units and external spools of `fixtures/bambu-h2d-pushall.json`. */
   model?: string
   /** `lite`: one AMS lite (the fixture's four slots) beside the external spool; `none`: the external spool only. Default: one AMS. */
@@ -411,13 +414,16 @@ export async function startBambu(m: MockMachine, log: string[]): Promise<{ handl
       const user = got.toString('utf8', 16, 48).replace(/\0+$/, '')
       const pass = got.toString('utf8', 48, 80).replace(/\0+$/, '')
       if (user !== 'bblp' || pass !== MOCK_ACCESS_CODE) return void sock.destroy()
-      const head = Buffer.alloc(16)
-      head.writeUInt32LE(JPEG.length, 0)
-      head.writeUInt32LE(1, 8)
+      const frame = () => {
+        const pic = extra.cameraFrame === 'hand' ? HAND_FRAME : JPEG
+        const head = Buffer.alloc(16)
+        head.writeUInt32LE(pic.length, 0)
+        head.writeUInt32LE(1, 8)
+        return Buffer.concat([head, pic])
+      }
       // The real camera streams for as long as the socket is open.
-      const frame = Buffer.concat([head, JPEG])
-      sock.write(frame)
-      const timer = setInterval(() => sock.write(frame), 100)
+      sock.write(frame())
+      const timer = setInterval(() => sock.write(frame()), 100)
       sock.on('close', () => clearInterval(timer))
     })
   })

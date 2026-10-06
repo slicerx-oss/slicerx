@@ -710,9 +710,21 @@ export async function sendToPrinter(host: Host, printer: PrinterInfo): Promise<v
         // Bambu Lab printers cannot list the objects of their print; the hub keeps the plate's so they can be skipped.
         const { plateObjectsFromGcode } = await import('../features/fleet/device')
         const objects = plateObjectsFromGcode(new TextDecoder().decode(data))
-        await hub.printLocal(printer.id, file, opts, bed !== 'clear', objects.length ? objects : undefined)
-        toast(`${plateName} started on ${printer.name}`, 'ok')
-        void rememberStartedUse(printer, file.name)
+        const go = async (plateOk: boolean) => {
+          await hub.printLocal(printer.id, file, opts, bed !== 'clear', objects.length ? objects : undefined, plateOk)
+          toast(`${plateName} started on ${printer.name}`, 'ok')
+          void rememberStartedUse(printer, file.name)
+        }
+        try {
+          await go(false)
+        } catch (e) {
+          if ((e as { code?: unknown } | null)?.code !== 'plate_check') throw e
+          // The camera guard saw something on the plate. Its card on the Printers tab shows the picture and can start
+          // this same plate anyway.
+          const { holdStart } = await import('../features/fleet/guard')
+          holdStart(printer.id, () => go(true))
+          toast(`${printer.name}: something is on the plate. The start is on hold on the Printers tab.`, 'warn')
+        }
         return 'done'
       }
       // Other hosts: the click on the sheet's confirm button is the approval. Register the request it described and take its token.

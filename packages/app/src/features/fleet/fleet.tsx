@@ -25,6 +25,8 @@ import { openSetup, useTabLabel } from '../../first-run/look'
 import { gauges, printingSlot, slotName } from './hud'
 import { bayGroups, progressOf, statusLine, timeLeftText, wallCounts, wallKind, wallOrder, wallPill, type WallCount } from './wall'
 import { moveToBay, newBay } from './bays'
+import { askToNotify, guardHub, notePlate, useGuard } from './guard'
+import { GuardCard } from './guard-card'
 import './wall.css'
 
 const DeviceDialog = lazy(() => import('./device-dialog').then((m) => ({ default: m.DeviceDialog })))
@@ -62,6 +64,8 @@ export function Fleet() {
   // The printer view closes when its row goes; say so to its camera's close.
   if (viewing && !live) noteViewClosing(fleet.data ? 'the printer left the printer list' : 'the printer list was reloading')
   const counts = useMemo(() => wallCounts(rows, now), [rows, now])
+  const { trips } = useGuard()
+  const tripped = rows.filter((r) => trips[r.id])
 
   if (live) {
     return (
@@ -93,6 +97,13 @@ export function Fleet() {
         </Button>
       </header>
       {fleet.isError ? <p className="app-err">Printers did not answer: {fleet.error.message}</p> : null}
+      {tripped.length ? (
+        <section className="guard-list" aria-label="Camera guard">
+          {tripped.map((r) => (
+            <GuardCard key={r.id} row={r} trip={trips[r.id]!} now={now} />
+          ))}
+        </section>
+      ) : null}
       {rows.length ? <CountStrip counts={counts} /> : null}
       {fleet.isPending ? <div className="wall-grid wall-skeleton" aria-busy="true" /> : null}
       {!fleet.isPending && rows.length === 0 ? <EmptyWall /> : null}
@@ -323,6 +334,18 @@ function TileMenu({ r, groups, onView }: { r: FleetRow; groups: readonly Fleet[]
     }
   }
   const inBay = bays.some((b) => b.id === bay)
+  const guard = guardHub(host)
+  const plateFrom = useGuard().plates[r.id]
+  const takePlate = async () => {
+    askToNotify()
+    try {
+      const { plateFrom: from } = await guard!.watch.plateClear(r.id)
+      notePlate(r.id, from)
+      toast(`Saved the empty plate for ${r.name}. Before each print the camera compares with it.`, 'ok')
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'Could not take the picture', 'error')
+    }
+  }
   return (
     <MenuAnchor className="wall-more">
       <Button size="sm" variant="ghost" icon="more" aria-label={`${r.name} options`} aria-expanded={menu} onClick={() => setMenu(!menu)} />
@@ -360,6 +383,11 @@ function TileMenu({ r, groups, onView }: { r: FleetRow; groups: readonly Fleet[]
             {kind === 'off' || st.state === 'error' ? (
               <MenuItem icon="refresh" onClick={close(() => void qc.invalidateQueries({ queryKey: ['fleet'] }))}>
                 Check again
+              </MenuItem>
+            ) : null}
+            {guard && st.cameraAvailable && (st.state === 'idle' || st.state === 'finished') ? (
+              <MenuItem icon="camera" onClick={close(() => void takePlate())} {...tipAttrs({ title: 'Plate check', body: plateFrom ? `The empty plate was saved ${new Date(plateFrom).toLocaleString()}. Take it again after you change the plate or move the camera.` : 'Take a picture of the empty plate. Before each print the camera compares the plate with it and holds the start if something is left on it.' })}>
+                {plateFrom ? 'Take the empty plate again' : 'This plate is clear'}
               </MenuItem>
             ) : null}
           </>

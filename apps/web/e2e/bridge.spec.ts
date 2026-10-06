@@ -22,6 +22,7 @@ test.skip(({ isMobile }) => isMobile, 'The bridge flow runs at desktop width')
 let proc: ChildProcessByStdio<null, Readable, Readable> | undefined
 let stopMocks: (() => Promise<void>) | undefined
 let code = ''
+let linkUrl = ''
 let controlPort = 0
 let admin: { close(): void; addPrinter(c: unknown, i?: unknown): Promise<unknown>; setSecret(n: string, v: string): Promise<void>; status(id: string): Promise<{ state: string }> } | undefined
 let ports: Record<string, number> = {}
@@ -76,6 +77,7 @@ test.beforeAll(async ({}, testInfo) => {
     })
     proc!.once('exit', () => reject(new Error('sx-link exited early')))
   })
+  linkUrl = url
   const link = await connectLink({ url, code })
   admin = link as unknown as typeof admin
   await link.addPrinter({ id: 'voron', name: 'Voron', plugin: 'moonraker', host: '127.0.0.1', port: mocks.ports['moonraker'] ?? 0 }, { vendor: 'Voron', model: '2.4' })
@@ -276,5 +278,71 @@ test('A1 with Developer Mode off: status keeps coming, and Print saves the file 
     expect(await logs()).toEqual(before)
   } finally {
     await ctl('/bambu', { developerMode: null })
+  }
+})
+
+/** A failure detector stand-in on the watch role: takes one frame of the printer, then reports a hand on it. */
+async function reportHand(printerId: string): Promise<{ frame: Uint8Array; paused: boolean; close(): void }> {
+  const { connectLink } = await import('../../../packages/connect/link-client/src/index.ts')
+  const det = await connectLink({ url: linkUrl, code, role: 'watch' })
+  const frame = await new Promise<Uint8Array>((resolve) => {
+    void det.watch.subscribe((f) => f.printerId === printerId && resolve(f.data), { everyMs: 2000, printerIds: [printerId] })
+  })
+  const { paused } = await det.watch.report({ printerId, kind: 'hand', confidence: 0.88, box: [0.06, 0.55, 0.4, 0.98], note: '2 of the last 3 frames, siglip2-base-224' })
+  return { frame, paused, close: () => det.close() }
+}
+
+test('the camera guard pauses for a hand and brings its card up on Printers', async ({ page }) => {
+  test.slow()
+  await idleAgain('a1')
+  await connectApp(page)
+  const { HAND_FRAME } = await import('../../../packages/connect/mock-printers/src/frames.ts')
+  await ctl('/bambu', { cameraFrame: 'hand' })
+  await ctl('/set', { mock: 'bambu', state: 'printing' })
+  try {
+    await expect.poll(async () => (await admin!.status('a1')).state, { timeout: 20_000 }).toBe('printing')
+    const det = await reportHand('a1')
+    try {
+      expect(Buffer.from(det.frame).equals(HAND_FRAME), 'the detector got the hand frame').toBe(true)
+      expect(det.paused).toBe(true)
+      expect(await mockLog()).toMatch(/pause/)
+      // The app comes to Printers on its own, with the card in view: the frame, the strike, and Resume.
+      const card = page.locator('.guard-card')
+      await expect(card.getByRole('heading', { name: 'Paused: a hand in the printer' })).toBeVisible()
+      await expect(card.locator('img')).toHaveAttribute('src', /^blob:/)
+      await expect(card.locator('.guard-spot svg.strike')).toBeVisible()
+      await expect(card.getByRole('button', { name: 'Resume' })).toBeEnabled()
+      await card.getByRole('button', { name: 'Dismiss, it was me' }).click()
+      await expect(card).toHaveCount(0)
+    } finally {
+      det.close()
+    }
+  } finally {
+    await ctl('/bambu', { cameraFrame: null })
+  }
+})
+
+test('the camera guard on a printer it cannot pause alerts and says why', async ({ page }) => {
+  test.slow()
+  await idleAgain('a1')
+  await ctl('/bambu', { developerMode: false, cameraFrame: 'hand' })
+  try {
+    await expect.poll(async () => ((await admin!.status('a1')) as { live?: { monitorOnly?: boolean } }).live?.monitorOnly, { timeout: 20_000 }).toBe(true)
+    await connectApp(page)
+    await ctl('/set', { mock: 'bambu', state: 'printing' })
+    await expect.poll(async () => (await admin!.status('a1')).state, { timeout: 20_000 }).toBe('printing')
+    const det = await reportHand('a1')
+    try {
+      expect(det.paused).toBe(false)
+      const card = page.locator('.guard-card')
+      await expect(card.getByRole('heading', { name: 'Hand seen, print still running' })).toBeVisible()
+      await expect(card.getByRole('note')).toContainText("can't stop this print")
+      await expect(card.getByRole('note')).toContainText('Bambu Connect')
+      await expect(card.getByRole('button', { name: 'Resume' })).toHaveCount(0)
+    } finally {
+      det.close()
+    }
+  } finally {
+    await ctl('/bambu', { developerMode: null, cameraFrame: null })
   }
 })
