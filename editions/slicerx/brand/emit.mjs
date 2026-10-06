@@ -9,6 +9,7 @@ import {
   CUTS, GROUND, INK, PALETTE, TEXT, X_BOX, X_PATH, markAt, markParts, placeMark, ringShapes, squircle, svgDoc,
 } from './geometry.mjs'
 import { CAPR, fonts, lockup, textPath } from './text.mjs'
+import { PERCH_PALETTE, perchPixel, placePerch } from './raven.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const out = join(here, 'svg')
@@ -23,61 +24,92 @@ const r2 = (v) => +v.toFixed(2)
 const PLATE_DARK = ['#2b2d3c', '#15161d']
 const PLATE_IOS_DARK = ['#232533', '#17181f']
 const PLATE_LIGHT = ['#ffffff', '#e9eaf2']
-// How much of the icon the X's height takes: 56 percent, the brand book's rule for icons.
-const ICON_X = 0.56
+// How wide the raven and its layers are on an icon: 80 percent of the plate, the box of the art in
+// the 100 grid being 78 units across.
+const ICON_ART = 0.8 / 0.779
+// The farthest point of the art from the center of its 100 box (the tail tip), for round crops.
+const ART_RADIUS = 46.5
 
 const ramp = (id, [top, bottom]) =>
   `<linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${top}"/><stop offset="1" stop-color="${bottom}"/></linearGradient>`
+// The top highlight of a lifted surface: white fading out by the middle of the plate.
+const SHEEN =
+  '<linearGradient id="sh" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity="0.09"/>' +
+  '<stop offset="0.5" stop-color="#fff" stop-opacity="0"/></linearGradient>'
 
-// ---------------------------------------------------------------- the mark, on clear
+// ---------------------------------------------------------------- the X alone, on clear
 
+// The letter of the wordmark on its own, for a place that needs the X without the word.
 const markFile = (palette, cut = CUTS.full, label = NAME) => {
   const { defs, body } = markParts('', { palette, cut })
   return svgDoc(32, 32, body, { title: label, defs })
 }
-put('slicerx-mark.svg', markFile(PALETTE.dark))
-put('slicerx-mark-light.svg', markFile(PALETTE.light))
-put('slicerx-mark-small.svg', markFile(PALETTE.dark, CUTS.small))
-put('slicerx-mark-small-light.svg', markFile(PALETTE.light, CUTS.small))
-put('slicerx-mark-white.svg', markFile(PALETTE.white))
-put('slicerx-mark-ink.svg', markFile(PALETTE.ink))
+put('slicerx-x.svg', markFile(PALETTE.dark))
+put('slicerx-x-light.svg', markFile(PALETTE.light))
+put('slicerx-x-small.svg', markFile(PALETTE.dark, CUTS.small))
+put('slicerx-x-small-light.svg', markFile(PALETTE.light, CUTS.small))
+put('slicerx-x-white.svg', markFile(PALETTE.white))
+put('slicerx-x-ink.svg', markFile(PALETTE.ink))
+
+// ---------------------------------------------------------------- the mark, on clear
+
+// The icon without a plate: huginn on the layers, on the 100 grid with its margin built in.
+const perchFile = (palette, cut = 'full') => {
+  const m = placePerch('', 50, 50, 1, { palette, cut })
+  return svgDoc(100, 100, m.content, { title: NAME, defs: m.defs })
+}
+put('slicerx-mark.svg', perchFile(PERCH_PALETTE.dark))
+put('slicerx-mark-light.svg', perchFile(PERCH_PALETTE.light))
+put('slicerx-mark-small.svg', perchFile(PERCH_PALETTE.dark, 'small'))
+put('slicerx-mark-small-light.svg', perchFile(PERCH_PALETTE.light, 'small'))
+put('slicerx-mark-white.svg', perchFile(PERCH_PALETTE.white))
+put('slicerx-mark-ink.svg', perchFile(PERCH_PALETTE.ink))
+// One color that follows the text it sits in.
+put('slicerx-mark-mono.svg', perchFile(PERCH_PALETTE.current))
+put('slicerx-mark-mono-small.svg', perchFile(PERCH_PALETTE.current, 'small'))
 
 // ---------------------------------------------------------------- app icons, 1024 grid
 
-/** A plate (any path or rect markup) with the X centered on it. */
-function icon({ plate, plateDefs = '', palette, cut = CUTS.full, glow, xHeight, cx = 512, cy = 512, extra = '', title = NAME }) {
-  const m = placeMark('i', cx, cy, xHeight, { palette, cut, glow })
-  return svgDoc(1024, 1024, `${plate}${m.content}${extra}`, { title, defs: plateDefs + m.defs })
+/**
+ * A plate (any path or rect markup) with the art centered on it, `scale` times the 100 grid.
+ * `top` is drawn over the art, such as a highlight that has to stay on the plate's edge.
+ */
+function icon({ plate, plateDefs = '', palette, cut = 'full', glow, scale, cx = 512, cy = 512, top = '', title = NAME }) {
+  const m = placePerch('i', cx, cy, scale, { palette, cut, glow })
+  return svgDoc(1024, 1024, `${plate}${m.content}${top}`, { title, defs: plateDefs + m.defs })
 }
-const GLOW_DARK = { opacity: 0.62, blur: 1.2 }
-const GLOW_LIGHT = { opacity: 0.3, blur: 1.2 }
+const GLOW_DARK = { opacity: 0.42, blur: 2.6 }
+const GLOW_LIGHT = { opacity: 0.2, blur: 2.6 }
 const full = (fill) => `<rect width="1024" height="1024" fill="${fill}"/>`
+const sheet = (shape) => `<path d="${shape}" fill="url(#sh)"/>`
+const SQUARE = 'M0 0H1024V1024H0z'
 
 // iOS and iPadOS: a full square, because the system rounds the corners itself.
 put('slicerx-app-icon.svg', icon({
-  plate: full('url(#p)'), plateDefs: ramp('p', PLATE_IOS_DARK), palette: PALETTE.dark, glow: GLOW_DARK, xHeight: 1024 * ICON_X,
+  plate: full('url(#p)') + sheet(SQUARE), plateDefs: ramp('p', PLATE_IOS_DARK) + SHEEN,
+  palette: PERCH_PALETTE.dark, glow: GLOW_DARK, scale: 10.24 * ICON_ART,
 }))
 put('slicerx-app-icon-light.svg', icon({
-  plate: full('url(#p)'), plateDefs: ramp('p', PLATE_LIGHT), palette: PALETTE.light, glow: GLOW_LIGHT, xHeight: 1024 * ICON_X,
+  plate: full('url(#p)'), plateDefs: ramp('p', PLATE_LIGHT), palette: PERCH_PALETTE.light, glow: GLOW_LIGHT, scale: 10.24 * ICON_ART,
 }))
 // The tinted icon is gray on clear: the system lays its own color and ground over it. No glow,
 // because a halo would tint into a smudge.
-put('slicerx-app-icon-tinted.svg', icon({ plate: '', palette: PALETTE.mono, xHeight: 1024 * ICON_X }))
+put('slicerx-app-icon-tinted.svg', icon({ plate: '', palette: PERCH_PALETTE.mono, scale: 10.24 * ICON_ART }))
 
-// macOS: a squircle plate on the 1024 grid with 100 px of margin and a soft shadow, the X at 56
-// percent of the plate.
+// macOS: a squircle plate on the 1024 grid with 100 px of margin and a soft shadow, the art 80
+// percent of the plate across.
 {
   const plate = squircle(100, 100, 824)
   const shadow =
     '<filter id="s" x="-20%" y="-20%" width="140%" height="150%"><feGaussianBlur in="SourceAlpha" stdDeviation="14"/><feOffset dy="14"/>' +
     '<feComponentTransfer><feFuncA type="linear" slope="0.5"/></feComponentTransfer></filter>'
   put('slicerx-app-icon-macos.svg', icon({
-    plateDefs: ramp('p', PLATE_DARK) + shadow + `<clipPath id="pc"><path d="${plate}"/></clipPath>`,
+    plateDefs: ramp('p', PLATE_DARK) + SHEEN + shadow + `<clipPath id="pc"><path d="${plate}"/></clipPath>`,
     plate:
-      `<path d="${plate}" fill="#000" filter="url(#s)"/><path d="${plate}" fill="url(#p)"/>` +
+      `<path d="${plate}" fill="#000" filter="url(#s)"/><path d="${plate}" fill="url(#p)"/>${sheet(plate)}` +
       // A one pixel inner highlight on the top edge, drawn inside the plate.
       `<g clip-path="url(#pc)"><path d="${plate}" fill="none" stroke="#fff" stroke-opacity="0.1" stroke-width="4"/></g>`,
-    palette: PALETTE.dark, glow: GLOW_DARK, xHeight: 824 * ICON_X,
+    palette: PERCH_PALETTE.dark, glow: GLOW_DARK, scale: 8.24 * ICON_ART,
   }))
 }
 
@@ -87,74 +119,80 @@ put('slicerx-app-icon-tinted.svg', icon({ plate: '', palette: PALETTE.mono, xHei
   const plate = squircle(24, 24, 976)
   put('slicerx-app-icon-macos-small.svg', icon({
     plateDefs: ramp('p', PLATE_DARK), plate: `<path d="${plate}" fill="url(#p)"/>`,
-    palette: PALETTE.dark, cut: CUTS.small, xHeight: 976 * 0.6,
+    palette: PERCH_PALETTE.dark, cut: 'small', scale: 9.76 * 0.86 / 0.779,
   }))
 }
 
 // Windows: a square tile with a small radius, for Start and the Store. Sizes under 64 px use the
 // small cut and no glow, made in raster.mjs from slicerx-app-icon-windows-small.svg.
 const winPlate = `<rect width="1024" height="1024" rx="64" fill="url(#p)"/>`
+const winEdge = `<rect x="2" y="2" width="1020" height="1020" rx="62" fill="none" stroke="#fff" stroke-opacity="0.08" stroke-width="4"/>`
 put('slicerx-app-icon-windows.svg', icon({
-  plate: winPlate, plateDefs: ramp('p', PLATE_DARK), palette: PALETTE.dark, glow: GLOW_DARK, xHeight: 1024 * 0.6,
+  plate: winPlate + sheet('M64 0H960A64 64 0 0 1 1024 64V1024H0V64A64 64 0 0 1 64 0z') + winEdge,
+  plateDefs: ramp('p', PLATE_DARK) + SHEEN, palette: PERCH_PALETTE.dark, glow: GLOW_DARK, scale: 10.24 * ICON_ART,
 }))
 put('slicerx-app-icon-windows-small.svg', icon({
-  plate: winPlate, plateDefs: ramp('p', PLATE_DARK), palette: PALETTE.dark, cut: CUTS.small, xHeight: 1024 * 0.66,
+  plate: winPlate, plateDefs: ramp('p', PLATE_DARK), palette: PERCH_PALETTE.dark, cut: 'small', scale: 10.24 * 0.88 / 0.779,
 }))
 
 // Android adaptive icon. The launcher masks the layers to a circle, squircle or teardrop and shows
-// about 72 of 108 dp, with a safe zone of 66 dp. The X's diagonal is 1.38 times its height, so at
-// 43 percent it stays inside a circle 61 percent of the canvas across.
-const ANDROID_X = 1024 * 0.43
-put('slicerx-android-foreground.svg', icon({ plate: '', palette: PALETTE.dark, glow: GLOW_DARK, xHeight: ANDROID_X }))
+// about 72 of 108 dp, with a safe zone of 66 dp: the art stays inside a circle 61 percent of the
+// canvas across.
+const ANDROID = (1024 * 0.61) / 2 / ART_RADIUS
+put('slicerx-android-foreground.svg', icon({ plate: '', palette: PERCH_PALETTE.dark, glow: GLOW_DARK, scale: ANDROID }))
 put('slicerx-android-background.svg', svgDoc(1024, 1024, full(GROUND.dark)))
 // The themed layer: alpha only, which Android colors from the wallpaper.
-put('slicerx-android-monochrome.svg', icon({ plate: '', palette: PALETTE.white, xHeight: ANDROID_X }))
+put('slicerx-android-monochrome.svg', icon({ plate: '', palette: PERCH_PALETTE.white, scale: ANDROID }))
 
 // The tile: the mark on Nocturne's ground with rounded corners, for an avatar or anywhere a
 // surface needs its own background.
 const tile = (ground, palette, glow) =>
-  icon({ plate: `<rect width="1024" height="1024" rx="230" fill="${ground}"/>`, palette, glow, xHeight: 1024 * ICON_X })
-put('slicerx-tile.svg', tile(INK[0], PALETTE.dark, GLOW_DARK))
-put('slicerx-tile-light.svg', tile(GROUND.light, PALETTE.light, GLOW_LIGHT))
+  icon({ plate: `<rect width="1024" height="1024" rx="230" fill="${ground}"/>`, palette, glow, scale: 10.24 * ICON_ART })
+put('slicerx-tile.svg', tile(INK[0], PERCH_PALETTE.dark, GLOW_DARK))
+put('slicerx-tile-light.svg', tile(GROUND.light, PERCH_PALETTE.light, GLOW_LIGHT))
+
+// The avatar: a full bleed night square for places that crop to a circle, such as a Discord
+// server, and the manifest's maskable icon. The art stays inside the maskable safe circle, 80
+// percent of the square across.
+put('slicerx-avatar.svg', icon({
+  plate: full('url(#p)') + sheet(SQUARE), plateDefs: ramp('p', PLATE_IOS_DARK) + SHEEN,
+  palette: PERCH_PALETTE.dark, glow: GLOW_DARK, scale: (1024 * 0.8) / 2 / ART_RADIUS, cy: 516,
+}))
 
 // The splash mark, on clear: the app paints the ground.
-put('slicerx-splash.svg', icon({ plate: '', palette: PALETTE.dark, glow: GLOW_DARK, xHeight: 700 }))
-put('slicerx-splash-light.svg', icon({ plate: '', palette: PALETTE.light, glow: GLOW_LIGHT, xHeight: 700 }))
+put('slicerx-splash.svg', icon({ plate: '', palette: PERCH_PALETTE.dark, glow: GLOW_DARK, scale: 9 }))
+put('slicerx-splash-light.svg', icon({ plate: '', palette: PERCH_PALETTE.light, glow: GLOW_LIGHT, scale: 9 }))
 
 // ---------------------------------------------------------------- browser tab
 
 {
   // Chrome and Firefox read the SVG and can ask for the tab strip's scheme. No tile: a dark tile
-  // on a dark strip is an invisible box that only makes the mark smaller. The viewBox is cropped
-  // to the X, which has 4.5 units of air on each side in the 32 unit grid and a tab has none to
-  // spare. Safari reads no SVG icon and takes the .ico, made from the tile below.
-  const { defs, body } = markParts('', { palette: PALETTE.dark, cut: CUTS.tab, classes: true })
+  // on a dark strip is an invisible box that only makes the mark smaller. It is the 16 px cut, so
+  // the layers land on whole pixels at 16 and 32 px. Safari reads no SVG icon and takes the .ico,
+  // made from the tiles below.
+  const d = perchPixel('d', 16, { palette: PERCH_PALETTE.dark, eye: false })
+  const l = perchPixel('l', 16, { palette: PERCH_PALETTE.light, eye: false })
   const style =
-    `<style>.o{stroke:${PALETTE.dark.b}}.m{fill:${PALETTE.dark.a}}.i{stroke:${PALETTE.dark.c}}` +
-    `@media (prefers-color-scheme: light){.o{stroke:${PALETTE.light.b}}.m{fill:${PALETTE.light.a}}.i{stroke:${PALETTE.light.c}}}</style>`
-  put('slicerx-tab.svg', svgDoc(64, 64, body, { title: NAME, defs: defs + style, viewBox: '3.5 3.5 25 25' }))
+    '<style>.b{fill:url(#pbd)}.l{fill:url(#pld)}' +
+    '@media (prefers-color-scheme: light){.b{fill:url(#pbl)}.l{fill:url(#pll)}}</style>'
+  const body = d.content.replaceAll('fill="url(#pld)"', 'class="l"').replace('fill="url(#pbd)"', 'class="b"')
+  put('slicerx-tab.svg', svgDoc(64, 64, body, { title: NAME, defs: d.defs + l.defs + style, viewBox: '0 0 16 16' }))
 }
-// The tile for Safari: a clear icon it finds too dark gets a pale plate behind it, and an icon
-// with a ground of its own is left alone. 32 and 48 px use the small cut.
-function tabTile(cut, height, radius) {
-  const m = placeMark('t', 16, 16, height, { palette: PALETTE.dark, cut })
-  return svgDoc(32, 32, `<rect width="32" height="32" rx="${radius}" fill="${INK[0]}"/>${m.content}`, { title: NAME, defs: m.defs })
-}
-put('slicerx-tab-tile.svg', tabTile(CUTS.small, 22, 7))
 
-/**
- * A 16 px frame. At 16 px the rings must land on whole pixels or the gaps blur into a gray smear, so
- * this is the tab cut at exactly half scale on a 16 unit grid: the X is 12 px tall (14 on clear),
- * the outline is 1 px, and the terminals sit on whole pixel rows.
- */
-function hinted16({ ground, scale = 0.5 }) {
-  const m = placeMark('h', 8, 8, 24 * scale, { palette: PALETTE.dark, cut: CUTS.tab })
-  const plate = ground ? `<rect width="16" height="16" rx="${ground.rx}" fill="${ground.fill}"/>` : ''
-  return svgDoc(16, 16, `${plate}${m.content}`, { title: NAME, defs: m.defs })
+/** A 16 or 32 px frame: the pixel cut, its layers and eye on whole pixels, on a plate or clear. */
+function hinted(grid, ground) {
+  const m = perchPixel(`h${grid}`, grid, { palette: PERCH_PALETTE.dark, eye: !!ground })
+  const plate = ground ? `<rect width="${grid}" height="${grid}" rx="${ground.rx}" fill="${ground.fill}"/>` : ''
+  return svgDoc(grid, grid, `${plate}${m.content}`, { title: NAME, defs: m.defs })
 }
-put('slicerx-tab-tile-16.svg', hinted16({ ground: { fill: INK[0], rx: 3.5 } }))
-put('slicerx-app-icon-16.svg', hinted16({ ground: { fill: '#1c1d26', rx: 3.5 } }))
-put('slicerx-mark-16.svg', hinted16({ scale: 14 / 24 }))
+// The tiles for Safari: a clear icon it finds too dark gets a pale plate behind it, and an icon
+// with a ground of its own is left alone. 48 px scales the 32 px tile.
+put('slicerx-tab-tile.svg', hinted(32, { fill: INK[0], rx: 7 }))
+put('slicerx-tab-tile-16.svg', hinted(16, { fill: INK[0], rx: 3.5 }))
+// The 16 and 32 px frames of the desktop icons.
+put('slicerx-app-icon-16.svg', hinted(16, { fill: '#1c1d26', rx: 3.5 }))
+put('slicerx-app-icon-32.svg', hinted(32, { fill: '#1c1d26', rx: 6 }))
+put('slicerx-mark-16.svg', hinted(16))
 
 // ---------------------------------------------------------------- lockups
 

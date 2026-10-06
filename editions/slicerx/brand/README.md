@@ -1,8 +1,10 @@
 # The SlicerX brand kit
 
-The mark is an X drawn as offset perimeters: nested outlines in pink, purple and cyan, the way a slicer insets each wall. It is also the X
-in the logo. Everything the apps and the site serve is generated from geometry, so the mark stays
-sharp at 16 px, every file stays small, and the colors come from the Nocturne tokens.
+The icon is huginn, the raven, perched on three printed layers, in the purple to pink of the
+filament gradient. The logo is the word Slicer with an X drawn as offset perimeters standing in for
+its last letter: nested outlines in pink, purple and cyan, the way a slicer insets each wall.
+Everything the apps and the site serve is generated from geometry, so both stay sharp at 16 px,
+every file stays small, and the colors come from the Nocturne tokens.
 
 This kit is the build of the brand assets. Files here are Apache-2.0 like the rest of the edition. The name and
 the mark are SlicerX's: a fork changes both (see `docs/integrating.md`).
@@ -11,7 +13,8 @@ the mark are SlicerX's: a fork changes both (see `docs/integrating.md`).
 
 | File | What it does |
 |---|---|
-| `geometry.mjs` | the X, the layer cuts, the palettes, the glow, the icon plates |
+| `geometry.mjs` | the X, its cuts and palettes, the glow, the squircle |
+| `raven.mjs` | the icon: the raven, its layers, its cuts and palettes |
 | `text.mjs` | outlines type and builds the lockups |
 | `emit.mjs` | writes every SVG in `svg/`, plus `paths.json` and `layout.json` |
 | `raster.mjs` | renders `svg/` to `out/`: PNGs, `.ico`, `.icns` |
@@ -25,13 +28,47 @@ Run `./build.sh`. It needs Node 24 and, the first time, network access to instal
 Mono, all SIL OFL) are read from the workspace install of `@expo-google-fonts`, or from `FONT_DIR`.
 Nothing heavy runs: a full build takes a few seconds, so it stays on this machine.
 
-## The mark
+## The icon
+
+Drawn on a 100 unit grid. The raven faces left and sits on the top layer, its tail over the right
+end of the stack. It is one silhouette with the folded wing and the eye cut out of it, so it reads
+as a raven in one color too: a heavy beak, shaggy throat hackles, a wedge tail. The three layers are
+beads with round ends, each a step wider than the one above, the way a print's first layers spread.
+The art is moved a little up and left of the box's center, because the bird is heavy at the top
+left and its tail is light. `raven.mjs` holds the shapes and `packages/ui/src/icons/perch-path.ts`
+repeats them for the app's `AppMark`.
+
+| Cut | What changes | Used at |
+|---|---|---|
+| full | hackles, a tapered wing gap, 4.8 unit layers | 64 px and up, and all print |
+| small | a plain throat, a wider wing gap and eye, heavier layers with wider gaps | 20 to 48 px |
+| 32 px | the small cut on a 32 px grid: 2 px layers and 1 px gaps on whole rows, a 2 px eye | the 32 px Windows frame and the Safari tile |
+| 16 px | on a 16 px grid: 1 px layers on rows 10, 12 and 14, no legs or wing gap, a 1 px eye on a plate | the 16 px frames and the browser tab |
+
+The bird runs from purple at the top left to pink at the bottom right and each layer from purple to
+pink left to right. The palettes are the X's `dark` and `light` pairs, plus `white`, `ink`,
+`current` (one color that follows the text, for monochrome uses) and `mono`, a gray ramp for the
+iOS tinted icon. Large icons on a ground of ours carry a soft violet glow around the bird, outside
+its silhouette only. The layers cast none, so the gaps between them stay as dark as the plate.
+
+| File | Use |
+|---|---|
+| `slicerx-mark.svg`, `slicerx-mark-light.svg` | the icon on clear, on dark and on light |
+| `slicerx-mark-small.svg`, `slicerx-mark-small-light.svg` | the same, small cut |
+| `slicerx-mark-white.svg`, `slicerx-mark-ink.svg` | one color, on dark and on light |
+| `slicerx-mark-mono.svg`, `slicerx-mark-mono-small.svg` | `currentColor`, for monochrome uses |
+| `slicerx-mark-16.svg` | the 16 px cut on clear |
+
+## The X
 
 Drawn on a 32 unit grid. The X is 24 units tall and 23 wide, centered, with horizontal terminals and
 bands 9.6 units across. Inside the outer outline sit a second outline and a solid core, each inset
 by the same slicer style offset with a gap under a unit between them. The outer outline is pink, the
 second purple and the core cyan. `geometry.mjs` holds the math and `packages/ui/src/icons/mark-path.ts`
 repeats it for the app, so the files and the app match.
+
+The X alone is in `slicerx-x.svg`, `-light`, `-small`, `-small-light`, `-white` and `-ink`, for a
+place that needs the letter without the word. It is not the icon.
 
 ### Colors
 
@@ -62,11 +99,8 @@ way a typeface has an optical size. It is one design, not three.
 | Cut | Rings | Used at |
 |---|---|---|
 | full | two outlines and a solid core, outline 1.1 and 0.9 units | 48 px and up, and all print |
-| small | one 1.5 unit outline and a solid core | 24 to 48 px: the Safari tab tile, the 32 and 48 px icon frames, `slicerx-mark-small` |
-| tab | a 2.4 unit outline and a solid core on a slightly bolder X | the Chrome and Firefox tab icon, and the 16 px frames |
-
-The 16 px frames use the tab cut at half scale on a 16 px grid: the X is 12 px tall (14 on clear),
-the outline is 1 px, and the top and bottom edges sit on whole pixel rows.
+| small | one 1.5 unit outline and a solid core | 24 to 48 px: the large credit badge, the app's logo at small sizes, `slicerx-x-small` |
+| tab | a 2.4 unit outline and a solid core on a slightly bolder X | under 20 px: the small credit badges, the app bar's logo |
 
 Minimum size: on screen the mark is 16 px and the horizontal lockup 72 px wide. In print the mark is
 6 mm and the horizontal lockup 25 mm wide.
@@ -97,8 +131,8 @@ geometry live. Use these files where a component cannot go: an email, a slide, a
 
 ## App icons
 
-The X is 56 percent of the icon's height on every plate. The platform decides the shape, the mark
-never changes.
+The raven and its layers are 80 percent of the plate across on every plate. The platform decides
+the shape, the icon never changes.
 
 | File | Platform | Notes |
 |---|---|---|
@@ -106,12 +140,14 @@ never changes.
 | `slicerx-app-icon-light.svg` | iOS light | the `light` palette on a pale plate |
 | `slicerx-app-icon-tinted.svg` | iOS tinted | gray on clear, no glow. The system lays its color and ground over it |
 | `slicerx-app-icon-macos.svg` | macOS | a squircle plate on the 1024 grid with 100 px margin and a soft shadow |
-| `slicerx-app-icon-macos-small.svg`, `slicerx-app-icon-16.svg` | macOS and Windows, 16 to 64 px | small cut, no glow, no shadow |
-| `slicerx-app-icon-windows.svg`, `-windows-small.svg` | Windows, and Linux | a square tile with a small radius |
-| `slicerx-android-foreground.svg` | Android adaptive | the X at 43 percent, inside the 66 dp safe zone |
+| `slicerx-app-icon-macos-small.svg` | macOS, 32 to 64 px | small cut, no glow, no shadow |
+| `slicerx-app-icon-windows.svg`, `-windows-small.svg` | Windows, and Linux | a square tile with a small radius, a top highlight and an edge light; small cut under 64 px |
+| `slicerx-app-icon-16.svg`, `slicerx-app-icon-32.svg` | macOS and Windows at 16 px, Windows at 32 px | the pixel cuts on a plain plate |
+| `slicerx-android-foreground.svg` | Android adaptive | the art inside a circle 61 percent across, the 66 dp safe zone |
 | `slicerx-android-background.svg` | Android adaptive | solid ink 0 |
 | `slicerx-android-monochrome.svg` | Android themed icon | alpha only |
 | `slicerx-tile.svg`, `slicerx-tile-light.svg` | avatars | rounded plate |
+| `slicerx-avatar.svg` | round crops, such as a Discord server | full bleed night square, the art inside a circle 80 percent across; also the manifest's maskable icon |
 | `slicerx-splash.svg`, `slicerx-splash-light.svg` | launch screens | the mark on clear |
 
 `out/desktop/` holds the Tauri set: `icon.icns` (16 to 1024 px with the @2x frames), `icon.ico`
@@ -119,12 +155,12 @@ never changes.
 
 ## Browser tab
 
-Chrome and Firefox read `slicerx-tab.svg`: no tile, the viewBox cropped to the X because a tab has no
-air to spare, the tab cut, and the colors ask the browser for its scheme (the `dark` pair on a
-dark strip, the `light` pair on a light one). Safari reads no SVG icon and takes the `.ico`. When a
+Chrome and Firefox read `slicerx-tab.svg`: no tile, the 16 px cut so the layers land on whole
+pixels at 16 and 32 px, and the colors ask the browser for its scheme (the `dark` pair on a dark
+strip, the `light` pair on a light one). Safari reads no SVG icon and takes the `.ico`. When a
 clear icon is too dark for its tab bar Safari puts a pale plate behind it, and an icon with a ground
-of its own is left alone, so the `.ico` carries ink 0: `slicerx-tab-tile.svg` at 32 and 48 px and
-the pixel-grid `slicerx-tab-tile-16.svg` at 16. Check a change to either in both browsers, in both
+of its own is left alone, so the `.ico` carries ink 0: `slicerx-tab-tile.svg` (the 32 px cut) at 32
+and 48 px and `slicerx-tab-tile-16.svg` at 16. Check a change to either in both browsers, in both
 schemes.
 
 ## Cards and banners
@@ -159,7 +195,10 @@ takes its positions from `layout.json`, so the static card and the live one shar
 
 ## Don't
 
-- Stretch, squash, rotate or skew the mark or the lockup.
+- Stretch, squash, rotate or skew the icon, the mark or the lockup.
+- Use the X alone as the app's icon, or put the raven in the wordmark. The icon is the raven, the
+  logo keeps the X.
+- Flip the raven to face right, or take it off its layers.
 - Recolor the rings outside the palettes above, or reorder them.
 - Drop the outer outline or the core from the full cut.
 - Put a separate symbol in front of the word, or type the X.
@@ -171,7 +210,8 @@ takes its positions from `layout.json`, so the static card and the live one shar
 
 ## Changing it
 
-Edit the numbers in `geometry.mjs` (the X, the cuts, the palettes), `emit.mjs` (the plates, the
-cards) or `text.mjs` (the lockup), then run `./build.sh`. Colors also live in `design/tokens.css` and
+Edit the numbers in `raven.mjs` (the icon), `geometry.mjs` (the X, the cuts, the palettes),
+`emit.mjs` (the plates, the cards) or `text.mjs` (the lockup), then run `./build.sh`. Change
+`raven.mjs` and `packages/ui/src/icons/perch-path.ts` together. Colors also live in `design/tokens.css` and
 `packages/ui`, and the palettes here have to be changed with them. The phone app's `Logo` and the
 site's `Logo` draw the geometry live and take their colors from the theme.

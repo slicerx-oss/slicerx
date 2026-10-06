@@ -109,7 +109,7 @@ function icns(frames) {
 
 {
   const d = dir('desktop')
-  const win = (s) => render(s === 16 ? 'slicerx-app-icon-16.svg' : s < 64 ? 'slicerx-app-icon-windows-small.svg' : 'slicerx-app-icon-windows.svg', s)
+  const win = (s) => render(s === 16 ? 'slicerx-app-icon-16.svg' : s === 32 ? 'slicerx-app-icon-32.svg' : s < 64 ? 'slicerx-app-icon-windows-small.svg' : 'slicerx-app-icon-windows.svg', s)
   // Tauri's icon set. The Linux and Windows sizes use the square tile, macOS uses the squircle.
   for (const [file, s] of [['32x32.png', 32], ['64x64.png', 64], ['128x128.png', 128], ['128x128@2x.png', 256], ['icon.png', 512]])
     writeFileSync(join(d, file), await win(s))
@@ -148,11 +148,11 @@ function icns(frames) {
   ]
   writeFileSync(join(d, 'favicon.ico'), ico(frames))
   await write(d, 'apple-icon.png', 'slicerx-app-icon.svg', 180, { flatten: '#17181f' })
-  // The manifest's icons: the tile for "any", and a full-bleed one for "maskable", whose X stays
+  // The manifest's icons: the tile for "any", and a full-bleed one for "maskable", whose art stays
   // inside the 80 percent safe circle.
   await write(d, 'icon-192.png', 'slicerx-tile.svg', 192)
   await write(d, 'icon-512.png', 'slicerx-tile.svg', 512)
-  await write(d, 'icon-maskable-512.png', 'slicerx-app-icon.svg', 512, { flatten: '#17181f' })
+  await write(d, 'icon-maskable-512.png', 'slicerx-avatar.svg', 512, { flatten: '#17181f' })
 }
 
 // ---------------------------------------------------------------- social
@@ -163,6 +163,8 @@ function icns(frames) {
   await write(d, 'slicerx-github-social-1280x640.png', 'slicerx-github-social.svg', 1280, { height: 640 })
   await write(d, 'slicerx-avatar-1024.png', 'slicerx-tile.svg', 1024)
   await write(d, 'slicerx-avatar-400.png', 'slicerx-tile.svg', 400)
+  // A full bleed square for places that crop to a circle, such as a Discord server.
+  for (const s of [512, 1024]) await write(d, `slicerx-discord-${s}.png`, 'slicerx-avatar.svg', s, { flatten: '#17181f' })
   await write(d, 'slicerx-banner-dark-2560x720.png', 'slicerx-banner-dark.svg', 2560, { height: 720 })
   await write(d, 'slicerx-banner-light-2560x720.png', 'slicerx-banner-light.svg', 2560, { height: 720 })
 }
