@@ -17,6 +17,9 @@ const UNIT_LABELS: Record<FilamentUnit['kind'], string> = {
   'ams-2-pro': 'AMS 2 Pro',
   'ams-ht': 'AMS HT',
   mmu: 'MMU',
+  'qidi-box': 'QIDI Box',
+  cfs: 'CFS',
+  toolchanger: 'Toolheads',
   external: 'External spool',
 }
 

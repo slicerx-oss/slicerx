@@ -250,6 +250,7 @@ impl PrinterConnector for BambuConnector {
             serial: Some(serial),
             firmware: None,
             lan_only: None,
+            ..DiscoveredPrinter::default()
         })
     }
 
@@ -322,6 +323,12 @@ pub fn parse_ssdp(text: &str) -> Option<DiscoveredPrinter> {
         lan_only: h
             .get("devconnect.bambu.com")
             .map(|c| c.eq_ignore_ascii_case("lan")),
+        // `occupied` while bound to a Bambu account, `free` otherwise. `Devseclink`, `DevInf` and
+        // `DevCap` are left out: no source says what their values mean.
+        bound: h
+            .get("devbind.bambu.com")
+            .map(|b| b.eq_ignore_ascii_case("occupied")),
+        ..DiscoveredPrinter::default()
     })
 }
 
@@ -708,6 +715,7 @@ pub(crate) fn hardware_from(
         filament_units,
         developer_mode: developer_mode(p),
         sd_card: sd_card(p).map(|c| c != SdCard::Missing),
+        ..crate::types::PrinterHardware::default()
     }
 }
 
@@ -2685,6 +2693,7 @@ mod tests {
         let n = parse_ssdp(H2D_NOTIFY).unwrap();
         assert_eq!(n.serial, a.serial);
         assert_eq!(n.lan_only, Some(false));
+        assert_eq!((a.bound, n.bound), (Some(false), Some(true)));
         // Another device's answer to the same search is not a printer.
         assert!(parse_ssdp("HTTP/1.1 200 OK\r\nST: upnp:rootdevice\r\nLOCATION: http://192.168.68.1:1900/rootDesc.xml\r\n\r\n").is_none());
     }

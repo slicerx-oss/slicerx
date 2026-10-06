@@ -299,6 +299,12 @@ export interface DiscoveredPrinter {
   firmware?: string
   /** Bambu Lab: true while LAN Only Mode is on, false while the printer uses Bambu Cloud. */
   lanOnly?: boolean
+  /** Bambu Lab: true while the printer is bound to a Bambu account (SSDP `DevBind` `occupied`). */
+  bound?: boolean
+  /** The announcement offers HTTPS on `port` (Moonraker's `https_port`). */
+  tls?: boolean
+  /** An identity that survives an address change, for printers that announce one without a serial number (Moonraker's `uuid`). */
+  uid?: string
 }
 
 /** What a printer reports about its own hardware when it is added. Every field is absent when the printer did not say. */
@@ -313,6 +319,16 @@ export interface PrinterHardware {
   developerMode?: boolean
   /** Bambu Lab: whether a micro SD card is in. An X1 needs one to start a print over the network. */
   sdCard?: boolean
+  /** The printable volume, X, Y and Z in mm, from the printer's own travel limits (Klipper). */
+  buildVolumeMm?: [number, number, number]
+  /** The diameter of a round bed in mm (delta printers). */
+  bedDiameterMm?: number
+  /** Klipper's kinematics: `cartesian`, `corexy`, `delta` and so on. */
+  kinematics?: string
+  maxVelocityMmS?: number
+  maxAccelMmS2?: number
+  /** The name the printer has on the network, which outlives an address change. */
+  hostname?: string
 }
 
 export interface ExtruderInfo {
@@ -327,7 +343,8 @@ export interface ExtruderInfo {
 export interface FilamentUnit {
   /** The letter the unit's slots use (`A` for A1 to A4), or `external`. */
   id: string
-  kind: 'ams' | 'ams-lite' | 'ams-2-pro' | 'ams-ht' | 'mmu' | 'external'
+  /** `qidi-box` is a QIDI Box, `cfs` a Creality CFS, `toolchanger` one spool per toolhead (Snapmaker U1). */
+  kind: 'ams' | 'ams-lite' | 'ams-2-pro' | 'ams-ht' | 'mmu' | 'qidi-box' | 'cfs' | 'toolchanger' | 'external'
   /** The tool the unit feeds, when the printer has more than one. */
   tool?: number
   slots: FilamentSlot[]

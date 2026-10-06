@@ -117,7 +117,6 @@ function buildConfig(id: string, name: string, family: ConnectionId, c: SetupCon
   const method = connectionMethod(family)
   if (!method.plugin) throw new SetupError('not_supported', 'That connection type has nothing to connect to.')
   const { host, port } = parseAddress(c.address)
-  if (family === 'bambu-lan' && !c.serial) throw new SetupError('bad_request', 'Bambu Lab printers need the serial number.')
   return {
     id,
     name,
@@ -135,7 +134,7 @@ export function foundPrinter(p: DiscoveredPrinter): FoundSetupPrinter {
   const usual = CONNECTION_METHODS.find((m) => m.plugin === p.plugin)?.defaultPort
   const address = p.port === undefined || p.port === usual ? p.host : `${p.host}:${p.port}`
   return {
-    id: p.serial ?? `${p.plugin}@${address}`,
+    id: p.serial ?? p.uid ?? `${p.plugin}@${address}`,
     name: p.name ?? p.model ?? p.host,
     family: p.plugin,
     address,

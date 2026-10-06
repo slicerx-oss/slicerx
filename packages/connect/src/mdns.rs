@@ -486,6 +486,7 @@ pub async fn browse_printers(target: SocketAddr, window: Duration) -> Vec<Discov
             serial: None,
             firmware: None,
             lan_only: None,
+            ..DiscoveredPrinter::default()
         };
         if !out
             .iter()
