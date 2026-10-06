@@ -5,10 +5,11 @@
 #![allow(clippy::indexing_slicing)]
 
 use crate::error::Result;
-use crate::faces::{self, Faces};
+use crate::faces::{self, Faces, Surface};
 use crate::fm::Fm;
 use crate::mesh::TriMesh;
 use crate::poly2d::{self, Polygon};
+use crate::vec3;
 use crate::vec3::{Frame, V2, V3};
 
 pub fn box_mesh(min: V3, max: V3) -> TriMesh {
@@ -62,10 +63,17 @@ pub fn box_mesh(min: V3, max: V3) -> TriMesh {
     }
 }
 
+/// A straight extrusion, with its faces: the two caps are planes, a straight side is a plane and a run of sides
+/// along a tessellated arc is one cylinder.
 pub fn extrude(polys: &[Polygon], frame: &Frame, h0: f64, h1: f64) -> Result<TriMesh> {
-    loft(polys, frame, h0, h1, |p, _| p)
+    let mut faces = Faces::default();
+    let mut m = sweep(polys, frame, h0, h1, |p, _| p, Some(&mut faces))?;
+    m.faces = Some(faces::merge_meeting_planes(&m, faces));
+    Ok(m)
 }
 
+/// Polygons swept from `h0` to `h1`, each top vertex placed by `top`. The faces are left out, since `top` may twist
+/// the sides; `extrude` has them.
 pub fn loft(
     polys: &[Polygon],
     frame: &Frame,
@@ -73,6 +81,18 @@ pub fn loft(
     h1: f64,
     top: impl Fn(V2, usize) -> V2,
 ) -> Result<TriMesh> {
+    sweep(polys, frame, h0, h1, top, None)
+}
+
+fn sweep(
+    polys: &[Polygon],
+    frame: &Frame,
+    h0: f64,
+    h1: f64,
+    top: impl Fn(V2, usize) -> V2,
+    mut faces: Option<&mut Faces>,
+) -> Result<TriMesh> {
+    let up = if h1 >= h0 { 1.0 } else { -1.0 };
     let mut m = TriMesh::default();
     for poly in polys {
         let mut poly = poly.clone();
@@ -88,6 +108,19 @@ pub fn loft(
             m.triangles.push([b + t[0], b + t[2], b + t[1]]);
             m.triangles.push([b + n + t[0], b + n + t[1], b + n + t[2]]);
         }
+        if let Some(f) = faces.as_deref_mut() {
+            let cap = |h: f64, sign: f64| {
+                let normal = vec3::scale(frame.w, sign * up);
+                Surface::Plane {
+                    normal,
+                    offset: vec3::dot(normal, frame.at([0.0, 0.0], h)),
+                }
+            };
+            let (bottom, lid) = (f.push(cap(h0, -1.0)), f.push(cap(h1, 1.0)));
+            for _ in &tris {
+                f.ids.extend([bottom, lid]);
+            }
+        }
         let mut start = 0u32;
         for ring in std::iter::once(&poly.outer).chain(&poly.holes) {
             #[allow(clippy::cast_possible_truncation, reason = "vertex counts stay below 2^32")]
@@ -97,10 +130,134 @@ pub fn loft(
                 m.triangles.push([i, j, j + n]);
                 m.triangles.push([i, j + n, i + n]);
             }
+            if let Some(f) = faces.as_deref_mut() {
+                for id in side_faces(ring, frame, h0, up, f) {
+                    f.ids.extend([id, id]);
+                }
+            }
             start += len;
         }
     }
     Ok(m)
+}
+
+/// The center of the circle through three points, or none when they lie on a line.
+fn circumcenter(a: V2, b: V2, c: V2) -> Option<V2> {
+    let d = 2.0 * (a[0] * (b[1] - c[1]) + b[0] * (c[1] - a[1]) + c[0] * (a[1] - b[1]));
+    if d.abs() < 1e-18 {
+        return None;
+    }
+    let (sa, sb, sc) = (
+        a[0] * a[0] + a[1] * a[1],
+        b[0] * b[0] + b[1] * b[1],
+        c[0] * c[0] + c[1] * c[1],
+    );
+    Some([
+        (sa * (b[1] - c[1]) + sb * (c[1] - a[1]) + sc * (a[1] - b[1])) / d,
+        (sa * (c[0] - b[0]) + sb * (a[0] - c[0]) + sc * (b[0] - a[0])) / d,
+    ])
+}
+
+/// Turns no sharper than this between two sides still follow one arc (a circle has at least 12 sides).
+const ARC_TURN_DEG: f64 = 30.0;
+
+/// The face of each side of `ring` (side `k` runs from vertex `k` to the next), pushed to `f`: a plane for a
+/// straight side, one cylinder for a run of sides along an arc. Outer rings run counterclockwise and holes
+/// clockwise, so the outward side is on the right of each side in both.
+fn side_faces(ring: &[V2], frame: &Frame, h0: f64, up: f64, f: &mut Faces) -> Vec<u32> {
+    let len = ring.len();
+    let at = |k: usize| ring[k % len];
+    let size = ring
+        .iter()
+        .fold(0.0_f64, |m, p| m.max(p[0].abs()).max(p[1].abs()))
+        .max(1.0);
+    let tol = size * 1e-7;
+    let max_turn = ARC_TURN_DEG.to_radians().m_sin() + 1e-9;
+    // The circle through the ends of side k and the end of side k + 1, when they turn gently.
+    let circle = |k: usize| -> Option<(V2, f64)> {
+        let (a, b, c) = (at(k), at(k + 1), at(k + 2));
+        let (d1, d2) = ([b[0] - a[0], b[1] - a[1]], [c[0] - b[0], c[1] - b[1]]);
+        let (l1, l2) = (d1[0].m_hypot(d1[1]), d2[0].m_hypot(d2[1]));
+        // The sides of a tessellated arc are about equally long; a long straight side between two rounds is not
+        // part of either, though the four points around it may lie on one circle.
+        if l1 <= tol || l2 <= tol || l1 > 2.0 * l2 || l2 > 2.0 * l1 {
+            return None;
+        }
+        let sin = (d1[0] * d2[1] - d1[1] * d2[0]) / (l1 * l2);
+        let cos = (d1[0] * d2[0] + d1[1] * d2[1]) / (l1 * l2);
+        if cos <= 0.0 || sin.abs() > max_turn || sin.abs() < 1e-6 {
+            return None;
+        }
+        circumcenter(a, b, c).map(|o| (o, (a[0] - o[0]).m_hypot(a[1] - o[1])))
+    };
+    let circles: Vec<Option<(V2, f64)>> = (0..len).map(circle).collect();
+    let same = |x: Option<(V2, f64)>, y: Option<(V2, f64)>| match (x, y) {
+        (Some((o1, r1)), Some((o2, r2))) => {
+            (o1[0] - o2[0]).m_hypot(o1[1] - o2[1]) <= tol * 10.0 && (r1 - r2).abs() <= tol * 10.0
+        }
+        _ => false,
+    };
+    // Side k is on an arc when the circle through it and the next side matches the one through the previous side
+    // and it, or it is the first or last side of such a run.
+    let on_arc: Vec<Option<(V2, f64)>> = (0..len)
+        .map(|k| {
+            let prev = circles[(k + len - 1) % len];
+            let here = circles[k];
+            if same(prev, here) || same(here, circles[(k + 1) % len]) {
+                here
+            } else if same(circles[(k + len - 2) % len], prev) {
+                prev
+            } else {
+                None
+            }
+        })
+        .collect();
+    let mut ids = Vec::with_capacity(len);
+    let mut last: Option<((V2, f64), u32)> = None;
+    for (k, arc) in on_arc.iter().enumerate() {
+        let id = if let Some(c) = *arc {
+            match last {
+                Some((lc, id)) if same(Some(lc), Some(c)) => id,
+                _ => {
+                    let id = f.push(Surface::Cylinder {
+                        origin: frame.at(c.0, h0),
+                        axis: frame.w,
+                        radius: c.1,
+                    });
+                    last = Some((c, id));
+                    id
+                }
+            }
+        } else {
+            last = None;
+            let (a, b) = (at(k), at(k + 1));
+            let d = [b[0] - a[0], b[1] - a[1]];
+            let out2 = [d[1] * up, -d[0] * up];
+            let normal = vec3::normalize(vec3::add(
+                vec3::scale(frame.u, out2[0]),
+                vec3::scale(frame.v, out2[1]),
+            ))
+            .unwrap_or(frame.u);
+            f.push(Surface::Plane {
+                normal,
+                offset: vec3::dot(normal, frame.at(a, h0)),
+            })
+        };
+        ids.push(id);
+    }
+    // A ring that is all one arc may have started a second cylinder for the same circle at side 0.
+    if let (Some(c0), Some(cn)) = (on_arc[0], on_arc[len - 1])
+        && same(Some(c0), Some(cn))
+        && ids[0] != ids[len - 1]
+    {
+        let (keep, drop) = (ids[len - 1], ids[0]);
+        for id in &mut ids {
+            if *id == drop {
+                *id = keep;
+            }
+        }
+    }
+    ids
 }
 
 pub fn cylinder(frame: &Frame, r: f64, h0: f64, h1: f64, segments: usize) -> TriMesh {

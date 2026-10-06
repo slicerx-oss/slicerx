@@ -195,6 +195,12 @@ impl Faces {
         Self { ids, table }
     }
 
+    /// Adds a face to the table and returns its id.
+    pub fn push(&mut self, s: Surface) -> u32 {
+        self.table.push(s);
+        (self.table.len() - 1) as u32
+    }
+
     /// The triangles of face `id`.
     pub fn triangles_of(&self, id: u32) -> Vec<u32> {
         self.ids
@@ -541,6 +547,69 @@ mod tests {
             assert!(vec3::dot(vec3::normalize(vec3::tri_normal(a, b, c)).unwrap(), normal) > 0.999_999);
         }
         assert_eq!(recognize(&m).table.len(), 6);
+    }
+
+    use crate::fm::Fm as _;
+
+    fn kinds(m: &TriMesh) -> (usize, usize) {
+        let f = m.faces.as_ref().unwrap();
+        let planes = f
+            .table
+            .iter()
+            .filter(|s| matches!(s, Surface::Plane { .. }))
+            .count();
+        let cylinders = f
+            .table
+            .iter()
+            .filter(|s| matches!(s, Surface::Cylinder { .. }))
+            .count();
+        (planes, cylinders)
+    }
+
+    #[test]
+    fn an_extruded_circle_is_two_caps_and_a_cylinder() {
+        let frame = crate::vec3::Frame::from_normal([1.0, 2.0, 3.0], [0.2, -0.3, 1.0], None).unwrap();
+        let m = build::cylinder(&frame, 4.0, 0.0, 6.0, 64);
+        assert_eq!(check::faces_agree(&m), 3);
+        assert_eq!(kinds(&m), (2, 1));
+    }
+
+    #[test]
+    fn an_extruded_rounded_rectangle_has_four_flat_sides_and_four_round_corners() {
+        use crate::poly2d::{self, Polygon};
+        let mut ring = Vec::new();
+        for (cx, cy, a0) in [
+            (8.0, 3.0, 0.0),
+            (2.0, 3.0, 90.0),
+            (2.0, -3.0, 180.0),
+            (8.0, -3.0, 270.0),
+        ] {
+            for k in 0..=8 {
+                let a = (a0 + f64::from(k) * 90.0 / 8.0_f64).to_radians();
+                ring.push([cx + 2.0 * a.m_cos(), cy + 2.0 * a.m_sin()]);
+            }
+        }
+        ring.dedup_by(|a, b| (a[0] - b[0]).abs() < 1e-9 && (a[1] - b[1]).abs() < 1e-9);
+        let m = build::extrude(&[Polygon::simple(ring)], &crate::vec3::Frame::WORLD, 0.0, 5.0).unwrap();
+        assert_eq!(check::faces_agree(&m), 10);
+        assert_eq!(kinds(&m), (6, 4));
+        let hexagon = Polygon::simple(poly2d::circle([0.0, 0.0], 5.0, 6));
+        let h = build::extrude(&[hexagon], &crate::vec3::Frame::WORLD, 0.0, 5.0).unwrap();
+        assert_eq!(kinds(&h), (8, 0));
+    }
+
+    #[test]
+    fn a_round_hole_in_an_extrusion_is_a_cylinder_facing_in() {
+        use crate::poly2d::{self, Polygon};
+        let mut hole = poly2d::circle([0.0, 0.0], 2.0, 48);
+        hole.reverse();
+        let ring = Polygon {
+            outer: vec![[-6.0, -6.0], [6.0, -6.0], [6.0, 6.0], [-6.0, 6.0]],
+            holes: vec![hole],
+        };
+        let m = build::extrude(&[ring], &crate::vec3::Frame::WORLD, 0.0, 3.0).unwrap();
+        assert_eq!(check::faces_agree(&m), 7);
+        assert_eq!(kinds(&m), (6, 1));
     }
 
     #[test]
