@@ -161,6 +161,10 @@ impl PrinterConnector for SnapmakerConnector {
         luban::LubanClient::open(cfg, secrets, self.gate.clone()).await
     }
 
+    fn pairs(&self) -> bool {
+        true
+    }
+
     /// Pairing for 2.0 machines: waits for the user to confirm on the touchscreen and returns the
     /// token to keep in the keychain. Moonraker machines need no pairing.
     async fn authorize(&self, cfg: &PrinterConfig, timeout: Duration) -> Result<Option<String>> {

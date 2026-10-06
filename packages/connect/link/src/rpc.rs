@@ -1158,6 +1158,22 @@ pub(crate) async fn printer_status(b: &Arc<Bridge>, id: &str) -> Rpc<Value> {
         Err(e) if matches!(e.code.as_str(), "unreachable" | "tls" | "timeout") => {
             to_json(&PrinterStatus::offline(id))
         }
+        // Not stored here: the printers list shows it offline and asks for the code (`needsCode`).
+        Err(e) if e.code == "credential_missing" => {
+            let code_ref = b
+                .printers
+                .lock()
+                .await
+                .get(id)
+                .and_then(|r| r.config.credential_ref.clone());
+            let mut v = to_json(&PrinterStatus::offline(id))?;
+            if let Some(o) = v.as_object_mut() {
+                o.insert("needsCode".into(), json!(true));
+                // Where the app stores the code it asks for: a name, never a secret.
+                o.insert("codeRef".into(), json!(code_ref));
+            }
+            Ok(v)
+        }
         Err(e) => Err(e),
     }
 }
@@ -1544,6 +1560,18 @@ pub(crate) async fn session(b: &Arc<Bridge>, id: &str) -> Rpc<Arc<dyn PrinterSes
         .iter()
         .find(|c| c.manifest().id == config.plugin)
         .ok_or_else(|| RpcError::new("not_found", "no plugin"))?;
+    // The printer names a typed credential the store does not have: one the keychain kept only for an
+    // earlier session, or one removed by hand. Nothing was refused, so the printer is not asked. (A
+    // pairing printer has none until it pairs; that stays an auth error for the pairing flow.)
+    if !connector.pairs()
+        && let Some(r) = config.credential_ref.as_deref()
+        && sx_connect::Secrets::get(b.secrets.as_ref(), r).is_none()
+    {
+        return Err(RpcError::new(
+            "credential_missing",
+            format!("no access code is stored for printer {id} on this computer; enter it again"),
+        ));
+    }
     match connector.connect(&config, b.secrets.as_ref()).await {
         Ok(s) => {
             let s: Arc<dyn PrinterSession> = Arc::from(s);
