@@ -17,4 +17,15 @@ crate-type = ["cdylib", "rlib"]
 all = { level = "deny", priority = -1 }
 
 [dependencies]
-sx-geom = { path = ".." }
+sx-geom = { path = "..", default-features = false }
+
+# The engine's optional parts, all on by default; scripts/build.sh takes SX_GEOM_FEATURES to pick some.
+[features]
+default = ["cad", "holes", "text", "svg", "nest", "calib", "hollow"]
+cad = ["sx-geom/cad"]
+holes = ["sx-geom/holes"]
+text = ["sx-geom/text"]
+svg = ["sx-geom/svg"]
+nest = ["sx-geom/nest"]
+calib = ["sx-geom/calib"]
+hollow = ["sx-geom/hollow"]
