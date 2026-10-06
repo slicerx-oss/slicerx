@@ -1,7 +1,5 @@
 # The SlicerX name and logo
 
-<!-- Draft for the owner to review before it is published. -->
-
 The SlicerX code is open source. The SlicerX name and logo are trademarks of the SlicerX project, and this page says how forks and white-label editions may use them.
 
 ## What you can do
