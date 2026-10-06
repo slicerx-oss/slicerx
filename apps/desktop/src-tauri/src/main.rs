@@ -32,6 +32,7 @@ mod presets;
 mod probe;
 mod slicing;
 mod themes;
+mod updates;
 #[cfg(feature = "connect")]
 mod vault;
 #[cfg(feature = "connect")]
@@ -44,11 +45,12 @@ fn main() {
     // The edition's name and link scheme, from the config this build was made with; the menu and links read it.
     let context = tauri::generate_context!();
     brand::init(context.config());
+    let has_feed = updates::configured(context.config());
     let builder = tauri::Builder::default();
     // A web view whose content process died is reported and loaded again (macOS only reports this).
     #[cfg(target_os = "macos")]
     let builder = builder.on_web_content_process_terminate(crash::webview_terminated);
-    let app = builder
+    let builder = builder
         // First, so a second launch (a double-clicked file, an "Open in" link) reaches this one instead of opening another app.
         // Links go to the deep link plugin through the feature; files arrive as arguments.
         .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
@@ -69,13 +71,21 @@ fn main() {
         // The menu bar is there from the first frame; the page swaps in the live one when it loads.
         .menu(menu::initial)
         .on_menu_event(menu::on_event)
-        .plugin(tauri_plugin_deep_link::init())
+        .plugin(tauri_plugin_deep_link::init());
+    // The updater runs only in a build whose edition has an update feed; without one the plugin has no config to start from.
+    let builder = if has_feed {
+        builder.plugin(tauri_plugin_updater::Builder::new().build())
+    } else {
+        builder
+    };
+    let app = builder
         .manage(slicing::Slicer::default())
         .manage(files::OpenFiles::default())
         .manage(link::Bridge::default())
         .manage(opened::Pending::default())
         .manage(closing::Unsaved::default())
         .manage(menu::Shown::default())
+        .manage(updates::Updates::new(has_feed))
         .on_window_event(closing::window_event)
         .manage(watch_state())
         .setup(|app| {
@@ -131,6 +141,10 @@ fn main() {
             firewall::firewall_inbound,
             #[cfg(feature = "connect")]
             firewall::firewall_open_settings,
+            updates::update_mode,
+            updates::update_check,
+            updates::update_download,
+            updates::update_restart,
             themes::themes_list,
             themes::themes_open_folder,
             probe::probe_enabled,
