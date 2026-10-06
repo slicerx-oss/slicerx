@@ -64,9 +64,10 @@ self.onmessage = async (ev: MessageEvent<ToWorker>) => {
       post({ type: 'metadata', call: msg.call, info: wasm.projectMetadata(msg.fileName, new Uint8Array(msg.data)) })
     } else if (msg.type === 'finalize') {
       const thumb = msg.thumbnail ? { width: msg.thumbnail.width, height: msg.thumbnail.height, rgba: new Uint8Array(msg.thumbnail.rgba) } : undefined
-      const done = wasm.finalizeGcode(new Uint8Array(msg.data), thumb, msg.request ? new TextEncoder().encode(msg.request) : undefined)
+      const text = (v: string | undefined) => (v ? new TextEncoder().encode(v) : undefined)
+      const done = wasm.finalizeGcode(new Uint8Array(msg.data), thumb, text(msg.request), text(msg.collide))
       const data = done.data.buffer as ArrayBuffer
-      post({ type: 'finalized', call: msg.call, data, format: done.format, ...(done.timeS !== undefined ? { timeS: done.timeS } : {}), ...(done.prepareS !== undefined ? { prepareS: done.prepareS } : {}), ...(done.layerTimeS ? { layerTimeS: done.layerTimeS } : {}), ...(done.fileName ? { fileName: done.fileName } : {}), ...(done.layerLines ? { layerLines: done.layerLines } : {}), ...(done.progressLines ? { progressLines: done.progressLines } : {}) }, [data])
+      post({ type: 'finalized', call: msg.call, data, format: done.format, ...(done.timeS !== undefined ? { timeS: done.timeS } : {}), ...(done.prepareS !== undefined ? { prepareS: done.prepareS } : {}), ...(done.layerTimeS ? { layerTimeS: done.layerTimeS } : {}), ...(done.fileName ? { fileName: done.fileName } : {}), ...(done.layerLines ? { layerLines: done.layerLines } : {}), ...(done.progressLines ? { progressLines: done.progressLines } : {}), ...(done.collisions ? { collisions: done.collisions, collisionFixes: done.collisionFixes ?? [] } : {}) }, [data])
     } else if (msg.type === 'load') {
       const id = wasm.loadMesh(msg.fileName, new Uint8Array(msg.data))
       meshIds.set(msg.meshId, id)
