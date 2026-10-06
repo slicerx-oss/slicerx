@@ -56,6 +56,7 @@ import { Pipeline } from './post'
 import { Stage } from './stage'
 import { FrameProbe, probeRequested, type ProbeStats } from './probe'
 import { Toolpaths, warmupBuffers } from './toolpaths'
+import { Strikes, type StrikeMark } from './strikes'
 import type {
   CameraState,
   CutPlaneSpec,
@@ -180,6 +181,7 @@ class ViewportImpl implements Viewport {
   private readonly controls: OrbitControls
   private readonly rig: CameraRig
   private readonly toolpaths = new Toolpaths()
+  private readonly strikes = new Strikes()
   private readonly mats = new MaterialCache()
   private readonly objects = new Map<string, ObjectEntry>()
   private readonly listeners = new Map<keyof ViewportEvents, Set<Listener>>()
@@ -355,6 +357,7 @@ class ViewportImpl implements Viewport {
     this.painter.onSettings = (s) => this.emit('paintsettings', { ...s, heightRangeMm: [...s.heightRangeMm] })
     this.stage.scene.add(this.gizmo.group)
     this.stage.previewRoot.add(this.toolpaths.root)
+    this.toolpaths.root.add(this.strikes.root)
     this.stage.objectsRoot.add(this.brim.group)
     this.stage.objectsRoot.add(this.gaps.group)
     this.stage.objectsRoot.add(this.guides.group)
@@ -1880,6 +1883,7 @@ class ViewportImpl implements Viewport {
     setSharedSceneColors(t.scene)
     this.mats.dispose()
     this.toolpaths.setTheme(t)
+    this.strikes.setColors(t.scene.overhangRed, t.scene.overhangAmber)
     this.applyMaterials()
   }
 
@@ -2702,6 +2706,11 @@ class ViewportImpl implements Viewport {
     this.invalidate()
   }
 
+  setStrikes(marks: readonly StrikeMark[] | null): void {
+    this.strikes.set(marks)
+    this.invalidate()
+  }
+
   previewRanges(): PreviewRanges {
     return this.toolpaths.ranges()
   }
@@ -2812,6 +2821,7 @@ class ViewportImpl implements Viewport {
   dispose(): void {
     if (this.disposed) return
     this.disposed = true
+    this.strikes.dispose()
     this.painter.dispose()
     this.gizmo.dispose()
     this.cutPreview.detach()
