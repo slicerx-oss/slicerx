@@ -193,12 +193,30 @@ const DENIED: &[(&str, &str, &str)] = &[
     ("SET_PIN", "drives a pin directly", "pin_write"),
     ("M42", "drives a pin directly", "pin_write"),
     ("M43", "changes pin state", "pin_write"),
+    // RepRapFirmware: a file could lock the owner out or take the printer off the network.
+    ("M551", "sets the printer's password", "network_change"),
+    (
+        "M552",
+        "changes the printer's network connection",
+        "network_change",
+    ),
+    ("M553", "changes the printer's network mask", "network_change"),
+    ("M554", "changes the printer's network gateway", "network_change"),
+    ("M587", "adds a Wi-Fi network to the printer", "network_change"),
+    (
+        "M588",
+        "removes a Wi-Fi network from the printer",
+        "network_change",
+    ),
+    ("M589", "changes the printer's access point", "network_change"),
+    ("M98", "runs a macro file on the printer", "macro_file"),
 ];
 
 /// Findings of `DENIED` that stock printer profiles use in their own G-code (the Bambu start
 /// sequences save their calibration with `M500` and set soft endstops with `M211`): only warnings for
 /// trusted text.
-const MAKER_SETUP: &[&str] = &["eeprom_write", "eeprom_load", "endstops"];
+/// Duet start G-code calls its own macros with `M98`, so a profile may too.
+const MAKER_SETUP: &[&str] = &["eeprom_write", "eeprom_load", "endstops", "macro_file"];
 
 /// Commands that are legal but change state a person should approve.
 const WARNED: &[(&str, &str, &str)] = &[
