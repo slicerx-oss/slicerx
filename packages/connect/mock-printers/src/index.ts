@@ -155,10 +155,14 @@ export async function startMocks(opts: StartOptions = {}): Promise<RunningMocks>
     // want another code (null: the access code again); `digestQop: true` makes its Digest challenge offer qop;
     // `dropPlays: n` makes its camera drop the next n PLAY requests; `dropWithinMs` makes it drop a PLAY that
     // comes that soon after its last session ended; `stallCamera: true` makes the camera's playing sessions stop
-    // sending frames with their connections left open.
+    // sending frames with their connections left open. `printerType` puts a `printer_type` in its reports; `storage`
+    // (`none`, `normal`, `abnormal`, `readonly`) is the SD card it reports, and `emmc: true` says it prints without one.
     if (req.path === '/bambu' && req.method === 'POST') {
       if (!bambuExtra) return { status: 404 }
-      const b = req.json() as { refuse?: string | null; model?: string; ams?: BambuExtra['ams']; external?: BambuExtra['external'] | null; tagged?: number[]; liveview?: boolean; inBandParameterSets?: boolean; cameraCode?: string | null; digestQop?: boolean; dropPlays?: number; dropWithinMs?: number; stallCamera?: boolean }
+      const b = req.json() as { refuse?: string | null; model?: string; ams?: BambuExtra['ams']; external?: BambuExtra['external'] | null; tagged?: number[]; liveview?: boolean; inBandParameterSets?: boolean; cameraCode?: string | null; digestQop?: boolean; dropPlays?: number; dropWithinMs?: number; stallCamera?: boolean; printerType?: string; storage?: BambuExtra['storage']; emmc?: boolean }
+      if (b.printerType !== undefined) bambuExtra.printerType = b.printerType
+      if (b.storage !== undefined) bambuExtra.storage = b.storage
+      if (b.emmc !== undefined) bambuExtra.emmc = b.emmc
       if (b.liveview !== undefined) bambuExtra.liveview = b.liveview
       if (b.inBandParameterSets !== undefined) bambuExtra.inBandParameterSets = b.inBandParameterSets
       if (b.cameraCode) bambuExtra.cameraCode = b.cameraCode

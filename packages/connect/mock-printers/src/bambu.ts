@@ -52,7 +52,15 @@ export interface BambuExtra {
   dropWithinMs?: number
   /** When set (ms since the epoch), the camera sessions playing then stop sending frames and keep their connections open. */
   stalledAt?: number
+  /** `print.printer_type` in every report (`C12`, or `3DPrinter-X1` as old X1 firmware sends it); absent when unset. */
+  printerType?: string
+  /** The storage the report shows (`home_flag` bits 8 and 9 and `sdcard`): `normal` when unset. */
+  storage?: 'none' | 'normal' | 'abnormal' | 'readonly'
+  /** `fun2` bit 0: the printer prints from its internal storage without an SD card. */
+  emmc?: boolean
 }
+
+const STORAGE = { none: 0, normal: 1, abnormal: 2, readonly: 3 } as const
 
 const PRODUCT: Record<string, string> = { N2S: 'Bambu Lab A1', N1: 'Bambu Lab A1 mini', 'BL-P001': 'Bambu Lab X1 Carbon', O1D: 'Bambu Lab H2D' }
 
@@ -117,7 +125,11 @@ export function reportFor(m: MockMachine, x: BambuExtra = { skipped: [], printEr
       gcode_state: GCODE_STATE[m.state],
       gcode_start_time: String(m.startedAt),
       // Bits 0 to 2 are the homed axes; bit 7 is the AMS remaining capacity setting, on so slot percents count.
-      home_flag: (m.homed.includes('x') ? 1 : 0) | (m.homed.includes('y') ? 2 : 0) | (m.homed.includes('z') ? 4 : 0) | 0x80,
+      // Bits 8 and 9 are the SD card: 0 none, 1 normal, 2 abnormal, 3 read only (Bambu Studio `parse_home_flag`).
+      home_flag: (m.homed.includes('x') ? 1 : 0) | (m.homed.includes('y') ? 2 : 0) | (m.homed.includes('z') ? 4 : 0) | 0x80 | (STORAGE[x.storage ?? 'normal'] << 8),
+      sdcard: (x.storage ?? 'normal') !== 'none',
+      ...(x.emmc ? { fun2: '1' } : {}),
+      ...(x.printerType ? { printer_type: x.printerType } : {}),
       s_obj: x.skipped,
       mc_percent: m.job ? Math.round(m.job.progress * 100) : 0,
       mc_remaining_time: m.job ? Math.round(m.job.timeLeftS / 60) : 0,
@@ -266,7 +278,7 @@ export async function startBambu(m: MockMachine, log: string[]): Promise<{ handl
           }
           answer('success', 'success')
           log.push(`project_file ${JSON.stringify({ param: pr.param, url: pr.url, ams_mapping: pr.ams_mapping, ams_mapping2: pr.ams_mapping2, use_ams: pr.use_ams, bed_levelling: pr.bed_levelling, flow_cali: pr.flow_cali, vibration_cali: pr.vibration_cali, layer_inspect: pr.layer_inspect, timelapse: pr.timelapse })}`)
-          m.start(String(pr.url).replace(/^ftp:\/\/\//, '').replace(/^cache\//, ''))
+          m.start(String(pr.url).replace(/^ftp:\/\/\//, '').replace(/^file:\/\/\/sdcard\//, '').replace(/^cache\//, ''))
           extra.skipped = []
           extra.printError = 0
           break
