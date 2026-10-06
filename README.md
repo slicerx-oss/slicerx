@@ -43,50 +43,42 @@ Settings everywhere use the shared slicer key names, so existing profiles and kn
 
 ## mimir and the MCP server
 
-mimir is the assistant built into SlicerX. It plans multi-step jobs (pick printers with the right filament, arrange plates, adjust settings for a material, slice, queue) and cites the knowledge base for every setting it changes.
+mimir is the assistant built into SlicerX. It plans jobs (printers, plates, settings, slicing, the queue) and cites the knowledge base for every setting it changes. It runs on the model you choose: your ChatGPT plan, an OpenAI or Anthropic key, or a local model through Ollama, LM Studio and similar. Keys stay in your system keychain.
 
-mimir runs on a model you choose: sign in with your ChatGPT plan, paste your own OpenAI or Anthropic API key, or point it at a local model through Ollama, LM Studio, llama.cpp, LocalAI or vLLM, on this computer or another one on your home network (with an optional server key). Keys stay in your operating system's keychain and go only to the provider they belong to.
-
-The MCP server gives other AI tools the same tools and the same rules:
-
-- Reading is always allowed: settings, profiles, the knowledge base, printer status and camera snapshots.
-- Everything else follows a permission policy the user writes: Allow, Ask first or Off for each class of action (changing the project, queueing jobs, heating or moving a printer, writing saved profiles, spending money). Heating, moving and queueing default to Ask first, and purchases default to Off.
-- Ask first asks the user directly through MCP elicitation when the client supports it. Otherwise the tool returns an approval request, and the client has to confirm it before anything happens.
-- Each approval covers one action on one target with the exact parameters shown, is signed, works once and expires after five minutes. The printer connector checks it before sending a byte.
-- Every call and decision goes to an action log.
+The MCP server gives other AI tools the same tools under your rules. Reading is always allowed. Changing a project, queueing, heating or moving a printer, and spending money follow a policy you set (Allow, Ask first or Off), and each approval is signed, single-use and logged.
 
 ```sh
 claude mcp add slicerx -- npx -y @slicerx/mcp --allow-dir ~/prints
 ```
 
-That registers the server with Claude Code. [packages/mcp/README.md](packages/mcp/README.md) covers Claude Desktop, Cursor, ChatGPT and other clients, streamable HTTP, the policy file and the full tool list.
-
-Claude Code users can also install the SlicerX plugin, which bundles the server with skills for slicing, settings, diagnosis, calibration, printer setup and theming, plus slash commands:
-
-```
-/plugin marketplace add slicerx-oss/slicerx
-/plugin install slicerx@slicerx
-```
-
-See [packages/claude-plugin](packages/claude-plugin/README.md).
+Other clients, the policy file and the tool list are in [packages/mcp/README.md](packages/mcp/README.md). Claude Code users can also install the [SlicerX plugin](packages/claude-plugin/README.md) with `/plugin marketplace add slicerx-oss/slicerx`.
 
 ## Features
 
-Working today:
+### The gods
 
-- A native slicing core (`sx-core`) with contour slicing, three wall generators (classic, Arachne and aegis, our own variable-width walls and the default), rectilinear, grid, gyroid and other infill patterns, tree and normal supports, top and bottom shells, brim, raft, seam placement, fuzzy skin, multi-material with tool changes and the atlas prime tower, G-code for Marlin 2, Klipper and RepRapFirmware, and a packed preview buffer (SXPV). It reads STL, OBJ, AMF and Bambu Lab or OrcaSlicer 3MF projects. It slices the 508 layer reference plate in 17.1 ms (median of 15 runs on an 11 core Apple M3 Pro), and every benchmark run also checks that the G-code is valid and that sharded and unsharded runs match byte for byte.
-- sleipnir, adaptive layer height: thin layers on curves and slopes, thick layers on straight walls, listed after the fixed layer heights.
-- The same core in the browser: a WebAssembly worker pool slices the reference plate in 55.3 ms (median first slice in Chrome), with G-code identical to the native build.
-- The `sx` command line tool: slice a file or a JSON request, print the JSON schemas, and run the benchmark.
-- The C ABI (`libslicerx` and `slicerx.h`), tested by a C program that slices the reference plate.
-- More than 700 settings with type, unit, limits and the slicing stage each one invalidates, with help text and a tier (simple, advanced, expert) for each; profile import with `inherits`; settings plans for a new material, printer or nozzle; validation and conflict checks; and Easy mode (detail, strength, speed, supports, brim) mapped onto those keys. Printer, filament and process presets ship with the app.
-- A print knowledge base with cited sources: filaments, printers and accessories, troubleshooting guides and workflow guides.
-- The MCP server with mimir's tools, the sx-geom mesh tools (cut, split, orient, repair, hollow, emboss, calibration models and a resume plan for a failed print), the permission policy, approvals and action log described above, and a Claude Code plugin built on it.
-- The embeddable viewport and settings panel, as React components and custom elements.
-- The browser app: Prepare, Preview, Library, Printers (with simulated printers) and mimir. It slices automatically after each edit (switch it off under Settings, Slicing), and Print opens the Print sheet: the file, the printer, the preflight result and your choices, with your confirm click as the approval.
-- Calibration by need: the app picks the tests a new spool, printer or nozzle needs (flow, pressure advance, temperature, retraction and more), puts them on one plate, and saves the picked values to a filament preset for that spool, printer and nozzle.
-- CAD tools in the app: STEP import, sketches with typed sizes extruded into solids, push and pull on a face, fillet and chamfer, dimensions that stay on the model, an SVG outline on a face, and an editable history of steps for each object.
-- norn: edit from Preview. Change a setting or move a layer mark and see the old and new toolpaths together before you slice again.
+Each name marks something SlicerX does its own way, or better than the slicers it learned from.
+
+| | |
+|---|---|
+| **mimir** | The assistant. It answers questions, reads your printer's camera, and suggests fixes you approve. |
+| **huginn and muninn** | mimir's two model tiers: huginn takes a quick look, muninn thinks deep. mimir picks per job. |
+| **aegis** | Variable-width walls, the default. Thin features print solid, with far fewer width changes than Arachne. |
+| **sleipnir** | Adaptive layer height: thin layers on curves and slopes, thick on straight walls. |
+| **atlas** | A prime tower that places and sizes itself. |
+| **norn** | Edit from Preview: click a toolpath, change the setting behind it, and see before and after. |
+| **heimdall** | Preview playback that runs the print as the machine will, tool changes and all. |
+
+### Working today
+
+- A native Rust slicing core (`sx-core`): Arachne, classic and aegis walls, the common infill patterns, tree and normal supports, brim, raft, seams, fuzzy skin and multi-material. It writes G-code for Marlin 2, Klipper and RepRapFirmware, and reads STL, OBJ, AMF and Bambu Lab or OrcaSlicer 3MF projects. The 508-layer reference plate slices in 17.1 ms (median of 15 runs on an 11-core Apple M3 Pro).
+- The same core in the browser through WebAssembly, with G-code identical to the native build.
+- The `sx` command line tool, and a C ABI (`libslicerx` and `slicerx.h`).
+- More than 700 settings with units, limits and help text, profile import, validation, and an Easy mode. Printer, filament and process presets ship with the app.
+- The MCP server with mimir's tools, the sx-geom mesh tools, and a permission policy with approvals and an action log.
+- The browser and desktop app: Prepare, Preview, Library, Printers and mimir, with calibration by need and the Print sheet, where your click is the approval.
+- CAD tools: STEP import, sketches with typed sizes, push and pull, fillet and chamfer, dimensions that stay on the model, and an editable history.
+- A print knowledge base with cited sources.
 
 In progress, working in tests and not yet proven on real hardware:
 
