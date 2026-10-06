@@ -1190,6 +1190,29 @@ impl PrintConfig {
                 range(key, v, 0.1, 2.0)?;
             }
         }
+        // Orca's limits (PrintConfig.cpp): the print flow ratio 0.01 to 2, the ratios by role 0 to 2.
+        range(
+            "print_flow_ratio",
+            self.raw_number("print_flow_ratio", 1.0),
+            0.01,
+            2.0,
+        )?;
+        for key in [
+            "top_solid_infill_flow_ratio",
+            "bottom_solid_infill_flow_ratio",
+            "brim_flow_ratio",
+            "outer_wall_flow_ratio",
+            "inner_wall_flow_ratio",
+            "overhang_flow_ratio",
+            "sparse_infill_flow_ratio",
+            "internal_solid_infill_flow_ratio",
+            "gap_fill_flow_ratio",
+            "support_flow_ratio",
+            "support_interface_flow_ratio",
+            "first_layer_flow_ratio",
+        ] {
+            range(key, self.raw_number(key, 1.0), 0.0, 2.0)?;
+        }
         range("sparse_infill_density", self.sparse_infill_density, 0.0, 100.0)?;
         range("infill_wall_overlap", self.infill_wall_overlap, 0.0, 100.0)?;
         range("brim_width", self.brim_width, 0.0, 100.0)?;
@@ -2085,6 +2108,26 @@ mod tests {
         assert!((pct.line_width - 0.44).abs() < 1e-9);
         let mm = PrintConfig::from_json(br#"{"line_width":"0.45"}"#).unwrap();
         assert!((mm.line_width - 0.45).abs() < 1e-9);
+    }
+
+    #[test]
+    fn flow_ratios_keep_to_orcas_ranges() {
+        use serde_json::json;
+        // An infinite print flow ratio overflowed the extrusion total and crashed the G-code writer.
+        for (key, lo) in [
+            ("print_flow_ratio", 0.01),
+            ("top_solid_infill_flow_ratio", 0.0),
+            ("first_layer_flow_ratio", 0.0),
+            ("support_interface_flow_ratio", 0.0),
+        ] {
+            for bad in [json!("inf"), json!(1e9), json!(2.5), json!(lo - 0.01)] {
+                let err = PrintConfig::from_value(&json!({ key: bad })).unwrap_err();
+                assert!(err.to_string().contains(key), "{key} {bad}: {err}");
+            }
+            for ok in [json!(0.95), json!("1.05"), json!(2), json!(lo)] {
+                assert!(PrintConfig::from_value(&json!({ key: ok })).is_ok(), "{key} {ok}");
+            }
+        }
     }
 
     #[test]
