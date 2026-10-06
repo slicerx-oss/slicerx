@@ -52,6 +52,9 @@ const EPS: f64 = 1e-4;
 /// Arcs this close in length count as the same length when choosing which to take first, mm.
 const TIE: f64 = 0.005;
 
+/// A longest join under this means none, mm (Orca `FillParams::dont_connect`).
+const NO_CONNECT: f64 = 0.05;
+
 impl End {
     fn consume_next(&mut self) {
         self.free_next = 0.0;
@@ -113,7 +116,8 @@ fn root(parent: &mut [usize], mut i: usize) -> usize {
 
 /// Joins the infill `lines` (polylines whose two ends lie on the boundary of `region`, as far as they do).
 pub(crate) fn connect(lines: Vec<Vec<Point>>, region: &Shapes, p: Params) -> Vec<Vec<Point>> {
-    if lines.len() < 2 && p.anchor <= 0.0 {
+    // A limit under `NO_CONNECT` means the lines stay apart, without joins or hooks (Orca `dont_connect`).
+    if p.anchor_max < NO_CONNECT || (lines.len() < 2 && p.anchor <= 0.0) {
         return lines;
     }
     let edge = Edge::new(region);
