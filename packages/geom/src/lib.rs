@@ -68,6 +68,8 @@ pub mod solids;
 pub mod split;
 #[cfg(feature = "svg")]
 pub mod svg;
+#[cfg(feature = "threads")]
+pub mod thread;
 pub mod vec3;
 pub mod xform;
 
