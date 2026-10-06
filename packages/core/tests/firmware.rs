@@ -1960,3 +1960,55 @@ fn no_jerk_line_is_written_for_a_travel_that_does_not_move() {
         "travel jerk still written"
     );
 }
+
+#[test]
+fn a_one_or_two_layer_raft_prints_its_contact_lines_at_orcas_angle() {
+    // One raft layer is only the contact layer: Orca (SupportParameters: raft_angle_interface 90 degrees, and
+    // raft_interface_angle(0) a further 45) lays its lines at 135 degrees, where SlicerX laid them at 90. With
+    // two, the contact layer rests on the first one and takes its interface id plus one (SupportCommon.cpp
+    // generate_support_layers), so 180 less 45: 135 again, where SlicerX laid 45.
+    for layers in [1, 2] {
+        let mut c = base_config();
+        c["raft_layers"] = json!(layers);
+        assert_eq!(
+            contact_angle(&text(&two_objects(c, json!({})))),
+            Some(135),
+            "{layers} raft layers"
+        );
+    }
+}
+
+/// The most common direction, whole degrees in 0..180, of the support interface lines longer than 2 mm.
+fn contact_angle(g: &str) -> Option<i64> {
+    let mut feature = String::new();
+    let mut at: Option<(f64, f64)> = None;
+    let mut hist = std::collections::BTreeMap::<i64, usize>::new();
+    for l in g.lines() {
+        if let Some(t) = l.strip_prefix(";TYPE:") {
+            t.clone_into(&mut feature);
+            continue;
+        }
+        let coord = |k: char| {
+            l.split_whitespace()
+                .find_map(|w| w.strip_prefix(k))
+                .and_then(|v| v.parse::<f64>().ok())
+        };
+        if !(l.starts_with("G0 ") || l.starts_with("G1 ")) {
+            continue;
+        }
+        let (Some(x), Some(y)) = (coord('X'), coord('Y')) else {
+            continue;
+        };
+        if let Some((px, py)) = at
+            && feature == "Support interface"
+            && l.contains(" E")
+            && (x - px).hypot(y - py) > 2.0
+        {
+            #[allow(clippy::cast_possible_truncation, reason = "a whole degree")]
+            let a = ((y - py).atan2(x - px).to_degrees().rem_euclid(180.0)).round() as i64;
+            *hist.entry(a).or_default() += 1;
+        }
+        at = Some((x, y));
+    }
+    hist.iter().max_by_key(|(_, n)| **n).map(|(a, _)| *a)
+}
