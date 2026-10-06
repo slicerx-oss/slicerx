@@ -25,7 +25,7 @@ export interface ProviderInfo {
 export const PROVIDERS: Readonly<Record<PilotProvider, ProviderInfo>> = {
   openai: { id: 'openai', label: 'OpenAI', needsKey: true, keyHint: 'sk-...', where: 'Create a key at platform.openai.com, under API keys.', defaultBase: 'https://api.openai.com/v1', defaultModel: 'gpt-6-sol' },
   anthropic: { id: 'anthropic', label: 'Anthropic', needsKey: true, keyHint: 'sk-ant-...', where: 'Create a key in the Anthropic Console, under API keys.', defaultBase: 'https://api.anthropic.com/v1', defaultModel: 'claude-opus-5-5' },
-  local: { id: 'local', label: 'Local model', needsKey: false, keyHint: '', where: 'Ollama listens on http://localhost:11434/v1, LM Studio on http://localhost:1234/v1. Allow this page as an origin in the server settings.', defaultBase: 'http://localhost:11434/v1', defaultModel: 'llama3.1' },
+  local: { id: 'local', label: 'Local model', needsKey: false, keyHint: '', where: 'llama.cpp, LocalAI, vLLM, or Ollama on another computer, such as http://192.168.1.50:8080/v1.', defaultBase: 'http://localhost:11434/v1', defaultModel: 'llama3.1' },
 }
 
 export interface KeyStore {
@@ -40,18 +40,15 @@ export interface KeyStore {
 /** The host's key commands (desktop): they write the keychain item the model transport reads. */
 export type ApiKeyHost = Pick<ChatGptHost, 'hasApiKey' | 'setApiKey' | 'clearApiKey'>
 
+/** The `local` slot holds the optional key of a model server on the network, in its own keychain item. */
 /** Desktop: the system keychain, through the host. The host reads it when it calls the provider. */
 export function keychainStore(keys: ApiKeyHost): KeyStore {
   return {
-    has: async (p) => p !== 'local' && keys.hasApiKey(p),
-    set: async (p, key) => {
-      if (p !== 'local') await keys.setApiKey(p, key)
-    },
+    has: (p) => keys.hasApiKey(p),
+    set: (p, key) => keys.setApiKey(p, key),
     // Write only from the webview: the host's own transport reads the keychain.
     get: async () => null,
-    delete: async (p) => {
-      if (p !== 'local') await keys.clearApiKey(p)
-    },
+    delete: (p) => keys.clearApiKey(p),
   }
 }
 

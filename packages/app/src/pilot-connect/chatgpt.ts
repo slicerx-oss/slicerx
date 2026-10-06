@@ -29,9 +29,14 @@ export interface ChatGptHost {
   account(): Promise<ChatGptAccount | null>
   disconnect(): Promise<void>
   /** The pasted key lives in the keychain item the model transport reads (service slicerx-<provider>-api-key, account slicerx). */
-  setApiKey(provider: 'openai' | 'anthropic', key: string): Promise<void>
-  hasApiKey(provider: 'openai' | 'anthropic'): Promise<boolean>
-  clearApiKey(provider: 'openai' | 'anthropic'): Promise<void>
+  setApiKey(provider: 'openai' | 'anthropic' | 'local', key: string): Promise<void>
+  hasApiKey(provider: 'openai' | 'anthropic' | 'local'): Promise<boolean>
+  clearApiKey(provider: 'openai' | 'anthropic' | 'local'): Promise<void>
+  /**
+   * The model listing of a local server by address, fetched by the host with the optional local
+   * key from the keychain (the webview cannot reach the network or read the key).
+   */
+  localModels?(baseUrl: string): Promise<string>
 }
 
 type Factory = (host: Host) => ChatGptHost

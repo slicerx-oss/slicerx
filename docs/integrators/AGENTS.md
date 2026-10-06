@@ -146,7 +146,7 @@ theme: {
 ```
 
      Ask the user for the font files (woff2 is best; woff, ttf and otf work) and check that the font's license allows bundling it in an app. Open fonts such as the SIL Open Font License ones from Google Fonts do.
-   - The assistant (mimir) with a local model: set `features.pilot: true`, `ai.provider: 'openai-compatible'` and `ai.baseUrl: 'http://127.0.0.1:11434/v1'` (Ollama's address; LM Studio's is `http://127.0.0.1:1234/v1`). Do not guess a model name. In the built app, Settings > mimir > Set up local AI checks the computer, recommends a model, downloads it with the user's confirmation, tests it and switches mimir to it.
+   - The assistant (mimir) with a local model: set `features.pilot: true`, `ai.provider: 'openai-compatible'` and `ai.baseUrl: 'http://127.0.0.1:11434/v1'` (Ollama's address; LM Studio's is `http://127.0.0.1:1234/v1`). For a server on another computer (llama.cpp, LocalAI, vLLM, Ollama) use its home-network address, such as `http://192.168.1.50:8080/v1`; a server that needs a key gets it in Settings > mimir, where it is kept in the keychain, never in the edition config. Do not guess a model name. In the built app, Settings > mimir > Set up local AI checks the computer, recommends a model, downloads it with the user's confirmation, tests it and switches mimir to it.
 2. Check it: `node packages/edition-config/src/cli.ts check editions/<id>/edition.config.ts`. A mistake names the field and the reason. Fix every one.
 3. Build it. From the root of the clone, with the prerequisites above:
 
