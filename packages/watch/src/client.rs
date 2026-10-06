@@ -4,7 +4,8 @@
 //! Ed25519 signature over both nonces and the port); then both run the code exchange (`CPace`,
 //! `sx_cpace::pair`) bound to that hello, so the watch code never crosses the socket and nothing
 //! sent can be tested offline. After pairing: the bed masks, a frame
-//! subscription, and `watch.report` for each finding. Protocol: packages/connect/link-client.
+//! subscription, `watch.report` for each finding, `watch.grab` for a second look at a possible
+//! hand, and `watch.plateResult` for each plate check. Protocol: packages/connect/link-client.
 use std::collections::HashMap;
 use std::time::Duration;
 
@@ -17,8 +18,8 @@ use tokio_tungstenite::tungstenite::Message;
 use crate::confirm::Confirmation;
 use crate::detector::Detector;
 use crate::mask::Mask;
-use crate::protocol::Report;
-use crate::session::Session;
+use crate::protocol::{Kind, Report};
+use crate::session::{Out, Session};
 
 const HELLO_CONTEXT: &[u8] = b"sx-link hello v2\n";
 /// How often the bed masks are read again, in case the person redrew one.
@@ -251,8 +252,11 @@ fn masks_from(v: &Value) -> HashMap<String, Mask> {
 }
 
 /// Asks for confirmation when the printer has it on, then holds an unconfirmed report under
-/// the hub's pause level.
+/// the hub's pause level. A hand goes out as it is: the hub pauses on it without confirmation.
 async fn finish<D: Detector>(session: &Session<D>, confirm: Option<&Confirmation>, mut r: Report) -> Report {
+    if r.kind == Kind::Hand {
+        return r;
+    }
     if let Some(c) = confirm.filter(|c| c.printers.contains(&r.printer_id))
         && let Some((content_type, bytes)) = session.latest_frame(&r.printer_id)
     {
@@ -293,13 +297,12 @@ pub async fn run_with<D: Detector>(
     let mut masks_call: Option<u64> = None;
     let mut refresh = tokio::time::interval(MASK_REFRESH);
     refresh.tick().await;
+    // Second looks in flight: call id to printer.
+    let mut grabs: HashMap<u64, String> = HashMap::new();
     let backlog = std::mem::take(&mut conn.backlog);
     for ev in backlog {
-        for r in session.on_event(&ev) {
-            let r = finish(session, confirm, r).await;
-            conn.send("watch.report", serde_json::to_value(&r).unwrap_or_default())
-                .await?;
-        }
+        let calls = session.on_event(&ev);
+        dispatch(&mut conn, session, confirm, calls, &mut grabs).await?;
     }
     loop {
         tokio::select! {
@@ -317,13 +320,52 @@ pub async fn run_with<D: Detector>(
                     masks_call = None;
                     continue;
                 }
-                for r in session.on_event(&msg) {
-                    let r = finish(session, confirm, r).await;
-                    conn.send("watch.report", serde_json::to_value(&r).unwrap_or_default()).await?;
+                // A second look came back: it is a frame like any other.
+                let id = msg.get("id").and_then(Value::as_u64);
+                if let Some(printer) = id.and_then(|i| grabs.remove(&i)) {
+                    let Some(mut data) = msg.get("result").filter(|r| r.is_object()).cloned() else {
+                        continue;
+                    };
+                    if let Some(o) = data.as_object_mut() {
+                        o.insert("printerId".into(), json!(printer));
+                    }
+                    let calls = session.on_event(&json!({ "event": "watch.frame", "data": data }));
+                    dispatch(&mut conn, session, confirm, calls, &mut grabs).await?;
+                    continue;
                 }
+                let calls = session.on_event(&msg);
+                dispatch(&mut conn, session, confirm, calls, &mut grabs).await?;
             }
         }
     }
+}
+
+/// Makes the calls the session asked for.
+async fn dispatch<D: Detector>(
+    conn: &mut Conn,
+    session: &Session<D>,
+    confirm: Option<&Confirmation>,
+    calls: Vec<Out>,
+    grabs: &mut HashMap<u64, String>,
+) -> Result<(), ClientError> {
+    for out in calls {
+        match out {
+            Out::Report(r) => {
+                let r = finish(session, confirm, r).await;
+                conn.send("watch.report", serde_json::to_value(&r).unwrap_or_default())
+                    .await?;
+            }
+            Out::Grab(printer) => {
+                let id = conn.send("watch.grab", json!({ "printerId": printer })).await?;
+                grabs.insert(id, printer);
+            }
+            Out::Plate(p) => {
+                conn.send("watch.plateResult", serde_json::to_value(&p).unwrap_or_default())
+                    .await?;
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Saves one still per printing printer every `every_ms` into `dir/<printer>/`, with a line of

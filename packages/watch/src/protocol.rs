@@ -12,17 +12,21 @@ pub enum Kind {
     Spaghetti,
     /// A lump of plastic stuck around the nozzle.
     NozzleBlob,
+    /// A person's hand inside the printer while it prints. A safety stop, not a failure: the
+    /// hub pauses on it without waiting for confirmation (see [`crate::policy`]).
+    Hand,
 }
 
 impl Kind {
-    /// Every kind, in report order.
-    pub const ALL: [Kind; 2] = [Kind::Spaghetti, Kind::NozzleBlob];
+    /// Every kind, in report order. A hand comes first: it is the one that pauses at once.
+    pub const ALL: [Kind; 3] = [Kind::Hand, Kind::Spaghetti, Kind::NozzleBlob];
 
     /// The wire name.
     pub fn name(self) -> &'static str {
         match self {
             Kind::Spaghetti => "spaghetti",
             Kind::NozzleBlob => "nozzle_blob",
+            Kind::Hand => "hand",
         }
     }
 }
@@ -77,4 +81,58 @@ pub struct Report {
     /// only on `true`; without it the finding notifies and nothing more.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub confirmed: Option<bool>,
+    /// Where in the frame, left, top, right, bottom from 0 to 1, when the watch could tell
+    /// (for a hand: the part of the bed area that changed since the frame before).
+    #[serde(rename = "box", skip_serializing_if = "Option::is_none")]
+    pub bbox: Option<[f64; 4]>,
+}
+
+/// A picture as the hub sends it.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Picture {
+    /// `image/jpeg`, `image/png` or `image/webp`.
+    pub content_type: String,
+    /// The picture.
+    pub data_base64: String,
+}
+
+/// `watch.plate` data: the plate before a print, to compare with the person's empty-plate
+/// picture.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlateCheck {
+    /// Echoed in the result.
+    pub check_id: String,
+    /// The printer.
+    pub printer_id: String,
+    /// The plate now.
+    pub frame: Picture,
+    /// The plate as the person said it was clear, when they captured one.
+    #[serde(default)]
+    pub reference: Option<Picture>,
+    /// Spots the person said are fine (plate marks), left, top, right, bottom from 0 to 1.
+    #[serde(default)]
+    pub ignore: Vec<[f64; 4]>,
+}
+
+/// `watch.plateResult` parameters.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlateResult {
+    /// From the check.
+    pub check_id: String,
+    /// The printer.
+    pub printer_id: String,
+    /// True when nothing was found; `None` when the plate could not be judged (no usable
+    /// picture), which never blocks a start.
+    pub clear: Option<bool>,
+    /// The spot that differs most from the empty plate, left, top, right, bottom from 0 to 1.
+    #[serde(rename = "box", skip_serializing_if = "Option::is_none")]
+    pub bbox: Option<[f64; 4]>,
+    /// The model's debris score for the plate now, 0 to 1, when the model has one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub debris: Option<f64>,
+    /// What was compared and why, for the app.
+    pub note: String,
 }

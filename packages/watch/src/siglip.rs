@@ -2,10 +2,13 @@
 // Copyright (C) 2026 The SlicerX contributors
 //! The local model: SigLIP2 base (google/siglip2-base-patch16-224, Apache-2.0 weights) asked
 //! zero-shot which of four descriptions fits the bed area: spaghetti, a blob on the nozzle, a
-//! part knocked over, or a normal print. The prompts are folded into the model file by
-//! `model/export_siglip2.py`, so only the image tower runs here, through ONNX Runtime.
+//! part knocked over, or a normal print. Two more questions are asked apart from those: is a
+//! hand reaching into the printer, and is something left on an empty plate. The prompts are
+//! folded into the model file by `model/export_siglip2.py`, so only the image tower runs here,
+//! through ONNX Runtime. A model file from before the hand and debris questions still loads;
+//! it just never sees a hand.
 //!
-//! The model file (`sx-watch-siglip2.onnx`, 177 MB) is not in git. It sits beside the sx-watch
+//! The model file (`sx-watch-siglip2.onnx`, 186 MB) is not in git. It sits beside the sx-watch
 //! binary, or where `--model` or `SX_WATCH_MODEL` says.
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -75,6 +78,11 @@ impl Siglip2 {
 
     /// The four probabilities for a picture: spaghetti, nozzle blob, knocked over, normal.
     pub fn probs(&self, rgb: &Rgb) -> Result<[f32; 4], String> {
+        self.scores(rgb).map(|s| s.probs)
+    }
+
+    /// Everything the model says about a picture.
+    pub fn scores(&self, rgb: &Rgb) -> Result<Scores, String> {
         let input = Tensor::from_array(([1usize, 3, SIZE, SIZE], pixels(rgb))).map_err(|e| e.to_string())?;
         let mut session = self
             .session
@@ -89,8 +97,30 @@ impl Siglip2 {
         for (o, v) in out.iter_mut().zip(data) {
             *o = *v;
         }
-        Ok(out)
+        let one = |name: &str| {
+            outputs.get(name).and_then(|v| {
+                v.try_extract_tensor::<f32>()
+                    .ok()
+                    .and_then(|(_, d)| d.first().copied())
+            })
+        };
+        Ok(Scores {
+            probs: out,
+            hand: one("hand"),
+            debris: one("debris"),
+        })
     }
+}
+
+/// The model's answers for one picture.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Scores {
+    /// Spaghetti, nozzle blob, knocked over, normal; they add up to 1.
+    pub probs: [f32; 4],
+    /// A hand reaching into the printer, 0 to 1. `None` for a model file without the question.
+    pub hand: Option<f32>,
+    /// Something left on an empty plate, 0 to 1. `None` for a model file without the question.
+    pub debris: Option<f32>,
 }
 
 impl Detector for Siglip2 {
@@ -99,23 +129,27 @@ impl Detector for Siglip2 {
     }
 
     fn detect(&self, frame: &Rgb) -> Vec<Detection> {
-        let Ok(probs) = self.probs(frame) else {
+        let Ok(scores) = self.scores(frame) else {
             return Vec::new();
+        };
+        let whole = |kind, p: f32| Detection {
+            kind,
+            score: f64::from(p),
+            bbox: [0.0, 0.0, 1.0, 1.0],
         };
         OUTPUTS
             .iter()
-            .zip(probs)
-            .filter_map(|(kind, p)| {
-                kind.map(|kind| Detection {
-                    kind,
-                    score: f64::from(p),
-                    bbox: [0.0, 0.0, 1.0, 1.0],
-                })
-            })
+            .zip(scores.probs)
+            .filter_map(|(kind, p)| kind.map(|kind| whole(kind, p)))
+            .chain(scores.hand.map(|p| whole(Kind::Hand, p)))
             .collect()
     }
 
     fn whole_image(&self) -> bool {
         true
+    }
+
+    fn debris(&self, frame: &Rgb) -> Option<f64> {
+        self.scores(frame).ok()?.debris.map(f64::from)
     }
 }
