@@ -451,6 +451,7 @@ fn extract(work: &Imprint, original: &TriMesh, region: &Region, eps: f64) -> Tri
     let mut out = TriMesh {
         positions: work.pos.clone(),
         triangles: kept,
+        faces: None,
     };
     for (fi, edges) in per_face.iter().enumerate() {
         if let Some(loops) = walk_face(&frames[fi], edges, &mut out, original, eps) {

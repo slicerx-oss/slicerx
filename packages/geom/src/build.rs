@@ -5,6 +5,7 @@
 #![allow(clippy::indexing_slicing)]
 
 use crate::error::Result;
+use crate::faces::{self, Faces};
 use crate::fm::Fm;
 use crate::mesh::TriMesh;
 use crate::poly2d::{self, Polygon};
@@ -42,7 +43,23 @@ pub fn box_mesh(min: V3, max: V3) -> TriMesh {
         [3, 0, 4],
         [3, 4, 7],
     ];
-    TriMesh::new(positions, triangles)
+    // Two triangles a side, in the order above: bottom, top, front (min y), right (max x), back, left.
+    let table = vec![
+        faces::box_plane(2, false, min[2]),
+        faces::box_plane(2, true, max[2]),
+        faces::box_plane(1, false, min[1]),
+        faces::box_plane(0, true, max[0]),
+        faces::box_plane(1, true, max[1]),
+        faces::box_plane(0, false, min[0]),
+    ];
+    TriMesh {
+        positions,
+        triangles,
+        faces: Some(Faces {
+            ids: (0..12).map(|t| t / 2).collect(),
+            table,
+        }),
+    }
 }
 
 pub fn extrude(polys: &[Polygon], frame: &Frame, h0: f64, h1: f64) -> Result<TriMesh> {

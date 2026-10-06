@@ -730,6 +730,7 @@ mod tests {
     #[test]
     fn repairs_holes_and_flips_and_reports() {
         let mut m = build::box_mesh([0.0; 3], [20.0, 20.0, 20.0]);
+        m.faces = None;
         m.triangles.pop();
         m.triangles[0] = [m.triangles[0][0], m.triangles[0][2], m.triangles[0][1]];
         let r = auto_import(one(m), &mm(), &AutoOptions::default()).unwrap();

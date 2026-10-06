@@ -145,6 +145,7 @@ impl Face {
         let mut rest = TriMesh {
             positions: solid.positions.clone(),
             triangles: Vec::new(),
+            faces: None,
         };
         let mut cap: Vec<(u32, u32)> = Vec::new();
         for t in &solid.triangles {
@@ -209,6 +210,7 @@ impl Face {
                 .filter(|(_, r)| !**r)
                 .map(|(t, _)| *t)
                 .collect(),
+            faces: None,
         };
         let text = matches!(fill, Fill::Text { .. });
         let rings: Vec<Vec<TextRing>> = polys
@@ -262,6 +264,7 @@ pub fn merge_coplanar(mesh: &TriMesh) -> Result<TriMesh> {
     let mut out = TriMesh {
         positions: base.positions.clone(),
         triangles: Vec::new(),
+        faces: None,
     };
     for seed in 0..base.triangles.len() {
         if done[seed] {

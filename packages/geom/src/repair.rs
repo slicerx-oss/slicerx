@@ -59,6 +59,8 @@ pub fn repair(mesh: &TriMesh, opts: &RepairOptions) -> Result<(TriMesh, RepairRe
         .unwrap_or_else(|| mesh::weld_tolerance(mesh.bounds()));
     let used_before = used_vertex_count(mesh);
     let mut m = mesh.weld(tol);
+    // Repair adds, drops and flips triangles; the repaired mesh gets its faces again by recognition.
+    m.faces = None;
     report.vertices_merged = used_before.saturating_sub(m.positions.len());
 
     report.degenerate_removed = mesh.triangles.len() - m.triangles.len() + remove_degenerate(&mut m);
@@ -463,6 +465,7 @@ mod tests {
     fn flips_found_after_a_flipped_neighbor() {
         for f in 0..11 {
             let mut m = build::box_mesh([0.0; 3], [20.0, 20.0, 20.0]);
+            m.faces = None;
             m.triangles.pop();
             m.triangles[f].swap(1, 2);
             let (r, rep) = default_repair(&m);
@@ -528,6 +531,8 @@ mod tests {
     #[test]
     fn duplicate_and_degenerate_faces_are_removed() {
         let mut c = build::box_mesh([0.0; 3], [10.0, 10.0, 10.0]);
+        // A broken mesh as it arrives from a file, with no faces.
+        c.faces = None;
         let dup = c.triangles[3];
         c.triangles.push(dup);
         c.triangles.push([dup[1], dup[2], dup[0]]);
