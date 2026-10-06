@@ -32,6 +32,17 @@ export function viteDefines(config: EditionConfig, env: Record<string, string | 
  * The desktop webview's own connect-src (apps/desktop/src-tauri/tauri.conf.json); the backend's origins are added to it.
  * It includes the printer bridge the app starts on 127.0.0.1 (sx-link's DEFAULT_PORT), which the page connects to.
  */
+/** Every optional part of the geometry engine (sx-geom's cargo features). */
+export const GEOM_FEATURES = ['cad', 'holes', 'text', 'svg', 'nest', 'calib', 'hollow'] as const
+
+/**
+ * The geometry engine's cargo features for an edition, or null for the default build with all of them. An edition
+ * without the modeling tools leaves out `cad` and the hole tool built on it.
+ */
+export function geomFeatures(config: EditionConfig): string[] | null {
+  return config.features.cad ? null : GEOM_FEATURES.filter((f) => f !== 'cad' && f !== 'holes')
+}
+
 export const DESKTOP_CONNECT_SRC = "'self' ipc: http://ipc.localhost ws://127.0.0.1:47615"
 
 /** Pages capabilities/default.json already lets the desktop shell open. */

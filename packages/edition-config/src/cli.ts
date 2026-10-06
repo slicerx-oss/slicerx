@@ -4,8 +4,9 @@
 import { spawnSync } from 'node:child_process'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { z } from 'zod'
-import { DESKTOP_ICON_DIR, expoConfig, tauriConfig, wellKnown } from './build.ts'
+import { DESKTOP_ICON_DIR, expoConfig, geomFeatures, tauriConfig, wellKnown } from './build.ts'
 import { NEUTRAL_EDITION } from './defaults.ts'
 import { EditionConfigError, parseEditionConfig } from './define.ts'
 import { missingFonts } from './fonts.ts'
@@ -55,6 +56,17 @@ try {
         const r = spawnSync('tauri', ['icon', icon, '--output', dir], { stdio: 'inherit', shell: process.platform === 'win32' })
         if (r.status !== 0) throw new Error(`tauri icon failed for ${icon}`)
       }
+      break
+    }
+    case 'geom-build': {
+      // The geometry engine with the edition's features (all of them unless the edition leaves the modeling tools out).
+      const named = process.env['SLICERX_CONFIG'] || file
+      const config = await loadEditionConfig(named ? { file: named } : {})
+      const features = geomFeatures(config)
+      const env = features ? { ...process.env, SX_GEOM_FEATURES: features.join(',') } : process.env
+      console.log(`geometry engine: ${features ? `features ${features.join(', ')}` : 'every feature'}`)
+      const r = spawnSync('sh', ['packages/geom/wasm/scripts/build.sh'], { cwd: join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..'), env, stdio: 'inherit', shell: process.platform === 'win32' })
+      if (r.status !== 0) throw new Error('the geometry engine did not build')
       break
     }
     case 'expo':

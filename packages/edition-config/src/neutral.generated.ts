@@ -36,6 +36,7 @@ export const NEUTRAL_PARSED: EditionConfig = {
     "cloudSlicing": false,
     "phonePairing": false,
     "pilot": true,
+    "cad": true,
     "localAi": true,
     "demoData": false,
     "printers": {

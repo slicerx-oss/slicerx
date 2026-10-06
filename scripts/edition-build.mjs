@@ -5,7 +5,8 @@
 //
 //   pnpm edition:build editions/<id>/edition.config.ts --target desktop|web [--skip-wasm] [--dry-run]
 //
-// It checks the config, builds the WebAssembly engine (set SX_WASM_OPT=0 to skip wasm-opt), then builds the
+// It checks the config, builds the WebAssembly engines (set SX_WASM_OPT=0 to skip wasm-opt; the geometry engine
+// leaves the modeling tools out when the edition does), then builds the
 // browser app or the desktop app. The config path goes to every step explicitly, and each child process
 // gets SLICERX_CONFIG for the Vite build.
 import { spawnSync } from 'node:child_process'
@@ -35,7 +36,11 @@ if (!existsSync(config)) {
 
 const cli = join(root, 'packages/edition-config/src/cli.ts')
 const steps = [['check the config', 'node', [cli, 'check', config]]]
-if (!flag('--skip-wasm')) steps.push(['build the WebAssembly engine', 'pnpm', ['--filter', '@slicerx/slicer', 'build:wasm']])
+if (!flag('--skip-wasm')) {
+  steps.push(['build the WebAssembly engine', 'pnpm', ['--filter', '@slicerx/slicer', 'build:wasm']])
+  // The geometry engine, without the modeling tools when the edition leaves them out.
+  steps.push(['build the geometry engine', 'node', [cli, 'geom-build', config]])
+}
 if (target === 'web') steps.push(['build the browser app', 'pnpm', ['--filter', '@slicerx/web', 'build']])
 else {
   // tauri:config with the edition's file, written where `tauri build --config` reads it

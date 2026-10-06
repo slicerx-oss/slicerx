@@ -15,8 +15,9 @@ test('edition-build passes the config to every step', () => {
   const lines = desktop.stdout.trim().split('\n')
   assert.match(lines[0], /check .*acme\.json$/)
   assert.match(lines[1], /build:wasm$/)
-  assert.match(lines[2], /tauri .*acme\.json desktop src-tauri\/gen\/edition\.conf\.json$/)
-  assert.match(lines[3], /tauri build --config src-tauri\/gen\/edition\.conf\.json$/)
+  assert.match(lines[2], /geom-build .*acme\.json$/)
+  assert.match(lines[3], /tauri .*acme\.json desktop src-tauri\/gen\/edition\.conf\.json$/)
+  assert.match(lines[4], /tauri build --config src-tauri\/gen\/edition\.conf\.json$/)
 
   const web = run(config, '--target', 'web', '--skip-wasm', '--dry-run')
   assert.equal(web.status, 0, web.stderr)
