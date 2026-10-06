@@ -2,8 +2,9 @@
 // Copyright (C) 2026 The SlicerX contributors
 //! Set up local AI: what the machine can give a local model (the GPU and its memory, system
 //! memory, cores), and the model lists of a running Ollama or LM Studio. Reads stay on this
-//! machine; the only requests are GETs to those two servers on 127.0.0.1. Pulls and the tool
-//! check go through llm.rs, whose transport also only reaches 127.0.0.1 for a local model.
+//! machine; the only requests are GETs to those two servers on 127.0.0.1, which never widens
+//! to the home network. Pulls and the tool check go through llm.rs, whose transport also
+//! reaches a model server the person typed in on the home network.
 
 use serde::Serialize;
 

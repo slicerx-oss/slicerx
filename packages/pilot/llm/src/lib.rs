@@ -35,8 +35,9 @@ use serde::{Deserialize, Serialize};
 
 pub use error::{Error, Result};
 pub use keys::{
-    ANTHROPIC_KEY_ENV, ANTHROPIC_KEYCHAIN_ACCOUNT, ANTHROPIC_KEYCHAIN_SERVICE, KeySource, OPENAI_KEY_ENV,
-    OPENAI_KEYCHAIN_ACCOUNT, OPENAI_KEYCHAIN_SERVICE, SystemKeySource,
+    ANTHROPIC_KEY_ENV, ANTHROPIC_KEYCHAIN_ACCOUNT, ANTHROPIC_KEYCHAIN_SERVICE, KeySource,
+    LOCAL_KEYCHAIN_ACCOUNT, LOCAL_KEYCHAIN_SERVICE, OPENAI_KEY_ENV, OPENAI_KEYCHAIN_ACCOUNT,
+    OPENAI_KEYCHAIN_SERVICE, SystemKeySource,
 };
 
 use keys::{ApiKey, Provider};
@@ -133,7 +134,13 @@ pub async fn stream(req: LlmHttpRequest) -> Result<impl Stream<Item = Result<Byt
                 .map_err(|_| Error::Transport("key lookup failed".to_owned()))?;
             Some(key.ok_or_else(|| missing_key(&req))?)
         }
-        Provider::OpenAiCompatible => None,
+        Provider::OpenAiCompatible => {
+            let rt = tokio::runtime::Handle::try_current()
+                .map_err(|_| Error::Transport("no tokio runtime".to_owned()))?;
+            rt.spawn_blocking(|| keys::local_key(&SystemKeySource))
+                .await
+                .map_err(|_| Error::Transport("key lookup failed".to_owned()))?
+        }
     };
     Ok(body_stream(send_response(checked, req, key).await?))
 }
@@ -147,7 +154,7 @@ pub async fn stream_with(
     let key = match checked.provider {
         Provider::OpenAi => Some(keys::openai_key(keys).ok_or_else(|| missing_key(&req))?),
         Provider::Anthropic => Some(keys::anthropic_key(keys).ok_or_else(|| missing_key(&req))?),
-        Provider::OpenAiCompatible => None,
+        Provider::OpenAiCompatible => keys::local_key(keys),
     };
     Ok(body_stream(send_response(checked, req, key).await?))
 }
@@ -173,7 +180,7 @@ pub async fn stream_with_store(
             None => return Err(missing_key(&req)),
         },
         Provider::Anthropic => Some(keys::anthropic_key(store).ok_or_else(|| missing_key(&req))?),
-        Provider::OpenAiCompatible => None,
+        Provider::OpenAiCompatible => keys::local_key(store),
     };
     Ok(body_stream(send_response(checked, req, key).await?))
 }
@@ -185,12 +192,48 @@ const MAX_LOCAL_BODY: usize = 1024 * 1024;
 const LOCAL_GET_TIMEOUT: Duration = Duration::from_secs(3);
 
 /// GETs a local model server's listing (Ollama's `/api/tags`, LM Studio's `/v1/models`) as
-/// text. Only `openai-compatible` URLs pass (`http://127.0.0.1` or `http://localhost`), no
-/// key is ever read, and the body is capped at 1 MiB. Needs a tokio runtime.
+/// text. Only loopback `http://127.0.0.1` or `http://localhost` URLs pass, even though
+/// `openai-compatible` requests may also go to the home network: auto-detect never reaches
+/// out. No key is ever read, and the body is capped at 1 MiB. Needs a tokio runtime.
 pub async fn local_get(url: &str) -> Result<String> {
-    let url = guard::check_url(Provider::OpenAiCompatible, "openai-compatible", url)?;
+    get_text(guard::check_loopback_url(url)?, None).await
+}
+
+/// GETs `<base>/models` from an `openai-compatible` server, on this computer or the home
+/// network, with the optional local key as a Bearer header. Used by the connect test. The
+/// body is capped at 1 MiB. Needs a tokio runtime.
+pub async fn local_models(base: &str) -> Result<String> {
+    let raw = format!("{}/models", base.trim_end_matches('/'));
+    let url = guard::check_url(Provider::OpenAiCompatible, "openai-compatible", &raw)?;
+    let rt =
+        tokio::runtime::Handle::try_current().map_err(|_| Error::Transport("no tokio runtime".to_owned()))?;
+    let key = rt
+        .spawn_blocking(|| keys::local_key(&SystemKeySource))
+        .await
+        .map_err(|_| Error::Transport("key lookup failed".to_owned()))?;
+    get_text(url, key).await
+}
+
+/// [`local_models`] over an explicit key source, read on the calling task.
+pub async fn local_models_with(keys: &dyn KeySource, base: &str) -> Result<String> {
+    let raw = format!("{}/models", base.trim_end_matches('/'));
+    let url = guard::check_url(Provider::OpenAiCompatible, "openai-compatible", &raw)?;
+    get_text(url, keys::local_key(keys)).await
+}
+
+async fn get_text(url: Url, key: Option<ApiKey>) -> Result<String> {
     let send = async {
-        let mut response = client()?.get(url).send().await.map_err(Error::transport)?;
+        let mut request = client()?.get(url);
+        if let Some(key) = &key {
+            let mut value = HeaderValue::from_str(&format!("Bearer {}", key.expose())).map_err(|_| {
+                Error::InvalidKey {
+                    provider: "openai-compatible".to_owned(),
+                }
+            })?;
+            value.set_sensitive(true);
+            request = request.header(AUTHORIZATION, value);
+        }
+        let mut response = request.send().await.map_err(Error::transport)?;
         let status = response.status();
         if !status.is_success() {
             return Err(Error::Http {

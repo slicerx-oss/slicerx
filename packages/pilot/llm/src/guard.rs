@@ -19,9 +19,27 @@ const FORBIDDEN_HEADERS: [&str; 4] = [
     "anthropic-version",
 ];
 
+/// True for the loopback names a local server answers on.
+fn is_loopback(host: &str) -> bool {
+    matches!(host, "127.0.0.1" | "localhost")
+}
+
+/// True for a home-network host: a private IPv4 address (10/8, 172.16/12, 192.168/16) or an
+/// mDNS `.local` name. Public addresses and other names never pass.
+fn is_home_network(host: &str) -> bool {
+    if let Ok(ip) = host.parse::<std::net::Ipv4Addr>() {
+        return ip.is_private();
+    }
+    host.len() > ".local".len()
+        && host
+            .get(host.len() - ".local".len()..)
+            .is_some_and(|tail| tail.eq_ignore_ascii_case(".local"))
+}
+
 /// Parses `raw` and checks it against the provider's allowlist: `https://api.openai.com`
-/// for `openai`, `https://api.anthropic.com` for `anthropic`, `http://127.0.0.1` or `http://localhost` on any port for
-/// `openai-compatible`. User info in the URL is always refused.
+/// for `openai`, `https://api.anthropic.com` for `anthropic`, and for `openai-compatible`
+/// `http://127.0.0.1`, `http://localhost`, a private IPv4 address or a `.local` name on any
+/// port. User info in the URL is always refused.
 pub(crate) fn check_url(provider: Provider, provider_id: &str, raw: &str) -> Result<Url> {
     let url = Url::parse(raw).map_err(|_| Error::InvalidUrl {
         provider: provider_id.to_owned(),
@@ -36,7 +54,9 @@ pub(crate) fn check_url(provider: Provider, provider_id: &str, raw: &str) -> Res
             Provider::Anthropic => {
                 url.scheme() == "https" && url.domain() == Some("api.anthropic.com") && url.port().is_none()
             }
-            Provider::OpenAiCompatible => url.scheme() == "http" && matches!(host, "127.0.0.1" | "localhost"),
+            Provider::OpenAiCompatible => {
+                url.scheme() == "http" && (is_loopback(host) || is_home_network(host))
+            }
         };
     if allowed {
         Ok(url)
@@ -44,6 +64,20 @@ pub(crate) fn check_url(provider: Provider, provider_id: &str, raw: &str) -> Res
         Err(Error::UrlNotAllowed {
             provider: provider_id.to_owned(),
             host: host.to_owned(),
+        })
+    }
+}
+
+/// Like [`check_url`] for `openai-compatible`, but loopback only. The auto-detect probes use
+/// it: they look for Ollama and LM Studio on this computer and never reach out to the network.
+pub(crate) fn check_loopback_url(raw: &str) -> Result<Url> {
+    let url = check_url(Provider::OpenAiCompatible, "openai-compatible", raw)?;
+    if is_loopback(url.host_str().unwrap_or_default()) {
+        Ok(url)
+    } else {
+        Err(Error::UrlNotAllowed {
+            provider: "openai-compatible".to_owned(),
+            host: url.host_str().unwrap_or_default().to_owned(),
         })
     }
 }
@@ -115,7 +149,20 @@ mod tests {
             ),
             (Provider::OpenAiCompatible, "http://localhost/v1", true),
             (Provider::OpenAiCompatible, "https://localhost:1234/v1", false),
-            (Provider::OpenAiCompatible, "http://192.168.1.20:11434/v1", false),
+            (Provider::OpenAiCompatible, "http://192.168.1.20:11434/v1", true),
+            (Provider::OpenAiCompatible, "http://10.0.0.5:8080/v1", true),
+            (Provider::OpenAiCompatible, "http://172.16.4.2:8080/v1", true),
+            (Provider::OpenAiCompatible, "http://172.32.0.1:8080/v1", false),
+            (Provider::OpenAiCompatible, "http://8.8.8.8:8080/v1", false),
+            (Provider::OpenAiCompatible, "http://169.254.1.1/v1", false),
+            (Provider::OpenAiCompatible, "http://studio.local:8080/v1", true),
+            (Provider::OpenAiCompatible, "http://.local/v1", false),
+            (
+                Provider::OpenAiCompatible,
+                "http://192.168.1.20.evil.example/v1",
+                false,
+            ),
+            (Provider::OpenAiCompatible, "https://192.168.1.20:8080/v1", false),
             (
                 Provider::OpenAiCompatible,
                 "http://localhost.evil.example/v1",

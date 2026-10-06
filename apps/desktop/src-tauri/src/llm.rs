@@ -83,6 +83,17 @@ pub async fn llm_available(provider: String) -> bool {
         .unwrap_or(false)
 }
 
+/// Lists the models of an `openai-compatible` server the person typed in, on this computer or the
+/// home network, sending the optional local key from the keychain. Returns the raw listing; the
+/// webview never sees the key and its CSP stays closed to the network.
+#[tauri::command]
+pub async fn llm_local_models(base_url: String) -> Result<String, String> {
+    sx_llm::local_models(&base_url).await.map_err(|e| match e {
+        sx_llm::Error::Http { status, message } => format!("{status}: {message}"),
+        other => other.to_string(),
+    })
+}
+
 /// Who pays for `openai` requests now: `plan`, `key`, or none.
 #[tauri::command]
 pub async fn llm_billing() -> Option<&'static str> {

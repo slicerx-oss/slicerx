@@ -21,8 +21,8 @@ use tokio::net::TcpListener;
 
 use crate::error::{Error, Result};
 use crate::keys::{
-    ANTHROPIC_KEYCHAIN_ACCOUNT, ANTHROPIC_KEYCHAIN_SERVICE, KeySource, OPENAI_KEYCHAIN_ACCOUNT,
-    OPENAI_KEYCHAIN_SERVICE, SystemKeySource,
+    ANTHROPIC_KEYCHAIN_ACCOUNT, ANTHROPIC_KEYCHAIN_SERVICE, KeySource, LOCAL_KEYCHAIN_ACCOUNT,
+    LOCAL_KEYCHAIN_SERVICE, OPENAI_KEYCHAIN_ACCOUNT, OPENAI_KEYCHAIN_SERVICE, SystemKeySource,
 };
 
 /// Keychain service of the stored ChatGPT connection (tokens and the probe result).
@@ -209,11 +209,13 @@ pub fn account(store: &dyn SecretStore) -> Option<Account> {
 // API keys -------------------------------------------------------------------------
 
 /// Saves a pasted API key in the keychain, the fallback when the plan route is not
-/// available. `provider` is `openai` or `anthropic`.
+/// available. `provider` is `openai`, `anthropic` or `local` (the optional key of a model
+/// server, which can be short).
 pub fn set_api_key(store: &dyn SecretStore, provider: &str, key: &str) -> Result<()> {
     let key = key.trim();
     let (service, account) = key_item(provider)?;
-    if key.len() < 20 || key.chars().any(|c| c.is_whitespace() || c.is_control()) {
+    let shortest = if provider == "local" { 1 } else { 20 };
+    if key.len() < shortest || key.chars().any(|c| c.is_whitespace() || c.is_control()) {
         return Err(Error::InvalidKey {
             provider: provider.to_owned(),
         });
@@ -227,7 +229,7 @@ pub fn clear_api_key(store: &dyn SecretStore, provider: &str) -> Result<()> {
     store.delete(service, account)
 }
 
-/// True when a pasted key is saved for `provider` (`openai` or `anthropic`).
+/// True when a pasted key is saved for `provider` (`openai`, `anthropic` or `local`).
 pub fn has_api_key(store: &dyn SecretStore, provider: &str) -> Result<bool> {
     let (service, account) = key_item(provider)?;
     Ok(store
@@ -269,6 +271,7 @@ fn key_item(provider: &str) -> Result<(&'static str, &'static str)> {
     match provider {
         "openai" => Ok((OPENAI_KEYCHAIN_SERVICE, OPENAI_KEYCHAIN_ACCOUNT)),
         "anthropic" => Ok((ANTHROPIC_KEYCHAIN_SERVICE, ANTHROPIC_KEYCHAIN_ACCOUNT)),
+        "local" => Ok((LOCAL_KEYCHAIN_SERVICE, LOCAL_KEYCHAIN_ACCOUNT)),
         other => Err(Error::UnknownProvider {
             provider: other.to_owned(),
         }),
