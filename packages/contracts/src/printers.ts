@@ -329,6 +329,8 @@ export interface PrinterHardware {
   maxAccelMmS2?: number
   /** The name the printer has on the network, which outlives an address change. */
   hostname?: string
+  /** The serial number or board id the printer reports, so a printer whose address changed is still the same one. */
+  serial?: string
 }
 
 export interface ExtruderInfo {
