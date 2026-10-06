@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 import type { Kinematics, PrinterModel } from '../types.ts'
-import { FIND_KLIPPER, find, rect, round } from './util.ts'
+import { FIND_KLIPPER, FIND_QIDI, find, rect, round } from './util.ts'
 
 /** Nozzle sizes offered for Voron builds. */
 const VORON_NOZZLES = [0.15, 0.2, 0.25, 0.4, 0.5, 0.6, 0.8, 1.0]
@@ -29,6 +29,10 @@ const klipper = (m: Omit<PrinterModel, 'connections' | 'nozzleCount' | 'defaultN
   ...m,
 })
 
+/** A QIDI printer on stock firmware, with the nozzles OrcaSlicer has profiles for. */
+const qidi = (id: string, name: string, buildVolume: PrinterModel['buildVolume']): PrinterModel =>
+  klipper({ id, brand: 'qidi', name, kinematics: 'corexy', enclosed: true, buildVolume, nozzles: [0.2, 0.4, 0.6, 0.8], find: FIND_QIDI })
+
 export const KLIPPER: PrinterModel[] = [
   voron('voron-0.1', 'Voron 0.1', 'corexy', 120, 120, 120),
   voron('voron-2.4-250', 'Voron 2.4 250', 'corexy', 250, 250, 225),
@@ -46,6 +50,7 @@ export const KLIPPER: PrinterModel[] = [
     enclosed: true,
     buildVolume: rect(245, 245, 240),
     nozzles: [0.4, 0.6],
+    find: FIND_QIDI,
   }),
   klipper({
     id: 'qidi-x-plus-4',
@@ -55,7 +60,15 @@ export const KLIPPER: PrinterModel[] = [
     enclosed: true,
     buildVolume: rect(305, 305, 280),
     nozzles: [0.4, 0.6],
+    find: FIND_QIDI,
   }),
+  // Build volumes from OrcaSlicer 2.4.2's QIDI machine profiles (printable_area, printable_height).
+  qidi('qidi-x-max-3', 'X-Max 3', rect(325, 325, 315)),
+  qidi('qidi-x-plus-3', 'X-Plus 3', rect(280, 280, 270)),
+  qidi('qidi-x-smart-3', 'X-Smart 3', rect(175, 180, 170)),
+  // The QIDI Box is optional on these two; its spools show as slots when the printer reports one.
+  qidi('qidi-q2', 'Q2', rect(270, 270, 256)),
+  qidi('qidi-x-max-4', 'X-Max 4', rect(390, 390, 340)),
   klipper({ id: 'sovol-sv08', brand: 'sovol', name: 'SV08', kinematics: 'corexy', enclosed: true, buildVolume: rect(350, 350, 345), nozzles: [0.4, 0.6] }),
   klipper({
     id: 'sovol-sv04',

@@ -5,7 +5,7 @@ import { find, rect } from './util.ts'
 
 const FIND = find({
   ip: 'On the touchscreen, open Settings, then Wi-Fi (or Network for a cable). Tap the connected network to see the IP address. Your router\'s device list shows it too.',
-  credential: 'None. Creality printers need no code or password for this connection.',
+  credential: 'None. Creality printers need no code or password for this connection, and no root. Moonraker and Fluidd come with the K2 family (Moonraker on 7125, Fluidd on 4408); on a K1 or Ender-3 V3 KE they need root (Settings, then Root account information), which SlicerX does not need.',
 })
 
 const creality = (m: Omit<PrinterModel, 'brand' | 'connections' | 'nozzleCount' | 'defaultNozzle' | 'find'> & Partial<PrinterModel>): PrinterModel => ({
@@ -39,7 +39,7 @@ export const CREALITY: PrinterModel[] = [
     buildVolume: rect(350, 350, 350),
     nozzles: STD,
     filamentSystem: 'cfs',
-    note: 'Runs Klipper. It has no camera through SlicerX because it streams over WebRTC.',
+    note: 'Runs Klipper with Moonraker on 7125 out of the box. SlicerX reads the CFS spools over the printer\'s own interface and shows the WebRTC camera.',
   }),
   creality({
     id: 'creality-ender-3-v3',

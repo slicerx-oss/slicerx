@@ -92,7 +92,7 @@ test('discovery is listed only where a protocol allows it, and says what it send
     octoprint: 'mdns',
     prusalink: 'mdns',
     duet: 'manual',
-    creality: 'manual',
+    creality: 'mdns',
     snapmaker: 'manual',
     elegoo: 'udp-broadcast',
     export: 'manual',

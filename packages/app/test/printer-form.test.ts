@@ -99,7 +99,8 @@ describe('connection validation', () => {
     const m = connectionMethod('bambu-lan')
     const empty = checkConnection(bambu(), m)
     expect(empty.ready).toBe(false)
-    expect(Object.keys(empty.errors).sort()).toEqual(['accessCode', 'host', 'serial'])
+    // The serial number is optional: SlicerX reads it from the printer's certificate.
+    expect(Object.keys(empty.errors).sort()).toEqual(['accessCode', 'host'])
     const f = { ...bambu(), fields: { ...EMPTY_FORM.fields, host: '192.168.1.40', serial: '01S00A123456789' }, secretLengths: { accessCode: 6 } }
     expect(checkConnection(f, m).errors).toEqual({ accessCode: 'The access code has 8 characters.' })
     expect(checkConnection({ ...f, secretLengths: { accessCode: 8 } }, m).ready).toBe(true)

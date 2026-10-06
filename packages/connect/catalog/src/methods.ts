@@ -20,10 +20,10 @@ export const CONNECTION_METHODS: readonly ConnectionMethod[] = [
     },
     fields: [
       host,
-      { key: 'serial', label: 'Serial number', secret: false, required: true },
+      { key: 'serial', label: 'Serial number', secret: false, required: false, placeholder: 'Read from the printer when empty' },
       { key: 'accessCode', label: 'Access code', secret: true, required: true, placeholder: '8 characters' },
     ],
-    summary: 'Turn on LAN Only Mode and Developer Mode on the printer, then enter its access code. A scan fills in the IP address and serial number.',
+    summary: 'Turn on LAN Only Mode and Developer Mode on the printer, then enter its access code. A scan fills in the IP address and serial number; with an IP address alone, SlicerX reads the serial number from the printer.',
   },
   {
     id: 'moonraker',
@@ -35,10 +35,16 @@ export const CONNECTION_METHODS: readonly ConnectionMethod[] = [
     discovery: {
       kind: 'mdns',
       service: '_moonraker._tcp',
-      detail: 'Asks the network for Moonraker servers with one multicast DNS query.',
+      detail: 'Asks the network for Moonraker servers with one multicast DNS query. An IP address alone is checked on ports 7125 and 80.',
     },
-    fields: [host, port('7125'), apiKey(false)],
-    summary: 'Any Klipper printer that opens in Mainsail or Fluidd. An API key is needed only if your computer is not a trusted client.',
+    fields: [
+      host,
+      port('7125'),
+      apiKey(false),
+      { key: 'username', label: 'User name', secret: false, required: false, placeholder: 'Only if logins are required' },
+      { key: 'password', label: 'Password', secret: true, required: false },
+    ],
+    summary: 'Any Klipper printer that opens in Mainsail or Fluidd. An API key is needed only if your computer is not a trusted client; a printer that requires logins also takes its user name and password.',
   },
   {
     id: 'octoprint',
@@ -93,8 +99,12 @@ export const CONNECTION_METHODS: readonly ConnectionMethod[] = [
     plugin: 'creality',
     guide: 'creality.md',
     defaultPort: 9999,
-    discovery: { kind: 'manual', detail: 'Creality printers on stock firmware are not found automatically. Enter the IP address.' },
-    fields: [host],
+    discovery: {
+      kind: 'mdns',
+      service: '_Creality-<id>._udp',
+      detail: 'Asks the network which services it offers with one multicast DNS query, and lists the ones stock Creality firmware announces. An IP address alone is checked through the printer\'s /info page and port 9999.',
+    },
+    fields: [host, apiKey(false)],
     summary: 'No code or password. SlicerX checks whether the printer answers as Moonraker or with Creality\'s own interface.',
   },
   {

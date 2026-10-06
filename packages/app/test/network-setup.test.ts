@@ -119,7 +119,6 @@ describe('why Test connection is off', () => {
   it('names each missing field in plain words', () => {
     expect(testBlockers(base, bambu)).toEqual([
       { field: 'host', text: 'The IP address is empty.' },
-      { field: 'serial', text: 'The serial number is empty.' },
       { field: 'accessCode', text: 'The access code is empty. It has 8 characters.' },
     ])
   })
@@ -138,19 +137,19 @@ describe('why Test connection is off', () => {
 
   it('lists them beside the fields as buttons that move to the field', () => {
     const blockers = testBlockers(base, bambu)
-    const r = render(createElement('div', null, createElement('input', { id: 'fr-f-serial' }), createElement(WhyNotReady, { blockers })))
+    const r = render(createElement('div', null, createElement('input', { id: 'fr-f-accessCode' }), createElement(WhyNotReady, { blockers })))
     const items = [...r.el.querySelectorAll<HTMLButtonElement>('#fr-test-why li button')]
     expect(items.map((b) => b.textContent)).toEqual(blockers.map((b) => b.text))
     expect(r.el.querySelector('#fr-test-why')?.getAttribute('role')).toBe('status')
     items[1]!.click()
-    expect(document.activeElement?.id).toBe('fr-f-serial')
+    expect(document.activeElement?.id).toBe('fr-f-accessCode')
     r.done()
   })
 
   it('says why in the footer, next to the disabled button, and reads it with the button', () => {
     const hint = blockerHint(testBlockers({ ...base, fields: { ...base.fields, host: '192.168.1.52', serial: '0948AA000000001' }, secretLengths: { accessCode: 6 } }, bambu))
     expect(hint).toBe('The access code has 8 characters; 6 are entered.')
-    expect(blockerHint(testBlockers(base, bambu))).toBe('The IP address is empty. 2 more fields need attention above.')
+    expect(blockerHint(testBlockers(base, bambu))).toBe('The IP address is empty. 1 more field needs attention above.')
     const r = render(createElement(Footer, { primary: { label: 'Test connection', onClick: () => undefined, disabled: true, hint: hint! } }))
     const button = [...r.el.querySelectorAll('button')].find((b) => b.textContent?.includes('Test connection'))!
     expect(button.getAttribute('aria-describedby')).toBe('fr-foot-hint')
