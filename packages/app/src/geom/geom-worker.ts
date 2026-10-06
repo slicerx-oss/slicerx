@@ -6,6 +6,7 @@
 // (cad/history/replay.ts) so meshes stay in the worker between steps; it yields between steps, so other
 // requests still get answers meanwhile, and stops when its caller cancels.
 import { replayHistory, type ReplayRequest } from '../cad/history/replay'
+import { askFaces } from './client'
 
 interface GeomExports {
   memory: WebAssembly.Memory
@@ -28,8 +29,9 @@ function load(): Promise<GeomExports> {
   })())
 }
 
+// Every mesh comes back with its faces, which the parts keep and send again with the next call.
 function call(x: GeomExports, op: string, request: unknown): unknown {
-  const bytes = new TextEncoder().encode(`${op}\0${JSON.stringify(request)}`)
+  const bytes = new TextEncoder().encode(`${op}\0${JSON.stringify(askFaces(request))}`)
   const at = x.geom_input(bytes.length)
   new Uint8Array(x.memory.buffer, at, bytes.length).set(bytes)
   const code = x.geom_call()
