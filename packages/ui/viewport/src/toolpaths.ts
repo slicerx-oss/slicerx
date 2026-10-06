@@ -40,7 +40,7 @@ import { ToolheadRig } from './toolhead'
 import { PurgeRig, type PurgePlan } from './purge'
 import type { HeadModel } from './heads'
 import { headAt, type HeadSeg } from './headpath'
-import { changeSequence, poseAt, type ChangeSequence, type ToolChangerSpec, type V3 } from './toolchanger'
+import { changeSequence, poseAt, printedTop, type ChangeSequence, type ToolChangerSpec, type V3 } from './toolchanger'
 
 /** Instances per draw call. Keeps each GPU buffer well under driver limits. */
 const CHUNK = 1 << 20
@@ -973,7 +973,7 @@ export class Toolpaths {
     const idx = this.changes.findIndex((c) => c.segment === segment)
     if (idx < 0) return null
     const c = this.changes[idx]!
-    const seq = changeSequence(spec, c.from, c.to, segmentEnd(b, segment - 1), segmentStart(b, segment), fixed, this.changes.slice(0, idx).map((h) => [h.from, h.to]))
+    const seq = changeSequence(spec, c.from, c.to, segmentEnd(b, segment - 1), segmentStart(b, segment), fixed, this.changes.slice(0, idx).map((h) => [h.from, h.to]), printedTop(b, segment))
     this.changeSeq = { key, seq }
     return seq
   }
