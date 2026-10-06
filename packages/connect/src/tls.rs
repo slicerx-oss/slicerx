@@ -54,13 +54,20 @@ impl ServerCertVerifier for AcceptSelfSigned {
     fn verify_server_cert(
         &self,
         end_entity: &CertificateDer<'_>,
-        _intermediates: &[CertificateDer<'_>],
+        intermediates: &[CertificateDer<'_>],
         _server_name: &ServerName<'_>,
         _ocsp: &[u8],
         _now: UnixTime,
     ) -> std::result::Result<ServerCertVerified, TlsError> {
         if let Some(o) = &self.observe {
-            let check = check_certificate(end_entity.as_ref(), &o.serial, bambu_anchors(), &self.provider);
+            let intermediates: Vec<&[u8]> = intermediates.iter().map(AsRef::as_ref).collect();
+            let check = check_chain(
+                end_entity.as_ref(),
+                &intermediates,
+                &o.serial,
+                bambu_anchors(),
+                &self.provider,
+            );
             if let Ok(mut map) = checks().lock() {
                 map.insert(o.host.clone(), check);
             }
@@ -252,6 +259,51 @@ fn bambu_anchors() -> &'static [Anchor] {
     ANCHORS.get_or_init(|| anchors_from(include_str!("../certs/bambu-ca.pem")))
 }
 
+/// Whether a key signed `cert`'s contents.
+fn signed_by(c: &Cert<'_>, key_alg: &[u8], key: &[u8], provider: &CryptoProvider) -> bool {
+    provider.signature_verification_algorithms.all.iter().any(|alg| {
+        alg.signature_alg_id().as_ref() == c.signature_alg
+            && alg.public_key_alg_id().as_ref() == key_alg
+            && alg.verify_signature(key, c.tbs, c.signature).is_ok()
+    })
+}
+
+/// [`check_certificate`], and when the leaf names no Bambu Lab CA as its issuer, a device CA the
+/// printer sent with it (BBL Device CA N7-V2 on a P2S, O1C2-V2 on an H2C, N6-V2 on an X2D) that a
+/// Bambu Lab CA signed and that signed the leaf.
+fn check_chain(
+    cert: &[u8],
+    intermediates: &[&[u8]],
+    serial: &str,
+    anchors: &[Anchor],
+    provider: &CryptoProvider,
+) -> CertificateCheck {
+    let direct = check_certificate(cert, serial, anchors, provider);
+    let Some(leaf) = parse(cert) else {
+        return direct;
+    };
+    if direct.verified || anchors.iter().any(|a| a.subject == leaf.issuer) {
+        return direct;
+    }
+    let by_device_ca = intermediates.iter().filter_map(|i| parse(i)).find(|ca| {
+        ca.subject == leaf.issuer
+            && signed_by(&leaf, ca.key_alg, ca.key, provider)
+            && anchors
+                .iter()
+                .any(|a| a.subject == ca.issuer && signed_by(ca, &a.key_alg, &a.key, provider))
+    });
+    match by_device_ca {
+        Some(ca) if direct.detail.contains("not issued") => CertificateCheck {
+            verified: true,
+            detail: format!(
+                "issued by Bambu Lab for this printer, through {}",
+                common_name(ca.subject).unwrap_or_else(|| "a device CA".to_owned())
+            ),
+        },
+        _ => direct,
+    }
+}
+
 /// Whether `cert` was issued by one of `anchors` for the printer with `serial`. A Bambu Lab
 /// printer's certificate names its serial as the common name.
 fn check_certificate(
@@ -273,12 +325,7 @@ fn check_certificate(
     let Some(anchor) = anchors.iter().find(|a| a.subject == c.issuer) else {
         return unverified("the certificate was not issued by a Bambu Lab CA");
     };
-    let signed = provider.signature_verification_algorithms.all.iter().any(|alg| {
-        alg.signature_alg_id().as_ref() == c.signature_alg
-            && alg.public_key_alg_id().as_ref() == anchor.key_alg
-            && alg.verify_signature(&anchor.key, c.tbs, c.signature).is_ok()
-    });
-    if signed {
+    if signed_by(&c, &anchor.key_alg, &anchor.key, provider) {
         CertificateCheck {
             verified: true,
             detail: "issued by Bambu Lab for this printer".to_owned(),
@@ -407,7 +454,7 @@ mod tests {
 
     use super::{
         anchors_from, bambu_anchors, bambu_client_config, bambu_lan_config, certificate_check,
-        check_certificate, common_name, lan_client_config, parse, public_key,
+        check_certificate, check_chain, common_name, lan_client_config, parse, public_key,
     };
 
     #[derive(Debug)]
@@ -564,6 +611,45 @@ mod tests {
         let check = check_certificate(der(LOOKALIKE_LEAF).as_ref(), SERIAL, bambu_anchors(), &provider());
         assert!(!check.verified);
         assert!(check.detail.contains("signature"), "{check:?}");
+    }
+
+    // A root, a device CA it signed and a leaf the device CA signed for SERIAL, the shape of a P2S or
+    // H2C chain (BBL CA2 RSA, BBL Device CA N7-V2, the printer). Throwaway, made once with OpenSSL.
+    const CHAIN_ROOT: &str = include_str!("../tests/fixtures/chain-root.cert.pem");
+    const CHAIN_DEVICE_CA: &[u8] = include_bytes!("../tests/fixtures/chain-device-ca.cert.pem");
+    const CHAIN_LEAF: &[u8] = include_bytes!("../tests/fixtures/chain-leaf.cert.pem");
+
+    #[test]
+    fn a_leaf_from_a_device_ca_that_a_trusted_ca_signed_is_verified() {
+        let (leaf, ca) = (der(CHAIN_LEAF), der(CHAIN_DEVICE_CA));
+        let anchors = anchors_from(CHAIN_ROOT);
+        let check = check_chain(leaf.as_ref(), &[ca.as_ref()], SERIAL, &anchors, &provider());
+        assert!(check.verified, "{check:?}");
+        assert!(check.detail.contains("Test Device CA N7-V2"), "{check:?}");
+        // Without the device CA the leaf names no trusted issuer.
+        assert!(!check_chain(leaf.as_ref(), &[], SERIAL, &anchors, &provider()).verified);
+        // The device CA does not make a leaf for another printer good.
+        assert!(
+            !check_chain(
+                leaf.as_ref(),
+                &[ca.as_ref()],
+                "01P00A000000002",
+                &anchors,
+                &provider()
+            )
+            .verified
+        );
+        // A device CA no trusted CA signed proves nothing.
+        assert!(
+            !check_chain(
+                leaf.as_ref(),
+                &[ca.as_ref()],
+                SERIAL,
+                &anchors_from(TEST_CA),
+                &provider()
+            )
+            .verified
+        );
     }
 
     #[test]
