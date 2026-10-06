@@ -8,7 +8,9 @@ mod common;
 use std::sync::Arc;
 
 use common::{Mocks, config, expect_code, job_file, secrets};
-use sx_connect::drivers::BambuConnector;
+use std::time::Duration;
+
+use sx_connect::drivers::{BambuConnector, MoonrakerConnector};
 use sx_connect::{
     Action, ErrorCode, JobKind, MemoryGate, PrinterConnector, PrinterSession, PrinterState, StartOptions,
     params,
@@ -100,4 +102,174 @@ async fn bambu_without_an_sd_card_says_so_before_uploading() {
         &params::upload("bay-1", &file.name, &file.sha256),
     );
     s.upload(file, &t).await.unwrap();
+}
+
+/// A Moonraker session to the fake, after `/moonraker` made it `variant` (a QIDI printer, a U1).
+async fn moonraker(extra: &[&str], control: serde_json::Value) -> (Mocks, Box<dyn PrinterSession>) {
+    let mocks = Mocks::start("moonraker", extra).await;
+    mocks.control("/moonraker", control).await;
+    let cfg = config("bay-4", "moonraker", mocks.port("moonraker"));
+    let s = MoonrakerConnector::new(Arc::new(MemoryGate::new()))
+        .connect(&cfg, &secrets(&[]))
+        .await
+        .unwrap();
+    (mocks, s)
+}
+
+async fn machine_log(mocks: &Mocks) -> Vec<String> {
+    mocks.state().await["moonraker"]["log"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|l| l.as_str().map(str::to_owned))
+        .collect()
+}
+
+// Setup fills the bed, kinematics and limits from Klipper itself, so nothing is typed.
+#[tokio::test]
+async fn moonraker_reports_the_bed_and_kinematics() {
+    let (_mocks, s) = moonraker(&[], serde_json::json!({})).await;
+    let hw = s.hardware().await.unwrap().unwrap();
+    assert_eq!(hw.build_volume_mm, Some([220.0, 220.0, 250.0]));
+    assert_eq!(hw.kinematics.as_deref(), Some("corexy"));
+    assert_eq!(hw.max_velocity_mm_s, Some(500.0));
+    assert_eq!(hw.hostname.as_deref(), Some("mock"));
+}
+
+// A QIDI Box's spools come from `save_variables`, the runout buttons and the printer's filament
+// dictionary; the model is the `machine_name` QIDI's Moonraker reports.
+#[tokio::test]
+async fn a_qidi_box_reads_as_slots() {
+    let (_mocks, s) = moonraker(&[], serde_json::json!({ "variant": "qidi" })).await;
+    let st = s.status().await.unwrap();
+    let slots: Vec<(&str, Option<&str>, Option<&str>)> = st
+        .slots
+        .iter()
+        .map(|x| (x.id.as_str(), x.material.as_deref(), x.color.as_deref()))
+        .collect();
+    assert_eq!(
+        slots,
+        [
+            ("A1", Some("PLA Rapido"), Some("#0000ff")),
+            ("A2", Some("PETG Tough"), Some("#ffffff")),
+            ("A3", None, None),
+            ("A4", None, None),
+        ]
+    );
+    let hw = s.hardware().await.unwrap().unwrap();
+    assert_eq!(hw.model.as_deref(), Some("X-Max 4"));
+    assert_eq!(hw.filament_units[0].kind, "qidi-box");
+}
+
+// A Snapmaker U1 names itself through `print_task_config`, and each toolhead's spool is a slot.
+#[tokio::test]
+async fn a_snapmaker_u1_reads_its_toolheads() {
+    let (_mocks, s) = moonraker(&[], serde_json::json!({ "variant": "u1" })).await;
+    assert_eq!(s.reported_model().as_deref(), Some("U1"));
+    let st = s.status().await.unwrap();
+    let mats: Vec<Option<&str>> = st.slots.iter().map(|x| x.material.as_deref()).collect();
+    assert_eq!(
+        mats,
+        [Some("PLA HIGH SPEED"), Some("PETG"), None, Some("PLA MATTE")]
+    );
+    assert_eq!(st.slots[0].color.as_deref(), Some("#ff0000"));
+}
+
+// Klipper down while Moonraker answers: an error with Klipper's own words, not a lost connection.
+#[tokio::test]
+async fn a_klipper_shutdown_says_why() {
+    let (mocks, s) = moonraker(&[], serde_json::json!({})).await;
+    mocks
+        .control(
+            "/moonraker",
+            serde_json::json!({ "klippy": "shutdown", "message": "Lost communication with MCU 'mcu'" }),
+        )
+        .await;
+    let st = s.status().await.unwrap();
+    assert_eq!(st.state, PrinterState::Error);
+    assert_eq!(
+        st.message.as_deref(),
+        Some("Klipper shutdown: Lost communication with MCU 'mcu'")
+    );
+    mocks
+        .control(
+            "/moonraker",
+            serde_json::json!({ "klippy": "startup", "message": "" }),
+        )
+        .await;
+    let st = s.status().await.unwrap();
+    assert_eq!(st.message.as_deref(), Some("Klipper is starting"));
+}
+
+// Uploads carry their SHA-256, which Moonraker checks; the webcam list is read once per session and
+// a disabled webcam is skipped.
+#[tokio::test]
+async fn moonraker_uploads_with_a_checksum_and_reads_webcams_once() {
+    let gate = Arc::new(MemoryGate::new());
+    let mocks = Mocks::start("moonraker", &["--camera"]).await;
+    let cfg = config("bay-4", "moonraker", mocks.port("moonraker"));
+    let s = MoonrakerConnector::new(gate.clone())
+        .connect(&cfg, &secrets(&[]))
+        .await
+        .unwrap();
+    let file = job_file("cube.gcode", JobKind::Gcode);
+    let t = gate.mint(
+        Action::Upload,
+        "bay-4",
+        &params::upload("bay-4", &file.name, &file.sha256),
+    );
+    s.upload(file, &t).await.unwrap();
+    assert!(s.snapshot().await.unwrap().is_some());
+    assert!(s.snapshot().await.unwrap().is_some());
+    let log = machine_log(&mocks).await;
+    assert!(
+        log.contains(&"moonraker upload checksum sent".to_owned()),
+        "{log:?}"
+    );
+    assert_eq!(log.iter().filter(|l| *l == "webcams list").count(), 1, "{log:?}");
+}
+
+// Logins forced: a user name and password sign in, and an expired access token is renewed with the
+// refresh token without the person seeing it.
+#[tokio::test]
+async fn moonraker_signs_in_with_a_user_login_and_renews_it() {
+    let mocks = Mocks::start("moonraker", &["--force-logins"]).await;
+    let mut cfg = config("bay-4", "moonraker", mocks.port("moonraker"));
+    cfg.username = Some(mocks.info["moonrakerLogin"]["user"].as_str().unwrap().to_owned());
+    cfg.credential_ref = Some("pw".to_owned());
+    let pw = mocks.info["moonrakerLogin"]["password"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let conn = MoonrakerConnector::new(Arc::new(MemoryGate::new()));
+    let s = conn.connect(&cfg, &secrets(&[("pw", pw)])).await.unwrap();
+    assert_eq!(s.status().await.unwrap().state, PrinterState::Idle);
+    mocks
+        .control("/moonraker", serde_json::json!({ "expireTokens": true }))
+        .await;
+    assert_eq!(s.status().await.unwrap().state, PrinterState::Idle);
+    assert!(machine_log(&mocks).await.contains(&"refresh_jwt".to_owned()));
+    let wrong = conn
+        .connect(&cfg, &secrets(&[("pw", "nope".to_owned())]))
+        .await
+        .err()
+        .unwrap();
+    assert_eq!(wrong.login_need(), Some(sx_connect::LoginNeed::KeyWrong));
+}
+
+// "Enter IP instead": Moonraker answers on the address, and a U1 is left to the Snapmaker connector.
+#[tokio::test]
+async fn moonraker_probe_confirms_a_typed_address() {
+    let (mocks, _s) = moonraker(&[], serde_json::json!({})).await;
+    let conn =
+        MoonrakerConnector::new(Arc::new(MemoryGate::new())).with_probe_ports(vec![mocks.port("moonraker")]);
+    let wait = Duration::from_millis(800);
+    let p = conn.probe("127.0.0.1", wait).await.unwrap();
+    assert_eq!(p.plugin, "moonraker");
+    assert_eq!(p.name.as_deref(), Some("mock"));
+    assert_eq!(p.firmware.as_deref(), Some("Moonraker mock"));
+    mocks
+        .control("/moonraker", serde_json::json!({ "variant": "u1" }))
+        .await;
+    assert!(conn.probe("127.0.0.1", wait).await.is_none());
 }
