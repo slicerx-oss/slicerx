@@ -154,6 +154,24 @@ describe('edition config', () => {
     expect(crashReportsRequired(pre)).toBe(true)
     expect(checkEditionConfig({ ...NEUTRAL_EDITION, release: { stage: 'nightly' } }).ok).toBe(false)
   })
+
+  it('turns the desktop updater on only for an edition with its own feed and key', () => {
+    const pubkey = Buffer.from('untrusted comment: minisign public key: 1234ABCD\nRWQ' + 'A'.repeat(53) + '\n').toString('base64')
+    const feed = 'https://updates.harbor.example/latest.json'
+    expect(tauriConfig(defineEditionConfig({}, { extends: harbor as never }), 'desktop')).not.toHaveProperty('plugins.updater')
+    const on = defineEditionConfig({ release: { updates: { endpoints: [feed], pubkey } } }, { extends: harbor as never })
+    expect(tauriConfig(on, 'desktop')).toMatchObject({ plugins: { updater: { endpoints: [feed], pubkey, requireSignedVersion: true, windows: { installMode: 'passive' } } } })
+    expect(tauriConfig(on, 'mobile')).not.toHaveProperty('plugins.updater')
+    // plain http, an empty list or a key that is not one are refused
+    const merged = (updates: unknown) => issues(mergeLayers(harbor as never, { release: { updates } } as never))
+    expect(merged({ endpoints: ['http://updates.harbor.example/latest.json'], pubkey })).not.toHaveLength(0)
+    expect(merged({ endpoints: [], pubkey })).not.toHaveLength(0)
+    expect(merged({ endpoints: [feed], pubkey: 'not a key' })).not.toHaveLength(0)
+    // a fork never takes SlicerX's feed, which would replace it with SlicerX
+    expect(merged({ endpoints: ['https://github.com/slicerx-oss/slicerx/releases/download/desktop-updates/latest.json'], pubkey })[0]).toMatch(/own update feed/)
+    expect(merged({ endpoints: ['https://slicerx.app/updates/latest.json'], pubkey })[0]).toMatch(/own update feed/)
+    expect(merged({ endpoints: [feed], pubkey })).toEqual([])
+  })
 })
 
 describe('runtime without a parser', () => {

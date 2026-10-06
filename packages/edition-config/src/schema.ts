@@ -207,6 +207,12 @@ export const releaseSchema = z.object({
   stage: z.enum(RELEASE_STAGES).default('stable'),
   /** Where people report bugs, linked from the agreement and Help, Report a bug. */
   bugReportsUrl: httpUrl.optional(),
+  /**
+   * In-app desktop updates. Unset, the desktop app never looks for updates. `endpoints` serve the update manifest
+   * (latest.json, written by apps/desktop/release/publish.sh) and are tried in order; `pubkey` is the public half of
+   * the edition's own update signing key (`tauri signer generate`), which checks every download.
+   */
+  updates: z.object({ endpoints: z.array(z.url({ protocol: /^https$/ })).min(1), pubkey: z.string().regex(/^[A-Za-z0-9+/=]{40,400}$/, 'the base64 public key `tauri signer generate` prints') }).optional(),
 })
 
 export const bugsSchema = z.object({
@@ -291,6 +297,8 @@ export const editionConfigSchema = baseSchema.superRefine((c, ctx) => {
     })
     need(fork, c.brand.logo.appIcon !== undefined, ['brand', 'logo', 'appIcon'], 'forks need their own app icon; without one the desktop build would ship the SlicerX icon')
     if (/^slicer-?x$/.test(c.apps.deepLinkScheme)) ctx.addIssue({ code: 'custom', path: ['apps', 'deepLinkScheme'], message: 'forks need their own link scheme, not slicerx://' })
+    // An edition installs only its own builds: SlicerX's update feed would replace it with SlicerX.
+    for (const [i, u] of (c.release.updates?.endpoints ?? []).entries()) if (/^https:\/\/(github\.com\/slicerx-oss\/|([a-z0-9-]+\.)*slicerx\.app\/)/i.test(u)) ctx.addIssue({ code: 'custom', path: ['release', 'updates', 'endpoints', i], message: "forks need their own update feed, not SlicerX's" })
     if (/^app\.slicerx\./.test(c.apps.desktop.identifier) || /^app\.slicerx\./.test(c.apps.ios?.bundleId ?? '') || /^app\.slicerx\./.test(c.apps.android?.applicationId ?? '')) ctx.addIssue({ code: 'custom', path: ['apps'], message: 'forks need their own app identifiers, not app.slicerx.*' })
   }
 

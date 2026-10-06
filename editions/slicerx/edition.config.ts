@@ -13,6 +13,12 @@ const supabase = env['SLICERX_SUPABASE_URL'] && env['SLICERX_SUPABASE_ANON_KEY']
   ? { url: env['SLICERX_SUPABASE_URL'], anonKey: env['SLICERX_SUPABASE_ANON_KEY'] }
   : null
 
+// In-app desktop updates: the manifest publish.sh keeps on the fixed desktop-updates release, which no engine or model
+// release touches, and the public half of the update signing key, made once on the release Mac and kept there
+// (apps/desktop/release/updates.md). Until the key is set the desktop app never looks for updates.
+const UPDATE_FEED = 'https://github.com/slicerx-oss/slicerx/releases/download/desktop-updates/latest.json'
+const UPDATE_PUBKEY = ''
+
 export default defineEditionConfig({
   id: 'slicerx',
   brand: {
@@ -67,7 +73,11 @@ export default defineEditionConfig({
   },
   firstRun: { defaultLook: 'slicerx' },
   // Testers and the dev kit get pre-alpha builds: the first run asks them to accept the agreement, and crash reports stay on.
-  release: { stage: 'pre-alpha', bugReportsUrl: 'https://discord.com/channels/1555048815881355324/1556010155802628228' },
+  release: {
+    stage: 'pre-alpha',
+    bugReportsUrl: 'https://discord.com/channels/1555048815881355324/1556010155802628228',
+    ...(UPDATE_PUBKEY ? { updates: { endpoints: [UPDATE_FEED], pubkey: UPDATE_PUBKEY } } : {}),
+  },
   legal: {
     sourceUrl: 'https://github.com/slicerx-oss/slicerx/tree/{commit}',
     trademarkNotice: 'SlicerX and its logo are trademarks of the SlicerX project.',

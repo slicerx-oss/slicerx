@@ -755,6 +755,27 @@
         "bugReportsUrl": {
           "type": "string",
           "format": "uri"
+        },
+        "updates": {
+          "type": "object",
+          "properties": {
+            "endpoints": {
+              "minItems": 1,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "format": "uri"
+              }
+            },
+            "pubkey": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9+/=]{40,400}$"
+            }
+          },
+          "required": [
+            "endpoints",
+            "pubkey"
+          ]
         }
       }
     },
