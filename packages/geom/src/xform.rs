@@ -116,6 +116,7 @@ pub fn transformed(mesh: &TriMesh, m: &Mat4) -> TriMesh {
 mod tests {
     use super::*;
 
+    #[cfg(feature = "cad")]
     #[test]
     fn faces_move_with_a_rigid_move_and_a_mirror() {
         let cut = crate::boolean::boolean(

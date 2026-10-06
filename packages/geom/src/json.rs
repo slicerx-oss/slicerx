@@ -2,72 +2,114 @@
 // Copyright (C) 2026 The SlicerX contributors
 //! JSON in, JSON out
 
+#[cfg(feature = "calib")]
+use crate::calib;
 use crate::error::{Error, Result};
+#[cfg(feature = "cad")]
 use crate::faces::Faces;
+#[cfg(feature = "hollow")]
+use crate::hollow;
 use crate::mesh::TriMesh;
 use crate::poly2d::Polygon;
 use crate::solids::SolidSpec;
+#[cfg(feature = "svg")]
+use crate::svg;
 use crate::vec3::{Plane, V3};
-use crate::{
-    calib, convex, cut, emboss, hollow, import, layers, orient, repair, resume, simplify, split, svg,
-};
+use crate::{convex, cut, emboss, import, layers, orient, repair, resume, simplify, split};
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
 
-pub const OPERATIONS: &[&str] = &[
-    "info",
-    "section",
-    "cut",
-    "split",
-    "repair",
-    "orient.analyze",
-    "orient.rank",
-    "hollow",
-    "emboss",
-    "emboss.polygons",
-    "calibrate",
-    "resume",
-    "layers.plan",
-    "build",
-    "subtract",
-    "import",
-    "simplify",
-    "extrude.svg",
-    "text.polygons",
-    "boolean",
-    "array",
-    "measure",
-    "measure.feature",
-    "face.pick",
-    "shape.profile",
-    "shape.extrude",
-    "text.mesh",
-    "import.auto",
-    "fit.check",
-    "face.push",
-    "face.push.preview",
-    "sketch.check",
-    "sketch.revolve",
-    "sketch.snaps",
-    "sketch.offset",
-    "dimension.anchor",
-    "dimension.evaluate",
-    "edge.pick",
-    "edge.chamfer",
-    "edge.fillet",
-    "edge.chamfer.preview",
-    "edge.fillet.preview",
-    "sketch.fillet",
-    "sketch.chamfer",
-    "hole.find",
-    "hole.apply",
-    "nest.footprint",
-    "nest.arrange",
-    "nest.start",
-    "nest.step",
-    "nest.end",
+/// Every operation, with the cargo feature it needs ("" for one every build has).
+const ALL_OPERATIONS: &[(&str, &str)] = &[
+    ("info", ""),
+    ("section", ""),
+    ("cut", ""),
+    ("split", ""),
+    ("repair", ""),
+    ("orient.analyze", ""),
+    ("orient.rank", ""),
+    ("hollow", "hollow"),
+    ("emboss", ""),
+    ("emboss.polygons", ""),
+    ("calibrate", "calib"),
+    ("resume", ""),
+    ("layers.plan", ""),
+    ("build", ""),
+    ("subtract", ""),
+    ("import", ""),
+    ("simplify", ""),
+    ("extrude.svg", "svg"),
+    ("text.polygons", "text"),
+    ("boolean", ""),
+    ("array", ""),
+    ("measure", ""),
+    ("measure.feature", ""),
+    ("face.pick", "cad"),
+    ("shape.profile", "cad"),
+    ("shape.extrude", "cad"),
+    ("text.mesh", "cad"),
+    ("import.auto", ""),
+    ("fit.check", ""),
+    ("face.push", "cad"),
+    ("face.push.preview", "cad"),
+    ("sketch.check", "cad"),
+    ("sketch.revolve", "cad"),
+    ("sketch.snaps", "cad"),
+    ("sketch.offset", "cad"),
+    ("dimension.anchor", "cad"),
+    ("dimension.evaluate", "cad"),
+    ("edge.pick", "cad"),
+    ("edge.chamfer", "cad"),
+    ("edge.fillet", "cad"),
+    ("edge.chamfer.preview", "cad"),
+    ("edge.fillet.preview", "cad"),
+    ("sketch.fillet", "cad"),
+    ("sketch.chamfer", "cad"),
+    ("hole.find", "holes"),
+    ("hole.apply", "holes"),
+    ("nest.footprint", "nest"),
+    ("nest.arrange", "nest"),
+    ("nest.start", "nest"),
+    ("nest.step", "nest"),
+    ("nest.end", "nest"),
 ];
+
+/// Whether this build has the feature.
+#[allow(
+    clippy::match_like_matches_macro,
+    reason = "each arm reads the build's features"
+)]
+fn has(feature: &str) -> bool {
+    match feature {
+        "" => true,
+        "cad" => cfg!(feature = "cad"),
+        "holes" => cfg!(feature = "holes"),
+        "text" => cfg!(feature = "text"),
+        "svg" => cfg!(feature = "svg"),
+        "nest" => cfg!(feature = "nest"),
+        "calib" => cfg!(feature = "calib"),
+        "hollow" => cfg!(feature = "hollow"),
+        _ => false,
+    }
+}
+
+/// The operations this build can run.
+pub fn operations() -> Vec<&'static str> {
+    ALL_OPERATIONS
+        .iter()
+        .filter(|(_, f)| has(f))
+        .map(|(n, _)| *n)
+        .collect()
+}
+
+/// The error for an operation this build leaves out, or for one that does not exist.
+fn unknown(op: &str) -> Error {
+    match ALL_OPERATIONS.iter().find(|(n, _)| *n == op) {
+        Some((_, f)) => Error::invalid("op", format!("{op} is not in this build; it leaves out {f}")),
+        None => Error::UnknownOp(op.to_owned()),
+    }
+}
 
 pub type FileLoader<'a> = &'a dyn Fn(&str) -> Result<Vec<u8>>;
 
@@ -152,6 +194,7 @@ pub fn call_value(op: &str, req: &Value, files: FileLoader<'_>) -> Result<Value>
             let max: usize = field_or(req, "maxCandidates", 12)?;
             Ok(json!({ "ranked": to_value(&orient::rank(&m, &opts, max))? }))
         }
+        #[cfg(feature = "hollow")]
         "hollow" => {
             let m = mesh_field(req, "mesh", files)?;
             let opts: hollow::HollowOptions = field_or_default(req, "options")?;
@@ -175,6 +218,7 @@ pub fn call_value(op: &str, req: &Value, files: FileLoader<'_>) -> Result<Value>
             let out = emboss::emboss_polygons(&m, &polys, point, normal, up, depth, mode)?;
             Ok(json!({ "mesh": enc.mesh(&out) }))
         }
+        #[cfg(feature = "calib")]
         "calibrate" => {
             let r: calib::CalibRequest = parse(req.get("request").unwrap_or(req))?;
             let model = calib::generate(&r)?;
@@ -316,6 +360,7 @@ pub fn call_value(op: &str, req: &Value, files: FileLoader<'_>) -> Result<Value>
                 "bounds": { "min": lo, "max": hi },
             }))
         }
+        #[cfg(feature = "svg")]
         "extrude.svg" => {
             #[derive(Deserialize)]
             #[serde(untagged)]
@@ -353,6 +398,7 @@ pub fn call_value(op: &str, req: &Value, files: FileLoader<'_>) -> Result<Value>
             let opts: layers::LayerOptions = field_or_default(req, "options")?;
             to_value(&layers::plan_layers(&m, nozzle, mode, &opts)?)
         }
+        #[cfg(feature = "nest")]
         "nest.footprint" => {
             let meshes = match req.get("meshes") {
                 Some(Value::Array(list)) => list
@@ -377,20 +423,22 @@ pub fn call_value(op: &str, req: &Value, files: FileLoader<'_>) -> Result<Value>
                 "bounds": if b.is_empty() { Value::Null } else { json!({ "min": b.min, "max": b.max }) },
             }))
         }
+        #[cfg(feature = "nest")]
         "nest.arrange" => to_value(&crate::nest::nest(parse(req)?)?),
+        #[cfg(feature = "nest")]
         "nest.start" => to_value(&crate::nest::start(parse(req)?)?),
+        #[cfg(feature = "nest")]
         "nest.step" => {
             let id: u32 = field(req, "session")?;
             let passes: usize = field_or(req, "passes", 1)?;
             to_value(&crate::nest::step(id, passes)?)
         }
+        #[cfg(feature = "nest")]
         "nest.end" => {
             crate::nest::end(field(req, "session")?);
             Ok(json!({}))
         }
-        _ => {
-            crate::json_cad::call(op, req, enc, files).unwrap_or_else(|| Err(Error::UnknownOp(op.to_owned())))
-        }
+        _ => crate::json_cad::call(op, req, enc, files).unwrap_or_else(|| Err(unknown(op))),
     }
 }
 
@@ -519,7 +567,8 @@ fn info(m: &TriMesh) -> Value {
 #[derive(Clone, Copy)]
 pub(crate) enum MeshOut {
     Flat,
-    /// Flat, with the faces when the mesh has them (the request's `withFaces`).
+    /// Flat, with the faces when the mesh has them (the request's `withFaces`; builds with the cad feature).
+    #[cfg(feature = "cad")]
     FlatFaces,
     StlBase64,
 }
@@ -528,6 +577,7 @@ impl MeshOut {
     fn from_request(req: &Value) -> Self {
         match req.get("meshOutput").and_then(Value::as_str) {
             Some("stlBase64") => Self::StlBase64,
+            #[cfg(feature = "cad")]
             _ if req.get("withFaces").and_then(Value::as_bool) == Some(true) => Self::FlatFaces,
             _ => Self::Flat,
         }
@@ -538,21 +588,25 @@ impl MeshOut {
         reason = "output positions are f32 like the contracts"
     )]
     pub(crate) fn mesh(self, m: &TriMesh) -> Value {
+        let flat = || {
+            let positions: Vec<f64> = m
+                .positions
+                .iter()
+                .flatten()
+                .map(|&c| f64::from(c as f32))
+                .collect();
+            let indices: Vec<u32> = m.triangles.iter().flatten().copied().collect();
+            json!({ "positions": positions, "indices": indices })
+        };
         match self {
-            Self::Flat | Self::FlatFaces => {
-                let positions: Vec<f64> = m
-                    .positions
-                    .iter()
-                    .flatten()
-                    .map(|&c| f64::from(c as f32))
-                    .collect();
-                let indices: Vec<u32> = m.triangles.iter().flatten().copied().collect();
-                match (&m.faces, self) {
-                    (Some(f), Self::FlatFaces) => {
-                        json!({ "positions": positions, "indices": indices, "faces": f })
-                    }
-                    _ => json!({ "positions": positions, "indices": indices }),
+            Self::Flat => flat(),
+            #[cfg(feature = "cad")]
+            Self::FlatFaces => {
+                let mut v = flat();
+                if let (Some(f), Some(o)) = (&m.faces, v.as_object_mut()) {
+                    o.insert("faces".to_owned(), json!(f));
                 }
+                v
             }
             Self::StlBase64 => json!({ "stlBase64": base64_encode(&m.to_stl("sx-geom")) }),
         }
@@ -569,12 +623,14 @@ pub(crate) enum MeshIn {
     Flat {
         positions: Vec<f64>,
         indices: Vec<u32>,
+        #[cfg(feature = "cad")]
         #[serde(default)]
         faces: Option<Faces>,
     },
     Nested {
         positions: Vec<V3>,
         triangles: Vec<[u32; 3]>,
+        #[cfg(feature = "cad")]
         #[serde(default)]
         faces: Option<Faces>,
     },
@@ -597,20 +653,30 @@ pub(crate) fn mesh_value(v: &Value, key: &str, files: FileLoader<'_>) -> Result<
         MeshIn::Flat {
             positions,
             indices,
+            #[cfg(feature = "cad")]
             faces,
         } => {
+            #[allow(unused_mut, reason = "faces are read only in builds with the cad feature")]
             let mut m = TriMesh::from_flat(&positions, &indices)?;
-            m.faces = faces.filter(|f| f.fit(&m));
+            #[cfg(feature = "cad")]
+            {
+                m.faces = faces.filter(|f| f.fit(&m));
+            }
             m
         }
         MeshIn::Nested {
             positions,
             triangles,
+            #[cfg(feature = "cad")]
             faces,
         } => {
+            #[allow(unused_mut, reason = "faces are read only in builds with the cad feature")]
             let mut m = TriMesh::new(positions, triangles);
             m.validate(key)?;
-            m.faces = faces.filter(|f| f.fit(&m));
+            #[cfg(feature = "cad")]
+            {
+                m.faces = faces.filter(|f| f.fit(&m));
+            }
             m
         }
     })
@@ -802,9 +868,16 @@ mod tests {
                 json!({ "mesh": mesh, "measuredHeightMm": 6.1, "meshOutput": "stlBase64" }),
             ),
         ];
+        let here = operations();
         for (op, req) in cases {
             let out = call(op, &req.to_string());
-            assert!(out.is_ok(), "{op}: {:?}", out.err());
+            if here.contains(&op) {
+                assert!(out.is_ok(), "{op}: {:?}", out.err());
+            } else {
+                // A build that leaves the tool out says so.
+                let why = out.err().map(|e| e.to_string()).unwrap_or_default();
+                assert!(why.contains("not in this build"), "{op}: {why}");
+            }
         }
         assert!(matches!(call("nope", "{}"), Err(Error::UnknownOp(_))));
     }
@@ -1003,6 +1076,7 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "svg")]
     #[test]
     fn extrude_svg_returns_colored_parts() {
         let svg = "<svg viewBox=\"0 0 50 50\"><rect width=\"20\" height=\"20\" fill=\"#f00\"/>\

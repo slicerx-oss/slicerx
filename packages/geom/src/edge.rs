@@ -20,6 +20,7 @@ use std::f64::consts::PI;
 
 mod rim;
 
+#[cfg(feature = "holes")]
 pub(crate) use rim::{Rim, rims_on};
 
 const MARGIN_MM: f64 = 0.01;
