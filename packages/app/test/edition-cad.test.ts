@@ -8,7 +8,7 @@ import { NEUTRAL, setCurrentEdition } from '../src/edition'
 import { plateCommands } from '../src/plate/commands'
 
 const ids = () => plateCommands(() => ({ id: 'slicerx' }), undefined).map((c) => c.id)
-const MODELING = ['object-text', 'object-shape', 'object-sketch', 'object-push', 'object-fillet', 'object-holefit', 'object-thread', 'dimensions-show']
+const MODELING = ['object-text', 'object-shape', 'object-sketch', 'object-push', 'object-fillet', 'object-holefit', 'object-thread', 'project-values', 'dimensions-show']
 
 describe('an edition without the modeling tools', () => {
   afterEach(() => setCurrentEdition(NEUTRAL))

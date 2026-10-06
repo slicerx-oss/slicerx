@@ -5,6 +5,7 @@
 // once, on release or Enter, and the new mesh lands in one store update, so undo takes it back in
 // one step. A face with a fillet or chamfer on one of its edges in the history is pushed before that
 // step and the round made again on the moved edge (docs/cad-history.md). No React in here.
+import { typedNumber } from './value-table'
 import type { MeshHandle, MeshPart } from '@slicerx/contracts'
 import { pickFace, pushFace, type FaceFrame, type FacePick, type MovedFace, type Pick as HitPick, type Polygon, type Vec3 } from '../geom/cad'
 import { fromGeom, toGeom } from '../geom/client'
@@ -33,9 +34,8 @@ const fmt = (v: number) => String(Math.round(v * 100) / 100)
 
 /** A typed distance: a number, comma decimals accepted. Null for anything else. */
 export function parseDistance(text: string): number | null {
-  const t = text.trim().replace(',', '.')
-  if (!t) return null
-  const v = Number(t)
+  if (!text.trim()) return null
+  const v = typedNumber(text)
   return Number.isFinite(v) ? v : null
 }
 

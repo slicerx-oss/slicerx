@@ -153,15 +153,15 @@ export function steps(page: Page): Promise<StepInfo[]> {
 /** The panel of the open modeling tool. */
 export const toolPanel = (page: Page) => page.locator('[data-section="cad-tool"]')
 
-/** Picks the top face with the push and pull tool and moves it by `mm`. */
-export async function pushTop(page: Page, objectId: string, mm: number): Promise<void> {
+/** Picks the top face with the push and pull tool and moves it by `mm`, a number or a sum of named values. */
+export async function pushTop(page: Page, objectId: string, mm: number | string): Promise<void> {
   await command(page, 'Push or pull a face')
   const panel = toolPanel(page)
   await expect(panel).toContainText('No face yet')
   await pick(page, await facePick(page, objectId, [0, 0, 1]))
   await expect(panel).toContainText('A face is picked')
   await panel.locator('#push-dist').fill(String(mm))
-  await panel.getByRole('button', { name: mm < 0 ? 'Push in' : 'Pull out' }).click()
+  await panel.getByRole('button', { name: String(mm).startsWith('-') ? 'Push in' : 'Pull out' }).click()
   await expect(panel).toContainText('No face yet', { timeout: 30_000 })
   await panel.getByRole('button', { name: 'Done' }).click()
 }

@@ -20,6 +20,7 @@ import { get, set, toast, type PlateEntry } from '../state/store'
 import { addEdge, applyEdges, edgeDistance, edgeLines, edgeParams, sameEdge, type Kind } from './edges'
 import { followed } from './history/model'
 import { editing, nowOf, saveEdit } from './history/ops'
+import { bindNext } from './history/record'
 import { close, errorText, num, Num, Shell, useProbe } from './panel-kit'
 
 interface Picked {
@@ -209,6 +210,7 @@ export function FilletTool() {
     setNote(null)
     try {
       const params = edgeParams(kind, picked.edges, s1, kind === 'chamfer' ? s2 : null)
+      bindNext(size)
       if (edit) {
         await saveEdit(host.slicer, params)
         toast(`Changed step ${edit.index + 1} and ran the steps after it.`, 'ok')

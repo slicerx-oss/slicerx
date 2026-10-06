@@ -5,6 +5,8 @@
 // names and filament slots, and Metadata/project_settings.config with the print settings. A sliced
 // plate goes in as Metadata/plate_N.gcode with its MD5, which makes a .gcode.3mf. With `sx` it is an
 // .sx3mf: the same layout with SlicerX metadata.
+import type { NamedValue } from '../cad/value-names'
+import { valuesJson } from './values-file'
 import type { MeshPart } from '@slicerx/contracts'
 import { bake } from '../plate/mesh-ops'
 import { areaOrigin } from '../plate/bed-origin'
@@ -384,6 +386,8 @@ export interface ProjectInput {
    * creator's id and the id of the person exporting (empty when signed out). Geometry is unchanged.
    */
   sx?: { modelId?: string; creatorId?: string; exportedBy: string }
+  /** The project's named values (cad/values.ts), written as Metadata/slicerx_values.json. */
+  namedValues?: readonly NamedValue[]
 }
 
 const SX_NS = 'https://slicerx.app/schemas/sx3mf/2026'
@@ -570,6 +574,8 @@ export function projectFiles(input: ProjectInput, splitAt = SPLIT_BYTES): ZipEnt
   const dims = dimensionsJson(input.plates.flatMap((p) => p.objects), fileIds)
   if (dims) files.push({ name: 'Metadata/slicerx_dimensions.json', data: dims })
   files.push(...historyFiles(input.plates.flatMap((p) => p.objects), fileIds))
+  const values = valuesJson(input.namedValues ?? [])
+  if (values) files.push({ name: 'Metadata/slicerx_values.json', data: values })
   const marks = marksXml(input.layerMarks)
   if (marks) files.push({ name: 'Metadata/custom_gcode_per_layer.xml', data: marks })
   const sliced = Object.entries(input.gcode ?? {}).map(([i, gcode]) => {

@@ -17,6 +17,7 @@ import { edgeLines } from './edges'
 import { holeSpecFor, THREADS, type Head, type Purpose, type Thread } from './hole-sizes'
 import { applyHole } from './holes'
 import { editing, saveEdit } from './history/ops'
+import { bindNext } from './history/record'
 import { close, errorText, num, Num, Shell, useProbe } from './panel-kit'
 
 interface Picked {
@@ -87,6 +88,7 @@ export function HoleTool() {
     setNote(null)
     try {
       const params = { op: 'hole.apply' as const, hole: picked.hole, spec: sized.spec, label: sized.label }
+      bindNext(purpose === 'custom' ? custom : undefined)
       if (edit) {
         await saveEdit(host.slicer, params)
         toast(`Changed step ${edit.index + 1} and ran the steps after it.`, 'ok')

@@ -11,8 +11,10 @@ import { geom, usesWorker } from '../../geom/client'
 import { quietly } from '../../plate/history'
 import { get, markStale, set, type CadTool, type PlateEntry } from '../../state/store'
 import { objectsFor } from '../dimensions'
-import { direction, followField, followFor, followsOf, invert, multiply, point, type History, type HistoryMesh, type ReplayResult, type Step, type StepParams, type StepStatus } from './model'
-import { sessionFonts } from './record'
+import { currentValues } from '../value-table'
+import { bindFor } from '../values'
+import { direction, followField, followFor, followsOf, invert, mainNumber, multiply, point, type History, type HistoryMesh, type ReplayResult, type Step, type StepParams, type StepStatus } from './model'
+import { sessionFonts, takeBind } from './record'
 import { replayHistory, type ReplayRequest } from './replay'
 import { brandAccent } from '../../edition'
 
@@ -218,8 +220,12 @@ export async function saveEdit(host: Loader, params: StepParams): Promise<{ stat
   if (!ed) throw new Error('No step is open for editing.')
   const h = ed.entry.history!
   const before = h.steps.slice(0, ed.index)
-  const { broken: _b, suppressed: _s, follow: _f, ...keep } = ed.step
-  const step: Step = { ...keep, params, transform: [...ed.entry.transform] }
+  const { broken: _b, suppressed: _s, follow: _f, bind: old, ...keep } = ed.step
+  // What the tool's field said this time, or the old binding when it still gives the step's number.
+  const typed = takeBind(params)
+  const n = mainNumber(params)
+  const kept = !typed.bind && old && n && bindFor(old, n.value, currentValues()) ? { bind: old } : {}
+  const step: Step = { ...keep, params, transform: [...ed.entry.transform], ...typed, ...kept }
   const follow = followFor(before, step)
   const steps = h.steps.map((s, i) => (i === ed.index ? (follow ? { ...step, follow } : step) : s))
   // A body that was hidden while its step was open comes back for the replay.
@@ -245,9 +251,14 @@ export function deleteStep(host: Loader, objectId: string, index: number): Promi
   return applyHistory(host, objectId, { ...h, steps: h.steps.filter((_, i) => i !== index).map(without) })
 }
 
-export function setParams(host: Loader, objectId: string, index: number, params: StepParams): Promise<{ status: StepStatus[] }> {
+/** The step's parameters changed in place; `bind` is the expression its main number now follows, if any. */
+export function setParams(host: Loader, objectId: string, index: number, params: StepParams, bind?: string): Promise<{ status: StepStatus[] }> {
   const h = need(objectId)
-  return applyHistory(host, objectId, { ...h, steps: h.steps.map((s, i) => (i === index ? { ...s, params } : s)) })
+  const with_ = (s: Step): Step => {
+    const { bind: _old, ...rest } = s
+    return { ...rest, params, ...(bind ? { bind } : {}) }
+  }
+  return applyHistory(host, objectId, { ...h, steps: h.steps.map((s, i) => (i === index ? with_(s) : s)) })
 }
 
 function need(objectId: string): History {

@@ -15,6 +15,7 @@ import { get, set, toast, useApp } from '../state/store'
 import { edgeLines } from './edges'
 import { applyThread } from './holes'
 import { editing, saveEdit } from './history/ops'
+import { bindNext } from './history/record'
 import { close, errorText, num, Num, Shell, useProbe } from './panel-kit'
 import { threadSpecFor } from './thread-spec'
 
@@ -91,6 +92,7 @@ export function ThreadTool() {
     setNote(null)
     try {
       const { suggested: _s, sizes: _all, ...place } = target
+      bindNext(length)
       if (edit) {
         const spec = sized?.spec ?? { ...edit.params.spec, ...(lengthMm !== undefined ? { lengthMm } : {}) }
         await saveEdit(host.slicer, { op: 'thread.apply', thread: place, spec, label: sized?.label ?? edit.params.label })

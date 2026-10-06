@@ -13,6 +13,7 @@ import { cameraBus } from '../plate/tools'
 import { get, set, toast } from '../state/store'
 import { findTriangle } from './history/model'
 import { editing, nowOf, saveEdit } from './history/ops'
+import { bindNext } from './history/record'
 import { loopsOf } from './cad-ops'
 import { close, errorText, Num, pickWords, Shell, useProbe } from './panel-kit'
 import { applyPush, onFace, parseDistance, pickPushFace, pushWords, type PushFace } from './push'
@@ -29,6 +30,11 @@ export function PushTool() {
   live.current = { ...live.current, face, text, busy }
   const view = cameraBus()?.cad
   const distance = parseDistance(text)
+  // A typed distance can follow a named value; a dragged one is a plain number.
+  const typed = (go: () => Promise<void>) => {
+    bindNext(text)
+    void go().finally(() => bindNext(undefined))
+  }
   // A push step opened from the history: its face, found again on the part as it was before the step.
   const [edit] = useState(() => {
     const ed = editing()
@@ -157,11 +163,11 @@ export function PushTool() {
       ) : (
         <p className="cad-hint" role="status"><Icon name="info" size={15} /> {words}</p>
       )}
-      <Num id="push-dist" label="Distance along the face normal" unit="mm" value={text} onChange={setText} onEnter={() => void apply(distance, face)} />
+      <Num id="push-dist" label="Distance along the face normal" unit="mm" value={text} onChange={setText} onEnter={() => typed(() => apply(distance, face))} />
       {note || bad ? <p className="cad-note" role="status"><Icon name="alert" size={14} /> {note ?? 'Type a number, such as 5 or -3.'}</p> : null}
       <div className="cad-actions">
         <Button variant="ghost" onClick={close} disabled={busy}>Done</Button>
-        <Button variant="primary" onClick={() => void apply(distance, face)} disabled={busy || !face || !distance}>
+        <Button variant="primary" onClick={() => typed(() => apply(distance, face))} disabled={busy || !face || !distance}>
           {busy ? 'Working' : distance !== null && distance < 0 ? 'Push in' : 'Pull out'}
         </Button>
       </div>
