@@ -25,6 +25,13 @@ export function currentEdition(): EditionConfig {
   return current
 }
 
+/** The modeling tools ship in this edition (its geometry engine is built without them when they do not). */
+export const MODELING_COMMANDS = new Set(['object-text', 'object-shape', 'object-sketch', 'object-push', 'object-fillet', 'object-holefit', 'dimensions-show'])
+
+export function editionHasCad(edition: EditionConfig = current): boolean {
+  return edition.features.cad
+}
+
 /**
  * The product name the app shows: the edition's brand name. Every user-facing mention of the app goes
  * through this, so a white-label edition never says SlicerX (only the Made possible by SlicerX credit does).

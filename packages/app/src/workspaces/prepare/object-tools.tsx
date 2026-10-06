@@ -6,6 +6,7 @@
 // loaded on first use).
 import { Button, Dialog, Field, Input, Menu, MenuAnchor, MenuItem, MenuSeparator, Seg, Select } from '@slicerx/ui'
 import { useState, type ReactNode } from 'react'
+import { editionHasCad, useEdition } from '../../edition'
 import { useHost } from '../../host'
 import { hollowSelected, orientSelected, repairSelected, simplifySelected, subtractFromSelected } from '../../plate/geom-ops'
 import { isCadTool, set, toast, useApp, type CadTool } from '../../state/store'
@@ -96,6 +97,7 @@ export function ObjectTools() {
   const [open, setOpen] = useState(false)
   const tool = useApp((s) => s.objectTool)
   const cad = useApp((s) => s.cadTools)
+  const modeling = editionHasCad(useEdition())
   const setTool = (t: ToolId | CadTool | null) => set({ objectTool: t })
   const direct = (fn: () => Promise<unknown>) => {
     setOpen(false)
@@ -117,16 +119,20 @@ export function ObjectTools() {
           <MenuSeparator />
           <MenuItem icon="measure" onClick={() => pick('measure')}>Measure</MenuItem>
           <MenuItem icon="grid" disabled={!hasSel} onClick={() => pick('array')}>Array</MenuItem>
-          <MenuItem icon="ruler" data-tip="sketch.enter" onClick={() => pick('sketch')}>Sketch</MenuItem>
-          <MenuItem icon="import" data-tip="cad.svgFace" onClick={() => pick('facesvg')}>SVG on a face</MenuItem>
-          <MenuItem icon="move" data-tip="cad.push" onClick={() => pick('push')}>Push and pull</MenuItem>
-          <MenuItem icon="shapes" data-tip="cad.fillet" onClick={() => pick('fillet')}>Fillet and chamfer</MenuItem>
-          <MenuItem icon="shapes" onClick={() => pick('holefit')}>Hole for a screw or insert</MenuItem>
+          {modeling ? (
+            <>
+              <MenuItem icon="ruler" data-tip="sketch.enter" onClick={() => pick('sketch')}>Sketch</MenuItem>
+              <MenuItem icon="import" data-tip="cad.svgFace" onClick={() => pick('facesvg')}>SVG on a face</MenuItem>
+              <MenuItem icon="move" data-tip="cad.push" onClick={() => pick('push')}>Push and pull</MenuItem>
+              <MenuItem icon="shapes" data-tip="cad.fillet" onClick={() => pick('fillet')}>Fillet and chamfer</MenuItem>
+              <MenuItem icon="shapes" onClick={() => pick('holefit')}>Hole for a screw or insert</MenuItem>
+            </>
+          ) : null}
           {cad ? (
             <>
               <MenuSeparator />
-              <MenuItem icon="shapes" onClick={() => pick('shape')}>Shape on a face</MenuItem>
-              <MenuItem icon="text" onClick={() => pick('facetext')}>Text on a face</MenuItem>
+              {modeling ? <MenuItem icon="shapes" onClick={() => pick('shape')}>Shape on a face</MenuItem> : null}
+              {modeling ? <MenuItem icon="text" onClick={() => pick('facetext')}>Text on a face</MenuItem> : null}
               <MenuItem icon="hollow" disabled={!hasSel} onClick={() => pick('hole')}>Subtract a shape</MenuItem>
             </>
           ) : null}
