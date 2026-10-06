@@ -12,9 +12,17 @@ const STATUS: Record<string, string> = { idle: 'IDLE', finished: 'IDLE', error: 
  * `confirmAfter` status polls with a new token answer 204 (waiting for the tap on the touchscreen);
  * after that the token is authorized. Tokens are 32 hex characters, as on the printer.
  */
+/**
+ * Changed through the control server (`POST /snapmaker`): `drop` makes the next n status requests of
+ * an authorized token answer 401, as an A350 does when it drops an idle session; `decline` makes
+ * pairing prompts answer 401, as when No is tapped; `forget` clears every token, as a power cycle does.
+ */
+export interface LubanExtra { drop: number; decline: boolean; forget(): void }
+
 export async function startSnapmakerLuban(m: MockMachine, opts: { confirmAfter?: number; headType?: number } = {}) {
   const confirmAfter = opts.confirmAfter ?? 2
   const tokens = new Map<string, { polls: number }>()
+  const extra: LubanExtra = { drop: 0, decline: false, forget: () => tokens.clear() }
   let prepared: string | undefined
 
   const form = async (req: Req): Promise<URLSearchParams> => {
@@ -40,11 +48,23 @@ export async function startSnapmakerLuban(m: MockMachine, opts: { confirmAfter?:
       if (!tokens.has(token)) tokens.set(token, { polls: 0 })
       return { json: { token, series: 'Snapmaker 2.0 A350', headType: opts.headType ?? 1, hasEnclosure: true } }
     }
+    if (p === '/api/v1/disconnect' && req.method === 'POST') {
+      const token = (await form(req)).get('token')
+      if (token && tokens.get(token)?.polls !== undefined && !authed(token)) tokens.delete(token)
+      m.log.push('disconnect')
+      return { json: {} }
+    }
     if (p === '/api/v1/status' && req.method === 'GET') {
-      const token = req.query.get('token')
+      // Luban sends the token in the query; a form body is read too.
+      const token = req.query.get('token') ?? (req.body.length ? new URLSearchParams(req.body.toString('utf8')).get('token') : null)
       const t = token ? tokens.get(token) : undefined
       if (!t) return { status: 401, json: { code: 401 } }
-      if (t.polls < confirmAfter) { t.polls++; return { status: 204 } }
+      if (t.polls < confirmAfter) {
+        if (extra.decline) { tokens.delete(token!); return { status: 401, json: { code: 401 } } }
+        t.polls++
+        return { status: 204 }
+      }
+      if (extra.drop > 0) { extra.drop--; return { status: 401, json: { code: 401 } } }
       const n = m.fx.nozzles[0]
       const active = m.state === 'printing' || m.state === 'paused'
       return {
@@ -63,6 +83,7 @@ export async function startSnapmakerLuban(m: MockMachine, opts: { confirmAfter?:
           isEnclosureDoorOpen: false,
           isFilamentOut: false,
           homed: true,
+          x: m.position[0], y: m.position[1], z: m.position[2],
         },
       }
     }
@@ -84,5 +105,6 @@ export async function startSnapmakerLuban(m: MockMachine, opts: { confirmAfter?:
     if (p === '/api/v1/execute_code') { m.gcode(f.get('code') ?? ''); return { json: { result: 0 }, type: 'application/json' } }
     throw new MockError(404, p)
   }
-  return listen(handler)
+  const r = await listen(handler)
+  return { ...r, extra }
 }

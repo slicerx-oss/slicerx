@@ -24,8 +24,8 @@ export interface TestStep {
 /** The contract's causes. */
 export type SetupCause = 'unreachable' | 'auth' | 'timeout' | 'protocol' | 'not_supported' | 'bad_request'
 
-export type AuthNeed = 'not_trusted' | 'key_wrong' | 'login_required'
-const AUTH_NEEDS = ['not_trusted', 'key_wrong', 'login_required'] as const
+export type AuthNeed = 'not_trusted' | 'key_wrong' | 'login_required' | 'pair_again' | 'declined'
+const AUTH_NEEDS = ['not_trusted', 'key_wrong', 'login_required', 'pair_again', 'declined'] as const
 
 export interface TestOutcome {
   ok: boolean
@@ -37,7 +37,7 @@ export interface TestOutcome {
   details?: string
   /** Bambu Lab: whether its CA issued the printer's certificate for that serial. */
   certificate?: { verified: boolean; detail: string }
-  /** Why a sign-in was refused, when the printer said (Moonraker). */
+  /** Why a sign-in was refused, when the printer said (Moonraker, Snapmaker 2.0, UltiMaker). */
   authNeed?: AuthNeed
   /** A finer cause when the host can tell (a bridge reports these as unreachable or auth). */
   detail?: 'lan-mode-off' | 'wrong-port' | 'certificate'

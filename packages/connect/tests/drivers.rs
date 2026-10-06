@@ -757,6 +757,64 @@ async fn snapmaker_luban_pairs_and_passes_the_contract() {
     run_contract(session.as_ref(), &case).await;
 }
 
+// A dropped session (401) is reconnected with the stored token. A printer that forgot the token
+// (powered off) has its new prompt cleared and says to pair again; a refusal on the screen stops the
+// pairing at once. The connect reply's series names the machine.
+#[tokio::test]
+async fn snapmaker_luban_recovers_a_dropped_session_and_says_when_to_pair_again() {
+    use sx_connect::LoginNeed;
+    let gate = Arc::new(MemoryGate::new());
+    let mocks = Mocks::start("snapmaker-luban", &[]).await;
+    let mut cfg = config("bay-2", "snapmaker", mocks.port("snapmaker-luban"));
+    cfg.credential_ref = Some("t".to_owned());
+    let connector = SnapmakerConnector::new(gate.clone());
+    let token = connector
+        .authorize(&cfg, Duration::from_secs(20))
+        .await
+        .unwrap()
+        .unwrap();
+    let s = connector
+        .connect(&cfg, &secrets(&[("t", token.clone())]))
+        .await
+        .unwrap();
+    assert_eq!(
+        s.hardware().await.unwrap().unwrap().model.as_deref(),
+        Some("A350")
+    );
+    // The query form and the body form are both refused once, then the reconnect gets in.
+    mocks
+        .control("/snapmaker", serde_json::json!({ "drop": 2 }))
+        .await;
+    assert_eq!(s.status().await.unwrap().state, sx_connect::PrinterState::Idle);
+    assert!(s.motion().await.unwrap().position.is_some());
+
+    // Power cycle: the token is gone.
+    mocks
+        .control("/snapmaker", serde_json::json!({ "forget": true }))
+        .await;
+    let e = connector
+        .connect(&cfg, &secrets(&[("t", token)]))
+        .await
+        .err()
+        .unwrap();
+    assert_eq!(e.login_need(), Some(LoginNeed::PairAgain), "{e}");
+    let log = mocks.state().await["snapmaker-luban"]["log"].clone();
+    assert!(
+        log.as_array().unwrap().iter().any(|l| l == "disconnect"),
+        "the prompt is cleared: {log}"
+    );
+
+    mocks
+        .control("/snapmaker", serde_json::json!({ "decline": true }))
+        .await;
+    let e = connector
+        .authorize(&cfg, Duration::from_secs(20))
+        .await
+        .err()
+        .unwrap();
+    assert_eq!(e.login_need(), Some(LoginNeed::Declined), "{e}");
+}
+
 #[tokio::test]
 async fn snapmaker_starts_only_the_file_sent_last() {
     let gate = Arc::new(MemoryGate::new());

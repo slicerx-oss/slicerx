@@ -31,7 +31,10 @@ TCP 8080 for the 2.0 machines, TCP 80 for the U1.
 | Message or symptom | Cause and fix |
 | --- | --- |
 | "rejected the credentials" when connecting | The machine is not paired yet, or you did not tap to confirm in time. Run Pair again and confirm on the touchscreen. |
-| Pairing times out | The prompt appeared and closed, or the machine is on another network. Run Pair again and watch the screen. |
+| "forgot its pairing with this computer" | The machine loses its pairing when it is turned off. Run Pair again and confirm on the touchscreen. SlicerX clears the prompt it raised, so the screen is not left waiting. |
+| "turned the connection down on its touchscreen" | No was tapped on the prompt. Run Pair again and tap Yes. |
+| Pairing times out | The prompt appeared and closed, or the machine is on another network. SlicerX clears the prompt when it gives up. Run Pair again and watch the screen. If the Wi-Fi is flaky, turn the machine off for 15 seconds and try again. |
+| Offline for a moment, then back | The A350 drops idle sessions. SlicerX reconnects with the stored token, at most every 10 seconds. |
 | "laser and CNC tool heads is not supported" | The machine has a laser or CNC module attached. Attach the 3D printing head. |
 | Start says the prepared file was not found | You sent a different file after this one. Send it again, then start. |
 | J1 or Artisan does not connect | These machines use a different protocol (SACP over TCP 8888), which is not supported yet. |
@@ -49,11 +52,17 @@ Printer config: `host`, optional `port`, `credentialRef` (keychain entry that ho
 
 ### Pairing
 
-`PrinterConnector::authorize(cfg, timeout)` posts `/api/v1/connect`, then polls `GET /api/v1/status?token=` until it stops answering 204, and returns the token. The caller stores it under `credentialRef`. Through `sx-link` the call is `printers.authorize`, which stores the token itself and never returns it. `connect` fails with `auth` when the token is missing, revoked or unconfirmed.
+`PrinterConnector::authorize(cfg, timeout)` posts `/api/v1/connect`, then polls `GET /api/v1/status?token=` every second until it stops answering 204, and returns the token. A 401 while waiting means No was tapped and stops at once (`auth`, login need `declined`); a timeout posts `/api/v1/disconnect` so the prompt does not stay on the screen. The caller stores the token under `credentialRef`. Through `sx-link` the call is `printers.authorize`, which stores the token itself and never returns it. `connect` fails with `auth` when the token is missing or revoked; when the printer answers the stored token with a new prompt (it forgot the token, as after a power cycle), the prompt is cleared and the login need is `pair_again`.
+
+### Sessions
+
+A status request refused with 401 is tried once with the token in a form body (newer notes say body only) and, when that works, the body form is kept. A session still refused is reconnected with the stored token (`POST /api/v1/connect`) and asked again, at most every 10 seconds; meanwhile the printer reads as unreachable, not as a wrong token. Ten refusals in a row mean the token is invalid (`pair_again`). The token is never in error text: request errors drop the URL.
 
 ### Luban protocol
 
-`POST /api/v1/prepare_print` (multipart `token`, `type=3DP`, `file`) uploads and loads a file; `POST /api/v1/start_print`, `pause_print`, `resume_print`, `stop_print` take the form field `token`; `POST /api/v1/execute_code` takes `token` and `code`. Status fields: `status`, `nozzleTemperature`, `nozzleTargetTemperature`, `heatedBedTemperature`, `heatedBedTargetTemperature`, `fileName`, `progress`, `remainingTime`, `isEnclosureDoorOpen`, `isFilamentOut`. `headType` 1 and 5 are printing heads.
+`POST /api/v1/prepare_print` (multipart `token`, `type=3DP`, `file`) uploads and loads a file; `POST /api/v1/start_print`, `pause_print`, `resume_print`, `stop_print` take the form field `token`; `POST /api/v1/execute_code` takes `token` and `code`. Status fields: `status` (`IDLE`, `RUNNING`, `PAUSED`; `STOPPED` is read as a stop in case it appears), `nozzleTemperature`, `nozzleTargetTemperature`, `heatedBedTemperature`, `heatedBedTargetTemperature`, `fileName`, `progress` (or `currentLine` over `totalLines` without it), `remainingTime`, `isEnclosureDoorOpen`, `isFilamentOut`, `x`, `y`, `z` and `homed` (read for jog limits). `headType` 1 and 5 are printing heads. The connect reply's `series` names the machine (A150, A250 or A350) and the head type gives one or two nozzles, which fill the hardware; serial and firmware are not in the replies.
+
+Uploads use `prepare_print`, which loads the file on the screen so it can also be started there. `POST /api/v1/upload` stores a file without loading it, but no source shows a remote start of a file stored that way, so it is not used.
 
 ### Events and rate
 
@@ -61,7 +70,7 @@ Polled every `pollMs` (default 2000). The screen firmware is slow; keep it at tw
 
 ### Testing
 
-`snapmaker_luban_pairs_and_passes_the_contract` and `snapmaker_starts_only_the_file_sent_last` in `tests/drivers.rs`, against a fake that confirms a new token after two status polls (`--only snapmaker-luban`). The link test `pairing_a_snapmaker_stores_the_token_without_returning_it` covers `printers.authorize`.
+`snapmaker_luban_pairs_and_passes_the_contract`, `snapmaker_starts_only_the_file_sent_last` and `snapmaker_luban_recovers_a_dropped_session_and_says_when_to_pair_again` in `tests/drivers.rs`, against a fake that confirms a new token after two status polls (`--only snapmaker-luban`). Its control port takes `POST /snapmaker {drop, decline, forget}` to drop sessions, refuse prompts and forget tokens. The link test `pairing_a_snapmaker_stores_the_token_without_returning_it` covers `printers.authorize`.
 
 ### Sources
 
