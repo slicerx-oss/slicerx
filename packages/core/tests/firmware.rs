@@ -1898,3 +1898,29 @@ fn a_bambu_tower_has_orcas_rib_wall_and_brim_chamfer() {
     assert!(min_x[1] < min_x[9] - 1.5, "{:?}", &min_x[..10]);
     assert!(min_x[0] < min_x[1], "{:?}", &min_x[..10]);
 }
+
+#[test]
+fn a_spiral_lift_is_commented_as_orca_comments_it() {
+    // Orca's GCodeWriter::_spiral_travel_to_z: ";spiral lift Z" before the segments, which carry no comment of
+    // their own, and with arc fitting "G17 ; XY plane for arc" and the comment on the G3.
+    let mut c = base_config();
+    c["gcode_comments"] = json!(true);
+    c["z_hop"] = json!(0.4);
+    c["retract_lift_above"] = json!(0);
+    c["z_hop_types"] = json!("Spiral Lift");
+    let g = text(&two_objects(c.clone(), json!({})));
+    let at = g.find(";spiral lift Z\nG1 F").expect("a commented spiral");
+    let segment = g[at..].lines().nth(2).unwrap();
+    assert!(
+        segment.starts_with("G1 X") && segment.contains(" Z") && !segment.contains(';'),
+        "{segment}"
+    );
+    assert!(!g.contains("Z0.25 ; move inwards before travel"));
+    c["enable_arc_fitting"] = json!(true);
+    let arcs = text(&two_objects(c, json!({})));
+    assert!(arcs.contains("G17 ; XY plane for arc\nG3 Z"), "an arc spiral");
+    assert!(
+        arcs.lines()
+            .any(|l| l.starts_with("G3 Z") && l.ends_with(" ; spiral lift Z"))
+    );
+}
