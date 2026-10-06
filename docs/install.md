@@ -62,11 +62,13 @@ To come back later, open Settings > Look and feel, use Add printer in Printers, 
 
 ## sx CLI
 
+Download the archive for your platform from an [engine release](https://github.com/slicerx-oss/slicerx/releases) (tags `engine-v*`; `SHA256SUMS.txt` has the checksums) and put `bin/sx` on your `PATH`. The binaries are not signed yet: on macOS, run `xattr -d com.apple.quarantine bin/*` after a browser download. Or build it:
+
 ```sh
 cargo build -p sx-cli --release
 ```
 
-The binary is `target/release/sx`. Copy it onto your `PATH` if you want to call it as `sx`.
+The binary is then `target/release/sx`. Copy it onto your `PATH` if you want to call it as `sx`.
 
 ```sh
 sx slice packages/core/bench/models/x-mark.stl --config config.json -o x-mark.gcode --preview x-mark.sxpv
@@ -116,9 +118,9 @@ cargo build -p sx-ffi --release
 
 ## Viewport and embeddable UI
 
-The framework-free viewport is the workspace package `@slicerx/viewport` (`packages/ui/viewport`). Run its demo page with `pnpm --filter @slicerx/viewport dev` (port 5190).
+The framework-free viewport is `@slicerx/viewport` on npm (`packages/ui/viewport`; `npm install @slicerx/viewport three`). Run its demo page with `pnpm --filter @slicerx/viewport dev` (port 5190).
 
-`@slicerx/embed` wraps the viewport and the settings panel as React components and custom elements. Run its demo with `pnpm --filter @slicerx/embed dev` (port 5191). It is not yet published to npm.
+`@slicerx/embed` wraps the viewport and the settings panel as React components and custom elements. Run its demo with `pnpm --filter @slicerx/embed dev` (port 5191). Install it with `npm install @slicerx/embed react react-dom three`.
 
 ## Printers
 

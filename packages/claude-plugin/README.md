@@ -105,8 +105,8 @@ The owner submits through the plugin directory form later; it needs a paid plan 
 - A local MCP server started with plain arguments, and any npx launcher pinned to an exact version. Done: `npx -y @slicerx/mcp@0.1.0`.
 - Every file under 256 KiB, at most 512 files, and readable source. Done: the plugin holds only Markdown and JSON; the server comes from npm, where its bundle is readable and not minified.
 - Tool annotations (read-only, destructive, title) on every MCP tool. Done.
-- Gap: `@slicerx/mcp` 0.1.0 must be published to npm before the plugin works outside a clone. Until then, use `.dev/`.
-- Gap: the repository is private. It must be public, with a tagged release for the directory entry to pin.
+- `@slicerx/mcp` 0.1.0 on npm, so the plugin works outside a clone. Done once it is published; until then, use `.dev/`.
+- Gap: a tagged release of the public repository for the directory entry to pin.
 - Gap: the homepage (slicerx.app) must resolve.
 - Gap: run the eval suite on the default model with three runs per case (`claude plugin eval packages/claude-plugin/.dev --allow-real-servers ...` without `--runs 1`) before submitting.
 - Gap: recorded mocks under `evals/mocks/slicerx/` would let reviewers run the suite without starting the server; today it needs `--allow-real-servers`.

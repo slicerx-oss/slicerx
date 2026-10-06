@@ -3,7 +3,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 // Packs the packages an app that builds SlicerX in installs (@slicerx/viewport, @slicerx/embed and
 // @slicerx/mcp) into one folder, built, as npm would publish them, with the credit kit
-// (docs/integrators/credit-kit) beside them. Use it until they are on npm:
+// (docs/integrators/credit-kit) beside them. Use it for a build that is not on npm yet:
 //   node scripts/pack-integrator-kit.mjs ~/slicerx-kit
 //   npm install ~/slicerx-kit/slicerx-viewport-0.1.0.tgz ~/slicerx-kit/slicerx-embed-0.1.0.tgz ~/slicerx-kit/slicerx-mcp-0.1.0.tgz
 import { execFileSync } from 'node:child_process'

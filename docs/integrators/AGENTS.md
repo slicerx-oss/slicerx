@@ -190,24 +190,20 @@ Two things come first. Install `@slicerx/mcp` (step 1), then register it as one 
 
 ## Step 1: get the packages
 
-The packages are not on npm yet. Ask the user which of these applies:
+Install from npm, pinned to the exact version:
 
-- They have the SlicerX kit, a folder of `.tgz` files from the SlicerX team. Install from it:
-  ```sh
-  npm install /path/to/kit/slicerx-viewport-0.1.0.tgz /path/to/kit/slicerx-embed-0.1.0.tgz /path/to/kit/slicerx-mcp-0.1.0.tgz
-  ```
-- They have a clone of the SlicerX repository. Pack the kit from it, then install as above:
-  ```sh
-  cd /path/to/slicerx && pnpm install && node scripts/pack-integrator-kit.mjs /path/to/kit
-  ```
-  The script prints the exact `npm install` line.
-- Once the packages are published, `npm install @slicerx/embed@0.1.0 @slicerx/mcp@0.1.0` replaces both.
+```sh
+npm install @slicerx/mcp@0.1.0
+npm install @slicerx/embed@0.1.0 react@19 react-dom@19 three@0.186   # for any UI part
+```
 
-Install only what the plan needs: `@slicerx/mcp` for slicing and profiles, `@slicerx/embed` (which brings `@slicerx/viewport`) for any UI part. `@slicerx/embed` needs React 19 as a peer dependency. With pnpm, use `pnpm add` with the same paths.
+Install only what the plan needs: `@slicerx/mcp` for slicing and profiles, `@slicerx/embed` (which brings `@slicerx/viewport`) for any UI part. `@slicerx/embed` and `@slicerx/viewport` take React 19 and three.js 0.186 as peer dependencies, so install them in the app. With pnpm, use `pnpm add` with the same names.
+
+When the user wants a SlicerX build that is not released yet, they can pack the same packages from a clone instead: `cd /path/to/slicerx && pnpm install && node scripts/pack-integrator-kit.mjs /path/to/kit`, then install the `.tgz` files it lists (the script prints the exact `npm install` line).
 
 Licenses, as `docs/licensing.md` states them: `@slicerx/embed`, `@slicerx/viewport` and `@slicerx/slicer` contain no profile data and are Apache-2.0. `@slicerx/mcp` bundles the stock profiles and is `Apache-2.0 AND AGPL-3.0-or-later AND LGPL-3.0-or-later`. Tell the user this when the plan uses `@slicerx/mcp`, and that it is not legal advice.
 
-Slicing for real needs the `sx` engine binary, which the app ships next to itself. It is built from the repository with `cargo build -p sx-cli --release` (it lands in `target/release/sx`, or `sx.exe` on Windows). Ask the user where theirs is. It runs locally and needs no account. Without it the server falls back to a stub that only estimates STL files.
+Slicing for real needs the `sx` engine binary, which the app ships next to itself. Download it from the latest engine release (https://github.com/slicerx-oss/slicerx/releases, tags `engine-v*`): the archive for the platform (`slicerx-engine-<version>-macos-universal.tar.gz`, `-linux-x64.tar.gz` or `-windows-x64.zip`) has it in `bin/`, and `SHA256SUMS.txt` has the checksums to verify. The binaries are not signed yet; on macOS run `xattr -d com.apple.quarantine bin/*` after a browser download. A clone builds it with `cargo build -p sx-cli --release` (`target/release/sx`, or `sx.exe` on Windows). Ask the user where theirs is. It runs locally and needs no account. Without it the server falls back to a stub that only estimates STL files.
 
 The server needs Node 24 or later. Check with `node --version`.
 
@@ -223,9 +219,9 @@ The server command is the same for every client. After step 1 it is installed in
 node node_modules/@slicerx/mcp/dist/cli.js --allow-dir /absolute/path/to/test/models --printers off
 ```
 
-This step runs before the interview, so install only `@slicerx/mcp` now: in the app folder, run `npm init -y` when there is no `package.json`, then `npm install /path/to/kit/slicerx-mcp-0.1.0.tgz`, and make an empty `data/models` folder to allow. The interview then adds what the plan needs. Do not skip this because no plan exists yet.
+This step runs before the interview, so install only `@slicerx/mcp` now: in the app folder, run `npm init -y` when there is no `package.json`, then `npm install @slicerx/mcp@0.1.0`, and make an empty `data/models` folder to allow. The interview then adds what the plan needs. Do not skip this because no plan exists yet.
 
-Add `--sx-bin /absolute/path/to/sx` when the user has the engine. Use absolute paths in client configs. Once `@slicerx/mcp` is on npm, `npx -y @slicerx/mcp@0.1.0` replaces `node node_modules/@slicerx/mcp/dist/cli.js`.
+Add `--sx-bin /absolute/path/to/sx` when the user has the engine. Use absolute paths in client configs. Outside a project, `npx -y @slicerx/mcp@0.1.0` runs the same server as `node node_modules/@slicerx/mcp/dist/cli.js`.
 
 Install it in the client you are running in:
 

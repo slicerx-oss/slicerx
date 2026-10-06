@@ -6,20 +6,24 @@ Each surface is versioned on its own with semver, starts at 0.x, and keeps a `CH
 
 | Surface | Use it when | State |
 | --- | --- | --- |
-| [Rust crate](#rust-crate) `sx-core` | Your app is in Rust, or you build a server or a tool around the slicer | Working, unpublished |
-| [CLI](#cli) `sx` | You want a separate process that reads a model and writes G-code | Working |
-| [npm package](#npm-package) `@slicerx/slicer` | You slice in a browser | Working, unpublished |
-| [C ABI](#c-abi) `libslicerx` | Your app is in C, C++, Swift, C#, Go or another language with a C FFI | Working, unpublished |
-| [Viewport](#viewport) `@slicerx/viewport` | You want the 3D plate and toolpath preview in a web page | Working |
-| [UI parts](#ui-parts) `@slicerx/embed` | You want the viewport and settings panel as React components or custom elements | Working |
+| [Rust crate](#rust-crate) `sx-core` | Your app is in Rust, or you build a server or a tool around the slicer | `cargo add sx-core` |
+| [CLI](#cli) `sx` | You want a separate process that reads a model and writes G-code | [Engine release](https://github.com/slicerx-oss/slicerx/releases) |
+| [npm package](#npm-package) `@slicerx/slicer` | You slice in a browser | `npm install @slicerx/slicer` |
+| [C ABI](#c-abi) `libslicerx` | Your app is in C, C++, Swift, C#, Go or another language with a C FFI | [Engine release](https://github.com/slicerx-oss/slicerx/releases) |
+| [Viewport](#viewport) `@slicerx/viewport` | You want the 3D plate and toolpath preview in a web page | `npm install @slicerx/viewport three` |
+| [UI parts](#ui-parts) `@slicerx/embed` | You want the viewport and settings panel as React components or custom elements | `npm install @slicerx/embed react react-dom three` |
 | [Theming](#theming-and-branding) `@slicerx/ui` | Your product's colors, fonts, gradient, logo and icons on every SlicerX surface | Working |
-| [MCP server](#mcp-server) `@slicerx/mcp` | An AI assistant should slice, plan settings, run mimir skills or control printers | Working |
+| [MCP server](#mcp-server) `@slicerx/mcp` | An AI assistant should slice, plan settings, run mimir skills or control printers | `npx @slicerx/mcp` |
 
 Settings everywhere use OrcaSlicer's key names (`layer_height`, `wall_loops`, `sparse_infill_density` and so on). `packages/settings/schema.json` lists all of them with type, unit, limits and help text. Units are millimeters, degrees Celsius, seconds and grams. Coordinates are Z up with the origin at the front left corner of the bed.
 
 ## Rust crate
 
-`sx_core::api` is the embedding surface and the only part of the crate covered by semver. It has two ways in.
+```sh
+cargo add sx-core
+```
+
+`sx_core::api` is the embedding surface and the only part of the crate covered by semver. It has two ways in. The default features are `parallel` (layers in parallel on rayon) and `import` (OBJ and AMF through `sx-geom`); a WebAssembly build turns both off with `default-features = false`.
 
 The JSON way takes the same `SliceRequest` the CLI, the C ABI and the WebAssembly build use:
 
@@ -51,7 +55,7 @@ The typed way is `load_mesh`, then `slice` or `slice_range` on a `Plate`, then `
 
 ## CLI
 
-Running `sx` as a separate process is the simplest way to use SlicerX from any language.
+Running `sx` as a separate process is the simplest way to use SlicerX from any language. Each [engine release](https://github.com/slicerx-oss/slicerx/releases) (tags `engine-v*`) has an archive per platform, `slicerx-engine-<version>-macos-universal.tar.gz`, `-linux-x64.tar.gz` and `-windows-x64.zip`, with `sx`, `sx-geom` and `sx-link` in `bin/`, and `SHA256SUMS.txt` next to them. The binaries are not signed yet, so on macOS clear the quarantine flag after a browser download: `xattr -d com.apple.quarantine bin/*`. To build them yourself, run `cargo build -p sx-cli --release`.
 
 ```sh
 sx slice x-mark.stl --config config.json -o x-mark.gcode --preview x-mark.sxpv
@@ -77,17 +81,22 @@ It prints a result JSON with `schemaVersion`, `layerCount`, `stats` (`timeS`, an
 
 ## npm package
 
-`@slicerx/slicer` runs the WebAssembly core in a pool of Web Workers. Each worker slices a range of layers, and the results are stitched into one G-code file and one preview, byte-identical to the native build. It needs no `SharedArrayBuffer` or cross-origin isolation. It works in the workspace today and is not yet published to npm.
+`@slicerx/slicer` runs the WebAssembly core in a pool of Web Workers. Each worker slices a range of layers, and the results are stitched into one G-code file and one preview, byte-identical to the native build. It needs no `SharedArrayBuffer` or cross-origin isolation.
+
+```sh
+npm install @slicerx/slicer
+```
+
+The package loads `dist/sx_wasm.wasm` and its worker script relative to its own module (`new URL(..., import.meta.url)`). Bundlers that follow that pattern, such as Vite and webpack 5, copy both into your build; for the Vite dev server, list `@slicerx/slicer` in `optimizeDeps.exclude`. Pass `wasmUrl` to serve the module from somewhere else.
 
 ```ts
-import { createWebSlicer, readPreview } from '@slicerx/slicer'
-import { defaultConfig } from '@slicerx/settings'
+import { createWebSlicer, readPreview, type PrintConfig } from '@slicerx/slicer'
 
 const slicer = await createWebSlicer({ workers: 4 })
 const mesh = await slicer.loadModel(await (await fetch('/models/x-mark.stl')).arrayBuffer(), 'x-mark.stl')
 const identity = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 128, 128, 0, 1]
 const bed = { widthMm: 256, depthMm: 256, heightMm: 250 }
-const config = { ...defaultConfig(), layer_height: 0.2, wall_loops: 3 }
+const config = { layer_height: 0.2, wall_loops: 3 } as PrintConfig // keys left out keep their defaults
 const result = await slicer.slice({ plate: { bed, objects: [{ id: 'a', name: 'x-mark', mesh: mesh.id, transform: identity }] }, config })
 console.log(result.layerCount, result.stats.timeS, result.stats.filamentG)
 const gcode = await slicer.exportGcode(result.id, { kind: 'blob' })
@@ -108,7 +117,7 @@ Transforms are 4x4 column-major matrices in millimeters, so the last column abov
 
 ## C ABI
 
-`libslicerx` exposes JSON in and out, opaque handles and byte buffers; no Rust type crosses the boundary. It is built and tested (a C program slices the reference plate through it), and not yet published.
+`libslicerx` exposes JSON in and out, opaque handles and byte buffers; no Rust type crosses the boundary. Each [engine release](https://github.com/slicerx-oss/slicerx/releases) ships it in the same archives as the CLI: `lib/libslicerx.dylib` (macOS, universal), `lib/libslicerx.so` (Linux x64) or `lib/slicerx.dll` with its import library `slicerx.dll.lib` (Windows x64), and `include/slicerx.h`. Its tests build a C program against it that slices the reference plate.
 
 ```c
 #include "slicerx.h"
@@ -124,15 +133,14 @@ sx_result_free(r);
 sx_mesh_free(mesh);
 ```
 
-The full set: `sx_abi_version`, `sx_mesh_load`, `sx_mesh_free`, `sx_slice`, `sx_result_json` (the same result JSON as the CLI), `sx_result_gcode`, `sx_result_preview` (SXPV), `sx_buffer_free`, `sx_result_free` and `sx_last_error` (per thread). Every call is thread-safe. `SX_ABI_VERSION` changes on any breaking change, and CI diffs the generated header. Build it with `cargo build -p sx-ffi --release`; the header is `packages/core/ffi/include/slicerx.h`.
+The full set: `sx_abi_version`, `sx_mesh_load`, `sx_mesh_free`, `sx_slice`, `sx_result_json` (the same result JSON as the CLI), `sx_result_gcode`, `sx_result_preview` (SXPV), `sx_buffer_free`, `sx_result_free` and `sx_last_error` (per thread). Every call is thread-safe. `SX_ABI_VERSION` changes on any breaking change, and CI diffs the generated header. To build it yourself, run `cargo build -p sx-ffi --release`; the header is `packages/core/ffi/include/slicerx.h`.
 
 ## Viewport
 
-`@slicerx/viewport` is a three.js viewport with no framework dependency. It owns its render loop and renders on demand, so a host calls methods on a handle instead of re-rendering it. It lives in `packages/ui/viewport`; run its demo with `pnpm --filter @slicerx/viewport dev` (port 5190).
+`@slicerx/viewport` is a three.js viewport with no framework dependency. It owns its render loop and renders on demand, so a host calls methods on a handle instead of re-rendering it. Install it with `npm install @slicerx/viewport three` (three.js 0.186 is a peer dependency). It lives in `packages/ui/viewport`; run its demo with `pnpm --filter @slicerx/viewport dev` (port 5190).
 
 ```ts
-import { createViewport } from '@slicerx/viewport'
-import { readPreview } from '@slicerx/contracts'
+import { createViewport, readPreview } from '@slicerx/viewport'
 
 // bed, identity, positions and indices as in the npm example; sxpvBytes from getPreview() or sx --preview
 const vp = createViewport(document.querySelector('canvas')!, { quality: 'balanced', label: 'Plate preview' })
@@ -150,7 +158,7 @@ Options: `backend` (`auto`, `webgpu` or `webgl2`), `quality` (`high`, `balanced`
 
 ## UI parts
 
-`@slicerx/embed` wraps the viewport and the settings panel for pages that want them without the rest of the app. It depends only on the viewport, the settings package, the design tokens and the shared types. Run its demo page with `pnpm --filter @slicerx/embed dev` (port 5191).
+`@slicerx/embed` wraps the viewport and the settings panel for pages that want them without the rest of the app. Install it with `npm install @slicerx/embed react react-dom three`: React 19 and three.js 0.186 are peer dependencies, `@slicerx/viewport` comes with it, and the settings schema, design tokens and shared types are bundled in. Run its demo page with `pnpm --filter @slicerx/embed dev` (port 5191).
 
 ```tsx
 import { Viewport, SettingsPanel } from '@slicerx/embed'
