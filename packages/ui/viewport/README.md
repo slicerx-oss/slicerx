@@ -9,10 +9,10 @@ const vp = createViewport(canvas, { controls: 'slicerx', theme, quality: 'high' 
 ## Install
 
 ```sh
-npm install @slicerx/viewport
+npm install @slicerx/viewport three
 ```
 
-The package is ES modules for the browser, with type declarations. It depends on `three` 0.186; use the same version if your page also imports three, so there is one copy. It needs WebGL2.
+The package is ES modules for the browser, with type declarations. `three` 0.186 is a peer dependency, so your page and the viewport share one copy; `@types/three` 0.186 is an optional peer for TypeScript. It needs WebGL2.
 
 Show the toolpath preview of a slice, for example the `slice.sxpv` that `sx slice --request <file> --out-dir <dir>` writes:
 

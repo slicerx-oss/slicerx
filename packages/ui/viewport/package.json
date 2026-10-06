@@ -33,6 +33,15 @@
     "LICENSE-APACHE",
     "NOTICE"
   ],
+  "peerDependencies": {
+    "three": "^0.186.0",
+    "@types/three": "^0.186.0"
+  },
+  "peerDependenciesMeta": {
+    "@types/three": {
+      "optional": true
+    }
+  },
   "publishConfig": {
     "access": "public",
     "exports": {
@@ -57,15 +66,14 @@
     "build:demo": "vite build demo",
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run",
-    "prepack": "pnpm run build"
-  },
-  "dependencies": {
-    "@types/three": "0.186.0",
-    "three": "0.186.1"
+    "prepack": "pnpm run build",
+    "prepublishOnly": "node ../../../scripts/publish-guard.mjs"
   },
   "devDependencies": {
     "@slicerx/contracts": "workspace:*",
+    "@types/three": "0.186.0",
     "playwright-core": "1.63.0",
+    "three": "0.186.1",
     "typescript": "5.9.3",
     "vite": "8.3.1",
     "vitest": "5.0.2"

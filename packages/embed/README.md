@@ -5,10 +5,10 @@ SlicerX pieces for other apps: the 3D viewport and the print settings panel, as 
 ## Install
 
 ```sh
-npm install @slicerx/embed react react-dom
+npm install @slicerx/embed react react-dom three
 ```
 
-ES modules for the browser, with type declarations. React 19 is a peer dependency, used by the React components and inside the custom elements. `@slicerx/viewport` (and through it `three`) comes along as a dependency. The settings schema and Easy mode it needs are bundled in.
+ES modules for the browser, with type declarations. React 19 and `three` 0.186 are peer dependencies: React for the components and inside the custom elements, three for the viewport. `@slicerx/viewport` comes along as a dependency. The settings schema and Easy mode it needs are bundled in.
 
 ## API
 
@@ -76,4 +76,4 @@ Contributions: see CONTRIBUTING.md at the repository root.
 
 Apache-2.0 (`LICENSE-APACHE`, `NOTICE`; keep the "Made possible by SlicerX" credit). The bundle contains the settings schema and Easy mode from `@slicerx/settings`, and no printer profile data.
 
-Packaging: `pnpm --filter @slicerx/embed pack` builds `dist/` (the library and self-contained declarations) and writes the tarball; pnpm applies `publishConfig.exports` and turns the `workspace:` ranges into versions.
+Packaging: `pnpm --filter @slicerx/embed pack` builds `dist/` (the library and self-contained declarations) and writes the tarball; pnpm applies `publishConfig.exports` and turns the `workspace:` ranges into versions. Publish with `pnpm publish --access public`; a plain `npm publish` from the folder would ship the workspace manifest, so `prepublishOnly` stops it.

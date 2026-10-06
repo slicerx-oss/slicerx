@@ -1,5 +1,9 @@
 # @slicerx/slicer
 
+```sh
+npm install @slicerx/slicer
+```
+
 Browser slicing: a pool of Web Workers, each with its own `sx-wasm` instance. A slice is split into one layer range per worker, the G-code chunks are concatenated and the SXPV chunks stitched (`stitchPreview`). The core guarantees the result is byte-identical to a single run. The pool implements `SlicerHost` from `@slicerx/contracts`. No SharedArrayBuffer or cross-origin isolation is needed.
 
 ## Public API
@@ -21,11 +25,11 @@ Plate objects need a 4x4 column-major transform in mm (Z up, origin at the bed's
 
 ## Packing
 
-`pnpm --filter @slicerx/slicer build` builds the module, bundles `dist/index.js` and the worker chunk with Vite (`vite.lib.config.mjs`), copies `sx_wasm.wasm` next to them and writes the type declarations. `pnpm pack` then produces a tarball whose `exports` point at `dist` (`publishConfig`); inside the workspace the package still resolves to `src`. Before a public release, `@slicerx/contracts` has to be published too, since the types reference it.
+`pnpm --filter @slicerx/slicer build` builds the module, bundles `dist/index.js` and the worker chunk with Vite (`vite.lib.config.mjs`), copies `sx_wasm.wasm` next to them and writes self-contained type declarations (`scripts/emit-types.mjs`). `@slicerx/contracts` is bundled into both, so the package has no runtime dependencies. `pnpm pack` (or `pnpm publish --access public`, which runs the build first) produces a tarball whose `exports` point at `dist` (`publishConfig`); inside the workspace the package still resolves to `src`. `prepublishOnly` stops a plain `npm publish` from the folder, which would ship the workspace manifest.
 
 ## Dependencies
 
-- `@slicerx/contracts` (workspace): the host and preview types.
+- `@slicerx/contracts` (workspace, bundled when packed): the host and preview types.
 - `vite` 8.3.1 and `playwright` 1.63.0 (dev only, MIT and Apache-2.0): the browser bench page in `bench/` and `../bench/web-slice.mjs`.
 
 ## Status

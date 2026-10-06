@@ -61,15 +61,23 @@
     "build:demo": "vite build demo",
     "typecheck": "tsc -p tsconfig.json",
     "prepack": "pnpm run build && node ../../scripts/copy-integrator-docs.mjs .",
-    "test": "vitest run"
+    "test": "vitest run",
+    "prepublishOnly": "node ../../scripts/publish-guard.mjs"
   },
   "dependencies": {
     "@slicerx/viewport": "workspace:*",
     "zod": "4.6.5"
   },
   "peerDependencies": {
+    "@types/react": "^19.0.0",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "three": "^0.186.0"
+  },
+  "peerDependenciesMeta": {
+    "@types/react": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@slicerx/contracts": "workspace:*",
@@ -80,6 +88,7 @@
     "@types/react-dom": "19.3.0",
     "react": "19.3.0",
     "react-dom": "19.3.0",
+    "three": "0.186.1",
     "vite": "8.3.1",
     "vitest": "5.0.2"
   }
