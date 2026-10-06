@@ -283,6 +283,8 @@ export const EXTRA_ICONS = {
   // Named features (design/NAMES.md), the marks picked from the brand canvas icon sheets.
   // slicerx is the brand X as offset perimeters: one wall around a solid core.
   slicerx: '<path d="M3.4 3h7.2L12 5.55 13.4 3h7.2l-5 9 5 9h-7.2L12 18.45 10.6 21H3.4l5-9z"/><path d="M6.6 4.9h2.9L12 9.45l2.5-4.55h2.9l-4 7.1 4 7.1h-2.9L12 14.55l-2.5 4.55H6.6l4-7.1z" fill="currentColor" stroke="none"/>',
+  // slicerx-mark is the app icon in line form: huginn perched on three printed layers.
+  'slicerx-mark': '<path d="M1.6 5.58C2.42 4.31 3.72 3.56 5.01 3.54C5.71 2.71 6.8 2.24 8.21 2.24C9.62 2.24 10.65 2.9 11.26 4.03C12.06 5.21 13.33 6.01 14.69 6.9C16.05 7.77 17.23 9.29 17.98 10.99L19.72 14.56C19.91 14.84 19.86 15.17 19.58 15.31L19.2 15.5C19.02 15.59 18.78 15.55 18.64 15.4L16.64 14.09C15.59 13.48 14.64 13.29 13.47 13.2L10.88 13.2C8.65 13.1 7.03 11.93 6.37 10C6.23 9.53 6.14 9.06 6.04 8.5C5.81 7.56 5.48 6.71 5.1 6.1C3.83 6.01 2.66 5.86 1.81 5.75z"/><path d="M9.47 6.12C11.12 8.59 13.94 10.71 17.98 12.35"/><circle cx="7.12" cy="4.27" r="0.85" fill="currentColor" stroke="none"/><path d="M8.4 16.4h6.8M7.4 19.1h8.8M6.4 21.8h10.8"/>',
   // mimir is the Mannaz rune over one filament bead.
   mimir: '<path d="M6 3v18M18 3v18"/><path d="M6 3l12 8M18 3L6 11"/><circle cx="12" cy="17" r="1.6" fill="currentColor" stroke="none"/>',
   // aegis is a shield of two walls, outer and inner perimeter.
@@ -309,5 +311,5 @@ export const EXTRA_ICON_GROUPS = {
   Views: ['fullscreen', 'exit-fullscreen', 'zoom-in', 'zoom-out', 'fit', 'home-view', 'top-view', 'front-view', 'side-view', 'iso-view', 'wireframe', 'x-ray', 'clay', 'hide', 'show', 'isolate'],
   Actions: ['undo', 'redo', 'copy', 'paste', 'duplicate', 'delete', 'rename', 'import', 'export', 'open', 'save', 'settings', 'settings-reset', 'history', 'star', 'star-off', 'tag', 'pin', 'share', 'comment'],
   Interface: ['help', 'info', 'warning', 'close', 'minus', 'chevron-up', 'chevron-left', 'chevron-right', 'arrow-up', 'arrow-down', 'arrow-left', 'arrow-right', 'external', 'refresh', 'stop', 'skip', 'record', 'volume', 'volume-off', 'sun', 'moon', 'contrast', 'language', 'keyboard', 'mouse', 'log', 'bug', 'sparkle', 'magic-wand'],
-  'Named features': ['slicerx', 'mimir', 'aegis', 'sleipnir', 'atlas', 'huginn', 'muninn'],
+  'Named features': ['slicerx', 'slicerx-mark', 'mimir', 'aegis', 'sleipnir', 'atlas', 'huginn', 'muninn'],
 }

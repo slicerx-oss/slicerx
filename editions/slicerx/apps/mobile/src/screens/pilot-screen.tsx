@@ -7,7 +7,7 @@ import { KeyboardAvoidingView, Platform, View } from 'react-native'
 import type { ApprovalRequest, SessionSummary } from '@slicerx/contracts'
 import { IconButton } from '../components/button'
 import { Row, Screen, ScreenHeader } from '../components/layout'
-import { Mark } from '../components/mark'
+import { AppMark } from '../components/mark'
 import { Composer, type Suggestion } from '../components/pilot/composer'
 import { fmtWhen, type Transcript } from '../components/pilot/model'
 import { TranscriptList } from '../components/pilot/transcript-list'
@@ -54,7 +54,7 @@ export function PilotScreen(p: PilotScreenProps) {
     <ScreenHeader
       title="mimir"
       subtitle={subtitle}
-      leading={p.onBack ? <IconButton icon="chevron-left" label="Back" onPress={p.onBack} color={t.color.fg} testID="pilot-back" /> : <Mark size={26} />}
+      leading={p.onBack ? <IconButton icon="chevron-left" label="Back" onPress={p.onBack} color={t.color.fg} testID="pilot-back" /> : <AppMark size={26} />}
       actions={
         <>
           <IconButton icon="history" label="Sessions" onPress={() => setSessionsOpen(true)} testID="open-sessions" />
@@ -67,7 +67,7 @@ export function PilotScreen(p: PilotScreenProps) {
 
   const empty = (
     <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: t.space(5), gap: t.space(1.5) }} testID="pilot-empty">
-      <Mark size={44} />
+      <AppMark size={44} />
       <Txt variant="title" align="center">
         What should we print?
       </Txt>

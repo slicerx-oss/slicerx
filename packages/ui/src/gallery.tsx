@@ -4,6 +4,7 @@
 // dev-only route; the render test proves each component renders on the server.
 import {
   AppBar,
+  AppMark,
   Avatar,
   Block,
   Button,
@@ -20,7 +21,6 @@ import {
   KeyValues,
   LinkButton,
   Logo,
-  Mark,
   Menu,
   MenuAnchor,
   MenuHeading,
@@ -82,7 +82,7 @@ export function Gallery({ palette = false, theme }: { palette?: boolean; theme?:
             <section className="g-sec">
               <Eyebrow>Brand</Eyebrow>
               <div className="g-row">
-                <Logo /> <Logo size="lg" /> <Logo size="xl" tagline /> <Mark size={48} />
+                <Logo /> <Logo size="lg" /> <Logo size="xl" tagline /> <AppMark size={64} /> <AppMark size={32} /> <AppMark size={16} />
               </div>
             </section>
             <section className="g-sec">
