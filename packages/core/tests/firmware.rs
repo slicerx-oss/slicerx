@@ -1924,3 +1924,39 @@ fn a_spiral_lift_is_commented_as_orca_comments_it() {
             .any(|l| l.starts_with("G3 Z") && l.ends_with(" ; spiral lift Z"))
     );
 }
+
+#[test]
+fn no_jerk_line_is_written_for_a_travel_that_does_not_move() {
+    // A zig-zag solid fill joins its lines end to start. SlicerX wrote the travel jerk and then the print jerk
+    // between every two of them, with no move between; Orca's GCode::_extrude calls travel_to only when the
+    // nozzle is not already at the path's first point.
+    let mut c = base_config();
+    for (k, v) in [
+        ("default_acceleration", 5000),
+        ("travel_acceleration", 8000),
+        ("initial_layer_acceleration", 1000),
+        ("default_jerk", 10),
+        ("initial_layer_jerk", 5),
+        ("outer_wall_jerk", 7),
+        ("inner_wall_jerk", 8),
+        ("top_surface_jerk", 6),
+        ("infill_jerk", 9),
+    ] {
+        c[k] = json!(v);
+    }
+    c["gcode_flavor"] = json!("marlin2");
+    let g = text(&two_objects(c, json!({})));
+    let lines: Vec<&str> = g
+        .lines()
+        .filter(|l| !l.starts_with(';') && !l.is_empty())
+        .collect();
+    let back_to_back = lines
+        .windows(2)
+        .filter(|w| w[0].starts_with("M205 ") && w[1].starts_with("M205 "))
+        .count();
+    assert_eq!(back_to_back, 0, "a jerk line replaced at once by another");
+    assert!(
+        lines.iter().any(|l| l.starts_with("M205 X10")),
+        "travel jerk still written"
+    );
+}
