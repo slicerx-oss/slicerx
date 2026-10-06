@@ -42,7 +42,15 @@ export function withStatus(steps: readonly Step[], status: readonly StepStatus[]
     const { broken: _b, note: _n, ...rest } = s
     const f = found[s.id]
     // The keys a step found its faces by are kept with it, so a step from a version 1 file has them from now on.
-    const params = f?.faceKey && rest.params.op === 'face.push' ? { ...rest.params, faceKey: f.faceKey } : f?.openKeys && rest.params.op === 'shell' ? { ...rest.params, open: rest.params.open.map((o, j) => (f.openKeys![j] ? { ...o, key: f.openKeys![j]! } : o)) } : rest.params
+    const p = rest.params
+    const params =
+      f?.faceKey && p.op === 'face.push'
+        ? { ...p, faceKey: f.faceKey }
+        : f?.openKeys && p.op === 'shell'
+          ? { ...p, open: p.open.map((o, j) => (f.openKeys![j] ? { ...o, key: f.openKeys![j]! } : o)) }
+          : f?.edgeKeys && (p.op === 'edge.fillet' || p.op === 'edge.chamfer')
+            ? { ...p, edges: p.edges.map((e, j) => (f.edgeKeys![j] ? { ...e, keys: f.edgeKeys![j]! } : e)) }
+            : p
     const kept = { ...rest, params }
     if (st?.state === 'broken') return { ...kept, broken: st.message ?? 'This step failed.' }
     return st?.note ? { ...kept, note: st.note } : kept

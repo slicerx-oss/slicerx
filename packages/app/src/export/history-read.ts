@@ -42,7 +42,8 @@ const vec2 = isVec(2)
 const vec3 = isVec(3)
 const obj = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v)
 const frameOk = (f: unknown) => f === undefined || (obj(f) && vec3(f['origin']) && vec3(f['normal']) && vec3(f['u']) && vec3(f['v']))
-const edgesOk = (e: unknown) => Array.isArray(e) && e.length > 0 && e.length <= 1000 && e.every((x) => obj(x) && vec3(x['a']) && vec3(x['b']) && vec3(x['face']))
+const edgesOk = (e: unknown) =>
+  Array.isArray(e) && e.length > 0 && e.length <= 1000 && e.every((x) => obj(x) && vec3(x['a']) && vec3(x['b']) && vec3(x['face']) && (x['keys'] === undefined || (Array.isArray(x['keys']) && x['keys'].length === 2 && x['keys'].every(keyOk))))
 
 /** One stored follow, or null when it does not read. */
 function readFollow(f: unknown): Follow | null {

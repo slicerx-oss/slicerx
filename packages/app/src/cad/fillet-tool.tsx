@@ -38,7 +38,7 @@ function editState(): { index: number; picked: Picked; kind: Kind; size: string;
   const now = nowOf(ed.step, ed.entry.transform)
   // Where the edges are now, after the faces they sit on moved.
   const q = followed(ed.step, ed.entry.history?.steps ?? []).params
-  const edges = (q.op === 'edge.fillet' || q.op === 'edge.chamfer' ? q.edges : p.edges).map((e) => ({ a: now.point(e.a), b: now.point(e.b), face: now.dir(e.face), ...(e.center ? { center: now.point(e.center) } : {}) }))
+  const edges = (q.op === 'edge.fillet' || q.op === 'edge.chamfer' ? q.edges : p.edges).map((e) => ({ a: now.point(e.a), b: now.point(e.b), face: now.dir(e.face), ...(e.center ? { center: now.point(e.center) } : {}), ...(e.keys ? { keys: e.keys } : {}) }))
   return {
     index: ed.index,
     picked: { objectId: ed.entry.id, partIndex: Math.max(0, ed.step.part), edges, last: null },
