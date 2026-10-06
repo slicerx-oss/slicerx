@@ -6,6 +6,7 @@ Changes to the `sx` command's JSON input and output. Keep a Changelog format; se
 
 ### Added
 
+- Custom G-code that is the printer maker's stock text, unchanged, for the printer the settings name (`printer_settings_id`, `inherits` or `printer_model`) runs as trusted without `trustedGcode`. Cargo feature `stock-gcode`, on by default.
 - `sx metadata <project.3mf>`: the project's settings entries as JSON.
 - `sx slice --request <file | ->` with `--out-dir`, result JSON with `schemaVersion` 1.
 - `sx schema request` and `sx schema result`.

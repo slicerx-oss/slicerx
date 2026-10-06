@@ -24,6 +24,15 @@
 //!
 //! Exit codes: 0 success, 1 slicing failed, 2 usage error, 3 invalid input
 //! (unreadable request or mesh, bad JSON or config).
+//!
+//! Custom G-code in the settings is linted as untrusted unless the request sets
+//! `trustedGcode`. Text that is the printer maker's stock text, unchanged, for
+//! the printer the settings name runs as trusted either way (stock.rs).
+
+#[cfg(feature = "stock-gcode")]
+mod fingerprint;
+#[cfg(feature = "stock-gcode")]
+mod stock;
 
 use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
@@ -227,6 +236,10 @@ fn cmd_request(args: &[String]) -> ExitCode {
         Ok(r) => r,
         Err(e) => return fail(EXIT_INPUT, format!("request: {e}")),
     };
+    #[cfg(feature = "stock-gcode")]
+    if let Some(config) = req.config.as_object() {
+        req.options.stock_gcode_keys = stock::stock_keys(config);
+    }
     let paths = mesh_paths(&raw);
     let cache = match split_projects(&mut req, &base, &paths) {
         Ok(split) => std::sync::Mutex::new(split),
@@ -354,6 +367,10 @@ fn cmd_slice(args: &[String]) -> Res<ExitCode> {
         Some(p) => PrintConfig::from_json(&std::fs::read(p)?)?,
         None => PrintConfig::default(),
     };
+    #[cfg(feature = "stock-gcode")]
+    {
+        config.trusted_gcode_keys = stock::stock_keys(&config.raw);
+    }
     // The same limits every entry point applies: settings past the nozzle and machine limits are lowered.
     let issues = sx_core::preflight::clamp_config(&mut config, &sx_core::gcode_lint::Limits::default());
     if sx_core::preflight::blocks(&issues) {

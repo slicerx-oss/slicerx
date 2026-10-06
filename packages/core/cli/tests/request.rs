@@ -166,3 +166,123 @@ fn untrusted_start_gcode_names_the_preflight_once() {
         "sx slice: blocked by the safety preflight: custom G-code: line 2: M500 writes settings to the printer's memory (eeprom_write)"
     );
 }
+
+/// The stock start G-code `SlicerX` ships for a printer (packages/profiles/gcode.json), as a Bambu project saves it.
+fn shipped_start(model: &str) -> String {
+    let doc: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../../profiles/gcode.json")).unwrap(),
+    )
+    .unwrap();
+    let family = doc["models"][model].as_str().unwrap();
+    doc["families"][family]["start"].as_str().unwrap().to_owned()
+}
+
+fn slice_with(config: &[(&str, serde_json::Value)], options: &serde_json::Value) -> std::process::Output {
+    let mut req: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(fixture("cube-request.json")).unwrap()).unwrap();
+    req["meshes"]["cube"] = serde_json::Value::String(fixture("cube.stl"));
+    for (k, v) in config {
+        req["config"][*k] = v.clone();
+    }
+    for (k, v) in options.as_object().into_iter().flatten() {
+        req["options"][k] = v.clone();
+    }
+    let mut child = sx()
+        .args(["slice", "--request", "-"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(req.to_string().as_bytes())
+        .unwrap();
+    child.wait_with_output().unwrap()
+}
+
+#[cfg(feature = "stock-gcode")]
+#[test]
+fn a_projects_stock_start_gcode_runs_as_the_maker_wrote_it() {
+    let p1s = shipped_start("bambu-p1s");
+    assert!(
+        p1s.lines().any(|l| l.trim_start().starts_with("M500")),
+        "the P1S start saves calibration data"
+    );
+    // Named the way a Bambu project names its printer, by profile or by model.
+    for name in [
+        ("printer_settings_id", "Bambu Lab P1S 0.4 nozzle"),
+        ("printer_model", "Bambu Lab P1S"),
+        ("inherits", "Bambu Lab P1S 0.6 nozzle"),
+    ] {
+        let out = slice_with(
+            &[
+                (name.0, serde_json::Value::String(name.1.to_owned())),
+                (
+                    "machine_start_gcode",
+                    serde_json::Value::String(p1s.replace('\n', "\r\n")),
+                ),
+            ],
+            &serde_json::json!({}),
+        );
+        assert!(
+            out.status.success(),
+            "{name:?}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+}
+
+#[test]
+fn stock_text_is_trusted_only_for_its_own_printer_and_only_as_written() {
+    let p1s = shipped_start("bambu-p1s");
+    let blocked = |out: &std::process::Output| {
+        assert_eq!(
+            out.status.code(),
+            Some(1),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let err = String::from_utf8_lossy(&out.stderr);
+        assert_eq!(err.matches("blocked by the safety preflight").count(), 1, "{err}");
+        assert!(
+            err.contains("M500 writes settings to the printer's memory"),
+            "{err}"
+        );
+    };
+    let model = (
+        "printer_model",
+        serde_json::Value::String("Bambu Lab X1 Carbon".to_owned()),
+    );
+    let start = ("machine_start_gcode", serde_json::Value::String(p1s.clone()));
+    blocked(&slice_with(&[model, start], &serde_json::json!({})));
+    let edited = format!("{p1s}\nG1 X10\n");
+    let model = (
+        "printer_model",
+        serde_json::Value::String("Bambu Lab P1S".to_owned()),
+    );
+    blocked(&slice_with(
+        &[model, ("machine_start_gcode", serde_json::Value::String(edited))],
+        &serde_json::json!({}),
+    ));
+}
+
+#[test]
+fn a_line_no_one_can_approve_stays_blocked_when_trusted() {
+    let out = slice_with(
+        &[(
+            "machine_start_gcode",
+            serde_json::Value::String("G28\nM502\n".to_owned()),
+        )],
+        &serde_json::json!({ "trustedGcode": true }),
+    );
+    assert_eq!(out.status.code(), Some(1));
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        err.contains("M502 resets the printer to factory settings"),
+        "{err}"
+    );
+    assert_eq!(err.matches("blocked by the safety preflight").count(), 1, "{err}");
+}
