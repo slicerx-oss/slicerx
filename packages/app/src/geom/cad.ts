@@ -354,6 +354,8 @@ export interface EdgeRef {
   face: Vec3
   /** The ends moved with a face they lie on (a history replay): the edge is found along its line. */
   moved?: boolean
+  /** A round edge (a hole's rim, a boss's root): the center of the circle; `a` is a corner of it and `b` the same. */
+  center?: Vec3
 }
 
 export interface EdgeFace {

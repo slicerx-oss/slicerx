@@ -17,8 +17,42 @@ export type Kind = 'fillet' | 'chamfer'
 const sub = (a: Vec3, b: Vec3): Vec3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
 const dot = (a: Vec3, b: Vec3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
 
-/** How far a point is from an edge, in mm. */
-export function edgeDistance(p: Vec3, e: Pick<EdgeRef, 'a' | 'b'>): number {
+/** The circle of a round edge: its center, its plane's normal, the radius and the direction to its corner. */
+function circleOf(e: Pick<EdgeRef, 'a' | 'face' | 'center'>): { c: Vec3; n: Vec3; r: number; u: Vec3 } | null {
+  if (!e.center) return null
+  const c = e.center
+  const nl = Math.hypot(e.face[0], e.face[1], e.face[2]) || 1
+  const n: Vec3 = [e.face[0] / nl, e.face[1] / nl, e.face[2] / nl]
+  const d = sub(e.a, c)
+  const h = dot(d, n)
+  const rv: Vec3 = [d[0] - n[0] * h, d[1] - n[1] * h, d[2] - n[2] * h]
+  const r = Math.hypot(rv[0], rv[1], rv[2])
+  return r > 0 ? { c, n, r, u: [rv[0] / r, rv[1] / r, rv[2] / r] } : null
+}
+
+/** An edge as line segments to draw: a straight edge is one, a round edge its circle in 64. */
+export function edgeLines(e: Pick<EdgeRef, 'a' | 'b' | 'face' | 'center'>): { from: Vec3; to: Vec3 }[] {
+  const k = circleOf(e)
+  if (!k) return [{ from: e.a, to: e.b }]
+  const v: Vec3 = [k.n[1] * k.u[2] - k.n[2] * k.u[1], k.n[2] * k.u[0] - k.n[0] * k.u[2], k.n[0] * k.u[1] - k.n[1] * k.u[0]]
+  const at = (i: number): Vec3 => {
+    if (i % 64 === 0) return e.a
+    const t = (2 * Math.PI * i) / 64
+    const [cs, sn] = [Math.cos(t) * k.r, Math.sin(t) * k.r]
+    return [k.c[0] + k.u[0] * cs + v[0] * sn, k.c[1] + k.u[1] * cs + v[1] * sn, k.c[2] + k.u[2] * cs + v[2] * sn]
+  }
+  return Array.from({ length: 64 }, (_, i) => ({ from: at(i), to: at(i + 1) }))
+}
+
+/** How far a point is from an edge, in mm: from the segment, or from the circle of a round edge. */
+export function edgeDistance(p: Vec3, e: Pick<EdgeRef, 'a' | 'b'> & Partial<Pick<EdgeRef, 'face' | 'center'>>): number {
+  const k = e.face && e.center ? circleOf({ a: e.a, face: e.face, center: e.center }) : null
+  if (k) {
+    const d = sub(p, k.c)
+    const h = dot(d, k.n)
+    const radial = Math.hypot(d[0] - k.n[0] * h, d[1] - k.n[1] * h, d[2] - k.n[2] * h)
+    return Math.hypot(radial - k.r, h)
+  }
   const ab = sub(e.b, e.a)
   const l2 = dot(ab, ab)
   const t = l2 > 0 ? Math.min(1, Math.max(0, dot(sub(p, e.a), ab) / l2)) : 0
