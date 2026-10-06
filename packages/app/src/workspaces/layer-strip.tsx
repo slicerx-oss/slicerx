@@ -142,7 +142,7 @@ export function LayerStrip() {
         {interactive ? [handle('lo'), handle('hi')] : null}
         {interactive
           ? strikes.map((c, i) => (
-              <button key={`strike-${i}`} type="button" className="lstrike" data-severity={c.severity} style={{ top: `${fromTop(zTop(Math.min(n, c.layer + 1))) * 100}%` }} aria-label={`${collisionTitle(c, names)}, layer ${c.layer + 1}`} {...tipAttrs({ title: collisionTitle(c, names), body: `Layer ${c.layer + 1}. Click to jump there.` })} onPointerDown={(e) => e.stopPropagation()} onClick={() => jumpToCollision(i)}>
+              <button key={`strike-${i}`} type="button" className="lstrike" data-severity={c.severity} style={{ top: `${fromTop(zTop(Math.min(n, c.layer + 1))) * 100}%` }} aria-label={`${collisionTitle(c, names)}, layer ${c.layer + 1}`} {...tipAttrs({ title: collisionTitle(c, names), body: `Layer ${c.layer + 1}. Click to jump there.` })} onPointerDown={(e) => e.stopPropagation()} onClick={() => void jumpToCollision(i)}>
                 <Icon name="strike" size={14} />
               </button>
             ))
