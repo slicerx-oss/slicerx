@@ -1176,6 +1176,20 @@ impl PrintConfig {
             0.8,
         )?;
         range("line_width", self.line_width, 0.1, 2.0)?;
+        let w = &self.feature_widths;
+        for (key, v) in [
+            ("outer_wall_line_width", w.outer_wall),
+            ("inner_wall_line_width", w.inner_wall),
+            ("sparse_infill_line_width", w.sparse_infill),
+            ("internal_solid_infill_line_width", w.internal_solid_infill),
+            ("top_surface_line_width", w.top_surface),
+            ("support_line_width", w.support),
+            ("initial_layer_line_width", w.initial_layer),
+        ] {
+            if let Some(v) = v {
+                range(key, v, 0.1, 2.0)?;
+            }
+        }
         range("sparse_infill_density", self.sparse_infill_density, 0.0, 100.0)?;
         range("infill_wall_overlap", self.infill_wall_overlap, 0.0, 100.0)?;
         range("brim_width", self.brim_width, 0.0, 100.0)?;
@@ -2071,6 +2085,29 @@ mod tests {
         assert!((pct.line_width - 0.44).abs() < 1e-9);
         let mm = PrintConfig::from_json(br#"{"line_width":"0.45"}"#).unwrap();
         assert!((mm.line_width - 0.45).abs() < 1e-9);
+    }
+
+    #[test]
+    fn feature_line_widths_are_range_checked_like_line_width() {
+        use serde_json::json;
+        // A width this wide overflowed the scaled geometry and crashed the slice.
+        for key in [
+            "outer_wall_line_width",
+            "inner_wall_line_width",
+            "sparse_infill_line_width",
+            "internal_solid_infill_line_width",
+            "top_surface_line_width",
+            "support_line_width",
+            "initial_layer_line_width",
+        ] {
+            for bad in [json!(1e9), json!("inf"), json!("5000%")] {
+                let err = PrintConfig::from_value(&json!({ key: bad })).unwrap_err();
+                assert!(err.to_string().contains(key), "{key} {bad}: {err}");
+            }
+            for ok in [json!(0.42), json!(0), json!("110%")] {
+                assert!(PrintConfig::from_value(&json!({ key: ok })).is_ok(), "{key} {ok}");
+            }
+        }
     }
 
     #[test]
