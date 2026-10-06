@@ -3851,15 +3851,21 @@ fn last_feed(bytes: &[u8]) -> Option<i64> {
 fn parse_e(s: &str) -> Option<i64> {
     let (neg, s) = s.strip_prefix('-').map_or((false, s), |r| (true, r));
     let (int, frac) = s.split_once('.').unwrap_or((s, ""));
-    if frac.len() > 5 || int.len() > 10 {
+    if int.len() > 10 || !frac.bytes().all(|d| d.is_ascii_digit()) {
         return None;
     }
+    // Custom G-code can carry more decimals than the writer's five (a template's arithmetic): round to five.
+    let (frac, up) = match frac.get(..5) {
+        Some(head) if frac.len() > 5 => (head, frac.as_bytes().get(5).is_some_and(|d| *d >= b'5')),
+        _ => (frac, false),
+    };
     let mut v: i64 = if int.is_empty() { 0 } else { int.parse().ok()? };
     v *= 100_000;
     if !frac.is_empty() {
         let scale = 10i64.pow(5 - u32::try_from(frac.len()).ok()?);
         v += frac.parse::<i64>().ok()? * scale;
     }
+    v += i64::from(up);
     Some(if neg { -v } else { v })
 }
 
@@ -4076,6 +4082,21 @@ mod tests {
 
     fn near(a: f64, b: f64) -> bool {
         (a - b).abs() < 1e-9
+    }
+
+    #[test]
+    fn absolute_distances_take_extrusions_with_more_than_five_decimals() {
+        // Bambu Lab's filament change works out flush lengths such as `E{(flush_length_1 - 23.7) * 0.02}`, which
+        // render with six decimals. Left as written, the printer read 0.357503 as a position and pulled back 23 mm.
+        let out = absolute_e(b"G1 E23.7\nG1 E0.357503 F50\nG1 E-0.0000049\n", b"G92 E0\n");
+        assert_eq!(
+            String::from_utf8(out).unwrap(),
+            "G92 E0\nG1 E23.7\nG1 E24.0575 F50\nG1 E24.0575\n"
+        );
+        assert_eq!(parse_e("0.357503"), Some(35_750));
+        assert_eq!(parse_e("0.0000051"), Some(1));
+        assert_eq!(parse_e("-1.999996"), Some(-200_000));
+        assert_eq!(parse_e("2.5"), Some(250_000));
     }
 
     #[test]
