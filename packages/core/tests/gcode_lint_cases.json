@@ -1,0 +1,741 @@
+{
+ "comment": "G-code linter cases that packages/core/src/gcode_lint.rs (tests/gcode_lint_cases.rs) and packages/settings/js/gcode-lint.ts (gcode-lint.test.ts) must both pass: each finding as [line, code, severity].",
+ "cases": [
+  {
+   "text": "M140 S60\nM104 S200\nG28\nM190 S60\nM109 S200\nG90\nM83\nG92 E0\n",
+   "section": "start",
+   "trust": "untrusted",
+   "limits": {
+    "nozzleMaxC": 300,
+    "bedMaxC": 110,
+    "chamberMaxC": 60
+   },
+   "expect": []
+  },
+  {
+   "text": "M104 S0\nM140 S0\nM107\nG91\nG1 Z10\nG90\nM84\n",
+   "section": "end",
+   "trust": "untrusted",
+   "limits": {
+    "nozzleMaxC": 300,
+    "bedMaxC": 110,
+    "chamberMaxC": 60
+   },
+   "expect": []
+  },
+  {
+   "text": "PRINT_END",
+   "section": "end",
+   "trust": "untrusted",
+   "limits": {
+    "nozzleMaxC": 300,
+    "bedMaxC": 110,
+    "chamberMaxC": 60
+   },
+   "expect": []
+  },
+  {
+   "text": "M104 S999",
+   "section": "start",
+   "trust": "trusted",
+   "limits": {
+    "nozzleMaxC": 300,
+    "bedMaxC": 110,
+    "chamberMaxC": 60
+   },
+   "expect": [
+    [
+     1,
+     "nozzle_over_limit",
+     "error"
+    ]
+   ]
+  },
+  {
+   "text": "M190 S150",
+   "section": "start",
+   "trust": "trusted",
+   "limits": {
+    "nozzleMaxC": 300,
+    "bedMaxC": 110,
+    "chamberMaxC": 60
+   },
+   "expect": [
+    [
+     1,
+     "bed_over_limit",
+     "error"
+    ]
+   ]
+  },
+  {
+   "text": "M191 S80",
+   "section": "start",
+   "trust": "trusted",
+   "limits": {
+    "nozzleMaxC": 300,
+    "bedMaxC": 110,
+    "chamberMaxC": 60
+   },
+   "expect": [
+    [
+     1,
+     "chamber_over_limit",
+     "error"
+    ]
+   ]
+  },
+  {
+   "text": "M106 S300",
+   "section": "layerChange",
+   "trust": "trusted",
+   "limits": {
+    "nozzleMaxC": 300,
+    "bedMaxC": 110,
+    "chamberMaxC": 60
+   },
+   "expect": [
+    [
+     1,
+     "fan_out_of_range",
+     "error"
+    ]
+   ]
+  },
+  {
+   "text": "SET_HEATER_TEMPERATURE HEATER=extruder TARGET=500",
+   "section": "start",
+   "trust": "trusted",
+   "limits": {
+    "nozzleMaxC": 300,
+    "bedMaxC": 110,
+    "chamberMaxC": 60
+   },
+   "expect": [
+    [
+     1,
+     "heater_over_limit",
+     "error"
+    ]
+   ]
+  },
+  {
+   "text": "SET_HEATER_TEMPERATURE HEATER=heater_bed TARGET=0\nSET_HEATER_TEMPERATURE HEATER=extruder TARGET=0",
+   "section": "end",
+   "trust": "untrusted",
+   "limits": {
+    "nozzleMaxC": 300,
+    "bedMaxC": 110,
+    "chamberMaxC": 60
+   },
+   "expect": []
+  },
+  {
+   "text": "M109",
+   "section": "start",
+   "trust": "trusted",
+   "limits": {
+    "nozzleMaxC": 300,
+    "bedMaxC": 110,
+    "chamberMaxC": 60
+   },
+   "expect": [
+    [
+     1,
+     "wait_without_target",
+     "error"
+    ]
+   ]
+  },
+  {
+   "text": "M190",
+   "section": "start",
+   "trust": "trusted",
+   "limits": {
+    "nozzleMaxC": 300,
+    "bedMaxC": 110,
+    "chamberMaxC": 60
+   },
+   "expect": [
+    [
+     1,
+     "wait_without_target",
+     "error"
+    ]
+   ]
+  },
+  {
+   "text": "TEMPERATURE_WAIT SENSOR=extruder",
+   "section": "start",
+   "trust": "trusted",
+   "limits": {
+    "nozzleMaxC": 300,
+    "bedMaxC": 110,
+    "chamberMaxC": 60
+   },
+   "expect": [
+    [
+     1,
+     "wait_without_target",
+     "error"
+    ]
+   ]
+  },
+  {
+   "text": "M109 R210",
+   "section": "start",
+   "trust": "trusted",
+   "limits": {
+    "nozzleMaxC": 300,
+    "bedMaxC": 110,
+    "chamberMaxC": 60
+   },
+   "expect": []
+  },
+  {
+   "text": "M502\nSAVE_CONFIG\nFIRMWARE_RESTART\nM997\nM851 Z-1\nM301 P1\nM92 E400\nRUN_SHELL_COMMAND CMD=x\nM302 P1",
+   "section": "start",
+   "trust": "trusted",
+   "limits": {},
+   "expect": [
+    [
+     1,
+     "factory_reset",
+     "error"
+    ],
+    [
+     2,
+     "config_save",
+     "error"
+    ],
+    [
+     3,
+     "firmware_restart",
+     "error"
+    ],
+    [
+     4,
+     "firmware_update",
+     "error"
+    ],
+    [
+     5,
+     "probe_offset",
+     "error"
+    ],
+    [
+     6,
+     "pid_change",
+     "error"
+    ],
+    [
+     7,
+     "steps_change",
+     "error"
+    ],
+    [
+     8,
+     "shell",
+     "error"
+    ],
+    [
+     9,
+     "cold_extrusion",
+     "error"
+    ]
+   ]
+  },
+  {
+   "text": "M500\nM211 S0\nM18",
+   "section": "start",
+   "trust": "untrusted",
+   "limits": {},
+   "expect": [
+    [
+     1,
+     "eeprom_write",
+     "error"
+    ],
+    [
+     2,
+     "endstops",
+     "error"
+    ],
+    [
+     3,
+     "motors_off",
+     "error"
+    ]
+   ]
+  },
+  {
+   "text": "M500\nM211 S0\nM18",
+   "section": "start",
+   "trust": "trusted",
+   "limits": {},
+   "expect": [
+    [
+     1,
+     "eeprom_write",
+     "warning"
+    ],
+    [
+     2,
+     "endstops",
+     "warning"
+    ],
+    [
+     3,
+     "motors_off",
+     "warning"
+    ]
+   ]
+  },
+  {
+   "text": "M84",
+   "section": "layerChange",
+   "trust": "trusted",
+   "limits": {
+    "nozzleMaxC": 300,
+    "bedMaxC": 110,
+    "chamberMaxC": 60
+   },
+   "expect": [
+    [
+     1,
+     "motors_off",
+     "error"
+    ]
+   ]
+  },
+  {
+   "text": "G28",
+   "section": "layerChange",
+   "trust": "trusted",
+   "limits": {
+    "nozzleMaxC": 300,
+    "bedMaxC": 110,
+    "chamberMaxC": 60
+   },
+   "expect": [
+    [
+     1,
+     "home_mid_print",
+     "error"
+    ]
+   ]
+  },
+  {
+   "text": "M84 E\nM302 S160\nG91\nG1 Z2\nM400\nSET_VELOCITY_LIMIT ACCEL_TO_DECEL=2500",
+   "section": "start",
+   "trust": "untrusted",
+   "limits": {},
+   "expect": [
+    [
+     6,
+     "motion_limits",
+     "warning"
+    ]
+   ]
+  },
+  {
+   "text": "M84 X Y",
+   "section": "start",
+   "trust": "trusted",
+   "limits": {
+    "nozzleMaxC": 300,
+    "bedMaxC": 110,
+    "chamberMaxC": 60
+   },
+   "expect": [
+    [
+     1,
+     "motors_off",
+     "warning"
+    ]
+   ]
+  },
+  {
+   "text": "M302 S0",
+   "section": "start",
+   "trust": "trusted",
+   "limits": {
+    "nozzleMaxC": 300,
+    "bedMaxC": 110,
+    "chamberMaxC": 60
+   },
+   "expect": [
+    [
+     1,
+     "cold_extrusion",
+     "error"
+    ]
+   ]
+  },
+  {
+   "text": "G91\nG1 Z1",
+   "section": "layerChange",
+   "trust": "trusted",
+   "limits": {
+    "nozzleMaxC": 300,
+    "bedMaxC": 110,
+    "chamberMaxC": 60
+   },
+   "expect": [
+    [
+     2,
+     "leaves_relative_xyz",
+     "error"
+    ]
+   ]
+  },
+  {
+   "text": "M82",
+   "section": "toolChange",
+   "trust": "trusted",
+   "limits": {
+    "nozzleMaxC": 300,
+    "bedMaxC": 110,
+    "chamberMaxC": 60
+   },
+   "expect": [
+    [
+     1,
+     "leaves_absolute_extruder",
+     "error"
+    ]
+   ]
+  },
+  {
+   "text": "G1 Z10",
+   "section": "end",
+   "trust": "trusted",
+   "limits": {
+    "nozzleMaxC": 300,
+    "bedMaxC": 110,
+    "chamberMaxC": 60
+   },
+   "expect": [
+    [
+     1,
+     "end_leaves_heaters_on",
+     "error"
+    ]
+   ]
+  },
+  {
+   "text": "M140 S0",
+   "section": "end",
+   "trust": "trusted",
+   "limits": {
+    "nozzleMaxC": 300,
+    "bedMaxC": 110,
+    "chamberMaxC": 60
+   },
+   "expect": [
+    [
+     1,
+     "end_leaves_heaters_on",
+     "error"
+    ]
+   ]
+  },
+  {
+   "text": "M104 S0",
+   "section": "end",
+   "trust": "trusted",
+   "limits": {
+    "nozzleMaxC": 300,
+    "bedMaxC": 110,
+    "chamberMaxC": 60
+   },
+   "expect": [
+    [
+     1,
+     "end_leaves_bed_on",
+     "warning"
+    ]
+   ]
+  },
+  {
+   "text": "M413 S0",
+   "section": "start",
+   "trust": "untrusted",
+   "limits": {
+    "nozzleMaxC": 300,
+    "bedMaxC": 110,
+    "chamberMaxC": 60
+   },
+   "expect": [
+    [
+     1,
+     "power_loss",
+     "error"
+    ]
+   ]
+  },
+  {
+   "text": "M413 S0",
+   "section": "start",
+   "trust": "trusted",
+   "limits": {
+    "nozzleMaxC": 300,
+    "bedMaxC": 110,
+    "chamberMaxC": 60
+   },
+   "expect": [
+    [
+     1,
+     "power_loss",
+     "warning"
+    ]
+   ]
+  },
+  {
+   "text": "M600",
+   "section": "pause",
+   "trust": "untrusted",
+   "limits": {
+    "nozzleMaxC": 300,
+    "bedMaxC": 110,
+    "chamberMaxC": 60
+   },
+   "expect": []
+  },
+  {
+   "text": "M104 S[nozzle_temperature]",
+   "section": "start",
+   "trust": "trusted",
+   "limits": {
+    "nozzleMaxC": 300,
+    "bedMaxC": 110,
+    "chamberMaxC": 60
+   },
+   "expect": [
+    [
+     1,
+     "unrendered_placeholder",
+     "error"
+    ]
+   ]
+  },
+  {
+   "text": "M104 S{x}",
+   "section": "start",
+   "trust": "trusted",
+   "limits": {
+    "nozzleMaxC": 300,
+    "bedMaxC": 110,
+    "chamberMaxC": 60
+   },
+   "expect": [
+    [
+     1,
+     "unrendered_placeholder",
+     "error"
+    ]
+   ]
+  },
+  {
+   "text": "M117 [ done ]",
+   "section": "start",
+   "trust": "trusted",
+   "limits": {
+    "nozzleMaxC": 300,
+    "bedMaxC": 110,
+    "chamberMaxC": 60
+   },
+   "expect": []
+  },
+  {
+   "text": "; M500 in a comment\nm500 ; save\nN12 M500*33",
+   "section": "start",
+   "trust": "trusted",
+   "limits": {
+    "nozzleMaxC": 300,
+    "bedMaxC": 110,
+    "chamberMaxC": 60
+   },
+   "expect": [
+    [
+     2,
+     "eeprom_write",
+     "warning"
+    ],
+    [
+     3,
+     "eeprom_write",
+     "warning"
+    ]
+   ]
+  },
+  {
+   "text": "M710 A1 S255\nM290 X40 Y40 Z2.6\nM500 ; save\n",
+   "section": "start",
+   "trust": "untrusted",
+   "limits": {},
+   "expect": [
+    [
+     1,
+     "fan_control",
+     "warning"
+    ],
+    [
+     2,
+     "babystep",
+     "warning"
+    ],
+    [
+     3,
+     "eeprom_write",
+     "error"
+    ]
+   ]
+  },
+  {
+   "text": "G1 E-2 F1800\nM106 S0\n",
+   "section": "end",
+   "trust": "trusted",
+   "limits": {},
+   "expect": [
+    [
+     2,
+     "end_leaves_heaters_on",
+     "error"
+    ]
+   ]
+  },
+  {
+   "text": "M104 S320\nM140 S100",
+   "section": "start",
+   "trust": "untrusted",
+   "limits": {},
+   "expect": [
+    [
+     1,
+     "nozzle_limit_unknown",
+     "warning"
+    ]
+   ]
+  },
+  {
+   "text": "M106 S-1\nM104 S-5\nM141 S70\nM191\nG92 X0",
+   "section": "toolChange",
+   "trust": "untrusted",
+   "limits": {
+    "nozzleMaxC": 300,
+    "bedMaxC": 110,
+    "chamberMaxC": 60
+   },
+   "expect": [
+    [
+     1,
+     "fan_out_of_range",
+     "error"
+    ],
+    [
+     2,
+     "negative_target",
+     "error"
+    ],
+    [
+     3,
+     "chamber_over_limit",
+     "error"
+    ],
+    [
+     4,
+     "wait_without_target",
+     "error"
+    ],
+    [
+     5,
+     "position_override",
+     "error"
+    ]
+   ]
+  },
+  {
+   "text": "M190 D60\nM190 D200",
+   "section": "start",
+   "trust": "untrusted",
+   "limits": {
+    "nozzleMaxC": 300,
+    "bedMaxC": 110,
+    "chamberMaxC": 60
+   },
+   "expect": [
+    [
+     2,
+     "bed_over_limit",
+     "error"
+    ]
+   ]
+  },
+  {
+   "text": "M81\nM104 S0",
+   "section": "end",
+   "trust": "untrusted",
+   "limits": {
+    "nozzleMaxC": 300,
+    "bedMaxC": 110,
+    "chamberMaxC": 60
+   },
+   "expect": []
+  },
+  {
+   "text": "M206 X1\nM420 S0\nSET_GCODE_OFFSET Z=0.1\nM85 S0\nM80",
+   "section": "layerChange",
+   "trust": "untrusted",
+   "limits": {
+    "nozzleMaxC": 300,
+    "bedMaxC": 110,
+    "chamberMaxC": 60
+   },
+   "expect": [
+    [
+     1,
+     "home_offset",
+     "error"
+    ],
+    [
+     2,
+     "leveling_state",
+     "error"
+    ],
+    [
+     3,
+     "gcode_offset",
+     "error"
+    ],
+    [
+     4,
+     "inactivity_timer",
+     "error"
+    ],
+    [
+     5,
+     "power_on",
+     "error"
+    ]
+   ]
+  },
+  {
+   "text": "",
+   "section": "end",
+   "trust": "trusted",
+   "limits": {
+    "nozzleMaxC": 300,
+    "bedMaxC": 110,
+    "chamberMaxC": 60
+   },
+   "expect": [
+    [
+     1,
+     "end_leaves_heaters_on",
+     "error"
+    ]
+   ]
+  }
+ ]
+}

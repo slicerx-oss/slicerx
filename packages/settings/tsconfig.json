@@ -1,4 +1,4 @@
 {
   "extends": "../../tsconfig.base.json",
-  "include": ["js", "fixtures", "easy-map.json", "schema.json", "knowledge.json", "legacy.json", "profiles/printers.json", "printer-models.json"]
+  "include": ["js", "fixtures", "easy-map.json", "schema.json", "knowledge.json", "legacy.json", "profiles/printers.json", "profiles/stock-gcode.json", "printer-models.json"]
 }
