@@ -115,6 +115,10 @@ pub struct PrinterLive {
     /// Height of the layer printing now, in mm.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub layer_z_mm: Option<f64>,
+    /// True while the printer sends status but refuses commands from other apps (a Bambu Lab printer
+    /// with Developer Mode off). Absent when it takes commands or does not say.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub monitor_only: Option<bool>,
 }
 
 /// Fan speeds in percent.
@@ -390,8 +394,8 @@ pub struct PrinterHardware {
     /// AMS units, MMUs and external spools, with what each slot holds.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub filament_units: Vec<FilamentUnit>,
-    /// Bambu Lab: false when the printer wants signed commands, which means Developer Mode is off and
-    /// it will refuse prints from SlicerX.
+    /// Bambu Lab: false when the printer wants signed commands, which means Developer Mode is off: it
+    /// sends status, and prints go through Bambu Connect.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub developer_mode: Option<bool>,
     /// Bambu Lab: whether a micro SD card is in. An X1 needs one to start a print over the network.

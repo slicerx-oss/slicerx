@@ -120,6 +120,11 @@ export interface PrinterLive {
   units?: { id: string; kind: FilamentUnit['kind']; feeds?: 'left' | 'right' }[]
   /** Height of the layer printing now, in mm. */
   layerZMm?: number
+  /**
+   * True while the printer sends status but refuses commands from other apps: a Bambu Lab printer with Developer Mode
+   * off. It prints through Bambu Connect then. Absent when it takes commands or does not say.
+   */
+  monitorOnly?: boolean
 }
 
 export type PrinterEvent =
@@ -315,7 +320,7 @@ export interface PrinterHardware {
   extruders?: ExtruderInfo[]
   /** AMS units, MMUs and external spools, with what each slot holds. */
   filamentUnits?: FilamentUnit[]
-  /** Bambu Lab: false while the printer wants signed commands, so Developer Mode is off and it refuses prints from SlicerX. */
+  /** Bambu Lab: false while the printer wants signed commands, so Developer Mode is off: it sends status, and prints go through Bambu Connect. */
   developerMode?: boolean
   /** Bambu Lab: whether a micro SD card is in. An X1 needs one to start a print over the network. */
   sdCard?: boolean

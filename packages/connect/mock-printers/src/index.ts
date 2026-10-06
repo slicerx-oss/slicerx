@@ -186,12 +186,16 @@ export async function startMocks(opts: StartOptions = {}): Promise<RunningMocks>
     // comes that soon after its last session ended; `stallCamera: true` makes the camera's playing sessions stop
     // sending frames with their connections left open. `printerType` puts a `printer_type` in its reports; `storage`
     // (`none`, `normal`, `abnormal`, `readonly`) is the SD card it reports, and `emmc: true` says it prints without one.
+    // `developerMode: false` makes it a printer with Developer Mode off: status only, every command and upload refused
+    // (null: no `fun` flags in its reports, as before).
     if (req.path === '/bambu' && req.method === 'POST') {
       if (!bambuExtra) return { status: 404 }
-      const b = req.json() as { refuse?: string | null; model?: string; ams?: BambuExtra['ams']; external?: BambuExtra['external'] | null; tagged?: number[]; liveview?: boolean; inBandParameterSets?: boolean; cameraCode?: string | null; digestQop?: boolean; dropPlays?: number; dropWithinMs?: number; stallCamera?: boolean; printerType?: string; storage?: BambuExtra['storage']; emmc?: boolean }
+      const b = req.json() as { refuse?: string | null; model?: string; ams?: BambuExtra['ams']; external?: BambuExtra['external'] | null; tagged?: number[]; liveview?: boolean; inBandParameterSets?: boolean; cameraCode?: string | null; digestQop?: boolean; dropPlays?: number; dropWithinMs?: number; stallCamera?: boolean; printerType?: string; storage?: BambuExtra['storage']; emmc?: boolean; developerMode?: boolean | null }
       if (b.printerType !== undefined) bambuExtra.printerType = b.printerType
       if (b.storage !== undefined) bambuExtra.storage = b.storage
       if (b.emmc !== undefined) bambuExtra.emmc = b.emmc
+      if (b.developerMode === null) delete bambuExtra.developerMode
+      else if (b.developerMode !== undefined) bambuExtra.developerMode = b.developerMode
       if (b.liveview !== undefined) bambuExtra.liveview = b.liveview
       if (b.inBandParameterSets !== undefined) bambuExtra.inBandParameterSets = b.inBandParameterSets
       if (b.cameraCode) bambuExtra.cameraCode = b.cameraCode

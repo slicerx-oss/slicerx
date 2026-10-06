@@ -58,7 +58,17 @@ export interface BambuExtra {
   storage?: 'none' | 'normal' | 'abnormal' | 'readonly'
   /** `fun2` bit 0: the printer prints from its internal storage without an SD card. */
   emmc?: boolean
+  /**
+   * Developer Mode as the report's `fun` flags give it (bit 0x20000000 set while it is off). Off, the printer keeps
+   * sending status but refuses every command and file from a third party, as Bambu Lab's Authorization Control does:
+   * a command gets `result: fail` on the report topic and an upload is refused. The real firmware's refusal words are
+   * not recorded here; the driver refuses before sending anything when the flag says off. Absent: no `fun` flags.
+   */
+  developerMode?: boolean
 }
+
+/** `fun` values seen on printers: Developer Mode on, and off (signed commands wanted). */
+const FUN = { on: '3EC18FFF9CFF', off: '3EC1AFFF9CFF' } as const
 
 const STORAGE = { none: 0, normal: 1, abnormal: 2, readonly: 3 } as const
 
@@ -158,6 +168,7 @@ export function reportFor(m: MockMachine, x: BambuExtra = { skipped: [], printEr
       },
       ...(x.external ? { vt_tray: { id: '254', tray_type: x.external.type, tray_color: `${x.external.color.replace('#', '').toUpperCase()}FF`, remain: -1 } } : {}),
       ...(x.model === 'O1D' ? h2dHardware(m) : {}),
+      ...(x.developerMode === undefined ? {} : { fun: x.developerMode ? FUN.on : FUN.off }),
     },
   }
 }
@@ -242,6 +253,15 @@ export async function startBambu(m: MockMachine, log: string[]): Promise<{ handl
       if (msg.info?.command === 'get_version') {
         const body = Buffer.from(JSON.stringify(versionFor(extra)))
         for (const s of subscribers) s.write(publish(`device/${MOCK_SERIAL}/report`, body))
+        return
+      }
+      // Developer Mode off: status only. Every command is answered with a refusal and changes nothing.
+      if (extra.developerMode === false) {
+        const [group, body] = Object.entries(msg)[0] ?? []
+        if (!group || !body) return
+        log.push(`refused ${String(body.command)}`)
+        const answer = Buffer.from(JSON.stringify({ [group]: { command: body.command, sequence_id: body.sequence_id, result: 'fail', reason: 'not authorized' } }))
+        for (const s of subscribers) s.write(publish(`device/${MOCK_SERIAL}/report`, answer))
         return
       }
       if (msg.system?.command === 'ledctrl') {
@@ -342,6 +362,7 @@ export async function startBambu(m: MockMachine, log: string[]): Promise<{ handl
         }
         case 'STOR': {
           if (!authed || !dataReady) { reply('530 not logged in'); break }
+          if (extra.developerMode === false) { log.push(`refused STOR ${arg}`); reply('550 not authorized'); break }
           const name = arg
           reply('150 send it')
           const sock = await dataReady

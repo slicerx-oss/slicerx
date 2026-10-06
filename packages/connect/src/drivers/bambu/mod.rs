@@ -1212,6 +1212,8 @@ fn parse_live(p: &Value, slots: &[String]) -> Option<Box<PrinterLive>> {
         nozzle_sides,
         units: (!units.is_empty()).then_some(units),
         layer_z_mm: None,
+        // Status keeps coming with Developer Mode off; commands need Bambu Connect then.
+        monitor_only: (developer_mode(p) == Some(false)).then_some(true),
     };
     (live != PrinterLive::default()).then(|| Box::new(live))
 }
@@ -1719,6 +1721,24 @@ impl BambuSession {
         }
     }
 
+    /// Whether the printer reports Developer Mode off: it then sends status but refuses commands
+    /// from other apps (Bambu Lab's third-party integration page, Authorization Control).
+    fn monitor_only(&self) -> bool {
+        let state = self.shared.state.lock().unwrap_or_else(PoisonError::into_inner);
+        developer_mode(&state) == Some(false)
+    }
+
+    /// Refused before anything goes out while the printer is monitor-only.
+    fn require_control(&self) -> Result<()> {
+        if !self.monitor_only() {
+            return Ok(());
+        }
+        Err(Error::Refused {
+            printer: self.id().to_owned(),
+            reason: MONITOR_ONLY.to_owned(),
+        })
+    }
+
     /// A refusal's reason, with the likely cause added while the printer reports Developer Mode off.
     fn with_developer_hint(&self, reason: String) -> String {
         let state = self.shared.state.lock().unwrap_or_else(PoisonError::into_inner);
@@ -1936,11 +1956,11 @@ fn refusal_with_hint(reason: String, p: &Value) -> String {
     if developer_mode(p) != Some(false) {
         return reason;
     }
-    format!(
-        "{}. Developer Mode is off on the printer: turn it on in its LAN Only settings, then try again.",
-        reason.trim_end_matches('.')
-    )
+    format!("{}. {MONITOR_ONLY}", reason.trim_end_matches('.'))
 }
+
+/// Why a printer with Developer Mode off takes no command from SlicerX, and the two ways to print.
+const MONITOR_ONLY: &str = "Developer Mode is off on the printer, so it sends status but takes no commands from other apps. Print through Bambu Connect, or turn on Developer Mode in its LAN Only settings to print directly.";
 
 /// The printer's reason when its reply to `project_file` is a refusal, else `None`. `result` is
 /// "success" or "fail" in any case; the reason is the reply's `reason` text when that says more than
@@ -2054,6 +2074,15 @@ pub(crate) fn slot_to_tray(slot: &str) -> Option<i64> {
 #[async_trait]
 impl PrinterSession for BambuSession {
     fn capabilities(&self) -> Capabilities {
+        // Developer Mode off: status, camera and slots to read, and nothing that commands the printer.
+        if self.monitor_only() {
+            return vec![
+                Capability::Status,
+                Capability::Events,
+                Capability::Camera,
+                Capability::FilamentSlots,
+            ];
+        }
         vec![
             Capability::Status,
             Capability::Events,
@@ -2143,6 +2172,7 @@ impl PrinterSession for BambuSession {
             self.id(),
             &params::upload(self.id(), &file.name, &file.sha256),
         )?;
+        self.require_control()?;
         if file.kind == JobKind::Bgcode {
             return Err(Error::not_supported("bambu-lan", "Prusa binary G-code"));
         }
@@ -2189,6 +2219,7 @@ impl PrinterSession for BambuSession {
             self.id(),
             &params::start(self.id(), file, &opts),
         )?;
+        self.require_control()?;
         self.require_state(
             "start a job",
             &[PrinterState::Idle, PrinterState::Finished, PrinterState::Error],
@@ -2210,6 +2241,7 @@ impl PrinterSession for BambuSession {
     async fn pause(&self, token: &ApprovalToken) -> Result<()> {
         self.gate
             .check(token, Action::Pause, self.id(), &params::printer(self.id()))?;
+        self.require_control()?;
         self.require_state("pause", &[PrinterState::Printing])?;
         self.command(json!({ "print": { "sequence_id": self.next_seq(), "command": "pause", "param": "" } }))
             .await
@@ -2218,6 +2250,7 @@ impl PrinterSession for BambuSession {
     async fn resume(&self, token: &ApprovalToken) -> Result<()> {
         self.gate
             .check(token, Action::Resume, self.id(), &params::printer(self.id()))?;
+        self.require_control()?;
         self.require_state("resume", &[PrinterState::Paused])?;
         self.command(json!({ "print": { "sequence_id": self.next_seq(), "command": "resume", "param": "" } }))
             .await
@@ -2226,6 +2259,7 @@ impl PrinterSession for BambuSession {
     async fn cancel(&self, token: &ApprovalToken) -> Result<()> {
         self.gate
             .check(token, Action::Cancel, self.id(), &params::printer(self.id()))?;
+        self.require_control()?;
         self.require_state(
             "cancel",
             &[
@@ -2386,12 +2420,14 @@ impl PrinterSession for BambuSession {
             self.id(),
             &params::adjust(self.id(), change),
         )?;
+        self.require_control()?;
         self.command(body).await
     }
 
     async fn set_light(&self, on: bool, token: &ApprovalToken) -> Result<()> {
         self.gate
             .check(token, Action::Adjust, self.id(), &params::light(self.id(), on))?;
+        self.require_control()?;
         // Bambu Studio's DevLamp::CtrlSetChamberLight: `ledctrl` for `chamber_light` and
         // `chamber_light2` (the H2 printers' second light), with the same timings.
         for node in ["chamber_light", "chamber_light2"] {
@@ -2440,6 +2476,7 @@ impl PrinterSession for BambuSession {
             self.id(),
             &params::slot(self.id(), setting),
         )?;
+        self.require_control()?;
         self.command(body).await?;
         // The printer answers on the report topic; a `fail` there is its refusal.
         let end = tokio::time::Instant::now() + SLOT_ANSWER_WAIT;
@@ -2590,6 +2627,7 @@ impl PrinterSession for BambuSession {
             self.id(),
             &params::gcode(self.id(), &crate::skip_object_line(id)),
         )?;
+        self.require_control()?;
         self.command(json!({ "print": { "sequence_id": self.next_seq(), "command": "skip_objects", "obj_list": [n] } })).await
     }
 
@@ -2598,6 +2636,7 @@ impl PrinterSession for BambuSession {
         crate::gate::one_gcode_line(self.id(), line)?;
         self.gate
             .check(token, Action::Gcode, self.id(), &params::gcode(self.id(), line))?;
+        self.require_control()?;
         self.command(json!({ "print": { "sequence_id": self.next_seq(), "command": "gcode_line", "param": format!("{line}\n") } })).await
     }
 }
@@ -2811,12 +2850,28 @@ mod tests {
     }
 
     #[test]
+    fn developer_mode_off_reads_as_monitor_only() {
+        let off = status_from_report(
+            "p",
+            &json!({ "print": { "gcode_state": "IDLE", "fun": "3EC1AFFF9CFF" } }),
+        );
+        assert_eq!(off.live.and_then(|l| l.monitor_only), Some(true));
+        let on = status_from_report(
+            "p",
+            &json!({ "print": { "gcode_state": "IDLE", "fun": "3EC18FFF9CFF" } }),
+        );
+        assert_eq!(on.live.and_then(|l| l.monitor_only), None);
+        let unsaid = status_from_report("p", &json!({ "print": { "gcode_state": "IDLE" } }));
+        assert_eq!(unsaid.live.and_then(|l| l.monitor_only), None);
+    }
+
+    #[test]
     fn a_refusal_names_developer_mode_when_it_is_off() {
         use super::refusal_with_hint;
         let off = json!({ "fun": "3EC1AFFF9CFF" });
         assert_eq!(
             refusal_with_hint("verify failed".to_owned(), &off),
-            "verify failed. Developer Mode is off on the printer: turn it on in its LAN Only settings, then try again."
+            "verify failed. Developer Mode is off on the printer, so it sends status but takes no commands from other apps. Print through Bambu Connect, or turn on Developer Mode in its LAN Only settings to print directly."
         );
         let on = json!({ "fun": "3EC18FFF9CFF" });
         assert_eq!(

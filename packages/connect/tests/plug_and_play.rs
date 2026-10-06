@@ -12,8 +12,8 @@ use std::time::Duration;
 
 use sx_connect::drivers::{BambuConnector, CrealityConnector, MoonrakerConnector, SnapmakerConnector};
 use sx_connect::{
-    Action, ErrorCode, JobKind, MemoryGate, PrinterConnector, PrinterSession, PrinterState, StartOptions,
-    params,
+    Action, Capability, ErrorCode, JobKind, MemoryGate, PrinterConnector, PrinterSession, PrinterState,
+    StartOptions, params,
 };
 
 /// A session to the Bambu fake after `/bambu` made it `printer`.
@@ -102,6 +102,55 @@ async fn bambu_without_an_sd_card_says_so_before_uploading() {
         &params::upload("bay-1", &file.name, &file.sha256),
     );
     s.upload(file, &t).await.unwrap();
+}
+
+// Developer Mode off: the printer still connects with the access code and sends status, the session
+// is monitor-only, and every command is refused before anything goes to the printer.
+#[tokio::test]
+async fn bambu_without_developer_mode_connects_monitor_only() {
+    let (mocks, gate, s) = bambu(serde_json::json!({ "model": "N2S", "developerMode": false })).await;
+    let st = s.status().await.unwrap();
+    assert_eq!(st.state, PrinterState::Idle);
+    assert_eq!(st.live.as_ref().and_then(|l| l.monitor_only), Some(true));
+    assert!(!st.slots.is_empty());
+    assert_eq!(s.hardware().await.unwrap().unwrap().developer_mode, Some(false));
+    let caps = s.capabilities();
+    assert!(caps.contains(&Capability::Status) && caps.contains(&Capability::Camera));
+    for c in [
+        Capability::Upload,
+        Capability::Start,
+        Capability::Pause,
+        Capability::GcodeConsole,
+    ] {
+        assert!(!caps.contains(&c), "{c:?}");
+    }
+    let file = job_file("cube.gcode.3mf", JobKind::Gcode3mf);
+    let t = gate.mint(
+        Action::Upload,
+        "bay-1",
+        &params::upload("bay-1", &file.name, &file.sha256),
+    );
+    let r = s.upload(file, &t).await;
+    assert!(
+        format!("{:?}", r.as_ref().err()).contains("Bambu Connect"),
+        "{r:?}"
+    );
+    expect_code(r, ErrorCode::Refused);
+    let t = gate.mint(Action::Pause, "bay-1", &params::printer("bay-1"));
+    expect_code(s.pause(&t).await, ErrorCode::Refused);
+    let state = mocks.state().await;
+    assert!(state["bambu"]["files"].as_array().unwrap().is_empty());
+    let log = state["log"].as_array().unwrap();
+    assert!(
+        !log.iter()
+            .any(|l| l.as_str().is_some_and(|l| l.starts_with("refused"))),
+        "{log:?}"
+    );
+
+    // With Developer Mode on, the same printer takes commands again.
+    let (_mocks, _gate, s) = bambu(serde_json::json!({ "model": "N2S", "developerMode": true })).await;
+    assert_eq!(s.status().await.unwrap().live.and_then(|l| l.monitor_only), None);
+    assert!(s.capabilities().contains(&Capability::Start));
 }
 
 /// A Moonraker session to the fake, after `/moonraker` made it `variant` (a QIDI printer, a U1).
