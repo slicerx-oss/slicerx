@@ -132,7 +132,9 @@ A slice starts from SlicerX's defaults and applies, in this order:
 
 Settings that run programs (`post_process`) and credentials (printer host passwords and API keys) are never read from project or preset files.
 
-Custom G-code (start, end, layer change and filament change G-code) is trusted only when it is the text SlicerX ships for the selected profiles. G-code that comes from a profile SlicerX does not ship, a project file, a preset file or an override gets the engine's strict checks. Projects sliced through mimir's tools follow the same rule. A line those checks refuse, such as one that turns off the motors in the start G-code, stops the slice with `preflight_blocked`.
+Custom G-code (start, end, layer change and filament change G-code) is trusted only when it is the text SlicerX ships for the selected profiles. G-code that comes from a profile SlicerX does not ship, a preset file or an override gets the engine's strict checks. Projects sliced through mimir's tools follow the same rule. A line those checks refuse, such as one that turns off the motors in the start G-code, stops the slice with `preflight_blocked`.
+
+A project's own printer G-code (`project_settings: true`) is compared with the printer's stock text first: the template SlicerX ships for the printer model, or any version Bambu Studio or OrcaSlicer shipped for it. Line endings, trailing spaces and blank lines do not count. Stock text is used as it is, and `project_gcode` in the result says so ("The project's start G-code matches the stock Bambu Lab A1 start G-code."). The model is the `machine:` profile in `profiles`, or the printer the project was saved for. G-code that is not stock text stops the call with `project_gcode_review`. `structuredContent.error.details` then holds, per setting, the unified diff against the printer profile's G-code (`diff`), each flagged line with its reason (`flags`: `line`, `code`, `reason`, and `severity`, where `error` means it is never allowed and `warning` that it needs a person's yes) and whether a person may choose it (`approvable`). Show it to the person. Call again with `project_gcode: "profile"` to slice with the printer profile's G-code instead. No tool call can choose the project's own G-code; a person does that in SlicerX.
 
 ### What a slice returns
 
@@ -278,6 +280,7 @@ A refused call has `isError: true`, text such as `Error: no_such_plate: Benchy.3
 | `engine_unavailable` | No slicing engine, or the stub engine was asked for something only `sx` does |
 | `slice_failed` | The engine could not slice the model; the message has its reason |
 | `preflight_blocked` | The engine's safety checks refused the settings or the custom G-code |
+| `project_gcode_review` | The project carries printer G-code that is not the printer's stock text; `details` has the diff and the flagged lines |
 | `sequence_clearance` | The plate prints by object, and objects sit closer than the printer's extruder clearance or one that prints before another is taller than the gantry or lid clears; the message names them |
 | `not_configured` | The feature needs a cloud API or an account service the server does not have |
 | `auth_failed` | No token, or the service refused it |
