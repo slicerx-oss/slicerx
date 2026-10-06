@@ -829,19 +829,20 @@ fn fix_self_intersections(epsilon: i64, rings: &mut Vec<Vec<P>>) {
         let half = (epsilon + 1) / 2;
         let move_dist = (half - 2).max(2);
         let cell = |v: i64| v.div_euclid(FIX_CELL);
-        let mut grid: std::collections::HashMap<(i64, i64), Vec<(usize, usize)>> =
-            std::collections::HashMap::new();
+        // (cell, ring, segment), sorted, so a cell's segments are one run
+        let mut grid: Vec<((i64, i64), usize, usize)> = Vec::new();
         for (ri, r) in rings.iter().enumerate() {
             let n = r.len();
             for i in 0..n {
                 let (a, b) = (r[i], r[(i + 1) % n]);
                 for cx in cell(a.x.min(b.x))..=cell(a.x.max(b.x)) {
                     for cy in cell(a.y.min(b.y))..=cell(a.y.max(b.y)) {
-                        grid.entry((cx, cy)).or_default().push((ri, i));
+                        grid.push(((cx, cy), ri, i));
                     }
                 }
             }
         }
+        grid.sort_unstable();
         let mut near: Vec<(usize, usize)> = Vec::new();
         for ri in 0..rings.len() {
             let n = rings[ri].len();
@@ -850,9 +851,9 @@ fn fix_self_intersections(epsilon: i64, rings: &mut Vec<Vec<P>>) {
                 near.clear();
                 for cx in cell(pt.x - epsilon)..=cell(pt.x + epsilon) {
                     for cy in cell(pt.y - epsilon)..=cell(pt.y + epsilon) {
-                        if let Some(v) = grid.get(&(cx, cy)) {
-                            near.extend_from_slice(v);
-                        }
+                        let from = grid.partition_point(|g| g.0 < (cx, cy));
+                        let to = grid.partition_point(|g| g.0 <= (cx, cy));
+                        near.extend(grid[from..to].iter().map(|g| (g.1, g.2)));
                     }
                 }
                 near.sort_unstable();
@@ -935,25 +936,46 @@ fn union_rings(rings: &[Vec<P>]) -> Vec<Vec<Vec<P>>> {
         .collect()
 }
 
-/// The rings resolved with `rule`, as shapes in nm.
+/// The rings resolved with `rule`, as shapes in nm. The overlay runs on i32 points from the rings' corner,
+/// the instance the rest of the engine uses, in units for rings too large for nm.
 fn overlay_rings(rings: &[Vec<P>], rule: i_overlay::core::fill_rule::FillRule) -> Vec<Vec<Vec<P>>> {
     use i_overlay::core::overlay::IntOverlayOptions;
     use i_overlay::core::simplify::Simplify;
-    let input: Vec<Vec<IntPoint<i64>>> = rings
-        .iter()
-        .filter(|r| r.len() >= 3)
-        .map(|r| r.iter().map(|p| IntPoint::new(p.x, p.y)).collect())
-        .collect();
-    if input.is_empty() {
+    let rings: Vec<&Vec<P>> = rings.iter().filter(|r| r.len() >= 3).collect();
+    let (mut lo, mut hi) = (P::new(i64::MAX, i64::MAX), P::new(i64::MIN, i64::MIN));
+    for p in rings.iter().copied().flatten() {
+        lo = P::new(lo.x.min(p.x), lo.y.min(p.y));
+        hi = P::new(hi.x.max(p.x), hi.y.max(p.y));
+    }
+    if rings.is_empty() {
         return Vec::new();
     }
+    let big = i64::from(i32::MAX);
+    let k = if hi.x - lo.x < big && hi.y - lo.y < big {
+        1
+    } else {
+        NM_PER_UNIT
+    };
+    #[allow(clippy::cast_possible_truncation, reason = "inside i32 from the corner")]
+    let input: Vec<Vec<IntPoint<i32>>> = rings
+        .iter()
+        .map(|r| {
+            r.iter()
+                .map(|p| IntPoint::new(((p.x - lo.x) / k) as i32, ((p.y - lo.y) / k) as i32))
+                .collect()
+        })
+        .collect();
     input
         .simplify(rule, IntOverlayOptions::default())
         .into_iter()
         .map(|shape| {
             shape
                 .into_iter()
-                .map(|r| r.into_iter().map(|p| P::new(p.x, p.y)).collect())
+                .map(|r| {
+                    r.into_iter()
+                        .map(|p| P::new(i64::from(p.x) * k + lo.x, i64::from(p.y) * k + lo.y))
+                        .collect()
+                })
                 .collect()
         })
         .collect()
