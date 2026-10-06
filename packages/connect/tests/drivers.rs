@@ -7,7 +7,7 @@ mod common;
 use std::sync::Arc;
 use std::time::Duration;
 
-use common::{Case, Mocks, config, expect_code, job_file, run_contract, secrets, wait_state};
+use common::{Case, Mocks, config, expect_code, job_file, run_contract, secrets};
 use sx_connect::drivers::{
     AnycubicConnector, BambuConnector, CrealityConnector, DuetConnector, ElegooConnector, MoonrakerConnector,
     OctoPrintConnector, PrusaLinkConnector, SnapmakerConnector, UltiMakerConnector,
@@ -1166,12 +1166,14 @@ async fn ultimaker_holds_the_file_until_start_and_drives_the_job() {
     );
 }
 
-// Anycubic LAN Mode: the signed handshake hands out the broker login and a client certificate, which
-// the broker asks for. A restart changes the login, and the session shakes hands again by itself.
-// With LAN Mode off, the connection says so. Files cannot be sent in LAN Mode.
+// Anycubic LAN Mode: the signed handshake hands out the broker login and a client certificate. The
+// fake's broker wants the certificate, so the driver's first try (login alone) is refused and the
+// second, with the certificate, gets in. The session then passes the contract: upload over
+// gcode_upload, a start from the slicer sender, pause, resume and stop. A restart changes the login,
+// and the session shakes hands again by itself. With LAN Mode off, the connection says so.
 #[tokio::test]
-async fn anycubic_lan_mode_handshake_status_and_control() {
-    use sx_connect::{Action, LoginNeed, PrinterState, params};
+async fn anycubic_lan_mode_passes_the_contract() {
+    use sx_connect::{LoginNeed, PrinterState};
     let gate = Arc::new(MemoryGate::new());
     let mocks = Mocks::start("anycubic", &[]).await;
     let port = mocks.port("anycubic");
@@ -1186,9 +1188,6 @@ async fn anycubic_lan_mode_handshake_status_and_control() {
     );
     let cfg = config("bay-8", "anycubic", port);
     let s = connector.connect(&cfg, &secrets(&[])).await.unwrap();
-    let st = s.status().await.unwrap();
-    assert_eq!(st.state, PrinterState::Idle);
-    assert!(!st.nozzles.is_empty());
     let hw = s.hardware().await.unwrap().unwrap();
     assert_eq!(
         (hw.model.as_deref(), hw.serial.as_deref()),
@@ -1205,25 +1204,20 @@ async fn anycubic_lan_mode_handshake_status_and_control() {
         s.status().await.unwrap().slots[0].material.as_deref(),
         Some("PLA")
     );
-
-    mocks.set_state("anycubic", "printing").await;
-    wait_state(s.as_ref(), PrinterState::Printing).await;
-    s.pause(&gate.mint(Action::Pause, "bay-8", &params::printer("bay-8")))
-        .await
-        .unwrap();
-    wait_state(s.as_ref(), PrinterState::Paused).await;
-    s.cancel(&gate.mint(Action::Cancel, "bay-8", &params::printer("bay-8")))
-        .await
-        .unwrap();
-    wait_state(s.as_ref(), PrinterState::Idle).await;
-
-    let f = job_file("cube.gcode", JobKind::Gcode);
-    let t = gate.mint(
-        Action::Upload,
-        "bay-8",
-        &params::upload("bay-8", &f.name, &f.sha256),
-    );
-    expect_code(s.upload(f, &t).await, ErrorCode::NotSupported);
+    let case = Case {
+        mocks: &mocks,
+        mock: "anycubic",
+        id: "bay-8",
+        file: job_file("cube.gcode", JobKind::Gcode),
+        start: StartOptions::default(),
+        gate: gate.clone(),
+        camera: false,
+        gcode: false,
+    };
+    run_contract(s.as_ref(), &case).await;
+    // The login alone was tried first and refused; the certificate got in.
+    mocks.wait_log("anycubic mqtt refused").await;
+    mocks.wait_log("anycubic mqtt connect").await;
 
     // A restart: new login, dropped connection, a new handshake on its own.
     mocks

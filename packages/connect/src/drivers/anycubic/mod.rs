@@ -89,6 +89,7 @@ pub(crate) fn decrypt_ctrl(info_b64: &str, token: &str, local_token: &str) -> Op
 
 /// What the handshake gives: the broker login and, on some firmware, a client certificate. Never
 /// logged; `Debug` shows none of it.
+#[derive(Clone)]
 struct Creds {
     port: u16,
     username: String,
@@ -295,9 +296,11 @@ impl Shared {
         format!("{PREFIX}/printer/public/{}/{}/#", ids.0, ids.1)
     }
 
-    fn command_topic(&self, msg_type: &str) -> String {
+    /// Where a request goes: `web` for queries and control, `slicer` for a start, which the printer
+    /// takes only from the slicer sender (kobra-connect).
+    fn command_topic(&self, sender: &str, msg_type: &str) -> String {
         let ids = self.ids.lock().unwrap_or_else(PoisonError::into_inner);
-        format!("{PREFIX}/web/printer/{}/{}/{msg_type}", ids.0, ids.1)
+        format!("{PREFIX}/{sender}/printer/{}/{}/{msg_type}", ids.0, ids.1)
     }
 
     fn envelope(msg_type: &str, action: &str, data: &Value) -> String {
@@ -317,6 +320,10 @@ impl Shared {
     }
 
     async fn send(&self, msg_type: &str, action: &str, data: &Value) -> Result<()> {
+        self.send_as("web", msg_type, action, data).await
+    }
+
+    async fn send_as(&self, sender: &str, msg_type: &str, action: &str, data: &Value) -> Result<()> {
         let client = self
             .client
             .lock()
@@ -325,7 +332,7 @@ impl Shared {
             .ok_or_else(|| Error::unreachable(&self.cfg.id, "not connected to the printer"))?;
         client
             .publish(
-                self.command_topic(msg_type),
+                self.command_topic(sender, msg_type),
                 QoS::AtLeastOnce,
                 false,
                 Self::envelope(msg_type, action, data),
@@ -502,14 +509,15 @@ fn ace_units(boxes: &[Value]) -> Vec<FilamentUnit> {
 
 /// Maps the merged `info` data and the ACE boxes to the normalized status.
 ///
-/// `state` is `free` or `busy`. While busy, `project.state` says what runs (`printing`, and
-/// `stoped` with the firmware's spelling after a stop) and `project.pause` refines it: 0 printing,
-/// 1 paused, 2 pausing, 3 resuming, 4 stopping.
+/// `state` is `free` or `busy`. While busy, `project.state` says what runs: `preheating`,
+/// `auto_leveling`, `vibrating` and `flow_calibrating` before the print, `printing`, `pausing`,
+/// `paused`, `resuming`, `resumed`, `stopping`, then `stoped` (the firmware's spelling) or
+/// `finished`; `project.pause` (1 paused, 2 pausing) refines it. Idle, `project` is null and
+/// `last_project` keeps the job before, which is not read as current.
 pub(crate) fn parse_status(id: &str, info: &Value, boxes: &[Value]) -> PrinterStatus {
     let project = info
         .get("project")
         .filter(|p| p.is_object())
-        .or_else(|| info.get("last_project"))
         .cloned()
         .unwrap_or(Value::Null);
     let busy = str_at(info, &["state"]) == Some("busy");
@@ -518,13 +526,17 @@ pub(crate) fn parse_status(id: &str, info: &Value, boxes: &[Value]) -> PrinterSt
     let mut message = None;
     let state = match (busy, job_state, pause) {
         (false, _, _) => PrinterState::Idle,
-        (true, _, Some(1 | 2)) => PrinterState::Paused,
-        (true, "printing", _) => PrinterState::Printing,
+        (true, "finished", _) => PrinterState::Finished,
         (true, "stoped" | "stopped", _) => {
             message = Some("The print was stopped".to_owned());
             PrinterState::Idle
         }
-        // Busy with something the reports do not name (levelling, preheating): not a job yet.
+        (true, "pausing" | "paused", _) | (true, _, Some(1 | 2)) => PrinterState::Paused,
+        (true, "printing" | "resuming" | "resumed" | "stopping", _) => PrinterState::Printing,
+        (true, "preheating" | "auto_leveling" | "vibrating" | "flow_calibrating", _) => {
+            PrinterState::Preparing
+        }
+        // Busy with something the reports do not name: not a job yet.
         (true, other, _) => {
             if !other.is_empty() {
                 message = Some(format!("Busy: {other}"));
@@ -534,7 +546,7 @@ pub(crate) fn parse_status(id: &str, info: &Value, boxes: &[Value]) -> PrinterSt
     };
     let active = matches!(
         state,
-        PrinterState::Printing | PrinterState::Paused | PrinterState::Preparing
+        PrinterState::Printing | PrinterState::Paused | PrinterState::Preparing | PrinterState::Finished
     );
     let temp = |cur: &str, tgt: &str| {
         Some(Temp {
@@ -589,12 +601,21 @@ impl Drop for AbortOnDrop {
 
 pub struct AnycubicSession {
     gate: Arc<dyn ApprovalGate>,
+    http: reqwest::Client,
     shared: Arc<Shared>,
     _task: AbortOnDrop,
 }
 
-/// One MQTT session on the credentials of one handshake. Returns when the connection drops.
-async fn run_mqtt(shared: &Arc<Shared>, creds: Creds, first: &mut Option<oneshot::Sender<Result<()>>>) {
+/// One MQTT session on the credentials of one handshake, with or without the client certificate.
+/// Returns when the connection drops: true when the broker took the login first. A failure before
+/// that is reported to the opening call only when `last_try` says no other way is left.
+async fn run_mqtt(
+    shared: &Arc<Shared>,
+    creds: &Creds,
+    with_cert: bool,
+    first: &mut Option<oneshot::Sender<Result<()>>>,
+    last_try: bool,
+) -> bool {
     let id = shared.cfg.id.clone();
     let mut client_id = [0_u8; 4];
     let _ = getrandom::fill(&mut client_id);
@@ -607,19 +628,20 @@ async fn run_mqtt(shared: &Arc<Shared>, creds: Creds, first: &mut Option<oneshot
     opts.set_credentials(creds.username.clone(), creds.password.clone());
     opts.set_keep_alive(Duration::from_secs(60));
     opts.set_max_packet_size(1024 * 1024, 1024 * 1024);
-    let tls = match &creds.cert {
-        Some((cert, key)) => crate::tls::lan_client_auth_config(cert, key),
-        None => crate::tls::lan_client_config(),
+    let tls = match (&creds.cert, with_cert) {
+        (Some((cert, key)), true) => crate::tls::lan_client_auth_config(cert, key),
+        _ => crate::tls::lan_client_config(),
     };
     let tls = match tls {
         Ok(t) => t,
         Err(e) => {
-            if let Some(tx) = first.take() {
+            if last_try && let Some(tx) = first.take() {
                 let _ = tx.send(Err(e));
             }
-            return;
+            return false;
         }
     };
+    let mut signed_in = false;
     opts.set_transport(Transport::tls_with_config(TlsConfiguration::Rustls(tls)));
     let (client, mut eventloop) = AsyncClient::new(opts, 32);
     *shared.client.lock().unwrap_or_else(PoisonError::into_inner) = Some(client.clone());
@@ -629,7 +651,8 @@ async fn run_mqtt(shared: &Arc<Shared>, creds: Creds, first: &mut Option<oneshot
         tokio::select! {
             ev = eventloop.poll() => match ev {
                 Ok(Event::Incoming(Packet::ConnAck(_))) => {
-                    crate::trace(&id, "anycubic: mqtt signed in");
+                    crate::trace(&id, format_args!("anycubic: mqtt signed in, client certificate {with_cert}"));
+                    signed_in = true;
                     shared.connected.store(true, Ordering::Relaxed);
                     let _ = client.subscribe(shared.report_topic(), QoS::AtMostOnce).await;
                     shared.query("info").await;
@@ -644,7 +667,7 @@ async fn run_mqtt(shared: &Arc<Shared>, creds: Creds, first: &mut Option<oneshot
                     crate::trace(&id, format_args!("anycubic: mqtt dropped: {e:?}"));
                     let was = shared.connected.swap(false, Ordering::Relaxed);
                     *shared.client.lock().unwrap_or_else(PoisonError::into_inner) = None;
-                    if let Some(tx) = first.take() {
+                    if (signed_in || last_try) && let Some(tx) = first.take() {
                         let err = match e {
                             ConnectionError::ConnectionRefused(_) => Error::Auth { printer: id.clone() },
                             ConnectionError::Tls(e) => Error::tls(&id, e),
@@ -655,7 +678,7 @@ async fn run_mqtt(shared: &Arc<Shared>, creds: Creds, first: &mut Option<oneshot
                     if was {
                         shared.publish_changes();
                     }
-                    return;
+                    return signed_in;
                 }
             },
             _ = info_tick.tick() => if shared.connected.load(Ordering::Relaxed) { shared.query("info").await },
@@ -694,6 +717,9 @@ impl AnycubicSession {
             tokio::spawn(async move {
                 let mut first = Some(first_tx);
                 let mut creds = Some(creds);
+                // User and password alone first (anycubic_ha_local and anycubic-lan send no certificate);
+                // the certificate only when that was refused, and from then on for this printer.
+                let mut cert_first = false;
                 loop {
                     let c = match creds.take() {
                         Some(c) => c,
@@ -707,7 +733,18 @@ impl AnycubicSession {
                             }
                         },
                     };
-                    run_mqtt(&shared, c, &mut first).await;
+                    let has_cert = c.cert.is_some();
+                    let order: &[bool] = match (has_cert, cert_first) {
+                        (false, _) => &[false],
+                        (true, false) => &[false, true],
+                        (true, true) => &[true, false],
+                    };
+                    for (n, &with_cert) in order.iter().enumerate() {
+                        if run_mqtt(&shared, &c, with_cert, &mut first, n + 1 == order.len()).await {
+                            cert_first = with_cert;
+                            break;
+                        }
+                    }
                     tokio::time::sleep(Duration::from_secs(2)).await;
                 }
             })
@@ -724,6 +761,7 @@ impl AnycubicSession {
         }
         Ok(Box::new(AnycubicSession {
             gate,
+            http: http::client(&cfg)?,
             shared,
             _task: task,
         }))
@@ -760,14 +798,14 @@ impl AnycubicSession {
     }
 }
 
-const NO_UPLOAD: &str = "sending files in LAN Mode (no documented upload); save the G-code to a USB drive and print it from the printer";
-
 #[async_trait]
 impl PrinterSession for AnycubicSession {
     fn capabilities(&self) -> Capabilities {
         vec![
             Capability::Status,
             Capability::Events,
+            Capability::Upload,
+            Capability::Start,
             Capability::Pause,
             Capability::Resume,
             Capability::Cancel,
@@ -841,7 +879,44 @@ impl PrinterSession for AnycubicSession {
             self.id(),
             &params::upload(self.id(), &file.name, &file.sha256),
         )?;
-        Err(Error::not_supported("anycubic", NO_UPLOAD))
+        if file.name.contains(['/', '\\']) || file.name.is_empty() {
+            return Err(Error::protocol(self.id(), "unsafe file name"));
+        }
+        // The upload address carries a secret (`s=`) and comes from the `info` report; it must be on
+        // the printer itself, and it is never written to a log or an error.
+        let url = str_at(
+            &self.shared.info.lock().unwrap_or_else(PoisonError::into_inner),
+            &["urls", "fileUploadurl"],
+        )
+        .map(str::to_owned)
+        .filter(|u| http::same_host(u, &self.shared.cfg.host))
+        .ok_or_else(|| {
+            Error::not_supported(
+                "anycubic",
+                "uploads on this printer (its info report names no upload address)",
+            )
+        })?;
+        // As kobra-lan-monitor sends it (packet capture): a `filename` field, the file under `gcode`,
+        // and its length in `X-File-Length`.
+        let form = reqwest::multipart::Form::new()
+            .text("filename", file.name.clone())
+            .part(
+                "gcode",
+                reqwest::multipart::Part::bytes(file.data.clone()).file_name(file.name.clone()),
+            );
+        let rb = self
+            .http
+            .post(url)
+            .header("X-File-Length", file.data.len().to_string())
+            .timeout(Duration::from_secs(300))
+            .multipart(form);
+        http::send(self.id(), rb).await?;
+        Ok(RemoteFile {
+            printer_id: self.id().to_owned(),
+            path: file.name.clone(),
+            name: file.name,
+            sha256: Some(file.sha256),
+        })
     }
 
     async fn start(&self, file: &RemoteFile, opts: StartOptions, token: &ApprovalToken) -> Result<()> {
@@ -852,7 +927,11 @@ impl PrinterSession for AnycubicSession {
             self.id(),
             &params::start(self.id(), file, &opts),
         )?;
-        Err(Error::not_supported("anycubic", NO_UPLOAD))
+        self.require("start a job", &[PrinterState::Idle, PrinterState::Finished])?;
+        let data = json!({ "taskid": "-1", "filename": file.path, "filepath": "/", "filetype": 1 });
+        self.shared.send_as("slicer", "print", "start", &data).await?;
+        self.shared.query("info").await;
+        Ok(())
     }
 
     async fn pause(&self, token: &ApprovalToken) -> Result<()> {
