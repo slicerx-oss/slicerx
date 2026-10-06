@@ -8,7 +8,7 @@ export type { NocturneColor } from './tokens'
 
 export { ICON_PATHS, ICON_GROUPS, ICON_COUNT } from './icons/icon-paths'
 export type { IconName } from './icons/icon-paths'
-export { Icon, isIconName } from './icons/icon'
+export { Icon, isIconName, iconsReady } from './icons/icon'
 export type { IconProps } from './icons/icon'
 export { Mark, Logo, MARK_PATH, MARK_CUTS, markRings, markCutFor } from './icons/mark'
 export type { MarkCut } from './icons/mark'

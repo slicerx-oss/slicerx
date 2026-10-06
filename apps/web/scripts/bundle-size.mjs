@@ -2,16 +2,18 @@
 // Copyright (C) 2026 The SlicerX contributors
 // Checks the browser build against its budgets: the JS that
 // loads before the viewport and WASM (the entry chunk and its static imports)
-// at most 252 KB gzip, and each WASM module at most 1.0 MB gzip. The STEP reader (OpenCASCADE, loaded
+// at most 246 KB gzip, and each WASM module at most 1.0 MB gzip. The STEP reader (OpenCASCADE, loaded
 // only when a STEP file opens) has a budget of its own and must not be reachable from the shell. It
-// also fails when printer, filament or G-code profile data lands in a startup chunk.
+// also fails when printer, filament or G-code profile data lands in a startup chunk, and when a startup chunk
+// names an icon that is not in the startup icon table.
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { gzipSync } from 'node:zlib'
 
 const dist = join(import.meta.dirname, '..', 'dist')
 const manifest = JSON.parse(readFileSync(join(dist, '.vite', 'manifest.json'), 'utf8'))
-const SHELL_KB = 252
+const SHELL_KB = 246
 const WASM_KB = 1024
 const STEP_WASM_KB = 3584
 const isStepReader = (file) => /occt-import-js/.test(file)
@@ -53,6 +55,27 @@ for (const key of seen) {
     }
   }
 }
+// Only the icons in packages/ui/icons/startup.mjs load with the shell; the rest draw as an empty box until their
+// table arrives. A startup chunk that names any other icon (a quoted name that is not an object key) would show
+// it popping in, so the build fails and names it: add it to startup.mjs and run gen-icons.mjs. Names built at run
+// time (a template string) are not seen here.
+const icons = join(import.meta.dirname, '..', '..', '..', 'packages', 'ui', 'icons')
+const drawn = new Set()
+for (const [file, key] of [['base.mjs', 'BASE_ICONS'], ['extra.mjs', 'EXTRA_ICONS'], ['hardware.mjs', 'HARDWARE_ICONS']]) {
+  for (const name of Object.keys((await import(pathToFileURL(join(icons, file)).href))[key])) drawn.add(name)
+}
+const startup = new Set((await import(pathToFileURL(join(icons, 'startup.mjs')).href)).STARTUP_ICONS)
+const late = new Map()
+for (const key of seen) {
+  const text = readFileSync(join(dist, manifest[key].file), 'utf8')
+  for (const [, , name] of text.matchAll(/(["'`])([a-z0-9-]+)\1(?!\s*:)/g)) {
+    if (drawn.has(name) && !startup.has(name)) late.set(name, manifest[key].file)
+  }
+}
+for (const [name, file] of late) {
+  console.error(`bundle-size: the startup chunk ${file} names the icon "${name}", which is not in packages/ui/icons/startup.mjs`)
+  failed = true
+}
 const files = (dir) => readdirSync(dir).flatMap((f) => (statSync(join(dir, f)).isDirectory() ? files(join(dir, f)).map((x) => join(f, x)) : [f]))
 for (const key of seen) {
   if (isStepReader(manifest[key].file)) {
@@ -67,6 +90,6 @@ for (const f of files(dist).filter((f) => f.endsWith('.wasm'))) {
   if (size > budget * 1024) failed = true
 }
 if (failed) {
-  console.error('bundle-size: over budget')
+  console.error('bundle-size: failed, see above')
   process.exit(1)
 }
