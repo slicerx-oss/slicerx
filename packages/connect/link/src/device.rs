@@ -436,6 +436,12 @@ pub(crate) async fn start_stored(b: &Arc<Bridge>, p: &Value) -> Rpc<Value> {
         .unwrap_or_default();
     let bed_clear = p.get("bedClear").and_then(Value::as_bool) == Some(true);
     let unverified_ok = p.get("unverifiedOk").and_then(Value::as_bool) == Some(true);
+    crate::guard::before_start(
+        b,
+        &printer,
+        p.get("plateOk").and_then(Value::as_bool) == Some(true),
+    )
+    .await?;
     let broker = b
         .broker
         .clone()

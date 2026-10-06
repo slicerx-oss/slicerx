@@ -2988,3 +2988,258 @@ async fn agents_and_the_watch_cannot_move_skip_or_start_but_may_read() {
         assert_eq!(r["error"]["code"], "forbidden", "{m}: {r}");
     }
 }
+
+// ---- the camera guard: a hand pauses, a dirty plate blocks a start ----
+
+/// A detector connection, paired with the watch code.
+async fn detector(link: &Link) -> Ws {
+    let mut ws = connect(link).await;
+    let pp = pairing::proof_params(&mut ws, WATCH_CODE, json!({})).await;
+    let r = call(&mut ws, 1, "pair", pp).await;
+    assert_eq!(r["result"]["role"], "watch", "{r}");
+    ws
+}
+
+/// A detector that subscribes, then answers every plate check: something at `SPOT` while `dirty`
+/// is set and the hub sent no spot to ignore, a clear plate otherwise. Returns the ignore lists
+/// it was sent.
+async fn plate_answers(
+    link: &Link,
+    dirty: Arc<std::sync::atomic::AtomicBool>,
+) -> Arc<std::sync::Mutex<Vec<Value>>> {
+    let mut det = detector(link).await;
+    let r = call(&mut det, 2, "watch.subscribe", json!({ "everyMs": 120_000 })).await;
+    assert!(r["result"]["subscription"].is_number(), "{r}");
+    let seen = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let log = seen.clone();
+    tokio::spawn(async move {
+        let mut id = 100;
+        while let Some(Ok(m)) = det.next().await {
+            let Message::Text(t) = m else { continue };
+            let v: Value = serde_json::from_str(t.as_str()).unwrap();
+            if v["event"] != "watch.plate" {
+                continue;
+            }
+            let d = &v["data"];
+            assert!(d["frame"]["dataBase64"].is_string(), "{d}");
+            log.lock().unwrap().push(d["ignore"].clone());
+            let ignored = d["ignore"].as_array().is_some_and(|a| !a.is_empty());
+            let found = dirty.load(std::sync::atomic::Ordering::SeqCst) && !ignored;
+            let mut res = json!({ "checkId": d["checkId"], "printerId": d["printerId"], "clear": !found, "note": "test" });
+            if found {
+                res["box"] = json!(SPOT);
+            }
+            id += 1;
+            det.send(Message::text(
+                json!({ "id": id, "method": "watch.plateResult", "params": res }).to_string(),
+            ))
+            .await
+            .unwrap();
+        }
+    });
+    seen
+}
+
+const SPOT: [f64; 4] = [0.4, 0.6, 0.45, 0.66];
+
+async fn wait_state(ws: &mut Ws, state: &str) {
+    for _ in 0..100 {
+        let st = call(ws, 95, "status", json!({ "printerId": "bay-4" })).await;
+        if st["result"]["state"] == state {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    panic!("bay-4 never became {state}");
+}
+
+async fn trip(ws: &mut Ws) -> Value {
+    call(ws, 96, "watch.guardState", json!({})).await["result"]["trips"]["bay-4"].clone()
+}
+
+#[tokio::test]
+async fn a_hand_pauses_at_once_without_confirmation_and_keeps_its_frame() {
+    let link = hub(None).await;
+    let mocks = common::Mocks::start("moonraker", &[]).await;
+    let mut app = paired(&link).await;
+    add_bay4(&mut app, &mocks).await;
+    mocks.set_state("moonraker", "printing").await;
+    wait_state(&mut app, "printing").await;
+    let mut det = detector(&link).await;
+    // The second look a detector asks for comes back shaped like a frame.
+    let g = call(&mut det, 2, "watch.grab", json!({ "printerId": "bay-4" })).await;
+    assert_eq!(
+        (g["result"]["contentType"].as_str(), g["result"]["state"].as_str()),
+        (Some("image/jpeg"), Some("printing")),
+        "{g}"
+    );
+    let again = call(&mut det, 3, "watch.grab", json!({ "printerId": "bay-4" })).await;
+    assert_eq!(
+        again["error"]["code"], "busy",
+        "one second look at a time: {again}"
+    );
+    // No confirmation and no auto-pause permission: a hand still pauses.
+    let r = call(&mut det, 4, "watch.report", json!({ "printerId": "bay-4", "kind": "hand", "confidence": 0.85, "box": [0.2, 0.3, 0.5, 0.9], "note": "2 of the last 3 frames" })).await;
+    assert_eq!(r["result"]["paused"], true, "{r}");
+    assert!(mock_log(&mocks).await.iter().any(|l| l.starts_with("pause")));
+    let ev = wait_event(&mut app, "watch.guard", |d| d["kind"] == "hand").await;
+    assert_eq!(
+        (ev["state"].as_str(), ev["monitorOnly"].as_bool()),
+        (Some("paused"), Some(false)),
+        "{ev}"
+    );
+    assert_eq!(ev["box"], json!([0.2, 0.3, 0.5, 0.9]), "{ev}");
+    let e = call(&mut app, 5, "watch.evidence", json!({ "printerId": "bay-4" })).await;
+    assert_eq!(
+        e["result"]["contentType"], "image/jpeg",
+        "the frame stays on the hub for the card: {e}"
+    );
+    // "Dismiss, it was me" ends the card.
+    let _ = call(
+        &mut app,
+        6,
+        "watch.dismiss",
+        json!({ "printerId": "bay-4", "kind": "hand" }),
+    )
+    .await;
+    assert!(trip(&mut app).await.is_null());
+
+    // With the guard off for this printer, a hand only reports.
+    mocks.set_state("moonraker", "printing").await;
+    wait_state(&mut app, "printing").await;
+    let r = call(
+        &mut app,
+        7,
+        "watch.guard",
+        json!({ "printerId": "bay-4", "enabled": false }),
+    )
+    .await;
+    assert_eq!(r["result"]["enabled"], false, "{r}");
+    let r = call(
+        &mut det,
+        8,
+        "watch.report",
+        json!({ "printerId": "bay-4", "kind": "hand", "confidence": 0.9 }),
+    )
+    .await;
+    assert_eq!(r["result"]["paused"], false, "{r}");
+    assert_eq!(
+        call(&mut app, 9, "watch.guardState", json!({})).await["result"]["off"],
+        json!(["bay-4"])
+    );
+    // The guard's settings are the person's, not a detector's.
+    let r = call(
+        &mut det,
+        10,
+        "watch.guard",
+        json!({ "printerId": "bay-4", "enabled": true }),
+    )
+    .await;
+    assert_eq!(r["error"]["code"], "forbidden", "{r}");
+}
+
+#[tokio::test]
+async fn a_dirty_plate_blocks_a_start_until_the_spot_is_marked_fine() {
+    let dir = temp_dir("plate");
+    let link = hub(Some(dir.clone())).await;
+    let mocks = common::Mocks::start("moonraker", &[]).await;
+    let mut app = paired(&link).await;
+    add_bay4(&mut app, &mocks).await;
+    wait_state(&mut app, "idle").await;
+    let dirty = Arc::new(std::sync::atomic::AtomicBool::new(true));
+    let ignores = plate_answers(&link, dirty.clone()).await;
+    // "This plate is clear": the picture is kept in the state directory.
+    let r = call(&mut app, 3, "watch.plateClear", json!({ "printerId": "bay-4" })).await;
+    assert!(r["result"]["plateFrom"].is_string(), "{r}");
+    assert_eq!(std::fs::read_dir(dir.join("plates")).unwrap().count(), 1);
+
+    let (f, _) = file("cube.gcode", 1);
+    let r = call(
+        &mut app,
+        4,
+        "print.local",
+        json!({ "printerId": "bay-4", "file": f, "bedClear": true }),
+    )
+    .await;
+    assert_eq!(r["error"]["code"], "plate_check", "{r}");
+    assert_eq!(starts(&mock_log(&mocks).await), 0, "nothing reached the printer");
+    let t = trip(&mut app).await;
+    assert_eq!(
+        (t["kind"].as_str(), t["state"].as_str(), t["startedBy"].as_str()),
+        (Some("plate"), Some("blocked"), Some("slicerx")),
+        "{t}"
+    );
+    assert_eq!(t["box"], json!(SPOT), "{t}");
+    assert!(t["plateFrom"].is_string(), "{t}");
+    assert_eq!(
+        call(&mut app, 5, "watch.evidence", json!({ "printerId": "bay-4" })).await["result"]["contentType"],
+        "image/jpeg"
+    );
+
+    // "It's fine": the spot is remembered for this printer and sent with every later check.
+    let r = call(&mut app, 6, "watch.plateIgnore", json!({ "printerId": "bay-4" })).await;
+    assert_eq!(r["result"]["remembered"], "spot", "{r}");
+    assert!(trip(&mut app).await.is_null());
+    let r = call(
+        &mut app,
+        7,
+        "print.local",
+        json!({ "printerId": "bay-4", "file": f, "bedClear": true }),
+    )
+    .await;
+    assert_eq!(r["result"]["started"], true, "{r}");
+    assert_eq!(ignores.lock().unwrap().last().unwrap(), &json!([SPOT]));
+    assert_eq!(starts(&mock_log(&mocks).await), 1);
+}
+
+#[tokio::test]
+async fn start_anyway_and_a_print_the_printer_started_itself() {
+    let link = hub(None).await;
+    let mocks = common::Mocks::start("moonraker", &[]).await;
+    let mut app = paired(&link).await;
+    add_bay4(&mut app, &mocks).await;
+    wait_state(&mut app, "idle").await;
+    let dirty = Arc::new(std::sync::atomic::AtomicBool::new(true));
+    let _ = plate_answers(&link, dirty.clone()).await;
+    // No empty-plate picture yet; the detector still answers. "Start anyway" skips the check.
+    let (f, _) = file("cube.gcode", 1);
+    let r = call(
+        &mut app,
+        3,
+        "print.local",
+        json!({ "printerId": "bay-4", "file": f, "bedClear": true, "plateOk": true }),
+    )
+    .await;
+    assert_eq!(r["result"]["started"], true, "{r}");
+    mocks.set_state("moonraker", "idle").await;
+    wait_state(&mut app, "idle").await;
+    let before = mock_log(&mocks)
+        .await
+        .iter()
+        .filter(|l| l.starts_with("pause"))
+        .count();
+
+    // The printer starts a print from its own screen onto a dirty plate: the hub pauses it.
+    mocks.set_state("moonraker", "printing").await;
+    let ev = wait_event(&mut app, "watch.guard", |d| d["kind"] == "plate").await;
+    assert_eq!(
+        (ev["state"].as_str(), ev["startedBy"].as_str()),
+        (Some("paused"), Some("printer")),
+        "{ev}"
+    );
+    let after = mock_log(&mocks)
+        .await
+        .iter()
+        .filter(|l| l.starts_with("pause"))
+        .count();
+    assert_eq!(after, before + 1);
+    // The person cleans it, checks again, and the card goes.
+    dirty.store(false, std::sync::atomic::Ordering::SeqCst);
+    let r = call(&mut app, 4, "watch.plateCheck", json!({ "printerId": "bay-4" })).await;
+    assert_eq!(
+        (r["result"]["checked"].as_bool(), r["result"]["clear"].as_bool()),
+        (Some(true), Some(true)),
+        "{r}"
+    );
+    assert!(trip(&mut app).await.is_null());
+}

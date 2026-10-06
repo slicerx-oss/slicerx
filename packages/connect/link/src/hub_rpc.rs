@@ -186,8 +186,9 @@ pub(crate) async fn save(b: &Bridge) {
 
 // ---- watching printers ----
 
-/// Feeds one status reading to the printer's bed record and announces a change.
-pub(crate) fn record(b: &Bridge, id: &str, st: &PrinterStatus) {
+/// Feeds one status reading to the printer's bed record and announces a change. A print the
+/// printer started on its own gets the guard's plate check.
+pub(crate) fn record(b: &Arc<Bridge>, id: &str, st: &PrinterStatus) {
     b.hub.note_observed(st);
     // The printer still shows the time before the hub's start: not an end, not a new job.
     if b.hub.stale_after_start(st) {
@@ -205,7 +206,22 @@ pub(crate) fn record(b: &Bridge, id: &str, st: &PrinterStatus) {
         b.hub.emit("bed", bed_json(id, &rec));
         b.hub.mark_dirty();
     }
-    if let Some(kind) = b.hub.alert(st) {
+    let (alert, prev) = b.hub.alert(st);
+    let running = matches!(st.state, PrinterState::Preparing | PrinterState::Printing);
+    if running
+        && matches!(
+            prev,
+            Some(PrinterState::Idle | PrinterState::Finished | PrinterState::Error)
+        )
+    {
+        // The hub marks its own starts as printing when it makes them, so this is someone else's.
+        tokio::spawn(crate::guard::job_began(b.clone(), id.to_owned()));
+    }
+    if prev == Some(PrinterState::Paused) && st.state != PrinterState::Paused {
+        // Resumed or ended: the guard's card has been answered.
+        crate::guard::clear(b, id);
+    }
+    if let Some(kind) = alert {
         let mut data = serde_json::Map::new();
         data.insert("printerId".into(), json!(id));
         data.insert("kind".into(), json!(kind));
@@ -368,6 +384,7 @@ pub(crate) async fn print_local(b: &Arc<Bridge>, p: &Value) -> Rpc<Value> {
     let opts = opts_arg(p)?;
     let objects = crate::device::plate_objects_arg(p)?;
     let title = format!("Print {}", file.name);
+    crate::guard::before_start(b, &printer, bool_arg(p, "plateOk")).await?;
     let rf = start_plate(
         b,
         Send {
@@ -402,6 +419,7 @@ pub(crate) async fn start_with_token(b: &Arc<Bridge>, p: &Value) -> Rpc<Value> {
 pub(crate) async fn start_with_token_held(b: &Arc<Bridge>, p: &Value) -> Rpc<Value> {
     let mut file: RemoteFile = arg(p, "file")?;
     let objects = crate::device::plate_objects_arg(p)?;
+    crate::guard::before_start(b, &file.printer_id, bool_arg(p, "plateOk")).await?;
     // Hold the printer first: uploads wait while a start is in flight (`upload` refuses with busy),
     // so the hash read below is the content the printer starts.
     if !b.hub.begin_start(&file.printer_id) {
@@ -685,6 +703,10 @@ async fn start_item(b: &Arc<Bridge>, item: &QueueItem) {
     };
     if sha256_hex(&data) != item.sha256 {
         return fail("the stored file changed after it was approved");
+    }
+    // An unattended start never goes onto a dirty plate; the guard's card says what it saw.
+    if let Err(e) = crate::guard::before_start(b, &item.printer_id, false).await {
+        return fail(&e.message);
     }
     let title = format!("{} {}", approval.origin.as_str(), item.name);
     let res = start_plate(
