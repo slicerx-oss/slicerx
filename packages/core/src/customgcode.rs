@@ -670,7 +670,11 @@ fn section_of(key: &str) -> crate::gcode_lint::Section {
 /// Runs the G-code linter over rendered text. A finding that blocks is reported as
 /// `safety: ...`, which the writer turns into a blocked slice.
 fn vet(section: crate::gcode_lint::Section, text: &str, cfg: &PrintConfig) -> Result<(), String> {
-    crate::preflight::vet_custom(section, text, cfg).map_err(|e| format!("safety: {e}"))
+    // The inner reason only: the writer wraps it in `Error::Blocked` again, whose text names the preflight.
+    crate::preflight::vet_custom(section, text, cfg).map_err(|e| match e {
+        crate::error::Error::Blocked(why) => format!("safety: {why}"),
+        other => format!("safety: {other}"),
+    })
 }
 
 /// Renders `template` (given directly, such as a pause command from a request).
