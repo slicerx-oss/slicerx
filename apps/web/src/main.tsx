@@ -21,10 +21,11 @@ async function features(): Promise<AppFeature[]> {
   return out
 }
 
-// Printer makers get their official mark where one is vendored, else a neutral lettermark tile.
+// Printer makers get their official mark where one is vendored, else a neutral lettermark tile. The tile comes from
+// its own subpath: importing the package index keeps every export of @slicerx/ui in the startup chunk.
 if (__SX_FEATURE_CONNECT__) {
   const [{ MakerTile, makerSlugFor }, { OfficialMark, hasOfficialMark }, { setVendorMarks }] = await Promise.all([
-    import('@slicerx/ui'),
+    import('@slicerx/ui/maker-tile'),
     import('@slicerx/brand-icons'),
     import('@slicerx/app'),
   ])
