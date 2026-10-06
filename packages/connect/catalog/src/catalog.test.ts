@@ -140,7 +140,7 @@ test('every Bambu Lab model has its SSDP and report code, so a found printer nev
   assert.equal(file.codes['O1D'], 'H2D')
 })
 
-test('each Bambu Lab series is told its own way to LAN Only Mode and Developer Mode', () => {
+test('each Bambu Lab series is told where its access code is, and that Developer Mode is optional', () => {
   const find = (id: string) => modelById(id)!.find
   // From Bambu Lab's wiki: X and H2 series Settings, LAN Only; P series Settings, WLAN; A series Settings, page 3.
   for (const id of ['bambu-x1-carbon', 'bambu-x1e', 'bambu-h2d', 'bambu-h2s', 'bambu-p2s']) {
@@ -151,6 +151,9 @@ test('each Bambu Lab series is told its own way to LAN Only Mode and Developer M
   for (const id of ['bambu-a1', 'bambu-a1-mini']) assert.match(find(id).credential!, /swipe to page 3 and tap LAN Only Mode/, id)
   for (const m of PRINTER_MODELS.filter((x) => x.brand === 'bambu-lab')) {
     assert.match(m.find.credential!, /Developer Mode \(.*firmware [0-9.]+ and later\)/, m.id)
+    assert.match(m.find.credential!, /Optional, for printing directly/, m.id)
+    assert.match(m.find.credential!, /Bambu Connect/, m.id)
+    assert.match(m.find.credential!, /access code \(8 characters\)/, m.id)
     assert.doesNotMatch(m.find.credential!, /changes each time/, m.id)
   }
   assert.match(find('bambu-x1-carbon').credential!, /micro SD card/)

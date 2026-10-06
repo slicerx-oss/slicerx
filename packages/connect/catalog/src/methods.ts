@@ -23,7 +23,7 @@ export const CONNECTION_METHODS: readonly ConnectionMethod[] = [
       { key: 'serial', label: 'Serial number', secret: false, required: false, placeholder: 'Read from the printer when empty' },
       { key: 'accessCode', label: 'Access code', secret: true, required: true, placeholder: '8 characters' },
     ],
-    summary: 'Turn on LAN Only Mode and Developer Mode on the printer, then enter its access code. A scan fills in the IP address and serial number; with an IP address alone, SlicerX reads the serial number from the printer.',
+    summary: 'Enter the access code from the printer\'s LAN Only page. A scan fills in the IP address and serial number; with an IP address alone, SlicerX reads the serial number from the printer. Developer Mode is optional: with it, prints go straight from SlicerX; without it, they go through Bambu Connect.',
   },
   {
     id: 'moonraker',

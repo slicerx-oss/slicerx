@@ -35,7 +35,7 @@ export const TOPICS: Readonly<Record<string, HelpTopic>> = {
   'printer.scan': T(
     'printer.scan',
     'Finding your printer',
-    '{app} asks the printers on your network to announce themselves and reads what they say: the model, the nozzle and the filament unit. Nothing signs in until you pick one.\n\n**Not in the list?** The printer must be on the same network as this computer, switched on, and allowed to be found: Bambu Lab printers need LAN Only Mode and Developer Mode, Klipper printers need Moonraker. Or enter its IP address.',
+    '{app} asks the printers on your network to announce themselves and reads what they say: the model, the nozzle and the filament unit. Nothing signs in until you pick one.\n\n**Not in the list?** The printer must be on the same network as this computer, switched on, and allowed to be found: Klipper printers need Moonraker, and a Bambu Lab printer that is not found may need LAN Only Mode. Or enter its IP address.',
   ),
   'look.overview': T(
     'look.overview',
@@ -107,7 +107,7 @@ function connectionTopic(id: ConnectionId, field: HelpField, model?: PrinterMode
   switch (id) {
     case 'bambu-lan':
       if (field === 'host') return T(tid, 'Printer IP address', find?.ip ?? 'On the printer touchscreen: Settings, Network. The IP address is shown with the network name.')
-      if (field === 'accessCode') return T(tid, 'Access code', find?.credential ?? 'In the printer\'s settings, open the LAN Only page and turn on LAN Only Mode and Developer Mode. The 8-character access code is shown there.')
+      if (field === 'accessCode') return T(tid, 'Access code', find?.credential ?? 'In the printer\'s settings, open the LAN Only page. The 8-character access code is shown there. Developer Mode is optional, for printing directly from this app.')
       if (field === 'serial') return T(tid, 'Serial number', find?.serial ?? 'Printed on the label at the back of the printer.')
       break
     case 'moonraker':
@@ -165,7 +165,7 @@ export const FAILURE_HELP: Readonly<Record<TestCause, FailureHelp>> = {
     action: 'Check that this computer and the printer are on the same network, and read the IP address on the printer again. A firewall can also block it.',
   },
   auth: { title: 'The printer refused the code', cause: 'The printer answered but did not accept the access code or key.', action: 'Re-enter the access code or key. Bambu Lab printers make a new code each time LAN Only Mode is switched on.' },
-  'lan-mode-off': { title: 'LAN Only Mode is off', cause: 'The printer answered but does not accept local connections.', action: 'In the printer\'s settings, open the LAN Only page and turn on LAN Only Mode and Developer Mode, then test again.' },
+  'lan-mode-off': { title: 'LAN Only Mode is off', cause: 'The printer answered but does not accept local connections.', action: 'In the printer\'s settings, open the LAN Only page and turn on LAN Only Mode, then test again. Developer Mode is optional, for printing directly from this app.' },
   timeout: { title: 'The printer took too long', cause: 'The printer started to answer, then stopped. A weak Wi-Fi signal or a busy printer can do this.', action: 'Wait a moment and test again. Move the printer closer to the router if it keeps happening.' },
   'wrong-port': { title: 'Wrong port', cause: 'Something answered at that address, but not the printer service on this port.', action: 'Clear the port field to use the default, or copy the port from the address you open in a browser.' },
   certificate: { title: 'Certificate not trusted', cause: 'The printer uses a certificate it signed itself, so it cannot be checked against a known authority.', action: 'Compare the fingerprint with the one the printer shows, then trust this printer\'s certificate.' },

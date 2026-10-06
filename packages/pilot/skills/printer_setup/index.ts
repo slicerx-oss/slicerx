@@ -412,7 +412,7 @@ function addInput(i: { profileId: string; nozzleMm: number; connection?: { famil
 
 function hintFor(cause: string | undefined, family: string): string {
   if (cause === 'auth') return 'The printer refused the access code or key. Check it on the printer and try again; the app asks for it again.'
-  if (cause === 'unreachable' || cause === 'timeout') return family === 'bambu-lan' ? 'The printer did not answer. Check that it is on, on the same network, and that LAN Only Mode is on.' : 'The printer did not answer. Check that it is on and on the same network as this computer.'
+  if (cause === 'unreachable' || cause === 'timeout') return family === 'bambu-lan' ? 'The printer did not answer. Check that it is on and on the same network. If it still does not answer, turn on LAN Only Mode on the printer. Developer Mode is not needed to connect: it is optional, for printing directly.' : 'The printer did not answer. Check that it is on and on the same network as this computer.'
   if (cause === 'not_supported') return 'This printer or firmware does not support this connection. Try another connection method or set it up for slicing only.'
   if (cause === 'bad_request') return 'The address is not a local network address. Use the IP address shown on the printer.'
   return 'The printer answered in a way SlicerX does not understand. Check the firmware version.'

@@ -2,7 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 // Network first printer setup: a printer the scan found fills the form from what it announced and
 // what it reported once connected, the catalog fills the rest, Test connection says why it is off,
-// and a Bambu Lab printer gets the LAN Only Mode and Developer Mode steps before anyone types a code.
+// and a Bambu Lab printer is told where its access code is before anyone types one, with Developer Mode optional.
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import type { PrinterHardware } from '@slicerx/contracts'
@@ -11,7 +11,7 @@ import { createElement, type ReactElement } from 'react'
 import { flushSync } from 'react-dom'
 import { createRoot } from 'react-dom/client'
 import { describe, expect, it } from 'vitest'
-import { bambuFamily, BAMBU_GUIDES, LAN_ONLY_EFFECT } from '../src/first-run/bambu-lan'
+import { bambuFamily, BAMBU_GUIDES, DEVELOPER_EFFECT, LAN_ONLY_EFFECT } from '../src/first-run/bambu-lan'
 import { BambuLanCard } from '../src/first-run/bambu-lan-card'
 import { AccessCodeScreen } from '../src/first-run/access-code-screen'
 import { IMAGE_IDS, printerImage } from '../src/first-run/printer-images'
@@ -158,7 +158,7 @@ describe('why Test connection is off', () => {
   })
 })
 
-describe('Bambu Lab LAN Only Mode and Developer Mode', () => {
+describe('Bambu Lab access code, LAN Only Mode and the optional Developer Mode', () => {
   it('knows the family of each model', () => {
     expect(bambuFamily('X1 Carbon')).toBe('x1')
     expect(bambuFamily('Bambu Lab P1S')).toBe('p1')
@@ -167,16 +167,19 @@ describe('Bambu Lab LAN Only Mode and Developer Mode', () => {
     expect(bambuFamily('Voron 2.4')).toBeNull()
   })
 
-  it('shows where both switches are and what LAN Only Mode changes, per family', () => {
+  it('shows where the code is, LAN Only Mode for a printer out of reach, and Developer Mode as optional, per family', () => {
     const r = render(createElement(BambuLanCard, { family: 'h2', lanOnly: false }))
     const details = r.el.querySelector('details')!
     // A printer that announced cloud mode opens the card and says so.
     expect(details.open).toBe(true)
     let t = r.text()
-    expect(t).toContain('LAN Only Mode is off')
-    expect(t).toContain('open Settings, then LAN Only, and turn on LAN Only Mode')
-    expect(t).toContain('H2D firmware 01.01.00.01 and later')
-    expect(t).toContain('turn on Developer Mode (H2D firmware')
+    expect(t).toContain('This printer is in cloud mode. Enter its access code. If SlicerX can\'t reach it, turn on LAN Only Mode.')
+    expect(t).toContain('open Settings, then LAN Only. The access code and the IP address are on the LAN Only page. The access code is enough to see the printer\'s status here.')
+    expect(t).toContain('If SlicerX can\'t reach the printer: On the touchscreen, open Settings, then LAN Only, and turn on LAN Only Mode')
+    expect(t).toContain('Direct printing (optional).')
+    expect(t).toContain('turn on Developer Mode (H2D firmware 01.01.00.01 and later')
+    expect(t).toContain('Without it, prints open in Bambu Connect')
+    expect(t).not.toMatch(/Developer Mode first|needs? Developer Mode|requires? Developer Mode/)
     expect(t).toContain('Bambu Handy')
     // The details open on click or key, in place, not on hover.
     const more = r.el.querySelector<HTMLButtonElement>('.fr-bambu .fr-codecard-more')!
@@ -196,12 +199,12 @@ describe('Bambu Lab LAN Only Mode and Developer Mode', () => {
   it('stays folded to one line until it matters', () => {
     const r = render(createElement(BambuLanCard, { family: null }))
     expect(r.el.querySelector('details')!.open).toBe(false)
-    expect(r.el.querySelector('summary')?.textContent).toContain('turn on LAN Only Mode and Developer Mode first')
+    expect(r.el.querySelector('summary')?.textContent).toBe('Bambu Lab printers: where to find the access code')
     r.done()
   })
 
   it('no text uses dashes as punctuation', () => {
-    const all = BAMBU_GUIDES.flatMap((g) => [g.lanOnly, g.developer, g.accessCode]).join(' ') + LAN_ONLY_EFFECT
+    const all = BAMBU_GUIDES.flatMap((g) => [g.lanOnly, g.developer, g.accessCode]).join(' ') + LAN_ONLY_EFFECT + DEVELOPER_EFFECT
     expect(all).not.toMatch(new RegExp('[\u2013\u2014]'))
   })
 })
@@ -269,12 +272,12 @@ describe('a failed test in plain words', () => {
     expect(words('something new').title).toBe("The printer didn't accept the key.")
   })
 
-  it('no answer names the address and reminds about LAN Only and Developer Mode', () => {
+  it('no answer names the address, suggests LAN Only Mode, and says Developer Mode is optional', () => {
     for (const [cause, kind] of [['timeout', 'timeout'], ['unreachable', 'other']] as const) {
       const c = failureCopy(fail({ cause, kind }), ctx)
       expect(c.title).toBe('No answer from 192.168.68.52.')
       expect(c.body).toBe('Check the printer is on and on the same network as this computer.')
-      expect(c.tips.join(' ')).toContain('LAN Only Mode and Developer Mode')
+      expect(c.tips).toEqual(['If it still doesn\'t answer, turn on LAN Only Mode on the printer.', 'Developer Mode isn\'t needed to connect. It\'s optional, for printing directly from SlicerX.'])
     }
   })
 
@@ -393,13 +396,16 @@ describe('both nozzles of a two nozzle printer', () => {
 })
 
 describe('what the first report says before a print is tried', () => {
-  it('asks for Developer Mode with the model\'s path when the printer wants signed commands', () => {
+  it('says prints go through Bambu Connect, as a note and not a warning, when the printer wants signed commands', () => {
     const form = withHardware(adoptFound(EMPTY_FORM, FOUND), H2D)
     const r = render(createElement(ConfirmCard, { form, setForm: () => undefined, hardware: { ...H2D, developerMode: false }, reportedNozzle: true }))
-    const warn = r.el.querySelector('[role="alert"]')!
-    expect(warn.textContent).toContain('Turn on Developer Mode.')
-    expect(warn.textContent).toContain('H2D firmware 01.01.00.01 and later')
-    expect(warn.textContent).toContain('open Settings, then LAN Only.')
+    expect(r.el.querySelector('[role="alert"]')).toBeNull()
+    const note = r.el.querySelector('.fr-info-box[role="status"]')!
+    expect(note.textContent).toContain('Prints go through Bambu Connect.')
+    expect(note.textContent).toContain('SlicerX shows this printer\'s status, and prints open in Bambu Connect')
+    expect(note.textContent).toContain('To print directly from SlicerX (optional), turn on Developer Mode')
+    expect(note.textContent).toContain('H2D firmware 01.01.00.01 and later')
+    expect(note.textContent).toContain('open Settings, then LAN Only.')
     r.done()
     const ok = render(createElement(ConfirmCard, { form, setForm: () => undefined, hardware: H2D, reportedNozzle: true }))
     expect(ok.el.querySelector('[role="alert"]')).toBeNull()
@@ -412,7 +418,7 @@ describe('what the first report says before a print is tried', () => {
     for (const [model, path] of Object.entries(where)) {
       const form = adoptFound(EMPTY_FORM, { ...FOUND, model })
       const r = render(createElement(ConfirmCard, { form, setForm: () => undefined, hardware: { model, developerMode: false }, reportedNozzle: false }))
-      expect(r.el.querySelector('[role="alert"]')!.textContent).toContain(path)
+      expect(r.el.querySelector('.fr-info-box')!.textContent).toContain(path)
       r.done()
     }
   })

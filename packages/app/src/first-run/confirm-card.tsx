@@ -120,11 +120,11 @@ export function ConfirmCard({ form, setForm, hardware, reportedNozzle, reportedF
   return (
     <>
     {devOff ? (
-      <p className="fr-warn fr-warn-box" role="alert">
-        <Icon name="warning" size={16} />
+      <p className="fr-info-box" role="status">
+        <Icon name="info" size={16} />
         <span>
-          <b>Turn on Developer Mode.</b> The printer answered, but it will refuse prints from {appName()} until Developer Mode is on.{' '}
-          {family ? `${bambuGuide(family).developerWhere} ${bambuGuide(family).developer}` : 'It is on the LAN Only page of the printer\'s settings.'}
+          <b>Prints go through Bambu Connect.</b> Developer Mode is off, so {appName()} shows this printer's status, and prints open in Bambu Connect, Bambu Lab's app, where you press Print. To print directly from {appName()} (optional), turn on Developer Mode:{' '}
+          {family ? `${bambuGuide(family).developerWhere} ${bambuGuide(family).developer}` : 'it is on the LAN Only page of the printer\'s settings.'}
         </span>
       </p>
     ) : null}
