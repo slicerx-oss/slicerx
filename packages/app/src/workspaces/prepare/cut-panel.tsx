@@ -9,11 +9,12 @@
 import { Block, Button, Field, ScrubNumber, Seg, Select, VectorField } from '@slicerx/ui'
 import { useEffect, useMemo, useState } from 'react'
 import { useHost } from '../../host'
-import { connectorRings, cutStore, normalOf, offsetOf, offsetRange, planeAt, tiltsOf, useCutConnectors, useCutKeep, useCutPlane, type ConnectorKind, type CutConnectors, type CutKeep } from '../../plate/cut-plane'
+import { clearanceFor } from '../../plate/clearance'
+import { connectorRings, connectorTolerance, cutStore, normalOf, offsetOf, offsetRange, planeAt, tiltsOf, useCutConnectors, useCutKeep, useCutPlane, type ConnectorKind, type CutConnectors, type CutKeep } from '../../plate/cut-plane'
 import { cutSelected, sectionLoops } from '../../plate/geom-ops'
 import { cameraBus } from '../../plate/tools'
 import { bounds, type Vec3 } from '../../plate/transform'
-import { set, toast, useApp } from '../../state/store'
+import { get, set, toast, useApp } from '../../state/store'
 import '../../cad/cad.css'
 
 type Preset = 'z' | 'x' | 'y'
@@ -31,6 +32,11 @@ export function CutPanel() {
   const keep = useCutKeep()
   const conn = useCutConnectors()
   const setConn = (patch: Partial<CutConnectors>) => cutStore.setState((st) => ({ connectors: { ...st.connectors, ...patch } }))
+  // The fit clearance stands in for the tolerance until one is typed, and says where it came from.
+  const clearanceMm = useApp((s) => clearanceFor(s).mm)
+  const clearanceWords = useApp((s) => clearanceFor(s).words)
+  const clearanceMeasured = useApp((s) => clearanceFor(s).measured)
+  const toleranceMm = conn.toleranceSet ? conn.toleranceMm : clearanceMm
   const [section, setSection] = useState<Vec3[][]>([])
   const [busy, setBusy] = useState(false)
   const box = useMemo(() => (entry ? bounds(entry.parts, entry.transform) : null), [entry])
@@ -96,7 +102,7 @@ export function CutPanel() {
         atMm: 0,
         plane: { point: plane.point, normal: plane.normal },
         keep,
-        ...(conn.kind === 'none' ? {} : { connector: { kind: conn.kind, diameterMm: conn.diameterMm, depthMm: conn.depthMm, toleranceMm: conn.toleranceMm, ...(placed ? { positions: conn.points } : {}) } }),
+        ...(conn.kind === 'none' ? {} : { connector: { kind: conn.kind, diameterMm: conn.diameterMm, depthMm: conn.depthMm, toleranceMm: connectorTolerance(conn, get()), ...(placed ? { positions: conn.points } : {}) } }),
       })
       if (n > 0) close()
     } catch (err) {
@@ -141,7 +147,19 @@ export function CutPanel() {
           </div>
           <div className="tf-row" role="group" aria-label="Connector tolerance">
             <span className="tf-name">Tolerance<small>mm</small></span>
-            <ScrubNumber id="cut-conn-tol" handle ariaLabel="Connector tolerance, millimeters" unit="mm" step={0.01} digits={2} min={0} value={conn.toleranceMm} onCommit={(v) => setConn({ toleranceMm: v })} />
+            <ScrubNumber id="cut-conn-tol" handle ariaLabel="Connector tolerance, millimeters" unit="mm" step={0.01} digits={2} min={0} value={toleranceMm} onCommit={(v) => setConn({ toleranceMm: v, toleranceSet: true })} />
+          </div>
+          <div className="cad-row" data-testid="cut-conn-tol-source">
+            <span className="cad-hint">{conn.toleranceSet ? `Typed. The fit clearance is ${clearanceWords.charAt(0).toLowerCase()}${clearanceWords.slice(1)}` : clearanceWords}</span>
+            {conn.toleranceSet ? (
+              <Button size="sm" variant="ghost" onClick={() => setConn({ toleranceSet: false })}>
+                Use it
+              </Button>
+            ) : !clearanceMeasured ? (
+              <Button size="sm" variant="ghost" onClick={() => set({ calibrationOpen: true })}>
+                Print the test
+              </Button>
+            ) : null}
           </div>
           {conn.kind !== 'dovetail' ? (
             <>

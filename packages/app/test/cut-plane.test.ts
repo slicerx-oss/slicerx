@@ -47,6 +47,34 @@ describe('cut plane math', () => {
 describe('cut panel', () => {
   afterEach(() => cutStore.setState({ plane: null, keep: 'both' }))
 
+  it('takes the connector tolerance from the fit clearance and says where it came from', async () => {
+    set({ plate: [entry('a')], selection: 'a', objectTool: 'cut', userPresets: [] })
+    cutStore.setState({ connectors: { ...cutStore.getState().connectors, kind: 'pin', toleranceSet: false } })
+    const el = document.createElement('div')
+    const root = createRoot(el)
+    flushSync(() => root.render(createElement(HostContext.Provider, { value: { kind: 'web', capabilities: {} } as never }, createElement(CutPanel))))
+    await tick()
+    flushSync(() => undefined)
+    const tol = el.querySelector<HTMLInputElement>('#cut-conn-tol')!
+    const source = el.querySelector('[data-testid="cut-conn-tol-source"]')!
+    // No hole test here: half the nozzle, and a way to print the test.
+    expect(Number(tol.value)).toBeCloseTo(0.2)
+    expect(source.textContent).toMatch(/half the 0\.4 mm nozzle/)
+    expect(source.textContent).toMatch(/Print the test/)
+    // A typed tolerance stays, and the clearance can be taken back.
+    const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!
+    flushSync(() => {
+      setValue.call(tol, '0.3')
+      tol.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    flushSync(() => tol.dispatchEvent(new FocusEvent('focusout', { bubbles: true })))
+    await tick()
+    expect(cutStore.getState().connectors).toMatchObject({ toleranceMm: 0.3, toleranceSet: true })
+    expect(source.textContent).toMatch(/^Typed\. The fit clearance is 0\.20 mm a side/)
+    root.unmount()
+    cutStore.setState({ connectors: { ...cutStore.getState().connectors, kind: 'none', toleranceSet: false } })
+  })
+
   it('starts level through the middle, and its fields and the view share the plane both ways', async () => {
     set({ plate: [entry('a')], selection: 'a', objectTool: 'cut' })
     const el = document.createElement('div')
