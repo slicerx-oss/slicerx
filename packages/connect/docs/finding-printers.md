@@ -9,11 +9,12 @@ Add printer, then Scan, lists the printers SlicerX can see. It only lists them. 
 | Printer | How it is found | What SlicerX sends |
 | --- | --- | --- |
 | Bambu Lab | It answers an SSDP search and announces itself every five seconds (UDP 2021 and 1990), in LAN Only Mode and in cloud mode alike. The answer names the model, serial number and firmware. | One SSDP search per network interface, repeated twice in the scan. |
-| Klipper with Moonraker | It announces `_moonraker._tcp` with multicast DNS. | One multicast DNS question. |
+| Klipper with Moonraker | It announces `_moonraker._tcp` with multicast DNS. A Snapmaker U1 announces itself as U1.local and is listed as a U1. | One multicast DNS question. |
+| Creality on stock firmware | It announces a service type of its own, `_Creality-<id>._udp` (as OrcaSlicer finds it). | The same multicast DNS question, which also asks for the list of service types. |
 | OctoPrint | It announces `_octoprint._tcp`. | One multicast DNS question. |
 | PrusaLink | It may announce `_prusalink._tcp`. This has not been seen on a printer yet. | One multicast DNS question. |
 | Elegoo Centauri Carbon | It answers one broadcast on UDP port 3000. | One broadcast, sent when you start the scan and never in the background. |
-| Duet, Creality on stock firmware, Snapmaker | They do not announce themselves. | Nothing. Enter the IP address. |
+| Duet, Snapmaker | They do not announce themselves. | Nothing. Enter the IP address. |
 
 A scan takes about three seconds. It lists only printers on your own network; anything else is dropped.
 
@@ -22,7 +23,7 @@ A scan takes about three seconds. It lists only printers on your own network; an
 1. Check that the computer and the printer are on the same network. A guest Wi-Fi, a VLAN or a router setting called client isolation or AP isolation blocks announcements.
 2. Check that the printer is on and connected. Bambu Lab printers answer only while awake.
 3. Multicast DNS uses UDP 5353. A firewall on the computer may block it. Allow SlicerX, or enter the IP address by hand.
-4. Use Enter IP instead. A Bambu Lab printer asked at its address answers with its model and serial number, so only the access code is left to type. Every guide says where to read the address on the printer.
+4. Use Enter IP instead. A Bambu Lab printer asked at its address answers with its model and serial number (or SlicerX reads the serial from its certificate), so only the access code is left to type. Klipper printers are asked on Moonraker's 7125 and on 80, a Snapmaker U1 by its own Klipper object, and a Creality printer through its `/info` page and port 9999. Every guide says where to read the address on the printer.
 
 On Windows, Hyper-V and WSL add virtual network adapters. SlicerX sends its questions out of every network adapter that has a private address, so the one the printer is on is always among them.
 
@@ -50,6 +51,11 @@ interface DiscoveredPrinter {
   name?: string    // the announced instance or printer name
   model?: string
   serial?: string  // Bambu Lab
+  firmware?: string
+  lanOnly?: boolean // Bambu Lab: LAN Only Mode is on
+  bound?: boolean   // Bambu Lab: bound to a Bambu account (DevBind)
+  tls?: boolean     // Moonraker: HTTPS offered too (https_port)
+  uid?: string      // an identity that survives an address change: Moonraker's uuid, a Creality id or MAC
 }
 ```
 
@@ -61,9 +67,7 @@ interface DiscoveredPrinter {
 { "id": 8, "method": "probe", "params": { "host": "192.168.1.52", "timeoutMs": 1500 } }
 ```
 
-Asks one address on the local network, for Enter IP instead. Each connector that can ask a single address does; today that is Bambu Lab (an SSDP search sent to the printer on 2021 and 1990). The reply is `{"printers": DiscoveredPrinter[]}`, empty when nothing answered. Nothing signs in.
-
-`DiscoveredPrinter` also carries `firmware` and, for Bambu Lab, `lanOnly` (true while LAN Only Mode is on, read from `DevConnect.bambu.com`).
+Asks one address on the local network, for Enter IP instead. Each connector that can ask a single address does: Bambu Lab (an SSDP search sent to the printer on 2021 and 1990, then the serial from the MQTT certificate), Moonraker (`/server/info` on 7125, then 80), Snapmaker (a U1's Moonraker on 80, then 7125), Creality (`GET /info`, then TCP 9999), and the others their guides name. The reply is `{"printers": DiscoveredPrinter[]}`, empty when nothing answered. Nothing signs in.
 
 ### Interfaces
 
@@ -73,7 +77,7 @@ Asks one address on the local network, for Enter IP instead. Each connector that
 
 A small RFC 6762 and RFC 6763 implementation: a packet parser and encoder, `browse`, `browse_printers` and `Advert`. `browse` sends its query from an ephemeral port, so responders answer to that port by unicast (RFC 6762 section 6.7) and nothing has to bind 5353. The query is repeated after a third and two thirds of the window, because multicast loses packets. The parser follows only backward compression pointers, caps names at 255 bytes and refuses truncated packets.
 
-The service types browsed are in `PRINTER_SERVICES`. `_moonraker._tcp` and `_octoprint._tcp` are announced by those projects. `_prusalink._tcp`, `_prusa-link._tcp` and `_duet._tcp` are the names their documentation suggests and are unverified on hardware. A printer found this way arrives as a `moonraker`, `octoprint`, `prusalink` or `duet` printer; the user still picks the brand entry when the printer is a Creality or Snapmaker that runs Klipper.
+The service types browsed are in `PRINTER_SERVICES`, plus the list of service types (`_services._dns-sd._udp.local`), where stock Creality firmware shows as `_Creality-<id>._udp.local`. `_moonraker._tcp` and `_octoprint._tcp` are announced by those projects. `_prusalink._tcp`, `_prusa-link._tcp` and `_duet._tcp` are the names their documentation suggests and are unverified on hardware. Moonraker's TXT record gives `uuid` (the printer's `uid`), `version` and `https_port`. A Moonraker whose host is U1.local arrives as a `snapmaker` U1; other Klipper printers arrive as `moonraker`, and the user still picks the brand entry for a Creality, QIDI or Sovol.
 
 ### Testing
 
