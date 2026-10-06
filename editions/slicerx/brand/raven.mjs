@@ -56,12 +56,14 @@ export const PERCH_CUTS = {
 export const PERCH_BOX = { x: 14, y: 15.8, w: 77.9, h: 67.8 }
 
 /**
- * Two stops for the fill, top left to bottom right on the bird and left to right on the layers.
- * One-color palettes pass the same color twice and get a plain fill with no gradient.
+ * Two stops for the bird, top left to bottom right, and two for the layers, left to right: cyan to
+ * purple, the aegis gradient, whose purple end meets the bird's. Light surfaces get deeper ends
+ * that read on white. One-color palettes pass the same color twice,
+ * have no `layers`, and get a plain fill with no gradient.
  */
 export const PERCH_PALETTE = {
-  dark: { from: '#bd93f9', to: '#ff79c6' },
-  light: { from: '#6b3fc4', to: '#c1268a' },
+  dark: { from: '#bd93f9', to: '#ff79c6', layers: ['#8be9fd', '#bd93f9'] },
+  light: { from: '#6b3fc4', to: '#c1268a', layers: ['#1a8fb0', '#6b3fc4'] },
   white: { from: '#f8f8f2', to: '#f8f8f2' },
   ink: { from: '#17181f', to: '#17181f' },
   current: { from: 'currentColor', to: 'currentColor' },
@@ -78,13 +80,14 @@ export const PERCH_PALETTE = {
 export function perchParts(uid, { cut = 'full', palette = PERCH_PALETTE.dark, glow = 0 } = {}) {
   const c = PERCH_CUTS[cut]
   const solid = palette.from === palette.to
+  const [lf, lt] = palette.layers ?? [palette.from, palette.to]
   const [bx0, , bw0] = c.bars[c.bars.length - 1]
   const bird = solid ? palette.from : `url(#rb${uid})`
   const bar = solid ? palette.from : `url(#rl${uid})`
   // one gradient across the bird and its legs, so the legs take the color of the belly above them
   let defs = solid ? '' :
     `<linearGradient id="rb${uid}" gradientUnits="userSpaceOnUse" x1="15.5" y1="21" x2="93.4" y2="77.8"><stop offset="0" stop-color="${palette.from}"/><stop offset="1" stop-color="${palette.to}"/></linearGradient>` +
-    `<linearGradient id="rl${uid}" gradientUnits="userSpaceOnUse" x1="${bx0}" y1="0" x2="${bx0 + bw0}" y2="0"><stop offset="0" stop-color="${palette.from}"/><stop offset="1" stop-color="${palette.to}"/></linearGradient>`
+    `<linearGradient id="rl${uid}" gradientUnits="userSpaceOnUse" x1="${bx0}" y1="0" x2="${bx0 + bw0}" y2="0"><stop offset="0" stop-color="${lf}"/><stop offset="1" stop-color="${lt}"/></linearGradient>`
   const wing = c.wing
     ? `<path d="${RAVEN_WING}" fill="none" stroke="#000" stroke-width="${c.wing}" stroke-linecap="round"/>`
     : `<path d="${WING_SHAPE}" fill="#000"/>`
@@ -125,10 +128,11 @@ const PIXEL_CUTS = {
 export function perchPixel(uid, grid, { palette = PERCH_PALETTE.dark, eye = true } = {}) {
   const p = PIXEL_CUTS[grid]
   const solid = palette.from === palette.to
+  const [lf, lt] = palette.layers ?? [palette.from, palette.to]
   const [bx0, , bw0] = p.bars[p.bars.length - 1]
   let defs = solid ? '' :
     `<linearGradient id="pb${uid}" gradientUnits="userSpaceOnUse" x1="15.5" y1="21" x2="93.4" y2="77.8"><stop offset="0" stop-color="${palette.from}"/><stop offset="1" stop-color="${palette.to}"/></linearGradient>` +
-    `<linearGradient id="pl${uid}" gradientUnits="userSpaceOnUse" x1="${bx0}" y1="0" x2="${bx0 + bw0}" y2="0"><stop offset="0" stop-color="${palette.from}"/><stop offset="1" stop-color="${palette.to}"/></linearGradient>`
+    `<linearGradient id="pl${uid}" gradientUnits="userSpaceOnUse" x1="${bx0}" y1="0" x2="${bx0 + bw0}" y2="0"><stop offset="0" stop-color="${lf}"/><stop offset="1" stop-color="${lt}"/></linearGradient>`
   const bird = solid ? palette.from : `url(#pb${uid})`
   const bar = solid ? palette.from : `url(#pl${uid})`
   const t = `translate(${r2(p.x - 15.5 * p.k)} ${r2(p.y - 21 * p.k)}) scale(${p.k})`

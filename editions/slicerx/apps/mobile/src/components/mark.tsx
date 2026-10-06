@@ -38,7 +38,7 @@ export function Mark({ size = 20, label }: MarkProps) {
   )
 }
 
-/** The app mark: huginn on three printed layers in the theme's purple to pink, with a heavier cut at small sizes. */
+/** The app mark: huginn in the theme's purple to pink on three cyan to purple printed layers, with a heavier cut at small sizes. */
 export function AppMark({ size = 24, label }: MarkProps) {
   const uid = useId().replace(/[^\w-]/g, '')
   const s = perchShapes(perchCutFor(size))
@@ -56,9 +56,10 @@ export function AppMark({ size = 24, label }: MarkProps) {
           <Stop offset="0" stopColor={t.gradient.from} />
           <Stop offset="1" stopColor={t.gradient.to} />
         </LinearGradient>
+
         <LinearGradient id={`pl${uid}`} gradientUnits="userSpaceOnUse" x1={s.barGradient.x1} y1="0" x2={s.barGradient.x2} y2="0">
-          <Stop offset="0" stopColor={t.gradient.from} />
-          <Stop offset="1" stopColor={t.gradient.to} />
+          <Stop offset="0" stopColor={t.color.cyan} />
+          <Stop offset="1" stopColor={t.gradient.from} />
         </LinearGradient>
         <Mask id={`pc${uid}`} maskUnits="userSpaceOnUse" x="0" y="0" width="100" height="100">
           <Rect width="100" height="100" fill="white" />

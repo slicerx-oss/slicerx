@@ -45,8 +45,9 @@ repeats them for the app's `AppMark`.
 | 32 px | the small cut on a 32 px grid: 2 px layers and 1 px gaps on whole rows, a 2 px eye | the 32 px Windows frame and the Safari tile |
 | 16 px | on a 16 px grid: 1 px layers on rows 10, 12 and 14, no legs or wing gap, a 1 px eye on a plate | the 16 px frames and the browser tab |
 
-The bird runs from purple at the top left to pink at the bottom right and each layer from purple to
-pink left to right. The palettes are the X's `dark` and `light` pairs, plus `white`, `ink`,
+The bird runs from purple at the top left to pink at the bottom right. The layers run cyan to purple
+left to right, the aegis gradient, `#8be9fd` to `#bd93f9`, so their purple end meets the bird's. On
+light surfaces they deepen to `#1a8fb0` to `#6b3fc4`, which read on white. The bird's palettes are the X's `dark` and `light` pairs, plus `white`, `ink`,
 `current` (one color that follows the text, for monochrome uses) and `mono`, a gray ramp for the
 iOS tinted icon. Large icons on a ground of ours carry a soft violet glow around the bird, outside
 its silhouette only. The layers cast none, so the gaps between them stay as dark as the plate.

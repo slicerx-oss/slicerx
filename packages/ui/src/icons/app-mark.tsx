@@ -21,7 +21,8 @@ export interface AppMarkProps {
 }
 
 /**
- * The app mark: huginn perched on three printed layers, in the theme's purple to pink. It stands
+ * The app mark: huginn perched on three printed layers, the bird in the theme's purple to pink and
+ * the layers in its cyan to purple. It stands
  * for the app on its own, where an icon goes; the wordmark keeps the layered X.
  */
 export function AppMark({ size = 24, className, cut, color, label }: AppMarkProps) {
@@ -48,8 +49,8 @@ export function AppMark({ size = 24, className, cut, color, label }: AppMarkProp
               <stop offset="1" style={{ stopColor: 'var(--grad-to)' }} />
             </linearGradient>
             <linearGradient id={`sx-pl-${uid}`} gradientUnits="userSpaceOnUse" x1={s.barGradient.x1} y1="0" x2={s.barGradient.x2} y2="0">
-              <stop offset="0" style={{ stopColor: 'var(--grad-from)' }} />
-              <stop offset="1" style={{ stopColor: 'var(--grad-to)' }} />
+              <stop offset="0" style={{ stopColor: 'var(--cyan)' }} />
+              <stop offset="1" style={{ stopColor: 'var(--grad-from)' }} />
             </linearGradient>
           </>
         )}
