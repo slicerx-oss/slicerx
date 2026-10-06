@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// What a Bambu Lab printer needs before SlicerX can reach it on the network: LAN Only Mode and
-// Developer Mode. Where both switches are, per model family, and what turning them on changes.
+// What a Bambu Lab printer needs before SlicerX can reach it on the network: its access code, which
+// is enough for status. LAN Only Mode helps when the printer cannot be reached, and Developer Mode is
+// optional, for printing directly; without it prints go through Bambu Connect. Where each is, per
+// model family, and what turning them on changes.
 
 export type BambuFamily = 'x1' | 'p1' | 'a1' | 'h2'
 
@@ -14,7 +16,7 @@ export interface BambuGuide {
   path: readonly string[]
   /** Where LAN Only Mode is, in screen order. */
   lanOnly: string
-  /** How to reach the page with Developer Mode on it, from the home screen. */
+  /** How to reach the LAN Only page (the access code, LAN Only Mode and Developer Mode), from the home screen. */
   developerWhere: string
   developer: string
   accessCode: string
@@ -72,9 +74,9 @@ export const BAMBU_GUIDES: readonly BambuGuide[] = [
 export const LAN_ONLY_EFFECT =
   'While LAN Only Mode is on, the printer is off Bambu Cloud: Bambu Handy and the cloud features of Bambu Studio stop working (watching or starting prints away from home, cloud print history, app notifications). Printing from this computer on your home network keeps working. You can turn it off again on the printer at any time.'
 
-/** Why Developer Mode, too. */
+/** What Developer Mode adds, and that it is optional. */
 export const DEVELOPER_EFFECT =
-  'Developer Mode opens the printer\'s local connection (status, file upload and live view) to apps other than Bambu Lab\'s own. Without it, the printer refuses prints and controls from this app.'
+  'Developer Mode is optional. With it on, prints and controls go straight from this app to the printer. Without it, the printer still shows its status here, and prints open in Bambu Connect, Bambu Lab\'s app, where you press Print. Developer Mode needs LAN Only Mode.'
 
 /** The family a model name belongs to (H2D, "Bambu Lab A1 mini", X1 Carbon). Null for anything else. */
 export function bambuFamily(model: string | undefined): BambuFamily | null {

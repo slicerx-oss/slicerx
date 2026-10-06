@@ -8,7 +8,7 @@ Paths in "Gaps in sx-connect" are relative to the repo root.
 
 | Family | Discovery | Auth | User must enter | Main pitfall |
 |---|---|---|---|---|
-| Bambu Lab (A1, P1, X1, H2, P2S) | SSDP, UDP 1990 and 2021 | MQTT, FTPS and camera with user `bblp` and the 8 character access code | Access code (IP if SSDP is blocked) | LAN Only Mode plus Developer Mode must be on, or writes silently fail |
+| Bambu Lab (A1, P1, X1, H2, P2S) | SSDP, UDP 1990 and 2021 | MQTT, FTPS and camera with user `bblp` and the 8 character access code | Access code (IP if SSDP is blocked) | Without Developer Mode the printer sends status but refuses commands, so prints go through Bambu Connect |
 | Prusa (MK4, MK3.9, MK3.5, Core One, XL, MINI) | None confirmed. DHCP MAC prefix 109C70 or a probe of port 80 | HTTP Digest, user `maker`, password shown on printer | Password (IP if not found) | No known mDNS service. Storage name varies, driver hard-codes `usb` |
 | Creality stock (K1 family, K2 family, Ender-3 V3, Hi) | mDNS `_Creality-<SN>._udp.local` (community), TCP 9999, `GET /info` | None | Nothing | Stock K1 and Ender-3 V3 KE have no usable Moonraker. K2 port 4408 is a web UI, not the API |
 | Elegoo Centauri Carbon | UDP broadcast `M99999` to port 3000 | None | Nothing (IP if broadcast fails) | Few concurrent clients. Status codes conflict between sources |
@@ -42,6 +42,7 @@ Models covered: A1 and A1 mini (model codes N2S and N1), P1P (C11) and P1S (C12)
 #### Auth
 
 - MQTT: user `bblp`, password the 8 character LAN access code. Topics `device/{serial}/report` and `device/{serial}/request`. FTPS: user `bblp`, same code. Camera on 6000: TLS, then an 80 byte packet (u32 LE 0x40, 0x3000, 0, 0, a 32 byte user, a 32 byte code).
+- Official (third-party integration page): MQTT status pushes, starting prints from an SD card and SD card firmware updates are not affected by Authorization Control. Printing from other software without Developer Mode goes through Bambu Connect, whose URL scheme is `bambu-connect://import-file?path=...&name=...&version=1.0.0` (Bambu Connect wiki page, "Launching Bambu Connect from Third-Party Software"). Bambu Connect runs on Windows 10 or later and macOS 13 or later; Linux is "under development".
 - Official: firmware with Authorization Control blocks write commands from third parties in cloud mode and in normal LAN mode. Developer Mode, under LAN Only Mode, restores open MQTT, FTP and video with no authorization, LAN only. Read-only MQTT status is unaffected.
 - Firmware floors for Authorization Control: A series 01.05.00.00, P1 01.08.02.00, X1 01.08.03.00 (official third-party page plus secondary sources). H2D Developer Mode from 01.01.00.01 and P2S from launch come from SimplyPrint only.
 - Earlier P1 firmware around 01.07.00.00 had a hybrid restriction: a cloud-connected printer used locally allowed only light control (community, ha-bambulab docs).
@@ -63,7 +64,7 @@ Models covered: A1 and A1 mini (model codes N2S and N1), P1P (C11) and P1S (C12)
 
 - LAN Only Mode must be on to read the access code. The code can show as all zeros until LAN Only is toggled off and on, and a power cycle is advised after the first enable (SimplyPrint, secondary).
 - The Developer Mode toggle appears only after LAN Only is on, and only on firmware that has it.
-- A cloud-mode printer accepts the code but refuses commands. If it was on cloud mode when Authorization Control firmware arrived, writes silently fail until LAN Only and Developer Mode are on.
+- A cloud-mode printer accepts the code but refuses commands. If it was on cloud mode when Authorization Control firmware arrived, writes silently fail until LAN Only and Developer Mode are on. SlicerX treats such a printer as monitor-only and sends prints through Bambu Connect.
 - P1 and A1 hardware is slow. Do not repeat `pushall` (OpenBambuAPI: not more often than every 5 min on P1P). P1 and A1 `push_status` reports are deltas, so merge them. X1 `pushall` is always a full object.
 - X1 without an SD card: a new job from a slicer fails (official wiki).
 - H2 LAN RTSPS is off by default. Port 322 closes at once until "LAN Only Liveview" is on (community, OpenBambuAPI video.md).
@@ -74,7 +75,7 @@ Models covered: A1 and A1 mini (model codes N2S and N1), P1P (C11) and P1S (C12)
 
 #### What to show the user
 
-Offer a scan, then one field (the access code) plus a model-specific screen hint. Offer "sign in to Bambu to fetch it" as an alternative, with a region choice (global or China). State plainly that LAN Only plus Developer Mode disables cloud features and that the Bambu Handy app and cloud printing stop. Menu paths per the official wiki:
+Offer a scan, then one field (the access code) plus a model-specific screen hint. The access code is enough for status; suggest LAN Only Mode only when the printer can't be reached. Developer Mode is optional, under "Direct printing": without it, prints go through Bambu Connect. Signing in to a Bambu account is out (owner decision, 2026-10-05): Bambu Lab's terms forbid it, and cloud print commands need Bambu's signing anyway. State plainly that LAN Only plus Developer Mode disables cloud features and that the Bambu Handy app and cloud printing stop. Menu paths per the official wiki:
 
 - A1 and A1 mini: Settings, scroll to page 3, LAN Only Mode, turn on (the button turns green). The access code is on that screen and the IP is on the WLAN screen. Then turn on Developer Mode on the same screen.
 - P1P and P1S: Settings, WLAN, LAN Only Mode (initially off), confirm Yes, note the Access Code. Developer Mode is a separate toggle in that menu on 01.08.02.00 or newer.
@@ -327,7 +328,7 @@ Ordered by impact on getting a printer connected. Items in the same tier are rou
 
 ### Printer is found but authentication fails or is mishandled
 
-10. Done in c91db330. The driver reads `fun` (bit 0x20000000) into `PrinterHardware.developer_mode`, setup warns when it is off with the series' own path to the switch (`developerWhere` in `packages/app/src/first-run/bambu-lan.ts`), and a refused start while it is off says to turn on Developer Mode. Firmware needing it: X1 01.08.03.00, P1 01.08.02.00, A1 01.05.00.00, H2D 01.01.00.01.
+10. Done in c91db330. The driver reads `fun` (bit 0x20000000) into `PrinterHardware.developer_mode`, setup warns when it is off with the series' own path to the switch (`developerWhere` in `packages/app/src/first-run/bambu-lan.ts`), and a refused start while it is off says to turn on Developer Mode. Firmware needing it: X1 01.08.03.00, P1 01.08.02.00, A1 01.05.00.00, H2D 01.01.00.01. Done since on feat/bambu-connect: Developer Mode is optional. A printer that reports it off connects monitor-only (`status.live.monitorOnly`, status, events, camera and slots as capabilities), every command is refused before it is sent, and Print hands the plate to Bambu Connect, or saves it on Linux and in the browser. Setup, the catalog guides and the "No answer" text call Developer Mode optional (`packages/connect/docs/bambu-lan.md`).
 11. Done in 0a8df3a5. `src/tls.rs` `bambu_lan_config()` and `bambu_client_config()` offer TLS 1.2 only, for MQTT 8883, FTPS 990, the 6000 camera and the serial read. Other LAN devices keep the default versions; RTSPS on 322 still offers 1.3. The certificate check still only records.
 12. Done in 2f43ba83. `catalog/src/models/bambu.ts` has one guide per series from the wiki: X1 and H2 series Settings, LAN Only; P1 Settings, WLAN, LAN Only Mode; A1 Settings, page 3, LAN Only Mode. Every series names Developer Mode with its firmware, the X1 and H2 series mention LAN Only Liveview, and the X1 mentions the micro SD card. `docs/bambu-lan.md` has the same table.
 13. Done in 8b7ca6cd. The claim is gone from `docs/bambu-lan.md`, `bambu.ts` and the app's setup text; they say to read the code again if the printer refuses it.
@@ -401,7 +402,7 @@ Verify each on a real printer or against an official source.
 - Whether the access code rotates each time LAN Only Mode is switched on. SimplyPrint says only that it can show zeros.
 - SSDP `DevModel` strings. BL-P001, BL-P002, C11, C12, C13, N1, N2S, N7, O1D, O1E and O1S are Orca and Studio `model_id` values and match SlicerX. H2C is O1C2 in Orca with an extra O1C file in Studio, and which one a given H2C announces is not confirmed. Whether SSDP `DevModel` equals the `model_id` on every model is verified for the H2D only, from SlicerX's recorded answer. The X1 names `3DPrinter-X1-Carbon` and `3DPrinter-X1` come from a community gist. No official SSDP spec exists; the code is in Bambu's closed network plugin.
 - Which CA (BBL CA, BBL CA2 RSA, BBL CA2 ECC, device CA) each model and firmware presents, and whether the 2025 CA2 certificates apply per firmware or per hardware.
-- Whether port 8883 stays open for read-only status in plain cloud mode on every post-Authorization-Control firmware, and whether the access code is visible in cloud mode on each screen.
+- Whether port 8883 stays open for read-only status in plain cloud mode on every post-Authorization-Control firmware, and whether the access code is visible in cloud mode on each screen. SlicerX relies on it for status without Developer Mode; the official page says status pushes are not affected by Authorization Control in cloud or LAN mode, but this is not yet checked on a printer. Also unchecked on hardware: whether the camera answers with Developer Mode off, and the Bambu Connect hand-off on Windows and macOS.
 - The H2 LAN liveview toggle name and path ("Settings > General > LAN Mode Liveview") comes from OpenBambuAPI on firmware 01.02.00.00. The official wiki says only "Choose whether to enable LAN mode liveview" on the LAN Only page.
 - Whether the P2S announces `DevModel` N7 and uses RTSPS 322 like the X1. Community video.md says P2S uses RTSP.
 - ha-bambulab's `file:///sdcard/` versus `ftp:///` split for `project_file`, and the P2S TLS 1.3 hang, are community observations.
@@ -503,6 +504,7 @@ O = official (vendor or project that owns the protocol). C = community.
 - O: Bambu Lab Wiki, How to enable LAN Mode on Bambu Lab printers. https://wiki.bambulab.com/en/knowledge-sharing/enable-lan-mode
 - O: Bambu Lab Wiki, Third-party Integration with Bambu Lab Products. https://wiki.bambulab.com/en/software/third-party-integration
 - O: Bambu Lab Blog, Updates and Third-Party Integration with Bambu Connect. https://blog.bambulab.com/updates-and-third-party-integration-with-bambu-connect
+- O: Bambu Lab Wiki, Bambu Connect (URL scheme for third-party software, downloads, platforms). https://wiki.bambulab.com/en/software/bambu-connect
 - O: BambuStudio `DeviceManager.cpp` (ipcam liveview, rtsp_url, printer_type parsing). https://raw.githubusercontent.com/bambulab/BambuStudio/master/src/slic3r/GUI/DeviceManager.cpp
 - O: OrcaSlicer BBL machine profiles (model_id codes). https://github.com/OrcaSlicer/OrcaSlicer/tree/main/resources/profiles/BBL/machine
 - O: BambuStudio `resources/printers` (model code files). https://github.com/bambulab/BambuStudio/tree/master/resources/printers

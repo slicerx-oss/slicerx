@@ -9,31 +9,34 @@ import { find, rect } from './util.ts'
 const SERIAL = 'Printed on the label at the back of the machine, and shown under Device in Bambu Studio. A scan reads it from the printer.'
 
 // Developer Mode first came with firmware X1 01.08.03.00, P1 01.08.02.00, A1 01.05.00.00 and H2D 01.01.00.01;
-// on that firmware or newer the printer refuses prints from other apps without it.
+// on that firmware or newer the printer refuses prints and commands from other apps without it, but still sends
+// status (Bambu Lab's third-party integration page). So it is optional: without it, prints go through Bambu Connect.
 const LIVEVIEW = 'Turn on LAN Only Liveview too if you want the camera.'
 const CODE = 'The access code (8 characters) is shown there. If the printer later refuses it, read it again there.'
+const REACH = 'If the printer can\'t be reached, turn on LAN Only Mode there.'
+const DIRECT = (firmware: string) => `Optional, for printing directly: with LAN Only Mode on, turn on Developer Mode (${firmware} and later). Without it, prints go through Bambu Connect, where you press Print.`
 
 const FIND_X1 = find({
   ip: 'On the touchscreen, open Settings, then LAN Only. The IP address is shown there.',
-  credential: `On the same LAN Only page, turn on LAN Only Mode, then Developer Mode (firmware 01.08.03.00 and later). ${CODE} ${LIVEVIEW} Keep a micro SD card in the printer: an X1 needs one to start a print sent over the network.`,
+  credential: `Open the same LAN Only page. ${CODE} ${REACH} ${LIVEVIEW} ${DIRECT('firmware 01.08.03.00')} Keep a micro SD card in the printer: an X1 needs one to start a print sent over the network.`,
   serial: SERIAL,
 })
 
 const FIND_H2 = find({
   ip: 'On the touchscreen, open Settings, then LAN Only. The IP address is shown there.',
-  credential: `On the same LAN Only page, turn on LAN Only Mode, then Developer Mode (H2D firmware 01.01.00.01 and later). ${CODE} ${LIVEVIEW}`,
+  credential: `Open the same LAN Only page. ${CODE} ${REACH} ${LIVEVIEW} ${DIRECT('H2D firmware 01.01.00.01')}`,
   serial: SERIAL,
 })
 
 const FIND_P1 = find({
   ip: 'On the printer screen, open Settings, then WLAN. The IP address is shown there.',
-  credential: 'On the WLAN page, open LAN Only Mode and choose Yes. Then scroll down to Developer Mode (firmware 01.08.02.00 and later), read the notice to the end and choose Enable. The access code (8 characters) is on the WLAN page. If the printer later refuses it, read it again there.',
+  credential: `The access code (8 characters) is on the WLAN page. If the printer later refuses it, read it again there. If the printer can't be reached, open LAN Only Mode on that page and choose Yes. Optional, for printing directly: with LAN Only Mode on, scroll down the WLAN page to Developer Mode (firmware 01.08.02.00 and later), read the notice to the end and choose Enable. Without it, prints go through Bambu Connect, where you press Print.`,
   serial: SERIAL,
 })
 
 const FIND_A1 = find({
   ip: 'On the touchscreen, open Settings, then WLAN. The IP address is shown there.',
-  credential: `Open Settings, swipe to page 3 and tap LAN Only Mode. On that page, turn on LAN Only Mode, then Developer Mode (firmware 01.05.00.00 and later). ${CODE}`,
+  credential: `Open Settings, swipe to page 3 and tap LAN Only Mode. ${CODE} ${REACH} ${DIRECT('firmware 01.05.00.00')}`,
   serial: SERIAL,
 })
 

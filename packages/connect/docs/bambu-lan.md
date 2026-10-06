@@ -2,26 +2,38 @@
 
 Connects to Bambu Lab X1, X1 Carbon, X1E, P1P, P1S, P2S, A1, A1 mini and H2 series printers over your local network: live status, AMS filament slots, uploads, start, pause, resume, cancel, camera and G-code lines. Bambu's cloud is not used.
 
+Developer Mode is optional. With the access code alone the printer sends its status, and prints go through Bambu Connect, Bambu Lab's own app for printing from other software. With Developer Mode on, prints and controls go straight from SlicerX.
+
 ## For users
 
 ### On the printer
 
 Connect the printer to your network first. Then, on the printer's screen (paths from Bambu Lab's wiki, "Enable Developer Mode"):
 
-| Series | LAN Only Mode and Developer Mode | IP address |
+| Series | Access code, LAN Only Mode and Developer Mode | IP address |
 | --- | --- | --- |
 | X1, X1 Carbon, X1E | Settings, then LAN Only | the LAN Only page |
 | H2D, H2S, H2C, P2S | Settings, then LAN Only | the LAN Only page |
 | P1P, P1S | Settings, then WLAN, then LAN Only Mode; Developer Mode is further down the WLAN page | the WLAN page |
 | A1, A1 mini | Settings, page 3, then LAN Only Mode | the WLAN page |
 
-1. Turn on LAN Only Mode. The access code (8 characters) is on the same page. Read it from the printer when you add it, and again if the printer later refuses it.
-2. Turn on Developer Mode on the same page, read the notice and enable it. Printers on firmware X1 01.08.03.00, P1 01.08.02.00, A1 01.05.00.00, H2D 01.01.00.01 or newer refuse prints from other apps without it. SlicerX warns when a printer reports it off.
-3. On X1 and H2 series printers, turn on LAN Only Liveview too if you want the camera.
-4. A printer in LAN Only Mode keeps a file sent over the network on its micro SD card, so put one in (an X1 cannot start a network print without it). SlicerX says so before uploading when the printer reports no card, a faulty one or a read only one, unless the printer reports it can print from its internal storage.
-5. You do not need the serial number: a scan reads it, and so does SlicerX from the printer's certificate when you enter only the IP address.
+1. Read the access code (8 characters) on that page when you add the printer, and again if the printer later refuses it. That is enough for status: Bambu Lab's third-party integration page lists MQTT status pushes among what its authorization does not affect, in cloud mode and in LAN mode.
+2. If SlicerX can't reach the printer, turn on LAN Only Mode on the same page. Whether status needs it on every model and firmware is not yet checked on a printer, so try without it first.
+3. Optional, for printing directly from SlicerX: with LAN Only Mode on, turn on Developer Mode on the same page, read the notice and enable it. Printers on firmware X1 01.08.03.00, P1 01.08.02.00, A1 01.05.00.00, H2D 01.01.00.01 or newer refuse prints and controls from other apps without it, so SlicerX shows such a printer as monitor only and sends prints through Bambu Connect (below).
+4. On X1 and H2 series printers, turn on LAN Only Liveview too if you want the camera.
+5. A printer in LAN Only Mode keeps a file sent over the network on its micro SD card, so put one in (an X1 cannot start a network print without it). SlicerX says so before uploading when the printer reports no card, a faulty one or a read only one, unless the printer reports it can print from its internal storage.
+6. You do not need the serial number: a scan reads it, and so does SlicerX from the printer's certificate when you enter only the IP address.
 
 While LAN Only Mode is on, the printer does not use Bambu's cloud, so the Bambu phone app and cloud printing stop working for it. Menu names differ between models and firmware versions.
+
+### Printing without Developer Mode: Bambu Connect
+
+When the printer reports Developer Mode off, Print in SlicerX opens the Print sheet with the checks as usual, and its button says Open in Bambu Connect. SlicerX saves the plate as a `.gcode.3mf` and opens it in Bambu Connect, which shows "Opening in Bambu Connect: press Print there". You pick the printer and press Print in Bambu Connect. If a printer that did not say refuses a print, the Print sheet offers Open in Bambu Connect as well.
+
+- Bambu Connect runs on Windows 10 or later and macOS 13 or later. Get it from Bambu Lab: https://wiki.bambulab.com/en/software/bambu-connect. When it is not installed, SlicerX says so with a link to that page.
+- Bambu Lab lists Linux as under development, so on Linux SlicerX saves the file instead. Copy it to the printer's SD card and start it on the printer, or turn on Developer Mode to print directly.
+- The web app cannot hand a file to another app, so it saves the file for you to open in Bambu Connect.
+- While Developer Mode is off, the printer's controls page shows status, temperatures, progress, the AMS and the camera where the firmware allows it. Pause, Stop, the light, speed and slot changes rest, with a tooltip saying why: use the printer's screen or Bambu Connect.
 
 ### In SlicerX
 
@@ -54,7 +66,8 @@ Guest Wi-Fi networks and VLANs that isolate clients block all of these.
 | "is unreachable" | Wrong IP, printer asleep or off, different subnet or VLAN, or a firewall blocks 8883. |
 | "there is no SD card in the printer" | Insert a micro SD card. A card the printer calls faulty or read only gets its own message; check it or format it on the printer. |
 | Upload fails or times out | Port 990 or the passive data ports are blocked, or the SD card is full. |
-| A command is refused | Developer Mode is off on firmware that requires it, or the printer is in a state that does not allow it (for example pausing while idle). |
+| A command is refused | Developer Mode is off on firmware that requires it (print through Bambu Connect, or turn on Developer Mode), or the printer is in a state that does not allow it (for example pausing while idle). |
+| "Bambu Connect isn't installed" | Install it from https://wiki.bambulab.com/en/software/bambu-connect, then press Print again. |
 | No camera on an X1, P2S or H2 printer | These stream over RTSPS on port 322 only while LAN Only Liveview is on. Turn it on on the printer's screen. |
 | Filament slots look wrong | Slots read from the AMS as A1 to A4 for the first unit, B1 to B4 for the next. Third party spools without a tag report no remaining percent. A tagged spool's `tray_uuid` is its `spoolUid`, so the app knows when a slot gets another spool (the drying note's "It's dry" lasts until then, or 7 days). |
 
@@ -62,9 +75,11 @@ Guest Wi-Fi networks and VLANs that isolate clients block all of these.
 
 Checked against a simulator, not a printer. First things to check: H2D nozzle temperatures, whether `Developer Mode` is required on your firmware, and the estimated time left (community documentation disagrees on its unit; SlicerX reads minutes).
 
+Not yet checked on a printer with Developer Mode off: that status comes through with the access code in cloud mode and in LAN Only Mode without Developer Mode, whether the camera (port 6000 or RTSPS 322) still answers, that the `fun` flag reads as described, and the Bambu Connect hand-off end to end (the link opening Bambu Connect on Windows and macOS, and the missing-app answer on each).
+
 ## For integrators
 
-Plugin id `bambu-lan`. Capabilities: status, events, upload, start, pause, resume, cancel, camera, filament slots, G-code console, and the device page's files, history, problems and skip objects. Network: `lan:8883`, `lan:990`, `lan:6000`, `lan:322`, `lan:1990`, `lan:2021`. Tools: `bambu-lan.status` (read), `.queue` (queue), `.start`, `.pause`, `.resume`, `.cancel`, `.gcode` (start).
+Plugin id `bambu-lan`. Capabilities: status, events, upload, start, pause, resume, cancel, camera, filament slots, G-code console, and the device page's files, history, problems and skip objects. While the printer reports Developer Mode off, the session's capabilities are status, events, camera and filament slots only, `status.live.monitorOnly` is true, and every command (upload, start, pause, resume, cancel, adjust, light, slot, skip, G-code) is refused with code `refused` before anything is sent. Network: `lan:8883`, `lan:990`, `lan:6000`, `lan:322`, `lan:1990`, `lan:2021`. Tools: `bambu-lan.status` (read), `.queue` (queue), `.start`, `.pause`, `.resume`, `.cancel`, `.gcode` (start).
 
 Printer config: `host`, `credentialRef` (keychain entry with the access code), optional `serial` (read from the MQTT certificate's common name when absent), `port` (8883), `ftpPort` (990) and `cameraPort` (6000).
 
@@ -83,6 +98,8 @@ Printer config: `host`, `credentialRef` (keychain entry with the access code), o
 - The Print sheet starts each filament on a loaded slot of the same material, closest color first, and will not start while a filament has no slot.
 - Print options on start: `bed_levelling`, `flow_cali`, `vibration_cali`, `layer_inspect` and `timelapse` in `project_file`. Defaults follow what Bambu Studio sends (read from `SelectMachine.cpp`): bed leveling on, flow calibration off, vibration compensation off, first layer inspection on, timelapse off. Studio's Auto mode for leveling and flow calibration sends the boolean false plus a separate mode value whose wire key is not public, so SlicerX offers on and off only. Studio turns timelapse on when the printer can record one; SlicerX cannot tell, so it waits to be asked.
 - FTPS is implicit TLS on 990 with the same credentials. `.bgcode` files are refused. Before an upload, the storage the report gives is checked as Bambu Studio checks it before a LAN send (`PrintStatusLanModeNoSdcard`): `aux` bits 12 and 13 where the firmware sends `aux`, else `sdcard` refined by `home_flag` bits 8 and 9 (0 none, 1 normal, 2 abnormal, 3 read only). No card is refused unless `fun2` bit 0 says the printer prints from internal storage; an abnormal or read only card is refused.
+- Developer Mode: `fun` bit 0x20000000 set means the printer wants signed commands, so Developer Mode is off (community, ha-bambulab). The driver reads it into `hardware.developerMode` and `status.live.monitorOnly`. SlicerX never signs commands and never works around the printer's authorization: it sends prints through Bambu Connect instead.
+- Bambu Connect: the desktop app writes the `.gcode.3mf` to its cache folder and opens `bambu-connect://import-file?path=<absolute path>&name=<name>&version=1.0.0`, both values encoded as `encodeURIComponent` encodes them, version fixed at 1.0.0 (Bambu Lab's wiki, "Launching Bambu Connect from Third-Party Software", https://wiki.bambulab.com/en/software/bambu-connect, and https://wiki.bambulab.com/en/software/third-party-integration). On Windows it checks that the `bambu-connect` scheme is registered first; on macOS `open` reports when no app takes the link. Code: `apps/desktop/src-tauri/src/bambu_connect.rs`, `packages/app/src/send/bambu-connect.ts`.
 - Camera on port 6000: an 80 byte authentication packet, then 16 byte frame headers followed by JPEG data.
 - Discovery sends one SSDP `M-SEARCH` for `urn:bambulab-com:device:3dprinter:1` and listens for the answers and for `NOTIFY` broadcasts. The answer's `DevModel`, `USN`, `DevVersion`, `DevConnect` and `DevBind` headers give the model, serial number, firmware, whether LAN Only Mode is on, and whether the printer is bound to a Bambu account (`bound`). `Devseclink`, `DevInf` and `DevCap` are not read: no source says what their values mean. A probe of a typed address sends the search to it and, when SSDP is blocked, reads the serial from the MQTT certificate.
 - Files: `LIST` over the same FTPS login, in the root (LAN uploads) and `cache` (cloud prints), `.3mf` and `.gcode` only. Size and the listed time are the file info the hub compares with its upload record, so a file changed on the printer reads as unverified.
@@ -98,8 +115,8 @@ Events are pushed. Status events are emitted when anything other than the timest
 
 ### Testing
 
-`bambu_contract` in `tests/drivers.rs` runs the contract suite against a fake broker, FTPS server and camera (the mock generates a throwaway certificate with `openssl`). `tests/plug_and_play.rs` covers a connect without a serial, `printer_type`, the `file:///sdcard/` URL and the SD card check; `POST /bambu` on the control server takes `printerType`, `storage` and `emmc`. Mock credentials: access code `12345678`, serial `01S00C000000000`.
+`bambu_contract` in `tests/drivers.rs` runs the contract suite against a fake broker, FTPS server and camera (the mock generates a throwaway certificate with `openssl`). `tests/plug_and_play.rs` covers a connect without a serial, `printer_type`, the `file:///sdcard/` URL and the SD card check; `POST /bambu` on the control server takes `printerType`, `storage` and `emmc`. `developerMode: false` makes the fake a printer with Developer Mode off: its reports carry `fun` with bit 0x20000000 set, it answers every command with `result: fail` and refuses uploads; `bambu_without_developer_mode_connects_monitor_only` checks the session is monitor-only and refuses commands before sending them. Mock credentials: access code `12345678`, serial `01S00C000000000`.
 
 ### Sources
 
-Bambu Lab's LAN protocol is documented by the community: https://github.com/Doridian/OpenBambuAPI (`mqtt.md`, `ftp.md`, `video.md`). Bambu Studio (`DeviceManager.cpp`, `DevConfigUtil.h`, `DevStorage.cpp`, `SelectMachine.cpp`) for `printer_type`, the storage flags and the LAN send checks. ha-bambulab (`pybambu/const.py`) for the `project_file` URL per model.
+Bambu Lab's own pages for third-party software: the third-party integration page (what Authorization Control blocks and what it leaves alone, Developer Mode, the Bambu Connect URL scheme), https://wiki.bambulab.com/en/software/third-party-integration; the Bambu Connect page (URL scheme, downloads, platforms), https://wiki.bambulab.com/en/software/bambu-connect; and the blog post "Updates and Third-Party Integration with Bambu Connect", https://blog.bambulab.com/updates-and-third-party-integration-with-bambu-connect. Bambu Lab's LAN protocol is documented by the community: https://github.com/Doridian/OpenBambuAPI (`mqtt.md`, `ftp.md`, `video.md`). Bambu Studio (`DeviceManager.cpp`, `DevConfigUtil.h`, `DevStorage.cpp`, `SelectMachine.cpp`) for `printer_type`, the storage flags and the LAN send checks. ha-bambulab (`pybambu/const.py`) for the `project_file` URL per model.

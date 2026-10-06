@@ -139,9 +139,11 @@ export function CodeCard({ ctl, picked, onReport }: { ctl: PrinterController; pi
           {family ? <AccessCodeScreen family={family} /> : <p>Check your printer's network settings for the LAN Only page. The access code is shown there.</p>}
           {family ? (
             <ol>
-              <li>{bambuGuide(family).lanOnly}</li>
-              <li>{bambuGuide(family).developer}</li>
-              <li>{bambuGuide(family).accessCode}</li>
+              <li>
+                {bambuGuide(family).developerWhere} {bambuGuide(family).accessCode}
+              </li>
+              <li>If the printer can't be reached: {bambuGuide(family).lanOnly}</li>
+              <li>Optional, for printing directly: {bambuGuide(family).developer}</li>
             </ol>
           ) : null}
           <p className="fr-codecard-note">

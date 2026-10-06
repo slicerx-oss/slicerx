@@ -396,7 +396,7 @@
 .fr-why button { all: unset; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; text-decoration-color: color-mix(in srgb, var(--orange) 45%, transparent); }
 .fr-why button:focus-visible { border-radius: 3px; }
 
-/* Bambu Lab LAN Only and Developer Mode, said before anyone types a code. */
+/* Bambu Lab: the access code, LAN Only Mode and the optional Developer Mode, said before anyone types a code. */
 .fr-bambu { margin: var(--s-4) 0 0; border: 1px solid var(--line-soft); border-radius: var(--r-md); background: var(--ink-1); }
 .fr-bambu[data-warn] { border-color: color-mix(in srgb, var(--orange) 50%, var(--line-soft)); }
 .fr-bambu > summary { display: flex; align-items: center; gap: var(--s-2); padding: var(--s-3) var(--s-4); cursor: pointer; list-style: none; font-weight: 500; }
@@ -548,3 +548,7 @@ p.fr-codecard-msg, .fr-codecard-msg p { color: var(--red); }
 :root[data-motion="reduced"] .fr-orbit-arm, :root[data-motion="reduced"] .fr-orbit-arm .sx-raven, :root[data-motion="reduced"] .fr-trail li .sx-ic { animation: none; }
 :root[data-motion="reduced"] .fr-orbit-late { transform: rotate(180deg); }
 :root[data-motion="reduced"] .fr-orbit-late .sx-raven { transform: rotate(-180deg) scaleX(-1); }
+
+/* Something to know that is not a problem, such as a Bambu Lab printer printing through Bambu Connect. */
+.fr-info-box { display: flex; align-items: flex-start; gap: 8px; padding: var(--s-2) var(--s-3); border-radius: var(--r-md); border: 1px solid var(--line-soft); background: var(--ink-1); color: var(--fg); font-size: var(--fs-md); margin: var(--s-3) 0 0; }
+.fr-info-box > .sx-ic { color: var(--muted); flex: none; margin-top: 2px; }
