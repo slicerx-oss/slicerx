@@ -240,10 +240,7 @@ impl PrinterConnector for BambuConnector {
         }
         // No SSDP answer (a network that drops it): the MQTT port's certificate names the serial number.
         let port = self.mqtt_port.unwrap_or(8883);
-        let serial = crate::tls::peer_common_name(host, port, timeout).await?;
-        if !serial.chars().all(|c| c.is_ascii_alphanumeric()) || !(8..=24).contains(&serial.len()) {
-            return None;
-        }
+        let serial = serial_from_certificate(host, port, timeout).await?;
         Some(DiscoveredPrinter {
             plugin: "bambu-lan".to_owned(),
             host: host.to_owned(),
@@ -257,10 +254,18 @@ impl PrinterConnector for BambuConnector {
     }
 
     async fn connect(&self, cfg: &PrinterConfig, secrets: &dyn Secrets) -> Result<Box<dyn PrinterSession>> {
-        let serial = cfg
-            .serial
-            .clone()
-            .ok_or_else(|| Error::Config("Bambu Lab printers need a serial number".to_owned()))?;
+        // Without a serial (SSDP blocked, an address typed in), the MQTT port's certificate names it.
+        let serial = match cfg.serial.clone() {
+            Some(s) => s,
+            None => serial_from_certificate(&cfg.host, cfg.port.unwrap_or(8883), Duration::from_secs(4))
+                .await
+                .ok_or_else(|| {
+                    Error::Config(
+                        "the printer did not name its serial number; enter it from the printer's screen"
+                            .to_owned(),
+                    )
+                })?,
+        };
         let code = cfg
             .credential_ref
             .as_deref()
@@ -270,6 +275,13 @@ impl PrinterConnector for BambuConnector {
             })?;
         BambuSession::open(cfg.clone(), serial, code, self.gate.clone()).await
     }
+}
+
+/// The serial number a printer's MQTT certificate names (its subject common name), when it reads as
+/// one. Only an IP address can be asked.
+async fn serial_from_certificate(host: &str, port: u16, timeout: Duration) -> Option<String> {
+    let serial = crate::tls::peer_common_name(host, port, timeout).await?;
+    (serial.chars().all(|c| c.is_ascii_alphanumeric()) && (8..=24).contains(&serial.len())).then_some(serial)
 }
 
 /// Parses one SSDP datagram from a Bambu printer: a NOTIFY announcement or the `200 OK` answer to a
@@ -325,6 +337,19 @@ fn model_name(code: &str) -> Option<String> {
             .unwrap_or_default()
     });
     CODES.get(code.trim()).cloned()
+}
+
+/// The model a report's `printer_type` names, when it is a code SlicerX knows. Old X1 firmware
+/// sends `3DPrinter-X1` and `3DPrinter-X1-Carbon`, which Bambu Studio's `_parse_printer_type`
+/// reads as BL-P002 and BL-P001.
+pub(crate) fn model_from_report(p: &Value) -> Option<String> {
+    let code = p.get("printer_type").and_then(Value::as_str)?.trim();
+    let code = match code {
+        "3DPrinter-X1" => "BL-P002",
+        "3DPrinter-X1-Carbon" => "BL-P001",
+        c => c,
+    };
+    model_name(code)
 }
 
 /// The printer's model from its `get_version` answer (`info.module`): a module's `project_name`
@@ -590,6 +615,83 @@ fn developer_mode(p: &Value) -> Option<bool> {
     Some(bits & 0x2000_0000 == 0)
 }
 
+/// Bits `start` to `start + count - 1` of a flag text in hex, bit 0 its last digit's lowest, as Bambu
+/// Studio reads `fun2` and `aux` (`get_flag_bits_no_border`).
+fn hex_bits(text: &str, start: u32, count: u32) -> Option<u64> {
+    let hex: String = text
+        .trim()
+        .trim_start_matches("0x")
+        .chars()
+        .filter(char::is_ascii_hexdigit)
+        .collect();
+    let digits = usize::try_from(start / 4 + count.div_ceil(4) + 1).ok()?;
+    let tail = hex.get(hex.len().saturating_sub(digits)..)?;
+    let v = u64::from_str_radix(if tail.is_empty() { "0" } else { tail }, 16).ok()?;
+    Some((v >> start) & ((1 << count) - 1))
+}
+
+/// The SD card as a report gives it, read the way Bambu Studio's DevStorage does.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SdCard {
+    Missing,
+    Normal,
+    Abnormal,
+    ReadOnly,
+}
+
+/// The SD card from a report: `aux` bits 12 and 13 on firmware that sends `aux`, else the `sdcard`
+/// flag refined by `home_flag` bits 8 and 9 (0 none, 1 normal, 2 abnormal, 3 read only). `None` when
+/// the report says nothing about it.
+pub(crate) fn sd_card(p: &Value) -> Option<SdCard> {
+    let of = |bits: u64| match bits {
+        1 => SdCard::Normal,
+        2 => SdCard::Abnormal,
+        3 => SdCard::ReadOnly,
+        _ => SdCard::Missing,
+    };
+    if let Some(aux) = p
+        .get("aux")
+        .and_then(Value::as_str)
+        .filter(|a| !a.trim().is_empty())
+    {
+        return hex_bits(aux, 12, 2).map(of);
+    }
+    let home = p
+        .get("home_flag")
+        .and_then(Value::as_u64)
+        .map(|f| of((f >> 8) & 3));
+    match p.get("sdcard").and_then(Value::as_bool) {
+        Some(false) => Some(SdCard::Missing),
+        // A card the flags call faulty or read only is still in the slot.
+        Some(true) => Some(
+            home.filter(|h| matches!(h, SdCard::Abnormal | SdCard::ReadOnly))
+                .unwrap_or(SdCard::Normal),
+        ),
+        None => home,
+    }
+}
+
+/// Why a file cannot go to the printer now, from its storage: a printer in LAN mode keeps a sent
+/// file on the SD card, unless it says it prints from internal storage (`fun2` bit 0). Bambu Studio
+/// stops a LAN send the same way (SelectMachine, `PrintStatusLanModeNoSdcard`).
+pub(crate) fn storage_problem(p: &Value) -> Option<&'static str> {
+    let internal = p
+        .get("fun2")
+        .and_then(Value::as_str)
+        .and_then(|f| hex_bits(f, 0, 1))
+        == Some(1);
+    match sd_card(p)? {
+        SdCard::Missing if !internal => {
+            Some("there is no SD card in the printer. Insert a micro SD card to print over the network")
+        }
+        SdCard::Abnormal => {
+            Some("the printer cannot read its SD card. Check the card or format it on the printer")
+        }
+        SdCard::ReadOnly => Some("the printer's SD card is read only"),
+        _ => None,
+    }
+}
+
 /// What a report and a `get_version` answer say about the printer's hardware.
 pub(crate) fn hardware_from(
     p: &Value,
@@ -605,7 +707,7 @@ pub(crate) fn hardware_from(
         extruders,
         filament_units,
         developer_mode: developer_mode(p),
-        sd_card: p.get("sdcard").and_then(Value::as_bool),
+        sd_card: sd_card(p).map(|c| c != SdCard::Missing),
     }
 }
 
@@ -1722,7 +1824,12 @@ async fn read_camera_frame<R: AsyncReadExt + Unpin>(tls: &mut R) -> Option<Vec<u
 /// vibration compensation off (Studio passes a literal `false`), first layer inspection on (a literal
 /// `true`; printers without the hardware ignore it) and bed type `auto`. Studio turns timelapse on
 /// when the printer can record one; a connector cannot know that, so it stays off until asked.
-pub(crate) fn project_file_command(seq: &str, file: &RemoteFile, opts: &StartOptions) -> Value {
+pub(crate) fn project_file_command(
+    seq: &str,
+    file: &RemoteFile,
+    opts: &StartOptions,
+    model: Option<&str>,
+) -> Value {
     let plate = opts.plate.unwrap_or(1);
     let (mapping, mapping2, use_ams) = ams_mapping(opts);
     let subtask = file.name.trim_end_matches(".gcode.3mf").trim_end_matches(".3mf");
@@ -1734,7 +1841,7 @@ pub(crate) fn project_file_command(seq: &str, file: &RemoteFile, opts: &StartOpt
         "project_id": "0", "profile_id": "0", "task_id": "0", "subtask_id": "0",
         "subtask_name": subtask,
         "file": "",
-        "url": format!("ftp:///{}", file.path),
+        "url": project_url(model, &file.path),
         "md5": "",
         "timelapse": opts.timelapse.unwrap_or(false),
         "bed_type": "auto",
@@ -1751,6 +1858,19 @@ pub(crate) fn project_file_command(seq: &str, file: &RemoteFile, opts: &StartOpt
         p.insert("ams_mapping2".to_owned(), Value::Array(mapping2));
     }
     v
+}
+
+/// Printers that take a project from `file:///sdcard/`, as ha-bambulab lists them
+/// (`LEGACY_SDCARD_PRINTERS`); every other model, and one whose model is not known yet, takes `ftp:///`.
+const SDCARD_URL_MODELS: [&str; 7] = ["X1", "X1 Carbon", "X1E", "P1P", "P1S", "A1", "A1 mini"];
+
+/// Where `project_file` tells the printer the uploaded file is.
+pub(crate) fn project_url(model: Option<&str>, path: &str) -> String {
+    if model.is_some_and(|m| SDCARD_URL_MODELS.contains(&m)) {
+        format!("file:///sdcard/{path}")
+    } else {
+        format!("ftp:///{path}")
+    }
 }
 
 /// How long a `project_file` start waits for the printer's answer.
@@ -1976,12 +2096,20 @@ impl PrinterSession for BambuSession {
         )))
     }
 
+    /// `print.printer_type` from the reports first, as Bambu Studio names the machine (it alone
+    /// separates an X1 from an X1 Carbon), then the `get_version` answer.
     fn reported_model(&self) -> Option<String> {
-        self.shared
-            .model
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone()
+        let from_report = {
+            let v = self.shared.state.lock().unwrap_or_else(PoisonError::into_inner);
+            model_from_report(&v)
+        };
+        from_report.or_else(|| {
+            self.shared
+                .model
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .clone()
+        })
     }
 
     fn events(&self) -> BoxStream<'static, PrinterEvent> {
@@ -2009,6 +2137,17 @@ impl PrinterSession for BambuSession {
         )?;
         if file.kind == JobKind::Bgcode {
             return Err(Error::not_supported("bambu-lan", "Prusa binary G-code"));
+        }
+        // Said before the upload, which would otherwise time out or fail without a reason.
+        let problem = {
+            let v = self.shared.state.lock().unwrap_or_else(PoisonError::into_inner);
+            storage_problem(&v)
+        };
+        if let Some(why) = problem {
+            return Err(Error::Refused {
+                printer: self.id().to_owned(),
+                reason: why.to_owned(),
+            });
         }
         ftps::store(&self.ftps(), &file.name, &file.data).await?;
         Ok(RemoteFile {
@@ -2048,7 +2187,7 @@ impl PrinterSession for BambuSession {
         )?;
         let seq = self.next_seq();
         let body = if is_3mf {
-            project_file_command(&seq, file, &opts)
+            project_file_command(&seq, file, &opts, self.reported_model().as_deref())
         } else {
             json!({ "print": { "sequence_id": seq, "command": "gcode_file", "param": format!("/sdcard/{}", file.path) } })
         };
@@ -3101,7 +3240,7 @@ mod tests {
             slot_map: Some(pairs.iter().map(|(k, v)| (*k, (*v).to_owned())).collect()),
             ..StartOptions::default()
         };
-        project_file_command("7", &f, &opts)["print"].clone()
+        project_file_command("7", &f, &opts, None)["print"].clone()
     }
 
     // Keys are 0 based filament indexes, the way Bambu Studio indexes `ams_mapping`
@@ -3149,7 +3288,7 @@ mod tests {
             name: "a.gcode.3mf".into(),
             sha256: None,
         };
-        let p = &project_file_command("1", &f, &StartOptions::default())["print"];
+        let p = &project_file_command("1", &f, &StartOptions::default(), None)["print"];
         assert_eq!(p["ams_mapping"], json!([]));
         assert_eq!(p["use_ams"], false);
         assert!(p.get("ams_mapping2").is_none());
@@ -3219,7 +3358,7 @@ mod tests {
             slot_map: Some(BTreeMap::from([(0, "A1".to_owned()), (2, "A3".to_owned())])),
             ..StartOptions::default()
         };
-        let v = project_file_command("7", &f, &opts);
+        let v = project_file_command("7", &f, &opts, None);
         assert_eq!(v["print"]["ams_mapping"], json!([0, -1, 2]));
         assert_eq!(
             v["print"]["ams_mapping2"][1],
@@ -3231,6 +3370,60 @@ mod tests {
     }
 
     #[test]
+    fn the_sd_card_reads_as_bambu_studio_reads_it() {
+        assert_eq!(sd_card(&json!({ "home_flag": 0x180 })), Some(SdCard::Normal));
+        assert_eq!(sd_card(&json!({ "home_flag": 0x80 })), Some(SdCard::Missing));
+        assert_eq!(
+            sd_card(&json!({ "home_flag": 0x300, "sdcard": true })),
+            Some(SdCard::ReadOnly)
+        );
+        // The recorded H2D sends `sdcard` true with no storage bits in `home_flag`.
+        assert_eq!(
+            sd_card(&json!({ "home_flag": 0, "sdcard": true })),
+            Some(SdCard::Normal)
+        );
+        assert_eq!(
+            sd_card(&json!({ "aux": "2000", "home_flag": 0x180 })),
+            Some(SdCard::Abnormal)
+        );
+        assert_eq!(sd_card(&json!({})), None);
+        assert!(storage_problem(&json!({ "sdcard": false })).is_some());
+        assert!(storage_problem(&json!({ "sdcard": false, "fun2": "0x1" })).is_none());
+        assert!(storage_problem(&json!({ "home_flag": 0x280 })).is_some());
+        assert!(storage_problem(&json!({ "home_flag": 0x180 })).is_none());
+        assert!(storage_problem(&json!({})).is_none());
+        assert_eq!(hex_bits("3EC18FFF9CFF", 29, 1), Some(0));
+        assert_eq!(hex_bits("3EC1AFFF9CFF", 29, 1), Some(1));
+    }
+
+    #[test]
+    fn older_printers_take_the_project_from_the_sd_card() {
+        assert_eq!(project_url(Some("A1 mini"), "a.3mf"), "file:///sdcard/a.3mf");
+        assert_eq!(project_url(Some("X1 Carbon"), "a.3mf"), "file:///sdcard/a.3mf");
+        assert_eq!(project_url(Some("H2D"), "a.3mf"), "ftp:///a.3mf");
+        assert_eq!(project_url(Some("P2S"), "a.3mf"), "ftp:///a.3mf");
+        assert_eq!(project_url(None, "a.3mf"), "ftp:///a.3mf");
+    }
+
+    #[test]
+    fn printer_type_names_the_model_as_bambu_studio_reads_it() {
+        assert_eq!(
+            model_from_report(&json!({ "printer_type": "C12" })).as_deref(),
+            Some("P1S")
+        );
+        assert_eq!(
+            model_from_report(&json!({ "printer_type": "3DPrinter-X1" })).as_deref(),
+            Some("X1")
+        );
+        assert_eq!(
+            model_from_report(&json!({ "printer_type": "3DPrinter-X1-Carbon" })).as_deref(),
+            Some("X1 Carbon")
+        );
+        assert_eq!(model_from_report(&json!({ "printer_type": "Z9" })), None);
+        assert_eq!(model_from_report(&json!({})), None);
+    }
+
+    #[test]
     fn print_options_default_to_what_bambu_studio_sends() {
         let f = RemoteFile {
             printer_id: "bay-1".into(),
@@ -3238,7 +3431,7 @@ mod tests {
             name: "a.gcode.3mf".into(),
             sha256: None,
         };
-        let p = &project_file_command("1", &f, &StartOptions::default())["print"];
+        let p = &project_file_command("1", &f, &StartOptions::default(), None)["print"];
         assert_eq!(p["bed_levelling"], true);
         assert_eq!(p["flow_cali"], false);
         assert_eq!(p["vibration_cali"], false);
@@ -3263,7 +3456,7 @@ mod tests {
             first_layer_inspection: Some(false),
             ..StartOptions::default()
         };
-        let p = &project_file_command("1", &f, &opts)["print"];
+        let p = &project_file_command("1", &f, &opts, None)["print"];
         assert_eq!(p["bed_levelling"], false);
         assert_eq!(p["flow_cali"], true);
         assert_eq!(p["vibration_cali"], true);
