@@ -3,10 +3,13 @@
 //! booleans on closed meshes
 
 use crate::error::{Error, Result};
+use crate::faces::{self, Faces, Surface};
 use crate::mesh::{self, TriMesh};
 use manifold_rust::manifold::Manifold;
 use manifold_rust::types::{BooleanEngine, Error as MfError, MeshGL64, OpType, WindingRule};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::sync::Arc;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -48,6 +51,9 @@ pub struct BooleanReport {
 pub struct Solid {
     pub(crate) m: Manifold,
     pub soup: bool,
+    /// The face table of each input mesh in this solid, by the kernel's id for that mesh: each output
+    /// triangle names its input mesh and the face it came from.
+    tables: Vec<(u32, Arc<Vec<Surface>>)>,
 }
 
 impl Solid {
@@ -57,17 +63,31 @@ impl Solid {
             return Ok(Self {
                 m: Manifold::empty(),
                 soup: false,
+                tables: Vec::new(),
             });
         }
-        let w = mesh.weld(mesh::weld_tolerance(mesh.bounds()));
-        let gl = to_gl(&w);
+        let mut w = mesh.weld(mesh::weld_tolerance(mesh.bounds()));
+        // A mesh without faces gets them by recognition, so the result has faces wherever it came from.
+        let f = w.faces.take().unwrap_or_else(|| faces::recognize(&w));
+        let mut gl = to_gl(&w);
+        gl.face_id = f.ids.iter().map(|&i| u64::from(i)).collect();
+        // One run under an id of our own, which every output triangle from this mesh reports back.
+        let id = Manifold::reserve_ids(1);
+        gl.run_original_id = vec![id];
+        gl.run_index = vec![0, gl.tri_verts.len() as u64];
+        let table = Arc::new(f.table);
+        let with = |m: Manifold, soup: bool| Self {
+            m,
+            soup,
+            tables: vec![(id, Arc::clone(&table))],
+        };
         let m = Manifold::from_mesh_gl64(&gl);
         match m.status() {
-            MfError::NoError => Ok(Self { m, soup: false }),
+            MfError::NoError => Ok(with(m, false)),
             MfError::NotManifold => {
                 let m = Manifold::from_mesh_gl64_robust(&gl);
                 match m.status() {
-                    MfError::NoError => Ok(Self { m, soup: true }),
+                    MfError::NoError => Ok(with(m, true)),
                     MfError::NotClosed => Err(not_closed()),
                     e => Err(Error::geometry("boolean", e.to_str().to_owned())),
                 }
@@ -94,7 +114,49 @@ impl Solid {
     }
 
     pub fn to_mesh(&self) -> TriMesh {
-        from_gl(&self.m.get_mesh_gl64(-1))
+        let gl = self.m.get_mesh_gl64(-1);
+        let mut out = from_gl(&gl);
+        if !out.triangles.is_empty() {
+            out.faces = Some(faces::merge_meeting_planes(&out, self.faces_of(&gl)));
+        }
+        out
+    }
+
+    /// The face of each output triangle: its input mesh's face, seen from the other side in a run the kernel
+    /// marks as a back side (a subtracted body), numbered in order of first use.
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "triangle and face counts stay below 2^32"
+    )]
+    fn faces_of(&self, gl: &MeshGL64) -> Faces {
+        let n = gl.tri_verts.len() / 3;
+        let tables: HashMap<u32, &Arc<Vec<Surface>>> = self.tables.iter().map(|(id, t)| (*id, t)).collect();
+        let mut ids = vec![0u32; n];
+        let mut table = Vec::new();
+        let mut seen: HashMap<(u32, bool, u64), u32> = HashMap::new();
+        let starts: Vec<usize> = gl
+            .run_index
+            .iter()
+            .map(|&i| usize::try_from(i / 3).unwrap_or(n))
+            .collect();
+        for (run, &start) in starts.iter().enumerate() {
+            let end = starts.get(run + 1).copied().unwrap_or(n).min(n);
+            let original = gl.run_original_id.get(run).copied().unwrap_or(0);
+            let back = gl.run_flags.get(run).is_some_and(|f| f & 1 == 1);
+            let source = tables.get(&original);
+            for (t, slot) in ids.iter_mut().enumerate().take(end).skip(start) {
+                let face = gl.face_id.get(t).copied().unwrap_or(0);
+                *slot = *seen.entry((original, back, face)).or_insert_with(|| {
+                    let s = source
+                        .and_then(|tab| usize::try_from(face).ok().and_then(|i| tab.get(i)))
+                        .copied()
+                        .unwrap_or(Surface::Other);
+                    table.push(if back { s.flipped() } else { s });
+                    (table.len() - 1) as u32
+                });
+            }
+        }
+        Faces { ids, table }
     }
 
     pub fn rebuilt(&self, keep_inverted: bool) -> Result<Self> {
@@ -105,7 +167,11 @@ impl Solid {
         };
         let m = self.m.rebuild_solid(rule);
         check(&m)?;
-        Ok(Self { m, soup: false })
+        Ok(Self {
+            m,
+            soup: false,
+            tables: self.tables.clone(),
+        })
     }
 
     fn apply(&self, other: &Self, op: OpType, opts: BooleanOptions) -> Result<(Self, bool)> {
@@ -134,7 +200,15 @@ impl Solid {
             .m
             .boolean_with_engine_rule_and_progress(&other.m, op, engine, rule, None, None);
         check(&m)?;
-        Ok((Self { m, soup: false }, robust))
+        let tables = self.tables.iter().chain(&other.tables).cloned().collect();
+        Ok((
+            Self {
+                m,
+                soup: false,
+                tables,
+            },
+            robust,
+        ))
     }
 }
 
@@ -263,7 +337,9 @@ pub fn boolean_solids(
 mod tests {
     use super::*;
     use crate::build;
+    use crate::faces::Surface;
     use crate::fm::Fm as _;
+    use crate::vec3;
 
     fn cube(min: [f64; 3], s: f64) -> TriMesh {
         build::box_mesh(min, [min[0] + s, min[1] + s, min[2] + s])
@@ -356,7 +432,92 @@ mod tests {
     #[test]
     fn open_mesh_is_refused() {
         let mut m = cube([0.0; 3], 10.0);
+        m.faces = None;
         m.triangles.pop();
         assert!(Solid::new(&m).is_err());
+    }
+
+    /// Every triangle lies on the plane of its face and faces the way the plane does.
+    fn on_their_planes(m: &TriMesh) -> usize {
+        let f = m.faces.as_ref().expect("the result has faces");
+        f.check("result", m.triangles.len()).unwrap();
+        for (t, &id) in f.ids.iter().enumerate() {
+            let Surface::Plane { normal, offset } = f.table[id as usize] else {
+                panic!("face {id} is not a plane: {:?}", f.table[id as usize])
+            };
+            let [a, b, c] = m.corners(m.triangles[t]);
+            for p in [a, b, c] {
+                assert!(
+                    (vec3::dot(normal, p) - offset).abs() < 1e-6,
+                    "triangle {t} is off its plane"
+                );
+            }
+            let n = vec3::normalize(vec3::tri_normal(a, b, c)).unwrap();
+            assert!(
+                vec3::dot(n, normal) > 0.9999,
+                "triangle {t} faces away from its plane"
+            );
+        }
+        f.table.len()
+    }
+
+    #[test]
+    fn a_union_keeps_the_faces_of_both_boxes() {
+        let (u, _) = boolean(
+            &[cube([0.0; 3], 10.0)],
+            &[cube([5.0; 3], 10.0)],
+            BoolOp::Union,
+            &BooleanOptions::default(),
+        )
+        .unwrap();
+        assert_eq!(on_their_planes(&u), 12);
+    }
+
+    #[test]
+    fn a_cutter_turns_into_the_walls_of_the_hole() {
+        let hole = build::box_mesh([3.0, 3.0, 2.0], [7.0, 7.0, 10.0]);
+        let (d, _) = boolean(
+            &[cube([0.0; 3], 10.0)],
+            &[hole],
+            BoolOp::Difference,
+            &BooleanOptions::default(),
+        )
+        .unwrap();
+        // The block's six sides, the hole's four walls and its floor, each wall facing into the hole.
+        assert_eq!(on_their_planes(&d), 11);
+        let f = d.faces.unwrap();
+        let walls = f
+            .table
+            .iter()
+            .filter(|s| matches!(s, Surface::Plane { normal, offset } if (normal[0] - 1.0).abs() < 1e-9 && (offset - 3.0).abs() < 1e-9))
+            .count();
+        assert_eq!(walls, 1, "the wall at x = 3 faces +x");
+    }
+
+    #[test]
+    fn coplanar_faces_that_meet_become_one_face() {
+        let (u, _) = boolean(
+            &[cube([0.0; 3], 10.0)],
+            &[cube([10.0, 0.0, 0.0], 10.0)],
+            BoolOp::Union,
+            &BooleanOptions::default(),
+        )
+        .unwrap();
+        // A 20 by 10 by 10 block: six faces, not ten.
+        assert_eq!(on_their_planes(&u), 6);
+    }
+
+    #[test]
+    fn an_untagged_input_is_recognized_first() {
+        let mut a = cube([0.0; 3], 10.0);
+        a.faces = None;
+        let (u, _) = boolean(
+            &[a],
+            &[cube([5.0; 3], 10.0)],
+            BoolOp::Union,
+            &BooleanOptions::default(),
+        )
+        .unwrap();
+        assert_eq!(on_their_planes(&u), 12);
     }
 }

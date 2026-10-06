@@ -280,6 +280,37 @@ fn union(p: &mut [u32], a: u32, b: u32) {
     }
 }
 
+/// Joins faces that lie on the same plane and meet across an edge (two blocks united side by side have one top).
+#[must_use]
+pub fn merge_meeting_planes(mesh: &TriMesh, f: Faces) -> Faces {
+    let size = mesh.bounds().map_or(1.0, |b| b.diagonal());
+    let tol = (size * 1e-6).max(1e-6);
+    let mut parent: Vec<u32> = (0..f.table.len() as u32).collect();
+    let mut edges: HashMap<(u32, u32), u32> = HashMap::with_capacity(mesh.triangles.len() * 2);
+    for (t, tri) in mesh.triangles.iter().enumerate() {
+        for j in 0..3 {
+            let (a, b) = (tri[j], tri[(j + 1) % 3]);
+            let key = (a.min(b), a.max(b));
+            match edges.get(&key) {
+                Some(&other) => {
+                    let (fa, fb) = (f.ids[t], f.ids[other as usize]);
+                    if fa != fb && same_plane(f.table[fa as usize], f.table[fb as usize], tol) {
+                        union(&mut parent, fa, fb);
+                    }
+                }
+                None => {
+                    edges.insert(key, t as u32);
+                }
+            }
+        }
+    }
+    Faces {
+        ids: f.ids.iter().map(|&id| root(&mut parent, id)).collect(),
+        table: f.table,
+    }
+    .compacted()
+}
+
 /// The plane of a box face along `axis` (0, 1 or 2), on its `max` side or not.
 pub(crate) fn box_plane(axis: usize, max: bool, at: f64) -> Surface {
     let mut normal = [0.0; 3];
