@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // The "What changed" list for a release's notes: one plain line per change people will notice.
-//   node apps/desktop/release/whats-changed.mjs [--since <tag>] [--json]
+//   node apps/desktop/release/whats-changed.mjs [--since <tag>] [--to <commit>] [--json]
 // Sources, both optional:
 // - a commit trailer `User-note: <one line>` on a commit pushed straight to main
 // - a merged pull request with the `user-facing` label: the first line under its "## For users" heading,
 //   else its title (read with the gh CLI; skipped when gh is missing or signed out)
 // `Reported-in: <link>` (a trailer, or a line in the pull request body) names the bug report the change fixes,
-// so the release bot can reply there. --since defaults to the newest desktop-v* tag.
+// so the release bot can reply there. --since defaults to the newest desktop-v* tag, --to to HEAD.
 import { execFileSync } from 'node:child_process'
 import { parseArgs } from 'node:util'
 
-const { values } = parseArgs({ options: { since: { type: 'string' }, json: { type: 'boolean', default: false } } })
+const { values } = parseArgs({ options: { since: { type: 'string' }, to: { type: 'string', default: 'HEAD' }, json: { type: 'boolean', default: false } } })
 const git = (...args) => execFileSync('git', args, { encoding: 'utf8' }).trim()
 
 const since = values.since ?? git('tag', '--list', 'desktop-v*', '--sort=-creatordate').split('\n')[0]
@@ -19,7 +19,7 @@ if (!since) throw new Error('No desktop-v* tag yet; give --since <tag or commit>
 
 const SEP = '\u001e'
 const notes = []
-const log = git('log', `${since}..HEAD`, `--format=%h%x1f%(trailers:key=User-note,valueonly,separator=%x1d)%x1f%(trailers:key=Reported-in,valueonly,separator=%x1d)${SEP}`)
+const log = git('log', `${since}..${values.to}`, `--format=%h%x1f%(trailers:key=User-note,valueonly,separator=%x1d)%x1f%(trailers:key=Reported-in,valueonly,separator=%x1d)${SEP}`)
 for (const rec of log.split(SEP)) {
   const [ref, note, reports] = rec.trim().split('\u001f')
   if (!ref || !note?.trim()) continue

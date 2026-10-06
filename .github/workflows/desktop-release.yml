@@ -216,6 +216,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
@@ -232,12 +234,16 @@ jobs:
             --out downloads.json
           (cd installers && sha256sum -- * > ../SHA256SUMS.txt)
           cat downloads.json
+      - name: Write the What changed list
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node apps/desktop/release/whats-changed.mjs --json > whats-changed.json && cat whats-changed.json
       - name: Attach to the draft release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           id="${{ needs.build.outputs.release_id }}"
-          for f in downloads.json SHA256SUMS.txt; do
+          for f in downloads.json SHA256SUMS.txt whats-changed.json; do
             gh api --method POST \
               -H "Content-Type: application/octet-stream" \
               "https://uploads.github.com/repos/${{ github.repository }}/releases/$id/assets?name=$f" \
