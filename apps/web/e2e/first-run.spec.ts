@@ -37,7 +37,12 @@ test('the scan finds the printer, the connection tests itself, then the slicer q
   await expect(code).toHaveAttribute('type', 'text')
   await expect(page.locator('.fr-found-ok')).toContainText('Found it.')
   await expect(page.locator('.fr-test .fr-ok')).toContainText('Connected')
-  await expect(page.locator('.fr-checks li[data-state="ok"]')).toHaveCount(4)
+  // A test past 1.2 s lands the ravens on a trail of three rows instead of the list of four steps (a slower runner
+  // gets the trail): either way, every row passed.
+  const rows = page.locator('.fr-checks li, .fr-trail li')
+  await expect(rows.first()).toBeVisible()
+  await expect(rows).toHaveCount((await page.locator('.fr-trail').count()) > 0 ? 3 : 4)
+  await expect(page.locator('.fr-checks li:not([data-state="ok"]), .fr-trail li:not([data-state="ok"])')).toHaveCount(0)
   await expect(page.locator('.fr-read')).toContainText('X1 Carbon')
   await expect(page.locator('.fr-read')).toContainText('AMS')
   await noHorizontalScroll(page)
