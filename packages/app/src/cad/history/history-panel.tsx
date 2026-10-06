@@ -9,6 +9,9 @@ import { Button, Icon } from '@slicerx/ui'
 import { useEffect, useState } from 'react'
 import { useHost } from '../../host'
 import { toast, useApp, type PlateEntry } from '../../state/store'
+import { num } from '../panel-kit'
+import { currentValues } from '../value-table'
+import { bindFor } from '../values'
 import { mainNumber, stepName, withNumber, type Step } from './model'
 import { beginEdit, cancelEdit, deleteStep, moveStep, setParams, setSuppressed, toolFor, viewStep } from './ops'
 import '../cad.css'
@@ -65,10 +68,14 @@ export function HistoryPanel({ objectId }: { objectId: string }) {
             onEdit={() => void run(i, () => (toolFor(s.params) ? beginEdit(host.slicer, objectId, i) : Promise.resolve(setOpen(i))))}
             onSuppress={() => void run(i, () => setSuppressed(host.slicer, objectId, i, !s.suppressed))}
             onDelete={() => void run(i, () => deleteStep(host.slicer, objectId, i))}
-            onNumber={(v) => {
+            onNumber={(text) => {
+              const v = num(text)
+              if (!Number.isFinite(v)) return 'That is not a number, or a sum of named values that works out.'
               const next = withNumber(s.params, v)
               if (typeof next === 'string') return next
-              void run(i, () => setParams(host.slicer, objectId, i, next))
+              const bind = bindFor(text, mainNumber(next)?.value ?? v, currentValues())
+              if (v === mainNumber(s.params)?.value && bind === s.bind) return null
+              void run(i, () => setParams(host.slicer, objectId, i, next, bind))
               return null
             }}
           />
@@ -106,7 +113,7 @@ function StepRow(props: {
   onEdit: () => void
   onSuppress: () => void
   onDelete: () => void
-  onNumber: (v: number) => string | null
+  onNumber: (text: string) => string | null
 }) {
   const { step: s, index, skipped, busy, editing } = props
   const name = stepName(s)
@@ -141,26 +148,26 @@ function StepRow(props: {
       <Button size="sm" variant="ghost" icon={s.suppressed ? 'hide' : 'show'} data-tip="history.suppress" aria-label={s.suppressed ? `Turn ${name} back on` : `Suppress ${name}`} pressed={Boolean(s.suppressed)} disabled={busy} onClick={props.onSuppress} />
       <Button size="sm" variant="ghost" icon="delete" data-tip="history.delete" aria-label={`Delete ${name}`} disabled={busy} onClick={props.onDelete} />
       {state === 'broken' ? <p className="cad-step-why"><Icon name="alert" size={13} /> {s.broken}</p> : state === 'skipped' ? <p className="cad-step-why sx-muted">Skipped: a step before it is broken.</p> : null}
-      {props.open && number ? <NumberEdit label={number.label} unit={number.unit} value={number.value} onApply={props.onNumber} /> : null}
+      {s.bind !== undefined ? <p className="cad-step-why sx-muted" data-testid="step-bind">Follows {s.bind}</p> : null}
+      {props.open && number ? <NumberEdit label={number.label} unit={number.unit} value={s.bind ?? String(number.value)} onApply={props.onNumber} /> : null}
     </li>
   )
 }
 
-/** One number, applied on Enter or when the field is left. */
-function NumberEdit({ label, unit, value, onApply }: { label: string; unit: string; value: number; onApply: (v: number) => string | null }) {
-  const [text, setText] = useState(String(value))
+/** One number, or a sum of named values the step then follows, applied on Enter or when the field is left. */
+function NumberEdit({ label, unit, value, onApply }: { label: string; unit: string; value: string; onApply: (text: string) => string | null }) {
+  const [text, setText] = useState(value)
   const [note, setNote] = useState<string | null>(null)
-  useEffect(() => setText(String(value)), [value])
+  useEffect(() => setText(value), [value])
   const apply = () => {
-    const v = Number(text.trim().replace(',', '.'))
-    if (v === value) return
-    setNote(onApply(v))
+    if (text.trim() === value) return
+    setNote(onApply(text))
   }
   return (
     <div className="cad-step-edit">
       <label>
         <span className="sx-small sx-muted">{label}</span>
-        <input className="sx-input" data-mono data-size="sm" inputMode="decimal" value={text} aria-label={`${label} in ${unit}`} onChange={(e) => setText(e.target.value)} onBlur={apply} onKeyDown={(e) => e.key === 'Enter' && apply()} />
+        <input className="sx-input" data-mono data-size="sm" value={text} aria-label={`${label} in ${unit}`} onChange={(e) => setText(e.target.value)} onBlur={apply} onKeyDown={(e) => e.key === 'Enter' && apply()} />
         <span className="sx-small sx-muted">{unit}</span>
       </label>
       {note ? <p className="cad-note"><Icon name="alert" size={13} /> {note}</p> : null}

@@ -6,8 +6,10 @@ import { Block, Field, Input, VectorField, type Axis } from '@slicerx/ui'
 import { useEffect, useRef, type ReactNode } from 'react'
 import { cameraBus, setProbeHandler, setTool, toolStore } from '../plate/tools'
 import { set } from '../state/store'
+import { typedNumber } from './value-table'
 
-export const num = (s: string) => Number(s.trim().replace(',', '.'))
+/** A typed number: plain, or arithmetic over the project's named values (`wall * 2`). NaN when it does not read. */
+export const num = (s: string) => typedNumber(s)
 export const close = () => set({ objectTool: null })
 export const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e))
 

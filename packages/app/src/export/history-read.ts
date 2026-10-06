@@ -116,6 +116,7 @@ function readHistory(v: Record<string, unknown>, files: ReadonlyMap<string, Uint
       ...readFollows(s['follow']),
       ...(s['suppressed'] === true ? { suppressed: true } : {}),
       ...(typeof s['broken'] === 'string' ? { broken: s['broken'].slice(0, 500) } : {}),
+      ...(typeof s['bind'] === 'string' && s['bind'].length <= 200 ? { bind: s['bind'] } : {}),
     })
   }
   return { version: 1, base, steps, ...(typeof v['ended'] === 'string' ? { ended: v['ended'].slice(0, 200) } : {}) }

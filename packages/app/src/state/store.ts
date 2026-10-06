@@ -2,6 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 // The one client store. Server data (store listings,
 // printer status) lives in TanStack Query; this holds what the user is doing.
+import type { NamedValue } from '../cad/value-names'
 import type {
   ApprovalRequest,
   Bed,
@@ -61,8 +62,8 @@ export interface NornState {
 }
 
 /** Modeling tools that work in the 3D view; their panel sits in the sidebar while one is on. */
-export type CadTool = 'shape' | 'facetext' | 'array' | 'measure' | 'push' | 'sketch' | 'facesvg' | 'fillet' | 'holefit' | 'thread'
-export const CAD_TOOLS: readonly CadTool[] = ['shape', 'facetext', 'array', 'measure', 'push', 'sketch', 'facesvg', 'fillet', 'holefit', 'thread']
+export type CadTool = 'shape' | 'facetext' | 'array' | 'measure' | 'push' | 'sketch' | 'facesvg' | 'fillet' | 'holefit' | 'thread' | 'values'
+export const CAD_TOOLS: readonly CadTool[] = ['shape', 'facetext', 'array', 'measure', 'push', 'sketch', 'facesvg', 'fillet', 'holefit', 'thread', 'values']
 export const isCadTool = (t: string | null): t is CadTool => t !== null && (CAD_TOOLS as readonly string[]).includes(t)
 
 export interface PlateEntry {
@@ -258,6 +259,8 @@ export interface AppState {
   electricity: { pricePerKwh: number; symbol: string }
   /** Draw every kept dimension, not only those of the selected object. */
   showDimensions: boolean
+  /** The project's named values (cad/values.ts), saved with the project. */
+  namedValues: NamedValue[]
   /** The nozzle size (mm) chosen for each printer id. */
   printerNozzles: Record<string, number>
   /** Each extruder's nozzle on printers with more than one, by printer id, in the slicer's extruder order (left first on an H2D). */
@@ -516,6 +519,7 @@ export const appStore = createStore<AppState>()(() => ({
   cadTools: prefs.cadTools ?? true,
   electricity: prefs.electricity ?? DEFAULT_ELECTRICITY,
   showDimensions: false,
+  namedValues: [],
   printerNozzles: prefs.printerNozzles ?? {},
   printerExtruders: prefs.printerExtruders ?? {},
   handPrinters: prefs.handPrinters ?? [],

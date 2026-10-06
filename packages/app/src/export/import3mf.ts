@@ -4,6 +4,8 @@
 // part subtypes of Orca's 3MF layout decide what a part is: normal parts print, negative parts cut,
 // support blockers and enforcers steer support. The archive is untrusted: entry count, sizes and names
 // are capped before anything is inflated.
+import type { NamedValue } from '../cad/value-names'
+import { parseValues } from './values-file'
 import type { MeshPart } from '@slicerx/contracts'
 import type { Dimension, DimensionAnchor, Feature } from '../geom/cad'
 import type { History } from '../cad/history/model'
@@ -175,6 +177,8 @@ export interface ImportedProject {
   dimensions: Dimension[]
   /** CAD histories from Metadata/slicerx_history.json, by `fileId`. */
   histories: Map<string, History>
+  /** Named values from Metadata/slicerx_values.json. */
+  namedValues: NamedValue[]
 }
 
 const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v)
@@ -633,5 +637,5 @@ export async function readProject(bytes: Uint8Array, bed: { widthMm: number; dep
   }
   const dimensions = parseDimensions(files.get('Metadata/slicerx_dimensions.json'), new Set(plates.flatMap((p) => p.objects.map((o) => o.fileId))))
   const fileIds = new Set(plates.flatMap((p) => p.objects.map((o) => o.fileId)))
-  return { plates, colors, settings, settingsFrom, dimensions, histories: parseHistories(files, fileIds) }
+  return { plates, colors, settings, settingsFrom, dimensions, histories: parseHistories(files, fileIds), namedValues: parseValues(files) }
 }

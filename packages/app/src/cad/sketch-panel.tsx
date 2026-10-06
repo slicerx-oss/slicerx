@@ -19,6 +19,7 @@ import { cameraBus } from '../plate/tools'
 import { get, set, toast, useApp } from '../state/store'
 import { applyExtrude, applyRevolve, BED_FRAME, extrudeParams, frameToBed, revolveParams, wholeMesh, type ExtrudeInput, type RevolveInput } from './cad-ops'
 import { editing, nowOf, saveEdit } from './history/ops'
+import { bindNext } from './history/record'
 import { chamferSketch, filletSketch } from './edge-api'
 import { flipFor, goesIntoFace } from './extrude-direction'
 import { close, errorText, num, Num, pickWords, Shell, useProbe } from './panel-kit'
@@ -401,12 +402,14 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
         if (extentKind === 'twoSides' && !(d2 > 0)) throw new Error('The second distance must be more than 0 mm.')
         const tp = num(taper)
         if (!Number.isFinite(tp) || Math.abs(tp) > 45) throw new Error('The draft is between -45 and 45 degrees.')
+        bindNext(distance)
         const input: ExtrudeInput = { frame: plane.frame, shape: { type: 'sketch', loops }, placement: {}, spec: { distanceMm: d, extent: extentKind, ...(extentKind === 'twoSides' ? { distance2Mm: d2 } : {}), ...(flip ? { flip } : {}), ...(tp ? { taperDeg: tp } : {}), operation: op }, ...target, name: 'Sketch body' }
         r = init ? await saveSketch(extrudeParams(input)) : await applyExtrude(host.slicer, input)
       } else {
         if (!axis) throw new Error('Pick a straight line of the sketch as the axis.')
         const a = num(angle)
         if (!(a > 0 && a <= 360)) throw new Error('The angle is more than 0 and at most 360 degrees.')
+        bindNext(angle)
         const input: RevolveInput = { frame: plane.frame, loops, axis, angleDeg: a, operation: op, ...target, name: 'Revolved body' }
         r = init ? await saveSketch(revolveParams(input)) : await applyRevolve(host.slicer, input)
       }

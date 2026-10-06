@@ -71,6 +71,7 @@ export async function sx3mfBytes(plates: readonly PlateMeta[], extra: Partial<Pi
     objectSettings: s.objectSettings,
     layerMarks: Object.fromEntries(plates.flatMap((p, i) => ((s.layerMarks[p.id] ?? []).length ? [[i, s.layerMarks[p.id]!.map(({ z, kind, gcode }) => ({ z, kind, ...(gcode ? { gcode } : {}) }))]] : []))),
     sx: { ...sharedSource(plates), exportedBy: await exportingUserId() },
+    namedValues: s.namedValues,
   })
 }
 

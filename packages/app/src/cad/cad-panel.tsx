@@ -14,6 +14,7 @@ import { bounds } from '../plate/transform'
 import { get, set, toast, useApp, type CadTool } from '../state/store'
 import { fontBase64, listLocalFonts, localFontsAvailable, type FontChoice } from './fonts'
 import { cancelEdit, editing, nowOf, saveEdit } from './history/ops'
+import { bindNext } from './history/record'
 import { sessionFonts } from './history/record'
 import { applyArray, applyExtrude, arraySpec, extrudeParams, type ExtrudeInput, BED_FRAME, describeFeature, featurePoints, loopsOf, previewArray, readout, type ArrayKind } from './cad-ops'
 import { close, errorText, num, Num, pickWords, Shell, useProbe, Vec } from './panel-kit'
@@ -30,6 +31,7 @@ const PushTool = lazy(() => import('./push-tool').then((m) => ({ default: m.Push
 const FilletTool = lazy(() => import('./fillet-tool').then((m) => ({ default: m.FilletTool })))
 const HoleTool = lazy(() => import('./hole-tool').then((m) => ({ default: m.HoleTool })))
 const ThreadTool = lazy(() => import('./thread-tool').then((m) => ({ default: m.ThreadTool })))
+const ValuesPanel = lazy(() => import('./values-panel').then((m) => ({ default: m.ValuesPanel })))
 
 // Shape and text on a face
 
@@ -192,6 +194,7 @@ function ShapeTool({ textOnly, svgFirst }: { textOnly: boolean; svgFirst?: boole
         ...(font ? { fontBase64: font.base64, fontName: font.name } : {}),
         name: shape.type === 'text' ? shape.text.slice(0, 24) : shape.type === 'svg' ? (svg?.name.replace(/\.svg$/i, '').slice(0, 24) || 'SVG outline') : SHAPE_NAMES[shape.type],
       }
+      bindNext(distance)
       if (edit) {
         await saveEdit(host.slicer, extrudeParams(input))
         toast(`Changed step ${edit.index + 1} and ran the steps after it.`, 'ok')
@@ -615,5 +618,6 @@ export function CadPanel({ tool }: { tool: CadTool }) {
   if (tool === 'fillet') return <Suspense fallback={null}><FilletTool /></Suspense>
   if (tool === 'holefit') return <Suspense fallback={null}><HoleTool /></Suspense>
   if (tool === 'thread') return <Suspense fallback={null}><ThreadTool /></Suspense>
+  if (tool === 'values') return <Suspense fallback={null}><ValuesPanel /></Suspense>
   return <ShapeTool textOnly={tool === 'facetext'} svgFirst={tool === 'facesvg'} />
 }

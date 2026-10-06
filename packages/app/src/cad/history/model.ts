@@ -71,6 +71,8 @@ export interface Step {
   suppressed?: boolean
   /** The plain sentence from the last replay when the step failed there. */
   broken?: string
+  /** The expression over named values the step's main number follows (`height + 2`); see cad/values.ts. */
+  bind?: string
 }
 
 export interface History {

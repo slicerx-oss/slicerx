@@ -5,7 +5,9 @@
 // note and makes the new parts the base. No engine calls in here.
 import type { MeshPart } from '@slicerx/contracts'
 import type { PlateEntry } from '../../state/store'
-import { direction, followed, followField, followFor, followsOf, HISTORY_VERSION, invert, multiply, onFlatFace, point, refPoints, stepId, type FlatFace, type Follow, type History, type Step, type StepParams } from './model'
+import { bindFor } from '../values'
+import { currentValues } from '../value-table'
+import { direction, followed, followField, followFor, followsOf, HISTORY_VERSION, invert, mainNumber, multiply, onFlatFace, point, refPoints, stepId, type FlatFace, type Follow, type History, type Step, type StepParams } from './model'
 
 // Fonts loaded this session, by name, for text steps that use one. Fonts are not saved in projects.
 const fonts = new Map<string, string>()
@@ -14,6 +16,23 @@ export function rememberFont(name: string, base64: string): void {
 }
 export function sessionFonts(): Record<string, string> {
   return Object.fromEntries(fonts)
+}
+
+// What the person typed for the main number of the step a tool is about to record (bindNext), used once.
+let pending: string | null = null
+
+/** The text typed for the main number of the next step a tool records, so the step can follow a named value. */
+export function bindNext(text: string | undefined): void {
+  pending = text?.trim() || null
+}
+
+/** The binding for `params` from what was typed (bindNext), if it uses a name and gives the main number. */
+export function takeBind(params: StepParams): { bind?: string } {
+  const t = pending
+  pending = null
+  const n = mainNumber(params)
+  const bind = t && n ? bindFor(t, n.value, currentValues()) : undefined
+  return bind ? { bind } : {}
 }
 
 /** The entry's history, or a new one whose base is the entry's parts now. */
@@ -34,7 +53,7 @@ export function settle(steps: readonly Step[]): Step[] {
 export function withStep(before: Pick<PlateEntry, 'parts' | 'history' | 'transform'>, part: number, params: StepParams, transform: number[] = before.transform): History {
   const h = historyOf(before)
   const steps = settle(h.steps)
-  const step: Step = { id: stepId(), part, transform: [...transform], params }
+  const step: Step = { id: stepId(), part, transform: [...transform], params, ...takeBind(params) }
   const follow = followFor(steps, step)
   return { ...h, steps: [...steps, follow ? { ...step, follow } : step] }
 }

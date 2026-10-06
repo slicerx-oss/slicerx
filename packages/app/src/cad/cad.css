@@ -8,6 +8,10 @@
 .cad-note { color: var(--fg); }
 .cad-note .sx-ic { color: var(--orange); }
 .cad-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; align-items: end; }
+.cad-values { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.cad-value { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 6px; align-items: center; }
+.cad-value label { display: grid; grid-template-columns: minmax(4em, auto) minmax(0, 1fr); gap: 6px; align-items: center; }
+.cad-value .cad-note { grid-column: 1 / -1; }
 .cad-trio { display: grid; grid-template-columns: repeat(auto-fit, minmax(104px, 1fr)); gap: 8px; align-items: end; }
 .cad-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: var(--fs-md); }
 .cad-row label { color: var(--fg); }
