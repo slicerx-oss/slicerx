@@ -579,6 +579,8 @@ fn track_uri(base: &str, control: Option<&str>) -> String {
 /// Connects, negotiates and starts playing. Fails when the camera does not answer, refuses the login,
 /// or has no H.264 video track. Each step goes to the connection log.
 pub(crate) async fn open(target: &Target) -> Result<FrameStream, Failure> {
+    // A session of this camera still being ended goes first, so its TEARDOWN never races this PLAY.
+    after_teardowns(target).await;
     trace(
         target,
         format_args!(
@@ -680,8 +682,9 @@ async fn play(
         session,
         cseq,
     } = client;
-    let (mut rd, wr) = tokio::io::split(io);
+    let (rd, wr) = tokio::io::split(io);
     let mut ctl = Control {
+        rd: Some(rd),
         wr: Some(wr),
         target: target.clone(),
         base,
@@ -711,7 +714,7 @@ async fn play(
                     return;
                 }
             }
-            got = read_interleaved(&mut rd, &mut buf) => {
+            got = read_open(&mut ctl.rd, &mut buf) => {
                 let (channel, data) = match got {
                     Ok(p) => p,
                     Err(e) => {
@@ -745,11 +748,15 @@ async fn play(
     }
 }
 
-/// The writing side of a playing session. However the stream ends, a viewer dropping it included
-/// (which aborts the reading task), dropping this sends TEARDOWN and closes the connection, so the
-/// camera frees the session at once. live555 on Bambu Lab printers refuses a new session while an
-/// old one it was not told about is still open.
+/// A playing session's connection. However the stream ends, a viewer dropping it included (which
+/// aborts the reading task), dropping this ends the session in order: TEARDOWN written and flushed,
+/// the camera's answer read (with any frames still in flight), then the connection closed. Closing
+/// with unread data in the socket resets the connection, and a reset can lose the TEARDOWN the camera
+/// had not read yet (Windows). The next open of the same camera waits for this (`PENDING`), so it
+/// never races its own TEARDOWN. live555 on Bambu Lab printers refuses a new session while an old
+/// one it was not told about is still open.
 struct Control {
+    rd: Option<tokio::io::ReadHalf<Box<dyn Io>>>,
     wr: Option<tokio::io::WriteHalf<Box<dyn Io>>>,
     target: Target,
     base: String,
@@ -782,24 +789,119 @@ impl Control {
 
 impl Drop for Control {
     fn drop(&mut self) {
-        let Some(mut wr) = self.wr.take() else { return };
+        let (Some(rd), Some(wr)) = (self.rd.take(), self.wr.take()) else {
+            return;
+        };
         let Ok(rt) = tokio::runtime::Handle::try_current() else {
             return;
         };
         let req = self.request("TEARDOWN");
+        let answer = format!("CSeq: {}\r\n", self.cseq);
         let target = self.target.clone();
+        let done = closing(&target);
         rt.spawn(async move {
-            let sent = tokio::time::timeout(STEP_TIMEOUT, async {
-                wr.write_all(req.as_bytes()).await?;
-                wr.shutdown().await
-            })
-            .await;
-            match sent {
-                Ok(Ok(())) => trace(&target, "TEARDOWN sent"),
-                Ok(Err(e)) => trace(&target, format_args!("TEARDOWN not sent: {e}")),
-                Err(_) => trace(&target, "TEARDOWN not sent in 5 s"),
-            }
+            let how = teardown(rd, wr, req.as_bytes(), answer.as_bytes()).await;
+            trace(&target, format_args!("TEARDOWN {how}"));
+            drop(done);
         });
+    }
+}
+
+/// How long ending a session may take: TEARDOWN out, the answer in, the connection closed.
+const TEARDOWN_WAIT: Duration = Duration::from_secs(2);
+
+/// Writes and flushes TEARDOWN, reads until the camera's answer (`answer` is its CSeq line) or the
+/// end of the connection, discarding frames still in flight, then closes. Says how it went.
+async fn teardown<R, W>(mut rd: R, mut wr: W, req: &[u8], answer: &[u8]) -> String
+where
+    R: AsyncRead + Unpin,
+    W: AsyncWrite + Unpin,
+{
+    let sent = tokio::time::timeout(TEARDOWN_WAIT, async {
+        wr.write_all(req).await?;
+        wr.flush().await
+    })
+    .await;
+    match sent {
+        Ok(Ok(())) => {}
+        Ok(Err(e)) => return format!("not sent: {e}"),
+        Err(_) => return "not sent in 2 s".to_owned(),
+    }
+    let mut chunk = vec![0_u8; 16 * 1024];
+    let mut tail: Vec<u8> = Vec::new();
+    let answered = tokio::time::timeout(TEARDOWN_WAIT, async {
+        loop {
+            let n = rd.read(&mut chunk).await.unwrap_or(0);
+            let Some(got) = chunk.get(..n).filter(|g| !g.is_empty()) else {
+                return false;
+            };
+            // Keep only enough to find the answer across two reads.
+            tail.extend_from_slice(got);
+            if tail.windows(answer.len()).any(|w| w == answer) {
+                return true;
+            }
+            let keep = tail.len().saturating_sub(answer.len());
+            tail.drain(..keep);
+        }
+    })
+    .await;
+    let _ = tokio::time::timeout(TEARDOWN_WAIT, wr.shutdown()).await;
+    match answered {
+        Ok(true) => "sent and answered".to_owned(),
+        Ok(false) => "sent; the camera closed the connection".to_owned(),
+        Err(_) => "sent; no answer in 2 s".to_owned(),
+    }
+}
+
+/// The next interleaved packet from a session's reading side, while it has one.
+async fn read_open(
+    rd: &mut Option<tokio::io::ReadHalf<Box<dyn Io>>>,
+    scratch: &mut Vec<u8>,
+) -> std::io::Result<(u8, Vec<u8>)> {
+    match rd {
+        Some(r) => read_interleaved(r, scratch).await,
+        None => Err(std::io::Error::other("the session is closing")),
+    }
+}
+
+/// Sessions being ended, by camera address: an open waits for them (see [`Control`]).
+static PENDING: std::sync::Mutex<Vec<(String, tokio::sync::watch::Receiver<bool>)>> =
+    std::sync::Mutex::new(Vec::new());
+
+fn camera_key(t: &Target) -> String {
+    format!("{}:{}", t.host, t.port)
+}
+
+/// Marks a session of `t` as ending until the returned guard is dropped.
+fn closing(t: &Target) -> Closing {
+    let (tx, rx) = tokio::sync::watch::channel(false);
+    let mut p = PENDING.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    p.retain(|(_, r)| !*r.borrow());
+    p.push((camera_key(t), rx));
+    Closing(tx)
+}
+
+struct Closing(tokio::sync::watch::Sender<bool>);
+
+impl Drop for Closing {
+    fn drop(&mut self) {
+        let _ = self.0.send(true);
+    }
+}
+
+/// Waits (at most a little longer than a TEARDOWN may take) for sessions of `t` being ended.
+async fn after_teardowns(t: &Target) {
+    let waits: Vec<_> = {
+        let mut p = PENDING.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        p.retain(|(_, r)| !*r.borrow());
+        let key = camera_key(t);
+        p.iter()
+            .filter(|(k, _)| *k == key)
+            .map(|(_, r)| r.clone())
+            .collect()
+    };
+    for mut w in waits {
+        let _ = tokio::time::timeout(TEARDOWN_WAIT * 3, w.wait_for(|done| *done)).await;
     }
 }
 
@@ -899,6 +1001,59 @@ async fn read_interleaved<R: AsyncRead + Unpin>(
 #[allow(clippy::unwrap_used, clippy::indexing_slicing)]
 mod tests {
     use super::*;
+
+    // Ending a session: TEARDOWN written and flushed, the frames still in flight read and dropped,
+    // the camera's answer (its CSeq) read, then the connection closed, so nothing unread resets it.
+    #[tokio::test]
+    async fn teardown_is_answered_before_the_connection_closes() {
+        let (ours, mut camera) = tokio::io::duplex(1024);
+        let (rd, wr) = tokio::io::split(ours);
+        let cam = tokio::spawn(async move {
+            // A frame already on its way, then the TEARDOWN arrives and is answered.
+            camera.write_all(&[b'$', 0, 0, 4, 1, 2, 3, 4]).await.unwrap();
+            let mut got = Vec::new();
+            let mut b = [0_u8; 256];
+            while !got.ends_with(b"\r\n\r\n") {
+                let n = camera.read(&mut b).await.unwrap();
+                got.extend_from_slice(&b[..n]);
+            }
+            camera.write_all(&[b'$', 0, 0, 2, 9, 9]).await.unwrap();
+            camera
+                .write_all(b"RTSP/1.0 200 OK\r\nCSeq: 7\r\n\r\n")
+                .await
+                .unwrap();
+            // The client closes its side after the answer.
+            let n = camera.read(&mut b).await.unwrap();
+            (String::from_utf8(got).unwrap(), n)
+        });
+        let how = teardown(
+            rd,
+            wr,
+            b"TEARDOWN rtsp://c/x RTSP/1.0\r\nCSeq: 7\r\n\r\n",
+            b"CSeq: 7\r\n",
+        )
+        .await;
+        assert_eq!(how, "sent and answered");
+        let (got, after) = cam.await.unwrap();
+        assert!(got.starts_with("TEARDOWN rtsp://c/x"), "{got}");
+        assert_eq!(after, 0, "closed after the answer");
+    }
+
+    // A camera that closes without answering still gets the TEARDOWN, and the end is reported.
+    #[tokio::test]
+    async fn teardown_reports_a_camera_that_closes_without_answering() {
+        let (ours, mut camera) = tokio::io::duplex(1024);
+        let (rd, wr) = tokio::io::split(ours);
+        let cam = tokio::spawn(async move {
+            let mut b = [0_u8; 256];
+            let n = camera.read(&mut b).await.unwrap();
+            drop(camera);
+            n
+        });
+        let how = teardown(rd, wr, b"TEARDOWN x RTSP/1.0\r\nCSeq: 3\r\n\r\n", b"CSeq: 3\r\n").await;
+        assert_eq!(how, "sent; the camera closed the connection");
+        assert!(cam.await.unwrap() > 0);
+    }
 
     /// A scripted camera on a plain TCP port: OPTIONS 200, DESCRIBE 401 with a live555 challenge,
     /// then it hands back every request it read and closes.
