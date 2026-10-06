@@ -56,3 +56,15 @@ describe('manual local model server', () => {
     expect(button().getAttribute('aria-expanded')).toBe('false')
   })
 })
+
+describe('local model privacy line', () => {
+  it('names the server host when the address is not this computer', async () => {
+    mount(false)
+    await act(async () => {})
+    expect(screen.getByText(/Nothing leaves this computer/)).toBeTruthy()
+    fireEvent.change(screen.getByLabelText('Server address'), { target: { value: 'http://192.168.1.50:8080/v1' } })
+    expect(screen.getByText('Your questions and printer setup go only to the server at 192.168.1.50.')).toBeTruthy()
+    fireEvent.change(screen.getByLabelText('Server address'), { target: { value: 'http://localhost:1234/v1' } })
+    expect(screen.getByText(/Nothing leaves this computer/)).toBeTruthy()
+  })
+})

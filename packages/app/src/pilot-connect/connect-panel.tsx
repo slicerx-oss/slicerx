@@ -20,6 +20,18 @@ import './connect.css'
 
 const ORDER: PilotProvider[] = ['openai', 'anthropic', 'local']
 
+/** The host of a typed server address, or null when it is empty, unparseable or this computer. */
+function remoteHost(address: string): string | null {
+  const a = address.trim()
+  if (!a) return null
+  try {
+    const h = new URL(a).hostname
+    return h === 'localhost' || h === '127.0.0.1' || h === '[::1]' || h === '::1' ? null : h
+  } catch {
+    return null
+  }
+}
+
 export interface ConnectState {
   /** True once a test passed and the connection was saved. */
   connected: boolean
@@ -45,6 +57,7 @@ export function ConnectPanel({ onConnected, idPrefix = 'pc', withLocal = true }:
   const [hasLocalKey, setHasLocalKey] = useState(false)
   const info = PROVIDERS[provider]
   const store = keyStoreFor(host)
+  const remote = provider === 'local' ? remoteHost(baseUrl) : null
   const saved = pref?.mode === 'on' && pref.provider === provider
   // The optional key of a model server on the network, asked for beside the address.
   const localKey = provider === 'local' && manual
@@ -113,7 +126,7 @@ export function ConnectPanel({ onConnected, idPrefix = 'pc', withLocal = true }:
               <Icon name={id === 'local' ? 'desktop' : 'cloud'} />
               <span>
                 <b>{p.label}</b>
-                <small>{id === 'local' ? 'A model on this computer. No key, nothing leaves it.' : `Your own ${p.label} API key. Calls go to ${p.label} only.`}</small>
+                <small>{id === 'local' ? 'A model you run yourself, on this computer or your network.' : `Your own ${p.label} API key. Calls go to ${p.label} only.`}</small>
               </span>
             </button>
           )
@@ -215,7 +228,9 @@ export function ConnectPanel({ onConnected, idPrefix = 'pc', withLocal = true }:
         <>
           <p className="pc-privacy">
             {provider === 'local'
-              ? 'Nothing leaves this computer: your questions and the printer setup you entered go only to the local model.'
+              ? remote
+                ? `Your questions and printer setup go only to the server at ${remote}.`
+                : 'Nothing leaves this computer: your questions and the printer setup you entered go only to the local model.'
               : `What leaves the browser: your questions and the printer setup you entered, sent to ${info.label} only. Access codes and printer keys are never sent.`}
           </p>
           <div className="pc-act">

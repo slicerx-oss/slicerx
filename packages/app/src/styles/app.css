@@ -477,7 +477,7 @@ button.reset:hover { color: var(--fg); background: var(--ink-3); }
 .banner.warn { border-color: color-mix(in srgb, var(--orange) 55%, transparent); }
 .banner p { margin: 0; }
 .policy ul { margin: 4px 0 8px; padding-left: 18px; }
-@media (max-width: 700px) { .settings { grid-template-columns: minmax(0, 1fr); } .settings-nav { grid-auto-flow: column; overflow-x: auto; } }
+@media (max-width: 700px) { .settings { grid-template-columns: minmax(0, 1fr); } .settings-nav { grid-auto-flow: column; grid-auto-columns: max-content; overflow-x: auto; } .settings-nav button { white-space: nowrap; flex: none; } }
 
 /* Look and feel: the settings sidebar's side and width, the floating Slice action, the mode selector. */
 .studio[data-mode="prepare"] > .pane { --w-side: var(--w-settings, 288px); }
