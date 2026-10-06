@@ -3,8 +3,10 @@
 # Copyright (C) 2026 The SlicerX contributors
 # Publishes a desktop release from installers already built and signed on their own machines.
 #   apps/desktop/release/publish.sh <version> <installers dir> <notes.md> <commit>
-# Writes downloads.json, SHA256SUMS.txt and whats-changed.json into the folder, puts the "What changed" list
-# after the first paragraph of the notes ({{version}} and {{commit}} filled in; release/notes.md is the standard text), and creates desktop-v<version> as the latest release at <commit>.
+# Writes downloads.json, SHA256SUMS.txt and whats-changed.json into the folder, puts the "What changed" list after
+# the first paragraph of the notes, and creates desktop-v<version> as the latest release at <commit>. The notes get
+# {{version}} and {{commit}} filled in (release/notes.md is the standard text). A changed.md in the folder replaces
+# the generated list when a release has many small lines.
 # The release bot reads whats-changed.json for the fixed-in replies.
 set -eu
 [ $# -eq 4 ] || { echo "usage: publish.sh <version> <installers dir> <notes.md> <commit>" >&2; exit 2; }
@@ -24,7 +26,8 @@ node "$here/make-manifest.mjs" "$dir" --version "$version" \
 (cd "$dir" && $sum SlicerX_* > SHA256SUMS.txt)
 (cd "$repo" && node "$here/whats-changed.mjs" --since "$since" --to "$commit" --json) > "$dir/whats-changed.json"
 body=$(mktemp)
-(cd "$repo" && node "$here/whats-changed.mjs" --since "$since" --to "$commit" 2>/dev/null || true) |
+# a hand-written changed.md in the folder replaces the generated list when a release has many small lines
+if [ -f "$dir/changed.md" ]; then cat "$dir/changed.md"; else (cd "$repo" && node "$here/whats-changed.mjs" --since "$since" --to "$commit" 2>/dev/null || true); fi |
   node -e '
     const fs = require("node:fs")
     const changed = fs.readFileSync(0, "utf8").trim()
