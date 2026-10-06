@@ -364,3 +364,51 @@ fn a_model_too_thin_for_one_layer_is_an_empty_plate() {
     let e = blocked_or_error(common::run_request(&req, &move |_: &str| Ok(m.clone())));
     assert!(e.contains("no printable geometry"), "{e}");
 }
+
+/// The H2D's machine settings from the shipped profile, with its Bambu Lab flags.
+fn h2d() -> Value {
+    let models: Value =
+        serde_json::from_slice(&std::fs::read(format!("{}/packages/profiles/machine.json", root())).unwrap())
+            .unwrap();
+    let mut c = models["models"]["bambu-h2d"]["machine"].clone();
+    c["printer_model"] = json!("Bambu Lab H2D");
+    c["gcode_flavor"] = json!("bambu");
+    c["single_extruder_multi_material"] = json!(true);
+    c
+}
+
+#[test]
+fn a_brim_stays_inside_its_extruders_reach_as_orca_clips_it() {
+    // One filament near the H2D's left edge goes to the right extruder, which reaches x 25 to 350; its 15 mm
+    // brim reached x 15 and the slice was blocked. Orca's Brim.cpp cuts each object's brim to the reach of the
+    // extruder that prints it.
+    let mut c = h2d();
+    c["brim_type"] = json!("outer_only");
+    c["brim_width"] = json!(15);
+    c["skirt_loops"] = json!(0);
+    let m = Arc::new(Mesh::load(&cube_stl([20.0, 20.0, 20.0]), "cube.stl").unwrap());
+    let req = request(c, json!({}), [30.0, 150.0, 0.0]);
+    let run = common::run_request(&req, &move |_: &str| Ok(m.clone())).unwrap();
+    let g = String::from_utf8(run.gcode.clone()).unwrap();
+    let map = run.report.filament_map.as_ref().expect("a filament map");
+    assert_eq!(map.extruders, [2], "the right extruder prints it");
+    let mut brim = false;
+    let mut min_x = f64::MAX;
+    for l in g.lines() {
+        // Bambu Lab files label features "; FEATURE: ", others ";TYPE:".
+        if let Some(t) = l.strip_prefix(";TYPE:").or_else(|| l.strip_prefix("; FEATURE: ")) {
+            brim = t == "Brim";
+        } else if brim
+            && l.starts_with("G1 ")
+            && l.contains(" E")
+            && let Some(x) = l
+                .split_whitespace()
+                .find_map(|w| w.strip_prefix('X'))
+                .and_then(|x| x.parse::<f64>().ok())
+        {
+            min_x = min_x.min(x);
+        }
+    }
+    assert!(min_x < f64::MAX, "a brim is printed");
+    assert!(min_x >= 24.9, "the brim reaches x {min_x}");
+}

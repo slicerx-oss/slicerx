@@ -7151,6 +7151,19 @@ impl SliceSession {
                         .collect()
                 }
             };
+            // The box the extruder printing filament `slot` reaches, when the filament map and the printer say so.
+            let reach_of = |slot: u8| -> Option<Shapes> {
+                let map = self.nozzle_map.as_ref()?;
+                let boxes = crate::nozzles::reach_boxes(cfg, crate::nozzles::extruders(cfg));
+                let b = boxes.get(map.extruder_of(slot)).copied().flatten()?;
+                let p = |x: f64, y: f64| IntPoint::new(mm(x), mm(y));
+                Some(vec![vec![vec![
+                    p(b[0], b[1]),
+                    p(b[2], b[1]),
+                    p(b[2], b[3]),
+                    p(b[0], b[3]),
+                ]]])
+            };
             // The brim area of each island, grouped by the filament that prints it (the one the island
             // is mostly made of).
             let mut by_slot: std::collections::BTreeMap<u8, Vec<Shapes>> = std::collections::BTreeMap::new();
@@ -7190,6 +7203,13 @@ impl SliceSession {
                     &painted_ears,
                 );
                 let areas = clear(areas);
+                // Orca Brim.cpp: where each extruder reaches only part of the bed (H2D, H2C), a brim is cut to
+                // the reach of the extruder that prints it (the ring outside get_extruder_printable_polygons is a
+                // no-brim area there).
+                let areas = match reach_of(slot) {
+                    Some(r) => areas.iter().map(|a| perimeters::intersection(a, &r)).collect(),
+                    None => areas,
+                };
                 if combine {
                     by_slot.entry(slot).or_default().extend(areas);
                 } else {
