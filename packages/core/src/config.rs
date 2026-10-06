@@ -1156,6 +1156,61 @@ impl PrintConfig {
         Ok(())
     }
 
+    /// Orca's `validate_extrusion_width` (Print.cpp): a line width set by hand (not 0, which is automatic)
+    /// must be wider than the layer it prints ("Too small line width"); a bridge line may not be wider
+    /// than the nozzle, and is held to the layer too unless bridges and internal bridges are both thick.
+    /// The layer is the one `preflight::clamp_config` keeps, at most the nozzle. A line far thinner than the
+    /// layer sliced into an unbounded amount of infill (it froze a test machine).
+    fn check_widths_against_layer(&self) -> Result<()> {
+        let nozzle = self.nozzle_diameter;
+        let layer = self.layer_height.min(nozzle);
+        let set_by_hand = |key: &str| {
+            let v = self.raw.get(key)?;
+            (num(v)? != 0.0).then(|| width(v, nozzle)).flatten()
+        };
+        let too_small = |key: &'static str, w: f64| Error::Config {
+            key,
+            reason: format!("a {w:.3} mm line is not wider than the {layer} mm layer"),
+        };
+        for key in [
+            "line_width",
+            "outer_wall_line_width",
+            "inner_wall_line_width",
+            "sparse_infill_line_width",
+            "internal_solid_infill_line_width",
+            "top_surface_line_width",
+            "support_line_width",
+            "skin_infill_line_width",
+            "skeleton_infill_line_width",
+        ] {
+            if let Some(w) = set_by_hand(key) {
+                if !(0.1..=2.0).contains(&w) {
+                    return Err(Error::Config {
+                        key,
+                        reason: format!("{w} is outside 0.1 to 2"),
+                    });
+                }
+                if w <= layer {
+                    return Err(too_small(key, w));
+                }
+            }
+        }
+        if let Some(w) = set_by_hand("bridge_line_width") {
+            if w > nozzle {
+                return Err(Error::Config {
+                    key: "bridge_line_width",
+                    reason: format!("a {w:.3} mm bridge line is wider than the {nozzle} mm nozzle"),
+                });
+            }
+            let thick = crate::firmware::truthy(self, "thick_bridges")
+                && crate::firmware::truthy(self, "thick_internal_bridges");
+            if !thick && w <= layer {
+                return Err(too_small("bridge_line_width", w));
+            }
+        }
+        Ok(())
+    }
+
     /// Rejects values that would make slicing meaningless or unbounded.
     pub fn check(&self) -> Result<()> {
         let range = |key: &'static str, v: f64, lo: f64, hi: f64| {
@@ -1190,6 +1245,7 @@ impl PrintConfig {
                 range(key, v, 0.1, 2.0)?;
             }
         }
+        self.check_widths_against_layer()?;
         // Geometry tolerances and overlaps Orca bounds only from below (internal_bridge_flow 0 to 2 as Orca
         // has it): values far past anything the settings offer overflow the scaled outlines.
         for (key, default, lo, hi) in [
@@ -2156,6 +2212,45 @@ mod tests {
         assert!((pct.line_width - 0.44).abs() < 1e-9);
         let mm = PrintConfig::from_json(br#"{"line_width":"0.45"}"#).unwrap();
         assert!((mm.line_width - 0.45).abs() < 1e-9);
+    }
+
+    #[test]
+    fn a_line_width_set_by_hand_is_wider_than_the_layer_as_orca_requires() {
+        use serde_json::json;
+        let at = |extra: serde_json::Value| {
+            let mut c = json!({ "layer_height": 0.2, "nozzle_diameter": [0.4] });
+            for (k, v) in extra.as_object().unwrap() {
+                c[k] = v.clone();
+            }
+            PrintConfig::from_value(&c)
+        };
+        // Orca's validate_extrusion_width: "Too small line width" at or below the layer height.
+        for key in [
+            "line_width",
+            "outer_wall_line_width",
+            "sparse_infill_line_width",
+            "internal_solid_infill_line_width",
+            "skin_infill_line_width",
+            "skeleton_infill_line_width",
+        ] {
+            for bad in [json!(0.15), json!(0.2), json!("50%"), json!("0.1%")] {
+                let err = at(json!({ key: bad })).unwrap_err();
+                assert!(err.to_string().contains(key), "{key} {bad}: {err}");
+            }
+            // Wider than the layer, or 0 for automatic.
+            for ok in [json!(0.21), json!(0.42), json!("110%"), json!(0)] {
+                assert!(at(json!({ key: ok })).is_ok(), "{key} {ok}");
+            }
+        }
+        // A bridge line may not be wider than the nozzle, and is held to the layer unless bridges are thick.
+        assert!(at(json!({ "bridge_line_width": "0.1%" })).is_err());
+        assert!(at(json!({ "bridge_line_width": 0.5 })).is_err());
+        assert!(at(json!({ "bridge_line_width": "100%" })).is_ok());
+        assert!(
+            at(json!({ "bridge_line_width": 0.2, "thick_bridges": true, "thick_internal_bridges": true }))
+                .is_ok()
+        );
+        assert!(at(json!({ "bridge_line_width": 0.2 })).is_err());
     }
 
     #[test]
