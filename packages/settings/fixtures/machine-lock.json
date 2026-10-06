@@ -38,7 +38,12 @@
   "prusa-xl": "ec36c625",
   "prusa-xl-5-toolhead": "b7d98f71",
   "qidi-q1-pro": "65124621",
+  "qidi-q2": "edde88f3",
+  "qidi-x-max-3": "ed0ddb10",
+  "qidi-x-max-4": "681548d2",
+  "qidi-x-plus-3": "3030d439",
   "qidi-x-plus-4": "2a2b3789",
+  "qidi-x-smart-3": "d447fbf7",
   "snapmaker-a250": "883d6702",
   "snapmaker-a350": "cad45ce7",
   "snapmaker-artisan": "2176ef99",
@@ -94,6 +99,11 @@
   "gcode maker_voron_2.4_250": "ff78e0ca",
   "gcode maker_bambu_h2c": "0a6169a2",
   "gcode maker_anycubic_kobra_x": "d3e32160",
-  "gcodeModels": "e1dec9c8"
+  "gcode maker_qidi_x_max_3": "ddb2d94f",
+  "gcode maker_qidi_x_plus_3": "ddb2d94f",
+  "gcode maker_qidi_x_smart_3": "ddb2d94f",
+  "gcode maker_qidi_q2": "4f06178d",
+  "gcode maker_qidi_x_max_4": "ce325185",
+  "gcodeModels": "8b9df7d5"
  }
 }

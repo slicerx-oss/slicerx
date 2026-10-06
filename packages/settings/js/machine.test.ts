@@ -30,7 +30,7 @@ const table = (): Record<string, string> => ({
 
 describe('machine settings', () => {
   it('covers the models Orca has a profile for and records what was checked', () => {
-    expect(Object.keys(models)).toHaveLength(51)
+    expect(Object.keys(models)).toHaveLength(56)
     expect(MACHINE_CHECKED_COMMIT).toMatch(/^[0-9a-f]{7,}$/)
     for (const [id, e] of Object.entries(models)) {
       expect(e.orca?.checked, id).toBe(MACHINE_CHECKED_COMMIT)

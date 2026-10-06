@@ -1254,6 +1254,119 @@
     "78c5706d0a446b8874c07ea12c9faa76"
    ]
   },
+  "qidi-q2": {
+   "change_filament_gcode": [
+    "46cbf761e47dd2ecb1a9fb782174e73b",
+    "b2d1cd0f85af32c411f0ea31023d8212",
+    "c07d02346498c00b53589ac5ddae617a"
+   ],
+   "layer_change_gcode": [
+    "011b717a7f2a9552d8b871e200804831"
+   ],
+   "machine_end_gcode": [
+    "9a50a3e56e0509220bf7ec2de3743d24",
+    "c2099968f36495f53a69e25fc8d4afce"
+   ],
+   "machine_pause_gcode": [
+    "ca6456daeccf73b1804061c5870895ff",
+    "d3b51b8a86a1937eba493d5845ce65e7"
+   ],
+   "machine_start_gcode": [
+    "2e8bce441e69829041cc6b41363cb6e9",
+    "4b6507cfe8e871b5c14a375aaf8dc8bc",
+    "9412330b0d66935fe5366e873a050d35",
+    "a564b0ac216781cbd9691535e8f7a02a"
+   ],
+   "time_lapse_gcode": [
+    "78c5706d0a446b8874c07ea12c9faa76"
+   ]
+  },
+  "qidi-x-max-3": {
+   "before_layer_change_gcode": [
+    "65005d455eb43b8b7d2468843796d85b"
+   ],
+   "machine_end_gcode": [
+    "427dedf6039054ced02e9617c4045bac",
+    "5959d30aa45b64e78f6b0d0de834dcc5",
+    "6a4836784fe42d84f45c0cc0b8ed2792",
+    "806df51fb331a1ae119e8234aa97017b",
+    "fa90cd20c01dbb1f903c915c2e3bb084"
+   ],
+   "machine_pause_gcode": [
+    "ca6456daeccf73b1804061c5870895ff",
+    "d3b51b8a86a1937eba493d5845ce65e7"
+   ],
+   "machine_start_gcode": [
+    "01a0800f27336bfdfbbb7e1fd50da9f2",
+    "3b6fe92e8a5af42c069bfbbf16557681",
+    "631f547d66caccd96ff50c95c8e2c443",
+    "813c1f1e776a07f5ede9bbd6622d357e",
+    "86d01cb2fbabc04c96b1b36921da741a",
+    "a2f79ebb1d18693ae01daba7c1140be0",
+    "dc8b758e26378c0c2d4e36e67891e50f"
+   ],
+   "time_lapse_gcode": [
+    "78c5706d0a446b8874c07ea12c9faa76"
+   ]
+  },
+  "qidi-x-max-4": {
+   "change_filament_gcode": [
+    "88400f27ffd4fa1df9ee296ebb43de35",
+    "e10f40128f8bc4e71c89001ce3c7eb2a",
+    "e914ae1f5fff999a10b9e35d69fb14c4"
+   ],
+   "layer_change_gcode": [
+    "9e7290789d3c79bfe8017e75dfa74d67",
+    "b1314e5c48c7cdb5089a42391e834fc6"
+   ],
+   "machine_end_gcode": [
+    "704d996b5e0087e0120fddc1296fe71e",
+    "ebc16cac14121a72826b3fc5f54fa587"
+   ],
+   "machine_pause_gcode": [
+    "ca6456daeccf73b1804061c5870895ff",
+    "d3b51b8a86a1937eba493d5845ce65e7"
+   ],
+   "machine_start_gcode": [
+    "0d979dcc36b0e820a1dbbe0c87cdf51f",
+    "295fd5ff4b31609005fba1625b52be5c",
+    "72a1f16b09b99a34a8fce482a134cec0",
+    "d4b05d45e0420cc8370cbce81f5554c8",
+    "e04e9d53a286caff660bbfb49fdd631f",
+    "e1a4465f4505dd9cb430713819a0d9ee"
+   ],
+   "time_lapse_gcode": [
+    "78c5706d0a446b8874c07ea12c9faa76"
+   ]
+  },
+  "qidi-x-plus-3": {
+   "before_layer_change_gcode": [
+    "65005d455eb43b8b7d2468843796d85b"
+   ],
+   "machine_end_gcode": [
+    "427dedf6039054ced02e9617c4045bac",
+    "5959d30aa45b64e78f6b0d0de834dcc5",
+    "6a4836784fe42d84f45c0cc0b8ed2792",
+    "806df51fb331a1ae119e8234aa97017b",
+    "fa90cd20c01dbb1f903c915c2e3bb084"
+   ],
+   "machine_pause_gcode": [
+    "ca6456daeccf73b1804061c5870895ff",
+    "d3b51b8a86a1937eba493d5845ce65e7"
+   ],
+   "machine_start_gcode": [
+    "01a0800f27336bfdfbbb7e1fd50da9f2",
+    "3b6fe92e8a5af42c069bfbbf16557681",
+    "631f547d66caccd96ff50c95c8e2c443",
+    "813c1f1e776a07f5ede9bbd6622d357e",
+    "86d01cb2fbabc04c96b1b36921da741a",
+    "a2f79ebb1d18693ae01daba7c1140be0",
+    "dc8b758e26378c0c2d4e36e67891e50f"
+   ],
+   "time_lapse_gcode": [
+    "78c5706d0a446b8874c07ea12c9faa76"
+   ]
+  },
   "qidi-x-plus-4": {
    "before_layer_change_gcode": [
     "65005d455eb43b8b7d2468843796d85b"
@@ -1283,6 +1396,34 @@
    ],
    "time_lapse_gcode": [
     "52a9a1fbbde5f027b796ddbb09f054e7",
+    "78c5706d0a446b8874c07ea12c9faa76"
+   ]
+  },
+  "qidi-x-smart-3": {
+   "before_layer_change_gcode": [
+    "65005d455eb43b8b7d2468843796d85b"
+   ],
+   "machine_end_gcode": [
+    "427dedf6039054ced02e9617c4045bac",
+    "5959d30aa45b64e78f6b0d0de834dcc5",
+    "6a4836784fe42d84f45c0cc0b8ed2792",
+    "806df51fb331a1ae119e8234aa97017b",
+    "fa90cd20c01dbb1f903c915c2e3bb084"
+   ],
+   "machine_pause_gcode": [
+    "ca6456daeccf73b1804061c5870895ff",
+    "d3b51b8a86a1937eba493d5845ce65e7"
+   ],
+   "machine_start_gcode": [
+    "01a0800f27336bfdfbbb7e1fd50da9f2",
+    "3b6fe92e8a5af42c069bfbbf16557681",
+    "631f547d66caccd96ff50c95c8e2c443",
+    "813c1f1e776a07f5ede9bbd6622d357e",
+    "86d01cb2fbabc04c96b1b36921da741a",
+    "a2f79ebb1d18693ae01daba7c1140be0",
+    "dc8b758e26378c0c2d4e36e67891e50f"
+   ],
+   "time_lapse_gcode": [
     "78c5706d0a446b8874c07ea12c9faa76"
    ]
   },
