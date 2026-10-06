@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // Typed access to the sx-wasm C ABI (packages/core/wasm/src/lib.rs).
+import type { Collision, CollisionFix } from '@slicerx/contracts'
 
 interface SxExports {
   memory: WebAssembly.Memory
@@ -17,6 +18,7 @@ interface SxExports {
   sx_finalize?(): number
   sx_set_thumbnail?(width: number, height: number): number
   sx_set_request?(): number
+  sx_set_collisions?(): number
 }
 
 export const OUT_GCODE = 0
@@ -100,7 +102,8 @@ export class SxWasm {
     data: Uint8Array,
     thumbnail?: { width: number; height: number; rgba: Uint8Array },
     request?: Uint8Array,
-  ): { data: Uint8Array; format: 'gcode' | 'bgcode'; timeS?: number; prepareS?: number; layerTimeS?: number[]; fileName?: string; layerLines?: number[]; progressLines?: number[] } {
+    collide?: Uint8Array,
+  ): { data: Uint8Array; format: 'gcode' | 'bgcode'; timeS?: number; prepareS?: number; layerTimeS?: number[]; fileName?: string; layerLines?: number[]; progressLines?: number[]; collisions?: Collision[]; collisionFixes?: CollisionFix[] } {
     if (!this.x.sx_finalize) return { data, format: 'gcode' }
     if (thumbnail && this.x.sx_set_thumbnail) {
       this.put(thumbnail.rgba)
@@ -110,9 +113,13 @@ export class SxWasm {
       this.put(request)
       if (this.x.sx_set_request() !== 0) throw this.error()
     }
+    if (collide && this.x.sx_set_collisions) {
+      this.put(collide)
+      if (this.x.sx_set_collisions() !== 0) throw this.error()
+    }
     this.put(data)
     if (this.x.sx_finalize() !== 0) throw this.error()
-    const info = this.outJson() as { format?: string; timeS?: number | null; prepareS?: number | null; layerTimeS?: number[]; fileName?: string | null; layerLines?: number[]; progressLines?: number[] }
+    const info = this.outJson() as { format?: string; timeS?: number | null; prepareS?: number | null; layerTimeS?: number[]; fileName?: string | null; layerLines?: number[]; progressLines?: number[]; collisions?: Collision[]; collisionFixes?: CollisionFix[] }
     return {
       data: this.out(OUT_GCODE),
       format: info.format === 'bgcode' ? 'bgcode' : 'gcode',
@@ -122,6 +129,7 @@ export class SxWasm {
       ...(typeof info.fileName === 'string' ? { fileName: info.fileName } : {}),
       ...(Array.isArray(info.layerLines) ? { layerLines: info.layerLines } : {}),
       ...(Array.isArray(info.progressLines) ? { progressLines: info.progressLines } : {}),
+      ...(Array.isArray(info.collisions) && info.collisions.length ? { collisions: info.collisions, collisionFixes: info.collisionFixes ?? [] } : {}),
     }
   }
 

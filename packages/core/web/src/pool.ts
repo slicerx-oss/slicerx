@@ -306,6 +306,10 @@ export async function createWasmSlicer(opts: PoolOptions): Promise<SlicerHost> {
       let finalLayerTimes: number[] = []
       let prepareS = 0
       let fileName: string | undefined
+      let collisions: Pick<SliceResult, 'collisions' | 'collisionFixes'> = {}
+      // By object: every shard's hits go to finalize, which reports them at the finished file's times.
+      const meta = infos.find((i) => i.collide?.meta)?.collide?.meta
+      const collide = meta ? JSON.stringify({ meta, hits: infos.flatMap((i) => i.collide?.hits ?? []) }) : undefined
       const w0 = workers[0]
       if (w0 && gcode.length > 0) {
         try {
@@ -318,7 +322,7 @@ export async function createWasmSlicer(opts: PoolOptions): Promise<SlicerHost> {
           const buf = joined.buffer as ArrayBuffer
           const rgba = thumbnail ? new Uint8Array(thumbnail.rgba instanceof ArrayBuffer ? thumbnail.rgba : thumbnail.rgba.buffer.slice(thumbnail.rgba.byteOffset, thumbnail.rgba.byteOffset + thumbnail.rgba.byteLength)).slice().buffer : undefined
           const r = await w0.call(
-            (call) => ({ type: 'finalize', call, data: buf, request, ...(thumbnail && rgba ? { thumbnail: { width: thumbnail.width, height: thumbnail.height, rgba } } : {}) }),
+            (call) => ({ type: 'finalize', call, data: buf, request, ...(collide ? { collide } : {}), ...(thumbnail && rgba ? { thumbnail: { width: thumbnail.width, height: thumbnail.height, rgba } } : {}) }),
             rgba ? [buf, rgba] : [buf],
           )
           if (r.type === 'finalized') {
@@ -332,6 +336,7 @@ export async function createWasmSlicer(opts: PoolOptions): Promise<SlicerHost> {
             layerLines = r.layerLines ?? []
             progressLines = r.progressLines ?? []
             fileName = r.fileName
+            if (r.collisions?.length) collisions = { collisions: r.collisions, collisionFixes: r.collisionFixes ?? [] }
           }
         } catch {
           // Left as written: the markers are comments, only the progress lines and footer are missing.
@@ -360,6 +365,7 @@ export async function createWasmSlicer(opts: PoolOptions): Promise<SlicerHost> {
         ...(infos[0]?.primeTower ? { primeTower: infos[0].primeTower } : {}),
         ...(infos[0]?.varyLayerCost ? { varyLayerCost: infos[0].varyLayerCost } : {}),
         ...(infos[0]?.filamentMap ? { filamentMap: infos[0].filamentMap } : {}),
+        ...collisions,
       }
     },
     getPreview(sliceId: string): Promise<ArrayBuffer> {

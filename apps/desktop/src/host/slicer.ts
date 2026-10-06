@@ -2,7 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 // SlicerHost over the native `slice` commands. Geometry and results cross as
 // raw bytes; only the small request and info objects are JSON.
-import type { GcodeExport, MeshHandle, SliceRequest, SliceResult, SliceStage, SliceWarning, SlicerHost } from '@slicerx/contracts'
+import type { Collision, CollisionFix, GcodeExport, MeshHandle, SliceRequest, SliceResult, SliceStage, SliceWarning, SlicerHost } from '@slicerx/contracts'
 import { encodeParts, sliceClock } from '@slicerx/slicer'
 import { invoke } from '@tauri-apps/api/core'
 
@@ -51,6 +51,8 @@ interface SliceInfo {
   gcodeFormat?: 'bgcode'
   fileName?: string
   filamentMap?: { extruders: number[]; nozzles: number[]; auto: boolean }
+  collisions?: Collision[]
+  collisionFixes?: CollisionFix[]
 }
 
 function parseSliceInfo(v: unknown): SliceInfo {
@@ -69,6 +71,8 @@ function parseSliceInfo(v: unknown): SliceInfo {
     ...(v['gcodeFormat'] === 'bgcode' ? { gcodeFormat: 'bgcode' as const } : {}),
     ...(typeof v['fileName'] === 'string' && v['fileName'] ? { fileName: v['fileName'] } : {}),
     ...(isRec(v['filamentMap']) ? { filamentMap: { extruders: nums((v['filamentMap'] as Rec)['extruders']), nozzles: nums((v['filamentMap'] as Rec)['nozzles']), auto: (v['filamentMap'] as Rec)['auto'] === true } } : {}),
+    // The engine's own report of collisions and fixes, passed through as it wrote them.
+    ...(Array.isArray(v['collisions']) && v['collisions'].length ? { collisions: v['collisions'] as Collision[], collisionFixes: Array.isArray(v['collisionFixes']) ? (v['collisionFixes'] as CollisionFix[]) : [] } : {}),
   }
 }
 
@@ -118,6 +122,7 @@ export function createTauriSlicer(): SlicerHost {
         ...(info.gcodeFormat ? { gcodeFormat: info.gcodeFormat } : {}),
         ...(info.fileName ? { fileName: info.fileName } : {}),
         ...(info.filamentMap ? { filamentMap: info.filamentMap } : {}),
+        ...(info.collisions ? { collisions: info.collisions, collisionFixes: info.collisionFixes ?? [] } : {}),
       }
     },
     getPreview: (id) => invoke<ArrayBuffer>('get_preview', { id: Number(id) }),

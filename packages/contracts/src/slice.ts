@@ -192,6 +192,8 @@ export interface SliceOptions {
   modelName?: string
   /** Image for the G-code thumbnails: raw RGBA bytes, width by height pixels. The engine scales it to the sizes the profile asks for. */
   thumbnail?: { width: number; height: number; rgba: Uint8Array }
+  /** The printer profile id (`bambu-h2d`): heimdall checks the plate with that printer's head, gantry and tool changer. */
+  printerId?: string
 }
 
 export interface SliceRequest {
@@ -271,6 +273,61 @@ export interface VaryLayerCost {
   extraPurgeG: number
 }
 
+/** What of the machine meets a printed part. */
+export type CollisionKind = 'gantry' | 'hotend' | 'nozzle_travel_through_part' | 'tool_change' | 'dock'
+
+/**
+ * One place where the machine would meet a part already printed (heimdall, print by object). `hit` is the head's own
+ * shape; `close` is only inside the printer profile's clearance radius, with the head itself clearing.
+ */
+export interface Collision {
+  kind: CollisionKind
+  severity: 'hit' | 'close'
+  /** The piece of the machine: the nozzle, the toolhead, the gantry beam or the frame over the bed (the profile's lid height). */
+  part: 'nozzle' | 'toolhead' | 'gantry' | 'lid'
+  title: string
+  detail: string
+  /** The plate object printing, and the one it meets. */
+  objectId: string
+  hitId: string
+  /** When it first happens: plate layer (0-based), the layer's extrusion segment as the preview counts them, print time. */
+  layer: number
+  segment: number
+  timeS: number
+  lastLayer: number
+  /** The nozzle tip, and where the machine meets the part, at that moment, mm. */
+  at: [number, number, number]
+  point: [number, number, number]
+  /** The layer and the spot where it goes deepest. */
+  worstLayer: number
+  worstPoint: [number, number, number]
+  depthMm: number
+  /** The extra spacing that clears a toolhead strike sideways, mm. */
+  pushMm?: number
+  /** During a tool change: the tools (0-based) and how far along the trip, 0 to 1. */
+  change?: [number, number, number]
+}
+
+export type CollisionFixKind = 'reorder' | 'by_layer' | 'spread' | 'raise_lift' | 'move_object'
+
+/** A way to clear some of the collisions, with the print time it adds. */
+export interface CollisionFix {
+  kind: CollisionFixKind
+  title: string
+  detail: string
+  costS: number
+  /** Indices into the collisions it clears. */
+  clears: number[]
+  /** Safe to apply with one click (a new order, print by layer); the others are explained. */
+  oneClick: boolean
+  /** reorder: the plate object ids in the new print order. */
+  order?: string[]
+  /** spread: the extra space between objects; raise_lift: the Z hop, mm. */
+  mm?: number
+  /** move_object: which object. */
+  objectId?: string
+}
+
 export interface SliceResult {
   id: string
   engine: EngineId
@@ -293,6 +350,10 @@ export interface SliceResult {
   varyLayerCost?: VaryLayerCost
   /** Present on a printer with two extruders fed by their own AMS: the nozzle of each filament. */
   filamentMap?: FilamentMapInfo
+  /** Print by object: every place the head, gantry or tool changer would meet a printed part, in print order. */
+  collisions?: Collision[]
+  /** Fixes for the collisions. */
+  collisionFixes?: CollisionFix[]
 }
 
 export type GcodeTarget = { kind: 'blob' } | { kind: 'path'; path: string }
