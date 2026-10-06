@@ -121,6 +121,7 @@ export function ObjectTools() {
           <MenuItem icon="import" data-tip="cad.svgFace" onClick={() => pick('facesvg')}>SVG on a face</MenuItem>
           <MenuItem icon="move" data-tip="cad.push" onClick={() => pick('push')}>Push and pull</MenuItem>
           <MenuItem icon="shapes" data-tip="cad.fillet" onClick={() => pick('fillet')}>Fillet and chamfer</MenuItem>
+          <MenuItem icon="shapes" onClick={() => pick('holefit')}>Hole for a screw or insert</MenuItem>
           {cad ? (
             <>
               <MenuSeparator />

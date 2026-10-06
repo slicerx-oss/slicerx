@@ -28,6 +28,7 @@ import { appName } from '../edition'
 const SketchTool = lazy(() => import('./sketch-panel').then((m) => ({ default: m.SketchTool })))
 const PushTool = lazy(() => import('./push-tool').then((m) => ({ default: m.PushTool })))
 const FilletTool = lazy(() => import('./fillet-tool').then((m) => ({ default: m.FilletTool })))
+const HoleTool = lazy(() => import('./hole-tool').then((m) => ({ default: m.HoleTool })))
 
 // Shape and text on a face
 
@@ -611,5 +612,6 @@ export function CadPanel({ tool }: { tool: CadTool }) {
   if (tool === 'sketch') return <Suspense fallback={null}><SketchTool /></Suspense>
   if (tool === 'push') return <Suspense fallback={null}><PushTool /></Suspense>
   if (tool === 'fillet') return <Suspense fallback={null}><FilletTool /></Suspense>
+  if (tool === 'holefit') return <Suspense fallback={null}><HoleTool /></Suspense>
   return <ShapeTool textOnly={tool === 'facetext'} svgFirst={tool === 'facesvg'} />
 }

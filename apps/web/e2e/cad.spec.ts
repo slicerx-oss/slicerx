@@ -155,6 +155,82 @@ test('a hole cut through the part gets its rim rounded', async ({ page }) => {
   expect(await height(page, id)).toBe(20)
 })
 
+test('the hole tool makes a hole fit an M3 screw', async ({ page }) => {
+  test.slow()
+  await openStudio(page)
+  const id = await freshBox(page)
+  const before = await bounds(page, id)
+  const cx = (before.min[0] + before.max[0]) / 2
+  const cy = (before.min[1] + before.max[1]) / 2
+  await command(page, 'Sketch on the bed or a face')
+  const panel = toolPanel(page)
+  await expect(panel).toContainText('Click the bed or a flat face')
+  await pick(page, await facePick(page, id, [0, 0, 1]))
+  await expect(panel).toContainText('A face of')
+  await panel.getByRole('radiogroup', { name: 'Drawing tool' }).getByRole('radio', { name: 'Circle' }).click()
+  await sketchAt(page, 'hover', [5, 0])
+  await page.locator('body').press('0')
+  const field = page.getByRole('group', { name: 'Exact size' })
+  await field.getByLabel('X mm').fill('0')
+  await field.getByLabel('Y mm').fill('0')
+  await field.getByLabel('Y mm').press('Enter')
+  await sketchAt(page, 'hover', [5, 0])
+  await page.locator('body').press('8')
+  await field.getByLabel('Diameter mm').press('Enter')
+  await panel.getByRole('radiogroup', { name: 'Result' }).getByRole('radio', { name: 'Cut' }).click()
+  await panel.locator('#sk-dist').fill('25')
+  await panel.getByRole('button', { name: 'Extrude' }).click()
+  await expect.poll(() => steps(page), { timeout: 30_000 }).toEqual([{ name: 'Sketch cut 25 mm', state: 'done' }])
+  await command(page, 'Fit a hole for a screw or insert')
+  const tool = toolPanel(page)
+  await expect(tool).toContainText('No hole yet')
+  // A triangle of the hole's wall: upright, within the 8 mm bore.
+  const wall = await page.evaluate(({ id, cx, cy }) => {
+    type E = { id: string; transform: number[]; parts: { positions: Float32Array; indices: Uint32Array }[] }
+    const e = (window as unknown as { __sx: { getState(): { plate: E[] } } }).__sx.getState().plate.find((p) => p.id === id)!
+    const m = e.transform
+    const p = e.parts[0]!.positions
+    const w = (i: number) => [0, 1, 2].map((k) => m[k]! * p[i * 3]! + m[4 + k]! * p[i * 3 + 1]! + m[8 + k]! * p[i * 3 + 2]! + m[12 + k]!)
+    const ix = e.parts[0]!.indices
+    for (let t = 0; t < ix.length / 3; t++) {
+      const [a, b, c] = [w(ix[t * 3]!), w(ix[t * 3 + 1]!), w(ix[t * 3 + 2]!)]
+      const n = [(b[1]! - a[1]!) * (c[2]! - a[2]!) - (b[2]! - a[2]!) * (c[1]! - a[1]!), (b[2]! - a[2]!) * (c[0]! - a[0]!) - (b[0]! - a[0]!) * (c[2]! - a[2]!), (b[0]! - a[0]!) * (c[1]! - a[1]!) - (b[1]! - a[1]!) * (c[0]! - a[0]!)]
+      const mid = [0, 1, 2].map((k) => (a[k]! + b[k]! + c[k]!) / 3)
+      if (Math.abs(n[2]!) < 1e-6 * Math.hypot(n[0]!, n[1]!, n[2]!) && Math.hypot(mid[0]! - cx, mid[1]! - cy) < 4.5) return { objectId: id, partIndex: 0, triangle: t, point: mid as [number, number, number] }
+    }
+    throw new Error('no wall')
+  }, { id, cx, cy })
+  await pick(page, wall)
+  await expect(tool).toContainText('8 mm, through')
+  await tool.getByRole('radiogroup', { name: 'What the hole is for' }).getByRole('radio', { name: 'Screw passes' }).click()
+  await tool.locator('#hole-thread').selectOption('M3')
+  await expect(tool.getByTestId('hole-size-words')).toContainText('an M3 screw passes')
+  await tool.getByRole('button', { name: 'Make hole' }).click()
+  await expect.poll(() => steps(page), { timeout: 30_000 }).toEqual([
+    { name: 'Sketch cut 25 mm', state: 'done' },
+    { name: 'M3 clearance', state: 'done' },
+  ])
+  // The bore is now at least 3.4 mm across: points on the bed about 1.7 mm from its axis.
+  const bore = await page.evaluate(({ id, cx, cy, bottom }) => {
+    type E = { id: string; transform: number[]; parts: { positions: Float32Array }[] }
+    const e = (window as unknown as { __sx: { getState(): { plate: E[] } } }).__sx.getState().plate.find((p) => p.id === id)!
+    const m = e.transform
+    let n = 0
+    for (const part of e.parts) {
+      const p = part.positions
+      for (let i = 0; i < p.length; i += 3) {
+        const x = m[0]! * p[i]! + m[4]! * p[i + 1]! + m[8]! * p[i + 2]! + m[12]!
+        const y = m[1]! * p[i]! + m[5]! * p[i + 1]! + m[9]! * p[i + 2]! + m[13]!
+        const z = m[2]! * p[i]! + m[6]! * p[i + 1]! + m[10]! * p[i + 2]! + m[14]!
+        const r = Math.hypot(x - cx, y - cy)
+        if (Math.abs(z - bottom) < 0.01 && r > 1.69 && r < 1.9) n++
+      }
+    }
+    return n
+  }, { id, cx, cy, bottom: before.min[2] })
+  expect(bore).toBeGreaterThan(8)
+})
+
 test('fillet rounds one edge and adds a history step', async ({ page }) => {
   test.slow()
   await openStudio(page)
