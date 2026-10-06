@@ -1,3 +1,11 @@
+# sx-boostvoronoi
+
+A fork of [boostvoronoi 0.12.1](https://codeberg.org/eadf/boostvoronoi_rs) by eadf, published for the SlicerX slicing engine ([sx-core](https://crates.io/crates/sx-core)). SOURCE.md lists every change. The library name stays `boostvoronoi`, so code that uses the original builds unchanged with `boostvoronoi = { package = "sx-boostvoronoi", version = "=0.12.1" }`. The optional integrations of the original (glam, nalgebra, cgmath, mint, geo, serde) are left out. License: BSL-1.0, the same as the original.
+
+The original README follows.
+
+---
+
 ![Rusty voronoi](img/title.png)
 
 [![crates.io](https://img.shields.io/crates/v/boostvoronoi.svg)](https://crates.io/crates/boostvoronoi)

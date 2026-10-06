@@ -1,12 +1,17 @@
 [package]
-name = "cpp_map"
+name = "sx-cpp-map"
 version = "0.2.0"
 edition = "2024"
 rust-version = "1.87.0"
-description = "A simple C++ std::map emulator (eadf/cpp_map_rs 0.2.0), with node levels from a fixed seed"
+authors = ["eadf <lacklustr@protonmail.com>", "The SlicerX contributors"]
+description = "Fork of cpp_map 0.2.0 (a C++ std::map emulator) for SlicerX: skip list node levels from a fixed seed, so results repeat from run to run"
 license = "MIT OR Apache-2.0"
-repository = "https://codeberg.org/eadf/cpp_map_rs"
-publish = false
+repository = "https://github.com/slicerx-oss/slicerx"
+homepage = "https://github.com/slicerx-oss/slicerx/tree/main/packages/vendor/cpp_map"
+readme = "README.md"
+keywords = ["map", "skiplist", "cursor", "deterministic"]
+categories = ["data-structures"]
+include = ["/src/**", "/README.md", "/SOURCE.md", "/LICENSE-APACHE", "/LICENSE-MIT"]
 
 [features]
 console_debug = []

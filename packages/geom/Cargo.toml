@@ -4,9 +4,16 @@
 name = "sx-geom"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license = "Apache-2.0"
-publish.workspace = true
 description = "Mesh operations for SlicerX: cut, split to fit, repair, orientation, hollowing, emboss, calibration models, resume from layer"
+repository = "https://github.com/slicerx-oss/slicerx"
+homepage = "https://slicerx.app"
+documentation = "https://docs.rs/sx-geom"
+readme = "README.md"
+keywords = ["mesh", "3d-printing", "geometry", "stl", "repair"]
+categories = ["graphics", "mathematics", "wasm"]
+include = ["/src/**", "/fonts/**", "/README.md", "/LICENSE-APACHE", "/NOTICE"]
 
 [lints]
 workspace = true
@@ -16,7 +23,7 @@ name = "sx-geom"
 path = "src/bin/sx-geom.rs"
 
 [dependencies]
-i_overlay = "=9.0.0"
+i_overlay = { package = "sx-i-overlay", path = "../vendor/i_overlay", version = "=9.0.0" }
 libm = "=0.2.16"
 manifold-rust = { version = "=0.15.0", default-features = false }
 miniz_oxide = "=0.9.1"

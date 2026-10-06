@@ -4,7 +4,7 @@ SlicerX ships no code from OrcaSlicer, Bambu Studio, PrusaSlicer or Slic3r. The 
 
 ## Vendored Rust crates (packages/vendor)
 
-Each folder holds the upstream license files and a SOURCE.md with the exact changes.
+Each folder holds the upstream license files and a SOURCE.md with the exact changes. They are published on crates.io as sx-i-overlay, sx-boostvoronoi and sx-cpp-map, so the published sx-core builds with the same code; each keeps its original library name, license and authors.
 
 | Crate | Version | License | Author | What we changed |
 | --- | --- | --- | --- | --- |
