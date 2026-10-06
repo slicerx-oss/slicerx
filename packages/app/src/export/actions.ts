@@ -14,7 +14,7 @@ import { markClean } from '../project/unsaved'
 import { slicePlate } from '../state/actions'
 import { get, set, toast, type PlateEntry, type PlateMeta } from '../state/store'
 import { exportingUserId } from './identity'
-import { writeProjectCompressed, type ProjectInput } from './threemf'
+import type { ProjectInput } from './threemf'
 
 const fileBase = projectBase
 
@@ -64,7 +64,7 @@ function sharedSource(plates: readonly PlateMeta[]): { modelId?: string; creator
 export async function sx3mfBytes(plates: readonly PlateMeta[], extra: Partial<Pick<ProjectInput, 'settings' | 'gcode'>> = {}): Promise<Uint8Array> {
   const s = get()
   const settings = extra.settings ?? orcaSettings(await loadSettings())
-  return writeProjectCompressed({
+  return (await import('./threemf')).writeProjectCompressed({
     plates,
     bed: s.bed,
     settings,
@@ -122,7 +122,7 @@ export async function exportGcode3mf(host: Host): Promise<boolean> {
     return false
   }
   const index = Math.max(0, s.plates.findIndex((p) => p.id === s.activePlate))
-  const bytes = await writeProjectCompressed({ plates: allPlates(get()), bed: s.bed, settings: orcaSettings(await loadSettings()), gcode: { [index]: text } })
+  const bytes = await (await import('./threemf')).writeProjectCompressed({ plates: allPlates(get()), bed: s.bed, settings: orcaSettings(await loadSettings()), gcode: { [index]: text } })
   return saveBytes(host, `${fileBase()}.gcode.3mf`, bytes, 'model/3mf', '.gcode.3mf')
 }
 
@@ -135,7 +135,7 @@ export async function exportGcode3mf(host: Host): Promise<boolean> {
 export async function printGcode3mf(gcode: string): Promise<Uint8Array> {
   const s = get()
   const active = allPlates(s).find((p) => p.id === s.activePlate)
-  return writeProjectCompressed({ plates: active ? [active] : [], bed: s.bed, settings: orcaSettings(await loadSettings()), gcode: { 0: gcode } })
+  return (await import('./threemf')).writeProjectCompressed({ plates: active ? [active] : [], bed: s.bed, settings: orcaSettings(await loadSettings()), gcode: { 0: gcode } })
 }
 
 /** Print output: slices every plate that has objects and writes them all into one .gcode.3mf. */
@@ -164,7 +164,7 @@ export async function exportAllPlates(host: Host): Promise<boolean> {
     return false
   }
   const s = get()
-  return saveBytes(host, `${fileBase()}.gcode.3mf`, await writeProjectCompressed({ plates: allPlates(s), bed: s.bed, settings: orcaSettings(await loadSettings()), gcode }), 'model/3mf', '.gcode.3mf')
+  return saveBytes(host, `${fileBase()}.gcode.3mf`, await (await import('./threemf')).writeProjectCompressed({ plates: allPlates(s), bed: s.bed, settings: orcaSettings(await loadSettings()), gcode }), 'model/3mf', '.gcode.3mf')
 }
 
 /**
