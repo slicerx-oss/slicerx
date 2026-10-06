@@ -79,18 +79,18 @@ function rfcFields(v: string): Record<string, string> {
  * `uri` exactly the request line's URI, and the response over that URI; with `qop` the RFC 7616
  * form with `qop=auth`, `nc` and `cnonce`, without it the RFC 2069 form live555 checks.
  */
-function authorized(o: RtspOptions, method: string, uri: string, header: string | undefined): boolean {
+function authorized(o: RtspOptions, method: string, uri: string, header: string | undefined, qop: boolean): boolean {
   const l = o.login
   if (!l) return true
   if (!header) return false
   if (l.scheme === 'basic') return header === `Basic ${Buffer.from(`${l.user}:${l.pass}`).toString('base64')}`
   if (!header.startsWith('Digest ')) return false
-  const kv = l.qop ? rfcFields(header) : live555Fields(header)
+  const kv = qop ? rfcFields(header) : live555Fields(header)
   if (!kv) return false
   if (kv.username !== l.user || kv.realm !== REALM || kv.nonce !== NONCE || kv.uri !== uri || !kv.response) return false
   const ha1 = md5(`${l.user}:${REALM}:${l.pass}`)
   const ha2 = md5(`${method}:${uri}`)
-  if (!l.qop) return kv.response === md5(`${ha1}:${NONCE}:${ha2}`)
+  if (!qop) return kv.response === md5(`${ha1}:${NONCE}:${ha2}`)
   if (kv.qop !== 'auth' || !kv.nc || !kv.cnonce) return false
   return kv.response === md5(`${ha1}:${NONCE}:${kv.nc}:${kv.cnonce}:auth:${ha2}`)
 }
@@ -126,6 +126,7 @@ export async function startRtsp(o: RtspOptions = {}): Promise<RunningRtsp> {
     sock.on('error', () => undefined)
     if (o.accept && !o.accept()) return void sock.destroy()
     let buf = ''
+    let challengeQop: boolean | undefined
     let seq = 1
     let n = 0
     let timer: NodeJS.Timeout | undefined
@@ -153,7 +154,10 @@ export async function startRtsp(o: RtspOptions = {}): Promise<RunningRtsp> {
           const lens = body ? [`Content-Length: ${Buffer.byteLength(body)}`] : []
           sock.write([`RTSP/1.0 ${status}`, `CSeq: ${h.cseq ?? '0'}`, ...extra, ...lens, '', body].join('\r\n'))
         }
-        const ok = method === 'OPTIONS' || authorized(o, method, uri, h.authorization)
+        // A connection keeps the challenge it was given: a login switched to qop between connections
+        // (the control server) does not change one already open, as on a real camera.
+        challengeQop ??= o.login?.qop === true
+        const ok = method === 'OPTIONS' || authorized(o, method, uri, h.authorization, challengeQop)
         if (ok && method === 'PLAY' && (o.dropPlay?.() || (lastEnded > 0 && Date.now() - lastEnded < (o.dropWithinMs?.() ?? 0)))) {
           note('PLAY dropped')
           sock.destroy()
@@ -166,7 +170,7 @@ export async function startRtsp(o: RtspOptions = {}): Promise<RunningRtsp> {
         }
         note(`${method} ${ok ? 'ok' : 'denied'}`)
         if (!ok) {
-          const ch = o.login?.scheme === 'basic' ? `Basic realm="${REALM}"` : `Digest realm="${REALM}", nonce="${NONCE}"${o.login?.qop ? ', qop="auth"' : ''}`
+          const ch = o.login?.scheme === 'basic' ? `Basic realm="${REALM}"` : `Digest realm="${REALM}", nonce="${NONCE}"${challengeQop ? ', qop="auth"' : ''}`
           reply('401 Unauthorized', [`WWW-Authenticate: ${ch}`])
           continue
         }
