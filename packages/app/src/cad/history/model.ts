@@ -19,6 +19,8 @@ export interface EdgeRef {
   moved?: boolean
   /** A round edge: the center of its circle; `a` is a corner of it and `b` the same. */
   center?: Vec3
+  /** The keys of the two faces either side, the one `face` faces first (docs/cad-history.md, "Face keys"). */
+  keys?: [number, number]
 }
 
 /** A mesh in the engine's flat form, with the part's name and filament slot. */
@@ -106,7 +108,7 @@ export interface ReplayResult {
   moved: Record<string, MovedFace>
   /** The face keys steps found their faces by on this replay, by step id, for steps to keep (a step saved
    * without them, from a version 1 file, gets them this way). */
-  found?: Record<string, { faceKey?: number; openKeys?: number[] }>
+  found?: Record<string, { faceKey?: number; openKeys?: number[]; edgeKeys?: ([number, number] | null)[] }>
 }
 
 export const HISTORY_VERSION = 1

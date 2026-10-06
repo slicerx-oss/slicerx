@@ -92,6 +92,27 @@ describe('face keys in the history', () => {
   })
 })
 
+describe('edge keys in the history', () => {
+  const slot = (x: number) => step('s1', { op: 'shape.extrude', frame: frame(10), shape: { type: 'rectangle', widthMm: 6, heightMm: 40 }, placement: { center: [x, 0], rotationDeg: 0 }, spec: { distanceMm: 5, operation: 'cut' } })
+  // The edge where the top meets the slot's near wall, as a version 1 step keeps it: by place only.
+  const bevel = (keys?: [number, number]) => step('s2', { op: 'edge.chamfer', edges: [{ a: [97, 85, 10], b: [97, 115, 10], face: [0, 0, 1], ...(keys ? { keys } : {}) }], distanceMm: 1 })
+
+  it('get their faces keys on the first replay, and then follow the edge when an earlier step moves it', async () => {
+    clearReplayCache()
+    const first = await replayHistory(call, { history: history(slot(0), bevel()) })
+    expect(first.status.map((s) => s.state)).toEqual(['done', 'done'])
+    const keys = first.found?.['s2']?.edgeKeys?.[0]
+    expect(keys).toHaveLength(2)
+    // The slot moved 5 mm along x: the chamfer finds its edge by those keys; by place it is gone.
+    clearReplayCache()
+    const moved = await replayHistory(call, { history: history(slot(5), bevel(keys as [number, number])) })
+    expect(moved.status.map((s) => s.state)).toEqual(['done', 'done'])
+    clearReplayCache()
+    const byPlace = await replayHistory(call, { history: history(slot(5), bevel()) })
+    expect(byPlace.status[1]).toMatchObject({ state: 'broken' })
+  })
+})
+
 describe('the history file, version 2', () => {
   const files = (h: History) => new Map(historyFiles([{ id: 'o1', history: h }], new Map([['o1', 1]])).map((f) => [f.name, typeof f.data === 'string' ? new TextEncoder().encode(f.data) : f.data]))
 
@@ -108,6 +129,32 @@ describe('the history file, version 2', () => {
     v3.set('Metadata/slicerx_history.json', new TextEncoder().encode(JSON.stringify({ ...j, version: 3 })))
     expect(parseHistories(v3, new Set(['1'])).size).toBe(0)
     expect(historyNewer(v3)).toMatch(/saved by a newer SlicerX.*open without their history/)
+  })
+})
+
+describe('a version 1 file saved again', () => {
+  it('writes version 2 with every step, a step its place no longer finds kept as broken', async () => {
+    // A version 1 file: the boss was moved, and the push still points at where the boss top was.
+    const v1h = history(boss(12), pull())
+    const one = historyFiles([{ id: 'o1', history: v1h }], new Map([['o1', 1]])).map((f) => [f.name, typeof f.data === 'string' ? new TextEncoder().encode(f.data) : f.data] as const)
+    const files = new Map(one)
+    const j = JSON.parse(new TextDecoder().decode(files.get('Metadata/slicerx_history.json')!))
+    files.set('Metadata/slicerx_history.json', new TextEncoder().encode(JSON.stringify({ ...j, version: 1 })))
+    const opened = parseHistories(files, new Set(['1'])).get('1')!
+    expect(opened.steps).toHaveLength(2)
+    // The first replay finds the boss but not the push, which stays, marked broken, with its numbers as saved.
+    clearReplayCache()
+    const r = await replayHistory(call, { history: opened })
+    expect(r.status.map((s) => s.state)).toEqual(['done', 'broken'])
+    const { withStatus } = await import('../src/cad/history/ops')
+    const after: History = { ...opened, steps: withStatus(opened.steps, r.status, r.found) }
+    const saved = new Map(historyFiles([{ id: 'o1', history: after }], new Map([['o1', 1]])).map((f) => [f.name, typeof f.data === 'string' ? new TextEncoder().encode(f.data) : f.data] as const))
+    expect(JSON.parse(new TextDecoder().decode(saved.get('Metadata/slicerx_history.json')!)).version).toBe(2)
+    const back = parseHistories(saved, new Set(['1'])).get('1')!
+    expect(back.steps.map((s) => s.id)).toEqual(['s1', 's2'])
+    expect(back.steps[1]!.params).toEqual(pull().params)
+    expect(back.steps[1]!.broken).toMatch(/gone/)
+    expect(back.base[0]!.positions.length).toBe(opened.base[0]!.positions.length)
   })
 })
 

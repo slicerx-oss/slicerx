@@ -358,6 +358,8 @@ export interface EdgeRef {
   moved?: boolean
   /** A round edge (a hole's rim, a boss's root): the center of the circle; `a` is a corner of it and `b` the same. */
   center?: Vec3
+  /** The keys of the two faces either side, the one `face` faces first: the edge is found between them first. */
+  keys?: [number, number]
 }
 
 export interface EdgeFace {

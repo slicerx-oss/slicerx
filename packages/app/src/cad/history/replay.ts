@@ -5,7 +5,7 @@
 // provider. Steps run in order; the first one that fails is marked broken with the engine's sentence,
 // every later one is skipped, and the parts are the result just before it. The parts after each step
 // are kept from the last replays, so an edit of step k starts at k.
-import type { MovedFace } from '../../geom/cad'
+import type { EdgeRef, MovedFace } from '../../geom/cad'
 import { bakeMesh, findByKey, findTriangle, followed, followsOf, hasFaceOn, invert, keyOfTriangle, type History, type HistoryMesh, type ReplayResult, type Step, type StepStatus } from './model'
 import { stepSalt } from './salt'
 
@@ -118,7 +118,7 @@ function keptEdges<E>(s: Step, edges: readonly E[], gone: ReadonlySet<string>): 
 
 /** What a step found its faces by on this replay, and what it noticed. */
 interface Found {
-  keys: Record<string, { faceKey?: number; openKeys?: number[] }>
+  keys: Record<string, { faceKey?: number; openKeys?: number[]; edgeKeys?: ([number, number] | null)[] }>
   notes: Record<string, string>
 }
 
@@ -233,7 +233,20 @@ async function runStep(engine: EngineCall, s: Step, parts: Flat[], fonts: Record
         const { op: _op, ...rest } = p
         const edges = keptEdges(s, p.edges, gone)
         if (!edges.length) break
-        const r = (await call(p.op, { mesh: item(part), ...rest, edges })) as { mesh: Flat }
+        const r = (await call(p.op, { mesh: item(part), ...rest, edges })) as { mesh: Flat; refs?: EdgeRef[]; notes?: string[] }
+        // The keys each edge was found by, in the step's own order, for the step to keep.
+        const keys: ([number, number] | null)[] = p.edges.map((e) => e.keys ?? null)
+        let changed = false
+        edges.forEach((e, j) => {
+          const k = r.refs?.[j]?.keys
+          const at = p.edges.indexOf(e)
+          if (k && at >= 0 && (keys[at]?.[0] !== k[0] || keys[at]?.[1] !== k[1])) {
+            keys[at] = k
+            changed = true
+          }
+        })
+        if (changed) found.keys[s.id] = { edgeKeys: keys }
+        if (r.notes?.length) found.notes[s.id] = r.notes.map((n) => n.charAt(0).toUpperCase() + n.slice(1)).join('. ') + '.'
         out[i] = next(part, r.mesh)
         break
       }
