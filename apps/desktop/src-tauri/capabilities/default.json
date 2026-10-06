@@ -7,6 +7,6 @@
     "core:default",
     "core:window:allow-set-fullscreen",
     "core:window:allow-set-title",
-    { "identifier": "opener:allow-open-url", "allow": [{ "url": "https://slicerx.app/*" }, { "url": "https://discord.com/channels/1555048815881355324/*" }, { "url": "https://ollama.com/download" }] }
+    { "identifier": "opener:allow-open-url", "allow": [{ "url": "https://slicerx.app/*" }, { "url": "https://discord.com/channels/1555048815881355324/*" }, { "url": "https://ollama.com/download" }, { "url": "https://wiki.bambulab.com/en/software/bambu-connect" }] }
   ]
 }

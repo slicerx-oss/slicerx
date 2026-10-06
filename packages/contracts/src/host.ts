@@ -67,6 +67,20 @@ export interface BuildInfo {
 }
 
 /**
+ * Bambu Connect, Bambu Lab's own app for printing from other software to a printer with Developer Mode off. The
+ * hand-off is the URL scheme on Bambu Lab's wiki (https://wiki.bambulab.com/en/software/bambu-connect, "Launching
+ * Bambu Connect from Third-Party Software"): `bambu-connect://import-file?path=...&name=...&version=1.0.0`, with the
+ * absolute path of a .gcode.3mf. Desktop only, since a web page has no file path to give.
+ */
+export interface BambuConnectHost {
+  /**
+   * Writes `data` where Bambu Connect can read it and opens it there under `title`. `opened` when Bambu Connect took
+   * the link, `missing` when it is not installed, `unsupported` where Bambu Lab makes no Bambu Connect (Linux).
+   */
+  open(fileName: string, data: ArrayBuffer, title: string): Promise<'opened' | 'missing' | 'unsupported'>
+}
+
+/**
  * The base members are always present. Optional members exist only when the
  * matching feature is compiled in; code checks for them instead of assuming
  * them. Editions extend this interface with their own members.
@@ -86,6 +100,8 @@ export interface Host {
   llm?: LlmTransport
   /** Features `pilot` and `connect`: every side effect needs an approval token. */
   approvals?: ApprovalHost
+  /** Feature `connect`, desktop only: prints for a Bambu Lab printer with Developer Mode off. */
+  bambuConnect?: BambuConnectHost
 }
 
 /** Base workspaces are 'prepare', 'preview' and 'library'; features add their own, such as 'printers' and 'pilot'. */

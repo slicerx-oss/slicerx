@@ -248,3 +248,33 @@ test('A1 mini with the external spool only: filament 1 goes to the external spoo
   // The external spool is tray 254 (vt_tray).
   expect(log).toMatch(/project_file[^\n]*ams_mapping\\":\[254\]|ams_mapping\\":\[-1\]|use_ams\\":false/)
 })
+
+test('A1 with Developer Mode off: status keeps coming, and Print saves the file for Bambu Connect', async ({ page }) => {
+  test.slow()
+  await idleAgain('a1')
+  await ctl('/bambu', { model: 'N2S', ams: 'lite', external: { type: 'PLA', color: '#FFFFFF' }, developerMode: false })
+  try {
+    // The printer still connects and reports; it is monitor-only, never a failed connection.
+    await expect.poll(async () => ((await admin!.status('a1')) as { state: string; live?: { monitorOnly?: boolean } }).live?.monitorOnly, { timeout: 20_000 }).toBe(true)
+    expect((await admin!.status('a1')).state).toBe('idle')
+    const sheet = await sheetFor(page, 'A1')
+    await expect(sheet).toContainText('Developer Mode is off on A1')
+    await expect(sheet.getByRole('switch', { name: 'Bed leveling' })).toHaveCount(0)
+    await expect(sheet.getByRole('button', { name: /start/i })).toHaveCount(0)
+    const logs = async () => {
+      const st = await ctl('/state')
+      return [...(st['log'] as string[]), ...((st['bambu'] as { log: string[] }).log)].filter((l) => /project_file|refused|upload|STOR/i.test(l))
+    }
+    const before = await logs()
+    // The browser has no file path to hand to Bambu Connect, so it saves the file; no picker in a headless run.
+    await page.evaluate(() => delete (window as unknown as { showSaveFilePicker?: unknown }).showSaveFilePicker)
+    const download = page.waitForEvent('download')
+    await sheet.getByRole('button', { name: 'Save file' }).click()
+    expect((await download).suggestedFilename()).toMatch(/\.gcode\.3mf$/)
+    await expect(page.getByText(/Open it in Bambu Connect and press Print there/)).toBeVisible()
+    // Nothing went to the printer: no upload, no start, nothing it had to refuse.
+    expect(await logs()).toEqual(before)
+  } finally {
+    await ctl('/bambu', { developerMode: null })
+  }
+})

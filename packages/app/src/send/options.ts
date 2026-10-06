@@ -157,6 +157,11 @@ export interface SendChoice {
    * which the printer feeds as filament 1 from slot 1 and so on. Only ever set by that button.
    */
   plainGcode?: true
+  /**
+   * The print goes through Bambu Connect (send/bambu-connect.ts): the .gcode.3mf opens there and the person presses
+   * Print in it. Set on a Bambu Lab printer with Developer Mode off, or by the sheet's button after a refusal.
+   */
+  bambuConnect?: true
 }
 
 const ILLEGAL = /[<>:"/\\|?*\u0000-\u001f]/
