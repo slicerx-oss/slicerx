@@ -24,11 +24,12 @@ fn is_loopback(host: &str) -> bool {
     matches!(host, "127.0.0.1" | "localhost")
 }
 
-/// True for a home-network host: a private IPv4 address (10/8, 172.16/12, 192.168/16) or an
-/// mDNS `.local` name. Public addresses and other names never pass.
+/// True for a home-network host: a private IPv4 address (10/8, 172.16/12, 192.168/16), a
+/// shared-address one (100.64/10, which Tailscale uses) or an mDNS `.local` name. Public addresses and other names never pass.
 fn is_home_network(host: &str) -> bool {
     if let Ok(ip) = host.parse::<std::net::Ipv4Addr>() {
-        return ip.is_private();
+        let [a, b, ..] = ip.octets();
+        return ip.is_private() || (a == 100 && (64..=127).contains(&b));
     }
     host.len() > ".local".len()
         && host
@@ -152,6 +153,8 @@ mod tests {
             (Provider::OpenAiCompatible, "http://192.168.1.20:11434/v1", true),
             (Provider::OpenAiCompatible, "http://10.0.0.5:8080/v1", true),
             (Provider::OpenAiCompatible, "http://172.16.4.2:8080/v1", true),
+            (Provider::OpenAiCompatible, "http://100.101.102.103:8080/v1", true),
+            (Provider::OpenAiCompatible, "http://100.128.0.1:8080/v1", false),
             (Provider::OpenAiCompatible, "http://172.32.0.1:8080/v1", false),
             (Provider::OpenAiCompatible, "http://8.8.8.8:8080/v1", false),
             (Provider::OpenAiCompatible, "http://169.254.1.1/v1", false),

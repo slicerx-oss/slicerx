@@ -24,7 +24,8 @@ export function localAllowed(url: string): boolean {
     const p = h.split('.').map(Number)
     if (p.length !== 4 || p.some((x) => !Number.isInteger(x) || x < 0 || x > 255)) return false
     const [a = 0, b = 0] = p
-    return a === 127 || a === 10 || (a === 192 && b === 168) || (a === 172 && b >= 16 && b <= 31)
+    // 100.64/10 is the shared range Tailscale gives its devices
+    return a === 127 || a === 10 || (a === 192 && b === 168) || (a === 172 && b >= 16 && b <= 31) || (a === 100 && b >= 64 && b <= 127)
   } catch {
     return false
   }
