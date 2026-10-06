@@ -1246,6 +1246,28 @@ impl PrintConfig {
             }
         }
         self.check_widths_against_layer()?;
+        // Retraction lengths, every entry of the per-extruder and per-filament lists ("nil" is a filament that
+        // keeps the printer's). Orca sets no limit; the settings offer at most 10 mm and profiles use up to
+        // 6.5 mm (18 mm at a tool change), so these only turn away what no extruder can mean.
+        for (key, hi) in [
+            ("retraction_length", 50.0),
+            ("filament_retraction_length", 50.0),
+            ("retract_length_toolchange", 200.0),
+        ] {
+            let entries: Vec<&Value> = match self.raw.get(key) {
+                Some(Value::Array(a)) => a.iter().collect(),
+                Some(v) => vec![v],
+                None => Vec::new(),
+            };
+            for v in entries {
+                if v.as_str().is_some_and(|s| s.trim() == "nil") {
+                    continue;
+                }
+                if let Some(n) = num(v) {
+                    range(key, n, 0.0, hi)?;
+                }
+            }
+        }
         // Geometry tolerances and overlaps Orca bounds only from below (internal_bridge_flow 0 to 2 as Orca
         // has it): values far past anything the settings offer overflow the scaled outlines.
         for (key, default, lo, hi) in [
@@ -2212,6 +2234,37 @@ mod tests {
         assert!((pct.line_width - 0.44).abs() < 1e-9);
         let mm = PrintConfig::from_json(br#"{"line_width":"0.45"}"#).unwrap();
         assert!((mm.line_width - 0.45).abs() < 1e-9);
+    }
+
+    #[test]
+    fn retraction_lengths_stay_within_what_an_extruder_can_mean() {
+        use serde_json::json;
+        // 1e9 mm went into the G-code as G1 E-1000000000: the extruder would run backwards for hours.
+        for (key, bad, ok) in [
+            (
+                "retraction_length",
+                [json!(51), json!(1e9), json!(-1)],
+                [json!(0), json!(0.8), json!([6.5, 50])],
+            ),
+            (
+                "filament_retraction_length",
+                [json!([2, 60]), json!(["inf"]), json!([-0.5])],
+                [json!(["nil", 3]), json!([0.8]), json!([50])],
+            ),
+            (
+                "retract_length_toolchange",
+                [json!(201), json!([18, 1e9]), json!(-1)],
+                [json!(0), json!([18]), json!(200)],
+            ),
+        ] {
+            for v in bad {
+                let err = PrintConfig::from_value(&json!({ key: v })).unwrap_err();
+                assert!(err.to_string().contains(key), "{key} {v}: {err}");
+            }
+            for v in ok {
+                assert!(PrintConfig::from_value(&json!({ key: v })).is_ok(), "{key} {v}");
+            }
+        }
     }
 
     #[test]
