@@ -5416,6 +5416,7 @@ version = "0.1.0"
 dependencies = [
  "rayon",
  "serde_json",
+ "sha2 0.11.0",
  "sx-core",
 ]
 

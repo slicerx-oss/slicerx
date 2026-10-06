@@ -43,6 +43,24 @@ describe('stock G-code', () => {
   })
 })
 
+describe('the fingerprint the native CLI matches', () => {
+  // The same inputs and outputs as the Rust port (packages/core/cli/src/stock.rs): change both together.
+  const VECTORS: [string, string, string][] = [
+    ['', '', 'e3b0c44298fc1c149afbf4c8996fb924'],
+    ['G28', 'G28', 'f3bfcb90d1ca0282a1cb6d92840f62cf'],
+    ['G28\r\nM104 S200  \r\n\r\n\tG1 X1\t \n', 'G28\nM104 S200\n\tG1 X1', '3e43937951c5a1b09ab0214a13a44b9d'],
+    ['line one\rline two\n\n\n', 'line one\nline two', 'b6858b03a6cae635deeaeab09a74e598'],
+    [' \t \n  ; comment  \nM500 ; save cali data\t\n', '  ; comment\nM500 ; save cali data', 'f3e2ff0f2fbfca52cbf2e1caca795e32'],
+    ['Tést ✓\nG1 X1 ; °C\n', 'Tést ✓\nG1 X1 ; °C', '845aa7a292e4642d66d4c46f61cb47ab'],
+  ]
+  it('normalizes and fingerprints these inputs as the Rust port does', () => {
+    for (const [text, norm, fp] of VECTORS) {
+      expect(normalizeGcode(text)).toBe(norm)
+      expect(gcodeFingerprint(text)).toBe(fp)
+    }
+  })
+})
+
 describe('a project with its own G-code', () => {
   it('keeps stock text without asking', () => {
     const r = reviewProjectGcode({ project: { machine_start_gcode: start, machine_end_gcode: end }, profile: a1, model: 'bambu-a1' })
