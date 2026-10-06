@@ -3,6 +3,7 @@
 // What the modeling tools do to the plate, on the typed geometry calls in geom/cad.ts: extrude a shape
 // from a face or the bed, copy an object in a line, a grid or a circle, and describe a measurement.
 // Each change lands in one store update, so undo takes it back in one step. No React in here.
+import type { Pattern } from './pattern'
 import type { MeshHandle, MeshPart } from '@slicerx/contracts'
 import { arrayCopies, arrayMerged, extrudeShape, revolveSketch, type ArraySpec, type ExtrudeReport, type ExtrudeSpec, type FaceFrame, type Feature, type FreeShape, type Measurement, type MeshResult, type Placement, type Polygon, type RevolveRequest, type Shape, type Vec2, type Vec3 } from '../geom/cad'
 import { fromGeom, toGeom, type GeomMesh } from '../geom/client'
@@ -60,6 +61,8 @@ export interface ExtrudeInput {
   fontName?: string
   /** Name of a new body. */
   name: string
+  /** Copies of the shape on its face, in the same step. */
+  pattern?: Pattern
 }
 
 /** Extrudes the shape: a join or a cut replaces the picked part, a new body becomes an object where it was drawn. One sentence on what happened. */
@@ -73,6 +76,7 @@ export async function applyExtrude(host: Loader, input: ExtrudeInput): Promise<{
     spec: input.spec,
     ...(target ? { target: { mesh: toGeom(target.part), transform: target.entry.transform } } : {}),
     ...(input.fontBase64 ? { fontBase64: input.fontBase64 } : {}),
+    ...(input.pattern ? { pattern: input.pattern } : {}),
   })
   return land(host, r, operation, input.target, input.name, extrudeParams(input))
 }
@@ -80,7 +84,7 @@ export async function applyExtrude(host: Loader, input: ExtrudeInput): Promise<{
 /** The history step an extrude records; the font is remembered for this session by name. */
 export function extrudeParams(input: ExtrudeInput): StepParams {
   if (input.fontBase64 && input.fontName) rememberFont(input.fontName, input.fontBase64)
-  return { op: 'shape.extrude', frame: input.frame, shape: input.shape, placement: input.placement, spec: input.spec, ...(input.fontBase64 && input.fontName ? { font: input.fontName } : {}), name: input.name }
+  return { op: 'shape.extrude', frame: input.frame, shape: input.shape, placement: input.placement, spec: input.spec, ...(input.fontBase64 && input.fontName ? { font: input.fontName } : {}), name: input.name, ...(input.pattern ? { pattern: input.pattern } : {}) }
 }
 
 /** The history step a revolve records. */

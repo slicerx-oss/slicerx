@@ -8,6 +8,8 @@
 // Speed: the view reports the cursor at most once a frame (viewport cadtools.ts). The hover path
 // here snaps, moves the rubber band in its fixed buffer and writes one text node; it renders no
 // React. React renders on clicks, drags of points and edits only.
+import { patternFromFields, patternProblem, type Pattern, type PatternFields } from './pattern'
+import { fieldsOf, PatternSection } from './pattern-fields'
 import type { PickEvent, SketchEvent, SketchScene, SketchTone } from '@slicerx/viewport'
 import { Button, Field, Icon, Seg, Select, Switch } from '@slicerx/ui'
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
@@ -81,6 +83,7 @@ interface SketchInit {
   fields: { distance: string; extent: 'oneSide' | 'symmetric' | 'twoSides'; distance2: string; taper: string; flip: boolean; angle: string }
   operation: 'new' | 'join' | 'cut'
   axis: { e: number; seg: number } | null
+  pattern?: Pattern
 }
 
 function sketchEdit(bed: { widthMm: number; depthMm: number }): { plane: Plane; init: SketchInit } | { note: string } | null {
@@ -115,6 +118,7 @@ function sketchEdit(bed: { widthMm: number; depthMm: number }): { plane: Plane; 
       fields: { distance: String(spec?.distanceMm ?? 5), extent: spec?.extent ?? 'oneSide', distance2: String(spec?.distance2Mm ?? 5), taper: String(spec?.taperDeg ?? 0), flip: Boolean(spec?.flip), angle: String(p.op === 'sketch.revolve' ? (p.angleDeg ?? 360) : 360) },
       operation,
       axis: p.op === 'sketch.revolve' ? axisSegment(sketch, p.axis) : null,
+      ...(p.op === 'shape.extrude' && p.pattern ? { pattern: p.pattern } : {}),
     },
   }
 }
@@ -173,6 +177,7 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
   const [taper, setTaper] = useState(init?.fields.taper ?? '0')
   const [flip, setFlip] = useState(init?.fields.flip ?? false)
   const [angle, setAngle] = useState(init?.fields.angle ?? '360')
+  const [patternFields, setPatternFields] = useState<PatternFields>(fieldsOf(init?.pattern))
   const [operation, setOperation] = useState<'new' | 'join' | 'cut'>(init?.operation ?? (plane.target ? 'join' : 'new'))
   const [offset, setOffset] = useState('1')
   const [corner, setCorner] = useState('2')
@@ -402,8 +407,11 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
         if (extentKind === 'twoSides' && !(d2 > 0)) throw new Error('The second distance must be more than 0 mm.')
         const tp = num(taper)
         if (!Number.isFinite(tp) || Math.abs(tp) > 45) throw new Error('The draft is between -45 and 45 degrees.')
+        const pattern = patternFromFields(patternFields)
+        const bad = pattern ? patternProblem(pattern) : null
+        if (bad) throw new Error(bad)
         bindNext(distance)
-        const input: ExtrudeInput = { frame: plane.frame, shape: { type: 'sketch', loops }, placement: {}, spec: { distanceMm: d, extent: extentKind, ...(extentKind === 'twoSides' ? { distance2Mm: d2 } : {}), ...(flip ? { flip } : {}), ...(tp ? { taperDeg: tp } : {}), operation: op }, ...target, name: 'Sketch body' }
+        const input: ExtrudeInput = { frame: plane.frame, shape: { type: 'sketch', loops }, placement: {}, spec: { distanceMm: d, extent: extentKind, ...(extentKind === 'twoSides' ? { distance2Mm: d2 } : {}), ...(flip ? { flip } : {}), ...(tp ? { taperDeg: tp } : {}), operation: op }, ...target, name: 'Sketch body', ...(pattern ? { pattern } : {}) }
         r = init ? await saveSketch(extrudeParams(input)) : await applyExtrude(host.slicer, input)
       } else {
         if (!axis) throw new Error('Pick a straight line of the sketch as the axis.')
@@ -487,6 +495,7 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
             <label htmlFor="sk-flip">Extrude into the face</label>
             <Switch id="sk-flip" checked={intoFace} onChange={setIntoFace} label="Extrude into the face" />
           </div>
+          <PatternSection value={patternFields} onChange={setPatternFields} />
         </>
       ) : (
         <>

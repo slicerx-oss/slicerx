@@ -288,6 +288,34 @@ test('the shell tool hollows a box with its top left open, from the full engine'
   expect(await pointsAround(page, id, [cx, cy], before.min[2] + 2, [0, 0.7 * (before.max[0] - before.min[0])])).toBeGreaterThan(3)
 })
 
+test('a hole repeated round a circle is one step with every copy cut', async ({ page }) => {
+  test.slow()
+  await openStudio(page)
+  const id = await freshBox(page)
+  const before = await bounds(page, id)
+  const cx = (before.min[0] + before.max[0]) / 2
+  const cy = (before.min[1] + before.max[1]) / 2
+  await command(page, 'Shape on a face: rectangle, circle, slot or polygon')
+  const tool = toolPanel(page)
+  await expect(tool).toContainText('No face yet')
+  await pick(page, await facePick(page, id, [0, 0, 1]))
+  await expect(tool).toContainText('A face of')
+  await tool.locator('#cad-shape').selectOption('circle')
+  await tool.locator('#cad-dia').fill('3')
+  const center = tool.getByRole('group', { name: 'Shape center' })
+  await center.getByRole('textbox', { name: /X/ }).fill('5')
+  await center.getByRole('textbox', { name: /Y/ }).fill('0')
+  await tool.getByRole('radiogroup', { name: 'Result' }).getByRole('radio', { name: 'Cut' }).click()
+  await tool.locator('#cad-dist').fill(String(before.max[2] - before.min[2]))
+  await tool.getByRole('radiogroup', { name: 'Pattern' }).getByRole('radio', { name: 'Circle' }).click()
+  await tool.locator('#pat-count').fill('4')
+  await tool.getByRole('button', { name: 'Cut' }).click()
+  await expect.poll(() => steps(page), { timeout: 60_000 }).toEqual([{ name: 'Hole 3 mm, 4 copies', state: 'done' }])
+  // Four round holes 5 mm from the middle reach the bed: their rims there, 3.5 to 6.5 mm out (one hole alone has
+  // about 10 such points).
+  expect(await pointsAround(page, id, [cx, cy], before.min[2], [3.4, 6.6])).toBeGreaterThan(30)
+})
+
 test('fillet rounds one edge and adds a history step', async ({ page }) => {
   test.slow()
   await openStudio(page)

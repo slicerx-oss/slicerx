@@ -9,7 +9,7 @@ SlicerX is a slicer, and its modeling tools cover what people need to make or fi
 | Booleans | Union, difference and intersection of any closed meshes | `boolean.rs` on manifold-rust |
 | Arrays | Linear, grid and circular copies as plate instances, or merged into one mesh | `array.rs`, `xform.rs` |
 | Measure | Pick a point, edge, hole rim, face, cylinder or surface; read distance, angle, radius, diameter, length or area | `measure.rs` |
-| Face shape tool | Pick the bed or a flat face, place a rectangle, circle, slot, polygon or text with typed dimensions, extrude it as a new body, joined, or cut | `face.rs` |
+| Face shape tool | Pick the bed or a flat face, place a rectangle, circle, slot, polygon or text with typed dimensions, extrude it as a new body, joined, or cut; repeat it in a line, a grid or round a circle as one step (the sketch's extrude too) | `face.rs` |
 | Text | TrueType and OpenType text with kerning, as a solid or as a face shape | `outline.rs` |
 | Automatic import | Repair every import, suggest a unit with an undo toast, split loose bodies | `import/auto.rs` |
 | Fit check | Warn where print-in-place parts come closer than the printer can keep apart | `fit.rs` |
@@ -57,7 +57,7 @@ Meshes are flat (`{positions: [x, y, z, ...], indices: [a, b, c, ...]}`) or base
 | `measure` | `a`, optional `b` (features) | distance with end points, center distance, angle, parallel, radius, diameter, length, area |
 | `face.pick` | `mesh`, `triangle`, `at` | `frame`, `outline`, area, bounds, face triangles |
 | `shape.profile` | `shape`, `placement`, `fontBase64` | outline polygons in the face frame, for the live preview |
-| `shape.extrude` | `frame`, `shape`, `placement`, `spec` (distance, extent, flip, taper, operation), `target` | mesh, `frame` (target or world), `tool`, `report` |
+| `shape.extrude` | `frame`, `shape`, `placement`, `spec` (distance, extent, flip, taper, operation), `target`, optional `pattern` (`linear` with `count`, `stepMm` and for a grid `count2`, `step2Mm`; `circular` with `count`, `center` and `angleDeg`; `points` with `offsets`; all in the face's u and v, mm; at most 500 copies, whose tools are joined before the one boolean) | mesh, `frame` (target or world), `tool`, `report` |
 | `text.mesh` | `text`, `heightMm`, `options` (size, spacing, align, kerning), `frame`, `fontBase64` | mesh, text bounds, characters the font lacks |
 | `import.auto` | `data` (`base64`), `name`, `format`, `auto` (repair, split, declared unit) | objects with parts and repair counts, unit suggestion, summary sentences, warnings |
 | `fit.check` | `mesh` or `meshes`, `minGapMm`, `minVerticalGapMm`, `layerHeightMm` | parts, gaps (size, limit, horizontal, vertical or fused, end points), warning sentences |
@@ -78,7 +78,7 @@ The optional parts of sx-geom are cargo features, all on by default: `cad` (face
 
 The browser gets two builds (`packages/geom/wasm/scripts/build.sh`). The worker loads `sx_geom_core.wasm` first: every feature but `cad`, `holes`, `threads` and `shell`, 772 KB gzip, within the 1024 KB budget for each wasm. It loads `sx_geom_wasm.wasm`, the full engine, the first time a call needs an operation the core lacks or sends a mesh with face ids, then sends it every call after that (`packages/app/src/geom/modules.ts`). The full engine has a budget of its own, 1536 KB gzip, and the heavier modules (threads, the shell, and the sketch solver still to come) go there only. Someone who never uses a modeling tool never downloads it. The desktop app runs the full engine natively.
 
-An edition turns the modeling tools off with `features.cad: false` in its config. The app then leaves their commands and menu items out, and `edition-build` builds the worker with every feature but `cad`, `holes`, `threads` and `shell` (set `SX_GEOM_FEATURES` to build `packages/geom/wasm` with any other list). Worker sizes, gzip: the core alone 610 KB, without the modeling tools 772 KB, everything 965 KB. Each feature on top of the core: `cad` with text and SVG 214 KB, `holes` 7 KB more, `threads` 6 KB more, `shell` 7 KB more, `calib` 59 KB, `svg` 23 KB, `nest` 71 KB, `hollow` 12 KB, `text` under 1 KB.
+An edition turns the modeling tools off with `features.cad: false` in its config. The app then leaves their commands and menu items out, and `edition-build` builds the worker with every feature but `cad`, `holes`, `threads` and `shell` (set `SX_GEOM_FEATURES` to build `packages/geom/wasm` with any other list). Worker sizes, gzip: the core alone 610 KB, without the modeling tools 772 KB, everything 968 KB. Each feature on top of the core: `cad` with text and SVG 214 KB, `holes` 7 KB more, `threads` 6 KB more, `shell` 7 KB more (patterns are part of `cad`, 2.5 KB), `calib` 59 KB, `svg` 23 KB, `nest` 71 KB, `hollow` 12 KB, `text` under 1 KB.
 
 ## 3. Print rescue
 

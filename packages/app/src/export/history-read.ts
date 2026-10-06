@@ -59,12 +59,27 @@ function readFollows(f: unknown): Pick<Step, 'follow'> {
 }
 
 /** Whether stored params have the fields the app reads; the engine checks the rest on replay. */
+/** A feature pattern (cad/pattern.ts): its kind and the numbers that kind needs. */
+function patternOk(v: unknown): boolean {
+  if (!obj(v)) return false
+  switch (v['kind']) {
+    case 'linear':
+      return Number.isInteger(v['count']) && vec2(v['stepMm']) && (v['count2'] === undefined || Number.isInteger(v['count2'])) && (v['step2Mm'] === undefined || vec2(v['step2Mm']))
+    case 'circular':
+      return Number.isInteger(v['count']) && vec2(v['center']) && (v['angleDeg'] === undefined || isNum(v['angleDeg']))
+    case 'points':
+      return Array.isArray(v['offsets']) && v['offsets'].length <= 500 && v['offsets'].every(vec2)
+    default:
+      return false
+  }
+}
+
 function paramsOk(p: Record<string, unknown>): boolean {
   switch (p['op']) {
     case 'face.push':
       return vec3(p['at']) && vec3(p['normal']) && isNum(p['distanceMm'])
     case 'shape.extrude':
-      return obj(p['shape']) && typeof p['shape']['type'] === 'string' && obj(p['spec']) && isNum(p['spec']['distanceMm']) && frameOk(p['frame']) && (p['font'] === undefined || typeof p['font'] === 'string')
+      return obj(p['shape']) && typeof p['shape']['type'] === 'string' && obj(p['spec']) && isNum(p['spec']['distanceMm']) && frameOk(p['frame']) && (p['font'] === undefined || typeof p['font'] === 'string') && (p['pattern'] === undefined || patternOk(p['pattern']))
     case 'sketch.revolve':
       return Array.isArray(p['loops']) && obj(p['axis']) && vec2(p['axis']['point']) && vec2(p['axis']['direction']) && frameOk(p['frame']) && (p['angleDeg'] === undefined || isNum(p['angleDeg']))
     case 'subtract':

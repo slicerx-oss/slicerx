@@ -3,6 +3,8 @@
 // The modeling tools that work in the 3D view, shown in the sidebar while one is on: a shape or text on a
 // face or the bed, arrays, and measure. The view is in probe mode meanwhile: a click is the tool's input
 // and nothing is selected or dragged. This file and everything it imports load on first use.
+import { patternCopies, patternFromFields, patternProblem, type Pattern, type PatternFields } from './pattern'
+import { fieldsOf, PatternSection } from './pattern-fields'
 import type { PickEvent } from '@slicerx/viewport'
 import { Button, Field, Icon, Input, Seg, Select, Switch } from '@slicerx/ui'
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -57,7 +59,7 @@ function readFont(file: File): Promise<string> {
 }
 
 /** A shape step opened from the history, as the fields of the shape tool. */
-function shapeEdit(): { index: number; entryId: string; part: number; face: PickedFace; type: ShapeType; f: Record<string, string>; font: string | undefined; svg: { name: string; text: string } | null; operation: 'new' | 'join' | 'cut' } | null {
+function shapeEdit(): { index: number; entryId: string; part: number; face: PickedFace; type: ShapeType; f: Record<string, string>; font: string | undefined; svg: { name: string; text: string } | null; operation: 'new' | 'join' | 'cut'; pattern: Pattern | undefined } | null {
   const ed = editing()
   const p = ed?.step.params
   if (!ed || p?.op !== 'shape.extrude' || p.shape.type === 'sketch') return null
@@ -82,6 +84,7 @@ function shapeEdit(): { index: number; entryId: string; part: number; face: Pick
     font: p.font,
     svg: sh.type === 'svg' ? { name: p.name ?? 'SVG outline', text: sh.svg } : null,
     operation,
+    pattern: p.pattern,
   }
 }
 
@@ -109,6 +112,7 @@ function ShapeTool({ textOnly, svgFirst }: { textOnly: boolean; svgFirst?: boole
   const [turn, setTurn] = useState(v('turn', '0'))
   const [distance, setDistance] = useState(v('distance', textOnly ? '0.6' : '5'))
   const [operation, setOperation] = useState<'new' | 'join' | 'cut'>(edit?.operation ?? 'join')
+  const [patternFields, setPatternFields] = useState<PatternFields>(fieldsOf(edit?.pattern))
   const [busy, setBusy] = useState(false)
   const [note, setNote] = useState<string | null>(edit?.font && !font ? `Pick the font again: ${edit.font} is not loaded.` : null)
   const op = face?.target ? operation : 'new'
@@ -159,7 +163,9 @@ function ShapeTool({ textOnly, svgFirst }: { textOnly: boolean; svgFirst?: boole
   }, [type, width, height, corner, diameter, sides, text, size, svg])
   const placed = Number.isFinite(num(x)) && Number.isFinite(num(y)) && Number.isFinite(num(turn))
   const depthOk = Number.isFinite(num(distance)) && num(distance) > 0
-  const problem = typeof shape === 'string' ? shape : !placed ? 'Position and rotation need numbers.' : !depthOk ? 'The distance must be more than 0 mm.' : null
+  const pattern = patternFromFields(patternFields)
+  const problem = typeof shape === 'string' ? shape : !placed ? 'Position and rotation need numbers.' : !depthOk ? 'The distance must be more than 0 mm.' : pattern ? patternProblem(pattern) : null
+  const patternKey = JSON.stringify(pattern)
 
   // The outline about to be extruded, drawn on the face a moment after the last change.
   useEffect(() => {
@@ -169,7 +175,12 @@ function ShapeTool({ textOnly, svgFirst }: { textOnly: boolean; svgFirst?: boole
     const ac = new AbortController()
     const t = setTimeout(() => {
       shapeProfile(shape, { center: [num(x), num(y)], rotationDeg: num(turn) }, font?.base64, ac.signal).then(
-        (polygons) => cameraBus()?.guides?.({ loops: [...soft, ...loopsOf(face.frame, polygons).map((points) => ({ points }))] }),
+        (polygons) => {
+          // Each copy of a pattern drawn too, moved on the face as the engine will move it.
+          const copies = pattern && !patternProblem(pattern) ? patternCopies(pattern) : [(q: [number, number]) => q]
+          const all = copies.flatMap((f) => polygons.map((pg) => ({ outer: pg.outer.map(f), holes: pg.holes.map((h) => h.map(f)) })))
+          cameraBus()?.guides?.({ loops: [...soft, ...loopsOf(face.frame, all).map((points) => ({ points }))] })
+        },
         (e: unknown) => {
           if (!ac.signal.aborted) setNote(errorText(e))
         },
@@ -179,7 +190,7 @@ function ShapeTool({ textOnly, svgFirst }: { textOnly: boolean; svgFirst?: boole
       clearTimeout(t)
       ac.abort()
     }
-  }, [face, shape, placed, x, y, turn, font])
+  }, [face, shape, placed, x, y, turn, font, patternKey])
 
   const apply = async () => {
     if (!face || typeof shape === 'string' || problem) return
@@ -194,6 +205,7 @@ function ShapeTool({ textOnly, svgFirst }: { textOnly: boolean; svgFirst?: boole
         ...(face.target ? { target: face.target } : {}),
         ...(font ? { fontBase64: font.base64, fontName: font.name } : {}),
         name: shape.type === 'text' ? shape.text.slice(0, 24) : shape.type === 'svg' ? (svg?.name.replace(/\.svg$/i, '').slice(0, 24) || 'SVG outline') : SHAPE_NAMES[shape.type],
+        ...(pattern ? { pattern } : {}),
       }
       bindNext(distance)
       if (edit) {
@@ -315,6 +327,7 @@ function ShapeTool({ textOnly, svgFirst }: { textOnly: boolean; svgFirst?: boole
         />
       </div>
       <Num id="cad-dist" label={op === 'cut' ? 'Depth into the face' : 'Height off the face'} unit="mm" value={distance} onChange={setDistance} />
+      <PatternSection value={patternFields} onChange={setPatternFields} />
       {note || (face && problem) ? <p className="cad-note" role="status"><Icon name="alert" size={14} /> {note ?? problem}</p> : null}
       <div className="cad-actions">
         <Button variant="ghost" onClick={close} disabled={busy}>Done</Button>
