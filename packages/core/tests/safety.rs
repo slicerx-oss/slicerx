@@ -352,3 +352,15 @@ fn blocked_or_error(r: api::Result<SliceRun>) -> String {
         Ok(_) => panic!("expected an error, the file was written"),
     }
 }
+
+#[test]
+fn a_model_too_thin_for_one_layer_is_an_empty_plate() {
+    // 20 um tall: no layer's cutting plane meets it. It wrote a file that only heated and homed the printer.
+    let m = Arc::new(Mesh::load(&cube_stl([20.0, 20.0, 20.0]), "cube.stl").unwrap());
+    let mut req = request(base_config(), json!({}), [0.0; 3]);
+    req.plate.objects[0].transform = Some(vec![
+        1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.001, 0.0, 100.0, 100.0, 0.0, 1.0,
+    ]);
+    let e = blocked_or_error(common::run_request(&req, &move |_: &str| Ok(m.clone())));
+    assert!(e.contains("no printable geometry"), "{e}");
+}

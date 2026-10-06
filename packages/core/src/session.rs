@@ -1202,6 +1202,11 @@ impl SliceSession {
         // sleipnir keeps fixed layers where colors change, and reports what variable layers still
         // cost against fixed ones.
         let (plan, vary_cost) = keep_color_bands(config, plan, &raw, max_z)?;
+        // No layer's cutting plane meets a model thinner than half the first layer: nothing would print
+        // (Orca: "The print is empty").
+        if plan.slice_z.is_empty() {
+            return Err(Error::EmptyPlate);
+        }
         let parts: Vec<PreparedPart> = par::map_owned(raw, |(slot, v, t, paint)| {
             PreparedPart::new(slot, v, t, &plan).with_paint(paint)
         });
