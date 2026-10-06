@@ -29,9 +29,12 @@ fn data_copies_match_the_settings_schema() {
             std::fs::write(&path, built).unwrap();
             continue;
         }
-        let copy = std::fs::read_to_string(&path).unwrap_or_default();
+        // a Windows checkout may turn the copies' line endings into CRLF
+        let copy = std::fs::read_to_string(&path)
+            .unwrap_or_default()
+            .replace("\r\n", "\n");
         assert!(
-            copy == built,
+            copy == built.replace("\r\n", "\n"),
             "data/{file} is out of date: run SX_UPDATE_CORE_DATA=1 cargo test -p sx-core --test published_data"
         );
     }
