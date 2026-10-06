@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// The X mark, drawn as nested outlines in the three accent colors.
+// The X mark of the wordmark, drawn as nested outlines in the three accent colors, and the app
+// mark: huginn perched on three printed layers.
+import { useId } from 'react'
 import { Text, View } from 'react-native'
-import Svg, { Path } from 'react-native-svg'
-import { MARK_VIEWBOX, markCutFor, markRings } from '@slicerx/ui/icons'
+import Svg, { Circle, Defs, G, LinearGradient, Mask, Path, Rect, Stop } from 'react-native-svg'
+import { MARK_VIEWBOX, markCutFor, markRings, perchCutFor, perchShapes } from '@slicerx/ui/icons'
 import { font, t } from './theme'
 
 export interface MarkProps {
@@ -32,6 +34,53 @@ export function Mark({ size = 20, label }: MarkProps) {
           <Path key={g.role} fill="none" stroke={ROLE_COLOR[g.role]} strokeWidth={g.width} strokeLinejoin="miter" d={g.path} />
         ),
       )}
+    </Svg>
+  )
+}
+
+/** The app mark: huginn on three printed layers in the theme's purple to pink, with a heavier cut at small sizes. */
+export function AppMark({ size = 24, label }: MarkProps) {
+  const uid = useId().replace(/[^\w-]/g, '')
+  const s = perchShapes(perchCutFor(size))
+  const g = s.birdGradient
+  return (
+    <Svg
+      width={size}
+      height={size}
+      viewBox={s.viewBox}
+      {...(label ? { accessible: true, role: 'img' as const, 'aria-label': label } : { 'aria-hidden': true })}
+      testID="sx-app-mark"
+    >
+      <Defs>
+        <LinearGradient id={`pb${uid}`} gradientUnits="userSpaceOnUse" x1={g.x1} y1={g.y1} x2={g.x2} y2={g.y2}>
+          <Stop offset="0" stopColor={t.gradient.from} />
+          <Stop offset="1" stopColor={t.gradient.to} />
+        </LinearGradient>
+        <LinearGradient id={`pl${uid}`} gradientUnits="userSpaceOnUse" x1={s.barGradient.x1} y1="0" x2={s.barGradient.x2} y2="0">
+          <Stop offset="0" stopColor={t.gradient.from} />
+          <Stop offset="1" stopColor={t.gradient.to} />
+        </LinearGradient>
+        <Mask id={`pc${uid}`} maskUnits="userSpaceOnUse" x="0" y="0" width="100" height="100">
+          <Rect width="100" height="100" fill="white" />
+          {s.wing ? (
+            <G transform={s.birdTransform}>
+              {s.wing.width === null ? (
+                <Path d={s.wing.d} fill="black" />
+              ) : (
+                <Path d={s.wing.d} fill="none" stroke="black" strokeWidth={s.wing.width} strokeLinecap="round" />
+              )}
+            </G>
+          ) : null}
+          {s.eye ? <Circle cx={s.eye.cx} cy={s.eye.cy} r={s.eye.r} fill="black" /> : null}
+        </Mask>
+      </Defs>
+      {s.legs ? <Path transform={s.birdTransform} d={s.legs.d} fill="none" stroke={`url(#pb${uid})`} strokeWidth={s.legs.width} /> : null}
+      {s.bars.map((b) => (
+        <Rect key={b.y} x={b.x} y={b.y} width={b.width} height={b.height} rx={b.rx} fill={`url(#pl${uid})`} />
+      ))}
+      <G mask={`url(#pc${uid})`}>
+        <Path transform={s.birdTransform} d={s.body} fill={`url(#pb${uid})`} />
+      </G>
     </Svg>
   )
 }
