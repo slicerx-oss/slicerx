@@ -279,7 +279,27 @@ fn walls_of_rings(shapes: &[Vec<Vec<P>>], prm: &Params) -> Option<Walls> {
         }
     }
     out.inner = inner_from_contour(&contour);
+    // a broken diagram can send walls far off the part; the caller then falls back to fixed-width walls
+    if strays(
+        &out,
+        shapes,
+        to_nm(prm.bead_width_0.max(prm.bead_width_x) * 2.0 + prm.wall_0_inset.abs()),
+    ) {
+        return None;
+    }
     Some(out)
+}
+
+/// Whether a wall point lies more than `margin` (nm) outside the bounds of the outline.
+fn strays(w: &Walls, shapes: &[Vec<Vec<P>>], margin: i64) -> bool {
+    let mut b = [i64::MAX, i64::MAX, i64::MIN, i64::MIN];
+    for p in shapes.iter().flatten().flatten() {
+        b = [b[0].min(p.x), b[1].min(p.y), b[2].max(p.x), b[3].max(p.y)];
+    }
+    w.lines.iter().flat_map(|l| &l.points).any(|p| {
+        let (x, y) = (i64::from(p.x) * NM_PER_UNIT, i64::from(p.y) * NM_PER_UNIT);
+        x < b[0] - margin || x > b[2] + margin || y < b[1] - margin || y > b[3] + margin
+    })
 }
 
 /// Outline bumps shallower than this (half the smallest printable feature, nm) do not keep an island off
@@ -1217,6 +1237,29 @@ mod tests {
         let rings: Vec<Vec<P>> = shapes.into_iter().flatten().collect();
         assert!(!rings.is_empty());
         assert_eq!(crossings(&rings), 0, "{rings:?}");
+    }
+
+    #[test]
+    fn walls_far_off_the_outline_are_refused() {
+        let ring = vec![
+            P::new(0, 0),
+            P::new(10_000_000, 0),
+            P::new(10_000_000, 10_000_000),
+            P::new(0, 10_000_000),
+        ];
+        let line = |x: i32| WallLine {
+            inset: 0,
+            is_odd: false,
+            closed: false,
+            points: vec![IntPoint::new(10_000, 10_000), IntPoint::new(x, 10_000)],
+            widths: vec![4000, 4000],
+        };
+        let walls = |x| Walls {
+            lines: vec![line(x)],
+            inner: Vec::new(),
+        };
+        assert!(!strays(&walls(90_000), &[vec![ring.clone()]], to_nm(0.8)));
+        assert!(strays(&walls(-30_000_000), &[vec![ring]], to_nm(0.8)));
     }
 
     #[test]
