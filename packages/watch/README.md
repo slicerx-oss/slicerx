@@ -18,6 +18,13 @@ The watch code comes from `SX_WATCH_CODE` or the hub's `watch-code` file (mode 0
 
 The hub sends the content-free alert, and pauses only when the person turned auto-pause on and the confidence is 0.8 or more.
 
+## The camera guard
+
+The same model also answers two questions apart from the failure prompts (`model/export_siglip2.py`, outputs `hand` and `debris`).
+
+- A hand inside a printing printer counts from the first frame, quiet time or not, when 2 of the last 3 usable frames score 0.6 or more. One sighting asks the hub for a second frame right away (`watch.grab`), so the second look comes within a couple of seconds. The hub pauses on a hand without huginn's confirmation and without the auto-pause permission (reasons in `src/policy.rs`); the person can turn the guard off per printer.
+- Before a print, the hub sends a still of the plate and the person's empty-plate picture (`watch.plate`). The watch looks for the largest patch that differs, at about 1 mm per pixel, outside the spots the person marked as fine, and answers with `watch.plateResult`. Without an empty-plate picture only the model's debris score counts, and only at 0.9 or more, since a clean plate already scores about 0.7.
+
 ## Tests
 
-`cargo test -p sx-watch`: the policy, mask and quality rules, the session from JSON in to reports out, and the client against a scripted hub that signs its hello with a real Ed25519 key and checks the pairing proof.
+`cargo test -p sx-watch`: the policy, mask and quality rules, the frame difference on drawn plates, the session from JSON in to reports and plate results out, and the client against a scripted hub that signs its hello with a real Ed25519 key and checks the pairing proof. `tests/model.rs` runs the real model when `SX_WATCH_MODEL` and the frame directories are set.

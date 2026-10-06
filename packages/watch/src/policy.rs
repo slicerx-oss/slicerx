@@ -10,6 +10,15 @@
 //! camera view that always looks a little like a failure to the model does not alarm on every
 //! frame: what counts is a rise over how this print looked when it started, strengthened when
 //! the bed area also changes more than it did then. See [`Relative`].
+//!
+//! A hand is judged apart ([`HandRule`]). It is a safety stop, not a print failure, so it does not
+//! wait for any of that: it counts from the first frame of a print, through the quiet time, on a
+//! fixed bar, and 2 of the last 3 usable frames are enough. When one frame shows a hand the
+//! session asks the hub for another frame right away ([`Verdict::LookAgain`]), so the second look
+//! comes about 2 s later instead of 10 s, while the hand is still there. The hub pauses on a hand
+//! without huginn's confirmation: a cloud round trip of several seconds is too slow for a hand
+//! near a moving head, and huginn's one question ("has this print failed?") does not fit a hand.
+//! A wrong pause costs a press of Resume; a missed hand can cost a finger.
 use std::collections::{BTreeMap, HashMap, VecDeque};
 
 use crate::protocol::Kind;
@@ -36,6 +45,32 @@ pub struct Config {
     pub gap_ms: u64,
     /// How whole-frame scores become a suspicion.
     pub relative: Relative,
+    /// When a hand counts.
+    pub hand: HandRule,
+}
+
+/// When a hand in the printer counts. The bar is the model's own probability (the hand
+/// question's softmax share), measured on 20 frames with a hand pasted into a printer and 70
+/// public frames without one: at 0.6 it caught 20 of 20 and fired on one frame without a hand
+/// (a spaghetti frame at 0.92), which one frame alone never reports.
+#[derive(Debug, Clone, PartialEq)]
+pub struct HandRule {
+    /// Usable frames looked at.
+    pub window: usize,
+    /// How many of them must show a hand.
+    pub agree: usize,
+    /// The hand score a frame needs.
+    pub threshold: f64,
+}
+
+impl Default for HandRule {
+    fn default() -> Self {
+        Self {
+            window: 3,
+            agree: 2,
+            threshold: 0.6,
+        }
+    }
 }
 
 /// Scoring a whole-frame model against the print's own start. The suspicion of a frame is
@@ -94,6 +129,7 @@ impl Default for Config {
             quiet_after_resume_ms: 30_000,
             gap_ms: 35_000,
             relative: Relative::default(),
+            hand: HandRule::default(),
         }
     }
 }
@@ -121,6 +157,8 @@ pub enum Seen {
 pub enum Verdict {
     /// Not looked at: first layers or just after a resume.
     Quiet,
+    /// One frame showed a hand: ask for another now rather than in 10 s.
+    LookAgain,
     /// Skipped for quality.
     Skipped,
     /// Scored, nothing agreed yet.
@@ -145,6 +183,8 @@ struct Printer {
     last_layer: Option<u32>,
     layer_count: Option<u32>,
     window: VecDeque<BTreeMap<Kind, f64>>,
+    /// Hand scores of the last usable frames.
+    hands: VecDeque<f64>,
     raised: BTreeMap<Kind, f64>,
     /// The print's baseline: scores per kind and frame changes from its first scored frames.
     base_scores: BTreeMap<Kind, Vec<f64>>,
@@ -228,7 +268,7 @@ impl Policy {
 
     /// The threshold for a kind on a printer, after dismissals.
     pub fn threshold(&self, printer: &str, kind: Kind) -> f64 {
-        let base = self.config.threshold.get(&kind).copied().unwrap_or(0.5);
+        let base = self.base_threshold(kind);
         let raised = self
             .printers
             .get(printer)
@@ -238,12 +278,20 @@ impl Policy {
         (base + raised).min(self.config.threshold_cap)
     }
 
+    fn base_threshold(&self, kind: Kind) -> f64 {
+        match kind {
+            Kind::Hand => self.config.hand.threshold,
+            _ => self.config.threshold.get(&kind).copied().unwrap_or(0.5),
+        }
+    }
+
     /// A person said a finding of this kind was fine.
     pub fn dismiss(&mut self, printer: &str, kind: Kind) {
         let raise = self.config.dismiss_raise;
         let p = self.printers.entry(printer.to_owned()).or_default();
         *p.raised.entry(kind).or_insert(0.0) += raise;
         p.window.clear();
+        p.hands.clear();
     }
 
     /// Takes one frame of a printing printer at `now_ms`.
@@ -255,6 +303,7 @@ impl Policy {
         layer_count: Option<u32>,
         seen: Seen,
     ) -> Verdict {
+        let hand_bar = self.threshold(printer, Kind::Hand);
         let c = &self.config;
         let p = self.printers.entry(printer.to_owned()).or_default();
         // A new print: the layer went back or the job's layer count changed. Dismissals end.
@@ -273,13 +322,47 @@ impl Policy {
         if resumed || new_print {
             p.quiet_until_ms = now_ms + c.quiet_after_resume_ms;
             p.window.clear();
+            p.hands.clear();
         }
         p.last_frame_ms = Some(now_ms);
         p.last_layer = layer.or(p.last_layer);
         p.layer_count = layer_count.or(p.layer_count);
 
+        // A hand first, quiet time or not.
+        let (seen, hand) = match seen {
+            Seen::Skipped => (Seen::Skipped, None),
+            Seen::Scored(mut s) => {
+                let h = s.remove(&Kind::Hand);
+                (Seen::Scored(s), h)
+            }
+            Seen::Relative { mut scores, change } => {
+                let h = scores.remove(&Kind::Hand);
+                (Seen::Relative { scores, change }, h)
+            }
+        };
+        let mut look_again = false;
+        if let Some(h) = hand {
+            p.hands.push_back(h);
+            while p.hands.len() > c.hand.window {
+                p.hands.pop_front();
+            }
+            let hits: Vec<f64> = p.hands.iter().copied().filter(|&s| s >= hand_bar).collect();
+            if hits.len() >= c.hand.agree {
+                p.hands.clear();
+                return Verdict::Finding {
+                    kind: Kind::Hand,
+                    confidence: hits.iter().sum::<f64>()
+                        / f64::from(u32::try_from(hits.len()).unwrap_or(u32::MAX)),
+                    agreed: hits.len(),
+                    of: c.hand.window,
+                };
+            }
+            look_again = h >= hand_bar;
+        }
+        let quiet = |v: Verdict| if look_again { Verdict::LookAgain } else { v };
+
         if now_ms < p.quiet_until_ms || layer.is_some_and(|l| l <= c.quiet_layers) {
-            return Verdict::Quiet;
+            return quiet(Verdict::Quiet);
         }
         let scores = match seen {
             Seen::Skipped => return Verdict::Skipped,
@@ -291,7 +374,7 @@ impl Policy {
             p.window.pop_front();
         }
         let (window, agree) = (c.window, c.agree);
-        for kind in Kind::ALL {
+        for kind in Kind::ALL.into_iter().filter(|&k| k != Kind::Hand) {
             let base = c.threshold.get(&kind).copied().unwrap_or(0.5);
             let th = (base + p.raised.get(&kind).copied().unwrap_or(0.0)).min(c.threshold_cap);
             let hits: Vec<f64> = p
@@ -313,7 +396,7 @@ impl Policy {
                 };
             }
         }
-        Verdict::Watching
+        quiet(Verdict::Watching)
     }
 }
 
@@ -506,6 +589,77 @@ mod tests {
             t += 10 * S;
         }
         assert!(found);
+    }
+
+    fn hand(score: f64) -> Seen {
+        Seen::Relative {
+            scores: [(Kind::Hand, score), (Kind::Spaghetti, 0.1)]
+                .into_iter()
+                .collect(),
+            change: Some(0.02),
+        }
+    }
+
+    /// A hand stops the print on the second sighting, even on the first layer and in the quiet
+    /// time after a start, and asks for a second look as soon as it sees one.
+    #[test]
+    fn a_hand_counts_at_once_two_of_three() {
+        let mut p = Policy::default();
+        // The print's first frame: quiet for failures, not for hands.
+        assert_eq!(
+            p.observe("bay-1", 0, Some(1), Some(200), hand(0.9)),
+            Verdict::LookAgain
+        );
+        match p.observe("bay-1", 2 * S, Some(1), Some(200), hand(0.8)) {
+            Verdict::Finding {
+                kind,
+                confidence,
+                agreed,
+                of,
+            } => {
+                assert_eq!((kind, agreed, of), (Kind::Hand, 2, 3));
+                assert!((confidence - 0.85).abs() < 1e-9);
+            }
+            v => panic!("expected a hand, got {v:?}"),
+        }
+        // One sighting among clean frames never stops it.
+        let mut q = Policy::default();
+        let mut t = 0;
+        for s in [0.1, 0.9, 0.1, 0.1, 0.2, 0.9, 0.1] {
+            assert!(!matches!(
+                q.observe("bay-1", t, Some(20), Some(200), hand(s)),
+                Verdict::Finding { .. }
+            ));
+            t += 10 * S;
+        }
+        // Under the bar is not a hand at all, and does not ask for a second look.
+        assert_eq!(
+            q.observe("bay-1", t, Some(20), Some(200), hand(0.55)),
+            Verdict::Watching
+        );
+    }
+
+    #[test]
+    fn a_dismissed_hand_needs_more_until_the_next_print() {
+        let mut p = Policy::default();
+        p.dismiss("bay-1", Kind::Hand);
+        assert!((p.threshold("bay-1", Kind::Hand) - 0.75).abs() < 1e-9);
+        let mut t = 0;
+        for _ in 0..4 {
+            assert!(!matches!(
+                p.observe("bay-1", t, Some(20), Some(200), hand(0.7)),
+                Verdict::Finding { .. }
+            ));
+            t += 2 * S;
+        }
+        assert!(matches!(
+            p.observe("bay-1", t, Some(20), Some(200), hand(0.9)),
+            Verdict::LookAgain
+        ));
+        assert!(matches!(
+            p.observe("bay-1", t + 2 * S, Some(20), Some(200), hand(0.9)),
+            Verdict::Finding { kind: Kind::Hand, .. }
+        ));
     }
 
     #[test]
