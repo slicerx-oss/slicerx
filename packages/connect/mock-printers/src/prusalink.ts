@@ -23,7 +23,11 @@ function digestOk(req: Req, nonce: string, user: string, password: string): bool
 
 const STATES: Record<string, string> = { idle: 'IDLE', printing: 'PRINTING', paused: 'PAUSED', finished: 'FINISHED', error: 'ERROR', preparing: 'BUSY', offline: 'IDLE' }
 
-export async function startPrusaLink(m: MockMachine, opts: { apiKey?: string; digest?: { user: string; password: string } } = {}) {
+/** What the PrusaLink fake lists in `/api/v1/storage`: a USB drive (Buddy firmware), the printer's own `local` storage, or nothing writable. */
+export type PrusaStorage = 'usb' | 'local' | 'none'
+
+export async function startPrusaLink(m: MockMachine, opts: { apiKey?: string; digest?: { user: string; password: string }; extra?: { storage: PrusaStorage } } = {}) {
+  const extra = opts.extra ?? { storage: 'usb' as PrusaStorage }
   const nonce = randomBytes(16).toString('hex')
   const active = () => m.job !== undefined && (m.state === 'printing' || m.state === 'paused')
   const handler: Handler = async (req) => {
@@ -32,8 +36,13 @@ export async function startPrusaLink(m: MockMachine, opts: { apiKey?: string; di
       return { status: 401, json: { message: 'unauthorized' }, headers: { 'www-authenticate': `Digest realm="Printer API", nonce="${nonce}", qop="auth", algorithm=MD5, opaque="mock"` } }
     }
     const p = req.path
-    if (p === '/api/version') return { json: { api: '2.0.0', server: '2.1.2', text: 'PrusaLink', hostname: 'mock', nozzle_diameter: 0.4 } }
-    if (p === '/api/v1/info') return { json: { name: m.fx.model, hostname: 'mock', serial: 'mock', nozzle_diameter: 0.4, mmu: false } }
+    if (p === '/api/version') return { json: { api: '2.0.0', server: '2.1.2', text: 'PrusaLink', hostname: 'mock', firmware: '6.2.4+mock', nozzle_diameter: 0.4 } }
+    if (p === '/api/v1/info') return { json: { name: m.fx.model, hostname: 'mock', serial: 'CZPXMOCK0001', nozzle_diameter: 0.4, mmu: false } }
+    if (p === '/api/v1/storage') {
+      const usb = { name: 'USB', type: 'USB', path: '/usb', available: extra.storage === 'usb', read_only: false }
+      const local = { name: 'Local', type: 'LOCAL', path: '/local', available: extra.storage === 'local', read_only: false }
+      return { json: { storage_list: [usb, local] } }
+    }
     if (p === '/api/v1/status') {
       const printerState = m.message && m.state === 'paused' ? 'ATTENTION' : STATES[m.state]
       const t = { n: m.fx.nozzles[0], b: m.fx.bed }
@@ -55,6 +64,9 @@ export async function startPrusaLink(m: MockMachine, opts: { apiKey?: string; di
     if (file) {
       const name = decodeURIComponent(file[2] ?? '')
       if (req.method === 'PUT') {
+        if (file[1] !== extra.storage) throw new MockError(404, `no storage ${file[1]}`)
+        // The spec's 409: the file is printing, or the storage is busy.
+        if (active() && m.job?.name === name) throw new MockError(409, `${name} is printing`)
         m.upload(name, req.body)
         return { status: 201, json: { name } }
       }

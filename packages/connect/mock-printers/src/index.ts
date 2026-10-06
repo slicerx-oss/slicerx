@@ -17,7 +17,7 @@ import { MockMachine } from './machine.ts'
 import { MOCK_MOONRAKER_LOGIN, startMoonraker, type MoonrakerControl } from './moonraker.ts'
 import { startOctoPrint } from './octoprint.ts'
 import { startSnapmakerLuban } from './snapmaker.ts'
-import { startPrusaLink } from './prusalink.ts'
+import { startPrusaLink, type PrusaStorage } from './prusalink.ts'
 import { MOCK_HA_TOKEN, startHomeAssistant, startSpoolman } from './services.ts'
 
 export { MOCK_ACCESS_CODE, MOCK_SERIAL, MOCK_HA_TOKEN, MOCK_CLOUD_TOKEN, MOCK_MOONRAKER_LOGIN }
@@ -81,7 +81,8 @@ export async function startMocks(opts: StartOptions = {}): Promise<RunningMocks>
     moonrakerControl = r.control
     add('moonraker', r)
   }
-  if (only.includes('prusalink')) add('prusalink', await startPrusaLink(machine('prusalink'), opts.digest ? { digest: MOCK_DIGEST } : apiKey ? { apiKey } : {}))
+  const prusaExtra = { storage: 'usb' as PrusaStorage }
+  if (only.includes('prusalink')) add('prusalink', await startPrusaLink(machine('prusalink'), { ...(opts.digest ? { digest: MOCK_DIGEST } : apiKey ? { apiKey } : {}), extra: prusaExtra }))
   if (only.includes('octoprint')) add('octoprint', await startOctoPrint(machine('octoprint'), apiKey ? { apiKey } : {}))
   if (only.includes('duet')) add('duet', await startDuet(machine('duet'), opts.auth ? { password: MOCK_DUET_PASSWORD } : {}))
   if (only.includes('elegoo')) add('elegoo', await startElegoo(machine('elegoo')))
@@ -203,6 +204,12 @@ export async function startMocks(opts: StartOptions = {}): Promise<RunningMocks>
       if (b.message !== undefined) moonrakerControl.message = b.message
       if (b.expireTokens) moonrakerControl.tokens.clear()
       return { json: { variant: moonrakerControl.variant ?? null, klippy: moonrakerControl.klippy } }
+    }
+    // POST /prusalink {storage}: what the PrusaLink fake lists as writable (`usb`, `local` or `none`).
+    if (req.path === '/prusalink' && req.method === 'POST') {
+      const b = req.json() as { storage?: PrusaStorage }
+      if (b.storage) prusaExtra.storage = b.storage
+      return { json: { storage: prusaExtra.storage } }
     }
     // POST /motion {mock, homed?, position?, failG90?}: where the head is and which axes are homed.
     if (req.path === '/motion' && req.method === 'POST') {

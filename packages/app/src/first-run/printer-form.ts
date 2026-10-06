@@ -340,12 +340,6 @@ export function checkConnection(form: PrinterForm, method: ConnectionMethod): Co
       else if (f.key === 'accessCode' && len > 0 && len !== 8) errors.accessCode = 'The access code has 8 characters.'
     }
   }
-  // PrusaLink takes an API key, or a user name and password.
-  if (method.id === 'prusalink') {
-    const key = (form.secretLengths.apiKey ?? 0) > 0
-    const login = form.fields.username.trim() !== '' && (form.secretLengths.password ?? 0) > 0
-    if (!key && !login) errors.apiKey = 'Enter the API key, or the user name and password.'
-  }
   return { errors, warnings, ready: Object.keys(errors).length === 0 }
 }
 

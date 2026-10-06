@@ -812,7 +812,7 @@ async fn prusalink_digest_login_passes_the_contract() {
     cfg.username = Some(mocks.str("digestUser"));
     let connector = PrusaLinkConnector::new(gate.clone());
 
-    // A missing password, a wrong one, and no username with a password all fail as auth errors.
+    // A missing password and a wrong one fail as auth errors.
     expect_code(connector.connect(&cfg, &secrets(&[])).await, ErrorCode::Auth);
     expect_code(
         connector
@@ -820,14 +820,16 @@ async fn prusalink_digest_login_passes_the_contract() {
             .await,
         ErrorCode::Auth,
     );
+    // Without a user name the login is `maker`, as on every Buddy printer.
     let mut no_user = cfg.clone();
     no_user.username = None;
-    expect_code(
-        connector
-            .connect(&no_user, &secrets(&[("prusa-pass", mocks.str("digestPassword"))]))
-            .await,
-        ErrorCode::Auth,
-    );
+    let s = connector
+        .connect(&no_user, &secrets(&[("prusa-pass", mocks.str("digestPassword"))]))
+        .await
+        .unwrap();
+    let hw = s.hardware().await.unwrap().unwrap();
+    assert_eq!(hw.firmware.as_deref(), Some("6.2.4+mock"));
+    assert_eq!(hw.serial.as_deref(), Some("CZPXMOCK0001"));
 
     let session = connector
         .connect(&cfg, &secrets(&[("prusa-pass", mocks.str("digestPassword"))]))
@@ -844,6 +846,56 @@ async fn prusalink_digest_login_passes_the_contract() {
         gcode: false,
     };
     run_contract(session.as_ref(), &case).await;
+}
+
+// One secret field: a printer that answers 401 with no Digest challenge takes it as an API key.
+// Uploads go to the storage the printer lists as writable, a printer without one says a USB drive
+// is needed, and a 409 says the printer is busy.
+#[tokio::test]
+async fn prusalink_key_fallback_storage_and_busy() {
+    let gate = Arc::new(MemoryGate::new());
+    let mocks = Mocks::start("prusalink", &["--auth"]).await;
+    let mut cfg = config("bay-3", "prusalink", mocks.port("prusalink"));
+    cfg.credential_ref = Some("k".to_owned());
+    let connector = PrusaLinkConnector::new(gate.clone());
+    let s = connector
+        .connect(&cfg, &secrets(&[("k", mocks.str("apiKey"))]))
+        .await
+        .unwrap();
+    let up = |name: &str| {
+        let f = job_file(name, JobKind::Gcode);
+        let t = gate.mint(
+            sx_connect::Action::Upload,
+            "bay-3",
+            &sx_connect::params::upload("bay-3", &f.name, &f.sha256),
+        );
+        (f, t)
+    };
+    mocks
+        .control("/prusalink", serde_json::json!({ "storage": "local" }))
+        .await;
+    let (f, t) = up("a.gcode");
+    let r = s.upload(f, &t).await.unwrap();
+    assert_eq!(r.path, "local/a.gcode");
+    let opts = StartOptions::default();
+    let st = gate.mint(
+        sx_connect::Action::Start,
+        "bay-3",
+        &sx_connect::params::start("bay-3", &r, &opts),
+    );
+    s.start(&r, opts, &st).await.unwrap();
+    // Replacing the file that is printing draws a 409.
+    let (f, t) = up("a.gcode");
+    let busy = s.upload(f, &t).await.err().unwrap();
+    assert_eq!(busy.code(), ErrorCode::BadState);
+    assert!(busy.to_string().contains("printing"), "{busy}");
+    mocks
+        .control("/prusalink", serde_json::json!({ "storage": "none" }))
+        .await;
+    let (f, t) = up("b.gcode");
+    let none = s.upload(f, &t).await.err().unwrap();
+    assert_eq!(none.code(), ErrorCode::NotFound);
+    assert!(none.to_string().contains("USB drive"), "{none}");
 }
 
 // A typed address is confirmed with `GET /api/version`, open or behind a Digest login. OctoPrint
