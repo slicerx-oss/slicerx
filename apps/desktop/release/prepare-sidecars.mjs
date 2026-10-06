@@ -47,7 +47,10 @@ if (haveModel) {
   const built = (triple) => join(resolve(repo, process.env.CARGO_TARGET_DIR ?? 'target'), triple, 'release', `sx-watch${exe}`)
   if (target === 'universal-apple-darwin') {
     run('cargo', ['build', '--release', '-p', 'sx-watch', '--target', 'aarch64-apple-darwin'])
-    copyFileSync(built('aarch64-apple-darwin'), join(tauri, 'binaries', `sx-watch-${target}`))
+    // tauri-build checks each externalBin under every arch triple of a universal build; only the universal file ships.
+    for (const name of [target, 'aarch64-apple-darwin', 'x86_64-apple-darwin']) {
+      copyFileSync(built('aarch64-apple-darwin'), join(tauri, 'binaries', `sx-watch-${name}`))
+    }
   } else {
     run('cargo', ['build', '--release', '-p', 'sx-watch', '--target', target])
     copyFileSync(built(target), join(tauri, 'binaries', `sx-watch-${target}${exe}`))
