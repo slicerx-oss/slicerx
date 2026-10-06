@@ -1202,6 +1202,12 @@ impl PrintConfig {
             ("prime_tower_brim_width", 3.0, -1.0, 100.0),
             // Degrees; Orca sets no limit and angles past a turn wrap around.
             ("wipe_tower_rotation_angle", 0.0, -3600.0, 3600.0),
+            // Orca's limits; a point distance of 0 divides each wall without end (Orca's own note).
+            ("fuzzy_skin_point_distance", 0.3, 0.01, 5.0),
+            ("fuzzy_skin_thickness", 0.2, 0.0, 2.0),
+            // Orca bounds these only from below; 100 mm is brim_width's ceiling.
+            ("raft_expansion", 1.5, 0.0, 100.0),
+            ("raft_first_layer_expansion", 2.0, 0.0, 100.0),
         ] {
             range(key, self.raw_number(key, default), lo, hi)?;
         }
@@ -2150,6 +2156,42 @@ mod tests {
         assert!((pct.line_width - 0.44).abs() < 1e-9);
         let mm = PrintConfig::from_json(br#"{"line_width":"0.45"}"#).unwrap();
         assert!((mm.line_width - 0.45).abs() < 1e-9);
+    }
+
+    #[test]
+    fn fuzzy_skin_and_raft_sizes_keep_to_their_ranges() {
+        use serde_json::json;
+        // A point distance of 0 or -1 never finished; a huge thickness or raft expansion crashed the slice.
+        for (key, bad, ok) in [
+            (
+                "fuzzy_skin_point_distance",
+                [json!(0), json!(-1), json!(6)],
+                [json!(0.01), json!(0.3), json!(5)],
+            ),
+            (
+                "fuzzy_skin_thickness",
+                [json!(1e9), json!("inf"), json!(-0.1)],
+                [json!(0), json!(0.2), json!(2)],
+            ),
+            (
+                "raft_expansion",
+                [json!(1e9), json!("inf"), json!(-1)],
+                [json!(0), json!(1.5), json!(100)],
+            ),
+            (
+                "raft_first_layer_expansion",
+                [json!(1e9), json!("inf"), json!(-1)],
+                [json!(0), json!(2), json!(100)],
+            ),
+        ] {
+            for v in bad {
+                let err = PrintConfig::from_value(&json!({ key: v })).unwrap_err();
+                assert!(err.to_string().contains(key), "{key} {v}: {err}");
+            }
+            for v in ok {
+                assert!(PrintConfig::from_value(&json!({ key: v })).is_ok(), "{key} {v}");
+            }
+        }
     }
 
     #[test]
