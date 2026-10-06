@@ -24,7 +24,7 @@ SlicerX is a free, fully open source slicer for FFF 3D printers, built to be dri
 </p>
 
 > [!NOTE]
-> SlicerX is pre-alpha. The engine continues work its author began in 2021; this app and repository started in September 2026, and several surfaces below are still being built. [Project status](#project-status) says what runs today.
+> SlicerX is pre-alpha. The engine continues work its author began in 2021; this app and repository started in September 2026, and several surfaces below are still being built.
 
 ## The base kit
 
@@ -145,6 +145,6 @@ The SlicerX app, working in the browser and running on macOS as a desktop app so
 </p>
 
 <p align="center">
-  <a href="https://github.com/sponsors/Subydev"><img alt="Sponsor on GitHub" src="https://img.shields.io/badge/Sponsor-GitHub-ea4aaa?logo=githubsponsors&logoColor=white&style=for-the-badge"></a>
+  <a href="https://suby.dev"><img alt="Sponsor at suby.dev" src="https://img.shields.io/badge/Sponsor-suby.dev-ea4aaa?style=for-the-badge"></a>
   <a href="https://buymeacoffee.com/xccyf47w7r"><img alt="Buy me a coffee" src="https://img.shields.io/badge/Buy_me_a_coffee-ffdd00?logo=buymeacoffee&logoColor=black&style=for-the-badge"></a>
 </p>
