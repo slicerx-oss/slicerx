@@ -172,8 +172,15 @@ if ($Release) {
     Push-Location apps/desktop
     try { Run 'signed build' { pnpm tauri build --config src-tauri/gen/edition.signed.conf.json --target $triple --bundles 'nsis,msi' } } finally { Pop-Location }
     $target = Join-Path $repo "target\$triple\release"
-    $setup = Get-ChildItem "$target\bundle\nsis" -Filter '*-setup.exe' | Select-Object -First 1
-    $msi = Get-ChildItem "$target\bundle\msi" -Filter '*.msi' | Select-Object -First 1
+    # Only this version's installers: an earlier release's can still sit in the bundle folders.
+    $version = (Get-Content (Join-Path $repo 'apps/desktop/src-tauri/tauri.conf.json') -Raw | ConvertFrom-Json).version
+    function One([string]$dir, [string]$filter) {
+      $found = @(Get-ChildItem $dir -Filter $filter -ErrorAction SilentlyContinue)
+      if ($found.Count -ne 1) { throw "Expected one $filter in $dir, found $($found.Count)." }
+      return $found[0]
+    }
+    $setup = One "$target\bundle\nsis" "*_${version}_*-setup.exe"
+    $msi = One "$target\bundle\msi" "*_${version}_*.msi"
     # Tauri marks the app with each installer's type after signing it, so target\slicerx.exe is left as the last,
     # unsigned copy; the copies inside the installers are the signed ones, and -VerifyInstalled checks them.
     $checked = @(Verify $setup.FullName) + @(Verify $msi.FullName)
