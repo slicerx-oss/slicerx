@@ -293,6 +293,41 @@ pub struct HeightRange {
 
 /// Range keys the G-code writer applies to a whole layer. When objects print layer by layer, a
 /// range of one object sets these for the layer, so every object on it prints with them.
+/// Farthest a placed model may reach from the bed's origin, mm. Outlines are `i32` at 1e-4 mm, about
+/// 214 m, and brims, skirts and offsets need room past the part.
+const MAX_REACH_MM: f64 = 100_000.0;
+
+/// Refuses a plate whose placed models have a point that is not a number (a damaged file) or that lies
+/// past [`MAX_REACH_MM`] (most often a file in the wrong units), which the scaled outlines cannot hold.
+fn check_extent(plate: &Plate) -> Result<()> {
+    for o in &plate.objects {
+        let name = if o.mesh.name.is_empty() {
+            &o.name
+        } else {
+            &o.mesh.name
+        };
+        for &p in o.mesh.parts.iter().flat_map(|part| &part.positions) {
+            let w = o.apply(p);
+            if w.iter().any(|c| !c.is_finite()) {
+                return Err(Error::mesh(
+                    name,
+                    "has a point that is not a number; the file may be damaged",
+                ));
+            }
+            if let Some(far) = w.iter().map(|c| c.abs()).find(|c| *c > MAX_REACH_MM) {
+                return Err(Error::mesh(
+                    name,
+                    format!(
+                        "reaches {:.0} m from the bed; check the file's units and where it is placed",
+                        far / 1000.0
+                    ),
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
 const LAYER_WIDE_KEYS: [&str; 7] = [
     "nozzle_temperature",
     "enable_pressure_advance",
@@ -761,6 +796,7 @@ impl SliceSession {
         tops: Option<&[f64]>,
         ranges: &[HeightRange],
     ) -> Result<Self> {
+        check_extent(plate)?;
         let map = if crate::nozzles::shared(config) {
             let usage = crate::nozzles::Usage::of_plate(plate, config);
             let tools = usage.layers.iter().flatten().copied().max().unwrap_or(1);

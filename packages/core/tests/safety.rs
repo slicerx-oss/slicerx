@@ -286,3 +286,69 @@ fn the_volumetric_limit_and_axis_limits_cap_speeds_and_the_estimate() {
         .fold(0.0, f64::max);
     assert!(top <= 60.5, "{top}");
 }
+
+/// A binary STL of a 20 mm cube, its far top corner moved to `corner`.
+fn cube_stl(corner: [f32; 3]) -> Vec<u8> {
+    let mut v = [
+        [0.0, 0.0, 0.0],
+        [20.0, 0.0, 0.0],
+        [20.0, 20.0, 0.0],
+        [0.0, 20.0, 0.0],
+        [0.0, 0.0, 20.0],
+        [20.0, 0.0, 20.0],
+        [20.0, 20.0, 20.0],
+        [0.0, 20.0, 20.0],
+    ];
+    v[6] = corner;
+    let faces = [
+        [0, 2, 1],
+        [0, 3, 2],
+        [4, 5, 6],
+        [4, 6, 7],
+        [0, 1, 5],
+        [0, 5, 4],
+        [1, 2, 6],
+        [1, 6, 5],
+        [2, 3, 7],
+        [2, 7, 6],
+        [3, 0, 4],
+        [3, 4, 7],
+    ];
+    let mut b = vec![0u8; 80];
+    b.extend_from_slice(&12u32.to_le_bytes());
+    for f in faces {
+        b.extend_from_slice(&[0u8; 12]);
+        for i in f {
+            for c in v[i] {
+                b.extend_from_slice(&c.to_le_bytes());
+            }
+        }
+        b.extend_from_slice(&[0, 0]);
+    }
+    b
+}
+
+#[test]
+fn geometry_past_the_engines_range_is_refused_not_sliced() {
+    // A part placed 300 m out overflowed the scaled outlines and crashed the slice.
+    let far = blocked_or_error(run(&request(base_config(), json!({}), [3.0e5, 100.0, 0.0])));
+    assert!(far.contains("units"), "{far}");
+    // A vertex that is not a number sliced into toolpaths in the wrong place.
+    for corner in [
+        [f32::NAN, 20.0, 20.0],
+        [f32::INFINITY, 20.0, 20.0],
+        [1.0e30, 20.0, 20.0],
+    ] {
+        let m = Arc::new(Mesh::load(&cube_stl(corner), "cube.stl").unwrap());
+        let req = request(base_config(), json!({}), [100.0, 100.0, 0.0]);
+        let e = blocked_or_error(common::run_request(&req, &move |_: &str| Ok(m.clone())));
+        assert!(e.contains("cube.stl"), "{corner:?}: {e}");
+    }
+}
+
+fn blocked_or_error(r: api::Result<SliceRun>) -> String {
+    match r {
+        Err(e) => e.to_string(),
+        Ok(_) => panic!("expected an error, the file was written"),
+    }
+}
