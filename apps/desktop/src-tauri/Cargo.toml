@@ -41,6 +41,8 @@ tauri-plugin-dialog = "=2.8.0"
 tauri-plugin-opener = "=2.7.0"
 tauri-plugin-deep-link = "=2.6.1"
 tauri-plugin-single-instance = { version = "=2.5.2", features = ["deep-link"] }
+# In-app updates (src/updates.rs). No zip: the Windows installers update as they are, not zipped.
+tauri-plugin-updater = { version = "=2.13.1", default-features = false, features = ["rustls-tls"] }
 serde = { version = "=1.0.229", features = ["derive"] }
 serde_json = "=1.0.151"
 anyhow = "=1.0.104"
@@ -55,3 +57,5 @@ webview2-com = "=0.39.1"
 
 [dev-dependencies]
 tokio = { version = "=1.53.1", features = ["macros", "rt-multi-thread", "sync", "net", "io-util"] }
+# The updater end to end against a local feed (tests/updater.rs) runs on Tauri's mock runtime.
+tauri = { version = "=2.12.0", features = ["test"] }

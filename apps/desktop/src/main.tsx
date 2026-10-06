@@ -83,6 +83,13 @@ if (__SX_FEATURE_PILOT__) {
   onWindowTitle((title) => void getCurrentWindow().setTitle(title).catch(() => undefined))
 }
 
+// In-app updates, when this build's edition has an update feed: checked at launch and daily, installed on the person's click.
+{
+  const [{ registerUpdater }, { createTauriUpdater, updaterMode }] = await Promise.all([import('@slicerx/app'), import('./host/updater')])
+  const mode = await updaterMode()
+  if (mode) registerUpdater(createTauriUpdater(mode))
+}
+
 // On Linux the shell reads the real GL renderer, which WebKit hides from the page (gl_renderer is null elsewhere).
 {
   const [{ registerShellGpu }, { invoke }] = await Promise.all([import('@slicerx/app'), import('@tauri-apps/api/core')])
