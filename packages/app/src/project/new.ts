@@ -19,6 +19,8 @@ export function clearProject(): void {
     slice: { status: 'idle' },
     preview: null,
     projectFile: null,
+    // A project's G-code waiting for a choice goes with the project; G-code already chosen is a print setting and stays.
+    projectGcode: null,
   })
   history().clear()
   markClean()

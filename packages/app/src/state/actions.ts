@@ -186,6 +186,8 @@ async function addProject(host: Host, data: ArrayBuffer, name: string): Promise<
       set((s) => ({ overrides: { ...s.overrides, ...values }, goal: 'custom' as const }))
       toast(`Applied ${n} settings from ${name}`, 'info')
     }
+    // Its printer G-code: stock text needs nothing, anything else waits for the person at the next slice.
+    await (await import('./project-gcode')).reviewOpenedGcode(name, project.settings)
   }
   markStale()
   return true
@@ -323,21 +325,29 @@ export async function plateObjects(slicer: Pick<SlicerHost, 'loadModel'>, s: App
 /**
  * What the engine may trust and the limits of the target printer. The custom G-code is trusted only when it is the text
  * shipped for the selected model and the person has overridden none of the G-code settings (a user edit, an imported
- * preset or project). Everything else gets the strict linter.
+ * preset or project), except with a project's G-code the person chose in the project G-code dialog and has not edited
+ * since. Everything else gets the strict linter.
  */
-export function trustOptions(s: Pick<AppState, 'profile' | 'overrides'>): { trustedGcode?: true; machineLimits?: { nozzleMaxC?: number; bedMaxC?: number } } {
+export function trustOptions(s: Pick<AppState, 'profile' | 'overrides'> & Partial<Pick<AppState, 'vouchedGcode'>>): { trustedGcode?: true; machineLimits?: { nozzleMaxC?: number; bedMaxC?: number } } {
   const p = s.profile
   if (!p) return {}
-  const edited = p.gcodeKeys.some((k) => k in s.overrides) || GCODE_TEXT_KEYS.some((k) => k in s.overrides)
+  const vouched = s.vouchedGcode ?? {}
+  const own = (k: string): boolean => k in s.overrides && !(k in vouched && JSON.stringify(s.overrides[k]) === JSON.stringify(vouched[k]))
+  const edited = p.gcodeKeys.some(own) || GCODE_TEXT_KEYS.some(own)
   return { ...(p.shippedGcode && !edited ? { trustedGcode: true as const } : {}), ...(Object.keys(p.limits).length ? { machineLimits: p.limits } : {}) }
 }
 
-export const GCODE_TEXT_KEYS = ['machine_start_gcode', 'machine_end_gcode', 'before_layer_change_gcode', 'layer_change_gcode', 'change_filament_gcode', 'filament_start_gcode', 'filament_end_gcode', 'machine_pause_gcode', 'template_custom_gcode', 'time_lapse_gcode', 'toolchange_gcode']
+export const GCODE_TEXT_KEYS = ['machine_start_gcode', 'machine_end_gcode', 'before_layer_change_gcode', 'layer_change_gcode', 'change_filament_gcode', 'filament_start_gcode', 'filament_end_gcode', 'machine_pause_gcode', 'template_custom_gcode', 'time_lapse_gcode', 'toolchange_gcode', 'wrapping_detection_gcode', 'file_start_gcode', 'extruder_start_gcode', 'printing_by_object_gcode', 'change_extrusion_role_gcode', 'filament_change_extrusion_role_gcode', 'process_change_extrusion_role_gcode']
 
 /** `auto` is a background slice after an edit: nothing to say when there is nothing to slice, and a failure shows in the panel, not as a toast. */
 export async function slicePlate(host: Host, opts: { auto?: boolean } = {}): Promise<void> {
   // The printer, filament and process layer must match the printer and quality tier before the configuration is read.
   await (await import('./profile-sync')).profileReady()
+  // A project's own printer G-code waits for the person: a slice they start asks first, a background slice uses the
+  // profile's until they choose.
+  if (!opts.auto && get().projectGcode && get().plate.length > 0) {
+    if ((await (await import('./project-gcode')).askProjectGcode()) === null) return
+  }
   const s = get()
   if (s.plate.length === 0) {
     if (!opts.auto) toast('Add a model to the plate first')
