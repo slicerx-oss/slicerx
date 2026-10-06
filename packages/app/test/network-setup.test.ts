@@ -13,6 +13,7 @@ import { createRoot } from 'react-dom/client'
 import { describe, expect, it } from 'vitest'
 import { bambuFamily, BAMBU_GUIDES, DEVELOPER_EFFECT, LAN_ONLY_EFFECT } from '../src/first-run/bambu-lan'
 import { BambuLanCard } from '../src/first-run/bambu-lan-card'
+import { FAILURE_HELP } from '../src/first-run/help-topics'
 import { AccessCodeScreen } from '../src/first-run/access-code-screen'
 import { IMAGE_IDS, printerImage } from '../src/first-run/printer-images'
 import { PrinterPicture } from '../src/first-run/printer-step'
@@ -272,13 +273,20 @@ describe('a failed test in plain words', () => {
     expect(words('something new').title).toBe("The printer didn't accept the key.")
   })
 
-  it('no answer names the address, suggests LAN Only Mode, and says Developer Mode is optional', () => {
+  it('no answer names the address and gives one thing to try: LAN Only Mode, with the family\'s path', () => {
     for (const [cause, kind] of [['timeout', 'timeout'], ['unreachable', 'other']] as const) {
       const c = failureCopy(fail({ cause, kind }), ctx)
       expect(c.title).toBe('No answer from 192.168.68.52.')
       expect(c.body).toBe('Check the printer is on and on the same network as this computer.')
-      expect(c.tips).toEqual(['If it still doesn\'t answer, turn on LAN Only Mode on the printer.', 'Developer Mode isn\'t needed to connect. It\'s optional, for printing directly from SlicerX.'])
+      expect(c.tips).toEqual(['Turn on LAN Only Mode on the printer, then test again. On the touchscreen, open Settings, then LAN Only, and turn on LAN Only Mode. Turn on LAN Only Liveview too if you want the camera.'])
+      expect(c.tips.join(' ')).not.toContain('Developer Mode')
     }
+    // Every failure the setup panel can show leaves Developer Mode out: connecting never needs it.
+    for (const kind of ['tls', 'auth', 'timeout', 'other'] as const) {
+      const c = failureCopy(fail({ cause: kind === 'auth' ? 'auth' : 'unreachable', kind }), ctx)
+      expect(`${c.title} ${c.body} ${c.tips.join(' ')}`, kind).not.toContain('Developer Mode')
+    }
+    expect(Object.values(FAILURE_HELP).map((h) => `${h.title} ${h.cause} ${h.action}`).join(' ')).not.toContain('Developer Mode')
   })
 
   it('anything else gets one plain sentence and a report', () => {
@@ -403,7 +411,13 @@ describe('what the first report says before a print is tried', () => {
     const note = r.el.querySelector('.fr-info-box[role="status"]')!
     expect(note.textContent).toContain('Prints go through Bambu Connect.')
     expect(note.textContent).toContain('SlicerX shows this printer\'s status, and prints open in Bambu Connect')
-    expect(note.textContent).toContain('To print directly from SlicerX (optional), turn on Developer Mode')
+    // Developer Mode stays folded under direct printing until asked for.
+    expect(note.textContent).not.toContain('Developer Mode')
+    const more = note.querySelector<HTMLButtonElement>('button')!
+    expect(more.textContent).toBe('Direct printing (optional)')
+    expect(more.getAttribute('aria-expanded')).toBe('false')
+    flushSync(() => more.click())
+    expect(note.textContent).toContain('To print straight from SlicerX, turn on LAN Only Mode and then Developer Mode.')
     expect(note.textContent).toContain('H2D firmware 01.01.00.01 and later')
     expect(note.textContent).toContain('open Settings, then LAN Only.')
     r.done()
@@ -418,6 +432,7 @@ describe('what the first report says before a print is tried', () => {
     for (const [model, path] of Object.entries(where)) {
       const form = adoptFound(EMPTY_FORM, { ...FOUND, model })
       const r = render(createElement(ConfirmCard, { form, setForm: () => undefined, hardware: { model, developerMode: false }, reportedNozzle: false }))
+      flushSync(() => r.el.querySelector<HTMLButtonElement>('.fr-info-box button')!.click())
       expect(r.el.querySelector('.fr-info-box')!.textContent).toContain(path)
       r.done()
     }

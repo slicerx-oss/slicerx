@@ -552,3 +552,4 @@ p.fr-codecard-msg, .fr-codecard-msg p { color: var(--red); }
 /* Something to know that is not a problem, such as a Bambu Lab printer printing through Bambu Connect. */
 .fr-info-box { display: flex; align-items: flex-start; gap: 8px; padding: var(--s-2) var(--s-3); border-radius: var(--r-md); border: 1px solid var(--line-soft); background: var(--ink-1); color: var(--fg); font-size: var(--fs-md); margin: var(--s-3) 0 0; }
 .fr-info-box > .sx-ic { color: var(--muted); flex: none; margin-top: 2px; }
+.fr-info-more { display: block; margin-top: 4px; color: var(--muted); }

@@ -76,7 +76,7 @@ export const LAN_ONLY_EFFECT =
 
 /** What Developer Mode adds, and that it is optional. */
 export const DEVELOPER_EFFECT =
-  'Developer Mode is optional. With it on, prints and controls go straight from this app to the printer. Without it, the printer still shows its status here, and prints open in Bambu Connect, Bambu Lab\'s app, where you press Print. Developer Mode needs LAN Only Mode.'
+  'Direct printing is optional. With Developer Mode on (it sits under LAN Only Mode), prints and controls go straight from this app to the printer. Without it, the printer still shows its status here, and prints open in Bambu Connect, Bambu Lab\'s app, where you press Print.'
 
 /** The family a model name belongs to (H2D, "Bambu Lab A1 mini", X1 Carbon). Null for anything else. */
 export function bambuFamily(model: string | undefined): BambuFamily | null {
