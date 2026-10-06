@@ -501,3 +501,71 @@ fn no_strike_on_plates_the_makers_rules_accept() {
     }
     assert!(checked > 40, "{checked}");
 }
+
+#[test]
+fn overlapping_objects_printed_by_layer_report_their_crossing_paths_and_the_arrange_fix() {
+    // Different settings keep the objects apart in slicing, so their walls cross where they overlap.
+    let req: SliceRequest = serde_json::from_value(json!({
+        "plate": {"objects": [
+            {"id": "a", "name": "a", "mesh": "a", "transform": [1,0,0,0, 0,1,0,0, 0,0,1,0, 60,100,0,1]},
+            {"id": "b", "name": "b", "mesh": "a", "transform": [1,0,0,0, 0,1,0,0, 0,0,1,0, 70,105,0,1], "settings": {"wall_loops": 3}},
+            {"id": "c", "name": "c", "mesh": "a", "transform": [1,0,0,0, 0,1,0,0, 0,0,1,0, 160,100,0,1]},
+        ]},
+        "config": {"brim_width": 0, "skirt_loops": 0},
+    }))
+    .unwrap();
+    let cube = block(20.0, 20.0, 4.0);
+    let r = common::run_request(&req, &move |_: &str| Ok(cube.clone())).unwrap();
+    let pairs: Vec<_> = kinds(&r)
+        .into_iter()
+        .filter(|k| k.0 == Kind::PathConflict)
+        .collect();
+    assert_eq!(pairs.len(), 1, "{:?}", kinds(&r));
+    assert_eq!((pairs[0].3.as_str(), pairs[0].4.as_str()), ("b", "a"));
+    let c = r
+        .report
+        .collisions
+        .iter()
+        .find(|c| c.kind == Kind::PathConflict)
+        .unwrap();
+    assert!(
+        c.last_layer > c.layer,
+        "every layer is counted, not only the first"
+    );
+    assert!(
+        r.report
+            .collision_fixes
+            .iter()
+            .any(|f| f.kind == FixKind::Arrange && f.one_click)
+    );
+    assert!(
+        !r.report
+            .collision_fixes
+            .iter()
+            .any(|f| f.kind == FixKind::ByLayer)
+    );
+}
+
+#[test]
+fn a_print_in_the_a1_wrap_check_corner_is_a_keep_out_hit() {
+    let zone = json!({"head_wrap_detect_zone": ["226x224", "256x224", "256x256", "226x256"], "printable_area": ["0x0", "256x0", "256x256", "0x256"]});
+    let corner = run(
+        &[("box", block(15.0, 15.0, 4.0), 235.0, 235.0)],
+        zone.clone(),
+        json!({}),
+    );
+    let c = &corner.report.collisions[0];
+    assert_eq!(
+        (c.kind, c.hit_id.as_str(), c.object_id.as_str()),
+        (Kind::KeepOut, "wrap-check-zone", "box")
+    );
+    assert!(
+        corner
+            .report
+            .collision_fixes
+            .iter()
+            .any(|f| f.kind == FixKind::MoveObject && f.object_id.as_deref() == Some("box"))
+    );
+    let away = run(&[("box", block(15.0, 15.0, 4.0), 100.0, 100.0)], zone, json!({}));
+    assert!(away.report.collisions.is_empty());
+}

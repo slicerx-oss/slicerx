@@ -9,6 +9,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { SXPV_HEADER_BYTES, SXPV_MAGIC, SXPV_SEGMENT_BYTES, SXPV_VERSION, readPreview, type Collision, type CollisionFix, type Host, type PreviewBuffers, type SliceResult } from '@slicerx/contracts'
 import { applyCollisionFix, closeCalls, collisionsOf, fixesOf, jumpToCollision, printBlock, strikeMarks } from '../src/plate/heimdall'
 import { collisionTime } from '../src/plate/heimdall-jump'
+import { collisionDetail, collisionTitle, fixDetail, fixTitle, namesOf } from '../src/plate/heimdall-words'
 import { preflight } from '../src/plate/preflight'
 import { get, set } from '../src/state/store'
 import { HostContext } from '../src/host'
@@ -141,5 +142,20 @@ describe('heimdall in the app', () => {
     await vi.waitFor(() => expect(get().strikePick).toBe(0))
     flushSync(() => root.unmount())
     el.remove()
+  })
+
+  it('names crossing paths, keep-out zones and their fixes', () => {
+    const name = namesOf([{ id: 'a', name: 'Bracket' }, { id: 'b', name: 'Hook' }])
+    const cross: Collision = { ...hit, kind: 'path_conflict', part: 'nozzle', objectId: 'b', hitId: 'prime-tower', depthMm: 0, limitMm: 0 }
+    expect(collisionTitle(cross, name)).toBe('Paths of Hook cross the prime tower')
+    expect(collisionDetail(cross, name)).toBe('The paths of Hook and the prime tower cross where they overlap on the plate, layers 3 to 4.')
+    const wrap: Collision = { ...cross, kind: 'keep_out', objectId: 'a', hitId: 'wrap-check-zone', lastLayer: 2 }
+    expect(collisionTitle(wrap, name)).toBe('Bracket prints into the nozzle wrap check corner')
+    expect(collisionDetail(wrap, name)).toContain('checks this corner for filament wrapped round the nozzle')
+    const list = [cross, wrap]
+    expect(fixTitle({ kind: 'arrange', costS: 0, clears: [0], oneClick: true }, name, [], undefined, list)).toBe('Arrange the plate')
+    const out: CollisionFix = { kind: 'move_object', costS: 0, clears: [1], oneClick: false, objectId: 'a' }
+    expect(fixTitle(out, name, [], undefined, list)).toBe('Move Bracket out of the zone')
+    expect(fixDetail(out, name, 2, undefined, list)).toBe('Place Bracket where the printer does not need the plate clear. Clears it.')
   })
 })

@@ -198,14 +198,14 @@ fn pad4(b: &mut Vec<u8>) {
 /// Which object of the plate a path belongs to, from the objects' outlines: the one whose outline holds
 /// the path's first point (the smallest when outlines overlap), else the nearest. The skirt, the prime
 /// tower, custom G-code and a brim around several objects belong to none.
-struct ObjectFinder<'a> {
+pub(crate) struct ObjectFinder<'a> {
     objects: &'a [crate::output::ObjectFootprint],
     boxes: Vec<[f64; 4]>,
     areas: Vec<f64>,
 }
 
 impl<'a> ObjectFinder<'a> {
-    fn new(objects: &'a [crate::output::ObjectFootprint]) -> Self {
+    pub(crate) fn new(objects: &'a [crate::output::ObjectFootprint]) -> Self {
         let boxes = objects
             .iter()
             .map(|o| {
@@ -279,7 +279,7 @@ impl<'a> ObjectFinder<'a> {
             .unwrap_or(OBJECT_NONE)
     }
 
-    fn object_of(&self, feature: crate::output::Feature, pts: &[Point]) -> u16 {
+    pub(crate) fn object_of(&self, feature: crate::output::Feature, pts: &[Point]) -> u16 {
         use crate::output::Feature as F;
         let Some(first) = pts.first() else {
             return OBJECT_NONE;

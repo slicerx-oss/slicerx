@@ -259,6 +259,8 @@ pub struct SliceSession {
     nozzle_map: Option<crate::nozzles::Map>,
     /// heimdall's model of a by-object plate: its objects as obstacles and the machine among them (`collide`).
     collide: Option<std::sync::Arc<crate::collide::Model>>,
+    /// The report's facts on a plate without a model (printed by layer): its objects and keep-out zones.
+    collide_meta: Option<std::sync::Arc<crate::collide::Meta>>,
     /// The tower's rows before the saves of a type 2 tower (`tower::plan_rows_unsaved`), which the saves are
     /// measured on.
     tower_rows0: f64,
@@ -1473,6 +1475,7 @@ impl SliceSession {
             whole_plate: None,
             nozzle_map: None,
             collide: None,
+            collide_meta: None,
             tower_rows0: 1.0,
         };
         if crate::spiral::enabled(config) {
@@ -1853,13 +1856,21 @@ impl SliceSession {
         self.collide = Some(model);
     }
 
+    /// Gives a plate printed by layer the report's facts, for its crossing paths and keep-out zones.
+    pub(crate) fn set_collide_meta(&mut self, meta: crate::collide::Meta) {
+        self.collide_meta = Some(std::sync::Arc::new(meta));
+    }
+
     pub(crate) fn collide(&self) -> Option<&crate::collide::Model> {
         self.collide.as_deref()
     }
 
     /// What the collision report needs besides the hits, on a by-object plate.
     pub fn collide_meta(&self) -> Option<&crate::collide::Meta> {
-        self.collide.as_deref().map(|m| &m.meta)
+        self.collide
+            .as_deref()
+            .map(|m| &m.meta)
+            .or(self.collide_meta.as_deref())
     }
 
     /// The objects of this by-object plate could print layer by layer instead: one layer plan, no spiral vase.
