@@ -304,7 +304,8 @@ fn fetch_once(host: &str, ip: std::net::IpAddr, target: &str) -> Result<(u16, Ve
     use std::io::Read;
     let dir = private_dir()?;
     let hdr = dir.join("headers");
-    let mut child = std::process::Command::new("curl")
+    let mut curl = std::process::Command::new("curl");
+    let mut child = crate::launch::no_window(&mut curl)
         .args([
             "--silent",
             "--show-error",
