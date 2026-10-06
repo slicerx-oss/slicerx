@@ -1,0 +1,3 @@
+# made-up Anycubic test tokens in history, before the gitleaks:allow markers
+489975e79a3a5c3c3be346bfc5112e2e7f86812c:packages/connect/src/drivers/anycubic/mod.rs:generic-api-key:903
+489975e79a3a5c3c3be346bfc5112e2e7f86812c:packages/connect/src/drivers/anycubic/mod.rs:generic-api-key:912
