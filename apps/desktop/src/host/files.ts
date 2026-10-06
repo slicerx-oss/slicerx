@@ -20,7 +20,8 @@ export function createTauriFiles(): FileHost {
     read: (ref) => (ref.path ? invoke<ArrayBuffer>('read_file', { id: Number(ref.id) }) : web.read(ref)),
     async save(suggestedName, data) {
       const bytes = new Uint8Array(data instanceof Blob ? await data.arrayBuffer() : data)
-      return invoke<FileRef | null>('save_file', bytes, { headers: { 'x-sx-name': suggestedName } })
+      // Header values take only Latin-1, so the name goes percent-encoded; the shell decodes it.
+      return invoke<FileRef | null>('save_file', bytes, { headers: { 'x-sx-name': encodeURIComponent(suggestedName) } })
     },
     // Only a file the shell already knows by id (opened or saved through it) is written over.
     async saveTo(ref, data) {
