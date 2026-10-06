@@ -544,6 +544,34 @@ mod tests {
     }
 
     #[test]
+    fn faces_that_do_not_fit_their_mesh_are_found_again() {
+        let mut stale = MeshOut::FlatFaces.mesh(&build::box_mesh([0.0; 3], [10.0; 3]));
+        // The caller moved the box without its faces.
+        let moved: Vec<f64> = stale["positions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_f64().unwrap() + 3.0)
+            .collect();
+        stale["positions"] = json!(moved);
+        let mut short = MeshOut::FlatFaces.mesh(&build::box_mesh([0.0; 3], [10.0; 3]));
+        short["faces"]["ids"].as_array_mut().unwrap().pop();
+        for (mesh, right) in [(stale, 13.0), (short, 10.0)] {
+            let out = run(
+                "boolean",
+                &json!({ "op": "union", "a": [mesh], "withFaces": true }),
+            );
+            let table = out["mesh"]["faces"]["table"].as_array().unwrap().clone();
+            assert_eq!(table.len(), 6, "{table:?}");
+            let side = table
+                .iter()
+                .find(|s| s["normal"][0].as_f64().unwrap() > 0.5)
+                .unwrap();
+            assert!((side["offset"].as_f64().unwrap() - right).abs() < 1e-6, "{side}");
+        }
+    }
+
+    #[test]
     fn array_transforms_and_merge() {
         let req = json!({
             "mesh": { "mesh": cube([0.0; 3], 10.0), "transform": translate([0.0, 0.0, 0.0]) },

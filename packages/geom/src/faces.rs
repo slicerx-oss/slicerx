@@ -195,6 +195,30 @@ impl Faces {
         Self { ids, table }
     }
 
+    /// True when these faces can belong to `mesh`: one id per triangle, every id in the table, and the first
+    /// triangle of each plane face on that plane. A caller that changed the triangles or moved the vertices
+    /// without the faces fails this, and its faces are better found again.
+    pub fn fit(&self, mesh: &TriMesh) -> bool {
+        if self.check("mesh", mesh.triangles.len()).is_err() {
+            return false;
+        }
+        let size = mesh.bounds().map_or(1.0, |b| b.diagonal());
+        let tol = (size * 1e-6).max(1e-4);
+        let mut seen = vec![false; self.table.len()];
+        self.ids.iter().zip(&mesh.triangles).all(|(&id, &t)| {
+            if std::mem::replace(&mut seen[id as usize], true) {
+                return true;
+            }
+            match self.table[id as usize] {
+                Surface::Plane { normal, offset } => mesh
+                    .corners(t)
+                    .iter()
+                    .all(|&p| (vec3::dot(normal, p) - offset).abs() < tol),
+                _ => true,
+            }
+        })
+    }
+
     /// Adds a face to the table and returns its id.
     pub fn push(&mut self, s: Surface) -> u32 {
         self.table.push(s);
