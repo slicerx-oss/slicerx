@@ -6,6 +6,7 @@
 #![allow(clippy::indexing_slicing)]
 
 use crate::error::{Error, Result};
+use crate::faces::{Faces, Surface};
 use crate::fm::Fm;
 use crate::measure::Topology;
 use crate::mesh::TriMesh;
@@ -908,6 +909,9 @@ pub fn revolve(
         ((sweep / TAU * circle_steps(size) as f64).ceil() as usize).clamp(if full { 8 } else { 1 }, 1024);
     let rows = if full { steps } else { steps + 1 };
     let mut mesh = TriMesh::default();
+    let mut faces = Faces::default();
+    let tol = on_axis * 10.0;
+    let at3 = |t: f64| vec3::add(o, vec3::scale(a3, t));
     for poly in polys {
         let mut p = Polygon {
             outer: poly.outer.iter().map(|&q| to_tr(q)).collect(),
@@ -938,7 +942,47 @@ pub fn revolve(
         let mut start = 0;
         for ring in std::iter::once(&p.outer).chain(&p.holes) {
             let n = ring.len();
-            for e in 0..n {
+            // In the (along, radius) half plane each side sweeps a face: a run of sides along an arc centered on
+            // the axis a sphere, other arcs a torus (no known surface), a side along the axis a cylinder, a side
+            // across it a flat ring, any other side a cone. The outward side of each is on its right.
+            let side_ids = crate::build::ring_faces(
+                ring,
+                &mut faces,
+                |(c, r)| {
+                    if c[1].abs() <= tol {
+                        Surface::Sphere {
+                            center: at3(c[0]),
+                            radius: r,
+                        }
+                    } else {
+                        Surface::Other
+                    }
+                },
+                |a, b| {
+                    if (a[1] - b[1]).abs() <= tol {
+                        Surface::Cylinder {
+                            origin: o,
+                            axis: a3,
+                            radius: a[1],
+                        }
+                    } else if (a[0] - b[0]).abs() <= tol {
+                        let normal = vec3::scale(a3, (b[1] - a[1]).signum());
+                        Surface::Plane {
+                            normal,
+                            offset: vec3::dot(normal, at3(a[0])),
+                        }
+                    } else {
+                        let apex = a[0] - a[1] * (b[0] - a[0]) / (b[1] - a[1]);
+                        let mid = f64::midpoint(a[0], b[0]);
+                        Surface::Cone {
+                            apex: at3(apex),
+                            axis: vec3::scale(a3, (mid - apex).signum()),
+                            half_angle: ((b[1] - a[1]).abs() / (b[0] - a[0]).abs()).m_atan(),
+                        }
+                    }
+                },
+            );
+            for (e, &face) in side_ids.iter().enumerate().take(n) {
                 let (i, j) = (start + e, start + (e + 1) % n);
                 let (ai, bj) = (pts[i][1] == 0.0, pts[j][1] == 0.0);
                 if ai && bj {
@@ -948,15 +992,29 @@ pub fn revolve(
                     let (a0, a1, b0, b1) = (id(i, k), id(i, k + 1), id(j, k), id(j, k + 1));
                     if !bj {
                         mesh.triangles.push([a0, b0, b1]);
+                        faces.ids.push(face);
                     }
                     if !ai {
                         mesh.triangles.push([a0, b1, a1]);
+                        faces.ids.push(face);
                     }
                 }
             }
             start += n;
         }
         if !full {
+            // The two ends of a partial turn are flat, facing back along the turn and on along it.
+            let (s, c) = sweep.m_sin_cos();
+            let back = vec3::scale(t3, -1.0);
+            let on = vec3::add(vec3::scale(r0, -s), vec3::scale(t3, c));
+            let first = faces.push(Surface::Plane {
+                normal: back,
+                offset: vec3::dot(back, o),
+            });
+            let last = faces.push(Surface::Plane {
+                normal: on,
+                offset: vec3::dot(on, o),
+            });
             let tris = poly2d::triangulate(&p)?;
             for t in tris {
                 mesh.triangles
@@ -966,9 +1024,11 @@ pub fn revolve(
                     id(t[1] as usize, steps),
                     id(t[2] as usize, steps),
                 ]);
+                faces.ids.extend([first, last]);
             }
         }
     }
+    mesh.faces = Some(crate::faces::merge_meeting_planes(&mesh, faces));
     Ok(mesh)
 }
 
@@ -1293,6 +1353,70 @@ mod tests {
         let inset = inset_keeping_vertices(&sq, 1.0).unwrap();
         assert!((inset[0].area() - 64.0).abs() < 1e-9);
         assert!(inset_keeping_vertices(&sq, 6.0).is_none());
+    }
+
+    fn surfaces(m: &TriMesh) -> Vec<&'static str> {
+        use crate::faces::Surface;
+        crate::faces::check::faces_agree(m);
+        let mut k: Vec<&'static str> = m
+            .faces
+            .as_ref()
+            .unwrap()
+            .table
+            .iter()
+            .map(|s| match s {
+                Surface::Plane { .. } => "plane",
+                Surface::Cylinder { .. } => "cylinder",
+                Surface::Cone { .. } => "cone",
+                Surface::Sphere { .. } => "sphere",
+                Surface::Other => "other",
+            })
+            .collect();
+        k.sort_unstable();
+        k
+    }
+
+    #[test]
+    fn a_revolved_profile_knows_its_round_faces() {
+        let washer = vec![Polygon::simple(poly2d::rect([5.0, 0.0], [15.0, 4.0]))];
+        let m = revolve(&Frame::WORLD, &washer, [0.0, 0.0], [0.0, 1.0], 360.0).unwrap();
+        assert_eq!(surfaces(&m), ["cylinder", "cylinder", "plane", "plane"]);
+        let tri = vec![Polygon::simple(vec![[0.0, 0.0], [5.0, 0.0], [0.0, 10.0]])];
+        let cone = revolve(&Frame::WORLD, &tri, [0.0, 0.0], [0.0, 1.0], 360.0).unwrap();
+        assert_eq!(surfaces(&cone), ["cone", "plane"]);
+        // Half a cone: its flat side is one face across the axis.
+        let half = revolve(&Frame::WORLD, &tri, [0.0, 0.0], [0.0, 1.0], 180.0).unwrap();
+        assert_eq!(surfaces(&half), ["cone", "plane", "plane"]);
+        let quarter = revolve(&Frame::WORLD, &washer, [0.0, 0.0], [0.0, 1.0], 90.0).unwrap();
+        assert_eq!(
+            surfaces(&quarter),
+            ["cylinder", "cylinder", "plane", "plane", "plane", "plane"]
+        );
+        let mut half_disc: Vec<V2> = (0..=32)
+            .map(|k| {
+                let a = (-90.0 + 180.0 * f64::from(k) / 32.0_f64).to_radians();
+                [5.0 * a.m_cos(), 5.0 * a.m_sin()]
+            })
+            .collect();
+        half_disc[0][0] = 0.0;
+        half_disc[32][0] = 0.0;
+        let ball = revolve(
+            &Frame::WORLD,
+            &[Polygon::simple(half_disc)],
+            [0.0, 0.0],
+            [0.0, 1.0],
+            360.0,
+        )
+        .unwrap();
+        assert_eq!(surfaces(&ball), ["sphere"]);
+        let Some(crate::faces::Surface::Sphere { center, radius }) = ball.faces.as_ref().map(|f| f.table[0])
+        else {
+            panic!("not a sphere")
+        };
+        assert!(
+            vec3::len(center) < 1e-9 && (radius - 5.0).abs() < 1e-9,
+            "{center:?} {radius}"
+        );
     }
 
     #[test]
