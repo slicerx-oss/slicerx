@@ -4,7 +4,6 @@
 // model, so a painted object is written as a one-object 3MF (its parts unmoved, with the paint texts) and loaded again; the handle of that
 // model stands in for the object's own when slicing. The result is kept until the paint or mesh changes.
 import type { MeshHandle, SlicerHost } from '@slicerx/contracts'
-import { writeProject } from '../export/threemf'
 import type { PlateEntry } from '../state/store'
 
 const IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
@@ -31,6 +30,8 @@ export async function sliceHandle(slicer: Pick<SlicerHost, 'loadModel'>, e: Plat
   const id = `${e.handle.id}|${key}`
   let hit = cache.get(id)
   if (!hit) {
+    // The project writer loads with the first painted object, not with the app.
+    const { writeProject } = await import('../export/threemf')
     const bytes = writeProject({
       plates: [{ id: 'p', name: 'Plate', settings: {}, objects: [{ ...e, transform: IDENTITY, volumes: [] }] }],
       bed: { widthMm: 256, depthMm: 256 },
