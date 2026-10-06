@@ -7,6 +7,8 @@ import { MOCK_API_KEY, MOCK_HA_TOKEN, startMocks, type RunningMocks } from './in
 import { throwawayCert } from './tls.ts'
 import { createHash } from 'node:crypto'
 import { connect } from 'node:net'
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { NONCE, REALM, startRtsp } from './rtsp.ts'
 
 let plain: RunningMocks
@@ -95,4 +97,17 @@ test('the RTSP camera checks a digest login as live555 does', async () => {
   } finally {
     cam.close()
   }
+})
+
+// Developer Mode as the report's `fun` flags carry it: bit 0x20000000 set while it is off.
+test('the Bambu fake reports Developer Mode in its fun flags', async () => {
+  const { reportFor } = await import('./bambu.ts')
+  const { MockMachine } = await import('./machine.ts')
+  const fixture = JSON.parse(readFileSync(fileURLToPath(new URL('../../fixtures/demo-fleet.json', import.meta.url)), 'utf8'))
+  const m = new MockMachine(fixture, 'bay-1')
+  const fun = (developerMode?: boolean) => (reportFor(m, { skipped: [], printError: 0, ...(developerMode === undefined ? {} : { developerMode }) }).print as { fun?: string }).fun
+  const signed = (f: string | undefined) => (BigInt(`0x${f}`) & 0x20000000n) !== 0n
+  assert.equal(signed(fun(false)), true)
+  assert.equal(signed(fun(true)), false)
+  assert.equal(fun(), undefined)
 })
