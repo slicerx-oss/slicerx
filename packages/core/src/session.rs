@@ -315,12 +315,15 @@ fn check_extent(plate: &Plate) -> Result<()> {
                 ));
             }
             if let Some(far) = w.iter().map(|c| c.abs()).find(|c| *c > MAX_REACH_MM) {
+                // A damaged file can put a point at 1e30 mm; past a kilometer the number says nothing more.
+                let how_far = if far < 1.0e6 {
+                    format!("{:.0} m", far / 1000.0)
+                } else {
+                    "more than a kilometer".to_owned()
+                };
                 return Err(Error::mesh(
                     name,
-                    format!(
-                        "reaches {:.0} m from the bed; check the file's units and where it is placed",
-                        far / 1000.0
-                    ),
+                    format!("reaches {how_far} from the bed; check the file's units and where it is placed"),
                 ));
             }
         }
