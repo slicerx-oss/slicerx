@@ -101,7 +101,8 @@ impl Settings {
             .branch_angle
             .to_radians()
             .clamp(0.0, 0.5 * std::f64::consts::PI - eps);
-        let tree_angle_slow = r.angle_slow.to_radians().clamp(0.0, tree_angle - eps);
+        // At a branch angle of 0 the slow angle's range would end below 0, which `clamp` refuses.
+        let tree_angle_slow = r.angle_slow.to_radians().clamp(0.0, (tree_angle - eps).max(0.0));
         let diameter_angle = r
             .branch_diameter_angle
             .to_radians()
