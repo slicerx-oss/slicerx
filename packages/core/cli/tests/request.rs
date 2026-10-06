@@ -139,3 +139,30 @@ fn a_3mf_plate_slices_as_its_objects() {
     );
     let _ = std::fs::remove_dir_all(dir);
 }
+
+#[test]
+fn untrusted_start_gcode_names_the_preflight_once() {
+    let mut req: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(fixture("cube-request.json")).unwrap()).unwrap();
+    req["meshes"]["cube"] = serde_json::Value::String(fixture("cube.stl"));
+    req["config"]["machine_start_gcode"] = serde_json::Value::String("G28\nM500 ; save\n".to_owned());
+    let mut child = sx()
+        .args(["slice", "--request", "-"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(req.to_string().as_bytes())
+        .unwrap();
+    let out = child.wait_with_output().unwrap();
+    assert_eq!(out.status.code(), Some(1));
+    assert_eq!(
+        String::from_utf8_lossy(&out.stderr).trim_end(),
+        "sx slice: blocked by the safety preflight: custom G-code: line 2: M500 writes settings to the printer's memory (eeprom_write)"
+    );
+}
