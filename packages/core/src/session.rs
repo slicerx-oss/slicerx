@@ -864,6 +864,29 @@ impl SliceSession {
         self.nozzle_map.as_ref()
     }
 
+    /// Which of a layer's `works` prints the skirt `loops`: the first, unless the filament map puts it on an extruder
+    /// that does not reach the whole skirt (`extruder_printable_area`), then the first that does.
+    fn skirt_tool_at(&self, cfg: &PrintConfig, works: &[ToolWork], loops: &[Vec<IntPoint<i32>>]) -> usize {
+        let Some(map) = self.nozzle_map.as_ref() else {
+            return 0;
+        };
+        let pts = loops.iter().flatten();
+        let Some(b) = pts.fold(None::<[f64; 4]>, |acc, p| {
+            let (x, y) = (f64::from(p.x) / SCALE, f64::from(p.y) / SCALE);
+            Some(acc.map_or([x, y, x, y], |a| {
+                [a[0].min(x), a[1].min(y), a[2].max(x), a[3].max(y)]
+            }))
+        }) else {
+            return 0;
+        };
+        let boxes = crate::nozzles::reach_boxes(cfg, crate::nozzles::extruders(cfg));
+        let reaches = |w: &ToolWork| match boxes.get(map.extruder_of(w.tool)).copied().flatten() {
+            Some(r) => b[0] >= r[0] && b[1] >= r[1] && b[2] <= r[2] && b[3] <= r[3],
+            None => true,
+        };
+        works.iter().position(reaches).unwrap_or(0)
+    }
+
     /// `config` with the session's filament map in it, when it has one.
     pub fn mapped_config<'a>(&self, config: &'a PrintConfig) -> std::borrow::Cow<'a, PrintConfig> {
         match &self.nozzle_map {
@@ -7308,15 +7331,21 @@ impl SliceSession {
         }
         if (cfg.skirt_loops > 0 || self.draft_hull.is_some())
             && (layer + self.raft_layers() < cfg.skirt_height || self.draft_hull.is_some())
-            && let Some(first) = works.first_mut()
+            && !works.is_empty()
         {
-            first.skirt = skirt_loops(
+            let loops = skirt_loops(
                 here,
                 cfg,
                 self.draft_hull.as_deref(),
                 &self.skirt_groups,
                 (usize::from(self.tool_count), layer),
             );
+            // The layer's first filament prints the skirt, as in Orca, unless its extruder cannot reach it (H2D,
+            // H2C): then the first filament whose extruder reaches all of it does.
+            let at = self.skirt_tool_at(cfg, &works, &loops);
+            if let Some(w) = works.get_mut(at) {
+                w.skirt = loops;
+            }
         }
         // Painted seam pieces within reach of this layer.
         let z = self.plan.top(layer);

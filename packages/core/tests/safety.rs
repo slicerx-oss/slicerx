@@ -493,3 +493,32 @@ fn the_auto_map_gives_a_skirt_to_an_extruder_that_reaches_it() {
     let map = run.report.filament_map.as_ref().expect("a filament map");
     assert_eq!(map.extruders, [1], "the left extruder prints it");
 }
+
+#[test]
+fn a_skirt_goes_to_a_filament_whose_extruder_reaches_it() {
+    // Filament 1 on the left extruder (x 0 to 325) at x 60, filament 2 on the right one (x 25 to 350) at x 310:
+    // the skirt around both runs past x 325, so the left extruder cannot print it, the right one can. The skirt
+    // went to the layer's first filament and the slice stopped.
+    let mut c = h2d();
+    c["filament_colour"] = json!(["#FF0000", "#0000FF"]);
+    c["filament_map_mode"] = json!("Manual");
+    c["filament_map"] = json!([1, 2]);
+    c["skirt_loops"] = json!(2);
+    c["skirt_distance"] = json!(6);
+    c["brim_type"] = json!("no_brim");
+    c["enable_prime_tower"] = json!(false);
+    let m = Arc::new(Mesh::load(&cube_stl([20.0, 20.0, 20.0]), "cube.stl").unwrap());
+    let t = |x: f64| json!([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, x, 150, 0, 1]);
+    let req: SliceRequest = serde_json::from_value(json!({
+        "plate": { "objects": [
+            { "id": "a", "mesh": "x", "transform": t(60.0) },
+            { "id": "b", "mesh": "x", "transform": t(310.0), "slotOverrides": { "cube": 2, "cube.stl": 2, "": 2 } }
+        ] },
+        "config": c, "options": {}
+    }))
+    .unwrap();
+    let run = common::run_request(&req, &move |_: &str| Ok(m.clone()));
+    assert!(run.is_ok(), "{:?}", run.err());
+    let map = run.unwrap().report.filament_map.expect("a filament map");
+    assert_eq!(map.extruders, [1, 2], "two filaments, one on each extruder");
+}

@@ -191,7 +191,8 @@ impl Usage {
         // A plate of one filament prints its skirt with it too: the skirt runs skirt_distance past the parts and
         // their brim, so the map must keep that within the extruder's reach. (Orca's geometric check reads only the
         // objects' walls and fills, PrintObject::detect_extruder_geometric_unprintables, and its skirt can land out
-        // of reach.)
+        // of reach.) With several filaments the skirt goes to one whose extruder reaches it (session.rs
+        // `skirt_tool_at`).
         let used: Vec<usize> = boxes
             .iter()
             .enumerate()
