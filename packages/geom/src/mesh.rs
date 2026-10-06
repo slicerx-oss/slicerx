@@ -381,6 +381,7 @@ impl TriMesh {
             Faces {
                 ids: idx.iter().map(|&i| f.ids[i]).collect(),
                 table: f.table.clone(),
+                keys: f.keys.clone(),
             }
             .compacted()
         });

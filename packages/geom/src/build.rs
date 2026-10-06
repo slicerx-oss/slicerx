@@ -59,6 +59,7 @@ pub fn box_mesh(min: V3, max: V3) -> TriMesh {
         faces: Some(Faces {
             ids: (0..12).map(|t| t / 2).collect(),
             table,
+            keys: Vec::new(),
         }),
     }
 }

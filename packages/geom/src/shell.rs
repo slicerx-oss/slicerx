@@ -26,6 +26,10 @@ use std::collections::HashMap;
 pub struct OpenFace {
     pub at: V3,
     pub normal: V3,
+    /// The face's key (faces.rs), looked for first; `at` and `normal` find the face when it has none, or the key is
+    /// gone.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -37,6 +41,8 @@ pub struct ShellReport {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
     pub open_faces: usize,
+    /// The key of each face in `open` as found (0 when it has none), for the history step to keep.
+    pub open_keys: Vec<u64>,
     pub volume_change_mm3: f64,
     pub watertight: bool,
     pub shells: usize,
@@ -70,7 +76,7 @@ pub fn shell(
         .clone()
         .filter(|f| f.fit(&w))
         .unwrap_or_else(|| faces::recognize(&w));
-    let opened = open_faces(&w, &faces, open)?;
+    let (opened, open_keys) = open_faces(&w, &faces, open)?;
     let v0 = boolean::Solid::new(&w)?.volume();
     let (out, r, note) = match exact_inner(&w, &faces, &opened, wall_mm) {
         Ok(inner) => {
@@ -105,6 +111,7 @@ pub fn shell(
             exact: note.is_none(),
             note,
             open_faces: opened.len(),
+            open_keys,
             volume_change_mm3: r.volume_mm3 - v0,
             watertight: r.watertight,
             shells: r.shells,
@@ -114,11 +121,24 @@ pub fn shell(
 }
 
 /// The face ids of the faces to open, each found by a point on it and its normal.
-fn open_faces(w: &TriMesh, faces: &Faces, open: &[OpenFace]) -> Result<Vec<u32>> {
+fn open_faces(w: &TriMesh, faces: &Faces, open: &[OpenFace]) -> Result<(Vec<u32>, Vec<u64>)> {
     let size = w.bounds().map_or(1.0, |b| b.diagonal());
     let tol = (size * 1e-5).max(1e-3);
     let mut out: Vec<u32> = Vec::new();
+    let mut keys: Vec<u64> = Vec::new();
     for o in open {
+        let by_key = o
+            .key
+            .filter(|&k| k != 0)
+            .and_then(|k| faces.keys.iter().position(|&x| x == k))
+            .and_then(|f| u32::try_from(f).ok());
+        if let Some(f) = by_key {
+            keys.push(faces.keys[f as usize]);
+            if !out.contains(&f) {
+                out.push(f);
+            }
+            continue;
+        }
         let n = vec3::normalize(o.normal)
             .ok_or_else(|| Error::invalid("open", "a face's normal must not be zero"))?;
         let hit = w.triangles.iter().position(|&t| {
@@ -135,6 +155,7 @@ fn open_faces(w: &TriMesh, faces: &Faces, open: &[OpenFace]) -> Result<Vec<u32>>
             )
         })?;
         let f = faces.ids[t];
+        keys.push(faces.keys.get(f as usize).copied().unwrap_or(0));
         if !out.contains(&f) {
             out.push(f);
         }
@@ -148,7 +169,7 @@ fn open_faces(w: &TriMesh, faces: &Faces, open: &[OpenFace]) -> Result<Vec<u32>>
             "opening every face leaves no body; leave at least one face closed",
         ));
     }
-    Ok(out)
+    Ok((out, keys))
 }
 
 /// Whether `p`, on the triangle's plane, lies in the triangle (within `tol`).
@@ -383,6 +404,7 @@ mod tests {
         OpenFace {
             at: [5.0, 5.0, z],
             normal: [0.0, 0.0, 1.0],
+            key: None,
         }
     }
 
@@ -419,6 +441,7 @@ mod tests {
         let end = OpenFace {
             at: [30.0, 5.0, 10.0],
             normal: [1.0, 0.0, 0.0],
+            key: None,
         };
         let (out, r) = shell(&l, &[top(20.0), end], 2.0, &o()).unwrap();
         assert!(r.exact && r.watertight && r.open_faces == 2);
@@ -443,6 +466,30 @@ mod tests {
     }
 
     #[test]
+    fn an_open_face_is_found_by_its_key_when_its_place_is_old() {
+        // Each request is its own scope, as in the worker.
+        let keyed = |m: &mut TriMesh| crate::faces::with_key_salt(Some(9), || crate::faces::base_keys(m));
+        let mut m = build::box_mesh([0.0; 3], [40.0, 30.0, 20.0]);
+        keyed(&mut m);
+        let (_, first) = shell(&m, &[top(20.0)], 2.0, &o()).unwrap();
+        let key = first.open_keys[0];
+        assert_ne!(key, 0);
+        // The box got taller since: the top is at 25 now, and only the key still finds it.
+        let mut tall = build::box_mesh([0.0; 3], [40.0, 30.0, 25.0]);
+        keyed(&mut tall);
+        let stale = OpenFace {
+            key: Some(key),
+            ..top(20.0)
+        };
+        let (out, r) = shell(&tall, &[stale], 2.0, &o()).unwrap();
+        assert!(r.exact && r.shells == 1 && r.open_keys == vec![key]);
+        let want = 40.0 * 30.0 * 25.0 - 36.0 * 26.0 * 23.0;
+        assert!((out.volume() - want).abs() < 1e-6);
+        // Without the key the old place is not on a face.
+        assert!(shell(&tall, &[top(20.0)], 2.0, &o()).is_err());
+    }
+
+    #[test]
     fn what_cannot_be_shelled_is_refused_in_words() {
         let m = build::box_mesh([0.0; 3], [40.0, 30.0, 20.0]);
         let e = shell(&m, &[top(20.0)], 0.0, &o()).unwrap_err().to_string();
@@ -452,6 +499,7 @@ mod tests {
         let off = OpenFace {
             at: [5.0, 5.0, 25.0],
             normal: [0.0, 0.0, 1.0],
+            key: None,
         };
         let e = shell(&m, &[off], 2.0, &o()).unwrap_err().to_string();
         assert!(e.contains("not on a face"), "{e}");
@@ -460,22 +508,27 @@ mod tests {
             OpenFace {
                 at: [5.0, 5.0, 0.0],
                 normal: [0.0, 0.0, -1.0],
+                key: None,
             },
             OpenFace {
                 at: [0.0, 5.0, 5.0],
                 normal: [-1.0, 0.0, 0.0],
+                key: None,
             },
             OpenFace {
                 at: [40.0, 5.0, 5.0],
                 normal: [1.0, 0.0, 0.0],
+                key: None,
             },
             OpenFace {
                 at: [5.0, 0.0, 5.0],
                 normal: [0.0, -1.0, 0.0],
+                key: None,
             },
             OpenFace {
                 at: [5.0, 30.0, 5.0],
                 normal: [0.0, 1.0, 0.0],
+                key: None,
             },
         ];
         let e = shell(&m, &every, 2.0, &o()).unwrap_err().to_string();
