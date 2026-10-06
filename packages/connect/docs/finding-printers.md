@@ -14,7 +14,8 @@ Add printer, then Scan, lists the printers SlicerX can see. It only lists them. 
 | OctoPrint | It announces `_octoprint._tcp`. | One multicast DNS question. |
 | PrusaLink | It may announce `_prusalink._tcp`. This has not been seen on a printer yet. | One multicast DNS question. |
 | Elegoo Centauri Carbon | It answers one broadcast on UDP port 3000. | One broadcast, sent when you start the scan and never in the background. |
-| Duet, Snapmaker | They do not announce themselves. | Nothing. Enter the IP address. |
+| Snapmaker A150, A250, A350, J1 and Artisan | They answer one broadcast of `discover` on UDP port 20054 with their name, address and model. The J1 and Artisan are listed, but SlicerX does not connect to them yet. | One broadcast, sent when you start the scan and never in the background. |
+| Duet | It does not announce itself. | Nothing. Enter the IP address. |
 
 A scan takes about three seconds. It lists only printers on your own network; anything else is dropped.
 
@@ -67,11 +68,11 @@ interface DiscoveredPrinter {
 { "id": 8, "method": "probe", "params": { "host": "192.168.1.52", "timeoutMs": 1500 } }
 ```
 
-Asks one address on the local network, for Enter IP instead. Each connector that can ask a single address does: Bambu Lab (an SSDP search sent to the printer on 2021 and 1990, then the serial from the MQTT certificate), Moonraker (`/server/info` on 7125, then 80), Snapmaker (a U1's Moonraker on 80, then 7125), Creality (`GET /info`, then TCP 9999), and the others their guides name. The reply is `{"printers": DiscoveredPrinter[]}`, empty when nothing answered. Nothing signs in.
+Asks one address on the local network, for Enter IP instead. Each connector that can ask a single address does: Bambu Lab (an SSDP search sent to the printer on 2021 and 1990, then the serial from the MQTT certificate), Moonraker (`/server/info` on 7125, then 80), Snapmaker (a U1's Moonraker on 80, then 7125), Creality (`GET /info`, then TCP 9999), Snapmaker 2.0, J1 and Artisan (`discover` on UDP 20054), Elegoo (`M99999` on UDP 3000), PrusaLink (`GET /api/version`), and the others their guides name. The reply is `{"printers": DiscoveredPrinter[]}`, empty when nothing answered. Nothing signs in.
 
 ### Interfaces
 
-`sx_connect::netif` lists the private IPv4 interfaces that are up. Bambu Lab searches, the Elegoo broadcast and mDNS queries leave from one socket per interface, with the multicast interface set, because a socket on 0.0.0.0 reaches only the network the OS picks. The Bambu listeners on 2021 and 1990 set SO_REUSEADDR (and SO_REUSEPORT on Unix), so they share the ports with Bambu Studio and OrcaSlicer when those run too.
+`sx_connect::netif` lists the private IPv4 interfaces that are up. Bambu Lab searches, the Elegoo and Snapmaker broadcasts and mDNS queries leave from one socket per interface, with the multicast interface set, because a socket on 0.0.0.0 reaches only the network the OS picks. The Bambu listeners on 2021 and 1990 set SO_REUSEADDR (and SO_REUSEPORT on Unix), so they share the ports with Bambu Studio and OrcaSlicer when those run too.
 
 ### mDNS in `sx_connect::mdns`
 

@@ -815,6 +815,24 @@ async fn snapmaker_luban_recovers_a_dropped_session_and_says_when_to_pair_again(
     assert_eq!(e.login_need(), Some(LoginNeed::Declined), "{e}");
 }
 
+// A J1 or Artisan found by a scan (port 8888) says SACP is not supported yet instead of failing as
+// an unreachable 2.0 machine.
+#[tokio::test]
+async fn snapmaker_sacp_machines_say_they_are_not_supported_yet() {
+    let connector = SnapmakerConnector::new(Arc::new(MemoryGate::new()));
+    let mut cfg = config("j1", "snapmaker", 8888);
+    cfg.host = "192.0.2.1".to_owned();
+    let e = connector.connect(&cfg, &secrets(&[])).await.err().unwrap();
+    assert_eq!(e.code(), ErrorCode::NotSupported);
+    assert!(e.to_string().contains("SACP"), "{e}");
+    cfg.port = Some(8080);
+    cfg.protocol = Some("sacp".to_owned());
+    expect_code(
+        connector.authorize(&cfg, Duration::from_secs(1)).await,
+        ErrorCode::NotSupported,
+    );
+}
+
 #[tokio::test]
 async fn snapmaker_starts_only_the_file_sent_last() {
     let gate = Arc::new(MemoryGate::new());

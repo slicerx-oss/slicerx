@@ -1120,7 +1120,8 @@
     "kind": "printer",
     "protocols": [
       "http",
-      "websocket-jsonrpc"
+      "websocket-jsonrpc",
+      "udp-discovery"
     ],
     "capabilities": [
       "status",
@@ -1275,7 +1276,8 @@
     "network": [
       "lan:80",
       "lan:8080",
-      "lan:7125"
+      "lan:7125",
+      "lan:20054"
     ]
   },
   {
