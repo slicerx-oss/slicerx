@@ -3,7 +3,8 @@
 // Checks the browser build against its budgets: the JS that
 // loads before the viewport and WASM (the entry chunk and its static imports)
 // at most 246 KB gzip, and each WASM module at most 1.0 MB gzip. The STEP reader (OpenCASCADE, loaded
-// only when a STEP file opens) has a budget of its own and must not be reachable from the shell. It
+// only when a STEP file opens) has a budget of its own and must not be reachable from the shell, and so does the
+// full geometry engine (the modeling tools and the heavier modules, loaded the first time a call needs them). It
 // also fails when printer, filament or G-code profile data lands in a startup chunk, and when a startup chunk
 // names an icon that is not in the startup icon table.
 import { readdirSync, readFileSync, statSync } from 'node:fs'
@@ -16,7 +17,9 @@ const manifest = JSON.parse(readFileSync(join(dist, '.vite', 'manifest.json'), '
 const SHELL_KB = 246
 const WASM_KB = 1024
 const STEP_WASM_KB = 3584
+const FULL_GEOM_WASM_KB = 1536
 const isStepReader = (file) => /occt-import-js/.test(file)
+const isFullGeom = (file) => /sx_geom_wasm/.test(file)
 
 const gz = (file) => gzipSync(readFileSync(join(dist, file)), { level: 9 }).length
 
@@ -85,7 +88,7 @@ for (const key of seen) {
 }
 for (const f of files(dist).filter((f) => f.endsWith('.wasm'))) {
   const size = gz(f)
-  const budget = isStepReader(f) ? STEP_WASM_KB : WASM_KB
+  const budget = isStepReader(f) ? STEP_WASM_KB : isFullGeom(f) ? FULL_GEOM_WASM_KB : WASM_KB
   console.log(`wasm ${f}: ${(size / 1024).toFixed(1)} KB gzip (budget ${budget} KB)`)
   if (size > budget * 1024) failed = true
 }
