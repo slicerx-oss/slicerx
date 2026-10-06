@@ -1,0 +1,4 @@
+# Text files check out with LF on every platform, as they are stored. Without this, Git for Windows
+# (core.autocrlf true by default) checks them out with CRLF, and the tests that compare generated
+# files with the committed ones fail on Windows.
+* text=auto eol=lf
