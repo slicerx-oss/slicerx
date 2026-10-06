@@ -79,6 +79,27 @@ A request slice reads a `SliceRequest`:
 
 It prints a result JSON with `schemaVersion`, `layerCount`, `stats` (`timeS`, and `filamentMm` and `filamentG` per slot), `warnings`, and, with `--out-dir`, the paths of `slice.gcode` and `slice.sxpv` under `files`. An object without a transform is centered on the bed. A `mesh` value is a key of `meshes` or a path relative to the request file, and `project.3mf#2` picks plate 2 of a project. Use `--request -` to pass the request on stdin. For an estimate only, set `"emitGcode": false` and `"emitPreview": false` and read `stats` from the result. Exit codes: 0 success, 1 slicing failed, 2 usage error, 3 invalid input.
 
+### Project G-code
+
+Custom G-code in `config` (start, end, layer change, filament change and the rest) is linted before it runs. Text from a project or another file is untrusted, so a line that changes the printer, such as `M500` (writes settings to its memory), blocks the slice with `blocked by the safety preflight: custom G-code: line N: ...` and exit code 1. Three cases:
+
+- Stock text runs as is. When the settings name the printer (`printer_settings_id`, `inherits` or `printer_model`, as a Bambu Studio or OrcaSlicer project saves them, such as `Bambu Lab P1S`), `sx` compares each G-code setting with the versions the maker shipped for that printer, and an unchanged one is trusted. A Bambu project with its printer's stock start G-code slices without a question.
+- Anything else goes to the person first. Review the project's G-code with `reviewProjectGcode` from `@slicerx/settings`: it returns each changed setting with a diff and the flagged lines and their reasons, and whether a person may approve it (`approvable`). Show that to the person. After their yes, send the request again with `"options": { "trustedGcode": true }`. Never set it for them, and never set it for text no one has seen.
+- Lines no one can approve (such as `M502`, a factory reset) block even with `trustedGcode`, and in stock text too.
+
+```ts
+import { reviewProjectGcode } from '@slicerx/settings'
+const review = reviewProjectGcode({ project: projectSettings, profile: printerProfileSettings, model: 'bambu-p1s' })
+if (review.changes.length === 0) {
+  // Stock text, or the printer profile's own text the app chose: nothing to ask.
+  request.options = { ...request.options, trustedGcode: true }
+} else if (review.changes.every((c) => c.approvable) && (await askThePerson(review.changes))) {
+  request.options = { ...request.options, trustedGcode: true }
+}
+```
+
+The C ABI and the WebAssembly build take the same `trustedGcode`; the stock check is in `sx` only.
+
 ## npm package
 
 `@slicerx/slicer` runs the WebAssembly core in a pool of Web Workers. Each worker slices a range of layers, and the results are stitched into one G-code file and one preview, byte-identical to the native build. It needs no `SharedArrayBuffer` or cross-origin isolation.

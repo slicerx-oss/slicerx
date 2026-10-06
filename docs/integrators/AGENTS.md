@@ -504,6 +504,16 @@ A refused tool call has `isError: true` and `structuredContent.error` with a sta
 
 [quickstart.md](quickstart.md#error-codes) has every code.
 
+### Project G-code when you call the engine directly
+
+An app that runs `sx slice --request` (or the C ABI or WebAssembly build) with a project's settings handles its custom G-code itself, the way the MCP server does with `project_gcode_review`:
+
+1. Do nothing for stock text. When the settings name the printer (`printer_settings_id`, `inherits` or `printer_model`, as Bambu Studio and OrcaSlicer projects save them), `sx` trusts G-code that is the maker's stock text for it, unchanged. A Bambu project with its printer's stock start G-code slices as is.
+2. For anything else, call `reviewProjectGcode` from `@slicerx/settings` and show the person each change (`diff`, `flags` with their reasons). Only after their yes, send the request with `"options": { "trustedGcode": true }`. Never set it on your own, and never for G-code the person has not seen.
+3. A change with `approvable: false` cannot run: its lines (such as `M502`) block even with `trustedGcode`. Offer the printer profile's G-code instead.
+
+A blocked slice exits with code 1 and `sx slice: blocked by the safety preflight: custom G-code: line N: <reason> (<code>)`. [embedding.md](../embedding.md#project-g-code) has an example.
+
 ## Path C: hand files to an installed SlicerX
 
 For a product that does not build or embed SlicerX and only opens models in the app the user installed. This is the weakest integration: the product does not get the engine, the viewport or the MCP server, and cannot read results. No signed SlicerX installers are published yet (`apps/desktop/release/downloads.json` is empty until a release exists); the release workflow builds them. What the repository establishes today:

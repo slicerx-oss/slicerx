@@ -293,6 +293,16 @@ A refused call has `isError: true`, text such as `Error: no_such_plate: Benchy.3
 
 `@slicerx/embed/sxlock` throws `SxlockError` with the same reasons as `code`, without the prefix, and `SXLOCK_MESSAGES` has a plain sentence for each.
 
+## Project G-code with the engine directly
+
+Over MCP, `project_gcode_review` covers a project's custom G-code. An app that calls `sx slice --request` itself does the same in three steps:
+
+- The printer maker's stock text runs as is: when the settings name the printer (`printer_settings_id`, `inherits` or `printer_model`), `sx` trusts G-code that matches the maker's text for it, unchanged.
+- Other text goes to the person: `reviewProjectGcode` from `@slicerx/settings` lists each change with its diff, flagged lines and reasons. After the person says yes, send `"options": { "trustedGcode": true }`.
+- Lines with `approvable: false` (such as `M502`) block even then.
+
+See [embedding.md](../embedding.md#project-g-code) for the details and an example.
+
 ## Not supported yet
 
 - Saving an editable project. The server writes G-code and `.gcode.3mf` files, and locks an existing `.sx3mf`, but it does not write a new `.sx3mf` from a model.
