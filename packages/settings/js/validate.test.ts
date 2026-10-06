@@ -55,6 +55,20 @@ describe('dependencies', () => {
   })
 })
 
+describe('line widths against the layer', () => {
+  it('flags a width set at or below the layer height, as the engine and OrcaSlicer refuse it', () => {
+    const at = (extra: Record<string, unknown>) => validate({ layer_height: 0.2, nozzle_diameter: [0.4], ...extra } as unknown as PrintConfig).filter((i) => i.code === 'line_width_below_layer')
+    for (const key of ['line_width', 'outer_wall_line_width', 'sparse_infill_line_width', 'internal_solid_infill_line_width', 'skin_infill_line_width']) {
+      const found = at({ [key]: '0.2' })
+      expect(found.map((i) => [i.severity, i.keys[0]]), key).toEqual([['error', key]])
+      expect(found[0]?.fix, key).toEqual({ key, value: '0' })
+      expect(at({ [key]: '0.42' }), key).toEqual([])
+      expect(at({ [key]: '0' }), `${key} automatic`).toEqual([])
+    }
+    expect(at({ sparse_infill_line_width: '40%' })).toHaveLength(1)
+  })
+})
+
 describe('automatic values', () => {
   it('accepts 0 on keys where 0 means auto, even under a positive minimum', () => {
     const cfg = { line_width: '0', outer_wall_line_width: '0', inner_wall_line_width: '0' } as unknown as PrintConfig
