@@ -7,9 +7,23 @@ use std::sync::{Mutex, PoisonError};
 use crate::error::{Error, Result};
 use crate::types::Secrets;
 
+/// Where [`SecretStore::set_kept`] put a credential.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Kept {
+    /// In the store, for later runs too.
+    Stored,
+    /// In memory until the program quits: the keychain refused it.
+    Session,
+}
+
 /// Write side of a credential store. The webview only ever gets this, never `Secrets::get`.
 pub trait SecretStore: Secrets {
     fn set(&self, name: &str, value: &str) -> Result<()>;
+    /// Like [`Self::set`], for a credential that must not stop what it belongs to (a printer being
+    /// saved): a store that can keep it for the session instead says so rather than failing.
+    fn set_kept(&self, name: &str, value: &str) -> Result<Kept> {
+        self.set(name, value).map(|()| Kept::Stored)
+    }
     fn delete(&self, name: &str) -> Result<()>;
     fn has(&self, name: &str) -> bool {
         self.get(name).is_some()
@@ -95,7 +109,7 @@ impl Secrets for ScratchSecrets {
         if name.starts_with(TEST_SECRET_PREFIX) {
             self.scratch.get(name)
         } else {
-            self.inner.get(name)
+            self.inner.get(name).or_else(|| self.scratch.get(name))
         }
     }
 }
@@ -109,9 +123,26 @@ impl SecretStore for ScratchSecrets {
         }
     }
 
-    fn delete(&self, name: &str) -> Result<()> {
+    /// A credential the keychain refuses is kept in memory for the session, so saving a printer never
+    /// fails on it; the caller is told, to say so.
+    fn set_kept(&self, name: &str, value: &str) -> Result<Kept> {
         if name.starts_with(TEST_SECRET_PREFIX) {
-            self.scratch.delete(name)
+            return self.scratch.set(name, value).map(|()| Kept::Stored);
+        }
+        match self.inner.set(name, value) {
+            Ok(()) => {
+                // A stored copy takes over from one kept earlier in the session.
+                self.scratch.delete(name)?;
+                Ok(Kept::Stored)
+            }
+            Err(_) => self.scratch.set(name, value).map(|()| Kept::Session),
+        }
+    }
+
+    fn delete(&self, name: &str) -> Result<()> {
+        self.scratch.delete(name)?;
+        if name.starts_with(TEST_SECRET_PREFIX) {
+            Ok(())
         } else {
             self.inner.delete(name)
         }
@@ -146,10 +177,17 @@ impl Secrets for KeychainSecrets {
 
 impl SecretStore for KeychainSecrets {
     fn set(&self, name: &str, value: &str) -> Result<()> {
-        // The keyring error can name the service and account but never the value.
-        self.entry(name)?
-            .set_password(value)
-            .map_err(|e| Error::Config(format!("keychain write failed: {e}")))
+        let entry = self.entry(name)?;
+        write_retrying(
+            &|local| {
+                if local {
+                    local_entry(&self.service, name)?.set_password(value)
+                } else {
+                    entry.set_password(value)
+                }
+            },
+            cfg!(windows),
+        )
     }
 
     fn delete(&self, name: &str) -> Result<()> {
@@ -157,6 +195,34 @@ impl SecretStore for KeychainSecrets {
             Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
             Err(e) => Err(Error::Config(format!("keychain delete failed: {e}"))),
         }
+    }
+}
+
+/// The Windows credential for `service` and `name` with Local persistence: kept on this PC and not
+/// roamed with the account, as keyring's default Enterprise persistence is.
+#[cfg(windows)]
+fn local_entry(service: &str, name: &str) -> keyring::Result<keyring_core::Entry> {
+    let local = HashMap::from([("persistence", "Local")]);
+    keyring_core::Entry::new_with_modifiers(service, name, &local)
+}
+
+#[cfg(not(windows))]
+fn local_entry(_: &str, _: &str) -> keyring::Result<keyring_core::Entry> {
+    Err(keyring::Error::NoDefaultStore)
+}
+
+/// Writes with `write(false)`, and on Windows (`retry_local`) when the platform refuses it, once more
+/// with `write(true)`, Local persistence: one user's Credential Manager refused the default Enterprise
+/// (roaming) persistence with error 8. The error can name the service and account but never the value.
+fn write_retrying(write: &dyn Fn(bool) -> keyring::Result<()>, retry_local: bool) -> Result<()> {
+    match write(false) {
+        Ok(()) => Ok(()),
+        Err(first @ keyring::Error::PlatformFailure(_)) if retry_local => write(true).map_err(|again| {
+            Error::Config(format!(
+                "keychain write failed: {first}; with local persistence: {again}"
+            ))
+        }),
+        Err(e) => Err(Error::Config(format!("keychain write failed: {e}"))),
     }
 }
 
@@ -294,6 +360,43 @@ mod tests {
         assert_eq!(s.get("printer-test-0b8f0d3e"), None);
         // A saved printer's credential still goes to the keychain, and its refusal still reaches the caller.
         assert!(s.set("printer-p1s-x1y2", "12345678").is_err());
+    }
+
+    #[test]
+    fn a_printer_credential_the_keychain_refuses_is_kept_for_the_session() {
+        let s = ScratchSecrets::new(std::sync::Arc::new(Refusing));
+        // Saving a printer never fails on the keychain: the code is kept in memory, and the caller is told.
+        assert_eq!(s.set_kept("printer-p1s-x1y2", "12345678").unwrap(), Kept::Session);
+        assert_eq!(s.get("printer-p1s-x1y2").as_deref(), Some("12345678"));
+        s.delete("printer-p1s-x1y2").unwrap();
+        assert_eq!(s.get("printer-p1s-x1y2"), None);
+        // The memory store keeps what it is given.
+        assert_eq!(MemorySecrets::new().set_kept("a", "b").unwrap(), Kept::Stored);
+    }
+
+    #[test]
+    fn a_refused_write_is_tried_again_with_local_persistence() {
+        let failure =
+            || keyring::Error::PlatformFailure(Box::new(std::io::Error::other("Windows error code 8")));
+        // Enterprise (roaming) refused, Local taken.
+        let tries = std::cell::RefCell::new(Vec::new());
+        let local_ok = |local: bool| {
+            tries.borrow_mut().push(local);
+            if local { Ok(()) } else { Err(failure()) }
+        };
+        assert!(write_retrying(&local_ok, true).is_ok());
+        assert_eq!(*tries.borrow(), [false, true]);
+        // Both refused: one error that names both tries, never the value.
+        let both = write_retrying(&|_| Err(failure()), true).unwrap_err().to_string();
+        assert!(
+            both.contains("Windows error code 8") && both.contains("local"),
+            "{both}"
+        );
+        // No retry off Windows, and none for an error that is not the platform's.
+        tries.borrow_mut().clear();
+        assert!(write_retrying(&local_ok, false).is_err());
+        assert_eq!(*tries.borrow(), [false]);
+        assert!(write_retrying(&|_| Err(keyring::Error::NoEntry), true).is_err());
     }
 
     #[test]

@@ -45,7 +45,7 @@ pub use error::{Error, ErrorCode, LoginNeed, Result};
 pub use gate::{Action, ApprovalGate, ApprovalToken, MAX_GCODE_LINE, MemoryGate, gcode_line_problem, params};
 pub use manifest::{PermissionClass, PluginKind, PluginManifest, ToolSpec, all_manifests, manifest};
 pub use secrets::{
-    FileSecrets, KeychainSecrets, MemorySecrets, ScratchSecrets, SecretStore, TEST_SECRET_PREFIX,
+    FileSecrets, Kept, KeychainSecrets, MemorySecrets, ScratchSecrets, SecretStore, TEST_SECRET_PREFIX,
     create_private_dir, write_private,
 };
 pub use tls::{CertificateCheck, certificate_check};

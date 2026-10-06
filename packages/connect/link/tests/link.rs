@@ -2513,3 +2513,53 @@ async fn a_cloud_sliced_job_reaches_a_printer_through_the_real_service() {
     );
     let _ = cloud.kill().await;
 }
+
+/// A keychain that refuses every write, as Windows Credential Manager did for a user (error 8).
+struct Refusing;
+impl sx_connect::Secrets for Refusing {
+    fn get(&self, _: &str) -> Option<String> {
+        None
+    }
+}
+impl sx_connect::SecretStore for Refusing {
+    fn set(&self, _: &str, _: &str) -> sx_connect::Result<()> {
+        Err(sx_connect::Error::Config(
+            "keychain write failed: Platform failure: Windows error code 8".into(),
+        ))
+    }
+    fn delete(&self, _: &str) -> sx_connect::Result<()> {
+        Ok(())
+    }
+}
+
+#[tokio::test]
+async fn a_keychain_that_refuses_keeps_the_credential_for_the_session() {
+    let cfg = LinkConfig {
+        port: 0,
+        fixed_code: Some(CODE.to_owned()),
+        ..LinkConfig::default()
+    };
+    let link = serve(cfg, Arc::new(MemoryGate::new()), Arc::new(Refusing))
+        .await
+        .unwrap();
+    let mut ws = paired(&link).await;
+    let r = call(
+        &mut ws,
+        1,
+        "secrets.set",
+        json!({ "name": "printer-p1s", "value": "12345678" }),
+    )
+    .await;
+    assert_eq!(r["result"]["kept"], "session", "{r}");
+    let r = call(&mut ws, 2, "secrets.has", json!({ "name": "printer-p1s" })).await;
+    assert_eq!(r["result"]["has"], true, "{r}");
+    // A connection test's credential never touches the keychain.
+    let r = call(
+        &mut ws,
+        3,
+        "secrets.set",
+        json!({ "name": "printer-test-1", "value": "12345678" }),
+    )
+    .await;
+    assert_eq!(r["result"]["kept"], "stored", "{r}");
+}
