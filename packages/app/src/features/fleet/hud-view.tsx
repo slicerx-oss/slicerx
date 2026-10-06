@@ -12,7 +12,7 @@ import { appName } from '../../edition'
 import { lastStillOf, useCamera } from '../../camera/use-camera'
 import { noteViewClosing } from '../../camera/closing'
 import { CameraIdle, CameraProblem, FirstLookCover, useFirstLook } from '../../camera/idle'
-import { OfflineIdle } from './offline'
+import { CodeNeeded, OfflineIdle } from './offline'
 import { printerImage } from '../../first-run/printer-images'
 import { catalogModel } from '../../plate/preflight'
 import { useMediaQuery } from '../../lib/media'
@@ -127,7 +127,7 @@ function Backdrop({ row }: { row: FleetRow }) {
   if (st.state === 'offline')
     return (
       <div className="ph-quiet" data-testid="ph-placeholder">
-        <OfflineIdle printerId={row.id} now={now} size="lg" />
+        {st.needsCode && st.codeRef ? <CodeNeeded codeRef={st.codeRef} name={row.name} size="lg" /> : <OfflineIdle printerId={row.id} now={now} size="lg" />}
       </div>
     )
   const model = catalogModel(row)

@@ -43,7 +43,8 @@ export interface FileHost {
  */
 export interface SecretsHost {
   has(name: string): Promise<boolean>
-  set(name: string, value: string): Promise<void>
+  /** `kept: 'session'`: the system keychain refused it, so it is kept only until the app closes. */
+  set(name: string, value: string): Promise<void | { kept: 'stored' | 'session' }>
   delete(name: string): Promise<void>
 }
 

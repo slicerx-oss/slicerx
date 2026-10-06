@@ -69,6 +69,10 @@ export interface SlotSetting {
 export interface PrinterStatus {
   printerId: string
   state: PrinterState
+  /** Offline because the access code is no longer stored on this computer: the app asks for it and stores it under `codeRef`. */
+  needsCode?: boolean
+  /** The name the printer's code is stored under, when `needsCode`. A name, never a secret. */
+  codeRef?: string
   jobName?: string
   progress?: number
   layer?: number
@@ -372,6 +376,8 @@ export type PrinterErrorCode =
   | 'protocol'
   /** The printer answered the start with a refusal; the message carries its reason. */
   | 'refused'
+  /** No access code is stored on this computer for the printer (the keychain kept it only for a session). */
+  | 'credential_missing'
 
 /** Error shape at the host boundary. Messages never contain secrets. */
 export interface PrinterError {
