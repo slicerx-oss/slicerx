@@ -365,7 +365,7 @@ pub struct DiscoveredPrinter {
     /// false while it is free.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bound: Option<bool>,
-    /// The announcement offers HTTPS on `port` (Moonraker's `https_port`).
+    /// The printer also offers HTTPS (Moonraker's `https_port`); `port` stays the plain one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tls: Option<bool>,
     /// An identity that survives an address change, for printers that announce one without a

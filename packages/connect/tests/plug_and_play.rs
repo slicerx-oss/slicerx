@@ -10,7 +10,7 @@ use std::sync::Arc;
 use common::{Mocks, config, expect_code, job_file, secrets};
 use std::time::Duration;
 
-use sx_connect::drivers::{BambuConnector, MoonrakerConnector};
+use sx_connect::drivers::{BambuConnector, MoonrakerConnector, SnapmakerConnector};
 use sx_connect::{
     Action, ErrorCode, JobKind, MemoryGate, PrinterConnector, PrinterSession, PrinterState, StartOptions,
     params,
@@ -272,4 +272,32 @@ async fn moonraker_probe_confirms_a_typed_address() {
         .control("/moonraker", serde_json::json!({ "variant": "u1" }))
         .await;
     assert!(conn.probe("127.0.0.1", wait).await.is_none());
+}
+
+// A U1 typed in by address: found on whichever of 80 and 7125 answers, named by its own Klipper
+// object, and connected through Moonraker with no port given.
+#[tokio::test]
+async fn a_snapmaker_u1_is_found_and_connected_by_address() {
+    let (mocks, _s) = moonraker(&[], serde_json::json!({ "variant": "u1" })).await;
+    let port = mocks.port("moonraker");
+    let conn = SnapmakerConnector::new(Arc::new(MemoryGate::new())).with_u1_ports(vec![1, port]);
+    let p = conn.probe("127.0.0.1", Duration::from_millis(800)).await.unwrap();
+    assert_eq!(
+        (p.plugin.as_str(), p.model.as_deref(), p.port),
+        ("snapmaker", Some("U1"), Some(port))
+    );
+    assert_eq!(p.name.as_deref(), Some("U1"));
+    let mut cfg = config("u1", "snapmaker", port);
+    cfg.port = None;
+    let s = conn.connect(&cfg, &secrets(&[])).await.unwrap();
+    assert_eq!(s.reported_model().as_deref(), Some("U1"));
+    // Another Klipper machine is not a U1.
+    mocks
+        .control("/moonraker", serde_json::json!({ "variant": null }))
+        .await;
+    assert!(
+        conn.probe("127.0.0.1", Duration::from_millis(800))
+            .await
+            .is_none()
+    );
 }

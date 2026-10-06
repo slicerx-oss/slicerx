@@ -400,6 +400,11 @@ pub fn assemble(packets: &[(IpAddr, Message)]) -> Vec<Service> {
 /// goes: [`MDNS_GROUP_V4`] on port 5353 in production, a local socket in tests. The query is sent
 /// again after a third and two thirds of the window because multicast is lossy.
 pub async fn browse(services: &[&str], target: SocketAddr, window: Duration) -> Vec<Service> {
+    assemble(&browse_packets(services, target, window).await)
+}
+
+/// The answers to a query for `services`, as [`browse`] collects them, before they are grouped.
+async fn browse_packets(services: &[&str], target: SocketAddr, window: Duration) -> Vec<(IpAddr, Message)> {
     let query = encode_query(services);
     if query.is_empty() {
         return Vec::new();
@@ -421,12 +426,11 @@ pub async fn browse(services: &[&str], target: SocketAddr, window: Duration) -> 
         IpAddr::V6(_) => socks.extend(UdpSocket::bind((Ipv6Addr::UNSPECIFIED, 0)).await.ok()),
     }
     let runs = socks.into_iter().map(|sock| ask(sock, &query, target, window));
-    let packets: Vec<(IpAddr, Message)> = futures::future::join_all(runs)
+    futures::future::join_all(runs)
         .await
         .into_iter()
         .flatten()
-        .collect();
-    assemble(&packets)
+        .collect()
 }
 
 /// Sends `query` at the start and after a third and two thirds of the window, and keeps every
@@ -456,12 +460,38 @@ async fn ask(sock: UdpSocket, query: &[u8], target: SocketAddr, window: Duration
     packets
 }
 
-/// Printers announced by [`PRINTER_SERVICES`]. Hosts that are not on the local network are the
-/// caller's to drop.
+/// Printers announced by [`PRINTER_SERVICES`], plus stock Creality printers, whose service type
+/// carries the printer's own id (`_Creality-<id>._udp.local`, as OrcaSlicer's CrealityHostDiscovery
+/// finds them) and so is asked for through the list of service types ([`META_QUERY`]). Hosts that are
+/// not on the local network are the caller's to drop.
 pub async fn browse_printers(target: SocketAddr, window: Duration) -> Vec<DiscoveredPrinter> {
-    let types: Vec<&str> = PRINTER_SERVICES.iter().map(|(t, _)| *t).collect();
+    let mut types: Vec<&str> = PRINTER_SERVICES.iter().map(|(t, _)| *t).collect();
+    types.push(META_QUERY);
+    printers_from(&browse_packets(&types, target, window).await)
+}
+
+/// A TXT record's `key=value` strings as pairs.
+fn txt_value<'a>(txt: &'a [String], key: &str) -> Option<&'a str> {
+    txt.iter().find_map(|t| {
+        let (k, v) = t.split_once('=')?;
+        k.eq_ignore_ascii_case(key)
+            .then_some(v.trim())
+            .filter(|v| !v.is_empty())
+    })
+}
+
+/// The printers in a browse's answers.
+pub(crate) fn printers_from(packets: &[(IpAddr, Message)]) -> Vec<DiscoveredPrinter> {
     let mut out: Vec<DiscoveredPrinter> = Vec::new();
-    for s in browse(&types, target, window).await {
+    let mut push = |p: DiscoveredPrinter| {
+        if !out
+            .iter()
+            .any(|o| o.plugin == p.plugin && o.host == p.host && o.port == p.port)
+        {
+            out.push(p);
+        }
+    };
+    for s in assemble(packets) {
         let Some((_, plugin)) = PRINTER_SERVICES
             .iter()
             .find(|(t, _)| t.eq_ignore_ascii_case(&s.service))
@@ -477,25 +507,58 @@ pub async fn browse_printers(target: SocketAddr, window: Duration) -> Vec<Discov
         else {
             continue;
         };
-        let p = DiscoveredPrinter {
+        let mut p = DiscoveredPrinter {
             plugin: (*plugin).to_owned(),
             host: addr.to_string(),
             port: Some(s.port),
             name: Some(s.instance.clone()),
-            model: None,
-            serial: None,
-            firmware: None,
-            lan_only: None,
             ..DiscoveredPrinter::default()
         };
-        if !out
-            .iter()
-            .any(|o| o.plugin == p.plugin && o.host == p.host && o.port == p.port)
-        {
-            out.push(p);
+        if *plugin == "moonraker" {
+            // Moonraker's zeroconf TXT: `uuid`, `version`, and `https_port` when TLS is set up.
+            p.uid = txt_value(&s.txt, "uuid").map(str::to_owned);
+            p.firmware = txt_value(&s.txt, "version").map(|v| format!("Moonraker {v}"));
+            p.tls = txt_value(&s.txt, "https_port").map(|_| true);
+            // The Snapmaker U1's Moonraker announces itself as U1.local (`mdns_hostname U1`).
+            if s.host_name.trim_end_matches('.').eq_ignore_ascii_case("u1.local") {
+                "snapmaker".clone_into(&mut p.plugin);
+                p.model = Some("U1".to_owned());
+            }
+        }
+        push(p);
+    }
+    // Stock Creality firmware: a service type of its own per printer, heard in the type list.
+    for (src, m) in packets {
+        if !m.response {
+            continue;
+        }
+        for r in &m.records {
+            let Rdata::Ptr(t) = &r.data else { continue };
+            if r.ttl == 0 || !r.name.eq_ignore_ascii_case(META_QUERY) {
+                continue;
+            }
+            let Some(id) = creality_service_id(t) else {
+                continue;
+            };
+            push(DiscoveredPrinter {
+                plugin: "creality".to_owned(),
+                host: src.to_string(),
+                uid: Some(id),
+                ..DiscoveredPrinter::default()
+            });
         }
     }
     out
+}
+
+/// The printer id in a stock Creality service type, `_Creality-<id>._udp.local`.
+fn creality_service_id(t: &str) -> Option<String> {
+    let lower = t.to_ascii_lowercase();
+    let rest = lower.strip_prefix("_creality-")?;
+    let id = rest
+        .strip_suffix("._udp.local")
+        .or_else(|| rest.strip_suffix("._udp.local."))?;
+    (!id.is_empty() && id.bytes().all(|b| b.is_ascii_alphanumeric())).then(|| id.to_ascii_uppercase())
 }
 
 /// One service this machine offers: the records to announce and the logic that answers queries.
@@ -707,5 +770,72 @@ mod tests {
         assert_eq!(found[0].host, "192.168.1.50");
         assert_eq!(found[0].port, Some(7125));
         assert_eq!(found[0].name.as_deref(), Some("voron"));
+    }
+
+    fn answer(records: Vec<Record>) -> (IpAddr, Message) {
+        (
+            IpAddr::V4(Ipv4Addr::new(192, 168, 1, 60)),
+            Message {
+                response: true,
+                questions: Vec::new(),
+                records,
+            },
+        )
+    }
+
+    fn rec(name: &str, data: Rdata) -> Record {
+        Record {
+            name: name.to_owned(),
+            ttl: 120,
+            data,
+        }
+    }
+
+    #[test]
+    fn moonraker_txt_fills_the_identity_and_a_u1_is_a_snapmaker() {
+        let svc = "_moonraker._tcp.local";
+        let packets = [answer(vec![
+            rec(svc, Rdata::Ptr(format!("U1.{svc}"))),
+            rec(
+                &format!("U1.{svc}"),
+                Rdata::Srv {
+                    port: 7125,
+                    target: "U1.local".to_owned(),
+                },
+            ),
+            rec(
+                &format!("U1.{svc}"),
+                Rdata::Txt(vec![
+                    "uuid=1b2c3d4e".to_owned(),
+                    "https_port=".to_owned(),
+                    "version=v0.9.3".to_owned(),
+                ]),
+            ),
+            rec("U1.local", Rdata::A(Ipv4Addr::new(192, 168, 1, 61))),
+        ])];
+        let found = printers_from(&packets);
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert_eq!(found[0].plugin, "snapmaker");
+        assert_eq!(found[0].model.as_deref(), Some("U1"));
+        assert_eq!(found[0].uid.as_deref(), Some("1b2c3d4e"));
+        assert_eq!(found[0].firmware.as_deref(), Some("Moonraker v0.9.3"));
+        assert_eq!(found[0].tls, None);
+    }
+
+    #[test]
+    fn a_stock_creality_is_heard_in_the_service_types() {
+        let packets = [answer(vec![
+            rec(
+                META_QUERY,
+                Rdata::Ptr("_Creality-543324280CDB19._udp.local".to_owned()),
+            ),
+            rec(META_QUERY, Rdata::Ptr("_http._tcp.local".to_owned())),
+        ])];
+        let found = printers_from(&packets);
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert_eq!(found[0].plugin, "creality");
+        assert_eq!(found[0].host, "192.168.1.60");
+        assert_eq!(found[0].uid.as_deref(), Some("543324280CDB19"));
+        assert_eq!(creality_service_id("_creality-a b._udp.local"), None);
     }
 }

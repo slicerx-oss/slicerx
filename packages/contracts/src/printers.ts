@@ -301,7 +301,7 @@ export interface DiscoveredPrinter {
   lanOnly?: boolean
   /** Bambu Lab: true while the printer is bound to a Bambu account (SSDP `DevBind` `occupied`). */
   bound?: boolean
-  /** The announcement offers HTTPS on `port` (Moonraker's `https_port`). */
+  /** The printer also offers HTTPS (Moonraker's `https_port`); `port` stays the plain one. */
   tls?: boolean
   /** An identity that survives an address change, for printers that announce one without a serial number (Moonraker's `uuid`). */
   uid?: string
