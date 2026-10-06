@@ -270,10 +270,10 @@ describe.skipIf(!existsSync(sxBin))('print by object with the real sx CLI', () =
     const h = await connect({ engine: 'sx', sxBin })
     const cases: { boxes: Box[]; profiles: string[]; overrides?: Record<string, unknown>; says: RegExp }[] = [
       // 30 mm tall, printed first, beside the next one: the gantry rod is at 25 mm.
-      { boxes: [{ name: 'Tower', x: 60, y: 128, w: 20, d: 20, h: 30 }, { name: 'Base', x: 140, y: 128, w: 20, d: 20, h: 6 }], profiles: A1, says: /The gantry hits Tower\. Tower is 30\.0 mm tall\. The gantry clears 25\.0 mm/ },
-      { boxes: [{ name: 'Tower', x: 40, y: 90, w: 20, d: 20, h: 30 }, { name: 'Base', x: 120, y: 90, w: 20, d: 20, h: 6 }], profiles: A1_MINI, says: /gantry clears 25\.0 mm/ },
+      { boxes: [{ name: 'Tower', x: 60, y: 128, w: 20, d: 20, h: 30 }, { name: 'Base', x: 140, y: 128, w: 20, d: 20, h: 6 }], profiles: A1, says: /The gantry hits Tower\. Tower is 30\.0 mm tall, over the 25\.0 mm the gantry clears/ },
+      { boxes: [{ name: 'Tower', x: 40, y: 90, w: 20, d: 20, h: 30 }, { name: 'Base', x: 120, y: 90, w: 20, d: 20, h: 6 }], profiles: A1_MINI, says: /over the 25\.0 mm the gantry clears/ },
       // Far apart in y the lid is the limit.
-      { boxes: [{ name: 'Tower', x: 128, y: 50, w: 20, d: 20, h: 30 }, { name: 'Base', x: 128, y: 170, w: 20, d: 20, h: 6 }], profiles: A1, overrides: { extruder_clearance_height_to_lid: 28 }, says: /The frame hits Tower.*clears 28\.0 mm/ },
+      { boxes: [{ name: 'Tower', x: 128, y: 50, w: 20, d: 20, h: 30 }, { name: 'Base', x: 128, y: 170, w: 20, d: 20, h: 6 }], profiles: A1, overrides: { extruder_clearance_height_to_lid: 28 }, says: /The frame hits Tower\..*over the 28\.0 mm the frame clears/ },
     ]
     for (const c of cases) {
       const file = project(join(h.dir, 'close.3mf'), c.boxes)

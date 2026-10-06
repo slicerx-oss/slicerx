@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 //! What the app shows: the collisions the plate's order runs into, when each happens, and the fixes with their cost.
+//! Codes, numbers and object ids only; the app writes the words.
 
 use super::{Hit, Kind, Meta, Part, Severity};
 use serde::{Deserialize, Serialize};
@@ -12,8 +13,6 @@ pub struct Collision {
     pub kind: Kind,
     pub severity: Severity,
     pub part: Part,
-    pub title: String,
-    pub detail: String,
     /// The object printing, and the one it meets.
     pub object_id: String,
     pub hit_id: String,
@@ -30,6 +29,12 @@ pub struct Collision {
     pub worst_layer: u32,
     pub worst_point: [f32; 3],
     pub depth_mm: f32,
+    /// How tall the object it meets stands, mm.
+    pub hit_height_mm: f32,
+    /// The clearance it breaks, mm: the rod height (gantry), the lid height (lid), the clearance radius (close call);
+    /// 0 for the rest.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub limit_mm: f32,
     /// The extra spacing that clears it sideways (toolhead), mm.
     #[serde(default, skip_serializing_if = "is_zero")]
     pub push_mm: f32,
@@ -67,8 +72,6 @@ pub enum FixKind {
 #[serde(rename_all = "camelCase")]
 pub struct CollisionFix {
     pub kind: FixKind,
-    pub title: String,
-    pub detail: String,
     /// Print time it adds (negative when it saves), s.
     pub cost_s: f64,
     /// The collisions it clears, as indices into the list.
@@ -84,6 +87,17 @@ pub struct CollisionFix {
     /// Move object: which one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub object_id: Option<String>,
+    /// Print by layer: the most extra travel moves on one layer.
+    #[serde(default, skip_serializing_if = "is_none_u32")]
+    pub moves: u32,
+}
+
+#[allow(
+    clippy::trivially_copy_pass_by_ref,
+    reason = "serde's skip_serializing_if signature"
+)]
+fn is_none_u32(v: &u32) -> bool {
+    *v == 0
 }
 
 /// The collisions and fixes of a plate.
@@ -143,13 +157,16 @@ pub fn report(meta: &Meta, hits: &[Hit], layer_s: &[f64], prepare_s: f64) -> Rep
     }
     let mut collisions = Vec::with_capacity(kept.len());
     for &(time_s, h) in &kept {
-        let (title, detail) = words(meta, h);
+        let limit = match (h.severity, h.part) {
+            (Severity::Close, _) => meta.radius,
+            (_, Part::Gantry) => meta.rod,
+            (_, Part::Lid) => meta.lid,
+            _ => 0.0,
+        };
         collisions.push(Collision {
             kind: h.kind,
             severity: h.severity,
             part: h.part,
-            title,
-            detail,
             object_id: meta.id(h.mover),
             hit_id: meta.id(h.obstacle),
             layer: h.first.layer,
@@ -161,6 +178,8 @@ pub fn report(meta: &Meta, hits: &[Hit], layer_s: &[f64], prepare_s: f64) -> Rep
             worst_layer: h.worst.layer,
             worst_point: h.worst.point,
             depth_mm: h.depth,
+            hit_height_mm: meta.objects.get(h.obstacle as usize).map_or(0.0, |o| o.height),
+            limit_mm: limit,
             push_mm: h.push,
             change: h.first.change,
         });
@@ -171,100 +190,11 @@ pub fn report(meta: &Meta, hits: &[Hit], layer_s: &[f64], prepare_s: f64) -> Rep
 }
 
 impl Meta {
-    fn name(&self, i: u32) -> &str {
-        self.objects
-            .get(i as usize)
-            .map_or("an object", |o| o.name.as_str())
-    }
-
     fn id(&self, i: u32) -> String {
         self.objects
             .get(i as usize)
             .map(|o| o.id.clone())
             .unwrap_or_default()
-    }
-
-    fn station(&self) -> &str {
-        if self.station.is_empty() {
-            "tool changer"
-        } else {
-            &self.station
-        }
-    }
-}
-
-/// The title and the explanation of a hit.
-fn words(meta: &Meta, h: &Hit) -> (String, String) {
-    let (a, b) = (meta.name(h.mover), meta.name(h.obstacle));
-    let hb = meta.objects.get(h.obstacle as usize).map_or(0.0, |o| o.height);
-    let z = h.first.at[2];
-    let r = if h.last_layer > h.first.layer {
-        format!(", layers {} to {}", h.first.layer + 1, h.last_layer + 1)
-    } else {
-        format!(", on layer {}", h.first.layer + 1)
-    };
-    let station = meta.station();
-    let piece = match h.part {
-        Part::Nozzle => "nozzle",
-        Part::Gantry => "gantry",
-        _ => "toolhead",
-    };
-    let tall = format!("{b}, which stands {hb:.1} mm tall{r}.");
-    match (h.kind, h.part, h.severity) {
-        (_, _, Severity::Close) => (
-            format!("The toolhead passes close to {b}"),
-            format!(
-                "While {a} prints, the nozzle comes within {:.1} mm of {b}. The printer profile asks for {:.0} mm around the nozzle; the head's own shape clears {b}, so this is the profile's margin, not a hit{r}.",
-                meta.radius - h.depth,
-                meta.radius
-            ),
-        ),
-        (Kind::Gantry, part, _) => {
-            let (what, clear) = if part == Part::Lid {
-                (
-                    "frame",
-                    format!(
-                        "Over the whole bed the printer clears {:.1} mm above the nozzle, so {b} is in the way",
-                        meta.lid
-                    ),
-                )
-            } else {
-                (
-                    "gantry",
-                    format!(
-                        "The gantry clears {:.1} mm above the nozzle, and it passes over {b}",
-                        meta.rod
-                    ),
-                )
-            };
-            (
-                format!("The {what} hits {b}"),
-                format!("{b} is {hb:.1} mm tall. {clear} while {a} prints{r}."),
-            )
-        }
-        (Kind::NozzleTravelThroughPart, _, _) => (
-            format!("A travel runs through {b}"),
-            format!("Moving across {a} at {z:.2} mm, the nozzle passes through {tall}"),
-        ),
-        (Kind::Hotend, Part::Nozzle, _) => (
-            format!("The nozzle prints into {b}"),
-            format!("A move of {a} at {z:.2} mm passes through {tall}"),
-        ),
-        (Kind::Hotend, _, _) => (
-            format!("The toolhead hits {b}"),
-            format!(
-                "While {a} prints at {z:.2} mm, the toolhead reaches {:.1} mm into {tall}",
-                h.push.max(0.1)
-            ),
-        ),
-        (Kind::ToolChange, _, _) => (
-            format!("A tool change crosses {b}"),
-            format!("On the way to the {station} at {z:.2} mm, the {piece} passes through {tall}"),
-        ),
-        (Kind::Dock, _, _) => (
-            format!("The {station} meets {b}"),
-            format!("At the {station}, with {a} at {z:.2} mm, the {piece} reaches {tall}"),
-        ),
     }
 }
 
@@ -291,24 +221,16 @@ fn order_without(n: usize, before: &[(usize, usize)]) -> Vec<usize> {
     out
 }
 
-fn fix(
-    kind: FixKind,
-    title: String,
-    detail: String,
-    cost_s: f64,
-    clears: Vec<u32>,
-    one_click: bool,
-) -> CollisionFix {
+fn fix(kind: FixKind, cost_s: f64, clears: Vec<u32>, one_click: bool) -> CollisionFix {
     CollisionFix {
         kind,
-        title,
-        detail,
         cost_s,
         clears,
         one_click,
         order: Vec::new(),
         mm: None,
         object_id: None,
+        moves: 0,
     }
 }
 
@@ -319,12 +241,6 @@ fn fixes(meta: &Meta, hits: &[Hit], kept: &[&Hit], collisions: &[Collision]) -> 
         return out;
     }
     let n = meta.objects.len();
-    let count = |c: usize| match c {
-        1 => "it".to_owned(),
-        2 if total == 2 => "both".to_owned(),
-        c if c == total => format!("all {c}"),
-        c => format!("{c} of {total}"),
-    };
     let index = |pred: &dyn Fn(&Collision) -> bool| -> Vec<u32> {
         let mut v = Vec::new();
         for (i, c) in collisions.iter().enumerate() {
@@ -368,48 +284,18 @@ fn fixes(meta: &Meta, hits: &[Hit], kept: &[&Hit], collisions: &[Collision]) -> 
         }
     }
     if let Some((order, clears)) = best {
-        // "Print X last" when one object moved to the end and the rest kept their order.
-        let last = order.last().copied().unwrap_or(0);
-        let kept_order = order
+        let mut f = fix(FixKind::Reorder, 0.0, clears, true);
+        f.order = order
             .iter()
-            .take(n.saturating_sub(1))
-            .copied()
-            .eq((0..n).filter(|&i| i != last));
-        let title = if kept_order {
-            format!("Print {} last", meta.name(u32::try_from(last).unwrap_or(0)))
-        } else {
-            "Print the objects in a new order".to_owned()
-        };
-        let mut names = String::new();
-        let mut ids = Vec::with_capacity(n);
-        for &i in &order {
-            let i = u32::try_from(i).unwrap_or(0);
-            if !names.is_empty() {
-                names.push_str(", ");
-            }
-            names.push_str(meta.name(i));
-            ids.push(meta.id(i));
-        }
-        let detail = format!("Order: {names}. Clears {}.", count(clears.len()));
-        let mut f = fix(FixKind::Reorder, title, detail, 0.0, clears, true);
-        f.order = ids;
+            .map(|&i| meta.id(u32::try_from(i).unwrap_or(0)))
+            .collect();
         out.push(f);
     }
-    if meta.no_by_layer.is_empty() {
+    if meta.by_layer {
         let (extra, moves) = by_layer_cost(meta);
-        let detail = format!(
-            "Clears {}. Up to {moves} more travel {} per layer between the objects.",
-            count(total),
-            if moves == 1 { "move" } else { "moves" }
-        );
-        out.push(fix(
-            FixKind::ByLayer,
-            "Print by layer".to_owned(),
-            detail,
-            extra,
-            index(&|_| true),
-            true,
-        ));
+        let mut f = fix(FixKind::ByLayer, extra, index(&|_| true), true);
+        f.moves = u32::try_from(moves).unwrap_or(u32::MAX);
+        out.push(f);
     }
     let sideways = index(&|c| c.kind == Kind::Hotend && c.part == Part::Toolhead);
     if !sideways.is_empty() {
@@ -424,19 +310,7 @@ fn fixes(meta: &Meta, hits: &[Hit], kept: &[&Hit], collisions: &[Collision]) -> 
             }
         }
         let mm = (need + 1.0).ceil();
-        let detail = format!(
-            "Clears {} the toolhead {}. Move them apart in Prepare, or arrange the plate with more space.",
-            count(sideways.len()),
-            if sideways.len() == 1 { "strike" } else { "strikes" }
-        );
-        let mut f = fix(
-            FixKind::Spread,
-            format!("Space the objects {mm:.0} mm wider"),
-            detail,
-            0.0,
-            sideways,
-            false,
-        );
+        let mut f = fix(FixKind::Spread, 0.0, sideways, false);
         f.mm = Some(mm);
         out.push(f);
     }
@@ -451,48 +325,21 @@ fn fixes(meta: &Meta, hits: &[Hit], kept: &[&Hit], collisions: &[Collision]) -> 
         let hop = f64::from(meta.z_hop).max(0.0);
         let lift = ((f64::from(depth) + 0.4) * 10.0).ceil() / 10.0 + hop;
         let extra = f64::from(moves) * 2.0 * (lift - hop) / f64::from(meta.z_speed).max(1.0);
-        let detail = format!(
-            "Set Z hop to {lift:.1} mm. Clears the travel {}.",
-            if travels.len() == 1 { "strike" } else { "strikes" }
-        );
-        let mut f = fix(
-            FixKind::RaiseLift,
-            format!("Lift {lift:.1} mm on travels"),
-            detail,
-            extra,
-            travels,
-            false,
-        );
+        let mut f = fix(FixKind::RaiseLift, extra, travels, false);
         #[allow(clippy::cast_possible_truncation, reason = "mm")]
         {
             f.mm = Some(lift as f32);
         }
         out.push(f);
     }
-    let station = meta.station();
     let mut lanes: Vec<&str> = Vec::new();
     for c in collisions {
         if !matches!(c.kind, Kind::ToolChange | Kind::Dock) || lanes.contains(&c.hit_id.as_str()) {
             continue;
         }
         lanes.push(&c.hit_id);
-        let b = meta
-            .objects
-            .iter()
-            .find(|o| o.id == c.hit_id)
-            .map_or("the object", |o| o.name.as_str());
-        let detail = format!(
-            "The toolhead crosses {b} on its way to the {station}. Place {b} where the head does not pass, toward the front, or print it last."
-        );
         let clears = index(&|x| matches!(x.kind, Kind::ToolChange | Kind::Dock) && x.hit_id == c.hit_id);
-        let mut f = fix(
-            FixKind::MoveObject,
-            format!("Move {b} out of the way to the {station}"),
-            detail,
-            0.0,
-            clears,
-            false,
-        );
+        let mut f = fix(FixKind::MoveObject, 0.0, clears, false);
         f.object_id = Some(c.hit_id.clone());
         out.push(f);
     }
@@ -556,7 +403,6 @@ mod tests {
     fn obj(id: &str, h: f32, x: f32) -> MetaObject {
         MetaObject {
             id: id.to_owned(),
-            name: id.to_owned(),
             height: h,
             center: [x, 100.0],
         }
@@ -598,7 +444,7 @@ mod tests {
             z_speed: 12.0,
             retract_s: 0.1,
             z_hop: 0.4,
-            ..Meta::default()
+            by_layer: true,
         }
     }
 
@@ -619,10 +465,12 @@ mod tests {
         // b prints before c, so its strike comes first, at 30 s + 200 layers + half a layer
         assert_eq!(r.collisions[0].object_id, "b");
         assert!((r.collisions[0].time_s - 230.5).abs() < 1e-9);
-        assert!(r.collisions[0].title.contains("gantry hits tall"));
+        assert!(
+            (r.collisions[0].limit_mm - 40.0).abs() < 1e-6
+                && (r.collisions[0].hit_height_mm - 48.0).abs() < 1e-6
+        );
         let reorder = r.fixes.iter().find(|f| f.kind == FixKind::Reorder).unwrap();
         assert_eq!(reorder.order, ["b", "c", "tall"]);
-        assert_eq!(reorder.title, "Print tall last");
         assert_eq!(reorder.clears, [0, 1]);
         assert!(reorder.one_click);
         let by_layer = r.fixes.iter().find(|f| f.kind == FixKind::ByLayer).unwrap();

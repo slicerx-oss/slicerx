@@ -60,7 +60,7 @@ async function preflightFor(printers: PrinterHost, printer: PrinterInfo, file: {
     plateBounds: pb,
     plateBed: s.bed,
     file: { name: file.name, sha256: file.sha256, layers: done?.layerCount ?? 0, timeS: done?.stats.timeS ?? 0, grams: done ? done.stats.filamentG.reduce((a, b) => a + b, 0) : 0 },
-    ...(done?.collisions ? { collisions: done.collisions } : {}),
+    ...(done?.collisions ? { collisions: done.collisions, objectNames: Object.fromEntries(s.plate.map((p) => [p.id, p.name])) } : {}),
   })
 }
 

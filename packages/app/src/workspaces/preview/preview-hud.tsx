@@ -16,6 +16,7 @@ import { setGcodePanel, useGcodeView } from './gcode-file'
 import { MARKERS, setMarkerShown, useMarkers } from './markers'
 import { purgeReadout, usePurgeView, type PlayPurge } from './purge-view'
 import { collisionsOf, collisionTime, jumpToCollision } from '../../plate/heimdall'
+import { collisionTitle, namesOf } from '../../plate/heimdall-words'
 
 /** Heights in px the playback bar snaps between: slim (transport only), medium and full. */
 const DOCK = { min: 56, max: 240, full: 190 } as const
@@ -119,6 +120,7 @@ export function LayerDock() {
   // heimdall: a jump to a strike plays the seconds before it and stops on it.
   const strikeJump = useApp((s) => s.strikeJump)
   const strikes = useApp(collisionsOf)
+  const names = namesOf(useApp((s) => s.plate))
   const stopAt = useRef<number | null>(null)
   // The purge at the chute (Bambu printers), read from the G-code once the preview is up.
   const purges = usePurgeView((s) => (s.timeline === timeline ? s.plans : NO_PURGES))
@@ -353,7 +355,7 @@ export function LayerDock() {
           {strikes.map((c, i) => {
             const at = collisionTime(get(), c)
             return at === null ? null : (
-              <button key={i} type="button" className="strike-tick" data-severity={c.severity} style={{ left: `${(sliderOf(timeline, at) / Math.max(1, timeline.total)) * 100}%` }} aria-label={`${c.title}, ${clock(at)}`} {...tipAttrs({ title: c.title, body: `${clock(at)}. Click to jump there.` })} onClick={() => jumpToCollision(i)}>
+              <button key={i} type="button" className="strike-tick" data-severity={c.severity} style={{ left: `${(sliderOf(timeline, at) / Math.max(1, timeline.total)) * 100}%` }} aria-label={`${collisionTitle(c, names)}, ${clock(at)}`} {...tipAttrs({ title: collisionTitle(c, names), body: `${clock(at)}. Click to jump there.` })} onClick={() => jumpToCollision(i)}>
                 <Icon name="strike" size={12} />
               </button>
             )
@@ -392,7 +394,7 @@ export function LayerDock() {
           />
           {strikes.map((c, i) =>
             c.layer === top - 1 ? (
-              <button key={i} type="button" className="strike-tick" data-severity={c.severity} style={{ left: `${movesOf(timeline, preview, top, segs > 0 ? c.segment / segs : 0) * 100}%` }} aria-label={`${c.title}, move ${c.segment + 1}`} {...tipAttrs({ title: c.title, body: `Move ${c.segment + 1} of this layer. Click to jump there.` })} onClick={() => jumpToCollision(i)}>
+              <button key={i} type="button" className="strike-tick" data-severity={c.severity} style={{ left: `${movesOf(timeline, preview, top, segs > 0 ? c.segment / segs : 0) * 100}%` }} aria-label={`${collisionTitle(c, names)}, move ${c.segment + 1}`} {...tipAttrs({ title: collisionTitle(c, names), body: `Move ${c.segment + 1} of this layer. Click to jump there.` })} onClick={() => jumpToCollision(i)}>
                 <Icon name="strike" size={12} />
               </button>
             ) : null,

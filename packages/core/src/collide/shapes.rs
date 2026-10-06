@@ -28,8 +28,6 @@ pub(crate) struct Stop {
 
 #[derive(Debug, Clone, Default)]
 pub(crate) struct Changer {
-    /// `toolChangerSpec`'s kind: dual-nozzle, hotend-rack, tool-rack, xl-dock, lift-switch, filament-swap.
-    pub kind: String,
     /// How far the head lifts over the print for the change, mm.
     pub lift_mm: f64,
     /// Each change's stops by its tools, `from-to` as the file writes them.
@@ -44,16 +42,6 @@ impl Changer {
         find(&key)
             .or_else(|| find("0-1"))
             .map_or(&[], |(_, s)| s.as_slice())
-    }
-
-    /// What the head goes to, for messages.
-    pub(crate) fn station(&self) -> &'static str {
-        match self.kind.as_str() {
-            "hotend-rack" => "hotend rack",
-            "tool-rack" | "xl-dock" => "tool dock",
-            "lift-switch" => "switch bay",
-            _ => "purge chute",
-        }
     }
 }
 
@@ -124,11 +112,6 @@ fn changer(c: &Value) -> Changer {
         })
         .unwrap_or_default();
     Changer {
-        kind: c
-            .get("kind")
-            .and_then(Value::as_str)
-            .unwrap_or_default()
-            .to_owned(),
         lift_mm: c.get("liftMm").and_then(Value::as_f64).unwrap_or(3.0),
         routes,
     }
@@ -193,11 +176,9 @@ mod tests {
         let h2d = machine(Some("bambu-h2d"), None);
         assert_eq!(h2d.heads.len(), 2);
         let ch = h2d.changer.expect("H2D changes at the chute");
-        assert_eq!(ch.kind, "dual-nozzle");
         assert!(ch.route(1, 0).first().is_some_and(|s| s.y > 320.0));
         let u1 = machine(None, Some("Snapmaker U1"));
         let ch = u1.changer.expect("U1 docks its tools");
-        assert_eq!(ch.kind, "tool-rack");
         // the U1's dock stops are behind the bed
         assert!(ch.route(0, 2).iter().any(|s| s.station && s.y > 300.0));
         assert!(machine(Some("nobody"), None).changer.is_none());

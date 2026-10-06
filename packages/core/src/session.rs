@@ -1862,20 +1862,15 @@ impl SliceSession {
         self.collide.as_deref().map(|m| &m.meta)
     }
 
-    /// Why the objects of this by-object plate could not print layer by layer instead; None when they can.
-    pub(crate) fn by_layer_blocker(&self, config: &PrintConfig) -> Option<String> {
-        if crate::spiral::enabled(config) {
-            return Some("spiral vase prints one object at a time".to_owned());
-        }
+    /// The objects of this by-object plate could print layer by layer instead: one layer plan, no spiral vase.
+    pub(crate) fn could_print_by_layer(&self, config: &PrintConfig) -> bool {
         let (h, f, c) = (self.plan.height, self.plan.first_height, &self.plan.custom);
-        self.followers
-            .iter()
-            .any(|s| {
-                (s.plan.height - h).abs() > 1e-9
-                    || (s.plan.first_height - f).abs() > 1e-9
-                    || s.plan.custom != *c
+        !crate::spiral::enabled(config)
+            && self.followers.iter().all(|s| {
+                (s.plan.height - h).abs() <= 1e-9
+                    && (s.plan.first_height - f).abs() <= 1e-9
+                    && s.plan.custom == *c
             })
-            .then(|| "the objects use different layer heights".to_owned())
     }
 
     /// The settings of the `k`th object of the sequence: the plate's plus its own overrides.

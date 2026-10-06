@@ -659,7 +659,7 @@ fn collide_model(
         config,
         req.options.printer_id.as_deref(),
         map,
-        session.by_layer_blocker(config).unwrap_or_default(),
+        session.could_print_by_layer(config),
     ))
 }
 

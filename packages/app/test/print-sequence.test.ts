@@ -57,7 +57,7 @@ describe('the by-object clearance check', () => {
 
 const plates = (sequence: 'by-object' | 'by-layer') => [{ id: 'p1', name: 'Plate 1', objects: [], settings: { sequence } }] as never
 const result = { id: 'r1', engine: 'sx', layerCount: 10, layerZ: new Float32Array(), layerTimeS: new Float32Array(), stats: { timeS: 600, filamentMm: [100], filamentG: [3], cost: 0, toolChanges: 0 }, stageMicros: {}, wallMs: 1, warnings: [] } as SliceResult
-const strike: Collision = { kind: 'gantry', severity: 'hit', part: 'gantry', title: 'The gantry hits Cube A', detail: 'Cube A is 30.0 mm tall.', objectId: 'b', hitId: 'a', layer: 5, segment: 0, timeS: 300, lastLayer: 9, at: [0, 0, 1], point: [0, 0, 26], worstLayer: 5, worstPoint: [0, 0, 26], depthMm: 4 }
+const strike: Collision = { kind: 'gantry', severity: 'hit', part: 'gantry', objectId: 'b', hitId: 'a', layer: 5, segment: 0, timeS: 300, lastLayer: 9, at: [0, 0, 1], point: [0, 0, 26], worstLayer: 5, worstPoint: [0, 0, 26], depthMm: 4, hitHeightMm: 30, limitMm: 25 }
 const struck = { ...result, collisions: [strike], collisionFixes: [] } as SliceResult
 
 describe('a plate placed too close or too tall by object', () => {

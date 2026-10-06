@@ -269,7 +269,7 @@ fn cmd_request(args: &[String]) -> ExitCode {
         }
         Err(e) => return fail(EXIT_SLICE, e.to_string()),
     };
-    if let Some(why) = collision_refusal(&run.report, args) {
+    if let Some(why) = collision_refusal(&run.report, &req.plate.objects, args) {
         return fail(EXIT_INPUT, why);
     }
     let mut out = match serde_json::to_value(&run.report) {
@@ -307,13 +307,47 @@ fn cmd_request(args: &[String]) -> ExitCode {
 }
 
 /// Why a slice is refused when its head, gantry or tool changer would meet a printed part, unless
-/// `--allow-collisions` asks for it anyway.
-fn collision_refusal(report: &sx_core::api::SliceReport, args: &[String]) -> Option<String> {
+/// `--allow-collisions` asks for it anyway. The engine reports codes and numbers; the words are the command line's.
+fn collision_refusal(
+    report: &sx_core::api::SliceReport,
+    objects: &[sx_core::api::ObjectSpec],
+    args: &[String],
+) -> Option<String> {
+    use sx_core::collide::{Kind, Part, Severity};
+    let name = |id: &str| {
+        objects
+            .iter()
+            .find(|o| o.id == id)
+            .map_or(id, |o| if o.name.is_empty() { id } else { o.name.as_str() })
+            .to_owned()
+    };
     let hits: Vec<String> = report
         .collisions
         .iter()
-        .filter(|c| c.severity == sx_core::collide::Severity::Hit)
-        .map(|c| format!("{}. {}", c.title, c.detail))
+        .filter(|c| c.severity == Severity::Hit)
+        .map(|c| {
+            let (what, piece) = match (c.kind, c.part) {
+                (Kind::Gantry, Part::Lid) => ("The frame hits", "frame"),
+                (Kind::Gantry, _) => ("The gantry hits", "gantry"),
+                (Kind::NozzleTravelThroughPart, _) => ("A travel runs through", ""),
+                (Kind::Hotend, Part::Nozzle) => ("The nozzle prints into", ""),
+                (Kind::Hotend, _) => ("The toolhead hits", ""),
+                (Kind::ToolChange, _) => ("A tool change crosses", ""),
+                (Kind::Dock, _) => ("The tool changer meets", ""),
+            };
+            let b = name(&c.hit_id);
+            let clears = if piece.is_empty() {
+                String::new()
+            } else {
+                format!(", over the {:.1} mm the {piece} clears", c.limit_mm)
+            };
+            format!(
+                "{what} {b}. {b} is {:.1} mm tall{clears}, from layer {} while {} prints.",
+                c.hit_height_mm,
+                c.layer + 1,
+                name(&c.object_id)
+            )
+        })
         .collect();
     (!hits.is_empty() && !args.iter().any(|a| a == "--allow-collisions"))
         .then(|| sx_core::Error::Clearance(hits.join(" ")).to_string())

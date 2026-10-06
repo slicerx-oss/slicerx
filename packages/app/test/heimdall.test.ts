@@ -44,11 +44,11 @@ function preview(layers: number, segs: number): PreviewBuffers {
   return readPreview(raw)
 }
 
-const hit: Collision = { kind: 'gantry', severity: 'hit', part: 'gantry', title: 'The gantry hits Tall', detail: 'Tall is 48.0 mm tall.', objectId: 'low', hitId: 'tall', layer: 2, segment: 5, timeS: 25, lastLayer: 3, at: [50, 50, 0.6], point: [20, 40, 40.6], worstLayer: 2, worstPoint: [21, 41, 40.6], depthMm: 7.4 }
-const close: Collision = { ...hit, kind: 'hotend', severity: 'close', part: 'toolhead', title: 'The toolhead passes close to Tall', detail: 'Inside the margin.', worstPoint: [30, 30, 3] }
-const reorder: CollisionFix = { kind: 'reorder', title: 'Print Tall last', detail: 'Order: Low, Tall. Clears it.', costS: 0, clears: [0], oneClick: true, order: ['low', 'tall'] }
-const byLayer: CollisionFix = { kind: 'by_layer', title: 'Print by layer', detail: 'Clears it.', costS: 840, clears: [0], oneClick: true }
-const spread: CollisionFix = { kind: 'spread', title: 'Space the objects 22 mm wider', detail: 'Clears the toolhead strike.', costS: 0, clears: [1], oneClick: false, mm: 22 }
+const hit: Collision = { kind: 'gantry', severity: 'hit', part: 'gantry', objectId: 'low', hitId: 'tall', layer: 2, segment: 5, timeS: 25, lastLayer: 3, at: [50, 50, 0.6], point: [20, 40, 40.6], worstLayer: 2, worstPoint: [21, 41, 40.6], depthMm: 7.4, hitHeightMm: 48, limitMm: 40 }
+const close: Collision = { ...hit, kind: 'hotend', severity: 'close', part: 'toolhead', worstPoint: [30, 30, 3], depthMm: 22, limitMm: 40 }
+const reorder: CollisionFix = { kind: 'reorder', costS: 0, clears: [0], oneClick: true, order: ['low', 'tall'] }
+const byLayer: CollisionFix = { kind: 'by_layer', costS: 840, clears: [0], oneClick: true, moves: 1 }
+const spread: CollisionFix = { kind: 'spread', costS: 0, clears: [1], oneClick: false, mm: 22 }
 const result = (collisions: Collision[], fixes: CollisionFix[] = []) => ({ id: 'r', engine: 'sx', layerCount: 4, layerZ: new Float32Array([0.2, 0.4, 0.6, 0.8]), layerTimeS: new Float32Array([10, 10, 10, 10]), stats: { timeS: 40, filamentMm: [1], filamentG: [1], cost: 0, toolChanges: 0 }, stageMicros: {}, wallMs: 1, warnings: [], collisions, collisionFixes: fixes }) as SliceResult
 /** A 20 mm box as a plate entry. */
 function entry(id: string, name: string) {
@@ -68,7 +68,7 @@ describe('heimdall in the app', () => {
     set({ slice: { status: 'idle' } })
     expect(printBlock(get())).toBeNull()
     // Store selectors: the same empty lists every time, so a component reading them renders once.
-    set({ slice: { status: 'done', result: { ...result([]), collisions: undefined, collisionFixes: undefined } as SliceResult, stale: false } })
+    set({ slice: { status: 'done', result: { ...result([]), collisions: undefined, collisionFixes: undefined } as unknown as SliceResult, stale: false } })
     expect(collisionsOf(get())).toBe(collisionsOf(get()))
     expect(fixesOf(get())).toBe(fixesOf(get()))
   })
@@ -113,9 +113,10 @@ describe('heimdall in the app', () => {
       plateBed: { widthMm: 256, depthMm: 256, heightMm: 256 },
       file: { name: 'x.gcode', sha256: 'ab'.repeat(32), layers: 4, timeS: 40, grams: 1 },
       collisions: [hit, close],
+      objectNames: { tall: 'Tall', low: 'Low' },
     })
-    expect(r.errors).toContain('The gantry hits Tall, layer 3. Tall is 48.0 mm tall. Fix it in Preview and slice again.')
-    expect(r.warnings).toContain('The toolhead passes close to Tall. Inside the margin.')
+    expect(r.errors).toContain('The gantry hits Tall, layer 3. Tall is 48.0 mm tall. The gantry clears 40.0 mm above the nozzle, and it passes over Tall while Low prints, layers 3 to 4. Fix it in Preview and slice again.')
+    expect(r.warnings).toContain("The toolhead passes close to Tall. While Low prints, the nozzle comes within 18.0 mm of Tall. The printer profile asks for 40 mm around the nozzle; the head's own shape clears Tall, so this is the profile's margin, not a hit, layers 3 to 4.")
   })
 
   it('lists the strikes with when and how deep, a jump for each, and the fixes with their cost', () => {
