@@ -842,18 +842,31 @@ pub fn inset_keeping_vertices(polys: &[Polygon], d: f64) -> Option<Vec<Polygon>>
     crossings(&all, (size * 1e-9).max(1e-9)).is_empty().then_some(res)
 }
 
-#[allow(clippy::too_many_lines, reason = "sides, axis points and caps in one pass")]
-#[allow(
-    clippy::cast_possible_truncation,
-    clippy::cast_sign_loss,
-    reason = "clamped step counts"
-)]
 pub fn revolve(
     frame: &Frame,
     polys: &[Polygon],
     point: V2,
     direction: V2,
     angle_deg: f64,
+) -> Result<TriMesh> {
+    revolve_steps(frame, polys, point, direction, angle_deg, None)
+}
+
+/// `revolve` in `steps` equal steps when given (a rim's tool takes the rim's own count), else as many as the
+/// size needs. The turn starts in the frame's `u` direction from the axis.
+#[allow(clippy::too_many_lines, reason = "sides, axis points and caps in one pass")]
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "clamped step counts"
+)]
+pub(crate) fn revolve_steps(
+    frame: &Frame,
+    polys: &[Polygon],
+    point: V2,
+    direction: V2,
+    angle_deg: f64,
+    steps: Option<usize>,
 ) -> Result<TriMesh> {
     let dl = len2(direction);
     if !(finite2(point) && dl.is_finite() && dl > 1e-12) {
@@ -905,8 +918,10 @@ pub fn revolve(
     let o = frame.at(point, 0.0);
     let full = angle_deg >= 360.0;
     let sweep = angle_deg.to_radians();
-    let steps =
-        ((sweep / TAU * circle_steps(size) as f64).ceil() as usize).clamp(if full { 8 } else { 1 }, 1024);
+    let steps = steps.map_or_else(
+        || ((sweep / TAU * circle_steps(size) as f64).ceil() as usize).clamp(if full { 8 } else { 1 }, 1024),
+        |n| n.clamp(3, 4096),
+    );
     let rows = if full { steps } else { steps + 1 };
     let mut mesh = TriMesh::default();
     let mut faces = Faces::default();

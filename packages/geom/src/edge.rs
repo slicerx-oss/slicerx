@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-//! fillet and chamfer on the straight edges where two flat faces meet
+//! fillet and chamfer on the straight edges where two flat faces meet, and on the round edge where a flat face
+//! meets a cylinder square to it (`rim`)
 // triangle, region and ring indices come from the validated mesh and the
 // lists built here
 #![allow(clippy::indexing_slicing)]
@@ -16,6 +17,8 @@ use crate::vec3::{self, Frame, V2, V3};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::f64::consts::PI;
+
+mod rim;
 
 const MARGIN_MM: f64 = 0.01;
 const MAX_MM: f64 = 1000.0;
@@ -41,6 +44,10 @@ pub struct EdgeRef {
     /// the ends moved with a face they lie on (a history replay): the edge is found along its line
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub moved: bool,
+    /// a round edge: the center of the circle where the face `face` meets a cylinder square to it; `a` is a
+    /// corner of the circle and `b` the same point
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub center: Option<V3>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -603,11 +610,44 @@ pub fn pick_edge(mesh: &TriMesh, triangle: u32, at: V3) -> Result<EdgePick> {
         curved: faces.regions[reg].curved,
         triangles: faces.regions[reg].tris.clone(),
     };
+    // A round edge always names itself by the same corner, so picking it again from anywhere matches.
+    if let Some(rim) = rim::at_edge(mesh, run.a, run.b) {
+        let edge = EdgeRef {
+            a: rim.start,
+            b: rim.start,
+            face: rim.normal,
+            moved: false,
+            center: Some(rim.center),
+        };
+        let floor = |w: f64| (w * 1000.0 + 1e-6).floor() / 1000.0;
+        let room = rim.room.map(floor);
+        let mut out_faces = vec![face_of(r)];
+        if let Across::Face(rb, _) = run.across {
+            out_faces.push(face_of(rb));
+        }
+        return Ok(EdgePick {
+            edge,
+            length_mm: rim.length(),
+            faces: out_faces,
+            dihedral_deg: rim.dihedral_deg(),
+            convex: rim.convex,
+            supported: true,
+            reason: None,
+            max_distance_mm: room,
+            max_radius_mm: floor((room[0].min(room[1]) * (rim.geom().phi * 0.5).m_tan()).min(MAX_MM)),
+            chain: vec![edge],
+            ring: vec![LoopEdge {
+                edge,
+                supported: true,
+            }],
+        });
+    }
     let edge = EdgeRef {
         a: run.a,
         b: run.b,
         face: faces.regions[r].normal,
         moved: false,
+        center: None,
     };
     let mut out = EdgePick {
         edge,
@@ -666,6 +706,7 @@ pub fn pick_edge(mesh: &TriMesh, triangle: u32, at: V3) -> Result<EdgePick> {
         b: run.b,
         face: faces.regions[r].normal,
         moved: false,
+        center: None,
     };
     if out.supported && n > 1 {
         let mut fwd = Vec::new();
@@ -943,11 +984,15 @@ fn lower_first(s: &str) -> String {
 }
 
 fn section(g: &Geom, p: Profile) -> Vec<V2> {
+    section_with(g, p, MARGIN_MM)
+}
+
+/// The cross section of the tool across the edge, reaching `m` past the faces where it leaves them.
+fn section_with(g: &Geom, p: Profile, m: f64) -> Vec<V2> {
     let tb = [g.phi.m_cos(), g.phi.m_sin()];
     let ta = [1.0, 0.0];
     let half = g.phi * 0.5;
     let bis = [half.m_cos(), half.m_sin()];
-    let m = MARGIN_MM;
     let q = [-bis[0] * m / half.m_sin(), -bis[1] * m / half.m_sin()];
     match p {
         Profile::Chamfer { d1, d2 } => {
@@ -1148,10 +1193,19 @@ fn tools(mesh: &TriMesh, edges: &[EdgeRef], profile: Profile) -> Result<Tools> {
         return Err(Error::invalid("edges", "pick at least one edge"));
     }
     let faces = Faces::new(mesh);
-    let geoms = edges
+    // Round edges get their own tools; the straight ones go on as before, numbered as the request numbers them.
+    let mut rims = Vec::new();
+    let mut straight = Vec::new();
+    for (i, e) in edges.iter().enumerate() {
+        if e.center.is_some() {
+            rims.push((i + 1, rim::of_ref(mesh, e, i + 1)?));
+        } else {
+            straight.push((i + 1, e));
+        }
+    }
+    let geoms = straight
         .iter()
-        .enumerate()
-        .map(|(i, e)| resolve(&faces, i + 1, e))
+        .map(|&(n, e)| resolve(&faces, n, e))
         .collect::<Result<Vec<_>>>()?;
     let mut strips: Vec<(usize, usize, [V3; 4])> = Vec::new();
     for (i, g) in geoms.iter().enumerate() {
@@ -1219,8 +1273,41 @@ fn tools(mesh: &TriMesh, edges: &[EdgeRef], profile: Profile) -> Result<Tools> {
         }
     }
     let mut out = Tools::default();
+    for &(n, ref r) in &rims {
+        let widths = r.widths(profile);
+        for (side, &w) in widths.iter().enumerate() {
+            if w > r.room[side] + 1e-9 {
+                let max = (r.room[side] * 1000.0 + 1e-6).floor() / 1000.0;
+                return Err(match profile {
+                    Profile::Chamfer { d1, d2 } if side == 1 && (d2 - d1).abs() > 0.0 => {
+                        fit_error("distance2Mm", d2, max)
+                    }
+                    Profile::Chamfer { d1, .. } => fit_error("distanceMm", d1, max),
+                    Profile::Fillet { radius, .. } => {
+                        let w = r.room[0].min(r.room[1]);
+                        fit_error(
+                            "radiusMm",
+                            radius,
+                            (w * (r.geom().phi * 0.5).m_tan() * 1000.0 + 1e-6).floor() / 1000.0,
+                        )
+                    }
+                });
+            }
+        }
+        let m = r.tool(profile, n)?;
+        if r.convex {
+            out.cut.push(m);
+        } else {
+            out.join.push(m);
+        }
+        out.edges.push(EdgeInfo {
+            convex: r.convex,
+            dihedral_deg: r.dihedral_deg(),
+            length_mm: r.length(),
+        });
+    }
     for (i, g) in geoms.iter().enumerate() {
-        let m = piece(g, profile, i + 1)?;
+        let m = piece(g, profile, straight[i].0)?;
         if g.convex {
             out.cut.push(m);
         } else {
@@ -1382,6 +1469,7 @@ mod tests {
             b,
             face,
             moved: false,
+            center: None,
         }
     }
 
@@ -1614,9 +1702,24 @@ mod tests {
 
     #[test]
     fn curved_neighbors_are_not_supported() {
+        // A round plate's rim, where its top meets a cylinder square to it, is a round edge (`rim`).
         let f = Frame::WORLD;
-        let m = build::cylinder(&f, 10.0, 0.0, 5.0, 64);
-        let p = pick(&m, [0.0, 0.0, 1.0], [9.9, 0.0, 5.0]);
+        let plate = build::cylinder(&f, 10.0, 0.0, 5.0, 64);
+        let p = pick(&plate, [0.0, 0.0, 1.0], [9.9, 0.0, 5.0]);
+        assert!(
+            p.supported && p.convex && p.edge.center.is_some(),
+            "{:?}",
+            p.reason
+        );
+        sound(&run(&plate, &[p.edge], fillet(1.0)).unwrap());
+        // The rim of a cone's base is not: the face across it is curved and not a cylinder.
+        let tri = vec![Polygon::simple(vec![[0.0, 0.0], [10.0, 0.0], [0.0, 5.0]])];
+        let m = crate::sketch::revolve(&Frame::WORLD, &tri, [0.0, 0.0], [0.0, 1.0], 360.0).unwrap();
+        let m = crate::xform::transformed(
+            &m,
+            &crate::xform::rotation_about([0.0; 3], [1.0, 0.0, 0.0], PI / 2.0),
+        );
+        let p = pick(&m, [0.0, 0.0, -1.0], [9.9, 0.0, 0.0]);
         assert!(!p.supported);
         assert_eq!(
             p.reason.as_deref(),
