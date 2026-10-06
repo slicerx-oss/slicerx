@@ -1,8 +1,7 @@
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/readme-assets/banner-dark.svg">
-    <source media="(prefers-color-scheme: light)" srcset="docs/readme-assets/banner-light.svg">
-    <img alt="SlicerX: the word Slicer followed by a layered X mark. The AI-ready slicer. Free and open source." src="docs/readme-assets/banner.svg" width="100%">
+    <source media="(prefers-reduced-motion: reduce)" srcset="docs/readme-assets/banner.png">
+    <img alt="SlicerX, a slicer for the gods. The AI-ready slicer, free and open source: Rust core, WebAssembly, every printer, MCP server. Two ravens, huginn and muninn, spar inside a ring of runes." src="docs/readme-assets/banner.gif" width="100%">
   </picture>
 </p>
 
@@ -18,7 +17,10 @@
 SlicerX is a free, fully open source slicer for FFF 3D printers, built to be driven by other software as much as by people. An AI assistant can plan settings, slice, and send a job to a printer through its MCP server, under a permission policy the user controls. A web page can slice in the browser with the WebAssembly core, and a print farm tool can call the CLI or link the Rust crate. The slicing core is written in Rust, compiles to native code and WebAssembly, and uses the setting names OrcaSlicer, Bambu Studio and PrusaSlicer share, so existing profiles carry over. It contains no code from those projects. The base kit is Apache-2.0, so you can build it into your own product, open or closed, as long as you keep the "Made possible by SlicerX" credit.
 
 <p align="center">
-  <img alt="The SlicerX wordmark, with the X built up from printed layers" src="docs/readme-assets/slicerx-title.gif" width="560">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/readme-assets/slicerx-title-clear.png">
+    <img alt="The SlicerX wordmark, with the X built up from printed layers" src="docs/readme-assets/slicerx-title.gif" width="560">
+  </picture>
 </p>
 
 > [!NOTE]
@@ -174,22 +176,16 @@ The SlicerX app, working in the browser and running on macOS as a desktop app so
 | Theming | UI and viewport theming working |
 | Open `.sx3mf` container format | Working |
 
-## Support development
+<p align="center">
+  <a href="docs/integrators/credit-kit">
+    <picture>
+      <source media="(prefers-color-scheme: light)" srcset="docs/integrators/credit-kit/badges/made-possible-by-slicerx-medium-light.svg">
+      <img alt="Made possible by SlicerX" src="docs/integrators/credit-kit/badges/made-possible-by-slicerx-medium-dark.svg" height="40">
+    </picture>
+  </a>
+</p>
 
-SlicerX is free and there is nothing to buy. If it saves you time, you can support the work: sponsor on [GitHub Sponsors](https://github.com/sponsors/Subydev), [buy the maintainers a coffee](https://buymeacoffee.com/xccyf47w7r), or pay what you want at [slicerx.app/support](https://slicerx.app/support). Donations do not buy features or priority. Code, bug reports and printer profiles help just as much.
-
-## Contributing
-
-Bug reports, printer profiles, connectors, translations, docs and code are welcome. [CONTRIBUTING.md](CONTRIBUTING.md) explains how to propose a change, how to sign off commits (Developer Certificate of Origin) and how we name commits and pull requests (Conventional Commits). Report security problems privately as described in [SECURITY.md](SECURITY.md). Participation is covered by the [Code of Conduct](CODE_OF_CONDUCT.md).
-
-## License and credits
-
-SlicerX is licensed under the [Apache License 2.0](LICENSE-APACHE). That covers everything the SlicerX contributors wrote: the engine, the CLI, the C ABI, the settings package, the MCP server, the apps, the UI parts, the printer connectors and the SlicerX edition. You can embed any of it in software under any license, closed source included. The one condition is credit: pass on the [NOTICE](NOTICE) and show "Made possible by SlicerX" wherever your product lists third-party credits.
-
-The stock printer, filament and process profiles in [packages/profiles](packages/profiles) come from the profile resources of OrcaSlicer and Bambu Studio, and they stay under the GNU Affero General Public License v3.0 or later. The engine, the CLI and the C ABI do not use them. The SlicerX app ships them, so the app as distributed is covered by the AGPL as a whole. [docs/licensing.md](docs/licensing.md) explains which files carry which license and what that means for your build.
-
-SlicerX contains no code or help text from OrcaSlicer, Bambu Studio, PrusaSlicer or Slic3r. We read their documented behavior and their file formats, and write our own implementation. Their setting names are the shared vocabulary, so OrcaSlicer, Bambu Studio and PrusaSlicer profile and project files import. The only data taken from them is the stock profiles above. The aegis wall generator follows the method of preFlight's Athena walls, with thanks to its authors. [NOTICE](NOTICE) and [THIRD-PARTY.md](THIRD-PARTY.md) list the libraries, model weights and fonts that do ship.
-
-## Trademark
-
-The code is open source. The SlicerX name, the logo and the Nocturne theme artwork are reserved, and none of the licenses grants rights in them. You are free to fork the code; a fork distributed with changes needs its own name and logo. Bambu Lab, Prusa, Creality, Elegoo, Klipper and other product names belong to their owners and appear here only to describe compatibility.
+<p align="center">
+  <a href="https://github.com/sponsors/Subydev"><img alt="Sponsor on GitHub" src="https://img.shields.io/badge/Sponsor-GitHub-ea4aaa?logo=githubsponsors&logoColor=white&style=for-the-badge"></a>
+  <a href="https://buymeacoffee.com/xccyf47w7r"><img alt="Buy me a coffee" src="https://img.shields.io/badge/Buy_me_a_coffee-ffdd00?logo=buymeacoffee&logoColor=black&style=for-the-badge"></a>
+</p>
