@@ -1544,6 +1544,24 @@ mod tests {
     }
 
     #[test]
+    fn a_grid_in_a_square_joins_into_one_stroke() {
+        // Every line end has a short arc to the line that crosses it near the wall and a longer arc to the
+        // next pair, and the short arcs tie. Following the short arcs closes loops, so the order of the ties
+        // decided how many strokes were left: four on the block where Orca prints one.
+        let mut strokes = Vec::new();
+        for (side, layer) in [(38.06, 10), (38.06, 11), (30.0, 4), (45.0, 7), (60.0, 2)] {
+            let region = square(side);
+            let inp = SparseIn {
+                connect_mm: 20.0,
+                anchor_mm: 1.5,
+                ..test_in(InfillPattern::Grid, &region, 0.15, 2.0, layer)
+            };
+            strokes.push((side, layer, sparse(&inp).len()));
+        }
+        assert!(strokes.iter().all(|s| s.2 == 1), "{strokes:?}");
+    }
+
+    #[test]
     fn layers_differ_where_the_pattern_moves_with_height() {
         let region = square(40.0);
         let a = sparse(&test_in(InfillPattern::Cubic, &region, 0.2, 1.0, 5));
