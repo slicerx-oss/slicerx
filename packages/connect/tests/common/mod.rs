@@ -55,7 +55,8 @@ impl Mocks {
             .expect("node must be on PATH to run the mock printers");
         let stdin = child.stdin.take().unwrap();
         let mut lines = BufReader::new(child.stdout.take().unwrap()).lines();
-        let line = tokio::time::timeout(Duration::from_secs(20), lines.next_line())
+        // node starts slowly on hosted windows runners with many tests at once
+        let line = tokio::time::timeout(Duration::from_secs(90), lines.next_line())
             .await
             .unwrap()
             .unwrap()
