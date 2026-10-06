@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 import { describe, expect, it } from 'vitest'
+import { excludeBoxes } from '../src/plate/arrange'
 import { excludedPolygons } from '../src/viewport/bed-exclude'
 
 describe('bed exclusion areas', () => {
@@ -13,6 +14,13 @@ describe('bed exclusion areas', () => {
     const want = [[[246, 0], [256, 0], [256, 20], [246, 20]]]
     expect(excludedPolygons(['246x0', '256x0', '256x20', '246x20'])).toEqual(want)
     expect(excludedPolygons('246x0, 256x0,256x20,246x20')).toEqual(want)
+  })
+
+  it('reads a longer list as one polygon per four points, as Orca does', () => {
+    // Qidi X-Plus 4: two corner strips, joined along the bed's top and right edges.
+    const qidi = [[0, 305], [0, 302], [35, 302], [35, 305], [305, 305], [305, 305], [305, 305], [305, 20], [293, 20], [293, 0], [305, 0], [305, 20], [305, 305]]
+    expect(excludedPolygons(qidi)).toEqual([[[0, 305], [0, 302], [35, 302], [35, 305]], [[293, 20], [293, 0], [305, 0], [305, 20]]])
+    expect(excludeBoxes(qidi)).toEqual([{ x: 0, y: 302, w: 35, h: 3 }, { x: 293, y: 0, w: 12, h: 20 }])
   })
 
   it('treats the usual empty values as no area', () => {

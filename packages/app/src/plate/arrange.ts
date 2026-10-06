@@ -8,6 +8,7 @@
 // footprint.ts), not the bare outline, and it keeps clear of the printer's excluded areas and the prime
 // tower. Pure and deterministic, so it runs without a GPU and is unit tested.
 import type { Bed } from '@slicerx/contracts'
+import { excludedPolygons } from '../viewport/bed-exclude'
 import { bounds, compose, decompose, multiply, type Box, type Mat4 } from './transform'
 
 export interface ArrangeItem {
@@ -88,13 +89,13 @@ export function avoidAreas(): readonly Rect[] {
   return avoid
 }
 
-/** The box around each polygon of a `bed_exclude_area` value (a flat list of points, one polygon). */
+/** The box around each polygon of a `bed_exclude_area` value (see `excludedPolygons`: up to four points are one polygon, a longer list one per four points). */
 export function excludeBoxes(points: unknown): Rect[] {
-  const pts = Array.isArray(points) ? (points as unknown[]).filter((p): p is [number, number] => Array.isArray(p) && p.length === 2 && p.every((n) => typeof n === 'number')) : []
-  if (pts.length < 3) return []
-  const xs = pts.map((p) => p[0])
-  const ys = pts.map((p) => p[1])
-  return [{ x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) }]
+  return excludedPolygons(points).map((pts) => {
+    const xs = pts.map((p) => p[0])
+    const ys = pts.map((p) => p[1])
+    return { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) }
+  })
 }
 
 /** Turns an object by `deg` about Z around its bounds' center. */

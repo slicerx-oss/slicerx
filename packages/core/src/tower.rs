@@ -1792,6 +1792,31 @@ mod tests {
     }
 
     #[test]
+    fn a_flat_exclusion_list_is_a_rectangle_per_four_points() {
+        // The Qidi X-Plus 4 lists two corner strips as 13 points, joined along the bed's edges. Orca reads each four
+        // points as one box (PartPlate::calc_bounding_boxes); one box round all of them covered the whole bed.
+        let c = tower_cfg(&[
+            ("prime_tower_auto_position", serde_json::json!(true)),
+            (
+                "printable_area",
+                serde_json::json!(["0x0", "305x0", "305x305", "0x305"]),
+            ),
+            (
+                "bed_exclude_area",
+                serde_json::json!([
+                    "0x305", "0x302", "35x302", "35x305", "305x305", "305x305", "305x305", "305x20",
+                    "293x20", "293x0", "305x0", "305x20", "305x305"
+                ]),
+            ),
+        ]);
+        let parts = [part(120.0, 120.0, 185.0, 185.0)];
+        let Ok(Some(p)) = place(&c, 2, &rows_for(60.0), None, &parts, 50.0) else {
+            panic!("placed")
+        };
+        assert!(p.tower(&c, 2).is_some());
+    }
+
+    #[test]
     fn a_tower_too_deep_for_any_free_spot_gets_wider() {
         // Only a strip 70 mm deep is free at the front; the purge needs about 120 mm at 35 mm wide.
         let c = tower_cfg(&[("prime_tower_auto_position", serde_json::json!(true))]);

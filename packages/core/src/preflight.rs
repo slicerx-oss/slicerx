@@ -130,8 +130,10 @@ fn point(v: &Value) -> Option<[f64; 2]> {
     }
 }
 
-/// The exclusion zones of `bed_exclude_area`: one polygon from a flat list of
-/// points, or several from a list of lists. Zones with fewer than 3 points are dropped.
+/// The exclusion zones of `bed_exclude_area`: several from a list of lists, or from a flat list of points
+/// one per four points, as Orca reads it (`PartPlate::calc_bounding_boxes` makes a box of each four; the
+/// Qidi X-Plus 4 lists two corner strips joined along the bed's edges that way). A shorter tail is dropped,
+/// as Orca drops it, and so are zones with fewer than 3 points.
 pub fn exclude_zones(cfg: &PrintConfig) -> Vec<Vec<[f64; 2]>> {
     let Some(Value::Array(items)) = cfg.raw.get("bed_exclude_area") else {
         return Vec::new();
@@ -148,7 +150,26 @@ pub fn exclude_zones(cfg: &PrintConfig) -> Vec<Vec<[f64; 2]>> {
             })
             .collect()
     } else {
-        vec![items.iter().filter_map(point).collect()]
+        let pts: Vec<[f64; 2]> = items.iter().filter_map(point).collect();
+        if pts.len() <= 4 {
+            vec![pts]
+        } else {
+            // A group that is only a line (the X-Plus 4's join along the right edge) excludes nothing.
+            let area = |q: &[[f64; 2]; 4]| {
+                let twice: f64 = q
+                    .iter()
+                    .zip(q.iter().cycle().skip(1))
+                    .map(|(a, b)| a[0] * b[1] - b[0] * a[1])
+                    .sum();
+                twice.abs() / 2.0
+            };
+            pts.as_chunks::<4>()
+                .0
+                .iter()
+                .filter(|q| area(q) > 0.01)
+                .map(|q| q.to_vec())
+                .collect()
+        }
     };
     zones.into_iter().filter(|z| z.len() >= 3).collect()
 }
@@ -922,6 +943,19 @@ mod tests {
             json!({ "bed_exclude_area": [["0x0", "10x0", "10x10", "0x10"], ["100x100", "110x100", "110x110", "100x110"]] }),
         );
         assert_eq!(exclude_zones(&two).len(), 2);
+        // A flat list longer than four points is a box per four points, as Orca reads it; a short tail and a
+        // group without area are dropped.
+        let qidi = cfg(json!({
+            "printable_area": ["0x0", "305x0", "305x305", "0x305"],
+            "bed_exclude_area": ["0x305", "0x302", "35x302", "35x305", "305x305", "305x305", "305x305", "305x20",
+                "293x20", "293x0", "305x0", "305x20", "305x305"]
+        }));
+        assert_eq!(exclude_zones(&qidi).len(), 2);
+        assert!(check_toolpaths(&output_with(&[(150.0, 150.0), (160.0, 150.0)], 0.2), &qidi).is_empty());
+        assert_eq!(
+            check_toolpaths(&output_with(&[(150.0, 150.0), (300.0, 10.0)], 0.2), &qidi)[0].code,
+            "in_exclusion_zone"
+        );
     }
 
     #[test]
