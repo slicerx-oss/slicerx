@@ -146,6 +146,19 @@ export function checkConflicts(config: PrintConfig, opts: { filament?: string } 
       issues.push({ code: 'line_width_range', severity: 'warning', keys: [wk, 'nozzle_diameter'], message: `${wk} of ${r2(w)} mm is far from the ${nozzle} mm nozzle (0.5x to 2x is usable).` })
     }
   }
+  // A width set by hand (not 0, automatic) must be wider than the layer it prints: the engine refuses it before slicing
+  // (config.rs check_widths_against_layer), as OrcaSlicer's validate_extrusion_width does.
+  if (lh !== undefined) {
+    const layer = Math.min(lh, nozzle)
+    for (const wk of ['line_width', 'outer_wall_line_width', 'inner_wall_line_width', 'sparse_infill_line_width', 'internal_solid_infill_line_width', 'top_surface_line_width', 'support_line_width', 'skin_infill_line_width', 'skeleton_infill_line_width']) {
+      const raw = scalarOf(config, wk)
+      if (raw === undefined || Number(String(raw).replace('%', '')) === 0) continue
+      const w = widthOf(config, wk, nozzle)
+      if (w <= layer + 1e-9) {
+        issues.push({ code: 'line_width_below_layer', severity: 'error', keys: [wk, 'layer_height'], message: `${wk} of ${r2(w)} mm is not wider than the ${layer} mm layer; lines that thin cannot be printed.`, fix: { key: wk, value: '0' } })
+      }
+    }
+  }
   if (scalarOf(config, 'spiral_mode') === true) {
     if (scalarOf(config, 'enable_support') === true) issues.push({ code: 'spiral_with_support', severity: 'warning', keys: ['spiral_mode', 'enable_support'], message: 'Spiral vase mode prints one continuous wall and cannot use supports.', fix: { key: 'enable_support', value: false } })
     const walls = numberOf(config, 'wall_loops')
