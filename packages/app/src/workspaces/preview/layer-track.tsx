@@ -47,7 +47,7 @@ export function LayerTrack({ id, n, top, layerZ, onChange, onKeyDown }: { id: st
         <Range id={id} className="thin" min={1} max={n} value={top} onChange={onChange} onKeyDown={onKeyDown} aria-valuetext={`Layer ${top} of ${n}, ${z.toFixed(2)} mm`} />
         <div className="layer-marks">
           {strikes.map((c, i) => (
-            <button key={`strike-${i}`} type="button" className="layer-mark strike-mark" data-kind="strike" data-severity={c.severity} style={{ left: `${share(c.layer + 1)}%` }} aria-label={`${collisionTitle(c, names)}, layer ${c.layer + 1}`} {...tipAttrs({ title: collisionTitle(c, names), body: `Layer ${c.layer + 1}. Click to jump there.` })} onClick={() => jumpToCollision(i)}>
+            <button key={`strike-${i}`} type="button" className="layer-mark strike-mark" data-kind="strike" data-severity={c.severity} style={{ left: `${share(c.layer + 1)}%` }} aria-label={`${collisionTitle(c, names)}, layer ${c.layer + 1}`} {...tipAttrs({ title: collisionTitle(c, names), body: `Layer ${c.layer + 1}. Click to jump there.` })} onClick={() => void jumpToCollision(i)}>
               <Icon name="strike" size={14} />
             </button>
           ))}
