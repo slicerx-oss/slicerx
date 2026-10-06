@@ -71,6 +71,12 @@ describe('filament presets', () => {
     expect(layer!.values['filament_vendor']).toEqual(['Bambu Lab'])
   })
 
+  it('a carbon fiber filament keeps its nozzle hardness, so the engine can warn about the stock nozzle as Orca does', async () => {
+    const layer = await buildProfileLayer({ printer: P1S, tier: 'standard', slots: [{ type: 'PETG', vendor: 'BBL', family: 'Bambu PET-CF' }] })
+    expect(layer!.values['required_nozzle_HRC']).toEqual([40])
+    expect(layer!.values['nozzle_type']).toEqual(['stainless_steel'])
+  })
+
   it('a material with no product gets the generic preset of that material, not the knowledge base', async () => {
     const layer = await buildProfileLayer({ printer: P1S, tier: 'standard', slots: [{ type: 'TPU' }] })
     expect(layer!.values['filament_type']).toEqual(['TPU'])

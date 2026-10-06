@@ -875,7 +875,8 @@ pub fn run_request_with(
             }
         }
     }
-    for i in &config_issues {
+    let hardness = crate::preflight::nozzle_hardness(&config, &report.stats.filament_mm);
+    for i in config_issues.iter().chain(&hardness) {
         report.warnings.push(SliceWarning {
             code: WarningCode::SafetyLimit,
             message: i.message.clone(),

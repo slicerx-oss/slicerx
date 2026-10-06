@@ -228,9 +228,6 @@ export async function buildProfileLayer(input: ProfileInput): Promise<ProfileLay
     }
   }
   const values: Record<string, SettingValue> = { ...process, ...perSlot(filaments), ...machine }
-  // A filament that asks for a hardened nozzle is only checked against a printer whose nozzle hardness is set. Orca's presets
-  // carry the request with the printer's value left at 0 (unknown); the slicer here refuses on a mismatch, so it is not sent until the nozzle is known.
-  if (!(Number(first(values['nozzle_hrc'])) > 0)) delete values['required_nozzle_HRC']
   // The G-code is the text written for SlicerX for this model, not the maker's.
   const shipped = gcodeStatus(printerId) === 'written'
   const gcodeKeys: string[] = []

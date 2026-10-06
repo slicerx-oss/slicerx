@@ -32,7 +32,6 @@ const REASONS: Record<string, string> = {
   default_print_profile: 'Orca preset name, not a setting',
   printer_notes: 'Orca preset note, not a setting',
   curr_bed_type: 'the dump sets the plate so Orca accepts the filament; the app keeps the plate of the printer and plate settings',
-  required_nozzle_HRC: 'Orca only warns when the nozzle hardness is unknown (0); the engine refuses, so the request is not sent until the nozzle is known',
 }
 
 /** Two filaments other than the printer's default, on the P1S: a Bambu product and a third party one. The dumps are orca-bambu-p1s.standard.<tag>.json in ORCA_RESOLVED_FIL_DIR. */
