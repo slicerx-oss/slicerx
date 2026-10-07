@@ -156,9 +156,24 @@ That gives 5.6 s per switch on the H2D, 5 s plus 30 s of unload and load per hot
 - H2C rack: a black frame with two posts and a top bar; each row has a rail with three holders, each holder a black block with a white light and a fork under it.
 - U1 toolhead: a black body with the nozzle under its sock, the orange lever on the side, the extruder motor at the back and the coupling face at the front (fan opening, label, the yellow line, the steel pins). It hangs on the back of the white carriage with the orange badge, and parks in a dock of black brackets on a beam along the back.
 
-- Printers with one nozzle get their family's head (`heads.ts`, `headFor` maps every profile id): Bambu X1 (with the Micro Lidar) and P1/P2 (light gray front with the round fan), A1 and A1 mini (a low, wide light gray head with the extruder window and the cable chain at its left side, estimated from product photos; heimdall checks only its nozzle and heater block until the head is measured, so the estimate never blocks a print), H2S (the H2 head with one hotend), the Prusa Nextruder and MINI+, the Voron Stealthburner (and the SV08's blue one), Creality K1, K2, Ender-3 V3 and the Sprite heads, Elegoo Centauri Carbon and Neptune 4, Anycubic Kobra, QIDI, the Snapmaker printing module, and a tidy generic head for the rest (the FLSUN delta).
+- Printers with one nozzle get their family's head (`heads.ts`, `headFor` maps every profile id): Bambu X1 (with the Micro Lidar) and P1/P2 (light gray front with the round fan), A1 and A1 mini (a low, wide light gray head with the extruder window and the cable chain at its left side, estimated from product photos; heimdall checks only its nozzle until the head is measured, so the estimate never blocks a print; sources under "A1 head sources"), H2S (the H2 head with one hotend), the Prusa Nextruder and MINI+, the Voron Stealthburner (and the SV08's blue one), Creality K1, K2, Ender-3 V3 and the Sprite heads, Elegoo Centauri Carbon and Neptune 4, Anycubic Kobra, QIDI, the Snapmaker printing module, and a tidy generic head for the rest (the FLSUN delta).
 
 Clearances: the head stays 17 mm either side of its nozzles in y, 10 mm right of the right nozzle in x and under 92 mm, the rack's other row is 96 mm away, holders and forks stay below the bay's front wall. `test/toolhead.test.ts` checks that no part of a head overlaps another, plays whole changes on the H2C (both rows) and the U1 and checks that no part of the moving head enters the rack or dock, that parked tools sit at the positions the sequence parks them in, and that the rack keeps what a change left it until the next one.
+
+## A1 head sources
+
+Searched 2026-10-06 for the A1 and A1 mini toolhead's dimensions. No official drawing or measurement of the head's width, depth or height was found, so heimdall's collision envelope for both comes from the machine profiles alone and the drawn head (`heads.ts`, estimated from product photos) is for Preview only.
+
+| Value | Source | Status |
+| --- | --- | --- |
+| `extruder_clearance_max_radius` 73 mm, `extruder_clearance_height_to_rod` 25 mm, `extruder_clearance_dist_to_rod` 56.5 mm, `nozzle_height` 4.76 mm; `extruder_clearance_height_to_lid` and `printable_height` 256 mm (A1), 180 mm (A1 mini) | Bambu Studio machine profiles `Bambu Lab A1 0.4 nozzle.json` and `Bambu Lab A1 mini 0.4 nozzle.json` (github.com/bambulab/BambuStudio, master, `resources/profiles/BBL/machine`), read 2026-10-06 | official |
+| `extruder_clearance_radius` 57 mm | the same profiles' parent, `fdm_bbl_3dp_001_common.json` | official |
+| What the values mean: "the max clearance radius around the tool head", "the height between the build plate to the lower rod at z=0"; "the clearances in different directions of the tool head are actually different", so Bambu Studio asks for `extruder_clearance_max_radius` between objects | Bambu Lab Wiki, "Print-by-object" (wiki.bambulab.com/en/software/bambu-studio/sequent-print), read 2026-10-06 | official; no per-direction numbers |
+| Hotend length 47.3 mm (A1 series) | Bambu Lab store, "Bambu Hotend - A1/A2" (us.store.bambulab.com/products/bambu-hotend-a1-a2), read 2026-10-06 | official; length only, no width |
+| A STEP model of the whole A1, measured on an A1 bought in May 2024, most dimensions within 0.2 mm (vajojajo) | MakerWorld model 770920, "Bambulab A1 CAD step model" | measured by a third party; behind a sign-in and a bot check, not read |
+| About 6.5 mm from the bed to the A1 mini's part cooler while printing | Bambu Lab forum, "Spacing needed when using by object printing is too conservative", a user's estimate, 2024-10-24 | estimate; not used |
+
+So heimdall holds the A1 and A1 mini to the profile: the nozzle, a 3.2 mm column (the nozzle every drawn head shares) up to `nozzle_height` (4.76 mm), is the only part of the head that can block a print, `extruder_clearance_max_radius` (73 mm) makes a close call the person is asked about, and the rod (25 mm, 56.5 mm either side) and lid rules hold above. When the owner's A1 and A1 mini are measured, or the measured CAD can be read, the head's boxes can replace this.
 
 ## Scrubbing
 
