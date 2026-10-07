@@ -217,10 +217,7 @@ pub(crate) fn record(b: &Arc<Bridge>, id: &str, st: &PrinterStatus) {
         // The hub marks its own starts as printing when it makes them, so this is someone else's.
         tokio::spawn(crate::guard::job_began(b.clone(), id.to_owned()));
     }
-    if prev == Some(PrinterState::Paused) && st.state != PrinterState::Paused {
-        // Resumed or ended: the guard's card has been answered.
-        crate::guard::clear(b, id);
-    }
+    crate::guard::observed(b, id, prev, st.state);
     if let Some(kind) = alert {
         let mut data = serde_json::Map::new();
         data.insert("printerId".into(), json!(id));
