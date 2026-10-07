@@ -293,6 +293,59 @@ async fn a_down_scanner_leaves_the_version_claimed_and_unapproved() {
 }
 
 #[tokio::test]
+async fn a_released_claim_is_offered_again_at_once() {
+    let r = rig();
+    r.queue("owl.stl", &cube_stl(b"owl"));
+    let j = r.backend.claim_scan("test").await.unwrap().unwrap();
+    assert_eq!(r.backend.scan_status(VERSION), Some("scanning"));
+    r.backend.release_scan(&j.version_id, "test").await.unwrap();
+    assert_eq!(r.backend.scan_status(VERSION), Some("queued"));
+    assert_eq!(r.tick().await, Some(Processed::Clean));
+}
+
+#[tokio::test]
+async fn an_upload_that_always_fails_is_rejected_on_the_third_attempt() {
+    let r = rig();
+    r.queue("owl.stl", &cube_stl(b"owl"));
+    r.backend.fail_library_writes(true);
+    let (stop_tx, stop_rx) = watch::channel(false);
+    let cfg = ScanWorkerConfig {
+        idle_poll: Duration::from_millis(5),
+        unavailable_backoff: Duration::from_millis(5),
+        ..ScanWorkerConfig::new("t")
+    };
+    let task = tokio::spawn(scan_worker::run(
+        r.backend.clone(),
+        r.scanner.clone(),
+        cfg,
+        stop_rx,
+    ));
+    for _ in 0..200 {
+        if r.backend.scan_status(VERSION) == Some("rejected") {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    // Give a looping worker the chance to claim it again before checking it did not.
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    stop_tx.send(true).unwrap();
+    tokio::time::timeout(Duration::from_secs(5), task)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(r.backend.scan_status(VERSION), Some("rejected"));
+    assert_eq!(r.backend.scan_attempts(VERSION), Some(2));
+    let done = r.backend.scan_result(VERSION).unwrap();
+    assert!(!done.ok);
+    let reason = done.report["reason"].as_str().unwrap();
+    assert!(
+        reason.starts_with("The scanner could not check this file:"),
+        "{reason}"
+    );
+    assert!(r.backend.paths(Bucket::Library).is_empty());
+}
+
+#[tokio::test]
 async fn long_names_stay_within_the_path_limit() {
     let r = rig();
     let long = format!("{}.stl", "a".repeat(196));

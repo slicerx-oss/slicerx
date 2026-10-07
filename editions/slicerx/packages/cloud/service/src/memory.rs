@@ -23,6 +23,8 @@ struct MemoryScan {
     /// `queued`, `scanning`, `clean` or `rejected`.
     status: &'static str,
     result: Option<ScanFinish>,
+    /// Failed processing attempts, as `retry_scan` counts them.
+    attempts: u32,
 }
 
 #[derive(Default)]
@@ -35,6 +37,8 @@ struct State {
     /// Invited accounts: jobs per day and the largest upload in bytes.
     access: HashMap<String, (u32, u64)>,
     objects: HashMap<(&'static str, String), Vec<u8>>,
+    /// Every write to the library bucket fails (tests).
+    fail_library_writes: bool,
     jobs: Vec<(Job, Option<String>)>,
     devices: Vec<Device>,
     printers: Vec<(String, SyncPrinter)>,
@@ -170,7 +174,23 @@ impl MemoryBackend {
             job,
             status: "queued",
             result: None,
+            attempts: 0,
         });
+    }
+
+    /// Makes every write to the library bucket fail, so processing a claimed
+    /// version always errors (tests).
+    pub fn fail_library_writes(&self, on: bool) {
+        self.lock().fail_library_writes = on;
+    }
+
+    /// Failed processing attempts recorded for a version (tests).
+    pub fn scan_attempts(&self, version_id: &str) -> Option<u32> {
+        self.lock()
+            .scans
+            .iter()
+            .find(|s| s.job.version_id == version_id)
+            .map(|s| s.attempts)
     }
 
     /// The scan state of a version: `queued`, `scanning`, `clean` or `rejected` (tests).
@@ -248,7 +268,11 @@ impl Backend for MemoryBackend {
         bytes: Vec<u8>,
         _content_type: &str,
     ) -> Result<()> {
-        self.lock().objects.insert((bucket.id(), path.to_owned()), bytes);
+        let mut s = self.lock();
+        if s.fail_library_writes && bucket == Bucket::Library {
+            return Err(Error::Backend("the library bucket refused the write".into()));
+        }
+        s.objects.insert((bucket.id(), path.to_owned()), bytes);
         Ok(())
     }
 
@@ -288,6 +312,49 @@ impl Backend for MemoryBackend {
         }
         row.result = Some(finish);
         Ok(true)
+    }
+
+    async fn release_scan(&self, version_id: &str, _worker: &str) -> Result<()> {
+        let mut s = self.lock();
+        if let Some(row) = s
+            .scans
+            .iter_mut()
+            .find(|x| x.job.version_id == version_id && x.status == "scanning")
+        {
+            row.status = "queued";
+        }
+        Ok(())
+    }
+
+    async fn retry_scan(&self, version_id: &str, error: &str) -> Result<()> {
+        let mut s = self.lock();
+        let Some(row) = s
+            .scans
+            .iter_mut()
+            .find(|x| x.job.version_id == version_id && x.status == "scanning")
+        else {
+            return Ok(());
+        };
+        // As retry_scan in the database: three attempts, then rejected.
+        if row.attempts + 1 < 3 {
+            row.attempts += 1;
+            row.status = "queued";
+        } else {
+            row.status = "rejected";
+            row.result = Some(ScanFinish {
+                ok: false,
+                report: serde_json::json!({
+                    "verdict": "error",
+                    "reason": format!("The scanner could not check this file: {error}"),
+                }),
+                sha256: None,
+                size_bytes: None,
+                parts: Vec::new(),
+                storage_path: None,
+                format: None,
+            });
+        }
+        Ok(())
     }
 
     async fn requeue_stale_scans(&self) -> Result<usize> {
