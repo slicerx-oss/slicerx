@@ -14,9 +14,11 @@ export interface LibrarySheets {
   editor: null | 'edit' | 'upload'
   /** The upload flow: the form for a new design, or the list of your uploads. */
   upload: null | 'form' | 'list'
+  /** The review queue, for the owner and moderators. */
+  review: boolean
 }
 
-const EMPTY: LibrarySheets = { creator: null, listing: null, editor: null, upload: null }
+const EMPTY: LibrarySheets = { creator: null, listing: null, editor: null, upload: null, review: false }
 let current: LibrarySheets = EMPTY
 const listeners = new Set<() => void>()
 
@@ -31,6 +33,8 @@ export const openEditor = (why: 'edit' | 'upload' = 'edit'): void => set({ ...cu
 export const closeEditor = (): void => set({ ...current, editor: null })
 export const openUpload = (view: 'form' | 'list' = 'form'): void => set({ ...current, upload: view, editor: null, creator: null, listing: null })
 export const closeUpload = (): void => set({ ...current, upload: null })
+export const openReview = (): void => set({ ...current, review: true, upload: null, editor: null, creator: null, listing: null })
+export const closeReview = (): void => set({ ...current, review: false })
 export const closeSheet = (): void => set({ ...current, creator: null, listing: null })
 export const resetSheets = (): void => set(EMPTY)
 
