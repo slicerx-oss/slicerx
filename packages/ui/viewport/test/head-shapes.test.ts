@@ -22,7 +22,10 @@ const profiles = (path: string) => JSON.parse(readFileSync(fileURLToPath(new URL
 const up = (v: number) => Math.ceil(v * 10 - 1e-6) / 10
 const down = (v: number) => Math.floor(v * 10 + 1e-6) / 10
 
-/** The head's solid parts as columns: decals skipped, parts that stand inside another's column dropped. */
+/**
+ * The head's solid parts as columns: decals skipped, parts that stand inside another's column dropped. The A1's cable
+ * chain is left out: it bends away from what it meets, and its shape is estimated.
+ */
 function columns(rig: ToolheadRig): Column[] {
   rig.root.updateMatrixWorld(true)
   const head = rig.root.getObjectByName('nozzle')!
@@ -33,7 +36,7 @@ function columns(rig: ToolheadRig): Column[] {
   const all: Column[] = []
   head.traverse((o) => {
     const m = o as Mesh
-    if (!m.isMesh || !m.name || m.name === 'shadow' || !shown(m)) return
+    if (!m.isMesh || !m.name || m.name === 'shadow' || m.name === 'cable chain' || !shown(m)) return
     const b = new Box3().setFromObject(m)
     all.push([down(b.min.x), up(b.max.x), down(b.min.y), up(b.max.y), down(b.min.z - 0.05)])
   })
