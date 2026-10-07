@@ -136,3 +136,31 @@ pub struct PlateResult {
     /// What was compared and why, for the app.
     pub note: String,
 }
+
+/// `watch.look` data: one frame of a printer the guard paused for a hand, to look at again.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Look {
+    /// Echoed in the result.
+    pub check_id: String,
+    /// The printer.
+    pub printer_id: String,
+    /// The new frame.
+    pub frame: Picture,
+}
+
+/// `watch.lookResult` parameters.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LookResult {
+    /// From the look.
+    pub check_id: String,
+    /// The printer.
+    pub printer_id: String,
+    /// True when the frame still shows a hand at the printer's bar; `None` when the frame could
+    /// not be judged or the model has no hand question.
+    pub hand: Option<bool>,
+    /// The hand score, 0 to 1, when there is one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub score: Option<f64>,
+}

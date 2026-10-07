@@ -5,7 +5,7 @@
 //! `sx_cpace::pair`) bound to that hello, so the watch code never crosses the socket and nothing
 //! sent can be tested offline. After pairing: the bed masks, a frame
 //! subscription, `watch.report` for each finding, `watch.grab` for a second look at a possible
-//! hand, and `watch.plateResult` for each plate check. Protocol: packages/connect/link-client.
+//! hand, `watch.plateResult` for each plate check and `watch.lookResult` for each look again. Protocol: packages/connect/link-client.
 use std::collections::HashMap;
 use std::time::Duration;
 
@@ -361,6 +361,10 @@ async fn dispatch<D: Detector>(
             }
             Out::Plate(p) => {
                 conn.send("watch.plateResult", serde_json::to_value(&p).unwrap_or_default())
+                    .await?;
+            }
+            Out::Look(l) => {
+                conn.send("watch.lookResult", serde_json::to_value(&l).unwrap_or_default())
                     .await?;
             }
         }
