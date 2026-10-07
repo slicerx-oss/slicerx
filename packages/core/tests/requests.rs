@@ -1938,6 +1938,37 @@ fn a_bridge_past_the_max_bridge_length_is_named_when_support_is_off() {
     );
     assert_eq!(bridges(&run(json!({"max_bridge_length": 40}))), 0);
     assert_eq!(bridges(&run(json!({"enable_support": true}))), 0);
+    // 0, as the Bambu Lab presets ship it, sets no limit: no "longer than the 0 mm max bridge length", and the bridge
+    // is not passed on as a region that needs support either (Orca warns about neither).
+    let zero = run(json!({"max_bridge_length": 0}));
+    assert!(zero.report.warnings.is_empty(), "{:?}", zero.report.warnings);
+}
+
+#[test]
+fn bridges_past_the_shown_five_are_counted_as_bridges() {
+    // Seven 30 mm bridges side by side: five are named, the other two are counted as bridges, not as regions.
+    let mut parts = Vec::new();
+    for y in [0.0_f32, 20.0, 40.0, 60.0, 80.0, 100.0, 120.0] {
+        parts.push(cuboid([0.0, 10.0], [y, y + 10.0], [0.0, 5.0], "left"));
+        parts.push(cuboid([40.0, 50.0], [y, y + 10.0], [0.0, 5.0], "right"));
+        parts.push(cuboid([0.0, 50.0], [y, y + 10.0], [5.0, 7.0], "slab"));
+    }
+    let mesh = Arc::new(Mesh {
+        name: "arches".into(),
+        parts,
+    });
+    let req: SliceRequest =
+        serde_json::from_value(json!({"plate": {"objects": [{"mesh": "m"}]}, "config": {}})).unwrap();
+    let run = common::run_request(&req, &move |_: &str| Ok(mesh.clone())).unwrap();
+    let w = &run.report.warnings;
+    assert!(w.iter().all(|w| w.code == api::WarningCode::LongBridge), "{w:?}");
+    assert_eq!(w.len(), 6, "{w:?}");
+    assert!(
+        w[5].message
+            .starts_with("2 more bridges are longer than the 10 mm max bridge length"),
+        "{}",
+        w[5].message
+    );
 }
 
 #[test]

@@ -17,6 +17,13 @@ export interface PreviewStats {
 
 const cache = new WeakMap<PreviewBuffers, PreviewStats>()
 
+/** A feature's path length for the legend: tenths of a meter, hundredths under 1 m, so a short stretch never reads 0.0 m. */
+export function lengthLabel(m: number): string {
+  if (m >= 1) return `${m.toFixed(1)} m`
+  if (m >= 0.005) return `${m.toFixed(2)} m`
+  return '<0.01 m'
+}
+
 export function previewStats(p: PreviewBuffers): PreviewStats {
   const hit = cache.get(p)
   if (hit) return hit

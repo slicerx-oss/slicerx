@@ -4288,7 +4288,13 @@ impl SliceSession {
             tops: &tops,
             slice: &slice,
             threshold_deg: if threshold > 0.0 { threshold } else { 30.0 },
-            max_bridge_mm: cfg.support.max_bridge_length.max(0.0),
+            // 0 is Orca's "support every bridge" for supports (the Bambu Lab presets ship it). With support off
+            // there is no length to hold a bridge to, and Orca warns about no bridge, so 0 sets no limit here.
+            max_bridge_mm: if cfg.support.max_bridge_length > 0.0 {
+                cfg.support.max_bridge_length
+            } else {
+                f64::INFINITY
+            },
         };
         let mut found = crate::floating::find(&self.parts, &layers);
         crate::sorting::sort_by_key(&mut found, |f| f.layers.0);
@@ -4318,12 +4324,28 @@ impl SliceSession {
                 SliceWarning { code, message, layer: Some(f.layers.0 + lift) }
             })
             .collect();
-        if found.len() > SHOWN {
+        // The rest in one line each for bridges and for regions, so a long bridge is never counted as a region.
+        let rest = found.get(SHOWN..).unwrap_or_default();
+        let bridges = rest
+            .iter()
+            .filter(|f| f.kind == crate::floating::Kind::Bridge)
+            .count();
+        if rest.len() > bridges {
             out.push(SliceWarning {
                 code: WarningCode::FloatingRegion,
                 message: format!(
                     "{} more regions need support. Turn on supports or paint support there.",
-                    found.len() - SHOWN
+                    rest.len() - bridges
+                ),
+                layer: None,
+            });
+        }
+        if bridges > 0 {
+            out.push(SliceWarning {
+                code: WarningCode::LongBridge,
+                message: format!(
+                    "{bridges} more bridges are longer than the {:.0} mm max bridge length. Turn on supports, or slow bridges down and give them more fan.",
+                    cfg.support.max_bridge_length
                 ),
                 layer: None,
             });

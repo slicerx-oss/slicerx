@@ -353,7 +353,8 @@ pub struct SupportConfig {
     pub enforce_layers: u32,
     /// No support under bridges (`bridge_no_support`).
     pub bridge_no_support: bool,
-    /// Longest bridge left without support for tree supports (`max_bridge_length`), mm.
+    /// Longest bridge left without support for tree supports (`max_bridge_length`), mm. 0 supports every bridge
+    /// when support is on, and sets no limit for the long bridge warning when it is off.
     pub max_bridge_length: f64,
     /// The part's walls as the overhang detection sees them: wall loops, outer and inner wall width
     /// and the nozzle, mm. Filled from the print settings by [`PrintConfig::support_config`].
