@@ -343,6 +343,12 @@ pub trait Backend: Send + Sync {
     async fn finish_scan(&self, version_id: &str, finish: ScanFinish) -> Result<bool>;
     /// Puts scans that a dead worker left behind back in the queue.
     async fn requeue_stale_scans(&self) -> Result<usize>;
+    /// Hands a version this worker claimed but could not finish back to the
+    /// queue at once, instead of leaving it to `requeue_stale_scans`.
+    async fn release_scan(&self, version_id: &str, worker: &str) -> Result<()>;
+    /// Gives a version back after processing it failed: queued again with one
+    /// more attempt, or rejected with `error` as the reason on the third.
+    async fn retry_scan(&self, version_id: &str, error: &str) -> Result<()>;
 
     async fn insert_job(&self, job: NewJob) -> Result<Job>;
     async fn job(&self, user_id: &str, id: &str) -> Result<Option<Job>>;
