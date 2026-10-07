@@ -25,7 +25,7 @@ const KIND: Record<Collision['kind'], string> = {
 
 function when(c: Collision): string {
   const layers = c.lastLayer > c.layer ? `layers ${c.layer + 1} to ${c.lastLayer + 1}` : `layer ${c.layer + 1}`
-  const depth = c.depthMm > 0 ? `, ${c.depthMm.toFixed(1)} mm ${c.severity === 'close' ? 'inside the margin' : 'deep'}` : ''
+  const depth = c.depthMm > 0 ? `, ${c.depthMm.toFixed(1)} mm ${c.severity === 'close' || c.part === 'clearance' ? 'inside the margin' : 'deep'}` : ''
   return `${KIND[c.kind]}, from ${clock(c.timeS)}, ${layers}${depth}`
 }
 

@@ -74,6 +74,8 @@ pub enum Part {
     Toolhead,
     Gantry,
     Lid,
+    /// The profile's clearance radius, held as a hit where the head is not measured (Bambu Studio's own rule).
+    Clearance,
 }
 
 /// A moment of the print: a layer, the move in it, and where the head is.
@@ -245,7 +247,8 @@ impl Hits {
                 0 => Part::Nozzle,
                 1 => Part::Toolhead,
                 2 => Part::Gantry,
-                _ => Part::Lid,
+                3 => Part::Lid,
+                _ => Part::Clearance,
             };
             // Layer ranges report the same pair each; it is one collision over the ranges together.
             out.add(Hit {
@@ -389,6 +392,20 @@ impl Obstacle {
     }
 }
 
+/// The clearance radius heimdall holds a by-object plate to: Bambu Studio's `extruder_clearance_max_radius` on a Bambu
+/// Lab printer, `extruder_clearance_radius` elsewhere. Orca's Bambu Lab profiles carry the max radius in
+/// `extruder_clearance_radius` (73 mm for the A1), so a Bambu Lab printer takes the larger of the two.
+pub(crate) fn clearance_radius(config: &PrintConfig) -> f64 {
+    let radius = config.raw_number("extruder_clearance_radius", 40.0);
+    if crate::firmware::bambu_printer(config, config.gcode_flavor) {
+        config
+            .raw_number("extruder_clearance_max_radius", 68.0)
+            .max(radius)
+    } else {
+        radius
+    }
+}
+
 /// The plate's objects as obstacles and the machine that moves among them.
 pub(crate) struct Model {
     pub meta: Meta,
@@ -405,6 +422,8 @@ pub(crate) struct Model {
     lid: f64,
     radius: f64,
     nozzle_height: f64,
+    /// The head is drawn from photos, not measured: the profile's radius blocks instead of warning.
+    estimated: bool,
 }
 
 impl std::fmt::Debug for Model {
@@ -485,13 +504,8 @@ impl Model {
             });
         }
         let changer = machine.changer;
-        // Bambu Studio grows each hull by half its `extruder_clearance_max_radius`; Orca and the others use
-        // `extruder_clearance_radius`.
-        let radius = if crate::firmware::bambu_printer(config, config.gcode_flavor) {
-            config.raw_number("extruder_clearance_max_radius", 68.0)
-        } else {
-            config.raw_number("extruder_clearance_radius", 40.0)
-        };
+        let machine_estimated = machine.estimated;
+        let radius = clearance_radius(config);
         // Without a filament map each tool has its own extruder where the machine has more than one head.
         let extruder_of =
             extruder_of.unwrap_or_else(|| (0..64).map(|t| t.min(heads.len().saturating_sub(1))).collect());
@@ -527,6 +541,7 @@ impl Model {
             lid: config.raw_number("extruder_clearance_height_to_lid", 120.0),
             radius,
             nozzle_height: config.raw_number("nozzle_height", 2.5),
+            estimated: machine_estimated,
         }
     }
 
