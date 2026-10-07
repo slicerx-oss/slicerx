@@ -447,8 +447,9 @@ const slab = (mat: Material, x0: number, x1: number, y0: number, y1: number, z0:
 }
 
 /**
- * The chute behind the bed and the purge blob. The chute hangs at the toolhead's height (the gantry carries
- * the head over it; the bed moves in z), so its group follows the head's z like the H2C rack does.
+ * The chute behind the bed and the purge blob. On printers whose bed moves in z the chute hangs at the toolhead's
+ * height (the gantry carries the head over it), so its group follows the head's z like the H2C rack does; on the A1
+ * and A1 mini it stands on the frame and stays still (`chute.frame`).
  */
 export class PurgeRig {
   readonly root = new Group()
@@ -583,21 +584,20 @@ export class PurgeRig {
    * Places the chute at the head's height `z` and the blob for `seconds` into the change `seq` with its
    * purge `plan`; without a change in progress only the chute shows.
    */
-  place(z: number, at: { seq: ChangeSequence; plan: PurgePlan; seconds: number } | null, headY?: number): BlobState | null {
+  place(z: number, at: { seq: ChangeSequence; plan: PurgePlan; seconds: number } | null): BlobState | null {
     const ch = this.spec?.chute
     this.chute.visible = !!ch
     this.blob.visible = false
     if (!ch) return null
-    // A chute beside the gantry of a bed slinger stays level with the head in bed coordinates.
-    const cy = ch.gantry && headY !== undefined ? headY : ch.y
-    this.chute.position.set(ch.x, cy, z)
+    // A chute on the frame of a bed slinger stays still at its flush spot; one the head's height carries follows it.
+    this.chute.position.set(ch.x, ch.y, ch.frame ? 0 : z)
     if (!at) return null
     const w = purgeWindow(at.seq, totalSeconds(at.plan))
     if (!w) return null
     const share = flushedShare(at.plan, w, at.seconds)
     if (share <= 0) return null
     const shape = this.shapeFor(at.plan, at.plan.volume * share)
-    const st = blobAt(at.seq, at.plan, w, at.seconds, shape.front, along(ch.x, cy, this.exit) + this.mouth.y[0], this.exit)
+    const st = blobAt(at.seq, at.plan, w, at.seconds, shape.front, along(ch.x, ch.y, this.exit) + this.mouth.y[0], this.exit)
     if (st.phase === 'none') return st
     this.blob.visible = true
     // The blob's top sits on the nozzle tip; falling, it turns about its middle, tipping back into the chute.
