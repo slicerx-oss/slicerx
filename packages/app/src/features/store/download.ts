@@ -82,7 +82,12 @@ export async function fetchModel(store: StoreClient, listing: Listing, get: type
     if (signal?.aborted) return canceled
     const init: RequestInit = { ...(link.value.headers ? { headers: link.value.headers } : {}), ...(signal ? { signal } : {}) }
     const res = await get(link.value.url, Object.keys(init).length ? init : undefined)
-    if (!res.ok) return { ok: false, reason: 'error', message: res.status === 404 || res.status === 400 ? `The file for ${listing.title} is missing (${res.status}).` : `The download failed (${res.status}).` }
+    if (!res.ok) {
+      // Signed out, storage answers a refused grant with 400 (not found) as well: that is a refusal, not a missing file.
+      const signedOut = Boolean(link.value.headers)
+      if (signedOut && (res.status === 400 || res.status === 401 || res.status === 403)) return { ok: false, reason: 'error', message: 'Sign in to download this design.' }
+      return { ok: false, reason: 'error', message: res.status === 404 || res.status === 400 ? `The file for ${listing.title} is missing (${res.status}).` : `The download failed (${res.status}).` }
+    }
     const bytes = await readBody(res, onProgress)
     return signal?.aborted ? canceled : { ok: true, name: link.value.fileName, bytes, version: link.value.version }
   } catch (e) {

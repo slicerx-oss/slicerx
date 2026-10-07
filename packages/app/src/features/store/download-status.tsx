@@ -57,14 +57,20 @@ export function useModelFetch() {
 
 /** `onSignIn`: the person is signed out, so a failed download offers signing in as well as a retry. */
 export function DownloadStatus({ state, onCancel, onRetry, onDismiss, onSignIn }: { state: DownloadState | null; onCancel: () => void; onRetry: () => void; onDismiss: () => void; onSignIn?: (() => void) | undefined }) {
+  // The line sits under the buttons, which can be below the fold of a tall sheet: bring it into view when it appears or fails.
+  const box = useRef<HTMLDivElement | null>(null)
+  const kind = state?.kind
+  useEffect(() => {
+    if (kind) box.current?.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' })
+  }, [kind])
   if (!state) return null
   if (state.kind === 'error') {
     return (
-      <div className="lib-dl" data-state="error" role="alert">
+      <div className="lib-dl" data-state="error" role="alert" ref={box}>
         <div className="lib-dl-top">
           <Icon name="alert" size={16} />
           <span className="lib-dl-msg">
-            {state.message} {onSignIn ? 'Try again, or sign in and download it to your account.' : 'Try again in a moment.'}
+            {state.message} {state.message.startsWith('Sign in') ? '' : onSignIn ? 'Try again, or sign in and download it to your account.' : 'Try again in a moment.'}
           </span>
         </div>
         <div className="lib-dl-actions">
@@ -87,7 +93,7 @@ export function DownloadStatus({ state, onCancel, onRetry, onDismiss, onSignIn }
   const pct = total ? Math.min(100, Math.round((got / total) * 100)) : null
   const size = total ? `${formatBytes(got)} of ${formatBytes(total)}` : got ? formatBytes(got) : 'Starting'
   return (
-    <div className="lib-dl" role="status">
+    <div className="lib-dl" role="status" ref={box}>
       <div className="lib-dl-top">
         <span className="lib-dl-msg">Downloading {state.title}</span>
         <span className="lib-dl-num">

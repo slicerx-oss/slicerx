@@ -59,6 +59,11 @@ describe('fetching a library model', () => {
     expect(await fetchModel(store(link('https://a/clip.sx3mf')), listing, dropped)).toMatchObject({ ok: false, message: 'The download failed: network down' })
     expect(await fetchModel(store({ ok: false, code: 'unavailable', message: '' }), listing, respond(200))).toMatchObject({ ok: false, message: 'The download could not be started.' })
   })
+  it('calls a refused signed-out read a sign-in problem, and a member 404 a missing file', async () => {
+    const out: StoreResult<DownloadLink> = { ok: true, value: { url: 'https://a/clip.sx3mf', headers: { 'x-sx-download-grant': 'sxg_1' }, versionId: 'v', version: '1.0.0', fileName: 'clip.sx3mf' } }
+    for (const status of [400, 401, 403]) expect(await fetchModel(store(out), listing, respond(status))).toMatchObject({ ok: false, message: 'Sign in to download this design.' })
+    expect(await fetchModel(store(link('https://a/clip.sx3mf')), listing, respond(404))).toMatchObject({ ok: false, message: 'The file for Clip is missing (404).' })
+  })
   it('reports progress, and a canceled download is neither an error nor a file', async () => {
     const seen: [number, number | null][] = []
     const body = new Response(new Uint8Array(5000), { status: 200, headers: { 'content-length': '5000' } })
@@ -134,8 +139,8 @@ describe('the design sheet', () => {
     mount(download)
     fireEvent.click(screen.getByRole('button', { name: /^Open in/ }))
     const alert = await screen.findByRole('alert')
-    expect(alert.textContent).toContain('The file for Clip is missing (400).')
-    expect(alert.textContent).toContain('sign in')
+    expect(alert.textContent).toContain('Sign in to download this design.')
+    expect(alert.textContent).not.toContain('missing')
     fireEvent.click(screen.getByRole('button', { name: 'Try again' }))
     await waitFor(() => expect(download).toHaveBeenCalledTimes(2))
     fireEvent.click(await screen.findByRole('button', { name: 'Sign in' }))
