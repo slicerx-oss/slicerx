@@ -303,8 +303,8 @@ fn a1(mini: bool) -> (Value, Value) {
     )
 }
 
-/// The A1's head is drawn from photos, not measured: it must not decide a hit. Its nozzle and heater block do, the
-/// profile's radius warns, and the gantry rule holds.
+/// The A1's head is drawn from photos, not measured: it must not decide a hit. Its nozzle does (up to the profile's
+/// `nozzle_height`), the profile's radius warns, and the gantry rule holds.
 #[test]
 fn an_estimated_head_never_blocks_a_print() {
     let hits = |r: &SliceRun| {
