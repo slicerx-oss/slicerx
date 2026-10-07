@@ -22,21 +22,6 @@ export function ObjectTools() {
   const tool = useApp((s) => s.objectTool)
   const cad = useApp((s) => s.cadTools)
   const modeling = editionHasCad(useEdition())
-  // Steps that follow a named value catch up when the values, the built-ins or the plate in view change.
-  // The table and what the built-ins read (the printer, its nozzle, the measured fits), by reference.
-  const plate = useApp((s) => s.activePlate)
-  const table = useApp((s) => s.namedValues)
-  const presets = useApp((s) => s.userPresets)
-  const profile = useApp((s) => s.profile)
-  const printer = useApp((s) => s.printerId)
-  useEffect(() => {
-    if (!modeling) return
-    // Loaded on demand: the history code stays out of the startup bundle.
-    void import('../../cad/value-ops').then((m) => m.refreshBound(host.slicer)).then(
-      (r) => r.broken.length && toast(`A step could not follow its value: ${r.broken[0]}`, 'warn'),
-      (e: unknown) => toast(e instanceof Error ? e.message : String(e), 'error'),
-    )
-  }, [plate, table, presets, profile, printer, modeling, host])
   const setTool = (t: ToolId | null) => (t ? openTool(t) : set({ objectTool: null }))
   const direct = (fn: () => Promise<unknown>) => {
     setOpen(false)
@@ -72,4 +57,27 @@ export function ObjectTools() {
       {tool && !isCadTool(tool) && tool !== 'cut' ? <Suspense fallback={null}><ToolDialog tool={tool} onClose={() => setTool(null)} /></Suspense> : null}
     </>
   )
+}
+
+/**
+ * Steps that follow a named value catch up when the values, the built-ins or the plate in view change. The table
+ * and what the built-ins read (the printer, its nozzle, the measured fits), by reference. Runs while the plate tab
+ * is open, in Design and in Slice.
+ */
+export function useBoundValues(on: boolean): void {
+  const host = useHost()
+  const modeling = editionHasCad(useEdition())
+  const plate = useApp((s) => s.activePlate)
+  const table = useApp((s) => s.namedValues)
+  const presets = useApp((s) => s.userPresets)
+  const profile = useApp((s) => s.profile)
+  const printer = useApp((s) => s.printerId)
+  useEffect(() => {
+    if (!modeling || !on) return
+    // Loaded on demand: the history code stays out of the startup bundle.
+    void import('../../cad/value-ops').then((m) => m.refreshBound(host.slicer)).then(
+      (r) => r.broken.length && toast(`A step could not follow its value: ${r.broken[0]}`, 'warn'),
+      (e: unknown) => toast(e instanceof Error ? e.message : String(e), 'error'),
+    )
+  }, [plate, table, presets, profile, printer, modeling, host, on])
 }
