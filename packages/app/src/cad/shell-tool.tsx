@@ -18,6 +18,7 @@ import { keyOfTriangle } from './history/model'
 import { editing, nowOf, saveEdit } from './history/ops'
 import { bindNext } from './history/record'
 import { close, errorText, num, Num, pickWords, Shell, useProbe } from './panel-kit'
+import { follow, useDraft, useDraftObject } from './park'
 
 interface Picked {
   objectId: string
@@ -34,12 +35,13 @@ export function ShellTool() {
     const p = ed?.step.params
     return ed && p?.op === 'shell' ? { index: ed.index, objectId: ed.entry.id, partIndex: Math.max(0, ed.step.part), params: p, step: ed.step, entry: ed.entry } : null
   })()
-  const [picked, setPicked] = useState<Picked | null>(() => {
+  const [picked, setPicked] = useDraft<Picked | null>('picked', () => {
     if (!edit) return null
     const now = nowOf(edit.step, edit.entry.transform)
     return { objectId: edit.objectId, partIndex: edit.partIndex, faces: edit.params.open.map((o) => ({ at: now.point(o.at), normal: now.dir(o.normal), ...(o.key ? { key: o.key } : {}), lines: [] })) }
-  })
-  const [wall, setWall] = useState(edit ? String(edit.params.wallMm) : '2')
+  }, follow((p, now) => p && { ...p, faces: p.faces.map((f) => ({ ...f, at: now.point(f.at), normal: now.dir(f.normal), lines: f.lines.map((l) => l.map(now.point)) })) }))
+  useDraftObject(picked?.objectId)
+  const [wall, setWall] = useDraft('wall', edit ? String(edit.params.wallMm) : '2')
   const [note, setNote] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 

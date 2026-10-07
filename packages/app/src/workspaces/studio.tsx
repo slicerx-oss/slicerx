@@ -30,6 +30,7 @@ import { setTool, toolStore, useTool } from '../plate/tools'
 import { warmFullEngine } from '../geom/full-engine'
 import { useBoundValues } from './prepare/object-tools'
 import { SliceLookSwitch } from './prepare/slice-look'
+import { ParkedChip } from './prepare/parked-chip'
 import { SliceProgress } from './slice-progress'
 
 const PREPARE_LEFT: PaneSection[] = [
@@ -93,6 +94,11 @@ export function Studio() {
     warmFullEngine()
   }, [design])
 
+  // A modeling tool left open when Design closed opens again as it was (cad/park.ts).
+  useEffect(() => {
+    if (design && get().parked) void import('../cad/park').then((p) => p.resume(host.slicer))
+  }, [design, host])
+
   useEffect(() => {
     const s = get()
     if (s.plate.length === 0 && !s.plateLoading) void seedExamplePlate(host)
@@ -140,6 +146,7 @@ export function Studio() {
         <ViewportHost layers={layers} />
         <SliceProgress />
         {design || !hasPreview ? null : <SliceLookSwitch />}
+        {design ? null : <ParkedChip />}
         <div className="hud hud-top">
           <div className="hud-col">
             <RenderMenu />
