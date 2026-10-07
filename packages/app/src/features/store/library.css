@@ -236,6 +236,7 @@ button.cs-thumb:hover .cs-art { outline: 1px solid var(--line); }
 .ce-rm:hover { background: var(--ink-3); color: var(--fg); }
 .ce-savebar { position: sticky; bottom: 0; display: flex; align-items: center; gap: 10px; padding: 12px 26px; padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px)); border-top: 1px solid var(--line-soft); background: color-mix(in srgb, var(--ink-1) 92%, transparent); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); }
 .ce-state { margin-right: auto; font-size: 12.5px; color: var(--muted); }
+.ce-state[data-error] { color: var(--red); }
 .ce-preview { position: relative; display: grid; grid-template-rows: auto minmax(0, 1fr); gap: 8px; padding: 12px 16px 16px; background: var(--ink-0); min-height: 0; }
 .ce-lbl { font: 11px var(--f-mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--dim); }
 .ce-preview-frame { overflow-y: auto; border: 1px solid var(--line); border-radius: var(--r-lg); background: color-mix(in srgb, var(--ink-2) 96%, transparent); box-shadow: var(--shadow-pop); }

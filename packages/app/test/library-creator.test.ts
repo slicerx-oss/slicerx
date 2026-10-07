@@ -202,6 +202,37 @@ describe('creator page editor logic', () => {
     const d: EditorDraft = { ...initialDraft(page, session), logo: { kind: 'new', image: { bytes: new Uint8Array([1]), contentType: 'image/png', preview: 'blob:x' } } }
     expect(await saveDraft(store, d, page)).toEqual({ ok: false, message: 'The logo did not upload: too big' })
   })
+
+  const img = { bytes: new Uint8Array([1]), contentType: 'image/png', preview: 'blob:x' }
+  it('removes the images it uploaded when a later step fails, and keeps them once the page shows them', async () => {
+    const removed: string[] = []
+    let saves = 0
+    const base = {
+      uploadCreatorImage: async (i: { kind: string }) => (i.kind === 'logo' ? { ok: false, code: 'invalid', message: 'too big' } : { ok: true, value: `https://cdn.example.com/${i.kind}.webp` }),
+      removeCreatorImage: async (url: string) => (removed.push(url), { ok: true, value: undefined }),
+      saveCreator: async () => (saves++, { ok: true, value: creator }),
+      setCreatorLinks: async () => ({ ok: false, code: 'invalid', message: 'bad link' }),
+    }
+    // The banner uploads, then the logo fails: the banner goes.
+    const both: EditorDraft = { ...initialDraft(page, session), banner: { kind: 'new', image: img }, logo: { kind: 'new', image: img } }
+    expect(await saveDraft(base as unknown as StoreClient, both, page)).toEqual({ ok: false, message: 'The logo did not upload: too big' })
+    expect(removed).toEqual(['https://cdn.example.com/banner.webp'])
+    // The second save (with the image) fails: the image goes.
+    removed.length = 0
+    saves = 0
+    const failSecond = { ...base, saveCreator: async () => (++saves === 2 ? { ok: false, code: 'invalid', message: 'The banner must come from your creator page' } : { ok: true, value: creator }) }
+    const banner: EditorDraft = { ...initialDraft(page, session), banner: { kind: 'new', image: img } }
+    expect(await saveDraft(failSecond as unknown as StoreClient, banner, page)).toEqual({ ok: false, message: 'The banner must come from your creator page' })
+    expect(removed).toEqual(['https://cdn.example.com/banner.webp'])
+    // The page took the image; a link failure after that keeps it.
+    removed.length = 0
+    expect(await saveDraft(base as unknown as StoreClient, banner, page)).toEqual({ ok: false, message: 'bad link' })
+    expect(removed).toEqual([])
+    // A store that throws comes back as a message, and still cleans up.
+    const throwing = { ...base, saveCreator: async () => (++saves > 4 ? Promise.reject(new Error('offline')) : { ok: true, value: creator }) }
+    saves = 4
+    expect(await saveDraft(throwing as unknown as StoreClient, { ...initialDraft(page, session) }, page)).toEqual({ ok: false, message: 'The page did not save: offline' })
+  })
 })
 
 describe('creator page editor', () => {
@@ -243,6 +274,20 @@ describe('creator page editor', () => {
     expect(await within(dialog).findByText('A Patreon link must point to patreon.com')).toBeTruthy()
     const page = await store.getCreatorByHandle('marrow-works')
     expect(page?.links.some((l) => l.url.includes('evil'))).toBe(false)
+  })
+
+  it('shows why a save failed instead of sitting at Unsaved changes', async () => {
+    const store = mount('marrow')
+    store.saveCreator = async () => ({ ok: false, code: 'invalid', message: 'Bios can be at most 500 characters' })
+    act(() => openEditor('edit'))
+    await screen.findByLabelText(/Display name/)
+    const dialog = screen.getByRole('dialog', { name: 'Creator page' })
+    fireEvent.change(within(dialog).getByLabelText(/^Bio/), { target: { value: 'Changed.' } })
+    expect(within(dialog).getByRole('status').textContent).toBe('Unsaved changes')
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(within(dialog).getByRole('status').textContent).toBe('Not saved: Bios can be at most 500 characters'))
+    fireEvent.change(within(dialog).getByLabelText(/^Bio/), { target: { value: 'Changed again.' } })
+    expect(within(dialog).getByRole('status').textContent).toBe('Unsaved changes')
   })
 
   it('sets up a page from Upload for a member without one', async () => {

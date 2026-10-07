@@ -60,7 +60,7 @@ import {
   type ListingRow,
   type VersionRow,
 } from './rows'
-import { DEFAULT_MAX_FILE_MB, slugify, validateCreatorLinks, validateHandle, validateUpload } from './validate'
+import { CREATOR_BIO_MAX, DEFAULT_MAX_FILE_MB, slugify, validateCreatorLinks, validateHandle, validateUpload } from './validate'
 
 const LISTING_COLUMNS = 'id, creator_id, slug, title, description, license, status, tags, cover_url, review_note, reviewed_by, reviewed_at, published_at, created_at'
 // The scan report is read through version_scan_report, never straight from the table.
@@ -74,6 +74,8 @@ const PROFILE_COLUMNS = 'id, handle, display_name, avatar_url, role, banned_at, 
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const HTTPS = /^https:\/\/[^\s<>"']{4,500}$/i
+/** An image address: https, or http on this machine for a local stack. */
+const IMAGE_URL = /^(https:\/\/|http:\/\/(127\.0\.0\.1|localhost)[:/])[^\s<>"']{4,500}$/i
 const statsRow = z.object({ listing_id: z.string(), likes: z.coerce.number(), makes: z.coerce.number(), comments: z.coerce.number(), downloads: z.coerce.number() })
 const followersRow = z.object({ creator_id: z.string(), followers: z.coerce.number() })
 const scoredRow = z.object({ listing_id: z.string(), score: z.coerce.number() })
@@ -99,6 +101,14 @@ const grantRow = z.object({ path: z.string(), version_id: z.string(), version: z
 
 /** `conn` is needed only for signed-out downloads, which read storage directly. */
 export function supabaseStore(sb: Db, conn?: Pick<SupabaseOptions, 'url' | 'anonKey'>): Omit<StoreClient, keyof AuthClient> {
+  // Banners, logos and covers come from this project's creator-media bucket (0013_creator_pages.sql checks the folder).
+  const mediaBase = conn ? `${conn.url.replace(/\/$/, '')}/storage/v1/object/public/creator-media/` : undefined
+  const mediaError = (url: string | null | undefined, what: string): StoreResult<never> | null => {
+    if (url == null) return null
+    if (!IMAGE_URL.test(url) || (mediaBase !== undefined && !url.startsWith(mediaBase))) return fail('invalid', `Upload the ${what} to your creator page first`)
+    return null
+  }
+
   async function uid(): Promise<string | null> {
     const { data } = await sb.auth.getSession()
     return data.session?.user.id ?? null
@@ -365,7 +375,8 @@ export function supabaseStore(sb: Db, conn?: Pick<SupabaseOptions, 'url' | 'anon
       if (isFailure(mine)) return mine
       const title = input.title.trim()
       if (title.length < 1 || title.length > 120) return fail('invalid', 'Titles are 1 to 120 characters')
-      if (input.coverUrl !== undefined && !HTTPS.test(input.coverUrl)) return fail('invalid', 'The cover must be an https address')
+      const coverBad = mediaError(input.coverUrl, 'cover')
+      if (coverBad) return coverBad
       const base = input.slug ?? slugify(title)
       // A slug made from the title gets a number when it is taken; a slug the caller chose does not.
       const attempts = input.slug === undefined ? 6 : 1
@@ -397,7 +408,8 @@ export function supabaseStore(sb: Db, conn?: Pick<SupabaseOptions, 'url' | 'anon
     async updateListing(id, patch) {
       const me = await uid()
       if (!me) return fail('not_signed_in', 'Sign in first')
-      if (patch.coverUrl != null && !HTTPS.test(patch.coverUrl)) return fail('invalid', 'The cover must be an https address')
+      const coverBad = mediaError(patch.coverUrl, 'cover')
+      if (coverBad) return coverBad
       const payload = {
         ...(patch.slug === undefined ? {} : { slug: patch.slug }),
         ...(patch.title === undefined ? {} : { title: patch.title.trim() }),
@@ -663,8 +675,9 @@ export function supabaseStore(sb: Db, conn?: Pick<SupabaseOptions, 'url' | 'anon
       if (!me) return fail('not_signed_in', 'Sign in first')
       const h = validateHandle(input.handle)
       if (!h.ok) return fail('invalid', h.message)
-      if (input.logoUrl != null && !HTTPS.test(input.logoUrl)) return fail('invalid', 'The logo must be an https address')
-      if (input.bannerUrl != null && !HTTPS.test(input.bannerUrl)) return fail('invalid', 'The banner must be an https address')
+      if (input.bio != null && input.bio.length > CREATOR_BIO_MAX) return fail('invalid', `Bios can be at most ${CREATOR_BIO_MAX} characters`)
+      const imageBad = mediaError(input.logoUrl, 'logo') ?? mediaError(input.bannerUrl, 'banner')
+      if (imageBad) return imageBad
       const fields = {
         handle: input.handle,
         display_name: input.displayName.trim(),
@@ -709,6 +722,17 @@ export function supabaseStore(sb: Db, conn?: Pick<SupabaseOptions, 'url' | 'anon
       const up = await sb.storage.from('creator-media').upload(path, input.bytes, { contentType: input.contentType, upsert: false, cacheControl: '31536000' })
       if (up.error) return fail('invalid', up.error.message)
       return ok(sb.storage.from('creator-media').getPublicUrl(path).data.publicUrl)
+    },
+
+    async removeCreatorImage(url) {
+      const me = await uid()
+      if (!me) return fail('not_signed_in', 'Sign in first')
+      const name = mediaBase !== undefined && url.startsWith(`${mediaBase}${me}/`) ? url.slice(`${mediaBase}${me}/`.length) : undefined
+      if (!name || name.includes('/')) return fail('invalid', 'That image is not in your creator folder')
+      const row = await ownCreatorRow(me)
+      if (row && [row.logo_url, row.banner_url].some((u) => u === url)) return ok(undefined)
+      const { error } = await sb.storage.from('creator-media').remove([`${me}/${name}`])
+      return error ? fail('unavailable', error.message) : ok(undefined)
     },
 
     async setFeatured(listingIds) {

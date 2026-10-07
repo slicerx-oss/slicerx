@@ -31,7 +31,7 @@ import { createOfflineContext, offlineAuth, type OfflineContext, type OfflineOpt
 import { downloadVersion, isoTime, latestVersion, toAudit, toCollection, toComment, toCreator, toCreatorLink, toFile, toListing, toMake, toModerationItem, toPrintProfile, toVersion } from './map'
 import { LICENSES, MODERATION_MODES, type CommentRow, type CreatorRow, type ListingRow, type SeedData, type VersionRow } from './rows'
 import { newCreatorIds, recommendedScores, trendingScores } from './ranking'
-import { DEFAULT_MAX_FILE_MB, MAX_FEATURED, slugify, validateCreatorLinks, validateHandle, validateUpload } from './validate'
+import { CREATOR_BIO_MAX, DEFAULT_MAX_FILE_MB, MAX_FEATURED, slugify, validateCreatorLinks, validateHandle, validateUpload } from './validate'
 
 export type { OfflineOptions } from './auth/offline'
 
@@ -723,7 +723,7 @@ export function offlineStore(ctx: OfflineContext): Omit<StoreClient, keyof AuthC
         const name = input.displayName.trim()
         if (name.length < 1 || name.length > 80) bad('invalid', 'Names are 1 to 80 characters')
         if (input.tagline != null && input.tagline.length > 140) bad('invalid', 'Taglines can be at most 140 characters')
-        if (input.bio != null && input.bio.length > 4000) bad('invalid', 'Bios can be at most 4000 characters')
+        if (input.bio != null && input.bio.length > CREATOR_BIO_MAX) bad('invalid', `Bios can be at most ${CREATOR_BIO_MAX} characters`)
         if (input.location != null && input.location.length > 80) bad('invalid', 'Locations can be at most 80 characters')
         if (input.logoUrl != null && !IMAGE.test(input.logoUrl)) bad('invalid', 'The logo must be an https address')
         if (input.bannerUrl != null && !IMAGE.test(input.bannerUrl)) bad('invalid', 'The banner must be an https address')
@@ -779,6 +779,12 @@ export function offlineStore(ctx: OfflineContext): Omit<StoreClient, keyof AuthC
         let bin = ''
         for (let i = 0; i < input.bytes.length; i += 0x8000) bin += String.fromCharCode(...input.bytes.subarray(i, i + 0x8000))
         return `data:${input.contentType};base64,${btoa(bin)}`
+      }),
+
+    // Images here are data URLs kept on the page itself; there is nothing stored apart to remove.
+    removeCreatorImage: () =>
+      run((c) => {
+        requireCreator(c)
       }),
 
     setFeatured: (listingIds) =>

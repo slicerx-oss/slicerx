@@ -25,7 +25,8 @@ begin
   reset role;
   select id into uid from public.profiles where handle = p_handle;
   if uid is null then raise exception 'no profile %', p_handle; end if;
-  perform set_config('request.jwt.claims', json_build_object('sub', uid, 'role', 'authenticated')::text, true);
+  -- The issuer a local stack signs with; creator images must come from its creator-media bucket.
+  perform set_config('request.jwt.claims', json_build_object('sub', uid, 'role', 'authenticated', 'iss', 'http://127.0.0.1:54321/auth/v1')::text, true);
   set local role authenticated;
 end;
 $$;
@@ -77,7 +78,7 @@ select throws_ok(
   '23505', null, 'handles are unique');
 select lives_ok(
   $$insert into public.creators (owner_id, handle, display_name, tagline, bio, logo_url, trusted)
-    select rv, 'rv-prints', 'RV Prints', 'Small useful prints', 'I print things for my workshop.', 'https://example.com/rv.png', true from ids$$,
+    select rv, 'rv-prints', 'RV Prints', 'Small useful prints', 'I print things for my workshop.', 'http://127.0.0.1:54321/storage/v1/object/public/creator-media/' || rv::text || '/logo-1.png', true from ids$$,
   'a member makes a creator page');
 select is((select trusted from public.creators where handle = 'rv-prints'), false, 'a client cannot make themselves trusted on insert');
 select is((select role from public.profiles where handle = 'rv'), 'creator', 'the member became a creator');

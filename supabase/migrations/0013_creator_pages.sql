@@ -7,7 +7,12 @@
 -- member's likes. supabase/modules/drop_store.sql removes it with the store.
 
 alter table public.creators add column banner_url text
-  check (char_length(banner_url) <= 500 and banner_url ~* '^https://[^\s<>"'']{4,}$');
+  check (char_length(banner_url) <= 500 and banner_url ~* '^(https://|http://(127\.0\.0\.1|localhost)[:/])[^\s<>"'']{4,}$');
+
+-- Bios: 500 characters, as the editor takes them (a sheet reads best short).
+-- Not checked against existing rows; a longer bio must shrink on its next edit.
+alter table public.creators drop constraint creators_bio_check;
+alter table public.creators add constraint creators_bio_check check (char_length(bio) <= 500) not valid;
 
 -- Tags staff set on a creator page, such as "Builds SlicerX" or "N3D team".
 -- Shown under the handle; the creator cannot change them.
@@ -219,6 +224,64 @@ end;
 $$;
 create trigger creators_media_cleanup after delete on public.creators
   for each row execute function public.queue_creator_media_cleanup();
+
+-- Banners, logos and covers come from this project's creator-media bucket, in
+-- the creator's own folder: no outside image (a tracking pixel, a hotlink) on a
+-- page. The project's public address is the origin of the caller's auth issuer
+-- (https://<ref>.supabase.co, or http on 127.0.0.1 or localhost for a local
+-- stack). Checked when a member sets one; the service role and SQL are trusted.
+alter table public.creators drop constraint creators_logo_url_check;
+alter table public.creators add constraint creators_logo_url_check
+  check (char_length(logo_url) <= 500 and logo_url ~* '^(https://|http://(127\.0\.0\.1|localhost)[:/])[^\s<>"'']{4,}$');
+alter table public.listings drop constraint listings_cover_url_check;
+alter table public.listings add constraint listings_cover_url_check
+  check (char_length(cover_url) <= 500 and cover_url ~* '^(https://|http://(127\.0\.0\.1|localhost)[:/])[^\s<>"'']{4,}$');
+
+create function public.creator_media_prefix() returns text
+language sql stable set search_path = '' as $$
+  select substring(
+    coalesce(nullif(current_setting('request.jwt.claims', true), '')::jsonb ->> 'iss', '')
+    from '^(https://[a-z0-9.-]+(?::[0-9]{1,5})?|http://(?:127\.0\.0\.1|localhost)(?::[0-9]{1,5})?)/auth/v1/?$'
+  ) || '/storage/v1/object/public/creator-media/';
+$$;
+
+-- True when the URL is a creator-media image in the owner's folder.
+create function public.is_creator_media_url(p_url text, p_owner uuid) returns boolean
+language sql stable set search_path = '' as $$
+  select coalesce(
+    starts_with(p_url, public.creator_media_prefix() || p_owner::text || '/')
+      and substr(p_url, char_length(public.creator_media_prefix()) + 1) ~ '^[0-9a-f-]{36}/[a-z0-9][a-z0-9._-]{0,80}\.(png|jpe?g|webp)$',
+    false
+  );
+$$;
+
+create function public.guard_creator_media() returns trigger
+language plpgsql set search_path = '' as $$
+begin
+  if current_user not in ('authenticated', 'anon') then
+    return new;
+  end if;
+  if tg_table_name = 'creators' then
+    if new.logo_url is not null and (tg_op = 'INSERT' or new.logo_url is distinct from old.logo_url)
+      and not public.is_creator_media_url(new.logo_url, new.owner_id) then
+      raise exception 'upload the logo to your creator page first' using errcode = '23514';
+    end if;
+    if new.banner_url is not null and (tg_op = 'INSERT' or new.banner_url is distinct from old.banner_url)
+      and not public.is_creator_media_url(new.banner_url, new.owner_id) then
+      raise exception 'upload the banner to your creator page first' using errcode = '23514';
+    end if;
+  elsif new.cover_url is not null and (tg_op = 'INSERT' or new.cover_url is distinct from old.cover_url)
+    and not public.is_creator_media_url(new.cover_url, (select c.owner_id from public.creators c where c.id = new.creator_id)) then
+    raise exception 'upload the cover to your creator page first' using errcode = '23514';
+  end if;
+  return new;
+end;
+$$;
+create trigger creators_guard_media before insert or update of logo_url, banner_url on public.creators
+  for each row execute function public.guard_creator_media();
+create trigger listings_guard_media before insert or update of cover_url on public.listings
+  for each row execute function public.guard_creator_media();
+grant execute on function public.creator_media_prefix(), public.is_creator_media_url(text, uuid) to authenticated, service_role;
 
 -- Vault files leave only as .sx3mf. The upload scan stores every clean upload
 -- as an .sx3mf; a model file in any other format (one stored before that, or

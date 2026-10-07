@@ -629,6 +629,8 @@ export interface StoreClient extends AuthClient {
   setCreatorLinks(links: CreatorLinkInput[]): Promise<StoreResult<CreatorLink[]>>
   /** Stores a banner or logo for the signed-in creator's page and returns its public URL. Save it with saveCreator. PNG, JPEG or WebP up to 5 MB. */
   uploadCreatorImage(input: CreatorImageInput): Promise<StoreResult<string>>
+  /** Removes an image uploadCreatorImage stored that the page does not use, such as one a failed save left behind. An image the page shows is kept. */
+  removeCreatorImage(url: string): Promise<StoreResult<void>>
   /** Replaces the featured models: up to six of the creator's approved listings, in order. The first is the pinned design. */
   setFeatured(listingIds: string[]): Promise<StoreResult<void>>
   getCreatorByHandle(handle: string): Promise<CreatorPage | null>

@@ -5,7 +5,7 @@
 -- Run with `supabase test db`.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(58);
+select plan(72);
 
 -- Seed activity is dated; move it a year back so the windows below see only this test's rows.
 update public.likes set created_at = created_at - interval '1 year';
@@ -35,7 +35,8 @@ begin
   reset role;
   select id into uid from public.profiles where handle = p_handle;
   if uid is null then raise exception 'no profile %', p_handle; end if;
-  perform set_config('request.jwt.claims', json_build_object('sub', uid, 'role', 'authenticated')::text, true);
+  -- The issuer a local stack signs with; creator images must come from its creator-media bucket.
+  perform set_config('request.jwt.claims', json_build_object('sub', uid, 'role', 'authenticated', 'iss', 'http://127.0.0.1:54321/auth/v1')::text, true);
   set local role authenticated;
 end;
 $$;
@@ -50,12 +51,31 @@ $$;
 
 -- Banner --------------------------------------------------------------------------------------
 select pg_temp.as_user('ferro');
-select lives_ok($$update public.creators set banner_url = 'https://cdn.example.com/ferro/banner.webp' where owner_id = (select ferro from ids)$$, 'a creator sets a banner');
+select lives_ok($$update public.creators set banner_url = 'http://127.0.0.1:54321/storage/v1/object/public/creator-media/' || (select ferro from ids)::text || '/banner-1a2b.webp' where owner_id = (select ferro from ids)$$, 'a creator sets a banner from their creator-media folder');
 select throws_ok($$update public.creators set banner_url = 'javascript:alert(1)' where owner_id = (select ferro from ids)$$, '23514', null, 'a banner must be an https URL');
 select pg_temp.as_user('ash');
 update public.creators set banner_url = 'https://evil.example.com/x.png' where owner_id = (select ferro from ids);
 select pg_temp.as_anon();
-select is((select banner_url from public.creators where owner_id = (select ferro from ids)), 'https://cdn.example.com/ferro/banner.webp', 'anon reads the banner and nobody else changed it');
+select is((select banner_url from public.creators where owner_id = (select ferro from ids)), 'http://127.0.0.1:54321/storage/v1/object/public/creator-media/' || (select ferro from ids)::text || '/banner-1a2b.webp', 'anon reads the banner and nobody else changed it');
+
+-- Images only from this project's creator-media -----------------------------------------------------
+select pg_temp.as_user('ferro');
+select throws_ok($$update public.creators set banner_url = 'https://cdn.example.com/ferro/banner.webp' where owner_id = (select ferro from ids)$$, '23514', 'upload the banner to your creator page first', 'an outside banner is refused');
+select throws_ok($$update public.creators set logo_url = 'https://cdn.example.com/ferro/logo.png' where owner_id = (select ferro from ids)$$, '23514', 'upload the logo to your creator page first', 'so is an outside logo');
+select throws_ok($$update public.creators set logo_url = 'http://127.0.0.1:54321/storage/v1/object/public/creator-media/' || (select ash from ids)::text || '/logo.png' where owner_id = (select ferro from ids)$$, '23514', null, 'and an image in someone else''s folder');
+select throws_ok($$update public.creators set logo_url = 'http://127.0.0.1:9999/storage/v1/object/public/creator-media/' || (select ferro from ids)::text || '/logo.png' where owner_id = (select ferro from ids)$$, '23514', null, 'and one from another server');
+select throws_ok($$update public.creators set logo_url = 'http://127.0.0.1:54321/storage/v1/object/public/creator-media/' || (select ferro from ids)::text || '/../x/logo.png' where owner_id = (select ferro from ids)$$, '23514', null, 'and a path that climbs out of the folder');
+select lives_ok($$update public.creators set tagline = 'Still editable' where owner_id = (select ferro from ids)$$, 'a page with an older outside logo still saves its other fields');
+select set_config('request.jwt.claims', json_build_object('sub', (select ferro from ids), 'role', 'authenticated', 'iss', 'https://abcdefgh.supabase.co/auth/v1')::text, true);
+select lives_ok($$update public.creators set logo_url = 'https://abcdefgh.supabase.co/storage/v1/object/public/creator-media/' || (select ferro from ids)::text || '/logo-9.png' where owner_id = (select ferro from ids)$$, 'a hosted project takes its own https creator-media URL');
+select throws_ok($$update public.creators set logo_url = 'http://abcdefgh.supabase.co/storage/v1/object/public/creator-media/' || (select ferro from ids)::text || '/logo-8.png' where owner_id = (select ferro from ids)$$, '23514', null, 'but not over http');
+select set_config('request.jwt.claims', json_build_object('sub', (select ferro from ids), 'role', 'authenticated')::text, true);
+select throws_ok($$update public.creators set logo_url = 'http://127.0.0.1:54321/storage/v1/object/public/creator-media/' || (select ferro from ids)::text || '/logo-7.png' where owner_id = (select ferro from ids)$$, '23514', null, 'without an issuer no image is taken');
+select pg_temp.as_user('ferro');
+select throws_ok($$update public.creators set bio = repeat('b', 501) where owner_id = (select ferro from ids)$$, '23514', null, 'a bio is at most 500 characters');
+select lives_ok($$update public.creators set bio = repeat('b', 500) where owner_id = (select ferro from ids)$$, '500 is fine');
+reset role;
+select lives_ok($$update public.creators set logo_url = 'https://cdn.example.com/any.png' where owner_id = (select ferro from ids)$$, 'the service role may set any https image');
 
 -- Staff tags --------------------------------------------------------------------------------------
 select pg_temp.as_user('ferro');
@@ -193,6 +213,11 @@ delete from public.creators where id = (select rv_creator from ids);
 select is(
   (select count(*)::int from public.storage_cleanup where bucket = 'creator-media' and prefix = (select rv from ids)::text || '/' and done_at is null),
   1, 'a deleted creator page queues its images for removal');
+
+-- Covers last: changing one sends the listing back to review.
+select pg_temp.as_user('ferro');
+select throws_ok($$update public.listings set cover_url = 'https://cdn.example.com/cover.png' where id = (select ferro_live from ids)$$, '23514', 'upload the cover to your creator page first', 'an outside cover is refused');
+select lives_ok($$update public.listings set cover_url = 'http://127.0.0.1:54321/storage/v1/object/public/creator-media/' || (select ferro from ids)::text || '/cover-1.jpg' where id = (select ferro_live from ids)$$, 'a cover from the creator''s folder is taken');
 
 select * from finish();
 rollback;
