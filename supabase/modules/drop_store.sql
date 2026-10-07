@@ -1,6 +1,6 @@
 -- SPDX-License-Identifier: Apache-2.0
 -- Copyright (C) 2026 The SlicerX contributors
--- Removes the store module (migrations/0002_store.sql and 0005_anon_downloads.sql). Leaves auth.users,
+-- Removes the store module (migrations/0002_store.sql, 0005_anon_downloads.sql and 0013_creator_pages.sql). Leaves auth.users,
 -- profiles, roles, the audit log, api_tokens and paired_devices untouched.
 -- Files already in the uploads-quarantine and listing-files buckets must be removed
 -- through the Storage API first; the buckets are dropped only when empty.
@@ -8,7 +8,10 @@ drop policy if exists uploads_quarantine_upload on storage.objects;
 drop policy if exists uploads_quarantine_replace on storage.objects;
 drop policy if exists listing_files_download on storage.objects;
 drop policy if exists listing_files_download_anon on storage.objects;
-delete from storage.buckets b where b.id in ('uploads-quarantine', 'listing-files') and not exists (
+drop policy if exists creator_media_insert on storage.objects;
+drop policy if exists creator_media_select_own on storage.objects;
+drop policy if exists creator_media_delete_own on storage.objects;
+delete from storage.buckets b where b.id in ('uploads-quarantine', 'listing-files', 'creator-media') and not exists (
   select 1 from storage.objects o where o.bucket_id = b.id
 );
 -- claim_scan returns the listing_versions row type, so it goes before the tables.
@@ -21,6 +24,9 @@ drop table if exists
   public.listing_files, public.listing_versions, public.listings, public.follows, public.creator_links,
   public.creators, public.library_settings;
 drop function if exists
+  public.set_saved(uuid, boolean), public.saved_listings(), public.trending_listings(integer, integer),
+  public.new_creators(integer, integer), public.recommended_listings(integer),
+  public.can_write_creator_media(text), public.queue_creator_media_cleanup(),
   public.request_download(uuid), public.can_download_anon(text), public.set_anon_downloads(boolean, integer, integer),
   public.is_public_image(text), public.is_public_file(text), public.public_download_path(uuid),
   public.client_ip_hash(), public.client_ip(),

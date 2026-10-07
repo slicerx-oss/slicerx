@@ -90,6 +90,8 @@ export interface Creator {
   bio?: string
   location?: string
   logoUrl?: string
+  /** A wide image across the top of the page. */
+  bannerUrl?: string
   followers: number
   ownerId: string
   status: 'active' | 'paused'
@@ -169,6 +171,8 @@ export interface Listing {
   stats?: ListingStats
   /** Signed-in member only. */
   likedByMe?: boolean
+  /** Signed-in member only: on the member's private Saved list. */
+  savedByMe?: boolean
 }
 
 export interface ListingCard {
@@ -316,7 +320,18 @@ export interface SaveCreatorInput {
   bio?: string | null
   location?: string | null
   logoUrl?: string | null
+  bannerUrl?: string | null
   status?: 'active' | 'paused'
+}
+
+/** Which creator page image an upload replaces. */
+export type CreatorImageKind = 'banner' | 'logo'
+
+export interface CreatorImageInput {
+  kind: CreatorImageKind
+  bytes: Uint8Array
+  /** image/png, image/jpeg or image/webp. */
+  contentType: string
 }
 
 export interface DashboardRow {
@@ -560,6 +575,15 @@ export interface StoreClient extends AuthClient {
   resubmitListing(id: string): Promise<StoreResult<void>>
   /** Pending, rejected and archived listings only. */
   deleteListing(id: string): Promise<StoreResult<void>>
+  /** Approved listings ranked by likes, makes and downloads in the last `days` days (default 7). Listings with no activity are left out. */
+  trending(opts?: { days?: number; limit?: number }): Promise<ListingCard[]>
+  /** Creators whose first approved listing went live in the last `days` days (default 30), newest first. */
+  newCreators(opts?: { days?: number; limit?: number }): Promise<Creator[]>
+  /** Approved listings sharing tags or a creator with the signed-in member's likes. Empty when signed out or without likes. */
+  recommended(opts?: { limit?: number }): Promise<ListingCard[]>
+  /** The signed-in member's private Saved list, newest save first. Empty when signed out. */
+  savedListings(): Promise<ListingCard[]>
+  setSaved(listingId: string, saved: boolean): Promise<StoreResult<void>>
   like(listingId: string): Promise<StoreResult<void>>
   unlike(listingId: string): Promise<StoreResult<void>>
   /** Comments and collections are deferred past v1: the SlicerX edition's client returns none and refuses writes with 'unavailable'. */
@@ -595,7 +619,9 @@ export interface StoreClient extends AuthClient {
   saveCreator(input: SaveCreatorInput): Promise<StoreResult<Creator>>
   /** Replaces every link. At most 12, https only, service links on the service's own domain. */
   setCreatorLinks(links: CreatorLinkInput[]): Promise<StoreResult<CreatorLink[]>>
-  /** Replaces the featured models: up to six of the creator's approved listings, in order. */
+  /** Stores a banner or logo for the signed-in creator's page and returns its public URL. Save it with saveCreator. PNG, JPEG or WebP up to 5 MB. */
+  uploadCreatorImage(input: CreatorImageInput): Promise<StoreResult<string>>
+  /** Replaces the featured models: up to six of the creator's approved listings, in order. The first is the pinned design. */
   setFeatured(listingIds: string[]): Promise<StoreResult<void>>
   getCreatorByHandle(handle: string): Promise<CreatorPage | null>
   /** A creator's approved listings, newest first. Empty for an unknown or hidden creator. Works signed out. */

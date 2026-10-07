@@ -3,6 +3,9 @@
 // Database row shapes (snake_case, as PostgREST returns them). The offline seed
 // uses the same shapes, so one set of mappers serves both modes.
 import { z } from 'zod'
+import { LINK_KINDS } from './validate'
+
+export { LINK_KINDS }
 
 const id = z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/)
 const ts = z.string().min(10)
@@ -15,23 +18,6 @@ const json = z.record(z.string(), z.unknown())
 export const ROLES = ['owner', 'moderator', 'creator', 'member'] as const
 export const LISTING_STATUSES = ['pending', 'approved', 'rejected', 'archived', 'removed'] as const
 export const LICENSES = ['cc0', 'cc-by', 'cc-by-sa', 'cc-by-nc', 'cc-by-nc-sa', 'cc-by-nd', 'cc-by-nc-nd', 'custom'] as const
-export const LINK_KINDS = [
-  'website',
-  'patreon',
-  'makerworld',
-  'printables',
-  'thingiverse',
-  'cults3d',
-  'youtube',
-  'instagram',
-  'tiktok',
-  'x',
-  'discord',
-  'github',
-  'kofi',
-  'buymeacoffee',
-  'other',
-] as const
 
 export const profileRow = z.object({
   id,
@@ -52,6 +38,8 @@ export const creatorRow = z.object({
   bio: nullable(z.string()),
   location: nullable(z.string()),
   logo_url: nullable(z.string()),
+  // Added after the bundled seed was made; absent there.
+  banner_url: nullable(z.string()).optional(),
   status: z.enum(['active', 'paused']),
   trusted: z.boolean(),
   created_at: ts,
@@ -151,7 +139,8 @@ export const makeRow = z.object({
   created_at: ts,
 })
 
-export const collectionRow = z.object({ id, owner_id: id, name: z.string(), is_public: z.boolean(), created_at: ts })
+// kind 'saved' is the member's private Saved list. Absent in the bundled seed, where every collection is 'custom'.
+export const collectionRow = z.object({ id, owner_id: id, name: z.string(), is_public: z.boolean(), kind: z.enum(['custom', 'saved']).optional(), created_at: ts })
 
 export const collectionItemRow = z.object({ collection_id: id, listing_id: id, added_at: ts })
 

@@ -443,6 +443,7 @@ export type Database = {
           created_at: string
           id: string
           is_public: boolean
+          kind: string
           name: string
           owner_id: string
         }
@@ -450,6 +451,7 @@ export type Database = {
           created_at?: string
           id?: string
           is_public?: boolean
+          kind?: string
           name: string
           owner_id: string
         }
@@ -457,6 +459,7 @@ export type Database = {
           created_at?: string
           id?: string
           is_public?: boolean
+          kind?: string
           name?: string
           owner_id?: string
         }
@@ -626,6 +629,7 @@ export type Database = {
       }
       creators: {
         Row: {
+          banner_url: string | null
           bio: string | null
           created_at: string
           display_name: string
@@ -639,6 +643,7 @@ export type Database = {
           trusted: boolean
         }
         Insert: {
+          banner_url?: string | null
           bio?: string | null
           created_at?: string
           display_name: string
@@ -652,6 +657,7 @@ export type Database = {
           trusted?: boolean
         }
         Update: {
+          banner_url?: string | null
           bio?: string | null
           created_at?: string
           display_name?: string
@@ -1602,6 +1608,7 @@ export type Database = {
           title: string
         }[]
       }
+      can_write_creator_media: { Args: { p_path: string }; Returns: boolean }
       creator_followers: {
         Args: { p_ids: string[] }
         Returns: {
@@ -1643,11 +1650,25 @@ export type Database = {
       }
       listing_visible: { Args: { p_listing: string }; Returns: boolean }
       my_role: { Args: never; Returns: string }
+      new_creators: {
+        Args: { p_days?: number; p_limit?: number }
+        Returns: {
+          creator_id: string
+          first_published_at: string
+        }[]
+      }
       owns_collection: { Args: { p_collection: string }; Returns: boolean }
       path_listing: { Args: { p_path: string }; Returns: string }
       public_download_path: { Args: { p_listing: string }; Returns: string }
       purge_account: { Args: { p_user: string }; Returns: undefined }
       purge_due_accounts: { Args: never; Returns: string[] }
+      recommended_listings: {
+        Args: { p_limit?: number }
+        Returns: {
+          listing_id: string
+          score: number
+        }[]
+      }
       record_download: { Args: { p_listing: string }; Returns: undefined }
       reject_listing: {
         Args: { p_listing: string; p_reason: string }
@@ -1686,6 +1707,13 @@ export type Database = {
           id: string
         }[]
       }
+      saved_listings: {
+        Args: never
+        Returns: {
+          listing_id: string
+          saved_at: string
+        }[]
+      }
       set_anon_downloads: {
         Args: { p_enabled: boolean; p_per_day: number; p_per_hour: number }
         Returns: undefined
@@ -1695,6 +1723,10 @@ export type Database = {
         Returns: undefined
       }
       set_moderation_mode: { Args: { p_mode: string }; Returns: undefined }
+      set_saved: {
+        Args: { p_listing: string; p_saved: boolean }
+        Returns: boolean
+      }
       set_user_role: {
         Args: { p_reason?: string; p_role: string; p_user: string }
         Returns: undefined
@@ -1747,6 +1779,13 @@ export type Database = {
           idx: number
           row_data: Json
           status: string
+        }[]
+      }
+      trending_listings: {
+        Args: { p_days?: number; p_limit?: number }
+        Returns: {
+          listing_id: string
+          score: number
         }[]
       }
       unban_user: {
