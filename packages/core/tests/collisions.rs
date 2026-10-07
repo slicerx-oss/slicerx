@@ -237,6 +237,78 @@ fn objects_under_the_hotend_need_no_clearance_and_taller_ones_inside_the_radius_
 }
 
 #[test]
+fn the_strike_sits_on_the_parts_material_where_the_gantry_meets_it() {
+    // A T: a stem 10 mm wide up to 30 mm under a slab 50 mm wide from 30 to 40 mm. The beam 10 mm over the low box's
+    // nozzle meets the stem only; the slab's columns stand taller but hold nothing at that height.
+    let tee = mesh(vec![
+        cuboid([20.0, 30.0], [0.0, 20.0], [0.0, 30.0], 1),
+        cuboid([0.0, 50.0], [0.0, 20.0], [30.0, 40.0], 1),
+    ]);
+    let rod = json!({"extruder_clearance_height_to_rod": 10, "extruder_clearance_dist_to_rod": 40});
+    let r = run(
+        &[
+            ("tee", tee, 40.0, 100.0),
+            ("low", block(20.0, 20.0, 4.0), 140.0, 100.0),
+        ],
+        rod,
+        json!({}),
+    );
+    let c = r
+        .report
+        .collisions
+        .iter()
+        .find(|c| c.kind == Kind::Gantry)
+        .expect("the gantry strike");
+    for p in [c.point, c.worst_point] {
+        // inside the stem's cross-section at the beam's height (the tee's own frame: x 60 to 70, y 100 to 120)
+        assert!(p[0] >= 60.0 - 0.01 && p[0] <= 70.0 + 0.01, "{p:?}");
+        assert!(p[1] >= 100.0 - 0.01 && p[1] <= 120.0 + 0.01, "{p:?}");
+        assert!(p[2] >= 10.0 && p[2] < 11.0, "{p:?}");
+    }
+}
+
+#[test]
+fn a_delta_has_no_gantry_to_strike() {
+    let plate = [
+        ("tall", block(20.0, 20.0, 20.0), 60.0, 100.0),
+        ("low", block(20.0, 20.0, 6.0), 140.0, 100.0),
+    ];
+    let rod = json!({"extruder_clearance_height_to_rod": 10, "extruder_clearance_dist_to_rod": 40});
+    let gantry = |r: &SliceRun| {
+        r.report
+            .collisions
+            .iter()
+            .filter(|c| c.part == Part::Gantry)
+            .count()
+    };
+    assert_eq!(gantry(&run(&plate, rod.clone(), json!({}))), 1);
+    let mut delta = rod.clone();
+    delta["printer_structure"] = json!("delta");
+    assert_eq!(gantry(&run(&plate, delta, json!({}))), 0);
+    // FLSun's profiles leave the structure out
+    assert_eq!(gantry(&run(&plate, rod, json!({"printerId": "flsun-v400"}))), 0);
+}
+
+#[test]
+fn the_nozzle_strikes_only_where_it_touches_the_part() {
+    // A low box 3 mm beside a tall one printed before it: the toolhead's body reaches the tall box, the nozzle tip does
+    // not, and no travel runs through it.
+    let r = run(
+        &[
+            ("tall", block(20.0, 20.0, 20.0), 60.0, 100.0),
+            ("low", block(20.0, 20.0, 2.0), 83.0, 100.0),
+        ],
+        json!({}),
+        json!({}),
+    );
+    let tip: Vec<_> = kinds(&r)
+        .into_iter()
+        .filter(|k| k.1 == Part::Nozzle || k.0 == Kind::NozzleTravelThroughPart)
+        .collect();
+    assert!(tip.is_empty(), "{tip:?}");
+}
+
+#[test]
 fn the_toolhead_hits_a_tall_neighbor_and_the_order_that_clears_it_is_offered() {
     // A 5 mm box 8 mm beside a 30 mm one: the generic head's body (from 12 mm up, 22 mm to the side) meets it; the
     // other way round nothing as low as the box reaches past the nozzle's sock.

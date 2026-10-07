@@ -234,6 +234,61 @@ impl Grid {
     }
 }
 
+/// Where a moving piece of the machine first meets `obj`: the lowest point of the part's surface inside the box
+/// `[x0, x1] x [y0, y1]` (bed mm) at or above `over`, the one nearest `p` among the lowest. That is the part's own
+/// material at the height the piece reaches it, not the top of a column of the height grid. None when the box holds
+/// no material above `over`.
+pub(crate) fn meet(obj: &PlateObject, rect: [f64; 4], over: f64, p: [f64; 2]) -> Option<[f64; 3]> {
+    let mut best: Option<[f64; 3]> = None;
+    for part in &obj.mesh.parts {
+        let mut pts = Vec::with_capacity(part.positions.len());
+        for &v in &part.positions {
+            pts.push(obj.apply(v));
+        }
+        for t in &part.triangles {
+            let (Some(&a), Some(&b), Some(&c)) = (
+                pts.get(t[0] as usize),
+                pts.get(t[1] as usize),
+                pts.get(t[2] as usize),
+            ) else {
+                continue;
+            };
+            let (zx, xl, xh, yl, yh) = (
+                a[2].max(b[2]).max(c[2]),
+                a[0].min(b[0]).min(c[0]),
+                a[0].max(b[0]).max(c[0]),
+                a[1].min(b[1]).min(c[1]),
+                a[1].max(b[1]).max(c[1]),
+            );
+            if zx < over || xh < rect[0] || xl > rect[1] || yh < rect[2] || yl > rect[3] {
+                continue;
+            }
+            // The triangle clipped to the box's prism above `over`; its lowest corner is where it is first met.
+            let mut poly = vec![a, b, c];
+            for (axis, at, keep_above) in [
+                (0, rect[0], true),
+                (0, rect[1], false),
+                (1, rect[2], true),
+                (1, rect[3], false),
+                (2, over, true),
+            ] {
+                poly = clip(&poly, axis, at, keep_above);
+                if poly.is_empty() {
+                    break;
+                }
+            }
+            for q in poly {
+                let d = |r: [f64; 3]| (r[0] - p[0]) * (r[0] - p[0]) + (r[1] - p[1]) * (r[1] - p[1]);
+                let better = best.is_none_or(|b| q[2] < b[2] - 1e-6 || (q[2] < b[2] + 1e-6 && d(q) < d(b)));
+                if better {
+                    best = Some(q);
+                }
+            }
+        }
+    }
+    best
+}
+
 /// A grid reduced to one value per row of cells (cells `y0..`).
 #[derive(Debug, Clone, Default)]
 pub(crate) struct Profile {

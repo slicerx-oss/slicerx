@@ -268,7 +268,7 @@ impl Walker<'_> {
                 if let Some((ci, d)) = best
                     && let Some(c) = m.heads.get(head).and_then(|h| h.get(ci))
                 {
-                    let tip = c.z0 < 0.5;
+                    let tip = c.z0 < super::TIP_Z;
                     let kind = pr.leg.unwrap_or(if pr.travel && tip {
                         Kind::NozzleTravelThroughPart
                     } else {
@@ -277,8 +277,8 @@ impl Walker<'_> {
                     let part = if tip { Part::Nozzle } else { Part::Toolhead };
                     let rect = [x + c.x[0], x + c.x[1], y + c.y[0], y + c.y[1]];
                     #[allow(clippy::cast_possible_truncation, reason = "mm")]
-                    self.record(pr, kind, Severity::Hit, part, n.j, d as f32, z + c.z0, |o| {
-                        o.grid().contact(rect, (z + c.z0) as f32, [x, y])
+                    self.record(pr, kind, Severity::Hit, part, n.j, d as f32, |o| {
+                        meeting(o, rect, z + c.z0, [x, y], true)
                     });
                 }
             }
@@ -290,20 +290,9 @@ impl Walker<'_> {
                     let rect = [o.bounds[0], o.bounds[2], y - m.to_rod, y + m.to_rod];
                     let kind = pr.leg.unwrap_or(Kind::Gantry);
                     #[allow(clippy::cast_possible_truncation, reason = "mm")]
-                    self.record(
-                        pr,
-                        kind,
-                        Severity::Hit,
-                        Part::Gantry,
-                        n.j,
-                        d as f32,
-                        z + m.rod,
-                        |o| {
-                            o.grid()
-                                .contact(rect, (z + m.rod) as f32, [x, y])
-                                .map(|(c, _)| (c, 0.0))
-                        },
-                    );
+                    self.record(pr, kind, Severity::Hit, Part::Gantry, n.j, d as f32, |o| {
+                        meeting(o, rect, z + m.rod, [x, y], false)
+                    });
                 }
             }
             if n.lid && top > z + m.lid {
@@ -317,12 +306,7 @@ impl Walker<'_> {
                     Part::Lid,
                     n.j,
                     (top - z - m.lid) as f32,
-                    z + m.lid,
-                    |o| {
-                        o.grid()
-                            .contact(rect, (z + m.lid) as f32, [x, y])
-                            .map(|(c, _)| (c, 0.0))
-                    },
+                    |o| meeting(o, rect, z + m.lid, [x, y], false),
                 );
             }
             if n.close && pr.leg.is_none() && top > z + m.nozzle_height {
@@ -337,8 +321,13 @@ impl Walker<'_> {
                         Part::Toolhead,
                         n.j,
                         short as f32,
-                        z + m.nozzle_height,
-                        |o| Some((nearest_on_hull(&o.hull, [x, y]), short as f32)),
+                        |o| {
+                            let q = nearest_on_hull(&o.hull, [x, y]);
+                            Some((
+                                [q[0], q[1], (z + m.nozzle_height).min(f64::from(o.top))],
+                                short as f32,
+                            ))
+                        },
                     );
                 }
             }
@@ -355,8 +344,7 @@ impl Walker<'_> {
         part: Part,
         j: usize,
         depth: f32,
-        meet_z: f64,
-        contact: impl FnOnce(&super::Obstacle) -> Option<([f64; 2], f32)>,
+        contact: impl FnOnce(&super::Obstacle) -> Option<([f64; 3], f32)>,
     ) {
         let mover = u32::try_from(self.k).unwrap_or(u32::MAX);
         let obstacle = u32::try_from(j).unwrap_or(u32::MAX);
@@ -380,14 +368,14 @@ impl Walker<'_> {
             h.moves += 1;
             return;
         }
-        let (c, push) = contact(o).unwrap_or(([pr.p[0], pr.p[1]], 0.0));
+        let (c, push) = contact(o).unwrap_or((pr.p, 0.0));
         #[allow(clippy::cast_possible_truncation, reason = "preview data is f32")]
         let moment = Moment {
             layer: pr.layer,
             segment: pr.segment,
             share: pr.share,
             at: pr.p.map(|v| v as f32),
-            point: [c[0] as f32, c[1] as f32, meet_z.min(f64::from(o.top)) as f32],
+            point: c.map(|v| v as f32),
             change: pr.change,
         };
         self.hits.add(Hit {
@@ -485,6 +473,25 @@ fn dist(a: [f64; 2], b: [f64; 2]) -> f64 {
 
 fn dist3(a: [f64; 3], b: [f64; 3]) -> f64 {
     dist([a[0], a[1]], [b[0], b[1]]).m_hypot(b[2] - a[2])
+}
+
+/// Where a piece of the machine whose box is `rect` and whose underside is at `over` meets the part: on the part's
+/// own material (`grid::meet`), and with `push` the sideways shift that clears it. Falls back to the height grid's
+/// nearest tall cell at `over` when the mesh gives no point.
+fn meeting(
+    o: &super::Obstacle,
+    rect: [f64; 4],
+    over: f64,
+    p: [f64; 2],
+    push: bool,
+) -> Option<([f64; 3], f32)> {
+    #[allow(clippy::cast_possible_truncation, reason = "mm")]
+    let near = o.grid().contact(rect, over as f32, p);
+    let shift = if push { near.map_or(0.0, |n| n.1) } else { 0.0 };
+    match super::grid::meet(&o.object, rect, over, p) {
+        Some(q) => Some((q, shift)),
+        None => near.map(|(c, _)| ([c[0], c[1], over.min(f64::from(o.top))], shift)),
+    }
 }
 
 /// Distance from `p` to a convex hull, 0 inside it.
