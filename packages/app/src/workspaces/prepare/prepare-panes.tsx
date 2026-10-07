@@ -30,6 +30,7 @@ import { useSliceNote } from '../../lib/slice-note'
 import { cancelSlice, exportGcode, openModelFiles, sendToPrinter, slicePlate } from '../../state/actions'
 import type { LayoutSpec } from '@slicerx/contracts'
 import { effectiveMode, openSetup, useLayout } from '../../first-run/look'
+import { useFold } from '../../shell/fold'
 import { ModeSelector, useExpertVisible } from '../../first-run/mode-selector'
 import { ObjectActions } from './object-actions'
 const ObjectSettings = lazy(() => import('./object-settings').then((m) => ({ default: m.ObjectSettings })))
@@ -82,9 +83,10 @@ function PrinterBlock() {
   const more = useMore('printer')
   const profileNozzle = useApp((s) => s.profile?.nozzle ?? 0.4)
   const noPrinter = useApp((s) => s.noPrinter)
+  const [open, setOpen] = useFold('printer')
   if (!printer) {
     return (
-      <Block title="Printer" data-section="printer">
+      <Block title="Printer" icon="printer" data-section="printer">
         <div className="printer-none">
           <p className="sx-muted sx-small" {...tipAttrs({ title: 'No printer yet', body: `Until you add one, slices are for a generic ${GENERIC_BED.widthMm} by ${GENERIC_BED.depthMm} mm bed, ${GENERIC_BED.heightMm} mm tall.` })}>
             Slicing for a generic {GENERIC_BED.widthMm} mm bed.
@@ -107,16 +109,26 @@ function PrinterBlock() {
   return (
     <Block
       title="Printer"
+      icon="printer"
+      id="printer-fold"
+      expanded={open}
+      onExpandedChange={setOpen}
       data-section="printer"
       aside={
-        <span className="fil-aside">
-          {showPrinterSettings ? (
-            <Button size="sm" variant="ghost" icon="sliders" aria-label="Printer settings" tip={{ title: 'Printer settings', body: 'Open the machine settings: bed shape, start and end G-code, limits.' }} onClick={() => set({ printerSettingsOpen: true })} />
-          ) : null}
-          <LinkButton expanded={choosing} onClick={() => setChoosing(!choosing)}>
-            Change
-          </LinkButton>
-        </span>
+        open ? (
+          <span className="fil-aside">
+            {showPrinterSettings ? (
+              <Button size="sm" variant="ghost" icon="sliders" aria-label="Printer settings" tip={{ title: 'Printer settings', body: 'Open the machine settings: bed shape, start and end G-code, limits.' }} onClick={() => set({ printerSettingsOpen: true })} />
+            ) : null}
+            <LinkButton expanded={choosing} onClick={() => setChoosing(!choosing)}>
+              Change
+            </LinkButton>
+          </span>
+        ) : (
+          <span className="sec-sum">
+            {printer.name}, {profileNozzle} mm, {pill.label}
+          </span>
+        )
       }
     >
       <div className="printer">
@@ -233,6 +245,7 @@ export function PrepareLeft({ layout }: { layout: LayoutSpec }) {
           {layout.objectList === 'sidebar-after-filament' ? <PrepareObjects /> : null}
           <Block
             title="Print settings"
+            icon="sliders"
             aside={
               layout.modeSelector === 'sidebar' ? (
                 <ModeSelector layout={layout} id="mode-side" />
@@ -253,7 +266,7 @@ export function PrepareLeft({ layout }: { layout: LayoutSpec }) {
             <EasySettingsPanel />
           </Block>
           {expertVisible ? (
-            <Block title={tierTitle} expanded={expertOpen} onExpandedChange={(v) => set({ expertOpen: v })} id="expert-toggle" data-section="expert">
+            <Block title={tierTitle} icon="settings" expanded={expertOpen} onExpandedChange={(v) => set({ expertOpen: v })} id="expert-toggle" data-section="expert">
               {expertOpen ? (
                 <Suspense fallback={<div className="ws-loading" aria-busy="true" />}>
                   <ExpertSettings />
@@ -290,7 +303,7 @@ export function PrepareObjects() {
   const matches = new Map(searchObjects(plate, query).map((m) => [m.id, m]))
   const searching = query.trim() !== ''
   return (
-    <Block title="Objects" data-section="objects">
+    <Block title="Objects" icon="cube" data-section="objects">
       {plate.length > 1 ? (
         <input className="sx-input obj-search" type="search" value={query} placeholder="Search objects and parts" aria-label="Search objects and parts" onChange={(e) => setQuery(e.target.value)} />
       ) : null}
