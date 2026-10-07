@@ -28,8 +28,10 @@ use std::sync::OnceLock;
 
 pub use report::{Collision, CollisionFix, report};
 
-/// Added around every piece of the head, mm: the drawn heads follow product photos.
+/// Added around every piece of the head above the nozzle tip, mm: the drawn heads follow product photos.
 const MARGIN_MM: f64 = 2.0;
+/// A head column starting below this, mm, is the nozzle tip.
+const TIP_Z: f64 = 0.5;
 /// How far a part must reach past a piece of the head before it counts, mm.
 const EPS: f32 = 0.05;
 
@@ -426,8 +428,15 @@ impl Model {
             serde_json::Value::Array(a) => a.first().and_then(serde_json::Value::as_str),
             _ => None,
         });
+        // A delta (`printer_structure`, or a FLSun, whose profiles leave it out) has no gantry beam over the bed.
+        let delta = matches!(config.raw.get("printer_structure"), Some(serde_json::Value::String(t)) if t == "delta")
+            || [printer_id, model]
+                .into_iter()
+                .flatten()
+                .any(|id| id.to_ascii_lowercase().starts_with("flsun"));
         let mut machine = shapes::machine(printer_id, model);
-        for c in machine.heads.iter_mut().flatten() {
+        // The nozzle tip is the real contact: a travel or a print move meets the part only where the nozzle does.
+        for c in machine.heads.iter_mut().flatten().filter(|c| c.z0 >= TIP_Z) {
             c.x = [c.x[0] - MARGIN_MM, c.x[1] + MARGIN_MM];
             c.y = [c.y[0] - MARGIN_MM, c.y[1] + MARGIN_MM];
         }
@@ -509,7 +518,11 @@ impl Model {
             changer,
             lift_mm,
             lift_over_print: matches!(config.raw.get("change_filament_gcode"), Some(serde_json::Value::String(t)) if t.contains("max_layer_z")),
-            rod: config.raw_number("extruder_clearance_height_to_rod", 40.0),
+            rod: if delta {
+                f64::INFINITY
+            } else {
+                config.raw_number("extruder_clearance_height_to_rod", 40.0)
+            },
             to_rod: config.raw_number("extruder_clearance_dist_to_rod", 40.0),
             lid: config.raw_number("extruder_clearance_height_to_lid", 120.0),
             radius,
