@@ -22,6 +22,7 @@ import type {
 import { z } from 'zod'
 import { createSupabaseClient, errorCode, fail, ok, read, rows, supabaseAuth, type Db, type SupabaseOptions } from './auth/supabase'
 import {
+  downloadVersion,
   latestVersion,
   toAudit,
   toCollection,
@@ -134,15 +135,18 @@ export function supabaseStore(sb: Db, conn?: Pick<SupabaseOptions, 'url' | 'anon
   async function hydrate(listings: ListingRow[], me: string | null): Promise<Listing[]> {
     if (listings.length === 0) return []
     const ids = listings.map((l) => l.id)
-    const [versions, stats, likes, saved] = await Promise.all([
+    const [versions, stats, likes, saved, mine] = await Promise.all([
       read(versionRow, sb.from('listing_versions').select(VERSION_COLUMNS).in('listing_id', ids)),
       statsFor(ids),
       me ? read(likeRow, sb.from('likes').select('user_id, listing_id, created_at').eq('user_id', me).in('listing_id', ids)) : Promise.resolve([]),
       me ? savedIds() : Promise.resolve(new Set<string>()),
+      me ? ownCreatorRow(me) : Promise.resolve(undefined),
     ])
+    // A creator sees their own newest version; everyone else the one a download hands them.
     const newest = new Map<string, VersionRow>()
     for (const l of listings) {
-      const v = latestVersion(versions.filter((x) => x.listing_id === l.id))
+      const of = versions.filter((x) => x.listing_id === l.id)
+      const v = mine && l.creator_id === mine.id ? latestVersion(of) : downloadVersion(of, false)
       if (v) newest.set(l.id, v)
     }
     const profiles = newest.size
@@ -552,7 +556,8 @@ export function supabaseStore(sb: Db, conn?: Pick<SupabaseOptions, 'url' | 'anon
     },
 
     async download(listingId) {
-      if (!(await uid())) {
+      const me = await uid()
+      if (!me) {
         // Signed out: the server checks the listing, counts the download against the
         // per-network limit and returns a short grant for a direct storage read.
         const res = await sb.rpc('request_download', { p_listing: listingId })
@@ -568,16 +573,20 @@ export function supabaseStore(sb: Db, conn?: Pick<SupabaseOptions, 'url' | 'anon
           fileName: g.data.path.split('/').pop() ?? g.data.path,
         })
       }
-      const clean = await read(
-        versionRow,
-        sb.from('listing_versions').select(VERSION_COLUMNS).eq('listing_id', listingId).eq('review_status', 'approved').eq('scan_status', 'clean'),
-      )
-      const v = latestVersion(clean)
-      if (!v) return fail('not_found', 'This model has no approved file yet')
+      // Members: the newest approved, clean .sx3mf, as request_download picks it; their own listing in any format.
+      const [listing, mine, clean] = await Promise.all([
+        read(listingRow, sb.from('listings').select(LISTING_COLUMNS).eq('id', listingId)),
+        ownCreatorRow(me),
+        read(versionRow, sb.from('listing_versions').select(VERSION_COLUMNS).eq('listing_id', listingId).eq('review_status', 'approved').eq('scan_status', 'clean')),
+      ])
+      if (!listing[0]) return fail('not_found', 'This model is not available')
+      const v = downloadVersion(clean, Boolean(mine && listing[0].creator_id === mine.id))
+      if (!v) return fail('not_found', 'This model has no .sx3mf file yet')
+      // Signed first, so a link that cannot be made is not counted as a download.
+      const signed = await sb.storage.from('listing-files').createSignedUrl(v.storage_path, 300)
+      if (signed.error || !signed.data?.signedUrl) return fail('unavailable', `The download could not be started${signed.error?.message ? `: ${signed.error.message}` : ''}`)
       const counted = await sb.rpc('record_download', { p_listing: listingId })
       if (counted.error) return failed(counted.error)
-      const signed = await sb.storage.from('listing-files').createSignedUrl(v.storage_path, 300)
-      if (signed.error) return fail('unavailable', signed.error.message)
       return ok({ url: signed.data.signedUrl, versionId: v.id, version: v.version, fileName: v.storage_path.split('/').pop() ?? v.storage_path })
     },
 
