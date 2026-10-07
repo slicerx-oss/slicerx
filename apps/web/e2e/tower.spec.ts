@@ -10,7 +10,7 @@ type Sx = { getState(): { tower: { auto: boolean; x: number; y: number }; slice:
 
 async function sliceAgain(page: Page): Promise<Tower> {
   await tab(page, 'prepare').click()
-  await page.getByRole('button', { name: /^Slice/ }).first().click()
+  await page.getByRole('main').getByRole('button', { name: /^Slice/ }).first().click()
   await expect(page.locator('.sx-tab[aria-current=page]')).toContainText('Preview', { timeout: 120_000 })
   await tab(page, 'prepare').click()
   return page.evaluate(() => (window as unknown as { __sx: Sx }).__sx.getState().slice.result!.primeTower!)

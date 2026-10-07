@@ -639,7 +639,7 @@ test('a part takes its own setting: it is listed under the part only, and the sl
   await prepare(page)
   const fs = await import('node:fs')
   const gramsOf = async (): Promise<number> => {
-    await page.getByRole('button', { name: /^Slice/ }).first().click()
+    await page.getByRole('main').getByRole('button', { name: /^Slice/ }).first().click()
     await expect(page.locator('.sx-tab[aria-current=page]')).toContainText('Preview', { timeout: 90_000 })
     const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Export G-code' }).click()])
     const text = fs.readFileSync(await download.path(), 'utf8')
@@ -684,7 +684,7 @@ test('sleipnir is on by default in the layer height picker and changes the layer
   await page.getByRole('menuitem', { name: 'Sphere' }).first().click()
   await expect(page.locator('.obj-name')).toHaveCount(1)
   const layers = async (): Promise<number> => {
-    await page.getByRole('button', { name: /^Slice/ }).first().click()
+    await page.getByRole('main').getByRole('button', { name: /^Slice/ }).first().click()
     await expect(page.locator('.sx-tab[aria-current=page]')).toContainText('Preview', { timeout: 90_000 })
     const text = await page.locator('[data-section="result"]').innerText()
     const n = Number(/Sliced (\d+) layers/.exec(text)?.[1])
@@ -866,7 +866,7 @@ test('pause, color change and custom G-code are set on the layer slider and land
   await expect(page.locator('.layer-mark')).toHaveCount(3)
   // The marks go into the next slice, at their layers.
   await tab(page, 'prepare').click()
-  await page.getByRole('button', { name: /^Slice/ }).first().click()
+  await page.getByRole('main').getByRole('button', { name: /^Slice/ }).first().click()
   await expect(page.locator('.sx-tab[aria-current=page]')).toContainText('Preview', { timeout: 120_000 })
   const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Export G-code' }).click()])
   const text = fs.readFileSync(await download.path(), 'utf8')
@@ -915,7 +915,7 @@ for (const printer of [
     await page.getByRole('button', { name: 'Change', exact: true }).click()
     await page.getByRole('list', { name: 'Choose a printer' }).getByRole('button', { name: new RegExp(printer.name) }).click()
     await expect(page.locator('.printer-name')).toContainText(printer.name)
-    await page.getByRole('button', { name: /^Slice/ }).first().click()
+    await page.getByRole('main').getByRole('button', { name: /^Slice/ }).first().click()
     await expect(page.locator('.sx-tab[aria-current=page]')).toContainText('Preview', { timeout: 120_000 })
     // No warning about the G-code: the linter let the shipped text through.
     await expect(page.locator('.warns li').filter({ hasText: /G-code|lint|blocked|refused/i })).toHaveCount(0)
@@ -938,7 +938,7 @@ test('the nozzle size is chosen per printer, shows on the printer card, and the 
   await expect(sizes.getByRole('radio', { name: '0.4 mm' })).toHaveAttribute('aria-checked', 'true')
   await sizes.getByRole('radio', { name: '0.6 mm' }).click()
   await expect(sizes.getByRole('radio', { name: '0.6 mm' })).toHaveAttribute('aria-checked', 'true')
-  await page.getByRole('button', { name: /^Slice/ }).first().click()
+  await page.getByRole('main').getByRole('button', { name: /^Slice/ }).first().click()
   await expect(page.locator('.sx-tab[aria-current=page]')).toContainText('Preview', { timeout: 120_000 })
   const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Export G-code' }).click()])
   const text = fs.readFileSync(await download.path(), 'utf8')
@@ -1014,7 +1014,7 @@ test('brim ears: click the model to add ears, they print as discs on the first l
   await page.keyboard.press('Delete')
   await expect(panel.getByTestId('brim-ear-count')).toHaveText(new RegExp(`${generated - 1} ears?`))
   await expect(page.locator('.obj-name', { hasText: 'Layered X' })).toBeVisible()
-  await page.getByRole('button', { name: /^Slice/ }).first().click()
+  await page.getByRole('main').getByRole('button', { name: /^Slice/ }).first().click()
   await expect(page.locator('.sx-tab[aria-current=page]')).toContainText('Preview', { timeout: 120_000 })
   const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Export G-code' }).click()])
   const text = fs.readFileSync(await download.path(), 'utf8')
@@ -1046,7 +1046,7 @@ test('the G-code carries the real date and local time: the date variables in the
     return { year: d.getFullYear(), month: d.getMonth() + 1, day: d.getDate(), hour: d.getHours() }
   })
   const before = await stamp()
-  await page.getByRole('button', { name: /^Slice/ }).first().click()
+  await page.getByRole('main').getByRole('button', { name: /^Slice/ }).first().click()
   await expect(page.locator('.sx-tab[aria-current=page]')).toContainText('Preview', { timeout: 120_000 })
   const after = await stamp()
   const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Export G-code' }).click()])
@@ -1074,7 +1074,7 @@ test('a two-color plate on a Bambu printer gets a prime tower from the printer p
   await page.getByRole('button', { name: 'Change', exact: true }).click()
   await page.getByRole('list', { name: 'Choose a printer' }).getByRole('button', { name: /Bay 2/ }).click()
   // Layered X has two parts, on the printer's AMS slots A1 and A2 (black and dark gray, the measured pair #000000 to #545454: 236 plus the printer minimum).
-  await page.getByRole('button', { name: /^Slice/ }).first().click()
+  await page.getByRole('main').getByRole('button', { name: /^Slice/ }).first().click()
   await expect(page.locator('.sx-tab[aria-current=page]')).toContainText('Preview', { timeout: 120_000 })
   const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Export G-code' }).click()])
   const text = fs.readFileSync(await download.path(), 'utf8')

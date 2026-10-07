@@ -33,7 +33,7 @@ test('the viewport ray hits the prime tower, and the settings plan renders', asy
   await viewportReady(page)
   await page.getByRole('button', { name: 'Change', exact: true }).click()
   await page.getByRole('list', { name: 'Choose a printer' }).getByRole('button', { name: /Bay 2/ }).click()
-  await page.getByRole('button', { name: /^Slice/ }).first().click()
+  await page.getByRole('main').getByRole('button', { name: /^Slice/ }).first().click()
   await expect(page.locator('.sx-tab[aria-current=page]')).toContainText('Preview', { timeout: 120_000 })
   await tab(page, 'prepare').click()
   const state = () => page.evaluate(() => (window as unknown as { __sx: Sx }).__sx.getState())
