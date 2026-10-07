@@ -27,6 +27,8 @@ export interface BambuExtra {
   refuse?: string
   /** `hand`: the JPEG camera sends a picture of a hand reaching into the printer (`POST /bambu {cameraFrame}`). */
   cameraFrame?: 'hand'
+  /** A JPEG file the camera sends instead of either, read for each frame (`POST /bambu {cameraFrameFile}`): a photo for a capture. */
+  cameraFrameFile?: string
   /** The model code `get_version` and the SSDP answer report (`N2S` A1, `N1` A1 mini, `O1D` H2D; default `BL-P001`, X1 Carbon). An H2D reports the two nozzles, AMS units and external spools of `fixtures/bambu-h2d-pushall.json`. */
   model?: string
   /** `lite`: one AMS lite (the fixture's four slots) beside the external spool; `none`: the external spool only. Default: one AMS. */
@@ -415,7 +417,14 @@ export async function startBambu(m: MockMachine, log: string[]): Promise<{ handl
       const pass = got.toString('utf8', 48, 80).replace(/\0+$/, '')
       if (user !== 'bblp' || pass !== MOCK_ACCESS_CODE) return void sock.destroy()
       const frame = () => {
-        const pic = extra.cameraFrame === 'hand' ? HAND_FRAME : JPEG
+        let pic = extra.cameraFrame === 'hand' ? HAND_FRAME : JPEG
+        if (extra.cameraFrameFile) {
+          try {
+            pic = readFileSync(extra.cameraFrameFile)
+          } catch {
+            // a file that is gone sends the picture the mock would have sent
+          }
+        }
         const head = Buffer.alloc(16)
         head.writeUInt32LE(pic.length, 0)
         head.writeUInt32LE(1, 8)
