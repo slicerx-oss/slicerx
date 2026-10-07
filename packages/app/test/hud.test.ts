@@ -151,6 +151,11 @@ describe('the first look at a printer', () => {
 })
 
 describe('device view of a printing H2D', () => {
+  // At midday, so the job's finish time stays on today: run in the last 14 minutes before midnight, it read
+  // "done Wed 12:03 AM".
+  beforeEach(() => vi.setSystemTime(new Date(2026, 9, 7, 12, 0)))
+  afterEach(() => vi.useRealTimers())
+
   it('shows the job, the current problem with its code, and the edge tabs', async () => {
     const { host } = fakeHost()
     await show(H2D, host)
