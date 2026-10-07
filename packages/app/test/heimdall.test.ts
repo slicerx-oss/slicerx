@@ -80,7 +80,15 @@ describe('heimdall in the app', () => {
 
   it('marks each strike where it goes deepest, the picked one selected, close calls apart', () => {
     set({ slice: { status: 'done', result: result([hit, close]), stale: false }, strikePick: 1 })
+    set({ layerHi: 4, strikeHover: null })
     expect(strikeMarks(get())).toEqual([{ x: 21, y: 41, z: 40.6 }, { x: 30, y: 30, z: 3, close: true, selected: true }])
+    // Before the layer a strike starts on only the picked one shows, and the one under the pointer in the list.
+    set({ layerHi: 2 })
+    expect(strikeMarks(get())).toEqual([{ x: 30, y: 30, z: 3, close: true, selected: true }])
+    set({ strikeHover: 0 })
+    expect(strikeMarks(get())).toHaveLength(2)
+    set({ strikeHover: null, layerHi: 3 })
+    expect(strikeMarks(get())).toHaveLength(2)
   })
 
   it('jumps to the moment: the layer, the move in it, the head shown and the playback stop', async () => {

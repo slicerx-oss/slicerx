@@ -31,6 +31,6 @@ export async function applyCollisionFix(host: Host, fix: CollisionFix): Promise<
     setPlateSettings(get().activePlate, { sequence: 'by-layer' })
     toast('This plate prints by layer now. Slicing again.', 'info')
   } else return
-  set({ strikePick: null, strikeJump: null })
+  set({ strikePick: null, strikeJump: null, strikeHover: null })
   await slicePlate(host)
 }

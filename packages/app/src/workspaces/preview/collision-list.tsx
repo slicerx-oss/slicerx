@@ -11,7 +11,7 @@ import { collisionsOf, fixesOf } from '../../plate/heimdall'
 import { applyCollisionFix } from '../../plate/heimdall-fix'
 import { jumpTo } from '../../plate/heimdall-jump'
 import { collisionDetail, collisionTitle, fixDetail, fixTitle, wordsOf } from '../../plate/heimdall-words'
-import { get, useApp } from '../../state/store'
+import { get, set, useApp } from '../../state/store'
 
 const KIND: Record<Collision['kind'], string> = {
   gantry: 'Gantry',
@@ -52,7 +52,7 @@ export function CollisionList() {
     <Block title="Collisions" aside={<span className={hits ? 'app-tag strike-tag' : 'app-tag'}>{label}</span>} data-section="collisions">
       <ol className="strikes" aria-label="Collisions">
         {list.map((c, i) => (
-          <li key={`${c.kind}-${c.objectId}-${c.hitId}-${i}`} className={pick === i ? 'sel' : undefined} data-severity={c.severity}>
+          <li key={`${c.kind}-${c.objectId}-${c.hitId}-${i}`} className={pick === i ? 'sel' : undefined} data-severity={c.severity} onPointerEnter={() => set({ strikeHover: i })} onPointerLeave={() => set({ strikeHover: null })}>
             <Icon name="strike" size={18} />
             <div>
               <b>{collisionTitle(c, name, station)}</b>

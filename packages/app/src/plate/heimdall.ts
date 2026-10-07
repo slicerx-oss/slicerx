@@ -44,7 +44,16 @@ export function closeCalls(s: Pick<AppState, 'slice' | 'plate'>): string[] {
     .map((c) => `${names(s, c.objectId)} passes within the printer profile's clearance of ${names(s, c.hitId)}. The head's own shape clears it.`)
 }
 
-/** One strike per collision where it goes deepest, the selected one marked. */
-export function strikeMarks(s: Pick<AppState, 'slice' | 'strikePick'>): StrikeMark[] {
-  return collisionsOf(s).map((c, i) => ({ x: c.worstPoint[0], y: c.worstPoint[1], z: c.worstPoint[2], ...(c.severity === 'close' ? { close: true } : {}), ...(s.strikePick === i ? { selected: true } : {}) }))
+/**
+ * One strike per collision where it goes deepest, the selected one marked. A strike shows once Preview reaches the
+ * layer it starts on, so the bed is not marked before the part is there; the picked one and the one under the pointer
+ * in the list show on any layer.
+ */
+export function strikeMarks(s: Pick<AppState, 'slice' | 'strikePick' | 'strikeHover' | 'layerHi'>): StrikeMark[] {
+  const out: StrikeMark[] = []
+  collisionsOf(s).forEach((c, i) => {
+    if (s.layerHi - 1 < c.layer && s.strikePick !== i && s.strikeHover !== i) return
+    out.push({ x: c.worstPoint[0], y: c.worstPoint[1], z: c.worstPoint[2], ...(c.severity === 'close' ? { close: true } : {}), ...(s.strikePick === i ? { selected: true } : {}) })
+  })
+  return out
 }

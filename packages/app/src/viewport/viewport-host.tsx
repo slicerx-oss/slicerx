@@ -278,7 +278,7 @@ export function ViewportHost({ mode }: { mode: 'prepare' | 'preview' }) {
         }
         if (vp.setToolChange && (first || s.toolChange !== prev.toolChange || s.preview !== prev.preview)) vp.setToolChange(s.toolChange)
         // heimdall's strikes where the machine would meet a printed part.
-        if (first || s.slice !== prev.slice || s.strikePick !== prev.strikePick) (vp as unknown as Viewport).setStrikes?.(strikeMarks(s))
+        if (first || s.slice !== prev.slice || s.strikePick !== prev.strikePick || s.strikeHover !== prev.strikeHover || s.layerHi !== prev.layerHi) (vp as unknown as Viewport).setStrikes?.(strikeMarks(s))
         if (first || s.slice !== prev.slice || s.plate !== prev.plate || s.profile !== prev.profile || s.overrides !== prev.overrides || s.easy !== prev.easy || s.bed !== prev.bed) {
           ;(vp as unknown as Viewport).setGantry?.(gantrySpec(s), gantryHits(s))
         }
