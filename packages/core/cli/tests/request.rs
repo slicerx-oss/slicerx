@@ -154,17 +154,17 @@ fn a_3mf_plate_slices_as_its_objects() {
     let _ = std::fs::remove_dir_all(dir);
 }
 
-/// Crossing paths are the plate's own, in any print order: refused in their own words, not as a by-object
-/// clearance.
+/// Paths into a zone the printer keeps clear are the plate's own, in any print order: refused in their own words,
+/// not as a by-object clearance.
 #[test]
-fn crossing_paths_are_refused_in_their_own_words() {
+fn keep_out_paths_are_refused_in_their_own_words() {
     let mut req: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(fixture("features-request.json")).unwrap()).unwrap();
     req["meshes"]["c"] = serde_json::Value::String(fixture("cube.stl"));
     req["meshes"]["t"] = serde_json::Value::String(fixture("table.stl"));
-    // placed by the engine, the tower lands beside the table and over the support it grows past its outline
-    req["config"]["prime_tower_auto_position"] = serde_json::Value::Bool(true);
-    let dir = std::env::temp_dir().join(format!("sx-cli-crossing-{}", std::process::id()));
+    // an A1 style nozzle wrap check corner over the cube
+    req["config"]["head_wrap_detect_zone"] = serde_json::json!(["80x95", "115x95", "115x125", "80x125"]);
+    let dir = std::env::temp_dir().join(format!("sx-cli-keep-out-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("request.json");
     std::fs::write(&path, req.to_string()).unwrap();
@@ -172,7 +172,7 @@ fn crossing_paths_are_refused_in_their_own_words() {
     assert_eq!(out.status.code(), Some(3));
     let err = String::from_utf8_lossy(&out.stderr);
     assert!(
-        err.contains("Paths cross: the prime tower and t1 on layer 1."),
+        err.contains("A print path enters the nozzle wrap check corner: c1 on layers 1 to"),
         "{err}"
     );
     assert!(!err.contains("printing by object"), "{err}");
