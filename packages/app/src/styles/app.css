@@ -358,6 +358,7 @@ button.reset:hover { color: var(--fg); background: var(--ink-3); }
 .studio[data-mode="prepare"] .ams-h { font: 700 var(--fs-md) / var(--lh-tight) var(--f-mono); color: var(--fg); }
 .studio[data-mode="prepare"] .ams-h span:last-child { color: var(--dim); font-weight: 500; }
 .studio[data-mode="prepare"] .cad-history-h .sx-muted { font-size: var(--fs-sm); font-weight: 400; }
+.studio[data-mode="prepare"] .obj > .obj-editor { margin: 0 8px 8px; padding-top: var(--s-2); border-top: 1px solid var(--line-soft); }
 .studio[data-mode="prepare"] .obj-editor,
 .studio[data-mode="prepare"] [data-section="color-tools"] { display: flex; flex-direction: column; gap: var(--s-2); }
 .studio[data-mode="prepare"] .obj-editor .tf,

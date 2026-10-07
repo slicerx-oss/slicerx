@@ -283,7 +283,6 @@ export function PrepareObjects() {
   const matches = new Map(searchObjects(plate, query).map((m) => [m.id, m]))
   const searching = query.trim() !== ''
   return (
-    <>
     <Block title="Objects" data-section="objects">
       {plate.length > 1 ? (
         <input className="sx-input obj-search" type="search" value={query} placeholder="Search objects and parts" aria-label="Search objects and parts" onChange={(e) => setQuery(e.target.value)} />
@@ -349,6 +348,22 @@ export function PrepareObjects() {
             <Button size="sm" variant="ghost" icon={p.locked ? 'lock' : 'unlock'} aria-label={`${p.locked ? 'Unlock' : 'Lock'} ${p.name}`} tip={{ title: p.locked ? 'Locked' : 'Lock', body: p.locked ? 'Click to let it move again.' : 'Keep it from moving, scaling or arranging.' }} pressed={Boolean(p.locked)} onClick={() => toggleLock([p.id])} />
             <Button size="sm" variant="ghost" icon={p.printable === false ? 'hide' : 'show'} aria-label={`${p.printable === false ? 'Print' : 'Do not print'} ${p.name}`} tip={{ title: p.printable === false ? 'Not printed' : 'Printed', body: p.printable === false ? 'Click to print it again.' : 'Click to leave it out of the print.', key: 'V' }} pressed={p.printable === false} onClick={() => togglePrintable([p.id])} />
             </div>
+            {selection === p.id ? (
+              <div className="obj-editor" data-section="object-editor">
+                <ObjectTransform />
+                {historyOf === p.id ? <Suspense fallback={null}><HistoryPanel objectId={historyOf} /></Suspense> : null}
+                {more ? (
+                  <>
+                    <Suspense fallback={null}>
+                      <ObjectVolumes />
+                    </Suspense>
+                    <Suspense fallback={null}>
+                      <ObjectSettings />
+                    </Suspense>
+                  </>
+                ) : null}
+              </div>
+            ) : null}
             {expanded === p.id || (searching && !matches.get(p.id)?.self) ? (
               <div className="obj-detail">
                 <label className="obj-rename" htmlFor={`rn-${p.id}`}>
@@ -403,23 +418,6 @@ export function PrepareObjects() {
         <ObjectActions />
       </div>
     </Block>
-    {selected.length > 0 ? (
-      <section className="sx-block obj-editor" data-section="object-editor" aria-label="Object editor">
-        <ObjectTransform />
-        {historyOf ? <Suspense fallback={null}><HistoryPanel objectId={historyOf} /></Suspense> : null}
-        {more ? (
-          <>
-            <Suspense fallback={null}>
-              <ObjectVolumes />
-            </Suspense>
-            <Suspense fallback={null}>
-              <ObjectSettings />
-            </Suspense>
-          </>
-        ) : null}
-      </section>
-    ) : null}
-    </>
   )
 }
 
