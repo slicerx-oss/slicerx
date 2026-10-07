@@ -5,12 +5,14 @@
 // the creator picks a picture), and how it printed when the plate was sliced.
 // Then Your uploads shows each one moving through the upload, the scan and
 // review until it is live or sent back with a note.
-import type { FileFormat, Listing, ListingLicense, StoreClient, UploadPrintProfile } from '@slicerx/contracts'
+import type { FileFormat, Listing, ListingColors, ListingLicense, StoreClient, UploadPrintProfile } from '@slicerx/contracts'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { Button, Icon, Seg } from '@slicerx/ui'
-import { coverForFile, currentProjectUpload, projectHasModels, toast, vaultCreatorsInFile, type CoverImage } from '@slicerx/app'
+import { coverForFile, coverInColors, currentProjectUpload, fileModel, projectHasModels, projectModel, toast, vaultCreatorsInFile, type CoverImage, type UploadModel } from '@slicerx/app'
 import { DrawingArt } from './drawing-art'
+import { ColorDots, ColorFacts, ColorsEditor } from './colors'
+import { draftOf, savedColors, slotColors, type ColorDraft } from './colors-edit'
 import { coverFor } from './art'
 import { Frame, prepareImage, type PendingImage } from './creator-editor'
 import { ago } from './library'
@@ -113,6 +115,8 @@ interface Picked {
   format: FileFormat
   vaultCreators: string[]
   printProfile?: UploadPrintProfile
+  /** The colors read from the file and its meshes by slot, for drawing the cover in edited colors. */
+  model?: UploadModel | null
 }
 
 export interface UploadDraft {
@@ -120,6 +124,8 @@ export interface UploadDraft {
   description: string
   tags: string
   license: ListingLicense
+  /** The model's colors as the creator left them; none for a file without any. */
+  colors?: ListingColors | null
 }
 
 /** What blocks Submit, by field. */
@@ -161,6 +167,7 @@ export async function submitUpload(
     bytes: file.bytes,
     format: file.format,
     ...(includeProfile && file.printProfile ? { printProfile: file.printProfile } : {}),
+    ...(d.colors ? { colors: d.colors } : {}),
   })
   if (!sent.ok) {
     await store.deleteListing(created.value.id)
@@ -216,7 +223,9 @@ function UploadForm() {
     void currentProjectUpload()
       .then(async (p) => {
         if (!live || !p) return
-        setProjectFile({ name: p.name, bytes: p.bytes, format: 'sx3mf', vaultCreators: p.vaultCreators, ...(p.printProfile ? { printProfile: p.printProfile } : {}) })
+        const model = await projectModel().catch(() => null)
+        if (!live) return
+        setProjectFile({ name: p.name, bytes: p.bytes, format: 'sx3mf', vaultCreators: p.vaultCreators, model, ...(p.printProfile ? { printProfile: p.printProfile } : {}) })
         setAutoCover(keep(await encodeCover(p.cover)))
         setDraft((d) => (d.title ? d : { ...d, title: p.name.replace(/\.sx3mf$/, '').replace(/[-_]+/g, ' ').replace(/^\w/, (c) => c.toUpperCase()) }))
       })
@@ -227,6 +236,33 @@ function UploadForm() {
   }, [source, projectFile])
 
   useEffect(() => setFile(source === 'project' ? projectFile : picked), [source, projectFile, picked])
+
+  // Colors start from the file, and the drawn cover follows the creator's edits.
+  const [colors, setColors] = useState<ColorDraft>(() => draftOf(null))
+  const [colorsTouched, setColorsTouched] = useState(false)
+  useEffect(() => {
+    setColors(draftOf(file?.model?.colors?.colors, file?.model?.colors?.slots))
+    setColorsTouched(false)
+  }, [file])
+  useEffect(() => {
+    const model = file?.model
+    if (!colorsTouched || !model || model.meshes.length === 0) return
+    let live = true
+    const t = window.setTimeout(() => {
+      void coverInColors(model, slotColors(colors)).then(async (img) => {
+        const next = img ? keep(await encodeCover(img)) : null
+        if (live && next) setAutoCover(next)
+      })
+    }, 250)
+    return () => {
+      live = false
+      window.clearTimeout(t)
+    }
+  }, [colors, colorsTouched, file])
+  const editColors = (d: ColorDraft) => {
+    setColors(d)
+    setColorsTouched(true)
+  }
 
   const pickFile = async (f: File | undefined) => {
     if (!f) return
@@ -239,8 +275,8 @@ function UploadForm() {
     setPreparing(true)
     try {
       const bytes = new Uint8Array(await f.arrayBuffer())
-      const [cover, vaultCreators] = await Promise.all([coverForFile(f.name, bytes), vaultCreatorsInFile(f.name, bytes)])
-      setPicked({ name: f.name, bytes, format, vaultCreators })
+      const [cover, vaultCreators, model] = await Promise.all([coverForFile(f.name, bytes), vaultCreatorsInFile(f.name, bytes), fileModel(f.name, bytes)])
+      setPicked({ name: f.name, bytes, format, vaultCreators, model })
       setAutoCover(cover ? keep(await encodeCover(cover)) : null)
       setDraft((d) => (d.title ? d : { ...d, title: f.name.replace(/\.(sx3mf|3mf|stl)$/i, '').replace(/[-_]+/g, ' ').replace(/^\w/, (c) => c.toUpperCase()) }))
     } finally {
@@ -266,7 +302,7 @@ function UploadForm() {
     if (!store || !file || Object.keys(errors).length) return
     setBusy('Starting')
     try {
-      const r = await submitUpload(store, draft, file, cover, includeProfile, setBusy)
+      const r = await submitUpload(store, { ...draft, colors: savedColors(colors) }, file, cover, includeProfile, setBusy)
       if (!r.ok) {
         toast(r.message, 'error')
         return
@@ -380,6 +416,12 @@ function UploadForm() {
             </fieldset>
 
             <fieldset className="ce-set">
+              <legend>Colors</legend>
+              <span className="ce-hint">{file?.model?.colors ? 'Read from the file. Name them, put them in order and mark the parts that need the AMS.' : 'Add the colors it prints in, so makers know what to load.'}</span>
+              <ColorsEditor draft={colors} onChange={editColors} />
+            </fieldset>
+
+            <fieldset className="ce-set">
               <legend>Cover</legend>
               <div className="up-cover">
                 <span className="cs-art">{cover ? <img src={cover.preview} alt="Cover" /> : <DrawingArt seed={draft.title || 'cover'} />}</span>
@@ -432,9 +474,16 @@ function UploadForm() {
           <span className="ce-lbl">How it shows in the Vault</span>
           <div className="up-preview">
             <div className="lib-mini">
-              <span className="lib-thumb" aria-hidden="true">
-                {cover ? <img src={cover.preview} alt="" /> : <DrawingArt seed={draft.title || 'cover'} />}
-              </span>
+              <div className="lib-mini-art">
+                <span className="lib-thumb" aria-hidden="true">
+                  {cover ? <img src={cover.preview} alt="" /> : <DrawingArt seed={draft.title || 'cover'} />}
+                </span>
+                {colors.colors.colors.length ? (
+                  <span className="lib-dots" aria-hidden="true">
+                    <ColorDots colors={colors.colors} size="sm" max={5} focusable={false} />
+                  </span>
+                ) : null}
+              </div>
               <h3 className="lib-mini-t">{draft.title.trim() || 'Your design'}</h3>
               <div className="lib-mini-meta">
                 <span className="lib-who" data-static="">
@@ -443,6 +492,7 @@ function UploadForm() {
                 </span>
               </div>
             </div>
+            {colors.colors.colors.length ? <ColorFacts colors={colors.colors} /> : null}
             <div className="cs-roles">
               <span className="cs-role" data-staff="">
                 {draft.license.toUpperCase()}
@@ -460,9 +510,92 @@ function UploadForm() {
   )
 }
 
+/** The colors of an uploaded design, edited after the upload. Saved on its newest version without a new review. */
+function ColorsFrame({ listing, onClose }: { listing: Listing; onClose: () => void }) {
+  const store = useStore()
+  const client = useQueryClient()
+  const version = listing.currentVersion
+  const [draft, setDraft] = useState<ColorDraft>(() => draftOf(version?.colors))
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const cover = coverFor(listing)
+  const save = async () => {
+    if (!store || !version) return
+    setBusy(true)
+    setError(null)
+    try {
+      const r = await store.setVersionColors(version.id, savedColors(draft))
+      if (!r.ok) {
+        setError(r.message)
+        return
+      }
+      await client.invalidateQueries({ queryKey: LIBRARY_KEY })
+      toast(`Colors saved for ${listing.title}`, 'ok')
+      onClose()
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <Frame title={`Colors of ${listing.title}`} onClose={onClose}>
+      <div className="ce">
+        <div className="ce-col">
+          <form
+            className="ce-form"
+            aria-label="Colors"
+            noValidate
+            onSubmit={(e) => {
+              e.preventDefault()
+              void save()
+            }}
+          >
+            <fieldset className="ce-set">
+              <legend>Colors</legend>
+              <span className="ce-hint">Name them, put them in order and mark the parts that need the AMS. Changes show on the listing at once.</span>
+              <ColorsEditor draft={draft} onChange={setDraft} />
+            </fieldset>
+            <button type="submit" hidden />
+          </form>
+          <div className="ce-savebar">
+            <span className="ce-state" role="status" data-error={error ? '' : undefined}>
+              {error ?? (busy ? 'Saving' : `Version ${version?.version ?? ''}`)}
+            </span>
+            <Button onClick={onClose} disabled={busy}>
+              Cancel
+            </Button>
+            <Button variant="primary" icon="save" onClick={() => void save()} disabled={busy || !version}>
+              Save colors
+            </Button>
+          </div>
+        </div>
+        <section className="ce-preview" aria-label="Preview">
+          <span className="ce-lbl">How it shows in the Vault</span>
+          <div className="up-preview">
+            <div className="lib-mini">
+              <div className="lib-mini-art">
+                <span className="lib-thumb" aria-hidden="true">
+                  {cover ? <img src={cover} alt="" /> : <DrawingArt seed={listing.slug} />}
+                </span>
+                {draft.colors.colors.length ? (
+                  <span className="lib-dots" aria-hidden="true">
+                    <ColorDots colors={draft.colors} size="sm" max={5} focusable={false} />
+                  </span>
+                ) : null}
+              </div>
+              <h3 className="lib-mini-t">{listing.title}</h3>
+            </div>
+            {draft.colors.colors.length ? <ColorFacts colors={draft.colors} /> : <p className="ce-hint">No colors show on the listing.</p>}
+          </div>
+        </section>
+      </div>
+    </Frame>
+  )
+}
+
 function UploadsList() {
   const store = useStore()
   const { session } = useSession()
+  const [editing, setEditing] = useState<Listing | null>(null)
   const q = useQuery({
     queryKey: ['library', 'my-listings', session?.userId],
     queryFn: async () => (store && session ? store.myListings() : []),
@@ -471,6 +604,7 @@ function UploadsList() {
     refetchInterval: (query) => ((query.state.data ?? []).some((l) => ['uploading', 'scanning', 'review'].includes(uploadStage(l).stage)) ? 5000 : false),
   })
   const items = [...(q.data ?? [])].sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+  if (editing) return <ColorsFrame listing={editing} onClose={() => setEditing(null)} />
   return (
     <Frame
       title="Your uploads"
@@ -505,11 +639,19 @@ function UploadsList() {
                   <span className="up-stage" data-stage={st.stage}>
                     {st.label}
                   </span>
-                  {st.stage === 'live' ? (
-                    <Button size="sm" variant="ghost" onClick={() => { closeUpload(); openListing(l.id) }}>
-                      View
-                    </Button>
-                  ) : null}
+                  <div className="up-acts">
+                    {l.currentVersion && st.stage !== 'removed' ? (
+                      <Button size="sm" variant="ghost" aria-label={`Colors of ${l.title}`} onClick={() => setEditing(l)}>
+                        {l.currentVersion.colors ? <ColorDots colors={l.currentVersion.colors} size="sm" max={3} focusable={false} /> : null}
+                        Colors
+                      </Button>
+                    ) : null}
+                    {st.stage === 'live' ? (
+                      <Button size="sm" variant="ghost" onClick={() => { closeUpload(); openListing(l.id) }}>
+                        View
+                      </Button>
+                    ) : null}
+                  </div>
                 </li>
               )
             })}

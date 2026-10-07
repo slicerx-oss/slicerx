@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// The Vault end to end against a real stack: sign up by magic link, make a creator page, upload a calibration cube
-// in the app, let the scan worker and ClamAV pass it, approve it as the owner, find it in the Vault, download it as
+// The Vault end to end against a real stack: sign up by magic link, make a creator page, upload a calibration plate
+// in eight colors (two parts through the AMS) and name one of its colors in the app, let the scan worker and ClamAV pass it, approve it as the owner, find it in the Vault, download it as
 // another member (sealed .sx3mf only), open it (export blocked, slicing works), then like, save and follow.
 //
 // It needs the stack from e2e/stack/vault-stack.sh and runs with playwright.stack.config.ts:
@@ -9,6 +9,7 @@
 //   SX_E2E_SUPABASE_URL=... SX_E2E_ANON_KEY=... SX_E2E_SERVICE_KEY=... SX_E2E_MAIL_URL=... \
 //     pnpm exec playwright test -c playwright.stack.config.ts
 // Without those variables every test is skipped.
+import { readFileSync } from 'node:fs'
 import { deflateSync } from 'node:zlib'
 import { expect, test, type Page } from '@playwright/test'
 
@@ -23,15 +24,8 @@ const title = `E2E calibration cube ${stamp}`
 test.describe.configure({ mode: 'serial' })
 test.skip(!run, 'needs the stack from e2e/stack/vault-stack.sh')
 
-/** A binary STL of a 20 mm cube standing on the bed. */
-function cubeStl(): Buffer {
-  const v = [[0, 0, 0], [20, 0, 0], [20, 20, 0], [0, 20, 0], [0, 0, 20], [20, 0, 20], [20, 20, 20], [0, 20, 20]]
-  const tris = [[0, 2, 1], [0, 3, 2], [4, 5, 6], [4, 6, 7], [0, 1, 5], [0, 5, 4], [1, 2, 6], [1, 6, 5], [2, 3, 7], [2, 7, 6], [3, 0, 4], [3, 4, 7]]
-  const b = Buffer.alloc(84 + tris.length * 50)
-  b.writeUInt32LE(tris.length, 80)
-  tris.forEach((t, i) => t.forEach((k, j) => v[k]!.forEach((c, n) => b.writeFloatLE(c, 84 + i * 50 + 12 + j * 12 + n * 4))))
-  return b
-}
+/** Five cubes in eight colors: Body (two parts) and Face (painted) go through the AMS. Written by packages/app/test/listing-colors.test.ts. */
+const eightColors = () => readFileSync(new URL('./fixtures/eight-colors.3mf', import.meta.url))
 
 /** A one-color PNG, for the banner and logo. */
 function png(w: number, h: number, rgb: [number, number, number]): Buffer {
@@ -125,7 +119,13 @@ test('a creator signs up, makes a page and uploads a calibration cube, and the o
   const form = page.getByRole('dialog', { name: 'Upload a design' })
   const choose = form.getByRole('radio', { name: 'A file' })
   if (await choose.count()) await choose.click()
-  await form.getByLabel('Pick a model file').setInputFiles({ name: 'calibration-cube.stl', mimeType: 'model/stl', buffer: cubeStl() })
+  await form.getByLabel('Pick a model file').setInputFiles({ name: 'calibration-plate.3mf', mimeType: 'model/3mf', buffer: eightColors() })
+  // The colors come from the file; the creator names one.
+  const colors = form.getByRole('list', { name: 'Colors, in the order they show' })
+  await expect(colors.getByRole('listitem')).toHaveCount(8)
+  await form.getByLabel('Color 3 name').fill('Silk gold')
+  await expect(form.getByRole('list', { name: 'Parts' }).getByRole('switch', { checked: true })).toHaveCount(2)
+  await expect(page.getByRole('region', { name: 'Preview' }).getByText('2 parts multi-color (AMS)')).toBeVisible()
   await form.getByLabel('Title').fill(title)
   await form.getByLabel('Description').fill('A 20 mm cube for checking dimensions.')
   await form.getByLabel(/^Tags/).fill('calibration, desk, functional')
@@ -148,6 +148,10 @@ test('a creator signs up, makes a page and uploads a calibration cube, and the o
   expect(v?.storage_path).toMatch(/\.sx3mf$/)
   expect(v?.format).toBe('sx3mf')
   expect(v?.scan_report.verdict).toBe('clean')
+  const stored = ((await (await rest(`/rest/v1/listing_versions?select=colors&listing_id=eq.${listingId}`)).json()) as { colors: { colors: { hex: string; name?: string }[]; parts: { ams: boolean }[] } }[])[0]?.colors
+  expect(stored?.colors).toHaveLength(8)
+  expect(stored?.colors[2]).toEqual({ hex: '#d4af37', name: 'Silk gold' })
+  expect(stored?.parts.filter((p) => p.ams)).toHaveLength(2)
   await expect(row.getByText('In review')).toBeVisible({ timeout: 20_000 })
 
   // The owner approves it from the review queue.
@@ -172,9 +176,22 @@ test('another member finds it, gets only the sealed file, and cannot export it',
   const recent = page.getByRole('region', { name: 'Recent' })
   await expect(recent.getByText(title)).toBeVisible({ timeout: 30_000 })
 
+  // The card shows five swatches and counts the rest.
+  const card = recent.locator('.lib-mini', { hasText: title })
+  await expect(card.getByRole('list', { name: '8 colors, 2 parts multi-color (AMS)' }).getByText('+3')).toBeVisible()
+
   // Download: the file is the sealed .sx3mf.
   await recent.getByRole('button', { name: `${title}, details` }).click()
   const sheet = page.getByRole('dialog', { name: title })
+  await expect(sheet.getByText('8 colors', { exact: true })).toBeVisible()
+  await expect(sheet.getByText('2 parts multi-color (AMS)')).toBeVisible()
+  // The name shows on keyboard focus (focus-visible), then on hover.
+  await sheet.getByLabel('Silk gold, through the AMS').focus()
+  await page.keyboard.press('Shift+Tab')
+  await page.keyboard.press('Tab')
+  await expect(page.locator('#sx-tip')).toContainText('Silk gold')
+  await sheet.getByLabel('#3fae5a').hover()
+  await expect(page.locator('#sx-tip')).toContainText('#3fae5a')
   const [download] = await Promise.all([page.waitForEvent('download'), sheet.getByRole('button', { name: /^Download/ }).click()])
   expect(download.suggestedFilename()).toMatch(/\.sx3mf$/)
 
@@ -182,7 +199,7 @@ test('another member finds it, gets only the sealed file, and cannot export it',
   const token = await sessionFor(member)
   const files = (await (await rest(`/rest/v1/listing_versions?select=id,storage_path&listing_id=eq.${listingId}`)).json()) as { id: string; storage_path: string }[]
   const sealed = files[0]!.storage_path
-  const raw = sealed.replace(/\.sx3mf$/, '.stl')
+  const raw = sealed.replace(/\.sx3mf$/, '.3mf')
   const read = (bucket: string, path: string) => fetch(`${url}/storage/v1/object/authenticated/${bucket}/${path}`, { headers: { apikey: anon, Authorization: `Bearer ${token}` } })
   expect((await read('listing-files', sealed)).status).toBe(200)
   expect((await read('uploads-quarantine', raw)).status).not.toBe(200)

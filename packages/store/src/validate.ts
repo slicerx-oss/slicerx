@@ -3,7 +3,7 @@
 // Client side checks that mirror the database, so a mistake is caught before
 // any network call. The database stays the authority; these only save a trip.
 // No dependencies, so the app's forms import it as @slicerx/store/validate.
-import type { CreatorLinkInput, CreatorLinkKind, FileFormat } from '@slicerx/contracts'
+import type { CreatorLinkInput, CreatorLinkKind, FileFormat, ListingColors } from '@slicerx/contracts'
 
 /** Default largest model file, in bytes (100 MB). The library settings can raise it, up to 500 MB. */
 export const MAX_UPLOAD_BYTES = 104_857_600
@@ -150,4 +150,39 @@ export function validateDevice(input: { deviceId: string; name: string; platform
   if (!['ios', 'android', 'desktop', 'web'].includes(input.platform)) return { ok: false, message: 'Platform must be ios, android, desktop or web' }
   if (!/^[A-Za-z0-9_+/=-]{32,128}$/.test(input.signPub)) return { ok: false, message: 'The signing key is not a valid public key' }
   return { ok: true, value: true }
+}
+
+/** Most colors and parts a listing version keeps (listing_versions.colors, 0016_listing_colors.sql). */
+export const MAX_LISTING_COLORS = 32
+export const MAX_LISTING_PARTS = 200
+export const COLOR_NAME_MAX = 40
+export const PART_NAME_MAX = 120
+
+/**
+ * Checks a version's colors the way the database does and returns them tidied: hex in
+ * lowercase, names trimmed (an empty name is dropped), each part's colors once and in order.
+ */
+export function validateListingColors(c: ListingColors): Checked<ListingColors> {
+  if (!c || !Array.isArray(c.colors) || !Array.isArray(c.parts)) return { ok: false, message: 'Colors need a color list and a part list' }
+  if (c.colors.length < 1 || c.colors.length > MAX_LISTING_COLORS) return { ok: false, message: `A model has 1 to ${MAX_LISTING_COLORS} colors` }
+  if (c.parts.length > MAX_LISTING_PARTS) return { ok: false, message: `At most ${MAX_LISTING_PARTS} parts` }
+  const colors: ListingColors['colors'] = []
+  for (const col of c.colors) {
+    const hex = typeof col?.hex === 'string' ? col.hex.trim().toLowerCase() : ''
+    if (!/^#[0-9a-f]{6}$/.test(hex)) return { ok: false, message: `${String(col?.hex)} is not a color like #d4af37` }
+    const name = typeof col.name === 'string' ? col.name.trim().replace(/\s+/g, ' ') : ''
+    if (name.length > COLOR_NAME_MAX) return { ok: false, message: `Color names can be at most ${COLOR_NAME_MAX} characters` }
+    if (/[<>\u0000-\u001f\u007f]/.test(name)) return { ok: false, message: 'Color names cannot hold < or >' }
+    colors.push(name ? { hex, name } : { hex })
+  }
+  const parts: ListingColors['parts'] = []
+  for (const p of c.parts) {
+    const name = typeof p?.name === 'string' ? p.name.trim() : ''
+    if (name.length < 1 || name.length > PART_NAME_MAX) return { ok: false, message: `Part names are 1 to ${PART_NAME_MAX} characters` }
+    if (/[<>\u0000-\u001f\u007f]/.test(name)) return { ok: false, message: 'Part names cannot hold < or >' }
+    if (!Array.isArray(p.colors) || p.colors.length < 1 || p.colors.length > MAX_LISTING_COLORS) return { ok: false, message: `${name} needs at least one color` }
+    if (!p.colors.every((i) => Number.isInteger(i) && i >= 0 && i < colors.length)) return { ok: false, message: `${name} names a color the model does not have` }
+    parts.push({ name, colors: [...new Set(p.colors)].sort((a, b) => a - b), ams: p.ams === true })
+  }
+  return { ok: true, value: { colors, parts } }
 }
