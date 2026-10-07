@@ -37,7 +37,11 @@ export type UpdatePhase =
   | { kind: 'downloading'; update: FoundUpdate; got: number; total: number | null }
   | { kind: 'ready'; update: FoundUpdate }
   | { kind: 'installing'; update: FoundUpdate }
-  | { kind: 'error'; message: string; update?: FoundUpdate }
+  | { kind: 'error'; step: UpdateStep; message: string; update?: FoundUpdate }
+
+/** Where an update failed: asking the feed, downloading, the signature check, or installing. */
+export type UpdateStep = 'check' | 'download' | 'verify' | 'install'
+const STEPS: readonly UpdateStep[] = ['check', 'download', 'verify', 'install']
 
 export interface UpdateState {
   phase: UpdatePhase
@@ -147,13 +151,19 @@ async function download(update: FoundUpdate): Promise<void> {
     put({ phase: { kind: 'ready', update } })
     maybeOpen()
   } catch (e) {
-    put({ phase: { kind: 'error', message: reason(e), update } })
+    put({ phase: { kind: 'error', ...failure(e, 'download'), update } })
   }
 }
 
-function reason(e: unknown): string {
-  const m = e instanceof Error ? e.message : typeof e === 'string' ? e : ''
-  return m.trim() || 'Something went wrong.'
+/**
+ * The step and the reason from a failure. The shell rejects with { step, message } (src-tauri/src/updates.rs) and
+ * names verify for a signature that does not check out; anything else counts as `step`. An empty reason stays empty.
+ */
+function failure(e: unknown, step: UpdateStep): { step: UpdateStep; message: string } {
+  const o = e && typeof e === 'object' ? (e as { step?: unknown; message?: unknown }) : {}
+  const named = STEPS.find((s) => s === o.step)
+  const message = typeof e === 'string' ? e : typeof o.message === 'string' ? o.message : ''
+  return { step: named ?? step, message: message.trim() }
 }
 
 /**
@@ -177,7 +187,7 @@ export async function checkForUpdates(opts: { manual?: boolean } = {}): Promise<
   try {
     found = await host.check()
   } catch (e) {
-    put({ phase: manual ? { kind: 'error', message: reason(e) } : { kind: 'idle' } })
+    put({ phase: manual ? { kind: 'error', ...failure(e, 'check') } : { kind: 'idle' } })
     return
   }
   if (!found) {
@@ -212,11 +222,11 @@ export async function restartToUpdate(confirm: () => Promise<boolean> = async ()
   try {
     await host.restart()
   } catch (e) {
-    put({ phase: { kind: 'error', message: reason(e), update: phase.update } })
+    put({ phase: { kind: 'error', ...failure(e, 'install'), update: phase.update } })
   }
 }
 
-/** Try again after an error: the download when the update was found, else a new check. */
+/** Try again after an error: the download when the update was found (an install that failed let go of it), else a new check. */
 export function retryUpdate(): void {
   const phase = state.phase
   if (phase.kind !== 'error') return
