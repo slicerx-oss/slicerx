@@ -21,7 +21,7 @@ import { featureStyle } from './preview-hud'
 import { fixApplies, jumpToWarning, runWarningFix, warningFix } from '../../lib/warning-actions'
 import { repairSelected } from '../../plate/geom-ops'
 import { closeGcodeFile, setGcodePanel, useGcodeView } from './gcode-file'
-import { CollisionList } from './collision-list'
+import { CollisionList } from './strike-slots'
 
 /** A G-code file opened on its own: what it is, and the way back to the plate. */
 function GcodeFileBlock() {

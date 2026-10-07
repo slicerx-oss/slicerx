@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// heimdall's collisions in the app: the strikes of the current slice, what holds Print back, and the one-click fixes
-// (a new print order, print by layer). Light enough for the startup code; the jump to a strike is heimdall-jump.ts.
-import type { Collision, CollisionFix, Host } from '@slicerx/contracts'
+// heimdall's collisions in the app: the strikes of the current slice, what holds Print back, and the fixes on offer.
+// Light enough for the startup code; the jump to a strike is heimdall-jump.ts and the one-click
+// fixes heimdall-fix.ts, both loaded with the strike list and marks once a slice has a collision.
+import type { Collision, CollisionFix } from '@slicerx/contracts'
 import type { StrikeMark } from '@slicerx/viewport'
-import { get, markStale, set, toast, type AppState } from '../state/store'
-import { setPlateSettings } from './plates'
+import type { AppState } from '../state/store'
 import { sequenceProblem } from './sequence-check'
 
 const NONE: Collision[] = []
@@ -47,42 +47,4 @@ export function closeCalls(s: Pick<AppState, 'slice' | 'plate'>): string[] {
 /** One strike per collision where it goes deepest, the selected one marked. */
 export function strikeMarks(s: Pick<AppState, 'slice' | 'strikePick'>): StrikeMark[] {
   return collisionsOf(s).map((c, i) => ({ x: c.worstPoint[0], y: c.worstPoint[1], z: c.worstPoint[2], ...(c.severity === 'close' ? { close: true } : {}), ...(s.strikePick === i ? { selected: true } : {}) }))
-}
-
-/**
- * Shows collision `i`: the sliders go to its moment, the head is drawn there, and the playback bar plays the seconds
- * before it and stops on it. The timeline code it needs loads with Preview, so it comes in on the first jump.
- */
-export function jumpToCollision(i: number): Promise<void> {
-  return import('./heimdall-jump').then((m) => m.jumpTo(i))
-}
-
-/** Reorders the plate's objects to `order` (ids); objects it leaves out keep their places after it. */
-function reorder(order: readonly string[]): boolean {
-  const plate = get().plate
-  const rank = new Map(order.map((id, i) => [id, i]))
-  const next = [...plate].sort((x, y) => (rank.get(x.id) ?? order.length + plate.indexOf(x)) - (rank.get(y.id) ?? order.length + plate.indexOf(y)))
-  if (next.every((e, i) => e === plate[i])) return false
-  set({ plate: next })
-  markStale()
-  return true
-}
-
-/** Applies a one-click fix and slices again. */
-export async function applyCollisionFix(host: Host, fix: CollisionFix): Promise<void> {
-  if (!fix.oneClick) return
-  if (fix.kind === 'reorder' && fix.order) {
-    if (!reorder(fix.order)) return
-    toast('The objects print in the new order. Slicing again.', 'info')
-  } else if (fix.kind === 'arrange') {
-    const { arrangePlate } = await import('./edit')
-    await arrangePlate('all')
-    toast('The plate is arranged again. Slicing again.', 'info')
-  } else if (fix.kind === 'by_layer') {
-    setPlateSettings(get().activePlate, { sequence: 'by-layer' })
-    toast('This plate prints by layer now. Slicing again.', 'info')
-  } else return
-  set({ strikePick: null, strikeJump: null })
-  const { slicePlate } = await import('../state/actions')
-  await slicePlate(host)
 }

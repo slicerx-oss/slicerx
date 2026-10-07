@@ -7,13 +7,15 @@ import { flushSync } from 'react-dom'
 import { createRoot } from 'react-dom/client'
 import { describe, expect, it, vi } from 'vitest'
 import { SXPV_HEADER_BYTES, SXPV_MAGIC, SXPV_SEGMENT_BYTES, SXPV_VERSION, readPreview, type Collision, type CollisionFix, type Host, type PreviewBuffers, type SliceResult } from '@slicerx/contracts'
-import { applyCollisionFix, closeCalls, collisionsOf, fixesOf, jumpToCollision, printBlock, strikeMarks } from '../src/plate/heimdall'
-import { collisionTime } from '../src/plate/heimdall-jump'
+import { closeCalls, collisionsOf, fixesOf, printBlock, strikeMarks } from '../src/plate/heimdall'
+import { applyCollisionFix } from '../src/plate/heimdall-fix'
+import { collisionTime, jumpTo } from '../src/plate/heimdall-jump'
 import { collisionDetail, collisionTitle, fixDetail, fixTitle, namesOf } from '../src/plate/heimdall-words'
 import { preflight } from '../src/plate/preflight'
 import { get, set } from '../src/state/store'
 import { HostContext } from '../src/host'
 import { CollisionList } from '../src/workspaces/preview/collision-list'
+import { TrackStrikes } from '../src/workspaces/preview/strike-slots'
 
 /** `layers` layers of `segs` 10 mm segments each, 100 mm/s, 10 s a layer. */
 function preview(layers: number, segs: number): PreviewBuffers {
@@ -82,13 +84,13 @@ describe('heimdall in the app', () => {
 
   it('jumps to the moment: the layer, the move in it, the head shown and the playback stop', async () => {
     set({ slice: { status: 'done', result: result([hit]), stale: false }, preview: preview(4, 10), showToolhead: false, layerLo: 3, strikePick: null, strikeJump: null, profile: null })
-    await jumpToCollision(0)
+    jumpTo(0)
     const s = get()
     expect(s).toMatchObject({ strikePick: 0, showToolhead: true, layerLo: 1, layerHi: 3, moveCut: 0.55, toolChange: null })
     // Two layers of 10 s and the middle of the third layer's sixth move.
     expect(s.strikeJump?.timeS).toBeCloseTo(25.5, 6)
     expect(collisionTime(s, hit)).toBeCloseTo(25.5, 6)
-    await jumpToCollision(0)
+    jumpTo(0)
     expect(get().strikeJump?.seq).toBeGreaterThan(s.strikeJump!.seq)
   })
 
@@ -140,6 +142,20 @@ describe('heimdall in the app', () => {
     expect(fixes.map((f) => f.querySelector('button') !== null)).toEqual([true, true, false])
     flushSync(() => (items[0]!.querySelector('button') as HTMLButtonElement).click())
     await vi.waitFor(() => expect(get().strikePick).toBe(0))
+    flushSync(() => root.unmount())
+    el.remove()
+  })
+
+  it('leaves the slider bare until a slice has a strike, then loads its marks', async () => {
+    set({ plate: [entry('tall', 'Tall'), entry('low', 'Low')], slice: { status: 'done', result: result([]), stale: false } })
+    const el = document.createElement('div')
+    document.body.append(el)
+    const root = createRoot(el)
+    flushSync(() => root.render(createElement(TrackStrikes, { share: (layer: number) => layer * 10 })))
+    expect(el.innerHTML).toBe('')
+    flushSync(() => set({ slice: { status: 'done', result: result([hit]), stale: false } }))
+    await vi.waitFor(() => expect(el.querySelectorAll('.strike-mark')).toHaveLength(1))
+    expect((el.querySelector('.strike-mark') as HTMLElement).style.left).toBe('30%')
     flushSync(() => root.unmount())
     el.remove()
   })
