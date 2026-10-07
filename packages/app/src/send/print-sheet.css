@@ -5,19 +5,19 @@
 .print-sheet { width: min(520px, calc(100vw - 2 * var(--gutter))); }
 .print-sheet .sx-dialog-h { padding-top: 14px; }
 .print-sheet .sx-dialog-h h2 { display: grid; gap: 6px; font-size: var(--fs-xl); }
-.ps-printer { display: flex; align-items: center; gap: 8px; font: 500 var(--fs-sm) var(--f-body); color: var(--muted); }
+.ps-printer { display: flex; align-items: center; gap: 8px; font: var(--fw-medium) var(--fs-sm) var(--f-body); color: var(--muted); }
 .ps-printer .sx-ic { color: var(--dim); }
-.ps-printer-name { color: var(--fg); font-weight: 600; }
-.ps-printer-model { font-size: 12px; font-weight: 400; }
-.ps-title { font: 600 var(--fs-xl) / var(--lh-tight) var(--f-body); color: var(--fg); }
+.ps-printer-name { color: var(--fg); font-weight: var(--fw-semibold); }
+.ps-printer-model { font-size: calc(12px * var(--text-scale)); font-weight: var(--fw-regular); }
+.ps-title { font: var(--fw-semibold) var(--fs-xl) / var(--lh-tight) var(--f-body); color: var(--fg); }
 
 /* What will print: a flat card with the picture, the file, time and weight, and each filament on its slot. */
 .ps-summary { display: grid; gap: 10px; margin: 6px 0 10px; padding: 12px; border: 1px solid var(--line-soft); border-radius: var(--r-md); background: var(--ink-1); }
 .ps-sum-top { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 12px; align-items: center; }
 .ps-thumb { display: grid; place-items: center; width: 64px; height: 64px; border-radius: var(--r-sm); background: var(--ink-2); color: var(--dim); object-fit: contain; }
 .ps-sum-text { display: grid; gap: 6px; min-width: 0; }
-.ps-file { margin: 0; font: 500 var(--fs-md) var(--f-mono); color: var(--fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.ps-meta { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 0; font: 500 var(--fs-sm) var(--f-mono); font-variant-numeric: tabular-nums; color: var(--muted); }
+.ps-file { margin: 0; font: var(--fw-medium) var(--fs-md) var(--f-mono); color: var(--fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ps-meta { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 0; font: var(--fw-medium) var(--fs-sm) var(--f-mono); font-variant-numeric: tabular-nums; color: var(--muted); }
 .ps-meta span { display: inline-flex; align-items: center; gap: 5px; }
 .ps-meta .sx-ic { color: var(--dim); }
 
@@ -35,21 +35,21 @@
 /* Filaments: swatch, material, the slot it feeds from. A slot picker shows only when one is needed. */
 .ps-fils { display: grid; gap: 6px; margin: 0; padding: 10px 0 0; border-top: 1px solid var(--line-soft); list-style: none; }
 .ps-fil { display: grid; grid-template-columns: 12px auto minmax(0, 1fr) auto; gap: 8px; align-items: center; font-size: var(--fs-md); }
-.ps-fil-type { font-weight: 600; color: var(--fg); }
+.ps-fil-type { font-weight: var(--fw-semibold); color: var(--fg); }
 .ps-fil .sx-muted { font-size: var(--fs-sm); }
-.ps-fil-slot { font: 500 var(--fs-sm) var(--f-mono); color: var(--muted); }
+.ps-fil-slot { font: var(--fw-medium) var(--fs-sm) var(--f-mono); color: var(--muted); }
 .ps-swatch { display: inline-block; width: 12px; height: 12px; border-radius: 50%; border: 1px solid color-mix(in srgb, var(--fg) 25%, transparent); flex: none; }
 .ps-map { display: grid; gap: 8px; margin: 0; padding: 10px 12px; border: 1px solid var(--line-soft); border-radius: var(--r-md); }
-.ps-map-head { display: flex; align-items: center; gap: 7px; margin: 0; font-weight: 600; }
+.ps-map-head { display: flex; align-items: center; gap: 7px; margin: 0; font-weight: var(--fw-semibold); }
 .ps-map-head .sx-ic { color: var(--orange); }
 .ps-map-row { display: grid; grid-template-columns: 12px minmax(0, 1fr) auto; gap: 10px; align-items: center; font-size: var(--fs-md); }
-.ps-map-row label { color: var(--fg); font-weight: 500; }
+.ps-map-row label { color: var(--fg); font-weight: var(--fw-medium); }
 .ps-row-warn { margin: 0; font-size: var(--fs-sm); color: var(--orange); }
 /* The printer's steps before the print: shown as toggles, each with its tooltip. */
 .ps-opts { display: grid; gap: 2px; padding: 8px 12px; border: 1px solid var(--line-soft); border-radius: var(--r-md); background: var(--ink-1); }
-.ps-opts-head { margin: 0 0 4px; font: 600 var(--fs-xs) var(--f-body); letter-spacing: 0.02em; color: var(--dim); }
+.ps-opts-head { margin: 0 0 4px; font: var(--fw-semibold) var(--fs-xs) var(--f-body); letter-spacing: 0.02em; color: var(--dim); }
 .ps-opt { display: grid; grid-template-columns: auto 18px minmax(0, 1fr) auto; gap: 6px; align-items: center; min-height: 34px; }
-.ps-opt label { font: 500 var(--fs-md) var(--f-body); color: var(--fg); cursor: pointer; }
+.ps-opt label { font: var(--fw-medium) var(--fs-md) var(--f-body); color: var(--fg); cursor: pointer; }
 .ps-opt .sx-switch { grid-column: 4; }
 .ps-opt .ps-tip-btn { width: 18px; height: 18px; }
 

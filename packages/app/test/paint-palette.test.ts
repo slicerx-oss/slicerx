@@ -7,7 +7,7 @@ import { featureStyle } from '../src/workspaces/preview/preview-hud'
 import { FEATURE } from '@slicerx/contracts'
 import { get, set } from '../src/state/store'
 
-afterEach(() => set({ toolpathPalette: 'standard' }))
+afterEach(() => set({ appearance: { ...get().appearance, colorVision: 'standard' } }))
 
 describe('paint brushes', () => {
   it('puts Brush, Fill and Height up front and the rest behind More', () => {
@@ -28,8 +28,9 @@ describe('toolpath palette', () => {
 
   it('the legend follows the picked palette', () => {
     const std = featureStyle(FEATURE.sparseInfill).color
-    set({ toolpathPalette: 'colorblind' })
+    set({ appearance: { ...get().appearance, colorVision: 'blueyellow' } })
     expect(featureStyle(FEATURE.sparseInfill).color).not.toBe(std)
-    expect(get().toolpathPalette).toBe('colorblind')
+    set({ appearance: { ...get().appearance, colorVision: 'redgreen' } })
+    expect(featureStyle(FEATURE.sparseInfill).color).not.toBe(std)
   })
 })

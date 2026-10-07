@@ -3,7 +3,7 @@
 /* Printers as a camera wall. Tiles and the count strip belong to the page and stay flat; only what floats over a
    camera (the state pill, the time left) is lifted. A tile glows softly on hover and keyboard focus. */
 .wall-h { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-3) var(--s-4); margin-bottom: var(--s-5); }
-.wall-h h1 { flex: 1 1 240px; margin: 0; font-size: 26px; }
+.wall-h h1 { flex: 1 1 240px; margin: 0; font-size: calc(26px * var(--text-scale)); }
 
 .wall-counts { list-style: none; margin: 0 0 var(--s-6); padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(140px, 100%), 1fr)); gap: var(--s-3); }
 .wall-counts li { --tone: var(--dim); display: flex; flex-direction: column; gap: 6px; min-width: 0; padding: 14px 16px; background: var(--ink-1); border: 1px solid var(--line-soft); border-radius: var(--r-md); }
@@ -13,14 +13,14 @@
 .wall-counts li[data-tone=low] { --tone: var(--purple); }
 .wall-count-label { display: inline-flex; align-items: center; gap: 8px; font-size: var(--fs-md); color: var(--muted); }
 .wall-count-label::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--tone); flex: none; }
-.wall-count-n { font: 600 28px/1 var(--f-body); font-variant-numeric: tabular-nums; }
+.wall-count-n { font: var(--fw-semibold) calc(28px * var(--text-scale))/1 var(--f-body); font-variant-numeric: tabular-nums; }
 .wall-count-sub { font-size: var(--fs-sm); color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
 
 .wall-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(290px, 100%), 1fr)); gap: var(--s-4); }
 .wall-skeleton { min-height: 240px; }
 .wall-bay { display: flex; flex-direction: column; gap: 14px; margin-bottom: var(--s-6); }
 .wall-bay-h { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; padding-bottom: 10px; border-bottom: 1px solid var(--line-soft); }
-.wall-bay-h h2 { margin: 0; font: 600 18px/1.2 var(--f-display); }
+.wall-bay-h h2 { margin: 0; font: var(--fw-semibold) calc(18px * var(--text-scale))/1.2 var(--f-display); }
 .wall-bay-place { font-size: var(--fs-body); color: var(--muted); }
 .wall-bay-sum { margin-left: auto; font-size: var(--fs-md); color: var(--muted); font-variant-numeric: tabular-nums; }
 .wall-bay .app-empty { padding: 0; }
@@ -39,14 +39,14 @@
 .wall-cam .cam-idle-line[data-tip-title] { position: relative; z-index: 2; cursor: default; }
 .wall-float { position: absolute; display: inline-flex; align-items: center; padding: 5px 10px; border-radius: var(--r-pill); background: color-mix(in srgb, var(--ink-0) 72%, transparent); box-shadow: var(--shadow-float); backdrop-filter: var(--lift-glass); -webkit-backdrop-filter: var(--lift-glass); }
 .wall-pill { left: 10px; top: 10px; }
-.wall-left { right: 10px; bottom: 12px; border-radius: var(--r-sm); font: 600 var(--fs-body) var(--f-body); font-variant-numeric: tabular-nums; color: var(--fg); }
+.wall-left { right: 10px; bottom: 12px; border-radius: var(--r-sm); font: var(--fw-semibold) var(--fs-body) var(--f-body); font-variant-numeric: tabular-nums; color: var(--fg); }
 .wall-bar { position: absolute; left: 0; right: 0; bottom: 0; height: 4px; background: color-mix(in srgb, var(--ink-4) 80%, transparent); }
 .wall-bar i { display: block; height: 100%; background: var(--cyan); transform-origin: left; transition: transform 0.6s var(--ease); }
 .wall-bar[data-tone=warn] i { background: var(--orange); }
 
 .wall-body { display: flex; flex: 1; flex-direction: column; gap: 8px; min-width: 0; padding: 10px 12px 14px 16px; }
 .wall-name { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.wall-name b { min-width: 0; font: 600 var(--fs-lg) var(--f-body); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wall-name b { min-width: 0; font: var(--fw-semibold) var(--fs-lg) var(--f-body); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .wall-mark { display: grid; place-items: center; flex: none; color: var(--fg); }
 .wall-model { flex: 1 1 auto; min-width: 0; font-size: var(--fs-md); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .wall-more { position: relative; z-index: 2; flex: none; margin-left: auto; }
@@ -56,7 +56,7 @@
 .wall-line { display: -webkit-box; margin: 0; overflow: hidden; font-size: var(--fs-body); color: color-mix(in srgb, var(--fg) 80%, var(--muted)); font-variant-numeric: tabular-nums; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 .wall-meta { display: flex; align-items: center; gap: 14px; margin-top: auto; padding-right: 4px; font-size: var(--fs-md); color: var(--muted); }
 .wall-heat { position: relative; z-index: 2; display: inline-flex; gap: 14px; font-variant-numeric: tabular-nums; }
-.wall-heat b { font-weight: 600; color: var(--fg); }
+.wall-heat b { font-weight: var(--fw-semibold); color: var(--fg); }
 .wall-slots { position: relative; z-index: 2; display: inline-flex; gap: 6px; margin-left: auto; }
 .wall-slot { display: inline-grid; border-radius: 50%; }
 .wall-slot .swatch.sm { width: 14px; height: 14px; }
@@ -66,7 +66,7 @@
 
 /* No printers yet: two ravens on a branch, now and then one glances about. */
 .wall-empty { display: flex; flex-direction: column; align-items: center; gap: var(--s-3); padding-block: var(--s-8); text-align: center; }
-.wall-empty h2 { margin: 0; font: 600 var(--fs-xl) var(--f-display); color: var(--fg); }
+.wall-empty h2 { margin: 0; font: var(--fw-semibold) var(--fs-xl) var(--f-display); color: var(--fg); }
 .wall-empty p { margin: 0; max-width: 40ch; color: var(--muted); }
 .wall-empty-acts { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--s-2); margin-top: var(--s-2); }
 .wall-empty-ravens { position: relative; display: flex; gap: 20px; padding: 0 28px 4px; color: var(--muted); }

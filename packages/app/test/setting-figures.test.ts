@@ -3,7 +3,7 @@
 // Setting figures draw with theme classes only, so they render in the light and the dark theme alike.
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { nocturne, nocturneLight, themeToVars } from '@slicerx/ui'
+import { subban, subbanLight, themeToVars } from '@slicerx/ui'
 import { createElement, Fragment } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
@@ -41,7 +41,7 @@ describe('setting figures', () => {
     }
   })
 
-  for (const theme of [nocturne, nocturneLight]) {
+  for (const theme of [subban, subbanLight]) {
     it(`find every color they use in the ${theme.scheme} theme`, () => {
       const vars = themeToVars(theme)
       const used = new Set(figRules.flatMap((l) => [...l.matchAll(/var\((--[a-z0-9-]+)/g)].map((m) => m[1]!)))

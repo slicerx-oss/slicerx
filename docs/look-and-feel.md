@@ -87,6 +87,10 @@ How a preset applies
 - Row height: `rowHeight` sm, md, lg map to a medium control of 28, 30 and 34 px. Density sets the gutter (12, 16, 20 px) and panel padding (8, 12, 16 px).
 - Nothing here changes parsed settings or G-code.
 
+The person's density and accent from Settings > Look and feel ride on the preset: `withAppearance` in `packages/app/src/first-run/look.ts` sets the look's density (Compact, Comfortable, Roomy map to compact, standard, roomy) and, unless it is the theme's own, its accent before `applyPreset`. The theme, text, contrast and color vision settings are in docs/themes.md.
+
+Settings > Look and feel holds the controls preset (Change opens the slicer screen of setup), Theme, Accent, Text, Accessibility, Workspace (Open models in, in editions with the modeling tools), Help and hints and Setup. Slice automatically, the electricity price and Drawing tools are on Settings > Slicing and modeling.
+
 Persisted as `LookAndFeelChoice` (`id` plus `overrides`) in user settings, changeable any time in Settings > Look and feel, with the same live preview as first run. Individual overrides (invert zoom, swap buttons, free camera, each keybinding, layout and look parts) win over the preset.
 
 ## 3. Camera and mouse table

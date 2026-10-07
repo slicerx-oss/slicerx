@@ -6,7 +6,7 @@
 .mimir-head { display: flex; align-items: center; gap: 8px; height: 44px; padding: 0 8px 0 14px; border-bottom: 1px solid var(--line-soft); }
 .mimir-mark { display: inline-flex; color: var(--purple); }
 .mimir-mark .sx-ic { width: 18px; height: 18px; }
-.mimir-name { margin: 0; font: 500 var(--fs-md) var(--f-display); letter-spacing: 0.01em; color: var(--fg); }
+.mimir-name { margin: 0; font: var(--fw-medium) var(--fs-md) var(--f-display); letter-spacing: 0.01em; color: var(--fg); }
 .mimir-sp { flex: 1; }
 .mimir-watch { width: 8px; height: 8px; border-radius: 50%; background: var(--cyan); box-shadow: 0 0 0 0 color-mix(in srgb, var(--cyan) 60%, transparent); animation: mimir-breathe 2.4s ease-in-out infinite; }
 @keyframes mimir-breathe { 0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--cyan) 60%, transparent); } 50% { box-shadow: 0 0 0 5px transparent; } }

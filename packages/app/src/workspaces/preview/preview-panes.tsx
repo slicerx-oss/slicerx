@@ -85,7 +85,7 @@ export function PreviewLeft() {
     if (!schema) void loadSettings().then(setSchema)
   }, [schema])
   const more = useMore('preview')
-  useApp((s) => s.toolpathPalette)
+  useApp((s) => s.appearance.colorVision)
   const show = (key: string, c: typeof config) => (schema ? schema.show(key, c) : String((c as Record<string, unknown>)[key] ?? ''))
   const file = useGcodeView((s) => s.file)
   if (file) return <GcodeFileBlock />

@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest'
 import { resolvePreset } from '@slicerx/ui'
 import { controlsFor, withControlOverrides } from '../src/first-run/controls'
 import { effectiveMode, orderWorkspaces } from '../src/first-run/look'
-import { choose, initialFlow, normalizeStep, outcome, progress, reduceFlow, stepLabel, type FlowEvent, type FlowState, type SetupPrinter } from '../src/first-run/model'
+import { choose, initialFlow, normalizeStep, ONBOARDING_VERSION, onboardingRerun, outcome, progress, reduceFlow, setupSteps, STEP_SINCE, stepLabel, type FlowEvent, type FlowState, type SetupPrinter } from '../src/first-run/model'
 import { EMPTY_FORM, pickModel, skipForm } from '../src/first-run/printer-form'
 import { adoptFound, matchFound } from '../src/first-run/printer-step'
 import { importPresetFile } from '../src/first-run/preset-import'
@@ -20,7 +20,7 @@ describe('setup flow', () => {
     expect(s.step).toBe('look')
     expect(s.closed).toBe('finished')
     const o = outcome(s, NOW, null)
-    expect(o.firstRun).toEqual({ completedAt: NOW, step: 'done', look: { id: 'slicerx' }, printerId: 'bay-1' })
+    expect(o.firstRun).toEqual({ completedAt: NOW, step: 'done', look: { id: 'slicerx' }, printerId: 'bay-1', version: ONBOARDING_VERSION })
     expect(o.printerId).toBe('bay-1')
   })
 
@@ -86,21 +86,78 @@ describe('setup flow', () => {
     expect(run(s, { type: 'next' })).toBe(s)
   })
 
-  it('labels steps and progress, and maps old step names onto the two screens', () => {
-    expect(stepLabel('printer')).toEqual({ index: 1, total: 2, text: 'Step 1 of 2, Printer' })
-    expect(stepLabel('look').text).toBe('Step 2 of 2, Your slicer')
-    expect(progress('printer')).toBe(0.5)
+  it('labels steps and progress, and maps old step names onto the first screen', () => {
+    expect(stepLabel('theme')).toEqual({ index: 1, total: 3, text: 'Step 1 of 3, Theme' })
+    expect(stepLabel('printer').text).toBe('Step 2 of 3, Printer')
+    expect(stepLabel('look').text).toBe('Step 3 of 3, Your slicer')
+    expect(progress('theme')).toBeCloseTo(1 / 3)
     expect(progress('look')).toBe(1)
-    expect(normalizeStep('welcome')).toBe('printer')
-    expect(normalizeStep('cad')).toBe('printer')
-    expect(normalizeStep('done')).toBe('printer')
+    expect(normalizeStep('welcome')).toBe('theme')
+    expect(normalizeStep('cad')).toBe('theme')
+    expect(normalizeStep('done')).toBe('theme')
+    expect(normalizeStep('printer')).toBe('printer')
     expect(normalizeStep('look')).toBe('look')
+  })
+
+  it('opens on the theme and walks on to the printer', () => {
+    const s = initialFlow('theme', { id: 'slicerx' })
+    expect(s.step).toBe('theme')
+    const next = run(s, { type: 'next' })
+    expect(next.step).toBe('printer')
+    expect(run(next, { type: 'back' }).step).toBe('theme')
   })
 
   it('switching presets keeps control overrides', () => {
     const c = withControlOverrides({ id: 'slicerx' }, { invert: true })
     expect(choose('prusaslicer', c)).toEqual({ id: 'prusaslicer', overrides: { controls: { invert: true } } })
     expect(withControlOverrides(c, {})).toEqual({ id: 'slicerx' })
+  })
+})
+
+describe('onboarding version', () => {
+  const done = (version?: number) => ({ completedAt: NOW, step: 'done' as const, look: { id: 'slicerx' as const }, printerId: 'bay-1', ...(version !== undefined ? { version } : {}) })
+
+  it('runs everything again before beta when the stored version is older', () => {
+    expect(onboardingRerun('pre-alpha', done())).toEqual({})
+    expect(onboardingRerun('alpha', done(1))).toEqual({})
+    expect(onboardingRerun('pre-alpha', done(ONBOARDING_VERSION))).toBeNull()
+    expect(onboardingRerun('alpha', done(ONBOARDING_VERSION + 1))).toBeNull()
+  })
+
+  it('shows only the new steps after alpha', () => {
+    expect(onboardingRerun('beta', done(1))).toEqual({ since: 1 })
+    expect(onboardingRerun('stable', done())).toEqual({ since: 1 })
+    expect(onboardingRerun('stable', done(ONBOARDING_VERSION))).toBeNull()
+    expect(setupSteps({ mimir: true, since: 1 })).toEqual(['theme'])
+    expect(setupSteps({ mimir: false, since: 1 })).toEqual(['theme'])
+    // nothing newer: the whole flow, never an empty one
+    expect(setupSteps({ mimir: false, since: ONBOARDING_VERSION })).toEqual(['theme', 'printer', 'look'])
+  })
+
+  it('a fresh install has no record and opens setup the usual way', () => {
+    expect(onboardingRerun('pre-alpha', null)).toBeNull()
+  })
+
+  it('every step has the version it arrived in, none newer than the current one', () => {
+    for (const v of Object.values(STEP_SINCE)) expect(v).toBeLessThanOrEqual(ONBOARDING_VERSION)
+    expect(Math.max(...Object.values(STEP_SINCE))).toBe(ONBOARDING_VERSION)
+  })
+
+  it('finishing or leaving records the current version, so the rerun does not come back', () => {
+    const fin = run(initialFlow('theme', { id: 'slicerx' }), { type: 'skip-all' })
+    expect(outcome(fin, NOW, done(1)).firstRun.version).toBe(ONBOARDING_VERSION)
+    const left = run(initialFlow('theme', { id: 'slicerx' }), { type: 'leave' })
+    expect(outcome(left, NOW, done(1)).firstRun).toMatchObject({ version: ONBOARDING_VERSION, completedAt: NOW, printerId: 'bay-1' })
+  })
+
+  it('a rerun prefilled from the settings keeps them when skipped through', () => {
+    // the flow starts from the stored look; nothing in it resets the printer
+    const s = run(initialFlow('theme', { id: 'bambu-studio' }, null, setupSteps({ mimir: false })), { type: 'next' }, { type: 'skip' }, { type: 'next' })
+    expect(s.closed).toBe('finished')
+    const o = outcome(s, NOW, done(1))
+    expect(o.look).toEqual({ id: 'bambu-studio' })
+    expect(o.printerId).toBeNull()
+    expect(o.firstRun.printerId).toBe('bay-1')
   })
 })
 

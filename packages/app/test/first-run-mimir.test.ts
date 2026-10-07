@@ -33,8 +33,8 @@ describe('first run with the mimir step', () => {
     expect(atLook.step).toBe('look')
     const atMimir = run(atLook, { type: 'next' })
     expect(atMimir.step).toBe('mimir')
-    expect(stepLabel('mimir', WITH).text).toBe('Step 3 of 3, mimir')
-    expect(progress('look', WITH)).toBeCloseTo(2 / 3)
+    expect(stepLabel('mimir', WITH).text).toBe('Step 4 of 4, mimir')
+    expect(progress('look', WITH)).toBeCloseTo(3 / 4)
     expect(run(atMimir, { type: 'skip' }).closed).toBe('finished')
     expect(run(atMimir, { type: 'back' }).step).toBe('look')
     expect(contractStep('mimir')).toBe('look')
@@ -43,9 +43,9 @@ describe('first run with the mimir step', () => {
   it('keeps two screens when mimir is not offered', () => {
     const s = run(initialFlow('printer', { id: 'slicerx' }), { type: 'no-printer' }, { type: 'next' })
     expect(s.closed).toBe('finished')
-    expect(normalizeStep('mimir')).toBe('printer')
+    expect(normalizeStep('mimir')).toBe('theme')
     expect(normalizeStep('mimir', WITH)).toBe('mimir')
-    expect(initialFlow('mimir', { id: 'slicerx' }).step).toBe('printer')
+    expect(initialFlow('mimir', { id: 'slicerx' }).step).toBe('theme')
   })
 
   it('offers sign-in only where the shell has it, and local only when the edition keeps it', () => {

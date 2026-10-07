@@ -3,7 +3,7 @@
 // The edition config (name, theme, printer families, AI defaults, legal links)
 // the app was built with. Without one the neutral defaults apply.
 import { fontStack, neutralEdition, type EditionConfig, type PrinterFamily } from '@slicerx/edition-config'
-import { createTheme, nocturne, nocturneLight, type Theme, type ThemeColors, type ThemeInput } from '@slicerx/ui'
+import { createTheme, subban, subbanLight, type Theme, type ThemeColors, type ThemeInput } from '@slicerx/ui'
 import { createContext, useContext } from 'react'
 
 export const NEUTRAL: EditionConfig = neutralEdition()
@@ -47,9 +47,9 @@ export function branded(text: string): string {
 
 /** The edition's theme on top of the user's light or dark choice. */
 export function editionTheme(edition: EditionConfig, scheme: 'dark' | 'light', chosen?: Theme): Theme {
-  const base = chosen ?? (scheme === 'light' ? nocturneLight : nocturne)
+  const base = chosen ?? (scheme === 'light' ? subbanLight : subban)
   const t = edition.brand.theme
-  if (t === 'nocturne') return base
+  if (typeof t === 'string') return base
   // Drop unset keys: the theme types do not accept explicit undefined.
   const defined = <T extends object>(o: T | undefined) => (o ? (Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined)) as { [K in keyof T]-?: Exclude<T[K], undefined> }) : undefined)
   const input: ThemeInput = { name: edition.id }
@@ -65,11 +65,11 @@ export function editionTheme(edition: EditionConfig, scheme: 'dark' | 'light', c
 
 const HEX = /^#[0-9a-fA-F]{6}$/
 
-/** The edition's accent as #rrggbb: its purple token, else Nocturne's. New objects take it, so an edition never shows the SlicerX purple. */
+/** The edition's accent as #rrggbb: its purple token, else Subban's. New objects take it, so an edition never shows the SlicerX purple. */
 export function brandAccent(edition: EditionConfig = current): string {
   const t = edition.brand.theme
-  const purple = t === 'nocturne' ? undefined : t.tokens.colors?.['purple']
-  return purple && HEX.test(purple) ? purple : nocturne.colors.purple
+  const purple = typeof t === 'string' ? undefined : t.tokens.colors?.['purple']
+  return purple && HEX.test(purple) ? purple : subban.colors.purple
 }
 
 /** Colors for new objects and spare filament slots, the accent first. */

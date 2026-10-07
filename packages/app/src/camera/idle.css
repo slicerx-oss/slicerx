@@ -10,7 +10,7 @@
 .cam-idle[data-connecting] .cam-idle-line { color: var(--muted); }
 .cam-idle[data-size=lg] .cam-idle-line { font-size: var(--fs-body); }
 .cam-idle-detail { max-width: 44ch; font-size: var(--fs-sm); color: var(--muted); }
-.cam-idle .cam-idle-names { margin-top: -4px; font: 600 10px/1 var(--f-body); letter-spacing: 0.32em; text-transform: uppercase; color: var(--dim); }
+.cam-idle .cam-idle-names { margin-top: -4px; font: var(--fw-semibold) calc(10px * var(--text-scale))/1 var(--f-body); letter-spacing: 0.32em; text-transform: uppercase; color: var(--dim); }
 .cam-ravens { display: inline-flex; gap: 2px; }
 /* dimmed by the stroke, not opacity, so the near-black body stays solid over the ground */
 .cam-raven { flex: none; color: color-mix(in srgb, var(--dim) 80%, transparent); }
