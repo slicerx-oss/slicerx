@@ -6,7 +6,7 @@ import { useState } from 'react'
 import { Button, Chip, Dialog } from '@slicerx/ui'
 import { appName, closeSettings, setWorkspace, toast, useEdition, useHost } from '@slicerx/app'
 import { activeTokens, deletionBanner, exportFileName, graceLabel, rateLabel, revokedLabel, tokenState } from './account-logic'
-import { useSession, useStore } from './queries'
+import { useAccountLabel, useSession, useStore } from './queries'
 import { openExternal, privacyUrl } from './routes'
 import { openEditor, openUpload } from './sheets'
 import { SignInNotice } from './signin'
@@ -33,6 +33,7 @@ function SignedIn() {
   const edition = useEdition()
   const client = useQueryClient()
   const { session } = useSession()
+  const label = useAccountLabel('Signed in')
   const [confirm, setConfirm] = useState(false)
   const [busy, setBusy] = useState<string | null>(null)
   const pending = useQuery({ queryKey: ['account-deletion'], queryFn: async () => (store ? store.pendingAccountDeletion() : null) })
@@ -103,7 +104,7 @@ function SignedIn() {
         <h3 id="acct-h">Account</h3>
         <div className="acct-who">
           <span className="min0">
-            <b>{session.displayName ?? session.handle ?? 'Signed in'}</b>
+            <b>{label ?? 'Signed in'}</b>
             <small className="sx-muted">{session.email ?? (store.mode === 'offline' ? 'Demo account, nothing is stored on a server' : '')}</small>
           </span>
           <Button size="sm" onClick={() => void signOut()}>
