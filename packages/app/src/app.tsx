@@ -407,9 +407,10 @@ function useFileDrops(): void {
     window.addEventListener('dragenter', enter)
     window.addEventListener('dragleave', leave)
     window.addEventListener('drop', drop)
-    const off = host.files.onOpenRequest((refs) => {
+    // A drop adds to the plate; a file the system hands over starts a new project.
+    const off = host.files.onOpenRequest((refs, how) => {
       set({ workspace: 'prepare' })
-      void addFileRefs(host, refs)
+      void addFileRefs(host, refs, { fresh: how !== 'drop' })
     })
     return () => {
       window.removeEventListener('dragenter', enter)

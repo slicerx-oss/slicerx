@@ -32,8 +32,11 @@ export interface FileHost {
   /** Writes over a project file opened or saved before, without asking. Desktop only. */
   saveTo?(ref: FileRef, data: ArrayBuffer | Blob): Promise<FileRef | null>
   recent(): Promise<FileRef[]>
-  /** Files dropped on the window or opened by file association. */
-  onOpenRequest(cb: (refs: FileRef[]) => void): () => void
+  /**
+   * Files dropped on the window (`drop`: they go onto the plate) or handed over by the system: a file association,
+   * a path on launch, an "Open in SlicerX" link (`open`: they start a new project).
+   */
+  onOpenRequest(cb: (refs: FileRef[], how: 'drop' | 'open') => void): () => void
 }
 
 /**

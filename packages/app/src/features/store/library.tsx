@@ -349,7 +349,7 @@ function useOpenInApp(item: ListingCard, onFetched?: (version: string, name: str
       onFetched?.(r.version, r.name)
       setWorkspace('prepare')
       // Errors opening the file are toasted there.
-      await openModelBytes(host, r.name, r.bytes, { modelId: item.listing.id, creatorId: item.creator.id })
+      await openModelBytes(host, r.name, r.bytes, { modelId: item.listing.id, creatorId: item.creator.id }, { fresh: true })
     } catch (e) {
       toast(e instanceof Error && e.message ? e.message : `Could not open ${item.listing.title}.`, 'error')
     } finally {

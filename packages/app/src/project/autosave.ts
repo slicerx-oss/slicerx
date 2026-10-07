@@ -182,6 +182,6 @@ export async function openSnapshot(host: Host, snap: Snapshot): Promise<void> {
   if (!opened) return
   if (!(await confirmDiscard('open another project'))) return
   const { openModelBytes } = await import('../state/actions')
-  await openModelBytes(host, opened.name, opened.data)
+  await openModelBytes(host, opened.name, opened.data, undefined, { fresh: true })
   set({ projectsDialog: null })
 }

@@ -24,6 +24,12 @@ pub struct FitOptions {
     pub min_vertical_gap_mm: Option<f64>,
     #[serde(default)]
     pub layer_height_mm: Option<f64>,
+    /// leave out parts that touch: one object's touching parts print as one piece, and they would crowd out real gaps
+    #[serde(default)]
+    pub skip_fused: bool,
+    /// also report separate pieces closer than this that do not touch, the closest pair per two pieces
+    #[serde(default)]
+    pub apart_mm: Option<f64>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -32,6 +38,8 @@ pub enum GapKind {
     Horizontal,
     Vertical,
     Fused,
+    /// two pieces that do not touch, so they print loose
+    Apart,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -51,6 +59,8 @@ pub struct FitPart {
     pub bounds: Aabb,
     pub volume_mm3: f64,
     pub triangles: usize,
+    /// the input mesh the body came from
+    pub item: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -60,11 +70,20 @@ pub struct FitReport {
     pub gaps: Vec<Gap>,
     pub limit_mm: f64,
     pub vertical_limit_mm: f64,
+    /// bodies that touch, joined: how many separate pieces print
+    pub pieces: usize,
     pub warnings: Vec<String>,
 }
 
 pub fn fit_check(mesh: &TriMesh, opts: &FitOptions) -> Result<FitReport> {
-    mesh.validate("fit")?;
+    fit_check_items(std::slice::from_ref(mesh), opts)
+}
+
+/// bodies are found per input mesh and keep its index, so a gap names the meshes it lies between
+pub fn fit_check_items(items: &[TriMesh], opts: &FitOptions) -> Result<FitReport> {
+    for m in items {
+        m.validate("fit")?;
+    }
     let g = opts.min_gap_mm;
     if !(g.is_finite() && g > 0.0 && g <= 5.0) {
         return Err(Error::invalid("minGapMm", "between 0 and 5 mm"));
@@ -77,18 +96,22 @@ pub fn fit_check(mesh: &TriMesh, opts: &FitOptions) -> Result<FitReport> {
     if !(gv.is_finite() && gv > 0.0 && gv <= 5.0) {
         return Err(Error::invalid("minVerticalGapMm", "between 0 and 5 mm"));
     }
-    let shells = bodies(mesh);
-    let boxes: Vec<Aabb> = shells.iter().filter_map(TriMesh::bounds).collect();
+    let apart = opts.apart_mm.filter(|a| a.is_finite() && *a > 0.0 && *a <= 20.0);
+    let (shells, boxes, from) = item_bodies(items);
     let parts: Vec<FitPart> = shells
         .iter()
         .zip(&boxes)
-        .map(|(s, b)| FitPart {
+        .zip(&from)
+        .map(|((s, b), &item)| FitPart {
             bounds: *b,
             volume_mm3: s.volume(),
             triangles: s.triangles.len(),
+            item,
         })
         .collect();
-    let reach = g.max(gv);
+    let reach = g.max(gv).max(apart.unwrap_or(0.0));
+    let mut piece: Vec<usize> = (0..shells.len()).collect();
+    let mut loose: Vec<Gap> = Vec::new();
     let mut gaps = Vec::new();
     for (i, (a, ba)) in shells.iter().zip(&boxes).enumerate() {
         for (j, (b, bb)) in shells.iter().zip(&boxes).enumerate().skip(i + 1) {
@@ -97,7 +120,28 @@ pub fn fit_check(mesh: &TriMesh, opts: &FitOptions) -> Result<FitReport> {
             }
             if let Some(gap) = pair_gap(a, b, ba, bb, reach) {
                 let kind = classify(&gap);
+                if kind == GapKind::Fused {
+                    let (ri, rj) = (root(&mut piece, i), root(&mut piece, j));
+                    piece[rj] = ri;
+                    if opts.skip_fused {
+                        continue;
+                    }
+                }
                 let limit = if kind == GapKind::Vertical { gv } else { g };
+                if let Some(a) = apart
+                    && kind != GapKind::Fused
+                    && gap.d >= limit
+                    && gap.d < a
+                {
+                    loose.push(Gap {
+                        parts: [i, j],
+                        gap_mm: gap.d,
+                        limit_mm: a,
+                        kind: GapKind::Apart,
+                        from: gap.p,
+                        to: gap.q,
+                    });
+                }
                 if kind == GapKind::Fused || gap.d < limit {
                     gaps.push(Gap {
                         parts: [i, j],
@@ -111,6 +155,16 @@ pub fn fit_check(mesh: &TriMesh, opts: &FitOptions) -> Result<FitReport> {
             }
         }
     }
+    // pieces joined through other bodies are one piece; of the rest, the closest pair per two pieces
+    loose.sort_by(|x, y| x.gap_mm.total_cmp(&y.gap_mm));
+    let mut told = std::collections::HashSet::new();
+    for l in loose {
+        let (a, b) = (root(&mut piece, l.parts[0]), root(&mut piece, l.parts[1]));
+        if a != b && told.insert((a.min(b), a.max(b))) {
+            gaps.push(l);
+        }
+    }
+    let pieces = (0..piece.len()).filter(|&i| root(&mut piece, i) == i).count();
     gaps.sort_by(|x, y| x.gap_mm.total_cmp(&y.gap_mm));
     gaps.truncate(MAX_GAPS);
     let warnings = gaps.iter().map(sentence).collect();
@@ -119,8 +173,32 @@ pub fn fit_check(mesh: &TriMesh, opts: &FitOptions) -> Result<FitReport> {
         gaps,
         limit_mm: g,
         vertical_limit_mm: gv,
+        pieces,
         warnings,
     })
+}
+
+/// the bodies of each mesh with their bounds and the mesh's index
+fn item_bodies(items: &[TriMesh]) -> (Vec<TriMesh>, Vec<Aabb>, Vec<usize>) {
+    let (mut shells, mut boxes, mut from) = (Vec::new(), Vec::new(), Vec::new());
+    for (k, m) in items.iter().enumerate() {
+        for s in bodies(m) {
+            if let Some(b) = s.bounds() {
+                shells.push(s);
+                boxes.push(b);
+                from.push(k);
+            }
+        }
+    }
+    (shells, boxes, from)
+}
+
+fn root(p: &mut [usize], mut i: usize) -> usize {
+    while p[i] != i {
+        p[i] = p[p[i]];
+        i = p[i];
+    }
+    i
 }
 
 fn bodies(mesh: &TriMesh) -> Vec<TriMesh> {
@@ -165,6 +243,10 @@ fn sentence(g: &Gap) -> String {
         GapKind::Vertical => format!(
             "Parts {a} and {b} are {:.2} mm apart vertically, less than {:.2} mm, so the gap closes when sliced.",
             g.gap_mm, g.limit_mm
+        ),
+        GapKind::Apart => format!(
+            "Parts {a} and {b} are {:.2} mm apart and do not touch, so they print as separate pieces.",
+            g.gap_mm
         ),
     }
 }
@@ -431,6 +513,8 @@ mod tests {
             min_gap_mm: g,
             min_vertical_gap_mm: None,
             layer_height_mm: Some(0.2),
+            skip_fused: false,
+            apart_mm: None,
         }
     }
 
@@ -471,9 +555,59 @@ mod tests {
         let r = fit_check(&n, &opts(0.2)).unwrap();
         assert_eq!(r.gaps.len(), 1);
         assert_eq!(r.gaps[0].kind, GapKind::Fused);
+        let skip = FitOptions {
+            skip_fused: true,
+            ..opts(0.2)
+        };
+        assert!(fit_check(&n, &skip).unwrap().gaps.is_empty());
         let mut far = build::box_mesh([0.0; 3], [10.0, 10.0, 10.0]);
         far.append(&build::box_mesh([30.0, 0.0, 0.0], [40.0, 10.0, 10.0]));
         assert!(fit_check(&far, &opts(0.2)).unwrap().gaps.is_empty());
+    }
+
+    #[test]
+    fn bodies_keep_the_mesh_they_came_from() {
+        // a small body first in one mesh, a large one in the next: indices follow the input, not body order
+        let a = build::box_mesh([0.0; 3], [10.0, 10.0, 10.0]);
+        let mut b = build::box_mesh([10.0, 0.0, 0.0], [20.0, 10.0, 10.0]);
+        b.append(&build::box_mesh([40.0, 0.0, 0.0], [41.0, 1.0, 1.0]));
+        let r = fit_check_items(&[a, b], &opts(0.2)).unwrap();
+        assert_eq!(r.parts.iter().map(|p| p.item).collect::<Vec<_>>(), vec![0, 1, 1]);
+        assert_eq!(r.gaps.len(), 1);
+        let [i, j] = r.gaps[0].parts;
+        assert_eq!((r.parts[i].item, r.parts[j].item), (0, 1));
+        assert_eq!(r.pieces, 2);
+    }
+
+    #[test]
+    fn pieces_that_do_not_touch_are_reported_apart() {
+        // a ring 0.76 mm off its foot, and a part joined to the foot through another
+        let mut m = build::box_mesh([0.0; 3], [10.0, 10.0, 2.0]);
+        m.append(&build::box_mesh([10.76, 0.0, 0.0], [16.0, 10.0, 8.0]));
+        m.append(&build::box_mesh([0.0, 0.0, 2.0], [10.0, 10.0, 4.0]));
+        let far = FitOptions {
+            apart_mm: Some(1.0),
+            skip_fused: true,
+            ..opts(0.2)
+        };
+        let r = fit_check(&m, &far).unwrap();
+        assert_eq!(r.pieces, 2);
+        assert_eq!(r.gaps.len(), 1, "{r:?}");
+        assert_eq!(r.gaps[0].kind, GapKind::Apart);
+        assert!((r.gaps[0].gap_mm - 0.76).abs() < 1e-9);
+        assert!(r.warnings[0].contains("print as separate pieces"));
+        assert!(
+            fit_check(&m, &opts(0.2))
+                .unwrap()
+                .gaps
+                .iter()
+                .all(|g| g.kind != GapKind::Apart)
+        );
+        let close = FitOptions {
+            apart_mm: Some(0.5),
+            ..far
+        };
+        assert!(fit_check(&m, &close).unwrap().gaps.is_empty());
     }
 
     #[test]

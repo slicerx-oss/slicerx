@@ -577,6 +577,7 @@ class ViewportImpl implements Viewport {
     }
     this.stage.updateZoneLabels(this.camera, this.pipeline.size.height / this.pipeline.size.pixelRatio)
     this.painter.sync()
+    this.gaps.follow((id) => this.objects.get(id)?.group.matrix)
     this.updateGizmo()
     // Only while their tool is on: the rings follow the selection, the cut gizmo its plane.
     if (this.tool === 'rotate' || this.rotRings.visible) this.updateRings()
