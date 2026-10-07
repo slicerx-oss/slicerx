@@ -6,20 +6,38 @@
 // after it. Each step can move earlier or later, be suppressed or deleted; a broken step says why.
 // Loads with the CAD tools, only for an object that has a history.
 import { Button, Icon } from '@slicerx/ui'
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useHost } from '../../host'
-import { toast, useApp, type PlateEntry } from '../../state/store'
+import { toast, useApp } from '../../state/store'
 import { num } from '../panel-kit'
 import { currentValues } from '../value-table'
 import { bindFor } from '../values'
-import { mainNumber, stepName, withNumber, type Step } from './model'
+import { mainNumber, withNumber } from './model'
 import { beginEdit, cancelEdit, deleteStep, moveStep, setParams, setSuppressed, toolFor, viewStep } from './ops'
+import { StepRow } from './step-row'
 import '../cad.css'
 
 const text = (e: unknown) => (e instanceof Error ? e.message : String(e))
 const quiet = (e: unknown) => (e as { name?: string }).name === 'AbortError'
 
 export function HistoryPanel({ objectId }: { objectId: string }) {
+  const entry = useApp((s) => (s.historyEdit?.objectId === objectId ? s.historyEdit.original : s.plate.find((p) => p.id === objectId)))
+  const h = entry?.history
+  if (!entry || !h || (!h.steps.length && !h.ended)) return null
+  return (
+    <section className="cad-history" aria-label={`History of ${entry.name}`}>
+      <header className="cad-history-h">
+        <Icon name="history" size={14} />
+        <span>History</span>
+        <span className="sx-muted">{h.steps.length === 1 ? '1 step' : `${h.steps.length} steps`}</span>
+      </header>
+      <HistorySteps objectId={objectId} />
+    </section>
+  )
+}
+
+/** An object's steps, each with view, edit, move, suppress and delete. The Design tree shows them with icons and sketch rows. */
+export function HistorySteps({ objectId, tree }: { objectId: string; tree?: boolean }) {
   const host = useHost()
   const entry = useApp((s) => (s.historyEdit?.objectId === objectId ? s.historyEdit.original : s.plate.find((p) => p.id === objectId)))
   const editingIndex = useApp((s) => (s.historyEdit?.objectId === objectId && !s.historyEdit.view ? s.historyEdit.index : null))
@@ -41,18 +59,14 @@ export function HistoryPanel({ objectId }: { objectId: string }) {
   }
   const firstBroken = h.steps.findIndex((s) => s.broken !== undefined && !s.suppressed)
   return (
-    <section className="cad-history" aria-label={`History of ${entry.name}`}>
-      <header className="cad-history-h">
-        <Icon name="history" size={14} />
-        <span>History</span>
-        <span className="sx-muted">{h.steps.length === 1 ? '1 step' : `${h.steps.length} steps`}</span>
-      </header>
+    <>
       {h.ended ? <p className="cad-hint"><Icon name="info" size={14} /> {h.ended}</p> : null}
       <ol className="cad-steps">
         {h.steps.map((s, i) => (
           <StepRow
             key={s.id}
             step={s}
+            tree={tree}
             index={i}
             entry={entry}
             skipped={firstBroken >= 0 && i > firstBroken && !s.suppressed}
@@ -92,86 +106,6 @@ export function HistoryPanel({ objectId }: { objectId: string }) {
           <Button size="sm" variant="ghost" onClick={cancelEdit}>Back to the latest</Button>
         </div>
       ) : null}
-    </section>
-  )
-}
-
-function StepRow(props: {
-  step: Step
-  index: number
-  entry: PlateEntry
-  skipped: boolean
-  busy: boolean
-  editing: boolean
-  open: boolean
-  last: boolean
-  viewing: boolean
-  later: boolean
-  onView: () => void
-  onMove: (to: number) => void
-  onOpen: () => void
-  onEdit: () => void
-  onSuppress: () => void
-  onDelete: () => void
-  onNumber: (text: string) => string | null
-}) {
-  const { step: s, index, skipped, busy, editing } = props
-  const name = stepName(s)
-  const number = mainNumber(s.params)
-  const tool = toolFor(s.params)
-  const state = s.suppressed ? 'suppressed' : s.broken !== undefined ? 'broken' : skipped ? 'skipped' : 'done'
-  return (
-    <li className="cad-step" data-state={state} data-editing={editing || props.viewing || undefined} data-later={props.later || undefined} aria-busy={busy || undefined}>
-      <button
-        type="button"
-        className="cad-step-n sx-mono"
-        data-tip="history.view"
-        aria-label={props.viewing ? 'Back to the latest' : props.last ? `${name}: the part as it is now` : `Show the part after ${name}`}
-        aria-pressed={props.viewing}
-        disabled={busy}
-        onClick={props.onView}
-      >
-        {index + 1}
-      </button>
-      <button
-        type="button"
-        className="cad-step-name"
-        data-tip="history.edit"
-        aria-label={tool ? `Edit ${name}` : number ? `Change ${name}` : name}
-        disabled={!tool && !number}
-        onClick={tool ? props.onEdit : props.onOpen}
-      >
-        {name}
-      </button>
-      <Button size="sm" variant="ghost" icon="arrow-up" data-tip="history.earlier" aria-label={`Move ${name} earlier`} disabled={busy || index === 0} onClick={() => props.onMove(index - 1)} />
-      <Button size="sm" variant="ghost" icon="arrow-down" data-tip="history.later" aria-label={`Move ${name} later`} disabled={busy || props.last} onClick={() => props.onMove(index + 1)} />
-      <Button size="sm" variant="ghost" icon={s.suppressed ? 'hide' : 'show'} data-tip="history.suppress" aria-label={s.suppressed ? `Turn ${name} back on` : `Suppress ${name}`} pressed={Boolean(s.suppressed)} disabled={busy} onClick={props.onSuppress} />
-      <Button size="sm" variant="ghost" icon="delete" data-tip="history.delete" aria-label={`Delete ${name}`} disabled={busy} onClick={props.onDelete} />
-      {state === 'broken' ? <p className="cad-step-why"><Icon name="alert" size={13} /> {s.broken}</p> : state === 'skipped' ? <p className="cad-step-why sx-muted">Skipped: a step before it is broken.</p> : null}
-      {state === 'done' && s.note ? <p className="cad-step-why sx-muted" data-testid="step-note"><Icon name="info" size={13} /> {s.note}</p> : null}
-      {s.bind !== undefined ? <p className="cad-step-why sx-muted" data-testid="step-bind">Follows {s.bind}</p> : null}
-      {props.open && number ? <NumberEdit label={number.label} unit={number.unit} value={s.bind ?? String(number.value)} onApply={props.onNumber} /> : null}
-    </li>
-  )
-}
-
-/** One number, or a sum of named values the step then follows, applied on Enter or when the field is left. */
-function NumberEdit({ label, unit, value, onApply }: { label: string; unit: string; value: string; onApply: (text: string) => string | null }) {
-  const [text, setText] = useState(value)
-  const [note, setNote] = useState<string | null>(null)
-  useEffect(() => setText(value), [value])
-  const apply = () => {
-    if (text.trim() === value) return
-    setNote(onApply(text))
-  }
-  return (
-    <div className="cad-step-edit">
-      <label>
-        <span className="sx-small sx-muted">{label}</span>
-        <input className="sx-input" data-mono data-size="sm" value={text} aria-label={`${label} in ${unit}`} onChange={(e) => setText(e.target.value)} onBlur={apply} onKeyDown={(e) => e.key === 'Enter' && apply()} />
-        <span className="sx-small sx-muted">{unit}</span>
-      </label>
-      {note ? <p className="cad-note"><Icon name="alert" size={13} /> {note}</p> : null}
-    </div>
+    </>
   )
 }
