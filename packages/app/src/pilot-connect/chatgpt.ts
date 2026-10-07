@@ -41,16 +41,22 @@ export interface ChatGptHost {
 
 type Factory = (host: Host) => ChatGptHost
 let factory: Factory | null = null
+// one ChatGptHost per host, so a component that depends on it does not ask the keychain again on every render
+let made = new WeakMap<Host, ChatGptHost>()
 const listeners = new Set<() => void>()
 
 /** Called once by an app entry that can sign in (the desktop app). */
 export function registerChatGpt(f: Factory | null): void {
   factory = f
+  made = new WeakMap()
   for (const l of listeners) l()
 }
 
 export function chatGptFor(host: Host): ChatGptHost | null {
-  return factory ? factory(host) : null
+  if (!factory) return null
+  let gpt = made.get(host)
+  if (!gpt) made.set(host, (gpt = factory(host)))
+  return gpt
 }
 
 export function useChatGpt(host: Host): ChatGptHost | null {

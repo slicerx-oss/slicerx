@@ -98,12 +98,14 @@ pub trait SecretStore: KeySource {
 
 impl SecretStore for SystemKeySource {
     fn set(&self, service: &str, account: &str, value: &str) -> Result<()> {
+        crate::keys::forget_refusal(service, account);
         keyring::Entry::new(service, account)
             .and_then(|e| e.set_password(value))
             .map_err(|_| Error::Transport("could not write to the keychain".to_owned()))
     }
 
     fn delete(&self, service: &str, account: &str) -> Result<()> {
+        crate::keys::forget_refusal(service, account);
         match keyring::Entry::new(service, account).and_then(|e| e.delete_credential()) {
             Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
             Err(_) => Err(Error::Transport("could not remove the keychain item".to_owned())),
