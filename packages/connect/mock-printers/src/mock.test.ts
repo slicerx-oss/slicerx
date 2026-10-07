@@ -111,3 +111,38 @@ test('the Bambu fake reports Developer Mode in its fun flags', async () => {
   assert.equal(signed(fun(true)), false)
   assert.equal(fun(), undefined)
 })
+
+test('the Bambu camera sends a JPEG file in place of its picture when asked', async () => {
+  const { MOCK_ACCESS_CODE } = await import('./bambu.ts')
+  const { connect: tlsConnect } = await import('node:tls')
+  const { mkdtempSync, writeFileSync } = await import('node:fs')
+  const { tmpdir } = await import('node:os')
+  const { join } = await import('node:path')
+  const m = await startMocks({ only: ['bambu'] })
+  try {
+    const file = join(mkdtempSync(join(tmpdir(), 'mock-frame-')), 'frame.jpg')
+    const photo = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.from('a photo'), Buffer.from([0xff, 0xd9])])
+    writeFileSync(file, photo)
+    const set = await fetch(`http://127.0.0.1:${m.control}/bambu`, { method: 'POST', body: JSON.stringify({ cameraFrameFile: file }) })
+    assert.equal(set.status, 200)
+    const login = Buffer.alloc(80)
+    login.write('bblp', 16)
+    login.write(MOCK_ACCESS_CODE, 48)
+    const got = await new Promise<Buffer>((resolve, reject) => {
+      const sock = tlsConnect({ port: m.ports['bambu-camera']!, host: '127.0.0.1', rejectUnauthorized: false })
+      let buf = Buffer.alloc(0)
+      sock.on('error', reject)
+      sock.on('data', (d: Buffer) => {
+        buf = Buffer.concat([buf, d])
+        if (buf.length >= 16 && buf.length >= 16 + buf.readUInt32LE(0)) {
+          sock.destroy()
+          resolve(buf.subarray(16, 16 + buf.readUInt32LE(0)))
+        }
+      })
+      sock.write(login)
+    })
+    assert.deepEqual(got, photo)
+  } finally {
+    await m.stop()
+  }
+})

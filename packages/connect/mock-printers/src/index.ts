@@ -188,10 +188,10 @@ export async function startMocks(opts: StartOptions = {}): Promise<RunningMocks>
     // (`none`, `normal`, `abnormal`, `readonly`) is the SD card it reports, and `emmc: true` says it prints without one.
     // `developerMode: false` makes it a printer with Developer Mode off: status only, every command and upload refused
     // (null: no `fun` flags in its reports, as before). `cameraFrame: 'hand'` makes its JPEG camera show a hand reaching
-    // in (null: the placeholder again).
+    // in (null: the placeholder again); `cameraFrameFile` sends that JPEG file instead, a photo for a capture (null: off).
     if (req.path === '/bambu' && req.method === 'POST') {
       if (!bambuExtra) return { status: 404 }
-      const b = req.json() as { refuse?: string | null; model?: string; ams?: BambuExtra['ams']; external?: BambuExtra['external'] | null; tagged?: number[]; liveview?: boolean; inBandParameterSets?: boolean; cameraCode?: string | null; digestQop?: boolean; dropPlays?: number; dropWithinMs?: number; stallCamera?: boolean; printerType?: string; storage?: BambuExtra['storage']; emmc?: boolean; developerMode?: boolean | null; cameraFrame?: 'hand' | null }
+      const b = req.json() as { refuse?: string | null; model?: string; ams?: BambuExtra['ams']; external?: BambuExtra['external'] | null; tagged?: number[]; liveview?: boolean; inBandParameterSets?: boolean; cameraCode?: string | null; digestQop?: boolean; dropPlays?: number; dropWithinMs?: number; stallCamera?: boolean; printerType?: string; storage?: BambuExtra['storage']; emmc?: boolean; developerMode?: boolean | null; cameraFrame?: 'hand' | null; cameraFrameFile?: string | null }
       if (b.printerType !== undefined) bambuExtra.printerType = b.printerType
       if (b.storage !== undefined) bambuExtra.storage = b.storage
       if (b.emmc !== undefined) bambuExtra.emmc = b.emmc
@@ -199,6 +199,8 @@ export async function startMocks(opts: StartOptions = {}): Promise<RunningMocks>
       else if (b.developerMode !== undefined) bambuExtra.developerMode = b.developerMode
       if (b.cameraFrame === null) delete bambuExtra.cameraFrame
       else if (b.cameraFrame) bambuExtra.cameraFrame = b.cameraFrame
+      if (b.cameraFrameFile === null) delete bambuExtra.cameraFrameFile
+      else if (b.cameraFrameFile) bambuExtra.cameraFrameFile = b.cameraFrameFile
       if (b.liveview !== undefined) bambuExtra.liveview = b.liveview
       if (b.inBandParameterSets !== undefined) bambuExtra.inBandParameterSets = b.inBandParameterSets
       if (b.cameraCode) bambuExtra.cameraCode = b.cameraCode
