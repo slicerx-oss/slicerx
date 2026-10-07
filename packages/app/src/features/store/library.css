@@ -151,6 +151,10 @@
 .cs-art { display: grid; place-items: center; aspect-ratio: 4 / 3; width: 100%; overflow: hidden; border-radius: var(--r-sm); background: radial-gradient(80% 80% at 50% 40%, var(--ink-3), var(--ink-1)); }
 .cs-art img { width: 100%; height: 100%; object-fit: cover; }
 .cs-art > svg, .cs-art > div { width: 70%; height: 80%; }
+.drawing-art { display: block; width: 100%; height: 100%; }
+:is(.lib-thumb, .lib-hero-art, .cs-art, .drop-art) > svg.drawing-art { width: 100%; height: 100%; }
+.drawing-art-grid { fill: none; stroke: var(--line); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.drawing-art-box { fill: none; stroke: var(--muted); stroke-width: 1.5; stroke-dasharray: 6 4; stroke-linecap: round; vector-effect: non-scaling-stroke; }
 .cs-pinned { display: grid; grid-template-columns: 112px 1fr; gap: 12px; align-items: center; padding: 10px; border: 1px solid var(--line-soft); border-radius: var(--r-md); background: var(--ink-1); color: var(--fg); text-align: left; font: inherit; }
 button.cs-pinned { cursor: pointer; }
 button.cs-pinned:hover { border-color: var(--line); }

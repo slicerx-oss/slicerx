@@ -9,7 +9,8 @@ import type { Creator, Listing, ListingCard } from '@slicerx/contracts'
 import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Button, Chip, Icon, Menu, MenuAnchor, MenuItem, Seg } from '@slicerx/ui'
-import { LayerArt, LibrarySwitch, openModelBytes, openSettings, setWorkspace, toast, useEdition, useHost } from '@slicerx/app'
+import { LibrarySwitch, openModelBytes, openSettings, setWorkspace, toast, useEdition, useHost } from '@slicerx/app'
+import { DrawingArt } from './drawing-art'
 import { coverFor } from './art'
 import { CreatorEditorHost } from './creator-editor'
 import { count, CreatorAvatar, CreatorSheet, plural, printFacts, Sheet } from './creator-sheet'
@@ -390,7 +391,7 @@ function Featured({ item, weekly }: { item: ListingCard; weekly: boolean }) {
   return (
     <article className="lib-hero" aria-labelledby="lib-feat-h">
       <button type="button" className="lib-hero-art" onClick={() => openListing(listing.id)} aria-label={`${listing.title}, details`}>
-        {cover ? <img src={cover} alt="" /> : <LayerArt seed={listing.slug} layers={28} />}
+        {cover ? <img src={cover} alt="" /> : <DrawingArt seed={listing.slug} />}
       </button>
       <div className="lib-hero-copy">
         <span className="lib-kicker">{weekly ? 'Featured this week' : 'Featured'}</span>
@@ -441,7 +442,7 @@ function Card({ item, rank, stat = 'downloads' }: { item: ListingCard; rank?: nu
     <article className="lib-mini">
       <div className="lib-mini-art">
         <button type="button" className="lib-thumb" onClick={() => openListing(listing.id)} aria-label={`${listing.title}, details`}>
-          {cover ? <img src={cover} alt="" loading="lazy" /> : <LayerArt seed={listing.slug} muted />}
+          {cover ? <img src={cover} alt="" loading="lazy" /> : <DrawingArt seed={listing.slug} />}
         </button>
         <button type="button" className="lib-save" aria-pressed={save.saved} aria-label={save.saved ? `Remove ${listing.title} from Saved` : `Save ${listing.title}`} disabled={save.busy} onClick={() => void save.toggle()}>
           <Icon name="bookmark" size={15} />
@@ -599,7 +600,7 @@ export function Detail({ item }: { item: ListingCard }) {
 
   return (
     <article className="lib-detail cs-pad" aria-labelledby={`lib-${listing.id}`}>
-      <div className="drop-art">{cover ? <img src={cover} alt={listing.title} /> : <LayerArt seed={listing.slug} layers={20} muted />}</div>
+      <div className="drop-art">{cover ? <img src={cover} alt={listing.title} /> : <DrawingArt seed={listing.slug} />}</div>
       <h2 id={`lib-${listing.id}`} className="sx-display">
         {listing.title}
       </h2>
