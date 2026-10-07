@@ -124,3 +124,23 @@ export function myCreatorQuery(store: StoreClient | undefined, signedIn: boolean
 
 /** Every Library read, so a like, save, follow or page edit shows everywhere at once. */
 export const LIBRARY_KEY = ['library'] as const
+
+/**
+ * The name the account shows as: the creator page's display name once there is one, otherwise the email's local part
+ * as typed (the profile handle is derived from it and drops characters such as hyphens).
+ */
+export function accountLabel(session: Pick<Session, 'email' | 'displayName' | 'handle'>, creator: Pick<Creator, 'displayName'> | null | undefined, fallback = 'Account'): string {
+  const creatorName = creator?.displayName?.trim()
+  if (creatorName) return creatorName
+  const local = session.email?.split('@')[0]?.trim()
+  if (local) return local
+  return session.displayName ?? session.handle ?? fallback
+}
+
+/** The signed-in account's label for headers and settings (accountLabel), following the creator page. */
+export function useAccountLabel(fallback = 'Account'): string | null {
+  const store = useStore()
+  const { session } = useSession()
+  const mine = useQuery(myCreatorQuery(store, Boolean(session)))
+  return session ? accountLabel(session, mine.data, fallback) : null
+}

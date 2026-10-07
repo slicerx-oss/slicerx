@@ -18,7 +18,7 @@ import { count, CreatorAvatar, CreatorSheet, plural, printFacts, Sheet } from '.
 import { formatLabel } from './download'
 import { DownloadStatus, useModelFetch } from './download-status'
 import { CATEGORIES, DEFAULT_FILTER, setLibraryFilter, showsGrid, useLibraryFilter, type LibrarySort } from './filter'
-import { detailQuery, LIBRARY_KEY, listingsQuery, myCreatorQuery, newCreatorsQuery, rowQuery, useSession, useStore } from './queries'
+import { accountLabel, detailQuery, LIBRARY_KEY, listingsQuery, myCreatorQuery, newCreatorsQuery, rowQuery, useSession, useStore } from './queries'
 import { pickFeatured, ROWS, withoutFeatured, type RowId } from './rows'
 import { closeSheet, openCreator, openEditor, openListing, openReview, openUpload, resetSheets, useLibrarySheets } from './sheets'
 import { UploadHost } from './upload'
@@ -115,7 +115,7 @@ export function VaultBar() {
         {session ? (
           <MenuAnchor>
             <Button size="sm" icon="creator" aria-expanded={menu} onClick={() => setMenu(!menu)}>
-              {session.displayName ?? session.handle ?? 'Account'}
+              {accountLabel(session, mine.data)}
             </Button>
             <Menu open={menu} onClose={() => setMenu(false)} label="Account" align="end">
               <MenuItem icon="cloud-upload" onClick={close(() => openUpload('list'))}>
