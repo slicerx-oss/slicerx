@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// First-run setup: Printer, then "Which slicer do you use now?", then an optional mimir screen (docs/first-run.md).
+// First-run setup: the theme, the printer, "Which slicer do you use now?", what the plate tab opens in, then an optional mimir screen (docs/first-run.md).
 // Loaded on demand; the shell mounts it while `setup` is set in the store.
 import type { LookAndFeelChoice } from '@slicerx/contracts'
 import { Button, Dialog } from '@slicerx/ui'
@@ -10,9 +10,11 @@ import { useHost } from '../host'
 import { useMediaQuery } from '../lib/media'
 import { get, set, useApp, type AppState } from '../state/store'
 import { Footer } from './frame'
-import { themeForPreset, useLookChoice } from './look'
-import { BASE_STEPS, contractStep, initialFlow, normalizeStep, outcome, progress, reduceFlow, stepLabel, type FlowState, type SetupStep } from './model'
+import { useLookChoice } from './look'
+import { contractStep, initialFlow, normalizeStep, outcome, progress, reduceFlow, setupSteps, stepLabel, type FlowState, type SetupStep } from './model'
 import { MimirStep, type MimirChoice } from './mimir-step'
+import { KnownPrinter } from './known-printer'
+import { ThemeStep } from './theme-step'
 import { bedOf } from './printer-form'
 import { withoutDirtying } from '../project/unsaved'
 import { PrinterStep, usePrinterController } from './printer-step'
@@ -27,6 +29,7 @@ const SlicerStep = lazy(() => import('./slicer-step').then((m) => ({ default: m.
 export function FirstRun() {
   const host = useHost()
   const opened = useApp((s) => s.setup?.step)
+  const since = useApp((s) => s.setup?.since)
   const storedLook = useApp((s) => s.lookAndFeel)
   const choice = useLookChoice()
   const phone = useMediaQuery('(max-width: 720px)')
@@ -34,12 +37,13 @@ export function FirstRun() {
   const ctl = usePrinterController(setupHost)
   const edition = useEdition()
   // The mimir screen is offered when the edition has mimir and it is not connected yet.
-  const [steps] = useState<readonly SetupStep[]>(() => (edition.features.pilot && get().pilot?.mode !== 'on' && get().pilot?.mode !== 'off' ? [...BASE_STEPS, 'mimir'] : BASE_STEPS))
+  // After alpha, a changed onboarding shows only the steps added since the person last ran it (`since`).
+  const [steps] = useState<readonly SetupStep[]>(() => setupSteps({ mimir: edition.features.pilot && get().pilot?.mode !== 'on' && get().pilot?.mode !== 'off', ...(since !== undefined ? { since } : {}) }))
+  // Someone who already has a printer keeps it with one click: setup run again (or from Settings) shows it instead of the scan. Adding a printer from Settings always scans.
+  const [keepPrinter, setKeepPrinter] = useState(() => opened !== 'printer' && Boolean(get().firstRun) && get().printerId !== null)
   const [flow, dispatch] = useReducer(reduceFlow, null, () => initialFlow(normalizeStep(opened, steps), choice, null, steps))
   const [mimir, setMimir] = useState<MimirChoice>('skip')
-  const atOpen = useRef({ look: storedLook, scheme: get().scheme, follow: get().themeFollowsSystem })
-  const themeAtLook = useRef<{ scheme: 'dark' | 'light'; follow: boolean } | null>(null)
-  const themeTouched = useRef(false)
+  const atOpen = useRef({ look: storedLook })
   const [announce, setAnnounce] = useState('')
   const rootRef = useRef<HTMLDivElement>(null)
 
@@ -68,17 +72,13 @@ export function FirstRun() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [flow.look])
 
-  // Remember the theme when the slicer screen opens, for Back. Keep progress so setup can resume from Settings.
+  // Keep progress so setup can resume from Settings.
   useEffect(() => {
-    if (flow.step === 'look') {
-      themeAtLook.current = { scheme: get().scheme, follow: get().themeFollowsSystem }
-      themeTouched.current = false
-    }
     setAnnounce(stepLabel(flow.step, flow.steps).text)
     rootRef.current?.querySelector<HTMLElement>('.fr-body')?.scrollTo({ top: 0 })
     if (!flow.closed) {
       const prior = get().firstRun
-      set({ firstRun: { completedAt: prior?.completedAt ?? null, step: contractStep(flow.step), look: prior?.look ?? flow.look, printerId: prior?.printerId ?? null } })
+      set({ firstRun: { completedAt: prior?.completedAt ?? null, step: contractStep(flow.step), look: prior?.look ?? flow.look, printerId: prior?.printerId ?? null, ...(prior?.version !== undefined ? { version: prior.version } : {}) } })
     }
     // flow.look is read for a first record only.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -91,7 +91,8 @@ export function FirstRun() {
     const o = outcome(flow, new Date().toISOString(), prior)
     const patch: Partial<AppState> = { firstRun: o.firstRun, setup: null }
     if (o.look) Object.assign(patch, { lookAndFeel: o.look })
-    else Object.assign(patch, { lookAndFeel: atOpen.current.look, scheme: atOpen.current.scheme, themeFollowsSystem: atOpen.current.follow })
+    // The theme stays as picked: it applied live and is the person's choice either way.
+    else Object.assign(patch, { lookAndFeel: atOpen.current.look })
     if (o.printerId) Object.assign(patch, { printerId: o.printerId })
     if (flow.closed === 'finished') {
       if (flow.printer) {
@@ -104,21 +105,9 @@ export function FirstRun() {
     withoutDirtying(() => set(patch))
   }, [flow, ctl.form])
 
-  const pickLook = useCallback(
-    (c: LookAndFeelChoice) => {
-      dispatch({ type: 'pick-look', look: c })
-      if (!themeTouched.current && c.id !== flow.look.id) {
-        const t = themeForPreset(c.id)
-        set({ scheme: t.scheme, themeFollowsSystem: t.follow })
-      }
-    },
-    [flow.look.id],
-  )
+  const pickLook = useCallback((c: LookAndFeelChoice) => dispatch({ type: 'pick-look', look: c }), [])
 
-  const back = () => {
-    if (flow.step === 'look' && themeAtLook.current) set({ scheme: themeAtLook.current.scheme, themeFollowsSystem: themeAtLook.current.follow })
-    dispatch({ type: 'back' })
-  }
+  const back = () => dispatch({ type: 'back' })
 
   // Escape asks before leaving (and answers Stay while that question is open).
   const leaving = useRef(false)
@@ -166,7 +155,29 @@ export function FirstRun() {
       </p>
       <div className="fr-stage">
         <main className="fr-main">
-          {flow.step === 'printer' ? (
+          {flow.step === 'theme' ? (
+            <>
+              <div className="fr-body">
+                <ThemeStep phone={phone} />
+              </div>
+              <Footer
+                back={flow.trail.length ? { label: 'Back', onClick: back } : null}
+                primary={last ? { label: 'Open the plate', onClick: () => dispatch({ type: 'finish' }), icon: 'prepare' } : { label: 'Next', onClick: () => dispatch({ type: 'next' }), icon: 'arrow-right' }}
+              />
+            </>
+          ) : null}
+          {flow.step === 'printer' && keepPrinter ? (
+            <>
+              <div className="fr-body">
+                <KnownPrinter onAddAnother={() => setKeepPrinter(false)} />
+              </div>
+              <Footer
+                back={flow.trail.length ? { label: 'Back', onClick: back } : null}
+                primary={last ? { label: 'Open the plate', onClick: () => dispatch({ type: 'finish' }), icon: 'prepare' } : { label: 'Next', onClick: () => dispatch({ type: 'next' }), icon: 'arrow-right' }}
+              />
+            </>
+          ) : null}
+          {flow.step === 'printer' && !keepPrinter ? (
             <PrinterStep
               ctl={ctl}
               onBack={flow.trail.length ? back : null}
@@ -184,7 +195,7 @@ export function FirstRun() {
             <>
               <div className="fr-body">
                 <Suspense fallback={<div className="fr-wait" aria-busy="true" />}>
-                  <SlicerStep choice={flow.look} onPick={pickLook} onTheme={() => (themeTouched.current = true)} phone={phone} />
+                  <SlicerStep choice={flow.look} onPick={pickLook} phone={phone} />
                 </Suspense>
               </div>
               <Footer

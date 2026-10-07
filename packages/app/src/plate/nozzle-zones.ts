@@ -11,7 +11,7 @@ import type { Bed } from '@slicerx/contracts'
 /** One polygon per extruder in bed coordinates (mm). */
 export type ExtruderArea = [number, number][]
 
-/** Tints per side, from the Nocturne palette. */
+/** Tints per side, from the Subban palette. */
 export const ZONE_COLORS = { first: '#8be9fd', second: '#ffb86c' } as const
 
 export interface ZoneInfo extends NozzleZone {
