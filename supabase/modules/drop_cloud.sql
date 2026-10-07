@@ -6,6 +6,8 @@
 -- removed through the Storage API first; the buckets are dropped only when
 -- empty.
 drop policy if exists cloud_files_read_own on storage.objects;
+-- Newer storage versions refuse SQL deletes unless asked; the buckets go only when empty.
+set local storage.allow_delete_query = 'true';
 delete from storage.buckets b where b.id in ('cloud-inputs', 'cloud-results') and not exists (
   select 1 from storage.objects o where o.bucket_id = b.id
 );
