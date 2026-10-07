@@ -334,6 +334,8 @@ export interface CollisionFix {
   objectId?: string
   /** by_layer: the most extra travel moves on one layer. */
   moves?: number
+  /** Reorder: the close calls the new order still has (inside the profile's radius; the head itself clears them). */
+  closeCalls?: number
 }
 
 export interface SliceResult {

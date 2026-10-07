@@ -7,7 +7,8 @@ import { flushSync } from 'react-dom'
 import { createRoot } from 'react-dom/client'
 import { describe, expect, it, vi } from 'vitest'
 import { SXPV_HEADER_BYTES, SXPV_MAGIC, SXPV_SEGMENT_BYTES, SXPV_VERSION, readPreview, type Collision, type CollisionFix, type Host, type PreviewBuffers, type SliceResult } from '@slicerx/contracts'
-import { closeCalls, collisionsOf, fixesOf, printBlock, strikeMarks } from '../src/plate/heimdall'
+import { collisionsOf, fixesOf, printBlock, strikeMarks } from '../src/plate/heimdall'
+import { noteOf } from '../src/send/check-lines'
 import { applyCollisionFix } from '../src/plate/heimdall-fix'
 import { collisionTime, jumpTo } from '../src/plate/heimdall-jump'
 import { gantryHits, gantrySpec } from '../src/plate/heimdall-gantry'
@@ -69,7 +70,6 @@ describe('heimdall in the app', () => {
     expect(printBlock(get())).toBe('heimdall found a collision on this plate. See it in Preview, apply a fix or change the plate, and slice again.')
     set({ slice: { status: 'done', result: result([close]), stale: false } })
     expect(printBlock(get())).toBeNull()
-    expect(closeCalls(get())).toEqual(["Low passes within the printer profile's clearance of Tall. The head's own shape clears it."])
     set({ slice: { status: 'idle' } })
     expect(printBlock(get())).toBeNull()
     // Store selectors: the same empty lists every time, so a component reading them renders once.
@@ -129,7 +129,9 @@ describe('heimdall in the app', () => {
       objectNames: { tall: 'Tall', low: 'Low' },
     })
     expect(r.errors).toContain('The gantry hits Tall, layer 3. Tall is 48.0 mm tall. The gantry clears 40.0 mm above the nozzle, and it passes over Tall while Low prints, layers 3 to 4. Fix it in Preview and slice again.')
-    expect(r.warnings).toContain("The toolhead passes close to Tall. While Low prints, the nozzle comes within 18.0 mm of Tall. The printer profile asks for 40 mm around the nozzle; the head's own shape clears Tall, so this is the profile's margin, not a hit, layers 3 to 4.")
+    expect(r.warnings).toContain("Low passes inside the profile's margin around Tall. The nozzle comes within 18.0 mm of it, where the profile asks for 40 mm; the head's own shape clears it, layers 3 to 4.")
+    // One short line on the sheet, the numbers behind Details.
+    expect(noteOf(r.warnings.find((w) => w.startsWith('Low passes'))!).text).toBe("Low passes inside the profile's margin around Tall.")
   })
 
   it('lists the strikes with when and how deep, a jump for each, and the fixes with their cost', async () => {
@@ -138,7 +140,7 @@ describe('heimdall in the app', () => {
     document.body.append(el)
     const root = createRoot(el)
     flushSync(() => root.render(createElement(HostContext.Provider, { value: {} as Host }, createElement(CollisionList))))
-    expect(el.querySelector('.strike-tag')?.textContent).toBe('1 strike on this plate')
+    expect(el.querySelector('.strike-tag')?.textContent).toBe('1 strike on this plate, 1 close call')
     const items = [...el.querySelectorAll('.strikes li')]
     expect(items).toHaveLength(2)
     expect(items[0]!.textContent).toContain('The gantry hits Tall')
@@ -182,6 +184,17 @@ describe('heimdall in the app', () => {
     expect(gantrySpec(get())).toBeNull()
   })
 
+  it('says what a fix clears, strikes and close calls apart, and the close calls a new order leaves', () => {
+    const name = namesOf([{ id: 'tall', name: 'Tall' }, { id: 'low', name: 'Low' }])
+    const list = [hit, close]
+    const order: CollisionFix = { kind: 'reorder', costS: 0, clears: [0], oneClick: true, order: ['low', 'tall'], closeCalls: 1 }
+    expect(fixDetail(order, name, 2, undefined, list)).toBe("Order: Low, Tall. Clears the strike. Leaves a close call: the head passes inside the profile's margin, but clears.")
+    const wide: CollisionFix = { kind: 'spread', costS: 0, clears: [0, 1], oneClick: false, mm: 22 }
+    expect(fixDetail(wide, name, 2, undefined, list)).toBe('Clears the strike and the close call. Move them apart in Prepare, or arrange the plate with more space.')
+    const three: Collision[] = [hit, { ...hit, objectId: 'tall', hitId: 'low' }, { ...hit, layer: 3 }, close, close]
+    expect(fixDetail({ ...wide, clears: [0, 1, 2] }, name, 5, undefined, three)).toBe('Clears all 3 strikes. Move them apart in Prepare, or arrange the plate with more space.')
+  })
+
   it('names crossing paths, keep-out zones and their fixes', () => {
     const name = namesOf([{ id: 'a', name: 'Bracket' }, { id: 'b', name: 'Hook' }])
     const cross: Collision = { ...hit, kind: 'path_conflict', part: 'nozzle', objectId: 'b', hitId: 'prime-tower', depthMm: 0, limitMm: 0 }
@@ -194,6 +207,6 @@ describe('heimdall in the app', () => {
     expect(fixTitle({ kind: 'arrange', costS: 0, clears: [0], oneClick: true }, name, [], undefined, list)).toBe('Arrange the plate')
     const out: CollisionFix = { kind: 'move_object', costS: 0, clears: [1], oneClick: false, objectId: 'a' }
     expect(fixTitle(out, name, [], undefined, list)).toBe('Move Bracket out of the zone')
-    expect(fixDetail(out, name, 2, undefined, list)).toBe('Place Bracket where the printer does not need the plate clear. Clears it.')
+    expect(fixDetail(out, name, 2, undefined, list)).toBe('Place Bracket where the printer does not need the plate clear. Clears 1 strike.')
   })
 })
