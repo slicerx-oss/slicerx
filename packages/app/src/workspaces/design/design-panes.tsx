@@ -3,13 +3,15 @@
 // The Design panes, loaded as their own chunk when Design first opens. One side holds the tree of objects and
 // their steps; the other holds the open tool (CAD tools and Cut) with the selected object's transform under it.
 import { Block, Button } from '@slicerx/ui'
-import { lazy, Suspense } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { useHost } from '../../host'
 import { openModelFiles } from '../../state/actions'
 import { isCadTool, useApp } from '../../state/store'
 import { ObjectActions } from '../prepare/object-actions'
 import { ObjectTransform } from '../prepare/object-transform'
 import { HistoryTree } from './history-tree'
+import { Timeline } from './timeline'
+import { BottomPanel } from '../../shell/bottom-panel'
 import './design.css'
 
 const CadPanel = lazy(() => import('../../cad/cad-panel').then((m) => ({ default: m.CadPanel })))
@@ -56,3 +58,22 @@ export function DesignRight() {
 }
 
 export { Shelf } from './shelf'
+
+/** The timeline in its bottom panel. A step that breaks after an edit asks for attention. */
+export function DesignTimeline() {
+  const broken = useApp((s) => {
+    const e = s.historyEdit?.original ?? s.plate.find((p) => p.id === s.selection)
+    return e?.history?.steps.filter((st) => st.broken !== undefined && !st.suppressed).length ?? 0
+  })
+  const [attention, setAttention] = useState(0)
+  const last = useRef(broken)
+  useEffect(() => {
+    if (broken > last.current) setAttention((n) => n + 1)
+    last.current = broken
+  }, [broken])
+  return (
+    <BottomPanel label="Timeline" memory="prepare-design:timeline" attention={attention}>
+      <Timeline />
+    </BottomPanel>
+  )
+}

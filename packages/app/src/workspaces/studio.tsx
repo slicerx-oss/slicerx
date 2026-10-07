@@ -52,6 +52,7 @@ const DESIGN_TOOL: PaneSection[] = [{ id: 'transform', icon: 'move', label: 'Tra
 const DesignLeft = lazy(() => import('./design/design-panes').then((m) => ({ default: m.DesignLeft })))
 const DesignRight = lazy(() => import('./design/design-panes').then((m) => ({ default: m.DesignRight })))
 const Shelf = lazy(() => import('./design/design-panes').then((m) => ({ default: m.Shelf })))
+const DesignTimeline = lazy(() => import('./design/design-panes').then((m) => ({ default: m.DesignTimeline })))
 
 // norn (edit from Preview) loads with the first click on a toolpath.
 const NornLayer = lazy(() => import('../norn/norn-layer').then((m) => ({ default: m.NornLayer })))
@@ -182,6 +183,11 @@ export function Studio() {
         {layers && nornOn ? (
           <Suspense fallback={null}>
             <NornLayer />
+          </Suspense>
+        ) : null}
+        {design ? (
+          <Suspense fallback={null}>
+            <DesignTimeline />
           </Suspense>
         ) : null}
         {design ? null : (
