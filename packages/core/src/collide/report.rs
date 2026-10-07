@@ -92,6 +92,9 @@ pub struct CollisionFix {
     /// Print by layer: the most extra travel moves on one layer.
     #[serde(default, skip_serializing_if = "is_none_u32")]
     pub moves: u32,
+    /// Reorder: the close calls the new order still has (pairs inside the profile's radius the head itself clears).
+    #[serde(default, skip_serializing_if = "is_none_u32")]
+    pub close_calls: u32,
 }
 
 #[allow(
@@ -249,6 +252,7 @@ fn fix(kind: FixKind, cost_s: f64, clears: Vec<u32>, one_click: bool) -> Collisi
         mm: None,
         object_id: None,
         moves: 0,
+        close_calls: 0,
     }
 }
 
@@ -306,7 +310,26 @@ fn fixes(meta: &Meta, hits: &[Hit], kept: &[&Hit], collisions: &[Collision]) -> 
         }
     }
     if let Some((order, clears)) = best {
+        let mut pos = vec![0usize; n];
+        for (k, &i) in order.iter().enumerate() {
+            if let Some(p) = pos.get_mut(i) {
+                *p = k;
+            }
+        }
+        let at = |i: u32| pos.get(i as usize).copied().unwrap_or(0);
+        // The pairs still inside the radius in the new order: the mover prints after the object it passes.
+        let mut close: Vec<(u32, u32)> = Vec::new();
+        for h in hits {
+            if machine(h.kind)
+                && h.severity == Severity::Close
+                && at(h.obstacle) < at(h.mover)
+                && !close.contains(&(h.mover, h.obstacle))
+            {
+                close.push((h.mover, h.obstacle));
+            }
+        }
         let mut f = fix(FixKind::Reorder, 0.0, clears, true);
+        f.close_calls = u32::try_from(close.len()).unwrap_or(u32::MAX);
         for &i in &order {
             f.order.push(meta.id(u32::try_from(i).unwrap_or(0)));
         }
@@ -513,6 +536,19 @@ mod tests {
         assert!(reorder.one_click);
         let by_layer = r.fixes.iter().find(|f| f.kind == FixKind::ByLayer).unwrap();
         assert!(by_layer.cost_s > 0.0 && by_layer.clears.len() == 2);
+    }
+
+    #[test]
+    fn a_reorder_says_which_close_calls_it_leaves() {
+        let m = meta(vec![obj("tall", 48.0, 50.0), obj("low", 10.0, 120.0)]);
+        // low's gantry passes over tall; in the other order tall's head passes inside the radius of low
+        let mut close = hit(Kind::Hotend, Part::Toolhead, 0, 1, 50);
+        close.severity = Severity::Close;
+        let hits = vec![hit(Kind::Gantry, Part::Gantry, 1, 0, 200), close];
+        let r = report(&m, &hits, &[], 0.0);
+        let reorder = r.fixes.iter().find(|f| f.kind == FixKind::Reorder).unwrap();
+        assert_eq!(reorder.order, ["low", "tall"]);
+        assert_eq!(reorder.close_calls, 1);
     }
 
     #[test]

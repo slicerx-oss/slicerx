@@ -21,8 +21,6 @@ export function fixesOf(s: Pick<AppState, 'slice'>): CollisionFix[] {
   return s.slice.status === 'done' ? (s.slice.result.collisionFixes ?? NO_FIXES) : NO_FIXES
 }
 
-const names = (s: Pick<AppState, 'plate'>, id: string) => s.plate.find((p) => p.id === id)?.name ?? 'an object'
-
 /**
  * Why Print and Export are held back, or null. A strike with the head's own shape blocks; a close call only inside the
  * profile's radius goes to the Print sheet as a warning. A slice from before the objects moved is checked against the
@@ -35,13 +33,6 @@ export function printBlock(s: Pick<AppState, 'slice' | 'plate' | 'plates' | 'act
   }
   if (s.slice.status === 'done' && s.slice.stale) return sequenceProblem(s)
   return null
-}
-
-/** Close calls of the current slice, as warnings the person says yes to on the Print sheet. */
-export function closeCalls(s: Pick<AppState, 'slice' | 'plate'>): string[] {
-  return collisionsOf(s)
-    .filter((c) => c.severity === 'close')
-    .map((c) => `${names(s, c.objectId)} passes within the printer profile's clearance of ${names(s, c.hitId)}. The head's own shape clears it.`)
 }
 
 /**

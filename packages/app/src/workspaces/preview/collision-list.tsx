@@ -47,7 +47,9 @@ export function CollisionList() {
   const [busy, setBusy] = useState(false)
   if (!list.length) return null
   const hits = list.filter((c) => c.severity === 'hit').length
-  const label = hits ? `${hits} ${hits === 1 ? 'strike' : 'strikes'} on this plate` : `${list.length} close ${list.length === 1 ? 'call' : 'calls'}`
+  const closes = list.length - hits
+  const closeLabel = `${closes} close ${closes === 1 ? 'call' : 'calls'}`
+  const label = hits ? `${hits} ${hits === 1 ? 'strike' : 'strikes'} on this plate${closes ? `, ${closeLabel}` : ''}` : closeLabel
   return (
     <Block title="Collisions" aside={<span className={hits ? 'app-tag strike-tag' : 'app-tag'}>{label}</span>} data-section="collisions">
       <ol className="strikes" aria-label="Collisions">
