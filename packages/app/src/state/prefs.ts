@@ -37,6 +37,8 @@ export interface Prefs {
   /** Random id of this install, sent with bug reports so the rate limit and repeats can be told apart. */
   installId?: string | undefined
   cadTools?: boolean | undefined
+  /** The mode the first tab opens in: Slice or Design. */
+  modelModeDefault?: 'slice' | 'design' | undefined
   autoSlice?: boolean | undefined
   electricity?: { pricePerKwh: number; symbol: string } | undefined
   tooltips?: { enabled: boolean; media: boolean } | undefined
@@ -275,6 +277,7 @@ export function normalizePrefs(v: unknown): Prefs {
     agreement: or(nullable(r['agreement'], (x) => (isRec(x) && num(x['version'], 1, 1e6) !== undefined && str(x['acceptedAt'], 40) ? { version: x['version'] as number, acceptedAt: x['acceptedAt'] as string } : undefined)), null),
     ...opt('installId', typeof r['installId'] === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(r['installId']) ? r['installId'] : undefined),
     cadTools: or(bool(r['cadTools']), true),
+    modelModeDefault: or(oneOf(r['modelModeDefault'], ['slice', 'design'] as const), 'slice'),
     // Absent stays absent, so the store picks the default (browser tests turn it off for the session); a bad value reads as on.
     ...opt('autoSlice', r['autoSlice'] === undefined ? undefined : or(bool(r['autoSlice']), true)),
     ...opt('electricity', isRec(r['electricity']) && num(r['electricity']['pricePerKwh'], 0, 5) !== undefined && str(r['electricity']['symbol'], 4) ? { pricePerKwh: r['electricity']['pricePerKwh'] as number, symbol: r['electricity']['symbol'] as string } : undefined),

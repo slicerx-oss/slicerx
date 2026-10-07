@@ -12,7 +12,7 @@ export const STARTUP_ICONS = [
   'lay-flat', 'layers', 'library', 'license', 'link', 'list', 'log', 'mcp', 'measure', 'mimir', 'mouse', 'move',
   'new-plate', 'nozzle', 'offline', 'overhang', 'paste', 'pause', 'phone', 'pilot', 'plate', 'plates', 'plus',
   'prepare', 'preset-draft', 'preset-fine', 'preset-standard', 'preset-strong', 'preview', 'printer', 'queue',
-  'redo', 'report', 'rotate', 'save', 'scale', 'search', 'select-all', 'settings', 'shapes', 'shield', 'show',
+  'redo', 'report', 'rotate', 'ruler', 'save', 'scale', 'search', 'select-all', 'settings', 'shapes', 'shield', 'show',
   'sleipnir', 'slice', 'slicerx', 'sliders', 'speed', 'stop', 'support', 'sx3mf', 'terminal', 'text', 'thinking',
   'timelapse', 'undo', 'unlock', 'upload', 'version', 'warning', 'weight', 'zoom-in', 'zoom-out',
 ]
