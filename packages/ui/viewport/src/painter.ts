@@ -42,7 +42,7 @@ const CURSOR_LEFT = { color: '#0000ff' }
 const CURSOR_RIGHT = { color: '#ff0000' }
 const ENFORCER = '#50fa7b'
 const BLOCKER = '#ff5555'
-// Painted fuzzy skin: Nocturne orange, apart from the support and seam green and red.
+// Painted fuzzy skin: Subban orange, apart from the support and seam green and red.
 const FUZZY = '#ffb86c'
 const SLOT_FALLBACK = ['#f7d959', '#fec600', '#ebebe6', '#1d1d21', '#ff9016', '#de4343', '#56b7e6', '#61c680']
 

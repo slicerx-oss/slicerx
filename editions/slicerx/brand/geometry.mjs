@@ -41,7 +41,7 @@ export const X_PATH = xPath(0, 9.6)
 // The X is 23 units wide and 24 tall, centered on (16, 16) of the 32 unit grid.
 export const X_BOX = { x: 4.5, y: 4, w: 23, h: 24, cx: 16, cy: 16 }
 
-// Nocturne tokens the kit draws from (design/tokens.css, packages/ui nocturneLight).
+// Subban tokens the kit draws from (design/tokens.css, packages/ui subbanLight).
 export const INK = { 0: '#121319', 1: '#17181f', 2: '#1e1f29', 3: '#262835', 4: '#303241', line: '#3d4054' }
 export const TEXT = { dark: '#f8f8f2', light: '#17181f', muted: '#a9afd0', mutedLight: '#4d5474', dim: '#7580ad' }
 export const GROUND = { dark: INK[0], light: '#f4f4f9' }

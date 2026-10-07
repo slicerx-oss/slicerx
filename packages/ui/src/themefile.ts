@@ -6,7 +6,7 @@
 
 import { FONT_IDS } from './fonts-ids'
 import type { Theme, ThemeColors, ThemeScene } from './theme'
-import { nocturne } from './theme'
+import { subban } from './theme'
 import { resolveFonts, THEME_FONT_CHOICE, type FontChoice } from './fonts'
 
 export const THEME_FILE_VERSION = 1
@@ -15,6 +15,12 @@ export interface ThemeFile {
   version: 1
   id: string
   name: string
+  /** Groups the light and dark modes of one theme into one card in the picker. */
+  family?: string
+  /** The card's name. Defaults to name. */
+  familyName?: string
+  /** The variant's name when a family has more than one theme of the same brightness (Catppuccin's Mocha). */
+  flavor?: string
   isDark: boolean
   background: string
   surface: string
@@ -147,37 +153,71 @@ export const TEXT_CONTRAST = 4.5
 /** Glyphs and dots (status colors, accent on a light theme) must reach this. */
 export const GLYPH_CONTRAST = 3
 
-export function derivePalette(t: ThemeFile): DerivedPalette {
+/** Accessibility choices that change the derived colors. */
+export type ContrastLevel = 'standard' | 'higher'
+export type ColorVision = 'standard' | 'redgreen' | 'blueyellow'
+export interface PaletteOptions {
+  /** Higher lifts secondary and dim text to 7:1, glyph colors and the accent to 4.5:1, and draws borders stronger. */
+  contrast?: ContrastLevel
+  /** Status and meaning colors that stay apart for red-green or blue-yellow color vision. */
+  colorVision?: ColorVision
+}
+
+/** Text at the higher contrast level. */
+export const HIGH_TEXT_CONTRAST = 7
+
+/**
+ * Meaning colors for color vision, after the Okabe and Ito palette. Only the colors that collide
+ * change: red-green moves ok to blue and attention to yellow; blue-yellow moves ok to bluish green,
+ * attention to vermilion and the cyan of progress to a pink. Lifted to contrast like any status color.
+ */
+export const COLOR_VISION: Readonly<Record<Exclude<ColorVision, 'standard'>, Record<'dark' | 'light', Partial<Record<'red' | 'green' | 'orange' | 'yellow' | 'cyan', string>>>>> = {
+  redgreen: {
+    dark: { green: '#56b4e9', red: '#ff8b4d', orange: '#f0e442', yellow: '#f0e442' },
+    light: { green: '#0072b2', red: '#c24e00', orange: '#8f7a00', yellow: '#8f7a00' },
+  },
+  blueyellow: {
+    dark: { green: '#3fd4a6', red: '#ff6b8a', orange: '#ff8b4d', cyan: '#f19fd0' },
+    light: { green: '#007a5a', red: '#c4245a', orange: '#c24e00', cyan: '#a8337a' },
+  },
+}
+
+export function derivePalette(t: ThemeFile, opts: PaletteOptions = {}): DerivedPalette {
   const ansi = t.ansi.length >= 16 ? t.ansi : [...t.ansi, ...Array<string>(16 - t.ansi.length).fill(t.accent)]
   const a = (i: number) => ansi[i] as string
   const grounds = [t.background, t.surface]
   const text = (hex: string, min: number) => readable(hex, grounds, t.text, min)
   const m = mixHex
-  const accent = t.isDark ? t.accent : text(t.accent, GLYPH_CONTRAST)
+  const high = opts.contrast === 'higher'
+  const textMin = high ? HIGH_TEXT_CONTRAST : TEXT_CONTRAST
+  const glyphMin = high ? TEXT_CONTRAST : GLYPH_CONTRAST
+  const cv = opts.colorVision && opts.colorVision !== 'standard' ? COLOR_VISION[opts.colorVision][t.isDark ? 'dark' : 'light'] : {}
+  const accent = t.isDark && !high ? t.accent : text(t.accent, glyphMin)
   const ink = t.isDark ? m(t.background, '#000000', 0.25) : '#ffffff'
   const other = t.isDark ? '#ffffff' : t.text
+  const border = high ? m(t.border, t.text, 0.3) : t.border
   return {
     background: t.background,
     pane: m(t.background, t.surface, 0.5),
     surface: t.surface,
     surfaceAlt: t.surfaceAlt,
-    chip: m(t.background, t.border, 0.62),
-    chipStrong: m(t.surface, t.border, 0.6),
-    border: t.border,
-    hairline: m(t.background, t.border, 0.7),
+    chip: m(t.background, border, 0.62),
+    chipStrong: m(t.surface, border, 0.6),
+    border,
+    hairline: high ? t.border : m(t.background, t.border, 0.7),
     text: t.text,
-    secondary: text(m(t.muted, t.text, 0.37), TEXT_CONTRAST),
-    dim: text(t.muted, TEXT_CONTRAST),
+    secondary: text(m(t.muted, t.text, 0.37), textMin),
+    dim: text(t.muted, textMin),
     accent,
     onAccent: contrast(ink, accent) >= contrast(other, accent) ? ink : other,
     selection: t.selection ?? t.border,
-    red: text(t.failed ?? a(1), GLYPH_CONTRAST),
-    green: text(t.working ?? a(2), GLYPH_CONTRAST),
-    orange: text(t.waiting ?? rehue(a(3), 30, 0.55), GLYPH_CONTRAST),
-    yellow: text(a(3), GLYPH_CONTRAST),
-    blue: text(a(4), GLYPH_CONTRAST),
-    magenta: text(a(5), GLYPH_CONTRAST),
-    cyan: text(a(6), GLYPH_CONTRAST),
+    red: text(cv.red ?? t.failed ?? a(1), glyphMin),
+    green: text(cv.green ?? t.working ?? a(2), glyphMin),
+    orange: text(cv.orange ?? t.waiting ?? rehue(a(3), 30, 0.55), glyphMin),
+    yellow: text(cv.yellow ?? a(3), glyphMin),
+    blue: text(a(4), glyphMin),
+    magenta: text(a(5), glyphMin),
+    cyan: text(cv.cyan ?? a(6), glyphMin),
   }
 }
 
@@ -189,8 +229,8 @@ export const SCENE_KEYS = ['top', 'bottom', 'glow', 'plate', 'grid', 'edge', 'xr
  * a light studio, with a pale gradient, darker grid lines and dark edges so the model still reads.
  * Anything the file's `scene` block sets wins over the derived value.
  */
-export function deriveScene(t: ThemeFile): ThemeScene {
-  const p = derivePalette(t)
+export function deriveScene(t: ThemeFile, opts: PaletteOptions = {}): ThemeScene {
+  const p = derivePalette(t, opts)
   const m = mixHex
   const derived: ThemeScene = t.isDark
     ? { top: t.surface, bottom: m(t.background, '#000000', 0.2), glow: p.chipStrong, plate: p.chipStrong, grid: p.secondary, edge: m(t.background, '#000000', 0.45) }
@@ -207,8 +247,8 @@ export function deriveScene(t: ThemeFile): ThemeScene {
 }
 
 /** The app's color variables for a theme file: the derived palette mapped onto --ink-0 and the rest. */
-export function themeColors(t: ThemeFile): ThemeColors {
-  const p = derivePalette(t)
+export function themeColors(t: ThemeFile, opts: PaletteOptions = {}): ThemeColors {
+  const p = derivePalette(t, opts)
   return {
     ink0: p.background,
     ink1: p.pane,
@@ -227,23 +267,24 @@ export function themeColors(t: ThemeFile): ThemeColors {
     orange: p.orange,
     yellow: p.yellow,
     red: p.red,
+    blue: p.blue,
     onGrad: p.onAccent,
     shadow: t.isDark ? 'rgb(0 0 0 / 70%)' : 'rgb(42 40 51 / 20%)',
   }
 }
 
-/** The app Theme object for a theme file and the person's font choice. */
-export function themeFromFile(t: ThemeFile, fonts: FontChoice = THEME_FONT_CHOICE): Theme {
+/** The app Theme object for a theme file, the person's font choice and their contrast and color vision settings. */
+export function themeFromFile(t: ThemeFile, fonts: FontChoice = THEME_FONT_CHOICE, opts: PaletteOptions = {}): Theme {
   const f = resolveFonts(fonts, t.fonts)
   return {
     name: t.id,
     scheme: t.isDark ? 'dark' : 'light',
-    colors: themeColors(t),
-    gradient: { ...nocturne.gradient },
+    colors: themeColors(t, opts),
+    gradient: { ...subban.gradient },
     fonts: { display: f.display, body: f.body, mono: f.mono },
-    radius: { ...nocturne.radius },
-    spacing: { ...nocturne.spacing },
-    scene: deriveScene(t),
+    radius: { ...subban.radius },
+    spacing: { ...subban.spacing },
+    scene: deriveScene(t, opts),
   }
 }
 
@@ -308,6 +349,12 @@ export function validateThemeFile(input: unknown): ThemeResult {
       if (bad.length) errors.push(`scene.${bad.join(', scene.')} must be a color like #1a2b3c.`)
     }
   }
+  const family = o['family']
+  if (family !== undefined && (typeof family !== 'string' || !SLUG.test(family))) errors.push('family must be a lowercase slug of letters, digits and hyphens, up to 40 characters.')
+  for (const k of ['familyName', 'flavor'] as const) {
+    const v = o[k]
+    if (v !== undefined && (typeof v !== 'string' || v.trim().length < 1 || v.length > 40)) errors.push(`${k} must be 1 to 40 characters.`)
+  }
   const credit = o['credit']
   if (credit !== undefined && (typeof credit !== 'string' || credit.length > 200)) errors.push('credit must be text of up to 200 characters.')
   if (errors.length) return { ok: false, errors }
@@ -326,6 +373,9 @@ export function validateThemeFile(input: unknown): ThemeResult {
     ansi: [...(ansi as string[])],
   }
   for (const k of OPTIONAL_COLOR_KEYS) if (typeof o[k] === 'string') theme[k] = o[k] as string
+  if (typeof family === 'string') theme.family = family
+  if (typeof o['familyName'] === 'string') theme.familyName = (o['familyName'] as string).trim()
+  if (typeof o['flavor'] === 'string') theme.flavor = (o['flavor'] as string).trim()
   if (fontsOut && Object.keys(fontsOut).length) theme.fonts = fontsOut
   if (sceneOut && Object.keys(sceneOut).length) theme.scene = sceneOut
   if (typeof credit === 'string') theme.credit = credit
@@ -359,7 +409,7 @@ export function parseThemeText(text: string): ThemeResult {
   return validateThemeFile(json)
 }
 
-const KEY_ORDER = ['version', 'id', 'name', 'isDark', 'background', 'surface', 'surfaceAlt', 'border', 'text', 'muted', 'accent', 'selection', 'ansi', 'working', 'waiting', 'failed', 'fonts', 'scene', 'credit'] as const
+const KEY_ORDER = ['version', 'id', 'name', 'family', 'familyName', 'flavor', 'isDark', 'background', 'surface', 'surfaceAlt', 'border', 'text', 'muted', 'accent', 'selection', 'ansi', 'working', 'waiting', 'failed', 'fonts', 'scene', 'credit'] as const
 
 /** Pretty JSON in the documented key order, ready to share. */
 export function serializeTheme(t: ThemeFile): string {

@@ -2,7 +2,7 @@
 
 The bundled themes use published color palettes. Colors are facts; the credits below are given anyway.
 
-## SlicerX dark
+## Subban
 
 Based on the Dracula palette, https://draculatheme.com.
 
@@ -18,7 +18,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 ## Others
 
-Tokyo Night (enkia), Atom One Dark and One Light (Atom editor), GitHub Light (GitHub Primer) and Solarized Light (Ethan Schoonover) are credited in the `credit` field of each file. SlicerX light is original.
+Tokyo Night (enkia), Atom One Dark and One Light (Atom editor), GitHub Light (GitHub Primer) and Solarized Light (Ethan Schoonover) are credited in the `credit` field of each file. Subban light is original.
 
 ## Fonts
 

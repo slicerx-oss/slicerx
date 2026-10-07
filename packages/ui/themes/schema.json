@@ -38,6 +38,23 @@
       "maxLength": 40,
       "description": "Name shown in the picker."
     },
+    "family": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]{0,39}$",
+      "description": "Groups the light and dark modes of one theme into one card in the picker. Themes with the same family are shown together."
+    },
+    "familyName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 40,
+      "description": "Name of the family shown on the card. Defaults to name."
+    },
+    "flavor": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 40,
+      "description": "Name of this variant when a family has more than one theme of the same brightness, for example Mocha."
+    },
     "isDark": {
       "type": "boolean",
       "description": "Dark themes fill the dark slot of Follow system, light themes the light slot."

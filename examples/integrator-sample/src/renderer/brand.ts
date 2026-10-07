@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // Spoolhouse's brand as a SlicerX theme: amber on warm charcoal, with a light variant.
-import { createTheme, nocturneLight } from '@slicerx/embed'
+import { createTheme, subbanLight } from '@slicerx/embed'
 
 const fonts = { body: 'system-ui, -apple-system, "Segoe UI", sans-serif', display: 'Georgia, "Times New Roman", serif' }
 
@@ -27,5 +27,5 @@ export const spoolhouseLight = createTheme(
     fonts,
     radius: { md: '4px', lg: '6px' },
   },
-  nocturneLight,
+  subbanLight,
 )

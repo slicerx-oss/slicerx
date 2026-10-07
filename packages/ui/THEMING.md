@@ -1,12 +1,12 @@
 # Theming @slicerx/ui
 
-Every component reads its colors, gradient, fonts, radii and spacing from CSS variables. A theme is a typed object that sets those variables. Nocturne, the dark default, is built in; you can ship your own brand on top of it, switch themes at runtime without a reload, replace icons, and put your own logo in the brand slot.
+Every component reads its colors, gradient, fonts, radii and spacing from CSS variables. A theme is a typed object that sets those variables. Subban, the dark default, is built in; you can ship your own brand on top of it, switch themes at runtime without a reload, replace icons, and put your own logo in the brand slot.
 
 ## Quick start
 
 ```tsx
 import '@slicerx/ui/styles.css'
-import { ThemeProvider, createTheme, nocturneLight } from '@slicerx/ui'
+import { ThemeProvider, createTheme, subbanLight } from '@slicerx/ui'
 
 const acme = createTheme({
   name: 'acme',
@@ -19,7 +19,7 @@ export function App() {
   const [theme, setTheme] = useState(acme)
   return (
     <ThemeProvider theme={theme} logo={<img src="/acme.svg" alt="Acme" height={18} />}>
-      <button onClick={() => setTheme(nocturneLight)}>Light</button>
+      <button onClick={() => setTheme(subbanLight)}>Light</button>
       ...
     </ThemeProvider>
   )
@@ -59,13 +59,13 @@ interface Theme {
 | `onGrad` | `--on-grad` | Text on the gradient |
 | `shadow` | `--shadow-color` | Shadow color, with alpha |
 
-The keys keep their Nocturne names so a recolored theme still reads the same in code: `purple` is "the accent color" even when you make it blue. Tints (`--purple-tint`, `--pink-tint`, `--purple-ring`, `--glass`) derive from these with `color-mix`, so they follow your colors.
+The keys keep their Subban names so a recolored theme still reads the same in code: `purple` is "the accent color" even when you make it blue. Tints (`--purple-tint`, `--pink-tint`, `--purple-ring`, `--glass`) derive from these with `color-mix`, so they follow your colors.
 
 `gradient.from` and `gradient.to` default to `var(--purple)` and `var(--pink)`; set concrete colors to detach the gradient from the accent. The gradient is reserved for the logo, the single primary action on a screen, and the active tab underline.
 
 ## Functions
 
-- `createTheme(overrides, base = nocturne)`: merges nested overrides on top of a base theme and returns a complete `Theme`.
+- `createTheme(overrides, base = subban)`: merges nested overrides on top of a base theme and returns a complete `Theme`.
 - `themeToVars(theme)`: the variables as a name to value map.
 - `themeToCss(theme, selector = ':root')`: a stylesheet rule, for server rendering or a static theme.
 - `applyTheme(theme, element = document.documentElement)`: sets the variables at runtime and dispatches an `sx-theme` event.
@@ -88,8 +88,9 @@ The keys keep their Nocturne names so a recolored theme still reads the same in 
 
 ## Built-in themes
 
-- `nocturne`: the default, dark.
-- `nocturneLight`: the same palette meanings on light surfaces, text contrast at WCAG AA.
+- `subban`: the default, dark.
+- `subbanLight`: Subban's light mode, the same palette meanings on light surfaces, text contrast at WCAG AA.
+- `nocturne` and `nocturneLight`: the earlier names of `subban` and `subbanLight`, kept so existing code keeps working. Use the new names in new code.
 - `forge`: an example rebrand with a warm accent, other typefaces, sharper corners and a 6px grid. Use it as a starting point for your own.
 
 `themes` maps the three by name.

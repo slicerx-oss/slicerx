@@ -4,7 +4,7 @@ The icon is huginn, the raven, perched on three printed layers, in the purple to
 filament gradient. The logo is the word Slicer with an X drawn as offset perimeters standing in for
 its last letter: nested outlines in pink, purple and cyan, the way a slicer insets each wall.
 Everything the apps and the site serve is generated from geometry, so both stay sharp at 16 px,
-every file stays small, and the colors come from the Nocturne tokens.
+every file stays small, and the colors come from the Subban tokens.
 
 This kit is the build of the brand assets. Files here are Apache-2.0 like the rest of the edition. The name and
 the mark are SlicerX's: a fork changes both (see `docs/integrating.md`).

@@ -18,7 +18,7 @@ This is what the files in this repository say, not legal advice. `NOTICE`, `docs
 1. Keep the credit. Show "Made possible by SlicerX", linked to https://slicerx.app/support, on your About screen and in your docs. An edition config shows it for you and cannot drop it.
 2. Path A, your own edition. The bundled printer profiles, printer pictures and Bambu certificates are AGPL-3.0-or-later, so an edition that ships them is an AGPL combined work as a whole. Publish its source (your fork: the SlicerX repository plus your config and brand files) and set `legal.sourceUrl` to it. Another app of yours, such as LayerMate, stays your own when it only launches the edition as a separate program and links none of its code.
 3. Path B, embedding. `@slicerx/viewport` and `@slicerx/embed` are Apache-2.0 and can go into closed code. `@slicerx/mcp` carries AGPL profile data, so run it as its own process (the `slicerx-mcp` server) and offer its source. Do not bundle it into closed code.
-4. Names. Use your own product name and logo. "SlicerX", its logo and the Nocturne artwork are trademarks (TRADEMARK.md).
+4. Names. Use your own product name and logo. "SlicerX", its logo and the Subban artwork are trademarks (TRADEMARK.md).
 
 ## Credit: Made possible by SlicerX
 
@@ -64,4 +64,4 @@ Inbound is outbound. A contribution is licensed under the license of the files i
 
 ## Trademarks
 
-The licenses cover code and data, not the SlicerX name, logo or the Nocturne theme artwork. `NOTICE` has the trademark terms.
+The licenses cover code and data, not the SlicerX name, logo or the Subban theme artwork. `NOTICE` has the trademark terms.

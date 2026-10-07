@@ -12,7 +12,7 @@ export const NEUTRAL_PARSED: EditionConfig = {
     "logo": {
       "mark": "builtin:generic-mark"
     },
-    "theme": "nocturne"
+    "theme": "subban"
   },
   "apps": {
     "web": {},

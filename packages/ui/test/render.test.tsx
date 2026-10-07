@@ -6,7 +6,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { FONTS_HREF } from '../src/tokens'
 import { GALLERY_CSS, Gallery } from '../src/gallery'
-import { forge, nocturneLight } from '../src/themes'
+import { forge, subbanLight } from '../src/themes'
 import type { Theme } from '../src/theme'
 import { iconsReady } from '../src/icons/icon'
 
@@ -48,7 +48,7 @@ describe('gallery', () => {
     await iconsReady()
     writeGallery(resolve(dir, 'gallery.html'), false)
     writeGallery(resolve(dir, 'gallery-palette.html'), true)
-    writeGallery(resolve(dir, 'gallery-light.html'), false, nocturneLight)
+    writeGallery(resolve(dir, 'gallery-light.html'), false, subbanLight)
     writeGallery(resolve(dir, 'gallery-forge.html'), false, forge)
   })
 })

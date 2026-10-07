@@ -3,7 +3,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, type ReactNode } from 'react'
 import type { IconName } from './icons/icon-paths'
-import { applyTheme, clearTheme, nocturne, themeToCss, type Theme } from './theme'
+import { applyTheme, clearTheme, subban, themeToCss, type Theme } from './theme'
 
 /** Icon overrides: inner SVG markup on the 24px grid, keyed by icon name. */
 export type IconOverrides = Partial<Record<IconName, string>>
@@ -15,9 +15,9 @@ export interface ThemeContextValue {
   logo: ReactNode | undefined
 }
 
-const ThemeContext = createContext<ThemeContextValue>({ theme: nocturne, icons: {}, logo: undefined })
+const ThemeContext = createContext<ThemeContextValue>({ theme: subban, icons: {}, logo: undefined })
 
-/** The current theme, icon overrides and logo slot. Nocturne with no overrides outside a provider. */
+/** The current theme, icon overrides and logo slot. Subban with no overrides outside a provider. */
 export function useTheme(): ThemeContextValue {
   return useContext(ThemeContext)
 }
@@ -42,7 +42,7 @@ export interface ThemeProviderProps {
  * with no reload. Server rendering emits the variables as a style tag so the first paint is
  * already themed.
  */
-export function ThemeProvider({ theme = nocturne, icons = {}, logo, scope = 'root', children }: ThemeProviderProps) {
+export function ThemeProvider({ theme = subban, icons = {}, logo, scope = 'root', children }: ThemeProviderProps) {
   const ref = useRef<HTMLDivElement>(null)
   const value = useMemo<ThemeContextValue>(() => ({ theme, icons, logo }), [theme, icons, logo])
 

@@ -8,6 +8,10 @@ All notable changes to `@slicerx/embed` are listed here. The format follows Keep
 
 - `tokenKeys` sends a publishable key (`sb_publishable_`) only as `apikey`, since it is not a JWT; the account token stays in the body. A legacy anon JWT is still also sent as the bearer.
 
+### Changed
+
+- The default theme is now called Subban: `subban` and `subbanLight` replace `nocturne` and `nocturneLight`, which stay as deprecated names for the same themes. Subban light uses a new pale violet palette.
+
 ### Added
 
 - `LocalAiSetup` and `useLocalAi`: Set up local AI as one piece or a hook, themed like the other pieces, with the models an edition allows.

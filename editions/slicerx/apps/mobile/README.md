@@ -25,7 +25,7 @@ npx expo run:ios
 | --- | --- |
 | `app/` | expo-router routes. Thin files that map data hooks onto screen props |
 | `src/screens/` | Screens, props-driven, no data access |
-| `src/components/` | Theme (Nocturne from `@slicerx/ui/theme`), icons, primitives, mimir chat parts |
+| `src/components/` | Theme (Subban from `@slicerx/ui/theme`), icons, primitives, mimir chat parts |
 | `src/data/` | Provider, TanStack Query hooks, mimir and send-print hooks |
 | `src/state/` | The zustand store (alerts, preferences, policy) and approvals |
 | `src/host/` | The phone host: printers, approvals, store and auth, cloud slicer |

@@ -1,37 +1,30 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// Themes that ship with the package: Nocturne (default, dark), Nocturne Light, and Forge, an
+// Themes that ship with the package: Subban (default, dark), Subban light, and Forge, an
 // example of a full rebrand (colors, gradient, fonts, radii, spacing).
-import { createTheme, nocturne } from './theme'
+import subbanLightFile from '../themes/subban-light.json'
+import { createTheme, nocturne, subban } from './theme'
+import { deriveScene, themeColors, validateThemeFile, type ThemeFile } from './themefile'
 
-export { nocturne }
+export { nocturne, subban }
 
-/** SlicerX light: the same palette meanings on a warm off-white canvas. Text reaches 4.5:1 and glyph colors 3:1. */
-export const nocturneLight = createTheme({
-  name: 'nocturne-light',
+const lightFile = validateThemeFile(subbanLightFile)
+if (!lightFile.ok) throw new Error(`Bundled theme is invalid: ${lightFile.errors.join(' ')}`)
+const light: ThemeFile = lightFile.theme
+
+/** Subban light: Subban's palette meanings on a pale violet canvas. Text reaches 4.5:1 and glyph colors 3:1. */
+export const subbanLight = createTheme({
+  name: 'subban-light',
   scheme: 'light',
-  colors: {
-    ink0: '#f7f6f3',
-    ink1: '#f3f2ee',
-    ink2: '#efede8',
-    ink3: '#e8e5df',
-    ink4: '#e2dfd8',
-    line: '#d9d5cd',
-    lineSoft: '#e2dfd8',
-    fg: '#2a2833',
-    muted: '#5b5763',
-    dim: '#6b6874',
-    purple: '#7349c9',
-    pink: '#a3378b',
-    cyan: '#1f7a86',
-    green: '#2b7536',
-    orange: '#c8661b',
-    yellow: '#9a6b00',
-    red: '#931d27',
-    onGrad: '#ffffff',
-    shadow: 'rgb(42 40 51 / 20%)',
-  },
+  colors: themeColors(light),
+  scene: deriveScene(light),
 })
+
+/**
+ * Subban light under its earlier name.
+ * @deprecated Use `subbanLight`.
+ */
+export const nocturneLight = subbanLight
 
 /** An example rebrand for integrators: warm accent, different faces, sharper corners, tighter grid. */
 export const forge = createTheme({
@@ -69,5 +62,5 @@ export const forge = createTheme({
   spacing: { unit: 6 },
 })
 
-export const themes = { nocturne, nocturneLight, forge } as const
+export const themes = { subban, subbanLight, forge } as const
 export type ThemeName = keyof typeof themes

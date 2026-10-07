@@ -10,6 +10,6 @@ export { EmbedTheme, sceneFor, type EmbedThemeProps } from './theme'
 export { LocalAiSetup, useLocalAi, type LocalAiSetupProps, type UseLocalAiOptions, type LocalAiState, type LocalAiJob, type LocalAiReady, type Hardware, type LocalModel, type LocalNet, type Runner } from './local-ai'
 export { Agreement, acceptAgreement, agreementNeeded, readAgreement, AGREEMENT_KEY, AGREEMENT_VERSION, RELEASE, type AgreementProps, type AgreementRecord, type AgreementStorage, type Release, type ReleaseStage } from './agreement'
 // The theme API, so an app themes the pieces without a second package.
-export { createTheme, nocturne, nocturneLight, themeToCss } from '@slicerx/ui/theme'
+export { createTheme, subban, subbanLight, nocturne, nocturneLight, themeToCss } from '@slicerx/ui/theme'
 export type { Theme, ThemeInput, ThemeColors, ThemeGradient, ThemeFonts, ThemeRadius, ThemeScene } from '@slicerx/ui/theme'
 export type { ViewportTheme } from '@slicerx/viewport'

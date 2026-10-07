@@ -46,7 +46,7 @@ export function fontFaceCss(faces: readonly FontFace[]): string {
 /** Families the theme names that no file and no base font provides. They show only where the font is installed. */
 export function missingFonts(config: EditionConfig): string[] {
   const t = config.brand.theme
-  if (t === 'nocturne') return []
+  if (typeof t === 'string') return []
   const have = new Set([...BASE_FONT_FAMILIES, ...(t.tokens.fontFiles ?? []).map((f) => f.family)].map((f) => f.toLowerCase()))
   const out = new Set<string>()
   for (const value of Object.values(t.tokens.fonts ?? {})) {

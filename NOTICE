@@ -33,7 +33,7 @@ advice.
    as its own process (the slicerx-mcp server) and offer its source. Do not
    bundle it into closed code.
 4. Names. Use your own product name and logo. "SlicerX", its logo and the
-   Nocturne artwork are trademarks (TRADEMARK.md).
+   Subban artwork are trademarks (TRADEMARK.md).
 
 The stock printer, filament and process profiles in packages/profiles/ come
 from the profile resources of OrcaSlicer and Bambu Studio and are licensed
@@ -67,7 +67,7 @@ release time into THIRD_PARTY_LICENSES and shipped with every build.
 The aegis wall generator follows the method of preFlight's Athena walls, with
 thanks to the preFlight authors. SlicerX contains none of their code.
 
-"SlicerX", the SlicerX logo, and the Nocturne theme artwork are trademarks or
+"SlicerX", the SlicerX logo, and the Subban theme artwork are trademarks or
 reserved brand assets of the SlicerX project. The open source license grants
 no rights in them beyond the "Made possible by SlicerX" credit above. A fork must not
 call itself SlicerX. TRADEMARK.md explains what a white-label edition may

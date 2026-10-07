@@ -56,7 +56,7 @@ This is what the files in this repository say, not legal advice. `NOTICE`, `docs
 1. Keep the credit. Show "Made possible by SlicerX", linked to https://slicerx.app/support, on your About screen and in your docs. An edition config shows it for you and cannot drop it. Ready-made badges, a Support SlicerX button, copy and screenshots are in `credit-kit/` (see its README).
 2. Path A, your own edition. The bundled printer profiles, printer pictures and Bambu certificates are AGPL-3.0-or-later, so an edition that ships them is an AGPL combined work as a whole. Publish its source (your fork: the SlicerX repository plus your config and brand files) and set `legal.sourceUrl` to it. Another app of yours, such as LayerMate, stays your own when it only launches the edition as a separate program and links none of its code.
 3. Path B, embedding. `@slicerx/viewport` and `@slicerx/embed` are Apache-2.0 and can go into closed code. `@slicerx/mcp` carries AGPL profile data, so run it as its own process (the `slicerx-mcp` server) and offer its source. Do not bundle it into closed code.
-4. Names. Use your own product name and logo. "SlicerX", its logo and the Nocturne artwork are trademarks (TRADEMARK.md).
+4. Names. Use your own product name and logo. "SlicerX", its logo and the Subban artwork are trademarks (TRADEMARK.md).
 
 ## Choose a path
 
@@ -101,7 +101,7 @@ export default defineEditionConfig({
     shortName: 'Acme',
     tagline: 'Slicing for your Acme library',
     logo: { mark: 'brand/acme-mark.svg', appIcon: 'brand/acme-icon.png' },
-    theme: { base: 'nocturne', tokens: { colors: { purple: '#e8590c' }, fonts: { display: 'Inter' } } },
+    theme: { base: 'subban', tokens: { colors: { purple: '#e8590c' }, fonts: { display: 'Inter' } } },
   },
   apps: {
     desktop: { identifier: 'com.acme.layer', productName: 'Acme Layer' },
@@ -133,7 +133,7 @@ export default defineEditionConfig({
 
 ```ts
 theme: {
-  base: 'nocturne',
+  base: 'subban',
   tokens: {
     colors: { purple: '#e8590c' },
     fonts: { display: 'Sora', body: 'Manrope' },
@@ -177,7 +177,7 @@ This is a summary of the files in the repository, not legal advice. Read `NOTICE
 
 - Anyone may fork, rebrand and sell an edition. The SlicerX code is Apache-2.0. Keep `LICENSE-APACHE` and `NOTICE`, keep each file's license header, and mark files you change, as Apache-2.0 section 4 asks.
 - Credit: a small "Made possible by SlicerX" line with a link to https://slicerx.app/support in the About screen and in the product's docs. It does not belong in the main UI.
-- Name and logo: "SlicerX", its logo and the Nocturne artwork are trademarks of the SlicerX project. The product must have its own name and logo. The config checker refuses the SlicerX name, the built-in SlicerX logo and `app.slicerx.*` identifiers in any edition whose id is not `slicerx`. Saying "built on SlicerX" is allowed. [TRADEMARK.md](../../TRADEMARK.md) has the rules.
+- Name and logo: "SlicerX", its logo and the Subban artwork are trademarks of the SlicerX project. The product must have its own name and logo. The config checker refuses the SlicerX name, the built-in SlicerX logo and `app.slicerx.*` identifiers in any edition whose id is not `slicerx`. Saying "built on SlicerX" is allowed. [TRADEMARK.md](../../TRADEMARK.md) has the rules.
 - AGPL parts: `REUSE.toml` lists these as AGPL-3.0-or-later: the stock printer, filament and process profiles in `packages/profiles` (from OrcaSlicer and Bambu Studio), the printer pictures in `packages/profiles/printer-images`, and Bambu Lab's printer certificate authorities in `packages/connect/certs/bambu-ca.pem`. `NOTICE` and `docs/licensing.md` say that the app ships the profiles and that the app as distributed is therefore covered by the AGPL as a whole, and that a hosted build must offer its source (section 13). `legal.sourceUrl` is where the app links to the source of the exact build. Report this to the user as what those files say, and tell them to get legal advice before shipping commercially.
 - Other licenses: the UltiMaker profiles in `packages/profiles/cura` are LGPL-3.0-or-later, and the STEP reader (Open CASCADE) is LGPL-2.1 with a source offer. Ship the license texts: the release build generates `THIRD_PARTY_LICENSES`, and `THIRD-PARTY.md` lists what is in it.
 - Printer maker names and logos belong to their owners and are used only to identify printers.
@@ -450,7 +450,7 @@ The color roles. Keep them when you recolor, even though some names are historic
 A worked example, a green brand on a dark app:
 
 ```ts
-import { createTheme, nocturne } from '@slicerx/embed'
+import { createTheme, subban } from '@slicerx/embed'
 
 export const brandDark = createTheme({
   name: 'acme-dark',
@@ -464,22 +464,22 @@ export const brandDark = createTheme({
   fonts: { body: 'Inter, system-ui, sans-serif', display: 'Inter, system-ui, sans-serif' },
   radius: { md: '6px', lg: '10px' },
   scene: { top: '#17211c', bottom: '#070b09', glow: '#1d2a23', plate: '#2f4338', grid: '#4f7a62', edge: '#020403' },
-}, nocturne)
+}, subban)
 ```
 
-Light and dark: make a second theme on `nocturneLight` (`createTheme({ ... }, nocturneLight)`) and pick one by the app's own setting or `matchMedia('(prefers-color-scheme: dark)')`. Changing the `theme` prop of `EmbedTheme` re-themes at once.
+Light and dark: make a second theme on `subbanLight` (`createTheme({ ... }, subbanLight)`) and pick one by the app's own setting or `matchMedia('(prefers-color-scheme: dark)')`. Changing the `theme` prop of `EmbedTheme` re-themes at once.
 
 Matching a host that already has CSS variables: read them once at start and build the theme from them.
 
 ```ts
 const css = getComputedStyle(document.documentElement)
 const v = (name: string) => css.getPropertyValue(name).trim()
-const theme = createTheme({ colors: { purple: v('--brand-primary'), ink0: v('--bg'), ink1: v('--surface'), fg: v('--text') } }, nocturne)
+const theme = createTheme({ colors: { purple: v('--brand-primary'), ink0: v('--bg'), ink1: v('--surface'), fg: v('--text') } }, subban)
 ```
 
 Colors must be `#rrggbb` for the 3D scene; other formats work for the UI parts only.
 
-Check contrast: with the MCP server connected, call `slicerx_theme_create` with `{ "base": "nocturne", "overrides": { ...the same object... } }`. It returns a WCAG contrast check; fix every failing pair. Without React, `themeToCss(theme, '[data-my-scope]')` returns a stylesheet.
+Check contrast: with the MCP server connected, call `slicerx_theme_create` with `{ "base": "subban", "overrides": { ...the same object... } }`. It returns a WCAG contrast check; fix every failing pair. Without React, `themeToCss(theme, '[data-my-scope]')` returns a stylesheet.
 
 Use the gradient for at most one hero moment per screen. Controls, including the primary button, use the solid accent.
 

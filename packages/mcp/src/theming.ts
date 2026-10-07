@@ -8,7 +8,7 @@ import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
-import { createTheme, nocturne, resolveColor, themes, themeToCss, themeToVars, type Theme, type ThemeInput } from '@slicerx/ui/theme'
+import { createTheme, subban, resolveColor, themes, themeToCss, themeToVars, type Theme, type ThemeInput } from '@slicerx/ui/theme'
 import { z } from 'zod'
 
 export interface ContrastCheck {
@@ -66,7 +66,7 @@ export function checkTheme(theme: Theme): ContrastCheck[] {
 }
 
 const color = z.string().min(1).max(64)
-const colorKeys = Object.keys(nocturne.colors) as (keyof Theme['colors'])[]
+const colorKeys = Object.keys(subban.colors) as (keyof Theme['colors'])[]
 const themeInput = z
   .object({
     name: z.string().regex(/^[a-z0-9-]{1,40}$/, 'lowercase letters, digits and dashes').optional(),
@@ -83,7 +83,9 @@ type Result = (data: object, text?: string) => CallToolResult
 
 export function registerThemingTools(server: McpServer, opts: { outDir: string; ok: Result; guard(fn: () => Promise<CallToolResult> | CallToolResult): Promise<CallToolResult> }): void {
   const { ok, guard } = opts
-  const names = Object.keys(themes) as (keyof typeof themes)[]
+  // nocturne and nocturneLight are the earlier names of subban and subbanLight, kept for callers that still send them
+  const builtIn: Record<string, Theme> = { ...themes, nocturne: themes.subban, nocturneLight: themes.subbanLight }
+  const names = Object.keys(builtIn)
   const readOnly = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false } as const
 
   server.registerTool(
@@ -91,13 +93,13 @@ export function registerThemingTools(server: McpServer, opts: { outDir: string; 
     {
       title: 'Get a built-in theme',
       description:
-        'Return a built-in theme (nocturne, the dark default; nocturneLight; forge, an example rebrand) as the theme object, its CSS variables and a ready stylesheet. Use it as the base for slicerx_theme_create.',
-      inputSchema: { name: z.enum(names as [string, ...string[]]).default('nocturne') },
+        'Return a built-in theme (subban, the dark default; subbanLight; forge, an example rebrand) as the theme object, its CSS variables and a ready stylesheet. Use it as the base for slicerx_theme_create.',
+      inputSchema: { name: z.enum(names as [string, ...string[]]).default('subban') },
       annotations: readOnly,
     },
     (args) =>
       guard(() => {
-        const theme = themes[args.name as keyof typeof themes]
+        const theme = builtIn[args.name] as Theme
         return ok({ theme, vars: themeToVars(theme), css: themeToCss(theme), contrast: checkTheme(theme) })
       }),
   )
@@ -107,13 +109,13 @@ export function registerThemingTools(server: McpServer, opts: { outDir: string; 
     {
       title: 'Create a theme',
       description: [
-        'Build a theme for an embedded SlicerX: overrides on top of a built-in base, covering colors (Nocturne role names: purple is the accent, pink commerce, cyan live data, green ok, orange attention, red error), the gradient, fonts, radii and the spacing unit.',
+        'Build a theme for an embedded SlicerX: overrides on top of a built-in base, covering colors (Subban role names: purple is the accent, pink commerce, cyan live data, green ok, orange attention, red error), the gradient, fonts, radii and the spacing unit.',
         'Returns the full theme, its CSS variables, a stylesheet scoped to a selector, and a WCAG contrast check; fix any failing pair before shipping.',
         'The gradient is for the layered X mark and at most one hero moment; controls, including the primary button, use the solid accent color.',
         'With save: true it writes <name>.json and <name>.css to the server output folder. The page applies it with applyTheme(theme) or <ThemeProvider theme={theme}>, or by loading the stylesheet.',
       ].join(' '),
       inputSchema: {
-        base: z.enum(names as [string, ...string[]]).default('nocturne'),
+        base: z.enum(names as [string, ...string[]]).default('subban'),
         overrides: themeInput,
         selector: z.string().max(120).default(':root').describe('CSS selector the stylesheet targets, such as ":root" or \'[data-sx-theme="acme"]\''),
         save: z.boolean().default(false),
@@ -122,7 +124,7 @@ export function registerThemingTools(server: McpServer, opts: { outDir: string; 
     },
     (args) =>
       guard(() => {
-        const theme = createTheme(args.overrides as ThemeInput, themes[args.base as keyof typeof themes])
+        const theme = createTheme(args.overrides as ThemeInput, builtIn[args.base] as Theme)
         const css = themeToCss(theme, args.selector)
         const checks = checkTheme(theme)
         const failing = checks.filter((c) => c.ok === false)

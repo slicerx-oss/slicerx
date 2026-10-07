@@ -212,7 +212,7 @@ Every SlicerX surface you embed can carry your brand. The UI components read the
 
 ```tsx
 import '@slicerx/ui/styles.css'
-import { ThemeProvider, createTheme, nocturneLight, themeToCss, resolveColor } from '@slicerx/ui'
+import { ThemeProvider, createTheme, subbanLight, themeToCss, resolveColor } from '@slicerx/ui'
 
 const acme = createTheme({
   name: 'acme',
@@ -224,7 +224,7 @@ const acme = createTheme({
     href: 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@600&display=swap',
   },
   radius: { md: '6px', lg: '10px' },
-}, nocturneLight) // start from the light theme
+}, subbanLight) // start from the light theme
 
 export function PrintPanel() {
   return (
@@ -239,7 +239,7 @@ const css = themeToCss(acme, '[data-sx-theme="acme"]')
 const accent = resolveColor(acme, 'var(--purple)') // "#2f6df6"
 ```
 
-`createTheme(overrides, base)` merges your overrides onto Nocturne, the dark default. `nocturneLight` and `forge` (a complete rebrand to start from) are built in. Keep the color roles when you recolor: the accent marks selection and focus, cyan marks live data, green ok, orange attention and red errors. The gradient belongs to the layered X mark and at most one hero moment on a screen; controls, including the primary button, use the solid accent color. Without React, import the same functions from `@slicerx/ui/theme`. An AI assistant connected to the MCP server can build and check a theme with `slicerx_theme_create`, which reports any text and background pair below WCAG AA. The full reference is [packages/ui/THEMING.md](../packages/ui/THEMING.md).
+`createTheme(overrides, base)` merges your overrides onto Subban, the dark default. `subbanLight` and `forge` (a complete rebrand to start from) are built in. Keep the color roles when you recolor: the accent marks selection and focus, cyan marks live data, green ok, orange attention and red errors. The gradient belongs to the layered X mark and at most one hero moment on a screen; controls, including the primary button, use the solid accent color. Without React, import the same functions from `@slicerx/ui/theme`. An AI assistant connected to the MCP server can build and check a theme with `slicerx_theme_create`, which reports any text and background pair below WCAG AA. The full reference is [packages/ui/THEMING.md](../packages/ui/THEMING.md).
 
 The viewport takes a theme of its own for the 3D scene: background gradient, selection, live layer, travel, overhang, clay, plate and edge colors, a color per SXPV feature, a heat ramp of two to eight stops, and tool colors. Every field is optional. The full reference is [packages/ui/viewport/THEMING.md](../packages/ui/viewport/THEMING.md).
 

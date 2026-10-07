@@ -5,15 +5,15 @@ import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { MONO_FONTS, UI_FONTS, resolveFonts } from '../src/fonts'
 import { FONT_IDS } from '../src/fonts-ids'
-import { nocturne } from '../src/theme'
-import { BUNDLED_THEMES, DEFAULT_DARK_THEME, DEFAULT_LIGHT_THEME, DEFAULT_THEME_IDS, allThemes, findTheme, pickTheme, slugify, themeForScheme } from '../src/theme-library'
-import { nocturneLight } from '../src/themes'
+import { nocturne, subban } from '../src/theme'
+import { BUNDLED_THEMES, DEFAULT_DARK_THEME, DEFAULT_LIGHT_THEME, DEFAULT_THEME_IDS, LEGACY_THEME_IDS, allThemes, familyId, findTheme, migrateThemeId, pickFamily, pickTheme, slugify, themeFamilies, themeForScheme } from '../src/theme-library'
+import { nocturneLight, subbanLight } from '../src/themes'
 import { SCENE } from '../viewport/src/palette'
-import { GLYPH_CONTRAST, TEXT_CONTRAST, contrast, derivePalette, deriveScene, mixHex, parseHex, parseThemeText, readable, rehue, serializeTheme, themeColors, themeFromFile, validateThemeFile, type ThemeFile } from '../src/themefile'
+import { GLYPH_CONTRAST, HIGH_TEXT_CONTRAST, TEXT_CONTRAST, contrast, derivePalette, deriveScene, mixHex, parseHex, parseThemeText, readable, rehue, serializeTheme, themeColors, themeFromFile, validateThemeFile, type ThemeFile } from '../src/themefile'
 
 const here = resolve(import.meta.dirname, '../themes')
-const slicerxDark = BUNDLED_THEMES.find((t) => t.id === 'slicerx-dark') as ThemeFile
-const slicerxLight = BUNDLED_THEMES.find((t) => t.id === 'slicerx-light') as ThemeFile
+const slicerxDark = BUNDLED_THEMES.find((t) => t.id === 'subban-dark') as ThemeFile
+const slicerxLight = BUNDLED_THEMES.find((t) => t.id === 'subban-light') as ThemeFile
 
 const good = () => JSON.parse(JSON.stringify(slicerxDark)) as Record<string, unknown>
 
@@ -50,7 +50,7 @@ describe('hex math', () => {
 })
 
 describe('derived palette follows the documented rules', () => {
-  it('derives SlicerX dark', () => {
+  it('derives Subban dark', () => {
     const p = derivePalette(slicerxDark)
     expect(p.pane).toBe(mixHex('#282a36', '#2f3241', 0.5))
     expect(p.hairline).toBe(mixHex('#282a36', '#44475a', 0.7))
@@ -62,9 +62,9 @@ describe('derived palette follows the documented rules', () => {
   })
   it('uses the status overrides when a theme sets them', () => {
     const p = derivePalette(slicerxLight)
-    expect(p.orange).toBe('#c8661b')
-    expect(p.red).toBe('#931d27')
-    expect(p.green).toBe('#2b7536')
+    expect(p.orange).toBe('#9a5a16')
+    expect(p.red).toBe('#c33c3c')
+    expect(p.green).toBe('#168452')
     expect(p.onAccent).toBe('#ffffff')
   })
   it('deepens a pale accent on a light theme to 3:1', () => {
@@ -97,13 +97,15 @@ describe('derived palette follows the documented rules', () => {
 })
 
 describe('maps onto the app theme', () => {
-  it('the built-in Nocturne themes equal the SlicerX files', () => {
-    expect(nocturne.colors).toEqual(themeColors(slicerxDark))
-    expect(nocturneLight.colors).toEqual(themeColors(slicerxLight))
+  it('the built-in Subban themes equal the Subban files, and the Nocturne names still reach them', () => {
+    expect(subban.colors).toEqual(themeColors(slicerxDark))
+    expect(subbanLight.colors).toEqual(themeColors(slicerxLight))
+    expect(nocturne).toBe(subban)
+    expect(nocturneLight).toBe(subbanLight)
   })
   it('sets the scheme and uses the id as the theme name', () => {
     expect(themeFromFile(slicerxLight).scheme).toBe('light')
-    expect(themeFromFile(slicerxDark).name).toBe('slicerx-dark')
+    expect(themeFromFile(slicerxDark).name).toBe('subban-dark')
   })
   it('the person font choice beats the theme suggestion, which beats the default', () => {
     const suggested = { ...slicerxDark, fonts: { ui: 'inter', mono: 'ibm-plex-mono' } }
@@ -122,7 +124,7 @@ describe('maps onto the app theme', () => {
 })
 
 describe('scene', () => {
-  it('SlicerX dark derives the default dark studio exactly', () => {
+  it('Subban dark derives the default dark studio exactly', () => {
     const sc = deriveScene(slicerxDark)
     expect(sc.top).toBe(SCENE.bgTop)
     expect(sc.bottom).toBe(SCENE.bgBottom)
@@ -229,11 +231,26 @@ describe('validation', () => {
 })
 
 describe('the bundled files', () => {
-  it('has exactly the seven themes, with SlicerX dark and SlicerX light first of their kind', () => {
-    expect(BUNDLED_THEMES.map((t) => t.id)).toEqual(['slicerx-dark', 'tokyo-night', 'atom-one-dark', 'slicerx-light', 'github-light', 'solarized-light', 'one-light'])
-    expect(DEFAULT_DARK_THEME).toBe('slicerx-dark')
-    expect(DEFAULT_LIGHT_THEME).toBe('slicerx-light')
-    expect(BUNDLED_THEMES.some((t) => /dracula/i.test(t.id + t.name))).toBe(false)
+  it('has the thirteen themes in light and dark, Subban first', () => {
+    expect(BUNDLED_THEMES.map((t) => t.id)).toEqual([
+      'subban-dark', 'subban-light', 'dracula', 'alucard', 'catppuccin-mocha', 'catppuccin-macchiato', 'catppuccin-frappe', 'catppuccin-latte', 'nord', 'nord-light', 'atom-one-dark', 'one-light',
+      'tokyo-night', 'tokyo-night-day', 'github-dark', 'github-light', 'solarized-dark', 'solarized-light', 'night', 'night-light', 'gothic', 'gothic-dark', 'newsprint', 'newsprint-dark', 'pixyll', 'pixyll-dark', 'whitey', 'whitey-dark',
+    ])
+    expect(DEFAULT_DARK_THEME).toBe('subban-dark')
+    expect(DEFAULT_LIGHT_THEME).toBe('subban-light')
+    const families = themeFamilies(BUNDLED_THEMES)
+    expect(families.map((f) => f.name)).toEqual(['Subban', 'Dracula', 'Catppuccin', 'Nord', 'One', 'Tokyo Night', 'GitHub', 'Solarized', 'Night', 'Gothic', 'Newsprint', 'Pixyll', 'Whitey'])
+    for (const f of families) {
+      expect(f.light.length, f.id).toBe(1)
+      expect(f.dark.length, f.id).toBeGreaterThanOrEqual(1)
+    }
+    expect(families.find((f) => f.id === 'catppuccin')?.dark.map((t) => t.flavor)).toEqual(['Mocha', 'Macchiato', 'Frappe'])
+    expect(families.find((f) => f.id === 'catppuccin')?.light[0]?.flavor).toBe('Latte')
+  })
+  it('Subban light is the Nocturne Bright palette', () => {
+    expect(slicerxLight).toMatchObject({ background: '#fbf8ff', text: '#2d2834', accent: '#7542bd', isDark: false, family: 'subban' })
+    expect(slicerxLight.ansi.slice(1, 7)).toEqual(['#c33c3c', '#168452', '#8a6a00', '#276fa9', '#b3316d', '#008494'])
+    expect(slicerxLight.waiting).toBe('#9a5a16')
   })
   it('every file on disk is valid, named after its id, and listed', () => {
     const files = readdirSync(here).filter((f) => f.endsWith('.json') && f !== 'schema.json')
@@ -247,9 +264,8 @@ describe('the bundled files', () => {
       }
     }
   })
-  it('credits Dracula in the license file', () => {
+  it('keeps the Dracula license text with the palettes', () => {
     expect(readFileSync(resolve(here, 'LICENSES.md'), 'utf8')).toMatch(/Dracula Theme/)
-    expect(slicerxDark.credit).toMatch(/Dracula/)
   })
   it('the JSON Schema agrees with the validator', () => {
     const schema = JSON.parse(readFileSync(resolve(here, 'schema.json'), 'utf8')) as { required: string[]; properties: Record<string, { enum?: string[]; properties?: Record<string, { enum: string[] }> }> }
@@ -260,26 +276,95 @@ describe('the bundled files', () => {
 })
 
 describe('library', () => {
-  const mine: ThemeFile = { ...slicerxDark, id: 'mine', name: 'Mine' }
+  const mine: ThemeFile = { ...slicerxDark, id: 'mine', name: 'Mine', family: 'mine', familyName: 'Mine' }
   it('user themes extend the list and replace bundled ids', () => {
     expect(allThemes([mine]).map((t) => t.id)).toContain('mine')
     const replaced = allThemes([{ ...slicerxDark, name: 'Changed' }])
-    expect(replaced.filter((t) => t.id === 'slicerx-dark')).toHaveLength(1)
-    expect(replaced.find((t) => t.id === 'slicerx-dark')?.name).toBe('Changed')
+    expect(replaced.filter((t) => t.id === 'subban-dark')).toHaveLength(1)
+    expect(replaced.find((t) => t.id === 'subban-dark')?.name).toBe('Changed')
   })
   it('a missing id falls back to the default of its slot', () => {
-    expect(findTheme('deleted', 'dark').id).toBe('slicerx-dark')
-    expect(findTheme('deleted', 'light').id).toBe('slicerx-light')
+    expect(findTheme('deleted', 'dark').id).toBe('subban-dark')
+    expect(findTheme('deleted', 'light').id).toBe('subban-light')
+  })
+  it('the earlier ids of the default theme reach Subban', () => {
+    for (const [old, now] of Object.entries(LEGACY_THEME_IDS)) {
+      expect(migrateThemeId(old)).toBe(now)
+      expect(findTheme(old, 'dark').id).toBe(now)
+    }
+    expect(migrateThemeId('slicerx-dark')).toBe('subban-dark')
+    expect(migrateThemeId('nocturne')).toBe('subban-dark')
+    expect(migrateThemeId('nocturne-light')).toBe('subban-light')
+    expect(migrateThemeId('tokyo-night')).toBe('tokyo-night')
   })
   it('picking fills the slot of the theme brightness', () => {
-    expect(pickTheme(DEFAULT_THEME_IDS, mine)).toEqual({ dark: 'mine', light: 'slicerx-light' })
+    expect(pickTheme(DEFAULT_THEME_IDS, mine)).toEqual({ dark: 'mine', light: 'subban-light' })
     const tokyo = BUNDLED_THEMES.find((t) => t.id === 'github-light') as ThemeFile
-    expect(pickTheme(DEFAULT_THEME_IDS, tokyo)).toEqual({ dark: 'slicerx-dark', light: 'github-light' })
+    expect(pickTheme(DEFAULT_THEME_IDS, tokyo)).toEqual({ dark: 'subban-dark', light: 'github-light' })
     expect(themeForScheme('light', { dark: 'mine', light: 'github-light' }, [mine]).id).toBe('github-light')
+  })
+  it('picking a family fills both slots, keeping or choosing the dark flavor', () => {
+    const fam = (id: string) => themeFamilies(BUNDLED_THEMES).find((f) => f.id === id)!
+    expect(pickFamily(DEFAULT_THEME_IDS, fam('nord'))).toEqual({ dark: 'nord', light: 'nord-light' })
+    expect(pickFamily(DEFAULT_THEME_IDS, fam('catppuccin'))).toEqual({ dark: 'catppuccin-mocha', light: 'catppuccin-latte' })
+    expect(pickFamily(DEFAULT_THEME_IDS, fam('catppuccin'), 'catppuccin-frappe')).toEqual({ dark: 'catppuccin-frappe', light: 'catppuccin-latte' })
+    expect(pickFamily({ dark: 'catppuccin-macchiato', light: 'catppuccin-latte' }, fam('catppuccin'))).toEqual({ dark: 'catppuccin-macchiato', light: 'catppuccin-latte' })
+    // a theme of one brightness only fills its own slot
+    const solo = themeFamilies([...BUNDLED_THEMES, mine]).find((f) => f.id === 'mine')!
+    expect(pickFamily(DEFAULT_THEME_IDS, solo)).toEqual({ dark: 'mine', light: 'subban-light' })
+    expect(familyId(mine)).toBe('mine')
   })
   it('slugifies names', () => {
     expect(slugify('My Cool Theme!')).toBe('my-cool-theme')
     expect(slugify('***')).toBe('theme')
     expect(slugify('x'.repeat(60)).length).toBeLessThanOrEqual(40)
+  })
+})
+
+describe('contrast of every bundled theme', () => {
+  const grounds = (t: ThemeFile) => [t.background, t.surface]
+  const atLeast = (c: string, t: ThemeFile, min: number) => grounds(t).every((g) => contrast(c, g) >= min - 1e-9)
+  for (const t of BUNDLED_THEMES) {
+    it(`${t.name}: text reaches AA and glyph colors 3:1`, () => {
+      for (const g of grounds(t)) expect(contrast(t.text, g), `${t.id} text on ${g}`).toBeGreaterThanOrEqual(TEXT_CONTRAST)
+      for (const vision of ['standard', 'redgreen', 'blueyellow'] as const) {
+        const p = derivePalette(t, { colorVision: vision })
+        for (const k of ['secondary', 'dim'] as const) expect(atLeast(p[k], t, TEXT_CONTRAST), `${t.id} ${vision} ${k} ${p[k]}`).toBe(true)
+        for (const k of ['red', 'green', 'orange', 'yellow', 'blue', 'magenta', 'cyan'] as const) expect(atLeast(p[k], t, GLYPH_CONTRAST), `${t.id} ${vision} ${k} ${p[k]}`).toBe(true)
+        if (!t.isDark) expect(atLeast(p.accent, t, GLYPH_CONTRAST), `${t.id} accent`).toBe(true)
+        expect(contrast(p.onAccent, p.accent), `${t.id} ink on accent`).toBeGreaterThanOrEqual(GLYPH_CONTRAST)
+      }
+    })
+    it(`${t.name}: higher contrast reaches 7:1 for secondary text and 4.5:1 for glyphs`, () => {
+      const p = derivePalette(t, { contrast: 'higher' })
+      for (const k of ['secondary', 'dim'] as const) expect(atLeast(p[k], t, HIGH_TEXT_CONTRAST) || p[k] === t.text, `${t.id} ${k}`).toBe(true)
+      for (const k of ['red', 'green', 'orange', 'accent'] as const) expect(atLeast(p[k], t, TEXT_CONTRAST) || p[k] === t.text, `${t.id} ${k}`).toBe(true)
+      expect(contrast(p.border, t.background)).toBeGreaterThan(contrast(t.border, t.background))
+    })
+  }
+  it('color vision changes the colors that collide and keeps them apart from each other', () => {
+    for (const t of BUNDLED_THEMES) {
+      const std = derivePalette(t)
+      const rg = derivePalette(t, { colorVision: 'redgreen' })
+      const by = derivePalette(t, { colorVision: 'blueyellow' })
+      expect(rg.green, t.id).not.toBe(std.green)
+      expect(by.cyan, t.id).not.toBe(std.cyan)
+      expect(new Set([rg.red, rg.green, rg.orange]).size, t.id).toBe(3)
+      expect(new Set([by.red, by.green, by.orange, by.cyan]).size, t.id).toBe(4)
+    }
+  })
+})
+
+describe('family fields', () => {
+  it('validates and keeps family, familyName and flavor', () => {
+    const r = validateThemeFile({ ...good(), family: 'mine', familyName: 'Mine', flavor: 'Deep' })
+    expect(r.ok && [r.theme.family, r.theme.familyName, r.theme.flavor]).toEqual(['mine', 'Mine', 'Deep'])
+    const bad = validateThemeFile({ ...good(), family: 'Not A Slug', flavor: '' })
+    expect(bad.ok).toBe(false)
+    if (!bad.ok) expect(bad.errors.join(' ')).toMatch(/family must be.*flavor must be/)
+  })
+  it('round-trips through serializeTheme', () => {
+    const r = parseThemeText(serializeTheme(BUNDLED_THEMES.find((t) => t.id === 'catppuccin-frappe') as ThemeFile))
+    expect(r.ok && r.theme.flavor).toBe('Frappe')
   })
 })

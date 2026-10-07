@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// Nocturne for React Native. Colors, radii and the spacing unit come from the React-free theme
+// Subban for React Native. Colors, radii and the spacing unit come from the React-free theme
 // entry of @slicerx/ui, so a retheme there reaches the phone. React Native has no CSS variables
 // and no color-mix(), so tints are computed here once.
-import { nocturne, resolveColor, type Theme } from '@slicerx/ui/theme'
+import { subban, resolveColor, type Theme } from '@slicerx/ui/theme'
 import type { Tone } from '@slicerx/contracts'
 import type { TextStyle } from 'react-native'
 
@@ -50,7 +50,7 @@ function build(theme: Theme) {
     },
     gradient: { from: resolveColor(theme, theme.gradient.from), to: resolveColor(theme, theme.gradient.to) },
     radius: { xs: px(theme.radius.xs), sm: px(theme.radius.sm), md: px(theme.radius.md), lg: px(theme.radius.lg), pill: 999 },
-    /** space(1) is one grid unit (8 in Nocturne); space(0.5) is 4. */
+    /** space(1) is one grid unit (8 in Subban); space(0.5) is 4. */
     space: (steps: number) => steps * unit,
     gutter: unit * 2,
     hairline: 1,
@@ -59,7 +59,7 @@ function build(theme: Theme) {
   }
 }
 
-export const t = build(nocturne)
+export const t = build(subban)
 export type Tokens = typeof t
 
 /**

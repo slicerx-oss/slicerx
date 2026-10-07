@@ -1,18 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// Nocturne values for code that cannot read CSS variables (the viewport's WebGPU materials,
+// Subban values for code that cannot read CSS variables (the viewport's WebGPU materials,
 // canvas drawing, the reel). Mirrors tokens.css; a test keeps the two in step.
 
 import { motionReduced } from './motion'
-import { nocturne } from './theme'
+import { subban } from './theme'
 
-/** Values of the Nocturne palette. Component styles use the CSS variables, never these. */
-export const NOCTURNE = nocturne.colors
+/** Values of the Subban palette. Component styles use the CSS variables, never these. */
+export const SUBBAN = subban.colors as Required<typeof subban.colors>
 
-export type NocturneColor = keyof typeof NOCTURNE
+export type SubbanColor = keyof typeof SUBBAN
 
-/** Maps a NOCTURNE key to the CSS custom property that carries the same value. */
-export const NOCTURNE_VARS: Record<NocturneColor, string> = {
+/** Maps a SUBBAN key to the CSS custom property that carries the same value. */
+export const SUBBAN_VARS: Record<SubbanColor, string> = {
   ink0: '--ink-0',
   ink1: '--ink-1',
   ink2: '--ink-2',
@@ -30,6 +30,7 @@ export const NOCTURNE_VARS: Record<NocturneColor, string> = {
   orange: '--orange',
   yellow: '--yellow',
   red: '--red',
+  blue: '--blue',
   onGrad: '--on-grad',
   shadow: '--shadow-color',
 }
@@ -48,13 +49,20 @@ export const ROLE = {
   ok: 'green',
   attention: 'orange',
   error: 'red',
-} as const satisfies Record<string, NocturneColor>
+} as const satisfies Record<string, SubbanColor>
 
 /** Fonts, for canvases that draw text. */
-export const FONTS = { display: nocturne.fonts.display, body: nocturne.fonts.body, mono: nocturne.fonts.mono } as const
+export const FONTS = { display: subban.fonts.display, body: subban.fonts.body, mono: subban.fonts.mono } as const
 
-/** Stylesheet for the three Nocturne families. */
-export const FONTS_HREF = nocturne.fonts.href as string
+/** Stylesheet for the three Subban families. */
+export const FONTS_HREF = subban.fonts.href as string
+
+/** @deprecated Use SUBBAN. */
+export const NOCTURNE = SUBBAN
+/** @deprecated Use SUBBAN_VARS. */
+export const NOCTURNE_VARS = SUBBAN_VARS
+/** @deprecated Use SubbanColor. */
+export type NocturneColor = SubbanColor
 
 /** Product names and the positioning line. Use these, never retyped strings. */
 export const BRAND = {
