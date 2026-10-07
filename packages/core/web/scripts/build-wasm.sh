@@ -10,12 +10,13 @@ root=$(cd "$here/../../.." && pwd)
 export PATH="$HOME/.cargo/bin:$PATH"
 cd "$root"
 # functions marked #[inline], the small generic helpers of std and the polygon crates among them, are
-# inlined up to a cost of 150 instead of 325: 21 KB gzip smaller for under 1 percent more instructions.
+# inlined up to a cost of 110 instead of 325: about 25 KB gzip smaller for about 1 percent more instructions
+# (docs/core-performance.md, items 16 and 19).
 # a panic in the module traps with no message either way (wasm32 has no stderr), so std is built from
 # source with the immediate-abort panic strategy: no panic formatting or source locations, 39 KB gzip
 # smaller and a little faster. std, core, alloc and the allocator stay at opt-level 3, as rustup ships
 # them. both need nightly options, unlocked for the pinned compiler with RUSTC_BOOTSTRAP, and rust-src.
-flags='target.wasm32-unknown-unknown.rustflags=["-Cllvm-args=-inlinehint-threshold=150", "-Zunstable-options", "-Cpanic=immediate-abort"]'
+flags='target.wasm32-unknown-unknown.rustflags=["-Cllvm-args=-inlinehint-threshold=110", "-Zunstable-options", "-Cpanic=immediate-abort"]'
 build() {
   RUSTC_BOOTSTRAP=1 cargo build -q -Zbuild-std=std,panic_abort -p sx-wasm --target wasm32-unknown-unknown \
     --profile wasm-release --config "$flags" \
