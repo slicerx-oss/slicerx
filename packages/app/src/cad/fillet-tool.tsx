@@ -22,6 +22,7 @@ import { followed } from './history/model'
 import { editing, nowOf, saveEdit } from './history/ops'
 import { bindNext } from './history/record'
 import { close, errorText, num, Num, Shell, useProbe } from './panel-kit'
+import { follow, useDraft, useDraftObject, type Now } from './park'
 
 interface Picked {
   objectId: string
@@ -31,6 +32,8 @@ interface Picked {
   last: EdgePick | null
 }
 
+const movedEdge = (e: EdgeRef, now: Now): EdgeRef => ({ a: now.point(e.a), b: now.point(e.b), face: now.dir(e.face), ...(e.center ? { center: now.point(e.center) } : {}), ...(e.keys ? { keys: e.keys } : {}) })
+
 function editState(): { index: number; picked: Picked; kind: Kind; size: string; size2: string } | null {
   const ed = editing()
   const p = ed?.step.params
@@ -38,7 +41,7 @@ function editState(): { index: number; picked: Picked; kind: Kind; size: string;
   const now = nowOf(ed.step, ed.entry.transform)
   // Where the edges are now, after the faces they sit on moved.
   const q = followed(ed.step, ed.entry.history?.steps ?? []).params
-  const edges = (q.op === 'edge.fillet' || q.op === 'edge.chamfer' ? q.edges : p.edges).map((e) => ({ a: now.point(e.a), b: now.point(e.b), face: now.dir(e.face), ...(e.center ? { center: now.point(e.center) } : {}), ...(e.keys ? { keys: e.keys } : {}) }))
+  const edges = (q.op === 'edge.fillet' || q.op === 'edge.chamfer' ? q.edges : p.edges).map((e) => movedEdge(e, now))
   return {
     index: ed.index,
     picked: { objectId: ed.entry.id, partIndex: Math.max(0, ed.step.part), edges, last: null },
@@ -52,10 +55,11 @@ export function FilletTool() {
   const host = useHost()
   const view = cameraBus()?.cad
   const [edit] = useState(editState)
-  const [kind, setKind] = useState<Kind>(edit?.kind ?? 'fillet')
-  const [picked, setPicked] = useState<Picked | null>(edit?.picked ?? null)
-  const [size, setSize] = useState(edit?.size ?? '1')
-  const [size2, setSize2] = useState(edit?.size2 ?? '')
+  const [kind, setKind] = useDraft<Kind>('kind', edit?.kind ?? 'fillet')
+  const [picked, setPicked] = useDraft<Picked | null>('picked', edit?.picked ?? null, follow((p, now) => p && { ...p, edges: p.edges.map((e) => movedEdge(e, now)), last: null }))
+  useDraftObject(picked?.objectId)
+  const [size, setSize] = useDraft('size', edit?.size ?? '1')
+  const [size2, setSize2] = useDraft('size2', edit?.size2 ?? '')
   const [note, setNote] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [previewOk, setPreviewOk] = useState(false)
