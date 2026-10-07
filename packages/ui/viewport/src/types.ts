@@ -432,8 +432,11 @@ export interface Viewport {
   setBrimEars(ears: Record<string, { x: number; y: number; z: number; r: number; error?: boolean; selected?: boolean }[]>): void
   /** Radius of the faint disc that follows the cursor while the brim tool is on; null hides it. */
   setBrimHoverRadius(r: number | null): void
-  /** Fit check: a line between the closest points of two parts that sit too close. Empty clears them. */
-  setGapLines(lines: readonly { from: [number, number, number]; to: [number, number, number]; kind: 'horizontal' | 'vertical' | 'fused' }[]): void
+  /**
+   * Fit check: a line between the closest points of two parts that sit too close. `on`: the objects it was measured
+   * on and their transforms then; it follows one object as it moves and hides once either of two has moved. Empty clears them.
+   */
+  setGapLines(lines: readonly { from: [number, number, number]; to: [number, number, number]; kind: 'horizontal' | 'vertical' | 'fused' | 'apart'; on?: readonly { id: string; transform: readonly number[] }[] }[]): void
   /** Modeling guides in bed coordinates (mm): lines, closed outlines and end point dots. An empty object clears them. */
   setGuides(guides: Guides): void
   /** Probe tool: highlight the flat face under the cursor, as lay on face does. */

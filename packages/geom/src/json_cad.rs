@@ -452,9 +452,17 @@ fn import_auto_op(req: &Value, enc: MeshOut, files: FileLoader<'_>) -> Result<Va
 }
 
 fn fit_op(req: &Value, files: FileLoader<'_>) -> Result<Value> {
-    let m = plate_mesh(req, files)?;
     let opts: FitOptions = parse(req)?;
-    to_value(&fit::fit_check(&m, &opts)?)
+    // each mesh on its own, so a body keeps the mesh it came from
+    let meshes: Vec<TriMesh> = if req.get("meshes").is_some() {
+        items(req, "meshes", files)?.iter().map(Item::world).collect()
+    } else {
+        vec![item_field(req, "mesh", files)?.world()]
+    };
+    if meshes.is_empty() {
+        return Err(Error::invalid("meshes", "needs at least one mesh"));
+    }
+    to_value(&fit::fit_check_items(&meshes, &opts)?)
 }
 
 #[cfg(feature = "cad")]

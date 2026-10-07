@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest'
 import type { PrimeTowerPlacement } from '@slicerx/contracts'
-import { towerMesh, towerNote, towerPlacement } from '../src/plate/tower'
+import { towerMesh, towerNote, towerPlacement, towerShown } from '../src/plate/tower'
 
 const r = (reason: PrimeTowerPlacement['reason']): PrimeTowerPlacement => ({ x: 10, y: 20, width: 35, depth: 20, angle: 0, reason })
 
@@ -22,6 +22,16 @@ describe('prime tower', () => {
     expect(towerPlacement({ slice: done, tower: { auto: true, x: 0, y: 0 } })).toMatchObject({ x: 10, y: 20 })
     expect(towerPlacement({ slice: done, tower: { auto: false, x: 50, y: 60 } })).toMatchObject({ x: 50, y: 60, width: 35, reason: 'kept' })
     expect(towerPlacement({ slice: { status: 'idle' }, tower: { auto: true, x: 0, y: 0 } })).toBeNull()
+  })
+  it('keeps the tower drawn while a new slice runs, so an edit does not rebuild the scene twice', () => {
+    const done = { status: 'done', stale: false, result: { primeTower: r('auto'), layerZ: [0.2, 12] } } as never
+    const running = { status: 'running', progress: null, startedAt: 0 } as const
+    const shown = towerShown({ slice: done, tower: { auto: true, x: 0, y: 0 } }, null)
+    expect(shown).toMatchObject({ at: { x: 10, y: 20 }, heightMm: 12 })
+    expect(towerShown({ slice: running, tower: { auto: true, x: 0, y: 0 } }, shown)).toBe(shown)
+    // A hand move while it runs shows at the new corner.
+    expect(towerShown({ slice: running, tower: { auto: false, x: 50, y: 60 } }, shown)).toMatchObject({ at: { x: 50, y: 60 }, heightMm: 12 })
+    expect(towerShown({ slice: { status: 'idle' }, tower: { auto: true, x: 0, y: 0 } }, shown)).toBeNull()
   })
   it('builds a closed box whose transform is the front left corner', () => {
     const m = towerMesh({ ...r('auto'), angle: 90 }, 12)
