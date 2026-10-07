@@ -92,6 +92,10 @@ export interface Creator {
   logoUrl?: string
   /** A wide image across the top of the page. */
   bannerUrl?: string
+  /** Tags staff set on the page, such as "N3D team". The creator cannot change them. */
+  badges?: string[]
+  /** On the new creators row: when their first approved listing went live. */
+  firstPublishedAt?: string
   followers: number
   ownerId: string
   status: 'active' | 'paused'

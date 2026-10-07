@@ -40,6 +40,7 @@ export const creatorRow = z.object({
   logo_url: nullable(z.string()),
   // Added after the bundled seed was made; absent there.
   banner_url: nullable(z.string()).optional(),
+  badges: z.array(z.string()).optional(),
   status: z.enum(['active', 'paused']),
   trusted: z.boolean(),
   created_at: ts,

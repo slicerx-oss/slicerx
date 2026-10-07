@@ -25,12 +25,25 @@ export const LINK_KIND_INFO: Record<CreatorLinkKind, { label: string; icon: Icon
 /** Kinds in the order the editor offers them: support first, then other libraries, then social. */
 export const LINK_KINDS: CreatorLinkKind[] = ['patreon', 'kofi', 'buymeacoffee', 'makerworld', 'printables', 'thingiverse', 'cults3d', 'website', 'youtube', 'instagram', 'tiktok', 'x', 'discord', 'github', 'other']
 
-/** The text a link shows: the creator's label, else the service name, else the bare host for a website or other link. */
+function host(url: string): string | undefined {
+  return /^https:\/\/([^/:?#]+)/i.exec(url)?.[1]?.replace(/^www\./i, '')
+}
+
+/** The bold line of a link row: the service's name, or the bare host for a website or other link. */
+export function linkTitle(link: Pick<CreatorLink, 'kind' | 'url'>): string {
+  if (link.kind === 'website' || link.kind === 'other') return host(link.url) ?? LINK_KIND_INFO[link.kind].label
+  return LINK_KIND_INFO[link.kind].label
+}
+
+/** The small line under it: the creator's label, else "Website", else "<name> on <service>". */
+export function linkSubtitle(link: Pick<CreatorLink, 'kind' | 'label'>, name: string): string {
+  if (link.label?.trim()) return link.label.trim()
+  if (link.kind === 'website' || link.kind === 'other') return LINK_KIND_INFO[link.kind].label
+  return `${name} on ${LINK_KIND_INFO[link.kind].label}`
+}
+
+/** One line of text for a link: the creator's label, else the service name, else the bare host for a website or other link. */
 export function linkText(link: Pick<CreatorLink, 'kind' | 'label' | 'url'>): string {
   if (link.label?.trim()) return link.label.trim()
-  if (link.kind === 'website' || link.kind === 'other') {
-    const host = /^https:\/\/([^/:?#]+)/i.exec(link.url)?.[1]?.replace(/^www\./i, '')
-    if (host) return host
-  }
-  return LINK_KIND_INFO[link.kind].label
+  return linkTitle(link)
 }

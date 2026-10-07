@@ -629,6 +629,7 @@ export type Database = {
       }
       creators: {
         Row: {
+          badges: string[]
           banner_url: string | null
           bio: string | null
           created_at: string
@@ -643,6 +644,7 @@ export type Database = {
           trusted: boolean
         }
         Insert: {
+          badges?: string[]
           banner_url?: string | null
           bio?: string | null
           created_at?: string
@@ -657,6 +659,7 @@ export type Database = {
           trusted?: boolean
         }
         Update: {
+          badges?: string[]
           banner_url?: string | null
           bio?: string | null
           created_at?: string
@@ -1716,6 +1719,10 @@ export type Database = {
       }
       set_anon_downloads: {
         Args: { p_enabled: boolean; p_per_day: number; p_per_hour: number }
+        Returns: undefined
+      }
+      set_creator_badges: {
+        Args: { p_badges: string[]; p_creator: string }
         Returns: undefined
       }
       set_creator_trusted: {

@@ -8,7 +8,8 @@ import type { Creator, CreatorPage, Host, Listing, ListingCard, StoreClient } fr
 import { createStore } from '@slicerx/store'
 import { HostContext } from '../src/host'
 import { CreatorEditorHost, draftErrors, initialDraft, previewPage, saveDraft, suggestHandle, type EditorDraft } from '../src/features/store/creator-editor'
-import { CreatorSheetView } from '../src/features/store/creator-sheet'
+import { count, CreatorSheetView } from '../src/features/store/creator-sheet'
+import { ago } from '../src/features/store/library'
 import { linkText } from '../src/features/store/links'
 import { pickFeatured, ROWS, withoutFeatured } from '../src/features/store/rows'
 import { openEditor, resetSheets } from '../src/features/store/sheets'
@@ -47,15 +48,19 @@ describe('creator sheet', () => {
     render(createElement(CreatorSheetView, { page }))
     expect(screen.getByRole('heading', { name: 'Marrow Works' })).toBeTruthy()
     expect(screen.getByText('@marrow-works')).toBeTruthy()
-    expect(screen.getByText('500')).toBeTruthy()
-    expect(screen.getByText('1,234')).toBeTruthy()
+    expect(screen.getByText('500 downloads')).toBeTruthy()
+    expect(screen.getByText('1,234 followers')).toBeTruthy()
+    expect(screen.getByText('Creator')).toBeTruthy()
     expect(screen.getByText(/Print-in-place fossils/)).toBeTruthy()
     const pinned = screen.getByRole('region', { name: 'Pinned design' })
     expect(within(pinned).getByText('Fossil fish')).toBeTruthy()
-    const links = screen.getByRole('region', { name: 'Links' })
+    const links = screen.getByRole('region', { name: 'Creator links' })
     expect(within(links).getByText('Patreon')).toBeTruthy()
+    expect(within(links).getByText('Marrow Works on Patreon')).toBeTruthy()
     expect(within(links).getByText('My MakerWorld')).toBeTruthy()
     expect(within(links).getByText('marrow.example.org')).toBeTruthy()
+    // The first link is the highlighted one.
+    expect(within(links).getAllByRole('link')[0]?.hasAttribute('data-feature')).toBe(true)
     // Never the raw URL as text.
     expect(links.textContent).not.toMatch(/https?:/)
     expect(screen.getByRole('button', { name: 'Follow' })).toBeTruthy()
@@ -67,9 +72,9 @@ describe('creator sheet', () => {
     fireEvent.click(screen.getByRole('tab', { name: /Uploads/ }))
     expect(screen.getByRole('tab', { name: /Uploads/ }).getAttribute('aria-selected')).toBe('true')
     expect(screen.getByText('Skull planter')).toBeTruthy()
-    expect(screen.queryByRole('region', { name: 'Links' })).toBeNull()
+    expect(screen.queryByRole('region', { name: 'Creator links' })).toBeNull()
     fireEvent.keyDown(screen.getByRole('tab', { name: /Uploads/ }), { key: 'ArrowLeft' })
-    expect(screen.getByRole('region', { name: 'Links' })).toBeTruthy()
+    expect(screen.getByRole('region', { name: 'Creator links' })).toBeTruthy()
   })
 
   it('offers Edit page instead of Follow on your own page, and opens what you click', () => {
@@ -81,6 +86,13 @@ describe('creator sheet', () => {
     expect(edited).toBe(1)
     fireEvent.click(within(screen.getByRole('region', { name: 'Pinned design' })).getByRole('button'))
     expect(opened).toEqual(['l2'])
+  })
+
+  it('shows the location and the tags staff set, in their own color', () => {
+    render(createElement(CreatorSheetView, { page: { ...page, creator: { ...creator, location: 'Melbourne', badges: ['N3D team'] } } }))
+    expect(screen.getByText('@marrow-works · Melbourne')).toBeTruthy()
+    expect(screen.getByText('N3D team').hasAttribute('data-staff')).toBe(true)
+    expect(screen.getByText('Creator').hasAttribute('data-staff')).toBe(false)
   })
 
   it('shows Following when you already follow', () => {
@@ -213,7 +225,7 @@ describe('creator page editor', () => {
     fireEvent.change(name, { target: { value: 'Marrow Works Studio' } })
     expect(within(preview).getByRole('heading', { name: 'Marrow Works Studio' })).toBeTruthy()
     fireEvent.change(within(dialog).getByLabelText(/^Bio/), { target: { value: 'New bio.' } })
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Save page' }))
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }))
     await waitFor(async () => expect((await store.getMyCreator())?.displayName).toBe('Marrow Works Studio'))
     expect((await store.getMyCreator())?.bio).toBe('New bio.')
   })
@@ -226,8 +238,8 @@ describe('creator page editor', () => {
     fireEvent.click(within(dialog).getByRole('button', { name: 'Add link' }))
     const n = within(dialog).getAllByLabelText(/address$/).length
     fireEvent.change(within(dialog).getByLabelText(`Link ${n} address`), { target: { value: 'https://evil.example.com' } })
-    fireEvent.change(within(dialog).getByLabelText(`Link ${n} type`), { target: { value: 'patreon' } })
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Save page' }))
+    fireEvent.change(within(dialog).getByLabelText(`Link ${n} site`), { target: { value: 'patreon' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }))
     expect(await within(dialog).findByText('A Patreon link must point to patreon.com')).toBeTruthy()
     const page = await store.getCreatorByHandle('marrow-works')
     expect(page?.links.some((l) => l.url.includes('evil'))).toBe(false)
@@ -244,5 +256,32 @@ describe('creator page editor', () => {
     fireEvent.change(handle, { target: { value: 'rv-prints' } })
     fireEvent.click(within(dialog).getByRole('button', { name: 'Save and upload' }))
     await waitFor(async () => expect((await store.getMyCreator())?.handle).toBe('rv-prints'))
+  })
+
+  it('caps links at 8, counts the bio to 500, and Discard puts the page back', async () => {
+    mount('marrow')
+    act(() => openEditor('edit'))
+    await screen.findByLabelText(/Display name/)
+    const dialog = screen.getByRole('dialog', { name: 'Creator page' })
+    expect(within(dialog).getByText(/of 500$/)).toBeTruthy()
+    const add = within(dialog).getByRole('button', { name: 'Add link' })
+    while (!(add as HTMLButtonElement).disabled) fireEvent.click(add)
+    expect(within(dialog).getAllByLabelText(/address$/)).toHaveLength(8)
+    expect(within(dialog).getByText('Unsaved changes')).toBeTruthy()
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Discard' }))
+    expect(within(dialog).queryByText('Unsaved changes')).toBeNull()
+    expect(within(dialog).getAllByLabelText(/address$/).length).toBeLessThan(8)
+    fireEvent.change(within(dialog).getByLabelText(/Location/), { target: { value: 'Hobart' } })
+    expect(within(within(dialog).getByRole('region', { name: 'Preview' })).getByText(/· Hobart$/)).toBeTruthy()
+  })
+})
+
+describe('Vault numbers', () => {
+  it('counts like the mockup and says how long ago', () => {
+    expect([0, 4812, 9999, 21_600, 1_204_000].map(count)).toEqual(['0', '4,812', '9,999', '21.6k', '1.2m'])
+    const now = Date.parse('2026-10-07T12:00:00Z')
+    expect(ago('2026-10-07T10:00:00Z', now)).toBe('2 h ago')
+    expect(ago('2026-10-04T12:00:00Z', now)).toBe('3 d ago')
+    expect(ago('2026-09-23T12:00:00Z', now)).toBe('2 w ago')
   })
 })

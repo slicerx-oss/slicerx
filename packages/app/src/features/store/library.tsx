@@ -1,20 +1,21 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// Library: the free, moderated model library. One featured design, then rows
-// (most popular, recent, trending this week, new creators, based on your
-// likes), each with See all for the full grid. Search, a category or the Saved
-// filter show the grid too. Designs and creators open in a sheet on the right.
+// The Vault: the free, moderated model library. One featured design, then rows
+// (most popular, recent, trending, new creators, based on your likes) that
+// scroll sideways, each with See all for the full grid. Search, Saved or a
+// quick filter show the grid too. Designs and creators open in a sheet on the
+// right.
 import type { Creator, Listing, ListingCard } from '@slicerx/contracts'
 import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { Button, Chip, Icon, Seg } from '@slicerx/ui'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { Button, Chip, Icon, Menu, MenuAnchor, MenuItem, Seg } from '@slicerx/ui'
 import { LayerArt, LibrarySwitch, openModelBytes, openSettings, setWorkspace, toast, useEdition, useHost } from '@slicerx/app'
 import { coverFor } from './art'
 import { CreatorEditorHost } from './creator-editor'
-import { count, CreatorAvatar, CreatorSheet, Sheet } from './creator-sheet'
+import { count, CreatorAvatar, CreatorSheet, plural, printFacts, Sheet } from './creator-sheet'
 import { fetchModel, formatLabel } from './download'
 import { CATEGORIES, DEFAULT_FILTER, setLibraryFilter, showsGrid, useLibraryFilter, type LibrarySort } from './filter'
-import { detailQuery, LIBRARY_KEY, listingsQuery, myCreatorQuery, newCreatorsQuery, rowQuery, useSession, useStore } from './queries'
+import { detailQuery, LIBRARY_KEY, listingsQuery, myCreatorQuery, newCreatorsQuery, rowQuery, savedCountQuery, useSession, useStore } from './queries'
 import { dashboardUrl, openExternal, signInUrl } from './routes'
 import { pickFeatured, ROWS, withoutFeatured, type RowId } from './rows'
 import { closeSheet, openCreator, openEditor, openListing, resetSheets, useLibrarySheets } from './sheets'
@@ -22,9 +23,22 @@ import { SignInNotice } from './signin'
 import './library.css'
 
 const label = (c: string) => c.charAt(0).toUpperCase() + c.slice(1)
-const plural = (n: number, word: string) => `${count(n)} ${n === 1 ? word : `${word}s`}`
 
-const SORT_TITLE: Record<LibrarySort, string> = { new: 'Recent', popular: 'Most popular', trending: 'Trending this week', liked: 'Based on your likes' }
+const SORT_TITLE: Record<LibrarySort, string> = { new: 'Recent', popular: 'Most popular', trending: 'Trending', liked: 'Based on your likes' }
+
+/** "2 h ago", "3 d ago", "2 w ago". */
+export function ago(iso: string | undefined, now = Date.now()): string {
+  if (!iso) return ''
+  const m = Math.max(0, Math.round((now - Date.parse(iso)) / 60_000))
+  if (m < 60) return `${Math.max(1, m)} min ago`
+  const h = Math.round(m / 60)
+  if (h < 24) return `${h} h ago`
+  const d = Math.round(h / 24)
+  if (d < 7) return `${d} d ago`
+  const w = Math.round(d / 7)
+  if (w < 9) return `${w} w ago`
+  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+}
 
 export function Library() {
   const store = useStore()
@@ -40,8 +54,11 @@ export function Library() {
 
   return (
     <div className="feed library-browse lib">
-      <LibraryBar text={text} setText={setText} />
-      <div className="lib-body">{!store ? <p className="app-empty">This build has no model library.</p> : showsGrid(filter) ? <Grid onBack={() => setText('')} /> : <Rows />}</div>
+      <VaultBar />
+      <div className="lib-body">
+        <Filters text={text} setText={setText} />
+        {!store ? <p className="app-empty">This build has no Vault.</p> : showsGrid(filter) ? <Grid onBack={() => setText('')} /> : <Rows />}
+      </div>
       {sheets.creator ? <CreatorSheet key={sheets.creator} handle={sheets.creator} /> : null}
       {sheets.listing ? <ListingSheet key={sheets.listing} id={sheets.listing} /> : null}
       <CreatorEditorHost />
@@ -49,13 +66,18 @@ export function Library() {
   )
 }
 
-function LibraryBar({ text, setText }: { text: string; setText: (t: string) => void }) {
+/** Community or Mine, the account menu and Upload. */
+function VaultBar() {
   const store = useStore()
   const host = useHost()
   const edition = useEdition()
-  const filter = useLibraryFilter()
   const { session } = useSession()
   const mine = useQuery(myCreatorQuery(store, Boolean(session)))
+  const [menu, setMenu] = useState(false)
+  const close = (fn: () => void) => () => {
+    setMenu(false)
+    fn()
+  }
 
   const upload = () => {
     if (session && mine.isSuccess && !mine.data) openEditor('upload')
@@ -63,22 +85,29 @@ function LibraryBar({ text, setText }: { text: string; setText: (t: string) => v
   }
 
   return (
-    <div className="feed-bar">
+    <div className="lib-bar">
       <LibrarySwitch />
-      <div className="feed-search">
-        <div className="search-in grow">
-          <Icon name="search" />
-          <label className="sr-only" htmlFor="models-search">
-            Search models
-          </label>
-          <input id="models-search" className="bare" type="search" placeholder="Search by model, creator or tag" value={text} onChange={(e) => setText(e.currentTarget.value)} />
-        </div>
-      </div>
-      <div className="feed-sort">
+      <div className="lib-bar-tools">
         {session ? (
-          <Button size="sm" tip="account.open" icon="creator" onClick={() => openSettings('account')}>
-            {session.displayName ?? session.handle ?? 'Account'}
-          </Button>
+          <MenuAnchor>
+            <Button size="sm" icon="creator" aria-expanded={menu} onClick={() => setMenu(!menu)}>
+              {session.displayName ?? session.handle ?? 'Account'}
+            </Button>
+            <Menu open={menu} onClose={() => setMenu(false)} label="Account" align="end">
+              <MenuItem icon="cloud-upload" onClick={close(() => void openExternal(host, dashboardUrl(edition)))}>
+                Uploads
+              </MenuItem>
+              <MenuItem icon="bookmark" onClick={close(() => setLibraryFilter({ saved: true }))}>
+                Saved
+              </MenuItem>
+              <MenuItem icon="creator" onClick={close(() => openEditor('edit'))}>
+                Creator page
+              </MenuItem>
+              <MenuItem icon="settings" onClick={close(() => openSettings('account'))}>
+                Account settings
+              </MenuItem>
+            </Menu>
+          </MenuAnchor>
         ) : (
           <Button size="sm" icon="creator" onClick={() => void openExternal(host, signInUrl(edition))}>
             Sign in
@@ -88,17 +117,39 @@ function LibraryBar({ text, setText }: { text: string; setText: (t: string) => v
           Upload
         </Button>
       </div>
-      <div className="cats" role="group" aria-label="Filter">
-        <button type="button" className="cat lib-saved" aria-pressed={filter.saved} onClick={() => setLibraryFilter({ saved: !filter.saved })}>
-          <Icon name="bookmark" size={14} /> Saved
-        </button>
-        <span className="lib-cat-sep" aria-hidden="true" />
-        {CATEGORIES.map((c) => (
-          <button key={c} type="button" aria-pressed={filter.category === c} className="cat" onClick={() => setLibraryFilter({ category: c })}>
-            {c === 'all' ? 'All' : label(c)}
-          </button>
-        ))}
+    </div>
+  )
+}
+
+/** Search, Everything, Saved with its count, then the quick filters. They narrow everything below. */
+function Filters({ text, setText }: { text: string; setText: (t: string) => void }) {
+  const store = useStore()
+  const filter = useLibraryFilter()
+  const { session } = useSession()
+  const saved = useQuery(savedCountQuery(store, Boolean(session)))
+  const everything = !filter.saved && filter.category === 'all'
+  return (
+    <div className="lib-filters" role="toolbar" aria-label="Filter the Vault">
+      <div className="search-in lib-search">
+        <Icon name="search" />
+        <label className="sr-only" htmlFor="models-search">
+          Search models
+        </label>
+        <input id="models-search" className="bare" type="search" placeholder="Search designs and creators" value={text} onChange={(e) => setText(e.currentTarget.value)} />
       </div>
+      <button type="button" className="lib-chip" aria-pressed={everything} onClick={() => setLibraryFilter({ saved: false, category: 'all' })}>
+        Everything
+      </button>
+      <button type="button" className="lib-chip" aria-pressed={filter.saved} onClick={() => setLibraryFilter({ saved: !filter.saved })}>
+        <Icon name="bookmark" size={13} /> Saved
+        {saved.data ? <span className="lib-chip-n">{saved.data}</span> : null}
+      </button>
+      <span className="lib-sep" aria-hidden="true" />
+      {CATEGORIES.filter((c) => c !== 'all').map((c) => (
+        <button key={c} type="button" className="lib-chip" aria-pressed={filter.category === c} onClick={() => setLibraryFilter({ category: filter.category === c ? 'all' : c })}>
+          {label(c)}
+        </button>
+      ))}
     </div>
   )
 }
@@ -114,10 +165,10 @@ function Rows() {
   const waiting = trending.isPending || popular.isPending
   return (
     <div className="lib-rows">
-      {waiting ? <div className="lib-feat skeleton" aria-busy="true" /> : featured ? <Featured item={featured} /> : null}
+      {waiting ? <div className="lib-hero skeleton" aria-busy="true" /> : featured ? <Featured item={featured} weekly={Boolean(trending.data?.length)} /> : null}
       {popular.isError ? (
         <p className="app-err" role="alert">
-          The library did not load: {popular.error.message}{' '}
+          The Vault did not load: {popular.error.message}{' '}
           <Button size="sm" onClick={() => void popular.refetch()}>
             Try again
           </Button>
@@ -125,68 +176,66 @@ function Rows() {
       ) : null}
       {ROWS.map((r) =>
         r.id === 'new-creators' ? (
-          <CreatorRow key={r.id} title={r.title} />
+          <CreatorRow key={r.id} title={r.title} note={r.note} />
         ) : r.signedIn && !signedIn ? null : (
-          <ListingRow key={r.id} row={r.id} title={r.title} sort={r.sort ?? 'new'} featured={featured} />
+          <ListingRow key={r.id} row={r.id} title={r.title} note={r.note} sort={r.sort ?? 'new'} featured={featured} />
         ),
       )}
     </div>
   )
 }
 
-function RowFrame({ title, onSeeAll, children, id }: { title: string; onSeeAll?: () => void; children: ReactNode; id: string }) {
-  const rail = useRef<HTMLDivElement>(null)
-  const scroll = (dir: 1 | -1) => rail.current?.scrollBy({ left: dir * rail.current.clientWidth * 0.8, behavior: 'smooth' })
+function RowFrame({ title, note, onSeeAll, children, id }: { title: string; note: string; onSeeAll?: () => void; children: ReactNode; id: string }) {
   return (
     <section className="lib-row" aria-labelledby={`${id}-h`}>
       <header className="lib-row-h">
-        <h2 id={`${id}-h`} className="sec-h">
+        <h2 id={`${id}-h`} className="lib-row-t">
           {title}
         </h2>
-        <div className="lib-row-tools">
-          <Button size="sm" variant="ghost" icon="chevron-left" aria-label={`Scroll ${title} back`} className="lib-row-arrow" onClick={() => scroll(-1)} />
-          <Button size="sm" variant="ghost" icon="chevron-right" aria-label={`Scroll ${title} forward`} className="lib-row-arrow" onClick={() => scroll(1)} />
-          {onSeeAll ? (
-            <Button size="sm" variant="ghost" onClick={onSeeAll}>
-              See all
-            </Button>
-          ) : null}
-        </div>
+        <span className="lib-row-note">{note}</span>
+        {onSeeAll ? (
+          <button type="button" className="lib-see" onClick={onSeeAll}>
+            See all
+          </button>
+        ) : null}
       </header>
-      <div className="lib-rail" ref={rail} role="list">
-        {children}
+      <div className="lib-railwrap">
+        <div className="lib-rail" role="list">
+          {children}
+        </div>
       </div>
     </section>
   )
 }
 
-function ListingRow({ row, title, sort, featured }: { row: RowId; title: string; sort: LibrarySort; featured: ListingCard | null }) {
+function ListingRow({ row, title, note, sort, featured }: { row: RowId; title: string; note: string; sort: LibrarySort; featured: ListingCard | null }) {
   const store = useStore()
   const { session } = useSession()
   const q = useQuery(rowQuery(store, row, Boolean(session)))
   const items = withoutFeatured(q.data ?? [], featured)
   if (q.isError || (q.isSuccess && items.length === 0)) return null
+  const ranked = row === 'popular' || row === 'trending'
   return (
-    <RowFrame id={`lib-${row}`} title={title} onSeeAll={() => setLibraryFilter({ ...DEFAULT_FILTER, sort, view: 'grid' })}>
+    <RowFrame id={`lib-${row}`} title={title} note={note} onSeeAll={() => setLibraryFilter({ ...DEFAULT_FILTER, sort, view: 'grid' })}>
       {q.isPending
-        ? Array.from({ length: 5 }, (_, i) => <div key={i} className="lib-rail-item lib-card skeleton" role="listitem" aria-hidden="true" />)
-        : items.map((i) => (
+        ? Array.from({ length: 5 }, (_, i) => <div key={i} className="lib-rail-item lib-mini skeleton" role="listitem" aria-hidden="true" />)
+        : items.map((i, n) => (
             <div key={i.listing.id} role="listitem" className="lib-rail-item">
-              <Card item={i} />
+              <Card item={i} rank={ranked ? n + 1 : undefined} stat={row === 'recent' ? 'age' : 'downloads'} />
             </div>
           ))}
     </RowFrame>
   )
 }
 
-function CreatorRow({ title }: { title: string }) {
+function CreatorRow({ title, note }: { title: string; note: string }) {
   const store = useStore()
   const q = useQuery(newCreatorsQuery(store))
   if (!q.isSuccess || q.data.length === 0) return null
   return (
-    <RowFrame id="lib-new-creators" title={title}>
+    <RowFrame id="lib-new-creators" title={title} note={note}>
       {q.data.map((c) => (
-        <div key={c.id} role="listitem" className="lib-rail-item lib-rail-creator">
+        <div key={c.id} role="listitem" className="lib-rail-item">
           <CreatorCard creator={c} />
         </div>
       ))}
@@ -195,15 +244,14 @@ function CreatorRow({ title }: { title: string }) {
 }
 
 function CreatorCard({ creator }: { creator: Creator }) {
-  const n = creator.listingCount ?? 0
   return (
     <button type="button" className="lib-creator" onClick={() => openCreator(creator.handle)}>
       <CreatorAvatar name={creator.displayName} url={creator.logoUrl} size="lg" />
-      <b>{creator.displayName}</b>
-      <span className="sx-mono sx-small dim">@{creator.handle}</span>
-      <span className="sx-small dim">
-        {plural(n, 'design')}
+      <span className="min0">
+        <b>{creator.displayName}</b>
+        <small>@{creator.handle}</small>
       </span>
+      <span className="lib-first">{creator.firstPublishedAt ? `First upload ${ago(creator.firstPublishedAt)}` : plural(creator.listingCount ?? 0, 'design')}</span>
     </button>
   )
 }
@@ -211,28 +259,11 @@ function CreatorCard({ creator }: { creator: Creator }) {
 /** The uploader as a chip that opens their creator sheet. */
 function Uploader({ creator }: { creator: Creator }) {
   return (
-    <button type="button" className="lib-uploader" onClick={() => openCreator(creator.handle)}>
+    <button type="button" className="lib-who" onClick={() => openCreator(creator.handle)}>
       <CreatorAvatar name={creator.displayName} url={creator.logoUrl} size="sm" />
       <span>{creator.displayName}</span>
     </button>
   )
-}
-
-function fmtTime(s: number): string {
-  const h = Math.floor(s / 3600)
-  const m = Math.round((s % 3600) / 60)
-  return h ? `${h} h ${m} min` : `${m} min`
-}
-
-/** Print time and filament from the creator's first tested profile. */
-function printFacts(listing: Listing): { time?: string; grams?: string; printer?: string } {
-  const p = listing.currentVersion?.printProfiles ? Object.entries(listing.currentVersion.printProfiles)[0] : undefined
-  if (!p) return {}
-  return {
-    printer: p[0],
-    ...(p[1].timeS ? { time: fmtTime(p[1].timeS) } : {}),
-    ...(p[1].grams ? { grams: `${Math.round(p[1].grams)} g` } : {}),
-  }
 }
 
 /** Save and unsave, with a sign-in nudge when signed out. */
@@ -290,51 +321,71 @@ function useOpenInApp(item: ListingCard) {
   return { open, busy, needSignIn }
 }
 
-function Featured({ item }: { item: ListingCard }) {
+function StatIcons({ listing }: { listing: Listing }) {
+  const s = listing.stats
+  if (!s) return null
+  return (
+    <div className="lib-stats">
+      <span aria-label="Downloads">
+        <Icon name="download" size={13} />
+        {count(s.downloads)}
+      </span>
+      <span>
+        <Icon name="printer" size={13} />
+        {count(s.makes)} printed
+      </span>
+      <span aria-label="Likes">
+        <Icon name="heart" size={13} />
+        {count(s.likes)}
+      </span>
+    </div>
+  )
+}
+
+function Featured({ item, weekly }: { item: ListingCard; weekly: boolean }) {
   const { listing, creator } = item
   const edition = useEdition()
   const cover = coverFor(listing)
   const facts = printFacts(listing)
   const save = useSave(listing)
   const openIn = useOpenInApp(item)
-  const s = listing.stats
-  const fact = (icon: Parameters<typeof Icon>[0]['name'], name: string, value: string) => (
-    <div>
-      <dt>
-        <Icon name={icon} size={16} /> {name}
-      </dt>
-      <dd className="sx-mono">{value}</dd>
-    </div>
-  )
   return (
-    <article className="lib-feat" aria-labelledby="lib-feat-h">
-      <button type="button" className="lib-feat-art" onClick={() => openListing(listing.id)} aria-label={`${listing.title}, details`}>
+    <article className="lib-hero" aria-labelledby="lib-feat-h">
+      <button type="button" className="lib-hero-art" onClick={() => openListing(listing.id)} aria-label={`${listing.title}, details`}>
         {cover ? <img src={cover} alt="" /> : <LayerArt seed={listing.slug} layers={28} />}
       </button>
-      <div className="lib-feat-b">
-        <span className="lib-eyebrow">Featured</span>
-        <h2 id="lib-feat-h" className="sx-display lib-feat-title">
+      <div className="lib-hero-copy">
+        <span className="lib-kicker">{weekly ? 'Featured this week' : 'Featured'}</span>
+        <h2 id="lib-feat-h" className="lib-hero-t">
           {listing.title}
         </h2>
-        <Uploader creator={creator} />
-        {listing.description ? <p className="lib-feat-desc">{listing.description}</p> : null}
-        <dl className="lib-facts">
-          {facts.time ? fact('time', 'Print time', facts.time) : null}
-          {facts.grams ? fact('weight', 'Filament', facts.grams) : null}
-          {s ? (
-            <>
-              {fact('download', 'Downloads', count(s.downloads))}
-              {fact('printer', 'Printed', count(s.makes))}
-              {fact('heart', 'Likes', count(s.likes))}
-            </>
-          ) : null}
-        </dl>
+        <div>
+          <Uploader creator={creator} />
+        </div>
+        {listing.description ? <p className="lib-hero-d">{listing.description}</p> : null}
+        {facts.time || facts.grams ? (
+          <dl className="lib-spec">
+            {facts.time ? (
+              <div>
+                <dt>Print time</dt>
+                <dd>{facts.time}</dd>
+              </div>
+            ) : null}
+            {facts.grams ? (
+              <div>
+                <dt>Filament</dt>
+                <dd>{facts.grams}</dd>
+              </div>
+            ) : null}
+          </dl>
+        ) : null}
+        <StatIcons listing={listing} />
         {openIn.needSignIn ? <SignInNotice>Sign in to download models. It is free.</SignInNotice> : null}
-        <div className="lib-feat-actions">
-          <Button variant="primary" size="lg" icon="prepare" disabled={openIn.busy || !listing.currentVersion} onClick={() => void openIn.open()}>
+        <div className="lib-hero-actions">
+          <Button variant="primary" icon="prepare" disabled={openIn.busy || !listing.currentVersion} onClick={() => void openIn.open()}>
             {openIn.busy ? 'Opening' : `Open in ${edition.brand.shortName}`}
           </Button>
-          <Button size="lg" icon="bookmark" pressed={save.saved} disabled={save.busy} onClick={() => void save.toggle()}>
+          <Button icon="bookmark" pressed={save.saved} disabled={save.busy} onClick={() => void save.toggle()}>
             {save.saved ? 'Saved' : 'Save'}
           </Button>
         </div>
@@ -343,27 +394,35 @@ function Featured({ item }: { item: ListingCard }) {
   )
 }
 
-function Card({ item }: { item: ListingCard }) {
+function Card({ item, rank, stat = 'downloads' }: { item: ListingCard; rank?: number | undefined; stat?: 'downloads' | 'age' }) {
   const { listing, creator } = item
   const cover = coverFor(listing)
   const save = useSave(listing)
   const s = listing.stats
   return (
-    <article className="lib-card">
-      <div className="lib-card-art">
-        <button type="button" className="card-art" onClick={() => openListing(listing.id)} aria-label={`${listing.title}, details`}>
+    <article className="lib-mini">
+      <div className="lib-mini-art">
+        <button type="button" className="lib-thumb" onClick={() => openListing(listing.id)} aria-label={`${listing.title}, details`}>
           {cover ? <img src={cover} alt="" loading="lazy" /> : <LayerArt seed={listing.slug} muted />}
         </button>
         <button type="button" className="lib-save" aria-pressed={save.saved} aria-label={save.saved ? `Remove ${listing.title} from Saved` : `Save ${listing.title}`} disabled={save.busy} onClick={() => void save.toggle()}>
-          <Icon name="bookmark" size={16} />
+          <Icon name="bookmark" size={15} />
         </button>
       </div>
-      <div className="card-b">
-        <b className="lib-card-title">{listing.title}</b>
+      <h3 className="lib-mini-t">
+        {rank ? <span className="lib-rank">{rank}</span> : null}
+        {listing.title}
+      </h3>
+      <div className="lib-mini-meta">
         <Uploader creator={creator} />
-        {s ? (
-          <span className="sx-mono sx-small sx-dim">
-            {plural(s.downloads, 'download')}, {plural(s.likes, 'like')}
+        {stat === 'age' ? (
+          <span className="lib-why">{ago(listing.publishedAt ?? listing.createdAt)}</span>
+        ) : s ? (
+          <span className="lib-stats">
+            <span aria-label="Downloads">
+              <Icon name="download" size={13} />
+              {count(s.downloads)}
+            </span>
           </span>
         ) : null}
       </div>
@@ -371,7 +430,7 @@ function Card({ item }: { item: ListingCard }) {
   )
 }
 
-/** The full sorted grid: See all, a search, a category or the Saved filter. */
+/** The full sorted grid: See all, a search, a quick filter or Saved. */
 function Grid({ onBack }: { onBack: () => void }) {
   const store = useStore()
   const filter = useLibraryFilter()
@@ -398,11 +457,11 @@ function Grid({ onBack }: { onBack: () => void }) {
             setLibraryFilter({ ...DEFAULT_FILTER })
           }}
         >
-          Library
+          Vault
         </Button>
-        <h2 id="lib-grid-h" className="sec-h">
+        <h2 id="lib-grid-h" className="lib-row-t">
           {heading}{' '}
-          <span className="sx-mono dim">
+          <span className="lib-row-note">
             {items.length}
             {list.hasNextPage ? '+' : ''}
           </span>
@@ -413,13 +472,13 @@ function Grid({ onBack }: { onBack: () => void }) {
       {list.isPending ? <div className="drop skeleton" aria-busy="true" /> : null}
       {list.isError ? (
         <p className="app-err" role="alert">
-          The library did not load: {list.error.message}{' '}
+          The Vault did not load: {list.error.message}{' '}
           <Button size="sm" onClick={() => void list.refetch()}>
             Try again
           </Button>
         </p>
       ) : null}
-      {list.isSuccess && items.length === 0 ? <p className="app-empty">{filter.saved ? 'Nothing saved yet. Use Save on any design to keep it here.' : 'No models match. Try another word or category.'}</p> : null}
+      {list.isSuccess && items.length === 0 ? <p className="app-empty">{filter.saved ? 'Nothing saved yet. Use Save on any design to keep it here.' : 'No models match. Try another word or filter.'}</p> : null}
       {items.length ? (
         <div className="lib-grid-cards">
           {items.map((i) => (
@@ -445,7 +504,7 @@ function ListingSheet({ id }: { id: string }) {
   return (
     <Sheet label={detail.data ? detail.data.listing.title : 'Model details'} onClose={closeSheet} className="lib-sheet-model">
       <button type="button" className="cs-close" aria-label="Close model details" onClick={closeSheet}>
-        <Icon name="close" size={18} />
+        <Icon name="close" size={16} />
       </button>
       {detail.isPending ? <div className="cs-loading skeleton" aria-busy="true" /> : null}
       {detail.isSuccess && !detail.data ? <p className="app-empty cs-pad">This model is not available.</p> : null}
@@ -457,8 +516,8 @@ function ListingSheet({ id }: { id: string }) {
 function Detail({ item }: { item: ListingCard }) {
   const store = useStore()
   const host = useHost()
-  const { session } = useSession()
   const edition = useEdition()
+  const { session } = useSession()
   const { listing, creator } = item
   const version = listing.currentVersion
   const cover = coverFor(listing)
@@ -466,7 +525,6 @@ function Detail({ item }: { item: ListingCard }) {
   const openIn = useOpenInApp(item)
   const [busy, setBusy] = useState(false)
   const [needSignIn, setNeedSignIn] = useState(false)
-  const stats = listing.stats
   const p = printFacts(listing)
   const facts: [string, string][] = []
   if (version) facts.push(['Format', formatLabel(version.format)], ['Version', version.version])
@@ -499,7 +557,9 @@ function Detail({ item }: { item: ListingCard }) {
       <h2 id={`lib-${listing.id}`} className="sx-display">
         {listing.title}
       </h2>
-      <Uploader creator={creator} />
+      <div>
+        <Uploader creator={creator} />
+      </div>
       {listing.description ? <p className="drop-desc">{listing.description}</p> : null}
       <div className="tags">
         <Chip mono>{listing.license.toUpperCase()}</Chip>
@@ -507,11 +567,7 @@ function Detail({ item }: { item: ListingCard }) {
           <Chip key={t}>{t}</Chip>
         ))}
       </div>
-      {stats ? (
-        <p className="sx-mono sx-small sx-dim">
-          {plural(stats.downloads, 'download')}, {count(stats.makes)} printed, {plural(stats.likes, 'like')}
-        </p>
-      ) : null}
+      <StatIcons listing={listing} />
       {facts.length ? (
         <dl className="used">
           {facts.map(([k, v]) => (
@@ -529,7 +585,7 @@ function Detail({ item }: { item: ListingCard }) {
         </Button>
         <div className="row-btns">
           <Button icon="download" disabled={busy || openIn.busy || !version} onClick={() => void download()}>
-            {busy ? 'Downloading' : 'Download'}
+            {busy ? 'Downloading' : 'Download .sx3mf'}
           </Button>
           <Button icon="bookmark" pressed={save.saved} disabled={save.busy} onClick={() => void save.toggle()}>
             {save.saved ? 'Saved' : 'Save'}
