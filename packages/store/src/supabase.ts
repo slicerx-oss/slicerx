@@ -64,7 +64,8 @@ import { DEFAULT_MAX_FILE_MB, slugify, validateCreatorLinks, validateHandle, val
 const LISTING_COLUMNS = 'id, creator_id, slug, title, description, license, status, tags, cover_url, review_note, reviewed_by, reviewed_at, published_at, created_at'
 // The scan report is read through version_scan_report, never straight from the table.
 const VERSION_COLUMNS = 'id, listing_id, version, changelog, storage_path, sha256, format, size_bytes, scan_status, scanned_at, review_status, created_at'
-const CREATOR_COLUMNS = 'id, owner_id, handle, display_name, tagline, bio, location, logo_url, banner_url, status, trusted, created_at'
+// Every column, so a project that has not applied 0013_creator_pages (banner_url) still reads creators.
+const CREATOR_COLUMNS = '*'
 const COMMENT_COLUMNS = 'id, listing_id, user_id, parent_id, body, created_at, edited_at, deleted_at'
 const MAKE_COLUMNS = 'id, listing_id, user_id, caption, photo_url, printer_model, created_at'
 const LINK_COLUMNS = 'id, creator_id, kind, label, url, position'
@@ -495,7 +496,8 @@ export function supabaseStore(sb: Db, conn?: Pick<SupabaseOptions, 'url' | 'anon
     async collections() {
       const me = await uid()
       if (!me) return []
-      const mine = await read(collectionRow, sb.from('collections').select('*').eq('owner_id', me).neq('kind', 'saved').order('created_at'))
+      // The Saved list is a collection of kind 'saved' and stays out of this list.
+      const mine = (await read(collectionRow, sb.from('collections').select('*').eq('owner_id', me).order('created_at'))).filter((c) => c.kind !== 'saved')
       if (mine.length === 0) return []
       const items = await read(collectionItemRow, sb.from('collection_items').select('*').in('collection_id', mine.map((c) => c.id)))
       return mine.map((c) =>
