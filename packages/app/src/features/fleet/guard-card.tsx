@@ -47,6 +47,7 @@ export function GuardCard({ row, trip, now }: { row: FleetRow; trip: GuardTrip; 
   const { url, again } = useEvidence(row.id, trip.at)
   const ref = useRef<HTMLElement>(null)
   const [busy, setBusy] = useState(false)
+  const [broken, setBroken] = useState('')
   const headingId = `guard-${row.id}`
   useEffect(() => {
     if (!takeFocus(row.id)) return
@@ -75,8 +76,10 @@ export function GuardCard({ row, trip, now }: { row: FleetRow; trip: GuardTrip; 
   })
   const plateClear = run(async () => {
     askToNotify()
+    // The hub takes a new picture now, after this click; the one that held the start is never kept.
+    const start = heldStart(row.id)
     await hub?.watch.plateClear(row.id)
-    toast(`Saved the empty plate for ${row.name}. Later checks compare with it.`, 'ok')
+    toast(`Saved the empty plate for ${row.name}. Later checks compare with it.`, 'ok', start ? { label: 'Start the print', run: () => void start().catch((e) => toast(e instanceof Error ? e.message : 'The print did not start', 'error')) } : undefined)
   })
   const fine = run(async () => {
     const start = heldStart(row.id)
@@ -86,45 +89,62 @@ export function GuardCard({ row, trip, now }: { row: FleetRow; trip: GuardTrip; 
   })
 
   const monitor = trip.monitorOnly === true
+  // Every way out of a paused card ends in Resume: the printer is a machine, and only a person's
+  // click starts it moving again. Answers (Dismiss, a clean check) keep the card and its Resume.
+  const resumeButton = (
+    <Button variant="primary" icon="play" onClick={resume} disabled={busy}>
+      Resume
+    </Button>
+  )
+  const checkButton = (
+    <Button icon={trip.kind === 'hand' ? 'camera' : 'refresh'} onClick={trip.kind === 'hand' ? look : checkPlate} disabled={busy}>
+      Check again
+    </Button>
+  )
   const pill = trip.state === 'alert' && !monitor ? { label: 'Not paused', tone: 'warn' as const } : STATE_PILL[trip.state]
   const actions =
-    trip.kind === 'hand' ? (
+    trip.state === 'paused' && trip.answered ? (
+      <>
+        {resumeButton}
+        {checkButton}
+      </>
+    ) : trip.kind === 'hand' ? (
       <>
         {trip.state === 'paused' ? (
-          <Button variant="primary" icon="play" onClick={resume} disabled={busy}>
-            Resume
-          </Button>
+          resumeButton
         ) : (
           <Button icon="pause" disabled tip={monitor ? { title: `Developer Mode is off on ${row.name}` } : { title: 'The printer did not take the pause' }}>
             Pause
           </Button>
         )}
-        <Button icon="camera" onClick={look} disabled={busy}>
-          Check again
-        </Button>
+        {checkButton}
         <Button variant="ghost" onClick={dismiss} disabled={busy}>
           {trip.state === 'paused' ? 'Dismiss, it was me' : 'Dismiss'}
         </Button>
       </>
+    ) : trip.state === 'paused' ? (
+      <>
+        <Button variant="primary" icon="play" onClick={fine} disabled={busy}>
+          {"It's fine, resume"}
+        </Button>
+        {checkButton}
+      </>
+    ) : trip.state === 'alert' ? (
+      <>
+        {checkButton}
+        <Button variant="ghost" onClick={fine} disabled={busy}>
+          {"It's fine"}
+        </Button>
+      </>
     ) : (
       <>
-        {trip.state === 'alert' ? null : (
-          <Button variant="primary" icon={trip.state === 'paused' ? 'play' : 'check'} onClick={fine} disabled={busy}>
-            {trip.state === 'paused' ? "It's fine, resume" : heldStart(row.id) ? "It's fine, start anyway" : "It's fine"}
-          </Button>
-        )}
-        <Button icon="refresh" onClick={checkPlate} disabled={busy}>
-          Check again
+        <Button variant="primary" icon="check" onClick={fine} disabled={busy}>
+          {heldStart(row.id) ? "It's fine, start anyway" : "It's fine"}
         </Button>
-        {trip.state === 'alert' ? (
-          <Button variant="ghost" onClick={fine} disabled={busy}>
-            {"It's fine"}
-          </Button>
-        ) : (
-          <Button variant="ghost" onClick={plateClear} disabled={busy}>
-            This plate is clear
-          </Button>
-        )}
+        {checkButton}
+        <Button variant="ghost" onClick={plateClear} disabled={busy}>
+          This plate is clear
+        </Button>
       </>
     )
 
@@ -132,8 +152,12 @@ export function GuardCard({ row, trip, now }: { row: FleetRow; trip: GuardTrip; 
   return (
     <article ref={ref} className="guard-card" data-state={trip.state} data-kind={trip.kind} aria-labelledby={headingId} tabIndex={-1}>
       <div className="guard-frame">
-        {url ? <img src={url} alt={`Camera picture of ${row.name} when the guard acted`} /> : <div className="guard-noframe">No picture from the camera</div>}
-        {url ? (
+        {url && broken !== url ? (
+          <img src={url} alt={`Camera picture of ${row.name} when the guard acted`} onError={() => setBroken(url)} />
+        ) : (
+          <div className="guard-noframe">No picture from the camera</div>
+        )}
+        {url && broken !== url ? (
           <div className="guard-spot" style={{ left: `${l * 100}%`, top: `${t * 100}%`, width: `${(r - l) * 100}%`, height: `${(b - t) * 100}%` }} data-marked={trip.box ? true : undefined}>
             <span className="guard-tag">{trip.kind === 'hand' ? 'Hand' : 'On the plate'}</span>
             <StrikeMark size={Math.round(Math.min(76, Math.max(44, (r - l) * 260)))} />

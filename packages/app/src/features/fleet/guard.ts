@@ -21,6 +21,8 @@ export interface GuardTrip {
   startedBy?: 'slicerx' | 'printer'
   plateFrom?: string
   capturedAt?: string
+  /** The person answered it (dismissed, the plate checked clean, a spot marked fine) while the print stays paused. */
+  answered?: boolean
 }
 
 /** The hub methods the guard uses (link-client `LinkHost.watch`). */
@@ -32,7 +34,7 @@ export interface GuardHub {
     dismiss(printerId: string, kind: string): Promise<void>
     plateClear(printerId: string): Promise<{ plateFrom: string }>
     plateCheck(printerId: string): Promise<{ checked: boolean; clear?: boolean }>
-    plateIgnore(printerId: string): Promise<{ remembered: 'spot' | 'plate' | 'nothing' }>
+    plateIgnore(printerId: string): Promise<{ remembered: 'spot' | 'model' | 'nothing' }>
   }
 }
 
@@ -134,6 +136,14 @@ export interface TripCopy {
 export function tripCopy(t: GuardTrip, name: string): TripCopy {
   const app = appName()
   const bambuConnect = `${app} can't stop this print. Developer Mode is off on ${name}, so the job came from Bambu Connect or the printer's screen.`
+  if (t.state === 'paused' && t.answered)
+    return {
+      title: 'Still paused',
+      body:
+        t.kind === 'hand'
+          ? `You dismissed the hand. The print stays paused until you resume it.`
+          : `You checked the plate. The print stays paused until you resume it.`,
+    }
   if (t.kind === 'hand') {
     const seen = t.note && /\d+ of the last \d+ frames/.test(t.note) ? `in ${/\d+ of the last \d+ frames/.exec(t.note)![0]}` : 'in the camera'
     if (t.state === 'paused')
@@ -155,7 +165,9 @@ export function tripCopy(t: GuardTrip, name: string): TripCopy {
     return {
       title: 'Something on the plate',
       body: `${app} held the start. ${against}${where}`,
-      note: t.box ? "\"It's fine\" skips this spot on this printer from now on." : "\"It's fine\" keeps this picture as the empty plate.",
+      note: t.box
+        ? "\"It's fine\" skips this spot on this printer from now on. \"This plate is clear\" takes a new empty-plate picture once you've cleared it."
+        : "\"It's fine\" stops the camera model alone from holding starts on this printer. \"This plate is clear\" takes an empty-plate picture once you've cleared it.",
     }
   if (t.state === 'paused')
     return {

@@ -312,13 +312,109 @@ test('the camera guard pauses for a hand and brings its card up on Printers', as
       await expect(card.locator('img')).toHaveAttribute('src', /^blob:/)
       await expect(card.locator('.guard-spot svg.strike')).toBeVisible()
       await expect(card.getByRole('button', { name: 'Resume' })).toBeEnabled()
+      // Check again takes a new picture and changes nothing else.
+      await card.getByRole('button', { name: 'Check again' }).click()
+      await expect(card.getByRole('heading', { name: 'Paused: a hand in the printer' })).toBeVisible()
+      // Dismiss answers the card but the print stays paused, so Resume stays (QA 0.2.0: the card vanished, the printer paused).
       await card.getByRole('button', { name: 'Dismiss, it was me' }).click()
+      await expect(card.getByRole('heading', { name: 'Still paused' })).toBeVisible()
+      expect((await admin!.status('a1')).state).toBe('paused')
+      await resumeFromCard(page, card)
+      await expect.poll(async () => (await admin!.status('a1')).state, { timeout: 20_000 }).toBe('printing')
       await expect(card).toHaveCount(0)
     } finally {
       det.close()
     }
   } finally {
     await ctl('/bambu', { cameraFrame: null })
+  }
+})
+
+/** Resume on the guard card, then the approval a resume asks for. */
+async function resumeFromCard(page: Page, card: Locator): Promise<void> {
+  await card.getByRole('button', { name: 'Resume' }).click()
+  const approval = page.locator('dialog.approve-dialog')
+  await expect(approval).toBeVisible()
+  await approval.getByRole('button', { name: 'Approve' }).click()
+}
+
+/** A plate detector stand-in on the watch role: answers every plate check with `answer()`. */
+async function plateDetector(answer: () => { clear: boolean; box?: number[] }): Promise<{ checks: number; close(): void }> {
+  const { connectLink } = await import('../../../packages/connect/link-client/src/index.ts')
+  const out = { checks: 0, close: () => undefined as void }
+  class Answering extends WebSocket {
+    constructor(u: string | URL) {
+      super(u)
+      this.addEventListener('message', (m: MessageEvent) => {
+        if (typeof m.data !== 'string') return
+        const msg = JSON.parse(m.data) as { event?: string; data?: { checkId: string; printerId: string } }
+        if (msg.event !== 'watch.plate' || !msg.data) return
+        out.checks++
+        this.send(JSON.stringify({ id: 900_000 + out.checks, method: 'watch.plateResult', params: { checkId: msg.data.checkId, printerId: msg.data.printerId, note: 'test', ...answer() } }))
+      })
+    }
+  }
+  const det = await connectLink({ url: linkUrl, code, role: 'watch', WebSocket: Answering as unknown as typeof WebSocket })
+  await det.watch.subscribe(() => undefined, { everyMs: 120_000, printerIds: ['a1'] })
+  out.close = () => det.close()
+  return out
+}
+
+const SPOT = [0.42, 0.5, 0.62, 0.75]
+
+test('the camera guard: a plate it paused waits on Resume after a clean check, and never becomes the empty plate', async ({ page }) => {
+  test.slow()
+  await idleAgain('a1')
+  await connectApp(page)
+  let dirty = true
+  const det = await plateDetector(() => (dirty ? { clear: false, box: SPOT } : { clear: true }))
+  try {
+    // The printer starts a print on its own onto a dirty plate.
+    await ctl('/set', { mock: 'bambu', state: 'printing' })
+    const card = page.locator('.guard-card')
+    await expect(card.getByRole('heading', { name: 'Paused: something on the plate' })).toBeVisible({ timeout: 30_000 })
+    await expect.poll(async () => (await admin!.status('a1')).state, { timeout: 20_000 }).toBe('paused')
+    // The empty-plate picture belongs to an empty printer: not offered here (QA 0.2.0 saved the dirty frame).
+    await expect(card.getByRole('button', { name: 'This plate is clear' })).toHaveCount(0)
+    // Checked again and still dirty: the same card.
+    await card.getByRole('button', { name: 'Check again' }).click()
+    await expect(card.getByRole('heading', { name: 'Paused: something on the plate' })).toBeVisible()
+    // Cleared and checked again: still paused, with Resume (QA 0.2.0: the card vanished, the printer paused).
+    dirty = false
+    await card.getByRole('button', { name: 'Check again' }).click()
+    await expect(card.getByRole('heading', { name: 'Still paused' })).toBeVisible()
+    expect((await admin!.status('a1')).state).toBe('paused')
+    await resumeFromCard(page, card)
+    await expect.poll(async () => (await admin!.status('a1')).state, { timeout: 20_000 }).toBe('printing')
+    await expect(card).toHaveCount(0)
+    const st = (await (admin as unknown as { watch: { guardState(): Promise<{ plates: Record<string, string> }> } }).watch.guardState())
+    expect(st.plates, 'no empty-plate picture was taken from the flagged frame').toEqual({})
+  } finally {
+    det.close()
+    await idleAgain('a1')
+  }
+})
+
+test('the camera guard holds a start from the Print sheet, and It\'s fine starts it anyway', async ({ page }) => {
+  test.slow()
+  await idleAgain('a1')
+  const det = await plateDetector(() => ({ clear: false, box: SPOT }))
+  try {
+    const sheet = await sheetFor(page, 'A1')
+    const before = (await mockLog()).match(/project_file/g)?.length ?? 0
+    await start(sheet)
+    await expect(page.getByText(/something is on the plate/)).toBeVisible({ timeout: 30_000 })
+    expect((await mockLog()).match(/project_file/g)?.length ?? 0, 'nothing started').toBe(before)
+    const card = page.locator('.guard-card')
+    await expect(card.getByRole('heading', { name: 'Something on the plate' })).toBeVisible()
+    await expect(card).toContainText('Start on hold')
+    await card.getByRole('button', { name: "It's fine, start anyway" }).click()
+    await expect(page.getByText(/started on A1/)).toBeVisible({ timeout: 30_000 })
+    expect((await mockLog()).match(/project_file/g)?.length ?? 0).toBe(before + 1)
+    await expect(card).toHaveCount(0)
+  } finally {
+    det.close()
+    await idleAgain('a1')
   }
 })
 

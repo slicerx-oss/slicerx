@@ -125,6 +125,53 @@ describe('the guard card', () => {
     expect(v.el.querySelector('h3')?.textContent).toBe('Paused: something on the plate')
     expect(v.el.textContent).toContain("There's no empty-plate picture for Desk A1 yet")
     expect(v.button("It's fine, resume")).toBeDefined()
+    expect(v.button('This plate is clear')).toBeUndefined()
+    v.done()
+  })
+})
+
+describe('every way out of a paused card keeps Resume until a person resumes', () => {
+  const names = (el: HTMLElement) => [...el.querySelectorAll('button')].map((b) => b.textContent)
+
+  it('a hand paused the print: Resume, a new picture, or dismiss it', async () => {
+    const v = await render({ printerId: 'a1', kind: 'hand', state: 'paused', at, answered: false })
+    expect(names(v.el)).toEqual(['Resume', 'Check again', 'Dismiss, it was me'])
+    v.done()
+  })
+
+  it('after Dismiss the card stays paused with Resume and nothing to dismiss', async () => {
+    const v = await render({ printerId: 'a1', kind: 'hand', state: 'paused', at, answered: true })
+    expect(v.el.querySelector('h3')?.textContent).toBe('Still paused')
+    expect(v.el.textContent).toContain('stays paused until you resume it')
+    expect(names(v.el)).toEqual(['Resume', 'Check again'])
+    v.done()
+  })
+
+  it('a paused plate offers to resume, never to save this plate as the empty one', async () => {
+    const v = await render({ printerId: 'a1', kind: 'plate', state: 'paused', at, box: [0.4, 0.6, 0.45, 0.66], startedBy: 'printer', answered: false })
+    expect(names(v.el)).toEqual(["It's fine, resume", 'Check again'])
+    v.done()
+  })
+
+  it('a paused plate checked clean waits on Resume', async () => {
+    const v = await render({ printerId: 'a1', kind: 'plate', state: 'paused', at, startedBy: 'printer', answered: true })
+    expect(v.el.querySelector('h3')?.textContent).toBe('Still paused')
+    expect(names(v.el)).toEqual(['Resume', 'Check again'])
+    v.done()
+  })
+
+  it('a held start can take a new empty-plate picture once the person cleared it', async () => {
+    const v = await render({ printerId: 'a1', kind: 'plate', state: 'blocked', at, startedBy: 'slicerx' }, fakeHub(), row({ state: 'idle' }))
+    expect(names(v.el)).toEqual(["It's fine", 'Check again', 'This plate is clear'])
+    expect(v.el.textContent).not.toContain('keeps this picture')
+    v.done()
+  })
+
+  it('a picture that does not load says so instead of a broken image', async () => {
+    const v = await render({ printerId: 'a1', kind: 'hand', state: 'paused', at })
+    await act(async () => v.el.querySelector('img')!.dispatchEvent(new Event('error')))
+    expect(v.el.querySelector('img')).toBeNull()
+    expect(v.el.textContent).toContain('No picture from the camera')
     v.done()
   })
 })
