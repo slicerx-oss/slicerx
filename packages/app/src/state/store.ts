@@ -691,6 +691,10 @@ export function openSettings(section?: string): void {
   set({ settingsOpen: true, settingsSection: section ?? null })
 }
 
+export function closeSettings(): void {
+  set({ settingsOpen: false })
+}
+
 /** Default rail state: expanded on wide windows, collapsed below 1200 px */
 export function railOpen(rails: AppState['rails'], ws: Workspace, side: Side, wide: boolean): boolean {
   return rails[ws]?.[side] ?? wide
