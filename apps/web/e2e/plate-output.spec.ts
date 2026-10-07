@@ -24,7 +24,7 @@ async function drop(page: Page, name: string): Promise<void> {
 }
 
 async function sliceDone(page: Page): Promise<void> {
-  await page.getByRole('button', { name: /^Slice/ }).first().click()
+  await page.getByRole('main').getByRole('button', { name: /^Slice/ }).first().click()
   await expect
     .poll(async () => {
       const sl = (await state(page)).slice

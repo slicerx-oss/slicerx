@@ -54,7 +54,7 @@ test('a dropped STEP assembly becomes named objects and slices', async ({ page, 
   await page.evaluate(() => (window as unknown as { __sx: Sx }).__sx.setState({ plate: [], selection: null, selectedIds: [] }))
   await drop(page, 'bracket-inch.stp')
   await expect.poll(async () => (await state()).plate.length, { timeout: 60_000 }).toBe(1)
-  await page.getByRole('button', { name: /^Slice/ }).click()
+  await page.getByRole('main').getByRole('button', { name: /^Slice/ }).click()
   // An error shows its message in the failure.
   await expect.poll(async () => { const sl = (await state()).slice as { status: string; error?: unknown }; return sl.status === 'error' ? JSON.stringify(sl).slice(0, 400) : sl.status }, { timeout: 120_000 }).toBe('done')
 })
