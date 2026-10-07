@@ -448,9 +448,9 @@ const slab = (mat: Material, x0: number, x1: number, y0: number, y1: number, z0:
 }
 
 /**
- * The chute behind the bed and the purge blob. On printers whose bed moves in z the chute hangs at the toolhead's
- * height (the gantry carries the head over it), so its group follows the head's z like the H2C rack does; on the A1
- * and A1 mini it stands on the frame and stays still (`chute.frame`).
+ * The chute behind the bed and the purge blob. It stands still at the bed's level; on printers whose bed moves in z
+ * it comes up to the head's height while a change flushes into it, where it meets the head in bed coordinates. On the
+ * A1 and A1 mini it stays at the bed's level throughout (`chute.frame`).
  */
 export class PurgeRig {
   readonly root = new Group()
@@ -615,8 +615,9 @@ export class PurgeRig {
     this.chute.visible = !!ch
     this.blob.visible = false
     if (!ch) return null
-    // A chute on the frame of a bed slinger stays still at its flush spot; one the head's height carries follows it.
-    this.chute.position.set(ch.x, ch.y, ch.frame ? 0 : z)
+    // The chute stands still on the frame. Where the bed drops in z (X1, P1, H2) it meets the head at the head's height
+    // in bed coordinates, so it comes up to it for a change and is back at the bed's level the rest of the print.
+    this.chute.position.set(ch.x, ch.y, ch.frame || !at ? 0 : z)
     if (!at) return null
     const w = purgeWindow(at.seq, totalSeconds(at.plan))
     if (!w) return null
