@@ -76,7 +76,7 @@ export function builtinCommands(host: Host, workspaces: readonly { id: string; l
   out.push(
     { id: 'slice', title: 'Slice the plate', section: 'slice', keywords: ['run', 'gcode'], shortcut: 'Mod+Enter', workspace: 'prepare', tool: { permission: 'slice' }, enabled: hasPlate, run: async () => { await slicePlate(host); if (get().slice.status === 'done') setWorkspace('preview') } },
     { id: 'slice-cancel', title: 'Cancel slicing', section: 'slice', keywords: ['stop', 'abort'], enabled: () => get().slice.status === 'running', run: cancelSlice },
-    { id: 'export-gcode', title: 'Export G-code', section: 'slice', keywords: ['save', 'download', 'file'], shortcut: 'Mod+E', workspace: 'preview', enabled: exportable, run: () => exportGcode(host) },
+    { id: 'export-gcode', title: 'Export G-code', section: 'slice', keywords: ['save', 'download', 'file'], shortcut: 'Mod+Shift+E', workspace: 'preview', enabled: exportable, run: () => exportGcode(host) },
   )
   const goals: [Exclude<Goal, 'custom'>, string][] = [['draft', 'Draft (0.28 mm, fastest)'], ['standard', 'Standard (0.20 mm)'], ['fine', 'Fine (0.12 mm)'], ['strong', 'Strong (5 walls, 35% infill)']]
   for (const [goal, label] of goals) {

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// The look's own keys for slice, export and the command bar. The fixed Mod+Enter, Mod+E and Mod+K
+// The look's own keys for slice, export and the command bar. The fixed Mod+Enter and Mod+K
 // keep working next to them, so a key learned in one look is never taken away by another.
 import type { Keymap } from '@slicerx/ui'
 import { matchShortcut } from '../lib/keys'

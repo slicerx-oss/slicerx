@@ -59,7 +59,7 @@
               "kind": "command",
               "id": "export-gcode",
               "label": "&G-code…",
-              "accelerator": "CmdOrCtrl+E"
+              "accelerator": "CmdOrCtrl+Shift+E"
             },
             {
               "kind": "command",
@@ -299,7 +299,7 @@
               "kind": "command",
               "id": "export-gcode",
               "label": "&G-code…",
-              "accelerator": "CmdOrCtrl+E"
+              "accelerator": "CmdOrCtrl+Shift+E"
             },
             {
               "kind": "command",
@@ -582,7 +582,7 @@
               "kind": "command",
               "id": "export-gcode",
               "label": "&G-code…",
-              "accelerator": "CmdOrCtrl+E"
+              "accelerator": "CmdOrCtrl+Shift+E"
             },
             {
               "kind": "command",

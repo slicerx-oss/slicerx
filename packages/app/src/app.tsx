@@ -349,7 +349,6 @@ function useGlobalKeys(order: readonly string[]): void {
       if (inTextField(e)) return
       for (const [shortcut, id] of [
         ['Mod+Enter', 'slice'],
-        ['Mod+E', 'export-gcode'],
         ['Mod+O', 'plate-open'],
         ['Mod+N', 'project-new'],
         ['Mod+Shift+S', 'project-save-as'],
