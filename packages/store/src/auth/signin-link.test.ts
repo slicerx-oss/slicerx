@@ -86,6 +86,18 @@ describe('finishing an emailed sign-in link', () => {
     expect(await auth.completeSignIn('slicerx://auth/callback?code=c4')).toMatchObject({ ok: false, message: 'This link answers an earlier request. Open the newest sign-in email, or send a new link.' })
   })
 
+  it('turns a superseded or expired link into a plain message and clears what the request left', async () => {
+    const s = server(() => ok())
+    const { auth, storage } = client(s.fetchFn)
+    await auth.signInWithEmail('qa@example.com')
+    await auth.signInWithEmail('qa@example.com')
+    const r = await auth.completeSignIn('slicerx://auth/callback?error=access_denied&error_code=otp_expired&error_description=Email+link+is+invalid+or+has+expired')
+    expect(r).toMatchObject({ ok: false, message: 'This link has expired, or a newer one was sent. Use the newest email, or send a new link.' })
+    expect(s.tokenCalls).toHaveLength(0)
+    expect(await storage.getItem(`${AUTH_STORAGE_KEY}-flows-code-verifier`)).toBeNull()
+    expect(await storage.getItem(`${AUTH_STORAGE_KEY}-code-verifier`)).toBeNull()
+  })
+
   it('maps expired and used links, and keeps other messages', () => {
     expect(signInError({ code: 'flow_state_not_found', message: 'invalid flow state, no valid flow state found' })).toBe('This link has expired or was already used. Send a new link.')
     expect(signInError({ message: 'Email rate limit exceeded' })).toBe('Email rate limit exceeded')

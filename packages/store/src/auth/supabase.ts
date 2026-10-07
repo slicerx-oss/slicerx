@@ -154,6 +154,9 @@ export function signInError(error: { code?: string | undefined; message: string;
   if (code === 'bad_code_verifier' || code === 'pkce_verifier_missing' || error.name === 'AuthPKCECodeVerifierMissingError' || /code (verifier|challenge)/i.test(error.message)) {
     return 'This link answers an earlier request. Open the newest sign-in email, or send a new link.'
   }
+  if (code === 'otp_expired') {
+    return 'This link has expired, or a newer one was sent. Use the newest email, or send a new link.'
+  }
   if (code === 'flow_state_not_found' || code === 'flow_state_expired' || /flow state|expired|already used/i.test(error.message)) {
     return 'This link has expired or was already used. Send a new link.'
   }
@@ -230,7 +233,11 @@ export function supabaseAuth(sb: Db, opts: SupabaseOptions): AuthClient {
         return fail('invalid', 'The sign-in link is not a valid URL')
       }
       const err = url.searchParams.get('error_description') ?? url.searchParams.get('error')
-      if (err) return fail('forbidden', err)
+      if (err) {
+        // The request this link answered is over either way, so its verifier goes.
+        await clearPendingVerifiers(opts.auth?.storage)
+        return fail('forbidden', signInError({ code: url.searchParams.get('error_code') ?? undefined, message: err }))
+      }
       const code = url.searchParams.get('code')
       if (!code) return fail('invalid', 'The sign-in link has no code')
       // A code works once: the same link handed over twice (a second launch, a second click) shares the first exchange.
