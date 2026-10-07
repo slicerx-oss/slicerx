@@ -19,8 +19,13 @@ export function formatLabel(format: FileFormat | undefined): string {
   return format ? format.toUpperCase() : 'Model'
 }
 
-/** Downloads count on the server the moment the link is made, so ask only when the person acts. */
-export async function fetchModel(store: StoreClient, listing: Listing, get: typeof fetch = fetch): Promise<ModelFetch> {
+/** Vault files leave only as .sx3mf, except to their own creator. The server enforces it; this refuses anything else it might hand out. */
+export function allowedVaultFile(fileName: string, own: boolean): boolean {
+  return own || /\.sx3mf$/i.test(fileName)
+}
+
+/** Downloads count on the server the moment the link is made, so ask only when the person acts. `own`: the signed-in member made the listing. */
+export async function fetchModel(store: StoreClient, listing: Listing, get: typeof fetch = fetch, own = false): Promise<ModelFetch> {
   const link = await store.download(listing.id)
   if (!link.ok) {
     if (link.code === 'not_signed_in') return { ok: false, reason: 'sign-in', message: 'Sign in to download models.' }
@@ -28,6 +33,9 @@ export async function fetchModel(store: StoreClient, listing: Listing, get: type
   }
   if (!/^https?:|^blob:|^data:/.test(link.value.url)) {
     return { ok: false, reason: 'error', message: `${listing.title} has no file in this catalog.` }
+  }
+  if (!allowedVaultFile(link.value.fileName, own)) {
+    return { ok: false, reason: 'error', message: `${listing.title} is not available as an .sx3mf yet.` }
   }
   try {
     const res = await get(link.value.url)

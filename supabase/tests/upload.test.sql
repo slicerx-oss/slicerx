@@ -174,7 +174,7 @@ select pg_temp.as_user('owner');
 select is(public.can_download((select l1::text || '/' || v1::text || '/piece.3mf' from ids)), true, 'staff can download it for review');
 select lives_ok($$select public.approve_listing((select l1 from ids))$$, 'the owner approves the scanned upload');
 select pg_temp.as_user('ash');
-select is(public.can_download((select l1::text || '/' || v1::text || '/piece.3mf' from ids)), true, 'members can download it once approved');
+select is(public.can_download((select l1::text || '/' || v1::text || '/piece.3mf' from ids)), false, 'members never get it as a raw 3MF, even approved; Vault files leave as .sx3mf');
 select pg_temp.as_anon();
 select is(public.can_download((select l1::text || '/' || v1::text || '/piece.3mf' from ids)), false, 'signed-out visitors cannot');
 select is((select count(*)::int from public.listing_files where version_id = (select v1 from ids)), 2, 'anyone can read the file manifest of an approved version');

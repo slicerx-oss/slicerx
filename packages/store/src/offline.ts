@@ -62,6 +62,8 @@ const IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/webp']
 const MAX_IMAGE_BYTES = 5_242_880
 const SLUG = /^[a-z0-9][a-z0-9-]{1,80}$/
 const MAX_PENDING = 20
+/** The only form a Vault file leaves in for anyone but its creator and staff. */
+const SEALED = /\.sx3mf$/i
 
 const isStaff = (role: EffectiveRole | null) => role === 'owner' || role === 'moderator'
 
@@ -278,6 +280,9 @@ export function offlineStore(ctx: OfflineContext): Omit<StoreClient, keyof AuthC
     v.scanned_at = now()
     if (failure === null) {
       v.scan_status = 'clean'
+      // The scan stores every clean upload as an .sx3mf next to where it came in.
+      v.storage_path = v.storage_path.replace(/\.[a-z0-9]+$/i, '.sx3mf')
+      v.format = 'sx3mf'
       v.scan_report = { ok: true, checks: ['extension', 'signature', 'size'], size_bytes: sizeBytes }
       c.d.listing_files.push({ id: newId(), version_id: v.id, name: v.storage_path.split('/').pop() ?? v.storage_path, role: 'model', format: v.format, size_bytes: sizeBytes, sha256: v.sha256 })
       const mode = settings(c.d).moderation_mode
@@ -633,7 +638,9 @@ export function offlineStore(ctx: OfflineContext): Omit<StoreClient, keyof AuthC
         const uid = c.uid ? active(c) : null
         const l = c.d.listings.find((x) => x.id === listingId)
         if (!l || l.status !== 'approved' || !listingVisible(c, l)) bad('not_found', 'no such listing')
-        const v = latestVersion(c.d.listing_versions.filter((x) => x.listing_id === listingId && x.review_status === 'approved' && x.scan_status === 'clean'))
+        // Vault files leave only as .sx3mf; the creator and staff may also get any other stored file.
+        const anyFormat = isOwnListing(c, l) || isStaff(c.role)
+        const v = latestVersion(c.d.listing_versions.filter((x) => x.listing_id === listingId && x.review_status === 'approved' && x.scan_status === 'clean' && (anyFormat || SEALED.test(x.storage_path))))
         if (!v) bad('not_found', 'This model has no approved file yet')
         const at = now()
         const row = uid ? c.d.downloads.find((x) => x.user_id === uid && x.listing_id === listingId) : undefined

@@ -6,6 +6,7 @@ import type { Host, MeshPart } from '@slicerx/contracts'
 import { apply, type Vec3 } from '../plate/transform'
 import { get, selectedIds, toast, type PlateEntry } from '../state/store'
 import { appName } from '../edition'
+import { fromVault, VAULT_SX3MF_ONLY } from './vault'
 
 export type MeshFormat = 'stl' | 'obj'
 export type MeshScope = 'selection' | 'plate'
@@ -98,6 +99,7 @@ export function exportTargets(scope: MeshScope): PlateEntry[] {
 }
 
 export function meshExportBytes(objects: readonly PlateEntry[], format: MeshFormat): Uint8Array {
+  if (fromVault(objects)) throw new Error(VAULT_SX3MF_ONLY)
   if (format === 'stl') return binaryStl(objects.flatMap(worldParts))
   return new TextEncoder().encode(wavefrontObj(objects.map((o) => ({ name: o.name, parts: worldParts(o) }))))
 }
@@ -107,6 +109,10 @@ export async function exportMesh(host: Host, scope: MeshScope, format: MeshForma
   const objects = exportTargets(scope)
   if (objects.length === 0) {
     toast(scope === 'selection' ? 'Select an object to export.' : 'There is nothing on the plate to export.', 'info')
+    return false
+  }
+  if (fromVault(objects)) {
+    toast(VAULT_SX3MF_ONLY, 'info')
     return false
   }
   const bytes = meshExportBytes(objects, format)

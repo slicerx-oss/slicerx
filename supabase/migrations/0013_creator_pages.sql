@@ -167,3 +167,82 @@ end;
 $$;
 create trigger creators_media_cleanup after delete on public.creators
   for each row execute function public.queue_creator_media_cleanup();
+
+-- Vault files leave only as .sx3mf. The upload scan stores every clean upload
+-- as an .sx3mf; a model file in any other format (one stored before that, or
+-- put there by hand) is handed out only to its creator and staff. Preview
+-- images are unchanged.
+create function public.is_sealed_path(p_path text) returns boolean
+language sql immutable set search_path = '' as $$
+  select coalesce(p_path ~* '\.sx3mf$', false);
+$$;
+grant execute on function public.is_sealed_path(text) to anon, authenticated, service_role;
+
+-- The file a download gets: the newest approved, clean .sx3mf version of a
+-- public listing; for its creator and staff, the newest approved, clean
+-- version in any format.
+create or replace function public.public_download_path(p_listing uuid) returns text
+language sql stable security definer set search_path = '' as $$
+  select v.storage_path
+  from public.listing_versions v
+  join public.listings l on l.id = v.listing_id
+  join public.creators c on c.id = l.creator_id
+  join public.profiles p on p.id = c.owner_id
+  where v.listing_id = p_listing
+    and l.status = 'approved' and c.status = 'active' and p.banned_at is null
+    and v.review_status = 'approved' and v.scan_status = 'clean'
+    and (public.is_sealed_path(v.storage_path) or public.can_edit_listing(p_listing) or public.is_staff())
+  order by string_to_array(v.version, '.')::int[] desc, v.created_at desc
+  limit 1;
+$$;
+
+-- Visitors: an .sx3mf of an approved, clean version of a public listing, or
+-- one of its preview images.
+create or replace function public.is_public_file(p_path text) returns boolean
+language sql stable security definer set search_path = '' as $$
+  select coalesce(exists (
+    select 1
+    from public.listing_versions v
+    join public.listings l on l.id = v.listing_id
+    join public.creators c on c.id = l.creator_id
+    join public.profiles p on p.id = c.owner_id
+    where v.listing_id = public.path_listing(p_path)
+      and l.status = 'approved' and c.status = 'active' and p.banned_at is null
+      and v.review_status = 'approved' and v.scan_status = 'clean'
+      and (
+        (v.storage_path = p_path and public.is_sealed_path(p_path))
+        or exists (
+          select 1 from public.listing_files f
+          where f.version_id = v.id and f.role = 'image'
+            and v.listing_id::text || '/' || v.id::text || '/' || f.name = p_path
+        )
+      )
+  ), false);
+$$;
+
+-- Members: as before, but another member's model file only as an .sx3mf.
+create or replace function public.can_download(p_path text) returns boolean
+language sql stable security definer set search_path = '' as $$
+  select coalesce(
+    public.is_active_user() and (
+      public.is_staff()
+      or public.can_edit_listing(public.path_listing(p_path))
+      or exists (
+        select 1 from public.listing_versions v
+        where v.storage_path = p_path and public.is_sealed_path(p_path)
+          and v.review_status = 'approved' and v.scan_status = 'clean'
+          and public.listing_visible(v.listing_id)
+          and exists (select 1 from public.listings l where l.id = v.listing_id and l.status = 'approved')
+      )
+      -- Preview images the scan wrote for an approved version.
+      or exists (
+        select 1 from public.listing_files f join public.listing_versions v on v.id = f.version_id
+        where f.role = 'image' and v.listing_id::text || '/' || v.id::text || '/' || f.name = p_path
+          and v.review_status = 'approved' and v.scan_status = 'clean'
+          and public.listing_visible(v.listing_id)
+          and exists (select 1 from public.listings l where l.id = v.listing_id and l.status = 'approved')
+      )
+    ),
+    false
+  );
+$$;
