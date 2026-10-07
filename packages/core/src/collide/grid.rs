@@ -289,6 +289,70 @@ pub(crate) fn meet(obj: &PlateObject, rect: [f64; 4], over: f64, p: [f64; 2]) ->
     best
 }
 
+/// True when `obj` has material inside the box `[x0, x1] x [y0, y1]` between `lo` and `hi`: a piece of its surface in
+/// the box at those heights, or `p` (inside the box) at `lo` lying within the solid (a vertical ray up from it crosses
+/// the surface an odd number of times).
+pub(crate) fn material_in(obj: &PlateObject, rect: [f64; 4], lo: f64, hi: f64, p: [f64; 2]) -> bool {
+    let mut crossings = 0u32;
+    for part in &obj.mesh.parts {
+        let mut pts = Vec::with_capacity(part.positions.len());
+        for &v in &part.positions {
+            pts.push(obj.apply(v));
+        }
+        for t in &part.triangles {
+            let (Some(&a), Some(&b), Some(&c)) = (
+                pts.get(t[0] as usize),
+                pts.get(t[1] as usize),
+                pts.get(t[2] as usize),
+            ) else {
+                continue;
+            };
+            let zx = a[2].max(b[2]).max(c[2]);
+            if zx < lo {
+                continue;
+            }
+            // the ray up from p at lo
+            let d = (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
+            if d.abs() > 1e-12 {
+                let u = ((b[0] - p[0]) * (c[1] - p[1]) - (b[1] - p[1]) * (c[0] - p[0])) / d;
+                let v = ((c[0] - p[0]) * (a[1] - p[1]) - (c[1] - p[1]) * (a[0] - p[0])) / d;
+                let w = 1.0 - u - v;
+                // half-open on the edges so a ray through a shared edge counts once
+                if u > 0.0 && v >= 0.0 && w >= 0.0 && u * a[2] + v * b[2] + w * c[2] > lo {
+                    crossings += 1;
+                }
+            }
+            let (xl, xh, yl, yh) = (
+                a[0].min(b[0]).min(c[0]),
+                a[0].max(b[0]).max(c[0]),
+                a[1].min(b[1]).min(c[1]),
+                a[1].max(b[1]).max(c[1]),
+            );
+            if a[2].min(b[2]).min(c[2]) > hi || xh < rect[0] || xl > rect[1] || yh < rect[2] || yl > rect[3] {
+                continue;
+            }
+            let mut poly = vec![a, b, c];
+            for (axis, at, keep_above) in [
+                (0, rect[0], true),
+                (0, rect[1], false),
+                (1, rect[2], true),
+                (1, rect[3], false),
+                (2, lo, true),
+                (2, hi, false),
+            ] {
+                poly = clip(&poly, axis, at, keep_above);
+                if poly.is_empty() {
+                    break;
+                }
+            }
+            if !poly.is_empty() {
+                return true;
+            }
+        }
+    }
+    crossings % 2 == 1
+}
+
 /// A grid reduced to one value per row of cells (cells `y0..`).
 #[derive(Debug, Clone, Default)]
 pub(crate) struct Profile {
