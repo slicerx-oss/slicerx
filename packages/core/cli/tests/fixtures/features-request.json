@@ -8,7 +8,7 @@
     ]
   },
   "config": {
-    "enable_prime_tower": true, "wipe_tower_x": 15, "wipe_tower_y": 20,
+    "enable_prime_tower": true, "prime_tower_auto_position": false, "wipe_tower_x": 15, "wipe_tower_y": 20,
     "outer_wall_filament_id": 2, "top_surface_filament_id": 3,
     "enable_support": true, "support_interface_filament": 3
   },
