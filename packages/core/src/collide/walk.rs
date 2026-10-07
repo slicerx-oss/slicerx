@@ -194,24 +194,24 @@ impl Walker<'_> {
             area[2] + m.radius,
             area[3] + m.radius,
         ];
-        m.objects
-            .iter()
-            .enumerate()
-            .filter(|(j, _)| *j != self.k)
-            .filter_map(|(j, o)| {
-                let top = f64::from(o.top);
-                let n = Near {
-                    j,
-                    head: top > z + f64::from(EPS) && overlaps(o.bounds, grown),
-                    beam: top > z + m.rod
-                        && o.bounds[1] < area[3] + m.to_rod
-                        && o.bounds[3] > area[1] - m.to_rod,
-                    lid: top > z + m.lid,
-                    close: top > z + m.nozzle_height && overlaps(o.bounds, round),
-                };
-                (n.head || n.beam || n.lid || n.close).then_some(n)
-            })
-            .collect()
+        let mut out = Vec::new();
+        for (j, o) in m.objects.iter().enumerate() {
+            if j == self.k {
+                continue;
+            }
+            let top = f64::from(o.top);
+            let n = Near {
+                j,
+                head: top > z + f64::from(EPS) && overlaps(o.bounds, grown),
+                beam: top > z + m.rod && o.bounds[1] < area[3] + m.to_rod && o.bounds[3] > area[1] - m.to_rod,
+                lid: top > z + m.lid,
+                close: top > z + m.nozzle_height && overlaps(o.bounds, round),
+            };
+            if n.head || n.beam || n.lid || n.close {
+                out.push(n);
+            }
+        }
+        out
     }
 
     /// Probes a straight move every cell along it.
@@ -423,7 +423,9 @@ impl Walker<'_> {
         };
         let up = top + m.lift_mm;
         let mut pts: Vec<([f64; 3], bool)> = vec![(at, false), ([at[0], at[1], up], false)];
-        pts.extend(stops.iter().map(|s| ([s.x, s.y, top + s.dz], s.station)));
+        for s in stops {
+            pts.push(([s.x, s.y, top + s.dz], s.station));
+        }
         let up_last = pts.last().map_or(up, |p| p.0[2]);
         pts.push(([resume[0], resume[1], up_last], false));
         pts.push((resume, false));

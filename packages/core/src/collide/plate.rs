@@ -20,20 +20,34 @@ pub const ZONE_EXCLUSION: u8 = 0;
 /// The corner the nozzle wrap check runs in (`head_wrap_detect_zone`, the A1 family).
 pub const ZONE_WRAP_CHECK: u8 = 1;
 
+/// The box around `pts`, grown by `room` on every side: `[x0, y0, x1, y1]`.
+fn bounds(pts: &[[f64; 2]], room: f64) -> [f64; 4] {
+    let mut b = [f64::MAX, f64::MAX, f64::MIN, f64::MIN];
+    for p in pts {
+        b = [
+            b[0].min(p[0] - room),
+            b[1].min(p[1] - room),
+            b[2].max(p[0] + room),
+            b[3].max(p[1] + room),
+        ];
+    }
+    b
+}
+
 /// The keep-out zones of the settings, each with its kind.
 pub(crate) fn zones(config: &crate::config::PrintConfig) -> Vec<(u8, Vec<[f64; 2]>)> {
-    let mut out: Vec<(u8, Vec<[f64; 2]>)> = crate::preflight::exclude_zones(config)
-        .into_iter()
-        .map(|z| (ZONE_EXCLUSION, z))
-        .collect();
+    let mut out = Vec::new();
+    for z in crate::preflight::exclude_zones(config) {
+        out.push((ZONE_EXCLUSION, z));
+    }
     if let Some(serde_json::Value::Array(pts)) = config.raw.get("head_wrap_detect_zone") {
-        let poly: Vec<[f64; 2]> = pts
-            .iter()
-            .filter_map(|p| {
-                let (x, y) = p.as_str()?.split_once('x')?;
-                Some([x.trim().parse().ok()?, y.trim().parse().ok()?])
-            })
-            .collect();
+        let mut poly = Vec::new();
+        for p in pts {
+            let xy = p.as_str().and_then(|p| p.split_once('x'));
+            if let Some((Ok(x), Ok(y))) = xy.map(|(x, y)| (x.trim().parse(), y.trim().parse())) {
+                poly.push([x, y]);
+            }
+        }
         if poly.len() >= 3 {
             out.push((ZONE_WRAP_CHECK, poly));
         }
@@ -83,33 +97,16 @@ pub(crate) fn check(out: &SliceOutput, zones: &[(u8, Vec<[f64; 2]>)], crossings:
     let mut hits = Hits::default();
     let n = u32::try_from(out.objects.len()).unwrap_or(u32::MAX);
     let finder = crate::preview::ObjectFinder::new(&out.objects);
-    let boxes: Vec<[f64; 4]> = zones
-        .iter()
-        .map(|(_, z)| {
-            z.iter().fold([f64::MAX, f64::MAX, f64::MIN, f64::MIN], |b, p| {
-                [b[0].min(p[0]), b[1].min(p[1]), b[2].max(p[0]), b[3].max(p[1])]
-            })
-        })
-        .collect();
+    let mut boxes = Vec::with_capacity(zones.len());
+    for (_, z) in zones {
+        boxes.push(bounds(z, 0.0));
+    }
     // Objects whose footprints, with room for a brim and support around them, stand apart cannot cross; only a prime
     // tower near one can.
-    let room = 10.0;
-    let feet: Vec<[f64; 4]> = out
-        .objects
-        .iter()
-        .map(|o| {
-            o.hull
-                .iter()
-                .fold([f64::MAX, f64::MAX, f64::MIN, f64::MIN], |b, p| {
-                    [
-                        b[0].min(p[0] - room),
-                        b[1].min(p[1] - room),
-                        b[2].max(p[0] + room),
-                        b[3].max(p[1] + room),
-                    ]
-                })
-        })
-        .collect();
+    let mut feet = Vec::with_capacity(out.objects.len());
+    for o in &out.objects {
+        feet.push(bounds(&o.hull, 10.0));
+    }
     let meets = |a: &[f64; 4], b: &[f64; 4]| a[0] <= b[2] && b[0] <= a[2] && a[1] <= b[3] && b[1] <= a[3];
     let objects_meet = feet
         .iter()
@@ -209,11 +206,12 @@ pub(crate) fn check(out: &SliceOutput, zones: &[(u8, Vec<[f64; 2]>)], crossings:
                 None => owners.push((s.owner, b)),
             }
         }
-        let close: Vec<u32> = owners
-            .iter()
-            .filter(|(o, b)| owners.iter().any(|(p, c)| p != o && meets(b, c)))
-            .map(|(o, _)| *o)
-            .collect();
+        let mut close = Vec::new();
+        for (o, b) in &owners {
+            if owners.iter().any(|(p, c)| p != o && meets(b, c)) {
+                close.push(*o);
+            }
+        }
         if close.is_empty() {
             continue;
         }
