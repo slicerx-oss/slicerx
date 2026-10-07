@@ -29,7 +29,7 @@ use base64::engine::general_purpose::STANDARD as B64;
 use serde_json::{Value, json};
 
 use crate::hub::{iso, lock, now_ms, random_hex};
-use crate::rpc::{Bridge, Rpc, RpcError, str_arg};
+use crate::rpc::{Bridge, Rpc, RpcError, session, str_arg};
 use crate::watch::{Still, sniff_image};
 
 /// How long a start waits for the detector's answer about the plate.
@@ -437,7 +437,8 @@ pub(crate) async fn grab_call(b: &Arc<Bridge>, p: &Value) -> Rpc<Value> {
     Ok(v)
 }
 
-/// `watch.plateResult {checkId, ...}` (detectors): the answer to a `watch.plate`.
+/// `watch.plateResult` and `watch.lookResult {checkId, ...}` (detectors): the answer to a
+/// `watch.plate` or a `watch.look`.
 pub(crate) fn plate_result_call(b: &Bridge, p: &Value) -> Rpc<Value> {
     let id = str_arg(p, "checkId")?;
     let waiting = lock(&b.hub.guard.waits).remove(&id);
@@ -445,6 +446,102 @@ pub(crate) fn plate_result_call(b: &Bridge, p: &Value) -> Rpc<Value> {
         let _ = tx.send(p.clone());
     }
     Ok(json!({ "recorded": true }))
+}
+
+/// Asks the detector whether a new frame still shows a hand: `Some(hand)` with the frame, or
+/// `None` when no detector answered (the frame is still returned for the card).
+async fn look_again(b: &Arc<Bridge>, printer: &str) -> Rpc<(Option<bool>, Option<Still>)> {
+    let Some(still) = crate::watch::grab(b, printer).await? else {
+        return Ok((None, None));
+    };
+    if !b.hub.has_watchers() {
+        return Ok((None, Some(still)));
+    }
+    let id = random_hex(8);
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    lock(&b.hub.guard.waits).insert(id.clone(), tx);
+    b.hub.emit(
+        "watch.look",
+        json!({ "checkId": id, "printerId": printer, "frame": picture(&still) }),
+    );
+    let reply = tokio::time::timeout(PLATE_WAIT, rx).await;
+    lock(&b.hub.guard.waits).remove(&id);
+    let hand = reply
+        .ok()
+        .and_then(Result::ok)
+        .and_then(|a| a.get("hand").and_then(Value::as_bool));
+    Ok((hand, Some(still)))
+}
+
+/// `watch.handCheck {printerId}` (app): "Check again" on a hand card. Takes a new frame, shows it
+/// on the card, and asks the detector whether the hand is still there: gone answers the card
+/// (the print stays paused until a person resumes it), still there keeps it as it was.
+pub(crate) async fn hand_check_call(b: &Arc<Bridge>, p: &Value) -> Rpc<Value> {
+    let printer = known(b, p).await?;
+    let (hand, still) = look_again(b, &printer).await?;
+    if let Some(s) = still {
+        let at = s.captured_at_ms;
+        lock(&b.hub.guard.evidence).insert(printer.clone(), s);
+        let updated = {
+            let mut trips = lock(&b.hub.guard.trips);
+            trips.get_mut(&printer).and_then(|t| {
+                let o = t.as_object_mut()?;
+                o.insert("capturedAt".into(), json!(iso(at)));
+                o.insert("at".into(), json!(iso(now_ms())));
+                // A frame the detector judged has no spot of its own yet.
+                o.remove("box");
+                Some(t.clone())
+            })
+        };
+        if hand == Some(false) {
+            answer(b, &printer);
+        } else if let Some(t) = updated {
+            b.hub.emit("watch.guard", t);
+        }
+    }
+    Ok(json!({ "printerId": printer, "checked": hand.is_some(), "hand": hand }))
+}
+
+/// `watch.resume {printerId}` (app, audited): Resume on the card of a print the guard paused.
+/// The click is the person's approval for that resume, as Print is for a start: the hub mints
+/// its own token, for this printer and this pause only (a card in the paused state, a printer
+/// that reports paused), and no second approval is asked.
+pub(crate) async fn resume_call(b: &Arc<Bridge>, p: &Value) -> Rpc<Value> {
+    let printer = known(b, p).await?;
+    let guarded = lock(&b.hub.guard.trips)
+        .get(&printer)
+        .is_some_and(|t| t.get("state").and_then(Value::as_str) == Some("paused"));
+    let paused = crate::hub_rpc::observe(b, &printer)
+        .await
+        .is_some_and(|st| st.state == sx_connect::PrinterState::Paused);
+    if !guarded || !paused {
+        return Err(RpcError::new(
+            "not_paused",
+            "The guard has no paused print on this printer. Resume it from the printer's own controls.",
+        ));
+    }
+    let broker = b
+        .broker
+        .as_ref()
+        .ok_or_else(|| RpcError::new("not_supported", "this bridge has no approval broker"))?;
+    let req = crate::hub::internal_request(
+        sx_permit::StartOrigin::LocalClick,
+        &printer,
+        "printer.resume",
+        &json!({ "printerId": printer }),
+        &format!("Resume {printer} from the guard's card"),
+    );
+    let t = broker
+        .mint(req, false)
+        .map_err(|e| RpcError::new("approval_invalid", e.to_string()))?;
+    let token = sx_connect::ApprovalToken {
+        request_id: t.request_id,
+        token: t.token,
+        expires_at: t.expires_at,
+    };
+    session(b, &printer).await?.resume(&token).await?;
+    b.hub.audit(json!({ "origin": "local_click", "action": "printer.resume", "printerId": printer, "requestId": token.request_id, "via": "guard" }));
+    Ok(json!({ "printerId": printer, "resumed": true }))
 }
 
 async fn known(b: &Arc<Bridge>, p: &Value) -> Rpc<String> {

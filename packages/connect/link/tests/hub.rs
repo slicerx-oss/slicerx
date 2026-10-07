@@ -3431,3 +3431,98 @@ async fn plate_answers_without_spot(link: &Link, dirty: Arc<std::sync::atomic::A
         }
     });
 }
+
+/// A detector that subscribes and answers every look again: a hand while `hand` is set.
+async fn look_answers(link: &Link, hand: Arc<std::sync::atomic::AtomicBool>) {
+    let mut det = detector(link).await;
+    let r = call(&mut det, 2, "watch.subscribe", json!({ "everyMs": 120_000 })).await;
+    assert!(r["result"]["subscription"].is_number(), "{r}");
+    tokio::spawn(async move {
+        let mut id = 100;
+        while let Some(Ok(m)) = det.next().await {
+            let Message::Text(t) = m else { continue };
+            let v: Value = serde_json::from_str(t.as_str()).unwrap();
+            if v["event"] != "watch.look" {
+                continue;
+            }
+            let d = &v["data"];
+            assert!(d["frame"]["dataBase64"].is_string(), "{d}");
+            let seen = hand.load(std::sync::atomic::Ordering::SeqCst);
+            id += 1;
+            let res = json!({ "checkId": d["checkId"], "printerId": d["printerId"], "hand": seen, "score": if seen { 0.9 } else { 0.1 } });
+            det.send(Message::text(
+                json!({ "id": id, "method": "watch.lookResult", "params": res }).to_string(),
+            ))
+            .await
+            .unwrap();
+        }
+    });
+}
+
+#[tokio::test]
+async fn check_again_on_a_hand_looks_at_a_new_frame() {
+    let link = hub(None).await;
+    let mocks = common::Mocks::start("moonraker", &[]).await;
+    let (mut app, _det) = paused_for_a_hand(&link, &mocks).await;
+    let hand = Arc::new(std::sync::atomic::AtomicBool::new(true));
+    look_answers(&link, hand.clone()).await;
+    // Still a hand: the card stays as it was, on the new frame.
+    let r = call(&mut app, 10, "watch.handCheck", json!({ "printerId": "bay-4" })).await;
+    assert_eq!(
+        (r["result"]["checked"].as_bool(), r["result"]["hand"].as_bool()),
+        (Some(true), Some(true)),
+        "{r}"
+    );
+    let t = trip(&mut app).await;
+    assert_eq!(
+        (t["state"].as_str(), t["answered"].as_bool()),
+        (Some("paused"), Some(false)),
+        "{t}"
+    );
+    // Gone: answered, still paused, waiting on Resume.
+    hand.store(false, std::sync::atomic::Ordering::SeqCst);
+    let r = call(&mut app, 11, "watch.handCheck", json!({ "printerId": "bay-4" })).await;
+    assert_eq!(r["result"]["hand"], false, "{r}");
+    let t = trip(&mut app).await;
+    assert_eq!(
+        (t["state"].as_str(), t["answered"].as_bool()),
+        (Some("paused"), Some(true)),
+        "{t}"
+    );
+    assert_eq!(mock_state(&mocks).await, "paused");
+}
+
+#[tokio::test]
+async fn resume_on_the_guard_card_is_the_persons_approval_for_that_pause() {
+    let link = hub(None).await;
+    let mocks = common::Mocks::start("moonraker", &[]).await;
+    let (mut app, mut det) = paused_for_a_hand(&link, &mocks).await;
+    // Only the app, a person's click, may resume; a detector may not.
+    let r = call(&mut det, 20, "watch.resume", json!({ "printerId": "bay-4" })).await;
+    assert_eq!(r["error"]["code"], "forbidden", "{r}");
+    let mut ag = agent(&link).await;
+    let r = call(&mut ag, 21, "watch.resume", json!({ "printerId": "bay-4" })).await;
+    assert_eq!(r["error"]["code"], "forbidden", "{r}");
+    // No card to answer: the click covers no pause.
+    let r = call(&mut app, 22, "watch.resume", json!({ "printerId": "nope" })).await;
+    assert_eq!(r["error"]["code"], "not_found", "{r}");
+    let r = call(&mut app, 23, "watch.resume", json!({ "printerId": "bay-4" })).await;
+    assert_eq!(r["result"]["resumed"], true, "{r}");
+    assert!(
+        mock_log(&mocks).await.iter().any(|l| l.starts_with("resume")),
+        "{:?}",
+        mock_log(&mocks).await
+    );
+    wait_state(&mut app, "printing").await;
+    assert!(trip(&mut app).await.is_null());
+    // The card is gone, so the same click no longer resumes anything.
+    let r = call(&mut app, 24, "watch.resume", json!({ "printerId": "bay-4" })).await;
+    assert_eq!(r["error"]["code"], "not_paused", "{r}");
+}
+
+async fn mock_state(mocks: &common::Mocks) -> String {
+    mocks.state().await["moonraker"]["state"]
+        .as_str()
+        .unwrap_or_default()
+        .to_owned()
+}

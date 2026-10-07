@@ -65,6 +65,9 @@ const APP_ONLY: &[&str] = &[
     "watch.plateClear",
     "watch.plateCheck",
     "watch.plateIgnore",
+    "watch.handCheck",
+    // Resume on the guard's card: the person's click is the approval (guard.rs).
+    "watch.resume",
     "services.configure",
     "services.list",
     "services.remove",
@@ -88,6 +91,7 @@ const WATCH_METHODS: &[&str] = &[
     "watch.huginnPrinters",
     "watch.grab",
     "watch.plateResult",
+    "watch.lookResult",
 ];
 
 /// The role a client may ask for at pairing, given the role its code or key gives: the same or a
@@ -140,10 +144,10 @@ pub(crate) fn may_answer(role: Role, own: bool, needs_person: bool) -> bool {
 /// Whether a connection with `role` gets a hub event addressed to no one in particular.
 pub(crate) fn sees_broadcast(role: Role, event: &str) -> bool {
     match role {
-        // Plate checks carry two pictures for the detector; the app gets the guard's own events.
-        Role::App => event != "watch.plate",
+        // Plate checks and looks carry pictures for the detector; the app gets the guard's own events.
+        Role::App => !matches!(event, "watch.plate" | "watch.look"),
         Role::Agent => false,
-        Role::Watch => matches!(event, "watch.dismissed" | "watch.plate"),
+        Role::Watch => matches!(event, "watch.dismissed" | "watch.plate" | "watch.look"),
     }
 }
 
