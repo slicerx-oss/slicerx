@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: Apache-2.0
    Copyright (C) 2026 The SlicerX contributors */
-/* The approved Nocturne brand kit colors for the brand pages. design/sync.mjs appends this after the
+/* The approved Subban brand kit colors for the brand pages. design/sync.mjs appends this after the
    app tokens, so the pages keep their approved ground (#121319) while every other value comes from packages/ui. */
 :root{
   --ink-0:#121319; --ink-1:#17181f; --ink-2:#1e1f29; --ink-3:#262835; --ink-4:#303241;

@@ -52,8 +52,12 @@
           ]
         },
         "theme": {
-          "default": "nocturne",
+          "default": "subban",
           "anyOf": [
+            {
+              "type": "string",
+              "const": "subban"
+            },
             {
               "type": "string",
               "const": "nocturne"
@@ -62,9 +66,12 @@
               "type": "object",
               "properties": {
                 "base": {
-                  "default": "nocturne",
+                  "default": "subban",
                   "type": "string",
-                  "const": "nocturne"
+                  "enum": [
+                    "subban",
+                    "nocturne"
+                  ]
                 },
                 "tokens": {
                   "type": "object",
@@ -334,6 +341,10 @@
           "type": "boolean"
         },
         "pilot": {
+          "default": true,
+          "type": "boolean"
+        },
+        "cad": {
           "default": true,
           "type": "boolean"
         },
