@@ -30,6 +30,7 @@ import type {
 import { createOfflineContext, offlineAuth, type OfflineContext, type OfflineOptions } from './auth/offline'
 import { latestVersion, toAudit, toCollection, toComment, toCreator, toCreatorLink, toFile, toListing, toMake, toModerationItem, toPrintProfile, toVersion } from './map'
 import { LICENSES, MODERATION_MODES, type CommentRow, type CreatorRow, type ListingRow, type SeedData, type VersionRow } from './rows'
+import { newCreatorIds, recommendedScores, trendingScores } from './ranking'
 import { DEFAULT_MAX_FILE_MB, MAX_FEATURED, slugify, validateCreatorLinks, validateHandle, validateUpload } from './validate'
 
 export type { OfflineOptions } from './auth/offline'
@@ -55,6 +56,10 @@ interface Cx {
 }
 
 const HTTPS = /^https:\/\/[^\s<>"']{4,500}$/i
+/** Offline only: uploaded creator images stay in memory as data URLs. */
+const IMAGE = /^(https:\/\/[^\s<>"']{4,500}|data:image\/(png|jpeg|webp);base64,[a-z0-9+/=]+)$/i
+const IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/webp']
+const MAX_IMAGE_BYTES = 5_242_880
 const SLUG = /^[a-z0-9][a-z0-9-]{1,80}$/
 const MAX_PENDING = 20
 
@@ -168,8 +173,35 @@ export function offlineStore(ctx: OfflineContext): Omit<StoreClient, keyof AuthC
       stats: statsOf(c.d, l.id),
       ...(latest ? { currentVersion: toVersion(latest, c.d.print_profiles.filter((p) => p.version_id === latest.id)) } : {}),
       ...(c.uid ? { likedByMe: c.d.likes.some((x) => x.user_id === c.uid && x.listing_id === l.id) } : {}),
+      ...(c.uid ? { savedByMe: savedIds(c).has(l.id) } : {}),
     })
   }
+
+  const savedList = (c: Cx) => (c.uid ? c.d.collections.find((x) => x.owner_id === c.uid && x.kind === 'saved') : undefined)
+  function savedIds(c: Cx): Set<string> {
+    const list = savedList(c)
+    return new Set(list ? c.d.collection_items.filter((i) => i.collection_id === list.id).map((i) => i.listing_id) : [])
+  }
+
+  /**
+   * The ranking clock. The bundled catalog is dated, so its rows rank against
+   * its own latest activity rather than an empty week; activity made in this
+   * session moves the clock up to the real time.
+   */
+  function rankNow(c: Cx): Date {
+    const real = ctx.now().getTime()
+    let latest = 0
+    for (const t of [...c.d.likes.map((x) => x.created_at), ...c.d.makes.map((x) => x.created_at), ...c.d.downloads.map((x) => x.last_at), ...c.d.listings.map((x) => x.published_at ?? '')]) {
+      const ms = t ? Date.parse(t) : 0
+      if (ms > latest) latest = ms
+    }
+    return new Date(latest > 0 ? Math.min(real, latest) : real)
+  }
+  const visibleApproved = (c: Cx) => c.d.listings.filter((l) => l.status === 'approved' && listingVisible(c, l))
+  const cardsFor = (c: Cx, ids: string[]) => ids.flatMap((id) => {
+    const l = c.d.listings.find((x) => x.id === id)
+    return l ? (cardOf(c, l) ?? []) : []
+  })
 
   const cardOf = (c: Cx, l: ListingRow): ListingCard | null => {
     const cr = c.d.creators.find((x) => x.id === l.creator_id)
@@ -293,6 +325,66 @@ export function offlineStore(ctx: OfflineContext): Omit<StoreClient, keyof AuthC
       })
       return withNext({ items, next: p.next })
     },
+
+    async trending(o = {}) {
+      const c = await cx()
+      const scored = trendingScores({ listings: visibleApproved(c), likes: c.d.likes, makes: c.d.makes, downloads: c.d.downloads }, rankNow(c), o)
+      return cardsFor(c, scored.map((x) => x.listingId))
+    },
+
+    async newCreators(o = {}) {
+      const c = await cx()
+      const visible = c.d.creators.filter((cr) => cr.status === 'active' && !ownerBanned(c, cr))
+      const found = newCreatorIds({ creatorIds: visible.map((cr) => cr.id), listings: c.d.listings }, rankNow(c), o)
+      return found.flatMap(({ creatorId }) => {
+        const cr = c.d.creators.find((x) => x.id === creatorId)
+        return cr ? [creatorOut(c, cr, true)] : []
+      })
+    },
+
+    async recommended(o = {}) {
+      const c = await cx()
+      if (!c.uid) return []
+      const likedIds = new Set(c.d.likes.filter((k) => k.user_id === c.uid).map((k) => k.listing_id))
+      const scored = recommendedScores(
+        {
+          candidates: visibleApproved(c),
+          liked: c.d.listings.filter((l) => likedIds.has(l.id)),
+          ownCreatorIds: c.d.creators.filter((cr) => cr.owner_id === c.uid).map((cr) => cr.id),
+        },
+        o,
+      )
+      return cardsFor(c, scored.map((x) => x.listingId))
+    },
+
+    async savedListings() {
+      const c = await cx()
+      const list = savedList(c)
+      if (!list) return []
+      const items = c.d.collection_items.filter((i) => i.collection_id === list.id).sort((a, b) => b.added_at.localeCompare(a.added_at))
+      return cardsFor(
+        c,
+        items.map((i) => i.listing_id).filter((id) => c.d.listings.some((l) => l.id === id && listingVisible(c, l))),
+      )
+    },
+
+    setSaved: (listingId, saved) =>
+      run((c) => {
+        const uid = active(c)
+        let list = savedList(c)
+        if (saved) {
+          visibleListing(c, listingId)
+          if (!list) {
+            list = { id: newId(), owner_id: uid, name: 'Saved', is_public: false, kind: 'saved', created_at: now() }
+            c.d.collections.push(list)
+          }
+          const id = list.id
+          if (!c.d.collection_items.some((i) => i.collection_id === id && i.listing_id === listingId)) c.d.collection_items.push({ collection_id: id, listing_id: listingId, added_at: now() })
+        } else if (list) {
+          const id = list.id
+          c.d.collection_items = c.d.collection_items.filter((i) => !(i.collection_id === id && i.listing_id === listingId))
+        }
+      }),
 
     async getListing(idOrSlug) {
       const c = await cx()
@@ -465,7 +557,7 @@ export function offlineStore(ctx: OfflineContext): Omit<StoreClient, keyof AuthC
       const c = await cx()
       if (!c.uid) return []
       return c.d.collections
-        .filter((x) => x.owner_id === c.uid)
+        .filter((x) => x.owner_id === c.uid && x.kind !== 'saved')
         .map((x): Collection =>
           toCollection(
             x,
@@ -627,7 +719,8 @@ export function offlineStore(ctx: OfflineContext): Omit<StoreClient, keyof AuthC
         if (input.tagline != null && input.tagline.length > 140) bad('invalid', 'Taglines can be at most 140 characters')
         if (input.bio != null && input.bio.length > 4000) bad('invalid', 'Bios can be at most 4000 characters')
         if (input.location != null && input.location.length > 80) bad('invalid', 'Locations can be at most 80 characters')
-        if (input.logoUrl != null && !HTTPS.test(input.logoUrl)) bad('invalid', 'The logo must be an https address')
+        if (input.logoUrl != null && !IMAGE.test(input.logoUrl)) bad('invalid', 'The logo must be an https address')
+        if (input.bannerUrl != null && !IMAGE.test(input.bannerUrl)) bad('invalid', 'The banner must be an https address')
         const existing = ownCreator(c)
         if (c.d.creators.some((x) => x.handle === input.handle && x.id !== existing?.id)) bad('conflict', 'That handle is taken')
         if (existing) {
@@ -637,6 +730,7 @@ export function offlineStore(ctx: OfflineContext): Omit<StoreClient, keyof AuthC
           if (input.bio !== undefined) existing.bio = input.bio
           if (input.location !== undefined) existing.location = input.location
           if (input.logoUrl !== undefined) existing.logo_url = input.logoUrl
+          if (input.bannerUrl !== undefined) existing.banner_url = input.bannerUrl
           if (input.status !== undefined) existing.status = input.status
           return creatorOut(c, existing)
         }
@@ -649,6 +743,7 @@ export function offlineStore(ctx: OfflineContext): Omit<StoreClient, keyof AuthC
           bio: input.bio ?? null,
           location: input.location ?? null,
           logo_url: input.logoUrl ?? null,
+          banner_url: input.bannerUrl ?? null,
           status: input.status ?? 'active',
           trusted: false,
           created_at: now(),
@@ -668,6 +763,16 @@ export function offlineStore(ctx: OfflineContext): Omit<StoreClient, keyof AuthC
         const rows = (checked.ok ? checked.value : []).map((l, position) => ({ id: newId(), creator_id: cr.id, kind: l.kind, label: l.label ?? null, url: l.url, position }))
         c.d.creator_links = [...c.d.creator_links.filter((k) => k.creator_id !== cr.id), ...rows]
         return rows.map(toCreatorLink)
+      }),
+
+    uploadCreatorImage: (input) =>
+      run((c) => {
+        requireCreator(c)
+        if (!IMAGE_TYPES.includes(input.contentType)) bad('invalid', 'Use a PNG, JPEG or WebP image')
+        if (input.bytes.byteLength > MAX_IMAGE_BYTES) bad('invalid', 'Images can be at most 5 MB')
+        let bin = ''
+        for (let i = 0; i < input.bytes.length; i += 0x8000) bin += String.fromCharCode(...input.bytes.subarray(i, i + 0x8000))
+        return `data:${input.contentType};base64,${btoa(bin)}`
       }),
 
     setFeatured: (listingIds) =>

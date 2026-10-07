@@ -2,8 +2,8 @@
 // Copyright (C) 2026 The SlicerX contributors
 // Client side checks that mirror the database, so a mistake is caught before
 // any network call. The database stays the authority; these only save a trip.
+// No dependencies, so the app's forms import it as @slicerx/store/validate.
 import type { CreatorLinkInput, CreatorLinkKind, FileFormat } from '@slicerx/contracts'
-import { LINK_KINDS } from './rows'
 
 /** Default largest model file, in bytes (100 MB). The library settings can raise it, up to 500 MB. */
 export const MAX_UPLOAD_BYTES = 104_857_600
@@ -11,6 +11,25 @@ export const DEFAULT_MAX_FILE_MB = 100
 export const UPLOAD_EXTENSIONS: readonly FileFormat[] = ['3mf', 'sx3mf', 'stl']
 export const MAX_CREATOR_LINKS = 12
 export const MAX_FEATURED = 6
+
+/** Every creator link kind the database accepts (creator_links.kind). */
+export const LINK_KINDS = [
+  'website',
+  'patreon',
+  'makerworld',
+  'printables',
+  'thingiverse',
+  'cults3d',
+  'youtube',
+  'instagram',
+  'tiktok',
+  'x',
+  'discord',
+  'github',
+  'kofi',
+  'buymeacoffee',
+  'other',
+] as const
 
 export type Checked<T> = { ok: true; value: T } | { ok: false; message: string }
 

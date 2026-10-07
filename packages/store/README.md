@@ -52,7 +52,14 @@ Reading, for anyone (a signed-in member also gets likes and follows):
 - `feed({ cursor, limit, category })` is the storefront feed: approved listings with the reason each is shown.
 - `getListing(idOrSlug)` returns the listing, its creator and the versions the caller may see.
 - `getCreatorByHandle(handle)` returns the page with links, featured models in order and approved listings. `listCreators({ query, limit })` is the directory: only creators with an approved listing, unless the caller is staff or the creator.
+- `trending({ days, limit })` ranks approved listings by what happened in the last `days` days (7 by default): a like counts 3, a make 5 and a download 1. Listings with nothing in the window are left out.
+- `newCreators({ days, limit })` lists creators whose first approved listing went live in the last `days` days (30 by default), newest first.
+- `recommended({ limit })` is "based on your likes": approved listings that share tags or a creator with the member's likes, without the ones they liked or uploaded. Empty when signed out or without likes.
 - `comments`, `makes`, `printProfiles`, `files`, `listingStats`.
+
+The database runs these as `trending_listings`, `new_creators` and `recommended_listings`; the offline store runs the same rules from `src/ranking.ts`, against the bundled catalog's latest activity rather than the real date.
+
+Members save designs to a private Saved list with `setSaved(listingId, saved)` and read it with `savedListings()`. It is a collection of kind `saved`, made on the first save, never public and left out of `collections()`.
 
 A listing is `pending`, `approved`, `rejected`, `archived` or `removed`. New listings start pending, and editing an approved or archived listing sends it back to review. Creators move their own listings with `archiveListing` (approved to archived), `unarchiveListing`, `resubmitListing` (rejected to pending) and `deleteListing` (pending, rejected or archived only). `myListings()` lists every status, and `creatorDashboard()` returns likes, comments, makes and downloads per listing.
 
@@ -75,7 +82,9 @@ Offline, the scan runs at once and checks the file signature (a zip archive for 
 
 ## Creator pages
 
-One member has at most one page. `saveCreator({ handle, displayName, tagline, bio, location, logoUrl, status })` makes it on the first call and updates it after, and the member becomes a creator. `setCreatorLinks(links)` replaces all links, and `setFeatured(listingIds)` replaces the featured models (up to six approved ones, in order).
+One member has at most one page. `saveCreator({ handle, displayName, tagline, bio, location, logoUrl, bannerUrl, status })` makes it on the first call and updates it after, and the member becomes a creator. `setCreatorLinks(links)` replaces all links, and `setFeatured(listingIds)` replaces the featured models (up to six approved ones, in order). The first featured model is the page's pinned design.
+
+`uploadCreatorImage({ kind, bytes, contentType })` stores a banner or logo (PNG, JPEG or WebP, up to 5 MB) in the public `creator-media` bucket under the member's id and returns its URL for `saveCreator`. Saving a new image removes the old ones the page no longer uses.
 
 Links are checked on the device before saving, with the same rules as the database. `validateCreatorLink` is a pure function, exported for forms:
 
@@ -83,7 +92,7 @@ Links are checked on the device before saving, with the same rules as the databa
 - A named service must point at its own domain: `patreon` at patreon.com, `youtube` at youtube.com or youtu.be, `x` at x.com or twitter.com, and so on. `website` and `other` accept any host.
 - At most 12 links per page, and no address twice (`validateCreatorLinks`).
 
-`validateUpload`, `validateHandle`, `validateDevice` and `slugify` are exported the same way.
+`validateUpload`, `validateHandle`, `validateDevice` and `slugify` are exported the same way. All of them are also at `@slicerx/store/validate`, which has no dependencies, so forms can use them without loading the client.
 
 ## Moderation
 

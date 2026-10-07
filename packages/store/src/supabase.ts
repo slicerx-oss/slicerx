@@ -64,7 +64,7 @@ import { DEFAULT_MAX_FILE_MB, slugify, validateCreatorLinks, validateHandle, val
 const LISTING_COLUMNS = 'id, creator_id, slug, title, description, license, status, tags, cover_url, review_note, reviewed_by, reviewed_at, published_at, created_at'
 // The scan report is read through version_scan_report, never straight from the table.
 const VERSION_COLUMNS = 'id, listing_id, version, changelog, storage_path, sha256, format, size_bytes, scan_status, scanned_at, review_status, created_at'
-const CREATOR_COLUMNS = 'id, owner_id, handle, display_name, tagline, bio, location, logo_url, status, trusted, created_at'
+const CREATOR_COLUMNS = 'id, owner_id, handle, display_name, tagline, bio, location, logo_url, banner_url, status, trusted, created_at'
 const COMMENT_COLUMNS = 'id, listing_id, user_id, parent_id, body, created_at, edited_at, deleted_at'
 const MAKE_COLUMNS = 'id, listing_id, user_id, caption, photo_url, printer_model, created_at'
 const LINK_COLUMNS = 'id, creator_id, kind, label, url, position'
@@ -74,6 +74,11 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const HTTPS = /^https:\/\/[^\s<>"']{4,500}$/i
 const statsRow = z.object({ listing_id: z.string(), likes: z.coerce.number(), makes: z.coerce.number(), comments: z.coerce.number(), downloads: z.coerce.number() })
 const followersRow = z.object({ creator_id: z.string(), followers: z.coerce.number() })
+const scoredRow = z.object({ listing_id: z.string(), score: z.coerce.number() })
+const newCreatorRow = z.object({ creator_id: z.string(), first_published_at: z.string() })
+const savedRow = z.object({ listing_id: z.string(), saved_at: z.string() })
+const IMAGE_TYPES: Record<string, string> = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp' }
+const MAX_IMAGE_BYTES = 5_242_880
 
 type DbError = { code?: string; message: string; hint?: string | null } | null
 const failed = <T>(error: NonNullable<DbError>): StoreResult<T> => fail(errorCode(error), error.message)
@@ -128,10 +133,11 @@ export function supabaseStore(sb: Db, conn?: Pick<SupabaseOptions, 'url' | 'anon
   async function hydrate(listings: ListingRow[], me: string | null): Promise<Listing[]> {
     if (listings.length === 0) return []
     const ids = listings.map((l) => l.id)
-    const [versions, stats, likes] = await Promise.all([
+    const [versions, stats, likes, saved] = await Promise.all([
       read(versionRow, sb.from('listing_versions').select(VERSION_COLUMNS).in('listing_id', ids)),
       statsFor(ids),
       me ? read(likeRow, sb.from('likes').select('user_id, listing_id, created_at').eq('user_id', me).in('listing_id', ids)) : Promise.resolve([]),
+      me ? savedIds() : Promise.resolve(new Set<string>()),
     ])
     const newest = new Map<string, VersionRow>()
     for (const l of listings) {
@@ -148,9 +154,31 @@ export function supabaseStore(sb: Db, conn?: Pick<SupabaseOptions, 'url' | 'anon
       return toListing(l, {
         ...(v ? { currentVersion: toVersion(v, profiles.filter((p) => p.version_id === v.id)) } : {}),
         ...(s ? { stats: s } : {}),
-        ...(me ? { likedByMe: liked.has(l.id) } : {}),
+        ...(me ? { likedByMe: liked.has(l.id), savedByMe: saved.has(l.id) } : {}),
       })
     })
+  }
+
+  async function savedIds(): Promise<Set<string>> {
+    const { data, error } = await sb.rpc('saved_listings')
+    return new Set(error ? [] : rows(savedRow, data).map((r) => r.listing_id))
+  }
+
+  /** Approved listings by id as cards, in the order given. */
+  async function cardsById(ids: string[], me: string | null): Promise<ListingCard[]> {
+    if (ids.length === 0) return []
+    const found = await read(listingRow, sb.from('listings').select(LISTING_COLUMNS).in('id', ids))
+    const byId = new Map(found.map((l) => [l.id, l]))
+    return cards(ids.flatMap((id) => byId.get(id) ?? []), me)
+  }
+
+  /** Removes images in the creator's folder the page no longer uses. Best effort. */
+  async function pruneCreatorImages(me: string, keep: (string | null)[]): Promise<void> {
+    const listed = await sb.storage.from('creator-media').list(me, { limit: 100 })
+    if (listed.error) return
+    const used = new Set(keep.filter((u): u is string => Boolean(u)).map((u) => u.split('/').pop()))
+    const stale = (listed.data ?? []).map((o) => o.name).filter((n) => !used.has(n))
+    if (stale.length) await sb.storage.from('creator-media').remove(stale.map((n) => `${me}/${n}`))
   }
 
   async function creatorsById(ids: string[], me: string | null, withCount = false): Promise<Map<string, Creator>> {
@@ -258,6 +286,44 @@ export function supabaseStore(sb: Db, conn?: Pick<SupabaseOptions, 'url' | 'anon
         return { listing, creator, reason, makes: s?.makes ?? 0 }
       })
       return p.more ? { items: feed, next: String(p.start + p.limit) } : { items: feed }
+    },
+
+    async trending(o = {}) {
+      const me = await uid()
+      const { data, error } = await sb.rpc('trending_listings', { p_days: o.days ?? 7, p_limit: o.limit ?? 24 })
+      if (error) throw new Error(`store read failed (${error.code ?? 'unknown'}): ${error.message}`)
+      return cardsById(rows(scoredRow, data).map((r) => r.listing_id), me)
+    },
+
+    async newCreators(o = {}) {
+      const me = await uid()
+      const { data, error } = await sb.rpc('new_creators', { p_days: o.days ?? 30, p_limit: o.limit ?? 12 })
+      if (error) throw new Error(`store read failed (${error.code ?? 'unknown'}): ${error.message}`)
+      const ids = rows(newCreatorRow, data).map((r) => r.creator_id)
+      const found = await creatorsById(ids, me, true)
+      return ids.flatMap((id) => found.get(id) ?? [])
+    },
+
+    async recommended(o = {}) {
+      const me = await uid()
+      if (!me) return []
+      const { data, error } = await sb.rpc('recommended_listings', { p_limit: o.limit ?? 24 })
+      if (error) throw new Error(`store read failed (${error.code ?? 'unknown'}): ${error.message}`)
+      return cardsById(rows(scoredRow, data).map((r) => r.listing_id), me)
+    },
+
+    async savedListings() {
+      const me = await uid()
+      if (!me) return []
+      const { data, error } = await sb.rpc('saved_listings')
+      if (error) throw new Error(`store read failed (${error.code ?? 'unknown'}): ${error.message}`)
+      return cardsById(rows(savedRow, data).map((r) => r.listing_id), me)
+    },
+
+    async setSaved(listingId, saved) {
+      if (!(await uid())) return fail('not_signed_in', 'Sign in first')
+      const { error } = await sb.rpc('set_saved', { p_listing: listingId, p_saved: saved })
+      return error ? failed(error) : ok(undefined)
     },
 
     async getListing(idOrSlug) {
@@ -429,7 +495,7 @@ export function supabaseStore(sb: Db, conn?: Pick<SupabaseOptions, 'url' | 'anon
     async collections() {
       const me = await uid()
       if (!me) return []
-      const mine = await read(collectionRow, sb.from('collections').select('*').eq('owner_id', me).order('created_at'))
+      const mine = await read(collectionRow, sb.from('collections').select('*').eq('owner_id', me).neq('kind', 'saved').order('created_at'))
       if (mine.length === 0) return []
       const items = await read(collectionItemRow, sb.from('collection_items').select('*').in('collection_id', mine.map((c) => c.id)))
       return mine.map((c) =>
@@ -584,6 +650,7 @@ export function supabaseStore(sb: Db, conn?: Pick<SupabaseOptions, 'url' | 'anon
       const h = validateHandle(input.handle)
       if (!h.ok) return fail('invalid', h.message)
       if (input.logoUrl != null && !HTTPS.test(input.logoUrl)) return fail('invalid', 'The logo must be an https address')
+      if (input.bannerUrl != null && !HTTPS.test(input.bannerUrl)) return fail('invalid', 'The banner must be an https address')
       const fields = {
         handle: input.handle,
         display_name: input.displayName.trim(),
@@ -591,6 +658,7 @@ export function supabaseStore(sb: Db, conn?: Pick<SupabaseOptions, 'url' | 'anon
         ...(input.bio === undefined ? {} : { bio: input.bio }),
         ...(input.location === undefined ? {} : { location: input.location }),
         ...(input.logoUrl === undefined ? {} : { logo_url: input.logoUrl }),
+        ...(input.bannerUrl === undefined ? {} : { banner_url: input.bannerUrl }),
         ...(input.status === undefined ? {} : { status: input.status }),
       }
       const existing = await ownCreatorRow(me)
@@ -599,6 +667,7 @@ export function supabaseStore(sb: Db, conn?: Pick<SupabaseOptions, 'url' | 'anon
         : await sb.from('creators').insert({ owner_id: me, ...fields }).select(CREATOR_COLUMNS).single()
       if (error) return fail(errorCode(error), error.code === '23505' ? 'That handle is taken' : error.message)
       const row = creatorRow.parse(data)
+      if (input.logoUrl !== undefined || input.bannerUrl !== undefined) await pruneCreatorImages(me, [row.logo_url, row.banner_url ?? null])
       const creator = (await creatorsById([row.id], me)).get(row.id)
       return creator ? ok(creator) : fail('unavailable', 'The page was saved but could not be read back')
     },
@@ -613,6 +682,19 @@ export function supabaseStore(sb: Db, conn?: Pick<SupabaseOptions, 'url' | 'anon
       if (!r.ok) return r
       const saved = await read(creatorLinkRow, sb.from('creator_links').select(LINK_COLUMNS).eq('creator_id', mine.creator.id).order('position'))
       return ok(saved.map(toCreatorLink))
+    },
+
+    async uploadCreatorImage(input) {
+      const mine = await needCreator()
+      if (isFailure(mine)) return mine
+      const ext = IMAGE_TYPES[input.contentType]
+      if (!ext) return fail('invalid', 'Use a PNG, JPEG or WebP image')
+      if (input.bytes.byteLength > MAX_IMAGE_BYTES) return fail('invalid', 'Images can be at most 5 MB')
+      const rand = crypto.getRandomValues(new Uint8Array(6)).reduce((s, b) => s + b.toString(16).padStart(2, '0'), '')
+      const path = `${mine.me}/${input.kind}-${rand}.${ext}`
+      const up = await sb.storage.from('creator-media').upload(path, input.bytes, { contentType: input.contentType, upsert: false, cacheControl: '31536000' })
+      if (up.error) return fail('invalid', up.error.message)
+      return ok(sb.storage.from('creator-media').getPublicUrl(path).data.publicUrl)
     },
 
     async setFeatured(listingIds) {
