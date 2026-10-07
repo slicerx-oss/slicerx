@@ -18,6 +18,10 @@ export interface FoundUpdate {
   releaseUrl?: string | null
   /** Where a package install downloads the new version. */
   downloadUrl?: string | null
+  /** The feed's min_version: versions below it have a known problem. */
+  minVersion?: string | null
+  /** This install is below minVersion: it must update (or quit) before it goes on. */
+  required?: boolean
 }
 
 export interface UpdaterHost {
@@ -27,6 +31,8 @@ export interface UpdaterHost {
   download(onProgress: (got: number, total: number | null) => void): Promise<void>
   /** Installs the downloaded update and restarts into it. */
   restart(): Promise<void>
+  /** Closes the app, for an update the running version must take (min_version). */
+  quit?(): Promise<void>
 }
 
 export type UpdatePhase =
@@ -47,6 +53,8 @@ export interface UpdateState {
   phase: UpdatePhase
   /** The dialog is showing. */
   open: boolean
+  /** The dialog is the launch sheet: Update now downloads and restarts in one go. */
+  startup: boolean
 }
 
 /** At most this many highlights, each at most this long, in the dialog. publish.sh trims the same way. */
@@ -55,6 +63,10 @@ export const NOTE_CHARS = 100
 /** How long after launch the first check waits, so it never competes with startup. */
 export const FIRST_CHECK_MS = 15_000
 export const DAY_MS = 24 * 60 * 60 * 1000
+/** How long the launch waits for the feed before the app goes on without it. */
+export const LAUNCH_CHECK_MS = 2_000
+/** Where Later at launch is remembered (version and until when), except in a pre-alpha. */
+export const LATER_KEY = 'slicerx.update.later'
 const TICK_MS = 60 * 60 * 1000
 
 /** The highlights in latest.json's notes: list marks dropped, blank lines skipped, the first five, each kept short. */
@@ -75,7 +87,9 @@ export function shorten(line: string, max: number): string {
   return `${(space > max / 2 ? cut.slice(0, space) : cut).replace(/[\s,.;:]+$/, '')}…`
 }
 
-let state: UpdateState = { phase: { kind: 'idle' }, open: false }
+let state: UpdateState = { phase: { kind: 'idle' }, open: false, startup: false }
+// a pre-alpha asks at every launch: Later lasts only until the app closes
+let laterThisLaunchOnly = false
 const listeners = new Set<() => void>()
 let busyCheck: () => boolean = () => false
 let quietCheck: () => boolean = () => false
@@ -195,6 +209,11 @@ export async function checkForUpdates(opts: { manual?: boolean } = {}): Promise<
     return
   }
   if (manual) dismissedAt = 0
+  // a version with a known problem cannot wait for a quiet moment: the sheet opens now, with no Later
+  if (found.required) {
+    put({ phase: { kind: 'available', update: found }, open: true, startup: true })
+    return
+  }
   if (host.mode === 'download') {
     put({ phase: { kind: 'available', update: found } })
     maybeOpen()
@@ -203,11 +222,85 @@ export async function checkForUpdates(opts: { manual?: boolean } = {}): Promise<
   await download(found)
 }
 
-/** Later: closes the dialog. A ready update asks again after a day, or at the next launch. */
+/** Later: closes the dialog. A ready update asks again after a day, or at the next launch. An update the running version must take has no Later. */
 export function laterUpdate(): void {
-  const k = state.phase.kind
-  if (k === 'ready' || k === 'available') dismissedAt = Date.now()
-  put({ open: false, ...(k === 'current' || k === 'error' ? { phase: { kind: 'idle' } } : {}) })
+  const phase = state.phase
+  const k = phase.kind
+  if ((k === 'available' || k === 'downloading' || k === 'ready') && phase.update.required) return
+  if (k === 'ready' || k === 'available') {
+    dismissedAt = Date.now()
+    if (state.startup && !laterThisLaunchOnly) rememberLater(phase.update.version, dismissedAt + DAY_MS)
+  }
+  put({ open: false, startup: false, ...(k === 'current' || k === 'error' ? { phase: { kind: 'idle' } } : {}) })
+}
+
+function rememberLater(version: string, until: number): void {
+  try {
+    localStorage.setItem(LATER_KEY, JSON.stringify({ version, until }))
+  } catch {
+    // no storage: the sheet asks again at the next launch
+  }
+}
+
+/** Later at an earlier launch still holds for this version. */
+function laterHolds(version: string): boolean {
+  if (laterThisLaunchOnly) return false
+  try {
+    const v = JSON.parse(localStorage.getItem(LATER_KEY) ?? 'null') as { version?: unknown; until?: unknown } | null
+    return v?.version === version && typeof v.until === 'number' && v.until > Date.now()
+  } catch {
+    return false
+  }
+}
+
+export type LaunchOutcome = 'off' | 'current' | 'offered' | 'later' | 'slow' | 'offline'
+
+/**
+ * The check at launch, before the window takes input: asks the feed for at most `timeoutMs`. A newer version opens
+ * the launch sheet; an offline or slow feed lets the app go on, and the background check asks again a little later.
+ * `stage` is the edition's release stage: a pre-alpha's Later lasts only for this launch.
+ */
+export async function launchCheck(o: { timeoutMs?: number; stage?: string } = {}): Promise<LaunchOutcome> {
+  const host = updater()
+  if (!host) return 'off'
+  laterThisLaunchOnly = o.stage === 'pre-alpha'
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const slow = new Promise<'slow'>((r) => {
+    timer = setTimeout(() => r('slow'), o.timeoutMs ?? LAUNCH_CHECK_MS)
+  })
+  let found: FoundUpdate | null | 'slow'
+  try {
+    found = await Promise.race([host.check(), slow])
+  } catch {
+    return 'offline'
+  } finally {
+    clearTimeout(timer)
+  }
+  if (found === 'slow') return 'slow'
+  lastCheck = Date.now()
+  if (!found) return 'current'
+  if (!found.required && laterHolds(found.version)) {
+    dismissedAt = Date.now()
+    return 'later'
+  }
+  put({ phase: { kind: 'available', update: found }, open: true, startup: true })
+  return 'offered'
+}
+
+/** Update now, from the launch sheet: downloads, checks the signature and restarts. A package install opens the download instead. */
+export async function updateNow(confirm: () => Promise<boolean> = async () => true): Promise<void> {
+  const host = updater()
+  const phase = state.phase
+  if (!host || phase.kind !== 'available') return
+  if (host.mode === 'download') return
+  put({ startup: true })
+  await download(phase.update)
+  if (state.phase.kind === 'ready') await restartToUpdate(confirm)
+}
+
+/** Quit, for an update the running version must take. */
+export async function quitForUpdate(): Promise<void> {
+  await updater()?.quit?.()
 }
 
 /** Restart to update, after `confirm` (unsaved changes) says yes. Refused while a print is being sent. */
@@ -239,7 +332,8 @@ export function startUpdates(): () => void {
   const host = updater()
   if (!host) return () => undefined
   stopUpdates()
-  timers.push(setTimeout(() => void checkForUpdates(), FIRST_CHECK_MS))
+  // the launch check already asked, unless the feed was slow or offline then
+  if (lastCheck === 0) timers.push(setTimeout(() => void checkForUpdates(), FIRST_CHECK_MS))
   timers.push(
     setInterval(() => {
       if (Date.now() - lastCheck >= DAY_MS) void checkForUpdates()
@@ -264,6 +358,7 @@ export function resetUpdates(): void {
   quietCheck = () => false
   lastCheck = 0
   dismissedAt = 0
-  state = { phase: { kind: 'idle' }, open: false }
+  laterThisLaunchOnly = false
+  state = { phase: { kind: 'idle' }, open: false, startup: false }
   listeners.clear()
 }

@@ -199,7 +199,7 @@ button { cursor: pointer; }
 
 /* menus */
 .sx-menu-anchor { position: relative; display: inline-block; }
-.sx-menu { position: absolute; top: calc(100% + 4px); left: 0; z-index: var(--z-menu); min-width: 200px; max-width: 300px; padding: 5px; border-radius: var(--r-md); background: color-mix(in srgb, var(--ink-3) 90%, transparent); border: 1px solid var(--line); box-shadow: var(--shadow-pop); }
+.sx-menu { position: absolute; top: calc(100% + 4px); left: 0; z-index: var(--z-menu); width: max-content; min-width: 200px; max-width: 300px; padding: 5px; border-radius: var(--r-md); background: color-mix(in srgb, var(--ink-3) 90%, transparent); border: 1px solid var(--line); box-shadow: var(--shadow-pop); }
 .sx-menu[data-align="end"] { left: auto; right: 0; }
 .sx-menu[data-side="top"] { top: auto; bottom: calc(100% + 4px); }
 .sx-menu[data-static] { position: static; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; }

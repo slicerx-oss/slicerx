@@ -21,5 +21,6 @@ export function createTauriUpdater(mode: UpdaterHost['mode']): UpdaterHost {
       return invoke<void>('update_download', { onProgress: progress })
     },
     restart: () => invoke<void>('update_restart'),
+    quit: () => invoke<void>('quit_app'),
   }
 }

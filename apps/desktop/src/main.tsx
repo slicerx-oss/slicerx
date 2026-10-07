@@ -86,11 +86,16 @@ if (__SX_FEATURE_PILOT__) {
   onWindowTitle((title) => void getCurrentWindow().setTitle(title).catch(() => undefined))
 }
 
-// In-app updates, when this build's edition has an update feed: checked at launch and daily, installed on the person's click.
+// In-app updates, when this build's edition has an update feed: the feed is asked at launch, for at most two seconds
+// before the window takes input (a newer version opens the launch sheet), then daily; installed on the person's click.
 {
   const [{ registerUpdater }, { createTauriUpdater, updaterMode }] = await Promise.all([import('@slicerx/app'), import('./host/updater')])
   const mode = await updaterMode()
-  if (mode) registerUpdater(createTauriUpdater(mode))
+  if (mode) {
+    registerUpdater(createTauriUpdater(mode))
+    const { launchCheck } = await import('../../../packages/app/src/updates/updates')
+    await launchCheck({ stage: editionFromBuild().release.stage })
+  }
 }
 
 // On Linux the shell reads the real GL renderer, which WebKit hides from the page (gl_renderer is null elsewhere).

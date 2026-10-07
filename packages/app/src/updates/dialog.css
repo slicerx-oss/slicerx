@@ -67,3 +67,5 @@
 /* the error step's release link sits centered under its centered lines */
 .upd-body > .upd-more { justify-self: center; }
 :root[data-motion="reduced"] .upd-ring, :root[data-motion="reduced"] .upd-bob, :root[data-motion="reduced"] .upd-lunge, :root[data-motion="reduced"] .upd-rwing, :root[data-motion="reduced"] .upd-spark, :root[data-motion="reduced"] .upd-progress > span { animation: none; transition: none; }
+/* a version below the feed's min_version: says so plainly */
+.upd-required { color: var(--fg); padding: 8px 10px; border: 1px solid color-mix(in srgb, var(--red) 45%, var(--line)); border-radius: 8px; }

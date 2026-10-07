@@ -81,6 +81,10 @@ pub struct Found {
     date: Option<String>,
     release_url: Option<String>,
     download_url: Option<String>,
+    /// The feed's min_version: versions below it have a known problem.
+    min_version: Option<String>,
+    /// This install is below min_version, so it must update before it goes on.
+    required: bool,
 }
 
 #[derive(Serialize, Clone)]
@@ -97,8 +101,33 @@ fn link(raw: &serde_json::Value, key: &str) -> Option<String> {
         .map(str::to_owned)
 }
 
+/// An x.y.z version as numbers; anything after the patch number (a pre-release tag) is ignored.
+fn numbers(v: &str) -> Option<[u64; 3]> {
+    let mut parts = v.trim().split(['.', '-', '+']);
+    let mut out = [0u64; 3];
+    for slot in &mut out {
+        *slot = parts.next()?.parse().ok()?;
+    }
+    Some(out)
+}
+
+/// Whether `current` is older than the feed's `min_version`. A min_version that does not parse requires nothing.
+fn below_min(current: &str, min: Option<&str>) -> bool {
+    match (numbers(current), min.and_then(numbers)) {
+        (Some(c), Some(m)) => c < m,
+        _ => false,
+    }
+}
+
 fn found(update: &Update) -> Found {
+    let min_version = update
+        .raw_json
+        .get("min_version")
+        .and_then(|v| v.as_str())
+        .map(str::to_owned);
     Found {
+        required: below_min(&update.current_version, min_version.as_deref()),
+        min_version,
         version: update.version.clone(),
         notes: update.body.clone().unwrap_or_default(),
         date: update.date.map(|d| d.to_string()),
@@ -250,6 +279,18 @@ mod tests {
             serde_json::to_value(&f).unwrap(),
             serde_json::json!({ "step": "check", "message": "" })
         );
+    }
+
+    #[test]
+    fn a_version_below_min_version_must_update() {
+        assert!(below_min("0.2.1", Some("0.2.2")));
+        assert!(below_min("0.1.9", Some("0.2.0")));
+        assert!(!below_min("0.2.2", Some("0.2.2")));
+        assert!(!below_min("0.3.0", Some("0.2.2")));
+        assert!(!below_min("0.2.1", None));
+        // a pre-release tag counts as its version; a min_version that does not parse requires nothing
+        assert!(below_min("0.2.1-rc.1", Some("0.2.2")));
+        assert!(!below_min("0.2.1", Some("soon")));
     }
 
     #[test]

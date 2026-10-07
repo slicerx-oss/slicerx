@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright (C) 2026 The SlicerX contributors
 # Publishes a desktop release from installers already built and signed on their own machines.
-#   apps/desktop/release/publish.sh <version> <installers dir> <notes.md> <commit>
+#   apps/desktop/release/publish.sh <version> <installers dir> <notes.md> <commit> [min version]
 # Writes downloads.json, SHA256SUMS.txt and whats-changed.json into the folder, puts the "What changed" list after
 # the first paragraph of the notes, and creates desktop-v<version> as the latest release at <commit>. The notes get
 # {{version}} and {{commit}} filled in (release/notes.md is the standard text). A changed.md in the folder replaces
@@ -11,10 +11,11 @@
 # In-app updates: when the folder holds update bundles with their .sig files (sign-updates.sh, on the release Mac), it
 # also writes latest.json, attaches it, then replaces latest.json on the fixed desktop-updates release, which is the
 # feed the app reads (editions/slicerx/edition.config.ts). That release is never the latest one, so engine and model
-# releases cannot take the feed over.
+# releases cannot take the feed over. A min version (optional) goes into latest.json as min_version: installs below it
+# have a known problem and get only Update now or Quit.
 set -eu
-[ $# -eq 4 ] || { echo "usage: publish.sh <version> <installers dir> <notes.md> <commit>" >&2; exit 2; }
-version=$1 dir=$2 notes=$3
+[ $# -eq 4 ] || [ $# -eq 5 ] || { echo "usage: publish.sh <version> <installers dir> <notes.md> <commit> [min version]" >&2; exit 2; }
+version=$1 dir=$2 notes=$3 min=${5:-}
 here=$(cd "$(dirname "$0")" && pwd)
 repo=$(git -C "$here" rev-parse --show-toplevel)
 commit=$(git -C "$repo" rev-parse --verify "$4^{commit}")
@@ -41,7 +42,7 @@ if ls "$dir"/SlicerX_"$version"_*.sig >/dev/null 2>&1; then
   changes=$dir/whats-changed.json
   [ -f "$dir/changed.md" ] && changes=$dir/changed.md
   node "$here/latest-json.mjs" "$dir" --version "$version" --base-url "https://github.com/$slug/releases/download/$tag" \
-    --release-url "https://github.com/$slug/releases/tag/$tag" --pubkey "$pubkey" --notes "$changes" --out "$dir/latest.json"
+    --release-url "https://github.com/$slug/releases/tag/$tag" --pubkey "$pubkey" --notes "$changes" ${min:+--min-version "$min"} --out "$dir/latest.json"
   updates=$dir/latest.json
 fi
 body=$(mktemp)
