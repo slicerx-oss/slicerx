@@ -213,7 +213,7 @@ function Rows() {
   )
 }
 
-function RowFrame({ title, note, onSeeAll, children, id }: { title: string; note: string; onSeeAll?: () => void; children: ReactNode; id: string }) {
+function RowFrame({ title, note, onSeeAll, children, id, kind = 'designs' }: { title: string; note: string; onSeeAll?: () => void; children: ReactNode; id: string; kind?: 'designs' | 'creators' }) {
   return (
     <section className="lib-row" aria-labelledby={`${id}-h`}>
       <header className="lib-row-h">
@@ -228,7 +228,7 @@ function RowFrame({ title, note, onSeeAll, children, id }: { title: string; note
         ) : null}
       </header>
       <div className="lib-railwrap">
-        <div className="lib-rail" role="list">
+        <div className="lib-rail" role="list" data-kind={kind}>
           {children}
         </div>
       </div>
@@ -261,7 +261,7 @@ function CreatorRow({ title, note }: { title: string; note: string }) {
   const q = useQuery(newCreatorsQuery(store))
   if (!q.isSuccess || q.data.length === 0) return null
   return (
-    <RowFrame id="lib-new-creators" title={title} note={note}>
+    <RowFrame id="lib-new-creators" title={title} note={note} kind="creators">
       {q.data.map((c) => (
         <div key={c.id} role="listitem" className="lib-rail-item">
           <CreatorCard creator={c} />
