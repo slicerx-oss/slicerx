@@ -5,7 +5,7 @@
 -- Run with `supabase test db`.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(72);
+select plan(75);
 
 -- Seed activity is dated; move it a year back so the windows below see only this test's rows.
 update public.likes set created_at = created_at - interval '1 year';
@@ -53,6 +53,7 @@ $$;
 select pg_temp.as_user('ferro');
 select lives_ok($$update public.creators set banner_url = 'http://127.0.0.1:54321/storage/v1/object/public/creator-media/' || (select ferro from ids)::text || '/banner-1a2b.webp' where owner_id = (select ferro from ids)$$, 'a creator sets a banner from their creator-media folder');
 select throws_ok($$update public.creators set banner_url = 'javascript:alert(1)' where owner_id = (select ferro from ids)$$, '23514', null, 'a banner must be an https URL');
+select throws_ok($$update public.creators set banner_url = 'http://cdn.example.com/b.png' where owner_id = (select ferro from ids)$$, '23514', null, 'plain http is refused off the loopback address');
 select pg_temp.as_user('ash');
 update public.creators set banner_url = 'https://evil.example.com/x.png' where owner_id = (select ferro from ids);
 select pg_temp.as_anon();
@@ -76,6 +77,12 @@ select throws_ok($$update public.creators set bio = repeat('b', 501) where owner
 select lives_ok($$update public.creators set bio = repeat('b', 500) where owner_id = (select ferro from ids)$$, '500 is fine');
 reset role;
 select lives_ok($$update public.creators set logo_url = 'https://cdn.example.com/any.png' where owner_id = (select ferro from ids)$$, 'the service role may set any https image');
+
+-- Making a listing ---------------------------------------------------------------------------------
+select pg_temp.as_user('ferro');
+select lives_ok($$insert into public.listings (creator_id, slug, title) select ferro_creator, 'returning-' || substr(md5(random()::text), 1, 8), 'Read back' from ids returning id$$, 'a creator reads a new listing back as it is made');
+select pg_temp.as_user('ash');
+select throws_ok($$insert into public.listings (creator_id, slug, title) select ferro_creator, 'not-mine-x', 'Not mine' from ids returning id$$, '42501', null, 'nobody else can make one on the page');
 
 -- Staff tags --------------------------------------------------------------------------------------
 select pg_temp.as_user('ferro');

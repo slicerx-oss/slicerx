@@ -6,13 +6,27 @@
 -- library's rows: trending this week, new creators and picks based on the
 -- member's likes. supabase/modules/drop_store.sql removes it with the store.
 
+-- Image URLs are https, or http on the loopback address, where a local stack serves storage.
 alter table public.creators add column banner_url text
-  check (char_length(banner_url) <= 500 and banner_url ~* '^(https://|http://(127\.0\.0\.1|localhost)[:/])[^\s<>"'']{4,}$');
+  check (char_length(banner_url) <= 500 and banner_url ~* '^(https://[^\s<>"'']{4,}|http://(127\.0\.0\.1|localhost)(:[0-9]{1,5})?/[^\s<>"'']+)$');
+alter table public.creators drop constraint creators_logo_url_check;
+alter table public.creators add constraint creators_logo_url_check
+  check (char_length(logo_url) <= 500 and logo_url ~* '^(https://[^\s<>"'']{4,}|http://(127\.0\.0\.1|localhost)(:[0-9]{1,5})?/[^\s<>"'']+)$');
+alter table public.listings drop constraint listings_cover_url_check;
+alter table public.listings add constraint listings_cover_url_check
+  check (char_length(cover_url) <= 500 and cover_url ~* '^(https://[^\s<>"'']{4,}|http://(127\.0\.0\.1|localhost)(:[0-9]{1,5})?/[^\s<>"'']+)$');
 
 -- Bios: 500 characters, as the editor takes them (a sheet reads best short).
 -- Not checked against existing rows; a longer bio must shrink on its next edit.
 alter table public.creators drop constraint creators_bio_check;
 alter table public.creators add constraint creators_bio_check check (char_length(bio) <= 500) not valid;
+
+-- A creator reads their own new listing back in the statement that makes it
+-- (insert ... returning, which every client does). listing_visible looks the
+-- row up by id and cannot see it yet, so the owner check is made directly.
+drop policy listings_read on public.listings;
+create policy listings_read on public.listings for select to anon, authenticated
+  using (public.listing_visible(id) or public.is_creator_owner(creator_id));
 
 -- Tags staff set on a creator page, such as "Builds SlicerX" or "N3D team".
 -- Shown under the handle; the creator cannot change them.
@@ -230,13 +244,6 @@ create trigger creators_media_cleanup after delete on public.creators
 -- page. The project's public address is the origin of the caller's auth issuer
 -- (https://<ref>.supabase.co, or http on 127.0.0.1 or localhost for a local
 -- stack). Checked when a member sets one; the service role and SQL are trusted.
-alter table public.creators drop constraint creators_logo_url_check;
-alter table public.creators add constraint creators_logo_url_check
-  check (char_length(logo_url) <= 500 and logo_url ~* '^(https://|http://(127\.0\.0\.1|localhost)[:/])[^\s<>"'']{4,}$');
-alter table public.listings drop constraint listings_cover_url_check;
-alter table public.listings add constraint listings_cover_url_check
-  check (char_length(cover_url) <= 500 and cover_url ~* '^(https://|http://(127\.0\.0\.1|localhost)[:/])[^\s<>"'']{4,}$');
-
 create function public.creator_media_prefix() returns text
 language sql stable set search_path = '' as $$
   select substring(
