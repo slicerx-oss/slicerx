@@ -16,11 +16,10 @@ import { count, CreatorAvatar, CreatorSheet, plural, printFacts, Sheet } from '.
 import { fetchModel, formatLabel } from './download'
 import { CATEGORIES, DEFAULT_FILTER, setLibraryFilter, showsGrid, useLibraryFilter, type LibrarySort } from './filter'
 import { detailQuery, LIBRARY_KEY, listingsQuery, myCreatorQuery, newCreatorsQuery, rowQuery, savedCountQuery, useSession, useStore } from './queries'
-import { openExternal, signInUrl } from './routes'
 import { pickFeatured, ROWS, withoutFeatured, type RowId } from './rows'
 import { closeSheet, openCreator, openEditor, openListing, openUpload, resetSheets, useLibrarySheets } from './sheets'
 import { UploadHost } from './upload'
-import { SignInNotice } from './signin'
+import { SignInDialog, SignInNotice } from './signin'
 import './library.css'
 
 const label = (c: string) => c.charAt(0).toUpperCase() + c.slice(1)
@@ -71,11 +70,10 @@ export function Library() {
 /** Community or Mine, the account menu and Upload. */
 function VaultBar() {
   const store = useStore()
-  const host = useHost()
-  const edition = useEdition()
   const { session } = useSession()
   const mine = useQuery(myCreatorQuery(store, Boolean(session)))
   const [menu, setMenu] = useState(false)
+  const [signIn, setSignIn] = useState(false)
   const close = (fn: () => void) => () => {
     setMenu(false)
     fn()
@@ -84,7 +82,7 @@ function VaultBar() {
   const upload = () => {
     if (session && mine.isSuccess && !mine.data) openEditor('upload')
     else if (session) openUpload('form')
-    else void openExternal(host, signInUrl(edition))
+    else setSignIn(true)
   }
 
   return (
@@ -112,7 +110,7 @@ function VaultBar() {
             </Menu>
           </MenuAnchor>
         ) : (
-          <Button size="sm" icon="creator" onClick={() => void openExternal(host, signInUrl(edition))}>
+          <Button size="sm" icon="creator" onClick={() => setSignIn(true)}>
             Sign in
           </Button>
         )}
@@ -120,6 +118,7 @@ function VaultBar() {
           Upload
         </Button>
       </div>
+      <SignInDialog open={signIn && !session} onClose={() => setSignIn(false)} />
     </div>
   )
 }
@@ -295,6 +294,31 @@ function useSave(listing: Listing) {
     }
   }
   return { saved, busy, toggle }
+}
+
+/** Like and unlike. Likes feed the counts, Trending and Based on your likes. */
+function useLike(listing: Listing) {
+  const store = useStore()
+  const client = useQueryClient()
+  const { session } = useSession()
+  const [busy, setBusy] = useState(false)
+  const liked = Boolean(listing.likedByMe)
+  const toggle = async () => {
+    if (!store) return
+    if (!session) {
+      toast('Sign in to like designs', 'info')
+      return
+    }
+    setBusy(true)
+    try {
+      const r = liked ? await store.unlike(listing.id) : await store.like(listing.id)
+      if (!r.ok) toast(r.message, 'error')
+      else await Promise.all([client.invalidateQueries({ queryKey: LIBRARY_KEY }), client.invalidateQueries({ queryKey: ['library-detail'] })])
+    } finally {
+      setBusy(false)
+    }
+  }
+  return { liked, busy, toggle }
 }
 
 /** Opens a design in Prepare. */
@@ -532,6 +556,7 @@ export function Detail({ item }: { item: ListingCard }) {
   // Once a download or Open hands out a file, the sheet shows that version and format.
   const [got, setGot] = useState<{ version: string; format: string } | null>(null)
   const onFetched = (v: string, name: string) => setGot({ version: v, format: name.split('.').pop()?.toUpperCase() ?? '' })
+  const like = useLike(listing)
   const openIn = useOpenInApp(item, onFetched)
   const [busy, setBusy] = useState(false)
   const [needSignIn, setNeedSignIn] = useState(false)
@@ -603,6 +628,9 @@ export function Detail({ item }: { item: ListingCard }) {
           </Button>
           <Button icon="bookmark" pressed={save.saved} disabled={save.busy} onClick={() => void save.toggle()}>
             {save.saved ? 'Saved' : 'Save'}
+          </Button>
+          <Button icon="heart" pressed={like.liked} disabled={like.busy} onClick={() => void like.toggle()}>
+            {like.liked ? 'Liked' : 'Like'}
           </Button>
         </div>
       </div>
