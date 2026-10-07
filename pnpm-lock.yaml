@@ -403,6 +403,9 @@ importers:
       '@slicerx/settings':
         specifier: workspace:*
         version: link:../settings
+      '@slicerx/store':
+        specifier: workspace:*
+        version: link:../store
       '@slicerx/ui':
         specifier: workspace:*
         version: link:../ui
