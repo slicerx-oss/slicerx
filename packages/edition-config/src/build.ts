@@ -45,6 +45,14 @@ export function geomFeatures(config: EditionConfig): string[] | null {
 
 export const DESKTOP_CONNECT_SRC = "'self' ipc: http://ipc.localhost ws://127.0.0.1:47615"
 
+/** The desktop webview's own img-src (tauri.conf.json); the backend's public storage is added to it. */
+export const DESKTOP_IMG_SRC = "'self' data: blob:"
+
+/** Where a Supabase project serves public storage objects: Vault covers, creator logos and banners. */
+export function publicStorageSource(supabaseUrl: string): string {
+  return `${new URL(supabaseUrl).origin}/storage/v1/object/public/`
+}
+
 /** Pages capabilities/default.json already lets the desktop shell open. */
 const SLICERX_PAGES = ['https://slicerx.app/', 'https://discord.com/channels/1555048815881355324/']
 
@@ -100,10 +108,12 @@ export function tauriConfig(config: EditionConfig, target: 'desktop' | 'mobile')
   // signature must name the version the feed announces, so an old signed build cannot pass as a new one.
   const updates = config.release.updates
   const updater = updates ? { updater: { endpoints: updates.endpoints, pubkey: updates.pubkey, requireSignedVersion: true, windows: { installMode: 'passive' } } } : {}
-  // The desktop page calls Supabase itself (the library, bug reports), so its origin joins connect-src.
-  // Tauri merges this over the CSP directives in tauri.conf.json; only connect-src changes.
-  const supabase = config.backend.supabase ? new URL(config.backend.supabase.url).origin : null
-  const csp = supabase ? { csp: { 'connect-src': `${DESKTOP_CONNECT_SRC} ${supabase}` } } : {}
+  // The desktop page calls Supabase itself (the library, bug reports), so its origin joins connect-src, and it shows
+  // the Vault's covers and creator logos from the project's public storage, so that path joins img-src.
+  // Tauri merges this over the CSP directives in tauri.conf.json; only these two change.
+  const sbUrl = config.backend.supabase?.url
+  const supabase = sbUrl ? new URL(sbUrl).origin : null
+  const csp = sbUrl && supabase ? { csp: { 'connect-src': `${DESKTOP_CONNECT_SRC} ${supabase}`, 'img-src': `${DESKTOP_IMG_SRC} ${publicStorageSource(sbUrl)}` } } : {}
   // The shell opens only pages its capabilities allow (capabilities/default.json allows SlicerX's); the edition's own
   // help, download and bug report pages join them.
   const own = [...Object.values(editionLinks(config)), config.release.bugReportsUrl]

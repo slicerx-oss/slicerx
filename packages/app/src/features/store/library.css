@@ -307,3 +307,17 @@ button.cs-thumb:hover .cs-art { outline: 1px solid var(--line); }
 .rv-reject { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
 .rv-reject .ce-in { flex: 1 1 240px; height: 30px; }
 @media (max-width: 900px) { .rv-row { grid-template-columns: minmax(0, 1fr); } .rv-actions { justify-content: flex-start; } }
+
+/* a Vault download: name, bytes and percent, cancel; the bar matches the update download's */
+.lib-dl { display: grid; gap: 8px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--ink-2); }
+.lib-dl-top { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.lib-dl-msg { flex: 1; min-width: 0; font-size: 13px; overflow-wrap: anywhere; }
+.lib-dl-num { font-size: 12px; color: var(--dim); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.lib-dl-actions { display: flex; gap: 8px; }
+.lib-dl[data-state="error"] { border-color: color-mix(in srgb, var(--red) 45%, var(--line)); }
+.lib-dl[data-state="error"] .lib-dl-top > svg { color: var(--red); flex: none; }
+.lib-dl-bar { height: 6px; border-radius: 3px; background: var(--ink-4); overflow: hidden; }
+.lib-dl-bar > span { display: block; height: 100%; width: 0; border-radius: inherit; background: var(--cyan); transition: width 240ms var(--ease); }
+.lib-dl-bar[data-indeterminate] > span { width: 30%; animation: lib-dl-slide 1.4s ease-in-out infinite; }
+@keyframes lib-dl-slide { from { transform: translateX(-100%); } to { transform: translateX(340%); } }
+:root[data-motion="reduced"] .lib-dl-bar > span { animation: none; transition: none; }

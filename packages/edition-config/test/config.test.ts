@@ -2,7 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { checkEditionConfig, crashReportsRequired, crashReportsSent, defineEditionConfig, DESKTOP_CONNECT_SRC, envLayer, geomFeatures, mergeLayers, NEUTRAL_EDITION, parseEditionConfig, tauriConfig, viteDefines, wellKnown } from '../src/index.ts'
+import { checkEditionConfig, crashReportsRequired, crashReportsSent, defineEditionConfig, DESKTOP_CONNECT_SRC, DESKTOP_IMG_SRC, envLayer, geomFeatures, mergeLayers, NEUTRAL_EDITION, parseEditionConfig, tauriConfig, viteDefines, wellKnown } from '../src/index.ts'
 
 const harbor = JSON.parse(readFileSync(new URL('../fixtures/fork-harbor.json', import.meta.url), 'utf8')) as unknown
 const issues = (input: unknown) => {
@@ -135,6 +135,20 @@ describe('edition config', () => {
     const conf = JSON.parse(readFileSync(new URL('../../../apps/desktop/src-tauri/tauri.conf.json', import.meta.url), 'utf8')) as { app: { security: { csp: Record<string, string> } } }
     expect(DESKTOP_CONNECT_SRC).toBe(conf.app.security.csp['connect-src'])
     expect(DESKTOP_CONNECT_SRC.split(' ')).toContain('ws://127.0.0.1:47615')
+  })
+
+  it("shows the Vault's covers and creator logos from the edition's own public storage, and nothing wider", () => {
+    const c = defineEditionConfig({}, { extends: harbor as never })
+    const imgSrc = (tauriConfig(c, 'desktop') as { app: { security: { csp: Record<string, string> } } }).app.security.csp['img-src'] ?? ''
+    expect(imgSrc).toBe(`${DESKTOP_IMG_SRC} https://abcdefghijklmnop.supabase.co/storage/v1/object/public/`)
+    // Cover and logo URLs are the bucket's public object URLs (packages/store/src/supabase.ts mediaBase).
+    const cover = 'https://abcdefghijklmnop.supabase.co/storage/v1/object/public/creator-media/u1/cover.webp'
+    expect(imgSrc.split(' ').some((s) => s.endsWith('/') && cover.startsWith(s))).toBe(true)
+    expect(imgSrc.split(' ')).not.toContain('https:')
+    expect(imgSrc).not.toContain('*')
+    // The base it builds on is the desktop app's own.
+    const conf = JSON.parse(readFileSync(new URL('../../../apps/desktop/src-tauri/tauri.conf.json', import.meta.url), 'utf8')) as { app: { security: { csp: Record<string, string> } } }
+    expect(DESKTOP_IMG_SRC).toBe(conf.app.security.csp['img-src'])
   })
 
   it('keeps upstream crash reports off unless the edition turns them on', () => {

@@ -3,14 +3,23 @@
 // Signing in from the app: an emailed link, or one of the providers the edition offers. The link
 // comes back to the app (the web callback or the desktop deep link), and the session follows.
 import type { AuthProvider, SignInMethod } from '@slicerx/contracts'
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Button, Dialog } from '@slicerx/ui'
 import { toast, useHost } from '@slicerx/app'
-import { useStore } from './queries'
+import { onSignInResult, takeSignInResult } from '../../lib/sign-in-result'
+import { useSession, useStore } from './queries'
 import './signin.css'
 
 const PROVIDER_LABEL: Record<AuthProvider, string> = { github: 'GitHub', google: 'Google', apple: 'Apple', discord: 'Discord' }
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/
+/** Seconds before another link may be asked for: the server's own wait when it names one, else a minute. */
+const RESEND_WAIT_S = 60
+
+/** The wait a rate-limit message names ("only request this after 32 seconds"), or null. */
+export function waitFromMessage(message: string): number | null {
+  const m = /after (\d+) seconds?/i.exec(message)
+  return m ? Number(m[1]) : null
+}
 
 /** True for an address worth sending a link to. */
 export function plausibleEmail(text: string): boolean {
@@ -25,6 +34,40 @@ export function SignInForm({ compact }: { compact?: boolean }) {
   const [sent, setSent] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // A link that came back and failed is shown here until the person sends a new one.
+  const [linkFailed, setLinkFailed] = useState<string | null>(null)
+  useEffect(() => {
+    const show = (r: { ok: boolean; message?: string }) => setLinkFailed(r.ok ? null : (r.message ?? 'Sign-in did not finish.'))
+    const early = takeSignInResult()
+    if (early) show(early)
+    return onSignInResult(show)
+  }, [])
+  // Send again is held until this time (ms), while the server would refuse another link.
+  const [until, setUntil] = useState(0)
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    if (until <= Date.now()) return
+    const t = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(t)
+  }, [until])
+  const wait = Math.max(0, Math.ceil((until - now) / 1000))
+  const setWait = (s: number) => {
+    const t = Date.now()
+    setNow(t)
+    setUntil(s > 0 ? t + s * 1000 : 0)
+  }
+  // Signing in or out starts the form over, so it never reopens on an old "We sent a link".
+  const { session } = useSession()
+  const who = session?.userId ?? null
+  const lastWho = useRef(who)
+  useEffect(() => {
+    if (lastWho.current === who) return
+    lastWho.current = who
+    setSent(null)
+    setError(null)
+    setLinkFailed(null)
+    setUntil(0)
+  }, [who])
   // The web host loads the store on first use, so even this sync call can come back as a promise.
   const [methods, setMethods] = useState<SignInMethod[] | null>(null)
   useEffect(() => {
@@ -48,24 +91,55 @@ export function SignInForm({ compact }: { compact?: boolean }) {
     }
     setBusy(true)
     setError(null)
+    setLinkFailed(null)
     try {
       const r = await store.signInWithEmail(to)
-      if (r.ok) setSent(to)
-      else setError(r.code === 'rate_limited' ? 'Too many links asked for. Try again in a few minutes.' : r.message)
+      if (r.ok) {
+        setSent(to)
+        setWait(RESEND_WAIT_S)
+      } else {
+        setError(r.code === 'rate_limited' ? 'Too many links asked for. Try again in a few minutes.' : r.message)
+        const w = waitFromMessage(r.message)
+        if (w) setWait(w)
+      }
     } finally {
       setBusy(false)
     }
   }
 
+  const failure = linkFailed ? (
+    <div className="si-failed" role="alert">
+      <b>Sign-in did not finish.</b> {linkFailed}
+    </div>
+  ) : null
+
   if (sent) {
     return (
       <div className="si-sent" role="status">
+        {failure}
         <p>
           We sent a sign-in link to <b>{sent}</b>. Open it on this {host.kind === 'desktop' ? 'computer' : 'device'} to finish.
         </p>
-        <Button size="sm" variant="ghost" onClick={() => setSent(null)}>
-          Use another address
-        </Button>
+        {error ? (
+          <span className="si-err" role="alert">
+            {error}
+          </span>
+        ) : null}
+        <div className="si-sent-actions">
+          <Button size="sm" variant={linkFailed ? 'primary' : 'default'} disabled={busy || wait > 0} onClick={() => void send()}>
+            {busy ? 'Sending' : wait > 0 ? `${linkFailed ? 'Send a new link' : 'Send again'} in ${wait} s` : linkFailed ? 'Send a new link' : 'Send again'}
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => {
+              setSent(null)
+              setError(null)
+            }}
+          >
+            Use another address
+          </Button>
+        </div>
       </div>
     )
   }
@@ -79,6 +153,7 @@ export function SignInForm({ compact }: { compact?: boolean }) {
         void send()
       }}
     >
+      {failure}
       {allowsEmail ? (
         <>
           <label className="sr-only" htmlFor="si-email">

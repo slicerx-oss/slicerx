@@ -8,13 +8,29 @@ import type { EditionConfig } from '@slicerx/edition-config'
 
 type AnyFn = (...args: unknown[]) => unknown
 
-/** The edition's Supabase backend, or the bundled demo catalog when it has none (or asks for demo data). */
-export function lazyStore(edition: EditionConfig): StoreClient {
+/** Where sign-in links return and how provider pages open. The web page returns to its own /auth/callback. */
+export interface StoreAuth {
+  redirectUrl: () => string
+  openExternal?: (url: string) => Promise<void>
+}
+
+/** The web page's sign-in callback, under the path the build is served from. */
+export function webAuth(): StoreAuth {
+  return { redirectUrl: () => `${location.origin}${import.meta.env.BASE_URL}auth/callback` }
+}
+
+type StoreModule = Pick<typeof import('@slicerx/store'), 'createStore'>
+
+/**
+ * The edition's Supabase backend, or the bundled demo catalog when it has none (or asks for demo data). The desktop
+ * app passes its deep link here: its page origin (tauri://localhost) is not an address a sign-in link can return to.
+ */
+export function lazyStore(edition: EditionConfig, auth: StoreAuth = webAuth(), loadModule: () => Promise<StoreModule> = () => import('@slicerx/store')): StoreClient {
   let client: Promise<StoreClient> | null = null
   const sb = edition.features.demoData ? null : edition.backend.supabase
   const load = () =>
-    (client ??= import('@slicerx/store').then((m) =>
-      sb ? m.createStore({ url: sb.url, anonKey: sb.anonKey, auth: { redirectUrl: () => `${location.origin}${import.meta.env.BASE_URL}auth/callback` } }) : m.createStore({ offline: true }),
+    (client ??= loadModule().then((m) =>
+      sb ? m.createStore({ url: sb.url, anonKey: sb.anonKey, auth: { redirectUrl: auth.redirectUrl, ...(auth.openExternal ? { openExternal: auth.openExternal } : {}) } }) : m.createStore({ offline: true }),
     ))
   const method = (c: StoreClient, key: PropertyKey): AnyFn => {
     const fn: unknown = Reflect.get(c, key)

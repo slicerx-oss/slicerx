@@ -83,6 +83,7 @@ fn main() {
         .manage(files::OpenFiles::default())
         .manage(link::Bridge::default())
         .manage(opened::Pending::default())
+        .manage(opened::PendingAuth::default())
         .manage(closing::Unsaved::default())
         .manage(menu::Shown::default())
         .manage(updates::Updates::new(has_feed))
@@ -129,6 +130,7 @@ fn main() {
             menu::menu_enable,
             gpu::gl_renderer,
             opened::opened_take,
+            opened::auth_callback_take,
             presets::presets_scan,
             presets::presets_read,
             #[cfg(feature = "connect")]

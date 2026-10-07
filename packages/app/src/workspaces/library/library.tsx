@@ -8,7 +8,6 @@ import { useVirtualizer } from '@tanstack/react-virtual'
 import { useMemo, useRef, useState } from 'react'
 import { Block, Button, Chip, Icon, Seg, type IconName } from '@slicerx/ui'
 import { useHost } from '../../host'
-import { LibrarySwitch } from '../../shell/library-switch'
 import { LayerArt, Silhouette, Swatch } from '../../parts'
 import { DEMO_MODELS } from '../../lib/demo-models'
 import { fuzzyScore } from '../../commands/fuzzy'
@@ -128,7 +127,6 @@ export function Library() {
 
       <section className="lib-main" aria-label="Models">
         <div className="lib-bar">
-          <LibrarySwitch />
           <div className="search-in grow">
             <Icon name="search" />
             <label className="sr-only" htmlFor="library-search">

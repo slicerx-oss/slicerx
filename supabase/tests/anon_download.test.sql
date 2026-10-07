@@ -5,7 +5,7 @@
 -- with `supabase test db` after `supabase db reset`.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(49);
+select plan(62);
 
 create temp table ids on commit drop as
 select
@@ -43,6 +43,20 @@ begin
   reset role;
   perform set_config('request.jwt.claims', '{"role":"anon"}', true);
   perform set_config('request.headers', jsonb_strip_nulls(jsonb_build_object('x-forwarded-for', p_xff, 'x-sx-download-grant', p_grant))::text, true);
+  perform set_config('request.path', '', true);
+  perform set_config('storage.operation', p_op, true);
+  set local role anon;
+end;
+$$;
+
+-- The grant in the object URL's query instead of the header, as storage passes the URL to policies.
+create function pg_temp.as_visitor_url(p_path text, p_grant text, p_op text default 'storage.object.get_authenticated') returns void
+language plpgsql as $$
+begin
+  reset role;
+  perform set_config('request.jwt.claims', '{"role":"anon"}', true);
+  perform set_config('request.headers', '{"x-forwarded-for":"198.51.100.1"}', true);
+  perform set_config('request.path', '/object/authenticated/listing-files/' || p_path || '?sx_grant=' || coalesce(p_grant, ''), true);
   perform set_config('storage.operation', p_op, true);
   set local role anon;
 end;
@@ -109,6 +123,35 @@ select pg_temp.as_visitor('198.51.100.1', 'sxg_' || repeat('0', 48));
 select is(pg_temp.visible((select fish_new from paths)), 0, 'a made-up grant is refused');
 select is(pg_temp.visible((select fish_image from paths)), 1, 'preview images of public versions need no grant');
 select is(pg_temp.visible((select dish_waiting from paths)), 0, 'files waiting for review stay private');
+
+-- The same grant in the URL's query (where the hosted project's storage sees it).
+select pg_temp.as_visitor_url((select fish_new from paths), (select v ->> 'grant' from got where k = 'fish'));
+select is(pg_temp.visible((select fish_new from paths)), 1, 'a grant in the URL reads the file');
+select is(pg_temp.visible((select fish_old from paths)), 0, 'a grant in the URL opens no other file');
+select pg_temp.as_visitor_url((select fish_new from paths), (select v ->> 'grant' from got where k = 'fish'), 'storage.object.sign');
+select is(pg_temp.visible((select fish_new from paths)), 0, 'a grant in the URL cannot sign a long-lived URL');
+select pg_temp.as_visitor_url((select fish_new from paths), 'sxg_' || repeat('0', 48));
+select is(pg_temp.visible((select fish_new from paths)), 0, 'a made-up grant in the URL is refused');
+select pg_temp.as_visitor_url((select fish_new from paths), (select v ->> 'grant' from got where k = 'fish') || 'x');
+select is(pg_temp.visible((select fish_new from paths)), 0, 'a grant with extra characters is refused');
+select pg_temp.as_visitor_url((select fish_new from paths), upper((select v ->> 'grant' from got where k = 'fish')));
+select is(pg_temp.visible((select fish_new from paths)), 0, 'only the exact token shape is read from the URL');
+
+-- The hosted storage service names the direct read without the 'storage.' prefix.
+select pg_temp.as_visitor('198.51.100.1', (select v ->> 'grant' from got where k = 'fish'), 'object.get_authenticated_info');
+select is(pg_temp.visible((select fish_new from paths)), 1, 'a grant reads the file under the hosted name of the read');
+select pg_temp.as_visitor('198.51.100.1', (select v ->> 'grant' from got where k = 'fish'), 'object.head_authenticated_info');
+select is(pg_temp.visible((select fish_new from paths)), 1, 'a grant answers an info lookup under its hosted name');
+select pg_temp.as_visitor_url((select fish_new from paths), (select v ->> 'grant' from got where k = 'fish'), 'object.get_authenticated_info');
+select is(pg_temp.visible((select fish_new from paths)), 1, 'a grant in the URL reads the file under the hosted name');
+select pg_temp.as_visitor('198.51.100.1', (select v ->> 'grant' from got where k = 'fish'), 'storage.object.sign_many');
+select is(pg_temp.visible((select fish_new from paths)), 0, 'a grant cannot sign many URLs');
+select pg_temp.as_visitor('198.51.100.1', (select v ->> 'grant' from got where k = 'fish'), 'object.sign');
+select is(pg_temp.visible((select fish_new from paths)), 0, 'a grant cannot sign under a legacy name either');
+select pg_temp.as_visitor('198.51.100.1', (select v ->> 'grant' from got where k = 'fish'), 'storage.object.list');
+select is(pg_temp.visible((select fish_new from paths)), 0, 'a grant cannot list the bucket');
+select pg_temp.as_visitor('198.51.100.1', null, 'object.get_authenticated_info');
+select is(pg_temp.visible((select fish_new from paths)), 0, 'the hosted read name without a grant opens nothing');
 
 -- A grant row for a private file (as if issued before a takedown) opens nothing.
 reset role;

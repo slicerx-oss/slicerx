@@ -83,7 +83,7 @@ test('Printers shows the demo fleet', async ({ page }) => {
   await expect(page.getByRole('region', { name: / live view$/ })).toBeVisible()
 })
 
-test('the Vault shows a featured design and rows, opens creators, and My models shows the examples', async ({ page }) => {
+test('the Vault shows a featured design and rows, opens creators, and switches between Feed and Saved', async ({ page }) => {
   await open(page, 'feed')
   await expect(page.locator('.lib-hero h2')).toBeVisible()
   await expect(page.locator('.lib-hero').getByRole('button', { name: /^Open in / })).toBeVisible()
@@ -106,10 +106,13 @@ test('the Vault shows a featured design and rows, opens creators, and My models 
   await page.keyboard.press('Escape')
   await expect(sheet).toHaveCount(0)
   await noHorizontalScroll(page)
-  // My models is the Mine view of the one Vault tab.
+  // The Vault switch is Feed | Saved; My models has no tab of its own here.
   await expect(page.locator('.sx-tab', { hasText: 'My models' })).toHaveCount(0)
-  await page.getByRole('radiogroup', { name: 'Vault' }).getByRole('radio', { name: 'Mine' }).click()
-  await expect.poll(() => page.locator('.tile').count()).toBeGreaterThanOrEqual(5)
+  const vault = page.getByRole('radiogroup', { name: 'Vault' })
+  await expect(vault.getByRole('radio')).toHaveText(['Feed', 'Saved'])
+  await vault.getByRole('radio', { name: 'Saved' }).click()
+  await expect(page.getByRole('heading', { name: /^Saved/ })).toBeVisible()
+  await vault.getByRole('radio', { name: 'Feed' }).click()
   await noHorizontalScroll(page)
 })
 

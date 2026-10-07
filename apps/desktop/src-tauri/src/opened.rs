@@ -22,6 +22,42 @@ const MAX_DOWNLOAD: u64 = 256 * 1024 * 1024;
 #[derive(Default)]
 pub struct Pending(Mutex<Vec<FileRef>>);
 
+/// Sign-in links (`slicerx://auth/callback?code=...`) waiting for the page to finish them.
+#[derive(Default)]
+pub struct PendingAuth(Mutex<Vec<String>>);
+
+/// True for this edition's sign-in callback link, which the page exchanges for a session.
+pub fn is_auth_callback(url: &str) -> bool {
+    is_auth_callback_for(&crate::brand::get().scheme, url)
+}
+
+fn is_auth_callback_for(scheme: &str, url: &str) -> bool {
+    let Some(rest) = url
+        .strip_prefix(scheme)
+        .and_then(|r| r.strip_prefix("://auth/callback"))
+    else {
+        return false;
+    };
+    rest.is_empty() || rest.starts_with(['?', '#']) || rest.starts_with("/?")
+}
+
+/// Holds a sign-in link for the page and brings the window forward, since the link came from the browser.
+fn hand_over_sign_in(app: &AppHandle, url: String) {
+    {
+        let state = app.state::<PendingAuth>();
+        let mut pending = state.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        // A cold start can see the same link twice (the launch arguments and the deep link plugin).
+        if !pending.contains(&url) {
+            pending.push(url);
+        }
+    }
+    let _ = app.emit("sx-auth-callback", ());
+    if let Some(w) = app.get_webview_window("main") {
+        let _ = w.unminimize();
+        let _ = w.set_focus();
+    }
+}
+
 pub fn wanted(path: &Path) -> bool {
     path.extension()
         .and_then(|e| e.to_str())
@@ -101,6 +137,10 @@ fn announce(app: &AppHandle, refs: Vec<FileRef>) {
 pub fn handle(app: &AppHandle, items: Vec<String>) {
     let mut refs = Vec::new();
     for item in items {
+        if is_auth_callback(&item) {
+            hand_over_sign_in(app, item);
+            continue;
+        }
         if let Some(target) = link_target(&item) {
             let app = app.clone();
             std::thread::spawn(move || {
@@ -430,9 +470,52 @@ pub fn opened_take(state: State<'_, Pending>) -> Vec<FileRef> {
     std::mem::take(&mut *state.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner))
 }
 
+/// Sign-in links that arrived since the page last asked, each handed over once.
+#[tauri::command]
+pub fn auth_callback_take(state: State<'_, PendingAuth>) -> Vec<String> {
+    std::mem::take(&mut *state.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sign_in_links_with_the_edition_scheme_go_to_the_page() {
+        assert!(is_auth_callback_for(
+            "slicerx",
+            "slicerx://auth/callback?code=abc"
+        ));
+        assert!(is_auth_callback_for(
+            "slicerx",
+            "slicerx://auth/callback/?code=abc"
+        ));
+        assert!(is_auth_callback_for(
+            "slicerx",
+            "slicerx://auth/callback?error=access_denied&error_description=expired"
+        ));
+        assert!(is_auth_callback_for(
+            "acmeslicer",
+            "acmeslicer://auth/callback?code=abc"
+        ));
+        // Another edition's scheme, an "Open in" link and look-alike paths are not sign-ins.
+        assert!(!is_auth_callback_for(
+            "slicerx",
+            "acmeslicer://auth/callback?code=abc"
+        ));
+        assert!(!is_auth_callback_for(
+            "slicerx",
+            "slicerx://open?url=https://example.com/a.stl"
+        ));
+        assert!(!is_auth_callback_for(
+            "slicerx",
+            "slicerx://auth/callbackx?code=abc"
+        ));
+        assert!(!is_auth_callback_for(
+            "slicerx",
+            "https://slicerx.app/auth/callback?code=abc"
+        ));
+    }
 
     #[test]
     fn l8_the_header_file_lives_in_a_fresh_private_folder() {

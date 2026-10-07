@@ -220,6 +220,15 @@ test('likes, saves and follows show in Saved, Based on your likes and the follow
 
   await page.reload()
   await expect(page.getByRole('region', { name: 'Based on your likes' })).toBeVisible({ timeout: 30_000 })
-  await page.getByRole('button', { name: /^Saved/ }).first().click()
+  // Saved is the second side of the Vault switch; there is no Saved filter chip any more.
+  await expect(page.getByRole('toolbar', { name: 'Filter the Vault' }).getByRole('button', { name: /Saved/ })).toHaveCount(0)
+  await page.getByRole('radiogroup', { name: 'Vault' }).getByRole('radio', { name: 'Saved' }).click()
   await expect(page.locator('.lib-grid-cards').getByText(title)).toBeVisible()
+  await page.getByRole('radiogroup', { name: 'Vault' }).getByRole('radio', { name: 'Feed' }).click()
+  await expect(page.getByRole('region', { name: 'Based on your likes' })).toBeVisible()
+  // Your uploads, your creator page and Sign out live under the account button.
+  await page.locator('.lib-bar button[aria-expanded]').click()
+  for (const item of ['Your uploads', 'Your creator page', 'Account settings', 'Sign out']) await expect(page.getByRole('menuitem', { name: item })).toBeVisible()
+  await page.getByRole('menuitem', { name: 'Sign out' }).click()
+  await expect(page.getByRole('button', { name: 'Sign in', exact: true })).toBeVisible()
 })

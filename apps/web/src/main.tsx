@@ -66,7 +66,8 @@ if (__SX_FEATURE_STORE__) {
   if (__SX_FEATURE_CONNECT__) {
     const { configureRelayTokens, pushAccountToken } = await import('@slicerx/app')
     const sb = config.features.demoData ? null : config.backend.supabase
-    configureRelayTokens(sb ? { url: sb.url, anonKey: sb.anonKey } : null)
+    // Relay tokens come from the backend's relay-token function, which exists only alongside a relay.
+    configureRelayTokens(sb && config.backend.relay ? { url: sb.url, anonKey: sb.anonKey } : null)
     store.onTokenChange((t) => pushAccountToken(t))
     void store.getAccessToken().then((t) => pushAccountToken(t), () => pushAccountToken(null))
   }
