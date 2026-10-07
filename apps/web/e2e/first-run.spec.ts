@@ -1,15 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// First-run setup on a fresh install: the printer scan, the slicer question, then setting up mimir.
+// First-run setup on a fresh install: the theme, the printer scan, the slicer question, what the plate opens in, then
+// setting up mimir. Also setup opening again for a profile from an earlier onboarding.
 import { type Page } from '@playwright/test'
 import { expect, test } from './fixtures'
 
 async function fresh(page: Page): Promise<void> {
-  // A fresh install: nothing stored, so setup opens by itself on the printer scan.
+  // A fresh install: nothing stored, so setup opens by itself on the theme.
   await page.goto('./')
+  await expect(page.getByRole('heading', { name: 'Pick a theme' })).toBeVisible()
+  // Four steps: the theme, the printer, the slicer you use now, and mimir (until mimir is turned on or off).
+  await expect(page.locator('#fr-step-label')).toHaveText('Step 1 of 4')
+  await page.locator('.fr-foot').getByRole('button', { name: 'Next' }).click()
   await expect(page.getByRole('heading', { name: 'Find your printer' })).toBeVisible()
-  // Three steps: the printer, the slicer you use now, and mimir (until mimir is turned on or off).
-  await expect(page.locator('#fr-step-label')).toHaveText('Step 1 of 3')
+  await expect(page.locator('#fr-step-label')).toHaveText('Step 2 of 4')
 }
 
 async function noHorizontalScroll(page: Page): Promise<void> {
@@ -51,7 +55,7 @@ test('the scan finds the printer, the connection tests itself, then the slicer q
   await page.locator('.fr-foot').getByRole('button', { name: 'Continue' }).click()
 
   // Which slicer: four cards, "something else" preselected, the pick applied live.
-  await expect(page.locator('#fr-step-label')).toHaveText('Step 2 of 3')
+  await expect(page.locator('#fr-step-label')).toHaveText('Step 3 of 4')
   await expect(page.getByRole('heading', { name: 'Which slicer do you use now?' })).toBeVisible()
   const cards = page.getByRole('radiogroup', { name: 'Slicer you use now' }).getByRole('radio')
   await expect(cards).toHaveCount(4)
@@ -73,7 +77,7 @@ test('the scan finds the printer, the connection tests itself, then the slicer q
   await page.locator('.fr-foot').getByRole('button', { name: 'Next' }).click()
 
   // Then mimir: setting it up is offered, and the plate opens from there.
-  await expect(page.locator('#fr-step-label')).toHaveText('Step 3 of 3')
+  await expect(page.locator('#fr-step-label')).toHaveText('Step 4 of 4')
   await expect(page.getByRole('heading', { name: 'Set up mimir' })).toBeVisible()
   await noHorizontalScroll(page)
   await page.locator('.fr-foot').getByRole('button', { name: 'Open the plate' }).click()
@@ -118,14 +122,121 @@ test('Escape asks before leaving, and Settings brings the slicer screen back', a
   await expect(dialog).toContainText('You can finish it later from Settings.')
   await dialog.getByRole('button', { name: 'Stay' }).click()
   await expect(dialog).toBeHidden()
-  await expect(page.locator('#fr-step-label')).toHaveText('Step 1 of 3')
+  await expect(page.locator('#fr-step-label')).toHaveText('Step 2 of 4')
   await page.keyboard.press('Escape')
   await page.getByRole('dialog', { name: 'Leave setup?' }).getByRole('button', { name: 'Leave' }).click()
   await expect(page.locator('.fr')).toHaveCount(0)
   await page.keyboard.press('ControlOrMeta+k')
   await page.keyboard.type('change look and feel')
   await page.keyboard.press('Enter')
-  await expect(page.locator('#fr-step-label')).toHaveText('Step 2 of 3')
+  await expect(page.locator('#fr-step-label')).toHaveText('Step 3 of 4')
+})
+
+test('the theme step: every theme as a card, the mode and flavors apply at once and stay after a reload', async ({ page }) => {
+  await page.goto('./')
+  await expect(page.getByRole('heading', { name: 'Pick a theme' })).toBeVisible()
+  const cards = page.getByRole('radiogroup', { name: 'Theme' }).locator('.th-card')
+  await expect(cards).toHaveCount(13)
+  await expect(page.getByTestId('theme-subban')).toHaveAttribute('aria-checked', 'true')
+  await expect(page.locator('html')).toHaveAttribute('data-sx-theme', 'subban-dark')
+  await noHorizontalScroll(page)
+
+  // Catppuccin: one card, the dark flavor picked inside it, Latte as its light mode.
+  await page.getByTestId('theme-catppuccin').click()
+  await expect(page.locator('html')).toHaveAttribute('data-sx-theme', 'catppuccin-mocha')
+  await page.getByRole('radiogroup', { name: 'Dark flavor' }).getByRole('radio', { name: 'Frappe' }).click()
+  await expect(page.locator('html')).toHaveAttribute('data-sx-theme', 'catppuccin-frappe')
+  await page.getByRole('radiogroup', { name: 'Theme mode' }).getByRole('radio', { name: 'Light' }).click()
+  await expect(page.locator('html')).toHaveAttribute('data-sx-theme', 'catppuccin-latte')
+
+  // Subban light is the Nocturne Bright palette.
+  await page.getByTestId('theme-subban').click()
+  await expect(page.locator('html')).toHaveAttribute('data-sx-theme', 'subban-light')
+  expect(await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--ink-0').trim())).toBe('#fbf8ff')
+
+  // The quick reading options apply at once.
+  const easy = page.getByRole('region', { name: 'Easier to read' })
+  await easy.getByRole('radio', { name: 'Larger' }).click()
+  await expect(page.locator('html')).toHaveAttribute('data-text-size', 'larger')
+  await easy.getByRole('radio', { name: 'Red-green' }).click()
+  await noHorizontalScroll(page)
+
+  await page.getByRole('button', { name: 'Skip, use defaults' }).click()
+  await expect(page.locator('.fr')).toHaveCount(0)
+  await page.reload()
+  await expect(page.locator('html')).toHaveAttribute('data-sx-theme', 'subban-light')
+  await expect(page.locator('html')).toHaveAttribute('data-text-size', 'larger')
+  const prefs = JSON.parse((await page.evaluate(() => localStorage.getItem('slicerx.prefs.v1'))) ?? '{}') as { themeIds: { dark: string; light: string }; appearance: { colorVision: string }; firstRun: { version: number } }
+  expect(prefs.themeIds).toEqual({ dark: 'subban-dark', light: 'subban-light' })
+  expect(prefs.appearance.colorVision).toBe('redgreen')
+  expect(prefs.firstRun.version).toBe(2)
+})
+
+test('Settings, Look and feel: theme, accent, text and accessibility; Slicing and modeling holds auto slice', async ({ page }) => {
+  await page.addInitScript(() => {
+    if (!localStorage.getItem('slicerx.prefs.v1')) localStorage.setItem('slicerx.prefs.v1', JSON.stringify({ workspace: 'prepare', pilot: { mode: 'off' } }))
+  })
+  await page.goto('./')
+  await page.getByRole('button', { name: 'Settings', exact: true }).click()
+  const dialog = page.getByRole('dialog', { name: 'Settings' })
+  const nav = dialog.getByRole('navigation', { name: 'Settings sections' })
+  await nav.getByRole('button', { name: 'Look and feel' }).click()
+  await dialog.getByTestId('theme-nord').click()
+  await expect(page.locator('html')).toHaveAttribute('data-sx-theme', 'nord')
+  await dialog.getByRole('radiogroup', { name: 'Contrast' }).getByRole('radio', { name: 'Higher' }).click()
+  await dialog.getByRole('radiogroup', { name: 'Color vision' }).getByRole('radio', { name: 'Blue-yellow' }).click()
+  await dialog.getByRole('radiogroup', { name: 'Text size' }).getByRole('radio', { name: 'Large', exact: true }).click()
+  await dialog.getByRole('radiogroup', { name: 'Font weight' }).getByRole('radio', { name: 'Medium' }).click()
+  await dialog.getByRole('radiogroup', { name: 'Accent color' }).getByRole('radio', { name: 'Green' }).click()
+  await dialog.getByRole('radiogroup', { name: 'Density' }).getByRole('radio', { name: 'Roomy' }).click()
+  const root = await page.evaluate(() => {
+    const cs = getComputedStyle(document.documentElement)
+    return { scale: cs.getPropertyValue('--text-scale').trim(), weight: cs.getPropertyValue('--fw-regular').trim(), accentIsGreen: cs.getPropertyValue('--accent').trim() === cs.getPropertyValue('--green').trim(), density: document.documentElement.dataset['density'], contrast: cs.getPropertyValue('--line').trim() }
+  })
+  expect(root).toMatchObject({ scale: '1.14', weight: '500', accentIsGreen: true, density: 'roomy' })
+  // Higher contrast draws Nord's borders stronger than the file's #4c566a.
+  expect(root.contrast).not.toBe('#4c566a')
+  await expect(dialog.getByText('Body text at 16 px.', { exact: false })).toBeVisible()
+  await noHorizontalScroll(page)
+  // Auto slice, the electricity price and the drawing tools moved to their own page.
+  await expect(dialog.getByText('Slice automatically')).toHaveCount(0)
+  await nav.getByRole('button', { name: 'Slicing and modeling' }).click()
+  await expect(dialog.getByText('Slice automatically')).toBeVisible()
+  await expect(dialog.getByText('Drawing tools')).toBeVisible()
+  await page.reload()
+  await expect(page.locator('html')).toHaveAttribute('data-sx-theme', 'nord')
+})
+
+test('a profile from an earlier onboarding goes through setup again, prefilled, and keeps everything', async ({ page }) => {
+  await page.addInitScript(() => {
+    if (localStorage.getItem('sx-e2e-seeded')) return
+    localStorage.setItem('sx-e2e-seeded', '1')
+    // As 0.2.2 left it: setup finished with no version, the old SlicerX theme ids, the Bambu look, a printer, slicing on open.
+    localStorage.setItem(
+      'slicerx.prefs.v1',
+      JSON.stringify({ workspace: 'prepare', printerId: 'bay-1', scheme: 'dark', themeIds: { dark: 'slicerx-dark', light: 'slicerx-light' }, lookAndFeel: { id: 'bambu-studio' }, toolpathPalette: 'colorblind', modelModeDefault: 'slice', firstRun: { completedAt: '2026-10-01T00:00:00.000Z', step: 'done', look: { id: 'bambu-studio' }, printerId: 'bay-1' } }),
+    )
+  })
+  await page.goto('./')
+  // Pre-alpha: everyone runs it again, from the theme, with their choices filled in.
+  await expect(page.getByRole('heading', { name: 'Pick a theme' })).toBeVisible()
+  await expect(page.locator('#fr-step-label')).toHaveText(/^Step 1 of \d$/)
+  await expect(page.getByTestId('theme-subban')).toHaveAttribute('aria-checked', 'true')
+  await expect(page.locator('html')).toHaveAttribute('data-sx-theme', 'subban-dark')
+  await expect(page.getByRole('region', { name: 'Easier to read' }).getByRole('radio', { name: 'Red-green' })).toHaveAttribute('aria-checked', 'true')
+  await page.locator('.fr-foot').getByRole('button', { name: 'Next' }).click()
+  // The printer they have is kept with one click.
+  await expect(page.getByRole('heading', { name: 'Your printer' })).toBeVisible()
+  await expect(page.getByRole('list', { name: 'Your printers' }).locator('li').first()).toContainText('Slices for this one')
+  await page.locator('.fr-foot').getByRole('button', { name: 'Next' }).click()
+  await expect(page.getByRole('radiogroup', { name: 'Slicer you use now' }).getByRole('radio', { name: /Bambu Studio/ })).toHaveAttribute('aria-checked', 'true')
+  await page.getByRole('button', { name: 'Skip, use defaults' }).click()
+  await expect(page.locator('.fr')).toHaveCount(0)
+  const prefs = JSON.parse((await page.evaluate(() => localStorage.getItem('slicerx.prefs.v1'))) ?? '{}') as Record<string, unknown>
+  expect(prefs).toMatchObject({ printerId: 'bay-1', lookAndFeel: { id: 'bambu-studio' }, themeIds: { dark: 'subban-dark', light: 'subban-light' }, appearance: { colorVision: 'redgreen' }, firstRun: { version: 2, printerId: 'bay-1' } })
+  // Once through, it does not come back.
+  await page.reload()
+  await expect(page.locator('.fr')).toHaveCount(0)
 })
 
 test('Skip, use defaults closes setup; mimir shows and opens the connect step until a model is connected', async ({ page }) => {
