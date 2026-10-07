@@ -211,14 +211,14 @@ for (const s of starters) {
   writeFileSync(join(out, `${s.slug}.sx3mf`), bytes)
   const cover = renderCover(s.parts.map((p) => ({ positions: p.positions, indices: p.indices, color: s.colors[p.slot - 1] ?? s.colors[0] ?? '#bd93f9' })), 800, 600)
   writeFileSync(join(out, `${s.slug}.png`), png(cover.width, cover.height, cover.rgba))
-  listings.push({ creator: 'slicerx', slug: s.slug, title: s.title, description: s.description, license: 'cc0', tags: s.tags, version: '1.0.0', file: `${s.slug}.sx3mf`, cover: `${s.slug}.png` })
+  listings.push({ creator: 'slicerx-team', slug: s.slug, title: s.title, description: s.description, license: 'cc0', tags: s.tags, version: '1.0.0', file: `${s.slug}.sx3mf`, cover: `${s.slug}.png` })
   console.log(`${s.slug}.sx3mf  ${(bytes.length / 1024).toFixed(0)} KB`)
 }
 
 const manifest = {
   creators: [
     {
-      handle: 'slicerx',
+      handle: 'slicerx-team',
       email: 'vault@slicerx.app',
       displayName: 'SlicerX',
       tagline: 'Starter and calibration prints',
