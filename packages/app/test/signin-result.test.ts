@@ -40,12 +40,14 @@ describe('a sign-in link that comes back and fails', () => {
   })
 
   it('shows in the form after the link was sent, with a way to send a new one once the wait is over', async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true })
+    // Only the clock and the countdown's interval are fake, so the waits below still poll in real time and the
+    // seconds on the button are exact.
+    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] })
     const send = mount()
     await sendTo('qa@example.com')
     act(() => reportSignInResult({ ok: false, message: 'This link has expired or was already used. Send a new link.' }))
     expect((await screen.findByRole('alert')).textContent).toContain('Sign-in did not finish. This link has expired or was already used.')
-    expect((screen.getByRole('button', { name: /Send a new link in \d+ s/ }) as HTMLButtonElement).disabled).toBe(true)
+    expect((screen.getByRole('button', { name: 'Send a new link in 60 s' }) as HTMLButtonElement).disabled).toBe(true)
     await act(async () => {
       vi.advanceTimersByTime(61_000)
     })
@@ -55,7 +57,9 @@ describe('a sign-in link that comes back and fails', () => {
   })
 
   it('counts Send again down from the wait the server names', async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true })
+    // Only the clock and the countdown's interval are fake, so the waits below still poll in real time and the
+    // seconds on the button are exact.
+    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] })
     const send = vi.fn(async (): Promise<{ ok: true; value: undefined } | { ok: false; code: string; message: string }> => ({ ok: true as const, value: undefined }))
     mount(send)
     await sendTo('qa@example.com')
@@ -65,7 +69,11 @@ describe('a sign-in link that comes back and fails', () => {
     send.mockResolvedValueOnce({ ok: false, code: 'conflict', message: 'For security purposes, you can only request this after 32 seconds.' })
     fireEvent.click(await screen.findByRole('button', { name: 'Send again' }))
     expect((await screen.findByRole('alert')).textContent).toContain('after 32 seconds')
-    expect(await screen.findByRole('button', { name: /Send again in 3[12] s/ })).toBeTruthy()
+    expect(await screen.findByRole('button', { name: 'Send again in 32 s' })).toBeTruthy()
+    await act(async () => {
+      vi.advanceTimersByTime(2000)
+    })
+    expect(await screen.findByRole('button', { name: 'Send again in 30 s' })).toBeTruthy()
   })
 
   it('starts over after signing in or out, never on an old sent link', async () => {

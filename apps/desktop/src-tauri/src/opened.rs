@@ -482,15 +482,39 @@ mod tests {
 
     #[test]
     fn sign_in_links_with_the_edition_scheme_go_to_the_page() {
-        assert!(is_auth_callback_for("slicerx", "slicerx://auth/callback?code=abc"));
-        assert!(is_auth_callback_for("slicerx", "slicerx://auth/callback/?code=abc"));
-        assert!(is_auth_callback_for("slicerx", "slicerx://auth/callback?error=access_denied&error_description=expired"));
-        assert!(is_auth_callback_for("acmeslicer", "acmeslicer://auth/callback?code=abc"));
+        assert!(is_auth_callback_for(
+            "slicerx",
+            "slicerx://auth/callback?code=abc"
+        ));
+        assert!(is_auth_callback_for(
+            "slicerx",
+            "slicerx://auth/callback/?code=abc"
+        ));
+        assert!(is_auth_callback_for(
+            "slicerx",
+            "slicerx://auth/callback?error=access_denied&error_description=expired"
+        ));
+        assert!(is_auth_callback_for(
+            "acmeslicer",
+            "acmeslicer://auth/callback?code=abc"
+        ));
         // Another edition's scheme, an "Open in" link and look-alike paths are not sign-ins.
-        assert!(!is_auth_callback_for("slicerx", "acmeslicer://auth/callback?code=abc"));
-        assert!(!is_auth_callback_for("slicerx", "slicerx://open?url=https://example.com/a.stl"));
-        assert!(!is_auth_callback_for("slicerx", "slicerx://auth/callbackx?code=abc"));
-        assert!(!is_auth_callback_for("slicerx", "https://slicerx.app/auth/callback?code=abc"));
+        assert!(!is_auth_callback_for(
+            "slicerx",
+            "acmeslicer://auth/callback?code=abc"
+        ));
+        assert!(!is_auth_callback_for(
+            "slicerx",
+            "slicerx://open?url=https://example.com/a.stl"
+        ));
+        assert!(!is_auth_callback_for(
+            "slicerx",
+            "slicerx://auth/callbackx?code=abc"
+        ));
+        assert!(!is_auth_callback_for(
+            "slicerx",
+            "https://slicerx.app/auth/callback?code=abc"
+        ));
     }
 
     #[test]
