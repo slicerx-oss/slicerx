@@ -108,6 +108,9 @@ function PrinterBlock() {
       data-section="printer"
       aside={
         <span className="fil-aside">
+          {showPrinterSettings ? (
+            <Button size="sm" variant="ghost" icon="sliders" aria-label="Printer settings" tip={{ title: 'Printer settings', body: 'Open the machine settings: bed shape, start and end G-code, limits.' }} onClick={() => set({ printerSettingsOpen: true })} />
+          ) : null}
           <LinkButton expanded={choosing} onClick={() => setChoosing(!choosing)}>
             Change
           </LinkButton>
@@ -160,11 +163,6 @@ function PrinterBlock() {
             </button>
           </li>
         </ul>
-      ) : null}
-      {showPrinterSettings ? (
-        <LinkButton icon="sliders" onClick={() => set({ printerSettingsOpen: true })}>
-          Printer settings
-        </LinkButton>
       ) : null}
       {printerSettingsOpen ? (
         <Suspense fallback={null}>
