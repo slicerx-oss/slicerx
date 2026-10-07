@@ -9,8 +9,10 @@
 export interface CoverMesh {
   positions: ArrayLike<number>
   indices: ArrayLike<number>
-  /** #rrggbb */
+  /** The filament color, #rrggbb. Empty or unreadable picks from COVER_COLORS by slot. */
   color: string
+  /** 1-based filament slot, for the fallback color. */
+  slot?: number
   /** 4x4 column-major placement, mm. */
   transform?: ArrayLike<number>
 }
@@ -45,9 +47,17 @@ const PALETTES: Record<'dark' | 'light', Palette> = {
   light: { paper: rgb('#f7f6f3'), grid: rgb('#a7a2b5'), ink: rgb('#2a2833'), hidden: rgb('#6b6874'), dim: rgb('#7349c9') },
 }
 
+/** Fill colors for a file that names none, by filament slot. */
+export const COVER_COLORS = ['#bd93f9', '#ff79c6', '#8be9fd', '#50fa7b', '#fab570', '#efefe9'] as const
+
+/** The fill a mesh is drawn in: its own color, or the slot's fallback. */
+export function coverColor(color: string | undefined, slot = 1): string {
+  const m = /^#?([0-9a-f]{6})(?:[0-9a-f]{2})?$/i.exec((color ?? '').trim())
+  return m ? `#${m[1]!.toLowerCase()}` : COVER_COLORS[(Math.max(1, Math.floor(slot)) - 1) % COVER_COLORS.length]!
+}
+
 function rgb(c: string): V3 {
-  const m = /^#?([0-9a-f]{6})$/i.exec(c.trim())
-  const n = m ? parseInt(m[1]!, 16) : 0xbd93f9
+  const n = parseInt(coverColor(c).slice(1), 16)
   return [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255]
 }
 
@@ -108,7 +118,7 @@ function build(meshes: readonly CoverMesh[]): Model | null {
   const part: number[] = []
   const colors: V3[] = []
   meshes.forEach((m, k) => {
-    colors.push(rgb(m.color))
+    colors.push(rgb(coverColor(m.color, m.slot)))
     const weld = new Map<string, number>()
     const map: number[] = []
     for (let i = 0; i + 2 < m.positions.length; i += 3) {

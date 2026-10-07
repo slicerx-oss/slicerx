@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 import { describe, expect, it } from 'vitest'
-import { COVER_PROFILE, coverLabels, mmLabel, renderCover, type CoverImage, type CoverMesh } from '../src/export/cover'
+import { COVER_COLORS, COVER_PROFILE, coverColor, coverLabels, mmLabel, renderCover, type CoverImage, type CoverMesh } from '../src/export/cover'
 import { boxMesh } from '../src/plate/mesh-ops'
 
 const box = (x: number, y: number, z: number, color = '#ff79c6'): CoverMesh => ({ ...boxMesh(x, y, z), color })
@@ -90,6 +90,28 @@ describe('shop drawing cover', () => {
     const short = bounds(renderCover([box(8, 8, 8)], 400, 300), DIM, 40).n
     const long = bounds(renderCover([box(188, 188, 188)], 400, 300), DIM, 40).n
     expect(long).toBeGreaterThan(short)
+  })
+
+  it('fills each part in its own filament color, or the slot fallback when the file has none', () => {
+    expect(coverColor('#8BE9FD')).toBe('#8be9fd')
+    expect(coverColor('#50fa7bff')).toBe('#50fa7b')
+    expect(coverColor('', 1)).toBe(COVER_COLORS[0])
+    expect(coverColor(undefined, 2)).toBe(COVER_COLORS[1])
+    // the middle of the top face: a cyan part reads blue, an orange part reads warm
+    const top = (img: CoverImage) => px(img, 200, Math.round(img.height * 0.4))
+    const cyan = top(renderCover([box(20, 20, 20, '#8be9fd')], 400, 300))
+    const orange = top(renderCover([box(20, 20, 20, '#fab570')], 400, 300))
+    expect(cyan[2]!).toBeGreaterThan(cyan[0]! + 20)
+    expect(orange[0]!).toBeGreaterThan(orange[2]! + 5)
+    // see-through: the fill is the color washed into the ground, not the color itself
+    expect(cyan[2]!).toBeLessThan(0xfd - 60)
+    // no color: slot 2 takes the second fallback, so a two-color print keeps two fills
+    const fallback = top(renderCover([{ ...box(20, 20, 20), color: '', slot: 2 }], 400, 300))
+    expect(fallback).toEqual(top(renderCover([box(20, 20, 20, COVER_COLORS[1])], 400, 300)))
+    const two = renderCover([{ ...box(40, 20, 4), color: '' }, { ...box(10, 10, 30), color: '', slot: 2, transform: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 4, 1] }], 400, 300)
+    const base = px(two, 130, Math.round(two.height * 0.66))
+    const post = px(two, 200, Math.round(two.height * 0.4))
+    expect(base).not.toEqual(post)
   })
 
   it('draws the ground alone for empty input and has a light ground', () => {
