@@ -105,6 +105,7 @@
 .lib-sheet-layer { position: absolute; inset: 0; z-index: var(--z-menu); pointer-events: none; overflow: hidden; }
 .lib-scrim { position: absolute; inset: 0; background: rgb(18 19 26 / 62%); -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px); pointer-events: auto; animation: lib-fade var(--t-base) var(--ease); }
 .lib-sheet { position: absolute; top: 0; right: 0; bottom: 0; width: min(440px, 100%); overflow-y: auto; overscroll-behavior: contain; border-left: 1px solid var(--line); background: color-mix(in srgb, var(--ink-2) 96%, transparent); -webkit-backdrop-filter: var(--lift-glass); backdrop-filter: var(--lift-glass); box-shadow: var(--shadow-pop); pointer-events: auto; animation: lib-slide var(--t-slow) var(--ease); outline: none; }
+.lib-sheet:focus-visible { box-shadow: var(--shadow-pop), inset 0 0 0 2px var(--accent-ring); }
 @keyframes lib-slide { from { transform: translateX(24px); opacity: 0; } }
 @keyframes lib-fade { from { opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .lib-sheet, .lib-scrim { animation: none; } }
@@ -174,6 +175,7 @@ button.cs-thumb:hover .cs-art { outline: 1px solid var(--line); }
 
 /* creator page editor: covers the Vault like a window of its own */
 .ce-frame { position: absolute; inset: 0; z-index: var(--z-dialog); display: grid; grid-template-rows: auto minmax(0, 1fr); background: var(--ink-1); box-shadow: var(--shadow-pop); outline: none; }
+.ce-frame:focus-visible { box-shadow: var(--shadow-pop), inset 0 0 0 2px var(--accent-ring); }
 .ce-bar { display: flex; align-items: center; gap: 12px; height: 48px; padding: 0 16px 0 24px; background: var(--ink-0); border-bottom: 1px solid var(--line-soft); }
 .ce-title { margin: 0; font: 600 14px var(--f-display); }
 .ce-bar-tools { display: flex; align-items: center; gap: 8px; margin-left: auto; }
