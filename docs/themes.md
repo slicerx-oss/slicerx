@@ -2,16 +2,34 @@
 
 SlicerX colors come from theme files. A theme is one small JSON file with the base colors. The app derives everything else (panels, hairlines, chips, secondary text, status colors) by fixed rules, so a theme only needs about a dozen colors and still reads well.
 
-Seven themes ship with the app: SlicerX dark (the default dark theme), Tokyo Night, Atom One Dark, SlicerX light (the default light theme), GitHub Light, Solarized Light and One Light. Their files are in `packages/ui/themes/`.
+Thirteen themes ship with the app, each with a light and a dark mode:
 
-SlicerX dark is based on the Dracula palette (MIT, draculatheme.com). The license notice is in `packages/ui/themes/LICENSES.md`.
+| Theme | Dark | Light |
+| --- | --- | --- |
+| Subban (default) | Subban | Subban light |
+| Dracula | Dracula | Alucard |
+| Catppuccin | Mocha, Macchiato, Frappe | Latte |
+| Nord | Nord | Nord light (designed) |
+| One | One Dark | One Light |
+| Tokyo Night | Tokyo Night | Tokyo Night Day |
+| GitHub | GitHub Dark | GitHub Light |
+| Solarized | Solarized Dark | Solarized Light |
+| Night | Night | Night light (designed) |
+| Gothic | Gothic dark (designed) | Gothic |
+| Newsprint | Newsprint dark (designed) | Newsprint |
+| Pixyll | Pixyll dark (designed) | Pixyll |
+| Whitey | Whitey dark (designed) | Whitey |
+
+Where a theme has an official mode of the other brightness, that is the one used. Where it has none, the missing mode is designed from the same hues and checked for contrast; the table marks those. Night, Gothic, Newsprint, Pixyll and Whitey follow the Typora themes of those names. The themes bring colors only; fonts stay a separate choice. The files are in `packages/ui/themes/`.
+
+Subban is the default. Its dark mode is the Dracula palette one step deeper, and its light mode is the Nocturne Bright palette. It was called SlicerX dark and light, and Nocturne, before: stored choices with those ids move to Subban without a step from the person, and `nocturne` still works in code and edition configs. The Dracula license notice is in `packages/ui/themes/LICENSES.md`.
 
 ## Using a theme
 
-Open Settings, then Look and feel, then Theme.
+Open Settings, then Look and feel, then Theme, or pick one on the first setup screen.
 
-- **One theme** shows the theme you pick, light or dark.
-- **Follow system** keeps one dark and one light theme and switches with the operating system. Picking a theme fills the slot that matches its brightness.
+- **Mode**: System follows the operating system, Light and Dark show one mode.
+- **Cards**: one card per theme, its light and dark modes side by side. Picking a card sets both modes, so switching mode keeps the theme. A theme with more than one dark variant (Catppuccin) shows a Dark flavor choice under the cards. A theme of one brightness only (your own file, say) says Light only or Dark only, and picking it while the other mode shows switches the mode.
 - **Import theme** reads a `.json` file and adds it to the list. The file is checked first; if something is wrong, the dialog says what.
 - **Export theme** saves the current theme as a file you can share.
 - **Open themes folder** (desktop app) opens a folder in the app data directory. Any `.json` file placed there appears in the list the next time the window gains focus.
@@ -19,7 +37,21 @@ Open Settings, then Look and feel, then Theme.
   - Windows: `%APPDATA%\app.slicerx.desktop\themes`
   - Linux: `~/.local/share/app.slicerx.desktop/themes`
 
-A theme with the same `id` as a bundled one never replaces it when imported through Settings: it gets a new id. Files in the themes folder with a bundled id do replace it, which is how you tweak a bundled theme.
+A theme with the same `id` as a bundled one never replaces it when imported through Settings: it gets a new id, and a copy of a bundled theme gets its own card instead of joining that theme's. Files in the themes folder with a bundled id do replace it, which is how you tweak a bundled theme.
+
+## Text and accessibility
+
+Settings, Look and feel also has:
+
+- **Accent**: the theme's own accent, or blue, cyan, green, pink or orange from the theme's palette, for selection, focus and the main button.
+- **Text size**: Small, Default, Large, Larger (13, 14, 16 and 18 px body text). Every type size scales with it through `--text-scale`.
+- **Font weight**: Light, Regular, Medium, Bold for body text. Labels and titles step up from it through the `--fw-regular`, `--fw-medium`, `--fw-semibold` and `--fw-bold` tokens.
+- **Contrast**: Higher lifts secondary and dim text to 7:1, status colors and the accent to 4.5:1, and draws borders stronger, in any theme.
+- **Color vision**: Red-green or Blue-yellow moves the status and meaning colors that collide for that kind of color vision to ones that stay apart (after the Okabe and Ito palette), and draws toolpaths and the legend in the color vision palette. Every status also carries an icon. It replaces the earlier toolpath color switch, which moves over as Red-green.
+- **Motion**: Follow system, On or Reduced.
+- **Density**: Compact, Comfortable or Roomy spacing in panels and lists.
+
+The first setup screen offers text size, color vision and reduce motion; the rest is in Settings.
 
 ## Fonts
 
@@ -43,6 +75,9 @@ Version 1. A JSON Schema is at `packages/ui/themes/schema.json`; add `"$schema":
 | `version` | `1` | yes | Schema version. |
 | `id` | string | yes | Lowercase slug: letters, digits and hyphens, up to 40 characters. |
 | `name` | string | yes | Shown in the picker, 1 to 40 characters. |
+| `family` | string | no | Slug that groups the light and dark modes of one theme into one card. |
+| `familyName` | string | no | The card's name, 1 to 40 characters. Defaults to `name`. |
+| `flavor` | string | no | The variant's name when a family has more than one theme of the same brightness, such as Mocha. |
 | `isDark` | boolean | yes | Dark themes fill the dark slot of Follow system, light themes the light slot. The app warns when it disagrees with the background. |
 | `background` | color | yes | Page and window background. |
 | `surface` | color | yes | Panels, cards and dialogs. |
@@ -101,13 +136,14 @@ The bundled theme files spell their scene block out, so you can copy one and cha
 
 ## Contrast rules
 
-- Text (main, secondary, dim) reaches 4.5:1 on the background and the surface, in every bundled theme. A test checks it.
+- Text (main, secondary, dim) reaches 4.5:1 on the background and the surface, in every bundled theme. A test checks it, with each color vision setting too.
 - Glyph colors (status colors, the accent on a light theme) reach 3:1.
+- With Higher contrast, secondary and dim text reach 7:1 and glyph colors and the accent 4.5:1. The same test checks it.
 - If a theme misses these, the derived shades are lifted, so the app stays readable. Your base `text` is never changed, so give it enough contrast.
 
 ## Make a theme
 
-1. Copy `packages/ui/themes/slicerx-dark.json` or `slicerx-light.json` and give it a new `id` and `name`.
+1. Copy `packages/ui/themes/subban-dark.json` or `subban-light.json` and give it a new `id` and `name`. Give your light and dark files the same `family` to show them as one card.
 2. Change the base colors. Start with `background`, `text` and `accent`; set `surface`, `surfaceAlt` and `border` a little lighter than `background` on a dark theme, a little darker on a light one.
 3. Fill `ansi` from your terminal theme if you have one.
 4. Import the file in Settings, or put it in the themes folder.
@@ -121,8 +157,10 @@ To share a theme, send the file. Set `credit` if the palette is someone else's.
 {
   "$schema": "./schema.json",
   "version": 1,
-  "id": "slicerx-light",
-  "name": "SlicerX light",
+  "id": "my-light",
+  "name": "My light",
+  "family": "mine",
+  "familyName": "Mine",
   "isDark": false,
   "background": "#f7f6f3",
   "surface": "#efede8",

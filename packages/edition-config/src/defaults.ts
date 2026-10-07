@@ -10,7 +10,7 @@ export const NEUTRAL_EDITION: EditionConfigInput = {
     name: 'Reference Slicer',
     shortName: 'Slicer',
     logo: { mark: 'builtin:generic-mark' },
-    theme: 'nocturne',
+    theme: 'subban',
   },
   apps: {
     desktop: { identifier: 'org.example.slicer', productName: 'Reference Slicer' },

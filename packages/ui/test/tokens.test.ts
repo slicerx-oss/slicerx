@@ -3,7 +3,7 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { ICON_COUNT, ICON_GROUPS, ICON_PATHS, NOCTURNE, NOCTURNE_VARS } from '../src/index'
+import { ICON_COUNT, ICON_GROUPS, ICON_PATHS, SUBBAN, SUBBAN_VARS } from '../src/index'
 
 const here = resolve(import.meta.dirname)
 const tokensCss = readFileSync(resolve(here, '../src/tokens.css'), 'utf8')
@@ -17,9 +17,9 @@ function cssValue(css: string, name: string): string | undefined {
 }
 
 describe('tokens', () => {
-  it('NOCTURNE hex values match tokens.css', () => {
-    for (const [key, hex] of Object.entries(NOCTURNE)) {
-      const name = NOCTURNE_VARS[key as keyof typeof NOCTURNE]
+  it('SUBBAN hex values match tokens.css', () => {
+    for (const [key, hex] of Object.entries(SUBBAN)) {
+      const name = SUBBAN_VARS[key as keyof typeof SUBBAN]
       expect(cssValue(tokensCss, name), name).toBe(hex)
     }
   })
