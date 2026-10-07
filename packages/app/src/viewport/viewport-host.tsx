@@ -37,6 +37,7 @@ import { toolChangerFor } from '../lib/toolchanger'
 import { buildTimeline, fitOf, type Timeline } from '../lib/preview-timeline'
 import { headFor } from '@slicerx/viewport'
 import { strikeMarks } from '../plate/heimdall'
+import { gantryHits, gantrySpec } from '../plate/heimdall-gantry'
 
 /** The part of the viewport handle the app drives. The 2D fallback implements the same. */
 export type Drive = Pick<Viewport, 'setMode' | 'setPlate' | 'setTransforms' | 'setRenderMode' | 'view' | 'setPreview' | 'setLayerRange' | 'setMoveCut' | 'setColorMode' | 'setToolColors' | 'setSelection' | 'on' | 'dispose'> & {
@@ -278,6 +279,9 @@ export function ViewportHost({ mode }: { mode: 'prepare' | 'preview' }) {
         if (vp.setToolChange && (first || s.toolChange !== prev.toolChange || s.preview !== prev.preview)) vp.setToolChange(s.toolChange)
         // heimdall's strikes where the machine would meet a printed part.
         if (first || s.slice !== prev.slice || s.strikePick !== prev.strikePick) (vp as unknown as Viewport).setStrikes?.(strikeMarks(s))
+        if (first || s.slice !== prev.slice || s.plate !== prev.plate || s.profile !== prev.profile || s.overrides !== prev.overrides || s.easy !== prev.easy || s.bed !== prev.bed) {
+          ;(vp as unknown as Viewport).setGantry?.(gantrySpec(s), gantryHits(s))
+        }
         if (vp.setShowToolhead && (first || s.showToolhead !== prev.showToolhead)) vp.setShowToolhead(s.showToolhead)
         if (vp.setFollowNozzle && (first || s.followNozzle !== prev.followNozzle)) vp.setFollowNozzle(s.followNozzle)
         if (first || s.plate !== prev.plate || s.bed !== prev.bed || s.overrides !== prev.overrides || s.easy !== prev.easy) (vp as unknown as Viewport).setBedAlert?.(s.plate.some((e) => objectWarnings(e, s).some((w) => w.kind === 'off-bed')))
