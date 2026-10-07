@@ -38,6 +38,7 @@ import { DEFAULT_TOOL_COLORS, FEATURE_COLORS, HEAT_RAMP, SCENE, displayHex, hexT
 import type { ColorMode } from './types'
 import { ToolheadRig } from './toolhead'
 import { PurgeRig, type PurgePlan } from './purge'
+import { GantryRig, type GantryHit, type GantrySpec } from './gantry'
 import type { HeadModel } from './heads'
 import { headAt, type HeadSeg } from './headpath'
 import { changeSequence, poseAt, printedTop, type ChangeSequence, type ToolChangerSpec, type V3 } from './toolchanger'
@@ -405,6 +406,8 @@ export class Toolpaths {
   /** The purge chute and the blob a change flushes into it (Bambu printers), by the change's first segment. */
   private readonly purge = new PurgeRig()
   private purges: Map<number, PurgePlan> | null = null
+  /** heimdall's gantry beam over the moving head, red where it runs through a part it strikes. */
+  private readonly gantry = new GantryRig()
   private changer: ToolChangerSpec | null = null
   /** Preview's "Show toolhead": off hides the moving head; the rack, dock, chute and wiper stay. */
   private headOn = true
@@ -457,7 +460,7 @@ export class Toolpaths {
       sh.vertexShader = sh.vertexShader.replace('varying vec3 vSegColor;\nvarying float vLive;\n', '')
     }
     this.depthMaterial.customProgramCacheKey = () => 'sx-bead-depth'
-    this.root.add(this.head.root, this.purge.root)
+    this.root.add(this.head.root, this.purge.root, this.gantry.root)
   }
 
   /** Room irradiance as nine spherical-harmonic coefficients (three.js LightProbe order). */
@@ -936,6 +939,22 @@ export class Toolpaths {
     this.apply()
   }
 
+  /** The printer's gantry, for the beam drawn over the moving head; null draws none. */
+  setGantry(spec: GantrySpec | null): void {
+    this.gantry.setSpec(spec)
+    this.apply()
+  }
+
+  /** heimdall's gantry strikes: the beam shows on their layers even with the head hidden, red through the part. */
+  setGantryHits(hits: readonly GantryHit[] | null): void {
+    this.gantry.setHits(hits)
+    this.apply()
+  }
+
+  setGantryColor(hit: string): void {
+    this.gantry.setColor(hit)
+  }
+
   /** Shows or hides the moving head and its carriage. The machine's fixed parts stay and still follow the print. */
   setShowToolhead(on: boolean): void {
     if (on === this.headOn) return
@@ -986,7 +1005,11 @@ export class Toolpaths {
     this.head.visible = fixtures
     this.head.headVisible = moving && this.headOn
     this.purge.visible = fixtures
-    if (!b || !fixtures) return
+    if (!b || !fixtures) {
+      this.gantry.place(false, 0, 0, 0)
+      return
+    }
+    const beam = moving && (this.headOn || this.gantry.striking(this.hi))
     // With nothing drawn yet the machine stands as the print starts.
     to = Math.max(1, Math.min(to, b.segmentCount))
     const bytes = new Uint8Array(b.raw, b.segmentsOffset, b.segmentCount * SXPV_SEGMENT_BYTES)
@@ -998,6 +1021,7 @@ export class Toolpaths {
       const tool = bytes[to * SXPV_SEGMENT_BYTES + SXPV_SEGMENT.tool] ?? 0
       this.head.place(pose.x, pose.y, pose.z, tool, pose, pose.slots)
       this.placePurge(pose.x, pose.y, pose.z + 0.05, seq, change)
+      this.gantry.place(beam, pose.y, pose.z, this.hi)
       return
     }
     const cur = this.part ? this.part.index : to - 1
@@ -1015,6 +1039,7 @@ export class Toolpaths {
     this.head.place(at.x, at.y, at.z, tool, null, null)
     if (this.headOn && this.head.headVisible) this.onHead?.(at.x, at.y, at.z)
     this.placePurge(at.x, at.y, at.z + 0.05, null, null)
+    this.gantry.place(beam, at.y, at.z, this.hi)
   }
 
   /** The chute at the head's height and, inside a change with a purge, the blob; the head's shadow only over the bed. */
@@ -1102,6 +1127,7 @@ export class Toolpaths {
     }
     this.head.visible = false
     this.purge.visible = false
+    this.gantry.place(false, 0, 0, 0)
     this.changes = []
     this.changeSeq = null
   }
@@ -1119,6 +1145,7 @@ export class Toolpaths {
     this.uniforms.uLayerLut.value.dispose()
     this.head.dispose()
     this.purge.dispose()
+    this.gantry.dispose()
   }
 }
 

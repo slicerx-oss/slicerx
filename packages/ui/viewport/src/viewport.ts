@@ -57,6 +57,7 @@ import { Stage } from './stage'
 import { FrameProbe, probeRequested, type ProbeStats } from './probe'
 import { Toolpaths, warmupBuffers } from './toolpaths'
 import { Strikes, type StrikeMark } from './strikes'
+import type { GantryHit, GantrySpec } from './gantry'
 import type {
   CameraState,
   CutPlaneSpec,
@@ -1884,6 +1885,7 @@ class ViewportImpl implements Viewport {
     this.mats.dispose()
     this.toolpaths.setTheme(t)
     this.strikes.setColors(t.scene.overhangRed, t.scene.overhangAmber)
+    this.toolpaths.setGantryColor(t.scene.overhangRed)
     this.applyMaterials()
   }
 
@@ -2704,6 +2706,11 @@ class ViewportImpl implements Viewport {
   setGcodeMarkers(data: Partial<Record<'wipes' | 'toolChanges' | 'pauses', Float32Array | null>>): void {
     this.toolpaths.setGcodeMarkers(data)
     this.invalidate()
+  }
+
+  setGantry(spec: GantrySpec | null, hits: readonly GantryHit[] | null): void {
+    this.toolpaths.setGantry(spec)
+    this.toolpaths.setGantryHits(hits)
   }
 
   setStrikes(marks: readonly StrikeMark[] | null): void {

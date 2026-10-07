@@ -10,6 +10,7 @@ import { SXPV_HEADER_BYTES, SXPV_MAGIC, SXPV_SEGMENT_BYTES, SXPV_VERSION, readPr
 import { closeCalls, collisionsOf, fixesOf, printBlock, strikeMarks } from '../src/plate/heimdall'
 import { applyCollisionFix } from '../src/plate/heimdall-fix'
 import { collisionTime, jumpTo } from '../src/plate/heimdall-jump'
+import { gantryHits, gantrySpec } from '../src/plate/heimdall-gantry'
 import { collisionDetail, collisionTitle, fixDetail, fixTitle, namesOf } from '../src/plate/heimdall-words'
 import { preflight } from '../src/plate/preflight'
 import { get, set } from '../src/state/store'
@@ -158,6 +159,19 @@ describe('heimdall in the app', () => {
     expect((el.querySelector('.strike-mark') as HTMLElement).style.left).toBe('30%')
     flushSync(() => root.unmount())
     el.remove()
+  })
+
+  it('gives the viewport the gantry it checks and the part each gantry strike runs through', () => {
+    set({ plate: [entry('tall', 'Tall'), entry('low', 'Low')], slice: { status: 'done', result: result([hit, close]), stale: false } })
+    expect(gantryHits(get())).toEqual([{ layers: [2, 3], box: [0, 0, 20, 20], top: 20 }])
+    set({ profile: { printerId: 'bambu-a1' } as never, overrides: { extruder_clearance_height_to_rod: '25', extruder_clearance_dist_to_rod: '56.5' }, bed: { widthMm: 256, depthMm: 256, heightMm: 256 } as never })
+    expect(gantrySpec(get())).toEqual({ rod: 25, reach: 56.5, width: 256, slinger: true })
+    set({ profile: { printerId: 'bambu-x1-carbon' } as never })
+    expect(gantrySpec(get())?.slinger).toBe(false)
+    set({ profile: { printerId: 'flsun-v400' } as never })
+    expect(gantrySpec(get())).toBeNull()
+    set({ profile: null })
+    expect(gantrySpec(get())).toBeNull()
   })
 
   it('names crossing paths, keep-out zones and their fixes', () => {

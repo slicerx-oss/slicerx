@@ -7,6 +7,7 @@ import type { ToolChangerSpec } from './toolchanger'
 import type { PurgePlan } from './purge'
 import type { HeadModel } from './heads'
 import type { StrikeMark } from './strikes'
+import type { GantryHit, GantrySpec } from './gantry'
 import type { Guides } from './guides'
 import type { DimensionMark, SketchCursor, SketchScene } from './cadtools'
 import type { Bed, PreviewBuffers } from '@slicerx/contracts'
@@ -555,6 +556,8 @@ export interface Viewport {
   setGcodeMarkers(data: Partial<Record<'wipes' | 'toolChanges' | 'pauses', Float32Array | null>>): void
   /** heimdall's strikes: where the machine would meet a printed part (bed frame, mm), drawn over everything. Null clears them. */
   setStrikes?(marks: readonly StrikeMark[] | null): void
+  /** heimdall's gantry: the beam over the moving head (null for none), and the strikes it runs through a part on. */
+  setGantry?(spec: GantrySpec | null, hits: readonly GantryHit[] | null): void
   /** Value ranges for legends of the speed, flow, width, height, fan and temperature schemes. */
   previewRanges(): PreviewRanges
   /** One row per feature type present: color, time, length and visibility. */
