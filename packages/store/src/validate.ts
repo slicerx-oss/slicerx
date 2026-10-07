@@ -10,6 +10,8 @@ export const MAX_UPLOAD_BYTES = 104_857_600
 export const DEFAULT_MAX_FILE_MB = 100
 export const UPLOAD_EXTENSIONS: readonly FileFormat[] = ['3mf', 'sx3mf', 'stl']
 export const MAX_CREATOR_LINKS = 12
+/** Longest creator bio, as the database takes it (0013_creator_pages.sql). */
+export const CREATOR_BIO_MAX = 500
 export const MAX_FEATURED = 6
 
 /** Every creator link kind the database accepts (creator_links.kind). */
