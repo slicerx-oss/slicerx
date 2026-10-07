@@ -109,10 +109,20 @@ const [host, list] = await Promise.all([createDesktopHost(), features()])
 if (__SX_FEATURE_CONNECT__) host.bambuConnect = (await import('./host/bambu-connect')).createTauriBambuConnect()
 if (__SX_FEATURE_CONNECT__) host.firewall = (await import('./host/firewall')).createTauriFirewall()
 if (__SX_FEATURE_STORE__) {
-  const { lazyStore } = await import('../../web/src/host/store')
+  const [{ lazyStore }, { createDesktopAuth }] = await Promise.all([import('../../web/src/host/store'), import('./host/auth')])
   const edition: EditionHost = host
-  edition.store = lazyStore(config)
+  // Sign-in and the website's pages open in the system browser through the host, and emailed links come back as
+  // the edition's deep link. The store must send that deep link as the return address, or the link lands on the website.
+  const auth = createDesktopAuth(config)
+  edition.auth = auth
+  edition.store = lazyStore(config, auth)
   const store = edition.store
+  auth.onDeepLink((url) => {
+    void Promise.all([store.completeSignIn(url), import('@slicerx/app')]).then(([r, { toast }]) => {
+      if (r.ok) toast(r.value.email ? `Signed in as ${r.value.email}` : 'Signed in', 'ok')
+      else toast(`Sign-in did not finish: ${r.message}`, 'error')
+    })
+  })
   // The hub signs in to the relay with a relay token minted from the account's session (never the session itself):
   // a new one on sign-in and refresh, null on sign-out, never stored.
   if (__SX_FEATURE_CONNECT__) {
@@ -121,15 +131,6 @@ if (__SX_FEATURE_STORE__) {
     configureRelayTokens(sb ? { url: sb.url, anonKey: sb.anonKey } : null)
     store.onTokenChange((t) => pushAccountToken(t))
     void store.getAccessToken().then((t) => pushAccountToken(t), () => pushAccountToken(null))
-  }
-  // Sign-in and the website's pages open in the system browser through the host.
-  edition.auth = {
-    redirectUrl: () => `${config.apps.deepLinkScheme}://auth/callback`,
-    openExternal: async (url) => {
-      const { invoke } = await import('@tauri-apps/api/core')
-      await invoke('open_external', { url })
-    },
-    onDeepLink: () => () => undefined,
   }
   const cloudApi = config.backend.cloudApi
   if (__SX_FEATURE_CLOUD__ && cloudApi) {
