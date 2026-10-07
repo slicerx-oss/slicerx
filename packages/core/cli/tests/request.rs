@@ -150,6 +150,13 @@ fn a_3mf_plate_slices_as_its_objects() {
         err.contains("printing by object is not safe: The gantry hits tall."),
         "{err}"
     );
+    // the fixes the engine offers, and the way past the refusal
+    // both boxes stand over the 3 mm gantry, so no order clears it: printing by layer does
+    assert!(err.contains("To fix it: print by layer."), "{err}");
+    assert!(
+        err.contains("To slice it anyway, add --allow-collisions."),
+        "{err}"
+    );
     assert!(run(40, 3, true).status.success());
     let _ = std::fs::remove_dir_all(dir);
 }

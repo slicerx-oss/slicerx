@@ -377,6 +377,27 @@ fn collision_refusal(
         why.push(sx_core::Error::Clearance(machine.join(" ")).to_string());
     }
     why.extend(plate);
+    // The fixes the engine offers, in the command line's words, and the way past the refusal.
+    let mut fixes = Vec::new();
+    for f in &report.collision_fixes {
+        use sx_core::collide::report::FixKind;
+        let mm = f.mm.unwrap_or(0.0);
+        fixes.push(match f.kind {
+            FixKind::Reorder => format!(
+                "print in the order {}",
+                f.order.iter().map(|id| name(id)).collect::<Vec<_>>().join(", ")
+            ),
+            FixKind::ByLayer => "print by layer".to_owned(),
+            FixKind::Spread => format!("space the objects {mm:.0} mm wider"),
+            FixKind::RaiseLift => format!("set Z hop to {mm:.1} mm"),
+            FixKind::Arrange => "arrange the plate".to_owned(),
+            FixKind::MoveObject => format!("move {}", name(f.object_id.as_deref().unwrap_or(""))),
+        });
+    }
+    if !fixes.is_empty() {
+        why.push(format!("To fix it: {}.", fixes.join("; or ")));
+    }
+    why.push("To slice it anyway, add --allow-collisions.".to_owned());
     Some(why.join(" "))
 }
 
