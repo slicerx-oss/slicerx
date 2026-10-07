@@ -133,7 +133,7 @@ describe('the words', () => {
   it('a dirty plate on a monitor-only printer says SlicerX cannot stop it', () => {
     const c = tripCopy({ printerId: 'a1', kind: 'plate', state: 'alert', at, monitorOnly: true, startedBy: 'printer' }, 'Garage A1')
     expect(c.cannotStop).toContain('Developer Mode is off on Garage A1')
-    expect(`${c.title} ${c.body} ${c.cannotStop}`).not.toMatch(/[–—]/)
+    expect(`${c.title} ${c.body} ${c.cannotStop}`).not.toMatch(/[\u2013\u2014]/)
   })
 })
 
