@@ -59,7 +59,7 @@ export type ControlsLookup = (id: LookId) => ControlsMap
 
 type Fmt = (chord: string) => string
 
-const BASE_LABEL: Readonly<Record<string, string>> = { prepare: 'Slice', preview: 'Preview', printers: 'Printers', library: 'Vault', feed: 'Vault', pilot: 'mimir' }
+const BASE_LABEL: Readonly<Record<string, string>> = { prepare: 'Slice', printers: 'Printers', library: 'Vault', feed: 'Vault', pilot: 'mimir' }
 
 /** Sidebar sections in the order the Prepare sidebar stacks them. */
 export function sidebarSections(layout: LayoutSpec): string[] {
@@ -125,7 +125,7 @@ const CANDIDATES: readonly Candidate[] = [
     id: 'slice',
     target: 'slice',
     value: (f) => `${f.keys.slice}|${f.keys.export}`,
-    note: (f, fmt) => (f.keys.slice ? { title: `${fmt(f.keys.slice)} slices the plate`, detail: f.keys.export ? `${fmt(f.keys.export)} exports the G-code.` : 'Export the G-code from Preview.', short: `${fmt(f.keys.slice)} to slice` } : null),
+    note: (f, fmt) => (f.keys.slice ? { title: `${fmt(f.keys.slice)} slices the plate`, detail: f.keys.export ? `${fmt(f.keys.export)} exports the G-code.` : 'Export the G-code from Slice.', short: `${fmt(f.keys.slice)} to slice` } : null),
   },
   {
     id: 'scroll',
@@ -174,7 +174,7 @@ const CANDIDATES: readonly Candidate[] = [
     id: 'one-layer',
     target: 'plate',
     value: (f) => f.keys['preview.singleLayer'],
-    note: (f, fmt) => (f.keys['preview.singleLayer'] ? { title: `${fmt(f.keys['preview.singleLayer'])} shows a single layer`, detail: 'In Preview, next to the layer slider.', short: 'one layer key' } : null),
+    note: (f, fmt) => (f.keys['preview.singleLayer'] ? { title: `${fmt(f.keys['preview.singleLayer'])} shows a single layer`, detail: 'In Slice, next to the layer slider.', short: 'one layer key' } : null),
   },
   {
     id: 'orbit',

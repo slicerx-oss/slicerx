@@ -7,7 +7,7 @@
 // skipped. The app pairs with the hub on its fixed port, so every hub test lives in this one file.
 import { type Locator, type Page } from '@playwright/test'
 import { command, openStudio } from './cad-helpers'
-import { expect, plateReady, test } from './fixtures'
+import { expect, plateReady, sliceCount, sliced, test } from './fixtures'
 import { spawn, type ChildProcessByStdio } from 'node:child_process'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -295,8 +295,9 @@ test('the camera player shows live frames from the printer', async ({ page }) =>
 test('sends a sliced plate with the preflight and an approval, and the printer receives it', async ({ page }) => {
   test.slow()
   await connectApp(page)
+  const slices1 = await sliceCount(page)
   await page.getByRole('button', { name: 'Slice plate' }).click()
-  await expect(page.locator('.sx-tab[aria-current=page]')).toContainText('Preview', { timeout: 90_000 })
+  await expect(sliced(page, slices1)).toBeVisible({ timeout: 90_000 })
   await page.keyboard.press('ControlOrMeta+k')
   await page.keyboard.type('Print the plate on Voron')
   await page.locator('.sx-palette-item', { hasText: 'Print the plate on Voron' }).first().click()
@@ -326,8 +327,9 @@ async function sheetFor(page: Page, printer: string): Promise<Locator> {
   await page.getByRole('list', { name: 'Choose a printer' }).getByRole('button', { name: new RegExp(`^${printer}\\b`) }).first().click()
   await page.evaluate(() => (window as unknown as { __sx: { setState(p: unknown): void } }).__sx.setState({ plate: [], selection: null, selectedIds: [] }))
   await command(page, 'Add a box')
+  const slices2 = await sliceCount(page)
   await page.getByRole('button', { name: 'Slice plate' }).click()
-  await expect(page.locator('.sx-tab[aria-current=page]')).toContainText('Preview', { timeout: 120_000 })
+  await expect(sliced(page, slices2)).toBeVisible({ timeout: 120_000 })
   await command(page, `Print the plate on ${printer}`)
   const sheet = page.locator('dialog.print-sheet[open]')
   await expect(sheet).toBeVisible()

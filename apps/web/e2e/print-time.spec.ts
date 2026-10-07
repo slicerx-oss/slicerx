@@ -2,7 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 // One print time everywhere: the Model estimate, the Preview summary, the playback bar and the send sheet all show
 // the figure the slice states, so the bar ends where the estimate says and the summary rows add up to it.
-import { expect, plateReady, tab, test } from './fixtures'
+import { expect, plateReady, sliceCount, sliced, tab, test } from './fixtures'
 
 /** The estimate's figure as the app words it (42m, 1h 05m is shown as 1h 5m). */
 const worded = (s: number): string => {
@@ -31,8 +31,9 @@ test('the estimate, the summary, the playback bar and the send sheet show one pr
   })
   await page.goto('./')
   await plateReady(page)
+  const slices1 = await sliceCount(page)
   await page.getByRole('button', { name: 'Slice plate' }).click()
-  await expect(page.locator('.sx-tab[aria-current=page]')).toContainText('Preview', { timeout: 120_000 })
+  await expect(sliced(page, slices1)).toBeVisible({ timeout: 120_000 })
   await expect(page.getByRole('group', { name: 'Layers and moves' })).toBeVisible()
 
   const stats = await page.evaluate(() => {

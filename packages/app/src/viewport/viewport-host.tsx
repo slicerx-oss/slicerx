@@ -184,7 +184,10 @@ export function moveCount(p: PreviewBuffers | null, layerHi: number, cut: number
   return (end - startIdx) * cut
 }
 
-export function ViewportHost({ mode }: { mode: 'prepare' | 'preview' }) {
+/** The plate's viewport. `layers`: Slice shows the toolpaths, with the layer dock and legend over the view. */
+export function ViewportHost({ layers }: { layers: boolean }) {
+  // There is one plate view now; the toolpath look (setToolpathLook) draws the slice in it.
+  const mode = 'prepare' as const
   const host = useHost()
   const edition = useEdition()
   const defaultLook = useRef(edition.firstRun.defaultLook)
@@ -308,6 +311,14 @@ export function ViewportHost({ mode }: { mode: 'prepare' | 'preview' }) {
         if (vp.setFollowNozzle && (first || s.followNozzle !== prev.followNozzle)) vp.setFollowNozzle(s.followNozzle)
         if (first || s.plate !== prev.plate || s.bed !== prev.bed || s.overrides !== prev.overrides || s.easy !== prev.easy) (vp as unknown as Viewport).setBedAlert?.(s.plate.some((e) => objectWarnings(e, s).some((w) => w.kind === 'off-bed')))
         if (first || s.zoneHover !== prev.zoneHover) (vp as unknown as Viewport).setZoneHighlight?.(s.zoneHover)
+        // How Slice shows that the plate is sliced: layer lines on the models, or the
+        // toolpaths in their place with the hovered model solid; models stay solid while the slice is out of date.
+        if (first || s.sliceLook !== prev.sliceLook || s.workspace !== prev.workspace || s.modelMode !== prev.modelMode || s.preview !== prev.preview || s.slice !== prev.slice || s.easy !== prev.easy || s.overrides !== prev.overrides) {
+          const plateView = s.workspace === 'prepare' && !designing(s)
+          const stale = s.slice.status !== 'done' || s.slice.stale
+          ;(vp as unknown as Viewport).setToolpathLook?.(plateView && s.sliceLook === 'toolpaths' && s.preview !== null, stale)
+          ;(vp as unknown as Viewport).setPrintLook?.(plateView && s.sliceLook === 'print', Number(resolveConfig(s.easy, s.overrides)['layer_height']) || 0.2)
+        }
         // Design models on a plain ground grid; the bed comes back in Slice. The camera stays where it is.
         if (first || s.modelMode !== prev.modelMode || s.workspace !== prev.workspace) (vp as unknown as Viewport).setGround?.(designing(s))
         // The printer's no-print areas follow its profile and any override of them in printer settings.
@@ -510,12 +521,7 @@ export function ViewportHost({ mode }: { mode: 'prepare' | 'preview' }) {
     }
   }, [host])
 
-  useEffect(() => {
-    modeRef.current = mode
-    vpRef.current?.setMode(mode)
-  }, [mode])
-
-  // In Preview the legend, the layer strip and the playback bar cover parts of the view: the viewport frames the plate's content in the free area.
+  // With the toolpaths showing, the legend, the layer strip and the playback bar cover parts of the view: the viewport frames the plate's content in the free area.
   useEffect(() => {
     const stage = stageRef.current
     const root = stage?.parentElement
@@ -523,7 +529,7 @@ export function ViewportHost({ mode }: { mode: 'prepare' | 'preview' }) {
     const send = () => {
       const vp = vpRef.current
       if (!vp?.setInsets) return
-      if (mode !== 'preview') return vp.setInsets({ left: 0, right: 0, top: 0, bottom: 0 })
+      if (!layers) return vp.setInsets({ left: 0, right: 0, top: 0, bottom: 0 })
       const box = (r: DOMRect) => ({ left: r.left, top: r.top, right: r.right, bottom: r.bottom })
       const rects = [...root.querySelectorAll<HTMLElement>('.sx-overlay')].filter((e) => e.offsetParent !== null).map((e) => box(e.getBoundingClientRect()))
       vp.setInsets(overlayInsets(box(stage.getBoundingClientRect()), rects))
@@ -555,7 +561,7 @@ export function ViewportHost({ mode }: { mode: 'prepare' | 'preview' }) {
       mo.disconnect()
       ro.disconnect()
     }
-  }, [mode])
+  }, [layers])
 
   return <div ref={stageRef} className="vp-stage" data-mode={mode} />
 }

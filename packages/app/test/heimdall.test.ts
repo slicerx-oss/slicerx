@@ -69,7 +69,7 @@ function entry(id: string, name: string) {
 describe('heimdall in the app', () => {
   it('holds Print back on a hit and only warns on a close call', () => {
     set({ plate: [entry('tall', 'Tall'), entry('low', 'Low')], slice: { status: 'done', result: result([hit, close]), stale: false } })
-    expect(printBlock(get())).toBe('heimdall found a collision on this plate. See it in Preview, apply a fix or change the plate, and slice again.')
+    expect(printBlock(get())).toBe('heimdall found a collision on this plate. See it in Slice, apply a fix or change the plate, and slice again.')
     set({ slice: { status: 'done', result: result([close]), stale: false } })
     expect(printBlock(get())).toBeNull()
     set({ slice: { status: 'idle' } })
@@ -130,7 +130,7 @@ describe('heimdall in the app', () => {
       collisions: [hit, close],
       objectNames: { tall: 'Tall', low: 'Low' },
     })
-    expect(r.errors).toContain('The gantry hits Tall, layer 3. Tall is 48.0 mm tall. The gantry clears 40.0 mm above the nozzle, and it passes over Tall while Low prints, layers 3 to 4. Fix it in Preview and slice again.')
+    expect(r.errors).toContain('The gantry hits Tall, layer 3. Tall is 48.0 mm tall. The gantry clears 40.0 mm above the nozzle, and it passes over Tall while Low prints, layers 3 to 4. Fix it in Slice and slice again.')
     expect(r.warnings).toContain("Low passes inside the profile's margin around Tall. The nozzle comes within 18.0 mm of it, where the profile asks for 40 mm; the head's own shape clears it, layers 3 to 4.")
     // One short line on the sheet, the numbers behind Details.
     expect(noteOf(r.warnings.find((w) => w.startsWith('Low passes'))!).text).toBe("Low passes inside the profile's margin around Tall.")

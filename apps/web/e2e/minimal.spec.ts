@@ -6,7 +6,7 @@ import { expect, test, viewportReady } from './fixtures'
 
 const INTERACTIVE = 'button, a[href], input, select, textarea, [role=radio], [role=switch], [role=slider], [role=tab], [role=menuitem]'
 
-async function open(page: Page, workspace: 'prepare' | 'preview'): Promise<void> {
+async function open(page: Page, workspace: string): Promise<void> {
   await page.addInitScript((ws) => {
     sessionStorage.setItem('sx-e2e', '1')
     localStorage.setItem('slicerx.prefs.v1', JSON.stringify({ workspace: ws, pilot: { mode: 'off' } }))
@@ -61,10 +61,8 @@ test('The plate tab with an object selected shows 38 controls or fewer, Simple m
   expect(list.length).toBeLessThanOrEqual(38)
 })
 
-test('Preview shows 12 controls or fewer', async ({ page, isMobile }) => {
-  test.skip(isMobile, 'Desktop width')
+test('a saved Preview tab opens Slice, with no Preview tab in the bar', async ({ page }) => {
   await open(page, 'preview')
-  const list = await visibleControls(page)
-  console.log('preview', list.length, list.join(' | '))
-  expect(list.length).toBeLessThanOrEqual(12)
+  await expect(page.locator('.sx-tab[aria-current=page]')).toHaveText('Slice')
+  await expect(page.locator('.sx-tab', { hasText: 'Preview' })).toHaveCount(0)
 })

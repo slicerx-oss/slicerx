@@ -78,6 +78,19 @@ export function tab(page: Page, id: string): Locator {
   return page.locator(`.sx-tab[data-tab="${id}"]`)
 }
 
+/** How many slices have finished so far. Read it before starting a slice, and pass it to `sliced`. */
+export async function sliceCount(page: Page): Promise<number> {
+  return Number((await page.locator('.studio').getAttribute('data-slices')) ?? 0)
+}
+
+/**
+ * Slice showing the toolpaths of a slice of the plate as it is now: where a finished slice lands, now that there is
+ * no Preview tab. With `after` (from `sliceCount`), only a slice that finished since then counts.
+ */
+export function sliced(page: Page, after?: number): Locator {
+  return page.locator(`.studio[data-layers][data-slice="current"]${after === undefined ? '' : `:not([data-slices="${after}"])`}`)
+}
+
 /** What the look calls that tab right now, for the buttons and groups that carry its name. */
 export async function tabName(page: Page, id: string): Promise<string> {
   return (await tab(page, id).getAttribute('aria-label')) ?? id

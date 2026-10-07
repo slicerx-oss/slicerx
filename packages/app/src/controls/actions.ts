@@ -34,7 +34,7 @@ export const ACTION_LABEL: Record<KeyAction, { label: string; group: ActionGroup
   'edit.paste': { label: 'Paste', group: 'Prepare' },
   'edit.duplicate': { label: 'Duplicate', group: 'Prepare' },
   'object.printable': { label: 'Toggle printable for the selected objects', group: 'Prepare' },
-  'workspace.toggle': { label: 'Switch between the plate and Preview', group: 'Global' },
+  'workspace.toggle': { label: 'Switch between toolpaths and solid models', group: 'Global' },
   'model.mode': { label: 'Switch between Design and Slice', group: 'Global' },
   slice: { label: 'Slice the plate', group: 'Global' },
   export: { label: 'Export the sliced plate', group: 'Global' },
@@ -47,14 +47,15 @@ export const ACTION_LABEL: Record<KeyAction, { label: string; group: ActionGroup
   'help.shortcuts': { label: 'Show this list', group: 'Global' },
 }
 
-/** An action's name as shown: the plate tab is called what the active look calls it. `tab` is that name. */
-export function actionLabel(action: KeyAction, tab: string): string {
-  return action === 'workspace.toggle' ? `Switch between ${tab} and Preview` : ACTION_LABEL[action].label
+/** An action's name as shown. `tab` is the look's name for the plate tab; no label names it now. */
+export function actionLabel(action: KeyAction, _tab?: string): string {
+  return ACTION_LABEL[action].label
 }
 
 /** A group's heading as shown. The group keys stay as they are; the Prepare group takes the tab's name. */
 export function groupLabel(group: ActionGroup, tab: string): string {
-  return group === 'Prepare' ? tab : group
+  // Preview's keys work on the sliced layers in Slice; the group key stays.
+  return group === 'Prepare' ? tab : group === 'Preview' ? 'Layers' : group
 }
 
 export const GROUPS: readonly ActionGroup[] = ['Global', 'Prepare', 'Views', 'Preview']

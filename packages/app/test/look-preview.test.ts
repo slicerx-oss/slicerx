@@ -11,7 +11,6 @@ import { cardLine } from '../src/first-run/slicer-step'
 
 const ws = [
   { id: 'prepare', label: 'Slice', icon: 'slice' as const, component: null },
-  { id: 'preview', label: 'Preview', icon: 'preview' as const, component: null },
   { id: 'library', label: 'Vault', icon: 'library' as const, component: null },
   { id: 'printers', label: 'Printers', icon: 'printer' as const, component: null },
 ]
@@ -29,7 +28,7 @@ describe('setup preview', () => {
 
   it('says what changed in plain words, with the real keys', () => {
     const bambu = preview('bambu-studio')
-    expect(bambu.notes[0]).toMatchObject({ title: 'Printers is named Device', tab: 'printers', target: 'tab', detail: 'As in Bambu Studio, right after Preview.' })
+    expect(bambu.notes[0]).toMatchObject({ title: 'Printers is named Device', tab: 'printers', target: 'tab', detail: 'As in Bambu Studio, right after Slice.' })
     expect(bambu.notes[1]).toMatchObject({ title: 'Mod+G slices the plate', target: 'slice' })
     expect(bambu.notes[2]).toMatchObject({ title: 'Two-finger scroll zooms', target: 'plate' })
     const orca = preview('orcaslicer')
@@ -62,7 +61,7 @@ describe('setup preview', () => {
       expect(p.modes).toEqual([...layout.modes])
       expect(p.slice).toBe(keymapFor(id).slice)
     }
-    expect(preview('bambu-studio').tabs.map((t) => t.label)).toEqual(['Slice', 'Preview', 'Device', 'Vault'])
+    expect(preview('bambu-studio').tabs.map((t) => t.label)).toEqual(['Slice', 'Device', 'Vault'])
     expect(preview('prusaslicer').tabs.some((t) => t.renamed)).toBe(false)
     expect(preview('slicerx').tabs.some((t) => t.renamed)).toBe(false)
     expect(preview('slicerx').sidebar).toEqual(['Printer', 'Filament', 'Objects', 'Print settings'])

@@ -16,11 +16,10 @@ export interface ActiveWorkspace {
 }
 
 /** Tab order. Workspaces a build does not have are skipped; unknown ones go last. */
-const ORDER = ['prepare', 'preview', 'feed', 'library', 'printers', 'pilot']
+const ORDER = ['prepare', 'feed', 'library', 'printers', 'pilot']
 
 const BASE: ActiveWorkspace[] = [
   { id: 'prepare', label: 'Slice', icon: 'slice', component: null },
-  { id: 'preview', label: 'Preview', icon: 'preview', component: null },
   { id: 'library', label: 'My models', icon: 'library', component: null },
 ]
 

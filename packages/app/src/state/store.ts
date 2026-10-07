@@ -34,6 +34,7 @@ import type { SendOptionId } from '../send/options'
 import type { PrintSheetAsk } from '../send/print-sheet'
 import { EASY_DEFAULTS, type FirstRunState, type LookAndFeelChoice } from '@slicerx/contracts'
 import { DEFAULT_THEME_IDS, THEME_FONT_CHOICE, type FontChoice, type ThemeFile, type ThemeIds } from '@slicerx/ui/theme'
+import { setTool, toolStore } from '../plate/tools'
 import { createStore, useStore } from 'zustand'
 import { normalizeEasy } from '../lib/easy-values'
 import { GENERIC_BED } from '../adapters/generic-bed'
@@ -186,6 +187,8 @@ export interface AppState {
   modelMode: ModelMode
   /** The mode the first tab opens in on launch (Settings > Look and feel, first run). Changing it never moves the open session. */
   modelModeDefault: ModelMode
+  /** How Slice shows the slice: solid models, layer lines on them, or the toolpaths in their place (the default). */
+  sliceLook: SliceLook
   /** Expanded (true) or collapsed to an icon rail (false), per workspace and side. */
   rails: Prefs['rails']
   commandOpen: boolean
@@ -229,6 +232,8 @@ export interface AppState {
   /** Bumped on every camera command so choosing the same view twice still moves the camera. */
   cameraSeq: number
   slice: SliceState
+  /** Slices finished this session, so a check can tell a new slice from the one already on screen. */
+  slicesDone: number
   preview: PreviewBuffers | null
   colorMode: ColorMode
   /** The person chose the toolpath colors (the Color by menu, a command, a warning); a new slice keeps their choice. */
@@ -523,6 +528,7 @@ export const appStore = createStore<AppState>()(() => ({
   workspace: prefs.workspace,
   modelMode: prefs.modelModeDefault ?? 'slice',
   modelModeDefault: prefs.modelModeDefault ?? 'slice',
+  sliceLook: prefs.sliceLook ?? 'toolpaths',
   rails: prefs.rails,
   commandOpen: false,
   recents: prefs.recents,
@@ -553,6 +559,7 @@ export const appStore = createStore<AppState>()(() => ({
   camera: 'iso',
   cameraSeq: 0,
   slice: { status: 'idle' },
+  slicesDone: 0,
   preview: null,
   colorMode: 'feature',
   colorModePicked: false,
@@ -667,13 +674,14 @@ function noAutoSliceDefault(): boolean {
 }
 
 
-const PERSISTED = ['workspace', 'modelModeDefault', 'rails', 'recents', 'appearance', 'sidebarFolds', 'showToolhead', 'playbackSpeed', 'followNozzle', 'easy', 'goal', 'printerId', 'scheme', 'lookAndFeel', 'themeFollowsSystem', 'themeIds', 'userThemes', 'themeCache', 'fonts', 'settingsMode', 'tooltips', 'autoSlice', 'cadTools', 'electricity', 'printerNozzles', 'printerExtruders', 'handPrinters', 'bays', 'printerBays', 'printersView', 'easyTouched', 'paneSizes', 'queue', 'spoolLinks', 'presetSync', 'firstRun', 'crashReports', 'motion', 'agreement', 'installId', 'setupPilotOff', 'noPrinter', 'pilot', 'sendChoices', 'dryMarks', 'activePresets'] as const satisfies readonly (keyof AppState)[]
+const PERSISTED = ['workspace', 'modelModeDefault', 'sliceLook', 'rails', 'recents', 'appearance', 'sidebarFolds', 'showToolhead', 'playbackSpeed', 'followNozzle', 'easy', 'goal', 'printerId', 'scheme', 'lookAndFeel', 'themeFollowsSystem', 'themeIds', 'userThemes', 'themeCache', 'fonts', 'settingsMode', 'tooltips', 'autoSlice', 'cadTools', 'electricity', 'printerNozzles', 'printerExtruders', 'handPrinters', 'bays', 'printerBays', 'printersView', 'easyTouched', 'paneSizes', 'queue', 'spoolLinks', 'presetSync', 'firstRun', 'crashReports', 'motion', 'agreement', 'installId', 'setupPilotOff', 'noPrinter', 'pilot', 'sendChoices', 'dryMarks', 'activePresets'] as const satisfies readonly (keyof AppState)[]
 
 appStore.subscribe((s, prev) => {
   if (PERSISTED.some((k) => s[k] !== prev[k])) {
     savePrefs({
       workspace: s.workspace,
       modelModeDefault: s.modelModeDefault,
+      sliceLook: s.sliceLook,
       rails: s.rails,
       recents: s.recents,
       appearance: s.appearance,
@@ -774,7 +782,22 @@ export function pickColorMode(colorMode: ColorMode): void {
 }
 
 export function setWorkspace(ws: Workspace): void {
+  if (ws === 'preview') return showSliced()
   if (get().workspace !== ws) set({ workspace: ws })
+}
+
+export type SliceLook = 'solid' | 'print' | 'toolpaths'
+
+/** Slice is showing the sliced toolpaths: the layer slider, playback and the legend are live. */
+export function showsLayers(s: Pick<AppState, 'workspace' | 'modelMode' | 'sliceLook' | 'preview'> = get()): boolean {
+  return s.workspace === 'prepare' && s.modelMode === 'slice' && s.sliceLook === 'toolpaths' && s.preview !== null
+}
+
+/** What opening Preview used to do: Slice, showing the toolpaths. A tool that works on the solid models (painting, brim ears, lay on face) ends, as it did on the way to Preview. */
+export function showSliced(): void {
+  if (['paint', 'brim', 'face'].includes(toolStore.getState().tool)) setTool('move')
+  const s = get()
+  if (s.workspace !== 'prepare' || s.modelMode !== 'slice' || s.sliceLook !== 'toolpaths') set({ workspace: 'prepare', modelMode: 'slice', sliceLook: 'toolpaths' })
 }
 
 export type ModelMode = 'slice' | 'design'

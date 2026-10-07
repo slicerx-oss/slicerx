@@ -30,7 +30,7 @@ export function PreviewPlates() {
           const st = status(on, slice, p.id)
           return (
             <li key={p.id}>
-              <button type="button" className="pv-plate" aria-current={on ? 'true' : undefined} onClick={() => switchPlate(p.id)} {...tipAttrs({ title: p.name, body: on ? 'This plate is in view.' : 'Show this plate in Preview.' })}>
+              <button type="button" className="pv-plate" aria-current={on ? 'true' : undefined} onClick={() => switchPlate(p.id)} {...tipAttrs({ title: p.name, body: on ? 'This plate is in view.' : 'Show this plate.' })}>
                 <PlateThumb objects={p.objects} bed={bed} size={52} />
                 <span className="pv-plate-name">
                   <span className="sx-mono">{i + 1}</span> {p.name}

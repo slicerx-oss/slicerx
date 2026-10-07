@@ -22,7 +22,6 @@ const WANT: readonly [LookId, string][] = [
 
 const WORKSPACES = [
   { id: 'prepare', label: 'Slice', icon: 'slice' as const, component: null },
-  { id: 'preview', label: 'Preview', icon: 'preview' as const, component: null },
   { id: 'printers', label: 'Printers', icon: 'printer' as const, component: null },
 ]
 
@@ -37,16 +36,17 @@ describe('the name of the first tab follows the look', () => {
 
   it('keeps the other names and falls back to the id', () => {
     const slicerx = resolvePreset('slicerx').layout
-    expect(tabLabel(slicerx, 'preview')).toBe('Preview')
+    expect(tabLabel(slicerx, 'library')).toBe('Vault')
     expect(tabLabel(resolvePreset('bambu-studio').layout, 'printers')).toBe('Device')
     expect(tabLabel(slicerx, 'something-new')).toBe('something-new')
   })
 
   it.each(WANT)('the shortcut texts use the name for %s: %s', (_id, name) => {
-    expect(actionLabel('workspace.toggle', name)).toBe(`Switch between ${name} and Preview`)
+    expect(actionLabel('workspace.toggle', name)).toBe('Switch between toolpaths and solid models')
     expect(groupLabel('Prepare', name)).toBe(name)
     // Other groups and actions keep their own text.
-    expect(groupLabel('Preview', name)).toBe('Preview')
+    // The layer keys are listed as Layers: there is no Preview tab.
+    expect(groupLabel('Preview', name)).toBe('Layers')
     expect(actionLabel('slice', name)).toBe('Slice the plate')
   })
 })
@@ -66,7 +66,7 @@ describe('Settings > Controls', () => {
     const groups = [...el.querySelectorAll('[role="group"]')].map((g) => g.getAttribute('aria-label'))
     expect(groups).toContain(`${name} shortcuts`)
     if (name !== 'Prepare') expect(groups).not.toContain('Prepare shortcuts')
-    expect(el.textContent).toContain(`Switch between ${name} and Preview`)
+    expect(el.textContent).toContain('Switch between toolpaths and solid models')
     root.unmount()
   })
 })

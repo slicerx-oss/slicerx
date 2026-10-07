@@ -22,15 +22,15 @@ export function onControl(target: EventTarget | null): boolean {
 
 /**
  * Which command the look binds to this key press, if any. A bare key (Space for the command bar
- * in the OrcaSlicer style) is left alone on a focused control, on key repeat and in Preview, where
- * Space plays the layers.
+ * in the OrcaSlicer style) is left alone on a focused control, on key repeat and while Slice shows
+ * the toolpaths, where Space plays the layers.
  */
-export function lookCommandFor(e: KeyboardEvent, map: Keymap, ctx: { workspace: string; onControl: boolean }): LookCommand | null {
+export function lookCommandFor(e: KeyboardEvent, map: Keymap, ctx: { layers: boolean; onControl: boolean }): LookCommand | null {
   for (const [action, command] of PAIRS) {
     const chord = map[action]
     if (!chord || !matchShortcut(e, chord)) continue
     const bare = !/(^|\+)(Mod|Alt)\+/.test(chord)
-    if (bare && (ctx.onControl || e.repeat || ctx.workspace === 'preview')) return null
+    if (bare && (ctx.onControl || e.repeat || ctx.layers)) return null
     return command
   }
   return null

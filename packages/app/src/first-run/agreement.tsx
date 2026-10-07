@@ -97,7 +97,7 @@ export function Agreement() {
 
               <div className="fra-points">
                 <Point icon="bug" title="It still needs heavy testing">
-                  <p>Features are unfinished and some will break. Settings, presets and project files can change from one build to the next. Check the sliced G-code in Preview before you print it.</p>
+                  <p>Features are unfinished and some will break. Settings, presets and project files can change from one build to the next. Check the sliced toolpaths in Slice before you print it.</p>
                 </Point>
                 <Point icon="printer" title="Watch your printer">
                   <p>

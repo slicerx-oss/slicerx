@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// Prepare and Preview share one viewport, so switching between them never
-// rebuilds the scene. The side panes change with the mode.
+// The plate tab: Design and Slice share one viewport, so switching never rebuilds the scene; the panes around it
+// change with the mode. Slice shows the slice in place (toolpaths by default), with the layer dock and the slice summary.
 import { lazy, Suspense, useEffect, useRef, type CSSProperties } from 'react'
-import { Button, Icon } from '@slicerx/ui'
 import { RenderMenu, ViewMenu } from './view-menus'
 import { useLayout, useLookChoice } from '../first-run/look'
 import { registerCommands } from '../commands/registry'
@@ -15,8 +14,8 @@ import { PlateToolbar } from './prepare/plate-toolbar'
 import { PlateList } from './prepare/plate-list'
 import { useHost } from '../host'
 import { SidePane, type PaneSection } from '../shell/pane'
-import { seedExamplePlate, slicePlate } from '../state/actions'
-import { get, useApp } from '../state/store'
+import { seedExamplePlate } from '../state/actions'
+import { get, showsLayers, useApp } from '../state/store'
 import { ViewportHost } from '../viewport/viewport-host'
 import { LayerStrip } from './layer-strip'
 import { ZoneLegend } from './zone-legend'
@@ -27,9 +26,11 @@ import { useGcodeView } from './preview/gcode-file'
 import { trackPlateSlices } from './preview/plate-slices'
 import { PreviewPlates } from './preview/preview-plates'
 import { railKey, useModelMode } from '../state/model-mode'
-import { setTool, toolStore } from '../plate/tools'
+import { setTool, toolStore, useTool } from '../plate/tools'
 import { warmFullEngine } from '../geom/full-engine'
 import { useBoundValues } from './prepare/object-tools'
+import { SliceLookSwitch } from './prepare/slice-look'
+import { SliceProgress } from './slice-progress'
 
 const PREPARE_LEFT: PaneSection[] = [
   { id: 'printer', icon: 'printer', label: 'Printer' },
@@ -57,9 +58,8 @@ const NornLayer = lazy(() => import('../norn/norn-layer').then((m) => ({ default
 // The G-code line view loads when it is first opened.
 const GcodePanel = lazy(() => import('./preview/gcode-panel').then((m) => ({ default: m.GcodePanel })))
 
-export function Studio({ mode }: { mode: 'prepare' | 'preview' }) {
+export function Studio() {
   const host = useHost()
-  const slice = useApp((s) => s.slice)
   const hasPreview = useApp((s) => s.preview !== null)
   const nornOn = useApp((s) => s.norn.pick !== null || s.norn.before !== null)
   const gcodeOn = useGcodeView((s) => s.panel)
@@ -72,8 +72,16 @@ export function Studio({ mode }: { mode: 'prepare' | 'preview' }) {
   const side = layout.sidebar.side
   const sliceInSidebar = layout.primaryAction.placement === 'sidebar-footer'
   const modelMode = useModelMode()
-  useBoundValues(mode === 'prepare')
-  const design = mode === 'prepare' && modelMode === 'design'
+  useBoundValues(true)
+  const design = modelMode === 'design'
+  // Slice shows the sliced toolpaths in place of the models (the default look); the layer dock, legend and color menu come with them.
+  // Painting, brim ears and lay on face work on the solid models, so the layers step aside while one is on.
+  const plateTool = useTool()
+  const surfaceTool = plateTool === 'paint' || plateTool === 'brim' || plateTool === 'face'
+  const layers = useApp((s) => showsLayers(s)) && !design && !surfaceTool
+  // Whether the slice on screen is the plate as it is now: tests and styles read it from the studio.
+  const sliceState = useApp((s) => (s.slice.status === 'done' ? (s.slice.stale ? 'stale' : 'current') : s.slice.status))
+  const slicesDone = useApp((s) => s.slicesDone)
   const other = side === 'left' ? 'right' : 'left'
 
   // Painting, brim ears and lay on face are print setup: they close when Design opens.
@@ -107,10 +115,9 @@ export function Studio({ mode }: { mode: 'prepare' | 'preview' }) {
   }, [host])
 
   const selected = plate[0]
-  const busy = plateLoading || slice.status === 'running'
 
   return (
-    <div className="studio" data-mode={mode} data-model-mode={design ? 'design' : undefined} data-sidebar={side} style={{ '--w-settings': `${layout.sidebar.width}px` } as CSSProperties}>
+    <div className="studio" data-mode="prepare" data-layers={layers || undefined} data-slice={sliceState} data-slices={slicesDone} data-model-mode={design ? 'design' : undefined} data-sidebar={side} style={{ '--w-settings': `${layout.sidebar.width}px` } as CSSProperties}>
       {design ? (
         <Suspense fallback={<div className="shelf" aria-hidden="true" />}>
           <Shelf />
@@ -122,24 +129,20 @@ export function Studio({ mode }: { mode: 'prepare' | 'preview' }) {
             <DesignLeft />
           </Suspense>
         </SidePane>
-      ) : mode === 'prepare' ? (
+      ) : (
         <SidePane key={`prepare-${side}`} side={side} ws="prepare" label="Printer and settings" sections={PREPARE_LEFT} width={layout.sidebar.width} {...(sliceInSidebar ? { footer: <SliceBlock label={layout.primaryAction.label} compact /> } : {})}>
           <PrepareLeft layout={layout} />
         </SidePane>
-      ) : null}
+      )}
 
-      <section className="vp" aria-label={mode === 'prepare' ? 'Plate' : 'Preview'}>
-        <ViewportHost mode={mode} />
-        {busy ? (
-          <div className="busy" aria-hidden="true">
-            <i />
-          </div>
-        ) : null}
+      <section className="vp" aria-label="Plate">
+        <ViewportHost layers={layers} />
+        <SliceProgress />
+        {design || !hasPreview ? null : <SliceLookSwitch />}
         <div className="hud hud-top">
           <div className="hud-col">
-            {mode === 'prepare' ? (
-              <RenderMenu />
-            ) : hasPreview ? (
+            <RenderMenu />
+            {layers ? (
               <Legend />
             ) : null}
           </div>
@@ -148,51 +151,35 @@ export function Studio({ mode }: { mode: 'prepare' | 'preview' }) {
           </div>
         </div>
 
-        {mode === 'prepare' ? (
-          <div className="hud hud-bl">
-            {design || layout.plateList === 'sidebar' ? null : <PlateList layout={layout} />}
-            {design ? null : (
-              <div className="platechip sx-overlay">
-                <b>{plateName}</b>
-                <span>{selected ? selected.name : plateLoading ? 'Loading' : 'Empty'}</span>
-                {plate.length > 1 ? <span>+{plate.length - 1}</span> : null}
-              </div>
-            )}
-            {selected ? (
-              <div className="dims sx-overlay sx-mono" aria-label="Model size">
-                {selected.handle.bboxMm.map((v) => v.toFixed(1)).join(' x ')} mm
-              </div>
-            ) : null}
-          </div>
-        ) : null}
-
-        {mode === 'preview' && !hasPreview ? (
-          <div className="vp-empty">
-            <div>
-              <Icon name="slice" />
-              <b>{slice.status === 'running' ? 'Slicing' : slice.status === 'error' ? 'The slice failed' : 'Nothing sliced yet'}</b>
-              <p>{slice.status === 'error' ? slice.message : 'Slice the plate to see its toolpaths here, layer by layer.'}</p>
-              {slice.status !== 'running' && plate.length > 0 ? (
-                <Button size="sm" variant="primary" icon="slice" onClick={() => void slicePlate(host)}>
-                  Slice {plateName}
-                </Button>
-              ) : null}
+        <div className="hud hud-bl">
+          {design || layout.plateList === 'sidebar' ? null : <PlateList layout={layout} />}
+          {design ? null : (
+            <div className="platechip sx-overlay">
+              <b>{plateName}</b>
+              <span>{selected ? selected.name : plateLoading ? 'Loading' : 'Empty'}</span>
+              {plate.length > 1 ? <span>+{plate.length - 1}</span> : null}
             </div>
-          </div>
-        ) : null}
-        {mode === 'prepare' && !design ? <PlateToolbar layout={layout} /> : null}
-        {mode === 'prepare' && !design && !sliceInSidebar ? (
+          )}
+          {selected ? (
+            <div className="dims sx-overlay sx-mono" aria-label="Model size">
+              {selected.handle.bboxMm.map((v) => v.toFixed(1)).join(' x ')} mm
+            </div>
+          ) : null}
+        </div>
+
+        {design ? null : <PlateToolbar layout={layout} />}
+        {!design && !sliceInSidebar ? (
           <div className="slice-float sx-overlay">
             <SliceBlock label={layout.primaryAction.label} compact />
           </div>
         ) : null}
-        {mode === 'preview' && hasPreview ? <LayerDock /> : null}
-        {mode === 'preview' && hasPreview && gcodeOn ? (
+        {layers ? <LayerDock /> : null}
+        {layers && gcodeOn ? (
           <Suspense fallback={null}>
             <GcodePanel />
           </Suspense>
         ) : null}
-        {mode === 'preview' && hasPreview && nornOn ? (
+        {layers && nornOn ? (
           <Suspense fallback={null}>
             <NornLayer />
           </Suspense>
@@ -200,7 +187,7 @@ export function Studio({ mode }: { mode: 'prepare' | 'preview' }) {
         {design ? null : (
           <>
             <LayerStrip />
-            <ZoneLegend mode={mode} />
+            <ZoneLegend layers={layers} />
           </>
         )}
       </section>
@@ -211,10 +198,8 @@ export function Studio({ mode }: { mode: 'prepare' | 'preview' }) {
             <DesignRight />
           </Suspense>
         </SidePane>
-      ) : null}
-
-      {mode === 'preview' ? (
-        <SidePane key="preview-right" side="right" ws="preview" label="Slice summary and filament" sections={manyPlates ? [PLATES_SECTION, ...PREVIEW_RIGHT] : PREVIEW_RIGHT} width={312}>
+      ) : hasPreview ? (
+        <SidePane key={`sliced-${other}`} side={other} ws="preview" label="Slice summary and filament" sections={manyPlates ? [PLATES_SECTION, ...PREVIEW_RIGHT] : PREVIEW_RIGHT} width={312}>
           <PreviewPlates />
           <PreviewLeft />
           <PreviewRight />

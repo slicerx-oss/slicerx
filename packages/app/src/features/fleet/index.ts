@@ -17,7 +17,7 @@ function printerCommands(host: Host, p: PrinterInfo, s: PrinterStatus): CommandS
       title: `Print the plate on ${p.name} (${p.model})`,
       section: 'printers',
       keywords: ['send', 'start', 'queue', p.vendor, p.model],
-      workspace: 'preview',
+      workspace: 'prepare',
       tool: { permission: 'start' },
       enabled: () => get().slice.status === 'done' && (s.state === 'idle' || s.state === 'finished'),
       run: () => sendToPrinter(host, p),

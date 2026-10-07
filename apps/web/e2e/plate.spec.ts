@@ -2,7 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 // Plate tools on the plate tab: numeric transform fields, scale to size, undo and redo, tool keys.
 import { type Page } from '@playwright/test'
-import { expect, plateReady, tab, tabName, test } from './fixtures'
+import { expect, plateReady, sliceCount, sliced, tab, tabName, test } from './fixtures'
 
 /**
  * The G-code the printer runs. Files for Bambu Lab printers open with the header and the full settings (hundreds
@@ -202,8 +202,9 @@ test('sending runs the preflight and needs the bed-clear check', async ({ page }
   // Slicing in the browser under a full parallel run can take a while.
   test.slow()
   await prepare(page)
+  const slices1 = await sliceCount(page)
   await page.getByRole('button', { name: 'Slice plate' }).click()
-  await expect(page.locator('.sx-tab[aria-current=page]')).toContainText('Preview', { timeout: 90_000 })
+  await expect(sliced(page, slices1)).toBeVisible({ timeout: 90_000 })
   await page.keyboard.press('ControlOrMeta+k')
   await page.keyboard.type('Print the plate on')
   const item = page.locator('.sx-palette-item', { hasText: 'Print the plate on' }).first()
@@ -316,6 +317,9 @@ test('the paint tool paints the object with a filament color, and undo takes it 
   // The panel shows the brush's state, not a stale one.
   await expect(panel.getByRole('radio', { name: /Filament 2/ })).toHaveAttribute('aria-checked', 'true')
   await page.locator('.obj-name', { hasText: 'Layered X' }).click()
+  // The view opens on the whole plate: the iso view (7) brings the model to the middle before painting it.
+  await page.keyboard.press('7')
+  await page.waitForTimeout(600)
   const box = await page.locator('.vp-canvas').first().boundingBox()
   if (!box) throw new Error('no canvas')
   const cx = box.x + box.width / 2
@@ -397,8 +401,9 @@ test('with mimir off the command bar does not offer it', async ({ page }) => {
 test('send can upload without starting: no bed-clear question, and the file name is fixed', async ({ page }) => {
   test.slow()
   await prepare(page)
+  const slices2 = await sliceCount(page)
   await page.getByRole('button', { name: 'Slice plate' }).click()
-  await expect(page.locator('.sx-tab[aria-current=page]')).toContainText('Preview', { timeout: 90_000 })
+  await expect(sliced(page, slices2)).toBeVisible({ timeout: 90_000 })
   await page.keyboard.press('ControlOrMeta+k')
   await page.keyboard.type('Print the plate on')
   await page.locator('.sx-palette-item', { hasText: 'Print the plate on' }).first().click()
@@ -463,8 +468,9 @@ test('seam paint changes where the seam lands in the sliced G-code', async ({ pa
   await prepare(page)
   const fs = await import('node:fs')
   const sliceAndExport = async (): Promise<string> => {
+    const slices3 = await sliceCount(page)
     await page.getByRole('button', { name: 'Slice plate' }).click()
-    await expect(page.locator('.sx-tab[aria-current=page]')).toContainText('Preview', { timeout: 90_000 })
+    await expect(sliced(page, slices3)).toBeVisible({ timeout: 90_000 })
     await page.keyboard.press('ControlOrMeta+k')
     await page.keyboard.type('Export G-code')
     const [download] = await Promise.all([page.waitForEvent('download'), page.locator('.sx-palette-item', { hasText: /^Export G-code/ }).first().click()])
@@ -478,6 +484,9 @@ test('seam paint changes where the seam lands in the sliced G-code', async ({ pa
   await panel.getByRole('radio', { name: 'Seam' }).click()
   await panel.getByRole('radiogroup', { name: 'Brush' }).getByRole('radio', { name: 'Fill', exact: true }).click()
   await page.locator('.obj-name', { hasText: 'Layered X' }).click()
+  // The view opens on the whole plate: bring the model to the middle of the view before painting it.
+  await page.keyboard.press('z')
+  await page.waitForTimeout(600)
   const box = await page.locator('.vp-canvas').first().boundingBox()
   if (!box) throw new Error('no canvas')
   const cx = box.x + box.width / 2
@@ -548,8 +557,9 @@ test('a pressure advance line test exports its own G-code, and an input shaping 
     return d
   }
   const sliceAndExport = async (): Promise<string> => {
+    const slices4 = await sliceCount(page)
     await page.getByRole('button', { name: 'Slice plate' }).click()
-    await expect(page.locator('.sx-tab[aria-current=page]')).toContainText('Preview', { timeout: 90_000 })
+    await expect(sliced(page, slices4)).toBeVisible({ timeout: 90_000 })
     await page.keyboard.press('ControlOrMeta+k')
     await page.keyboard.type('Export G-code')
     const [download] = await Promise.all([page.waitForEvent('download'), page.locator('.sx-palette-item', { hasText: /^Export G-code/ }).first().click()])
@@ -639,8 +649,9 @@ test('a part takes its own setting: it is listed under the part only, and the sl
   await prepare(page)
   const fs = await import('node:fs')
   const gramsOf = async (): Promise<number> => {
+    const slices5 = await sliceCount(page)
     await page.getByRole('main').getByRole('button', { name: /^Slice/ }).first().click()
-    await expect(page.locator('.sx-tab[aria-current=page]')).toContainText('Preview', { timeout: 90_000 })
+    await expect(sliced(page, slices5)).toBeVisible({ timeout: 90_000 })
     const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Export G-code' }).click()])
     const text = fs.readFileSync(await download.path(), 'utf8')
     await tab(page, 'prepare').click()
@@ -684,8 +695,9 @@ test('sleipnir is on by default in the layer height picker and changes the layer
   await page.getByRole('menuitem', { name: 'Sphere' }).first().click()
   await expect(page.locator('.obj-name')).toHaveCount(1)
   const layers = async (): Promise<number> => {
+    const slices6 = await sliceCount(page)
     await page.getByRole('main').getByRole('button', { name: /^Slice/ }).first().click()
-    await expect(page.locator('.sx-tab[aria-current=page]')).toContainText('Preview', { timeout: 90_000 })
+    await expect(sliced(page, slices6)).toBeVisible({ timeout: 90_000 })
     const text = await page.locator('[data-section="result"]').innerText()
     const n = Number(/Sliced (\d+) layers/.exec(text)?.[1])
     await tab(page, 'prepare').click()
@@ -705,8 +717,9 @@ test('queue for later uploads and waits; a queued plate is started from Printers
   test.skip(isMobile, 'Runs at desktop width')
   test.slow()
   await prepare(page)
+  const slices7 = await sliceCount(page)
   await page.getByRole('button', { name: 'Slice plate' }).click()
-  await expect(page.locator('.sx-tab[aria-current=page]')).toContainText('Preview', { timeout: 90_000 })
+  await expect(sliced(page, slices7)).toBeVisible({ timeout: 90_000 })
   await page.keyboard.press('ControlOrMeta+k')
   await page.keyboard.type('Print the plate on')
   await page.locator('.sx-palette-item', { hasText: 'Print the plate on' }).first().click()
@@ -756,8 +769,9 @@ test('a slot links to a Spoolman spool, and the plate can be subtracted from it 
   await spools.nth(1).getByRole('button').click()
   await expect(spools.nth(1)).toHaveAttribute('aria-selected', 'true')
   await dialog.getByRole('button', { name: 'Done' }).click()
+  const slices8 = await sliceCount(page)
   await page.getByRole('button', { name: 'Slice plate' }).click()
-  await expect(page.locator('.sx-tab[aria-current=page]')).toContainText('Preview', { timeout: 90_000 })
+  await expect(sliced(page, slices8)).toBeVisible({ timeout: 90_000 })
   await page.getByRole('button', { name: 'Record use in Spoolman' }).click()
   const approve = page.locator('dialog.approve-dialog[open]')
   await expect(approve).toContainText('Subtract this print from your spools in Spoolman?')
@@ -768,8 +782,9 @@ test('send shows each filament on its printer slot as text when every filament h
   test.skip(isMobile, 'Runs at desktop width')
   test.slow()
   await prepare(page)
+  const slices9 = await sliceCount(page)
   await page.getByRole('button', { name: 'Slice plate' }).click()
-  await expect(page.locator('.sx-tab[aria-current=page]')).toContainText('Preview', { timeout: 90_000 })
+  await expect(sliced(page, slices9)).toBeVisible({ timeout: 90_000 })
   await page.keyboard.press('ControlOrMeta+k')
   await page.keyboard.type('Print the plate on')
   await page.locator('.sx-palette-item', { hasText: 'Print the plate on' }).first().click()
@@ -789,8 +804,9 @@ test('send to several printers walks each one through its own send step', async 
   test.skip(isMobile, 'Runs at desktop width')
   test.slow()
   await prepare(page)
+  const slices10 = await sliceCount(page)
   await page.getByRole('button', { name: 'Slice plate' }).click()
-  await expect(page.locator('.sx-tab[aria-current=page]')).toContainText('Preview', { timeout: 90_000 })
+  await expect(sliced(page, slices10)).toBeVisible({ timeout: 90_000 })
   await page.getByRole('button', { name: 'Printers', exact: true }).click()
   await page.getByRole('button', { name: 'Several' }).click()
   const pick = page.getByRole('dialog', { name: 'Print on several printers' })
@@ -845,8 +861,9 @@ test('pause, color change and custom G-code are set on the layer slider and land
   })
   await prepare(page)
   const fs = await import('node:fs')
+  const slices11 = await sliceCount(page)
   await page.getByRole('button', { name: 'Slice plate' }).click()
-  await expect(page.locator('.sx-tab[aria-current=page]')).toContainText('Preview', { timeout: 120_000 })
+  await expect(sliced(page, slices11)).toBeVisible({ timeout: 120_000 })
   const slider = page.locator('#pv-layer')
   await slider.fill('20')
   await slider.click({ button: 'right' })
@@ -866,8 +883,9 @@ test('pause, color change and custom G-code are set on the layer slider and land
   await expect(page.locator('.layer-mark')).toHaveCount(3)
   // The marks go into the next slice, at their layers.
   await tab(page, 'prepare').click()
+  const slices12 = await sliceCount(page)
   await page.getByRole('main').getByRole('button', { name: /^Slice/ }).first().click()
-  await expect(page.locator('.sx-tab[aria-current=page]')).toContainText('Preview', { timeout: 120_000 })
+  await expect(sliced(page, slices12)).toBeVisible({ timeout: 120_000 })
   const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Export G-code' }).click()])
   const text = fs.readFileSync(await download.path(), 'utf8')
   expect(text).toContain('M117 Swap the lid')
@@ -915,8 +933,9 @@ for (const printer of [
     await page.getByRole('button', { name: 'Change', exact: true }).click()
     await page.getByRole('list', { name: 'Choose a printer' }).getByRole('button', { name: new RegExp(printer.name) }).click()
     await expect(page.locator('.printer-name')).toContainText(printer.name)
+    const slices13 = await sliceCount(page)
     await page.getByRole('main').getByRole('button', { name: /^Slice/ }).first().click()
-    await expect(page.locator('.sx-tab[aria-current=page]')).toContainText('Preview', { timeout: 120_000 })
+    await expect(sliced(page, slices13)).toBeVisible({ timeout: 120_000 })
     // No warning about the G-code: the linter let the shipped text through.
     await expect(page.locator('.warns li').filter({ hasText: /G-code|lint|blocked|refused/i })).toHaveCount(0)
     const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Export G-code' }).click()])
@@ -938,8 +957,9 @@ test('the nozzle size is chosen per printer, shows on the printer card, and the 
   await expect(sizes.getByRole('radio', { name: '0.4 mm' })).toHaveAttribute('aria-checked', 'true')
   await sizes.getByRole('radio', { name: '0.6 mm' }).click()
   await expect(sizes.getByRole('radio', { name: '0.6 mm' })).toHaveAttribute('aria-checked', 'true')
+  const slices14 = await sliceCount(page)
   await page.getByRole('main').getByRole('button', { name: /^Slice/ }).first().click()
-  await expect(page.locator('.sx-tab[aria-current=page]')).toContainText('Preview', { timeout: 120_000 })
+  await expect(sliced(page, slices14)).toBeVisible({ timeout: 120_000 })
   const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Export G-code' }).click()])
   const text = fs.readFileSync(await download.path(), 'utf8')
   // The 0.6 mm nozzle's lines: 1.05 times the nozzle, not the 0.42 of a 0.4 mm nozzle.
@@ -1014,15 +1034,17 @@ test('brim ears: click the model to add ears, they print as discs on the first l
   await page.keyboard.press('Delete')
   await expect(panel.getByTestId('brim-ear-count')).toHaveText(new RegExp(`${generated - 1} ears?`))
   await expect(page.locator('.obj-name', { hasText: 'Layered X' })).toBeVisible()
+  const slices15 = await sliceCount(page)
   await page.getByRole('main').getByRole('button', { name: /^Slice/ }).first().click()
-  await expect(page.locator('.sx-tab[aria-current=page]')).toContainText('Preview', { timeout: 120_000 })
+  await expect(sliced(page, slices15)).toBeVisible({ timeout: 120_000 })
   const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Export G-code' }).click()])
   const text = fs.readFileSync(await download.path(), 'utf8')
   const mark = text.includes('\n; CHANGE_LAYER\n') ? '; CHANGE_LAYER' : ';LAYER_CHANGE'
   const firstLayer = text.slice(text.indexOf(mark), text.indexOf(mark, text.indexOf(mark) + 1))
   expect(firstLayer).toMatch(/;\s*(?:TYPE|FEATURE):\s*Brim/)
-  // Remove all clears them.
+  // Remove all clears them. The slice showed the toolpaths and ended the brim tool; open it again.
   await tab(page, 'prepare').click()
+  await page.getByRole('toolbar', { name: 'Plate tools' }).getByRole('button', { name: 'Brim ears' }).click()
   await panel.getByRole('button', { name: 'Remove all' }).click()
   await expect(panel.getByTestId('brim-ear-count')).toHaveText(/No ears yet/)
 })
@@ -1046,8 +1068,9 @@ test('the G-code carries the real date and local time: the date variables in the
     return { year: d.getFullYear(), month: d.getMonth() + 1, day: d.getDate(), hour: d.getHours() }
   })
   const before = await stamp()
+  const slices16 = await sliceCount(page)
   await page.getByRole('main').getByRole('button', { name: /^Slice/ }).first().click()
-  await expect(page.locator('.sx-tab[aria-current=page]')).toContainText('Preview', { timeout: 120_000 })
+  await expect(sliced(page, slices16)).toBeVisible({ timeout: 120_000 })
   const after = await stamp()
   const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Export G-code' }).click()])
   const text = fs.readFileSync(await download.path(), 'utf8')
@@ -1074,8 +1097,9 @@ test('a two-color plate on a Bambu printer gets a prime tower from the printer p
   await page.getByRole('button', { name: 'Change', exact: true }).click()
   await page.getByRole('list', { name: 'Choose a printer' }).getByRole('button', { name: /Bay 2/ }).click()
   // Layered X has two parts, on the printer's AMS slots A1 and A2 (black and dark gray, the measured pair #000000 to #545454: 236 plus the printer minimum).
+  const slices17 = await sliceCount(page)
   await page.getByRole('main').getByRole('button', { name: /^Slice/ }).first().click()
-  await expect(page.locator('.sx-tab[aria-current=page]')).toContainText('Preview', { timeout: 120_000 })
+  await expect(sliced(page, slices17)).toBeVisible({ timeout: 120_000 })
   const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Export G-code' }).click()])
   const text = fs.readFileSync(await download.path(), 'utf8')
   // The preset's tower reaches the slice: the engine prints it and changes tools. The matrix values are checked in test/filament.test.ts.

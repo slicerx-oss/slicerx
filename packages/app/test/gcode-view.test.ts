@@ -211,11 +211,11 @@ describe('opening a G-code file', () => {
     ({ files: { read: async () => enc.encode(text).buffer } }) as unknown as Host
   const ref: FileRef = { id: 'f1', name: 'part.gcode', size: SAMPLE.length }
 
-  it('shows the file in Preview without a project and puts the slice back on close', async () => {
+  it('shows the file in Slice as toolpaths without a project and puts the slice back on close', async () => {
     set({ workspace: 'prepare', slice: { status: 'idle' }, preview: null, layerHi: 0 })
     await openGcodeFile(host(SAMPLE), ref)
     const s = get()
-    expect(s.workspace).toBe('preview')
+    expect(s).toMatchObject({ workspace: 'prepare', modelMode: 'slice', sliceLook: 'toolpaths' })
     expect(s.preview?.layerCount).toBe(2)
     expect(s.layerHi).toBe(2)
     expect(gcodeView.getState().file).toMatchObject({ name: 'part.gcode', lines: 32 })

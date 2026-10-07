@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { type Page } from '@playwright/test'
 import { command, openStudio } from './cad-helpers'
-import { expect, tab, test } from './fixtures'
+import { expect, sliced, tab, test } from './fixtures'
 
 type Sx = { getState(): { plate: { name: string }[]; slice: { status: string; stale?: boolean; error?: unknown; result?: { id: string } } }; setState(p: unknown): void }
 const state = (page: Page) => page.evaluate(() => (window as unknown as { __sx: Sx }).__sx.getState())
@@ -70,7 +70,7 @@ test('a two-color plate keeps its prime tower and the filament order reaches the
   await page.getByRole('list', { name: 'Choose a printer' }).getByRole('button', { name: /Bay 2/ }).click()
   const exportGcode = async (): Promise<string> => {
     await sliceDone(page)
-    await page.locator('.sx-tab', { hasText: 'Preview' }).click()
+    await expect(sliced(page)).toBeVisible()
     const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Export G-code' }).click()])
     const text = readFileSync(await download.path(), 'utf8')
     await tab(page, 'prepare').click()
