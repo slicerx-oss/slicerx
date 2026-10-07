@@ -211,7 +211,7 @@ function CreatorCard({ creator }: { creator: Creator }) {
 /** The uploader as a chip that opens their creator sheet. */
 function Uploader({ creator }: { creator: Creator }) {
   return (
-    <button type="button" className="lib-uploader" onClick={() => openCreator(creator.handle)} title={`${creator.displayName}, creator page`}>
+    <button type="button" className="lib-uploader" onClick={() => openCreator(creator.handle)}>
       <CreatorAvatar name={creator.displayName} url={creator.logoUrl} size="sm" />
       <span>{creator.displayName}</span>
     </button>
