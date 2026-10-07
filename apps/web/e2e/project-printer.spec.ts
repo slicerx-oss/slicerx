@@ -6,7 +6,7 @@
 // has objects, the project asks first. The project is made here: a 20 mm cube and Bambu Studio's settings form.
 import { readFileSync } from 'node:fs'
 import { expect, type Page } from '@playwright/test'
-import { plateReady, tab, test } from './fixtures'
+import { plateReady, sliceCount, sliced, tab, test } from './fixtures'
 import { projectZip } from './project-zip'
 
 const START = 'G28\nM290 Z0.02 ; baby step from the project\nM500\nG1 Z5 F3000\n'
@@ -46,8 +46,9 @@ async function choose(page: Page, open: () => Promise<void>, settings: Record<st
 }
 
 async function sliceAndExport(page: Page): Promise<string> {
+  const before = await sliceCount(page)
   await page.getByRole('button', { name: 'Slice plate' }).click()
-  await expect(page.locator('.sx-tab[aria-current=page]')).toContainText('Preview', { timeout: 120_000 })
+  await expect(sliced(page, before)).toBeVisible({ timeout: 120_000 })
   await page.keyboard.press('ControlOrMeta+k')
   await page.keyboard.type('Export G-code')
   const [download] = await Promise.all([page.waitForEvent('download'), page.locator('.sx-palette-item', { hasText: /^Export G-code/ }).first().click()])

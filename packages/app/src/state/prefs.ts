@@ -46,6 +46,8 @@ export interface Prefs {
   cadTools?: boolean | undefined
   /** The mode the first tab opens in: Slice or Design. */
   modelModeDefault?: 'slice' | 'design' | undefined
+  /** How Slice shows the slice: solid models, layer lines on them, or the toolpaths in their place. */
+  sliceLook?: 'solid' | 'print' | 'toolpaths' | undefined
   autoSlice?: boolean | undefined
   electricity?: { pricePerKwh: number; symbol: string } | undefined
   tooltips?: { enabled: boolean; media: boolean } | undefined
@@ -262,7 +264,8 @@ export function normalizePrefs(v: unknown): Prefs {
   const or = <T>(x: T | undefined, d: T): T => (x === undefined ? d : x)
   const opt = <K extends keyof Prefs>(key: K, x: Prefs[K] | undefined): Partial<Prefs> => (x === undefined ? {} : ({ [key]: x } as Partial<Prefs>))
   return {
-    workspace: or(workspace(r['workspace']), 'prepare'),
+    // There is no Preview tab any more: a saved Preview opens Slice, which shows the sliced plate.
+    workspace: or(workspace(r['workspace'] === 'preview' ? 'prepare' : r['workspace']), 'prepare'),
     rails: or(record(r['rails'], (k) => WORKSPACE.test(k), (x) => (isRec(x) ? { ...(bool(x['left']) !== undefined ? { left: bool(x['left'])! } : {}), ...(bool(x['right']) !== undefined ? { right: bool(x['right'])! } : {}) } : undefined)), {}),
     recents: or(list(r['recents'], 8, (x) => str(x, 80)), []),
     appearance: appearance(r['appearance'], r['toolpathPalette'] === 'colorblind'),
@@ -288,6 +291,7 @@ export function normalizePrefs(v: unknown): Prefs {
     ...opt('installId', typeof r['installId'] === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(r['installId']) ? r['installId'] : undefined),
     cadTools: or(bool(r['cadTools']), true),
     modelModeDefault: or(oneOf(r['modelModeDefault'], ['slice', 'design'] as const), 'slice'),
+    sliceLook: or(oneOf(r['sliceLook'], ['solid', 'print', 'toolpaths'] as const), 'toolpaths'),
     // Absent stays absent, so the store picks the default (browser tests turn it off for the session); a bad value reads as on.
     ...opt('autoSlice', r['autoSlice'] === undefined ? undefined : or(bool(r['autoSlice']), true)),
     ...opt('electricity', isRec(r['electricity']) && num(r['electricity']['pricePerKwh'], 0, 5) !== undefined && str(r['electricity']['symbol'], 4) ? { pricePerKwh: r['electricity']['pricePerKwh'] as number, symbol: r['electricity']['symbol'] as string } : undefined),

@@ -3,7 +3,7 @@
 // The prime tower's place: auto by default, a hand move turns auto off and the engine keeps the spot, auto snaps it back,
 // and a spot off the bed shows a note instead of an error.
 import { type Page } from '@playwright/test'
-import { expect, plateReady, tab, test } from './fixtures'
+import { expect, plateReady, sliceCount, sliced, tab, test } from './fixtures'
 
 interface Tower { x: number; y: number; width: number; depth: number; reason: string }
 type Sx = { getState(): { tower: { auto: boolean; x: number; y: number }; slice: { status: string; stale?: boolean; result?: { id: string; primeTower?: Tower } } } }
@@ -13,9 +13,10 @@ async function sliceAgain(page: Page): Promise<Tower> {
   const slice = () => page.evaluate(() => { const s = (window as unknown as { __sx: Sx }).__sx.getState().slice; return { status: s.status, stale: s.stale ?? false, id: s.result?.id ?? null } })
   const before = (await slice()).id
   await tab(page, 'prepare').click()
+  const slices1 = await sliceCount(page)
   await page.getByRole('main').getByRole('button', { name: /^Slice/ }).first().click()
   await expect.poll(async () => { const s = await slice(); return s.status === 'done' && !s.stale && s.id !== before }, { timeout: 120_000 }).toBe(true)
-  await expect(page.locator('.sx-tab[aria-current=page]')).toContainText('Preview', { timeout: 120_000 })
+  await expect(sliced(page, slices1)).toBeVisible({ timeout: 120_000 })
   await tab(page, 'prepare').click()
   return page.evaluate(() => (window as unknown as { __sx: Sx }).__sx.getState().slice.result!.primeTower!)
 }

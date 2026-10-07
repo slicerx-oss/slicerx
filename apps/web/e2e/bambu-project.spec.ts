@@ -4,7 +4,7 @@
 // tree_support_wall_count). It opens and slices with the real engine, and a value the engine still refuses is dropped
 // with a note instead of blocking the slice. The project is made here: a 20 mm cube and Bambu Studio's settings form.
 import { expect, type Page } from '@playwright/test'
-import { plateReady, test } from './fixtures'
+import { plateReady, sliceCount, sliced, test } from './fixtures'
 import { projectZip } from './project-zip'
 
 /** Bambu Studio's -1s as it writes them (every value a string), with a raft and supports on so they are used. */
@@ -41,9 +41,10 @@ async function openProject(page: Page, settings: Record<string, unknown>): Promi
   await expect(page.locator('.obj-name')).toHaveText(['Cube'], { timeout: 60_000 })
 }
 
-async function sliceToPreview(page: Page): Promise<void> {
+async function sliceToDone(page: Page): Promise<void> {
+  const before = await sliceCount(page)
   await page.getByRole('button', { name: 'Slice plate' }).click()
-  await expect(page.locator('.sx-tab[aria-current=page]')).toContainText('Preview', { timeout: 120_000 })
+  await expect(sliced(page, before)).toBeVisible({ timeout: 120_000 })
   await expect(page.getByText(/config key/)).toHaveCount(0)
 }
 
@@ -52,7 +53,7 @@ test("a Bambu Studio project's -1 values open and slice with no error", async ({
   test.slow()
   await open(page)
   await openProject(page, BAMBU)
-  await sliceToPreview(page)
+  await sliceToDone(page)
 })
 
 test('a project value the engine refuses is dropped with a note, and the plate still slices', async ({ page, isMobile }) => {
@@ -60,8 +61,9 @@ test('a project value the engine refuses is dropped with a note, and the plate s
   test.slow()
   await open(page)
   await openProject(page, { ...BAMBU, raft_expansion: '-3' })
+  const before = await sliceCount(page)
   await page.getByRole('button', { name: 'Slice plate' }).click()
   await expect(page.getByText(/Setting not imported from a1-mini\.3mf: Raft expansion/)).toBeVisible({ timeout: 120_000 })
-  await expect(page.locator('.sx-tab[aria-current=page]')).toContainText('Preview', { timeout: 120_000 })
+  await expect(sliced(page, before)).toBeVisible({ timeout: 120_000 })
   await expect(page.getByText(/config key/)).toHaveCount(0)
 })
