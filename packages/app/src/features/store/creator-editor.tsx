@@ -358,6 +358,8 @@ function EditorForm({ why, session, page, own }: { why: 'edit' | 'upload'; sessi
         toast(r.message, 'error')
         return
       }
+      // The upload flow checks for a page right away; it must see this one.
+      client.setQueryData(['library', 'my-creator', true], r.creator)
       await client.invalidateQueries({ queryKey: LIBRARY_KEY })
       void client.invalidateQueries({ queryKey: ['session'] })
       toast(page ? 'Creator page saved' : 'Creator page created', 'ok')
