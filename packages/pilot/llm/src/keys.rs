@@ -42,12 +42,40 @@ pub struct SystemKeySource;
 impl KeySource for SystemKeySource {
     fn keychain(&self, service: &str, account: &str) -> Option<String> {
         // Any keychain error (no item, access refused, no store) falls through to the
-        // environment. The error is dropped rather than reported, so it cannot leak.
-        keyring::Entry::new(service, account).ok()?.get_password().ok()
+        // environment. The error is dropped rather than reported, so it cannot leak. An item
+        // the user refused (macOS Deny) is not asked for again until it is written or removed.
+        let key = (service.to_owned(), account.to_owned());
+        if refused().lock().is_ok_and(|r| r.contains(&key)) {
+            return None;
+        }
+        match keyring::Entry::new(service, account).ok()?.get_password() {
+            Ok(v) => Some(v),
+            Err(keyring::Error::NoEntry) => None,
+            Err(_) => {
+                if let Ok(mut r) = refused().lock() {
+                    r.insert(key);
+                }
+                None
+            }
+        }
     }
 
     fn env(&self, name: &str) -> Option<String> {
         std::env::var(name).ok()
+    }
+}
+
+/// Keychain items whose read failed with something other than "no item" this session.
+fn refused() -> &'static std::sync::Mutex<std::collections::HashSet<(String, String)>> {
+    static REFUSED: std::sync::OnceLock<std::sync::Mutex<std::collections::HashSet<(String, String)>>> =
+        std::sync::OnceLock::new();
+    REFUSED.get_or_init(Default::default)
+}
+
+/// Asks for a refused item again, after it was written or removed.
+pub(crate) fn forget_refusal(service: &str, account: &str) {
+    if let Ok(mut r) = refused().lock() {
+        r.remove(&(service.to_owned(), account.to_owned()));
     }
 }
 
