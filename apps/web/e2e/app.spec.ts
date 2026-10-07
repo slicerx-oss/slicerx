@@ -2,7 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 // The main flows of the browser build, at desktop and phone widths.
 import { type Page } from '@playwright/test'
-import { COLD_START_MS, expect, plateReady, tab, tabName, test } from './fixtures'
+import { COLD_START_MS, expect, plateReady, sliceCount, sliced, tab, tabName, test } from './fixtures'
 
 async function open(page: Page, workspace: string): Promise<void> {
   // Seed the starting workspace once per test; a reload must keep what the app saved.
@@ -29,7 +29,7 @@ test('the reference plate loads on the plate tab', async ({ page }) => {
 
 test('Cmd+K opens from every workspace and lists at least 30 commands', async ({ page }) => {
   await open(page, 'prepare')
-  for (const id of ['prepare', 'preview', 'feed', 'printers']) {
+  for (const id of ['prepare', 'feed', 'printers']) {
     await tab(page, id).click()
     await page.keyboard.press('ControlOrMeta+k')
     await expect(page.getByRole('dialog', { name: 'Commands' })).toBeVisible()
@@ -54,11 +54,12 @@ test('free text in Cmd+K goes to the assistant dock', async ({ page }) => {
   await expect(page.locator('.mimir-dock')).toContainText('why is my first layer peeling')
 })
 
-test('Slice runs and Preview shows layers', async ({ page }) => {
+test('Slice runs and shows the layers in place', async ({ page }) => {
   await open(page, 'prepare')
   await plateReady(page)
+  const slices1 = await sliceCount(page)
   await page.getByRole('button', { name: 'Slice plate' }).click()
-  await expect(page.locator('.sx-tab[aria-current=page]')).toContainText('Preview', { timeout: 30_000 })
+  await expect(sliced(page, slices1)).toBeVisible({ timeout: 30_000 })
   await expect(page.getByRole('group', { name: 'Layers and moves' })).toBeVisible()
   await page.getByTestId('legend-color-by').click()
   await page.getByRole('menuitem', { name: 'Layer time' }).click()

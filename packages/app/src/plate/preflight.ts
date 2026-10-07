@@ -112,7 +112,7 @@ export function preflight(input: PreflightInput): Preflight {
   // heimdall: the head, gantry or tool changer would meet a printed part.
   const name = (id: string) => input.objectNames?.[id] ?? 'an object'
   for (const c of input.collisions ?? []) {
-    if (c.severity === 'hit') errors.push(`${collisionTitle(c, name)}, layer ${c.layer + 1}. ${collisionDetail(c, name)} Fix it in Preview and slice again.`)
+    if (c.severity === 'hit') errors.push(`${collisionTitle(c, name)}, layer ${c.layer + 1}. ${collisionDetail(c, name)} Fix it in Slice and slice again.`)
     else warnings.push(closeCallNote(c, name))
   }
 

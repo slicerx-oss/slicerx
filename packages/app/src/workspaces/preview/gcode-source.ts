@@ -59,8 +59,8 @@ export async function openGcodeFile(host: Host, ref: FileRef): Promise<void> {
     held = { key: `file:${ref.name}:${bytes.length}`, index: Promise.resolve(index) }
     filePreview = parsed.preview
     gcodeView.setState({ file: { name: ref.name, bytes: bytes.length, lines: index.count, timeS: parsed.timeS, filamentMm: parsed.filamentMm } })
-    set({ workspace: 'preview', slice: { status: 'idle' }, preview: parsed.preview, layerHi: parsed.preview.layerCount, layerLo: 1, moveCut: 1, norn: { ...s.norn, pick: null, before: null, ghost: false } })
-    // A slice of the plate takes Preview back; the file is let go.
+    set({ workspace: 'prepare', modelMode: 'slice', sliceLook: 'toolpaths', slice: { status: 'idle' }, preview: parsed.preview, layerHi: parsed.preview.layerCount, layerLo: 1, moveCut: 1, norn: { ...s.norn, pick: null, before: null, ghost: false } })
+    // A slice of the plate takes the view back; the file is let go.
     offWatch?.()
     offWatch = appStore.subscribe((st) => {
       if (st.preview !== filePreview) forgetFile()
