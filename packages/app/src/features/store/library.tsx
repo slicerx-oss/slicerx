@@ -9,14 +9,15 @@ import type { Creator, Listing, ListingCard } from '@slicerx/contracts'
 import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Button, Chip, Icon, Menu, MenuAnchor, MenuItem, Seg } from '@slicerx/ui'
-import { LibrarySwitch, openModelBytes, openSettings, setWorkspace, toast, useEdition, useHost } from '@slicerx/app'
+import { openModelBytes, openSettings, setWorkspace, toast, useEdition, useHost } from '@slicerx/app'
 import { DrawingArt } from './drawing-art'
 import { coverFor } from './art'
 import { CreatorEditorHost } from './creator-editor'
 import { count, CreatorAvatar, CreatorSheet, plural, printFacts, Sheet } from './creator-sheet'
-import { fetchModel, formatLabel } from './download'
+import { formatLabel } from './download'
+import { DownloadStatus, useModelFetch } from './download-status'
 import { CATEGORIES, DEFAULT_FILTER, setLibraryFilter, showsGrid, useLibraryFilter, type LibrarySort } from './filter'
-import { detailQuery, LIBRARY_KEY, listingsQuery, myCreatorQuery, newCreatorsQuery, rowQuery, savedCountQuery, useSession, useStore } from './queries'
+import { detailQuery, LIBRARY_KEY, listingsQuery, myCreatorQuery, newCreatorsQuery, rowQuery, useSession, useStore } from './queries'
 import { pickFeatured, ROWS, withoutFeatured, type RowId } from './rows'
 import { closeSheet, openCreator, openEditor, openListing, openReview, openUpload, resetSheets, useLibrarySheets } from './sheets'
 import { UploadHost } from './upload'
@@ -70,9 +71,27 @@ export function Library() {
   )
 }
 
-/** Community or Mine, the account menu and Upload. */
-function VaultBar() {
+/** Feed (everyone's designs) or Saved (the ones you bookmarked). */
+export function VaultSwitch() {
+  const filter = useLibraryFilter()
+  return (
+    <Seg<'feed' | 'saved'>
+      label="Vault"
+      size="sm"
+      value={filter.saved ? 'saved' : 'feed'}
+      onChange={(v) => setLibraryFilter({ saved: v === 'saved' })}
+      options={[
+        { value: 'feed', label: 'Feed' },
+        { value: 'saved', label: 'Saved' },
+      ]}
+    />
+  )
+}
+
+/** Feed or Saved, the account menu (your uploads, your creator page, sign out) and Upload. */
+export function VaultBar() {
   const store = useStore()
+  const client = useQueryClient()
   const { session } = useSession()
   const mine = useQuery(myCreatorQuery(store, Boolean(session)))
   const [menu, setMenu] = useState(false)
@@ -90,7 +109,7 @@ function VaultBar() {
 
   return (
     <div className="lib-bar">
-      <LibrarySwitch />
+      <VaultSwitch />
       <div className="lib-bar-tools">
         {session ? (
           <MenuAnchor>
@@ -99,13 +118,10 @@ function VaultBar() {
             </Button>
             <Menu open={menu} onClose={() => setMenu(false)} label="Account" align="end">
               <MenuItem icon="cloud-upload" onClick={close(() => openUpload('list'))}>
-                Uploads
-              </MenuItem>
-              <MenuItem icon="bookmark" onClick={close(() => setLibraryFilter({ saved: true }))}>
-                Saved
+                Your uploads
               </MenuItem>
               <MenuItem icon="creator" onClick={close(() => openEditor('edit'))}>
-                Creator page
+                Your creator page
               </MenuItem>
               {canReview(session.role) ? (
                 <MenuItem icon="queue-review" onClick={close(openReview)}>
@@ -114,6 +130,14 @@ function VaultBar() {
               ) : null}
               <MenuItem icon="settings" onClick={close(() => openSettings('account'))}>
                 Account settings
+              </MenuItem>
+              <MenuItem
+                icon="unlink"
+                onClick={close(() => {
+                  void store?.signOut().then(() => client.setQueryData(['session'], null))
+                })}
+              >
+                Sign out
               </MenuItem>
             </Menu>
           </MenuAnchor>
@@ -131,13 +155,10 @@ function VaultBar() {
   )
 }
 
-/** Search, Everything, Saved with its count, then the quick filters. They narrow everything below. */
+/** Search, Everything, then the quick filters. They narrow everything below, in Feed and in Saved. */
 function Filters({ text, setText }: { text: string; setText: (t: string) => void }) {
-  const store = useStore()
   const filter = useLibraryFilter()
-  const { session } = useSession()
-  const saved = useQuery(savedCountQuery(store, Boolean(session)))
-  const everything = !filter.saved && filter.category === 'all'
+  const everything = filter.category === 'all'
   return (
     <div className="lib-filters" role="toolbar" aria-label="Filter the Vault">
       <div className="search-in lib-search">
@@ -147,12 +168,8 @@ function Filters({ text, setText }: { text: string; setText: (t: string) => void
         </label>
         <input id="models-search" className="bare" type="search" placeholder="Search designs and creators" value={text} onChange={(e) => setText(e.currentTarget.value)} />
       </div>
-      <button type="button" className="lib-chip" aria-pressed={everything} onClick={() => setLibraryFilter({ saved: false, category: 'all' })}>
+      <button type="button" className="lib-chip" aria-pressed={everything} onClick={() => setLibraryFilter({ category: 'all' })}>
         Everything
-      </button>
-      <button type="button" className="lib-chip" aria-pressed={filter.saved} onClick={() => setLibraryFilter({ saved: !filter.saved })}>
-        <Icon name="bookmark" size={13} /> Saved
-        {saved.data ? <span className="lib-chip-n">{saved.data}</span> : null}
       </button>
       <span className="lib-sep" aria-hidden="true" />
       {CATEGORIES.filter((c) => c !== 'all').map((c) => (
@@ -329,22 +346,22 @@ function useLike(listing: Listing) {
   return { liked, busy, toggle }
 }
 
-/** Opens a design in Prepare. */
+/** Opens a design in Prepare. `dl` shows the download's progress, so Download in the same view shares it. */
 function useOpenInApp(item: ListingCard, onFetched?: (version: string, name: string) => void) {
   const store = useStore()
   const host = useHost()
   const { session } = useSession()
+  const dl = useModelFetch()
   const [busy, setBusy] = useState(false)
   const [needSignIn, setNeedSignIn] = useState(false)
-  const open = async () => {
+  const open = async (): Promise<void> => {
     if (!store) return
     setBusy(true)
     setNeedSignIn(false)
     try {
-      const r = await fetchModel(store, item.listing, fetch, Boolean(session?.creatorId && session.creatorId === item.creator.id))
-      if (!r.ok) {
-        if (r.reason === 'sign-in') setNeedSignIn(true)
-        else toast(r.message, 'error')
+      const r = await dl.run(item.listing, Boolean(session?.creatorId && session.creatorId === item.creator.id), () => void open())
+      if (!r || !r.ok) {
+        if (r?.reason === 'sign-in') setNeedSignIn(true)
         return
       }
       onFetched?.(r.version, r.name)
@@ -357,7 +374,9 @@ function useOpenInApp(item: ListingCard, onFetched?: (version: string, name: str
       setBusy(false)
     }
   }
-  return { open, busy, needSignIn }
+  // Signed out, a failed download also offers signing in.
+  const signIn = session ? undefined : () => setNeedSignIn(true)
+  return { open, busy, needSignIn, dl, signIn }
 }
 
 function StatIcons({ listing }: { listing: Listing }) {
@@ -428,6 +447,7 @@ function Featured({ item, weekly }: { item: ListingCard; weekly: boolean }) {
             {save.saved ? 'Saved' : 'Save'}
           </Button>
         </div>
+        <DownloadStatus state={openIn.dl.state} onCancel={openIn.dl.cancel} onRetry={openIn.dl.retry} onDismiss={openIn.dl.dismiss} onSignIn={openIn.signIn} />
       </div>
     </article>
   )
@@ -576,15 +596,14 @@ export function Detail({ item }: { item: ListingCard }) {
   if (p.time) facts.push(['Print time', p.time])
   if (p.grams) facts.push(['Filament', p.grams])
 
-  const download = async () => {
+  const download = async (): Promise<void> => {
     if (!store) return
     setBusy(true)
     setNeedSignIn(false)
     try {
-      const r = await fetchModel(store, listing, fetch, Boolean(session?.creatorId && session.creatorId === creator.id))
-      if (!r.ok) {
-        if (r.reason === 'sign-in') setNeedSignIn(true)
-        else toast(r.message, 'error')
+      const r = await openIn.dl.run(listing, Boolean(session?.creatorId && session.creatorId === creator.id), () => void download())
+      if (!r || !r.ok) {
+        if (r?.reason === 'sign-in') setNeedSignIn(true)
         return
       }
       onFetched(r.version, r.name)
@@ -641,6 +660,7 @@ export function Detail({ item }: { item: ListingCard }) {
             {like.liked ? 'Liked' : 'Like'}
           </Button>
         </div>
+        <DownloadStatus state={openIn.dl.state} onCancel={openIn.dl.cancel} onRetry={openIn.dl.retry} onDismiss={openIn.dl.dismiss} onSignIn={session ? undefined : () => setNeedSignIn(true)} />
       </div>
       {!version ? <p className="sx-small sx-muted">This model has no file yet.</p> : null}
       <button type="button" className="lib-more" onClick={() => openCreator(creator.handle)}>

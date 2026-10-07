@@ -10,3 +10,8 @@
 .si-providers { display: flex; flex-wrap: wrap; gap: 8px; }
 .si-sent { display: grid; gap: 8px; justify-items: start; }
 .si-sent p { margin: 0; color: var(--fg); }
+
+/* a sign-in link that came back and failed */
+.si-failed { padding: 8px 10px; border: 1px solid color-mix(in srgb, var(--red) 45%, var(--line)); border-radius: 8px; font-size: 13px; overflow-wrap: anywhere; }
+.si-failed b { color: var(--red); font-weight: 600; }
+.si-sent-actions { display: flex; flex-wrap: wrap; gap: 8px; }

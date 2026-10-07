@@ -79,18 +79,39 @@ pub async fn run(
             }
         }
         let wait = match backend.claim_scan(&cfg.id).await {
-            Ok(Some(job)) => match process(backend.as_ref(), &scanner, &job).await {
-                Ok(Processed::Unavailable) => cfg.unavailable_backoff,
-                Ok(_) => continue,
-                Err(e) => {
-                    eprintln!("sx-cloud scan {}: {e}", cfg.id);
-                    cfg.unavailable_backoff
+            Ok(Some(job)) => {
+                eprintln!(
+                    "sx-cloud scan {}: claimed version {} ({})",
+                    cfg.id, job.version_id, job.title
+                );
+                match process(backend.as_ref(), &scanner, &job).await {
+                    Ok(Processed::Unavailable) => cfg.unavailable_backoff,
+                    Ok(done) => {
+                        let verdict = if done == Processed::Clean {
+                            "clean"
+                        } else {
+                            "rejected"
+                        };
+                        eprintln!("sx-cloud scan {}: version {} {verdict}", cfg.id, job.version_id);
+                        continue;
+                    }
+                    Err(e) => {
+                        // Counted: a file that always fails is rejected on the third attempt
+                        // instead of going round the queue for ever.
+                        eprintln!("sx-cloud scan {}: version {}: {e}", cfg.id, job.version_id);
+                        if let Err(e) = backend.retry_scan(&job.version_id, &e.to_string()).await {
+                            eprintln!("sx-cloud scan {}: retry failed: {e}", cfg.id);
+                        }
+                        cfg.unavailable_backoff
+                    }
                 }
-            },
+            }
             Ok(None) => cfg.idle_poll,
             Err(e) => {
+                // A claim that failed after it was recorded is back in the queue already;
+                // wait as for a down scanner so a lasting fault does not spin.
                 eprintln!("sx-cloud scan {}: claim failed: {e}", cfg.id);
-                cfg.idle_poll
+                cfg.unavailable_backoff
             }
         };
         tokio::select! {
@@ -218,6 +239,7 @@ pub async fn process(backend: &dyn Backend, scanner: &Scanner, job: &ScanJob) ->
                 .first()
                 .cloned()
                 .unwrap_or_else(|| "the file failed the upload checks".to_owned());
+            eprintln!("sx-cloud scan: version {} refused: {reason}", job.version_id);
             let recorded = backend
                 .finish_scan(&job.version_id, refusal(report, &reason))
                 .await?;

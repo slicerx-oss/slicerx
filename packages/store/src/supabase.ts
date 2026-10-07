@@ -578,8 +578,9 @@ export function supabaseStore(sb: Db, conn?: Pick<SupabaseOptions, 'url' | 'anon
         const g = grantRow.safeParse(res.data)
         if (!g.success || !g.data.grant || !conn) return fail('unavailable', 'The download could not be started')
         const path = g.data.path.split('/').map(encodeURIComponent).join('/')
+        // The grant goes in the URL as well as the header: the hosted storage policy sees the URL (request.path).
         return ok({
-          url: `${conn.url.replace(/\/$/, '')}/storage/v1/object/authenticated/listing-files/${path}`,
+          url: `${conn.url.replace(/\/$/, '')}/storage/v1/object/authenticated/listing-files/${path}?sx_grant=${encodeURIComponent(g.data.grant)}`,
           headers: { apikey: conn.anonKey, Authorization: `Bearer ${conn.anonKey}`, 'x-sx-download-grant': g.data.grant },
           versionId: g.data.version_id,
           version: g.data.version,
