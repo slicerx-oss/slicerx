@@ -1,36 +1,41 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// The setup flow as a pure state machine: two or three screens, Back and Skip, leaving, and what is written.
-// React-free so every path is unit tested. See docs/first-run.md.
+// The setup flow as a pure state machine: the screens, Back and Skip, leaving, and what is written. Also
+// when a changed onboarding runs again. React-free so every path is unit tested. See docs/first-run.md.
 import type { FirstRunState, FirstRunStep, LookAndFeelChoice, LookId } from '@slicerx/contracts'
 import { ASSISTANT_NAME } from '@slicerx/pilot/name'
+import { ONBOARDING_VERSION, STEP_SINCE, type SetupStep } from './onboarding'
 
-/** Printer first, then the slicer the person comes from (stored as the look choice), then what the plate tab opens in (editions with modeling tools), then an optional mimir step. */
-export const SETUP_STEPS = ['printer', 'look', 'open', 'mimir'] as const
-export type SetupStep = (typeof SETUP_STEPS)[number]
+export { ONBOARDING_VERSION, SETUP_STEPS, STEP_SINCE, onboardingRerun, type SetupStep } from './onboarding'
 
 /** The screens without the mimir step, for editions without mimir and for people already connected. */
-export const BASE_STEPS: readonly SetupStep[] = ['printer', 'look']
+export const BASE_STEPS: readonly SetupStep[] = ['theme', 'printer', 'look']
 
-/** The screens for an edition: the open step only where the edition has modeling tools, mimir where it is offered. */
-export function setupSteps(o: { cad: boolean; mimir: boolean }): SetupStep[] {
-  return [...BASE_STEPS, ...(o.cad ? (['open'] as const) : []), ...(o.mimir ? (['mimir'] as const) : [])]
+/** The screens for an edition: the open step only where the edition has modeling tools, mimir where it is offered. With `since`, only the steps newer than that onboarding version. */
+export function setupSteps(o: { cad: boolean; mimir: boolean; since?: number }): SetupStep[] {
+  const all: SetupStep[] = [...BASE_STEPS, ...(o.cad ? (['open'] as const) : []), ...(o.mimir ? (['mimir'] as const) : [])]
+  if (o.since === undefined) return all
+  const newer = all.filter((s) => STEP_SINCE[s] > (o.since as number))
+  return newer.length ? newer : all
 }
 
 export type OpenIn = 'slice' | 'design'
 
 export const STEP_TITLES: Readonly<Record<SetupStep, string>> = {
+  theme: 'Theme',
   printer: 'Printer',
   look: 'Your slicer',
   open: 'Opens in',
   mimir: ASSISTANT_NAME,
 }
 
-/** Any stored or requested step name, mapped onto the screens in `steps`. Old names (welcome, cad, done) open the printer screen. */
+/** Any stored or requested step name, mapped onto the screens in `steps`. Old names (welcome, cad, done) open the first screen. */
 export function normalizeStep(step: string | null | undefined, steps: readonly SetupStep[] = BASE_STEPS): SetupStep {
-  if ((step === 'mimir' || step === 'pilot') && steps.includes('mimir')) return 'mimir'
-  if (step === 'open' && steps.includes('open')) return 'open'
-  return step === 'look' || step === 'open' ? 'look' : 'printer'
+  const first = steps[0] ?? 'theme'
+  if (step === 'pilot') return steps.includes('mimir') ? 'mimir' : first
+  if (step && (steps as readonly string[]).includes(step)) return step as SetupStep
+  if (step === 'open' && steps.includes('look')) return 'look'
+  return first
 }
 
 /** What the stored state knows about the printer. No secrets, ever. */
@@ -81,7 +86,7 @@ export type FlowEvent =
   | { type: 'finish' }
 
 export function initialFlow(step: SetupStep, look: LookAndFeelChoice, printer: SetupPrinter | null = null, steps: readonly SetupStep[] = BASE_STEPS, openIn: OpenIn = 'slice'): FlowState {
-  return { step: steps.includes(step) ? step : 'printer', steps, trail: [], look, lookAtEntry: step === 'look' ? look : null, lookPicked: false, printer, openIn, confirmLeave: false, closed: null }
+  return { step: steps.includes(step) ? step : (steps[0] ?? 'theme'), steps, trail: [], look, lookAtEntry: step === 'look' ? look : null, lookPicked: false, printer, openIn, confirmLeave: false, closed: null }
 }
 
 function go(s: FlowState, step: SetupStep): FlowState {
@@ -158,7 +163,7 @@ export function contractStep(step: SetupStep, steps: readonly SetupStep[] = BASE
 export function outcome(s: FlowState, now: string, prior: FirstRunState | null): { firstRun: FirstRunState; look: LookAndFeelChoice | null; printerId: string | null; openIn: OpenIn | null } {
   if (s.closed === 'finished') {
     return {
-      firstRun: { completedAt: now, step: 'done', look: s.look, printerId: s.printer?.printerId ?? null },
+      firstRun: { completedAt: now, step: 'done', look: s.look, printerId: s.printer?.printerId ?? prior?.printerId ?? null, version: ONBOARDING_VERSION },
       look: s.look,
       printerId: s.printer?.printerId ?? null,
       // Skip, use defaults keeps the default; finishing writes the choice when the open step was offered.
@@ -167,7 +172,8 @@ export function outcome(s: FlowState, now: string, prior: FirstRunState | null):
   }
   const look = s.lookPicked ? s.look : null
   return {
-    firstRun: { completedAt: prior?.completedAt ?? null, step: contractStep(s.step, s.steps), look: look ?? prior?.look ?? s.look, printerId: prior?.printerId ?? null },
+    // Leaving counts as having seen this onboarding: a rerun does not come back at the next launch. Setup stays open to finish from Settings.
+    firstRun: { completedAt: prior?.completedAt ?? null, step: contractStep(s.step, s.steps), look: look ?? prior?.look ?? s.look, printerId: prior?.printerId ?? null, version: ONBOARDING_VERSION },
     look,
     printerId: null,
     openIn: null,

@@ -11,7 +11,10 @@ export interface Prefs {
   workspace: string
   rails: Record<string, { left?: boolean; right?: boolean }>
   recents: string[]
+  /** Read once, for the move into appearance.colorVision. */
   toolpathPalette?: 'standard' | 'colorblind' | undefined
+  /** Settings > Look and feel: text, contrast, color vision, density and accent. */
+  appearance?: Appearance | undefined
   /** Preview draws the moving toolhead (the machine's fixed parts show either way). */
   showToolhead?: boolean | undefined
   /** Preview playback speed, times real time; the last choice is kept. */
@@ -165,11 +168,12 @@ function lookChoice(v: unknown): LookAndFeelChoice | undefined {
 function firstRun(v: unknown): FirstRunState | undefined {
   if (!isRec(v)) return undefined
   const completedAt = nullable(v['completedAt'], (x) => str(x, 40))
-  const step = oneOf(v['step'], ['look', 'printer', 'open', 'done'] as const)
+  const step = oneOf(v['step'], ['theme', 'look', 'printer', 'open', 'done'] as const)
   const look = lookChoice(v['look'])
   const printerId = nullable(v['printerId'], (x) => str(x, 80))
   if (completedAt === undefined || !step || !look || printerId === undefined) return undefined
-  return { completedAt, step, look, printerId }
+  const version = num(v['version'], 1, 1e6)
+  return { completedAt, step, look, printerId, ...(version !== undefined ? { version: Math.floor(version) } : {}) }
 }
 
 function easy(v: unknown): Prefs['easy'] | undefined {
@@ -260,7 +264,7 @@ export function normalizePrefs(v: unknown): Prefs {
     workspace: or(workspace(r['workspace'] === 'preview' ? 'prepare' : r['workspace']), 'prepare'),
     rails: or(record(r['rails'], (k) => WORKSPACE.test(k), (x) => (isRec(x) ? { ...(bool(x['left']) !== undefined ? { left: bool(x['left'])! } : {}), ...(bool(x['right']) !== undefined ? { right: bool(x['right'])! } : {}) } : undefined)), {}),
     recents: or(list(r['recents'], 8, (x) => str(x, 80)), []),
-    toolpathPalette: or(oneOf(r['toolpathPalette'], ['standard', 'colorblind'] as const), 'standard'),
+    appearance: appearance(r['appearance'], r['toolpathPalette'] === 'colorblind'),
     showToolhead: or(bool(r['showToolhead']), true),
     playbackSpeed: or((PLAYBACK_SPEEDS as readonly number[]).includes(r['playbackSpeed'] as number) ? (r['playbackSpeed'] as number) : undefined, DEFAULT_PLAYBACK_SPEED),
     followNozzle: or(bool(r['followNozzle']), false),
@@ -271,7 +275,7 @@ export function normalizePrefs(v: unknown): Prefs {
     lookAndFeel: or(nullable(r['lookAndFeel'], lookChoice), null),
     firstRun: or(nullable(r['firstRun'], firstRun), null),
     themeFollowsSystem: or(bool(r['themeFollowsSystem']), false),
-    ...opt('themeIds', isRec(r['themeIds']) && str(r['themeIds']['dark'], 40) && str(r['themeIds']['light'], 40) ? { dark: r['themeIds']['dark'] as string, light: r['themeIds']['light'] as string } : undefined),
+    ...opt('themeIds', isRec(r['themeIds']) && str(r['themeIds']['dark'], 40) && str(r['themeIds']['light'], 40) ? { dark: themeId(r['themeIds']['dark'] as string), light: themeId(r['themeIds']['light'] as string) } : undefined),
     ...opt('userThemes', Array.isArray(r['userThemes']) && r['userThemes'].length <= 64 ? (r['userThemes'] as unknown[]) : undefined),
     ...opt('fonts', isRec(r['fonts']) && str(r['fonts']['ui'], 40) && str(r['fonts']['mono'], 40) ? { ui: r['fonts']['ui'] as string, mono: r['fonts']['mono'] as string } : undefined),
     settingsMode: or(oneOf(r['settingsMode'], ['simple', 'advanced', 'expert', 'developer'] as const), 'simple'),
@@ -303,6 +307,37 @@ export function normalizePrefs(v: unknown): Prefs {
     spoolLinks: or(record(r['spoolLinks'], () => true, (x) => num(x)), {}),
     queue: or(list(r['queue'], 200, queueItem), []),
     pilot: or(nullable(r['pilot'], pilot), null),
+  }
+}
+
+/** The default theme's earlier ids (SlicerX dark and light, Nocturne), under its name now, Subban. Mirrors LEGACY_THEME_IDS in @slicerx/ui, kept here so prefs load without the theme bundle. */
+const THEME_ID_MOVES: Readonly<Record<string, string>> = { 'slicerx-dark': 'subban-dark', 'slicerx-light': 'subban-light', nocturne: 'subban-dark', 'nocturne-dark': 'subban-dark', 'nocturne-light': 'subban-light' }
+export const themeId = (id: string): string => THEME_ID_MOVES[id] ?? id
+
+export interface Appearance {
+  textSize: 'small' | 'default' | 'large' | 'larger'
+  fontWeight: 'light' | 'regular' | 'medium' | 'bold'
+  contrast: 'standard' | 'higher'
+  /** Status and meaning colors, toolpaths included, for red-green or blue-yellow color vision. */
+  colorVision: 'standard' | 'redgreen' | 'blueyellow'
+  density: 'compact' | 'comfortable' | 'roomy'
+  /** The interactive accent: the theme's own, or one of its palette colors. */
+  accent: 'theme' | 'blue' | 'cyan' | 'green' | 'pink' | 'orange'
+}
+
+export const DEFAULT_APPEARANCE: Appearance = { textSize: 'default', fontWeight: 'regular', contrast: 'standard', colorVision: 'standard', density: 'comfortable', accent: 'theme' }
+
+/** Each field on its own. The old toolpath palette switch becomes red-green color vision. */
+function appearance(v: unknown, colorblindToolpaths: boolean): Appearance {
+  const r: Rec = isRec(v) ? v : {}
+  const d = DEFAULT_APPEARANCE
+  return {
+    textSize: oneOf(r['textSize'], ['small', 'default', 'large', 'larger'] as const) ?? d.textSize,
+    fontWeight: oneOf(r['fontWeight'], ['light', 'regular', 'medium', 'bold'] as const) ?? d.fontWeight,
+    contrast: oneOf(r['contrast'], ['standard', 'higher'] as const) ?? d.contrast,
+    colorVision: oneOf(r['colorVision'], ['standard', 'redgreen', 'blueyellow'] as const) ?? (colorblindToolpaths ? 'redgreen' : d.colorVision),
+    density: oneOf(r['density'], ['compact', 'comfortable', 'roomy'] as const) ?? d.density,
+    accent: oneOf(r['accent'], ['theme', 'blue', 'cyan', 'green', 'pink', 'orange'] as const) ?? d.accent,
   }
 }
 

@@ -335,10 +335,10 @@ export function ViewportHost({ layers }: { layers: boolean }) {
       vp.setMode(modeRef.current)
       apply(prev, true)
       // The backdrop follows the theme, now and on every change.
-      const syncScene = () => vp.setTheme?.(viewportTheme(appStore.getState().toolpathPalette))
+      const syncScene = () => vp.setTheme?.(viewportTheme(appStore.getState().appearance.colorVision === 'standard' ? 'standard' : 'colorblind'))
       syncScene()
       offs.push(onThemeChange(syncScene))
-      offs.push(appStore.subscribe((s, p) => s.toolpathPalette !== p.toolpathPalette && syncScene()))
+      offs.push(appStore.subscribe((s, p) => s.appearance.colorVision !== p.appearance.colorVision && syncScene()))
       offs.push(appStore.subscribe((s) => apply(s, false)))
       // The selected printer's extruder areas come from its profile, loaded when the printer changes.
       let areasFor: string | null | undefined

@@ -7,7 +7,7 @@ import { startAutoSlice } from './state/auto-slice'
 import { QueueWatcher } from './queue/watcher'
 import { ProfileFollow } from './shell/profile-follow'
 import { Frame, keymapFor, setMotionPreference, ThemeProvider, ToastProvider, type Theme } from '@slicerx/ui'
-import { themeForScheme, themeFromFile } from '@slicerx/ui/theme'
+import { applyType, themeForScheme, themeFromFile } from '@slicerx/ui/theme'
 import '@slicerx/ui/styles.css'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
@@ -36,6 +36,7 @@ import { toolStore } from './plate/tools'
 import { startReadySignal } from './lib/ready-signal'
 import { startBugReports } from './bugs/reports'
 import { needsAgreement } from './first-run/agreement-check'
+import { onboardingRerun } from './first-run/onboarding'
 import { hasLegacySetupPrinters, withHandPrinters } from './lib/hand-printers'
 import './styles/fonts'
 import './styles/app.css'
@@ -77,7 +78,11 @@ export function SlicerXApp({ host, features = [], theme, edition = NEUTRAL, logo
   const userThemes = useApp((s) => s.userThemes)
   const folderThemes = useApp((s) => s.folderThemes)
   const fonts = useApp((s) => s.fonts)
-  const chosen = useMemo(() => themeFromFile(themeForScheme(scheme, themeIds, [...userThemes, ...folderThemes]), fonts), [scheme, themeIds, userThemes, folderThemes, fonts])
+  const contrast = useApp((s) => s.appearance.contrast)
+  const colorVision = useApp((s) => s.appearance.colorVision)
+  const textSize = useApp((s) => s.appearance.textSize)
+  const fontWeight = useApp((s) => s.appearance.fontWeight)
+  const chosen = useMemo(() => themeFromFile(themeForScheme(scheme, themeIds, [...userThemes, ...folderThemes]), fonts, { contrast, colorVision }), [scheme, themeIds, userThemes, folderThemes, fonts, contrast, colorVision])
   const active = theme ?? editionTheme(edition, scheme, chosen)
   const [client] = useState(() => new QueryClient({ defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false } } }))
   // The assistant off means off everywhere: no commands, no panel. Not yet connected keeps both, and the panel shows the connect step.
@@ -86,6 +91,9 @@ export function SlicerXApp({ host, features = [], theme, edition = NEUTRAL, logo
   // A pre-alpha build asks for the agreement before anything else, and catches crashes from the first frame.
   useState(() => {
     if (needsAgreement(edition, host, get().agreement)) set({ agreementOpen: true })
+    // A release that changed onboarding opens setup again: all of it, prefilled, before beta; only the new steps after.
+    const rerun = get().setup ? null : onboardingRerun(edition.release.stage, get().firstRun)
+    if (rerun) set({ setup: { step: 'welcome', rerun: true, ...rerun } })
   })
   // Printers added by hand join the host's printers; setup's old list moves into the store once.
   useState(() => {
@@ -96,6 +104,8 @@ export function SlicerXApp({ host, features = [], theme, edition = NEUTRAL, logo
   // Settings > Appearance > Motion, else the edition's default, on the root before paint (ui motion.ts)
   const motion = useApp((s) => s.motion) ?? edition.firstRun.defaultMotion ?? 'full'
   useLayoutEffect(() => setMotionPreference(motion), [motion])
+  // Settings > Look and feel > Text size and Font weight move the type tokens on the root
+  useLayoutEffect(() => applyType(textSize, fontWeight), [textSize, fontWeight])
   return (
     <HostContext value={host}>
       <EditionContext value={edition}>

@@ -11,10 +11,10 @@ const run = (s: FlowState, ...events: FlowEvent[]) => events.reduce(reduceFlow, 
 
 describe('the open step', () => {
   it('comes after the slicer screen in editions with the modeling tools, and not in the others', () => {
-    expect(setupSteps({ cad: true, mimir: false })).toEqual(['printer', 'look', 'open'])
-    expect(setupSteps({ cad: true, mimir: true })).toEqual(['printer', 'look', 'open', 'mimir'])
-    expect(setupSteps({ cad: false, mimir: false })).toEqual(['printer', 'look'])
-    expect(stepLabel('open', setupSteps({ cad: true, mimir: false })).text).toBe('Step 3 of 3, Opens in')
+    expect(setupSteps({ cad: true, mimir: false })).toEqual(['theme', 'printer', 'look', 'open'])
+    expect(setupSteps({ cad: true, mimir: true })).toEqual(['theme', 'printer', 'look', 'open', 'mimir'])
+    expect(setupSteps({ cad: false, mimir: false })).toEqual(['theme', 'printer', 'look'])
+    expect(stepLabel('open', setupSteps({ cad: true, mimir: false })).text).toBe('Step 4 of 4, Opens in')
   })
 
   it('goes forward and back through it, keeping the choice', () => {
