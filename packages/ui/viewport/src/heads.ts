@@ -115,19 +115,25 @@ function bambuX1(lidar: boolean): BuiltHead {
   return { group: g, sleeve: inlet(g, 88, 6), shadow: 30 }
 }
 
-/** A1 and A1 mini: a tall light gray head with the extruder window, the gray hotend housing and its clip under it. */
+/**
+ * A1 and A1 mini, estimated from Bambu's product photos: a low, wide light gray head (the hotend housing and its clip
+ * under it, the round extruder window in front) with the cable chain leaving its left side, link by link, for the
+ * frame.
+ */
 function bambuA1(): BuiltHead {
   const g = new Group()
   nozzle(g)
   g.add(
-    slab(graphite, -15, 15, -14, 12, 8, 20, 'housing', 2),
-    slab(steel, 15, 18, -10, 4, 9, 18, 'clip', 1),
-    slab(a1Gray, -19, 19, -14, 24, 20, 96, 'body', 4),
-    part(new CylinderGeometry(9, 9, 1, 40), deep, 0, -14.5, 76, 'window'),
-    part(new CylinderGeometry(5.5, 5.5, 1, 32), amber, 0, -15.5, 76, 'gear'),
-    slab(deep, -7, 7, -14.4, -14, 50, 52.5, 'label'),
+    slab(graphite, -15, 15, -14, 12, 8, 18, 'housing', 2),
+    slab(steel, 15, 18, -10, 4, 9, 17, 'clip', 1),
+    slab(a1Gray, -30, 30, -16, 22, 18, 60, 'body', 5),
+    part(new CylinderGeometry(9, 9, 1, 40), deep, 10, -16.5, 42, 'window'),
+    part(new CylinderGeometry(5.5, 5.5, 1, 32), amber, 10, -17.5, 42, 'gear'),
+    slab(deep, -22, -8, -16.4, -16, 44, 46.5, 'label'),
   )
-  return { group: g, sleeve: inlet(g, 96, 6), shadow: 22 }
+  // The cable chain: dark links stepping out and up from the left side.
+  for (let i = 0; i < 5; i++) g.add(slab(deep, -30 - 7 * (i + 1), -30 - 7 * i, -4, 14, 40 + 3 * i, 48 + 3 * i, 'cable chain', 1))
+  return { group: g, sleeve: inlet(g, 60, 6), shadow: 30 }
 }
 
 /** H2S: the H2 family head with one hotend: brushed cover over a black body, the nozzle display and the hot plate. */
