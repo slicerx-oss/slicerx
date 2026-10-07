@@ -17,7 +17,7 @@ const supabase = env['SLICERX_SUPABASE_URL'] && env['SLICERX_SUPABASE_ANON_KEY']
 // release touches, and the public half of the update signing key, made once on the release Mac and kept there
 // (apps/desktop/release/updates.md). Until the key is set the desktop app never looks for updates.
 const UPDATE_FEED = 'https://github.com/slicerx-oss/slicerx/releases/download/desktop-updates/latest.json'
-const UPDATE_PUBKEY = ''
+const UPDATE_PUBKEY = 'dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDdBQzI4RjU1QTRFNjlCRDgKUldUWW0rYWtWWS9DZWp6L1MvZTBSdDNwNlNOZEVLQWZRK0N4Uzg1dzJQeUdGRzJQZFdkQ3h5WVIK'
 
 export default defineEditionConfig({
   id: 'slicerx',

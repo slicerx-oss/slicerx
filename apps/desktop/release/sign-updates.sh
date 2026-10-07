@@ -38,3 +38,7 @@ for f in "$dir"/SlicerX_"$version"_*.app.tar.gz "$dir"/SlicerX_"$version"_*-setu
   signed=$((signed + 1))
 done
 [ "$signed" -gt 0 ] || { echo "sign-updates: no update bundles for $version in $dir" >&2; exit 1; }
+# every desktop platform updates itself, so a release missing one of its bundles stops here
+for kind in .app.tar.gz -setup.exe .msi .AppImage; do
+  ls "$dir"/SlicerX_"$version"_*"$kind" >/dev/null 2>&1 || { echo "sign-updates: no SlicerX_${version}_*$kind in $dir" >&2; exit 1; }
+done

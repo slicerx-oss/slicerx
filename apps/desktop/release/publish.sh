@@ -30,9 +30,13 @@ node "$here/make-manifest.mjs" "$dir" --version "$version" \
 (cd "$dir" && $sum SlicerX_* > SHA256SUMS.txt)
 (cd "$repo" && node "$here/whats-changed.mjs" --since "$since" --to "$commit" --json) > "$dir/whats-changed.json"
 updates=
+pubkey=$(node "$repo/packages/edition-config/src/cli.ts" resolve "$repo/editions/slicerx/edition.config.ts" |
+  node -e 'let s = ""; process.stdin.on("data", (d) => (s += d)).on("end", () => process.stdout.write(JSON.parse(s).release.updates?.pubkey ?? ""))')
+# with an update key set, every release carries updates for macOS, Windows and Linux; an unsigned folder stops here
+if [ -n "$pubkey" ] && ! ls "$dir"/SlicerX_"$version"_*.sig >/dev/null 2>&1; then
+  echo "the edition has an update key, but no update bundle in $dir is signed (sign-updates.sh)" >&2; exit 1
+fi
 if ls "$dir"/SlicerX_"$version"_*.sig >/dev/null 2>&1; then
-  pubkey=$(node "$repo/packages/edition-config/src/cli.ts" resolve "$repo/editions/slicerx/edition.config.ts" |
-    node -e 'let s = ""; process.stdin.on("data", (d) => (s += d)).on("end", () => process.stdout.write(JSON.parse(s).release.updates?.pubkey ?? ""))')
   [ -n "$pubkey" ] || { echo "update bundles are signed, but the edition config has no release.updates.pubkey" >&2; exit 1; }
   changes=$dir/whats-changed.json
   [ -f "$dir/changed.md" ] && changes=$dir/changed.md
