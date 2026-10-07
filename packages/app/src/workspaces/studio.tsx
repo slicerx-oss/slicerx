@@ -15,7 +15,7 @@ import { PlateToolbar } from './prepare/plate-toolbar'
 import { PlateList } from './prepare/plate-list'
 import { useHost } from '../host'
 import { SidePane, type PaneSection } from '../shell/pane'
-import { loadDefaultPlate, slicePlate } from '../state/actions'
+import { seedExamplePlate, slicePlate } from '../state/actions'
 import { get, useApp } from '../state/store'
 import { ViewportHost } from '../viewport/viewport-host'
 import { LayerStrip } from './layer-strip'
@@ -63,7 +63,7 @@ export function Studio({ mode }: { mode: 'prepare' | 'preview' }) {
 
   useEffect(() => {
     const s = get()
-    if (s.plate.length === 0 && !s.plateLoading) void loadDefaultPlate(host)
+    if (s.plate.length === 0 && !s.plateLoading) void seedExamplePlate(host)
   }, [host])
 
   // Each plate keeps its slice while another one is in view.
