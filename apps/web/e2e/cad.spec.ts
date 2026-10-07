@@ -5,8 +5,8 @@
 // face, and a saved project that brings history and dimensions back.
 import { readFileSync } from 'node:fs'
 import { type Page } from '@playwright/test'
-import { bounds, command, facePick, freshBox, height, openStudio, pick, placeAt, pointsAround, pushTop, roundWall, sketchAt, steps, toolPanel } from './cad-helpers'
-import { expect, test } from './fixtures'
+import { bounds, clickStepButton, command, facePick, freshBox, height, openStudio, pick, placeAt, pointsAround, pushTop, roundWall, sketchAt, steps, toolPanel } from './cad-helpers'
+import { expect, tab, test } from './fixtures'
 
 type Dim = { kind: string; value?: number }
 type Sx = { getState(): { plate: { id: string; name: string; dimensions?: Dim[]; history?: { steps: unknown[] } }[]; selection: string | null }; setState(p: unknown): void }
@@ -368,17 +368,17 @@ test('editing an earlier step replays the steps after it; suppress and delete wo
   expect(filleted).toBeGreaterThan(12)
 
   // Suppressing the pull drops it. The fillet's edge was on the pulled top, so that step breaks and says why.
-  await page.getByRole('button', { name: 'Suppress Pull 10 mm' }).click()
+  await clickStepButton(page, 'Pull 10 mm', 'Suppress Pull 10 mm')
   await expect.poll(() => steps(page), { timeout: 30_000 }).toEqual([{ name: 'Pull 10 mm', state: 'suppressed' }, { name: 'Fillet 2 mm', state: 'broken' }])
   await expect(page.locator('.cad-step[data-state=broken] .cad-step-why')).not.toBeEmpty()
   await expect.poll(() => height(page, id)).toBe(20)
-  await page.getByRole('button', { name: 'Turn Pull 10 mm back on' }).click()
+  await clickStepButton(page, 'Pull 10 mm', 'Turn Pull 10 mm back on')
   await expect.poll(() => steps(page), { timeout: 30_000 }).toEqual([{ name: 'Pull 10 mm', state: 'done' }, { name: 'Fillet 2 mm', state: 'done' }])
   await expect.poll(() => height(page, id), { timeout: 30_000 }).toBe(30)
   const withFillet = (await bounds(page, id)).triangles
 
   // Deleting the fillet leaves a square box 30 mm high: fewer triangles than with the round.
-  await page.getByRole('button', { name: 'Delete Fillet 2 mm' }).click()
+  await clickStepButton(page, 'Fillet 2 mm', 'Delete Fillet 2 mm')
   await expect.poll(() => steps(page), { timeout: 30_000 }).toEqual([{ name: 'Pull 10 mm', state: 'done' }])
   await expect.poll(async () => (await bounds(page, id)).triangles).toBeLessThan(withFillet)
   expect(await height(page, id)).toBe(30)
@@ -416,6 +416,8 @@ test('a saved project opens again with its history and dimensions', async ({ pag
   await keepHeight(page, id)
   await pushTop(page, id, 5)
   await expect.poll(() => steps(page)).toEqual([{ name: 'Pull 5 mm', state: 'done' }])
+  // Push and pull opened Design; Export is in Slice.
+  await tab(page, 'prepare').click()
   await page.getByRole('button', { name: 'Export', exact: true }).click()
   const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('menuitem', { name: /Save project/ }).click()])
   const bytes = [...readFileSync(await download.path())]
