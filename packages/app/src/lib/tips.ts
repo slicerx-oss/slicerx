@@ -53,6 +53,8 @@ export const TIPS = {
   'sketch.look': f('Look at the sketch', 'Turn the view square onto the sketch plane.'),
   'sketch.extrude': f('Extrude', 'Pull a sketch profile into a solid.'),
   'nav.printers': f('Printers', 'Open your printers and their status.'),
+  'mode.design': a('Design', 'Model parts: sketches, features and their history, on the same plate.', 'model.mode'),
+  'mode.slice': a('Slice', 'Set up the plate, printer and settings, then slice.', 'model.mode'),
   get 'nav.settings'() {
     return f('Settings', `Change how ${appName()} looks, behaves and connects.`)
   },

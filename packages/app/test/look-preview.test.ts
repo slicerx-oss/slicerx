@@ -10,7 +10,7 @@ import { lookPreview, mouseLine, previewTabs, sidebarSections } from '../src/fir
 import { cardLine } from '../src/first-run/slicer-step'
 
 const ws = [
-  { id: 'prepare', label: 'Prepare', icon: 'prepare' as const, component: null },
+  { id: 'prepare', label: 'Slice', icon: 'slice' as const, component: null },
   { id: 'preview', label: 'Preview', icon: 'preview' as const, component: null },
   { id: 'library', label: 'Vault', icon: 'library' as const, component: null },
   { id: 'printers', label: 'Printers', icon: 'printer' as const, component: null },
@@ -22,7 +22,7 @@ describe('setup preview', () => {
   it('labels the three things that matter most for each look', () => {
     expect(preview('bambu-studio').notes.map((n) => n.id)).toEqual(['tabs', 'slice', 'scroll'])
     expect(preview('orcaslicer').notes.map((n) => n.id)).toEqual(['tabs', 'palette', 'slice'])
-    expect(preview('prusaslicer').notes.map((n) => n.id)).toEqual(['tabs', 'slice', 'scroll'])
+    expect(preview('prusaslicer').notes.map((n) => n.id)).toEqual(['slice', 'scroll', 'object-drag'])
     // The SlicerX defaults name what is their own: no other look has these.
     expect(preview('slicerx').notes.map((n) => n.id)).toEqual(['slice', 'scroll', 'space-pan'])
   })
@@ -36,8 +36,8 @@ describe('setup preview', () => {
     expect(orca.notes[1]).toMatchObject({ title: 'Space opens the command bar', target: 'search' })
     expect(orca.palette).toBe('Space')
     const prusa = preview('prusaslicer')
-    expect(prusa.notes[0]).toMatchObject({ title: 'Prepare is named Plater', detail: 'As in PrusaSlicer, the first tab.' })
-    expect(prusa.notes[1]?.detail).toBe('Mod+G exports the G-code.')
+    expect(prusa.notes.map((n) => n.id)).not.toContain('tabs')
+    expect(prusa.notes[0]?.detail).toBe('Mod+G exports the G-code.')
     expect(prusa.more).toContain('0 shows the iso view')
     expect(preview('slicerx').notes[0]?.title).toBe('Mod+Enter slices the plate')
   })
@@ -62,8 +62,8 @@ describe('setup preview', () => {
       expect(p.modes).toEqual([...layout.modes])
       expect(p.slice).toBe(keymapFor(id).slice)
     }
-    expect(preview('bambu-studio').tabs.map((t) => t.label)).toEqual(['Prepare', 'Preview', 'Device', 'Vault'])
-    expect(preview('prusaslicer').tabs.find((t) => t.renamed)?.label).toBe('Plater')
+    expect(preview('bambu-studio').tabs.map((t) => t.label)).toEqual(['Slice', 'Preview', 'Device', 'Vault'])
+    expect(preview('prusaslicer').tabs.some((t) => t.renamed)).toBe(false)
     expect(preview('slicerx').tabs.some((t) => t.renamed)).toBe(false)
     expect(preview('slicerx').sidebar).toEqual(['Printer', 'Filament', 'Objects', 'Print settings'])
     const paint = (id: LookId) => preview(id).tools.find((t) => t.label === 'Paint')?.key
@@ -84,7 +84,7 @@ describe('setup preview', () => {
   it('writes card lines and the mouse line from the same notes and map', () => {
     expect(cardLine(preview('bambu-studio'))).toBe('Device tab, Mod+G to slice')
     expect(cardLine(preview('orcaslicer'))).toBe('Device tab, Space for commands')
-    expect(cardLine(preview('prusaslicer'))).toBe('Plater tab, Mod+R to slice')
+    expect(cardLine(preview('prusaslicer'))).toBe('Mod+R to slice, scroll to zoom')
     expect(cardLine(preview('slicerx'))).toBe('Start with the SlicerX defaults')
     expect(mouseLine(controlsPreset('bambu-studio'))).toBe('Left drag rotates, right or middle drag pans')
   })

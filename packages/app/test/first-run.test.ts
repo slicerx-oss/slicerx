@@ -169,7 +169,7 @@ describe('look and feel in the shell', () => {
     // Workspaces a preset leaves out keep their place at the end.
     expect(bambu.map((w) => w.id)).toContain('feed')
     const prusa = orderWorkspaces(ws, resolvePreset('prusaslicer').layout)
-    expect(prusa[0]?.label).toBe('Plater')
+    expect(prusa[0]?.label).toBe('prepare')
   })
 
   it('offers the same settings modes whichever slicer the person comes from', () => {

@@ -26,6 +26,7 @@ import { PreviewLeft, PreviewRight } from './preview/preview-panes'
 import { useGcodeView } from './preview/gcode-file'
 import { trackPlateSlices } from './preview/plate-slices'
 import { PreviewPlates } from './preview/preview-plates'
+import { useModelMode } from '../state/model-mode'
 
 const PREPARE_LEFT: PaneSection[] = [
   { id: 'printer', icon: 'printer', label: 'Printer' },
@@ -60,6 +61,7 @@ export function Studio({ mode }: { mode: 'prepare' | 'preview' }) {
   // The look and feel places the settings sidebar, its width, and the primary Slice action.
   const side = layout.sidebar.side
   const sliceInSidebar = layout.primaryAction.placement === 'sidebar-footer'
+  const design = useModelMode() === 'design'
 
   useEffect(() => {
     const s = get()
@@ -89,7 +91,7 @@ export function Studio({ mode }: { mode: 'prepare' | 'preview' }) {
   return (
     <div className="studio" data-mode={mode} data-sidebar={side} style={{ '--w-settings': `${layout.sidebar.width}px` } as CSSProperties}>
       {mode === 'prepare' ? (
-        <SidePane key={`prepare-${side}`} side={side} ws="prepare" label="Printer and settings" sections={PREPARE_LEFT} width={layout.sidebar.width} {...(sliceInSidebar ? { footer: <SliceBlock label={layout.primaryAction.label} compact /> } : {})}>
+        <SidePane key={`prepare-${side}`} side={side} ws="prepare" label={design ? 'Objects' : 'Printer and settings'} sections={PREPARE_LEFT} width={layout.sidebar.width} {...(sliceInSidebar ? { footer: <SliceBlock label={layout.primaryAction.label} compact /> } : {})}>
           <PrepareLeft layout={layout} />
         </SidePane>
       ) : null}

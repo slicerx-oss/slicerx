@@ -34,12 +34,15 @@ export interface TabsProps<K extends string> {
   active: K
   onChange?: (id: K) => void
   label?: string
+  /** A custom first entry, before the tabs (the app's Design | Slice pair). */
+  lead?: ReactNode
 }
 
 /** Top tabs with the gradient underline on the active one. Labels hide under 560px. */
-export function Tabs<K extends string>({ tabs, active, onChange, label = 'Workspaces' }: TabsProps<K>) {
+export function Tabs<K extends string>({ tabs, active, onChange, label = 'Workspaces', lead }: TabsProps<K>) {
   return (
     <nav className="sx-tabs" aria-label={label}>
+      {lead}
       {tabs.map((t) => {
         const current = t.id === active ? ('page' as const) : undefined
         const inner = (

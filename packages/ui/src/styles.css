@@ -325,11 +325,17 @@ button { cursor: pointer; }
 .sx-frame { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto; background: var(--ink-1); border: 1px solid var(--line-soft); border-radius: var(--r-lg); overflow: hidden; }
 .sx-frame-root { height: 100%; padding: var(--gutter); display: flex; flex-direction: column; }
 .sx-main { min-height: 0; overflow: auto; position: relative; }
-.sx-appbar { display: flex; align-items: center; gap: 22px; height: var(--h-bar); padding: 0 16px; border-bottom: 1px solid var(--line-soft); min-width: 0; }
+.sx-appbar { display: flex; align-items: center; gap: 26px; height: var(--h-bar); padding: 0 20px; border-bottom: 1px solid var(--line-soft); min-width: 0; }
 .sx-appbar .sx-brand .sx-brand-x svg { width: 15.5px; height: 15.5px; }
 .sx-tabs { display: flex; gap: 2px; height: 100%; overflow-x: auto; scrollbar-width: none; min-width: 0; }
 .sx-tab { display: flex; align-items: center; gap: 7px; height: 100%; padding: 0 10px; border: 0; background: none; color: var(--muted); font: 600 var(--fs-md) var(--f-body); position: relative; white-space: nowrap; text-decoration: none; }
 .sx-tab .sx-ic { width: 16px; height: 16px; }
+/* The first tab as a Design | Slice pair: two tabs with a thin divider (app shell/mode-tab.tsx). */
+.sx-modetab { display: flex; align-items: center; height: 100%; flex: none; }
+.sx-modetab-sep { width: 1px; height: 16px; background: var(--line); flex: none; }
+/* The project's file name after the tabs, behind a thin divider. */
+.sx-projname { display: flex; align-items: center; height: 22px; padding-left: 26px; border-left: 1px solid var(--line-soft); font-size: var(--fs-sm); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 0 1 auto; }
+.sx-projname b { color: var(--fg); font-weight: 600; overflow: hidden; text-overflow: ellipsis; }
 .sx-tab:hover { color: var(--fg); }
 .sx-tab[aria-current="page"] { color: var(--fg); }
 .sx-tab[aria-current="page"]::after { content: ""; position: absolute; left: 10px; right: 10px; bottom: -1px; height: 2px; border-radius: 2px; background: var(--accent); }
@@ -376,14 +382,17 @@ button { cursor: pointer; }
   .sx-main { overflow: visible; }
   .sx-searchbtn { width: 32px; padding: 0; justify-content: center; }
   .sx-searchbtn span, .sx-searchbtn .sx-kbd, .sx-online span { display: none; }
-  .sx-appbar { gap: 12px; }
+  .sx-appbar { gap: 12px; padding: 0 16px; }
+  .sx-projname { display: none; }
   .sx-rail[data-collapsed] { width: 0; border: 0; overflow: hidden; }
   .sx-rail[data-peek] { width: min(var(--w-side), calc(100vw - 2 * var(--gutter))); }
 }
 @media (max-width: 560px) {
   .sx-tab span { display: none; }
-  .sx-tab { padding: 0 9px; }
-  .sx-tab[aria-current="page"]::after { left: 6px; right: 6px; }
+  .sx-tab { padding: 0 7px; }
+  .sx-tabs { gap: 0; }
+  .sx-appbar { gap: 8px; padding: 0 12px; }
+  .sx-tab[aria-current="page"]::after { left: 5px; right: 5px; }
 }
 
 /* Feature tooltip (one element for the app). */

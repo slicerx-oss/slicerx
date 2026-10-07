@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// The first tab (id `prepare`) is Model in the SlicerX style, Prepare in the Bambu and Orca styles and Plater in
-// the PrusaSlicer style. Every sentence that points at it takes the name from the look.
+// The first tab (id `prepare`) is Slice in every look (Design | Slice when the edition has modeling tools). Every
+// sentence that points at it takes the name from the look, so a look could still rename it.
 import type { LookId } from '@slicerx/contracts'
 import { resolvePreset } from '@slicerx/ui'
 import { createElement } from 'react'
@@ -14,14 +14,14 @@ import { orderWorkspaces, tabLabel, topBarTabs } from '../src/first-run/look'
 import { set } from '../src/state/store'
 
 const WANT: readonly [LookId, string][] = [
-  ['slicerx', 'Model'],
-  ['bambu-studio', 'Prepare'],
-  ['orcaslicer', 'Prepare'],
-  ['prusaslicer', 'Plater'],
+  ['slicerx', 'Slice'],
+  ['bambu-studio', 'Slice'],
+  ['orcaslicer', 'Slice'],
+  ['prusaslicer', 'Slice'],
 ]
 
 const WORKSPACES = [
-  { id: 'prepare', label: 'Prepare', icon: 'prepare' as const, component: null },
+  { id: 'prepare', label: 'Slice', icon: 'slice' as const, component: null },
   { id: 'preview', label: 'Preview', icon: 'preview' as const, component: null },
   { id: 'printers', label: 'Printers', icon: 'printer' as const, component: null },
 ]

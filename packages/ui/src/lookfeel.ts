@@ -39,9 +39,9 @@ const LOOK: LookSpec = { density: 'standard', accent: 'purple', radius: 'soft', 
 
 /** Tab order and names per style: the one thing a style changes about the layout. */
 const TABS: Readonly<Record<LookId, Pick<LayoutSpec, 'workspaceTabs' | 'tabLabels'>>> = {
-  slicerx: { workspaceTabs: LAYOUT.workspaceTabs, tabLabels: { prepare: 'Model' } },
+  slicerx: { workspaceTabs: LAYOUT.workspaceTabs },
   'bambu-studio': { workspaceTabs: ['prepare', 'preview', 'printers', 'library', 'pilot'], tabLabels: { printers: 'Device' } },
-  prusaslicer: { workspaceTabs: ['prepare', 'preview', 'library', 'printers', 'pilot'], tabLabels: { prepare: 'Plater' } },
+  prusaslicer: { workspaceTabs: ['prepare', 'preview', 'library', 'printers', 'pilot'] },
   orcaslicer: { workspaceTabs: ['prepare', 'preview', 'printers', 'library', 'pilot'], tabLabels: { printers: 'Device' } },
 }
 
@@ -148,7 +148,7 @@ export const KEY_ACTIONS = [
   'tool.move', 'tool.rotate', 'tool.scale', 'tool.cut', 'tool.placeOnFace', 'tool.supports', 'tool.orient',
   'plate.arrange', 'plate.arrangeSelected',
   'edit.copy', 'edit.cut', 'edit.paste', 'edit.duplicate', 'object.printable',
-  'workspace.toggle', 'slice', 'export', 'palette',
+  'workspace.toggle', 'model.mode', 'slice', 'export', 'palette',
   'preview.legend', 'preview.singleLayer', 'preview.jumpToLayer', 'preview.layerUp', 'preview.layerDown',
   'help.shortcuts',
 ] as const
@@ -161,7 +161,7 @@ const COMMON: Keymap = {
   'tool.move': 'M', 'tool.rotate': 'R', 'tool.scale': 'S', 'tool.cut': 'C', 'tool.placeOnFace': 'F', 'tool.supports': null, 'tool.orient': null,
   'plate.arrange': 'A', 'plate.arrangeSelected': 'Shift+A',
   'edit.copy': 'Mod+C', 'edit.cut': 'Mod+X', 'edit.paste': 'Mod+V', 'edit.duplicate': null, 'object.printable': 'V',
-  'workspace.toggle': null, 'slice': 'Mod+G', 'export': 'Mod+Shift+E', 'palette': 'Mod+K',
+  'workspace.toggle': null, 'model.mode': 'Mod+E', 'slice': 'Mod+G', 'export': 'Mod+Shift+E', 'palette': 'Mod+K',
   'preview.legend': 'L', 'preview.singleLayer': 'Shift+L', 'preview.jumpToLayer': 'Shift+G', 'preview.layerUp': 'Up', 'preview.layerDown': 'Down',
   'help.shortcuts': 'Shift+?',
 }

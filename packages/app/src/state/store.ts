@@ -179,6 +179,10 @@ export interface PendingApproval {
 
 export interface AppState {
   workspace: Workspace
+  /** The first tab's mode: Design (modeling) or Slice (the plate). Session only; it starts from `modelModeDefault`. */
+  modelMode: ModelMode
+  /** The mode the first tab opens in on launch (Settings > Look and feel, first run). Changing it never moves the open session. */
+  modelModeDefault: ModelMode
   /** Expanded (true) or collapsed to an icon rail (false), per workspace and side. */
   rails: Prefs['rails']
   commandOpen: boolean
@@ -472,6 +476,8 @@ const prefs = loadPrefs()
 
 export const appStore = createStore<AppState>()(() => ({
   workspace: prefs.workspace,
+  modelMode: prefs.modelModeDefault ?? 'slice',
+  modelModeDefault: prefs.modelModeDefault ?? 'slice',
   rails: prefs.rails,
   commandOpen: false,
   recents: prefs.recents,
@@ -606,12 +612,13 @@ function noAutoSliceDefault(): boolean {
 }
 
 
-const PERSISTED = ['workspace', 'rails', 'recents', 'toolpathPalette', 'showToolhead', 'playbackSpeed', 'followNozzle', 'easy', 'goal', 'printerId', 'scheme', 'lookAndFeel', 'themeFollowsSystem', 'themeIds', 'userThemes', 'fonts', 'settingsMode', 'tooltips', 'autoSlice', 'cadTools', 'electricity', 'printerNozzles', 'printerExtruders', 'handPrinters', 'bays', 'printerBays', 'printersView', 'easyTouched', 'paneSizes', 'queue', 'spoolLinks', 'presetSync', 'firstRun', 'crashReports', 'motion', 'agreement', 'installId', 'setupPilotOff', 'noPrinter', 'pilot', 'sendChoices', 'dryMarks', 'activePresets'] as const satisfies readonly (keyof AppState)[]
+const PERSISTED = ['workspace', 'modelModeDefault', 'rails', 'recents', 'toolpathPalette', 'showToolhead', 'playbackSpeed', 'followNozzle', 'easy', 'goal', 'printerId', 'scheme', 'lookAndFeel', 'themeFollowsSystem', 'themeIds', 'userThemes', 'fonts', 'settingsMode', 'tooltips', 'autoSlice', 'cadTools', 'electricity', 'printerNozzles', 'printerExtruders', 'handPrinters', 'bays', 'printerBays', 'printersView', 'easyTouched', 'paneSizes', 'queue', 'spoolLinks', 'presetSync', 'firstRun', 'crashReports', 'motion', 'agreement', 'installId', 'setupPilotOff', 'noPrinter', 'pilot', 'sendChoices', 'dryMarks', 'activePresets'] as const satisfies readonly (keyof AppState)[]
 
 appStore.subscribe((s, prev) => {
   if (PERSISTED.some((k) => s[k] !== prev[k])) {
     savePrefs({
       workspace: s.workspace,
+      modelModeDefault: s.modelModeDefault,
       rails: s.rails,
       recents: s.recents,
       toolpathPalette: s.toolpathPalette,
@@ -684,6 +691,14 @@ export function selectedIds(s: Pick<AppState, 'selection' | 'selectedIds'> = get
 
 export function setWorkspace(ws: Workspace): void {
   if (get().workspace !== ws) set({ workspace: ws })
+}
+
+export type ModelMode = 'slice' | 'design'
+
+/** Opens the first tab in a mode, from any tab, in one step. */
+export function setModelMode(mode: ModelMode): void {
+  const s = get()
+  if (s.workspace !== 'prepare' || s.modelMode !== mode) set({ workspace: 'prepare', modelMode: mode })
 }
 
 /** Opens Settings, on a section when given. */

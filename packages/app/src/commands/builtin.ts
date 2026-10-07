@@ -7,12 +7,12 @@ import { goalEasy } from '../adapters/config'
 import { confirmDiscard } from '../project/unsaved'
 import { gcodeView, pickGcodeFile, setGcodePanel } from '../workspaces/preview/gcode-file'
 import { cancelSlice, clearPlate, exportGcode, loadDefaultPlate, loadDemoModel, openModelFiles, removeSelected, slicePlate } from '../state/actions'
-import { get, markStale, openSettings, set, setCamera, setRail, setWorkspace, type CameraView, type ColorMode, type Goal, type PrepareLook } from '../state/store'
+import { get, markStale, openSettings, set, setCamera, setModelMode, setRail, setWorkspace, type CameraView, type ColorMode, type Goal, type PrepareLook } from '../state/store'
 import { DEMO_MODELS } from '../lib/demo-models'
 import { printBlock } from '../plate/heimdall'
 import { helpLinks, openLink } from '../lib/links'
 import { newProject } from '../project/new'
-import { appName, currentEdition } from '../edition'
+import { appName, currentEdition, editionHasCad } from '../edition'
 import { bugReportsOff } from '../bugs/where'
 import { updaterRegistered } from '../updates/hold'
 
@@ -51,6 +51,14 @@ export function builtinCommands(host: Host, workspaces: readonly { id: string; l
       run: () => setWorkspace(w.id),
     })
   })
+  // The first tab's two modes. Ctrl+E (Cmd+E) flips between them; it lives in the keymap, not here.
+  if (editionHasCad()) {
+    const inMode = (m: 'design' | 'slice') => () => get().workspace === 'prepare' && get().modelMode === m
+    out.push(
+      { id: 'mode-design', title: 'Switch to Design', section: 'navigate', keywords: ['model', 'cad', 'sketch'], enabled: () => !inMode('design')(), tool: { permission: 'read' }, run: () => setModelMode('design') },
+      { id: 'mode-slice', title: 'Switch to Slice', section: 'navigate', keywords: ['plate', 'prepare'], enabled: () => !inMode('slice')(), tool: { permission: 'read' }, run: () => setModelMode('slice') },
+    )
+  }
 
   out.push(
     { id: 'project-new', title: 'New project', section: 'plate', keywords: ['new', 'empty', 'blank', 'clear', 'start'], shortcut: 'Mod+N', run: async () => { if (await newProject()) setWorkspace('prepare') } },

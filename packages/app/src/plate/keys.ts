@@ -7,6 +7,7 @@ import type { LookAndFeelChoice } from '@slicerx/contracts'
 import { keymapFor, type KeyAction } from '@slicerx/ui'
 import { runCommand } from '../commands/registry'
 import { inTextField, matchShortcut } from '../lib/keys'
+import { toggleModelMode } from '../state/model-mode'
 import { get, set } from '../state/store'
 import { arrangePlate, centerSelected, dropSelectedToBed, selectAll } from './edit'
 import { history } from './history'
@@ -53,6 +54,7 @@ export function plateHandlers(): Partial<Record<KeyAction, Handler>> {
     'edit.duplicate': () => void runCommand('duplicate'),
     'object.printable': () => void runCommand('toggle-printable'),
     'workspace.toggle': () => set((s) => ({ workspace: s.workspace === 'preview' ? 'prepare' : 'preview' })),
+    'model.mode': toggleModelMode,
   }
   for (const [action, preset] of Object.entries(VIEW) as [KeyAction, NonNullable<(typeof VIEW)[KeyAction]>][]) out[action] = () => bus()?.view?.(preset, { animate: true })
   return out

@@ -19,7 +19,7 @@ export interface ActiveWorkspace {
 const ORDER = ['prepare', 'preview', 'feed', 'library', 'printers', 'pilot']
 
 const BASE: ActiveWorkspace[] = [
-  { id: 'prepare', label: 'Prepare', icon: 'prepare', component: null },
+  { id: 'prepare', label: 'Slice', icon: 'slice', component: null },
   { id: 'preview', label: 'Preview', icon: 'preview', component: null },
   { id: 'library', label: 'My models', icon: 'library', component: null },
 ]
