@@ -236,6 +236,32 @@ describe('the status line agrees with the card (QA N1)', () => {
   })
 })
 
+describe('a hand answered by a clean Check again (QA N3)', () => {
+  it('says the new picture shows no hand, not that it was dismissed, and marks nothing', async () => {
+    const v = await render({ printerId: 'a1', kind: 'hand', state: 'paused', at, answered: true, answeredBy: 'clear' })
+    expect(v.el.querySelector('h3')?.textContent).toBe('Still paused')
+    expect(v.el.textContent).toContain('The new picture shows no hand')
+    expect(v.el.textContent).not.toContain('You dismissed')
+    expect(v.el.querySelector('.guard-badge')).toBeNull()
+    expect(v.el.querySelector('.guard-spot')).toBeNull()
+    v.done()
+  })
+
+  it('a dismissed hand still says so and keeps its badge', async () => {
+    const v = await render({ printerId: 'a1', kind: 'hand', state: 'paused', at, answered: true, answeredBy: 'dismissed' })
+    expect(v.el.textContent).toContain('You dismissed the hand')
+    expect(v.el.querySelector('.guard-badge')).not.toBeNull()
+    v.done()
+  })
+
+  it('a plate checked clean says the plate looks clear and marks nothing', async () => {
+    const v = await render({ printerId: 'a1', kind: 'plate', state: 'paused', at, startedBy: 'printer', box: [0.4, 0.6, 0.45, 0.66], answered: true, answeredBy: 'clear' })
+    expect(v.el.textContent).toContain('The plate looks clear now')
+    expect(v.el.querySelector('.guard-spot')).toBeNull()
+    v.done()
+  })
+})
+
 describe('the mark on the frame', () => {
   it('a hand with no spot gets a corner badge, never a strike on nothing', async () => {
     const v = await render({ printerId: 'a1', kind: 'hand', state: 'paused', at })
