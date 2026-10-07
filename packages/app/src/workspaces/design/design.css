@@ -30,3 +30,22 @@
   .dtree-body .cad-step { grid-template-columns: 22px minmax(0, 1fr) auto auto auto auto; }
   .dtree-body .cad-step > .sx-btn { display: inline-flex; }
 }
+
+/* The shelf: tool groups over their names, undo and redo at the end. */
+.shelf { display: flex; align-items: stretch; gap: 0; padding: 6px 12px 4px; border-bottom: 1px solid var(--line-soft); background: var(--ink-0); overflow-x: auto; scrollbar-width: none; min-width: 0; }
+.shelf-grp { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 0 10px; border-right: 1px solid var(--line-soft); flex: none; }
+.shelf-grp:first-child { padding-left: 0; }
+.shelf-tools { display: flex; align-items: center; gap: 2px; }
+.shelf-tool { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 9px; border: 0; border-radius: var(--r-sm); background: none; color: var(--fg); font: 500 var(--fs-md) var(--f-body); white-space: nowrap; }
+.shelf-tool .sx-ic { width: 17px; height: 17px; color: var(--muted); flex: none; }
+.shelf-tool:hover:not(:disabled) { background: var(--ink-2); }
+.shelf-tool[aria-pressed="true"] { background: color-mix(in srgb, var(--accent) 16%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 55%, transparent); }
+.shelf-tool[aria-pressed="true"] .sx-ic { color: var(--accent); }
+.shelf-tool:disabled { color: var(--dim); }
+.shelf-tool:disabled .sx-ic { color: var(--dim); }
+.shelf-label { font: 600 10.5px var(--f-mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--dim); }
+.shelf-end { margin-left: auto; display: flex; align-items: center; gap: 2px; padding-left: 10px; flex: none; }
+@media (max-width: 1100px) {
+  .shelf-tool > span { display: none; }
+  .shelf-tool { padding: 0 7px; }
+}

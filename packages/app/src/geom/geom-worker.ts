@@ -75,6 +75,10 @@ self.onmessage = async (e: MessageEvent<{ id: number; op: string; request: unkno
       self.postMessage({ id, result })
       return
     }
+    if (op === 'engine.full') {
+      self.postMessage({ id, result: await engine.full() })
+      return
+    }
     self.postMessage({ id, result: await engine.run(op, request) })
   } catch (err) {
     canceled.delete(id)

@@ -12,7 +12,7 @@ import { setTool, useTool } from '../../plate/tools'
 import { useApp } from '../../state/store'
 import { BRIM_TOOL, PLATE_TOOLS } from './plate-tool-list'
 
-function useHistoryCounts(): { undo: number; redo: number } {
+export function useHistoryCounts(): { undo: number; redo: number } {
   const [counts, setCounts] = useState(() => ({ undo: history().canUndo() ? 1 : 0, redo: history().canRedo() ? 1 : 0 }))
   useEffect(() => history().subscribe(setCounts), [])
   return counts
