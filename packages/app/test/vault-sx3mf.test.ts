@@ -11,7 +11,8 @@ import { isVaultFile, refuseVaultFile } from '../../mcp/src/vault'
 import { exportAllPlates, exportGcode3mf, printGcode3mf } from '../src/export/actions'
 import { readProject, unzipEntries } from '../src/export/import3mf'
 import { exportMesh, meshExportBytes } from '../src/export/mesh'
-import { writeProject } from '../src/export/threemf'
+import { projectFiles, writeProject } from '../src/export/threemf'
+import { zip } from '../src/export/zip'
 import { fromVault, VAULT_SX3MF_ONLY } from '../src/export/vault'
 import { plateCommands } from '../src/plate/commands'
 import { mergeSelected, splitSelectedToObjects } from '../src/plate/edit'
@@ -94,6 +95,43 @@ describe('the Vault tag in .sx3mf files', () => {
     const bytes = writeProject({ plates: [{ id: 'p1', name: 'Plate 1', objects: [own('a')], settings: { sequence: 'by-layer' } }], bed, settings: {}, sx: { exportedBy: '' } })
     const back = await readProject(bytes, bed)
     expect(back.plates.flatMap((p) => p.objects).some((o) => o.source?.modelId)).toBe(false)
+  })
+})
+
+describe('reading the Vault marks as XML', () => {
+  const bed = { widthMm: 256, depthMm: 256 }
+  const ID = VAULT.modelId
+  /** A plain project with its model part and settings changed. */
+  function crafted(edit: { model?: (xml: string) => string; settings?: (xml: string) => string }): Uint8Array {
+    const files = projectFiles({ plates: [{ id: 'p1', name: 'Plate 1', objects: [own('a')], settings: { sequence: 'by-layer' } }], bed, settings: {} })
+    return zip(files.map((f) => (f.name === '3D/3dmodel.model' && edit.model ? { ...f, data: edit.model(String(f.data)) } : f.name === 'Metadata/model_settings.config' && edit.settings ? { ...f, data: edit.settings(String(f.data)) } : f)))
+  }
+  const tagged = async (bytes: Uint8Array) => (await readProject(bytes, bed)).plates.flatMap((p) => p.objects).every((o) => o.source?.modelId === ID)
+  const root = (meta: string) => (x: string) => x.replace('<resources>', `${meta}<resources>`)
+  const onObject = (meta: string) => (x: string) => x.replace(/(<object id="\d+">)/, `$1${meta}`)
+
+  it('on the root model: single quotes, an attribute before name, another prefix, after 1 MB', async () => {
+    expect(await tagged(crafted({ model: root(`<metadata name='sx:Listing'>${ID}</metadata>`) }))).toBe(true)
+    expect(await tagged(crafted({ model: root(`<metadata type="xs:string" name="sx:Listing">${ID}</metadata>`) }))).toBe(true)
+    expect(await tagged(crafted({ model: (x) => root(`<metadata name="v:Listing">${ID}</metadata>`)(x).replace('<model ', '<model xmlns:v="https://slicerx.app/schemas/sx3mf/2026" ') }))).toBe(true)
+    const filler = '<metadata name="Description">filler filler filler filler</metadata>'.repeat(20_000)
+    expect(filler.length).toBeGreaterThan(1 << 20)
+    expect(await tagged(crafted({ model: root(`${filler}<metadata name="sx:Listing">${ID}</metadata>`) }))).toBe(true)
+  })
+
+  it('on an object: single quotes, value before key, an attribute before key, after 1 MB', async () => {
+    expect(await tagged(crafted({ settings: onObject(`<metadata key='sx:Listing' value='${ID}'/>`) }))).toBe(true)
+    expect(await tagged(crafted({ settings: onObject(`<metadata value="${ID}" key="sx:Listing"/>`) }))).toBe(true)
+    expect(await tagged(crafted({ settings: onObject(`<metadata note="x" key="sx:Listing" value="${ID}"/>`) }))).toBe(true)
+    const filler = '<metadata key="note" value="filler filler filler filler"/>'.repeat(25_000)
+    expect(await tagged(crafted({ settings: onObject(`${filler}<metadata key="sx:Listing" value="${ID}"/>`) }))).toBe(true)
+  })
+
+  it('takes nothing from a comment or another name, and refuses a DTD', async () => {
+    const bytes = crafted({ model: root(`<!-- <metadata name="sx:Listing">${ID}</metadata> --><metadata name="sx:Version">1.0.0</metadata>`) })
+    expect((await readProject(bytes, bed)).plates.flatMap((p) => p.objects).some((o) => o.source?.modelId)).toBe(false)
+    const dtd = crafted({ settings: (x) => x.replace('<config>', '<!DOCTYPE config [<!ENTITY l "Listing">]><config>') })
+    await expect(readProject(dtd, bed)).rejects.toThrow(/DTD/)
   })
 })
 
