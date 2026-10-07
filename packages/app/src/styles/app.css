@@ -565,9 +565,6 @@ button.reset:hover { color: var(--fg); background: var(--ink-3); }
 .tf-input:focus { outline: none; }
 .tf-unit { font: var(--fs-xs) var(--f-mono); color: var(--dim); }
 .tf-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 2px; }
-.tf-align { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 2px; padding: 6px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--ink-3); }
-.tf-align .sx-btn[data-variant="ghost"] { background: var(--ink-1); color: var(--fg); border-color: var(--line-soft); }
-.tf-align .sx-btn[data-variant="ghost"]:hover { background: var(--ink-0); color: var(--fg); }
 .tf-lock { display: flex; align-items: center; gap: 6px; font-size: var(--fs-sm); color: var(--muted); margin-right: auto; }
 .tf-mirror { display: inline-flex; }
 @media (max-width: 900px) { .plate-tools { top: 52px; } }

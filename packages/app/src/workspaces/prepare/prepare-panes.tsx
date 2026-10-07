@@ -371,10 +371,10 @@ export function PrepareObjects() {
                   <span className="sx-small sx-muted">Name</span>
                   <input id={`rn-${p.id}`} className="sx-input" defaultValue={p.name} maxLength={100} key={p.name} onBlur={(e) => { if (!renameObject(p.id, e.currentTarget.value)) e.currentTarget.value = p.name }} onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()} />
                 </label>
+                <ObjectTransform />
                 <Suspense fallback={null}>
                   <ObjectVolumes />
                 </Suspense>
-                <ObjectTransform />
                 {historyOf === p.id ? <Suspense fallback={null}><HistoryPanel objectId={historyOf} /></Suspense> : null}
                 <Suspense fallback={null}>
                   <ObjectSettings />

@@ -77,10 +77,10 @@ export function ObjectTransform() {
           Fill bed
         </Button>
       </div>
-      <label className="tf-lock">
-        <input type="checkbox" checked={uniform} onChange={(e) => setUniform(e.target.checked)} /> Uniform scale
-      </label>
-      <div className="tf-align" role="group" aria-label="Alignment">
+      <div className="tf-actions">
+        <label className="tf-lock">
+          <input type="checkbox" checked={uniform} onChange={(e) => setUniform(e.target.checked)} /> Uniform scale
+        </label>
         <Button size="sm" variant="ghost" icon="arrow-down" onClick={() => dropSelectedToBed()} disabled={Math.abs(bottom) < 0.001}>
           Drop to bed
         </Button>
