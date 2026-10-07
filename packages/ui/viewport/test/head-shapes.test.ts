@@ -17,11 +17,12 @@ type Settings = Record<string, unknown>
 type Column = [number, number, number, number, number, number]
 
 /**
- * Heads drawn from product photos alone, not measured: heimdall gets only their nozzle and heater block (the columns
- * from under 5 mm up), so an estimated body never blocks a print. The profile's clearance radius still warns around
- * them, and the gantry and lid rules still hold.
+ * Heads drawn from product photos alone, not measured (docs/toolchanger-sim.md, "A1 head sources"): heimdall gets
+ * only their nozzle, up to the profile's `nozzle_height` (4.76 mm on the A1 and A1 mini, Bambu Studio's machine
+ * profiles), so a guessed body never blocks a print. The profile's clearance radius still warns around them, and the
+ * gantry and lid rules still hold.
  */
-const ESTIMATED = new Set(['bambu-a1'])
+const ESTIMATED = new Map([['bambu-a1', 4.76]])
 
 const OUT = fileURLToPath(new URL('../data/head-shapes.json', import.meta.url))
 const profiles = (path: string) => JSON.parse(readFileSync(fileURLToPath(new URL(`../../../profiles/${path}`, import.meta.url)), 'utf8')) as { models: Record<string, { machine: Settings }> }
@@ -107,7 +108,8 @@ function build() {
     rig.setModel(model)
     rig.place(0, 0, 0, 0, null, null)
     const cols = columns(rig)
-    family.set(model, head(model, ESTIMATED.has(model) ? cols.filter((c) => c[4] < 5) : cols))
+    const nozzleTop = ESTIMATED.get(model)
+    family.set(model, head(model, nozzleTop === undefined ? cols : cols.filter((c) => c[4] < 0.5).map((c): Column => [c[0], c[1], c[2], c[3], c[4], nozzleTop])))
   }
   const single = (id: string) => family.get(headFor(id)) ?? 'generic'
   const printers: Record<string, { heads: string[]; changer?: string }> = {}
@@ -165,11 +167,11 @@ describe('head-shapes.json', () => {
   it('gives every head a nozzle column at the tip and a body above it', () => {
     const { heads } = build()
     for (const [key, cols] of Object.entries(heads)) {
-      expect(cols.length, key).toBeGreaterThan(1)
+      expect(cols.length, key).toBeGreaterThan(ESTIMATED.has(key) ? 0 : 1)
       expect(cols.some((c) => c[4] <= 0.01 && c[0] <= 0 && c[1] >= 0 && c[2] <= 0 && c[3] >= 0), key).toBe(true)
       // every box has a top above its underside
       expect(cols.every((c) => c[5] > c[4]), key).toBe(true)
-      if (ESTIMATED.has(key)) expect(cols.every((c) => c[4] < 5 && c[1] - c[0] <= 12), key).toBe(true)
+      if (ESTIMATED.has(key)) expect(cols).toEqual([[-1.6, 1.6, -1.6, 1.6, 0, ESTIMATED.get(key)]])
       else expect(Math.max(...cols.map((c) => c[1] - c[0])), key).toBeGreaterThan(20)
     }
   })
