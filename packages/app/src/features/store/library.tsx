@@ -267,6 +267,7 @@ function useSave(listing: Listing) {
 function useOpenInApp(item: ListingCard) {
   const store = useStore()
   const host = useHost()
+  const { session } = useSession()
   const [busy, setBusy] = useState(false)
   const [needSignIn, setNeedSignIn] = useState(false)
   const open = async () => {
@@ -274,7 +275,7 @@ function useOpenInApp(item: ListingCard) {
     setBusy(true)
     setNeedSignIn(false)
     try {
-      const r = await fetchModel(store, item.listing)
+      const r = await fetchModel(store, item.listing, fetch, Boolean(session?.creatorId && session.creatorId === item.creator.id))
       if (!r.ok) {
         if (r.reason === 'sign-in') setNeedSignIn(true)
         else toast(r.message, 'error')
@@ -456,6 +457,7 @@ function ListingSheet({ id }: { id: string }) {
 function Detail({ item }: { item: ListingCard }) {
   const store = useStore()
   const host = useHost()
+  const { session } = useSession()
   const edition = useEdition()
   const { listing, creator } = item
   const version = listing.currentVersion
@@ -477,7 +479,7 @@ function Detail({ item }: { item: ListingCard }) {
     setBusy(true)
     setNeedSignIn(false)
     try {
-      const r = await fetchModel(store, listing)
+      const r = await fetchModel(store, listing, fetch, Boolean(session?.creatorId && session.creatorId === creator.id))
       if (!r.ok) {
         if (r.reason === 'sign-in') setNeedSignIn(true)
         else toast(r.message, 'error')

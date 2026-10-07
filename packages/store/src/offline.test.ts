@@ -199,7 +199,7 @@ describe('offline store: member actions', () => {
 
   it('downloads approved files signed out, never private ones', async () => {
     const r = await store(null).download(listing('wave-dish'))
-    expect(r.ok && r.value.fileName).toBe('wave-dish-1.0.0.3mf')
+    expect(r.ok && r.value.fileName).toBe('wave-dish-1.0.0.sx3mf')
     fails(await store(null).download(listing('trilobite-coaster-set')), 'not_found')
     fails(await store(null).download(listing('wizard-tower-terrain')), 'not_found')
   })
@@ -278,7 +278,7 @@ describe('offline store: member actions', () => {
     const link = value(await s.download(id))
     expect(link).toMatchObject({ version: '1.2.0' })
     expect(link.url.startsWith('seed://listing-files/')).toBe(true)
-    expect(link.fileName).toBe('spine-cable-organizer-1.2.0.3mf')
+    expect(link.fileName).toBe('spine-cable-organizer-1.2.0.sx3mf')
     expect((await s.getListing(id))?.listing.stats?.downloads).toBe(before + 1)
     fails(await s.download(listing('trilobite-coaster-set')), 'not_found')
     fails(await s.download(listing('logo-keychain')), 'not_found')
@@ -867,5 +867,39 @@ describe('offline store: library rows and creator pages', () => {
     expect((await s.getCreatorByHandle('marrow-works'))?.creator.bannerUrl).toBe(url)
     fails(await s.saveCreator({ handle: 'marrow-works', displayName: 'Marrow Works', bannerUrl: 'javascript:alert(1)' }), 'invalid')
     fails(await store('ash').uploadCreatorImage({ kind: 'logo', bytes: new Uint8Array(3), contentType: 'image/png' }), 'forbidden')
+  })
+})
+
+describe('offline store: Vault files leave only as .sx3mf', () => {
+  /** The seed with every version of wave-dish stored as a raw 3MF, as a file from before the scan converted uploads. */
+  function rawDish(as: string | null) {
+    const seed = generateSeed()
+    for (const v of seed.listing_versions) {
+      if (v.listing_id === listing('wave-dish')) {
+        v.storage_path = v.storage_path.replace(/\.sx3mf$/, '.3mf')
+        v.format = '3mf'
+      }
+    }
+    return createStore({ offline: true, signedInAs: as, now: fixed, newId, seed })
+  }
+
+  it('hands members and visitors no raw 3MF or STL', async () => {
+    fails(await rawDish('rv').download(listing('wave-dish')), 'not_found')
+    fails(await rawDish(null).download(listing('wave-dish')), 'not_found')
+  })
+
+  it('still gives the creator their own file in any format', async () => {
+    const r = value(await rawDish('tidewell').download(listing('wave-dish')))
+    expect(r.fileName.endsWith('.3mf')).toBe(true)
+  })
+
+  it('stores a clean upload as .sx3mf', async () => {
+    const s = store('marrow')
+    const { v } = await submit(s, 'Sealed piece')
+    const versions = value(await s.getScanStatus(v.id))
+    expect(versions.scanStatus).toBe('clean')
+    const mine = await s.myListings()
+    const l = mine.find((x) => x.title === 'Sealed piece')
+    expect(l?.currentVersion?.format).toBe('sx3mf')
   })
 })

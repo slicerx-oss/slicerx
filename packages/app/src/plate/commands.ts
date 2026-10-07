@@ -15,6 +15,7 @@ import { history } from './history'
 import { addPlate, duplicatePlate, removePlate, switchPlate } from './plates'
 import { cameraBus, getPaintBus, setTool } from './tools'
 import { appName, editionHasCad, MODELING_COMMANDS } from '../edition'
+import { fromVault } from '../export/vault'
 
 const hasSelection = () => get().selection !== null
 
@@ -137,10 +138,10 @@ export function plateCommands(choice: () => LookAndFeelChoice, full?: Host): Com
           { id: 'project-export-locked', title: `Export a locked ${appName()} project (.sxlock)`, section: 'plate', keywords: ['sxlock', 'lock', 'encrypt', 'protect', 'private', 'account', 'export'], run: () => void import('../export/locked').then((m) => m.exportLockedProject(full)) },
           { id: 'project-save-as', title: 'Save the project as a new file', section: 'plate', keywords: ['save as', 'sx3mf', 'copy', 'file'], shortcut: 'Mod+Shift+S', run: () => void saveProject(full, { as: true }) },
           { id: 'project-recent', title: 'Open a recent project', section: 'plate', keywords: ['recent', 'reopen', 'restore', 'autosave', 'sx3mf'], run: () => set({ projectsDialog: 'recent' }) },
-          { id: 'export-selection-stl', title: 'Export the selection as STL', section: 'plate', keywords: ['mesh', 'save', 'model'], enabled: () => selectedIds().length > 0, run: () => void import('../export/mesh').then((m) => m.exportMesh(full, 'selection', 'stl')) },
-          { id: 'export-selection-obj', title: 'Export the selection as OBJ', section: 'plate', keywords: ['mesh', 'save', 'model'], enabled: () => selectedIds().length > 0, run: () => void import('../export/mesh').then((m) => m.exportMesh(full, 'selection', 'obj')) },
-          { id: 'export-plate-stl', title: 'Export the plate as STL', section: 'plate', keywords: ['mesh', 'save', 'model', 'all'], run: () => void import('../export/mesh').then((m) => m.exportMesh(full, 'plate', 'stl')) },
-          { id: 'export-plate-obj', title: 'Export the plate as OBJ', section: 'plate', keywords: ['mesh', 'save', 'model', 'all'], run: () => void import('../export/mesh').then((m) => m.exportMesh(full, 'plate', 'obj')) },
+          { id: 'export-selection-stl', title: 'Export the selection as STL', section: 'plate', keywords: ['mesh', 'save', 'model'], enabled: () => selectedIds().length > 0 && !fromVault(get().plate.filter((p) => selectedIds().includes(p.id))), run: () => void import('../export/mesh').then((m) => m.exportMesh(full, 'selection', 'stl')) },
+          { id: 'export-selection-obj', title: 'Export the selection as OBJ', section: 'plate', keywords: ['mesh', 'save', 'model'], enabled: () => selectedIds().length > 0 && !fromVault(get().plate.filter((p) => selectedIds().includes(p.id))), run: () => void import('../export/mesh').then((m) => m.exportMesh(full, 'selection', 'obj')) },
+          { id: 'export-plate-stl', title: 'Export the plate as STL', section: 'plate', keywords: ['mesh', 'save', 'model', 'all'], enabled: () => !fromVault(get().plate), run: () => void import('../export/mesh').then((m) => m.exportMesh(full, 'plate', 'stl')) },
+          { id: 'export-plate-obj', title: 'Export the plate as OBJ', section: 'plate', keywords: ['mesh', 'save', 'model', 'all'], enabled: () => !fromVault(get().plate), run: () => void import('../export/mesh').then((m) => m.exportMesh(full, 'plate', 'obj')) },
           { id: 'export-gcode-3mf', title: 'Export the sliced plate as .gcode.3mf', section: 'slice', keywords: ['bambu', 'printer file', 'send'], run: () => void exportGcode3mf(full) },
           { id: 'export-all-plates', title: 'Slice and export every plate', section: 'slice', keywords: ['all plates', 'batch', 'gcode.3mf'], enabled: () => get().plates.length > 1, run: () => void exportAllPlates(full) },
         ] satisfies CommandSpec[])

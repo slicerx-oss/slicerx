@@ -5,7 +5,7 @@
 -- Run with `supabase test db`.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(38);
+select plan(47);
 
 -- Seed activity is dated; move it a year back so the windows below see only this test's rows.
 update public.likes set created_at = created_at - interval '1 year';
@@ -138,6 +138,28 @@ select is(
    )),
   0, 'every pick shares a tag or a creator with a like');
 select is((select count(*)::int from public.recommended_listings(24) r join public.listings l on l.id = r.listing_id where l.status <> 'approved'), 0, 'picks are approved designs only');
+
+-- Vault files leave only as .sx3mf ----------------------------------------------------------------
+select is(public.is_sealed_path('a/b/model.sx3mf'), true, 'an .sx3mf path is sealed');
+select is(public.is_sealed_path('a/b/model.3mf'), false, 'a 3MF path is not');
+reset role;
+create temp table raw on commit drop as
+select ferro_live as listing, ferro_live::text || '/66666666-6666-4666-8666-666666666666/raw-original.3mf' as path,
+  (select storage_path from public.listing_versions where listing_id = ferro_live and review_status = 'approved' and scan_status = 'clean' order by string_to_array(version, '.')::int[] desc limit 1) as sealed
+from ids;
+grant select on raw to anon, authenticated;
+insert into public.listing_versions (id, listing_id, version, storage_path, sha256, format, size_bytes, scan_status, scanned_at, review_status)
+select '66666666-6666-4666-8666-666666666666', listing, '9.9.9', path, repeat('f', 64), '3mf', 4096, 'clean', now(), 'approved' from raw;
+select pg_temp.as_user('ash');
+select is(public.request_download((select listing from raw)) ->> 'path', (select sealed from raw), 'a member is handed the newest .sx3mf, not a newer raw 3MF');
+select is(public.can_download((select path from raw)), false, 'a member cannot read the raw 3MF from storage');
+select is(public.can_download((select sealed from raw)), true, 'a member reads the .sx3mf');
+reset role;
+select is(public.is_public_file((select path from raw)), false, 'a visitor grant never covers a raw 3MF');
+select is(public.is_public_file((select sealed from raw)), true, 'it covers the .sx3mf');
+select pg_temp.as_user('ferro');
+select is(public.request_download((select listing from raw)) ->> 'path', (select path from raw), 'the creator is handed their own newest file in any format');
+select is(public.can_download((select path from raw)), true, 'and can read it from storage');
 
 -- Cleanup -------------------------------------------------------------------------------------
 reset role;

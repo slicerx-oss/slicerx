@@ -26,7 +26,7 @@ drop table if exists
 drop function if exists
   public.set_saved(uuid, boolean), public.saved_listings(), public.trending_listings(integer, integer),
   public.new_creators(integer, integer), public.recommended_listings(integer),
-  public.can_write_creator_media(text), public.queue_creator_media_cleanup(),
+  public.can_write_creator_media(text), public.queue_creator_media_cleanup(), public.is_sealed_path(text),
   public.request_download(uuid), public.can_download_anon(text), public.set_anon_downloads(boolean, integer, integer),
   public.is_public_image(text), public.is_public_file(text), public.public_download_path(uuid),
   public.client_ip_hash(), public.client_ip(),
