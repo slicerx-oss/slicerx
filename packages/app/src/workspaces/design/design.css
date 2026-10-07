@@ -20,15 +20,21 @@
 .dtree-parts li { display: flex; align-items: center; gap: 8px; min-height: 26px; padding: 0 4px; font-size: var(--fs-sm); color: var(--muted); }
 .dtree-parts li > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dtree-empty { margin: 4px 0 10px; }
-/* In the tree a step row is its name; move, suppress and delete show on hover or keyboard focus. */
-.dtree-body .cad-step { grid-template-columns: 22px minmax(0, 1fr); }
-.dtree-body .cad-step > .sx-btn { display: none; }
-.dtree-body .cad-step:hover, .dtree-body .cad-step:focus-within { grid-template-columns: 22px minmax(0, 1fr) auto auto auto auto; }
-.dtree-body .cad-step:hover > .sx-btn, .dtree-body .cad-step:focus-within > .sx-btn { display: inline-flex; }
+/* In the tree a step row is its name; move, suppress and delete sit over its end and show on hover or keyboard focus. */
+.dtree-body .cad-step { position: relative; grid-template-columns: 22px minmax(0, 1fr); }
+.dtree-body .cad-step > .sx-btn { position: absolute; top: 2px; opacity: 0; pointer-events: none; }
+.dtree-body .cad-step > .sx-btn:nth-of-type(3) { right: 84px; }
+.dtree-body .cad-step > .sx-btn:nth-of-type(4) { right: 56px; }
+.dtree-body .cad-step > .sx-btn:nth-of-type(5) { right: 28px; }
+.dtree-body .cad-step > .sx-btn:nth-of-type(6) { right: 0; }
+.dtree-body .cad-step:hover > .sx-btn, .dtree-body .cad-step:focus-within > .sx-btn { opacity: 1; pointer-events: auto; }
+/* The name makes room for them, so a click on a name never lands on a hidden button. */
+.dtree-body .cad-step:hover > .cad-step-name, .dtree-body .cad-step:focus-within > .cad-step-name { margin-right: 112px; }
 .dtree-body .cad-step[data-editing] { background: color-mix(in srgb, var(--accent) 12%, transparent); border-radius: var(--r-sm); }
 @media (hover: none) {
   .dtree-body .cad-step { grid-template-columns: 22px minmax(0, 1fr) auto auto auto auto; }
-  .dtree-body .cad-step > .sx-btn { display: inline-flex; }
+  .dtree-body .cad-step > .sx-btn { position: static; opacity: 1; pointer-events: auto; }
+  .dtree-body .cad-step > .cad-step-name { margin-right: 0; }
 }
 
 /* The shelf: tool groups over their names, undo and redo at the end. */
