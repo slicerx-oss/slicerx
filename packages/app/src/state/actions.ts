@@ -50,8 +50,14 @@ function centered(bedW: number, bedD: number): number[] {
   return t
 }
 
-async function addDecoded(host: Host, model: DecodedModel, opts: { replace: boolean; thumb?: string }): Promise<PlateEntry> {
+// Designs opened this session (a file, a Vault design, an example picked by hand), and whether the example plate
+// was put out at the start.
+let opened = 0
+let seeded = false
+
+async function addDecoded(host: Host, model: DecodedModel, opts: { replace: boolean; thumb?: string; keep?: () => boolean }): Promise<PlateEntry | null> {
   const handle = await host.slicer.loadParts(model.name, model.parts)
+  if (opts.keep && !opts.keep()) return null
   const { bed } = get()
   const entry: PlateEntry = {
     id: uid('obj'),
@@ -68,18 +74,20 @@ async function addDecoded(host: Host, model: DecodedModel, opts: { replace: bool
 }
 
 /** Puts one of the built-in example models on the plate. */
-export async function loadDemoModel(host: Host, slug: string, opts: { replace?: boolean } = {}): Promise<void> {
+export async function loadDemoModel(host: Host, slug: string, opts: { replace?: boolean; keep?: () => boolean } = {}): Promise<void> {
   const demo = demoModel(slug)
   if (!demo) {
     toast(`No example model called ${slug}`, 'error')
     return
   }
+  // Picked by hand, it is an opened design; the start of session example passes `keep`.
+  if (!opts.keep) opened++
   set({ plateLoading: true })
   try {
     const { parts, colors } = await demo.build()
     const model: DecodedModel = { name: demo.name, bboxMm: [0, 0, 0], triangles: parts.reduce((n, p) => n + p.indices.length / 3, 0), parts, colors }
-    await addDecoded(host, model, { replace: opts.replace ?? true })
-    if (opts.replace ?? true) {
+    const added = await addDecoded(host, model, { replace: opts.replace ?? true, ...(opts.keep ? { keep: opts.keep } : {}) })
+    if (added && (opts.replace ?? true)) {
       set({ slice: { status: 'idle' }, preview: null, projectFile: null })
       markClean()
     }
@@ -90,9 +98,19 @@ export async function loadDemoModel(host: Host, slug: string, opts: { replace?: 
   }
 }
 
-/** The plate a fresh session opens with. */
+/** The example plate. */
 export function loadDefaultPlate(host: Host): Promise<void> {
   return loadDemoModel(host, DEFAULT_MODEL, { replace: true })
+}
+
+/**
+ * The example a fresh session starts with: once, never after a design was opened, and dropped if a design opens while
+ * it loads. A plate the person emptied stays empty.
+ */
+export function seedExamplePlate(host: Host): Promise<void> {
+  if (seeded || opened > 0) return Promise.resolve()
+  seeded = true
+  return loadDemoModel(host, DEFAULT_MODEL, { replace: true, keep: () => opened === 0 })
 }
 
 /** Open (the default) starts a new project with the files; `fresh: false` is Add model, onto the plate as it is. */
@@ -103,6 +121,7 @@ export async function openModelFiles(host: Host, opts: { fresh?: boolean } = {})
 
 /** A new project for an opened design: asks about unsaved work first (Save, Discard, Cancel). False when canceled. */
 async function startFresh(): Promise<boolean> {
+  opened++
   if (!(await confirmDiscard('open another design'))) return false
   clearProject()
   return true
