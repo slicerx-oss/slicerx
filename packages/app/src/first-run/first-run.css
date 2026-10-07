@@ -558,6 +558,14 @@ p.fr-codecard-msg, .fr-codecard-msg p { color: var(--red); }
 :root[data-shell="desktop"][data-os="mac"] .fr-top { padding-left: 98px; }
 :root[data-shell="desktop"] .fr-top { -webkit-user-select: none; user-select: none; }
 
+/* What the plate tab opens in: two large cards, art above the name. */
+.fr-open-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s-3); }
+.fr-open-card { flex-direction: column; align-items: stretch; padding: var(--s-2); gap: var(--s-2); }
+.fr-open-art { display: block; width: 100%; height: auto; aspect-ratio: 8 / 5; object-fit: cover; border-radius: calc(var(--r-md) - 4px); background: var(--ink-0); }
+.fr-open-row { display: flex; align-items: center; gap: var(--s-3); padding: 0 var(--s-2) var(--s-1); }
+.fr-open-card[data-on] .fr-radio { border-color: var(--accent); background: radial-gradient(circle, var(--accent) 0 4px, transparent 4.5px); }
+@media (max-width: 720px) { .fr-open-cards { grid-template-columns: minmax(0, 1fr); } }
+
 /* the theme step */
 .fr-theme-grid { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: var(--s-5); align-items: start; }
 .fr-theme-left { display: grid; gap: var(--s-4); min-width: 0; justify-items: start; }
