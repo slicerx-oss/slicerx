@@ -8,7 +8,8 @@ import { setLibraryFilter, type LibrarySort } from './filter'
 
 const SORTS: [LibrarySort, string, string[]][] = [
   ['new', 'Show the newest models', ['latest', 'recent']],
-  ['popular', 'Show the most printed models', ['popular', 'makes', 'trending']],
+  ['popular', 'Show the most popular models', ['popular', 'makes', 'printed']],
+  ['trending', 'Show models trending this week', ['trending', 'hot', 'week']],
 ]
 
 export const storeFeature: AppFeature = {
@@ -26,7 +27,7 @@ export const storeFeature: AppFeature = {
       tool: { permission: 'read' },
       run: () => {
         setWorkspace('feed')
-        setLibraryFilter({ sort })
+        setLibraryFilter({ sort, view: 'grid' })
       },
     })),
 }

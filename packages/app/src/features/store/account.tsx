@@ -4,10 +4,11 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { Button, Chip, Dialog } from '@slicerx/ui'
-import { appName, toast, useEdition, useHost } from '@slicerx/app'
+import { appName, closeSettings, setWorkspace, toast, useEdition, useHost } from '@slicerx/app'
 import { activeTokens, deletionBanner, exportFileName, graceLabel, rateLabel, revokedLabel, tokenState } from './account-logic'
 import { useSession, useStore } from './queries'
-import { creatorUrl, dashboardUrl, openExternal, privacyUrl } from './routes'
+import { dashboardUrl, openExternal, privacyUrl } from './routes'
+import { openEditor } from './sheets'
 import { SignInNotice } from './signin'
 
 export default function Account() {
@@ -110,11 +111,17 @@ function SignedIn() {
           </Button>
         </div>
         <div className="row-btns">
-          {session.handle ? (
-            <Button size="sm" icon="creator" onClick={() => open(creatorUrl(edition, session.handle ?? ''))}>
-              Your creator page
-            </Button>
-          ) : null}
+          <Button
+            size="sm"
+            icon="creator"
+            onClick={() => {
+              closeSettings()
+              setWorkspace('feed')
+              openEditor('edit')
+            }}
+          >
+            {session.creatorId ? 'Edit creator page' : 'Set up your creator page'}
+          </Button>
           <Button size="sm" icon="cloud-upload" onClick={() => open(dashboardUrl(edition))}>
             Upload and manage models
           </Button>

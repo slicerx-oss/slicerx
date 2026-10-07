@@ -1,21 +1,26 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // Catalog and session queries over the edition host's store client.
-import type { EditionHost, ListingDetail, Session, StoreClient } from '@slicerx/contracts'
+import type { Creator, CreatorPage, EditionHost, ListingCard, ListingDetail, Session, StoreClient } from '@slicerx/contracts'
 import { useHost } from '@slicerx/app'
 import { infiniteQueryOptions, queryOptions, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect } from 'react'
 import { applyFilter, listOptions, type LibraryFilter } from './filter'
+import { ROW_LIMIT, type RowId } from './rows'
 
 export function useStore(): StoreClient | undefined {
   return (useHost() as EditionHost).store
 }
 
-export function listingsQuery(store: StoreClient | undefined, f: LibraryFilter) {
+/** The full grid. The Saved filter and the ranked sorts come as one list from the store; the rest pages through the catalog. */
+export function listingsQuery(store: StoreClient | undefined, f: LibraryFilter, signedIn = false) {
   return infiniteQueryOptions({
-    queryKey: ['library', f.category, f.query.trim(), f.sort],
-    queryFn: async ({ pageParam }) => {
+    queryKey: ['library', f.category, f.query.trim(), f.sort, f.saved, signedIn],
+    queryFn: async ({ pageParam }): Promise<{ items: ListingCard[]; next: string | undefined }> => {
       if (!store) return { items: [], next: undefined }
+      if (f.saved) return { items: applyFilter(await store.savedListings(), f, f.sort !== 'new' && f.sort !== 'popular'), next: undefined }
+      if (f.sort === 'trending') return { items: applyFilter(await store.trending({ limit: 100 }), f, true), next: undefined }
+      if (f.sort === 'liked') return { items: applyFilter(signedIn ? await store.recommended({ limit: 100 }) : [], f, true), next: undefined }
       const page = await store.listListings(listOptions(f, pageParam))
       return { items: applyFilter(page.items, f), next: page.next }
     },
@@ -53,3 +58,55 @@ export function useSession(): { session: Session | null; ready: boolean } {
   }, [store, client])
   return { session: q.data ?? null, ready: !store || q.isSuccess || q.isError }
 }
+
+/** One row on the Library's front page. */
+export function rowQuery(store: StoreClient | undefined, row: RowId, signedIn: boolean) {
+  return queryOptions<ListingCard[]>({
+    queryKey: ['library', 'row', row, signedIn],
+    queryFn: async () => {
+      if (!store) return []
+      switch (row) {
+        case 'popular':
+          return (await store.listListings({ sort: 'popular', limit: ROW_LIMIT })).items
+        case 'recent':
+          return (await store.listListings({ sort: 'new', limit: ROW_LIMIT })).items
+        case 'trending':
+          return store.trending({ days: 7, limit: ROW_LIMIT })
+        case 'liked':
+          return signedIn ? store.recommended({ limit: ROW_LIMIT }) : []
+      }
+    },
+    enabled: Boolean(store) && (row !== 'liked' || signedIn),
+    staleTime: 60_000,
+  })
+}
+
+export function newCreatorsQuery(store: StoreClient | undefined) {
+  return queryOptions<Creator[]>({
+    queryKey: ['library', 'new-creators'],
+    queryFn: async () => (store ? store.newCreators({ days: 30, limit: 12 }) : []),
+    enabled: Boolean(store),
+    staleTime: 60_000,
+  })
+}
+
+export function creatorPageQuery(store: StoreClient | undefined, handle: string | null) {
+  return queryOptions<CreatorPage | null>({
+    queryKey: ['library', 'creator', handle],
+    queryFn: async () => (store && handle ? store.getCreatorByHandle(handle) : null),
+    enabled: Boolean(store && handle),
+    staleTime: 30_000,
+  })
+}
+
+export function myCreatorQuery(store: StoreClient | undefined, signedIn: boolean) {
+  return queryOptions<Creator | null>({
+    queryKey: ['library', 'my-creator', signedIn],
+    queryFn: async () => (store && signedIn ? store.getMyCreator() : null),
+    enabled: Boolean(store) && signedIn,
+    staleTime: 30_000,
+  })
+}
+
+/** Every Library read, so a like, save, follow or page edit shows everywhere at once. */
+export const LIBRARY_KEY = ['library'] as const

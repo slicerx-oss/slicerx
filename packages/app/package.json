@@ -28,6 +28,7 @@
     "@slicerx/pilot": "workspace:*",
     "@slicerx/printer-catalog": "workspace:*",
     "@slicerx/settings": "workspace:*",
+    "@slicerx/store": "workspace:*",
     "@slicerx/ui": "workspace:*",
     "@slicerx/viewport": "workspace:*",
     "@tanstack/react-query": "5.104.0",
