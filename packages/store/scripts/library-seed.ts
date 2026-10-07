@@ -29,6 +29,10 @@ export const manifestSchema = z.object({
     bio: z.string().max(4000).optional(),
     location: z.string().max(80).optional(),
     logoUrl: z.url({ protocol: /^https$/ }).max(500).optional(),
+    /** A PNG, JPEG or WebP next to the manifest, uploaded to creator-media as the page's logo. */
+    logo: z.string().regex(/^[a-z0-9][a-z0-9._-]{0,80}\.(png|jpe?g|webp)$/).optional(),
+    /** The same for the banner. */
+    banner: z.string().regex(/^[a-z0-9][a-z0-9._-]{0,80}\.(png|jpe?g|webp)$/).optional(),
     trusted: z.boolean().default(false),
     links: z.array(z.object({
       kind: z.enum(LINK_KINDS),
@@ -45,6 +49,8 @@ export const manifestSchema = z.object({
     license: z.enum(LICENSES).default('cc-by'),
     tags: z.array(z.string().min(1).max(40)).max(20).default([]),
     coverUrl: z.url({ protocol: /^https$/ }).max(500).optional(),
+    /** A PNG, JPEG or WebP next to the manifest, uploaded to creator-media as the listing's cover. */
+    cover: z.string().regex(/^[a-z0-9][a-z0-9._-]{0,80}\.(png|jpe?g|webp)$/).optional(),
     version: z.string().regex(/^\d+\.\d+\.\d+$/).default('1.0.0'),
     changelog: z.string().max(4000).optional(),
     /** Path of the model file relative to the manifest, inside the models folder. */
