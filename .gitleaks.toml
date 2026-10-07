@@ -14,6 +14,8 @@ paths = [
   '''^packages/app/test/(bug-reports|agent-install|pilot-connect)\.test\.ts$''',
   '''^packages/edition-config/test/config\.test\.ts$''',
   '''^supabase/seed/store\.sql$''',
+  # generated base64 geometry (scripts/vault-starters.ts --demo-meshes), no keys
+  '''^packages/app/src/lib/demo-meshes\.ts$''',
 ]
 regexes = [
   '''sb_publishable_[A-Za-z0-9_-]+''',
