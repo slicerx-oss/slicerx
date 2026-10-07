@@ -350,6 +350,16 @@ fn collision_refusal(
                 plate.push(format!("A print path enters {b}: {a} on {layers}."));
                 continue;
             }
+            (Kind::Hotend, Part::Clearance) => {
+                machine.push(format!(
+                    "While {a} prints, the toolhead comes within {:.1} mm of {b}, inside the {:.0} mm the printer profile asks for around the nozzle, \
+                     from layer {}; this printer's head is not measured, so the profile's rule holds.",
+                    (c.limit_mm - c.depth_mm).max(0.0),
+                    c.limit_mm,
+                    c.layer + 1,
+                ));
+                continue;
+            }
             (Kind::Gantry, Part::Lid) => ("The frame hits", "frame"),
             (Kind::Gantry, _) => ("The gantry hits", "gantry"),
             (Kind::NozzleTravelThroughPart, _) => ("A travel runs through", ""),

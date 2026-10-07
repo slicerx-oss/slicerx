@@ -289,8 +289,11 @@ export type CollisionKind = 'gantry' | 'hotend' | 'nozzle_travel_through_part' |
 export interface Collision {
   kind: CollisionKind
   severity: 'hit' | 'close'
-  /** The piece of the machine: the nozzle, the toolhead, the gantry beam or the frame over the bed (the profile's lid height). */
-  part: 'nozzle' | 'toolhead' | 'gantry' | 'lid'
+  /**
+   * The piece of the machine: the nozzle, the toolhead, the gantry beam or the frame over the bed (the profile's lid
+   * height); `clearance` is the profile's clearance radius, which blocks where the head is not measured (A1, A1 mini).
+   */
+  part: 'nozzle' | 'toolhead' | 'gantry' | 'lid' | 'clearance'
   /** The plate object printing, and the one it meets. */
   objectId: string
   hitId: string

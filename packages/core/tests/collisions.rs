@@ -289,12 +289,14 @@ fn a_delta_has_no_gantry_to_strike() {
     assert_eq!(gantry(&run(&plate, rod, json!({"printerId": "flsun-v400"}))), 0);
 }
 
-/// The A1 and A1 mini as their profiles describe them.
+/// The A1 and A1 mini as the app sends them: Orca's Bambu Lab profiles carry the max radius in
+/// `extruder_clearance_radius`, so `extruder_clearance_max_radius` is left at its default.
 fn a1(mini: bool) -> (Value, Value) {
     let cfg = json!({
         "printer_model": if mini { "Bambu Lab A1 mini" } else { "Bambu Lab A1" },
-        "extruder_clearance_max_radius": 73, "extruder_clearance_height_to_rod": 25,
+        "extruder_clearance_radius": 73, "extruder_clearance_height_to_rod": 25,
         "extruder_clearance_dist_to_rod": 56.5, "extruder_clearance_height_to_lid": if mini { 180 } else { 256 },
+        "nozzle_height": 4.76,
         "printable_area": if mini { json!(["0x0", "180x0", "180x180", "0x180"]) } else { json!(["0x0", "256x0", "256x256", "0x256"]) },
     });
     (
@@ -303,43 +305,100 @@ fn a1(mini: bool) -> (Value, Value) {
     )
 }
 
-/// The A1's head is drawn from photos, not measured: it must not decide a hit. Its nozzle does (up to the profile's
-/// `nozzle_height`), the profile's radius warns, and the gantry rule holds.
+/// The A1's head is drawn from photos, not measured, so its shape decides nothing: the profile's 73 mm radius blocks a
+/// pair closer than that, as Bambu Studio refuses it, with no new order offered that would only swap the pair, and
+/// past the radius nothing of the head strikes.
 #[test]
-fn an_estimated_head_never_blocks_a_print() {
-    let hits = |r: &SliceRun| {
+fn an_estimated_head_is_held_to_the_profiles_radius() {
+    let blocks = |r: &SliceRun| {
         kinds(r)
             .into_iter()
-            .filter(|k| k.2 == Severity::Hit && k.0 == Kind::Hotend)
-            .collect::<Vec<_>>()
+            .filter(|k| k.2 == Severity::Hit && k.1 == Part::Clearance)
+            .count()
+    };
+    let shaped = |r: &SliceRun| {
+        kinds(r)
+            .into_iter()
+            .filter(|k| k.2 == Severity::Hit && k.1 == Part::Toolhead)
+            .count()
     };
     let (cfg, opts) = a1(false);
-    // a 25 mm gap: inside the profile's 73 mm radius, a close call and no hit
+    // QA's 3 mm layout: a 64 mm plinth, 40 mm tall, printed last between two short parts 3 mm away
     let r = run(
         &[
-            ("tall", block(20.0, 20.0, 20.0), 60.0, 100.0),
-            ("low", block(20.0, 20.0, 6.0), 105.0, 100.0),
+            ("cylinder", block(20.0, 20.0, 10.0), 73.0, 118.0),
+            ("box", block(20.0, 20.0, 10.0), 163.0, 118.0),
+            ("plinth", block(64.0, 20.0, 40.0), 96.0, 118.0),
         ],
         cfg.clone(),
         opts.clone(),
     );
-    assert!(hits(&r).is_empty(), "{:?}", kinds(&r));
+    assert!(blocks(&r) > 0, "{:?}", kinds(&r));
+    let c = r
+        .report
+        .collisions
+        .iter()
+        .find(|c| c.part == Part::Clearance)
+        .unwrap();
+    assert!((c.limit_mm - 73.0).abs() < 1e-6, "{c:?}");
+    // no order clears a pair held to a radius both ways; printing by layer does
     assert!(
-        kinds(&r).iter().any(|k| k.2 == Severity::Close),
-        "{:?}",
-        kinds(&r)
+        !r.report
+            .collision_fixes
+            .iter()
+            .any(|f| f.kind == FixKind::Reorder)
     );
-    // 32 mm away: no hit either
+    assert!(
+        r.report
+            .collision_fixes
+            .iter()
+            .any(|f| f.kind == FixKind::ByLayer && f.one_click)
+    );
+    // the same plate with the plinth first: its gantry strikes could be cleared by printing it last, but that order
+    // still breaks the radius, so no reorder is offered there either
+    let (cfg2, opts2) = a1(false);
     let r = run(
         &[
-            ("tall", block(20.0, 20.0, 20.0), 60.0, 100.0),
-            ("low", block(20.0, 20.0, 6.0), 112.0, 100.0),
+            ("plinth", block(64.0, 20.0, 40.0), 96.0, 118.0),
+            ("cylinder", block(20.0, 20.0, 10.0), 73.0, 118.0),
+            ("box", block(20.0, 20.0, 10.0), 163.0, 118.0),
+        ],
+        cfg2,
+        opts2,
+    );
+    assert!(blocks(&r) > 0, "{:?}", kinds(&r));
+    assert!(
+        !r.report
+            .collision_fixes
+            .iter()
+            .any(|f| f.kind == FixKind::Reorder),
+        "{:?}",
+        r.report.collision_fixes
+    );
+    // QA's 25 mm and 32 mm gaps: inside 73 mm, blocked the same way
+    for gap in [25.0, 32.0] {
+        let r = run(
+            &[
+                ("tall", block(20.0, 20.0, 20.0), 60.0, 100.0),
+                ("low", block(20.0, 20.0, 6.0), 80.0 + gap, 100.0),
+            ],
+            cfg.clone(),
+            opts.clone(),
+        );
+        assert_eq!(blocks(&r), 1, "{gap}: {:?}", kinds(&r));
+        assert_eq!(shaped(&r), 0, "{gap}: {:?}", kinds(&r));
+    }
+    // 80 mm apart: outside the radius, nothing
+    let r = run(
+        &[
+            ("tall", block(20.0, 20.0, 20.0), 20.0, 100.0),
+            ("low", block(20.0, 20.0, 6.0), 120.0, 100.0),
         ],
         cfg,
         opts,
     );
-    assert!(hits(&r).is_empty(), "{:?}", kinds(&r));
-    // the A1 mini, a row with the tall part first: the gantry meets it, the head does not
+    assert!(r.report.collisions.is_empty(), "{:?}", kinds(&r));
+    // the A1 mini, a row with the tall part first: the gantry meets it, the drawn head never does
     let (cfg, opts) = a1(true);
     let r = run(
         &[
@@ -350,7 +409,7 @@ fn an_estimated_head_never_blocks_a_print() {
         cfg,
         opts,
     );
-    assert!(hits(&r).is_empty(), "{:?}", kinds(&r));
+    assert_eq!(shaped(&r), 0, "{:?}", kinds(&r));
     assert!(kinds(&r).iter().any(|k| k.0 == Kind::Gantry), "{:?}", kinds(&r));
 }
 

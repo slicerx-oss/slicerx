@@ -51,6 +51,9 @@ impl Changer {
 pub(crate) struct Machine {
     pub heads: Vec<Vec<Column>>,
     pub changer: Option<Changer>,
+    /// The head is drawn from photos, not measured (`estimated` in the file): only its nozzle is checked, and the
+    /// profile's clearance radius stands in for the rest.
+    pub estimated: bool,
 }
 
 fn file() -> &'static Value {
@@ -132,12 +135,15 @@ pub(crate) fn machine(printer_id: Option<&str>, printer_model: Option<&str>) -> 
         return Machine {
             heads: vec![columns(f, "generic")],
             changer: None,
+            estimated: false,
         };
     };
     let mut heads = Vec::new();
+    let mut estimated = false;
     for k in list(p.get("heads")) {
         if let Some(k) = k.as_str() {
             heads.push(columns(f, k));
+            estimated |= list(f.get("estimated")).iter().any(|e| e.as_str() == Some(k));
         }
     }
     let changer = p
@@ -145,7 +151,11 @@ pub(crate) fn machine(printer_id: Option<&str>, printer_model: Option<&str>) -> 
         .and_then(Value::as_str)
         .and_then(|k| f.get("changers")?.get(k))
         .map(changer);
-    Machine { heads, changer }
+    Machine {
+        heads,
+        changer,
+        estimated,
+    }
 }
 
 #[cfg(test)]

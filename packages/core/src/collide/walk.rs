@@ -323,22 +323,20 @@ impl Walker<'_> {
                 let d = hull_distance(&o.hull, [x, y]);
                 if d < m.radius {
                     let short = m.radius - d;
+                    // A head that is not measured cannot clear it by its own shape: the radius blocks, as in Bambu Studio.
+                    let (severity, part) = if m.estimated {
+                        (Severity::Hit, Part::Clearance)
+                    } else {
+                        (Severity::Close, Part::Toolhead)
+                    };
                     #[allow(clippy::cast_possible_truncation, reason = "mm")]
-                    self.record(
-                        pr,
-                        Kind::Hotend,
-                        Severity::Close,
-                        Part::Toolhead,
-                        n.j,
-                        short as f32,
-                        |o| {
-                            let q = nearest_on_hull(&o.hull, [x, y]);
-                            Some((
-                                [q[0], q[1], (z + m.nozzle_height).min(f64::from(o.top))],
-                                short as f32,
-                            ))
-                        },
-                    );
+                    self.record(pr, Kind::Hotend, severity, part, n.j, short as f32, |o| {
+                        let q = nearest_on_hull(&o.hull, [x, y]);
+                        Some((
+                            [q[0], q[1], (z + m.nozzle_height).min(f64::from(o.top))],
+                            short as f32,
+                        ))
+                    });
                 }
             }
         }

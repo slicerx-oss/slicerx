@@ -205,6 +205,14 @@ describe('heimdall in the app', () => {
     expect(groupMarks(marks, 1100, 18).map((g) => g.map((x) => x.i))).toEqual([[0], [1], [2]])
   })
 
+  it('words a clearance hit as the profile\'s rule, never as the head clearing', () => {
+    const name = namesOf([{ id: 'tall', name: 'Tall' }, { id: 'low', name: 'Low' }])
+    const held: Collision = { ...close, severity: 'hit', part: 'clearance', limitMm: 73, depthMm: 70 }
+    expect(collisionTitle(held, name)).toBe('The toolhead comes too close to Tall')
+    expect(collisionDetail(held, name)).toBe('While Low prints, the nozzle comes within 3.0 mm of Tall, inside the 73 mm the printer profile asks for around it, layers 3 to 4. This printer\'s head is not measured, so heimdall holds it to the profile, as Bambu Studio does.')
+    expect(collisionDetail(held, name)).not.toContain('clears')
+  })
+
   it('names crossing paths, keep-out zones and their fixes', () => {
     const name = namesOf([{ id: 'a', name: 'Bracket' }, { id: 'b', name: 'Hook' }])
     const cross: Collision = { ...hit, kind: 'path_conflict', part: 'nozzle', objectId: 'b', hitId: 'prime-tower', depthMm: 0, limitMm: 0 }
