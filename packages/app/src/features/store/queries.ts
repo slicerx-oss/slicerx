@@ -78,6 +78,8 @@ export function rowQuery(store: StoreClient | undefined, row: RowId, signedIn: b
     },
     enabled: Boolean(store) && (row !== 'liked' || signedIn),
     staleTime: 60_000,
+    // A row that fails is hidden, so do not hold the page on retries.
+    retry: 1,
   })
 }
 
@@ -87,6 +89,7 @@ export function newCreatorsQuery(store: StoreClient | undefined) {
     queryFn: async () => (store ? store.newCreators({ days: 30, limit: 12 }) : []),
     enabled: Boolean(store),
     staleTime: 60_000,
+    retry: 1,
   })
 }
 
