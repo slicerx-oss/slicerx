@@ -7,6 +7,7 @@
 import type { NamedValue } from '../cad/value-names'
 import { parseValues } from './values-file'
 import type { MeshPart } from '@slicerx/contracts'
+import { MarkReadError, readVaultMarks, type VaultMark, type VaultMarks } from '@slicerx/contracts/sx3mf-marks'
 import type { Dimension, DimensionAnchor, Feature } from '../geom/cad'
 import type { History } from '../cad/history/model'
 import { historyNewer, parseHistories } from './history-read'
@@ -449,6 +450,61 @@ export function parseBrimEars(bytes: Uint8Array | undefined): Map<number, [numbe
 }
 
 /** Reads project bytes. Throws ProjectReadError with a plain message for anything it cannot use. */
+/** Where the Vault marks are: every model part (a mark there covers the whole file) and the per object settings files. */
+const MARKED_SETTINGS = ['Metadata/model_settings.config', 'Metadata/Slic3r_PE_model.config']
+
+/**
+ * The Vault marks of an unzipped 3MF, read as XML (packages/contracts/src/sx3mf-marks.ts), not by pattern. A mark in
+ * any model part is a root mark; one in a settings file belongs to its object.
+ */
+export function vaultMarksOf(files: ReadonlyMap<string, Uint8Array>, mainText?: string): VaultMarks {
+  const out: VaultMarks = { root: {}, objects: new Map() }
+  const merge = (to: VaultMark, from: VaultMark) => {
+    if (from.listing && !to.listing) to.listing = from.listing
+    if (from.creator && !to.creator) to.creator = from.creator
+  }
+  const dec = new TextDecoder()
+  try {
+    for (const [name, bytes] of files) {
+      if (!/\.model$/i.test(name)) continue
+      merge(out.root, readVaultMarks(name === '3D/3dmodel.model' && mainText !== undefined ? mainText : dec.decode(bytes)).root)
+    }
+    for (const name of MARKED_SETTINGS) {
+      const bytes = files.get(name)
+      if (!bytes) continue
+      const m = readVaultMarks(dec.decode(bytes), true)
+      merge(out.root, m.root)
+      for (const [id, mark] of m.objects) {
+        const to = out.objects.get(id) ?? {}
+        merge(to, mark)
+        out.objects.set(id, to)
+      }
+    }
+  } catch (e) {
+    if (e instanceof MarkReadError) throw new ProjectReadError(e.message)
+    throw e
+  }
+  return out
+}
+
+function sourceOf(m: VaultMark): { modelId?: string; creatorId?: string } | undefined {
+  return m.listing || m.creator ? { ...(m.listing ? { modelId: m.listing } : {}), ...(m.creator ? { creatorId: m.creator } : {}) } : undefined
+}
+
+/** The listing a 3MF names, for a file the engine opens itself: its root mark, or the first object's. Undefined when it names none or does not unzip. */
+export async function vaultSourceOf(bytes: Uint8Array): Promise<{ modelId?: string; creatorId?: string } | undefined> {
+  let files
+  try {
+    files = await unzipEntries(bytes)
+  } catch {
+    return undefined
+  }
+  const marks = vaultMarksOf(files)
+  if (marks.root.listing) return sourceOf(marks.root)
+  const first = [...marks.objects.values()].find((m) => m.listing)
+  return first ? sourceOf({ ...marks.root, ...first }) : undefined
+}
+
 export async function readProject(bytes: Uint8Array, bed: { widthMm: number; depthMm: number }): Promise<ImportedProject> {
   const files = await unzipEntries(bytes)
   const modelBytes = files.get('3D/3dmodel.model')
@@ -457,10 +513,8 @@ export async function readProject(bytes: Uint8Array, bed: { widthMm: number; dep
   const mainText = dec.decode(modelBytes)
   const main = scanModel(mainText)
   // The library stamps sx:Listing and sx:Creator on the root model; they apply to every object without its own.
-  const rootMeta = (name: string) => new RegExp(`<metadata\\s+name="${name}"\\s*>([^<]*)</metadata>`).exec(mainText.slice(0, 1 << 20))?.[1]?.trim() || undefined
-  const rootListing = rootMeta('sx:Listing')
-  const rootCreator = rootMeta('sx:Creator')
-  const rootSource = rootListing || rootCreator ? { ...(rootListing ? { modelId: unescapeXml(rootListing) } : {}), ...(rootCreator ? { creatorId: unescapeXml(rootCreator) } : {}) } : undefined
+  const marks = vaultMarksOf(files, mainText)
+  const rootSource = sourceOf(marks.root)
   // Bambu Studio and Orca keep each object's mesh in its own file, named by the component's p:path.
   const others = new Map<string, ScannedModel>()
   const modelAt = (path: string | undefined): ScannedModel => {
@@ -485,7 +539,6 @@ export async function readProject(bytes: Uint8Array, bed: { widthMm: number; dep
     raw?: Record<string, string>
   }
   const meta = new Map<string, { name?: string; extruder?: number; parts: Map<string, PartInfo> }>()
-  const sxSource = new Map<string, { modelId?: string; creatorId?: string }>()
   const plateCfg: { name: string; sequence?: 'by-layer' | 'by-object'; nozzleMap?: number[]; objectIds: string[] }[] = []
   if (settingsText) {
     const cfg = xml(dec.decode(settingsText)).documentElement
@@ -502,7 +555,6 @@ export async function readProject(bytes: Uint8Array, bed: { widthMm: number; dep
       }
       const objExt = Number(m['extruder'])
       meta.set(id, { ...(m['name'] ? { name: m['name'] } : {}), ...(Number.isInteger(objExt) && objExt > 0 ? { extruder: objExt } : {}), parts })
-      if (m['sx:Listing'] || m['sx:Creator']) sxSource.set(id, { ...(m['sx:Listing'] ? { modelId: m['sx:Listing'] } : {}), ...(m['sx:Creator'] ? { creatorId: m['sx:Creator'] } : {}) })
     }
     for (const p of kids(cfg, 'plate')) {
       const m = md(p)
@@ -594,7 +646,8 @@ export async function readProject(bytes: Uint8Array, bed: { widthMm: number; dep
     const t = item.transform ? [...item.transform] : [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
     t[12] = t[12]! - ox - ax
     t[13] = t[13]! - oy - ay
-    const source = sxSource.get(item.objectId) ?? rootSource
+    const own = marks.objects.get(item.objectId)
+    const source = own ? sourceOf({ ...marks.root, ...own }) : rootSource
     ;(plates[pIndex] ?? plates[0]!).objects.push({ name: info?.name ?? pz?.name ?? obj.name ?? parts[0]!.name, parts, volumes, transform: t, ...(Object.keys(rawPartSettings).length ? { rawPartSettings } : {}), ...(Object.keys(paintByPart).length ? { paint: paintByPart } : {}), ...(item.printable ? {} : { printable: false }), ...(ears.get(itemIndex + 1) ? { brimPoints: ears.get(itemIndex + 1)! } : {}), ...(source ? { source } : {}), fileId: item.objectId })
   }
   // Marks from Orca and Bambu Studio's layer slider: color change 0, pause 1, custom 4 (other types are not carried over).
