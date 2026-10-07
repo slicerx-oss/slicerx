@@ -47,6 +47,7 @@ import { PlateList } from './plate-list'
 import { selectObject } from '../../plate/edit'
 import { get, isCadTool, selectedIds, set, setWorkspace, useApp } from '../../state/store'
 import { GENERIC_BED } from '../../adapters/generic-bed'
+import { useModelMode } from '../../state/model-mode'
 import { EasySettingsPanel } from './easy-settings'
 const ExpertSettings = lazy(() => import('./expert-settings').then((m) => ({ default: m.ExpertSettings })))
 
@@ -214,6 +215,8 @@ export function PrepareLeft({ layout }: { layout: LayoutSpec }) {
   const mode = effectiveMode(useApp((s) => s.settingsMode), layout)
   const tierTitle = mode === 'expert' || mode === 'developer' ? 'Expert settings' : 'Advanced settings'
   const objectsFirst = layout.objectList === 'sidebar-above-settings'
+  // Design has no printer, filament or print settings: it models parts; Slice sets them up for printing.
+  const design = useModelMode() === 'design'
   // A history step opened for editing gets a fresh panel, even when the same tool is already open.
   const editKey = useApp((s) => (s.historyEdit ? `:${s.historyEdit.objectId}:${s.historyEdit.index}` : ''))
   return (
@@ -223,40 +226,44 @@ export function PrepareLeft({ layout }: { layout: LayoutSpec }) {
       {objectTool === 'cut' ? <Suspense fallback={null}><CutPanel /></Suspense> : null}
       {tool === 'paint' ? <Suspense fallback={null}><PaintPanel /></Suspense> : null}
       {tool === 'brim' ? <Suspense fallback={null}><BrimEarsPanel /></Suspense> : null}
-      <PrinterBlock />
-      <FilamentBlock />
-      {layout.objectList === 'sidebar-after-filament' ? <PrepareObjects /> : null}
-      <Block
-        title="Print settings"
-        aside={
-          layout.modeSelector === 'sidebar' ? (
-            <ModeSelector layout={layout} id="mode-side" />
-          ) : expertVisible ? (
-          <LinkButton
-            icon="sliders"
-            onClick={() => {
-              set({ expertOpen: true })
-              requestAnimationFrame(() => document.getElementById('expert-toggle')?.scrollIntoView({ block: 'start', behavior: 'smooth' }))
-            }}
+      {design ? null : (
+        <>
+          <PrinterBlock />
+          <FilamentBlock />
+          {layout.objectList === 'sidebar-after-filament' ? <PrepareObjects /> : null}
+          <Block
+            title="Print settings"
+            aside={
+              layout.modeSelector === 'sidebar' ? (
+                <ModeSelector layout={layout} id="mode-side" />
+              ) : expertVisible ? (
+              <LinkButton
+                icon="sliders"
+                onClick={() => {
+                  set({ expertOpen: true })
+                  requestAnimationFrame(() => document.getElementById('expert-toggle')?.scrollIntoView({ block: 'start', behavior: 'smooth' }))
+                }}
+              >
+                {overrides ? `Expert (${overrides})` : 'Expert'}
+              </LinkButton>
+              ) : undefined
+            }
+            data-section="settings"
           >
-            {overrides ? `Expert (${overrides})` : 'Expert'}
-          </LinkButton>
-          ) : undefined
-        }
-        data-section="settings"
-      >
-        <EasySettingsPanel />
-      </Block>
-      {expertVisible ? (
-        <Block title={tierTitle} expanded={expertOpen} onExpandedChange={(v) => set({ expertOpen: v })} id="expert-toggle" data-section="expert">
-          {expertOpen ? (
-            <Suspense fallback={<div className="ws-loading" aria-busy="true" />}>
-              <ExpertSettings />
-            </Suspense>
+            <EasySettingsPanel />
+          </Block>
+          {expertVisible ? (
+            <Block title={tierTitle} expanded={expertOpen} onExpandedChange={(v) => set({ expertOpen: v })} id="expert-toggle" data-section="expert">
+              {expertOpen ? (
+                <Suspense fallback={<div className="ws-loading" aria-busy="true" />}>
+                  <ExpertSettings />
+                </Suspense>
+              ) : null}
+            </Block>
           ) : null}
-        </Block>
-      ) : null}
-      {objectsFirst || layout.objectList === 'sidebar-after-filament' ? null : <PrepareObjects />}
+        </>
+      )}
+      {objectsFirst || (!design && layout.objectList === 'sidebar-after-filament') ? null : <PrepareObjects />}
       {layout.plateList === 'sidebar' ? <PlateList layout={layout} /> : null}
     </>
   )

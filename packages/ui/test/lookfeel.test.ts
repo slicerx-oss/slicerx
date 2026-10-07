@@ -51,8 +51,8 @@ describe('look and feel presets', () => {
   it('renames tabs per style', () => {
     expect(resolvePreset('bambu-studio').layout.tabLabels?.['printers']).toBe('Device')
     expect(resolvePreset('orcaslicer').layout.tabLabels?.['printers']).toBe('Device')
-    expect(resolvePreset('prusaslicer').layout.tabLabels?.['prepare']).toBe('Plater')
-    expect(resolvePreset('slicerx').layout.tabLabels).toEqual({ prepare: 'Model' })
+    // The first tab is Design | Slice in every look; no look renames it.
+    for (const id of LOOK_IDS) expect(resolvePreset(id).layout.tabLabels?.['prepare'], id).toBeUndefined()
   })
 
   it('maps look values to variables', () => {
@@ -98,6 +98,8 @@ describe('keymaps', () => {
 
   it('has no chord bound twice inside one look', () => {
     for (const id of LOOK_IDS) expect(keymapConflicts(KEYMAPS[id]), id).toEqual([])
+    // Design | Slice is Mod+E in all four looks (Tab is Preview in three of them; sketching takes bare digits).
+    for (const id of LOOK_IDS) expect(KEYMAPS[id]['model.mode'], id).toBe('Mod+E')
   })
 
   it('matches the research on the disputed keys', () => {
