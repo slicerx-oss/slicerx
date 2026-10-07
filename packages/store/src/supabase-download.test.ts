@@ -57,6 +57,7 @@ function fake(tables: Record<string, Record<string, unknown>[]>, opts: { signErr
     rpc: async (fn: string, args: Record<string, unknown>) => {
       if (fn === 'record_download') counted.push(String(args['p_listing']))
       if (fn === 'listing_stats' || fn === 'saved_listings') return { data: [], error: null }
+      if (fn === 'trending_listings') return { data: [{ listing_id: LISTING, score: 9 }], error: null }
       return { data: null, error: null }
     },
     storage: {
@@ -102,5 +103,13 @@ describe('a member download', () => {
     expect((await supabaseStore(theirs.db).getListing(LISTING))?.listing.currentVersion).toMatchObject({ version: '1.0.0', format: 'sx3mf' })
     const mine = fake({ listings: [listing(MINE)], listing_versions: versions, creators: [creator, other], print_profiles: [], likes: [] })
     expect((await supabaseStore(mine.db).getListing(LISTING))?.listing.currentVersion).toMatchObject({ version: '1.1.0', format: 'stl' })
+  })
+
+  it('keeps the print time and filament on a featured card when a newer non-.sx3mf version has none', async () => {
+    const profile = { id: '00000000-0000-4000-8000-000000000201', version_id: version(1, '1.0.0', 'cube.sx3mf').id, printer_model: 'Bambu Lab P1S', process: '0.20 mm Standard', filament: 'Generic PLA', layer_height_mm: 0.2, nozzle_mm: 0.4, time_s: 7320, grams: 94, plates: 1, notes: null }
+    const f = fake({ listings: [listing(THEIRS)], listing_versions: [version(1, '1.0.0', 'cube.sx3mf'), version(9, '99.0.0', 'cube.stl')], creators: [creator, other], print_profiles: [profile], likes: [] })
+    const [card] = await supabaseStore(f.db).trending({ days: 7, limit: 1 })
+    expect(card?.listing.currentVersion?.version).toBe('1.0.0')
+    expect(card?.listing.currentVersion?.printProfiles?.['Bambu Lab P1S']).toMatchObject({ timeS: 7320, grams: 94 })
   })
 })
