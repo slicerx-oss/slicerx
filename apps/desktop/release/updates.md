@@ -68,7 +68,9 @@ the desktop session and to its LaunchAgents; over plain ssh unlock it first with
    ```
 
 3. Publish from that folder as before (`publish.sh <version> <folder> <notes.md> <commit>`). With `.sig` files in the
-   folder it writes and uploads `latest.json` and moves the feed.
+   folder it writes and uploads `latest.json` and moves the feed. Once the edition has an update key, a release must
+   carry a signed update for macOS, both Windows installers and the AppImage: `sign-updates.sh` and `publish.sh` stop
+   when any of them is missing, so no platform is left on the old version.
 
 To test the whole path on a computer with Rust: `node apps/desktop/release/test/updater-e2e.mjs`. It makes a
 throwaway key in a temporary folder, signs fake bundles with `sign-updates.sh`, writes the feeds with
