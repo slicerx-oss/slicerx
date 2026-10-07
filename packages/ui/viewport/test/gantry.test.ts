@@ -66,6 +66,20 @@ describe('gantry beam', () => {
     expect(hits(t)).toHaveLength(0)
   })
 
+  it('marks a strike at the band\'s edge, where the engine counts whole cells', () => {
+    const t = new Toolpaths()
+    t.set(preview)
+    t.setGantry(A1)
+    // the part starts 1.5 mm past the band (128 + 56.5), within the engine's two cells
+    t.setGantryHits([{ ...HIT, box: [100, 128 + 56.5 + 1.5, 156, 200] }])
+    t.setRange(0, 1, 2)
+    expect(hits(t)).toHaveLength(1)
+    // 5 mm past it: no strike there
+    t.setGantryHits([{ ...HIT, box: [100, 128 + 56.5 + 5, 156, 200] }])
+    t.setRange(0, 2, 2)
+    expect(hits(t)).toHaveLength(0)
+  })
+
   it('shows on a strike\'s layers with the head hidden, and not elsewhere', () => {
     const t = rig()
     t.setShowToolhead(false)
