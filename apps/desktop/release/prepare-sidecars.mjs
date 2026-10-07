@@ -9,7 +9,7 @@
 // optional: without it the watch is left out of the bundle, since a watch with no model reports nothing.
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -29,15 +29,19 @@ run('node', [join(repo, 'packages', 'mcp', 'scripts', 'build.mjs'), '--standalon
 
 const model = join(tauri, 'resources', 'sx-watch-siglip2.onnx')
 const url = process.env.SX_WATCH_MODEL_URL
+const want = process.env.SX_WATCH_MODEL_SHA256?.toLowerCase()
+const sha = () => createHash('sha256').update(readFileSync(model)).digest('hex')
+// a model left by an earlier build is fetched again when it is not the one this build asks for
+if (url && existsSync(model) && want && sha() !== want) {
+  console.log('prepare-sidecars: the cached watch model is not the one SX_WATCH_MODEL_SHA256 names, fetching it again')
+  rmSync(model)
+}
 if (url && !existsSync(model)) {
   if (!url.startsWith('https://')) throw new Error('SX_WATCH_MODEL_URL must be https')
   run('curl', ['--fail', '--silent', '--show-error', '--location', '--output', model, url])
 }
 const haveModel = existsSync(model)
-if (haveModel && process.env.SX_WATCH_MODEL_SHA256) {
-  const sum = createHash('sha256').update(readFileSync(model)).digest('hex')
-  if (sum !== process.env.SX_WATCH_MODEL_SHA256.toLowerCase()) throw new Error('The watch model does not match SX_WATCH_MODEL_SHA256')
-}
+if (haveModel && want && sha() !== want) throw new Error('The watch model does not match SX_WATCH_MODEL_SHA256')
 
 // Without the model the watch is not bundled, so it is not built either. ONNX Runtime ships no x86_64 macOS binary,
 // so a universal build carries an arm64 watch, and the app leaves it off on Intel Macs.
