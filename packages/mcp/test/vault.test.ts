@@ -4,6 +4,7 @@ import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { geomTools } from '../src/geom'
 import { isVaultFile, refuseVaultFile } from '../src/vault'
 import { writeZip } from '../src/zip'
 
@@ -85,5 +86,27 @@ describe('Vault designs in the mesh tools', () => {
 
   it('refuses with a message that says slicing still works', () => {
     expect(() => refuseVaultFile(project('f.sx3mf', '<metadata name="sx:Listing">id</metadata>'))).toThrow(/leaves SlicerX only as \.sx3mf/)
+  })
+})
+
+describe('the mesh tools take STL only', () => {
+  const tools = geomTools({ bin: '/nonexistent/sx-geom', policy: { allowDirs: [dir], outDir: join(dir, 'out'), allowUrls: false } })
+  const run = (name: string, input: Record<string, unknown>) => (tools.find((t) => t.name === name) as unknown as { run(i: unknown): Promise<unknown> }).run(input)
+  const plain = join(dir, 'plain.3mf')
+  writeFileSync(plain, writeZip([{ name: '3D/3dmodel.model', data: '<model><resources/><build/></model>' }]))
+  const vault = join(dir, 'print.gcode.3mf')
+  writeFileSync(vault, writeZip([{ name: '3D/3dmodel.model', data: '<model><metadata name="sx:Listing">id</metadata><resources/><build/></model>' }]))
+  const disguised = join(dir, 'disguised.stl')
+  writeFileSync(disguised, writeZip([{ name: '3D/3dmodel.model', data: '<model><resources/><build/></model>' }]))
+
+  it('refuses a 3MF with a clear message instead of reading it as an STL', async () => {
+    for (const name of ['geom.cut', 'geom.orient']) {
+      await expect(run(name, { model: plain, plane: { axis: 'z', at: 5 } })).rejects.toThrow(/plain\.3mf is not an STL\. The mesh tools take STL files only/)
+    }
+    await expect(run('geom.repair', { model: disguised })).rejects.toThrow(/disguised\.stl is not an STL/)
+  })
+
+  it('says a Vault design is one before it says it is not an STL', async () => {
+    await expect(run('geom.cut', { model: vault, plane: { axis: 'z', at: 5 } })).rejects.toThrow(/design from the Vault/)
   })
 })

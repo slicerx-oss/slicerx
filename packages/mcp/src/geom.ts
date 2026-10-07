@@ -7,12 +7,12 @@
 // analysis is a read, anything that writes a new mesh is in the slice class.
 import { spawn } from 'node:child_process'
 import { mkdirSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { basename, dirname, extname, join } from 'node:path'
 import { defineTool, type PilotTool } from '@slicerx/pilot'
 import { z } from 'zod'
 import { resolveModel, ToolInputError, type PathPolicy } from './models'
 import { findBinary } from './sx'
-import { refuseVaultFile } from './vault'
+import { looksZipped, refuseVaultFile } from './vault'
 
 /** Finds sx-geom: an explicit path, SLICERX_SX_GEOM_BIN, next to the sx binary, then PATH. */
 export function findSxGeom(explicit?: string, sxPath?: string): string | undefined {
@@ -91,12 +91,19 @@ export function geomCaller(deps: GeomToolDeps): GeomCall {
 
 export function geomTools(deps: GeomToolDeps): PilotTool<never>[] {
   const call = geomCaller(deps)
-  const mesh = async (model: string): Promise<{ stlPath: string }> => ({ stlPath: await resolveModel(deps.policy, model) })
-  // Tools that write a new mesh never take a Vault design.
+  // sx-geom reads STL only; a 3MF would be read as a binary STL with nonsense counts.
+  const stlOnly = (path: string): { stlPath: string } => {
+    if (extname(path).toLowerCase() !== '.stl' || looksZipped(path)) {
+      throw new ToolInputError(`${basename(path)} is not an STL. The mesh tools take STL files only; to work on a 3MF, export the object as STL from SlicerX first.`, 'unsupported_format')
+    }
+    return { stlPath: path }
+  }
+  const mesh = async (model: string): Promise<{ stlPath: string }> => stlOnly(await resolveModel(deps.policy, model))
+  // Tools that write a new mesh never take a Vault design, and say so before saying it is not an STL.
   const meshOut = async (model: string): Promise<{ stlPath: string }> => {
-    const m = await mesh(model)
-    refuseVaultFile(m.stlPath)
-    return m
+    const path = await resolveModel(deps.policy, model)
+    refuseVaultFile(path)
+    return stlOnly(path)
   }
 
   const cut = defineTool({
