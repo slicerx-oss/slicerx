@@ -565,7 +565,8 @@ button.reset:hover { color: var(--fg); background: var(--ink-3); }
 .obj-actions .sx-menu-anchor:last-child { margin-left: 0; }
 
 /* Filament slots, slot editor, flush volumes */
-.fil-aside { display: inline-flex; gap: 10px; align-items: center; }
+.fil-aside { display: inline-flex; gap: 6px; align-items: center; white-space: nowrap; flex: none; }
+.fil-count { font-size: var(--fs-sm); color: var(--dim); margin-right: 2px; }
 .fil-sync { margin: 0 0 8px; }
 .slot-swatch { all: unset; cursor: pointer; display: inline-flex; border-radius: 50%; }
 .slot { grid-template-columns: 22px 30px minmax(0, 1fr) auto; }
