@@ -4,6 +4,10 @@ All notable changes to the `sx_core::api` module. The format follows Keep a Chan
 
 ## [Unreleased]
 
+### Fixed
+
+- `LongBridge`: a `max_bridge_length` of 0 sets no limit, so presets that ship 0 (Bambu Lab) no longer warn about every bridge; findings past the first five are counted as bridges and regions on separate lines.
+
 ### Added
 
 - `RequestOptions::stock_gcode_keys` (never read from JSON) and `PrintConfig::trusted_gcode_keys`: custom G-code keys a native caller checked as the maker's stock text, linted as trusted when the rest is not.
