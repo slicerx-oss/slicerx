@@ -195,7 +195,11 @@ export async function buildProfileLayer(input: ProfileInput): Promise<ProfileLay
   const exact = await resolvedProfile(printerId, input.tier, nozzle)
   const resolved = exact ?? (nozzle !== profile.defaultNozzle ? await resolvedProfile(printerId, input.tier) : undefined)
   const base = printerConfig(printerId, nozzle) as Record<string, SettingValue>
-  const machine = (resolved ? { ...resolved.machine } : { ...base }) as Record<string, SettingValue>
+  // Orca's Bambu Lab presets leave out Bambu Studio's clearance keys (extruder_clearance_max_radius and
+  // extruder_clearance_dist_to_rod: 73 and 56.5 mm on the A1); heimdall needs them, so they come from the maker's own
+  // machine settings where the preset has none.
+  const clearance = Object.fromEntries(Object.entries(base).filter(([k]) => k.startsWith('extruder_clearance_')))
+  const machine = (resolved ? { ...clearance, ...resolved.machine } : { ...base }) as Record<string, SettingValue>
   const process = (resolved && exact ? { ...resolved.process } : { ...(processConfig(input.tier, nozzle, printerId) as Record<string, SettingValue>) }) as Record<string, SettingValue>
   if (resolved && !exact) {
     for (const k of ['nozzle_diameter', 'min_layer_height', 'max_layer_height'] as const) if (base[k] !== undefined) machine[k] = base[k]!
