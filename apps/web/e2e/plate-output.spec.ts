@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { type Page } from '@playwright/test'
 import { command, openStudio } from './cad-helpers'
-import { expect, tab, test } from './fixtures'
+import { expect, sliceCount, sliced, tab, test } from './fixtures'
 
 type Sx = { getState(): { plate: { name: string }[]; slice: { status: string; error?: unknown } }; setState(p: unknown): void }
 const state = (page: Page) => page.evaluate(() => (window as unknown as { __sx: Sx }).__sx.getState())
@@ -24,11 +24,14 @@ async function drop(page: Page, name: string): Promise<void> {
 }
 
 async function sliceDone(page: Page): Promise<void> {
+  // A slice that finished before this click does not count: the toolpaths of the last slice are already on screen.
+  const before = await sliceCount(page)
   await page.getByRole('main').getByRole('button', { name: /^Slice/ }).first().click()
   await expect
     .poll(async () => {
       const sl = (await state(page)).slice
-      return sl.status === 'error' ? JSON.stringify(sl).slice(0, 600) : sl.status
+      if (sl.status === 'error') return JSON.stringify(sl).slice(0, 600)
+      return sl.status === 'done' && (await sliceCount(page)) > before ? 'done' : sl.status
     }, { timeout: 120_000 })
     .toBe('done')
 }
@@ -67,7 +70,7 @@ test('a two-color plate keeps its prime tower and the filament order reaches the
   await page.getByRole('list', { name: 'Choose a printer' }).getByRole('button', { name: /Bay 2/ }).click()
   const exportGcode = async (): Promise<string> => {
     await sliceDone(page)
-    await page.locator('.sx-tab', { hasText: 'Preview' }).click()
+    await expect(sliced(page)).toBeVisible()
     const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Export G-code' }).click()])
     const text = readFileSync(await download.path(), 'utf8')
     await tab(page, 'prepare').click()

@@ -6,7 +6,7 @@
 import { type Page } from '@playwright/test'
 import { expect, test, viewportReady } from './fixtures'
 
-async function open(page: Page, workspace: 'prepare' | 'preview'): Promise<void> {
+async function open(page: Page, workspace: 'prepare'): Promise<void> {
   // The full icon table never arrives in this test.
   await page.route(/\/icon-paths-[^/]*\.js$/, (route) => route.abort())
   await page.addInitScript((ws) => {
@@ -34,7 +34,7 @@ async function blankIcons(page: Page): Promise<string[]> {
   })
 }
 
-for (const workspace of ['prepare', 'preview'] as const) {
+for (const workspace of ['prepare'] as const) {
   test(`the ${workspace} workspace draws every icon without the full icon table`, async ({ page }, info) => {
     await open(page, workspace)
     const shot = await page.screenshot({ path: info.outputPath(`${workspace}-first-frame.png`) })

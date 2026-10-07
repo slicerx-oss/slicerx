@@ -134,13 +134,13 @@ export function BugReportDialog() {
     body = (
       <div className="bug-form">
         <Field htmlFor="bug-title" label="Title">
-          <Input id="bug-title" value={form.title} maxLength={200} placeholder="Preview shows no toolpaths after slicing" onChange={(e) => patch({ title: e.target.value })} />
+          <Input id="bug-title" value={form.title} maxLength={200} placeholder="No toolpaths show after slicing" onChange={(e) => patch({ title: e.target.value })} />
         </Field>
         <Field htmlFor="bug-happened" label="What happened">
           <Textarea id="bug-happened" rows={3} value={form.happened} onChange={(e) => patch({ happened: e.target.value })} />
         </Field>
         <Field htmlFor="bug-steps" label="Steps to reproduce" hint="Optional. Numbered steps help most.">
-          <Textarea id="bug-steps" rows={3} value={form.steps} placeholder={'1. Open the example plate\n2. Slice\n3. Open Preview'} onChange={(e) => patch({ steps: e.target.value })} />
+          <Textarea id="bug-steps" rows={3} value={form.steps} placeholder={'1. Open the example plate\n2. Slice\n3. Drag the layer slider down'} onChange={(e) => patch({ steps: e.target.value })} />
         </Field>
         <Field htmlFor="bug-expected" label="Expected behavior" hint="Optional.">
           <Textarea id="bug-expected" rows={2} value={form.expected} onChange={(e) => patch({ expected: e.target.value })} />

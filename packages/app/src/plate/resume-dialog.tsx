@@ -12,7 +12,7 @@ import { planResume, type ResumePlan } from '../geom/resume'
 import { useHost } from '../host'
 import { Silhouette } from '../parts'
 import { slicePlate } from '../state/actions'
-import { get, markStale, set, setWorkspace, useApp } from '../state/store'
+import { get, markStale, set, showSliced, useApp } from '../state/store'
 import { closeResume, openResume, useResumeAsk } from './resume-state'
 import './resume-dialog.css'
 import { appName } from '../edition'
@@ -86,7 +86,7 @@ function Body({ printerName, startLayer }: { printerName?: string | undefined; s
     set({ resume: { plan: { resumeLayer: plan.resumeLayer, printedHeightMm: plan.printedHeightMm }, ...(declareZ ? { declareZ: true } : {}), ...(tops ? { layerTopsMm: tops } : {}) } })
     markStale()
     closeResume()
-    setWorkspace('preview')
+    showSliced()
     void slicePlate(host)
   }
   const everything = () => {

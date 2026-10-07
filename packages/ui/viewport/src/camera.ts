@@ -120,6 +120,16 @@ export class CameraRig {
       target = sphere.center.clone()
       dir = cam.position.clone().sub(this.controls.target).normalize()
       d = distFor(sphere.radius * 1.12)
+    } else if (kind === 'plate') {
+      // The opening view: the whole build plate from a three-quarter view above the front, with the parts (and anything
+      // tall on it) in view.
+      dir = new Vector3(0.6, 0.62, 1).normalize()
+      const plate = new Box3(new Vector3(-bedSize / 2, 0, -bedSize / 2), new Vector3(bedSize / 2, 0, bedSize / 2))
+      if (!box.isEmpty()) plate.expandByPoint(new Vector3(0, box.max.y, 0))
+      // About 70 percent of the width the overlays leave free, with room above and below.
+      const f = fitDistance(cam, plate, dir, 0.86 * fh, 0.72 * fw)
+      target = f.target
+      d = f.distance
     } else if (kind === 'iso') {
       // Product shot: three-quarter view from the front right, slightly high, model filling about 60 percent of the height.
       dir = new Vector3(0.66, 0.42, 1).normalize()

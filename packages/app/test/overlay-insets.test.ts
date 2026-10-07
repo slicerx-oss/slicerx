@@ -22,6 +22,11 @@ describe('overlay insets', () => {
     expect(overlayInsets(stage, [{ left: 30, top: 104, right: 1100, bottom: 160 }]).top).toBe(160 - 100 + OVERLAY_GAP)
   })
 
+  it('puts a narrow bar centered across the view (the plate toolbar, the look switch) on the top, not on a side', () => {
+    const toolbar: Rect = { left: 405, top: 156, right: 725, bottom: 196 }
+    expect(overlayInsets(stage, [toolbar])).toEqual({ left: 0, right: 0, top: 196 - 100 + OVERLAY_GAP, bottom: 0 })
+  })
+
   it('keeps the largest claim on a side', () => {
     expect(overlayInsets(stage, [legend, { left: 30, top: 540, right: 400, bottom: 600 }]).left).toBe(400 - 18 + OVERLAY_GAP)
   })

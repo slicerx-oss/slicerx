@@ -18,7 +18,7 @@ const MODES = ['simple', 'advanced', 'expert', 'developer'] as const
  * with it, nothing else. The theme owns color.
  */
 const LAYOUT: LayoutSpec = {
-  workspaceTabs: ['prepare', 'preview', 'feed', 'library', 'printers', 'pilot'],
+  workspaceTabs: ['prepare', 'feed', 'library', 'printers', 'pilot'],
   settingsModel: 'sidebar',
   sidebar: { side: 'left', width: 340, resizable: true, collapseKey: 'Shift+Tab' },
   objectList: 'sidebar-after-filament',
@@ -40,9 +40,9 @@ const LOOK: LookSpec = { density: 'standard', accent: 'purple', radius: 'soft', 
 /** Tab order and names per style: the one thing a style changes about the layout. */
 const TABS: Readonly<Record<LookId, Pick<LayoutSpec, 'workspaceTabs' | 'tabLabels'>>> = {
   slicerx: { workspaceTabs: LAYOUT.workspaceTabs },
-  'bambu-studio': { workspaceTabs: ['prepare', 'preview', 'printers', 'library', 'pilot'], tabLabels: { printers: 'Device' } },
-  prusaslicer: { workspaceTabs: ['prepare', 'preview', 'library', 'printers', 'pilot'] },
-  orcaslicer: { workspaceTabs: ['prepare', 'preview', 'printers', 'library', 'pilot'], tabLabels: { printers: 'Device' } },
+  'bambu-studio': { workspaceTabs: ['prepare', 'printers', 'library', 'pilot'], tabLabels: { printers: 'Device' } },
+  prusaslicer: { workspaceTabs: ['prepare', 'library', 'printers', 'pilot'] },
+  orcaslicer: { workspaceTabs: ['prepare', 'printers', 'library', 'pilot'], tabLabels: { printers: 'Device' } },
 }
 
 const preset = (id: LookId): LookAndFeelPreset => ({ id, ...LOOK_OPTIONS[id], controls: id, keys: id, layout: { ...LAYOUT, ...TABS[id] }, look: LOOK, defaultTheme: 'nocturne' })

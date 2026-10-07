@@ -136,6 +136,22 @@ button.reset:hover { color: var(--fg); background: var(--ink-3); }
 .busy { position: absolute; left: 0; right: 0; top: 0; height: 2px; z-index: 6; overflow: hidden; }
 .busy i { position: absolute; inset: 0; background: var(--cyan); animation: busy 1s ease-in-out infinite; }
 @keyframes busy { 0% { transform: translateX(-100%) scaleX(.3); } 100% { transform: translateX(100%) scaleX(.6); } }
+/* The slice's own progress: a thin accent line that fills from the left, its leading edge glowing; fades when done. */
+.slice-progress { position: absolute; left: 0; right: 0; top: 0; height: 2px; z-index: 6; pointer-events: none; transition: opacity 180ms ease; }
+.slice-progress[data-done] { opacity: 0; transition-delay: 120ms; }
+.slice-progress i { position: absolute; left: 0; top: 0; bottom: 0; width: calc(var(--p, 0) * 100%); background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 40%, transparent), var(--accent)); box-shadow: 0 0 8px 1px color-mix(in srgb, var(--accent) 70%, transparent), 0 0 2px var(--accent); border-radius: 0 2px 2px 0; transition: width 120ms linear; }
+:root[data-motion="reduced"] .slice-progress, :root[data-motion="reduced"] .slice-progress i { transition: none; box-shadow: none; }
+/* How Slice shows the slice: Solid, Layer lines or Toolpaths, centered under the plate toolbar. */
+.slice-look { position: absolute; left: 50%; top: 104px; transform: translateX(-50%); z-index: var(--z-hud); border-radius: var(--r-md); padding: 3px; }
+/* With the toolpaths showing, the layer dock takes the bottom: the plate list and chip sit above it, and a floating Slice action moves up under the View menu. */
+.studio[data-layers] .hud-bl { bottom: 216px; }
+.studio[data-layers] .slice-float { bottom: auto; top: 104px; right: 64px; }
+/* On a phone the toolpath view keeps the layer dock and drops the plate tools and the legend (the color menu still has it); the view grows to make room. */
+@media (max-width: 900px) {
+  .studio[data-layers] .legend, .studio[data-layers] .plate-tools { display: none; }
+  .studio[data-layers] .slice-look { top: 12px; }
+  .studio[data-layers] > .vp { height: 74vh; }
+}
 .vp-empty { position: absolute; inset: 0; display: grid; place-items: center; padding: 24px; text-align: center; z-index: 1; }
 .vp-empty > div { max-width: 340px; }
 .vp-empty > div > .sx-ic { width: 28px; height: 28px; color: var(--purple); }
@@ -486,7 +502,8 @@ button.reset:hover { color: var(--fg); background: var(--ink-3); }
 
 /* Look and feel: the settings sidebar's side and width, the floating Slice action, the mode selector. */
 .studio[data-mode="prepare"] > .pane { --w-side: var(--w-settings, 288px); }
-.studio[data-mode="prepare"][data-sidebar="right"] > .pane { order: 2; }
+/* Panes sit on their own side of the view: the settings sidebar where the look puts it, the slice summary opposite. */
+.studio > .pane[data-side="right"] { order: 2; }
 /* Design: the tree on the look's sidebar side, the tool pane on the other. */
 .studio[data-model-mode="design"] > .pane[data-side="left"] { order: 0; }
 .studio[data-model-mode="design"] > .pane[data-side="right"] { order: 2; }
@@ -505,7 +522,7 @@ button.reset:hover { color: var(--fg); background: var(--ink-3); }
 .mode-switch { display: inline-flex; align-items: center; gap: 8px; font: 500 var(--fs-sm) var(--f-body); color: var(--muted); }
 .mode-seg .sx-seg-btn, .mode-seg button { font-size: var(--fs-xs); }
 @media (max-width: 900px) {
-  .studio[data-mode="prepare"][data-sidebar="right"] > .pane { order: 0; }
+  .studio > .pane[data-side="right"] { order: 0; }
   .slice-float { position: static; width: auto; border-radius: 0; background: var(--ink-1); box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; }
 }
 .page-h-end { display: flex; align-items: center; gap: var(--s-3); flex-wrap: wrap; justify-content: flex-end; }

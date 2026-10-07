@@ -251,7 +251,19 @@ class ViewportImpl implements Viewport {
   private cameraMoved = false
   private firstFrameMs: number | null = null
   private arrangeAnim: ((now: number) => boolean) | null = null
-  private drag: Drag | null = null
+  private dragState: Drag | null = null
+  private get drag(): Drag | null {
+    return this.dragState
+  }
+  private set drag(d: Drag | null) {
+    const was = this.dragState !== null
+    this.dragState = d
+    if (was !== (d !== null)) this.applyToolpathLook()
+  }
+  // Toolpath look: in the plate view the sliced toolpaths stand in for the models. The model under the
+  // pointer turns solid at once, every model is solid while one is dragged or the slice is out of date.
+  private toolpathLook = { on: false, stale: false }
+  private solidId: string | null = null
   private width = 1
   private height = 1
   private insets: Insets = NO_INSETS
@@ -418,7 +430,7 @@ class ViewportImpl implements Viewport {
     // One frame with the warm-up bead and a shadow update also builds the shadow-pass program.
     this.shadowDirty = true
     this.afterFrame = () => {
-      root.visible = this.mode === 'preview'
+      root.visible = this.pathsShown()
       if (this.previewGen === gen) {
         this.toolpaths.warmNozzle(false)
         this.toolpaths.set(null)
@@ -570,7 +582,7 @@ class ViewportImpl implements Viewport {
         if (o) outline.push(o.group)
       }
     }
-    if (this.mode === 'preview') {
+    if (this.pathsShown()) {
       const camBed = this.camera.position.clone().applyMatrix4(this.stage.bedRoot.matrixWorld.clone().invert())
       this.toolpaths.setView(camBed, this.pipeline.size.height)
       this.ghost?.setView(camBed, this.pipeline.size.height)
@@ -584,7 +596,7 @@ class ViewportImpl implements Viewport {
     if (this.cut || this.cutGizmo.group.visible) this.updateCutGizmo()
     this.dims.fit(this.camera.fov, this.height)
     const ao = this.aoOn && aoMix > 0 && this.display !== 'wireframe' && !(this.mode === 'prepare' && this.renderMode === 'xray')
-    const firstPreviewFrame = this.previewSetAt !== null && this.mode === 'preview'
+    const firstPreviewFrame = this.previewSetAt !== null && this.pathsShown()
     this.stage.bakePendingContact()
     this.pipeline.render(this.stage.scene, this.camera, { ao, aoMix, fast: moving, outline, frameIndex: this.frameIdx++ })
     this.probe?.end()
@@ -601,7 +613,7 @@ class ViewportImpl implements Viewport {
       f()
       this.invalidate()
     }
-    if (this.previewSetAt !== null && this.mode === 'preview') {
+    if (this.previewSetAt !== null && this.pathsShown()) {
       this.firstFrameMs = t1 - this.previewSetAt
       this.previewSetAt = null
     }
@@ -664,7 +676,39 @@ class ViewportImpl implements Viewport {
     this.stage.previewRoot.visible = pv
     this.stage.setContactVisible(!pv && this.renderMode !== 'xray')
     this.shadowDirty = true
+    this.applyToolpathLook()
     this.invalidate()
+  }
+
+  setToolpathLook(on: boolean, stale = false): void {
+    if (on === this.toolpathLook.on && stale === this.toolpathLook.stale) return
+    this.toolpathLook = { on, stale }
+    this.applyToolpathLook()
+  }
+
+  /** The toolpaths are on screen: in Preview, or in the plate view with the toolpath look. */
+  private pathsShown(): boolean {
+    // Tools that work on the model's surface (painting, brim ears, lay on face, the modeling tools' picks) need it solid.
+    const surface = this.tool === 'paint' || this.tool === 'brim' || this.tool === 'face' || this.tool === 'probe'
+    return this.mode === 'preview' || (this.toolpathLook.on && !this.toolpathLook.stale && this.dragState === null && !surface)
+  }
+
+  private applyToolpathLook(): void {
+    if (this.mode !== 'prepare') return
+    const paths = this.pathsShown()
+    this.stage.previewRoot.visible = paths
+    this.stage.objectsRoot.visible = true
+    for (const o of this.objects.values()) o.group.visible = !paths || o.id === this.solidId
+    this.stage.setContactVisible(!paths && this.renderMode !== 'xray')
+    this.shadowDirty = true
+    this.invalidate()
+  }
+
+  /** The model under the pointer, for the toolpath look: solid the moment the pointer is over it, toolpaths again when it leaves. */
+  private hoverSolid(id: string | null): void {
+    if (!this.toolpathLook.on || id === this.solidId) return
+    this.solidId = id
+    this.applyToolpathLook()
   }
 
   setRenderMode(mode: RenderMode): void {
@@ -777,7 +821,9 @@ class ViewportImpl implements Viewport {
     }
     this.applyMaterials()
     this.objectsMoved()
-    if (!opts.keepCamera) this.view('iso')
+    this.applyToolpathLook()
+    // A fresh plate (the first one, a project opened, a plate swap) opens on the whole build plate, not on its parts.
+    if (!opts.keepCamera) this.view('plate')
   }
 
   setTransforms(transforms: Record<string, number[]>): void {
@@ -912,6 +958,7 @@ class ViewportImpl implements Viewport {
     if (tool !== 'brim' && this.brim.setHover(null)) this.invalidate()
     if (tool !== 'face' && tool !== 'probe') this.hoverFace(null)
     this.painter.setActive(tool === 'paint')
+    this.applyToolpathLook()
     this.invalidate()
   }
 
@@ -2243,6 +2290,7 @@ class ViewportImpl implements Viewport {
       }
       const d = this.drag
       if (!d) {
+        if (this.toolpathLook.on && this.mode === 'prepare' && e.buttons === 0) this.hoverSolid(pick(e)?.entry.id ?? null)
         if ((this.tool === 'face' || (this.tool === 'probe' && this.probeFaces)) && this.mode === 'prepare' && e.buttons === 0) this.hoverFace(pick(e))
         if (this.tool === 'probe' && this.probeHover && this.mode === 'prepare' && e.buttons === 0) queueProbe(e)
         if (this.tool === 'paint' && this.mode === 'prepare') this.paintMove(e, pick)
@@ -2359,7 +2407,7 @@ class ViewportImpl implements Viewport {
       if (moved >= 5 || e.button !== 0) return
       const p = pick(e)
       this.emit('pick', { objectId: p?.entry.id ?? null, partIndex: p?.part ?? null, point: p ? this.worldToBed(p.point) : null, triangle: p && p.face >= 0 ? p.face : null, bed: bedHit(e), ...(e.shiftKey ? { shift: true } : {}) })
-      if (this.mode === 'preview') {
+      if (this.pathsShown() && !p) {
         // A click on a toolpath: which path it is, so the app can show the setting that made it.
         setRay(e)
         const toBed = this.stage.bedRoot.matrixWorld.clone().invert()
@@ -2447,6 +2495,9 @@ class ViewportImpl implements Viewport {
     el.addEventListener('pointermove', onMove)
     el.addEventListener('pointerup', onUp)
     el.addEventListener('pointercancel', onCancel)
+    const onLeave = () => this.hoverSolid(null)
+    el.addEventListener('pointerleave', onLeave)
+    this.cleanups.push(() => el.removeEventListener('pointerleave', onLeave))
     el.addEventListener('keydown', onKey)
     el.addEventListener('keyup', onKeyUp)
     el.addEventListener('blur', onBlur)

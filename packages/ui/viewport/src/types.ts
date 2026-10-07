@@ -22,7 +22,7 @@ export type RenderMode = 'studio' | 'clay' | 'xray' | 'overhang' | 'filament'
 /** Preview coloring. `tool` is the filament color of each segment's tool. */
 export type ColorMode = 'feature' | 'tool' | 'speed' | 'flow' | 'layerTime' | 'width' | 'height' | 'fan' | 'temperature'
 /** `fit` frames the scene or selection from the current direction; `bed` frames the whole bed from it. */
-export type ViewPreset = 'iso' | 'top' | 'bottom' | 'front' | 'back' | 'left' | 'right' | 'fit' | 'bed'
+export type ViewPreset = 'iso' | 'top' | 'bottom' | 'front' | 'back' | 'left' | 'right' | 'fit' | 'bed' | 'plate'
 export type Projection = 'perspective' | 'orthographic'
 /** How Prepare draws models: `shaded`, `edges` (shaded with feature edges, the default) or `wireframe`. X-ray is a RenderMode. */
 export type DisplayStyle = 'shaded' | 'edges' | 'wireframe'
@@ -426,6 +426,8 @@ export interface Viewport {
   setLayerHeightBand(on: boolean): void
   /** Layer-groove shading in Prepare; `layerHeightMm` defaults to 0.2. */
   setPrintLook(on: boolean, layerHeightMm?: number): void
+  /** The plate view draws the sliced toolpaths in place of the models; the hovered model turns solid. `stale` keeps the models solid until the next slice lands. */
+  setToolpathLook(on: boolean, stale?: boolean): void
   setSelection(ids: string[]): void
   setTool(tool: PlateTool): void
   /** Brim ears per object, in bed coordinates (mm). `error` draws the ear in the alert color. */
