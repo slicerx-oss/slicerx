@@ -8,6 +8,7 @@ import { loadSettings } from '../adapters/load'
 import { allPlates, projectBase } from '../plate/plates'
 import { get, type PlateEntry } from '../state/store'
 import { renderCover, stlMesh, type CoverImage, type CoverMesh } from './cover'
+import { deriveColors, type DerivedColors } from './listing-colors'
 
 export type { CoverImage, CoverMesh } from './cover'
 
@@ -91,4 +92,57 @@ export async function vaultCreatorsInFile(name: string, bytes: Uint8Array): Prom
   } catch {
     return []
   }
+}
+
+/** A model's colors and its meshes by filament slot, so the cover can be drawn again in the creator's colors. */
+export interface UploadModel {
+  colors: DerivedColors | null
+  meshes: (CoverMesh & { slot: number })[]
+}
+
+/** The open project's colors: the slot colors the Filament block shows, each part's slot after the plate's swaps. */
+export async function projectModel(): Promise<UploadModel> {
+  const { resolveSlots, effectiveSlot, mapSlot } = await import('../filament/slots')
+  const s = get()
+  const palette = resolveSlots(s).map((r) => r.color)
+  const plates = allPlates(s)
+  const sources = plates.flatMap((p) =>
+    p.objects.map((o) => ({
+      name: o.name,
+      parts: o.parts.map((part) => ({ name: part.name, slot: mapSlot(p, effectiveSlot(o, part)) })),
+      ...(o.paint ? { paint: o.paint } : {}),
+      ...(o.printable === false ? { printable: false } : {}),
+      ...(o.instanceOf ? { instanceOf: o.instanceOf } : {}),
+    })),
+  )
+  const meshes = plates.flatMap((p) =>
+    p.objects.flatMap((o) =>
+      o.parts.map((part) => {
+        const slot = mapSlot(p, effectiveSlot(o, part))
+        return { positions: part.positions, indices: part.indices, color: palette[slot - 1] ?? '#bd93f9', slot, transform: o.transform }
+      }),
+    ),
+  )
+  return { colors: deriveColors(sources, palette), meshes }
+}
+
+/** A picked 3MF or .sx3mf's colors from its objects and project settings. Null for an STL or a file that cannot be read. */
+export async function fileModel(name: string, bytes: Uint8Array): Promise<UploadModel | null> {
+  const ext = name.toLowerCase().split('.').pop()
+  if (ext !== '3mf' && ext !== 'sx3mf') return null
+  try {
+    const { readProject } = await import('./import3mf')
+    const project = await readProject(bytes, get().bed)
+    const objects = project.plates.flatMap((p) => p.objects)
+    const meshes = objects.flatMap((o) => o.parts.map((p) => ({ positions: p.positions, indices: p.indices, color: project.colors[p.slot - 1] ?? project.colors[0] ?? '#bd93f9', slot: p.slot, transform: o.transform })))
+    return { colors: deriveColors(objects, project.colors), meshes }
+  } catch {
+    return null
+  }
+}
+
+/** The cover drawn again with the creator's colors: `slotHex` maps a file slot to the color it should show. */
+export function coverInColors(model: UploadModel, slotHex: Readonly<Record<number, string>>): CoverImage | null {
+  if (model.meshes.length === 0) return null
+  return renderCover(model.meshes.map((m) => ({ ...m, color: slotHex[m.slot] ?? m.color })))
 }

@@ -11,6 +11,7 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Button, Chip, Icon, Menu, MenuAnchor, MenuItem, Seg } from '@slicerx/ui'
 import { LayerArt, LibrarySwitch, openModelBytes, openSettings, setWorkspace, toast, useEdition, useHost } from '@slicerx/app'
 import { coverFor } from './art'
+import { ColorDots, ColorFacts } from './colors'
 import { CreatorEditorHost } from './creator-editor'
 import { count, CreatorAvatar, CreatorSheet, plural, printFacts, Sheet } from './creator-sheet'
 import { fetchModel, formatLabel } from './download'
@@ -401,7 +402,7 @@ function Featured({ item, weekly }: { item: ListingCard; weekly: boolean }) {
           <Uploader creator={creator} />
         </div>
         {listing.description ? <p className="lib-hero-d">{listing.description}</p> : null}
-        {facts.time || facts.grams ? (
+        {facts.time || facts.grams || listing.currentVersion?.colors ? (
           <dl className="lib-spec">
             {facts.time ? (
               <div>
@@ -413,6 +414,14 @@ function Featured({ item, weekly }: { item: ListingCard; weekly: boolean }) {
               <div>
                 <dt>Filament</dt>
                 <dd>{facts.grams}</dd>
+              </div>
+            ) : null}
+            {listing.currentVersion?.colors ? (
+              <div className="lib-spec-colors">
+                <dt>Colors</dt>
+                <dd>
+                  <ColorFacts colors={listing.currentVersion.colors} label={false} />
+                </dd>
               </div>
             ) : null}
           </dl>
@@ -443,6 +452,11 @@ function Card({ item, rank, stat = 'downloads' }: { item: ListingCard; rank?: nu
         <button type="button" className="lib-thumb" onClick={() => openListing(listing.id)} aria-label={`${listing.title}, details`}>
           {cover ? <img src={cover} alt="" loading="lazy" /> : <LayerArt seed={listing.slug} muted />}
         </button>
+        {listing.currentVersion?.colors ? (
+          <span className="lib-dots">
+            <ColorDots colors={listing.currentVersion.colors} size="sm" max={5} focusable={false} />
+          </span>
+        ) : null}
         <button type="button" className="lib-save" aria-pressed={save.saved} aria-label={save.saved ? `Remove ${listing.title} from Saved` : `Save ${listing.title}`} disabled={save.busy} onClick={() => void save.toggle()}>
           <Icon name="bookmark" size={15} />
         </button>
@@ -614,6 +628,7 @@ export function Detail({ item }: { item: ListingCard }) {
         ))}
       </div>
       <StatIcons listing={listing} />
+      {version?.colors ? <ColorFacts colors={version.colors} /> : null}
       {facts.length ? (
         <dl className="used">
           {facts.map(([k, v]) => (

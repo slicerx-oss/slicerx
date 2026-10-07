@@ -307,3 +307,52 @@ button.cs-thumb:hover .cs-art { outline: 1px solid var(--line); }
 .rv-reject { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
 .rv-reject .ce-in { flex: 1 1 240px; height: 30px; }
 @media (max-width: 900px) { .rv-row { grid-template-columns: minmax(0, 1fr); } .rv-actions { justify-content: flex-start; } }
+
+/* Listing colors: the Filament block's swatches (.swatch, 1 px inner ring), a ring around the colors an AMS part uses. */
+.lib { --lc-ring: color-mix(in srgb, var(--fg) 70%, transparent); }
+.lc-dots { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin: 0; padding: 0; list-style: none; }
+.lc-dots[data-size=sm] { gap: 6px; }
+.lc-dot { position: relative; display: inline-flex; border-radius: 50%; }
+.lc-dot[tabindex] { cursor: default; }
+.lc-dot[tabindex]:focus-visible { outline: var(--focus-ring); outline-offset: 5px; }
+.lc-dot[data-ams]::after, .lc-pick[data-ams]::after { content: ""; position: absolute; inset: -3.5px; border: 1.5px solid var(--lc-ring); border-radius: 50%; pointer-events: none; }
+.lc-dots[data-size=sm] .lc-dot[data-ams]::after { inset: -3px; border-width: 1px; }
+.lc-dots[data-size=sm] .lc-dot[data-ams] { margin: 0 2px; }
+.lc-more { font: 500 11.5px var(--f-body); font-variant-numeric: tabular-nums; color: var(--muted); line-height: 1; }
+.lc-facts { display: grid; gap: 9px; justify-items: start; }
+.lc-label { font-size: 13px; color: var(--muted); }
+.lc-line { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; font: 500 13px/1.4 var(--f-body); font-variant-numeric: tabular-nums; color: var(--fg); }
+.lc-sep { color: var(--dim); }
+.lc-ams { display: inline-flex; align-items: center; gap: 7px; }
+.lc-key { width: 10px; height: 10px; flex: none; border: 1.5px solid var(--lc-ring); border-radius: 50%; }
+.lib-detail .lc-facts { padding: 10px 0 2px; border-top: 1px dashed var(--line-soft); }
+.lib-spec .lib-spec-colors { flex-basis: 100%; gap: 8px; }
+.lib-spec .lib-spec-colors dd { font: inherit; }
+.lib-spec .lib-spec-colors .lc-facts { grid-auto-flow: column; justify-content: start; align-items: center; gap: 14px; }
+@media (max-width: 900px) { .lib-spec .lib-spec-colors .lc-facts { grid-auto-flow: row; gap: 9px; } }
+/* On a card the swatches float over the cover. */
+.lib-dots { position: absolute; left: 8px; bottom: 8px; display: inline-flex; align-items: center; min-height: 24px; padding: 5px 8px; border-radius: var(--r-pill); border: 1px solid color-mix(in srgb, var(--line) 70%, transparent); background: color-mix(in srgb, var(--ink-1) 74%, transparent); box-shadow: var(--shadow-float); -webkit-backdrop-filter: var(--lift-glass); backdrop-filter: var(--lift-glass); pointer-events: none; }
+/* The editor: one row per color, then the parts with their AMS switch. */
+.lc-edit { display: grid; gap: 12px; min-width: 0; }
+.lc-rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.lc-row { display: grid; grid-template-columns: 18px 30px minmax(0, 1fr) 64px 30px; gap: 8px; align-items: center; border-radius: var(--r-md); }
+.lc-row[data-drag] { opacity: 0.5; }
+.lc-pick { position: relative; display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; cursor: pointer; }
+.lc-pick .swatch { width: 22px; height: 22px; }
+.lc-pick[data-ams]::after { inset: 0; }
+.lc-pick:focus-within { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+.lc-hex { font: 12px var(--f-mono); color: var(--dim); font-variant-numeric: tabular-nums; }
+.lc-parts { display: grid; gap: 8px; padding-top: 4px; }
+.lc-sub { display: grid; gap: 2px; font: 600 13px var(--f-body); }
+.lc-plist { list-style: none; margin: 0; padding: 0; display: grid; max-height: 320px; overflow-y: auto; border: 1px solid var(--line-soft); border-radius: var(--r-md); }
+.lc-prow { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 12px; align-items: center; padding: 8px 12px; border-top: 1px solid var(--line-soft); }
+.lc-prow:first-child { border-top: 0; }
+.lc-pname { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.up-acts { display: flex; align-items: center; gap: 4px; }
+.up-acts .lc-dots { margin-right: 2px; }
+.ce-preview .lc-facts { padding: 2px 4px; }
+@media (max-width: 900px) {
+  .lc-row { grid-template-columns: 18px 30px minmax(0, 1fr) 30px; }
+  .lc-hex { display: none; }
+  .up-row > .up-acts { grid-column: 2; justify-self: start; }
+}
