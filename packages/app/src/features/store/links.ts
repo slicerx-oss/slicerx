@@ -36,8 +36,10 @@ export function linkTitle(link: Pick<CreatorLink, 'kind' | 'url'>): string {
 }
 
 /** The small line under it: the creator's label, else "Website", else "<name> on <service>". */
-export function linkSubtitle(link: Pick<CreatorLink, 'kind' | 'label'>, name: string): string {
-  if (link.label?.trim()) return link.label.trim()
+export function linkSubtitle(link: Pick<CreatorLink, 'kind' | 'label' | 'url'>, name: string): string {
+  const label = link.label?.trim()
+  // A label that only repeats the bold line says nothing new.
+  if (label && label.toLowerCase() !== linkTitle(link).toLowerCase()) return label
   if (link.kind === 'website' || link.kind === 'other') return LINK_KIND_INFO[link.kind].label
   return `${name} on ${LINK_KIND_INFO[link.kind].label}`
 }
