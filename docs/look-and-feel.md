@@ -146,6 +146,7 @@ One keymap per preset, all remappable, with a searchable list on Shift+? in ever
 | Arrange all, arrange selected | A, Shift+A | A, Shift+A | A, Shift+A | A, Shift+A |
 | Nudge 10 mm, 1 mm | arrows, Shift+arrows | same | same | same |
 | Prepare and Preview | Tab | click tab | Tab | Tab |
+| Design and Slice | Ctrl+E | Ctrl+E | Ctrl+E | Ctrl+E |
 | Slice | Ctrl+Enter | Ctrl+G | Ctrl+R | Ctrl+R |
 | Export G-code or print | Ctrl+Shift+E | Ctrl+Shift+E | Ctrl+G | Ctrl+Shift+E |
 | Command palette | Ctrl+K | Ctrl+K | Ctrl+K | Space (Speed Dial idea, opens the palette) |

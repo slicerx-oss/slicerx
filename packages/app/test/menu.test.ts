@@ -53,7 +53,7 @@ describe('native menu', () => {
     const items = new Map(menuCommands(menuModel(all, { platform: 'windows', app: 'SlicerX' })).map((e) => [e.id, e]))
     expect(items.get('plate-open')?.accelerator).toBe('CmdOrCtrl+O')
     expect(items.get('project-save')?.accelerator).toBe('CmdOrCtrl+S')
-    expect(items.get('export-gcode')?.accelerator).toBe('CmdOrCtrl+E')
+    expect(items.get('export-gcode')?.accelerator).toBe('CmdOrCtrl+Shift+E')
     expect(items.get('undo')).toMatchObject({ accelerator: 'CmdOrCtrl+Z', text: 'undo' })
     expect(items.get('redo')).toMatchObject({ accelerator: 'CmdOrCtrl+Shift+Z', text: 'redo' })
     expect(items.get('select-all')).toMatchObject({ accelerator: 'CmdOrCtrl+A', text: 'selectAll' })
