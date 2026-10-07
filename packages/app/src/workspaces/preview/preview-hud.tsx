@@ -13,7 +13,7 @@ import { ColorBy } from '../view-menus'
 import { LayerTrack } from './layer-track'
 import { layerKeyStep, stepLayer } from './layer-step'
 import { usePaneSize } from '../../shell/pane'
-import { get, set, shownSlice, useApp } from '../../state/store'
+import { colorblindToolpaths, get, set, shownSlice, useApp } from '../../state/store'
 import { PLAYBACK_SPEEDS } from '../../state/prefs'
 import { setGcodePanel, useGcodeView } from './gcode-file'
 import { MARKERS, setMarkerShown, useMarkers } from './markers'
@@ -23,11 +23,11 @@ import { MoveStrikes, TimeStrikes } from './strike-slots'
 /** Heights in px the playback bar snaps between: slim (transport only), medium and full. */
 const DOCK = { min: 56, max: 240, full: 190 } as const
 
-/** Label and color of a toolpath feature, in the palette the person picked. Callers subscribe to `toolpathPalette` to redraw. */
+/** Label and color of a toolpath feature, in the palette the person picked. Callers subscribe to `appearance.colorVision` to redraw. */
 export function featureStyle(id: number): { label: string; color: string } {
   const f = FEATURE_COLORS.find((x) => x.id === id)
   if (!f) return { label: 'Other', color: 'var(--dim)' }
-  return { label: f.label, color: (get().toolpathPalette === 'colorblind' ? COLORBLIND_THEME.features[f.id] : undefined) ?? f.color }
+  return { label: f.label, color: (colorblindToolpaths() ? COLORBLIND_THEME.features[f.id] : undefined) ?? f.color }
 }
 
 /** Marker swatch in the shape the viewport draws: discs, a diamond for wipes, squares for changes and pauses. */
@@ -65,7 +65,7 @@ function MarkerToggles({ hasExtras }: { hasExtras: boolean }) {
 export function Legend() {
   const preview = useApp((s) => s.preview)
   const colorMode = useApp((s) => s.colorMode)
-  const palette = useApp((s) => s.toolpathPalette)
+  const vision = useApp((s) => s.appearance.colorVision)
   // The slots' colors, which the filament view draws with; a string, so the selector stays stable.
   const slotColors = useApp((s) => resolveSlots(s).map((r) => r.color).join())
   if (!preview) return null
@@ -98,7 +98,7 @@ export function Legend() {
       {stats ? (
         <li className="legend-palette">
           <label>
-            <input type="checkbox" checked={palette === 'colorblind'} onChange={(e) => set({ toolpathPalette: e.target.checked ? 'colorblind' : 'standard' })} /> Color-blind friendly colors
+            <input type="checkbox" checked={vision !== 'standard'} onChange={(e) => set({ appearance: { ...get().appearance, colorVision: e.target.checked ? 'redgreen' : 'standard' } })} /> Color vision colors
           </label>
         </li>
       ) : null}

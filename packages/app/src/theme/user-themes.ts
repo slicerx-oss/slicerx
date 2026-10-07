@@ -2,7 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 // The person's own themes: imported files and the desktop themes folder. Everything is validated
 // again on load, so a hand-edited or corrupt entry is dropped and never reaches the UI.
-import { allThemes, parseThemeText, slugify, type ThemeFile } from '@slicerx/ui/theme'
+import { allThemes, BUNDLED_THEMES, DEFAULT_THEME_IDS, parseThemeText, slugify, type ThemeFile } from '@slicerx/ui/theme'
 import { get, set } from '../state/store'
 
 export { loadUserThemes } from './load'
@@ -22,6 +22,14 @@ export function importThemeText(text: string, fileName = ''): ImportResult {
   const taken = new Set(themeList([], []).map((t) => t.id))
   const own = new Set(state.userThemes.map((t) => t.id))
   let theme = r.theme
+  // A copy of a bundled theme stands on its own card; it never joins the bundled family it came from.
+  if (theme.family && BUNDLED_THEMES.some((t) => t.family === theme.family)) {
+    const own: ThemeFile = { ...theme }
+    delete own.family
+    delete own.familyName
+    delete own.flavor
+    theme = own
+  }
   if (taken.has(theme.id) && !own.has(theme.id)) {
     const base = slugify(fileName.replace(/\.json$/i, '') || theme.name)
     let id = base === theme.id ? `${base}-custom` : base
@@ -35,6 +43,6 @@ export function importThemeText(text: string, fileName = ''): ImportResult {
 export function removeUserTheme(id: string): void {
   const s = get()
   const userThemes = s.userThemes.filter((t) => t.id !== id)
-  const themeIds = { dark: s.themeIds.dark === id ? 'slicerx-dark' : s.themeIds.dark, light: s.themeIds.light === id ? 'slicerx-light' : s.themeIds.light }
+  const themeIds = { dark: s.themeIds.dark === id ? DEFAULT_THEME_IDS.dark : s.themeIds.dark, light: s.themeIds.light === id ? DEFAULT_THEME_IDS.light : s.themeIds.light }
   set({ userThemes, themeIds })
 }
