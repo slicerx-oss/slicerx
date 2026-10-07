@@ -13,8 +13,9 @@ export interface Starter {
   tags: string[]
   parts: MeshPart[]
   colors: string[]
-  /** The listing version this build is. */
+  /** The listing version this build is, and what changed in it. */
   version: string
+  changelog: string
   /** Custom G-code by height, written to the file's custom_gcode_per_layer.xml. */
   marks?: { z: number; kind: 'custom'; gcode: string }[]
 }
@@ -37,6 +38,7 @@ const cube: Make = (geom) => {
     parts: one(c, 'Cube'),
     colors: ['#8be9fd'],
     version: '1.1.0',
+    changelog: 'X, Y and Z letters on the faces, and the filament color in the file.',
   }
 }
 
@@ -68,6 +70,7 @@ const hook: Make = (geom) => {
     parts: one(h, 'Hook'),
     colors: ['#ffb86c'],
     version: '1.1.0',
+    changelog: 'A back plate with two countersunk holes for 4 mm screws, and the filament color in the file.',
   }
 }
 
@@ -91,6 +94,7 @@ const clip: Make = (geom) => {
     parts: one(c, 'Cable clip'),
     colors: ['#50fa7b'],
     version: '1.1.0',
+    changelog: 'The ring now joins the foot and opens away from it, the foot has two countersunk holes for 3 mm screws, and the filament color is in the file.',
   }
 }
 
@@ -114,6 +118,7 @@ const bracket: Make = (geom) => {
     parts: one(b, 'Shelf bracket'),
     colors: ['#ff79c6'],
     version: '1.1.0',
+    changelog: 'A diagonal gusset and two countersunk holes per arm, and the filament color in the file.',
   }
 }
 
@@ -138,6 +143,7 @@ const overhang: Make = (geom) => {
     parts: one(o, 'Overhang test'),
     colors: ['#8be9fd'],
     version: '1.1.0',
+    changelog: 'One body with each angle cut into the base, and the filament color in the file.',
   }
 }
 
@@ -173,6 +179,7 @@ const bridging: Make = (geom) => {
     parts: one(b, 'Bridging test'),
     colors: ['#50fa7b'],
     version: '1.1.0',
+    changelog: 'One body on a thin base (about half the filament), each span raised on its deck, and the filament color in the file.',
   }
 }
 
@@ -187,6 +194,7 @@ const retraction: Make = (geom) => {
     parts: one(r, 'Retraction test'),
     colors: ['#ffb86c'],
     version: '1.1.0',
+    changelog: 'One body, and the filament color in the file.',
   }
 }
 
@@ -199,6 +207,7 @@ const firstLayer: Make = () => ({
   parts: [{ ...box([-20, -20, 0], [20, 20, 0.2]), name: 'Middle', slot: 1 }, ...[[-70, -70], [70, -70], [70, 70], [-70, 70]].map(([x, y], i) => ({ ...box([x! - 15, y! - 15, 0], [x! + 15, y! + 15, 0.2]), name: `Corner ${i + 1}`, slot: 1 }))],
   colors: ['#f8f8f2'],
   version: '1.1.0',
+    changelog: 'The filament color is in the file.',
 })
 
 /** PLA temperatures, bottom floor first. */
@@ -245,6 +254,7 @@ const tower: Make = (geom) => {
     parts: one(t, 'Temperature tower'),
     colors: ['#ff79c6'],
     version: '1.1.0',
+    changelog: 'Rebuilt: seven labeled floors from 230 to 200 C with a bridge, 45 and 30 degree overhangs and a stringing cone, the temperature changes in the file, and the filament color.',
     marks: TOWER_C.map((c, i) => ({ z: PLINTH + i * FLOOR, kind: 'custom' as const, gcode: `M104 S${c}` })),
   }
 }

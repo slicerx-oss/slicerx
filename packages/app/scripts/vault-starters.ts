@@ -6,7 +6,10 @@
 // (sx-geom joins the pieces and cuts the labels), so it slices without touch notes. The output folder must sit outside
 // git, like every seed folder. Build the geometry engine first (packages/geom/wasm/scripts/build.sh).
 //
-//   pnpm --filter @slicerx/store exec tsx ../app/scripts/vault-starters.ts <out folder>
+//   pnpm --filter @slicerx/store exec tsx ../app/scripts/vault-starters.ts <out folder> [--demo-meshes]
+//
+// --demo-meshes also writes packages/app/src/lib/demo-meshes.ts: the app's built-in wall hook, cable clip and
+// shelf bracket, the same bodies as the starters, so the examples in the app match the Vault.
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { deflateSync } from 'node:zlib'
@@ -19,6 +22,7 @@ import { loadGeom } from './starter-geom'
 import { STARTERS, type Starter } from './starter-parts'
 
 const out = resolve(process.argv[2] ?? '')
+const demoMeshes = process.argv.includes('--demo-meshes')
 if (!process.argv[2]) throw new Error('usage: vault-starters.ts <out folder>')
 mkdirSync(out, { recursive: true })
 
@@ -26,8 +30,8 @@ const geom = await loadGeom()
 const starters: Starter[] = []
 const xMark = DEMO_MODELS.find((m) => m.slug === 'x-mark')
 if (xMark) {
-  const built = xMark.build()
-  starters.push({ slug: 'x-mark', title: 'Layered X', description: 'The SlicerX mark on a plinth, in two colors. A short first print to check a new printer and a filament swap.', tags: ['calibration', 'multicolor', 'functional'], parts: built.parts, colors: built.colors, version: '1.1.0' })
+  const built = await xMark.build()
+  starters.push({ slug: 'x-mark', title: 'Layered X', description: 'The SlicerX mark on a plinth, in two colors. A short first print to check a new printer and a filament swap.', tags: ['calibration', 'multicolor', 'functional'], parts: built.parts, colors: built.colors, version: '1.1.0', changelog: 'The filament colors are in the file.' })
 }
 for (const make of STARTERS) starters.push(make(geom))
 
@@ -70,8 +74,10 @@ for (const s of starters) {
   const bytes = writeProject({ plates: [{ id: 'p1', name: 'Plate 1', objects: [entry], settings: { sequence: 'by-layer' } }], bed, settings: { filament_colour: s.colors }, ...(layerMarks ? { layerMarks } : {}), sx: { exportedBy: '' } })
   writeFileSync(join(out, `${s.slug}.sx3mf`), bytes)
   const cover = renderCover(s.parts.map((p) => ({ positions: p.positions, indices: p.indices, color: s.colors[p.slot - 1] ?? s.colors[0] ?? '#bd93f9' })), 800, 600)
-  writeFileSync(join(out, `${s.slug}.png`), png(cover.width, cover.height, cover.rgba))
-  listings.push({ creator: 'slicerx-team', slug: s.slug, title: s.title, description: s.description, license: 'cc0', tags: s.tags, version: s.version, file: `${s.slug}.sx3mf`, cover: `${s.slug}.png` })
+  // Each version's cover has a name of its own, so a new version never overwrites the cover the old one used.
+  const coverFile = `${s.slug}-${s.version}.png`
+  writeFileSync(join(out, coverFile), png(cover.width, cover.height, cover.rgba))
+  listings.push({ creator: 'slicerx-team', slug: s.slug, title: s.title, description: s.description, license: 'cc0', tags: s.tags, version: s.version, changelog: s.changelog, file: `${s.slug}.sx3mf`, cover: coverFile })
   console.log(`${s.slug}.sx3mf  ${(bytes.length / 1024).toFixed(0)} KB`)
 }
 
@@ -94,3 +100,27 @@ const manifest = {
 }
 writeFileSync(join(out, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`)
 console.log(`${listings.length} starters and manifest.json in ${out}`)
+
+if (demoMeshes) {
+  const b64 = (a: Float32Array | Uint32Array) => Buffer.from(a.buffer, a.byteOffset, a.byteLength).toString('base64')
+  const lines = (['wall-hook', 'cable-clip', 'shelf-bracket'] as const).map((slug) => {
+    const s = starters.find((x) => x.slug === slug)
+    const p = s?.parts[0]
+    if (!s || !p) throw new Error(`no ${slug}`)
+    return `  '${slug}': { name: '${p.name}', color: '${s.colors[0]}', positions: '${b64(p.positions)}', indices: '${b64(p.indices)}' },`
+  })
+  const file = join(import.meta.dirname, '../src/lib/demo-meshes.ts')
+  writeFileSync(
+    file,
+    `// SPDX-License-Identifier: Apache-2.0
+// Copyright (C) 2026 The SlicerX contributors
+// Written by scripts/vault-starters.ts --demo-meshes; do not edit. The built-in wall hook, cable clip and shelf
+// bracket as the Vault starters build them: one closed body each, Float32 positions (mm) and Uint32 triangle
+// indices, little endian, in base64. Loaded on demand, not at startup.
+export const DEMO_MESHES: Readonly<Record<string, { name: string; color: string; positions: string; indices: string }>> = {
+${lines.join('\n')}
+}
+`,
+  )
+  console.log(`wrote ${file}`)
+}
