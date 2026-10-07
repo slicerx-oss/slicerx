@@ -21,8 +21,9 @@
 //! relative to the request file; `file.3mf#2` picks plate 2 of a project.
 //! With `--out-dir`, the G-code and SXPV are
 //! written there as `slice.gcode` and `slice.sxpv`. A by-object plate where the head, gantry or tool changer would meet
-//! a printed part (the result's `collisions`) is refused with exit code 3, unless `--allow-collisions` asks for it
-//! anyway; close calls inside the profile's clearance radius pass with the result listing them.
+//! a printed part, and any plate where two objects' paths cross or a path enters an exclusion area (the result's
+//! `collisions`), is refused with exit code 3, unless `--allow-collisions` asks for it anyway; close calls inside the
+//! profile's clearance radius pass with the result listing them.
 //!
 //! Exit codes: 0 success, 1 slicing failed, 2 usage error, 3 invalid input
 //! (unreadable request or mesh, bad JSON or config).
@@ -306,60 +307,77 @@ fn cmd_request(args: &[String]) -> ExitCode {
     ExitCode::SUCCESS
 }
 
-/// Why a slice is refused when its head, gantry or tool changer would meet a printed part, unless
-/// `--allow-collisions` asks for it anyway. The engine reports codes and numbers; the words are the command line's.
+/// Why a slice is refused when its head, gantry or tool changer would meet a printed part, two objects' paths cross,
+/// or a path enters a zone the printer keeps clear, unless `--allow-collisions` asks for it anyway. The engine reports
+/// codes and numbers; the words are the command line's.
 fn collision_refusal(
     report: &sx_core::api::SliceReport,
     objects: &[sx_core::api::ObjectSpec],
     args: &[String],
 ) -> Option<String> {
     use sx_core::collide::{Kind, Part, Severity};
-    let name = |id: &str| {
+    let named = |id: &str| {
         objects
             .iter()
             .find(|o| o.id == id)
             .map_or(id, |o| if o.name.is_empty() { id } else { o.name.as_str() })
             .to_owned()
     };
-    let hits: Vec<String> = report
-        .collisions
-        .iter()
-        .filter(|c| c.severity == Severity::Hit)
-        .map(|c| {
-            let (what, piece) = match (c.kind, c.part) {
-                (Kind::Gantry, Part::Lid) => ("The frame hits", "frame"),
-                (Kind::Gantry, _) => ("The gantry hits", "gantry"),
-                (Kind::NozzleTravelThroughPart, _) => ("A travel runs through", ""),
-                (Kind::Hotend, Part::Nozzle) => ("The nozzle prints into", ""),
-                (Kind::Hotend, _) => ("The toolhead hits", ""),
-                (Kind::ToolChange, _) => ("A tool change crosses", ""),
-                (Kind::Dock, _) => ("The tool changer meets", ""),
-                (Kind::PathConflict, _) => ("Paths cross with", ""),
-                (Kind::KeepOut, _) => ("A print path enters", ""),
-            };
-            let b = name(&c.hit_id);
-            if matches!(c.kind, Kind::PathConflict | Kind::KeepOut) {
-                return format!(
-                    "{what} {b} from layer {}, printing {}.",
-                    c.layer + 1,
-                    name(&c.object_id)
-                );
+    let name = |id: &str| match id {
+        "prime-tower" => "the prime tower".to_owned(),
+        "exclusion-area" => "the exclusion area".to_owned(),
+        "wrap-check-zone" => "the nozzle wrap check corner".to_owned(),
+        _ => named(id),
+    };
+    // The machine's clearance holds for a plate printed by object; crossing paths and keep-out zones are the plate's
+    // own, in either order, so they get their own words.
+    let mut machine = Vec::new();
+    let mut plate = Vec::new();
+    for c in report.collisions.iter().filter(|c| c.severity == Severity::Hit) {
+        let a = name(&c.object_id);
+        let b = name(&c.hit_id);
+        let layers = if c.last_layer > c.layer {
+            format!("layers {} to {}", c.layer + 1, c.last_layer + 1)
+        } else {
+            format!("layer {}", c.layer + 1)
+        };
+        let (what, piece) = match (c.kind, c.part) {
+            (Kind::PathConflict, _) => {
+                plate.push(format!("Paths cross: {a} and {b} on {layers}."));
+                continue;
             }
-            let clears = if piece.is_empty() {
-                String::new()
-            } else {
-                format!(", over the {:.1} mm the {piece} clears", c.limit_mm)
-            };
-            format!(
-                "{what} {b}. {b} is {:.1} mm tall{clears}, from layer {} while {} prints.",
-                c.hit_height_mm,
-                c.layer + 1,
-                name(&c.object_id)
-            )
-        })
-        .collect();
-    (!hits.is_empty() && !args.iter().any(|a| a == "--allow-collisions"))
-        .then(|| sx_core::Error::Clearance(hits.join(" ")).to_string())
+            (Kind::KeepOut, _) => {
+                plate.push(format!("A print path enters {b}: {a} on {layers}."));
+                continue;
+            }
+            (Kind::Gantry, Part::Lid) => ("The frame hits", "frame"),
+            (Kind::Gantry, _) => ("The gantry hits", "gantry"),
+            (Kind::NozzleTravelThroughPart, _) => ("A travel runs through", ""),
+            (Kind::Hotend, Part::Nozzle) => ("The nozzle prints into", ""),
+            (Kind::Hotend, _) => ("The toolhead hits", ""),
+            (Kind::ToolChange, _) => ("A tool change crosses", ""),
+            (Kind::Dock, _) => ("The tool changer meets", ""),
+        };
+        let clears = if piece.is_empty() {
+            String::new()
+        } else {
+            format!(", over the {:.1} mm the {piece} clears", c.limit_mm)
+        };
+        machine.push(format!(
+            "{what} {b}. {b} is {:.1} mm tall{clears}, from layer {} while {a} prints.",
+            c.hit_height_mm,
+            c.layer + 1,
+        ));
+    }
+    if args.iter().any(|a| a == "--allow-collisions") || (machine.is_empty() && plate.is_empty()) {
+        return None;
+    }
+    let mut why = Vec::new();
+    if !machine.is_empty() {
+        why.push(sx_core::Error::Clearance(machine.join(" ")).to_string());
+    }
+    why.extend(plate);
+    Some(why.join(" "))
 }
 
 /// Prints a 3MF project's settings entries as JSON (`projectSettings`,
