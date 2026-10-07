@@ -5,6 +5,7 @@
 // which parts use more than one, so the listing can say "8 colors, 2 parts
 // multi-color" instead of reading as an 8 color AMS print.
 import type { ListingColors, ListingPart } from '@slicerx/contracts'
+import { coverColor } from './cover'
 
 /** What the colors are read from: a plate object or a file's object. */
 export interface ColorSource {
@@ -23,14 +24,12 @@ export interface DerivedColors {
   slots: number[]
 }
 
-const GRAY = '#8e8e93'
 const MAX_COLORS = 32
 const MAX_PARTS = 200
 
-/** `#rrggbb` in lowercase from a file's color (`#RRGGBB` or `#RRGGBBAA`), gray when it cannot be read. */
-export function normalizeHex(c: string | undefined): string {
-  const m = /^#?([0-9a-f]{6})([0-9a-f]{2})?$/i.exec((c ?? '').trim())
-  return m ? `#${m[1]!.toLowerCase()}` : GRAY
+/** `#rrggbb` in lowercase from a file's color (`#RRGGBB` or `#RRGGBBAA`); one the file leaves out takes the drawn cover's color for its slot. */
+export function normalizeHex(c: string | undefined, slot = 1): string {
+  return coverColor(c, slot)
 }
 
 /**
@@ -97,5 +96,5 @@ export function deriveColors(objects: readonly ColorSource[], palette: readonly 
     const colors = p.slots.flatMap((s) => (index.has(s) ? [index.get(s)!] : []))
     return colors.length ? [{ name: p.name, colors, ams: colors.length > 1 }] : []
   })
-  return { colors: { colors: all.map((s) => ({ hex: normalizeHex(palette[s - 1]) })), parts }, slots: all }
+  return { colors: { colors: all.map((s) => ({ hex: normalizeHex(palette[s - 1], s) })), parts }, slots: all }
 }

@@ -9,8 +9,8 @@ import type { FileFormat, Listing, ListingColors, ListingLicense, StoreClient, U
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { Button, Icon, Seg } from '@slicerx/ui'
-import { coverForFile, currentProjectUpload, LayerArt, projectHasModels, toast, vaultCreatorsInFile, type CoverImage } from '@slicerx/app'
-import { coverInColors, fileModel, projectModel, type UploadModel } from '@slicerx/app'
+import { coverForFile, coverInColors, currentProjectUpload, fileModel, projectHasModels, projectModel, toast, vaultCreatorsInFile, type CoverImage, type UploadModel } from '@slicerx/app'
+import { DrawingArt } from './drawing-art'
 import { ColorDots, ColorFacts, ColorsEditor } from './colors'
 import { draftOf, savedColors, slotColors, type ColorDraft } from './colors-edit'
 import { coverFor } from './art'
@@ -424,7 +424,7 @@ function UploadForm() {
             <fieldset className="ce-set">
               <legend>Cover</legend>
               <div className="up-cover">
-                <span className="cs-art">{cover ? <img src={cover.preview} alt="Cover" /> : <LayerArt seed={draft.title || 'cover'} muted />}</span>
+                <span className="cs-art">{cover ? <img src={cover.preview} alt="Cover" /> : <DrawingArt seed={draft.title || 'cover'} />}</span>
                 <div className="ce-logo-b">
                   <div className="ce-ops">
                     <label className="ce-file">
@@ -476,7 +476,7 @@ function UploadForm() {
             <div className="lib-mini">
               <div className="lib-mini-art">
                 <span className="lib-thumb" aria-hidden="true">
-                {cover ? <img src={cover.preview} alt="" /> : <LayerArt seed={draft.title || 'cover'} muted />}
+                  {cover ? <img src={cover.preview} alt="" /> : <DrawingArt seed={draft.title || 'cover'} />}
                 </span>
                 {colors.colors.colors.length ? (
                   <span className="lib-dots" aria-hidden="true">
@@ -574,7 +574,7 @@ function ColorsFrame({ listing, onClose }: { listing: Listing; onClose: () => vo
             <div className="lib-mini">
               <div className="lib-mini-art">
                 <span className="lib-thumb" aria-hidden="true">
-                  {cover ? <img src={cover} alt="" /> : <LayerArt seed={listing.slug} muted />}
+                  {cover ? <img src={cover} alt="" /> : <DrawingArt seed={listing.slug} />}
                 </span>
                 {draft.colors.colors.length ? (
                   <span className="lib-dots" aria-hidden="true">
@@ -626,7 +626,7 @@ function UploadsList() {
               const cover = coverFor(l)
               return (
                 <li key={l.id} className="up-row">
-                  <span className="cs-art">{cover ? <img src={cover} alt="" /> : <LayerArt seed={l.slug} muted />}</span>
+                  <span className="cs-art">{cover ? <img src={cover} alt="" /> : <DrawingArt seed={l.slug} />}</span>
                   <div className="min0">
                     <b className="up-title">{l.title}</b>
                     <span className="ce-hint">

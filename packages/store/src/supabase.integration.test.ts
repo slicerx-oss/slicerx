@@ -73,6 +73,8 @@ describe.skipIf(!local || !anonKey)('supabase store (local stack)', () => {
     expect(r.value.fileName).toBe('wave-dish-1.0.0.3mf')
     expect(r.value.url).toContain('/storage/v1/object/authenticated/listing-files/')
     expect(r.value.headers?.['x-sx-download-grant']).toMatch(/^sxg_[0-9a-f]{48}$/)
+    // The grant rides in the URL too, where the hosted storage policy reads it.
+    expect(new URL(r.value.url).searchParams.get('sx_grant')).toBe(r.value.headers?.['x-sx-download-grant'])
   })
 
   it('refuses member writes before sign-in', async () => {

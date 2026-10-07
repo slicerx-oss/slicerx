@@ -269,7 +269,7 @@ impl Backend for SupabaseBackend {
         else {
             return Ok(None);
         };
-        let listing: Option<Listing> = self
+        let listing: Result<Option<Listing>> = self
             .first(self.rest(Method::GET, "listings").query(&[
                 ("id", eq(&v.listing_id)),
                 (
@@ -279,8 +279,17 @@ impl Backend for SupabaseBackend {
                     "slug,title,creator:creators!listings_creator_id_fkey(id,handle,display_name)".to_owned(),
                 ),
             ]))
-            .await?;
-        let listing = listing.ok_or_else(|| Error::Backend("a version has no listing".into()))?;
+            .await;
+        let listing = match listing {
+            Ok(Some(l)) => l,
+            failed => {
+                // The claim is already recorded; without a job the worker cannot finish it.
+                let _ = self.release_scan(&v.id, worker).await;
+                return Err(failed
+                    .err()
+                    .unwrap_or_else(|| Error::Backend("a version has no listing".into())));
+            }
+        };
         Ok(Some(ScanJob {
             version_id: v.id,
             listing_id: v.listing_id,
@@ -318,6 +327,36 @@ impl Backend for SupabaseBackend {
             Ok(_) => Ok(true),
             // P0001: "this version is not being scanned".
             Err(Error::Limit(_)) => Ok(false),
+            Err(e) => Err(e),
+        }
+    }
+
+    async fn release_scan(&self, version_id: &str, worker: &str) -> Result<()> {
+        // claim_scan stores the worker id cut to 80 characters.
+        let worker: String = worker.chars().take(80).collect();
+        let res = self
+            .rest(Method::PATCH, "listing_versions")
+            .query(&[
+                ("id", eq(version_id)),
+                ("scan_status", eq("scanning")),
+                ("scan_worker", eq(&worker)),
+            ])
+            .json(&json!({ "scan_status": "queued", "scan_worker": null, "scan_started_at": null }))
+            .send()
+            .await?;
+        check(res).await?;
+        Ok(())
+    }
+
+    async fn retry_scan(&self, version_id: &str, error: &str) -> Result<()> {
+        let res = self
+            .rest(Method::POST, "rpc/retry_scan")
+            .json(&json!({ "p_version": version_id, "p_error": error }))
+            .send()
+            .await?;
+        match check(res).await {
+            // P0001: "this version is not being scanned", so someone else has it.
+            Ok(_) | Err(Error::Limit(_)) => Ok(()),
             Err(e) => Err(e),
         }
     }

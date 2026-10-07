@@ -10,7 +10,7 @@ import { isoTime, toDevice } from '../map'
 import { pairedDeviceRow, profileRow } from '../rows'
 import { validateDevice } from '../validate'
 import { ACCOUNT_DELETION_POLICY } from './account'
-import type { AuthStorage } from './callbacks'
+import { webAuthStorage, type AuthStorage } from './callbacks'
 import { supabaseSxlock } from './sxlock'
 
 export interface SupabaseOptions {
@@ -130,7 +130,41 @@ const PROFILE_COLUMNS = 'id, handle, display_name, avatar_url, role, banned_at, 
 const DEVICE_COLUMNS = 'id, user_id, device_id, name, platform, sign_pub, linked_at, revoked_at'
 const TOKEN_COLUMNS = 'id, name, prefix, scopes, rate_limit_per_minute, created_at, expires_at, last_used_at, last_used_ip, revoked_at'
 
+/** Removes every PKCE verifier supabase-js keeps for sign-ins in flight (the newest, the per-flow slots and their index). */
+export async function clearPendingVerifiers(storage: AuthStorage | undefined): Promise<void> {
+  const store: AuthStorage | null = storage ?? (typeof localStorage === 'undefined' ? null : webAuthStorage(localStorage))
+  if (!store) return
+  const indexKey = `${AUTH_STORAGE_KEY}-flows-code-verifier`
+  let ids: unknown = []
+  try {
+    ids = JSON.parse((await store.getItem(indexKey)) ?? '[]')
+  } catch {
+    ids = []
+  }
+  for (const id of Array.isArray(ids) ? ids : []) {
+    if (typeof id === 'string' && /^[\w-]{1,64}$/.test(id)) await store.removeItem(`${AUTH_STORAGE_KEY}-flow-${id}-code-verifier`)
+  }
+  await store.removeItem(indexKey)
+  await store.removeItem(`${AUTH_STORAGE_KEY}-code-verifier`)
+}
+
+/** What a failed code exchange means for the person holding the link. */
+export function signInError(error: { code?: string | undefined; message: string; name?: string | undefined }): string {
+  const code = error.code ?? ''
+  if (code === 'bad_code_verifier' || code === 'pkce_verifier_missing' || error.name === 'AuthPKCECodeVerifierMissingError' || /code (verifier|challenge)/i.test(error.message)) {
+    return 'This link answers an earlier request. Open the newest sign-in email, or send a new link.'
+  }
+  if (code === 'otp_expired') {
+    return 'This link has expired, or a newer one was sent. Use the newest email, or send a new link.'
+  }
+  if (code === 'flow_state_not_found' || code === 'flow_state_expired' || /flow state|expired|already used/i.test(error.message)) {
+    return 'This link has expired or was already used. Send a new link.'
+  }
+  return error.message
+}
+
 export function supabaseAuth(sb: Db, opts: SupabaseOptions): AuthClient {
+  const exchanges = new Map<string, Promise<StoreResult<Session>>>()
   async function toSession(s: SbSession | null): Promise<Session | null> {
     if (!s) return null
     const [profile, creators] = await Promise.all([
@@ -199,13 +233,28 @@ export function supabaseAuth(sb: Db, opts: SupabaseOptions): AuthClient {
         return fail('invalid', 'The sign-in link is not a valid URL')
       }
       const err = url.searchParams.get('error_description') ?? url.searchParams.get('error')
-      if (err) return fail('forbidden', err)
+      if (err) {
+        // The request this link answered is over either way, so its verifier goes.
+        await clearPendingVerifiers(opts.auth?.storage)
+        return fail('forbidden', signInError({ code: url.searchParams.get('error_code') ?? undefined, message: err }))
+      }
       const code = url.searchParams.get('code')
       if (!code) return fail('invalid', 'The sign-in link has no code')
-      const { data, error } = await sb.auth.exchangeCodeForSession(code)
-      if (error) return fail('forbidden', error.message)
-      const s = await toSession(data.session)
-      return s ? ok(s) : fail('not_signed_in', 'No session after sign-in')
+      // A code works once: the same link handed over twice (a second launch, a second click) shares the first exchange.
+      const running = exchanges.get(code)
+      if (running) return running
+      const exchange = (async (): Promise<StoreResult<Session>> => {
+        // The flow id names which pending request this link answers, when the link carries it.
+        const flowId = url.searchParams.get('sb_flow_id')
+        const { data, error } = await sb.auth.exchangeCodeForSession(code, flowId ? { flowId } : undefined)
+        if (error) return fail('forbidden', signInError(error))
+        // Signed in: no earlier request's link is needed any more, so its verifier goes too.
+        await clearPendingVerifiers(opts.auth?.storage)
+        const s = await toSession(data.session)
+        return s ? ok(s) : fail('not_signed_in', 'No session after sign-in')
+      })()
+      exchanges.set(code, exchange)
+      return exchange
     },
 
     async signOut() {

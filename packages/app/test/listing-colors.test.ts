@@ -8,6 +8,7 @@ import type { Host, ListingColors, MeshHandle } from '@slicerx/contracts'
 import { createStore } from '@slicerx/store'
 import { encodeTree } from '../../ui/viewport/src/paint'
 import { deriveColors, normalizeHex, paintStates, type ColorSource } from '../src/export/listing-colors'
+import { COVER_COLORS } from '../src/export/cover'
 import { writeProject } from '../src/export/threemf'
 import { coverInColors, fileModel } from '../src/export/upload-source'
 import { compose } from '../src/plate/transform'
@@ -38,7 +39,7 @@ describe('reading colors from a file', () => {
   it('normalizes file colors', () => {
     expect(normalizeHex('#D4AF37FF')).toBe('#d4af37')
     expect(normalizeHex('d4af37')).toBe('#d4af37')
-    expect(normalizeHex('gold')).toBe('#8e8e93')
+    expect(normalizeHex('gold', 2)).toBe(COVER_COLORS[1])
   })
 
   it('keeps 8 colors apart from the 2 parts that need the AMS', () => {

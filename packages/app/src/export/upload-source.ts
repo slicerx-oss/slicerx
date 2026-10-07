@@ -22,7 +22,7 @@ export interface ProjectUpload {
 }
 
 function meshesOf(objects: readonly PlateEntry[]): CoverMesh[] {
-  return objects.flatMap((o) => o.parts.map((p) => ({ positions: p.positions, indices: p.indices, color: o.colors[p.slot - 1] ?? o.colors[0] ?? '#bd93f9', transform: o.transform })))
+  return objects.flatMap((o) => o.parts.map((p) => ({ positions: p.positions, indices: p.indices, color: o.colors[p.slot - 1] ?? o.colors[0] ?? '', slot: p.slot, transform: o.transform })))
 }
 
 /** The current project as an .sx3mf with its cover. Null when the plates are empty. */
@@ -66,13 +66,13 @@ export async function coverForFile(name: string, bytes: Uint8Array): Promise<Cov
   try {
     if (ext === 'stl') {
       const m = stlMesh(bytes)
-      return m ? renderCover([{ ...m, color: '#bd93f9' }]) : null
+      return m ? renderCover([{ ...m, color: '' }]) : null
     }
     if (ext === '3mf' || ext === 'sx3mf') {
       const { readProject } = await import('./import3mf')
       const project = await readProject(bytes, get().bed)
       const objects = project.plates.flatMap((p) => p.objects)
-      const meshes = objects.flatMap((o) => o.parts.map((p) => ({ positions: p.positions, indices: p.indices, color: project.colors[p.slot - 1] ?? project.colors[0] ?? '#bd93f9', transform: o.transform })))
+      const meshes = objects.flatMap((o) => o.parts.map((p) => ({ positions: p.positions, indices: p.indices, color: project.colors[p.slot - 1] ?? project.colors[0] ?? '', slot: p.slot, transform: o.transform })))
       return meshes.length ? renderCover(meshes) : null
     }
   } catch {
@@ -104,8 +104,11 @@ export interface UploadModel {
 export async function projectModel(): Promise<UploadModel> {
   const { resolveSlots, effectiveSlot, mapSlot } = await import('../filament/slots')
   const s = get()
-  const palette = resolveSlots(s).map((r) => r.color)
   const plates = allPlates(s)
+  // The file's colors first, as the drawn cover uses them; slots the file leaves out take the Filament block's.
+  const fileColors: (string | undefined)[] = []
+  for (const p of plates) for (const o of p.objects) o.colors.forEach((c, i) => (fileColors[i] ??= c))
+  const palette = resolveSlots(s).map((r, i) => fileColors[i] ?? r.color)
   const sources = plates.flatMap((p) =>
     p.objects.map((o) => ({
       name: o.name,
@@ -119,7 +122,7 @@ export async function projectModel(): Promise<UploadModel> {
     p.objects.flatMap((o) =>
       o.parts.map((part) => {
         const slot = mapSlot(p, effectiveSlot(o, part))
-        return { positions: part.positions, indices: part.indices, color: palette[slot - 1] ?? '#bd93f9', slot, transform: o.transform }
+        return { positions: part.positions, indices: part.indices, color: palette[slot - 1] ?? '', slot, transform: o.transform }
       }),
     ),
   )
@@ -134,7 +137,7 @@ export async function fileModel(name: string, bytes: Uint8Array): Promise<Upload
     const { readProject } = await import('./import3mf')
     const project = await readProject(bytes, get().bed)
     const objects = project.plates.flatMap((p) => p.objects)
-    const meshes = objects.flatMap((o) => o.parts.map((p) => ({ positions: p.positions, indices: p.indices, color: project.colors[p.slot - 1] ?? project.colors[0] ?? '#bd93f9', slot: p.slot, transform: o.transform })))
+    const meshes = objects.flatMap((o) => o.parts.map((p) => ({ positions: p.positions, indices: p.indices, color: project.colors[p.slot - 1] ?? project.colors[0] ?? '', slot: p.slot, transform: o.transform })))
     return { colors: deriveColors(objects, project.colors), meshes }
   } catch {
     return null
