@@ -3094,7 +3094,7 @@ async fn a_hand_pauses_at_once_without_confirmation_and_keeps_its_frame() {
         e["result"]["contentType"], "image/jpeg",
         "the frame stays on the hub for the card: {e}"
     );
-    // "Dismiss, it was me" ends the card.
+    // "Dismiss, it was me" answers the card; it stays until the print is resumed.
     let _ = call(
         &mut app,
         6,
@@ -3102,7 +3102,7 @@ async fn a_hand_pauses_at_once_without_confirmation_and_keeps_its_frame() {
         json!({ "printerId": "bay-4", "kind": "hand" }),
     )
     .await;
-    assert!(trip(&mut app).await.is_null());
+    assert_eq!(trip(&mut app).await["answered"], json!(true));
 
     // With the guard off for this printer, a hand only reports.
     mocks.set_state("moonraker", "printing").await;
@@ -3233,7 +3233,8 @@ async fn start_anyway_and_a_print_the_printer_started_itself() {
         .filter(|l| l.starts_with("pause"))
         .count();
     assert_eq!(after, before + 1);
-    // The person cleans it, checks again, and the card goes.
+    wait_state(&mut app, "paused").await;
+    // The person cleans it and checks again: answered, and the card goes once the print resumes.
     dirty.store(false, std::sync::atomic::Ordering::SeqCst);
     let r = call(&mut app, 4, "watch.plateCheck", json!({ "printerId": "bay-4" })).await;
     assert_eq!(
@@ -3241,5 +3242,192 @@ async fn start_anyway_and_a_print_the_printer_started_itself() {
         (Some(true), Some(true)),
         "{r}"
     );
+    assert_eq!(trip(&mut app).await["answered"], json!(true));
+    mocks.set_state("moonraker", "printing").await;
+    wait_state(&mut app, "printing").await;
+    let t = trip(&mut app).await;
+    assert!(t.is_null(), "{t}");
+}
+
+// ---- the camera guard: every way out of a paused card keeps Resume until a person resumes ----
+
+/// A printing Bay 4 the guard has paused for a hand, with the app and a detector connected.
+async fn paused_for_a_hand(link: &Link, mocks: &common::Mocks) -> (Ws, Ws) {
+    let mut app = paired(link).await;
+    add_bay4(&mut app, mocks).await;
+    mocks.set_state("moonraker", "printing").await;
+    wait_state(&mut app, "printing").await;
+    let mut det = detector(link).await;
+    let _ = call(&mut det, 2, "watch.grab", json!({ "printerId": "bay-4" })).await;
+    let r = call(
+        &mut det,
+        3,
+        "watch.report",
+        json!({ "printerId": "bay-4", "kind": "hand", "confidence": 0.9 }),
+    )
+    .await;
+    assert_eq!(r["result"]["paused"], true, "{r}");
+    wait_state(&mut app, "paused").await;
+    (app, det)
+}
+
+#[tokio::test]
+async fn dismissing_a_hand_keeps_the_paused_card_until_someone_resumes() {
+    let link = hub(None).await;
+    let mocks = common::Mocks::start("moonraker", &[]).await;
+    let (mut app, _det) = paused_for_a_hand(&link, &mocks).await;
+    // "Dismiss, it was me": the finding is answered, the print is still paused, so the card stays with Resume.
+    let _ = call(
+        &mut app,
+        10,
+        "watch.dismiss",
+        json!({ "printerId": "bay-4", "kind": "hand" }),
+    )
+    .await;
+    let t = trip(&mut app).await;
+    assert_eq!(
+        (t["state"].as_str(), t["answered"].as_bool()),
+        (Some("paused"), Some(true)),
+        "{t}"
+    );
+    // Only a resume ends it.
+    mocks.set_state("moonraker", "printing").await;
+    wait_state(&mut app, "printing").await;
     assert!(trip(&mut app).await.is_null());
+}
+
+#[tokio::test]
+async fn a_paused_plate_checked_clean_or_marked_fine_still_waits_for_resume() {
+    let link = hub(None).await;
+    let mocks = common::Mocks::start("moonraker", &[]).await;
+    let mut app = paired(&link).await;
+    add_bay4(&mut app, &mocks).await;
+    wait_state(&mut app, "idle").await;
+    let dirty = Arc::new(std::sync::atomic::AtomicBool::new(true));
+    let _ = plate_answers(&link, dirty.clone()).await;
+    // The printer starts a print on its own onto a dirty plate: paused.
+    mocks.set_state("moonraker", "printing").await;
+    let ev = wait_event(&mut app, "watch.guard", |d| d["kind"] == "plate").await;
+    assert_eq!(ev["state"], "paused", "{ev}");
+    wait_state(&mut app, "paused").await;
+    // While a print is on the plate, the empty-plate picture cannot be taken.
+    let r = call(&mut app, 3, "watch.plateClear", json!({ "printerId": "bay-4" })).await;
+    assert_eq!(r["error"]["code"], "busy", "{r}");
+    // Checked again and clean: answered, still paused, Resume stays.
+    dirty.store(false, std::sync::atomic::Ordering::SeqCst);
+    let r = call(&mut app, 4, "watch.plateCheck", json!({ "printerId": "bay-4" })).await;
+    assert_eq!(r["result"]["clear"], true, "{r}");
+    let t = trip(&mut app).await;
+    assert_eq!(
+        (t["state"].as_str(), t["answered"].as_bool()),
+        (Some("paused"), Some(true)),
+        "{t}"
+    );
+    // Dirty again, then "It's fine": still answered and paused.
+    dirty.store(true, std::sync::atomic::Ordering::SeqCst);
+    let r = call(&mut app, 5, "watch.plateCheck", json!({ "printerId": "bay-4" })).await;
+    assert_eq!(r["result"]["clear"], false, "{r}");
+    assert_eq!(trip(&mut app).await["answered"], json!(false));
+    let r = call(&mut app, 6, "watch.plateIgnore", json!({ "printerId": "bay-4" })).await;
+    assert_eq!(r["result"]["remembered"], "spot", "{r}");
+    assert_eq!(trip(&mut app).await["answered"], json!(true));
+    mocks.set_state("moonraker", "printing").await;
+    wait_state(&mut app, "printing").await;
+    assert!(trip(&mut app).await.is_null());
+}
+
+#[tokio::test]
+async fn a_frame_that_tripped_the_guard_never_becomes_the_empty_plate() {
+    let dir = temp_dir("plate-ref");
+    let link = hub(Some(dir.clone())).await;
+    let mocks = common::Mocks::start("moonraker", &[]).await;
+    let mut app = paired(&link).await;
+    add_bay4(&mut app, &mocks).await;
+    wait_state(&mut app, "idle").await;
+    let dirty = Arc::new(std::sync::atomic::AtomicBool::new(true));
+    // The detector flags the plate on the model alone (no spot): no empty-plate picture yet.
+    plate_answers_without_spot(&link, dirty.clone()).await;
+    let (f, _) = file("cube.gcode", 1);
+    let r = call(
+        &mut app,
+        3,
+        "print.local",
+        json!({ "printerId": "bay-4", "file": f, "bedClear": true }),
+    )
+    .await;
+    assert_eq!(r["error"]["code"], "plate_check", "{r}");
+    // "It's fine" on a spotless trip remembers the answer, not the dirty frame.
+    let r = call(&mut app, 4, "watch.plateIgnore", json!({ "printerId": "bay-4" })).await;
+    assert_eq!(r["result"]["remembered"], "model", "{r}");
+    assert!(!dir.join("plates").exists() || std::fs::read_dir(dir.join("plates")).unwrap().count() == 0);
+    assert_eq!(
+        call(&mut app, 5, "watch.guardState", json!({})).await["result"]["plates"],
+        json!({})
+    );
+    // The model alone no longer holds this printer's starts.
+    let r = call(
+        &mut app,
+        6,
+        "print.local",
+        json!({ "printerId": "bay-4", "file": f, "bedClear": true }),
+    )
+    .await;
+    assert_eq!(r["result"]["started"], true, "{r}");
+}
+
+#[tokio::test]
+async fn this_plate_is_clear_on_a_held_start_takes_a_new_picture() {
+    let dir = temp_dir("plate-new");
+    let link = hub(Some(dir.clone())).await;
+    let mocks = common::Mocks::start("moonraker", &[]).await;
+    let mut app = paired(&link).await;
+    add_bay4(&mut app, &mocks).await;
+    wait_state(&mut app, "idle").await;
+    let dirty = Arc::new(std::sync::atomic::AtomicBool::new(true));
+    let _ = plate_answers(&link, dirty.clone()).await;
+    let (f, _) = file("cube.gcode", 1);
+    let r = call(
+        &mut app,
+        3,
+        "print.local",
+        json!({ "printerId": "bay-4", "file": f, "bedClear": true }),
+    )
+    .await;
+    assert_eq!(r["error"]["code"], "plate_check", "{r}");
+    let held = trip(&mut app).await;
+    // The person clears the plate and says so: a fresh still, taken after the click, not the flagged one.
+    let r = call(&mut app, 4, "watch.plateClear", json!({ "printerId": "bay-4" })).await;
+    let from = r["result"]["plateFrom"].as_str().unwrap().to_owned();
+    assert!(
+        from.as_str() > held["capturedAt"].as_str().unwrap(),
+        "{from} after {held}"
+    );
+    assert!(trip(&mut app).await.is_null());
+    assert_eq!(std::fs::read_dir(dir.join("plates")).unwrap().count(), 1);
+}
+
+/// Like `plate_answers`, but a dirty answer has no spot (the model alone).
+async fn plate_answers_without_spot(link: &Link, dirty: Arc<std::sync::atomic::AtomicBool>) {
+    let mut det = detector(link).await;
+    let r = call(&mut det, 2, "watch.subscribe", json!({ "everyMs": 120_000 })).await;
+    assert!(r["result"]["subscription"].is_number(), "{r}");
+    tokio::spawn(async move {
+        let mut id = 100;
+        while let Some(Ok(m)) = det.next().await {
+            let Message::Text(t) = m else { continue };
+            let v: Value = serde_json::from_str(t.as_str()).unwrap();
+            if v["event"] != "watch.plate" {
+                continue;
+            }
+            let d = &v["data"];
+            let found = dirty.load(std::sync::atomic::Ordering::SeqCst);
+            id += 1;
+            let res = json!({ "checkId": d["checkId"], "printerId": d["printerId"], "clear": !found, "note": "model" });
+            det.send(Message::text(
+                json!({ "id": id, "method": "watch.plateResult", "params": res }).to_string(),
+            ))
+            .await
+            .unwrap();
+        }
+    });
 }

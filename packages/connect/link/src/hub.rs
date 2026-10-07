@@ -184,6 +184,10 @@ pub(crate) struct HubSettings {
     /// Spots on each printer's plate the person said are fine, left, top, right, bottom from 0 to 1.
     #[serde(default)]
     pub watch_plate_ignore: BTreeMap<String, Vec<[f64; 4]>>,
+    /// Printers whose person said the model alone was wrong about their plate ("It's fine" with
+    /// no spot): until an empty-plate picture is taken, only a picture comparison holds a start.
+    #[serde(default)]
+    pub watch_plate_model_off: Vec<String>,
 }
 
 fn agent_role() -> crate::roles::Role {

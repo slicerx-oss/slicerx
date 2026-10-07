@@ -386,6 +386,8 @@ export interface GuardTrip {
   plateFrom?: string
   /** When the frame behind the trip was taken. */
   capturedAt?: string
+  /** The person answered it (dismissed, the plate checked clean, a spot marked fine) while the print stays paused: the card stays with Resume. */
+  answered?: boolean
 }
 
 /** What the guard knows: current trips, printers it is off for, empty-plate picture times, and whether a detector is connected. */
@@ -671,12 +673,12 @@ export interface LinkHost extends PrinterHost {
     evidence(printerId: string, fresh?: boolean): Promise<{ contentType: string; data: Uint8Array; capturedAt: string } | null>
     /** App only, audited: whether the guard watches this printer (on by default). */
     setGuard(printerId: string, enabled: boolean): Promise<void>
-    /** App only: "This plate is clear". Takes the printer's empty-plate picture now. */
+    /** App only: "This plate is clear". Takes a new empty-plate picture now; refused with `busy` while a print is on the plate. */
     plateClear(printerId: string): Promise<{ plateFrom: string }>
     /** App only: checks the plate now. `checked` is false without a detector or a picture. */
     plateCheck(printerId: string): Promise<{ checked: boolean; clear?: boolean }>
-    /** App only: "It's fine". Remembers the flagged spot as a plate mark (or, without one, the picture as the empty plate). */
-    plateIgnore(printerId: string): Promise<{ remembered: 'spot' | 'plate' | 'nothing' }>
+    /** App only: "It's fine". Remembers the flagged spot as a plate mark, or, without one, that the camera model alone does not hold this printer. Never keeps the flagged picture. */
+    plateIgnore(printerId: string): Promise<{ remembered: 'spot' | 'model' | 'nothing' }>
   }
   /** Show and allow the connectors not yet tested on real printers (Duet, Snapmaker, Creality WebSocket, Home Assistant). */
   settings: {
@@ -1198,7 +1200,7 @@ export async function connectLink(opts: ConnectOptions): Promise<LinkHost> {
       setGuard: async (printerId, enabled) => void (await call('watch.guard', { printerId, enabled })),
       plateClear: (printerId) => call<{ plateFrom: string }>('watch.plateClear', { printerId }),
       plateCheck: (printerId) => call<{ checked: boolean; clear?: boolean }>('watch.plateCheck', { printerId }),
-      plateIgnore: (printerId) => call<{ remembered: 'spot' | 'plate' | 'nothing' }>('watch.plateIgnore', { printerId }),
+      plateIgnore: (printerId) => call<{ remembered: 'spot' | 'model' | 'nothing' }>('watch.plateIgnore', { printerId }),
     },
     settings: {
       get: () => call<HubSettings>('settings.get'),
