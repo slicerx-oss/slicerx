@@ -13,7 +13,9 @@ import {
   FIRST_CHECK_MS,
   getUpdateState,
   holdUpdates,
+  LATER_KEY,
   laterUpdate,
+  launchCheck,
   notifyBusy,
   noteLines,
   registerUpdater,
@@ -22,6 +24,7 @@ import {
   retryUpdate,
   shorten,
   startUpdates,
+  updateNow,
   updatesHeld,
   watchBusy,
   type FoundUpdate,
@@ -105,7 +108,7 @@ describe('the update flow', () => {
     expect(calls.check).toBe(0)
     await vi.advanceTimersByTimeAsync(FIRST_CHECK_MS)
     expect(calls).toEqual({ check: 1, download: 1, restart: 0 })
-    expect(getUpdateState()).toEqual({ phase: { kind: 'ready', update: found }, open: true })
+    expect(getUpdateState()).toMatchObject({ phase: { kind: 'ready', update: found }, open: true })
     // nothing restarts until the person clicks
     expect(calls.restart).toBe(0)
   })
@@ -127,24 +130,24 @@ describe('the update flow', () => {
   it('stays quiet when a scheduled check fails, and says why when the person asked', async () => {
     fakeHost({ check: async () => Promise.reject(new Error('The feed did not answer')) })
     await checkForUpdates()
-    expect(getUpdateState()).toEqual({ phase: { kind: 'idle' }, open: false })
+    expect(getUpdateState()).toMatchObject({ phase: { kind: 'idle' }, open: false })
     await checkForUpdates({ manual: true })
-    expect(getUpdateState()).toEqual({ phase: { kind: 'error', step: 'check', message: 'The feed did not answer' }, open: true })
+    expect(getUpdateState()).toMatchObject({ phase: { kind: 'error', step: 'check', message: 'The feed did not answer' }, open: true })
   })
 
   it('says the newest version is installed when the person asked', async () => {
     fakeHost({ check: async () => null })
     await checkForUpdates({ manual: true })
-    expect(getUpdateState()).toEqual({ phase: { kind: 'current' }, open: true })
+    expect(getUpdateState()).toMatchObject({ phase: { kind: 'current' }, open: true })
     laterUpdate()
-    expect(getUpdateState()).toEqual({ phase: { kind: 'idle' }, open: false })
+    expect(getUpdateState()).toMatchObject({ phase: { kind: 'idle' }, open: false })
   })
 
   it('waits for a print send to finish before it asks, and holds the restart while one runs', async () => {
     const calls = fakeHost()
     const release = holdUpdates()
     await checkForUpdates()
-    expect(getUpdateState()).toEqual({ phase: { kind: 'ready', update: found }, open: false })
+    expect(getUpdateState()).toMatchObject({ phase: { kind: 'ready', update: found }, open: false })
     await restartToUpdate()
     expect(calls.restart).toBe(0)
     release()
@@ -190,7 +193,7 @@ describe('the update flow', () => {
     startUpdates()
     await vi.advanceTimersByTimeAsync(FIRST_CHECK_MS)
     laterUpdate()
-    expect(getUpdateState()).toEqual({ phase: { kind: 'ready', update: found }, open: false })
+    expect(getUpdateState()).toMatchObject({ phase: { kind: 'ready', update: found }, open: false })
     await vi.advanceTimersByTimeAsync(60 * 60 * 1000)
     expect(getUpdateState().open).toBe(false)
     await checkForUpdates({ manual: true })
@@ -245,12 +248,12 @@ describe('the update flow', () => {
     const calls = fakeHost({ mode: 'download' })
     await checkForUpdates()
     expect(calls.download).toBe(0)
-    expect(getUpdateState()).toEqual({ phase: { kind: 'available', update: found }, open: true })
+    expect(getUpdateState()).toMatchObject({ phase: { kind: 'available', update: found }, open: true })
   })
 
   it('does nothing without an updater', async () => {
     await checkForUpdates({ manual: true })
-    expect(getUpdateState()).toEqual({ phase: { kind: 'idle' }, open: false })
+    expect(getUpdateState()).toMatchObject({ phase: { kind: 'idle' }, open: false })
     expect(startUpdates()).toBeTypeOf('function')
   })
 })
@@ -393,5 +396,116 @@ describe('the update dialog', () => {
     expect(installing.title).toBe('Installing SlicerX 0.2.0')
     expect(installing.dialog.querySelector('.sx-dialog-close')).toBeNull()
     expect(installing.button('Restarting…')?.disabled).toBe(true)
+  })
+})
+
+describe('the check at launch', () => {
+  beforeEach(() => localStorage.removeItem(LATER_KEY))
+
+  it('lets an offline launch go on, and the background check asks again', async () => {
+    vi.useFakeTimers()
+    const calls = fakeHost({ check: async () => (calls.check++, Promise.reject({ step: 'check', message: 'offline' })) })
+    expect(await launchCheck()).toBe('offline')
+    expect(getUpdateState()).toMatchObject({ open: false })
+    startUpdates()
+    await vi.advanceTimersByTimeAsync(FIRST_CHECK_MS)
+    expect(calls.check).toBe(2)
+  })
+
+  it('stops waiting for a slow feed after two seconds and goes on', async () => {
+    vi.useFakeTimers()
+    fakeHost({ check: () => new Promise(() => undefined) })
+    const outcome = launchCheck()
+    await vi.advanceTimersByTimeAsync(2_000)
+    expect(await outcome).toBe('slow')
+    expect(getUpdateState()).toMatchObject({ phase: { kind: 'idle' }, open: false })
+  })
+
+  it('offers a newer version on the launch sheet, and Update now downloads, checks and restarts', async () => {
+    const calls = fakeHost()
+    expect(await launchCheck()).toBe('offered')
+    expect(getUpdateState()).toMatchObject({ phase: { kind: 'available', update: found }, open: true, startup: true })
+    await updateNow()
+    expect(calls).toEqual({ check: 1, download: 1, restart: 1 })
+  })
+
+  it('remembers Later for a day, except in a pre-alpha, where it lasts only for this launch', async () => {
+    fakeHost()
+    expect(await launchCheck({ stage: 'stable' })).toBe('offered')
+    laterUpdate()
+    expect(getUpdateState()).toMatchObject({ open: false })
+    resetUpdates()
+    fakeHost()
+    expect(await launchCheck({ stage: 'stable' })).toBe('later')
+    resetUpdates()
+    localStorage.removeItem(LATER_KEY)
+    fakeHost()
+    expect(await launchCheck({ stage: 'pre-alpha' })).toBe('offered')
+    laterUpdate()
+    expect(localStorage.getItem(LATER_KEY)).toBeNull()
+    resetUpdates()
+    fakeHost()
+    expect(await launchCheck({ stage: 'pre-alpha' })).toBe('offered')
+  })
+
+  it('gives a version below min_version no Later: only Update now or Quit', async () => {
+    const required: FoundUpdate = { ...found, minVersion: '0.2.0', required: true }
+    const quit = vi.fn(async () => undefined)
+    fakeHost({ check: async () => required, quit })
+    localStorage.setItem(LATER_KEY, JSON.stringify({ version: '0.2.0', until: Date.now() + DAY_MS }))
+    expect(await launchCheck({ stage: 'stable' })).toBe('offered')
+    laterUpdate()
+    expect(getUpdateState()).toMatchObject({ open: true, phase: { kind: 'available' } })
+  })
+
+  it('says so when the download fails its signature check, and installs nothing', async () => {
+    const calls = fakeHost({ download: async () => Promise.reject({ step: 'verify', message: 'signature mismatch' }) })
+    await launchCheck()
+    await updateNow()
+    expect(getUpdateState()).toMatchObject({ phase: { kind: 'error', step: 'verify' }, open: true })
+    expect(calls.restart).toBe(0)
+  })
+})
+
+describe('the launch sheet', () => {
+  const roots: (() => void)[] = []
+  afterEach(() => {
+    for (const u of roots.splice(0)) u()
+  })
+  function sheet(phase: UpdatePhase) {
+    const el = document.createElement('div')
+    document.body.append(el)
+    const root = createRoot(el)
+    const on = { now: vi.fn(), quit: vi.fn(), later: vi.fn() }
+    flushSync(() =>
+      root.render(
+        createElement(UpdateDialogView, { phase, open: true, app: 'SlicerX', tag: 'SlicerX', version: '0.1.3', mode: 'install', held: false, onRestart: vi.fn(), onLater: on.later, onRetry: vi.fn(), onDownload: vi.fn(), startup: true, onUpdateNow: on.now, onQuit: on.quit }),
+      ),
+    )
+    roots.push(() => {
+      root.unmount()
+      el.remove()
+    })
+    const dialog = el.querySelector('dialog')!
+    const button = (name: string) => [...dialog.querySelectorAll('button')].find((b) => b.textContent === name)
+    return { dialog, on, button }
+  }
+
+  it('says the version is out, shows the highlights, Update now and a smaller Later', () => {
+    const { dialog, button, on } = sheet({ kind: 'available', update: found })
+    expect(dialog.querySelector('.upd-title')?.textContent).toBe('SlicerX 0.2.0 is out')
+    expect(dialog.querySelectorAll('.upd-notes li').length).toBe(5)
+    button('Update now')!.click()
+    expect(on.now).toHaveBeenCalled()
+    expect(button('Later')).toBeTruthy()
+    expect(button('Quit')).toBeUndefined()
+  })
+
+  it('below min_version: one line about the known problem, Update now or Quit, nothing else', () => {
+    const { dialog, button, on } = sheet({ kind: 'available', update: { ...found, minVersion: '0.2.0', required: true } })
+    expect(dialog.querySelector('.upd-required')?.textContent).toBe('This version has a known problem. Update to keep using SlicerX.')
+    expect(button('Later')).toBeUndefined()
+    button('Quit')!.click()
+    expect(on.quit).toHaveBeenCalled()
   })
 })
