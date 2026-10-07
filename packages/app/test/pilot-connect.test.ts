@@ -2,7 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 import { describe, expect, it } from 'vitest'
 import type { Host } from '@slicerx/contracts'
-import { registerChatGpt, type ChatGptHost } from '../src/pilot-connect/chatgpt'
+import { chatGptFor, registerChatGpt, type ChatGptHost } from '../src/pilot-connect/chatgpt'
 import { browserStore, keyStoreFor } from '../src/pilot-connect/keys'
 import { pilotModel } from '../src/pilot-connect/llm'
 import { authHeaders, browserTransport, hostLocalFetch, localAllowed, testConnection } from '../src/pilot-connect/transport'
@@ -46,6 +46,25 @@ describe('mimir keys', () => {
       await store.set('local', 'lan')
       expect(written[1]).toEqual(['local', 'lan'])
       expect(await store.get('local')).toBeNull()
+    } finally {
+      registerChatGpt(null)
+    }
+  })
+})
+
+describe('sign in with ChatGPT', () => {
+  it('gives one host per app host, so the card asks the keychain once and not on every render', () => {
+    let made = 0
+    registerChatGpt(() => {
+      made++
+      return {} as ChatGptHost
+    })
+    try {
+      const host = {} as Host
+      expect(chatGptFor(host)).toBe(chatGptFor(host))
+      expect(made).toBe(1)
+      registerChatGpt(() => ({}) as ChatGptHost)
+      expect(chatGptFor(host)).not.toBeNull()
     } finally {
       registerChatGpt(null)
     }
