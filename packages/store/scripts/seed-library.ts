@@ -56,6 +56,15 @@ for (const l of manifest.listings) {
     problems.push(`${l.slug}: ${e instanceof Error ? e.message : String(e)}`)
   }
 }
+for (const [owner, f] of [...manifest.creators.flatMap((c) => [c.logo, c.banner].filter(Boolean).map((f) => [c.handle, f] as const)), ...manifest.listings.flatMap((l) => (l.cover ? [[l.slug, l.cover] as const] : []))]) {
+  try {
+    const path = resolveModelPath(root, f as string)
+    if (!existsSync(path)) problems.push(`${owner}: ${f} is missing`)
+    else if (statSync(path).size > 5 * 1024 * 1024) problems.push(`${owner}: ${f} is over 5 MB`)
+  } catch (e) {
+    problems.push(`${owner}: ${e instanceof Error ? e.message : String(e)}`)
+  }
+}
 if (problems.length > 0) fail(`the manifest has problems:\n  ${problems.join('\n  ')}`)
 
 console.log(`${manifest.creators.length} creators, ${prepared.length} models (${(prepared.reduce((n, p) => n + p.bytes.length, 0) / 1048576).toFixed(1)} MB)`)
@@ -78,11 +87,24 @@ async function must<T = { id: string }>(what: string, q: PromiseLike<Res>): Prom
   return r.data as T
 }
 
+const IMAGE_TYPES: Record<string, string> = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp' }
+/** Uploads an image from the models folder to the owner's creator-media folder and returns its public URL. */
+async function uploadImage(ownerId: string, file: string): Promise<string> {
+  const path = resolveModelPath(root, file)
+  const ext = file.split('.').pop()?.toLowerCase() ?? ''
+  const object = `${ownerId}/${file}`
+  const up = await sb.storage.from('creator-media').upload(object, readFileSync(path), { contentType: IMAGE_TYPES[ext] ?? 'image/png', upsert: true })
+  if (up.error) fail(`upload ${object}: ${up.error.message}`)
+  return sb.storage.from('creator-media').getPublicUrl(object).data.publicUrl
+}
+
 const creatorIds = new Map<string, string>()
+const ownerIds = new Map<string, string>()
 for (const c of manifest.creators) {
-  const existing = await must<{ id: string } | null>('find creator', sb.from('creators').select('id').eq('handle', c.handle).maybeSingle())
+  const existing = await must<{ id: string; owner_id: string } | null>('find creator', sb.from('creators').select('id, owner_id').eq('handle', c.handle).maybeSingle())
   if (existing) {
     creatorIds.set(c.handle, existing.id)
+    ownerIds.set(c.handle, existing.owner_id)
     continue
   }
   const created = await sb.auth.admin.createUser({
@@ -100,6 +122,13 @@ for (const c of manifest.creators) {
     location: c.location ?? null, logo_url: c.logoUrl ?? null, trusted: c.trusted,
   }).select('id').single())
   creatorIds.set(c.handle, row.id)
+  ownerIds.set(c.handle, userId)
+  if (c.logo || c.banner) {
+    await must('creator images', sb.from('creators').update({
+      ...(c.logo ? { logo_url: await uploadImage(userId, c.logo) } : {}),
+      ...(c.banner ? { banner_url: await uploadImage(userId, c.banner) } : {}),
+    }).eq('id', row.id).select('id'))
+  }
   if (c.links.length > 0) {
     await must('create links', sb.from('creator_links').insert(c.links.map((l, i) => ({ creator_id: row.id, kind: l.kind, label: l.label ?? null, url: l.url, position: i + 1 }))).select('id'))
   }
@@ -121,9 +150,10 @@ for (const p of prepared) {
   const versionId = newId()
   const path = objectName(listingId, versionId, p.name)
   const now = new Date().toISOString()
+  const coverUrl = l.cover ? await uploadImage(ownerIds.get(l.creator) as string, l.cover) : (l.coverUrl ?? null)
   await must('create listing', sb.from('listings').insert({
     id: listingId, creator_id: creatorId, slug: l.slug, title: l.title, description: l.description ?? null, license: l.license,
-    tags: l.tags, cover_url: l.coverUrl ?? null, status: 'approved', published_at: now, reviewed_at: now,
+    tags: l.tags, cover_url: coverUrl, status: 'approved', published_at: now, reviewed_at: now,
   }).select('id'))
   const up = await sb.storage.from('listing-files').upload(path, p.bytes, { contentType: 'application/octet-stream', upsert: false })
   if (up.error) fail(`upload ${path}: ${up.error.message}`)
