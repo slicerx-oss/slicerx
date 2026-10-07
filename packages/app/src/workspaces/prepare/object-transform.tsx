@@ -3,7 +3,6 @@
 // Numeric position, rotation, scale and size for the selected object, the way Bambu Studio and
 // OrcaSlicer show them under the object list. Fields commit on Enter or blur, and a drag on an axis
 // letter moves the object live, so one edit or one drag is one undo step.
-import { useMore } from '../../shell/more'
 import { setRotateSpace, useRotateSpace, useTool } from '../../plate/tools'
 import { Button, ScrubNumber, Seg, VectorField } from '@slicerx/ui'
 import { useState } from 'react'
@@ -13,8 +12,6 @@ import { bounds, decompose, sizeOf, type Vec3 } from '../../plate/transform'
 import { useApp } from '../../state/store'
 
 const AXES = ['X', 'Y', 'Z'] as const
-
-const fmt = (n: number | undefined): string => String(Math.round((n ?? 0) * 10) / 10)
 
 export function ObjectTransform() {
   const entry = useApp((s) => s.plate.find((p) => p.id === s.selection))
@@ -26,7 +23,6 @@ export function ObjectTransform() {
   const [uniform, setUniform] = useState(true)
   const tool = useTool()
   const space = useRotateSpace()
-  const more = useMore('object')
   if (!entry) return null
   const t = decompose(entry.transform)
   const b = bounds(entry.parts, entry.transform)
@@ -48,33 +44,29 @@ export function ObjectTransform() {
   )
   return (
     <div className="tf" data-section="transform">
-      {!more && tool !== 'rotate' && tool !== 'scale' ? (
-        <p className="tf-readout" aria-label="Position">
-          X {fmt(t.position[0])} Y {fmt(t.position[1])} Z {fmt(t.position[2])} mm
-        </p>
-      ) : row('Position', 'mm', t.position, (i, v) => {
+      {row('Position', 'mm', t.position, (i, v) => {
         const p = [...t.position] as Vec3
         p[i] = v
         setTrs({ position: p })
       })}
-      {more || tool === 'rotate' ? row('Rotation', '°', t.rotation, (i, v) => {
+      {row('Rotation', '°', t.rotation, (i, v) => {
         const r = [...t.rotation] as Vec3
         r[i] = v
         setTrs({ rotation: r })
-      }, { digits: 1 }) : null}
+      }, { digits: 1 })}
       {tool === 'rotate' ? (
         <div className="tf-row" role="group" aria-label="Rotate rings">
           <span className="tf-name">Rings</span>
           <Seg label="Rotate about" size="sm" value={space} onChange={setRotateSpace} options={[{ value: 'world', label: 'Bed axes' }, { value: 'local', label: 'Object axes' }]} />
         </div>
       ) : null}
-      {more || tool === 'scale' ? row('Scale', '%', t.scale.map((s) => s * 100) as Vec3, (i, v) => {
+      {row('Scale', '%', t.scale.map((s) => s * 100) as Vec3, (i, v) => {
         const f = v / 100
         const cur = t.scale[i] ?? 1
         setTrs({ scale: uniform ? (t.scale.map((s) => (s * f) / cur) as Vec3) : (t.scale.map((s, k) => (k === i ? f : s)) as Vec3) })
-      }, { digits: 1, min: 0.1 }) : null}
-      {more || tool === 'scale' ? row('Size', 'mm', size, (i, v) => void scaleSelectedToSize(i, v, uniform), { min: 0.01 }) : null}
-      {more ? <div className="tf-row tf-inst" role="group" aria-label="Instances">
+      }, { digits: 1, min: 0.1 })}
+      {row('Size', 'mm', size, (i, v) => void scaleSelectedToSize(i, v, uniform), { min: 0.01 })}
+      <div className="tf-row tf-inst" role="group" aria-label="Instances">
         <span className="tf-name">Instances</span>
         <span className="tf-stepper">
           <Button size="sm" variant="ghost" icon="minus" aria-label="Remove an instance" disabled={count <= 1} onClick={() => setInstanceCount(entry.id, instanceCount(entry.id) - 1)} />
@@ -84,26 +76,24 @@ export function ObjectTransform() {
         <Button size="sm" variant="ghost" icon="grid" onClick={() => void fillBed(entry.id)}>
           Fill bed
         </Button>
-      </div> : null}
-      <div className="tf-actions">
-        {more || tool === 'scale' ? <label className="tf-lock">
-          <input type="checkbox" checked={uniform} onChange={(e) => setUniform(e.target.checked)} /> Uniform scale
-        </label> : null}
-        {more ? <>
+      </div>
+      <label className="tf-lock">
+        <input type="checkbox" checked={uniform} onChange={(e) => setUniform(e.target.checked)} /> Uniform scale
+      </label>
+      <div className="tf-align" role="group" aria-label="Alignment">
         <Button size="sm" variant="ghost" icon="arrow-down" onClick={() => dropSelectedToBed()} disabled={Math.abs(bottom) < 0.001}>
           Drop to bed
         </Button>
         <Button size="sm" variant="ghost" icon="fit" onClick={() => centerSelected()}>
           Center
         </Button>
-        </> : null}
-        {more ? <span className="tf-mirror" role="group" aria-label="Mirror">
+        <span className="tf-mirror" role="group" aria-label="Mirror">
           {AXES.map((a, i) => (
             <Button key={a} size="sm" variant="ghost" icon="mirror" onClick={() => mirrorSelected(i as 0 | 1 | 2)} tip={{ title: `Mirror along ${a}`, body: `Flip the object across the ${a} axis.` }}>
               {a}
             </Button>
           ))}
-        </span> : null}
+        </span>
       </div>
     </div>
   )

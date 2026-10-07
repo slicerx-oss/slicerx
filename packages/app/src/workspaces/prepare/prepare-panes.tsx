@@ -6,10 +6,10 @@ import { filamentUnitName } from '@slicerx/printer-catalog'
 import { isExportOnly } from '../../lib/hand-printers'
 import { NozzlePicker } from './nozzle-picker'
 import { EnergyRow } from './energy-row'
-import { MoreButton, useMore } from '../../shell/more'
+import { useMore } from '../../shell/more'
 import type { PrinterState } from '@slicerx/contracts'
 import { Block, Button, Icon, KeyValues, LinkButton, Pill, type PillState, tipAttrs } from '@slicerx/ui'
-import { lazy, Suspense, useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { useHost } from '../../host'
 import { useFleet, type FleetRow } from '../../lib/queries'
 import { formatCost, formatDuration, formatGrams } from '../../lib/preview-stats'
@@ -269,6 +269,7 @@ export function PrepareObjects() {
   const multi = useApp((s) => s.selectedIds)
   const selected = selectedIds({ selection, selectedIds: multi })
   const [expanded, setExpanded] = useState<string | null>(null)
+  const closed = useRef<string | null>(null)
   const slotTotal = useResolvedSlots().length
   const bed = useApp((s) => s.bed)
   const printerSlots = useApp((s) => s.printerSlots)
@@ -282,6 +283,15 @@ export function PrepareObjects() {
   const fits = useFits()
   const matches = new Map(searchObjects(plate, query).map((m) => [m.id, m]))
   const searching = query.trim() !== ''
+  // The row is the only open/close. Selecting an object opens it; clicking the open row closes it.
+  useEffect(() => {
+    if (!selection) {
+      setExpanded(null)
+      return
+    }
+    if (closed.current === selection) return
+    setExpanded(selection)
+  }, [selection])
   return (
     <Block title="Objects" data-section="objects">
       {plate.length > 1 ? (
@@ -321,7 +331,14 @@ export function PrepareObjects() {
               onClick={(e) => {
                 const additive = e.metaKey || e.ctrlKey || e.shiftKey
                 selectObject(p.id, additive)
-                if (!additive) setExpanded(expanded === p.id ? null : p.id)
+                if (additive) return
+                if (expanded === p.id) {
+                  closed.current = p.id
+                  setExpanded(null)
+                } else {
+                  closed.current = null
+                  setExpanded(p.id)
+                }
               }}
             >
               <span className="obj-thumb">{p.thumb ? <img src={p.thumb} alt="" /> : p.parts.length ? <Silhouette parts={p.parts} /> : null}</span>
@@ -341,31 +358,30 @@ export function PrepareObjects() {
                   </span>
                 ))}
               </span>
-              <span className="obj-chev" {...tipAttrs({ title: expanded === p.id ? 'Hide details' : 'Details', body: 'Rename it, reorder it and pick a filament for each part.' })}>
+              <span className="obj-chev" {...tipAttrs({ title: expanded === p.id ? 'Hide details' : 'Details', body: 'Name, volumes, and where it sits on the bed.' })}>
                 <Icon name="chevron-down" />
               </span>
             </button>
             <Button size="sm" variant="ghost" icon={p.locked ? 'lock' : 'unlock'} aria-label={`${p.locked ? 'Unlock' : 'Lock'} ${p.name}`} tip={{ title: p.locked ? 'Locked' : 'Lock', body: p.locked ? 'Click to let it move again.' : 'Keep it from moving, scaling or arranging.' }} pressed={Boolean(p.locked)} onClick={() => toggleLock([p.id])} />
             <Button size="sm" variant="ghost" icon={p.printable === false ? 'hide' : 'show'} aria-label={`${p.printable === false ? 'Print' : 'Do not print'} ${p.name}`} tip={{ title: p.printable === false ? 'Not printed' : 'Printed', body: p.printable === false ? 'Click to print it again.' : 'Click to leave it out of the print.', key: 'V' }} pressed={p.printable === false} onClick={() => togglePrintable([p.id])} />
             </div>
-            {selection === p.id ? (
+            {expanded === p.id ? (
               <div className="obj-editor" data-section="object-editor">
+                <label className="obj-rename" htmlFor={`rn-${p.id}`}>
+                  <span className="sx-small sx-muted">Name</span>
+                  <input id={`rn-${p.id}`} className="sx-input" defaultValue={p.name} maxLength={100} key={p.name} onBlur={(e) => { if (!renameObject(p.id, e.currentTarget.value)) e.currentTarget.value = p.name }} onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()} />
+                </label>
+                <Suspense fallback={null}>
+                  <ObjectVolumes />
+                </Suspense>
                 <ObjectTransform />
                 {historyOf === p.id ? <Suspense fallback={null}><HistoryPanel objectId={historyOf} /></Suspense> : null}
-                {more ? (
-                  <>
-                    <Suspense fallback={null}>
-                      <ObjectVolumes />
-                    </Suspense>
-                    <Suspense fallback={null}>
-                      <ObjectSettings />
-                    </Suspense>
-                  </>
-                ) : null}
-                <MoreButton id="object" />
+                <Suspense fallback={null}>
+                  <ObjectSettings />
+                </Suspense>
               </div>
             ) : null}
-            {expanded === p.id || (searching && !matches.get(p.id)?.self) ? (
+            {searching && !matches.get(p.id)?.self && expanded !== p.id ? (
               <div className="obj-detail">
                 <label className="obj-rename" htmlFor={`rn-${p.id}`}>
                   <span className="sx-small sx-muted">Name</span>
