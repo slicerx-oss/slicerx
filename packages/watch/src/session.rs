@@ -13,7 +13,7 @@ use crate::decode::{DecodeError, Rgb, decode};
 use crate::detector::Detector;
 use crate::mask::Mask;
 use crate::policy::{Config, Policy, Seen, Verdict};
-use crate::protocol::{Dismissed, Frame, Kind, Picture, PlateCheck, PlateResult, Report};
+use crate::protocol::{Dismissed, Frame, Kind, Look, LookResult, Picture, PlateCheck, PlateResult, Report};
 use crate::quality::{Quality, assess};
 use crate::resize::crop;
 
@@ -43,6 +43,8 @@ pub enum Out {
     Grab(String),
     /// `watch.plateResult`.
     Plate(PlateResult),
+    /// `watch.lookResult`.
+    Look(LookResult),
 }
 
 impl Out {
@@ -50,7 +52,7 @@ impl Out {
     pub fn report(self) -> Option<Report> {
         match self {
             Out::Report(r) => Some(r),
-            Out::Grab(_) | Out::Plate(_) => None,
+            Out::Grab(_) | Out::Plate(_) | Out::Look(_) => None,
         }
     }
 }
@@ -142,6 +144,9 @@ impl<D: Detector> Session<D> {
             Some("watch.plate") => serde_json::from_value::<PlateCheck>(data)
                 .map(|c| vec![Out::Plate(self.plate(&c))])
                 .unwrap_or_default(),
+            Some("watch.look") => serde_json::from_value::<Look>(data)
+                .map(|l| vec![Out::Look(self.look(&l))])
+                .unwrap_or_default(),
             Some("watch.dismissed") => {
                 if let Ok(d) = serde_json::from_value::<Dismissed>(data) {
                     self.policy.dismiss(&d.printer_id, d.kind);
@@ -207,6 +212,43 @@ impl<D: Detector> Session<D> {
                 };
             }
         }
+        out
+    }
+
+    /// "Check again" on a print the guard paused for a hand: is the hand still there in a new
+    /// frame? One frame at the printer's hand bar (after dismissals) decides; the agreement over
+    /// frames is for starting a pause, not for telling the person the printer looks clear.
+    pub fn look(&self, l: &Look) -> LookResult {
+        let mut out = LookResult {
+            check_id: l.check_id.clone(),
+            printer_id: l.printer_id.clone(),
+            hand: None,
+            score: None,
+        };
+        let Some(rgb) = B64
+            .decode(&l.frame.data_base64)
+            .ok()
+            .and_then(|b| decode(&l.frame.content_type, &b).ok())
+            .filter(|rgb| assess(&rgb.gray(), rgb.width, rgb.height) == Quality::Usable)
+        else {
+            return out;
+        };
+        let mask = self.masks.get(&l.printer_id).cloned().unwrap_or_else(Mask::whole);
+        let area = if self.detector.whole_image() {
+            crop(&rgb, mask.bounds())
+        } else {
+            rgb
+        };
+        out.score = self
+            .detector
+            .detect(&area)
+            .into_iter()
+            .filter(|d| d.kind == Kind::Hand)
+            .map(|d| d.score)
+            .reduce(f64::max);
+        out.hand = out
+            .score
+            .map(|s| s >= self.policy.threshold(&l.printer_id, Kind::Hand));
         out
     }
 
@@ -572,6 +614,52 @@ mod tests {
         );
         assert_eq!(r.clear, Some(true), "{r:?}");
         assert!(r.note.contains("no empty-plate picture"), "{r:?}");
+    }
+
+    fn look_event(data: &str) -> Value {
+        json!({ "event": "watch.look", "data": {
+            "checkId": "k1", "printerId": "bay-1", "frame": { "contentType": "image/png", "dataBase64": data },
+        } })
+    }
+
+    fn look_result(s: &mut Session<impl Detector>, ev: &Value) -> LookResult {
+        match s.on_event(ev).pop() {
+            Some(Out::Look(r)) => r,
+            o => panic!("expected a look result, got {o:?}"),
+        }
+    }
+
+    #[test]
+    fn check_again_says_whether_the_hand_is_still_there() {
+        let frame = picture(plate);
+        let r = look_result(
+            &mut Session::new(Hands(0.9), Config::default()),
+            &look_event(&frame),
+        );
+        assert_eq!((r.hand, r.check_id.as_str()), (Some(true), "k1"), "{r:?}");
+        let r = look_result(
+            &mut Session::new(Hands(0.2), Config::default()),
+            &look_event(&frame),
+        );
+        assert_eq!(r.hand, Some(false), "{r:?}");
+        // A model without the hand question, or a frame too dark to judge: no answer.
+        assert_eq!(
+            look_result(&mut Session::new(Stub, Config::default()), &look_event(&frame)).hand,
+            None
+        );
+        let dark = picture(|_, _| 4);
+        assert_eq!(
+            look_result(
+                &mut Session::new(Hands(0.9), Config::default()),
+                &look_event(&dark)
+            )
+            .hand,
+            None
+        );
+        // A dismissed hand needs more.
+        let mut s = Session::new(Hands(0.7), Config::default());
+        s.on_event(&json!({ "event": "watch.dismissed", "data": { "printerId": "bay-1", "kind": "hand" } }));
+        assert_eq!(look_result(&mut s, &look_event(&frame)).hand, Some(false));
     }
 
     #[test]
