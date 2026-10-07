@@ -300,6 +300,19 @@ export interface UploadVersionInput {
   changelog?: string
   bytes: Uint8Array
   format: FileFormat
+  /** How the creator printed it, shown on the listing. */
+  printProfile?: UploadPrintProfile
+}
+
+/** One tested print of an upload: the printer, the presets and what the slicer measured. */
+export interface UploadPrintProfile {
+  printerModel: string
+  process: string
+  filament: string
+  layerHeightMm?: number
+  nozzleMm?: number
+  timeS?: number
+  grams?: number
 }
 
 export interface ScanState {
@@ -329,7 +342,8 @@ export interface SaveCreatorInput {
 }
 
 /** Which creator page image an upload replaces. */
-export type CreatorImageKind = 'banner' | 'logo'
+/** banner and logo belong to the creator page; cover is a listing's picture. */
+export type CreatorImageKind = 'banner' | 'logo' | 'cover'
 
 export interface CreatorImageInput {
   kind: CreatorImageKind
@@ -627,7 +641,7 @@ export interface StoreClient extends AuthClient {
   saveCreator(input: SaveCreatorInput): Promise<StoreResult<Creator>>
   /** Replaces every link. At most 12, https only, service links on the service's own domain. */
   setCreatorLinks(links: CreatorLinkInput[]): Promise<StoreResult<CreatorLink[]>>
-  /** Stores a banner or logo for the signed-in creator's page and returns its public URL. Save it with saveCreator. PNG, JPEG or WebP up to 5 MB. */
+  /** Stores a banner, logo or listing cover for the signed-in creator and returns its public URL, for saveCreator or a listing's coverUrl. PNG, JPEG or WebP up to 5 MB. */
   uploadCreatorImage(input: CreatorImageInput): Promise<StoreResult<string>>
   /** Removes an image uploadCreatorImage stored that the page does not use, such as one a failed save left behind. An image the page shows is kept. */
   removeCreatorImage(url: string): Promise<StoreResult<void>>

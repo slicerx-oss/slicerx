@@ -241,7 +241,7 @@ export function offlineStore(ctx: OfflineContext): Omit<StoreClient, keyof AuthC
     if (input.description != null && input.description.length > 8000) bad('invalid', 'Descriptions can be at most 8000 characters')
     if (input.license !== undefined && !(LICENSES as readonly string[]).includes(input.license)) bad('invalid', 'Unknown license')
     if (input.tags !== undefined && input.tags.length > 20) bad('invalid', 'A listing has at most 20 tags')
-    if (input.coverUrl != null && !HTTPS.test(input.coverUrl)) bad('invalid', 'The cover must be an https address')
+    if (input.coverUrl != null && !IMAGE.test(input.coverUrl)) bad('invalid', 'The cover must be an https address')
   }
 
   function page<T>(rows: readonly T[], cursor: string | undefined, limit: number | undefined) {
@@ -688,6 +688,10 @@ export function offlineStore(ctx: OfflineContext): Omit<StoreClient, keyof AuthC
           created_at: now(),
         }
         c.d.listing_versions.push(row)
+        if (input.printProfile) {
+          const p = input.printProfile
+          c.d.print_profiles.push({ id: newId(), version_id: id, printer_model: p.printerModel, process: p.process, filament: p.filament, layer_height_mm: p.layerHeightMm ?? null, nozzle_mm: p.nozzleMm ?? null, time_s: p.timeS === undefined ? null : Math.round(p.timeS), grams: p.grams ?? null, plates: 1, notes: null })
+        }
         finishScan(c, row, listing, cr, input.bytes.length, scanBytes(input.bytes, input.format))
         return toVersion(row)
       })

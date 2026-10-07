@@ -192,7 +192,8 @@ export function supabaseStore(sb: Db, conn?: Pick<SupabaseOptions, 'url' | 'anon
     const listed = await sb.storage.from('creator-media').list(me, { limit: 100 })
     if (listed.error) return
     const used = new Set(keep.filter((u): u is string => Boolean(u)).map((u) => u.split('/').pop()))
-    const stale = (listed.data ?? []).map((o) => o.name).filter((n) => !used.has(n))
+    // Listing covers live in the same folder and are left alone.
+    const stale = (listed.data ?? []).map((o) => o.name).filter((n) => /^(banner|logo)-/.test(n) && !used.has(n))
     if (stale.length) await sb.storage.from('creator-media').remove(stale.map((n) => `${me}/${n}`))
   }
 
@@ -637,6 +638,14 @@ export function supabaseStore(sb: Db, conn?: Pick<SupabaseOptions, 'url' | 'anon
           .single()
         if (error) return failed(error)
         row = versionRow.parse(data)
+        if (input.printProfile) {
+          const p = input.printProfile
+          const added = await sb.from('print_profiles').insert({
+            version_id: row.id, printer_model: p.printerModel.slice(0, 80), process: p.process.slice(0, 120), filament: p.filament.slice(0, 120),
+            layer_height_mm: p.layerHeightMm ?? null, nozzle_mm: p.nozzleMm ?? null, time_s: p.timeS === undefined ? null : Math.round(p.timeS), grams: p.grams ?? null,
+          })
+          if (added.error) return failed(added.error)
+        }
       }
 
       const up = await sb.storage.from('uploads-quarantine').upload(row.storage_path, input.bytes, { contentType: 'application/octet-stream', upsert: false })

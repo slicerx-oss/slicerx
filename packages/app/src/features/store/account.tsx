@@ -7,8 +7,8 @@ import { Button, Chip, Dialog } from '@slicerx/ui'
 import { appName, closeSettings, setWorkspace, toast, useEdition, useHost } from '@slicerx/app'
 import { activeTokens, deletionBanner, exportFileName, graceLabel, rateLabel, revokedLabel, tokenState } from './account-logic'
 import { useSession, useStore } from './queries'
-import { dashboardUrl, openExternal, privacyUrl } from './routes'
-import { openEditor } from './sheets'
+import { openExternal, privacyUrl } from './routes'
+import { openEditor, openUpload } from './sheets'
 import { SignInNotice } from './signin'
 
 export default function Account() {
@@ -122,7 +122,11 @@ function SignedIn() {
           >
             {session.creatorId ? 'Edit creator page' : 'Set up your creator page'}
           </Button>
-          <Button size="sm" icon="cloud-upload" onClick={() => open(dashboardUrl(edition))}>
+          <Button size="sm" icon="cloud-upload" onClick={() => {
+              closeSettings()
+              setWorkspace('feed')
+              openUpload('list')
+            }}>
             Upload and manage models
           </Button>
         </div>
