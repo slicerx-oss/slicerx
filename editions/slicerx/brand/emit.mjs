@@ -144,7 +144,7 @@ put('slicerx-android-background.svg', svgDoc(1024, 1024, full(GROUND.dark)))
 // The themed layer: alpha only, which Android colors from the wallpaper.
 put('slicerx-android-monochrome.svg', icon({ plate: '', palette: PERCH_PALETTE.white, scale: ANDROID }))
 
-// The tile: the mark on Nocturne's ground with rounded corners, for an avatar or anywhere a
+// The tile: the mark on Subban's ground with rounded corners, for an avatar or anywhere a
 // surface needs its own background.
 const tile = (ground, palette, glow) =>
   icon({ plate: `<rect width="1024" height="1024" rx="230" fill="${ground}"/>`, palette, glow, scale: 10.24 * ICON_ART })

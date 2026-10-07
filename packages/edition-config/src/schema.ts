@@ -55,11 +55,12 @@ export const brandSchema = z.object({
     /** Square source image for app icons (1024 px PNG or SVG). The desktop build makes its icons from it; forks must set it. */
     appIcon: asset.optional(),
   }),
-  /** A theme id the base ships, or token overrides on top of one. */
+  /** A theme id the base ships, or token overrides on top of one. `nocturne` is Subban's earlier name and still works. */
   theme: z.union([
+    z.literal('subban'),
     z.literal('nocturne'),
-    z.object({ base: z.literal('nocturne').default('nocturne'), tokens: themeTokens }),
-  ]).default('nocturne'),
+    z.object({ base: z.enum(['subban', 'nocturne']).default('subban'), tokens: themeTokens }),
+  ]).default('subban'),
   supportEmail: z.email().optional(),
 })
 

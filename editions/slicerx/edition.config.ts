@@ -27,7 +27,7 @@ export default defineEditionConfig({
     tagline: 'The AI-ready slicer',
     description: 'Fast, open source 3D print slicer',
     logo: { mark: 'builtin:slicerx-mark' },
-    theme: 'nocturne',
+    theme: 'subban',
   },
   apps: {
     web: { origin: 'https://slicerx.app' },
