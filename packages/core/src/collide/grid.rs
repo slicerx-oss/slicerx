@@ -47,7 +47,10 @@ impl Grid {
         let mut tris: Vec<[[f64; 3]; 3]> = Vec::new();
         let (mut lo, mut hi) = ([f64::MAX; 2], [f64::MIN; 2]);
         for part in &obj.mesh.parts {
-            let pts: Vec<[f64; 3]> = part.positions.iter().map(|&p| obj.apply(p)).collect();
+            let mut pts = Vec::with_capacity(part.positions.len());
+            for &p in &part.positions {
+                pts.push(obj.apply(p));
+            }
             for t in &part.triangles {
                 let (Some(a), Some(b), Some(c)) = (
                     pts.get(t[0] as usize),
@@ -171,16 +174,14 @@ impl Grid {
     /// Per row of cells, the tallest point across it, grown by `reach` mm either way in y: what a gantry beam that
     /// spans the bed meets at each y.
     pub(crate) fn beam(&self, reach: f64) -> Profile {
-        let mut rows: Vec<f32> = (0..self.h)
-            .map(|y| {
-                self.z
-                    .get(y * self.w..(y + 1) * self.w)
-                    .unwrap_or(&[])
-                    .iter()
-                    .copied()
-                    .fold(0.0, f32::max)
-            })
-            .collect();
+        let mut rows = Vec::with_capacity(self.h);
+        for y in 0..self.h {
+            let mut top = 0.0f32;
+            for &z in self.z.get(y * self.w..(y + 1) * self.w).unwrap_or(&[]) {
+                top = top.max(z);
+            }
+            rows.push(top);
+        }
         #[allow(clippy::cast_possible_truncation, reason = "a beam reach of a few tens of mm")]
         let k = (reach / CELL).ceil().max(0.0) as i32;
         let n = rows.len() + usize::try_from(2 * k).unwrap_or(0);

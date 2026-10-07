@@ -57,60 +57,56 @@ fn file() -> &'static Value {
     crate::par::Init::once(&FILE, || serde_json::from_str(SHAPES).unwrap_or_default())
 }
 
-/// The numbers of a JSON list, 0 where one is missing.
-fn numbers(v: &Value) -> Vec<f64> {
-    v.as_array()
-        .map(|a| a.iter().map(|x| x.as_f64().unwrap_or(0.0)).collect())
-        .unwrap_or_default()
+/// The list at `v`, empty when it is not one.
+fn list(v: Option<&Value>) -> &[Value] {
+    v.and_then(Value::as_array).map_or(&[], Vec::as_slice)
+}
+
+/// The `N` numbers of a JSON list, or none when it holds another count.
+fn numbers<const N: usize>(v: &Value) -> Option<[f64; N]> {
+    let a = list(Some(v));
+    let mut out = [0.0; N];
+    if a.len() != N {
+        return None;
+    }
+    for (o, x) in out.iter_mut().zip(a) {
+        *o = x.as_f64().unwrap_or(0.0);
+    }
+    Some(out)
 }
 
 fn columns(f: &Value, key: &str) -> Vec<Column> {
-    f.get("heads")
-        .and_then(|h| h.get(key))
-        .and_then(Value::as_array)
-        .map(|cols| {
-            cols.iter()
-                .filter_map(|c| match numbers(c).as_slice() {
-                    &[x0, x1, y0, y1, z0] => Some(Column {
-                        x: [x0, x1],
-                        y: [y0, y1],
-                        z0,
-                    }),
-                    _ => None,
-                })
-                .collect()
-        })
-        .unwrap_or_default()
+    let mut out = Vec::new();
+    for c in list(f.get("heads").and_then(|h| h.get(key))) {
+        if let Some([x0, x1, y0, y1, z0]) = numbers(c) {
+            out.push(Column {
+                x: [x0, x1],
+                y: [y0, y1],
+                z0,
+            });
+        }
+    }
+    out
 }
 
 fn changer(c: &Value) -> Changer {
-    let routes = c
-        .get("routes")
-        .and_then(Value::as_object)
-        .map(|r| {
-            r.iter()
-                .map(|(k, stops)| {
-                    let stops = stops
-                        .as_array()
-                        .map(|a| {
-                            a.iter()
-                                .filter_map(|s| match numbers(s).as_slice() {
-                                    &[x, y, dz, station] => Some(Stop {
-                                        x,
-                                        y,
-                                        dz,
-                                        station: station > 0.5,
-                                    }),
-                                    _ => None,
-                                })
-                                .collect()
-                        })
-                        .unwrap_or_default();
-                    (k.clone(), stops)
-                })
-                .collect()
-        })
-        .unwrap_or_default();
+    let mut routes = Vec::new();
+    if let Some(r) = c.get("routes").and_then(Value::as_object) {
+        for (k, stops) in r {
+            let mut route = Vec::new();
+            for s in list(Some(stops)) {
+                if let Some([x, y, dz, station]) = numbers(s) {
+                    route.push(Stop {
+                        x,
+                        y,
+                        dz,
+                        station: station > 0.5,
+                    });
+                }
+            }
+            routes.push((k.clone(), route));
+        }
+    }
     Changer {
         lift_mm: c.get("liftMm").and_then(Value::as_f64).unwrap_or(3.0),
         routes,
@@ -123,26 +119,22 @@ pub(crate) fn machine(printer_id: Option<&str>, printer_model: Option<&str>) -> 
     let f = file();
     let printers = f.get("printers");
     let by_model = printer_model.and_then(|m| f.get("models")?.get(m)?.as_str());
-    let Some(p) = [printer_id, by_model]
-        .into_iter()
-        .flatten()
-        .find_map(|id| printers?.get(id))
-    else {
+    let Some(p) = printers.and_then(|ps| {
+        printer_id
+            .and_then(|id| ps.get(id))
+            .or_else(|| by_model.and_then(|id| ps.get(id)))
+    }) else {
         return Machine {
             heads: vec![columns(f, "generic")],
             changer: None,
         };
     };
-    let heads = p
-        .get("heads")
-        .and_then(Value::as_array)
-        .map(|h| {
-            h.iter()
-                .filter_map(Value::as_str)
-                .map(|k| columns(f, k))
-                .collect()
-        })
-        .unwrap_or_default();
+    let mut heads = Vec::new();
+    for k in list(p.get("heads")) {
+        if let Some(k) = k.as_str() {
+            heads.push(columns(f, k));
+        }
+    }
     let changer = p
         .get("changer")
         .and_then(Value::as_str)

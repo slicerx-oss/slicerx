@@ -304,11 +304,10 @@ impl Meta {
     /// The facts as JSON, for a layer range's JSON in the browser build: the objects as `[id, height, x, y]`, then
     /// the numbers.
     pub fn to_json(&self) -> serde_json::Value {
-        let objects: Vec<serde_json::Value> = self
-            .objects
-            .iter()
-            .map(|o| serde_json::json!([o.id, o.height, o.center[0], o.center[1]]))
-            .collect();
+        let mut objects = Vec::with_capacity(self.objects.len());
+        for o in &self.objects {
+            objects.push(serde_json::json!([o.id, o.height, o.center[0], o.center[1]]));
+        }
         let numbers = [
             self.radius,
             self.rod,
@@ -335,19 +334,23 @@ impl Meta {
                 .unwrap_or_default()
                 .to_owned()
         };
-        let objects = v
-            .get(0)
-            .and_then(serde_json::Value::as_array)
-            .map(|a| {
-                a.iter()
-                    .map(|o| MetaObject {
-                        id: text(o.get(0)),
-                        height: num(o.get(1)),
-                        center: [num(o.get(2)), num(o.get(3))],
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
+        let list = |i: usize| {
+            v.get(i)
+                .and_then(serde_json::Value::as_array)
+                .map_or(&[][..], Vec::as_slice)
+        };
+        let mut objects = Vec::new();
+        for o in list(0) {
+            objects.push(MetaObject {
+                id: text(o.get(0)),
+                height: num(o.get(1)),
+                center: [num(o.get(2)), num(o.get(3))],
+            });
+        }
+        let mut zones = Vec::new();
+        for z in list(2) {
+            zones.push(u8::from(z.as_u64() == Some(1)));
+        }
         let n = |i: usize| num(v.get(1).and_then(|a| a.get(i)));
         Self {
             objects,
@@ -360,11 +363,7 @@ impl Meta {
             retract_s: n(6),
             z_hop: n(7),
             by_layer: n(8) > 0.5,
-            zones: v
-                .get(2)
-                .and_then(serde_json::Value::as_array)
-                .map(|a| a.iter().map(|z| u8::from(z.as_u64() == Some(1))).collect())
-                .unwrap_or_default(),
+            zones,
         }
     }
 }
@@ -427,24 +426,16 @@ impl Model {
             serde_json::Value::Array(a) => a.first().and_then(serde_json::Value::as_str),
             _ => None,
         });
-        let machine = shapes::machine(printer_id, model);
-        let heads: Vec<Vec<Column>> = machine
-            .heads
-            .iter()
-            .map(|h| {
-                h.iter()
-                    .map(|c| Column {
-                        x: [c.x[0] - MARGIN_MM, c.x[1] + MARGIN_MM],
-                        y: [c.y[0] - MARGIN_MM, c.y[1] + MARGIN_MM],
-                        z0: c.z0,
-                    })
-                    .collect()
-            })
-            .collect();
-        let plate = crate::plate::Plate {
-            objects: objects.iter().map(|o| (*o).clone()).collect(),
-            ..crate::plate::Plate::default()
-        };
+        let mut machine = shapes::machine(printer_id, model);
+        for c in machine.heads.iter_mut().flatten() {
+            c.x = [c.x[0] - MARGIN_MM, c.x[1] + MARGIN_MM];
+            c.y = [c.y[0] - MARGIN_MM, c.y[1] + MARGIN_MM];
+        }
+        let heads = machine.heads;
+        let mut plate = crate::plate::Plate::default();
+        for o in objects {
+            plate.objects.push((*o).clone());
+        }
         let hulls = crate::firmware::footprints(&plate);
         let mut built = Vec::with_capacity(objects.len());
         let mut listed = Vec::with_capacity(objects.len());
@@ -464,6 +455,10 @@ impl Model {
                 height: top as f32,
                 center: [f.center[0] as f32, f.center[1] as f32],
             });
+            let mut fields = Vec::with_capacity(heads.len());
+            for _ in &heads {
+                fields.push(OnceLock::new());
+            }
             #[allow(clippy::cast_possible_truncation, reason = "heights of a print fit in f32")]
             built.push(Obstacle {
                 object: (*o).clone(),
@@ -476,7 +471,7 @@ impl Model {
                     hi[1].floor() + 1.0,
                 ],
                 hull: f.hull.clone(),
-                fields: (0..heads.len()).map(|_| OnceLock::new()).collect(),
+                fields,
                 beam: OnceLock::new(),
             });
         }
