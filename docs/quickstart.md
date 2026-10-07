@@ -31,7 +31,7 @@ export default defineEditionConfig({
     name: 'TinySlice',
     shortName: 'Tiny',
     tagline: 'A slicer for the Tiny Makers club',
-    theme: { base: 'nocturne', tokens: { colors: { purple: '#4fb3bf' } } },
+    theme: { base: 'subban', tokens: { colors: { purple: '#4fb3bf' } } },
   },
   apps: {
     web: { origin: 'https://slice.tinymakers.example' },
@@ -47,7 +47,7 @@ export default defineEditionConfig({
 
 What each part does:
 
-- `brand`: the name, tagline, logo files and theme. `nocturne` is the built-in theme; `tokens` overrides its colors and fonts.
+- `brand`: the name, tagline, logo files and theme. `subban` is the built-in theme; `tokens` overrides its colors and fonts.
 - `features`: switches for the store, feed, creators, cloud slicing, mimir and each printer family. Anything you leave out takes the neutral default. mimir needs an AI provider, which is why the example turns it off along with `ai.provider: 'none'`.
 - `funding`: links shown in the app for supporting your project (`payWhatYouWant`, `buyMeACoffee`, `githubSponsors`). Unset links are hidden. Nothing is sold in the app.
 - `routes`: public paths. Here the web app moves from `/studio` to `/app`.

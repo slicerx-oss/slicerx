@@ -306,7 +306,7 @@ describe('theming', () => {
   it('returns a built-in theme with a stylesheet and passing contrast', async () => {
     const h = await connect()
     const t = data<{ theme: { name: string }; css: string; contrast: { ok: boolean | null }[] }>(await h.call('slicerx_theme_get', { name: 'nocturne' }))
-    expect(t.theme.name).toBe('nocturne')
+    expect(t.theme.name).toBe('subban')
     expect(t.css).toContain('--purple')
     expect(t.contrast.filter((c) => c.ok === false)).toEqual([])
   })

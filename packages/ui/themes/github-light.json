@@ -3,6 +3,8 @@
   "version": 1,
   "id": "github-light",
   "name": "GitHub Light",
+  "family": "github",
+  "familyName": "GitHub",
   "isDark": false,
   "background": "#f6f8fa",
   "surface": "#ffffff",

@@ -3,6 +3,8 @@
   "version": 1,
   "id": "solarized-light",
   "name": "Solarized Light",
+  "family": "solarized",
+  "familyName": "Solarized",
   "isDark": false,
   "background": "#fdf6e3",
   "surface": "#f6f0dd",

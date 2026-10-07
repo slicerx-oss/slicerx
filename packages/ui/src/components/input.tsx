@@ -60,7 +60,7 @@ export interface SelectProps extends Omit<SelectHTMLAttributes<HTMLSelectElement
   children?: ReactNode
 }
 
-/** A native select with the Nocturne chrome. Options are plain option elements. */
+/** A native select with the Subban chrome. Options are plain option elements. */
 export function Select({ id, size = 'md', className, children, ...rest }: SelectProps) {
   return (
     <span className="sx-selectwrap">

@@ -61,7 +61,7 @@ export interface EditionFontFile {
 /** The edition's `fontFiles`, resolved against the config file. Throws when a file is missing. */
 export function editionFontFiles(config: EditionConfig, configFile: string): EditionFontFile[] {
   const t = config.brand.theme
-  if (t === 'nocturne') return []
+  if (typeof t === 'string') return []
   return (t.tokens.fontFiles ?? []).map((f, i) => {
     const path = editionAssetPath(configFile, f.src)
     if (!path) throw new Error(`brand.theme.tokens.fontFiles[${i}].src must be a file next to the config, not a URL`)

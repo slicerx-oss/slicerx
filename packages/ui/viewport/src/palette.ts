@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// Colors the renderer draws with. They follow the Nocturne tokens in
+// Colors the renderer draws with. They follow the Subban tokens in
 // packages/ui/tokens.css; GL needs them as numbers, so they are listed here.
 // Apps should build legends from these exports so swatches match the scene.
 import { FEATURE, type FeatureId } from '@slicerx/contracts'

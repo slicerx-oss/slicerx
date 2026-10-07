@@ -3,6 +3,8 @@
   "version": 1,
   "id": "one-light",
   "name": "One Light",
+  "family": "one",
+  "familyName": "One",
   "isDark": false,
   "background": "#fafafa",
   "surface": "#ffffff",

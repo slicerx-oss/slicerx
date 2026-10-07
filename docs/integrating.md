@@ -11,7 +11,7 @@ Status: the schema, loaders and build helpers are in `packages/edition-config`, 
 | Section | What it sets |
 | --- | --- |
 | `id` | a short machine id (`harbor`), used in file names, storage keys and user agents |
-| `brand` | product name, short name, tagline, a one-line description for installers, logo files (mark, wordmark, app icon), theme (`nocturne` or token overrides on it), support email |
+| `brand` | product name, short name, tagline, a one-line description for installers, logo files (mark, wordmark, app icon), theme (`subban` or token overrides on it), support email |
 | `apps` | web origin, desktop identifier and product name, iOS bundle id and team id, Android application id and signing fingerprints, the deep link scheme, universal link domains |
 | `backend` | Supabase URL and anon key, the cloud API, the relay for phone pairing, the local `sx-link` port |
 | `features` | `store`, `feed`, `creators`, `cloudSlicing`, `phonePairing`, `pilot`, `localAi` (Set up local AI, on by default), `demoData`, and each printer family (`bambu`, `moonraker`, `prusalink`, `octoprint`, `duet`, `creality`, `elegoo`, `snapmaker`, `spoolman`, `homeassistant`) |
@@ -40,7 +40,7 @@ export default defineEditionConfig({
     shortName: 'Harbor',
     tagline: 'Slicing and print management for Harbor Print Co. customers',
     logo: { mark: 'brand/harbor-mark.svg', wordmark: 'brand/harbor-wordmark.svg', appIcon: 'brand/harbor-icon.png' },
-    theme: { base: 'nocturne', tokens: { colors: { purple: '#4fb3bf', pink: '#f2a65a' }, fonts: { display: 'Space Grotesk' } } },
+    theme: { base: 'subban', tokens: { colors: { purple: '#4fb3bf', pink: '#f2a65a' }, fonts: { display: 'Space Grotesk' } } },
     supportEmail: 'support@harborprint.example',
   },
   apps: {

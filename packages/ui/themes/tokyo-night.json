@@ -3,6 +3,8 @@
   "version": 1,
   "id": "tokyo-night",
   "name": "Tokyo Night",
+  "family": "tokyo-night",
+  "familyName": "Tokyo Night",
   "isDark": true,
   "background": "#1a1b26",
   "surface": "#222430",

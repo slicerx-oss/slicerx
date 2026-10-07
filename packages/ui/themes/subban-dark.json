@@ -1,8 +1,10 @@
 {
   "$schema": "./schema.json",
   "version": 1,
-  "id": "slicerx-dark",
-  "name": "SlicerX dark",
+  "id": "subban-dark",
+  "name": "Subban",
+  "family": "subban",
+  "familyName": "Subban",
   "isDark": true,
   "background": "#282a36",
   "surface": "#2f3241",
@@ -17,7 +19,7 @@
     "#ff5555",
     "#50fa7b",
     "#f1fa8c",
-    "#bd93f9",
+    "#82aaff",
     "#ff79c6",
     "#8be9fd",
     "#f8f8f2",
@@ -25,7 +27,7 @@
     "#ff6e6e",
     "#69ff94",
     "#ffffa5",
-    "#d6acff",
+    "#82aaff",
     "#ff92df",
     "#a4ffff",
     "#ffffff"
@@ -37,6 +39,5 @@
     "plate": "#3c3f50",
     "grid": "#9aa4c1",
     "edge": "#16171e"
-  },
-  "credit": "Based on the Dracula palette (MIT, draculatheme.com)."
+  }
 }
