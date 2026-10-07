@@ -83,30 +83,30 @@ test('Printers shows the demo fleet', async ({ page }) => {
   await expect(page.getByRole('region', { name: / live view$/ })).toBeVisible()
 })
 
-test('Library shows a featured design and rows, opens creators, and My models shows the examples', async ({ page }) => {
+test('the Vault shows a featured design and rows, opens creators, and My models shows the examples', async ({ page }) => {
   await open(page, 'feed')
-  await expect(page.locator('.lib-feat h2')).toBeVisible()
-  await expect(page.locator('.lib-feat').getByRole('button', { name: /^Open in / })).toBeVisible()
+  await expect(page.locator('.lib-hero h2')).toBeVisible()
+  await expect(page.locator('.lib-hero').getByRole('button', { name: /^Open in / })).toBeVisible()
   await expect.poll(() => page.locator('.lib-row').count()).toBeGreaterThanOrEqual(3)
   // Search shows the grid, and a nonsense word empties it.
   await page.getByLabel('Search models', { exact: true }).fill('zzzzqx')
   await expect(page.getByText('No models match')).toBeVisible()
   await page.getByLabel('Search models', { exact: true }).fill('')
-  await expect(page.locator('.lib-feat')).toBeVisible()
+  await expect(page.locator('.lib-hero')).toBeVisible()
   // See all opens the full sorted grid; the back button returns to the rows.
   await page.getByRole('region', { name: 'Most popular' }).getByRole('button', { name: 'See all' }).click()
-  await expect.poll(() => page.locator('.lib-grid-cards .lib-card').count()).toBeGreaterThan(2)
+  await expect.poll(() => page.locator('.lib-grid-cards .lib-mini').count()).toBeGreaterThan(2)
   await page.locator('.lib-grid-h').getByRole('button', { name: 'Vault' }).click()
   // The uploader opens the creator sheet, with About and Uploads tabs; Escape closes it.
-  await page.locator('.lib-feat .lib-uploader').click()
+  await page.locator('.lib-hero .lib-who').click()
   const sheet = page.getByRole('dialog', { name: /creator page$/ })
   await expect(sheet.getByRole('tab', { name: 'About' })).toBeVisible()
   await sheet.getByRole('tab', { name: /Uploads/ }).click()
-  await expect.poll(() => sheet.locator('.cs-tile').count()).toBeGreaterThan(0)
+  await expect.poll(() => sheet.locator('.cs-thumb').count()).toBeGreaterThan(0)
   await page.keyboard.press('Escape')
   await expect(sheet).toHaveCount(0)
   await noHorizontalScroll(page)
-  // My models is the Mine view of the one Library tab.
+  // My models is the Mine view of the one Vault tab.
   await expect(page.locator('.sx-tab', { hasText: 'My models' })).toHaveCount(0)
   await page.getByRole('radiogroup', { name: 'Vault' }).getByRole('radio', { name: 'Mine' }).click()
   await expect.poll(() => page.locator('.tile').count()).toBeGreaterThanOrEqual(5)
