@@ -14,6 +14,8 @@ export interface StrikeMark {
   close?: boolean
   /** The strike the list has selected: drawn larger. */
   selected?: boolean
+  /** Before the layer it starts on, picked or pointed at in the list: a faint mark that shows where to look. */
+  ghost?: boolean
 }
 
 /** The outline under every mark. */
@@ -95,11 +97,12 @@ export class Strikes {
     this.disposeMaterials()
   }
 
-  private material(color: string): SpriteMaterial {
-    let m = this.materials.get(color)
+  private material(color: string, ghost = false): SpriteMaterial {
+    const key = ghost ? `${color} ghost` : color
+    let m = this.materials.get(key)
     if (!m) {
-      m = new SpriteMaterial({ map: strikeTexture(color), color: 0xffffff, depthTest: false, depthWrite: false, transparent: true, sizeAttenuation: false })
-      this.materials.set(color, m)
+      m = new SpriteMaterial({ map: strikeTexture(color), color: 0xffffff, depthTest: false, depthWrite: false, transparent: true, opacity: ghost ? 0.35 : 1, sizeAttenuation: false })
+      this.materials.set(key, m)
     }
     return m
   }
@@ -108,8 +111,8 @@ export class Strikes {
   set(marks: readonly StrikeMark[] | null): void {
     this.root.clear()
     for (const m of marks ?? []) {
-      const s = new Sprite(this.material(m.close ? this.colors.close : this.colors.hit))
-      s.name = m.selected ? 'strike selected' : 'strike'
+      const s = new Sprite(this.material(m.close ? this.colors.close : this.colors.hit, m.ghost))
+      s.name = `${m.selected ? 'strike selected' : 'strike'}${m.ghost ? ' ghost' : ''}`
       s.position.set(m.x, m.y, m.z)
       const k = m.selected ? SELECTED : SIZE
       s.scale.set(k, k, 1)
