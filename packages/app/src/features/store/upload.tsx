@@ -199,8 +199,8 @@ function UploadForm() {
 
   // Signed in without a creator page: the page comes first.
   useEffect(() => {
-    if (session && mine.isSuccess && !mine.data) openEditor('upload')
-  }, [session, mine.isSuccess, mine.data])
+    if (session && mine.isSuccess && !mine.isFetching && !mine.data) openEditor('upload')
+  }, [session, mine.isSuccess, mine.isFetching, mine.data])
 
   const keep = (img: PendingImage | null) => {
     if (img) urls.current.push(img.preview)

@@ -2,8 +2,8 @@
 // Copyright (C) 2026 The SlicerX contributors
 // Signing in from the app: an emailed link, or one of the providers the edition offers. The link
 // comes back to the app (the web callback or the desktop deep link), and the session follows.
-import type { AuthProvider } from '@slicerx/contracts'
-import { useState, type ReactNode } from 'react'
+import type { AuthProvider, SignInMethod } from '@slicerx/contracts'
+import { useEffect, useState, type ReactNode } from 'react'
 import { Button, Dialog } from '@slicerx/ui'
 import { toast, useHost } from '@slicerx/app'
 import { useStore } from './queries'
@@ -25,9 +25,20 @@ export function SignInForm({ compact }: { compact?: boolean }) {
   const [sent, setSent] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // The web host loads the store on first use, so even this sync call can come back as a promise.
+  const [methods, setMethods] = useState<SignInMethod[] | null>(null)
+  useEffect(() => {
+    if (!store) return
+    let live = true
+    void Promise.resolve(store.signInMethods() as SignInMethod[] | Promise<SignInMethod[]>).then((m) => live && setMethods(m))
+    return () => {
+      live = false
+    }
+  }, [store])
   if (!store) return <p className="sx-small sx-muted">This build has no accounts.</p>
-  const providers = store.signInMethods().filter((m): m is AuthProvider => m !== 'email')
-  const allowsEmail = store.signInMethods().includes('email')
+  if (!methods) return null
+  const providers = methods.filter((m): m is AuthProvider => m !== 'email')
+  const allowsEmail = methods.includes('email')
 
   const send = async () => {
     const to = email.trim()
