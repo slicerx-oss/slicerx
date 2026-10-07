@@ -65,6 +65,7 @@ export const toCreator = (r: CreatorRow, followers: number, extra: { listingCoun
   ...opt('bio', r.bio),
   ...opt('location', r.location),
   ...opt('logoUrl', r.logo_url),
+  ...opt('bannerUrl', r.banner_url),
   ...opt('tagline', r.tagline),
   ...opt('listingCount', extra.listingCount),
   ...opt('followedByMe', extra.followedByMe),
@@ -129,7 +130,7 @@ export const toFile = (r: FileRow): ListingFile => ({
 
 export const toListing = (
   r: ListingRow,
-  extra: { currentVersion?: ListingVersion; stats?: ListingStats; likedByMe?: boolean } = {},
+  extra: { currentVersion?: ListingVersion; stats?: ListingStats; likedByMe?: boolean; savedByMe?: boolean } = {},
 ): Listing => ({
   id: r.id,
   creatorId: r.creator_id,
@@ -147,6 +148,7 @@ export const toListing = (
   ...opt('currentVersion', extra.currentVersion),
   ...opt('stats', extra.stats),
   ...opt('likedByMe', extra.likedByMe),
+  ...opt('savedByMe', extra.savedByMe),
 })
 
 type Author = Comment['author']

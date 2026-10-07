@@ -87,7 +87,8 @@
         "comments": 3,
         "downloads": 8
       },
-      "likedByMe": false
+      "likedByMe": false,
+      "savedByMe": false
     },
     {
       "id": "25d99ffe-32b2-567e-b637-5e0d615cd78d",
@@ -136,7 +137,8 @@
         "comments": 2,
         "downloads": 5
       },
-      "likedByMe": false
+      "likedByMe": false,
+      "savedByMe": false
     },
     {
       "id": "7aeeaa45-5a64-511b-9c29-09587ca3e206",
@@ -185,7 +187,8 @@
         "comments": 2,
         "downloads": 9
       },
-      "likedByMe": true
+      "likedByMe": true,
+      "savedByMe": false
     }
   ],
   "listings": [
@@ -236,7 +239,8 @@
         "comments": 2,
         "downloads": 9
       },
-      "likedByMe": true
+      "likedByMe": true,
+      "savedByMe": false
     },
     {
       "id": "25d99ffe-32b2-567e-b637-5e0d615cd78d",
@@ -285,7 +289,8 @@
         "comments": 2,
         "downloads": 5
       },
-      "likedByMe": false
+      "likedByMe": false,
+      "savedByMe": false
     },
     {
       "id": "713c8053-ec80-531e-859a-b3b61826c0fb",
@@ -334,7 +339,8 @@
         "comments": 2,
         "downloads": 6
       },
-      "likedByMe": false
+      "likedByMe": false,
+      "savedByMe": false
     },
     {
       "id": "04b41b28-c776-5f1a-a349-b903e08b3d31",
@@ -384,7 +390,8 @@
         "comments": 3,
         "downloads": 8
       },
-      "likedByMe": false
+      "likedByMe": false,
+      "savedByMe": false
     }
   ]
 }

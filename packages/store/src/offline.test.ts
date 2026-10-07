@@ -798,3 +798,74 @@ describe('contract fixtures', () => {
     expect(queue[0]?.listingId).toBeTruthy()
   })
 })
+
+describe('offline store: library rows and creator pages', () => {
+  it('ranks trending against the catalog own latest activity', async () => {
+    const s = store()
+    const rows = await s.trending({ limit: 10 })
+    expect(rows.length).toBeGreaterThan(0)
+    expect(rows.every((r) => r.listing.status === 'approved')).toBe(true)
+  })
+
+  it('moves a freshly liked design up the trending row', async () => {
+    const s = store()
+    const before = await s.trending({ limit: 100 })
+    const last = before.at(-1)
+    expect(last).toBeDefined()
+    for (const h of ['ash', 'bo', 'rv']) {
+      await as(s, h)
+      await s.like(last?.listing.id ?? '')
+    }
+    const after = await s.trending({ limit: 100 })
+    expect(after.findIndex((r) => r.listing.id === last?.listing.id)).toBeLessThan(before.length - 1)
+  })
+
+  it('lists a creator whose first design was just approved as new', async () => {
+    const s = store('rv')
+    value(await s.saveCreator({ handle: 'rv-prints', displayName: 'RV Prints' }))
+    const { l } = await submit(s, 'First print')
+    await as(s, 'owner')
+    value(await s.approveListing(l.id))
+    const fresh = await s.newCreators({ days: 30 })
+    expect(fresh[0]?.handle).toBe('rv-prints')
+    expect(fresh.some((c) => c.handle === 'marrow-works')).toBe(false)
+  })
+
+  it('recommends from the member likes and leaves out what they liked', async () => {
+    const s = store('rv')
+    const picks = await s.recommended()
+    expect(picks.length).toBeGreaterThan(0)
+    expect(picks.some((p) => p.listing.likedByMe)).toBe(false)
+    expect(await store(null).recommended()).toEqual([])
+  })
+
+  it('keeps a private Saved list', async () => {
+    const s = store('rv')
+    const id = listing('spine-cable-organizer')
+    expect(await s.savedListings()).toEqual([])
+    value(await s.setSaved(id, true))
+    value(await s.setSaved(id, true))
+    const saved = await s.savedListings()
+    expect(saved.map((x) => x.listing.id)).toEqual([id])
+    expect(saved[0]?.listing.savedByMe).toBe(true)
+    expect((await s.collections()).some((c) => c.name === 'Saved')).toBe(false)
+    await as(s, 'ash')
+    expect(await s.savedListings()).toEqual([])
+    await as(s, 'rv')
+    value(await s.setSaved(id, false))
+    expect(await s.savedListings()).toEqual([])
+    fails(await store(null).setSaved(id, true), 'not_signed_in')
+  })
+
+  it('stores a banner and logo on the creator page', async () => {
+    const s = store('marrow')
+    fails(await s.uploadCreatorImage({ kind: 'banner', bytes: new Uint8Array(4), contentType: 'image/svg+xml' }), 'invalid')
+    fails(await s.uploadCreatorImage({ kind: 'banner', bytes: new Uint8Array(5_242_881), contentType: 'image/png' }), 'invalid')
+    const url = value(await s.uploadCreatorImage({ kind: 'banner', bytes: new Uint8Array([1, 2, 3]), contentType: 'image/png' }))
+    const me = await s.getMyCreator()
+    value(await s.saveCreator({ handle: me?.handle ?? '', displayName: me?.displayName ?? '', bannerUrl: url }))
+    expect((await s.getCreatorByHandle('marrow-works'))?.creator.bannerUrl).toBe(url)
+    fails(await s.saveCreator({ handle: 'marrow-works', displayName: 'Marrow Works', bannerUrl: 'javascript:alert(1)' }), 'invalid')
+    fails(await store('ash').uploadCreatorImage({ kind: 'logo', bytes: new Uint8Array(3), contentType: 'image/png' }), 'forbidden')
+  })
+})
