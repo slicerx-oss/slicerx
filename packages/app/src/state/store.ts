@@ -38,7 +38,7 @@ import { createStore, useStore } from 'zustand'
 import { normalizeEasy } from '../lib/easy-values'
 import { GENERIC_BED } from '../adapters/generic-bed'
 import { loadUserThemes } from '../theme/load'
-import { DEFAULT_PLAYBACK_SPEED, hasStoredPrefs, loadPrefs, savePrefs, type HandPrinter, type PrinterBay, type Prefs } from './prefs'
+import { DEFAULT_APPEARANCE, DEFAULT_PLAYBACK_SPEED, hasStoredPrefs, loadPrefs, savePrefs, type Appearance, type HandPrinter, type PrinterBay, type Prefs } from './prefs'
 import type { DryMark } from '../filament/dry-marks'
 
 
@@ -189,8 +189,8 @@ export interface AppState {
   rails: Prefs['rails']
   commandOpen: boolean
   recents: string[]
-  /** Toolpath colors: the standard set, or one for color vision deficiency. */
-  toolpathPalette: 'standard' | 'colorblind'
+  /** Settings > Look and feel: text size and weight, contrast, color vision (toolpaths included), density and accent. */
+  appearance: Appearance
   /** Preview draws the moving toolhead; the rack, dock, chute and wiper show either way. */
   showToolhead: boolean
   /** Preview playback speed, times real time (PLAYBACK_SPEEDS). */
@@ -312,7 +312,8 @@ export interface AppState {
   moreOpen: Record<string, boolean>
   firstRun: FirstRunState | null
   /** The setup flow on screen, and the step it opened at; `byHand` opens the printer step on the hand-made form. Null when closed. */
-  setup: { step: SetupStep; byHand?: boolean } | null
+  /** Setup is open at this step. `since` limits it to the steps newer than that onboarding version (a changed onboarding after alpha); `rerun` marks a run that opened by itself because onboarding changed. */
+  setup: { step: SetupStep; byHand?: boolean; since?: number; rerun?: boolean } | null
   crashReports: boolean
   /** Settings > Appearance > Motion; null until picked, which means the edition's default. */
   motion: 'system' | 'full' | 'reduced' | null
@@ -503,7 +504,7 @@ export function pilotState(s: Pick<AppState, 'pilot' | 'setupPilotOff'> = get())
   if (pilotOn(s)) return 'on'
   return s.pilot?.mode === 'unset' && !s.setupPilotOff ? 'connect' : 'off'
 }
-export type SetupStep = 'welcome' | 'look' | 'cad' | 'pilot' | 'printer' | 'done'
+export type SetupStep = 'welcome' | 'theme' | 'look' | 'open' | 'mimir' | 'cad' | 'pilot' | 'printer' | 'done'
 
 /** Electricity price until the person sets one: $0.15 per kWh. */
 export const DEFAULT_ELECTRICITY = { pricePerKwh: 0.15, symbol: '$' }
@@ -518,7 +519,7 @@ export const appStore = createStore<AppState>()(() => ({
   rails: prefs.rails,
   commandOpen: false,
   recents: prefs.recents,
-  toolpathPalette: prefs.toolpathPalette ?? 'standard',
+  appearance: prefs.appearance ?? DEFAULT_APPEARANCE,
   showToolhead: prefs.showToolhead ?? true,
   playbackSpeed: prefs.playbackSpeed ?? DEFAULT_PLAYBACK_SPEED,
   followNozzle: prefs.followNozzle ?? false,
@@ -656,7 +657,7 @@ function noAutoSliceDefault(): boolean {
 }
 
 
-const PERSISTED = ['workspace', 'modelModeDefault', 'rails', 'recents', 'toolpathPalette', 'showToolhead', 'playbackSpeed', 'followNozzle', 'easy', 'goal', 'printerId', 'scheme', 'lookAndFeel', 'themeFollowsSystem', 'themeIds', 'userThemes', 'fonts', 'settingsMode', 'tooltips', 'autoSlice', 'cadTools', 'electricity', 'printerNozzles', 'printerExtruders', 'handPrinters', 'bays', 'printerBays', 'printersView', 'easyTouched', 'paneSizes', 'queue', 'spoolLinks', 'presetSync', 'firstRun', 'crashReports', 'motion', 'agreement', 'installId', 'setupPilotOff', 'noPrinter', 'pilot', 'sendChoices', 'dryMarks', 'activePresets'] as const satisfies readonly (keyof AppState)[]
+const PERSISTED = ['workspace', 'modelModeDefault', 'rails', 'recents', 'appearance', 'showToolhead', 'playbackSpeed', 'followNozzle', 'easy', 'goal', 'printerId', 'scheme', 'lookAndFeel', 'themeFollowsSystem', 'themeIds', 'userThemes', 'fonts', 'settingsMode', 'tooltips', 'autoSlice', 'cadTools', 'electricity', 'printerNozzles', 'printerExtruders', 'handPrinters', 'bays', 'printerBays', 'printersView', 'easyTouched', 'paneSizes', 'queue', 'spoolLinks', 'presetSync', 'firstRun', 'crashReports', 'motion', 'agreement', 'installId', 'setupPilotOff', 'noPrinter', 'pilot', 'sendChoices', 'dryMarks', 'activePresets'] as const satisfies readonly (keyof AppState)[]
 
 appStore.subscribe((s, prev) => {
   if (PERSISTED.some((k) => s[k] !== prev[k])) {
@@ -665,7 +666,7 @@ appStore.subscribe((s, prev) => {
       modelModeDefault: s.modelModeDefault,
       rails: s.rails,
       recents: s.recents,
-      toolpathPalette: s.toolpathPalette,
+      appearance: s.appearance,
       showToolhead: s.showToolhead,
       playbackSpeed: s.playbackSpeed,
       followNozzle: s.followNozzle,
@@ -714,6 +715,11 @@ export function useApp<T>(select: (s: AppState) => T): T {
 }
 
 export const set = appStore.setState
+
+/** Toolpaths draw in the color vision palette whenever a color vision setting is on. */
+export function colorblindToolpaths(s: Pick<AppState, 'appearance'> = appStore.getState()): boolean {
+  return s.appearance.colorVision !== 'standard'
+}
 export const get = appStore.getState
 
 // Profiling and test hook: with localStorage 'slicerx.debug' set, scripts reach the store as window.__sx from the

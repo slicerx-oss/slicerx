@@ -17,7 +17,7 @@
   background: color-mix(in srgb, var(--ink-1) 60%, transparent);
 }
 .fra-point-ic { display: inline-flex; align-items: center; justify-content: center; align-self: center; width: 40px; height: 40px; color: var(--accent); }
-.fra-point-title { margin: 0 0 var(--s-1); font: 600 var(--fs-lg) / var(--lh-tight) var(--f-body); }
+.fra-point-title { margin: 0 0 var(--s-1); font: var(--fw-semibold) var(--fs-lg) / var(--lh-tight) var(--f-body); }
 .fra-point p { margin: 0 0 var(--s-2); color: var(--muted); font-size: var(--fs-md); max-width: 68ch; }
 .fra-point p:last-child { margin-bottom: 0; }
 .fra-point a { color: var(--accent); overflow-wrap: anywhere; }

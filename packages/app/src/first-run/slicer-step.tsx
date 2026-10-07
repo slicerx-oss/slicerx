@@ -42,13 +42,6 @@ export function cardLine(p: LookPreview): string {
   return line.charAt(0).toUpperCase() + line.slice(1)
 }
 
-const THEMES = [
-  { value: 'system', label: 'System' },
-  { value: 'dark', label: 'Dark' },
-  { value: 'light', label: 'Light' },
-] as const
-type ThemeValue = (typeof THEMES)[number]['value']
-
 export const BUTTON_LABELS: Record<MouseButtonName, string> = { left: 'Left button', middle: 'Middle button', right: 'Right button' }
 export const REMAP_OPTIONS = [
   { value: 'none', label: 'None' },
@@ -286,7 +279,7 @@ function CrashReports() {
   )
 }
 
-export function SlicerStep({ choice, onPick, onTheme, phone }: { choice: LookAndFeelChoice; onPick: (c: LookAndFeelChoice) => void; onTheme: () => void; phone: boolean }) {
+export function SlicerStep({ choice, onPick, phone }: { choice: LookAndFeelChoice; onPick: (c: LookAndFeelChoice) => void; phone: boolean }) {
   const host = useHost()
   const download = editionLinks(useEdition()).download
   const scheme = useApp((s) => s.scheme)
@@ -296,7 +289,6 @@ export function SlicerStep({ choice, onPick, onTheme, phone }: { choice: LookAnd
   const [hover, setHover] = useState<LookId | null>(null)
   const [mouseOpen, setMouseOpen] = useState(false)
   const cards = useRef<(HTMLDivElement | null)[]>([])
-  const theme: ThemeValue = follow ? 'system' : scheme
   const app = APP_FOR_LOOK[choice.id] ?? null
   const keys = choice.overrides?.keys
   const previews = useMemo(() => new Map(SLICERS.map((s) => [s.id, lookPreview(s.id, workspaces, controlsPreset, formatShortcut, keys ?? {})])), [workspaces, keys])
@@ -330,18 +322,6 @@ export function SlicerStep({ choice, onPick, onTheme, phone }: { choice: LookAnd
         {label}
         {hover && hover !== choice.id ? <span className="frp-peek">Preview</span> : null}
       </h2>
-      <Seg
-        label="Theme"
-        size="sm"
-        value={theme}
-        options={THEMES}
-        className="frp-theme"
-        onChange={(v) => {
-          onTheme()
-          if (v === 'system') set({ themeFollowsSystem: true })
-          else set({ themeFollowsSystem: false, scheme: v })
-        }}
-      />
     </>
   )
 
