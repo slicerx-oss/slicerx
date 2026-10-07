@@ -1,0 +1,12 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+/* Copyright (C) 2026 The SlicerX contributors */
+/* Signing in from the app: the email field, the provider buttons and the sent note. */
+.si-form { display: grid; gap: 10px; width: 100%; }
+.si-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.si-in { flex: 1 1 200px; min-width: 0; height: 36px; padding: 0 11px; border-radius: var(--r-md); border: 1px solid var(--line); background: var(--ink-2); color: var(--fg); font: 14px var(--f-body); }
+.si-in:focus-visible { outline: none; border-color: var(--accent); box-shadow: var(--focus-field); }
+.si-in[aria-invalid=true] { border-color: var(--red); }
+.si-err { color: var(--red); font-size: 12px; }
+.si-providers { display: flex; flex-wrap: wrap; gap: 8px; }
+.si-sent { display: grid; gap: 8px; justify-items: start; }
+.si-sent p { margin: 0; color: var(--fg); }
