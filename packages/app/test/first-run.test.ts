@@ -128,10 +128,10 @@ describe('onboarding version', () => {
     expect(onboardingRerun('beta', done(1))).toEqual({ since: 1 })
     expect(onboardingRerun('stable', done())).toEqual({ since: 1 })
     expect(onboardingRerun('stable', done(ONBOARDING_VERSION))).toBeNull()
-    expect(setupSteps({ mimir: true, since: 1 })).toEqual(['theme'])
-    expect(setupSteps({ mimir: false, since: 1 })).toEqual(['theme'])
+    expect(setupSteps({ cad: true, mimir: true, since: 1 })).toEqual(['theme', 'open'])
+    expect(setupSteps({ cad: false, mimir: false, since: 1 })).toEqual(['theme'])
     // nothing newer: the whole flow, never an empty one
-    expect(setupSteps({ mimir: false, since: ONBOARDING_VERSION })).toEqual(['theme', 'printer', 'look'])
+    expect(setupSteps({ cad: false, mimir: false, since: ONBOARDING_VERSION })).toEqual(['theme', 'printer', 'look'])
   })
 
   it('a fresh install has no record and opens setup the usual way', () => {
@@ -151,11 +151,12 @@ describe('onboarding version', () => {
   })
 
   it('a rerun prefilled from the settings keeps them when skipped through', () => {
-    // the flow starts from the stored look; nothing in it resets the printer
-    const s = run(initialFlow('theme', { id: 'bambu-studio' }, null, setupSteps({ mimir: false })), { type: 'next' }, { type: 'skip' }, { type: 'next' })
+    // the flow starts from the stored look and open choice; nothing in it resets the printer
+    const s = run(initialFlow('theme', { id: 'bambu-studio' }, null, setupSteps({ cad: true, mimir: false }), 'design'), { type: 'next' }, { type: 'skip' }, { type: 'next' }, { type: 'next' })
     expect(s.closed).toBe('finished')
     const o = outcome(s, NOW, done(1))
     expect(o.look).toEqual({ id: 'bambu-studio' })
+    expect(o.openIn).toBe('design')
     expect(o.printerId).toBeNull()
     expect(o.firstRun.printerId).toBe('bay-1')
   })

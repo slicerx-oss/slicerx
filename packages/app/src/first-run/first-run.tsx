@@ -5,7 +5,7 @@
 import type { LookAndFeelChoice } from '@slicerx/contracts'
 import { Button, Dialog } from '@slicerx/ui'
 import { lazy, Suspense, useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
-import { useEdition } from '../edition'
+import { editionHasCad, useEdition } from '../edition'
 import { useHost } from '../host'
 import { useMediaQuery } from '../lib/media'
 import { get, set, useApp, type AppState } from '../state/store'
@@ -13,6 +13,7 @@ import { Footer } from './frame'
 import { useLookChoice } from './look'
 import { contractStep, initialFlow, normalizeStep, outcome, progress, reduceFlow, setupSteps, stepLabel, type FlowState, type SetupStep } from './model'
 import { MimirStep, type MimirChoice } from './mimir-step'
+import { OpenStep } from './open-step'
 import { KnownPrinter } from './known-printer'
 import { ThemeStep } from './theme-step'
 import { bedOf } from './printer-form'
@@ -36,12 +37,12 @@ export function FirstRun() {
   const setupHost = useMemo(() => setupHostFor(host), [host])
   const ctl = usePrinterController(setupHost)
   const edition = useEdition()
-  // The mimir screen is offered when the edition has mimir and it is not connected yet.
+  // The open screen is offered when the edition has the modeling tools, the mimir screen when it has mimir and it is not connected yet.
   // After alpha, a changed onboarding shows only the steps added since the person last ran it (`since`).
-  const [steps] = useState<readonly SetupStep[]>(() => setupSteps({ mimir: edition.features.pilot && get().pilot?.mode !== 'on' && get().pilot?.mode !== 'off', ...(since !== undefined ? { since } : {}) }))
+  const [steps] = useState<readonly SetupStep[]>(() => setupSteps({ cad: editionHasCad(edition), mimir: edition.features.pilot && get().pilot?.mode !== 'on' && get().pilot?.mode !== 'off', ...(since !== undefined ? { since } : {}) }))
   // Someone who already has a printer keeps it with one click: setup run again (or from Settings) shows it instead of the scan. Adding a printer from Settings always scans.
   const [keepPrinter, setKeepPrinter] = useState(() => opened !== 'printer' && Boolean(get().firstRun) && get().printerId !== null)
-  const [flow, dispatch] = useReducer(reduceFlow, null, () => initialFlow(normalizeStep(opened, steps), choice, null, steps))
+  const [flow, dispatch] = useReducer(reduceFlow, null, () => initialFlow(normalizeStep(opened, steps), choice, null, steps, get().modelModeDefault))
   const [mimir, setMimir] = useState<MimirChoice>('skip')
   const atOpen = useRef({ look: storedLook })
   const [announce, setAnnounce] = useState('')
@@ -78,7 +79,7 @@ export function FirstRun() {
     rootRef.current?.querySelector<HTMLElement>('.fr-body')?.scrollTo({ top: 0 })
     if (!flow.closed) {
       const prior = get().firstRun
-      set({ firstRun: { completedAt: prior?.completedAt ?? null, step: contractStep(flow.step), look: prior?.look ?? flow.look, printerId: prior?.printerId ?? null, ...(prior?.version !== undefined ? { version: prior.version } : {}) } })
+      set({ firstRun: { completedAt: prior?.completedAt ?? null, step: contractStep(flow.step, flow.steps), look: prior?.look ?? flow.look, printerId: prior?.printerId ?? null, ...(prior?.version !== undefined ? { version: prior.version } : {}) } })
     }
     // flow.look is read for a first record only.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -100,6 +101,8 @@ export function FirstRun() {
         if (bed) Object.assign(patch, { bed })
       }
       Object.assign(patch, { workspace: 'prepare' })
+      // The plate tab opens in the chosen mode now and on every launch after (Settings > Look and feel changes it).
+      if (o.openIn) Object.assign(patch, { modelModeDefault: o.openIn, modelMode: o.openIn })
     }
     // Choosing a printer changes the bed, which is not an edit of the plate: closing right after setup must not ask to save.
     withoutDirtying(() => set(patch))
@@ -197,6 +200,17 @@ export function FirstRun() {
                 <Suspense fallback={<div className="fr-wait" aria-busy="true" />}>
                   <SlicerStep choice={flow.look} onPick={pickLook} phone={phone} />
                 </Suspense>
+              </div>
+              <Footer
+                back={flow.trail.length ? { label: 'Back', onClick: back } : null}
+                primary={last ? { label: 'Open the plate', onClick: () => dispatch({ type: 'finish' }), icon: 'prepare' } : { label: 'Next', onClick: () => dispatch({ type: 'next' }), icon: 'arrow-right' }}
+              />
+            </>
+          ) : null}
+          {flow.step === 'open' ? (
+            <>
+              <div className="fr-body">
+                <OpenStep choice={flow.openIn} onChoose={(openIn) => dispatch({ type: 'pick-open', openIn })} />
               </div>
               <Footer
                 back={flow.trail.length ? { label: 'Back', onClick: back } : null}

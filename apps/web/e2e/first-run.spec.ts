@@ -9,11 +9,11 @@ async function fresh(page: Page): Promise<void> {
   // A fresh install: nothing stored, so setup opens by itself on the theme.
   await page.goto('./')
   await expect(page.getByRole('heading', { name: 'Pick a theme' })).toBeVisible()
-  // Four steps: the theme, the printer, the slicer you use now, and mimir (until mimir is turned on or off).
-  await expect(page.locator('#fr-step-label')).toHaveText('Step 1 of 4')
+  // Five steps: the theme, the printer, the slicer you use now, what the plate tab opens in, and mimir (until mimir is turned on or off).
+  await expect(page.locator('#fr-step-label')).toHaveText('Step 1 of 5')
   await page.locator('.fr-foot').getByRole('button', { name: 'Next' }).click()
   await expect(page.getByRole('heading', { name: 'Find your printer' })).toBeVisible()
-  await expect(page.locator('#fr-step-label')).toHaveText('Step 2 of 4')
+  await expect(page.locator('#fr-step-label')).toHaveText('Step 2 of 5')
 }
 
 async function noHorizontalScroll(page: Page): Promise<void> {
@@ -55,7 +55,7 @@ test('the scan finds the printer, the connection tests itself, then the slicer q
   await page.locator('.fr-foot').getByRole('button', { name: 'Continue' }).click()
 
   // Which slicer: four cards, "something else" preselected, the pick applied live.
-  await expect(page.locator('#fr-step-label')).toHaveText('Step 3 of 4')
+  await expect(page.locator('#fr-step-label')).toHaveText('Step 3 of 5')
   await expect(page.getByRole('heading', { name: 'Which slicer do you use now?' })).toBeVisible()
   const cards = page.getByRole('radiogroup', { name: 'Slicer you use now' }).getByRole('radio')
   await expect(cards).toHaveCount(4)
@@ -76,8 +76,15 @@ test('the scan finds the printer, the connection tests itself, then the slicer q
   await noHorizontalScroll(page)
   await page.locator('.fr-foot').getByRole('button', { name: 'Next' }).click()
 
+  // Then what the plate tab opens in: Slicing stays chosen.
+  await expect(page.locator('#fr-step-label')).toHaveText('Step 4 of 5')
+  await expect(page.getByRole('heading', { name: /What do you want .* to open in\?/ })).toBeVisible()
+  await expect(page.getByRole('radio', { name: /^Slicing/ })).toHaveAttribute('aria-checked', 'true')
+  await noHorizontalScroll(page)
+  await page.locator('.fr-foot').getByRole('button', { name: 'Next' }).click()
+
   // Then mimir: setting it up is offered, and the plate opens from there.
-  await expect(page.locator('#fr-step-label')).toHaveText('Step 4 of 4')
+  await expect(page.locator('#fr-step-label')).toHaveText('Step 5 of 5')
   await expect(page.getByRole('heading', { name: 'Set up mimir' })).toBeVisible()
   await noHorizontalScroll(page)
   await page.locator('.fr-foot').getByRole('button', { name: 'Open the plate' }).click()
@@ -122,14 +129,14 @@ test('Escape asks before leaving, and Settings brings the slicer screen back', a
   await expect(dialog).toContainText('You can finish it later from Settings.')
   await dialog.getByRole('button', { name: 'Stay' }).click()
   await expect(dialog).toBeHidden()
-  await expect(page.locator('#fr-step-label')).toHaveText('Step 2 of 4')
+  await expect(page.locator('#fr-step-label')).toHaveText('Step 2 of 5')
   await page.keyboard.press('Escape')
   await page.getByRole('dialog', { name: 'Leave setup?' }).getByRole('button', { name: 'Leave' }).click()
   await expect(page.locator('.fr')).toHaveCount(0)
   await page.keyboard.press('ControlOrMeta+k')
   await page.keyboard.type('change look and feel')
   await page.keyboard.press('Enter')
-  await expect(page.locator('#fr-step-label')).toHaveText('Step 3 of 4')
+  await expect(page.locator('#fr-step-label')).toHaveText('Step 3 of 5')
 })
 
 test('the theme step: every theme as a card, the mode and flavors apply at once and stay after a reload', async ({ page }) => {
@@ -259,4 +266,32 @@ test('Skip, use defaults closes setup; mimir shows and opens the connect step un
   const dialog = page.getByRole('dialog', { name: 'Settings' })
   await expect(dialog.getByRole('heading', { name: 'mimir' })).toBeVisible()
   await expect(dialog.getByRole('radiogroup', { name: 'Model provider' })).toBeVisible()
+})
+
+test('choosing CAD design opens the plate in Design, now and on the next launch, and Settings changes it', async ({ page }) => {
+  await fresh(page)
+  // Straight to the open step: no printer, the slicer as it is.
+  await page.getByRole('button', { name: 'I do not have a printer yet' }).first().click()
+  await expect(page.locator('#fr-step-label')).toHaveText('Step 3 of 5')
+  await page.locator('.fr-foot').getByRole('button', { name: 'Next' }).click()
+  await expect(page.locator('#fr-step-label')).toHaveText('Step 4 of 5')
+  const cad = page.getByRole('radio', { name: /^CAD design/ })
+  await cad.click()
+  await expect(cad).toHaveAttribute('aria-checked', 'true')
+  await page.locator('.fr-foot').getByRole('button', { name: 'Next' }).click()
+  await page.locator('.fr-foot').getByRole('button', { name: 'Open the plate' }).click()
+  await expect(page.locator('.fr')).toHaveCount(0)
+  await expect(page.locator('.sx-tab[data-mode="design"]')).toHaveAttribute('aria-current', 'page')
+  await page.reload()
+  await expect(page.locator('.sx-tab[data-mode="design"]')).toHaveAttribute('aria-current', 'page')
+  // Settings > Look and feel changes the default; the session stays where it is.
+  await page.getByRole('button', { name: 'Settings', exact: true }).click()
+  await page.getByRole('navigation', { name: 'Settings sections' }).getByRole('button', { name: 'Look and feel' }).click()
+  const row = page.getByRole('radiogroup', { name: 'Open models in' })
+  await expect(row.getByRole('radio', { name: 'CAD design' })).toHaveAttribute('aria-checked', 'true')
+  await row.getByRole('radio', { name: 'Slicing' }).click()
+  await page.keyboard.press('Escape')
+  await expect(page.locator('.sx-tab[data-mode="design"]')).toHaveAttribute('aria-current', 'page')
+  await page.reload()
+  await expect(page.locator('.sx-tab[data-mode="slice"]')).toHaveAttribute('aria-current', 'page')
 })
