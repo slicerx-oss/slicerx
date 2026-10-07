@@ -890,6 +890,12 @@ button.tuned-badge:hover { background: color-mix(in srgb, currentColor 14%, tran
 .sx-edition-logo img { display: block; height: 1.15em; width: auto; }
 .sx-edition-logo > img:only-child { height: 1.4em; }
 
+/* A settings row with a segmented choice: the label and its note on the left, the choice on the right. */
+.set-seg-row { display: flex; align-items: center; justify-content: space-between; gap: var(--s-4); padding: var(--s-2) 0; }
+.set-seg-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.set-seg-text small { color: var(--muted); font-size: var(--fs-sm); }
+@media (max-width: 560px) { .set-seg-row { flex-direction: column; align-items: stretch; } }
+
 /* Slice sidebar: printer, filament and print settings as separate flat panels on the darker ground, each opening
    with a header strip. Printer and filament fold to a summary line (shell/fold.ts). */
 .studio[data-mode="prepare"]:not([data-model-mode="design"]) > .pane .sx-rail-body { background: var(--ink-0); }

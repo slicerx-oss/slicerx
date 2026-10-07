@@ -88,7 +88,7 @@ export interface LookAndFeelChoice {
 }
 
 /** Steps of the first-run flow in order. mimir can drive `printer` through the printer setup tools. */
-export const FIRST_RUN_STEPS = ['theme', 'look', 'printer', 'done'] as const
+export const FIRST_RUN_STEPS = ['theme', 'look', 'printer', 'open', 'done'] as const
 export type FirstRunStep = (typeof FIRST_RUN_STEPS)[number]
 
 export interface FirstRunState {
