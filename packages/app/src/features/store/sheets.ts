@@ -12,9 +12,11 @@ export interface LibrarySheets {
   listing: string | null
   /** The creator page editor. 'upload' when it opened from Upload for someone without a page. */
   editor: null | 'edit' | 'upload'
+  /** The upload flow: the form for a new design, or the list of your uploads. */
+  upload: null | 'form' | 'list'
 }
 
-const EMPTY: LibrarySheets = { creator: null, listing: null, editor: null }
+const EMPTY: LibrarySheets = { creator: null, listing: null, editor: null, upload: null }
 let current: LibrarySheets = EMPTY
 const listeners = new Set<() => void>()
 
@@ -27,6 +29,8 @@ export const openCreator = (handle: string): void => set({ ...current, creator: 
 export const openListing = (id: string): void => set({ ...current, listing: id, creator: null })
 export const openEditor = (why: 'edit' | 'upload' = 'edit'): void => set({ ...current, editor: why })
 export const closeEditor = (): void => set({ ...current, editor: null })
+export const openUpload = (view: 'form' | 'list' = 'form'): void => set({ ...current, upload: view, editor: null, creator: null, listing: null })
+export const closeUpload = (): void => set({ ...current, upload: null })
 export const closeSheet = (): void => set({ ...current, creator: null, listing: null })
 export const resetSheets = (): void => set(EMPTY)
 

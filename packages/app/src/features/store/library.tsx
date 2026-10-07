@@ -16,9 +16,10 @@ import { count, CreatorAvatar, CreatorSheet, plural, printFacts, Sheet } from '.
 import { fetchModel, formatLabel } from './download'
 import { CATEGORIES, DEFAULT_FILTER, setLibraryFilter, showsGrid, useLibraryFilter, type LibrarySort } from './filter'
 import { detailQuery, LIBRARY_KEY, listingsQuery, myCreatorQuery, newCreatorsQuery, rowQuery, savedCountQuery, useSession, useStore } from './queries'
-import { dashboardUrl, openExternal, signInUrl } from './routes'
+import { openExternal, signInUrl } from './routes'
 import { pickFeatured, ROWS, withoutFeatured, type RowId } from './rows'
-import { closeSheet, openCreator, openEditor, openListing, resetSheets, useLibrarySheets } from './sheets'
+import { closeSheet, openCreator, openEditor, openListing, openUpload, resetSheets, useLibrarySheets } from './sheets'
+import { UploadHost } from './upload'
 import { SignInNotice } from './signin'
 import './library.css'
 
@@ -62,6 +63,7 @@ export function Library() {
       {sheets.creator ? <CreatorSheet key={sheets.creator} handle={sheets.creator} /> : null}
       {sheets.listing ? <ListingSheet key={sheets.listing} id={sheets.listing} /> : null}
       <CreatorEditorHost />
+      <UploadHost />
     </div>
   )
 }
@@ -81,7 +83,8 @@ function VaultBar() {
 
   const upload = () => {
     if (session && mine.isSuccess && !mine.data) openEditor('upload')
-    else void openExternal(host, dashboardUrl(edition))
+    else if (session) openUpload('form')
+    else void openExternal(host, signInUrl(edition))
   }
 
   return (
@@ -94,7 +97,7 @@ function VaultBar() {
               {session.displayName ?? session.handle ?? 'Account'}
             </Button>
             <Menu open={menu} onClose={() => setMenu(false)} label="Account" align="end">
-              <MenuItem icon="cloud-upload" onClick={close(() => void openExternal(host, dashboardUrl(edition)))}>
+              <MenuItem icon="cloud-upload" onClick={close(() => openUpload('list'))}>
                 Uploads
               </MenuItem>
               <MenuItem icon="bookmark" onClick={close(() => setLibraryFilter({ saved: true }))}>

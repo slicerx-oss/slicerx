@@ -14,8 +14,7 @@ import { coverFor } from './art'
 import { CreatorAvatar, CreatorSheetView, CreatorTags } from './creator-sheet'
 import { LINK_KIND_INFO, LINK_KINDS } from './links'
 import { creatorPageQuery, LIBRARY_KEY, myCreatorQuery, useSession, useStore } from './queries'
-import { dashboardUrl, openExternal } from './routes'
-import { closeEditor, openCreator, useLibrarySheets } from './sheets'
+import { closeEditor, openCreator, openUpload, useLibrarySheets } from './sheets'
 
 /** Longest bio, as the database takes it; a sheet reads best short. */
 export const BIO_MAX = CREATOR_BIO_MAX
@@ -26,14 +25,14 @@ export const LINKS_MAX = 8
 const IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/webp']
 const IMAGE_MAX_BYTES = 5 * 1024 * 1024
 /** Largest stored size: banners 1800 by 600, logos 512 square. Bigger pictures are scaled down before upload. */
-const IMAGE_BOX: Record<CreatorImageKind, [number, number]> = { banner: [1800, 600], logo: [512, 512] }
+const IMAGE_BOX: Record<CreatorImageKind, [number, number]> = { banner: [1800, 600], logo: [512, 512], cover: [1600, 1200] }
 
 interface LinkDraft extends CreatorLinkInput {
   key: string
 }
 
 /** An image the creator picked: kept as bytes until Save, shown from an object URL meanwhile. */
-interface PendingImage {
+export interface PendingImage {
   bytes: Uint8Array
   contentType: string
   preview: string
@@ -152,7 +151,7 @@ export function previewPage(d: EditorDraft, page: CreatorPage | null, own: Listi
 }
 
 /** Scales a picked image into its box as WebP. Falls back to the original bytes where the browser cannot. */
-async function prepareImage(file: File, kind: CreatorImageKind): Promise<PendingImage | string> {
+export async function prepareImage(file: File, kind: CreatorImageKind): Promise<PendingImage | string> {
   if (!IMAGE_TYPES.includes(file.type)) return 'Use a PNG, JPEG or WebP image'
   const original = new Uint8Array(await file.arrayBuffer())
   let out: { bytes: Uint8Array; type: string } = { bytes: original, type: file.type }
@@ -234,7 +233,7 @@ export function CreatorEditorHost() {
 }
 
 /** The editor's frame: covers the Vault with a title bar, takes focus, and closes on Escape. */
-function Frame({ title, onClose, actions, children }: { title: string; onClose: () => void; actions?: ReactNode; children: ReactNode }) {
+export function Frame({ title, onClose, actions, children }: { title: string; onClose: () => void; actions?: ReactNode; children: ReactNode }) {
   const ref = useRef<HTMLDivElement>(null)
   useEffect(() => {
     const before = document.activeElement as HTMLElement | null
@@ -346,7 +345,6 @@ function EditorForm({ why, session, page, own }: { why: 'edit' | 'upload'; sessi
     set({ [kind]: { kind: 'new', image: r } } as Partial<EditorDraft>)
   }
 
-  const continueToUpload = () => void openExternal(host, dashboardUrl(edition))
 
   const save = async () => {
     setTried(true)
@@ -364,7 +362,7 @@ function EditorForm({ why, session, page, own }: { why: 'edit' | 'upload'; sessi
       void client.invalidateQueries({ queryKey: ['session'] })
       toast(page ? 'Creator page saved' : 'Creator page created', 'ok')
       closeEditor()
-      if (upload) continueToUpload()
+      if (upload) openUpload('form')
       else openCreator(r.creator.handle)
     } finally {
       setBusy(false)
@@ -414,7 +412,7 @@ function EditorForm({ why, session, page, own }: { why: 'edit' | 'upload'; sessi
               void save()
             }}
           >
-            {upload && !page ? <p className="ce-intro">Your uploads show on your creator page. Add a name and a few details now, or skip and do it later from your account.</p> : null}
+            {upload && !page ? <p className="ce-intro">Your uploads show on your creator page, so set it up first. You can change any of it later.</p> : null}
             <fieldset className="ce-set">
               <legend>Banner and logo</legend>
               <div className="ce-banner">
@@ -599,14 +597,8 @@ function EditorForm({ why, session, page, own }: { why: 'edit' | 'upload'; sessi
               {stateText}
             </span>
             {upload ? (
-              <Button
-                onClick={() => {
-                  closeEditor()
-                  continueToUpload()
-                }}
-                disabled={busy}
-              >
-                Skip for now
+              <Button onClick={closeEditor} disabled={busy}>
+                Cancel
               </Button>
             ) : (
               <Button onClick={() => (dirty ? setDraft(base) : closeEditor())} disabled={busy}>
@@ -614,7 +606,7 @@ function EditorForm({ why, session, page, own }: { why: 'edit' | 'upload'; sessi
               </Button>
             )}
             <button type="button" className="cs-btn" data-pink="" onClick={() => void save()} disabled={busy}>
-              {busy ? 'Saving' : upload ? 'Save and upload' : 'Save'}
+              {busy ? 'Saving' : upload ? 'Save and continue' : 'Save'}
             </button>
           </div>
         </div>
