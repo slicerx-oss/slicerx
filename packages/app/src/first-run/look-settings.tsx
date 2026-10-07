@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// Settings > Look and feel: the controls preset, theme, accent, text, accessibility, hints and the ways
-// back into setup. Settings > Slicing and modeling: auto slice, the electricity price and the drawing tools.
+// Settings > Look and feel: the controls preset, theme, accent, text, accessibility, the workspace
+// the first tab opens in, hints and the ways back into setup. Settings > Slicing and modeling: auto
+// slice, the electricity price and the drawing tools.
 import { LOOK_OPTIONS } from '@slicerx/contracts'
-import { Button, SwitchRow } from '@slicerx/ui'
+import { Button, Seg, SwitchRow } from '@slicerx/ui'
 import { useEffect, useState } from 'react'
 import { editionHasCad, useEdition } from '../edition'
+import { formatShortcut } from '../lib/keys'
 import { AccentGroup, AccessibilityGroup, TextGroup } from '../shell/appearance-settings'
 import { ThemeSettingsSection } from '../shell/theme-settings'
 import { get, set, useApp } from '../state/store'
@@ -45,6 +47,9 @@ export function LookSettingsSection() {
   const choice = useLookChoice()
   const firstRun = useApp((s) => s.firstRun)
   const tips = useApp((s) => s.tooltips)
+  const modeling = editionHasCad(useEdition())
+  // Changing it never moves the session you are in; it applies from the next launch.
+  const openIn = useApp((s) => s.modelModeDefault)
   const custom = Boolean(choice.overrides && Object.keys(choice.overrides).length)
   const go = (fn: () => void) => {
     set({ settingsOpen: false, settingsSection: null })
@@ -69,6 +74,27 @@ export function LookSettingsSection() {
       <AccentGroup />
       <TextGroup />
       <AccessibilityGroup />
+      {modeling ? (
+        <div className="set-group">
+          <h4>Workspace</h4>
+          <div className="set-seg-row">
+            <span className="set-seg-text">
+              <span>Open models in</span>
+              <small>The mode the first tab starts in. {formatShortcut('Mod+E')} switches any time.</small>
+            </span>
+            <Seg
+              size="sm"
+              label="Open models in"
+              value={openIn}
+              onChange={(v) => set({ modelModeDefault: v })}
+              options={[
+                { value: 'slice', label: 'Slicing' },
+                { value: 'design', label: 'CAD design' },
+              ]}
+            />
+          </div>
+        </div>
+      ) : null}
       <div className="set-group">
         <h4>Help and hints</h4>
         <SwitchRow id="set-tips" icon="help" label="Show feature tooltips" detail="Hover or focus a control to see what it does. Press ? any time to see one." checked={tips.enabled} onChange={(v) => set({ tooltips: { ...get().tooltips, enabled: v } })} />
