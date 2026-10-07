@@ -21,7 +21,24 @@
   },
   "scanned_at": "2026-06-03T01:05:00Z",
   "review_status": "approved",
-  "created_at": "2026-06-03T01:00:00Z"
+  "created_at": "2026-06-03T01:00:00Z",
+  "colors": {
+   "colors": [
+    {
+     "hex": "#3fae5a",
+     "name": "Grass green"
+    }
+   ],
+   "parts": [
+    {
+     "name": "Body",
+     "colors": [
+      0
+     ],
+     "ams": false
+    }
+   ]
+  }
  },
  {
   "id": "1d9a9c06-6ddc-55de-9134-33d821725a00",
@@ -45,7 +62,24 @@
   },
   "scanned_at": "2026-06-12T01:05:00Z",
   "review_status": "approved",
-  "created_at": "2026-06-12T01:00:00Z"
+  "created_at": "2026-06-12T01:00:00Z",
+  "colors": {
+   "colors": [
+    {
+     "hex": "#3fae5a",
+     "name": "Grass green"
+    }
+   ],
+   "parts": [
+    {
+     "name": "Body",
+     "colors": [
+      0
+     ],
+     "ams": false
+    }
+   ]
+  }
  },
  {
   "id": "5234cee4-afb6-50b1-b920-2e3144a24064",
@@ -69,7 +103,46 @@
   },
   "scanned_at": "2026-06-28T01:05:00Z",
   "review_status": "approved",
-  "created_at": "2026-06-28T01:00:00Z"
+  "created_at": "2026-06-28T01:00:00Z",
+  "colors": {
+   "colors": [
+    {
+     "hex": "#2e6fd8",
+     "name": "Cobalt blue"
+    },
+    {
+     "hex": "#8e8e93",
+     "name": "Ash gray"
+    },
+    {
+     "hex": "#1c1c1e",
+     "name": "Matte black"
+    }
+   ],
+   "parts": [
+    {
+     "name": "Part 1",
+     "colors": [
+      0
+     ],
+     "ams": false
+    },
+    {
+     "name": "Part 2",
+     "colors": [
+      1
+     ],
+     "ams": false
+    },
+    {
+     "name": "Part 3",
+     "colors": [
+      2
+     ],
+     "ams": false
+    }
+   ]
+  }
  },
  {
   "id": "03027603-7e2d-5dff-bf15-59e9023a1215",
@@ -93,7 +166,24 @@
   },
   "scanned_at": "2026-07-22T01:05:00Z",
   "review_status": "approved",
-  "created_at": "2026-07-22T01:00:00Z"
+  "created_at": "2026-07-22T01:00:00Z",
+  "colors": {
+   "colors": [
+    {
+     "hex": "#3fae5a",
+     "name": "Grass green"
+    }
+   ],
+   "parts": [
+    {
+     "name": "Body",
+     "colors": [
+      0
+     ],
+     "ams": false
+    }
+   ]
+  }
  },
  {
   "id": "ba919515-090b-51c6-bf41-34fdccdb202e",
@@ -117,7 +207,24 @@
   },
   "scanned_at": "2026-07-31T01:05:00Z",
   "review_status": "approved",
-  "created_at": "2026-07-31T01:00:00Z"
+  "created_at": "2026-07-31T01:00:00Z",
+  "colors": {
+   "colors": [
+    {
+     "hex": "#3fae5a",
+     "name": "Grass green"
+    }
+   ],
+   "parts": [
+    {
+     "name": "Body",
+     "colors": [
+      0
+     ],
+     "ams": false
+    }
+   ]
+  }
  },
  {
   "id": "ea367271-660c-532e-9228-ffdcde12ae83",
@@ -141,7 +248,90 @@
   },
   "scanned_at": "2026-08-17T01:05:00Z",
   "review_status": "approved",
-  "created_at": "2026-08-17T01:00:00Z"
+  "created_at": "2026-08-17T01:00:00Z",
+  "colors": {
+   "colors": [
+    {
+     "hex": "#5dade2",
+     "name": "Sky blue"
+    },
+    {
+     "hex": "#d4af37",
+     "name": "Silk gold"
+    },
+    {
+     "hex": "#3fae5a",
+     "name": "Grass green"
+    },
+    {
+     "hex": "#8e44ad",
+     "name": "Plum"
+    },
+    {
+     "hex": "#f2f0eb",
+     "name": "Bone white"
+    },
+    {
+     "hex": "#2e6fd8",
+     "name": "Cobalt blue"
+    },
+    {
+     "hex": "#8e8e93",
+     "name": "Ash gray"
+    },
+    {
+     "hex": "#1c1c1e",
+     "name": "Matte black"
+    }
+   ],
+   "parts": [
+    {
+     "name": "Body",
+     "colors": [
+      0,
+      1
+     ],
+     "ams": true
+    },
+    {
+     "name": "Face",
+     "colors": [
+      2,
+      3,
+      4
+     ],
+     "ams": true
+    },
+    {
+     "name": "Part 5",
+     "colors": [
+      4
+     ],
+     "ams": false
+    },
+    {
+     "name": "Part 6",
+     "colors": [
+      5
+     ],
+     "ams": false
+    },
+    {
+     "name": "Part 7",
+     "colors": [
+      6
+     ],
+     "ams": false
+    },
+    {
+     "name": "Part 8",
+     "colors": [
+      7
+     ],
+     "ams": false
+    }
+   ]
+  }
  },
  {
   "id": "0637e6e7-0839-5079-a86d-2bd66663fd48",
@@ -165,7 +355,24 @@
   },
   "scanned_at": "2026-09-25T11:05:00Z",
   "review_status": "pending",
-  "created_at": "2026-09-25T11:00:00Z"
+  "created_at": "2026-09-25T11:00:00Z",
+  "colors": {
+   "colors": [
+    {
+     "hex": "#d4af37",
+     "name": "Silk gold"
+    }
+   ],
+   "parts": [
+    {
+     "name": "Body",
+     "colors": [
+      0
+     ],
+     "ams": false
+    }
+   ]
+  }
  },
  {
   "id": "ccd029fb-968f-5bf8-a441-af76fe1ecd75",
@@ -189,7 +396,24 @@
   },
   "scanned_at": "2026-06-07T01:05:00Z",
   "review_status": "approved",
-  "created_at": "2026-06-07T01:00:00Z"
+  "created_at": "2026-06-07T01:00:00Z",
+  "colors": {
+   "colors": [
+    {
+     "hex": "#f39c12",
+     "name": "Amber"
+    }
+   ],
+   "parts": [
+    {
+     "name": "Body",
+     "colors": [
+      0
+     ],
+     "ams": false
+    }
+   ]
+  }
  },
  {
   "id": "3bb047d9-dd63-5302-9045-40b6f696b46d",
@@ -213,7 +437,51 @@
   },
   "scanned_at": "2026-07-03T01:05:00Z",
   "review_status": "approved",
-  "created_at": "2026-07-03T01:00:00Z"
+  "created_at": "2026-07-03T01:00:00Z",
+  "colors": {
+   "colors": [
+    {
+     "hex": "#8e44ad",
+     "name": "Plum"
+    },
+    {
+     "hex": "#f2f0eb",
+     "name": "Bone white"
+    },
+    {
+     "hex": "#2e6fd8",
+     "name": "Cobalt blue"
+    },
+    {
+     "hex": "#8e8e93",
+     "name": "Ash gray"
+    }
+   ],
+   "parts": [
+    {
+     "name": "Body",
+     "colors": [
+      0,
+      1
+     ],
+     "ams": true
+    },
+    {
+     "name": "Part 3",
+     "colors": [
+      2
+     ],
+     "ams": false
+    },
+    {
+     "name": "Part 4",
+     "colors": [
+      3
+     ],
+     "ams": false
+    }
+   ]
+  }
  },
  {
   "id": "a5bcee79-a985-51e4-9c4b-fbeb90720476",
@@ -237,7 +505,35 @@
   },
   "scanned_at": "2026-07-28T01:05:00Z",
   "review_status": "approved",
-  "created_at": "2026-07-28T01:00:00Z"
+  "created_at": "2026-07-28T01:00:00Z",
+  "colors": {
+   "colors": [
+    {
+     "hex": "#8e8e93",
+     "name": "Ash gray"
+    },
+    {
+     "hex": "#1c1c1e",
+     "name": "Matte black"
+    }
+   ],
+   "parts": [
+    {
+     "name": "Part 1",
+     "colors": [
+      0
+     ],
+     "ams": false
+    },
+    {
+     "name": "Part 2",
+     "colors": [
+      1
+     ],
+     "ams": false
+    }
+   ]
+  }
  },
  {
   "id": "e0b3b26e-6994-5e96-8fff-be7146d83289",
@@ -261,7 +557,35 @@
   },
   "scanned_at": "2026-08-06T01:05:00Z",
   "review_status": "approved",
-  "created_at": "2026-08-06T01:00:00Z"
+  "created_at": "2026-08-06T01:00:00Z",
+  "colors": {
+   "colors": [
+    {
+     "hex": "#8e8e93",
+     "name": "Ash gray"
+    },
+    {
+     "hex": "#1c1c1e",
+     "name": "Matte black"
+    }
+   ],
+   "parts": [
+    {
+     "name": "Part 1",
+     "colors": [
+      0
+     ],
+     "ams": false
+    },
+    {
+     "name": "Part 2",
+     "colors": [
+      1
+     ],
+     "ams": false
+    }
+   ]
+  }
  },
  {
   "id": "4f353bfa-7578-53f6-bfe7-da0fc5aa8203",
@@ -285,7 +609,29 @@
   },
   "scanned_at": "2026-08-20T01:05:00Z",
   "review_status": "approved",
-  "created_at": "2026-08-20T01:00:00Z"
+  "created_at": "2026-08-20T01:00:00Z",
+  "colors": {
+   "colors": [
+    {
+     "hex": "#8e8e93",
+     "name": "Ash gray"
+    },
+    {
+     "hex": "#1c1c1e",
+     "name": "Matte black"
+    }
+   ],
+   "parts": [
+    {
+     "name": "Body",
+     "colors": [
+      0,
+      1
+     ],
+     "ams": true
+    }
+   ]
+  }
  },
  {
   "id": "99fc88ca-ab79-5f25-91da-7ef9235f6916",
@@ -309,7 +655,24 @@
   },
   "scanned_at": "2026-09-26T11:05:00Z",
   "review_status": "pending",
-  "created_at": "2026-09-26T11:00:00Z"
+  "created_at": "2026-09-26T11:00:00Z",
+  "colors": {
+   "colors": [
+    {
+     "hex": "#2e6fd8",
+     "name": "Cobalt blue"
+    }
+   ],
+   "parts": [
+    {
+     "name": "Body",
+     "colors": [
+      0
+     ],
+     "ams": false
+    }
+   ]
+  }
  },
  {
   "id": "8b5a39f6-e74d-50fc-835b-c0866f4cf98c",
@@ -333,7 +696,24 @@
   },
   "scanned_at": "2026-06-11T01:05:00Z",
   "review_status": "approved",
-  "created_at": "2026-06-11T01:00:00Z"
+  "created_at": "2026-06-11T01:00:00Z",
+  "colors": {
+   "colors": [
+    {
+     "hex": "#8e44ad",
+     "name": "Plum"
+    }
+   ],
+   "parts": [
+    {
+     "name": "Body",
+     "colors": [
+      0
+     ],
+     "ams": false
+    }
+   ]
+  }
  },
  {
   "id": "641f86f9-d180-558c-8fa5-29007a3a6a75",
@@ -357,7 +737,24 @@
   },
   "scanned_at": "2026-06-20T01:05:00Z",
   "review_status": "approved",
-  "created_at": "2026-06-20T01:00:00Z"
+  "created_at": "2026-06-20T01:00:00Z",
+  "colors": {
+   "colors": [
+    {
+     "hex": "#8e44ad",
+     "name": "Plum"
+    }
+   ],
+   "parts": [
+    {
+     "name": "Body",
+     "colors": [
+      0
+     ],
+     "ams": false
+    }
+   ]
+  }
  },
  {
   "id": "35375079-c2bc-51c5-8973-84347ef85588",
@@ -381,7 +778,24 @@
   },
   "scanned_at": "2026-06-29T01:05:00Z",
   "review_status": "approved",
-  "created_at": "2026-06-29T01:00:00Z"
+  "created_at": "2026-06-29T01:00:00Z",
+  "colors": {
+   "colors": [
+    {
+     "hex": "#8e44ad",
+     "name": "Plum"
+    }
+   ],
+   "parts": [
+    {
+     "name": "Body",
+     "colors": [
+      0
+     ],
+     "ams": false
+    }
+   ]
+  }
  },
  {
   "id": "9fa3d7e2-9c48-593c-b351-a76930ba09b7",
@@ -405,7 +819,57 @@
   },
   "scanned_at": "2026-07-08T01:05:00Z",
   "review_status": "approved",
-  "created_at": "2026-07-08T01:00:00Z"
+  "created_at": "2026-07-08T01:00:00Z",
+  "colors": {
+   "colors": [
+    {
+     "hex": "#f2f0eb",
+     "name": "Bone white"
+    },
+    {
+     "hex": "#2e6fd8",
+     "name": "Cobalt blue"
+    },
+    {
+     "hex": "#8e8e93",
+     "name": "Ash gray"
+    },
+    {
+     "hex": "#1c1c1e",
+     "name": "Matte black"
+    }
+   ],
+   "parts": [
+    {
+     "name": "Part 1",
+     "colors": [
+      0
+     ],
+     "ams": false
+    },
+    {
+     "name": "Part 2",
+     "colors": [
+      1
+     ],
+     "ams": false
+    },
+    {
+     "name": "Part 3",
+     "colors": [
+      2
+     ],
+     "ams": false
+    },
+    {
+     "name": "Part 4",
+     "colors": [
+      3
+     ],
+     "ams": false
+    }
+   ]
+  }
  },
  {
   "id": "2c160ade-a51b-5dc9-a285-64966b88b381",
@@ -429,7 +893,24 @@
   },
   "scanned_at": "2026-08-01T01:05:00Z",
   "review_status": "approved",
-  "created_at": "2026-08-01T01:00:00Z"
+  "created_at": "2026-08-01T01:00:00Z",
+  "colors": {
+   "colors": [
+    {
+     "hex": "#f39c12",
+     "name": "Amber"
+    }
+   ],
+   "parts": [
+    {
+     "name": "Body",
+     "colors": [
+      0
+     ],
+     "ams": false
+    }
+   ]
+  }
  },
  {
   "id": "490770df-6481-5fdb-adc2-24160044db12",
@@ -453,7 +934,29 @@
   },
   "scanned_at": "2026-08-27T01:05:00Z",
   "review_status": "approved",
-  "created_at": "2026-08-27T01:00:00Z"
+  "created_at": "2026-08-27T01:00:00Z",
+  "colors": {
+   "colors": [
+    {
+     "hex": "#f2f0eb",
+     "name": "Bone white"
+    },
+    {
+     "hex": "#2e6fd8",
+     "name": "Cobalt blue"
+    }
+   ],
+   "parts": [
+    {
+     "name": "Body",
+     "colors": [
+      0,
+      1
+     ],
+     "ams": true
+    }
+   ]
+  }
  },
  {
   "id": "4e44372f-7242-537b-9e23-2c3062250864",
@@ -477,7 +980,35 @@
   },
   "scanned_at": "2026-09-27T11:05:00Z",
   "review_status": "pending",
-  "created_at": "2026-09-27T11:00:00Z"
+  "created_at": "2026-09-27T11:00:00Z",
+  "colors": {
+   "colors": [
+    {
+     "hex": "#f39c12",
+     "name": "Amber"
+    },
+    {
+     "hex": "#5dade2",
+     "name": "Sky blue"
+    }
+   ],
+   "parts": [
+    {
+     "name": "Part 1",
+     "colors": [
+      0
+     ],
+     "ams": false
+    },
+    {
+     "name": "Part 2",
+     "colors": [
+      1
+     ],
+     "ams": false
+    }
+   ]
+  }
  },
  {
   "id": "58cee525-e3ee-55f3-a9fc-cfc8d2dc6f1e",
@@ -501,7 +1032,35 @@
   },
   "scanned_at": "2026-06-18T01:05:00Z",
   "review_status": "approved",
-  "created_at": "2026-06-18T01:00:00Z"
+  "created_at": "2026-06-18T01:00:00Z",
+  "colors": {
+   "colors": [
+    {
+     "hex": "#5dade2",
+     "name": "Sky blue"
+    },
+    {
+     "hex": "#d4af37",
+     "name": "Silk gold"
+    }
+   ],
+   "parts": [
+    {
+     "name": "Part 1",
+     "colors": [
+      0
+     ],
+     "ams": false
+    },
+    {
+     "name": "Part 2",
+     "colors": [
+      1
+     ],
+     "ams": false
+    }
+   ]
+  }
  },
  {
   "id": "cc4f0593-bfa0-5145-a4ff-e6861710d250",
@@ -525,7 +1084,35 @@
   },
   "scanned_at": "2026-06-27T01:05:00Z",
   "review_status": "approved",
-  "created_at": "2026-06-27T01:00:00Z"
+  "created_at": "2026-06-27T01:00:00Z",
+  "colors": {
+   "colors": [
+    {
+     "hex": "#5dade2",
+     "name": "Sky blue"
+    },
+    {
+     "hex": "#d4af37",
+     "name": "Silk gold"
+    }
+   ],
+   "parts": [
+    {
+     "name": "Part 1",
+     "colors": [
+      0
+     ],
+     "ams": false
+    },
+    {
+     "name": "Part 2",
+     "colors": [
+      1
+     ],
+     "ams": false
+    }
+   ]
+  }
  },
  {
   "id": "ca2c7504-0ca6-5b9b-a8a9-a664ae2318fb",
@@ -549,7 +1136,24 @@
   },
   "scanned_at": "2026-07-12T01:05:00Z",
   "review_status": "approved",
-  "created_at": "2026-07-12T01:00:00Z"
+  "created_at": "2026-07-12T01:00:00Z",
+  "colors": {
+   "colors": [
+    {
+     "hex": "#f2f0eb",
+     "name": "Bone white"
+    }
+   ],
+   "parts": [
+    {
+     "name": "Body",
+     "colors": [
+      0
+     ],
+     "ams": false
+    }
+   ]
+  }
  },
  {
   "id": "6668f440-dcd3-578c-92fa-c37f284100b3",
@@ -573,7 +1177,46 @@
   },
   "scanned_at": "2026-08-05T01:05:00Z",
   "review_status": "approved",
-  "created_at": "2026-08-05T01:00:00Z"
+  "created_at": "2026-08-05T01:00:00Z",
+  "colors": {
+   "colors": [
+    {
+     "hex": "#3fae5a",
+     "name": "Grass green"
+    },
+    {
+     "hex": "#8e44ad",
+     "name": "Plum"
+    },
+    {
+     "hex": "#f2f0eb",
+     "name": "Bone white"
+    }
+   ],
+   "parts": [
+    {
+     "name": "Part 1",
+     "colors": [
+      0
+     ],
+     "ams": false
+    },
+    {
+     "name": "Part 2",
+     "colors": [
+      1
+     ],
+     "ams": false
+    },
+    {
+     "name": "Part 3",
+     "colors": [
+      2
+     ],
+     "ams": false
+    }
+   ]
+  }
  },
  {
   "id": "d182df8b-b2af-5135-aab9-a9d7c994c769",
@@ -597,7 +1240,29 @@
   },
   "scanned_at": "2026-09-01T01:05:00Z",
   "review_status": "approved",
-  "created_at": "2026-09-01T01:00:00Z"
+  "created_at": "2026-09-01T01:00:00Z",
+  "colors": {
+   "colors": [
+    {
+     "hex": "#d4af37",
+     "name": "Silk gold"
+    },
+    {
+     "hex": "#3fae5a",
+     "name": "Grass green"
+    }
+   ],
+   "parts": [
+    {
+     "name": "Body",
+     "colors": [
+      0,
+      1
+     ],
+     "ams": true
+    }
+   ]
+  }
  },
  {
   "id": "a8263c83-4fd5-5fbc-87d7-a8e0a024ebdf",
@@ -621,7 +1286,35 @@
   },
   "scanned_at": "2026-09-15T11:05:00Z",
   "review_status": "rejected",
-  "created_at": "2026-09-15T11:00:00Z"
+  "created_at": "2026-09-15T11:00:00Z",
+  "colors": {
+   "colors": [
+    {
+     "hex": "#f39c12",
+     "name": "Amber"
+    },
+    {
+     "hex": "#5dade2",
+     "name": "Sky blue"
+    }
+   ],
+   "parts": [
+    {
+     "name": "Part 1",
+     "colors": [
+      0
+     ],
+     "ams": false
+    },
+    {
+     "name": "Part 2",
+     "colors": [
+      1
+     ],
+     "ams": false
+    }
+   ]
+  }
  },
  {
   "id": "174c901e-8fbb-5e53-bbb4-d5c1a3431b8c",
@@ -645,7 +1338,40 @@
   },
   "scanned_at": "2026-08-10T11:05:00Z",
   "review_status": "approved",
-  "created_at": "2026-08-10T11:00:00Z"
+  "created_at": "2026-08-10T11:00:00Z",
+  "colors": {
+   "colors": [
+    {
+     "hex": "#5dade2",
+     "name": "Sky blue"
+    },
+    {
+     "hex": "#d4af37",
+     "name": "Silk gold"
+    },
+    {
+     "hex": "#3fae5a",
+     "name": "Grass green"
+    }
+   ],
+   "parts": [
+    {
+     "name": "Body",
+     "colors": [
+      0,
+      1
+     ],
+     "ams": true
+    },
+    {
+     "name": "Part 3",
+     "colors": [
+      2
+     ],
+     "ams": false
+    }
+   ]
+  }
  },
  {
   "id": "099aa9d2-f0c3-5306-a93b-32a01062a874",
@@ -669,7 +1395,57 @@
   },
   "scanned_at": "2026-06-21T01:05:00Z",
   "review_status": "approved",
-  "created_at": "2026-06-21T01:00:00Z"
+  "created_at": "2026-06-21T01:00:00Z",
+  "colors": {
+   "colors": [
+    {
+     "hex": "#f2f0eb",
+     "name": "Bone white"
+    },
+    {
+     "hex": "#2e6fd8",
+     "name": "Cobalt blue"
+    },
+    {
+     "hex": "#8e8e93",
+     "name": "Ash gray"
+    },
+    {
+     "hex": "#1c1c1e",
+     "name": "Matte black"
+    }
+   ],
+   "parts": [
+    {
+     "name": "Part 1",
+     "colors": [
+      0
+     ],
+     "ams": false
+    },
+    {
+     "name": "Part 2",
+     "colors": [
+      1
+     ],
+     "ams": false
+    },
+    {
+     "name": "Part 3",
+     "colors": [
+      2
+     ],
+     "ams": false
+    },
+    {
+     "name": "Part 4",
+     "colors": [
+      3
+     ],
+     "ams": false
+    }
+   ]
+  }
  },
  {
   "id": "d2e816a0-19ce-5eb9-97f3-680d1cd57014",
@@ -693,7 +1469,57 @@
   },
   "scanned_at": "2026-06-30T01:05:00Z",
   "review_status": "approved",
-  "created_at": "2026-06-30T01:00:00Z"
+  "created_at": "2026-06-30T01:00:00Z",
+  "colors": {
+   "colors": [
+    {
+     "hex": "#f2f0eb",
+     "name": "Bone white"
+    },
+    {
+     "hex": "#2e6fd8",
+     "name": "Cobalt blue"
+    },
+    {
+     "hex": "#8e8e93",
+     "name": "Ash gray"
+    },
+    {
+     "hex": "#1c1c1e",
+     "name": "Matte black"
+    }
+   ],
+   "parts": [
+    {
+     "name": "Part 1",
+     "colors": [
+      0
+     ],
+     "ams": false
+    },
+    {
+     "name": "Part 2",
+     "colors": [
+      1
+     ],
+     "ams": false
+    },
+    {
+     "name": "Part 3",
+     "colors": [
+      2
+     ],
+     "ams": false
+    },
+    {
+     "name": "Part 4",
+     "colors": [
+      3
+     ],
+     "ams": false
+    }
+   ]
+  }
  },
  {
   "id": "9d8e5f5e-d18e-5d8f-8979-d66d857904bc",
@@ -717,7 +1543,24 @@
   },
   "scanned_at": "2026-07-16T01:05:00Z",
   "review_status": "approved",
-  "created_at": "2026-07-16T01:00:00Z"
+  "created_at": "2026-07-16T01:00:00Z",
+  "colors": {
+   "colors": [
+    {
+     "hex": "#8e44ad",
+     "name": "Plum"
+    }
+   ],
+   "parts": [
+    {
+     "name": "Body",
+     "colors": [
+      0
+     ],
+     "ams": false
+    }
+   ]
+  }
  },
  {
   "id": "4df56d6e-0620-5aa9-9153-f5291a86d2ee",
@@ -741,7 +1584,46 @@
   },
   "scanned_at": "2026-08-10T01:05:00Z",
   "review_status": "approved",
-  "created_at": "2026-08-10T01:00:00Z"
+  "created_at": "2026-08-10T01:00:00Z",
+  "colors": {
+   "colors": [
+    {
+     "hex": "#1c1c1e",
+     "name": "Matte black"
+    },
+    {
+     "hex": "#c0392b",
+     "name": "Signal red"
+    },
+    {
+     "hex": "#f39c12",
+     "name": "Amber"
+    }
+   ],
+   "parts": [
+    {
+     "name": "Part 1",
+     "colors": [
+      0
+     ],
+     "ams": false
+    },
+    {
+     "name": "Part 2",
+     "colors": [
+      1
+     ],
+     "ams": false
+    },
+    {
+     "name": "Part 3",
+     "colors": [
+      2
+     ],
+     "ams": false
+    }
+   ]
+  }
  },
  {
   "id": "2d7fe7b1-b5de-5771-a1ad-c8ba790cf87a",
@@ -765,7 +1647,24 @@
   },
   "scanned_at": "2026-09-04T01:05:00Z",
   "review_status": "approved",
-  "created_at": "2026-09-04T01:00:00Z"
+  "created_at": "2026-09-04T01:00:00Z",
+  "colors": {
+   "colors": [
+    {
+     "hex": "#8e8e93",
+     "name": "Ash gray"
+    }
+   ],
+   "parts": [
+    {
+     "name": "Body",
+     "colors": [
+      0
+     ],
+     "ams": false
+    }
+   ]
+  }
  },
  {
   "id": "464fdd41-c3f4-59ba-b9b0-c525bc0ba1de",
@@ -789,6 +1688,39 @@
   },
   "scanned_at": "2026-08-01T11:05:00Z",
   "review_status": "approved",
-  "created_at": "2026-08-01T11:00:00Z"
+  "created_at": "2026-08-01T11:00:00Z",
+  "colors": {
+   "colors": [
+    {
+     "hex": "#f2f0eb",
+     "name": "Bone white"
+    },
+    {
+     "hex": "#2e6fd8",
+     "name": "Cobalt blue"
+    },
+    {
+     "hex": "#8e8e93",
+     "name": "Ash gray"
+    }
+   ],
+   "parts": [
+    {
+     "name": "Body",
+     "colors": [
+      0,
+      1
+     ],
+     "ams": true
+    },
+    {
+     "name": "Part 3",
+     "colors": [
+      2
+     ],
+     "ams": false
+    }
+   ]
+  }
  }
 ]

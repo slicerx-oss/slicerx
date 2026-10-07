@@ -943,6 +943,7 @@ export type Database = {
       listing_versions: {
         Row: {
           changelog: string | null
+          colors: Json | null
           created_at: string
           format: string
           id: string
@@ -961,6 +962,7 @@ export type Database = {
         }
         Insert: {
           changelog?: string | null
+          colors?: Json | null
           created_at?: string
           format: string
           id?: string
@@ -979,6 +981,7 @@ export type Database = {
         }
         Update: {
           changelog?: string | null
+          colors?: Json | null
           created_at?: string
           format?: string
           id?: string

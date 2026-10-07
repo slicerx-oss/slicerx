@@ -1,6 +1,6 @@
 -- SPDX-License-Identifier: Apache-2.0
 -- Copyright (C) 2026 The SlicerX contributors
--- Removes the store module (migrations/0002_store.sql, 0005_anon_downloads.sql and 0013_creator_pages.sql). Leaves auth.users,
+-- Removes the store module (migrations/0002_store.sql, 0005_anon_downloads.sql, 0013_creator_pages.sql and 0015_listing_colors.sql). Leaves auth.users,
 -- profiles, roles, the audit log, api_tokens and paired_devices untouched.
 -- Files already in the uploads-quarantine and listing-files buckets must be removed
 -- through the Storage API first; the buckets are dropped only when empty.
@@ -43,4 +43,5 @@ drop function if exists
   public.version_scan_report(uuid), public.retry_scan(uuid, text), public.apply_library_settings(text, integer, text[]), public.guard_listing_change(), public.guard_version_change(),
   public.guard_creator_update(), public.guard_creator_insert(), public.promote_creator(),
   public.check_creator_link(), public.check_featured(), public.unfeature_listing(),
-  public.queue_listing_cleanup(), public.guard_comment_update(), public.delete_comment(uuid);
+  public.queue_listing_cleanup(), public.guard_comment_update(), public.delete_comment(uuid),
+  public.listing_colors_ok(jsonb);

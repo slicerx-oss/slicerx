@@ -37,17 +37,26 @@ interface Fake {
 }
 
 /** Answers each table with its rows, filtered by eq and in. */
-function fake(tables: Record<string, Record<string, unknown>[]>, opts: { signError?: string } = {}): Fake {
+function fake(tables: Record<string, Record<string, unknown>[]>, opts: { signError?: string; noColors?: boolean } = {}): Fake & { refused: number } {
   const counted: string[] = []
   const signed: string[] = []
+  let refused = 0
   const query = (table: string) => {
     let out = tables[table] ?? []
+    let error: { code: string; message: string } | null = null
     const q = {
-      select: () => q,
+      select: (cols = '*') => {
+        // A project without 0015_listing_colors.
+        if (opts.noColors && table === 'listing_versions' && cols.includes('colors')) {
+          refused++
+          error = { code: '42703', message: 'column listing_versions.colors does not exist' }
+        }
+        return q
+      },
       eq: (k: string, v: unknown) => ((out = out.filter((r) => r[k] === v)), q),
       in: (k: string, v: unknown[]) => ((out = out.filter((r) => v.includes(r[k]))), q),
       order: () => q,
-      then: (res: (r: { data: unknown; error: null }) => unknown) => Promise.resolve({ data: out, error: null }).then(res),
+      then: (res: (r: { data: unknown; error: unknown }) => unknown) => Promise.resolve(error ? { data: null, error } : { data: out, error: null }).then(res),
     }
     return q
   }
@@ -70,7 +79,14 @@ function fake(tables: Record<string, Record<string, unknown>[]>, opts: { signErr
       }),
     },
   } as unknown as Db
-  return { db, counted, signed }
+  return {
+    db,
+    counted,
+    signed,
+    get refused() {
+      return refused
+    },
+  }
 }
 
 const versions = [version(1, '1.0.0', 'cube.sx3mf'), version(2, '1.1.0', 'cube.stl')]
@@ -111,5 +127,29 @@ describe('a member download', () => {
     const [card] = await supabaseStore(f.db).trending({ days: 7, limit: 1 })
     expect(card?.listing.currentVersion?.version).toBe('1.0.0')
     expect(card?.listing.currentVersion?.printProfiles?.['Bambu Lab P1S']).toMatchObject({ timeS: 7320, grams: 94 })
+  })
+})
+
+describe('listing colors', () => {
+  const colors = { colors: [{ hex: '#d4af37', name: 'Silk gold' }, { hex: '#1c1c1e' }], parts: [{ name: 'Body', colors: [0, 1], ams: true }] }
+  const tables = (c: unknown) => ({ listings: [listing(THEIRS)], listing_versions: [{ ...version(1, '1.0.0', 'cube.sx3mf'), colors: c }], creators: [creator, other], print_profiles: [], likes: [] })
+
+  it('reads them with the version, and drops a stored shape that does not check out', async () => {
+    expect((await supabaseStore(fake(tables(colors)).db).getListing(LISTING))?.listing.currentVersion?.colors).toEqual(colors)
+    expect((await supabaseStore(fake(tables({ colors: [{ hex: 'gold' }], parts: [] })).db).getListing(LISTING))?.listing.currentVersion?.colors).toBeUndefined()
+  })
+
+  it('still reads listings on a project without the column, and stops asking for it', async () => {
+    const f = fake(tables(undefined), { noColors: true })
+    const store = supabaseStore(f.db)
+    expect((await store.getListing(LISTING))?.listing.currentVersion).toMatchObject({ version: '1.0.0' })
+    const asked = f.refused
+    expect((await store.getListing(LISTING))?.listing.currentVersion?.colors).toBeUndefined()
+    expect(f.refused).toBe(asked)
+  })
+
+  it('checks colors before writing them', async () => {
+    const r = await supabaseStore(fake(tables(colors)).db).setVersionColors(version(1, '1.0.0', 'cube.sx3mf').id, { colors: [{ hex: '#000000' }], parts: [{ name: 'Body', colors: [3], ams: false }] })
+    expect(r).toMatchObject({ ok: false, code: 'invalid' })
   })
 })
