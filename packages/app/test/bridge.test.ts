@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-import { beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ApprovalHost, Host, PrinterHost } from '@slicerx/contracts'
 import { bridgeConnector, connectBridge, disconnectBridge, resetBridge, setBridgeConnector, type ConnectedBridge } from '../src/link/bridge'
 import { setupHostFor } from '../src/first-run/setup-host'
@@ -32,6 +32,10 @@ beforeEach(() => {
   resetBridge()
   setBridgeConnector(null)
 })
+
+// connectBridge starts loading the card, guard and filament watchers without waiting for them; the file must not
+// end while those modules are still loading, or the environment is torn down under them.
+afterEach(() => vi.dynamicImportSettled())
 
 describe('printer bridge', () => {
   it('swaps the host printers, approvals and streams in and restores them on disconnect', async () => {

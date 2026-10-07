@@ -78,11 +78,13 @@ impl PushState {
                 }
             }
         }
-        let _ = self.have_state.send(true);
+        // send_replace stores the flag even when nobody waits yet: `send` drops it without a receiver, so
+        // telemetry that came in before `first_state` subscribed was lost and the connect timed out.
+        self.have_state.send_replace(true);
         self.publish_changes();
     }
 
-    /// Waits until the first telemetry arrived.
+    /// Waits until the first telemetry arrived, including telemetry that came before this call.
     pub(crate) async fn first_state(&self, timeout: Duration) -> bool {
         let mut rx = self.have_state.subscribe();
         matches!(
@@ -139,5 +141,31 @@ impl PushState {
             }
         });
         head.chain(tail).boxed()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parse(printer: &str, _: &Value) -> PrinterStatus {
+        PrinterStatus::offline(printer)
+    }
+
+    #[tokio::test]
+    async fn telemetry_that_came_before_anyone_waited_still_counts() {
+        let push = PushState::new("bay-1", parse);
+        push.set_link(true);
+        // The first frame often arrives with the WebSocket handshake, before the session waits for it.
+        let mut update = Map::new();
+        update.insert("state".to_owned(), Value::from(0));
+        push.merge(&update);
+        assert!(push.first_state(Duration::from_millis(50)).await);
+    }
+
+    #[tokio::test]
+    async fn no_telemetry_is_still_reported() {
+        let push = PushState::new("bay-1", parse);
+        assert!(!push.first_state(Duration::from_millis(50)).await);
     }
 }
