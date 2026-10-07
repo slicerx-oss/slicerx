@@ -496,10 +496,21 @@ fn meeting(
     #[allow(clippy::cast_possible_truncation, reason = "mm")]
     let near = o.grid().contact(rect, over as f32, p);
     let shift = if push { near.map_or(0.0, |n| n.1) } else { 0.0 };
-    match super::grid::meet(&o.object, rect, over, p) {
-        Some(q) => Some((q, shift)),
-        None => near.map(|(c, _)| ([c[0], c[1], over.min(f64::from(o.top))], shift)),
+    if let Some(q) = super::grid::meet(&o.object, rect, over, p) {
+        return Some((q, shift));
     }
+    if let Some((c, _)) = near {
+        return Some(([c[0], c[1], over.min(f64::from(o.top))], shift));
+    }
+    // The grids work in whole cells, so a contact at the edge of the box can sit up to a cell or two outside it.
+    let g = 2.0 * super::grid::CELL;
+    super::grid::meet(
+        &o.object,
+        [rect[0] - g, rect[1] + g, rect[2] - g, rect[3] + g],
+        over,
+        p,
+    )
+    .map(|q| (q, shift))
 }
 
 /// Distance from `p` to a convex hull, 0 inside it.

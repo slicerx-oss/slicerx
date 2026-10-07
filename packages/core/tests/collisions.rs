@@ -411,6 +411,55 @@ fn an_estimated_head_is_held_to_the_profiles_radius() {
     );
     assert_eq!(shaped(&r), 0, "{:?}", kinds(&r));
     assert!(kinds(&r).iter().any(|k| k.0 == Kind::Gantry), "{:?}", kinds(&r));
+    // every gantry strike sits on the tall part, never at the nozzle
+    for c in r.report.collisions.iter().filter(|c| c.kind == Kind::Gantry) {
+        assert!(
+            c.point[0] >= 79.9 && c.point[0] <= 100.1 && c.point[2] > 20.0,
+            "{c:?}"
+        );
+    }
+}
+
+/// The showcase's layout: two short parts forward of a tall one, past the A1's 73 mm radius and at the edge of its
+/// gantry's 56.5 mm band. The gantry strikes land on the tall part, never at the nozzle, and printing it last clears
+/// them.
+#[test]
+fn a_strike_at_the_edge_of_the_gantry_band_lands_on_the_part() {
+    let (cfg, opts) = a1(false);
+    let r = run(
+        &[
+            ("tall", block(64.0, 22.0, 60.0), 96.0, 117.0),
+            ("left", block(20.0, 20.0, 10.0), 6.0, 50.0),
+            ("right", block(20.0, 20.0, 10.0), 230.0, 50.0),
+        ],
+        cfg,
+        opts,
+    );
+    let gantry: Vec<_> = r
+        .report
+        .collisions
+        .iter()
+        .filter(|c| c.kind == Kind::Gantry)
+        .collect();
+    assert_eq!(gantry.len(), 2, "{:?}", kinds(&r));
+    for c in gantry {
+        assert!(
+            c.point[0] >= 95.9 && c.point[0] <= 160.1 && c.point[1] >= 116.9 && c.point[2] > 20.0,
+            "{c:?}"
+        );
+    }
+    assert!(
+        !r.report.collisions.iter().any(|c| c.part == Part::Clearance),
+        "{:?}",
+        kinds(&r)
+    );
+    let order = r
+        .report
+        .collision_fixes
+        .iter()
+        .find(|f| f.kind == FixKind::Reorder)
+        .expect("a new order");
+    assert_eq!(order.order, ["left", "right", "tall"]);
 }
 
 /// A box of the head ends at its top: a part that reaches past the top only above the head does not meet it.
