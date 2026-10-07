@@ -15,14 +15,14 @@ const SORTS: [LibrarySort, string, string[]][] = [
 export const storeFeature: AppFeature = {
   id: 'store',
   requires: ['store'],
-  workspaces: [{ id: 'feed', label: 'Library', icon: 'feed', load: () => import('./library').then((m) => ({ default: m.Library })) }],
+  workspaces: [{ id: 'feed', label: 'Vault', icon: 'feed', load: () => import('./library').then((m) => ({ default: m.Library })) }],
   settings: [{ id: 'account', label: 'Account', icon: 'creator', load: () => import('./account') }],
   commands: (): CommandSpec[] =>
     SORTS.map(([sort, title, keywords]) => ({
       id: `library-${sort}`,
       title,
       section: 'library',
-      keywords: ['library', 'models', ...keywords],
+      keywords: ['vault', 'library', 'models', ...keywords],
       workspace: 'feed',
       tool: { permission: 'read' },
       run: () => {

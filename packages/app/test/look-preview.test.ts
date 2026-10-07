@@ -12,7 +12,7 @@ import { cardLine } from '../src/first-run/slicer-step'
 const ws = [
   { id: 'prepare', label: 'Prepare', icon: 'prepare' as const, component: null },
   { id: 'preview', label: 'Preview', icon: 'preview' as const, component: null },
-  { id: 'library', label: 'Library', icon: 'library' as const, component: null },
+  { id: 'library', label: 'Vault', icon: 'library' as const, component: null },
   { id: 'printers', label: 'Printers', icon: 'printer' as const, component: null },
 ]
 const fmt = (c: string) => c
@@ -62,7 +62,7 @@ describe('setup preview', () => {
       expect(p.modes).toEqual([...layout.modes])
       expect(p.slice).toBe(keymapFor(id).slice)
     }
-    expect(preview('bambu-studio').tabs.map((t) => t.label)).toEqual(['Prepare', 'Preview', 'Device', 'Library'])
+    expect(preview('bambu-studio').tabs.map((t) => t.label)).toEqual(['Prepare', 'Preview', 'Device', 'Vault'])
     expect(preview('prusaslicer').tabs.find((t) => t.renamed)?.label).toBe('Plater')
     expect(preview('slicerx').tabs.some((t) => t.renamed)).toBe(false)
     expect(preview('slicerx').sidebar).toEqual(['Printer', 'Filament', 'Objects', 'Print settings'])
@@ -71,8 +71,8 @@ describe('setup preview', () => {
   })
 
   it('keeps one Library tab when the build has the community feed', () => {
-    const withFeed = [...ws, { id: 'feed', label: 'Library', icon: 'feed' as const, component: null }]
-    expect(previewTabs('bambu-studio', withFeed).filter((t) => t.label === 'Library')).toHaveLength(1)
+    const withFeed = [...ws, { id: 'feed', label: 'Vault', icon: 'feed' as const, component: null }]
+    expect(previewTabs('bambu-studio', withFeed).filter((t) => t.label === 'Vault')).toHaveLength(1)
   })
 
   it("follows the person's own keys", () => {

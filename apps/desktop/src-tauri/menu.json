@@ -27,7 +27,7 @@
             {
               "kind": "command",
               "id": "library-import",
-              "label": "&Models into the library…"
+              "label": "&Models into the Vault…"
             },
             {
               "kind": "command",
@@ -167,7 +167,7 @@
         {
           "kind": "command",
           "id": "open-library",
-          "label": "Library",
+          "label": "Vault",
           "accelerator": "CmdOrCtrl+3"
         },
         {
@@ -267,7 +267,7 @@
             {
               "kind": "command",
               "id": "library-import",
-              "label": "&Models into the library…"
+              "label": "&Models into the Vault…"
             },
             {
               "kind": "command",
@@ -407,7 +407,7 @@
         {
           "kind": "command",
           "id": "open-library",
-          "label": "Library",
+          "label": "Vault",
           "accelerator": "CmdOrCtrl+3"
         },
         {
@@ -550,7 +550,7 @@
             {
               "kind": "command",
               "id": "library-import",
-              "label": "&Models into the library…"
+              "label": "&Models into the Vault…"
             },
             {
               "kind": "command",
@@ -673,7 +673,7 @@
         {
           "kind": "command",
           "id": "open-library",
-          "label": "Library",
+          "label": "Vault",
           "accelerator": "CmdOrCtrl+3"
         },
         {

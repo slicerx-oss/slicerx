@@ -96,7 +96,7 @@ test('Library shows a featured design and rows, opens creators, and My models sh
   // See all opens the full sorted grid; the back button returns to the rows.
   await page.getByRole('region', { name: 'Most popular' }).getByRole('button', { name: 'See all' }).click()
   await expect.poll(() => page.locator('.lib-grid-cards .lib-card').count()).toBeGreaterThan(2)
-  await page.locator('.lib-grid-h').getByRole('button', { name: 'Library' }).click()
+  await page.locator('.lib-grid-h').getByRole('button', { name: 'Vault' }).click()
   // The uploader opens the creator sheet, with About and Uploads tabs; Escape closes it.
   await page.locator('.lib-feat .lib-uploader').click()
   const sheet = page.getByRole('dialog', { name: /creator page$/ })
@@ -108,7 +108,7 @@ test('Library shows a featured design and rows, opens creators, and My models sh
   await noHorizontalScroll(page)
   // My models is the Mine view of the one Library tab.
   await expect(page.locator('.sx-tab', { hasText: 'My models' })).toHaveCount(0)
-  await page.getByRole('radiogroup', { name: 'Library' }).getByRole('radio', { name: 'Mine' }).click()
+  await page.getByRole('radiogroup', { name: 'Vault' }).getByRole('radio', { name: 'Mine' }).click()
   await expect.poll(() => page.locator('.tile').count()).toBeGreaterThanOrEqual(5)
   await noHorizontalScroll(page)
 })

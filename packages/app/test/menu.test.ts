@@ -13,7 +13,7 @@ import { plateCommands } from '../src/plate/commands'
 const workspaces = [
   { id: 'prepare', label: 'Prepare' },
   { id: 'preview', label: 'Preview' },
-  { id: 'library', label: 'Library' },
+  { id: 'library', label: 'Vault' },
 ]
 const all: CommandSpec[] = [...builtinCommands({} as Host, workspaces), ...plateCommands(() => ({ id: 'slicerx' }), { slicer: {} } as Host)]
 const byId = new Map(all.map((c) => [c.id, c]))

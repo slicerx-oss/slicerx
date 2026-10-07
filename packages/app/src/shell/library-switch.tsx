@@ -12,7 +12,7 @@ export function LibrarySwitch() {
   if (!workspaces.some((w) => w.id === 'feed')) return null
   return (
     <Seg<'feed' | 'library'>
-      label="Library"
+      label="Vault"
       size="sm"
       value={ws === 'library' ? 'library' : 'feed'}
       onChange={(v) => setWorkspace(v)}
