@@ -295,7 +295,7 @@ function useSave(listing: Listing) {
 }
 
 /** Opens a design in Prepare. */
-function useOpenInApp(item: ListingCard) {
+function useOpenInApp(item: ListingCard, onFetched?: (version: string, name: string) => void) {
   const store = useStore()
   const host = useHost()
   const { session } = useSession()
@@ -312,8 +312,12 @@ function useOpenInApp(item: ListingCard) {
         else toast(r.message, 'error')
         return
       }
+      onFetched?.(r.version, r.name)
       setWorkspace('prepare')
+      // Errors opening the file are toasted there.
       await openModelBytes(host, r.name, r.bytes, { modelId: item.listing.id, creatorId: item.creator.id })
+    } catch (e) {
+      toast(e instanceof Error && e.message ? e.message : `Could not open ${item.listing.title}.`, 'error')
     } finally {
       setBusy(false)
     }
@@ -513,7 +517,7 @@ function ListingSheet({ id }: { id: string }) {
   )
 }
 
-function Detail({ item }: { item: ListingCard }) {
+export function Detail({ item }: { item: ListingCard }) {
   const store = useStore()
   const host = useHost()
   const edition = useEdition()
@@ -522,12 +526,16 @@ function Detail({ item }: { item: ListingCard }) {
   const version = listing.currentVersion
   const cover = coverFor(listing)
   const save = useSave(listing)
-  const openIn = useOpenInApp(item)
+  // Once a download or Open hands out a file, the sheet shows that version and format.
+  const [got, setGot] = useState<{ version: string; format: string } | null>(null)
+  const onFetched = (v: string, name: string) => setGot({ version: v, format: name.split('.').pop()?.toUpperCase() ?? '' })
+  const openIn = useOpenInApp(item, onFetched)
   const [busy, setBusy] = useState(false)
   const [needSignIn, setNeedSignIn] = useState(false)
   const p = printFacts(listing)
   const facts: [string, string][] = []
-  if (version) facts.push(['Format', formatLabel(version.format)], ['Version', version.version])
+  if (got) facts.push(['Format', got.format || formatLabel(version?.format)], ['Version', got.version])
+  else if (version) facts.push(['Format', formatLabel(version.format)], ['Version', version.version])
   if (p.printer) facts.push(['Printer', p.printer])
   if (p.time) facts.push(['Print time', p.time])
   if (p.grams) facts.push(['Filament', p.grams])
@@ -543,9 +551,12 @@ function Detail({ item }: { item: ListingCard }) {
         else toast(r.message, 'error')
         return
       }
+      onFetched(r.version, r.name)
       const ext = r.name.split('.').pop() ?? ''
       const saved = await host.files.save(r.name, r.bytes, { accept: [`.${ext}`] })
       if (saved) toast(`Saved ${saved.name}`, 'ok')
+    } catch (e) {
+      toast(e instanceof Error && e.message ? `The download failed: ${e.message}` : 'The download failed.', 'error')
     } finally {
       setBusy(false)
     }

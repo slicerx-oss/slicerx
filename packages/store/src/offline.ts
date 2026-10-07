@@ -28,7 +28,7 @@ import type {
   StoreResult,
 } from '@slicerx/contracts'
 import { createOfflineContext, offlineAuth, type OfflineContext, type OfflineOptions } from './auth/offline'
-import { isoTime, latestVersion, toAudit, toCollection, toComment, toCreator, toCreatorLink, toFile, toListing, toMake, toModerationItem, toPrintProfile, toVersion } from './map'
+import { downloadVersion, isoTime, latestVersion, toAudit, toCollection, toComment, toCreator, toCreatorLink, toFile, toListing, toMake, toModerationItem, toPrintProfile, toVersion } from './map'
 import { LICENSES, MODERATION_MODES, type CommentRow, type CreatorRow, type ListingRow, type SeedData, type VersionRow } from './rows'
 import { newCreatorIds, recommendedScores, trendingScores } from './ranking'
 import { DEFAULT_MAX_FILE_MB, MAX_FEATURED, slugify, validateCreatorLinks, validateHandle, validateUpload } from './validate'
@@ -62,8 +62,6 @@ const IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/webp']
 const MAX_IMAGE_BYTES = 5_242_880
 const SLUG = /^[a-z0-9][a-z0-9-]{1,80}$/
 const MAX_PENDING = 20
-/** The only form a Vault file leaves in for anyone but its creator and staff. */
-const SEALED = /\.sx3mf$/i
 
 const isStaff = (role: EffectiveRole | null) => role === 'owner' || role === 'moderator'
 
@@ -170,7 +168,8 @@ export function offlineStore(ctx: OfflineContext): Omit<StoreClient, keyof AuthC
 
   function listingOut(c: Cx, l: ListingRow): Listing {
     const versions = c.d.listing_versions.filter((v) => v.listing_id === l.id && versionVisible(c, v))
-    const latest = latestVersion(versions)
+    // The creator and staff see the newest version; everyone else the one a download hands them.
+    const latest = isOwnListing(c, l) || isStaff(c.role) ? latestVersion(versions) : downloadVersion(versions, false)
     return toListing(l, {
       stats: statsOf(c.d, l.id),
       ...(latest ? { currentVersion: toVersion(latest, c.d.print_profiles.filter((p) => p.version_id === latest.id)) } : {}),
@@ -640,7 +639,7 @@ export function offlineStore(ctx: OfflineContext): Omit<StoreClient, keyof AuthC
         if (!l || l.status !== 'approved' || !listingVisible(c, l)) bad('not_found', 'no such listing')
         // Vault files leave only as .sx3mf; the creator and staff may also get any other stored file.
         const anyFormat = isOwnListing(c, l) || isStaff(c.role)
-        const v = latestVersion(c.d.listing_versions.filter((x) => x.listing_id === listingId && x.review_status === 'approved' && x.scan_status === 'clean' && (anyFormat || SEALED.test(x.storage_path))))
+        const v = downloadVersion(c.d.listing_versions.filter((x) => x.listing_id === listingId), anyFormat)
         if (!v) bad('not_found', 'This model has no approved file yet')
         const at = now()
         const row = uid ? c.d.downloads.find((x) => x.user_id === uid && x.listing_id === listingId) : undefined

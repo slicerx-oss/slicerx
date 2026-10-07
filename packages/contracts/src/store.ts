@@ -607,7 +607,11 @@ export interface StoreClient extends AuthClient {
   listingStats(listingIds: string[]): Promise<Record<string, ListingStats>>
   printProfiles(versionId: string): Promise<PrintProfile[]>
   files(versionId: string): Promise<ListingFile[]>
-  /** Counts the download and returns a link to the newest approved version's file. Works signed out, where downloads are limited per network (rate_limited) unless the owner turned that off. */
+  /**
+   * Returns a link to the newest approved, clean version's .sx3mf (the listing's own creator gets the newest file in
+   * any format) and counts the download once the link is made. Works signed out, where downloads are limited per
+   * network (rate_limited) unless the owner turned that off.
+   */
   download(listingId: string): Promise<StoreResult<DownloadLink>>
 
   // Upload

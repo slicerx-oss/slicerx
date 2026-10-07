@@ -232,6 +232,17 @@ export const toDashboardRow = (r: DashboardDbRow): DashboardRow => ({
   downloads: Number(r.downloads),
 })
 
+/** Vault model files leave only as .sx3mf, except to their own creator (and staff). */
+export const SEALED_FILE = /\.sx3mf$/i
+
+/**
+ * The version a download hands out: the newest approved, clean one, and for anyone but the listing's creator only
+ * an .sx3mf (public_download_path in supabase/migrations/0013_creator_pages.sql).
+ */
+export function downloadVersion<T extends { version: string; storage_path: string; review_status: string; scan_status: string }>(versions: readonly T[], anyFormat: boolean): T | undefined {
+  return latestVersion(versions.filter((v) => v.review_status === 'approved' && v.scan_status === 'clean' && (anyFormat || SEALED_FILE.test(v.storage_path))))
+}
+
 /** Newest version by semantic version number. */
 export function latestVersion<T extends { version: string }>(versions: readonly T[]): T | undefined {
   const key = (v: string) => v.split('.').map((n) => Number(n))
