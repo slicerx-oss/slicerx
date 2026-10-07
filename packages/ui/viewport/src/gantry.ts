@@ -29,6 +29,8 @@ export interface GantryHit {
 
 /** How tall the beam is drawn, mm; the check needs only its underside. */
 const BEAM = 14
+/** How far past the band's edge a strike the engine counted may sit, mm (two of its 1 mm cells). */
+const EDGE = 2
 /** The uprights: their width, and how far beside the bed they stand, mm. */
 const POST = 14
 const SIDE = 22
@@ -96,9 +98,16 @@ export class GantryRig {
     let n = 0
     for (const h of this.hits) {
       if (layer < h.layers[0] || layer > h.layers[1] || h.top <= z0) continue
-      const ya = Math.max(y0, h.box[1])
-      const yb = Math.min(y1, h.box[3])
-      if (yb <= ya) continue
+      let ya = Math.max(y0, h.box[1])
+      let yb = Math.min(y1, h.box[3])
+      if (yb <= ya) {
+        // The engine works in whole cells, so a strike can sit at the band's edge by under a cell or two: the red
+        // stretch then marks that edge.
+        if (ya - yb > EDGE) continue
+        const e = h.box[1] > y1 ? y1 : y0
+        ya = e - 1
+        yb = e + 1
+      }
       const m = this.hot[n] ?? this.addHot()
       m.visible = true
       // A hair larger than the beam, so the red stretch shows over it.
