@@ -16,7 +16,7 @@ function setup(w: number, h: number, insets: Insets) {
 }
 
 /** Where the box's corners land on screen, in pixels from the top left, after the rig frames it. */
-function framed(w: number, h: number, insets: Insets, box: Box3, bed: number, kind: 'iso' | 'fit') {
+function framed(w: number, h: number, insets: Insets, box: Box3, bed: number, kind: 'iso' | 'fit' | 'plate', measure: Box3 = box) {
   const { camera, rig } = setup(w, h, insets)
   const pose = rig.presetPose(kind, box, bed)
   camera.position.copy(pose.pos)
@@ -26,7 +26,7 @@ function framed(w: number, h: number, insets: Insets, box: Box3, bed: number, ki
   camera.updateProjectionMatrix()
   camera.updateMatrixWorld(true)
   const px = [0, 1, 2, 3, 4, 5, 6, 7].map((i) => {
-    const p = new Vector3(i & 1 ? box.max.x : box.min.x, i & 2 ? box.max.y : box.min.y, i & 4 ? box.max.z : box.min.z).project(camera)
+    const p = new Vector3(i & 1 ? measure.max.x : measure.min.x, i & 2 ? measure.max.y : measure.min.y, i & 4 ? measure.max.z : measure.min.z).project(camera)
     return { x: ((p.x + 1) / 2) * w, y: ((1 - p.y) / 2) * h }
   })
   return { x0: Math.min(...px.map((p) => p.x)), x1: Math.max(...px.map((p) => p.x)), y0: Math.min(...px.map((p) => p.y)), y1: Math.max(...px.map((p) => p.y)) }
@@ -73,4 +73,18 @@ describe('framing clear of overlays', () => {
     expect(f.w).toBeGreaterThanOrEqual(400 - 1e-6)
     expect(f.h).toBeGreaterThanOrEqual(320 - 1e-6)
   })
+})
+
+describe('the opening view', () => {
+  for (const [name, bed, box] of [['a 256 mm bed', 256, SMALL], ['a 350 mm bed with a tall plate', 350, H2C]] as const) {
+    it(`frames the whole plate on ${name}, its edge about 70 percent of the width, with the parts in view`, () => {
+      const plate = new Box3(new Vector3(-bed / 2, 0, -bed / 2), new Vector3(bed / 2, 0, bed / 2))
+      const edge = framed(1094, 800, NO_INSETS, box, bed, 'plate', plate)
+      expect((edge.x1 - edge.x0) / 1094).toBeGreaterThan(0.6)
+      expect((edge.x1 - edge.x0) / 1094).toBeLessThanOrEqual(0.75)
+      expect(edge.y1).toBeLessThan(800)
+      const parts = framed(1094, 800, NO_INSETS, box, bed, 'plate')
+      expect(parts.y0).toBeGreaterThan(0)
+    })
+  }
 })

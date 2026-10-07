@@ -55,8 +55,8 @@ test('heimdall strikes a plate too close to print by object, and printing by lay
   await workspace('prepare')
   await expect(print).toBeDisabled()
 
-  // Preview lists the strikes, marks them on the layer slider, and offers the fixes.
-  await workspace('preview')
+  // Slice's summary lists the strikes, marks them on the layer slider, and offers the fixes.
+  await page.evaluate(() => (window as unknown as { __sx: Sx }).__sx.setState({ workspace: 'prepare', sliceLook: 'toolpaths' }))
   const list = page.locator('[data-section="collisions"]')
   await expect(list).toBeVisible()
   await expect(list.locator('.strike-tag')).toContainText(/strikes? on this plate/)

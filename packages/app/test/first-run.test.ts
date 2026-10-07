@@ -164,7 +164,8 @@ describe('look and feel in the shell', () => {
 
   it('orders and renames tabs per preset', () => {
     const bambu = orderWorkspaces(ws, resolvePreset('bambu-studio').layout)
-    expect(bambu.map((w) => w.id).slice(0, 2)).toEqual(['prepare', 'preview'])
+    // There is no Preview tab: the sliced plate shows in Slice. A workspace a preset leaves out keeps its place at the end.
+    expect(bambu.map((w) => w.id).slice(0, 2)).toEqual(['prepare', 'printers'])
     expect(bambu.find((w) => w.id === 'printers')?.label).toBe('Device')
     // Workspaces a preset leaves out keep their place at the end.
     expect(bambu.map((w) => w.id)).toContain('feed')

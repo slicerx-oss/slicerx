@@ -97,7 +97,6 @@ export function LayerDock() {
   const layerHi = useApp((s) => s.layerHi)
   const moveCut = useApp((s) => s.moveCut)
   const advanced = useApp((s) => s.settingsMode !== 'simple')
-  const workspace = useApp((s) => s.workspace)
   const gcodeOn = useGcodeView((s) => s.panel)
   const showToolhead = useApp((s) => s.showToolhead)
   const [playing, setPlayingState] = useState(false)
@@ -212,8 +211,8 @@ export function LayerDock() {
     }
   })
 
+  // The dock is only there while Slice shows the toolpaths, so Space plays the layers whenever it is.
   useEffect(() => {
-    if (workspace !== 'preview') return
     const onKey = (e: KeyboardEvent) => {
       if (e.code !== 'Space' || e.repeat || e.metaKey || e.ctrlKey || e.altKey) return
       if ((e.target as HTMLElement | null)?.closest('input,textarea,select,button,[contenteditable],[role=dialog]')) return

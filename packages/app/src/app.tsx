@@ -30,7 +30,7 @@ import { useAskForPrinter } from './first-run/ask-printer'
 import { addFileRefs } from './state/actions'
 import { isDirty, startDirtyTracking } from './project/unsaved'
 import { useFolderThemes } from './theme/folder'
-import { get, pilotState, pushRecent, set, toast, useApp } from './state/store'
+import { get, pilotState, pushRecent, set, showsLayers, toast, useApp } from './state/store'
 import { updaterRegistered } from './updates/hold'
 import { toolStore } from './plate/tools'
 import { startReadySignal } from './lib/ready-signal'
@@ -206,7 +206,7 @@ function Shell() {
         <WorkspaceBoundary name={current?.label ?? 'This workspace'}>
           {covered ? null : (
             <Suspense fallback={<div className="ws-loading" aria-busy="true" />}>
-              {workspace === 'prepare' || workspace === 'preview' ? <Studio mode={workspace} /> : null}
+              {workspace === 'prepare' ? <Studio /> : null}
               {workspace === 'library' ? <Library /> : null}
               {Feature ? <Feature /> : null}
             </Suspense>
@@ -364,7 +364,7 @@ function useGlobalKeys(order: readonly string[]): void {
       }
       // The look's own keys: Mod+G slices in the Bambu Studio style, Space opens the command bar in the OrcaSlicer style.
       const c = choiceRef.current
-      const look = lookCommandFor(e, keymapFor(c.id, c.overrides?.keys ?? {}), { workspace: s.workspace, onControl: onControl(e.target) })
+      const look = lookCommandFor(e, keymapFor(c.id, c.overrides?.keys ?? {}), { layers: showsLayers(s), onControl: onControl(e.target) })
       if (look) {
         e.preventDefault()
         if (look === 'palette') set({ commandOpen: true })

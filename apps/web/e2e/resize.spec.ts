@@ -2,7 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 // Pane edges: drag to resize, keys, collapse by drag and double-click, sizes kept per look.
 import { type Page } from '@playwright/test'
-import { expect, plateReady, test } from './fixtures'
+import { expect, plateReady, sliceCount, sliced, test } from './fixtures'
 
 async function prepare(page: Page): Promise<void> {
   await page.addInitScript(() => {
@@ -78,8 +78,9 @@ test.describe('playback bar edge', () => {
   test('dragging the playback bar shorter hides its sliders, and a double-click brings them back', async ({ page }) => {
     test.slow()
     await prepare(page)
+    const slices1 = await sliceCount(page)
     await page.getByRole('button', { name: 'Slice plate' }).click()
-    await expect(page.locator('.sx-tab[aria-current=page]')).toContainText('Preview', { timeout: 120_000 })
+    await expect(sliced(page, slices1)).toBeVisible({ timeout: 120_000 })
     const dock = page.getByRole('group', { name: 'Layers and moves' })
     await expect(dock).toHaveAttribute('data-mode', 'full')
     const edge = page.getByRole('separator', { name: /Resize the playback bar/i })

@@ -7,7 +7,7 @@ import { goalEasy } from '../adapters/config'
 import { confirmDiscard } from '../project/unsaved'
 import { gcodeView, pickGcodeFile, setGcodePanel } from '../workspaces/preview/gcode-file'
 import { cancelSlice, clearPlate, exportGcode, loadDefaultPlate, loadDemoModel, openModelFiles, removeSelected, slicePlate } from '../state/actions'
-import { get, markStale, openSettings, set, setCamera, setModelMode, setRail, setWorkspace, type CameraView, type ColorMode, type Goal, type PrepareLook } from '../state/store'
+import { get, markStale, openSettings, set, setCamera, setModelMode, setRail, setWorkspace, showSliced, type CameraView, type ColorMode, type Goal, type PrepareLook } from '../state/store'
 import { DEMO_MODELS } from '../lib/demo-models'
 import { printBlock } from '../plate/heimdall'
 import { helpLinks, openLink } from '../lib/links'
@@ -66,7 +66,7 @@ export function builtinCommands(host: Host, workspaces: readonly { id: string; l
     { id: 'plate-default', title: 'Start over with the example plate', section: 'plate', keywords: ['example', 'demo', 'new', 'reset'], workspace: 'prepare', tool: { permission: 'slice' }, run: async () => { if (!(await confirmDiscard('start over'))) return; setWorkspace('prepare'); await loadDefaultPlate(host) } },
     { id: 'plate-open', title: 'Open a model file', section: 'plate', keywords: ['import', 'stl', '3mf', 'obj', 'step', 'stp', 'add'], shortcut: 'Mod+O', workspace: 'prepare', run: async () => { setWorkspace('prepare'); await openModelFiles(host) } },
     { id: 'gcode-open', title: 'Open a G-code file to view', section: 'plate', keywords: ['gcode', 'view', 'preview', 'file'], run: () => pickGcodeFile(host) },
-    { id: 'gcode-lines', title: 'Show or hide the G-code lines', section: 'view', keywords: ['gcode', 'text', 'lines', 'viewer'], workspace: 'preview', enabled: () => get().preview !== null, run: () => { setWorkspace('preview'); setGcodePanel(!gcodeView.getState().panel) } },
+    { id: 'gcode-lines', title: 'Show or hide the G-code lines', section: 'view', keywords: ['gcode', 'text', 'lines', 'viewer'], workspace: 'prepare', enabled: () => get().preview !== null, run: () => { showSliced(); setGcodePanel(!gcodeView.getState().panel) } },
     { id: 'plate-remove', title: 'Remove the selected object', section: 'plate', keywords: ['delete'], workspace: 'prepare', enabled: () => get().selection !== null, run: removeSelected },
     { id: 'plate-clear', title: 'Clear the plate', section: 'plate', keywords: ['empty', 'reset'], workspace: 'prepare', enabled: hasPlate, run: async () => { if (await confirmDiscard('clear the plate')) clearPlate() } },
   )
@@ -75,9 +75,9 @@ export function builtinCommands(host: Host, workspaces: readonly { id: string; l
   }
 
   out.push(
-    { id: 'slice', title: 'Slice the plate', section: 'slice', keywords: ['run', 'gcode'], shortcut: 'Mod+Enter', workspace: 'prepare', tool: { permission: 'slice' }, enabled: hasPlate, run: async () => { await slicePlate(host); if (get().slice.status === 'done') setWorkspace('preview') } },
+    { id: 'slice', title: 'Slice the plate', section: 'slice', keywords: ['run', 'gcode'], shortcut: 'Mod+Enter', workspace: 'prepare', tool: { permission: 'slice' }, enabled: hasPlate, run: async () => { await slicePlate(host); if (get().slice.status === 'done') showSliced() } },
     { id: 'slice-cancel', title: 'Cancel slicing', section: 'slice', keywords: ['stop', 'abort'], enabled: () => get().slice.status === 'running', run: cancelSlice },
-    { id: 'export-gcode', title: 'Export G-code', section: 'slice', keywords: ['save', 'download', 'file'], shortcut: 'Mod+Shift+E', workspace: 'preview', enabled: exportable, run: () => exportGcode(host) },
+    { id: 'export-gcode', title: 'Export G-code', section: 'slice', keywords: ['save', 'download', 'file'], shortcut: 'Mod+Shift+E', workspace: 'prepare', enabled: exportable, run: () => exportGcode(host) },
   )
   const goals: [Exclude<Goal, 'custom'>, string][] = [['draft', 'Draft (0.28 mm, fastest)'], ['standard', 'Standard (0.20 mm)'], ['fine', 'Fine (0.12 mm)'], ['strong', 'Strong (5 walls, 35% infill)']]
   for (const [goal, label] of goals) {
@@ -115,11 +115,11 @@ export function builtinCommands(host: Host, workspaces: readonly { id: string; l
   }
   const modes: [ColorMode, string][] = [['feature', 'feature type'], ['tool', 'filament'], ['speed', 'speed'], ['flow', 'volumetric flow'], ['layerTime', 'layer time']]
   for (const [colorMode, label] of modes) {
-    out.push({ id: `color-${colorMode}`, title: `Color toolpaths by ${label}`, section: 'view', keywords: ['preview', 'legend', 'color'], workspace: 'preview', enabled: sliced, run: () => { setWorkspace('preview'); set({ colorMode }) } })
+    out.push({ id: `color-${colorMode}`, title: `Color toolpaths by ${label}`, section: 'view', keywords: ['preview', 'legend', 'color'], workspace: 'prepare', enabled: sliced, run: () => { showSliced(); set({ colorMode }) } })
   }
   out.push(
-    { id: 'preview-first-layer', title: 'Show the first layer only', section: 'view', keywords: ['layer 1', 'adhesion'], workspace: 'preview', enabled: sliced, run: () => { setWorkspace('preview'); set({ layerHi: 1 }) } },
-    { id: 'preview-all-layers', title: 'Show all layers', section: 'view', keywords: ['layers', 'full'], workspace: 'preview', enabled: sliced, run: () => { setWorkspace('preview'); set((s) => ({ layerHi: s.preview?.layerCount ?? 0 })) } },
+    { id: 'preview-first-layer', title: 'Show the first layer only', section: 'view', keywords: ['layer 1', 'adhesion'], workspace: 'prepare', enabled: sliced, run: () => { showSliced(); set({ layerHi: 1 }) } },
+    { id: 'preview-all-layers', title: 'Show all layers', section: 'view', keywords: ['layers', 'full'], workspace: 'prepare', enabled: sliced, run: () => { showSliced(); set((s) => ({ layerHi: s.preview?.layerCount ?? 0 })) } },
   )
 
   out.push(
