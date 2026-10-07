@@ -214,14 +214,20 @@ pub(crate) fn observed(
 /// The person answered a trip (dismissed it, the plate checked clean, a spot marked fine). A print
 /// the guard paused stays paused: the card stays, marked answered, with Resume, until a person
 /// resumes it (a physical machine never starts moving again on its own). Any other trip ends.
-pub(crate) fn answer(b: &Bridge, printer: &str) {
+/// `by` says how, for the card's words: `dismissed`, `clear` (a new look found nothing), `fine` (a
+/// spot marked as a plate mark) or `off` (the guard turned off). A clean look drops the spot.
+pub(crate) fn answer(b: &Bridge, printer: &str, by: &str) {
     let updated = {
         let mut trips = lock(&b.hub.guard.trips);
         match trips.get_mut(printer) {
             Some(t) if t.get("state").and_then(Value::as_str) == Some("paused") => {
                 if let Some(o) = t.as_object_mut() {
                     o.insert("answered".into(), json!(true));
+                    o.insert("answeredBy".into(), json!(by));
                     o.insert("at".into(), json!(iso(now_ms())));
+                    if by == "clear" {
+                        o.remove("box");
+                    }
                 }
                 Some(t.clone())
             }
@@ -494,7 +500,7 @@ pub(crate) async fn hand_check_call(b: &Arc<Bridge>, p: &Value) -> Rpc<Value> {
             })
         };
         if hand == Some(false) {
-            answer(b, &printer);
+            answer(b, &printer, "clear");
         } else if let Some(t) = updated {
             b.hub.emit("watch.guard", t);
         }
@@ -593,7 +599,7 @@ pub(crate) async fn plate_check_call(b: &Arc<Bridge>, p: &Value) -> Rpc<Value> {
     };
     let clear_now = plate.clear != Some(false);
     if clear_now {
-        answer(b, &printer);
+        answer(b, &printer, "clear");
     } else {
         let was = lock(&b.hub.guard.trips).get(&printer).cloned();
         let state = was
@@ -646,7 +652,7 @@ pub(crate) async fn plate_ignore_call(b: &Arc<Bridge>, p: &Value) -> Rpc<Value> 
         }
         "model"
     };
-    answer(b, &printer);
+    answer(b, &printer, "fine");
     b.hub.audit(json!({ "origin": "local_click", "action": "watch.plateIgnore", "printerId": printer, "remembered": remembered }));
     crate::hub_rpc::save(b).await;
     Ok(json!({ "printerId": printer, "remembered": remembered }))
@@ -667,7 +673,7 @@ pub(crate) async fn guard_call(b: &Arc<Bridge>, p: &Value) -> Rpc<Value> {
         }
     }
     if !enabled {
-        answer(b, &printer);
+        answer(b, &printer, "off");
     }
     b.hub.audit(
         json!({ "origin": "local_click", "action": "watch.guard", "printerId": printer, "enabled": enabled }),
