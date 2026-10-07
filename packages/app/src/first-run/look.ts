@@ -33,9 +33,9 @@ export function useLayout(): LayoutSpec {
 }
 
 /** The names the tabs have when a look does not rename them. */
-const BASE_TAB_LABEL: Readonly<Record<string, string>> = { prepare: 'Prepare', preview: 'Preview', printers: 'Printers', library: 'Vault', feed: 'Vault', pilot: 'mimir' }
+const BASE_TAB_LABEL: Readonly<Record<string, string>> = { prepare: 'Slice', preview: 'Preview', printers: 'Printers', library: 'Vault', feed: 'Vault', pilot: 'mimir' }
 
-/** What a look calls a workspace tab ("Model", "Prepare" or "Plater" for `prepare`). Every sentence that points at a tab uses this, never a literal name. The id stays the same everywhere else. */
+/** What a look calls a workspace tab ("Slice" for `prepare` in every look; Bambu and Orca call Printers "Device"). Every sentence that points at a tab uses this, never a literal name. The id stays the same everywhere else. */
 export function tabLabel(layout: LayoutSpec, id: string): string {
   return layout.tabLabels?.[id] ?? BASE_TAB_LABEL[id] ?? id
 }

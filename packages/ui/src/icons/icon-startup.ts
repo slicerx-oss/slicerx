@@ -83,6 +83,7 @@ export const STARTUP_ICON_PATHS: Partial<Record<IconName, string>> = {
   "redo": "<path d=\"M15 14.5l4.5-4.5L15 5.5\"/><path d=\"M19.5 10h-10a5 5 0 0 0 0 10H13\"/>",
   "report": "<path d=\"M6 21V3.5\"/><path d=\"M6 4.5h12v9H6\"/><path d=\"M12 7v2.5M12 11.75h.01\"/>",
   "rotate": "<path d=\"M20 12a8 8 0 1 1-2.35-5.65\"/><path d=\"M20 3.5V8h-4.5\"/>",
+  "ruler": "<rect x=\"3\" y=\"8.5\" width=\"18\" height=\"7\" rx=\"1.5\" transform=\"rotate(-45 12 12)\"/><path d=\"M7 8.5v3M10 8.5v2M13 8.5v3M16 8.5v2\" transform=\"rotate(-45 12 12)\"/>",
   "save": "<path d=\"M5 3.5h11.5l4 4V19a1.5 1.5 0 0 1-1.5 1.5H5A1.5 1.5 0 0 1 3.5 19V5A1.5 1.5 0 0 1 5 3.5z\"/><path d=\"M7.5 20.5v-6h9v6M8 3.5v4h7v-4\"/>",
   "scale": "<rect x=\"3.5\" y=\"10.5\" width=\"10\" height=\"10\" rx=\"1.5\"/><path d=\"M13.5 3.5h7v7M20.5 3.5l-7 7\"/>",
   "search": "<circle cx=\"11\" cy=\"11\" r=\"6.5\"/><path d=\"M20.5 20.5L16 16\"/>",
