@@ -176,7 +176,7 @@ function kindOf(printerId: string | undefined, cfg: Settings): ToolChangerKind |
  */
 function swapChute(id: string, bed: Bed): NonNullable<ToolChangerSpec['chute']> | null {
   if (id.startsWith('bambu-a1-mini')) return { x: -13.5, y: 90, exitY: [], exit: 'right', frame: true, cut: [180, null], exits: [[-3.5, 90], [-13.5, 90], [-3.5, 90]], mouth: { x: [-17, 17], y: [-8, 18] } }
-  if (id.startsWith('bambu-a1')) return { x: -48.2, y: 128, exitY: [], exit: 'right', frame: true, cut: [267, null], exits: [[-38.2, 128], [-48.2, 128], [-38.2, 128]] }
+  if (id.startsWith('bambu-a1')) return { x: -48.2, y: 128, exitY: [], exit: 'right', frame: true, cut: [267, null], exits: [[-38.2, 128], [-48.2, 128], [-38.2, 128]], mouth: { x: [-12, 12], y: [-8, 14] } }
   if (/^bambu-(x1|p1p|p1s)/.test(id)) return { x: 54, y: 265, exitY: [], exit: 'right', cut: [70, 265], exits: [[70, 265], [100, 265], [165, 265], [165, 256]], mouth: { x: [-5.7, 26], y: [-12, 18] } }
   if (id.startsWith('bambu-h2s')) return { x: 95.5, y: bed.depthMm + 16, exitY: [bed.depthMm, bed.depthMm - 25, bed.depthMm - 55] }
   return null
