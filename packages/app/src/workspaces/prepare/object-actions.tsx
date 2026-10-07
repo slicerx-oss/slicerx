@@ -14,14 +14,14 @@ import { printBlock } from '../../plate/heimdall'
 import { exportAllPlates, exportGcode3mf, saveProject } from '../../export/actions'
 import { appName } from '../../edition'
 
-const SHAPES: { shape: PrimitiveShape; label: string; icon: IconName }[] = [
+export const SHAPES: { shape: PrimitiveShape; label: string; icon: IconName }[] = [
   { shape: 'box', label: 'Box', icon: 'cube' },
   { shape: 'cylinder', label: 'Cylinder', icon: 'cylinder' },
   { shape: 'sphere', label: 'Sphere', icon: 'sphere' },
   { shape: 'cone', label: 'Cone', icon: 'cone' },
 ]
 
-/** `design`: no Export menu, which belongs to Slice (Mod+S still saves the project). */
+/** `design`: only More (split and merge). Design's shelf has Add and the tools; Export belongs to Slice (Mod+S still saves). */
 export function ObjectActions({ design }: { design?: boolean } = {}) {
   const host = useHost()
   const hasSel = useApp((s) => s.selection !== null)
@@ -38,7 +38,7 @@ export function ObjectActions({ design }: { design?: boolean } = {}) {
   }
   return (
     <div className="obj-actions">
-      {cad ? (
+      {cad && !design ? (
       <MenuAnchor>
         <Button size="sm" variant="ghost" icon="shapes" data-testid="add-shape" aria-haspopup="menu" aria-expanded={menu === 'add'} onClick={() => setMenu(menu === 'add' ? null : 'add')}>
           Add shape
@@ -83,7 +83,7 @@ export function ObjectActions({ design }: { design?: boolean } = {}) {
         </Menu>
       </MenuAnchor>
       )}
-      {more ? <ObjectTools /> : null}
+      {more && !design ? <ObjectTools /> : null}
       {more ? <MenuAnchor>
         <Button size="sm" variant="ghost" icon="more" data-testid="object-menu" aria-haspopup="menu" aria-expanded={menu === 'object'} disabled={!hasSel} onClick={() => setMenu(menu === 'object' ? null : 'object')}>
           Object

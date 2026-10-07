@@ -9,14 +9,15 @@ import type { MeshHandle, MeshPart } from '@slicerx/contracts'
 import { evaluateDimensions, type Dimension, type FaceFrame, type MovedFace } from '../../geom/cad'
 import { geom, usesWorker } from '../../geom/client'
 import { quietly } from '../../plate/history'
-import { get, markStale, set, type CadTool, type PlateEntry } from '../../state/store'
+import { get, markStale, set, type AppState, type CadTool, type PlateEntry } from '../../state/store'
 import { objectsFor } from '../dimensions'
 import { currentValues } from '../value-table'
 import { bindFor } from '../values'
 import { direction, followField, followFor, followsOf, invert, mainNumber, multiply, point, type History, type HistoryMesh, type ReplayResult, type Step, type StepParams, type StepStatus } from './model'
 import { sessionFonts, takeBind } from './record'
 import { replayHistory, type ReplayRequest } from './replay'
-import { brandAccent } from '../../edition'
+import { brandAccent, editionHasCad } from '../../edition'
+import { opensDesign } from '../../workspaces/design/shelf-tools'
 
 type Loader = { loadParts(name: string, parts: MeshPart[]): Promise<MeshHandle> }
 
@@ -147,6 +148,12 @@ export function toolFor(p: StepParams): CadTool | null {
   return null
 }
 
+/** Editing a modeling step opens Design, as choosing its tool does (workspaces/design/open-tool.ts). */
+function designFor(p: StepParams): Partial<AppState> {
+  const tool = toolFor(p)
+  return tool && opensDesign(tool) && editionHasCad() ? { workspace: 'prepare', modelMode: 'design' } : {}
+}
+
 /** Rolls the object back to the result before step `index` and opens the step's tool to edit it. */
 export async function beginEdit(host: Loader, objectId: string, index: number): Promise<void> {
   cancelEdit()
@@ -156,13 +163,13 @@ export async function beginEdit(host: Loader, objectId: string, index: number): 
   const r = await runReplay({ history: e.history, before: index })
   if (!r.before || r.before.length === 0) {
     // A body made by this step has nothing before it: edit on the bed with the object hidden.
-    quietly(() => set((s) => ({ historyEdit: { objectId, index, original: e }, plate: s.plate.filter((p) => p.id !== objectId), objectTool: toolFor(step.params) })))
+    quietly(() => set((s) => ({ historyEdit: { objectId, index, original: e }, plate: s.plate.filter((p) => p.id !== objectId), objectTool: toolFor(step.params), ...designFor(step.params) })))
     return
   }
   const parts = r.before.map(toPart)
   const handle = await host.loadParts(e.name, parts)
   const { paint: _p, ...rest } = e
-  quietly(() => set((s) => ({ historyEdit: { objectId, index, original: e }, plate: s.plate.map((p) => (p.id === objectId ? { ...rest, parts, handle } : p)), objectTool: toolFor(step.params) })))
+  quietly(() => set((s) => ({ historyEdit: { objectId, index, original: e }, plate: s.plate.map((p) => (p.id === objectId ? { ...rest, parts, handle } : p)), objectTool: toolFor(step.params), ...designFor(step.params) })))
 }
 
 /**
