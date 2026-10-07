@@ -62,27 +62,27 @@ export function ObjectTools() {
           {modeling ? (
             <>
               <MenuItem icon="ruler" data-tip="sketch.enter" onClick={() => pick('sketch')}>Sketch</MenuItem>
-              <MenuItem icon="import" data-tip="cad.svgFace" onClick={() => pick('facesvg')}>SVG on a face</MenuItem>
-              <MenuItem icon="move" data-tip="cad.push" onClick={() => pick('push')}>Push and pull</MenuItem>
-              <MenuItem icon="shapes" data-tip="cad.fillet" onClick={() => pick('fillet')}>Fillet and chamfer</MenuItem>
-              <MenuItem icon="shapes" onClick={() => pick('holefit')}>Hole for a screw or insert</MenuItem>
-              <MenuItem icon="shapes" onClick={() => pick('thread')}>Thread</MenuItem>
-              <MenuItem icon="hollow" onClick={() => pick('shell')}>Shell with open faces</MenuItem>
-              <MenuItem icon="settings" onClick={() => pick('values')}>Named values</MenuItem>
+              <MenuItem icon="svg-face" data-tip="cad.svgFace" onClick={() => pick('facesvg')}>SVG on a face</MenuItem>
+              <MenuItem icon="push-pull" data-tip="cad.push" onClick={() => pick('push')}>Push and pull</MenuItem>
+              <MenuItem icon="fillet-edge" data-tip="cad.fillet" onClick={() => pick('fillet')}>Fillet and chamfer</MenuItem>
+              <MenuItem icon="hole-fit" onClick={() => pick('holefit')}>Hole for a screw or insert</MenuItem>
+              <MenuItem icon="thread-bolt" onClick={() => pick('thread')}>Thread</MenuItem>
+              <MenuItem icon="shell-open" onClick={() => pick('shell')}>Shell with open faces</MenuItem>
+              <MenuItem icon="named-values" onClick={() => pick('values')}>Named values</MenuItem>
             </>
           ) : null}
           {cad ? (
             <>
               <MenuSeparator />
-              {modeling ? <MenuItem icon="shapes" onClick={() => pick('shape')}>Shape on a face</MenuItem> : null}
+              {modeling ? <MenuItem icon="on-face" onClick={() => pick('shape')}>Shape on a face</MenuItem> : null}
               {modeling ? <MenuItem icon="text" onClick={() => pick('facetext')}>Text on a face</MenuItem> : null}
-              <MenuItem icon="hollow" disabled={!hasSel} onClick={() => pick('hole')}>Subtract a shape</MenuItem>
+              <MenuItem icon="subtract-shape" disabled={!hasSel} onClick={() => pick('hole')}>Subtract a shape</MenuItem>
             </>
           ) : null}
           <MenuSeparator />
           <MenuItem icon="hollow" disabled={!hasSel} onClick={() => pick('hollow')}>Hollow</MenuItem>
           <MenuItem icon="settings-reset" disabled={!hasSel} onClick={() => direct(() => repairSelected(host.slicer))}>Repair mesh</MenuItem>
-          <MenuItem icon="shapes" disabled={!hasSel} onClick={() => pick('simplify')}>Simplify mesh</MenuItem>
+          <MenuItem icon="simplify-mesh" disabled={!hasSel} onClick={() => pick('simplify')}>Simplify mesh</MenuItem>
         </Menu>
       </MenuAnchor>
       {tool && !isCadTool(tool) && tool !== 'cut' ? <Suspense fallback={null}><ToolDialog tool={tool} onClose={() => setTool(null)} /></Suspense> : null}
