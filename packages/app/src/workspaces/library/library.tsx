@@ -48,9 +48,10 @@ const RIGHT: PaneSection[] = [{ id: 'detail', icon: 'more', label: 'Details' }]
 function useItems(): Item[] {
   const host = useHost()
   const recent = useQuery({ queryKey: ['recent-files'], queryFn: () => host.files.recent(), staleTime: 5_000 })
+  // The hook, clip and bracket load their meshes on demand, so the examples arrive a moment after the files.
+  const built = useQuery({ queryKey: ['example-models'], queryFn: () => Promise.all(DEMO_MODELS.map(async (m) => ({ m, ...(await m.build()) }))), staleTime: Infinity })
   return useMemo(() => {
-    const examples: Item[] = DEMO_MODELS.map((m) => {
-      const { parts, colors } = m.build()
+    const examples: Item[] = (built.data ?? []).map(({ m, parts, colors }) => {
       return {
         id: `example-${m.slug}`,
         title: m.name,
@@ -78,7 +79,7 @@ function useItems(): Item[] {
       sizeBytes: f.size,
     }))
     return [...files, ...examples]
-  }, [recent.data])
+  }, [recent.data, built.data])
 }
 
 export function Library() {

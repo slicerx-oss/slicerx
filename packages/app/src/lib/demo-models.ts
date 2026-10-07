@@ -2,7 +2,9 @@
 // Copyright (C) 2026 The SlicerX contributors
 // Example models built in code, so a fresh install has something to slice
 // without shipping mesh files: the layered X, a calibration cube, a wall
-// hook, a cable clip and a shelf bracket. Each is a 2D outline extruded in Z.
+// hook, a cable clip and a shelf bracket. The X and the cube are 2D outlines
+// extruded in Z; the hook, clip and bracket are the Vault starters' bodies
+// (demo-meshes.ts, written by scripts/vault-starters.ts), loaded on demand.
 import type { MeshPart } from '@slicerx/contracts'
 import { brandAccent } from '../edition'
 
@@ -13,7 +15,7 @@ export interface DemoModel {
   name: string
   /** Short description for the library. */
   note: string
-  build(): { parts: MeshPart[]; colors: string[] }
+  build(): Promise<{ parts: MeshPart[]; colors: string[] }>
 }
 
 /** Twice the signed area; positive for counterclockwise outlines. */
@@ -123,13 +125,6 @@ function rect(w: number, d: number): Pt[] {
   ]
 }
 
-function arc(cx: number, cy: number, r: number, from: number, to: number, steps: number): Pt[] {
-  return Array.from({ length: steps + 1 }, (_, i) => {
-    const a = from + ((to - from) * i) / steps
-    return [cx + Math.cos(a) * r, cy + Math.sin(a) * r] as Pt
-  })
-}
-
 /** The X of the mark on a 32-unit grid, as in the logo, centered and scaled to `size` mm. */
 function xOutline(size: number): Pt[] {
   const pts: Pt[] = [[4.5, 4], [10.7, 4], [16, 12.1], [21.3, 4], [27.5, 4], [19.2, 16], [27.5, 28], [21.3, 28], [16, 19.9], [10.7, 28], [4.5, 28], [12.8, 16]]
@@ -137,12 +132,21 @@ function xOutline(size: number): Pt[] {
   return pts.map(([x, y]) => [(x - 16) * k, (16 - y) * k])
 }
 
+/** One of the starter bodies from demo-meshes.ts. */
+async function starterBody(slug: string): Promise<{ parts: MeshPart[]; colors: string[] }> {
+  const { DEMO_MESHES } = await import('./demo-meshes')
+  const m = DEMO_MESHES[slug]
+  if (!m) throw new Error(`No example mesh called ${slug}`)
+  const bytes = (b64: string) => Uint8Array.from(atob(b64), (c) => c.charCodeAt(0)).buffer
+  return { parts: [{ name: m.name, slot: 1, positions: new Float32Array(bytes(m.positions)), indices: new Uint32Array(bytes(m.indices)) }], colors: [m.color] }
+}
+
 export const DEMO_MODELS: readonly DemoModel[] = [
   {
     slug: 'x-mark',
     name: 'Layered X',
     note: 'Two colors, stands on a plinth',
-    build: () => ({
+    build: async () => ({
       parts: [extrude('Plinth', 1, rect(64, 22), 0, 4), standUp(extrude('X', 2, xOutline(56), 0, 12), 4)],
       colors: ['#303241', brandAccent()],
     }),
@@ -151,36 +155,11 @@ export const DEMO_MODELS: readonly DemoModel[] = [
     slug: 'calibration-cube',
     name: 'Calibration cube',
     note: '20 mm, one color',
-    build: () => ({ parts: [extrude('Cube', 1, rect(20, 20), 0, 20)], colors: ['#8be9fd'] }),
+    build: async () => ({ parts: [extrude('Cube', 1, rect(20, 20), 0, 20)], colors: ['#8be9fd'] }),
   },
-  {
-    slug: 'wall-hook',
-    name: 'Wall hook',
-    note: 'Prints on its side',
-    build: () => {
-      const outer: Pt[] = [[-6, 30], [6, 30], [6, -2], ...arc(14, -2, 8, Math.PI, 2 * Math.PI, 10).slice(1), [22, 8], [28, 8], [28, -2], ...arc(14, -2, 14, 0, -Math.PI, 14).slice(1)]
-      return { parts: [extrude('Hook', 1, outer.map(([x, y]) => [x - 8, y - 12] as Pt), 0, 12)], colors: ['#ffb86c'] }
-    },
-  },
-  {
-    slug: 'cable-clip',
-    name: 'Cable clip',
-    note: 'Snap fit, 6 mm cable',
-    build: () => {
-      const outer = arc(0, 0, 7, -Math.PI * 0.35, Math.PI * 1.35, 24)
-      const inner = arc(0, 0, 4, Math.PI * 1.35, -Math.PI * 0.35, 20)
-      return { parts: [extrude('Clip', 1, [...outer, ...inner], 0, 8), extrude('Foot', 1, rect(22, 3).map(([x, y]) => [x, y - 8.5] as Pt), 0, 8)], colors: ['#50fa7b', '#50fa7b'] }
-    },
-  },
-  {
-    slug: 'shelf-bracket',
-    name: 'Shelf bracket',
-    note: 'Strong settings suggested',
-    build: () => ({
-      parts: [extrude('Bracket', 1, ([[0, 0], [60, 0], [60, 6], [14, 6], [6, 14], [6, 60], [0, 60]] as Pt[]).map(([x, y]) => [x - 30, y - 30] as Pt), 0, 16)],
-      colors: ['#ff79c6'],
-    }),
-  },
+  { slug: 'wall-hook', name: 'Wall hook', note: 'Back plate, two screw holes, prints on its side', build: () => starterBody('wall-hook') },
+  { slug: 'cable-clip', name: 'Cable clip', note: 'Snap fit, 6 mm cable, screw holes in the foot', build: () => starterBody('cable-clip') },
+  { slug: 'shelf-bracket', name: 'Shelf bracket', note: 'Gusseted, two screw holes per arm', build: () => starterBody('shelf-bracket') },
 ]
 
 export const DEFAULT_MODEL = 'x-mark'
