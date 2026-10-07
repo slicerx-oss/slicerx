@@ -9,7 +9,7 @@ import type { PreviewBuffers } from '@slicerx/contracts'
 import type { ToolChangerSpec, Viewport, ViewportPlate } from '@slicerx/viewport'
 import { onThemeChange } from '@slicerx/ui/theme'
 import { useEffect, useRef } from 'react'
-import { brandAccent, useEdition } from '../edition'
+import { brandAccent, editionHasCad, useEdition } from '../edition'
 import { controlsFor, type ControlsApi } from '../first-run/controls'
 import { effectiveSlot, mapSlot, resolveSlots, type ResolvedSlot } from '../filament/slots'
 import { activeMeta } from '../plate/plates'
@@ -295,6 +295,8 @@ export function ViewportHost({ mode }: { mode: 'prepare' | 'preview' }) {
         if (vp.setFollowNozzle && (first || s.followNozzle !== prev.followNozzle)) vp.setFollowNozzle(s.followNozzle)
         if (first || s.plate !== prev.plate || s.bed !== prev.bed || s.overrides !== prev.overrides || s.easy !== prev.easy) (vp as unknown as Viewport).setBedAlert?.(s.plate.some((e) => objectWarnings(e, s).some((w) => w.kind === 'off-bed')))
         if (first || s.zoneHover !== prev.zoneHover) (vp as unknown as Viewport).setZoneHighlight?.(s.zoneHover)
+        // Design models on a plain ground grid; the bed comes back in Slice. The camera stays where it is.
+        if (first || s.modelMode !== prev.modelMode || s.workspace !== prev.workspace) (vp as unknown as Viewport).setGround?.(s.workspace === 'prepare' && s.modelMode === 'design' && editionHasCad())
         // The printer's no-print areas follow its profile and any override of them in printer settings.
         // Both are machine coordinates; the plate counts from the printable area's front left corner.
         if (first || s.profile !== prev.profile || s.overrides !== prev.overrides || s.easy !== prev.easy) {
