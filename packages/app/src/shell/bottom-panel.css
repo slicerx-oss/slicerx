@@ -1,0 +1,13 @@
+/* SPDX-License-Identifier: Apache-2.0
+   Copyright (C) 2026 The SlicerX contributors */
+/* A panel along the bottom of the view with a small ^ tab on the bottom edge, in the glass of the side handles. */
+.bpanel { position: absolute; left: 12px; right: 12px; bottom: 0; z-index: var(--z-hud); display: flex; flex-direction: column; align-items: center; pointer-events: none; }
+.bpanel > * { pointer-events: auto; }
+.bpanel-tab { display: grid; place-items: center; width: 56px; height: 18px; border: 0; border-radius: var(--r-md) var(--r-md) 0 0; color: var(--muted); cursor: pointer; }
+.bpanel-tab:hover, .bpanel-tab[aria-expanded="true"] { color: var(--fg); }
+.bpanel-tab::after { content: ""; position: absolute; left: 50%; bottom: 3px; width: 20px; height: 3px; margin-left: -10px; border-radius: 2px; background: rgb(255 255 255 / 18%); }
+.bpanel-body { width: 100%; max-width: 1100px; margin-bottom: 10px; border-radius: var(--r-md); padding: 10px 12px; animation: bpanel-in 160ms ease-out; }
+.bpanel-body[hidden] { display: none; }
+@keyframes bpanel-in { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+:root[data-motion="reduced"] .bpanel-body { animation: bpanel-fade 120ms linear; }
+@keyframes bpanel-fade { from { opacity: 0; } to { opacity: 1; } }
