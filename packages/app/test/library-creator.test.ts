@@ -295,11 +295,11 @@ describe('creator page editor', () => {
     act(() => openEditor('upload'))
     await screen.findByLabelText(/Display name/)
     const dialog = screen.getByRole('dialog', { name: 'Set up your creator page' })
-    expect(within(dialog).getByRole('button', { name: 'Skip for now' })).toBeTruthy()
+    expect(within(dialog).getByRole('button', { name: 'Cancel' })).toBeTruthy()
     const handle = within(dialog).getByLabelText(/Handle/) as HTMLInputElement
     expect(handle.readOnly).toBe(false)
     fireEvent.change(handle, { target: { value: 'rv-prints' } })
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Save and upload' }))
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Save and continue' }))
     await waitFor(async () => expect((await store.getMyCreator())?.handle).toBe('rv-prints'))
   })
 
