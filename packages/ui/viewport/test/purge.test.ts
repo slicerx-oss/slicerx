@@ -268,7 +268,7 @@ function sweep(spec: ToolChangerSpec, from: number, to: number, volume: number, 
   for (const t of times) {
     const pose = poseAt(seq, t)
     head.place(pose.x, pose.y, pose.z, to, pose, pose.slots)
-    const st = purge.place(pose.z + 0.05, { seq, plan: p, seconds: t }, pose.y)
+    const st = purge.place(pose.z + 0.05, { seq, plan: p, seconds: t })
     head.root.updateMatrixWorld(true)
     purge.root.updateMatrixWorld(true)
     const hb = boxes(nozzle, head.root)

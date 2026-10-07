@@ -4,7 +4,7 @@
 // "Show toolhead" hides only the moving head, and the fixtures still follow the print with the head hidden.
 import { describe, expect, it } from 'vitest'
 import { FEATURE } from '@slicerx/contracts'
-import { Box3, type Mesh, type Object3D } from 'three'
+import { Box3, Vector3, type Mesh, type Object3D } from 'three'
 import { Toolpaths } from '../src/toolpaths'
 import { purgeGrams, type PurgePlan } from '../src/purge'
 import { toolChangerSpec, type ToolChangerSpec } from '../src/toolchanger'
@@ -106,6 +106,24 @@ describe('machine fixtures in Preview', () => {
         // Clear of the plate's area: beside it in x, or behind it in y.
         expect(b.max.x <= 0 || b.min.x >= w || b.min.y >= d || b.max.y <= 0, `${p.name}: ${o.name}`).toBe(true)
       })
+    }
+  })
+
+  it('the A1 chute stands still on the frame while the head moves in x, y and z', () => {
+    for (const id of ['bambu-a1', 'bambu-a1-mini']) {
+      const spec = SWAP_PRINTERS.find((p) => p.id === id)!.spec()
+      const t = new Toolpaths()
+      // the head runs across the bed in y and climbs a layer at a time
+      t.set(buildPreview([0, 1, 2].map((l) => [10, 60, 110].map((y): Seg => ({ a: [30 + l * 20, y], b: [40 + l * 20, y + 40], feature: FEATURE.outerWall, tool: 0 })))))
+      t.setToolChanger(spec)
+      const seen = new Set<string>()
+      for (const [layer, cut] of [[0, 1], [0, 2], [1, 1], [1, 3], [2, 2], [2, 3]] as const) {
+        t.setRange(0, layer, cut)
+        t.root.updateMatrixWorld(true)
+        const p = part(t, 'chute').getWorldPosition(new Vector3())
+        seen.add(`${p.x.toFixed(3)} ${p.y.toFixed(3)} ${p.z.toFixed(3)}`)
+      }
+      expect([...seen], id).toEqual([`${spec.chute!.x.toFixed(3)} ${spec.chute!.y.toFixed(3)} 0.000`])
     }
   })
 

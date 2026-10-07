@@ -129,7 +129,7 @@ Numbers.
 | H2S: the H2 family's chute at X 95.5, Y 336 and the H2D's exit moves (Y 320, 295, 265) | the H2C template's `M620.14`; the H2S change G-code's exit moves | measured |
 | The chute's mouth and wiper blade, the H2D's turned to face the way the head leaves; on the X1 and P1 the mouth starts 2 mm behind the bed, on the A1 mini 2 mm left of it | no public drawing | estimated |
 
-The A1 and A1 mini move the bed in y. Their chute stands on the frame beside the gantry, so in bed coordinates it stays level with the head. The P2S's change G-code hands the cut, the flush and the wipe to firmware macros (`G150`) and writes no position, so Preview has no chute for it and plays its swaps in place, as before.
+The A1 and A1 mini move the bed in y and the gantry in z. Their chute stands on the frame, so Preview, which holds the bed still, keeps it still at its flush spot at bed level: the change moves the bed to that y before it flushes, so the head meets the chute there. The P2S's change G-code hands the cut, the flush and the wipe to firmware macros (`G150`) and writes no position, so Preview has no chute for it and plays its swaps in place, as before.
 
 Sources: Bambu Studio 2.8.4 machine profiles and their start and change G-code templates (`Bambu Lab A1 0.4 nozzle template change_filament_gcode.json` and the others, mirrored in `packages/profiles/gcode.json`); the bed models (`bbl-3dp-X1.stl`, `bbl-3dp-A1M.stl`), which the chutes stay clear of.
 

@@ -1020,7 +1020,7 @@ export class Toolpaths {
   /** The chute at the head's height and, inside a change with a purge, the blob; the head's shadow only over the bed. */
   private placePurge(x: number, y: number, z: number, seq: ChangeSequence | null, change: { segment: number; seconds: number } | null): void {
     const plan = change ? this.purges?.get(change.segment) : undefined
-    this.purge.place(z, seq && change && plan ? { seq, plan, seconds: change.seconds } : null, y)
+    this.purge.place(z, seq && change && plan ? { seq, plan, seconds: change.seconds } : null)
     const bed = this.changer?.bed
     const shadow = this.head.root.getObjectByName('shadow')
     if (shadow) shadow.visible = !bed || (x >= -5 && y >= -5 && x <= bed.widthMm + 5 && y <= bed.depthMm + 5)

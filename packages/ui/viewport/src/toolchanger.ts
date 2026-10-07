@@ -66,8 +66,12 @@ export interface ToolChangerSpec {
     exits?: [number, number][]
     /** The cutter, the head's first stop (null y keeps the head's y); none where the firmware cuts at the chute. */
     cut?: [number, number | null]
-    /** A1, A1 mini: the chute sits on the frame beside the gantry while the bed moves in y, so in bed coordinates it stays level with the head. */
-    gantry?: boolean
+    /**
+     * A1, A1 mini: the chute stands on the frame, which neither the bed (moving in y) nor the gantry (moving in z)
+     * carries. Preview holds the bed still, so the chute stays at its flush spot at bed level: the change moves the
+     * bed to that y before it flushes, so the head meets it there.
+     */
+    frame?: boolean
     /** The mouth around the nozzle's spot, x across and y back from the wiper side, where it differs from the H2 family's (`CHUTE`). */
     mouth?: { x: [number, number]; y: [number, number] }
   }
@@ -171,8 +175,8 @@ function kindOf(printerId: string | undefined, cfg: Settings): ToolChangerKind |
  * The P2S's change hands everything to the firmware (`G150` macros) and writes no position, so it has none here.
  */
 function swapChute(id: string, bed: Bed): NonNullable<ToolChangerSpec['chute']> | null {
-  if (id.startsWith('bambu-a1-mini')) return { x: -13.5, y: 90, exitY: [], exit: 'right', gantry: true, cut: [180, null], exits: [[-3.5, 90], [-13.5, 90], [-3.5, 90]], mouth: { x: [-17, 17], y: [-8, 18] } }
-  if (id.startsWith('bambu-a1')) return { x: -48.2, y: 128, exitY: [], exit: 'right', gantry: true, cut: [267, null], exits: [[-38.2, 128], [-48.2, 128], [-38.2, 128]] }
+  if (id.startsWith('bambu-a1-mini')) return { x: -13.5, y: 90, exitY: [], exit: 'right', frame: true, cut: [180, null], exits: [[-3.5, 90], [-13.5, 90], [-3.5, 90]], mouth: { x: [-17, 17], y: [-8, 18] } }
+  if (id.startsWith('bambu-a1')) return { x: -48.2, y: 128, exitY: [], exit: 'right', frame: true, cut: [267, null], exits: [[-38.2, 128], [-48.2, 128], [-38.2, 128]] }
   if (/^bambu-(x1|p1p|p1s)/.test(id)) return { x: 54, y: 265, exitY: [], exit: 'right', cut: [70, 265], exits: [[70, 265], [100, 265], [165, 265], [165, 256]], mouth: { x: [-5.7, 26], y: [-12, 18] } }
   if (id.startsWith('bambu-h2s')) return { x: 95.5, y: bed.depthMm + 16, exitY: [bed.depthMm, bed.depthMm - 25, bed.depthMm - 55] }
   return null
