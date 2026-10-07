@@ -146,6 +146,28 @@ export interface ListingVersion {
   reviewStatus: ReviewStatus
   /** Print profiles the creator tested, keyed by printer model. */
   printProfiles?: Record<string, { process: string; filament: string; timeS?: number; grams?: number }>
+  /** The filament colors the model prints in and which parts need more than one. */
+  colors?: ListingColors
+}
+
+/** One filament color of a model: `#rrggbb` and the creator's name for it ("Silk gold"). */
+export interface ListingColor {
+  hex: string
+  name?: string
+}
+
+/** A printed part (a plate object) and the colors it uses, as indexes into `ListingColors.colors`. */
+export interface ListingPart {
+  name: string
+  colors: number[]
+  /** Needs a filament changer (AMS): set from the file when the part uses more than one color, the creator may change it. */
+  ams: boolean
+}
+
+/** A model's colors in the creator's order, read from its 3MF on upload and edited by the creator. */
+export interface ListingColors {
+  colors: ListingColor[]
+  parts: ListingPart[]
 }
 
 export interface ListingStats {
@@ -302,6 +324,8 @@ export interface UploadVersionInput {
   format: FileFormat
   /** How the creator printed it, shown on the listing. */
   printProfile?: UploadPrintProfile
+  /** The model's filament colors, shown on the listing. */
+  colors?: ListingColors
 }
 
 /** One tested print of an upload: the printer, the presets and what the slicer measured. */
@@ -631,6 +655,8 @@ export interface StoreClient extends AuthClient {
   // Upload
   /** Checks the file against the library settings, records the version, puts the bytes in the uploads-quarantine bucket and queues the scan. */
   uploadVersion(listingId: string, input: UploadVersionInput): Promise<StoreResult<ListingVersion>>
+  /** Replaces a version's colors; null clears them. The listing's creator only. Does not send the listing back to review. */
+  setVersionColors(versionId: string, colors: ListingColors | null): Promise<StoreResult<ListingVersion>>
   getScanStatus(versionId: string): Promise<StoreResult<ScanState>>
   /** The scan report. The creator and staff only; null while no scan has finished. */
   getScanReport(versionId: string): Promise<StoreResult<Record<string, unknown> | null>>

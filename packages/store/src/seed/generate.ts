@@ -54,6 +54,37 @@ function hash128(s: string): [number, number, number, number] {
 
 const hex8 = (n: number) => n.toString(16).padStart(8, '0')
 
+const SEED_FILAMENTS: [string, string][] = [
+  ['#1c1c1e', 'Matte black'],
+  ['#f2f0eb', 'Bone white'],
+  ['#d4af37', 'Silk gold'],
+  ['#c0392b', 'Signal red'],
+  ['#2e6fd8', 'Cobalt blue'],
+  ['#3fae5a', 'Grass green'],
+  ['#f39c12', 'Amber'],
+  ['#8e8e93', 'Ash gray'],
+  ['#8e44ad', 'Plum'],
+  ['#5dade2', 'Sky blue'],
+]
+
+/** A listing's colors from its slug alone (no PRNG draws, so the rest of the seed stays put). Multicolor listings get eight colors, two parts through the AMS. */
+function seedColors(slug: string, tags: readonly string[]): VersionRow['colors'] {
+  const [a, b] = hash128(`colors:${slug}`)
+  const from = a % SEED_FILAMENTS.length
+  const pick = (n: number) => Array.from({ length: n }, (_, i) => SEED_FILAMENTS[(from + i * 3) % SEED_FILAMENTS.length] as [string, string])
+  const kind = tags.includes('multicolor') ? 3 : b % 10 < 5 ? 0 : b % 10 < 8 ? 1 : 2
+  if (kind === 0) {
+    const [hex, name] = pick(1)[0] as [string, string]
+    return { colors: [{ hex, name }], parts: [{ name: 'Body', colors: [0], ams: false }] }
+  }
+  const n = kind === 3 ? 8 : 2 + (b % 3)
+  const colors = pick(n).map(([hex, name]) => ({ hex, name }))
+  const parts = colors.map((_, i) => ({ name: `Part ${i + 1}`, colors: [i], ams: false }))
+  if (kind >= 2) parts.splice(0, 2, { name: 'Body', colors: [0, 1], ams: true })
+  if (kind === 3) parts.splice(1, 2, { name: 'Face', colors: [2, 3, 4], ams: true })
+  return { colors, parts }
+}
+
 /** A stable UUID (version 5 layout, variant 10) derived from a label. */
 export function seedId(label: string): string {
   const [a, b, c, d] = hash128(`slicerx-seed:${label}`)
@@ -210,6 +241,7 @@ export function generateSeed(): SeedData {
           scanned_at: iso(versionCreated + 300_000),
           review_status: reviewStatus,
           created_at: iso(versionCreated),
+          colors: seedColors(l.slug, l.tags),
         })
         files.push({ id: seedId(`file:${versionId}:model`), version_id: versionId, name: fileName, role: 'model', format: ext, size_bytes: size, sha256: fakeSha256(`file:${versionId}:model`) })
         files.push({ id: seedId(`file:${versionId}:cover`), version_id: versionId, name: 'cover.webp', role: 'image', format: null, size_bytes: 40_000 + Math.floor(rand() * 60_000), sha256: fakeSha256(`file:${versionId}:cover`) })

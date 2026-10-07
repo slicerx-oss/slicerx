@@ -13,6 +13,7 @@ import type {
   FeedItem,
   Listing,
   ListingCard,
+  ListingColors,
   ListingStats,
   LibrarySettings,
   ListingVersion,
@@ -20,6 +21,9 @@ import type {
   StoreResult,
 } from '@slicerx/contracts'
 import { z } from 'zod'
+import type { Database, Json } from './generated/database'
+
+type Insert = Database['public']['Tables']['listing_versions']['Insert']
 import { createSupabaseClient, errorCode, fail, ok, read, rows, supabaseAuth, type Db, type SupabaseOptions } from './auth/supabase'
 import {
   downloadVersion,
@@ -60,7 +64,7 @@ import {
   type ListingRow,
   type VersionRow,
 } from './rows'
-import { CREATOR_BIO_MAX, DEFAULT_MAX_FILE_MB, slugify, validateCreatorLinks, validateHandle, validateUpload } from './validate'
+import { CREATOR_BIO_MAX, DEFAULT_MAX_FILE_MB, slugify, validateCreatorLinks, validateHandle, validateListingColors, validateUpload } from './validate'
 
 const LISTING_COLUMNS = 'id, creator_id, slug, title, description, license, status, tags, cover_url, review_note, reviewed_by, reviewed_at, published_at, created_at'
 // The scan report is read through version_scan_report, never straight from the table.
@@ -114,6 +118,18 @@ export function supabaseStore(sb: Db, conn?: Pick<SupabaseOptions, 'url' | 'anon
     return data.session?.user.id ?? null
   }
 
+  // listing_versions.colors comes with 0016_listing_colors. A project without it is read and written without colors.
+  let colorsColumn = true
+  const noColorsColumn = (e: DbError) => Boolean(e && (e.code === '42703' || e.code === 'PGRST204') && /colors/.test(e.message))
+  async function readVersions(q: (columns: string) => PromiseLike<{ data: unknown; error: DbError }>): Promise<VersionRow[]> {
+    if (colorsColumn) {
+      const r = await q(`${VERSION_COLUMNS}, colors`)
+      if (!noColorsColumn(r.error)) return read(versionRow, Promise.resolve(r))
+      colorsColumn = false
+    }
+    return read(versionRow, q(VERSION_COLUMNS))
+  }
+
   async function ownCreatorRow(me: string): Promise<CreatorRow | undefined> {
     return (await read(creatorRow, sb.from('creators').select(CREATOR_COLUMNS).eq('owner_id', me)))[0]
   }
@@ -146,7 +162,7 @@ export function supabaseStore(sb: Db, conn?: Pick<SupabaseOptions, 'url' | 'anon
     if (listings.length === 0) return []
     const ids = listings.map((l) => l.id)
     const [versions, stats, likes, saved, mine] = await Promise.all([
-      read(versionRow, sb.from('listing_versions').select(VERSION_COLUMNS).in('listing_id', ids)),
+      readVersions((cols) => sb.from('listing_versions').select(cols).in('listing_id', ids)),
       statsFor(ids),
       me ? read(likeRow, sb.from('likes').select('user_id, listing_id, created_at').eq('user_id', me).in('listing_id', ids)) : Promise.resolve([]),
       me ? savedIds() : Promise.resolve(new Set<string>()),
@@ -353,7 +369,7 @@ export function supabaseStore(sb: Db, conn?: Pick<SupabaseOptions, 'url' | 'anon
       const [[listing], creators, versionRows] = await Promise.all([
         hydrate([row], me),
         creatorsById([row.creator_id], me),
-        read(versionRow, sb.from('listing_versions').select(VERSION_COLUMNS).eq('listing_id', row.id).order('created_at', { ascending: false })),
+        readVersions((cols) => sb.from('listing_versions').select(cols).eq('listing_id', row.id).order('created_at', { ascending: false })),
       ])
       const creator = creators.get(row.creator_id)
       if (!listing || !creator) return null
@@ -591,7 +607,7 @@ export function supabaseStore(sb: Db, conn?: Pick<SupabaseOptions, 'url' | 'anon
       const [listing, mine, clean] = await Promise.all([
         read(listingRow, sb.from('listings').select(LISTING_COLUMNS).eq('id', listingId)),
         ownCreatorRow(me),
-        read(versionRow, sb.from('listing_versions').select(VERSION_COLUMNS).eq('listing_id', listingId).eq('review_status', 'approved').eq('scan_status', 'clean')),
+        readVersions((cols) => sb.from('listing_versions').select(cols).eq('listing_id', listingId).eq('review_status', 'approved').eq('scan_status', 'clean')),
       ])
       if (!listing[0]) return fail('not_found', 'This model is not available')
       const v = downloadVersion(clean, Boolean(mine && listing[0].creator_id === mine.id))
@@ -612,31 +628,44 @@ export function supabaseStore(sb: Db, conn?: Pick<SupabaseOptions, 'url' | 'anon
       const pre = validateUpload({ name: input.name, version: input.version, format: input.format, size: input.bytes.length }, { maxFileMb: rules.maxFileMb, allowedFormats: rules.allowedFormats })
       if (!pre.ok) return fail('invalid', pre.message)
       if (input.changelog !== undefined && input.changelog.length > 4000) return fail('invalid', 'Changelogs can be at most 4000 characters')
+      let colors: ListingColors | undefined
+      if (input.colors) {
+        const c = validateListingColors(input.colors)
+        if (!c.ok) return fail('invalid', c.message)
+        colors = c.value
+      }
       if (!(await uid())) return fail('not_signed_in', 'Sign in first')
       const sha = await sha256Hex(input.bytes)
 
       // An earlier attempt that never finished uploading can be picked up again.
-      const earlier = (await read(versionRow, sb.from('listing_versions').select(VERSION_COLUMNS).eq('listing_id', listingId).eq('version', input.version)))[0]
+      const earlier = (await readVersions((cols) => sb.from('listing_versions').select(cols).eq('listing_id', listingId).eq('version', input.version)))[0]
       let row: VersionRow
       if (earlier) {
         if (earlier.scan_status !== 'uploading' || earlier.sha256 !== sha) return fail('conflict', 'That version already exists; publish a new version number')
         row = earlier
       } else {
         const id = crypto.randomUUID()
-        const { data, error } = await sb
-          .from('listing_versions')
-          .insert({
-            id,
-            listing_id: listingId,
-            version: input.version,
-            storage_path: `${listingId}/${id}/${input.name}`,
-            sha256: sha,
-            format: input.format,
-            size_bytes: input.bytes.length,
-            ...(input.changelog === undefined ? {} : { changelog: input.changelog }),
-          })
-          .select(VERSION_COLUMNS)
-          .single()
+        const fields: { colors?: Json } & Pick<Insert, 'id' | 'listing_id' | 'version' | 'storage_path' | 'sha256' | 'format' | 'size_bytes' | 'changelog'> = {
+          id,
+          listing_id: listingId,
+          version: input.version,
+          storage_path: `${listingId}/${id}/${input.name}`,
+          sha256: sha,
+          format: input.format,
+          size_bytes: input.bytes.length,
+          ...(input.changelog === undefined ? {} : { changelog: input.changelog }),
+        }
+        const insert = (withColors: boolean) =>
+          sb
+            .from('listing_versions')
+            .insert(withColors && colors ? { ...fields, colors: colors as unknown as Json } : { ...fields })
+            .select(withColors ? `${VERSION_COLUMNS}, colors` : VERSION_COLUMNS)
+            .single()
+        let { data, error } = await insert(colorsColumn)
+        if (colorsColumn && noColorsColumn(error)) {
+          colorsColumn = false
+          ;({ data, error } = await insert(false))
+        }
         if (error) return failed(error)
         row = versionRow.parse(data)
         if (input.printProfile) {
@@ -654,8 +683,27 @@ export function supabaseStore(sb: Db, conn?: Pick<SupabaseOptions, 'url' | 'anon
       if (up.error && !/already exists|duplicate/i.test(up.error.message)) return fail('unavailable', up.error.message)
       const submitted = await sb.rpc('submit_version', { p_version: row.id })
       if (submitted.error) return failed(submitted.error)
-      const after = (await read(versionRow, sb.from('listing_versions').select(VERSION_COLUMNS).eq('id', row.id)))[0]
+      const after = (await readVersions((cols) => sb.from('listing_versions').select(cols).eq('id', row.id)))[0]
       return ok(toVersion(after ?? { ...row, scan_status: 'queued' }))
+    },
+
+    async setVersionColors(versionId, input) {
+      let colors: ListingColors | null = null
+      if (input) {
+        const c = validateListingColors(input)
+        if (!c.ok) return fail('invalid', c.message)
+        colors = c.value
+      }
+      if (!(await uid())) return fail('not_signed_in', 'Sign in first')
+      const { data, error } = await sb
+        .from('listing_versions')
+        .update({ colors: colors as unknown as Json })
+        .eq('id', versionId)
+        .select(`${VERSION_COLUMNS}, colors`)
+      if (noColorsColumn(error)) return fail('unavailable', 'This Vault does not keep colors yet')
+      if (error) return failed(error)
+      const row = rows(versionRow, data)[0]
+      return row ? ok(toVersion(row)) : fail('not_found', 'No version of yours with that id')
     },
 
     async getScanStatus(versionId) {

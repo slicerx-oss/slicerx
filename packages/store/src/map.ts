@@ -10,6 +10,7 @@ import type {
   CreatorLink,
   DashboardRow,
   Listing,
+  ListingColors,
   ListingFile,
   ListingStats,
   ListingVersion,
@@ -18,6 +19,7 @@ import type {
   PrintProfile,
   Profile,
 } from '@slicerx/contracts'
+import { validateListingColors } from './validate'
 import type {
   AuditRow,
   CollectionRow,
@@ -117,6 +119,7 @@ export const toVersion = (r: VersionRow, profiles: readonly PrintProfileRow[] = 
     reviewStatus: r.review_status,
     ...opt('changelog', r.changelog),
     ...(profiles.length > 0 ? { printProfiles } : {}),
+    ...colorsOf(r.colors),
   }
 }
 
@@ -254,4 +257,11 @@ export function latestVersion<T extends { version: string }>(versions: readonly 
     }
     return 0
   })[0]
+}
+
+/** A version's stored colors, or nothing when there are none or they do not check out. */
+function colorsOf(v: unknown): { colors?: ListingColors } {
+  if (!v || typeof v !== 'object') return {}
+  const c = validateListingColors(v as ListingColors)
+  return c.ok ? { colors: c.value } : {}
 }

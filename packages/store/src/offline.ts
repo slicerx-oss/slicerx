@@ -31,7 +31,7 @@ import { createOfflineContext, offlineAuth, type OfflineContext, type OfflineOpt
 import { downloadVersion, isoTime, latestVersion, toAudit, toCollection, toComment, toCreator, toCreatorLink, toFile, toListing, toMake, toModerationItem, toPrintProfile, toVersion } from './map'
 import { LICENSES, MODERATION_MODES, type CommentRow, type CreatorRow, type ListingRow, type SeedData, type VersionRow } from './rows'
 import { newCreatorIds, recommendedScores, trendingScores } from './ranking'
-import { CREATOR_BIO_MAX, DEFAULT_MAX_FILE_MB, MAX_FEATURED, slugify, validateCreatorLinks, validateHandle, validateUpload } from './validate'
+import { CREATOR_BIO_MAX, DEFAULT_MAX_FILE_MB, MAX_FEATURED, slugify, validateCreatorLinks, validateHandle, validateListingColors, validateUpload } from './validate'
 
 export type { OfflineOptions } from './auth/offline'
 
@@ -663,6 +663,8 @@ export function offlineStore(ctx: OfflineContext): Omit<StoreClient, keyof AuthC
       )
       if (!pre.ok) return { ok: false, code: 'invalid', message: pre.message }
       if (input.changelog !== undefined && input.changelog.length > 4000) return { ok: false, code: 'invalid', message: 'Changelogs can be at most 4000 characters' }
+      const colors = input.colors ? validateListingColors(input.colors) : null
+      if (colors && !colors.ok) return { ok: false, code: 'invalid', message: colors.message }
       const sha = await sha256Hex(input.bytes)
       return run((c) => {
         active(c)
@@ -686,6 +688,7 @@ export function offlineStore(ctx: OfflineContext): Omit<StoreClient, keyof AuthC
           scanned_at: null,
           review_status: 'pending',
           created_at: now(),
+          ...(colors ? { colors: colors.value } : {}),
         }
         c.d.listing_versions.push(row)
         if (input.printProfile) {
@@ -694,6 +697,20 @@ export function offlineStore(ctx: OfflineContext): Omit<StoreClient, keyof AuthC
         }
         finishScan(c, row, listing, cr, input.bytes.length, scanBytes(input.bytes, input.format))
         return toVersion(row)
+      })
+    },
+
+    async setVersionColors(versionId, input) {
+      const colors = input ? validateListingColors(input) : null
+      if (colors && !colors.ok) return { ok: false, code: 'invalid', message: colors.message }
+      return run((c) => {
+        active(c)
+        const v = c.d.listing_versions.find((x) => x.id === versionId)
+        const l = v && c.d.listings.find((x) => x.id === v.listing_id)
+        if (!v || !l || !canEdit(c, l)) bad('not_found', 'No version of yours with that id')
+        const ver = v as VersionRow
+        ver.colors = colors ? colors.value : null
+        return toVersion(ver, c.d.print_profiles.filter((p) => p.version_id === ver.id))
       })
     },
 

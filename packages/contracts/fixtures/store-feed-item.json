@@ -38,6 +38,23 @@
           "timeS": 8040,
           "grams": 143.4
         }
+      },
+      "colors": {
+        "colors": [
+          {
+            "hex": "#8e8e93",
+            "name": "Ash gray"
+          }
+        ],
+        "parts": [
+          {
+            "name": "Body",
+            "colors": [
+              0
+            ],
+            "ams": false
+          }
+        ]
       }
     },
     "stats": {

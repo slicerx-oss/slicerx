@@ -79,6 +79,56 @@
             "timeS": 10500,
             "grams": 99.4
           }
+        },
+        "colors": {
+          "colors": [
+            {
+              "hex": "#f2f0eb",
+              "name": "Bone white"
+            },
+            {
+              "hex": "#2e6fd8",
+              "name": "Cobalt blue"
+            },
+            {
+              "hex": "#8e8e93",
+              "name": "Ash gray"
+            },
+            {
+              "hex": "#1c1c1e",
+              "name": "Matte black"
+            }
+          ],
+          "parts": [
+            {
+              "name": "Part 1",
+              "colors": [
+                0
+              ],
+              "ams": false
+            },
+            {
+              "name": "Part 2",
+              "colors": [
+                1
+              ],
+              "ams": false
+            },
+            {
+              "name": "Part 3",
+              "colors": [
+                2
+              ],
+              "ams": false
+            },
+            {
+              "name": "Part 4",
+              "colors": [
+                3
+              ],
+              "ams": false
+            }
+          ]
         }
       },
       "stats": {
@@ -129,6 +179,45 @@
             "timeS": 3780,
             "grams": 87.8
           }
+        },
+        "colors": {
+          "colors": [
+            {
+              "hex": "#1c1c1e",
+              "name": "Matte black"
+            },
+            {
+              "hex": "#c0392b",
+              "name": "Signal red"
+            },
+            {
+              "hex": "#f39c12",
+              "name": "Amber"
+            }
+          ],
+          "parts": [
+            {
+              "name": "Part 1",
+              "colors": [
+                0
+              ],
+              "ams": false
+            },
+            {
+              "name": "Part 2",
+              "colors": [
+                1
+              ],
+              "ams": false
+            },
+            {
+              "name": "Part 3",
+              "colors": [
+                2
+              ],
+              "ams": false
+            }
+          ]
         }
       },
       "stats": {
@@ -179,6 +268,23 @@
             "timeS": 8040,
             "grams": 143.4
           }
+        },
+        "colors": {
+          "colors": [
+            {
+              "hex": "#8e8e93",
+              "name": "Ash gray"
+            }
+          ],
+          "parts": [
+            {
+              "name": "Body",
+              "colors": [
+                0
+              ],
+              "ams": false
+            }
+          ]
         }
       },
       "stats": {
@@ -231,6 +337,23 @@
             "timeS": 8040,
             "grams": 143.4
           }
+        },
+        "colors": {
+          "colors": [
+            {
+              "hex": "#8e8e93",
+              "name": "Ash gray"
+            }
+          ],
+          "parts": [
+            {
+              "name": "Body",
+              "colors": [
+                0
+              ],
+              "ams": false
+            }
+          ]
         }
       },
       "stats": {
@@ -281,6 +404,45 @@
             "timeS": 3780,
             "grams": 87.8
           }
+        },
+        "colors": {
+          "colors": [
+            {
+              "hex": "#1c1c1e",
+              "name": "Matte black"
+            },
+            {
+              "hex": "#c0392b",
+              "name": "Signal red"
+            },
+            {
+              "hex": "#f39c12",
+              "name": "Amber"
+            }
+          ],
+          "parts": [
+            {
+              "name": "Part 1",
+              "colors": [
+                0
+              ],
+              "ams": false
+            },
+            {
+              "name": "Part 2",
+              "colors": [
+                1
+              ],
+              "ams": false
+            },
+            {
+              "name": "Part 3",
+              "colors": [
+                2
+              ],
+              "ams": false
+            }
+          ]
         }
       },
       "stats": {
@@ -331,6 +493,23 @@
             "timeS": 3960,
             "grams": 124.1
           }
+        },
+        "colors": {
+          "colors": [
+            {
+              "hex": "#8e44ad",
+              "name": "Plum"
+            }
+          ],
+          "parts": [
+            {
+              "name": "Body",
+              "colors": [
+                0
+              ],
+              "ams": false
+            }
+          ]
         }
       },
       "stats": {
@@ -382,6 +561,56 @@
             "timeS": 10500,
             "grams": 99.4
           }
+        },
+        "colors": {
+          "colors": [
+            {
+              "hex": "#f2f0eb",
+              "name": "Bone white"
+            },
+            {
+              "hex": "#2e6fd8",
+              "name": "Cobalt blue"
+            },
+            {
+              "hex": "#8e8e93",
+              "name": "Ash gray"
+            },
+            {
+              "hex": "#1c1c1e",
+              "name": "Matte black"
+            }
+          ],
+          "parts": [
+            {
+              "name": "Part 1",
+              "colors": [
+                0
+              ],
+              "ams": false
+            },
+            {
+              "name": "Part 2",
+              "colors": [
+                1
+              ],
+              "ams": false
+            },
+            {
+              "name": "Part 3",
+              "colors": [
+                2
+              ],
+              "ams": false
+            },
+            {
+              "name": "Part 4",
+              "colors": [
+                3
+              ],
+              "ams": false
+            }
+          ]
         }
       },
       "stats": {
