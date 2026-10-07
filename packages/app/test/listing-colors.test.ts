@@ -114,14 +114,15 @@ describe('the drawn cover', () => {
   it('takes the creator colors by file slot', () => {
     const box = boxMesh(20, 20, 20)
     const model = { colors: null, meshes: [{ positions: box.positions, indices: box.indices, color: '#ff0000', slot: 2 }] }
-    const middle = (img: { rgba: Uint8ClampedArray | Uint8Array; width: number; height: number }) => {
-      const at = (Math.floor(img.height / 2) * img.width + Math.floor(img.width / 2)) * 4
-      return [img.rgba[at] ?? 0, img.rgba[at + 2] ?? 0] as const
+    // Red minus blue over the whole picture: the part's fill moves it, the drawing's ground and ink do not change.
+    const tint = (img: { rgba: Uint8ClampedArray | Uint8Array }) => {
+      let t = 0
+      for (let i = 0; i < img.rgba.length; i += 4) t += (img.rgba[i] ?? 0) - (img.rgba[i + 2] ?? 0)
+      return t
     }
-    const [r1, b1] = middle(coverInColors(model, {})!)
-    const [r2, b2] = middle(coverInColors(model, { 2: '#0000ff' })!)
-    expect(r1).toBeGreaterThan(b1)
-    expect(b2).toBeGreaterThan(r2)
+    const red = tint(coverInColors(model, {})!)
+    const blue = tint(coverInColors(model, { 2: '#0000ff' })!)
+    expect(red).toBeGreaterThan(blue)
     expect(coverInColors({ colors: null, meshes: [] }, {})).toBeNull()
   })
 })
