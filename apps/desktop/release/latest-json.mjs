@@ -111,9 +111,11 @@ function main() {
   const text = values.notes ? readFileSync(values.notes, 'utf8') : ''
   const notes = values.notes ? topNotes(values.notes.endsWith('.json') ? JSON.parse(text) : text) : []
   const manifest = latestJson({ version: values.version, files, baseUrl: values['base-url'], releaseUrl: values['release-url'], pubkey: values.pubkey, notes })
+  // a release that leaves a desktop platform without its update strands those installs on the old version
+  const missing = ['darwin-aarch64', 'windows-x86_64', 'windows-x86_64-msi', 'linux-x86_64'].filter((p) => !manifest.platforms[p])
+  if (missing.length) throw new Error(`no signed update for ${missing.join(', ')}`)
   writeFileSync(values.out, JSON.stringify(manifest, null, 2) + '\n')
-  const missing = ['darwin-aarch64', 'windows-x86_64', 'linux-x86_64'].filter((p) => !manifest.platforms[p])
-  console.log(`${values.out}: ${values.version} for ${Object.keys(manifest.platforms).length} targets, ${notes.length} highlights${missing.length ? `; no update for ${missing.join(', ')}` : ''}`)
+  console.log(`${values.out}: ${values.version} for ${Object.keys(manifest.platforms).length} targets, ${notes.length} highlights`)
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
