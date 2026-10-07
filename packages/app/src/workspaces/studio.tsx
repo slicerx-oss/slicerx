@@ -29,6 +29,7 @@ import { PreviewPlates } from './preview/preview-plates'
 import { railKey, useModelMode } from '../state/model-mode'
 import { setTool, toolStore } from '../plate/tools'
 import { warmFullEngine } from '../geom/full-engine'
+import { useBoundValues } from './prepare/object-tools'
 
 const PREPARE_LEFT: PaneSection[] = [
   { id: 'printer', icon: 'printer', label: 'Printer' },
@@ -71,6 +72,7 @@ export function Studio({ mode }: { mode: 'prepare' | 'preview' }) {
   const side = layout.sidebar.side
   const sliceInSidebar = layout.primaryAction.placement === 'sidebar-footer'
   const modelMode = useModelMode()
+  useBoundValues(mode === 'prepare')
   const design = mode === 'prepare' && modelMode === 'design'
   const other = side === 'left' ? 'right' : 'left'
 
