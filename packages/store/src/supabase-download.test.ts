@@ -46,7 +46,7 @@ function fake(tables: Record<string, Record<string, unknown>[]>, opts: { signErr
     let error: { code: string; message: string } | null = null
     const q = {
       select: (cols = '*') => {
-        // A project without 0015_listing_colors.
+        // A project without 0016_listing_colors.
         if (opts.noColors && table === 'listing_versions' && cols.includes('colors')) {
           refused++
           error = { code: '42703', message: 'column listing_versions.colors does not exist' }

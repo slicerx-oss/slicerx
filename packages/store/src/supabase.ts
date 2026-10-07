@@ -118,7 +118,7 @@ export function supabaseStore(sb: Db, conn?: Pick<SupabaseOptions, 'url' | 'anon
     return data.session?.user.id ?? null
   }
 
-  // listing_versions.colors comes with 0015_listing_colors. A project without it is read and written without colors.
+  // listing_versions.colors comes with 0016_listing_colors. A project without it is read and written without colors.
   let colorsColumn = true
   const noColorsColumn = (e: DbError) => Boolean(e && (e.code === '42703' || e.code === 'PGRST204') && /colors/.test(e.message))
   async function readVersions(q: (columns: string) => PromiseLike<{ data: unknown; error: DbError }>): Promise<VersionRow[]> {

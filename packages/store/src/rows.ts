@@ -90,7 +90,7 @@ export const versionRow = z.object({
   scanned_at: nullable(ts),
   review_status: z.enum(['pending', 'approved', 'rejected']),
   created_at: ts,
-  // 0015_listing_colors; absent on a project without it. Checked again when mapped.
+  // 0016_listing_colors; absent on a project without it. Checked again when mapped.
   colors: z.unknown().optional(),
 })
 

@@ -1,6 +1,6 @@
 -- SPDX-License-Identifier: Apache-2.0
 -- Copyright (C) 2026 The SlicerX contributors
--- Removes the store module (migrations/0002_store.sql, 0005_anon_downloads.sql, 0013_creator_pages.sql and 0015_listing_colors.sql). Leaves auth.users,
+-- Removes the store module (migrations/0002_store.sql, 0005_anon_downloads.sql, 0013_creator_pages.sql and 0016_listing_colors.sql). Leaves auth.users,
 -- profiles, roles, the audit log, api_tokens and paired_devices untouched.
 -- Files already in the uploads-quarantine and listing-files buckets must be removed
 -- through the Storage API first; the buckets are dropped only when empty.

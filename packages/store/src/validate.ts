@@ -152,7 +152,7 @@ export function validateDevice(input: { deviceId: string; name: string; platform
   return { ok: true, value: true }
 }
 
-/** Most colors and parts a listing version keeps (listing_versions.colors, 0015_listing_colors.sql). */
+/** Most colors and parts a listing version keeps (listing_versions.colors, 0016_listing_colors.sql). */
 export const MAX_LISTING_COLORS = 32
 export const MAX_LISTING_PARTS = 200
 export const COLOR_NAME_MAX = 40
