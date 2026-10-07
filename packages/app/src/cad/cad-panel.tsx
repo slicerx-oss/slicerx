@@ -20,6 +20,7 @@ import { bindNext } from './history/record'
 import { sessionFonts } from './history/record'
 import { applyArray, applyExtrude, arraySpec, extrudeParams, type ExtrudeInput, BED_FRAME, describeFeature, featurePoints, loopsOf, previewArray, readout, type ArrayKind } from './cad-ops'
 import { close, errorText, num, Num, pickWords, Shell, useProbe, Vec } from './panel-kit'
+import { useDraft, useDraftObject } from './park'
 import { SvgFileField } from './svg-file'
 import { KIND_NAMES, dimensionText, keepDimension, keepableKinds, removeDimension, type ObjectPick } from './dimensions'
 import { useDimensionResults } from './dimension-view'
@@ -92,27 +93,29 @@ function ShapeTool({ textOnly, svgFirst }: { textOnly: boolean; svgFirst?: boole
   const host = useHost()
   const [edit] = useState(shapeEdit)
   const v = (k: string, d: string) => edit?.f[k] ?? d
-  const [face, setFace] = useState<PickedFace | null>(edit?.face ?? null)
-  const [type, setType] = useState<ShapeType>(edit?.type ?? (textOnly ? 'text' : svgFirst ? 'svg' : 'rectangle'))
-  const [width, setWidth] = useState(v('width', '20'))
-  const [height, setHeight] = useState(v('height', '10'))
-  const [corner, setCorner] = useState(v('corner', '0'))
-  const [diameter, setDiameter] = useState(v('diameter', '10'))
-  const [sides, setSides] = useState(v('sides', '6'))
-  const [text, setText] = useState(v('text', appName()))
-  const [size, setSize] = useState(v('size', '8'))
-  const [font, setFont] = useState<{ name: string; base64: string } | null>(() => {
+  // A face on a part that moved in Slice moves with it.
+  const [face, setFace] = useDraft<PickedFace | null>('face', edit?.face ?? null, (f, now) => (f && now ? { ...f, frame: now.frame(f.frame) } : f))
+  useDraftObject(face?.target?.objectId)
+  const [type, setType] = useDraft<ShapeType>('type', edit?.type ?? (textOnly ? 'text' : svgFirst ? 'svg' : 'rectangle'))
+  const [width, setWidth] = useDraft('width', v('width', '20'))
+  const [height, setHeight] = useDraft('height', v('height', '10'))
+  const [corner, setCorner] = useDraft('corner', v('corner', '0'))
+  const [diameter, setDiameter] = useDraft('diameter', v('diameter', '10'))
+  const [sides, setSides] = useDraft('sides', v('sides', '6'))
+  const [text, setText] = useDraft('text', v('text', appName()))
+  const [size, setSize] = useDraft('size', v('size', '8'))
+  const [font, setFont] = useDraft<{ name: string; base64: string } | null>('font', () => {
     const b = edit?.font ? sessionFonts()[edit.font] : undefined
     return edit?.font && b ? { name: edit.font, base64: b } : null
   })
-  const [svg, setSvg] = useState<{ name: string; text: string } | null>(edit?.svg ?? null)
+  const [svg, setSvg] = useDraft<{ name: string; text: string } | null>('svg', edit?.svg ?? null)
   const [installed, setInstalled] = useState<FontChoice[] | null>(null)
-  const [x, setX] = useState(v('x', '0'))
-  const [y, setY] = useState(v('y', '0'))
-  const [turn, setTurn] = useState(v('turn', '0'))
-  const [distance, setDistance] = useState(v('distance', textOnly ? '0.6' : '5'))
-  const [operation, setOperation] = useState<'new' | 'join' | 'cut'>(edit?.operation ?? 'join')
-  const [patternFields, setPatternFields] = useState<PatternFields>(fieldsOf(edit?.pattern))
+  const [x, setX] = useDraft('x', v('x', '0'))
+  const [y, setY] = useDraft('y', v('y', '0'))
+  const [turn, setTurn] = useDraft('turn', v('turn', '0'))
+  const [distance, setDistance] = useDraft('distance', v('distance', textOnly ? '0.6' : '5'))
+  const [operation, setOperation] = useDraft<'new' | 'join' | 'cut'>('operation', edit?.operation ?? 'join')
+  const [patternFields, setPatternFields] = useDraft<PatternFields>('patternFields', fieldsOf(edit?.pattern))
   const [busy, setBusy] = useState(false)
   const [note, setNote] = useState<string | null>(edit?.font && !font ? `Pick the font again: ${edit.font} is not loaded.` : null)
   const op = face?.target ? operation : 'new'

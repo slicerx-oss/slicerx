@@ -3,10 +3,11 @@
 // The one way to open an object tool. A modeling tool opens Design first, from any tab; Cut, Measure, Array and the
 // mesh tools stay where they are.
 import { editionHasCad } from '../../edition'
-import { isCadTool, set } from '../../state/store'
+import { get, isCadTool, set } from '../../state/store'
 import { opensDesign, type ToolId } from './shelf-tools'
 
 export function openTool(tool: ToolId): void {
-  if (isCadTool(tool) && opensDesign(tool) && editionHasCad()) set({ workspace: 'prepare', modelMode: 'design', objectTool: tool })
+  // The same tool waiting from an earlier trip to Slice opens as it was left (cad/park.ts).
+  if (isCadTool(tool) && opensDesign(tool) && editionHasCad()) set({ workspace: 'prepare', modelMode: 'design', objectTool: get().parked?.tool === tool ? null : tool })
   else set({ objectTool: tool })
 }

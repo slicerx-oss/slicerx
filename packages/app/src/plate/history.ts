@@ -4,7 +4,7 @@
 // in the app store and keeps the state before each change: adds, removes, moves, rotations,
 // scaling, arranging, plates and object settings all come back the same way. Snapshots share
 // meshes by reference, so a step costs a few arrays, not geometry.
-import { appStore, markStale, type AppState } from '../state/store'
+import { appStore, fullPlate, markStale, type AppState } from '../state/store'
 
 /** What one step restores. */
 export type Snapshot = Pick<AppState, 'plate' | 'selection'> & Partial<Pick<AppState, 'selectedIds' | 'plates' | 'activePlate' | 'objectSettings' | 'slotSetup' | 'flush'>>
@@ -93,7 +93,7 @@ export function createHistory(store = appStore, limit = 100): History {
     try {
       // A history step open for editing closes first: the object goes back to how it is.
       const open = store.getState().historyEdit
-      if (open) store.setState((s) => ({ plate: s.plate.map((e) => (e.id === open.objectId ? open.original : e)), historyEdit: null }))
+      if (open) store.setState((s) => ({ plate: fullPlate(s), historyEdit: null }))
       to.push(snap(store.getState()))
       store.setState(target)
     } finally {

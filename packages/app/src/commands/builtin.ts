@@ -75,7 +75,7 @@ export function builtinCommands(host: Host, workspaces: readonly { id: string; l
   }
 
   out.push(
-    { id: 'slice', title: 'Slice the plate', section: 'slice', keywords: ['run', 'gcode'], shortcut: 'Mod+Enter', workspace: 'prepare', tool: { permission: 'slice' }, enabled: hasPlate, run: async () => { await slicePlate(host); if (get().slice.status === 'done') showSliced() } },
+    { id: 'slice', title: 'Slice the plate', section: 'slice', keywords: ['run', 'gcode'], shortcut: 'Mod+Enter', workspace: 'prepare', tool: { permission: 'slice' }, enabled: hasPlate, run: async () => { if (get().modelMode === 'design') setModelMode('slice'); await slicePlate(host); if (get().slice.status === 'done') showSliced() } },
     { id: 'slice-cancel', title: 'Cancel slicing', section: 'slice', keywords: ['stop', 'abort'], enabled: () => get().slice.status === 'running', run: cancelSlice },
     { id: 'export-gcode', title: 'Export G-code', section: 'slice', keywords: ['save', 'download', 'file'], shortcut: 'Mod+Shift+E', workspace: 'prepare', enabled: exportable, run: () => exportGcode(host) },
   )

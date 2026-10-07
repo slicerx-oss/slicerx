@@ -25,6 +25,7 @@ import { bindNext } from './history/record'
 import { chamferSketch, filletSketch } from './edge-api'
 import { flipFor, goesIntoFace } from './extrude-direction'
 import { close, errorText, num, Num, pickWords, Shell, useProbe } from './panel-kit'
+import { useDraft, useDraftObject } from './park'
 import {
   axisOf,
   axisSegment,
@@ -126,7 +127,9 @@ function sketchEdit(bed: { widthMm: number; depthMm: number }): { plane: Plane; 
 export function SketchTool() {
   const bedSize = useApp((s) => s.bed)
   const [edit] = useState(() => sketchEdit(bedSize))
-  const [plane, setPlane] = useState<Plane | null>(edit && 'plane' in edit ? edit.plane : null)
+  // A plane on a part that moved in Slice moves with it.
+  const [plane, setPlane] = useDraft<Plane | null>('plane', edit && 'plane' in edit ? edit.plane : null, (p, now) => (p && now ? { ...p, frame: now.frame(p.frame) } : p))
+  useDraftObject(plane?.target?.objectId)
   const [note, setNote] = useState<string | null>(edit && 'note' in edit ? edit.note : null)
   const bed = useApp((s) => s.bed)
 
@@ -163,25 +166,25 @@ export function SketchTool() {
 function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () => void; init?: SketchInit }) {
   const host = useHost()
   const view = cameraBus()?.cad
-  const [sketch, setSketch] = useState<Entity[]>(init?.sketch ?? [])
-  const [draft, setDraft] = useState<Draft>(emptyDraft(init ? 'select' : 'line'))
-  const [selected, setSelected] = useState<{ e: number; seg: number } | null>(init?.axis ?? null)
-  const [grid, setGrid] = useState('1')
+  const [sketch, setSketch] = useDraft<Entity[]>('sketch', init?.sketch ?? [])
+  const [draft, setDraft] = useDraft<Draft>('draft', emptyDraft(init ? 'select' : 'line'))
+  const [selected, setSelected] = useDraft<{ e: number; seg: number } | null>('selected', init?.axis ?? null)
+  const [grid, setGrid] = useDraft('grid', '1')
   const [check, setCheck] = useState<SketchCheck | null>(null)
   const [engineSnaps, setEngineSnaps] = useState<SnapTargets>({ points: [], edges: [] })
   const [field, setField] = useState<{ x: number; y: number; values: string[]; focus: number } | null>(null)
-  const [finish, setFinish] = useState<'extrude' | 'revolve'>(init?.finish ?? 'extrude')
-  const [distance, setDistance] = useState(init?.fields.distance ?? '5')
-  const [extentKind, setExtentKind] = useState<'oneSide' | 'symmetric' | 'twoSides'>(init?.fields.extent ?? 'oneSide')
-  const [distance2, setDistance2] = useState(init?.fields.distance2 ?? '5')
-  const [taper, setTaper] = useState(init?.fields.taper ?? '0')
-  const [flip, setFlip] = useState(init?.fields.flip ?? false)
-  const [angle, setAngle] = useState(init?.fields.angle ?? '360')
-  const [patternFields, setPatternFields] = useState<PatternFields>(fieldsOf(init?.pattern))
-  const [operation, setOperation] = useState<'new' | 'join' | 'cut'>(init?.operation ?? (plane.target ? 'join' : 'new'))
-  const [offset, setOffset] = useState('1')
-  const [corner, setCorner] = useState('2')
-  const [cornerKind, setCornerKind] = useState<'fillet' | 'chamfer'>('fillet')
+  const [finish, setFinish] = useDraft<'extrude' | 'revolve'>('finish', init?.finish ?? 'extrude')
+  const [distance, setDistance] = useDraft('distance', init?.fields.distance ?? '5')
+  const [extentKind, setExtentKind] = useDraft<'oneSide' | 'symmetric' | 'twoSides'>('extentKind', init?.fields.extent ?? 'oneSide')
+  const [distance2, setDistance2] = useDraft('distance2', init?.fields.distance2 ?? '5')
+  const [taper, setTaper] = useDraft('taper', init?.fields.taper ?? '0')
+  const [flip, setFlip] = useDraft('flip', init?.fields.flip ?? false)
+  const [angle, setAngle] = useDraft('angle', init?.fields.angle ?? '360')
+  const [patternFields, setPatternFields] = useDraft<PatternFields>('patternFields', fieldsOf(init?.pattern))
+  const [operation, setOperation] = useDraft<'new' | 'join' | 'cut'>('operation', init?.operation ?? (plane.target ? 'join' : 'new'))
+  const [offset, setOffset] = useDraft('offset', '1')
+  const [corner, setCorner] = useDraft('corner', '2')
+  const [cornerKind, setCornerKind] = useDraft<'fillet' | 'chamfer'>('cornerKind', 'fillet')
   const [busy, setBusy] = useState(false)
   const [note, setNote] = useState<string | null>(null)
   const readoutRef = useRef<HTMLSpanElement | null>(null)

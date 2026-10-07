@@ -16,12 +16,15 @@ import { editing, nowOf, saveEdit } from './history/ops'
 import { bindNext } from './history/record'
 import { loopsOf } from './cad-ops'
 import { close, errorText, Num, pickWords, Shell, useProbe } from './panel-kit'
+import { follow, useDraft, useDraftObject, useRestored } from './park'
 import { applyPush, onFace, parseDistance, pickPushFace, pushWords, type PushFace } from './push'
 
 export function PushTool() {
   const host = useHost()
-  const [face, setFace] = useState<PushFace | null>(null)
-  const [text, setText] = useState('')
+  const restored = useRestored()
+  const [face, setFace] = useDraft<PushFace | null>('face', null, follow((f, now) => f && { ...f, frame: now.frame(f.frame), pick: { ...f.pick, at: now.point(f.pick.at) } }))
+  useDraftObject(face?.objectId)
+  const [text, setText] = useDraft('text', '')
   const [prism, setPrism] = useState<GeomMesh | null>(null)
   const [busy, setBusy] = useState(false)
   const [note, setNote] = useState<string | null>(null)
@@ -72,14 +75,16 @@ export function PushTool() {
 
   useEffect(() => {
     if (!edit || edit.step.params.op !== 'face.push') return
+    // Back from Slice with its face and distance: nothing to find again.
+    if (restored && live.current.face) return
     const now = nowOf(edit.step, edit.entry.transform)
     const at = now.point(edit.step.params.at)
     const part = get().plate.find((p) => p.id === edit.entry.id)?.parts[edit.step.part]
     const tri = part ? findTriangle(part, edit.entry.transform, at, now.dir(edit.step.params.normal)) : -1
-    setText(String(edit.step.params.distanceMm))
+    if (!restored) setText(String(edit.step.params.distanceMm))
     if (tri < 0) setNote('The face this step moved is not there before it any more. Pick a face to push instead.')
     else void pick(edit.entry.id, edit.step.part, tri, at)
-  }, [edit, pick])
+  }, [edit, pick, restored])
 
   const apply = useCallback(
     async (d: number | null, f: PushFace | null) => {

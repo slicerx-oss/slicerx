@@ -12,6 +12,8 @@ import { ObjectTransform } from '../prepare/object-transform'
 import { HistoryTree } from './history-tree'
 import { Timeline } from './timeline'
 import { BottomPanel } from '../../shell/bottom-panel'
+// Design closing parks the open tool and ends a step's rollback; the watch starts with Design.
+import '../../cad/park'
 import './design.css'
 
 const CadPanel = lazy(() => import('../../cad/cad-panel').then((m) => ({ default: m.CadPanel })))

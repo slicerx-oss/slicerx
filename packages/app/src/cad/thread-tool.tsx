@@ -17,6 +17,7 @@ import { applyThread } from './holes'
 import { editing, saveEdit } from './history/ops'
 import { bindNext } from './history/record'
 import { close, errorText, num, Num, Shell, useProbe } from './panel-kit'
+import { follow, useDraft, useDraftObject } from './park'
 import { threadSpecFor } from './thread-spec'
 
 interface Picked {
@@ -45,9 +46,10 @@ export function ThreadTool() {
     const p = ed?.step.params
     return ed && p?.op === 'thread.apply' ? { index: ed.index, objectId: ed.entry.id, partIndex: Math.max(0, ed.step.part), params: p } : null
   })()
-  const [picked, setPicked] = useState<Picked | null>(null)
-  const [size, setSize] = useState(edit?.params.spec.size ?? '')
-  const [length, setLength] = useState(edit?.params.spec.lengthMm !== undefined ? String(edit.params.spec.lengthMm) : '')
+  const [picked, setPicked] = useDraft<Picked | null>('picked', null, follow((p, now) => p && { ...p, target: { ...p.target, start: now.point(p.target.start), axis: now.dir(p.target.axis) } }))
+  useDraftObject(picked?.objectId ?? edit?.objectId)
+  const [size, setSize] = useDraft('size', edit?.params.spec.size ?? '')
+  const [length, setLength] = useDraft('length', edit?.params.spec.lengthMm !== undefined ? String(edit.params.spec.lengthMm) : '')
   const [note, setNote] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const fitMm = useApp((s) => clearanceFor(s).mm)

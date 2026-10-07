@@ -19,6 +19,7 @@ import { applyHole } from './holes'
 import { editing, saveEdit } from './history/ops'
 import { bindNext } from './history/record'
 import { close, errorText, num, Num, Shell, useProbe } from './panel-kit'
+import { follow, useDraft, useDraftObject } from './park'
 
 interface Picked {
   objectId: string
@@ -46,11 +47,12 @@ export function HoleTool() {
     const p = ed?.step.params
     return ed && p?.op === 'hole.apply' ? { index: ed.index, objectId: ed.entry.id, partIndex: Math.max(0, ed.step.part), params: p } : null
   })()
-  const [picked, setPicked] = useState<Picked | null>(edit ? { objectId: edit.objectId, partIndex: edit.partIndex, hole: edit.params.hole } : null)
-  const [purpose, setPurpose] = useState<Purpose>(edit ? 'custom' : 'clearance')
-  const [thread, setThread] = useState<Thread>('M3')
-  const [head, setHead] = useState<Head>('none')
-  const [custom, setCustom] = useState(edit ? String(edit.params.spec.diameterMm) : '')
+  const [picked, setPicked] = useDraft<Picked | null>('picked', edit ? { objectId: edit.objectId, partIndex: edit.partIndex, hole: edit.params.hole } : null, follow((p, now) => p && { ...p, hole: { ...p.hole, entry: now.point(p.hole.entry), axis: now.dir(p.hole.axis) } }))
+  useDraftObject(picked?.objectId)
+  const [purpose, setPurpose] = useDraft<Purpose>('purpose', edit ? 'custom' : 'clearance')
+  const [thread, setThread] = useDraft<Thread>('thread', 'M3')
+  const [head, setHead] = useDraft<Head>('head', 'none')
+  const [custom, setCustom] = useDraft('custom', edit ? String(edit.params.spec.diameterMm) : '')
   const [note, setNote] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const fitMm = useApp((s) => clearanceFor(s).mm)

@@ -24,7 +24,8 @@ export function startAutoSlice(host: Host, delayMs = AUTO_SLICE_DELAY_MS): () =>
   const run = (): void => {
     timer = null
     const s = appStore.getState()
-    if (!s.autoSlice || s.plate.length === 0 || s.plateLoading) return
+    // A step open for editing rolls the part back; the slice waits for the edit to end.
+    if (!s.autoSlice || s.plate.length === 0 || s.plateLoading || s.historyEdit) return
     // A plate switched back to with its slice still current (workspaces/preview/plate-slices.ts) needs none.
     if (s.slice.status === 'done' && !s.slice.stale) return
     void slicePlate(host, { auto: true })
