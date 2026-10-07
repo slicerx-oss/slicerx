@@ -679,6 +679,10 @@ export interface LinkHost extends PrinterHost {
     plateCheck(printerId: string): Promise<{ checked: boolean; clear?: boolean }>
     /** App only: "It's fine". Remembers the flagged spot as a plate mark, or, without one, that the camera model alone does not hold this printer. Never keeps the flagged picture. */
     plateIgnore(printerId: string): Promise<{ remembered: 'spot' | 'model' | 'nothing' }>
+    /** App only: Check again on a hand card. Takes a new frame and asks the detector whether the hand is still there (`hand: null` without one). */
+    handCheck(printerId: string): Promise<{ checked: boolean; hand: boolean | null }>
+    /** App only: Resume on the card of a print the guard paused. The click is the approval for that pause; refused with `not_paused` otherwise. */
+    resume(printerId: string): Promise<void>
   }
   /** Show and allow the connectors not yet tested on real printers (Duet, Snapmaker, Creality WebSocket, Home Assistant). */
   settings: {
@@ -1201,6 +1205,8 @@ export async function connectLink(opts: ConnectOptions): Promise<LinkHost> {
       plateClear: (printerId) => call<{ plateFrom: string }>('watch.plateClear', { printerId }),
       plateCheck: (printerId) => call<{ checked: boolean; clear?: boolean }>('watch.plateCheck', { printerId }),
       plateIgnore: (printerId) => call<{ remembered: 'spot' | 'model' | 'nothing' }>('watch.plateIgnore', { printerId }),
+      handCheck: (printerId) => call<{ checked: boolean; hand: boolean | null }>('watch.handCheck', { printerId }),
+      resume: async (printerId) => void (await call('watch.resume', { printerId })),
     },
     settings: {
       get: () => call<HubSettings>('settings.get'),
