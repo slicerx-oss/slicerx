@@ -73,7 +73,6 @@
 .tl-n { font-size: var(--fs-xs); color: var(--dim); }
 .tl-sketch { display: inline-flex; align-items: center; gap: 4px; padding-left: 7px; border-left: 1px solid var(--line-soft); font: var(--fw-medium) var(--fs-xs) var(--f-mono); color: var(--muted); }
 .tl-marker { width: 4px; height: 40px; border-radius: 2px; background: var(--accent); box-shadow: 0 0 8px color-mix(in srgb, var(--accent) 60%, transparent); cursor: ew-resize; touch-action: none; }
-.tl-marker:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .tl-status { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; white-space: nowrap; }
 .tl-empty { margin: 4px 6px; }
 @media (max-width: 900px) {
