@@ -5,23 +5,32 @@
 import type { FirstRunState, FirstRunStep, LookAndFeelChoice, LookId } from '@slicerx/contracts'
 import { ASSISTANT_NAME } from '@slicerx/pilot/name'
 
-/** Printer first, then the slicer the person comes from (stored as the look choice), then an optional mimir step. */
-export const SETUP_STEPS = ['printer', 'look', 'mimir'] as const
+/** Printer first, then the slicer the person comes from (stored as the look choice), then what the plate tab opens in (editions with modeling tools), then an optional mimir step. */
+export const SETUP_STEPS = ['printer', 'look', 'open', 'mimir'] as const
 export type SetupStep = (typeof SETUP_STEPS)[number]
 
 /** The screens without the mimir step, for editions without mimir and for people already connected. */
 export const BASE_STEPS: readonly SetupStep[] = ['printer', 'look']
 
+/** The screens for an edition: the open step only where the edition has modeling tools, mimir where it is offered. */
+export function setupSteps(o: { cad: boolean; mimir: boolean }): SetupStep[] {
+  return [...BASE_STEPS, ...(o.cad ? (['open'] as const) : []), ...(o.mimir ? (['mimir'] as const) : [])]
+}
+
+export type OpenIn = 'slice' | 'design'
+
 export const STEP_TITLES: Readonly<Record<SetupStep, string>> = {
   printer: 'Printer',
   look: 'Your slicer',
+  open: 'Opens in',
   mimir: ASSISTANT_NAME,
 }
 
 /** Any stored or requested step name, mapped onto the screens in `steps`. Old names (welcome, cad, done) open the printer screen. */
 export function normalizeStep(step: string | null | undefined, steps: readonly SetupStep[] = BASE_STEPS): SetupStep {
   if ((step === 'mimir' || step === 'pilot') && steps.includes('mimir')) return 'mimir'
-  return step === 'look' ? 'look' : 'printer'
+  if (step === 'open' && steps.includes('open')) return 'open'
+  return step === 'look' || step === 'open' ? 'look' : 'printer'
 }
 
 /** What the stored state knows about the printer. No secrets, ever. */
@@ -48,6 +57,8 @@ export interface FlowState {
   /** True once the person picked a slicer; only then is the look kept on leaving. */
   lookPicked: boolean
   printer: SetupPrinter | null
+  /** What the plate tab opens in, from the open step. Written when the flow finishes, like the look. */
+  openIn: OpenIn
   /** The Escape dialog is open. */
   confirmLeave: boolean
   /** Set when the flow ends: finished or left. */
@@ -61,6 +72,7 @@ export type FlowEvent =
   | { type: 'skip' }
   | { type: 'goto'; step: SetupStep }
   | { type: 'pick-look'; look: LookAndFeelChoice }
+  | { type: 'pick-open'; openIn: OpenIn }
   | { type: 'printer-saved'; printer: SetupPrinter }
   | { type: 'no-printer' }
   | { type: 'request-leave' }
@@ -68,8 +80,8 @@ export type FlowEvent =
   | { type: 'leave' }
   | { type: 'finish' }
 
-export function initialFlow(step: SetupStep, look: LookAndFeelChoice, printer: SetupPrinter | null = null, steps: readonly SetupStep[] = BASE_STEPS): FlowState {
-  return { step: steps.includes(step) ? step : 'printer', steps, trail: [], look, lookAtEntry: step === 'look' ? look : null, lookPicked: false, printer, confirmLeave: false, closed: null }
+export function initialFlow(step: SetupStep, look: LookAndFeelChoice, printer: SetupPrinter | null = null, steps: readonly SetupStep[] = BASE_STEPS, openIn: OpenIn = 'slice'): FlowState {
+  return { step: steps.includes(step) ? step : 'printer', steps, trail: [], look, lookAtEntry: step === 'look' ? look : null, lookPicked: false, printer, openIn, confirmLeave: false, closed: null }
 }
 
 function go(s: FlowState, step: SetupStep): FlowState {
@@ -104,6 +116,8 @@ export function reduceFlow(s: FlowState, e: FlowEvent): FlowState {
     }
     case 'pick-look':
       return { ...s, look: e.look, lookPicked: true }
+    case 'pick-open':
+      return { ...s, openIn: e.openIn }
     case 'printer-saved':
       return forward({ ...s, printer: e.printer })
     case 'no-printer':
@@ -130,9 +144,10 @@ export function progress(step: SetupStep, steps: readonly SetupStep[] = BASE_STE
   return (steps.indexOf(step) + 1) / steps.length
 }
 
-/** The step as stored. The contract has no mimir step; a run left there resumes on the slicer screen, one Next away. */
-export function contractStep(step: SetupStep): FirstRunStep {
-  return step === 'mimir' ? 'look' : step
+/** The step as stored. The contract has no mimir step; a run left there resumes on the step before it, one Next away. */
+export function contractStep(step: SetupStep, steps: readonly SetupStep[] = BASE_STEPS): FirstRunStep {
+  if (step !== 'mimir') return step
+  return steps.includes('open') ? 'open' : 'look'
 }
 
 /**
@@ -140,19 +155,22 @@ export function contractStep(step: SetupStep): FirstRunStep {
  * writes nothing new except the look, and only when the person had picked one (it was applied
  * live and stays). Returns null for the look when nothing about it should change.
  */
-export function outcome(s: FlowState, now: string, prior: FirstRunState | null): { firstRun: FirstRunState; look: LookAndFeelChoice | null; printerId: string | null } {
+export function outcome(s: FlowState, now: string, prior: FirstRunState | null): { firstRun: FirstRunState; look: LookAndFeelChoice | null; printerId: string | null; openIn: OpenIn | null } {
   if (s.closed === 'finished') {
     return {
       firstRun: { completedAt: now, step: 'done', look: s.look, printerId: s.printer?.printerId ?? null },
       look: s.look,
       printerId: s.printer?.printerId ?? null,
+      // Skip, use defaults keeps the default; finishing writes the choice when the open step was offered.
+      openIn: s.steps.includes('open') ? s.openIn : null,
     }
   }
   const look = s.lookPicked ? s.look : null
   return {
-    firstRun: { completedAt: prior?.completedAt ?? null, step: contractStep(s.step), look: look ?? prior?.look ?? s.look, printerId: prior?.printerId ?? null },
+    firstRun: { completedAt: prior?.completedAt ?? null, step: contractStep(s.step, s.steps), look: look ?? prior?.look ?? s.look, printerId: prior?.printerId ?? null },
     look,
     printerId: null,
+    openIn: null,
   }
 }
 

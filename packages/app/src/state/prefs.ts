@@ -165,7 +165,7 @@ function lookChoice(v: unknown): LookAndFeelChoice | undefined {
 function firstRun(v: unknown): FirstRunState | undefined {
   if (!isRec(v)) return undefined
   const completedAt = nullable(v['completedAt'], (x) => str(x, 40))
-  const step = oneOf(v['step'], ['look', 'printer', 'done'] as const)
+  const step = oneOf(v['step'], ['look', 'printer', 'open', 'done'] as const)
   const look = lookChoice(v['look'])
   const printerId = nullable(v['printerId'], (x) => str(x, 80))
   if (completedAt === undefined || !step || !look || printerId === undefined) return undefined
