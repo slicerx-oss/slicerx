@@ -18,6 +18,7 @@ import { get, set } from '../src/state/store'
 import { HostContext } from '../src/host'
 import { CollisionList } from '../src/workspaces/preview/collision-list'
 import { TrackStrikes } from '../src/workspaces/preview/strike-slots'
+import { groupMarks } from '../src/workspaces/preview/strike-marks'
 
 /** `layers` layers of `segs` 10 mm segments each, 100 mm/s, 10 s a layer. */
 function preview(layers: number, segs: number): PreviewBuffers {
@@ -193,6 +194,15 @@ describe('heimdall in the app', () => {
     expect(fixDetail(wide, name, 2, undefined, list)).toBe('Clears the strike and the close call. Move them apart in Prepare, or arrange the plate with more space.')
     const three: Collision[] = [hit, { ...hit, objectId: 'tall', hitId: 'low' }, { ...hit, layer: 3 }, close, close]
     expect(fixDetail({ ...wide, clears: [0, 1, 2] }, name, 5, undefined, three)).toBe('Clears all 3 strikes. Move them apart in Prepare, or arrange the plate with more space.')
+  })
+
+  it('joins strike marks that would overlap on a narrow rail', () => {
+    const m = (i: number, at: number) => ({ i, at, label: `s${i}`, body: '' })
+    const marks = [m(0, 0.5), m(1, 0.52), m(2, 0.9)]
+    // a phone's 300 px rail: 6 px apart, under one 18 px mark
+    expect(groupMarks(marks, 300, 18).map((g) => g.map((x) => x.i))).toEqual([[0, 1], [2]])
+    // a desktop's 1100 px rail: 22 px apart, each its own
+    expect(groupMarks(marks, 1100, 18).map((g) => g.map((x) => x.i))).toEqual([[0], [1], [2]])
   })
 
   it('names crossing paths, keep-out zones and their fixes', () => {
