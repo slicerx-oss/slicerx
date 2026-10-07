@@ -55,3 +55,28 @@
   .shelf-tool > span { display: none; }
   .shelf-tool { padding: 0 7px; }
 }
+
+/* The timeline: the selected object's steps as chips, the marker after the step the part shows. */
+.tl { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 12px; }
+.tl-nav { display: flex; gap: 2px; }
+.tl-track { list-style: none; margin: 0; padding: 4px 2px; display: flex; align-items: center; gap: 6px; overflow-x: auto; scrollbar-width: thin; }
+.tl-item { display: flex; align-items: center; gap: 6px; flex: none; }
+.tl-item[data-drop] .tl-chip { box-shadow: inset 2px 0 0 var(--accent); }
+.tl-chip { display: inline-flex; align-items: center; gap: 7px; height: 34px; padding: 0 12px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--ink-1); color: var(--fg); font: 500 var(--fs-md) var(--f-body); white-space: nowrap; cursor: pointer; }
+.tl-chip .sx-ic { color: var(--muted); }
+.tl-chip:hover:not(:disabled) { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
+.tl-chip[data-current] { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, var(--ink-1)); }
+.tl-chip[data-current] .sx-ic { color: var(--accent); }
+.tl-chip[data-later] { opacity: 0.45; }
+.tl-chip[data-state="suppressed"] .tl-name { text-decoration: line-through; color: var(--dim); }
+.tl-chip[data-state="broken"] { border-color: var(--red); }
+.tl-n { font-size: var(--fs-xs); color: var(--dim); }
+.tl-sketch { display: inline-flex; align-items: center; gap: 4px; padding-left: 7px; border-left: 1px solid var(--line-soft); font: 500 var(--fs-xs) var(--f-mono); color: var(--muted); }
+.tl-marker { width: 4px; height: 40px; border-radius: 2px; background: var(--accent); box-shadow: 0 0 8px color-mix(in srgb, var(--accent) 60%, transparent); cursor: ew-resize; touch-action: none; }
+.tl-marker:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.tl-status { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; white-space: nowrap; }
+.tl-empty { margin: 4px 6px; }
+@media (max-width: 900px) {
+  .tl { grid-template-columns: minmax(0, 1fr); }
+  .tl-nav, .tl-status { display: none; }
+}
