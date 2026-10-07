@@ -119,8 +119,10 @@ fn set_plate(b: &Bridge, printer: &str, still: Option<Still>) -> Rpc<()> {
     match &still {
         Some(s) => {
             settings.watch_plates.insert(printer.to_owned(), s.captured_at_ms);
-            // A new empty plate: the spots marked on the old picture no longer apply.
+            // A new empty plate: the spots marked on the old picture no longer apply, and the
+            // picture is what holds a start from now on.
             settings.watch_plate_ignore.remove(printer);
+            settings.watch_plate_model_off.retain(|x| x != printer);
         }
         None => {
             settings.watch_plates.remove(printer);
@@ -143,6 +145,8 @@ fn picture(s: &Still) -> Value {
 fn trip(b: &Bridge, printer: &str, mut event: serde_json::Map<String, Value>, evidence: Option<Still>) {
     event.insert("printerId".into(), json!(printer));
     event.insert("at".into(), json!(iso(now_ms())));
+    event.insert("answered".into(), json!(false));
+    event.insert("trippedMs".into(), json!(now_ms()));
     if let Some(s) = evidence {
         event.insert("capturedAt".into(), json!(iso(s.captured_at_ms)));
         lock(&b.hub.guard.evidence).insert(printer.to_owned(), s);
@@ -167,6 +171,66 @@ pub(crate) fn clear(b: &Bridge, printer: &str) {
             "watch.guard",
             json!({ "printerId": printer, "state": "clear", "at": iso(now_ms()) }),
         );
+    }
+}
+
+/// How long a paused card waits for the printer to report the pause before a running reading
+/// ends it anyway (a pause and a resume both within one status poll).
+const PAUSE_SEEN_MS: u64 = 20_000;
+
+/// A status reading. A card for a print the guard paused ends only when the printer leaves the
+/// paused state after the hub saw it paused (resumed by a person, or ended), never on an answer.
+pub(crate) fn observed(
+    b: &Bridge,
+    printer: &str,
+    prev: Option<sx_connect::PrinterState>,
+    now: sx_connect::PrinterState,
+) {
+    use sx_connect::PrinterState::{Offline, Paused};
+    let end = {
+        let mut trips = lock(&b.hub.guard.trips);
+        let Some(t) = trips.get_mut(printer) else { return };
+        if t.get("state").and_then(Value::as_str) != Some("paused") {
+            // Any other card for a print that was running ends with it.
+            prev == Some(Paused) && now != Paused
+        } else if now == Paused {
+            if let Some(o) = t.as_object_mut() {
+                o.insert("pauseSeen".into(), json!(true));
+            }
+            false
+        } else if now == Offline {
+            false
+        } else {
+            let seen = t.get("pauseSeen").and_then(Value::as_bool) == Some(true);
+            let since = t.get("trippedMs").and_then(Value::as_u64).unwrap_or(0);
+            seen || now_ms().saturating_sub(since) > PAUSE_SEEN_MS
+        }
+    };
+    if end {
+        clear(b, printer);
+    }
+}
+
+/// The person answered a trip (dismissed it, the plate checked clean, a spot marked fine). A print
+/// the guard paused stays paused: the card stays, marked answered, with Resume, until a person
+/// resumes it (a physical machine never starts moving again on its own). Any other trip ends.
+pub(crate) fn answer(b: &Bridge, printer: &str) {
+    let updated = {
+        let mut trips = lock(&b.hub.guard.trips);
+        match trips.get_mut(printer) {
+            Some(t) if t.get("state").and_then(Value::as_str) == Some("paused") => {
+                if let Some(o) = t.as_object_mut() {
+                    o.insert("answered".into(), json!(true));
+                    o.insert("at".into(), json!(iso(now_ms())));
+                }
+                Some(t.clone())
+            }
+            _ => None,
+        }
+    };
+    match updated {
+        Some(t) => b.hub.emit("watch.guard", t),
+        None => clear(b, printer),
     }
 }
 
@@ -243,16 +307,31 @@ async fn check_plate(b: &Arc<Bridge>, printer: &str) -> Option<Plate> {
         .cloned()
         .unwrap_or_default();
     let reference = plate(b, printer).map(|s| picture(&s));
+    let has_reference = reference.is_some();
     b.hub.emit(
         "watch.plate",
         json!({ "checkId": id, "printerId": printer, "frame": picture(&still), "reference": reference, "ignore": ignore }),
     );
-    let answer = tokio::time::timeout(PLATE_WAIT, rx).await;
+    let reply = tokio::time::timeout(PLATE_WAIT, rx).await;
     lock(&b.hub.guard.waits).remove(&id);
-    let answer = answer.ok()?.ok()?;
+    let answer = reply.ok()?.ok()?;
+    let bbox: Option<[f64; 4]> =
+        serde_json::from_value(answer.get("box").cloned().unwrap_or(Value::Null)).ok();
+    // The person said a finding of the model alone was wrong on this printer; only a picture
+    // comparison holds it from now on.
+    let model_only = bbox.is_none() && !has_reference;
+    let overruled = model_only
+        && lock(&b.hub.settings)
+            .watch_plate_model_off
+            .iter()
+            .any(|x| x == printer);
     Some(Plate {
-        clear: answer.get("clear").and_then(Value::as_bool),
-        bbox: serde_json::from_value(answer.get("box").cloned().unwrap_or(Value::Null)).ok(),
+        clear: if overruled {
+            Some(true)
+        } else {
+            answer.get("clear").and_then(Value::as_bool)
+        },
+        bbox,
         note: answer
             .get("note")
             .and_then(Value::as_str)
@@ -376,10 +455,26 @@ async fn known(b: &Arc<Bridge>, p: &Value) -> Rpc<String> {
     Ok(printer)
 }
 
-/// `watch.plateClear {printerId}` (app): "This plate is clear". Takes a still now as the
-/// printer's empty plate, replacing any earlier one and the spots marked on it.
+/// `watch.plateClear {printerId}` (app): "This plate is clear". Takes a new still, after the
+/// person's click, as the printer's empty plate, replacing any earlier one and the spots marked
+/// on it. Only while nothing runs on the printer: a running or paused print is on the plate, and
+/// the frame that tripped the guard is never kept as the empty plate.
 pub(crate) async fn plate_clear_call(b: &Arc<Bridge>, p: &Value) -> Rpc<Value> {
     let printer = known(b, p).await?;
+    let running = crate::hub_rpc::observe(b, &printer).await.is_some_and(|st| {
+        matches!(
+            st.state,
+            sx_connect::PrinterState::Preparing
+                | sx_connect::PrinterState::Printing
+                | sx_connect::PrinterState::Paused
+        )
+    });
+    if running {
+        return Err(RpcError::new(
+            "busy",
+            "The empty plate can only be taken while nothing is printing. Take it once this print is off the plate.",
+        ));
+    }
     let still = crate::watch::grab(b, &printer)
         .await?
         .ok_or_else(|| RpcError::new("not_supported", "this printer has no camera"))?;
@@ -401,7 +496,7 @@ pub(crate) async fn plate_check_call(b: &Arc<Bridge>, p: &Value) -> Rpc<Value> {
     };
     let clear_now = plate.clear != Some(false);
     if clear_now {
-        clear(b, &printer);
+        answer(b, &printer);
     } else {
         let was = lock(&b.hub.guard.trips).get(&printer).cloned();
         let state = was
@@ -417,8 +512,11 @@ pub(crate) async fn plate_check_call(b: &Arc<Bridge>, p: &Value) -> Rpc<Value> {
             .unwrap_or("slicerx")
             .to_owned();
         let mut ev = plate_event(b, &printer, &plate, &state, &by);
-        if let Some(m) = was.as_ref().and_then(|t| t.get("monitorOnly")) {
-            ev.insert("monitorOnly".into(), m.clone());
+        // The same trip seen again: what it was, and whether the printer was seen paused, carry over.
+        for key in ["monitorOnly", "pauseSeen"] {
+            if let Some(v) = was.as_ref().and_then(|t| t.get(key)) {
+                ev.insert(key.into(), v.clone());
+            }
         }
         trip(b, &printer, ev, Some(plate.still));
     }
@@ -427,7 +525,8 @@ pub(crate) async fn plate_check_call(b: &Arc<Bridge>, p: &Value) -> Rpc<Value> {
 
 /// `watch.plateIgnore {printerId}` (app): "It's fine". The spot on the card is a plate mark:
 /// it is left out of later checks on this printer. A trip without a spot (no empty-plate
-/// picture yet, the model alone) makes the picture behind it the printer's empty plate.
+/// picture yet, the model alone) stops the model alone from holding this printer until an
+/// empty-plate picture is taken. The frame behind the trip is never kept.
 pub(crate) async fn plate_ignore_call(b: &Arc<Bridge>, p: &Value) -> Rpc<Value> {
     let printer = known(b, p).await?;
     let trip = lock(&b.hub.guard.trips).get(&printer).cloned();
@@ -444,15 +543,13 @@ pub(crate) async fn plate_ignore_call(b: &Arc<Bridge>, p: &Value) -> Rpc<Value> 
         }
         "spot"
     } else {
-        let still = lock(&b.hub.guard.evidence).get(&printer).cloned();
-        if let Some(s) = still {
-            set_plate(b, &printer, Some(s))?;
-            "plate"
-        } else {
-            "nothing"
+        let mut s = lock(&b.hub.settings);
+        if !s.watch_plate_model_off.contains(&printer) {
+            s.watch_plate_model_off.push(printer.clone());
         }
+        "model"
     };
-    clear(b, &printer);
+    answer(b, &printer);
     b.hub.audit(json!({ "origin": "local_click", "action": "watch.plateIgnore", "printerId": printer, "remembered": remembered }));
     crate::hub_rpc::save(b).await;
     Ok(json!({ "printerId": printer, "remembered": remembered }))
@@ -473,7 +570,7 @@ pub(crate) async fn guard_call(b: &Arc<Bridge>, p: &Value) -> Rpc<Value> {
         }
     }
     if !enabled {
-        clear(b, &printer);
+        answer(b, &printer);
     }
     b.hub.audit(
         json!({ "origin": "local_click", "action": "watch.guard", "printerId": printer, "enabled": enabled }),
