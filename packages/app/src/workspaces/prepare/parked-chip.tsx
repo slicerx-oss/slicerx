@@ -4,13 +4,11 @@
 // and a way to drop it.
 import { Button, Icon } from '@slicerx/ui'
 import { set, setModelMode, useApp } from '../../state/store'
-import { SHELF_TOOLS, toolLabel } from '../design/shelf-tools'
 
 export function ParkedChip() {
-  const tool = useApp((s) => s.parked?.tool ?? null)
-  if (!tool) return null
-  const label = toolLabel(tool)
-  const icon = SHELF_TOOLS.find((x) => x.tool === tool)?.icon ?? 'ruler'
+  const label = useApp((s) => (s.parked?.tool ? (s.parked.label ?? 'A tool') : null))
+  const icon = useApp((s) => s.parked?.icon ?? 'ruler')
+  if (!label) return null
   return (
     <div className="parked-chip sx-overlay" role="status" data-testid="parked-chip">
       <Icon name={icon} size={15} />

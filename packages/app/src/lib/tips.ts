@@ -7,7 +7,6 @@ import { ASSISTANT_NAME } from '@slicerx/pilot/name'
 import type { KeyAction } from '@slicerx/ui'
 import { appName } from '../edition'
 import { get } from '../state/store'
-import { toolLabel } from '../workspaces/design/shelf-tools'
 
 export interface TipEntry {
   title: string
@@ -57,8 +56,8 @@ export const TIPS = {
   'nav.printers': f('Printers', 'Open your printers and their status.'),
   // A tool left open in Design says so on its tab.
   get 'mode.design'() {
-    const tool = get().parked?.tool
-    return a('Design', tool ? `${toolLabel(tool)} in progress. Open Design to finish it.` : 'Model parts: sketches, features and their history, on the same plate.', 'model.mode')
+    const p = get().parked
+    return a('Design', p?.tool ? `${p.label ?? 'A tool'} in progress. Open Design to finish it.` : 'Model parts: sketches, features and their history, on the same plate.', 'model.mode')
   },
   'mode.slice': a('Slice', 'Set up the plate, printer and settings, then slice.', 'model.mode'),
   get 'nav.settings'() {

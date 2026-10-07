@@ -6,7 +6,7 @@
 // or when another tool or step opens instead.
 import { useEffect, useState, type Dispatch, type SetStateAction } from 'react'
 import { appStore, get, isCadTool, set, toast, type AppState, type CadTool, type Parked } from '../state/store'
-import { opensDesign, toolLabel } from '../workspaces/design/shelf-tools'
+import { opensDesign, SHELF_TOOLS, toolLabel } from '../workspaces/design/shelf-tools'
 import { beginEdit, cancelEdit, nowOf, viewStep } from './history/ops'
 
 type Loader = Parameters<typeof beginEdit>[0]
@@ -89,8 +89,10 @@ export function park(): void {
   const fields = tool ? Object.fromEntries([...live].filter(([k]) => k !== OBJECT)) : {}
   cancelEdit()
   const e = objectId ? get().plate.find((p) => p.id === objectId) : undefined
+  const icon = SHELF_TOOLS.find((x) => x.tool === tool)?.icon
   const parked: Parked = {
     tool,
+    ...(tool ? { label: toolLabel(tool), ...(icon ? { icon } : {}) } : {}),
     objectId,
     fields,
     ...(ed && step ? { historyEdit: { stepId: step.id, ...(ed.view ? { view: true } : {}) } } : {}),

@@ -8,7 +8,6 @@ import { Fragment, useRef } from 'react'
 import { useFullEngine, warmFullEngine } from '../geom/full-engine'
 import { useModelMode } from '../state/model-mode'
 import { setModelMode, useApp, type ModelMode } from '../state/store'
-import { toolLabel } from '../workspaces/design/shelf-tools'
 
 const HALVES: readonly { mode: ModelMode; label: string; icon: 'ruler' | 'slice'; tab: string }[] = [
   { mode: 'design', label: 'Design', icon: 'ruler', tab: 'design' },
@@ -23,7 +22,7 @@ export function ModeTab() {
   const loading = useFullEngine() === 'loading'
   const rest = useRef<ReturnType<typeof setTimeout>>(undefined)
   // A tool left open in Design: an orange dot on its half; the tip and the description say which.
-  const parked = useApp((s) => (s.parked?.tool ? toolLabel(s.parked.tool) : null))
+  const parked = useApp((s) => (s.parked?.tool ? (s.parked.label ?? 'A tool') : null))
   return (
     <div className="sx-modetab" role="group" aria-label="Design or Slice">
       {HALVES.map((h, i) => (
