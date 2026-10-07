@@ -362,6 +362,7 @@ export function PrepareObjects() {
                     </Suspense>
                   </>
                 ) : null}
+                <MoreButton id="object" />
               </div>
             ) : null}
             {expanded === p.id || (searching && !matches.get(p.id)?.self) ? (

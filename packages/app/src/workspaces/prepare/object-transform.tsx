@@ -3,7 +3,7 @@
 // Numeric position, rotation, scale and size for the selected object, the way Bambu Studio and
 // OrcaSlicer show them under the object list. Fields commit on Enter or blur, and a drag on an axis
 // letter moves the object live, so one edit or one drag is one undo step.
-import { MoreButton, useMore } from '../../shell/more'
+import { useMore } from '../../shell/more'
 import { setRotateSpace, useRotateSpace, useTool } from '../../plate/tools'
 import { Button, ScrubNumber, Seg, VectorField } from '@slicerx/ui'
 import { useState } from 'react'
@@ -104,7 +104,6 @@ export function ObjectTransform() {
             </Button>
           ))}
         </span> : null}
-        <MoreButton id="object" />
       </div>
     </div>
   )
