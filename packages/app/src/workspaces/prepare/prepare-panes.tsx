@@ -398,7 +398,7 @@ export function PrepareObjects() {
         </Button>
         {more ? (
           <Button size="sm" variant="ghost" icon="library" onClick={() => setWorkspace('library')}>
-            From library
+            From the Vault
           </Button>
         ) : null}
         <ObjectActions />

@@ -95,7 +95,7 @@ export function menuModel(commands: readonly CommandSpec[], o: { platform: MenuP
       cmd('project-new', '&New project'),
       cmd('plate-open', '&Open…'),
       cmd('project-recent', 'Open &recent…'),
-      sub('&Import', [cmd('library-import', '&Models into the library…'), cmd('user-presets', '&Presets…')]),
+      sub('&Import', [cmd('library-import', '&Models into the Vault…'), cmd('user-presets', '&Presets…')]),
       sep,
       cmd('project-save', '&Save'),
       cmd('project-save-as', 'Save &as…'),
