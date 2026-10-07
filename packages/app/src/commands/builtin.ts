@@ -7,7 +7,7 @@ import { goalEasy } from '../adapters/config'
 import { confirmDiscard } from '../project/unsaved'
 import { gcodeView, pickGcodeFile, setGcodePanel } from '../workspaces/preview/gcode-file'
 import { cancelSlice, clearPlate, exportGcode, loadDefaultPlate, loadDemoModel, openModelFiles, removeSelected, slicePlate } from '../state/actions'
-import { get, markStale, openSettings, pickColorMode, set, setCamera, setModelMode, setRail, setWorkspace, showSliced, type CameraView, type ColorMode, type Goal, type PrepareLook } from '../state/store'
+import { fullPlate, get, markStale, openSettings, pickColorMode, set, setCamera, setModelMode, setRail, setWorkspace, showSliced, type CameraView, type ColorMode, type Goal, type PrepareLook } from '../state/store'
 import { DEMO_MODELS } from '../lib/demo-models'
 import { printBlock } from '../plate/heimdall'
 import { helpLinks, openLink } from '../lib/links'
@@ -75,7 +75,7 @@ export function builtinCommands(host: Host, workspaces: readonly { id: string; l
   }
 
   out.push(
-    { id: 'slice', title: 'Slice the plate', section: 'slice', keywords: ['run', 'gcode'], shortcut: 'Mod+Enter', workspace: 'prepare', tool: { permission: 'slice' }, enabled: hasPlate, run: async () => { if (get().modelMode === 'design') setModelMode('slice'); await slicePlate(host); if (get().slice.status === 'done') showSliced() } },
+    { id: 'slice', title: 'Slice the plate', section: 'slice', keywords: ['run', 'gcode'], shortcut: 'Mod+Enter', workspace: 'prepare', tool: { permission: 'slice' }, enabled: () => fullPlate(get()).length > 0, run: async () => { if (get().modelMode === 'design') setModelMode('slice'); await slicePlate(host); if (get().slice.status === 'done') showSliced() } },
     { id: 'slice-cancel', title: 'Cancel slicing', section: 'slice', keywords: ['stop', 'abort'], enabled: () => get().slice.status === 'running', run: cancelSlice },
     { id: 'export-gcode', title: 'Export G-code', section: 'slice', keywords: ['save', 'download', 'file'], shortcut: 'Mod+Shift+E', workspace: 'prepare', enabled: exportable, run: () => exportGcode(host) },
   )
