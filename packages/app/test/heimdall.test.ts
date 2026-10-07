@@ -84,7 +84,7 @@ describe('heimdall in the app', () => {
     expect(strikeMarks(get())).toEqual([{ x: 21, y: 41, z: 40.6 }, { x: 30, y: 30, z: 3, close: true, selected: true }])
     // Before the layer a strike starts on only the picked one shows, and the one under the pointer in the list.
     set({ layerHi: 2 })
-    expect(strikeMarks(get())).toEqual([{ x: 30, y: 30, z: 3, close: true, selected: true }])
+    expect(strikeMarks(get())).toEqual([{ x: 30, y: 30, z: 3, close: true, selected: true, ghost: true }])
     set({ strikeHover: 0 })
     expect(strikeMarks(get())).toHaveLength(2)
     set({ strikeHover: null, layerHi: 3 })

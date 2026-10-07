@@ -37,14 +37,15 @@ export function printBlock(s: Pick<AppState, 'slice' | 'plate' | 'plates' | 'act
 
 /**
  * One strike per collision where it goes deepest, the selected one marked. A strike shows once Preview reaches the
- * layer it starts on, so the bed is not marked before the part is there; the picked one and the one under the pointer
- * in the list show on any layer.
+ * layer it starts on, so the bed is not marked before the part is there; before then the picked one and the one under
+ * the pointer in the list show as a faint ghost, to say where to look.
  */
 export function strikeMarks(s: Pick<AppState, 'slice' | 'strikePick' | 'strikeHover' | 'layerHi'>): StrikeMark[] {
   const out: StrikeMark[] = []
   collisionsOf(s).forEach((c, i) => {
-    if (s.layerHi - 1 < c.layer && s.strikePick !== i && s.strikeHover !== i) return
-    out.push({ x: c.worstPoint[0], y: c.worstPoint[1], z: c.worstPoint[2], ...(c.severity === 'close' ? { close: true } : {}), ...(s.strikePick === i ? { selected: true } : {}) })
+    const early = s.layerHi - 1 < c.layer
+    if (early && s.strikePick !== i && s.strikeHover !== i) return
+    out.push({ x: c.worstPoint[0], y: c.worstPoint[1], z: c.worstPoint[2], ...(c.severity === 'close' ? { close: true } : {}), ...(s.strikePick === i ? { selected: true } : {}), ...(early ? { ghost: true } : {}) })
   })
   return out
 }
