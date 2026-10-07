@@ -149,7 +149,7 @@ export function createSxSlicer(bin: string, timeoutMs = 10 * 60_000): SlicerBack
       if (code !== 0) {
         const why = stderr.trim().split('\n').slice(-3).join(' ') || 'no error output'
         // Exit codes: 1 slicing failed, 2 usage, 3 invalid input (docs/embedding.md).
-        throw new ToolInputError(`sx exited with code ${code}: ${why}`, /no plate \d+/.test(why) ? 'no_such_plate' : /safety preflight/.test(why) ? 'preflight_blocked' : /printing by object is not safe/.test(why) ? 'sequence_clearance' : code === 3 ? 'invalid_model' : 'slice_failed')
+        throw new ToolInputError(`sx exited with code ${code}: ${why}`, /no plate \d+/.test(why) ? 'no_such_plate' : /safety preflight/.test(why) ? 'preflight_blocked' : /printing by object is not safe|Paths cross: |A print path enters /.test(why) ? 'sequence_clearance' : code === 3 ? 'invalid_model' : 'slice_failed')
       }
       const out = JSON.parse(stdout.trim()) as {
         layerCount?: number
