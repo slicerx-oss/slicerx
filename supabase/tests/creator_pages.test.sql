@@ -91,8 +91,10 @@ select is((select count(*)::int from public.saved_listings()), 0, 'and it is gon
 
 -- Trending ------------------------------------------------------------------------------------
 reset role;
-insert into public.likes (user_id, listing_id) select rv, ferro_live from ids;
-insert into public.likes (user_id, listing_id) select ash, ferro_live from ids;
+insert into public.likes (user_id, listing_id) select rv, ferro_live from ids
+  on conflict (user_id, listing_id) do update set created_at = now();
+insert into public.likes (user_id, listing_id) select ash, ferro_live from ids
+  on conflict (user_id, listing_id) do update set created_at = now();
 insert into public.likes (user_id, listing_id, created_at) select moderator, marrow_live, now() - interval '20 days' from ids
   on conflict (user_id, listing_id) do update set created_at = excluded.created_at;
 insert into public.downloads (user_id, listing_id) select rv, marrow_live from ids
