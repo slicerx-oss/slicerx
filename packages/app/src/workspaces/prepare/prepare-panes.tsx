@@ -46,7 +46,7 @@ import { useTool } from '../../plate/tools'
 const ObjectVolumes = lazy(() => import('./object-volumes').then((m) => ({ default: m.ObjectVolumes })))
 import { PlateList } from './plate-list'
 import { selectObject } from '../../plate/edit'
-import { get, isCadTool, selectedIds, set, setWorkspace, useApp } from '../../state/store'
+import { get, isCadTool, selectedIds, set, setWorkspace, showSliced, useApp } from '../../state/store'
 import { GENERIC_BED } from '../../adapters/generic-bed'
 import { useModelMode } from '../../state/model-mode'
 import { EasySettingsPanel } from './easy-settings'
@@ -462,12 +462,12 @@ export function SliceBlock({ label = 'Slice plate', compact }: { label?: string;
         Export G-code
       </Button>
     ) : (
-      <Button variant="primary" size="lg" full icon="send-to-printer" disabled={plate.length === 0 || !fresh} onClick={() => (target ? void sendToPrinter(host, target) : setWorkspace('preview'))}>
+      <Button variant="primary" size="lg" full icon="send-to-printer" disabled={plate.length === 0 || !fresh} onClick={() => (target ? void sendToPrinter(host, target) : showSliced())}>
         Print
       </Button>
     )
   ) : (
-    <Button variant="primary" size="lg" full icon="slice" disabled={plate.length === 0} onClick={() => void slicePlate(host).then(() => get().slice.status === 'done' && setWorkspace('preview'))}>
+    <Button variant="primary" size="lg" full icon="slice" disabled={plate.length === 0} onClick={() => void slicePlate(host).then(() => get().slice.status === 'done' && showSliced())}>
       {done && !done.stale ? 'Slice again' : label}
     </Button>
   )

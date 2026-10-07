@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// Layer heights along the model, bottom to top, from the last slice. In Preview it is the vertical
-// layer slider: drag the two handles for the lowest and highest drawn layer, use the arrow keys, or
-// click a layer. In Prepare it only shows the heights the slice used.
+// Layer heights along the model, bottom to top, from the last slice, and the vertical layer slider: drag the two
+// handles for the lowest and highest drawn layer, use the arrow keys, or click a layer. Using it in the solid or
+// layer lines look switches Slice to the toolpaths, which the range applies to.
 import { tipAttrs } from '@slicerx/ui'
 import { HEAT_RAMP } from '@slicerx/viewport/palette'
 import { useMemo, useRef, type KeyboardEvent, type PointerEvent } from 'react'
@@ -29,7 +29,8 @@ export function LayerStrip() {
   const slice = useApp((s) => s.slice)
   const layerHi = useApp((s) => s.layerHi)
   const layerLoRaw = useApp((s) => s.layerLo)
-  const mode = useApp((s) => s.workspace)
+  // Interactive whenever there is a slice to look at; using it shows the toolpaths.
+  const layersOn = useApp((s) => s.sliceLook === 'toolpaths')
   const track = useRef<HTMLDivElement>(null)
   const drag = useRef<Handle | null>(null)
   const data = useMemo(() => {
@@ -45,10 +46,9 @@ export function LayerStrip() {
   const n = h.length
   const span = max - min
   const uniform = span < 1e-4
-  const interactive = mode === 'preview'
   const color = (v: number) => HEAT_RAMP[uniform ? 1 : Math.round(((max - v) / span) * (HEAT_RAMP.length - 1))] ?? 'var(--muted)'
-  const hi = interactive ? Math.max(1, Math.min(layerHi, n)) : n
-  const lo = interactive ? Math.max(1, Math.min(layerLoRaw, hi)) : 1
+  const hi = layersOn ? Math.max(1, Math.min(layerHi, n)) : n
+  const lo = layersOn ? Math.max(1, Math.min(layerLoRaw, hi)) : 1
   const zTop = (l: number) => z[l - 1] ?? 0
   const zBottom = (l: number) => (l > 1 ? (z[l - 2] ?? 0) : 0)
   // Share of the track from the top: 0 at the last layer's top, 1 at the plate.
@@ -71,11 +71,10 @@ export function LayerStrip() {
   const move = (which: Handle, layer: number) => {
     const s = get()
     const l = Math.max(1, Math.min(n, layer))
-    if (which === 'hi') set({ layerHi: Math.max(l, Math.min(s.layerLo, n)), moveCut: 1 })
-    else set({ layerLo: Math.min(l, Math.min(s.layerHi, n)) })
+    if (which === 'hi') set({ layerHi: Math.max(l, Math.min(s.layerLo, n)), moveCut: 1, sliceLook: 'toolpaths' })
+    else set({ layerLo: Math.min(l, Math.min(s.layerHi, n)), sliceLook: 'toolpaths' })
   }
   const onDown = (e: PointerEvent, handle?: Handle) => {
-    if (!interactive) return
     const layer = layerAt(e.clientY)
     const which = handle ?? (Math.abs(layer - hi) <= Math.abs(layer - lo) ? 'hi' : 'lo')
     drag.current = which
@@ -137,21 +136,21 @@ export function LayerStrip() {
   }
   return (
     <figure
-      className={`lstrip sx-overlay${interactive ? ' lstrip-live' : ''}`}
+      className="lstrip sx-overlay lstrip-live"
       aria-label={uniform ? `Layers of ${max.toFixed(2)} mm` : `Layer heights from ${min.toFixed(2)} to ${max.toFixed(2)} mm`}
-      {...tipAttrs(interactive ? { title: 'Layers', body: 'Drag the handles to show a range of layers, or click a layer to jump there.' } : { title: 'Layer heights', body: 'The heights this slice used, bottom to top.' })}
+      {...tipAttrs({ title: 'Layers', body: 'Drag the handles to show a range of layers, or click a layer to jump there.' })}
     >
-      <span className="sx-mono lend">{interactive ? (hi === n ? '\u00a0' : n) : max.toFixed(2)}</span>
+      <span className="sx-mono lend">{hi === n ? '\u00a0' : n}</span>
       <div className="ltrack" ref={track} onPointerDown={(e) => onDown(e)} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp}>
         <svg viewBox={`0 0 10 ${top}`} preserveAspectRatio="none" aria-hidden="true">
           {h.map((v, i) => (
             <rect key={i} x="0" width="10" y={top - (z[i] ?? 0)} height={Math.max(v, 0.01)} fill={color(v)} opacity={i + 1 >= lo && i + 1 <= hi ? 1 : 0.22} />
           ))}
         </svg>
-        {interactive ? [handle('lo'), handle('hi')] : null}
-        {interactive ? <StripStrikes y={(layer) => fromTop(zTop(Math.min(n, layer)))} /> : null}
+        {[handle('lo'), handle('hi')]}
+        <StripStrikes y={(layer) => fromTop(zTop(Math.min(n, layer)))} />
       </div>
-      <span className="sx-mono lend">{interactive ? (lo === 1 ? '\u00a0' : 1) : min.toFixed(2)}</span>
+      <span className="sx-mono lend">{lo === 1 ? '\u00a0' : 1}</span>
       <figcaption className="sx-mono">{uniform ? `${max.toFixed(2)} mm` : <>{min.toFixed(2)} to {max.toFixed(2)} mm<br />sleipnir</>}</figcaption>
     </figure>
   )

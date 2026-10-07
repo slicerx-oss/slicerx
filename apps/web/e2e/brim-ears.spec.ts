@@ -58,6 +58,9 @@ test('rectangle select, ear drag and Ctrl+wheel work on the plate', async ({ pag
   test.skip(isMobile, 'Needs a pointer and keyboard')
   test.slow()
   await open(page)
+  // The iso view, low enough that the model hides the ear behind it (the plate opens on a higher view of the whole plate).
+  await page.keyboard.press('7')
+  await page.waitForTimeout(600)
   const panel = page.locator('[data-section=brim-ears]')
   // Three ears: two on the side the camera sees and one behind the model, placed through the viewport's own event
   // (the same path as a click there).

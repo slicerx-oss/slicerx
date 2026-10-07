@@ -7,7 +7,7 @@ import { lookCommandFor } from '../src/controls/global-keys'
 
 describe("the look's own keys outside the plate", () => {
   const key = (k: string, code: string, o: Partial<KeyboardEventInit> = {}) => new KeyboardEvent('keydown', { key: k, code, ...o })
-  const at = { workspace: 'prepare', onControl: false }
+  const at = { layers: false, onControl: false }
 
   it('slices and exports with the look keys', () => {
     expect(lookCommandFor(key('g', 'KeyG', { ctrlKey: true }), keymapFor('bambu-studio'), at)).toBe('slice')
@@ -16,10 +16,10 @@ describe("the look's own keys outside the plate", () => {
     expect(lookCommandFor(key('g', 'KeyG', { ctrlKey: true }), keymapFor('slicerx'), at)).toBeNull()
   })
 
-  it('opens the command bar with Space in the OrcaSlicer style, but not on a control or in Preview', () => {
+  it('opens the command bar with Space in the OrcaSlicer style, but not on a control or while the toolpaths show', () => {
     expect(lookCommandFor(key(' ', 'Space'), keymapFor('orcaslicer'), at)).toBe('palette')
     expect(lookCommandFor(key(' ', 'Space'), keymapFor('orcaslicer'), { ...at, onControl: true })).toBeNull()
-    expect(lookCommandFor(key(' ', 'Space'), keymapFor('orcaslicer'), { ...at, workspace: 'preview' })).toBeNull()
+    expect(lookCommandFor(key(' ', 'Space'), keymapFor('orcaslicer'), { ...at, layers: true })).toBeNull()
     expect(lookCommandFor(key(' ', 'Space'), keymapFor('bambu-studio'), at)).toBeNull()
   })
 })

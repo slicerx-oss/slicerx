@@ -53,7 +53,8 @@ export function plateHandlers(): Partial<Record<KeyAction, Handler>> {
     'edit.paste': () => void runCommand('paste'),
     'edit.duplicate': () => void runCommand('duplicate'),
     'object.printable': () => void runCommand('toggle-printable'),
-    'workspace.toggle': () => set((s) => ({ workspace: s.workspace === 'preview' ? 'prepare' : 'preview' })),
+    // Tab (in most looks) flips Slice between the toolpaths and the solid models.
+    'workspace.toggle': () => set((s) => ({ workspace: 'prepare', modelMode: 'slice', sliceLook: s.workspace === 'prepare' && s.modelMode === 'slice' && s.sliceLook === 'toolpaths' ? 'solid' : 'toolpaths' })),
     'model.mode': toggleModelMode,
   }
   for (const [action, preset] of Object.entries(VIEW) as [KeyAction, NonNullable<(typeof VIEW)[KeyAction]>][]) out[action] = () => bus()?.view?.(preset, { animate: true })
@@ -76,7 +77,7 @@ export function bindPlateKeys(choice: () => LookAndFeelChoice, extra: { dropToBe
     if (e.defaultPrevented || inTextField(e)) return
     const s = get()
     if (s.setup || s.commandOpen || s.approval || s.aboutOpen || s.shortcutsOpen || s.settingsOpen) return
-    if (s.workspace !== 'prepare' && s.workspace !== 'preview') return
+    if (s.workspace !== 'prepare') return
     // While sketching, a typed number opens the size field at the cursor; the view keys (1 is top) step aside.
     if (s.objectTool === 'sketch' && /^[0-9.\-]$/.test(e.key) && !e.metaKey && !e.ctrlKey && !e.altKey) return
     const run = (h: Handler) => {

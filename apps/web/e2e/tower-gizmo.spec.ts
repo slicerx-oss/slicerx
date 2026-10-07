@@ -2,7 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 // The drawn prime tower is hit by the viewport's ray, and the inline settings plan renders.
 import { type Page } from '@playwright/test'
-import { expect, plateReady, tab, test, viewportReady } from './fixtures'
+import { expect, plateReady, sliceCount, sliced, tab, test, viewportReady } from './fixtures'
 
 interface Vp {
   camera: { position: { clone(): { set(x: number, y: number, z: number): { applyMatrix4(m: unknown): { project(c: unknown): { x: number; y: number } } } } } }
@@ -33,8 +33,9 @@ test('the viewport ray hits the prime tower, and the settings plan renders', asy
   await viewportReady(page)
   await page.getByRole('button', { name: 'Change', exact: true }).click()
   await page.getByRole('list', { name: 'Choose a printer' }).getByRole('button', { name: /Bay 2/ }).click()
+  const slices1 = await sliceCount(page)
   await page.getByRole('main').getByRole('button', { name: /^Slice/ }).first().click()
-  await expect(page.locator('.sx-tab[aria-current=page]')).toContainText('Preview', { timeout: 120_000 })
+  await expect(sliced(page, slices1)).toBeVisible({ timeout: 120_000 })
   await tab(page, 'prepare').click()
   const state = () => page.evaluate(() => (window as unknown as { __sx: Sx }).__sx.getState())
   const t = (await state()).slice.result!.primeTower!

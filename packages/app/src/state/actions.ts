@@ -518,6 +518,7 @@ export async function slicePlate(host: Host, opts: { auto?: boolean } = {}): Pro
     const raw = await host.slicer.getPreview(result.id)
     const preview = readPreview(raw)
     const cur = get()
+    set((st) => ({ slicesDone: st.slicesDone + 1 }))
     set({ slice: { status: 'done', result, stale: false }, preview, strikePick: null, strikeJump: null, strikeHover: null, ...layersAfterSlice(cur, preview.layerCount, cur.norn.before !== null), ...colorModeAfterSlice(cur, defaultColorMode(preview)) })
   } catch (e) {
     if (abort.signal.aborted) {
