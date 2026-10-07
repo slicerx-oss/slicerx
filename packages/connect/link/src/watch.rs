@@ -471,7 +471,7 @@ pub(crate) fn dismiss_call(b: &Arc<Bridge>, p: &Value) -> Rpc<Value> {
     let kind = str_arg(p, "kind")?;
     let at = iso(now_ms());
     b.hub.clear_finding(&printer);
-    crate::guard::answer(b, &printer);
+    crate::guard::answer(b, &printer, "dismissed");
     b.hub.audit(
         json!({ "origin": "local_click", "action": "watch.dismiss", "printerId": printer, "kind": kind }),
     );

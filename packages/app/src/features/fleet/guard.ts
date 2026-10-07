@@ -23,6 +23,8 @@ export interface GuardTrip {
   capturedAt?: string
   /** The person answered it (dismissed, the plate checked clean, a spot marked fine) while the print stays paused. */
   answered?: boolean
+  /** How: dismissed, `clear` (a new look found nothing), `fine` (a spot marked as a plate mark) or `off`. */
+  answeredBy?: 'dismissed' | 'clear' | 'fine' | 'off'
 }
 
 /** The hub methods the guard uses (link-client `LinkHost.watch`). */
@@ -165,14 +167,19 @@ export interface TripCopy {
 export function tripCopy(t: GuardTrip, name: string): TripCopy {
   const app = appName()
   const bambuConnect = `${app} can't stop this print. Developer Mode is off on ${name}, so the job came from Bambu Connect or the printer's screen.`
-  if (t.state === 'paused' && t.answered)
-    return {
-      title: 'Still paused',
-      body:
-        t.kind === 'hand'
-          ? `You dismissed the hand. The print stays paused until you resume it.`
-          : `You checked the plate. The print stays paused until you resume it.`,
-    }
+  if (t.state === 'paused' && t.answered) {
+    const why =
+      t.answeredBy === 'clear'
+        ? t.kind === 'hand'
+          ? 'The new picture shows no hand.'
+          : 'The plate looks clear now.'
+        : t.answeredBy === 'off'
+          ? `You turned the camera guard off for ${name}.`
+          : t.kind === 'hand'
+            ? 'You dismissed the hand.'
+            : 'You marked the spot as fine.'
+    return { title: 'Still paused', body: `${why} The print stays paused until you resume it.` }
+  }
   if (t.kind === 'hand') {
     const seen = t.note && /\d+ of the last \d+ frames/.test(t.note) ? `in ${/\d+ of the last \d+ frames/.exec(t.note)![0]}` : 'in the camera'
     if (t.state === 'paused')

@@ -182,6 +182,8 @@ export function GuardCard({ row, trip, now }: { row: FleetRow; trip: GuardTrip; 
   const running = row.status.state === 'printing' || row.status.state === 'paused' || row.status.state === 'preparing'
   const stats = running ? statusLine(row, now).replace(/^Paused( · )?/, '') : ''
   const shown = Boolean(url) && broken !== url
+  // A clean look found nothing: no spot, no badge, only the new picture.
+  const marked = shown && !(trip.answered && trip.answeredBy === 'clear')
   return (
     <article ref={ref} className="guard-card" data-state={trip.state} data-kind={trip.kind} aria-labelledby={headingId} tabIndex={-1}>
       <div className="guard-frame">
@@ -197,9 +199,9 @@ export function GuardCard({ row, trip, now }: { row: FleetRow; trip: GuardTrip; 
         ) : (
           <div className="guard-noframe">No picture from the camera</div>
         )}
-        {shown && trip.box ? <Spot at={placeBox(trip.box, fit)} label={trip.kind === 'hand' ? 'Hand' : 'On the plate'} /> : null}
+        {marked && trip.box ? <Spot at={placeBox(trip.box, fit)} label={trip.kind === 'hand' ? 'Hand' : 'On the plate'} /> : null}
         {/* No spot to mark: a badge in the corner, so the strike never sits on nothing. */}
-        {shown && !trip.box ? (
+        {marked && !trip.box ? (
           <div className="guard-badge">
             <StrikeMark size={26} pulse={false} />
             <span>{trip.kind === 'hand' ? 'Hand seen' : 'Something on the plate'}</span>

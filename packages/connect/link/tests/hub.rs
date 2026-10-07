@@ -3290,6 +3290,7 @@ async fn dismissing_a_hand_keeps_the_paused_card_until_someone_resumes() {
         (Some("paused"), Some(true)),
         "{t}"
     );
+    assert_eq!(t["answeredBy"], "dismissed", "{t}");
     // Only a resume ends it.
     mocks.set_state("moonraker", "printing").await;
     wait_state(&mut app, "printing").await;
@@ -3396,10 +3397,11 @@ async fn this_plate_is_clear_on_a_held_start_takes_a_new_picture() {
     assert_eq!(r["error"]["code"], "plate_check", "{r}");
     let held = trip(&mut app).await;
     // The person clears the plate and says so: a fresh still, taken after the click, not the flagged one.
+    // The two can fall in the same millisecond on a fast camera, so the check is "not earlier".
     let r = call(&mut app, 4, "watch.plateClear", json!({ "printerId": "bay-4" })).await;
     let from = r["result"]["plateFrom"].as_str().unwrap().to_owned();
     assert!(
-        from.as_str() > held["capturedAt"].as_str().unwrap(),
+        from.as_str() >= held["capturedAt"].as_str().unwrap(),
         "{from} after {held}"
     );
     assert!(trip(&mut app).await.is_null());
@@ -3489,6 +3491,9 @@ async fn check_again_on_a_hand_looks_at_a_new_frame() {
         (Some("paused"), Some(true)),
         "{t}"
     );
+    // Answered by a clean look, not a dismissal; the card says so and marks nothing.
+    assert_eq!(t["answeredBy"], "clear", "{t}");
+    assert!(t["box"].is_null(), "{t}");
     assert_eq!(mock_state(&mocks).await, "paused");
 }
 

@@ -388,6 +388,8 @@ export interface GuardTrip {
   capturedAt?: string
   /** The person answered it (dismissed, the plate checked clean, a spot marked fine) while the print stays paused: the card stays with Resume. */
   answered?: boolean
+  /** How it was answered: dismissed, `clear` (a new look found nothing; the spot is dropped), `fine` (a spot marked as a plate mark) or `off`. */
+  answeredBy?: 'dismissed' | 'clear' | 'fine' | 'off'
 }
 
 /** What the guard knows: current trips, printers it is off for, empty-plate picture times, and whether a detector is connected. */
