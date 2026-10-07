@@ -437,6 +437,7 @@ const chuteBlack = new MeshStandardMaterial({ color: new Color('#26272e'), metal
 const chuteInside = new MeshStandardMaterial({ color: new Color('#0d0d10'), metalness: 0.1, roughness: 0.9 })
 const chuteSteel = new MeshStandardMaterial({ color: new Color('#a9aeb9'), metalness: 0.85, roughness: 0.32 })
 const wiperMat = new MeshStandardMaterial({ color: new Color('#3b3d47'), metalness: 0.02, roughness: 0.7 })
+const framePlastic = new MeshStandardMaterial({ color: new Color('#c9ccd3'), metalness: 0.05, roughness: 0.55 })
 
 const slab = (mat: Material, x0: number, x1: number, y0: number, y1: number, z0: number, z1: number, name: string, r = 0): Mesh => {
   const geo = r > 0 ? new RoundedBoxGeometry(x1 - x0, y1 - y0, z1 - z0, 2, r) : new BoxGeometry(x1 - x0, y1 - y0, z1 - z0)
@@ -496,7 +497,8 @@ export class PurgeRig {
     this.exit = ch?.exit ?? 'front'
     this.mouth = ch?.mouth ?? CHUTE
     this.chute.rotation.z = TURN[this.exit]
-    if (ch) this.buildChute()
+    if (ch?.frame) this.buildFrameChute()
+    else if (ch) this.buildChute()
   }
 
   setColors(colors: readonly string[]): void {
@@ -536,6 +538,30 @@ export class PurgeRig {
       slab(wiperMat, wp.x[0], wp.x[1], wp.y[0], wp.y[1], wp.z[0], wp.z[1], 'wiper', 0.35),
       slab(chuteSteel, wp.x[0], wp.arm, wp.y[0], wp.y[1], wp.holder, wp.z[0], 'arm', 0.3),
       slab(chuteBlack, wp.post[0], wp.post[1], wp.y[0], wp.y[1], top, wp.holder, 'post'),
+    )
+    this.chute.traverse((o) => void ((o as Mesh).isMesh && ((o as Mesh).receiveShadow = true)))
+  }
+
+  /**
+   * The A1 and A1 mini chute, estimated from Bambu's product photos (docs/toolchanger-sim.md): a small, low shaft in
+   * the frame's light gray plastic at the bed's left, open below so the purge drops through, its mouth just under the
+   * bed's surface, with the wiper blade on a block at the side the head leaves by, toward the bed.
+   */
+  private buildFrameChute(): void {
+    const [x0, x1] = this.mouth.x
+    const [y0, y1] = this.mouth.y
+    const w = CHUTE.wall
+    const top = -2
+    const bot = top - 22
+    const wp = { ...CHUTE.wiper, y: [y0 - w - 1.4, y0 - w] as const }
+    this.chute.add(
+      slab(framePlastic, x0 - w, x1 + w, y0 - w, y0, bot, top, 'front wall', 0.6),
+      slab(framePlastic, x0 - w, x1 + w, y1, y1 + w, bot, top, 'back wall', 0.6),
+      slab(framePlastic, x0 - w, x0, y0 + 0.01, y1 - 0.01, bot, top, 'side wall', 0.6),
+      slab(framePlastic, x1, x1 + w, y0 + 0.01, y1 - 0.01, bot, top, 'side wall', 0.6),
+      // The wiper: a silicone blade at the nozzle's height on a gray block against the front wall.
+      slab(wiperMat, wp.x[0], wp.x[1], wp.y[0], wp.y[1], wp.z[0], wp.z[1], 'wiper', 0.35),
+      slab(framePlastic, wp.x[0] - 1, wp.x[1] + 1, wp.y[0], wp.y[1], bot, wp.z[0] - 0.01, 'wiper block'),
     )
     this.chute.traverse((o) => void ((o as Mesh).isMesh && ((o as Mesh).receiveShadow = true)))
   }

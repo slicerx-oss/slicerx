@@ -128,6 +128,7 @@ Numbers.
 | X1, X1E, P1P, P1S: cut at X 70, Y 265; flush at X 54, Y 265; wipe right along Y 265 to X 165, then Y 256 | change G-code (`G1 X70`, `G1 Y265`, the wipe moves after the flush), start G-code (`G1 X54`, `G1 Y265` before its flush) | measured |
 | H2S: the H2 family's chute at X 95.5, Y 336 and the H2D's exit moves (Y 320, 295, 265) | the H2C template's `M620.14`; the H2S change G-code's exit moves | measured |
 | The chute's mouth and wiper blade, the H2D's turned to face the way the head leaves; on the X1 and P1 the mouth starts 2 mm behind the bed, on the A1 mini 2 mm left of it | no public drawing | estimated |
+| A1, A1 mini: their own chute body, a low light gray shaft 22 mm deep, open below, with its mouth 2 mm under the bed's surface (24 by 22 mm on the A1, 34 by 26 mm on the mini) and the wiper blade on a block at the bed side, not the H2 family's shaft | Bambu's product photos and wiki images; no drawing | estimated, to confirm on the owner's A1 and A1 mini |
 
 The A1 and A1 mini move the bed in y and the gantry in z. Their chute stands on the frame, so Preview, which holds the bed still, keeps it still at its flush spot at bed level: the change moves the bed to that y before it flushes, so the head meets the chute there. The P2S's change G-code hands the cut, the flush and the wipe to firmware macros (`G150`) and writes no position, so Preview has no chute for it and plays its swaps in place, as before.
 
