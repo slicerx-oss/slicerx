@@ -3,19 +3,13 @@
 // A modeling tool left open in Design waits there (cad/park.ts); Slice says so on the viewport, with the way back
 // and a way to drop it.
 import { Button, Icon } from '@slicerx/ui'
-import { set, setModelMode, useApp, type CadTool } from '../../state/store'
-import { SHELF_TOOLS } from '../design/shelf-tools'
-
-/** The tool's short name, as the shelf shows it. */
-export function parkedLabel(tool: CadTool): string {
-  const t = SHELF_TOOLS.find((x) => x.tool === tool)
-  return t?.short ?? t?.label ?? 'A tool'
-}
+import { set, setModelMode, useApp } from '../../state/store'
+import { SHELF_TOOLS, toolLabel } from '../design/shelf-tools'
 
 export function ParkedChip() {
   const tool = useApp((s) => s.parked?.tool ?? null)
   if (!tool) return null
-  const label = parkedLabel(tool)
+  const label = toolLabel(tool)
   const icon = SHELF_TOOLS.find((x) => x.tool === tool)?.icon ?? 'ruler'
   return (
     <div className="parked-chip sx-overlay" role="status" data-testid="parked-chip">

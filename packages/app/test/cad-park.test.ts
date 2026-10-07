@@ -87,10 +87,12 @@ describe('leaving Design', () => {
     expect(get().parked?.tool).toBe('fillet')
   })
 
-  it('leaves Measure and Array open, since they work in Slice too', () => {
-    set({ objectTool: 'measure' })
-    setModelMode('slice')
-    expect(get()).toMatchObject({ objectTool: 'measure', parked: null })
+  it('closes Measure and Array, which have nothing to keep', () => {
+    for (const tool of ['measure', 'array'] as const) {
+      set({ workspace: 'prepare', modelMode: 'design', objectTool: tool })
+      setModelMode('slice')
+      expect(get()).toMatchObject({ objectTool: null, parked: null })
+    }
   })
 
   it('puts a rolled back part back whole and parks the step being edited', () => {
@@ -190,6 +192,18 @@ describe('a parked draft', () => {
     setModelMode('slice')
     set({ plate: [] })
     expect(get().parked).toBeNull()
+    expect(get().toast?.text).toBe('Fillet closed: its object is no longer on the plate.')
+  })
+
+  it('says so when the step it looked at is gone', async () => {
+    const whole = box()
+    set({ plate: [{ ...whole, parts: [] }], historyEdit: { objectId: 'a', index: 0, original: whole, view: true }, objectTool: null })
+    setModelMode('slice')
+    set({ plate: [{ ...whole, history: { ...history, steps: [history.steps[1]!] } }] })
+    setModelMode('design')
+    await resume(host)
+    expect(begun).toEqual([])
+    expect(get().toast?.text).toBe('The step view closed: its step is gone.')
   })
 
   it('stays when other objects change', () => {

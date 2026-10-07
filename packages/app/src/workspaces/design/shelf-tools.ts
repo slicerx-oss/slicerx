@@ -84,6 +84,12 @@ export function shelfGroup(tools: readonly ShelfTool[], group: ShelfGroup): ({ k
   return out
 }
 
+/** A tool's short name, as the shelf shows it. */
+export function toolLabel(tool: ToolId): string {
+  const t = SHELF_TOOLS.find((x) => x.tool === tool)
+  return t?.short ?? t?.label ?? 'A tool'
+}
+
 /** Tools that model a part: choosing one from Slice opens Design. Cut, Measure, Array and the mesh tools work in both. */
 export function opensDesign(tool: ToolId): boolean {
   return tool !== 'cut' && tool !== 'measure' && tool !== 'array' && tool !== 'hole' && tool !== 'hollow' && tool !== 'simplify'

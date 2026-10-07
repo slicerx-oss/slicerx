@@ -6,7 +6,7 @@
 // or when another tool or step opens instead.
 import { useEffect, useState, type Dispatch, type SetStateAction } from 'react'
 import { appStore, get, isCadTool, set, toast, type AppState, type CadTool, type Parked } from '../state/store'
-import { opensDesign } from '../workspaces/design/shelf-tools'
+import { opensDesign, toolLabel } from '../workspaces/design/shelf-tools'
 import { beginEdit, cancelEdit, nowOf, viewStep } from './history/ops'
 
 type Loader = Parameters<typeof beginEdit>[0]
@@ -81,7 +81,9 @@ export function park(): void {
   const ed = s.historyEdit
   // Named values apply as they are typed, so their panel has nothing to keep.
   const tool = isCadTool(s.objectTool) && opensDesign(s.objectTool) && s.objectTool !== 'values' ? s.objectTool : null
-  if (!tool && !ed) return
+  // Measure and Array keep nothing worth parking, and their probe would keep Slice from showing the toolpaths.
+  const closes = s.objectTool === 'measure' || s.objectTool === 'array'
+  if (!tool && !ed) return void (closes && set({ objectTool: null }))
   const step = ed?.original.history?.steps[ed.index]
   const objectId = ed?.objectId ?? (live.get(OBJECT) as string | null | undefined) ?? null
   const fields = tool ? Object.fromEntries([...live].filter(([k]) => k !== OBJECT)) : {}
@@ -94,7 +96,7 @@ export function park(): void {
     ...(ed && step ? { historyEdit: { stepId: step.id, ...(ed.view ? { view: true } : {}) } } : {}),
     ...(e ? { basis: { transform: [...e.transform], parts: e.parts } } : {}),
   }
-  set({ parked, ...(tool ? { objectTool: null } : {}) })
+  set({ parked, ...(tool || closes ? { objectTool: null } : {}) })
 }
 
 const sameMatrix = (a: readonly number[], b: readonly number[]) => a.length === b.length && a.every((v, i) => Math.abs(v - (b[i] ?? 0)) < 1e-9)
@@ -108,7 +110,7 @@ export async function resume(host: Loader): Promise<void> {
   // A tool or step chosen on the way in wins over the parked one.
   if (s.objectTool !== null || s.historyEdit) return
   const e = p.objectId ? s.plate.find((x) => x.id === p.objectId) : undefined
-  if (p.objectId && !e) return
+  if (p.objectId && !e) return void (p.tool && dropped(p, 'its object is no longer on the plate'))
   const remade = Boolean(p.basis && e && e.parts !== p.basis.parts)
   const now = p.basis && e && !remade && !sameMatrix(p.basis.transform, e.transform) ? nowOf({ transform: p.basis.transform }, e.transform) : null
   if (p.tool) handback = { tool: p.tool, fields: p.fields, now, remade }
@@ -117,8 +119,7 @@ export async function resume(host: Loader): Promise<void> {
       const index = e.history?.steps.findIndex((x) => x.id === p.historyEdit!.stepId) ?? -1
       if (index < 0) {
         handback = null
-        if (p.tool) toast('The step being edited is gone, so its edit was dropped.', 'warn')
-        return
+        return dropped(p, 'its step is gone')
       }
       await (p.historyEdit.view ? viewStep(host, e.id, index) : beginEdit(host, e.id, index))
       // Design closed again while the step replayed: it goes back to waiting.
@@ -133,10 +134,18 @@ export async function resume(host: Loader): Promise<void> {
   }
 }
 
+/** Says what a park that cannot come back was. */
+function dropped(p: Parked, why: string): void {
+  toast(p.tool ? `${toolLabel(p.tool)} closed: ${why}.` : `The step view closed: ${why}.`, 'warn')
+}
+
 appStore.subscribe((s, prev) => {
   if (inDesign(prev) && !inDesign(s)) return park()
   // Its object left the plate (deleted, undone, another project or plate).
   const p = s.parked
-  if (p?.objectId && s.plate !== prev.plate && !s.plate.some((e) => e.id === p.objectId)) set({ parked: null })
+  if (p?.objectId && s.plate !== prev.plate && !s.plate.some((e) => e.id === p.objectId)) {
+    set({ parked: null })
+    if (p.tool) dropped(p, 'its object is no longer on the plate')
+  }
   if (handback && s.objectTool !== prev.objectTool && s.objectTool !== handback.tool) handback = null
 })
