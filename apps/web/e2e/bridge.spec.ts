@@ -282,14 +282,28 @@ test('A1 with Developer Mode off: status keeps coming, and Print saves the file 
 })
 
 /** A failure detector stand-in on the watch role: takes one frame of the printer, then reports a hand on it. */
-async function reportHand(printerId: string): Promise<{ frame: Uint8Array; paused: boolean; close(): void }> {
+async function reportHand(printerId: string): Promise<{ frame: Uint8Array; paused: boolean; looks: { hand: boolean; count: number }; close(): void }> {
   const { connectLink } = await import('../../../packages/connect/link-client/src/index.ts')
-  const det = await connectLink({ url: linkUrl, code, role: 'watch' })
+  // It also answers Check again (`watch.look`): a hand while `looks.hand` is set.
+  const looks = { hand: true, count: 0 }
+  class Looking extends WebSocket {
+    constructor(u: string | URL) {
+      super(u)
+      this.addEventListener('message', (m: MessageEvent) => {
+        if (typeof m.data !== 'string') return
+        const msg = JSON.parse(m.data) as { event?: string; data?: { checkId: string; printerId: string } }
+        if (msg.event !== 'watch.look' || !msg.data) return
+        looks.count++
+        this.send(JSON.stringify({ id: 800_000 + looks.count, method: 'watch.lookResult', params: { checkId: msg.data.checkId, printerId: msg.data.printerId, hand: looks.hand } }))
+      })
+    }
+  }
+  const det = await connectLink({ url: linkUrl, code, role: 'watch', WebSocket: Looking as unknown as typeof WebSocket })
   const frame = await new Promise<Uint8Array>((resolve) => {
     void det.watch.subscribe((f) => f.printerId === printerId && resolve(f.data), { everyMs: 2000, printerIds: [printerId] })
   })
   const { paused } = await det.watch.report({ printerId, kind: 'hand', confidence: 0.88, box: [0.06, 0.55, 0.4, 0.98], note: '2 of the last 3 frames, siglip2-base-224' })
-  return { frame, paused, close: () => det.close() }
+  return { frame, paused, looks, close: () => det.close() }
 }
 
 test('the camera guard pauses for a hand and brings its card up on Printers', async ({ page }) => {
@@ -312,11 +326,16 @@ test('the camera guard pauses for a hand and brings its card up on Printers', as
       await expect(card.locator('img')).toHaveAttribute('src', /^blob:/)
       await expect(card.locator('.guard-spot svg.strike')).toBeVisible()
       await expect(card.getByRole('button', { name: 'Resume' })).toBeEnabled()
-      // Check again takes a new picture and changes nothing else.
+      // The pill says Paused; the status line does not say it again (QA P6).
+      await expect(card.getByText('Paused', { exact: true })).toHaveCount(1)
+      // Check again asks the detector about a new frame (QA M7): still a hand, so the card stays as it was.
       await card.getByRole('button', { name: 'Check again' }).click()
+      await expect(page.getByText('There is still a hand in the new picture')).toBeVisible()
+      expect(det.looks.count).toBe(1)
       await expect(card.getByRole('heading', { name: 'Paused: a hand in the printer' })).toBeVisible()
-      // Dismiss answers the card but the print stays paused, so Resume stays (QA 0.2.0: the card vanished, the printer paused).
-      await card.getByRole('button', { name: 'Dismiss, it was me' }).click()
+      // The hand is gone: answered, still paused, with Resume (QA 0.2.0: the card vanished, the printer paused).
+      det.looks.hand = false
+      await card.getByRole('button', { name: 'Check again' }).click()
       await expect(card.getByRole('heading', { name: 'Still paused' })).toBeVisible()
       expect((await admin!.status('a1')).state).toBe('paused')
       await resumeFromCard(page, card)
@@ -325,17 +344,30 @@ test('the camera guard pauses for a hand and brings its card up on Printers', as
     } finally {
       det.close()
     }
+    // A second hand, dismissed: still paused with Resume until the person resumes.
+    const again = await reportHand('a1')
+    try {
+      expect(again.paused).toBe(true)
+      const card = page.locator('.guard-card')
+      await card.getByRole('button', { name: 'Dismiss, it was me' }).click()
+      await expect(card.getByRole('heading', { name: 'Still paused' })).toBeVisible()
+      expect((await admin!.status('a1')).state).toBe('paused')
+      await resumeFromCard(page, card)
+      await expect.poll(async () => (await admin!.status('a1')).state, { timeout: 20_000 }).toBe('printing')
+      await expect(card).toHaveCount(0)
+    } finally {
+      again.close()
+    }
   } finally {
     await ctl('/bambu', { cameraFrame: null })
   }
 })
 
-/** Resume on the guard card, then the approval a resume asks for. */
+/** Resume on the guard card. The click is the approval: no second card opens (QA M9). */
 async function resumeFromCard(page: Page, card: Locator): Promise<void> {
   await card.getByRole('button', { name: 'Resume' }).click()
-  const approval = page.locator('dialog.approve-dialog')
-  await expect(approval).toBeVisible()
-  await approval.getByRole('button', { name: 'Approve' }).click()
+  await expect(page.getByText(/Resumed on A1/)).toBeVisible()
+  await expect(page.locator('dialog.approve-dialog[open]')).toHaveCount(0)
 }
 
 /** A plate detector stand-in on the watch role: answers every plate check with `answer()`. */

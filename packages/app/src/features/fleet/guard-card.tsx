@@ -66,9 +66,24 @@ export function GuardCard({ row, trip, now }: { row: FleetRow; trip: GuardTrip; 
       setBusy(false)
     }
   }
-  const resume = run(() => printerAction(host, row, 'resume'))
+  // Resume on this card is the person's approval for this pause: the hub resumes it without a second
+  // card. A hub without that call falls back to the usual approval.
+  const resumeNow = async () => {
+    if (hub && typeof hub.watch.resume === 'function') {
+      await hub.watch.resume(row.id)
+      toast(`Resumed on ${row.name}`, 'ok')
+    } else await printerAction(host, row, 'resume')
+  }
+  const resume = run(resumeNow)
   const dismiss = run(async () => hub?.watch.dismiss(row.id, trip.kind ?? 'hand'))
-  const look = run(again)
+  const look = run(async () => {
+    if (!hub || typeof hub.watch.handCheck !== 'function') return again()
+    const r = await hub.watch.handCheck(row.id)
+    await again()
+    if (!r.checked) toast('New picture taken. The watch is not running, so nothing looked at it.', 'warn')
+    else if (r.hand) toast('There is still a hand in the new picture. The print stays paused.', 'warn')
+    else toast('No hand in the new picture. Resume when you are ready.', 'ok')
+  })
   const checkPlate = run(async () => {
     const r = await hub?.watch.plateCheck(row.id)
     if (r && !r.checked) toast('The plate check needs the camera and the watch running.', 'warn')
@@ -85,7 +100,7 @@ export function GuardCard({ row, trip, now }: { row: FleetRow; trip: GuardTrip; 
     const start = heldStart(row.id)
     await hub?.watch.plateIgnore(row.id)
     if (trip.state === 'blocked' && start) await start()
-    else if (trip.state === 'paused') await printerAction(host, row, 'resume')
+    else if (trip.state === 'paused') await resumeNow()
   })
 
   const monitor = trip.monitorOnly === true
@@ -148,6 +163,8 @@ export function GuardCard({ row, trip, now }: { row: FleetRow; trip: GuardTrip; 
       </>
     )
 
+  // The pill already says the state; the line adds only what it does not (layer, time left).
+  const stats = statusLine(row, now).replace(/^Paused( · )?/, '')
   const [l, t, r, b] = trip.box ?? [0.35, 0.3, 0.65, 0.7]
   return (
     <article ref={ref} className="guard-card" data-state={trip.state} data-kind={trip.kind} aria-labelledby={headingId} tabIndex={-1}>
@@ -177,7 +194,7 @@ export function GuardCard({ row, trip, now }: { row: FleetRow; trip: GuardTrip; 
           </p>
         ) : null}
         <p className="guard-text">{copy.body}</p>
-        <p className="guard-stats">{statusLine(row, now)}</p>
+        {stats ? <p className="guard-stats">{stats}</p> : null}
         <div className="guard-acts">{actions}</div>
         {copy.note ? <p className="guard-note">{copy.note}</p> : null}
       </div>
