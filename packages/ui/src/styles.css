@@ -257,10 +257,12 @@ button { cursor: pointer; }
 .sx-block:last-child { border-bottom: 0; }
 .sx-block-h { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 12px; min-height: 24px; }
 .sx-block-h h3 { margin: 0; font: var(--fw-semibold) var(--fs-md) / var(--lh-tight) var(--f-body); color: var(--fg); letter-spacing: 0.005em; }
+.sx-block-h h3 { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.sx-block-h .sx-block-icon { width: 16px; height: 16px; flex: none; color: var(--accent); }
 .sx-block-h .sx-block-aside { font: var(--fw-medium) var(--fs-xs) var(--f-mono); color: var(--dim); }
 .sx-block-h > button.sx-block-toggle { all: unset; cursor: pointer; display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; }
-.sx-block-toggle .sx-ic { width: 15px; height: 15px; color: var(--dim); transition: transform var(--t-base) var(--ease); }
-.sx-block-toggle[aria-expanded="false"] .sx-ic { transform: rotate(-90deg); }
+.sx-block-toggle > .sx-ic { width: 15px; height: 15px; color: var(--dim); transition: transform var(--t-base) var(--ease); }
+.sx-block-toggle[aria-expanded="false"] > .sx-ic { transform: rotate(-90deg); }
 .sx-block[data-collapsed] .sx-block-h { margin-bottom: 0; }
 .sx-kv { display: grid; grid-template-columns: repeat(var(--cols, 3), 1fr); margin-top: 14px; border-top: 1px solid var(--line-soft); }
 .sx-kv > div { padding: 10px 0 0; min-width: 0; }

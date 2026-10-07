@@ -862,3 +862,17 @@ button.tuned-badge:hover { background: color-mix(in srgb, currentColor 14%, tran
 .sx-edition-logo .sx-brand-word { font-size: inherit; }
 .sx-edition-logo img { display: block; height: 1.15em; width: auto; }
 .sx-edition-logo > img:only-child { height: 1.4em; }
+
+/* Slice sidebar: printer, filament and print settings as separate flat panels on the darker ground, each opening
+   with a header strip. Printer and filament fold to a summary line (shell/fold.ts). */
+.studio[data-mode="prepare"]:not([data-model-mode="design"]) > .pane .sx-rail-body { background: var(--ink-0); }
+.studio[data-mode="prepare"]:not([data-model-mode="design"]) > .pane .sx-rail-body::after { background: linear-gradient(to bottom, transparent, var(--ink-0)); }
+.studio[data-mode="prepare"]:not([data-model-mode="design"]) > .pane .pane-body { display: flex; flex-direction: column; gap: var(--s-2); padding: var(--s-2) var(--s-2) 56px; }
+.studio[data-mode="prepare"]:not([data-model-mode="design"]) > .pane .pane-body > .sx-block { padding: 0 var(--s-3) var(--s-3); border: 1px solid var(--line-soft); border-radius: var(--r-md); background: var(--ink-1); }
+.studio[data-mode="prepare"]:not([data-model-mode="design"]) > .pane .pane-body > .sx-block > .sx-block-h { min-height: 40px; margin: 0 calc(-1 * var(--s-3)) var(--s-3); padding: 6px var(--s-3); background: var(--ink-2); border-bottom: 1px solid var(--line-soft); border-radius: calc(var(--r-md) - 1px) calc(var(--r-md) - 1px) 0 0; }
+.studio[data-mode="prepare"]:not([data-model-mode="design"]) > .pane .pane-body > .sx-block[data-collapsed] { padding-bottom: 0; }
+.studio[data-mode="prepare"]:not([data-model-mode="design"]) > .pane .pane-body > .sx-block[data-collapsed] > .sx-block-h { margin-bottom: 0; border-bottom: 0; border-radius: calc(var(--r-md) - 1px); }
+.sec-sum { display: flex; align-items: center; gap: 4px; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font: var(--fw-regular) var(--fs-xs) var(--f-body); color: var(--muted); }
+.sec-sum .swatch { flex: none; }
+.studio[data-mode="prepare"]:not([data-model-mode="design"]) > .pane .pane-body > .sx-block > .sx-block-h { flex-wrap: wrap; row-gap: 6px; }
+.studio[data-mode="prepare"]:not([data-model-mode="design"]) > .pane .pane-body > .sx-block > .sx-block-h h3 { white-space: nowrap; }

@@ -15,6 +15,8 @@ export interface Prefs {
   toolpathPalette?: 'standard' | 'colorblind' | undefined
   /** Settings > Look and feel: text, contrast, color vision, density and accent. */
   appearance?: Appearance | undefined
+  /** Slice sidebar sections folded to their summary line, by section id (printer, filament). */
+  sidebarFolds?: Record<string, boolean> | undefined
   /** Preview draws the moving toolhead (the machine's fixed parts show either way). */
   showToolhead?: boolean | undefined
   /** Preview playback speed, times real time; the last choice is kept. */
@@ -264,6 +266,7 @@ export function normalizePrefs(v: unknown): Prefs {
     rails: or(record(r['rails'], (k) => WORKSPACE.test(k), (x) => (isRec(x) ? { ...(bool(x['left']) !== undefined ? { left: bool(x['left'])! } : {}), ...(bool(x['right']) !== undefined ? { right: bool(x['right'])! } : {}) } : undefined)), {}),
     recents: or(list(r['recents'], 8, (x) => str(x, 80)), []),
     appearance: appearance(r['appearance'], r['toolpathPalette'] === 'colorblind'),
+    sidebarFolds: or(record(r['sidebarFolds'], (k) => /^[a-z-]{1,40}$/.test(k), bool), {}),
     showToolhead: or(bool(r['showToolhead']), true),
     playbackSpeed: or((PLAYBACK_SPEEDS as readonly number[]).includes(r['playbackSpeed'] as number) ? (r['playbackSpeed'] as number) : undefined, DEFAULT_PLAYBACK_SPEED),
     followNozzle: or(bool(r['followNozzle']), false),
