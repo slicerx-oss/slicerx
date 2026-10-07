@@ -26,6 +26,21 @@ $$;
 create trigger creators_guard_badges before insert or update on public.creators
   for each row execute function public.guard_creator_badges();
 
+-- The handle is the creator page's address, so it is locked after the first
+-- save: links to the page keep working. Staff may still change it (a support
+-- request, an impersonation report), as may the service role.
+create function public.guard_creator_handle() returns trigger
+language plpgsql set search_path = '' as $$
+begin
+  if current_user in ('authenticated', 'anon') and new.handle is distinct from old.handle and not public.is_staff() then
+    raise exception 'the handle cannot change after the creator page is made' using errcode = '42501';
+  end if;
+  return new;
+end;
+$$;
+create trigger creators_guard_handle before update of handle on public.creators
+  for each row execute function public.guard_creator_handle();
+
 -- Owner only: sets the tags on a creator page. Each is 1 to 24 characters.
 create function public.set_creator_badges(p_creator uuid, p_badges text[]) returns void
 language plpgsql volatile security definer set search_path = '' as $$
