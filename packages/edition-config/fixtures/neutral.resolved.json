@@ -31,6 +31,7 @@
     "cloudSlicing": false,
     "phonePairing": false,
     "pilot": true,
+    "cad": true,
     "localAi": true,
     "demoData": false,
     "printers": {
@@ -82,10 +83,14 @@
     "moderation": "/moderation"
   },
   "firstRun": {
-    "defaultLook": "slicerx"
+    "defaultLook": "slicerx",
+    "defaultMotion": "full"
   },
   "release": {
     "stage": "stable"
+  },
+  "bugs": {
+    "upstream": false
   },
   "links": {}
 }

@@ -159,6 +159,10 @@ pub struct Features {
     /// Set up local AI. Configs resolved before it existed have it on.
     #[serde(default = "on")]
     pub local_ai: bool,
+    /// The modeling tools (packages/edition-config/src/schema.ts, `features.cad`). Configs resolved before it
+    /// existed have it on.
+    #[serde(default = "on")]
+    pub cad: bool,
     pub demo_data: bool,
     /// Printer family (`bambu`, `moonraker`, ...) to enabled.
     pub printers: BTreeMap<String, bool>,
@@ -286,6 +290,18 @@ pub struct Release {
     /// `pre-alpha`, `alpha`, `beta` or `stable`.
     pub stage: String,
     pub bug_reports_url: Option<String>,
+    /// In-app desktop updates (packages/edition-config/src/schema.ts, `release.updates`). Unset, the desktop app
+    /// never looks for updates.
+    pub updates: Option<Updates>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct Updates {
+    /// Where the update manifest is served, tried in order.
+    pub endpoints: Vec<String>,
+    /// The public half of the edition's update signing key.
+    pub pubkey: String,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -308,6 +324,7 @@ impl Default for Release {
         Self {
             stage: "stable".into(),
             bug_reports_url: None,
+            updates: None,
         }
     }
 }
@@ -598,33 +615,72 @@ mod tests {
 
     // The Motion setting added firstRun.defaultMotion to the TypeScript schema; sx-cloud refused
     // every resolved config with it ("unknown field `defaultMotion`") and did not start.
+    /// The neutral fixture as a JSON value, `edit` applied.
+    fn neutral_with(edit: impl FnOnce(&mut serde_json::Value)) -> String {
+        let mut v: serde_json::Value = serde_json::from_str(&fixture("neutral.resolved.json")).unwrap();
+        edit(&mut v);
+        v.to_string()
+    }
+
     #[test]
     fn bugs_upstream_is_off_in_older_configs_and_read_when_present() {
-        let neutral = fixture("neutral.resolved.json");
-        assert!(!EditionConfig::from_json(&neutral).unwrap().bugs.upstream);
-        let with = neutral.replace("\"links\": {}", "\"bugs\": { \"upstream\": true }, \"links\": {}");
-        assert_ne!(with, neutral);
+        let older = neutral_with(|v| {
+            v.as_object_mut().unwrap().remove("bugs");
+        });
+        assert!(!EditionConfig::from_json(&older).unwrap().bugs.upstream);
+        let with = neutral_with(|v| v["bugs"] = serde_json::json!({ "upstream": true }));
         assert!(EditionConfig::from_json(&with).unwrap().bugs.upstream);
     }
 
     #[test]
     fn first_run_reads_default_motion_and_older_configs_without_it() {
-        let neutral = fixture("neutral.resolved.json");
-        let with = neutral.replace(
-            "\"defaultLook\": \"slicerx\"",
-            "\"defaultLook\": \"slicerx\", \"defaultMotion\": \"reduced\"",
-        );
-        assert_ne!(with, neutral);
+        let with = neutral_with(|v| v["firstRun"]["defaultMotion"] = serde_json::json!("reduced"));
         assert_eq!(
             EditionConfig::from_json(&with).unwrap().first_run.default_motion,
             "reduced"
         );
+        let older = neutral_with(|v| {
+            v["firstRun"].as_object_mut().unwrap().remove("defaultMotion");
+        });
         assert_eq!(
-            EditionConfig::from_json(&neutral)
-                .unwrap()
-                .first_run
-                .default_motion,
+            EditionConfig::from_json(&older).unwrap().first_run.default_motion,
             "full"
+        );
+    }
+
+    // features.cad reached the TypeScript schema first and sx-cloud refused every resolved config with it.
+    #[test]
+    fn the_modeling_tools_switch_is_read_and_on_in_older_configs() {
+        let off = neutral_with(|v| v["features"]["cad"] = serde_json::json!(false));
+        assert!(!EditionConfig::from_json(&off).unwrap().features.cad);
+        let older = neutral_with(|v| {
+            v["features"].as_object_mut().unwrap().remove("cad");
+        });
+        assert!(EditionConfig::from_json(&older).unwrap().features.cad);
+        assert!(
+            EditionConfig::from_json(&fixture("neutral.resolved.json"))
+                .unwrap()
+                .features
+                .cad
+        );
+    }
+
+    // release.updates reached the TypeScript schema first and sx-cloud refused the SlicerX edition's config with it.
+    #[test]
+    fn an_update_feed_is_read_and_absent_in_older_configs() {
+        let with = neutral_with(|v| {
+            v["release"]["updates"] =
+                serde_json::json!({ "endpoints": ["https://example.com/latest.json"], "pubkey": "a2V5" });
+        });
+        let updates = EditionConfig::from_json(&with).unwrap().release.updates.unwrap();
+        assert_eq!(updates.endpoints, ["https://example.com/latest.json"]);
+        assert_eq!(updates.pubkey, "a2V5");
+        assert_eq!(
+            EditionConfig::from_json(&fixture("neutral.resolved.json"))
+                .unwrap()
+                .release
+                .updates,
+            None
         );
     }
 
