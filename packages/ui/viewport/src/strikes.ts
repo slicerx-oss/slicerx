@@ -16,6 +16,9 @@ export interface StrikeMark {
   selected?: boolean
 }
 
+/** The outline under every mark. */
+const OUTLINE = '#15161c'
+
 /** Screen share of a strike's width, and of the selected one's. */
 const SIZE = 0.05
 const SELECTED = 0.075
@@ -30,6 +33,24 @@ function strikeTexture(color: string): Texture | null {
   g.translate(64, 64)
   g.scale(2, 2)
   g.lineCap = 'round'
+  // A dark outline under the ring and the X, so the mark reads on a part of its own color (an amber close call on
+  // an orange print).
+  const strokes: [number, number, number, number][] = [
+    [-17.5, -14.5, -5.5, -2.5], [3.5, 6.5, 14.5, 17.5], [-14.5, -17.5, -2.5, -5.5], [6.5, 3.5, 17.5, 14.5],
+    [14.5, -17.5, 3.5, -6.5], [-6.5, 3.5, -17.5, 14.5], [17.5, -14.5, 6.5, -3.5], [-3.5, 6.5, -14.5, 17.5],
+  ]
+  g.strokeStyle = OUTLINE
+  g.lineWidth = 4.4
+  g.beginPath()
+  g.arc(0, 0, 27, 0, Math.PI * 2)
+  g.stroke()
+  g.lineWidth = 5.2
+  g.beginPath()
+  for (const [x0, y0, x1, y1] of strokes) {
+    g.moveTo(x0, y0)
+    g.lineTo(x1, y1)
+  }
+  g.stroke()
   g.strokeStyle = color
   g.lineWidth = 2
   g.beginPath()
@@ -43,10 +64,6 @@ function strikeTexture(color: string): Texture | null {
   g.globalAlpha = 1
   g.lineWidth = 2.8
   // Each stroke of the X as two parallel perimeters, broken at the center where it lands.
-  const strokes: [number, number, number, number][] = [
-    [-17.5, -14.5, -5.5, -2.5], [3.5, 6.5, 14.5, 17.5], [-14.5, -17.5, -2.5, -5.5], [6.5, 3.5, 17.5, 14.5],
-    [14.5, -17.5, 3.5, -6.5], [-6.5, 3.5, -17.5, 14.5], [17.5, -14.5, 6.5, -3.5], [-3.5, 6.5, -14.5, 17.5],
-  ]
   g.beginPath()
   for (const [x0, y0, x1, y1] of strokes) {
     g.moveTo(x0, y0)
