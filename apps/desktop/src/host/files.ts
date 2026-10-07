@@ -31,7 +31,7 @@ export function createTauriFiles(): FileHost {
     recent: async () => [...recent, ...(await web.recent())],
     onOpenRequest(cb) {
       // Files the system hands over (a double-clicked project, an "Open in SlicerX" link) wait in the shell until asked for.
-      const takeOpened = () => void invoke<FileRef[]>('opened_take').then((refs) => refs.length && cb(refs), () => undefined)
+      const takeOpened = () => void invoke<FileRef[]>('opened_take').then((refs) => refs.length && cb(refs, 'open'), () => undefined)
       const unlisten = listen('sx-open-files', takeOpened)
       takeOpened()
       const off = web.onOpenRequest(cb)

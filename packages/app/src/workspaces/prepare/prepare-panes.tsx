@@ -18,7 +18,6 @@ import { printerMinFlush } from '../../filament/flush'
 import type { SettingValue } from '@slicerx/contracts'
 import { useResolvedSlots } from '../../filament/use-slots'
 import { effectiveSlot } from '../../filament/slots'
-import { useFits } from '../../plate/fit-state'
 import { useFitWatch } from '../../plate/fit-check'
 import { moveObject, objectWarnings, renameObject, searchObjects, setPartSlot, toggleLock, togglePrintable } from '../../plate/object-list'
 import { printBlock } from '../../plate/heimdall'
@@ -35,6 +34,8 @@ import { ModeSelector, useExpertVisible } from '../../first-run/mode-selector'
 import { ObjectActions } from './object-actions'
 const ObjectSettings = lazy(() => import('./object-settings').then((m) => ({ default: m.ObjectSettings })))
 import { ObjectTransform } from './object-transform'
+// Fit check notes: their code loads with the first object list, not at startup.
+const FitNotes = lazy(() => import('./fit-notes').then((m) => ({ default: m.FitNotes })))
 const BrimEarsPanel = lazy(() => import('./brim-ears-panel').then((m) => ({ default: m.BrimEarsPanel })))
 const CadPanel = lazy(() => import('../../cad/cad-panel').then((m) => ({ default: m.CadPanel })))
 const HistoryPanel = lazy(() => import('../../cad/history/history-panel').then((m) => ({ default: m.HistoryPanel })))
@@ -279,7 +280,6 @@ export function PrepareObjects() {
   const historyOf = useApp((s) => (s.historyEdit ? s.historyEdit.objectId : s.plate.find((p) => p.id === s.selection)?.history ? s.selection : null))
   const names = new Map(plate.map((p) => [p.id, p.name]))
   useFitWatch()
-  const fits = useFits()
   const matches = new Map(searchObjects(plate, query).map((m) => [m.id, m]))
   const searching = query.trim() !== ''
   return (
@@ -335,11 +335,6 @@ export function PrepareObjects() {
                     <Icon name="alert" size={11} /> {w.text}
                   </span>
                 ))}
-                {(fits[p.id]?.warnings ?? []).map((w, i) => (
-                  <span key={`fit-${i}`} className="obj-warn obj-fit" {...tipAttrs({ title: 'Fit check', body: w })}>
-                    <Icon name="tolerance" size={11} /> {w}
-                  </span>
-                ))}
               </span>
               <span className="obj-chev" {...tipAttrs({ title: expanded === p.id ? 'Hide details' : 'Details', body: 'Rename it, reorder it and pick a filament for each part.' })}>
                 <Icon name="chevron-down" />
@@ -348,6 +343,9 @@ export function PrepareObjects() {
             <Button size="sm" variant="ghost" icon={p.locked ? 'lock' : 'unlock'} aria-label={`${p.locked ? 'Unlock' : 'Lock'} ${p.name}`} tip={{ title: p.locked ? 'Locked' : 'Lock', body: p.locked ? 'Click to let it move again.' : 'Keep it from moving, scaling or arranging.' }} pressed={Boolean(p.locked)} onClick={() => toggleLock([p.id])} />
             <Button size="sm" variant="ghost" icon={p.printable === false ? 'hide' : 'show'} aria-label={`${p.printable === false ? 'Print' : 'Do not print'} ${p.name}`} tip={{ title: p.printable === false ? 'Not printed' : 'Printed', body: p.printable === false ? 'Click to print it again.' : 'Click to leave it out of the print.', key: 'V' }} pressed={p.printable === false} onClick={() => togglePrintable([p.id])} />
             </div>
+            <Suspense fallback={null}>
+              <FitNotes id={p.id} />
+            </Suspense>
             {expanded === p.id || (searching && !matches.get(p.id)?.self) ? (
               <div className="obj-detail">
                 <label className="obj-rename" htmlFor={`rn-${p.id}`}>
@@ -391,7 +389,7 @@ export function PrepareObjects() {
         ))}
       </ul>
       <div className="plate-actions">
-        <Button size="sm" variant="ghost" icon="plus" onClick={() => void openModelFiles(host)}>
+        <Button size="sm" variant="ghost" icon="plus" onClick={() => void openModelFiles(host, { fresh: false })}>
           Add model
         </Button>
         {more ? (

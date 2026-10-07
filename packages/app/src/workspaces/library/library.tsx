@@ -13,6 +13,7 @@ import { DEMO_MODELS } from '../../lib/demo-models'
 import { fuzzyScore } from '../../commands/fuzzy'
 import { addFileRefs, loadDemoModel, openModelFiles } from '../../state/actions'
 import { setWorkspace } from '../../state/store'
+import { newProject } from '../../project/new'
 import { useTabLabel } from '../../first-run/look'
 import { SidePane, type PaneSection } from '../../shell/pane'
 import { appName } from '../../edition'
@@ -153,7 +154,7 @@ export function Library() {
         {view === 'grid' ? (
           <div className="grid lib-grid">
             {items.map((i) => (
-              <button key={i.id} type="button" className="tile" aria-pressed={sel?.id === i.id} onClick={() => setSelected(i.id)} onDoubleClick={() => openItem(host, i)}>
+              <button key={i.id} type="button" className="tile" aria-pressed={sel?.id === i.id} onClick={() => setSelected(i.id)} onDoubleClick={() => void openItem(host, i)}>
                 <span className="tile-art">
                   {i.thumb ? <img src={i.thumb} alt="" loading="lazy" /> : i.parts ? <Silhouette parts={i.parts} /> : <LayerArt seed={i.id} muted />}
                 </span>
@@ -183,10 +184,12 @@ export function Library() {
   )
 }
 
-function openItem(host: ReturnType<typeof useHost>, i: Item): void {
+/** Opening a model starts a new project, after asking about unsaved work. */
+async function openItem(host: ReturnType<typeof useHost>, i: Item): Promise<void> {
   setWorkspace('prepare')
-  if (i.slug) void loadDemoModel(host, i.slug, { replace: true })
-  else if (i.file) void addFileRefs(host, [i.file])
+  if (i.slug) {
+    if (await newProject()) await loadDemoModel(host, i.slug, { replace: true })
+  } else if (i.file) await addFileRefs(host, [i.file], { fresh: true })
 }
 
 function ListView({ items, selected, onSelect }: { items: Item[]; selected: string | null; onSelect: (id: string) => void }) {
@@ -223,7 +226,7 @@ function Detail({ item }: { item: Item }) {
         <span className="muted">{item.source === 'example' ? `Example model. ${item.creator}.` : `${item.creator} file on this device`}</span>
       </p>
       <div className="stack8">
-        <Button variant="primary" size="lg" full icon="prepare" onClick={() => openItem(host, item)}>
+        <Button variant="primary" size="lg" full icon="prepare" onClick={() => void openItem(host, item)}>
           Open in {tab}
         </Button>
       </div>

@@ -41,6 +41,24 @@ export function towerNote(r: PrimeTowerPlacement | undefined, auto: boolean): st
   }
 }
 
+/** The tower the plate view draws, with its height. */
+export interface ShownTower {
+  at: PrimeTowerPlacement
+  heightMm: number
+}
+
+/**
+ * What the plate view draws: the finished slice's tower, or the one drawn before while a new slice runs (at the hand
+ * placed corner once auto is off), so an edit does not drop the tower and bring it back, a scene rebuild each time.
+ */
+export function towerShown(s: Pick<ReturnType<typeof get>, 'slice' | 'tower'>, before: ShownTower | null): ShownTower | null {
+  if (s.slice.status === 'running') return before && !s.tower.auto ? { ...before, at: { ...before.at, x: s.tower.x, y: s.tower.y } } : before
+  const at = towerPlacement(s)
+  if (!at || s.slice.status !== 'done') return null
+  const z = s.slice.result.layerZ
+  return { at, heightMm: z?.length ? (z[z.length - 1] as number) : 10 }
+}
+
 /** The tower as a box for the 3D view: local corner at the origin, so the transform is the corner and the angle. */
 export function towerMesh(p: PrimeTowerPlacement, heightMm: number): { positions: Float32Array; indices: Uint32Array; transform: number[] } {
   const w = p.width

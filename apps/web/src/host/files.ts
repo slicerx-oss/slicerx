@@ -11,7 +11,7 @@ interface PickerWindow {
 export function createWebFiles(): FileHost {
   const files = new Map<string, File>()
   const recent: FileRef[] = []
-  const listeners = new Set<(refs: FileRef[]) => void>()
+  const listeners = new Set<(refs: FileRef[], how: 'drop' | 'open') => void>()
   let seq = 0
 
   const remember = (f: File): FileRef => {
@@ -30,7 +30,7 @@ export function createWebFiles(): FileHost {
     if (!list || list.length === 0) return
     e.preventDefault()
     const refs = [...list].filter((f) => /\.(stl|3mf|sx3mf|sxlock|obj|amf|step|stp|gcode|json)$/i.test(f.name)).map(remember)
-    if (refs.length) for (const l of listeners) l(refs)
+    if (refs.length) for (const l of listeners) l(refs, 'drop')
   })
 
   return {

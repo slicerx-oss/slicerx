@@ -4,7 +4,7 @@
 // the store through its imperative handle. React never renders per frame
 //. If the GPU path cannot start, a flat 2D fallback
 // keeps both workspaces usable.
-import { fitLines, subscribeFits } from '../plate/fit-state'
+import { fitLines, keepFits, subscribeFits } from '../plate/fit-state'
 import type { PreviewBuffers } from '@slicerx/contracts'
 import type { ToolChangerSpec, Viewport, ViewportPlate } from '@slicerx/viewport'
 import { onThemeChange } from '@slicerx/ui/theme'
@@ -20,7 +20,7 @@ import { commitTransforms, layOnPickedFace } from '../plate/edit'
 import { cutStore, toggleConnector } from '../plate/cut-plane'
 import { probeHandler, setCameraBus, toolStore, type CadView } from '../plate/tools'
 import { useHost } from '../host'
-import { moveTower, towerMesh, towerPlacement, TOWER_ID } from '../plate/tower'
+import { moveTower, towerMesh, towerShown, TOWER_ID, type ShownTower } from '../plate/tower'
 import { appStore, selectedIds, set, toast, type AppState } from '../state/store'
 import { createFallbackViewport } from './fallback'
 import { overlayInsets } from './overlay-insets'
@@ -89,11 +89,9 @@ const PAINT_LAYERS = ['color', 'seam', 'support', 'fuzzy'] as const
 
 const VOLUME_COLOR = { negative: '#ff5555', support_blocker: '#ffb86c', support_enforcer: '#50fa7b', modifier: '#8be9fd' } as const
 
-function platePayload(s: AppState): ViewportPlate {
+function platePayload(s: AppState, shown: ShownTower | null): ViewportPlate {
   const slots = resolveSlots(s)
-  const tp = towerPlacement(s)
-  const tz = s.slice.status === 'done' ? s.slice.result.layerZ : undefined
-  const tower = tp ? towerMesh(tp, tz && tz.length ? (tz[tz.length - 1] as number) : 10) : null
+  const tower = shown ? towerMesh(shown.at, shown.heightMm) : null
   return {
     bed: s.bed,
     surfaceLabel: 'Textured PEI',
@@ -128,10 +126,12 @@ export function reframesOnRebuild(prev: { plate: readonly { id: string }[]; acti
   return !next.plate.some((o) => before.has(o.id))
 }
 
-function geometryKey(s: AppState): string {
+const towerSpot = (t: ShownTower | null): string => (t ? `${t.at.x},${t.at.y},${t.at.angle}` : '')
+
+function geometryKey(s: AppState, shown: ShownTower | null): string {
   const colors = resolveSlots(s).map((r) => r.color).join()
-  const tp = towerPlacement(s)
-  const towerKey = tp ? `tower:${tp.x},${tp.y},${tp.width},${tp.depth},${tp.angle}` : ''
+  // The tower's corner and angle are its transform; only its size rebuilds.
+  const towerKey = shown ? `tower:${shown.at.width},${shown.at.depth},${shown.heightMm}` : ''
   return towerKey + '|' + s.plate.map((p) => `${p.id}:${p.handle.id}:${p.printable === false ? 'x' : ''}${JSON.stringify(p.slotOverrides ?? {})}:${(p.volumes ?? []).map((v) => `${v.id}${v.role}${v.local.join()}`).join(';')}`).join('|') + `#${colors}#${JSON.stringify(activeMeta(s)?.settings.slotMap ?? {})}`
 }
 
@@ -203,6 +203,8 @@ export function ViewportHost({ mode }: { mode: 'prepare' | 'preview' }) {
       // Paint the viewport already holds (a stroke it just made) is not pushed back.
       let fromViewport = false
       let excludedKey: string | null = null
+      let towerBefore: ShownTower | null = null
+      let keyBefore = ''
       let changerSent: ToolChangerSpec | null | undefined
       // The purge at the chute for each change, read from the G-code once per preview and tool changer.
       let purgesFor: Timeline | null = null
@@ -253,9 +255,16 @@ export function ViewportHost({ mode }: { mode: 'prepare' | 'preview' }) {
           ),
         )
       const apply = (s: AppState, first: boolean) => {
-        const rebuilt = first || geometryKey(s) !== geometryKey(prev) || s.bed !== prev.bed || s.extruderAreas !== prev.extruderAreas
-        if (rebuilt) vp.setPlate(platePayload(s), { keepCamera: !first && !reframesOnRebuild(prev, s) })
-        else if (s.plate !== prev.plate) vp.setTransforms(Object.fromEntries(s.plate.map((p) => [p.id, p.transform])))
+        const shown = towerShown(s, towerBefore)
+        const towerMoved = towerSpot(shown) !== towerSpot(towerBefore)
+        const key = geometryKey(s, shown)
+        const rebuilt = first || key !== keyBefore || s.bed !== prev.bed || s.extruderAreas !== prev.extruderAreas
+        towerBefore = shown
+        keyBefore = key
+        // Fit notes and markers belong to the objects on the plate: a new project or a removed object takes its own along.
+        if (s.plate !== prev.plate) keepFits(s.plate.map((p) => p.id))
+        if (rebuilt) vp.setPlate(platePayload(s, shown), { keepCamera: !first && !reframesOnRebuild(prev, s) })
+        else if (s.plate !== prev.plate || towerMoved) vp.setTransforms(Object.fromEntries([...s.plate.map((p) => [p.id, p.transform]), ...(shown ? [[TOWER_ID, towerMesh(shown.at, shown.heightMm).transform]] : [])]))
         // A rebuilt scene starts unpainted; otherwise only what changed outside the brush (undo, redo, clear) goes in.
         if (rebuilt) pushPaint(s.plate, null)
         else if (s.plate !== prev.plate && !fromViewport) pushPaint(s.plate, prev.plate)

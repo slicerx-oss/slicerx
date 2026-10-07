@@ -326,8 +326,13 @@ button.reset:hover { color: var(--fg); background: var(--ink-3); }
 .mt14 { margin-top: 14px; }
 .app-err { color: var(--red); font-size: var(--fs-sm); margin: 8px 0 0; }
 /* Tiers: Advanced groups by intent, Expert adds "more" per group. */
-.obj-fit { white-space: normal; color: var(--orange); }
-.obj-fit .sx-ic { flex: none; }
+/* Fit check notes under an object: one line per kind of problem, aligned with the name, full row width. */
+.obj-notes { list-style: none; margin: 0 0 6px; padding: 0 8px 0 52px; display: grid; gap: 8px; }
+.obj-note { display: grid; grid-template-columns: 12px minmax(0, 1fr); column-gap: 6px; row-gap: 2px; font-size: var(--fs-sm); line-height: 1.4; color: var(--orange); }
+.obj-note > .sx-ic { margin-top: 3px; }
+.obj-note-acts, .obj-note-which { grid-column: 2; }
+.obj-note-acts { display: flex; flex-wrap: wrap; gap: 2px 14px; }
+.obj-note-which { list-style: none; margin: 2px 0 0; padding: 0; display: grid; gap: 2px; color: var(--muted); }
 .tier-group h4 .tier-h { display: inline-flex; align-items: center; gap: 6px; }
 .tier-group h4 .tier-h .sx-ic { width: 14px; height: 14px; color: var(--muted); }
 .tier-blurb { margin: 0 0 2px; font: var(--fs-xs)/1.4 var(--f-body); color: var(--dim); }

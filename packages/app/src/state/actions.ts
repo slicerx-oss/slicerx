@@ -25,6 +25,7 @@ import { nameOptions, plateConfig } from '../plate/plates'
 import { plateSequence } from '../plate/plate-sequence'
 import { layerHeightConflict, objectOverrides, partOverridesOf } from '../plate/object-settings'
 import { printBlock } from '../plate/heimdall'
+import { clearProject } from '../project/new'
 import { confirmDiscard, markClean } from '../project/unsaved'
 import { isExportOnly } from '../lib/hand-printers'
 import { get, markStale, set, toast, type AppState, type PlateEntry, type PlateMeta, selectedIds, type PendingApproval, type ModelSource, type PlateVolumeEntry } from './store'
@@ -94,9 +95,17 @@ export function loadDefaultPlate(host: Host): Promise<void> {
   return loadDemoModel(host, DEFAULT_MODEL, { replace: true })
 }
 
-export async function openModelFiles(host: Host): Promise<void> {
+/** Open (the default) starts a new project with the files; `fresh: false` is Add model, onto the plate as it is. */
+export async function openModelFiles(host: Host, opts: { fresh?: boolean } = {}): Promise<void> {
   const refs = await host.files.open({ accept: ['.stl', '.3mf', '.sx3mf', '.sxlock', '.obj', '.amf', '.step', '.stp', '.json', '.gcode'], multiple: true })
-  await addFileRefs(host, refs)
+  await addFileRefs(host, refs, { fresh: opts.fresh ?? true })
+}
+
+/** A new project for an opened design: asks about unsaved work first (Save, Discard, Cancel). False when canceled. */
+async function startFresh(): Promise<boolean> {
+  if (!(await confirmDiscard('open another design'))) return false
+  clearProject()
+  return true
 }
 
 /**
@@ -241,14 +250,19 @@ async function addBytes(host: Host, name: string, data: ArrayBuffer): Promise<bo
   return false
 }
 
-/** Opens model bytes that came from somewhere other than a file dialog (a download, a feature). */
-export async function openModelBytes(host: Host, name: string, data: ArrayBuffer, source?: ModelSource): Promise<void> {
+/**
+ * Opens model bytes that came from somewhere other than a file dialog (a download, a feature). `fresh` (a Vault design,
+ * a recent project) starts a new project; otherwise they go onto the plate as it is.
+ */
+export async function openModelBytes(host: Host, name: string, data: ArrayBuffer, source?: ModelSource, opts: { fresh?: boolean } = {}): Promise<void> {
+  if (opts.fresh && !(await startFresh())) return
   set({ plateLoading: true })
   try {
     const before = new Set(get().plate.map((p) => p.id))
     const told = await addBytes(host, name, data)
     // A model from the library keeps its model and creator ids for the sx3mf it is saved in.
     if (source && (source.modelId || source.creatorId)) set((s) => ({ plate: s.plate.map((p) => (before.has(p.id) ? p : { ...p, source })) }))
+    if (opts.fresh) markClean()
     if (!told) toast(`Added ${name}`)
   } catch (e) {
     toast(e instanceof Error ? e.message : `Could not open ${name}`, 'error')
@@ -257,7 +271,8 @@ export async function openModelBytes(host: Host, name: string, data: ArrayBuffer
   }
 }
 
-export async function addFileRefs(host: Host, refs: FileRef[]): Promise<void> {
+/** `fresh`: the files start a new project (Open); otherwise they go onto the plate as it is (Add model, a drop). */
+export async function addFileRefs(host: Host, refs: FileRef[], opts: { fresh?: boolean } = {}): Promise<void> {
   // A G-code file opens in Preview to view, not on the plate.
   const gcode = refs.filter((r) => isGcodeName(r.name))
   if (gcode.length) {
@@ -268,9 +283,8 @@ export async function addFileRefs(host: Host, refs: FileRef[]): Promise<void> {
   // A locked project is unlocked first, so a refusal (offline, another account) changes nothing on the plate.
   const unlocked = refs.some((r) => /\.sxlock$/i.test(r.name)) ? await (await import('../export/locked')).unlockRefs(host, refs) : new Map<FileRef, { name: string; data: ArrayBuffer }>()
   if (!unlocked) return
-  // A project file opens onto what is there, so unsaved work is offered a save first.
   const project = refs.some((r) => /\.(sx3mf|3mf|sxlock)$/i.test(r.name))
-  if (project && !(await confirmDiscard('open another project'))) return
+  if (opts.fresh && !(await startFresh())) return
   const wasEmpty = get().plate.length === 0 && get().plates.every((p) => p.objects.length === 0)
   set({ plateLoading: true })
   try {
@@ -284,6 +298,7 @@ export async function addFileRefs(host: Host, refs: FileRef[]): Promise<void> {
       told = (await addBytes(host, name, data)) || told
       if (keep) void import('../project/autosave').then((m) => m.recordRecent(name, keep))
     }
+    if (opts.fresh) markClean()
     if (project && wasEmpty) {
       // Save writes back to an opened .sx3mf; another slicer's 3MF is saved as a new file.
       const only = refs.length === 1 ? refs[0] : undefined

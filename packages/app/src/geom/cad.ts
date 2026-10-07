@@ -726,25 +726,33 @@ export interface FitOptions {
   /** Smallest gap between faces above one another. Default: the larger of minGapMm and layerHeightMm. */
   minVerticalGapMm?: number
   layerHeightMm?: number
+  /** Leave out parts that touch (they print as one piece), so they do not crowd out real gaps. */
+  skipFused?: boolean
+  /** Also report separate pieces closer than this that do not touch (kind `apart`), the closest pair per two pieces. */
+  apartMm?: number
 }
 
 export interface FitGap {
-  /** Indices into FitReport.parts. */
+  /** Indices into FitReport.parts (the bodies; each body's `item` is the mesh it came from). */
   parts: [number, number]
   gapMm: number
   limitMm: number
-  kind: 'horizontal' | 'vertical' | 'fused'
+  /** `apart`: two pieces that do not touch at all, so they print loose. */
+  kind: 'horizontal' | 'vertical' | 'fused' | 'apart'
   /** Closest points on each part, world coordinates, for drawing the gap. */
   from: Vec3
   to: Vec3
 }
 
 export interface FitReport {
-  parts: { bounds: { min: Vec3; max: Vec3 }; volumeMm3: number; triangles: number }[]
+  /** The bodies found, each with the index of the mesh it came from. */
+  parts: { bounds: { min: Vec3; max: Vec3 }; volumeMm3: number; triangles: number; item: number }[]
   /** Pairs of parts closer than their limit, closest first (at most 64). */
   gaps: FitGap[]
   limitMm: number
   verticalLimitMm: number
+  /** Bodies that touch, joined: how many separate pieces print. */
+  pieces: number
   /** One sentence per gap. */
   warnings: string[]
 }
