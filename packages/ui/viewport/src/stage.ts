@@ -80,7 +80,7 @@ varying float vH;
 void main(){ vec4 w = modelMatrix * vec4(position, 1.0); vH = w.y; gl_Position = projectionMatrix * viewMatrix * w; }`
 
 const PLATE_OUTLINE_FS = /* glsl */ `
-uniform vec3 edge; uniform vec3 edgeAlt; uniform float alert; uniform vec3 grid; uniform vec2 hb; varying vec2 vP;
+uniform vec3 edge; uniform vec3 edgeAlt; uniform float alert; uniform float ground; uniform vec3 grid; uniform vec2 hb; varying vec2 vP;
 float lines(vec2 p, float s){ vec2 q = p / s; vec2 w = fwidth(q); vec2 g = abs(fract(q - 0.5) - 0.5) / max(w, vec2(1e-4)); return (1.0 - min(min(g.x, g.y), 1.0)) * (1.0 - smoothstep(0.3, 0.7, max(w.x, w.y))); }
 void main(){
   vec2 q = abs(vP) - hb;
@@ -96,10 +96,11 @@ void main(){
   float br = max(bx, by);
   vec2 r = abs(vP) / hb;
   float fade = 1.0 - smoothstep(0.35, 1.0, max(r.x, r.y));
-  float inside = 1.0 - smoothstep(-0.4, 0.0, d);
+  // ground: no outline or corner marks, the grid runs to the quad's edge and fades out there.
+  float inside = mix(1.0 - smoothstep(-0.4, 0.0, d), 1.0, ground);
   float gl = (lines(vP + hb, 10.0) * 0.35 + lines(vP + hb, 50.0) * 0.75) * fade * inside * 0.3;
-  float inner = exp(d / 10.0) * inside * 0.045;
-  float aEdge = clamp(line * 0.9 + glow + br * 0.7, 0.0, 1.0);
+  float inner = exp(d / 10.0) * inside * 0.045 * (1.0 - ground);
+  float aEdge = clamp(line * 0.9 + glow + br * 0.7, 0.0, 1.0) * (1.0 - ground);
   float aG = clamp(gl + inner, 0.0, 1.0);
   float a = clamp(aEdge + aG * (1.0 - aEdge), 0.0, 1.0);
   vec3 col = (mix(edge, edgeAlt, alert) * aEdge + grid * aG * (1.0 - aEdge));
@@ -136,6 +137,7 @@ export class Stage {
   private outline: ShaderMaterial | null = null
   private zoneLabels: { sprite: Sprite; centre: Vector3; thin: Vector3 }[] = []
   private alert = false
+  private ground = false
   private zones: readonly NozzleZone[] = []
   private zoneDisposables: { dispose(): void }[] = []
   private excluded: readonly (readonly [number, number])[][] = []
@@ -322,6 +324,14 @@ export class Stage {
   }
 
   /** The outline turns orange while an object sits off the bed. */
+  /** Design draws a plain ground grid at bed level: no bed outline, corner marks, nozzle zones or excluded areas. */
+  setGround(on: boolean): void {
+    this.ground = on
+    if (this.outline?.uniforms.ground) this.outline.uniforms.ground.value = on ? 1 : 0
+    this.zoneGroup.visible = !on
+    this.excludeGroup.visible = !on
+  }
+
   setBedAlert(on: boolean): void {
     this.alert = on
     if (this.outline?.uniforms.alert) this.outline.uniforms.alert.value = on ? 1 : 0
@@ -429,7 +439,7 @@ export class Stage {
     const half = new Vector2(bed.widthMm / 2, bed.depthMm / 2)
     const pad = 24
     const mat = new ShaderMaterial({
-      uniforms: { edge: { value: new Color(this.colors.selection) }, edgeAlt: { value: new Color(this.colors.overhangAmber) }, alert: { value: this.alert ? 1 : 0 }, grid: { value: new Color(this.colors.floorGrid) }, hb: { value: half } },
+      uniforms: { edge: { value: new Color(this.colors.selection) }, edgeAlt: { value: new Color(this.colors.overhangAmber) }, alert: { value: this.alert ? 1 : 0 }, ground: { value: this.ground ? 1 : 0 }, grid: { value: new Color(this.colors.floorGrid) }, hb: { value: half } },
       transparent: true,
       depthWrite: false,
       vertexShader: 'varying vec2 vP; void main(){ vP = position.xy; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',

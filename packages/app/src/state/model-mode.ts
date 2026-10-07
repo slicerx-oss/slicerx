@@ -18,3 +18,8 @@ export function modelMode(): ModelMode {
 export function toggleModelMode(): void {
   if (editionHasCad()) setModelMode(get().modelMode === 'design' ? 'slice' : 'design')
 }
+
+/** Where the side panes keep their open state and widths: Design remembers its own, apart from Slice. */
+export function railKey(workspace: string, mode: ModelMode): string {
+  return workspace === 'prepare' && mode === 'design' ? 'prepare-design' : workspace
+}

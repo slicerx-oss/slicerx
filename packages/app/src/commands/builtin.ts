@@ -13,6 +13,7 @@ import { printBlock } from '../plate/heimdall'
 import { helpLinks, openLink } from '../lib/links'
 import { newProject } from '../project/new'
 import { appName, currentEdition, editionHasCad } from '../edition'
+import { modelMode, railKey } from '../state/model-mode'
 import { bugReportsOff } from '../bugs/where'
 import { updaterRegistered } from '../updates/hold'
 
@@ -142,7 +143,7 @@ export function builtinCommands(host: Host, workspaces: readonly { id: string; l
 }
 
 export function toggleRail(side: 'left' | 'right'): void {
-  const ws = get().workspace
+  const ws = railKey(get().workspace, modelMode())
   const cur = get().rails[ws]?.[side]
   const wide = window.matchMedia('(min-width: 1280px)').matches
   setRail(ws, side, !(cur ?? wide))

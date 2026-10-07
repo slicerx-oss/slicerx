@@ -21,7 +21,8 @@ const SHAPES: { shape: PrimitiveShape; label: string; icon: IconName }[] = [
   { shape: 'cone', label: 'Cone', icon: 'cone' },
 ]
 
-export function ObjectActions() {
+/** `design`: no Export menu, which belongs to Slice (Mod+S still saves the project). */
+export function ObjectActions({ design }: { design?: boolean } = {}) {
   const host = useHost()
   const hasSel = useApp((s) => s.selection !== null)
   // A plate with a strike in its slice is not exported; the item says why.
@@ -59,6 +60,7 @@ export function ObjectActions() {
         </Menu>
       </MenuAnchor>
       ) : null}
+      {design ? null : (
       <MenuAnchor>
         <Button size="sm" variant="ghost" icon="export" aria-haspopup="menu" aria-expanded={menu === 'export'} onClick={() => setMenu(menu === 'export' ? null : 'export')}>
           Export
@@ -80,6 +82,7 @@ export function ObjectActions() {
           </MenuItem>
         </Menu>
       </MenuAnchor>
+      )}
       {more ? <ObjectTools /> : null}
       {more ? <MenuAnchor>
         <Button size="sm" variant="ghost" icon="more" aria-haspopup="menu" aria-expanded={menu === 'object'} disabled={!hasSel} onClick={() => setMenu(menu === 'object' ? null : 'object')}>
