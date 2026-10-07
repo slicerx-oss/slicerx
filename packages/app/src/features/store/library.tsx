@@ -71,8 +71,9 @@ export function Library() {
 }
 
 /** Community or Mine, the account menu and Upload. */
-function VaultBar() {
+export function VaultBar() {
   const store = useStore()
+  const client = useQueryClient()
   const { session } = useSession()
   const mine = useQuery(myCreatorQuery(store, Boolean(session)))
   const [menu, setMenu] = useState(false)
@@ -114,6 +115,14 @@ function VaultBar() {
               ) : null}
               <MenuItem icon="settings" onClick={close(() => openSettings('account'))}>
                 Account settings
+              </MenuItem>
+              <MenuItem
+                icon="unlink"
+                onClick={close(() => {
+                  void store?.signOut().then(() => client.setQueryData(['session'], null))
+                })}
+              >
+                Sign out
               </MenuItem>
             </Menu>
           </MenuAnchor>

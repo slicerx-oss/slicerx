@@ -43,3 +43,25 @@ describe('a sign-in link that comes back and fails', () => {
     expect(screen.queryByRole('alert')).toBeNull()
   })
 })
+
+describe('the account menu', () => {
+  afterEach(() => cleanup())
+
+  it('signs out from the Vault bar', async () => {
+    const { VaultBar } = await import('../src/features/store/library')
+    const signOut = vi.fn(async () => undefined)
+    const store = {
+      session: async () => ({ userId: 'u1', handle: 'qa2', displayName: 'qa2', role: 'member' }),
+      onSessionChange: () => () => undefined,
+      getMyCreator: async () => null,
+      signInMethods: () => ['email'],
+      signOut,
+    } as unknown as StoreClient
+    const host = { kind: 'desktop', capabilities: {}, store } as unknown as Host
+    render(createElement(QueryClientProvider, { client: new QueryClient() }, createElement(HostContext.Provider, { value: host }, createElement(VaultBar))))
+    fireEvent.click(await screen.findByRole('button', { name: 'qa2' }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: /Sign out/ }))
+    await waitFor(() => expect(signOut).toHaveBeenCalledTimes(1))
+    expect(await screen.findByRole('button', { name: 'Sign in' })).toBeTruthy()
+  })
+})

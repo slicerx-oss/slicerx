@@ -70,8 +70,13 @@ describe('finishing an emailed sign-in link', () => {
     const first = index[0] ?? ''
     const firstVerifier = JSON.parse((await storage.getItem(`${AUTH_STORAGE_KEY}-flow-${first}-code-verifier`)) ?? '""') as string
     await auth.signInWithEmail('qa@example.com')
+    const index2 = JSON.parse((await storage.getItem(`${AUTH_STORAGE_KEY}-flows-code-verifier`)) ?? '[]') as string[]
     expect(await auth.completeSignIn(`slicerx://auth/callback?code=c3&sb_flow_id=${first}`)).toMatchObject({ ok: true })
     expect(s.tokenCalls[0]?.verifier).toBe(firstVerifier)
+    // Signed in, every pending request's verifier is cleared.
+    for (const id of index2) expect(await storage.getItem(`${AUTH_STORAGE_KEY}-flow-${id}-code-verifier`)).toBeNull()
+    expect(await storage.getItem(`${AUTH_STORAGE_KEY}-flows-code-verifier`)).toBeNull()
+    expect(await storage.getItem(`${AUTH_STORAGE_KEY}-code-verifier`)).toBeNull()
   })
 
   it('says what to do when the link answers an older request', async () => {
