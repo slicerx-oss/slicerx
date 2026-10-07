@@ -56,4 +56,5 @@ The upload scan (`sx-upload-scan`) sanitizes every upload, converts an STL to a 
 
 - Entry names must be relative, use `/` only, and contain no empty, `.` or `..` segments, backslashes, colons or control characters.
 - XML parts with a DOCTYPE or an entity other than the five predefined ones are refused.
+- SlicerX treats a file as a library model when an `sx:Listing` entry appears in any model part, or on an object in `Metadata/model_settings.config`. It reads these as XML, not by pattern: either quote, any attribute order, the value before the key, any prefix bound to the `sx` namespace, character references, CDATA, and any position in the part, however large the geometry before it.
 - `sx3mf::inspect` reads at most the first 1 MiB of the model part: the `sx:` entries come before `resources`, so the size of the geometry does not matter. It accepts up to 10,000 entries, 4 MiB for the relationships and content types parts, and an 8 MiB thumbnail. A thumbnail relationship that points at a missing part is ignored.

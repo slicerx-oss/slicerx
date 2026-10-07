@@ -230,9 +230,11 @@ async function addBytes(host: Host, name: string, data: ArrayBuffer): Promise<bo
   } else {
     // 3MF geometry for the viewport arrives with the core's mesh export; slice it meanwhile.
     const handle = await host.slicer.loadModel(data, name)
+    // A Vault design stays one when the engine opens it.
+    const source = await (await import('../export/import3mf')).vaultSourceOf(new Uint8Array(data))
     const { bed } = get()
     set((s) => ({
-      plate: [...s.plate, { id: uid('obj'), name: handle.name, handle, parts: [], colors: handle.parts.map((p) => p.color ?? brandAccent()), transform: centered(bed.widthMm, bed.depthMm) }],
+      plate: [...s.plate, { id: uid('obj'), name: handle.name, handle, parts: [], colors: handle.parts.map((p) => p.color ?? brandAccent()), transform: centered(bed.widthMm, bed.depthMm), ...(source ? { source } : {}) }],
     }))
     markStale()
   }
