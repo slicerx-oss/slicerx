@@ -2,9 +2,14 @@
 // Copyright (C) 2026 The SlicerX contributors
 // Designs from the Vault leave only as .sx3mf: no STL or OBJ export, through the export function, the commands (and so
 // the menu and the command bar) or after splitting, cutting or merging; the Vault tag survives a save and a reopen.
-import { beforeEach, describe, expect, it } from 'vitest'
-import type { Host, MeshHandle } from '@slicerx/contracts'
-import { readProject } from '../src/export/import3mf'
+import { mkdtempSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type { Host, MeshHandle, SliceResult } from '@slicerx/contracts'
+import { isVaultFile, refuseVaultFile } from '../../mcp/src/vault'
+import { exportAllPlates, exportGcode3mf, printGcode3mf } from '../src/export/actions'
+import { readProject, unzipEntries } from '../src/export/import3mf'
 import { exportMesh, meshExportBytes } from '../src/export/mesh'
 import { writeProject } from '../src/export/threemf'
 import { fromVault, VAULT_SX3MF_ONLY } from '../src/export/vault'
@@ -12,7 +17,14 @@ import { plateCommands } from '../src/plate/commands'
 import { mergeSelected, splitSelectedToObjects } from '../src/plate/edit'
 import { boxMesh } from '../src/plate/mesh-ops'
 import { compose } from '../src/plate/transform'
+import { openModelBytes } from '../src/state/actions'
 import { get, set, type PlateEntry } from '../src/state/store'
+
+// Slicing is the engine's job; here every plate slices to the same result.
+vi.mock('../src/state/actions', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../src/state/actions')>()),
+  slicePlate: async () => set({ slice: { status: 'done', result: { id: 'r1' } as never, stale: false } }),
+}))
 
 const handle = (id: string): MeshHandle => ({ id, hash: id, name: id, triangles: 12, bboxMm: [20, 20, 20], openEdges: 0, parts: [] })
 const place = (x: number) => compose({ position: [x, 50, 0], rotation: [0, 0, 0], scale: [1, 1, 1] })
@@ -82,5 +94,76 @@ describe('the Vault tag in .sx3mf files', () => {
     const bytes = writeProject({ plates: [{ id: 'p1', name: 'Plate 1', objects: [own('a')], settings: { sequence: 'by-layer' } }], bed, settings: {}, sx: { exportedBy: '' } })
     const back = await readProject(bytes, bed)
     expect(back.plates.flatMap((p) => p.objects).some((o) => o.source?.modelId)).toBe(false)
+  })
+})
+
+describe('print output made from a Vault design', () => {
+  const GCODE = ['; HEADER_BLOCK_START', '; model label id: 1', '; HEADER_BLOCK_END', '; start printing object, unique label id: 1', 'G1 X60 Y60', 'G1 X80 Y80 E1', '; stop printing object, unique label id: 1', ''].join('\n')
+  const result = { id: 'r1', engine: 'sx', layerCount: 10, layerZ: new Float32Array(), layerTimeS: new Float32Array(), stats: { timeS: 600, filamentMm: [100], filamentG: [3], cost: 0, toolChanges: 0 }, stageMicros: {}, wallMs: 1, warnings: [] } as SliceResult
+  const dec = (b: Uint8Array | undefined) => new TextDecoder().decode(b)
+  const printHost = (saved: { name: string; blob: Blob }[]) =>
+    ({
+      kind: 'web',
+      capabilities: { threads: 1 },
+      files: { save: async (name: string, blob: Blob) => (saved.push({ name, blob }), { id: name, name, size: blob.size }) },
+      slicer: {
+        exportGcode: async () => ({ fileName: 'plate.gcode', bytes: GCODE.length, sha256: '', blob: new Blob([GCODE]) }),
+        loadParts: async (name: string) => handle(name),
+      },
+    }) as unknown as Host
+  const sliced = (plate: PlateEntry[]) => set({ plate, selection: null, selectedIds: [], slice: { status: 'done', result, stale: false }, toast: null })
+
+  it('carries sx:Listing on the root model and on each object, in .gcode.3mf and in the file sent to a printer', async () => {
+    sliced([vault('vault', 60)])
+    const saved: { name: string; blob: Blob }[] = []
+    expect(await exportGcode3mf(printHost(saved))).toBe(true)
+    expect(saved[0]?.name).toMatch(/\.gcode\.3mf$/)
+    for (const bytes of [new Uint8Array(await saved[0]!.blob.arrayBuffer()), await printGcode3mf(GCODE)]) {
+      const files = await unzipEntries(bytes)
+      expect(dec(files.get('3D/3dmodel.model'))).toContain(`<metadata name="sx:Listing">${VAULT.modelId}</metadata>`)
+      expect(dec(files.get('Metadata/model_settings.config'))).toContain(`<metadata key="sx:Listing" value="${VAULT.modelId}"/>`)
+      expect(files.has('Metadata/plate_1.gcode')).toBe(true)
+    }
+  })
+
+  it('marks only the Vault object on a plate that mixes it with your own, in every plate export', async () => {
+    sliced([own('mine', 40), vault('vault', 140)])
+    const saved: { name: string; blob: Blob }[] = []
+    expect(await exportAllPlates(printHost(saved))).toBe(true)
+    const files = await unzipEntries(new Uint8Array(await saved[0]!.blob.arrayBuffer()))
+    expect(dec(files.get('3D/3dmodel.model'))).not.toContain('name="sx:Listing"')
+    const back = await readProject(new Uint8Array(await saved[0]!.blob.arrayBuffer()), { widthMm: 256, depthMm: 256 })
+    expect(back.plates.flatMap((p) => p.objects).map((o) => o.source?.modelId ?? null)).toEqual([null, VAULT.modelId])
+  })
+
+  it('leaves print output from your own designs without sx: metadata', async () => {
+    sliced([own('mine', 60)])
+    const files = await unzipEntries(await printGcode3mf(GCODE))
+    expect(dec(files.get('3D/3dmodel.model'))).not.toContain('sx:')
+    expect(dec(files.get('Metadata/model_settings.config'))).not.toContain('sx:')
+  })
+
+  it('round trips: a sliced Vault design exported as .gcode.3mf opens as a Vault design, STL export stays off and the MCP refuses it', async () => {
+    sliced([vault('vault', 60)])
+    const saved: { name: string; blob: Blob }[] = []
+    const h = printHost(saved)
+    expect(await exportGcode3mf(h)).toBe(true)
+    const bytes = await saved[0]!.blob.arrayBuffer()
+    set({ plate: [], plates: [{ id: 'p1', name: 'Plate 1', objects: [], settings: { sequence: 'by-layer' } }], activePlate: 'p1', selection: null, selectedIds: [] })
+    await openModelBytes(h, 'vault.gcode.3mf', bytes)
+    const opened = get().plate
+    expect(opened.length).toBeGreaterThan(0)
+    expect(opened.every((o) => o.source?.modelId === VAULT.modelId)).toBe(true)
+    set({ selection: opened[0]!.id, selectedIds: [opened[0]!.id] })
+    const out: string[] = []
+    expect(await exportMesh(host(out), 'selection', 'stl')).toBe(false)
+    expect(await exportMesh(host(out), 'plate', 'obj')).toBe(false)
+    expect(out).toEqual([])
+    const cmds = plateCommands(() => 'slicerx' as never, host([]))
+    expect(cmds.find((c) => c.id === 'export-plate-stl')?.enabled?.()).toBe(false)
+    const path = join(mkdtempSync(join(tmpdir(), 'sx-vault-')), 'vault.gcode.3mf')
+    writeFileSync(path, new Uint8Array(bytes))
+    expect(isVaultFile(path)).toBe(true)
+    expect(() => refuseVaultFile(path)).toThrow(/design from the Vault/)
   })
 })
