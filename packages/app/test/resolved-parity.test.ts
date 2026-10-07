@@ -19,6 +19,8 @@ const MODELS: { id: string; vendor: string; model: string }[] = DIR && existsSyn
 /** Differences that are expected, with the reason. */
 const REASONS: Record<string, string> = {
   machine_start_gcode: 'G-code written for SlicerX (packages/profiles/gcode.json), not the maker text',
+  extruder_clearance_dist_to_rod: "Bambu Studio's machine value, which Orca's preset leaves out (heimdall's gantry band)",
+  extruder_clearance_max_radius: "Bambu Studio's machine value, which Orca's preset leaves out (heimdall's clearance radius)",
   machine_end_gcode: 'G-code written for SlicerX',
   layer_change_gcode: 'G-code written for SlicerX',
   before_layer_change_gcode: 'G-code written for SlicerX',
