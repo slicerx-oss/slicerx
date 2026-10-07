@@ -6,7 +6,7 @@ import { createElement } from 'react'
 import { flushSync } from 'react-dom'
 import { createRoot } from 'react-dom/client'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
-import { UpdateDialogView, type UpdateDialogViewProps } from '../src/updates/dialog'
+import { ravensStill, UpdateDialogView, type UpdateDialogViewProps } from '../src/updates/dialog'
 import {
   checkForUpdates,
   DAY_MS,
@@ -129,7 +129,7 @@ describe('the update flow', () => {
     await checkForUpdates()
     expect(getUpdateState()).toEqual({ phase: { kind: 'idle' }, open: false })
     await checkForUpdates({ manual: true })
-    expect(getUpdateState()).toEqual({ phase: { kind: 'error', message: 'The feed did not answer' }, open: true })
+    expect(getUpdateState()).toEqual({ phase: { kind: 'error', step: 'check', message: 'The feed did not answer' }, open: true })
   })
 
   it('says the newest version is installed when the person asked', async () => {
@@ -214,11 +214,31 @@ describe('the update flow', () => {
       },
     })
     await checkForUpdates({ manual: true })
-    expect(getUpdateState().phase).toEqual({ kind: 'error', message: 'Signature does not match', update: found })
+    expect(getUpdateState().phase).toEqual({ kind: 'error', step: 'download', message: 'Signature does not match', update: found })
     fail = false
     retryUpdate()
     await vi.waitFor(() => expect(getUpdateState().phase.kind).toBe('ready'))
     expect(calls).toMatchObject({ check: 1, download: 2 })
+  })
+
+  it('names the step that failed, from the shell when it says, and keeps an empty reason empty', async () => {
+    // the shell names verify for a signature that does not check out
+    fakeHost({ download: async () => Promise.reject({ step: 'verify', message: '' }) })
+    await checkForUpdates({ manual: true })
+    expect(getUpdateState().phase).toEqual({ kind: 'error', step: 'verify', message: '', update: found })
+    resetUpdates()
+    fakeHost({ check: async () => Promise.reject(new Error('')) })
+    await checkForUpdates({ manual: true })
+    expect(getUpdateState().phase).toEqual({ kind: 'error', step: 'check', message: '' })
+    resetUpdates()
+    const calls = fakeHost({ restart: async () => Promise.reject({ step: 'install', message: 'Permission denied (os error 13)' }) })
+    await checkForUpdates()
+    await restartToUpdate()
+    expect(getUpdateState().phase).toEqual({ kind: 'error', step: 'install', message: 'Permission denied (os error 13)', update: found })
+    // the shell let go of the download when the install failed, so trying again downloads it again
+    retryUpdate()
+    await vi.waitFor(() => expect(getUpdateState().phase.kind).toBe('ready'))
+    expect(calls.download).toBe(2)
   })
 
   it('offers the download for a Linux package install and never downloads itself', async () => {
@@ -232,6 +252,19 @@ describe('the update flow', () => {
     await checkForUpdates({ manual: true })
     expect(getUpdateState()).toEqual({ phase: { kind: 'idle' }, open: false })
     expect(startUpdates()).toBeTypeOf('function')
+  })
+})
+
+describe('the ravens under reduced motion', () => {
+  it('follow the system unless the person chose Motion on in Settings', () => {
+    // no choice yet: the edition's default (On) does not override the system here
+    expect(ravensStill(null, true)).toBe(true)
+    expect(ravensStill(null, false)).toBe(false)
+    expect(ravensStill('system', true)).toBe(true)
+    expect(ravensStill('system', false)).toBe(false)
+    // the person's own choice wins either way
+    expect(ravensStill('full', true)).toBe(false)
+    expect(ravensStill('reduced', false)).toBe(true)
   })
 })
 
@@ -311,12 +344,34 @@ describe('the update dialog', () => {
     expect(on.download).toHaveBeenCalledWith(pkg.downloadUrl)
   })
 
-  it('says what went wrong and tries again', () => {
-    const { dialog, on, button, title } = show({ kind: 'error', message: 'Signature does not match', update: found })
-    expect(title).toBe('Could not update')
-    expect(dialog.querySelector('[role=alert]')?.textContent).toBe('Signature does not match')
-    button('Try again')!.click()
-    expect(on.retry).toHaveBeenCalledOnce()
+  it('says which step failed and what to try, and tries again', () => {
+    const check = show({ kind: 'error', step: 'check', message: '' })
+    expect(check.title).toBe('Could not check for updates')
+    expect(check.dialog.querySelector('[role=alert]')?.textContent).toMatch(/internet connection/)
+    // no empty reason, and never the old catch-all
+    expect(check.dialog.querySelector('.upd-detail')).toBeNull()
+    expect(check.dialog.textContent).not.toMatch(/Something went wrong/)
+
+    const download = show({ kind: 'error', step: 'download', message: 'error sending request', update: found })
+    expect(download.title).toBe('The download of SlicerX 0.2.0 stopped')
+    expect(download.dialog.querySelector('[role=alert]')?.textContent).toMatch(/starts over/)
+    expect(download.dialog.querySelector('.upd-detail')?.textContent).toBe('Details: error sending request')
+
+    const verify = show({ kind: 'error', step: 'verify', message: '', update: found })
+    expect(verify.title).toBe('SlicerX 0.2.0 failed its signature check')
+    expect(verify.dialog.querySelector('[role=alert]')?.textContent).toMatch(/Nothing was installed/)
+    expect(verify.dialog.querySelector<HTMLAnchorElement>('a.upd-more')?.href).toBe(found.releaseUrl)
+
+    const install = show({ kind: 'error', step: 'install', message: '', update: found })
+    expect(install.title).toBe('Could not install SlicerX 0.2.0')
+    expect(install.dialog.querySelector('[role=alert]')?.textContent).toMatch(/unchanged/)
+    install.button('Try again')!.click()
+    expect(install.on.retry).toHaveBeenCalledOnce()
+  })
+
+  it('holds the ravens still when asked, and lets them spar otherwise', () => {
+    expect(show({ kind: 'ready', update: found }, { still: true }).dialog.querySelector('svg.upd-ravens')?.hasAttribute('data-still')).toBe(true)
+    expect(show({ kind: 'ready', update: found }).dialog.querySelector('svg.upd-ravens')?.hasAttribute('data-still')).toBe(false)
   })
 
   it('says when this is the newest version, and stays put while installing', () => {

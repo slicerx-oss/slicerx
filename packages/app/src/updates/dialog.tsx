@@ -3,14 +3,14 @@
 // The update dialog, in the gods style: huginn and muninn spar in their rune ring straight on the dialog (no tile
 // or halo behind them, a still frame under reduced motion), the purple tag, a green title, the release's top
 // highlights and a link to the full notes. Restart to update is the one click; Later closes it.
-import { Button, Dialog, RAVEN_BODY, RAVEN_WING } from '@slicerx/ui'
-import { useEffect, useState, type ReactNode } from 'react'
+import { Button, Dialog, RAVEN_BODY, RAVEN_WING, systemReducesMotion } from '@slicerx/ui'
+import { useEffect, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { useEdition } from '../edition'
 import { useHost } from '../host'
 import { openLink } from '../lib/links'
 import { confirmDiscard } from '../project/unsaved'
-import { appStore } from '../state/store'
-import { laterUpdate, noteLines, restartToUpdate, retryUpdate, subscribeUpdates, updateMode, updatesHeld, useUpdateState, type FoundUpdate, type UpdatePhase } from './updates'
+import { appStore, useApp, type AppState } from '../state/store'
+import { laterUpdate, noteLines, restartToUpdate, retryUpdate, subscribeUpdates, updateMode, updatesHeld, useUpdateState, type FoundUpdate, type UpdatePhase, type UpdateStep } from './updates'
 import './dialog.css'
 
 // elder futhark on a 4 by 8 box, as in the camera loader (camera/idle.tsx)
@@ -38,10 +38,26 @@ function Raven({ at, late }: { at: string; late?: boolean }) {
   )
 }
 
-/** The two ravens sparring in the rune ring, on a transparent ground. */
-export function UpdateRavens() {
+/**
+ * Whether the ravens hold still. The system's reduce motion setting counts unless the person chose Motion on in
+ * Settings: the edition's default (On, for Remote Desktop, which reports reduce motion) is not their choice.
+ */
+export function ravensStill(choice: AppState['motion'], systemReduced: boolean): boolean {
+  if (choice === 'full') return false
+  if (choice === 'reduced') return true
+  return systemReduced
+}
+
+function subscribeSystemMotion(cb: () => void): () => void {
+  const q = typeof matchMedia === 'function' ? matchMedia('(prefers-reduced-motion: reduce)') : null
+  q?.addEventListener?.('change', cb)
+  return () => q?.removeEventListener?.('change', cb)
+}
+
+/** The two ravens sparring in the rune ring, on a transparent ground; `still` holds one frame. */
+export function UpdateRavens({ still = false }: { still?: boolean }) {
   return (
-    <svg className="upd-ravens" viewBox="40 0 120 120" aria-hidden="true" focusable="false">
+    <svg className="upd-ravens" viewBox="40 0 120 120" aria-hidden="true" focusable="false" data-still={still ? true : undefined}>
       <g className="upd-ring">
         <circle cx="100" cy="60" r="56" />
         <circle cx="100" cy="60" r="42" />
@@ -112,6 +128,8 @@ export interface UpdateDialogViewProps {
   mode: 'install' | 'download'
   /** A print is being sent or a job is starting: Restart to update waits. */
   held: boolean
+  /** Hold the ravens and the progress bar still (ravensStill). */
+  still?: boolean
   onRestart: () => void
   onLater: () => void
   onRetry: () => void
@@ -119,7 +137,7 @@ export interface UpdateDialogViewProps {
 }
 
 /** The dialog for each step: checking, up to date, out, downloading, ready, installing and could not update. */
-export function UpdateDialogView({ phase, open, app, tag, version, mode, held, onRestart, onLater, onRetry, onDownload }: UpdateDialogViewProps) {
+export function UpdateDialogView({ phase, open, app, tag, version, mode, held, still = false, onRestart, onLater, onRetry, onDownload }: UpdateDialogViewProps) {
   let title: string
   let body: ReactNode = null
   let footer: ReactNode
@@ -209,12 +227,31 @@ export function UpdateDialogView({ phase, open, app, tag, version, mode, held, o
         </Button>
       )
       break
-    case 'error':
-      title = 'Could not update'
+    case 'error': {
+      const e = failed(phase.step, app, phase.update?.version)
+      const url = phase.update?.releaseUrl
+      title = e.title
       body = (
-        <p className="upd-line" role="alert">
-          {phase.message}
-        </p>
+        <>
+          <p className="upd-line" role="alert">
+            {e.advice}
+          </p>
+          {phase.message ? <p className="upd-line upd-detail sx-small">Details: {phase.message}</p> : null}
+          {url && (phase.step === 'verify' || phase.step === 'install') ? (
+            <a
+              className="upd-more"
+              href={url}
+              target="_blank"
+              rel="noreferrer"
+              onClick={(ev) => {
+                ev.preventDefault()
+                void openLink(url)
+              }}
+            >
+              Release page
+            </a>
+          ) : null}
+        </>
       )
       footer = (
         <>
@@ -225,10 +262,11 @@ export function UpdateDialogView({ phase, open, app, tag, version, mode, held, o
         </>
       )
       break
+    }
   }
   const headline = (
     <span className="upd-head">
-      <UpdateRavens />
+      <UpdateRavens still={still} />
       <span className="upd-tag" aria-hidden="true">
         {tag}
       </span>
@@ -237,11 +275,26 @@ export function UpdateDialogView({ phase, open, app, tag, version, mode, held, o
   )
   return (
     <Dialog open={open} onClose={phase.kind === 'installing' ? () => undefined : onLater} title={headline} footer={footer} className="upd" required={phase.kind === 'installing'}>
-      <div className="upd-body" data-step={phase.kind}>
+      <div className="upd-body" data-step={phase.kind} data-still={still ? true : undefined}>
         {body}
       </div>
     </Dialog>
   )
+}
+
+/** The title and what to try for each step that can fail. */
+function failed(step: UpdateStep, app: string, version: string | undefined): { title: string; advice: string } {
+  const named = version ? `${app} ${version}` : 'the update'
+  switch (step) {
+    case 'check':
+      return { title: 'Could not check for updates', advice: 'The update server did not answer. Check your internet connection and try again.' }
+    case 'download':
+      return { title: `The download of ${named} stopped`, advice: 'Check your internet connection and try again. The download starts over.' }
+    case 'verify':
+      return { title: `${version ? named : 'The update'} failed its signature check`, advice: `Nothing was installed. Try again; if it fails again, download ${app} from the release page.` }
+    case 'install':
+      return { title: `Could not install ${named}`, advice: `${app} is unchanged. Try again, or download the new version from the release page and install it over this one.` }
+  }
 }
 
 /** Re-renders when the app's busy state changes, so Restart to update follows a print send. */
@@ -264,6 +317,7 @@ export function UpdateDialog() {
   const host = useHost()
   const edition = useEdition()
   const held = useHeld()
+  const still = ravensStill(useApp((s) => s.motion), useSyncExternalStore(subscribeSystemMotion, systemReducesMotion, () => false))
   const app = edition.brand.name
   return (
     <UpdateDialogView
@@ -274,6 +328,7 @@ export function UpdateDialog() {
       version={host.build.version}
       mode={updateMode() ?? 'install'}
       held={held}
+      still={still}
       onRestart={() => void restartToUpdate(() => confirmDiscard('restart to update'))}
       onLater={laterUpdate}
       onRetry={retryUpdate}

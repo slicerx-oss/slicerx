@@ -107,6 +107,36 @@ fn found(update: &Update) -> Found {
     }
 }
 
+/// Why a step failed, for the page to say which one and what to try: check, download, verify or install.
+#[derive(Serialize, Debug)]
+pub struct Failed {
+    step: &'static str,
+    message: String,
+}
+
+impl Failed {
+    fn at(step: &'static str, e: impl std::fmt::Display) -> Self {
+        Self {
+            step,
+            message: e.to_string(),
+        }
+    }
+}
+
+/// A download that arrived but whose signature does not check out (wrong key, changed bytes, another version) is
+/// verify; anything else on the way is download.
+fn download_step(e: &tauri_plugin_updater::Error) -> &'static str {
+    use tauri_plugin_updater::Error as E;
+    match e {
+        E::Minisign(_)
+        | E::Base64(_)
+        | E::SignatureUtf8(_)
+        | E::SignedVersionMismatch { .. }
+        | E::MissingSignedVersion => "verify",
+        _ => "download",
+    }
+}
+
 #[tauri::command]
 pub fn update_mode(state: State<'_, Updates>) -> &'static str {
     state.mode.name()
@@ -114,21 +144,21 @@ pub fn update_mode(state: State<'_, Updates>) -> &'static str {
 
 /// Asks the feed for a newer version. None when this is the newest.
 #[tauri::command]
-pub async fn update_check(app: AppHandle, state: State<'_, Updates>) -> Result<Option<Found>, String> {
+pub async fn update_check(app: AppHandle, state: State<'_, Updates>) -> Result<Option<Found>, Failed> {
     if state.mode == Mode::Off {
         return Ok(None);
     }
     let update = app
         .updater()
-        .map_err(|e| e.to_string())?
+        .map_err(|e| Failed::at("check", e))?
         .check()
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| Failed::at("check", e))?;
     let out = update.as_ref().map(found);
-    let mut held = state.found.lock().map_err(|e| e.to_string())?;
+    let mut held = state.found.lock().map_err(|e| Failed::at("check", e))?;
     // a different version than the one downloaded drops the old download
     if held.as_ref().map(|u| &u.version) != update.as_ref().map(|u| &u.version) {
-        *state.bytes.lock().map_err(|e| e.to_string())? = None;
+        *state.bytes.lock().map_err(|e| Failed::at("check", e))? = None;
     }
     *held = update;
     Ok(out)
@@ -139,16 +169,19 @@ pub async fn update_check(app: AppHandle, state: State<'_, Updates>) -> Result<O
 pub async fn update_download(
     state: State<'_, Updates>,
     on_progress: Channel<Progress>,
-) -> Result<(), String> {
+) -> Result<(), Failed> {
     if state.mode != Mode::Install {
-        return Err("This install updates through its package manager.".into());
+        return Err(Failed::at(
+            "download",
+            "This install updates through its package manager.",
+        ));
     }
     let update = state
         .found
         .lock()
-        .map_err(|e| e.to_string())?
+        .map_err(|e| Failed::at("download", e))?
         .clone()
-        .ok_or("No update to download.")?;
+        .ok_or_else(|| Failed::at("download", "No update to download."))?;
     let (mut got, mut sent) = (0u64, 0u64);
     let bytes = update
         .download(
@@ -163,35 +196,48 @@ pub async fn update_download(
             || {},
         )
         .await
-        .map_err(|e| e.to_string())?;
-    *state.bytes.lock().map_err(|e| e.to_string())? = Some(bytes);
+        .map_err(|e| Failed::at(download_step(&e), e))?;
+    *state.bytes.lock().map_err(|e| Failed::at("download", e))? = Some(bytes);
     Ok(())
 }
 
 /// Installs the downloaded update and restarts into it. Only after the person clicked Restart to update; the page
 /// holds the button while a print is being sent.
 #[tauri::command]
-pub fn update_restart(app: AppHandle, state: State<'_, Updates>) -> Result<(), String> {
+pub fn update_restart(app: AppHandle, state: State<'_, Updates>) -> Result<(), Failed> {
     let update = state
         .found
         .lock()
-        .map_err(|e| e.to_string())?
+        .map_err(|e| Failed::at("install", e))?
         .clone()
-        .ok_or("No update to install.")?;
+        .ok_or_else(|| Failed::at("install", "No update to install."))?;
     let bytes = state
         .bytes
         .lock()
-        .map_err(|e| e.to_string())?
+        .map_err(|e| Failed::at("install", e))?
         .take()
-        .ok_or("The update has not finished downloading.")?;
+        .ok_or_else(|| Failed::at("install", "The update has not finished downloading."))?;
     // Windows runs the installer and exits here; it starts the new version when it is done.
-    update.install(&bytes).map_err(|e| e.to_string())?;
+    update.install(&bytes).map_err(|e| Failed::at("install", e))?;
     app.restart()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_signature_that_does_not_check_out_is_verify_and_a_lost_connection_is_download() {
+        use tauri_plugin_updater::Error as E;
+        assert_eq!(download_step(&E::MissingSignedVersion), "verify");
+        assert_eq!(download_step(&E::SignatureUtf8("x".into())), "verify");
+        assert_eq!(download_step(&E::Network("connection reset".into())), "download");
+        let f = Failed::at("check", "");
+        assert_eq!(
+            serde_json::to_value(&f).unwrap(),
+            serde_json::json!({ "step": "check", "message": "" })
+        );
+    }
 
     #[test]
     fn a_build_without_a_feed_never_updates() {

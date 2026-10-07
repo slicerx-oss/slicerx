@@ -60,5 +60,8 @@
   .upd .sx-dialog-foot .sx-btn[data-variant="primary"] { flex: 1 1 auto; }
 }
 
-/* reduced motion: the ravens hold one still frame */
+/* reduced motion: the ravens hold one still frame. data-still also follows the system's setting when the person has
+   not chosen Motion on (ravensStill), so the edition's default of On does not keep them moving */
+.upd-ravens[data-still] *, .upd-body[data-still] .upd-progress > span { animation: none; transition: none; }
+.upd-detail { color: var(--dim); overflow-wrap: anywhere; }
 :root[data-motion="reduced"] .upd-ring, :root[data-motion="reduced"] .upd-bob, :root[data-motion="reduced"] .upd-lunge, :root[data-motion="reduced"] .upd-rwing, :root[data-motion="reduced"] .upd-spark, :root[data-motion="reduced"] .upd-progress > span { animation: none; transition: none; }
