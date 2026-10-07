@@ -64,6 +64,7 @@ export const STARTUP_ICON_PATHS: Partial<Record<IconName, string>> = {
   "new-plate": "<path d=\"M7 12.5h10.5l-3 6.5H4z\"/><path d=\"M18.5 3.5v6M15.5 6.5h6\"/>",
   "nozzle": "<rect x=\"6.5\" y=\"3.5\" width=\"11\" height=\"5\" rx=\"1.5\"/><path d=\"M8.5 8.5h7l-2 5h-3z\"/><path d=\"M11 13.5h2l-.5 2h-1z\"/><path d=\"M6 20.5h12\"/>",
   "offline": "<path d=\"M3.5 3.5l17 17\"/><path d=\"M8.5 16a5 5 0 0 1 7 0M5 12.5a10 10 0 0 1 4.3-2.3M14.7 10.2a10 10 0 0 1 4.3 2.3\"/><path d=\"M12 19.5v.01\"/>",
+  "open": "<path d=\"M3.5 18.5v-13a1 1 0 0 1 1-1h5l2 2.5h6.5a1 1 0 0 1 1 1v2.5\"/><path d=\"M3.5 18.5L6 10.5h14.5l-2.5 8z\"/>",
   "overhang": "<path d=\"M3.5 20.5h17\"/><path d=\"M5.5 20.5v-16h13v5.5H11v10.5\"/><path d=\"M15 13v5\" stroke-dasharray=\"0 2.5\"/>",
   "paint": "<path d=\"M18 3l3 3-9 9-3-3z\"/><path d=\"M9 12c-3 0-5 2-5 5 0 1.5-.5 2.5-1.5 3.5 4 0 9.5-1 9.5-5.5\"/>",
   "paste": "<path d=\"M9 4.5H7.5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h9a2 2 0 0 0 2-2v-12a2 2 0 0 0-2-2H15\"/><rect x=\"9\" y=\"3\" width=\"6\" height=\"3.5\" rx=\"1\"/>",
