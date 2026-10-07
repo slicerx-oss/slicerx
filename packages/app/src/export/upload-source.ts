@@ -21,7 +21,7 @@ export interface ProjectUpload {
 }
 
 function meshesOf(objects: readonly PlateEntry[]): CoverMesh[] {
-  return objects.flatMap((o) => o.parts.map((p) => ({ positions: p.positions, indices: p.indices, color: o.colors[p.slot - 1] ?? o.colors[0] ?? '#bd93f9', transform: o.transform })))
+  return objects.flatMap((o) => o.parts.map((p) => ({ positions: p.positions, indices: p.indices, color: o.colors[p.slot - 1] ?? o.colors[0] ?? '', slot: p.slot, transform: o.transform })))
 }
 
 /** The current project as an .sx3mf with its cover. Null when the plates are empty. */
@@ -65,13 +65,13 @@ export async function coverForFile(name: string, bytes: Uint8Array): Promise<Cov
   try {
     if (ext === 'stl') {
       const m = stlMesh(bytes)
-      return m ? renderCover([{ ...m, color: '#bd93f9' }]) : null
+      return m ? renderCover([{ ...m, color: '' }]) : null
     }
     if (ext === '3mf' || ext === 'sx3mf') {
       const { readProject } = await import('./import3mf')
       const project = await readProject(bytes, get().bed)
       const objects = project.plates.flatMap((p) => p.objects)
-      const meshes = objects.flatMap((o) => o.parts.map((p) => ({ positions: p.positions, indices: p.indices, color: project.colors[p.slot - 1] ?? project.colors[0] ?? '#bd93f9', transform: o.transform })))
+      const meshes = objects.flatMap((o) => o.parts.map((p) => ({ positions: p.positions, indices: p.indices, color: project.colors[p.slot - 1] ?? project.colors[0] ?? '', slot: p.slot, transform: o.transform })))
       return meshes.length ? renderCover(meshes) : null
     }
   } catch {

@@ -58,9 +58,9 @@ describe('cover drawing', () => {
     const img = renderCover([{ positions: box.positions, indices: box.indices, color: '#ff79c6' }], 80, 60)
     expect(img.rgba).toHaveLength(80 * 60 * 4)
     const center = (30 * 80 + 40) * 4
-    // The middle is the model (pink, red channel high), the corner is the ground.
-    expect(img.rgba[center]).toBeGreaterThan(120)
-    expect(img.rgba[0]).toBe(0x34)
+    // The middle is the model (pink washed into the ground), the corner is the ground.
+    expect(img.rgba[center]).toBeGreaterThan(img.rgba[center + 1]! + 10)
+    expect(img.rgba[0]).toBe(0x26)
     const stl = new Uint8Array(84 + 50)
     new DataView(stl.buffer).setUint32(80, 1, true)
     expect(stlMesh(stl)?.indices).toHaveLength(3)

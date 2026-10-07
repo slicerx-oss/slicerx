@@ -10,6 +10,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Button, Icon } from '@slicerx/ui'
 import { LayerArt, toast, useEdition, useHost } from '@slicerx/app'
+import { DrawingArt } from './drawing-art'
 import { coverFor } from './art'
 import { CreatorAvatar, CreatorSheetView, CreatorTags } from './creator-sheet'
 import { LINK_KIND_INFO, LINK_KINDS } from './links'
@@ -495,7 +496,7 @@ function EditorForm({ why, session, page, own }: { why: 'edit' | 'upload'; sessi
                     const cover = coverFor(l)
                     return (
                       <button key={l.id} type="button" className="ce-pick" aria-pressed={draft.pinnedId === l.id} onClick={() => set({ pinnedId: draft.pinnedId === l.id ? null : l.id })}>
-                        <span className="cs-art">{cover ? <img src={cover} alt="" /> : <LayerArt seed={l.slug} muted />}</span>
+                        <span className="cs-art">{cover ? <img src={cover} alt="" /> : <DrawingArt seed={l.slug} />}</span>
                         <span className="ce-pick-t">{l.title}</span>
                       </button>
                     )

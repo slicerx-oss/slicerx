@@ -8,6 +8,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { Icon } from '@slicerx/ui'
 import { LayerArt, toast, useHost } from '@slicerx/app'
+import { DrawingArt } from './drawing-art'
 import { coverFor, initials } from './art'
 import { LINK_KIND_INFO, linkSubtitle, linkTitle } from './links'
 import { creatorPageQuery, LIBRARY_KEY, useSession, useStore } from './queries'
@@ -235,7 +236,7 @@ export function CreatorSheetView({ page, own, preview, onClose, onFollow, onEdit
 
 function Art({ listing }: { listing: Listing }) {
   const cover = coverFor(listing)
-  return <span className="cs-art">{cover ? <img src={cover} alt="" loading="lazy" /> : <LayerArt seed={listing.slug} muted />}</span>
+  return <span className="cs-art">{cover ? <img src={cover} alt="" loading="lazy" /> : <DrawingArt seed={listing.slug} />}</span>
 }
 
 function Pinned({ listing, by, onOpen }: { listing: Listing; by: string; onOpen?: ((l: Listing) => void) | undefined }) {

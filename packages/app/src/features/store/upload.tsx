@@ -9,7 +9,8 @@ import type { FileFormat, Listing, ListingLicense, StoreClient, UploadPrintProfi
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { Button, Icon, Seg } from '@slicerx/ui'
-import { coverForFile, currentProjectUpload, LayerArt, projectHasModels, toast, vaultCreatorsInFile, type CoverImage } from '@slicerx/app'
+import { coverForFile, currentProjectUpload, projectHasModels, toast, vaultCreatorsInFile, type CoverImage } from '@slicerx/app'
+import { DrawingArt } from './drawing-art'
 import { coverFor } from './art'
 import { Frame, prepareImage, type PendingImage } from './creator-editor'
 import { ago } from './library'
@@ -381,7 +382,7 @@ function UploadForm() {
             <fieldset className="ce-set">
               <legend>Cover</legend>
               <div className="up-cover">
-                <span className="cs-art">{cover ? <img src={cover.preview} alt="Cover" /> : <LayerArt seed={draft.title || 'cover'} muted />}</span>
+                <span className="cs-art">{cover ? <img src={cover.preview} alt="Cover" /> : <DrawingArt seed={draft.title || 'cover'} />}</span>
                 <div className="ce-logo-b">
                   <div className="ce-ops">
                     <label className="ce-file">
@@ -432,7 +433,7 @@ function UploadForm() {
           <div className="up-preview">
             <div className="lib-mini">
               <span className="lib-thumb" aria-hidden="true">
-                {cover ? <img src={cover.preview} alt="" /> : <LayerArt seed={draft.title || 'cover'} muted />}
+                {cover ? <img src={cover.preview} alt="" /> : <DrawingArt seed={draft.title || 'cover'} />}
               </span>
               <h3 className="lib-mini-t">{draft.title.trim() || 'Your design'}</h3>
               <div className="lib-mini-meta">
@@ -491,7 +492,7 @@ function UploadsList() {
               const cover = coverFor(l)
               return (
                 <li key={l.id} className="up-row">
-                  <span className="cs-art">{cover ? <img src={cover} alt="" /> : <LayerArt seed={l.slug} muted />}</span>
+                  <span className="cs-art">{cover ? <img src={cover} alt="" /> : <DrawingArt seed={l.slug} />}</span>
                   <div className="min0">
                     <b className="up-title">{l.title}</b>
                     <span className="ce-hint">
