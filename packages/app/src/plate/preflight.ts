@@ -8,7 +8,7 @@ import { degC } from '../lib/temp'
 import type { Collision, PrinterInfo, PrinterStatus, SettingValue } from '@slicerx/contracts'
 import { PRINTER_MODELS, type PrinterModel } from '@slicerx/printer-catalog'
 import { appName } from '../edition'
-import { collisionDetail, collisionTitle } from './heimdall-words'
+import { closeCallNote, collisionDetail, collisionTitle } from './heimdall-words'
 
 export interface PreflightInput {
   printer: PrinterInfo
@@ -113,7 +113,7 @@ export function preflight(input: PreflightInput): Preflight {
   const name = (id: string) => input.objectNames?.[id] ?? 'an object'
   for (const c of input.collisions ?? []) {
     if (c.severity === 'hit') errors.push(`${collisionTitle(c, name)}, layer ${c.layer + 1}. ${collisionDetail(c, name)} Fix it in Preview and slice again.`)
-    else warnings.push(`${collisionTitle(c, name)}. ${collisionDetail(c, name)}`)
+    else warnings.push(closeCallNote(c, name))
   }
 
   const facts = [

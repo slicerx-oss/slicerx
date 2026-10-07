@@ -44,6 +44,16 @@ export function collisionTitle(c: Collision, name: Names, station = 'tool change
   return c.part === 'nozzle' ? `The nozzle prints into ${b}` : `The toolhead hits ${b}`
 }
 
+/**
+ * A close call on the Print sheet: one short line, then the numbers for the Details tip (the sheet's lines split at the
+ * first sentence).
+ */
+export function closeCallNote(c: Collision, name: Names): string {
+  const r = c.lastLayer > c.layer ? `layers ${c.layer + 1} to ${c.lastLayer + 1}` : `layer ${c.layer + 1}`
+  const limit = (c.limitMm ?? 0).toFixed(0)
+  return `${name(c.objectId)} passes inside the profile's margin around ${name(c.hitId)}. The nozzle comes within ${mm(Math.max(0, (c.limitMm ?? 0) - c.depthMm))} of it, where the profile asks for ${limit} mm; the head's own shape clears it, ${r}.`
+}
+
 /** Why it happens, with the numbers. */
 export function collisionDetail(c: Collision, name: Names, station = 'tool changer'): string {
   const a = name(c.objectId)
@@ -69,10 +79,26 @@ export function collisionDetail(c: Collision, name: Names, station = 'tool chang
 }
 
 /** How many of the list a fix clears. */
-function clears(n: number, total: number): string {
-  if (n === 1) return 'it'
-  if (n === 2 && total === 2) return 'both'
-  return n === total ? `all ${n}` : `${n} of ${total}`
+/** How many of one kind a fix clears, out of how many the plate has of that kind. */
+function some(n: number, total: number, noun: string): string {
+  if (n === 1) return total === 1 ? `the ${noun}` : `1 ${noun}`
+  if (n === 2 && total === 2) return `both ${noun}s`
+  return n === total ? `all ${n} ${noun}s` : `${n} of the ${total} ${noun}s`
+}
+
+/** What a fix clears, strikes and close calls named apart: "both strikes", "1 strike and the close call". */
+function clears(f: CollisionFix, list: readonly Collision[]): string {
+  const of = (sev: Collision['severity']) => [f.clears.filter((i) => list[i]?.severity === sev).length, list.filter((c) => c.severity === sev).length] as const
+  const [hit, hits] = of('hit')
+  const [close, closes] = of('close')
+  const parts = [hit ? some(hit, hits, 'strike') : '', close ? some(close, closes, 'close call') : ''].filter(Boolean)
+  return parts.length ? parts.join(' and ') : `${f.clears.length === 1 ? 'it' : `${f.clears.length} of them`}`
+}
+
+/** The close calls a new order still leaves, as a sentence, or nothing. */
+function leaves(f: CollisionFix): string {
+  const n = f.closeCalls ?? 0
+  return n ? ` Leaves ${n === 1 ? 'a close call' : `${n} close calls`}: the head passes inside the profile's margin, but clears.` : ''
 }
 
 /** The fix as a short instruction. `order` is the plate's current order of object ids. */
@@ -96,17 +122,18 @@ export function fixTitle(f: CollisionFix, name: Names, order: readonly string[] 
 
 /** What the fix does and clears. `total` is the number of collisions. */
 export function fixDetail(f: CollisionFix, name: Names, total: number, station = 'tool changer', list: readonly Collision[] = []): string {
-  const n = f.clears.length
-  const strikes = n === 1 ? 'strike' : 'strikes'
-  if (f.kind === 'reorder') return `Order: ${(f.order ?? []).map(name).join(', ')}. Clears ${clears(n, total)}.`
+  // Without the list (older callers) every cleared item counts as a strike.
+  const items = list.length ? list : Array.from({ length: total }, () => ({ severity: 'hit' }) as Collision)
+  const c = clears(f, items)
+  if (f.kind === 'reorder') return `Order: ${(f.order ?? []).map(name).join(', ')}. Clears ${c}.${leaves(f)}`
   if (f.kind === 'by_layer') {
     const moves = f.moves ?? 1
-    return `Clears ${clears(n, total)}. Up to ${moves} more travel ${moves === 1 ? 'move' : 'moves'} per layer between the objects.`
+    return `Clears ${c}. Up to ${moves} more travel ${moves === 1 ? 'move' : 'moves'} per layer between the objects.`
   }
-  if (f.kind === 'spread') return `Clears ${clears(n, total)} the toolhead ${strikes}. Move them apart in Prepare, or arrange the plate with more space.`
-  if (f.kind === 'raise_lift') return `Set Z hop to ${(f.mm ?? 0).toFixed(1)} mm. Clears the travel ${strikes}.`
-  if (f.kind === 'arrange') return `Clears ${clears(n, total)}. Places every object apart, so no paths cross.`
+  if (f.kind === 'spread') return `Clears ${c}. Move them apart in Prepare, or arrange the plate with more space.`
+  if (f.kind === 'raise_lift') return `Set Z hop to ${(f.mm ?? 0).toFixed(1)} mm. Clears ${c}.`
+  if (f.kind === 'arrange') return `Clears ${c}. Places every object apart, so no paths cross.`
   const b = name(f.objectId ?? '')
-  if (zone(f, list)) return `Place ${b} where the printer does not need the plate clear. Clears ${clears(n, total)}.`
+  if (zone(f, list)) return `Place ${b} where the printer does not need the plate clear. Clears ${c}.`
   return `The toolhead crosses ${b} on its way to the ${station}. Place ${b} where the head does not pass, toward the front, or print it last.`
 }
