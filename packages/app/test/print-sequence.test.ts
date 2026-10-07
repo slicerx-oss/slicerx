@@ -38,6 +38,9 @@ describe('the by-object clearance check', () => {
     const bambu = { ...A1, printer_model: 'Bambu Lab A1', extruder_clearance_max_radius: 73 } as unknown as Record<string, number>
     expect(check([100, 118, 10], [170, 118, 10], bambu)).toMatch(/50\.0 mm apart; printing by object needs 73 mm between objects/)
     expect(check([100, 118, 10], [193, 118, 10], bambu)).toBe('')
+    // Orca's Bambu Lab profiles carry it in extruder_clearance_radius, the max radius left at its default
+    const orca = { ...A1, printer_model: 'Bambu Lab A1', extruder_clearance_radius: 73 } as unknown as Record<string, number>
+    expect(check([100, 118, 10], [170, 118, 10], orca)).toMatch(/needs 73 mm between objects/)
   })
 
   it('refuses objects closer than the clearance radius and passes them at it', () => {

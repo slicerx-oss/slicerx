@@ -36,6 +36,7 @@ export function collisionTitle(c: Collision, name: Names, station = 'tool change
   if (c.kind === 'path_conflict') return `Paths of ${name(c.objectId)} cross ${b}`
   if (c.kind === 'keep_out') return `${name(c.objectId)} prints into ${b}`
   if (c.severity === 'close') return `The toolhead passes close to ${b}`
+  if (c.part === 'clearance') return `The toolhead comes too close to ${b}`
   if (c.kind === 'gantry') return `The ${c.part === 'lid' ? 'frame' : 'gantry'} hits ${b}`
   if (c.kind === 'nozzle_travel_through_part') return `A travel runs through ${b}`
   if (c.kind === 'tool_change') return `A tool change crosses ${b}`
@@ -67,6 +68,8 @@ export function collisionDetail(c: Collision, name: Names, station = 'tool chang
     return c.hitId === 'wrap-check-zone' ? `The printer checks this corner for filament wrapped round the nozzle, and ${a} prints into it${r}.` : `${a} prints into an area the printer keeps clear${r}.`
   if (c.severity === 'close')
     return `While ${a} prints, the nozzle comes within ${mm(Math.max(0, limit - c.depthMm))} of ${b}. The printer profile asks for ${limit.toFixed(0)} mm around the nozzle; the head's own shape clears ${b}, so this is the profile's margin, not a hit${r}.`
+  if (c.part === 'clearance')
+    return `While ${a} prints, the nozzle comes within ${mm(Math.max(0, limit - c.depthMm))} of ${b}, inside the ${limit.toFixed(0)} mm the printer profile asks for around it${r}. This printer's head is not measured, so heimdall holds it to the profile, as Bambu Studio does.`
   if (c.kind === 'gantry' && c.part === 'lid') return `${b} is ${mm(c.hitHeightMm)} tall. Over the whole bed the printer clears ${mm(limit)} above the nozzle, so ${b} is in the way while ${a} prints${r}.`
   if (c.kind === 'gantry') return `${b} is ${mm(c.hitHeightMm)} tall. The gantry clears ${mm(limit)} above the nozzle, and it passes over ${b} while ${a} prints${r}.`
   if (c.kind === 'nozzle_travel_through_part') return `Moving across ${a} at ${z}, the nozzle passes through ${tall}`

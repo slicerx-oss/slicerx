@@ -88,13 +88,15 @@ function crosses(a: Pt[], b: Pt[]): boolean {
 }
 
 /**
- * The clearance radius heimdall holds a by-object plate to, the engine's own choice (collide `Model::new`): Bambu
+ * The clearance radius heimdall holds a by-object plate to, the engine's own choice (collide `clearance_radius`): Bambu
  * Studio's `extruder_clearance_max_radius` on a Bambu Lab printer, `extruder_clearance_radius` on the others.
  */
 export function clearanceRadius(cfg: Record<string, SettingValue>): number {
   const model = cfg['printer_model']
   const bambu = cfg['gcode_flavor'] === 'bambu' || (typeof model === 'string' && model.startsWith('Bambu Lab'))
-  return bambu ? num(cfg['extruder_clearance_max_radius'], 68) : num(cfg['extruder_clearance_radius'], 40)
+  const radius = num(cfg['extruder_clearance_radius'], 40)
+  // Orca's Bambu Lab profiles carry the max radius in extruder_clearance_radius (73 mm for the A1).
+  return bambu ? Math.max(num(cfg['extruder_clearance_max_radius'], 68), radius) : radius
 }
 
 /**

@@ -165,7 +165,7 @@ pub fn report(meta: &Meta, hits: &[Hit], layer_s: &[f64], prepare_s: f64) -> Rep
     let mut collisions = Vec::with_capacity(kept.len());
     for &(time_s, h) in &kept {
         let limit = match (h.severity, h.part) {
-            (Severity::Close, _) => meta.radius,
+            (Severity::Close, _) | (_, Part::Clearance) => meta.radius,
             (_, Part::Gantry) => meta.rod,
             (_, Part::Lid) => meta.lid,
             _ => 0.0,
@@ -342,7 +342,7 @@ fn fixes(meta: &Meta, hits: &[Hit], kept: &[&Hit], collisions: &[Collision]) -> 
         f.moves = u32::try_from(moves).unwrap_or(u32::MAX);
         out.push(f);
     }
-    let sideways = index(&|c| c.kind == Kind::Hotend && c.part == Part::Toolhead);
+    let sideways = index(&|c| c.kind == Kind::Hotend && matches!(c.part, Part::Toolhead | Part::Clearance));
     if !sideways.is_empty() {
         let mut need = 0.0f32;
         for &i in &sideways {
