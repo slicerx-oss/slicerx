@@ -188,7 +188,11 @@ pub fn report(meta: &Meta, hits: &[Hit], layer_s: &[f64], prepare_s: f64) -> Rep
             change: h.first.change,
         });
     }
-    let kept: Vec<&Hit> = kept.into_iter().map(|k| k.1).collect();
+    let mut hits_kept = Vec::with_capacity(kept.len());
+    for k in &kept {
+        hits_kept.push(k.1);
+    }
+    let kept = hits_kept;
     let fixes = fixes(meta, hits, &kept, &collisions);
     Report { collisions, fixes }
 }
@@ -213,7 +217,10 @@ impl Meta {
 /// that takes the earliest object it may, and when a cycle leaves none, the one with the fewest objects left that
 /// must come before it.
 fn order_without(n: usize, before: &[(usize, usize)]) -> Vec<usize> {
-    let mut left: Vec<usize> = (0..n).collect();
+    let mut left: Vec<usize> = Vec::with_capacity(n);
+    for i in 0..n {
+        left.push(i);
+    }
     let mut out = Vec::with_capacity(n);
     while !left.is_empty() {
         let mut pick = (usize::MAX, 0, 0);
@@ -300,10 +307,9 @@ fn fixes(meta: &Meta, hits: &[Hit], kept: &[&Hit], collisions: &[Collision]) -> 
     }
     if let Some((order, clears)) = best {
         let mut f = fix(FixKind::Reorder, 0.0, clears, true);
-        f.order = order
-            .iter()
-            .map(|&i| meta.id(u32::try_from(i).unwrap_or(0)))
-            .collect();
+        for &i in &order {
+            f.order.push(meta.id(u32::try_from(i).unwrap_or(0)));
+        }
         out.push(f);
     }
     let by_object = index(&|c| machine(c.kind));
@@ -392,12 +398,12 @@ fn by_layer_cost(meta: &Meta) -> (f64, usize) {
         .filter(|&h| h > below)
         .reduce(f32::min)
     {
-        let mut left: Vec<[f32; 2]> = meta
-            .objects
-            .iter()
-            .filter(|o| o.height >= top)
-            .map(|o| o.center)
-            .collect();
+        let mut left: Vec<[f32; 2]> = Vec::new();
+        for o in &meta.objects {
+            if o.height >= top {
+                left.push(o.center);
+            }
+        }
         let moves = left.len().saturating_sub(1);
         if moves == 0 {
             break;
