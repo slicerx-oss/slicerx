@@ -302,3 +302,8 @@ button.cs-thumb:hover .cs-art { outline: 1px solid var(--line); }
   .up-row { grid-template-columns: 72px minmax(0, 1fr); }
   .up-row > .up-stage, .up-row > .sx-btn { grid-column: 2; justify-self: start; }
 }
+.rv-row { grid-template-columns: minmax(0, 1fr) auto auto; }
+.rv-actions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.rv-reject { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+.rv-reject .ce-in { flex: 1 1 240px; height: 30px; }
+@media (max-width: 900px) { .rv-row { grid-template-columns: minmax(0, 1fr); } .rv-actions { justify-content: flex-start; } }
