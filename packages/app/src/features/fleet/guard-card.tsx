@@ -8,7 +8,7 @@ import { useHost } from '../../host'
 import type { FleetRow } from '../../lib/queries'
 import { printerAction } from '../../state/actions'
 import { toast } from '../../state/store'
-import { askToNotify, guardHub, heldStart, takeFocus, tripCopy, type GuardTrip } from './guard'
+import { askToNotify, fitFrame, guardHub, heldStart, placeBox, takeFocus, tripCopy, type FrameRect, type GuardTrip } from './guard'
 import { StrikeMark } from './strike'
 import { statusLine } from './wall'
 import './guard.css'
@@ -40,12 +40,15 @@ const STATE_PILL: Record<GuardTrip['state'], { label: string; tone: 'bad' | 'war
   clear: { label: 'Clear', tone: 'ok' },
 }
 
-/** The spot the guard found, bracketed, with the strike at its center. */
-function Spot({ box: [l, t, r, b], label }: { box: [number, number, number, number]; label: string }) {
+/** A rectangle of the frame as CSS percentages. */
+const pct = ([l, t, w, h]: FrameRect) => ({ left: `${+(l * 100).toFixed(4)}%`, top: `${+(t * 100).toFixed(4)}%`, width: `${+(w * 100).toFixed(4)}%`, height: `${+(h * 100).toFixed(4)}%` })
+
+/** The spot the guard found, bracketed, with the strike at its center. `at` is its place in the frame. */
+function Spot({ at, label }: { at: FrameRect; label: string }) {
   return (
-    <div className="guard-spot" style={{ left: `${l * 100}%`, top: `${t * 100}%`, width: `${(r - l) * 100}%`, height: `${(b - t) * 100}%` }}>
+    <div className="guard-spot" style={pct(at)}>
       <span className="guard-tag">{label}</span>
-      <StrikeMark size={Math.round(Math.min(76, Math.max(44, (r - l) * 260)))} />
+      <StrikeMark size={Math.round(Math.min(76, Math.max(44, at[2] * 260)))} />
     </div>
   )
 }
@@ -58,6 +61,7 @@ export function GuardCard({ row, trip, now }: { row: FleetRow; trip: GuardTrip; 
   const ref = useRef<HTMLElement>(null)
   const [busy, setBusy] = useState(false)
   const [broken, setBroken] = useState('')
+  const [fit, setFit] = useState<FrameRect>(() => fitFrame(0, 0))
   const headingId = `guard-${row.id}`
   useEffect(() => {
     if (!takeFocus(row.id)) return
@@ -173,18 +177,27 @@ export function GuardCard({ row, trip, now }: { row: FleetRow; trip: GuardTrip; 
       </>
     )
 
-  // The pill already says the state; the line adds only what it does not (layer, time left).
-  const stats = statusLine(row, now).replace(/^Paused( · )?/, '')
+  // The pill and the title already say what happened; the line adds the job and layer of a print on the
+  // plate, and nothing for an idle printer, whose line would call a plate the guard flagged clear.
+  const running = row.status.state === 'printing' || row.status.state === 'paused' || row.status.state === 'preparing'
+  const stats = running ? statusLine(row, now).replace(/^Paused( · )?/, '') : ''
   const shown = Boolean(url) && broken !== url
   return (
     <article ref={ref} className="guard-card" data-state={trip.state} data-kind={trip.kind} aria-labelledby={headingId} tabIndex={-1}>
       <div className="guard-frame">
         {shown ? (
-          <img src={url} alt={`Camera picture of ${row.name} when the guard acted`} onError={() => setBroken(url)} />
+          <img
+            className="guard-pic"
+            style={pct(fit)}
+            src={url}
+            alt={`Camera picture of ${row.name} when the guard acted`}
+            onError={() => setBroken(url)}
+            onLoad={(e) => setFit(fitFrame(e.currentTarget.naturalWidth, e.currentTarget.naturalHeight))}
+          />
         ) : (
           <div className="guard-noframe">No picture from the camera</div>
         )}
-        {shown && trip.box ? <Spot box={trip.box} label={trip.kind === 'hand' ? 'Hand' : 'On the plate'} /> : null}
+        {shown && trip.box ? <Spot at={placeBox(trip.box, fit)} label={trip.kind === 'hand' ? 'Hand' : 'On the plate'} /> : null}
         {/* No spot to mark: a badge in the corner, so the strike never sits on nothing. */}
         {shown && !trip.box ? (
           <div className="guard-badge">

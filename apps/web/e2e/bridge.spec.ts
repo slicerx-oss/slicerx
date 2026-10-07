@@ -9,7 +9,7 @@ import { type Locator, type Page } from '@playwright/test'
 import { command, openStudio } from './cad-helpers'
 import { expect, plateReady, test } from './fixtures'
 import { spawn, type ChildProcessByStdio } from 'node:child_process'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Readable } from 'node:stream'
@@ -430,7 +430,13 @@ test('the camera guard: a plate it paused waits on Resume after a clean check, a
 test('the camera guard holds a start from the Print sheet, and It\'s fine starts it anyway', async ({ page }) => {
   test.slow()
   await idleAgain('a1')
-  const det = await plateDetector(() => ({ clear: false, box: SPOT }))
+  // A 4:3 camera with a scrap at the plate's bottom right (QA N2: spots landed off the picture on frames that are not 16:9).
+  const { PLATE_4_3_FRAME } = await import('../../../packages/connect/mock-printers/src/frames.ts')
+  const frameFile = join(stateDir, 'plate-4x3.jpg')
+  writeFileSync(frameFile, PLATE_4_3_FRAME)
+  await ctl('/bambu', { cameraFrameFile: frameFile })
+  const scrap = [0.75, 0.8333, 0.85, 0.9333]
+  const det = await plateDetector(() => ({ clear: false, box: scrap }))
   try {
     const sheet = await sheetFor(page, 'A1')
     const before = (await mockLog()).match(/project_file/g)?.length ?? 0
@@ -440,12 +446,23 @@ test('the camera guard holds a start from the Print sheet, and It\'s fine starts
     const card = page.locator('.guard-card')
     await expect(card.getByRole('heading', { name: 'Something on the plate' })).toBeVisible()
     await expect(card).toContainText('Start on hold')
+    // The idle printer's own line ("Plate clear, ready for a job") would contradict the card (QA N1).
+    await expect(card).not.toContainText('Plate clear')
+    // The whole picture shows, and the spot sits on the scrap.
+    const pic = (await card.locator('img').boundingBox())!
+    const spot = (await card.locator('.guard-spot').boundingBox())!
+    const frame = (await card.locator('.guard-frame').boundingBox())!
+    expect(pic.width / pic.height).toBeCloseTo(4 / 3, 1)
+    expect(Math.abs(spot.x - (pic.x + scrap[0]! * pic.width))).toBeLessThan(2)
+    expect(Math.abs(spot.y - (pic.y + scrap[1]! * pic.height))).toBeLessThan(2)
+    expect(spot.y + spot.height).toBeLessThanOrEqual(frame.y + frame.height + 1)
     await card.getByRole('button', { name: "It's fine, start anyway" }).click()
     await expect(page.getByText(/started on A1/)).toBeVisible({ timeout: 30_000 })
     expect((await mockLog()).match(/project_file/g)?.length ?? 0).toBe(before + 1)
     await expect(card).toHaveCount(0)
   } finally {
     det.close()
+    await ctl('/bambu', { cameraFrameFile: null })
     await idleAgain('a1')
   }
 })

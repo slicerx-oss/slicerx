@@ -8,7 +8,7 @@ import { act, createElement } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { GuardCard } from '../src/features/fleet/guard-card'
-import { guardTrips, holdStart, resetGuard, tripCopy, watchGuard, type GuardTrip } from '../src/features/fleet/guard'
+import { fitFrame, guardTrips, holdStart, placeBox, resetGuard, tripCopy, watchGuard, type GuardTrip } from '../src/features/fleet/guard'
 import type { FleetRow } from '../src/lib/queries'
 import { HostContext } from '../src/host'
 import { get, set } from '../src/state/store'
@@ -176,6 +176,62 @@ describe('every way out of a paused card keeps Resume until a person resumes', (
     await act(async () => v.el.querySelector('img')!.dispatchEvent(new Event('error')))
     expect(v.el.querySelector('img')).toBeNull()
     expect(v.el.textContent).toContain('No picture from the camera')
+    v.done()
+  })
+})
+
+describe('the picture in its 16:9 frame (QA N2)', () => {
+  const near = (a: number[], b: number[]) => a.every((v, i) => Math.abs(v - b[i]!) < 1e-9)
+
+  it('fits the whole picture, letterboxed, so a box lands where it is', () => {
+    // 16:9 fills the frame.
+    expect(near(fitFrame(1280, 720), [0, 0, 1, 1])).toBe(true)
+    // 4:3 is narrower: bars left and right.
+    expect(near(fitFrame(640, 480), [0.125, 0, 0.75, 1])).toBe(true)
+    // An odd size, 960 by 686 (QA's A1 frame): a little narrower than 16:9.
+    const odd = fitFrame(960, 686)
+    expect(odd[1]).toBe(0)
+    expect(odd[2]).toBeCloseTo((960 / 686) / (16 / 9), 9)
+    // Wider than 16:9: bars top and bottom.
+    expect(near(fitFrame(2000, 500), [0, (1 - (16 / 9) / 4) / 2, 1, (16 / 9) / 4])).toBe(true)
+    // An unknown size counts as 16:9.
+    expect(near(fitFrame(0, 0), [0, 0, 1, 1])).toBe(true)
+  })
+
+  it('places a box through the fit, inside the picture', () => {
+    const fit = fitFrame(640, 480)
+    // The bottom right corner of the picture is the bottom right of the picture's area, not of the frame.
+    expect(near(placeBox([0.5, 0.5, 1, 1], fit), [0.125 + 0.375, 0.5, 0.375, 0.5])).toBe(true)
+    // QA's debris box on the 960 by 686 frame stays inside the frame.
+    const [l, t, w, h] = placeBox([0.496, 0.771, 0.648, 0.911], fitFrame(960, 686))
+    expect(l >= 0 && t >= 0 && l + w <= 1 && t + h <= 1).toBe(true)
+  })
+
+  it('the card sizes the picture and the spot from the loaded picture', async () => {
+    const v = await render({ printerId: 'a1', kind: 'plate', state: 'blocked', at, box: [0.5, 0.5, 1, 1], startedBy: 'slicerx' }, fakeHub(), row({ state: 'idle' }))
+    const img = v.el.querySelector('img')!
+    Object.defineProperty(img, 'naturalWidth', { value: 640 })
+    Object.defineProperty(img, 'naturalHeight', { value: 480 })
+    await act(async () => img.dispatchEvent(new Event('load')))
+    const pic = v.el.querySelector('.guard-pic') as HTMLElement
+    expect([pic.style.left, pic.style.width]).toEqual(['12.5%', '75%'])
+    const spot = v.el.querySelector('.guard-spot') as HTMLElement
+    expect([spot.style.left, spot.style.top, spot.style.width, spot.style.height]).toEqual(['50%', '50%', '37.5%', '50%'])
+    v.done()
+  })
+})
+
+describe('the status line agrees with the card (QA N1)', () => {
+  it('a held start on an idle printer does not say the plate is clear', async () => {
+    const v = await render({ printerId: 'a1', kind: 'plate', state: 'blocked', at, box: [0.4, 0.6, 0.45, 0.66], startedBy: 'slicerx' }, fakeHub(), row({ state: 'idle' }))
+    expect(v.el.textContent).not.toContain('Plate clear')
+    expect(v.el.querySelector('.guard-stats')).toBeNull()
+    v.done()
+  })
+
+  it('a running print keeps its job and layer line', async () => {
+    const v = await render({ printerId: 'a1', kind: 'hand', state: 'alert', at, monitorOnly: true }, fakeHub(), row({ state: 'printing' }))
+    expect(v.el.querySelector('.guard-stats')?.textContent).toContain('layer 46 of 210')
     v.done()
   })
 })
