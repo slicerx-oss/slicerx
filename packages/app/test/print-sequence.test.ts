@@ -9,7 +9,7 @@ import { arrangePlate } from '../src/plate/edit'
 import { installPrintMargins } from '../src/plate/footprint'
 import { clearanceProblems, hullDistance, sequenceProblem } from '../src/plate/sequence-check'
 import { exportGcode3mf } from '../src/export/actions'
-import { exportGcode, sendToPrinter, slicePlate } from '../src/state/actions'
+import { exportGcode, jobFileName, jobName, sendToPrinter, slicePlate } from '../src/state/actions'
 import { get, set } from '../src/state/store'
 
 // The printer layer is the profile these tests set by hand; the sync that would rebuild it from a printer stays out.
@@ -33,6 +33,12 @@ const A1 = { extruder_clearance_radius: 40, extruder_clearance_height_to_rod: 25
 
 describe('the by-object clearance check', () => {
   const check = (a: [number, number, number], b: [number, number, number], cfg: Record<string, number> = A1) => clearanceProblems([entry('a', 'Cube A', ...a), entry('b', 'Cube B', ...b)], cfg).join('; ')
+
+  it('holds a Bambu Lab printer to the radius heimdall uses, the profile\'s max radius', () => {
+    const bambu = { ...A1, printer_model: 'Bambu Lab A1', extruder_clearance_max_radius: 73 } as unknown as Record<string, number>
+    expect(check([100, 118, 10], [170, 118, 10], bambu)).toMatch(/50\.0 mm apart; printing by object needs 73 mm between objects/)
+    expect(check([100, 118, 10], [193, 118, 10], bambu)).toBe('')
+  })
 
   it('refuses objects closer than the clearance radius and passes them at it', () => {
     expect(check([100, 118, 10], [150, 118, 10])).toMatch(/^Cube A and Cube B are 30\.0 mm apart; printing by object needs 40 mm between objects/)
@@ -194,5 +200,17 @@ describe('one print sequence for the plate', () => {
     expect(el.textContent).toContain('Plate 1 prints by object, set in its plate settings, and that wins over this setting.')
     flushSync(() => root.unmount())
     el.remove()
+  })
+})
+
+describe('the job name', () => {
+  const plate = [entry('a', 'Cylinder', 0, 0, 5), entry('b', 'Layered X', 50, 0, 5)]
+  const s = { plate, plates: [{ id: 'p1', name: 'Plate 1', objects: [], settings: {} }], activePlate: 'p1' } as never
+  it('follows the plate, not whichever object a new order prints first', () => {
+    expect(jobName(s)).toBe('Plate 1')
+    expect(jobFileName(s, 'Cylinder_PLA_1h12m.gcode')).toBe('Plate 1_PLA_1h12m.gcode')
+    const one = { ...(s as object), plate: [plate[1]] } as never
+    expect(jobName(one)).toBe('Layered X')
+    expect(jobFileName(one, 'Layered X_PLA_40m.gcode')).toBe('Layered X_PLA_40m.gcode')
   })
 })

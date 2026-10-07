@@ -453,6 +453,28 @@ function gcodeSlotsLine(fixed: Record<number, string>): string {
     .join(', ')}`
 }
 
+/**
+ * The job's name: the object's own on a plate of one, else the plate's, so a new print order does not rename it after
+ * whichever object now prints first.
+ */
+export function jobName(s: Pick<AppState, 'plate' | 'plates' | 'activePlate'>): string {
+  const printable = s.plate.filter((p) => p.printable !== false)
+  if (printable.length === 1) return printable[0]!.name
+  return s.plates.find((p) => p.id === s.activePlate)?.name ?? 'Plate 1'
+}
+
+/**
+ * The file name for the slice: the engine's (Orca's `filename_format`, which starts with the first object's name), with
+ * that start swapped for the job's name on a plate of more than one object.
+ */
+export function jobFileName(s: Pick<AppState, 'plate' | 'plates' | 'activePlate'>, engine: string | undefined): string {
+  const job = jobName(s)
+  if (!engine) return gcodeName(job)
+  const first = s.plate.find((p) => p.printable !== false)?.name
+  if (!first || job === first || !engine.startsWith(first)) return engine
+  return job + engine.slice(first.length)
+}
+
 function gcodeName(plate: string): string {
   const slug = plate.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'plate'
   return `${slug}_plate-1.gcode`
@@ -470,7 +492,7 @@ export async function exportGcode(host: Host): Promise<void> {
     toast(unsafe, 'error')
     return
   }
-  const name = s.result.fileName ?? gcodeName(get().plate[0]?.name ?? 'Plate')
+  const name = jobFileName(get(), s.result.fileName)
   const out = await exportPlateGcode(host, s.result.id)
   if (out.blob) await host.files.save(name, out.blob, { accept: [name.endsWith('.bgcode') ? '.bgcode' : '.gcode'] })
   toast(`Exported ${name}`)
@@ -579,7 +601,7 @@ async function sendNow(host: Host, printer: PrinterInfo): Promise<void> {
     toast(unsafe, 'error')
     return
   }
-  const plateName = get().plate[0]?.name ?? 'Plate 1'
+  const plateName = jobName(get())
   const status = await conn.printers.status(printer.id).catch(() => null)
   const specs = supportedOptions(printer, status)
   const ending = printEnding(printer.plugin)
@@ -605,7 +627,7 @@ async function sendNow(host: Host, printer: PrinterInfo): Promise<void> {
     plateName,
     specs,
     initial: mergeOptions(specs, get().sendChoices[printer.id]),
-    name: withEnding(s.result.fileName ?? gcodeName(plateName), ending),
+    name: withEnding(jobFileName(get(), s.result.fileName), ending),
     ending,
     filaments,
     slots: st0.printerSlots,
@@ -637,7 +659,7 @@ async function sendNow(host: Host, printer: PrinterInfo): Promise<void> {
   const config = plateSliceConfig(st, st.plates.find((p) => p.id === st.activePlate)) as Record<string, SettingValue | undefined>
   // Preflight: the file against the printer as it is now (docs/safety.md). Shown in the sheet before the person decides.
   const checkFor = (name: string, hash = sha256) => preflight({ printer, status, config, plateBounds, plateBed: st.bed, file: { name, sha256: hash, layers: s.result.layerCount, timeS: s.result.stats.timeS, grams }, ...(s.result.collisions ? { collisions: s.result.collisions, objectNames: Object.fromEntries(st.plate.map((p) => [p.id, p.name])) } : {}) })
-  const first = checkFor(withEnding(s.result.fileName ?? gcodeName(plateName), ending))
+  const first = checkFor(withEnding(jobFileName(get(), s.result.fileName), ending))
   check0 = { errors: first.errors, warnings: first.warnings.map((text) => ({ text })), sha256 }
   // The plate's picture, from the thumbnails the engine wrote into the G-code.
   const shot = await import('../export/threemf').then((m) => m.gcodeThumbnails(new TextDecoder().decode(data.slice(0, 4_000_000)))).catch(() => [])
