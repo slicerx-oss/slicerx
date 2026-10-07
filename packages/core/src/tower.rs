@@ -408,6 +408,94 @@ impl Placement {
     }
 }
 
+/// How far an object's first layer reaches past its hull with `cfg`, mm: its brim, or its support's first layer
+/// (the pad `raft_first_layer_expansion` and `support_expansion` widen, a tree's brim and half a branch), whichever
+/// is wider, and the skirt's loops round that (`skirt_reach`).
+pub(crate) fn room(cfg: &PrintConfig) -> f64 {
+    let brim = cfg.brim_width.max(0.0);
+    let support = if cfg.enable_support {
+        let s = &cfg.support;
+        let tree = if s.style.is_tree() {
+            s.tree_settings.brim_width.max(0.0) + 0.5 * s.tree_settings.branch_diameter.max(0.0)
+        } else {
+            0.0
+        };
+        s.expansion.max(0.0)
+            + cfg.raw_number("raft_first_layer_expansion", 2.0).max(0.0)
+            + tree
+            + cfg.feature_widths.support.unwrap_or(cfg.line_width).max(0.0)
+    } else {
+        0.0
+    };
+    skirt_reach(cfg, brim.max(support))
+}
+
+/// `under` past the hull, and the skirt's loops round it when there is a skirt: `skirt_distance` and the loops'
+/// width (`session::skirt_spacing_mm`).
+fn skirt_reach(cfg: &PrintConfig, under: f64) -> f64 {
+    if cfg.skirt_loops == 0 || cfg.skirt_height == 0 {
+        return under;
+    }
+    under + cfg.skirt_distance.max(0.0) + f64::from(cfg.skirt_loops) * crate::session::skirt_spacing_mm(cfg)
+}
+
+/// The edges of a closed ring.
+fn edges(ring: &[[f64; 2]]) -> impl Iterator<Item = ([f64; 2], [f64; 2])> + '_ {
+    ring.iter().copied().zip(ring.iter().copied().cycle().skip(1))
+}
+
+/// Twice the signed area of `o`, `a`, `b`: positive when `b` is left of `o` to `a`.
+fn turn(o: [f64; 2], a: [f64; 2], b: [f64; 2]) -> f64 {
+    (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
+}
+
+/// True when `p` is inside the counterclockwise convex `hull`.
+fn inside(hull: &[[f64; 2]], p: [f64; 2]) -> bool {
+    edges(hull).all(|(a, b)| turn(a, b, p) >= 0.0)
+}
+
+/// True when the box `[x0, y0, x1, y1]` stands inside the objects' `hull` or `out` mm or more clear of it, so the
+/// skirt round the hull does not cross it.
+#[inline(never)]
+fn off_skirt(hull: &[[f64; 2]], out: f64, r: [f64; 4]) -> bool {
+    [[r[0], r[1]], [r[2], r[1]], [r[2], r[3]], [r[0], r[3]]]
+        .iter()
+        .all(|&c| inside(hull, c))
+        || rect_gap(hull, r) >= out
+}
+
+/// The gap between the convex `hull` and the box `[x0, y0, x1, y1]`, mm; 0 where they meet.
+fn rect_gap(hull: &[[f64; 2]], r: [f64; 4]) -> f64 {
+    let rect = [[r[0], r[1]], [r[2], r[1]], [r[2], r[3]], [r[0], r[3]]];
+    let in_rect = |p: [f64; 2]| p[0] >= r[0] && p[0] <= r[2] && p[1] >= r[1] && p[1] <= r[3];
+    let crosses = |(a, b): ([f64; 2], [f64; 2]), (c, d): ([f64; 2], [f64; 2])| {
+        turn(a, b, c) * turn(a, b, d) < 0.0 && turn(c, d, a) * turn(c, d, b) < 0.0
+    };
+    if hull.iter().any(|&p| in_rect(p))
+        || rect.iter().any(|&c| inside(hull, c))
+        || edges(hull).any(|e| edges(&rect).any(|f| crosses(e, f)))
+    {
+        return 0.0;
+    }
+    let seg = |p: [f64; 2], (a, b): ([f64; 2], [f64; 2])| {
+        let (dx, dy) = (b[0] - a[0], b[1] - a[1]);
+        let l2 = dx * dx + dy * dy;
+        let t = if l2 > 0.0 {
+            (((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / l2).clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        (p[0] - a[0] - dx * t).m_hypot(p[1] - a[1] - dy * t)
+    };
+    let mut gap = f64::MAX;
+    for e in edges(hull) {
+        for f in edges(&rect) {
+            gap = gap.min(seg(f.0, e)).min(seg(e.0, f));
+        }
+    }
+    gap
+}
+
 /// Boxes `[min x, min y, max x, max y]` the tower must stay out of besides the objects: every
 /// `bed_exclude_area` zone (Bambu's cutter and purge corner among them) and the purge line the
 /// start G-code draws on the bed (its extruding moves below 1 mm, as literal coordinates).
@@ -473,7 +561,9 @@ fn no_go(cfg: &PrintConfig) -> Vec<[f64; 4]> {
 /// the engine picks the clear spot nearest the objects (shortest travel), preferring the back of the
 /// bed. Where nothing fits, the tower gets wider (same purge, fewer rows) and is turned a quarter.
 /// Clear means on the bed with a 1 mm margin, the tower's brim included, outside the printer's
-/// no-go zones, and the object brim plus 1 mm from every object. `None` when the tower is off or
+/// no-go zones, 1 mm past everything an object's first layer lays down beyond its hull (`rooms`, one per
+/// object: its brim, its support's pad and brim, the skirt around them; `room`), and off the skirt that runs
+/// round the whole plate: either inside the objects' hull or clear of the skirt's outer loop. `None` when the tower is off or
 /// not needed, an error when it fits nowhere. Every step is plain arithmetic in a fixed order, so
 /// native and WASM pick the same spot.
 pub(crate) fn place(
@@ -482,6 +572,7 @@ pub(crate) fn place(
     rows_at: &dyn Fn(f64) -> f64,
     rib: Option<(f64, f64)>,
     objects: &[crate::output::ObjectFootprint],
+    rooms: &[f64],
     height: f64,
 ) -> crate::error::Result<Option<Placement>> {
     let Some(t0) = Tower::new(cfg, tools, 1.0) else {
@@ -510,7 +601,6 @@ pub(crate) fn place(
     };
     let auto = flag_or(cfg, "prime_tower_auto_position", true);
     let bed = cfg.bed_rect();
-    let pad = cfg.brim_width.max(0.0) + 1.0;
     let hull_box = |o: &crate::output::ObjectFootprint| {
         o.hull
             .iter()
@@ -518,12 +608,29 @@ pub(crate) fn place(
                 [b[0].min(p[0]), b[1].min(p[1]), b[2].max(p[0]), b[3].max(p[1])]
             })
     };
-    let mut boxes: Vec<[f64; 4]> = objects
-        .iter()
-        .map(hull_box)
-        .map(|b| [b[0] - pad, b[1] - pad, b[2] + pad, b[3] + pad])
-        .collect();
+    let mut boxes: Vec<[f64; 4]> = Vec::with_capacity(objects.len());
+    for (k, o) in objects.iter().enumerate() {
+        let b = hull_box(o);
+        let pad = rooms.get(k).copied().unwrap_or_else(|| room(cfg)) + 1.0;
+        boxes.push([b[0] - pad, b[1] - pad, b[2] + pad, b[3] + pad]);
+    }
     boxes.extend(no_go(cfg));
+    // The plate's skirt runs round the hull of every object (`skirt_type` combined), its outer loop this far
+    // out; the tower stands inside the hull or clear of the loop.
+    let skirt = (cfg.skirt_loops > 0
+        && cfg.skirt_height > 0
+        && !matches!(cfg.raw.get("skirt_type"), Some(serde_json::Value::String(t)) if t == "perobject"))
+    .then(|| {
+        let mut pts = Vec::new();
+        for o in objects {
+            pts.extend_from_slice(&o.hull);
+        }
+        (
+            crate::firmware::convex_hull(pts),
+            skirt_reach(cfg, rooms.iter().copied().fold(room(cfg), f64::max)) + 1.0,
+        )
+    })
+    .filter(|(h, _)| h.len() >= 3);
     // The objects' middle, for the travel score.
     let mid = if objects.is_empty() {
         [f64::midpoint(bed[0], bed[2]), f64::midpoint(bed[1], bed[3])]
@@ -562,6 +669,9 @@ pub(crate) fn place(
                     && boxes
                         .iter()
                         .all(|b| hx <= b[0] || lx >= b[2] || hy <= b[1] || ly >= b[3])
+                    && skirt
+                        .as_ref()
+                        .is_none_or(|(hull, out)| off_skirt(hull, *out, [lx, ly, hx, hy]))
             };
             let reshaped = k > 0 || turn != 0.0;
             let done = |origin: [f64; 2], reason: TowerReason| {
@@ -1734,7 +1844,7 @@ mod tests {
         // of depth. It moves forward just enough to stay on the 256 mm bed, x unchanged.
         let c = tower_cfg(&[]);
         let rows = rows_for(330.0);
-        let Ok(Some(p)) = place(&c, 2, &rows, None, &[part(96.0, 117.0, 160.0, 139.0)], 50.0) else {
+        let Ok(Some(p)) = place(&c, 2, &rows, None, &[part(96.0, 117.0, 160.0, 139.0)], &[], 50.0) else {
             panic!("placed")
         };
         let Some(t) = p.tower(&c, 2) else { panic!("tower") };
@@ -1766,7 +1876,7 @@ mod tests {
         ]);
         // The part covers the whole back half, so the tower must go to the front.
         let parts = [part(5.0, 120.0, 250.0, 250.0)];
-        let Ok(Some(p)) = place(&c, 2, &rows_for(60.0), None, &parts, 50.0) else {
+        let Ok(Some(p)) = place(&c, 2, &rows_for(60.0), None, &parts, &[], 50.0) else {
             panic!("placed")
         };
         let Some(t) = p.tower(&c, 2) else { panic!("tower") };
@@ -1785,7 +1895,7 @@ mod tests {
         assert!(hy >= 110.0, "near the part (back {hy})");
         assert!(hx <= 255.0);
         // The same plate gives the same spot every time.
-        let Ok(Some(again)) = place(&c, 2, &rows_for(60.0), None, &parts, 50.0) else {
+        let Ok(Some(again)) = place(&c, 2, &rows_for(60.0), None, &parts, &[], 50.0) else {
             panic!("placed")
         };
         assert_eq!(p, again);
@@ -1810,10 +1920,62 @@ mod tests {
             ),
         ]);
         let parts = [part(120.0, 120.0, 185.0, 185.0)];
-        let Ok(Some(p)) = place(&c, 2, &rows_for(60.0), None, &parts, 50.0) else {
+        let Ok(Some(p)) = place(&c, 2, &rows_for(60.0), None, &parts, &[], 50.0) else {
             panic!("placed")
         };
         assert!(p.tower(&c, 2).is_some());
+    }
+
+    #[test]
+    fn an_objects_room_is_its_brim_or_support_pad_and_the_skirt_round_it() {
+        let brim = tower_cfg(&[
+            ("skirt_loops", serde_json::json!(0)),
+            ("brim_width", serde_json::json!(5)),
+        ]);
+        assert!((room(&brim) - 5.0).abs() < 1e-9, "{}", room(&brim));
+        // the support's first layer: the 2 mm pad, the expansion and a line
+        let support = tower_cfg(&[
+            ("skirt_loops", serde_json::json!(0)),
+            ("brim_width", serde_json::json!(0)),
+            ("enable_support", serde_json::json!(true)),
+            ("support_expansion", serde_json::json!(1.5)),
+        ]);
+        assert!(room(&support) > 3.5, "{}", room(&support));
+        let skirt = tower_cfg(&[
+            ("skirt_loops", serde_json::json!(2)),
+            ("skirt_distance", serde_json::json!(3)),
+            ("brim_width", serde_json::json!(0)),
+        ]);
+        assert!(room(&skirt) > 3.5, "{}", room(&skirt));
+    }
+
+    #[test]
+    fn the_tower_keeps_off_the_skirt_that_runs_between_objects() {
+        // Two parts at the front corners: the skirt's loop runs along the back of both and across the gap.
+        let c = tower_cfg(&[
+            ("prime_tower_auto_position", serde_json::json!(true)),
+            ("skirt_loops", serde_json::json!(2)),
+            ("skirt_distance", serde_json::json!(3)),
+            ("brim_width", serde_json::json!(0)),
+        ]);
+        let parts = [part(20.0, 20.0, 60.0, 60.0), part(196.0, 20.0, 236.0, 60.0)];
+        let Ok(Some(p)) = place(&c, 2, &rows_for(60.0), None, &parts, &[], 50.0) else {
+            panic!("placed")
+        };
+        let Some(t) = p.tower(&c, 2) else { panic!("tower") };
+        let r = t.reach(t.brim.max(0.0));
+        let b = [
+            p.origin[0] + r[0],
+            p.origin[1] + r[1],
+            p.origin[0] + r[2],
+            p.origin[1] + r[3],
+        ];
+        let hull = crate::firmware::convex_hull(parts.iter().flat_map(|o| o.hull.clone()).collect());
+        let corners = [[b[0], b[1]], [b[2], b[1]], [b[2], b[3]], [b[0], b[3]]];
+        assert!(
+            corners.iter().all(|&q| inside(&hull, q)) || rect_gap(&hull, b) >= skirt_reach(&c, 0.0),
+            "tower at {b:?}"
+        );
     }
 
     #[test]
@@ -1821,7 +1983,7 @@ mod tests {
         // Only a strip 70 mm deep is free at the front; the purge needs about 120 mm at 35 mm wide.
         let c = tower_cfg(&[("prime_tower_auto_position", serde_json::json!(true))]);
         let parts = [part(1.0, 75.0, 255.0, 255.0)];
-        let Ok(Some(p)) = place(&c, 2, &rows_for(800.0), None, &parts, 50.0) else {
+        let Ok(Some(p)) = place(&c, 2, &rows_for(800.0), None, &parts, &[], 50.0) else {
             panic!("placed")
         };
         let Some(t) = p.tower(&c, 2) else { panic!("tower") };
@@ -1842,6 +2004,7 @@ mod tests {
                 &rows_for(800.0),
                 None,
                 &[part(1.0, 1.0, 255.0, 255.0)],
+                &[],
                 50.0
             )
             .is_err()
@@ -1860,7 +2023,7 @@ mod tests {
             ("prime_tower_auto_position", serde_json::json!(false)),
         ]);
         let rows = |w: f64| plan_rows(&c, w, 2, &[vec![1, 2, 1]], &|_| 0.2, 0);
-        let Ok(Some(p)) = place(&c, 2, &rows, None, &[], 20.0) else {
+        let Ok(Some(p)) = place(&c, 2, &rows, None, &[], &[], 20.0) else {
             panic!("placed")
         };
         let Some(t) = p.tower(&c, 2) else { panic!("tower") };
@@ -1871,7 +2034,7 @@ mod tests {
             t.depth
         );
         assert!(t.width > 15.0 && t.width < 30.0, "width {}", t.width);
-        let Ok(Some(tall)) = place(&c, 2, &rows, None, &[], 250.0) else {
+        let Ok(Some(tall)) = place(&c, 2, &rows, None, &[], &[], 250.0) else {
             panic!("placed")
         };
         assert!((tall.width - 40.0).abs() < 1e-9, "width {}", tall.width);
@@ -1892,7 +2055,7 @@ mod tests {
         };
         assert!((w - 20.5).abs() < 1e-9 && (d - 20.0).abs() < 1e-9, "{w} x {d}");
         let rows = |w: f64| plan_rows(&c, w, 2, &[vec![1, 2]], &|_| 0.2, 0);
-        let Ok(Some(p)) = place(&c, 2, &rows, Some((w, d)), &[], 60.0) else {
+        let Ok(Some(p)) = place(&c, 2, &rows, Some((w, d)), &[], &[], 60.0) else {
             panic!("placed")
         };
         let Some(t) = p.tower(&c, 2) else { panic!("tower") };
@@ -1967,7 +2130,7 @@ mod tests {
             pairs.extend(extra);
             let c = tower_cfg(&pairs);
             let rows = |w: f64| plan_rows(&c, w, 8, &order, &|_| 0.08, order.len() - 1);
-            let Ok(Some(p)) = place(&c, 8, &rows, None, &parts, 80.0) else {
+            let Ok(Some(p)) = place(&c, 8, &rows, None, &parts, &[], 80.0) else {
                 panic!("placed")
             };
             let Some(t) = p.tower(&c, 8) else { panic!("tower") };

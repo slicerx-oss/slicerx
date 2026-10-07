@@ -1380,6 +1380,14 @@ impl SliceSession {
                     t as usize,
                 ),
                 &crate::firmware::footprints(plate),
+                &plate
+                    .objects
+                    .iter()
+                    .map(|o| {
+                        object_config(config, &o.settings)
+                            .map_or_else(|_| crate::tower::room(config), |c| crate::tower::room(&c))
+                    })
+                    .collect::<Vec<f64>>(),
                 plan.top(plan.count().saturating_sub(1)),
             )?,
             None => None,
@@ -1999,6 +2007,13 @@ impl SliceSession {
         let Some(top) = self.tower_top else {
             return Ok(());
         };
+        // What each object's first layer lays down past its hull, with its own settings.
+        let rooms: Vec<f64> = (0..self.objects.len())
+            .map(|k| {
+                self.object_config(k, config)
+                    .map_or_else(|_| crate::tower::room(config), |c| crate::tower::room(&c))
+            })
+            .collect();
         let plan = &self.plan;
         let (tools, order) = (self.tool_count, &self.tool_order);
         self.tower_shape = crate::tower::place(
@@ -2022,6 +2037,7 @@ impl SliceSession {
                 top as usize,
             ),
             &self.objects,
+            &rooms,
             plan.top(plan.count().saturating_sub(1)),
         )?;
         self.tower_rows = self.tower_shape.map_or(1.0, |p| p.rows);
