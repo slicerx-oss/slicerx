@@ -333,7 +333,7 @@ export async function splitSelectedToObjects(host: Loader): Promise<number> {
     pieces.map(async (piece, i) => {
       const name = `${src.name} ${i + 1}`
       const handle = await host.loadParts(name, piece.parts)
-      return { id: newObjectId(), name, handle, parts: piece.parts, colors: colorsFor(piece.parts, src.colors), transform: piece.transform }
+      return { id: newObjectId(), name, handle, parts: piece.parts, colors: colorsFor(piece.parts, src.colors), transform: piece.transform, ...(src.source ? { source: src.source } : {}) }
     }),
   )
   const cur = get().plate
@@ -361,7 +361,9 @@ export async function mergeSelected(host: Loader): Promise<boolean> {
   const { instanceOf: _was, ...rest } = first
   // In a CAD history the merge is a step that adds the other objects' meshes; their own histories are not kept.
   const history = first.history ? (await import('../cad/history/record')).withStep(first, -1, { op: 'parts.add', parts: parts.slice(first.parts.length), label: `Merge with ${objs.slice(1).map((o) => o.name).join(', ')}`.slice(0, 80) }) : undefined
-  const merged: PlateEntry = { ...rest, handle, parts, colors, ...(history ? { history } : {}) }
+  // Merging with a Vault design keeps the merged object a Vault design.
+  const source = objs.find((o) => o.source?.modelId)?.source ?? first.source
+  const merged: PlateEntry = { ...rest, handle, parts, colors, ...(history ? { history } : {}), ...(source ? { source } : {}) }
   set({ plate: get().plate.filter((p) => !drop.has(p.id)).map((p) => (p.id === first.id ? merged : p)), selection: first.id, selectedIds: [first.id] })
   markStale()
   return true

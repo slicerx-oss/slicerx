@@ -144,7 +144,7 @@ export async function cutSelected(host: Loader, spec: CutSpec): Promise<number> 
     pieces.map(async (piece) => {
       const up = standUp(piece.parts)
       const handle = await host.loadParts(piece.name, up.parts)
-      return { id: newId(), name: piece.name, handle, parts: up.parts, colors: [...e.colors], transform: up.transform }
+      return { id: newId(), name: piece.name, handle, parts: up.parts, colors: [...e.colors], transform: up.transform, ...(e.source ? { source: e.source } : {}) }
     }),
   )
   const plate = get().plate

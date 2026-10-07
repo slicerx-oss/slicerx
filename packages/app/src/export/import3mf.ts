@@ -454,7 +454,13 @@ export async function readProject(bytes: Uint8Array, bed: { widthMm: number; dep
   const modelBytes = files.get('3D/3dmodel.model')
   if (!modelBytes) throw new ProjectReadError('The 3MF has no model file.')
   const dec = new TextDecoder()
-  const main = scanModel(dec.decode(modelBytes))
+  const mainText = dec.decode(modelBytes)
+  const main = scanModel(mainText)
+  // The library stamps sx:Listing and sx:Creator on the root model; they apply to every object without its own.
+  const rootMeta = (name: string) => new RegExp(`<metadata\\s+name="${name}"\\s*>([^<]*)</metadata>`).exec(mainText.slice(0, 1 << 20))?.[1]?.trim() || undefined
+  const rootListing = rootMeta('sx:Listing')
+  const rootCreator = rootMeta('sx:Creator')
+  const rootSource = rootListing || rootCreator ? { ...(rootListing ? { modelId: unescapeXml(rootListing) } : {}), ...(rootCreator ? { creatorId: unescapeXml(rootCreator) } : {}) } : undefined
   // Bambu Studio and Orca keep each object's mesh in its own file, named by the component's p:path.
   const others = new Map<string, ScannedModel>()
   const modelAt = (path: string | undefined): ScannedModel => {
@@ -588,7 +594,7 @@ export async function readProject(bytes: Uint8Array, bed: { widthMm: number; dep
     const t = item.transform ? [...item.transform] : [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
     t[12] = t[12]! - ox - ax
     t[13] = t[13]! - oy - ay
-    const source = sxSource.get(item.objectId)
+    const source = sxSource.get(item.objectId) ?? rootSource
     ;(plates[pIndex] ?? plates[0]!).objects.push({ name: info?.name ?? pz?.name ?? obj.name ?? parts[0]!.name, parts, volumes, transform: t, ...(Object.keys(rawPartSettings).length ? { rawPartSettings } : {}), ...(Object.keys(paintByPart).length ? { paint: paintByPart } : {}), ...(item.printable ? {} : { printable: false }), ...(ears.get(itemIndex + 1) ? { brimPoints: ears.get(itemIndex + 1)! } : {}), ...(source ? { source } : {}), fileId: item.objectId })
   }
   // Marks from Orca and Bambu Studio's layer slider: color change 0, pause 1, custom 4 (other types are not carried over).

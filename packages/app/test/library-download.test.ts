@@ -8,7 +8,7 @@ import { NEUTRAL } from '../src/edition'
 
 const listing = { id: 'l1', title: 'Clip' } as Listing
 const store = (r: StoreResult<DownloadLink>) => ({ download: async () => r }) as unknown as StoreClient
-const link = (url: string, fileName = 'clip.stl'): StoreResult<DownloadLink> => ({ ok: true, value: { url, versionId: 'v', version: '1.0.0', fileName } })
+const link = (url: string, fileName = 'clip.sx3mf'): StoreResult<DownloadLink> => ({ ok: true, value: { url, versionId: 'v', version: '1.0.0', fileName } })
 const respond = (status: number, body = new Uint8Array([1, 2, 3])) => (async () => new Response(body, { status })) as unknown as typeof fetch
 
 describe('fetching a library model', () => {
@@ -17,8 +17,8 @@ describe('fetching a library model', () => {
     expect(r).toMatchObject({ ok: false, reason: 'sign-in' })
   })
   it('returns the bytes and the file name', async () => {
-    const r = await fetchModel(store(link('https://cdn.example/clip.stl')), listing, respond(200))
-    expect(r.ok && r.name).toBe('clip.stl')
+    const r = await fetchModel(store(link('https://cdn.example/clip.sx3mf')), listing, respond(200))
+    expect(r.ok && r.name).toBe('clip.sx3mf')
     expect(r.ok && new Uint8Array(r.bytes).length).toBe(3)
   })
   it('reports a catalog entry with no file', async () => {
@@ -28,6 +28,13 @@ describe('fetching a library model', () => {
   it('reports http failures and wrong formats', async () => {
     expect(await fetchModel(store(link('https://a/b')), listing, respond(403))).toMatchObject({ ok: false, message: 'The download failed (403).' })
     expect(await fetchModel(store(link('https://a/b', 'run.exe')), listing, respond(200))).toMatchObject({ ok: false })
+  })
+  it('takes a Vault file only as .sx3mf, unless it is the creator downloading their own', async () => {
+    for (const name of ['clip.stl', 'clip.3mf', 'clip.obj']) {
+      expect(await fetchModel(store(link('https://cdn.example/x', name)), listing, respond(200))).toMatchObject({ ok: false, message: 'Clip is not available as an .sx3mf yet.' })
+    }
+    const own = await fetchModel(store(link('https://cdn.example/x', 'clip.stl')), listing, respond(200), true)
+    expect(own.ok && own.name).toBe('clip.stl')
   })
   it('accepts sx3mf, 3mf and stl only', () => {
     expect(['a.sx3mf', 'b.3MF', 'c.stl', 'd.obj', 'e'].map(isLibraryFormat)).toEqual([true, true, true, false, false])

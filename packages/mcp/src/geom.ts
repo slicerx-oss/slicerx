@@ -12,6 +12,7 @@ import { defineTool, type PilotTool } from '@slicerx/pilot'
 import { z } from 'zod'
 import { resolveModel, ToolInputError, type PathPolicy } from './models'
 import { findBinary } from './sx'
+import { refuseVaultFile } from './vault'
 
 /** Finds sx-geom: an explicit path, SLICERX_SX_GEOM_BIN, next to the sx binary, then PATH. */
 export function findSxGeom(explicit?: string, sxPath?: string): string | undefined {
@@ -91,6 +92,12 @@ export function geomCaller(deps: GeomToolDeps): GeomCall {
 export function geomTools(deps: GeomToolDeps): PilotTool<never>[] {
   const call = geomCaller(deps)
   const mesh = async (model: string): Promise<{ stlPath: string }> => ({ stlPath: await resolveModel(deps.policy, model) })
+  // Tools that write a new mesh never take a Vault design.
+  const meshOut = async (model: string): Promise<{ stlPath: string }> => {
+    const m = await mesh(model)
+    refuseVaultFile(m.stlPath)
+    return m
+  }
 
   const cut = defineTool({
     name: 'geom.cut',
@@ -100,7 +107,7 @@ export function geomTools(deps: GeomToolDeps): PilotTool<never>[] {
     description: 'Cut a model with a plane into a lower and an upper part with flat caps, optionally with pin, dowel or dovetail connectors. Writes two STL files and returns their paths.',
     input: z.object({ model: modelArg, plane, connector: connector.optional() }),
     async run(i) {
-      const out = await call('cut', { mesh: await mesh(i.model), plane: i.plane, options: i.connector ? { connector: i.connector } : {} })
+      const out = await call('cut', { mesh: await meshOut(i.model), plane: i.plane, options: i.connector ? { connector: i.connector } : {} })
       return { summary: 'Cut the model into two parts', output: out }
     },
   })
@@ -120,7 +127,7 @@ export function geomTools(deps: GeomToolDeps): PilotTool<never>[] {
     }),
     async run(i) {
       const { model, ...options } = i
-      const out = await call('split', { mesh: await mesh(model), options })
+      const out = await call('split', { mesh: await meshOut(model), options })
       const parts = Array.isArray(out['parts']) ? out['parts'].length : 0
       return { summary: `Split the model into ${parts} part${parts === 1 ? '' : 's'}`, output: out }
     },
@@ -161,7 +168,7 @@ export function geomTools(deps: GeomToolDeps): PilotTool<never>[] {
     }),
     async run(i) {
       const { model, ...options } = i
-      const out = await call('repair', { mesh: await mesh(model), options })
+      const out = await call('repair', { mesh: await meshOut(model), options })
       return { summary: 'Repaired the mesh', output: out }
     },
   })
@@ -180,7 +187,7 @@ export function geomTools(deps: GeomToolDeps): PilotTool<never>[] {
     }),
     async run(i) {
       const { model, ...options } = i
-      const out = await call('hollow', { mesh: await mesh(model), options })
+      const out = await call('hollow', { mesh: await meshOut(model), options })
       return { summary: 'Hollowed the model', output: out }
     },
   })
@@ -203,7 +210,7 @@ export function geomTools(deps: GeomToolDeps): PilotTool<never>[] {
     }),
     async run(i) {
       const { model, ...spec } = i
-      const out = await call('emboss', { mesh: await mesh(model), spec })
+      const out = await call('emboss', { mesh: await meshOut(model), spec })
       return { summary: `${i.mode === 'deboss' ? 'Debossed' : 'Embossed'} "${i.text.slice(0, 40)}"`, output: out }
     },
   })
@@ -241,7 +248,7 @@ export function geomTools(deps: GeomToolDeps): PilotTool<never>[] {
     async run(i) {
       if (i.measured_height_mm === undefined && i.failed_layer === undefined) return { ok: false, summary: 'Give measured_height_mm or failed_layer' }
       const { model, ...req } = i
-      const out = await call('resume', { mesh: await mesh(model), ...req, includeRemainingMesh: true })
+      const out = await call('resume', { mesh: await meshOut(model), ...req, includeRemainingMesh: true })
       return { summary: `Resume from layer ${String(out['resumeLayer'] ?? '?')}`, output: out }
     },
   })
@@ -294,7 +301,7 @@ export function geomTools(deps: GeomToolDeps): PilotTool<never>[] {
     description: `Cut holes and pockets in an existing model with convex cutters, such as screw holes or a countersink: {"type":"countersink","origin":[x,y,z] on the surface,"axis":[...] into the material,"shaftDiameterMm":d,"headDiameterMm":D,"angleDeg":90,"depthMm":h}. Writes an STL and returns the removed volume. ${solidsHelp}`,
     input: z.object({ model: modelArg, solids: z.array(solid).min(1).max(64) }),
     async run(i) {
-      const out = await call('subtract', { mesh: await mesh(i.model), solids: i.solids })
+      const out = await call('subtract', { mesh: await meshOut(i.model), solids: i.solids })
       return { summary: `Removed ${String(out['removedVolumeMm3'] ?? '?')} mm3`, output: out }
     },
   })

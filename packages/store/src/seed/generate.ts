@@ -189,7 +189,8 @@ export function generateSeed(): SeedData {
         audit.push({ at: iso(reviewedAt), actor_id: modId, action: 'remove', target_kind: 'listing', target_id: listingId, reason: l.note ?? null, detail: { title: l.title, was: 'approved' } })
       }
       const reviewStatus = status === 'pending' ? 'pending' : status === 'rejected' ? 'rejected' : 'approved'
-      const ext = l.format ?? '3mf'
+      // The upload scan turns every clean upload into an .sx3mf, the only form a Vault file leaves in.
+      const ext = 'sx3mf'
       l.versions.forEach((v, vi) => {
         const versionId = seedId(`version:${l.slug}:${v.version}`)
         const fileName = `${l.slug}-${v.version}.${ext}`
