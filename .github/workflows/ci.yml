@@ -71,6 +71,9 @@ jobs:
         run: cargo test --workspace --exclude slicerx-desktop --lib --bins
       - if: github.event_name == 'pull_request'
         run: cargo test -p sx-core --test reference
+      # sx-link's real-service test runs the sx-cloud binary; it fails here, not skips, when it is missing.
+      - if: github.event_name != 'pull_request'
+        run: cargo build -p sx-cloud
       - if: github.event_name != 'pull_request'
         run: cargo test --workspace --exclude slicerx-desktop
 

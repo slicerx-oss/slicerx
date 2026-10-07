@@ -2287,11 +2287,60 @@ fn cube_stl() -> Vec<u8> {
 /// (`cargo build -p sx-cloud`).
 #[tokio::test]
 async fn a_cloud_sliced_job_reaches_a_printer_through_the_real_service() {
+    // It talks to a real service over sockets. A hang anywhere, even one that blocks this thread (where a tokio
+    // timeout never fires), fails the run instead of holding it, and the machine's heavy lock, for hours: a
+    // watchdog thread stops the service and ends the test process.
+    use std::sync::atomic::{AtomicBool, Ordering};
+    let done = Arc::new(AtomicBool::new(false));
+    let watched = done.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_secs(240));
+        if !watched.load(Ordering::SeqCst) {
+            eprintln!("the real-service test did not finish in 240 s");
+            stop_cloud();
+            std::process::exit(101);
+        }
+    });
+    cloud_sliced_job_through_the_real_service().await;
+    done.store(true, Ordering::SeqCst);
+}
+
+/// The sx-cloud process the real-service test started, for its watchdog to stop.
+static CLOUD_PID: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+
+fn stop_cloud() {
+    let pid = CLOUD_PID.load(std::sync::atomic::Ordering::SeqCst);
+    if pid == 0 {
+        return;
+    }
+    let pid = pid.to_string();
+    let _ = if cfg!(windows) {
+        std::process::Command::new("taskkill")
+            .args(["/PID", &pid, "/T", "/F"])
+            .output()
+    } else {
+        std::process::Command::new("kill").args(["-9", &pid]).output()
+    };
+}
+
+async fn cloud_sliced_job_through_the_real_service() {
     const TOKEN: &str = "sxk_test_dev";
     use sx_link::{BrokerGate, InboxConfig, serve_with_approvals};
-    let bin = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../target/debug/sx-cloud");
+    let bin = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(format!(
+        "../../../target/debug/sx-cloud{}",
+        std::env::consts::EXE_SUFFIX
+    ));
     if !bin.exists() {
-        eprintln!("skipped: {} is not built", bin.display());
+        // CI builds it before the tests, so there a missing service is a failure, not a skip.
+        assert!(
+            std::env::var_os("CI").is_none(),
+            "{} is not built: CI runs `cargo build -p sx-cloud` before the tests",
+            bin.display()
+        );
+        eprintln!(
+            "skipped: {} is not built (cargo build -p sx-cloud)",
+            bin.display()
+        );
         return;
     }
     // The service reads an edition config; resolve the repository's own with the TS tool.
@@ -2319,9 +2368,16 @@ async fn a_cloud_sliced_job_reaches_a_printer_through_the_real_service() {
     };
     let config_path = std::env::temp_dir().join(format!("sx-link-test-edition-{}.json", std::process::id()));
     std::fs::write(&config_path, &resolved.stdout).unwrap();
-    let mut cloud = tokio::process::Command::new("nice")
-        .args(["-n", "19"])
-        .arg(&bin)
+    // At low priority where `nice` exists. On Windows it is started directly: through `nice`, dropping the test
+    // stopped `nice` and left the service running, holding the test's pipes open.
+    let mut command = if cfg!(unix) {
+        let mut c = tokio::process::Command::new("nice");
+        c.args(["-n", "19"]).arg(&bin);
+        c
+    } else {
+        tokio::process::Command::new(&bin)
+    };
+    let mut cloud = command
         .env("SLICERX_CONFIG", &config_path)
         .env("SLICERX_FEATURES", "cloudSlicing")
         .env("SLICERX_CLOUD_API_URL", "http://127.0.0.1")
@@ -2336,6 +2392,7 @@ async fn a_cloud_sliced_job_reaches_a_printer_through_the_real_service() {
         .stderr(std::process::Stdio::piped())
         .spawn()
         .unwrap();
+    CLOUD_PID.store(cloud.id().unwrap_or(0), std::sync::atomic::Ordering::SeqCst);
     let port = {
         use tokio::io::AsyncBufReadExt;
         let mut lines = tokio::io::BufReader::new(cloud.stderr.take().unwrap()).lines();
