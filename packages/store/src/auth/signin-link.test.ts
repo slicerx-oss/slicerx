@@ -86,16 +86,18 @@ describe('finishing an emailed sign-in link', () => {
     expect(await auth.completeSignIn('slicerx://auth/callback?code=c4')).toMatchObject({ ok: false, message: 'This link answers an earlier request. Open the newest sign-in email, or send a new link.' })
   })
 
-  it('turns a superseded or expired link into a plain message and clears what the request left', async () => {
+  it('turns a superseded link into a plain message and still signs in with the newest one', async () => {
     const s = server(() => ok())
     const { auth, storage } = client(s.fetchFn)
     await auth.signInWithEmail('qa@example.com')
     await auth.signInWithEmail('qa@example.com')
-    const r = await auth.completeSignIn('slicerx://auth/callback?error=access_denied&error_code=otp_expired&error_description=Email+link+is+invalid+or+has+expired')
-    expect(r).toMatchObject({ ok: false, message: 'This link has expired, or a newer one was sent. Use the newest email, or send a new link.' })
+    const newest = JSON.parse((await storage.getItem(`${AUTH_STORAGE_KEY}-code-verifier`)) ?? '""') as string
+    // Supabase invalidated the first email's link when the second was sent.
+    const old = await auth.completeSignIn('slicerx://auth/callback?error=access_denied&error_code=otp_expired&error_description=Email+link+is+invalid+or+has+expired')
+    expect(old).toMatchObject({ ok: false, message: 'This link has expired, or a newer one was sent. Use the newest email, or send a new link.' })
     expect(s.tokenCalls).toHaveLength(0)
-    expect(await storage.getItem(`${AUTH_STORAGE_KEY}-flows-code-verifier`)).toBeNull()
-    expect(await storage.getItem(`${AUTH_STORAGE_KEY}-code-verifier`)).toBeNull()
+    expect(await auth.completeSignIn('slicerx://auth/callback?code=c5')).toMatchObject({ ok: true })
+    expect(s.tokenCalls).toEqual([{ code: 'c5', verifier: newest }])
   })
 
   it('maps expired and used links, and keeps other messages', () => {
