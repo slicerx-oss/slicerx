@@ -274,7 +274,9 @@ impl Backend for SupabaseBackend {
                 ("id", eq(&v.listing_id)),
                 (
                     "select",
-                    "slug,title,creator:creators(id,handle,display_name)".to_owned(),
+                    // Named by its foreign key: creator_featured links the two tables as well,
+                    // and PostgREST refuses an embed it cannot tell apart.
+                    "slug,title,creator:creators!listings_creator_id_fkey(id,handle,display_name)".to_owned(),
                 ),
             ]))
             .await?;

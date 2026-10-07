@@ -54,7 +54,7 @@ Progress runs from 2 percent (fetching meshes) through 10 to 90 percent while sl
 
 ### Library upload scan
 
-A creator makes a listing and a version, uploads the file to the `quarantine` bucket and calls `submit_version`. The scan worker (`scan_worker.rs`) claims queued versions with `claim_scan`, reads the file and runs `sx-upload-scan`. A clean file is converted to an sx3mf and written to `listing-files` with a preview, and `finish_scan` records the report and the file manifest. A refused file is recorded as rejected and removed from quarantine. The worker never approves: `approve_listing` is the moderator's call. If `clamd` does not answer, the version stays claimed and `requeue_stale_scans` returns it to the queue later.
+A creator makes a listing and a version, uploads the file to the `uploads-quarantine` bucket and calls `submit_version`. The scan worker (`scan_worker.rs`) claims queued versions with `claim_scan`, reads the file and runs `sx-upload-scan`. A clean file is converted to an sx3mf and written to `listing-files` with a preview, and `finish_scan` records the report and the file manifest. A refused file is recorded as rejected and removed from quarantine. The worker never approves: `approve_listing` is the moderator's call. If `clamd` does not answer, the version stays claimed and `requeue_stale_scans` returns it to the queue later.
 
 ### Configuration
 
