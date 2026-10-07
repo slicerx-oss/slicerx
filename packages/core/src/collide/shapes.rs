@@ -8,12 +8,13 @@ use std::sync::OnceLock;
 
 const SHAPES: &str = include_str!(concat!(env!("OUT_DIR"), "/head-shapes.json"));
 
-/// A box around the nozzle tip, `[x0, x1] x [y0, y1]`, standing from `z0` up to the carriage, mm.
+/// A box around the nozzle tip, `[x0, x1] x [y0, y1]`, from its underside `z0` to its top `z1`, mm.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct Column {
     pub x: [f64; 2],
     pub y: [f64; 2],
     pub z0: f64,
+    pub z1: f64,
 }
 
 /// One stop of a tool change: where the head goes, how far above the print's top, and whether it is at the
@@ -78,11 +79,15 @@ fn numbers<const N: usize>(v: &Value) -> Option<[f64; N]> {
 fn columns(f: &Value, key: &str) -> Vec<Column> {
     let mut out = Vec::new();
     for c in list(f.get("heads").and_then(|h| h.get(key))) {
-        if let Some([x0, x1, y0, y1, z0]) = numbers(c) {
+        // a file from before the boxes had tops stands them up forever
+        let box6 = numbers::<6>(c)
+            .or_else(|| numbers::<5>(c).map(|[x0, x1, y0, y1, z0]| [x0, x1, y0, y1, z0, f64::INFINITY]));
+        if let Some([x0, x1, y0, y1, z0, z1]) = box6 {
             out.push(Column {
                 x: [x0, x1],
                 y: [y0, y1],
                 z0,
+                z1,
             });
         }
     }

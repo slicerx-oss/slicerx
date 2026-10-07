@@ -289,6 +289,94 @@ fn a_delta_has_no_gantry_to_strike() {
     assert_eq!(gantry(&run(&plate, rod, json!({"printerId": "flsun-v400"}))), 0);
 }
 
+/// The A1 and A1 mini as their profiles describe them.
+fn a1(mini: bool) -> (Value, Value) {
+    let cfg = json!({
+        "printer_model": if mini { "Bambu Lab A1 mini" } else { "Bambu Lab A1" },
+        "extruder_clearance_max_radius": 73, "extruder_clearance_height_to_rod": 25,
+        "extruder_clearance_dist_to_rod": 56.5, "extruder_clearance_height_to_lid": if mini { 180 } else { 256 },
+        "printable_area": if mini { json!(["0x0", "180x0", "180x180", "0x180"]) } else { json!(["0x0", "256x0", "256x256", "0x256"]) },
+    });
+    (
+        cfg,
+        json!({"printerId": if mini { "bambu-a1-mini" } else { "bambu-a1" }}),
+    )
+}
+
+/// The A1's head is drawn from photos, not measured: it must not decide a hit. Its nozzle and heater block do, the
+/// profile's radius warns, and the gantry rule holds.
+#[test]
+fn an_estimated_head_never_blocks_a_print() {
+    let hits = |r: &SliceRun| {
+        kinds(r)
+            .into_iter()
+            .filter(|k| k.2 == Severity::Hit && k.0 == Kind::Hotend)
+            .collect::<Vec<_>>()
+    };
+    let (cfg, opts) = a1(false);
+    // a 25 mm gap: inside the profile's 73 mm radius, a close call and no hit
+    let r = run(
+        &[
+            ("tall", block(20.0, 20.0, 20.0), 60.0, 100.0),
+            ("low", block(20.0, 20.0, 6.0), 105.0, 100.0),
+        ],
+        cfg.clone(),
+        opts.clone(),
+    );
+    assert!(hits(&r).is_empty(), "{:?}", kinds(&r));
+    assert!(
+        kinds(&r).iter().any(|k| k.2 == Severity::Close),
+        "{:?}",
+        kinds(&r)
+    );
+    // 32 mm away: no hit either
+    let r = run(
+        &[
+            ("tall", block(20.0, 20.0, 20.0), 60.0, 100.0),
+            ("low", block(20.0, 20.0, 6.0), 112.0, 100.0),
+        ],
+        cfg,
+        opts,
+    );
+    assert!(hits(&r).is_empty(), "{:?}", kinds(&r));
+    // the A1 mini, a row with the tall part first: the gantry meets it, the head does not
+    let (cfg, opts) = a1(true);
+    let r = run(
+        &[
+            ("tall", block(20.0, 20.0, 60.0), 80.0, 80.0),
+            ("left", block(20.0, 20.0, 10.0), 15.0, 80.0),
+            ("right", block(20.0, 20.0, 10.0), 145.0, 80.0),
+        ],
+        cfg,
+        opts,
+    );
+    assert!(hits(&r).is_empty(), "{:?}", kinds(&r));
+    assert!(kinds(&r).iter().any(|k| k.0 == Kind::Gantry), "{:?}", kinds(&r));
+}
+
+/// A box of the head ends at its top: a part that reaches past the top only above the head does not meet it.
+#[test]
+fn the_head_has_a_top() {
+    // a shelf from 120 to 124 mm on a thin post at its far side: the X1's head, under 100 mm tall, runs beneath it
+    let shelf = mesh(vec![
+        cuboid([0.0, 4.0], [0.0, 40.0], [0.0, 124.0], 1),
+        cuboid([4.0, 60.0], [0.0, 40.0], [120.0, 124.0], 1),
+    ]);
+    let r = run(
+        &[
+            ("shelf", shelf, 40.0, 100.0),
+            ("low", block(10.0, 10.0, 2.0), 80.0, 115.0),
+        ],
+        json!({"extruder_clearance_height_to_rod": 150, "extruder_clearance_height_to_lid": 200}),
+        json!({"printerId": "bambu-x1-carbon"}),
+    );
+    let head = kinds(&r)
+        .into_iter()
+        .filter(|k| k.0 == Kind::Hotend && k.2 == Severity::Hit)
+        .count();
+    assert_eq!(head, 0, "{:?}", kinds(&r));
+}
+
 #[test]
 fn the_nozzle_strikes_only_where_it_touches_the_part() {
     // A low box 3 mm beside a tall one printed before it: the toolhead's body reaches the tall box, the nozzle tip does

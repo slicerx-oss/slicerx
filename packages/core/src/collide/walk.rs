@@ -248,7 +248,7 @@ impl Walker<'_> {
             let top = f64::from(o.top);
             if n.head {
                 let fields = m.fields(n.j, head);
-                let mut best: Option<(usize, f64)> = None;
+                let mut best: Option<(usize, f64, bool)> = None;
                 for (ci, c) in m
                     .heads
                     .get(head)
@@ -260,13 +260,23 @@ impl Walker<'_> {
                         continue;
                     }
                     let v = f64::from(fields.get(ci).map_or(0.0, |f| f.at(x, y)));
+                    // How far the part rises past the box's underside; past the box's top it may hold nothing inside the
+                    // box, which is checked on the mesh below.
                     let d = v - (z + c.z0);
-                    if d > f64::from(EPS) && best.is_none_or(|(_, b)| d > b) {
-                        best = Some((ci, d));
+                    if d > f64::from(EPS) && best.is_none_or(|(_, b, _)| d > b) {
+                        best = Some((ci, d, v > z + c.z1));
                     }
                 }
-                if let Some((ci, d)) = best
+                if let Some((ci, d, above)) = best
                     && let Some(c) = m.heads.get(head).and_then(|h| h.get(ci))
+                    && (!above
+                        || super::grid::material_in(
+                            &o.object,
+                            [x + c.x[0], x + c.x[1], y + c.y[0], y + c.y[1]],
+                            z + c.z0,
+                            z + c.z1,
+                            [x, y],
+                        ))
                 {
                     let tip = c.z0 < super::TIP_Z;
                     let kind = pr.leg.unwrap_or(if pr.travel && tip {

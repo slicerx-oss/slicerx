@@ -13,8 +13,15 @@ import { ToolheadRig } from '../src/toolhead'
 import { HEAD_MODELS, headFor } from '../src/heads'
 
 type Settings = Record<string, unknown>
-/** x0, x1, y0, y1, z0 around the nozzle tip, mm; each box stands up from z0 to the carriage. */
-type Column = [number, number, number, number, number]
+/** x0, x1, y0, y1, z0, z1 around the nozzle tip, mm: each box from its underside z0 to its top z1. */
+type Column = [number, number, number, number, number, number]
+
+/**
+ * Heads drawn from product photos alone, not measured: heimdall gets only their nozzle and heater block (the columns
+ * from under 5 mm up), so an estimated body never blocks a print. The profile's clearance radius still warns around
+ * them, and the gantry and lid rules still hold.
+ */
+const ESTIMATED = new Set(['bambu-a1'])
 
 const OUT = fileURLToPath(new URL('../data/head-shapes.json', import.meta.url))
 const profiles = (path: string) => JSON.parse(readFileSync(fileURLToPath(new URL(`../../../profiles/${path}`, import.meta.url)), 'utf8')) as { models: Record<string, { machine: Settings }> }
@@ -38,9 +45,9 @@ function columns(rig: ToolheadRig): Column[] {
     const m = o as Mesh
     if (!m.isMesh || !m.name || m.name === 'shadow' || m.name === 'cable chain' || !shown(m)) return
     const b = new Box3().setFromObject(m)
-    all.push([down(b.min.x), up(b.max.x), down(b.min.y), up(b.max.y), down(b.min.z - 0.05)])
+    all.push([down(b.min.x), up(b.max.x), down(b.min.y), up(b.max.y), down(b.min.z - 0.05), up(b.max.z)])
   })
-  const inside = (a: Column, b: Column) => a[0] >= b[0] - 0.5 && a[1] <= b[1] + 0.5 && a[2] >= b[2] - 0.5 && a[3] <= b[3] + 0.5 && a[4] >= b[4] - 0.01
+  const inside = (a: Column, b: Column) => a[0] >= b[0] - 0.5 && a[1] <= b[1] + 0.5 && a[2] >= b[2] - 0.5 && a[3] <= b[3] + 0.5 && a[4] >= b[4] - 0.01 && a[5] <= b[5] + 0.01
   const kept = all.filter((a, i) => !all.some((b, j) => j !== i && inside(a, b) && (!inside(b, a) || j < i)))
   return kept.sort((a, b) => a[4] - b[4] || a[0] - b[0] || a[2] - b[2])
 }
@@ -99,7 +106,8 @@ function build() {
     const rig = new ToolheadRig()
     rig.setModel(model)
     rig.place(0, 0, 0, 0, null, null)
-    family.set(model, head(model, columns(rig)))
+    const cols = columns(rig)
+    family.set(model, head(model, ESTIMATED.has(model) ? cols.filter((c) => c[4] < 5) : cols))
   }
   const single = (id: string) => family.get(headFor(id)) ?? 'generic'
   const printers: Record<string, { heads: string[]; changer?: string }> = {}
@@ -159,7 +167,10 @@ describe('head-shapes.json', () => {
     for (const [key, cols] of Object.entries(heads)) {
       expect(cols.length, key).toBeGreaterThan(1)
       expect(cols.some((c) => c[4] <= 0.01 && c[0] <= 0 && c[1] >= 0 && c[2] <= 0 && c[3] >= 0), key).toBe(true)
-      expect(Math.max(...cols.map((c) => c[1] - c[0])), key).toBeGreaterThan(20)
+      // every box has a top above its underside
+      expect(cols.every((c) => c[5] > c[4]), key).toBe(true)
+      if (ESTIMATED.has(key)) expect(cols.every((c) => c[4] < 5 && c[1] - c[0] <= 12), key).toBe(true)
+      else expect(Math.max(...cols.map((c) => c[1] - c[0])), key).toBeGreaterThan(20)
     }
   })
 })
