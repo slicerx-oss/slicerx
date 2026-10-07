@@ -109,6 +109,23 @@ describe('machine fixtures in Preview', () => {
     }
   })
 
+  it('every other chute stands still too while no change flushes into it', () => {
+    for (const p of [PRINTERS[0]!, ...SWAP_PRINTERS.filter((q) => !q.id.startsWith('bambu-a1'))]) {
+      const spec = p.spec()
+      const t = new Toolpaths()
+      t.set(buildPreview([0, 1, 2].map((l) => [10, 60, 110].map((y): Seg => ({ a: [30 + l * 20, y], b: [40 + l * 20, y + 40], feature: FEATURE.outerWall, tool: 0 })))))
+      t.setToolChanger(spec)
+      const seen = new Set<string>()
+      for (const [layer, cut] of [[0, 1], [1, 3], [2, 2]] as const) {
+        t.setRange(0, layer, cut)
+        t.root.updateMatrixWorld(true)
+        const q = part(t, 'chute').getWorldPosition(new Vector3())
+        seen.add(`${q.x.toFixed(3)} ${q.y.toFixed(3)} ${q.z.toFixed(3)}`)
+      }
+      expect([...seen], p.name).toEqual([`${spec.chute!.x.toFixed(3)} ${spec.chute!.y.toFixed(3)} 0.000`])
+    }
+  })
+
   it('the A1 chute stands still on the frame while the head moves in x, y and z', () => {
     for (const id of ['bambu-a1', 'bambu-a1-mini']) {
       const spec = SWAP_PRINTERS.find((p) => p.id === id)!.spec()
