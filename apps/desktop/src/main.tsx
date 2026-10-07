@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 import type { AppFeature, EditionHost } from '@slicerx/contracts'
-import { editionLogo, registerCrashHost, SlicerXApp } from '@slicerx/app'
+import { editionLogo, registerCrashHost, setCurrentEdition, SlicerXApp } from '@slicerx/app'
 import { editionFromBuild } from '@slicerx/edition-config'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
@@ -14,6 +14,9 @@ declare const __SX_FEATURE_STORE__: boolean
 declare const __SX_FEATURE_PILOT__: boolean
 declare const __SX_FEATURE_CONNECT__: boolean
 declare const __SX_FEATURE_CLOUD__: boolean
+
+// The edition names the app from the first frame: the window title, menus and setup read it before the app renders.
+setCurrentEdition(editionFromBuild())
 
 // Panics and web view crashes the shell recorded are sent from the page; register before the app starts.
 registerCrashHost(createTauriCrash())

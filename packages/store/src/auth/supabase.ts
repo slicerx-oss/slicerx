@@ -233,11 +233,9 @@ export function supabaseAuth(sb: Db, opts: SupabaseOptions): AuthClient {
         return fail('invalid', 'The sign-in link is not a valid URL')
       }
       const err = url.searchParams.get('error_description') ?? url.searchParams.get('error')
-      if (err) {
-        // The request this link answered is over either way, so its verifier goes.
-        await clearPendingVerifiers(opts.auth?.storage)
-        return fail('forbidden', signInError({ code: url.searchParams.get('error_code') ?? undefined, message: err }))
-      }
+      // An error link (an old one Supabase invalidated, say) leaves pending requests alone: the newest link
+      // still needs its verifier. Only a successful sign-in or a new request replaces them.
+      if (err) return fail('forbidden', signInError({ code: url.searchParams.get('error_code') ?? undefined, message: err }))
       const code = url.searchParams.get('code')
       if (!code) return fail('invalid', 'The sign-in link has no code')
       // A code works once: the same link handed over twice (a second launch, a second click) shares the first exchange.
@@ -259,6 +257,8 @@ export function supabaseAuth(sb: Db, opts: SupabaseOptions): AuthClient {
 
     async signOut() {
       await sb.auth.signOut()
+      // Links asked for before signing out should not sign this computer back in.
+      await clearPendingVerifiers(opts.auth?.storage)
     },
 
     onSessionChange(cb) {
