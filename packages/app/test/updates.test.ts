@@ -6,7 +6,7 @@ import { createElement } from 'react'
 import { flushSync } from 'react-dom'
 import { createRoot } from 'react-dom/client'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
-import { ravensStill, UpdateDialogView, type UpdateDialogViewProps } from '../src/updates/dialog'
+import { detailText, ravensStill, UpdateDialogView, type UpdateDialogViewProps } from '../src/updates/dialog'
 import {
   checkForUpdates,
   DAY_MS,
@@ -367,6 +367,18 @@ describe('the update dialog', () => {
     expect(install.dialog.querySelector('[role=alert]')?.textContent).toMatch(/unchanged/)
     install.button('Try again')!.click()
     expect(install.on.retry).toHaveBeenCalledOnce()
+  })
+
+  it('says a reason once: no repeated parts, and nothing that restates the advice', () => {
+    const url = 'error sending request for url (https://github.com/slicerx-oss/slicerx/releases/download/desktop-updates/latest.json)'
+    expect(detailText(`${url}: ${url}`)).toBe(url)
+    expect(detailText('`connection reset`: connection reset')).toBe('connection reset')
+    expect(detailText('The update server did not answer.', 'The update server did not answer. Check your internet connection and try again.')).toBe('')
+    expect(detailText('Permission denied (os error 13)')).toBe('Permission denied (os error 13)')
+    expect(detailText('')).toBe('')
+    const check = show({ kind: 'error', step: 'check', message: `${url}: ${url}` })
+    expect(check.dialog.querySelector('.upd-detail')?.textContent).toBe(`Details: ${url}`)
+    expect(check.dialog.textContent!.split('error sending request')).toHaveLength(2)
   })
 
   it('holds the ravens still when asked, and lets them spar otherwise', () => {

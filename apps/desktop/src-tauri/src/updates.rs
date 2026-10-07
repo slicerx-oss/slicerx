@@ -123,6 +123,14 @@ impl Failed {
     }
 }
 
+/// A check that got no usable feed says only that (the page's advice covers it); anything odder keeps its reason.
+fn check_failure(e: &tauri_plugin_updater::Error) -> Failed {
+    match e {
+        tauri_plugin_updater::Error::ReleaseNotFound => Failed::at("check", ""),
+        _ => Failed::at("check", e),
+    }
+}
+
 /// A download that arrived but whose signature does not check out (wrong key, changed bytes, another version) is
 /// verify; anything else on the way is download.
 fn download_step(e: &tauri_plugin_updater::Error) -> &'static str {
@@ -153,7 +161,7 @@ pub async fn update_check(app: AppHandle, state: State<'_, Updates>) -> Result<O
         .map_err(|e| Failed::at("check", e))?
         .check()
         .await
-        .map_err(|e| Failed::at("check", e))?;
+        .map_err(|e| check_failure(&e))?;
     let out = update.as_ref().map(found);
     let mut held = state.found.lock().map_err(|e| Failed::at("check", e))?;
     // a different version than the one downloaded drops the old download
@@ -232,6 +240,11 @@ mod tests {
         assert_eq!(download_step(&E::MissingSignedVersion), "verify");
         assert_eq!(download_step(&E::SignatureUtf8("x".into())), "verify");
         assert_eq!(download_step(&E::Network("connection reset".into())), "download");
+        assert_eq!(check_failure(&E::ReleaseNotFound).message, "");
+        assert_eq!(
+            check_failure(&E::Network("timed out".into())).message,
+            "`timed out`"
+        );
         let f = Failed::at("check", "");
         assert_eq!(
             serde_json::to_value(&f).unwrap(),

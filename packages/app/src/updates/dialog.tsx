@@ -230,13 +230,14 @@ export function UpdateDialogView({ phase, open, app, tag, version, mode, held, s
     case 'error': {
       const e = failed(phase.step, app, phase.update?.version)
       const url = phase.update?.releaseUrl
+      const detail = detailText(phase.message, e.title, e.advice)
       title = e.title
       body = (
         <>
           <p className="upd-line" role="alert">
             {e.advice}
           </p>
-          {phase.message ? <p className="upd-line upd-detail sx-small">Details: {phase.message}</p> : null}
+          {detail ? <p className="upd-line upd-detail sx-small">Details: {detail}</p> : null}
           {url && (phase.step === 'verify' || phase.step === 'install') ? (
             <a
               className="upd-more"
@@ -280,6 +281,24 @@ export function UpdateDialogView({ phase, open, app, tag, version, mode, held, s
       </div>
     </Dialog>
   )
+}
+
+/**
+ * A failure's reason as the dialog shows it: each part once (the updater's errors can repeat their cause after a
+ * colon), without the plugin's backticks, and empty when it only restates what the dialog already says.
+ */
+export function detailText(message: string, ...shown: string[]): string {
+  const key = (t: string) => t.toLowerCase().replace(/`/g, '').replace(/[\s.:]+$/, '').trim()
+  const seen = new Set<string>()
+  const kept: string[] = []
+  for (const part of message.split(/(?<=[.:])\s+/)) {
+    const clean = part.replace(/`/g, '').trim()
+    if (!clean || seen.has(key(clean))) continue
+    seen.add(key(clean))
+    kept.push(clean)
+  }
+  const text = kept.join(' ').replace(/:$/, '')
+  return shown.some((s) => s.toLowerCase().includes(key(text))) ? '' : text
 }
 
 /** The title and what to try for each step that can fail. */
