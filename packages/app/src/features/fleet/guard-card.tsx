@@ -40,6 +40,16 @@ const STATE_PILL: Record<GuardTrip['state'], { label: string; tone: 'bad' | 'war
   clear: { label: 'Clear', tone: 'ok' },
 }
 
+/** The spot the guard found, bracketed, with the strike at its center. */
+function Spot({ box: [l, t, r, b], label }: { box: [number, number, number, number]; label: string }) {
+  return (
+    <div className="guard-spot" style={{ left: `${l * 100}%`, top: `${t * 100}%`, width: `${(r - l) * 100}%`, height: `${(b - t) * 100}%` }}>
+      <span className="guard-tag">{label}</span>
+      <StrikeMark size={Math.round(Math.min(76, Math.max(44, (r - l) * 260)))} />
+    </div>
+  )
+}
+
 export function GuardCard({ row, trip, now }: { row: FleetRow; trip: GuardTrip; now: number }) {
   const host = useHost()
   const hub = guardHub(host)
@@ -165,19 +175,21 @@ export function GuardCard({ row, trip, now }: { row: FleetRow; trip: GuardTrip; 
 
   // The pill already says the state; the line adds only what it does not (layer, time left).
   const stats = statusLine(row, now).replace(/^Paused( · )?/, '')
-  const [l, t, r, b] = trip.box ?? [0.35, 0.3, 0.65, 0.7]
+  const shown = Boolean(url) && broken !== url
   return (
     <article ref={ref} className="guard-card" data-state={trip.state} data-kind={trip.kind} aria-labelledby={headingId} tabIndex={-1}>
       <div className="guard-frame">
-        {url && broken !== url ? (
+        {shown ? (
           <img src={url} alt={`Camera picture of ${row.name} when the guard acted`} onError={() => setBroken(url)} />
         ) : (
           <div className="guard-noframe">No picture from the camera</div>
         )}
-        {url && broken !== url ? (
-          <div className="guard-spot" style={{ left: `${l * 100}%`, top: `${t * 100}%`, width: `${(r - l) * 100}%`, height: `${(b - t) * 100}%` }} data-marked={trip.box ? true : undefined}>
-            <span className="guard-tag">{trip.kind === 'hand' ? 'Hand' : 'On the plate'}</span>
-            <StrikeMark size={Math.round(Math.min(76, Math.max(44, (r - l) * 260)))} />
+        {shown && trip.box ? <Spot box={trip.box} label={trip.kind === 'hand' ? 'Hand' : 'On the plate'} /> : null}
+        {/* No spot to mark: a badge in the corner, so the strike never sits on nothing. */}
+        {shown && !trip.box ? (
+          <div className="guard-badge">
+            <StrikeMark size={26} pulse={false} />
+            <span>{trip.kind === 'hand' ? 'Hand seen' : 'Something on the plate'}</span>
           </div>
         ) : null}
       </div>
