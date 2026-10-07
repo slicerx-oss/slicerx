@@ -20,7 +20,9 @@ test('the scan finds the printer, the connection tests itself, then the slicer q
   await fresh(page)
   await noHorizontalScroll(page)
 
-  // The scan runs by itself and lists what the demo network announces, with what each printer reported.
+  // Nothing is searched until asked; then the scan lists what the demo network announces, with what each printer reported.
+  await expect(page.getByRole('radiogroup', { name: 'Printers found' })).toHaveCount(0)
+  await page.getByRole('button', { name: 'Search my network' }).click()
   const found = page.getByRole('radiogroup', { name: 'Printers found' }).getByRole('radio')
   await expect(found).toHaveCount(6)
   const x1 = found.filter({ hasText: 'X1 Carbon' })

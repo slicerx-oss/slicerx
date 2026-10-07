@@ -115,6 +115,7 @@ export function NoAnswerHint({ windows }: { windows: boolean }) {
 }
 
 const onWindows = () => typeof navigator !== 'undefined' && /Windows/.test(navigator.userAgent)
+const onMac = () => typeof navigator !== 'undefined' && /Mac OS X|Macintosh/.test(navigator.userAgent) && !/iPhone|iPad/.test(navigator.userAgent)
 
 // Controller: form state, secrets, test and scan. Lives in the flow so the setup skill can apply cards.
 
@@ -1086,9 +1087,24 @@ function EnterIp({ ctl, onFound, onNothing }: { ctl: PrinterController; onFound:
 
 function FoundList({ ctl, picked, onPick, onClear, enterIp }: { ctl: PrinterController; picked: FoundPrinter | null; onPick: (p: FoundPrinter) => void; onClear: () => void; enterIp: ReactNode }) {
   const { scan } = ctl
+  // Only the desktop app listens on the network itself; a browser never gets the macOS question.
+  const desktop = useHost().kind === 'desktop'
   const pickedId = picked?.id ?? null
   // A picked printer stays on screen whatever a later scan finds.
-  if (!picked && (scan.status === 'idle' || scan.status === 'scanning')) {
+  // Nothing is searched until the person asks: on macOS the search makes the system ask about incoming connections.
+  if (!picked && scan.status === 'idle') {
+    return (
+      <div className="fr-scanning fr-scan-ask">
+        <Icon name="connect-scan" size={22} />
+        <p>Search your network for printers. You can also enter the printer's IP address instead.</p>
+        <Button variant="primary" icon="search" onClick={() => void ctl.runScan()}>
+          Search my network
+        </Button>
+        {desktop && onMac() ? <p className="sx-small sx-muted">macOS will ask whether {appName()} may accept incoming connections. Allow it so printers can answer.</p> : null}
+      </div>
+    )
+  }
+  if (!picked && scan.status === 'scanning') {
     return (
       <div className="fr-scanning" role="status">
         <div className="fr-test-line" aria-hidden="true" />
@@ -1202,12 +1218,12 @@ export function PrinterStep({
   const check = method ? checkConnection(form, method) : null
   const outcome = test.status === 'done' ? test.outcome : null
 
-  // The scan starts by itself, once, when the screen opens.
+  // The scan waits for Search my network: it listens for printers' announcements, which on macOS makes the system
+  // ask about incoming connections, so it never starts by itself.
   const started = useRef(false)
   useEffect(() => {
     if (started.current) return
     started.current = true
-    if (ctl.scan.status === 'idle') void ctl.runScan()
     // Opened on the hand-made form (Add printer on Printers): it starts at the brand.
     if (mode === 'manual' && !ctl.form.brand) ctl.setField('brand')
   }, [ctl, mode])
@@ -1367,12 +1383,14 @@ export function PrinterStep({
       {picked ? null : <BambuLanCard family={bambuFamily(bambuFound[0]?.model)} lanOnly={bambuFound.some((p) => p.lanOnly === false) ? false : undefined} />}
       <div className="fr-scanbar">
         <span className="fr-scanbar-txt" role="status">
-          {ctl.scan.status === 'scanning' || ctl.scan.status === 'idle' ? 'Scanning' : found === null ? '' : found === 0 ? 'Nothing found' : found === 1 ? '1 printer found' : `${found} printers found`}
+          {ctl.scan.status === 'scanning' ? 'Scanning' : ctl.scan.status === 'idle' ? '' : found === null ? '' : found === 0 ? 'Nothing found' : found === 1 ? '1 printer found' : `${found} printers found`}
           {ctl.scan.status === 'done' ? <span className="sx-dim"> on {ctl.host.scanRange}</span> : null}
         </span>
-        <Button size="sm" variant="ghost" icon="refresh" disabled={ctl.scan.status === 'scanning'} onClick={() => void ctl.runScan()}>
-          Scan again
-        </Button>
+        {ctl.scan.status === 'idle' ? null : (
+          <Button size="sm" variant="ghost" icon="refresh" disabled={ctl.scan.status === 'scanning'} onClick={() => void ctl.runScan()}>
+            Scan again
+          </Button>
+        )}
       </div>
       <FoundList
         ctl={ctl}

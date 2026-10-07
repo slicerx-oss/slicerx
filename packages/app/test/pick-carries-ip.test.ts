@@ -45,6 +45,10 @@ async function launch(scans: FoundPrinter[][]): Promise<{ el: HTMLDivElement; te
   const root = createRoot(el)
   const host = { kind: 'desktop', build: {}, capabilities: { printers: 'link', secureStorage: true }, printers: undefined } as never
   await act(async () => root.render(createElement(HostContext.Provider, { value: host }, createElement(FirstRun))))
+  // Setup searches only when asked.
+  const search = [...el.querySelectorAll('button')].find((b) => b.textContent?.includes('Search my network'))
+  if (!search) throw new Error('no Search my network button')
+  await act(async () => search.click())
   return { el, tests, codes, done: () => (act(() => root.unmount()), el.remove(), registerPrinterSetup(null)) }
 }
 
