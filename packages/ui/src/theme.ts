@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// Themes: a typed object that maps onto the CSS variables every component reads. Nocturne is the
+// Themes: a typed object that maps onto the CSS variables every component reads. Subban is the
 // default. Integrators build their own with createTheme() and apply it at runtime with
 // applyTheme() or <ThemeProvider>. See THEMING.md.
 
@@ -29,6 +29,8 @@ export interface ThemeColors {
   orange: string
   yellow: string
   red: string
+  /** Blue, for an accent choice. Optional: themes written before it existed fall back to the stylesheet's. */
+  blue?: string
   /** Text drawn on top of the gradient. */
   onGrad: string
   /** The color shadows are made of, including alpha. */
@@ -109,9 +111,9 @@ export interface ThemeInput {
   scene?: ThemeScene
 }
 
-/** The default theme: Nocturne, a Dracula-derived dark palette. */
-export const nocturne: Theme = {
-  name: 'nocturne',
+/** The default theme: Subban, the owner's dark palette, derived from Dracula. */
+export const subban: Theme = {
+  name: 'subban',
   scheme: 'dark',
   colors: {
     ink0: '#282a36',
@@ -131,6 +133,7 @@ export const nocturne: Theme = {
     orange: '#fab570',
     yellow: '#f1fa8c',
     red: '#ff5555',
+    blue: '#82aaff',
     onGrad: '#1e2029',
     shadow: 'rgb(0 0 0 / 70%)',
   },
@@ -144,8 +147,14 @@ export const nocturne: Theme = {
   spacing: { unit: 8 },
 }
 
-/** Builds a theme from overrides on top of a base (Nocturne unless given). */
-export function createTheme(input: ThemeInput, base: Theme = nocturne): Theme {
+/**
+ * The default theme under its earlier name. Editions and integrations built on `nocturne` keep working.
+ * @deprecated Use `subban`.
+ */
+export const nocturne: Theme = subban
+
+/** Builds a theme from overrides on top of a base (Subban unless given). */
+export function createTheme(input: ThemeInput, base: Theme = subban): Theme {
   const fonts: ThemeFonts = { ...base.fonts, ...input.fonts }
   if (input.fonts && 'href' in input.fonts && input.fonts.href === undefined) delete fonts.href
   const scene = input.scene ?? base.scene
@@ -179,6 +188,7 @@ const COLOR_VARS: Record<keyof ThemeColors, string> = {
   orange: '--orange',
   yellow: '--yellow',
   red: '--red',
+  blue: '--blue',
   onGrad: '--on-grad',
   shadow: '--shadow-color',
 }
@@ -199,7 +209,10 @@ const SPACING_STEPS = [0.5, 1, 1.5, 2, 3, 4, 6, 8]
 /** The CSS custom properties a theme sets, as a name to value map. */
 export function themeToVars(theme: Theme): Record<string, string> {
   const vars: Record<string, string> = {}
-  for (const key of Object.keys(COLOR_VARS) as (keyof ThemeColors)[]) vars[COLOR_VARS[key]] = theme.colors[key]
+  for (const key of Object.keys(COLOR_VARS) as (keyof ThemeColors)[]) {
+    const v = theme.colors[key]
+    if (v !== undefined) vars[COLOR_VARS[key]] = v
+  }
   vars['--grad-from'] = theme.gradient.from
   vars['--grad-to'] = theme.gradient.to
   vars['--grad-angle'] = theme.gradient.angle
@@ -252,7 +265,7 @@ export function applyTheme(theme: Theme, el?: HTMLElement): void {
 export function clearTheme(el?: HTMLElement): void {
   const target = el ?? (typeof document !== 'undefined' ? document.documentElement : undefined)
   if (!target) return
-  for (const k of Object.keys(themeToVars(nocturne))) target.style.removeProperty(k)
+  for (const k of Object.keys(themeToVars(subban))) target.style.removeProperty(k)
   for (const k of Object.values(SCENE_VARS)) target.style.removeProperty(k)
   target.style.removeProperty('color-scheme')
   delete target.dataset['sxTheme']
@@ -276,5 +289,5 @@ export function resolveColor(theme: Theme, value: string): string {
   const m = value.match(/^var\((--[a-z0-9-]+)\)$/)
   if (!m) return value
   const key = (Object.keys(COLOR_VARS) as (keyof ThemeColors)[]).find((k) => COLOR_VARS[k] === m[1])
-  return key ? theme.colors[key] : value
+  return key ? (theme.colors[key] ?? value) : value
 }

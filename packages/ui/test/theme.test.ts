@@ -3,8 +3,8 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { applyTheme, createTheme, nocturne, onThemeChange, resolveColor, themeToCss, themeToVars, type Theme } from '../src/theme'
-import { forge, nocturneLight, themes } from '../src/themes'
+import { applyTheme, createTheme, subban, onThemeChange, resolveColor, themeToCss, themeToVars, type Theme } from '../src/theme'
+import { forge, subbanLight, themes } from '../src/themes'
 
 const here = resolve(import.meta.dirname)
 const tokensCss = readFileSync(resolve(here, '../src/tokens.css'), 'utf8')
@@ -19,8 +19,8 @@ function walk(dir: string): string[] {
 }
 
 describe('theme', () => {
-  it('nocturne maps onto every variable in tokens.css with the same value', () => {
-    for (const [name, value] of Object.entries(themeToVars(nocturne))) {
+  it('subban maps onto every variable in tokens.css with the same value', () => {
+    for (const [name, value] of Object.entries(themeToVars(subban))) {
       expect(cssValue(tokensCss, name), name).toBe(value)
     }
   })
@@ -28,19 +28,19 @@ describe('theme', () => {
   it('createTheme merges nested overrides on top of the base', () => {
     const t = createTheme({ name: 'x', colors: { purple: 'rebeccapurple' }, spacing: { unit: 4 } })
     expect(t.colors.purple).toBe('rebeccapurple')
-    expect(t.colors.pink).toBe(nocturne.colors.pink)
-    expect(t.fonts).toEqual(nocturne.fonts)
+    expect(t.colors.pink).toBe(subban.colors.pink)
+    expect(t.fonts).toEqual(subban.fonts)
     expect(themeToVars(t)['--s-2']).toBe('4px')
     expect(themeToVars(t)['--gutter']).toBe('8px')
-    expect(nocturne.colors.purple).toBe('#bd93f9')
+    expect(subban.colors.purple).toBe('#bd93f9')
   })
 
   it('ships dark and light variants plus an example rebrand', () => {
-    expect(nocturne.scheme).toBe('dark')
-    expect(nocturneLight.scheme).toBe('light')
-    expect(forge.fonts.body).not.toBe(nocturne.fonts.body)
-    expect(forge.radius.lg).not.toBe(nocturne.radius.lg)
-    expect(Object.keys(themes)).toEqual(['nocturne', 'nocturneLight', 'forge'])
+    expect(subban.scheme).toBe('dark')
+    expect(subbanLight.scheme).toBe('light')
+    expect(forge.fonts.body).not.toBe(subban.fonts.body)
+    expect(forge.radius.lg).not.toBe(subban.radius.lg)
+    expect(Object.keys(themes)).toEqual(['subban', 'subbanLight', 'forge'])
     for (const t of Object.values(themes)) {
       for (const [k, v] of Object.entries(t.colors)) expect(v, `${t.name}.${k}`).toMatch(/^(#[0-9a-f]{6}|rgb\(.+\))$/i)
     }
@@ -68,11 +68,11 @@ describe('theme', () => {
       removeEventListener: (_: string, l: (e: Event) => void) => listeners.delete(l),
     }
     const off = onThemeChange((t) => (received = t), el as unknown as EventTarget)
-    applyTheme(nocturneLight, el as unknown as HTMLElement)
-    expect(set.get('--ink-0')).toBe(nocturneLight.colors.ink0)
+    applyTheme(subbanLight, el as unknown as HTMLElement)
+    expect(set.get('--ink-0')).toBe(subbanLight.colors.ink0)
     expect(set.get('color-scheme')).toBe('light')
-    expect(el.dataset['sxTheme']).toBe('nocturne-light')
-    expect(received?.name).toBe('nocturne-light')
+    expect(el.dataset['sxTheme']).toBe('subban-light')
+    expect(received?.name).toBe('subban-light')
     applyTheme(forge, el as unknown as HTMLElement)
     expect(set.get('--f-body')).toBe(forge.fonts.body)
     off()
@@ -80,7 +80,7 @@ describe('theme', () => {
 
   it('resolves variable references to concrete colors for canvases', () => {
     expect(resolveColor(forge, forge.gradient.from)).toBe(forge.colors.purple)
-    expect(resolveColor(nocturne, '#123456')).toBe('#123456')
+    expect(resolveColor(subban, '#123456')).toBe('#123456')
   })
 
   it('no component hard-codes a color or a font', () => {

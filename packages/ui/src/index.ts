@@ -3,8 +3,8 @@
 // @slicerx/ui. See README.md for the public API.
 // Styles: import "@slicerx/ui/styles.css" once per app (it pulls in tokens.css).
 
-export { NOCTURNE, NOCTURNE_VARS, ROLE, BRAND, FONTS, FONTS_HREF, MOTION, readToken, prefersReducedMotion } from './tokens'
-export type { NocturneColor } from './tokens'
+export { SUBBAN, SUBBAN_VARS, NOCTURNE, NOCTURNE_VARS, ROLE, BRAND, FONTS, FONTS_HREF, MOTION, readToken, prefersReducedMotion } from './tokens'
+export type { SubbanColor, NocturneColor } from './tokens'
 
 export { ICON_PATHS, ICON_GROUPS, ICON_COUNT } from './icons/icon-paths'
 export type { IconName } from './icons/icon-paths'
@@ -52,15 +52,17 @@ export type { AppBarProps, TabsProps, TabSpec, WorkspaceId, SearchButtonProps, A
 export { ToastProvider, useToast } from './components/toast'
 export type { ToastTone, ToastOptions } from './components/toast'
 
-export { SCENE_VARS, nocturne, createTheme, themeToVars, themeToCss, applyTheme, clearTheme, onThemeChange, resolveColor, THEME_EVENT } from './theme'
+export { SCENE_VARS, subban, nocturne, createTheme, themeToVars, themeToCss, applyTheme, clearTheme, onThemeChange, resolveColor, THEME_EVENT } from './theme'
 export type { Theme, ThemeInput, ThemeColors, ThemeGradient, ThemeFonts, ThemeRadius, ThemeSpacing, ThemeScene, ColorScheme } from './theme'
-export { THEME_FILE_VERSION, TEXT_CONTRAST, GLYPH_CONTRAST, MAX_THEME_BYTES, derivePalette, deriveScene, SCENE_KEYS, themeColors, themeFromFile, validateThemeFile, parseThemeText, serializeTheme, themeWarnings, mixHex, contrast, readable, rehue } from './themefile'
-export type { ThemeFile, DerivedPalette, ThemeResult } from './themefile'
-export { BUNDLED_THEMES, DEFAULT_DARK_THEME, DEFAULT_LIGHT_THEME, DEFAULT_THEME_IDS, allThemes, findTheme, pickTheme, themeForScheme, slugify } from './theme-library'
-export type { ThemeIds } from './theme-library'
+export { THEME_FILE_VERSION, TEXT_CONTRAST, GLYPH_CONTRAST, HIGH_TEXT_CONTRAST, COLOR_VISION, MAX_THEME_BYTES, derivePalette, deriveScene, SCENE_KEYS, themeColors, themeFromFile, validateThemeFile, parseThemeText, serializeTheme, themeWarnings, mixHex, contrast, readable, rehue } from './themefile'
+export type { ThemeFile, DerivedPalette, ThemeResult, PaletteOptions, ContrastLevel, ColorVision } from './themefile'
+export { BUNDLED_THEMES, DEFAULT_DARK_THEME, DEFAULT_LIGHT_THEME, DEFAULT_THEME_IDS, LEGACY_THEME_IDS, allThemes, findTheme, pickTheme, pickFamily, familyId, themeFamilies, migrateThemeId, themeForScheme, slugify } from './theme-library'
+export type { ThemeIds, ThemeFamily } from './theme-library'
+export { TEXT_SIZES, FONT_WEIGHTS, TEXT_SCALE, WEIGHT_STEPS, bodyPx, typeVars, applyType } from './appearance'
+export type { TextSize, FontWeight } from './appearance'
 export { UI_FONTS, MONO_FONTS, DEFAULT_UI_FONT, DEFAULT_MONO_FONT, THEME_FONT_CHOICE, resolveFonts } from './fonts'
 export type { FontOption, FontChoice, ResolvedFonts } from './fonts'
-export { nocturneLight, forge, themes } from './themes'
+export { subbanLight, nocturneLight, forge, themes } from './themes'
 export type { ThemeName } from './themes'
 export { ThemeProvider, useTheme } from './theme-provider'
 export type { ThemeProviderProps, ThemeContextValue, IconOverrides } from './theme-provider'

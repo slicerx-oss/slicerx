@@ -2,7 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 // Themes the embedded pieces without touching the host page: the variables
 // apply to this subtree only.
-import { nocturne, nocturneLight, ThemeProvider, type Theme } from '@slicerx/ui'
+import { subban, subbanLight, ThemeProvider, type Theme } from '@slicerx/ui'
 import { mixHex, parseHex } from '@slicerx/ui/theme'
 import type { ViewportTheme } from '@slicerx/viewport'
 import type { ReactNode } from 'react'
@@ -14,8 +14,8 @@ export interface EmbedThemeProps {
 }
 
 export function resolveTheme(t: EmbedThemeProps['theme']): Theme {
-  if (t === 'light') return nocturneLight
-  if (t === undefined || t === 'dark') return nocturne
+  if (t === 'light') return subbanLight
+  if (t === undefined || t === 'dark') return subban
   return t
 }
 

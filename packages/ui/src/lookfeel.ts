@@ -45,7 +45,7 @@ const TABS: Readonly<Record<LookId, Pick<LayoutSpec, 'workspaceTabs' | 'tabLabel
   orcaslicer: { workspaceTabs: ['prepare', 'printers', 'library', 'pilot'], tabLabels: { printers: 'Device' } },
 }
 
-const preset = (id: LookId): LookAndFeelPreset => ({ id, ...LOOK_OPTIONS[id], controls: id, keys: id, layout: { ...LAYOUT, ...TABS[id] }, look: LOOK, defaultTheme: 'nocturne' })
+const preset = (id: LookId): LookAndFeelPreset => ({ id, ...LOOK_OPTIONS[id], controls: id, keys: id, layout: { ...LAYOUT, ...TABS[id] }, look: LOOK, defaultTheme: 'subban' })
 
 const PRESETS: Readonly<Record<LookId, LookAndFeelPreset>> = {
   slicerx: preset('slicerx'),
@@ -134,10 +134,10 @@ export function onLookChange(cb: (preset: LookAndFeelPreset) => void, el?: Event
   return () => target.removeEventListener(LOOK_EVENT, handler)
 }
 
-/** Which theme to use for a preset: its own default, or the OS scheme when it says `system`. Every bundled preset says nocturne; a stored override may still say system. */
-export function themeNameFor(preset: LookAndFeelPreset, systemPrefersDark: boolean): 'nocturne' | 'nocturne-light' {
-  if (preset.defaultTheme === 'nocturne') return 'nocturne'
-  return systemPrefersDark ? 'nocturne' : 'nocturne-light'
+/** Which theme to use for a preset: its own default, or the OS scheme when it says `system`. Every bundled preset says subban (nocturne is its earlier name); a stored override may still say system. */
+export function themeNameFor(preset: LookAndFeelPreset, systemPrefersDark: boolean): 'subban' | 'subban-light' {
+  if (preset.defaultTheme === 'subban' || preset.defaultTheme === 'nocturne') return 'subban'
+  return systemPrefersDark ? 'subban' : 'subban-light'
 }
 
 // Keymaps. Actions are command ids; a value is a key chord ("Mod" is Command on macOS, Control elsewhere)

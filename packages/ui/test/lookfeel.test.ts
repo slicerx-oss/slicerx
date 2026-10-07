@@ -39,7 +39,7 @@ describe('look and feel presets', () => {
     const own = resolvePreset('slicerx')
     for (const p of allPresets()) {
       expect(p.look).toEqual(own.look)
-      expect(p.defaultTheme).toBe('nocturne')
+      expect(p.defaultTheme).toBe('subban')
       const { workspaceTabs: _t, tabLabels: _l, ...rest } = p.layout
       const { workspaceTabs: _ot, tabLabels: _ol, ...ownRest } = own.layout
       expect(rest).toEqual(ownRest)
@@ -84,10 +84,12 @@ describe('look and feel presets', () => {
   })
 
   it('starts every style dark; only a system default follows the OS', () => {
-    expect(themeNameFor(resolvePreset('slicerx'), false)).toBe('nocturne')
-    expect(themeNameFor(resolvePreset('orcaslicer'), false)).toBe('nocturne')
-    expect(themeNameFor({ ...resolvePreset('orcaslicer'), defaultTheme: 'system' }, false)).toBe('nocturne-light')
-    expect(themeNameFor({ ...resolvePreset('orcaslicer'), defaultTheme: 'system' }, true)).toBe('nocturne')
+    expect(themeNameFor(resolvePreset('slicerx'), false)).toBe('subban')
+    expect(themeNameFor(resolvePreset('orcaslicer'), false)).toBe('subban')
+    // a stored preset from before the rename still says nocturne
+    expect(themeNameFor({ ...resolvePreset('orcaslicer'), defaultTheme: 'nocturne' }, false)).toBe('subban')
+    expect(themeNameFor({ ...resolvePreset('orcaslicer'), defaultTheme: 'system' }, false)).toBe('subban-light')
+    expect(themeNameFor({ ...resolvePreset('orcaslicer'), defaultTheme: 'system' }, true)).toBe('subban')
   })
 })
 

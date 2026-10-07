@@ -44,7 +44,7 @@ export interface LayoutSpec {
 /** Read by the theme. Token names resolve through CSS variables in @slicerx/ui. */
 export interface LookSpec {
   density: 'compact' | 'standard' | 'roomy'
-  accent: 'purple' | 'green' | 'orange' | 'cyan'
+  accent: 'purple' | 'green' | 'orange' | 'cyan' | 'pink' | 'blue'
   radius: 'sharp' | 'soft' | 'round'
   rowHeight: 'sm' | 'md' | 'lg'
   displayFont: boolean
@@ -68,7 +68,8 @@ export interface LookAndFeelPreset {
   keys: KeymapId
   layout: LayoutSpec
   look: LookSpec
-  defaultTheme: 'nocturne' | 'system'
+  /** `nocturne` is Subban's earlier name. */
+  defaultTheme: 'subban' | 'nocturne' | 'system'
 }
 
 /** Picker labels, in the owner's order. The full preset (layout, look) comes from @slicerx/ui `resolvePreset`. */
@@ -87,7 +88,7 @@ export interface LookAndFeelChoice {
 }
 
 /** Steps of the first-run flow in order. mimir can drive `printer` through the printer setup tools. */
-export const FIRST_RUN_STEPS = ['look', 'printer', 'open', 'done'] as const
+export const FIRST_RUN_STEPS = ['theme', 'look', 'printer', 'open', 'done'] as const
 export type FirstRunStep = (typeof FIRST_RUN_STEPS)[number]
 
 export interface FirstRunState {
@@ -96,6 +97,8 @@ export interface FirstRunState {
   look: LookAndFeelChoice
   /** Printer chosen during setup, by printer profile id; null while skipped. */
   printerId: string | null
+  /** The onboarding version this record was written by. Absent on records from before versions (version 1). */
+  version?: number
 }
 
 /** How to reach a printer. Only `family` and `address` are always needed; the rest depends on the family (Bambu Lab needs `serial` and the access code as `credential`). */
