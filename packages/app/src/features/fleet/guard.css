@@ -19,9 +19,9 @@
   linear-gradient(var(--tone), var(--tone)) bottom left / var(--k) var(--w), linear-gradient(var(--tone), var(--tone)) bottom left / var(--w) var(--k),
   linear-gradient(var(--tone), var(--tone)) bottom right / var(--k) var(--w), linear-gradient(var(--tone), var(--tone)) bottom right / var(--w) var(--k);
   background-repeat: no-repeat; }
-.guard-spot:not([data-marked])::before { opacity: 0; }
 .guard-tag { position: absolute; left: 0; bottom: calc(100% + 6px); padding: 3px 8px; border-radius: var(--r-sm); background: var(--tone); color: color-mix(in srgb, var(--tone) 12%, black); font: 600 var(--fs-sm) var(--f-body); letter-spacing: 0.04em; text-transform: uppercase; white-space: nowrap; box-shadow: var(--shadow-float); }
-.guard-spot:not([data-marked]) .guard-tag { display: none; }
+/* no spot to mark: a badge in the frame's corner */
+.guard-badge { position: absolute; left: 12px; top: 12px; display: inline-flex; align-items: center; gap: 8px; padding: 5px 12px 5px 6px; border-radius: var(--r-pill); background: color-mix(in srgb, var(--ink-0) 72%, transparent); box-shadow: var(--shadow-float); backdrop-filter: var(--lift-glass); -webkit-backdrop-filter: var(--lift-glass); font: 600 var(--fs-md) var(--f-body); color: var(--fg); }
 
 .strike { overflow: visible; filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.45)); }
 .strike-ring { fill: none; stroke: var(--tone); stroke-width: 2; transform-origin: center; }

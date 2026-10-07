@@ -180,6 +180,24 @@ describe('every way out of a paused card keeps Resume until a person resumes', (
   })
 })
 
+describe('the mark on the frame', () => {
+  it('a hand with no spot gets a corner badge, never a strike on nothing', async () => {
+    const v = await render({ printerId: 'a1', kind: 'hand', state: 'paused', at })
+    expect(v.el.querySelector('.guard-spot')).toBeNull()
+    const badge = v.el.querySelector('.guard-badge')
+    expect(badge?.textContent).toContain('Hand seen')
+    expect(badge?.querySelector('svg.strike')).not.toBeNull()
+    v.done()
+  })
+
+  it('a hand with a spot gets the strike on it', async () => {
+    const v = await render({ printerId: 'a1', kind: 'hand', state: 'paused', at, box: [0.1, 0.5, 0.4, 0.9] })
+    expect(v.el.querySelector('.guard-spot svg.strike')).not.toBeNull()
+    expect(v.el.querySelector('.guard-badge')).toBeNull()
+    v.done()
+  })
+})
+
 describe('Resume on the card', () => {
   it('is the approval itself: the hub resumes that pause, no second card (QA M9)', async () => {
     const v = await render({ printerId: 'a1', kind: 'hand', state: 'paused', at, answered: true })
