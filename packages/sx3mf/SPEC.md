@@ -46,6 +46,8 @@ Every entry is optional. Values are plain text with no control characters. A fil
 
 Bambu Studio and OrcaSlicer projects may also carry `sx:Listing` and `sx:Creator` per object in `Metadata/model_settings.config` (`<metadata key="sx:Listing" value="..."/>`), so a project that mixes models from several listings keeps each object's source.
 
+A `.gcode.3mf` that SlicerX writes from library models (the exported print file and the file it sends to a printer) carries the same `sx:Listing` and `sx:Creator` entries, on the model and per object, so it opens again as a library model. Print output from other models has no `sx:` entries.
+
 ## Library files
 
 The upload scan (`sx-upload-scan`) sanitizes every upload, converts an STL to a 3MF, and stamps the result with the listing's `sx:Listing`, `sx:Version`, `sx:VersionId` and `sx:Creator`. Any `sx:` entries the upload carried are replaced, so the uploader's `sx:ExportedBy` never reaches the library. The 256 px preview becomes the package thumbnail. All other parts are copied byte for byte.
