@@ -1,0 +1,32 @@
+/* SPDX-License-Identifier: Apache-2.0
+   Copyright (C) 2026 The SlicerX contributors */
+/* The Design tree: objects, their steps (cad/history step rows) and parts. */
+.dtree { list-style: none; margin: 0 0 8px; padding: 0; display: grid; gap: 2px; }
+.dtree-row { display: flex; align-items: center; gap: 2px; min-height: 34px; border-radius: var(--r-sm); padding-right: 8px; }
+.dtree-row[data-selected] { background: color-mix(in srgb, var(--accent) 12%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent); }
+.dtree-chev { display: grid; place-items: center; width: 24px; height: 28px; border: 0; background: none; color: var(--dim); border-radius: var(--r-sm); flex: none; }
+.dtree-chev:hover { color: var(--fg); }
+.dtree-name { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; height: 30px; border: 0; background: none; color: var(--fg); font: 600 var(--fs-md) var(--f-body); text-align: left; padding: 0 4px; border-radius: var(--r-sm); }
+.dtree-name .sx-ic { color: var(--muted); flex: none; }
+.dtree-name > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dtree-count { font-size: var(--fs-sm); color: var(--dim); flex: none; }
+.dtree-body { margin-left: 12px; padding-left: 10px; border-left: 1px solid var(--line-soft); display: grid; gap: 4px; padding-bottom: 6px; }
+.dtree-body .cad-steps { margin: 0; }
+.dtree-body .cad-step-name { display: flex; align-items: center; gap: 7px; }
+.dtree-body .cad-step-name .sx-ic { color: var(--muted); flex: none; }
+.cad-step-sketch { grid-column: 2 / -1; display: flex; align-items: center; gap: 7px; margin: 0 0 2px; padding-left: 4px; font-size: var(--fs-sm); color: var(--muted); }
+.cad-step-sketch .sx-mono { margin-left: auto; }
+.dtree-parts { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.dtree-parts li { display: flex; align-items: center; gap: 8px; min-height: 26px; padding: 0 4px; font-size: var(--fs-sm); color: var(--muted); }
+.dtree-parts li > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dtree-empty { margin: 4px 0 10px; }
+/* In the tree a step row is its name; move, suppress and delete show on hover or keyboard focus. */
+.dtree-body .cad-step { grid-template-columns: 22px minmax(0, 1fr); }
+.dtree-body .cad-step > .sx-btn { display: none; }
+.dtree-body .cad-step:hover, .dtree-body .cad-step:focus-within { grid-template-columns: 22px minmax(0, 1fr) auto auto auto auto; }
+.dtree-body .cad-step:hover > .sx-btn, .dtree-body .cad-step:focus-within > .sx-btn { display: inline-flex; }
+.dtree-body .cad-step[data-editing] { background: color-mix(in srgb, var(--accent) 12%, transparent); border-radius: var(--r-sm); }
+@media (hover: none) {
+  .dtree-body .cad-step { grid-template-columns: 22px minmax(0, 1fr) auto auto auto auto; }
+  .dtree-body .cad-step > .sx-btn { display: inline-flex; }
+}

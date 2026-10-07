@@ -2597,6 +2597,11 @@ class ViewportImpl implements Viewport {
     this.invalidate()
   }
 
+  setGround(on: boolean): void {
+    this.stage.setGround(on)
+    this.invalidate()
+  }
+
   /** Brightens one dual nozzle zone (by id); null resets. */
   setExcludedAreas(areas: readonly (readonly [number, number])[][]): void {
     this.stage.setExcludedAreas(areas)

@@ -487,6 +487,9 @@ button.reset:hover { color: var(--fg); background: var(--ink-3); }
 /* Look and feel: the settings sidebar's side and width, the floating Slice action, the mode selector. */
 .studio[data-mode="prepare"] > .pane { --w-side: var(--w-settings, 288px); }
 .studio[data-mode="prepare"][data-sidebar="right"] > .pane { order: 2; }
+/* Design: the tree on the look's sidebar side, the tool pane on the other. */
+.studio[data-model-mode="design"] > .pane[data-side="left"] { order: 0; }
+.studio[data-model-mode="design"] > .pane[data-side="right"] { order: 2; }
 .slice-float { position: absolute; right: 12px; bottom: 12px; z-index: var(--z-hud); width: 300px; border-radius: var(--r-md); }
 .slice-float .sx-block { border: 0; padding: var(--s-3); }
 .slice-block.compact .est-grid, .slice-block.compact .app-note { display: none; }

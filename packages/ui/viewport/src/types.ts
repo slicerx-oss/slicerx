@@ -523,6 +523,8 @@ export interface Viewport {
   setInsets(insets: { left: number; right: number; top: number; bottom: number }): void
   /** Turns the bed outline orange (an object is off the bed). */
   setBedAlert(on: boolean): void
+  /** Hides the bed for modeling: a plain ground grid at bed level, the camera and objects unchanged. */
+  setGround(on: boolean): void
   /** Hatches the parts of the bed nothing may print on (polygons in bed coordinates, mm). An empty list clears them. */
   setExcludedAreas(areas: readonly (readonly [number, number])[][]): void
   /** Brightens one dual nozzle zone (by id); null resets. */

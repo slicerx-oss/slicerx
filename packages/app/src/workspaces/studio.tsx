@@ -26,7 +26,8 @@ import { PreviewLeft, PreviewRight } from './preview/preview-panes'
 import { useGcodeView } from './preview/gcode-file'
 import { trackPlateSlices } from './preview/plate-slices'
 import { PreviewPlates } from './preview/preview-plates'
-import { useModelMode } from '../state/model-mode'
+import { railKey, useModelMode } from '../state/model-mode'
+import { setTool, toolStore } from '../plate/tools'
 
 const PREPARE_LEFT: PaneSection[] = [
   { id: 'printer', icon: 'printer', label: 'Printer' },
@@ -41,6 +42,12 @@ const PREVIEW_RIGHT: PaneSection[] = [
 ]
 
 const PLATES_SECTION: PaneSection = { id: 'plates', icon: 'plates', label: 'Plates' }
+const DESIGN_TREE: PaneSection[] = [{ id: 'objects', icon: 'history', label: 'Model' }]
+const DESIGN_TOOL: PaneSection[] = [{ id: 'transform', icon: 'move', label: 'Transform' }]
+
+// Design's panes load the first time Design opens, so Slice users never download them.
+const DesignLeft = lazy(() => import('./design/design-panes').then((m) => ({ default: m.DesignLeft })))
+const DesignRight = lazy(() => import('./design/design-panes').then((m) => ({ default: m.DesignRight })))
 
 // norn (edit from Preview) loads with the first click on a toolpath.
 const NornLayer = lazy(() => import('../norn/norn-layer').then((m) => ({ default: m.NornLayer })))
@@ -61,7 +68,14 @@ export function Studio({ mode }: { mode: 'prepare' | 'preview' }) {
   // The look and feel places the settings sidebar, its width, and the primary Slice action.
   const side = layout.sidebar.side
   const sliceInSidebar = layout.primaryAction.placement === 'sidebar-footer'
-  const design = useModelMode() === 'design'
+  const modelMode = useModelMode()
+  const design = mode === 'prepare' && modelMode === 'design'
+  const other = side === 'left' ? 'right' : 'left'
+
+  // Painting, brim ears and lay on face are print setup: they close when Design opens.
+  useEffect(() => {
+    if (design && ['paint', 'brim', 'face'].includes(toolStore.getState().tool)) setTool('move')
+  }, [design])
 
   useEffect(() => {
     const s = get()
@@ -89,9 +103,15 @@ export function Studio({ mode }: { mode: 'prepare' | 'preview' }) {
   const busy = plateLoading || slice.status === 'running'
 
   return (
-    <div className="studio" data-mode={mode} data-sidebar={side} style={{ '--w-settings': `${layout.sidebar.width}px` } as CSSProperties}>
-      {mode === 'prepare' ? (
-        <SidePane key={`prepare-${side}`} side={side} ws="prepare" label={design ? 'Objects' : 'Printer and settings'} sections={PREPARE_LEFT} width={layout.sidebar.width} {...(sliceInSidebar ? { footer: <SliceBlock label={layout.primaryAction.label} compact /> } : {})}>
+    <div className="studio" data-mode={mode} data-model-mode={design ? 'design' : undefined} data-sidebar={side} style={{ '--w-settings': `${layout.sidebar.width}px` } as CSSProperties}>
+      {design ? (
+        <SidePane key={`design-${side}`} side={side} ws={railKey('prepare', 'design')} label="Model" sections={DESIGN_TREE} width={280}>
+          <Suspense fallback={<div className="ws-loading" aria-busy="true" />}>
+            <DesignLeft />
+          </Suspense>
+        </SidePane>
+      ) : mode === 'prepare' ? (
+        <SidePane key={`prepare-${side}`} side={side} ws="prepare" label="Printer and settings" sections={PREPARE_LEFT} width={layout.sidebar.width} {...(sliceInSidebar ? { footer: <SliceBlock label={layout.primaryAction.label} compact /> } : {})}>
           <PrepareLeft layout={layout} />
         </SidePane>
       ) : null}
@@ -121,12 +141,14 @@ export function Studio({ mode }: { mode: 'prepare' | 'preview' }) {
 
         {mode === 'prepare' ? (
           <div className="hud hud-bl">
-            {layout.plateList === 'sidebar' ? null : <PlateList layout={layout} />}
-            <div className="platechip sx-overlay">
-              <b>{plateName}</b>
-              <span>{selected ? selected.name : plateLoading ? 'Loading' : 'Empty'}</span>
-              {plate.length > 1 ? <span>+{plate.length - 1}</span> : null}
-            </div>
+            {design || layout.plateList === 'sidebar' ? null : <PlateList layout={layout} />}
+            {design ? null : (
+              <div className="platechip sx-overlay">
+                <b>{plateName}</b>
+                <span>{selected ? selected.name : plateLoading ? 'Loading' : 'Empty'}</span>
+                {plate.length > 1 ? <span>+{plate.length - 1}</span> : null}
+              </div>
+            )}
             {selected ? (
               <div className="dims sx-overlay sx-mono" aria-label="Model size">
                 {selected.handle.bboxMm.map((v) => v.toFixed(1)).join(' x ')} mm
@@ -149,8 +171,8 @@ export function Studio({ mode }: { mode: 'prepare' | 'preview' }) {
             </div>
           </div>
         ) : null}
-        {mode === 'prepare' ? <PlateToolbar layout={layout} /> : null}
-        {mode === 'prepare' && !sliceInSidebar ? (
+        {mode === 'prepare' && !design ? <PlateToolbar layout={layout} /> : null}
+        {mode === 'prepare' && !design && !sliceInSidebar ? (
           <div className="slice-float sx-overlay">
             <SliceBlock label={layout.primaryAction.label} compact />
           </div>
@@ -166,9 +188,21 @@ export function Studio({ mode }: { mode: 'prepare' | 'preview' }) {
             <NornLayer />
           </Suspense>
         ) : null}
-        <LayerStrip />
-        <ZoneLegend mode={mode} />
+        {design ? null : (
+          <>
+            <LayerStrip />
+            <ZoneLegend mode={mode} />
+          </>
+        )}
       </section>
+
+      {design ? (
+        <SidePane key={`design-${other}`} side={other} ws={railKey('prepare', 'design')} label="Tool and transform" sections={DESIGN_TOOL} width={312}>
+          <Suspense fallback={<div className="ws-loading" aria-busy="true" />}>
+            <DesignRight />
+          </Suspense>
+        </SidePane>
+      ) : null}
 
       {mode === 'preview' ? (
         <SidePane key="preview-right" side="right" ws="preview" label="Slice summary and filament" sections={manyPlates ? [PLATES_SECTION, ...PREVIEW_RIGHT] : PREVIEW_RIGHT} width={312}>
