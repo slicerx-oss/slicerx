@@ -6,7 +6,7 @@ import type { MarkerKind } from '@slicerx/viewport'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { buildTimeline, clock, fitOf, movesAt, movesOf, positionAt, sliderOf, timeAt, timeOfSlider } from '../../lib/preview-timeline'
 import { toolChangerFor } from '../../lib/toolchanger'
-import { previewStats } from '../../lib/preview-stats'
+import { lengthLabel, previewStats } from '../../lib/preview-stats'
 import { LayerTrack } from './layer-track'
 import { layerKeyStep, stepLayer } from './layer-step'
 import { usePaneSize } from '../../shell/pane'
@@ -71,7 +71,7 @@ export function Legend() {
         <li key={f.feature}>
           <i className="bar-key" style={{ background: featureStyle(f.feature).color }} />
           <span>{featureStyle(f.feature).label}</span>
-          <b>{f.lengthM.toFixed(1)} m</b>
+          <b>{lengthLabel(f.lengthM)}</b>
         </li>
       ))}
       {stats ? (

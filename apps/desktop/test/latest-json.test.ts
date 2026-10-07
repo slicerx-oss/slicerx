@@ -33,6 +33,14 @@ describe('latest.json', () => {
     expect(m).toMatchObject({ version: V, notes: 'One\nTwo', pub_date: '2026-10-06T03:00:00.000Z', release_url: release, deb_url: `${base}/SlicerX_0.2.0_amd64.deb` })
   })
 
+  it('writes min_version only when it is given, and refuses one that is not a version or is newer than the release', () => {
+    expect(write(signed())).not.toHaveProperty('min_version')
+    expect(write(signed(), { minVersion: '0.1.9' }).min_version).toBe('0.1.9')
+    expect(write(signed(), { minVersion: '0.2.0' }).min_version).toBe('0.2.0')
+    expect(() => write(signed(), { minVersion: 'soon' })).toThrow(/not a version/)
+    expect(() => write(signed(), { minVersion: '0.2.1' })).toThrow(/newer than the release/)
+  })
+
   it('leaves out a platform the release has no bundle for', () => {
     const m = write({ [names[0]!]: sig(names[0]!, V) })
     expect(Object.keys(m.platforms)).toEqual(['darwin-aarch64', 'darwin-x86_64'])

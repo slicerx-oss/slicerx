@@ -15,7 +15,7 @@ export async function runProbe(host: Host): Promise<void> {
   try {
     const demo = DEMO_MODELS.find((m) => m.slug === DEFAULT_MODEL)
     if (!demo) throw new Error('The example model is missing')
-    const mesh = await host.slicer.loadParts(demo.name, demo.build().parts)
+    const mesh = await host.slicer.loadParts(demo.name, (await demo.build()).parts)
     const config = applyEasy(EASY_DEFAULTS, defaultConfig() as PrintConfig)
     const t = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 128, 128, 0, 1]
     const result = await host.slicer.slice({ plate: { bed: { widthMm: 256, depthMm: 256, heightMm: 256 }, objects: [{ id: 'example', name: demo.name, mesh: mesh.id, transform: t }] }, config })

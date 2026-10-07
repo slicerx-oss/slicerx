@@ -3,7 +3,7 @@
 // Seeds the hosted library from model files kept outside git.
 //
 //   SLICERX_SUPABASE_URL=... SLICERX_SERVICE_ROLE_KEY=... \
-//     pnpm --filter @slicerx/store library:seed --models <folder> [--manifest <file>] [--dry-run]
+//     pnpm --filter @slicerx/store library:seed --models <folder> [--manifest <file>] [--dry-run] [--update]
 //
 // The folder holds the model files and a manifest.json (see seed-manifest.example.json
 // for the shape). It must not be inside a git work tree. Creators are created as
@@ -12,10 +12,17 @@
 // checks in library-seed.ts here; they do not go through the hosted scan service, so
 // only seed files you trust. Running it again skips listings that already exist.
 // The service role key comes from the environment and is never written anywhere.
+//
+// --update publishes changed files as new versions of the listings that already exist: for each
+// manifest entry whose file differs (by sha256) from the listing's latest approved version, it adds
+// the manifest's version with its changelog, file and cover, approved and scan-marked as the seed
+// does. The listing keeps its id, stats and likes. With --dry-run it reads the library and lists what
+// would change, writing nothing.
 import { execFileSync, spawnSync } from 'node:child_process'
 import { existsSync, readFileSync, statSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { createClient } from '@supabase/supabase-js'
+import { latestVersion } from '../src/map'
 import {
   checkModelBytes, fileFormat, manifestProblems, manifestSchema, newId, objectName, resolveModelPath, sha256Hex,
   type SeedManifest,
@@ -27,6 +34,7 @@ const flag = (name: string): string | undefined => {
   return i >= 0 ? args[i + 1] : undefined
 }
 const dryRun = args.includes('--dry-run')
+const update = args.includes('--update')
 const modelsDir = flag('--models')
 if (!modelsDir) fail('usage: library:seed --models <folder> [--manifest <file>] [--dry-run]')
 const root = resolve(modelsDir)
@@ -68,7 +76,7 @@ for (const [owner, f] of [...manifest.creators.flatMap((c) => [c.logo, c.banner]
 if (problems.length > 0) fail(`the manifest has problems:\n  ${problems.join('\n  ')}`)
 
 console.log(`${manifest.creators.length} creators, ${prepared.length} models (${(prepared.reduce((n, p) => n + p.bytes.length, 0) / 1048576).toFixed(1)} MB)`)
-if (dryRun) {
+if (dryRun && !update) {
   for (const p of prepared) console.log(`  ${p.listing.creator}/${p.listing.slug}  ${p.format}  ${p.sha256.slice(0, 12)}`)
   console.log('dry run: nothing written')
   process.exit(0)
@@ -96,6 +104,49 @@ async function uploadImage(ownerId: string, file: string): Promise<string> {
   const up = await sb.storage.from('creator-media').upload(object, readFileSync(path), { contentType: IMAGE_TYPES[ext] ?? 'image/png', upsert: true })
   if (up.error) fail(`upload ${object}: ${up.error.message}`)
   return sb.storage.from('creator-media').getPublicUrl(object).data.publicUrl
+}
+
+if (update) {
+  let changed = 0
+  for (const p of prepared) {
+    const l = p.listing
+    const listing = await must<{ id: string; creator_id: string } | null>('find listing', sb.from('listings').select('id, creator_id').eq('slug', l.slug).maybeSingle())
+    if (!listing) {
+      console.log(`listing ${l.slug}: not in the library; seed it without --update`)
+      continue
+    }
+    const versions = await must<{ version: string; sha256: string; review_status: string; scan_status: string }[]>('find versions', sb.from('listing_versions').select('version, sha256, review_status, scan_status').eq('listing_id', listing.id))
+    const live = latestVersion(versions.filter((v) => v.review_status === 'approved' && v.scan_status === 'clean'))
+    if (live?.sha256 === p.sha256) {
+      console.log(`listing ${l.slug}: unchanged (${live.version})`)
+      continue
+    }
+    if (versions.some((v) => v.version === l.version) || (live && latestVersion([live, { ...live, version: l.version }])?.version !== l.version)) {
+      fail(`listing ${l.slug}: the file changed but version ${l.version} is not newer than ${live?.version ?? 'the ones there'}; raise it in the manifest`)
+    }
+    changed += 1
+    console.log(`listing ${l.slug}: ${live?.version ?? 'none'} -> ${l.version} (${p.sha256.slice(0, 12)}, ${(p.bytes.length / 1024).toFixed(0)} KB)${l.changelog ? `: ${l.changelog}` : ''}`)
+    if (dryRun) continue
+    const versionId = newId()
+    const path = objectName(listing.id, versionId, p.name)
+    const now = new Date().toISOString()
+    const up = await sb.storage.from('listing-files').upload(path, p.bytes, { contentType: 'application/octet-stream', upsert: false })
+    if (up.error) fail(`upload ${path}: ${up.error.message}`)
+    await must('create version', sb.from('listing_versions').insert({
+      id: versionId, listing_id: listing.id, version: l.version, changelog: l.changelog ?? null, storage_path: path,
+      sha256: p.sha256, format: p.format, size_bytes: p.bytes.length, scan_status: 'clean', review_status: 'approved',
+      scan_report: { verdict: 'clean', checks: [], scannerVersion: 'seed-import', scannedAt: now, source: 'library seed' }, scanned_at: now,
+    }).select('id'))
+    await must('create file row', sb.from('listing_files').insert({
+      version_id: versionId, name: path.split('/').pop() as string, role: 'model', format: p.format, size_bytes: p.bytes.length, sha256: p.sha256,
+    }).select('id'))
+    const owner = await must<{ owner_id: string }>('find owner', sb.from('creators').select('owner_id').eq('id', listing.creator_id).single())
+    const coverUrl = l.cover ? await uploadImage(owner.owner_id, l.cover) : undefined
+    await must('update listing', sb.from('listings').update({ title: l.title, description: l.description ?? null, tags: l.tags, ...(coverUrl ? { cover_url: coverUrl } : {}) }).eq('id', listing.id).select('id'))
+    await must('audit', sb.from('audit_log').insert({ action: 'seed_update', target_kind: 'listing', target_id: listing.id, detail: { slug: l.slug, version: l.version, sha256: p.sha256 } }).select('id'))
+  }
+  console.log(dryRun ? `dry run: ${changed} listings would get a new version, nothing written` : `done: ${changed} listings got a new version`)
+  process.exit(0)
 }
 
 const creatorIds = new Map<string, string>()

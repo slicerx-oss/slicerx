@@ -2,11 +2,12 @@
 // Copyright (C) 2026 The SlicerX contributors
 // Writes latest.json, the update manifest the desktop app's updater reads (src-tauri/src/updates.rs), from a folder
 // of update bundles and their signatures.
-//   node latest-json.mjs <dir> --version 0.2.0 --base-url <url> --release-url <url> --pubkey <base64> [--notes <file>] [--out latest.json]
+//   node latest-json.mjs <dir> --version 0.2.0 --base-url <url> --release-url <url> --pubkey <base64> [--notes <file>] [--min-version <x.y.z>] [--out latest.json]
 // Bundles: the macOS .app.tar.gz, the Windows -setup.exe and .msi, the Linux .AppImage. Each needs its .sig from
 // sign-updates.sh, made with the key whose public half is --pubkey and bound to this version and file; anything else
 // stops the release. --notes is whats-changed.json or a changed.md; the first five lines, kept short, become the
 // dialog's highlights. A .deb in the folder is linked for package installs, which update through their package manager.
+// --min-version marks every older version as having a known problem: those installs must update before they go on.
 import { readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -64,7 +65,22 @@ export function signedFields(sig) {
  * The manifest for `files` (name to signature text, null for a bundle with none). Throws on a missing signature, one
  * made with another key, or one bound to another file or version.
  */
-export function latestJson({ version, files, baseUrl, releaseUrl, pubkey, notes = [], date = new Date() }) {
+/** A plain x.y.z version. */
+const PLAIN = /^\d+\.\d+\.\d+$/
+
+/** Compares two x.y.z versions: negative, zero or positive. */
+export function compareVersions(a, b) {
+  const pa = a.split('.').map(Number)
+  const pb = b.split('.').map(Number)
+  for (let i = 0; i < 3; i++) if (pa[i] !== pb[i]) return pa[i] - pb[i]
+  return 0
+}
+
+export function latestJson({ version, files, baseUrl, releaseUrl, pubkey, notes = [], date = new Date(), minVersion }) {
+  if (minVersion !== undefined) {
+    if (!PLAIN.test(minVersion)) throw new Error(`--min-version ${minVersion} is not a version like 0.2.2`)
+    if (compareVersions(minVersion, version) > 0) throw new Error(`--min-version ${minVersion} is newer than the release ${version}, so no install could ever meet it`)
+  }
   const want = keyId(pubkey)
   const platforms = {}
   let deb = null
@@ -90,6 +106,7 @@ export function latestJson({ version, files, baseUrl, releaseUrl, pubkey, notes 
     pub_date: date.toISOString(),
     release_url: releaseUrl,
     ...(deb ? { deb_url: deb } : {}),
+    ...(minVersion !== undefined ? { min_version: minVersion } : {}),
     platforms,
   }
 }
@@ -97,11 +114,11 @@ export function latestJson({ version, files, baseUrl, releaseUrl, pubkey, notes 
 function main() {
   const { values, positionals } = parseArgs({
     allowPositionals: true,
-    options: { version: { type: 'string' }, 'base-url': { type: 'string' }, 'release-url': { type: 'string' }, pubkey: { type: 'string' }, notes: { type: 'string' }, out: { type: 'string', default: 'latest.json' } },
+    options: { version: { type: 'string' }, 'base-url': { type: 'string' }, 'release-url': { type: 'string' }, pubkey: { type: 'string' }, notes: { type: 'string' }, 'min-version': { type: 'string' }, out: { type: 'string', default: 'latest.json' } },
   })
   const [dir] = positionals
   if (!dir || !values.version || !values['base-url'] || !values['release-url'] || !values.pubkey) {
-    console.error('usage: latest-json.mjs <dir> --version <x.y.z> --base-url <url> --release-url <url> --pubkey <base64> [--notes file] [--out file]')
+    console.error('usage: latest-json.mjs <dir> --version <x.y.z> --base-url <url> --release-url <url> --pubkey <base64> [--notes file] [--min-version x.y.z] [--out file]')
     process.exit(2)
   }
   const names = readdirSync(dir)
@@ -110,12 +127,12 @@ function main() {
   )
   const text = values.notes ? readFileSync(values.notes, 'utf8') : ''
   const notes = values.notes ? topNotes(values.notes.endsWith('.json') ? JSON.parse(text) : text) : []
-  const manifest = latestJson({ version: values.version, files, baseUrl: values['base-url'], releaseUrl: values['release-url'], pubkey: values.pubkey, notes })
+  const manifest = latestJson({ version: values.version, files, baseUrl: values['base-url'], releaseUrl: values['release-url'], pubkey: values.pubkey, notes, ...(values['min-version'] ? { minVersion: values['min-version'] } : {}) })
   // a release that leaves a desktop platform without its update strands those installs on the old version
   const missing = ['darwin-aarch64', 'windows-x86_64', 'windows-x86_64-msi', 'linux-x86_64'].filter((p) => !manifest.platforms[p])
   if (missing.length) throw new Error(`no signed update for ${missing.join(', ')}`)
   writeFileSync(values.out, JSON.stringify(manifest, null, 2) + '\n')
-  console.log(`${values.out}: ${values.version} for ${Object.keys(manifest.platforms).length} targets, ${notes.length} highlights`)
+  console.log(`${values.out}: ${values.version} for ${Object.keys(manifest.platforms).length} targets, ${notes.length} highlights${manifest.min_version ? `, versions below ${manifest.min_version} must update` : ''}`)
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
