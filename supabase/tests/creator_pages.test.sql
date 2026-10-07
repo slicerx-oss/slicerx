@@ -5,7 +5,7 @@
 -- Run with `supabase test db`.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(52);
+select plan(58);
 
 -- Seed activity is dated; move it a year back so the windows below see only this test's rows.
 update public.likes set created_at = created_at - interval '1 year';
@@ -66,6 +66,22 @@ select lives_ok($$select public.set_creator_badges((select ferro_creator from id
 select throws_ok($$select public.set_creator_badges((select ferro_creator from ids), array[''])$$, '22023', null, 'an empty tag is refused');
 select pg_temp.as_anon();
 select is((select badges from public.creators where id = (select ferro_creator from ids)), array['Builds SlicerX', 'N3D team'], 'anyone reads the tags');
+
+-- Handle lock ----------------------------------------------------------------------------------------
+reset role;
+create temp table ferro_handle on commit drop as select handle from public.creators where owner_id = (select ferro from ids);
+select pg_temp.as_user('ferro');
+select throws_ok($$update public.creators set handle = 'ferro-two' where owner_id = (select ferro from ids)$$, '42501', null, 'a creator cannot change the handle after the first save');
+select lives_ok($$update public.creators set display_name = 'Ferro Works', handle = handle where owner_id = (select ferro from ids)$$, 'other fields still save, with the same handle');
+reset role;
+insert into public.creators (owner_id, handle, display_name) values ((select moderator from ids), 'mod-page', 'Mod page');
+select pg_temp.as_user('moderator');
+select lives_ok($$update public.creators set handle = 'mod-page-two' where owner_id = (select moderator from ids)$$, 'staff may change a handle');
+select is((select handle from public.creators where owner_id = (select moderator from ids)), 'mod-page-two', 'and it changed');
+reset role;
+select lives_ok($$update public.creators set handle = 'ferro-renamed' where owner_id = (select ferro from ids)$$, 'so may the service role');
+select is((select handle from public.creators where owner_id = (select ferro from ids)), 'ferro-renamed', 'and that changed too');
+update public.creators set handle = (select handle from ferro_handle) where owner_id = (select ferro from ids);
 
 -- creator-media bucket ------------------------------------------------------------------------
 reset role;
