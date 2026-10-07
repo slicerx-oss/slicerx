@@ -6,7 +6,8 @@ import type { GantryHit, GantrySpec } from '@slicerx/viewport'
 import { resolveConfig } from '../adapters/config'
 import type { AppState } from '../state/store'
 import { collisionsOf } from './heimdall'
-import { bounds } from './transform'
+import type { PlateEntry } from '../state/store'
+import { apply, bounds } from './transform'
 
 /** Printers whose bed moves in y under a gantry on two uprights, where the profile does not say (`printer_structure`). */
 const SLINGER = /^(bambu-a1|prusa-(mk|mini)|creality-ender|elegoo-neptune)/
@@ -36,8 +37,36 @@ export function gantryHits(s: Pick<AppState, 'slice' | 'plate'>): GantryHit[] {
     if (c.kind !== 'gantry' || c.part !== 'gantry' || c.severity !== 'hit') continue
     const e = s.plate.find((p) => p.id === c.hitId)
     const b = e ? bounds(e.parts, e.transform) : null
-    if (!b) continue
-    out.push({ layers: [c.layer, c.lastLayer], box: [b.min[0], b.min[1], b.max[0], b.max[1]], top: b.max[2] })
+    if (!e || !b) continue
+    // Red only where the part has material at the height the beam meets it, not across its whole outline.
+    const box = sectionBox(e, c.point[2] + 0.5) ?? [b.min[0], b.min[1], b.max[0], b.max[1]]
+    out.push({ layers: [c.layer, c.lastLayer], box, top: b.max[2] })
   }
   return out
+}
+
+/** The box of the part's cross-section at height `z`, mm, or null where the plane misses it. */
+function sectionBox(e: PlateEntry, z: number): [number, number, number, number] | null {
+  const b: [number, number, number, number] = [Infinity, Infinity, -Infinity, -Infinity]
+  for (const part of e.parts) {
+    const p = part.positions
+    const idx = part.indices
+    const at = (i: number) => apply(e.transform, [p[3 * i] ?? 0, p[3 * i + 1] ?? 0, p[3 * i + 2] ?? 0])
+    for (let t = 0; t + 2 < idx.length; t += 3) {
+      const v = [at(idx[t]!), at(idx[t + 1]!), at(idx[t + 2]!)]
+      for (let k = 0; k < 3; k++) {
+        const a = v[k]!
+        const c = v[(k + 1) % 3]!
+        if ((a[2] - z) * (c[2] - z) > 0 || a[2] === c[2]) continue
+        const f = (z - a[2]) / (c[2] - a[2])
+        const x = a[0] + (c[0] - a[0]) * f
+        const y = a[1] + (c[1] - a[1]) * f
+        b[0] = Math.min(b[0], x)
+        b[1] = Math.min(b[1], y)
+        b[2] = Math.max(b[2], x)
+        b[3] = Math.max(b[3], y)
+      }
+    }
+  }
+  return Number.isFinite(b[0]) ? b : null
 }
