@@ -5,7 +5,7 @@
 -- Run with `supabase test db`.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(47);
+select plan(52);
 
 -- Seed activity is dated; move it a year back so the windows below see only this test's rows.
 update public.likes set created_at = created_at - interval '1 year';
@@ -56,6 +56,16 @@ select pg_temp.as_user('ash');
 update public.creators set banner_url = 'https://evil.example.com/x.png' where owner_id = (select ferro from ids);
 select pg_temp.as_anon();
 select is((select banner_url from public.creators where owner_id = (select ferro from ids)), 'https://cdn.example.com/ferro/banner.webp', 'anon reads the banner and nobody else changed it');
+
+-- Staff tags --------------------------------------------------------------------------------------
+select pg_temp.as_user('ferro');
+select throws_ok($$update public.creators set badges = array['N3D team'] where owner_id = (select ferro from ids)$$, '42501', null, 'a creator cannot set their own tags');
+select throws_ok($$select public.set_creator_badges((select ferro_creator from ids), array['Builds SlicerX'])$$, '42501', null, 'nor through the function');
+select pg_temp.as_user('owner');
+select lives_ok($$select public.set_creator_badges((select ferro_creator from ids), array['Builds SlicerX', 'N3D team'])$$, 'the owner sets them');
+select throws_ok($$select public.set_creator_badges((select ferro_creator from ids), array[''])$$, '22023', null, 'an empty tag is refused');
+select pg_temp.as_anon();
+select is((select badges from public.creators where id = (select ferro_creator from ids)), array['Builds SlicerX', 'N3D team'], 'anyone reads the tags');
 
 -- creator-media bucket ------------------------------------------------------------------------
 reset role;

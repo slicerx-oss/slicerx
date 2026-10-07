@@ -9,6 +9,43 @@
 alter table public.creators add column banner_url text
   check (char_length(banner_url) <= 500 and banner_url ~* '^https://[^\s<>"'']{4,}$');
 
+-- Tags staff set on a creator page, such as "Builds SlicerX" or "N3D team".
+-- Shown under the handle; the creator cannot change them.
+alter table public.creators add column badges text[] not null default '{}'
+  check (cardinality(badges) <= 4 and array_to_string(badges, '') !~ '[<>]');
+
+create or replace function public.guard_creator_badges() returns trigger
+language plpgsql set search_path = '' as $$
+begin
+  if current_user in ('authenticated', 'anon') and new.badges is distinct from (case when tg_op = 'INSERT' then '{}'::text[] else old.badges end) then
+    raise exception 'only staff set the tags on a creator page' using errcode = '42501';
+  end if;
+  return new;
+end;
+$$;
+create trigger creators_guard_badges before insert or update on public.creators
+  for each row execute function public.guard_creator_badges();
+
+-- Owner only: sets the tags on a creator page. Each is 1 to 24 characters.
+create function public.set_creator_badges(p_creator uuid, p_badges text[]) returns void
+language plpgsql volatile security definer set search_path = '' as $$
+begin
+  if not public.is_owner() then
+    raise exception 'only the owner sets creator tags' using errcode = '42501';
+  end if;
+  if exists (select 1 from unnest(p_badges) b where char_length(btrim(b)) not between 1 and 24) then
+    raise exception 'a tag is 1 to 24 characters' using errcode = '22023';
+  end if;
+  update public.creators set badges = p_badges where id = p_creator;
+  if not found then
+    raise exception 'no such creator page' using errcode = 'P0002';
+  end if;
+  perform public.audit('creator_badges', 'creator', p_creator, null, jsonb_build_object('badges', to_jsonb(p_badges)));
+end;
+$$;
+revoke execute on function public.set_creator_badges(uuid, text[]) from public;
+grant execute on function public.set_creator_badges(uuid, text[]) to authenticated, service_role;
+
 -- Saved designs: one private collection per member, made on the first save.
 alter table public.collections add column kind text not null default 'custom' check (kind in ('custom', 'saved'));
 alter table public.collections add constraint collections_saved_private check (kind <> 'saved' or not is_public);

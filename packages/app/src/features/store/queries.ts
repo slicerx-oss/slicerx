@@ -93,6 +93,17 @@ export function newCreatorsQuery(store: StoreClient | undefined) {
   })
 }
 
+/** How many designs the member saved, for the Saved filter. Zero when signed out. */
+export function savedCountQuery(store: StoreClient | undefined, signedIn: boolean) {
+  return queryOptions<number>({
+    queryKey: ['library', 'saved-count', signedIn],
+    queryFn: async () => (store && signedIn ? (await store.savedListings()).length : 0),
+    enabled: Boolean(store) && signedIn,
+    staleTime: 30_000,
+    retry: 1,
+  })
+}
+
 export function creatorPageQuery(store: StoreClient | undefined, handle: string | null) {
   return queryOptions<CreatorPage | null>({
     queryKey: ['library', 'creator', handle],

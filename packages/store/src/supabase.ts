@@ -300,9 +300,12 @@ export function supabaseStore(sb: Db, conn?: Pick<SupabaseOptions, 'url' | 'anon
       const me = await uid()
       const { data, error } = await sb.rpc('new_creators', { p_days: o.days ?? 30, p_limit: o.limit ?? 12 })
       if (error) throw new Error(`store read failed (${error.code ?? 'unknown'}): ${error.message}`)
-      const ids = rows(newCreatorRow, data).map((r) => r.creator_id)
-      const found = await creatorsById(ids, me, true)
-      return ids.flatMap((id) => found.get(id) ?? [])
+      const got = rows(newCreatorRow, data)
+      const found = await creatorsById(got.map((r) => r.creator_id), me, true)
+      return got.flatMap((r) => {
+        const c = found.get(r.creator_id)
+        return c ? [{ ...c, firstPublishedAt: new Date(r.first_published_at).toISOString() }] : []
+      })
     },
 
     async recommended(o = {}) {

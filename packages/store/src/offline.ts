@@ -28,7 +28,7 @@ import type {
   StoreResult,
 } from '@slicerx/contracts'
 import { createOfflineContext, offlineAuth, type OfflineContext, type OfflineOptions } from './auth/offline'
-import { latestVersion, toAudit, toCollection, toComment, toCreator, toCreatorLink, toFile, toListing, toMake, toModerationItem, toPrintProfile, toVersion } from './map'
+import { isoTime, latestVersion, toAudit, toCollection, toComment, toCreator, toCreatorLink, toFile, toListing, toMake, toModerationItem, toPrintProfile, toVersion } from './map'
 import { LICENSES, MODERATION_MODES, type CommentRow, type CreatorRow, type ListingRow, type SeedData, type VersionRow } from './rows'
 import { newCreatorIds, recommendedScores, trendingScores } from './ranking'
 import { DEFAULT_MAX_FILE_MB, MAX_FEATURED, slugify, validateCreatorLinks, validateHandle, validateUpload } from './validate'
@@ -341,9 +341,9 @@ export function offlineStore(ctx: OfflineContext): Omit<StoreClient, keyof AuthC
       const c = await cx()
       const visible = c.d.creators.filter((cr) => cr.status === 'active' && !ownerBanned(c, cr))
       const found = newCreatorIds({ creatorIds: visible.map((cr) => cr.id), listings: c.d.listings }, rankNow(c), o)
-      return found.flatMap(({ creatorId }) => {
+      return found.flatMap(({ creatorId, firstPublishedAt }) => {
         const cr = c.d.creators.find((x) => x.id === creatorId)
-        return cr ? [creatorOut(c, cr, true)] : []
+        return cr ? [{ ...creatorOut(c, cr, true), firstPublishedAt: isoTime(firstPublishedAt) }] : []
       })
     },
 

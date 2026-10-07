@@ -53,7 +53,7 @@ export const toProfile = (r: ProfileRow): Profile => ({
   ...opt('banReason', r.ban_reason),
 })
 
-export const toCreator = (r: CreatorRow, followers: number, extra: { listingCount?: number; followedByMe?: boolean } = {}): Creator => ({
+export const toCreator = (r: CreatorRow, followers: number, extra: { listingCount?: number; followedByMe?: boolean; firstPublishedAt?: string } = {}): Creator => ({
   id: r.id,
   handle: r.handle,
   displayName: r.display_name,
@@ -66,6 +66,8 @@ export const toCreator = (r: CreatorRow, followers: number, extra: { listingCoun
   ...opt('location', r.location),
   ...opt('logoUrl', r.logo_url),
   ...opt('bannerUrl', r.banner_url),
+  ...(r.badges?.length ? { badges: [...r.badges] } : {}),
+  ...opt('firstPublishedAt', extra.firstPublishedAt === undefined ? undefined : isoTime(extra.firstPublishedAt)),
   ...opt('tagline', r.tagline),
   ...opt('listingCount', extra.listingCount),
   ...opt('followedByMe', extra.followedByMe),
