@@ -35,6 +35,10 @@ export interface GuardHub {
     plateClear(printerId: string): Promise<{ plateFrom: string }>
     plateCheck(printerId: string): Promise<{ checked: boolean; clear?: boolean }>
     plateIgnore(printerId: string): Promise<{ remembered: 'spot' | 'model' | 'nothing' }>
+    /** Check again on a hand: a new frame, judged by the detector. `checked` is false without one. */
+    handCheck(printerId: string): Promise<{ checked: boolean; hand: boolean | null }>
+    /** Resume on the card: the click is the approval for this pause (packages/connect/link/src/guard.rs). */
+    resume(printerId: string): Promise<void>
   }
 }
 
