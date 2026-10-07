@@ -320,6 +320,57 @@ button.reset:hover { color: var(--fg); background: var(--ink-3); }
 .pane.sx-rail[data-side=right]:not([data-collapsed]) { width: calc(var(--w-side) + 24px); }
 .pane-body { padding-bottom: 56px; }
 .pane .sx-block:first-child { padding-top: var(--s-2); }
+
+/* Prepare sidebar: each settings area is its own card. A few pixels of the page
+   background sit between the boxes so their borders do not join into one slab. */
+.studio[data-mode="prepare"] > .pane.sx-rail { background: var(--ink-0); }
+.studio[data-mode="prepare"] .pane .sx-rail-body { scrollbar-gutter: stable; }
+.studio[data-mode="prepare"] .pane-body { display: flex; flex-direction: column; gap: var(--s-2); padding: var(--s-2) var(--s-2) 56px; }
+.studio[data-mode="prepare"] .pane .sx-block {
+  border: 1px solid var(--line-soft);
+  border-radius: var(--r-md);
+  background: var(--ink-1);
+}
+.studio[data-mode="prepare"] .pane .sx-block:first-child { padding-top: 16px; }
+.studio[data-mode="prepare"] .pane .sx-block:last-child { border-bottom: 1px solid var(--line-soft); }
+.studio[data-mode="prepare"] .pane .sx-block.cad { border-left: 2px solid var(--accent); }
+/* The scroller reserves a 10px thin scrollbar, so the pinned estimate matches the cards above it. */
+.studio[data-mode="prepare"] .pane .sx-rail-foot { border-top: 0; padding: 0 var(--s-2) var(--s-2); padding-right: calc(var(--s-2) + 10px); background: transparent; }
+.studio[data-mode="prepare"] .pane .sx-rail-foot .slice-block,
+.studio[data-mode="prepare"] .pane .sx-rail-foot .slice-lite {
+  border: 1px solid var(--line-soft);
+  border-radius: var(--r-md);
+  background: var(--ink-1);
+  padding: 16px 18px;
+}
+.studio[data-mode="prepare"] .pane .sx-rail-body::after { background: linear-gradient(to bottom, transparent, var(--ink-0)); }
+.studio[data-mode="prepare"] .pane .sx-rail-title,
+.studio[data-mode="prepare"] .pane .sx-block-h h3 { font: 700 var(--fs-lg) / var(--lh-tight) var(--f-body); }
+.studio[data-mode="prepare"] .expert-group h4,
+.studio[data-mode="prepare"] .obj-set-h,
+.studio[data-mode="prepare"] .obj-volumes .sx-eyebrow,
+.studio[data-mode="prepare"] .cad-history-h {
+  font: 700 var(--fs-body) / var(--lh-tight) var(--f-body);
+  color: var(--fg);
+}
+.studio[data-mode="prepare"] .expert-group h4,
+.studio[data-mode="prepare"] .obj-volumes .sx-eyebrow { letter-spacing: 0.04em; }
+.studio[data-mode="prepare"] .ams-h { font: 700 var(--fs-md) / var(--lh-tight) var(--f-mono); color: var(--fg); }
+.studio[data-mode="prepare"] .ams-h span:last-child { color: var(--dim); font-weight: 500; }
+.studio[data-mode="prepare"] .cad-history-h .sx-muted { font-size: var(--fs-sm); font-weight: 400; }
+.studio[data-mode="prepare"] .obj-editor,
+.studio[data-mode="prepare"] [data-section="color-tools"] { display: flex; flex-direction: column; gap: var(--s-2); }
+.studio[data-mode="prepare"] .obj-editor .tf,
+.studio[data-mode="prepare"] .obj-editor .obj-set,
+.studio[data-mode="prepare"] .obj-editor .obj-volumes,
+.studio[data-mode="prepare"] .obj-editor .cad-history,
+.studio[data-mode="prepare"] [data-section="color-tools"] .swap-colors,
+.studio[data-mode="prepare"] [data-section="color-tools"] .tower-row {
+  margin-top: 0;
+  padding-top: 0;
+  border: 0;
+  border-top: 0;
+}
 .sx-rail-slot { height: 100%; }
 
 .swatch.sm { width: 12px; height: 12px; }

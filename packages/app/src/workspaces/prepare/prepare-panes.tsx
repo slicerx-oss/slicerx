@@ -283,6 +283,7 @@ export function PrepareObjects() {
   const matches = new Map(searchObjects(plate, query).map((m) => [m.id, m]))
   const searching = query.trim() !== ''
   return (
+    <>
     <Block title="Objects" data-section="objects">
       {plate.length > 1 ? (
         <input className="sx-input obj-search" type="search" value={query} placeholder="Search objects and parts" aria-label="Search objects and parts" onChange={(e) => setQuery(e.target.value)} />
@@ -401,19 +402,24 @@ export function PrepareObjects() {
         ) : null}
         <ObjectActions />
       </div>
-      <ObjectTransform />
-      {historyOf ? <Suspense fallback={null}><HistoryPanel objectId={historyOf} /></Suspense> : null}
-      {more ? (
-        <>
-          <Suspense fallback={null}>
-            <ObjectVolumes />
-          </Suspense>
-          <Suspense fallback={null}>
-            <ObjectSettings />
-          </Suspense>
-        </>
-      ) : null}
     </Block>
+    {selected.length > 0 ? (
+      <section className="sx-block obj-editor" data-section="object-editor" aria-label="Object editor">
+        <ObjectTransform />
+        {historyOf ? <Suspense fallback={null}><HistoryPanel objectId={historyOf} /></Suspense> : null}
+        {more ? (
+          <>
+            <Suspense fallback={null}>
+              <ObjectVolumes />
+            </Suspense>
+            <Suspense fallback={null}>
+              <ObjectSettings />
+            </Suspense>
+          </>
+        ) : null}
+      </section>
+    ) : null}
+    </>
   )
 }
 

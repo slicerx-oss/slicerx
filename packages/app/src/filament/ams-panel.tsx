@@ -138,6 +138,7 @@ export function AmsPanel({ maker, system }: { maker: string; system?: 'ams' | 'm
     groups.set(unit, [...(groups.get(unit) ?? []), s])
   }
   return (
+    <>
     <Block
       title="Filament"
       aside={
@@ -212,11 +213,16 @@ export function AmsPanel({ maker, system }: { maker: string; system?: 'ams' | 'm
         </Button>
       ) : null}
       <NozzleRows slots={slots} />
-      {more ? <SwapColors slots={slots} /> : null}
-      {more && used >= 2 ? <TowerRow /> : null}
       <SetupNotes />
       <Suspense fallback={null}>{dialogOpen ? <Dialogs /> : null}</Suspense>
     </Block>
+    {more && used >= 2 ? (
+      <section className="sx-block" data-section="color-tools" aria-label="Color changes">
+        <SwapColors slots={slots} />
+        <TowerRow />
+      </section>
+    ) : null}
+    </>
   )
 }
 
