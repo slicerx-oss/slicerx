@@ -9,7 +9,9 @@
 // `Reported-in: <link>` (a trailer, or a line in the pull request body) names the bug report the change fixes,
 // so the release bot can reply there. `Urgent: <why people must update>` (a trailer, or a pull request with the
 // `urgent` label and the same line in its body) marks a hotfix: the release notes ask everyone to update and the
-// bot pings for it. Everything else is announced without a ping. --since defaults to the newest desktop-v* tag, --to to HEAD.
+// bot pings for it. Everything else is announced without a ping. `User-note-replaces: <commit>` drops the User-note of an
+// earlier commit that said something wrong, so a shared branch corrects a note without rewriting history; the new
+// commit's own User-note takes its place. --since defaults to the newest desktop-v* tag, --to to HEAD.
 import { execFileSync } from 'node:child_process'
 import { parseArgs } from 'node:util'
 
@@ -22,11 +24,12 @@ if (!since) throw new Error('No desktop-v* tag yet; give --since <tag or commit>
 const SEP = '\u001e'
 const notes = []
 const urgent = []
-const log = git('log', `${since}..${values.to}`, `--format=%h%x1f%(trailers:key=User-note,valueonly,separator=%x1d)%x1f%(trailers:key=Reported-in,valueonly,separator=%x1d)%x1f%(trailers:key=Urgent,valueonly,separator=%x1d)${SEP}`)
-for (const rec of log.split(SEP)) {
-  const [ref, note, reports, why] = rec.trim().split('\u001f')
+const log = git('log', `${since}..${values.to}`, `--format=%H%x1f%h%x1f%(trailers:key=User-note,valueonly,separator=%x1d)%x1f%(trailers:key=Reported-in,valueonly,separator=%x1d)%x1f%(trailers:key=Urgent,valueonly,separator=%x1d)%x1f%(trailers:key=User-note-replaces,valueonly,separator=%x1d)${SEP}`)
+const records = log.split(SEP).map((rec) => rec.trim().split('\u001f'))
+const replaced = records.flatMap(([, , , , , gone]) => (gone ?? '').split('\u001d').map((s) => s.trim().toLowerCase()).filter((s) => /^[0-9a-f]{7,40}$/.test(s)))
+for (const [full, ref, note, reports, why] of records) {
   for (const line of (why ?? '').split('\u001d').map((s) => s.trim()).filter(Boolean)) urgent.push({ why: line, ref })
-  if (!ref || !note?.trim()) continue
+  if (!ref || !note?.trim() || replaced.some((h) => full?.startsWith(h))) continue
   for (const line of note.split('\u001d').map((s) => s.trim()).filter(Boolean)) {
     notes.push({ note: line, ref, reports: (reports ?? '').split('\u001d').map((s) => s.trim()).filter(Boolean) })
   }
