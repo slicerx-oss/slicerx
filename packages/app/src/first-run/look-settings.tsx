@@ -2,9 +2,10 @@
 // Copyright (C) 2026 The SlicerX contributors
 // Settings > Look and feel: the current preset and the ways back into setup.
 import { LOOK_OPTIONS } from '@slicerx/contracts'
-import { Button, SwitchRow } from '@slicerx/ui'
+import { Button, Seg, SwitchRow } from '@slicerx/ui'
 import { useEffect, useState } from 'react'
 import { editionHasCad, useEdition } from '../edition'
+import { formatShortcut } from '../lib/keys'
 import { ThemeSettingsSection } from '../shell/theme-settings'
 import { get, set, useApp } from '../state/store'
 import { openSetup, resumeSetup, useLookChoice } from './look'
@@ -45,6 +46,8 @@ export function LookSettingsSection() {
   const tips = useApp((s) => s.tooltips)
   const cad = useApp((s) => s.cadTools)
   const modeling = editionHasCad(useEdition())
+  // Changing it never moves the session you are in; it applies from the next launch.
+  const openIn = useApp((s) => s.modelModeDefault)
   const autoSlice = useApp((s) => s.autoSlice)
   const palette = useApp((s) => s.toolpathPalette)
   const custom = Boolean(choice.overrides && Object.keys(choice.overrides).length)
@@ -70,7 +73,7 @@ export function LookSettingsSection() {
       <ThemeSettingsSection />
       <div className="set-group">
         <h4>Display</h4>
-        <SwitchRow id="set-palette" icon="toolpath" label="Color vision friendly toolpath colors" detail="Preview colors for walls, infill, supports and overhangs that stay apart with red-green and blue-yellow color vision. Also in the Preview legend." checked={palette === 'colorblind'} onChange={(v) => set({ toolpathPalette: v ? 'colorblind' : 'standard' })} />
+        <SwitchRow id="set-palette" icon="toolpath" label="Color vision friendly toolpath colors" detail="Toolpath colors for walls, infill, supports and overhangs that stay apart with red-green and blue-yellow color vision. Also in the toolpath legend." checked={palette === 'colorblind'} onChange={(v) => set({ toolpathPalette: v ? 'colorblind' : 'standard' })} />
       </div>
       <div className="set-group">
         <h4>Help and hints</h4>
@@ -81,6 +84,27 @@ export function LookSettingsSection() {
         <SwitchRow id="set-autoslice" icon="slice" label="Slice automatically" detail="Slices in the background after every edit, so time and filament are always current. Off shows a Slice button and slices only when you press it." checked={autoSlice} onChange={(v) => set({ autoSlice: v })} />
       </div>
       <ElectricityFields />
+      {modeling ? (
+        <div className="set-group">
+          <h4>Workspace</h4>
+          <div className="set-seg-row">
+            <span className="set-seg-text">
+              <span>Open models in</span>
+              <small>The mode the first tab starts in. {formatShortcut('Mod+E')} switches any time.</small>
+            </span>
+            <Seg
+              size="sm"
+              label="Open models in"
+              value={openIn}
+              onChange={(v) => set({ modelModeDefault: v })}
+              options={[
+                { value: 'slice', label: 'Slicing' },
+                { value: 'design', label: 'CAD design' },
+              ]}
+            />
+          </div>
+        </div>
+      ) : null}
       <div className="set-group">
         <h4>Modeling</h4>
         <SwitchRow id="set-cad" icon="shapes" label="Drawing tools" detail={modeling ? 'Draw a shape or text on a face or the bed and extrude it, add basic shapes, subtract a shape. Measure, arrays, repair and simplify are always on.' : 'Add basic shapes and subtract a shape. Measure, arrays, repair and simplify are always on.'} checked={cad} onChange={(v) => set({ cadTools: v })} />

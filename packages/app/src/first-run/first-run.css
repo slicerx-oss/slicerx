@@ -554,3 +554,11 @@ p.fr-codecard-msg, .fr-codecard-msg p { color: var(--red); }
 .fr-info-box > .sx-ic { color: var(--muted); flex: none; margin-top: 2px; }
 .fr-info-more { display: block; margin-top: 4px; color: var(--muted); }
 .fr-scan-ask { display: grid; justify-items: start; gap: var(--s-3); }
+
+/* What the plate tab opens in: two large cards, art above the name. */
+.fr-open-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s-3); }
+.fr-open-card { flex-direction: column; align-items: stretch; padding: var(--s-2); gap: var(--s-2); }
+.fr-open-art { display: block; width: 100%; height: auto; aspect-ratio: 8 / 5; object-fit: cover; border-radius: calc(var(--r-md) - 4px); background: var(--ink-0); }
+.fr-open-row { display: flex; align-items: center; gap: var(--s-3); padding: 0 var(--s-2) var(--s-1); }
+.fr-open-card[data-on] .fr-radio { border-color: var(--accent); background: radial-gradient(circle, var(--accent) 0 4px, transparent 4.5px); }
+@media (max-width: 720px) { .fr-open-cards { grid-template-columns: minmax(0, 1fr); } }
