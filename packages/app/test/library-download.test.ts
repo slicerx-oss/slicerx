@@ -88,7 +88,7 @@ describe('the design sheet', () => {
   const current = { id: 'v2', version: '1.1.0', format: 'sx3mf' } as ListingVersion
   const item = { listing: { ...listing, creatorId: 'c1', slug: 'clip', license: 'cc-by', status: 'approved', tags: [], createdAt: '2026-06-01T00:00:00Z', currentVersion: current } as Listing, creator }
   function mount(download: StoreClient['download'], save = vi.fn(async (name: string) => ({ id: name, name, size: 1 }))) {
-    const s = { download, session: async () => null, onSessionChange: () => () => {} } as unknown as StoreClient
+    const s = { download, session: async () => null, onSessionChange: () => () => {}, signInMethods: () => ['email'] } as unknown as StoreClient
     const host = { kind: 'web', capabilities: {}, store: s, files: { save } } as unknown as Host
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     render(createElement(QueryClientProvider, { client }, createElement(HostContextProvider, { value: host }, createElement(Detail, { item }))))
@@ -125,6 +125,22 @@ describe('the design sheet', () => {
     mount(async () => ({ ok: false, code: 'unavailable', message: 'The download could not be started: Object not found' }))
     fireEvent.click(screen.getByRole('button', { name: /^Open in/ }))
     expect((await screen.findByRole('alert')).textContent).toContain('The download could not be started: Object not found')
+  })
+
+  it('signed out, a failed Open says what to do and offers sign-in and a retry', async () => {
+    // The signed-out read of the file is refused, as production answered 0.2.1.
+    vi.stubGlobal('fetch', async () => new Response('{"statusCode":"404","error":"not_found"}', { status: 400 }))
+    const download = vi.fn(async (): Promise<StoreResult<DownloadLink>> => ({ ok: true, value: { url: 'https://a/clip.sx3mf', headers: { 'x-sx-download-grant': 'sxg_1' }, versionId: 'v', version: '1.0.0', fileName: 'clip.sx3mf' } }))
+    mount(download)
+    fireEvent.click(screen.getByRole('button', { name: /^Open in/ }))
+    const alert = await screen.findByRole('alert')
+    expect(alert.textContent).toContain('The file for Clip is missing (400).')
+    expect(alert.textContent).toContain('sign in')
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }))
+    await waitFor(() => expect(download).toHaveBeenCalledTimes(2))
+    fireEvent.click(await screen.findByRole('button', { name: 'Sign in' }))
+    expect(await screen.findByText('Sign in to download models. It is free.')).toBeTruthy()
+    expect(screen.getByPlaceholderText('you@example.com')).toBeTruthy()
   })
 
   it('shows bytes and percent while the file comes in, and Cancel stops it', async () => {

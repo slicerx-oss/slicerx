@@ -55,16 +55,24 @@ export function useModelFetch() {
   }
 }
 
-export function DownloadStatus({ state, onCancel, onRetry, onDismiss }: { state: DownloadState | null; onCancel: () => void; onRetry: () => void; onDismiss: () => void }) {
+/** `onSignIn`: the person is signed out, so a failed download offers signing in as well as a retry. */
+export function DownloadStatus({ state, onCancel, onRetry, onDismiss, onSignIn }: { state: DownloadState | null; onCancel: () => void; onRetry: () => void; onDismiss: () => void; onSignIn?: (() => void) | undefined }) {
   if (!state) return null
   if (state.kind === 'error') {
     return (
       <div className="lib-dl" data-state="error" role="alert">
         <div className="lib-dl-top">
           <Icon name="alert" size={16} />
-          <span className="lib-dl-msg">{state.message}</span>
+          <span className="lib-dl-msg">
+            {state.message} {onSignIn ? 'Try again, or sign in and download it to your account.' : 'Try again in a moment.'}
+          </span>
         </div>
         <div className="lib-dl-actions">
+          {onSignIn ? (
+            <Button size="sm" variant="primary" onClick={onSignIn}>
+              Sign in
+            </Button>
+          ) : null}
           <Button size="sm" onClick={onRetry}>
             Try again
           </Button>

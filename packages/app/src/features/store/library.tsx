@@ -357,7 +357,9 @@ function useOpenInApp(item: ListingCard, onFetched?: (version: string, name: str
       setBusy(false)
     }
   }
-  return { open, busy, needSignIn, dl }
+  // Signed out, a failed download also offers signing in.
+  const signIn = session ? undefined : () => setNeedSignIn(true)
+  return { open, busy, needSignIn, dl, signIn }
 }
 
 function StatIcons({ listing }: { listing: Listing }) {
@@ -428,7 +430,7 @@ function Featured({ item, weekly }: { item: ListingCard; weekly: boolean }) {
             {save.saved ? 'Saved' : 'Save'}
           </Button>
         </div>
-        <DownloadStatus state={openIn.dl.state} onCancel={openIn.dl.cancel} onRetry={openIn.dl.retry} onDismiss={openIn.dl.dismiss} />
+        <DownloadStatus state={openIn.dl.state} onCancel={openIn.dl.cancel} onRetry={openIn.dl.retry} onDismiss={openIn.dl.dismiss} onSignIn={openIn.signIn} />
       </div>
     </article>
   )
@@ -641,7 +643,7 @@ export function Detail({ item }: { item: ListingCard }) {
             {like.liked ? 'Liked' : 'Like'}
           </Button>
         </div>
-        <DownloadStatus state={openIn.dl.state} onCancel={openIn.dl.cancel} onRetry={openIn.dl.retry} onDismiss={openIn.dl.dismiss} />
+        <DownloadStatus state={openIn.dl.state} onCancel={openIn.dl.cancel} onRetry={openIn.dl.retry} onDismiss={openIn.dl.dismiss} onSignIn={session ? undefined : () => setNeedSignIn(true)} />
       </div>
       {!version ? <p className="sx-small sx-muted">This model has no file yet.</p> : null}
       <button type="button" className="lib-more" onClick={() => openCreator(creator.handle)}>
