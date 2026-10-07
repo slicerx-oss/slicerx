@@ -10,6 +10,7 @@ import { activeMeta } from '../plate/plates'
 import { useHost } from '../host'
 import { spoolFor, useSpools } from '../inventory/spools'
 import { MoreButton, useMore } from '../shell/more'
+import { useFold } from '../shell/fold'
 import { set, useApp } from '../state/store'
 import { nozzleText, tuneState } from '../calibration/tuned'
 import { useResolvedSlots } from './use-slots'
@@ -117,6 +118,7 @@ export function AmsPanel({ maker, system }: { maker: string; system?: 'ams' | 'm
   const fromPrinter = printerSlots.length > 0
   const edited = Object.keys(slotSetup).length > 0
   const more = useMore('filament')
+  const [open, setOpen] = useFold('filament')
   const host = useHost()
   const spools = useSpools(host)
   const links = useApp((s) => s.spoolLinks)
@@ -140,7 +142,19 @@ export function AmsPanel({ maker, system }: { maker: string; system?: 'ams' | 'm
   return (
     <Block
       title="Filament"
+      icon="spool"
+      id="filament-fold"
+      expanded={open}
+      onExpandedChange={setOpen}
       aside={
+        !open ? (
+          <span className="sec-sum">
+            {basics.slice(0, 6).map((s) => (
+              <Swatch key={s.index} color={s.color} size="sm" />
+            ))}
+            {`${used} of ${slots.length} used`}
+          </span>
+        ) : (
         <span className="fil-aside">
           <span className="fil-count sx-mono">{`${used} of ${slots.length} used`}</span>
           {more ? (
@@ -151,6 +165,7 @@ export function AmsPanel({ maker, system }: { maker: string; system?: 'ams' | 'm
           ) : null}
           <MoreButton id="filament" changed={edited} />
         </span>
+        )
       }
       data-section="filament"
     >

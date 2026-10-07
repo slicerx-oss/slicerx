@@ -215,6 +215,8 @@ export interface AppState {
   recents: string[]
   /** Settings > Look and feel: text size and weight, contrast, color vision (toolpaths included), density and accent. */
   appearance: Appearance
+  /** Slice sidebar sections folded to their summary line. */
+  sidebarFolds: Record<string, boolean>
   /** Preview draws the moving toolhead; the rack, dock, chute and wiper show either way. */
   showToolhead: boolean
   /** Preview playback speed, times real time (PLAYBACK_SPEEDS). */
@@ -516,6 +518,7 @@ export const appStore = createStore<AppState>()(() => ({
   commandOpen: false,
   recents: prefs.recents,
   appearance: prefs.appearance ?? DEFAULT_APPEARANCE,
+  sidebarFolds: prefs.sidebarFolds ?? {},
   showToolhead: prefs.showToolhead ?? true,
   playbackSpeed: prefs.playbackSpeed ?? DEFAULT_PLAYBACK_SPEED,
   followNozzle: prefs.followNozzle ?? false,
@@ -649,7 +652,7 @@ function noAutoSliceDefault(): boolean {
 }
 
 
-const PERSISTED = ['workspace', 'modelModeDefault', 'sliceLook', 'rails', 'recents', 'appearance', 'showToolhead', 'playbackSpeed', 'followNozzle', 'easy', 'goal', 'printerId', 'scheme', 'lookAndFeel', 'themeFollowsSystem', 'themeIds', 'userThemes', 'themeCache', 'fonts', 'settingsMode', 'tooltips', 'autoSlice', 'cadTools', 'electricity', 'printerNozzles', 'printerExtruders', 'handPrinters', 'bays', 'printerBays', 'printersView', 'easyTouched', 'paneSizes', 'queue', 'spoolLinks', 'presetSync', 'firstRun', 'crashReports', 'motion', 'agreement', 'installId', 'setupPilotOff', 'noPrinter', 'pilot', 'sendChoices', 'dryMarks', 'activePresets'] as const satisfies readonly (keyof AppState)[]
+const PERSISTED = ['workspace', 'modelModeDefault', 'sliceLook', 'rails', 'recents', 'appearance', 'sidebarFolds', 'showToolhead', 'playbackSpeed', 'followNozzle', 'easy', 'goal', 'printerId', 'scheme', 'lookAndFeel', 'themeFollowsSystem', 'themeIds', 'userThemes', 'themeCache', 'fonts', 'settingsMode', 'tooltips', 'autoSlice', 'cadTools', 'electricity', 'printerNozzles', 'printerExtruders', 'handPrinters', 'bays', 'printerBays', 'printersView', 'easyTouched', 'paneSizes', 'queue', 'spoolLinks', 'presetSync', 'firstRun', 'crashReports', 'motion', 'agreement', 'installId', 'setupPilotOff', 'noPrinter', 'pilot', 'sendChoices', 'dryMarks', 'activePresets'] as const satisfies readonly (keyof AppState)[]
 
 appStore.subscribe((s, prev) => {
   if (PERSISTED.some((k) => s[k] !== prev[k])) {
@@ -660,6 +663,7 @@ appStore.subscribe((s, prev) => {
       rails: s.rails,
       recents: s.recents,
       appearance: s.appearance,
+      sidebarFolds: s.sidebarFolds,
       showToolhead: s.showToolhead,
       playbackSpeed: s.playbackSpeed,
       followNozzle: s.followNozzle,
