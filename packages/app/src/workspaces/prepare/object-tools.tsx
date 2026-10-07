@@ -5,14 +5,13 @@
 // the 3D view; choosing one here opens its panel in the sidebar (cut-panel.tsx and cad/cad-panel.tsx,
 // loaded on first use).
 import { Button, Menu, MenuAnchor, MenuItem, MenuSeparator } from '@slicerx/ui'
-import { lazy, Suspense, useEffect, useState } from 'react'
+import { Fragment, lazy, Suspense, useEffect, useState } from 'react'
 import { editionHasCad, useEdition } from '../../edition'
 import { useHost } from '../../host'
 import { orientSelected, repairSelected } from '../../plate/geom-ops'
-import { isCadTool, set, toast, useApp, type CadTool } from '../../state/store'
-
-type DialogTool = 'simplify' | 'hollow' | 'hole'
-type ToolId = 'cut' | DialogTool
+import { isCadTool, set, toast, useApp } from '../../state/store'
+import { openTool } from '../design/open-tool'
+import { availableTools, type ShelfTool, type ToolId } from '../design/shelf-tools'
 
 const ToolDialog = lazy(() => import('./tool-dialog').then((m) => ({ default: m.ToolDialog })))
 
@@ -38,14 +37,20 @@ export function ObjectTools() {
       (e: unknown) => toast(e instanceof Error ? e.message : String(e), 'error'),
     )
   }, [plate, table, presets, profile, printer, modeling, host])
-  const setTool = (t: ToolId | CadTool | null) => set({ objectTool: t })
+  const setTool = (t: ToolId | null) => (t ? openTool(t) : set({ objectTool: null }))
   const direct = (fn: () => Promise<unknown>) => {
     setOpen(false)
     void fn().catch((err: unknown) => toast(err instanceof Error ? err.message : String(err), 'error'))
   }
-  const pick = (t: ToolId | CadTool) => {
+  const pick = (t: ToolId) => {
     setOpen(false)
     setTool(t)
+  }
+  const tools = availableTools({ modeling, drawing: cad })
+  const choose = (t: ShelfTool) => {
+    if (t.run === 'orient') return direct(() => orientSelected())
+    if (t.run === 'repair') return direct(() => repairSelected(host.slicer))
+    if (t.tool) pick(t.tool)
   }
   return (
     <>
@@ -54,35 +59,14 @@ export function ObjectTools() {
           Tools
         </Button>
         <Menu open={open} onClose={() => setOpen(false)} label="Object tools" align="end">
-          <MenuItem icon="cut" disabled={!hasSel} onClick={() => pick('cut')}>Cut</MenuItem>
-          <MenuItem icon="orient" disabled={!hasSel} onClick={() => direct(() => orientSelected())}>Auto orient</MenuItem>
-          <MenuSeparator />
-          <MenuItem icon="measure" onClick={() => pick('measure')}>Measure</MenuItem>
-          <MenuItem icon="grid" disabled={!hasSel} onClick={() => pick('array')}>Array</MenuItem>
-          {modeling ? (
-            <>
-              <MenuItem icon="ruler" data-tip="sketch.enter" onClick={() => pick('sketch')}>Sketch</MenuItem>
-              <MenuItem icon="svg-face" data-tip="cad.svgFace" onClick={() => pick('facesvg')}>SVG on a face</MenuItem>
-              <MenuItem icon="push-pull" data-tip="cad.push" onClick={() => pick('push')}>Push and pull</MenuItem>
-              <MenuItem icon="fillet-edge" data-tip="cad.fillet" onClick={() => pick('fillet')}>Fillet and chamfer</MenuItem>
-              <MenuItem icon="hole-fit" onClick={() => pick('holefit')}>Hole for a screw or insert</MenuItem>
-              <MenuItem icon="thread-bolt" onClick={() => pick('thread')}>Thread</MenuItem>
-              <MenuItem icon="shell-open" onClick={() => pick('shell')}>Shell with open faces</MenuItem>
-              <MenuItem icon="named-values" onClick={() => pick('values')}>Named values</MenuItem>
-            </>
-          ) : null}
-          {cad ? (
-            <>
-              <MenuSeparator />
-              {modeling ? <MenuItem icon="on-face" onClick={() => pick('shape')}>Shape on a face</MenuItem> : null}
-              {modeling ? <MenuItem icon="text" onClick={() => pick('facetext')}>Text on a face</MenuItem> : null}
-              <MenuItem icon="subtract-shape" disabled={!hasSel} onClick={() => pick('hole')}>Subtract a shape</MenuItem>
-            </>
-          ) : null}
-          <MenuSeparator />
-          <MenuItem icon="hollow" disabled={!hasSel} onClick={() => pick('hollow')}>Hollow</MenuItem>
-          <MenuItem icon="settings-reset" disabled={!hasSel} onClick={() => direct(() => repairSelected(host.slicer))}>Repair mesh</MenuItem>
-          <MenuItem icon="simplify-mesh" disabled={!hasSel} onClick={() => pick('simplify')}>Simplify mesh</MenuItem>
+          {tools.map((t, i) => (
+            <Fragment key={t.id}>
+              {i > 0 && tools[i - 1]!.menu !== t.menu ? <MenuSeparator /> : null}
+              <MenuItem icon={t.icon} {...(t.tip ? { 'data-tip': t.tip } : {})} disabled={t.needsSelection && !hasSel} onClick={() => choose(t)}>
+                {t.label}
+              </MenuItem>
+            </Fragment>
+          ))}
         </Menu>
       </MenuAnchor>
       {tool && !isCadTool(tool) && tool !== 'cut' ? <Suspense fallback={null}><ToolDialog tool={tool} onClose={() => setTool(null)} /></Suspense> : null}
