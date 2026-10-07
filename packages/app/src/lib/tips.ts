@@ -6,6 +6,8 @@
 import { ASSISTANT_NAME } from '@slicerx/pilot/name'
 import type { KeyAction } from '@slicerx/ui'
 import { appName } from '../edition'
+import { get } from '../state/store'
+import { toolLabel } from '../workspaces/design/shelf-tools'
 
 export interface TipEntry {
   title: string
@@ -53,7 +55,11 @@ export const TIPS = {
   'sketch.look': f('Look at the sketch', 'Turn the view square onto the sketch plane.'),
   'sketch.extrude': f('Extrude', 'Pull a sketch profile into a solid.'),
   'nav.printers': f('Printers', 'Open your printers and their status.'),
-  'mode.design': a('Design', 'Model parts: sketches, features and their history, on the same plate.', 'model.mode'),
+  // A tool left open in Design says so on its tab.
+  get 'mode.design'() {
+    const tool = get().parked?.tool
+    return a('Design', tool ? `${toolLabel(tool)} in progress. Open Design to finish it.` : 'Model parts: sketches, features and their history, on the same plate.', 'model.mode')
+  },
   'mode.slice': a('Slice', 'Set up the plate, printer and settings, then slice.', 'model.mode'),
   get 'nav.settings'() {
     return f('Settings', `Change how ${appName()} looks, behaves and connects.`)
