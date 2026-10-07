@@ -88,23 +88,33 @@ function crosses(a: Pt[], b: Pt[]): boolean {
 }
 
 /**
+ * The clearance radius heimdall holds a by-object plate to, the engine's own choice (collide `Model::new`): Bambu
+ * Studio's `extruder_clearance_max_radius` on a Bambu Lab printer, `extruder_clearance_radius` on the others.
+ */
+export function clearanceRadius(cfg: Record<string, SettingValue>): number {
+  const model = cfg['printer_model']
+  const bambu = cfg['gcode_flavor'] === 'bambu' || (typeof model === 'string' && model.startsWith('Bambu Lab'))
+  return bambu ? num(cfg['extruder_clearance_max_radius'], 68) : num(cfg['extruder_clearance_radius'], 40)
+}
+
+/**
  * The problems of printing `entries` one after the other in this order with `cfg`, one sentence each, worded as the
  * engine words them. Empty when the plate prints safely by object.
  */
 export function clearanceProblems(entries: readonly PlateEntry[], cfg: Record<string, SettingValue>): string[] {
-  const radius = num(cfg['extruder_clearance_radius'], 40)
+  const radius = clearanceRadius(cfg)
   const rod = num(cfg['extruder_clearance_height_to_rod'], 40)
   const lid = num(cfg['extruder_clearance_height_to_lid'], 120)
   const toRod = num(cfg['extruder_clearance_dist_to_rod'], 40)
   const shaped = entries.map((e) => ({ name: e.name, ...shapeOf(e) }))
   // Objects under the nozzle height never meet the hotend, only the nozzle.
   const short = shaped.every((o) => o.top < num(cfg['nozzle_height'], 2.5))
-  const need = short ? 2 * (0.5 * OUTER_NOZZLE_MM - 0.1) : radius - 0.2
+  const need = short ? 2 * (0.5 * OUTER_NOZZLE_MM - 0.1) : radius
   const out: string[] = []
   for (let i = 0; i < shaped.length; i++) {
     for (let j = i + 1; j < shaped.length; j++) {
       const gap = hullDistance(shaped[i]!.hull, shaped[j]!.hull)
-      if (gap < need) out.push(`${shaped[i]!.name} and ${shaped[j]!.name} are ${gap.toFixed(1)} mm apart; printing by object needs ${Math.ceil(need)} mm between objects so the toolhead clears them`)
+      if (gap < need) out.push(`${shaped[i]!.name} and ${shaped[j]!.name} are ${gap.toFixed(1)} mm apart; printing by object needs ${Math.round(need)} mm between objects so the toolhead clears them`)
     }
   }
   // The gantry passes over an earlier object while a later one prints in a band of y around it.
