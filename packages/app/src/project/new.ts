@@ -16,6 +16,7 @@ export function clearProject(): void {
     layerMarks: {},
     objectSettings: {},
     historyEdit: null,
+    parked: null,
     slice: { status: 'idle' },
     preview: null,
     projectFile: null,

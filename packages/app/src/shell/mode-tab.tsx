@@ -8,6 +8,7 @@ import { Fragment, useRef } from 'react'
 import { useFullEngine, warmFullEngine } from '../geom/full-engine'
 import { useModelMode } from '../state/model-mode'
 import { setModelMode, useApp, type ModelMode } from '../state/store'
+import { parkedLabel } from '../workspaces/prepare/parked-chip'
 
 const HALVES: readonly { mode: ModelMode; label: string; icon: 'ruler' | 'slice'; tab: string }[] = [
   { mode: 'design', label: 'Design', icon: 'ruler', tab: 'design' },
@@ -20,6 +21,8 @@ export function ModeTab() {
   const mode = useModelMode()
   const loading = useFullEngine() === 'loading'
   const rest = useRef<ReturnType<typeof setTimeout>>(undefined)
+  // A tool left open in Design: an orange dot on its half, and the tip says which.
+  const parked = useApp((s) => (s.parked?.tool ? parkedLabel(s.parked.tool) : null))
   return (
     <div className="sx-modetab" role="group" aria-label="Design or Slice">
       {HALVES.map((h, i) => (
@@ -30,9 +33,9 @@ export function ModeTab() {
             className="sx-tab"
             data-tab={h.tab}
             data-mode={h.mode}
-            data-tip={`mode.${h.mode}`}
+            {...(h.mode === 'design' && parked ? { 'data-tip-title': 'Design', 'data-tip-body': `${parked} in progress. Open Design to finish it.`, 'data-parked': '' } : { 'data-tip': `mode.${h.mode}` })}
             aria-current={open && mode === h.mode ? 'page' : undefined}
-            aria-label={h.label}
+            aria-label={h.mode === 'design' && parked ? `Design, ${parked} in progress` : h.label}
             aria-busy={h.mode === 'design' && loading ? true : undefined}
             onClick={() => setModelMode(h.mode)}
             // A pointer resting on Design starts the full geometry engine before the click.
@@ -42,6 +45,7 @@ export function ModeTab() {
             <Icon name={h.icon} />
             <span>{h.label}</span>
             {h.mode === 'design' && loading ? <i className="sx-modetab-spin" aria-hidden="true" /> : null}
+            {h.mode === 'design' && parked && !loading ? <i className="sx-modetab-dot" aria-hidden="true" /> : null}
           </button>
         </Fragment>
       ))}
