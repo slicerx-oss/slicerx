@@ -117,6 +117,26 @@ export interface HistoryEdit {
   view?: boolean
 }
 
+/** A modeling tool left open when Design closed, waiting to open again (cad/park.ts). Memory only. */
+export interface Parked {
+  /** Null when only a step was being looked at. */
+  tool: CadTool | null
+  objectId: string | null
+  /** The tool's fields by name, as they were. */
+  fields: Record<string, unknown>
+  /** The history step that was open, by id, and whether it was only being looked at. */
+  historyEdit?: { stepId: string; view?: boolean }
+  /** The object's transform and mesh then: picks follow a move and drop on a new mesh. */
+  basis?: { transform: number[]; parts: unknown }
+}
+
+/** The plate as it is: a history step open for editing shows an earlier mesh (or hides the object), and this puts it back. */
+export function fullPlate(s: Pick<AppState, 'plate' | 'historyEdit'>): PlateEntry[] {
+  const edit = s.historyEdit
+  if (!edit) return s.plate
+  return s.plate.some((e) => e.id === edit.objectId) ? s.plate.map((e) => (e.id === edit.objectId ? edit.original : e)) : [...s.plate, edit.original]
+}
+
 export interface ProfileInfo {
   printerId: string
   /** The nozzle size in use (mm), the sizes the printer model offers, and where the size came from. */
@@ -400,6 +420,8 @@ export interface AppState {
   objectTool: 'cut' | 'hole' | 'hollow' | 'simplify' | CadTool | null
   /** A CAD history step being edited, or null. Not an edit itself: undo and autosave skip the rollback. */
   historyEdit: HistoryEdit | null
+  /** The modeling tool waiting while Design is closed, shown as a chip in Slice and a dot on the Design tab. */
+  parked: Parked | null
   /** A setting the command bar is sending the person to: Expert settings scroll to it, or Printer settings search for it. */
   settingFocus: { key: string; label: string } | null
   /** The printer bridge (sx-link) connection, and a counter that changes whenever the host's printers do. */
@@ -647,6 +669,7 @@ export const appStore = createStore<AppState>()(() => ({
   projectFile: null,
   objectTool: null,
   historyEdit: null,
+  parked: null,
   settingFocus: null,
   bridgeStatus: { state: 'off' },
   linkEpoch: 0,

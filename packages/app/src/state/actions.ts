@@ -28,7 +28,7 @@ import { printBlock } from '../plate/heimdall'
 import { clearProject } from '../project/new'
 import { confirmDiscard, markClean } from '../project/unsaved'
 import { isExportOnly } from '../lib/hand-printers'
-import { colorModeAfterSlice, get, markStale, set, toast, type AppState, type PlateEntry, type PlateMeta, selectedIds, type PendingApproval, type ModelSource, type PlateVolumeEntry } from './store'
+import { colorModeAfterSlice, fullPlate, get, markStale, set, toast, type AppState, type PlateEntry, type PlateMeta, selectedIds, type PendingApproval, type ModelSource, type PlateVolumeEntry } from './store'
 import { appName, brandAccent, objectPalette } from '../edition'
 import { handOffCopy, handToBambuConnect, onLinux, printRoute } from '../send/bambu-connect'
 import { openLink } from '../lib/links'
@@ -448,7 +448,9 @@ export async function slicePlate(host: Host, opts: { auto?: boolean } = {}): Pro
   if (!opts.auto && get().projectGcode && get().plate.length > 0) {
     if ((await (await import('./project-gcode')).askProjectGcode()) === null) return
   }
-  const s = get()
+  // A history step open for editing shows the part as it was before it; the slice is of the whole part.
+  const at = get()
+  const s = at.historyEdit ? { ...at, plate: fullPlate(at) } : at
   if (s.plate.length === 0) {
     if (!opts.auto) toast('Add a model to the plate first')
     return
