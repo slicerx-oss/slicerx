@@ -10,7 +10,7 @@ export const STARTUP_ICONS = [
   'cut', 'delete', 'desktop', 'download', 'drop', 'duplicate', 'export', 'external', 'extruder', 'feed', 'fit',
   'fleet', 'flush', 'fullscreen', 'glow', 'grid', 'group', 'help', 'hide', 'import', 'info', 'iso-view', 'key',
   'lay-flat', 'layers', 'library', 'license', 'link', 'list', 'log', 'mcp', 'measure', 'mimir', 'mouse', 'move',
-  'new-plate', 'nozzle', 'offline', 'overhang', 'paste', 'pause', 'phone', 'pilot', 'plate', 'plates', 'plus',
+  'new-plate', 'nozzle', 'offline', 'overhang', 'paint', 'paste', 'pause', 'phone', 'pilot', 'plate', 'plates', 'plus',
   'prepare', 'preset-draft', 'preset-fine', 'preset-standard', 'preset-strong', 'preview', 'printer', 'queue',
   'redo', 'report', 'rotate', 'ruler', 'save', 'scale', 'search', 'select-all', 'settings', 'shapes', 'shield', 'show',
   'sleipnir', 'slice', 'slicerx', 'sliders', 'speed', 'spool', 'stop', 'support', 'sx3mf', 'terminal', 'text', 'thinking',
