@@ -2722,6 +2722,7 @@ impl SliceSession {
             };
             skirt_loops(
                 &here,
+                &[],
                 config,
                 self.draft_hull.as_deref(),
                 &self.skirt_groups,
@@ -7033,12 +7034,32 @@ impl SliceSession {
         } else {
             cfg
         };
+        let skirt_here = (cfg.skirt_loops > 0 || self.draft_hull.is_some())
+            && (layer + self.raft_layers() < cfg.skirt_height || self.draft_hull.is_some());
+        // What else the skirt goes round on this layer, as Orca's `Print::_make_skirt` collects it: the support's
+        // paths, and on a plate with one skirt the prime tower's first layer.
+        let mut skirt_extra: Vec<IntPoint<i32>> = Vec::new();
+        if skirt_here
+            && self.skirt_groups.is_empty()
+            && self.tower_top.is_some()
+            && let Some(t) = self.tower(cfg).map(|t| self.tower_origin.map_or(t, |o| t.at(o)))
+        {
+            for [x, y] in t.first_layer_corners() {
+                let p = crate::geom::Point::from_mm(x, y);
+                skirt_extra.push(IntPoint::new(p.x, p.y));
+            }
+        }
         if cfg.enable_support
             && (!cfg.support.manual || self.has_enforcers())
             && let (Some((sl, flow, index, z)), Some(active)) =
                 (self.support_at(cfg, layer), works.first().map(|w| w.tool))
         {
             let sp = self.support_paths(cfg, sl, index, z);
+            if skirt_here {
+                for p in sp.support.iter().chain(&sp.interface).flatten() {
+                    skirt_extra.push(IntPoint::new(p.x, p.y));
+                }
+            }
             out.support_areas = support_islands(sl);
             place_support(&mut works, sp, flow, support_tools(cfg, active));
         }
@@ -7379,12 +7400,10 @@ impl SliceSession {
                 }
             }
         }
-        if (cfg.skirt_loops > 0 || self.draft_hull.is_some())
-            && (layer + self.raft_layers() < cfg.skirt_height || self.draft_hull.is_some())
-            && !works.is_empty()
-        {
+        if skirt_here && !works.is_empty() {
             let loops = skirt_loops(
                 here,
+                &skirt_extra,
                 cfg,
                 self.draft_hull.as_deref(),
                 &self.skirt_groups,
@@ -7756,12 +7775,13 @@ fn hull_gap(a: &[IntPoint<i32>], b: &[IntPoint<i32>]) -> f64 {
 /// per object) each group of objects gets the loops of its own hull.
 fn skirt_loops(
     here: &LayerRegions,
+    extra: &[IntPoint<i32>],
     cfg: &PrintConfig,
     whole: Option<&[IntPoint<i32>]>,
     groups: &[Vec<IntPoint<i32>>],
     (tools, layer): (usize, u32),
 ) -> Vec<Vec<IntPoint<i32>>> {
-    let points: Vec<IntPoint<i32>> = here
+    let mut points: Vec<IntPoint<i32>> = here
         .regions
         .iter()
         .flat_map(|(_, s)| s.iter())
@@ -7770,6 +7790,7 @@ fn skirt_loops(
         .collect();
     if whole.is_none() && groups.len() > 1 {
         let mut buckets: Vec<Vec<IntPoint<i32>>> = vec![Vec::new(); groups.len()];
+        points.extend_from_slice(extra);
         for p in points {
             let at = groups
                 .iter()
@@ -7787,7 +7808,23 @@ fn skirt_loops(
     }
     match whole {
         Some(h) => loops_around(h.to_vec(), cfg, true, (tools, layer)),
-        None => loops_around(convex_hull(points), cfg, false, (tools, layer)),
+        None if extra.is_empty() => loops_around(convex_hull(points), cfg, false, (tools, layer)),
+        // Orca's occupied outline: the objects with their brim, then the support and the tower as they print.
+        None => {
+            let objects = convex_hull(points);
+            let brim = mm(cfg.brim_width.max(0.0));
+            let mut occupied: Vec<IntPoint<i32>> = if brim > 0 && objects.len() >= 3 {
+                perimeters::offset_round(&vec![vec![objects]], brim)
+                    .into_iter()
+                    .flatten()
+                    .flatten()
+                    .collect()
+            } else {
+                objects
+            };
+            occupied.extend_from_slice(extra);
+            loops_around(convex_hull(occupied), cfg, true, (tools, layer))
+        }
     }
 }
 
