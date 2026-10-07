@@ -7,7 +7,9 @@ import { Block, Button, Icon } from '@slicerx/ui'
 import { useState } from 'react'
 import { useHost } from '../../host'
 import { clock } from '../../lib/preview-timeline'
-import { applyCollisionFix, collisionsOf, fixesOf, jumpToCollision } from '../../plate/heimdall'
+import { collisionsOf, fixesOf } from '../../plate/heimdall'
+import { applyCollisionFix } from '../../plate/heimdall-fix'
+import { jumpTo } from '../../plate/heimdall-jump'
 import { collisionDetail, collisionTitle, fixDetail, fixTitle, wordsOf } from '../../plate/heimdall-words'
 import { get, useApp } from '../../state/store'
 
@@ -57,7 +59,7 @@ export function CollisionList() {
               <p>{collisionDetail(c, name, station)}</p>
               <span className="strike-when">{when(c)}</span>
             </div>
-            <Button size="sm" variant="ghost" aria-label={`Jump to: ${collisionTitle(c, name, station)}`} tip={{ title: 'Jump', body: 'Move the sliders to this moment and play the toolhead up to it.' }} onClick={() => void jumpToCollision(i)}>
+            <Button size="sm" variant="ghost" aria-label={`Jump to: ${collisionTitle(c, name, station)}`} tip={{ title: 'Jump', body: 'Move the sliders to this moment and play the toolhead up to it.' }} onClick={() => jumpTo(i)}>
               Jump
             </Button>
           </li>

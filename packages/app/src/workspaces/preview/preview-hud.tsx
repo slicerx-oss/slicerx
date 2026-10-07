@@ -15,9 +15,7 @@ import { PLAYBACK_SPEEDS } from '../../state/prefs'
 import { setGcodePanel, useGcodeView } from './gcode-file'
 import { MARKERS, setMarkerShown, useMarkers } from './markers'
 import { purgeReadout, usePurgeView, type PlayPurge } from './purge-view'
-import { collisionsOf, jumpToCollision } from '../../plate/heimdall'
-import { collisionTime } from '../../plate/heimdall-jump'
-import { collisionTitle, namesOf } from '../../plate/heimdall-words'
+import { MoveStrikes, TimeStrikes } from './strike-slots'
 
 /** Heights in px the playback bar snaps between: slim (transport only), medium and full. */
 const DOCK = { min: 56, max: 240, full: 190 } as const
@@ -120,8 +118,6 @@ export function LayerDock() {
   const toolChange = useApp((s) => s.toolChange)
   // heimdall: a jump to a strike plays the seconds before it and stops on it.
   const strikeJump = useApp((s) => s.strikeJump)
-  const strikes = useApp(collisionsOf)
-  const names = namesOf(useApp((s) => s.plate))
   const stopAt = useRef<number | null>(null)
   // The purge at the chute (Bambu printers), read from the G-code once the preview is up.
   const purges = usePurgeView((s) => (s.timeline === timeline ? s.plans : NO_PURGES))
@@ -353,14 +349,7 @@ export function LayerDock() {
           }}
           aria-valuetext={`${clock(now)} of ${clock(timeline.total)}`}
           />
-          {strikes.map((c, i) => {
-            const at = collisionTime(get(), c)
-            return at === null ? null : (
-              <button key={i} type="button" className="strike-tick" data-severity={c.severity} style={{ left: `${(sliderOf(timeline, at) / Math.max(1, timeline.total)) * 100}%` }} aria-label={`${collisionTitle(c, names)}, ${clock(at)}`} {...tipAttrs({ title: collisionTitle(c, names), body: `${clock(at)}. Click to jump there.` })} onClick={() => void jumpToCollision(i)}>
-                <Icon name="strike" size={12} />
-              </button>
-            )
-          })}
+          <TimeStrikes timeline={timeline} />
         </div>
         <output className="sx-mono" htmlFor="pv-time">
           {clock(now)} / {clock(timeline.total)}
@@ -393,13 +382,7 @@ export function LayerDock() {
             }}
             aria-valuetext={`${moves} of ${segs} moves`}
           />
-          {strikes.map((c, i) =>
-            c.layer === top - 1 ? (
-              <button key={i} type="button" className="strike-tick" data-severity={c.severity} style={{ left: `${movesOf(timeline, preview, top, segs > 0 ? c.segment / segs : 0) * 100}%` }} aria-label={`${collisionTitle(c, names)}, move ${c.segment + 1}`} {...tipAttrs({ title: collisionTitle(c, names), body: `Move ${c.segment + 1} of this layer. Click to jump there.` })} onClick={() => void jumpToCollision(i)}>
-                <Icon name="strike" size={12} />
-              </button>
-            ) : null,
-          )}
+          <MoveStrikes timeline={timeline} preview={preview} top={top} segs={segs} />
           </div>
           <output className="sx-mono" htmlFor="pv-moves">
             {moves} / {segs}
