@@ -119,6 +119,9 @@ export interface HistoryEdit {
 export interface Parked {
   /** Null when only a step was being looked at. */
   tool: CadTool | null
+  /** The tool's short name and icon, for the chip and the Design tab, which load before the tool list does. */
+  label?: string
+  icon?: import('@slicerx/ui').IconName
   objectId: string | null
   /** The tool's fields by name, as they were. */
   fields: Record<string, unknown>
