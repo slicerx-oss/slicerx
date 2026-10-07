@@ -117,8 +117,13 @@ if (__SX_FEATURE_STORE__) {
   edition.auth = auth
   edition.store = lazyStore(config, auth)
   const store = edition.store
+  // Each link is finished once, even when the system hands it over twice; the sign-in form shows a failure as well.
+  const handled = new Set<string>()
   auth.onDeepLink((url) => {
-    void Promise.all([store.completeSignIn(url), import('@slicerx/app')]).then(([r, { toast }]) => {
+    if (handled.has(url)) return
+    handled.add(url)
+    void Promise.all([store.completeSignIn(url), import('@slicerx/app')]).then(([r, { reportSignInResult, toast }]) => {
+      reportSignInResult(r.ok ? { ok: true, ...(r.value.email ? { email: r.value.email } : {}) } : { ok: false, message: r.message })
       if (r.ok) toast(r.value.email ? `Signed in as ${r.value.email}` : 'Signed in', 'ok')
       else toast(`Sign-in did not finish: ${r.message}`, 'error')
     })

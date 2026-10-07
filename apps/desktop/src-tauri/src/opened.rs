@@ -43,11 +43,14 @@ fn is_auth_callback_for(scheme: &str, url: &str) -> bool {
 
 /// Holds a sign-in link for the page and brings the window forward, since the link came from the browser.
 fn hand_over_sign_in(app: &AppHandle, url: String) {
-    app.state::<PendingAuth>()
-        .0
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
-        .push(url);
+    {
+        let state = app.state::<PendingAuth>();
+        let mut pending = state.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        // A cold start can see the same link twice (the launch arguments and the deep link plugin).
+        if !pending.contains(&url) {
+            pending.push(url);
+        }
+    }
     let _ = app.emit("sx-auth-callback", ());
     if let Some(w) = app.get_webview_window("main") {
         let _ = w.unminimize();

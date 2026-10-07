@@ -130,7 +130,20 @@ const PROFILE_COLUMNS = 'id, handle, display_name, avatar_url, role, banned_at, 
 const DEVICE_COLUMNS = 'id, user_id, device_id, name, platform, sign_pub, linked_at, revoked_at'
 const TOKEN_COLUMNS = 'id, name, prefix, scopes, rate_limit_per_minute, created_at, expires_at, last_used_at, last_used_ip, revoked_at'
 
+/** What a failed code exchange means for the person holding the link. */
+export function signInError(error: { code?: string | undefined; message: string; name?: string | undefined }): string {
+  const code = error.code ?? ''
+  if (code === 'bad_code_verifier' || code === 'pkce_verifier_missing' || error.name === 'AuthPKCECodeVerifierMissingError' || /code (verifier|challenge)/i.test(error.message)) {
+    return 'This link answers an earlier request. Open the newest sign-in email, or send a new link.'
+  }
+  if (code === 'flow_state_not_found' || code === 'flow_state_expired' || /flow state|expired|already used/i.test(error.message)) {
+    return 'This link has expired or was already used. Send a new link.'
+  }
+  return error.message
+}
+
 export function supabaseAuth(sb: Db, opts: SupabaseOptions): AuthClient {
+  const exchanges = new Map<string, Promise<StoreResult<Session>>>()
   async function toSession(s: SbSession | null): Promise<Session | null> {
     if (!s) return null
     const [profile, creators] = await Promise.all([
@@ -202,10 +215,19 @@ export function supabaseAuth(sb: Db, opts: SupabaseOptions): AuthClient {
       if (err) return fail('forbidden', err)
       const code = url.searchParams.get('code')
       if (!code) return fail('invalid', 'The sign-in link has no code')
-      const { data, error } = await sb.auth.exchangeCodeForSession(code)
-      if (error) return fail('forbidden', error.message)
-      const s = await toSession(data.session)
-      return s ? ok(s) : fail('not_signed_in', 'No session after sign-in')
+      // A code works once: the same link handed over twice (a second launch, a second click) shares the first exchange.
+      const running = exchanges.get(code)
+      if (running) return running
+      const exchange = (async (): Promise<StoreResult<Session>> => {
+        // The flow id names which pending request this link answers, when the link carries it.
+        const flowId = url.searchParams.get('sb_flow_id')
+        const { data, error } = await sb.auth.exchangeCodeForSession(code, flowId ? { flowId } : undefined)
+        if (error) return fail('forbidden', signInError(error))
+        const s = await toSession(data.session)
+        return s ? ok(s) : fail('not_signed_in', 'No session after sign-in')
+      })()
+      exchanges.set(code, exchange)
+      return exchange
     },
 
     async signOut() {

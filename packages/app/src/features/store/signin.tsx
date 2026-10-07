@@ -6,6 +6,7 @@ import type { AuthProvider, SignInMethod } from '@slicerx/contracts'
 import { useEffect, useState, type ReactNode } from 'react'
 import { Button, Dialog } from '@slicerx/ui'
 import { toast, useHost } from '@slicerx/app'
+import { onSignInResult, takeSignInResult } from '../../lib/sign-in-result'
 import { useStore } from './queries'
 import './signin.css'
 
@@ -25,6 +26,14 @@ export function SignInForm({ compact }: { compact?: boolean }) {
   const [sent, setSent] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // A link that came back and failed is shown here until the person sends a new one.
+  const [linkFailed, setLinkFailed] = useState<string | null>(null)
+  useEffect(() => {
+    const show = (r: { ok: boolean; message?: string }) => setLinkFailed(r.ok ? null : (r.message ?? 'Sign-in did not finish.'))
+    const early = takeSignInResult()
+    if (early) show(early)
+    return onSignInResult(show)
+  }, [])
   // The web host loads the store on first use, so even this sync call can come back as a promise.
   const [methods, setMethods] = useState<SignInMethod[] | null>(null)
   useEffect(() => {
@@ -48,6 +57,7 @@ export function SignInForm({ compact }: { compact?: boolean }) {
     }
     setBusy(true)
     setError(null)
+    setLinkFailed(null)
     try {
       const r = await store.signInWithEmail(to)
       if (r.ok) setSent(to)
@@ -57,15 +67,29 @@ export function SignInForm({ compact }: { compact?: boolean }) {
     }
   }
 
+  const failure = linkFailed ? (
+    <div className="si-failed" role="alert">
+      <b>Sign-in did not finish.</b> {linkFailed}
+    </div>
+  ) : null
+
   if (sent) {
     return (
       <div className="si-sent" role="status">
+        {failure}
         <p>
           We sent a sign-in link to <b>{sent}</b>. Open it on this {host.kind === 'desktop' ? 'computer' : 'device'} to finish.
         </p>
-        <Button size="sm" variant="ghost" onClick={() => setSent(null)}>
-          Use another address
-        </Button>
+        <div className="si-sent-actions">
+          {linkFailed ? (
+            <Button size="sm" variant="primary" disabled={busy} onClick={() => void send()}>
+              {busy ? 'Sending' : 'Send a new link'}
+            </Button>
+          ) : null}
+          <Button size="sm" variant="ghost" onClick={() => setSent(null)}>
+            Use another address
+          </Button>
+        </div>
       </div>
     )
   }
@@ -79,6 +103,7 @@ export function SignInForm({ compact }: { compact?: boolean }) {
         void send()
       }}
     >
+      {failure}
       {allowsEmail ? (
         <>
           <label className="sr-only" htmlFor="si-email">
