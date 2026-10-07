@@ -39,7 +39,7 @@ impl Bucket {
         match self {
             Self::Inputs => "cloud-inputs",
             Self::Results => "cloud-results",
-            Self::Quarantine => "quarantine",
+            Self::Quarantine => "uploads-quarantine",
             Self::Library => "listing-files",
         }
     }
