@@ -125,6 +125,31 @@ export function resetGuard(): void {
   emit()
 }
 
+// ---- the picture ----
+
+/** Left, top, width, height as fractions of the card's frame. */
+export type FrameRect = [number, number, number, number]
+
+/**
+ * Where a picture of `w` by `h` sits in the card's frame (16:9 by default), shown whole and letterboxed. Cropping it
+ * to fill the frame would cut off the edges a spot can be on (a 960 by 686 camera loses its bottom). Unknown sizes count
+ * as the frame's own shape.
+ */
+export function fitFrame(w: number, h: number, frame = 16 / 9): FrameRect {
+  const ar = w > 0 && h > 0 ? w / h : frame
+  if (ar >= frame) {
+    const height = frame / ar
+    return [0, (1 - height) / 2, 1, height]
+  }
+  const width = ar / frame
+  return [(1 - width) / 2, 0, width, 1]
+}
+
+/** A box in picture coordinates (left, top, right, bottom from 0 to 1), placed in the frame through `fit`. */
+export function placeBox([l, t, r, b]: [number, number, number, number], [x, y, w, h]: FrameRect): FrameRect {
+  return [x + l * w, y + t * h, (r - l) * w, (b - t) * h]
+}
+
 // ---- words ----
 
 export interface TripCopy {

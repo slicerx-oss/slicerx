@@ -9,7 +9,8 @@
 .guard-card:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--accent-ring), 0 14px 40px -18px color-mix(in srgb, var(--tone) 55%, transparent); }
 
 .guard-frame { position: relative; aspect-ratio: 16 / 9; min-width: 0; background: color-mix(in srgb, var(--ink-0) 55%, black); }
-.guard-frame img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+/* the whole picture, letterboxed where its shape is not 16:9; guard-card.tsx places it and the spot */
+.guard-frame img { position: absolute; object-fit: fill; }
 .guard-noframe { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); font-size: var(--fs-md); }
 /* the spot: corner brackets around it, the strike at its center */
 .guard-spot { position: absolute; display: grid; place-items: center; background: color-mix(in srgb, var(--tone) 8%, transparent); }
