@@ -233,6 +233,8 @@ export interface AppState {
   strikePick: number | null
   /** heimdall: playback runs up to this print time and stops on it; `seq` tells two jumps to one moment apart. */
   strikeJump: { timeS: number; seq: number } | null
+  /** The strike the pointer is over in the collision list: its mark shows on any layer. */
+  strikeHover: number | null
   shortcutsOpen: boolean
   /** A prompt handed to the Pilot workspace by a command; it clears it once started. */
   pilotPrompt: string | null
@@ -507,6 +509,7 @@ export const appStore = createStore<AppState>()(() => ({
   toolChange: null,
   strikePick: null,
   strikeJump: null,
+  strikeHover: null,
   shortcutsOpen: false,
   pilotPrompt: null,
   fleetRefresh: 0,
