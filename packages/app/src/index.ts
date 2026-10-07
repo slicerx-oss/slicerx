@@ -8,7 +8,6 @@ export { registerChatGpt, type ChatGptHost, type ChatGptAccount } from './pilot-
 export { registerLocalAi, type LocalAiHost } from './pilot-connect/local-ai-host'
 export type { Hardware, LocalNet } from '@slicerx/pilot/local-ai'
 export { registerAgentInstall, registerAgentMarks, type AgentInstallHost, type AgentId, type InstallResult } from './pilot-connect/agents'
-export { LibrarySwitch } from './shell/library-switch'
 export { registerCommand, registerCommands, listCommands, searchCommands, runCommand, commandTools, commandIdForTool } from './commands/registry'
 export { fuzzyScore } from './commands/fuzzy'
 export { setWorkspace, toast, useApp } from './state/store'

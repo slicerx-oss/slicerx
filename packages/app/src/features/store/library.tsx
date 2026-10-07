@@ -9,14 +9,14 @@ import type { Creator, Listing, ListingCard } from '@slicerx/contracts'
 import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Button, Chip, Icon, Menu, MenuAnchor, MenuItem, Seg } from '@slicerx/ui'
-import { LayerArt, LibrarySwitch, openModelBytes, openSettings, setWorkspace, toast, useEdition, useHost } from '@slicerx/app'
+import { LayerArt, openModelBytes, openSettings, setWorkspace, toast, useEdition, useHost } from '@slicerx/app'
 import { coverFor } from './art'
 import { CreatorEditorHost } from './creator-editor'
 import { count, CreatorAvatar, CreatorSheet, plural, printFacts, Sheet } from './creator-sheet'
 import { formatLabel } from './download'
 import { DownloadStatus, useModelFetch } from './download-status'
 import { CATEGORIES, DEFAULT_FILTER, setLibraryFilter, showsGrid, useLibraryFilter, type LibrarySort } from './filter'
-import { detailQuery, LIBRARY_KEY, listingsQuery, myCreatorQuery, newCreatorsQuery, rowQuery, savedCountQuery, useSession, useStore } from './queries'
+import { detailQuery, LIBRARY_KEY, listingsQuery, myCreatorQuery, newCreatorsQuery, rowQuery, useSession, useStore } from './queries'
 import { pickFeatured, ROWS, withoutFeatured, type RowId } from './rows'
 import { closeSheet, openCreator, openEditor, openListing, openReview, openUpload, resetSheets, useLibrarySheets } from './sheets'
 import { UploadHost } from './upload'
@@ -70,7 +70,24 @@ export function Library() {
   )
 }
 
-/** Community or Mine, the account menu and Upload. */
+/** Feed (everyone's designs) or Saved (the ones you bookmarked). */
+export function VaultSwitch() {
+  const filter = useLibraryFilter()
+  return (
+    <Seg<'feed' | 'saved'>
+      label="Vault"
+      size="sm"
+      value={filter.saved ? 'saved' : 'feed'}
+      onChange={(v) => setLibraryFilter({ saved: v === 'saved' })}
+      options={[
+        { value: 'feed', label: 'Feed' },
+        { value: 'saved', label: 'Saved' },
+      ]}
+    />
+  )
+}
+
+/** Feed or Saved, the account menu (your uploads, your creator page, sign out) and Upload. */
 export function VaultBar() {
   const store = useStore()
   const client = useQueryClient()
@@ -91,7 +108,7 @@ export function VaultBar() {
 
   return (
     <div className="lib-bar">
-      <LibrarySwitch />
+      <VaultSwitch />
       <div className="lib-bar-tools">
         {session ? (
           <MenuAnchor>
@@ -100,13 +117,10 @@ export function VaultBar() {
             </Button>
             <Menu open={menu} onClose={() => setMenu(false)} label="Account" align="end">
               <MenuItem icon="cloud-upload" onClick={close(() => openUpload('list'))}>
-                Uploads
-              </MenuItem>
-              <MenuItem icon="bookmark" onClick={close(() => setLibraryFilter({ saved: true }))}>
-                Saved
+                Your uploads
               </MenuItem>
               <MenuItem icon="creator" onClick={close(() => openEditor('edit'))}>
-                Creator page
+                Your creator page
               </MenuItem>
               {canReview(session.role) ? (
                 <MenuItem icon="queue-review" onClick={close(openReview)}>
@@ -140,13 +154,10 @@ export function VaultBar() {
   )
 }
 
-/** Search, Everything, Saved with its count, then the quick filters. They narrow everything below. */
+/** Search, Everything, then the quick filters. They narrow everything below, in Feed and in Saved. */
 function Filters({ text, setText }: { text: string; setText: (t: string) => void }) {
-  const store = useStore()
   const filter = useLibraryFilter()
-  const { session } = useSession()
-  const saved = useQuery(savedCountQuery(store, Boolean(session)))
-  const everything = !filter.saved && filter.category === 'all'
+  const everything = filter.category === 'all'
   return (
     <div className="lib-filters" role="toolbar" aria-label="Filter the Vault">
       <div className="search-in lib-search">
@@ -156,12 +167,8 @@ function Filters({ text, setText }: { text: string; setText: (t: string) => void
         </label>
         <input id="models-search" className="bare" type="search" placeholder="Search designs and creators" value={text} onChange={(e) => setText(e.currentTarget.value)} />
       </div>
-      <button type="button" className="lib-chip" aria-pressed={everything} onClick={() => setLibraryFilter({ saved: false, category: 'all' })}>
+      <button type="button" className="lib-chip" aria-pressed={everything} onClick={() => setLibraryFilter({ category: 'all' })}>
         Everything
-      </button>
-      <button type="button" className="lib-chip" aria-pressed={filter.saved} onClick={() => setLibraryFilter({ saved: !filter.saved })}>
-        <Icon name="bookmark" size={13} /> Saved
-        {saved.data ? <span className="lib-chip-n">{saved.data}</span> : null}
       </button>
       <span className="lib-sep" aria-hidden="true" />
       {CATEGORIES.filter((c) => c !== 'all').map((c) => (
