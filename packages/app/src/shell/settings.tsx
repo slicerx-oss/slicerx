@@ -7,7 +7,7 @@ import { lazy, Suspense, useState } from 'react'
 import { useEdition, appName } from '../edition'
 import { useFeatures } from '../features'
 import { bridgeConnector } from '../link/bridge'
-import { LookSettingsSection } from '../first-run/look-settings'
+import { LookSettingsSection, SlicingSettingsSection } from '../first-run/look-settings'
 
 import { usePhoneAccess, usePhoneState, type PhoneAccess } from '../lib/phone'
 import { PairDialog } from '../features/phone/pair-dialog'
@@ -23,6 +23,7 @@ const ControlsSection = lazy(() => import('../controls/section').then((m) => ({ 
 const CONTROLS_ID = 'controls'
 const PRESETS_ID = 'presets'
 const LOOK_ID = 'look'
+const SLICING_ID = 'slicing'
 const PILOT_ID = 'pilot'
 
 export function SettingsDialog() {
@@ -39,6 +40,7 @@ export function SettingsDialog() {
     { id: PRESETS_ID, label: 'Presets', icon: 'save' },
     { id: CONTROLS_ID, label: 'Controls', icon: 'keyboard' },
     { id: LOOK_ID, label: 'Look and feel', icon: 'sliders' },
+    { id: SLICING_ID, label: 'Slicing and modeling', icon: 'slice' },
     ...(settings.some((s) => s.id === PILOT_ID) ? [] : [{ id: PILOT_ID, label: ASSISTANT_NAME, icon: 'mimir' as IconName }]),
   ]
   const id = [want, picked].find((x) => x && sections.some((s) => s.id === x)) ?? sections[0]?.id
@@ -87,6 +89,8 @@ export function SettingsDialog() {
             </Suspense>
           ) : id === LOOK_ID ? (
             <LookSettingsSection />
+          ) : id === SLICING_ID ? (
+            <SlicingSettingsSection />
           ) : id === PILOT_ID && !settings.some((s) => s.id === PILOT_ID) ? (
             <Suspense fallback={<div className="ws-loading" aria-busy="true" />}>
               <PilotSettingsSection />

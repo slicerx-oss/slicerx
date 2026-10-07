@@ -9,6 +9,7 @@ import { applyPreset, resolvePreset } from '@slicerx/ui'
 import { useEffect, useMemo } from 'react'
 import { useEdition } from '../edition'
 import type { ActiveWorkspace } from '../features'
+import type { Appearance } from '../state/prefs'
 import { get, openSettings, set, useApp, type SettingsMode, type SetupStep } from '../state/store'
 
 /** The stored choice, or the edition's default before the person picked one. */
@@ -57,9 +58,14 @@ export function useApplyLook(): void {
   const preset = usePreset()
   const scheme = useApp((s) => s.scheme)
   const follow = useApp((s) => s.themeFollowsSystem)
+  const density = useApp((s) => s.appearance.density)
+  const accent = useApp((s) => s.appearance.accent)
+  // the theme changes with the appearance too: contrast and color vision rebuild it, so the accent is set again after
+  const contrast = useApp((s) => s.appearance.contrast)
+  const vision = useApp((s) => s.appearance.colorVision)
   useEffect(() => {
-    applyPreset(preset)
-  }, [preset, scheme])
+    applyPreset(withAppearance(preset, density, accent))
+  }, [preset, scheme, density, accent, contrast, vision])
   useEffect(() => {
     if (!follow || typeof window === 'undefined' || !window.matchMedia) return
     const m = window.matchMedia('(prefers-color-scheme: dark)')
@@ -68,6 +74,13 @@ export function useApplyLook(): void {
     m.addEventListener('change', sync)
     return () => m.removeEventListener('change', sync)
   }, [follow])
+}
+
+const DENSITY = { compact: 'compact', comfortable: 'standard', roomy: 'roomy' } as const
+
+/** The preset with the person's density and accent from Settings > Look and feel on top. */
+export function withAppearance(preset: LookAndFeelPreset, density: Appearance['density'], accent: Appearance['accent']): LookAndFeelPreset {
+  return { ...preset, look: { ...preset.look, density: DENSITY[density], ...(accent === 'theme' ? {} : { accent }) } }
 }
 
 /** The theme every look starts with: the SlicerX one (dark). The theme owns color, not the look; the person changes it in Settings. */
@@ -100,18 +113,19 @@ export function effectiveMode(mode: SettingsMode, layout: LayoutSpec): SettingsM
   return layout.modes.includes('advanced') ? 'advanced' : (layout.modes[0] ?? 'advanced')
 }
 
-export function openSetup(step: SetupStep = 'printer', o: { byHand?: boolean } = {}): void {
+export function openSetup(step: SetupStep = 'theme', o: { byHand?: boolean } = {}): void {
   set({ setup: { step, ...(o.byHand ? { byHand: true } : {}) }, commandOpen: false, aboutOpen: false })
 }
 
 /** Resume where setup was left, or start over when it was finished. */
 export function resumeSetup(): void {
   const fr = get().firstRun
-  openSetup(fr && !fr.completedAt && fr.step === 'look' ? 'look' : 'printer')
+  openSetup(fr && !fr.completedAt && fr.step !== 'done' ? fr.step : 'theme')
 }
 
 export function setupCommands(): CommandSpec[] {
   return [
+    { id: 'setup-theme', title: 'Pick a theme', section: 'settings', keywords: ['dark mode', 'light mode', 'colors', 'catppuccin', 'dracula', 'nord', 'github', 'tokyo night', 'solarized', 'subban'], run: () => openSettings('look') },
     { id: 'setup-look', title: 'Change look and feel', section: 'settings', keywords: ['preset', 'slicer', 'bambu studio style', 'prusaslicer style', 'orcaslicer style', 'mouse', 'controls', 'shortcuts', 'import presets'], run: () => openSetup('look') },
     { id: 'setup-printer', title: 'Add a printer with guided setup', section: 'printers', keywords: ['new printer', 'connect', 'onboarding', 'nozzle'], run: () => openSetup('printer') },
     { id: 'pilot-connect', title: `Connect ${ASSISTANT_NAME}`, section: 'settings', keywords: ['assistant', 'model', 'api key', 'openai', 'anthropic', 'ollama', 'lm studio'], run: () => openSettings('pilot') },

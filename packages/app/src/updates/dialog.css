@@ -6,15 +6,15 @@
 .upd .sx-dialog-close { position: absolute; top: 10px; right: 10px; }
 .upd .sx-dialog-h h2 { flex: 1; min-width: 0; }
 .upd-head { display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center; }
-.upd-tag { font: 500 11px/1.2 var(--f-mono); letter-spacing: 0.16em; text-transform: uppercase; color: var(--purple); }
-.upd-title { font: 800 22px/1.15 var(--f-body); letter-spacing: -0.01em; color: var(--green); text-wrap: balance; }
+.upd-tag { font: var(--fw-medium) calc(11px * var(--text-scale))/1.2 var(--f-mono); letter-spacing: 0.16em; text-transform: uppercase; color: var(--purple); }
+.upd-title { font: 800 calc(22px * var(--text-scale))/1.15 var(--f-body); letter-spacing: -0.01em; color: var(--green); text-wrap: balance; }
 .upd-body { display: grid; gap: 12px; }
 .upd-line { margin: 0; text-align: center; color: var(--muted); }
 .upd-held { color: var(--orange); }
 .upd-title[data-tone="error"] { color: var(--orange); }
 
 .upd-notes { display: grid; gap: 8px; padding-top: 4px; }
-.upd-notes-h { margin: 0; font: 600 11px/1 var(--f-body); letter-spacing: 0.12em; text-transform: uppercase; color: var(--dim); }
+.upd-notes-h { margin: 0; font: var(--fw-semibold) calc(11px * var(--text-scale))/1 var(--f-body); letter-spacing: 0.12em; text-transform: uppercase; color: var(--dim); }
 .upd-notes ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 6px; }
 .upd-notes li { position: relative; padding-left: 16px; font-size: var(--fs-md); line-height: 1.45; color: var(--fg); }
 .upd-notes li::before { content: ""; position: absolute; left: 3px; top: 0.6em; width: 5px; height: 5px; border-radius: 50%; background: var(--purple); }
@@ -52,10 +52,10 @@
 @media (max-height: 620px) {
   .upd-ravens { height: 72px; }
   .upd .sx-dialog-h { padding-top: 12px; }
-  .upd-title { font-size: 19px; }
+  .upd-title { font-size: calc(19px * var(--text-scale)); }
 }
 @media (max-width: 420px) {
-  .upd-title { font-size: 19px; }
+  .upd-title { font-size: calc(19px * var(--text-scale)); }
   .upd .sx-dialog-foot { flex-wrap: wrap; }
   .upd .sx-dialog-foot .sx-btn[data-variant="primary"] { flex: 1 1 auto; }
 }
