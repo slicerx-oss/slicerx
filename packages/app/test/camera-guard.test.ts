@@ -43,6 +43,8 @@ function fakeHub() {
     plateClear: async (id: string) => (calls.push(`plateClear ${id}`), { plateFrom: '2026-10-06T09:00:00.000Z' }),
     plateCheck: async (id: string) => (calls.push(`plateCheck ${id}`), { checked: true, clear: false }),
     plateIgnore: async (id: string) => (calls.push(`plateIgnore ${id}`), { remembered: 'spot' as const }),
+    handCheck: async (id: string) => (calls.push(`handCheck ${id}`), { checked: true, hand: false }),
+    resume: async (id: string) => void calls.push(`resume ${id}`),
   }
   const printers = { watch, list: async () => [{ id: 'a1', name: 'Desk A1' }] }
   const host = { kind: 'desktop', capabilities: {}, printers }
@@ -83,8 +85,10 @@ describe('the guard card', () => {
     expect([spot.style.left, spot.style.top]).toEqual(['15%', '40%'])
     expect(spot.querySelector('svg.strike')).not.toBeNull()
     expect(v.button('Resume')?.disabled).toBe(false)
+    // Check again looks at a new frame with the detector, not only a new still (QA M7).
     await v.click('Check again')
-    expect(v.hub.calls).toContain('evidence a1 fresh')
+    expect(v.hub.calls).toContain('handCheck a1')
+    expect(get().toast?.text).toContain('No hand in the new picture')
     await v.click('Dismiss, it was me')
     expect(v.hub.calls).toContain('dismiss a1 hand')
     v.done()
@@ -172,6 +176,29 @@ describe('every way out of a paused card keeps Resume until a person resumes', (
     await act(async () => v.el.querySelector('img')!.dispatchEvent(new Event('error')))
     expect(v.el.querySelector('img')).toBeNull()
     expect(v.el.textContent).toContain('No picture from the camera')
+    v.done()
+  })
+})
+
+describe('Resume on the card', () => {
+  it('is the approval itself: the hub resumes that pause, no second card (QA M9)', async () => {
+    const v = await render({ printerId: 'a1', kind: 'hand', state: 'paused', at, answered: true })
+    await v.click('Resume')
+    expect(v.hub.calls).toEqual(expect.arrayContaining(['resume a1']))
+    expect(document.querySelector('dialog.approve-dialog')).toBeNull()
+    v.done()
+  })
+
+  it("It's fine on a paused plate marks the spot, then resumes the same way", async () => {
+    const v = await render({ printerId: 'a1', kind: 'plate', state: 'paused', at, box: [0.4, 0.6, 0.45, 0.66], startedBy: 'printer' })
+    await v.click("It's fine, resume")
+    expect(v.hub.calls.filter((c) => c.startsWith('plateIgnore') || c.startsWith('resume'))).toEqual(['plateIgnore a1', 'resume a1'])
+    v.done()
+  })
+
+  it('says Paused once (QA P6)', async () => {
+    const v = await render({ printerId: 'a1', kind: 'hand', state: 'paused', at })
+    expect(v.el.textContent!.match(/Paused(?!:)/g)?.length).toBe(1)
     v.done()
   })
 })
