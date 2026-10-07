@@ -89,6 +89,9 @@ const PAINT_LAYERS = ['color', 'seam', 'support', 'fuzzy'] as const
 
 const VOLUME_COLOR = { negative: '#ff5555', support_blocker: '#ffb86c', support_enforcer: '#50fa7b', modifier: '#8be9fd' } as const
 
+/** Design models parts on a plain ground: no prime tower, which is print setup. */
+const designing = (s: AppState): boolean => s.workspace === 'prepare' && s.modelMode === 'design' && editionHasCad()
+
 function platePayload(s: AppState, shown: ShownTower | null): ViewportPlate {
   const slots = resolveSlots(s)
   const tower = shown ? towerMesh(shown.at, shown.heightMm) : null
@@ -255,7 +258,7 @@ export function ViewportHost({ mode }: { mode: 'prepare' | 'preview' }) {
           ),
         )
       const apply = (s: AppState, first: boolean) => {
-        const shown = towerShown(s, towerBefore)
+        const shown = designing(s) ? null : towerShown(s, towerBefore)
         const towerMoved = towerSpot(shown) !== towerSpot(towerBefore)
         const key = geometryKey(s, shown)
         const rebuilt = first || key !== keyBefore || s.bed !== prev.bed || s.extruderAreas !== prev.extruderAreas
@@ -296,7 +299,7 @@ export function ViewportHost({ mode }: { mode: 'prepare' | 'preview' }) {
         if (first || s.plate !== prev.plate || s.bed !== prev.bed || s.overrides !== prev.overrides || s.easy !== prev.easy) (vp as unknown as Viewport).setBedAlert?.(s.plate.some((e) => objectWarnings(e, s).some((w) => w.kind === 'off-bed')))
         if (first || s.zoneHover !== prev.zoneHover) (vp as unknown as Viewport).setZoneHighlight?.(s.zoneHover)
         // Design models on a plain ground grid; the bed comes back in Slice. The camera stays where it is.
-        if (first || s.modelMode !== prev.modelMode || s.workspace !== prev.workspace) (vp as unknown as Viewport).setGround?.(s.workspace === 'prepare' && s.modelMode === 'design' && editionHasCad())
+        if (first || s.modelMode !== prev.modelMode || s.workspace !== prev.workspace) (vp as unknown as Viewport).setGround?.(designing(s))
         // The printer's no-print areas follow its profile and any override of them in printer settings.
         // Both are machine coordinates; the plate counts from the printable area's front left corner.
         if (first || s.profile !== prev.profile || s.overrides !== prev.overrides || s.easy !== prev.easy) {

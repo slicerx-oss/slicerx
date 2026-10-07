@@ -54,3 +54,5 @@ export function DesignRight() {
     </>
   )
 }
+
+export { Shelf } from './shelf'

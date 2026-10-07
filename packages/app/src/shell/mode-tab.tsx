@@ -4,7 +4,8 @@
 // tab; on another tab neither is. Either half opens the first tab in that mode in one step. Both are workspace
 // `prepare` underneath; editions without modeling tools show a plain Slice tab instead (top-bar.tsx).
 import { Icon } from '@slicerx/ui'
-import { Fragment } from 'react'
+import { Fragment, useRef } from 'react'
+import { useFullEngine, warmFullEngine } from '../geom/full-engine'
 import { useModelMode } from '../state/model-mode'
 import { setModelMode, useApp, type ModelMode } from '../state/store'
 
@@ -17,14 +18,30 @@ const HALVES: readonly { mode: ModelMode; label: string; icon: 'ruler' | 'slice'
 export function ModeTab() {
   const open = useApp((s) => s.workspace === 'prepare')
   const mode = useModelMode()
+  const loading = useFullEngine() === 'loading'
+  const rest = useRef<ReturnType<typeof setTimeout>>(undefined)
   return (
     <div className="sx-modetab" role="group" aria-label="Design or Slice">
       {HALVES.map((h, i) => (
         <Fragment key={h.mode}>
           {i > 0 ? <i className="sx-modetab-sep" aria-hidden="true" /> : null}
-          <button type="button" className="sx-tab" data-tab={h.tab} data-mode={h.mode} data-tip={`mode.${h.mode}`} aria-current={open && mode === h.mode ? 'page' : undefined} aria-label={h.label} onClick={() => setModelMode(h.mode)}>
+          <button
+            type="button"
+            className="sx-tab"
+            data-tab={h.tab}
+            data-mode={h.mode}
+            data-tip={`mode.${h.mode}`}
+            aria-current={open && mode === h.mode ? 'page' : undefined}
+            aria-label={h.label}
+            aria-busy={h.mode === 'design' && loading ? true : undefined}
+            onClick={() => setModelMode(h.mode)}
+            // A pointer resting on Design starts the full geometry engine before the click.
+            onPointerEnter={h.mode === 'design' ? () => (rest.current = setTimeout(warmFullEngine, 250)) : undefined}
+            onPointerLeave={h.mode === 'design' ? () => clearTimeout(rest.current) : undefined}
+          >
             <Icon name={h.icon} />
             <span>{h.label}</span>
+            {h.mode === 'design' && loading ? <i className="sx-modetab-spin" aria-hidden="true" /> : null}
           </button>
         </Fragment>
       ))}

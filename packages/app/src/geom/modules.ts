@@ -35,6 +35,10 @@ export function engineModules(loadCore: () => Promise<EngineModule>, loadFull: (
     ))
   const coreModule = () => (core ??= loadCore().catch(() => null))
   return {
+    /** Loads the full engine now (Design asks for it on the way in). True when it is there. */
+    async full(): Promise<boolean> {
+      return (await fullModule()) !== null
+    },
     async run(op: string, request: unknown): Promise<unknown> {
       if (fullReady) return fullReady.call(op, request)
       const c = await coreModule()

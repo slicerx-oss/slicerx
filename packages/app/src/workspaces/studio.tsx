@@ -28,6 +28,7 @@ import { trackPlateSlices } from './preview/plate-slices'
 import { PreviewPlates } from './preview/preview-plates'
 import { railKey, useModelMode } from '../state/model-mode'
 import { setTool, toolStore } from '../plate/tools'
+import { warmFullEngine } from '../geom/full-engine'
 
 const PREPARE_LEFT: PaneSection[] = [
   { id: 'printer', icon: 'printer', label: 'Printer' },
@@ -48,6 +49,7 @@ const DESIGN_TOOL: PaneSection[] = [{ id: 'transform', icon: 'move', label: 'Tra
 // Design's panes load the first time Design opens, so Slice users never download them.
 const DesignLeft = lazy(() => import('./design/design-panes').then((m) => ({ default: m.DesignLeft })))
 const DesignRight = lazy(() => import('./design/design-panes').then((m) => ({ default: m.DesignRight })))
+const Shelf = lazy(() => import('./design/design-panes').then((m) => ({ default: m.Shelf })))
 
 // norn (edit from Preview) loads with the first click on a toolpath.
 const NornLayer = lazy(() => import('../norn/norn-layer').then((m) => ({ default: m.NornLayer })))
@@ -73,8 +75,11 @@ export function Studio({ mode }: { mode: 'prepare' | 'preview' }) {
   const other = side === 'left' ? 'right' : 'left'
 
   // Painting, brim ears and lay on face are print setup: they close when Design opens.
+  // The full geometry engine starts loading on the way into Design, so its first tool does not wait.
   useEffect(() => {
-    if (design && ['paint', 'brim', 'face'].includes(toolStore.getState().tool)) setTool('move')
+    if (!design) return
+    if (['paint', 'brim', 'face'].includes(toolStore.getState().tool)) setTool('move')
+    warmFullEngine()
   }, [design])
 
   useEffect(() => {
@@ -104,6 +109,11 @@ export function Studio({ mode }: { mode: 'prepare' | 'preview' }) {
 
   return (
     <div className="studio" data-mode={mode} data-model-mode={design ? 'design' : undefined} data-sidebar={side} style={{ '--w-settings': `${layout.sidebar.width}px` } as CSSProperties}>
+      {design ? (
+        <Suspense fallback={<div className="shelf" aria-hidden="true" />}>
+          <Shelf />
+        </Suspense>
+      ) : null}
       {design ? (
         <SidePane key={`design-${side}`} side={side} ws={railKey('prepare', 'design')} label="Model" sections={DESIGN_TREE} width={280}>
           <Suspense fallback={<div className="ws-loading" aria-busy="true" />}>

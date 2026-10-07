@@ -339,6 +339,8 @@ button { cursor: pointer; }
 /* The first tab as a Design | Slice pair: two tabs with a thin divider (app shell/mode-tab.tsx). */
 .sx-modetab { display: flex; align-items: center; height: 100%; flex: none; }
 .sx-modetab-sep { width: 1px; height: 16px; background: var(--line); flex: none; }
+.sx-modetab-spin { width: 10px; height: 10px; border-radius: 50%; border: 1.5px solid var(--line); border-top-color: var(--cyan); animation: sx-spin 0.8s linear infinite; flex: none; }
+@keyframes sx-spin { to { transform: rotate(360deg); } }
 /* The project's file name after the tabs, behind a thin divider. */
 .sx-projname { display: flex; align-items: center; height: 22px; padding-left: 26px; border-left: 1px solid var(--line-soft); font-size: var(--fs-sm); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 0 1 auto; }
 .sx-projname b { color: var(--fg); font-weight: 600; overflow: hidden; text-overflow: ellipsis; }
