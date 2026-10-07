@@ -6,7 +6,7 @@
 // engine reported a gantry strike on, that stretch is drawn in the strike color. On a bed slinger (A1, A1 mini, the
 // i3 family) two uprights stand at the beam's ends, so the frame reads as one that moves with the head in bed
 // coordinates.
-import { BoxGeometry, Color, Group, Mesh, MeshBasicMaterial } from 'three'
+import { BoxGeometry, Color, EdgesGeometry, Group, LineBasicMaterial, LineSegments, Mesh, MeshStandardMaterial } from 'three'
 
 export interface GantrySpec {
   /** The beam's underside above the nozzle tip, mm. */
@@ -28,7 +28,7 @@ export interface GantryHit {
 }
 
 /** How tall the beam is drawn, mm; the check needs only its underside. */
-const BEAM = 12
+const BEAM = 14
 /** The uprights: their width, and how far beside the bed they stand, mm. */
 const POST = 14
 const SIDE = 22
@@ -36,11 +36,14 @@ const SIDE = 22
 export class GantryRig {
   readonly root = new Group()
   private readonly unit = new BoxGeometry(1, 1, 1)
-  private readonly beamMat = new MeshBasicMaterial({ color: new Color('#c6cbe0'), transparent: true, opacity: 0.16, depthWrite: false })
-  private readonly frameMat = new MeshBasicMaterial({ color: new Color('#8f95ab'), transparent: true, opacity: 0.32, depthWrite: false })
-  private readonly hitMat = new MeshBasicMaterial({ color: new Color('#ff4b5c'), transparent: true, opacity: 0.6, depthWrite: false })
-  private readonly beam = new Mesh(this.unit, this.beamMat)
-  private readonly posts = [new Mesh(this.unit, this.frameMat), new Mesh(this.unit, this.frameMat)]
+  private readonly edges = new EdgesGeometry(this.unit)
+  /** Brushed aluminum, the beam and the uprights alike: solid faces the part still shows through. */
+  private readonly frameMat = new MeshStandardMaterial({ color: new Color('#a9afc2'), metalness: 0.55, roughness: 0.35, transparent: true, opacity: 0.5, depthWrite: false })
+  private readonly edgeMat = new LineBasicMaterial({ color: new Color('#e4e8f4'), transparent: true, opacity: 0.85 })
+  private readonly hitMat = new MeshStandardMaterial({ color: new Color('#ff4b5c'), emissive: new Color('#ff4b5c'), emissiveIntensity: 0.35, roughness: 0.5, transparent: true, opacity: 0.8, depthWrite: false })
+  private readonly hitEdgeMat = new LineBasicMaterial({ color: new Color('#ff4b5c') })
+  private readonly beam = this.solid(this.frameMat, this.edgeMat)
+  private readonly posts = [this.solid(this.frameMat, this.edgeMat), this.solid(this.frameMat, this.edgeMat)]
   private readonly hot: Mesh[] = []
   private spec: GantrySpec | null = null
   private hits: readonly GantryHit[] = []
@@ -66,6 +69,8 @@ export class GantryRig {
   /** The strike color, the theme's overhang red. */
   setColor(hit: string): void {
     this.hitMat.color.set(hit)
+    this.hitMat.emissive.set(hit)
+    this.hitEdgeMat.color.set(hit)
   }
 
   /** True when a gantry strike happens on `layer`: the beam then shows even with the head hidden. */
@@ -104,8 +109,17 @@ export class GantryRig {
     return n
   }
 
+  /** A box with crisp edges, scaled to size by `box`. */
+  private solid(face: MeshStandardMaterial, edge: LineBasicMaterial): Mesh {
+    const m = new Mesh(this.unit, face)
+    const e = new LineSegments(this.edges, edge)
+    e.name = 'edges'
+    m.add(e)
+    return m
+  }
+
   private addHot(): Mesh {
-    const m = new Mesh(this.unit, this.hitMat)
+    const m = this.solid(this.hitMat, this.hitEdgeMat)
     m.name = `hit ${this.hot.length}`
     this.hot.push(m)
     this.root.add(m)
@@ -114,9 +128,11 @@ export class GantryRig {
 
   dispose(): void {
     this.unit.dispose()
-    this.beamMat.dispose()
+    this.edges.dispose()
     this.frameMat.dispose()
+    this.edgeMat.dispose()
     this.hitMat.dispose()
+    this.hitEdgeMat.dispose()
   }
 }
 
