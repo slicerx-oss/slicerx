@@ -9,6 +9,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { SXPV_HEADER_BYTES, SXPV_MAGIC, SXPV_SEGMENT_BYTES, SXPV_VERSION, readPreview, type Collision, type CollisionFix, type Host, type PreviewBuffers, type SliceResult } from '@slicerx/contracts'
 import { collisionsOf, fixesOf, printBlock, strikeMarks } from '../src/plate/heimdall'
 import { noteOf } from '../src/send/check-lines'
+import { buildProfileLayer } from '../src/adapters/profile'
 import { applyCollisionFix } from '../src/plate/heimdall-fix'
 import { collisionTime, jumpTo } from '../src/plate/heimdall-jump'
 import { gantryHits, gantrySpec } from '../src/plate/heimdall-gantry'
@@ -211,6 +212,15 @@ describe('heimdall in the app', () => {
     expect(collisionTitle(held, name)).toBe('The toolhead comes too close to Tall')
     expect(collisionDetail(held, name)).toBe('While Low prints, the nozzle comes within 3.0 mm of Tall, inside the 73 mm the printer profile asks for around it, layers 3 to 4. This printer\'s head is not measured, so heimdall holds it to the profile, as Bambu Studio does.')
     expect(collisionDetail(held, name)).not.toContain('clears')
+  })
+
+  it('gives the A1 the clearance its maker sets, which Orca\'s preset leaves out', async () => {
+    const layer = await buildProfileLayer({ printer: { vendor: 'Bambu Lab', model: 'A1' }, tier: 'standard', slots: [{ type: 'PLA' }] })
+    expect(layer?.source).toBe('orca')
+    const v = layer!.values as Record<string, unknown>
+    expect(v['extruder_clearance_dist_to_rod']).toBe(56.5)
+    expect(v['extruder_clearance_max_radius']).toBe(73)
+    expect(v['extruder_clearance_height_to_rod']).toBe(25)
   })
 
   it('names crossing paths, keep-out zones and their fixes', () => {
