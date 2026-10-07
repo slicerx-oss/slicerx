@@ -5,7 +5,7 @@
 // save bar that stays in view. Opens from the account menu, Edit page on your
 // own sheet, and Upload when you have no page yet.
 import type { Creator, CreatorImageKind, CreatorLinkInput, CreatorLinkKind, CreatorPage, Listing, Session, StoreClient } from '@slicerx/contracts'
-import { validateCreatorLink, validateHandle } from '@slicerx/store/validate'
+import { CREATOR_BIO_MAX, validateCreatorLink, validateHandle } from '@slicerx/store/validate'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Button, Icon } from '@slicerx/ui'
@@ -17,8 +17,8 @@ import { creatorPageQuery, LIBRARY_KEY, myCreatorQuery, useSession, useStore } f
 import { dashboardUrl, openExternal } from './routes'
 import { closeEditor, openCreator, useLibrarySheets } from './sheets'
 
-/** Longest bio the editor takes. The database allows more; a sheet reads best short. */
-export const BIO_MAX = 500
+/** Longest bio, as the database takes it; a sheet reads best short. */
+export const BIO_MAX = CREATOR_BIO_MAX
 export const NAME_MAX = 40
 export const LOCATION_MAX = 40
 /** Links a page shows. The database allows 12; the sheet stays readable with 8. */
@@ -176,39 +176,55 @@ async function prepareImage(file: File, kind: CreatorImageKind): Promise<Pending
   return { bytes: out.bytes, contentType: out.type, preview: URL.createObjectURL(new Blob([out.bytes.slice().buffer], { type: out.type })) }
 }
 
-/** Saves the draft in order: the page itself, then images, links and the pinned design. Stops at the first failure. */
+/**
+ * Saves the draft in order: the page itself, then images, links and the pinned design. Stops at the first failure, and
+ * then removes the images it uploaded that the page does not use, so a failed save leaves nothing behind in storage.
+ */
 export async function saveDraft(store: StoreClient, d: EditorDraft, page: CreatorPage | null): Promise<{ ok: true; creator: Creator } | { ok: false; message: string }> {
-  const text = { handle: page?.creator.handle ?? d.handle, displayName: d.displayName.trim(), bio: d.bio.trim() || null, location: d.location.trim() || null }
-  const first = await store.saveCreator(text)
-  if (!first.ok) return { ok: false, message: first.message }
-  let creator = first.value
-  const urls: { logoUrl?: string | null; bannerUrl?: string | null } = {}
-  for (const kind of ['banner', 'logo'] as const) {
-    const s = kind === 'banner' ? d.banner : d.logo
-    const key = kind === 'banner' ? 'bannerUrl' : 'logoUrl'
-    if (s.kind === 'remove') urls[key] = null
-    if (s.kind === 'new') {
-      const up = await store.uploadCreatorImage({ kind, bytes: s.image.bytes, contentType: s.image.contentType })
-      if (!up.ok) return { ok: false, message: `The ${kind} did not upload: ${up.message}` }
-      urls[key] = up.value
+  const uploaded: string[] = []
+  const failed = async (message: string): Promise<{ ok: false; message: string }> => {
+    // Best effort: the store keeps an image the saved page shows.
+    await Promise.all(uploaded.map((url) => store.removeCreatorImage(url).catch(() => undefined)))
+    return { ok: false, message }
+  }
+  try {
+    const text = { handle: page?.creator.handle ?? d.handle, displayName: d.displayName.trim(), bio: d.bio.trim() || null, location: d.location.trim() || null }
+    const first = await store.saveCreator(text)
+    if (!first.ok) return await failed(first.message)
+    let creator = first.value
+    const urls: { logoUrl?: string | null; bannerUrl?: string | null } = {}
+    for (const kind of ['banner', 'logo'] as const) {
+      const s = kind === 'banner' ? d.banner : d.logo
+      const key = kind === 'banner' ? 'bannerUrl' : 'logoUrl'
+      if (s.kind === 'remove') urls[key] = null
+      if (s.kind === 'new') {
+        const up = await store.uploadCreatorImage({ kind, bytes: s.image.bytes, contentType: s.image.contentType })
+        if (!up.ok) return await failed(`The ${kind} did not upload: ${up.message}`)
+        uploaded.push(up.value)
+        urls[key] = up.value
+      }
     }
+    if (Object.keys(urls).length) {
+      const again = await store.saveCreator({ ...text, ...urls })
+      if (!again.ok) return await failed(again.message)
+      creator = again.value
+    }
+    // The images are on the page now; a later failure leaves them in use.
+    uploaded.length = 0
+    const links = await store.setCreatorLinks(d.links.map(({ kind, label, url }) => ({ kind, url, ...(label?.trim() ? { label: label.trim() } : {}) })))
+    if (!links.ok) return { ok: false, message: links.message }
+    const featured = (page?.featured ?? []).map((l) => l.id)
+    const oldPinned = featured[0] ?? null
+    if (d.pinnedId !== oldPinned) {
+      const rest = featured.filter((id) => id !== d.pinnedId && id !== oldPinned)
+      const next = d.pinnedId ? [d.pinnedId, ...rest] : rest
+      const r = await store.setFeatured(next.slice(0, 6))
+      if (!r.ok) return { ok: false, message: r.message }
+    }
+    return { ok: true, creator }
+  } catch (e) {
+    return failed(e instanceof Error && e.message ? `The page did not save: ${e.message}` : 'The page did not save.')
   }
-  if (Object.keys(urls).length) {
-    const again = await store.saveCreator({ ...text, ...urls })
-    if (!again.ok) return { ok: false, message: again.message }
-    creator = again.value
-  }
-  const links = await store.setCreatorLinks(d.links.map(({ kind, label, url }) => ({ kind, url, ...(label?.trim() ? { label: label.trim() } : {}) })))
-  if (!links.ok) return { ok: false, message: links.message }
-  const featured = (page?.featured ?? []).map((l) => l.id)
-  const oldPinned = featured[0] ?? null
-  if (d.pinnedId !== oldPinned) {
-    const rest = featured.filter((id) => id !== d.pinnedId && id !== oldPinned)
-    const next = d.pinnedId ? [d.pinnedId, ...rest] : rest
-    const r = await store.setFeatured(next.slice(0, 6))
-    if (!r.ok) return { ok: false, message: r.message }
-  }
-  return { ok: true, creator }
 }
 
 /** The editor, when the Vault asked for it. */
@@ -284,6 +300,7 @@ function EditorForm({ why, session, page, own }: { why: 'edit' | 'upload'; sessi
   const [tried, setTried] = useState(false)
   const [busy, setBusy] = useState(false)
   const [imageError, setImageError] = useState<string | null>(null)
+  const [saveError, setSaveError] = useState<string | null>(null)
   const [dragKey, setDragKey] = useState<string | null>(null)
   const handleFixed = Boolean(page)
   const errors = useMemo(() => draftErrors(draft, handleFixed), [draft, handleFixed])
@@ -299,8 +316,14 @@ function EditorForm({ why, session, page, own }: { why: 'edit' | 'upload'; sessi
   const urls = useRef<string[]>([])
   useEffect(() => () => urls.current.forEach((u) => URL.revokeObjectURL(u)), [])
 
-  const set = (patch: Partial<EditorDraft>) => setDraft((d) => ({ ...d, ...patch }))
-  const setLink = (key: string, patch: Partial<LinkDraft>) => setDraft((d) => ({ ...d, links: d.links.map((l) => (l.key === key ? { ...l, ...patch } : l)) }))
+  const set = (patch: Partial<EditorDraft>) => {
+    setSaveError(null)
+    setDraft((d) => ({ ...d, ...patch }))
+  }
+  const setLink = (key: string, patch: Partial<LinkDraft>) => {
+    setSaveError(null)
+    setDraft((d) => ({ ...d, links: d.links.map((l) => (l.key === key ? { ...l, ...patch } : l)) }))
+  }
   const moveLink = (key: string, to: number) =>
     setDraft((d) => {
       const i = d.links.findIndex((l) => l.key === key)
@@ -329,9 +352,11 @@ function EditorForm({ why, session, page, own }: { why: 'edit' | 'upload'; sessi
     setTried(true)
     if (!store || Object.keys(errors).length) return
     setBusy(true)
+    setSaveError(null)
     try {
       const r = await saveDraft(store, draft, page)
       if (!r.ok) {
+        setSaveError(r.message)
         toast(r.message, 'error')
         return
       }
@@ -364,7 +389,7 @@ function EditorForm({ why, session, page, own }: { why: 'edit' | 'upload'; sessi
   )
 
   const linksErr = shown('links')
-  const stateText = busy ? 'Saving' : dirty ? 'Unsaved changes' : page ? 'All changes saved' : 'Not saved yet'
+  const stateText = busy ? 'Saving' : saveError ? `Not saved: ${saveError}` : dirty ? 'Unsaved changes' : page ? 'All changes saved' : 'Not saved yet'
 
   return (
     <Frame
@@ -570,7 +595,7 @@ function EditorForm({ why, session, page, own }: { why: 'edit' | 'upload'; sessi
             <button type="submit" hidden />
           </form>
           <div className="ce-savebar">
-            <span className="ce-state" role="status">
+            <span className="ce-state" role="status" data-error={saveError ? '' : undefined}>
               {stateText}
             </span>
             {upload ? (
