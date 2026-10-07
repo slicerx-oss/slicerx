@@ -31,7 +31,7 @@ const SECTION_LABEL: Record<CommandSpec['section'], string> = {
   plate: 'Plate',
   slice: 'Slice',
   printers: 'Printers',
-  library: 'Library and feed',
+  library: 'Vault',
   pilot: 'Assistant',
   settings: 'Print settings',
   view: 'View',

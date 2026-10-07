@@ -59,7 +59,7 @@ export type ControlsLookup = (id: LookId) => ControlsMap
 
 type Fmt = (chord: string) => string
 
-const BASE_LABEL: Readonly<Record<string, string>> = { prepare: 'Prepare', preview: 'Preview', printers: 'Printers', library: 'Library', feed: 'Library', pilot: 'mimir' }
+const BASE_LABEL: Readonly<Record<string, string>> = { prepare: 'Prepare', preview: 'Preview', printers: 'Printers', library: 'Vault', feed: 'Vault', pilot: 'mimir' }
 
 /** Sidebar sections in the order the Prepare sidebar stacks them. */
 export function sidebarSections(layout: LayoutSpec): string[] {
