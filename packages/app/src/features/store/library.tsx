@@ -17,8 +17,9 @@ import { fetchModel, formatLabel } from './download'
 import { CATEGORIES, DEFAULT_FILTER, setLibraryFilter, showsGrid, useLibraryFilter, type LibrarySort } from './filter'
 import { detailQuery, LIBRARY_KEY, listingsQuery, myCreatorQuery, newCreatorsQuery, rowQuery, savedCountQuery, useSession, useStore } from './queries'
 import { pickFeatured, ROWS, withoutFeatured, type RowId } from './rows'
-import { closeSheet, openCreator, openEditor, openListing, openUpload, resetSheets, useLibrarySheets } from './sheets'
+import { closeSheet, openCreator, openEditor, openListing, openReview, openUpload, resetSheets, useLibrarySheets } from './sheets'
 import { UploadHost } from './upload'
+import { canReview, ReviewHost } from './review'
 import { SignInDialog, SignInNotice } from './signin'
 import './library.css'
 
@@ -63,6 +64,7 @@ export function Library() {
       {sheets.listing ? <ListingSheet key={sheets.listing} id={sheets.listing} /> : null}
       <CreatorEditorHost />
       <UploadHost />
+      <ReviewHost />
     </div>
   )
 }
@@ -104,6 +106,11 @@ function VaultBar() {
               <MenuItem icon="creator" onClick={close(() => openEditor('edit'))}>
                 Creator page
               </MenuItem>
+              {canReview(session.role) ? (
+                <MenuItem icon="queue-review" onClick={close(openReview)}>
+                  Review queue
+                </MenuItem>
+              ) : null}
               <MenuItem icon="settings" onClick={close(() => openSettings('account'))}>
                 Account settings
               </MenuItem>
