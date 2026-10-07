@@ -420,7 +420,7 @@ export async function slicePlate(host: Host, opts: { auto?: boolean } = {}): Pro
     const raw = await host.slicer.getPreview(result.id)
     const preview = readPreview(raw)
     const cur = get()
-    set({ slice: { status: 'done', result, stale: false }, preview, strikePick: null, strikeJump: null, ...layersAfterSlice(cur, preview.layerCount, cur.norn.before !== null) })
+    set({ slice: { status: 'done', result, stale: false }, preview, strikePick: null, strikeJump: null, strikeHover: null, ...layersAfterSlice(cur, preview.layerCount, cur.norn.before !== null) })
   } catch (e) {
     if (abort.signal.aborted) {
       // A newer slice may already be running; its state is not ours to reset.
