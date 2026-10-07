@@ -249,7 +249,8 @@ impl Shared {
         }
         if let Some(a) = v.get("Attributes").filter(|a| a.is_object()) {
             *self.attributes.lock().unwrap_or_else(PoisonError::into_inner) = a.clone();
-            let _ = self.have_attributes.send(true);
+            // Kept even before anyone waits for it (see PushState::merge).
+            self.have_attributes.send_replace(true);
             self.publish_changes();
             return;
         }

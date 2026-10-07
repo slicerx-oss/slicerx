@@ -167,14 +167,19 @@ describe('the blob', () => {
     const w = purgeWindow(seq, totalSeconds(p))!
     const times = Array.from({ length: 400 }, (_, i) => w.start - 1 + ((w.kick + 0.4 - w.start + 1) * i) / 399)
     const wiper = spec.chute!.y + CHUTE.wiper.y[1]
-    const state = (t: number) => {
-      const share = flushedShare(p, w, t)
-      const shape = blobShape(p.volume * Math.max(share, 1e-6), p.volume, p.segment)
-      return JSON.stringify(blobAt(seq, p, w, t, shape.front, wiper))
-    }
+    // The blob's front only counts once the head kicks it off, after the flush, when the volume is whole: one shape
+    // gives it. Building a full blob mesh at every step only to read its front made this test take seconds on CI.
+    expect(w.kick).toBeGreaterThanOrEqual(w.end)
+    const { front } = blobShape(p.volume, p.volume, p.segment)
+    const state = (t: number) => JSON.stringify(blobAt(seq, p, w, t, front, wiper))
     const forward = times.map(state)
     const backward = times.slice().reverse().map(state).reverse()
     expect(backward).toEqual(forward)
+    // The shape is a function of the volume alone: the same volumes, visited in the other order, give the same mesh.
+    const volumes = [0.2, 0.45, 0.7, 1].map((k) => p.volume * k)
+    const mesh = (v: number) => Array.from(blobShape(v, p.volume, p.segment).positions)
+    const ahead = volumes.map(mesh)
+    expect(volumes.slice().reverse().map(mesh).reverse()).toEqual(ahead)
     // The volume only grows while the flush runs, and the blob is gone once it has dropped.
     let last = 0
     for (const t of times) {
