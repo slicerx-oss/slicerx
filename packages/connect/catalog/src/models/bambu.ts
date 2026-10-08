@@ -43,7 +43,7 @@ const FIND_A1 = find({
 const STD = [0.2, 0.4, 0.6, 0.8]
 const bambu = (m: Omit<PrinterModel, 'brand' | 'connections' | 'nozzleCount' | 'defaultNozzle' | 'find'> & Partial<PrinterModel>): PrinterModel => ({
   brand: 'bambu-lab',
-  connections: ['bambu-lan', 'export'],
+  connections: ['bambu-lan', 'bambuddy', 'export'],
   nozzleCount: 1,
   defaultNozzle: 0.4,
   find: FIND_X1,

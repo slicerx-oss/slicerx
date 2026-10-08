@@ -11,7 +11,7 @@ const FIND_PRUSALINK = find({
 const NOZZLES = [0.25, 0.4, 0.6, 0.8]
 const prusa = (m: Omit<PrinterModel, 'brand' | 'connections' | 'nozzleCount' | 'defaultNozzle' | 'find'> & Partial<PrinterModel>): PrinterModel => ({
   brand: 'prusa',
-  connections: ['prusalink', 'octoprint', 'export'],
+  connections: ['prusalink', 'octoprint', 'bambuddy', 'export'],
   nozzleCount: 1,
   defaultNozzle: 0.4,
   find: FIND_PRUSALINK,
