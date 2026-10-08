@@ -302,7 +302,7 @@ describe('local AI network', () => {
       const text = readFileSync(join(__dirname, f), 'utf8')
       for (const url of text.match(/https?:\/\/[^\s'"`)]+/g) ?? []) expect([OLLAMA_DOWNLOAD, 'http://127.0.0.1:11434', 'http://127.0.0.1:1234'], `${f}: ${url}`).toContain(url)
     }
-    const caps = JSON.parse(readFileSync(join(__dirname, '../../../apps/desktop/src-tauri/capabilities/default.json'), 'utf8')) as { permissions: (string | { identifier: string; allow: { url: string }[] })[] }
+    const caps = JSON.parse(readFileSync(join(__dirname, '../../../apps/desktop/src-tauri/capabilities/shared-links.json'), 'utf8')) as { permissions: (string | { identifier: string; allow: { url: string }[] })[] }
     const opener = caps.permissions.find((p) => typeof p === 'object' && p.identifier === 'opener:allow-open-url') as { allow: { url: string }[] }
     expect(opener.allow).toContainEqual({ url: OLLAMA_DOWNLOAD })
     expect(opener.allow.filter((a) => a.url.includes('ollama'))).toEqual([{ url: OLLAMA_DOWNLOAD }])
