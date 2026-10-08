@@ -12,7 +12,7 @@ import type { Dimension, DimensionAnchor, Feature } from '../geom/cad'
 import type { History } from '../cad/history/model'
 import { historyNewer, parseHistories } from './history-read'
 import type { VolumeRole } from '../state/store'
-import { areaOrigin } from '../plate/bed-origin'
+import { areaOrigin, areaSize } from '../plate/bed-origin'
 import { bounds } from '../plate/transform'
 
 const MAX_ENTRIES = 4000
@@ -418,13 +418,50 @@ function scanModel(text: string): ScannedModel {
 }
 
 function projectOrigin(config: Uint8Array | undefined): readonly [number, number] {
-  if (!config) return [0, 0]
+  return areaOrigin(projectArea(config))
+}
+
+/** The project's printable_area, as its settings carry it. */
+function projectArea(config: Uint8Array | undefined): unknown {
+  if (!config) return undefined
   try {
     const j: unknown = JSON.parse(new TextDecoder().decode(config))
-    return j !== null && typeof j === 'object' && !Array.isArray(j) ? areaOrigin((j as Record<string, unknown>)['printable_area']) : [0, 0]
+    return j !== null && typeof j === 'object' && !Array.isArray(j) ? (j as Record<string, unknown>)['printable_area'] : undefined
   } catch {
-    return [0, 0]
+    return undefined
   }
+}
+
+/**
+ * Bambu Studio and Orca keep where a part sits in its object in the component's transform, in the model's own
+ * coordinates, so a part can sit far from its object's origin (m.3mf's at 128, 131 with the object at -53, 128). Models
+ * here are stored centered on X and Y, so that offset moves into the object's placement: the position fields then read
+ * where the object is, and rotate and scale turn it about itself. Where it prints does not change. Returns the offset.
+ */
+function centerObject(parts: MeshPart[], volumes: ImportedVolume[], t: number[], ears: [number, number, number, number][] | undefined): [number, number] | null {
+  const b = bounds(parts, [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1])
+  if (!b) return null
+  const cx = (b.min[0] + b.max[0]) / 2
+  const cy = (b.min[1] + b.max[1]) / 2
+  if (Math.abs(cx) < 1e-3 && Math.abs(cy) < 1e-3) return null
+  const shift = (p: MeshPart): MeshPart => {
+    const out = new Float32Array(p.positions)
+    for (let i = 0; i + 2 < out.length; i += 3) {
+      out[i] = out[i]! - cx
+      out[i + 1] = out[i + 1]! - cy
+    }
+    return { ...p, positions: out }
+  }
+  parts.splice(0, parts.length, ...parts.map(shift))
+  for (const v of volumes) v.part = shift(v.part)
+  if (ears) for (const e of ears) {
+    e[0] -= cx
+    e[1] -= cy
+  }
+  t[12] = t[12]! + t[0]! * cx + t[4]! * cy
+  t[13] = t[13]! + t[1]! * cx + t[5]! * cy
+  t[14] = t[14]! + t[2]! * cx + t[6]! * cy
+  return [cx, cy]
 }
 
 function plateOffset(index: number, count: number, bed: { widthMm: number; depthMm: number }): [number, number] {
@@ -615,6 +652,8 @@ export async function readProject(bytes: Uint8Array, bed: { widthMm: number; dep
   const ears = parseBrimEars(files.get('Metadata/brim_ear_points.txt'))
   // Orca places objects on the machine; the plate counts from the printable area's front left corner.
   const [ax, ay] = projectOrigin(files.get('Metadata/project_settings.config'))
+  // Plates after the first sit to the side of it by the size of the bed the project was laid out on.
+  const layoutBed = areaSize(projectArea(files.get('Metadata/project_settings.config'))) ?? bed
   for (const [itemIndex, item] of main.items.entries()) {
     const obj = main.objects.get(item.objectId)
     if (!obj) continue
@@ -662,13 +701,15 @@ export async function readProject(bytes: Uint8Array, bed: { widthMm: number; dep
     }
     if (parts.length === 0) continue
     const pIndex = plateOf(item.objectId)
-    const [ox, oy] = plateOffset(pIndex, plates.length, bed)
+    const [ox, oy] = plateOffset(pIndex, plates.length, layoutBed)
     const t = item.transform ? [...item.transform] : [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
     t[12] = t[12]! - ox - ax
     t[13] = t[13]! - oy - ay
+    const itemEars = ears.get(itemIndex + 1)?.map((e) => [...e] as [number, number, number, number])
+    if (sources.some((s) => s.matrix)) centerObject(parts, volumes, t, itemEars)
     const own = marks.objects.get(item.objectId)
     const source = own ? sourceOf({ ...marks.root, ...own }) : rootSource
-    ;(plates[pIndex] ?? plates[0]!).objects.push({ name: info?.name ?? pz?.name ?? obj.name ?? parts[0]!.name, parts, volumes, transform: t, ...(Object.keys(rawPartSettings).length ? { rawPartSettings } : {}), ...(Object.keys(paintByPart).length ? { paint: paintByPart } : {}), ...(item.printable ? {} : { printable: false }), ...(ears.get(itemIndex + 1) ? { brimPoints: ears.get(itemIndex + 1)! } : {}), ...(source ? { source } : {}), fileId: item.objectId })
+    ;(plates[pIndex] ?? plates[0]!).objects.push({ name: info?.name ?? pz?.name ?? obj.name ?? parts[0]!.name, parts, volumes, transform: t, ...(Object.keys(rawPartSettings).length ? { rawPartSettings } : {}), ...(Object.keys(paintByPart).length ? { paint: paintByPart } : {}), ...(item.printable ? {} : { printable: false }), ...(itemEars ? { brimPoints: itemEars } : {}), ...(source ? { source } : {}), fileId: item.objectId })
   }
   // Marks from Orca and Bambu Studio's layer slider: color change 0, pause 1, custom 4 (other types are not carried over).
   const marksText = files.get('Metadata/custom_gcode_per_layer.xml')
