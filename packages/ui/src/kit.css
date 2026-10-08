@@ -1,0 +1,66 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+/* Copyright (C) 2026 The SlicerX contributors */
+/* Chip buttons, popovers, split buttons, the selection bar, swatch rings and the rail header slot. Lifted pieces
+   (popover, selection bar) use .sx-overlay plus the frosted glass; everything else sits flat on its panel. */
+
+/* rail header: an extra control after the title, such as the settings mode chip */
+.sx-rail-extra { display: inline-flex; align-items: center; flex: none; min-width: 0; }
+
+/* chip button: a value you change in place */
+.sx-chip-btn {
+  display: inline-flex; align-items: center; gap: 6px; height: var(--h-sm); max-width: 100%; padding: 0 8px 0 10px;
+  border: 1px solid var(--line-soft); border-radius: var(--r-pill); background: var(--ink-2); color: var(--fg);
+  font: 500 var(--fs-md) / 1 var(--f-body); white-space: nowrap;
+  transition: background var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease);
+}
+.sx-chip-btn:hover { background: var(--ink-3); border-color: var(--line); }
+.sx-chip-btn[aria-expanded="true"], .sx-chip-btn[aria-pressed="true"] { border-color: color-mix(in srgb, var(--accent) 60%, transparent); background: color-mix(in srgb, var(--accent) 12%, var(--ink-2)); }
+.sx-chip-btn[data-numeric] { font-variant-numeric: tabular-nums; }
+.sx-chip-btn:disabled { opacity: 0.5; cursor: default; }
+.sx-chip-btn .sx-ic { color: var(--muted); flex: none; }
+.sx-chip-btn-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.sx-chip-btn-caret { margin-left: -2px; }
+
+/* popover: anchored like a menu, for richer content */
+.sx-popover {
+  position: absolute; top: calc(100% + 4px); left: 0; z-index: var(--z-menu); width: max-content; min-width: 220px; max-width: 320px;
+  padding: 6px; border-radius: var(--r-md); box-shadow: var(--shadow-pop); -webkit-backdrop-filter: var(--lift-glass); backdrop-filter: var(--lift-glass);
+}
+.sx-popover[data-align="end"] { left: auto; right: 0; }
+.sx-popover[data-side="top"] { top: auto; bottom: calc(100% + 4px); }
+
+/* split button: main action and its menu as two joined buttons */
+.sx-split { display: inline-flex; align-items: stretch; }
+.sx-split[data-full] { display: flex; width: 100%; }
+.sx-split[data-full] > .sx-split-main { flex: 1; }
+.sx-split > .sx-split-main { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.sx-split > .sx-split-menu { border-top-left-radius: 0; border-bottom-left-radius: 0; margin-left: 1px; padding: 0; width: var(--h-md); }
+.sx-split > .sx-split-menu[data-size="lg"] { width: 40px; }
+.sx-split > .sx-split-menu[data-size="sm"] { width: var(--h-sm); }
+.sx-split > .sx-split-menu[aria-expanded="true"] .sx-ic { transform: rotate(180deg); }
+.sx-split > .sx-split-menu .sx-ic { transition: transform var(--t-fast) var(--ease); }
+
+/* selection bar */
+.sx-selbar {
+  display: flex; align-items: center; gap: 6px; min-height: 40px; padding: 4px 4px 4px 12px; border-radius: var(--r-md);
+  -webkit-backdrop-filter: var(--lift-glass); backdrop-filter: var(--lift-glass); animation: sx-selbar-in var(--t-fast) var(--ease);
+}
+.sx-selbar-count { flex: none; font: 600 var(--fs-md) var(--f-body); color: var(--fg); font-variant-numeric: tabular-nums; }
+.sx-selbar-actions .sx-btn:not(:disabled):not([aria-disabled="true"]) { color: var(--fg); }
+.sx-selbar-actions { display: flex; flex: 1; align-items: center; justify-content: flex-end; gap: 2px; min-width: 0; flex-wrap: wrap; }
+.sx-selbar-clear { width: var(--h-sm); height: var(--h-sm); border: 0; border-radius: var(--r-sm); background: none; color: var(--dim); display: grid; place-items: center; flex: none; }
+.sx-selbar-clear:hover { color: var(--fg); background: var(--ink-3); }
+@keyframes sx-selbar-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+
+/* swatch ring: a filament color with its usage arc */
+.sx-swatch-ring { position: relative; display: inline-flex; flex-direction: column; align-items: center; gap: 3px; flex: none; }
+.sx-swatch-ring > svg { display: block; overflow: visible; }
+.sx-swatch-disc { stroke: color-mix(in srgb, var(--fg) 22%, transparent); stroke-width: 1; }
+.sx-swatch-track { fill: none; stroke: var(--line); stroke-width: 2.5; }
+.sx-swatch-arc { fill: none; stroke: var(--fg); stroke-width: 2.5; stroke-linecap: round; transition: stroke-dasharray var(--t-base) var(--ease); }
+.sx-swatch-check-a { fill: var(--ink-3); }
+.sx-swatch-check-b { fill: var(--ink-1); }
+.sx-swatch-ring[data-dim] > svg { opacity: 0.45; }
+.sx-swatch-ring[data-selected] > svg { border-radius: 50%; box-shadow: 0 0 0 2px var(--ink-1), 0 0 0 4px var(--accent); }
+.sx-swatch-mismatch { position: absolute; top: -1px; right: -1px; width: 9px; height: 9px; border-radius: 50%; background: var(--orange); box-shadow: 0 0 0 2px var(--ink-1); }
+.sx-swatch-label { font: 500 var(--fs-xs) / 1 var(--f-mono); color: var(--muted); font-variant-numeric: tabular-nums; }

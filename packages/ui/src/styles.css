@@ -3,6 +3,7 @@
 /* Subban primitives. Class names carry
    the sx- prefix so page styles never collide. Import once per app: "@slicerx/ui/styles.css". */
 @import "./tokens.css";
+@import "./kit.css";
 
 /* base */
 *, *::before, *::after { box-sizing: border-box; }
