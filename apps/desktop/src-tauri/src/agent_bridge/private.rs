@@ -2,7 +2,8 @@
 // Copyright (C) 2026 The SlicerX contributors
 //! Files only this user can read: the connection file with the token, and the G-code exports. A file is always made
 //! new (never written through a file or link already at its path), and the export folder must be a real folder this
-//! user owns that no one else can open.
+//! user owns that no one else can open. On Windows each file is created with its own access list: this user and
+//! SYSTEM, nothing inherited, so it stays private even in a shared folder `SX_AGENT_BRIDGE_TOKEN_FILE` may name.
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -55,7 +56,10 @@ pub fn own_dir(dir: &Path, uid: u32) -> std::io::Result<()> {
     let refuse = |why: &str| {
         Err(std::io::Error::new(
             std::io::ErrorKind::PermissionDenied,
-            format!("{} {why}; the bridge writes only into a folder of this user's", dir.display()),
+            format!(
+                "{} {why}; the bridge writes only into a folder of this user's",
+                dir.display()
+            ),
         ))
     };
     if !meta.file_type().is_dir() {
@@ -71,7 +75,8 @@ pub fn own_dir(dir: &Path, uid: u32) -> std::io::Result<()> {
 }
 
 /// Writes `bytes` to a new file at `path`, readable only by this user. A file or link already at the path is removed
-/// first, never written through: the file is created with O_EXCL (and O_NOFOLLOW on macOS and Linux).
+/// first, never written through: the file is created with O_EXCL (and O_NOFOLLOW on macOS and Linux; on Windows,
+/// CREATE_NEW with an owner-only access list from the start).
 pub fn write_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     match std::fs::remove_file(path) {
         Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(e),
@@ -93,9 +98,91 @@ fn create_new(path: &Path) -> std::io::Result<std::fs::File> {
         .open(path)
 }
 
-#[cfg(not(unix))]
+#[cfg(windows)]
 fn create_new(path: &Path) -> std::io::Result<std::fs::File> {
-    std::fs::OpenOptions::new().write(true).create_new(true).open(path)
+    use std::os::windows::ffi::OsStrExt;
+    use std::os::windows::io::{FromRawHandle, RawHandle};
+    use windows::Win32::Foundation::{GENERIC_WRITE, HLOCAL, LocalFree};
+    use windows::Win32::Security::Authorization::{
+        ConvertStringSecurityDescriptorToSecurityDescriptorW, SDDL_REVISION_1,
+    };
+    use windows::Win32::Security::{PSECURITY_DESCRIPTOR, SECURITY_ATTRIBUTES};
+    use windows::Win32::Storage::FileSystem::{
+        CREATE_NEW, CreateFileW, FILE_ATTRIBUTE_NORMAL, FILE_SHARE_NONE,
+    };
+    use windows::core::PCWSTR;
+
+    let wide = |s: &std::ffi::OsStr| s.encode_wide().chain(Some(0)).collect::<Vec<u16>>();
+    // D:P keeps the folder's entries from being inherited; FA is full access, for this user and SYSTEM only.
+    let sddl = wide(format!("D:P(A;;FA;;;SY)(A;;FA;;;{})", user_sid()?).as_ref());
+    let name = wide(path.as_os_str());
+    let mut sd = PSECURITY_DESCRIPTOR::default();
+    // SAFETY: the SDDL string is NUL-terminated and outlives the call; sd receives a LocalAlloc'd descriptor, freed
+    // below once CreateFileW has used it.
+    unsafe {
+        ConvertStringSecurityDescriptorToSecurityDescriptorW(
+            PCWSTR(sddl.as_ptr()),
+            SDDL_REVISION_1,
+            &raw mut sd,
+            None,
+        )
+        .map_err(std::io::Error::other)?;
+    }
+    let attrs = SECURITY_ATTRIBUTES {
+        nLength: u32::try_from(std::mem::size_of::<SECURITY_ATTRIBUTES>()).unwrap_or(0),
+        lpSecurityDescriptor: sd.0,
+        bInheritHandle: false.into(),
+    };
+    // SAFETY: the path is NUL-terminated and attrs points at a valid descriptor for the length of the call.
+    let handle = unsafe {
+        CreateFileW(
+            PCWSTR(name.as_ptr()),
+            GENERIC_WRITE.0,
+            FILE_SHARE_NONE,
+            Some(&raw const attrs),
+            CREATE_NEW,
+            FILE_ATTRIBUTE_NORMAL,
+            None,
+        )
+    };
+    // SAFETY: sd came from ConvertStringSecurityDescriptorToSecurityDescriptorW and is freed exactly once.
+    unsafe {
+        LocalFree(Some(HLOCAL(sd.0)));
+    }
+    let handle = handle.map_err(|e| std::io::Error::from_raw_os_error(e.code().0 & 0xFFFF))?;
+    // SAFETY: CreateFileW returned a new, valid file handle that nothing else owns.
+    Ok(unsafe { std::fs::File::from_raw_handle(handle.0 as RawHandle) })
+}
+
+/// This process's user, as a SID string (S-1-5-21-...).
+#[cfg(windows)]
+fn user_sid() -> std::io::Result<String> {
+    use windows::Win32::Foundation::{CloseHandle, HANDLE, HLOCAL, LocalFree};
+    use windows::Win32::Security::Authorization::ConvertSidToStringSidW;
+    use windows::Win32::Security::{GetTokenInformation, TOKEN_QUERY, TOKEN_USER, TokenUser};
+    use windows::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
+    use windows::core::PWSTR;
+
+    let mut token = HANDLE::default();
+    // SAFETY: GetCurrentProcess is a pseudo handle; token receives a handle that is closed below.
+    unsafe { OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &raw mut token) }
+        .map_err(std::io::Error::other)?;
+    let mut len = 0u32;
+    // SAFETY: the first call only asks for the size; the second fills a buffer of that size, aligned for TOKEN_USER,
+    // which stays alive while the SID in it is read.
+    unsafe {
+        let _ = GetTokenInformation(token, TokenUser, None, 0, &raw mut len);
+        let mut buf = vec![0u64; (len as usize).div_ceil(8)];
+        let got = GetTokenInformation(token, TokenUser, Some(buf.as_mut_ptr().cast()), len, &raw mut len);
+        let _ = CloseHandle(token);
+        got.map_err(std::io::Error::other)?;
+        let user = &*buf.as_ptr().cast::<TOKEN_USER>();
+        let mut text = PWSTR::null();
+        ConvertSidToStringSidW(user.User.Sid, &raw mut text).map_err(std::io::Error::other)?;
+        let sid = text.to_string().map_err(std::io::Error::other);
+        LocalFree(Some(HLOCAL(text.0.cast())));
+        sid
+    }
 }
 
 #[cfg(test)]
@@ -119,7 +206,10 @@ mod tests {
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            assert_eq!(std::fs::metadata(&file).unwrap().permissions().mode() & 0o777, 0o600);
+            assert_eq!(
+                std::fs::metadata(&file).unwrap().permissions().mode() & 0o777,
+                0o600
+            );
             // A link planted at the path is replaced; what it points at is left alone.
             let target = dir.join("target.txt");
             std::fs::write(&target, b"keep").unwrap();
@@ -144,10 +234,74 @@ mod tests {
         {
             use std::os::unix::fs::PermissionsExt;
             for d in [&dir, &base.join("slicerx-agent-bridge")] {
-                assert_eq!(std::fs::metadata(d).unwrap().permissions().mode() & 0o777, 0o700, "{}", d.display());
+                assert_eq!(
+                    std::fs::metadata(d).unwrap().permissions().mode() & 0o777,
+                    0o700,
+                    "{}",
+                    d.display()
+                );
             }
         }
         let _ = std::fs::remove_dir_all(base);
+    }
+
+    /// The file's access list as SDDL: protected, with full access for this user and SYSTEM and nothing else.
+    #[cfg(windows)]
+    #[test]
+    fn windows_files_get_an_owner_only_access_list() {
+        use windows::Win32::Foundation::{HLOCAL, LocalFree};
+        use windows::Win32::Security::Authorization::{
+            ConvertSecurityDescriptorToStringSecurityDescriptorW, GetNamedSecurityInfoW, SDDL_REVISION_1,
+            SE_FILE_OBJECT,
+        };
+        use windows::Win32::Security::{DACL_SECURITY_INFORMATION, PSECURITY_DESCRIPTOR};
+        use windows::core::{HSTRING, PWSTR};
+
+        let dir = scratch("private-dacl");
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("agent-bridge.json");
+        write_private(&file, b"{}").unwrap();
+        let mut sd = PSECURITY_DESCRIPTOR::default();
+        let mut text = PWSTR::null();
+        // SAFETY: the out pointers are valid; both buffers are LocalAlloc'd by the system and freed here.
+        let sddl = unsafe {
+            let err = GetNamedSecurityInfoW(
+                &HSTRING::from(file.as_os_str()),
+                SE_FILE_OBJECT,
+                DACL_SECURITY_INFORMATION,
+                None,
+                None,
+                None,
+                None,
+                &raw mut sd,
+            );
+            assert_eq!(err.0, 0, "GetNamedSecurityInfoW");
+            ConvertSecurityDescriptorToStringSecurityDescriptorW(
+                sd,
+                SDDL_REVISION_1,
+                DACL_SECURITY_INFORMATION,
+                &raw mut text,
+                None,
+            )
+            .unwrap();
+            let s = text.to_string().unwrap();
+            LocalFree(Some(HLOCAL(text.0.cast())));
+            LocalFree(Some(HLOCAL(sd.0)));
+            s
+        };
+        let me = user_sid().unwrap();
+        assert!(sddl.starts_with("D:P"), "{sddl}");
+        let mut aces: Vec<String> = sddl
+            .trim_start_matches("D:P")
+            .split_inclusive(')')
+            .map(str::to_owned)
+            .collect();
+        aces.sort();
+        let mut want = vec!["(A;;FA;;;SY)".to_owned(), format!("(A;;FA;;;{me})")];
+        want.sort();
+        assert_eq!(aces, want, "{sddl}");
+        assert_eq!(std::fs::read(&file).unwrap(), b"{}");
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[cfg(unix)]
@@ -171,12 +325,18 @@ mod tests {
         // A folder of someone else's.
         let mine = base.join("mine");
         std::fs::create_dir(&mine).unwrap();
-        assert_eq!(own_dir(&mine, uid.wrapping_add(1)).unwrap_err().kind(), std::io::ErrorKind::PermissionDenied);
+        assert_eq!(
+            own_dir(&mine, uid.wrapping_add(1)).unwrap_err().kind(),
+            std::io::ErrorKind::PermissionDenied
+        );
 
         // An open folder of this user's is closed.
         std::fs::set_permissions(&mine, std::fs::Permissions::from_mode(0o777)).unwrap();
         own_dir(&mine, uid).unwrap();
-        assert_eq!(std::fs::metadata(&mine).unwrap().permissions().mode() & 0o777, 0o700);
+        assert_eq!(
+            std::fs::metadata(&mine).unwrap().permissions().mode() & 0o777,
+            0o700
+        );
         let _ = std::fs::remove_dir_all(base);
     }
 

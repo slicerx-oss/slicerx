@@ -87,7 +87,8 @@ $p = Start-Process target\agent-bridge\release\slicerx.exe -PassThru   # stop it
 ```
 
 The app writes `{"port", "token", "pid", "app", "version"}` to the connection file, made fresh at every start and readable
-only by the user on macOS and Linux, and removes it when it quits. stderr says where it listens. The app is
+only by the user (mode 0600 on macOS and Linux; on Windows an access list of the user and SYSTEM only, not inherited
+from the folder), and removes it when it quits. stderr says where it listens. The app is
 single-instance per identifier: quit a running copy of the same build first, or the new one hands its arguments to it
 and exits. On Windows, `WEBVIEW2_USER_DATA_FOLDER=<empty folder>` gives a run a fresh web profile (first run again).
 
