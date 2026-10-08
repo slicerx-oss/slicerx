@@ -69,31 +69,48 @@ fn plate_temps(cfg: &PrintConfig, first: bool) -> Vec<f64> {
         _ => None,
     }
     .unwrap_or("hot_plate_temp");
-    let key = if first {
-        format!("{plate}_initial_layer")
-    } else {
-        plate.to_owned()
-    };
-    let list: Vec<f64> = match cfg.raw.get(&key) {
-        Some(Json::Array(a)) => a
-            .iter()
-            .filter_map(|v| {
-                v.as_f64()
-                    .or_else(|| v.as_str().and_then(|t| t.trim().parse().ok()))
-            })
-            .collect(),
-        Some(v) => v.as_f64().into_iter().collect(),
-        None => Vec::new(),
-    };
-    if list.is_empty() {
-        vec![if first {
-            cfg.hot_plate_temp_initial_layer
+    let key = |plate: &str| {
+        if first {
+            format!("{plate}_initial_layer")
         } else {
-            cfg.hot_plate_temp
-        }]
+            plate.to_owned()
+        }
+    };
+    let read = |key: &str| -> Vec<f64> {
+        match cfg.raw.get(key) {
+            Some(Json::Array(a)) => a
+                .iter()
+                .filter_map(|v| {
+                    v.as_f64()
+                        .or_else(|| v.as_str().and_then(|t| t.trim().parse().ok()))
+                })
+                .collect(),
+            Some(v) => v.as_f64().into_iter().collect(),
+            None => Vec::new(),
+        }
+    };
+    let fallback = if first {
+        cfg.hot_plate_temp_initial_layer
     } else {
-        list
+        cfg.hot_plate_temp
+    };
+    let list = read(&key(plate));
+    if list.is_empty() {
+        return vec![fallback];
     }
+    // a filament with 0 for this plate does not support it: preflight warns and keeps the
+    // high temp plate's temperature, so the templates heat to that too instead of switching the bed off
+    let hot = read(&key("hot_plate_temp"));
+    list.iter()
+        .enumerate()
+        .map(|(i, &t)| {
+            if t > 0.0 {
+                t
+            } else {
+                hot.get(i).copied().filter(|h| *h > 0.0).unwrap_or(fallback)
+            }
+        })
+        .collect()
 }
 
 /// `bed_temperature_initial_layer_single`: the first layer's bed temperature of the first filament, or with
