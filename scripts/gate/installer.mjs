@@ -75,7 +75,14 @@ async function cdp(wsUrl, onEvent) {
   return { send, evaluate, close: () => ws.close() }
 }
 
-const $ = (id) => `document.querySelector('[data-testid="${id}"]')`
+// By test id; a release older than its test ids is found by what a person reads (the agreement's checkbox, a button's text).
+const FALLBACK = {
+  'agreement-check': `document.querySelector('[data-testid="agreement"] input[type=checkbox]')`,
+  'agreement-accept': `[...document.querySelectorAll('[data-testid="agreement"] button')].find((b) => /accept/i.test(b.textContent))`,
+  'setup-skip-all': `[...document.querySelectorAll('button')].find((b) => /^Skip, use defaults/.test(b.textContent.trim()))`,
+  'tab-feed': `[...document.querySelectorAll('button, a')].find((b) => b.textContent.trim() === 'Vault')`,
+}
+const $ = (id) => `(document.querySelector('[data-testid="${id}"]') || ${FALLBACK[id] ?? 'null'})`
 const visible = (id) => `(() => { const e = ${$(id)}; if (!e) return false; const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0 })()`
 
 let child = null
@@ -119,8 +126,9 @@ try {
     if (msg.method === 'Log.entryAdded') {
       const e = msg.params.entry
       // A refused eval is a library probing whether eval is allowed (zod at startup); it is reported, not failed.
-      if (/evaluate a string as JavaScript/.test(e.text)) probes.push(e.text)
-      else if (e.source === 'security' || /Content Security Policy|Refused to/.test(e.text)) csp.push(e.text)
+      const text = e.text.length > 300 ? `${e.text.slice(0, 300)}...` : e.text
+      if (/evaluate a string as JavaScript/.test(e.text)) probes.push(text)
+      else if (e.source === 'security' || /Content Security Policy|Refused to/.test(e.text)) csp.push(text)
       else if (e.level === 'error') errors.push(`${e.text} ${e.url ?? ''}`)
     } else if (msg.method === 'Runtime.consoleAPICalled' && msg.params.type === 'error') errors.push(msg.params.args.map((a) => a.value ?? a.description ?? '').join(' '))
   })
