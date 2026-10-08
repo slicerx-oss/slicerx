@@ -15,6 +15,7 @@ import { parseArgs } from 'node:util'
 import { inflateSync } from 'node:zlib'
 import { createRequire } from 'node:module'
 import { createAppClient } from '../src/client.ts'
+import { finishFirstRun } from './first-run.mjs'
 
 const { values } = parseArgs({ options: { app: { type: 'string' }, file: { type: 'string' }, out: { type: 'string' }, 'cdp-port': { type: 'string' } }, strict: true })
 const cdpPort = values['cdp-port'] ? Number(values['cdp-port']) : null
@@ -256,16 +257,8 @@ try {
     if (h?.appReady) break
     await sleep(500)
   }
-  // First run on the fresh profile: the agreement, then Skip, until the objects list shows.
-  for (let i = 0; i < 120; i++) {
-    const ids = await call('testids').catch(() => ({}))
-    if (ids['objects-list']) break
-    if (ids['agreement-check']) {
-      await call('click', { testid: 'agreement-check' })
-      await call('click', { testid: 'agreement-accept' })
-    } else if (ids['setup-skip-all']) await call('click', { testid: 'setup-skip-all' })
-    await sleep(500)
-  }
+  // First run on the fresh profile, until the objects list shows.
+  await finishFirstRun({ testids: () => call('testids'), click: (testid) => call('click', { testid }).catch(() => undefined), sleep })
   if (cdpPort) await connectCdp()
   await sliced()
   await sleep(1500)
