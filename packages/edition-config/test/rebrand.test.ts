@@ -45,7 +45,7 @@ describe('a white-label edition', () => {
     expect(merged.plugins['deep-link']?.desktop.schemes).toEqual(['acmeslicer'])
     // The shell may open the edition's own pages, each one exactly, and the source of any of its builds.
     expect(merged).toHaveProperty(['app', 'security', 'capabilities', 0], 'default')
-    const allow = (merged as { app: { security: { capabilities: [string, string, { permissions: { allow: { url: string }[] }[] }] } } }).app.security.capabilities[2].permissions[0]!.allow
+    const allow = (merged as unknown as { app: { security: { capabilities: [string, string, { permissions: { allow: { url: string }[] }[] }] } } }).app.security.capabilities[2].permissions[0]!.allow
     expect(allow).toContainEqual({ url: 'https://slicer.acme.example/docs' })
     expect(allow).toContainEqual({ url: 'https://git.acme.example/slicer/tree/*' })
     expect(allow).not.toContainEqual({ url: 'https://slicer.acme.example/*' })

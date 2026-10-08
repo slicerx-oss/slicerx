@@ -57,8 +57,9 @@ export function bugReportsLink(config: EditionConfig): string | null {
  */
 export function privacyPage(config: EditionConfig, source: string): string {
   if (config.legal.privacy) return config.legal.privacy
-  const repo = /^(https:\/\/[^/]+\/[^/]+\/[^/#?]+)/.exec(source)?.[1]
-  return `${repo ?? source}/blob/main/packages/store/README.md#privacy`
+  // the repository: the source link without its `/tree/<commit>` (GitHub, Gitea) or `/-/tree/<commit>` (GitLab)
+  const repo = source.replace(/[?#].*$/, '').replace(/\/(-\/)?tree\/.*$/, '').replace(/\/$/, '')
+  return `${repo}/blob/main/packages/store/README.md#privacy`
 }
 
 /** The credit an edition shows. Always the standard one: the check refuses any other `legal.attribution`. */
