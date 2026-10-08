@@ -111,8 +111,7 @@ function PrinterBlock() {
       title="Printer"
       icon="printer"
       id="printer-fold"
-      expanded={open}
-      onExpandedChange={setOpen}
+      {...(setOpen ? { expanded: open, onExpandedChange: setOpen } : {})}
       data-section="printer"
       aside={
         open ? (

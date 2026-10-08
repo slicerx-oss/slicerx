@@ -13,6 +13,6 @@ export const STARTUP_ICONS = [
   'new-plate', 'nozzle', 'offline', 'open', 'overhang', 'paint', 'paste', 'pause', 'phone', 'pilot', 'plate', 'plates', 'plus',
   'prepare', 'preset-draft', 'preset-fine', 'preset-standard', 'preset-strong', 'preview', 'printer', 'queue',
   'redo', 'report', 'rotate', 'ruler', 'save', 'scale', 'search', 'select-all', 'settings', 'shapes', 'shield', 'show',
-  'sleipnir', 'slice', 'slicerx', 'sliders', 'speed', 'stop', 'support', 'sx3mf', 'terminal', 'text', 'thinking',
+  'sleipnir', 'slice', 'slicerx', 'sliders', 'speed', 'spool', 'stop', 'support', 'sx3mf', 'terminal', 'text', 'thinking',
   'timelapse', 'undo', 'unlock', 'upload', 'version', 'warning', 'weight', 'zoom-in', 'zoom-out',
 ]
