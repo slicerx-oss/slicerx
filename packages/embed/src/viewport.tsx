@@ -5,7 +5,7 @@
 import type { PreviewBuffers } from '@slicerx/contracts'
 import { readPreview } from '@slicerx/contracts'
 import { useTheme } from '@slicerx/ui'
-import { createViewport, type ColorMode, type PickEvent, type RenderMode, type ViewPreset, type Viewport as Handle, type ViewportPlate, type ViewportTheme } from '@slicerx/viewport'
+import { createViewport, type ColorMode, type PickEvent, type PlateStyle, type RenderMode, type ToolpathFinish, type ViewPreset, type Viewport as Handle, type ViewportPlate, type ViewportTheme } from '@slicerx/viewport'
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { sceneFor } from './theme'
 
@@ -30,6 +30,13 @@ export interface ViewportProps {
   sceneTheme?: ViewportTheme
   /** Filament color per slot (#rrggbb, slot 1 first), for colorMode "tool" and the plate's parts. */
   toolColors?: readonly string[]
+  /**
+   * How each slot's toolpaths shine (slot 1 first): matte, satin (everyday PLA, the default), glossy (PETG and the
+   * like) or silk, which streaks along each bead. One value for every slot is a list of one.
+   */
+  toolFinishes?: readonly ToolpathFinish[]
+  /** The bed under the print: `grid` (the default) or a build plate surface: textured-pei, smooth-pei, cool, engineering. */
+  plateStyle?: PlateStyle
   /** The viewport could not start (no WebGL) or failed while drawing. Report it as a crash of the SlicerX part. */
   onError?: (error: Error) => void
   label?: string
@@ -37,7 +44,7 @@ export interface ViewportProps {
   style?: CSSProperties
 }
 
-export function Viewport({ plate, preview, look = 'studio', colorMode = 'feature', layer, view, quality = 'high', onPick, onReady, sceneTheme, toolColors, onError, label = '3D view', className, style }: ViewportProps) {
+export function Viewport({ plate, preview, look = 'studio', colorMode = 'feature', layer, view, quality = 'high', onPick, onReady, sceneTheme, toolColors, toolFinishes, plateStyle = 'grid', onError, label = '3D view', className, style }: ViewportProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [vp, setVp] = useState<Handle | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -99,6 +106,11 @@ export function Viewport({ plate, preview, look = 'studio', colorMode = 'feature
   useEffect(() => {
     if (vp && tools) vp.setToolColors(tools.split(','))
   }, [vp, tools])
+  const finishes = toolFinishes?.join(',')
+  useEffect(() => {
+    if (vp && finishes) vp.setToolFinishes?.(finishes.split(',') as ToolpathFinish[])
+  }, [vp, finishes])
+  useEffect(() => vp?.setPlateStyle?.(plateStyle), [vp, plateStyle])
   useEffect(() => vp?.setRenderMode(look), [vp, look])
   useEffect(() => vp?.setColorMode(colorMode), [vp, colorMode])
   useEffect(() => {

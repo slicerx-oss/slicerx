@@ -188,7 +188,7 @@ import { Viewport, SettingsPanel } from '@slicerx/embed'
 <SettingsPanel config={baseProfile} mode="easy" onChange={({ easy, overrides, config }) => save(config)} />
 ```
 
-- `Viewport` props: `plate` (a `ViewportPlate`), `preview` (SXPV bytes or parsed `PreviewBuffers`), `look` (`studio`, `clay`, `xray`, `overhang`, `filament`), `colorMode` (`feature`, `tool`, `speed`, `flow`, `layerTime`), `layer` (top visible layer, 1-based), `view` (`iso`, `top`, `front`, `fit`), `quality`, `onPick`, `onReady(viewport)` for the imperative handle, `label`, `className`, `style`.
+- `Viewport` props: `plate` (a `ViewportPlate`), `preview` (SXPV bytes or parsed `PreviewBuffers`), `look` (`studio`, `clay`, `xray`, `overhang`, `filament`), `colorMode` (`feature`, `tool`, `speed`, `flow`, `layerTime`), `layer` (top visible layer, 1-based), `view` (`iso`, `top`, `front`, `fit`), `toolColors` (filament color per slot), `toolFinishes` (how each slot's toolpaths shine: `matte`, `satin`, `glossy` or `silk`, which streaks along each bead the way a silk print does), `plateStyle` (`grid`, or a build plate surface under the print: `textured-pei`, `smooth-pei`, `cool`, `engineering`), `quality`, `onPick`, `onReady(viewport)` for the imperative handle, `label`, `className`, `style`.
 - `SettingsPanel` props: `config` (the base profile, OrcaSlicer keys), `easy`, `mode` (`easy` or `advanced`), and `onChange({ easy, overrides, config })`.
 - Helpers: `decodeStl(bytes, name)` and `decodeQuantized(json)` turn a file into viewport parts (also at `@slicerx/embed/mesh`), and `injectStyles()` adds the stylesheet when you do not import it.
 
@@ -204,7 +204,7 @@ Pages without React call `defineSlicerXElements()` once:
 </script>
 ```
 
-`<sx-viewport>` also takes the `plate` and `preview` properties (set SXPV bytes on `preview`) and fires `pick`. `<sx-settings-panel>` takes a `config` property and fires `change` with `{ easy, overrides, config }`. Each element renders in its own shadow root, so your page's styles do not leak in.
+`<sx-viewport>` also takes the `plate` and `preview` properties (set SXPV bytes on `preview`), the `finish` attribute (one finish for every slot, or one per slot: `finish="satin silk"`) and `plate-style`, and fires `pick`. `<sx-settings-panel>` takes a `config` property and fires `change` with `{ easy, overrides, config }`. Each element renders in its own shadow root, so your page's styles do not leak in.
 
 ## Theming and branding
 

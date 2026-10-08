@@ -117,6 +117,14 @@ export function resolveSlots(s: SlotInputs): ResolvedSlot[] {
   })
 }
 
+/** How a slot's filament shines in Preview, from its name: silk, matte, glossy (PETG and PCTG), else satin. */
+export function slotFinish(r: Pick<ResolvedSlot, 'type' | 'brand'> & { family?: string }): 'matte' | 'satin' | 'glossy' | 'silk' {
+  const name = `${r.type} ${r.family ?? ''} ${r.brand}`
+  if (/silk/i.test(name)) return 'silk'
+  if (/matte?\b/i.test(name)) return 'matte'
+  return /\bP(ET|CT)G\b/i.test(name) ? 'glossy' : 'satin'
+}
+
 export function resolved(): ResolvedSlot[] {
   return resolveSlots(get())
 }

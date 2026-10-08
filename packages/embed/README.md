@@ -42,7 +42,7 @@ injectStyles() // once, on a page that does not load @slicerx/ui
 <sx-settings-panel mode="advanced"></sx-settings-panel>
 ```
 
-- `<sx-viewport>`: attributes `src` (an STL file), `look`, `color-mode`, `view`, `layer`, `theme`; properties `plate`, `preview` (SXPV bytes), `theme` (a full theme), `sceneTheme` and `toolColors`; `pick` and `error` events.
+- `<sx-viewport>`: attributes `src` (an STL file), `look`, `color-mode`, `view`, `layer`, `theme`, `finish` (`matte`, `satin`, `glossy` or `silk`, one for every slot or one per slot) and `plate-style` (`grid`, `textured-pei`, `smooth-pei`, `cool`, `engineering`); properties `plate`, `preview` (SXPV bytes), `theme` (a full theme), `sceneTheme` and `toolColors`; `pick` and `error` events.
 - `<sx-settings-panel>`: attributes `mode` and `theme`; properties `config` and `theme`; a `change` event with `{ easy, overrides, config }`.
 - `<sx-agreement>`: attribute `app-name`, property `theme`, an `accept` event with `{ version, acceptedAt }`.
 

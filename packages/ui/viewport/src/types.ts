@@ -37,6 +37,12 @@ export type PlateTool = 'select' | 'move' | 'rotate' | 'face' | 'paint' | 'scale
 /** With the `probe` tool a click only reports what is under the cursor (`pick`): nothing is selected or moved. Measure and the shape tools use it. */
 export type FilamentFinish = 'basic' | 'matte' | 'silk' | 'petg' | 'translucent'
 
+/** How printed toolpaths shine: matte, satin (everyday PLA), glossy (PETG and the like) or silk, which streaks along each bead. */
+export type ToolpathFinish = 'matte' | 'satin' | 'glossy' | 'silk'
+
+/** The bed under the print: the outline and grid only, or a build plate surface under them. */
+export type PlateStyle = 'grid' | 'textured-pei' | 'smooth-pei' | 'cool' | 'engineering'
+
 /** Preview data beyond SXPV v1. Per-segment arrays follow the segment order of the buffer. */
 export interface PreviewExtras {
   /** Fan speed, 0 to 100, per segment. */
@@ -537,6 +543,10 @@ export interface Viewport {
   setColorMode(mode: ColorMode): void
   /** Filament colors by tool index, #rrggbb. */
   setToolColors(colors: string[]): void
+  /** The finish each tool's filament prints with, tool 1 first (satin where none is given). The toolpaths shine to match. */
+  setToolFinishes?(finishes: ToolpathFinish[]): void
+  /** The bed under the print: `grid` (the default) or a build plate surface (textured or smooth PEI, cool, engineering). */
+  setPlateStyle?(style: PlateStyle): void
   /** The printer family's toolhead for a printer with one nozzle (`headFor` maps a profile id to it). */
   setHeadModel(model: HeadModel): void
   /** The printer's tool changer: the toolhead, rack or dock Preview draws. Null draws the printer's own single head. */
