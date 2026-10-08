@@ -213,7 +213,11 @@ jobs:
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}
-      - run: pnpm --filter @slicerx/web exec playwright install --with-deps chromium
+      # the project runner's system packages are installed once by its admin; two jobs running apt at once collide
+      - run: |
+          deps="--with-deps"
+          [ "$RUNNER_ENVIRONMENT" = self-hosted ] && deps=""
+          pnpm --filter @slicerx/web exec playwright install $deps chromium
       # One retry per failing test, as in the web job. The next step decides from the results: a test that passed only
       # on the retry, or failed both times, fails the job unless scripts/ci/flaky.txt or quarantine.txt lists it
       # (scripts/ci/README.md, "Flaky tests"). Playwright's own exit code is left to that step.
