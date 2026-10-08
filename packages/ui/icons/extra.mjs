@@ -118,7 +118,7 @@ export const EXTRA_ICONS = {
   vibration: '<rect x="8.5" y="4.5" width="7" height="15" rx="1.5"/><path d="M5.5 8.5v7M18.5 8.5v7M3 10.5v3M21 10.5v3"/>',
   'input-shaper': '<path d="M3.5 3.5v17h17"/><path d="M6.5 12c1-6.5 2.5-6.5 3.5 0s2.5 4.5 3.5 0 2.5-3 3.5 0 2-1.5 3 0"/>',
   'max-flow': '<path d="M6 3.5h12"/><path d="M12 10V6M9.5 8.5L12 6l2.5 2.5"/><path d="M12 12c2 2.4 3 3.8 3 5a3 3 0 0 1-6 0c0-1.2 1-2.6 3-5z"/>',
-  tolerance: '<path d="M12 4v9M7.5 8.5h9M7.5 18.5h9"/>',
+  tolerance: '<path d="M3.5 9h5.5v11H3.5M20.5 9H15v11h5.5"/><path d="M9 5h6M10.5 3.5L9 5l1.5 1.5M13.5 3.5L15 5l-1.5 1.5"/>',
   // Sensors
   sensor: '<circle cx="12" cy="12" r="2"/><path d="M8.5 8.5a5 5 0 0 0 0 7M15.5 8.5a5 5 0 0 1 0 7M5.5 5.5a10 10 0 0 0 0 13M18.5 5.5a10 10 0 0 1 0 13"/>',
   'filament-sensor': '<rect x="6.5" y="8" width="10" height="8" rx="1.5"/><path d="M11.5 3v5M11.5 16v5"/><path d="M11.5 12h.01"/><path d="M19 9.5a3.5 3.5 0 0 1 0 5"/>',
@@ -285,10 +285,10 @@ export const EXTRA_ICONS = {
   cone: '<path d="M5 17.5L12 3.5l7 14"/><ellipse cx="12" cy="17.5" rx="7" ry="2.5"/>',
   'support-painting': '<path d="M3.5 4h9M5.5 4v7.5M10.5 4v7.5"/>' + PENCIL,
   'seam-painting': '<path d="M11.5 8a4 4 0 1 1-4-4"/>' + DOT(9.9, 4.8) + PENCIL,
-  'preset-draft': '<rect x="4" y="4" width="16" height="4" rx="1"/><rect x="4" y="10" width="16" height="4" rx="1"/><rect x="4" y="16" width="16" height="4" rx="1"/>',
-  'preset-standard': '<path d="M4 5h16M4 10h16M4 15h16M4 20h16"/>',
-  'preset-fine': '<path d="M4 4h16M4 7.5h16M4 11h16M4 14.5h16M4 18h16M4 21.5h16" stroke-width="1.25"/>',
-  'preset-strong': '<rect x="4" y="3.5" width="16" height="17" rx="2"/><path d="M8 8h8M8 12h8M8 16h8"/>',
+  'preset-draft': '<rect x="4" y="3.5" width="16" height="17" rx="3"/><path d="M4 9.25h16M4 14.75h16"/>',
+  'preset-standard': '<rect x="4" y="3.5" width="16" height="17" rx="3"/><path d="M4 6.9h16M4 10.3h16M4 13.7h16M4 17.1h16"/>',
+  'preset-fine': '<rect x="4" y="3.5" width="16" height="17" rx="3"/><path d="M4 5.65h16M4 7.75h16M4 9.9h16M4 12h16M4 14.1h16M4 16.25h16M4 18.35h16" stroke-width="1"/>',
+  'preset-strong': '<rect x="4" y="3.5" width="16" height="17" rx="3"/><path d="M4 9.25h16M4 14.75h16M9.25 3.5v17M14.75 3.5v17"/>',
   'color-painting': '<path d="M7.5 3.5c2 2.5 3.5 4.3 3.5 6a3.5 3.5 0 0 1-7 0c0-1.7 1.5-3.5 3.5-6z"/>' + PENCIL,
   // Named features (design/NAMES.md), the marks picked from the brand canvas icon sheets.
   // slicerx is the brand X as offset perimeters: one wall around a solid core.
