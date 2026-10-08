@@ -11,7 +11,7 @@
 .gc-scroll { position: relative; flex: 1; min-height: 120px; overflow-y: auto; overflow-x: hidden; }
 .gc-scroll:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset-inset); }
 .gc-rows { position: sticky; top: 0; overflow: hidden; contain: strict; }
-.gc-row { position: absolute; left: 0; right: 0; height: 18px; display: grid; grid-template-columns: 64px 1fr; gap: 10px; align-items: center; padding-right: 10px; font: var(--fw-regular) calc(11.5px * var(--text-scale))/18px var(--f-mono); color: var(--fg); white-space: pre; cursor: pointer; }
+.gc-row { position: absolute; left: 0; right: 0; height: 18px; display: grid; grid-template-columns: 64px 1fr; gap: 10px; align-items: center; padding-right: 10px; font: var(--fw-regular) calc(11.5px * var(--text-scale))/calc(18px * var(--text-scale)) var(--f-mono); color: var(--fg); white-space: pre; cursor: pointer; }
 .gc-row:hover { background: var(--ink-3); }
 .gc-row.on { background: color-mix(in srgb, var(--cyan) 18%, transparent); box-shadow: inset 2px 0 0 var(--cyan); }
 .gc-no { text-align: right; color: var(--dim); font-variant-numeric: tabular-nums; }
