@@ -75,7 +75,9 @@ export function printerPill(r: FleetRow): { state: PillState; label: string } {
 
 function PrinterBlock() {
   const { rows, printer } = usePrinter()
-  const [choosing, setChoosing] = useState(false)
+  // In the store, so a note's "Change printer" can open it.
+  const choosing = useApp((s) => s.printerChooserOpen)
+  const setChoosing = (open: boolean) => set({ printerChooserOpen: open })
   const layout = useLayout()
   const showPrinterSettings = effectiveMode(useApp((s) => s.settingsMode), layout) !== 'simple'
   const printerSettingsOpen = useApp((s) => s.printerSettingsOpen)

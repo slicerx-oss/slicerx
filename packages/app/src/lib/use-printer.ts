@@ -1,16 +1,24 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
+import { useMemo } from 'react'
 import type { FleetRow } from './queries'
 import { useFleet } from './queries'
 import { useApp } from '../state/store'
-import { isExportOnly } from './hand-printers'
+import { EXPORT_PLUGIN, isExportOnly } from './hand-printers'
+import type { ProjectPrinter } from '../state/store'
 
-/** The printer the sidebar shows: the selected one, else the first idle one, else the first. */
+/** The printer the sidebar shows: the selected one, else the first idle one, else the first. An open project's own printer is listed first. */
 export function usePrinter(): { rows: FleetRow[]; printer: FleetRow | undefined } {
   const fleet = useFleet()
   const printerId = useApp((s) => s.printerId)
-  const rows = fleet.data ?? []
+  const project = useApp((s) => s.projectPrinter)
+  const rows = useMemo(() => (project ? [projectRow(project), ...(fleet.data ?? [])] : (fleet.data ?? [])), [project, fleet.data])
   return { rows, printer: shownPrinter(rows, printerId) }
+}
+
+/** An open project's printer as a printer row: it takes no jobs, so Print exports its G-code. */
+export function projectRow(p: ProjectPrinter): FleetRow {
+  return { id: p.id, name: `${p.model} ${p.nozzle} from ${p.source}`, vendor: p.vendor, model: p.model, plugin: EXPORT_PLUGIN, nozzleCount: 1, status: { printerId: p.id, state: 'idle', nozzles: [], slots: [], cameraAvailable: false, updatedAt: new Date(0).toISOString() } }
 }
 
 export function shownPrinter(rows: FleetRow[], printerId: string | null): FleetRow | undefined {
