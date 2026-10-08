@@ -37,6 +37,8 @@ export interface RailProps {
   children?: ReactNode
   /** Rendered only when expanded, pinned at the bottom. */
   footer?: ReactNode
+  /** Rendered in the header after the title while expanded, such as a mode chip. */
+  headExtra?: ReactNode
   className?: string
   /** Inline style, such as a --w-side the parent sets while the person resizes the rail. */
   style?: CSSProperties
@@ -52,7 +54,7 @@ export interface RailProps {
  * decides the window is wide enough. The inner edge glows as the pointer approaches. The parent
  * owns and remembers the collapsed state per workspace.
  */
-export function Rail({ side, label, collapsed, onCollapsedChange, items = [], onSelect, peekOnHover = true, peekDelay = 320, dropActive, children, footer, className, style, edge, railRef }: RailProps) {
+export function Rail({ side, label, collapsed, onCollapsedChange, items = [], onSelect, peekOnHover = true, peekDelay = 320, dropActive, children, footer, headExtra, className, style, edge, railRef }: RailProps) {
   const own = useRef<HTMLElement>(null)
   const ref = railRef ?? own
   const [peek, setPeek] = useState(false)
@@ -94,6 +96,7 @@ export function Rail({ side, label, collapsed, onCollapsedChange, items = [], on
       {edge}
       <div className="sx-rail-head">
         {side === 'right' ? null : <span className="sx-rail-title">{label}</span>}
+        {side === 'right' || !showExpanded || !headExtra ? null : <span className="sx-rail-extra">{headExtra}</span>}
         <button
           type="button"
           className="sx-rail-toggle"
@@ -107,6 +110,7 @@ export function Rail({ side, label, collapsed, onCollapsedChange, items = [], on
           <Icon name="chevron-down" />
         </button>
         {side === 'right' ? <span className="sx-rail-title">{label}</span> : null}
+        {side === 'right' && showExpanded && headExtra ? <span className="sx-rail-extra">{headExtra}</span> : null}
       </div>
       {items.length ? (
         <nav className="sx-rail-items" aria-label={label}>
