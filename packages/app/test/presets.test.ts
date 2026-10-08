@@ -52,6 +52,17 @@ describe('user presets', () => {
     expect(get().activePresets.filament).toBe(p.id)
   })
 
+  it('a reload that finds the same presets keeps the list, so a fresh slice stays fresh', async () => {
+    // The command bar loads the presets each time it opens while there are none, and the list is a slice input.
+    const none = get().userPresets
+    await loadPresets()
+    expect(get().userPresets).toBe(none)
+    await savePreset('filament', 'PETG', { values: {} })
+    const one = get().userPresets
+    await loadPresets()
+    expect(get().userPresets).toBe(one)
+  })
+
   it('updates a preset with the current changes', async () => {
     set({ overrides: { nozzle_temperature: [200] } })
     const p = await savePreset('filament', 'PLA')
