@@ -94,3 +94,17 @@ describe('the icon sources', () => {
     expect(out).toContain('no 24px drawing: no-such-icon')
   })
 })
+
+describe('the Slice icons', () => {
+  it('tells the four goals apart, and Draft apart from layers', () => {
+    const goals = ['preset-draft', 'preset-standard', 'preset-fine', 'preset-strong'] as const
+    expect(new Set(goals.map((g) => ICON_PATHS[g])).size).toBe(4)
+    expect(ICON_PATHS['preset-draft']).not.toBe(ICON_PATHS.layers)
+    for (const g of goals) expect(SMALL_ICON_PATHS[g], g).toBeTruthy()
+  })
+
+  it('has a 16px version of every icon the Slice sidebar draws at 16px', () => {
+    const sidebar = ['printer', 'spool', 'cube', 'sliders', 'settings', 'send-to-printer', 'slice', 'lock', 'unlock', 'show', 'hide', 'more', 'search', 'alert', 'chevron-down', 'chevron-right', 'plus', 'check', 'close', 'negative-part', 'support-blocker', 'support-enforcer', 'select-by-filament', 'move-to-plate', 'skip-object', 'color-by'] as const
+    expect(sidebar.filter((n) => !SMALL_ICON_PATHS[n])).toEqual([])
+  })
+})
