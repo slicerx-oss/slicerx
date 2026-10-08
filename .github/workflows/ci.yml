@@ -41,10 +41,12 @@ jobs:
           [ -f package.json ] && echo "node=true" >> "$GITHUB_OUTPUT" || echo "node=false" >> "$GITHUB_OUTPUT"
           [ -f Cargo.toml ] && echo "rust=true" >> "$GITHUB_OUTPUT" || echo "rust=false" >> "$GITHUB_OUTPUT"
           # The database and browser suites are the slow ones, so a pull request skips them and the merge queue
-          # runs them on the queued change; every push to main runs them too. A pull request labeled full-ci
-          # runs them when they touch what changed (or this file).
+          # runs them on the queued change. A push to main skips them too: every commit on main comes from the
+          # queue, which already ran them on that exact tree. A pull request labeled full-ci runs them when they
+          # touch what changed (or this file).
           changed=$(git diff --name-only HEAD^1 HEAD)
           touched() {
+            [ "$GITHUB_EVENT_NAME" = push ] && return 1
             [ "$GITHUB_EVENT_NAME" != pull_request ] && return 0
             [ "$FULL_CI" = true ] || return 1
             printf '%s\n' "$changed" | grep -qE "$1"
