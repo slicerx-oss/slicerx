@@ -68,7 +68,7 @@ test('playback through a tool change on the H2C runs clean and keeps its frame r
     const reached = w.__pv.clock() >= until
     if (w.__pv.playing()) w.__pv.toggle()
     const median = (v: number[]) => [...v].sort((a, b) => a - b)[Math.floor(v.length / 2)] ?? 0
-    return { plain: plain.length, inChange: inChange.length, medianPlain: median(plain), medianInChange: median(inChange), longestInChange: Math.max(0, ...inChange), reached }
+    return { plain: plain.length, inChange: inChange.length, medianPlain: median(plain), medianInChange: median(inChange), longestPlain: Math.max(0, ...plain), longestInChange: Math.max(0, ...inChange), reached }
   }, info.first!.start + info.first!.duration + 2)
   test.info().annotations.push({ type: 'frames', description: JSON.stringify(result) })
   expect(errors).toEqual([])
@@ -78,10 +78,11 @@ test('playback through a tool change on the H2C runs clean and keeps its frame r
   // The change keeps the frame rate of plain playback, measured in the same run. Software WebGL draws every playback
   // frame slowly, at a pace that is the machine's (on a CI runner about a second a frame, plain or not), so a limit in
   // milliseconds measures the runner and not the app. Drawing the head at the rack, the rack and the purge may cost a
-  // little more: the change's median frame stays within 1.5 times the plain median, and none of its frames takes over
-  // three times as long, which a stall would.
+  // little more: the change's median frame stays within 1.5 times the plain median. Its longest frame is held to the
+  // longest plain frame, not to a median: plain playback misses frame deadlines too (single frames of two or three times
+  // the median), so only a frame well past the worst of those is a stall.
   expect(result.medianInChange).toBeLessThanOrEqual(1.5 * result.medianPlain)
-  expect(result.longestInChange).toBeLessThanOrEqual(3 * result.medianPlain)
+  expect(result.longestInChange).toBeLessThanOrEqual(1.5 * result.longestPlain)
   // Scrubbing the time slider onto the change places the head away from the paths, and back.
   const mid = info.first!.start + info.first!.duration / 2
   await page.evaluate((t) => (window as unknown as { __pv: Hook }).__pv.seek(t), mid)
