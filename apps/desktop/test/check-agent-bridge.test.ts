@@ -63,6 +63,25 @@ describe('agent bridge release check', () => {
     expect(cargoFeatures(readFileSync(manifest, 'utf8'))['agent-bridge']).toBeDefined()
   })
 
+  it('runs before every signature: windows-sign.ps1 for each file it signs, sign-mac with the same names as a fallback', () => {
+    const repo = resolve(import.meta.dirname, '../../..')
+    const ps = readFileSync(join(repo, 'apps/desktop/release/windows-sign.ps1'), 'utf8')
+    const signOne = ps.slice(ps.indexOf('function Sign-One'), ps.indexOf('function Hash-Into'))
+    expect(signOne.indexOf('Check-NoBridge $path')).toBeGreaterThan(0)
+    expect(signOne.indexOf('Check-NoBridge $path')).toBeLessThan(signOne.indexOf('sign /v'))
+    expect(ps).toMatch(/check-agent-bridge\.mjs'\s*\n\s*& node \$check --binary \$path/)
+    const mac = readFileSync(join(repo, 'scripts/sign-mac'), 'utf8')
+    const listed = /^bridge_markers=\(([^)]*)\)$/m.exec(mac)?.[1]?.split(/\s+/)
+    expect(listed).toEqual(SHELL_MARKERS)
+    for (const kind of ['app', 'bin']) {
+      const start = mac.indexOf(`\n  ${kind})`)
+      const arm = mac.slice(start, mac.indexOf(';;', start))
+      expect(start, kind).toBeGreaterThan(0)
+      expect(arm.indexOf('no_bridge'), kind).toBeGreaterThan(0)
+      expect(arm.indexOf('no_bridge'), kind).toBeLessThan(arm.indexOf('sign_file'))
+    }
+  })
+
   it('refuses an environment that makes a bridge build', () => {
     expect(check({ env: { SLICERX_AGENT_BRIDGE: '1' } }).problems).toHaveLength(1)
     expect(check({ env: {} }).problems).toEqual([])
