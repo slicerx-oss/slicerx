@@ -4,7 +4,7 @@
 import { expect, test } from '@playwright/test'
 import { plateReady } from './fixtures'
 
-type Sx = { getState(): { slice: { status: string; stale?: boolean }; autoSlice: boolean; easy: { detail: number } }; setState(p: unknown): void }
+type Sx = { getState(): { slice: { status: string; stale?: boolean; result?: { id: string } }; autoSlice: boolean; easy: { detail: number } }; setState(p: unknown): void }
 
 test('slices in the background after an edit, and the Slice button returns when Auto slice is off', async ({ page, isMobile }) => {
   test.skip(isMobile, 'Runs at desktop width')
@@ -17,17 +17,18 @@ test('slices in the background after an edit, and the Slice button returns when 
   })
   await page.goto('./')
   await plateReady(page)
-  const state = () => page.evaluate(() => { const s = (window as unknown as { __sx: Sx }).__sx.getState(); return { status: s.slice.status, stale: s.slice.stale ?? false, auto: s.autoSlice } })
+  const state = () => page.evaluate(() => { const s = (window as unknown as { __sx: Sx }).__sx.getState(); return { status: s.slice.status, stale: s.slice.stale ?? false, id: s.slice.result?.id ?? null, auto: s.autoSlice } })
   expect((await state()).auto).toBe(true)
   await expect(page.getByRole('main').getByRole('button', { name: /^Slice/ })).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'Print', exact: true })).toBeVisible()
   // The first slice starts on its own.
   await expect.poll(async () => (await state()).status, { timeout: 120_000 }).toBe('done')
   await expect.poll(async () => (await state()).stale, { timeout: 10_000 }).toBe(false)
-  // An edit makes the result stale at once, then a new slice makes it current again.
+  // An edit makes the result stale at once, then a new slice (a new id) makes it current again.
+  const first = (await state()).id
   await page.evaluate(() => { const st = (window as unknown as { __sx: Sx }).__sx; st.setState({ overrides: { sparse_infill_density: '25%' } }) })
   expect((await state()).status === 'done' ? (await state()).stale : true).toBe(true)
-  await expect.poll(async () => { const s = await state(); return s.status === 'done' && !s.stale }, { timeout: 120_000 }).toBe(true)
+  await expect.poll(async () => { const s = await state(); return s.status === 'done' && !s.stale && s.id !== first }, { timeout: 120_000 }).toBe(true)
   // Off: nothing slices on its own and the Slice button shows.
   await page.evaluate(() => (window as unknown as { __sx: Sx }).__sx.setState({ autoSlice: false }))
   await expect(page.getByRole('main').getByRole('button', { name: /^Slice/ })).toBeVisible()
