@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// The fit check on the Vault's starters, made by the same generator: parts of one design that touch never warn, the
-// cable clip's ring that floats off its foot does, a separate object that touches warns and its marker goes the
-// moment it is dragged away. Opening a design starts a new project, so designs never pile up. Moving an object
-// never rebuilds the scene.
+// The fit check on the Vault's starters, made by the same generator: every one opens alone with no notes, a separate
+// object that touches warns and its marker goes the moment it is dragged away. A design with a real gap is a fixture
+// of its own (fixtures/loose-clip.sx3mf: an earlier cable clip, our own geometry, whose ring floats 0.76 mm off its
+// foot), so no starter has to keep a fault. Opening a design starts a new project, so designs never pile up. Moving
+// an object never rebuilds the scene.
 import { execFileSync } from 'node:child_process'
 import { mkdtempSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -18,7 +19,8 @@ interface Vp {
   camera: { position: { clone(): { set(x: number, y: number, z: number): { applyMatrix4(m: unknown): { project(c: unknown): { x: number; y: number } } } } } }
   stage: { bedRoot: { matrixWorld: unknown } }
   canvas: HTMLCanvasElement
-  gaps: { group: { children: { visible: boolean }[] } }
+  gaps: { group: { children: { visible: boolean; children: { matrixWorld: { elements: number[] } }[] }[] } }
+  objects: Map<string, { group: { matrixWorld: { elements: number[] } } }>
   setPlate(...a: unknown[]): void
 }
 
@@ -50,6 +52,15 @@ async function openFile(page: Page, file: string): Promise<void> {
     const chooser = page.waitForEvent('filechooser', { timeout: 5_000 })
     await page.keyboard.press('ControlOrMeta+o')
     await (await chooser).setFiles(join(starters, file))
+  }).toPass({ timeout: 60_000 })
+}
+
+/** Open (Mod+O) with a file from e2e/fixtures. */
+async function openFixture(page: Page, file: string): Promise<void> {
+  await expect(async () => {
+    const chooser = page.waitForEvent('filechooser', { timeout: 5_000 })
+    await page.keyboard.press('ControlOrMeta+o')
+    await (await chooser).setFiles(join(import.meta.dirname, 'fixtures', file))
   }).toPass({ timeout: 60_000 })
 }
 
@@ -136,26 +147,86 @@ test('parts of one object that touch never warn; a separate object that touches 
   await expect.poll(() => lines(page)).toEqual([])
 })
 
-test('opening starters one after another: one design on the plate, its own notes only, never notes for parts that touch', async ({ page, isMobile }) => {
+test('every starter opens alone, with no notes and no markers', async ({ page, isMobile }) => {
   test.skip(isMobile, 'Runs at desktop width')
   test.slow()
   await open(page)
   const plate = () => page.evaluate(() => (window as unknown as { __sx: Sx }).__sx.getState().plate.map((p) => p.name))
   const titles = new Map((JSON.parse(readFileSync(join(starters, 'manifest.json'), 'utf8')) as { listings: { slug: string; title: string }[] }).listings.map((l) => [l.slug, l.title]))
-  for (const slug of STARTERS.slice(0, -1)) {
+  for (const slug of STARTERS) {
     await openFile(page, `${slug}.sx3mf`)
     await expect.poll(plate, { timeout: 60_000 }).toEqual([titles.get(slug)])
-    // The check runs a moment after the plate changes; parts that touch never get a note.
+    // The check runs a moment after the plate changes.
     await page.waitForTimeout(2500)
     await expect(page.locator('.obj-note'), slug).toHaveCount(0)
     expect(await lines(page), slug).toEqual([])
   }
-  // The cable clip's ring floats 0.76 mm off its foot in the seeded file: it prints as two loose pieces.
-  await openFile(page, 'cable-clip.sx3mf')
-  await expect.poll(plate, { timeout: 60_000 }).toEqual(['Cable clip'])
-  await expect(page.locator('.obj-note')).toHaveCount(1, { timeout: 30_000 })
-  await expect(page.locator('.obj-note')).toContainText(/Clip and Foot are 0\.\d\d mm apart and do not touch, so they print as separate pieces/)
+})
+
+test('a design whose parts do not touch gets one note, Show which names them, and its marker follows a drag', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'Needs a pointer')
+  test.slow()
+  await open(page)
+  await openFixture(page, 'loose-clip.sx3mf')
+  await expect(page.locator('.obj-name')).toHaveText(['Cable clip'], { timeout: 60_000 })
+  const note = page.locator('.obj-note')
+  await expect(note).toHaveCount(1, { timeout: 30_000 })
+  await expect(note).toContainText(/Clip and Foot are 0\.\d\d mm apart and do not touch, so they print as separate pieces/)
+  await note.getByRole('button', { name: 'Show which' }).click()
+  await expect(note.locator('.obj-note-which li')).toHaveText([/^Clip and Foot, 0\.\d\d mm$/])
   await expect.poll(() => lines(page)).toEqual([true])
+
+  // Drag the clip: the marker moves with it, from the first move on.
+  const where = () =>
+    page.evaluate(() => {
+      const vp = (window as unknown as { __vp: Vp }).__vp
+      // By its id: the view can also hold the prime tower once the plate is sliced.
+      const id = (window as unknown as { __sx: Sx }).__sx.getState().plate[0]!.id
+      const o = vp.objects.get(id)!.group.matrixWorld.elements
+      const m = vp.gaps.group.children[0]!.children[1]!.matrixWorld.elements
+      return { object: [o[12]!, o[13]!, o[14]!], marker: [m[12]!, m[13]!, m[14]!] }
+    })
+  const before = await where()
+  // Press on the foot's top face: the middle of the whole clip is the gap between its pieces.
+  const foot = await page.evaluate(() => {
+    const e = (window as unknown as { __sx: Sx }).__sx.getState().plate[0]!
+    const part = e.parts.find((p) => (p as { name?: string }).name === 'Foot')!
+    const m = e.transform
+    const min = [Infinity, Infinity, Infinity]
+    const max = [-Infinity, -Infinity, -Infinity]
+    for (let i = 0; i + 2 < part.positions.length; i += 3) {
+      const [x, y, z] = [part.positions[i]!, part.positions[i + 1]!, part.positions[i + 2]!]
+      const w = [0, 1, 2].map((k) => m[k]! * x + m[k + 4]! * y + m[k + 8]! * z + m[k + 12]!)
+      for (let k = 0; k < 3; k++) {
+        min[k] = Math.min(min[k]!, w[k]!)
+        max[k] = Math.max(max[k]!, w[k]!)
+      }
+    }
+    return { x: (min[0]! + max[0]!) / 2, y: (min[1]! + max[1]!) / 2, z: max[2]! }
+  })
+  // The camera frames a newly opened design with a short move; aim once it has stopped.
+  let at = await screen(page, foot.x, foot.y, foot.z)
+  await expect
+    .poll(async () => {
+      const again = await screen(page, foot.x, foot.y, foot.z)
+      const still = Math.hypot(again.x - at.x, again.y - at.y) < 0.5
+      at = again
+      return still
+    })
+    .toBe(true)
+  await page.mouse.move(at.x, at.y)
+  await page.mouse.down()
+  for (let i = 1; i <= 8; i++) await page.mouse.move(at.x + i * 6, at.y + i * 3)
+  await expect.poll(async () => (await where()).object[0] !== before.object[0]).toBe(true)
+  await expect
+    .poll(async () => {
+      const now = await where()
+      return [0, 1, 2].every((k) => Math.abs(now.marker[k]! - before.marker[k]! - (now.object[k]! - before.object[k]!)) < 0.01)
+    })
+    .toBe(true)
+  expect(await lines(page)).toEqual([true])
+  await page.mouse.up()
+  await expect(note).toHaveCount(1)
 })
 
 test('opening a design asks once about unsaved work, and Cancel keeps the plate', async ({ page, isMobile }) => {
