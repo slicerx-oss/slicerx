@@ -106,7 +106,7 @@ export const DESKTOP_WINDOW = {
   dragDropEnabled: false,
   titleBarStyle: 'Overlay',
   hiddenTitle: true,
-  trafficLightPosition: { x: 18, y: 20 },
+  trafficLightPosition: { x: 18, y: 27 },
 } as const
 
 /** The file types the desktop app opens. The overlay replaces tauri.conf.json's list, so the whole list lives here. */
