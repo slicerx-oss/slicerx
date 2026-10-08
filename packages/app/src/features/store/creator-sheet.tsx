@@ -14,6 +14,7 @@ import { LINK_KIND_INFO, linkSubtitle, linkTitle } from './links'
 import { creatorPageQuery, LIBRARY_KEY, useSession, useStore } from './queries'
 import { openExternal } from './routes'
 import { closeSheet, openEditor, openListing } from './sheets'
+import { BannerImage } from './banner-image'
 
 /** Counts as the Vault shows them: 4,812 up to ten thousand, then 21.6k and 1.2m. */
 export function count(n: number): string {
@@ -52,14 +53,14 @@ export function CreatorAvatar({ name, url, size = 'md', ring }: { name: string; 
   )
 }
 
-/** The banner image, or a quiet layered pattern seeded by the handle. */
+/** The banner image (a GIF plays, or holds its first frame with motion reduced), or a quiet layered pattern seeded by the handle. */
 export function CreatorBanner({ url, seed }: { url?: string | undefined; seed: string }) {
   const [broken, setBroken] = useState(false)
   useEffect(() => setBroken(false), [url])
   return (
     <div className="cs-cover" aria-hidden="true">
       {url && !broken ? (
-        <img src={url} alt="" onError={() => setBroken(true)} />
+        <BannerImage url={url} onError={() => setBroken(true)} />
       ) : (
         <div className="cs-cover-art">
           <LayerArt seed={seed} layers={24} muted />

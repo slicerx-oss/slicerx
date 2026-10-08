@@ -31,8 +31,8 @@ export const manifestSchema = z.object({
     logoUrl: z.url({ protocol: /^https$/ }).max(500).optional(),
     /** A PNG, JPEG or WebP next to the manifest, uploaded to creator-media as the page's logo. */
     logo: z.string().regex(/^[a-z0-9][a-z0-9._-]{0,80}\.(png|jpe?g|webp)$/).optional(),
-    /** The same for the banner. */
-    banner: z.string().regex(/^[a-z0-9][a-z0-9._-]{0,80}\.(png|jpe?g|webp)$/).optional(),
+    /** The same for the banner, which may also be an animated GIF. */
+    banner: z.string().regex(/^[a-z0-9][a-z0-9._-]{0,80}\.(png|jpe?g|webp|gif)$/).optional(),
     trusted: z.boolean().default(false),
     links: z.array(z.object({
       kind: z.enum(LINK_KINDS),

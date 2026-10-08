@@ -58,7 +58,10 @@ interface Cx {
 const HTTPS = /^https:\/\/[^\s<>"']{4,500}$/i
 /** Offline only: uploaded creator images stay in memory as data URLs. */
 const IMAGE = /^(https:\/\/[^\s<>"']{4,500}|data:image\/(png|jpeg|webp);base64,[a-z0-9+/=]+)$/i
+/** A banner may also be an animated GIF, kept as is. */
+const BANNER = /^(https:\/\/[^\s<>"']{4,500}|data:image\/(png|jpeg|webp|gif);base64,[a-z0-9+/=]+)$/i
 const IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/webp']
+const BANNER_TYPES = [...IMAGE_TYPES, 'image/gif']
 const MAX_IMAGE_BYTES = 5_242_880
 const SLUG = /^[a-z0-9][a-z0-9-]{1,80}$/
 const MAX_PENDING = 20
@@ -747,7 +750,7 @@ export function offlineStore(ctx: OfflineContext): Omit<StoreClient, keyof AuthC
         if (input.bio != null && input.bio.length > CREATOR_BIO_MAX) bad('invalid', `Bios can be at most ${CREATOR_BIO_MAX} characters`)
         if (input.location != null && input.location.length > 80) bad('invalid', 'Locations can be at most 80 characters')
         if (input.logoUrl != null && !IMAGE.test(input.logoUrl)) bad('invalid', 'The logo must be an https address')
-        if (input.bannerUrl != null && !IMAGE.test(input.bannerUrl)) bad('invalid', 'The banner must be an https address')
+        if (input.bannerUrl != null && !BANNER.test(input.bannerUrl)) bad('invalid', 'The banner must be an https address')
         const existing = ownCreator(c)
         if (c.d.creators.some((x) => x.handle === input.handle && x.id !== existing?.id)) bad('conflict', 'That handle is taken')
         if (existing) {
@@ -795,7 +798,7 @@ export function offlineStore(ctx: OfflineContext): Omit<StoreClient, keyof AuthC
     uploadCreatorImage: (input) =>
       run((c) => {
         requireCreator(c)
-        if (!IMAGE_TYPES.includes(input.contentType)) bad('invalid', 'Use a PNG, JPEG or WebP image')
+        if (input.kind === 'banner' ? !BANNER_TYPES.includes(input.contentType) : !IMAGE_TYPES.includes(input.contentType)) bad('invalid', input.kind === 'banner' ? 'Use a PNG, JPEG, WebP or GIF image' : 'Use a PNG, JPEG or WebP image')
         if (input.bytes.byteLength > MAX_IMAGE_BYTES) bad('invalid', 'Images can be at most 5 MB')
         let bin = ''
         for (let i = 0; i < input.bytes.length; i += 0x8000) bin += String.fromCharCode(...input.bytes.subarray(i, i + 0x8000))

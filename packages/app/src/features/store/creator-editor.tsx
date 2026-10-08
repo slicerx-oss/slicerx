@@ -12,6 +12,7 @@ import { Button, Icon } from '@slicerx/ui'
 import { LayerArt, toast, useEdition, useHost } from '@slicerx/app'
 import { DrawingArt } from './drawing-art'
 import { coverFor } from './art'
+import { BannerImage, isGifBytes, isGifUrl } from './banner-image'
 import { CreatorAvatar, CreatorSheetView, CreatorTags } from './creator-sheet'
 import { LINK_KIND_INFO, LINK_KINDS } from './links'
 import { creatorPageQuery, LIBRARY_KEY, myCreatorQuery, useSession, useStore } from './queries'
@@ -23,7 +24,10 @@ export const NAME_MAX = 40
 export const LOCATION_MAX = 40
 /** Links a page shows. The database allows 12; the sheet stays readable with 8. */
 export const LINKS_MAX = 8
-const IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/webp']
+const STILL_TYPES = ['image/png', 'image/jpeg', 'image/webp']
+/** A banner may also be an animated GIF, uploaded as is. */
+const BANNER_TYPES = [...STILL_TYPES, 'image/gif']
+export const imageTypes = (kind: CreatorImageKind): string[] => (kind === 'banner' ? BANNER_TYPES : STILL_TYPES)
 const IMAGE_MAX_BYTES = 5 * 1024 * 1024
 /** Largest stored size: banners 1800 by 600, logos 512 square. Bigger pictures are scaled down before upload. */
 const IMAGE_BOX: Record<CreatorImageKind, [number, number]> = { banner: [1800, 600], logo: [512, 512], cover: [1600, 1200] }
@@ -151,10 +155,21 @@ export function previewPage(d: EditorDraft, page: CreatorPage | null, own: Listi
   }
 }
 
-/** Scales a picked image into its box as WebP. Falls back to the original bytes where the browser cannot. */
+/**
+ * Scales a picked image into its box as WebP. Falls back to the original bytes where the browser cannot. A GIF banner
+ * is kept byte for byte: drawing it to a canvas would keep one frame.
+ */
 export async function prepareImage(file: File, kind: CreatorImageKind): Promise<PendingImage | string> {
-  if (!IMAGE_TYPES.includes(file.type)) return 'Use a PNG, JPEG or WebP image'
+  if (!imageTypes(kind).includes(file.type)) {
+    if (kind === 'banner') return 'Use a PNG, JPEG, WebP or GIF image'
+    return file.type === 'image/gif' ? `A ${kind} can't be animated. Use a PNG, JPEG or WebP image` : 'Use a PNG, JPEG or WebP image'
+  }
   const original = new Uint8Array(await file.arrayBuffer())
+  if (file.type === 'image/gif') {
+    if (!isGifBytes(original)) return 'This file is not a GIF image'
+    if (original.byteLength > IMAGE_MAX_BYTES) return 'GIF banners can be at most 5 MB. Fewer frames or colors make it smaller'
+    return { bytes: original, contentType: 'image/gif', preview: URL.createObjectURL(new Blob([original.slice().buffer], { type: 'image/gif' })) }
+  }
   let out: { bytes: Uint8Array; type: string } = { bytes: original, type: file.type }
   try {
     const bmp = await createImageBitmap(file)
@@ -378,7 +393,7 @@ function EditorForm({ why, session, page, own }: { why: 'edit' | 'upload'; sessi
   const imageButtons = (kind: CreatorImageKind, label: string) => (
     <div className="ce-ops">
       <label className="ce-file">
-        <input type="file" accept={IMAGE_TYPES.join(',')} className="sr-only" aria-label={`${has(kind) ? 'Change' : 'Upload'} ${label}`} onChange={(e) => { void pick(kind, e.currentTarget.files?.[0]); e.currentTarget.value = '' }} />
+        <input type="file" accept={imageTypes(kind).join(',')} className="sr-only" aria-label={`${has(kind) ? 'Change' : 'Upload'} ${label}`} onChange={(e) => { void pick(kind, e.currentTarget.files?.[0]); e.currentTarget.value = '' }} />
         <span aria-hidden="true">{has(kind) ? `Change ${label}` : `Upload ${label}`}</span>
       </label>
       {has(kind) ? (
@@ -419,10 +434,10 @@ function EditorForm({ why, session, page, own }: { why: 'edit' | 'upload'; sessi
             <fieldset className="ce-set">
               <legend>Banner and logo</legend>
               <div className="ce-banner">
-                {preview.creator.bannerUrl ? <img src={preview.creator.bannerUrl} alt="Current banner" /> : <span className="ce-banner-art" aria-hidden="true"><LayerArt seed={draft.handle || 'creator'} layers={24} muted /></span>}
+                {preview.creator.bannerUrl ? <BannerImage url={preview.creator.bannerUrl} animated={draft.banner.kind === 'new' ? draft.banner.image.contentType === 'image/gif' : isGifUrl(preview.creator.bannerUrl)} alt="Current banner" /> : <span className="ce-banner-art" aria-hidden="true"><LayerArt seed={draft.handle || 'creator'} layers={24} muted /></span>}
                 {imageButtons('banner', 'banner')}
               </div>
-              <span className="ce-hint">JPG, PNG or WebP up to 5 MB, at least 1500 by 500. Shown behind your logo at the top of your sheet.</span>
+              <span className="ce-hint">JPG, PNG, WebP or animated GIF up to 5 MB, at least 1500 by 500. Shown behind your logo at the top of your sheet. A GIF holds its first frame for people who reduce motion.</span>
               <div className="ce-logo">
                 <CreatorAvatar name={draft.displayName || 'You'} url={preview.creator.logoUrl} size="xl" ring />
                 <div className="ce-logo-b">

@@ -114,7 +114,7 @@ update public.creators set handle = (select handle from ferro_handle) where owne
 reset role;
 select is((select public from storage.buckets where id = 'creator-media'), true, 'creator-media is public to read');
 select is((select file_size_limit from storage.buckets where id = 'creator-media'), 5242880::bigint, 'with a 5 MB limit');
-select is((select allowed_mime_types from storage.buckets where id = 'creator-media'), array['image/png', 'image/jpeg', 'image/webp'], 'and only PNG, JPEG and WebP');
+select is((select allowed_mime_types from storage.buckets where id = 'creator-media'), array['image/png', 'image/jpeg', 'image/webp', 'image/gif'], 'and only PNG, JPEG, WebP and GIF (GIF for banners, creator_gif_banners.test.sql)');
 select pg_temp.as_user('ferro');
 select is(public.can_write_creator_media((select ferro from ids)::text || '/banner-1a2b.webp'), true, 'a creator writes under their own id');
 select is(public.can_write_creator_media((select ash from ids)::text || '/banner.webp'), false, 'not under someone else''s');

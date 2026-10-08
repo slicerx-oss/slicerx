@@ -372,7 +372,7 @@ export type CreatorImageKind = 'banner' | 'logo' | 'cover'
 export interface CreatorImageInput {
   kind: CreatorImageKind
   bytes: Uint8Array
-  /** image/png, image/jpeg or image/webp. */
+  /** image/png, image/jpeg or image/webp; a banner may also be image/gif, stored as is so it stays animated. */
   contentType: string
 }
 
@@ -667,7 +667,7 @@ export interface StoreClient extends AuthClient {
   saveCreator(input: SaveCreatorInput): Promise<StoreResult<Creator>>
   /** Replaces every link. At most 12, https only, service links on the service's own domain. */
   setCreatorLinks(links: CreatorLinkInput[]): Promise<StoreResult<CreatorLink[]>>
-  /** Stores a banner, logo or listing cover for the signed-in creator and returns its public URL, for saveCreator or a listing's coverUrl. PNG, JPEG or WebP up to 5 MB. */
+  /** Stores a banner, logo or listing cover for the signed-in creator and returns its public URL, for saveCreator or a listing's coverUrl. PNG, JPEG or WebP up to 5 MB; a banner may also be a GIF, kept as is. */
   uploadCreatorImage(input: CreatorImageInput): Promise<StoreResult<string>>
   /** Removes an image uploadCreatorImage stored that the page does not use, such as one a failed save left behind. An image the page shows is kept. */
   removeCreatorImage(url: string): Promise<StoreResult<void>>

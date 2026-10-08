@@ -95,7 +95,7 @@ async function must<T = { id: string }>(what: string, q: PromiseLike<Res>): Prom
   return r.data as T
 }
 
-const IMAGE_TYPES: Record<string, string> = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp' }
+const IMAGE_TYPES: Record<string, string> = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', gif: 'image/gif' }
 /** Uploads an image from the models folder to the owner's creator-media folder and returns its public URL. */
 async function uploadImage(ownerId: string, file: string): Promise<string> {
   const path = resolveModelPath(root, file)

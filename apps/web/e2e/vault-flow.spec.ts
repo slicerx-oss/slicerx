@@ -2,7 +2,8 @@
 // Copyright (C) 2026 The SlicerX contributors
 // The Vault end to end against a real stack: sign up by magic link, make a creator page, upload a calibration plate
 // in eight colors (two parts through the AMS) and name one of its colors in the app, let the scan worker and ClamAV pass it, approve it as the owner, find it in the Vault, download it as
-// another member (sealed .sx3mf only), open it (export blocked, slicing works), then like, save and follow.
+// another member (sealed .sx3mf only), open it (export blocked, slicing works), then like, save and follow. A second
+// creator sets an animated GIF banner, which is stored as is, plays, and holds its first frame with reduced motion.
 //
 // It needs the stack from e2e/stack/vault-stack.sh and runs with playwright.stack.config.ts:
 //   eval "$(e2e/stack/vault-stack.sh start)"   # on the build machine; prints SX_E2E_* values
@@ -54,6 +55,50 @@ function png(w: number, h: number, rgb: [number, number, number]): Buffer {
   ihdr[9] = 2
   const row = Buffer.concat([Buffer.from([0]), Buffer.from(Array.from({ length: w }, () => rgb).flat())])
   return Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', ihdr), chunk('IDAT', deflateSync(Buffer.concat(Array.from({ length: h }, () => row)))), chunk('IEND', Buffer.alloc(0))])
+}
+
+/**
+ * A two-frame GIF in one color per frame: a 20 ms first frame, then a 10 s second one. The first frame is the one a
+ * still must show. Written uncompressed (a clear code every two pixels keeps the codes 3 bits wide).
+ */
+function gif(w: number, h: number, frames: [number, number, number][]): Buffer {
+  const out: number[] = [...Buffer.from('GIF89a')]
+  const u16 = (n: number) => out.push(n & 255, n >> 8)
+  u16(w)
+  u16(h)
+  out.push(0xf1, 0, 0)
+  for (let i = 0; i < 4; i++) out.push(...(frames[i] ?? [0, 0, 0]))
+  out.push(0x21, 0xff, 11, ...Buffer.from('NETSCAPE2.0'), 3, 1, 0, 0, 0)
+  frames.forEach((_, i) => {
+    out.push(0x21, 0xf9, 4, 0x04)
+    u16(i === 0 ? 2 : 1000)
+    out.push(0, 0, 0x2c)
+    u16(0)
+    u16(0)
+    u16(w)
+    u16(h)
+    out.push(0, 2)
+    const codes: number[] = []
+    for (let p = 0; p < w * h; p += 2) codes.push(4, i, ...(p + 1 < w * h ? [i] : []))
+    codes.push(5)
+    const data: number[] = []
+    let acc = 0
+    let bits = 0
+    for (const c of codes) {
+      acc |= c << bits
+      bits += 3
+      while (bits >= 8) {
+        data.push(acc & 255)
+        acc >>= 8
+        bits -= 8
+      }
+    }
+    if (bits) data.push(acc & 255)
+    for (let k = 0; k < data.length; k += 255) out.push(Math.min(255, data.length - k), ...data.slice(k, k + 255))
+    out.push(0)
+  })
+  out.push(0x3b)
+  return Buffer.from(out)
 }
 
 const rest = (path: string, init: RequestInit & { token?: string } = {}) =>
@@ -248,4 +293,53 @@ test('likes, saves and follows show in Saved, Based on your likes and the follow
   for (const item of ['Your uploads', 'Your creator page', 'Account settings', 'Sign out']) await expect(page.getByRole('menuitem', { name: item })).toBeVisible()
   await page.getByRole('menuitem', { name: 'Sign out' }).click()
   await expect(page.getByRole('button', { name: 'Sign in', exact: true })).toBeVisible()
+})
+
+test('a creator sets an animated GIF banner: stored as is, playing on the page, still with reduced motion', async ({ page }) => {
+  const banner = gif(150, 50, [[189, 147, 249], [80, 250, 123]])
+  await signIn(page, `banner-${stamp}@example.com`)
+  await page.locator('.lib-bar').getByRole('button', { name: 'Upload' }).click()
+  const setup = page.getByRole('dialog', { name: 'Set up your creator page' })
+  await setup.getByLabel('Display name').fill(`E2E Ravens ${stamp}`)
+  await setup.getByLabel('Handle').fill(`ravens-${stamp}`)
+  // A logo can't be animated.
+  await setup.getByLabel('Upload logo').setInputFiles({ name: 'logo.gif', mimeType: 'image/gif', buffer: banner })
+  await expect(setup.getByRole('alert')).toHaveText("A logo can't be animated. Use a PNG, JPEG or WebP image")
+  await setup.getByLabel('Upload banner').setInputFiles({ name: 'ravens.gif', mimeType: 'image/gif', buffer: banner })
+  await expect(setup.locator('.ce-banner img')).toHaveAttribute('src', /^blob:/)
+  await setup.getByRole('button', { name: 'Save and continue' }).click()
+  await expect(page.getByRole('dialog', { name: 'Upload a design' })).toBeVisible({ timeout: 20_000 })
+  await page.keyboard.press('Escape')
+
+  // Stored byte for byte, as a GIF, in the creator's own folder.
+  const row = ((await (await rest(`/rest/v1/creators?select=owner_id,banner_url&handle=eq.ravens-${stamp}`)).json()) as { owner_id: string; banner_url: string }[])[0]
+  expect(row?.banner_url).toMatch(new RegExp(`/storage/v1/object/public/creator-media/${row?.owner_id}/banner-[0-9a-f]{12}\\.gif$`))
+  const stored = await fetch(row?.banner_url ?? '')
+  expect(stored.headers.get('content-type')).toBe('image/gif')
+  expect(Buffer.from(await stored.arrayBuffer()).equals(banner)).toBe(true)
+
+  // It plays on the creator page.
+  const mySheet = async () => {
+    await page.locator('.lib-bar button[aria-expanded]').click()
+    await page.getByRole('menuitem', { name: 'Your creator page' }).click()
+    await page.getByRole('dialog', { name: 'Creator page' }).getByRole('button', { name: 'View my sheet' }).click()
+    return page.getByRole('dialog', { name: /creator page$/ })
+  }
+  let sheet = await mySheet()
+  await expect(sheet.locator('.cs-cover img')).toHaveAttribute('src', row?.banner_url ?? '')
+  await expect(sheet.locator('.cs-cover canvas')).toHaveCount(0)
+
+  // With Motion set to reduced it holds the first frame.
+  await page.evaluate(() => {
+    const prefs = JSON.parse(localStorage.getItem('slicerx.prefs.v1') ?? '{}') as Record<string, unknown>
+    localStorage.setItem('slicerx.prefs.v1', JSON.stringify({ ...prefs, motion: 'reduced' }))
+  })
+  await page.reload()
+  await expect(page.locator('html')).toHaveAttribute('data-motion', 'reduced', { timeout: 30_000 })
+  sheet = await mySheet()
+  const still = sheet.locator('.cs-cover canvas[data-still][data-ready]')
+  await expect(still).toHaveCount(1)
+  await expect(sheet.locator('.cs-cover img')).toHaveCount(0)
+  const px = await still.evaluate((c: HTMLCanvasElement) => [c.width, c.height, ...(c.getContext('2d')?.getImageData(75, 25, 1, 1).data.slice(0, 3) ?? [])])
+  expect(px).toEqual([150, 50, 189, 147, 249])
 })
