@@ -776,7 +776,10 @@ async function sendNow(host: Host, printer: PrinterInfo): Promise<void> {
     if (specs.length) set((cur) => ({ sendChoices: { ...cur.sendChoices, [printer.id]: Object.fromEntries(specs.map((sp) => [sp.id, Boolean(picked.options[sp.id])])) } }))
     // "Send as plain G-code" sends the G-code itself, under the same name with a .gcode ending.
     const plain = !project || picked.plainGcode === true
-    const file: JobFile = plain ? { name: withEnding(picked.name, '.gcode'), kind: 'gcode', data, sha256: plainSha } : { name: picked.name, kind: 'gcode.3mf', data: sent, sha256 }
+    let file: JobFile = plain ? { name: withEnding(picked.name, '.gcode'), kind: 'gcode', data, sha256: plainSha } : { name: picked.name, kind: 'gcode.3mf', data: sent, sha256 }
+    // BamBuddy may stamp a non-Bambu profile. The hash on the approval is the hash of the bytes that will be posted.
+    const prepare = conn?.printers.prepareUpload
+    if (prepare) file = await prepare(printer.id, file)
     const check = checkFor(file.name, file.sha256)
     if (check.errors.length) {
       toast(check.errors[0]!, 'error')

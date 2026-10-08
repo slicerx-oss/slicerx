@@ -22,7 +22,7 @@ const s = (id: string, name: string, x: number, y: number, z: number, enclosed: 
   nozzles: [0.25, 0.4, 0.6, 0.8],
   defaultNozzle: 0.4,
   nozzleCount: 2,
-  connections: ['ultimaker', 'bambuddy', 'export'],
+  connections: ['ultimaker', 'export'],
   find: FIND,
   note: 'Experimental: the UltiMaker connection is untested on a printer. Needs firmware 4.0 or later.',
 })

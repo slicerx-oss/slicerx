@@ -939,6 +939,7 @@ async fn dispatch(
             }
             Ok(json!({ "ok": true }))
         }
+        "prepareUpload" => prepare_upload_call(b, &p).await,
         "upload" => upload_call(b, &p).await,
         "start" => hub_rpc::start_with_token(b, &p).await,
         "pause" | "resume" | "cancel" => {
@@ -1030,6 +1031,20 @@ async fn dispatch(
         )),
         other => Err(RpcError::new("bad_request", format!("unknown method {other}"))),
     }
+}
+
+/// Rewrites a file the way `upload` will, and returns those bytes with their sha256.
+/// No token: nothing is sent. The caller approves this sha256, then uploads this file.
+async fn prepare_upload_call(b: &Arc<Bridge>, p: &Value) -> Rpc<Value> {
+    let id = str_arg(p, "printerId")?;
+    let file = hub_rpc::decode_file(p)?;
+    let prepared = session(b, &id).await?.prepare_upload(file).await?;
+    Ok(json!({
+        "name": prepared.name,
+        "kind": prepared.kind,
+        "sha256": prepared.sha256,
+        "dataBase64": B64.encode(&prepared.data),
+    }))
 }
 
 async fn upload_call(b: &Arc<Bridge>, p: &Value) -> Rpc<Value> {
