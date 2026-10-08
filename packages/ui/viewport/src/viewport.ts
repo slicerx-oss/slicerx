@@ -408,6 +408,9 @@ class ViewportImpl implements Viewport {
 
   /** Compiles the bead shaders in the background so the first real preview frame does not wait for them. */
   private async warmPreview(): Promise<void> {
+    // A preview set before the first frame (a slice that finished while the view was being made, such as one run
+    // behind first-run setup) compiles the shaders itself. Warming up would swap it for the warm-up bead and then clear it.
+    if (this.toolpaths.segmentCount > 0) return
     const gen = this.previewGen
     const root = this.stage.previewRoot
     this.toolpaths.set(warmupBuffers())
