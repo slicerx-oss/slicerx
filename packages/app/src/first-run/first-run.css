@@ -554,3 +554,7 @@ p.fr-codecard-msg, .fr-codecard-msg p { color: var(--red); }
 .fr-info-box > .sx-ic { color: var(--muted); flex: none; margin-top: 2px; }
 .fr-info-more { display: block; margin-top: 4px; color: var(--muted); }
 .fr-scan-ask { display: grid; justify-items: start; gap: var(--s-3); }
+
+/* macOS desktop: the traffic lights sit over the setup header (an overlay title bar), so it starts after them. */
+:root[data-shell="desktop"][data-os="mac"] .fr-top { padding-left: 84px; }
+:root[data-shell="desktop"] .fr-top { -webkit-user-select: none; user-select: none; }

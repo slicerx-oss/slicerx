@@ -24,6 +24,11 @@ if (__SX_AGENT_BRIDGE__) attachAgentBridge = await (await import('./agent-bridge
 // The edition names the app from the first frame: the window title, menus and setup read it before the app renders.
 setCurrentEdition(editionFromBuild())
 
+// The desktop window has no inset frame: the app fills it edge to edge. On macOS the title bar is an overlay, so the
+// app's top bar is the title area and leaves room for the traffic lights. Set before the first paint.
+document.documentElement.dataset['shell'] = 'desktop'
+document.documentElement.dataset['os'] = /Mac/.test(navigator.userAgent) ? 'mac' : /Windows/.test(navigator.userAgent) ? 'windows' : 'linux'
+
 // Panics and web view crashes the shell recorded are sent from the page; register before the app starts.
 registerCrashHost(createTauriCrash())
 // F5 and Ctrl+R would reload the window and drop the plate; the dev server keeps them for development.
