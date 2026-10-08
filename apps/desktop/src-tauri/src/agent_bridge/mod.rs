@@ -18,6 +18,8 @@ mod http;
 mod png;
 mod private;
 mod shot;
+#[cfg(unix)]
+mod signal;
 
 use std::collections::HashMap;
 use std::net::{TcpListener, TcpStream};
@@ -140,6 +142,9 @@ fn listen(app: &AppHandle, port: u16) -> Result<(), String> {
         "version": app.package_info().version.to_string(),
     });
     write_token_file(&file, &info.to_string()).map_err(|e| format!("{}: {e}", file.display()))?;
+    // A normal quit removes the file (stop); on macOS and Linux a signal that ends the app does too.
+    #[cfg(unix)]
+    signal::remove_on_signal(&file, &token);
     let relay = app.state::<Relay>();
     *lock(&relay.token_file) = Some((file.clone(), token.clone()));
     relay.running.store(true, Ordering::SeqCst);
@@ -294,7 +299,8 @@ pub fn agent_bridge_reply(id: u64, ok: bool, value: Value, code: Option<String>,
     let _ = tx.send(out);
 }
 
-/// Removes the connection file when the app quits, if it is still this run's.
+/// Removes the connection file when the app quits, if it is still this run's (signal.rs does the same when a signal
+/// ends the app on macOS and Linux).
 pub fn stop(app: &AppHandle) {
     let Some(relay) = app.try_state::<Relay>() else {
         return;
