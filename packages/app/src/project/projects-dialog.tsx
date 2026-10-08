@@ -32,20 +32,31 @@ export function ProjectsDialog() {
     }
   }
   return (
-    <Dialog open={mode !== null} onClose={close} title={mode === 'recover' ? 'Restore unsaved work?' : 'Recent projects'} footer={<Button variant="primary" onClick={close}>Close</Button>}>
+    <Dialog
+      open={mode !== null}
+      onClose={close}
+      title={mode === 'recover' ? 'Restore unsaved work?' : 'Recent projects'}
+      testId="projects-dialog"
+      footer={
+        <Button variant="primary" data-testid="projects-close" onClick={close}>
+          Close
+        </Button>
+      }
+    >
       {recovery ? (
-        <section aria-label="Unsaved work">
+        <section aria-label="Unsaved work" data-testid="recover-work">
           <p className="sx-small">
             {appName()} kept <b>{recovery.name}</b> ({count(recovery.objects)}, {when(recovery.savedAt)}) because it was never saved.
             {recovery.locked ? ` It is locked to your ${appName()} account, so restoring it needs you signed in and online.` : ''}
           </p>
           <div className="calib-act">
-            <Button variant="primary" disabled={busy} onClick={() => void open(recovery)}>
+            <Button variant="primary" disabled={busy} data-testid="recover-restore" onClick={() => void open(recovery)}>
               Restore
             </Button>
             <Button
               variant="ghost"
               disabled={busy}
+              data-testid="danger-recover-discard"
               onClick={() => {
                 void discardRecovery()
                 setRecovery(null)
@@ -57,14 +68,16 @@ export function ProjectsDialog() {
           </div>
         </section>
       ) : mode === 'recover' ? (
-        <p className="sx-small sx-muted">There is nothing to restore.</p>
+        <p className="sx-small sx-muted" data-testid="recover-nothing">
+          There is nothing to restore.
+        </p>
       ) : null}
       {mode === 'recent' ? (
         recent.length ? (
           <ul className="recent-projects">
             {recent.map((r) => (
               <li key={r.id}>
-                <button type="button" disabled={busy} onClick={() => void open(r)}>
+                <button type="button" disabled={busy} data-testid="recent-project" onClick={() => void open(r)}>
                   <b>{r.name}</b>
                   <small>
                     {count(r.objects)}, {when(r.savedAt)}
