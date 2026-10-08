@@ -145,7 +145,7 @@ export function FirstRun() {
 
   return (
     <div className="fr" ref={rootRef} role="dialog" aria-modal="true" aria-labelledby="fr-step-label" data-step={flow.step} data-testid="setup" data-wide>
-      <header className="fr-top">
+      <header className="fr-top" data-tauri-drag-region>
         <span className="fr-mark" role="img" aria-label={appName()}>
           <EditionMark edition={currentEdition()} size={24} />
         </span>
