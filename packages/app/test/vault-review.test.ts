@@ -10,10 +10,6 @@ import { HostContext } from '../src/host'
 import { canReview, ReviewHost } from '../src/features/store/review'
 import { openReview, resetSheets } from '../src/features/store/sheets'
 
-// The list shows once the session and then the queue have loaded, and the first mount also loads the bundled seed. On a loaded
-// machine that takes seconds, well past Testing Library's 1 s default, so the waits get room inside the test's own limit.
-const WAIT = { timeout: 30_000 }
-
 afterEach(() => {
   cleanup()
   resetSheets()
@@ -34,17 +30,17 @@ describe('review queue', () => {
 
   it('approves an upload that passed the scan, and it goes live', async () => {
     const store = mount('owner')
-    const list = await screen.findByRole('list', { name: 'Waiting for review' }, WAIT)
+    const list = await screen.findByRole('list', { name: 'Waiting for review' })
     const row = within(list).getAllByRole('listitem').find((li) => within(li).queryByText('Scan passed')) as HTMLElement
     const title = row.querySelector('.up-title')?.textContent ?? ''
     fireEvent.click(within(row).getByRole('button', { name: 'Approve' }))
-    await waitFor(() => expect(within(screen.getByRole('list', { name: 'Waiting for review' })).queryByText(title)).toBeNull(), WAIT)
+    await waitFor(() => expect(within(screen.getByRole('list', { name: 'Waiting for review' })).queryByText(title)).toBeNull())
     expect((await store.listListings({ limit: 100 })).items.some((c) => c.listing.title === title)).toBe(true)
   })
 
   it('sends one back with a note only when the note is long enough', async () => {
     const store = mount('owner')
-    const list = await screen.findByRole('list', { name: 'Waiting for review' }, WAIT)
+    const list = await screen.findByRole('list', { name: 'Waiting for review' })
     const row = within(list).getAllByRole('listitem')[0] as HTMLElement
     const title = row.querySelector('.up-title')?.textContent ?? ''
     fireEvent.click(within(row).getByRole('button', { name: 'Send back' }))
@@ -52,7 +48,7 @@ describe('review queue', () => {
     expect(send.disabled).toBe(true)
     fireEvent.change(within(row).getByLabelText('Why it goes back'), { target: { value: 'Add a photo of the print' } })
     fireEvent.click(send)
-    await waitFor(() => expect(within(screen.getByRole('list', { name: 'Waiting for review' })).queryByText(title)).toBeNull(), WAIT)
+    await waitFor(() => expect(within(screen.getByRole('list', { name: 'Waiting for review' })).queryByText(title)).toBeNull())
     const queue = await store.moderationQueue()
     expect(queue.ok && queue.value.some((i) => i.title === title)).toBe(false)
   })
