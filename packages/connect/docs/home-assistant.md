@@ -11,7 +11,13 @@ Lets SlicerX see the switches, lights and fans in your Home Assistant, and (afte
 
 ### In SlicerX
 
-Add Home Assistant under service plugins, enter the address and paste the token. SlicerX stores the token in your keychain and never shows it again. The address must be `http://` on your local network; `https://` and internet addresses are refused for now.
+Home Assistant is experimental: it is built from Home Assistant's API documentation but not yet tested against a real Home Assistant.
+
+1. Turn on Developer mode (the settings mode switch), then open Settings, Connected apps and switch on Try experimental connectors at the bottom.
+2. The Home Assistant card appears, labeled Experimental. Enter the address and paste the token, then Add Home Assistant. SlicerX stores the token in your keychain and never shows it again.
+3. The card shows whether Home Assistant answers and how many switches, lights and fans it lists.
+
+The address must be `http://` on your local network; `https://` and internet addresses are refused for now. Turning experimental connectors off hides the card and stops SlicerX from using Home Assistant.
 
 ### What SlicerX can see and do
 

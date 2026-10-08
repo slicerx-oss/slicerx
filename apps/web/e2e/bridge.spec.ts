@@ -230,6 +230,48 @@ test('Connected apps: BamBuddy shows as a printer connection only once it is add
   }
 })
 
+test('Connected apps: Home Assistant shows only with experimental connectors on, in Developer mode', async ({ page }) => {
+  const { startMocks } = await import('../../../packages/connect/mock-printers/src/index.ts')
+  const { MOCK_HA_TOKEN } = await import('../../../packages/connect/mock-printers/src/services.ts')
+  const ha = await startMocks({ only: ['home-assistant'] })
+  const apps = page.getByRole('navigation', { name: 'Settings sections' }).getByRole('button', { name: 'Connected apps' })
+  try {
+    await connectApp(page)
+    await page.getByRole('button', { name: 'Settings', exact: true }).click()
+    await apps.click()
+    // Advanced mode: no experimental switch and no Home Assistant card.
+    await expect(page.getByTestId('connected-app-bambuddy')).toBeVisible()
+    await expect(page.getByTestId('connected-apps-experimental')).toHaveCount(0)
+    await expect(page.getByTestId('connected-app-home-assistant')).toHaveCount(0)
+    await page.keyboard.press('Escape')
+
+    // Developer mode shows the switch; turning it on shows Home Assistant, labeled Experimental.
+    await page.getByRole('radiogroup', { name: 'Settings mode' }).getByRole('radio', { name: 'Developer' }).click()
+    await page.getByRole('button', { name: 'Settings', exact: true }).click()
+    await apps.click()
+    const sw = page.getByTestId('connected-apps-experimental')
+    await expect(sw).toHaveAttribute('aria-checked', 'false')
+    await sw.click()
+    await expect(sw).toHaveAttribute('aria-checked', 'true')
+    const card = page.getByTestId('connected-app-home-assistant')
+    await expect(card.getByTestId('connected-app-home-assistant-experimental')).toHaveText('Experimental')
+    await card.getByTestId('connected-app-home-assistant-address').fill(`127.0.0.1:${ha.ports['home-assistant']}`)
+    await card.getByTestId('connected-app-home-assistant-key').fill(MOCK_HA_TOKEN)
+    await card.getByTestId('connected-app-home-assistant-save').click()
+    await expect(card.getByTestId('connected-app-home-assistant-status')).toHaveText('Connected')
+    await expect(card).toContainText(/\d+ (switch, light or fan|switches, lights and fans) in Home Assistant/)
+
+    // Remove it, and turn the switch off again: the card goes away.
+    await card.getByTestId('connected-app-home-assistant-remove').click()
+    await expect(card.getByTestId('connected-app-home-assistant-save')).toBeVisible()
+    await sw.click()
+    await expect(sw).toHaveAttribute('aria-checked', 'false')
+    await expect(page.getByTestId('connected-app-home-assistant')).toHaveCount(0)
+  } finally {
+    await ha.stop()
+  }
+})
+
 test('a wrong code is refused with a plain message', async ({ page }) => {
   await seed(page)
   await page.getByRole('button', { name: 'Settings', exact: true }).click()
