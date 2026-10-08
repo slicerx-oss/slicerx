@@ -70,6 +70,11 @@ fn bed_temps(gcode: &[u8]) -> Vec<(String, f64)> {
         .collect()
 }
 
+/// Temperatures are whole degrees; this keeps clippy's float rules happy.
+fn near(a: f64, b: f64) -> bool {
+    (a - b).abs() < 1e-6
+}
+
 fn first(cfg: &serde_json::Map<String, Value>, key: &str) -> f64 {
     cfg[key][0].as_f64().unwrap()
 }
@@ -97,11 +102,17 @@ fn each_plate_type_heats_the_bed_to_its_own_temperatures() {
         );
         // after the first layer the bed drops to the plate's other-layer temperature
         assert!(
-            temps.iter().skip(2).any(|(c, t)| c == "M140" && *t == want_rest),
+            temps
+                .iter()
+                .skip(2)
+                .any(|(c, t)| c == "M140" && near(*t, want_rest)),
             "{plate}: {temps:?}"
         );
         assert!(
-            temps.iter().skip(2).all(|(_, t)| *t == want_rest || *t == 0.0),
+            temps
+                .iter()
+                .skip(2)
+                .all(|(_, t)| near(*t, want_rest) || near(*t, 0.0)),
             "{plate}: {temps:?}"
         );
     }
