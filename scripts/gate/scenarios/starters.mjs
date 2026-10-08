@@ -23,6 +23,8 @@ export async function starters(s, { only } = {}) {
     const r = await s.call('app_open_vault_design', { id: slug, timeoutMs: 120_000 })
     if (r.error) {
       s.check(`${slug}: opens from the Vault`, false, r.error)
+      // A failed download leaves its sheet open with Try again in place of Open; close it for the next design.
+      if ((await s.ids())['vault-listing-close']) await s.click('vault-listing-close').catch(() => undefined)
       continue
     }
     const { id, title } = r.data.listing

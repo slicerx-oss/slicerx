@@ -49,6 +49,12 @@ export function createContext({ bridge, out, opts, tokenFile, log }) {
     } catch (e) {
       if (!(e instanceof Stop)) step('scenario stopped', false, e instanceof Error ? e.stack ?? e.message : String(e))
     }
+    // Leave no dialog or sheet open for the next scenario (a wait that ran out leaves its sign-in dialog up). Escape
+    // cancels, as a person would; it never answers a question with Save.
+    for (let i = 0; i < 4 && ((await call('app_dialogs')).data?.open ?? []).some((d) => d.testid !== 'setup'); i++) {
+      await call('app_press_key', { key: 'Escape' })
+      await sleep(400)
+    }
     // The excerpts: what went wrong in the console, the backend calls, and the toasts, since the scenario began.
     const con = (await call('app_console', { since: marker, limit: 1000 })).data?.entries ?? []
     rec.console = con.filter((e) => ['error', 'pageerror', 'csp', 'warn'].includes(e.level)).slice(-40).map((e) => mask(`${e.at} [${e.level}] ${e.text}`))
