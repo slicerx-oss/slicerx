@@ -90,6 +90,13 @@ try {
     record(`${name}${Object.keys(args).length ? ` ${JSON.stringify(args).slice(0, 80)}` : ''}`, ok, r.error ?? summarize(name, r.data))
     return r
   }
+  /** Fails the run with a clear line when a control it needs has no test id on the page (renamed, or not in this build). */
+  const needIds = async (...ids) => {
+    const on = (await call('app_testids', { all: true })).data ?? {}
+    const missing = ids.filter((id) => !on[id])
+    record(`test ids ${ids.join(', ')} on the page`, missing.length === 0, missing.length ? `missing ${missing.join(', ')}; see docs/test-ids.md for the current ids` : undefined)
+    if (missing.length) throw new Error(`the app has no control with the test id ${missing.join(', ')}`)
+  }
   const summarize = (name, d) => {
     if (!d) return undefined
     if (name === 'app_state') return { tab: d.tab, objects: d.plate?.objects?.map((o) => o.name), slicing: d.slicing?.status, dialogs: d.dialogs?.map((x) => x.title) }
@@ -131,6 +138,9 @@ try {
     if (!prepared) await sleep(500)
   }
   record('first run done, objects list on screen', prepared)
+
+  // The controls this run uses by test id, so a renamed one fails here, by name, and not as a vague step further on.
+  await needIds('tab-prepare', 'objects-list')
 
   // Every read.
   await expectOk('app_state', {}, (d) => typeof d.tab === 'string' && Array.isArray(d.plate?.objects))

@@ -11,7 +11,8 @@ import { setModelMode, useApp, type ModelMode } from '../state/store'
 
 const HALVES: readonly { mode: ModelMode; label: string; icon: 'ruler' | 'slice'; tab: string }[] = [
   { mode: 'design', label: 'Design', icon: 'ruler', tab: 'design' },
-  // The Slice half keeps the workspace's id, so links and tests that open `prepare` land on the plate.
+  // The Slice half keeps the workspace's id (and test id, tab-prepare), so links and tests that open `prepare` land on
+  // the plate.
   { mode: 'slice', label: 'Slice', icon: 'slice', tab: 'prepare' },
 ]
 
@@ -29,6 +30,7 @@ export function ModeTab() {
             type="button"
             className="sx-tab"
             data-tab={h.tab}
+            data-testid={`tab-${h.tab}`}
             data-mode={h.mode}
             data-tip={`mode.${h.mode}`}
             aria-current={open && mode === h.mode ? 'page' : undefined}
