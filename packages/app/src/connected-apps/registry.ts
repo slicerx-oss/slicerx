@@ -29,7 +29,7 @@ export const CONNECTED_APPS: readonly ConnectedApp[] = [
     blurb: 'Send prints to the printers BamBuddy runs, including ones it reaches through a bridge. Once it is added, those printers can choose BamBuddy as their connection.',
     defaultPort: 8000,
     https: true,
-    addressPlaceholder: 'BamBuddy address, like 192.168.1.50:8000',
+    addressPlaceholder: 'Address, like 192.168.1.50',
     key: { label: 'API key', placeholder: 'From BamBuddy, Settings, API keys' },
   },
   {
@@ -38,7 +38,7 @@ export const CONNECTED_APPS: readonly ConnectedApp[] = [
     blurb: 'Spoolman keeps track of your spools. Connect it to pick a spool for each filament slot, see the grams left, get a warning when a spool is too short for the plate, and record the filament a print used (you approve each one).',
     defaultPort: 7912,
     https: false,
-    addressPlaceholder: 'Spoolman address, like 192.168.1.50:7912',
+    addressPlaceholder: 'Address, like 192.168.1.50',
     key: null,
   },
 ]

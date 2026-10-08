@@ -662,6 +662,9 @@ button.reset:hover { color: var(--fg); background: var(--ink-3); }
 /* Connected apps: the address and the key each take a full row, the buttons follow. */
 .preset-save.app-form { flex-wrap: wrap; }
 .preset-save.app-form .sx-input { flex: 1 1 100%; }
+/* A connected app's actions: Test and Edit together, Remove on the right as quiet danger text. */
+.bridge-forget.app-actions { justify-content: flex-start; }
+.bridge-forget.app-actions .app-remove { margin-left: auto; color: var(--red); }
 .preset-name .preset-for { color: var(--muted); }
 
 /* Preset import report */
