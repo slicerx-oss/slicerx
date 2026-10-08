@@ -3,15 +3,16 @@
 // The first launch draws the plate as soon as setup closes: after Skip, use defaults, the 3D view shows the bed and the
 // example plate within a moment and stays drawn while the first background slice runs. Every composited frame is
 // checked (e2e/frames.ts): the plate must show within a few seconds of the view coming up and never go empty again.
+import { writeFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { expect, test } from '@playwright/test'
-import { cellsIn, recordFrames, spread } from './frames'
+import { alike, cellsIn, recordFrames, spread } from './frames'
 
 test('the plate is drawn right after setup is skipped on a fresh install', async ({ page, isMobile }) => {
   test.skip(isMobile, 'Runs at desktop width')
   test.slow()
   await page.goto('./')
-  // Setup opens on its first step, the theme; Skip, use defaults closes it from there.
-  await expect(page.getByRole('heading', { name: 'Pick a theme' })).toBeVisible({ timeout: 120_000 })
+  await expect(page.getByRole('heading', { name: 'Find your printer' })).toBeVisible({ timeout: 120_000 })
   const stop = await recordFrames(page)
   await page.getByRole('button', { name: 'Skip, use defaults' }).click()
   await expect(page.locator('.obj-name', { hasText: 'Layered X' })).toBeVisible({ timeout: 60_000 })
@@ -37,4 +38,47 @@ test('the plate is drawn right after setup is skipped on a fresh install', async
   const drawn = spread(shown!, cells)
   const empty = frames.filter((f) => f.t > shown!.t && spread(f, cells) < drawn * 0.35)
   expect(empty.map((f) => `${(f.t - up).toFixed(2)} s after the view came up: spread ${spread(f, cells).toFixed(1)}`), `the view went empty after it showed the plate (drawn ${drawn.toFixed(1)})`).toEqual([])
+})
+
+type Sx = { getState(): { slice: { status: string; stale?: boolean }; preview: unknown; plate: { name: string }[] } }
+
+test('a model sliced while setup is open shows its toolpaths in Preview after setup closes', async ({ page, isMobile }, info) => {
+  test.skip(isMobile, 'Runs at desktop width')
+  test.slow()
+  await page.addInitScript(() => localStorage.setItem('slicerx.debug', '1'))
+  await page.goto('./')
+  await expect(page.getByRole('heading', { name: 'Find your printer' })).toBeVisible({ timeout: 120_000 })
+  // With setup still open: open a model through the command bar; the background slice runs behind setup.
+  await page.keyboard.press('ControlOrMeta+k')
+  await page.keyboard.type('Open a model file')
+  const chooser = page.waitForEvent('filechooser')
+  await page.keyboard.press('Enter')
+  await (await chooser).setFiles(fileURLToPath(new URL('../../../packages/core/bench/models/x-mark.stl', import.meta.url)))
+  await expect
+    .poll(() => page.evaluate(() => { const s = (window as unknown as { __sx?: Sx }).__sx?.getState(); return !!s && s.plate.some((o) => /x-mark/i.test(o.name)) && s.slice.status === 'done' && !s.slice.stale && s.preview !== null }), { timeout: 120_000 })
+    .toBe(true)
+  await page.getByRole('button', { name: 'Skip, use defaults' }).click()
+  const preview = page.locator('.sx-tab', { hasText: 'Preview' }).first()
+  await preview.click()
+  // Preview must show what it shows after a trip through Slice and back, which always drew the toolpaths.
+  const view = (await page.locator('.vp').boundingBox())!
+  // The picture a moment after Preview opened, then the one after Slice and back. A recording starts with the picture on
+  // screen, so a short one is a snapshot of it.
+  const snapshot = async () => {
+    const stop = await recordFrames(page)
+    await page.waitForTimeout(300)
+    return (await stop()).at(-1)!
+  }
+  await page.waitForTimeout(2000)
+  const before = await snapshot()
+  await page.locator('.sx-tab', { hasText: 'Slice' }).first().click()
+  await page.waitForTimeout(1500)
+  await preview.click()
+  await page.waitForTimeout(3000)
+  const after = await snapshot()
+  const cells = cellsIn(view, page.viewportSize()!)
+  // The two pictures go with a failed run, to look at.
+  writeFileSync(info.outputPath('after-setup.jpg'), Buffer.from(before.jpeg, 'base64'))
+  writeFileSync(info.outputPath('after-slice-trip.jpg'), Buffer.from(after.jpeg, 'base64'))
+  expect(alike(before, after, cells), 'Preview after setup looks like Preview after a trip through Slice').toBeGreaterThan(0.9)
 })
