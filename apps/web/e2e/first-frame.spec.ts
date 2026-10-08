@@ -12,7 +12,8 @@ test('the plate is drawn right after setup is skipped on a fresh install', async
   test.skip(isMobile, 'Runs at desktop width')
   test.slow()
   await page.goto('./')
-  await expect(page.getByRole('heading', { name: 'Find your printer' })).toBeVisible({ timeout: 120_000 })
+  // Setup opens on its first step, the theme; Skip, use defaults closes it from there.
+  await expect(page.getByRole('heading', { name: 'Pick a theme' })).toBeVisible({ timeout: 120_000 })
   const stop = await recordFrames(page)
   await page.getByRole('button', { name: 'Skip, use defaults' }).click()
   await expect(page.locator('.obj-name', { hasText: 'Layered X' })).toBeVisible({ timeout: 60_000 })
@@ -47,7 +48,7 @@ test('a model sliced while setup is open shows its toolpaths in Preview after se
   test.slow()
   await page.addInitScript(() => localStorage.setItem('slicerx.debug', '1'))
   await page.goto('./')
-  await expect(page.getByRole('heading', { name: 'Find your printer' })).toBeVisible({ timeout: 120_000 })
+  await expect(page.getByRole('heading', { name: 'Pick a theme' })).toBeVisible({ timeout: 120_000 })
   // With setup still open: open a model through the command bar; the background slice runs behind setup.
   await page.keyboard.press('ControlOrMeta+k')
   await page.keyboard.type('Open a model file')
