@@ -193,7 +193,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
-          cache: pnpm
+          # the project runner keeps its pnpm store and browsers locally; uploading them gains nothing
+          cache: ${{ runner.environment == 'self-hosted' && '' || 'pnpm' }}
       - run: pnpm install --frozen-lockfile
       - uses: actions/download-artifact@v4
         with:
@@ -201,7 +202,8 @@ jobs:
           path: packages
       - id: pw
         run: echo "version=$(pnpm --filter @slicerx/web exec playwright --version | cut -d ' ' -f 2)" >> "$GITHUB_OUTPUT"
-      - uses: actions/cache@v4
+      - if: runner.environment != 'self-hosted'
+        uses: actions/cache@v4
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}
