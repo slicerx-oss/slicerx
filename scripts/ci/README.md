@@ -18,7 +18,8 @@ home (default `~/ci`), never in a developer's working tree.
 A newer push replaces a run still waiting; a run in progress always finishes first. The nightly run has its own slot.
 Every run holds the machine's heavy-work lock (`heavy.sh`, default `~/.slicerx-heavy.lock`, or `SX_HEAVY_LOCK`).
 Release builds, kit builds and other heavy jobs on the same machine take it too (`scripts/ci/heavy.sh <command>`), so
-a run never competes with a build for the CPU and timing tests stay honest. Waiters are served in arrival order, and
+a run never competes with a build for the CPU and timing tests stay honest. Waiters are served in arrival order, CI
+jobs first (a self-hosted runner, or `SX_HEAVY_PRIORITY=ci`), and
 `SX_HEAVY_WAIT=<seconds>` makes one give up (exit 75) after that long.
 
 ## Results
