@@ -15,6 +15,7 @@ const creator = { id: '00000000-0000-4000-8000-0000000000c1', owner_id: ME, hand
 function fake() {
   const writes: unknown[] = []
   const removed: string[][] = []
+  const uploads: { path: string; bytes: Uint8Array; contentType: string }[] = []
   const query = (table: string) => {
     let out: Record<string, unknown>[] = table === 'creators' ? [creator] : []
     const q = {
@@ -32,9 +33,16 @@ function fake() {
     auth: { getSession: async () => ({ data: { session: { user: { id: ME } } } }) },
     from: query,
     rpc: async () => ({ data: [], error: null }),
-    storage: { from: () => ({ remove: async (paths: string[]) => (removed.push(paths), { error: null }), list: async () => ({ data: [], error: null }) }) },
+    storage: {
+      from: () => ({
+        remove: async (paths: string[]) => (removed.push(paths), { error: null }),
+        list: async () => ({ data: [], error: null }),
+        upload: async (path: string, bytes: Uint8Array, o: { contentType: string }) => (uploads.push({ path, bytes, contentType: o.contentType }), { data: { path }, error: null }),
+        getPublicUrl: (path: string) => ({ data: { publicUrl: `${MEDIA}${path}` } }),
+      }),
+    },
   } as unknown as Db
-  return { store: supabaseStore(db, { url: URL_BASE, anonKey: 'anon' }), writes, removed }
+  return { store: supabaseStore(db, { url: URL_BASE, anonKey: 'anon' }), writes, removed, uploads }
 }
 
 describe('creator images', () => {
@@ -46,6 +54,24 @@ describe('creator images', () => {
     expect(await store.saveCreator({ handle: 'mine', displayName: 'Me', logoUrl: 'https://cdn.example.com/l.png' })).toMatchObject({ ok: false, message: 'Upload the logo to your creator page first' })
     expect(writes).toEqual([])
     await store.saveCreator({ handle: 'mine', displayName: 'Me', bannerUrl: `${MEDIA}${ME}/banner-1.webp` })
+    expect(writes).toHaveLength(1)
+  })
+
+  it('stores a GIF banner byte for byte, and keeps logos and covers still', async () => {
+    const { store, writes, uploads } = fake()
+    const gif = new Uint8Array([0x47, 0x49, 0x46, 0x38, 0x39, 0x61, 1, 2, 3])
+    const up = await store.uploadCreatorImage({ kind: 'banner', bytes: gif, contentType: 'image/gif' })
+    expect(up).toMatchObject({ ok: true })
+    const url = up.ok ? up.value : ''
+    expect(url).toMatch(new RegExp(`^${MEDIA}${ME}/banner-[0-9a-f]{12}\\.gif$`))
+    expect(uploads).toEqual([{ path: url.slice(MEDIA.length), bytes: gif, contentType: 'image/gif' }])
+    for (const kind of ['logo', 'cover'] as const) {
+      expect(await store.uploadCreatorImage({ kind, bytes: gif, contentType: 'image/gif' })).toMatchObject({ ok: false, message: 'Use a PNG, JPEG or WebP image' })
+    }
+    expect(uploads).toHaveLength(1)
+    expect(await store.saveCreator({ handle: 'mine', displayName: 'Me', logoUrl: url })).toMatchObject({ ok: false, message: 'The logo must be a still image' })
+    expect(writes).toEqual([])
+    expect(await store.saveCreator({ handle: 'mine', displayName: 'Me', bannerUrl: url })).toMatchObject({ ok: true })
     expect(writes).toHaveLength(1)
   })
 

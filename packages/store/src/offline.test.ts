@@ -868,6 +868,19 @@ describe('offline store: library rows and creator pages', () => {
     fails(await s.saveCreator({ handle: 'marrow-works', displayName: 'Marrow Works', bannerUrl: 'javascript:alert(1)' }), 'invalid')
     fails(await store('ash').uploadCreatorImage({ kind: 'logo', bytes: new Uint8Array(3), contentType: 'image/png' }), 'forbidden')
   })
+
+  it('keeps a GIF banner as is, and logos still', async () => {
+    const s = store('marrow')
+    const gif = new Uint8Array([0x47, 0x49, 0x46, 0x38, 0x39, 0x61, 9, 8, 7])
+    const url = value(await s.uploadCreatorImage({ kind: 'banner', bytes: gif, contentType: 'image/gif' }))
+    expect(url).toBe(`data:image/gif;base64,${btoa(String.fromCharCode(...gif))}`)
+    fails(await s.uploadCreatorImage({ kind: 'logo', bytes: gif, contentType: 'image/gif' }), 'invalid')
+    fails(await s.uploadCreatorImage({ kind: 'banner', bytes: new Uint8Array(5_242_881), contentType: 'image/gif' }), 'invalid')
+    const me = await s.getMyCreator()
+    value(await s.saveCreator({ handle: me?.handle ?? '', displayName: me?.displayName ?? '', bannerUrl: url }))
+    expect((await s.getCreatorByHandle('marrow-works'))?.creator.bannerUrl).toBe(url)
+    fails(await s.saveCreator({ handle: me?.handle ?? '', displayName: me?.displayName ?? '', logoUrl: url }), 'invalid')
+  })
 })
 
 describe('offline store: Vault files leave only as .sx3mf', () => {

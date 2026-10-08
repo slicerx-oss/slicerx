@@ -130,7 +130,7 @@
 /* creator sheet */
 .cs { position: relative; display: grid; align-content: start; }
 .cs-cover { position: relative; height: 132px; overflow: hidden; background: var(--ink-3); }
-.cs-cover img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; filter: saturate(.9) brightness(.62); }
+.cs-cover img, .cs-cover canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; filter: saturate(.9) brightness(.62); }
 .cs-cover::after { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, transparent 30%, var(--ink-2)); }
 .cs-cover-art { position: absolute; inset: -20% 6% -60% 56%; opacity: 0.35; }
 .cs-cover-art > * { width: 100%; height: 100%; }
@@ -218,7 +218,7 @@ button.cs-thumb:hover .cs-art { outline: 1px solid var(--line); }
 .ce-prefix .ce-in { padding-left: 26px; font-family: var(--f-mono); }
 .ce-err { color: var(--red); font-size: 12px; margin: 0; }
 .ce-banner { position: relative; height: 112px; overflow: hidden; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--ink-3); }
-.ce-banner > img { width: 100%; height: 100%; object-fit: cover; filter: brightness(.7); }
+.ce-banner > img, .ce-banner > canvas { width: 100%; height: 100%; object-fit: cover; filter: brightness(.7); }
 .ce-banner-art { position: absolute; inset: -20% 4% -60% 60%; opacity: 0.35; }
 .ce-banner-art > * { width: 100%; height: 100%; }
 .ce-banner .ce-ops { position: absolute; right: 10px; bottom: 10px; }
