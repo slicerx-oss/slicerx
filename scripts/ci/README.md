@@ -107,8 +107,10 @@ Pull requests (`ci.yml`, the `web` job): `pr-test.sh` runs each package's tests,
 and the reporter in `vitest-flaky-reporter.mjs`, which
 annotates each test that passed only on a retry, and the next step fails the job unless `flaky.txt` or
 `quarantine.txt` lists it, so a retry cannot hide a flake: the pull request that meets one adds the entry (owner, a
-deadline a day out, an issue) or fixes the test. The cargo and Playwright jobs on pull requests have no retry. The
-machine runs rerun those.
+deadline a day out, an issue) or fixes the test. The e2e shards (`ci.yml`, `e2e-shard`) hold to the same rule with
+Playwright's `--retries=1`: `playwright-results.mjs` reads the JSON report, a test that passed only on the retry must be
+on either list, and a test that failed both times fails the job unless it counts as quarantined. The cargo job on pull
+requests has no retry; the machine runs rerun it.
 
 Adding an entry: open an issue for the test, add the line, run `bash scripts/ci/flaky-check.sh lint`. Fixing one:
 fix the test and delete its line in the same change.
