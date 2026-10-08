@@ -86,11 +86,13 @@ $env:SX_AGENT_BRIDGE_PORT = '0'; $env:SX_AGENT_BRIDGE_TOKEN_FILE = "$env:TEMP\sx
 $p = Start-Process target\agent-bridge\release\slicerx.exe -PassThru   # stop it later by $p.Id
 ```
 
-The app writes `{"port", "token", "pid", "app", "version"}` to the connection file, made fresh at every start and readable
-only by the user (mode 0600 on macOS and Linux; on Windows an access list of the user and SYSTEM only, not inherited
-from the folder), and removes it when it quits. stderr says where it listens. The app is
-single-instance per identifier: quit a running copy of the same build first, or the new one hands its arguments to it
-and exits. On Windows, `WEBVIEW2_USER_DATA_FOLDER=<empty folder>` gives a run a fresh web profile (first run again).
+The app writes `{"port", "token", "pid", "app", "version"}` to the connection file, made fresh at every start and
+readable only by the user (mode 0600 on macOS and Linux; on Windows an access list of the user and SYSTEM only, not
+inherited from the folder), and removes it when it quits: also when SIGTERM, SIGINT or SIGHUP ends it on macOS and
+Linux. On Windows a forced stop (`taskkill /F`) leaves the file; `taskkill /PID <pid>` without `/F` closes the window,
+which quits normally and removes it. stderr says where it listens. The app is single-instance per identifier: quit a
+running copy of the same build first, or the new one hands its arguments to it and exits. On Windows,
+`WEBVIEW2_USER_DATA_FOLDER=<empty folder>` gives a run a fresh web profile (first run again).
 
 ## Connect an MCP client
 
