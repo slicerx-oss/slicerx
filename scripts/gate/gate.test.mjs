@@ -138,7 +138,7 @@ describe('the report', () => {
   const run = (platform, status) => ({
     platform,
     commit: 'abc123',
-    build: { file: 'slicerx.exe', sha256: 'f'.repeat(10) },
+    build: { file: 'slicerx.exe', sha256: 'f'.repeat(64) },
     startedAt: 't0',
     scenarios: [{ id: 'a', title: 'Vault <check>', status, steps: [{ name: 'covers', ok: status === 'PASS', detail: 'slicerx://auth/callback?code=leak' }], shots: [{ file: 'shots/a-01.png', caption: 'The Vault' }], console: ['[csp] Refused'], network: [], toasts: [] }],
   })
@@ -149,6 +149,7 @@ describe('the report', () => {
     assert.match(html, /src="linux\/shots\/a-01.png"/)
     assert.ok(!html.includes('leak'))
     assert.match(html, /b-fail/)
+    assert.ok(html.includes('f'.repeat(64)), 'the build hash shows as it is')
   })
   it('fails a run with any failed scenario', () => {
     assert.equal(runStatus(run('windows', 'FAIL')), 'FAIL')
