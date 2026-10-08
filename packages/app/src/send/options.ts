@@ -4,7 +4,8 @@
 // ones a printer supports, and their defaults, follow the maker's own slicer for that model (Bambu Studio's
 // SelectMachineDialog and resources/printers/<model>.json; Orca's send dialog does the same).
 import type { FilamentSlot, PrinterInfo, PrinterStatus, StartOptions } from '@slicerx/contracts'
-import { CONNECTION_METHODS } from '@slicerx/printer-catalog'
+// The connection methods alone: the catalog's model list stays out of the startup shell.
+import { CONNECTION_METHODS } from '@slicerx/printer-catalog/methods'
 
 export type SendOptionId = 'bedLeveling' | 'flowCalibration' | 'vibrationCompensation' | 'timelapse' | 'firstLayerInspection'
 
