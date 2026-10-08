@@ -110,6 +110,9 @@ function connectionTopic(id: ConnectionId, field: HelpField, model?: PrinterMode
       if (field === 'accessCode') return T(tid, 'Access code', find?.credential ?? 'In the printer\'s settings, open the LAN Only page. The 8-character access code is shown there.')
       if (field === 'serial') return T(tid, 'Serial number', find?.serial ?? 'Printed on the label at the back of the printer.')
       break
+    case 'bambuddy':
+      if (field === 'serial') return T(tid, 'BamBuddy printer id', 'In BamBuddy, open the printer list. The number BamBuddy shows for this printer is its id, like 12. The BamBuddy address and API key are set once in Settings, Connected apps.')
+      break
     case 'moonraker':
       if (field === 'host' || field === 'port') return T(tid, 'Moonraker address', 'Open Mainsail or Fluidd in a browser and copy the address. Moonraker listens on port 7125, for example http://printer.local:7125.')
       if (field === 'apiKey') return T(tid, 'API key', find?.credential ?? 'Usually not needed. If the test says it was rejected, add your network to trusted_clients in moonraker.conf, or use the API key Moonraker shows.')

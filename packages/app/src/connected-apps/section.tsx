@@ -123,7 +123,7 @@ function BambuddyRows({ services }: { services: BridgeServices }) {
 
   const form = (
     <form
-      className="preset-save"
+      className="preset-save app-form"
       onSubmit={(e) => {
         e.preventDefault()
         void save()
