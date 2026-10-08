@@ -4,7 +4,7 @@
 import { readFileSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { attribution, checkEditionConfig, DESKTOP_WINDOW, desktopFileTypes, editionLinks, logoImage, mcpServerId, mergeLayers, POWERED_BY, SLICERX_LINKS, tauriConfig, type EditionConfig } from '../src/index.ts'
+import { allowPattern, attribution, checkEditionConfig, DESKTOP_WINDOW, editionLinksCapability, desktopFileTypes, editionLinks, logoImage, mcpServerId, mergeLayers, POWERED_BY, SLICERX_LINKS, tauriConfig, type EditionConfig } from '../src/index.ts'
 import { inlineLogo, loadEditionConfig } from '../src/node.ts'
 import slicerxEdition from '../../../editions/slicerx/edition.config.ts'
 
@@ -43,8 +43,12 @@ describe('a white-label edition', () => {
     expect(merged.bundle['shortDescription']).toBe('The slicer for Acme printers')
     expect(merged.bundle['icon']).toEqual(['gen/icons/32x32.png', 'gen/icons/128x128.png', 'gen/icons/128x128@2x.png', 'gen/icons/icon.icns', 'gen/icons/icon.ico'])
     expect(merged.plugins['deep-link']?.desktop.schemes).toEqual(['acmeslicer'])
-    // The shell may open the edition's own help pages.
-    expect(merged).toHaveProperty(['app', 'security', 'capabilities', 1, 'permissions', 0, 'allow'], [{ url: 'https://slicer.acme.example/*' }])
+    // The shell may open the edition's own pages, each one exactly, and the source of any of its builds.
+    expect(merged).toHaveProperty(['app', 'security', 'capabilities', 0], 'default')
+    const allow = (merged as { app: { security: { capabilities: [string, string, { permissions: { allow: { url: string }[] }[] }] } } }).app.security.capabilities[2].permissions[0]!.allow
+    expect(allow).toContainEqual({ url: 'https://slicer.acme.example/docs' })
+    expect(allow).toContainEqual({ url: 'https://git.acme.example/slicer/tree/*' })
+    expect(allow).not.toContainEqual({ url: 'https://slicer.acme.example/*' })
     // Not one value in the merged config names SlicerX, its publisher, its scheme or its icons.
     const all = JSON.stringify(merged)
     expect(all).not.toMatch(/slicer\s*x/i)
@@ -59,7 +63,25 @@ describe('a white-label edition', () => {
     expect({ ...base.app.windows[0], title: undefined }).toEqual({ ...DESKTOP_WINDOW, title: undefined })
     for (const k of ['publisher', 'copyright', 'shortDescription', 'fileAssociations']) expect(overlay.bundle[k]).toEqual(base.bundle[k])
     expect(overlay.bundle).not.toHaveProperty('icon')
-    expect(overlay.app).not.toHaveProperty('security.capabilities')
+  })
+
+  it('keeps capabilities/slicerx-links.json, for builds without an overlay, in step with the SlicerX edition', () => {
+    const pinned = new URL('../../../apps/desktop/src-tauri/capabilities/slicerx-links.json', import.meta.url)
+    const file = {
+      $schema: '../gen/schemas/desktop-schema.json',
+      ...editionLinksCapability(slicerxEdition),
+      identifier: 'slicerx-links',
+      description: "SlicerX's own web pages, for builds without an edition overlay. Generated from editions/slicerx; a test keeps it in step.",
+    }
+    const text = JSON.stringify(file, null, 2) + '\n'
+    if (process.env['SX_WRITE_FIXTURES']) writeFileSync(pinned, text)
+    expect(readFileSync(pinned, 'utf8')).toBe(text)
+  })
+
+  it('writes opener allow entries that match the link and nothing wider', () => {
+    expect(allowPattern('https://github.com/o/r/tree/{commit}')).toBe('https://github.com/o/r/tree/*')
+    expect(allowPattern('https://slicerx.app')).toBe('https://slicerx.app/')
+    expect(allowPattern('https://example.com/a?b=[c]*')).toBe('https://example.com/a[?]b=[[]c[]][*]')
   })
 
   it('names file types after the edition and keeps the format extensions', async () => {

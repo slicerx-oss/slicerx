@@ -5,7 +5,7 @@
 // its constant so a build without it carries none of its code.
 import type { ApprovalHost, ApprovalVerifier, FileHost, Host, LlmTransport, SecretsHost, SlicerHost, ThemesHost } from '@slicerx/contracts'
 import { createWebSlicer } from '@slicerx/slicer'
-import { editionFromBuild, sourceUrl } from '@slicerx/edition-config'
+import { editionFromBuild, SLICERX_SOURCE, sourceUrl } from '@slicerx/edition-config'
 import { createWebFiles } from './files'
 
 declare const __SX_VERSION__: string
@@ -86,7 +86,7 @@ export async function createWebHost(over: HostOverrides = {}): Promise<Host> {
       version: __SX_VERSION__,
       commit: __SX_COMMIT__,
       // The edition names where its source lives; `{commit}` pins this exact build.
-      sourceUrl: sourceUrl(edition, __SX_COMMIT__) ?? 'https://github.com/slicerx-oss/slicerx',
+      sourceUrl: sourceUrl(edition, __SX_COMMIT__) ?? SLICERX_SOURCE,
       ...(__SX_E2E__ ? { e2e: true } : {}),
     },
     slicer: resolvingAuto(sl.host),

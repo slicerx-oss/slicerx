@@ -3,7 +3,8 @@
 // Links out to the website. Paths come from the edition's routes, never from
 // string literals, and the origin from the edition or the page.
 import type { EditionHost, Host } from '@slicerx/contracts'
-import type { EditionConfig } from '@slicerx/edition-config'
+import { privacyPage, type EditionConfig } from '@slicerx/edition-config'
+import { openSafely } from '../../lib/links'
 
 type Routes = EditionConfig['routes']
 
@@ -36,7 +37,7 @@ export type RouteName = keyof Routes
 /** A new tab on the web; the system browser through the host on desktop. */
 export async function openExternal(host: Host, url: string): Promise<void> {
   const auth = (host as EditionHost).auth
-  if (auth) await auth.openExternal(url)
+  if (auth) await openSafely(url, (u) => auth.openExternal(u))
   else window.open(url, '_blank', 'noopener')
 }
 
@@ -45,7 +46,5 @@ export async function openExternal(host: Host, url: string): Promise<void> {
  * has one, otherwise the README in the source the build came from.
  */
 export function privacyUrl(edition: EditionConfig, sourceUrl: string): string {
-  if (edition.legal.privacy) return edition.legal.privacy
-  const repo = /^(https:\/\/[^/]+\/[^/]+\/[^/#?]+)/.exec(sourceUrl)?.[1]
-  return `${repo ?? sourceUrl}/blob/main/packages/store/README.md#privacy`
+  return privacyPage(edition, sourceUrl)
 }
