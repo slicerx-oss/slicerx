@@ -704,6 +704,83 @@ async fn a_plate_queues_for_an_offline_bambu_printer_without_connecting() {
     assert_eq!(it["printerId"], "bay-9", "{it}");
 }
 
+/// A stand-in BamBuddy: answers every request with an idle printer and records the request line and
+/// the API key it was sent.
+async fn fake_bambuddy() -> (u16, std::sync::Arc<std::sync::Mutex<Vec<String>>>) {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let log = seen.clone();
+    tokio::spawn(async move {
+        while let Ok((mut sock, _)) = listener.accept().await {
+            let log = log.clone();
+            tokio::spawn(async move {
+                let mut buf = vec![0_u8; 8192];
+                let n = sock.read(&mut buf).await.unwrap_or(0);
+                let req = String::from_utf8_lossy(&buf[..n]).to_string();
+                let line = req.lines().next().unwrap_or_default().to_owned();
+                let key = req
+                    .lines()
+                    .find_map(|l| l.to_ascii_lowercase().starts_with("x-api-key:").then(|| l[10..].trim().to_owned()))
+                    .unwrap_or_default();
+                log.lock().unwrap().push(format!("{line} key={key}"));
+                let body = r#"{"connected":true,"state":"IDLE"}"#;
+                let resp = format!("HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}", body.len());
+                let _ = sock.write_all(resp.as_bytes()).await;
+            });
+        }
+    });
+    (port, seen)
+}
+
+#[tokio::test]
+async fn a_bambuddy_printer_takes_its_server_from_connected_apps() {
+    let link = hub(None).await;
+    let mut ws = paired(&link).await;
+    let cfg = json!({ "id": "bb-12", "name": "Shed P1S", "plugin": "bambuddy", "host": "10.9.9.9", "serial": "12" });
+
+    // Until BamBuddy is added in Connected apps, a BamBuddy printer has nowhere to go.
+    let r = call(&mut ws, 2, "printers.add", json!({ "config": cfg })).await;
+    assert_eq!(r["error"]["code"], "not_configured", "{r}");
+    let r = call(&mut ws, 3, "printers.test", json!({ "config": cfg })).await;
+    assert_eq!(r["result"]["ok"], false, "{r}");
+    assert_eq!(r["result"]["cause"], "not_configured", "{r}");
+
+    // Add BamBuddy once: its address, and its API key kept as a secret.
+    let (port, seen) = fake_bambuddy().await;
+    let r = call(&mut ws, 4, "secrets.set", json!({ "name": "app-bambuddy", "value": "bb-key-1" })).await;
+    assert!(r["error"].is_null(), "{r}");
+    let r = call(
+        &mut ws,
+        5,
+        "services.configure",
+        json!({ "pluginId": "bambuddy", "baseUrl": format!("http://127.0.0.1:{port}"), "secretRef": "app-bambuddy" }),
+    )
+    .await;
+    assert!(r["error"].is_null(), "{r}");
+    let list = call(&mut ws, 6, "services.list", json!({})).await;
+    assert!(
+        list["result"].as_array().unwrap().iter().any(|s| s["pluginId"] == "bambuddy" && s["hasSecret"] == true),
+        "{list}"
+    );
+
+    // The printer named another host. The connection goes to the app's server, with the app's key,
+    // for the printer id the printer holds.
+    let r = call(&mut ws, 7, "printers.test", json!({ "config": cfg })).await;
+    assert_eq!(r["result"]["ok"], true, "{r}");
+    let r = call(&mut ws, 8, "printers.add", json!({ "config": cfg })).await;
+    assert_eq!(r["result"]["id"], "bb-12", "{r}");
+    let r = call(&mut ws, 9, "status", json!({ "printerId": "bb-12" })).await;
+    assert!(r["error"].is_null(), "{r}");
+    let seen = seen.lock().unwrap().clone();
+    assert!(!seen.is_empty(), "the app's server was asked");
+    assert!(
+        seen.iter().all(|l| l.contains("/api/v1/printers/12") && l.ends_with("key=bb-key-1")),
+        "{seen:?}"
+    );
+}
+
 #[tokio::test]
 async fn printers_fleets_queue_approvals_and_clients_survive_a_restart() {
     let dir = temp_dir("restart");
