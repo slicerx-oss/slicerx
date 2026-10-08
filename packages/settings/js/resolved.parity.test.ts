@@ -4,7 +4,7 @@
 // OrcaSlicer 2.4.2 resolved for the same presets, for the day-one printers. Runs only when ORCA_RESOLVED_DIR points at
 // the dumps (orca-<model>.<tier>.json, the config block of Orca's own G-code), which stay out of the repository.
 // Every difference must be listed here with its reason.
-import { appendFileSync, existsSync, readFileSync } from 'node:fs'
+import { appendFileSync, existsSync, readdirSync, readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { defaultConfig } from './schema'
 import { importFlat } from './import'
@@ -35,14 +35,18 @@ const GCODE = ['machine_start_gcode', 'machine_end_gcode', 'layer_change_gcode',
 const unescape = (v: string): string => v.replace(/\\(.)/g, (m, c: string) => (c === 'n' ? '\n' : c === 'r' ? '\r' : c === '"' ? '"' : c === '\\' ? '\\' : m))
 const clean = (v: string): string => unescape(v.startsWith('"') && v.endsWith('"') && v.length >= 2 ? v.slice(1, -1) : v)
 
+/** The nozzle variants' Standard dumps in the directory (orca-<model>.standard.n<size>.json). */
+const NOZZLE_DUMPS = DIR && existsSync(DIR) ? readdirSync(DIR).flatMap((f) => { const m = /^orca-(.+)\.standard\.n([0-9.]+)\.json$/.exec(f); return m ? [{ id: m[1]!, nozzle: Number(m[2]) }] : [] }) : []
+
 describe.skipIf(!DIR || !existsSync(DIR ?? ''))('resolved profiles against OrcaSlicer 2.4.2', () => {
-  for (const id of PRINTERS) {
-    for (const tier of TIERS) {
-      const file = `${DIR}/orca-${id}.${tier}.json`
-      it.skipIf(!existsSync(file))(`${id} ${tier}`, async () => {
+  const cases = [...PRINTERS.flatMap((id) => TIERS.map((tier) => ({ id, tier, nozzle: undefined as number | undefined }))), ...NOZZLE_DUMPS.map((d) => ({ ...d, tier: 'standard' }))]
+  for (const { id, tier, nozzle } of cases) {
+    {
+      const file = `${DIR}/orca-${id}.${tier}${nozzle ? `.n${nozzle}` : ''}.json`
+      it.skipIf(!existsSync(file))(`${id} ${tier}${nozzle ? ` ${nozzle} mm nozzle` : ''}`, async () => {
         const raw = JSON.parse(readFileSync(file, 'utf8')) as Record<string, string>
         const orca = importFlat(Object.fromEntries(Object.entries(raw).map(([k, v]) => [k, clean(v)]))).config as Record<string, unknown>
-        const r = await resolvedProfile(id, tier)
+        const r = await resolvedProfile(id, tier, nozzle)
         expect(r, `${id} has resolved data`).toBeDefined()
         const ours = { ...defaultConfig(), ...r!.machine, ...r!.filament, ...r!.process, ...Object.fromEntries(Object.entries(printerConfig(id) ?? {}).filter(([k]) => GCODE.includes(k))) } as Record<string, unknown>
         const differ = Object.keys(orca).filter((k) => !(k in REASONS) && !sameValue(orca[k] as never, ours[k] as never) && JSON.stringify(orca[k]) !== JSON.stringify(ours[k]))
