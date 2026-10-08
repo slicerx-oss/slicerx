@@ -831,7 +831,7 @@ export function readText(o: TestOutcome): string {
   const parts: string[] = []
   if (o.reportedModel) parts.push(o.reportedModel)
   if (o.nozzleMm) parts.push(`${o.nozzleMm} mm nozzle`)
-  if (o.filamentSystem) parts.push(`${FILAMENT_LABELS[o.filamentSystem === 'toolchanger' ? 'other' : o.filamentSystem]}${o.slotCount ? ` with ${o.slotCount} slots` : ''}`)
+  if (o.filamentSystem) parts.push(`${FILAMENT_LABELS[o.filamentSystem === 'toolchanger' ? 'other' : o.filamentSystem]}${o.slotCount ? ` with ${o.slotCount} ${o.slotCount === 1 ? 'slot' : 'slots'}` : ''}`)
   return parts.join(', ')
 }
 
@@ -1165,7 +1165,7 @@ function FoundList({ ctl, picked, onPick, onClear, enterIp }: { ctl: PrinterCont
                   {p.firmware ? <Chip mono>Firmware {p.firmware}</Chip> : null}
                   {p.lanOnly === false ? <Chip tone="orange">LAN Only Mode off</Chip> : null}
                   {p.nozzleMm ? <Chip mono icon="nozzle">{p.nozzleMm} mm</Chip> : null}
-                  {p.filamentSystem ? <Chip icon="ams-unit">{model?.filamentUnit ?? FILAMENT_LABELS[p.filamentSystem === 'toolchanger' ? 'other' : p.filamentSystem]}{p.slotCount ? `, ${p.slotCount} slots` : ''}</Chip> : null}
+                  {p.filamentSystem ? <Chip icon="ams-unit">{model?.filamentUnit ?? FILAMENT_LABELS[p.filamentSystem === 'toolchanger' ? 'other' : p.filamentSystem]}{p.slotCount ? `, ${p.slotCount} ${p.slotCount === 1 ? 'slot' : 'slots'}` : ''}</Chip> : null}
                   {!model ? <Chip tone="orange">Not in the catalog</Chip> : null}
                 </span>
               </span>
