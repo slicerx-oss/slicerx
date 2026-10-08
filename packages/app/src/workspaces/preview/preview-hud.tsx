@@ -7,6 +7,9 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { buildTimeline, clock, fitOf, movesAt, movesOf, positionAt, sliderOf, timeAt, timeOfSlider } from '../../lib/preview-timeline'
 import { toolChangerFor } from '../../lib/toolchanger'
 import { lengthLabel, previewStats } from '../../lib/preview-stats'
+import { resolveSlots } from '../../filament/slots'
+import { Swatch } from '../../parts'
+import { ColorBy } from '../view-menus'
 import { LayerTrack } from './layer-track'
 import { layerKeyStep, stepLayer } from './layer-step'
 import { usePaneSize } from '../../shell/pane'
@@ -63,10 +66,28 @@ export function Legend() {
   const preview = useApp((s) => s.preview)
   const colorMode = useApp((s) => s.colorMode)
   const palette = useApp((s) => s.toolpathPalette)
+  // The slots' colors, which the filament view draws with; a string, so the selector stays stable.
+  const slotColors = useApp((s) => resolveSlots(s).map((r) => r.color).join())
   if (!preview) return null
   const stats = colorMode === 'feature' ? previewStats(preview) : null
+  const tools = colorMode === 'tool' ? previewStats(preview).toolLengthM : null
+  const colors = slotColors.split(',')
   return (
     <ul className="legend sx-overlay" aria-label="Toolpath legend">
+      <li className="legend-mode">
+        <ColorBy />
+      </li>
+      {tools?.flatMap((m, i) =>
+        m > 0
+          ? [
+              <li key={i} data-testid="legend-slot" data-slot={i + 1}>
+                <Swatch color={colors[i] ?? 'var(--dim)'} size="sm" />
+                <span>Slot {i + 1}</span>
+                <b>{lengthLabel(m)}</b>
+              </li>,
+            ]
+          : [],
+      )}
       {stats?.features.slice(0, 7).map((f) => (
         <li key={f.feature}>
           <i className="bar-key" style={{ background: featureStyle(f.feature).color }} />

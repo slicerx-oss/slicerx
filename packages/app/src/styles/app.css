@@ -145,6 +145,9 @@ button.reset:hover { color: var(--fg); background: var(--ink-3); }
 .legend { list-style: none; margin: 0; padding: 8px 12px; border-radius: var(--r-md); display: grid; gap: 3px; }
 .legend li { display: grid; grid-template-columns: 14px 1fr auto; gap: 10px; align-items: center; font: 500 11.5px var(--f-mono); color: var(--muted); }
 .legend b { color: var(--fg); font-weight: 500; text-align: right; }
+.legend .legend-mode { display: block; margin-bottom: 4px; padding-bottom: 4px; border-bottom: 1px solid var(--line-soft); }
+.legend-color-by { display: flex; align-items: center; justify-content: space-between; gap: 8px; font: 500 11.5px var(--f-body); color: var(--muted); }
+.legend-color-by .sx-btn { color: var(--fg); }
 .legend .legend-markers { display: grid; grid-template-columns: 1fr; gap: 3px; margin-top: 4px; padding-top: 6px; border-top: 1px solid var(--line-soft); }
 .legend .legend-markers label { display: grid; grid-template-columns: 14px 10px 1fr auto; gap: 8px; align-items: center; cursor: pointer; }
 .pv-plates { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 6px; }

@@ -7,7 +7,7 @@ import type { ApprovalHost, ApprovalRequest, ApprovalToken, FileRef, Host, JobFi
 import { followsSlotMap, grantApproval, hashParams, readPreview, slotMapLine } from '@slicerx/contracts'
 import { resolveConfig } from '../adapters/config'
 import { DEFAULT_MODEL, demoModel } from '../lib/demo-models'
-import { formatDuration } from '../lib/preview-stats'
+import { defaultColorMode, formatDuration } from '../lib/preview-stats'
 import type { DecodedModel } from '@slicerx/embed/mesh'
 import { resumeSliceOptions } from '../geom/resume'
 import { resolveSlots, slotConfig, slotOverridesFor, usedSlots } from '../filament/slots'
@@ -28,7 +28,7 @@ import { printBlock } from '../plate/heimdall'
 import { clearProject } from '../project/new'
 import { confirmDiscard, markClean } from '../project/unsaved'
 import { isExportOnly } from '../lib/hand-printers'
-import { get, markStale, set, toast, type AppState, type PlateEntry, type PlateMeta, selectedIds, type PendingApproval, type ModelSource, type PlateVolumeEntry } from './store'
+import { colorModeAfterSlice, get, markStale, set, toast, type AppState, type PlateEntry, type PlateMeta, selectedIds, type PendingApproval, type ModelSource, type PlateVolumeEntry } from './store'
 import { appName, brandAccent, objectPalette } from '../edition'
 import { handOffCopy, handToBambuConnect, onLinux, printRoute } from '../send/bambu-connect'
 import { openLink } from '../lib/links'
@@ -157,6 +157,8 @@ async function addProject(host: Host, data: ArrayBuffer, name: string): Promise<
   if (project.namedValues.length) {
     set((s) => ({ namedValues: [...s.namedValues, ...project.namedValues.filter((v) => !s.namedValues.some((o) => o.name === v.name))] }))
   }
+  // The file's filament colors stay per slot; a second file only fills slots the first left without one.
+  if (project.colors.length) set((s) => ({ fileSlotColors: wasEmpty ? [...project.colors] : project.colors.map((c, i) => s.fileSlotColors[i] ?? c) }))
   const placed = new Set<string>()
   // Every setting key the file brings, so a value the engine refuses can be dropped at the slice.
   const brought = new Set<string>()
@@ -463,7 +465,7 @@ export async function slicePlate(host: Host, opts: { auto?: boolean } = {}): Pro
     const raw = await host.slicer.getPreview(result.id)
     const preview = readPreview(raw)
     const cur = get()
-    set({ slice: { status: 'done', result, stale: false }, preview, strikePick: null, strikeJump: null, strikeHover: null, ...layersAfterSlice(cur, preview.layerCount, cur.norn.before !== null) })
+    set({ slice: { status: 'done', result, stale: false }, preview, strikePick: null, strikeJump: null, strikeHover: null, ...layersAfterSlice(cur, preview.layerCount, cur.norn.before !== null), ...colorModeAfterSlice(cur, defaultColorMode(preview)) })
   } catch (e) {
     if (abort.signal.aborted) {
       // A newer slice may already be running; its state is not ours to reset.

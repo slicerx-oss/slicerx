@@ -75,7 +75,12 @@ export function components(part: MeshPart): MeshPart[] {
 
 /** Every connected piece of every part, as parts. */
 export function splitToParts(parts: readonly MeshPart[]): MeshPart[] {
-  return parts.flatMap((p) => components(p))
+  return splitPieces(parts).map((x) => x.part)
+}
+
+/** The connected pieces of the parts, each with the index of the part it came from. */
+export function splitPieces(parts: readonly MeshPart[]): { part: MeshPart; from: number }[] {
+  return parts.flatMap((p, from) => components(p).map((part) => ({ part, from })))
 }
 
 function boundsOf(parts: readonly MeshPart[]): { min: Vec3; max: Vec3 } {
@@ -111,6 +116,8 @@ export interface SplitObject {
   parts: MeshPart[]
   /** The piece's transform: the source transform, moved so the piece stays where it was. */
   transform: Mat4
+  /** The index of the source part the piece came from. */
+  from: number
 }
 
 /**
@@ -118,12 +125,12 @@ export interface SplitObject {
  * with a transform that leaves it where it was on the plate.
  */
 export function splitToObjects(parts: readonly MeshPart[], transform: Mat4): SplitObject[] {
-  const pieces = splitToParts(parts)
+  const pieces = splitPieces(parts)
   if (pieces.length <= 1) return []
-  return pieces.map((piece) => {
+  return pieces.map(({ part: piece, from }) => {
     const b = boundsOf([piece])
     const c: Vec3 = [(b.min[0] + b.max[0]) / 2, (b.min[1] + b.max[1]) / 2, 0]
-    return { parts: [shift(piece, [-c[0], -c[1], 0])], transform: multiply(transform, translation(c)) }
+    return { parts: [shift(piece, [-c[0], -c[1], 0])], transform: multiply(transform, translation(c)), from }
   })
 }
 

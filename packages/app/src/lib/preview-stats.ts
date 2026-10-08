@@ -56,6 +56,11 @@ export function previewStats(p: PreviewBuffers): PreviewStats {
   return out
 }
 
+/** The toolpath colors a new preview opens in: filament when more than one tool prints, else feature type. */
+export function defaultColorMode(p: PreviewBuffers): 'tool' | 'feature' {
+  return previewStats(p).toolLengthM.filter((m) => m > 0).length > 1 ? 'tool' : 'feature'
+}
+
 export interface TimeRow {
   /** A feature id, or `start` for what happens before the first layer. */
   key: string
