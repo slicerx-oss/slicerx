@@ -71,7 +71,7 @@ describe('the Goal tiles', () => {
   it('show about how long and how much from a fresh slice, and Updating while it is stale or slicing again', () => {
     set({ slice: { status: 'done', result, stale: false } })
     mount()
-    expect(estimate()?.textContent).toBe('About 1h 36m, 148.0 g')
+    expect(estimate()?.textContent).toBe('About 1h 36m, 148 g')
     flushSync(() => set({ slice: { status: 'done', result, stale: true } }))
     expect(estimate()?.textContent).toBe('Updating')
     flushSync(() => set({ slice: { status: 'running', progress: null, startedAt: 0, last: result } }))

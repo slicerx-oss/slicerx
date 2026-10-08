@@ -5,7 +5,7 @@ import type { EasyGoal, EasySettings, SpeedPreset, SupportMode } from '@slicerx/
 import { Chip, Icon, Menu, MenuAnchor, MenuItem, MenuSeparator, Range, Seg, SwitchRow, tipAttrs, type IconName } from '@slicerx/ui'
 import { useMemo, useState } from 'react'
 import { easyConfig, goalEasy, GOALS, inferEasy, matchGoal } from '../../adapters/config'
-import { estimateLine, goalEstimate, goalSubtitle } from '../../lib/estimate-line'
+import { goalEstimate, goalSubtitle } from '../../lib/estimate-line'
 import { choicePatch, chosenFrom, FIXED_HEIGHTS, SLEIPNIR, SLEIPNIR_LINE, type LayerChoice } from '../../lib/layer-choice'
 import { OPTION_TIPS, settingTipAttrs } from '../../lib/tips'
 import { MoreButton, useMore } from '../../shell/more'
@@ -92,7 +92,7 @@ export function EasySettingsPanel() {
       })),
     [subtitles],
   )
-  const line = useApp((s) => goalEstimate(estimateLine(shownSlice(s.slice))))
+  const line = useApp((s) => goalEstimate(shownSlice(s.slice)))
   return (
     <>
       <div className="goal-head">

@@ -29,9 +29,17 @@ describe('the footer line', () => {
 
 describe('the line under the Goal tiles', () => {
   it('says about how long and how much, or Updating while stale', () => {
-    expect(goalEstimate(estimateLine(done({ timeS: 5760, filamentG: [148], cost: 2, toolChanges: 0 })))).toBe('About 1h 36m, 148.0 g')
-    expect(goalEstimate(estimateLine(done({ timeS: 5760, filamentG: [148], cost: 2, toolChanges: 0 }, 0, true)))).toBe('Updating')
-    expect(goalEstimate(estimateLine(done({ timeS: 5760, filamentG: [0], cost: 0, toolChanges: 0 })))).toBe('About 1h 36m')
+    expect(goalEstimate(done({ timeS: 5760, filamentG: [148], cost: 2, toolChanges: 0 }))).toBe('About 1h 36m, 148 g')
+    expect(goalEstimate(done({ timeS: 5760, filamentG: [148], cost: 2, toolChanges: 0 }, 0, true))).toBe('Updating')
+    expect(goalEstimate(done({ timeS: 5760, filamentG: [0], cost: 0, toolChanges: 0 }))).toBe('About 1h 36m')
+  })
+
+  it('reads whole grams, and one decimal under 10 g, while the footer keeps its own format', () => {
+    expect(goalEstimate(done({ timeS: 600, filamentG: [100.2, 47.6], cost: 0, toolChanges: 1 }))).toBe('About 10m, 148 g')
+    expect(goalEstimate(done({ timeS: 600, filamentG: [7.43], cost: 0, toolChanges: 0 }))).toBe('About 10m, 7.4 g')
+    expect(goalEstimate(done({ timeS: 600, filamentG: [9.96], cost: 0, toolChanges: 0 }))).toBe('About 10m, 10 g')
+    expect(estimateLine(done({ timeS: 600, filamentG: [7.43], cost: 0, toolChanges: 0 }))?.grams).toBe('7.4 g')
+    expect(estimateLine(done({ timeS: 600, filamentG: [148], cost: 0, toolChanges: 0 }))?.grams).toBe('148.0 g')
   })
 })
 
