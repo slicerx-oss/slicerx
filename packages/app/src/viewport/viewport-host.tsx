@@ -156,9 +156,10 @@ async function start(stage: HTMLElement, webgpu: boolean, label: string): Promis
   try {
     const [{ createViewport, controlsPreset, withRemap, withGizmo }, gpuRenderer] = await Promise.all([import('@slicerx/viewport'), shellGpu()])
     const vp = createViewport(canvas, { backend: webgpu ? 'auto' : 'webgl2', label, gpuRenderer })
-    // Profiling hook: set localStorage 'slicerx.debug' to reach the handle from a script.
+    // Profiling hook: set localStorage 'slicerx.debug' to reach the handle from a script (the store's __sx is there
+    // from the first frame, state/store.ts).
     try {
-      if (localStorage.getItem('slicerx.debug')) Object.assign(window, { __vp: vp, __sx: appStore })
+      if (localStorage.getItem('slicerx.debug')) Object.assign(window, { __vp: vp })
     } catch { /* storage blocked */ }
     return Object.assign(vp, { backendName: () => (vp.stats().backend === 'webgpu' ? 'WebGPU' : 'WebGL2'), controlsApi: { controlsPreset, withRemap, withGizmo } })
   } catch (e) {
