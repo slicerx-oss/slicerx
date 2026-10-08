@@ -285,9 +285,9 @@ export const EXTRA_ICONS = {
   cone: '<path d="M5 17.5L12 3.5l7 14"/><ellipse cx="12" cy="17.5" rx="7" ry="2.5"/>',
   'support-painting': '<path d="M3.5 4h9M5.5 4v7.5M10.5 4v7.5"/>' + PENCIL,
   'seam-painting': '<path d="M11.5 8a4 4 0 1 1-4-4"/>' + DOT(9.9, 4.8) + PENCIL,
-  'preset-draft': '<rect x="4" y="3.5" width="16" height="17" rx="3"/><path d="M4 9.25h16M4 14.75h16"/>',
-  'preset-standard': '<rect x="4" y="3.5" width="16" height="17" rx="3"/><path d="M4 6.9h16M4 10.3h16M4 13.7h16M4 17.1h16"/>',
-  'preset-fine': '<rect x="4" y="3.5" width="16" height="17" rx="3"/><path d="M4 5.65h16M4 7.75h16M4 9.9h16M4 12h16M4 14.1h16M4 16.25h16M4 18.35h16" stroke-width="1"/>',
+  'preset-draft': '<rect x="4" y="3.5" width="16" height="17" rx="3"/><path d="M4 12h16" stroke-width="2.5"/>',
+  'preset-standard': '<rect x="4" y="3.5" width="16" height="17" rx="3"/><path d="M4 7.75h16M4 12h16M4 16.25h16"/>',
+  'preset-fine': '<rect x="4" y="3.5" width="16" height="17" rx="3"/><path d="M4 5.65h16M4 7.75h16M4 9.9h16M4 12h16M4 14.1h16M4 16.25h16M4 18.35h16" stroke-width="0.75"/>',
   'preset-strong': '<rect x="4" y="3.5" width="16" height="17" rx="3"/><path d="M4 9.25h16M4 14.75h16M9.25 3.5v17M14.75 3.5v17"/>',
   'color-painting': '<path d="M7.5 3.5c2 2.5 3.5 4.3 3.5 6a3.5 3.5 0 0 1-7 0c0-1.7 1.5-3.5 3.5-6z"/>' + PENCIL,
   // Named features (design/NAMES.md), the marks picked from the brand canvas icon sheets.
