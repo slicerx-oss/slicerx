@@ -1,16 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // The print watch runs on Windows, Linux and Apple silicon Macs. On an Intel Mac the desktop app never starts it
-// (apps/desktop/src-tauri/src/watch.rs), so Settings shows no Print watch rows there.
+// (apps/desktop/src-tauri/src/watch.rs), so Settings shows no Print watch rows there. The shell names its CPU (shell_arch).
 import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import { createElement } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ApprovalHost, Host, PrinterHost } from '@slicerx/contracts'
 import { HostContext } from '../src/host'
-import { registerCrashHost } from '../src/bugs/reports'
 import { connectBridge, resetBridge, setBridgeConnector, type ConnectedBridge } from '../src/link/bridge'
 import { BridgeSection } from '../src/link/section'
-import { watchRunsOn } from '../src/link/watch-support'
+import { registerShellArch } from '../src/link/watch-support'
 
 function host(): Host {
   return { kind: 'desktop', printers: { id: 'demo' } as unknown as PrinterHost, approvals: { id: 'demo' } as unknown as ApprovalHost, secrets: { id: 'none' }, capabilities: { printers: 'sim', secureStorage: false } } as unknown as Host
@@ -28,9 +27,13 @@ function bridge(): ConnectedBridge {
   }
 }
 
-/** The desktop shell as crash.rs reports itself: the OS with the CPU in brackets. */
-function shell(os: string): void {
-  registerCrashHost({ take: async () => ({ reports: [], pageLoads: 1, os }), ack: async () => undefined, testPanic: async () => undefined })
+/** The desktop shell on `platform` (navigator.platform, as the web view reports it) answering shell_arch with `arch`. */
+function shell(platform: string, arch: string | Error): void {
+  vi.spyOn(navigator, 'platform', 'get').mockReturnValue(platform)
+  registerShellArch(async () => {
+    if (arch instanceof Error) throw arch
+    return arch
+  })
 }
 
 async function settings(): Promise<void> {
@@ -48,13 +51,14 @@ beforeEach(() => {
 
 afterEach(async () => {
   cleanup()
-  registerCrashHost(null)
+  registerShellArch(null)
+  vi.restoreAllMocks()
   await vi.dynamicImportSettled()
 })
 
 describe('Print watch rows by platform', () => {
   it('hides the rows on an Intel Mac', async () => {
-    shell('macOS 15.1 (x86_64)')
+    shell('MacIntel', 'x86_64')
     await settings()
     // Long enough for the rows to have come in, had they been going to.
     await new Promise((r) => setTimeout(r, 50))
@@ -62,24 +66,27 @@ describe('Print watch rows by platform', () => {
     expect(screen.queryByLabelText(/Let mimir confirm/)).toBeNull()
   })
 
-  it.each(['macOS 15.1 (aarch64)', 'Windows 10.0.22631.4317 (x86_64)', 'Ubuntu 24.04.1 LTS (x86_64)', 'Ubuntu 24.04.1 LTS (aarch64)'])('shows the rows on %s', async (os) => {
-    shell(os)
+  it.each([
+    ['an Apple silicon Mac', 'MacIntel', 'aarch64'],
+    ['Windows', 'Win32', 'x86_64'],
+    ['Linux on x86_64', 'Linux x86_64', 'x86_64'],
+    ['Linux on arm64', 'Linux aarch64', 'aarch64'],
+  ])('shows the rows on %s', async (_name, platform, arch) => {
+    shell(platform, arch)
     await settings()
     await waitFor(() => expect(screen.getByText('Print watch')).toBeTruthy())
     expect(screen.getByLabelText(/Let mimir confirm/)).toBeTruthy()
   })
 
-  it('shows the rows in the browser, which has no shell to ask', async () => {
+  it('shows the rows on a Mac whose shell does not answer', async () => {
+    shell('MacIntel', new Error('shell_arch not allowed'))
     await settings()
     await waitFor(() => expect(screen.getByText('Print watch')).toBeTruthy())
   })
 
-  it('reads only macOS on x86_64 as a computer without the watch', () => {
-    expect(watchRunsOn('macOS 15.1 (x86_64)')).toBe(false)
-    expect(watchRunsOn('macOS (x86_64)')).toBe(false)
-    expect(watchRunsOn('macOS 15.1 (aarch64)')).toBe(true)
-    expect(watchRunsOn('Windows 11 (x86_64)')).toBe(true)
-    expect(watchRunsOn('Linux (x86_64)')).toBe(true)
-    expect(watchRunsOn('')).toBe(true)
+  it('shows the rows in the browser, which has no shell to ask', async () => {
+    vi.spyOn(navigator, 'platform', 'get').mockReturnValue('MacIntel')
+    await settings()
+    await waitFor(() => expect(screen.getByText('Print watch')).toBeTruthy())
   })
 })
