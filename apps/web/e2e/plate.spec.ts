@@ -276,7 +276,7 @@ test('the printer bridge section asks for a code and says plainly when sx-link i
   await prepare(page)
   await page.getByRole('button', { name: 'Settings', exact: true }).click()
   await page.getByRole('navigation', { name: 'Settings sections' }).getByRole('button', { name: 'Printer bridge' }).click()
-  const connect = page.getByRole('button', { name: 'Connect' })
+  const connect = page.getByRole('button', { name: 'Connect', exact: true })
   await expect(connect).toBeDisabled()
   await page.getByLabel('Pairing code').fill('abcd-2345')
   await expect(connect).toBeEnabled()
