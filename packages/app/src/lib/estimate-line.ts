@@ -33,11 +33,20 @@ export function estimateLine(done: { result: Pick<SliceResult, 'stats' | 'warnin
   }
 }
 
-/** The muted line under the Goal tiles: "About 1h 36m, 148.0 g", "Updating" while stale, nothing before a slice. */
-export function goalEstimate(line: EstimateLine | null): string | null {
-  if (!line) return null
-  if (line.stale) return 'Updating'
-  return line.grams === NOT_ESTIMATED ? `About ${line.time}` : `About ${line.time}, ${line.grams}`
+/** Grams for the line under the Goal tiles: whole grams, one decimal under 10 g. The footer keeps formatGrams. */
+function roughGrams(g: number): string | null {
+  if (!(g > 0)) return null
+  const tenth = Math.round(g * 10) / 10
+  return tenth < 10 ? `${tenth.toFixed(1)} g` : `${Math.round(g)} g`
+}
+
+/** The muted line under the Goal tiles: "About 1h 36m, 148 g", "Updating" while stale, nothing before a slice. */
+export function goalEstimate(done: { result: Pick<SliceResult, 'stats'>; stale: boolean } | null): string | null {
+  if (!done) return null
+  if (done.stale) return 'Updating'
+  const time = formatDuration(done.result.stats.timeS)
+  const grams = roughGrams(done.result.stats.filamentG.reduce((a, b) => a + b, 0))
+  return grams ? `About ${time}, ${grams}` : `About ${time}`
 }
 
 const num = (v: SettingValue | undefined): number => Number(Array.isArray(v) ? v[0] : v)
