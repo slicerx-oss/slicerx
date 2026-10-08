@@ -11,7 +11,7 @@ import { onThemeChange } from '@slicerx/ui/theme'
 import { useEffect, useRef } from 'react'
 import { brandAccent, editionHasCad, useEdition } from '../edition'
 import { controlsFor, type ControlsApi } from '../first-run/controls'
-import { effectiveSlot, mapSlot, resolveSlots, type ResolvedSlot } from '../filament/slots'
+import { effectiveSlot, mapSlot, resolveSlots, slotFinish, type ResolvedSlot } from '../filament/slots'
 import { activeMeta } from '../plate/plates'
 import { bake } from '../plate/mesh-ops'
 import { objectWarnings } from '../plate/object-list'
@@ -54,6 +54,7 @@ export type Drive = Pick<Viewport, 'setMode' | 'setPlate' | 'setTransforms' | 's
   setPreviewGhost?: Viewport['setPreviewGhost']
   setPreviewOrigin?: Viewport['setPreviewOrigin']
   setPreviewStale?: Viewport['setPreviewStale']
+  setToolFinishes?: Viewport['setToolFinishes']
   setMarkers?: Viewport['setMarkers']
   setExcludedAreas?: Viewport['setExcludedAreas']
   setGcodeMarkers?: Viewport['setGcodeMarkers']
@@ -274,7 +275,12 @@ export function ViewportHost({ mode }: { mode: 'prepare' | 'preview' }) {
         if (rebuilt) pushPaint(s.plate, null)
         else if (s.plate !== prev.plate && !fromViewport) pushPaint(s.plate, prev.plate)
         if ((first || s.slotSetup !== prev.slotSetup || s.printerSlots !== prev.printerSlots || s.fileSlotColors !== prev.fileSlotColors || rebuilt) && vp.setPaintColors) vp.setPaintColors(resolveSlots(s).map((r) => r.color))
-        if (first || s.plate !== prev.plate || s.slotSetup !== prev.slotSetup || s.printerSlots !== prev.printerSlots || s.fileSlotColors !== prev.fileSlotColors) vp.setToolColors(resolveSlots(s).map((r) => r.color))
+        if (first || s.plate !== prev.plate || s.slotSetup !== prev.slotSetup || s.printerSlots !== prev.printerSlots || s.fileSlotColors !== prev.fileSlotColors) {
+          const slots = resolveSlots(s)
+          vp.setToolColors(slots.map((r) => r.color))
+          // Silk prints streak along each bead, matte ones barely shine: the toolpaths shine like the filament named.
+          vp.setToolFinishes?.(slots.map(slotFinish))
+        }
         if (first || rebuilt || s.plate !== prev.plate) pushEars(s)
         if (first || s.selection !== prev.selection || s.selectedIds !== prev.selectedIds || s.towerSelected !== prev.towerSelected) vp.setSelection(s.towerSelected ? [TOWER_ID] : selectedIds(s))
         if (first || s.preview !== prev.preview) vp.setPreview(s.preview)
