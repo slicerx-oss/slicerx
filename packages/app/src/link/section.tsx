@@ -10,6 +10,7 @@ import { useHost } from '../host'
 import { set, toast, useApp } from '../state/store'
 import { bridgeConnector, connectBridge, disconnectBridge, liveBridge } from './bridge'
 import { forgetHub, hubPinned, pinnedHubKey, trustHub } from './hub-pin'
+import { usePrintWatchRuns } from './watch-support'
 import { appName } from '../edition'
 
 /** A hub key's fingerprint as `sx-link code` prints it, or null while it is worked out or for no key. */
@@ -31,7 +32,8 @@ export const normalizeCode = (s: string): string => s.replace(/[^a-z0-9]/gi, '')
 
 /**
  * Print watch, per printer: whether one camera frame may go to the connected AI account for a second look when the
- * local detector is suspicious. Off by default, and it says plainly what leaves this computer.
+ * local detector is suspicious. Off by default, and it says plainly what leaves this computer. An Intel Mac has no
+ * print watch, so it shows no rows.
  */
 function WatchRows() {
   const host = useHost()
@@ -40,6 +42,7 @@ function WatchRows() {
   const [printers, setPrinters] = useState<PrinterInfo[]>([])
   const [on, setOn] = useState<Set<string>>(new Set())
   const [error, setError] = useState<string | null>(null)
+  const runs = usePrintWatchRuns()
   useEffect(() => {
     const w = bridge?.watch
     if (!w) return
@@ -51,7 +54,7 @@ function WatchRows() {
       (e: unknown) => setError(e instanceof Error ? e.message : String(e)),
     )
   }, [bridge, host, epoch])
-  if (!bridge?.watch || printers.length === 0) return null
+  if (!runs || !bridge?.watch || printers.length === 0) return null
   const change = (id: string, enabled: boolean) => {
     setError(null)
     void bridge.watch?.setHuginn(id, enabled).then(
