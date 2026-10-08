@@ -163,7 +163,8 @@ export interface ModelSource {
 
 export type SliceState =
   | { status: 'idle' }
-  | { status: 'running'; progress: SliceProgress | null; startedAt: number }
+  /** `last` is the slice before this one: the screen keeps showing it, as stale, until this one lands. */
+  | { status: 'running'; progress: SliceProgress | null; startedAt: number; last?: SliceResult }
   | { status: 'done'; result: SliceResult; stale: boolean }
   | { status: 'error'; message: string }
 
@@ -787,6 +788,12 @@ export function setRail(ws: Workspace, side: Side, open: boolean): void {
 }
 
 /** Any settings or plate change marks a finished slice stale instead of discarding it. */
+/** The slice the screen shows: the finished one, or while a new one runs, the one before it, as stale. */
+export function shownSlice(slice: SliceState): { result: SliceResult; stale: boolean } | null {
+  if (slice.status === 'done') return slice
+  return slice.status === 'running' && slice.last ? { result: slice.last, stale: true } : null
+}
+
 export function markStale(): void {
   const s = get().slice
   if (s.status === 'done' && !s.stale) set({ slice: { ...s, stale: true } })

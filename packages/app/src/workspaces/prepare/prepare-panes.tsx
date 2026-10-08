@@ -45,7 +45,7 @@ import { useTool } from '../../plate/tools'
 const ObjectVolumes = lazy(() => import('./object-volumes').then((m) => ({ default: m.ObjectVolumes })))
 import { PlateList } from './plate-list'
 import { selectObject } from '../../plate/edit'
-import { get, isCadTool, selectedIds, set, setWorkspace, useApp } from '../../state/store'
+import { get, isCadTool, selectedIds, set, setWorkspace, shownSlice, useApp } from '../../state/store'
 import { GENERIC_BED } from '../../adapters/generic-bed'
 import { useModelMode } from '../../state/model-mode'
 import { EasySettingsPanel } from './easy-settings'
@@ -434,7 +434,8 @@ export function SliceBlock({ label = 'Slice plate', compact }: { label?: string;
   const slice = useApp((s) => s.slice)
   const plate = useApp((s) => s.plate)
   const auto = useApp((s) => s.autoSlice)
-  const done = slice.status === 'done' ? slice : null
+  // While a new slice runs the last one stays, stale, so the estimate never empties and comes back.
+  const done = shownSlice(slice)
   // A strike in the slice holds Print and Export back. Before a slice, objects closer or taller than the printer
   // profile allows by object are a heads-up: heimdall checks every move when the plate slices.
   const unsafe = useApp(printBlock)
@@ -515,7 +516,13 @@ export function SliceBlock({ label = 'Slice plate', compact }: { label?: string;
       ) : (
         <p className="est-sub">{plate.length ? 'Slice to see print time, filament and cost.' : 'Add a model to the plate.'}</p>
       )}
-      {slice.status === 'running' ? (
+      {/* A background slice keeps the action in place and shows its progress on the block's top edge, so nothing moves. */}
+      {slice.status === 'running' && auto && done ? (
+        <div className="slicing-edge" role="status" aria-label="Slicing">
+          <i style={{ transform: `scaleX(${progress ? Math.max(0.04, progress.fraction) : 0.04})` }} />
+        </div>
+      ) : null}
+      {slice.status === 'running' && !(auto && done) ? (
         <div className="slicing" role="status">
           <div className="app-bar-track">
             <i style={{ transform: `scaleX(${progress ? Math.max(0.04, progress.fraction) : 0.04})` }} />

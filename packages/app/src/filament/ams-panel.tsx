@@ -10,7 +10,7 @@ import { activeMeta } from '../plate/plates'
 import { useHost } from '../host'
 import { spoolFor, useSpools } from '../inventory/spools'
 import { MoreButton, useMore } from '../shell/more'
-import { set, useApp } from '../state/store'
+import { set, shownSlice, useApp } from '../state/store'
 import { nozzleText, tuneState } from '../calibration/tuned'
 import { useResolvedSlots } from './use-slots'
 import { SetupNotes } from './setup-plan'
@@ -272,7 +272,7 @@ const ATLAS_TIP = OPTION_TIPS['prime_tower.atlas']!
 /** The prime tower's place: automatic by default, or typed (dragging it in the 3D view does the same). */
 function TowerRow() {
   const tower = useApp((s) => s.tower)
-  const reported = useApp((s) => (s.slice.status === 'done' ? s.slice.result.primeTower : undefined))
+  const reported = useApp((s) => shownSlice(s.slice)?.result.primeTower)
   const note = towerNote(reported, tower.auto)
   return (
     <div className="tower-row">

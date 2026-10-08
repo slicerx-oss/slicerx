@@ -8,20 +8,23 @@ import { useEdition, appName } from '../edition'
 import { useHost } from '../host'
 import { formatShortcut } from '../lib/keys'
 import { CheckLines, checkLines } from '../send/check-lines'
-import { set, useApp } from '../state/store'
+import { set, shownSlice, useApp } from '../state/store'
 
-/** One quiet slot for progress and warnings. Engine and graphics details live in About, under Diagnostics. */
+/**
+ * One quiet slot for progress and warnings. Engine and graphics details live in About, under Diagnostics. The line
+ * stays when it has nothing to say, so slicing and loading never change the height of the view above it.
+ */
 export function Status() {
   const slice = useApp((s) => s.slice)
   const loading = useApp((s) => s.plateLoading)
   const arranging = useApp((s) => s.arranging)
+  const warnings = shownSlice(slice)?.result.warnings.length ?? 0
   const items = [
     ...(slice.status === 'running' ? ['Slicing'] : []),
     ...(loading ? ['Loading the model'] : []),
     ...(arranging ? [arranging.total ? `Arranging, layout ${Math.min(arranging.done + 1, arranging.total)} of ${arranging.total}` : 'Arranging'] : []),
-    ...(slice.status === 'done' && slice.result.warnings.length ? [`${slice.result.warnings.length} ${slice.result.warnings.length === 1 ? 'warning' : 'warnings'} in the last slice`] : []),
+    ...(warnings ? [`${warnings} ${warnings === 1 ? 'warning' : 'warnings'} in the last slice`] : []),
   ]
-  if (!items.length) return null
   return <StatusLine items={items} />
 }
 

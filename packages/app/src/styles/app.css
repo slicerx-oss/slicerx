@@ -112,6 +112,10 @@ button.reset:hover { color: var(--fg); background: var(--ink-3); }
 .app-tag::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
 .app-tag.stale { color: var(--orange); }
 .slicing { display: grid; gap: 6px; }
+.slice-block { position: relative; }
+/* A background slice's progress on the estimate's top edge: drawn over the block, so it never moves anything. */
+.slicing-edge { position: absolute; left: 0; right: 0; top: 0; height: 2px; overflow: hidden; pointer-events: none; }
+.slicing-edge i { position: absolute; inset: 0; background: var(--cyan); transform-origin: left center; transition: transform 0.2s ease-out; }
 .app-bar-track { height: 6px; border-radius: 6px; background: var(--ink-3); overflow: hidden; }
 .app-bar-track i { display: block; height: 100%; background: var(--cyan); transform-origin: left; transition: transform .12s linear; }
 

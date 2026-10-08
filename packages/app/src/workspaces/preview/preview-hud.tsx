@@ -13,7 +13,7 @@ import { ColorBy } from '../view-menus'
 import { LayerTrack } from './layer-track'
 import { layerKeyStep, stepLayer } from './layer-step'
 import { usePaneSize } from '../../shell/pane'
-import { get, set, useApp } from '../../state/store'
+import { get, set, shownSlice, useApp } from '../../state/store'
 import { PLAYBACK_SPEEDS } from '../../state/prefs'
 import { setGcodePanel, useGcodeView } from './gcode-file'
 import { MARKERS, setMarkerShown, useMarkers } from './markers'
@@ -134,7 +134,7 @@ export function LayerDock() {
   const followNozzle = useApp((s) => s.followNozzle)
   const raf = useRef(0)
   const changer = useApp(toolChangerFor)
-  const stats = useApp((s) => (s.slice.status === 'done' ? s.slice.result.stats : null))
+  const stats = useApp((s) => shownSlice(s.slice)?.result.stats ?? null)
   const timeline = useMemo(() => (preview ? buildTimeline(preview, changer, fitOf(stats)) : null), [preview, changer, stats])
   const toolChange = useApp((s) => s.toolChange)
   // heimdall: a jump to a strike plays the seconds before it and stops on it.
