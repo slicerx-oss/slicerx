@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // A new, empty project: one empty plate, no undo history and no file. Print settings, the printer and
-// the filament stay as they are, the same as a new project in OrcaSlicer.
+// the filament stay as they are, the same as a new project in OrcaSlicer, except what an opened project brought.
 import { history } from '../plate/history'
 import { get, set } from '../state/store'
 import { confirmDiscard, markClean } from './unsaved'
@@ -14,6 +14,19 @@ export function clearProject(): void {
     const brought = new Set([...pp.gcodeKeys, ...(get().projectSettings?.keys ?? [])])
     const off = (o: Record<string, unknown>) => Object.fromEntries(Object.entries(o).filter(([k]) => !brought.has(k)))
     set((s) => ({ overrides: off(s.overrides) as typeof s.overrides, vouchedGcode: off(s.vouchedGcode) as typeof s.vouchedGcode, projectPrinter: null, ...(s.printerId === 'project-printer' ? { printerId: pp.previousPrinterId } : {}) }))
+  }
+  // On any printer, the print settings the project changed go back to what the person had before it opened, so an old
+  // project's values never reach the next one.
+  const prior = get().projectSettings?.prior
+  if (prior && Object.keys(prior).length) {
+    set((s) => {
+      const overrides = { ...s.overrides }
+      for (const [k, v] of Object.entries(prior)) {
+        if (v === null) delete overrides[k]
+        else overrides[k] = v
+      }
+      return { overrides }
+    })
   }
   set({
     plate: [],
