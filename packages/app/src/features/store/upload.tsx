@@ -469,7 +469,7 @@ function UploadForm() {
             <Button onClick={closeUpload} disabled={busy !== null} data-testid="upload-cancel">
               Cancel
             </Button>
-            <Button variant="primary" icon="cloud-upload" data-testid="upload-submit" onClick={() => void submit()} disabled={busy !== null || preparing}>
+            <Button variant="primary" icon="cloud-upload" data-testid="upload-publish" onClick={() => void submit()} disabled={busy !== null || preparing}>
               Submit for review
             </Button>
           </div>

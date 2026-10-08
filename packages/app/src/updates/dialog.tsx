@@ -188,7 +188,7 @@ export function UpdateDialogView({ phase, open, app, tag, version, mode, held, s
         <>
           {later()}
           {mode === 'install' && onUpdateNow ? (
-            <Button variant="primary" icon="download" data-testid="update-now" onClick={onUpdateNow}>
+            <Button variant="primary" icon="download" data-testid="danger-update-now" onClick={onUpdateNow}>
               Update now
             </Button>
           ) : url ? (
@@ -234,7 +234,7 @@ export function UpdateDialogView({ phase, open, app, tag, version, mode, held, s
       footer = (
         <>
           {later()}
-          <Button variant="primary" data-testid="update-restart" disabled={held} onClick={onRestart} {...(held ? { tip: 'Waits until the print is on the printer' } : {})}>
+          <Button variant="primary" data-testid="danger-update-restart" disabled={held} onClick={onRestart} {...(held ? { tip: 'Waits until the print is on the printer' } : {})}>
             Restart to update
           </Button>
         </>

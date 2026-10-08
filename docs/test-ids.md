@@ -8,10 +8,12 @@ renamed API breaks a client. The rules:
 - New screens add test ids to the controls a person uses to get through them, and list them here in the same change.
 - Names are lower case words joined by hyphens: the screen or area first, then the control (`vault-detail-open`).
   A row repeated per item keeps one id and carries the item in another attribute (`data-listing`, `data-object-id`).
-- A control that prints, sends to a printer, deletes or archives something gets an id starting with `danger-`, or none.
-  The bridge refuses `danger-` controls, and `packages/app/test/test-ids.test.ts` fails on such a control named any
-  other way. The bridge also refuses everything inside the approval dialog, the Print sheet and any element marked
-  `data-agent-refuse`.
+- A control that prints, sends to a printer, deletes, archives, publishes, installs an update or cancels something
+  gets an id starting with `danger-`, or none. The bridge refuses `danger-` controls, and
+  `packages/app/test/test-ids.test.ts` fails on an id with one of those words (delete, print, send-to, archive, erase,
+  remove-account, publish, update, cancel) named any other way, unless it is listed under
+  [Exceptions to the danger- rule](#exceptions-to-the-danger--rule) with the reason. The bridge also refuses everything
+  inside the approval dialog, the Print sheet and any element marked `data-agent-refuse`.
 - That test also fails when an id in the source is missing from this page.
 
 Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`, `tab-feed` and so on.
@@ -119,7 +121,7 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | `colors-row` | One color of the design (upload and Colors); `data-hex` is the color |
 | `upload-include-profile` | Show how it printed on the listing |
 | `upload-state` | The status line (Ready to send, Uploading) |
-| `upload-cancel`, `upload-submit` | Cancel and Submit for review |
+| `upload-cancel`, `upload-publish` | Cancel and Submit for review (sends the design to the Vault, where it waits for review) |
 | `upload-your-uploads` | Your uploads |
 | `uploads-list` | Your uploads |
 | `uploads-new` | Upload a design |
@@ -148,8 +150,8 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | --- | --- |
 | `update-sheet` | The update sheet |
 | `update-body` | Its body; `data-step` is checking, current, available, downloading, ready, installing or error |
-| `update-now`, `update-download` | Update now, or Download for package installs |
-| `update-restart` | Restart to update |
+| `danger-update-now`, `update-download` | Update now (downloads and installs), or Download for package installs |
+| `danger-update-restart` | Restart to update |
 | `update-later` | Later (Close after an error) |
 | `update-quit` | Quit, when the update is required |
 | `update-retry` | Try again |
@@ -161,6 +163,24 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | `legend-color-by` | The legend's Color by menu: what the toolpath colors show |
 | `legend-color-<mode>` | Its items: `legend-color-feature`, `legend-color-tool` (Filament), `legend-color-speed`, `legend-color-flow`, `legend-color-layer-time` |
 | `legend-slot` | A slot's swatch and path length in the Filament colors; `data-slot` is the slot number |
+
+## Exceptions to the danger- rule
+
+These ids carry one of the rule's words but name no destructive act, so they keep their names and the bridge may use
+them. `packages/app/test/test-ids.test.ts` keeps this table and its own list the same.
+
+| Test id | Why it is not `danger-` |
+| --- | --- |
+| `upload-publish` | The release gate publishes its own test design; nothing goes live before a person approves it in review |
+| `unsaved-cancel` | Closes Save changes first? and keeps everything as it is |
+| `upload-cancel` | Closes the upload form; nothing was sent |
+| `creator-cancel` | Closes the creator page editor without saving |
+| `update-sheet` | The update sheet itself |
+| `update-body` | The sheet body, read for its step |
+| `update-download` | Opens the download page for a package install; nothing is installed |
+| `update-later` | Closes the sheet without updating |
+| `update-quit` | Quits the app when an update is required, without installing anything |
+| `update-retry` | Checks for the update again |
 
 ## Other
 
