@@ -19,6 +19,9 @@ store = []
 pilot = ["dep:sx-llm", "dep:sx-permit", "dep:futures", "dep:base64", "dep:keyring", "dep:zip"]
 connect = ["dep:sx-connect", "dep:sx-permit", "dep:sx-link", "dep:tokio", "dep:tokio-tungstenite", "dep:futures", "dep:keyring", "dep:chacha20poly1305", "dep:getrandom"]
 cloud = []
+# Dev and test builds only: the agent bridge (src/agent_bridge, docs/agent-bridge.md). Never in `default`, never in a
+# release build: apps/desktop/release/check-agent-bridge.mjs fails a release binary or feature set that has it.
+agent-bridge = ["dep:getrandom", "dep:base64", "dep:webkit2gtk", "dep:cairo-rs", "dep:objc2", "dep:objc2-foundation", "dep:objc2-app-kit", "dep:objc2-web-kit", "dep:block2"]
 
 [build-dependencies]
 tauri-build = { version = "=2.7.0", features = [] }
@@ -49,11 +52,25 @@ anyhow = "=1.0.104"
 zip = { version = "=8.6.0", default-features = false, features = ["deflate-flate2-zlib-rs"], optional = true }
 
 # Opens a menu by its access key (menu::menu_key), reads the GPU for local AI (localai.rs) and seals printer codes the
-# keychain refuses with DPAPI (vault.rs). The same version tauri uses.
+# keychain refuses with DPAPI (vault.rs); the agent bridge's screenshots read a COM stream (agent_bridge/shot.rs). The
+# same version tauri uses.
 [target.'cfg(windows)'.dependencies]
-windows = { version = "=0.62.2", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_Graphics_Dxgi", "Win32_System_SystemInformation", "Win32_Security", "Win32_Security_Cryptography"] }
-# Turns off the web view's browser keys (crash::disable_browser_keys). The same version tauri uses.
+windows = { version = "=0.62.2", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_Graphics_Dxgi", "Win32_System_SystemInformation", "Win32_Security", "Win32_Security_Cryptography", "Win32_System_Com", "Win32_System_Com_StructuredStorage"] }
+# Turns off the web view's browser keys (crash::disable_browser_keys) and captures the agent bridge's screenshots. The
+# same version tauri uses.
 webview2-com = "=0.39.1"
+
+# The agent bridge's screenshots (src/agent_bridge/shot.rs) on macOS and Linux, the same versions wry uses.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = { version = "=0.6.4", optional = true }
+objc2-foundation = { version = "=0.3.2", default-features = false, features = ["std", "NSData", "NSDictionary", "NSError", "NSString"], optional = true }
+objc2-app-kit = { version = "=0.3.2", default-features = false, features = ["std", "NSImage", "NSImageRep", "NSBitmapImageRep"], optional = true }
+objc2-web-kit = { version = "=0.3.2", default-features = false, features = ["std", "block2", "objc2-app-kit", "WKWebView", "WKSnapshotConfiguration"], optional = true }
+block2 = { version = "=0.6.2", optional = true }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+webkit2gtk = { version = "=2.0.2", optional = true }
+cairo-rs = { version = "=0.18.5", optional = true }
 
 [dev-dependencies]
 tokio = { version = "=1.53.1", features = ["macros", "rt-multi-thread", "sync", "net", "io-util"] }
