@@ -105,14 +105,14 @@ Reads:
 | Tool | What it returns |
 | --- | --- |
 | `app_health` | Whether a bridge build is running: name, version, pid, platform, whether the page side is up (`pageReady`) and the app has started (`appReady`), the tools it serves |
-| `app_state` | The tab; the plate with each object's parts, filament slot, size, Vault listing, the object list's warnings and the last slice's warnings; the printer and nozzle; the filament slots; the slicing status with the last slice summary; whether setup or the save prompt is open; the dialogs and toasts on screen; the log marker |
+| `app_state` | The tab; the plate with each object's parts, filament slot, size, Vault listing, the object list's warnings and the last slice's warnings; the printer and nozzle; the filament slots; the slicing status with the last slice summary; which export commands are on (`exports`: the mesh exports stay off for a Vault design); whether setup or the save prompt is open; the dialogs and toasts on screen; the log marker |
 | `app_toasts` | Toasts with text, tone and time, since a marker |
 | `app_dialogs` | Dialogs opening and closing, with titles, test ids and times, since a marker, and the dialogs open now |
 | `app_console` | Console lines, page errors, unhandled rejections and content security refusals, since a marker. Tokens are masked |
 | `app_network` | Backend calls and failed resource loads: method, address without its query, status, time. Never bodies, headers or tokens |
 | `app_user` | Signed in or not, and the user id and email |
 | `app_screenshot` | A PNG of the window's content, as an image, and saved to a path when given one |
-| `app_element` | Every control with a test id: on screen, enabled, text, value (never a password), checked, pressed, expanded, and its other `data-` attributes (the row's `listing` or `object-id`, a `state` or `step`) |
+| `app_element` | Every control with a test id: on screen, enabled, text, value (never a password), checked, pressed, expanded, its other `data-` attributes (the row's `listing` or `object-id`, a `state` or `step`), and the pictures in it (`images`: address without its query, `loaded`, `pending` or `failed`, and whether it is on screen) |
 | `app_testids` | The test ids on screen with their counts |
 
 Acts:

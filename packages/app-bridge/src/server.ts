@@ -89,7 +89,7 @@ export function createAppBridgeServer(client: AppClient): McpServer {
     {
       title: 'Read the app state',
       description:
-        'What the app shows now: the active tab (prepare, preview, feed for the Vault, printers...), the plate (each object with its parts, filament slot, size, Vault listing and the last slice\'s warnings for it), the printer and nozzle, the filament slots, the slicing status with the last slice summary (time, grams, layers, warnings), whether setup or the save prompt is open, the dialogs and toasts on screen, and the current log marker.',
+        'What the app shows now: the active tab (prepare, preview, feed for the Vault, printers...), the plate (each object with its parts, filament slot, size, Vault listing and the last slice\'s warnings for it), the printer and nozzle, the filament slots, the slicing status with the last slice summary (time, grams, layers, warnings), which export commands are on (the mesh exports stay off for a Vault design), whether setup or the save prompt is open, the dialogs and toasts on screen, and the current log marker.',
       inputSchema: {},
       annotations: read,
     },
@@ -151,7 +151,7 @@ export function createAppBridgeServer(client: AppClient): McpServer {
   )
   server.registerTool(
     'app_element',
-    { title: 'Read a control', description: 'Every control with this test id: whether it is on screen and enabled, its text, value (never a password), checked, pressed, expanded or current state, and its other data- attributes (data-listing, data-object-id, data-state, data-step).', inputSchema: { testid }, annotations: read },
+    { title: 'Read a control', description: 'Every control with this test id: whether it is on screen and enabled, its text, value (never a password), checked, pressed, expanded or current state, and its other data- attributes (data-listing, data-object-id, data-state, data-step), and the pictures in it (address without its query; loaded, pending or failed; on screen or not).', inputSchema: { testid }, annotations: read },
     forward('element'),
   )
   server.registerTool(

@@ -4,8 +4,9 @@
 // uses controls by test id, what it refuses, and the state and slice summary it reads.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { MeshHandle, SliceResult } from '@slicerx/contracts'
-import { appState, createPageBridge, installCapture, redact, safeUrl, sliceSummary, type Capture } from '../src/agent-bridge'
-import { click, elements, fill, find, pressKey, refusal, testids, waitFor } from '../src/agent-bridge/dom'
+import { registerCommand } from '../src/commands/registry'
+import { appState, createPageBridge, exportCommands, installCapture, redact, safeUrl, sliceSummary, type Capture } from '../src/agent-bridge'
+import { click, elements, fill, find, images, pressKey, refusal, testids, waitFor } from '../src/agent-bridge/dom'
 import { get, set, type PlateEntry } from '../src/state/store'
 
 const handle = (id: string): MeshHandle => ({ id, hash: id, name: id, triangles: 12, bboxMm: [20, 20, 10], openEdges: 0, parts: [{ name: 'body', slot: 1, triangles: 12 }] })
@@ -186,6 +187,30 @@ describe('controls by test id', () => {
     expect(elements(document, 't')[0]).toMatchObject({ value: 'Tower' })
   })
 
+  it('reads the pictures in a control: loaded, still pending or failed, without the query', () => {
+    document.body.innerHTML =
+      '<article data-testid="vault-card"><img id="a" src="https://p.example/storage/v1/object/public/cover.webp?token=abc"><span><img id="b" loading="lazy" src="https://p.example/logo.png"></span><img id="c" src="https://p.example/gone.png"></article>'
+    const set = (id: string, complete: boolean, width: number) => {
+      const img = document.getElementById(id) as HTMLImageElement
+      Object.defineProperty(img, 'complete', { value: complete })
+      Object.defineProperty(img, 'naturalWidth', { value: width })
+      Object.defineProperty(img, 'naturalHeight', { value: width ? 300 : 0 })
+    }
+    set('a', true, 400)
+    set('b', false, 0)
+    set('c', true, 0)
+    const card = elements(document, 'vault-card')[0] as { images: Record<string, unknown>[] }
+    expect(card.images.map((i) => [i['url'], i['state']])).toEqual([
+      ['https://p.example/storage/v1/object/public/cover.webp', 'loaded'],
+      ['https://p.example/logo.png', 'pending'],
+      ['https://p.example/gone.png', 'failed'],
+    ])
+    expect(card.images[0]).toMatchObject({ width: 400, height: 300 })
+    expect(card.images[1]).toMatchObject({ lazy: true })
+    expect(images(document.getElementById('a')!)).toHaveLength(1)
+    expect(JSON.stringify(card)).not.toContain('token')
+  })
+
   it('lists the test ids on the page', () => {
     document.body.innerHTML = '<i data-testid="a"></i><i data-testid="a"></i><i data-testid="b" style="display:none"></i>'
     expect(testids(document)).toEqual({ a: 2 })
@@ -230,6 +255,22 @@ describe('the state an agent reads', () => {
     expect(sliceSummary({ ...base, slice: { status: 'idle' } })).toEqual({ status: 'idle', autoSlice: true })
     expect(sliceSummary({ ...base, slice: { status: 'error', message: 'No room' } })).toEqual({ status: 'error', autoSlice: true, message: 'No room' })
     expect(sliceSummary({ ...base, slice: { status: 'running', progress: null, startedAt: 0 } })).toMatchObject({ status: 'running' })
+  })
+
+  it('says which export commands are on, so a sealed Vault design shows no mesh export', () => {
+    const offs = [
+      registerCommand({ id: 'export-plate-stl', title: 'Export the plate as STL', section: 'plate', enabled: () => false, run: () => undefined }),
+      registerCommand({ id: 'export-gcode', title: 'Export G-code', section: 'plate', run: () => undefined }),
+      registerCommand({ id: 'plate-clear', title: 'Clear the plate', section: 'plate', run: () => undefined }),
+    ]
+    try {
+      const on = exportCommands()
+      expect(on['export-plate-stl']).toBe(false)
+      expect(on['export-gcode']).toBe(true)
+      expect(on).not.toHaveProperty('plate-clear')
+    } finally {
+      offs.forEach((off) => off())
+    }
   })
 
   it('answers tools, refuses unknown ones and waits for the host', async () => {
