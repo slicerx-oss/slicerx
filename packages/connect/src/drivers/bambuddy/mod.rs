@@ -865,7 +865,7 @@ mod tests {
         assert_eq!(s.slots[2].material.as_deref(), Some("ABS"));
         assert_eq!(s.live.as_ref().and_then(|l| l.active_slot.as_deref()), Some("A1"));
         assert_eq!(s.live.as_ref().and_then(|l| l.speed_percent), Some(100));
-        assert_eq!(s.nozzles[0].current, 210.0);
+        assert!((s.nozzles[0].current - 210.0).abs() < 1e-9);
         let hw = hardware_from(&s);
         assert_eq!(hw.filament_units.len(), 2);
         assert_eq!(hw.filament_units[0].id, "A");
