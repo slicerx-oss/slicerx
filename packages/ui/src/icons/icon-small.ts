@@ -7,9 +7,9 @@ import type { IconName } from './icon-names'
 /** Inner SVG markup of the 16px versions, drawn on a 16px grid at stroke 1.5 in currentColor (icons/small.mjs). */
 export const SMALL_ICON_PATHS: Partial<Record<IconName, string>> = {
   "array-linear": "<rect x=\"1.75\" y=\"6.25\" width=\"3.5\" height=\"3.5\" rx=\".75\"/><rect x=\"6.25\" y=\"6.25\" width=\"3.5\" height=\"3.5\" rx=\".75\"/><rect x=\"10.75\" y=\"6.25\" width=\"3.5\" height=\"3.5\" rx=\".75\"/>",
-  "array-polar": "<rect x=\"6.25\" y=\"2.25\" width=\"3.5\" height=\"3.5\" rx=\".75\"/><rect x=\"1.75\" y=\"9\" width=\"3.5\" height=\"3.5\" rx=\".75\"/><rect x=\"10.75\" y=\"9\" width=\"3.5\" height=\"3.5\" rx=\".75\"/>",
-  "body": "<path d=\"M6 1.75l4.25 2.5v2.25M6 11.75l-4.25-2.5v-5L6 1.75\"/><path d=\"M1.75 4.25 6 6.75l4.25-2.5M6 6.75v5\"/><circle cx=\"11.5\" cy=\"11.5\" r=\"2.75\"/>",
-  "box-select": "<path d=\"M2 4.75V2h2.75M7.5 2h3v2.75M2 7.25V10h2.75\"/><path d=\"M8.5 8.5l5.5 2.25-2.25 1-1 2.25z\"/>",
+  "array-polar": "<path d=\"M2.5 10v.01M5.25 5.25v.01M10.75 5.25v.01M13.5 10v.01\" stroke-width=\"3\"/><path d=\"M8 9v2M7 10h2\"/>",
+  "body": "<path d=\"M5.5 1.5l4 2.25v4.25L5.5 10.25l-4-2.25V3.75zM1.5 3.75 5.5 6l4-2.25M5.5 6v4.25\"/><circle cx=\"11.5\" cy=\"11.5\" r=\"3.25\"/><path d=\"M11.5 9.75v1.75l1.25 1\"/>",
+  "box-select": "<path d=\"M1.75 4V1.75H4M7.5 1.75h2.25V4M1.75 6.5v2.25H4M7.5 8.75h2.25V6.5\"/><path d=\"M10.25 9.25l4 1.75-1.75.75-.75 1.75z\"/>",
   "box-shape": "<path d=\"M8 3.5l5.25 2.5v4.75L8 13.25l-5.25-2.5V6z\"/><path d=\"M2.75 6 8 8.5 13.25 6M8 8.5v4.75\"/>",
   "check": "<path d=\"M3.25 8.25l3 3 6.5-6.5\"/>",
   "chevron-down": "<path d=\"M4.25 6.25L8 10l3.75-3.75\"/>",
@@ -19,7 +19,7 @@ export const SMALL_ICON_PATHS: Partial<Record<IconName, string>> = {
   "mesh-menu": "<path d=\"M8 1.75l5.25 3v6.5L8 14.25l-5.25-3v-6.5z\"/><path d=\"M8 1.75v12.5M2.75 4.75l10.5 6.5M13.25 4.75l-10.5 6.5\"/>",
   "mesh-object": "<path d=\"M8 1.75l5.25 3v6.5L8 14.25l-5.25-3v-6.5z\"/><path d=\"M2.75 4.75 8 14.25l5.25-9.5\"/>",
   "model": "<path d=\"M2.75 13.25V7.25a4.5 4.5 0 0 1 4.5-4.5h6v10.5z\"/><circle cx=\"8.75\" cy=\"8.5\" r=\"1.5\"/>",
-  "modifier": "<path d=\"M8 1.75l5.25 3v6.5L8 14.25l-5.25-3v-6.5z\"/><path d=\"M5.5 7h5M5.5 9.75h5\"/>",
+  "modifier": "<path d=\"M5.5 1.5l4 2.25v4.25L5.5 10.25l-4-2.25V3.75zM1.5 3.75 5.5 6l4-2.25M5.5 6v4.25\"/><circle cx=\"11.5\" cy=\"11.5\" r=\"3.25\"/><path d=\"M9.75 10.75h3.5M9.75 12.25h3.5\"/>",
   "part": "<path d=\"M2.75 3.25h10.5v9.5H8.25V9H2.75z\"/>",
   "plus": "<path d=\"M8 3.25v9.5M3.25 8h9.5\"/>",
   "repair-mesh": "<path d=\"M2 13.5 8 2.5l6 11z\"/><path d=\"M8 7.25v4M6 9.25h4\"/>",
