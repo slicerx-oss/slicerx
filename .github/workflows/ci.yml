@@ -3,8 +3,9 @@
 name: ci
 
 # Runs for outside pull requests too, so it holds to this: pull_request (never pull_request_target), no
-# secrets, read-only token, and only the fast checks. The benchmark, the full e2e run, the integrator
-# sample and the release builds run elsewhere (scripts/ci, desktop-release.yml).
+# secrets, read-only token, and no outside services. The benchmark, the e2e specs that need a real backend
+# or sx-link, the integrator sample on pull requests and the release builds run elsewhere (scripts/ci,
+# desktop-release.yml).
 on:
   push:
     branches: [main]
@@ -23,12 +24,23 @@ jobs:
     outputs:
       node: ${{ steps.f.outputs.node }}
       rust: ${{ steps.f.outputs.rust }}
+      pgtap: ${{ steps.f.outputs.pgtap }}
+      e2e: ${{ steps.f.outputs.e2e }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          # a pull request checks out its merge commit, whose first parent is the base it merges into
+          fetch-depth: 2
       - id: f
         run: |
           [ -f package.json ] && echo "node=true" >> "$GITHUB_OUTPUT" || echo "node=false" >> "$GITHUB_OUTPUT"
           [ -f Cargo.toml ] && echo "rust=true" >> "$GITHUB_OUTPUT" || echo "rust=false" >> "$GITHUB_OUTPUT"
+          # The database and browser suites run on a pull request that touches what they test (or this file),
+          # and on every push to main.
+          changed=$(git diff --name-only HEAD^1 HEAD)
+          touched() { [ "$GITHUB_EVENT_NAME" != pull_request ] || printf '%s\n' "$changed" | grep -qE "$1"; }
+          touched '^(supabase/|packages/store/|\.github/workflows/ci\.yml$)' && echo "pgtap=true" >> "$GITHUB_OUTPUT" || echo "pgtap=false" >> "$GITHUB_OUTPUT"
+          touched '^(apps/web/|packages/(app|ui|core|geom)/|pnpm-lock\.yaml$|\.github/workflows/ci\.yml$)' && echo "e2e=true" >> "$GITHUB_OUTPUT" || echo "e2e=false" >> "$GITHUB_OUTPUT"
 
   web:
     needs: detect
@@ -103,11 +115,134 @@ jobs:
       - run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
         with:
-          key: wasm
+          key: wasm-geom
       - run: sh scripts/install-binaryen.sh "$RUNNER_TEMP/binaryen" >> "$GITHUB_PATH"
       - run: sh packages/core/web/scripts/build-wasm.sh
+      # The geometry module the app's worker loads, then both modules for the e2e shards.
+      - if: needs.detect.outputs.e2e == 'true'
+        run: sh packages/geom/wasm/scripts/build.sh
+      - if: needs.detect.outputs.e2e == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: wasm-modules
+          path: |
+            packages/core/web/pkg/
+            packages/geom/wasm/pkg/
+          retention-days: 3
+          if-no-files-found: error
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @slicerx/web build
+
+  # The browser suite (apps/web/e2e) against `vite preview` of the web build. playwright.config.ts builds it with
+  # no backend, so the store and feed run on the bundled demo catalog (features.demoData). Specs that need a
+  # real service skip themselves: vault-flow.spec.ts without the stack from e2e/stack/vault-stack.sh, and
+  # bridge.spec.ts without a built sx-link. --fully-parallel spreads the tests of the big files over the shards;
+  # the e2e job after them is the one name to require.
+  e2e-shard:
+    name: e2e (${{ matrix.shard }}/4)
+    needs: [detect, wasm]
+    if: needs.detect.outputs.e2e == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@v4
+        with:
+          name: wasm-modules
+          path: packages
+      - id: pw
+        run: echo "version=$(pnpm --filter @slicerx/web exec playwright --version | cut -d ' ' -f 2)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}
+      - run: pnpm --filter @slicerx/web exec playwright install --with-deps chromium
+      - run: pnpm --filter @slicerx/web exec playwright test --shard ${{ matrix.shard }}/4 --fully-parallel --reporter=blob,list --trace=retain-on-failure
+      - if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-blob-${{ matrix.shard }}
+          path: apps/web/blob-report/
+          retention-days: 3
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-failures-${{ matrix.shard }}
+          path: apps/web/test-results/
+          retention-days: 14
+
+  # One result for the shards, and their reports merged into one HTML report, with the traces of failures.
+  e2e:
+    needs: [detect, e2e-shard]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - if: needs.e2e-shard.result != 'skipped'
+        uses: actions/checkout@v4
+      - if: needs.e2e-shard.result != 'skipped'
+        uses: pnpm/action-setup@v4
+      - if: needs.e2e-shard.result != 'skipped'
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - if: needs.e2e-shard.result != 'skipped'
+        run: pnpm install --frozen-lockfile
+      - if: needs.e2e-shard.result != 'skipped'
+        uses: actions/download-artifact@v4
+        with:
+          pattern: e2e-blob-*
+          merge-multiple: true
+          path: apps/web/blob-reports
+      - if: needs.e2e-shard.result != 'skipped'
+        run: pnpm --filter @slicerx/web exec playwright merge-reports --reporter html ./blob-reports
+      - if: needs.e2e-shard.result != 'skipped'
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-report
+          path: apps/web/playwright-report/
+          retention-days: 14
+      # Passes when the suite was not needed; fails when it was and a shard, or the build before them, did not pass.
+      - env:
+          DETECT: ${{ needs.detect.result }}
+          WANTED: ${{ needs.detect.outputs.e2e }}
+          SHARDS: ${{ needs.e2e-shard.result }}
+        run: |
+          echo "detect: $DETECT, e2e wanted: $WANTED, shards: $SHARDS"
+          [ "$DETECT" = success ] || exit 1
+          [ "$WANTED" != true ] || [ "$SHARDS" = success ]
+
+  # The database tests (pgTAP) on a throwaway local Supabase with only the services they use: the database, auth
+  # and storage. Then the module drop check, and the whole suite again on a second stack without the default
+  # grants, the way a hosted project starts (supabase/README.md).
+  pgtap:
+    needs: detect
+    if: needs.detect.outputs.pgtap == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.62.10
+      - run: supabase start -x studio,imgproxy,logflare,vector,edge-runtime,supavisor,realtime,mailpit,postgres-meta,kong,postgrest
+      - run: supabase test db
+      - run: sh supabase/modules/check-drop.sh
+      - run: supabase stop --no-backup
+      - run: sh supabase/tests/no-default-grants.sh "$RUNNER_TEMP/nogrants"
+        env:
+          SX_SUPABASE_CLI: supabase
 
   # Heavy: builds the engine in release mode and installs a browser. Pushes to main only.
   devkit:

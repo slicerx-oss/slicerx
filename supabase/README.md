@@ -111,6 +111,8 @@ modules/check-drop.sh
 
 A hosted project created with "automatically expose new tables" off gives `anon` and `authenticated` no table privileges, while the local stack gives them everything. `migrations/0009_api_role_grants.sql` grants each role exactly the commands its row level security policies allow, so both end the same, and `tests/grants.test.sql` checks that match. `tests/no-default-grants.sh` runs the whole suite on a second stack without default privileges (project `slicerx-nogrants`, ports 55320 to 55329).
 
+CI runs all three (the suite, `modules/check-drop.sh` and `tests/no-default-grants.sh`) on every change to `supabase/` or `packages/store` and on every push to main (job `pgtap` in `.github/workflows/ci.yml`).
+
 Realtime stays on: paired devices report a revoked phone through it. Magic link emails go to the local mail catcher at http://127.0.0.1:54324. The auth blocks in `config.toml` (site URL, allowed redirects, OAuth providers) are generated from the edition config by `pnpm --filter @slicerx/store supabase:config`.
 
 ## Hosted library
