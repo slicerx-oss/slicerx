@@ -98,6 +98,14 @@ name="the same record with the right start time is kept"
 fake $$ "$(my_identity right)"; waiter 2 w4; ok kept $$
 name="an old record (no side) with a live pid is kept"
 fake $$ ''; waiter 2 w5; ok kept $$
+
+# A lock with no record: a holder between mkdir and writing it (kept), or one left empty when its removal failed on
+# Windows (cleared once it is older than SX_HEAVY_ORPHAN).
+name="a new lock with no record is kept"
+rm -rf "$dir" && mkdir "$dir"; SX_HEAVY_ORPHAN=60 waiter 2 w6; ok eval '[ "$rc" = 75 ] && [ -d "$dir" ]'
+name="an old lock with no record is cleared"
+rm -rf "$dir" && mkdir "$dir" && touch -d '-120 seconds' "$dir"; SX_HEAVY_ORPHAN=60 waiter 20 w7
+ok eval 'taken_over && grep -q "cleared a lock with no holder record" "$tmp/waiter.out"'
 sleep 0 & dead=$!; wait $dead
 name="an old record (no side) with a dead pid is taken over"
 fake $dead ''; waiter 20 w6; ok taken_over
