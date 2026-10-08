@@ -380,8 +380,10 @@ export interface AppState {
   /**
    * Setting keys an opened project brought (print settings, part and modifier settings). A slice the engine refuses
    * over one of them drops that key, says so, and slices again, so one bad value in a file never blocks the plate.
+   * `prior` is what the person had for each print setting the project changed (null: not set), so clearing the
+   * project puts those back.
    */
-  projectSettings: { source: string; keys: string[] } | null
+  projectSettings: { source: string; keys: string[]; prior?: Record<string, SettingValue | null> } | null
   /** The printer an opened project was made for, while the project is open (project/project-printer.ts). */
   projectPrinter: ProjectPrinter | null
   /** Another slicer's project added to a plate that has objects, waiting for "Open as project" or "Import geometry only". */

@@ -33,6 +33,11 @@ function setEasy(patch: Partial<EasySettings>, goal: Goal = 'custom'): void {
 }
 
 const hasPlate = () => get().plate.length > 0
+/** Something a clear would take away: objects on any plate, more plates than one, or what an opened project brought. */
+const hasJob = () => {
+  const s = get()
+  return s.plate.length > 0 || s.plates.length > 1 || s.plates.some((p) => p.objects.length > 0) || s.projectSettings !== null || s.projectPrinter !== null
+}
 const sliced = () => get().slice.status === 'done'
 /** A slice whose plate can print: no strike in it, and not from before objects were moved too close or too tall by object. */
 const exportable = () => sliced() && printBlock(get()) === null
@@ -68,7 +73,7 @@ export function builtinCommands(host: Host, workspaces: readonly { id: string; l
     { id: 'gcode-open', title: 'Open a G-code file to view', section: 'plate', keywords: ['gcode', 'view', 'preview', 'file'], run: () => pickGcodeFile(host) },
     { id: 'gcode-lines', title: 'Show or hide the G-code lines', section: 'view', keywords: ['gcode', 'text', 'lines', 'viewer'], workspace: 'preview', enabled: () => get().preview !== null, run: () => { setWorkspace('preview'); setGcodePanel(!gcodeView.getState().panel) } },
     { id: 'plate-remove', title: 'Remove the selected object', section: 'plate', keywords: ['delete'], workspace: 'prepare', enabled: () => get().selection !== null, run: removeSelected },
-    { id: 'plate-clear', title: 'Clear the plate', section: 'plate', keywords: ['empty', 'reset'], workspace: 'prepare', enabled: hasPlate, run: async () => { if (await confirmDiscard('clear the plate')) clearPlate() } },
+    { id: 'plate-clear', title: 'Clear the plate', section: 'plate', keywords: ['empty', 'reset'], workspace: 'prepare', enabled: hasJob, run: async () => { if (await confirmDiscard('clear the plate')) clearPlate() } },
   )
   for (const m of DEMO_MODELS) {
     out.push({ id: `plate-add-${m.slug}`, title: `Put the ${m.name.toLowerCase()} on the plate`, section: 'plate', keywords: [m.name, 'example', 'model'], workspace: 'prepare', tool: { permission: 'slice' }, run: async () => { if (!(await confirmDiscard('replace the plate'))) return; setWorkspace('prepare'); await loadDemoModel(host, m.slug, { replace: true }) } })

@@ -163,6 +163,11 @@ async function addProject(host: Host, data: ArrayBuffer, name: string, scope?: O
       wasEmpty = true
     }
   }
+  // A project onto plates the person emptied starts a clean project: the plates, printer and settings an earlier
+  // project left behind go first, so they never mix with this one.
+  if (wasEmpty && (get().projectSettings || get().projectPrinter)) mine(() => clearProject())
+  // What the person had before this project, so clearing it later puts their values back.
+  const overridesBefore = get().overrides
   // Another slicer's project opens as its own printer, first, so its objects land on that printer's bed.
   const asProject = wasEmpty && !own && project.settingsFrom === 'orca' && hasSettings
   const pp = asProject ? await import('../project/project-printer') : null
@@ -283,7 +288,14 @@ async function addProject(host: Host, data: ArrayBuffer, name: string, scope?: O
     const { settingDef } = await import('@slicerx/settings')
     note = `${note ? `${note} ` : ''}Not imported from its height ranges: ${[...rangesLeft].map((k) => (settingDef(k)?.label ?? k).toLowerCase()).join(', ')}.`
   }
-  if (brought.size) mine(() => set((s) => ({ projectSettings: { source: name, keys: [...new Set([...(wasEmpty ? [] : (s.projectSettings?.keys ?? [])), ...brought])] } })))
+  if (brought.size) {
+    const prior: Record<string, SettingValue | null> = {}
+    for (const k of brought) {
+      const was = overridesBefore[k]
+      if (JSON.stringify(get().overrides[k]) !== JSON.stringify(was)) prior[k] = was === undefined ? null : was
+    }
+    mine(() => set((s) => ({ projectSettings: { source: name, keys: [...new Set([...(wasEmpty ? [] : (s.projectSettings?.keys ?? [])), ...brought])], prior: { ...prior, ...(wasEmpty ? {} : s.projectSettings?.prior) } } })))
+  }
   markStale()
   if (!note) return 'opened'
   // A newer open took over meanwhile: its note is the one to show.
@@ -422,8 +434,12 @@ export function removeSelected(): void {
   markStale()
 }
 
+/**
+ * Clears the plate for the next job: every plate, the project's printer and the settings it brought go with the
+ * objects, as a new project does, so nothing of the old job reaches the next file.
+ */
 export function clearPlate(): void {
-  set({ plate: [], selection: null, slice: { status: 'idle' }, preview: null })
+  clearProject()
 }
 
 function overridesOf(meta: PlateMeta | undefined, p: PlateEntry): { slotOverrides?: Record<string, number> } {
