@@ -330,7 +330,7 @@ button { cursor: pointer; }
 :root[data-shell="desktop"] .sx-frame-root { padding: 0; }
 :root[data-shell="desktop"] .sx-frame { border: 0; border-radius: 0; }
 /* macOS draws the traffic lights over the top bar (an overlay title bar), so the bar starts after them. */
-:root[data-shell="desktop"][data-os="mac"] .sx-appbar { padding-left: 84px; }
+:root[data-shell="desktop"][data-os="mac"] .sx-appbar { padding-left: 98px; }
 :root[data-shell="desktop"] .sx-appbar { -webkit-user-select: none; user-select: none; }
 .sx-main { min-height: 0; overflow: auto; position: relative; }
 .sx-appbar { display: flex; align-items: center; gap: 26px; height: var(--h-bar); padding: 0 20px; border-bottom: 1px solid var(--line-soft); min-width: 0; }
