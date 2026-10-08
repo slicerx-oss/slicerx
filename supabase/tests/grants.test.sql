@@ -45,7 +45,7 @@ select is(
 select is(
   (select coalesce(string_agg(format('%s %s', r, t), ', '), '')
    from unnest(array['anon', 'authenticated']) r,
-        unnest(array['api_token_usage', 'storage_cleanup', 'download_secret', 'anon_download_usage', 'anon_downloads', 'download_grants']) t
+        unnest(array['api_token_usage', 'storage_cleanup', 'download_secret', 'anon_download_usage', 'anon_downloads', 'download_grants', 'qa_accounts']) t
    where has_any_column_privilege(r, format('public.%I', t), 'SELECT, INSERT, UPDATE')
       or has_table_privilege(r, format('public.%I', t), 'DELETE, TRUNCATE')),
   '', 'service tables have no client access');
