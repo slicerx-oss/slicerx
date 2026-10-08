@@ -185,6 +185,11 @@ jobs:
           target="${target%% *}"
           node apps/desktop/release/prepare-sidecars.mjs --target "$target" --config apps/desktop/src-tauri/gen/edition.conf.json
 
+      # The agent bridge is for dev and test builds only (docs/agent-bridge.md).
+      - name: Agent bridge off
+        shell: bash
+        run: node apps/desktop/release/check-agent-bridge.mjs --env --manifest apps/desktop/src-tauri/Cargo.toml
+
       - uses: tauri-apps/tauri-action@v0
         id: tauri
         env:
@@ -198,6 +203,16 @@ jobs:
           prerelease: false
           includeUpdaterJson: false
           args: --config src-tauri/gen/edition.conf.json ${{ matrix.args }}
+
+      # Every app binary this job built, and the frontend inside it, must be free of the agent bridge.
+      - name: No agent bridge in the release
+        shell: bash
+        run: |
+          bins=$(find target -maxdepth 3 -type f \( -path '*/release/slicerx' -o -path '*/release/slicerx.exe' \))
+          [ -n "$bins" ] || { echo "no app binary under target/"; exit 1; }
+          args=()
+          for b in $bins; do args+=(--binary "$b"); done
+          node apps/desktop/release/check-agent-bridge.mjs --dist apps/desktop/dist "${args[@]}"
 
       - name: Keep installers for the manifest
         uses: actions/upload-artifact@v4
