@@ -47,6 +47,12 @@ function ollama(): LocalNet & { urls: string[] } {
 }
 
 const flush = () => act(async () => new Promise((r) => setTimeout(r, 0)))
+// Flushes until the condition holds. The model check imports its tool on first use, which on a loaded machine takes far
+// more than a few ticks, so this waits by the clock, up to 20 s, not by a count of ticks.
+async function until(ok: () => boolean, ms = 20_000): Promise<void> {
+  const end = Date.now() + ms
+  while (!ok() && Date.now() < end) await flush()
+}
 let host: HTMLDivElement | null = null
 afterEach(() => {
   host?.remove()
@@ -66,15 +72,14 @@ describe('LocalAiSetup', () => {
     host = document.body.appendChild(document.createElement('div'))
     const root = createRoot(host)
     await act(async () => root.render(<LocalAiSetup net={net} hardware={async () => RTX_4060} onReady={(r) => ready.push(r)} />))
-    await flush()
+    await until(() => /License: Apache 2\.0\..*is running/s.test(host?.textContent ?? ''))
     expect(host.textContent).toContain('Your RTX 4060 has 8 GB, so Qwen 2.5 7B fits well.')
     expect(host.textContent).toContain('License: Apache 2.0.')
     await act(async () => button(/Download 4\.7 GB/).click())
     expect(host.textContent).toMatch(/Download Qwen 2\.5 7B \(4\.7 GB\) with Ollama\?/)
     expect(net.urls.some((u) => u.endsWith('/api/pull'))).toBe(false)
     await act(async () => button(/^Download$/).click())
-    // the check loads its tool lazily, so wait for it instead of a fixed number of ticks
-    for (let i = 0; i < 50 && ready.length === 0; i++) await flush()
+    await until(() => ready.length > 0)
     expect(ready).toEqual([{ model: 'qwen2.5:7b-ctx16k', name: 'Qwen 2.5 7B', baseUrl: 'http://127.0.0.1:11434/v1', tokensPerSecond: expect.anything() }])
     expect(host.textContent).toContain('Qwen 2.5 7B is ready.')
     expect(net.urls.every((u) => u.startsWith('http://127.0.0.1:11434/') || u.startsWith('http://127.0.0.1:1234/'))).toBe(true)
@@ -87,7 +92,7 @@ describe('LocalAiSetup', () => {
     host = document.body.appendChild(document.createElement('div'))
     const root = createRoot(host)
     await act(async () => root.render(<LocalAiSetup net={none} hardware={async () => RTX_4060} allowedModels={['llama-3.2-3b']} onOpenUrl={(u) => opened.push(u)} />))
-    await flush()
+    await until(() => host?.textContent?.includes('Get Ollama') ?? false)
     expect(host.textContent).toContain('Llama 3.2 3B')
     expect(host.textContent).toContain('Meta Llama 3.2 Community License')
     await act(async () => button(/Get Ollama/).click())
