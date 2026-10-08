@@ -229,7 +229,7 @@ export function PreviewRight() {
   })
   return (
     <>
-      <Block title="Filament use" aside={`${r.stats.filamentG.length} slots`} data-section="filament">
+      <Block title="Filament use" aside={`${r.stats.filamentG.length} ${r.stats.filamentG.length === 1 ? 'slot' : 'slots'}`} data-section="filament">
         <ul className="fuse">
           {r.stats.filamentG.map((g, i) => (
             <li key={i}>
