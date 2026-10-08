@@ -7,7 +7,7 @@ import { startAutoSlice } from './state/auto-slice'
 import { QueueWatcher } from './queue/watcher'
 import { ProfileFollow } from './shell/profile-follow'
 import { Frame, keymapFor, setMotionPreference, ThemeProvider, ToastProvider, type Theme } from '@slicerx/ui'
-import { applyType, themeForScheme, themeFromFile } from '@slicerx/ui/theme'
+import { applyType, DEFAULT_THEMES, themeForScheme, themeFromFile } from '@slicerx/ui/theme'
 import '@slicerx/ui/styles.css'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
@@ -77,12 +77,19 @@ export function SlicerXApp({ host, features = [], theme, edition = NEUTRAL, logo
   const themeIds = useApp((s) => s.themeIds)
   const userThemes = useApp((s) => s.userThemes)
   const folderThemes = useApp((s) => s.folderThemes)
+  const themeCache = useApp((s) => s.themeCache)
   const fonts = useApp((s) => s.fonts)
   const contrast = useApp((s) => s.appearance.contrast)
   const colorVision = useApp((s) => s.appearance.colorVision)
   const textSize = useApp((s) => s.appearance.textSize)
   const fontWeight = useApp((s) => s.appearance.fontWeight)
-  const chosen = useMemo(() => themeFromFile(themeForScheme(scheme, themeIds, [...userThemes, ...folderThemes]), fonts, { contrast, colorVision }), [scheme, themeIds, userThemes, folderThemes, fonts, contrast, colorVision])
+  const chosen = useMemo(() => themeFromFile(themeForScheme(scheme, themeIds, [...themeCache, ...userThemes, ...folderThemes]), fonts, { contrast, colorVision }), [scheme, themeIds, themeCache, userThemes, folderThemes, fonts, contrast, colorVision])
+  // A chosen bundled theme the app has no file for yet (a profile from before the cache) loads once from the theme bundle.
+  useEffect(() => {
+    const have = new Set([...DEFAULT_THEMES, ...themeCache, ...userThemes, ...folderThemes].map((t) => t.id))
+    if (have.has(themeIds.dark) && have.has(themeIds.light)) return
+    void import('./theme/cache').then((m) => m.cacheThemes(themeIds))
+  }, [themeIds, themeCache, userThemes, folderThemes])
   const active = theme ?? editionTheme(edition, scheme, chosen)
   const [client] = useState(() => new QueryClient({ defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false } } }))
   // The assistant off means off everywhere: no commands, no panel. Not yet connected keeps both, and the panel shows the connect step.

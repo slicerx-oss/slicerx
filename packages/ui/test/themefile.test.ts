@@ -6,7 +6,8 @@ import { describe, expect, it } from 'vitest'
 import { MONO_FONTS, UI_FONTS, resolveFonts } from '../src/fonts'
 import { FONT_IDS } from '../src/fonts-ids'
 import { nocturne, subban } from '../src/theme'
-import { BUNDLED_THEMES, DEFAULT_DARK_THEME, DEFAULT_LIGHT_THEME, DEFAULT_THEME_IDS, LEGACY_THEME_IDS, allThemes, familyId, findTheme, migrateThemeId, pickFamily, pickTheme, slugify, themeFamilies, themeForScheme } from '../src/theme-library'
+import { BUNDLED_THEMES } from '../src/theme-bundle'
+import { DEFAULT_DARK_THEME, DEFAULT_LIGHT_THEME, DEFAULT_THEMES, DEFAULT_THEME_IDS, LEGACY_THEME_IDS, allThemes, familyId, findTheme, migrateThemeId, pickFamily, pickTheme, slugify, themeFamilies, themeForScheme } from '../src/theme-library'
 import { nocturneLight, subbanLight } from '../src/themes'
 import { SCENE } from '../viewport/src/palette'
 import { GLYPH_CONTRAST, HIGH_TEXT_CONTRAST, TEXT_CONTRAST, contrast, derivePalette, deriveScene, mixHex, parseHex, parseThemeText, readable, rehue, serializeTheme, themeColors, themeFromFile, validateThemeFile, type ThemeFile } from '../src/themefile'
@@ -301,7 +302,13 @@ describe('library', () => {
     expect(pickTheme(DEFAULT_THEME_IDS, mine)).toEqual({ dark: 'mine', light: 'subban-light' })
     const tokyo = BUNDLED_THEMES.find((t) => t.id === 'github-light') as ThemeFile
     expect(pickTheme(DEFAULT_THEME_IDS, tokyo)).toEqual({ dark: 'subban-dark', light: 'github-light' })
-    expect(themeForScheme('light', { dark: 'mine', light: 'github-light' }, [mine]).id).toBe('github-light')
+    expect(themeForScheme('light', { dark: 'mine', light: 'github-light' }, [mine], BUNDLED_THEMES).id).toBe('github-light')
+    // without the bundle (the app at startup), a theme the person has not cached falls back to Subban
+    expect(themeForScheme('light', { dark: 'mine', light: 'github-light' }, [mine]).id).toBe('subban-light')
+  })
+  it('carries only Subban at startup, the same files the bundle has', () => {
+    expect(DEFAULT_THEMES.map((t) => t.id)).toEqual(['subban-dark', 'subban-light'])
+    for (const t of DEFAULT_THEMES) expect(BUNDLED_THEMES.find((b) => b.id === t.id)).toEqual(t)
   })
   it('picking a family fills both slots, keeping or choosing the dark flavor', () => {
     const fam = (id: string) => themeFamilies(BUNDLED_THEMES).find((f) => f.id === id)!

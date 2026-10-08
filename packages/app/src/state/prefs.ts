@@ -30,6 +30,8 @@ export interface Prefs {
   themeFollowsSystem?: boolean | undefined
   themeIds?: { dark: string; light: string } | undefined
   userThemes?: unknown[] | undefined
+  /** The files of the bundled themes in use, so the app starts in them without loading the whole theme bundle. */
+  themeCache?: unknown[] | undefined
   fonts?: { ui: string; mono: string } | undefined
   settingsMode?: 'simple' | 'advanced' | 'expert' | 'developer' | undefined
   crashReports?: boolean | undefined
@@ -277,6 +279,7 @@ export function normalizePrefs(v: unknown): Prefs {
     themeFollowsSystem: or(bool(r['themeFollowsSystem']), false),
     ...opt('themeIds', isRec(r['themeIds']) && str(r['themeIds']['dark'], 40) && str(r['themeIds']['light'], 40) ? { dark: themeId(r['themeIds']['dark'] as string), light: themeId(r['themeIds']['light'] as string) } : undefined),
     ...opt('userThemes', Array.isArray(r['userThemes']) && r['userThemes'].length <= 64 ? (r['userThemes'] as unknown[]) : undefined),
+    ...opt('themeCache', Array.isArray(r['themeCache']) && r['themeCache'].length <= 4 ? (r['themeCache'] as unknown[]) : undefined),
     ...opt('fonts', isRec(r['fonts']) && str(r['fonts']['ui'], 40) && str(r['fonts']['mono'], 40) ? { ui: r['fonts']['ui'] as string, mono: r['fonts']['mono'] as string } : undefined),
     settingsMode: or(oneOf(r['settingsMode'], ['simple', 'advanced', 'expert', 'developer'] as const), 'simple'),
     crashReports: or(bool(r['crashReports']), false),
