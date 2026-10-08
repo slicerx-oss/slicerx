@@ -12,8 +12,8 @@ describe('the desktop window', () => {
   it('overlays the macOS title bar and hides its title', () => {
     const main = (JSON.parse(read('../src-tauri/tauri.conf.json')) as { app: { windows: Record<string, unknown>[] } }).app.windows[0]
     expect(main).toMatchObject({ label: 'main', titleBarStyle: 'Overlay', hiddenTitle: true })
-    // centered in the 52 px top bar
-    expect(main?.['trafficLightPosition']).toEqual({ x: 18, y: 20 })
+    // on the centre line of the top bar's text
+    expect(main?.['trafficLightPosition']).toEqual({ x: 18, y: 27 })
   })
 
   it('lets the page drag and zoom the window from its top bar', () => {
