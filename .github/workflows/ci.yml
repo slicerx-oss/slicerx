@@ -136,10 +136,12 @@ jobs:
   # The browser suite (apps/web/e2e) against `vite preview` of the web build. playwright.config.ts builds it with
   # no backend, so the store and feed run on the bundled demo catalog (features.demoData). Specs that need a
   # real service skip themselves: vault-flow.spec.ts without the stack from e2e/stack/vault-stack.sh, and
-  # bridge.spec.ts without a built sx-link. --fully-parallel spreads the tests of the big files over the shards;
-  # the e2e job after them is the one name to require.
+  # bridge.spec.ts without a built sx-link. Most phone tests skip (desktop width only), so the desktop project gets
+  # five shards and the phone project one; a new project in playwright.config.ts needs its own line here.
+  # --fully-parallel spreads the tests of the big files over the shards, and two workers leave the four cores
+  # room for the app's own slicer workers and software WebGL. The e2e job after them is the one name to require.
   e2e-shard:
-    name: e2e (${{ matrix.shard }}/4)
+    name: e2e (${{ matrix.project }} ${{ matrix.shard }})
     needs: [detect, wasm]
     if: needs.detect.outputs.e2e == 'true'
     runs-on: ubuntu-latest
@@ -147,7 +149,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4]
+        include:
+          - { project: desktop, shard: 1/5 }
+          - { project: desktop, shard: 2/5 }
+          - { project: desktop, shard: 3/5 }
+          - { project: desktop, shard: 4/5 }
+          - { project: desktop, shard: 5/5 }
+          - { project: phone, shard: 1/1 }
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -167,17 +175,20 @@ jobs:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}
       - run: pnpm --filter @slicerx/web exec playwright install --with-deps chromium
-      - run: pnpm --filter @slicerx/web exec playwright test --shard ${{ matrix.shard }}/4 --fully-parallel --reporter=blob,list --trace=retain-on-failure
+      - run: pnpm --filter @slicerx/web exec playwright test --project ${{ matrix.project }} --shard ${{ matrix.shard }} --fully-parallel --workers 2 --reporter=blob,list --trace=retain-on-failure
+        env:
+          # one blob name per job, so the merged report keeps every shard of both projects
+          PLAYWRIGHT_BLOB_OUTPUT_NAME: report-${{ matrix.project }}-${{ strategy.job-index }}.zip
       - if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v4
         with:
-          name: e2e-blob-${{ matrix.shard }}
+          name: e2e-blob-${{ matrix.project }}-${{ strategy.job-index }}
           path: apps/web/blob-report/
           retention-days: 3
       - if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: e2e-failures-${{ matrix.shard }}
+          name: e2e-failures-${{ matrix.project }}-${{ strategy.job-index }}
           path: apps/web/test-results/
           retention-days: 14
 
@@ -236,7 +247,7 @@ jobs:
       - uses: supabase/setup-cli@v1
         with:
           version: 2.62.10
-      - run: supabase start -x studio,imgproxy,logflare,vector,edge-runtime,supavisor,realtime,mailpit,postgres-meta,kong,postgrest
+      - run: supabase start -x studio,imgproxy,logflare,vector,edge-runtime,supavisor,realtime,mailpit,postgres-meta,postgrest
       - run: supabase test db
       - run: sh supabase/modules/check-drop.sh
       - run: supabase stop --no-backup
