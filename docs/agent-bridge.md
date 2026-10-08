@@ -95,6 +95,8 @@ Any MCP client works the same way: the command is `node packages/app-bridge/src/
 edition's data folder. With neither, it looks in the data folders of `app.slicerx.desktop.agent-bridge` and
 `app.slicerx.desktop` and reads the file written last.
 
+The release gate ([release-gate.md](release-gate.md)) runs its scenarios through this server with one command.
+
 An end to end run of the whole chain (start the app with a fresh profile, every read, the safe acts, the refusals,
 stop by pid) is `node packages/app-bridge/scripts/e2e.mjs [--app <binary>] [--file <model>] [--out <dir>]`.
 
