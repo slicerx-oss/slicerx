@@ -149,7 +149,13 @@ jobs:
       - name: gitleaks
         run: |
           curl -sSfL https://github.com/gitleaks/gitleaks/releases/download/v8.18.4/gitleaks_8.18.4_linux_x64.tar.gz | tar xz gitleaks
-          ./gitleaks detect --source . --redact --verbose --exit-code 1
+          # Only the commits this run is about: a pull request's own commits (base..head), or main's history on a
+          # push. Without a range gitleaks scans every fetched branch, so one bad branch would fail every pull request.
+          if [ "$GITHUB_EVENT_NAME" = pull_request ]; then range="$BASE_SHA..$HEAD_SHA"; else range="$GITHUB_SHA"; fi
+          ./gitleaks detect --source . --log-opts="$range" --redact --verbose --exit-code 1
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
 
   licenses:
     needs: detect
