@@ -22,6 +22,7 @@ import { holdUpdates } from '../updates/hold'
 import { exportPlateGcode, sha256Hex } from '../calibration/gcode'
 import { sliceHandle } from '../plate/painted'
 import { nameOptions, plateConfig } from '../plate/plates'
+import { bedTypeConfig } from '../plate/bed-type'
 import { plateSequence } from '../plate/plate-sequence'
 import { layerHeightConflict, objectOverrides, partOverridesOf } from '../plate/object-settings'
 import { printBlock } from '../plate/heimdall'
@@ -407,7 +408,9 @@ function overridesOf(meta: PlateMeta | undefined, p: PlateEntry): { slotOverride
 
 /** The resolved config a plate slices with: profile and Easy choices, overrides, filament slots and the plate's own settings. */
 export function plateSliceConfig(s: AppState, meta: PlateMeta | undefined): PrintConfig {
-  return { ...resolveConfig(s.easy, s.overrides), ...slotConfig(s), ...plateConfig(meta) }
+  const base = resolveConfig(s.easy, s.overrides)
+  // The plate type picks the bed temperatures (the engine's curr_bed_type), so it goes with the plate's other settings.
+  return { ...base, ...slotConfig(s), ...plateConfig(meta), ...bedTypeConfig(meta, base) } as PrintConfig
 }
 
 /**

@@ -30,3 +30,15 @@ describe('the plate type a plate prints on', () => {
     expect(bedTypeConfig(undefined, {})).toEqual({ curr_bed_type: 'High Temp Plate' })
   })
 })
+
+describe('a project\'s plate type in the print settings', () => {
+  it('counts after the plate\'s own and before the printer\'s default', () => {
+    expect(plateBedType(plate(), { curr_bed_type: 'Cool Plate', default_bed_type: '4' })).toMatchObject({ value: 'cool', source: 'settings' })
+    expect(plateBedType(plate('textured-pei'), { curr_bed_type: 'Cool Plate' })).toMatchObject({ value: 'textured-pei', source: 'plate' })
+  })
+
+  it('stays in the slice as it is, even a plate the picker does not list', () => {
+    expect(bedTypeConfig(plate(), { curr_bed_type: 'Supertack Plate' })).toEqual({})
+    expect(bedTypeConfig(plate('cool'), { curr_bed_type: 'Supertack Plate' })).toEqual({ curr_bed_type: 'Cool Plate' })
+  })
+})
