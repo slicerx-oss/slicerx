@@ -1,0 +1,6 @@
+# Tests that failed, then passed on the one rerun. One per line: name (a substring of the test name as the run
+# reports it) | owner | date added | deadline | issue link | why. The deadline is at most one day after the date
+# added; past it the entry counts as quarantined (see quarantine.txt) until someone fixes the test and removes the
+# line. A listed test that fails again on the rerun is a real failure. scripts/ci/flaky-check.sh lint checks this file.
+#
+# test name | owner | added (YYYY-MM-DD) | deadline (YYYY-MM-DD) | issue | why
