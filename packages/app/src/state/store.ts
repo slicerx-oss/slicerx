@@ -263,6 +263,8 @@ export interface AppState {
   themeIds: ThemeIds
   /** Themes the person imported or put in the themes folder. */
   userThemes: ThemeFile[]
+  /** The files of the bundled themes in use (both slots), kept so startup needs only them. */
+  themeCache: ThemeFile[]
   /** Themes read from the desktop themes folder. Not saved: the folder is the source. */
   folderThemes: ThemeFile[]
   /** The person's font choice; "theme" follows the theme's suggestion. */
@@ -567,6 +569,7 @@ export const appStore = createStore<AppState>()(() => ({
   themeFollowsSystem: prefs.themeFollowsSystem ?? false,
   themeIds: prefs.themeIds ?? DEFAULT_THEME_IDS,
   userThemes: loadUserThemes(prefs.userThemes),
+  themeCache: loadUserThemes(prefs.themeCache),
   folderThemes: [],
   fonts: prefs.fonts ?? THEME_FONT_CHOICE,
   settingsMode: prefs.settingsMode ?? 'simple',
@@ -658,7 +661,7 @@ function noAutoSliceDefault(): boolean {
 }
 
 
-const PERSISTED = ['workspace', 'modelModeDefault', 'rails', 'recents', 'appearance', 'showToolhead', 'playbackSpeed', 'followNozzle', 'easy', 'goal', 'printerId', 'scheme', 'lookAndFeel', 'themeFollowsSystem', 'themeIds', 'userThemes', 'fonts', 'settingsMode', 'tooltips', 'autoSlice', 'cadTools', 'electricity', 'printerNozzles', 'printerExtruders', 'handPrinters', 'bays', 'printerBays', 'printersView', 'easyTouched', 'paneSizes', 'queue', 'spoolLinks', 'presetSync', 'firstRun', 'crashReports', 'motion', 'agreement', 'installId', 'setupPilotOff', 'noPrinter', 'pilot', 'sendChoices', 'dryMarks', 'activePresets'] as const satisfies readonly (keyof AppState)[]
+const PERSISTED = ['workspace', 'modelModeDefault', 'rails', 'recents', 'appearance', 'showToolhead', 'playbackSpeed', 'followNozzle', 'easy', 'goal', 'printerId', 'scheme', 'lookAndFeel', 'themeFollowsSystem', 'themeIds', 'userThemes', 'themeCache', 'fonts', 'settingsMode', 'tooltips', 'autoSlice', 'cadTools', 'electricity', 'printerNozzles', 'printerExtruders', 'handPrinters', 'bays', 'printerBays', 'printersView', 'easyTouched', 'paneSizes', 'queue', 'spoolLinks', 'presetSync', 'firstRun', 'crashReports', 'motion', 'agreement', 'installId', 'setupPilotOff', 'noPrinter', 'pilot', 'sendChoices', 'dryMarks', 'activePresets'] as const satisfies readonly (keyof AppState)[]
 
 appStore.subscribe((s, prev) => {
   if (PERSISTED.some((k) => s[k] !== prev[k])) {
@@ -679,6 +682,7 @@ appStore.subscribe((s, prev) => {
       themeFollowsSystem: s.themeFollowsSystem,
       themeIds: s.themeIds,
       userThemes: s.userThemes,
+      themeCache: s.themeCache,
       fonts: s.fonts,
       settingsMode: s.settingsMode,
       tooltips: s.tooltips,
