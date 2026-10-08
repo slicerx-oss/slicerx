@@ -10,6 +10,7 @@
 # to $SX_CI_HOME/logs/<run>/, the last 20 runs are kept, and only a short summary (pass or fail, the failing steps
 # and tests, the sha) leaves the machine, through $SX_CI_NOTIFY. A green run records its sha per platform, and the
 # next per-merge run tests what changed since then. Machine settings live in $SX_CI_HOME/ci.env, never in the repo.
+# A failing test gets one rerun: passed is flaky (reported, tracked in scripts/ci/flaky.txt), failed again is real.
 set -uo pipefail
 
 tier=${1:-}; sha=${2:-}
@@ -93,14 +94,59 @@ failures_of() {
     | sed -E 's/^test ([^ ]+) \.\.\. FAILED/\1/; s/^---- ([^ ]+) stdout ----/\1/; s/^ +//; s/^FAIL +//' | awk '!seen[$0]++' | head -15
 }
 
-quarantined() { # name -> 0 when scripts/ci/quarantine.txt lists it
-  [ -f scripts/ci/quarantine.txt ] || return 1
-  grep -vE '^\s*(#|$)' scripts/ci/quarantine.txt | cut -d'|' -f1 | sed 's/[[:space:]]*$//' | while read -r pat; do
-    [ -n "$pat" ] && case "$1" in *"$pat"*) echo hit; break ;; esac
-  done | grep -q hit
+
+# Lists: scripts/ci/quarantine.txt and flaky.txt, through flaky-check.sh in the checkout. A flaky entry past its
+# deadline counts as quarantined. A commit from before the checker has no lists: nothing is quarantined.
+list_status() { # name -> quarantined | flaky | none
+  if [ -f scripts/ci/flaky-check.sh ]; then bash scripts/ci/flaky-check.sh status "$1" 2>/dev/null || echo none; else echo none; fi
 }
 
-# step <name> <command...>: runs in the checkout, logs to <run>/<name>.log, records pass, fail or quarantined.
+# The second look at a failing step: run only the tests that failed, once, and print (one per line) those that passed.
+# Anything this cannot tell apart from a real failure stays one: a name it cannot map to a test, a rerun that did
+# not run the test, a step that is not a test run.
+#   vitest      each failing test file again (pnpm exec vitest run <file>) in its package
+#   cargo test  the failing tests by exact name, with the step's own packages and flags
+#   playwright  the failing spec files again, with the step's own command
+rerun_once() { # step names command...
+  local step=$1 names=$2; shift 2
+  local rl="$out/$step.rerun.log" part="$out/$step.rerun.part" n d f fl rc again="" files=""
+  : > "$rl"
+  case $step in
+    vitest)
+      while read -r d f; do
+        [ -n "$f" ] || continue
+        ( cd "$d" && pnpm exec vitest run "$f" ) > "$part" 2>&1; rc=$?
+        cat "$part" >> "$rl"
+        if [ $rc -ne 0 ]; then
+          fl=$(failures_of "$part"); [ -n "$fl" ] || continue   # failed without a named test: proves nothing
+          again+=$'\n'$fl
+        fi
+        files+=" $f "
+      done < <(sed -nE 's/^([^ ]+) test: +(FAIL|×) +([^ >]+\.(test|spec)\.[cm]?[jt]sx?).*/\1 \3/p' "$out/$step.log" | sort -u)
+      rm -f "$part"
+      while IFS= read -r n; do
+        f=${n%% *}
+        case $files in *" $f "*) grep -qxF -- "$n" <<< "$again" || echo "$n" ;; esac
+      done <<< "$names" ;;
+    cargo-test|cargo-workspace|gcode-goldens|parity)
+      # shellcheck disable=SC2086
+      ( "$@" -- --exact $names ) > "$rl" 2>&1
+      while IFS= read -r n; do grep -qxF -- "test $n ... ok" "$rl" && echo "$n"; done <<< "$names" ;;
+    e2e)
+      files=$(grep -oE '[^ ]+\.spec\.[cm]?[jt]s' <<< "$names" | sort -u | tr '\n' ' ')
+      [ -n "$files" ] || return 0
+      # shellcheck disable=SC2086
+      ( "$@" $files ) > "$rl" 2>&1
+      local norm='s/^[✘✓ ]+[0-9]+ +//; s/ +\([0-9.]+m?s\)$//; s/ \(retry #[0-9]+\)$//'
+      local passed; passed=$(sed -E 's/^ *(✓)/\1/' "$rl" | grep -E '^✓' | sed -E "$norm")
+      while IFS= read -r n; do grep -qxF -- "$(sed -E "$norm" <<< "$n")" <<< "$passed" && echo "$n"; done <<< "$names" ;;
+  esac
+  return 0
+}
+
+# step <name> <command...>: runs in the checkout, logs to <run>/<name>.log, records pass, flaky, fail or quarantined.
+# A failing test gets one rerun (rerun_once). Passed on the rerun: flaky, reported in the summary, the step passes.
+# Failed again: a real failure. Quarantined (or a flaky entry past its deadline): counted, not rerun, not failed on.
 step() {
   local name=$1; shift
   local t0=$(date +%s) rc
@@ -110,13 +156,35 @@ step() {
   if [ $rc -eq 0 ]; then printf '%s\tpass\t%s\n' "$name" "$secs" >> "$out/steps.tsv"; log "  pass ($secs s)"; return 0; fi
   local names; names=$(failures_of "$out/$name.log")
   [ -n "$names" ] || names=$(tail -n 3 "$out/$name.log" | cut -c1-160)
-  local open=0
+  local open=0 n s tried="" flaky_names="" cap=0
+  # vitest prints a failure twice, as "FAIL file > test" and as a bare "× test 12ms"; the first names the file the rerun needs
+  if [ "$name" = vitest ] && grep -qE '^[^ ]+[.](test|spec)[.][cm]?[jt]sx? > ' <<< "$names"; then names=$(grep -v '^× ' <<< "$names"); fi
+  # cargo ends a failed test run with a line of its own that is no test
+  if grep -qvE '^error: test failed, to rerun' <<< "$names"; then names=$(grep -vE '^error: test failed, to rerun' <<< "$names"); fi
+  # the list of names is capped; with more failures than names, a rerun of the named ones proves nothing
+  [ "$(wc -l <<< "$names" | tr -d ' ')" -ge 15 ] && cap=1
   while IFS= read -r n; do
     [ -n "$n" ] || continue
-    if quarantined "$n"; then printf '%s\tquarantined\t%s\n' "$name" "$n" >> "$out/failures.txt"
-    else printf '%s\tfail\t%s\n' "$name" "$n" >> "$out/failures.txt"; open=1; fi
+    if [ "$(list_status "$n")" = quarantined ]; then printf '%s\tquarantined\t%s\n' "$name" "$n" >> "$out/failures.txt"
+    else tried+="$n"$'\n'; fi
   done <<< "$names"
-  if [ $open -eq 0 ]; then printf '%s\tquarantined\t%s\n' "$name" "$secs" >> "$out/steps.tsv"; log "  failures all quarantined ($secs s)"; return 0; fi
+  if [ -n "$tried" ] && [ $cap -eq 0 ]; then
+    log "  rerunning the failed tests once"
+    flaky_names=$(rerun_once "$name" "${tried%$'\n'}" "$@")
+  fi
+  while IFS= read -r n; do
+    [ -n "$n" ] || continue
+    if [ -n "$flaky_names" ] && grep -qxF -- "$n" <<< "$flaky_names"; then
+      s=$(list_status "$n"); [ "$s" = flaky ] || s=untracked
+      printf '%s\tflaky-%s\t%s\n' "$name" "$s" "$n" >> "$out/failures.txt"
+    else printf '%s\tfail\t%s\n' "$name" "$n" >> "$out/failures.txt"; open=1; fi
+  done <<< "$tried"
+  if [ $open -eq 0 ]; then
+    if [ -n "$flaky_names" ]; then
+      printf '%s\tflaky\t%s\n' "$name" "$secs" >> "$out/steps.tsv"; log "  failed once, passed on the rerun: flaky ($secs s)"
+    else printf '%s\tquarantined\t%s\n' "$name" "$secs" >> "$out/steps.tsv"; log "  failures all quarantined ($secs s)"; fi
+    return 0
+  fi
   printf '%s\tfail\t%s\n' "$name" "$secs" >> "$out/steps.tsv"; log "  FAIL ($secs s, rc $rc)"; return 1
 }
 skip() { printf '%s\tskip\t%s\n' "$1" "$2" >> "$out/steps.tsv"; log "step $1: skipped ($2)"; }
@@ -148,6 +216,8 @@ vitest_opts=(--no-bail --workspace-concurrency=2)
 [ -n "$base" ] && pnpm_scope=(--filter "...[$base]")
 
 step install pnpm install --frozen-lockfile || true
+# The flaky and quarantine lists: every entry needs an owner, a date and an issue link.
+if [ -f scripts/ci/flaky-check.sh ]; then step flaky-lint bash scripts/ci/flaky-check.sh lint; else skip flaky-lint "no checker in this commit"; fi
 
 # The engine module and its 1040 KB gzip budget; the geom module the app tests load.
 if [ "$tier" = nightly ] || [ -z "$base" ] || touched '^(packages/core/|packages/geom/|Cargo\.lock|rust-toolchain\.toml)'; then
@@ -193,7 +263,8 @@ else
     step pgtap sh -c 'npx --yes supabase db reset --local && npx --yes supabase test db --local'
   else skip pgtap "no local Supabase stack on $platform"; fi
   step e2e-browsers pnpm --filter @slicerx/web exec playwright install chromium
-  step e2e pnpm --filter @slicerx/web e2e
+  # the list reporter names each failing test, which the rerun needs (CI=true would pick the dot reporter)
+  step e2e pnpm --filter @slicerx/web e2e --reporter=list
   step devkit sh -c 'cargo build -p sx-cli --release && SLICERX_SX_BIN="$PWD/target/release/sx" node examples/integrator-sample/scripts/integration.mjs'
   if [ "${SX_CI_BENCH:-0}" = 1 ]; then step speed-benchmark pnpm bench; else skip speed-benchmark "not the reference machine"; fi
 fi
@@ -211,7 +282,15 @@ if [ "$fails" = 0 ]; then verdict=PASS; else verdict=FAIL; fi
     awk -F'\t' '$2=="fail"{print "- " $1 ": " $3}' "$out/failures.txt" | head -12
   fi
   q=$(awk -F'\t' '$2=="quarantined"' "$out/failures.txt" | wc -l | tr -d ' ')
-  [ "$q" != 0 ] && echo "Quarantined failures: $q (scripts/ci/quarantine.txt)"
+  [ "$q" != 0 ] && echo "Quarantined failures: $q (scripts/ci/quarantine.txt, scripts/ci/flaky.txt)"
+  # Failed once, passed on the rerun: the run is not red, but each one needs an entry in flaky.txt (owner, a deadline a
+  # day out, an issue) or it is untracked, and a flaky entry past its deadline is already quarantined.
+  nf=$(awk -F'\t' '$2 ~ /^flaky-/' "$out/failures.txt" | wc -l | tr -d ' ')
+  if [ "$nf" != 0 ]; then
+    echo "Flaky (passed on the rerun): $nf"
+    awk -F'\t' '$2=="flaky-flaky"{print "- " $1 ": " $3 " (tracked)"} $2=="flaky-untracked"{print "- " $1 ": " $3 " (UNTRACKED: add to scripts/ci/flaky.txt)"}' "$out/failures.txt" | head -12
+  fi
+  [ -f scripts/ci/flaky-check.sh ] && bash scripts/ci/flaky-check.sh report 2>/dev/null | grep OVERDUE | sed 's/^ *OVERDUE /Overdue, now quarantined: /' | head -5
   echo "Logs: $out on $(hostname -s)"
 } > "$out/summary.txt"
 cat "$out/summary.txt"
