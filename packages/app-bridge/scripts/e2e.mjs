@@ -14,6 +14,7 @@ import { join, resolve } from 'node:path'
 import { parseArgs } from 'node:util'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
+import { finishFirstRun } from './first-run.mjs'
 
 const repo = resolve(import.meta.dirname, '../../..')
 const win = process.platform === 'win32'
@@ -125,19 +126,8 @@ try {
   }
   record('first frame has test ids', rendered)
 
-  // First run on the fresh profile: the agreement, then Skip, use defaults, until the objects list shows.
-  let prepared = false
-  let ids = {}
-  for (let i = 0; i < 60 && !prepared; i++) {
-    ids = (await call('app_testids')).data ?? {}
-    if (ids['agreement-check']) {
-      await expectOk('app_click', { testid: 'agreement-check' })
-      await expectOk('app_click', { testid: 'agreement-accept' })
-    } else if (ids['setup-skip-all']) {
-      await expectOk('app_click', { testid: 'setup-skip-all' })
-    } else prepared = Boolean(ids['objects-list'])
-    if (!prepared) await sleep(500)
-  }
+  // First run on the fresh profile, until the objects list shows (scripts/first-run.mjs, shared with frames.mjs).
+  const { done: prepared, ids } = await finishFirstRun({ testids: async () => (await call('app_testids')).data ?? {}, click: (testid) => expectOk('app_click', { testid }), sleep, tries: 60 })
   record('first run done, objects list on screen', prepared, prepared ? undefined : { onScreen: Object.keys(ids), tab: (await call('app_state')).data?.tab })
   if (!prepared) await call('app_screenshot', { path: join(out, '00-not-prepared.png') })
 
