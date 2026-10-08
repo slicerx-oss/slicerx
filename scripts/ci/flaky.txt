@@ -4,3 +4,5 @@
 # line. A listed test that fails again on the rerun is a real failure. scripts/ci/flaky-check.sh lint checks this file.
 #
 # test name | owner | added (YYYY-MM-DD) | deadline (YYYY-MM-DD) | issue | why
+creator page editor > edits an existing page with a live preview and saves it | ds-fixes | 2026-10-07 | 2026-10-08 | https://github.com/slicerx-oss/slicerx/issues/50 | passes alone, fails in the full app run (packages/app/test/library-creator.test.ts)
+playback through a tool change on the H2C runs clean and keeps its frame rate | ds-fixes | 2026-10-07 | 2026-10-08 | https://github.com/slicerx-oss/slicerx/issues/51 | passes alone, fails in the full e2e run (e2e/toolchange-play.spec.ts)
