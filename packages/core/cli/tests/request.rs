@@ -135,7 +135,11 @@ fn a_bambu_projects_auto_values_slice() {
     // no raft, no supports, then a raft that grows its first layer on auto
     for extra in [&[][..], &[("raft_layers", "2")][..]] {
         let out = run(extra);
-        assert!(out.status.success(), "{extra:?}: {}", String::from_utf8_lossy(&out.stderr));
+        assert!(
+            out.status.success(),
+            "{extra:?}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
         let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
         assert!(v["layerCount"].as_u64().unwrap() > 90, "{v}");
     }
