@@ -1,83 +1,32 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// The theme library: the bundled themes (JSON files in packages/ui/themes) plus the person's own,
-// and the choice of which one is showing.
+// The theme library: the default theme, the person's own, and the choice of which one is showing.
+// The other bundled themes are in theme-bundle.ts.
 
 import subbanDark from '../themes/subban-dark.json'
 import subbanLight from '../themes/subban-light.json'
-import dracula from '../themes/dracula.json'
-import alucard from '../themes/alucard.json'
-import catppuccinMocha from '../themes/catppuccin-mocha.json'
-import catppuccinMacchiato from '../themes/catppuccin-macchiato.json'
-import catppuccinFrappe from '../themes/catppuccin-frappe.json'
-import catppuccinLatte from '../themes/catppuccin-latte.json'
-import nord from '../themes/nord.json'
-import nordLight from '../themes/nord-light.json'
-import atomOneDark from '../themes/atom-one-dark.json'
-import oneLight from '../themes/one-light.json'
-import tokyoNight from '../themes/tokyo-night.json'
-import tokyoNightDay from '../themes/tokyo-night-day.json'
-import githubDark from '../themes/github-dark.json'
-import githubLight from '../themes/github-light.json'
-import solarizedDark from '../themes/solarized-dark.json'
-import solarizedLight from '../themes/solarized-light.json'
-import night from '../themes/night.json'
-import nightLight from '../themes/night-light.json'
-import gothic from '../themes/gothic.json'
-import gothicDark from '../themes/gothic-dark.json'
-import newsprint from '../themes/newsprint.json'
-import newsprintDark from '../themes/newsprint-dark.json'
-import pixyll from '../themes/pixyll.json'
-import pixyllDark from '../themes/pixyll-dark.json'
-import whitey from '../themes/whitey.json'
-import whiteyDark from '../themes/whitey-dark.json'
 import { validateThemeFile, type ThemeFile } from './themefile'
 
 export const DEFAULT_DARK_THEME = 'subban-dark'
 export const DEFAULT_LIGHT_THEME = 'subban-light'
 
-function bundle(raw: unknown): ThemeFile {
+/** Validates a bundled theme file; a broken one is a build error, not a runtime state. */
+export function bundledFile(raw: unknown): ThemeFile {
   const r = validateThemeFile(raw)
   if (!r.ok) throw new Error(`Bundled theme is invalid: ${r.errors.join(' ')}`)
   return r.theme
 }
 
-/** Family by family, Subban first; within a family the dark modes, then the light one. */
-export const BUNDLED_THEMES: readonly ThemeFile[] = [
-  subbanDark,
-  subbanLight,
-  dracula,
-  alucard,
-  catppuccinMocha,
-  catppuccinMacchiato,
-  catppuccinFrappe,
-  catppuccinLatte,
-  nord,
-  nordLight,
-  atomOneDark,
-  oneLight,
-  tokyoNight,
-  tokyoNightDay,
-  githubDark,
-  githubLight,
-  solarizedDark,
-  solarizedLight,
-  night,
-  nightLight,
-  gothic,
-  gothicDark,
-  newsprint,
-  newsprintDark,
-  pixyll,
-  pixyllDark,
-  whitey,
-  whiteyDark,
-].map(bundle)
+/**
+ * Subban, the default, in both modes. The only themes the app carries at startup; the rest are in
+ * `@slicerx/ui/theme-bundle`, which the picker loads, and the app keeps the files of the chosen ones.
+ */
+export const DEFAULT_THEMES: readonly ThemeFile[] = [subbanDark, subbanLight].map(bundledFile)
 
-/** Bundled plus the person's themes. A user theme with a bundled id replaces it. */
-export function allThemes(user: readonly ThemeFile[] = []): ThemeFile[] {
+/** The bundled themes passed in (the defaults unless given) plus the person's. A user theme with a bundled id replaces it. */
+export function allThemes(user: readonly ThemeFile[] = [], bundled: readonly ThemeFile[] = DEFAULT_THEMES): ThemeFile[] {
   const byId = new Map<string, ThemeFile>()
-  for (const t of BUNDLED_THEMES) byId.set(t.id, t)
+  for (const t of bundled) byId.set(t.id, t)
   for (const t of user) byId.set(t.id, t)
   return [...byId.values()]
 }
@@ -100,12 +49,12 @@ export function migrateThemeId(id: string): string {
 }
 
 /** The theme for an id, falling back to the default of the slot the id was meant for. */
-export function findTheme(id: string, scheme: 'dark' | 'light', user: readonly ThemeFile[] = []): ThemeFile {
-  const all = allThemes(user)
+export function findTheme(id: string, scheme: 'dark' | 'light', user: readonly ThemeFile[] = [], bundled: readonly ThemeFile[] = DEFAULT_THEMES): ThemeFile {
+  const all = allThemes(user, bundled)
   const hit = all.find((t) => t.id === id) ?? all.find((t) => t.id === LEGACY_THEME_IDS[id])
   if (hit) return hit
   const fallback = scheme === 'dark' ? DEFAULT_DARK_THEME : DEFAULT_LIGHT_THEME
-  return all.find((t) => t.id === fallback) ?? (BUNDLED_THEMES[0] as ThemeFile)
+  return all.find((t) => t.id === fallback) ?? (DEFAULT_THEMES[0] as ThemeFile)
 }
 
 /** Which theme fills each slot. The app shows the dark slot or the light slot. */
@@ -122,8 +71,8 @@ export function pickTheme(ids: ThemeIds, theme: ThemeFile): ThemeIds {
 }
 
 /** The theme to show for a scheme. */
-export function themeForScheme(scheme: 'dark' | 'light', ids: ThemeIds, user: readonly ThemeFile[] = []): ThemeFile {
-  return findTheme(scheme === 'dark' ? ids.dark : ids.light, scheme, user)
+export function themeForScheme(scheme: 'dark' | 'light', ids: ThemeIds, user: readonly ThemeFile[] = [], bundled: readonly ThemeFile[] = DEFAULT_THEMES): ThemeFile {
+  return findTheme(scheme === 'dark' ? ids.dark : ids.light, scheme, user, bundled)
 }
 
 /** One card in the picker: a theme's light and dark modes, and its flavors when it has more than one of a brightness. */

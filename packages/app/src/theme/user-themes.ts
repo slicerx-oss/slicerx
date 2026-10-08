@@ -2,14 +2,15 @@
 // Copyright (C) 2026 The SlicerX contributors
 // The person's own themes: imported files and the desktop themes folder. Everything is validated
 // again on load, so a hand-edited or corrupt entry is dropped and never reaches the UI.
-import { allThemes, BUNDLED_THEMES, DEFAULT_THEME_IDS, parseThemeText, slugify, type ThemeFile } from '@slicerx/ui/theme'
+import { allThemes, DEFAULT_THEME_IDS, parseThemeText, slugify, type ThemeFile } from '@slicerx/ui/theme'
+import { BUNDLED_THEMES } from '@slicerx/ui/theme-bundle'
 import { get, set } from '../state/store'
 
 export { loadUserThemes } from './load'
 
 /** Bundled themes plus the person's, user ones replacing bundled ones with the same id. */
 export function themeList(userThemes: readonly ThemeFile[], folderThemes: readonly ThemeFile[]): ThemeFile[] {
-  return allThemes([...userThemes, ...folderThemes])
+  return allThemes([...userThemes, ...folderThemes], BUNDLED_THEMES)
 }
 
 export type ImportResult = { ok: true; theme: ThemeFile; warnings: string[] } | { ok: false; errors: string[] }

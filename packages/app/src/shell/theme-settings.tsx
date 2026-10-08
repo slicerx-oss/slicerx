@@ -7,6 +7,7 @@ import { Button, Icon, Seg } from '@slicerx/ui'
 import { derivePalette, familyId, pickFamily, serializeTheme, themeFamilies, themeForScheme, type ThemeFamily, type ThemeFile } from '@slicerx/ui/theme'
 import { useMemo, useRef, useState } from 'react'
 import { useHost } from '../host'
+import { themeCacheFor } from '../theme/cache'
 import { get, set, useApp } from '../state/store'
 import { importThemeText, removeUserTheme, themeList } from '../theme/user-themes'
 import './theme-settings.css'
@@ -73,7 +74,7 @@ function useThemeState() {
   const folder = useApp((s) => s.folderThemes)
   const all = useMemo(() => themeList(user, folder), [user, folder])
   const families = useMemo(() => themeFamilies(all), [all])
-  const current = themeForScheme(scheme, ids, [...user, ...folder])
+  const current = themeForScheme(scheme, ids, all)
   const owned = useMemo(() => new Set(user.map((t) => t.id)), [user])
   return { scheme, ids, families, current, active: familyId(current), owned }
 }
@@ -83,7 +84,8 @@ export function pickThemeFamily(family: ThemeFamily, flavor?: string): void {
   const s = get()
   const ids = pickFamily(s.themeIds, family, flavor)
   const has = s.scheme === 'dark' ? family.dark.length > 0 : family.light.length > 0
-  set(!s.themeFollowsSystem && !has ? { themeIds: ids, scheme: s.scheme === 'dark' ? 'light' : 'dark' } : { themeIds: ids })
+  const themeCache = themeCacheFor(ids)
+  set(!s.themeFollowsSystem && !has ? { themeIds: ids, themeCache, scheme: s.scheme === 'dark' ? 'light' : 'dark' } : { themeIds: ids, themeCache })
 }
 
 /** The line under a card's name: the flavor in use, how many there are, or which mode a one-mode theme has. */

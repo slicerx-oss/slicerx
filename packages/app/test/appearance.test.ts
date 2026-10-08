@@ -19,7 +19,7 @@ import { colorblindToolpaths, get, set } from '../src/state/store'
 const HOST = { kind: 'web', capabilities: { secureStorage: false }, files: { save: async () => undefined } } as unknown as Host
 const mount = (el: ReturnType<typeof createElement>) => render(createElement(HostContext.Provider, { value: HOST }, createElement(EditionContext.Provider, { value: NEUTRAL }, el)))
 
-beforeEach(() => set({ themeIds: { dark: 'subban-dark', light: 'subban-light' }, scheme: 'dark', themeFollowsSystem: false, userThemes: [], folderThemes: [], appearance: DEFAULT_APPEARANCE, motion: null }))
+beforeEach(() => set({ themeCache: [], themeIds: { dark: 'subban-dark', light: 'subban-light' }, scheme: 'dark', themeFollowsSystem: false, userThemes: [], folderThemes: [], appearance: DEFAULT_APPEARANCE, motion: null }))
 afterEach(() => cleanup())
 
 describe('the theme cards', () => {
@@ -35,9 +35,12 @@ describe('the theme cards', () => {
     mount(createElement(ThemePicker))
     fireEvent.click(screen.getByTestId('theme-nord'))
     expect(get().themeIds).toEqual({ dark: 'nord', light: 'nord-light' })
+    // the files of the picked theme are kept, so the next start needs no theme bundle
+    expect(get().themeCache.map((t) => t.id)).toEqual(['nord', 'nord-light'])
     expect(screen.queryByRole('radiogroup', { name: 'Dark flavor' })).toBeNull()
     fireEvent.click(screen.getByTestId('theme-catppuccin'))
     expect(get().themeIds).toEqual({ dark: 'catppuccin-mocha', light: 'catppuccin-latte' })
+    expect(get().themeCache.map((t) => t.id)).toEqual(['catppuccin-mocha', 'catppuccin-latte'])
     const flavor = screen.getByRole('radiogroup', { name: 'Dark flavor' })
     fireEvent.click(flavor.querySelector('[role=radio]:nth-child(3)') as HTMLElement)
     expect(get().themeIds.dark).toBe('catppuccin-frappe')

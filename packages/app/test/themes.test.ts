@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-import { BUNDLED_THEMES, serializeTheme, type ThemeFile } from '@slicerx/ui/theme'
+import { serializeTheme, type ThemeFile } from '@slicerx/ui/theme'
+import { BUNDLED_THEMES } from '@slicerx/ui/theme-bundle'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { loadPrefs, savePrefs } from '../src/state/prefs'
 import { get, set } from '../src/state/store'
