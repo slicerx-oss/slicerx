@@ -15,7 +15,7 @@ Links a printer that is already in SlicerX to the printer BamBuddy knows. Status
 1. Add the printer from the catalog first, the same way you would without BamBuddy. Then choose BamBuddy as the connection.
 2. Enter the BamBuddy computer's address, the API key, and the printer number. SlicerX stores the key in your keychain.
 3. The address has to be on your local network: a private IP address, or a name ending in `.local`, `.lan`, or `.home.arpa`.
-4. Slice with the printer's own profile (a Voron stays a Voron). The file BamBuddy stores is labeled as the Bambu model that printer is in BamBuddy. A Voron that BamBuddy shows as an A1 Mini is labeled `Bambu Lab A1 Mini`. The bed size and start G-code in the file stay the machine you sliced. When BamBuddy does not say which model that printer is, a non-Bambu profile is labeled as an A1 Mini, and a Bambu profile keeps its own model.
+4. Slice with the printer's own profile (a Voron stays a Voron). A file that is not already a Bambu profile is labeled as the Bambu model BamBuddy has for that printer. A Voron that BamBuddy shows as an A1 Mini is labeled `Bambu Lab A1 Mini`. The bed size and start G-code stay the machine you sliced. A Bambu profile that matches the printer is stored as sliced. A Bambu profile for a different model is not uploaded: the message names both models. When BamBuddy answers and the printer has no model, a non-Bambu profile is labeled as an A1 Mini. If that lookup fails, the upload stops.
 
 ### Network and firewall
 
@@ -43,7 +43,7 @@ Printer config: `host`, optional `port` (8000), `credentialRef` for the API key,
 
 ### Requests
 
-`GET /api/v1/printers/{id}/status` on connect and on each poll. Upload reads `GET /api/v1/printers/{id}` for `model`, stamps the `.gcode.3mf` identity when the slice is not already that model, then `POST /api/v1/library/files` (multipart field `file`). The returned file id is what start uses. With no model from that GET, a non-Bambu profile is stamped `Bambu Lab A1 Mini` / `N1` and a Bambu profile is uploaded as sliced. Start is `POST /api/v1/queue/` with `library_file_id`, `printer_id`, `manual_start` false, and the sheet's plate, calibration options and `ams_mapping` when a map was approved. Pause, resume and cancel are `POST /api/v1/printers/{id}/print/pause|resume|stop`. A slot write is `POST /api/v1/printers/{id}/slots/{ams}/{tray}/configure`.
+`GET /api/v1/printers/{id}/status` on connect and on each poll. Upload reads `GET /api/v1/printers/{id}` for `model`. A timeout, a 401, or any other failed lookup fails the upload. A `.gcode.3mf` that is not already a Bambu profile is stamped with that model, then posted to `POST /api/v1/library/files` (multipart field `file`). A Bambu profile that does not match the printer is refused. An empty `model` on a successful reply stamps a non-Bambu profile `Bambu Lab A1 Mini` / `N1` and leaves a Bambu profile as sliced. The sha256 on the upload approval is the sha256 of the posted bytes. The returned file id is what start uses. Start is `POST /api/v1/queue/` with `library_file_id`, `printer_id`, `manual_start` false, and the sheet's plate, calibration options and `ams_mapping` when a map was approved. Pause, resume and cancel are `POST /api/v1/printers/{id}/print/pause|resume|stop`. A slot write is `POST /api/v1/printers/{id}/slots/{ams}/{tray}/configure`.
 
 `remaining_time` is minutes. `progress` is a percent. AMS units 0 to 3 map to slots A1 to D4. The virtual tray is slot `1`. An empty tray (`state` 9) has no material.
 

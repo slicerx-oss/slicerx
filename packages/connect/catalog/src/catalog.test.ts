@@ -120,7 +120,7 @@ test('the demo fleet printers are all in the catalog', () => {
 test('lookups', () => {
   assert.equal(modelById('bambu-a1')?.name, 'A1')
   assert.equal(modelById('nope'), undefined)
-  assert.deepEqual(connectionsFor(modelById('snapmaker-u1')!).map((c) => c.id), ['snapmaker', 'moonraker', 'bambuddy', 'export'])
+  assert.deepEqual(connectionsFor(modelById('snapmaker-u1')!).map((c) => c.id), ['snapmaker', 'moonraker', 'export'])
   assert.ok(modelsByConnection('bambu-lan').every((m) => m.brand === 'bambu-lab'))
   assert.deepEqual(searchModels('bambu a1').map((m) => m.id), ['bambu-a1', 'bambu-a1-mini'])
   assert.equal(searchModels('').length, PRINTER_MODELS.length)
