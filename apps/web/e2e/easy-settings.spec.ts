@@ -116,3 +116,20 @@ test('shots: fresh estimate, Updating, Custom and no slice, light and dark', asy
     await sx({ slice: { ...s, stale: false } })
   }
 })
+
+test.describe('shots at 2x', () => {
+  test.use({ deviceScaleFactor: 2 })
+  test('shots: the four tiles close up, light and dark', async ({ page, isMobile }, info) => {
+    test.skip(!process.env['SX_SHOTS'], 'SX_SHOTS=1 only')
+    test.skip(isMobile, 'Desktop width')
+    const dir = process.env['SX_SHOTS_DIR'] ?? info.outputPath('shots')
+    await open(page, { autoSlice: false })
+    const tiles = page.getByRole('radiogroup', { name: 'Goal' })
+    for (const scheme of ['light', 'dark'] as const) {
+      await page.evaluate((s) => (window as unknown as { __sx: Sx }).__sx.setState({ scheme: s, themeFollowsSystem: false }), scheme)
+      await page.mouse.move(0, 0)
+      await page.waitForTimeout(400)
+      await tiles.screenshot({ path: `${dir}/icons-crop-${scheme}-1440@2x.png` })
+    }
+  })
+})
