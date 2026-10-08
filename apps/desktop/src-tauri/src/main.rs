@@ -71,7 +71,11 @@ fn main() {
         .plugin(tauri_plugin_dialog::init())
         // Links in the page open through the app's own opener (packages/app/src/lib/links.ts), which
         // shows a refused link instead of an unhandled rejection.
-        .plugin(tauri_plugin_opener::Builder::new().open_js_links_on_click(false).build())
+        .plugin(
+            tauri_plugin_opener::Builder::new()
+                .open_js_links_on_click(false)
+                .build(),
+        )
         // The menu bar is there from the first frame; the page swaps in the live one when it loads.
         .menu(menu::initial)
         .on_menu_event(menu::on_event)

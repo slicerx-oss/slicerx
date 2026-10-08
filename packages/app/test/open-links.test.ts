@@ -3,7 +3,6 @@
 // Every page the app opens is one the desktop shell's capabilities allow, and a refused one shows a toast.
 import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { DEFAULT_BUG_REPORTS_URL } from '@slicerx/contracts'
 import { attribution, DESKTOP_CAPABILITIES, editionLinks, editionPages, NEUTRAL_EDITION, parseEditionConfig, SLICERX_BUG_REPORTS, SLICERX_SOURCE, sourceUrl, tauriConfig, type EditionConfig } from '@slicerx/edition-config'
 import { loadEditionConfig } from '@slicerx/edition-config/node'
@@ -16,7 +15,7 @@ import { OLLAMA_DOWNLOAD } from '../src/pilot-connect/local-ai'
 import { BAMBU_CONNECT_DOWNLOAD } from '../src/send/bambu-connect'
 import { get, set } from '../src/state/store'
 
-const capabilities = fileURLToPath(new URL('../../../apps/desktop/src-tauri/capabilities/', import.meta.url))
+const capabilities = join(__dirname, '../../../apps/desktop/src-tauri/capabilities')
 const COMMIT = '508c58be1d0c7e5a6c2b4f3e9a8d7c6b5a4f3e2d'
 
 type Capability = { identifier: string; permissions: (string | { identifier: string; allow?: { url: string }[] })[] }
@@ -83,7 +82,7 @@ function linksOf(config: EditionConfig): string[] {
 const editions: [string, EditionConfig][] = [
   ['slicerx', slicerxEdition],
   ['reference', parseEditionConfig(NEUTRAL_EDITION)],
-  ['acme', await loadEditionConfig({ file: fileURLToPath(new URL('../../edition-config/fixtures/acme/acme.json', import.meta.url)), env: {} })],
+  ['acme', await loadEditionConfig({ file: join(__dirname, '../../edition-config/fixtures/acme/acme.json'), env: {} })],
 ]
 
 describe('the pages the desktop app opens', () => {
@@ -127,7 +126,7 @@ describe('the pages the desktop app opens', () => {
       'commands/builtin.ts': 1,
       'pilot-connect/local-ai-card.tsx': 1,
     }
-    const src = fileURLToPath(new URL('../src/', import.meta.url))
+    const src = join(__dirname, '../src')
     const found: Record<string, number> = {}
     for (const f of readdirSync(src, { recursive: true }) as string[]) {
       if (!/\.tsx?$/.test(f)) continue
