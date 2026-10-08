@@ -105,7 +105,8 @@ jobs:
   # release workflow proves release binaries do not carry it (apps/desktop/release/check-agent-bridge.mjs).
   desktop-bridge:
     needs: detect
-    if: needs.detect.outputs.rust == 'true'
+    # not a required check; the queue runs only what main requires
+    if: needs.detect.outputs.rust == 'true' && github.event_name != 'merge_group'
     strategy:
       fail-fast: false
       matrix:
@@ -327,6 +328,7 @@ jobs:
 
   # The heavy-work lock of the self-hosted CI (scripts/ci/heavy.sh), on a temporary lock.
   heavy-lock:
+    if: github.event_name != 'merge_group'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
