@@ -28,6 +28,12 @@ impl Slicer {
     fn id(&self) -> u32 {
         self.next.fetch_add(1, Ordering::Relaxed) + 1
     }
+
+    /// A slice's G-code, for the agent bridge's export (agent_bridge::export_gcode).
+    #[cfg(feature = "agent-bridge")]
+    pub fn gcode(&self, id: u32) -> Option<Vec<u8>> {
+        lock(&self.results).get(&id).map(|o| o.gcode.clone())
+    }
 }
 
 fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
