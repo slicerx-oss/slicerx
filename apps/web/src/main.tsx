@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
+// First: Zod must be jitless before any module makes a schema (packages/app/src/zod-jitless.ts).
+import '@slicerx/app/zod-jitless'
 import type { AppFeature, EditionHost } from '@slicerx/contracts'
 import { setCurrentEdition, SlicerXApp } from '@slicerx/app'
 import { editionFromBuild } from '@slicerx/edition-config'
