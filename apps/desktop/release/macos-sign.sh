@@ -39,6 +39,8 @@ else
 fi
 
 cd "$repo"
+# A release never carries the agent bridge (docs/agent-bridge.md): refuse a bridge environment before building.
+node apps/desktop/release/check-agent-bridge.mjs --env --manifest apps/desktop/src-tauri/Cargo.toml
 say "build (universal, unsigned)"
 pnpm install --frozen-lockfile --filter "@slicerx/desktop..." --filter "@slicerx/mcp..."
 rustup target add wasm32-unknown-unknown aarch64-apple-darwin x86_64-apple-darwin
@@ -55,6 +57,8 @@ name=${${app:t}%.app}
 version=$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$app/Contents/Info.plist")
 mkdir -p "$out"
 lipo -archs "$app/Contents/MacOS/${name:l}" 2>/dev/null || true
+say "no agent bridge"
+node apps/desktop/release/check-agent-bridge.mjs --binary "$app/Contents/MacOS/${name:l}" --dist apps/desktop/dist
 
 say "sign, notarize and staple the app"
 "${signer[@]}" "$app"

@@ -153,6 +153,8 @@ if ($Release) {
       try { & $step 2>&1 | ForEach-Object { "$_" } } finally { $ErrorActionPreference = $was }
       if ($LASTEXITCODE) { throw "$what failed ($LASTEXITCODE)" }
     }
+    # A release never carries the agent bridge (docs/agent-bridge.md): refuse a bridge environment before building.
+    Run 'agent bridge off' { node apps/desktop/release/check-agent-bridge.mjs --env --manifest apps/desktop/src-tauri/Cargo.toml }
     Run 'engine module' { pnpm --filter @slicerx/slicer build:wasm }
     Run 'geometry module' { sh packages/geom/wasm/scripts/build.sh }
     Run 'edition config' { pnpm --filter @slicerx/desktop tauri:config }
@@ -172,6 +174,8 @@ if ($Release) {
     Push-Location apps/desktop
     try { Run 'signed build' { pnpm tauri build --config src-tauri/gen/edition.signed.conf.json --target $triple --bundles 'nsis,msi' } } finally { Pop-Location }
     $target = Join-Path $repo "target\$triple\release"
+    # The app the installers carry and the frontend inside it, checked for the agent bridge before anything is copied out.
+    Run 'no agent bridge' { node apps/desktop/release/check-agent-bridge.mjs --binary "$target\slicerx.exe" --dist apps/desktop/dist }
     # Only this version's installers: an earlier release's can still sit in the bundle folders.
     $version = (Get-Content (Join-Path $repo 'apps/desktop/src-tauri/tauri.conf.json') -Raw | ConvertFrom-Json).version
     function One([string]$dir, [string]$filter) {
