@@ -88,7 +88,8 @@ alive() {
     :*) kill -0 "$pid" 2> /dev/null ;; # a record from before sides were recorded: same side, the old rule
     darwin:darwin) kill -0 "$pid" 2> /dev/null && [ "$(ps -o lstart= -p "$pid")" = "$start" ] ;;
     linux:linux | wsl:wsl)
-      if [ "$r_side" = linux ] || [ "$r_distro" = "$distro" ]; then
+      # A WSL record with no distro came from a service on this machine's WSL (before wslpath filled the name in).
+      if [ "$r_side" = linux ] || [ "$r_distro" = "$distro" ] || [ -z "$r_distro" ]; then
         [ "$(boot_id)" = "$boot" ] && [ "$(proc_start "$pid")" = "$start" ]
       else wsl_alive; fi ;;
     wsl:msys) wsl_alive ;;
