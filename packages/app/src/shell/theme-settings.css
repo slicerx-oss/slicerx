@@ -37,6 +37,12 @@
 .th-font .sx-select { width: 100%; }
 :root[data-motion="reduced"] .th-card, :root[data-motion="reduced"] .th-remove { transition: none; }
 
+/* A settings row: the label and its note on the left, the choice on the right; stacked on a phone. */
+.set-seg-row { display: flex; align-items: center; justify-content: space-between; gap: var(--s-4); padding: var(--s-2) 0; }
+.set-seg-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.set-seg-text small { color: var(--muted); font-size: var(--fs-sm); }
+@media (max-width: 560px) { .set-seg-row { flex-direction: column; align-items: stretch; } }
+
 /* Look and feel rows: icon, label and one line, the control at the right */
 .ap-text { position: relative; padding-left: 30px; }
 .ap-text > .ap-ic { position: absolute; left: 0; top: 1px; width: 20px; height: 20px; color: var(--muted); }
