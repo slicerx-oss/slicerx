@@ -1,14 +1,32 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // Test ids are part of the UI contract (docs/test-ids.md): every one in the app and the ui kit is listed there, and a
-// control that prints, sends, deletes or archives carries a `danger-` id the agent bridge refuses, or none.
+// control that prints, sends, deletes, archives, publishes, installs an update or cancels carries a `danger-` id the
+// agent bridge refuses, or none, unless it is one of the documented exceptions.
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 const repo = resolve(import.meta.dirname, '../../..')
 const SOURCES = [join(repo, 'packages/app/src'), join(repo, 'packages/ui/src')]
-const DESTRUCTIVE = /(^|-)(delete|print|send-to|archive|erase|remove-account)(-|$)/
+const DESTRUCTIVE = /(^|-)(delete|print|send-to|archive|erase|remove-account|publish|update|cancel)(-|$)/
+
+/**
+ * Ids that carry one of those words and still name no destructive act, each with the reason. docs/test-ids.md lists
+ * the same ids under "Exceptions to the danger- rule".
+ */
+const EXCEPTIONS: Record<string, string> = {
+  'upload-publish': 'the release gate publishes its own test design; nothing goes live before a person approves it in review',
+  'unsaved-cancel': 'closes Save changes first? and keeps everything as it is',
+  'upload-cancel': 'closes the upload form; nothing was sent',
+  'creator-cancel': 'closes the creator page editor without saving',
+  'update-sheet': 'the update sheet itself',
+  'update-body': 'the sheet body, read for its step',
+  'update-download': 'opens the download page for a package install; nothing is installed',
+  'update-later': 'closes the sheet without updating',
+  'update-quit': 'quits the app when an update is required, without installing anything',
+  'update-retry': 'checks for the update again',
+}
 
 function files(dir: string): string[] {
   return readdirSync(dir).flatMap((n) => {
@@ -53,7 +71,7 @@ describe('test ids', () => {
   const doc = documented()
 
   it('finds the ids the release gate uses', () => {
-    for (const id of ['vault-detail-open', 'signin-send-again', 'account-sign-out', 'objects-list', 'export-menu', 'update-now', 'setup-next', 'upload-submit', 'creator-save']) expect(src.exact.has(id), id).toBe(true)
+    for (const id of ['vault-detail-open', 'signin-send-again', 'account-sign-out', 'objects-list', 'export-menu', 'update-later', 'setup-next', 'upload-publish', 'creator-save']) expect(src.exact.has(id), id).toBe(true)
     expect(src.families.has('tab-*')).toBe(true)
   })
 
@@ -65,7 +83,20 @@ describe('test ids', () => {
   })
 
   it('keeps destructive actions under danger-', () => {
-    const named = [...src.exact, ...src.families].filter((id) => !id.startsWith('danger-') && DESTRUCTIVE.test(id))
-    expect(named).toEqual([])
+    const named = [...src.exact, ...src.families].filter((id) => !id.startsWith('danger-') && DESTRUCTIVE.test(id) && !(id in EXCEPTIONS))
+    expect(named, 'name these danger-, or add a documented exception').toEqual([])
+    for (const id of ['danger-update-now', 'danger-update-restart']) expect(src.exact.has(id), id).toBe(true)
+  })
+
+  it('lists each exception to the danger- rule in docs/test-ids.md, and only those', () => {
+    const doc = readFileSync(join(repo, 'docs/test-ids.md'), 'utf8')
+    const section = doc.split(/^## /m).find((s) => s.startsWith('Exceptions to the danger- rule'))
+    expect(section, 'docs/test-ids.md needs the section "Exceptions to the danger- rule"').toBeDefined()
+    const listed = [...section!.matchAll(/^\| `([a-z0-9-]+)` \|/gm)].map((m) => m[1]!)
+    expect(listed.sort()).toEqual(Object.keys(EXCEPTIONS).sort())
+    for (const id of listed) {
+      expect(src.exact.has(id), `${id} is no longer in the source; drop the exception`).toBe(true)
+      expect(DESTRUCTIVE.test(id), `${id} needs no exception`).toBe(true)
+    }
   })
 })
