@@ -176,6 +176,7 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | Test id | Control |
 | --- | --- |
 | `connected-apps` | The Connected apps section (Settings, after Printer bridge) |
+| `connected-app-<app>` | An app's card: `connected-app-bambuddy`, `connected-app-spoolman`, `connected-app-home-assistant` |
 | `connected-app-bambuddy` | BamBuddy's card |
 | `connected-app-bambuddy-address` | BamBuddy's address |
 | `connected-app-bambuddy-key` | BamBuddy's API key (kept in the secrets store; empty keeps the saved one) |
@@ -185,6 +186,9 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | `connected-app-bambuddy-edit` | Edit the address or key |
 | `connected-app-bambuddy-remove` | Remove BamBuddy and its key |
 | `connected-app-spoolman` | Spoolman's card (moved from Printer bridge, unchanged) |
+| `connected-app-home-assistant` | Home Assistant's card, shown only while experimental connectors are on; the same `-address`, `-key`, `-save`, `-status`, `-test`, `-edit` and `-remove` ids as BamBuddy's |
+| `connected-app-home-assistant-experimental` | The Experimental label on Home Assistant's card |
+| `connected-apps-experimental` | Try experimental connectors, at the bottom of Connected apps in Developer mode |
 
 Once BamBuddy is added, printer setup offers `setup-connection-bambuddy` for the models that can use it.
 

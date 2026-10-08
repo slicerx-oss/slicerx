@@ -32,6 +32,8 @@ export interface ConnectedBridge {
   watch?: { huginnPrinters(): Promise<string[]>; setHuginn(printerId: string, enabled: boolean): Promise<void> }
   /** Connected apps the hub talks to (Spoolman, BamBuddy), set up in Settings, Connected apps. */
   services?: BridgeServices
+  /** The hub's own settings: whether it accepts experimental connectors. Absent on an older hub. */
+  hubSettings?: { get(): Promise<{ experimentalConnectors: boolean }>; set(patch: { experimentalConnectors: boolean }): Promise<{ experimentalConnectors: boolean }> }
   /** The relay this edition uses for remote access (wss://), if any. */
   relayUrl?: string | null
   /** The hub's public key, as it proved it on connect. Its fingerprint is shown in Settings. */

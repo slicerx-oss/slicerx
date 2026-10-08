@@ -6,7 +6,7 @@
 // is added, so nothing new shows for anyone who never adds one.
 import { connectionMethod, type ConnectionId } from '@slicerx/printer-catalog'
 
-export type ConnectedAppId = 'spoolman' | 'bambuddy'
+export type ConnectedAppId = 'spoolman' | 'bambuddy' | 'home-assistant'
 
 export interface ConnectedApp {
   id: ConnectedAppId
@@ -20,6 +20,13 @@ export interface ConnectedApp {
   addressPlaceholder: string
   /** What the key is called, when the app needs one. Kept in the secrets store, never in prefs. */
   key: { label: string; placeholder: string } | null
+  /**
+   * Not tested against the real app yet. The hub refuses it unless its experimental connectors are on, so the
+   * card shows only then, labeled Experimental.
+   */
+  experimental?: boolean
+  /** What its status line counts: printers, spools, entities. */
+  counts: { one: string; many: string }
 }
 
 export const CONNECTED_APPS: readonly ConnectedApp[] = [
@@ -31,6 +38,7 @@ export const CONNECTED_APPS: readonly ConnectedApp[] = [
     https: true,
     addressPlaceholder: 'Address, like 192.168.1.50',
     key: { label: 'API key', placeholder: 'From BamBuddy, Settings, API keys' },
+    counts: { one: 'printer', many: 'printers' },
   },
   {
     id: 'spoolman',
@@ -40,8 +48,28 @@ export const CONNECTED_APPS: readonly ConnectedApp[] = [
     https: false,
     addressPlaceholder: 'Address, like 192.168.1.50',
     key: null,
+    counts: { one: 'spool', many: 'spools' },
+  },
+  {
+    id: 'home-assistant',
+    name: 'Home Assistant',
+    blurb: 'See the switches, lights and fans in your Home Assistant, such as a smart plug that powers a printer or an enclosure fan, and turn them on or off. Each change asks for your approval first.',
+    defaultPort: 8123,
+    https: false,
+    addressPlaceholder: 'Address, like 192.168.1.60',
+    key: { label: 'Long-lived access token', placeholder: 'From your Home Assistant profile, Security' },
+    experimental: true,
+    counts: { one: 'switch, light or fan', many: 'switches, lights and fans' },
   },
 ]
+
+/** What an Experimental label means, for its tooltip. */
+export const EXPERIMENTAL_TIP = 'Built from the app\'s documentation but not yet tested against the real app. It may not work, and it can change. It shows only while Try experimental connectors is on (Developer mode).'
+
+/** The apps the Connected apps list shows: an experimental app only while the hub's experimental connectors are on. */
+export function visibleApps(experimental: boolean): ConnectedApp[] {
+  return CONNECTED_APPS.filter((a) => !a.experimental || experimental)
+}
 
 export const connectedApp = (id: string): ConnectedApp | undefined => CONNECTED_APPS.find((a) => a.id === id)
 

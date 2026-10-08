@@ -33,7 +33,7 @@ pub(crate) fn experimental_refusal(plugin: &str) -> RpcError {
     RpcError::new(
         "not_supported",
         format!(
-            "The {plugin} connector is experimental and has not been tested on a real printer yet. Turn on experimental connectors in Settings to use it."
+            "The {plugin} connector is experimental and has not been tested on real hardware yet. To use it, switch on Try experimental connectors at the bottom of Settings, Connected apps (shown in Developer mode)."
         ),
     )
 }
