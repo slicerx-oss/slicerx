@@ -1472,7 +1472,7 @@ export function PrinterStep({
             Not found? Enter IP instead
           </LinkButton>
         ) : null}
-        <LinkButton icon="plus" onClick={toManual}>
+        <LinkButton icon="plus" data-testid="setup-printer-by-hand" onClick={toManual}>
           Not listed? Add it by hand
         </LinkButton>
         <LinkButton icon="skip" onClick={onNoPrinter} className="fr-noprinter">

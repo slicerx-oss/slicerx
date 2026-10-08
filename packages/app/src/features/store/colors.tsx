@@ -126,6 +126,8 @@ export function ColorsEditor({ draft, onChange }: { draft: ColorDraft; onChange:
             <li
               key={draft.keys[i]}
               className="lc-row"
+              data-testid="colors-row"
+              data-hex={c.hex}
               data-drag={dragFrom === i ? '' : undefined}
               onDragOver={(e) => {
                 if (dragFrom !== null) e.preventDefault()

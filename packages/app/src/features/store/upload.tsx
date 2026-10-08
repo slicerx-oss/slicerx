@@ -426,7 +426,9 @@ function UploadForm() {
             <fieldset className="ce-set">
               <legend>Cover</legend>
               <div className="up-cover">
-                <span className="cs-art">{cover ? <img src={cover.preview} alt="Cover" /> : <DrawingArt seed={draft.title || 'cover'} />}</span>
+                <span className="cs-art" data-testid="upload-cover" data-source={customCover ? 'picture' : autoCover ? 'render' : 'none'}>
+                  {cover ? <img src={cover.preview} alt="Cover" /> : <DrawingArt seed={draft.title || 'cover'} />}
+                </span>
                 <div className="ce-logo-b">
                   <div className="ce-ops">
                     <label className="ce-file">
