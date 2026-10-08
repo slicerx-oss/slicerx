@@ -27,11 +27,12 @@ export function UnsavedDialog() {
       open={prompt !== null}
       onClose={() => answerUnsaved(false)}
       title="Save changes first?"
+      testId="unsaved-dialog"
       footer={
         <>
-          <Button variant="ghost" disabled={busy} onClick={() => answerUnsaved(false)}>Cancel</Button>
-          <Button variant="ghost" disabled={busy} onClick={() => answerUnsaved(true)}>Don't save</Button>
-          <Button variant="primary" disabled={busy} onClick={() => void save()}>Save project</Button>
+          <Button variant="ghost" disabled={busy} data-testid="unsaved-cancel" onClick={() => answerUnsaved(false)}>Cancel</Button>
+          <Button variant="ghost" disabled={busy} data-testid="unsaved-discard" onClick={() => answerUnsaved(true)}>Don't save</Button>
+          <Button variant="primary" disabled={busy} data-testid="unsaved-save" onClick={() => void save()}>Save project</Button>
         </>
       }
     >

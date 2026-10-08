@@ -82,8 +82,8 @@ export function VaultSwitch() {
       value={filter.saved ? 'saved' : 'feed'}
       onChange={(v) => setLibraryFilter({ saved: v === 'saved' })}
       options={[
-        { value: 'feed', label: 'Feed' },
-        { value: 'saved', label: 'Saved' },
+        { value: 'feed', label: 'Feed', testId: 'vault-feed' },
+        { value: 'saved', label: 'Saved', testId: 'vault-saved' },
       ]}
     />
   )
@@ -114,26 +114,27 @@ export function VaultBar() {
       <div className="lib-bar-tools">
         {session ? (
           <MenuAnchor>
-            <Button size="sm" icon="creator" aria-expanded={menu} onClick={() => setMenu(!menu)}>
+            <Button size="sm" icon="creator" aria-expanded={menu} data-testid="account-menu" onClick={() => setMenu(!menu)}>
               {accountLabel(session, mine.data)}
             </Button>
             <Menu open={menu} onClose={() => setMenu(false)} label="Account" align="end">
-              <MenuItem icon="cloud-upload" onClick={close(() => openUpload('list'))}>
+              <MenuItem icon="cloud-upload" data-testid="account-uploads" onClick={close(() => openUpload('list'))}>
                 Your uploads
               </MenuItem>
-              <MenuItem icon="creator" onClick={close(() => openEditor('edit'))}>
+              <MenuItem icon="creator" data-testid="account-creator-page" onClick={close(() => openEditor('edit'))}>
                 Your creator page
               </MenuItem>
               {canReview(session.role) ? (
-                <MenuItem icon="queue-review" onClick={close(openReview)}>
+                <MenuItem icon="queue-review" data-testid="account-review" onClick={close(openReview)}>
                   Review queue
                 </MenuItem>
               ) : null}
-              <MenuItem icon="settings" onClick={close(() => openSettings('account'))}>
+              <MenuItem icon="settings" data-testid="account-settings" onClick={close(() => openSettings('account'))}>
                 Account settings
               </MenuItem>
               <MenuItem
                 icon="unlink"
+                data-testid="account-sign-out"
                 onClick={close(() => {
                   void store?.signOut().then(() => client.setQueryData(['session'], null))
                 })}
@@ -143,11 +144,11 @@ export function VaultBar() {
             </Menu>
           </MenuAnchor>
         ) : (
-          <Button size="sm" icon="creator" onClick={() => setSignIn(true)}>
+          <Button size="sm" icon="creator" data-testid="vault-sign-in" onClick={() => setSignIn(true)}>
             Sign in
           </Button>
         )}
-        <Button size="sm" variant="primary" icon="cloud-upload" onClick={upload}>
+        <Button size="sm" variant="primary" icon="cloud-upload" data-testid="vault-upload" onClick={upload}>
           Upload
         </Button>
       </div>
@@ -409,7 +410,7 @@ function Featured({ item, weekly }: { item: ListingCard; weekly: boolean }) {
   const save = useSave(listing)
   const openIn = useOpenInApp(item)
   return (
-    <article className="lib-hero" aria-labelledby="lib-feat-h">
+    <article className="lib-hero" aria-labelledby="lib-feat-h" data-testid="vault-featured" data-listing={listing.id}>
       <button type="button" className="lib-hero-art" onClick={() => openListing(listing.id)} aria-label={`${listing.title}, details`}>
         {cover ? <img src={cover} alt="" /> : <DrawingArt seed={listing.slug} />}
       </button>
@@ -449,7 +450,7 @@ function Featured({ item, weekly }: { item: ListingCard; weekly: boolean }) {
         <StatIcons listing={listing} />
         {openIn.needSignIn ? <SignInNotice>Sign in to download models. It is free.</SignInNotice> : null}
         <div className="lib-hero-actions">
-          <Button variant="primary" icon="prepare" disabled={openIn.busy || !listing.currentVersion} onClick={() => void openIn.open()}>
+          <Button variant="primary" icon="prepare" data-testid="vault-featured-open" disabled={openIn.busy || !listing.currentVersion} onClick={() => void openIn.open()}>
             {openIn.busy ? 'Opening' : `Open in ${edition.brand.shortName}`}
           </Button>
           <Button icon="bookmark" pressed={save.saved} disabled={save.busy} onClick={() => void save.toggle()}>
@@ -468,9 +469,9 @@ function Card({ item, rank, stat = 'downloads' }: { item: ListingCard; rank?: nu
   const save = useSave(listing)
   const s = listing.stats
   return (
-    <article className="lib-mini">
+    <article className="lib-mini" data-testid="vault-card" data-listing={listing.id}>
       <div className="lib-mini-art">
-        <button type="button" className="lib-thumb" onClick={() => openListing(listing.id)} aria-label={`${listing.title}, details`}>
+        <button type="button" className="lib-thumb" data-testid="vault-card-details" onClick={() => openListing(listing.id)} aria-label={`${listing.title}, details`}>
           {cover ? <img src={cover} alt="" loading="lazy" /> : <DrawingArt seed={listing.slug} />}
         </button>
         {listing.currentVersion?.colors ? (
@@ -478,7 +479,7 @@ function Card({ item, rank, stat = 'downloads' }: { item: ListingCard; rank?: nu
             <ColorDots colors={listing.currentVersion.colors} size="sm" max={5} focusable={false} />
           </span>
         ) : null}
-        <button type="button" className="lib-save" aria-pressed={save.saved} aria-label={save.saved ? `Remove ${listing.title} from Saved` : `Save ${listing.title}`} disabled={save.busy} onClick={() => void save.toggle()}>
+        <button type="button" className="lib-save" data-testid="vault-card-save" aria-pressed={save.saved} aria-label={save.saved ? `Remove ${listing.title} from Saved` : `Save ${listing.title}`} disabled={save.busy} onClick={() => void save.toggle()}>
           <Icon name="bookmark" size={15} />
         </button>
       </div>
@@ -575,8 +576,8 @@ function ListingSheet({ id }: { id: string }) {
   const store = useStore()
   const detail = useQuery(detailQuery(store, id))
   return (
-    <Sheet label={detail.data ? detail.data.listing.title : 'Model details'} onClose={closeSheet} className="lib-sheet-model">
-      <button type="button" className="cs-close" aria-label="Close model details" onClick={closeSheet}>
+    <Sheet label={detail.data ? detail.data.listing.title : 'Model details'} onClose={closeSheet} className="lib-sheet-model" testId="vault-listing-sheet">
+      <button type="button" className="cs-close" aria-label="Close model details" data-testid="vault-listing-close" onClick={closeSheet}>
         <Icon name="close" size={16} />
       </button>
       {detail.isPending ? <div className="cs-loading skeleton" aria-busy="true" /> : null}
@@ -632,7 +633,7 @@ export function Detail({ item }: { item: ListingCard }) {
   }
 
   return (
-    <article className="lib-detail cs-pad" aria-labelledby={`lib-${listing.id}`}>
+    <article className="lib-detail cs-pad" aria-labelledby={`lib-${listing.id}`} data-testid="vault-detail" data-listing={listing.id}>
       <div className="drop-art">{cover ? <img src={cover} alt={listing.title} /> : <DrawingArt seed={listing.slug} />}</div>
       <h2 id={`lib-${listing.id}`} className="sx-display">
         {listing.title}
@@ -661,11 +662,11 @@ export function Detail({ item }: { item: ListingCard }) {
       ) : null}
       {needSignIn || openIn.needSignIn ? <SignInNotice>Sign in to download models. It is free.</SignInNotice> : null}
       <div className="stack8">
-        <Button variant="primary" size="lg" full icon="prepare" disabled={openIn.busy || busy || !version} onClick={() => void openIn.open()}>
+        <Button variant="primary" size="lg" full icon="prepare" data-testid="vault-detail-open" disabled={openIn.busy || busy || !version} onClick={() => void openIn.open()}>
           {openIn.busy ? 'Opening' : `Open in ${edition.brand.shortName}`}
         </Button>
         <div className="row-btns">
-          <Button icon="download" disabled={busy || openIn.busy || !version} onClick={() => void download()}>
+          <Button icon="download" data-testid="vault-detail-download" disabled={busy || openIn.busy || !version} onClick={() => void download()}>
             {busy ? 'Downloading' : 'Download .sx3mf'}
           </Button>
           <Button icon="bookmark" pressed={save.saved} disabled={save.busy} onClick={() => void save.toggle()}>

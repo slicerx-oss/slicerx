@@ -13,6 +13,8 @@ export interface SegOption<V extends string> {
   /** Tooltip and accessible name when the label is only an icon. */
   title?: string
   disabled?: boolean
+  /** The option's data-testid (docs/test-ids.md). */
+  testId?: string
 }
 
 export interface SegProps<V extends string> {
@@ -61,6 +63,7 @@ export function Seg<V extends string>({ label, value, onChange, options, size = 
             role="radio"
             aria-checked={checked}
             aria-label={opt.title}
+            data-testid={opt.testId}
             {...tipAttrs(opt.title ? { title: opt.title } : undefined)}
             tabIndex={checked || (!hasChecked && i === firstEnabled) ? 0 : -1}
             disabled={opt.disabled}

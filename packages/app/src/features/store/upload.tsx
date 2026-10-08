@@ -319,8 +319,9 @@ function UploadForm() {
     <Frame
       title="Upload a design"
       onClose={closeUpload}
+      testId="upload-dialog"
       actions={
-        <Button size="sm" onClick={() => openUpload('list')}>
+        <Button size="sm" data-testid="upload-your-uploads" onClick={() => openUpload('list')}>
           Your uploads
         </Button>
       }
@@ -329,6 +330,7 @@ function UploadForm() {
         <div className="ce-col">
           <form
             className="ce-form"
+            data-testid="upload-form"
             aria-label="Upload details"
             noValidate
             onSubmit={(e) => {
@@ -345,15 +347,15 @@ function UploadForm() {
                   value={source}
                   onChange={setSource}
                   options={[
-                    { value: 'project', label: 'This project' },
-                    { value: 'file', label: 'A file' },
+                    { value: 'project', label: 'This project', testId: 'upload-source-project' },
+                    { value: 'file', label: 'A file', testId: 'upload-source-file' },
                   ]}
                 />
               ) : null}
               {source === 'file' ? (
                 <div className="ce-ops">
                   <label className="ce-file">
-                    <input type="file" accept=".3mf,.sx3mf,.stl" className="sr-only" aria-label="Pick a model file" onChange={(e) => { void pickFile(e.currentTarget.files?.[0]); e.currentTarget.value = '' }} />
+                    <input type="file" accept=".3mf,.sx3mf,.stl" className="sr-only" data-testid="upload-file" aria-label="Pick a model file" onChange={(e) => { void pickFile(e.currentTarget.files?.[0]); e.currentTarget.value = '' }} />
                     <Icon name="upload" size={14} />
                     <span aria-hidden="true">{picked ? 'Pick another file' : 'Pick a file'}</span>
                   </label>
@@ -366,7 +368,7 @@ function UploadForm() {
                   )}
                 </div>
               ) : (
-                <span className="ce-hint">{preparing ? 'Packing the project as .sx3mf' : projectFile ? `Every plate as ${projectFile.name}, ${fileSize(projectFile.bytes.length)}` : 'The plates are empty'}</span>
+                <span className="ce-hint" data-testid="upload-project-file">{preparing ? 'Packing the project as .sx3mf' : projectFile ? `Every plate as ${projectFile.name}, ${fileSize(projectFile.bytes.length)}` : 'The plates are empty'}</span>
               )}
               {fileError ? <span className="ce-err">{fileError}</span> : null}
               {shown('file') ?? (file && errors.file) ? (
@@ -380,12 +382,12 @@ function UploadForm() {
               <legend>About the design</legend>
               <div className="ce-field">
                 <label htmlFor={`${ids}-title`}>Title</label>
-                <input className="ce-in" id={`${ids}-title`} value={draft.title} maxLength={TITLE_MAX} onChange={(e) => setDraft({ ...draft, title: e.currentTarget.value })} aria-invalid={Boolean(shown('title'))} />
+                <input className="ce-in" id={`${ids}-title`} data-testid="upload-title" value={draft.title} maxLength={TITLE_MAX} onChange={(e) => setDraft({ ...draft, title: e.currentTarget.value })} aria-invalid={Boolean(shown('title'))} />
                 {shown('title') ? <span className="ce-err">{shown('title')}</span> : null}
               </div>
               <div className="ce-field">
                 <label htmlFor={`${ids}-desc`}>Description</label>
-                <textarea className="ce-in ce-ta" id={`${ids}-desc`} value={draft.description} maxLength={DESCRIPTION_MAX} rows={5} placeholder="What it is, how it prints, anything to know before printing." onChange={(e) => setDraft({ ...draft, description: e.currentTarget.value })} />
+                <textarea className="ce-in ce-ta" id={`${ids}-desc`} data-testid="upload-description" value={draft.description} maxLength={DESCRIPTION_MAX} rows={5} placeholder="What it is, how it prints, anything to know before printing." onChange={(e) => setDraft({ ...draft, description: e.currentTarget.value })} />
                 <span className="ce-count">
                   {draft.description.length} of {DESCRIPTION_MAX}
                 </span>
@@ -394,10 +396,10 @@ function UploadForm() {
                 <label htmlFor={`${ids}-tags`}>
                   Tags <span className="ce-hint">comma separated, up to {TAGS_MAX}</span>
                 </label>
-                <input className="ce-in" id={`${ids}-tags`} value={draft.tags} placeholder="functional, desk, print-in-place" onChange={(e) => setDraft({ ...draft, tags: e.currentTarget.value })} />
+                <input className="ce-in" id={`${ids}-tags`} data-testid="upload-tags" value={draft.tags} placeholder="functional, desk, print-in-place" onChange={(e) => setDraft({ ...draft, tags: e.currentTarget.value })} />
                 <div className="up-tags">
                   {CATEGORIES.filter((c) => c !== 'all' && !tags.includes(c)).map((c) => (
-                    <button key={c} type="button" className="lib-chip" onClick={() => setDraft({ ...draft, tags: [...tags, c].join(', ') })}>
+                    <button key={c} type="button" className="lib-chip" data-testid={`upload-tag-${c}`} onClick={() => setDraft({ ...draft, tags: [...tags, c].join(', ') })}>
                       <Icon name="plus" size={12} /> {c}
                     </button>
                   ))}
@@ -405,7 +407,7 @@ function UploadForm() {
               </div>
               <div className="ce-field">
                 <label htmlFor={`${ids}-license`}>License</label>
-                <select className="ce-in" id={`${ids}-license`} value={draft.license} onChange={(e) => setDraft({ ...draft, license: e.currentTarget.value as ListingLicense })}>
+                <select className="ce-in" id={`${ids}-license`} data-testid="upload-license" value={draft.license} onChange={(e) => setDraft({ ...draft, license: e.currentTarget.value as ListingLicense })}>
                   {(Object.keys(LICENSE_LABELS) as ListingLicense[]).map((k) => (
                     <option key={k} value={k}>
                       {LICENSE_LABELS[k]}
@@ -428,11 +430,11 @@ function UploadForm() {
                 <div className="ce-logo-b">
                   <div className="ce-ops">
                     <label className="ce-file">
-                      <input type="file" accept="image/png,image/jpeg,image/webp" className="sr-only" aria-label="Pick a cover picture" onChange={(e) => { void pickCover(e.currentTarget.files?.[0]); e.currentTarget.value = '' }} />
+                      <input type="file" accept="image/png,image/jpeg,image/webp" className="sr-only" data-testid="upload-cover-file" aria-label="Pick a cover picture" onChange={(e) => { void pickCover(e.currentTarget.files?.[0]); e.currentTarget.value = '' }} />
                       <span aria-hidden="true">Use a picture</span>
                     </label>
                     {customCover && autoCover ? (
-                      <button type="button" className="ce-file" onClick={() => setCustomCover(null)}>
+                      <button type="button" className="ce-file" data-testid="upload-cover-render" onClick={() => setCustomCover(null)}>
                         Use the render
                       </button>
                     ) : null}
@@ -446,7 +448,7 @@ function UploadForm() {
               <fieldset className="ce-set">
                 <legend>How it printed</legend>
                 <label className="up-check">
-                  <input type="checkbox" checked={includeProfile} onChange={(e) => setIncludeProfile(e.currentTarget.checked)} />
+                  <input type="checkbox" data-testid="upload-include-profile" checked={includeProfile} onChange={(e) => setIncludeProfile(e.currentTarget.checked)} />
                   <span>
                     Show {profile.printerModel}, {profile.process}, {profile.filament}
                     {profile.timeS ? `, ${duration(profile.timeS)}` : ''}
@@ -459,13 +461,13 @@ function UploadForm() {
             <button type="submit" hidden />
           </form>
           <div className="ce-savebar">
-            <span className="ce-state" role="status">
+            <span className="ce-state" role="status" data-testid="upload-state">
               {busy ?? (preparing ? 'Preparing' : file ? 'Ready to send' : 'Pick what to upload')}
             </span>
-            <Button onClick={closeUpload} disabled={busy !== null}>
+            <Button onClick={closeUpload} disabled={busy !== null} data-testid="upload-cancel">
               Cancel
             </Button>
-            <Button variant="primary" icon="cloud-upload" onClick={() => void submit()} disabled={busy !== null || preparing}>
+            <Button variant="primary" icon="cloud-upload" data-testid="upload-submit" onClick={() => void submit()} disabled={busy !== null || preparing}>
               Submit for review
             </Button>
           </div>
@@ -609,8 +611,9 @@ function UploadsList() {
     <Frame
       title="Your uploads"
       onClose={closeUpload}
+      testId="uploads-list"
       actions={
-        <Button size="sm" variant="primary" icon="cloud-upload" onClick={() => openUpload('form')}>
+        <Button size="sm" variant="primary" icon="cloud-upload" data-testid="uploads-new" onClick={() => openUpload('form')}>
           Upload a design
         </Button>
       }
@@ -625,7 +628,7 @@ function UploadsList() {
               const st = uploadStage(l)
               const cover = coverFor(l)
               return (
-                <li key={l.id} className="up-row">
+                <li key={l.id} className="up-row" data-testid="uploads-row" data-listing={l.id}>
                   <span className="cs-art">{cover ? <img src={cover} alt="" /> : <DrawingArt seed={l.slug} />}</span>
                   <div className="min0">
                     <b className="up-title">{l.title}</b>
@@ -636,7 +639,7 @@ function UploadsList() {
                     </span>
                     {st.note ? <p className="up-note">{st.note}</p> : null}
                   </div>
-                  <span className="up-stage" data-stage={st.stage}>
+                  <span className="up-stage" data-testid="uploads-stage" data-stage={st.stage}>
                     {st.label}
                   </span>
                   <div className="up-acts">
@@ -647,7 +650,7 @@ function UploadsList() {
                       </Button>
                     ) : null}
                     {st.stage === 'live' ? (
-                      <Button size="sm" variant="ghost" onClick={() => { closeUpload(); openListing(l.id) }}>
+                      <Button size="sm" variant="ghost" data-testid="uploads-view" onClick={() => { closeUpload(); openListing(l.id) }}>
                         View
                       </Button>
                     ) : null}
