@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { expect, plateReady, test } from './fixtures'
 
-type Sx = { getState(): { plate: { name: string; parts: { name: string }[] }[]; slice: { status: string }; toast: { text: string; kind?: string } | null }; setState(p: unknown): void }
+type Sx = { getState(): { plate: { name: string; parts: { name: string }[] }[]; slice: { status: string; stale?: boolean; result?: { id: string } }; toast: { text: string; kind?: string } | null }; setState(p: unknown): void }
 
 const fixtures = join(import.meta.dirname, '..', '..', '..', 'packages', 'app', 'test', 'fixtures', 'step')
 
@@ -54,7 +54,9 @@ test('a dropped STEP assembly becomes named objects and slices', async ({ page, 
   await page.evaluate(() => (window as unknown as { __sx: Sx }).__sx.setState({ plate: [], selection: null, selectedIds: [] }))
   await drop(page, 'bracket-inch.stp')
   await expect.poll(async () => (await state()).plate.length, { timeout: 60_000 }).toBe(1)
+  // The slice of the bracket, not the earlier one of the assembly: done, current and with a new id. An error shows its
+  // message in the failure.
+  const earlier = (await state()).slice.result?.id ?? null
   await page.getByRole('main').getByRole('button', { name: /^Slice/ }).click()
-  // An error shows its message in the failure.
-  await expect.poll(async () => { const sl = (await state()).slice as { status: string; error?: unknown }; return sl.status === 'error' ? JSON.stringify(sl).slice(0, 400) : sl.status }, { timeout: 120_000 }).toBe('done')
+  await expect.poll(async () => { const sl = (await state()).slice as { status: string; stale?: boolean; error?: unknown; result?: { id: string } }; if (sl.status === 'error') return JSON.stringify(sl).slice(0, 400); return sl.status === 'done' && !sl.stale && sl.result?.id !== earlier ? 'done' : sl.status }, { timeout: 120_000 }).toBe('done')
 })
