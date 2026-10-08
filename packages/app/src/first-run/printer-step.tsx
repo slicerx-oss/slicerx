@@ -367,7 +367,10 @@ function BrandSection({ ctl, onNoPrinter }: { ctl: PrinterController; onNoPrinte
               className="fr-brand"
               data-on={on ? true : undefined}
               data-help="brand"
-              onClick={() => {
+              onClick={(e) => {
+                // The grid opens under the pointer that pressed "Add it by hand": the second click of a double click
+                // lands on a tile and must not pick it. A tile's own first click (detail 1) or a key press (0) does.
+                if (e.detail > 1) return
                 setForm((f) => pickBrand(f, b.id))
                 requestAnimationFrame(() => scrollTo('model'))
               }}
