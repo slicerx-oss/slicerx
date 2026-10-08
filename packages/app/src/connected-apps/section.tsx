@@ -166,7 +166,7 @@ function BambuddyRows({ services }: { services: BridgeServices }) {
               {check.message}
             </p>
           ) : null}
-          <p className="bridge-forget">
+          <p className="bridge-forget app-actions">
             {services.check ? (
               <Button size="sm" data-testid="connected-app-bambuddy-test" disabled={check.state === 'busy'} onClick={() => void test()}>
                 Test connection
@@ -175,7 +175,7 @@ function BambuddyRows({ services }: { services: BridgeServices }) {
             <Button size="sm" variant="ghost" data-testid="connected-app-bambuddy-edit" onClick={startEdit}>
               Edit
             </Button>
-            <Button variant="ghost" size="sm" data-testid="connected-app-bambuddy-remove" onClick={() => void remove()}>
+            <Button variant="ghost" size="sm" className="app-remove" data-testid="connected-app-bambuddy-remove" onClick={() => void remove()}>
               Remove {app.name}
             </Button>
           </p>
