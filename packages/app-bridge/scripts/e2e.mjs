@@ -203,7 +203,8 @@ try {
   await client?.close().catch(() => undefined)
   // Stopped by its own pid, never by name. On macOS and Linux SIGTERM, which the app catches to remove its connection
   // file. On Windows a forced stop cannot be caught, so the window is asked to close first (the normal quit, which
-  // removes the file), and only an app still running after that is forced.
+  // removes the file), and only an app still running after that is forced. That first taskkill names the app alone:
+  // with /T it would ask the web view's processes first, which only a forced stop ends, and give up on the app.
   const ended = async (ms) => {
     for (let t = 0; t < ms && child.exitCode === null && child.signalCode === null; t += 250) await sleep(250)
     return child.exitCode !== null || child.signalCode !== null
@@ -211,7 +212,7 @@ try {
   let forced = false
   if (child.exitCode === null) {
     if (win) {
-      spawnSync('taskkill', ['/PID', String(child.pid), '/T'])
+      spawnSync('taskkill', ['/PID', String(child.pid)])
       if (!(await ended(10_000))) {
         forced = true
         spawnSync('taskkill', ['/PID', String(child.pid), '/T', '/F'])
