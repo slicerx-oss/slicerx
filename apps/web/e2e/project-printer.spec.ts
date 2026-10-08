@@ -60,7 +60,8 @@ test('a P1S 0.2 project opens as its own printer, and the A1 mini slices it with
   await open(page)
   await choose(page, () => page.keyboard.press('ControlOrMeta+o'), P1S)
   await expect(page.locator('.obj-name')).toHaveText(['Cube'], { timeout: 60_000 })
-  await expect(page.getByTestId('toast')).toContainText('Opened as P1S 0.2 mm from the project.')
+  // Toasts stack; the note is the one that names the printer.
+  await expect(page.getByTestId('toast').filter({ hasText: 'Opened as P1S' })).toContainText('Opened as P1S 0.2 mm from the project.')
   await expect(page.locator('[data-section="printer"] .printer-name')).toContainText('P1S 0.2 from keychain.3mf')
   await expect(page.getByTestId('project-gcode-dialog')).toHaveCount(0)
   const own = await sliceAndExport(page)
@@ -70,7 +71,7 @@ test('a P1S 0.2 project opens as its own printer, and the A1 mini slices it with
   await tab(page, 'prepare').click()
   await page.locator('[data-section="printer"]').getByRole('button', { name: 'Change' }).click()
   await page.locator('[data-section="printer"] ul.choose').getByRole('button', { name: /Desk A1 mini/ }).click()
-  await expect(page.getByTestId('toast')).toContainText("Slicing for the A1 mini with its own G-code. Not carried over, made for the project's 0.2 mm nozzle: layer height.")
+  await expect(page.getByTestId('toast').filter({ hasText: 'Slicing for the A1 mini' })).toContainText("Slicing for the A1 mini with its own G-code. Not carried over, made for the project's 0.2 mm nozzle: layer height.")
   const theirs = await sliceAndExport(page)
   expect(theirs).not.toContain('baby step from the project')
   expect(theirs).not.toMatch(/^M500/m)
