@@ -27,7 +27,7 @@ Each run writes `logs/<run>/`: `run.log`, one log per step, `steps.tsv`, `failur
 20 runs are kept. Only the summary (pass or fail, the failing steps and test names, the sha) leaves the machine,
 through the command in `SX_CI_NOTIFY`. A green run records its sha in `state/last-green-<platform>`.
 
-Flaky tests go in `quarantine.txt` with an owner and a date: their failures are counted, not failed on.
+A failing test is rerun once; flaky and quarantined tests are tracked in `flaky.txt` and `quarantine.txt` (see "Flaky tests").
 
 ## Setup
 
@@ -75,3 +75,49 @@ waiters: `mkdir` alone decides who holds the lock, so an older `heavy.sh` that i
 
 `scripts/ci/heavy-test.sh` tests all of this on a temporary lock: alone on any side, and with
 `cross <distro> [<stopped distro>]` from Git Bash, Windows against WSL.
+
+## Flaky tests
+
+A failing test gets one rerun. Passed on the rerun: it is flaky. Failed again: it is a real failure, listed or not.
+A red `main` blocks every merge and every release bump (`require-green.sh`, below).
+
+Files, all in `scripts/ci/`:
+
+- `flaky.txt`: tests that failed once and passed on the rerun. `name | owner | added | deadline | issue | why`. The
+  deadline is at most one day after the date added. Past it, the entry counts as quarantined from the next day on
+  (the run does not fail on it, and every report marks it OVERDUE) until someone fixes the test and deletes the line.
+  It does not fail the run, so an unfixed flake never blocks `main` for a day-old deadline; the daily report is what
+  keeps it visible.
+- `quarantine.txt`: tests whose failures are counted, not failed on. `name | owner | added | issue | why`. Nothing is
+  skipped silently: every entry has an owner, a date and a link to its issue.
+- `flaky-check.sh`: `lint` fails on an entry without an owner, a valid date, a deadline within a day, or an issue link
+  (`https://github.com/<org>/<repo>/issues/<n>`); `status <name>` prints quarantined, flaky or none; `report` lists both
+  files with ages and deadlines; `retried <file>` is the pull request check below. A name is a substring of the test
+  name as the run reports it (`path/to/file.test.ts > suite > test`, a cargo test path, or a Playwright title).
+- `require-green.sh` and `required-checks.txt`: see "Release gate".
+
+Machine runs (`run.sh`): when a step fails, only the failing tests run again, once. vitest reruns the failing files in
+their packages, cargo test reruns the failing tests by exact name, Playwright reruns the failing spec files. A test
+that passes is reported in the summary as flaky, tracked or UNTRACKED (not in `flaky.txt`), and does not fail the step;
+a test that fails again fails the step. Anything the rerun cannot tell apart from a real failure (a failure it cannot
+name, more failures than the 15 names kept, clippy, tsc, a build step, a compile error) stays a real failure.
+Quarantined failures are not rerun. `flaky-lint` runs first in every run, and the summary lists overdue entries.
+
+Pull requests (`ci.yml`, the `web` job): `pr-test.sh` runs each package's tests, vitest packages with `--retry=1`
+and the reporter in `vitest-flaky-reporter.mjs`, which
+annotates each test that passed only on a retry, and the next step fails the job unless `flaky.txt` or
+`quarantine.txt` lists it, so a retry cannot hide a flake: the pull request that meets one adds the entry (owner, a
+deadline a day out, an issue) or fixes the test. The cargo and Playwright jobs on pull requests have no retry. The
+machine runs rerun those.
+
+Adding an entry: open an issue for the test, add the line, run `bash scripts/ci/flaky-check.sh lint`. Fixing one:
+fix the test and delete its line in the same change.
+
+## Release gate
+
+`require-green.sh <commit>` reads the commit's check-runs from GitHub (read only) and requires every check in
+`required-checks.txt` to be success or skipped. A check still pending, or not yet reported, is waited for up to
+`SX_GREEN_WAIT` seconds (default 600) and then counts as not green. `apps/desktop/release/publish.sh` runs it before it
+builds or publishes anything. `SX_PUBLISH_CHECK_ONLY=1 publish.sh ...` (or `require-green.sh --dry-run <commit>`) only
+reports. `SX_PUBLISH_ALLOW_RED=1` lets a red commit through with a loud warning: for an owner-approved emergency only.
+Keep `required-checks.txt` in step with the jobs in `ci.yml`.

@@ -1,0 +1,14 @@
+# The CI checks a commit must have green (success or skipped) before a release is published from it. One check-run
+# name per line, as GitHub shows it in .github/workflows/ci.yml runs (a matrix job is "job (os)"). Used by
+# require-green.sh, which apps/desktop/release/publish.sh and any local release script call. dco is left out on
+# purpose: it runs on pull requests only and is skipped on a push. Keep this in step with the jobs in ci.yml.
+detect
+web
+rust (ubuntu-latest)
+rust (macos-latest)
+rust (windows-latest)
+wasm
+devkit
+secrets
+licenses
+hygiene

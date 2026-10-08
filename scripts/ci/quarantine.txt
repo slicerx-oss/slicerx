@@ -1,5 +1,6 @@
-# Flaky tests that must not fail a CI run. One per line: name (a substring of the failing test's name as the run
-# reports it) | owner | date added | why. A quarantined failure still shows in the summary as a count. Remove the
-# line when the test is fixed; nothing stays here without an owner and a date.
+# Flaky tests that must not fail a CI run. One per line: name (a substring of the failing test name as the run
+# reports it) | owner | date added | issue link | why. A quarantined failure still shows in the summary as a count.
+# Remove the line when the test is fixed; nothing stays here without an owner, a date and an issue
+# (scripts/ci/flaky-check.sh lint fails otherwise). A flaky.txt entry past its deadline counts as quarantined.
 #
-# test name                                        | owner | added      | why
+# test name | owner | added (YYYY-MM-DD) | issue | why
