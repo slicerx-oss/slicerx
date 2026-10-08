@@ -43,6 +43,10 @@ export function wrapLink(link: LinkHost, relay?: string | null): ConnectedBridge
           },
         }
       : {}),
+    // The hub's experimental connectors switch (Settings, Connected apps, in Developer mode).
+    ...(typeof (link as { settings?: { get?: unknown } }).settings?.get === 'function'
+      ? { hubSettings: { get: () => link.settings.get(), set: (patch: { experimentalConnectors: boolean }) => link.settings.set(patch) } }
+      : {}),
     pair: link.pair,
     camera: link.camera as unknown as NonNullable<ConnectedBridge['camera']>,
     push: link.push,

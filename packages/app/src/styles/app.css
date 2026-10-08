@@ -665,6 +665,8 @@ button.reset:hover { color: var(--fg); background: var(--ink-3); }
 /* A connected app's actions: Test and Edit together, Remove on the right as quiet danger text. */
 .bridge-forget.app-actions { justify-content: flex-start; }
 .bridge-forget.app-actions .app-remove { margin-left: auto; color: var(--red); }
+/* Developer mode: the experimental connectors switch at the bottom of Connected apps. */
+.app-experimental-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 0; }
 .preset-name .preset-for { color: var(--muted); }
 
 /* Preset import report */

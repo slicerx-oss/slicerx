@@ -97,10 +97,12 @@ export interface SwitchProps {
   tone?: 'purple' | 'green' | 'pink'
   disabled?: boolean
   className?: string
+  /** `data-testid`, for the agent bridge and the e2e specs (docs/test-ids.md). */
+  testId?: string
 }
 
 /** An on or off toggle. */
-export function Switch({ id, checked, onChange, label, tone = 'purple', disabled, className }: SwitchProps) {
+export function Switch({ id, checked, onChange, label, tone = 'purple', disabled, className, testId }: SwitchProps) {
   return (
     <button
       id={id}
@@ -111,6 +113,7 @@ export function Switch({ id, checked, onChange, label, tone = 'purple', disabled
       disabled={disabled}
       className={className ? `sx-switch ${className}` : 'sx-switch'}
       data-tone={tone === 'purple' ? undefined : tone}
+      data-testid={testId}
       onClick={() => onChange(!checked)}
     />
   )
