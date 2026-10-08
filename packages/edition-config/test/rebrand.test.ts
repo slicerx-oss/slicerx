@@ -61,6 +61,8 @@ describe('a white-label edition', () => {
     const base = conf as { app: { windows: Record<string, unknown>[] }; bundle: Record<string, unknown> }
     expect(overlay.app.windows).toEqual(base.app.windows)
     expect({ ...base.app.windows[0], title: undefined }).toEqual({ ...DESKTOP_WINDOW, title: undefined })
+    // the release build merges this window over tauri.conf.json's whole, so the macOS title bar keys must ship in it
+    expect(overlay.app.windows[0]).toMatchObject({ titleBarStyle: 'Overlay', hiddenTitle: true, trafficLightPosition: { x: 18, y: 20 } })
     for (const k of ['publisher', 'copyright', 'shortDescription', 'fileAssociations']) expect(overlay.bundle[k]).toEqual(base.bundle[k])
     expect(overlay.bundle).not.toHaveProperty('icon')
   })

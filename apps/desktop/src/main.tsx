@@ -9,6 +9,7 @@ import { createDesktopHost } from './host'
 import { createTauriCrash } from './host/crash'
 import { blockReloadKeys } from './reload-keys'
 import { runProbe } from './probe'
+import { followAppTheme } from './window-theme'
 
 declare const __SX_FEATURE_STORE__: boolean
 declare const __SX_FEATURE_PILOT__: boolean
@@ -28,6 +29,7 @@ setCurrentEdition(editionFromBuild())
 // app's top bar is the title area and leaves room for the traffic lights. Set before the first paint.
 document.documentElement.dataset['shell'] = 'desktop'
 document.documentElement.dataset['os'] = /Mac/.test(navigator.userAgent) ? 'mac' : /Windows/.test(navigator.userAgent) ? 'windows' : 'linux'
+followAppTheme()
 
 // Panics and web view crashes the shell recorded are sent from the page; register before the app starts.
 registerCrashHost(createTauriCrash())
