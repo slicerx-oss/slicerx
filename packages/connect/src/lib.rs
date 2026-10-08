@@ -235,6 +235,16 @@ pub fn is_experimental(plugin: &str) -> bool {
     EXPERIMENTAL_PLUGINS.contains(&plugin)
 }
 
+/// The connected app (Settings, Connected apps) a printer plugin reaches its printers through, if
+/// any. Such a printer stores only its id in that app; the app's address, port and key come from the
+/// app's settings every time it connects.
+pub fn connected_app(plugin: &str) -> Option<&'static str> {
+    match plugin {
+        "bambuddy" => Some("bambuddy"),
+        _ => None,
+    }
+}
+
 /// Whether `plugin`'s manifest declares `rewrites_upload`: its uploads go through
 /// [`PrinterSession::prepare_upload`] before they are approved. Read from the manifest, so asking
 /// never connects to a printer.
