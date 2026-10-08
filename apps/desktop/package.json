@@ -10,7 +10,8 @@
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run",
     "tauri:config": "node ../../packages/edition-config/src/cli.ts tauri ../../editions/slicerx/edition.config.ts desktop src-tauri/gen/edition.conf.json",
-    "build:app": "pnpm tauri:config && tauri build --config src-tauri/gen/edition.conf.json"
+    "build:app": "pnpm tauri:config && tauri build --config src-tauri/gen/edition.conf.json",
+    "build:bridge": "node scripts/bridge-build.mjs"
   },
   "dependencies": {
     "@slicerx/app": "workspace:*",
