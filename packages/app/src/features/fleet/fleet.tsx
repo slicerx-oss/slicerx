@@ -92,7 +92,7 @@ export function Fleet() {
         <Button icon="search" onClick={() => openSetup('printer')} tip={{ title: 'Find printers', body: 'Look for printers on your network and add one.' }}>
           Find printers
         </Button>
-        <Button variant="primary" icon="plus" onClick={() => openSetup('printer', { byHand: true })}>
+        <Button variant="primary" icon="plus" data-testid="printers-add" onClick={() => openSetup('printer', { byHand: true })}>
           Add printer
         </Button>
       </header>
@@ -146,7 +146,7 @@ function EmptyWall() {
         <Button variant="primary" icon="search" onClick={() => openSetup('printer')}>
           Find printers
         </Button>
-        <Button icon="plus" onClick={() => openSetup('printer', { byHand: true })}>
+        <Button icon="plus" data-testid="printers-add" onClick={() => openSetup('printer', { byHand: true })}>
           Add one by hand
         </Button>
       </div>

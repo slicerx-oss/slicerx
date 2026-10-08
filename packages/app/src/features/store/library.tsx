@@ -274,7 +274,7 @@ function CreatorRow({ title, note }: { title: string; note: string }) {
 
 function CreatorCard({ creator }: { creator: Creator }) {
   return (
-    <button type="button" className="lib-creator" onClick={() => openCreator(creator.handle)}>
+    <button type="button" className="lib-creator" data-testid="vault-creator" data-handle={creator.handle} onClick={() => openCreator(creator.handle)}>
       <CreatorAvatar name={creator.displayName} url={creator.logoUrl} size="lg" />
       <span className="min0">
         <b>{creator.displayName}</b>

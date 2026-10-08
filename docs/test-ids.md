@@ -34,10 +34,12 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 
 | Test id | Control |
 | --- | --- |
+| `printers-add` | Add printer (or Add one by hand) in Printers: setup on the hand-made form |
 | `setup` | The setup window; `data-step` is welcome, look, printer, mimir and so on |
 | `setup-skip-all` | Skip, use defaults |
 | `setup-back`, `setup-skip`, `setup-secondary`, `setup-next` | The footer: Back, Skip, the second action, and the main one (Next, Save printer, Open the plate) |
 | `setup-leave-dialog`, `setup-leave`, `setup-stay` | Leave setup? and its two answers |
+| `setup-printer-by-hand` | Not listed? Add it by hand (from the network scan to the hand-made form) |
 | `setup-printer-search` | Search brand or model |
 | `setup-printer-hit` | A search result; `data-model` is the model id |
 | `setup-brand-<brand>` | A brand tile |
@@ -79,6 +81,7 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | `vault-featured-open` | Its Open in SlicerX |
 | `vault-card` | A design card in a row or the grid; `data-listing` is its listing id |
 | `vault-card-details`, `vault-card-save` | The card's picture (opens its sheet) and its Save |
+| `vault-creator` | A creator in New creators; `data-handle` is the handle |
 | `vault-listing-sheet`, `vault-listing-close` | A design's sheet and its close button |
 | `vault-detail` | The design in the sheet; `data-listing` is its listing id |
 | `vault-detail-open`, `vault-detail-download` | Open in SlicerX and Download .sx3mf |
@@ -111,7 +114,9 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | `upload-file` | The file picker (a file input; set by a person) |
 | `upload-title`, `upload-description`, `upload-tags`, `upload-license` | The fields |
 | `upload-tag-<tag>` | A suggested tag |
+| `upload-cover` | The cover as it will show; `data-source` is render (drawn from the model), picture or none |
 | `upload-cover-file`, `upload-cover-render` | Use a picture, and Use the render |
+| `colors-row` | One color of the design (upload and Colors); `data-hex` is the color |
 | `upload-include-profile` | Show how it printed on the listing |
 | `upload-state` | The status line (Ready to send, Uploading) |
 | `upload-cancel`, `upload-submit` | Cancel and Submit for review |
