@@ -73,6 +73,7 @@ import {
   type SecretKey,
 } from './printer-form'
 import { displayCause, TEST_STEPS, type AppSetupHost, type FoundPrinter, type TestOutcome, type TestStep } from './setup-host'
+import { useConnectedApps } from '../connected-apps/state'
 
 // ---------------------------------------------------------------------------
 type Inbound = 'allowed' | 'blocked' | 'none' | 'unsupported'
@@ -694,7 +695,10 @@ export function typedBlockers(blockers: Blocker[], form: PrinterForm): Blocker[]
 
 function ConnectionSection({ ctl, keychain, onWhere, fieldsOnly, known, quiet }: { ctl: PrinterController; keychain: boolean; onWhere: (f: HelpField) => void; fieldsOnly?: boolean; known?: Partial<Record<'host' | 'serial', boolean>>; quiet?: boolean }) {
   const { form, setForm, method, scan } = ctl
-  const choices = connectionChoices(form)
+  // A connection that goes through a connected app (BamBuddy) shows only once the app is added.
+  const apps = useConnectedApps()
+  const choices = connectionChoices(form, new Set(apps.map((a) => a.id)))
+  const appUrlFor = (id: ConnectionId) => apps.find((a) => a.id === connectionMethod(id).requiresApp)?.baseUrl
   const check = method ? checkConnection(form, method) : null
   const setField = (k: 'host' | 'port' | 'serial' | 'username', v: string) => setForm((f) => ({ ...f, fields: { ...f.fields, [k]: v } }))
   const where = (f: HelpField) => (
@@ -710,7 +714,7 @@ function ConnectionSection({ ctl, keychain, onWhere, fieldsOnly, known, quiet }:
           const m = connectionMethod(id)
           const on = form.connection === id
           return (
-            <button key={id} type="button" role="radio" aria-checked={on} className="fr-conn" data-testid={`setup-connection-${id}`} data-on={on ? true : undefined} data-help="connection" onClick={() => setForm((f) => pickConnection(f, id))}>
+            <button key={id} type="button" role="radio" aria-checked={on} className="fr-conn" data-testid={`setup-connection-${id}`} data-on={on ? true : undefined} data-help="connection" onClick={() => setForm((f) => pickConnection(f, id, appUrlFor(id)))}>
               <Icon name={CONNECTION_ICON[id] ?? 'link'} />
               <span className="min0">
                 <b>
