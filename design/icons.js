@@ -441,6 +441,31 @@ const SX_ICON_GROUPS = {
     "file-stl",
     "upload",
     "globe"
+  ],
+  "Model": [
+    "model",
+    "body",
+    "mesh-object",
+    "part",
+    "modifier",
+    "box-shape"
+  ],
+  "Steps": [
+    "sketch",
+    "extrude",
+    "revolve",
+    "array-linear",
+    "array-polar",
+    "repair-mesh",
+    "mesh-menu",
+    "step-broken"
+  ],
+  "Picking": [
+    "select-object",
+    "select-face",
+    "select-edge",
+    "box-select",
+    "roll-to-here"
   ]
 };
 const SX_ICONS = {
@@ -835,12 +860,50 @@ const SX_ICONS = {
   "upload":"<path d=\"M4 15v3.5a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V15\"/><path d=\"M12 15V4M8 8l4-4 4 4\"/>",
   "globe":"<circle cx=\"12\" cy=\"12\" r=\"8.5\"/><path d=\"M3.5 12h17\"/><path d=\"M12 3.5c2.4 2.4 3.5 5.2 3.5 8.5s-1.1 6.1-3.5 8.5c-2.4-2.4-3.5-5.2-3.5-8.5S9.6 5.9 12 3.5z\"/>",
   "calibration":"<circle cx=\"12\" cy=\"12\" r=\"6\"/><path d=\"M12 3v4M12 17v4M3 12h4M17 12h4\"/><path d=\"M12 12h.01\"/>",
+  "model":"<path d=\"M4 20.5V11a7.5 7.5 0 0 1 7.5-7.5h9v17z\"/><circle cx=\"14\" cy=\"13.5\" r=\"2.5\"/>",
+  "sketch":"<path d=\"M2.5 20.5l4.5-4h14.5l-4.5 4z\"/><path d=\"M15 3.5l3.5 3.5-7.5 7.5H7.5V11z\"/><path d=\"M12.75 5.75l3.5 3.5\"/>",
+  "extrude":"<path d=\"M3 19.5l4-3.5h14l-4 3.5z\"/><path d=\"M12 13V4M9 7l3-3 3 3\"/><path stroke-dasharray=\"2 2.2\" d=\"M3 19.5V13M17 19.5V13\"/>",
+  "revolve":"<path stroke-dasharray=\"1.5 2.2\" d=\"M12 2.5v19\"/><path d=\"M12 5.5h4l2.5 3.5v6L16 18.5h-4\"/><path stroke-dasharray=\"2 2.2\" d=\"M12 5.5H8L5.5 9v6L8 18.5h4\"/>",
+  "body":"<path d=\"M9.5 3l6 3.4v4.1M9.5 17l-6-3.4V6.4L9.5 3\"/><path d=\"M3.5 6.4l6 3.4 6-3.4M9.5 9.8V17\"/><circle cx=\"17\" cy=\"17\" r=\"4\"/><path d=\"M17 15v2l1.25 1\"/>",
+  "mesh-object":"<path d=\"M12 3l7.5 4.25v9L12 20.5l-7.5-4.25v-9z\"/><path d=\"M4.5 7.25L12 11.5l7.5-4.25M12 11.5v9\"/><path d=\"M12 3v8.5M4.5 7.25 12 20.5M19.5 7.25 12 20.5\"/>",
+  "part":"<path d=\"M3.5 4.5h17v15h-9v-6h-8z\"/>",
+  "modifier":"<path stroke-dasharray=\"2 2.2\" d=\"M12 3l7.5 4.25v9L12 20.5l-7.5-4.25v-9z\"/><path stroke-dasharray=\"2 2.2\" d=\"M4.5 7.25L12 11.5l7.5-4.25M12 11.5v9\"/>",
+  "box-shape":"<path d=\"M12 5l8.5 4v7.5L12 20.5l-8.5-4V9z\"/><path d=\"M3.5 9 12 13l8.5-4M12 13v7.5\"/>",
+  "array-linear":"<rect x=\"2.5\" y=\"9.5\" width=\"5\" height=\"5\" rx=\"1\"/><rect stroke-dasharray=\"1.6 1.8\" x=\"9.5\" y=\"9.5\" width=\"5\" height=\"5\" rx=\"1\"/><rect stroke-dasharray=\"1.6 1.8\" x=\"16.5\" y=\"9.5\" width=\"5\" height=\"5\" rx=\"1\"/>",
+  "array-polar":"<rect x=\"10\" y=\"6\" width=\"4\" height=\"4\" rx=\"1\"/><rect stroke-dasharray=\"1.4 1.6\" x=\"2.5\" y=\"11.25\" width=\"4\" height=\"4\" rx=\"1\"/><rect stroke-dasharray=\"1.4 1.6\" x=\"17.5\" y=\"11.25\" width=\"4\" height=\"4\" rx=\"1\"/><circle cx=\"12\" cy=\"17.5\" r=\"1.5\" fill=\"currentColor\" stroke=\"none\"/>",
+  "repair-mesh":"<path d=\"M3.5 19 12 4.5 20.5 19z\"/><path stroke-dasharray=\"2 2.2\" d=\"M7.8 11.8h8.4L12 19z\"/>",
+  "mesh-menu":"<path d=\"M12 3.5l7.36 4.25v8.5L12 20.5l-7.36-4.25v-8.5z\"/><path d=\"M12 3.5v17M4.64 7.75l14.72 8.5M19.36 7.75 4.64 16.25\"/>",
+  "select-object":"<rect x=\"3.5\" y=\"3.5\" width=\"11\" height=\"11\" rx=\"2\"/><path d=\"M12.5 12.5l7.5 3-3 1.25-1.25 3z\"/>",
+  "select-face":"<path d=\"M3.5 14.5 7 4h10l-3.5 10.5z\"/><circle cx=\"10.25\" cy=\"9.25\" r=\"1.5\" fill=\"currentColor\" stroke=\"none\"/><path d=\"M12.5 12.5l7.5 3-3 1.25-1.25 3z\"/>",
+  "select-edge":"<path d=\"M3.5 14.5V5.5a2 2 0 0 1 2-2h9\"/><path d=\"M3.5 14.5V5.5\" stroke-width=\"3\"/><path d=\"M12.5 12.5l7.5 3-3 1.25-1.25 3z\"/>",
+  "box-select":"<rect stroke-dasharray=\"2 2.2\" x=\"3.5\" y=\"3.5\" width=\"13\" height=\"11\" rx=\"1.5\"/><path d=\"M13.5 12.5l7.5 3-3 1.25-1.25 3z\"/>",
+  "roll-to-here":"<path d=\"M15.5 3.5v17\"/><path d=\"M3.5 12h8.5M9 9l3 3-3 3\"/><path d=\"M19.5 7v.01M19.5 12v.01M19.5 17v.01\"/>",
+  "step-broken":"<circle cx=\"12\" cy=\"12\" r=\"4.5\" fill=\"currentColor\" stroke=\"none\"/>",
 };
 /* 16px versions of some of them, for 16px and smaller. 16px grid, 1.5 stroke. */
 const SX_SMALL_ICONS = {
+  "array-linear":"<rect x=\"1.75\" y=\"6.25\" width=\"3.5\" height=\"3.5\" rx=\".75\"/><rect x=\"6.25\" y=\"6.25\" width=\"3.5\" height=\"3.5\" rx=\".75\"/><rect x=\"10.75\" y=\"6.25\" width=\"3.5\" height=\"3.5\" rx=\".75\"/>",
+  "array-polar":"<rect x=\"6.25\" y=\"2.25\" width=\"3.5\" height=\"3.5\" rx=\".75\"/><rect x=\"1.75\" y=\"9\" width=\"3.5\" height=\"3.5\" rx=\".75\"/><rect x=\"10.75\" y=\"9\" width=\"3.5\" height=\"3.5\" rx=\".75\"/>",
+  "body":"<path d=\"M6 1.75l4.25 2.5v2.25M6 11.75l-4.25-2.5v-5L6 1.75\"/><path d=\"M1.75 4.25 6 6.75l4.25-2.5M6 6.75v5\"/><circle cx=\"11.5\" cy=\"11.5\" r=\"2.75\"/>",
+  "box-select":"<path d=\"M2 4.75V2h2.75M7.5 2h3v2.75M2 7.25V10h2.75\"/><path d=\"M8.5 8.5l5.5 2.25-2.25 1-1 2.25z\"/>",
+  "box-shape":"<path d=\"M8 3.5l5.25 2.5v4.75L8 13.25l-5.25-2.5V6z\"/><path d=\"M2.75 6 8 8.5 13.25 6M8 8.5v4.75\"/>",
   "check":"<path d=\"M3.25 8.25l3 3 6.5-6.5\"/>",
   "chevron-down":"<path d=\"M4.25 6.25L8 10l3.75-3.75\"/>",
   "chevron-right":"<path d=\"M6.25 4.25L10 8l-3.75 3.75\"/>",
   "close":"<path d=\"M4.25 4.25l7.5 7.5M11.75 4.25l-7.5 7.5\"/>",
+  "extrude":"<path d=\"M1.75 13.5l2.5-2.5h10l-2.5 2.5z\"/><path d=\"M8 8.75V2.25M5.75 4.5 8 2.25l2.25 2.25\"/>",
+  "mesh-menu":"<path d=\"M8 1.75l5.25 3v6.5L8 14.25l-5.25-3v-6.5z\"/><path d=\"M8 1.75v12.5M2.75 4.75l10.5 6.5M13.25 4.75l-10.5 6.5\"/>",
+  "mesh-object":"<path d=\"M8 1.75l5.25 3v6.5L8 14.25l-5.25-3v-6.5z\"/><path d=\"M2.75 4.75 8 14.25l5.25-9.5\"/>",
+  "model":"<path d=\"M2.75 13.25V7.25a4.5 4.5 0 0 1 4.5-4.5h6v10.5z\"/><circle cx=\"8.75\" cy=\"8.5\" r=\"1.5\"/>",
+  "modifier":"<path d=\"M8 1.75l5.25 3v6.5L8 14.25l-5.25-3v-6.5z\"/><path d=\"M5.5 7h5M5.5 9.75h5\"/>",
+  "part":"<path d=\"M2.75 3.25h10.5v9.5H8.25V9H2.75z\"/>",
   "plus":"<path d=\"M8 3.25v9.5M3.25 8h9.5\"/>",
+  "repair-mesh":"<path d=\"M2 13.5 8 2.5l6 11z\"/><path d=\"M8 7.25v4M6 9.25h4\"/>",
+  "revolve":"<path d=\"M8 1.75v12.5\"/><path d=\"M8 3.5h2.5l2 2.5v4l-2 2.5H8\"/><path d=\"M5.75 3.75a5.5 5.5 0 0 0 0 8.5\"/>",
+  "roll-to-here":"<path d=\"M10.5 2v12\"/><path d=\"M2 8h5.5M5.25 5.75 7.5 8l-2.25 2.25\"/><path d=\"M13.5 5v.01M13.5 8v.01M13.5 11v.01\"/>",
+  "select-edge":"<path d=\"M2.5 9.5v-6A1.5 1.5 0 0 1 4 2h5.5\"/><path d=\"M2.5 9.5v-6\" stroke-width=\"2.5\"/><path d=\"M8.5 8.5l5.5 2.25-2.25 1-1 2.25z\"/>",
+  "select-face":"<path d=\"M2 9.5 4.5 2.5h6.5l-2.5 7z\"/><circle cx=\"6.5\" cy=\"6\" r=\"1\" fill=\"currentColor\" stroke=\"none\"/><path d=\"M8.5 8.5l5.5 2.25-2.25 1-1 2.25z\"/>",
+  "select-object":"<rect x=\"2\" y=\"2\" width=\"7.5\" height=\"7.5\" rx=\"1.5\"/><path d=\"M8.5 8.5l5.5 2.25-2.25 1-1 2.25z\"/>",
+  "sketch":"<path d=\"M1.75 14l3-2.5h9.5l-3 2.5z\"/><path d=\"M10 2l2.5 2.5-5 5H5V7z\"/>",
+  "step-broken":"<circle cx=\"8\" cy=\"8\" r=\"3\" fill=\"currentColor\" stroke=\"none\"/>",
 };
