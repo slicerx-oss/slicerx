@@ -684,7 +684,13 @@ async fn a_plate_queues_for_an_offline_bambu_printer_without_connecting() {
     let off = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     let port = off.local_addr().unwrap().port();
     drop(off);
-    let r = call(&mut ws, 2, "secrets.set", json!({ "name": "bay-9-code", "value": "12345678" })).await;
+    let r = call(
+        &mut ws,
+        2,
+        "secrets.set",
+        json!({ "name": "bay-9-code", "value": "12345678" }),
+    )
+    .await;
     assert!(r["error"].is_null(), "{r}");
     let cfg = json!({
         "id": "bay-9", "name": "Bay 9", "plugin": "bambu-lan", "host": "127.0.0.1", "port": port,
@@ -695,16 +701,28 @@ async fn a_plate_queues_for_an_offline_bambu_printer_without_connecting() {
 
     // Queueing stores the plate as given. It does not connect, so an offline printer takes it.
     let (f, sha) = file("night.gcode", 9);
-    let r = call(&mut ws, 4, "queue.add", json!({ "printerId": "bay-9", "file": f, "title": "Night plate" })).await;
-    assert!(r["error"].is_null(), "an offline printer takes a queued plate: {r}");
+    let r = call(
+        &mut ws,
+        4,
+        "queue.add",
+        json!({ "printerId": "bay-9", "file": f, "title": "Night plate" }),
+    )
+    .await;
+    assert!(
+        r["error"].is_null(),
+        "an offline printer takes a queued plate: {r}"
+    );
     let item = r["result"]["item"].clone();
-    assert_eq!(item["sha256"], sha, "the queued bytes are the plate as sent: {item}");
+    assert_eq!(
+        item["sha256"], sha,
+        "the queued bytes are the plate as sent: {item}"
+    );
     let id = item["id"].as_str().unwrap().to_owned();
     let it = queue_item(&mut ws, &id).await;
     assert_eq!(it["printerId"], "bay-9", "{it}");
 }
 
-/// A stand-in BamBuddy: answers every request with an idle printer and records the request line and
+/// A stand-in `BamBuddy`: answers every request with an idle printer and records the request line and
 /// the API key it was sent.
 async fn fake_bambuddy() -> (u16, std::sync::Arc<std::sync::Mutex<Vec<String>>>) {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -722,7 +740,11 @@ async fn fake_bambuddy() -> (u16, std::sync::Arc<std::sync::Mutex<Vec<String>>>)
                 let line = req.lines().next().unwrap_or_default().to_owned();
                 let key = req
                     .lines()
-                    .find_map(|l| l.to_ascii_lowercase().starts_with("x-api-key:").then(|| l[10..].trim().to_owned()))
+                    .find_map(|l| {
+                        l.to_ascii_lowercase()
+                            .starts_with("x-api-key:")
+                            .then(|| l[10..].trim().to_owned())
+                    })
                     .unwrap_or_default();
                 log.lock().unwrap().push(format!("{line} key={key}"));
                 let body = if line.starts_with("GET /api/v1/printers ") {
@@ -730,7 +752,10 @@ async fn fake_bambuddy() -> (u16, std::sync::Arc<std::sync::Mutex<Vec<String>>>)
                 } else {
                     r#"{"connected":true,"state":"IDLE"}"#
                 };
-                let resp = format!("HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}", body.len());
+                let resp = format!(
+                    "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+                    body.len()
+                );
                 let _ = sock.write_all(resp.as_bytes()).await;
             });
         }
@@ -753,7 +778,13 @@ async fn a_bambuddy_printer_takes_its_server_from_connected_apps() {
 
     // Add BamBuddy once: its address, and its API key kept as a secret.
     let (port, seen) = fake_bambuddy().await;
-    let r = call(&mut ws, 4, "secrets.set", json!({ "name": "app-bambuddy", "value": "bb-key-1" })).await;
+    let r = call(
+        &mut ws,
+        4,
+        "secrets.set",
+        json!({ "name": "app-bambuddy", "value": "bb-key-1" }),
+    )
+    .await;
     assert!(r["error"].is_null(), "{r}");
     let r = call(
         &mut ws,
@@ -765,7 +796,11 @@ async fn a_bambuddy_printer_takes_its_server_from_connected_apps() {
     assert!(r["error"].is_null(), "{r}");
     let list = call(&mut ws, 6, "services.list", json!({})).await;
     assert!(
-        list["result"].as_array().unwrap().iter().any(|s| s["pluginId"] == "bambuddy" && s["hasSecret"] == true),
+        list["result"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|s| s["pluginId"] == "bambuddy" && s["hasSecret"] == true),
         "{list}"
     );
 
@@ -784,11 +819,14 @@ async fn a_bambuddy_printer_takes_its_server_from_connected_apps() {
     let seen = seen.lock().unwrap().clone();
     assert!(!seen.is_empty(), "the app's server was asked");
     assert!(
-        seen.iter().all(|l| l.contains("/api/v1/printers") && l.ends_with("key=bb-key-1")),
+        seen.iter()
+            .all(|l| l.contains("/api/v1/printers") && l.ends_with("key=bb-key-1")),
         "{seen:?}"
     );
     assert!(
-        seen.iter().filter(|l| !l.starts_with("GET /api/v1/printers ")).all(|l| l.contains("/api/v1/printers/12")),
+        seen.iter()
+            .filter(|l| !l.starts_with("GET /api/v1/printers "))
+            .all(|l| l.contains("/api/v1/printers/12")),
         "a printer's calls name its BamBuddy id: {seen:?}"
     );
 }

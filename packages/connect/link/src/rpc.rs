@@ -1168,7 +1168,12 @@ pub(crate) async fn through_app(b: &Bridge, mut config: PrinterConfig) -> Rpc<Pr
             format!("add {name} in Settings, Connected apps first"),
         )
     })?;
-    let bad = || RpcError::new("bad_request", format!("the {name} address in Connected apps is malformed"));
+    let bad = || {
+        RpcError::new(
+            "bad_request",
+            format!("the {name} address in Connected apps is malformed"),
+        )
+    };
     let (scheme, rest) = service.base_url.split_once("://").ok_or_else(bad)?;
     let host = url_host(&service.base_url).ok_or_else(bad)?;
     let authority = rest.split(['/', '?', '#']).next().unwrap_or_default();
@@ -1847,7 +1852,9 @@ async fn test_printer(b: &Bridge, p: &Value) -> Rpc<Value> {
     let config = match through_app(b, config).await {
         Ok(c) => c,
         Err(e) => {
-            return Ok(json!({ "ok": false, "cause": e.code, "kind": "other", "message": e.message, "details": e.message, "steps": test_steps(None, None, None, None) }));
+            return Ok(
+                json!({ "ok": false, "cause": e.code, "kind": "other", "message": e.message, "details": e.message, "steps": test_steps(None, None, None, None) }),
+            );
         }
     };
     let fail = |cause: &str, message: String, st: Value| {
