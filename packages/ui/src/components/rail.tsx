@@ -44,6 +44,8 @@ export interface RailProps {
   edge?: ReactNode
   /** The rail element, for measuring a drag from the parent. */
   railRef?: React.RefObject<HTMLElement | null>
+  /** False where an EdgeTab shuts and opens the rail instead: the header's own toggle is not drawn. */
+  toggle?: boolean
 }
 
 /**
@@ -52,7 +54,7 @@ export interface RailProps {
  * decides the window is wide enough. The inner edge glows as the pointer approaches. The parent
  * owns and remembers the collapsed state per workspace.
  */
-export function Rail({ side, label, collapsed, onCollapsedChange, items = [], onSelect, peekOnHover = true, peekDelay = 320, dropActive, children, footer, className, style, edge, railRef }: RailProps) {
+export function Rail({ side, label, collapsed, onCollapsedChange, items = [], onSelect, peekOnHover = true, peekDelay = 320, dropActive, children, footer, className, style, edge, railRef, toggle = true }: RailProps) {
   const own = useRef<HTMLElement>(null)
   const ref = railRef ?? own
   const [peek, setPeek] = useState(false)
@@ -94,7 +96,7 @@ export function Rail({ side, label, collapsed, onCollapsedChange, items = [], on
       {edge}
       <div className="sx-rail-head">
         {side === 'right' ? null : <span className="sx-rail-title">{label}</span>}
-        <button
+        {toggle ? <button
           type="button"
           className="sx-rail-toggle"
           aria-expanded={!collapsed}
@@ -105,7 +107,7 @@ export function Rail({ side, label, collapsed, onCollapsedChange, items = [], on
           }}
         >
           <Icon name="chevron-down" />
-        </button>
+        </button> : null}
         {side === 'right' ? <span className="sx-rail-title">{label}</span> : null}
       </div>
       {items.length ? (
