@@ -48,8 +48,15 @@ your Mac's own architecture).
 
 A bridge build gets its own identifier, the edition's plus `.agent-bridge` (`app.slicerx.desktop.agent-bridge`). It
 keeps its own data folder, web profile, printer hub state and single-instance lock, so it runs next to an installed
-SlicerX without reading or changing that copy's state, and never sees the printers paired there. `--same-identifier`
-builds with the edition's own identifier instead, for a run that must share the installed app's state.
+SlicerX without reading or changing that copy's state, and never sees the printers paired there. That default is the
+safe choice: keep it unless a run truly needs the installed app's state.
+
+`--same-identifier` builds with the edition's own identifier instead. The test build then is the installed SlicerX as
+far as the system can tell: it reads and changes the same data folder and web profile (settings, recent and unsaved
+projects, the Vault sign-in), sees and can use the printers paired there, and shares the single-instance lock, so
+with the installed app running a launch of the test build hands its arguments to that copy and exits (and the other
+way round). Quit the installed app first, and expect whatever the run changes to be there the next time the installed
+app starts.
 
 The edition config comes from `SLICERX_CONFIG` and the `SLICERX_*` variables as for any build. Without
 `SLICERX_SUPABASE_URL` the Vault runs on demo data and nothing reaches a backend. The engine's WASM module and the CAD
