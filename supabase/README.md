@@ -15,6 +15,7 @@ The schema is split into module migrations so the store and cloud can be removed
 | `migrations/0005_anon_downloads.sql` | store | Downloads without signing in: per-IP limits in `library_settings`, the IP hash salt, hourly usage per IP hash, daily anonymous counts per listing, short-lived `download_grants`, `request_download`, `set_anon_downloads` and the anon storage policy on `listing-files` |
 | `migrations/0013_creator_pages.sql` | store | Creator page banners (`creators.banner_url`), the public `creator-media` bucket for banners and logos (writes only under the member's own id), the private Saved list (`collections.kind = 'saved'`, `set_saved`, `saved_listings`), and the library rows: `trending_listings`, `new_creators` and `recommended_listings` |
 | `migrations/0016_listing_colors.sql` | store | `listing_versions.colors`: the filament colors a version prints in and which parts need the AMS, checked by `listing_colors_ok`; editable by the creator without a new review |
+| `migrations/0017_qa_accounts.sql` | auth, store | `qa_accounts`, the flag on the release gate's test accounts (see "QA accounts"), set by a trigger on `auth.users` and by `backfill_qa_accounts`; the `library_listings` view and the counts and rankings without QA activity |
 | `migrations/0004_cloud.sql` | cloud | devices, synced profiles, printers and fleets, the `cloud_jobs` queue, deliveries, and the private `cloud-inputs` and `cloud-results` buckets |
 | `migrations/0012_bug_reports.sql` | bug reports | `bug_reports`, written only through `submit_bug_report` (10 an hour per install, 200 an hour overall), read by the Discord poller with the service key, and the private `bug-reports` bucket (docs/bug-intake.md) |
 
@@ -75,6 +76,17 @@ Clients cannot set scan or review status, write to `listing-files`, or write the
 - IPs are never stored. Usage rows hold an HMAC of the IP and the date under a private salt, so they cannot be linked across days, and rows older than two days are pruned as downloads come in.
 - `library_settings.client_ip_source` names the header that holds the client IP. The default, `x-forwarded-for-last`, is the hop the local Kong gateway appends. Behind Cloudflare use `cf-connecting-ip`. A header the client can set (Kong passes a client-sent `cf-connecting-ip` through unchanged) lets a visitor pick their own bucket.
 - `listing_stats` and `creator_dashboard` add anonymous downloads to the member count.
+
+## QA accounts
+
+Accounts at `@qa.slicerx.app` addresses are the release gate's test accounts. They can do everything a member can, but what they do stays out of what everyone else sees counted and ranked:
+
+- Likes, makes, member downloads and follows by a QA account are left out of `listing_stats`, `creator_dashboard`, `creator_followers` and `trending_listings`.
+- A QA account's listings stay out of `trending_listings`, `recommended_listings` and the `library_listings` view (the Vault's Feed), and its creator page out of `new_creators`. The listing still opens by its address and downloads like any other.
+- The caller's own activity and uploads always count and show for the caller, so a QA account sees the library as a member would.
+- Signed-out downloads carry no account and are counted as before.
+
+The flag is a row in `qa_accounts`. A trigger on `auth.users` adds it when an account signs up with, or changes to, a QA address, and never removes it. Only the service role reads or changes the table; `backfill_qa_accounts()` flags every QA address that is not flagged yet.
 
 ## Access rules
 

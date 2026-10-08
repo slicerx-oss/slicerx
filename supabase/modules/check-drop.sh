@@ -21,7 +21,7 @@ declare
 begin
   select string_agg(c.relname, ', ') into leftover
   from pg_class c join pg_namespace n on n.oid = c.relnamespace
-  where n.nspname = 'public' and c.relkind = 'r' and c.relname not in ('profiles', 'api_tokens', 'api_token_usage', 'account_deletions', 'audit_log', 'paired_devices');
+  where n.nspname = 'public' and c.relkind = 'r' and c.relname not in ('profiles', 'api_tokens', 'api_token_usage', 'account_deletions', 'audit_log', 'paired_devices', 'qa_accounts');
   if leftover is not null then
     raise exception 'tables left after dropping the modules: %', leftover;
   end if;
