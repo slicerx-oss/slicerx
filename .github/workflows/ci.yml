@@ -274,7 +274,7 @@ jobs:
           merge-multiple: true
           path: apps/web/blob-reports
       - if: needs.e2e-shard.result != 'skipped'
-        run: pnpm --filter @slicerx/web exec playwright merge-reports --reporter html ./blob-reports
+        run: pnpm --filter @slicerx/web exec playwright merge-reports -c playwright.merge.config.ts --reporter html ./blob-reports
       - if: needs.e2e-shard.result != 'skipped'
         uses: actions/upload-artifact@v4
         with:
