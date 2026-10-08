@@ -377,7 +377,9 @@ export function testBlockers(form: PrinterForm, method: ConnectionMethod): Block
     if (f.key === 'host') {
       out.push({ field: 'host', text: form.fields.host.trim() ? `The IP address "${form.fields.host.trim()}" is not valid. Use four numbers such as 192.168.1.50.` : 'The IP address is empty.' })
     } else if (f.key === 'serial') {
-      out.push({ field: 'serial', text: form.fields.serial.trim() ? 'The serial number must be 8 to 24 letters and digits (Bambu Lab serials have 15).' : 'The serial number is empty.' })
+      // BamBuddy's printer id rides in the serial field (see checkConnection).
+      if (method.id === 'bambuddy') out.push({ field: 'serial', text: form.fields.serial.trim() ? 'The BamBuddy printer id is the number BamBuddy uses for this printer, like 12.' : 'The BamBuddy printer id is empty.' })
+      else out.push({ field: 'serial', text: form.fields.serial.trim() ? 'The serial number must be 8 to 24 letters and digits (Bambu Lab serials have 15).' : 'The serial number is empty.' })
     } else if (f.key === 'accessCode') {
       const len = form.secretLengths.accessCode ?? 0
       out.push({ field: 'accessCode', text: len ? `The access code has 8 characters; ${len} ${len === 1 ? 'is' : 'are'} entered.` : 'The access code is empty. It has 8 characters.' })
