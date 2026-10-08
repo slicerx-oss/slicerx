@@ -9,6 +9,7 @@
     "./styles.css": "./src/styles.css",
     "./gallery": "./src/gallery.tsx",
     "./theme": "./src/theme-entry.ts",
+    "./theme-bundle": "./src/theme-bundle.ts",
     "./icons": "./src/icons-entry.ts",
     "./app-mark": "./src/icons/app-mark.tsx",
     "./maker-tile": "./src/components/maker-tile.tsx",
