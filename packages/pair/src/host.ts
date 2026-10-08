@@ -787,6 +787,13 @@ export async function createPairHost(o: PairHostOptions): Promise<PairHost> {
     })
   }
 
+  /** The bytes this printer will be sent. BamBuddy may stamp a non-Bambu profile; the approval then covers that hash. */
+  async function fileForPrinter(printerId: string, slice: SliceEntry): Promise<JobFile> {
+    const file: JobFile = { name: slice.summary.name, kind: slice.file.kind, data: slice.file.data, sha256: slice.sha256 }
+    const prepare = printers().prepareUpload
+    return prepare ? prepare(printerId, file) : file
+  }
+
   async function sendJob(s: Session, rec: PairingRecord, p: { sliceId: string; target: JobTarget; start: boolean; opts?: StartOptions }) {
     const slice = slices.get(p.sliceId)
     if (!slice || slice.pairingId !== s.pairingId) throw new PairError('not_found', 'Unknown slice')
@@ -794,11 +801,14 @@ export async function createPairHost(o: PairHostOptions): Promise<PairHost> {
     const targets = await resolveTargets(p.target)
     const opts: StartOptions = p.opts ?? {}
     const name = slice.summary.name
+    const prepared = []
+    for (const t of targets) prepared.push({ t, file: await fileForPrinter(t.id, slice) })
     const actions = []
-    for (const t of targets) {
-      actions.push({ action: 'printer.upload' as const, target: t.id, paramsHash: await hashParams({ printerId: t.id, name, sha256: slice.sha256 }) })
-      if (p.start) actions.push({ action: 'printer.start' as const, target: t.id, paramsHash: await hashParams({ printerId: t.id, name, opts, sha256: slice.sha256 }) })
+    for (const { t, file } of prepared) {
+      actions.push({ action: 'printer.upload' as const, target: t.id, paramsHash: await hashParams({ printerId: t.id, name: file.name, sha256: file.sha256 }) })
+      if (p.start) actions.push({ action: 'printer.start' as const, target: t.id, paramsHash: await hashParams({ printerId: t.id, name: file.name, opts, sha256: file.sha256 }) })
     }
+    const hashes = [...new Set(prepared.map((row) => row.file.sha256))]
     const names = targets.map((t) => t.name)
     const where = names.length <= 3 ? names.join(', ') : `${names.slice(0, 2).join(', ')} and ${names.length - 2} more`
     return raiseApproval(s, rec, {
@@ -809,7 +819,7 @@ export async function createPairHost(o: PairHostOptions): Promise<PairHost> {
         ...(slice.summary.timeS !== undefined ? [`Print time ${Math.floor(slice.summary.timeS / 3600)} h ${Math.round((slice.summary.timeS % 3600) / 60)} m`] : []),
         ...(slice.summary.grams !== undefined ? [`Filament ${slice.summary.grams.toFixed(0)} g`] : []),
         p.start ? 'Heats and starts each printer' : 'Uploads only, nothing starts',
-        `SHA-256 ${slice.sha256.slice(0, 16)}`,
+        hashes.length === 1 && hashes[0] ? `SHA-256 ${hashes[0].slice(0, 16)}` : 'Each printer is sent the file labeled for its own model',
       ],
       ...(targets.length === 1 && targets[0] ? { printerId: targets[0].id } : {}),
       input: { sliceId: p.sliceId, target: p.target, start: p.start, opts },
@@ -943,8 +953,8 @@ export async function createPairHost(o: PairHostOptions): Promise<PairHost> {
     const host = printers()
     const w = job.work
     if (w.kind === 'print') {
-      const file: JobFile = { name: w.slice.summary.name, kind: w.slice.file.kind, data: w.slice.file.data, sha256: w.slice.sha256 }
       for (const printerId of w.printerIds) {
+        const file = await fileForPrinter(printerId, w.slice)
         try {
           emitJob(job, 'uploading', printerId)
           const remote = await host.upload(printerId, file, token)

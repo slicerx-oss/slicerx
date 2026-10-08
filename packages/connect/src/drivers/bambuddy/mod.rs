@@ -7,19 +7,22 @@
 //! speak Moonraker or the Bambu LAN protocol.
 //!
 //! Upload stores the sliced file in the library. A bridged printer is presented as a
-//! Bambu model (goBamKlipper uses an A1 Mini), so the upload rewrites that identity
-//! in the `.gcode.3mf` and leaves the motion G-code alone. A slice that already
-//! matches the model BamBuddy has for this printer id is uploaded unchanged. When
-//! `GET /api/v1/printers/{id}` does not say a model, a non-Bambu profile is stamped
-//! `Bambu Lab A1 Mini` / `N1`, and a Bambu profile keeps the model it was sliced as.
+//! Bambu model (goBamKlipper uses an A1 Mini), so a file that is not already a Bambu
+//! profile is stamped with that identity and the motion G-code is left alone. A Bambu
+//! profile that matches the printer is uploaded unchanged. A Bambu profile for a
+//! different model is refused, not relabeled. `GET /api/v1/printers/{id}` has to
+//! succeed first. The A1 Mini / `N1` stamp is used only when that reply has no model.
 //! Start posts a queue item with `manual_start` false, so BamBuddy starts it when
 //! that printer is idle. A slot map becomes `ams_mapping`. `set_slot` configures an
 //! AMS tray. Status reads AMS trays and the external spool.
 
 mod stamp;
 
+use std::fmt::Write as _;
 use std::sync::Arc;
 use std::time::Duration;
+
+use sha2::{Digest, Sha256};
 
 use async_trait::async_trait;
 use futures::stream::BoxStream;
@@ -121,17 +124,30 @@ impl Inner {
         Ok(parse_status(self.id(), &body))
     }
 
-    /// `Printer.model` for this id. `None` when BamBuddy does not say, which
-    /// makes the upload stamp a non-Bambu profile as an A1 Mini.
-    async fn printer_model(&self) -> Option<String> {
+    /// `Printer.model` after a successful `GET /api/v1/printers/{id}`. `Ok(None)`
+    /// when that reply has no model. A timeout, a 401, or any other failure is
+    /// returned: the upload must not treat it as an empty model.
+    async fn printer_model(&self) -> Result<Option<String>> {
         let path = format!("{API}/printers/{}", self.printer_num);
-        let resp = http::send(self.id(), self.get(&path)).await.ok()?;
-        let body = http::json(self.id(), resp).await.ok()?;
-        body.get("model")
+        let resp = http::send(self.id(), self.get(&path)).await?;
+        let body = http::json(self.id(), resp).await?;
+        Ok(body
+            .get("model")
             .and_then(Value::as_str)
             .map(str::trim)
             .filter(|model| !model.is_empty())
-            .map(ToOwned::to_owned)
+            .map(ToOwned::to_owned))
+    }
+
+    /// The bytes the library post will send. A non-zip file is unchanged and
+    /// does not ask BamBuddy for a model.
+    async fn library_bytes(&self, file: &JobFile) -> Result<Vec<u8>> {
+        if !stamp::is_zip(&file.data) {
+            return Ok(file.data.clone());
+        }
+        let api_model = self.printer_model().await?;
+        stamp::prepare_library_file(&file.data, api_model.as_deref())
+            .map_err(|detail| Error::protocol(self.id(), detail))
     }
 }
 
@@ -184,20 +200,25 @@ impl PrinterSession for BambuddySession {
         true
     }
 
+    async fn prepare_upload(&self, mut file: JobFile) -> Result<JobFile> {
+        let data = self.inner.library_bytes(&file).await?;
+        file.sha256 = content_sha256(&data);
+        file.data = data;
+        Ok(file)
+    }
+
     async fn upload(&self, file: JobFile, token: &ApprovalToken) -> Result<RemoteFile> {
+        let data = self.inner.library_bytes(&file).await?;
+        let sha = content_sha256(&data);
+        if let Some(why) = sha_covers(&file.sha256, &sha) {
+            return Err(Error::protocol(self.inner.id(), why));
+        }
         self.inner.gate.check(
             token,
             Action::Upload,
             self.inner.id(),
-            &params::upload(self.inner.id(), &file.name, &file.sha256),
+            &params::upload(self.inner.id(), &file.name, &sha),
         )?;
-        let api_model = if stamp::is_zip(&file.data) {
-            self.inner.printer_model().await
-        } else {
-            None
-        };
-        let data = stamp::prepare_library_file(&file.data, api_model.as_deref())
-            .map_err(|detail| Error::protocol(self.inner.id(), detail))?;
         let form = Form::new().part("file", Part::bytes(data).file_name(file.name.clone()));
         let resp = http::send(
             self.inner.id(),
@@ -217,7 +238,7 @@ impl PrinterSession for BambuddySession {
             printer_id: self.inner.id().to_owned(),
             path: id.to_string(),
             name: file.name,
-            sha256: Some(file.sha256),
+            sha256: Some(sha),
         })
     }
 
@@ -308,6 +329,23 @@ impl BambuddySession {
         .await?;
         Ok(())
     }
+}
+
+fn content_sha256(data: &[u8]) -> String {
+    Sha256::digest(data).iter().fold(String::new(), |mut s, b| {
+        let _ = write!(s, "{b:02x}");
+        s
+    })
+}
+
+/// `Some` when `approved` is not the hash of the bytes that will be uploaded.
+fn sha_covers(approved: &str, actual: &str) -> Option<String> {
+    if actual.eq_ignore_ascii_case(approved) {
+        return None;
+    }
+    Some(format!(
+        "the approval covers sha256 {approved}, and the file that would be uploaded is sha256 {actual}. Approve the stamped file, then upload those bytes"
+    ))
 }
 
 fn printer_num(cfg: &PrinterConfig) -> Result<u64> {
@@ -824,6 +862,14 @@ mod tests {
         let s = parse_status("bay-1", &json!({ "connected": false, "state": "RUNNING" }));
         assert_eq!(s.state, PrinterState::Offline);
         assert!(s.message.is_some());
+    }
+
+    #[test]
+    fn an_approval_for_a_different_hash_does_not_cover_the_upload() {
+        let why = sha_covers("abc", "def").unwrap();
+        assert!(why.contains("abc"), "{why}");
+        assert!(why.contains("def"), "{why}");
+        assert!(sha_covers("abc", "ABC").is_none());
     }
 
     #[test]

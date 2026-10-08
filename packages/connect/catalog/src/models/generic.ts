@@ -14,7 +14,7 @@ export const GENERIC: PrinterModel[] = [
     kinematics: 'corexy',
     buildVolume: rect(250, 250, 250),
     nozzles: [0.4],
-    connections: ['moonraker', 'bambuddy', 'export'],
+    connections: ['moonraker', 'export'],
     find: FIND_KLIPPER,
     note: 'Any printer that opens in Mainsail or Fluidd. Set your own build volume.',
   },
@@ -25,7 +25,7 @@ export const GENERIC: PrinterModel[] = [
     kinematics: 'bed-slinger',
     buildVolume: rect(220, 220, 250),
     nozzles: [0.4],
-    connections: ['octoprint', 'bambuddy', 'export'],
+    connections: ['octoprint', 'export'],
     find: find({
       ip: 'The address of the Raspberry Pi that runs OctoPrint. Your router\'s device list shows it, and OctoPi answers to octopi.local.',
       credential: 'In OctoPrint, open Settings, then Application Keys, and create a key for SlicerX.',
@@ -39,7 +39,7 @@ export const GENERIC: PrinterModel[] = [
     kinematics: 'corexy',
     buildVolume: rect(300, 300, 300),
     nozzles: [0.4],
-    connections: ['duet', 'bambuddy', 'export'],
+    connections: ['duet', 'export'],
     find: find({
       ip: 'In Duet Web Control, open the G-code console and send M552. The reply shows the address. The board\'s .local name works too.',
       credential: 'The password you set with M551. Boards without one accept the default, reprap.',

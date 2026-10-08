@@ -10,7 +10,7 @@ const FIND = find({
 
 const creality = (m: Omit<PrinterModel, 'brand' | 'connections' | 'nozzleCount' | 'defaultNozzle' | 'find'> & Partial<PrinterModel>): PrinterModel => ({
   brand: 'creality',
-  connections: ['creality', 'moonraker', 'bambuddy', 'export'],
+  connections: ['creality', 'moonraker', 'export'],
   nozzleCount: 1,
   defaultNozzle: 0.4,
   find: FIND,
@@ -60,7 +60,7 @@ export const CREALITY: PrinterModel[] = [
     enclosed: false,
     buildVolume: rect(220, 220, 250),
     nozzles: STD,
-    connections: ['octoprint', 'bambuddy', 'export'],
+    connections: ['octoprint', 'export'],
     find: find({
       ip: 'The address of the Raspberry Pi that runs OctoPrint. Your router\'s device list shows it, and OctoPi answers to octopi.local.',
       credential: 'In OctoPrint, open Settings, then Application Keys, and create a key for SlicerX.',

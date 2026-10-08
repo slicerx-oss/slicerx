@@ -22,7 +22,7 @@ const voron = (id: string, name: string, kinematics: Kinematics, x: number, y: n
 })
 
 const klipper = (m: Omit<PrinterModel, 'connections' | 'nozzleCount' | 'defaultNozzle' | 'find'> & Partial<PrinterModel>): PrinterModel => ({
-  connections: ['moonraker', 'bambuddy', 'export'],
+  connections: ['moonraker', 'export'],
   nozzleCount: 1,
   defaultNozzle: 0.4,
   find: FIND_KLIPPER,
@@ -79,7 +79,7 @@ export const KLIPPER: PrinterModel[] = [
     buildVolume: rect(300, 300, 400),
     nozzles: [0.4],
     nozzleCount: 2,
-    connections: ['octoprint', 'bambuddy', 'export'],
+    connections: ['octoprint', 'export'],
     find: find({
       ip: 'The address of the Raspberry Pi that runs OctoPrint. Your router\'s device list shows it.',
       credential: 'In OctoPrint, open Settings, then Application Keys, and create a key for SlicerX.',

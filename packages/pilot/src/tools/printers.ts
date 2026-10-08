@@ -47,6 +47,12 @@ export const hostParams = {
   simple: (printerId: string) => ({ printerId }),
 }
 
+/** The file `upload` will send. A host without prepare returns the sliced file. */
+async function uploadedFile(ctx: ToolContext, printerId: string, file: JobFile): Promise<JobFile> {
+  const prepare = ctx.host.printers.prepareUpload
+  return prepare ? prepare(printerId, file) : file
+}
+
 async function exportPlate(shared: ToolShared, ctx: ToolContext, plate: number): Promise<{ file: JobFile; timeS: number; grams: number }> {
   const entry = shared.slices.get(plate)
   if (!entry) throw new Error(`Plate ${plate} is not sliced yet. Run slice first.`)
@@ -153,8 +159,9 @@ export function printerTools(shared: ToolShared): PilotTool<never>[] {
     args: (i) => `${i.printerId} --send plate_${i.plate}`,
     async approval(i, ctx) {
       const job = await exportPlate(shared, ctx, i.plate)
+      const file = await uploadedFile(ctx, i.printerId, job.file)
       const info = (await ctx.host.printers.list()).find((p) => p.id === i.printerId)
-      const opts = queueOptions(i.slotMap, info?.plugin, info?.name ?? i.printerId, job.file.name)
+      const opts = queueOptions(i.slotMap, info?.plugin, info?.name ?? i.printerId, file.name)
       return {
         title: `Send plate ${i.plate} to ${info?.name ?? i.printerId}?`,
         lines: [
@@ -165,25 +172,27 @@ export function printerTools(shared: ToolShared): PilotTool<never>[] {
         ],
         printerId: i.printerId,
         actions: [
-          { action: 'printer.upload', target: i.printerId, params: hostParams.upload(i.printerId, job.file) },
-          { action: 'printer.start', target: i.printerId, params: hostParams.start(i.printerId, job.file.name, opts, job.file.sha256) },
+          { action: 'printer.upload', target: i.printerId, params: hostParams.upload(i.printerId, file) },
+          { action: 'printer.start', target: i.printerId, params: hostParams.start(i.printerId, file.name, opts, file.sha256) },
         ],
       }
     },
     // Over MCP only a person may approve this; the hub then uploads and starts the same file.
     async agentWork(i, ctx) {
       const job = await exportPlate(shared, ctx, i.plate)
+      const file = await uploadedFile(ctx, i.printerId, job.file)
       const info = (await ctx.host.printers.list()).find((p) => p.id === i.printerId)
-      const opts = queueOptions(i.slotMap, info?.plugin, info?.name ?? i.printerId, job.file.name)
-      return { kind: 'print', printerId: i.printerId, file: job.file, opts }
+      const opts = queueOptions(i.slotMap, info?.plugin, info?.name ?? i.printerId, file.name)
+      return { kind: 'print', printerId: i.printerId, file, opts }
     },
     async run(i, ctx) {
       if (!ctx.token) return { ok: false, summary: 'Not approved' }
       const job = await exportPlate(shared, ctx, i.plate)
+      const file = await uploadedFile(ctx, i.printerId, job.file)
       const info = (await ctx.host.printers.list()).find((p) => p.id === i.printerId)
-      const opts = queueOptions(i.slotMap, info?.plugin, info?.name ?? i.printerId, job.file.name)
-      ctx.progress(`uploading ${job.file.name}`, 0.2)
-      const remote = await ctx.host.printers.upload(i.printerId, job.file, ctx.token)
+      const opts = queueOptions(i.slotMap, info?.plugin, info?.name ?? i.printerId, file.name)
+      ctx.progress(`uploading ${file.name}`, 0.2)
+      const remote = await ctx.host.printers.upload(i.printerId, file, ctx.token)
       ctx.progress('starting', 0.8)
       try {
         await ctx.host.printers.start(remote, opts, ctx.token)
