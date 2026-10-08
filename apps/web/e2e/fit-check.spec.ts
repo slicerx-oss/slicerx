@@ -13,7 +13,7 @@ import { expect, test, type Page } from '@playwright/test'
 import { plateReady, viewportReady } from './fixtures'
 
 type Entry = { id: string; name: string; transform: number[]; parts: { positions: ArrayLike<number> }[] }
-type Sx = { getState(): { plate: Entry[]; slice: { status: string; stale?: boolean; result?: { primeTower?: unknown } } }; setState(p: unknown): void }
+type Sx = { getState(): { plate: Entry[]; slice: { status: string; stale?: boolean; result?: { id: string; primeTower?: unknown } } }; setState(p: unknown): void }
 const STARTERS = ['x-mark', 'calibration-cube-20mm', 'wall-hook', 'shelf-bracket', 'first-layer-test', 'overhang-test', 'bridging-test', 'retraction-test', 'temperature-tower', 'cable-clip']
 interface Vp {
   camera: { position: { clone(): { set(x: number, y: number, z: number): { applyMatrix4(m: unknown): { project(c: unknown): { x: number; y: number } } } } } }
@@ -257,8 +257,10 @@ test('moving an object does not rebuild the scene, with a prime tower on the pla
   // A printer with a filament unit, so the two color X gets a prime tower.
   await page.getByRole('button', { name: 'Change', exact: true }).click()
   await page.getByRole('list', { name: 'Choose a printer' }).getByRole('button', { name: /Bay 2/ }).click()
+  const sliceId = () => page.evaluate(() => (window as unknown as { __sx: Sx }).__sx.getState().slice.result?.id ?? null)
   const current = () => page.evaluate(() => { const s = (window as unknown as { __sx: Sx }).__sx.getState().slice; return s.status === 'done' && !s.stale })
   await expect.poll(current, { timeout: 120_000 }).toBe(true)
+  const before = await sliceId()
   expect(await page.evaluate(() => Boolean((window as unknown as { __sx: Sx }).__sx.getState().slice.result?.primeTower))).toBe(true)
   await page.evaluate(() => {
     const w = window as unknown as { __vp: Vp; __rebuilds: number }
@@ -276,7 +278,7 @@ test('moving an object does not rebuild the scene, with a prime tower on the pla
   for (let i = 1; i <= 8; i++) await page.mouse.move(at.x - i * 5, at.y + i * 2)
   await page.mouse.up()
   await expect.poll(async () => (await box(page, 'Layered X')).min[0]).not.toBe(x.min[0])
-  // The plate slices again on its own; the tower stays drawn meanwhile and moves without a rebuild.
-  await expect.poll(current, { timeout: 120_000 }).toBe(true)
+  // The plate slices again on its own (a new slice, current); the tower stays drawn meanwhile and moves without a rebuild.
+  await expect.poll(() => page.evaluate((b) => { const s = (window as unknown as { __sx: Sx }).__sx.getState().slice; return s.status === 'done' && !s.stale && s.result?.id !== b }, before), { timeout: 120_000 }).toBe(true)
   expect(await page.evaluate(() => (window as unknown as { __rebuilds: number }).__rebuilds)).toBe(0)
 })

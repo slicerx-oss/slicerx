@@ -8,7 +8,7 @@ import { type Page } from '@playwright/test'
 import { command, openStudio } from './cad-helpers'
 import { expect, tab, test } from './fixtures'
 
-type Sx = { getState(): { plate: { name: string }[]; slice: { status: string; error?: unknown } }; setState(p: unknown): void }
+type Sx = { getState(): { plate: { name: string }[]; slice: { status: string; stale?: boolean; error?: unknown; result?: { id: string } } }; setState(p: unknown): void }
 const state = (page: Page) => page.evaluate(() => (window as unknown as { __sx: Sx }).__sx.getState())
 const stepFixtures = join(import.meta.dirname, '..', '..', '..', 'packages', 'app', 'test', 'fixtures', 'step')
 
@@ -23,12 +23,15 @@ async function drop(page: Page, name: string): Promise<void> {
   }, { name, bytes })
 }
 
+// The slice this click starts: done, current and with a new id, so an earlier slice of the plate does not pass for it.
 async function sliceDone(page: Page): Promise<void> {
+  const before = (await state(page)).slice.result?.id ?? null
   await page.getByRole('main').getByRole('button', { name: /^Slice/ }).first().click()
   await expect
     .poll(async () => {
       const sl = (await state(page)).slice
-      return sl.status === 'error' ? JSON.stringify(sl).slice(0, 600) : sl.status
+      if (sl.status === 'error') return JSON.stringify(sl).slice(0, 600)
+      return sl.status === 'done' && !sl.stale && sl.result?.id !== before ? 'done' : sl.status
     }, { timeout: 120_000 })
     .toBe('done')
 }
