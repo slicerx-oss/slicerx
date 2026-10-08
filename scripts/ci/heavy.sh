@@ -14,7 +14,8 @@
 #
 # The lock is a directory holding the holder's record (mkdir is atomic; macOS has no flock command). A lock whose
 # holder has died is taken over, so a crashed job never wedges the machine. Waiters take a ticket in <lock>.queue and
-# only the oldest one tries the lock, so they are served in arrival order.
+# only the oldest one tries the lock, so they are served in arrival order, CI jobs first (SX_HEAVY_PRIORITY=ci, or a
+# self-hosted runner). Every waiter judges the holder now and then, so one that cannot does not wedge the queue.
 #
 # Windows (Git Bash) and WSL on one machine share one lock when both name the same directory on the Windows drive,
 # for example C:\Users\<user>\.slicerx-heavy.lock (a C:\ path works on both sides). The record names the holder's
@@ -39,6 +40,9 @@ case "$(uname -s)" in
   *) side=msys ;;
 esac
 distro=${WSL_DISTRO_NAME:-}
+# A systemd service (a CI runner, for one) gets no WSL_DISTRO_NAME, but wslpath still knows the distro. A record
+# without it could not be judged from the other distro side, and a dead holder would wedge the queue.
+if [ "$side" = wsl ] && [ -z "$distro" ]; then distro=$(wslpath -w / 2> /dev/null | awk -F'[^A-Za-z0-9._-]+' '{print $3}'); fi
 
 boot_id() { cat /proc/sys/kernel/random/boot_id 2> /dev/null; }
 # A process's start time in clock ticks since boot: field 22 of /proc/<pid>/stat, counted after the ")" that ends
@@ -118,7 +122,10 @@ wsl_alive() {
 me=$(identity)
 q=$lock.queue
 mkdir -p "$q" 2> /dev/null
-ticket=$q/$(date +%s)-$side-$$
+# CI jobs (a self-hosted runner, or SX_HEAVY_PRIORITY=ci) queue ahead of other waiters; a holder always finishes.
+prio=1
+if [ "${SX_HEAVY_PRIORITY:-}" = ci ] || [ "${RUNNER_ENVIRONMENT:-}" = self-hosted ]; then prio=0; fi
+ticket=$q/$prio-$(date +%s)-$side-$$
 held=
 # Windows refuses to remove a directory another process is looking into (a waiter reading the record), and a lock left
 # empty that way would have no record to judge, so the removal is tried a few times.
@@ -133,7 +140,7 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 mtime() { stat -c %Y "$1" 2> /dev/null || stat -f %m "$1" 2> /dev/null; }
 
-t0=$SECONDS next=0
+t0=$SECONDS next=0 judged=0
 while :; do
   # Our ticket, refreshed on every poll. A ticket left alone for 2 minutes is a dead waiter's, and is dropped.
   touch "$ticket" 2> /dev/null || { mkdir -p "$q" 2> /dev/null; touch "$ticket" 2> /dev/null; }
@@ -147,6 +154,14 @@ while :; do
   done
   if [ -z "$first" ] || [ "$first" = "$ticket" ]; then
     mkdir "$lock" 2> /dev/null && break
+    judge=1
+  else
+    # Every waiter judges the holder once a minute, so one that cannot (a record from a side it cannot ask) does not
+    # keep a dead holder's lock for the whole queue. Only the first ticket takes the lock.
+    judge=; [ $((SECONDS - judged)) -lt 60 ] || judge=1
+  fi
+  if [ -n "$judge" ]; then
+    judged=$SECONDS
     rec=$(cat "$lock/owner" 2> /dev/null)
     # Take over only the record judged dead, not one a new holder wrote meanwhile.
     if [ -n "$rec" ] && ! alive "$rec" && [ "$(cat "$lock/owner" 2> /dev/null)" = "$rec" ]; then

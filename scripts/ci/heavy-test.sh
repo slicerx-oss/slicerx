@@ -127,6 +127,18 @@ done
 release h2 "$h2"; wait "$pA" "$pB" "$pC"
 ok eval '[ "$(tr "\n" " " < "$tmp/order")" = "A B C " ]'
 
+name="a CI waiter (a self-hosted runner) goes ahead of earlier waiters"
+: > "$tmp/order"
+hold h3; h3=$!
+for t in A B; do
+  SX_HEAVY_LOCK=$lock SX_HEAVY_WAIT=60 bash "$heavy" sh -c 'echo "$1" >> "$2"' sh "$t" "$tmp/order" > /dev/null 2>&1 &
+  eval "p$t=\$!"; lpids="$lpids $!"; sleep 1.5
+done
+SX_HEAVY_LOCK=$lock SX_HEAVY_WAIT=60 RUNNER_ENVIRONMENT=self-hosted bash "$heavy" sh -c 'echo "$1" >> "$2"' sh C "$tmp/order" > /dev/null 2>&1 &
+pC=$!; lpids="$lpids $!"; sleep 1.5
+release h3 "$h3"; wait "$pA" "$pB" "$pC"
+ok eval '[ "$(tr "\n" " " < "$tmp/order")" = "C A B " ]'
+
 if [ "${1:-}" = cross ]; then
   distro=${2:?usage: heavy-test.sh cross <distro> [<stopped distro>]} stopped=${3:-}
   [ "$side" = msys ] || { echo "cross runs from Git Bash" >&2; exit 2; }
