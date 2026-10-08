@@ -9,6 +9,8 @@
 #                                              ci.env of the CI home this copy runs from ($SX_CI_HOME, or bin/..)
 #   SX_HEAVY_WAIT=<seconds>                    give up after this long (default 0: wait as long as it takes)
 #   SX_HEAVY_POLL=<seconds>                    how often a waiter looks again (default 5; the tests use 1)
+#   SX_HEAVY_ORPHAN=<seconds>                  how old a lock with no holder record must be before it is cleared
+#                                              (default 60; a holder writes its record right after taking the lock)
 #
 # The lock is a directory holding the holder's record (mkdir is atomic; macOS has no flock command). A lock whose
 # holder has died is taken over, so a crashed job never wedges the machine. Waiters take a ticket in <lock>.queue and
@@ -22,6 +24,7 @@ set -uo pipefail
 [ $# -gt 0 ] || { echo "usage: heavy.sh <command...>" >&2; exit 2; }
 max=${SX_HEAVY_WAIT:-0}
 poll=${SX_HEAVY_POLL:-5}
+orphan=${SX_HEAVY_ORPHAN:-60}
 lock=${SX_HEAVY_LOCK:-}
 if [ -z "$lock" ]; then
   env_file=${SX_CI_HOME:-$(dirname "$0")/..}/ci.env
@@ -41,7 +44,7 @@ boot_id() { cat /proc/sys/kernel/random/boot_id 2> /dev/null; }
 # A process's start time in clock ticks since boot: field 22 of /proc/<pid>/stat, counted after the ")" that ends
 # the command name. Linux and Git Bash both have it.
 stat_start() { sed 's/.*) //' | cut -d' ' -f20; }
-proc_start() { stat_start < "/proc/$1/stat" 2> /dev/null; }
+proc_start() { { stat_start < "/proc/$1/stat"; } 2> /dev/null; }
 # A Windows process's start time (FILETIME), "gone" when there is no such process, "unknown" when it cannot be read
 # (an elevated process, for one), empty when powershell.exe cannot be run.
 win_start() {
@@ -117,7 +120,15 @@ q=$lock.queue
 mkdir -p "$q" 2> /dev/null
 ticket=$q/$(date +%s)-$side-$$
 held=
-trap 'rm -f "$ticket"; [ -z "$held" ] || rm -rf "$lock"' EXIT
+# Windows refuses to remove a directory another process is looking into (a waiter reading the record), and a lock left
+# empty that way would have no record to judge, so the removal is tried a few times.
+release() {
+  rm -f "$ticket"
+  [ -n "$held" ] || return 0
+  local i
+  for i in 1 2 3 4 5; do rm -rf "$lock" 2> /dev/null; [ -e "$lock" ] || return 0; sleep 1; done
+}
+trap release EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 mtime() { stat -c %Y "$1" 2> /dev/null || stat -f %m "$1" 2> /dev/null; }
@@ -141,6 +152,14 @@ while :; do
     if [ -n "$rec" ] && ! alive "$rec" && [ "$(cat "$lock/owner" 2> /dev/null)" = "$rec" ]; then
       echo "heavy.sh: taking over a lock left by $(sed -n '1s/ since.*//p' <<< "$rec") ($(sed -n 's/^side //p' <<< "$rec"))" >&2
       rm -rf "$lock"; continue
+    fi
+    # No record: a holder between mkdir and writing it, or a lock whose removal failed half way. Only one older than
+    # $orphan seconds is cleared, and rmdir removes it only while it is still empty.
+    if [ -z "$rec" ] && [ -d "$lock" ] && [ ! -e "$lock/owner" ]; then
+      t=$(date +%s); m=$(mtime "$lock")
+      if [ -n "$m" ] && [ $((t - m)) -ge "$orphan" ] && rmdir "$lock" 2> /dev/null; then
+        echo "heavy.sh: cleared a lock with no holder record, left for $((t - m)) s" >&2; continue
+      fi
     fi
   fi
   waited=$((SECONDS - t0))
