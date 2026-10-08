@@ -15,6 +15,7 @@ Links a printer that is already in SlicerX to the printer BamBuddy knows. Status
 1. Add the printer from the catalog first, the same way you would without BamBuddy. Then choose BamBuddy as the connection.
 2. Enter the BamBuddy computer's address, the API key, and the printer number. SlicerX stores the key in your keychain.
 3. The address has to be on your local network: a private IP address, or a name ending in `.local`, `.lan`, or `.home.arpa`.
+4. Slice with the printer's own profile (a Voron stays a Voron). The file BamBuddy stores is labeled as the Bambu model that printer is in BamBuddy. A Voron that BamBuddy shows as an A1 Mini is labeled `Bambu Lab A1 Mini`. The bed size and start G-code in the file stay the machine you sliced. When BamBuddy does not say which model that printer is, a non-Bambu profile is labeled as an A1 Mini, and a Bambu profile keeps its own model.
 
 ### Network and firewall
 
@@ -42,7 +43,7 @@ Printer config: `host`, optional `port` (8000), `credentialRef` for the API key,
 
 ### Requests
 
-`GET /api/v1/printers/{id}/status` on connect and on each poll. Upload is `POST /api/v1/library/files` (multipart field `file`); the returned file id is what start uses. Start is `POST /api/v1/queue/` with `library_file_id`, `printer_id`, `manual_start` false, and the sheet's plate, calibration options and `ams_mapping` when a map was approved. Pause, resume and cancel are `POST /api/v1/printers/{id}/print/pause|resume|stop`. A slot write is `POST /api/v1/printers/{id}/slots/{ams}/{tray}/configure`.
+`GET /api/v1/printers/{id}/status` on connect and on each poll. Upload reads `GET /api/v1/printers/{id}` for `model`, stamps the `.gcode.3mf` identity when the slice is not already that model, then `POST /api/v1/library/files` (multipart field `file`). The returned file id is what start uses. With no model from that GET, a non-Bambu profile is stamped `Bambu Lab A1 Mini` / `N1` and a Bambu profile is uploaded as sliced. Start is `POST /api/v1/queue/` with `library_file_id`, `printer_id`, `manual_start` false, and the sheet's plate, calibration options and `ams_mapping` when a map was approved. Pause, resume and cancel are `POST /api/v1/printers/{id}/print/pause|resume|stop`. A slot write is `POST /api/v1/printers/{id}/slots/{ams}/{tray}/configure`.
 
 `remaining_time` is minutes. `progress` is a percent. AMS units 0 to 3 map to slots A1 to D4. The virtual tray is slot `1`. An empty tray (`state` 9) has no material.
 
