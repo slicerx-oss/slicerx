@@ -289,4 +289,13 @@ describe('the state an agent reads', () => {
     // The Slice command is not registered in this test, so the refusal comes back at once instead of a wait.
     await expect(bridge.handle('slice', {})).rejects.toMatchObject({ code: 'not_ready' })
   })
+
+  it('refuses to export a slice the plate has changed since', async () => {
+    capture = installCapture(window)
+    const bridge = createPageBridge(capture)
+    set({ slice: { status: 'done', result: result(), stale: false } })
+    await expect(bridge.handle('export_info', {})).resolves.toMatchObject({ id: '7' })
+    set({ slice: { status: 'done', result: result(), stale: true } })
+    await expect(bridge.handle('export_info', {})).rejects.toMatchObject({ code: 'refused', message: expect.stringMatching(/changed after the last slice/) })
+  })
 })

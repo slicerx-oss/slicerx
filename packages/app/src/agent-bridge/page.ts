@@ -230,6 +230,8 @@ export function createPageBridge(capture: Capture, doc: Document = document): Pa
   function exportInfo(): unknown {
     const s = get()
     if (s.slice.status !== 'done') throw new BridgeError('not_ready', 'slice the plate first')
+    // The G-code on hand is from before the last change to the plate or its settings; it is not what the plate shows.
+    if (s.slice.stale) throw new BridgeError('refused', 'the plate changed after the last slice; slice it again, then export')
     const unsafe = printBlock(s)
     if (unsafe) throw new BridgeError('refused', unsafe)
     return { id: s.slice.result.id, fileName: jobFileName(s, s.slice.result.fileName) }
