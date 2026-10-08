@@ -88,7 +88,7 @@ export const HARDWARE_ICONS = {
   'spool-rfid': SPOOL(9.5, 14, 6.5, 1.8) + '<path d="M16.5 6.5h.01M16 3.5a5.5 5.5 0 0 1 4.5 4.5M16 6a3 3 0 0 1 2 2"/>',
   'spool-third-party': SPOOL(9, 14, 6.5, 1.8) + '<path d="M16.5 6a2.5 2.5 0 1 1 3.5 2.3c-.6.4-1 .8-1 1.5M19 12.5h.01"/>',
   'spool-weight': '<circle cx="12" cy="9.5" r="5"/><circle cx="12" cy="9.5" r="1.5"/><rect x="4" y="15" width="16" height="5.5" rx="1.5"/><path d="M9 18.75a3 3 0 0 1 6 0M12 18.75l1.25-1.25"/>',
-  'flush-volume': '<path d="M4.5 4.5h15l-5.5 7v5h-4v-5z"/><path d="M12 19.5v1"/>',
+  'flush-volume': '<path d="M7 3.5c1.8 2.3 3 4 3 5.5a3 3 0 0 1-6 0c0-1.5 1.2-3.2 3-5.5z"/><path d="M17 9.5c1.8 2.3 3 4 3 5.5a3 3 0 0 1-6 0c0-1.5 1.2-3.2 3-5.5z"/><path d="M7 15.5c0 3 2 4.5 4.5 4.5h1M11 18.5l1.5 1.5-1.5 1.5"/>',
   'filament-tangle': SPOOL(9, 12, 6.5) + '<path d="M15.5 12h3a2.75 2.75 0 1 1-2.75 2.75v-1.5"/>',
   // Multi-material units
   'unit-ams': '<rect x="3.5" y="6.5" width="17" height="14" rx="2"/><path d="M12 3.5v3"/><path d="M7 11v6M10.3 11v6M13.7 11v6M17 11v6"/>',
@@ -154,7 +154,7 @@ export const HARDWARE_ICONS = {
   upload: '<path d="M4 15v3.5a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V15"/><path d="M12 15V4M8 8l4-4 4 4"/>',
   globe: '<circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17"/><path d="M12 3.5c2.4 2.4 3.5 5.2 3.5 8.5s-1.1 6.1-3.5 8.5c-2.4-2.4-3.5-5.2-3.5-8.5S9.6 5.9 12 3.5z"/>',
   // Calibration
-  calibration: '<circle cx="12" cy="12" r="6"/><path d="M12 3v4M12 17v4M3 12h4M17 12h4"/><path d="M12 12h.01"/>',
+  calibration: '<path d="M10 3.5l6 3.4v6.8L10 17.1l-6-3.4V6.9z"/><path d="M4 6.9l6 3.4 6-3.4M10 10.3v6.8"/><path d="M14.5 18.25l2.25 2.25L21 16.25"/>',
 }
 
 export const HARDWARE_ICON_GROUPS = {
