@@ -4,7 +4,7 @@
 import { useEffect, useReducer, type SVGProps } from 'react'
 import { useTheme } from '../theme-provider'
 import { ICON_NAMES, type IconName } from './icon-names'
-import { STARTUP_ICON_PATHS } from './icon-startup'
+import { STARTUP_ICON_PATHS, STARTUP_SMALL_PATHS } from './icon-startup'
 
 export interface IconProps extends Omit<SVGProps<SVGSVGElement>, 'name' | 'children'> {
   name: IconName
@@ -12,19 +12,26 @@ export interface IconProps extends Omit<SVGProps<SVGSVGElement>, 'name' | 'child
   size?: number
   /** Accessible name. Without one the icon is decorative and hidden from readers. */
   label?: string
+  /**
+   * Draw the 16px version (icons/small.mjs) when the icon has one. On by default at a size of 16 or less; set it
+   * where CSS sizes the icon to 16px or less, since the component cannot see that.
+   */
+  small?: boolean
 }
 
 // The icons the shell draws at its first paint load with it (icons/startup.mjs); the full table is a chunk of its
 // own, loaded once the page is idle or when an icon outside the startup set is first drawn. Until it arrives such an
 // icon is an empty box of its size, so nothing around it moves.
 let allPaths: Readonly<Record<string, string>> | null = null
+let smallPaths: Readonly<Record<string, string>> | null = null
 let loading: Promise<void> | null = null
 const waiting = new Set<() => void>()
 
 function loadAll(): Promise<void> {
-  loading ??= import('./icon-paths').then(
-    (m) => {
+  loading ??= Promise.all([import('./icon-paths'), import('./icon-small')]).then(
+    ([m, small]) => {
       allPaths = m.ICON_PATHS
+      smallPaths = small.SMALL_ICON_PATHS
       for (const wake of waiting) wake()
       waiting.clear()
     },
@@ -42,12 +49,17 @@ if (typeof window !== 'undefined') {
   else setTimeout(() => void loadAll(), 1000)
 }
 
-/** One line icon from the SlicerX set, drawn on a 24px grid at stroke 1.75 in currentColor. */
-export function Icon({ name, size, label, className, ...rest }: IconProps) {
+/**
+ * One line icon from the SlicerX set, drawn on a 24px grid at stroke 1.75 in currentColor, or at 16px or less its
+ * 16px version on a 16px grid at stroke 1.5 when it has one. An integrator's override always draws as given.
+ */
+export function Icon({ name, size, label, small, className, ...rest }: IconProps) {
   const { icons } = useTheme()
   const [, wake] = useReducer((n: number) => n + 1, 0)
   // Paths come from the generated icon files or the integrator's overrides, never from user input.
-  const markup = icons[name] ?? STARTUP_ICON_PATHS[name] ?? allPaths?.[name]
+  const own = icons[name]
+  const fine = own === undefined && (small ?? (size !== undefined && size <= 16)) ? (STARTUP_SMALL_PATHS[name] ?? smallPaths?.[name]) : undefined
+  const markup = fine ?? own ?? STARTUP_ICON_PATHS[name] ?? allPaths?.[name]
   useEffect(() => {
     if (markup !== undefined) return
     waiting.add(wake)
@@ -61,10 +73,10 @@ export function Icon({ name, size, label, className, ...rest }: IconProps) {
       className={className ? `sx-ic ${className}` : 'sx-ic'}
       width={size}
       height={size}
-      viewBox="0 0 24 24"
+      viewBox={fine ? '0 0 16 16' : '0 0 24 24'}
       fill="none"
       stroke="currentColor"
-      strokeWidth={1.75}
+      strokeWidth={fine ? 1.5 : 1.75}
       strokeLinecap="round"
       strokeLinejoin="round"
       role={label ? 'img' : undefined}
@@ -72,6 +84,7 @@ export function Icon({ name, size, label, className, ...rest }: IconProps) {
       aria-hidden={label ? undefined : true}
       // Names an icon still waiting for its table, for tests that check nothing pops in.
       data-icon-pending={markup === undefined ? name : undefined}
+      data-icon-small={fine ? true : undefined}
       dangerouslySetInnerHTML={{ __html: markup ?? '' }}
       {...rest}
     />

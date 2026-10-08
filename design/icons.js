@@ -836,3 +836,11 @@ const SX_ICONS = {
   "globe":"<circle cx=\"12\" cy=\"12\" r=\"8.5\"/><path d=\"M3.5 12h17\"/><path d=\"M12 3.5c2.4 2.4 3.5 5.2 3.5 8.5s-1.1 6.1-3.5 8.5c-2.4-2.4-3.5-5.2-3.5-8.5S9.6 5.9 12 3.5z\"/>",
   "calibration":"<circle cx=\"12\" cy=\"12\" r=\"6\"/><path d=\"M12 3v4M12 17v4M3 12h4M17 12h4\"/><path d=\"M12 12h.01\"/>",
 };
+/* 16px versions of some of them, for 16px and smaller. 16px grid, 1.5 stroke. */
+const SX_SMALL_ICONS = {
+  "check":"<path d=\"M3.25 8.25l3 3 6.5-6.5\"/>",
+  "chevron-down":"<path d=\"M4.25 6.25L8 10l3.75-3.75\"/>",
+  "chevron-right":"<path d=\"M6.25 4.25L10 8l-3.75 3.75\"/>",
+  "close":"<path d=\"M4.25 4.25l7.5 7.5M11.75 4.25l-7.5 7.5\"/>",
+  "plus":"<path d=\"M8 3.25v9.5M3.25 8h9.5\"/>",
+};

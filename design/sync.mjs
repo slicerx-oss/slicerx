@@ -11,6 +11,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 const here = dirname(fileURLToPath(import.meta.url))
 const root = resolve(here, '..')
 const { ICON_PATHS, ICON_GROUPS } = await import(pathToFileURL(resolve(root, 'packages/ui/src/icons/icon-paths.ts')).href)
+const { SMALL_ICON_PATHS } = await import(pathToFileURL(resolve(root, 'packages/ui/src/icons/icon-small.ts')).href)
 // a Windows checkout with core.autocrlf has CRLF in the working tree; generate and compare with LF
 const read = (path) => readFileSync(path, 'utf8').replace(/\r\n/g, '\n')
 
@@ -29,6 +30,10 @@ const icons =
   '/* SlicerX icon set. 24px grid, 1.75 stroke, round caps and joins, currentColor. */\n' +
   `const SX_ICON_GROUPS = ${JSON.stringify(ICON_GROUPS, null, 2)};\n` +
   `const SX_ICONS = {\n${Object.entries(ICON_PATHS)
+    .map(([n, d]) => `  ${JSON.stringify(n)}:${JSON.stringify(d)},`)
+    .join('\n')}\n};\n` +
+  '/* 16px versions of some of them, for 16px and smaller. 16px grid, 1.5 stroke. */\n' +
+  `const SX_SMALL_ICONS = {\n${Object.entries(SMALL_ICON_PATHS)
     .map(([n, d]) => `  ${JSON.stringify(n)}:${JSON.stringify(d)},`)
     .join('\n')}\n};\n`
 
