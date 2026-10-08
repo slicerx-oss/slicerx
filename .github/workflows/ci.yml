@@ -179,18 +179,14 @@ jobs:
     name: e2e (${{ matrix.project }} ${{ matrix.shard }})
     needs: [detect, wasm]
     if: needs.detect.outputs.e2e == 'true'
-    runs-on: ubuntu-latest
+    # pull requests stay on GitHub's runners; the merge queue and main use the project's own runner
+    runs-on: ${{ github.event_name == 'pull_request' && 'ubuntu-latest' || fromJSON('["self-hosted","sx-pc"]') }}
     timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - { project: desktop, shard: 1/5 }
-          - { project: desktop, shard: 2/5 }
-          - { project: desktop, shard: 3/5 }
-          - { project: desktop, shard: 4/5 }
-          - { project: desktop, shard: 5/5 }
-          - { project: phone, shard: 1/1 }
+        # GitHub's 2-core runners split desktop five ways; the PC runs each project whole
+        include: ${{ github.event_name == 'pull_request' && fromJSON('[{"project":"desktop","shard":"1/5"},{"project":"desktop","shard":"2/5"},{"project":"desktop","shard":"3/5"},{"project":"desktop","shard":"4/5"},{"project":"desktop","shard":"5/5"},{"project":"phone","shard":"1/1"}]') || fromJSON('[{"project":"desktop","shard":"1/1"},{"project":"phone","shard":"1/1"}]') }}
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -213,8 +209,14 @@ jobs:
       # One retry per failing test, as in the web job. The next step decides from the results: a test that passed only
       # on the retry, or failed both times, fails the job unless scripts/ci/flaky.txt or quarantine.txt lists it
       # (scripts/ci/README.md, "Flaky tests"). Playwright's own exit code is left to that step.
-      - run: pnpm --filter @slicerx/web exec playwright test --project=${{ matrix.project }} --shard=${{ matrix.shard }} --fully-parallel --workers=2 --retries=1 --reporter=blob,list,json --trace=retain-on-failure || echo "playwright exited $?"
+      # on the PC the run holds the machine's heavy lock, so it never shares the CPU with an agent's test run
+      - run: |
+          run=""
+          [ "$RUNNER_ENVIRONMENT" = self-hosted ] && run="bash scripts/ci/heavy.sh"
+          $run pnpm --filter @slicerx/web exec playwright test --project=${{ matrix.project }} --shard=${{ matrix.shard }} --fully-parallel --workers=${{ github.event_name == 'pull_request' && 2 || 8 }} --retries=1 --reporter=blob,list,json --trace=retain-on-failure || echo "playwright exited $?"
         env:
+          SX_HEAVY_LOCK: /mnt/c/Users/musda/.slicerx-heavy.lock
+          SX_HEAVY_WAIT: 1800
           # one blob name per job, so the merged report keeps every shard of both projects
           PLAYWRIGHT_BLOB_OUTPUT_NAME: report-${{ matrix.project }}-${{ strategy.job-index }}.zip
           PLAYWRIGHT_JSON_OUTPUT_FILE: ${{ runner.temp }}/e2e-results.json
