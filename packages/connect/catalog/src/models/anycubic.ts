@@ -19,7 +19,7 @@ export const ANYCUBIC: PrinterModel[] = [
     nozzles: [0.4],
     defaultNozzle: 0.4,
     nozzleCount: 1,
-    connections: ['anycubic', 'bambuddy', 'export'],
+    connections: ['anycubic', 'export'],
     find: FIND_KOBRA,
     note: 'Experimental: the LAN Mode connection is untested on a printer.',
   },

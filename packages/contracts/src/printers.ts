@@ -263,6 +263,13 @@ export interface PrinterHost {
   removeFromFleet(fleetId: string, printerId: string): Promise<Fleet>
   status(printerId: string): Promise<PrinterStatus>
   subscribe(printerId: string, onEvent: (e: PrinterEvent) => void): () => void
+  /**
+   * The bytes `upload` will send, with `sha256` of those bytes. Connectors that
+   * leave the file alone return it unchanged. BamBuddy stamps a non-Bambu profile
+   * here, so the approval covers the file that is posted. Absent on a host that
+   * has no prepare step; the file is then uploaded as given.
+   */
+  prepareUpload?(printerId: string, file: JobFile): Promise<JobFile>
   upload(printerId: string, file: JobFile, token: ApprovalToken): Promise<RemoteFile>
   start(file: RemoteFile, opts: StartOptions, token: ApprovalToken): Promise<void>
   pause(printerId: string, token: ApprovalToken): Promise<void>

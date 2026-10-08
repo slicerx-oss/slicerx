@@ -300,6 +300,11 @@ async fn start_plate_inner(
     sx_permit::check_start(Some(s.origin), bed.state, s.origin.is_remote(), bed_confirmed)
         .map_err(|e| refusal(&e))?;
     let session = session(b, s.printer).await?;
+    // Stamp (or leave) the file before the token exists, so the hash that is
+    // approved is the hash of the bytes the upload posts.
+    let file = session.prepare_upload(job_file(s)).await?;
+    let size = u64::try_from(file.data.len()).unwrap_or(u64::MAX);
+    let sha = file.sha256.clone();
     let mint = |action: &str, params: &Value| {
         broker
             .mint(
@@ -308,9 +313,9 @@ async fn start_plate_inner(
             )
             .map_err(|e| RpcError::new("approval_invalid", e.to_string()))
     };
-    let t = mint("printer.upload", &upload_params(s.printer, s.name, s.sha256))?;
-    let rf = session.upload(job_file(s), &to_connect(&t)).await?;
-    record_upload(b, &rf, u64::try_from(s.data.len()).unwrap_or(u64::MAX)).await;
+    let t = mint("printer.upload", &upload_params(s.printer, s.name, &sha))?;
+    let rf = session.upload(file, &to_connect(&t)).await?;
+    record_upload(b, &rf, size).await;
     let t = mint("printer.start", &start_params(s.printer, &rf, &s.opts))?;
     crate::device::settle_absolute(b, s.printer, session.as_ref()).await?;
     session.start(&rf, s.opts.clone(), &to_connect(&t)).await?;
@@ -816,6 +821,7 @@ pub(crate) async fn queue_call(b: &Arc<Bridge>, method: &str, p: &Value) -> Rpc<
             let printer = str_arg(p, "printerId")?;
             known_printer(b, &printer).await?;
             let file = decode_file(p)?;
+            let file = session(b, &printer).await?.prepare_upload(file).await?;
             let opts = opts_arg(p)?;
             let start_after =
                 match (p.get("startAfter"), p.get("startAfterMs")) {
