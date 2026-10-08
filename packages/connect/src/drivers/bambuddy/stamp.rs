@@ -4,13 +4,13 @@
 //!
 //! BamBuddy accepts a bridged printer as the Bambu model that printer is
 //! presented as (goBamKlipper's card is an A1 Mini, `printer_model_id` `N1`).
-//! The motion G-code stays the machine that was sliced. A real Bambu profile
-//! is left alone when it already matches that model, and also when BamBuddy
-//! does not say which model the printer is.
+//! The motion G-code stays the machine that was sliced. A file that is already
+//! a Bambu profile is never relabeled. When that profile is a different Bambu
+//! model from the printer BamBuddy has, the upload is refused.
 //!
-//! When `GET /api/v1/printers/{id}` has no model, a non-Bambu profile is
-//! stamped `Bambu Lab A1 Mini` / `N1` / `printer_agent` `bambu`, the same
-//! default `gobamklipper wrap` writes.
+//! A non-Bambu profile is stamped as the model from `GET /api/v1/printers/{id}`.
+//! The A1 Mini / `N1` default applies only when that call answered and `model`
+//! was empty. A failed lookup never reaches this function.
 use std::io::{Cursor, Read, Write};
 
 use serde_json::{Value, json};
@@ -151,34 +151,61 @@ pub(crate) fn is_zip(data: &[u8]) -> bool {
     data.get(..4).is_some_and(|magic| magic == b"PK\x03\x04")
 }
 
-/// The bytes to upload. A file that already matches the printer's Bambu model
-/// is returned unchanged. `api_model` is `Printer.model` from
-/// `GET /api/v1/printers/{id}`, or `None` when that call does not say.
+/// The bytes to upload. A Bambu profile is returned unchanged when it matches
+/// the printer, and refused when it does not. `api_model` is `Printer.model`
+/// from a successful `GET /api/v1/printers/{id}`, or `None` when that reply
+/// had no model. The caller does not pass `None` for a failed lookup.
 pub(crate) fn prepare_library_file(data: &[u8], api_model: Option<&str>) -> Result<Vec<u8>, String> {
     if !is_zip(data) {
         return Ok(data.to_vec());
     }
     let identity = read_identity(data)?;
-    let Some(model) = stamp_target(&identity, api_model) else {
+    let Some(model) = stamp_target(&identity, api_model)? else {
         return Ok(data.to_vec());
     };
     rewrite(data, model)
 }
 
-/// Stamp toward the model BamBuddy has for this printer. With no usable model,
-/// stamp a non-Bambu profile as an A1 Mini and leave a Bambu profile as sliced.
-fn stamp_target<'a>(identity: &Identity, api_model: Option<&str>) -> Option<&'a Model> {
+/// Stamp a non-Bambu profile toward the model BamBuddy has for this printer.
+/// A Bambu profile is never rewritten. An empty model stamps a non-Bambu
+/// profile as an A1 Mini. A named model this table does not know is refused,
+/// so the A1 Mini default is not used in its place.
+fn stamp_target<'a>(identity: &Identity, api_model: Option<&str>) -> Result<Option<&'a Model>, String> {
     let told = api_model.map(str::trim).filter(|s| !s.is_empty());
-    if let Some(wanted) = told.and_then(find_model) {
-        if identity.matches(wanted) {
-            return None;
-        }
-        return Some(wanted);
-    }
+    let wanted = told.and_then(find_model);
     if identity.is_known_bambu() {
-        return None;
+        if let Some(model) = wanted {
+            if identity.matches(model) {
+                return Ok(None);
+            }
+            return Err(mismatch(identity, model.display));
+        }
+        if let Some(raw) = told {
+            return Err(mismatch(identity, raw));
+        }
+        return Ok(None);
     }
-    Some(&A1_MINI)
+    if let Some(model) = wanted {
+        return Ok(Some(model));
+    }
+    if let Some(raw) = told {
+        return Err(format!(
+            "BamBuddy calls this printer {raw}, which is not a Bambu model this upload can stamp. The file was not uploaded"
+        ));
+    }
+    Ok(Some(&A1_MINI))
+}
+
+fn mismatch(identity: &Identity, printer: &str) -> String {
+    let sliced = identity
+        .effective()
+        .and_then(find_model)
+        .map(|m| m.display)
+        .or(identity.effective())
+        .unwrap_or("a Bambu model");
+    format!(
+        "this file was sliced as {sliced}, and BamBuddy's printer is {printer}. The upload was refused so a Bambu profile is not relabeled as a different model"
+    )
 }
 
 fn find_model(raw: &str) -> Option<&'static Model> {
@@ -631,5 +658,36 @@ G1 X300 Y300 F6000 ; Voron bed\n";
         assert!(info.contains("value=\"C12\""), "{info}");
         assert!(entry(&stamped, "Metadata/project_settings.config").contains("Bambu Lab P1S"));
         assert!(entry(&stamped, "Metadata/plate_1.gcode").contains("G1 X300 Y300 F6000 ; Voron bed"));
+    }
+
+    #[test]
+    fn an_x1c_file_is_not_relabeled_as_an_a1_mini() {
+        let x1c = bambu_3mf("Bambu Lab X1 Carbon", "BL-P001");
+        let err = prepare_library_file(&x1c, Some("A1 Mini")).unwrap_err();
+        assert!(err.contains("Bambu Lab X1 Carbon"), "{err}");
+        assert!(err.contains("Bambu Lab A1 Mini"), "{err}");
+        assert!(err.contains("refused"), "{err}");
+    }
+
+    #[test]
+    fn a_bambu_file_that_matches_the_printer_is_not_a_mismatch() {
+        let x1c = bambu_3mf("Bambu Lab X1 Carbon", "BL-P001");
+        let kept = prepare_library_file(&x1c, Some("X1C")).unwrap();
+        assert_eq!(kept, x1c);
+    }
+
+    #[test]
+    fn an_empty_model_still_stamps_a_voron_and_leaves_a_bambu_file() {
+        let voron = prepare_library_file(&voron_3mf(), Some("  ")).unwrap();
+        assert!(entry(&voron, "Metadata/slice_info.config").contains("value=\"N1\""));
+        let x1c = bambu_3mf("Bambu Lab X1 Carbon", "BL-P001");
+        assert_eq!(prepare_library_file(&x1c, Some("")).unwrap(), x1c);
+    }
+
+    #[test]
+    fn a_named_model_that_is_not_bambu_is_not_treated_as_an_a1_mini() {
+        let err = prepare_library_file(&voron_3mf(), Some("Voron 2.4")).unwrap_err();
+        assert!(err.contains("Voron 2.4"), "{err}");
+        assert!(!err.contains("A1 Mini"), "{err}");
     }
 }
