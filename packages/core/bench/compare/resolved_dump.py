@@ -106,6 +106,19 @@ def process_for(vendor, machine_name, tier):
         elif not compat and condition and _condition_holds(condition, machine):
             compatible.append((name, flat, True))
     words = TIER_WORDS[tier]
+    # Standard is the maker's own default for the machine when that is a compatible Standard preset with layers of 25 to 75
+    # percent of the nozzle. Bambu names every layer height of the X1C nozzles "Standard" (0.18 to 0.42 mm on the 0.6), so the
+    # first by name was the thinnest, not the default. (The A1 0.6 defaults to its Strength preset, which stays the strong tier.)
+    default = machine.get("default_print_profile")
+    nozzle_mm = float((machine.get("nozzle_diameter") or ["0.4"])[0])
+    if tier == "standard" and isinstance(default, str) and any(w in default for w in words):
+        for n, flat, _ in compatible:
+            try:
+                layer = float(flat.get("layer_height"))
+            except (TypeError, ValueError):
+                continue
+            if n == default and 0.25 * nozzle_mm <= layer <= 0.75 * nozzle_mm:
+                return default
     hits = [(n, f, c) for n, f, c in compatible if any(w in n for w in words) and not (tier == "fine" and ("Extra Fine" in n or "SuperDetail" in n))]
     # Presets that list the machine are taken by the tier's words (the first by name). Presets a condition admits (Prusa's, named by layer
     # height and purpose, with several per nozzle) are taken by the layer height nearest to the tier's, scaled to the nozzle.
