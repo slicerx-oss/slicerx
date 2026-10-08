@@ -99,17 +99,14 @@ describe('a sign-in link that comes back and fails', () => {
   })
 
   it('starts over after signing in or out, never on an old sent link', async () => {
+    // Each change waits for the form to come back: two changes inside one render would look like none.
     const m = mount()
     await sendTo('qa@example.com')
-    const settle = () => new Promise((r) => setTimeout(r, 20))
-    await act(async () => {
-      m.session({ userId: 'u1' })
-      await settle()
-    })
-    await act(async () => {
-      m.session(null)
-      await settle()
-    })
+    act(() => m.session({ userId: 'u1' }))
+    expect(await screen.findByPlaceholderText('you@example.com')).toBeTruthy()
+    expect(screen.queryByText(/We sent a sign-in link/)).toBeNull()
+    await sendTo('qa@example.com')
+    act(() => m.session(null))
     expect(await screen.findByPlaceholderText('you@example.com')).toBeTruthy()
     expect(screen.queryByText(/We sent a sign-in link/)).toBeNull()
   })
