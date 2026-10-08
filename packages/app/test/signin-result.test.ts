@@ -40,8 +40,8 @@ describe('a sign-in link that comes back and fails', () => {
   })
 
   it('shows in the form after the link was sent, with a way to send a new one once the wait is over', async () => {
-    // Only the clock and the countdown's interval are fake, so the waits below still poll in real time and the
-    // seconds on the button are exact.
+    // Only the clock and the countdown's interval are fake, so the seconds on the button are exact. Testing Library's
+    // waits poll with setInterval too, so here they look again on each change to the page, not on a timer.
     vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] })
     const send = mount()
     await sendTo('qa@example.com')
@@ -57,8 +57,8 @@ describe('a sign-in link that comes back and fails', () => {
   })
 
   it('counts Send again down from the wait the server names', async () => {
-    // Only the clock and the countdown's interval are fake, so the waits below still poll in real time and the
-    // seconds on the button are exact.
+    // Only the clock and the countdown's interval are fake, so the seconds on the button are exact. Testing Library's
+    // waits poll with setInterval too, so here they look again on each change to the page, not on a timer.
     vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] })
     const send = vi.fn(async (): Promise<{ ok: true; value: undefined } | { ok: false; code: string; message: string }> => ({ ok: true as const, value: undefined }))
     mount(send)
@@ -74,6 +74,28 @@ describe('a sign-in link that comes back and fails', () => {
       vi.advanceTimersByTime(2000)
     })
     expect(await screen.findByRole('button', { name: 'Send again in 30 s' })).toBeTruthy()
+  })
+
+  it('offers Send again once the wait is over, even when the countdown starts late', async () => {
+    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] })
+    mount()
+    fireEvent.change(await screen.findByPlaceholderText('you@example.com'), { target: { value: 'qa@example.com' } })
+    // Resolves as the sent view is committed, before React runs the effect that starts the countdown, so the clock
+    // passes the whole wait first: what a stalled page or a busy test runner does.
+    const committed = new Promise<void>((resolve) => {
+      const o = new MutationObserver(() => {
+        if (!document.body.textContent?.includes('We sent a sign-in link')) return
+        o.disconnect()
+        resolve()
+      })
+      o.observe(document.body, { subtree: true, childList: true, characterData: true })
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Email me a link' }))
+    await committed
+    await act(async () => {
+      vi.advanceTimersByTime(61_000)
+    })
+    expect(await screen.findByRole('button', { name: 'Send again' })).toBeTruthy()
   })
 
   it('starts over after signing in or out, never on an old sent link', async () => {
