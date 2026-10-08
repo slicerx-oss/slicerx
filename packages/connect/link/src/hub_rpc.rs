@@ -10,7 +10,9 @@ use std::time::Duration;
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as B64;
 use serde_json::{Value, json};
-use sx_connect::{ApprovalToken, Capability, JobFile, JobKind, PrinterState, PrinterStatus, RemoteFile, StartOptions};
+use sx_connect::{
+    ApprovalToken, Capability, JobFile, JobKind, PrinterState, PrinterStatus, RemoteFile, StartOptions,
+};
 use sx_permit::{ApprovalBroker, Plate, StandingApproval, StartOrigin, StartRefusal};
 
 use crate::hub::{
