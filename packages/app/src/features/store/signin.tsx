@@ -46,7 +46,11 @@ export function SignInForm({ compact }: { compact?: boolean }) {
   const [until, setUntil] = useState(0)
   const [now, setNow] = useState(() => Date.now())
   useEffect(() => {
-    if (until <= Date.now()) return
+    if (until <= Date.now()) {
+      // The wait ran out before the countdown started (a stalled page, a clock that jumped): show it over at once.
+      if (until > 0) setNow(Date.now())
+      return
+    }
     const t = setInterval(() => setNow(Date.now()), 1000)
     return () => clearInterval(t)
   }, [until])
