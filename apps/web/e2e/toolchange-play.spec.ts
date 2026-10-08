@@ -44,14 +44,17 @@ test('playback through a tool change on the H2C runs clean and keeps its frame r
   // The head drives to the chute and back, on top of the firmware's own seconds for the change.
   expect(info.first!.duration).toBeGreaterThan(10)
   // Play at 2x from 20 s of print time before the first change to just after it, and time the frames. The change lasts
-  // about 16 s of print time, so it plays for about eight seconds, after ten of plain playback.
+  // about 16 s of print time, so it plays for about eight seconds, after ten of plain playback. Plain frames count from
+  // the last 10 s of print time before the change (about five seconds), and only from a second after Play: playback
+  // starts at an uneven pace, with many short intervals, which would pull the plain median down.
   await page.getByRole('radio', { name: '2 times real time' }).click()
   await page.evaluate((t) => (window as unknown as { __pv: Hook }).__pv.seek(t), Math.max(0, info.first!.start - 20))
-  const result = await page.evaluate(async (until) => {
+  const result = await page.evaluate(async ({ from, until }) => {
     const w = window as unknown as { __pv: Hook }
     const plain: number[] = []
     const inChange: number[] = []
-    let last = performance.now()
+    const t0 = performance.now()
+    let last = t0
     w.__pv.toggle()
     await new Promise<void>((resolve) => {
       const tick = (now: number) => {
@@ -59,7 +62,10 @@ test('playback through a tool change on the H2C runs clean and keeps its frame r
         last = now
         // A tick under 30 ms redrew nothing: it came one 60 Hz interval (17 ms) after the last, where a frame that
         // draws the view takes far longer on software WebGL. Counting it would pull either median down.
-        if (dt >= 30) (document.querySelector('[data-testid="pv-change"]') ? inChange : plain).push(dt)
+        if (dt >= 30) {
+          if (document.querySelector('[data-testid="pv-change"]')) inChange.push(dt)
+          else if (now - t0 >= 1000 && w.__pv.clock() >= from && inChange.length === 0) plain.push(dt)
+        }
         if (w.__pv.clock() >= until || !w.__pv.playing()) return resolve()
         requestAnimationFrame(tick)
       }
@@ -68,8 +74,8 @@ test('playback through a tool change on the H2C runs clean and keeps its frame r
     const reached = w.__pv.clock() >= until
     if (w.__pv.playing()) w.__pv.toggle()
     const median = (v: number[]) => [...v].sort((a, b) => a - b)[Math.floor(v.length / 2)] ?? 0
-    return { plain: plain.length, inChange: inChange.length, medianPlain: median(plain), medianInChange: median(inChange), longestPlain: Math.max(0, ...plain), longestInChange: Math.max(0, ...inChange), reached }
-  }, info.first!.start + info.first!.duration + 2)
+    return { plain: plain.length, inChange: inChange.length, medianPlain: median(plain), medianInChange: median(inChange), longestPlain: Math.max(0, ...plain), longestInChange: Math.max(0, ...inChange), reached, plainFrames: plain.map(Math.round), changeFrames: inChange.map(Math.round) }
+  }, { from: info.first!.start - 10, until: info.first!.start + info.first!.duration + 2 })
   test.info().annotations.push({ type: 'frames', description: JSON.stringify(result) })
   expect(errors).toEqual([])
   expect(result.reached).toBe(true)
