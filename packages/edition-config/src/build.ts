@@ -57,7 +57,19 @@ export function publicStorageSource(supabaseUrl: string): string {
 const SLICERX_PAGES = ['https://slicerx.app/', 'https://discord.com/channels/1555048815881355324/']
 
 /** The main window, as apps/desktop/src-tauri/tauri.conf.json has it apart from the title (a test keeps them in step). */
-export const DESKTOP_WINDOW = { label: 'main', width: 1440, height: 900, minWidth: 960, minHeight: 600, backgroundColor: '#121319', dragDropEnabled: false } as const
+/** On macOS the title bar is an overlay with no title: the traffic lights sit in the app's top bar (the keys are macOS-only; other systems keep their title bar). */
+export const DESKTOP_WINDOW = {
+  label: 'main',
+  width: 1440,
+  height: 900,
+  minWidth: 960,
+  minHeight: 600,
+  backgroundColor: '#121319',
+  dragDropEnabled: false,
+  titleBarStyle: 'Overlay',
+  hiddenTitle: true,
+  trafficLightPosition: { x: 18, y: 20 },
+} as const
 
 /** The file types the desktop app opens. The overlay replaces tauri.conf.json's list, so the whole list lives here. */
 export function desktopFileTypes(config: EditionConfig): { ext: string[]; name: string; role: 'Editor' | 'Viewer' }[] {

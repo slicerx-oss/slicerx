@@ -11,6 +11,12 @@
         "minHeight": 600,
         "backgroundColor": "#121319",
         "dragDropEnabled": false,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true,
+        "trafficLightPosition": {
+          "x": 18,
+          "y": 20
+        },
         "title": "Acme Slicer"
       }
     ],
