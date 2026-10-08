@@ -70,6 +70,7 @@ const APP_ONLY: &[&str] = &[
     "watch.resume",
     "services.configure",
     "services.list",
+    "services.check",
     "services.remove",
     "settings.set",
     "pair.listen",
