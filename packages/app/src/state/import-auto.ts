@@ -13,6 +13,7 @@ import { centerOnBed, compose, dropToBed, setScale } from '../plate/transform'
 import { repairChanged, rememberRepair, showRepairReport, type RepairEntry } from '../plate/repair-report'
 import { get, markStale, set, toast, type PlateEntry } from './store'
 import { brandAccent, objectPalette } from '../edition'
+import type { OpenScope } from '../project/unsaved'
 
 export type AutoFormat = 'stl' | 'obj' | 'amf' | 'step'
 type MeshFormat = Exclude<AutoFormat, 'step'>
@@ -66,7 +67,7 @@ export function entriesFromImport(result: AutoImport, bed: Bed): { parts: MeshPa
  * Adds a file to the plate through the engine. `run` is the engine call and `step` the STEP reader (a
  * test passes its own). Returns the ids of the new objects. Nothing is added when any step fails.
  */
-export async function addAutoImport(host: Host, name: string, data: ArrayBuffer, run: AutoRunner = engine, step?: StepConverter): Promise<string[]> {
+export async function addAutoImport(host: Host, name: string, data: ArrayBuffer, run: AutoRunner = engine, step?: StepConverter, scope?: OpenScope): Promise<string[]> {
   const format = autoFormatOf(name)
   if (!format) throw new Error(`${name} is not an STL, OBJ, AMF or STEP file`)
   let stepNotes: string[] = []
@@ -90,8 +91,13 @@ export async function addAutoImport(host: Host, name: string, data: ArrayBuffer,
     const handle = await host.slicer.loadParts(m.name, m.parts)
     entries.push({ id: uid(), name: m.name, handle, parts: m.parts, colors: m.colors, transform: m.transform })
   }
-  set((s) => ({ plate: [...s.plate, ...entries], selection: entries[0]!.id, selectedIds: entries.map((e) => e.id) }))
-  if (entries.length > 1) await (await import('../plate/edit')).arrangePlate('all')
+  const add = () => set((s) => ({ plate: [...s.plate, ...entries], selection: entries[0]!.id, selectedIds: entries.map((e) => e.id) }))
+  if (scope) scope.run(add)
+  else add()
+  if (entries.length > 1) {
+    const arranged = (await import('../plate/edit')).arrangePlate('all')
+    await (scope ? scope.during(arranged) : arranged)
+  }
   markStale()
   const ids = entries.map((e) => e.id)
   const notes = [...stepNotes, ...result.summary]
