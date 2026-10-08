@@ -150,8 +150,13 @@ export async function upload(s, { account, out, waitSignin, waitScan, waitReview
   await s.call('app_press_key', { key: 'Escape' })
 
   // In the Feed, opens, sealed.
-  await s.feed()
-  const inFeed = await waitUntil(async () => ((await s.element('vault-card')).some((c) => c.data?.listing === listing) ? true : null), { timeoutMs: 60_000, everyMs: 2000 })
+  // The Vault keeps its rows for a minute while it stays open, so each look leaves for Preview and comes back,
+  // which loads them again once they are that old.
+  const inFeed = await waitUntil(async () => {
+    await s.click('tab-preview')
+    await s.feed()
+    return (await s.element('vault-card')).some((c) => c.data?.listing === listing) ? true : null
+  }, { timeoutMs: 120_000, everyMs: 10_000 })
   s.check('it shows in the Feed', !inFeed.timedOut)
   s.check('Clear the plate empties it', await s.clearPlate())
   const open = await s.call('app_open_vault_design', { id: listing, timeoutMs: 120_000 })
