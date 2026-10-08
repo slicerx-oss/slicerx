@@ -3,7 +3,7 @@
 import { describe, expect, it } from 'vitest'
 import { EASY_DEFAULTS } from '@slicerx/contracts/settings'
 import { applyEasy } from './easy'
-import { ProfileError, exportOrcaProfile, importOrcaProfile, mergeConfigs } from './import'
+import { ProfileError, exportOrcaProfile, importFlat, importOrcaProfile, mergeConfigs } from './import'
 import { allProfileNames, loadProfile, vendorResolver } from './testkit'
 
 describe('a process profile with an inherits chain', () => {
@@ -131,5 +131,18 @@ describe('Easy mode on a real profile', () => {
     expect(out['bottom_shell_layers']).toBe(3)
     expect(out['brim_type']).toBe('auto_brim')
     expect(cfg['layer_height']).toBe(0.2)
+  })
+})
+
+describe("Bambu Studio's -1 for auto", () => {
+  it('reads as the value Bambu Studio resolves it to', () => {
+    // Bambu Studio's raft and support first layer grows 2 mm on auto (SupportCommon.cpp); its auto wall count is Orca's 0.
+    const r = importFlat({ raft_first_layer_expansion: '-1', tree_support_wall_count: '-1', support_interface_bottom_layers: '-1', prime_tower_brim_width: '-1' })
+    expect(r.config['raft_first_layer_expansion']).toBe(2)
+    expect(r.config['tree_support_wall_count']).toBe(0)
+    // Orca has these -1s too, with the same meaning, so they stay.
+    expect(r.config['support_interface_bottom_layers']).toBe(-1)
+    expect(r.config['prime_tower_brim_width']).toBe(-1)
+    expect(r.invalidKeys).toEqual([])
   })
 })
