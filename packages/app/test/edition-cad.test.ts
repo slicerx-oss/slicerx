@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // An edition without the modeling tools (features.cad off) ships a geometry engine without them, so the app offers
-// none of them: no face shape or text tool, sketch, push and pull, fillet, hole or thread tool or kept dimensions. Measure,
+// none of them: no face shape, text or SVG tool, sketch, push and pull, fillet, hole or thread tool or kept dimensions. Measure,
 // arrays, subtract and the mesh tools stay.
 import { afterEach, describe, expect, it } from 'vitest'
 import { NEUTRAL, setCurrentEdition } from '../src/edition'
 import { plateCommands } from '../src/plate/commands'
 
 const ids = () => plateCommands(() => ({ id: 'slicerx' }), undefined).map((c) => c.id)
-const MODELING = ['object-text', 'object-shape', 'object-sketch', 'object-push', 'object-fillet', 'object-holefit', 'object-thread', 'object-shell', 'project-values', 'dimensions-show']
+const MODELING = ['object-text', 'object-shape', 'object-sketch', 'object-svg-face', 'object-push', 'object-fillet', 'object-holefit', 'object-thread', 'object-shell', 'project-values', 'dimensions-show']
 
 describe('an edition without the modeling tools', () => {
   afterEach(() => setCurrentEdition(NEUTRAL))
