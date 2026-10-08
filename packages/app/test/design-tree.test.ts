@@ -80,6 +80,14 @@ describe('the Design tree', () => {
     expect(objects[1]!.querySelector('.dtree-body')).toBeNull()
   })
 
+  it("puts a step's tips beside its row, so a tip never covers the step under it", () => {
+    set({ plate: [entry('o1', 'Pi enclosure', STEPS)], selection: 'o1', selectedIds: ['o1'] })
+    const el = render()
+    const tips = [...el.querySelectorAll('.cad-step')].flatMap((row) => [...row.querySelectorAll(':scope > [data-tip]')])
+    expect(tips.length).toBe(STEPS.length * 6)
+    expect(tips.every((b) => b.getAttribute('data-tip-avoid') === '.cad-step')).toBe(true)
+  })
+
   it('keeps an object whose first step is being edited, while it is off the plate', () => {
     const original = entry('o1', 'Pi enclosure', STEPS)
     set({ plate: [], historyEdit: { objectId: 'o1', index: 0, original } as never })
