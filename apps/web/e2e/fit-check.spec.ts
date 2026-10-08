@@ -5,12 +5,11 @@
 // of its own (fixtures/loose-clip.sx3mf: an earlier cable clip, our own geometry, whose ring floats 0.76 mm off its
 // foot), so no starter has to keep a fault. Opening a design starts a new project, so designs never pile up. Moving
 // an object never rebuilds the scene.
-import { execFileSync } from 'node:child_process'
 import { mkdtempSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, test, type Page } from '@playwright/test'
-import { plateReady, viewportReady } from './fixtures'
+import { plateReady, pnpmSync, viewportReady } from './fixtures'
 
 type Entry = { id: string; name: string; transform: number[]; parts: { positions: ArrayLike<number> }[] }
 type Sx = { getState(): { plate: Entry[]; slice: { status: string; stale?: boolean; result?: { id: string; primeTower?: unknown } } }; setState(p: unknown): void }
@@ -30,7 +29,7 @@ let starters = ''
 test.beforeAll(() => {
   // The starters are made in code; the output never goes in git.
   starters = mkdtempSync(join(tmpdir(), 'sx-starters-'))
-  execFileSync('pnpm', ['--filter', '@slicerx/store', 'exec', 'tsx', '../app/scripts/vault-starters.ts', starters], { cwd: root, stdio: 'ignore' })
+  pnpmSync(['--filter', '@slicerx/store', 'exec', 'tsx', '../app/scripts/vault-starters.ts', starters], root)
 })
 
 async function open(page: Page): Promise<void> {

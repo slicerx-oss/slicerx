@@ -5,6 +5,7 @@
 // Cold start waits on the app's own ready mark, `data-sx-ready` on the root element: "engine" once the app is up
 // with the slicer loaded, "plate" once the first plate has loaded, "viewport" once the 3D view is up too. Nothing waits on a fixed time, so a slow
 // machine (software WebGL, many pages starting at once) only takes longer and a fast one does not wait.
+import { execFileSync, execSync } from 'node:child_process'
 import { expect, test as base, type Locator, type Page } from '@playwright/test'
 
 /** How long a cold start may take before a spec gives up, on a loaded machine with software graphics. */
@@ -80,4 +81,13 @@ export function tab(page: Page, id: string): Locator {
 /** What the look calls that tab right now, for the buttons and groups that carry its name. */
 export async function tabName(page: Page, id: string): Promise<string> {
   return (await tab(page, id).getAttribute('aria-label')) ?? id
+}
+
+/**
+ * Runs pnpm and waits for it. On Windows pnpm is a .cmd script, which only a shell starts (spawning it directly fails
+ * with ENOENT), so there it goes through the shell with each argument quoted.
+ */
+export function pnpmSync(args: string[], cwd: string): void {
+  if (process.platform === 'win32') execSync(['pnpm', ...args.map((a) => `"${a.replace(/"/g, '""')}"`)].join(' '), { cwd, stdio: 'ignore' })
+  else execFileSync('pnpm', args, { cwd, stdio: 'ignore' })
 }
