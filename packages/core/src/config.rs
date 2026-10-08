@@ -1303,9 +1303,8 @@ impl PrintConfig {
             ("raft_first_layer_expansion", 2.0, 0.0, 100.0),
         ] {
             // the raft keys only shape a raft or supports
-            let unused = key.starts_with("raft_")
-                && self.raw_number("raft_layers", 0.0) < 1.0
-                && !self.enable_support;
+            let unused =
+                key.starts_with("raft_") && self.raw_number("raft_layers", 0.0) < 1.0 && !self.enable_support;
             if !unused {
                 range(key, self.raw_number(key, default), lo, hi)?;
             }
@@ -2207,7 +2206,9 @@ mod tests {
         // a bad expansion only matters with a raft or supports
         let bad = |extra: Value| {
             let mut v = serde_json::json!({"raft_first_layer_expansion": "500"});
-            v.as_object_mut().unwrap().extend(extra.as_object().unwrap().clone());
+            v.as_object_mut()
+                .unwrap()
+                .extend(extra.as_object().unwrap().clone());
             PrintConfig::from_value(&v)
         };
         assert!(bad(serde_json::json!({"raft_layers": "0", "enable_support": "0"})).is_ok());
@@ -2384,18 +2385,27 @@ mod tests {
                 [json!(1e9), json!("inf"), json!(-1)],
                 [json!(0), json!(1.5), json!(100)],
             ),
+            // -1 is bambu studio's auto
             (
                 "raft_first_layer_expansion",
-                [json!(1e9), json!("inf"), json!(-1)],
-                [json!(0), json!(2), json!(100)],
+                [json!(1e9), json!("inf"), json!(500)],
+                [json!(0), json!(-1), json!(100)],
             ),
         ] {
+            // the raft keys are checked when there is a raft
+            let with = |v: &Value| {
+                let mut o = json!({ key: v });
+                if key.starts_with("raft_") {
+                    o["raft_layers"] = json!(2);
+                }
+                o
+            };
             for v in bad {
-                let err = PrintConfig::from_value(&json!({ key: v })).unwrap_err();
+                let err = PrintConfig::from_value(&with(&v)).unwrap_err();
                 assert!(err.to_string().contains(key), "{key} {v}: {err}");
             }
             for v in ok {
-                assert!(PrintConfig::from_value(&json!({ key: v })).is_ok(), "{key} {v}");
+                assert!(PrintConfig::from_value(&with(&v)).is_ok(), "{key} {v}");
             }
         }
     }
