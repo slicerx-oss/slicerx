@@ -117,6 +117,36 @@ test('pairs with the bridge and lists its printer', async ({ page }) => {
   await expect(page.getByText('Voron').first()).toBeVisible()
 })
 
+test('printer setup asks the bridge to search the network only when Search my network is pressed', async ({ page }) => {
+  // Every call the app makes on the hub, read on the way through.
+  const calls: string[] = []
+  await page.routeWebSocket(/127\.0\.0\.1:47615/, (ws) => {
+    const server = ws.connectToServer()
+    ws.onMessage((m) => {
+      if (typeof m === 'string') {
+        try {
+          const method = (JSON.parse(m) as { method?: unknown }).method
+          if (typeof method === 'string') calls.push(method)
+        } catch {
+          // Not a call: the handshake.
+        }
+      }
+      server.send(m)
+    })
+  })
+  await connectApp(page)
+  await page.getByRole('button', { name: 'Change', exact: true }).click()
+  await page.locator('.choose-add').click()
+  const search = page.getByRole('button', { name: 'Search my network' })
+  await expect(search).toBeVisible()
+  // Open, connected and idle for a while: no search yet, so no socket listens for printers.
+  await page.waitForTimeout(5000)
+  expect(calls.length).toBeGreaterThan(0)
+  expect(calls).not.toContain('discover')
+  await search.click()
+  await expect.poll(() => calls.includes('discover')).toBe(true)
+})
+
 test('a wrong code is refused with a plain message', async ({ page }) => {
   await seed(page)
   await page.getByRole('button', { name: 'Settings', exact: true }).click()

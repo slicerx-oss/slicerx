@@ -11,6 +11,7 @@ declare const __SX_FEATURE_STORE__: boolean
 declare const __SX_FEATURE_PILOT__: boolean
 declare const __SX_FEATURE_CONNECT__: boolean
 declare const __SX_FEATURE_CLOUD__: boolean
+declare const __SX_E2E__: boolean
 
 // The edition names the app from the first frame: the window title, menus and setup read it before the app renders.
 setCurrentEdition(editionFromBuild())
@@ -52,6 +53,18 @@ if (__SX_FEATURE_CONNECT__) {
 if (__SX_FEATURE_PILOT__) {
   const [{ registerAgentMarks }, { BrandLogo }] = await Promise.all([import('@slicerx/app'), import('@slicerx/brand-icons')])
   registerAgentMarks((mark, size, title) => <BrandLogo slug={mark} size={size} title={title} />)
+}
+
+// The end-to-end build answers update checks from a feed the spec puts on the page, so the launch sheet (and a required
+// update) can be tested in the browser. A real build has no updater here: __SX_E2E__ folds this away.
+if (__SX_E2E__) {
+  const feed = (window as { __sxUpdateFeed?: import('../../../packages/app/src/updates/updates').FoundUpdate }).__sxUpdateFeed
+  if (feed) {
+    const [{ registerUpdater }, { launchCheck }] = await Promise.all([import('@slicerx/app'), import('../../../packages/app/src/updates/updates')])
+    const done = async () => undefined
+    registerUpdater({ mode: 'install', check: async () => feed, download: done, restart: done, quit: async () => void ((window as { __sxQuit?: boolean }).__sxQuit = true) })
+    await launchCheck()
+  }
 }
 
 const el = document.getElementById('root')
