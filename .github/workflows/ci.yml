@@ -40,7 +40,7 @@ jobs:
           changed=$(git diff --name-only HEAD^1 HEAD)
           touched() { [ "$GITHUB_EVENT_NAME" != pull_request ] || printf '%s\n' "$changed" | grep -qE "$1"; }
           touched '^(supabase/|packages/store/|\.github/workflows/ci\.yml$)' && echo "pgtap=true" >> "$GITHUB_OUTPUT" || echo "pgtap=false" >> "$GITHUB_OUTPUT"
-          touched '^(apps/web/|packages/(app|ui|core|geom)/|pnpm-lock\.yaml$|\.github/workflows/ci\.yml$)' && echo "e2e=true" >> "$GITHUB_OUTPUT" || echo "e2e=false" >> "$GITHUB_OUTPUT"
+          touched '^(apps/web/|packages/(app|ui|core|geom)/|pnpm-lock\.yaml$|scripts/ci/playwright-results\.mjs$|\.github/workflows/ci\.yml$)' && echo "e2e=true" >> "$GITHUB_OUTPUT" || echo "e2e=false" >> "$GITHUB_OUTPUT"
 
   web:
     needs: detect
@@ -175,10 +175,24 @@ jobs:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}
       - run: pnpm --filter @slicerx/web exec playwright install --with-deps chromium
-      - run: pnpm --filter @slicerx/web exec playwright test --project ${{ matrix.project }} --shard ${{ matrix.shard }} --fully-parallel --workers 2 --reporter=blob,list --trace=retain-on-failure
+      # One retry per failing test, as in the web job. The next step decides from the results: a test that passed only
+      # on the retry, or failed both times, fails the job unless scripts/ci/flaky.txt or quarantine.txt lists it
+      # (scripts/ci/README.md, "Flaky tests"). Playwright's own exit code is left to that step.
+      - run: pnpm --filter @slicerx/web exec playwright test --project=${{ matrix.project }} --shard=${{ matrix.shard }} --fully-parallel --workers=2 --retries=1 --reporter=blob,list,json --trace=retain-on-failure || echo "playwright exited $?"
         env:
           # one blob name per job, so the merged report keeps every shard of both projects
           PLAYWRIGHT_BLOB_OUTPUT_NAME: report-${{ matrix.project }}-${{ strategy.job-index }}.zip
+          PLAYWRIGHT_JSON_OUTPUT_FILE: ${{ runner.temp }}/e2e-results.json
+      - name: flaky and quarantined tests
+        run: |
+          node scripts/ci/playwright-results.mjs "$RUNNER_TEMP/e2e-results.json" "$RUNNER_TEMP/retried.txt" "$RUNNER_TEMP/failed.txt"
+          bad=0
+          bash scripts/ci/flaky-check.sh retried "$RUNNER_TEMP/retried.txt" || bad=1
+          while IFS= read -r t; do
+            if [ "$(bash scripts/ci/flaky-check.sh status "$t")" = quarantined ]; then echo "flaky-check: failed, quarantined and counted: $t"
+            else echo "::error title=Failed test::$t"; bad=1; fi
+          done < "$RUNNER_TEMP/failed.txt"
+          exit $bad
       - if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v4
         with:
