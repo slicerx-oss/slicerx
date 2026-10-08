@@ -188,6 +188,11 @@
    "to": "0"
   },
   {
+   "key": "raft_first_layer_expansion",
+   "from": "-1",
+   "to": "2"
+  },
+  {
    "key": "overhang_fan_threshold",
    "from": "5%",
    "to": "10%"

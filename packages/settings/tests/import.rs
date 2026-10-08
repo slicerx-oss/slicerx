@@ -133,6 +133,20 @@ fn legacy_keys_and_values() {
 }
 
 #[test]
+fn bambu_auto_sentinels() {
+    // Bambu Studio writes -1 for auto: its raft first layer grows 2 mm, and its auto wall count is Orca's 0.
+    let r = import_orca(
+        &json!({"name": "bambu", "type": "process", "raft_first_layer_expansion": "-1", "tree_support_wall_count": "-1", "support_interface_bottom_layers": "-1"}),
+        &|_| None,
+    )
+    .unwrap();
+    assert_eq!(get_json(&r.config, "raft_first_layer_expansion"), json!(2.0));
+    assert_eq!(get_json(&r.config, "tree_support_wall_count"), json!(0));
+    assert_eq!(get_json(&r.config, "support_interface_bottom_layers"), json!(-1));
+    assert!(r.invalid_keys.is_empty());
+}
+
+#[test]
 fn unknown_and_bad_values_are_reported_not_guessed() {
     let r = import_orca(&json!({"name": "p", "type": "process", "made_up_key": "1", "layer_height": "thick", "wall_loops": "3"}), &|_| None).unwrap();
     assert_eq!(r.unknown_keys, ["made_up_key"]);
