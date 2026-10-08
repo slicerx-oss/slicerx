@@ -3,12 +3,13 @@
 // First: Zod must be jitless before any module makes a schema (packages/app/src/zod-jitless.ts).
 import '@slicerx/app/zod-jitless'
 import type { AppFeature, EditionHost } from '@slicerx/contracts'
-import { editionLogo, registerCrashHost, setCurrentEdition, SlicerXApp } from '@slicerx/app'
+import { editionLogo, registerCrashHost, registerShellArch, setCurrentEdition, SlicerXApp } from '@slicerx/app'
 import { editionFromBuild } from '@slicerx/edition-config'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { createDesktopHost } from './host'
 import { createTauriCrash } from './host/crash'
+import { shellArch } from './host/platform'
 import { blockReloadKeys } from './reload-keys'
 import { runProbe } from './probe'
 import { followAppTheme } from './window-theme'
@@ -35,6 +36,8 @@ followAppTheme()
 
 // Panics and web view crashes the shell recorded are sent from the page; register before the app starts.
 registerCrashHost(createTauriCrash())
+// The print watch does not run on Intel Macs, and the web view cannot tell them apart.
+registerShellArch(shellArch)
 // F5 and Ctrl+R would reload the window and drop the plate; the dev server keeps them for development.
 if (!import.meta.env.DEV) blockReloadKeys()
 

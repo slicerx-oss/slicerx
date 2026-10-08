@@ -30,6 +30,7 @@ mod menu;
 mod opened;
 #[cfg(feature = "connect")]
 mod pairdoc;
+mod platform;
 mod presets;
 mod probe;
 mod slicing;
@@ -167,6 +168,7 @@ fn main() {
             crash::crash_take,
             crash::crash_ack,
             crash::crash_test_panic,
+            platform::shell_arch,
             #[cfg(feature = "pilot")]
             chatgpt::open_external,
             #[cfg(feature = "pilot")]
