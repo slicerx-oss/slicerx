@@ -6,9 +6,18 @@
 //! id. A printer BamBuddy reaches through a bridge is the same kind of id. This driver does not
 //! speak Moonraker or the Bambu LAN protocol.
 //!
-//! Upload stores the sliced file in the library. Start posts a queue item with `manual_start`
-//! false, so BamBuddy starts it when that printer is idle. A slot map becomes `ams_mapping`.
-//! `set_slot` configures an AMS tray. Status reads AMS trays and the external spool.
+//! Upload stores the sliced file in the library. A bridged printer is presented as a
+//! Bambu model (goBamKlipper uses an A1 Mini), so the upload rewrites that identity
+//! in the `.gcode.3mf` and leaves the motion G-code alone. A slice that already
+//! matches the model BamBuddy has for this printer id is uploaded unchanged. When
+//! `GET /api/v1/printers/{id}` does not say a model, a non-Bambu profile is stamped
+//! `Bambu Lab A1 Mini` / `N1`, and a Bambu profile keeps the model it was sliced as.
+//! Start posts a queue item with `manual_start` false, so BamBuddy starts it when
+//! that printer is idle. A slot map becomes `ams_mapping`. `set_slot` configures an
+//! AMS tray. Status reads AMS trays and the external spool.
+
+mod stamp;
+
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -111,6 +120,19 @@ impl Inner {
         let body = http::json(self.id(), resp).await?;
         Ok(parse_status(self.id(), &body))
     }
+
+    /// `Printer.model` for this id. `None` when BamBuddy does not say, which
+    /// makes the upload stamp a non-Bambu profile as an A1 Mini.
+    async fn printer_model(&self) -> Option<String> {
+        let path = format!("{API}/printers/{}", self.printer_num);
+        let resp = http::send(self.id(), self.get(&path)).await.ok()?;
+        let body = http::json(self.id(), resp).await.ok()?;
+        body.get("model")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|model| !model.is_empty())
+            .map(ToOwned::to_owned)
+    }
 }
 
 struct BambuddySession {
@@ -169,7 +191,14 @@ impl PrinterSession for BambuddySession {
             self.inner.id(),
             &params::upload(self.inner.id(), &file.name, &file.sha256),
         )?;
-        let form = Form::new().part("file", Part::bytes(file.data).file_name(file.name.clone()));
+        let api_model = if stamp::is_zip(&file.data) {
+            self.inner.printer_model().await
+        } else {
+            None
+        };
+        let data = stamp::prepare_library_file(&file.data, api_model.as_deref())
+            .map_err(|detail| Error::protocol(self.inner.id(), detail))?;
+        let form = Form::new().part("file", Part::bytes(data).file_name(file.name.clone()));
         let resp = http::send(
             self.inner.id(),
             self.inner
