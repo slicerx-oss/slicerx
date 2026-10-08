@@ -32,6 +32,12 @@ import {
   Shape,
   ShaderMaterial,
   CustomBlending,
+  DataTexture,
+  LinearFilter,
+  LinearMipmapLinearFilter,
+  MeshStandardMaterial,
+  RepeatWrapping,
+  RGBAFormat,
   Vector3,
   WebGLCubeRenderTarget,
   WebGLRenderTarget,
@@ -44,6 +50,7 @@ import { LightProbeGenerator } from 'three/addons/lights/LightProbeGenerator.js'
 import { FullScreenQuad } from 'three/addons/postprocessing/Pass.js'
 import type { Bed } from '@slicerx/contracts'
 import { SCENE, type SceneColors } from './palette'
+import type { PlateStyle } from './types'
 
 /** Objects sit this far above the plate top so their bottoms never fight it for depth. */
 export const LIFT_MM = 0.02
@@ -80,7 +87,7 @@ varying float vH;
 void main(){ vec4 w = modelMatrix * vec4(position, 1.0); vH = w.y; gl_Position = projectionMatrix * viewMatrix * w; }`
 
 const PLATE_OUTLINE_FS = /* glsl */ `
-uniform vec3 edge; uniform vec3 edgeAlt; uniform float alert; uniform float ground; uniform vec3 grid; uniform vec2 hb; varying vec2 vP;
+uniform vec3 edge; uniform vec3 edgeAlt; uniform float alert; uniform float ground; uniform float surface; uniform vec3 grid; uniform vec2 hb; varying vec2 vP;
 float lines(vec2 p, float s){ vec2 q = p / s; vec2 w = fwidth(q); vec2 g = abs(fract(q - 0.5) - 0.5) / max(w, vec2(1e-4)); return (1.0 - min(min(g.x, g.y), 1.0)) * (1.0 - smoothstep(0.3, 0.7, max(w.x, w.y))); }
 void main(){
   vec2 q = abs(vP) - hb;
@@ -98,7 +105,8 @@ void main(){
   float fade = 1.0 - smoothstep(0.35, 1.0, max(r.x, r.y));
   // ground: no outline or corner marks, the grid runs to the quad's edge and fades out there.
   float inside = mix(1.0 - smoothstep(-0.4, 0.0, d), 1.0, ground);
-  float gl = (lines(vP + hb, 10.0) * 0.35 + lines(vP + hb, 50.0) * 0.75) * fade * inside * 0.3;
+  // On a plate surface the grid is a faint guide over the sheet.
+  float gl = (lines(vP + hb, 10.0) * 0.35 + lines(vP + hb, 50.0) * 0.75) * fade * inside * 0.3 * (1.0 - 0.7 * surface);
   float inner = exp(d / 10.0) * inside * 0.045 * (1.0 - ground);
   float aEdge = clamp(line * 0.9 + glow + br * 0.7, 0.0, 1.0) * (1.0 - ground);
   float aG = clamp(gl + inner, 0.0, 1.0);
@@ -106,6 +114,34 @@ void main(){
   vec3 col = (mix(edge, edgeAlt, alert) * aEdge + grid * aG * (1.0 - aEdge));
   gl_FragColor = vec4(col, a);
 }`
+
+/** How each build plate surface looks: base color, roughness, how coarse its texture is, and a touch of metal. */
+const PLATE_SURFACES: Record<Exclude<PlateStyle, 'grid'>, { color: string; roughness: number; grain: number; metalness: number }> = {
+  'textured-pei': { color: '#7a6a4f', roughness: 0.7, grain: 1, metalness: 0.2 },
+  'smooth-pei': { color: '#8a7552', roughness: 0.32, grain: 0.12, metalness: 0.25 },
+  cool: { color: '#2c2f36', roughness: 0.5, grain: 0.25, metalness: 0 },
+  engineering: { color: '#383b42', roughness: 0.72, grain: 0.75, metalness: 0.05 },
+}
+
+/** Fine random grain for a plate surface, tiled across it: the speckle of a textured sheet, faint on a smooth one. */
+function grainTexture(): DataTexture {
+  const n = 128
+  const data = new Uint8Array(n * n * 4)
+  let seed = 7
+  for (let i = 0; i < n * n; i++) {
+    seed = (seed * 1103515245 + 12345) >>> 0
+    const v = 96 + ((seed >>> 16) & 127)
+    data.set([v, v, v, 255], i * 4)
+  }
+  const t = new DataTexture(data, n, n, RGBAFormat)
+  t.wrapS = RepeatWrapping
+  t.wrapT = RepeatWrapping
+  t.magFilter = LinearFilter
+  t.minFilter = LinearMipmapLinearFilter
+  t.generateMipmaps = true
+  t.needsUpdate = true
+  return t
+}
 
 /** An area only one nozzle can reach, in bed coordinates (mm, origin front left). */
 export interface NozzleZone {
@@ -155,6 +191,7 @@ export class Stage {
     size: number
   } | null = null
   private label = 'Textured PEI'
+  private plateStyle: PlateStyle = 'grid'
   private colors: SceneColors = SCENE
   private disposables: { dispose(): void }[] = []
 
@@ -257,6 +294,16 @@ export class Stage {
     sc.far = 800 + Math.max(0, bed.heightMm - 256)
     sc.updateProjectionMatrix()
     this.renderer.shadowMap.needsUpdate = true
+  }
+
+  /**
+   * What the bed looks like under the print: `grid` is the outline and grid on the floor; the others lay a lit build
+   * plate surface under them (textured or smooth PEI, a cool plate, an engineering plate). Rebuilds the plate decor.
+   */
+  setPlateStyle(style: PlateStyle): void {
+    if (style === this.plateStyle) return
+    this.plateStyle = style
+    this.setSceneColors(this.colors)
   }
 
   /** Bed and floor colors. Rebuilds the plate decor. */
@@ -439,7 +486,7 @@ export class Stage {
     const half = new Vector2(bed.widthMm / 2, bed.depthMm / 2)
     const pad = 24
     const mat = new ShaderMaterial({
-      uniforms: { edge: { value: new Color(this.colors.selection) }, edgeAlt: { value: new Color(this.colors.overhangAmber) }, alert: { value: this.alert ? 1 : 0 }, ground: { value: this.ground ? 1 : 0 }, grid: { value: new Color(this.colors.floorGrid) }, hb: { value: half } },
+      uniforms: { edge: { value: new Color(this.colors.selection) }, edgeAlt: { value: new Color(this.colors.overhangAmber) }, alert: { value: this.alert ? 1 : 0 }, ground: { value: this.ground ? 1 : 0 }, surface: { value: this.plateStyle === 'grid' ? 0 : 1 }, grid: { value: new Color(this.colors.floorGrid) }, hb: { value: half } },
       transparent: true,
       depthWrite: false,
       vertexShader: 'varying vec2 vP; void main(){ vP = position.xy; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
@@ -451,6 +498,23 @@ export class Stage {
       blendSrcAlpha: OneFactor,
       blendDstAlpha: OneMinusSrcAlphaFactor,
     })
+    if (this.plateStyle !== 'grid') {
+      const look = PLATE_SURFACES[this.plateStyle]
+      const grain = grainTexture()
+      // One grain tile every 6 mm reads as a textured sheet at a normal distance and stays fine up close.
+      grain.repeat.set(bed.widthMm / 6, bed.depthMm / 6)
+      const surfMat = new MeshStandardMaterial({ color: new Color(look.color), roughness: look.roughness, metalness: look.metalness, roughnessMap: grain, bumpMap: grain, bumpScale: 0.6 * look.grain, envMapIntensity: 0.8 })
+      const surfGeo = new PlaneGeometry(bed.widthMm, bed.depthMm)
+      const surf = new Mesh(surfGeo, surfMat)
+      surf.rotation.x = -Math.PI / 2
+      // Just under the floor overlays, so the outline, zones and contact shadow draw over it.
+      surf.position.y = FLOOR_Y - 0.05
+      surf.receiveShadow = true
+      surf.renderOrder = FLOOR_ORDER.plate - 1
+      surf.name = 'plate-surface'
+      this.decor.add(surf)
+      this.disposables.push(surfGeo, surfMat, grain)
+    }
     const geo = new PlaneGeometry(bed.widthMm + pad * 2, bed.depthMm + pad * 2)
     const quad = new Mesh(geo, mat)
     // Plane xy is bed xz: lie it flat with +y up.

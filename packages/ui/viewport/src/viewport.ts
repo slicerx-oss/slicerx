@@ -86,6 +86,8 @@ import type {
   ViewportOptions,
   ViewportPlate,
   ViewportStats,
+  ToolpathFinish,
+  PlateStyle,
 } from './types'
 
 const RING = 600
@@ -2642,6 +2644,17 @@ class ViewportImpl implements Viewport {
 
   setToolColors(colors: string[]): void {
     this.toolpaths.setToolColors(colors)
+    this.invalidate()
+  }
+
+  setToolFinishes(finishes: ToolpathFinish[]): void {
+    this.toolpaths.setToolFinishes(finishes)
+    this.invalidate()
+  }
+
+  setPlateStyle(style: PlateStyle): void {
+    this.stage.setPlateStyle(style)
+    this.shadowDirty = true
     this.invalidate()
   }
 

@@ -4,7 +4,7 @@
 // the React piece into its own shadow root with the embed styles.
 import type { PrintConfig } from '@slicerx/contracts'
 import type { Theme } from '@slicerx/ui'
-import type { ColorMode, RenderMode, ViewPreset, ViewportPlate, ViewportTheme } from '@slicerx/viewport'
+import type { ColorMode, PlateStyle, RenderMode, ToolpathFinish, ViewPreset, ViewportPlate, ViewportTheme } from '@slicerx/viewport'
 import { createRoot, type Root } from 'react-dom/client'
 import { Agreement } from './agreement'
 import { decodeQuantized, decodeStl } from './mesh'
@@ -25,6 +25,8 @@ function themeOf(el: HTMLElement, own: Theme | null): Theme | 'dark' | 'light' {
 const LOOKS: readonly string[] = ['studio', 'clay', 'xray', 'overhang', 'filament']
 const COLORS: readonly string[] = ['feature', 'tool', 'speed', 'flow', 'layerTime']
 const VIEWS: readonly string[] = ['iso', 'top', 'front', 'fit']
+const FINISHES: readonly string[] = ['matte', 'satin', 'glossy', 'silk'] satisfies ToolpathFinish[]
+const PLATE_STYLES: readonly string[] = ['grid', 'textured-pei', 'smooth-pei', 'cool', 'engineering'] satisfies PlateStyle[]
 
 function shadow(host: HTMLElement): { root: Root; mount: HTMLElement } {
   const sr = host.attachShadow({ mode: 'open' })
@@ -57,7 +59,7 @@ async function plateFrom(url: string): Promise<ViewportPlate> {
 }
 
 class SxViewportElement extends Base {
-  static observedAttributes = ['src', 'look', 'color-mode', 'view', 'layer', 'theme']
+  static observedAttributes = ['src', 'look', 'color-mode', 'view', 'layer', 'theme', 'finish', 'plate-style']
   #root: Root | null = null
   #plate: ViewportPlate | null = null
   #preview: ArrayBuffer | null = null
@@ -139,6 +141,9 @@ class SxViewportElement extends Base {
     const color = this.getAttribute('color-mode') ?? 'feature'
     const view = this.getAttribute('view')
     const layer = Number(this.getAttribute('layer'))
+    // finish="silk" for every slot, or one per slot: finish="satin silk matte".
+    const finishes = (this.getAttribute('finish') ?? '').split(/[\s,]+/).filter((f): f is ToolpathFinish => FINISHES.includes(f))
+    const plateStyle = this.getAttribute('plate-style') ?? ''
     this.#root.render(
       <EmbedTheme theme={themeOf(this, this.#theme)}>
       <Viewport
@@ -151,6 +156,8 @@ class SxViewportElement extends Base {
         label={this.getAttribute('aria-label') ?? '3D view'}
         {...(this.#sceneTheme ? { sceneTheme: this.#sceneTheme } : {})}
         {...(this.#toolColors ? { toolColors: this.#toolColors } : {})}
+        {...(finishes.length ? { toolFinishes: finishes } : {})}
+        {...(PLATE_STYLES.includes(plateStyle) ? { plateStyle: plateStyle as PlateStyle } : {})}
         onPick={(e) => this.dispatchEvent(new CustomEvent('pick', { detail: e }))}
         onError={(e) => this.dispatchEvent(new CustomEvent('error', { detail: e.message }))}
       />
