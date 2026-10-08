@@ -19,6 +19,7 @@ function probes(jitless: boolean): number {
     ${jitless ? `await import(${JSON.stringify(pathToFileURL(join(app, 'src', 'zod-jitless.ts')).href)})` : ''}
     const { z } = await import('zod')
     z.object({ name: z.string(), size: z.object({ x: z.number() }) }).parse({ name: 'cube', size: { x: 20 } })
+    if (${jitless} && z.config().jitless !== true) throw new Error('Zod does not see jitless')
     process.stdout.write(String(calls))
   `
   return Number(execFileSync(process.execPath, ['--input-type=module', '-e', script], { cwd: app, encoding: 'utf8' }))
