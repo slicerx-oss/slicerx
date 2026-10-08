@@ -8,6 +8,7 @@ import { FONTS_HREF } from '../src/tokens'
 import { GALLERY_CSS, Gallery } from '../src/gallery'
 import { forge, nocturneLight } from '../src/themes'
 import type { Theme } from '../src/theme'
+import { iconsReady } from '../src/icons/icon'
 
 /** Writes the gallery as a standalone page for design review screenshots. */
 function writeGallery(out: string, palette: boolean, theme?: Theme) {
@@ -40,9 +41,11 @@ describe('gallery', () => {
   })
 
   // GALLERY_OUT=/path/dir pnpm test writes gallery.html and gallery-palette.html there.
-  it('writes the gallery page when asked', () => {
+  it('writes the gallery page when asked', async () => {
     const dir = process.env['GALLERY_OUT']
     if (!dir) return
+    // every icon drawn, not the empty boxes the late ones hold until their table loads
+    await iconsReady()
     writeGallery(resolve(dir, 'gallery.html'), false)
     writeGallery(resolve(dir, 'gallery-palette.html'), true)
     writeGallery(resolve(dir, 'gallery-light.html'), false, nocturneLight)

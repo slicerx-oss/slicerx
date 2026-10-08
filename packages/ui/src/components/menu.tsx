@@ -27,6 +27,16 @@ const MIN_HEIGHT = 120
 /** How close a lifted-out menu may come to the window's edge, px. */
 const EDGE = 8
 
+/** Where a menu of this size opens at a point: down and right of it, flipped up or left when that side is short, inside the window. */
+export function placeAt(at: { x: number; y: number }, size: { width: number; height: number }, view: { width: number; height: number }): { left: number; top: number } {
+  const left = at.x + size.width + EDGE > view.width ? at.x - size.width : at.x
+  const top = at.y + size.height + EDGE > view.height ? at.y - size.height : at.y
+  return {
+    left: Math.max(EDGE, Math.min(left, view.width - size.width - EDGE)),
+    top: Math.max(EDGE, Math.min(top, view.height - size.height - EDGE)),
+  }
+}
+
 /** Where the menu goes: under or over its trigger, and, when a scrolling panel would cut it off, lifted out of the panel. */
 type Place = { up: boolean; max?: number; fixed?: { left: number; top?: number; bottom?: number } }
 
@@ -39,6 +49,8 @@ export interface MenuProps {
   align?: 'start' | 'end'
   /** Render in flow instead of floating, for menus inside a panel. */
   static?: boolean
+  /** Open at this window point instead of under the trigger (a context menu). */
+  at?: { x: number; y: number } | undefined
   className?: string
   children?: ReactNode
 }
@@ -47,7 +59,7 @@ export interface MenuProps {
  * A floating menu. The parent owns the open state; Escape, an outside click, or choosing an item
  * calls onClose. Arrow keys move focus between items. Focus lands on the first item when opened.
  */
-export function Menu({ open, onClose, label, align = 'start', static: isStatic, className, children }: MenuProps) {
+export function Menu({ open, onClose, label, align = 'start', static: isStatic, at, className, children }: MenuProps) {
   const ref = useRef<HTMLDivElement>(null)
   const [place, setPlace] = useState<Place>({ up: false })
   useDismiss(ref, open && !isStatic, onClose)
@@ -57,7 +69,7 @@ export function Menu({ open, onClose, label, align = 'start', static: isStatic, 
   useLayoutEffect(() => {
     const el = ref.current
     const anchor = el?.parentElement
-    if (!open || isStatic || !el || !anchor || place.fixed) return
+    if (!open || isStatic || !el || !anchor || place.fixed || at) return
     const a = anchor.getBoundingClientRect()
     let top = 0
     let bottom = window.innerHeight
@@ -95,7 +107,18 @@ export function Menu({ open, onClose, label, align = 'start', static: isStatic, 
     const up = height > below && above > below
     const room = Math.floor(up ? above : below)
     setPlace(height > room ? { up, max: Math.max(MIN_HEIGHT, room) } : { up })
-  }, [open, isStatic, align, place.fixed])
+  }, [open, isStatic, align, place.fixed, at])
+  // at a point: placed against the window, flipped at its edges, scrolling when taller than the window
+  const atX = at?.x
+  const atY = at?.y
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!open || isStatic || !el || atX === undefined || atY === undefined) return
+    const room = window.innerHeight - 2 * EDGE
+    const height = Math.min(el.scrollHeight, room)
+    const p = placeAt({ x: atX, y: atY }, { width: el.offsetWidth, height }, { width: window.innerWidth, height: window.innerHeight })
+    setPlace({ up: false, ...(el.scrollHeight > room ? { max: room } : {}), fixed: { left: p.left, top: p.top } })
+  }, [open, isStatic, atX, atY])
   // closed, it measures again next time
   useEffect(() => {
     if (!open) setPlace({ up: false })

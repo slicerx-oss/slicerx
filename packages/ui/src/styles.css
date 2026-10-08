@@ -215,6 +215,14 @@ button { cursor: pointer; }
 .sx-menu-item-aside { margin-left: auto; padding-left: 12px; font: 500 var(--fs-xs) var(--f-mono); color: var(--dim); }
 .sx-menu-item [data-checkmark="off"] { visibility: hidden; }
 .sx-menu-sep { border: 0; border-top: 1px solid var(--line-soft); margin: 5px 0; }
+/* A context menu: the verbs used most as a row of icons over the items. */
+.sx-menu-icons { display: flex; gap: 2px; padding: 1px 1px 4px; margin-bottom: 4px; border-bottom: 1px solid var(--line-soft); }
+.sx-menu-item.sx-menu-icon { width: 32px; min-height: 32px; padding: 0; justify-content: center; flex: none; }
+.sx-menu-item.sx-menu-icon .sx-ic { width: 16px; height: 16px; color: var(--muted); }
+.sx-menu-item.sx-menu-icon[aria-pressed="true"] .sx-ic { color: var(--accent); }
+.sx-menu-item.sx-menu-icon[aria-disabled="true"] { cursor: not-allowed; background: none; }
+.sx-menu-item.sx-menu-icon[aria-disabled="true"] .sx-ic { color: var(--dim); }
+.sx-menu-item.sx-menu-icon[data-tone="danger"] .sx-ic { color: var(--red); }
 
 /* dialogs */
 .sx-dialog { padding: 0; border: 1px solid var(--line); border-radius: var(--r-lg); background: color-mix(in srgb, var(--ink-2) 92%, transparent); color: var(--fg); width: min(480px, calc(100vw - 2 * var(--gutter))); max-height: calc(100dvh - 2 * var(--gutter)); box-shadow: var(--shadow-pop); }
