@@ -163,6 +163,7 @@ Ids that tests read for their text:
 | `about-attribution`, `about-step-reader` | About: the engine attribution and the STEP reader line |
 | `bug-preview` | Report a bug: what the report sends |
 | `step-note`, `step-bind` | A CAD history step's note and binding |
+| `step-sketch` | A step's sketch line in the Design tree, with its loop count |
 | `hole-size-words`, `thread-words` | The hole and thread tools' size in words |
 | `value-<name>` | A named value in the values panel |
 | `brim-ear-count` | The number of painted brim ears |
