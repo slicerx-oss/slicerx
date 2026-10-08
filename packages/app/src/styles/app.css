@@ -659,6 +659,9 @@ button.reset:hover { color: var(--fg); background: var(--ink-3); }
 .preset-act { display: inline-flex; flex-wrap: wrap; gap: 2px; }
 .preset-save { display: flex; gap: 8px; align-items: center; }
 .preset-save .sx-input { flex: 1; min-width: 0; }
+/* Connected apps: the address and the key each take a full row, the buttons follow. */
+.preset-save.app-form { flex-wrap: wrap; }
+.preset-save.app-form .sx-input { flex: 1 1 100%; }
 .preset-name .preset-for { color: var(--muted); }
 
 /* Preset import report */

@@ -5,7 +5,7 @@
 import { describe, expect, it } from 'vitest'
 import { CONNECTION_METHODS, modelById, PRINTER_MODELS } from '@slicerx/printer-catalog'
 import { appHostPort, appKeyName, appUrl, CONNECTED_APPS, connectedApp, offeredConnections } from '../src/connected-apps/registry'
-import { checkConnection, connectionChoices, EMPTY_FORM, pickBrand, pickConnection, pickModel, type PrinterForm } from '../src/first-run/printer-form'
+import { checkConnection, connectionChoices, EMPTY_FORM, pickBrand, pickConnection, pickModel, testBlockers, type PrinterForm } from '../src/first-run/printer-form'
 import { connectionMethod } from '@slicerx/printer-catalog'
 
 const bambu = connectedApp('bambuddy')!
@@ -87,6 +87,7 @@ describe('the connection picker and connected apps', () => {
     expect(Object.keys(checkConnection(ready, connectionMethod('bambuddy')).errors)).toEqual([])
     const wrong = { ...f, fields: { ...f.fields, serial: 'shed' } }
     expect(checkConnection(wrong, connectionMethod('bambuddy')).errors.serial).toMatch(/number BamBuddy uses/)
+    expect(testBlockers(f, connectionMethod('bambuddy')).map((b) => b.text)).toContain('The BamBuddy printer id is empty.')
   })
 
   it('choosing another connection leaves the address alone', () => {
