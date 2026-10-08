@@ -122,7 +122,7 @@ fn each_plate_type_heats_the_bed_to_its_own_temperatures() {
 fn a_plate_the_filament_has_no_temperature_for_keeps_the_printers_and_warns() {
     // the A1's stock PLA lists 0 for the engineering plate: Orca's "not supported on this plate"
     let mut cfg = stock_a1();
-    assert_eq!(first(&cfg, "eng_plate_temp"), 0.0);
+    assert!(near(first(&cfg, "eng_plate_temp"), 0.0));
     cfg.insert("curr_bed_type".into(), json!("Engineering Plate"));
     let hot = first(&cfg, "hot_plate_temp_initial_layer");
     let run = slice(cfg);
