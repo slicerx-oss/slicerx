@@ -106,7 +106,7 @@ async function connectApp(page: Page): Promise<void> {
   await page.getByRole('button', { name: 'Settings', exact: true }).click()
   await page.getByRole('navigation', { name: 'Settings sections' }).getByRole('button', { name: 'Printer bridge' }).click()
   await page.getByLabel('Pairing code').fill(code)
-  await page.getByRole('button', { name: 'Connect' }).click()
+  await page.getByRole('button', { name: 'Connect', exact: true }).click()
   await expect(page.getByText('Connected', { exact: true })).toBeVisible()
   await page.keyboard.press('Escape')
 }
@@ -152,7 +152,7 @@ test('a wrong code is refused with a plain message', async ({ page }) => {
   await page.getByRole('button', { name: 'Settings', exact: true }).click()
   await page.getByRole('navigation', { name: 'Settings sections' }).getByRole('button', { name: 'Printer bridge' }).click()
   await page.getByLabel('Pairing code').fill('ZZZZ9999')
-  await page.getByRole('button', { name: 'Connect' }).click()
+  await page.getByRole('button', { name: 'Connect', exact: true }).click()
   await expect(page.getByRole('alert')).toContainText('That pairing code was not accepted.')
 })
 
@@ -194,7 +194,7 @@ async function sheetFor(page: Page, printer: string): Promise<Locator> {
   await page.getByRole('button', { name: 'Settings', exact: true }).click()
   await page.getByRole('navigation', { name: 'Settings sections' }).getByRole('button', { name: 'Printer bridge' }).click()
   await page.getByLabel('Pairing code').fill(code)
-  await page.getByRole('button', { name: 'Connect' }).click()
+  await page.getByRole('button', { name: 'Connect', exact: true }).click()
   await expect(page.getByText('Connected', { exact: true })).toBeVisible()
   await page.keyboard.press('Escape')
   await page.getByRole('button', { name: 'Change', exact: true }).click()
