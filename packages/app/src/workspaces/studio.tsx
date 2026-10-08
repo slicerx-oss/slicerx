@@ -4,7 +4,7 @@
 // rebuilds the scene. The side panes change with the mode.
 import { lazy, Suspense, useEffect, useRef, type CSSProperties } from 'react'
 import { Button, Icon } from '@slicerx/ui'
-import { ColorMenu, RenderMenu, ViewMenu } from './view-menus'
+import { RenderMenu, ViewMenu } from './view-menus'
 import { useLayout, useLookChoice } from '../first-run/look'
 import { registerCommands } from '../commands/registry'
 import { history } from '../plate/history'
@@ -140,10 +140,7 @@ export function Studio({ mode }: { mode: 'prepare' | 'preview' }) {
             {mode === 'prepare' ? (
               <RenderMenu />
             ) : hasPreview ? (
-              <>
-                <ColorMenu />
-                <Legend />
-              </>
+              <Legend />
             ) : null}
           </div>
           <div className="hud-col end">

@@ -4,7 +4,7 @@
 // finished slice stale. The math lives in ./transform.
 import type { MeshHandle, MeshPart } from '@slicerx/contracts'
 import { get, markStale, selectedIds, set, toast, type PlateEntry } from '../state/store'
-import { bake, mergeParts, primitive, splitToObjects, splitToParts, type PrimitiveShape } from './mesh-ops'
+import { bake, mergeParts, primitive, splitPieces, splitToObjects, type PrimitiveShape } from './mesh-ops'
 import { arrange, ARRANGE_DEFAULTS, fillCount, type ArrangeOptions, type ArrangeResult } from './arrange'
 import { NEST_STEP_DEFAULT, nestArrange, nestFill, type NestRun } from './nest'
 import { quietly } from './history'
@@ -297,15 +297,17 @@ type Loader = { loadParts(name: string, parts: MeshPart[]): Promise<MeshHandle> 
 let objSeq = 0
 const newObjectId = () => `obj_${Date.now().toString(36)}${(++objSeq).toString(36)}`
 
-function colorsFor(parts: readonly MeshPart[], from: readonly string[]): string[] {
-  return parts.map((p) => from[p.slot - 1] ?? objectPalette()[(p.slot - 1) % 6]!)
+/** Per-part colors for parts made from the source's parts: `from[i]` is the source part piece i came from. */
+function colorsFor(src: Pick<PlateEntry, 'colors' | 'parts'>, from: readonly number[]): string[] {
+  return from.map((i) => src.colors[i] ?? src.colors[0] ?? objectPalette()[((src.parts[i]?.slot ?? 1) - 1) % 6]!)
 }
 
 /** Split to parts: each connected piece becomes a part of the same object. Returns the new part count. */
 export async function splitSelectedToParts(host: Loader): Promise<number> {
   const src = selectedEntry()
   if (!src) return 0
-  const parts = splitToParts(src.parts)
+  const pieces = splitPieces(src.parts)
+  const parts = pieces.map((x) => x.part)
   if (parts.length <= src.parts.length) {
     toast('This object is one piece; there is nothing to split.', 'info')
     return 0
@@ -315,7 +317,7 @@ export async function splitSelectedToParts(host: Loader): Promise<number> {
   const history = src.history ? (await import('../cad/history/record')).endHistory(src, parts, 'the object was split into parts.') : undefined
   const { history: _h, ...plain } = src
   const cur = get().plate
-  set({ plate: cur.map((p) => (p.id === src.id ? { ...plain, handle, parts, colors: colorsFor(parts, src.colors), ...(history ? { history } : {}) } : p)) })
+  set({ plate: cur.map((p) => (p.id === src.id ? { ...plain, handle, parts, colors: colorsFor(src, pieces.map((x) => x.from)), ...(history ? { history } : {}) } : p)) })
   markStale()
   return parts.length
 }
@@ -333,7 +335,7 @@ export async function splitSelectedToObjects(host: Loader): Promise<number> {
     pieces.map(async (piece, i) => {
       const name = `${src.name} ${i + 1}`
       const handle = await host.loadParts(name, piece.parts)
-      return { id: newObjectId(), name, handle, parts: piece.parts, colors: colorsFor(piece.parts, src.colors), transform: piece.transform, ...(src.source ? { source: src.source } : {}) }
+      return { id: newObjectId(), name, handle, parts: piece.parts, colors: colorsFor(src, [piece.from]), transform: piece.transform, ...(src.source ? { source: src.source } : {}) }
     }),
   )
   const cur = get().plate
@@ -354,7 +356,7 @@ export async function mergeSelected(host: Loader): Promise<boolean> {
     return false
   }
   const parts = mergeParts(objs)
-  const colors = objs.flatMap((o) => o.parts.map((p) => o.colors[p.slot - 1] ?? o.colors[0] ?? brandAccent()))
+  const colors = objs.flatMap((o) => o.parts.map((_, i) => o.colors[i] ?? o.colors[0] ?? brandAccent()))
   const handle = await host.loadParts(first.name, parts)
   const drop = new Set(objs.slice(1).map((o) => o.id))
   // The merged object is its own thing now, not an instance of anything.
@@ -387,7 +389,7 @@ export async function addPrimitive(host: Loader, shape: PrimitiveShape, as: 'obj
     const parts = [...src.parts, partMesh]
     const handle = await host.loadParts(src.name, parts)
     const history = src.history ? (await import('../cad/history/record')).withStep(src, -1, { op: 'parts.add', parts: [partMesh], label: `Add ${mesh.name.toLowerCase()}` }) : undefined
-    set({ plate: get().plate.map((p) => (p.id === src.id ? { ...p, handle, parts, colors: [...p.colors], ...(history ? { history } : {}) } : p)) })
+    set({ plate: get().plate.map((p) => (p.id === src.id ? { ...p, handle, parts, colors: [...p.colors, p.colors[src.parts.findIndex((q) => q.slot === slot)] ?? p.colors[0] ?? brandAccent()], ...(history ? { history } : {}) } : p)) })
     markStale()
     return src.id
   }

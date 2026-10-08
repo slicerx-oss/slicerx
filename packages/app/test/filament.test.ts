@@ -3,7 +3,7 @@
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import type { MeshHandle } from '@slicerx/contracts'
 import { deltaE2000, extruderCount, flushInputs, flushMatrix, flushValues, flushVolume, FLUSH_MAX, measuredFlush, minFlushFor, parseHex, printerMinFlush, loadFlushData, variantIndex } from '../src/filament/flush'
-import { materialType, resetSlots, resolveSlots, setFlushManual, setSlot, slotConfig, slotOverridesFor, swapPlateSlots } from '../src/filament/slots'
+import { flushPlan, materialType, resetSlots, resolveSlots, setFlushManual, setSlot, slotConfig, slotOverridesFor, swapPlateSlots } from '../src/filament/slots'
 import { appStore, get, set, type PlateEntry } from '../src/state/store'
 
 beforeAll(() => loadFlushData())
@@ -14,7 +14,7 @@ function entry(id: string, slots: number[], colors: string[] = []): PlateEntry {
 }
 
 beforeEach(() => {
-  set({ plate: [], plates: [{ id: 'plate-1', name: 'Plate 1', objects: [], settings: { sequence: 'by-layer' } }], activePlate: 'plate-1', printerSlots: [], slotSetup: {}, slotMatch: {}, flush: { multiplier: 1, manual: {} } })
+  set({ plate: [], plates: [{ id: 'plate-1', name: 'Plate 1', objects: [], settings: { sequence: 'by-layer' } }], activePlate: 'plate-1', printerSlots: [], slotSetup: {}, slotMatch: {}, fileSlotColors: [], flush: { multiplier: 1, manual: {} } })
 })
 
 describe('flush volumes', () => {
@@ -150,6 +150,46 @@ describe('slots', () => {
     expect(c['flush_volumes_matrix']).toHaveLength(4)
     setFlushManual('1>2', 640)
     expect((slotConfig(get())['flush_volumes_matrix'] as number[])[1]).toBe(640)
+  })
+})
+
+describe('model colors per slot', () => {
+  // A project's filament_colour, by slot, and its parts' colors as addProject stores them: one per part, by the part's slot.
+  const FILE = ['#ff0000', '#00ff00', '#0000ff', '#ffff00']
+  const perPart = (slots: number[]) => slots.map((n) => FILE[n - 1]!)
+
+  it('reads the file colors by slot, not part by part', () => {
+    const slots = [1, 1, 1, 2, 3, 4]
+    set({ plate: [entry('a', slots, perPart(slots))], fileSlotColors: [...FILE] })
+    expect(resolveSlots(get()).map((x) => x.color)).toEqual(FILE)
+    expect(resolveSlots(get()).map((x) => x.source)).toEqual(['model', 'model', 'model', 'model'])
+  })
+
+  it('maps per-part colors to their slots when the file names none', () => {
+    const slots = [1, 1, 1, 2, 3, 4]
+    set({ plate: [entry('a', slots, perPart(slots))] })
+    expect(resolveSlots(get()).map((x) => x.color)).toEqual(FILE)
+  })
+
+  it('gives a slot only another plate uses its file color, not the default', () => {
+    // Two plates, as a project like tangela.3mf has them: slot 4 is used on the second plate only.
+    set({
+      plate: [entry('a', [1, 2, 3], perPart([1, 2, 3]))],
+      plates: [{ id: 'plate-1', name: 'Plate 1', objects: [], settings: { sequence: 'by-layer' } }, { id: 'p2', name: 'Plate 2', objects: [entry('b', [4], perPart([4]))], settings: { sequence: 'by-layer' } }],
+      fileSlotColors: [...FILE],
+    })
+    const four = resolveSlots(get())[3]!
+    expect(four.color).toBe('#ffff00')
+    expect(four.color).not.toBe('#50fa7b')
+  })
+
+  it('sends the file colors and their flush matrix to the engine', () => {
+    const slots = [1, 1, 1, 2, 3, 4]
+    set({ plate: [entry('a', slots, perPart(slots))], fileSlotColors: [...FILE] })
+    const c = slotConfig(get())
+    expect(c['filament_colour']).toEqual(FILE)
+    const plan = flushPlan(get(), 4)
+    expect(c['flush_volumes_matrix']).toEqual(plan.nozzles.flatMap((z) => flushValues(FILE, get().flush, z.mins, z.dataset)))
   })
 })
 

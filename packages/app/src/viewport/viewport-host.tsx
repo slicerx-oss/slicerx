@@ -271,8 +271,8 @@ export function ViewportHost({ mode }: { mode: 'prepare' | 'preview' }) {
         // A rebuilt scene starts unpainted; otherwise only what changed outside the brush (undo, redo, clear) goes in.
         if (rebuilt) pushPaint(s.plate, null)
         else if (s.plate !== prev.plate && !fromViewport) pushPaint(s.plate, prev.plate)
-        if ((first || s.slotSetup !== prev.slotSetup || s.printerSlots !== prev.printerSlots || rebuilt) && vp.setPaintColors) vp.setPaintColors(resolveSlots(s).map((r) => r.color))
-        if (first || s.plate !== prev.plate || s.slotSetup !== prev.slotSetup || s.printerSlots !== prev.printerSlots) vp.setToolColors(resolveSlots(s).map((r) => r.color))
+        if ((first || s.slotSetup !== prev.slotSetup || s.printerSlots !== prev.printerSlots || s.fileSlotColors !== prev.fileSlotColors || rebuilt) && vp.setPaintColors) vp.setPaintColors(resolveSlots(s).map((r) => r.color))
+        if (first || s.plate !== prev.plate || s.slotSetup !== prev.slotSetup || s.printerSlots !== prev.printerSlots || s.fileSlotColors !== prev.fileSlotColors) vp.setToolColors(resolveSlots(s).map((r) => r.color))
         if (first || rebuilt || s.plate !== prev.plate) pushEars(s)
         if (first || s.selection !== prev.selection || s.selectedIds !== prev.selectedIds || s.towerSelected !== prev.towerSelected) vp.setSelection(s.towerSelected ? [TOWER_ID] : selectedIds(s))
         if (first || s.preview !== prev.preview) vp.setPreview(s.preview)

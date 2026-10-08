@@ -50,7 +50,10 @@ export function jumpToWarning(w: SliceWarning): void {
     patch.moveCut = 1
   }
   const mode = warningScheme(w)
-  if (mode) patch.colorMode = mode
+  if (mode) {
+    patch.colorMode = mode
+    patch.colorModePicked = true
+  }
   if (w.objectId && get().plate.some((p) => p.id === w.objectId)) {
     patch.selection = w.objectId
     patch.selectedIds = [w.objectId]

@@ -60,9 +60,9 @@ test('Slice runs and Preview shows layers', async ({ page }) => {
   await page.getByRole('button', { name: 'Slice plate' }).click()
   await expect(page.locator('.sx-tab[aria-current=page]')).toContainText('Preview', { timeout: 30_000 })
   await expect(page.getByRole('group', { name: 'Layers and moves' })).toBeVisible()
-  await page.getByRole('button', { name: /Color toolpaths by/ }).click()
+  await page.getByTestId('legend-color-by').click()
   await page.getByRole('menuitem', { name: 'Layer time' }).click()
-  await expect(page.getByRole('button', { name: 'Color toolpaths by: Layer time' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Color by Layer time' })).toBeVisible()
 })
 
 test('Printers shows the demo fleet', async ({ page }) => {
