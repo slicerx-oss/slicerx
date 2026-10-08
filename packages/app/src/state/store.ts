@@ -687,6 +687,14 @@ export function useApp<T>(select: (s: AppState) => T): T {
 export const set = appStore.setState
 export const get = appStore.getState
 
+// Profiling and test hook: with localStorage 'slicerx.debug' set, scripts reach the store as window.__sx from the
+// first frame, before any ready mark (the viewport adds its own handle, __vp, once it starts).
+try {
+  if (typeof window !== 'undefined' && localStorage.getItem('slicerx.debug')) Object.assign(window, { __sx: appStore })
+} catch {
+  /* storage blocked */
+}
+
 let toastSeq = 0
 /** A button on a toast, for example an undo. */
 export interface ToastAction {
