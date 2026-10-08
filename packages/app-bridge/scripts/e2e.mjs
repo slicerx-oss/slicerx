@@ -127,8 +127,9 @@ try {
 
   // First run on the fresh profile: the agreement, then Skip, use defaults, until the objects list shows.
   let prepared = false
+  let ids = {}
   for (let i = 0; i < 60 && !prepared; i++) {
-    const ids = (await call('app_testids')).data ?? {}
+    ids = (await call('app_testids')).data ?? {}
     if (ids['agreement-check']) {
       await expectOk('app_click', { testid: 'agreement-check' })
       await expectOk('app_click', { testid: 'agreement-accept' })
@@ -137,7 +138,8 @@ try {
     } else prepared = Boolean(ids['objects-list'])
     if (!prepared) await sleep(500)
   }
-  record('first run done, objects list on screen', prepared)
+  record('first run done, objects list on screen', prepared, prepared ? undefined : { onScreen: Object.keys(ids), tab: (await call('app_state')).data?.tab })
+  if (!prepared) await call('app_screenshot', { path: join(out, '00-not-prepared.png') })
 
   // The controls this run uses by test id, so a renamed one fails here, by name, and not as a vague step further on.
   await needIds('tab-prepare', 'objects-list')
