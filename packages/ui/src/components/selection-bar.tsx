@@ -2,6 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 import type { HTMLAttributes, ReactNode } from 'react'
 import { Icon } from '../icons/icon'
+import { tipAttrs } from './tooltip'
 
 export interface SelectionBarProps extends Omit<HTMLAttributes<HTMLDivElement>, 'children'> {
   /** What is selected, in words: "2 selected". */
@@ -21,7 +22,7 @@ export function SelectionBar({ count, onClear, clearLabel = 'Clear selection', c
         {count}
       </span>
       <span className="sx-selbar-actions">{children}</span>
-      <button type="button" className="sx-selbar-clear" aria-label={clearLabel} title={clearLabel} onClick={onClear}>
+      <button type="button" className="sx-selbar-clear" aria-label={clearLabel} {...tipAttrs({ title: clearLabel, key: 'Esc' })} onClick={onClear}>
         <Icon name="close" size={14} />
       </button>
     </div>
