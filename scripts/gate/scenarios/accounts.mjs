@@ -5,14 +5,21 @@
 // mail, fetches a verify address or touches a sign-in code (docs/release-gate.md, "The operator"). Then: sign out from
 // the account menu, the form starts over, two links in a row with Send again and its countdown, the older link shows
 // the expired copy, and the newer one signs in again.
-import { waitUntil } from '../lib/util.mjs'
+import { sleep, waitUntil } from '../lib/util.mjs'
 
 const EXPIRED = /expired|newer one was sent/i
+// The backend's one-link-per-address limit; a fast operator step can land the next request inside it.
+const THROTTLED = /only request this after (\d+) seconds?/i
 
 /** Opens Sign in from the Vault (or uses the form already open) and asks for a link. Returns when it was asked. */
 export async function requestLink(s, account) {
   await s.feed()
-  const ids = await s.ids()
+  // The Vault redraws after a sign out, so its Sign in can show a moment later.
+  const ready = await waitUntil(async () => {
+    const now = await s.ids()
+    return now['signin-email'] || now['signin-sent'] || now['vault-sign-in'] ? now : null
+  }, { timeoutMs: 15_000, everyMs: 300 })
+  const ids = ready.value ?? (await s.ids())
   if (!ids['signin-email'] && !ids['signin-sent']) {
     if (!ids['vault-sign-in']) s.stop('the Vault offers Sign in', 'no vault-sign-in (already signed in?)')
     await s.click('vault-sign-in')
@@ -29,14 +36,26 @@ export async function requestLink(s, account) {
   }
   const marker = await s.marker()
   await s.fill('signin-email', account)
-  await s.click('signin-submit')
-  const at = new Date().toISOString()
-  const sent = await waitUntil(async () => {
-    const ids = await s.ids()
-    if (ids['signin-sent']) return 'sent'
-    if (ids['signin-error']) return `error: ${(await s.one('signin-error'))?.text}`
-    return null
-  }, { timeoutMs: 30_000, everyMs: 300 })
+  const submit = async () => {
+    await s.click('signin-submit')
+    const at = new Date().toISOString()
+    const sent = await waitUntil(async () => {
+      const ids = await s.ids()
+      if (ids['signin-sent']) return 'sent'
+      if (ids['signin-error']) return `error: ${(await s.one('signin-error'))?.text}`
+      return null
+    }, { timeoutMs: 30_000, everyMs: 300 })
+    return { at, sent }
+  }
+  let asked = await submit()
+  const wait = THROTTLED.exec(asked.sent.value ?? '')
+  if (wait) {
+    // Asked again once the limit passes; the app showing the limit is the expected answer, not a failure.
+    s.info('the backend limits links to one a minute per address; asking again after', `${wait[1]} s`)
+    await sleep((Number(wait[1]) + 2) * 1000)
+    asked = await submit()
+  }
+  const { at, sent } = asked
   const otp = (await s.since(marker)).network.filter((e) => /\/auth\/v1\/otp$/.test(e.url))
   if (sent.value !== 'sent') s.stop(`asked for a sign-in link for ${account}`, sent.value ?? 'no answer in 30 s')
   s.check(`asked for a sign-in link for ${account} at ${at}`, otp.some((e) => e.status === 200), otp.map((e) => `${e.method} ${e.status} ${e.url}`))
@@ -83,6 +102,12 @@ export async function accounts(s, { account, waitSignin }) {
   await s.click('account-sign-out')
   const out = await waitUntil(async () => ((await s.user()).signedIn ? null : true), { timeoutMs: 15_000, everyMs: 500 })
   s.check('Sign out from the account menu signs out', !out.timedOut)
+  await s.feed()
+  if (!(await s.waitFor('vault-sign-in', 'visible', 15_000))) {
+    await s.shot('no-sign-in', 'Signed out, but the Vault offers no Sign in')
+    const shown = Object.keys(await s.ids()).filter((k) => /^(account|signin|vault)-/.test(k))
+    s.stop('the Vault offers Sign in after a sign out', `no vault-sign-in in 15 s; shown: ${shown.join(', ')}; user: ${JSON.stringify(await s.user())}`)
+  }
   await s.click('vault-sign-in')
   const fresh = await s.waitFor('signin-email', 'visible', 10_000)
   s.check('Sign in starts over at the email field', fresh && !(await s.ids())['signin-sent'])
