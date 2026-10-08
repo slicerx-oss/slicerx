@@ -22,6 +22,7 @@ import {
   Mesh,
   MeshDepthMaterial,
   MeshPhongMaterial,
+  MeshPhysicalMaterial,
   NearestFilter,
   Points,
   RedFormat,
@@ -35,7 +36,7 @@ import {
 import { SXPV_EXTRA_BYTES, SXPV_EXTRA_FLAG, SXPV_SEGMENT, SXPV_SEGMENT_BYTES, SXPV_TRAVEL_BYTES, objectOfSegment, type PreviewBuffers } from '@slicerx/contracts'
 import type { MarkerKind, PreviewExtras, PreviewRanges } from './types'
 import { DEFAULT_TOOL_COLORS, FEATURE_COLORS, HEAT_RAMP, SCENE, displayHex, hexToRgb, srgbToLinear, type ResolvedTheme, type SceneColors } from './palette'
-import type { ColorMode } from './types'
+import type { ColorMode, FilamentFinish, ToolpathFinish } from './types'
 import { ToolheadRig } from './toolhead'
 import { PurgeRig, type PurgePlan } from './purge'
 import { GantryRig, type GantryHit, type GantrySpec } from './gantry'
@@ -100,6 +101,7 @@ uniform float uCurLayer;
 uniform int uColorMode;
 uniform sampler2D uFeatureLut;
 uniform sampler2D uToolLut;
+uniform sampler2D uFinishLut;
 uniform sampler2D uRamp;
 uniform sampler2D uLayerLut;
 uniform vec2 uSpeedRange;
@@ -111,6 +113,14 @@ uniform float uPartZ;
 uniform float uPartFrac;
 varying vec3 vSegColor;
 varying float vLive;
+varying vec4 vFinish;
+varying float vSurf;
+// Across and along the bead in plate space, and how far the normals keep their round shape (1) or turn to face the camera
+// (level of detail): sxBead sets them for the per-pixel shading.
+vec2 sxSide;
+vec2 sxDir;
+float sxK = 1.0;
+float sxPx = 8.0;
 void sxBead(out vec3 p, out vec3 n) {
   vec2 a = vec2(uintBitsToFloat(aSegA.x), uintBitsToFloat(aSegA.y));
   vec2 b = vec2(uintBitsToFloat(aSegA.z), uintBitsToFloat(aSegA.w));
@@ -123,6 +133,8 @@ void sxBead(out vec3 p, out vec3 n) {
   float len = length(d);
   vec2 dir = len > 1e-6 ? d / len : vec2(1.0, 0.0);
   vec2 side = vec2(dir.y, -dir.x);
+  sxSide = side;
+  sxDir = dir;
   vec2 base = mix(a, b, position.z) + side * (position.x * hw) + dir * (position.z * hw);
   p = vec3(base, zTop - hh + position.y * hh);
   // Hidden feature types collapse to a point far outside the view, so they draw nothing and cast no shadow.
@@ -132,7 +144,9 @@ void sxBead(out vec3 p, out vec3 n) {
   // moire, so they blend toward the normal of a round bead facing the camera.
   float depth = max(1e-3, -(modelViewMatrix * vec4(p, 1.0)).z);
   float px = 2.0 * hh * projectionMatrix[1][1] * 0.5 * uViewH / depth;
+  sxPx = px;
   float k = mix(0.3, 1.0, smoothstep(0.7, 2.2, px));
+  sxK = abs(aLayer - uCurLayer) > 0.5 ? k : 1.0;
   if (k < 1.0 && abs(aLayer - uCurLayer) > 0.5) {
     vec3 d3 = vec3(dir, 0.0);
     vec3 v = normalize(uCamObj - p);
@@ -172,6 +186,9 @@ const BEAD_COLOR = /* glsl */ `
     c = texture(uRamp, vec2(t, 0.5)).rgb;
   }
   vSegColor = c;
+  vFinish = texelFetch(uFinishLut, ivec2(int(min(tool, 15u)), 0), 0);
+  // What surface the bead belongs to from afar: a wall (1), a flat top, bottom or solid layer (2), anything else (0).
+  vSurf = feat <= 2u || feat == 13u ? 1.0 : feat == 3u || feat == 4u || feat == 5u || feat == 7u || feat == 11u ? 2.0 : 0.0;
   // Only the walls of the live layer glow, so it reads as a lit ring at the nozzle height rather than a plane.
   vLive = abs(aLayer - uCurLayer) < 0.5 && feat <= 2u ? 1.0 : 0.0;
 }
@@ -228,6 +245,118 @@ const BEAD_LIGHT = /* glsl */ `
     c += mix( albedo, uLiveColor, 0.9 ) * ( 0.7 + rim * uGlow );
   }
   vLit = c;
+}
+`
+
+/**
+ * Per-pixel bead shading. The vertex shader hands over the bead's frame in view space and where on its cross-section the
+ * vertex sits; across a face the profile point runs along the diamond's edge, so normalizing it per pixel gives the
+ * normal of a round bead. The beads are then lit by three.js's physical material, the one the model view uses, with the
+ * same room, lights, finish and tone, so a sliced plate reads like the model.
+ */
+const BEAD_PIXEL_DECL = /* glsl */ `
+varying vec3 vSideV;
+varying vec3 vUpV;
+varying vec3 vAlongV;
+varying vec2 vProf;
+varying float vK;
+varying float vLayer;
+varying float vBeadPx;
+`
+
+const BEAD_PIXEL = /* glsl */ `
+{
+  vSideV = normalize( normalMatrix * vec3( sxSide, 0.0 ) );
+  vUpV = normalize( normalMatrix * vec3( 0.0, 0.0, 1.0 ) );
+  vAlongV = normalize( normalMatrix * vec3( sxDir, 0.0 ) );
+  vProf = position.xy;
+  vK = sxK;
+  vLayer = aLayer;
+  vBeadPx = sxPx;
+}
+`
+
+/** Declarations the bead fragment code below reads, on top of the physical material's own. */
+const BEAD_FRAG_DECL = /* glsl */ `
+uniform vec3 uLiveColor;
+uniform float uGlow;
+uniform float uCrease;
+varying vec3 vSegColor;
+varying float vLive;
+varying vec4 vFinish;
+varying float vSurf;
+${BEAD_PIXEL_DECL}
+`
+
+/**
+ * The bead's normal per pixel. Where the cross-section turns more than about half its width within one pixel its detail
+ * cannot be drawn, so the round normal fades out there and a bead a pixel or two tall shades evenly instead of in moire.
+ * From afar a bead stands for the surface it is part of: stacked walls face out, solid layers face up, and a lone bead
+ * (infill, support) shows its round side to the camera. `sxOcc` is the groove where a bead sits on the one below; it
+ * lasts a little longer than the round shape, so layer lines still read at a middle distance.
+ */
+const BEAD_NORMAL = /* glsl */ `
+float faceDirection = gl_FrontFacing ? 1.0 : - 1.0;
+float sxPl = length( vProf );
+vec2 sxQ = sxPl > 1e-4 ? vProf / sxPl : vec2( 0.0, 1.0 );
+// The part of a bead that shows: in a wall the beads above and below hide most of its top and bottom, in a solid layer
+// its neighbors hide its sides. The hidden part's normals are squashed out, so a wall keeps its face's light.
+vec2 sxShow = vSurf > 1.5 ? vec2( 0.6, 1.0 ) : vSurf > 0.5 ? vec2( 1.0, 0.6 ) : vec2( 1.0 );
+vec3 sxRound = normalize( vSideV * sxQ.x * sxShow.x + vUpV * sxQ.y * sxShow.y );
+float sxFw = fwidth( vProf.x ) + fwidth( vProf.y );
+float sxKeep = vK * saturate( 1.6 - 1.4 * sxFw );
+vec3 sxV = normalize( vViewPosition );
+vec3 sxAcross = sxV - vAlongV * dot( sxV, vAlongV );
+vec3 sxFacing = length( sxAcross ) > 1e-4 ? normalize( sxAcross ) : vUpV;
+// The side of the bead this face is on (from the profile, not the view, so a face seen edge-on never flips).
+vec3 sxOut = sxQ.x >= 0.0 ? vSideV : - vSideV;
+vec3 sxMacro = vSurf > 1.5 ? vUpV : vSurf > 0.5 ? normalize( sxOut + vUpV * 0.15 ) : sxFacing;
+vec3 normal = sxKeep >= 0.999 ? sxRound : normalize( mix( sxMacro, sxRound, sxKeep ) );
+vec3 nonPerturbedNormal = normal;
+// The groove under a wall bead or beside a solid-layer bead, while the bead's cross-section is drawn.
+float sxEdge = vSurf > 1.5 ? abs( sxQ.x ) : - sxQ.y;
+float sxOcc = 1.0 - uCrease * smoothstep( 0.3, 0.97, sxEdge ) * sxKeep;
+// Farther out a wall's layers read as even lines, the way the model view draws them: a darker band under every layer
+// while a layer is a few pixels tall, then under every 2nd, 4th, 8th layer as they shrink, so the lines stay about
+// three pixels apart and never turn to moire.
+if ( vSurf > 0.5 && vSurf < 1.5 ) {
+  // The bead's height on screen comes from the vertex shader, smooth across the wall, so neighbors pick the same lines.
+  float sxEvery = exp2( max( 0.0, ceil( log2( 3.0 / max( vBeadPx, 0.05 ) ) ) ) );
+  float sxFirst = mod( vLayer + 0.5, sxEvery ) < 1.0 ? 1.0 : 0.0;
+  // The whole bead darkens, not just its lower edge: a band a pixel or two tall that sampling cannot break into dots.
+  float sxStripe = sxFirst * ( 1.0 - smoothstep( 8.0, 32.0, sxEvery ) ) * min( 1.0, 2.0 / sxEvery + 0.5 );
+  sxOcc = mix( 1.0 - 0.22 * sxStripe, sxOcc, smoothstep( 3.0, 6.0, vBeadPx ) );
+}
+`
+
+/** The finish's gloss on top of the physical material's (one value per tool): clearcoat and sheen, as the model view sets them. */
+const BEAD_FINISH = /* glsl */ `
+#ifdef USE_CLEARCOAT
+material.clearcoat = vFinish.y;
+#endif
+#ifdef USE_SHEEN
+material.sheenColor = mix( diffuseColor.rgb, vec3( 1.0 ), 0.45 ) * vFinish.z;
+#endif
+`
+
+/** The groove's occlusion, the silk streak along the bead, and the live layer's glow. */
+const BEAD_AFTER_LIGHTS = /* glsl */ `
+reflectedLight.indirectDiffuse *= sxOcc;
+reflectedLight.directDiffuse *= sxOcc;
+reflectedLight.directSpecular *= mix( 1.0, sxOcc, 0.5 );
+reflectedLight.indirectSpecular *= mix( 1.0, sxOcc, 0.5 );
+#if NUM_DIR_LIGHTS > 0
+if ( vFinish.w > 0.0 ) {
+  // Silk: a bright streak across the bead, along its length (Kajiya-Kay), tinted by the filament.
+  vec3 sxL = directionalLights[ 0 ].direction;
+  float sxTh = dot( vAlongV, normalize( sxL + sxV ) );
+  float sxStreak = pow( sqrt( max( 0.0, 1.0 - sxTh * sxTh ) ), 90.0 ) * vFinish.w * 0.5 * saturate( dot( normal, sxL ) );
+  reflectedLight.directSpecular += sxStreak * directionalLights[ 0 ].color * mix( vec3( 1.0 ), diffuseColor.rgb, 0.55 );
+}
+#endif
+if ( vLive > 0.5 ) {
+  float sxRim = pow( 1.0 - saturate( abs( dot( normal, sxV ) ) ), 1.5 );
+  totalEmissiveRadiance += mix( diffuseColor.rgb, uLiveColor, 0.9 ) * ( 0.7 + sxRim * uGlow );
 }
 `
 
@@ -294,6 +423,33 @@ export function layerOfZ(layerZ: ArrayLike<number>, z: number): number {
   return lo
 }
 
+/**
+ * How each finish lights, as the bead shader reads it: roughness, clearcoat, sheen and the silk streak. They are the
+ * model view's values for the same finish (studioMaterial), so a matte or silk print looks the same sliced or not.
+ */
+export const BEAD_FINISHES: Record<ToolpathFinish, readonly [number, number, number, number]> = {
+  matte: [0.82, 0, 0.35, 0],
+  satin: [0.52, 0.16, 0.3, 0],
+  glossy: [0.3, 0.6, 0.2, 0],
+  silk: [0.26, 1, 0.9, 1],
+}
+
+/** The finish a model part's look draws its toolpaths with. */
+export function beadFinish(f: FilamentFinish | ToolpathFinish | undefined): ToolpathFinish {
+  return f === 'matte' || f === 'silk' || f === 'glossy' ? f : f === 'petg' || f === 'translucent' ? 'glossy' : 'satin'
+}
+
+/** One finish per tool (16 at most), satin for tools without one. */
+function finishTexture(finishes: readonly (ToolpathFinish | undefined)[], size = 16): DataTexture {
+  const data = new Float32Array(size * 4)
+  for (let i = 0; i < size; i++) data.set(BEAD_FINISHES[finishes[i] ?? finishes[0] ?? 'satin'], i * 4)
+  const t = new DataTexture(data, size, 1, RGBAFormat, FloatType)
+  t.minFilter = NearestFilter
+  t.magFilter = NearestFilter
+  t.needsUpdate = true
+  return t
+}
+
 function lutTexture(colors: readonly string[], size = 16): DataTexture {
   const data = new Float32Array(size * 4)
   for (let i = 0; i < size; i++) {
@@ -358,13 +514,15 @@ interface Chunk {
 export class Toolpaths {
   readonly root = new Group()
   private readonly base = beadGeometry()
-  private readonly material: MeshPhongMaterial
+  private readonly material: MeshPhongMaterial | MeshPhysicalMaterial
   private readonly depthMaterial: MeshDepthMaterial
   private readonly uniforms = {
     uCurLayer: { value: -1 },
     uColorMode: { value: 0 },
     uFeatureLut: { value: lutTexture(FEATURE_COLORS.map((f) => f.color)) },
     uToolLut: { value: lutTexture(DEFAULT_TOOL_COLORS) },
+    uFinishLut: { value: finishTexture([]) },
+    uCrease: { value: 0.55 },
     uRamp: { value: rampTexture(HEAT_RAMP) },
     uLayerLut: { value: new DataTexture(new Float32Array(1), 1, 1, RedFormat, FloatType) },
     uSpeedRange: { value: [0, 300] as [number, number] },
@@ -429,35 +587,41 @@ export class Toolpaths {
   constructor(private readonly ghost = false) {
     this.root.name = ghost ? 'toolpaths-ghost' : 'toolpaths'
     const u = this.uniforms
-    // Beads are lit per vertex (Gouraud): Blinn-Phong for the key and rim lights, the room's
-    // irradiance as spherical harmonics, one hardware PCF shadow tap, and the live-layer glow.
-    // Beads are a few pixels across, so per-pixel lighting mostly shaded partly covered 2x2
-    // quads; the fragment shader now only writes the interpolated color. MeshPhongMaterial
-    // supplies the light, shadow and matrix plumbing. Shininess 36 matches GGX roughness 0.48.
-    this.material = new MeshPhongMaterial({ color: 0xffffff, specular: new Color(0.04, 0.04, 0.04), shininess: 36 })
+    // The live paths are lit per pixel by the model view's physical material (round bead normals, the room, the lights,
+    // the finish's clearcoat and sheen, tone). The ghost stays lit per vertex by Phong: it is a faint gray layer.
+    this.material = ghost
+      ? new MeshPhongMaterial({ color: 0xffffff, specular: new Color(0.04, 0.04, 0.04), shininess: 36 })
+      : new MeshPhysicalMaterial({ color: 0xffffff, roughness: 0.52, metalness: 0, clearcoat: 0.16, clearcoatRoughness: 0.3, sheen: 1, sheenRoughness: 0.55, envMapIntensity: 0.95 })
     this.material.onBeforeCompile = (sh: WebGLProgramParametersWithUniforms) => {
       Object.assign(sh.uniforms, u)
       sh.vertexShader =
         BEAD_DECL +
         sh.vertexShader
-          .replace('#include <common>', '#include <common>\n' + BEAD_LIGHT_DECL)
+          .replace('#include <common>', '#include <common>\n' + (ghost ? BEAD_LIGHT_DECL : BEAD_PIXEL_DECL))
           .replace('#include <beginnormal_vertex>', 'vec3 sxP; vec3 objectNormal; sxBead(sxP, objectNormal);\n' + BEAD_COLOR)
           .replace('#include <begin_vertex>', 'vec3 transformed = sxP;')
-          .replace('#include <shadowmap_vertex>', '#include <shadowmap_vertex>\n' + BEAD_LIGHT)
+          .replace('#include <shadowmap_vertex>', '#include <shadowmap_vertex>\n' + (ghost ? BEAD_LIGHT : BEAD_PIXEL))
       sh.fragmentShader = ghost
         ? 'varying vec3 vLit;\nvoid main() {\n  float g = dot( vLit, vec3( 0.299, 0.587, 0.114 ) );\n  gl_FragColor = vec4( vec3( g * 0.6 + 0.35 ), 0.3 );\n}\n'
-        : 'varying vec3 vLit;\nvoid main() {\n  gl_FragColor = vec4( vLit, 1.0 );\n}\n'
+        : BEAD_FRAG_DECL +
+          sh.fragmentShader
+            .replace('#include <color_fragment>', 'diffuseColor.rgb = vSegColor;')
+            .replace('#include <roughnessmap_fragment>', 'float roughnessFactor = vFinish.x;')
+            .replace('#include <metalnessmap_fragment>', 'float metalnessFactor = vFinish.w * 0.28;')
+            .replace('#include <normal_fragment_begin>', BEAD_NORMAL)
+            .replace('#include <lights_physical_fragment>', '#include <lights_physical_fragment>\n' + BEAD_FINISH)
+            .replace('#include <aomap_fragment>', BEAD_AFTER_LIGHTS)
     }
     if (ghost) {
       this.material.transparent = true
       this.material.depthWrite = false
     }
-    this.material.customProgramCacheKey = () => (ghost ? 'sx-bead-ghost' : 'sx-bead')
+    this.material.customProgramCacheKey = () => (ghost ? 'sx-bead-ghost' : 'sx-bead-pixel')
     this.depthMaterial = new MeshDepthMaterial({ depthPacking: RGBADepthPacking })
     this.depthMaterial.onBeforeCompile = (sh: WebGLProgramParametersWithUniforms) => {
       Object.assign(sh.uniforms, u)
       sh.vertexShader = BEAD_DECL + sh.vertexShader.replace('#include <begin_vertex>', 'vec3 sxP; vec3 sxN; sxBead(sxP, sxN);\nvec3 transformed = sxP;')
-      sh.vertexShader = sh.vertexShader.replace('varying vec3 vSegColor;\nvarying float vLive;\n', '')
+      sh.vertexShader = sh.vertexShader.replace('varying vec3 vSegColor;\nvarying float vLive;\nvarying vec4 vFinish;\nvarying float vSurf;\n', '')
     }
     this.depthMaterial.customProgramCacheKey = () => 'sx-bead-depth'
     this.root.add(this.head.root, this.purge.root, this.gantry.root)
@@ -745,6 +909,18 @@ export class Toolpaths {
       if (m) m.visible = this.markerShown[kind]
     }
     this.markerRange.value = [this.lo, this.hi]
+  }
+
+  /** The finish each tool's filament prints with (tool 1 first): matte, satin, glossy or silk. A tool without one is satin. */
+  setToolFinishes(finishes: readonly ToolpathFinish[]): void {
+    const old = this.uniforms.uFinishLut.value
+    this.uniforms.uFinishLut.value = finishTexture(finishes)
+    old.dispose()
+  }
+
+  /** How dark the groove between stacked layers is, 0 (none) to 1. */
+  setCrease(amount: number): void {
+    this.uniforms.uCrease.value = Math.max(0, Math.min(1, amount))
   }
 
   setToolColors(colors: readonly string[]): void {

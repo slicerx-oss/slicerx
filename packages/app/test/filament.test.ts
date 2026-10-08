@@ -3,7 +3,7 @@
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import type { MeshHandle } from '@slicerx/contracts'
 import { deltaE2000, extruderCount, flushInputs, flushMatrix, flushValues, flushVolume, FLUSH_MAX, measuredFlush, minFlushFor, parseHex, printerMinFlush, loadFlushData, variantIndex } from '../src/filament/flush'
-import { flushPlan, materialType, resetSlots, resolveSlots, setFlushManual, setSlot, slotConfig, slotOverridesFor, swapPlateSlots } from '../src/filament/slots'
+import { flushPlan, materialType, resetSlots, slotFinish, resolveSlots, setFlushManual, setSlot, slotConfig, slotOverridesFor, swapPlateSlots } from '../src/filament/slots'
 import { appStore, get, set, type PlateEntry } from '../src/state/store'
 
 beforeAll(() => loadFlushData())
@@ -190,6 +190,16 @@ describe('model colors per slot', () => {
     expect(c['filament_colour']).toEqual(FILE)
     const plan = flushPlan(get(), 4)
     expect(c['flush_volumes_matrix']).toEqual(plan.nozzles.flatMap((z) => flushValues(FILE, get().flush, z.mins, z.dataset)))
+  })
+})
+
+describe('slot finishes', () => {
+  it('shine as the filament named: silk, matte, PETG glossy, else satin', () => {
+    expect(slotFinish({ type: 'PLA', brand: 'Bambu Lab', family: 'Bambu PLA Silk+' })).toBe('silk')
+    expect(slotFinish({ type: 'PLA', brand: 'Bambu Lab', family: 'Bambu PLA Matte' })).toBe('matte')
+    expect(slotFinish({ type: 'PETG', brand: '' })).toBe('glossy')
+    expect(slotFinish({ type: 'PLA', brand: 'Generic' })).toBe('satin')
+    expect(slotFinish({ type: 'PLA', brand: 'Mattes and Co' })).toBe('satin')
   })
 })
 
