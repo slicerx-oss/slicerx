@@ -5,7 +5,7 @@ import type { ApprovalToken, PermissionClass } from './pilot'
 import manifests from '../../connect/manifests.json' with { type: 'json' }
 
 export type PluginKind = 'printer' | 'inventory' | 'home'
-export type Capability = 'status' | 'events' | 'upload' | 'start' | 'pause' | 'resume' | 'cancel' | 'camera' | 'filament_slots' | 'gcode_console' | 'project_file' | 'slot_write'
+export type Capability = 'status' | 'events' | 'upload' | 'start' | 'pause' | 'resume' | 'cancel' | 'camera' | 'filament_slots' | 'gcode_console' | 'project_file' | 'slot_write' | 'rewrites_upload'
 
 const pluginCapabilities = new Map<string, ReadonlySet<string>>(
   manifests.map((m) => [m.id, new Set<string>(m.capabilities)]),
@@ -264,10 +264,10 @@ export interface PrinterHost {
   status(printerId: string): Promise<PrinterStatus>
   subscribe(printerId: string, onEvent: (e: PrinterEvent) => void): () => void
   /**
-   * The bytes `upload` will send, with `sha256` of those bytes. Connectors that
-   * leave the file alone return it unchanged. BamBuddy stamps a non-Bambu profile
-   * here, so the approval covers the file that is posted. Absent on a host that
-   * has no prepare step; the file is then uploaded as given.
+   * The bytes `upload` will send, with `sha256` of those bytes. Only call it for a plugin
+   * that declares `rewrites_upload` (BamBuddy stamps a non-Bambu profile here), so the
+   * approval covers the file that is posted; every other file is sent as given. Absent on
+   * a host that has no prepare step.
    */
   prepareUpload?(printerId: string, file: JobFile): Promise<JobFile>
   upload(printerId: string, file: JobFile, token: ApprovalToken): Promise<RemoteFile>
