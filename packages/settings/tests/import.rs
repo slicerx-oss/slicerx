@@ -140,7 +140,10 @@ fn bambu_auto_sentinels() {
         &|_| None,
     )
     .unwrap();
-    assert_eq!(get_json(&r.config, "raft_first_layer_expansion"), json!(2.0));
+    assert_eq!(
+        get_json(&r.config, "raft_first_layer_expansion").as_f64(),
+        Some(2.0)
+    );
     assert_eq!(get_json(&r.config, "tree_support_wall_count"), json!(0));
     assert_eq!(get_json(&r.config, "support_interface_bottom_layers"), json!(-1));
     assert!(r.invalid_keys.is_empty());
