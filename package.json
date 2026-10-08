@@ -13,7 +13,7 @@
     "build": "pnpm -r build",
     "lint": "pnpm -r lint && node scripts/check-dashes.mjs",
     "lint:dashes": "node scripts/check-dashes.mjs",
-    "test:scripts": "node --test scripts/check-dashes.test.mjs scripts/edition-build.test.mjs scripts/ci/playwright-results.test.mjs",
+    "test:scripts": "node --test scripts/check-dashes.test.mjs scripts/edition-build.test.mjs scripts/ci/playwright-results.test.mjs scripts/gate/gate.test.mjs",
     "edition:build": "node scripts/edition-build.mjs",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test",
