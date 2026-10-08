@@ -86,6 +86,8 @@ const scoredRow = z.object({ listing_id: z.string(), score: z.coerce.number() })
 const newCreatorRow = z.object({ creator_id: z.string(), first_published_at: z.string() })
 const savedRow = z.object({ listing_id: z.string(), saved_at: z.string() })
 const IMAGE_TYPES: Record<string, string> = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp' }
+/** Banners may also be animated GIFs (0018_creator_gif_banners.sql), stored byte for byte. */
+const BANNER_TYPES: Record<string, string> = { ...IMAGE_TYPES, 'image/gif': 'gif' }
 const MAX_IMAGE_BYTES = 5_242_880
 
 type DbError = { code?: string; message: string; hint?: string | null } | null
@@ -106,10 +108,12 @@ const grantRow = z.object({ path: z.string(), version_id: z.string(), version: z
 /** `conn` is needed only for signed-out downloads, which read storage directly. */
 export function supabaseStore(sb: Db, conn?: Pick<SupabaseOptions, 'url' | 'anonKey'>): Omit<StoreClient, keyof AuthClient> {
   // Banners, logos and covers come from this project's creator-media bucket (0013_creator_pages.sql checks the folder).
+  // Only a banner may be a GIF (0018_creator_gif_banners.sql).
   const mediaBase = conn ? `${conn.url.replace(/\/$/, '')}/storage/v1/object/public/creator-media/` : undefined
   const mediaError = (url: string | null | undefined, what: string): StoreResult<never> | null => {
     if (url == null) return null
     if (!IMAGE_URL.test(url) || (mediaBase !== undefined && !url.startsWith(mediaBase))) return fail('invalid', `Upload the ${what} to your creator page first`)
+    if (what !== 'banner' && /\.gif$/i.test(url)) return fail('invalid', `The ${what} must be a still image`)
     return null
   }
 
@@ -789,8 +793,8 @@ export function supabaseStore(sb: Db, conn?: Pick<SupabaseOptions, 'url' | 'anon
     async uploadCreatorImage(input) {
       const mine = await needCreator()
       if (isFailure(mine)) return mine
-      const ext = IMAGE_TYPES[input.contentType]
-      if (!ext) return fail('invalid', 'Use a PNG, JPEG or WebP image')
+      const ext = (input.kind === 'banner' ? BANNER_TYPES : IMAGE_TYPES)[input.contentType]
+      if (!ext) return fail('invalid', input.kind === 'banner' ? 'Use a PNG, JPEG, WebP or GIF image' : 'Use a PNG, JPEG or WebP image')
       if (input.bytes.byteLength > MAX_IMAGE_BYTES) return fail('invalid', 'Images can be at most 5 MB')
       const rand = crypto.getRandomValues(new Uint8Array(6)).reduce((s, b) => s + b.toString(16).padStart(2, '0'), '')
       const path = `${mine.me}/${input.kind}-${rand}.${ext}`
