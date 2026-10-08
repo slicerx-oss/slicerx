@@ -1,9 +1,10 @@
 'use client'
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-import { useEffect, useLayoutEffect, useRef, useState, type ButtonHTMLAttributes, type CSSProperties, type HTMLAttributes, type KeyboardEvent, type ReactNode } from 'react'
+import { useEffect, useRef, type ButtonHTMLAttributes, type HTMLAttributes, type KeyboardEvent, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { useDismiss } from '../hooks/use-dismiss'
+import { usePlacement } from '../hooks/use-placement'
 import { Icon } from '../icons/icon'
 import type { IconName } from '../icons/icon-paths'
 
@@ -19,16 +20,6 @@ export function MenuAnchor({ className, children, ...rest }: MenuAnchorProps) {
     </div>
   )
 }
-
-/** Space between the trigger and the menu, px, as in styles.css. */
-const GAP = 4
-/** A menu short of room still shows a few items and scrolls. */
-const MIN_HEIGHT = 120
-/** How close a lifted-out menu may come to the window's edge, px. */
-const EDGE = 8
-
-/** Where the menu goes: under or over its trigger, and, when a scrolling panel would cut it off, lifted out of the panel. */
-type Place = { up: boolean; max?: number; fixed?: { left: number; top?: number; bottom?: number } }
 
 export interface MenuProps {
   open: boolean
@@ -49,57 +40,8 @@ export interface MenuProps {
  */
 export function Menu({ open, onClose, label, align = 'start', static: isStatic, className, children }: MenuProps) {
   const ref = useRef<HTMLDivElement>(null)
-  const [place, setPlace] = useState<Place>({ up: false })
   useDismiss(ref, open && !isStatic, onClose)
-  // A menu opened near the bottom of a scrolling panel or the window opens upward when there is more room
-  // there, and scrolls itself when neither side fits it, so no item is cut off. One a panel would cut off at the side
-  // (the Export menu at the right end of the side pane) is lifted out of the panel and kept inside the window.
-  useLayoutEffect(() => {
-    const el = ref.current
-    const anchor = el?.parentElement
-    if (!open || isStatic || !el || !anchor || place.fixed) return
-    const a = anchor.getBoundingClientRect()
-    let top = 0
-    let bottom = window.innerHeight
-    let left = 0
-    let right = window.innerWidth
-    for (let p = anchor.parentElement; p; p = p.parentElement) {
-      const s = getComputedStyle(p)
-      if (s.overflowY === 'visible' && s.overflowX === 'visible') continue
-      const r = p.getBoundingClientRect()
-      top = Math.max(top, r.top)
-      bottom = Math.min(bottom, r.bottom)
-      left = Math.max(left, r.left)
-      right = Math.min(right, r.right)
-    }
-    const width = el.offsetWidth
-    const height = el.scrollHeight
-    const start = align === 'start' ? a.left : a.right - width
-    const cutAtSide = start < left - 1 || start + width > right + 1
-    if (cutAtSide) {
-      // lifted out: placed against the window, under the trigger or over it, wherever there is more room
-      const below = window.innerHeight - a.bottom - GAP - EDGE
-      const above = a.top - GAP - EDGE
-      const up = height > below && above > below
-      const room = Math.floor(up ? above : below)
-      const x = Math.min(Math.max(EDGE, start), window.innerWidth - width - EDGE)
-      setPlace({
-        up,
-        ...(height > room ? { max: Math.max(MIN_HEIGHT, room) } : {}),
-        fixed: up ? { left: x, bottom: window.innerHeight - a.top + GAP } : { left: x, top: a.bottom + GAP },
-      })
-      return
-    }
-    const below = bottom - a.bottom - GAP
-    const above = a.top - top - GAP
-    const up = height > below && above > below
-    const room = Math.floor(up ? above : below)
-    setPlace(height > room ? { up, max: Math.max(MIN_HEIGHT, room) } : { up })
-  }, [open, isStatic, align, place.fixed])
-  // closed, it measures again next time
-  useEffect(() => {
-    if (!open) setPlace({ up: false })
-  }, [open])
+  const { place, style } = usePlacement(ref, open, align, isStatic)
   // lifted out, the menu is a new element: focus moves to it again
   const lifted = Boolean(place.fixed)
   useEffect(() => {
@@ -118,12 +60,6 @@ export function Menu({ open, onClose, label, align = 'start', static: isStatic, 
       e.key === 'Home' ? 0 : e.key === 'End' ? items.length - 1 : e.key === 'ArrowDown' ? (i + 1) % items.length : (i - 1 + items.length) % items.length
     items[next]?.focus()
   }
-  const style: CSSProperties | undefined = isStatic
-    ? undefined
-    : {
-        ...(place.max !== undefined ? { maxHeight: place.max, overflowY: 'auto' } : {}),
-        ...(place.fixed ? { position: 'fixed', left: place.fixed.left, right: 'auto', top: place.fixed.top ?? 'auto', bottom: place.fixed.bottom ?? 'auto' } : {}),
-      }
   const menu = (
     <div
       ref={ref}
@@ -134,7 +70,7 @@ export function Menu({ open, onClose, label, align = 'start', static: isStatic, 
       data-static={isStatic ? true : undefined}
       data-side={!isStatic && place.up ? 'top' : undefined}
       data-lifted={place.fixed ? true : undefined}
-      style={style && Object.keys(style).length ? style : undefined}
+      style={style}
       onKeyDown={onKeyDown}
     >
       {children}
