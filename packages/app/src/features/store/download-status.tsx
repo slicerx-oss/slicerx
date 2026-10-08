@@ -66,7 +66,7 @@ export function DownloadStatus({ state, onCancel, onRetry, onDismiss, onSignIn }
   if (!state) return null
   if (state.kind === 'error') {
     return (
-      <div className="lib-dl" data-state="error" role="alert" ref={box}>
+      <div className="lib-dl" data-state="error" role="alert" ref={box} data-testid="vault-download-status">
         <div className="lib-dl-top">
           <Icon name="alert" size={16} />
           <span className="lib-dl-msg">
@@ -79,7 +79,7 @@ export function DownloadStatus({ state, onCancel, onRetry, onDismiss, onSignIn }
               Sign in
             </Button>
           ) : null}
-          <Button size="sm" onClick={onRetry}>
+          <Button size="sm" data-testid="vault-download-retry" onClick={onRetry}>
             Try again
           </Button>
           <Button size="sm" variant="ghost" onClick={onDismiss}>
@@ -93,7 +93,7 @@ export function DownloadStatus({ state, onCancel, onRetry, onDismiss, onSignIn }
   const pct = total ? Math.min(100, Math.round((got / total) * 100)) : null
   const size = total ? `${formatBytes(got)} of ${formatBytes(total)}` : got ? formatBytes(got) : 'Starting'
   return (
-    <div className="lib-dl" role="status" ref={box}>
+    <div className="lib-dl" data-state="downloading" role="status" ref={box} data-testid="vault-download-status">
       <div className="lib-dl-top">
         <span className="lib-dl-msg">Downloading {state.title}</span>
         <span className="lib-dl-num">

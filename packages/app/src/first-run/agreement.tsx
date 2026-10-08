@@ -137,7 +137,7 @@ export function Agreement() {
               </div>
 
               <label className="fr-check fra-check">
-                <input type="checkbox" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} />
+                <input type="checkbox" data-testid="agreement-check" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} />
                 I understand that this is a pre-alpha build and I'll watch my printer while it runs.
               </label>
               <p className="fra-foot sx-mono">Agreement version {AGREEMENT_VERSION}. Accepting saves the version and date on this computer.</p>
@@ -147,7 +147,7 @@ export function Agreement() {
             <div className="fr-foot-in">
               <span className="fr-back" />
               <span />
-              <Button variant="primary" className="fr-primary fr-next-btn" iconEnd="arrow-right" disabled={!agreed} onClick={() => acceptAgreement()}>
+              <Button variant="primary" className="fr-primary fr-next-btn" iconEnd="arrow-right" data-testid="agreement-accept" disabled={!agreed} onClick={() => acceptAgreement()}>
                 Accept and continue
               </Button>
             </div>

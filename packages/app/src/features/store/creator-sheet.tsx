@@ -332,7 +332,7 @@ export function CreatorSheet({ handle }: { handle: string }) {
 }
 
 /** The right-side sheet frame: docks over the Vault, closes on Escape or the scrim, and takes focus while open. */
-export function Sheet({ label, onClose, children, className }: { label: string; onClose: () => void; children: ReactNode; className?: string }) {
+export function Sheet({ label, onClose, children, className, testId }: { label: string; onClose: () => void; children: ReactNode; className?: string; testId?: string }) {
   const ref = useRef<HTMLElement>(null)
   useEffect(() => {
     const before = document.activeElement as HTMLElement | null
@@ -349,7 +349,7 @@ export function Sheet({ label, onClose, children, className }: { label: string; 
   return (
     <div className="lib-sheet-layer">
       <div className="lib-scrim" aria-hidden="true" onClick={onClose} />
-      <aside ref={ref} className={className ? `lib-sheet ${className}` : 'lib-sheet'} role="dialog" aria-modal="false" aria-label={label} tabIndex={-1}>
+      <aside ref={ref} className={className ? `lib-sheet ${className}` : 'lib-sheet'} role="dialog" aria-modal="false" aria-label={label} data-testid={testId} tabIndex={-1}>
         {children}
       </aside>
     </div>

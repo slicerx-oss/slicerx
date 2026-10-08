@@ -45,11 +45,11 @@ export function ToastProvider({ children, max = 3 }: { children?: ReactNode; max
       {children}
       <div className="sx-toasts" role="status" aria-live="polite">
         {toasts.map((t) => (
-          <div key={t.id} className="sx-toast" data-tone={t.tone === 'plain' ? undefined : t.tone}>
+          <div key={t.id} className="sx-toast" data-testid="toast" data-tone={t.tone === 'plain' ? undefined : t.tone}>
             {t.tone === 'plain' ? null : <Icon name={TONE_ICON[t.tone]} />}
             <span>{t.message}</span>
             {t.action ? (
-              <button type="button" className="sx-toast-action" onClick={() => { t.action?.run(); setToasts((list) => list.filter((x) => x.id !== t.id)) }}>
+              <button type="button" className="sx-toast-action" data-testid="toast-action" onClick={() => { t.action?.run(); setToasts((list) => list.filter((x) => x.id !== t.id)) }}>
                 {t.action.label}
               </button>
             ) : null}

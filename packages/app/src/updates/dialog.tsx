@@ -149,11 +149,11 @@ export function UpdateDialogView({ phase, open, app, tag, version, mode, held, s
   const required = 'update' in phase && phase.update?.required === true && phase.kind !== 'error'
   const later = (label = 'Later') =>
     required ? (
-      <Button variant="ghost" onClick={onQuit}>
+      <Button variant="ghost" data-testid="update-quit" onClick={onQuit}>
         Quit
       </Button>
     ) : (
-      <Button variant="ghost" size="sm" onClick={onLater}>
+      <Button variant="ghost" size="sm" data-testid="update-later" onClick={onLater}>
         {label}
       </Button>
     )
@@ -188,11 +188,11 @@ export function UpdateDialogView({ phase, open, app, tag, version, mode, held, s
         <>
           {later()}
           {mode === 'install' && onUpdateNow ? (
-            <Button variant="primary" icon="download" onClick={onUpdateNow}>
+            <Button variant="primary" icon="download" data-testid="update-now" onClick={onUpdateNow}>
               Update now
             </Button>
           ) : url ? (
-            <Button variant="primary" icon="download" onClick={() => onDownload(url)}>
+            <Button variant="primary" icon="download" data-testid="update-download" onClick={() => onDownload(url)}>
               Download
             </Button>
           ) : null}
@@ -234,7 +234,7 @@ export function UpdateDialogView({ phase, open, app, tag, version, mode, held, s
       footer = (
         <>
           {later()}
-          <Button variant="primary" disabled={held} onClick={onRestart} {...(held ? { tip: 'Waits until the print is on the printer' } : {})}>
+          <Button variant="primary" data-testid="update-restart" disabled={held} onClick={onRestart} {...(held ? { tip: 'Waits until the print is on the printer' } : {})}>
             Restart to update
           </Button>
         </>
@@ -279,7 +279,7 @@ export function UpdateDialogView({ phase, open, app, tag, version, mode, held, s
       footer = (
         <>
           {later('Close')}
-          <Button variant="primary" onClick={onRetry}>
+          <Button variant="primary" data-testid="update-retry" onClick={onRetry}>
             Try again
           </Button>
         </>
@@ -297,8 +297,8 @@ export function UpdateDialogView({ phase, open, app, tag, version, mode, held, s
     </span>
   )
   return (
-    <Dialog open={open} onClose={phase.kind === 'installing' || required ? () => undefined : onLater} title={headline} footer={footer} className="upd" required={phase.kind === 'installing' || required}>
-      <div className="upd-body" data-step={phase.kind} data-still={still ? true : undefined}>
+    <Dialog open={open} onClose={phase.kind === 'installing' || required ? () => undefined : onLater} title={headline} footer={footer} className="upd" testId="update-sheet" required={phase.kind === 'installing' || required}>
+      <div className="upd-body" data-testid="update-body" data-step={phase.kind} data-still={still ? true : undefined}>
         {body}
       </div>
     </Dialog>

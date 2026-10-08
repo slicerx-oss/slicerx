@@ -19,6 +19,8 @@ export interface DialogProps {
    */
   required?: boolean
   className?: string
+  /** The dialog's data-testid (docs/test-ids.md). */
+  testId?: string
   children?: ReactNode
 }
 
@@ -42,7 +44,7 @@ if (typeof window !== 'undefined') {
  * A modal dialog on the native dialog element, so focus trapping, Escape, and the backdrop come
  * from the browser. The parent owns the open state.
  */
-export function Dialog({ open, onClose, title, footer, splitFooter, size = 'md', required, className, children }: DialogProps) {
+export function Dialog({ open, onClose, title, footer, splitFooter, size = 'md', required, className, testId, children }: DialogProps) {
   const ref = useRef<HTMLDialogElement>(null)
   const titleId = useId()
   // A close the parent asked for raises the native close event a moment later. It must not count as the person closing a dialog that has since opened again.
@@ -67,6 +69,7 @@ export function Dialog({ open, onClose, title, footer, splitFooter, size = 'md',
       ref={ref}
       className={className ? `sx-dialog ${className}` : 'sx-dialog'}
       data-size={size === 'md' ? undefined : size}
+      data-testid={testId}
       aria-labelledby={titleId}
       onCancel={(e) => {
         e.preventDefault()
@@ -88,7 +91,7 @@ export function Dialog({ open, onClose, title, footer, splitFooter, size = 'md',
     >
       <div className="sx-dialog-h">
         <h2 id={titleId}>{title}</h2>
-        {required ? null : <Button variant="ghost" size="sm" icon="plus" aria-label="Close" className="sx-dialog-close" onClick={onClose} />}
+        {required ? null : <Button variant="ghost" size="sm" icon="plus" aria-label="Close" className="sx-dialog-close" data-testid="dialog-close" onClick={onClose} />}
       </div>
       <div className="sx-dialog-body">{children}</div>
       {footer ? (

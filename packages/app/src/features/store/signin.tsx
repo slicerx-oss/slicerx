@@ -108,30 +108,31 @@ export function SignInForm({ compact }: { compact?: boolean }) {
   }
 
   const failure = linkFailed ? (
-    <div className="si-failed" role="alert">
+    <div className="si-failed" role="alert" data-testid="signin-failed">
       <b>Sign-in did not finish.</b> {linkFailed}
     </div>
   ) : null
 
   if (sent) {
     return (
-      <div className="si-sent" role="status">
+      <div className="si-sent" role="status" data-testid="signin-sent">
         {failure}
         <p>
           We sent a sign-in link to <b>{sent}</b>. Open it on this {host.kind === 'desktop' ? 'computer' : 'device'} to finish.
         </p>
         {error ? (
-          <span className="si-err" role="alert">
+          <span className="si-err" role="alert" data-testid="signin-error">
             {error}
           </span>
         ) : null}
         <div className="si-sent-actions">
-          <Button size="sm" variant={linkFailed ? 'primary' : 'default'} disabled={busy || wait > 0} onClick={() => void send()}>
+          <Button size="sm" variant={linkFailed ? 'primary' : 'default'} data-testid="signin-send-again" disabled={busy || wait > 0} onClick={() => void send()}>
             {busy ? 'Sending' : wait > 0 ? `${linkFailed ? 'Send a new link' : 'Send again'} in ${wait} s` : linkFailed ? 'Send a new link' : 'Send again'}
           </Button>
           <Button
             size="sm"
             variant="ghost"
+            data-testid="signin-other-address"
             onClick={() => {
               setSent(null)
               setError(null)
@@ -146,6 +147,7 @@ export function SignInForm({ compact }: { compact?: boolean }) {
   return (
     <form
       className="si-form"
+      data-testid="signin-form"
       data-compact={compact ? true : undefined}
       noValidate
       onSubmit={(e) => {
@@ -160,13 +162,13 @@ export function SignInForm({ compact }: { compact?: boolean }) {
             Email
           </label>
           <div className="si-row">
-            <input id="si-email" className="si-in" type="email" autoComplete="email" placeholder="you@example.com" value={email} onChange={(e) => setEmail(e.currentTarget.value)} aria-invalid={Boolean(error)} />
-            <Button type="submit" variant="primary" disabled={busy}>
+            <input id="si-email" className="si-in" data-testid="signin-email" type="email" autoComplete="email" placeholder="you@example.com" value={email} onChange={(e) => setEmail(e.currentTarget.value)} aria-invalid={Boolean(error)} />
+            <Button type="submit" variant="primary" data-testid="signin-submit" disabled={busy}>
               {busy ? 'Sending' : 'Email me a link'}
             </Button>
           </div>
           {error ? (
-            <span className="si-err" role="alert">
+            <span className="si-err" role="alert" data-testid="signin-error">
               {error}
             </span>
           ) : null}
@@ -177,6 +179,7 @@ export function SignInForm({ compact }: { compact?: boolean }) {
           {providers.map((p) => (
             <Button
               key={p}
+              data-testid={`signin-provider-${p}`}
               onClick={() =>
                 void store.signInWithOAuth(p).then((r) => {
                   if (!r.ok) toast(r.message, 'error')
@@ -196,7 +199,7 @@ export function SignInForm({ compact }: { compact?: boolean }) {
 /** Sign in, in a dialog of its own. */
 export function SignInDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   return (
-    <Dialog open={open} onClose={onClose} title="Sign in or create an account">
+    <Dialog open={open} onClose={onClose} title="Sign in or create an account" testId="signin-dialog">
       <SignInForm />
     </Dialog>
   )
@@ -205,7 +208,7 @@ export function SignInDialog({ open, onClose }: { open: boolean; onClose: () => 
 /** Shown where an action needs a session. */
 export function SignInNotice({ children }: { children: ReactNode }) {
   return (
-    <div className="signin-note" role="status">
+    <div className="signin-note" role="status" data-testid="signin-notice">
       <p className="sx-small">{children}</p>
       <SignInForm compact />
     </div>

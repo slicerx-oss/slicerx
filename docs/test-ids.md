@@ -1,0 +1,166 @@
+# Test ids
+
+`data-testid` values are part of the UI contract. The agent bridge ([agent-bridge.md](agent-bridge.md)) clicks, fills and
+reads controls by them, and the release gate's scenarios name them, so a rename breaks a test run the same way a
+renamed API breaks a client. The rules:
+
+- Keep a test id when the control moves or its text changes. Rename one only together with every scenario that uses it.
+- New screens add test ids to the controls a person uses to get through them, and list them here in the same change.
+- Names are lower case words joined by hyphens: the screen or area first, then the control (`vault-detail-open`).
+  A row repeated per item keeps one id and carries the item in another attribute (`data-listing`, `data-object-id`).
+- A control that prints, sends to a printer, deletes or archives something gets an id starting with `danger-`, or none.
+  The bridge refuses `danger-` controls, and `packages/app/test/test-ids.test.ts` fails on such a control named any
+  other way. The bridge also refuses everything inside the approval dialog, the Print sheet and any element marked
+  `data-agent-refuse`.
+- That test also fails when an id in the source is missing from this page.
+
+Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`, `tab-feed` and so on.
+
+## App frame
+
+| Test id | Control |
+| --- | --- |
+| `tab-<workspace>` | A workspace tab in the top bar: `tab-prepare`, `tab-preview`, `tab-printers`, `tab-feed` (the Vault) |
+| `toast` | A toast on screen; `data-tone` is ok, info, warn or error |
+| `toast-action` | The button on a toast (Undo and the like) |
+| `dialog-close` | The close button of a dialog |
+| `frame-close` | The close button of a full window frame (creator page editor, upload) |
+| `unsaved-dialog` | Save changes first? |
+| `unsaved-save`, `unsaved-discard`, `unsaved-cancel` | Its Save project, Don't save and Cancel buttons |
+| `agreement` | The pre-alpha agreement screen |
+| `agreement-check`, `agreement-accept` | Its checkbox and Accept and continue |
+
+## Setup (first run and Printers > Add)
+
+| Test id | Control |
+| --- | --- |
+| `setup` | The setup window; `data-step` is welcome, look, printer, mimir and so on |
+| `setup-skip-all` | Skip, use defaults |
+| `setup-back`, `setup-skip`, `setup-secondary`, `setup-next` | The footer: Back, Skip, the second action, and the main one (Next, Save printer, Open the plate) |
+| `setup-leave-dialog`, `setup-leave`, `setup-stay` | Leave setup? and its two answers |
+| `setup-printer-search` | Search brand or model |
+| `setup-printer-hit` | A search result; `data-model` is the model id |
+| `setup-brand-<brand>` | A brand tile |
+| `setup-model-<model>` | A model card; `setup-model-custom` is Not listed, set it up by hand |
+| `setup-connection-<method>` | A connection choice; `setup-connection-export` is No connection (export files) |
+| `setup-printer-step-<step>` | A step in the printer form's step list |
+| `setup-printer-error` | The printer was not saved |
+
+## Prepare: the objects list and Export
+
+| Test id | Control |
+| --- | --- |
+| `objects-list` | The Objects list |
+| `objects-search` | Search objects and parts (two or more objects) |
+| `object-row` | One object; `data-object-id` is its id |
+| `object-select` | The row's button: selects it and opens its details |
+| `object-name` | The object's name in the row |
+| `object-warning` | A warning on the row (off the bed, a missing filament); `data-kind` names it |
+| `object-lock`, `object-printable` | Lock, and leave out of the print |
+| `object-rename` | The name field in the details |
+| `object-part-slot` | The filament of a part, one per part |
+| `objects-add-model` | Add model (opens the system's file dialog) |
+| `objects-from-vault` | From the Vault |
+| `add-shape` | Add shape |
+| `object-menu` | Object (split, merge) |
+| `export-menu` | Export |
+| `export-save-project`, `export-locked-project`, `export-gcode-3mf`, `export-all-plates` | Its items (each opens the system's save dialog) |
+
+## Vault
+
+| Test id | Control |
+| --- | --- |
+| `vault-feed`, `vault-saved` | Feed and Saved |
+| `vault-sign-in` | Sign in (signed out) |
+| `vault-upload` | Upload |
+| `account-menu` | The account button (signed in) |
+| `account-uploads`, `account-creator-page`, `account-review`, `account-settings`, `account-sign-out` | Its items |
+| `vault-featured` | The featured design; `data-listing` is its listing id |
+| `vault-featured-open` | Its Open in SlicerX |
+| `vault-card` | A design card in a row or the grid; `data-listing` is its listing id |
+| `vault-card-details`, `vault-card-save` | The card's picture (opens its sheet) and its Save |
+| `vault-listing-sheet`, `vault-listing-close` | A design's sheet and its close button |
+| `vault-detail` | The design in the sheet; `data-listing` is its listing id |
+| `vault-detail-open`, `vault-detail-download` | Open in SlicerX and Download .sx3mf |
+| `vault-download-status` | Download progress or failure; `data-state` is downloading or error |
+| `vault-download-retry` | Try again after a failed download |
+
+## Sign-in
+
+| Test id | Control |
+| --- | --- |
+| `signin-dialog` | Sign in or create an account |
+| `signin-notice` | The sign-in form shown where an action needs a session |
+| `signin-form` | The form |
+| `signin-email`, `signin-submit` | The address and Email me a link |
+| `signin-provider-<provider>` | Continue with a sign-in provider |
+| `signin-sent` | We sent a sign-in link |
+| `signin-send-again` | Send again (Send a new link after a failed link), with its countdown while disabled |
+| `signin-other-address` | Use another address |
+| `signin-error` | The error under the form or the sent message |
+| `signin-failed` | Sign-in did not finish |
+
+## Upload and your uploads
+
+| Test id | Control |
+| --- | --- |
+| `upload-dialog` | Upload a design |
+| `upload-form` | Its form |
+| `upload-source-project`, `upload-source-file` | This project or A file |
+| `upload-project-file` | The project's packed file and size |
+| `upload-file` | The file picker (a file input; set by a person) |
+| `upload-title`, `upload-description`, `upload-tags`, `upload-license` | The fields |
+| `upload-tag-<tag>` | A suggested tag |
+| `upload-cover-file`, `upload-cover-render` | Use a picture, and Use the render |
+| `upload-include-profile` | Show how it printed on the listing |
+| `upload-state` | The status line (Ready to send, Uploading) |
+| `upload-cancel`, `upload-submit` | Cancel and Submit for review |
+| `upload-your-uploads` | Your uploads |
+| `uploads-list` | Your uploads |
+| `uploads-new` | Upload a design |
+| `uploads-row` | One upload; `data-listing` is its listing id |
+| `uploads-stage` | Its stage; `data-stage` is uploading, scanning, review, live and so on |
+| `uploads-view` | View, once it is live |
+
+## Creator page editor
+
+| Test id | Control |
+| --- | --- |
+| `creator-editor` | The editor |
+| `creator-form` | Its form |
+| `creator-banner-file`, `creator-logo-file` | Upload or change the banner and the logo (file inputs) |
+| `creator-banner-remove`, `creator-logo-remove` | Remove them |
+| `creator-name`, `creator-handle`, `creator-location`, `creator-bio` | The fields |
+| `creator-link-site`, `creator-link-label`, `creator-link-url` | A link's site, label and address, one each per link |
+| `creator-add-link` | Add link |
+| `creator-state` | The status line (Unsaved changes, All changes saved) |
+| `creator-save`, `creator-discard`, `creator-cancel` | Save, Discard (or Close), and Cancel when it opened from Upload |
+| `creator-view-sheet` | View my sheet |
+
+## Updates
+
+| Test id | Control |
+| --- | --- |
+| `update-sheet` | The update sheet |
+| `update-body` | Its body; `data-step` is checking, current, available, downloading, ready, installing or error |
+| `update-now`, `update-download` | Update now, or Download for package installs |
+| `update-restart` | Restart to update |
+| `update-later` | Later (Close after an error) |
+| `update-quit` | Quit, when the update is required |
+| `update-retry` | Try again |
+
+## Other
+
+Ids that tests read for their text:
+
+| Test id | Control |
+| --- | --- |
+| `about-attribution`, `about-step-reader` | About: the engine attribution and the STEP reader line |
+| `bug-preview` | Report a bug: what the report sends |
+| `step-note`, `step-bind` | A CAD history step's note and binding |
+| `hole-size-words`, `thread-words` | The hole and thread tools' size in words |
+| `value-<name>` | A named value in the values panel |
+| `brim-ear-count` | The number of painted brim ears |
+| `cut-conn-tol-source` | Where the cut connector tolerance comes from |
+| `pv-change`, `pv-purge` | Preview: the tool change and the purge at the playhead |
+| `ph-placeholder` | The phone view's placeholder |

@@ -24,7 +24,7 @@ export function Footer({ back, skip, primary, secondary }: { back?: FooterAction
     <footer className="fr-foot">
       <div className="fr-foot-in">
         {back ? (
-          <Button variant="ghost" icon="arrow-left" className="fr-back" onClick={back.onClick}>
+          <Button variant="ghost" icon="arrow-left" className="fr-back" data-testid="setup-back" onClick={back.onClick}>
             {back.label}
           </Button>
         ) : (
@@ -33,12 +33,12 @@ export function Footer({ back, skip, primary, secondary }: { back?: FooterAction
         {skip || second ? (
           <div className="fr-foot-links">
             {skip ? (
-              <button type="button" className="fr-textbtn fr-skip" onClick={skip.onClick}>
+              <button type="button" className="fr-textbtn fr-skip" data-testid="setup-skip" onClick={skip.onClick}>
                 {skip.label}
               </button>
             ) : null}
             {second ? (
-              <Button variant="ghost" className="fr-second" onClick={second.onClick}>
+              <Button variant="ghost" className="fr-second" data-testid="setup-secondary" onClick={second.onClick}>
                 {second.label}
               </Button>
             ) : null}
@@ -53,6 +53,7 @@ export function Footer({ back, skip, primary, secondary }: { back?: FooterAction
           <Button
             variant="primary"
             className="fr-primary fr-next-btn"
+            data-testid="setup-next"
             iconEnd={primary.icon ?? 'arrow-right'}
             onClick={primary.onClick}
             disabled={primary.disabled}

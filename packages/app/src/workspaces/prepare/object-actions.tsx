@@ -39,7 +39,7 @@ export function ObjectActions() {
     <div className="obj-actions">
       {cad ? (
       <MenuAnchor>
-        <Button size="sm" variant="ghost" icon="shapes" aria-haspopup="menu" aria-expanded={menu === 'add'} onClick={() => setMenu(menu === 'add' ? null : 'add')}>
+        <Button size="sm" variant="ghost" icon="shapes" data-testid="add-shape" aria-haspopup="menu" aria-expanded={menu === 'add'} onClick={() => setMenu(menu === 'add' ? null : 'add')}>
           Add shape
         </Button>
         <Menu open={menu === 'add'} onClose={() => setMenu(null)} label="Add shape">
@@ -60,29 +60,29 @@ export function ObjectActions() {
       </MenuAnchor>
       ) : null}
       <MenuAnchor>
-        <Button size="sm" variant="ghost" icon="export" aria-haspopup="menu" aria-expanded={menu === 'export'} onClick={() => setMenu(menu === 'export' ? null : 'export')}>
+        <Button size="sm" variant="ghost" icon="export" data-testid="export-menu" aria-haspopup="menu" aria-expanded={menu === 'export'} onClick={() => setMenu(menu === 'export' ? null : 'export')}>
           Export
         </Button>
         <Menu open={menu === 'export'} onClose={() => setMenu(null)} label="Export">
-          <MenuItem icon="sx3mf" aside="sx3mf" onClick={() => run(() => saveProject(host))}>
+          <MenuItem icon="sx3mf" aside="sx3mf" data-testid="export-save-project" onClick={() => run(() => saveProject(host))}>
             Save project
           </MenuItem>
-          <MenuItem icon="lock" aside="sxlock" onClick={() => run(() => import('../../export/locked').then((m) => m.exportLockedProject(host)))}>
+          <MenuItem icon="lock" aside="sxlock" data-testid="export-locked-project" onClick={() => run(() => import('../../export/locked').then((m) => m.exportLockedProject(host)))}>
             Locked {appName()} project (.sxlock)
           </MenuItem>
           <MenuSeparator />
           <MenuHeading>For the printer</MenuHeading>
-          <MenuItem icon="send-to-printer" aria-disabled={unsafe ? true : undefined} {...(unsafe ? tipAttrs({ title: 'Sliced plate as .gcode.3mf', reason: unsafe }) : {})} onClick={() => run(() => exportGcode3mf(host))}>
+          <MenuItem icon="send-to-printer" data-testid="export-gcode-3mf" aria-disabled={unsafe ? true : undefined} {...(unsafe ? tipAttrs({ title: 'Sliced plate as .gcode.3mf', reason: unsafe }) : {})} onClick={() => run(() => exportGcode3mf(host))}>
             Sliced plate as .gcode.3mf
           </MenuItem>
-          <MenuItem icon="plates" disabled={plates < 2} onClick={() => run(() => exportAllPlates(host))}>
+          <MenuItem icon="plates" data-testid="export-all-plates" disabled={plates < 2} onClick={() => run(() => exportAllPlates(host))}>
             Every plate, sliced
           </MenuItem>
         </Menu>
       </MenuAnchor>
       {more ? <ObjectTools /> : null}
       {more ? <MenuAnchor>
-        <Button size="sm" variant="ghost" icon="more" aria-haspopup="menu" aria-expanded={menu === 'object'} disabled={!hasSel} onClick={() => setMenu(menu === 'object' ? null : 'object')}>
+        <Button size="sm" variant="ghost" icon="more" data-testid="object-menu" aria-haspopup="menu" aria-expanded={menu === 'object'} disabled={!hasSel} onClick={() => setMenu(menu === 'object' ? null : 'object')}>
           Object
         </Button>
         <Menu open={menu === 'object'} onClose={() => setMenu(null)} label="Object actions" align="end">
