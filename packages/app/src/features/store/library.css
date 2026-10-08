@@ -32,8 +32,10 @@
 .lib-hero { display: grid; grid-template-columns: 1.25fr 1fr; border-radius: var(--r-lg); overflow: hidden; background: var(--ink-2); border: 1px solid var(--line-soft); }
 .lib-hero.skeleton { min-height: 300px; border: 0; }
 /* the featured cover keeps a 16:9 frame and stops growing on a tall wide window, so the rows stay in view */
-.lib-hero-art { display: grid; place-items: center; min-height: 280px; aspect-ratio: 16 / 9; max-height: min(52vh, 560px); width: 100%; padding: 24px; border: 0; background: radial-gradient(70% 70% at 50% 42%, var(--ink-3), var(--ink-1)); cursor: pointer; overflow: hidden; }
-.lib-hero-art img { width: 100%; height: 100%; object-fit: cover; }
+.lib-hero-art { position: relative; display: grid; place-items: center; min-height: 280px; aspect-ratio: 16 / 9; max-height: min(52vh, 560px); width: 100%; padding: 24px; border: 0; background: radial-gradient(70% 70% at 50% 42%, var(--ink-3), var(--ink-1)); cursor: pointer; overflow: hidden; }
+/* The cover is a whole drawing with its dimensions: it fits inside the padding, centered, never cropped. A percent
+   height has nothing to resolve against in an auto grid row, so the image is placed on the box itself. */
+.lib-hero-art img { position: absolute; inset: 24px; width: calc(100% - 48px); height: calc(100% - 48px); object-fit: contain; }
 .lib-hero-art > svg, .lib-hero-art > div { width: 62%; height: 80%; }
 .lib-hero-copy { padding: 26px 26px 24px; display: grid; align-content: start; gap: 14px; min-width: 0; }
 .lib-kicker { font: 11px var(--f-mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--pink); }
@@ -265,7 +267,9 @@ button.cs-thumb:hover .cs-art { outline: 1px solid var(--line); }
   .lib-bar { padding: 10px 16px; }
   .lib-body { overflow: visible; padding: 16px 16px 40px; gap: 22px; }
   .lib-hero { grid-template-columns: minmax(0, 1fr); }
-  .lib-hero-art { min-height: 200px; aspect-ratio: 16 / 10; }
+  /* Covers are drawn 4 by 3: on one column the hero takes their shape, so the drawing fills it. */
+  .lib-hero-art { min-height: 200px; aspect-ratio: 4 / 3; padding: 12px; }
+  .lib-hero-art img { inset: 12px; width: calc(100% - 24px); height: calc(100% - 24px); }
   .lib-hero-copy { padding: 18px 18px 20px; }
   .lib-hero-t { font-size: 22px; }
   .lib-grid-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px 12px; }
