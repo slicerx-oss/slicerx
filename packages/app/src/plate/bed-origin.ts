@@ -29,6 +29,16 @@ export function areaOrigin(area: unknown): Origin {
   return [Math.min(...pts.map((p) => p[0])), Math.min(...pts.map((p) => p[1]))]
 }
 
+/** The width and depth of a printable area, or null when it names no area. */
+export function areaSize(area: unknown): { widthMm: number; depthMm: number } | null {
+  const items = typeof area === 'string' ? area.split(',') : Array.isArray(area) ? (area as unknown[]) : []
+  const pts = items.map(point).filter((p): p is [number, number] => p !== null)
+  if (pts.length < 3) return null
+  const widthMm = Math.max(...pts.map((p) => p[0])) - Math.min(...pts.map((p) => p[0]))
+  const depthMm = Math.max(...pts.map((p) => p[1])) - Math.min(...pts.map((p) => p[1]))
+  return widthMm > 0 && depthMm > 0 ? { widthMm, depthMm } : null
+}
+
 export function isZero(o: Origin): boolean {
   return o[0] === 0 && o[1] === 0
 }
