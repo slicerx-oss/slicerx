@@ -25,8 +25,8 @@ export function currentEdition(): EditionConfig {
   return current
 }
 
-/** The modeling tools ship in this edition (its geometry engine is built without them when they do not). */
-export const MODELING_COMMANDS = new Set(['object-text', 'object-shape', 'object-sketch', 'object-push', 'object-fillet', 'object-holefit', 'object-thread', 'object-shell', 'project-values', 'dimensions-show'])
+/** Commands that need the modeling tools and are not a shelf tool; the tools' own commands take the flag from shelf-tools.ts. */
+export const MODELING_COMMANDS = new Set(['dimensions-show'])
 
 export function editionHasCad(edition: EditionConfig = current): boolean {
   return edition.features.cad
