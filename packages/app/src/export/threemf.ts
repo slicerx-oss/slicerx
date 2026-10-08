@@ -463,6 +463,7 @@ export function projectFiles(input: ProjectInput, splitAt = SPLIT_BYTES): ZipEnt
   const objectsCfg: string[] = []
   const platesCfg: string[] = []
   const brimLines: string[] = []
+  const rangesCfg: string[] = []
   const fileIds = new Map<string, number>()
   let nextId = 1
   const thumbs = new Map<number, ReturnType<typeof gcodeThumbnails>>()
@@ -504,6 +505,8 @@ export function projectFiles(input: ProjectInput, splitAt = SPLIT_BYTES): ZipEnt
       t[12] = (t[12] ?? 0) + ox + ax
       t[13] = (t[13] ?? 0) + oy + ay
       const pts = obj.brimPoints
+      // Settings by height (layer_config_ranges.xml), objects numbered from 1 in build order as for the brim ears.
+      if (obj.layerRanges?.length) rangesCfg.push(`<object id="${build.length + 1}">${obj.layerRanges.map((r) => `<range min_z="${f(r.minZ)}" max_z="${f(r.maxZ)}">${Object.entries(r.settings).map(([k, v]) => `<option opt_key="${esc(k)}">${esc(String(v))}</option>`).join('')}</range>`).join('')}</object>`)
       if (pts?.length) brimLines.push(`object_id=${build.length + 1}|${pts.map((q) => q.map(f).join(' ')).join(' ')}`)
       build.push(`<item objectid="${objId}" transform="${transformAttr(t)}" printable="${obj.printable === false ? 0 : 1}"/>`)
       const own = input.objectSettings?.[obj.instanceOf ?? obj.id] ?? {}
@@ -570,6 +573,7 @@ export function projectFiles(input: ProjectInput, splitAt = SPLIT_BYTES): ZipEnt
     { name: 'Metadata/model_settings.config', data: `<?xml version="1.0" encoding="UTF-8"?>\n<config>${objectsCfg.join('')}${platesCfg.join('')}</config>` },
     { name: 'Metadata/project_settings.config', data: JSON.stringify(input.settings, null, 2) },
   ]
+  if (rangesCfg.length) files.push({ name: 'Metadata/layer_config_ranges.xml', data: `<?xml version="1.0" encoding="utf-8"?>\n<objects>${rangesCfg.join('')}</objects>\n` })
   if (brimLines.length) files.push({ name: 'Metadata/brim_ear_points.txt', data: `brim_points_format_version=0\n${brimLines.join('\n')}\n` })
   const dims = dimensionsJson(input.plates.flatMap((p) => p.objects), fileIds)
   if (dims) files.push({ name: 'Metadata/slicerx_dimensions.json', data: dims })
