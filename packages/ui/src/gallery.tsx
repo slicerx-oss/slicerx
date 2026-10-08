@@ -2,6 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 // A page of every primitive in a realistic state, for design review. Apps mount it on a
 // dev-only route; the render test proves each component renders on the server.
+import { MenuIcon, MenuIconRow } from './components/context-menu'
 import {
   AppBar,
   Avatar,
@@ -185,6 +186,21 @@ export function Gallery({ palette = false, theme }: { palette?: boolean; theme?:
                   <MenuItem tone="danger" icon="plus">Remove plate</MenuItem>
                 </Menu>
               </MenuAnchor>
+            </section>
+            <section className="g-sec">
+              <Eyebrow>Context menu</Eyebrow>
+              <Menu open static label="Bracket" className="sx-ctx" onClose={noop}>
+                <MenuIconRow>
+                  <MenuIcon icon="rename" label="Rename" shortcut="F2" onClick={noop} />
+                  <MenuIcon icon="lock" label="Lock" onClick={noop} />
+                  <MenuIcon icon="show" label="Printable" pressed onClick={noop} />
+                  <MenuIcon icon="delete" label="Delete" tone="danger" onClick={noop} />
+                </MenuIconRow>
+                <MenuItem icon="split">Split to parts</MenuItem>
+                <MenuItem icon="merge" disabled>Merge selected objects</MenuItem>
+                <MenuSeparator />
+                <MenuItem icon="slice">Go to Slice with it selected</MenuItem>
+              </Menu>
             </section>
             <section className="g-sec">
               <Eyebrow>Panel</Eyebrow>

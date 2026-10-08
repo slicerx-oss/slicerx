@@ -30,6 +30,8 @@ export type { ScrubNumberProps, VectorFieldProps, Axis } from './components/scru
 export type { SegProps, SegOption, SwitchProps, SwitchRowProps } from './components/seg'
 export { Menu, MenuAnchor, MenuItem, MenuHeading, MenuSeparator } from './components/menu'
 export type { MenuProps, MenuAnchorProps, MenuItemProps } from './components/menu'
+export { ContextMenu, MenuIcon, MenuIconRow, useContextMenu, isMenuKey, placeAt, pressStays, LONG_PRESS_MS, LONG_PRESS_SLOP } from './components/context-menu'
+export type { ContextMenuProps, ContextMenuBind, MenuIconProps, MenuPoint } from './components/context-menu'
 export { ResizeEdge } from './components/resize-edge'
 export type { ResizeEdgeProps } from './components/resize-edge'
 export { TooltipHost, tipAttrs, TIP_TIMING } from './components/tooltip'
