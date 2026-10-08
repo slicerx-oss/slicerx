@@ -79,7 +79,9 @@ runs, and no printer is ever contacted.
 | d | Creator page and upload | The creator page saves: it's made on first use, otherwise its bio gets this run's date. Then a fresh two-color coaster is made for the run, opened, and uploaded as This project. Its swatches are derived from the model's colors, and its cover is drawn from the model. The malware scan passes, a reviewer approves it, and it shows in the Feed and opens. The Export menu offers no mesh export, and no STL or OBJ export command is on (sealed). |
 
 When an account is given, e runs signed in, so the gate's downloads stay out of the public counts (test accounts are
-flagged). b1's downloads are anonymous.
+flagged). b1's downloads are anonymous. Anonymous downloads count against the per-network limit (20 per clock hour by
+default). A run without an account makes 13 of them, so a second run from the same network within the hour fails with
+"too many downloads from this network".
 
 Each scenario's section in the report has its PASS and FAIL lines with their evidence (state, toasts, dialog answers),
 its screenshots, and excerpts of the console (errors, warnings, content security refusals) and of the backend calls

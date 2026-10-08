@@ -16,7 +16,12 @@ export async function requestLink(s, account) {
   if (!ids['signin-email'] && !ids['signin-sent']) {
     if (!ids['vault-sign-in']) s.stop('the Vault offers Sign in', 'no vault-sign-in (already signed in?)')
     await s.click('vault-sign-in')
-    if (!(await s.waitFor('signin-email', 'visible', 15_000))) s.stop('Sign in shows the email form', 'no signin-email')
+    // The dialog shows the form, or (opened again after an earlier request) the sent message with its own controls.
+    const shown = await waitUntil(async () => {
+      const now = await s.ids()
+      return now['signin-email'] || now['signin-sent'] ? true : null
+    }, { timeoutMs: 15_000, everyMs: 300 })
+    if (shown.timedOut) s.stop('Sign in shows the email form', 'neither the form nor the sent message showed')
   }
   if ((await s.ids())['signin-sent']) {
     await s.click('signin-other-address')
