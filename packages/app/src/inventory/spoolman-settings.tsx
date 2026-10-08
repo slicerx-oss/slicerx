@@ -122,18 +122,18 @@ export function SpoolmanRows({ services }: { services: BridgeServices }) {
               {check.message}
             </p>
           ) : null}
-          <p className="bridge-forget">
+          <p className="bridge-forget app-actions">
             <Button size="sm" disabled={check.state === 'busy'} onClick={() => void test()}>
               Test connection
             </Button>
-            <Button variant="ghost" size="sm" onClick={() => void remove()}>
+            <Button variant="ghost" size="sm" className="app-remove" onClick={() => void remove()}>
               Remove Spoolman
             </Button>
           </p>
         </>
       ) : (
         <form
-          className="preset-save"
+          className="preset-save app-form"
           onSubmit={(e) => {
             e.preventDefault()
             void add()
@@ -142,7 +142,7 @@ export function SpoolmanRows({ services }: { services: BridgeServices }) {
           <label className="sr-only" htmlFor="spoolman-url">
             Spoolman address
           </label>
-          <Input id="spoolman-url" className="sx-mono" placeholder="Spoolman address, like 192.168.1.50:7912" value={address} autoComplete="off" spellCheck={false} onChange={(e) => setAddress(e.target.value)} />
+          <Input id="spoolman-url" className="sx-mono" placeholder="Address, like 192.168.1.50" value={address} autoComplete="off" spellCheck={false} onChange={(e) => setAddress(e.target.value)} />
           <Button type="submit" variant="primary" disabled={!address.trim()}>
             Add Spoolman
           </Button>
