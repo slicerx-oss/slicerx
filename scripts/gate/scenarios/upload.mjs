@@ -106,7 +106,7 @@ export async function upload(s, { account, out, waitSignin, waitScan, waitReview
   await s.fill('upload-tags', 'test, coaster')
   await s.shot('upload-filled', 'Upload: derived swatches and the drawn cover')
   const marker = await s.marker()
-  await s.click('upload-submit')
+  await s.click('upload-publish')
   const sent = await waitUntil(async () => {
     const t = ((await s.call('app_toasts', { since: marker })).data?.entries ?? []).find((x) => x.tone === 'error' || /waiting for review/.test(x.text))
     if (t) return t

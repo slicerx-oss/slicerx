@@ -89,6 +89,10 @@ export async function start(s) {
         await s.click('update-later')
         s.info('an update sheet showed at launch; answered Later')
       } else s.stop('no required update blocks the app', (await s.one('update-body'))?.text)
+    } else if (ids['projects-dialog'] && ids['projects-close']) {
+      // Restore unsaved work? on a reused profile: Close keeps the copy; the gate never discards it.
+      await s.click('projects-close')
+      s.info('Restore unsaved work? showed at launch; closed it, keeping the copy')
     } else if (ids['setup'] && !setupDone) {
       setupDone = await setupByHand(s)
       s.check(`added the ${PRINTER.name} by hand in first-run setup, no connection`, setupDone)
@@ -105,7 +109,7 @@ export async function start(s) {
     s.check(`added the ${PRINTER.name} by hand from Printers, no connection`, await setupByHand(s))
     st = await s.state()
   }
-  await s.click('tab-prepare').catch(() => undefined)
+  await s.click('tab-prepare')
   const slot = st.filament?.[0]
   s.check(`the printer is the ${PRINTER.name}, ${PRINTER.nozzleMm} mm`, isGatePrinter(st), st.printer)
   s.check(`filament 1 is ${PRINTER.filament}`, slot?.type === PRINTER.filament, slot)

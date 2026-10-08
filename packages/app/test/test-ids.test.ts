@@ -50,6 +50,21 @@ function sourceIds(): { exact: Set<string>; families: Set<string> } {
   return { exact, families }
 }
 
+/** The test ids the release gate (scripts/gate) uses by name. */
+function gateIds(): string[] {
+  const walk = (d: string): string[] =>
+    readdirSync(d).flatMap((n) => {
+      const p = join(d, n)
+      return statSync(p).isDirectory() ? walk(p) : p.endsWith('.mjs') && !p.endsWith('.test.mjs') ? [p] : []
+    })
+  const ids = new Set<string>()
+  for (const f of walk(join(repo, 'scripts/gate'))) {
+    const text = readFileSync(f, 'utf8')
+    for (const m of text.matchAll(/(?:\.(?:click|one|element|waitFor|fill)\(|visible\(|ids\(\)\)\[|ids\[)\s*'([a-z0-9]+(?:-[a-z0-9]+)+)'/g)) ids.add(m[1]!)
+  }
+  return [...ids].sort()
+}
+
 /** Ids on the page: `name` entries, and `name-<thing>` families. */
 function documented(): { exact: Set<string>; families: Set<string> } {
   const doc = readFileSync(join(repo, 'docs/test-ids.md'), 'utf8')
@@ -71,7 +86,12 @@ describe('test ids', () => {
   const doc = documented()
 
   it('finds the ids the release gate uses', () => {
-    for (const id of ['vault-detail-open', 'signin-send-again', 'account-sign-out', 'objects-list', 'export-menu', 'update-later', 'setup-next', 'upload-publish', 'creator-save']) expect(src.exact.has(id), id).toBe(true)
+    // Every id scripts/gate names in a click, fill, read or wait, so a rename here fails until the gate follows.
+    const gate = gateIds()
+    expect(gate.length).toBeGreaterThan(40)
+    const missing = gate.filter((id) => !src.exact.has(id) && ![...src.families].some((f) => new RegExp(`^${f.split('*').join('[a-z0-9-]+')}$`).test(id)))
+    expect(missing, 'rename these in scripts/gate too').toEqual([])
+    for (const id of ['vault-detail-open', 'update-later', 'upload-publish', 'projects-close']) expect(src.exact.has(id), id).toBe(true)
     expect(src.families.has('tab-*')).toBe(true)
   })
 
