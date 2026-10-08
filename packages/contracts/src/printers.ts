@@ -2,14 +2,40 @@
 // Copyright (C) 2026 The SlicerX contributors
 // Printer and service plugins as the UI and Pilot see them.
 import type { ApprovalToken, PermissionClass } from './pilot'
-import manifests from '../../connect/manifests.json' with { type: 'json' }
 
 export type PluginKind = 'printer' | 'inventory' | 'home'
 export type Capability = 'status' | 'events' | 'upload' | 'start' | 'pause' | 'resume' | 'cancel' | 'camera' | 'filament_slots' | 'gcode_console' | 'project_file' | 'slot_write' | 'rewrites_upload'
 
+/** What every printer plugin can do. */
+const CORE: readonly Capability[] = ['status', 'events', 'upload', 'start', 'pause', 'resume', 'cancel']
+
+/**
+ * Each plugin's capabilities, as `packages/connect/manifests.json` declares them (a test keeps the two equal).
+ * Written out here rather than imported: contracts loads with the app shell, and the manifests file with
+ * every plugin's tools would add about 2 KB to it.
+ */
 const pluginCapabilities = new Map<string, ReadonlySet<string>>(
-  manifests.map((m) => [m.id, new Set<string>(m.capabilities)]),
+  (
+    [
+      ['bambu-lan', [...CORE, 'camera', 'filament_slots', 'gcode_console', 'project_file', 'slot_write']],
+      ['moonraker', [...CORE, 'camera', 'gcode_console']],
+      ['prusalink', [...CORE, 'camera']],
+      ['octoprint', [...CORE, 'camera', 'gcode_console']],
+      ['duet', [...CORE, 'gcode_console']],
+      ['creality', [...CORE, 'camera', 'gcode_console']],
+      ['elegoo', [...CORE, 'camera']],
+      ['snapmaker', [...CORE, 'camera', 'gcode_console']],
+      ['ultimaker', [...CORE, 'camera', 'filament_slots']],
+      ['anycubic', [...CORE, 'filament_slots']],
+      ['bambuddy', [...CORE, 'filament_slots', 'project_file', 'slot_write', 'rewrites_upload']],
+      ['spoolman', []],
+      ['home-assistant', []],
+    ] as [string, Capability[]][]
+  ).map(([id, caps]) => [id, new Set<string>(caps)]),
 )
+
+/** Every plugin id and its capabilities, for the test that keeps this table equal to the manifests. */
+export const PLUGIN_CAPABILITIES: ReadonlyMap<string, ReadonlySet<string>> = pluginCapabilities
 
 /** Whether a connect plugin declares `capability` in `packages/connect/manifests.json`. */
 export function pluginHas(plugin: string | undefined, capability: Capability): boolean {
