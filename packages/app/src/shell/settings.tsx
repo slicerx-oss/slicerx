@@ -19,6 +19,8 @@ const PilotSettingsSection = lazy(() => import('../pilot-connect/connect-panel')
 const PresetsSection = lazy(() => import('../presets/section').then((m) => ({ default: m.PresetsSection })))
 const BridgeSection = lazy(() => import('../link/section').then((m) => ({ default: m.BridgeSection })))
 const BRIDGE_ID = 'bridge'
+const ConnectedAppsSection = lazy(() => import('../connected-apps/section').then((m) => ({ default: m.ConnectedAppsSection })))
+const APPS_ID = 'apps'
 const ControlsSection = lazy(() => import('../controls/section').then((m) => ({ default: m.ControlsSection })))
 const CONTROLS_ID = 'controls'
 const PRESETS_ID = 'presets'
@@ -35,7 +37,12 @@ export function SettingsDialog() {
   const sections: { id: string; label: string; icon: IconName }[] = [
     ...settings.map((s) => ({ id: s.id, label: s.label, icon: s.icon })),
     ...(edition.features.phonePairing ? [{ id: PHONE_ID, label: 'Phone access', icon: 'phone' as IconName }] : []),
-    ...(hasBridge ? [{ id: BRIDGE_ID, label: 'Printer bridge', icon: 'connect-lan' as IconName }] : []),
+    ...(hasBridge
+      ? [
+          { id: BRIDGE_ID, label: 'Printer bridge', icon: 'connect-lan' as IconName },
+          { id: APPS_ID, label: 'Connected apps', icon: 'plugin' as IconName },
+        ]
+      : []),
     { id: PRESETS_ID, label: 'Presets', icon: 'save' },
     { id: CONTROLS_ID, label: 'Controls', icon: 'keyboard' },
     { id: LOOK_ID, label: 'Look and feel', icon: 'sliders' },
@@ -80,6 +87,10 @@ export function SettingsDialog() {
           ) : id === BRIDGE_ID ? (
             <Suspense fallback={<div className="ws-loading" aria-busy="true" />}>
               <BridgeSection />
+            </Suspense>
+          ) : id === APPS_ID ? (
+            <Suspense fallback={<div className="ws-loading" aria-busy="true" />}>
+              <ConnectedAppsSection />
             </Suspense>
           ) : id === PRESETS_ID ? (
             <Suspense fallback={<div className="ws-loading" aria-busy="true" />}>

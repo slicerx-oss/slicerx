@@ -118,6 +118,11 @@ export interface ConnectionMethod {
   startOptions: StartOptionKey[]
   /** Set when the printer must be paired on its own screen (Snapmaker 2.0). */
   pairsOnPrinter?: boolean
+  /**
+   * The connected app (Settings, Connected apps) this connection goes through. It is offered only once that
+   * app is added, and its address and key come from there, so the form asks only for what is per printer.
+   */
+  requiresApp?: string
   /** One line for the setup screen. */
   summary: string
 }

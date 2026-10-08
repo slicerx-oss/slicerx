@@ -2,13 +2,12 @@
 // Copyright (C) 2026 The SlicerX contributors
 // Settings > Printer bridge: connect to sx-link so the app reaches real printers. The desktop app starts
 // its own bridge; in the browser the person runs sx-link and types the pairing code it prints. Once connected,
-// the print watch and Spoolman are set up here too.
+// the print watch is set up here too. Spoolman and other apps are in Settings, Connected apps.
 import { hubFingerprint, type PrinterInfo } from '@slicerx/contracts/printers'
 import { Button, Dialog, Input, Pill, Switch } from '@slicerx/ui'
 import { useEffect, useState } from 'react'
 import { useHost } from '../host'
 import { set, toast, useApp } from '../state/store'
-import { SpoolmanRows } from '../inventory/spoolman-settings'
 import { bridgeConnector, connectBridge, disconnectBridge, liveBridge } from './bridge'
 import { forgetHub, hubPinned, pinnedHubKey, trustHub } from './hub-pin'
 import { appName } from '../edition'
@@ -167,7 +166,6 @@ export function BridgeSection() {
         </form>
       )}
       {on ? <WatchRows /> : null}
-      {on && liveBridge()?.services ? <SpoolmanRows services={liveBridge()!.services!} /> : null}
       {pinned ? (
         <p className="bridge-forget">
           <span className="sx-small sx-muted">This browser remembers the bridge it paired with and sends the code to no other program.</span>

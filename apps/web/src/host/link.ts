@@ -32,8 +32,17 @@ export function wrapLink(link: LinkHost, relay?: string | null): ConnectedBridge
     ...(hasRemote(link) ? { remote: link.remote, relayUrl: relay ? relay.replace(/^http/, 'ws') : null } : {}),
     // Phone access: the hub's LAN listener, camera and push registrations go to paired phones.
     ...(typeof (link as { watch?: { setHuginn?: unknown } }).watch?.setHuginn === 'function' ? { watch: { huginnPrinters: () => link.watch.huginnPrinters(), setHuginn: (id: string, on: boolean) => link.watch.setHuginn(id, on) } } : {}),
-    // Service plugins (Spoolman) set up from Settings.
-    ...(typeof (link as { listServices?: unknown }).listServices === 'function' ? { services: { list: () => link.listServices(), configure: (id: 'spoolman' | 'home-assistant', url: string) => link.configureService(id, url), remove: (id: string) => link.removeService(id) } } : {}),
+    // Connected apps (Spoolman, BamBuddy) set up from Settings, Connected apps.
+    ...(typeof (link as { listServices?: unknown }).listServices === 'function'
+      ? {
+          services: {
+            list: () => link.listServices(),
+            configure: (id: 'spoolman' | 'home-assistant' | 'bambuddy', url: string, secretRef?: string) => link.configureService(id, url, secretRef),
+            remove: (id: string) => link.removeService(id),
+            ...(typeof (link as { checkService?: unknown }).checkService === 'function' ? { check: (id: 'bambuddy') => link.checkService(id) } : {}),
+          },
+        }
+      : {}),
     pair: link.pair,
     camera: link.camera as unknown as NonNullable<ConnectedBridge['camera']>,
     push: link.push,

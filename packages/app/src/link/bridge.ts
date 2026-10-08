@@ -30,7 +30,7 @@ export interface ConnectedBridge {
   push?: import('@slicerx/pair').PairPushHub
   /** The print watch's per-printer settings, when the hub has them (watch.huginn). */
   watch?: { huginnPrinters(): Promise<string[]>; setHuginn(printerId: string, enabled: boolean): Promise<void> }
-  /** Service plugins the hub talks to (Spoolman), set up in Settings, Printers. */
+  /** Connected apps the hub talks to (Spoolman, BamBuddy), set up in Settings, Connected apps. */
   services?: BridgeServices
   /** The relay this edition uses for remote access (wss://), if any. */
   relayUrl?: string | null
@@ -39,11 +39,16 @@ export interface ConnectedBridge {
   close(): void
 }
 
-/** The hub's service settings (`services.*`). Addresses only; a secret never comes back. */
+/**
+ * The hub's connected apps (`services.*`). Addresses only: a key goes to the hub's secrets store with
+ * `secrets.set`, `configure` names it (`secretRef`), and a secret never comes back.
+ */
 export interface BridgeServices {
   list(): Promise<{ pluginId: string; baseUrl: string; hasSecret: boolean }[]>
-  configure(pluginId: 'spoolman' | 'home-assistant', baseUrl: string): Promise<void>
+  configure(pluginId: 'spoolman' | 'home-assistant' | 'bambuddy', baseUrl: string, secretRef?: string): Promise<void>
   remove(pluginId: string): Promise<boolean>
+  /** Whether a connected app answers at its address with its key, and how many printers it lists (BamBuddy). Absent on an older hub. */
+  check?(pluginId: 'bambuddy'): Promise<{ ok: true; printers: number }>
 }
 
 /** The bridge's printer setup calls (`createPrinterSetup` in @slicerx/connect satisfies it). */

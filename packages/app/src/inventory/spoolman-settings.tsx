@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// Settings > Printer bridge > Spoolman: point the bridge at a Spoolman server on this network, test it,
+// Settings > Connected apps > Spoolman: point the bridge at a Spoolman server on this network, test it,
 // see whether it answers, remove it. The address is all the app sends; Spoolman needs no key. Once it
 // answers, the Filament dialog shows the spools and the grams left.
 import { Button, Input, Pill } from '@slicerx/ui'
@@ -9,6 +9,7 @@ import { useHost } from '../host'
 import type { BridgeServices } from '../link/bridge'
 import { toast, useApp } from '../state/store'
 import { loadSpools, parseSpools } from './spools'
+import { refreshConnectedApps } from '../connected-apps/state'
 
 /** Spoolman's own default port. */
 export const SPOOLMAN_PORT = 7912
@@ -83,6 +84,7 @@ export function SpoolmanRows({ services }: { services: BridgeServices }) {
     try {
       await services.configure('spoolman', r.url)
       setSaved(r.url)
+      void refreshConnectedApps()
       setAddress('')
       await test()
     } catch (e) {
@@ -95,6 +97,7 @@ export function SpoolmanRows({ services }: { services: BridgeServices }) {
     try {
       await services.remove('spoolman')
       setSaved(null)
+      void refreshConnectedApps()
       setCheck({ state: 'idle' })
       await loadSpools(host)
       toast('Removed Spoolman.', 'info')

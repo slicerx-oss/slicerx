@@ -147,6 +147,89 @@ test('printer setup asks the bridge to search the network only when Search my ne
   await expect.poll(() => calls.includes('discover')).toBe(true)
 })
 
+/** Settings > Printer bridge, pairing again when this page is not connected yet. */
+async function bridgeOn(page: Page): Promise<void> {
+  await page.getByRole('button', { name: 'Settings', exact: true }).click()
+  await page.getByRole('navigation', { name: 'Settings sections' }).getByRole('button', { name: 'Printer bridge' }).click()
+  // The section loads on demand: wait for it, then pair only when it asks for the code.
+  await expect(page.getByRole('region', { name: 'Printer bridge' })).toBeVisible()
+  const codeBox = page.getByLabel('Pairing code')
+  const connected = page.getByText('Connected', { exact: true })
+  await expect(codeBox.or(connected).first()).toBeVisible()
+  if (await codeBox.isVisible()) {
+    await codeBox.fill(code)
+    await page.getByRole('button', { name: 'Connect', exact: true }).click()
+  }
+  await expect(page.getByText('Connected', { exact: true })).toBeVisible()
+}
+
+/** Printer setup for a Bambu Lab X1 Carbon, up to its connection choices. */
+async function setupX1(page: Page): Promise<void> {
+  await page.getByRole('button', { name: 'Change', exact: true }).click()
+  await page.locator('.choose-add').click()
+  const byHand = page.getByRole('button', { name: /Add it by hand/ }).first()
+  await expect(byHand).toBeVisible()
+  await byHand.dblclick()
+  await page.getByRole('radiogroup', { name: 'Brand' }).getByRole('radio', { name: /Bambu Lab/ }).click()
+  await page.getByTestId('setup-model-bambu-x1-carbon').click()
+  await expect(page.getByTestId('setup-connection-bambu-lan')).toBeVisible()
+}
+
+test('Connected apps: BamBuddy shows as a printer connection only once it is added', async ({ page }) => {
+  // A stand-in BamBuddy on this computer that lists one printer.
+  const { createServer } = await import('node:http')
+  const keys: string[] = []
+  const server = createServer((req, res) => {
+    keys.push(String(req.headers['x-api-key'] ?? ''))
+    res.setHeader('content-type', 'application/json')
+    res.end(req.url === '/api/v1/printers' ? '[{"id":12,"name":"Shed P1S"}]' : '{}')
+  })
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+  const port = (server.address() as { port: number }).port
+  try {
+    // Before: the X1 Carbon offers its own connection and export, nothing new.
+    await connectApp(page)
+    await setupX1(page)
+    await expect(page.getByTestId('setup-connection-bambuddy')).toHaveCount(0)
+    await expect(page.getByTestId('setup-connection-bambu-lan')).toHaveAttribute('data-on', 'true')
+
+    // Add BamBuddy once, in Settings, Connected apps.
+    await page.goto('./')
+    await plateReady(page)
+    await bridgeOn(page)
+    await page.getByRole('navigation', { name: 'Settings sections' }).getByRole('button', { name: 'Connected apps' }).click()
+    const card = page.getByTestId('connected-app-bambuddy')
+    await card.getByTestId('connected-app-bambuddy-address').fill(`127.0.0.1:${port}`)
+    await card.getByTestId('connected-app-bambuddy-key').fill('e2e-bambuddy-key')
+    await card.getByTestId('connected-app-bambuddy-save').click()
+    await expect(card.getByTestId('connected-app-bambuddy-status')).toHaveText('Connected')
+    await expect(card).toContainText('1 printer in BamBuddy')
+    expect(keys).toContain('e2e-bambuddy-key')
+    // Spoolman moved here from Printer bridge.
+    await expect(page.getByTestId('connected-app-spoolman')).toContainText('Spoolman')
+    await page.keyboard.press('Escape')
+
+    // After: the same printer can now choose BamBuddy, and its own connection stays the default.
+    await setupX1(page)
+    await expect(page.getByTestId('setup-connection-bambu-lan')).toHaveAttribute('data-on', 'true')
+    await page.getByTestId('setup-connection-bambuddy').click()
+    await expect(page.getByPlaceholder('12')).toBeVisible()
+    await expect(page.getByPlaceholder('192.168.1.50')).toHaveCount(0)
+  } finally {
+    // Leave the hub as the other tests expect it.
+    await page.goto('./')
+    await plateReady(page)
+    await bridgeOn(page)
+    await page.getByRole('navigation', { name: 'Settings sections' }).getByRole('button', { name: 'Connected apps' }).click()
+    const remove = page.getByTestId('connected-app-bambuddy-remove')
+    const save = page.getByTestId('connected-app-bambuddy-save')
+    await expect(remove.or(save).first()).toBeVisible()
+    if (await remove.isVisible()) await remove.click()
+    await expect(page.getByTestId('connected-app-bambuddy-save')).toBeVisible()
+    server.close()
+  }
+})
+
 test('a wrong code is refused with a plain message', async ({ page }) => {
   await seed(page)
   await page.getByRole('button', { name: 'Settings', exact: true }).click()

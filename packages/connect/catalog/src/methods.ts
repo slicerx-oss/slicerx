@@ -171,17 +171,13 @@ export const CONNECTION_METHODS: readonly ConnectionMethod[] = [
     plugin: 'bambuddy',
     guide: 'bambuddy.md',
     defaultPort: 8000,
+    requiresApp: 'bambuddy',
     discovery: {
       kind: 'manual',
-      detail: 'BamBuddy is not scanned. Enter the address of the BamBuddy computer and the printer number it uses.',
+      detail: 'BamBuddy is not scanned. Its address and API key come from Settings, Connected apps; enter the printer number BamBuddy uses.',
     },
-    fields: [
-      host,
-      port('8000'),
-      apiKey(true),
-      { key: 'serial', label: 'BamBuddy printer id', secret: false, required: true, placeholder: '12' },
-    ],
-    summary: 'The printer is already in SlicerX. Enter the BamBuddy computer, its API key, and the number BamBuddy uses for this printer. That number is the link, including a printer BamBuddy reaches through a bridge.',
+    fields: [{ key: 'serial', label: 'BamBuddy printer id', secret: false, required: true, placeholder: '12' }],
+    summary: 'Prints go through the BamBuddy you added in Connected apps. Enter the number BamBuddy uses for this printer. That number is the link, including a printer BamBuddy reaches through a bridge.',
   },
   {
     id: 'export',

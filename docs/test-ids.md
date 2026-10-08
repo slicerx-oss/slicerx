@@ -180,6 +180,23 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | `legend-color-<mode>` | Its items: `legend-color-feature`, `legend-color-tool` (Filament), `legend-color-speed`, `legend-color-flow`, `legend-color-layer-time` |
 | `legend-slot` | A slot's swatch and path length in the Filament colors; `data-slot` is the slot number |
 
+## Settings: Connected apps
+
+| Test id | Control |
+| --- | --- |
+| `connected-apps` | The Connected apps section (Settings, after Printer bridge) |
+| `connected-app-bambuddy` | BamBuddy's card |
+| `connected-app-bambuddy-address` | BamBuddy's address |
+| `connected-app-bambuddy-key` | BamBuddy's API key (kept in the secrets store; empty keeps the saved one) |
+| `connected-app-bambuddy-save` | Add BamBuddy, or Save after Edit |
+| `connected-app-bambuddy-status` | Connected, Not answering, Testing or Added |
+| `connected-app-bambuddy-test` | Test connection |
+| `connected-app-bambuddy-edit` | Edit the address or key |
+| `connected-app-bambuddy-remove` | Remove BamBuddy and its key |
+| `connected-app-spoolman` | Spoolman's card (moved from Printer bridge, unchanged) |
+
+Once BamBuddy is added, printer setup offers `setup-connection-bambuddy` for the models that can use it.
+
 ## Exceptions to the danger- rule
 
 These ids carry one of the rule's words but name no destructive act, so they keep their names and the bridge may use
