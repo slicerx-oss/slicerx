@@ -1,0 +1,36 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (C) 2026 The SlicerX contributors
+name: attribution
+
+# The AI attribution check of ci.yml's hygiene job (scripts/ci/attribution.mjs), also run when a pull request's
+# title or body is edited, which does not start ci.yml. It runs on every pull request and queued group as well, so it
+# always reports and can be a required check. Same limits as ci.yml: pull_request only, no secrets, read-only token.
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+  merge_group:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: attribution-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  attribution:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # the check reads the commits of the run's range, which needs their history
+          fetch-depth: 0
+      - name: No AI attribution in the commits or the pull request body
+        run: node scripts/ci/attribution.mjs
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          MQ_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+          MQ_HEAD_SHA: ${{ github.event.merge_group.head_sha }}
+          # the body goes through the environment only, never into the script text
+          PR_BODY: ${{ github.event.pull_request.body }}
