@@ -4,7 +4,7 @@
 // only records whether a secret field holds something and how long it is.
 import type { Bed, PrinterHardware } from '@slicerx/contracts'
 import { brandById, CONNECTION_METHODS, connectionMethod, modelById, modelsForBrand, type ConnectionId, type ConnectionMethod, type FieldKey, type Kinematics, type PrinterModel } from '@slicerx/printer-catalog'
-import { appHostPort, offeredConnections } from '../connected-apps/registry'
+import { appHostPort, offeredConnections } from '../connected-apps/gate'
 
 // ---------------------------------------------------------------------------
 // Brands
