@@ -109,6 +109,14 @@ ok eval 'taken_over && grep -q "cleared a lock with no holder record" "$tmp/wait
 sleep 0 & dead=$!; wait $dead
 name="an old record (no side) with a dead pid is taken over"
 fake $dead ''; waiter 20 w6; ok taken_over
+if [ "$side" = wsl ]; then
+  # A record from a service (no WSL_DISTRO_NAME) on this WSL, as an older heavy.sh in a CI runner wrote it.
+  boot=$(cat /proc/sys/kernel/random/boot_id)
+  name="a WSL record with no distro and a dead pid is taken over"
+  fake $dead "$(printf 'side wsl\nstart 1\nboot %s\ndistro ' "$boot")"; waiter 20 w6b; ok taken_over
+  name="a WSL record with no distro and a live pid is kept"
+  fake $$ "$(printf 'side wsl\nstart %s\nboot %s\ndistro ' "$(start_of $$)" "$boot")"; waiter 3 w6c; ok kept $$
+fi
 name="a record from a side this one cannot ask is kept"
 fake 1 'side elsewhere'; waiter 2 w7; ok kept 1
 rm -rf "$dir"
