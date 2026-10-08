@@ -2,6 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 // The approved base icon set: 68 icons on a 24px grid for a 1.75 stroke, round caps and joins,
 // currentColor, no fills except small dots. This file is the source of truth; icon-paths.ts is generated from it.
+// Redraws need the owner's go: printer, send-to-printer and spool were redrawn for the Slice redesign (2026-10-08).
 
 export const BASE_ICON_GROUPS = {
   "Workspace": [
@@ -115,14 +116,14 @@ export const BASE_ICONS = {
   "arrange": "<rect x=\"3.5\" y=\"3.5\" width=\"8\" height=\"8\" rx=\"1.5\"/><rect x=\"14\" y=\"3.5\" width=\"6.5\" height=\"5\" rx=\"1.2\"/><rect x=\"14\" y=\"11\" width=\"6.5\" height=\"9.5\" rx=\"1.2\"/><rect x=\"3.5\" y=\"14\" width=\"8\" height=\"6.5\" rx=\"1.2\"/>",
   "cut": "<path d=\"M3 12h18\" stroke-dasharray=\"2 2.2\"/><path d=\"M6 9V5.5A1.5 1.5 0 0 1 7.5 4h9A1.5 1.5 0 0 1 18 5.5V9\"/><path d=\"M6 15v3.5A1.5 1.5 0 0 0 7.5 20h9a1.5 1.5 0 0 0 1.5-1.5V15\"/>",
   "paint": "<path d=\"M18 3l3 3-9 9-3-3z\"/><path d=\"M9 12c-3 0-5 2-5 5 0 1.5-.5 2.5-1.5 3.5 4 0 9.5-1 9.5-5.5\"/>",
-  "printer": "<rect x=\"3.5\" y=\"3.5\" width=\"17\" height=\"17\" rx=\"2\"/><path d=\"M3.5 8h17\"/><path d=\"M9.5 8v3.5h5V8\"/><path d=\"M11 11.5l1 1.5 1-1.5\"/><path d=\"M7 17h10\"/>",
+  "printer": "<path d=\"M4.5 20.5V5A1.5 1.5 0 0 1 6 3.5h12A1.5 1.5 0 0 1 19.5 5v15.5\"/><path d=\"M4.5 8.5h15M10.5 8.5v3h3v-3M12 11.5V13\"/><path d=\"M7.5 17h9\"/>",
   "nozzle": "<rect x=\"6.5\" y=\"3.5\" width=\"11\" height=\"5\" rx=\"1.5\"/><path d=\"M8.5 8.5h7l-2 5h-3z\"/><path d=\"M11 13.5h2l-.5 2h-1z\"/><path d=\"M6 20.5h12\"/>",
   "bed-temp": "<rect x=\"3\" y=\"16.5\" width=\"18\" height=\"4\" rx=\"1\"/><path d=\"M8 13c-1.3-1.3-1.3-2.7 0-4s1.3-2.7 0-4M12 13c-1.3-1.3-1.3-2.7 0-4s1.3-2.7 0-4M16 13c-1.3-1.3-1.3-2.7 0-4s1.3-2.7 0-4\"/>",
   "fan": "<circle cx=\"12\" cy=\"12\" r=\"1.8\"/><path d=\"M13.2 10.6C14.2 7 13.6 3.8 11.5 3.6 9 3.4 9.3 7.4 10.8 10.3\"/><path d=\"M13.2 10.6C14.2 7 13.6 3.8 11.5 3.6 9 3.4 9.3 7.4 10.8 10.3\" transform=\"rotate(120 12 12)\"/><path d=\"M13.2 10.6C14.2 7 13.6 3.8 11.5 3.6 9 3.4 9.3 7.4 10.8 10.3\" transform=\"rotate(240 12 12)\"/>",
-  "spool": "<circle cx=\"12\" cy=\"12\" r=\"8\"/><circle cx=\"12\" cy=\"12\" r=\"2.5\"/><circle cx=\"12\" cy=\"12\" r=\"5.25\" stroke-dasharray=\"2.5 2\"/><path d=\"M20 12v8.5\"/>",
+  "spool": "<circle cx=\"12\" cy=\"12\" r=\"8\"/><circle cx=\"12\" cy=\"12\" r=\"4.25\"/><path d=\"M12 12h.01M20 12v8.5\"/>",
   "multi-material": "<circle cx=\"7\" cy=\"7\" r=\"3.5\"/><circle cx=\"17\" cy=\"7\" r=\"3.5\"/><circle cx=\"7\" cy=\"17\" r=\"3.5\"/><circle cx=\"17\" cy=\"17\" r=\"3.5\"/><path d=\"M7 7h.01M17 7h.01M7 17h.01M17 17h.01\"/>",
   "camera": "<rect x=\"3\" y=\"7\" width=\"18\" height=\"13\" rx=\"2\"/><circle cx=\"12\" cy=\"13.5\" r=\"3.5\"/><path d=\"M8.5 7L10 4.5h4L15.5 7\"/>",
-  "send-to-printer": "<rect x=\"3.5\" y=\"10\" width=\"17\" height=\"10.5\" rx=\"1.5\"/><path d=\"M12 2.5V12M8.5 8.5L12 12l3.5-3.5\"/><path d=\"M7 17h10\"/>",
+  "send-to-printer": "<rect x=\"8\" y=\"3.5\" width=\"8\" height=\"5\" rx=\"1.5\"/><path d=\"M9.5 8.5h5l-1.5 3.5h-2z\"/><path d=\"M3.5 20.5h17M6.5 17h7.5\"/>",
   "queue": "<path d=\"M4 6h12M4 11h12M4 16h7\"/><path d=\"M17 13.5v7M14.5 18l2.5 2.5 2.5-2.5\"/>",
   "creator": "<circle cx=\"10\" cy=\"8\" r=\"3.5\"/><path d=\"M3.5 20a6.5 6.5 0 0 1 10.5-5.1\"/><path d=\"M18 13.5l1.1 2.2 2.4.35-1.75 1.7.4 2.4L18 19l-2.15 1.15.4-2.4-1.75-1.7 2.4-.35z\"/>",
   "subscribe": "<path d=\"M5 15.5V10a6 6 0 0 1 9-5.2\"/><path d=\"M17 9v6.5l1.5 1.5h-15L5 15.5\"/><path d=\"M10 19.5a2 2 0 0 0 4 0\"/><path d=\"M19 2.5v5M16.5 5h5\"/>",
