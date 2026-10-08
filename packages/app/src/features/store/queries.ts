@@ -3,7 +3,7 @@
 // Catalog and session queries over the edition host's store client.
 import type { Creator, CreatorPage, EditionHost, ListingCard, ListingDetail, Session, StoreClient } from '@slicerx/contracts'
 import { useHost } from '@slicerx/app'
-import { infiniteQueryOptions, queryOptions, useQuery, useQueryClient } from '@tanstack/react-query'
+import { infiniteQueryOptions, queryOptions, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { useEffect } from 'react'
 import { applyFilter, listOptions, type LibraryFilter } from './filter'
 import { ROW_LIMIT, type RowId } from './rows'
@@ -39,6 +39,21 @@ export function detailQuery(store: StoreClient | undefined, idOrSlug: string | n
   })
 }
 
+/**
+ * Puts a session in the cache. A session read already running (a refetch once the query went stale) is cancelled
+ * first: it started under the old session and would otherwise land afterwards and put that one back.
+ */
+async function putSession(client: QueryClient, s: Session | null): Promise<void> {
+  await client.cancelQueries({ queryKey: ['session'] })
+  client.setQueryData(['session'], s)
+}
+
+/** Signs out and shows it at once, wherever the session is read. */
+export async function signOutSession(store: StoreClient, client: QueryClient): Promise<void> {
+  await store.signOut()
+  await putSession(client, null)
+}
+
 /** The signed-in member, kept current when the session changes or the window regains focus (after signing in on the website). */
 export function useSession(): { session: Session | null; ready: boolean } {
   const store = useStore()
@@ -46,7 +61,7 @@ export function useSession(): { session: Session | null; ready: boolean } {
   const q = useQuery({ queryKey: ['session'], queryFn: async () => (store ? store.session() : null), enabled: Boolean(store), staleTime: 30_000 })
   useEffect(() => {
     if (!store) return
-    const off = store.onSessionChange((s) => client.setQueryData(['session'], s))
+    const off = store.onSessionChange((s) => void putSession(client, s))
     const refresh = () => {
       if (document.visibilityState === 'visible') void client.invalidateQueries({ queryKey: ['session'] })
     }

@@ -18,7 +18,7 @@ import { count, CreatorAvatar, CreatorSheet, plural, printFacts, Sheet } from '.
 import { formatLabel } from './download'
 import { DownloadStatus, useModelFetch } from './download-status'
 import { CATEGORIES, DEFAULT_FILTER, setLibraryFilter, showsGrid, useLibraryFilter, type LibrarySort } from './filter'
-import { accountLabel, detailQuery, LIBRARY_KEY, listingsQuery, myCreatorQuery, newCreatorsQuery, rowQuery, useSession, useStore } from './queries'
+import { accountLabel, detailQuery, LIBRARY_KEY, listingsQuery, myCreatorQuery, newCreatorsQuery, rowQuery, signOutSession, useSession, useStore } from './queries'
 import { pickFeatured, ROWS, withoutFeatured, type RowId } from './rows'
 import { closeSheet, openCreator, openEditor, openListing, openReview, openUpload, resetSheets, useLibrarySheets } from './sheets'
 import { UploadHost } from './upload'
@@ -136,7 +136,7 @@ export function VaultBar() {
                 icon="unlink"
                 data-testid="account-sign-out"
                 onClick={close(() => {
-                  void store?.signOut().then(() => client.setQueryData(['session'], null))
+                  if (store) void signOutSession(store, client)
                 })}
               >
                 Sign out

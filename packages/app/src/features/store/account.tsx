@@ -6,7 +6,7 @@ import { useState } from 'react'
 import { Button, Chip, Dialog } from '@slicerx/ui'
 import { appName, closeSettings, setWorkspace, toast, useEdition, useHost } from '@slicerx/app'
 import { activeTokens, deletionBanner, exportFileName, graceLabel, rateLabel, revokedLabel, tokenState } from './account-logic'
-import { useAccountLabel, useSession, useStore } from './queries'
+import { signOutSession, useAccountLabel, useSession, useStore } from './queries'
 import { openExternal, privacyUrl } from './routes'
 import { openEditor, openUpload } from './sheets'
 import { SignInNotice } from './signin'
@@ -91,10 +91,7 @@ function SignedIn() {
       setBusy(null)
     }
   }
-  const signOut = async () => {
-    await store.signOut()
-    client.setQueryData(['session'], null)
-  }
+  const signOut = () => signOutSession(store, client)
   const open = (url: string) => void openExternal(host, url)
   const live = activeTokens(tokens.data ?? [])
 
