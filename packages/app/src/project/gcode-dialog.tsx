@@ -25,13 +25,14 @@ export function ProjectGcodeDialog() {
       title="Check this project's G-code"
       size="lg"
       className="pg"
+      testId="project-gcode-dialog"
       splitFooter
       footer={
         <>
-          <Button variant="ghost" disabled={!approvable} onClick={() => answerProjectGcode('project')}>
+          <Button variant="ghost" disabled={!approvable} data-testid="project-gcode-use-project" onClick={() => answerProjectGcode('project')}>
             Use the project's G-code
           </Button>
-          <Button variant="primary" autoFocus onClick={() => answerProjectGcode('profile')}>
+          <Button variant="primary" autoFocus data-testid="project-gcode-use-profile" onClick={() => answerProjectGcode('profile')}>
             Use the printer profile's G-code instead
           </Button>
         </>

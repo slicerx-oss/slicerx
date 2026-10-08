@@ -15,6 +15,7 @@ export function ProfileFollow() {
   const reported = printer?.status.nozzleDiameterMm
   useEffect(() => {
     startProfileSync()
+    void import('../project/project-printer').then((m) => m.startProjectPrinterSync())
   }, [])
   useEffect(() => {
     set({ printerModel: vendor && model ? { ...(id ? { id } : {}), vendor, model } : null })

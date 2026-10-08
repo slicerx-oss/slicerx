@@ -130,20 +130,47 @@ async function startFresh(): Promise<boolean> {
 /**
  * Opens a 3MF project with its objects, parts and volumes (negative parts, support blockers and
  * enforcers). Returns false when the file is not one we can read as a project, so the caller falls back
- * to the engine's own loader.
+ * to the engine's own loader; `told` when it already showed the person a note of its own.
  */
-async function addProject(host: Host, data: ArrayBuffer, name: string): Promise<boolean> {
+async function addProject(host: Host, data: ArrayBuffer, name: string): Promise<false | 'opened' | 'told'> {
   const { readProject, ProjectReadError } = await import('../export/import3mf')
-  const { bed } = get()
   let project
   try {
-    project = await readProject(new Uint8Array(data), bed)
+    project = await readProject(new Uint8Array(data), get().bed)
   } catch (e) {
     if (e instanceof ProjectReadError && /too many|too large|unsafe|encrypted|inflates|damaged/.test(e.message)) throw e
     return false
   }
   const { addPlate, switchPlate } = await import('../plate/plates')
-  const wasEmpty = get().plates.every((p) => p.objects.length === 0) && get().plate.length === 0
+  const own = /\.sx3mf$/i.test(name)
+  const hasSettings = Object.keys(project.settings).length > 0
+  let wasEmpty = get().plates.every((p) => p.objects.length === 0) && get().plate.length === 0
+  // Another slicer's project onto a plate that has objects asks: the whole project in its place, or its geometry alone.
+  // Our own designs add to the plate as they are.
+  let geometryOnly = false
+  if (!wasEmpty && hasSettings && !own) {
+    const choice = await (await import('../project/open-ask')).askOpenProject(name)
+    if (choice === null) return 'told'
+    if (choice === 'geometry') geometryOnly = true
+    else {
+      if (!(await confirmDiscard('open this project'))) return 'told'
+      clearProject()
+      wasEmpty = true
+    }
+  }
+  // Another slicer's project opens as its own printer, first, so its objects land on that printer's bed.
+  const asProject = wasEmpty && !own && project.settingsFrom === 'orca' && hasSettings
+  const pp = asProject ? await import('../project/project-printer') : null
+  let match: import('../project/project-printer').ProjectPrinterMatch | null = null
+  if (pp) {
+    const before = get().bed
+    // A printer of the person's own that matches it is picked over the project's own.
+    const printers = host.printers ? await host.printers.list().catch(() => []) : []
+    match = await pp.switchToProjectPrinter(name, project.settings, printers)
+    const bed = get().bed
+    // Plates after the first are laid out by bed size.
+    if (project.plates.length > 1 && (bed.widthMm !== before.widthMm || bed.depthMm !== before.depthMm)) project = await readProject(new Uint8Array(data), bed)
+  }
   const startPlate = get().activePlate
   // Ids up front, so kept dimensions can name objects on any plate.
   const idOf = new Map<string, string>()
@@ -162,6 +189,8 @@ async function addProject(host: Host, data: ArrayBuffer, name: string): Promise<
   const placed = new Set<string>()
   // Every setting key the file brings, so a value the engine refuses can be dropped at the slice.
   const brought = new Set<string>()
+  const rangesLeft = new Set<string>()
+  const { usableRanges } = await import('../plate/layer-ranges')
   const entries = async (objects: typeof project.plates[number]['objects']): Promise<PlateEntry[]> => {
     const out: PlateEntry[] = []
     for (const o of objects) {
@@ -174,14 +203,14 @@ async function addProject(host: Host, data: ArrayBuffer, name: string): Promise<
         const move = (d: [number, number, number]) => compose({ position: d, rotation: [0, 0, 0], scale: [1, 1, 1] })
         const centeredPart = bake(v.part, move([-c[0], -c[1], -c[2]]))
         const vh = await host.slicer.loadParts(v.name, [centeredPart])
-        const mod = v.role === 'modifier' && v.rawSettings ? (await import('../export/project-settings')).modifierSettings(v.rawSettings) : undefined
+        const mod = !geometryOnly && v.role === 'modifier' && v.rawSettings ? (await import('../export/project-settings')).modifierSettings(v.rawSettings) : undefined
         for (const k of Object.keys(mod ?? {})) brought.add(k)
         volumes.push({ id: uid('vol'), name: v.name, role: v.role, handle: vh, part: centeredPart, local: move(c), ...(mod && Object.keys(mod).length ? { settings: mod } : {}) })
       }
       const palette = objectPalette()
       const colors = project.colors.length ? project.colors : palette
       const partSettings: Record<string, Record<string, SettingValue>> = {}
-      for (const [part, raw] of Object.entries(o.rawPartSettings ?? {})) {
+      for (const [part, raw] of Object.entries(geometryOnly ? {} : (o.rawPartSettings ?? {}))) {
         const v = (await import('../export/project-settings')).modifierSettings(raw)
         if (Object.keys(v).length) partSettings[part] = v
         for (const k of Object.keys(v)) brought.add(k)
@@ -192,7 +221,10 @@ async function addProject(host: Host, data: ArrayBuffer, name: string): Promise<
       const dims = first ? dimsOf(o.fileId) : []
       // So does its CAD history, which needs the parts to be the ones it made.
       const history = first ? project.histories.get(o.fileId) : undefined
-      out.push({ id: first ? idOf.get(o.fileId)! : uid('obj'), name: o.name, ...(dims.length ? { dimensions: dims } : {}), ...(history ? { history } : {}), handle, parts: o.parts, ...(Object.keys(partSettings).length ? { partSettings } : {}), colors: o.parts.map((p) => colors[p.slot - 1] ?? palette[0]!), transform: o.transform, ...(o.paint ? { paint: o.paint } : {}), ...(o.printable === false ? { printable: false } : {}), ...(o.brimPoints?.length ? { brimPoints: o.brimPoints } : {}), ...(volumes.length ? { volumes } : {}), ...(o.source ? { source: o.source } : {}) })
+      // Its settings by height, what of them the plate can use.
+      const ranges = !geometryOnly && o.layerRanges ? usableRanges(o.layerRanges) : null
+      for (const k of ranges?.left ?? []) rangesLeft.add(k)
+      out.push({ id: first ? idOf.get(o.fileId)! : uid('obj'), name: o.name, ...(dims.length ? { dimensions: dims } : {}), ...(history ? { history } : {}), handle, parts: o.parts, ...(Object.keys(partSettings).length ? { partSettings } : {}), colors: o.parts.map((p) => colors[p.slot - 1] ?? palette[0]!), transform: o.transform, ...(o.paint ? { paint: o.paint } : {}), ...(o.printable === false ? { printable: false } : {}), ...(o.brimPoints?.length ? { brimPoints: o.brimPoints } : {}), ...(volumes.length ? { volumes } : {}), ...(o.source ? { source: o.source } : {}), ...(ranges?.ranges.length ? { layerRanges: ranges.ranges } : {}) })
     }
     return out
   }
@@ -218,23 +250,38 @@ async function addProject(host: Host, data: ArrayBuffer, name: string): Promise<
   switchPlate(startPlate)
   // An Orca or Bambu Studio project (anything but our .sx3mf) opens with its own fixed layers, so
   // sleipnir goes off and the layer count matches the slicer that made it.
-  if (wasEmpty && !/\.sx3mf$/i.test(name)) set((s) => ({ easy: { ...s.easy, varyLayerHeight: false }, goal: 'custom' as const }))
-  // A project's own print and filament settings come along when it opens on an empty project.
-  if (wasEmpty && Object.keys(project.settings).length) {
+  if (wasEmpty && !own) set((s) => ({ easy: { ...s.easy, varyLayerHeight: false }, goal: 'custom' as const }))
+  let note: string | null = null
+  if (pp) {
+    // Another slicer's project: its settings on top of its own printer's profile, or what suits the current printer.
+    const r = pp.applyProjectSettings(name, project.settings, match)
+    for (const k of r.keys) brought.add(k)
+    note = r.note
+  } else if (wasEmpty && hasSettings) {
+    // Our own project, or a PrusaSlicer one: its print and filament settings on the current printer.
     const { projectSettingChanges } = await import('../export/project-settings')
     const { values } = projectSettingChanges(project.settings, resolveConfig(get().easy, get().overrides))
     const n = Object.keys(values).length
     if (n) {
       set((s) => ({ overrides: { ...s.overrides, ...values }, goal: 'custom' as const }))
-      toast(`Applied ${n} settings from ${name}`, 'info')
+      note = `Applied ${n} settings from ${name}`
     }
     for (const k of Object.keys(values)) brought.add(k)
     // Its printer G-code: stock text needs nothing, anything else waits for the person at the next slice.
     await (await import('./project-gcode')).reviewOpenedGcode(name, project.settings)
   }
+  if (!geometryOnly && (await import('../plate/layer-ranges')).layerHeightsDiffer(get().plate)) {
+    note = `${note ? `${note} ` : ''}Per-object layer heights are not imported yet: its objects change layer height at different heights, so the plate uses one layer height.`
+  }
+  if (rangesLeft.size) {
+    const { settingDef } = await import('@slicerx/settings')
+    note = `${note ? `${note} ` : ''}Not imported from its height ranges: ${[...rangesLeft].map((k) => (settingDef(k)?.label ?? k).toLowerCase()).join(', ')}.`
+  }
   if (brought.size) set((s) => ({ projectSettings: { source: name, keys: [...new Set([...(wasEmpty ? [] : (s.projectSettings?.keys ?? [])), ...brought])] } }))
   markStale()
-  return true
+  if (!note) return 'opened'
+  toast(note, 'info', match?.kind === 'match' ? pp?.CHANGE_PRINTER : undefined)
+  return 'told'
 }
 
 /** Returns true when it already told the person what it did (a toast of its own). */
@@ -261,9 +308,10 @@ async function addBytes(host: Host, name: string, data: ArrayBuffer): Promise<bo
     const { decodeQuantized } = await import('@slicerx/embed/mesh')
     const json: unknown = JSON.parse(new TextDecoder().decode(data))
     await addDecoded(host, decodeQuantized(json), { replace: false })
-  } else if (await addProject(host, data, name)) {
-    // A project with objects, parts and volumes opened as such.
   } else {
+    // A project with objects, parts and volumes opens as such.
+    const opened = await addProject(host, data, name)
+    if (opened) return opened === 'told'
     // 3MF geometry for the viewport arrives with the core's mesh export; slice it meanwhile.
     const handle = await host.slicer.loadModel(data, name)
     // A Vault design stays one when the engine opens it.
@@ -432,8 +480,13 @@ export async function slicePlate(host: Host, opts: { auto?: boolean } = {}): Pro
     // Vary layer height reaches the engine as the resolved `smart_layer` mode (quality, or strength for a strong print).
     const smart = (String((config as Record<string, unknown>)['smart_layer'] ?? 'off') as 'off' | 'quality' | 'strength')
     const planned = smart !== 'off' && !s.calibration[s.activePlate] ? await (await import('../plate/smart-layer')).planSmartLayers(toPrint, config, smart).catch(() => null) : null
+    // A project's settings by height: range keys by object, and layer height ranges as the plate's layer tops.
+    const { heightRangesOf, rangeLayerTops } = await import('../plate/layer-ranges')
+    const cfg = config as Record<string, unknown>
+    const rangeTops = smart === 'off' && !s.calibration[s.activePlate] ? rangeLayerTops(toPrint, Number(cfg['initial_layer_print_height'] ?? 0.2), Number(cfg['layer_height'] ?? 0.2)) : null
+    const heightRanges = [...(s.calibration[s.activePlate]?.ranges ?? []), ...heightRangesOf(toPrint)]
     // A resume plan restarts the failed job's layers, so its layer tops win over a fresh plan.
-    const layerTopsMm = s.resume?.layerTopsMm?.length ? s.resume.layerTopsMm : planned
+    const layerTopsMm = s.resume?.layerTopsMm?.length ? s.resume.layerTopsMm : (planned ?? rangeTops)
     // Marks from the layer slider (pause, color change, custom G-code) go by height: the engine places them on its own
     // layers, so a plate whose layer plan only the engine knows (sleipnir color bands) slices once.
     const marks = get().layerMarks[s.activePlate] ?? []
@@ -447,7 +500,7 @@ export async function slicePlate(host: Host, opts: { auto?: boolean } = {}): Pro
             objects,
           },
           config,
-          options: { emitGcode: true, emitPreview: true, shards: host.kind === 'desktop' ? 1 : host.capabilities.threads, ...trustOptions(s), ...nameOptions(s), ...(s.profile?.printerId ? { printerId: s.profile.printerId } : {}), ...(layerTopsMm ? { layerTopsMm } : {}), ...(s.calibration[s.activePlate] ? { heightRanges: s.calibration[s.activePlate]!.ranges } : {}), ...(layerGcode.length ? { layerGcode } : {}), ...(s.resume ? resumeSliceOptions(s.resume.plan, s.resume.declareZ) : {}) },
+          options: { emitGcode: true, emitPreview: true, shards: host.kind === 'desktop' ? 1 : host.capabilities.threads, ...trustOptions(s), ...nameOptions(s), ...(s.profile?.printerId ? { printerId: s.profile.printerId } : {}), ...(layerTopsMm ? { layerTopsMm } : {}), ...(heightRanges.length ? { heightRanges } : {}), ...(layerGcode.length ? { layerGcode } : {}), ...(s.resume ? resumeSliceOptions(s.resume.plan, s.resume.declareZ) : {}) },
         },
         {
           signal: abort.signal,

@@ -95,6 +95,8 @@ export interface PlateEntry {
   partSettings?: Record<string, Record<string, SettingValue>>
   /** Painted brim ears: [x, y, z, headRadius] in the mesh's own space, mm. Used when the brim type is painted. */
   brimPoints?: [number, number, number, number][]
+  /** Settings by height from the project it came from (Metadata/layer_config_ranges.xml), heights from its bottom. */
+  layerRanges?: import('../plate/layer-ranges').LayerRange[]
   /** Where the model came from, for the sx3mf metadata: the library model id and its creator's id. */
   source?: ModelSource
   /** Kept dimensions that start on this object. Anchors are in its mesh's own coordinates; `object` is a plate object id. */
@@ -374,6 +376,12 @@ export interface AppState {
    * over one of them drops that key, says so, and slices again, so one bad value in a file never blocks the plate.
    */
   projectSettings: { source: string; keys: string[] } | null
+  /** The printer an opened project was made for, while the project is open (project/project-printer.ts). */
+  projectPrinter: ProjectPrinter | null
+  /** Another slicer's project added to a plate that has objects, waiting for "Open as project" or "Import geometry only". */
+  projectOpenAsk: { source: string } | null
+  /** The printer list on the Printer card is open. */
+  printerChooserOpen: boolean
   /** G-code overrides a person chose from a project, by key, as they chose them. An edit since makes the key untrusted again. */
   vouchedGcode: Record<string, SettingValue>
   /** The .sx3mf file the project was opened from or last saved to, where Save writes without asking. */
@@ -444,6 +452,24 @@ export interface PlateSettings {
    * 2 the right) set by hand. Absent means the slicer picks it.
    */
   nozzleMap?: number[]
+}
+
+/**
+ * A project's own printer: our profile for the printer and nozzle the file was made for. It exports G-code and slices
+ * with the project's machine G-code (`gcodeKeys`). `parked` holds what stays with it while the plate slices for
+ * another printer; `previousPrinterId` is the printer chosen before the project opened.
+ */
+export interface ProjectPrinter {
+  id: string
+  name: string
+  vendor: string
+  model: string
+  profileId: string
+  nozzle: number
+  source: string
+  previousPrinterId: string | null
+  gcodeKeys: string[]
+  parked: Record<string, SettingValue> | null
 }
 
 export interface PlateMeta {
@@ -600,6 +626,9 @@ export const appStore = createStore<AppState>()(() => ({
   unsavedPrompt: null,
   projectGcode: null,
   projectSettings: null,
+  projectPrinter: null,
+  projectOpenAsk: null,
+  printerChooserOpen: false,
   vouchedGcode: {},
   projectFile: null,
   objectTool: null,

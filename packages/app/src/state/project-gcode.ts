@@ -55,23 +55,29 @@ export function answerProjectGcode(choice: GcodeChoice | null): void {
     return
   }
   if (choice === 'project') {
-    const s = get()
-    const base = { ...resolveConfig(s.easy, s.overrides), ...slotConfig(s) } as Record<string, SettingValue | undefined>
-    const values: Record<string, SettingValue> = {}
-    for (const c of p.changes) {
-      if (c.slot === undefined) {
-        values[c.key] = c.text
-        continue
-      }
-      const cur = values[c.key] ?? base[c.key]
-      const list = Array.isArray(cur) ? [...(cur as SettingValue[])] : [cur ?? '']
-      while (list.length <= c.slot) list.push(list[list.length - 1] ?? '')
-      list[c.slot] = c.text
-      values[c.key] = list as unknown as SettingValue
-    }
+    const values = gcodeValues(p.changes)
     set((st) => ({ overrides: { ...st.overrides, ...values }, vouchedGcode: { ...st.vouchedGcode, ...values }, projectGcode: null }))
   } else set({ projectGcode: null })
   r?.(choice)
+}
+
+/** The project's G-code as overrides: per-filament text goes into its slot of the current list. */
+export function gcodeValues(changes: readonly GcodeChange[]): Record<string, SettingValue> {
+  const s = get()
+  const base = { ...resolveConfig(s.easy, s.overrides), ...slotConfig(s) } as Record<string, SettingValue | undefined>
+  const values: Record<string, SettingValue> = {}
+  for (const c of changes) {
+    if (c.slot === undefined) {
+      values[c.key] = c.text
+      continue
+    }
+    const cur = values[c.key] ?? base[c.key]
+    const list = Array.isArray(cur) ? [...(cur as SettingValue[])] : [cur ?? '']
+    while (list.length <= c.slot) list.push(list[list.length - 1] ?? '')
+    list[c.slot] = c.text
+    values[c.key] = list as unknown as SettingValue
+  }
+  return values
 }
 
 /** The override of `key` is the value a person chose from a project, unchanged since. */

@@ -77,6 +77,15 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | `export-menu` | Export |
 | `export-save-project`, `export-locked-project`, `export-gcode-3mf`, `export-all-plates` | Its items (each opens the system's save dialog) |
 
+## Opening a project
+
+| Test id | Control |
+| --- | --- |
+| `project-open-dialog` | Open this project? (another slicer's project added to a plate that has objects) |
+| `project-open-as-project`, `project-open-geometry-only` | Its Open as project and Import geometry only |
+| `project-gcode-dialog` | Check this project's G-code (an .sx3mf with its own printer G-code) |
+| `project-gcode-use-project`, `project-gcode-use-profile` | Its two choices |
+
 ## Vault
 
 | Test id | Control |

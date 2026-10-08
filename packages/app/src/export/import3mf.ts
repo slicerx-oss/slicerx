@@ -151,6 +151,8 @@ export interface ImportedObject {
   /** Painted brim ears from Metadata/brim_ear_points.txt, [x, y, z, headRadius] in the object's own space. */
   brimPoints?: [number, number, number, number][]
   source?: { modelId?: string; creatorId?: string }
+  /** Settings by height from Metadata/layer_config_ranges.xml, as the file has them. Untrusted: take them through plate/layer-ranges.ts. */
+  layerRanges?: import('../plate/layer-ranges').LayerRange[]
   /** The object's id in 3D/3dmodel.model, which kept dimensions refer to. */
   fileId: string
 }
@@ -675,6 +677,25 @@ export async function readProject(bytes: Uint8Array, bed: { widthMm: number; dep
     }
   }
   if (plates.every((p) => p.objects.length === 0)) throw new ProjectReadError('The 3MF has nothing to print.')
+  // Settings by height, by object (Orca and Bambu Studio's height range modifiers).
+  const rangesText = files.get('Metadata/layer_config_ranges.xml')
+  if (rangesText) {
+    try {
+      const { importProject } = await import('@slicerx/settings')
+      const ranges = importProject({ projectSettings: {}, layerRanges: dec.decode(rangesText) }).layerRanges
+      // The file numbers objects from 1 in the order the build first places them, not by their ids.
+      const order = [...new Set(main.items.map((i) => i.objectId))]
+      for (const pl of plates) {
+        for (const o of pl.objects) {
+          const index = String(order.indexOf(o.fileId) + 1)
+          const own = ranges.filter((r) => r.objectId === index).map((r) => ({ minZ: r.minZ, maxZ: r.maxZ, settings: r.overrides as Record<string, import('@slicerx/contracts').SettingValue> }))
+          if (own.length) o.layerRanges = own
+        }
+      }
+    } catch {
+      // A damaged ranges file leaves the objects without ranges; the rest still opens.
+    }
+  }
   let colors: string[] = []
   let settings: Record<string, unknown> = {}
   let settingsFrom: ImportedProject['settingsFrom'] = 'orca'
