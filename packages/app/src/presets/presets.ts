@@ -36,7 +36,10 @@ export function capture(kind: PresetKind, s: Pick<AppState, 'overrides' | 'easy'
 /** Loads the saved presets into the store. */
 export async function loadPresets(): Promise<void> {
   const rows = await presetStore().list()
-  set({ userPresets: rows.sort((a, b) => a.name.localeCompare(b.name, 'en')) })
+  rows.sort((a, b) => a.name.localeCompare(b.name, 'en'))
+  // The same presets keep the same list: the list is a slice input, and the command bar loads it each time it opens
+  // while there are none, which would otherwise mark a fresh slice stale and slice again on every Cmd+K.
+  if (JSON.stringify(rows) !== JSON.stringify(get().userPresets)) set({ userPresets: rows })
   // Changed settings are not kept between sessions, presets are: put the ones in use back.
   const active = get().activePresets
   const live = Object.fromEntries(Object.entries(active).filter(([, id]) => rows.some((r) => r.id === id)))
