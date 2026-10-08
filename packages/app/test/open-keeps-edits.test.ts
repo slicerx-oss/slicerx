@@ -55,6 +55,36 @@ describe('an open and the edits made while it runs', () => {
     expect(isDirty()).toBe(false)
   })
 
+  it('a second open while the first still runs asks nothing, and the first stops', async () => {
+    // The first open's geometry arrives only when let go, so the second starts while it runs.
+    let release: () => void = () => undefined
+    const gate = new Promise<void>((r) => (release = r))
+    const slow = { ...host, slicer: { loadParts: async (name: string) => (name === 'tower' ? (await gate, handle(name)) : handle(name)) } } as unknown as Host
+    const first = openModelBytes(slow, 'tower.3mf', design('tower', { layer_height: '0.16' }), undefined, { fresh: true })
+    await vi.waitFor(() => expect(get().plateLoading).toBe(true))
+    await openModelBytes(host, 'clip.3mf', design('clip'), undefined, { fresh: true })
+    expect(get().unsavedPrompt).toBeNull()
+    expect(names()).toEqual(['clip'])
+    release()
+    await first
+    // The first open's objects and settings never land on the second project, and nothing is left unsaved.
+    expect(names()).toEqual(['clip'])
+    expect(get().overrides).not.toHaveProperty('layer_height')
+    expect(isDirty()).toBe(false)
+    expect(get().plateLoading).toBe(false)
+  })
+
+  it('an open still running is not unsaved work, but an edit made during it is', async () => {
+    markClean()
+    const scope = beginOpen()
+    scope.run(() => set((s) => ({ plate: [...s.plate, entry('own')] })))
+    expect(isDirty()).toBe(false)
+    set((s) => ({ plate: [...s.plate, entry('theirs')] }))
+    expect(isDirty()).toBe(true)
+    scope.finish()
+    expect(isDirty()).toBe(true)
+  })
+
   it('the scope counts only what is not its own', async () => {
     let scope = beginOpen()
     scope.run(() => set((s) => ({ plate: [...s.plate, entry('own')] })))
