@@ -138,9 +138,32 @@ describe('nozzle size', () => {
     // A 0.6 mm nozzle shows its own numbers, not the 0.4 mm ones.
     expect(lines(six)).not.toEqual(lines(four))
     expect(h(six, 'standard')).not.toBe(h(four, 'standard'))
-    // Orca ships no Draft or Fine for the P1S 0.6 mm nozzle, so those slice with its Standard, and the tiles say so.
-    expect(h(six, 'draft')).toBe(h(six, 'standard'))
-    expect(h(six, 'fine')).toBe(h(six, 'standard'))
+    // The 0.6 mm Standard is the maker's default for the nozzle (0.30 mm), not the thinnest preset Bambu also calls Standard.
+    expect(h(six, 'standard')).toBe(0.3)
+  })
+
+  it('every nozzle has Draft thicker than Standard and Fine thinner, deriving only the tiers the maker has no preset for', async () => {
+    const ladder: Record<string, [number, number, number]> = {}
+    for (const nozzle of [0.2, 0.4, 0.6, 0.8]) {
+      const l = await buildProfileLayer({ printer: P1S, tier: 'standard', slots: [{ type: 'PLA' }], nozzle, nozzleFrom: 'choice' })
+      const v = (g: 'draft' | 'standard' | 'fine') => Number(l!.goalValues[g]['layer_height'])
+      ladder[String(nozzle)] = [v('draft'), v('standard'), v('fine')]
+      expect(v('draft'), `${nozzle} draft`).toBeGreaterThan(v('standard'))
+      expect(v('standard'), `${nozzle} standard`).toBeGreaterThan(v('fine'))
+      // Within 25 to 75 percent of the nozzle.
+      for (const g of ['draft', 'fine'] as const) {
+        expect(v(g)).toBeGreaterThanOrEqual(0.25 * nozzle - 1e-9)
+        expect(v(g)).toBeLessThanOrEqual(0.75 * nozzle + 1e-9)
+      }
+    }
+    // The maker's presets where it has them (0.4 mm, the 0.2 mm Fine), the others scaled from that nozzle's Standard by the 0.4 mm ratios.
+    expect(ladder).toEqual({ '0.2': [0.14, 0.1, 0.06], '0.4': [0.28, 0.2, 0.12], '0.6': [0.42, 0.3, 0.18], '0.8': [0.56, 0.4, 0.24] })
+  })
+
+  it('slices a derived tier at its own layer height, so the tile and the print agree', async () => {
+    const layer = await buildProfileLayer({ printer: P1S, tier: 'draft', slots: [{ type: 'PLA' }], nozzle: 0.6, nozzleFrom: 'choice' })
+    expect(Number(layer!.values['layer_height'])).toBe(0.42)
+    expect(goalSubtitle('draft', layer!.goalValues.draft)).toBe('0.42 mm')
   })
 
   it('a size the printer does not offer falls back to its default nozzle', async () => {
