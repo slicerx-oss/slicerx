@@ -13,6 +13,7 @@ import type { History } from '../cad/history/model'
 import { historyNewer, parseHistories } from './history-read'
 import type { VolumeRole } from '../state/store'
 import { areaOrigin } from '../plate/bed-origin'
+import { bounds } from '../plate/transform'
 
 const MAX_ENTRIES = 4000
 const MAX_ENTRY = 256 * 1024 * 1024
@@ -505,6 +506,23 @@ export async function vaultSourceOf(bytes: Uint8Array): Promise<{ modelId?: stri
   return first ? sourceOf({ ...marks.root, ...first }) : undefined
 }
 
+/** Centers the objects, as one group, on the bed, and sets each down on it (XY by the group's box, Z per object). */
+function placeOnBed(objects: { parts: MeshPart[]; transform: number[] }[], bed: { widthMm: number; depthMm: number }): void {
+  const boxes = objects.map((o) => bounds(o.parts, o.transform))
+  const all = boxes.filter((b): b is NonNullable<typeof b> => b !== null)
+  if (all.length === 0) return
+  const lo = [Math.min(...all.map((b) => b.min[0])), Math.min(...all.map((b) => b.min[1]))]
+  const hi = [Math.max(...all.map((b) => b.max[0])), Math.max(...all.map((b) => b.max[1]))]
+  const dx = bed.widthMm / 2 - (lo[0]! + hi[0]!) / 2
+  const dy = bed.depthMm / 2 - (lo[1]! + hi[1]!) / 2
+  objects.forEach((o, i) => {
+    o.transform[12] = o.transform[12]! + dx
+    o.transform[13] = o.transform[13]! + dy
+    const b = boxes[i]
+    if (b) o.transform[14] = o.transform[14]! - b.min[2]
+  })
+}
+
 export async function readProject(bytes: Uint8Array, bed: { widthMm: number; depthMm: number }): Promise<ImportedProject> {
   const files = await unzipEntries(bytes)
   const modelBytes = files.get('3D/3dmodel.model')
@@ -696,6 +714,10 @@ export async function readProject(bytes: Uint8Array, bed: { widthMm: number; dep
       // Settings that do not parse are left out; geometry still opens.
     }
   }
+  // A 3MF that is no slicer's project (no project settings: a CAD export, a downloaded model) is placed the way Orca
+  // places one (Plater::priv::load_files: center_instances_around_point, then ensure_on_bed): its objects, as one
+  // group, centered on the bed, each resting on it. Its own coordinates are the modeler's, not a print bed's.
+  if (!ps && !pe) for (const p of plates) placeOnBed(p.objects, bed)
   const dimensions = parseDimensions(files.get('Metadata/slicerx_dimensions.json'), new Set(plates.flatMap((p) => p.objects.map((o) => o.fileId))))
   const fileIds = new Set(plates.flatMap((p) => p.objects.map((o) => o.fileId)))
   const note = historyNewer(files)
