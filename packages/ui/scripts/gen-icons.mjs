@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// Builds src/icons/icon-paths.ts from three sources: icons/base.mjs (the approved concept icon
-// set, frozen, always first and unchanged) icons/extra.mjs and icons/hardware.mjs (icons added in this package).
+// Builds src/icons/icon-paths.ts from icons/base.mjs (the approved concept icon set, always first),
+// icons/extra.mjs and icons/hardware.mjs (icons added in this package) and icons/slice.mjs and icons/model.mjs (the
+// Slice and Model tabs' own), and src/icons/icon-small.ts from icons/small.mjs (16px versions of drawn icons).
 // Groups with the same name are merged, base icons first. Fails on a name drawn in both
 // sources, a grouped name with no drawing, or a drawing that no group lists.
 // Run: node packages/ui/scripts/gen-icons.mjs
@@ -15,15 +16,19 @@ const { BASE_ICONS: SX_ICONS, BASE_ICON_GROUPS: SX_ICON_GROUPS } = await import(
 const { EXTRA_ICONS, EXTRA_ICON_GROUPS } = await import(pathToFileURL(resolve(here, '../icons/extra.mjs')).href)
 
 const { HARDWARE_ICONS, HARDWARE_ICON_GROUPS } = await import(pathToFileURL(resolve(here, '../icons/hardware.mjs')).href)
+const { SLICE_ICONS, SLICE_ICON_GROUPS } = await import(pathToFileURL(resolve(here, '../icons/slice.mjs')).href)
+const { MODEL_ICONS, MODEL_ICON_GROUPS } = await import(pathToFileURL(resolve(here, '../icons/model.mjs')).href)
+const { SMALL_ICONS } = await import(pathToFileURL(resolve(here, '../icons/small.mjs')).href)
 
-const collisions = [...Object.keys(EXTRA_ICONS), ...Object.keys(HARDWARE_ICONS)].filter((n, i, all) => Object.hasOwn(SX_ICONS, n) || all.indexOf(n) !== i)
-if (collisions.length) throw new Error('icons redrawn across icons/base.mjs, icons/extra.mjs and icons/hardware.mjs: ' + collisions.join(', '))
+const added = [EXTRA_ICONS, HARDWARE_ICONS, SLICE_ICONS, MODEL_ICONS]
+const collisions = added.flatMap(Object.keys).filter((n, i, all) => Object.hasOwn(SX_ICONS, n) || all.indexOf(n) !== i)
+if (collisions.length) throw new Error('icons drawn twice across icons/base.mjs, extra.mjs, hardware.mjs, slice.mjs and model.mjs: ' + collisions.join(', '))
 
-const icons = { ...SX_ICONS, ...EXTRA_ICONS, ...HARDWARE_ICONS }
+const icons = Object.assign({}, SX_ICONS, ...added)
 // The concept file predates the mimir name; the group label follows the product name.
 const label = (group) => (group === 'Pilot' ? 'mimir' : group)
 const groups = {}
-for (const source of [SX_ICON_GROUPS, EXTRA_ICON_GROUPS, HARDWARE_ICON_GROUPS]) {
+for (const source of [SX_ICON_GROUPS, EXTRA_ICON_GROUPS, HARDWARE_ICON_GROUPS, SLICE_ICON_GROUPS, MODEL_ICON_GROUPS]) {
   for (const [group, list] of Object.entries(source)) groups[label(group)] = [...(groups[label(group)] ?? []), ...list]
 }
 
@@ -35,6 +40,9 @@ const twice = grouped.filter((n, i) => grouped.indexOf(n) !== i)
 if (twice.length) throw new Error('icons listed in more than one group: ' + twice.join(', '))
 const loose = names.filter((n) => !grouped.includes(n))
 if (loose.length) throw new Error('icons drawn but not in any group: ' + loose.join(', '))
+
+const orphans = Object.keys(SMALL_ICONS).filter((n) => !Object.hasOwn(icons, n))
+if (orphans.length) throw new Error('icons/small.mjs draws icons with no 24px drawing: ' + orphans.join(', '))
 
 const { STARTUP_ICONS } = await import(pathToFileURL(resolve(here, '../icons/startup.mjs')).href)
 const undrawn = STARTUP_ICONS.filter((n) => !Object.hasOwn(icons, n))
@@ -68,6 +76,22 @@ writeFileSync(resolve(here, '../src/icons/icon-startup.ts'), [
   ...STARTUP_ICONS.map((n) => `  ${JSON.stringify(n)}: ${JSON.stringify(icons[n])},`),
   '}',
   '',
+  '/** The 16px versions of the startup icons that have one (icons/small.mjs). */',
+  'export const STARTUP_SMALL_PATHS: Partial<Record<IconName, string>> = {',
+  ...STARTUP_ICONS.filter((n) => Object.hasOwn(SMALL_ICONS, n)).map((n) => `  ${JSON.stringify(n)}: ${JSON.stringify(SMALL_ICONS[n])},`),
+  '}',
+  '',
+].join('\n'))
+// The 16px drawings, loaded with the full table.
+writeFileSync(resolve(here, '../src/icons/icon-small.ts'), [
+  ...header,
+  "import type { IconName } from './icon-names'",
+  '',
+  '/** Inner SVG markup of the 16px versions, drawn on a 16px grid at stroke 1.5 in currentColor (icons/small.mjs). */',
+  'export const SMALL_ICON_PATHS: Partial<Record<IconName, string>> = {',
+  ...Object.keys(SMALL_ICONS).sort().map((n) => `  ${JSON.stringify(n)}: ${JSON.stringify(SMALL_ICONS[n])},`),
+  '}',
+  '',
 ].join('\n'))
 
 const lines = [
@@ -90,4 +114,4 @@ const lines = [
   '',
 ]
 writeFileSync(resolve(here, '../src/icons/icon-paths.ts'), lines.join('\n'))
-console.log(`wrote ${names.length} icons, ${STARTUP_ICONS.length} of them in the startup table (${Object.keys(SX_ICONS).length} from icons/base.mjs, ${Object.keys(EXTRA_ICONS).length} from icons/extra.mjs, ${Object.keys(HARDWARE_ICONS).length} from icons/hardware.mjs) in ${Object.keys(groups).length} groups`)
+console.log(`wrote ${names.length} icons, ${STARTUP_ICONS.length} of them in the startup table (${Object.keys(SX_ICONS).length} from icons/base.mjs, ${Object.keys(EXTRA_ICONS).length} from icons/extra.mjs, ${Object.keys(HARDWARE_ICONS).length} from icons/hardware.mjs, ${Object.keys(SLICE_ICONS).length} from icons/slice.mjs, ${Object.keys(MODEL_ICONS).length} from icons/model.mjs) in ${Object.keys(groups).length} groups, and ${Object.keys(SMALL_ICONS).length} 16px versions`)
