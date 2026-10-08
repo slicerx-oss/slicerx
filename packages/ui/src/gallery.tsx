@@ -3,6 +3,7 @@
 // A page of every primitive in a realistic state, for design review. Apps mount it on a
 // dev-only route; the render test proves each component renders on the server.
 import { MenuIcon, MenuIconRow } from './components/context-menu'
+import { EdgeTab } from './components/edge-tab'
 import {
   AppBar,
   Avatar,
@@ -188,6 +189,16 @@ export function Gallery({ palette = false, theme }: { palette?: boolean; theme?:
               </MenuAnchor>
             </section>
             <section className="g-sec">
+              <Eyebrow>Edge tabs</Eyebrow>
+              {/* each tab on the inner edge of its panel, open on the left, shut on the right and at the bottom */}
+              <div className="g-edgebox">
+                <div className="g-edge-pane" />
+                <span className="g-edge-at" data-at="left"><EdgeTab side="left" open label="Model tree" shortcut="[" onToggle={noop} /></span>
+                <span className="g-edge-at" data-at="right"><EdgeTab side="right" open={false} label="Tool and transform" shortcut="]" onToggle={noop} /></span>
+                <span className="g-edge-at" data-at="bottom"><EdgeTab side="bottom" open={false} label="Timeline" shortcut="Mod+J" onToggle={noop} /></span>
+              </div>
+            </section>
+            <section className="g-sec">
               <Eyebrow>Context menu</Eyebrow>
               {/* floating over a busy backdrop, as over the 3D view, so the glass and the lift show */}
               <div className="g-ctxbox">
@@ -274,6 +285,9 @@ export const GALLERY_CSS = `
 .g-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:16px 24px;margin-top:16px}
 .g-stack{display:flex;flex-direction:column;gap:8px;max-width:360px}
 .g-pad{padding:8px 14px}
+.g-edgebox{position:relative;height:200px;max-width:420px;border-radius:var(--r-md);overflow:hidden;background:repeating-linear-gradient(135deg,color-mix(in srgb,var(--accent) 22%,transparent) 0 10px,transparent 10px 22px),var(--ink-1)}
+.g-edge-pane{position:absolute;left:0;top:0;bottom:0;width:120px;background:var(--ink-2);border-right:1px solid var(--line-soft)}
+.g-edge-at{position:absolute}.g-edge-at[data-at=left]{left:120px;top:72px}.g-edge-at[data-at=right]{right:0;top:72px}.g-edge-at[data-at=bottom]{left:50%;bottom:0;margin-left:-28px}
 .g-ctxbox{position:relative;height:300px;max-width:420px;padding:12px;border-radius:var(--r-md);background:repeating-linear-gradient(135deg,color-mix(in srgb,var(--accent) 22%,transparent) 0 10px,transparent 10px 22px),var(--ink-1)}
 .g-ctxat{position:absolute;left:48px;top:52px}
 .g-panelbox{max-width:300px;border:1px solid var(--line-soft);border-radius:var(--r-md);overflow:hidden}
