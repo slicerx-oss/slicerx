@@ -26,7 +26,7 @@ import { plateSequence } from '../plate/plate-sequence'
 import { layerHeightConflict, objectOverrides, partOverridesOf } from '../plate/object-settings'
 import { printBlock } from '../plate/heimdall'
 import { clearProject } from '../project/new'
-import { confirmDiscard, markClean } from '../project/unsaved'
+import { beginOpen, confirmDiscard, markClean, type OpenScope } from '../project/unsaved'
 import { isExportOnly } from '../lib/hand-printers'
 import { colorModeAfterSlice, get, markStale, set, toast, type AppState, type PlateEntry, type PlateMeta, selectedIds, type PendingApproval, type ModelSource, type PlateVolumeEntry } from './store'
 import { appName, brandAccent, objectPalette } from '../edition'
@@ -55,7 +55,7 @@ function centered(bedW: number, bedD: number): number[] {
 let opened = 0
 let seeded = false
 
-async function addDecoded(host: Host, model: DecodedModel, opts: { replace: boolean; thumb?: string; keep?: () => boolean }): Promise<PlateEntry | null> {
+async function addDecoded(host: Host, model: DecodedModel, opts: { replace: boolean; thumb?: string; keep?: () => boolean; scope?: OpenScope | undefined }): Promise<PlateEntry | null> {
   const handle = await host.slicer.loadParts(model.name, model.parts)
   if (opts.keep && !opts.keep()) return null
   const { bed } = get()
@@ -68,7 +68,9 @@ async function addDecoded(host: Host, model: DecodedModel, opts: { replace: bool
     transform: centered(bed.widthMm, bed.depthMm),
     ...(opts.thumb ? { thumb: opts.thumb } : {}),
   }
-  set((s) => ({ plate: opts.replace ? [entry] : [...s.plate, entry], selection: entry.id }))
+  const add = () => set((s) => ({ plate: opts.replace ? [entry] : [...s.plate, entry], selection: entry.id }))
+  if (opts.scope) opts.scope.run(add)
+  else add()
   markStale()
   return entry
 }
@@ -132,7 +134,9 @@ async function startFresh(): Promise<boolean> {
  * enforcers). Returns false when the file is not one we can read as a project, so the caller falls back
  * to the engine's own loader; `told` when it already showed the person a note of its own.
  */
-async function addProject(host: Host, data: ArrayBuffer, name: string): Promise<false | 'opened' | 'told'> {
+async function addProject(host: Host, data: ArrayBuffer, name: string, scope?: OpenScope): Promise<false | 'opened' | 'told'> {
+  // The open's own changes, so an edit made while it runs is not taken for part of it.
+  const mine = <T>(fn: () => T): T => (scope ? scope.run(fn) : fn())
   const { readProject, ProjectReadError } = await import('../export/import3mf')
   let project
   try {
@@ -154,7 +158,7 @@ async function addProject(host: Host, data: ArrayBuffer, name: string): Promise<
     if (choice === 'geometry') geometryOnly = true
     else {
       if (!(await confirmDiscard('open this project'))) return 'told'
-      clearProject()
+      mine(() => clearProject())
       wasEmpty = true
     }
   }
@@ -182,10 +186,10 @@ async function addProject(host: Host, data: ArrayBuffer, name: string): Promise<
   if (project.historyNote) toast(project.historyNote, 'warn')
   // Named values come with the project; a name the open project already has keeps its own value.
   if (project.namedValues.length) {
-    set((s) => ({ namedValues: [...s.namedValues, ...project.namedValues.filter((v) => !s.namedValues.some((o) => o.name === v.name))] }))
+    mine(() => set((s) => ({ namedValues: [...s.namedValues, ...project.namedValues.filter((v) => !s.namedValues.some((o) => o.name === v.name))] })))
   }
   // The file's filament colors stay per slot; a second file only fills slots the first left without one.
-  if (project.colors.length) set((s) => ({ fileSlotColors: wasEmpty ? [...project.colors] : project.colors.map((c, i) => s.fileSlotColors[i] ?? c) }))
+  if (project.colors.length) mine(() => set((s) => ({ fileSlotColors: wasEmpty ? [...project.colors] : project.colors.map((c, i) => s.fileSlotColors[i] ?? c) })))
   const placed = new Set<string>()
   // Every setting key the file brings, so a value the engine refuses can be dropped at the slice.
   const brought = new Set<string>()
@@ -232,29 +236,29 @@ async function addProject(host: Host, data: ArrayBuffer, name: string): Promise<
     if (plate.objects.length === 0) continue
     const made = await entries(plate.objects)
     if (i > 0) {
-      const id = addPlate({ ...(plate.sequence ? { sequence: plate.sequence } : {}), ...(plate.nozzleMap ? { nozzleMap: plate.nozzleMap } : {}) })
-      set((s) => ({ plates: s.plates.map((p) => (p.id === id ? { ...p, name: plate.name } : p)) }))
+      const id = mine(() => addPlate({ ...(plate.sequence ? { sequence: plate.sequence } : {}), ...(plate.nozzleMap ? { nozzleMap: plate.nozzleMap } : {}) }))
+      mine(() => set((s) => ({ plates: s.plates.map((p) => (p.id === id ? { ...p, name: plate.name } : p)) })))
     }
-    set((s) => ({ plate: [...s.plate, ...made], selection: made[0]?.id ?? s.selection }))
+    mine(() => set((s) => ({ plate: [...s.plate, ...made], selection: made[0]?.id ?? s.selection })))
     if (plate.marks?.length) {
       const { customGcodeProblem, markId } = await import('../plate/layer-marks')
       // Custom text from a file is untrusted: it passes the same check as text typed in.
       const ok = plate.marks.filter((m) => m.kind !== 'custom' || customGcodeProblem(m.gcode ?? '') === null).map((m) => ({ id: markId(), z: m.z, kind: m.kind, ...(m.kind === 'custom' ? { gcode: (m.gcode ?? '').trim() } : {}) }))
-      set((s) => ({ layerMarks: { ...s.layerMarks, [s.activePlate]: [...(s.layerMarks[s.activePlate] ?? []), ...ok].sort((a, b) => a.z - b.z) } }))
+      mine(() => set((s) => ({ layerMarks: { ...s.layerMarks, [s.activePlate]: [...(s.layerMarks[s.activePlate] ?? []), ...ok].sort((a, b) => a.z - b.z) } })))
     }
     const sequence = plate.sequence
-    if (i === 0 && sequence) set((s) => ({ plates: s.plates.map((p) => (p.id === s.activePlate ? { ...p, settings: { ...p.settings, sequence } } : p)) }))
+    if (i === 0 && sequence) mine(() => set((s) => ({ plates: s.plates.map((p) => (p.id === s.activePlate ? { ...p, settings: { ...p.settings, sequence } } : p)) })))
     const nozzleMap = plate.nozzleMap
-    if (i === 0 && nozzleMap) set((s) => ({ plates: s.plates.map((p) => (p.id === s.activePlate ? { ...p, settings: { ...p.settings, nozzleMap } } : p)) }))
+    if (i === 0 && nozzleMap) mine(() => set((s) => ({ plates: s.plates.map((p) => (p.id === s.activePlate ? { ...p, settings: { ...p.settings, nozzleMap } } : p)) })))
   }
-  switchPlate(startPlate)
+  mine(() => switchPlate(startPlate))
   // An Orca or Bambu Studio project (anything but our .sx3mf) opens with its own fixed layers, so
   // sleipnir goes off and the layer count matches the slicer that made it.
-  if (wasEmpty && !own) set((s) => ({ easy: { ...s.easy, varyLayerHeight: false }, goal: 'custom' as const }))
+  if (wasEmpty && !own) mine(() => set((s) => ({ easy: { ...s.easy, varyLayerHeight: false }, goal: 'custom' as const })))
   let note: string | null = null
   if (pp) {
     // Another slicer's project: its settings on top of its own printer's profile, or what suits the current printer.
-    const r = pp.applyProjectSettings(name, project.settings, match)
+    const r = mine(() => pp.applyProjectSettings(name, project.settings, match))
     for (const k of r.keys) brought.add(k)
     note = r.note
   } else if (wasEmpty && hasSettings) {
@@ -263,7 +267,7 @@ async function addProject(host: Host, data: ArrayBuffer, name: string): Promise<
     const { values } = projectSettingChanges(project.settings, resolveConfig(get().easy, get().overrides))
     const n = Object.keys(values).length
     if (n) {
-      set((s) => ({ overrides: { ...s.overrides, ...values }, goal: 'custom' as const }))
+      mine(() => set((s) => ({ overrides: { ...s.overrides, ...values }, goal: 'custom' as const })))
       note = `Applied ${n} settings from ${name}`
     }
     for (const k of Object.keys(values)) brought.add(k)
@@ -277,7 +281,7 @@ async function addProject(host: Host, data: ArrayBuffer, name: string): Promise<
     const { settingDef } = await import('@slicerx/settings')
     note = `${note ? `${note} ` : ''}Not imported from its height ranges: ${[...rangesLeft].map((k) => (settingDef(k)?.label ?? k).toLowerCase()).join(', ')}.`
   }
-  if (brought.size) set((s) => ({ projectSettings: { source: name, keys: [...new Set([...(wasEmpty ? [] : (s.projectSettings?.keys ?? [])), ...brought])] } }))
+  if (brought.size) mine(() => set((s) => ({ projectSettings: { source: name, keys: [...new Set([...(wasEmpty ? [] : (s.projectSettings?.keys ?? [])), ...brought])] } })))
   markStale()
   if (!note) return 'opened'
   toast(note, 'info', match?.kind === 'match' ? pp?.CHANGE_PRINTER : undefined)
@@ -285,19 +289,19 @@ async function addProject(host: Host, data: ArrayBuffer, name: string): Promise<
 }
 
 /** Returns true when it already told the person what it did (a toast of its own). */
-async function addBytes(host: Host, name: string, data: ArrayBuffer): Promise<boolean> {
+async function addBytes(host: Host, name: string, data: ArrayBuffer, scope?: OpenScope): Promise<boolean> {
   if (/\.(stl|obj|amf|step|stp)$/i.test(name)) {
     // Every mesh goes through the engine: repaired, unit detected, loose bodies split. STEP files are
     // meshed first in a worker of their own.
     const { addAutoImport } = await import('./import-auto')
     try {
-      await addAutoImport(host, name, data)
+      await addAutoImport(host, name, data, undefined, undefined, scope)
     } catch (e) {
       // Without the engine (a host that has none) an STL still opens, unrepaired.
       if (!/\.stl$/i.test(name)) throw e
       const { decodeStl } = await import('@slicerx/embed/mesh')
       try {
-        await addDecoded(host, decodeStl(data, name), { replace: false })
+        await addDecoded(host, decodeStl(data, name), { replace: false, scope })
       } catch {
         throw e
       }
@@ -307,19 +311,22 @@ async function addBytes(host: Host, name: string, data: ArrayBuffer): Promise<bo
   } else if (/\.json$/i.test(name)) {
     const { decodeQuantized } = await import('@slicerx/embed/mesh')
     const json: unknown = JSON.parse(new TextDecoder().decode(data))
-    await addDecoded(host, decodeQuantized(json), { replace: false })
+    await addDecoded(host, decodeQuantized(json), { replace: false, scope })
   } else {
     // A project with objects, parts and volumes opens as such.
-    const opened = await addProject(host, data, name)
+    const opened = await addProject(host, data, name, scope)
     if (opened) return opened === 'told'
     // 3MF geometry for the viewport arrives with the core's mesh export; slice it meanwhile.
     const handle = await host.slicer.loadModel(data, name)
     // A Vault design stays one when the engine opens it.
     const source = await (await import('../export/import3mf')).vaultSourceOf(new Uint8Array(data))
     const { bed } = get()
-    set((s) => ({
-      plate: [...s.plate, { id: uid('obj'), name: handle.name, handle, parts: [], colors: handle.parts.map((p) => p.color ?? brandAccent()), transform: centered(bed.widthMm, bed.depthMm), ...(source ? { source } : {}) }],
-    }))
+    const add = () =>
+      set((s) => ({
+        plate: [...s.plate, { id: uid('obj'), name: handle.name, handle, parts: [], colors: handle.parts.map((p) => p.color ?? brandAccent()), transform: centered(bed.widthMm, bed.depthMm), ...(source ? { source } : {}) }],
+      }))
+    if (scope) scope.run(add)
+    else add()
     markStale()
   }
   return false
@@ -331,13 +338,19 @@ async function addBytes(host: Host, name: string, data: ArrayBuffer): Promise<bo
  */
 export async function openModelBytes(host: Host, name: string, data: ArrayBuffer, source?: ModelSource, opts: { fresh?: boolean } = {}): Promise<void> {
   if (opts.fresh && !(await startFresh())) return
+  // A new project ends clean, unless the person edited it while it opened.
+  const scope = opts.fresh ? beginOpen() : undefined
   set({ plateLoading: true })
   try {
     const before = new Set(get().plate.map((p) => p.id))
-    const told = await addBytes(host, name, data)
+    const told = await addBytes(host, name, data, scope)
     // A model from the library keeps its model and creator ids for the sx3mf it is saved in.
-    if (source && (source.modelId || source.creatorId)) set((s) => ({ plate: s.plate.map((p) => (before.has(p.id) ? p : { ...p, source })) }))
-    if (opts.fresh) markClean()
+    if (source && (source.modelId || source.creatorId)) {
+      const tag = () => set((s) => ({ plate: s.plate.map((p) => (before.has(p.id) ? p : { ...p, source })) }))
+      if (scope) scope.run(tag)
+      else tag()
+    }
+    scope?.finish()
     if (!told) toast(`Added ${name}`)
   } catch (e) {
     toast(e instanceof Error ? e.message : `Could not open ${name}`, 'error')
@@ -361,6 +374,8 @@ export async function addFileRefs(host: Host, refs: FileRef[], opts: { fresh?: b
   const project = refs.some((r) => /\.(sx3mf|3mf|sxlock)$/i.test(r.name))
   if (opts.fresh && !(await startFresh())) return
   const wasEmpty = get().plate.length === 0 && get().plates.every((p) => p.objects.length === 0)
+  // A new project, or a project onto an empty plate, ends clean, unless the person edited it while it opened.
+  const scope = opts.fresh || (project && wasEmpty) ? beginOpen() : undefined
   set({ plateLoading: true })
   try {
     let told = false
@@ -370,16 +385,15 @@ export async function addFileRefs(host: Host, refs: FileRef[], opts: { fresh?: b
       const data = open?.data ?? (await host.files.read(ref))
       // A copy is taken first: a worker may take the original. A locked project is never kept unlocked in recents.
       const keep = !open && /\.(sx3mf|3mf)$/i.test(name) ? data.slice(0) : null
-      told = (await addBytes(host, name, data)) || told
+      told = (await addBytes(host, name, data, scope)) || told
       if (keep) void import('../project/autosave').then((m) => m.recordRecent(name, keep))
     }
-    if (opts.fresh) markClean()
     if (project && wasEmpty) {
       // Save writes back to an opened .sx3mf; another slicer's 3MF is saved as a new file.
       const only = refs.length === 1 ? refs[0] : undefined
       set({ projectFile: only?.path && /\.sx3mf$/i.test(only.name) ? only : null })
-      markClean()
     }
+    scope?.finish()
     if (!told || refs.length > 1) toast(refs.length === 1 ? `Added ${refs[0]?.name ?? 'model'}` : `Added ${refs.length} models`)
   } catch (e) {
     toast(e instanceof Error ? e.message : 'Could not open the file')

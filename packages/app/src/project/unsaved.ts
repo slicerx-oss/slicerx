@@ -11,6 +11,9 @@ const INPUTS = ['plate', 'plates', 'objectSettings', 'slotSetup', 'layerMarks', 
 let dirty = false
 let tracking = false
 let pending: ((proceed: boolean) => void) | null = null
+/** Project changes so far, except those made while `quiet` (not edits at all). Opens compare it to tell their own changes from the person's. */
+let edits = 0
+let quiet = 0
 
 /** The project matches what was saved or opened (or is the untouched starting plate). */
 export function markClean(): void {
@@ -21,8 +24,54 @@ export function markClean(): void {
 /** Runs a store change that is not an edit of the project (setup choosing the bed): a project that was clean stays clean. */
 export function withoutDirtying(change: () => void): void {
   const clean = !isDirty()
-  change()
+  quiet++
+  try {
+    change()
+  } finally {
+    quiet--
+  }
   if (clean) markClean()
+}
+
+/** An open in progress. Changes it makes through `run` or `during` are its own; `finish` marks the project clean only when nothing else changed it meanwhile. */
+export interface OpenScope {
+  /** Runs changes the open makes. */
+  run<T>(fn: () => T): T
+  /** Waits for work of the open whose changes cannot be wrapped one by one (an arrange); changes until it settles are the open's. */
+  during<T>(work: Promise<T>): Promise<T>
+  /** The open is done: clean, unless the person edited the project while it ran. */
+  finish(): void
+}
+
+/** Starts an open: from here, a project change that is not the open's own (a model dropped while it loads) keeps the project unsaved. */
+export function beginOpen(): OpenScope {
+  const start = edits
+  let own = 0
+  let open = 0
+  const count = <T>(fn: () => T): T => {
+    const before = edits
+    try {
+      return fn()
+    } finally {
+      own += edits - before
+    }
+  }
+  return {
+    run: count,
+    async during(work) {
+      const before = edits
+      open++
+      try {
+        return await work
+      } finally {
+        open--
+        own += edits - before
+      }
+    },
+    finish() {
+      if (open === 0 && edits - start === own) markClean()
+    },
+  }
 }
 
 const listeners = new Set<(unsaved: boolean) => void>()
@@ -47,7 +96,10 @@ export function startDirtyTracking(): void {
   if (tracking) return
   tracking = true
   appStore.subscribe((s, prev) => {
-    if (INPUTS.some((k) => s[k] !== prev[k])) dirty = true
+    if (INPUTS.some((k) => s[k] !== prev[k])) {
+      dirty = true
+      if (!quiet) edits++
+    }
     if (dirty || reported) notify()
   })
 }
