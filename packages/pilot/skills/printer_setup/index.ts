@@ -8,7 +8,7 @@
 // secure field the host shows; they never pass through the chat.
 import type { Cell, LookId } from '@slicerx/contracts'
 import { LOOK_IDS, LOOK_OPTIONS } from '@slicerx/contracts'
-import { BRANDS, brandsWithModels, connectionMethod, modelById, modelsForBrand, type ConnectionField, type ConnectionId, type PrinterModel } from '@slicerx/printer-catalog'
+import { BRANDS, brandsWithModels, connectionMethod, directConnections, modelById, modelsForBrand, type ConnectionField, type ConnectionId, type PrinterModel } from '@slicerx/printer-catalog'
 import { z } from 'zod'
 import type { SetupAddInput, SetupConnection } from '../../src/hosts'
 import { defineSkill, type ToolContext } from '../../src/tool'
@@ -160,7 +160,7 @@ export function createSetupTools() {
       const modelMatches = brand && i.model ? findModel(brand.id, i.model) : []
       const model = modelMatches.length === 1 ? modelMatches[0] : undefined
       const nozzleOk = model && i.nozzleMm !== undefined ? model.nozzles.includes(i.nozzleMm) : false
-      const connId = model ? (isExport(i.connection) ? EXPORT : model.connections.find((c) => c === i.connection)) : undefined
+      const connId = model ? (isExport(i.connection) ? EXPORT : directConnections(model.connections).find((c) => c === i.connection)) : undefined
       const method = connId && connId !== EXPORT ? methodOf(connId) : undefined
       const plain = method ? method.fields.filter((f) => !f.secret && f.key !== 'port' && f.key !== 'pairing') : []
       const have = (k: string): boolean => (k === 'host' ? Boolean(i.host) : k === 'serial' ? Boolean(i.serial) : k === 'username' ? Boolean(i.username) : true)
@@ -199,7 +199,8 @@ export function createSetupTools() {
         ask = {
           stage,
           question: 'How should SlicerX reach the printer?',
-          options: model.connections.map((c) => {
+          // A connection through a connected app (BamBuddy) is set up in Settings, Connected apps, not here.
+          options: directConnections(model.connections).map((c) => {
             const m = methodOf(c)
             return c === EXPORT ? { id: c, label: 'Slicing only, save G-code' } : { id: c, label: m?.name ?? c, ...(m ? { note: m.summary } : {}) }
           }),
@@ -223,7 +224,7 @@ export function createSetupTools() {
       if (brand) resolved['brand'] = { id: brand.id, label: brand.name }
       if (model) {
         resolved['model'] = { id: model.id, label: model.name, nozzlesMm: model.nozzles, defaultNozzleMm: model.defaultNozzle, filamentSystem: model.filamentSystem ?? 'none', ...(model.note ? { note: oneLine(model.note, 200) } : {}) }
-        resolved['connections'] = model.connections.map((c) => ({ id: c, label: c === EXPORT ? 'Slicing only, save G-code' : (methodOf(c)?.name ?? c) }))
+        resolved['connections'] = directConnections(model.connections).map((c) => ({ id: c, label: c === EXPORT ? 'Slicing only, save G-code' : (methodOf(c)?.name ?? c) }))
       }
       if (method && model) {
         resolved['connection'] = { id: method.id, guide: method.guide, fields: method.fields.map((f) => fieldSummary(model, f)), pairsOnPrinter: method.pairsOnPrinter ?? false, helpCheckedOnPrinter: model.find.checkedOnPrinter }

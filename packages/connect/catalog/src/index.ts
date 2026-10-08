@@ -75,6 +75,14 @@ export function brandsWithModels(): Brand[] {
 }
 
 /** The connection methods of a model, best first, as full records. */
+/**
+ * The connections that need nothing set up first: a connection that goes through a connected app (BamBuddy)
+ * is left out. Use it where Settings, Connected apps is not known, such as the assistant's printer setup.
+ */
+export function directConnections(ids: readonly ConnectionId[]): ConnectionId[] {
+  return ids.filter((id) => connectionMethod(id).requiresApp === undefined)
+}
+
 export function connectionsFor(model: PrinterModel): ConnectionMethod[] {
   return model.connections.map(connectionMethod)
 }
