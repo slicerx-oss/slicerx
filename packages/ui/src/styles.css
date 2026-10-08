@@ -215,6 +215,22 @@ button { cursor: pointer; }
 .sx-menu-item-aside { margin-left: auto; padding-left: 12px; font: 500 var(--fs-xs) var(--f-mono); color: var(--dim); }
 .sx-menu-item [data-checkmark="off"] { visibility: hidden; }
 .sx-menu-sep { border: 0; border-top: 1px solid var(--line-soft); margin: 5px 0; }
+/* A panel's edge tab: 56 by 18 (18 by 56 on the sides), rounded toward the view, a grip mark along the panel's edge.
+   The parent places it; the lifted look comes from .sx-overlay. */
+.sx-edge-tab { position: relative; display: grid; place-items: center; width: 56px; height: 18px; padding: 0; border-radius: var(--r-md) var(--r-md) 0 0; border-bottom: 0; color: var(--muted); cursor: pointer; }
+.sx-edge-tab[data-side="left"], .sx-edge-tab[data-side="right"] { width: 18px; height: 56px; }
+.sx-edge-tab[data-side="left"] { border-radius: 0 var(--r-md) var(--r-md) 0; border-bottom: 1px solid var(--line-soft); border-left: 0; }
+.sx-edge-tab[data-side="right"] { border-radius: var(--r-md) 0 0 var(--r-md); border-bottom: 1px solid var(--line-soft); border-right: 0; }
+.sx-edge-tab:hover, .sx-edge-tab:focus-visible, .sx-edge-tab[aria-expanded="true"] { color: var(--fg); }
+.sx-edge-tab:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+.sx-edge-tab::after { content: ""; position: absolute; border-radius: 2px; background: color-mix(in srgb, currentColor 30%, transparent); }
+.sx-edge-tab[data-side="bottom"]::after { left: 50%; bottom: 3px; width: 20px; height: 3px; margin-left: -10px; }
+.sx-edge-tab[data-side="left"]::after { top: 50%; left: 3px; width: 3px; height: 20px; margin-top: -10px; }
+.sx-edge-tab[data-side="right"]::after { top: 50%; right: 3px; width: 3px; height: 20px; margin-top: -10px; }
+.sx-edge-tab .sx-ic { transition: transform var(--t-fast) var(--ease); }
+.sx-edge-tab .sx-ic[data-dir="left"] { transform: rotate(180deg); }
+.sx-edge-tab .sx-ic[data-dir="up"] { transform: rotate(-90deg); }
+.sx-edge-tab .sx-ic[data-dir="down"] { transform: rotate(90deg); }
 /* A context menu: the verbs used most as a row of icons over the items. */
 .sx-menu-icons { display: flex; gap: 2px; padding: 1px 1px 4px; margin-bottom: 4px; border-bottom: 1px solid var(--line-soft); }
 .sx-menu-item.sx-menu-icon { width: 32px; min-height: 32px; padding: 0; justify-content: center; flex: none; }
