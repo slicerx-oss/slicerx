@@ -2,9 +2,19 @@
 // Copyright (C) 2026 The SlicerX contributors
 // Printer and service plugins as the UI and Pilot see them.
 import type { ApprovalToken, PermissionClass } from './pilot'
+import manifests from '../../connect/manifests.json' with { type: 'json' }
 
 export type PluginKind = 'printer' | 'inventory' | 'home'
-export type Capability = 'status' | 'events' | 'upload' | 'start' | 'pause' | 'resume' | 'cancel' | 'camera' | 'filament_slots' | 'gcode_console'
+export type Capability = 'status' | 'events' | 'upload' | 'start' | 'pause' | 'resume' | 'cancel' | 'camera' | 'filament_slots' | 'gcode_console' | 'project_file' | 'slot_write'
+
+const pluginCapabilities = new Map<string, ReadonlySet<string>>(
+  manifests.map((m) => [m.id, new Set<string>(m.capabilities)]),
+)
+
+/** Whether a connect plugin declares `capability` in `packages/connect/manifests.json`. */
+export function pluginHas(plugin: string | undefined, capability: Capability): boolean {
+  return plugin !== undefined && (pluginCapabilities.get(plugin)?.has(capability) ?? false)
+}
 
 export interface PluginToolSpec {
   name: string
@@ -173,12 +183,12 @@ export interface StartOptions {
 }
 
 /**
- * Whether a printer makes its filament follow `StartOptions.slotMap` for this file. Today only
- * a Bambu Lab printer starting a .gcode.3mf does (`project_file` with `ams_mapping`); a plain
- * .gcode on Bambu and every other driver take filament as the G-code says.
+ * Whether a printer makes its filament follow `StartOptions.slotMap` for this file. A plugin that
+ * declares `project_file` does, for a .gcode.3mf (`ams_mapping`). A plain .gcode, and every plugin
+ * without that capability, takes filament as the G-code says.
  */
 export function followsSlotMap(plugin: string, fileName: string): boolean {
-  return plugin === 'bambu-lan' && /\.3mf$/i.test(fileName)
+  return pluginHas(plugin, 'project_file') && /\.3mf$/i.test(fileName)
 }
 
 /**

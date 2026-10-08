@@ -5,7 +5,7 @@
 // approval card is the confirm, its `printer.adjust` action binds the exact setting, and the hub
 // accepts the write from the app alone, never from an agent. After it, the slot shows what the printer
 // reports.
-import type { ApprovalToken, FilamentSlot, Host, PrinterInfo, SlotSetting } from '@slicerx/contracts'
+import { pluginHas, type ApprovalToken, type FilamentSlot, type Host, type PrinterInfo, type SlotSetting } from '@slicerx/contracts'
 import { resolveConfig } from '../adapters/config'
 import { askApproval, buildApproval } from '../state/actions'
 import { get, set, toast, type AppState } from '../state/store'
@@ -25,12 +25,12 @@ export function slotWriter(host: Host): SlotWriter | null {
 const nth = (v: unknown, i: number): number => Number(Array.isArray(v) ? (v[i] ?? v[0]) : v)
 
 /**
- * The setting for slot `index` as SlicerX has it now, or why it cannot be written: only a Bambu Lab printer that is not
- * printing takes one, a spool with an RFID tag sets itself (Bambu Studio shows those read only), and the slot needs a
+ * The setting for slot `index` as SlicerX has it now, or why it cannot be written: the printer must
+ * declare `slot_write` and not be printing, a spool with an RFID tag sets itself, and the slot needs a
  * filament preset with an id and a nozzle range.
  */
 export function slotSettingFor(st: Pick<AppState, 'slotSetup' | 'printerSlots' | 'plate' | 'plates' | 'activePlate' | 'profile' | 'easy' | 'overrides'>, index: number, printer: Pick<PrinterInfo, 'plugin'> & { status?: { state: string } }): { setting: SlotSetting } | { reason: string } {
-  if (printer.plugin !== 'bambu-lan') return { reason: `Only Bambu Lab printers take a slot setting from ${appName()}.` }
+  if (!pluginHas(printer.plugin, 'slot_write')) return { reason: `This printer does not take a slot setting from ${appName()}.` }
   if (printer.status && ['printing', 'paused', 'preparing'].includes(printer.status.state)) return { reason: 'The printer is printing. Set the slot when it is done.' }
   const on = st.printerSlots[index - 1]
   if (!on) return { reason: 'The printer reports no slot here.' }
