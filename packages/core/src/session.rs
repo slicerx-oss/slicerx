@@ -1234,7 +1234,7 @@ impl SliceSession {
                 layer: None,
             });
         }
-        if min_z < -0.001 {
+        if below_bed(min_z) {
             warnings.push(SliceWarning {
                 code: WarningCode::OutsideBed,
                 message: "Part of the plate is below the bed; it is cut off at z = 0".to_owned(),
@@ -9003,6 +9003,12 @@ fn zig_lines(
     lines
 }
 
+/// a thousandth of a mm under the bed still counts as on it (prusa's sinking threshold). bambu writes -0.001,
+/// which f32 widens to just under that, hence the slack.
+fn below_bed(min_z: f64) -> bool {
+    min_z < -(0.001 + 1e-4)
+}
+
 #[cfg(test)]
 mod tag_tests {
     use super::settings_tag;
@@ -9017,5 +9023,18 @@ mod tag_tests {
         assert_eq!(first.raw, cfg.raw);
         assert_ne!(settings_tag(&first), settings_tag(&cfg));
         assert_eq!(settings_tag(&cfg.clone()), settings_tag(&cfg));
+    }
+}
+
+#[cfg(test)]
+mod below_bed_tests {
+    use super::below_bed;
+
+    #[test]
+    fn a_part_on_the_bed_or_a_thousandth_into_it_is_not_below_it() {
+        assert!(!below_bed(f64::from(0.0f32)));
+        // bambu writes this, and as an f32 it is -0.00100000005
+        assert!(!below_bed(f64::from(-0.001f32)));
+        assert!(below_bed(f64::from(-0.01f32)));
     }
 }
