@@ -11,7 +11,7 @@ import { collisionsOf, fixesOf } from '../../plate/heimdall'
 import { applyCollisionFix } from '../../plate/heimdall-fix'
 import { jumpTo } from '../../plate/heimdall-jump'
 import { collisionDetail, collisionTitle, fixDetail, fixTitle, wordsOf } from '../../plate/heimdall-words'
-import { get, set, useApp } from '../../state/store'
+import { get, set, shownSlice, useApp } from '../../state/store'
 
 const KIND: Record<Collision['kind'], string> = {
   gantry: 'Gantry',
@@ -40,7 +40,7 @@ export function CollisionList() {
   const list = useApp(collisionsOf)
   const fixes = useApp(fixesOf)
   const pick = useApp((s) => s.strikePick)
-  const stale = useApp((s) => s.slice.status === 'done' && s.slice.stale)
+  const stale = useApp((s) => shownSlice(s.slice)?.stale ?? false)
   // The names follow the plate; the station follows the printer, read when the list draws.
   const plate = useApp((s) => s.plate)
   const { name, station } = wordsOf(get())

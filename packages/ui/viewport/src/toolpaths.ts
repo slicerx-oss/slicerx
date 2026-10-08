@@ -374,6 +374,7 @@ export class Toolpaths {
     uFanRange: { value: [0, 100] as [number, number] },
     uTempRange: { value: [180, 260] as [number, number] },
     uHasExtras: { value: 0 },
+    uStale: { value: 0 },
     uFeatureMask: { value: 0x7fff },
     uLiveColor: { value: new Color(SCENE.liveLayer) },
     uGlow: { value: 3 },
@@ -446,7 +447,8 @@ export class Toolpaths {
           .replace('#include <shadowmap_vertex>', '#include <shadowmap_vertex>\n' + BEAD_LIGHT)
       sh.fragmentShader = ghost
         ? 'varying vec3 vLit;\nvoid main() {\n  float g = dot( vLit, vec3( 0.299, 0.587, 0.114 ) );\n  gl_FragColor = vec4( vec3( g * 0.6 + 0.35 ), 0.3 );\n}\n'
-        : 'varying vec3 vLit;\nvoid main() {\n  gl_FragColor = vec4( vLit, 1.0 );\n}\n'
+        : // stale paths (the plate changed, a new slice is coming) are drawn darker and less saturated, never hidden
+          'varying vec3 vLit;\nuniform float uStale;\nvoid main() {\n  float g = dot( vLit, vec3( 0.299, 0.587, 0.114 ) );\n  gl_FragColor = vec4( mix( vLit, vec3( g ), 0.5 * uStale ) * ( 1.0 - 0.35 * uStale ), 1.0 );\n}\n'
     }
     if (ghost) {
       this.material.transparent = true
@@ -461,6 +463,14 @@ export class Toolpaths {
     }
     this.depthMaterial.customProgramCacheKey = () => 'sx-bead-depth'
     this.root.add(this.head.root, this.purge.root, this.gantry.root)
+  }
+
+  /** Draws the paths dimmed while they are stale. Returns whether that changed. */
+  setStale(stale: boolean): boolean {
+    const v = stale ? 1 : 0
+    if (this.uniforms.uStale.value === v) return false
+    this.uniforms.uStale.value = v
+    return true
   }
 
   /** Room irradiance as nine spherical-harmonic coefficients (three.js LightProbe order). */

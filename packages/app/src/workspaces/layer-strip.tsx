@@ -6,7 +6,7 @@
 import { tipAttrs } from '@slicerx/ui'
 import { HEAT_RAMP } from '@slicerx/viewport/palette'
 import { useMemo, useRef, type KeyboardEvent, type PointerEvent } from 'react'
-import { get, set, useApp } from '../state/store'
+import { get, set, shownSlice, useApp } from '../state/store'
 import { layerKeyStep, stepLayer } from './preview/layer-step'
 import { StripStrikes } from './preview/strike-slots'
 
@@ -26,15 +26,16 @@ export function layerHeights(z: ArrayLike<number>): number[] {
 }
 
 export function LayerStrip() {
-  const slice = useApp((s) => s.slice)
+  // The last slice's layers stay while a new slice runs, so the strip never drops out and comes back.
+  const slice = useApp((s) => shownSlice(s.slice)?.result ?? null)
   const layerHi = useApp((s) => s.layerHi)
   const layerLoRaw = useApp((s) => s.layerLo)
   const mode = useApp((s) => s.workspace)
   const track = useRef<HTMLDivElement>(null)
   const drag = useRef<Handle | null>(null)
   const data = useMemo(() => {
-    if (slice.status !== 'done') return null
-    const z = slice.result.layerZ
+    if (!slice) return null
+    const z = slice.layerZ
     const h = layerHeights(z)
     const min = Math.min(...h)
     const max = Math.max(...h)

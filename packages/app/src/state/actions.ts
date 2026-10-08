@@ -28,7 +28,7 @@ import { printBlock } from '../plate/heimdall'
 import { clearProject } from '../project/new'
 import { confirmDiscard, markClean } from '../project/unsaved'
 import { isExportOnly } from '../lib/hand-printers'
-import { colorModeAfterSlice, get, markStale, set, toast, type AppState, type PlateEntry, type PlateMeta, selectedIds, type PendingApproval, type ModelSource, type PlateVolumeEntry } from './store'
+import { colorModeAfterSlice, get, markStale, set, shownSlice, toast, type AppState, type PlateEntry, type PlateMeta, selectedIds, type PendingApproval, type ModelSource, type PlateVolumeEntry } from './store'
 import { appName, brandAccent, objectPalette } from '../edition'
 import { handOffCopy, handToBambuConnect, onLinux, printRoute } from '../send/bambu-connect'
 import { openLink } from '../lib/links'
@@ -468,7 +468,9 @@ export async function slicePlate(host: Host, opts: { auto?: boolean } = {}): Pro
   sliceAbort?.abort()
   const abort = new AbortController()
   sliceAbort = abort
-  set({ slice: { status: 'running', progress: null, startedAt: performance.now() } })
+  // The last slice stays on screen, stale, until this one lands: the panels and the preview never empty in between.
+  const before = shownSlice(get().slice)
+  set({ slice: { status: 'running', progress: null, startedAt: performance.now(), ...(before ? { last: before.result } : {}) } })
   let again = false
   try {
     // The plate's own print sequence (Bambu Studio and Orca set it per plate).
@@ -522,7 +524,10 @@ export async function slicePlate(host: Host, opts: { auto?: boolean } = {}): Pro
   } catch (e) {
     if (abort.signal.aborted) {
       // A newer slice may already be running; its state is not ours to reset.
-      if (sliceAbort === abort) set({ slice: { status: 'idle' } })
+      if (sliceAbort === abort) {
+        const cur = get().slice
+        set({ slice: cur.status === 'running' && cur.last ? { status: 'done', result: cur.last, stale: true } : { status: 'idle' } })
+      }
       return
     }
     const message = e instanceof Error ? e.message : String(e)

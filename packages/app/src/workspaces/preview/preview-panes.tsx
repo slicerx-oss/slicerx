@@ -13,7 +13,7 @@ import { Swatch } from '../../parts'
 import { printBlock } from '../../plate/heimdall'
 import { resolveSlots } from '../../filament/slots'
 import { exportGcode, recordSpoolUse, sendToPrinter } from '../../state/actions'
-import { setWorkspace, useApp } from '../../state/store'
+import { setWorkspace, shownSlice, useApp } from '../../state/store'
 import { useTabLabel } from '../../first-run/look'
 import { usePrinter } from '../prepare/prepare-panes'
 import { printTarget } from '../../lib/use-printer'
@@ -89,14 +89,15 @@ export function PreviewLeft() {
   const show = (key: string, c: typeof config) => (schema ? schema.show(key, c) : String((c as Record<string, unknown>)[key] ?? ''))
   const file = useGcodeView((s) => s.file)
   if (file) return <GcodeFileBlock />
-  if (slice.status !== 'done' || !preview) {
+  const shown = shownSlice(slice)
+  if (!shown || !preview) {
     return (
       <Block title="Sliced plate" data-section="result">
         <p className="sx-muted sx-small">{slice.status === 'running' ? 'Slicing now.' : 'Nothing sliced yet.'}</p>
       </Block>
     )
   }
-  const r = slice.result
+  const r = shown.result
   const stats = previewStats(preview)
   // The rows add up to the estimate: the printing split by feature, and the start before the first layer.
   const rows = timeRows(stats.features, r.stats.timeS, r.stats.prepareS).map((row) =>
@@ -108,7 +109,7 @@ export function PreviewLeft() {
   return (
     <>
       <CollisionList />
-      <Block title="Sliced plate" aside={<span className="fil-aside"><span className={slice.stale ? 'app-tag stale' : 'app-tag'}>{slice.stale ? 'Settings changed' : 'Current'}</span><MoreButton id="preview" /></span>} data-section="result">
+      <Block title="Sliced plate" aside={<span className="fil-aside"><span className={shown.stale ? 'app-tag stale' : 'app-tag'}>{shown.stale ? (slice.status === 'running' ? 'Updating' : 'Settings changed') : 'Current'}</span><MoreButton id="preview" /></span>} data-section="result">
         <p className="result-line">
           <Icon name="check" />
           Sliced {r.layerCount} layers in {(r.wallMs / 1000).toFixed(2)} s
@@ -201,7 +202,10 @@ export function PreviewRight() {
   const links = useApp((s) => s.spoolLinks)
   // A strike in the slice, or by object objects moved too close or too tall since it: Print and Export wait.
   const unsafe = useApp(printBlock)
-  if (slice.status !== 'done') {
+  const shown = shownSlice(slice)
+  // The result on screen while a new slice runs is the last one: its file is not the plate's, so Print and Export wait.
+  const updating = slice.status === 'running'
+  if (!shown) {
     return (
       <Block title="Filament use" data-section="filament">
         <p className="sx-muted sx-small">Appears after slicing.</p>
@@ -213,7 +217,7 @@ export function PreviewRight() {
       </Block>
     )
   }
-  const r = slice.result
+  const r = shown.result
   const colors = slotColors.split(',')
   const grams = r.stats.filamentG.reduce((a, b) => a + b, 0)
   const target = printTarget(printer, rows)
@@ -273,19 +277,19 @@ export function PreviewRight() {
         </dl>
         {printer && isExportOnly(printer) ? (
           <>
-            <Button variant="primary" size="lg" full icon="sd-card" disabled={unsafe !== null} onClick={() => void exportGcode(host)}>
+            <Button variant="primary" size="lg" full icon="sd-card" disabled={unsafe !== null || updating} onClick={() => void exportGcode(host)}>
               {`Export for ${printer.name}`}
             </Button>
             <p className="app-note">No connection. Save the file and copy it to the printer on a USB stick or SD card.</p>
           </>
         ) : (
           <>
-            <Button variant="primary" size="lg" full icon="send-to-printer" aria-label={target ? `Print on ${target.name}` : undefined} disabled={!target || unsafe !== null} onClick={() => target && void sendToPrinter(host, target)}>
+            <Button variant="primary" size="lg" full icon="send-to-printer" aria-label={target ? `Print on ${target.name}` : undefined} disabled={!target || unsafe !== null || updating} onClick={() => target && void sendToPrinter(host, target)}>
               {target ? 'Print' : 'No idle printer'}
             </Button>
             {target ? <p className="app-note">On {target.name}{target.name !== target.model ? `, ${target.model}` : ''}</p> : null}
             <div className="app-row gap8">
-              <Button size="sm" icon="download" disabled={unsafe !== null} onClick={() => void exportGcode(host)}>
+              <Button size="sm" icon="download" disabled={unsafe !== null || updating} onClick={() => void exportGcode(host)}>
                 Export G-code
               </Button>
             </div>
