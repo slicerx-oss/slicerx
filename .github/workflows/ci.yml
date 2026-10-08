@@ -122,6 +122,14 @@ jobs:
         env:
           SLICERX_SX_BIN: ${{ github.workspace }}/target/release/sx
 
+  # The heavy-work lock of the self-hosted CI (scripts/ci/heavy.sh), on a temporary lock.
+  heavy-lock:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash scripts/ci/heavy-test.sh
+
   secrets:
     runs-on: ubuntu-latest
     steps:
