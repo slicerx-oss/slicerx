@@ -47,6 +47,7 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | `setup-connection-<method>` | A connection choice; `setup-connection-export` is No connection (export files) |
 | `setup-printer-step-<step>` | A step in the printer form's step list |
 | `setup-printer-error` | The printer was not saved |
+| `theme-<family>` | A theme card in setup's theme step and in Settings, Look and feel: `theme-subban`, `theme-dracula` and so on |
 
 ## Prepare: the objects list and Export
 
