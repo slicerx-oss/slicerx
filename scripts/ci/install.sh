@@ -22,6 +22,7 @@ if [ ! -f "$CI_HOME/ci.env" ]; then
 # SX_CI_REMOTES="pc-wsl"
 # SX_CI_REMOTE_pc_wsl="ssh user@host wsl -d Ubuntu-24.04 -- bash -lc"
 # SX_CI_REMOTE_HOME_pc_wsl=/root/builds/ci
+# SX_HEAVY_LOCK=/mnt/c/Users/<user>/.slicerx-heavy.lock   # WSL on Windows: share the Windows side's heavy lock
 EOF
 fi
 echo "CI home: $CI_HOME"
