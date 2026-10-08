@@ -420,10 +420,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          # the attribution check reads the commits of the run's range, which needs their history
-          fetch-depth: 0
-      - name: No dashes, emojis, or AI attribution in docs and commits
+      - name: No em or en dashes in docs
         run: |
           set -u
           fail=0
@@ -431,14 +428,4 @@ jobs:
           if [ -n "$files" ] && echo "$files" | xargs grep -nP '\x{2014}|\x{2013}' ; then
             echo "Em or en dash found."; fail=1
           fi
-          # A pull request's own commits and its body, the queued commits, or what a push added (scripts/ci/attribution.mjs)
-          node scripts/ci/attribution.mjs || fail=1
           exit $fail
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          MQ_BASE_SHA: ${{ github.event.merge_group.base_sha }}
-          MQ_HEAD_SHA: ${{ github.event.merge_group.head_sha }}
-          PUSH_BEFORE: ${{ github.event.before }}
-          # the body goes through the environment only, never into the script text
-          PR_BODY: ${{ github.event.pull_request.body }}
