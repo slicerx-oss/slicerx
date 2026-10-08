@@ -4,6 +4,8 @@
 //! maps to one method of the desktop `Host` (apps/desktop/src/host).
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+#[cfg(feature = "agent-bridge")]
+mod agent_bridge;
 #[cfg(feature = "pilot")]
 mod agents;
 #[cfg(feature = "connect")]
@@ -78,6 +80,8 @@ fn main() {
     } else {
         builder
     };
+    #[cfg(feature = "agent-bridge")]
+    let builder = builder.manage(agent_bridge::Relay::default());
     let app = builder
         .manage(slicing::Slicer::default())
         .manage(files::OpenFiles::default())
@@ -110,6 +114,9 @@ fn main() {
             opened::handle(&handle, std::env::args().skip(1).collect());
             #[cfg(feature = "pilot")]
             chatgpt::migrate_api_keys();
+            // Dev and test builds only, and only with SX_AGENT_BRIDGE_PORT set.
+            #[cfg(feature = "agent-bridge")]
+            agent_bridge::start(app.handle());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -200,6 +207,10 @@ fn main() {
             agents::agent_bundle,
             #[cfg(feature = "pilot")]
             agents::open_deeplink,
+            #[cfg(feature = "agent-bridge")]
+            agent_bridge::agent_bridge_ready,
+            #[cfg(feature = "agent-bridge")]
+            agent_bridge::agent_bridge_reply,
         ])
         .build(context)
         .expect("the Tauri runtime failed to start");
@@ -216,6 +227,8 @@ fn main() {
         tauri::RunEvent::Exit => {
             #[cfg(feature = "connect")]
             watch::stop(handle);
+            #[cfg(feature = "agent-bridge")]
+            agent_bridge::stop(handle);
             let _ = handle;
         }
         _ => {
