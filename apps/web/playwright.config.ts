@@ -2,6 +2,9 @@
 // Copyright (C) 2026 The SlicerX contributors
 import { defineConfig } from '@playwright/test'
 
+// SX_E2E_PORT serves the app on another port, for a second run on the same machine.
+const port = Number(process.env['SX_E2E_PORT'] ?? 4317)
+
 export default defineConfig({
   testDir: 'e2e',
   // A cold start can take well over a minute on a machine busy with software graphics, and the specs wait for the app's
@@ -14,7 +17,7 @@ export default defineConfig({
   workers: 3,
   expect: { timeout: 15_000 },
   use: {
-    baseURL: 'http://127.0.0.1:4317/studio/',
+    baseURL: `http://127.0.0.1:${port}/studio/`,
     // Software WebGL so the viewport runs on machines and CI runners without a GPU.
     launchOptions: { args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] },
   },
@@ -23,5 +26,5 @@ export default defineConfig({
     { name: 'phone', use: { browserName: 'chromium', viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true } },
   ],
   // Always build and serve a fresh bundle with the test environment. A server left running from an earlier build hides changes (and lacks the relay URL the phone pairing tests need).
-  webServer: { command: 'pnpm exec vite build && pnpm exec vite preview --port 4317 --strictPort --host 127.0.0.1', url: 'http://127.0.0.1:4317/studio/', reuseExistingServer: false, timeout: 120_000, env: { SLICERX_E2E: '1', SLICERX_SUPABASE_URL: '', SLICERX_SUPABASE_ANON_KEY: '', SLICERX_RELAY_URL: 'https://relay.example.invalid' } },
+  webServer: { command: `pnpm exec vite build && pnpm exec vite preview --port ${port} --strictPort --host 127.0.0.1`, url: `http://127.0.0.1:${port}/studio/`, reuseExistingServer: false, timeout: 120_000, env: { SLICERX_E2E: '1', SLICERX_SUPABASE_URL: '', SLICERX_SUPABASE_ANON_KEY: '', SLICERX_RELAY_URL: 'https://relay.example.invalid' } },
 })
