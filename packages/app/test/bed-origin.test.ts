@@ -13,12 +13,13 @@ import { areaOrigin, polygonsToPlate, towerToPlate } from '../src/plate/bed-orig
 import { boxMesh } from '../src/plate/mesh-ops'
 import { compose } from '../src/plate/transform'
 import { plateObjects } from '../src/state/actions'
-import { profileReady } from '../src/state/profile-sync'
+import { profileReady, resetProfileReady } from '../src/state/profile-sync'
 import { get, set, type PlateEntry } from '../src/state/store'
 
 afterEach(() => {
   set({ printerModel: null, plate: [], tower: { auto: true, x: 0, y: 0 } })
   setProfileLayer(null, [])
+  resetProfileReady()
 })
 
 const handle = (id: string): MeshHandle => ({ id, hash: id, name: id, triangles: 12, bboxMm: [20, 20, 20], openEdges: 0, parts: [] })

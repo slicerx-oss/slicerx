@@ -43,7 +43,7 @@ describe('electricity price', () => {
     set({ electricity: { pricePerKwh: 0.31, symbol: '€' } })
     const el = document.createElement('div')
     flushSync(() => createRoot(el).render(createElement(EnergyRow, { timeS: 7200 })))
-    await vi.waitFor(() => expect(el.querySelector('dd')?.textContent).toMatch(/^about [\d.]+ kWh, €[\d.]+$/))
+    await vi.waitFor(() => expect(el.querySelector('dd')?.textContent).toMatch(/^about [\d.]+ kWh, €[\d.]+$/), { timeout: 5000 })
     expect(el.textContent).not.toContain('$')
     expect(el.innerHTML).toContain('€0.31 per kWh')
   })

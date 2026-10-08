@@ -99,6 +99,11 @@ export async function profileReady(): Promise<void> {
   await building
 }
 
+/** For tests: forgets the inputs the layer was last built for, so the next `profileReady` builds it again. */
+export function resetProfileReady(): void {
+  key = ''
+}
+
 let started = false
 
 /** Follows the store: tracks which Easy controls were moved, and rebuilds the layer when its inputs change. */
