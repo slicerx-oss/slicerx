@@ -143,7 +143,7 @@ button.reset:hover { color: var(--fg); background: var(--ink-3); }
 :root[data-motion="reduced"] .slice-progress, :root[data-motion="reduced"] .slice-progress i { transition: none; box-shadow: none; }
 /* How Slice shows the slice: Solid, Layer lines or Toolpaths, centered under the plate toolbar. */
 /* A modeling tool left open in Design: a chip at the bottom of the viewport with the way back, above the layer dock when it shows. */
-.parked-chip { position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%); z-index: var(--z-hud); display: flex; align-items: center; gap: 8px; padding: 3px 3px 3px 12px; border-radius: var(--r-md); font: 500 13px var(--f-body); white-space: nowrap; max-width: calc(100% - 24px); }
+.parked-chip { position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%); z-index: var(--z-hud); display: flex; align-items: center; gap: 8px; padding: 3px 3px 3px 12px; border-radius: var(--r-md); font: var(--fw-medium) calc(13px * var(--text-scale)) var(--f-body); white-space: nowrap; max-width: calc(100% - 24px); }
 .parked-chip > .sx-ic:first-child { color: var(--orange); flex: none; }
 .parked-chip > span { overflow: hidden; text-overflow: ellipsis; }
 .studio[data-layers] .parked-chip { bottom: 216px; }
