@@ -59,6 +59,8 @@ Reading, for anyone (a signed-in member also gets likes and follows):
 
 The database runs these as `trending_listings`, `new_creators` and `recommended_listings`; the offline store runs the same rules from `src/ranking.ts`, against the bundled catalog's latest activity rather than the real date.
 
+QA accounts (the release gate's test accounts, see `supabase/README.md`) stay out of everyone else's view of the library: `listListings` and `feed` read approved listings from the `library_listings` view, which leaves out their uploads, and the counts and rankings above leave out their activity. A project without the view lists from the `listings` table.
+
 Members save designs to a private Saved list with `setSaved(listingId, saved)` and read it with `savedListings()`. It is a collection of kind `saved`, made on the first save, never public and left out of `collections()`.
 
 A listing is `pending`, `approved`, `rejected`, `archived` or `removed`. New listings start pending, and editing an approved or archived listing sends it back to review. Creators move their own listings with `archiveListing` (approved to archived), `unarchiveListing`, `resubmitListing` (rejected to pending) and `deleteListing` (pending, rejected or archived only). `myListings()` lists every status, and `creatorDashboard()` returns likes, comments, makes and downloads per listing.

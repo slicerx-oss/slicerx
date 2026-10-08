@@ -130,6 +130,10 @@ export function supabaseStore(sb: Db, conn?: Pick<SupabaseOptions, 'url' | 'anon
     return read(versionRow, q(VERSION_COLUMNS))
   }
 
+  // library_listings comes with 0017_qa_accounts. A project without it lists from the listings table.
+  let libraryView = true
+  const noLibraryView = (e: DbError) => Boolean(e && (e.code === 'PGRST205' || e.code === '42P01') && /library_listings/.test(e.message))
+
   async function ownCreatorRow(me: string): Promise<CreatorRow | undefined> {
     return (await read(creatorRow, sb.from('creators').select(CREATOR_COLUMNS).eq('owner_id', me)))[0]
   }
@@ -248,21 +252,34 @@ export function supabaseStore(sb: Db, conn?: Pick<SupabaseOptions, 'url' | 'anon
   async function listPage(o: { cursor?: string | undefined; limit?: number | undefined; tag?: string | undefined; creatorId?: string | undefined; query?: string | undefined; sort?: 'new' | 'popular' | undefined; status?: string | undefined }) {
     const start = Number(o.cursor ?? 0) || 0
     const limit = Math.min(Math.max(o.limit ?? 20, 1), 100)
-    let q = sb.from('listings').select(LISTING_COLUMNS).eq('status', o.status ?? 'approved')
-    if (o.tag) q = q.contains('tags', [o.tag])
-    if (o.creatorId) q = q.eq('creator_id', o.creatorId)
+    const status = o.status ?? 'approved'
     const term = o.query ? cleanTerm(o.query) : ''
-    if (term) q = q.or(`title.ilike.%${term}%,tags.cs.{${term.toLowerCase().replace(/\s+/g, '-')}}`)
-    q = q.order('published_at', { ascending: false, nullsFirst: false }).order('created_at', { ascending: false })
+    const query = (from: 'listings' | 'library_listings') => {
+      // The view has the table's columns, so both read as listings.
+      let q = sb.from(from as 'listings').select(LISTING_COLUMNS).eq('status', status)
+      if (o.tag) q = q.contains('tags', [o.tag])
+      if (o.creatorId) q = q.eq('creator_id', o.creatorId)
+      if (term) q = q.or(`title.ilike.%${term}%,tags.cs.{${term.toLowerCase().replace(/\s+/g, '-')}}`)
+      return q.order('published_at', { ascending: false, nullsFirst: false }).order('created_at', { ascending: false })
+    }
+    // Approved listings come from library_listings, which leaves out QA accounts' uploads (0017_qa_accounts).
+    const between = async (first: number, last: number): Promise<ListingRow[]> => {
+      if (status === 'approved' && libraryView) {
+        const r = await query('library_listings').range(first, last)
+        if (!noLibraryView(r.error)) return read(listingRow, Promise.resolve(r))
+        libraryView = false
+      }
+      return read(listingRow, query('listings').range(first, last))
+    }
     if (o.sort === 'popular') {
       // No database sort by counts: rank the newest 200 matches here.
-      const pool = await read(listingRow, q.range(0, 199))
+      const pool = await between(0, 199)
       const stats = await statsFor(pool.map((l) => l.id))
       const score = (l: ListingRow) => (stats.get(l.id)?.likes ?? 0) + (stats.get(l.id)?.downloads ?? 0)
       const ranked = [...pool].sort((a, b) => score(b) - score(a))
       return { rows: ranked.slice(start, start + limit), more: start + limit < ranked.length, start, limit }
     }
-    const page = await read(listingRow, q.range(start, start + limit))
+    const page = await between(start, start + limit)
     return { rows: page.slice(0, limit), more: page.length > limit, start, limit }
   }
 
