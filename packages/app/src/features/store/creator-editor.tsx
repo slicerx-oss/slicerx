@@ -249,7 +249,7 @@ export function CreatorEditorHost() {
 }
 
 /** The editor's frame: covers the Vault with a title bar, takes focus, and closes on Escape. */
-export function Frame({ title, onClose, actions, children }: { title: string; onClose: () => void; actions?: ReactNode; children: ReactNode }) {
+export function Frame({ title, onClose, actions, children, testId }: { title: string; onClose: () => void; actions?: ReactNode; children: ReactNode; testId?: string }) {
   const ref = useRef<HTMLDivElement>(null)
   useEffect(() => {
     const before = document.activeElement as HTMLElement | null
@@ -264,12 +264,12 @@ export function Frame({ title, onClose, actions, children }: { title: string; on
     }
   }, [onClose])
   return (
-    <div ref={ref} className="ce-frame" role="dialog" aria-modal="true" aria-label={title} tabIndex={-1}>
+    <div ref={ref} className="ce-frame" role="dialog" aria-modal="true" aria-label={title} data-testid={testId} tabIndex={-1}>
       <header className="ce-bar">
         <h2 className="ce-title">{title}</h2>
         <div className="ce-bar-tools">
           {actions}
-          <button type="button" className="cs-close" data-inline="" aria-label="Close the creator page editor" onClick={onClose}>
+          <button type="button" className="cs-close" data-inline="" aria-label="Close the creator page editor" data-testid="frame-close" onClick={onClose}>
             <Icon name="close" size={16} />
           </button>
         </div>
@@ -288,14 +288,14 @@ function CreatorEditor({ why }: { why: 'edit' | 'upload' }) {
   const ready = sessionReady && (!session || (mine.isSuccess && (!mine.data || page.isSuccess)))
   if (sessionReady && !session) {
     return (
-      <Frame title="Set up your creator page" onClose={closeEditor}>
+      <Frame title="Set up your creator page" onClose={closeEditor} testId="creator-editor">
         <p className="cs-pad">Sign in to make a creator page.</p>
       </Frame>
     )
   }
   if (!ready || !session) {
     return (
-      <Frame title="Creator page" onClose={closeEditor}>
+      <Frame title="Creator page" onClose={closeEditor} testId="creator-editor">
         <div className="ce-loading skeleton" aria-busy="true" />
       </Frame>
     )
@@ -393,11 +393,11 @@ function EditorForm({ why, session, page, own }: { why: 'edit' | 'upload'; sessi
   const imageButtons = (kind: CreatorImageKind, label: string) => (
     <div className="ce-ops">
       <label className="ce-file">
-        <input type="file" accept={imageTypes(kind).join(',')} className="sr-only" aria-label={`${has(kind) ? 'Change' : 'Upload'} ${label}`} onChange={(e) => { void pick(kind, e.currentTarget.files?.[0]); e.currentTarget.value = '' }} />
+        <input type="file" accept={imageTypes(kind).join(',')} className="sr-only" data-testid={`creator-${kind}-file`} aria-label={`${has(kind) ? 'Change' : 'Upload'} ${label}`} onChange={(e) => { void pick(kind, e.currentTarget.files?.[0]); e.currentTarget.value = '' }} />
         <span aria-hidden="true">{has(kind) ? `Change ${label}` : `Upload ${label}`}</span>
       </label>
       {has(kind) ? (
-        <button type="button" className="ce-file" onClick={() => set({ [kind]: { kind: 'remove' } } as Partial<EditorDraft>)} aria-label={`Remove ${label}`}>
+        <button type="button" className="ce-file" data-testid={`creator-${kind}-remove`} onClick={() => set({ [kind]: { kind: 'remove' } } as Partial<EditorDraft>)} aria-label={`Remove ${label}`}>
           Remove
         </button>
       ) : null}
@@ -411,9 +411,10 @@ function EditorForm({ why, session, page, own }: { why: 'edit' | 'upload'; sessi
     <Frame
       title={title}
       onClose={closeEditor}
+      testId="creator-editor"
       actions={
         page ? (
-          <Button size="sm" onClick={() => { closeEditor(); openCreator(page.creator.handle) }}>
+          <Button size="sm" data-testid="creator-view-sheet" onClick={() => { closeEditor(); openCreator(page.creator.handle) }}>
             View my sheet
           </Button>
         ) : null
@@ -423,6 +424,7 @@ function EditorForm({ why, session, page, own }: { why: 'edit' | 'upload'; sessi
         <div className="ce-col">
           <form
             className="ce-form"
+            data-testid="creator-form"
             aria-label="Creator page details"
             noValidate
             onSubmit={(e) => {
@@ -457,7 +459,7 @@ function EditorForm({ why, session, page, own }: { why: 'edit' | 'upload'; sessi
               <div className="ce-two">
                 <div className="ce-field">
                   <label htmlFor={`${ids}-name`}>Display name</label>
-                  <input className="ce-in" id={`${ids}-name`} value={draft.displayName} maxLength={NAME_MAX} onChange={(e) => set({ displayName: e.currentTarget.value })} onBlur={() => touch('displayName')} aria-invalid={Boolean(shown('displayName'))} />
+                  <input className="ce-in" id={`${ids}-name`} data-testid="creator-name" value={draft.displayName} maxLength={NAME_MAX} onChange={(e) => set({ displayName: e.currentTarget.value })} onBlur={() => touch('displayName')} aria-invalid={Boolean(shown('displayName'))} />
                   {shown('displayName') ? <span className="ce-err">{shown('displayName')}</span> : null}
                 </div>
                 <div className="ce-field">
@@ -467,6 +469,7 @@ function EditorForm({ why, session, page, own }: { why: 'edit' | 'upload'; sessi
                     <input
                       className="ce-in"
                       id={`${ids}-handle`}
+                      data-testid="creator-handle"
                       value={draft.handle}
                       placeholder="your-name"
                       readOnly={handleFixed}
@@ -487,11 +490,11 @@ function EditorForm({ why, session, page, own }: { why: 'edit' | 'upload'; sessi
                 <label htmlFor={`${ids}-place`}>
                   Location <span className="ce-hint">optional</span>
                 </label>
-                <input className="ce-in" id={`${ids}-place`} value={draft.location} maxLength={LOCATION_MAX} onChange={(e) => set({ location: e.currentTarget.value })} />
+                <input className="ce-in" id={`${ids}-place`} data-testid="creator-location" value={draft.location} maxLength={LOCATION_MAX} onChange={(e) => set({ location: e.currentTarget.value })} />
               </div>
               <div className="ce-field">
                 <label htmlFor={`${ids}-bio`}>Bio</label>
-                <textarea className="ce-in ce-ta" id={`${ids}-bio`} value={draft.bio} maxLength={BIO_MAX} rows={5} onChange={(e) => set({ bio: e.currentTarget.value })} onBlur={() => touch('bio')} aria-invalid={Boolean(shown('bio'))} aria-describedby={`${ids}-bio-n`} />
+                <textarea className="ce-in ce-ta" id={`${ids}-bio`} data-testid="creator-bio" value={draft.bio} maxLength={BIO_MAX} rows={5} onChange={(e) => set({ bio: e.currentTarget.value })} onBlur={() => touch('bio')} aria-invalid={Boolean(shown('bio'))} aria-describedby={`${ids}-bio-n`} />
                 <span className="ce-count" id={`${ids}-bio-n`}>
                   {draft.bio.length} of {BIO_MAX}
                 </span>
@@ -570,7 +573,7 @@ function EditorForm({ why, session, page, own }: { why: 'edit' | 'upload'; sessi
                           <Icon name="more" size={14} />
                         </button>
                         <span className="ce-selectwrap">
-                          <select className="ce-in" aria-label={`Link ${i + 1} site`} value={l.kind} onChange={(e) => setLink(l.key, { kind: e.currentTarget.value as CreatorLinkKind })}>
+                          <select className="ce-in" data-testid="creator-link-site" aria-label={`Link ${i + 1} site`} value={l.kind} onChange={(e) => setLink(l.key, { kind: e.currentTarget.value as CreatorLinkKind })}>
                             {LINK_KINDS.map((k) => (
                               <option key={k} value={k}>
                                 {LINK_KIND_INFO[k].label}
@@ -578,9 +581,10 @@ function EditorForm({ why, session, page, own }: { why: 'edit' | 'upload'; sessi
                             ))}
                           </select>
                         </span>
-                        <input className="ce-in" aria-label={`Link ${i + 1} label`} placeholder="Label (optional)" maxLength={60} value={l.label ?? ''} onChange={(e) => setLink(l.key, { label: e.currentTarget.value })} />
+                        <input className="ce-in" data-testid="creator-link-label" aria-label={`Link ${i + 1} label`} placeholder="Label (optional)" maxLength={60} value={l.label ?? ''} onChange={(e) => setLink(l.key, { label: e.currentTarget.value })} />
                         <input
                           className="ce-in ce-url"
+                          data-testid="creator-link-url"
                           type="url"
                           aria-label={`Link ${i + 1} address`}
                           placeholder="https://"
@@ -604,26 +608,26 @@ function EditorForm({ why, session, page, own }: { why: 'edit' | 'upload'; sessi
                 })}
               </ol>
               {linksErr ? <span className="ce-err">{linksErr}</span> : null}
-              <button type="button" className="ce-file ce-add" disabled={draft.links.length >= LINKS_MAX} onClick={() => set({ links: [...draft.links, { key: newKey(), kind: draft.links.length ? 'website' : 'patreon', url: '' }] })}>
+              <button type="button" className="ce-file ce-add" data-testid="creator-add-link" disabled={draft.links.length >= LINKS_MAX} onClick={() => set({ links: [...draft.links, { key: newKey(), kind: draft.links.length ? 'website' : 'patreon', url: '' }] })}>
                 <Icon name="plus" size={14} /> Add link
               </button>
             </fieldset>
             <button type="submit" hidden />
           </form>
           <div className="ce-savebar">
-            <span className="ce-state" role="status" data-error={saveError ? '' : undefined}>
+            <span className="ce-state" role="status" data-testid="creator-state" data-error={saveError ? '' : undefined}>
               {stateText}
             </span>
             {upload ? (
-              <Button onClick={closeEditor} disabled={busy}>
+              <Button onClick={closeEditor} disabled={busy} data-testid="creator-cancel">
                 Cancel
               </Button>
             ) : (
-              <Button onClick={() => (dirty ? setDraft(base) : closeEditor())} disabled={busy}>
+              <Button onClick={() => (dirty ? setDraft(base) : closeEditor())} disabled={busy} data-testid="creator-discard">
                 {dirty ? 'Discard' : 'Close'}
               </Button>
             )}
-            <button type="button" className="cs-btn" data-pink="" onClick={() => void save()} disabled={busy}>
+            <button type="button" className="cs-btn" data-pink="" data-testid="creator-save" onClick={() => void save()} disabled={busy}>
               {busy ? 'Saving' : upload ? 'Save and continue' : 'Save'}
             </button>
           </div>

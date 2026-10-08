@@ -292,13 +292,15 @@ export function PrepareObjects() {
   return (
     <Block title="Objects" data-section="objects">
       {plate.length > 1 ? (
-        <input className="sx-input obj-search" type="search" value={query} placeholder="Search objects and parts" aria-label="Search objects and parts" onChange={(e) => setQuery(e.target.value)} />
+        <input className="sx-input obj-search" data-testid="objects-search" type="search" value={query} placeholder="Search objects and parts" aria-label="Search objects and parts" onChange={(e) => setQuery(e.target.value)} />
       ) : null}
       {searching && matches.size === 0 ? <p className="sx-small sx-muted">Nothing on the plate matches "{query.trim()}".</p> : null}
-      <ul className="objs">
+      <ul className="objs" data-testid="objects-list">
         {plate.map((p, index) => matches.has(p.id) && (
           <li
             key={p.id}
+            data-testid="object-row"
+            data-object-id={p.id}
             className={`${selected.includes(p.id) ? 'obj sel' : 'obj'}${p.printable === false ? ' off' : ''}${dropOn === p.id ? ' drop' : ''}`}
             draggable
             onDragStart={(e) => {
@@ -323,6 +325,7 @@ export function PrepareObjects() {
             <button
               type="button"
               className="obj-h"
+              data-testid="object-select"
               aria-expanded={expanded === p.id}
               aria-pressed={selected.includes(p.id)}
               onClick={(e) => {
@@ -333,12 +336,12 @@ export function PrepareObjects() {
             >
               <span className="obj-thumb">{p.thumb ? <img src={p.thumb} alt="" /> : p.parts.length ? <Silhouette parts={p.parts} /> : null}</span>
               <span className="min0">
-                <span className="obj-name">{p.name}</span>
+                <span className="obj-name" data-testid="object-name">{p.name}</span>
                 <span className="obj-meta">
                   {p.instanceOf ? `Instance of ${names.get(p.instanceOf) ?? p.name}` : `${p.handle.parts.length} parts, ${p.handle.triangles.toLocaleString('en-US')} tris`}
                 </span>
                 {objectWarnings(p, { bed, printerSlots }).map((w) => (
-                  <span key={w.kind} className="obj-warn" {...tipAttrs({ title: w.text })}>
+                  <span key={w.kind} className="obj-warn" data-testid="object-warning" data-kind={w.kind} {...tipAttrs({ title: w.text })}>
                     <Icon name="alert" size={11} /> {w.text}
                   </span>
                 ))}
@@ -347,8 +350,8 @@ export function PrepareObjects() {
                 <Icon name="chevron-down" />
               </span>
             </button>
-            <Button size="sm" variant="ghost" icon={p.locked ? 'lock' : 'unlock'} aria-label={`${p.locked ? 'Unlock' : 'Lock'} ${p.name}`} tip={{ title: p.locked ? 'Locked' : 'Lock', body: p.locked ? 'Click to let it move again.' : 'Keep it from moving, scaling or arranging.' }} pressed={Boolean(p.locked)} onClick={() => toggleLock([p.id])} />
-            <Button size="sm" variant="ghost" icon={p.printable === false ? 'hide' : 'show'} aria-label={`${p.printable === false ? 'Print' : 'Do not print'} ${p.name}`} tip={{ title: p.printable === false ? 'Not printed' : 'Printed', body: p.printable === false ? 'Click to print it again.' : 'Click to leave it out of the print.', key: 'V' }} pressed={p.printable === false} onClick={() => togglePrintable([p.id])} />
+            <Button size="sm" variant="ghost" icon={p.locked ? 'lock' : 'unlock'} data-testid="object-lock" aria-label={`${p.locked ? 'Unlock' : 'Lock'} ${p.name}`} tip={{ title: p.locked ? 'Locked' : 'Lock', body: p.locked ? 'Click to let it move again.' : 'Keep it from moving, scaling or arranging.' }} pressed={Boolean(p.locked)} onClick={() => toggleLock([p.id])} />
+            <Button size="sm" variant="ghost" icon={p.printable === false ? 'hide' : 'show'} data-testid="object-printable" aria-label={`${p.printable === false ? 'Print' : 'Do not print'} ${p.name}`} tip={{ title: p.printable === false ? 'Not printed' : 'Printed', body: p.printable === false ? 'Click to print it again.' : 'Click to leave it out of the print.', key: 'V' }} pressed={p.printable === false} onClick={() => togglePrintable([p.id])} />
             </div>
             <Suspense fallback={null}>
               <FitNotes id={p.id} />
@@ -357,7 +360,7 @@ export function PrepareObjects() {
               <div className="obj-detail">
                 <label className="obj-rename" htmlFor={`rn-${p.id}`}>
                   <span className="sx-small sx-muted">Name</span>
-                  <input id={`rn-${p.id}`} className="sx-input" defaultValue={p.name} maxLength={100} key={p.name} onBlur={(e) => { if (!renameObject(p.id, e.currentTarget.value)) e.currentTarget.value = p.name }} onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()} />
+                  <input id={`rn-${p.id}`} className="sx-input" data-testid="object-rename" defaultValue={p.name} maxLength={100} key={p.name} onBlur={(e) => { if (!renameObject(p.id, e.currentTarget.value)) e.currentTarget.value = p.name }} onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()} />
                 </label>
                 <div className="obj-order">
                   <Button size="sm" variant="ghost" icon="arrow-up" aria-label={`Move ${p.name} up`} disabled={index === 0} onClick={() => moveObject(p.id, index - 1)} />
@@ -372,7 +375,7 @@ export function PrepareObjects() {
                       <label className="sr-only" htmlFor={`ps-${p.id}-${i}`}>
                         Filament for {part.name}
                       </label>
-                      <select id={`ps-${p.id}-${i}`} className="mini" value={effectiveSlot(p, part)} onChange={(e) => setPartSlot(p.id, part.name, Number(e.target.value))}>
+                      <select id={`ps-${p.id}-${i}`} className="mini" data-testid="object-part-slot" value={effectiveSlot(p, part)} onChange={(e) => setPartSlot(p.id, part.name, Number(e.target.value))}>
                         {Array.from({ length: Math.max(4, slotTotal, effectiveSlot(p, part)) }, (_, k) => (
                           <option key={k + 1} value={k + 1}>
                             Filament {k + 1}
@@ -396,11 +399,11 @@ export function PrepareObjects() {
         ))}
       </ul>
       <div className="plate-actions">
-        <Button size="sm" variant="ghost" icon="plus" onClick={() => void openModelFiles(host, { fresh: false })}>
+        <Button size="sm" variant="ghost" icon="plus" data-testid="objects-add-model" onClick={() => void openModelFiles(host, { fresh: false })}>
           Add model
         </Button>
         {more ? (
-          <Button size="sm" variant="ghost" icon="library" onClick={() => setWorkspace('library')}>
+          <Button size="sm" variant="ghost" icon="library" data-testid="objects-from-vault" onClick={() => setWorkspace('library')}>
             From the Vault
           </Button>
         ) : null}

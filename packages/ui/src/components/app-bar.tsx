@@ -53,11 +53,11 @@ export function Tabs<K extends string>({ tabs, active, onChange, label = 'Worksp
           </>
         )
         return t.href ? (
-          <a key={t.id} className="sx-tab" data-tab={t.id} href={t.href} aria-current={current} aria-label={t.label} onClick={() => onChange?.(t.id)}>
+          <a key={t.id} className="sx-tab" data-tab={t.id} data-testid={`tab-${t.id}`} href={t.href} aria-current={current} aria-label={t.label} onClick={() => onChange?.(t.id)}>
             {inner}
           </a>
         ) : (
-          <button key={t.id} type="button" className="sx-tab" data-tab={t.id} aria-current={current} aria-label={t.label} onClick={() => onChange?.(t.id)}>
+          <button key={t.id} type="button" className="sx-tab" data-tab={t.id} data-testid={`tab-${t.id}`} aria-current={current} aria-label={t.label} onClick={() => onChange?.(t.id)}>
             {inner}
           </button>
         )

@@ -334,7 +334,7 @@ function BrandSection({ ctl, onNoPrinter }: { ctl: PrinterController; onNoPrinte
   const { form, setForm } = ctl
   return (
     <>
-      <Input id="fr-brand-search" icon="search" placeholder="Search brand or model" aria-label="Search brand or model" value={q} onChange={(e) => setQ(e.target.value)} data-help="brand" />
+      <Input id="fr-brand-search" data-testid="setup-printer-search" icon="search" placeholder="Search brand or model" aria-label="Search brand or model" value={q} onChange={(e) => setQ(e.target.value)} data-help="brand" />
       {hits.models.length ? (
         <ul className="fr-hits" aria-label="Matching models">
           {hits.models.map((m) => (
@@ -342,6 +342,8 @@ function BrandSection({ ctl, onNoPrinter }: { ctl: PrinterController; onNoPrinte
               <button
                 type="button"
                 className="fr-hit"
+                data-testid="setup-printer-hit"
+                data-model={m.id}
                 onClick={() => {
                   setForm((f) => pickModel(pickBrand(f, tileForModel(m)?.id ?? 'other'), m.id))
                   setQ('')
@@ -365,6 +367,7 @@ function BrandSection({ ctl, onNoPrinter }: { ctl: PrinterController; onNoPrinte
               role="radio"
               aria-checked={on}
               className="fr-brand"
+              data-testid={`setup-brand-${b.id}`}
               data-on={on ? true : undefined}
               data-help="brand"
               onClick={(e) => {
@@ -472,6 +475,7 @@ function ModelSection({ ctl }: { ctl: PrinterController }) {
                 role="radio"
                 aria-checked={on}
                 className="fr-mcard"
+                data-testid={`setup-model-${m.id}`}
                 aria-label={m.name}
                 data-on={on ? true : undefined}
                 data-help="model"
@@ -487,7 +491,7 @@ function ModelSection({ ctl }: { ctl: PrinterController }) {
           )
         })}
         <li>
-          <button type="button" role="radio" aria-checked={form.modelId === 'custom'} className="fr-mcard" data-on={form.modelId === 'custom' ? true : undefined} data-help="model" onClick={() => setForm((f) => pickModel(f, 'custom'))}>
+          <button type="button" role="radio" aria-checked={form.modelId === 'custom'} className="fr-mcard" data-testid="setup-model-custom" data-on={form.modelId === 'custom' ? true : undefined} data-help="model" onClick={() => setForm((f) => pickModel(f, 'custom'))}>
             <span className="fr-mcard-pic" data-empty="" aria-hidden="true">
               <Icon name="printer-custom" size={48} />
             </span>
@@ -706,7 +710,7 @@ function ConnectionSection({ ctl, keychain, onWhere, fieldsOnly, known, quiet }:
           const m = connectionMethod(id)
           const on = form.connection === id
           return (
-            <button key={id} type="button" role="radio" aria-checked={on} className="fr-conn" data-on={on ? true : undefined} data-help="connection" onClick={() => setForm((f) => pickConnection(f, id))}>
+            <button key={id} type="button" role="radio" aria-checked={on} className="fr-conn" data-testid={`setup-connection-${id}`} data-on={on ? true : undefined} data-help="connection" onClick={() => setForm((f) => pickConnection(f, id))}>
               <Icon name={CONNECTION_ICON[id] ?? 'link'} />
               <span className="min0">
                 <b>
@@ -1491,7 +1495,7 @@ export function PrinterStep({
             const st = status(s.id)
             return (
               <li key={s.id} data-state={st}>
-                <button type="button" disabled={st === 'locked'} onClick={() => scrollTo(s.id, true)}>
+                <button type="button" data-testid={`setup-printer-step-${s.id}`} disabled={st === 'locked'} onClick={() => scrollTo(s.id, true)}>
                   <i aria-hidden="true">{st === 'done' ? <Icon name="check" size={12} /> : null}</i>
                   {s.label}
                 </button>
@@ -1538,7 +1542,7 @@ export function PrinterStep({
           />
         </Section>
         {error ? (
-          <p className="app-err" role="alert">
+          <p className="app-err" role="alert" data-testid="setup-printer-error">
             The printer was not saved: {error}
           </p>
         ) : null}

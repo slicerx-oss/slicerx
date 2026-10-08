@@ -144,14 +144,14 @@ export function FirstRun() {
   const last = flow.steps[flow.steps.length - 1] === flow.step
 
   return (
-    <div className="fr" ref={rootRef} role="dialog" aria-modal="true" aria-labelledby="fr-step-label" data-step={flow.step} data-wide>
+    <div className="fr" ref={rootRef} role="dialog" aria-modal="true" aria-labelledby="fr-step-label" data-step={flow.step} data-testid="setup" data-wide>
       <header className="fr-top">
         <span className="fr-mark" role="img" aria-label={appName()}>
           <EditionMark edition={currentEdition()} size={24} />
         </span>
         <span className="fr-top-title">Set up {appName()}</span>
         <span className="fr-top-sp" />
-        <Button variant="ghost" size="sm" onClick={() => dispatch({ type: 'skip-all' })}>
+        <Button variant="ghost" size="sm" data-testid="setup-skip-all" onClick={() => dispatch({ type: 'skip-all' })}>
           Skip, use defaults
         </Button>
         <span className="fr-stepno sx-mono" id="fr-step-label" aria-label={label.text}>
@@ -213,10 +213,11 @@ export function FirstRun() {
         required
         onClose={() => undefined}
         title="Leave setup?"
+        testId="setup-leave-dialog"
         footer={
           <>
-            <Button onClick={() => dispatch({ type: 'leave' })}>Leave</Button>
-            <Button variant="primary" autoFocus onClick={() => dispatch({ type: 'stay' })}>
+            <Button data-testid="setup-leave" onClick={() => dispatch({ type: 'leave' })}>Leave</Button>
+            <Button variant="primary" autoFocus data-testid="setup-stay" onClick={() => dispatch({ type: 'stay' })}>
               Stay
             </Button>
           </>
