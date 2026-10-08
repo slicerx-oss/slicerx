@@ -49,19 +49,35 @@ export function printerBedType(cfg: Readonly<Record<string, unknown>>): BedType 
   return BY_NAME[String(v).trim().toLowerCase()]
 }
 
+/** The plate type the print settings name in `curr_bed_type`, as a project's settings do. */
+export function settingsBedType(cfg: Readonly<Record<string, unknown>>): BedType | undefined {
+  const raw = cfg['curr_bed_type']
+  const v = Array.isArray(raw) ? raw[0] : raw
+  return typeof v === 'string' ? BY_NAME[v.trim().toLowerCase()] : undefined
+}
+
 /**
- * The plate type a plate prints on, its label, and where it came from. A printer with no default prints on smooth PEI
- * (Orca's High Temp Plate), the plate the engine reads its bed temperatures from when none is set.
+ * The plate type a plate prints on, its label, and where it came from: the plate's own, then the print settings' (a
+ * project's), then the printer's default. A printer with no default prints on smooth PEI (Orca's High Temp Plate),
+ * the plate the engine reads its bed temperatures from when none is set.
  */
-export function plateBedType(meta: Pick<PlateMeta, 'settings'> | undefined, cfg: Readonly<Record<string, unknown>>): { value: BedType; label: string; source: 'plate' | 'printer' | 'default' } {
+export function plateBedType(meta: Pick<PlateMeta, 'settings'> | undefined, cfg: Readonly<Record<string, unknown>>): { value: BedType; label: string; source: 'plate' | 'settings' | 'printer' | 'default' } {
   const own = meta?.settings.bedType
   if (own) return { value: own, label: label(own), source: 'plate' }
+  const settings = settingsBedType(cfg)
+  if (settings) return { value: settings, label: label(settings), source: 'settings' }
   const printer = printerBedType(cfg)
   if (printer) return { value: printer, label: label(printer), source: 'printer' }
   return { value: 'smooth-pei', label: label('smooth-pei'), source: 'default' }
 }
 
-/** The `curr_bed_type` a plate slices with. */
-export function bedTypeConfig(meta: Pick<PlateMeta, 'settings'> | undefined, cfg: Readonly<Record<string, unknown>>): { curr_bed_type: string } {
+/**
+ * The `curr_bed_type` a plate slices with, to spread over the print settings. A plate type set on the plate wins; a
+ * `curr_bed_type` already in the settings stays as it is, even one this picker does not list (a Supertack plate).
+ */
+export function bedTypeConfig(meta: Pick<PlateMeta, 'settings'> | undefined, cfg: Readonly<Record<string, unknown>>): { curr_bed_type?: string } {
+  const own = meta?.settings.bedType
+  if (own) return { curr_bed_type: BED_TYPE_ENGINE[own] }
+  if (typeof cfg['curr_bed_type'] === 'string' && cfg['curr_bed_type']) return {}
   return { curr_bed_type: BED_TYPE_ENGINE[plateBedType(meta, cfg).value] }
 }
