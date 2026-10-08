@@ -251,9 +251,11 @@ test('another member finds it, gets only the sealed file, and cannot export it',
   expect((await read('listing-files', raw)).status).not.toBe(200)
 
   // Open it: the plate holds it as a Vault design, mesh export is off, and it slices.
-  type Sx = { getState(): { plate: { source?: { modelId?: string } }[]; slice: { status: string; stale?: boolean } } }
+  type Sx = { getState(): { plate: { source?: { modelId?: string } }[]; slice: { status: string; stale?: boolean; result?: { id: string } } } }
   // The viewport puts the app state on window once it is up.
-  const state = () => page.evaluate(() => { const sx = (window as unknown as { __sx?: Sx }).__sx; if (!sx) return { vault: false, status: 'loading', stale: true }; const s = sx.getState(); return { vault: s.plate.some((p) => Boolean(p.source?.modelId)), status: s.slice.status, stale: s.slice.stale ?? false } })
+  const state = () => page.evaluate(() => { const sx = (window as unknown as { __sx?: Sx }).__sx; if (!sx) return { vault: false, status: 'loading', stale: true, id: null }; const s = sx.getState(); return { vault: s.plate.some((p) => Boolean(p.source?.modelId)), status: s.slice.status, stale: s.slice.stale ?? false, id: s.slice.result?.id ?? null } })
+  // It slices: a new slice of the opened design, done and current, not a result from before it was opened.
+  const before = (await state()).id
   await sheet.getByRole('button', { name: /^Open in / }).click()
   await expect.poll(async () => (await state()).vault, { timeout: 60_000 }).toBe(true)
   await page.keyboard.press('ControlOrMeta+k')
@@ -261,7 +263,7 @@ test('another member finds it, gets only the sealed file, and cannot export it',
   await page.keyboard.type('Export the plate as STL')
   await expect(page.locator('.sx-palette-item:not([aria-disabled="true"])', { hasText: 'Export the plate as STL' })).toHaveCount(0)
   await page.keyboard.press('Escape')
-  await expect.poll(async () => { const s = await state(); return s.status === 'done' && !s.stale }, { timeout: 180_000 }).toBe(true)
+  await expect.poll(async () => { const s = await state(); return s.status === 'done' && !s.stale && s.id !== before }, { timeout: 180_000 }).toBe(true)
 })
 
 test('likes, saves and follows show in Saved, Based on your likes and the follower count', async ({ page }) => {
