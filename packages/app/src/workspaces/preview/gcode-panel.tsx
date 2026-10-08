@@ -7,7 +7,7 @@ import type { PreviewBuffers } from '@slicerx/contracts'
 import { Button, Icon } from '@slicerx/ui'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { useHost } from '../../host'
-import { set, useApp } from '../../state/store'
+import { set, shownSlice, useApp } from '../../state/store'
 import { setGcodePanel, useGcodeView } from './gcode-file'
 import { currentSegment, lineOfSegment, lineText, scroller, segmentOfLine, slidersFor, type LineIndex } from './gcode-lines'
 import { currentText, NoTextError } from './gcode-source'
@@ -61,7 +61,7 @@ export function GcodePanel() {
   const [goTo, setGoTo] = useState('')
   const scrollRef = useRef<HTMLDivElement>(null)
   const panelRef = useRef<HTMLElement>(null)
-  const sliceId = slice.status === 'done' ? slice.result.id : null
+  const sliceId = shownSlice(slice)?.result.id ?? null
 
   // The text for what Preview shows: loaded once per slice or file.
   useEffect(() => {

@@ -627,6 +627,9 @@ class ViewportImpl implements Viewport {
     this.camera.aspect = w / h
     this.applyInset()
     shared.gmin.value = this.pr >= 1.5 ? 6.5 : 4
+    // Sizing the canvas clears it. The observer runs before the page paints, so drawing now keeps the old picture
+    // from going blank for a frame when a panel or bar beside the view changes size.
+    if (this.frames > 0 && this.canRun()) this.renderFrame(this.aoLevel, false)
     this.invalidate()
   }
 
@@ -2564,6 +2567,10 @@ class ViewportImpl implements Viewport {
     this.toolpaths.set(buffers)
     this.shadowDirty = true
     this.invalidate()
+  }
+
+  setPreviewStale(stale: boolean): void {
+    if (this.toolpaths.setStale(stale)) this.invalidate()
   }
 
   setPreviewOrigin(x: number, y: number): void {

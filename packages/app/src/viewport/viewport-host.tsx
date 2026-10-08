@@ -21,7 +21,7 @@ import { cutStore, toggleConnector } from '../plate/cut-plane'
 import { probeHandler, setCameraBus, toolStore, type CadView } from '../plate/tools'
 import { useHost } from '../host'
 import { moveTower, towerMesh, towerShown, TOWER_ID, type ShownTower } from '../plate/tower'
-import { appStore, selectedIds, set, toast, type AppState } from '../state/store'
+import { appStore, selectedIds, set, shownSlice, toast, type AppState } from '../state/store'
 import { createFallbackViewport } from './fallback'
 import { overlayInsets } from './overlay-insets'
 import { shellGpu } from './shell-gpu'
@@ -53,6 +53,7 @@ export type Drive = Pick<Viewport, 'setMode' | 'setPlate' | 'setTransforms' | 's
   setInsets?: Viewport['setInsets']
   setPreviewGhost?: Viewport['setPreviewGhost']
   setPreviewOrigin?: Viewport['setPreviewOrigin']
+  setPreviewStale?: Viewport['setPreviewStale']
   setMarkers?: Viewport['setMarkers']
   setExcludedAreas?: Viewport['setExcludedAreas']
   setGcodeMarkers?: Viewport['setGcodeMarkers']
@@ -216,7 +217,7 @@ export function ViewportHost({ mode }: { mode: 'prepare' | 'preview' }) {
         if (!vp.setPurges) return
         const spec = toolChangerFor(s)
         const p = s.preview
-        const tl = p && spec?.chute ? buildTimeline(p, spec, fitOf(s.slice.status === 'done' ? s.slice.result.stats : null)) : null
+        const tl = p && spec?.chute ? buildTimeline(p, spec, fitOf(shownSlice(s.slice)?.result.stats ?? null)) : null
         if (tl === purgesFor) return
         purgesFor = tl
         vp.setPurges(null)
@@ -277,6 +278,8 @@ export function ViewportHost({ mode }: { mode: 'prepare' | 'preview' }) {
         if (first || rebuilt || s.plate !== prev.plate) pushEars(s)
         if (first || s.selection !== prev.selection || s.selectedIds !== prev.selectedIds || s.towerSelected !== prev.towerSelected) vp.setSelection(s.towerSelected ? [TOWER_ID] : selectedIds(s))
         if (first || s.preview !== prev.preview) vp.setPreview(s.preview)
+        // A preview that no longer matches the plate stays drawn, dimmed, until the next slice replaces it.
+        if (first || s.slice !== prev.slice) vp.setPreviewStale?.(shownSlice(s.slice)?.stale ?? false)
         if (first || s.layerHi !== prev.layerHi || s.layerLo !== prev.layerLo || s.preview !== prev.preview) vp.setLayerRange(Math.max(0, Math.min(s.layerLo, s.layerHi) - 1), Math.max(0, s.layerHi - 1))
         if (first || s.moveCut !== prev.moveCut || s.layerHi !== prev.layerHi || s.preview !== prev.preview) vp.setMoveCut(moveCount(s.preview, s.layerHi, s.moveCut))
         // The printer's own toolhead, its tool changer and, during playback, where the head is in a change.

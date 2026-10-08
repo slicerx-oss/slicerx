@@ -512,6 +512,8 @@ export interface Viewport {
 
   // Preview
   setPreview(buffers: PreviewBuffers | null): void
+  /** Dims the toolpaths while they no longer match the plate (a new slice is on its way), instead of hiding them. */
+  setPreviewStale?(stale: boolean): void
   /** A second, faint set of toolpaths under the live one: the slice before a change. Null removes it. It follows the layer range. */
   setPreviewGhost(buffers: PreviewBuffers | null): void
   /** Where the plate's front left corner sits in the toolpaths' (machine) coordinates, mm: the preview is drawn shifted back by it. */
