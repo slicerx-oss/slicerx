@@ -4,7 +4,6 @@
 // Connected apps. The hub keeps each one (`services.*`): its address, and the name of its key in the
 // secrets store. A printer connection that goes through an app (BamBuddy) is offered only once that app
 // is added, so nothing new shows for anyone who never adds one.
-import { connectionMethod, type ConnectionId } from '@slicerx/printer-catalog'
 
 export type ConnectedAppId = 'spoolman' | 'bambuddy'
 
@@ -68,25 +67,4 @@ export function appUrl(app: ConnectedApp, input: string): { url: string } | { er
   return { url: `${u.protocol}//${u.hostname}:${u.port || app.defaultPort}` }
 }
 
-/** `host:port` of an app's address, for a printer form whose connection goes through that app. */
-export function appHostPort(baseUrl: string): string {
-  try {
-    const u = new URL(baseUrl)
-    return u.port ? `${u.hostname}:${u.port}` : u.hostname
-  } catch {
-    return ''
-  }
-}
-
-/** The app a connection goes through, if any. */
-export function appForConnection(id: ConnectionId): string | undefined {
-  return connectionMethod(id).requiresApp
-}
-
-/** The connections to offer: one that goes through an app shows only once that app is added. Order is kept. */
-export function offeredConnections(choices: readonly ConnectionId[], added: ReadonlySet<string>): ConnectionId[] {
-  return choices.filter((id) => {
-    const app = appForConnection(id)
-    return app === undefined || added.has(app)
-  })
-}
+export { appForConnection, appHostPort, offeredConnections } from './gate'
