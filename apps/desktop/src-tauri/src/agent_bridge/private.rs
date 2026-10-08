@@ -251,7 +251,8 @@ mod tests {
     fn windows_files_get_an_owner_only_access_list() {
         use windows::Win32::Foundation::{HLOCAL, LocalFree};
         use windows::Win32::Security::Authorization::{
-            ConvertSecurityDescriptorToStringSecurityDescriptorW, GetNamedSecurityInfoW, SDDL_REVISION_1,
+            ConvertSecurityDescriptorToStringSecurityDescriptorW,
+            ConvertStringSecurityDescriptorToSecurityDescriptorW, GetNamedSecurityInfoW, SDDL_REVISION_1,
             SE_FILE_OBJECT,
         };
         use windows::Win32::Security::{DACL_SECURITY_INFORMATION, PSECURITY_DESCRIPTOR};
@@ -289,17 +290,48 @@ mod tests {
             LocalFree(Some(HLOCAL(sd.0)));
             s
         };
+        // What is expected, in the same form: SDDL writes some accounts by an alias (LA for the built-in
+        // Administrator), so the list the file should have goes through the same round trip.
         let me = user_sid().unwrap();
-        assert!(sddl.starts_with("D:P"), "{sddl}");
-        let mut aces: Vec<String> = sddl
-            .trim_start_matches("D:P")
-            .split_inclusive(')')
-            .map(str::to_owned)
+        let wide: Vec<u16> = format!("D:P(A;;FA;;;SY)(A;;FA;;;{me})\0")
+            .encode_utf16()
             .collect();
-        aces.sort();
-        let mut want = vec!["(A;;FA;;;SY)".to_owned(), format!("(A;;FA;;;{me})")];
-        want.sort();
-        assert_eq!(aces, want, "{sddl}");
+        let mut want_sd = PSECURITY_DESCRIPTOR::default();
+        let mut want_text = PWSTR::null();
+        // SAFETY: the string is NUL-terminated; both buffers are LocalAlloc'd by the system and freed here.
+        let want = unsafe {
+            ConvertStringSecurityDescriptorToSecurityDescriptorW(
+                windows::core::PCWSTR(wide.as_ptr()),
+                SDDL_REVISION_1,
+                &raw mut want_sd,
+                None,
+            )
+            .unwrap();
+            ConvertSecurityDescriptorToStringSecurityDescriptorW(
+                want_sd,
+                SDDL_REVISION_1,
+                DACL_SECURITY_INFORMATION,
+                &raw mut want_text,
+                None,
+            )
+            .unwrap();
+            let s = want_text.to_string().unwrap();
+            LocalFree(Some(HLOCAL(want_text.0.cast())));
+            LocalFree(Some(HLOCAL(want_sd.0)));
+            s
+        };
+        let aces = |s: &str| {
+            let mut v: Vec<String> = s
+                .trim_start_matches("D:P")
+                .split_inclusive(')')
+                .map(str::to_owned)
+                .collect();
+            v.sort();
+            v
+        };
+        assert!(sddl.starts_with("D:P"), "{sddl}");
+        assert_eq!(aces(&sddl), aces(&want), "{sddl}");
+        assert_eq!(aces(&sddl).len(), 2, "{sddl}");
         assert_eq!(std::fs::read(&file).unwrap(), b"{}");
         let _ = std::fs::remove_dir_all(dir);
     }
