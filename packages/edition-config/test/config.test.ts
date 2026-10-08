@@ -127,7 +127,7 @@ describe('edition config', () => {
     expect(tauriConfig(c, 'desktop')).toMatchObject({ app: { security: { csp: { 'connect-src': `${DESKTOP_CONNECT_SRC} https://abcdefghijklmnop.supabase.co` } } } })
     expect(tauriConfig(c, 'mobile')).not.toHaveProperty('app')
     const bare = defineEditionConfig({ backend: { supabase: null }, features: { store: false, feed: false, creators: false } }, { extends: harbor as never })
-    expect(tauriConfig(bare, 'desktop')).not.toHaveProperty('app.security')
+    expect(tauriConfig(bare, 'desktop')).not.toHaveProperty('app.security.csp')
   })
 
   it("keeps the desktop page's own connect-src, the printer bridge included, when the backend is added", () => {

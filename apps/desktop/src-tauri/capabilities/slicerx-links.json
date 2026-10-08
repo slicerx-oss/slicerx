@@ -1,0 +1,39 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "slicerx-links",
+  "description": "SlicerX's own web pages, for builds without an edition overlay. Generated from editions/slicerx; a test keeps it in step.",
+  "windows": [
+    "main"
+  ],
+  "permissions": [
+    {
+      "identifier": "opener:allow-open-url",
+      "allow": [
+        {
+          "url": "https://slicerx.app/docs"
+        },
+        {
+          "url": "https://slicerx.app/support"
+        },
+        {
+          "url": "https://slicerx.app/#download"
+        },
+        {
+          "url": "https://discord.com/channels/1555048815881355324/1556010155802628228"
+        },
+        {
+          "url": "https://github.com/slicerx-oss/slicerx/tree/*"
+        },
+        {
+          "url": "https://github.com/slicerx-oss/slicerx/blob/main/packages/store/README.md#privacy"
+        },
+        {
+          "url": "https://slicerx.app/"
+        },
+        {
+          "url": "https://github.com/slicerx-oss/slicerx/releases/*"
+        }
+      ]
+    }
+  ]
+}

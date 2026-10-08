@@ -1,12 +1,11 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "The main window. App commands open native dialogs themselves, so the webview never names a file path.",
+  "description": "The main window. App commands open native dialogs themselves, so the webview never names a file path. Web pages it may open are in shared-links.json and the edition's own links.",
   "windows": ["main"],
   "permissions": [
     "core:default",
     "core:window:allow-set-fullscreen",
-    "core:window:allow-set-title",
-    { "identifier": "opener:allow-open-url", "allow": [{ "url": "https://slicerx.app/*" }, { "url": "https://github.com/slicerx-oss/slicerx/releases/*" }, { "url": "https://discord.com/channels/1555048815881355324/*" }, { "url": "https://ollama.com/download" }, { "url": "https://wiki.bambulab.com/en/software/bambu-connect" }] }
+    "core:window:allow-set-title"
   ]
 }

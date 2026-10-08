@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // Build-time outputs: bundler defines, Tauri and Expo settings, universal link files.
-import { editionLinks } from './links.ts'
+import { bugReportsLink, editionLinks, privacyPage, SLICERX_SOURCE } from './links.ts'
 import type { EditionConfig } from './schema.ts'
 
 /** Global the web, desktop and phone builds define; read it with editionFromBuild(). */
@@ -53,8 +53,46 @@ export function publicStorageSource(supabaseUrl: string): string {
   return `${new URL(supabaseUrl).origin}/storage/v1/object/public/`
 }
 
-/** Pages capabilities/default.json already lets the desktop shell open. */
-const SLICERX_PAGES = ['https://slicerx.app/', 'https://discord.com/channels/1555048815881355324/']
+/**
+ * The capabilities in apps/desktop/src-tauri/capabilities every edition keeps: the main window's, and the pages any
+ * edition may open (the Made possible by SlicerX credit, and Bambu Lab's and Ollama's pages the app links to).
+ */
+export const DESKTOP_CAPABILITIES = ['default', 'shared-links'] as const
+
+/**
+ * An opener allow entry for one link: the link as the shell receives it, glob characters escaped, with `*` where the
+ * app fills something in at run time (`{commit}` in a source link). The shell matches the whole URL against it.
+ */
+export function allowPattern(url: string): string {
+  return new URL(url).href.replace(/[*?[\]]/g, (c) => `[${c}]`).replace(/%7B[a-z]+%7D/gi, '*')
+}
+
+/** The release pages an update feed's latest.json links (apps/desktop/release/publish.sh): its GitHub repo's, else the feed's folder. */
+function releasePages(feed: string): string {
+  const repo = /^https:\/\/github\.com\/[^/]+\/[^/]+\//.exec(feed)?.[0]
+  return `${allowPattern(repo ? `${repo}releases/` : new URL('.', feed).href)}*`
+}
+
+/**
+ * Every page of the edition's own the desktop shell may open, as opener allow entries: its help pages, bug reports,
+ * source, terms and privacy notice, its site, and the release pages of its update feed. Nothing wider than the links.
+ */
+export function editionPages(config: EditionConfig): string[] {
+  const source = config.legal.sourceUrl ?? SLICERX_SOURCE
+  const links = [...Object.values(editionLinks(config)), bugReportsLink(config), source, privacyPage(config, source), config.legal.terms, config.apps.web.origin]
+  const pages = links.filter((u): u is string => !!u).map(allowPattern)
+  return [...new Set([...pages, ...(config.release.updates?.endpoints ?? []).map(releasePages)])]
+}
+
+/** The capability that lets the desktop shell open the edition's own pages (editionPages). */
+export function editionLinksCapability(config: EditionConfig): Record<string, unknown> {
+  return {
+    identifier: 'edition-links',
+    description: "The edition's own web pages, opened in the system browser.",
+    windows: ['main'],
+    permissions: [{ identifier: 'opener:allow-open-url', allow: editionPages(config).map((url) => ({ url })) }],
+  }
+}
 
 /** The main window, as apps/desktop/src-tauri/tauri.conf.json has it apart from the title (a test keeps them in step). */
 export const DESKTOP_WINDOW = { label: 'main', width: 1440, height: 900, minWidth: 960, minHeight: 600, backgroundColor: '#121319', dragDropEnabled: false } as const
@@ -114,16 +152,8 @@ export function tauriConfig(config: EditionConfig, target: 'desktop' | 'mobile')
   const sbUrl = config.backend.supabase?.url
   const supabase = sbUrl ? new URL(sbUrl).origin : null
   const csp = sbUrl && supabase ? { csp: { 'connect-src': `${DESKTOP_CONNECT_SRC} ${supabase}`, 'img-src': `${DESKTOP_IMG_SRC} ${publicStorageSource(sbUrl)}` } } : {}
-  // The shell opens only pages its capabilities allow (capabilities/default.json allows SlicerX's); the edition's own
-  // help, download and bug report pages join them.
-  const own = [...Object.values(editionLinks(config)), config.release.bugReportsUrl]
-    .filter((u): u is string => u !== undefined && !SLICERX_PAGES.some((p) => u.startsWith(p)))
-    .map((u) => new URL(u).origin)
-    .filter((o, i, all) => all.indexOf(o) === i)
-  const capabilities = own.length
-    ? { capabilities: ['default', { identifier: 'edition-links', description: "The edition's own web pages, opened in the system browser.", windows: ['main'], permissions: [{ identifier: 'opener:allow-open-url', allow: own.map((o) => ({ url: `${o}/*` })) }] }] }
-    : {}
-  const security = supabase || own.length ? { security: { ...csp, ...capabilities } } : {}
+  // The shell opens only the pages its capabilities allow: the shared ones, and exactly the edition's own links.
+  const security = { security: { ...csp, capabilities: [...DESKTOP_CAPABILITIES, editionLinksCapability(config)] } }
   const { publisher, copyright, description } = publisherOf(config)
   return {
     productName: config.apps.desktop.productName,
