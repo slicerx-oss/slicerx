@@ -10,7 +10,7 @@ use std::time::Duration;
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as B64;
 use serde_json::{Value, json};
-use sx_connect::{ApprovalToken, JobFile, JobKind, PrinterState, PrinterStatus, RemoteFile, StartOptions};
+use sx_connect::{ApprovalToken, Capability, JobFile, JobKind, PrinterState, PrinterStatus, RemoteFile, StartOptions};
 use sx_permit::{ApprovalBroker, Plate, StandingApproval, StartOrigin, StartRefusal};
 
 use crate::hub::{
@@ -300,9 +300,13 @@ async fn start_plate_inner(
     sx_permit::check_start(Some(s.origin), bed.state, s.origin.is_remote(), bed_confirmed)
         .map_err(|e| refusal(&e))?;
     let session = session(b, s.printer).await?;
-    // Stamp (or leave) the file before the token exists, so the hash that is
-    // approved is the hash of the bytes the upload posts.
-    let file = session.prepare_upload(job_file(s)).await?;
+    // A connector that rewrites files (BamBuddy stamps a non-Bambu profile) does it before the
+    // token exists, so the hash that is approved is the hash of the bytes the upload posts.
+    let file = if session.capabilities().contains(&Capability::RewritesUpload) {
+        session.prepare_upload(job_file(s)).await?
+    } else {
+        job_file(s)
+    };
     let size = u64::try_from(file.data.len()).unwrap_or(u64::MAX);
     let sha = file.sha256.clone();
     let mint = |action: &str, params: &Value| {
@@ -820,8 +824,9 @@ pub(crate) async fn queue_call(b: &Arc<Bridge>, method: &str, p: &Value) -> Rpc<
             }
             let printer = str_arg(p, "printerId")?;
             known_printer(b, &printer).await?;
+            // Queued as given, without connecting: a printer may be off until the item's turn. A
+            // connector that rewrites files prepares them when the item starts (start_plate_inner).
             let file = decode_file(p)?;
-            let file = session(b, &printer).await?.prepare_upload(file).await?;
             let opts = opts_arg(p)?;
             let start_after =
                 match (p.get("startAfter"), p.get("startAfterMs")) {

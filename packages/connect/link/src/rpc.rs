@@ -1038,7 +1038,19 @@ async fn dispatch(
 async fn prepare_upload_call(b: &Arc<Bridge>, p: &Value) -> Rpc<Value> {
     let id = str_arg(p, "printerId")?;
     let file = hub_rpc::decode_file(p)?;
-    let prepared = session(b, &id).await?.prepare_upload(file).await?;
+    let plugin = b
+        .printers
+        .lock()
+        .await
+        .get(&id)
+        .map(|r| r.config.plugin.clone())
+        .ok_or_else(|| RpcError::new("not_found", format!("no printer {id}")))?;
+    // Only a plugin that rewrites files connects here; every other file comes back as it is.
+    let prepared = if sx_connect::rewrites_upload(&plugin) {
+        session(b, &id).await?.prepare_upload(file).await?
+    } else {
+        file
+    };
     Ok(json!({
         "name": prepared.name,
         "kind": prepared.kind,

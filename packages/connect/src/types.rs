@@ -290,6 +290,10 @@ pub enum Capability {
     ProjectFile,
     /// Accepts a filament slot write ([`crate::PrinterSession::set_slot`]).
     SlotWrite,
+    /// Rewrites a file before it is sent ([`crate::PrinterSession::prepare_upload`]), so the
+    /// approval has to cover the rewritten bytes. Only these plugins prepare an upload; every other
+    /// file is approved and sent as it is, without connecting first.
+    RewritesUpload,
 }
 
 pub type Capabilities = Vec<Capability>;
