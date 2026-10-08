@@ -14,6 +14,12 @@ declare const __SX_FEATURE_STORE__: boolean
 declare const __SX_FEATURE_PILOT__: boolean
 declare const __SX_FEATURE_CONNECT__: boolean
 declare const __SX_FEATURE_CLOUD__: boolean
+declare const __SX_AGENT_BRIDGE__: boolean
+
+// Dev and test builds only (docs/agent-bridge.md): a build without SLICERX_AGENT_BRIDGE=1 drops this and its module.
+// First, so it sees the app's backend calls from the start.
+let attachAgentBridge: ((host: EditionHost) => void) | null = null
+if (__SX_AGENT_BRIDGE__) attachAgentBridge = await (await import('./agent-bridge')).startAgentBridge()
 
 // The edition names the app from the first frame: the window title, menus and setup read it before the app renders.
 setCurrentEdition(editionFromBuild())
@@ -175,6 +181,7 @@ if (__SX_FEATURE_STORE__) {
     }
   }
 }
+if (__SX_AGENT_BRIDGE__) attachAgentBridge?.(host)
 // The app bar's logo slot shows the edition's own logo (brand.logo); SlicerX keeps its wordmark.
 createRoot(el).render(
   <StrictMode>
