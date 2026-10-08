@@ -272,10 +272,37 @@ export async function buildProfileLayer(input: ProfileInput): Promise<ProfileLay
 /** The settings the Goal tiles read from each goal's process. */
 const GOAL_KEYS = ['layer_height', 'wall_loops'] as const
 
-/** A tier's process preset: Orca's own for this nozzle when it has one, else ours for the size. */
+/** SlicerX's layer heights on a 0.4 mm nozzle, for a printer whose own 0.4 mm presets leave a tier out. */
+const LADDER_04: Record<'draft' | 'standard' | 'fine', number> = { draft: 0.28, standard: 0.2, fine: 0.12 }
+
+const layerOf = (p: Record<string, SettingValue>): number => Number(first(p['layer_height'] ?? baseConfig()['layer_height']))
+
+/**
+ * A tier's process preset: the maker's own for this nozzle when it has one, else ours for the size. Draft and Fine with
+ * no preset of their own (Orca falls back to Standard, or the preset is no thicker or thinner than Standard) are that
+ * nozzle's Standard with the layer height scaled by the 0.4 mm ladder's ratio, kept within 25 to 75 percent of the nozzle.
+ */
 async function tierProcess(printerId: string, tier: EasyGoal, nozzle: number, exact?: Awaited<ReturnType<typeof resolvedProfile>>): Promise<Record<string, SettingValue>> {
   const shipped = exact ?? (await resolvedProfile(printerId, tier, nozzle))
-  return (shipped ? { ...shipped.process } : { ...(processConfig(tier, nozzle, printerId) as Record<string, SettingValue>) }) as Record<string, SettingValue>
+  if (!shipped) return { ...(processConfig(tier, nozzle, printerId) as Record<string, SettingValue>) }
+  const own = { ...shipped.process } as Record<string, SettingValue>
+  if (tier !== 'draft' && tier !== 'fine') return own
+  const standard = { ...(await resolvedProfile(printerId, 'standard', nozzle))!.process } as Record<string, SettingValue>
+  const std = layerOf(standard)
+  const ordered = (h: number) => (tier === 'draft' ? h > std + 1e-9 : h < std - 1e-9)
+  if (shipped.tier === tier && ordered(layerOf(own))) return own
+  const ratio = await ladderRatio(printerId, tier)
+  const h = Math.round(Math.min(Math.max(std * ratio, 0.25 * nozzle), 0.75 * nozzle) * 100) / 100
+  return { ...standard, layer_height: Array.isArray(standard['layer_height']) ? [h] : h }
+}
+
+/** Draft or Fine over Standard on the printer's own 0.4 mm presets, else on SlicerX's. */
+async function ladderRatio(printerId: string, tier: 'draft' | 'fine'): Promise<number> {
+  const [own, std] = await Promise.all([resolvedProfile(printerId, tier, 0.4), resolvedProfile(printerId, 'standard', 0.4)])
+  const fallback = LADDER_04[tier] / LADDER_04.standard
+  if (!own || !std || own.tier !== tier) return fallback
+  const r = layerOf(own.process as Record<string, SettingValue>) / layerOf(std.process as Record<string, SettingValue>)
+  return Number.isFinite(r) && (tier === 'draft' ? r > 1 : r < 1) ? r : fallback
 }
 
 export type { PrintConfig }
