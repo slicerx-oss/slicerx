@@ -305,6 +305,9 @@ describe('the pre-alpha agreement', () => {
 
 describe('the agreement screen', () => {
   it('needs the box ticked, then records acceptance', async () => {
+    // The screen and the store from one fresh import, whatever an earlier test imported.
+    vi.resetModules()
+    const { get, set } = await import('../src/state/store')
     const { createElement } = await import('react')
     const { flushSync } = await import('react-dom')
     const { createRoot } = await import('react-dom/client')
@@ -334,7 +337,11 @@ describe('the agreement screen', () => {
 describe('automatic crash reports', () => {
   it('queue a scrubbed report for an error nothing handled, once per stack', async () => {
     localStorage.clear()
+    // The reports, the outbox and the store from one fresh import, whatever an earlier test imported.
+    vi.resetModules()
     const { startBugReports, resetBugReports } = await import('../src/bugs/reports')
+    const { queued } = await import('../src/bugs/outbox')
+    const { get, set } = await import('../src/state/store')
     resetBugReports()
     set({ crashReports: false, printerId: null })
     const host = { kind: 'web', build: { version: '0.1.0', commit: '0f15b63a', sourceUrl: '' } } as never

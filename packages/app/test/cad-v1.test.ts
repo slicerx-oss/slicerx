@@ -4,11 +4,10 @@
 // The v1 CAD calls in geom/cad.ts (push and pull, sketches, SVG on a face, dimensions) against the
 // geometry engine. With a built engine (packages/geom/wasm/pkg/sx_geom_wasm.wasm, or SX_GEOM_WASM)
 // the calls run in the real wasm; without one they replay replies recorded from it in
-// fixtures/cad-v1-replies.json. SX_GEOM_RECORD=1 with a built engine records that file again.
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { setGeomProvider, type GeomMesh } from '../src/geom/client'
+// fixtures/cad-v1-replies.json, by test (test/geom-engine.ts). SX_GEOM_RECORD=1 with a built engine records it again.
+import { beforeEach, describe, expect, it } from 'vitest'
+import type { GeomMesh } from '../src/geom/client'
+import { useGeomEngine } from './geom-engine'
 import {
   chamferSketch,
   checkSketch,
@@ -31,73 +30,7 @@ import {
   type SketchLoop,
 } from '../src/geom/cad'
 
-const fixture = join(__dirname, 'fixtures', 'cad-v1-replies.json')
-const wasmPath = process.env['SX_GEOM_WASM'] ?? join(__dirname, '..', '..', 'geom', 'wasm', 'pkg', 'sx_geom_wasm.wasm')
-const live = existsSync(wasmPath)
-const record = live && process.env['SX_GEOM_RECORD'] === '1'
-interface Recorded { op: string; request: unknown; reply?: unknown; error?: string }
-const recorded: Recorded[] = []
-
-interface GeomExports {
-  memory: WebAssembly.Memory
-  geom_input(len: number): number
-  geom_call(): number
-  geom_out_ptr(): number
-  geom_out_len(): number
-  geom_error_ptr(): number
-  geom_error_len(): number
-}
-
-async function wasmProvider() {
-  const { instance } = (await WebAssembly.instantiate(readFileSync(wasmPath), {})) as unknown as { instance: WebAssembly.Instance }
-  const x = instance.exports as unknown as GeomExports
-  const text = (ptr: number, len: number) => new TextDecoder().decode(new Uint8Array(x.memory.buffer, ptr, len))
-  return {
-    async call<T>(op: string, request: unknown): Promise<T> {
-      const req = JSON.parse(JSON.stringify(request)) as unknown
-      const bytes = new TextEncoder().encode(`${op}\0${JSON.stringify(req)}`)
-      const at = x.geom_input(bytes.length)
-      new Uint8Array(x.memory.buffer, at, bytes.length).set(bytes)
-      if (x.geom_call() === 0) {
-        const reply = JSON.parse(text(x.geom_out_ptr(), x.geom_out_len())) as T
-        recorded.push({ op, request: req, reply })
-        return reply
-      }
-      let message = text(x.geom_error_ptr(), x.geom_error_len())
-      try {
-        message = (JSON.parse(message) as { error?: string }).error ?? message
-      } catch {
-        // A plain message stays as it is.
-      }
-      recorded.push({ op, request: req, error: message })
-      throw new Error(message)
-    },
-  }
-}
-
-function replayProvider() {
-  const replies = JSON.parse(readFileSync(fixture, 'utf8')) as Recorded[]
-  let next = 0
-  return {
-    async call<T>(op: string, request: unknown): Promise<T> {
-      const r = replies[next++]
-      if (!r) throw new Error(`no recorded reply for ${op}`)
-      expect(r.op).toBe(op)
-      expect(r.request).toEqual(JSON.parse(JSON.stringify(request)))
-      if (r.error !== undefined) throw new Error(r.error)
-      return r.reply as T
-    },
-  }
-}
-
-beforeAll(async () => {
-  setGeomProvider(live ? await wasmProvider() : replayProvider())
-})
-
-afterAll(() => {
-  setGeomProvider(null)
-  if (record) writeFileSync(fixture, `${JSON.stringify(recorded)}\n`)
-})
+useGeomEngine('cad-v1-replies')
 
 /** A 20 mm cube at the local origin; triangles 2 and 3 are the top. */
 function cube(): GeomMesh {
@@ -112,9 +45,12 @@ const topPick = { triangle: 2, at: [60, 10, 20] as [number, number, number] }
 
 describe('v1 CAD calls', () => {
   let face: FacePick
+  // Every test starts from the picked top face, whatever ran before it.
+  beforeEach(async () => {
+    face = await pickFace(body, topPick)
+  })
 
   it('pulls a face out with a preview first, and refuses a zero move', async () => {
-    face = await pickFace(body, topPick)
     const preview = await pushPreview(face, 5)
     expect(preview.operation).toBe('join')
     expect(preview.tool.indices.length).toBeGreaterThan(0)
