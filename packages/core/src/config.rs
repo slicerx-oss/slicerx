@@ -899,6 +899,8 @@ impl PrintConfig {
             }
             if let Some(x) = get("tree_support_wall_count") {
                 let n = num(x).ok_or_else(|| bad("tree_support_wall_count"))?;
+                // bambu studio's -1 is auto, orca's 0
+                let n = if (n + 1.0).abs() < 1e-9 { 0.0 } else { n };
                 if !(0.0..=20.0).contains(&n) {
                     return Err(bad("tree_support_wall_count"));
                 }
@@ -1158,6 +1160,11 @@ impl PrintConfig {
             c.raw
                 .insert("retract_when_changing_layer".to_owned(), Value::Bool(false));
         }
+        // bambu studio writes -1 for auto: a 2 mm first layer (SupportCommon.cpp)
+        if c.raw_number("raft_first_layer_expansion", 2.0) < 0.0 {
+            c.raw
+                .insert("raft_first_layer_expansion".to_owned(), Value::from(2.0));
+        }
         Ok(())
     }
 
@@ -1295,7 +1302,13 @@ impl PrintConfig {
             ("raft_expansion", 1.5, 0.0, 100.0),
             ("raft_first_layer_expansion", 2.0, 0.0, 100.0),
         ] {
-            range(key, self.raw_number(key, default), lo, hi)?;
+            // the raft keys only shape a raft or supports
+            let unused = key.starts_with("raft_")
+                && self.raw_number("raft_layers", 0.0) < 1.0
+                && !self.enable_support;
+            if !unused {
+                range(key, self.raw_number(key, default), lo, hi)?;
+            }
         }
         // Orca sets no upper limit, but a compensation of meters overflows the scaled outlines; the settings
         // offer at most 1 mm, so 5 mm either way turns away only nonsense.
@@ -2180,6 +2193,27 @@ pub(crate) fn athena_spacing(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn bambu_auto_sentinels_parse() {
+        // bambu studio writes every value as a string, -1 for auto
+        let c = PrintConfig::from_value(&serde_json::json!({
+            "raft_first_layer_expansion": "-1",
+            "tree_support_wall_count": "-1",
+        }))
+        .unwrap();
+        assert!((c.raw_number("raft_first_layer_expansion", 0.0) - 2.0).abs() < 1e-9);
+        assert_eq!(c.support.tree_settings.wall_count, 0);
+        // a bad expansion only matters with a raft or supports
+        let bad = |extra: Value| {
+            let mut v = serde_json::json!({"raft_first_layer_expansion": "500"});
+            v.as_object_mut().unwrap().extend(extra.as_object().unwrap().clone());
+            PrintConfig::from_value(&v)
+        };
+        assert!(bad(serde_json::json!({"raft_layers": "0", "enable_support": "0"})).is_ok());
+        assert!(bad(serde_json::json!({"raft_layers": "2"})).is_err());
+        assert!(bad(serde_json::json!({"enable_support": "1"})).is_err());
+    }
 
     #[test]
     fn the_defaults_are_the_schema_defaults() {

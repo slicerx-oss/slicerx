@@ -105,6 +105,43 @@ fn metadata_of_a_plain_3mf_is_empty() {
     );
 }
 
+/// A Bambu Studio project's own settings, as `sx metadata` hands them over, slice with its -1s for auto
+/// (bambu-auto.3mf: a 20 mm cube and the negative values Bambu Studio writes).
+#[test]
+fn a_bambu_projects_auto_values_slice() {
+    let path = fixture("bambu-auto.3mf");
+    let out = sx().args(["metadata", &path]).output().unwrap();
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let meta: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let settings = meta["projectSettings"].clone();
+    assert_eq!(settings["raft_first_layer_expansion"], "-1");
+    let dir = std::env::temp_dir().join(format!("sx-cli-bambu-auto-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let run = |extra: &[(&str, &str)]| {
+        let mut config = settings.clone();
+        for (k, v) in extra {
+            config[*k] = serde_json::Value::String((*v).to_owned());
+        }
+        let req = serde_json::json!({
+            "schemaVersion": 1,
+            "meshes": {"p": path},
+            "plate": {"objects": [{"id": "p", "mesh": "p"}]},
+            "config": config,
+        });
+        let file = dir.join("request.json");
+        std::fs::write(&file, req.to_string()).unwrap();
+        sx().args(["slice", "--request"]).arg(&file).output().unwrap()
+    };
+    // no raft, no supports, then a raft that grows its first layer on auto
+    for extra in [&[][..], &[("raft_layers", "2")][..]] {
+        let out = run(extra);
+        assert!(out.status.success(), "{extra:?}: {}", String::from_utf8_lossy(&out.stderr));
+        let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+        assert!(v["layerCount"].as_u64().unwrap() > 90, "{v}");
+    }
+    let _ = std::fs::remove_dir_all(dir);
+}
+
 /// A 3MF plate given as one mesh prints as its objects: by object each one finishes before the
 /// next starts, and objects too close for the toolhead are refused as bad input.
 #[test]
