@@ -16,6 +16,7 @@ import { addPlate, duplicatePlate, removePlate, switchPlate } from './plates'
 import { cameraBus, getPaintBus, setTool } from './tools'
 import { appName, editionHasCad, MODELING_COMMANDS } from '../edition'
 import { openTool } from '../workspaces/design/open-tool'
+import { SHELF_TOOLS } from '../workspaces/design/shelf-tools'
 import { fromVault } from '../export/vault'
 
 const hasSelection = () => get().selection !== null
@@ -171,9 +172,11 @@ export function plateCommands(choice: () => LookAndFeelChoice, full?: Host): Com
     withKey({ id: 'zoom-bed', title: 'Zoom to the bed', section: 'view', keywords: ['plate', 'frame'], run: () => cameraBus()?.zoomToBed?.({ animate: true }) }, 'view.zoomBed'),
     withKey({ id: 'toggle-projection', title: 'Switch perspective and orthographic', section: 'view', keywords: ['ortho', 'camera'], run: () => void cameraBus()?.toggleProjection?.() }, 'view.projection'),
   ]
-  // Drawing commands exist only when the drawing tools are on. Measure, arrays, hollow, repair and simplify always do.
-  const cad = new Set(['object-text', 'object-shape', 'object-subtract', 'add-box', 'add-cylinder', 'add-sphere', 'add-cone'])
+  // A tool's command takes its gates from the shelf list. Drawing commands exist only when the drawing tools are on;
+  // measure, arrays, hollow, repair and simplify always do.
+  const cad = new Set(['add-box', 'add-cylinder', 'add-sphere', 'add-cone', ...SHELF_TOOLS.filter((t) => t.drawing).map((t) => t.command)])
   // An edition without the modeling tools has none of their commands: its geometry engine cannot run them.
-  const shipped = editionHasCad() ? list : list.filter((c) => !MODELING_COMMANDS.has(c.id))
+  const modeling = new Set([...MODELING_COMMANDS, ...SHELF_TOOLS.filter((t) => t.modeling).map((t) => t.command)])
+  const shipped = editionHasCad() ? list : list.filter((c) => !modeling.has(c.id))
   return shipped.map((c) => (cad.has(c.id) ? { ...c, enabled: c.enabled ? () => cadOn() && c.enabled!() : cadOn } : c))
 }
