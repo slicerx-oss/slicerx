@@ -6,17 +6,23 @@ import { useFold } from '../src/shell/fold'
 import { loadPrefs, savePrefs } from '../src/state/prefs'
 import { get, set } from '../src/state/store'
 
-beforeEach(() => set({ sidebarFolds: {} }))
+beforeEach(() => set({ sidebarFolds: {}, settingsMode: 'advanced' }))
 
 describe('sidebar folds', () => {
   it('sections start open and fold on their own', () => {
     const printer = renderHook(() => useFold('printer'))
     const filament = renderHook(() => useFold('filament'))
     expect(printer.result.current[0]).toBe(true)
-    act(() => printer.result.current[1](false))
+    act(() => printer.result.current[1]?.(false))
     expect(printer.result.current[0]).toBe(false)
     expect(filament.result.current[0]).toBe(true)
     expect(get().sidebarFolds).toEqual({ printer: true })
+  })
+
+  it('do not fold in Simple mode, so Simple shows no extra controls', () => {
+    set({ settingsMode: 'simple', sidebarFolds: { printer: true } })
+    const printer = renderHook(() => useFold('printer'))
+    expect(printer.result.current).toEqual([true, null])
   })
 
   it('are stored, and a bad entry is dropped', () => {
