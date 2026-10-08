@@ -1,0 +1,32 @@
+{
+  "name": "@slicerx/app-bridge",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Running-app MCP server for SlicerX dev and test builds: reads and drives the desktop app through its agent bridge",
+  "license": "Apache-2.0",
+  "type": "module",
+  "bin": {
+    "slicerx-app-bridge": "./src/cli.ts"
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "start": "node src/cli.ts",
+    "e2e": "node scripts/e2e.mjs",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.31.0",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.0",
+    "typescript": "5.9.3",
+    "vitest": "5.0.2"
+  }
+}
