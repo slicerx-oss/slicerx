@@ -2,7 +2,8 @@
 // Copyright (C) 2026 The SlicerX contributors
 import { afterEach, describe, expect, it } from 'vitest'
 import { defaultConfig } from '@slicerx/settings/defaults'
-import { goalEasy, presetOwnValue, resolveConfig, setProfileLayer } from '../src/adapters/config'
+import { GOALS, goalEasy, presetOwnValue, resolveConfig, setProfileLayer } from '../src/adapters/config'
+import { goalSubtitle } from '../src/lib/estimate-line'
 import { buildProfileLayer } from '../src/adapters/profile'
 import { changedControls } from '../src/state/profile-sync'
 import { trustOptions } from '../src/state/actions'
@@ -121,6 +122,25 @@ describe('nozzle size', () => {
     const w = (l: typeof four): number => Number({ ...defaultConfig(), ...l!.values }['outer_wall_line_width'])
     expect(w(six)).toBeGreaterThan(w(four))
     expect(six!.nozzles).toContain(0.8)
+  })
+
+  it('carries what each goal gives on the printer and nozzle in use, for the Goal tiles', async () => {
+    const four = await buildProfileLayer({ printer: P1S, tier: 'standard', slots: [{ type: 'PLA' }] })
+    const six = await buildProfileLayer({ printer: P1S, tier: 'fine', slots: [{ type: 'PLA' }], nozzle: 0.6, nozzleFrom: 'choice' })
+    const lines = (l: typeof four) => GOALS.map((g) => goalSubtitle(g, l!.goalValues[g]))
+    // Every tile has words, the tier in use reads what the layer slices with, and the layers get thinner from Draft to Fine.
+    for (const line of [...lines(four), ...lines(six)]) expect(line).toMatch(/^(\d\.\d\d mm|\d+ walls)$/)
+    expect(goalSubtitle('standard', four!.goalValues.standard)).toBe(`${Number({ ...defaultConfig(), ...four!.values }['layer_height']).toFixed(2)} mm`)
+    expect(goalSubtitle('fine', six!.goalValues.fine)).toBe(`${Number({ ...defaultConfig(), ...six!.values }['layer_height']).toFixed(2)} mm`)
+    const h = (l: typeof four, g: 'draft' | 'standard' | 'fine') => Number(l!.goalValues[g]['layer_height'])
+    expect(h(four, 'draft')).toBeGreaterThan(h(four, 'standard'))
+    expect(h(four, 'standard')).toBeGreaterThan(h(four, 'fine'))
+    // A 0.6 mm nozzle shows its own numbers, not the 0.4 mm ones.
+    expect(lines(six)).not.toEqual(lines(four))
+    expect(h(six, 'standard')).not.toBe(h(four, 'standard'))
+    // Orca ships no Draft or Fine for the P1S 0.6 mm nozzle, so those slice with its Standard, and the tiles say so.
+    expect(h(six, 'draft')).toBe(h(six, 'standard'))
+    expect(h(six, 'fine')).toBe(h(six, 'standard'))
   })
 
   it('a size the printer does not offer falls back to its default nozzle', async () => {

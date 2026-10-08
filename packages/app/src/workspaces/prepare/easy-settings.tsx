@@ -2,20 +2,24 @@
 // Copyright (C) 2026 The SlicerX contributors
 // Easy mode: five controls that write Orca keys through @slicerx/settings.
 import type { EasyGoal, EasySettings, SpeedPreset, SupportMode } from '@slicerx/contracts'
-import { Icon, Menu, MenuAnchor, MenuItem, MenuSeparator, Range, Seg, SwitchRow, type IconName } from '@slicerx/ui'
+import { Chip, Icon, Menu, MenuAnchor, MenuItem, MenuSeparator, Range, Seg, SwitchRow, tipAttrs, type IconName } from '@slicerx/ui'
 import { useMemo, useState } from 'react'
-import { easyConfig, goalEasy, inferEasy, matchGoal } from '../../adapters/config'
+import { easyConfig, goalEasy, GOALS, inferEasy, matchGoal } from '../../adapters/config'
+import { estimateLine, goalEstimate, goalSubtitle } from '../../lib/estimate-line'
 import { choicePatch, chosenFrom, FIXED_HEIGHTS, SLEIPNIR, SLEIPNIR_LINE, type LayerChoice } from '../../lib/layer-choice'
 import { OPTION_TIPS, settingTipAttrs } from '../../lib/tips'
 import { MoreButton, useMore } from '../../shell/more'
-import { markStale, set, useApp, type Goal } from '../../state/store'
+import { markStale, set, shownSlice, useApp, type Goal } from '../../state/store'
+import './goal-tiles.css'
 
 const GOAL_OPTIONS = [
-  { value: 'draft', label: 'Draft', icon: 'preset-draft' },
-  { value: 'standard', label: 'Standard', icon: 'preset-standard' },
-  { value: 'fine', label: 'Fine', icon: 'preset-fine' },
-  { value: 'strong', label: 'Strong', icon: 'preset-strong' },
-] as const satisfies readonly { value: Goal; label: string; icon: IconName }[]
+  { value: 'draft', label: 'Draft', icon: 'preset-draft', testId: 'slice-goal-draft' },
+  { value: 'standard', label: 'Standard', icon: 'preset-standard', testId: 'slice-goal-standard' },
+  { value: 'fine', label: 'Fine', icon: 'preset-fine', testId: 'slice-goal-fine' },
+  { value: 'strong', label: 'Strong', icon: 'preset-strong', testId: 'slice-goal-strong' },
+] as const satisfies readonly { value: EasyGoal; label: string; icon: IconName; testId: string }[]
+
+const CUSTOM_TIP = 'You changed a setting the goal sets. Pick a goal to start over.'
 
 const SPEEDS: { value: SpeedPreset; label: string; pct: number }[] = [
   { value: 'quality', label: 'Quality', pct: 50 },
@@ -72,12 +76,41 @@ export function EasySettingsPanel() {
   const supports: SupportMode = !profile || touched.includes('supports') ? (easy.supports === 'everywhere' ? 'auto' : easy.supports) : cfg['enable_support'] ? (String(cfg['support_type']) === 'tree(manual)' ? 'painted' : 'auto') : 'off'
   const brim: boolean = !profile || touched.includes('brim') ? easy.brim : String(cfg['brim_type'] ?? 'no_brim') !== 'no_brim'
   const more = useMore('print')
+  // What each goal gives on this printer and nozzle: the printer's own tier presets, else SlicerX's goals.
+  const goalValues = profile?.goalValues
+  const subtitles = useMemo(() => Object.fromEntries(GOALS.map((g) => [g, goalSubtitle(g, goalValues?.[g] ?? easyConfig(goalEasy(g)))])) as Record<EasyGoal, string>, [goalValues, profile])
+  const tiles = useMemo(
+    () =>
+      GOAL_OPTIONS.map((o) => ({
+        ...o,
+        label: (
+          <>
+            <span className="goal-name">{o.label}</span>
+            <span className="goal-sub sx-mono">{subtitles[o.value]}</span>
+          </>
+        ),
+      })),
+    [subtitles],
+  )
+  const line = useApp((s) => goalEstimate(estimateLine(shownSlice(s.slice))))
   return (
     <>
-      <div className="lbl" id="goal-label">
-        Goal
+      <div className="goal-head">
+        <div className="lbl" id="goal-label">
+          Goal
+        </div>
+        {goal === 'custom' ? (
+          <Chip className="goal-custom" tabIndex={0} {...tipAttrs(CUSTOM_TIP)}>
+            Custom
+          </Chip>
+        ) : null}
       </div>
-      <Seg<Goal> label="Goal" full className="mt6 goal-seg" value={goal} options={GOAL_OPTIONS} onChange={(g) => g !== 'custom' && update(goalEasy(g), g)} />
+      <Seg<Goal> label="Goal" full className="mt6 goal-seg goal-tiles" value={goal} options={tiles} onChange={(g) => g !== 'custom' && update(goalEasy(g), g)} />
+      {line ? (
+        <p className="goal-estimate" data-testid="slice-goal-estimate" data-stale={line === 'Updating' ? true : undefined} aria-live="polite">
+          {line}
+        </p>
+      ) : null}
 
       {more ? (
       <div className="srow">

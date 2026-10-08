@@ -73,7 +73,7 @@ async function rebuild(): Promise<void> {
   // A new overrides object makes every panel that reads the resolved configuration read it again. Following the
   // printer is not an edit of the project, so a plate that was clean stays clean.
   withoutDirtying(() =>
-    set({ profile: { printerId: layer.printerId, nozzle: layer.nozzle, nozzles: layer.nozzles, nozzleFrom: layer.nozzleFrom, tier: layer.tier, source: layer.source, shippedGcode: layer.shippedGcode, gcodeKeys: layer.gcodeKeys, limits: layer.limits, filamentIds: layer.filamentIds }, ...(same ? {} : { bed: layer.bed }), overrides: { ...get().overrides } }),
+    set({ profile: { printerId: layer.printerId, nozzle: layer.nozzle, nozzles: layer.nozzles, nozzleFrom: layer.nozzleFrom, tier: layer.tier, source: layer.source, shippedGcode: layer.shippedGcode, gcodeKeys: layer.gcodeKeys, limits: layer.limits, filamentIds: layer.filamentIds, goalValues: layer.goalValues }, ...(same ? {} : { bed: layer.bed }), overrides: { ...get().overrides } }),
   )
   markStale()
 }
