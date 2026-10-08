@@ -204,7 +204,7 @@ export function appProject(host: Pick<Host, 'slicer'>): () => PilotProject {
         const handle = await host.slicer.loadParts(obj.name, parts)
         const s = get()
         const id = find(obj.id) ? uid(obj.id) : obj.id
-        const entry: PlateEntry = { id, name: obj.name, handle, parts, colors: resolveSlots(s).map((x) => x.color), transform: dropToBed(parts, centerOnBed(parts, identity(), s.bed)) }
+        const entry: PlateEntry = { id, name: obj.name, handle, parts, colors: parts.map((p) => (resolveSlots(s)[p.slot - 1] ?? resolveSlots(s)[0]!).color), transform: dropToBed(parts, centerOnBed(parts, identity(), s.bed)) }
         const plates = draft()
         const shown = plates.find((p) => p.id === s.activePlate)!
         const t = arrange([entry], shown.objects, s.bed, placeOptions()).transforms[id]

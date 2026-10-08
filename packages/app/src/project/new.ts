@@ -23,6 +23,7 @@ export function clearProject(): void {
     projectGcode: null,
     projectSettings: null,
     namedValues: [],
+    fileSlotColors: [],
   })
   history().clear()
   markClean()

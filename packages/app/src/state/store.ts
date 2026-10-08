@@ -226,6 +226,10 @@ export interface AppState {
   slice: SliceState
   preview: PreviewBuffers | null
   colorMode: ColorMode
+  /** The person chose the toolpath colors (the Color by menu, a command, a warning); a new slice keeps their choice. */
+  colorModePicked: boolean
+  /** The colors the last slice chose by itself: filament when it prints with more than one, else feature type. */
+  colorModeAuto: 'tool' | 'feature' | null
   layerHi: number
   /** First drawn layer, 1 based (the bottom handle of the layer slider). */
   layerLo: number
@@ -341,6 +345,8 @@ export interface AppState {
   towerSelected: boolean
   /** Slots set by hand, by 1-based slot number. */
   slotSetup: Record<number, SlotSetup>
+  /** The open project file's filament colors (filament_colour), by slot: slot n is index n - 1. */
+  fileSlotColors: string[]
   flush: FlushSettings
   /** Preset matches for what the printer reports, by slot; the AMS panel fills it from the filament presets. */
   slotMatch: Record<number, Pick<SlotSetup, 'brand' | 'family' | 'vendor'>>
@@ -514,6 +520,8 @@ export const appStore = createStore<AppState>()(() => ({
   slice: { status: 'idle' },
   preview: null,
   colorMode: 'feature',
+  colorModePicked: false,
+  colorModeAuto: null,
   layerHi: 0,
   layerLo: 1,
   moveCut: 1,
@@ -579,6 +587,7 @@ export const appStore = createStore<AppState>()(() => ({
   tower: { auto: true, x: 0, y: 0 },
   towerSelected: false,
   slotSetup: {},
+  fileSlotColors: [],
   flush: FLUSH_DEFAULTS,
   slotMatch: {},
   slotDialog: null,
@@ -693,6 +702,20 @@ export function toast(text: string, tone?: 'ok' | 'info' | 'warn' | 'error', act
 export function selectedIds(s: Pick<AppState, 'selection' | 'selectedIds'> = get()): string[] {
   if (!s.selection) return []
   return s.selectedIds.includes(s.selection) ? s.selectedIds : [s.selection]
+}
+
+/**
+ * The toolpath colors after a slice: the preview's own default (defaultColorMode) unless the person picked colors and
+ * the default is the same kind as last time. Orca and Bambu Studio switch the same way when a print gains or loses colors.
+ */
+export function colorModeAfterSlice(s: Pick<AppState, 'colorModePicked' | 'colorModeAuto'>, auto: 'tool' | 'feature'): Partial<AppState> {
+  if (s.colorModePicked && (s.colorModeAuto === null || s.colorModeAuto === auto)) return { colorModeAuto: auto }
+  return { colorMode: auto, colorModePicked: false, colorModeAuto: auto }
+}
+
+/** The person picks the toolpath colors; slices after this keep them (colorModePicked). */
+export function pickColorMode(colorMode: ColorMode): void {
+  set({ colorMode, colorModePicked: true })
 }
 
 export function setWorkspace(ws: Workspace): void {

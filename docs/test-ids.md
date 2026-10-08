@@ -154,6 +154,14 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | `update-quit` | Quit, when the update is required |
 | `update-retry` | Try again |
 
+## Preview
+
+| Test id | Control |
+| --- | --- |
+| `legend-color-by` | The legend's Color by menu: what the toolpath colors show |
+| `legend-color-<mode>` | Its items: `legend-color-feature`, `legend-color-tool` (Filament), `legend-color-speed`, `legend-color-flow`, `legend-color-layer-time` |
+| `legend-slot` | A slot's swatch and path length in the Filament colors; `data-slot` is the slot number |
+
 ## Other
 
 Ids that tests read for their text:

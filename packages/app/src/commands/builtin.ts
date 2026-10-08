@@ -7,7 +7,7 @@ import { goalEasy } from '../adapters/config'
 import { confirmDiscard } from '../project/unsaved'
 import { gcodeView, pickGcodeFile, setGcodePanel } from '../workspaces/preview/gcode-file'
 import { cancelSlice, clearPlate, exportGcode, loadDefaultPlate, loadDemoModel, openModelFiles, removeSelected, slicePlate } from '../state/actions'
-import { get, markStale, openSettings, set, setCamera, setModelMode, setRail, setWorkspace, type CameraView, type ColorMode, type Goal, type PrepareLook } from '../state/store'
+import { get, markStale, openSettings, pickColorMode, set, setCamera, setModelMode, setRail, setWorkspace, type CameraView, type ColorMode, type Goal, type PrepareLook } from '../state/store'
 import { DEMO_MODELS } from '../lib/demo-models'
 import { printBlock } from '../plate/heimdall'
 import { helpLinks, openLink } from '../lib/links'
@@ -115,7 +115,7 @@ export function builtinCommands(host: Host, workspaces: readonly { id: string; l
   }
   const modes: [ColorMode, string][] = [['feature', 'feature type'], ['tool', 'filament'], ['speed', 'speed'], ['flow', 'volumetric flow'], ['layerTime', 'layer time']]
   for (const [colorMode, label] of modes) {
-    out.push({ id: `color-${colorMode}`, title: `Color toolpaths by ${label}`, section: 'view', keywords: ['preview', 'legend', 'color'], workspace: 'preview', enabled: sliced, run: () => { setWorkspace('preview'); set({ colorMode }) } })
+    out.push({ id: `color-${colorMode}`, title: `Color toolpaths by ${label}`, section: 'view', keywords: ['preview', 'legend', 'color'], workspace: 'preview', enabled: sliced, run: () => { setWorkspace('preview'); pickColorMode(colorMode) } })
   }
   out.push(
     { id: 'preview-first-layer', title: 'Show the first layer only', section: 'view', keywords: ['layer 1', 'adhesion'], workspace: 'preview', enabled: sliced, run: () => { setWorkspace('preview'); set({ layerHi: 1 }) } },

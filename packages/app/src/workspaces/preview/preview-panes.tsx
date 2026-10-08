@@ -11,6 +11,7 @@ import { useHost } from '../../host'
 import { formatCost, formatDuration, formatGrams, previewStats, timeRows } from '../../lib/preview-stats'
 import { Swatch } from '../../parts'
 import { printBlock } from '../../plate/heimdall'
+import { resolveSlots } from '../../filament/slots'
 import { exportGcode, recordSpoolUse, sendToPrinter } from '../../state/actions'
 import { setWorkspace, useApp } from '../../state/store'
 import { useTabLabel } from '../../first-run/look'
@@ -193,7 +194,8 @@ export function PreviewLeft() {
 export function PreviewRight() {
   const host = useHost()
   const slice = useApp((s) => s.slice)
-  const plate = useApp((s) => s.plate)
+  // The swatches are the slots' colors, as the slice used them; a string, so the selector stays stable.
+  const slotColors = useApp((s) => resolveSlots(s).map((r) => r.color).join())
   const { printer, rows } = usePrinter()
   const spools = useSpools(host)
   const links = useApp((s) => s.spoolLinks)
@@ -212,7 +214,7 @@ export function PreviewRight() {
     )
   }
   const r = slice.result
-  const colors = plate[0]?.colors ?? []
+  const colors = slotColors.split(',')
   const grams = r.stats.filamentG.reduce((a, b) => a + b, 0)
   const target = printTarget(printer, rows)
   const spoolOf = (slot: number) => spoolFor(slot, spools, links, printer?.status.slots[slot - 1]?.spoolmanId)

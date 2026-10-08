@@ -81,13 +81,25 @@ export function mapSlot(plate: Pick<PlateMeta, 'settings'> | undefined, slot: nu
   return plate?.settings.slotMap?.[slot] ?? slot
 }
 
-type SlotInputs = Pick<AppState, 'printerSlots' | 'plates' | 'plate' | 'activePlate' | 'slotSetup'> & Partial<Pick<AppState, 'slotMatch'>>
+type SlotInputs = Pick<AppState, 'printerSlots' | 'plates' | 'plate' | 'activePlate' | 'slotSetup'> & Partial<Pick<AppState, 'slotMatch' | 'fileSlotColors'>>
+
+/**
+ * The model's color for each slot: the project file's filament colors, then for slots the file does not name, the color
+ * of the first part the file put in that slot (an entry's colors are per part, so part i's color goes to part i's slot).
+ */
+export function modelSlotColors(s: Pick<SlotInputs, 'plates' | 'plate' | 'activePlate' | 'fileSlotColors'>): (string | undefined)[] {
+  const out: (string | undefined)[] = [...(s.fileSlotColors ?? [])]
+  for (const p of allPlates(s)) for (const o of p.objects) {
+    const parts = o.parts.length ? o.parts : o.handle.parts
+    parts.forEach((part, i) => (out[part.slot - 1] ??= o.colors[i]))
+  }
+  return out
+}
 
 export function resolveSlots(s: SlotInputs): ResolvedSlot[] {
   const n = slotCount(s)
   const used = usedSlots(s)
-  const modelColors: (string | undefined)[] = []
-  for (const p of allPlates(s)) for (const o of p.objects) o.colors.forEach((c, i) => (modelColors[i] ??= c))
+  const modelColors = modelSlotColors(s)
   return Array.from({ length: n }, (_, i) => {
     const index = i + 1
     const fallback = defaultColors()[i % 8]!
