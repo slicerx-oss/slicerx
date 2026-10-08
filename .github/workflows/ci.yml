@@ -227,10 +227,11 @@ jobs:
       # on the retry, or failed both times, fails the job unless scripts/ci/flaky.txt or quarantine.txt lists it
       # (scripts/ci/README.md, "Flaky tests"). Playwright's own exit code is left to that step.
       # on the PC the run holds the machine's heavy lock, so it never shares the CPU with an agent's test run
+      # and uses 5 workers: each one draws software WebGL on more than two threads, and 8 drove the load near 70 on 24
       - run: |
           run=""
           [ "$RUNNER_ENVIRONMENT" = self-hosted ] && run="bash scripts/ci/heavy.sh timeout 900"
-          $run pnpm --filter @slicerx/web exec playwright test --project=${{ matrix.project }} --shard=${{ matrix.shard }} --fully-parallel --workers=${{ github.event_name == 'pull_request' && 2 || 8 }} --retries=1 --reporter=blob,list,json --trace=retain-on-failure || echo "playwright exited $?"
+          $run pnpm --filter @slicerx/web exec playwright test --project=${{ matrix.project }} --shard=${{ matrix.shard }} --fully-parallel --workers=${{ github.event_name == 'pull_request' && 2 || 5 }} --retries=1 --reporter=blob,list,json --trace=retain-on-failure || echo "playwright exited $?"
         env:
           SX_HEAVY_LOCK: /mnt/c/Users/musda/.slicerx-heavy.lock
           # a lock that is not free within 20 minutes fails the step with "gave up after 1200 s", not a cancel
