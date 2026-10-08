@@ -29,6 +29,13 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | `frame-close` | The close button of a full window frame (creator page editor, upload) |
 | `unsaved-dialog` | Save changes first? |
 | `unsaved-save`, `unsaved-discard`, `unsaved-cancel` | Its Save project, Don't save and Cancel buttons |
+| `projects-dialog` | Restore unsaved work? at startup, or Recent projects (the title says which) |
+| `recover-work` | The unsaved work it offers back: name, objects and time |
+| `recover-restore` | Restore it |
+| `danger-recover-discard` | Discard it (deletes the kept copy; the bridge refuses it, Close keeps the copy for later) |
+| `recover-nothing` | There is nothing to restore |
+| `recent-project` | A project in Recent projects (opens it) |
+| `projects-close` | Close (keeps the unsaved work for next time) |
 | `agreement` | The pre-alpha agreement screen |
 | `agreement-check`, `agreement-accept` | Its checkbox and Accept and continue |
 
