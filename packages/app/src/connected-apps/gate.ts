@@ -2,11 +2,13 @@
 // Copyright (C) 2026 The SlicerX contributors
 // Which printer connections to offer given the connected apps that are added. Kept apart from the app list
 // (registry.ts) so printer setup, which loads with the shell, does not carry the apps' descriptions.
-import { connectionMethod, type ConnectionId } from '@slicerx/printer-catalog'
+// The connection methods alone: the catalog's model list stays out of the startup shell.
+import { CONNECTION_METHODS } from '@slicerx/printer-catalog/methods'
+import type { ConnectionId } from '@slicerx/printer-catalog'
 
 /** The app a connection goes through, if any. */
 export function appForConnection(id: ConnectionId): string | undefined {
-  return connectionMethod(id).requiresApp
+  return CONNECTION_METHODS.find((m) => m.id === id)?.requiresApp
 }
 
 /** The connections to offer: one that goes through an app shows only once that app is added. Order is kept. */
