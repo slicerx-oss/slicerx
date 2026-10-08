@@ -17,7 +17,10 @@ import { parseArgs } from 'node:util'
 
 const desktop = resolve(import.meta.dirname, '..')
 const repo = resolve(desktop, '../..')
-const { values } = parseArgs({ options: { debug: { type: 'boolean' }, target: { type: 'string' }, 'same-identifier': { type: 'boolean' } }, strict: true })
+// `pnpm ... build:bridge -- --debug` hands the script a literal `--` first (pnpm 10), which parseArgs would take as the
+// end of the options; it is dropped.
+const argv = process.argv.slice(2)
+const { values } = parseArgs({ args: argv[0] === '--' ? argv.slice(1) : argv, options: { debug: { type: 'boolean' }, target: { type: 'string' }, 'same-identifier': { type: 'boolean' } }, strict: true })
 
 const env = { ...process.env, SLICERX_AGENT_BRIDGE: '1', CARGO_TARGET_DIR: process.env.CARGO_TARGET_DIR || join(repo, 'target', 'agent-bridge') }
 // On Windows pnpm is a .cmd script, which only a shell starts; the arguments are this script's own, without spaces.
