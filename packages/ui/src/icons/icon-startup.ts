@@ -97,6 +97,7 @@ export const STARTUP_ICON_PATHS: Partial<Record<IconName, string>> = {
   "slicerx": "<path d=\"M3.4 3h7.2L12 5.55 13.4 3h7.2l-5 9 5 9h-7.2L12 18.45 10.6 21H3.4l5-9z\"/><path d=\"M6.6 4.9h2.9L12 9.45l2.5-4.55h2.9l-4 7.1 4 7.1h-2.9L12 14.55l-2.5 4.55H6.6l4-7.1z\" fill=\"currentColor\" stroke=\"none\"/>",
   "sliders": "<path d=\"M4 7h9M17 7h3M4 17h3M11 17h9\"/><circle cx=\"15\" cy=\"7\" r=\"2\"/><circle cx=\"9\" cy=\"17\" r=\"2\"/>",
   "speed": "<path d=\"M4.5 17.5a8.5 8.5 0 1 1 15 0\"/><path d=\"M12 13.5l4.5-4.5\"/><circle cx=\"12\" cy=\"13.5\" r=\"1.4\"/>",
+  "spool": "<circle cx=\"12\" cy=\"12\" r=\"8\"/><circle cx=\"12\" cy=\"12\" r=\"2.5\"/><circle cx=\"12\" cy=\"12\" r=\"5.25\" stroke-dasharray=\"2.5 2\"/><path d=\"M20 12v8.5\"/>",
   "stop": "<rect x=\"6\" y=\"6\" width=\"12\" height=\"12\" rx=\"2\"/>",
   "support": "<rect x=\"5.5\" y=\"3.5\" width=\"13\" height=\"5\" rx=\"1.5\"/><path d=\"M12 8.5v12M12 14.5L8 8.5M12 14.5l4-6M8.5 20.5h7\"/>",
   "sx3mf": "<path d=\"M14 3.5H7A1.5 1.5 0 0 0 5.5 5v14A1.5 1.5 0 0 0 7 20.5h10a1.5 1.5 0 0 0 1.5-1.5V8z\"/><path d=\"M14 3.5V8h4.5\"/><path d=\"M9 11.5l6 6M15 11.5l-6 6\"/>",
