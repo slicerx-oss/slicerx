@@ -40,6 +40,7 @@ export function TopBar() {
 
   return (
     <AppBar
+      data-tauri-drag-region
       right={
         <>
           {layout.modeSelector === 'top-right' ? <ModeSelector layout={layout} id="mode-top" /> : null}

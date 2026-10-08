@@ -326,6 +326,12 @@ button { cursor: pointer; }
 /* app frame: rounded framed grid of bar, main and status line (the concept shell) */
 .sx-frame { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto; background: var(--ink-1); border: 1px solid var(--line-soft); border-radius: var(--r-lg); overflow: hidden; }
 .sx-frame-root { height: 100%; padding: var(--gutter); display: flex; flex-direction: column; }
+/* The desktop app fills its window: no gap around the app and no rounded frame inside the native one. */
+:root[data-shell="desktop"] .sx-frame-root { padding: 0; }
+:root[data-shell="desktop"] .sx-frame { border: 0; border-radius: 0; }
+/* macOS draws the traffic lights over the top bar (an overlay title bar), so the bar starts after them. */
+:root[data-shell="desktop"][data-os="mac"] .sx-appbar { padding-left: 84px; }
+:root[data-shell="desktop"] .sx-appbar { -webkit-user-select: none; user-select: none; }
 .sx-main { min-height: 0; overflow: auto; position: relative; }
 .sx-appbar { display: flex; align-items: center; gap: 26px; height: var(--h-bar); padding: 0 20px; border-bottom: 1px solid var(--line-soft); min-width: 0; }
 .sx-appbar .sx-brand .sx-brand-x svg { width: 15.5px; height: 15.5px; }

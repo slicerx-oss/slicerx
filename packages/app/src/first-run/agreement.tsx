@@ -70,7 +70,7 @@ export function Agreement() {
 
   return (
     <div className="fr fra" ref={rootRef} role="dialog" aria-modal="true" aria-labelledby="fra-title" data-testid="agreement">
-      <header className="fr-top">
+      <header className="fr-top" data-tauri-drag-region>
         <span className="fr-mark" role="img" aria-label={name}>
           <EditionMark edition={edition} size={24} />
         </span>
