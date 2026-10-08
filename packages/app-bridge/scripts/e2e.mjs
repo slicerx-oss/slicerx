@@ -201,13 +201,28 @@ try {
   record('run', false, e instanceof Error ? e.message : String(e))
 } finally {
   await client?.close().catch(() => undefined)
-  // Stopped by its own pid, never by name.
-  if (child.exitCode === null) {
-    if (win) spawnSync('taskkill', ['/PID', String(child.pid), '/T', '/F'])
-    else child.kill('SIGTERM')
+  // Stopped by its own pid, never by name. On macOS and Linux SIGTERM, which the app catches to remove its connection
+  // file. On Windows a forced stop cannot be caught, so the window is asked to close first (the normal quit, which
+  // removes the file), and only an app still running after that is forced.
+  const ended = async (ms) => {
+    for (let t = 0; t < ms && child.exitCode === null && child.signalCode === null; t += 250) await sleep(250)
+    return child.exitCode !== null || child.signalCode !== null
   }
-  await sleep(1000)
-  record('app stopped by pid', child.exitCode !== null || child.signalCode !== null, child.pid)
+  let forced = false
+  if (child.exitCode === null) {
+    if (win) {
+      spawnSync('taskkill', ['/PID', String(child.pid), '/T'])
+      if (!(await ended(10_000))) {
+        forced = true
+        spawnSync('taskkill', ['/PID', String(child.pid), '/T', '/F'])
+      }
+    } else child.kill('SIGTERM')
+  }
+  record('app stopped by pid', await ended(10_000), { pid: child.pid, ...(forced ? { forced } : {}) })
+  if (forced) {
+    log('info the app did not close on request and was forced; its connection file is removed here')
+    rmSync(tokenFile, { force: true })
+  } else record('the app removed its connection file when it stopped', !existsSync(tokenFile), tokenFile)
   writeFileSync(join(out, 'report.json'), JSON.stringify({ app, file, steps, stderr: stderr.slice(-4000) }, null, 2))
   log(`${steps.length - failed} of ${steps.length} passed; report ${join(out, 'report.json')}`)
   process.exit(failed ? 1 : 0)
