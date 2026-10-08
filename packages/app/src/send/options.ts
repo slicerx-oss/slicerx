@@ -3,7 +3,7 @@
 // The print options a send offers per printer: what the printer does before or during the job. Which
 // ones a printer supports, and their defaults, follow the maker's own slicer for that model (Bambu Studio's
 // SelectMachineDialog and resources/printers/<model>.json; Orca's send dialog does the same).
-import type { FilamentSlot, PrinterInfo, PrinterStatus, StartOptions } from '@slicerx/contracts'
+import { pluginHas, type FilamentSlot, type PrinterInfo, type PrinterStatus, type StartOptions } from '@slicerx/contracts'
 import { CONNECTION_METHODS } from '@slicerx/printer-catalog'
 
 export type SendOptionId = 'bedLeveling' | 'flowCalibration' | 'vibrationCompensation' | 'timelapse' | 'firstLayerInspection'
@@ -191,11 +191,11 @@ export function withGcodeEnding(name: string): string {
 export type PrintEnding = '.gcode' | '.gcode.3mf'
 
 /**
- * What the Print sheet sends: a .gcode.3mf to a Bambu Lab printer, which starts it with `project_file` and so
- * follows the slot choice, shows the plate's picture and lists its objects for skipping; plain .gcode elsewhere.
+ * What the Print sheet sends: a .gcode.3mf when the plugin declares `project_file`, so the start
+ * follows the slot choice; plain .gcode otherwise.
  */
 export function printEnding(plugin: string | undefined): PrintEnding {
-  return plugin === 'bambu-lan' ? '.gcode.3mf' : '.gcode'
+  return pluginHas(plugin, 'project_file') ? '.gcode.3mf' : '.gcode'
 }
 
 /** The name without any print file ending. */
