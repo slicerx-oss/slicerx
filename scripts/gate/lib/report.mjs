@@ -13,6 +13,9 @@ export function runStatus(run) {
   return st.includes('FAIL') ? 'FAIL' : st.includes('PASS') ? 'PASS' : 'SKIP'
 }
 
+/** A hash the gate computed itself (hex only), shown as it is: masking would hide the build's sha256. */
+const hash = (h) => (/^[0-9a-f]{7,64}$/i.test(String(h ?? '')) ? String(h) : esc(h ?? ''))
+
 const badge = (st) => `<span class="b b-${esc(String(st ?? 'none').toLowerCase())}">${esc(st ?? 'not run')}</span>`
 const pre = (title, lines) => (lines?.length ? `<details><summary>${esc(title)} (${lines.length})</summary><pre>${lines.map(esc).join('\n')}</pre></details>` : '')
 
@@ -51,8 +54,8 @@ export function renderReport(runs, { prefix = () => '' } = {}) {
     .map((r) => `<section class="run">
 <h2>${badge(runStatus(r))} ${esc(r.platform)}</h2>
 <table class="kv">
-<tr><th>Commit</th><td><code>${esc(r.commit ?? 'unknown')}</code></td></tr>
-<tr><th>Build</th><td><code>${esc(r.build?.file ?? '')}</code> ${esc(r.build?.version ?? '')}, sha256 <code>${esc(r.build?.sha256 ?? '')}</code>${r.build?.kind ? `, ${esc(r.build.kind)}` : ''}</td></tr>
+<tr><th>Commit</th><td><code>${hash(r.commit ?? 'unknown')}</code></td></tr>
+<tr><th>Build</th><td><code>${esc(r.build?.file ?? '')}</code> ${esc(r.build?.version ?? '')}, sha256 <code>${hash(r.build?.sha256)}</code>${r.build?.installerSha256 ? `, installer ${esc(r.build.installer ?? '')} sha256 <code>${hash(r.build.installerSha256)}</code>` : ''}${r.build?.kind ? `, ${esc(r.build.kind)}` : ''}</td></tr>
 <tr><th>Account</th><td>${esc(r.account ?? 'none (signed out only)')}</td></tr>
 <tr><th>Host</th><td>${esc(r.host ?? '')}</td></tr>
 <tr><th>Run</th><td>${esc(r.startedAt)} to ${esc(r.endedAt ?? '')}</td></tr>
@@ -80,7 +83,7 @@ pre{white-space:pre-wrap;word-break:break-word;font-size:12px;background:var(--c
 summary{cursor:pointer;color:var(--dim);margin:6px 0}code{font-size:12px;word-break:break-all}
 </style></head><body><main>
 <h1>${badge(overall)} Release gate</h1>
-<p class="m">Commit ${esc(commits.join(', ') || 'unknown')}. Generated ${esc(new Date().toISOString())}.</p>
+<p class="m">Commit ${commits.map(hash).join(', ') || 'unknown'}. Generated ${esc(new Date().toISOString())}.</p>
 <table class="sum">${head}${rows}</table>
 ${runBlocks}
 </main></body></html>
