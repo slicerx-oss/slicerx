@@ -1153,7 +1153,7 @@ async fn upload_delivery(b: &Arc<Bridge>, p: &Value, delivery: &str) -> Rpc<Valu
     }
 }
 
-/// A printer reached through a connected app (BamBuddy) takes that app's address, port and key from
+/// A printer reached through a connected app (`BamBuddy`) takes that app's address, port and key from
 /// Settings, Connected apps each time: the printer itself only names its id in the app. Any other
 /// printer's config is returned unchanged.
 pub(crate) async fn through_app(b: &Bridge, mut config: PrinterConfig) -> Rpc<PrinterConfig> {

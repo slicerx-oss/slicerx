@@ -4,6 +4,7 @@
 // only records whether a secret field holds something and how long it is.
 import type { Bed, PrinterHardware } from '@slicerx/contracts'
 import { brandById, CONNECTION_METHODS, connectionMethod, modelById, modelsForBrand, type ConnectionId, type ConnectionMethod, type FieldKey, type Kinematics, type PrinterModel } from '@slicerx/printer-catalog'
+import { appHostPort, offeredConnections } from '../connected-apps/registry'
 
 // ---------------------------------------------------------------------------
 // Brands
@@ -212,11 +213,16 @@ export const HAND_CONNECTIONS: Readonly<Record<Firmware, readonly ConnectionId[]
 
 export const FIRMWARE_LABELS: Readonly<Record<Firmware, string>> = { marlin: 'Marlin', klipper: 'Klipper', reprapfirmware: 'RepRapFirmware', bambu: 'Bambu' }
 
-/** Connection types for the current model or firmware, most likely first. */
-export function connectionChoices(form: PrinterForm): ConnectionId[] {
+const NO_APPS: ReadonlySet<string> = new Set()
+
+/**
+ * Connection types for the current model or firmware, most likely first. One that goes through a connected
+ * app (BamBuddy) is offered only once that app is added (`apps`, the ids in Settings, Connected apps).
+ */
+export function connectionChoices(form: PrinterForm, apps: ReadonlySet<string> = NO_APPS): ConnectionId[] {
   const model = currentModel(form)
-  if (model) return [...model.connections]
-  return form.modelId === 'custom' ? [...HAND_CONNECTIONS[form.custom.firmware]] : []
+  if (model) return offeredConnections(model.connections, apps)
+  return form.modelId === 'custom' ? offeredConnections(HAND_CONNECTIONS[form.custom.firmware], apps) : []
 }
 
 export function setFirmware(form: PrinterForm, firmware: Firmware): PrinterForm {
@@ -225,9 +231,14 @@ export function setFirmware(form: PrinterForm, firmware: Firmware): PrinterForm 
   return { ...form, custom: { ...form.custom, firmware }, connection, secretLengths: connection === form.connection ? form.secretLengths : {} }
 }
 
-export function pickConnection(form: PrinterForm, id: ConnectionId): PrinterForm {
+/**
+ * Chooses a connection. One that goes through a connected app takes the app's address (`appBaseUrl`) as the
+ * printer's: the form does not ask for it, and the hub fills in the app's address and key when it connects.
+ */
+export function pickConnection(form: PrinterForm, id: ConnectionId, appBaseUrl?: string): PrinterForm {
   if (form.connection === id) return form
-  return { ...form, connection: id, fields: { ...form.fields, port: '' }, secretLengths: {} }
+  const viaApp = connectionMethod(id).requiresApp !== undefined
+  return { ...form, connection: id, fields: { ...form.fields, port: '', ...(viaApp ? { host: appBaseUrl ? appHostPort(appBaseUrl) : '' } : {}) }, secretLengths: {} }
 }
 
 export function nozzleMm(n: NozzleSpec): number | null {
@@ -328,7 +339,11 @@ export function checkConnection(form: PrinterForm, method: ConnectionMethod): Co
       if (form.fields.port.trim() && !validPort(form.fields.port)) errors.port = 'The port must be 1 to 65535.'
     } else if (f.key === 'serial') {
       const v = form.fields.serial.trim()
-      if (!v && f.required) errors.serial = 'Enter the serial number.'
+      // BamBuddy's printer id rides in the serial field: it is the number BamBuddy uses, not a serial number.
+      if (method.id === 'bambuddy') {
+        if (!v) errors.serial = 'Enter the BamBuddy printer id.'
+        else if (!/^[1-9]\d{0,9}$/.test(v)) errors.serial = 'The BamBuddy printer id is the number BamBuddy uses for this printer, like 12.'
+      } else if (!v && f.required) errors.serial = 'Enter the serial number.'
       else if (v && !/^[A-Z0-9]{8,24}$/i.test(v)) errors.serial = 'The serial number is 8 to 24 letters and digits.'
     } else if (f.key === 'username') {
       if (f.required && !form.fields.username.trim()) errors.username = 'Enter the user name.'
