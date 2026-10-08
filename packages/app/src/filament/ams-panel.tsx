@@ -144,8 +144,7 @@ export function AmsPanel({ maker, system }: { maker: string; system?: 'ams' | 'm
       title="Filament"
       icon="spool"
       id="filament-fold"
-      expanded={open}
-      onExpandedChange={setOpen}
+      {...(setOpen ? { expanded: open, onExpandedChange: setOpen } : {})}
       aside={
         !open ? (
           <span className="sec-sum">

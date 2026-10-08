@@ -6,7 +6,7 @@ import { expect, test } from './fixtures'
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
-    if (!localStorage.getItem('slicerx.prefs.v1')) localStorage.setItem('slicerx.prefs.v1', JSON.stringify({ workspace: 'prepare', printerId: 'bay-1', pilot: { mode: 'off' } }))
+    if (!localStorage.getItem('slicerx.prefs.v1')) localStorage.setItem('slicerx.prefs.v1', JSON.stringify({ workspace: 'prepare', printerId: 'bay-1', settingsMode: 'advanced', pilot: { mode: 'off' } }))
   })
 })
 
@@ -26,6 +26,13 @@ test('each section is its own panel with an icon in its header', async ({ page }
   // The panels sit apart on the darker ground.
   const gap = await page.locator('.pane-body').evaluate((el) => parseFloat(getComputedStyle(el).rowGap))
   expect(gap).toBeGreaterThan(0)
+})
+
+test('Simple mode keeps the sections open with no fold', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('slicerx.prefs.v1', JSON.stringify({ workspace: 'prepare', printerId: 'bay-1', settingsMode: 'simple', pilot: { mode: 'off' } })))
+  await page.goto('./')
+  await expect(page.locator('.sx-block[data-section="printer"] .printer')).toBeVisible()
+  await expect(page.locator('#printer-fold, #filament-fold')).toHaveCount(0)
 })
 
 test('printer and filament fold to a summary line and stay folded', async ({ page }) => {
