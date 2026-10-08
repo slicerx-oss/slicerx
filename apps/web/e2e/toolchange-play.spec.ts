@@ -84,11 +84,14 @@ test('playback through a tool change on the H2C runs clean and keeps its frame r
   // The change keeps the frame rate of plain playback, measured in the same run. Software WebGL draws every playback
   // frame slowly, at a pace that is the machine's (on a CI runner about a second a frame, plain or not), so a limit in
   // milliseconds measures the runner and not the app. Drawing the head at the rack, the rack and the purge may cost a
-  // little more: the change's median frame stays within 1.5 times the plain median. Its longest frame is held to the
-  // longest plain frame, not to a median: plain playback misses frame deadlines too (single frames of two or three times
-  // the median), so only a frame well past the worst of those is a stall.
+  // little more: the change's median frame stays within 1.5 times the plain median.
+  // Single frames are not compared one to one. Traced on software WebGL, entering the change is cheap, nothing compiles a
+  // shader during it and the viewport's own script takes about a millisecond a frame; the frames of a second or more
+  // that do show up are missed frame deadlines, which come anywhere in plain playback as well as in the change. One of
+  // them lands on either side by chance. A frame over five times the plain median is past those misses: a real stall,
+  // as is playback that never reaches the end of the change (`reached` above).
   expect(result.medianInChange).toBeLessThanOrEqual(1.5 * result.medianPlain)
-  expect(result.longestInChange).toBeLessThanOrEqual(1.5 * result.longestPlain)
+  expect(result.longestInChange).toBeLessThanOrEqual(5 * result.medianPlain)
   // Scrubbing the time slider onto the change places the head away from the paths, and back.
   const mid = info.first!.start + info.first!.duration / 2
   await page.evaluate((t) => (window as unknown as { __pv: Hook }).__pv.seek(t), mid)
