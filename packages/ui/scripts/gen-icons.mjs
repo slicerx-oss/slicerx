@@ -76,13 +76,9 @@ writeFileSync(resolve(here, '../src/icons/icon-startup.ts'), [
   ...STARTUP_ICONS.map((n) => `  ${JSON.stringify(n)}: ${JSON.stringify(icons[n])},`),
   '}',
   '',
-  '/** The 16px versions of the startup icons that have one (icons/small.mjs). */',
-  'export const STARTUP_SMALL_PATHS: Partial<Record<IconName, string>> = {',
-  ...STARTUP_ICONS.filter((n) => Object.hasOwn(SMALL_ICONS, n)).map((n) => `  ${JSON.stringify(n)}: ${JSON.stringify(SMALL_ICONS[n])},`),
-  '}',
-  '',
 ].join('\n'))
-// The 16px drawings, loaded with the full table.
+// The 16px drawings, loaded with the full table. None ride in the shell: the web shell is held to 240 KB gzip, and
+// a startup icon draws its 24px art until they arrive, so nothing pops in.
 writeFileSync(resolve(here, '../src/icons/icon-small.ts'), [
   ...header,
   "import type { IconName } from './icon-names'",

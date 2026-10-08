@@ -4,7 +4,7 @@
 import { useEffect, useReducer, type SVGProps } from 'react'
 import { useTheme } from '../theme-provider'
 import { ICON_NAMES, type IconName } from './icon-names'
-import { STARTUP_ICON_PATHS, STARTUP_SMALL_PATHS } from './icon-startup'
+import { STARTUP_ICON_PATHS } from './icon-startup'
 
 export interface IconProps extends Omit<SVGProps<SVGSVGElement>, 'name' | 'children'> {
   name: IconName
@@ -58,7 +58,7 @@ export function Icon({ name, size, label, small, className, ...rest }: IconProps
   const [, wake] = useReducer((n: number) => n + 1, 0)
   // Paths come from the generated icon files or the integrator's overrides, never from user input.
   const own = icons[name]
-  const fine = own === undefined && (small ?? (size !== undefined && size <= 16)) ? (STARTUP_SMALL_PATHS[name] ?? smallPaths?.[name]) : undefined
+  const fine = own === undefined && (small ?? (size !== undefined && size <= 16)) ? smallPaths?.[name] : undefined
   const markup = fine ?? own ?? STARTUP_ICON_PATHS[name] ?? allPaths?.[name]
   useEffect(() => {
     if (markup !== undefined) return
