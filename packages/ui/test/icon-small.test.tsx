@@ -10,11 +10,17 @@ import { describe, expect, it } from 'vitest'
 import { SMALL_ICONS } from '../icons/small.mjs'
 import { ICON_PATHS } from '../src/icons/icon-paths'
 import { SMALL_ICON_PATHS } from '../src/icons/icon-small'
-import { STARTUP_SMALL_PATHS } from '../src/icons/icon-startup'
-import { Icon } from '../src/icons/icon'
+import { Icon, iconsReady } from '../src/icons/icon'
 import { ThemeProvider } from '../src/theme-provider'
 
 describe('16px icons', () => {
+  it('draws a startup icon\'s 24px art at 16 until the 16px table arrives, so nothing pops in', async () => {
+    const early = renderToStaticMarkup(<Icon name="check" size={16} />)
+    expect(early).toContain(ICON_PATHS.check)
+    expect(early).toContain('viewBox="0 0 24 24"')
+    await iconsReady()
+  })
+
   it('draws the 16px version at 16 and less, and the 24px drawing above', () => {
     const at16 = renderToStaticMarkup(<Icon name="check" size={16} />)
     expect(at16).toContain('viewBox="0 0 16 16"')
@@ -47,9 +53,8 @@ describe('16px icons', () => {
     expect(html).toContain('viewBox="0 0 24 24"')
   })
 
-  it('generates the tables from icons/small.mjs, startup icons included', () => {
+  it('generates the table from icons/small.mjs', () => {
     expect(SMALL_ICON_PATHS).toEqual(SMALL_ICONS)
-    for (const [name, markup] of Object.entries(STARTUP_SMALL_PATHS)) expect(markup, name).toBe(SMALL_ICONS[name as keyof typeof SMALL_ICONS])
   })
 
   it('keeps every 16px drawing to the grid: at most three primitives, no dashes, inside 16', () => {
@@ -92,5 +97,19 @@ describe('the icon sources', () => {
       writeFileSync(f, readFileSync(f, 'utf8').replace('export const SMALL_ICONS = {', "export const SMALL_ICONS = {\n  'no-such-icon': '<path d=\"M1 1h1\"/>',"))
     })
     expect(out).toContain('no 24px drawing: no-such-icon')
+  })
+})
+
+describe('the Slice icons', () => {
+  it('tells the four goals apart, and Draft apart from layers', () => {
+    const goals = ['preset-draft', 'preset-standard', 'preset-fine', 'preset-strong'] as const
+    expect(new Set(goals.map((g) => ICON_PATHS[g])).size).toBe(4)
+    expect(ICON_PATHS['preset-draft']).not.toBe(ICON_PATHS.layers)
+    for (const g of goals) expect(SMALL_ICON_PATHS[g], g).toBeTruthy()
+  })
+
+  it('has a 16px version of every icon the Slice sidebar draws at 16px', () => {
+    const sidebar = ['printer', 'spool', 'cube', 'sliders', 'settings', 'send-to-printer', 'slice', 'lock', 'unlock', 'show', 'hide', 'more', 'search', 'alert', 'chevron-down', 'chevron-right', 'plus', 'check', 'close', 'negative-part', 'support-blocker', 'support-enforcer', 'select-by-filament', 'move-to-plate', 'skip-object', 'color-by'] as const
+    expect(sidebar.filter((n) => !SMALL_ICON_PATHS[n])).toEqual([])
   })
 })
