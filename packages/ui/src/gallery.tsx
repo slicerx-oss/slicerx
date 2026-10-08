@@ -189,18 +189,24 @@ export function Gallery({ palette = false, theme }: { palette?: boolean; theme?:
             </section>
             <section className="g-sec">
               <Eyebrow>Context menu</Eyebrow>
-              <Menu open static label="Bracket" className="sx-ctx" onClose={noop}>
-                <MenuIconRow>
-                  <MenuIcon icon="rename" label="Rename" shortcut="F2" onClick={noop} />
-                  <MenuIcon icon="lock" label="Lock" onClick={noop} />
-                  <MenuIcon icon="show" label="Printable" pressed onClick={noop} />
-                  <MenuIcon icon="delete" label="Delete" tone="danger" onClick={noop} />
-                </MenuIconRow>
-                <MenuItem icon="split">Split to parts</MenuItem>
-                <MenuItem icon="merge" disabled>Merge selected objects</MenuItem>
-                <MenuSeparator />
-                <MenuItem icon="slice">Go to Slice with it selected</MenuItem>
-              </Menu>
+              {/* floating over a busy backdrop, as over the 3D view, so the glass and the lift show */}
+              <div className="g-ctxbox">
+                <p className="sx-small sx-muted">Bracket, 5 steps. Right-click a row, a face or empty space.</p>
+                <MenuAnchor className="g-ctxat">
+                  <Menu open label="Bracket" className="sx-ctx" onClose={noop}>
+                    <MenuIconRow>
+                      <MenuIcon icon="rename" label="Rename" shortcut="F2" onClick={noop} />
+                      <MenuIcon icon="lock" label="Lock" onClick={noop} />
+                      <MenuIcon icon="show" label="Printable" pressed onClick={noop} />
+                      <MenuIcon icon="delete" label="Delete" tone="danger" onClick={noop} />
+                    </MenuIconRow>
+                    <MenuItem icon="split">Split to parts</MenuItem>
+                    <MenuItem icon="merge" disabled>Merge selected objects</MenuItem>
+                    <MenuSeparator />
+                    <MenuItem icon="slice">Go to Slice with it selected</MenuItem>
+                  </Menu>
+                </MenuAnchor>
+              </div>
             </section>
             <section className="g-sec">
               <Eyebrow>Panel</Eyebrow>
@@ -268,6 +274,8 @@ export const GALLERY_CSS = `
 .g-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:16px 24px;margin-top:16px}
 .g-stack{display:flex;flex-direction:column;gap:8px;max-width:360px}
 .g-pad{padding:8px 14px}
+.g-ctxbox{position:relative;height:300px;max-width:420px;padding:12px;border-radius:var(--r-md);background:repeating-linear-gradient(135deg,color-mix(in srgb,var(--accent) 22%,transparent) 0 10px,transparent 10px 22px),var(--ink-1)}
+.g-ctxat{position:absolute;left:48px;top:52px}
 .g-panelbox{max-width:300px;border:1px solid var(--line-soft);border-radius:var(--r-md);overflow:hidden}
 .g-icons{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:8px}
 .g-icons-h{width:90px}
