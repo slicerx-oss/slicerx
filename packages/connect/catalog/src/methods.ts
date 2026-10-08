@@ -165,6 +165,25 @@ export const CONNECTION_METHODS: readonly ConnectionMethod[] = [
     summary: 'Experimental, untested on a printer. Turn on LAN Mode on the printer first: that removes it from your Anycubic account for good. No code or password.',
   },
   {
+    id: 'bambuddy',
+    startOptions: ['bedLeveling', 'flowCalibration', 'vibrationCompensation', 'timelapse', 'firstLayerInspection'],
+    name: 'BamBuddy',
+    plugin: 'bambuddy',
+    guide: 'bambuddy.md',
+    defaultPort: 8000,
+    discovery: {
+      kind: 'manual',
+      detail: 'BamBuddy is not scanned. Enter the address of the BamBuddy computer and the printer number it uses.',
+    },
+    fields: [
+      host,
+      port('8000'),
+      apiKey(true),
+      { key: 'serial', label: 'BamBuddy printer id', secret: false, required: true, placeholder: '12' },
+    ],
+    summary: 'The printer is already in SlicerX. Enter the BamBuddy computer, its API key, and the number BamBuddy uses for this printer. That number is the link, including a printer BamBuddy reaches through a bridge.',
+  },
+  {
     id: 'export',
     startOptions: [],
     name: 'Save G-code',
