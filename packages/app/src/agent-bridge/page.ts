@@ -207,17 +207,22 @@ export function createPageBridge(capture: Capture, doc: Document = document): Pa
   }
 
   async function clearPlate(): Promise<unknown> {
-    if (get().plate.length === 0) return { cleared: true, state: appState(get()) }
+    // Cleared: one empty plate and nothing an opened project brought.
+    const cleared = () => {
+      const s = get()
+      return s.plate.length === 0 && s.plates.length === 1 && s.plates.every((p) => p.objects.length === 0) && s.projectSettings === null && s.projectPrinter === null
+    }
+    if (cleared()) return { cleared: true, state: appState(get()) }
     const run = runCommand('plate-clear')
     for (let i = 0; i < 40; i++) {
-      if (get().plate.length === 0) {
+      if (cleared()) {
         await run
         return { cleared: true, state: appState(get()) }
       }
       if (get().unsavedPrompt) return { cleared: false, asking: get().unsavedPrompt?.what, dialogs: capture.openDialogs() }
       await sleep(50)
     }
-    return { cleared: get().plate.length === 0, state: appState(get()) }
+    return { cleared: cleared(), state: appState(get()) }
   }
 
   async function user(): Promise<unknown> {
