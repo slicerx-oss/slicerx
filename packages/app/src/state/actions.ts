@@ -158,6 +158,8 @@ async function addProject(host: Host, data: ArrayBuffer, name: string): Promise<
     set((s) => ({ namedValues: [...s.namedValues, ...project.namedValues.filter((v) => !s.namedValues.some((o) => o.name === v.name))] }))
   }
   const placed = new Set<string>()
+  // Every setting key the file brings, so a value the engine refuses can be dropped at the slice.
+  const brought = new Set<string>()
   const entries = async (objects: typeof project.plates[number]['objects']): Promise<PlateEntry[]> => {
     const out: PlateEntry[] = []
     for (const o of objects) {
@@ -171,6 +173,7 @@ async function addProject(host: Host, data: ArrayBuffer, name: string): Promise<
         const centeredPart = bake(v.part, move([-c[0], -c[1], -c[2]]))
         const vh = await host.slicer.loadParts(v.name, [centeredPart])
         const mod = v.role === 'modifier' && v.rawSettings ? (await import('../export/project-settings')).modifierSettings(v.rawSettings) : undefined
+        for (const k of Object.keys(mod ?? {})) brought.add(k)
         volumes.push({ id: uid('vol'), name: v.name, role: v.role, handle: vh, part: centeredPart, local: move(c), ...(mod && Object.keys(mod).length ? { settings: mod } : {}) })
       }
       const palette = objectPalette()
@@ -179,6 +182,7 @@ async function addProject(host: Host, data: ArrayBuffer, name: string): Promise<
       for (const [part, raw] of Object.entries(o.rawPartSettings ?? {})) {
         const v = (await import('../export/project-settings')).modifierSettings(raw)
         if (Object.keys(v).length) partSettings[part] = v
+        for (const k of Object.keys(v)) brought.add(k)
       }
       // A file object placed twice keeps its dimensions on the first placement only.
       const first = !placed.has(o.fileId)
@@ -222,9 +226,11 @@ async function addProject(host: Host, data: ArrayBuffer, name: string): Promise<
       set((s) => ({ overrides: { ...s.overrides, ...values }, goal: 'custom' as const }))
       toast(`Applied ${n} settings from ${name}`, 'info')
     }
+    for (const k of Object.keys(values)) brought.add(k)
     // Its printer G-code: stock text needs nothing, anything else waits for the person at the next slice.
     await (await import('./project-gcode')).reviewOpenedGcode(name, project.settings)
   }
+  if (brought.size) set((s) => ({ projectSettings: { source: name, keys: [...new Set([...(wasEmpty ? [] : (s.projectSettings?.keys ?? [])), ...brought])] } }))
   markStale()
   return true
 }
@@ -413,6 +419,7 @@ export async function slicePlate(host: Host, opts: { auto?: boolean } = {}): Pro
   const abort = new AbortController()
   sliceAbort = abort
   set({ slice: { status: 'running', progress: null, startedAt: performance.now() } })
+  let again = false
   try {
     // The plate's own print sequence (Bambu Studio and Orca set it per plate).
     const meta = s.plates.find((p) => p.id === s.activePlate)
@@ -464,11 +471,38 @@ export async function slicePlate(host: Host, opts: { auto?: boolean } = {}): Pro
       return
     }
     const message = e instanceof Error ? e.message : String(e)
-    set({ slice: { status: 'error', message } })
-    if (!opts.auto) toast(message, 'error')
+    if (await dropRefusedProjectSetting(message)) again = true
+    else {
+      set({ slice: { status: 'error', message } })
+      if (!opts.auto) toast(message, 'error')
+    }
   } finally {
     if (sliceAbort === abort) sliceAbort = null
   }
+  // Each round drops one key the file brought, so this ends.
+  if (again) await slicePlate(host, opts)
+}
+
+/**
+ * A setting an opened project brought that the engine refuses (Bambu Studio's -1 for "auto" where we have no such
+ * value, say) is dropped, so the plate slices with the profile's value. True when it dropped one.
+ */
+async function dropRefusedProjectSetting(message: string): Promise<boolean> {
+  const brought = get().projectSettings
+  if (!brought) return false
+  const { entryWithout, refusedSetting } = await import('../export/project-settings')
+  const refused = refusedSetting(message)
+  if (!refused || !brought.keys.includes(refused.key)) return false
+  const { key, reason } = refused
+  set((s) => ({
+    overrides: Object.fromEntries(Object.entries(s.overrides).filter(([k]) => k !== key)),
+    plate: s.plate.map((e) => entryWithout(e, key)),
+    plates: s.plates.map((p) => ({ ...p, objects: p.objects.map((e) => entryWithout(e, key)) })),
+    projectSettings: { ...brought, keys: brought.keys.filter((k) => k !== key) },
+  }))
+  const { settingDef } = await import('@slicerx/settings')
+  toast(`Setting not imported from ${brought.source}: ${settingDef(key)?.label ?? key} (${reason}). Using your profile's value.`, 'warn')
+  return true
 }
 
 export function cancelSlice(opts: { quiet?: boolean } = {}): void {
