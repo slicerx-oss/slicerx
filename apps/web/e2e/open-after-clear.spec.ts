@@ -8,7 +8,7 @@
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type FileChooser, type Page } from '@playwright/test'
 import { plateReady, pnpmSync, tab } from './fixtures'
 
 const root = join(import.meta.dirname, '..', '..', '..')
@@ -20,7 +20,16 @@ test.beforeAll(() => {
   pnpmSync(['--filter', '@slicerx/store', 'exec', 'tsx', '../app/scripts/vault-starters.ts', starters], root)
 })
 
+// The file dialogs each page opened, oldest first. The listener is on from the start, so every dialog is intercepted.
+// Waiting for one only around the key press turns interception on at the same time as the press, and on a busy page
+// the press can open the dialog first: it then opens for real, the headless browser cancels it at once, and the press
+// looks lost.
+const choosers = new WeakMap<Page, FileChooser[]>()
+
 async function open(page: Page): Promise<void> {
+  const seen: FileChooser[] = []
+  choosers.set(page, seen)
+  page.on('filechooser', (c) => seen.push(c))
   await page.addInitScript(() => {
     if (sessionStorage.getItem('sx-e2e')) return
     sessionStorage.setItem('sx-e2e', '1')
@@ -32,12 +41,11 @@ async function open(page: Page): Promise<void> {
 
 /** Open (Mod+O) from wherever the app is: a new project with the file. */
 async function openFile(page: Page, file: string): Promise<void> {
-  // A key pressed while the page is still settling can be lost, so it is pressed again until the file dialog opens.
-  await expect(async () => {
-    const chooser = page.waitForEvent('filechooser', { timeout: 5_000 })
-    await page.keyboard.press('ControlOrMeta+o')
-    await (await chooser).setFiles(join(starters, file))
-  }).toPass({ timeout: 60_000 })
+  const seen = choosers.get(page)!
+  const before = seen.length
+  await page.keyboard.press('ControlOrMeta+o')
+  await expect.poll(() => seen.length, { timeout: 60_000 }).toBe(before + 1)
+  await seen[before]!.setFiles(join(starters, file))
 }
 
 const names = (page: Page) => page.locator('.obj-name')
