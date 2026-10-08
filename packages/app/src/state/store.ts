@@ -363,6 +363,11 @@ export interface AppState {
    * the profile's (`asking` while the dialog is open). Until then the plate slices with the profile's.
    */
   projectGcode: { source: string; changes: import('@slicerx/settings').GcodeChange[]; asking: boolean } | null
+  /**
+   * Setting keys an opened project brought (print settings, part and modifier settings). A slice the engine refuses
+   * over one of them drops that key, says so, and slices again, so one bad value in a file never blocks the plate.
+   */
+  projectSettings: { source: string; keys: string[] } | null
   /** G-code overrides a person chose from a project, by key, as they chose them. An edit since makes the key untrusted again. */
   vouchedGcode: Record<string, SettingValue>
   /** The .sx3mf file the project was opened from or last saved to, where Save writes without asking. */
@@ -585,6 +590,7 @@ export const appStore = createStore<AppState>()(() => ({
   projectsDialog: null,
   unsavedPrompt: null,
   projectGcode: null,
+  projectSettings: null,
   vouchedGcode: {},
   projectFile: null,
   objectTool: null,
