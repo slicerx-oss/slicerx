@@ -6,6 +6,7 @@
 // own approval card or on an approver phone, and the approval broker mints the token.
 import type { ApprovalAction, ApprovalDecision, ApprovalHost, ApprovalRequest, JobFile, PermissionClass, PrinterHost, RemoteFile, StartOptions } from '@slicerx/contracts'
 import { grantApproval, hashParams } from '@slicerx/contracts/pilot'
+import { pluginHas } from '@slicerx/contracts/printers'
 import { fromB64url, toArrayBuffer, toB64, toB64url, toHex } from './bytes'
 import { createCameraRelay, type CameraRelay, type PairCameraSource } from './camera-relay'
 import { defaultEnv, sha256, sha256Stream, type PairEnv } from './crypto'
@@ -787,11 +788,16 @@ export async function createPairHost(o: PairHostOptions): Promise<PairHost> {
     })
   }
 
-  /** The bytes this printer will be sent. BamBuddy may stamp a non-Bambu profile; the approval then covers that hash. */
+  /**
+   * The bytes this printer will be sent. A plugin that rewrites files (BamBuddy stamps a non-Bambu profile)
+   * prepares them, and the approval then covers that hash; every other printer gets the slice as it is.
+   */
   async function fileForPrinter(printerId: string, slice: SliceEntry): Promise<JobFile> {
     const file: JobFile = { name: slice.summary.name, kind: slice.file.kind, data: slice.file.data, sha256: slice.sha256 }
     const prepare = printers().prepareUpload
-    return prepare ? prepare(printerId, file) : file
+    if (!prepare) return file
+    const plugin = (await printers().list()).find((x) => x.id === printerId)?.plugin
+    return pluginHas(plugin, 'rewrites_upload') ? prepare(printerId, file) : file
   }
 
   async function sendJob(s: Session, rec: PairingRecord, p: { sliceId: string; target: JobTarget; start: boolean; opts?: StartOptions }) {

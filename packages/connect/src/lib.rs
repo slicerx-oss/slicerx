@@ -235,6 +235,13 @@ pub fn is_experimental(plugin: &str) -> bool {
     EXPERIMENTAL_PLUGINS.contains(&plugin)
 }
 
+/// Whether `plugin`'s manifest declares `rewrites_upload`: its uploads go through
+/// [`PrinterSession::prepare_upload`] before they are approved. Read from the manifest, so asking
+/// never connects to a printer.
+pub fn rewrites_upload(plugin: &str) -> bool {
+    manifest(plugin).is_some_and(|m| m.capabilities.contains(&Capability::RewritesUpload))
+}
+
 /// Every first-party printer connector, sharing one approval gate.
 pub fn registry(gate: Arc<dyn ApprovalGate>) -> Vec<Box<dyn PrinterConnector>> {
     registry_with(gate, std::net::Ipv4Addr::UNSPECIFIED.into())

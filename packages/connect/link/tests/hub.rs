@@ -677,6 +677,34 @@ async fn a_queued_plate_raises_a_card_on_its_turn_and_starts_once_approved() {
 // ---- state that survives a restart ----
 
 #[tokio::test]
+async fn a_plate_queues_for_an_offline_bambu_printer_without_connecting() {
+    let link = hub(None).await;
+    let mut ws = paired(&link).await;
+    // Nothing listens on this port: the printer is switched off.
+    let off = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = off.local_addr().unwrap().port();
+    drop(off);
+    let r = call(&mut ws, 2, "secrets.set", json!({ "name": "bay-9-code", "value": "12345678" })).await;
+    assert!(r["error"].is_null(), "{r}");
+    let cfg = json!({
+        "id": "bay-9", "name": "Bay 9", "plugin": "bambu-lan", "host": "127.0.0.1", "port": port,
+        "serial": "01S00C123456789", "credentialRef": "bay-9-code", "ftpPort": port, "pollMs": 50,
+    });
+    let r = call(&mut ws, 3, "printers.add", json!({ "config": cfg })).await;
+    assert_eq!(r["result"]["id"], "bay-9", "{r}");
+
+    // Queueing stores the plate as given. It does not connect, so an offline printer takes it.
+    let (f, sha) = file("night.gcode", 9);
+    let r = call(&mut ws, 4, "queue.add", json!({ "printerId": "bay-9", "file": f, "title": "Night plate" })).await;
+    assert!(r["error"].is_null(), "an offline printer takes a queued plate: {r}");
+    let item = r["result"]["item"].clone();
+    assert_eq!(item["sha256"], sha, "the queued bytes are the plate as sent: {item}");
+    let id = item["id"].as_str().unwrap().to_owned();
+    let it = queue_item(&mut ws, &id).await;
+    assert_eq!(it["printerId"], "bay-9", "{it}");
+}
+
+#[tokio::test]
 async fn printers_fleets_queue_approvals_and_clients_survive_a_restart() {
     let dir = temp_dir("restart");
     let mocks = common::Mocks::start("moonraker", &[]).await;
