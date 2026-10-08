@@ -397,6 +397,8 @@ export interface AppState {
   /** `hubKey`: the key of the connected hub. `presentedKey`: after a hub mismatch, the key the program on the port proved. */
   bridgeStatus: { state: 'off' | 'connecting' | 'on' | 'error'; message?: string; hubKey?: string; presentedKey?: string }
   linkEpoch: number
+  /** Connected apps the hub has (Settings, Connected apps): address and whether a key is stored, never the key. */
+  connectedApps: { id: string; baseUrl: string; hasSecret: boolean }[]
   printerSettingsOpen: boolean
   /** Presets the person saved, and the one of each kind in use. */
   userPresets: UserPreset[]
@@ -637,6 +639,7 @@ export const appStore = createStore<AppState>()(() => ({
   settingFocus: null,
   bridgeStatus: { state: 'off' },
   linkEpoch: 0,
+  connectedApps: [],
   printerSettingsOpen: false,
   userPresets: [],
   activePresets: (prefs.activePresets ?? {}) as Partial<Record<PresetKind, string>>,

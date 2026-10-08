@@ -715,11 +715,13 @@ export interface LinkHost extends PrinterHost {
    */
   authorizePrinter(printerId: string, timeoutSeconds?: number): Promise<{ stored: boolean }>
   /** Point a service plugin (Spoolman, Home Assistant) at a server on the local network. */
-  configureService(pluginId: 'spoolman' | 'home-assistant', baseUrl: string, secretRef?: string): Promise<void>
+  configureService(pluginId: 'spoolman' | 'home-assistant' | 'bambuddy', baseUrl: string, secretRef?: string): Promise<void>
   /** The configured services: address and whether a keychain secret is named. Never the secret. */
   listServices(): Promise<ServiceEntry[]>
   /** Forgets a service. Resolves false when it was not configured. */
   removeService(pluginId: string): Promise<boolean>
+  /** Whether a connected app answers at its address with its key (`services.check`, BamBuddy), and how many printers it lists. */
+  checkService(pluginId: 'bambuddy'): Promise<{ ok: true; printers: number }>
   /** Write only. The bridge stores it in the OS keychain and never sends it back. `kept: 'session'` means the
    * keychain refused it and the bridge keeps it in memory until it quits (an older bridge answers nothing). */
   setSecret(name: string, value: string): Promise<SecretKept | void>
@@ -1048,6 +1050,7 @@ export async function connectLink(opts: ConnectOptions): Promise<LinkHost> {
     configureService: async (pluginId, baseUrl, secretRef) => void (await call('services.configure', { pluginId, baseUrl, ...(secretRef ? { secretRef } : {}) })),
     listServices: () => call<ServiceEntry[]>('services.list'),
     removeService: async (pluginId) => (await call<{ removed: boolean }>('services.remove', { pluginId })).removed,
+    checkService: (pluginId) => call<{ ok: true; printers: number }>('services.check', { pluginId }),
     setSecret: async (name, value) => ({ kept: (await call<{ kept?: string }>('secrets.set', { name, value })).kept === 'session' ? 'session' : 'stored' }),
     hasSecret: async (name) => (await call<{ has: boolean }>('secrets.has', { name })).has,
     deleteSecret: async (name) => void (await call('secrets.delete', { name })),

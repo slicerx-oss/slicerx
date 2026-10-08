@@ -58,7 +58,8 @@ test('connection methods match the connector manifests and their guides exist', 
   for (const c of CONNECTION_METHODS) {
     if (c.plugin) assert.ok(printerIds.has(c.plugin), `${c.id} plugin ${c.plugin}`)
     assert.ok(existsSync(new URL(`docs/${c.guide}`, connect)), `${c.id} guide ${c.guide}`)
-    assert.equal(c.fields.some((f) => f.key === 'host'), c.id !== 'export', c.id)
+    // A connection through a connected app (BamBuddy) takes the app's address, so it asks for no host.
+    assert.equal(c.fields.some((f) => f.key === 'host'), c.id !== 'export' && !c.requiresApp, c.id)
     for (const f of c.fields) if (f.key === 'accessCode' || f.key === 'apiKey' || f.key === 'password') assert.ok(f.secret, `${c.id} ${f.key} is stored as a secret`)
   }
   for (const id of printerIds) assert.ok(CONNECTION_METHODS.some((c) => c.plugin === id), `${id} has a catalog connection`)
