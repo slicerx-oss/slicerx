@@ -968,7 +968,7 @@ async fn dispatch(
         "services.configure" => {
             let plugin = str_arg(&p, "pluginId")?;
             let base_url = str_arg(&p, "baseUrl")?;
-            if !matches!(plugin.as_str(), "spoolman" | "home-assistant") {
+            if !matches!(plugin.as_str(), "spoolman" | "home-assistant" | "bambuddy") {
                 return Err(RpcError::new("not_found", format!("no service plugin {plugin}")));
             }
             let host = url_host(&base_url).unwrap_or_default();
@@ -1136,6 +1136,35 @@ async fn upload_delivery(b: &Arc<Bridge>, p: &Value, delivery: &str) -> Rpc<Valu
             Err(e.into())
         }
     }
+}
+
+/// A printer reached through a connected app (BamBuddy) takes that app's address, port and key from
+/// Settings, Connected apps each time: the printer itself only names its id in the app. Any other
+/// printer's config is returned unchanged.
+pub(crate) async fn through_app(b: &Bridge, mut config: PrinterConfig) -> Rpc<PrinterConfig> {
+    let Some(app) = sx_connect::connected_app(&config.plugin) else {
+        return Ok(config);
+    };
+    let name = sx_connect::manifest(app).map_or_else(|| app.to_owned(), |m| m.name);
+    let services = b.services.lock().await;
+    let service = services.get(app).ok_or_else(|| {
+        RpcError::new(
+            "not_configured",
+            format!("add {name} in Settings, Connected apps first"),
+        )
+    })?;
+    let bad = || RpcError::new("bad_request", format!("the {name} address in Connected apps is malformed"));
+    let (scheme, rest) = service.base_url.split_once("://").ok_or_else(bad)?;
+    let host = url_host(&service.base_url).ok_or_else(bad)?;
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or_default();
+    let port = authority
+        .rsplit_once(':')
+        .and_then(|(_, p)| p.parse::<u16>().ok());
+    config.host = host;
+    config.port = port;
+    config.tls = Some(scheme.eq_ignore_ascii_case("https"));
+    config.credential_ref = service.secret_ref.clone();
+    Ok(config)
 }
 
 /// The host part of an http(s) URL, without userinfo or port. `None` when userinfo is present.
@@ -1497,6 +1526,7 @@ async fn authorize_printer(b: &Arc<Bridge>, p: &Value) -> Rpc<Value> {
 
 async fn add_printer(b: &Arc<Bridge>, p: &Value) -> Rpc<Value> {
     let config: PrinterConfig = arg(p, "config")?;
+    let config = through_app(b, config).await?;
     if !is_lan_host(&config.host) {
         return Err(RpcError::new(
             "bad_request",
@@ -1592,6 +1622,7 @@ pub(crate) async fn session(b: &Arc<Bridge>, id: &str) -> Rpc<Arc<dyn PrinterSes
         .get(id)
         .map(|r| r.config.clone())
         .ok_or_else(|| RpcError::new("not_found", format!("no printer {id}")))?;
+    let config = through_app(b, config).await?;
     let connector = b
         .connectors
         .iter()
@@ -1798,6 +1829,12 @@ fn failed_test(rpc: &RpcError, certificate: Option<Value>) -> Value {
 
 async fn test_printer(b: &Bridge, p: &Value) -> Rpc<Value> {
     let config: PrinterConfig = arg(p, "config")?;
+    let config = match through_app(b, config).await {
+        Ok(c) => c,
+        Err(e) => {
+            return Ok(json!({ "ok": false, "cause": e.code, "kind": "other", "message": e.message, "details": e.message, "steps": test_steps(None, None, None, None) }));
+        }
+    };
     let fail = |cause: &str, message: String, st: Value| {
         let kind = match cause {
             "auth" => "auth",
