@@ -25,6 +25,7 @@ export type ConnectionId =
   | 'elegoo'
   | 'ultimaker'
   | 'anycubic'
+  | 'bambuddy'
   | 'export'
 
 export interface Brand {

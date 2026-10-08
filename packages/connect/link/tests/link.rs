@@ -213,12 +213,13 @@ async fn paired_client_drives_a_printer_with_approval_tokens() {
             "prusalink",
             "octoprint",
             "elegoo",
+            "bambuddy",
             "spoolman"
         ]
     );
     let all = call(&mut ws, 2, "plugins", json!({ "includeExperimental": true })).await;
     let all = all["result"].as_array().unwrap();
-    assert_eq!(all.len(), 12);
+    assert_eq!(all.len(), 13);
     assert!(
         all.iter()
             .filter(|m| m["experimental"] == true)

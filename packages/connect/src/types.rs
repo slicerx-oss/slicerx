@@ -285,6 +285,11 @@ pub enum Capability {
     Camera,
     FilamentSlots,
     GcodeConsole,
+    /// Starts a `.gcode.3mf` and follows [`StartOptions::slot_map`]. The Print sheet sends that
+    /// file and keeps the map when the plugin declares this.
+    ProjectFile,
+    /// Accepts a filament slot write ([`crate::PrinterSession::set_slot`]).
+    SlotWrite,
 }
 
 pub type Capabilities = Vec<Capability>;

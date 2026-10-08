@@ -5,6 +5,7 @@ SlicerX talks to printers and to two home services through connectors that share
 | Guide | Covers |
 | --- | --- |
 | [bambu-lan.md](bambu-lan.md) | Bambu Lab X1, P1, A1 and H2D in LAN mode |
+| [bambuddy.md](bambuddy.md) | A printer already in SlicerX, linked to the printer BamBuddy knows |
 | [moonraker.md](moonraker.md) | Klipper printers with Moonraker |
 | [creality.md](creality.md) | Creality K1, K1 Max, K1C, K2 Plus, Ender-3 V3 series and Hi, on stock firmware or Klipper |
 | [snapmaker.md](snapmaker.md) | Snapmaker U1 and Snapmaker 2.0 (A150, A250, A350); J1 and Artisan are found but not connected |
@@ -45,6 +46,7 @@ None of these connectors has been run against a physical printer yet. Each guide
 | Connector | Status | Events | Upload | Start, pause, resume, cancel | Camera | Filament slots | G-code console |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | Bambu LAN | yes | push | yes | yes | A1 and P1 | AMS | yes |
+| BamBuddy | yes | polled | yes | yes | no | AMS, read and write | no |
 | Moonraker | yes | polled | yes | yes | if a webcam is configured | no | yes |
 | PrusaLink | yes | polled | yes | yes | if a camera is configured | no | no |
 | OctoPrint | yes | polled | yes | yes | if a webcam is configured | no | yes |

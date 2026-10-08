@@ -18,6 +18,7 @@ Subfolders:
 | Plugin | Status | Notes |
 | --- | --- | --- |
 | Bambu Lab LAN (`bambu-lan`) | real protocol | MQTT over TLS, FTPS upload, AMS slots and mapping, camera on port 6000, SSDP search and announcements, hardware readout (nozzles per extruder, AMS units, firmware). X1, P1, A1 and H2D message shapes; discovery checked on a real H2D. |
+| BamBuddy (`bambuddy`) | real protocol | REST to a BamBuddy on the LAN. The printer id in BamBuddy is the link, including a printer BamBuddy reaches through a bridge. Library upload, queue start, AMS read and slot write. No scan. |
 | Moonraker (`moonraker`) | real protocol | HTTP API, polled events. |
 | PrusaLink (`prusalink`) | real protocol | `/api/v1`, HTTP digest login as `maker`, `X-Api-Key` on firmware that takes one. |
 | OctoPrint (`octoprint`) | real protocol | REST, polled events. |

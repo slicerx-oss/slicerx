@@ -2094,6 +2094,8 @@ impl PrinterSession for BambuSession {
             Capability::Camera,
             Capability::FilamentSlots,
             Capability::GcodeConsole,
+            Capability::ProjectFile,
+            Capability::SlotWrite,
         ]
     }
 

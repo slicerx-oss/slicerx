@@ -2,7 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 import { describe, expect, it } from 'vitest'
 import { followsSlotMap, slotMapLine } from '@slicerx/contracts'
-import { defaultOptions, mergeOptions, optionLines, optionTip, slotMapFor, startSlotMap, supportedOptions, withoutSlotMap } from '../src/send/options'
+import { defaultOptions, mergeOptions, optionLines, optionTip, printEnding, slotMapFor, startSlotMap, supportedOptions, withoutSlotMap } from '../src/send/options'
 
 const ids = (v: string, m: string, plugin: string, cam = true) => supportedOptions({ vendor: v, model: m, plugin }, { cameraAvailable: cam }).map((s) => s.id)
 
@@ -13,6 +13,7 @@ describe('send options', () => {
     expect(ids('Bambu Lab', 'H2D', 'bambu-lan')).toEqual(['bedLeveling', 'flowCalibration', 'vibrationCompensation', 'timelapse'])
     expect(ids('Bambu Lab', 'P1S', 'bambu-lan')).toEqual(['bedLeveling', 'vibrationCompensation', 'timelapse'])
     expect(ids('Bambu Lab', 'P1S', 'bambu-lan', false)).toEqual(['bedLeveling', 'vibrationCompensation'])
+    expect(ids('Voron Design', 'Voron 2.4', 'bambuddy')).toEqual(['bedLeveling', 'flowCalibration', 'vibrationCompensation', 'timelapse', 'firstLayerInspection'])
   })
 
   it("defaults each model the way Bambu Studio does, Auto shown as on", () => {
@@ -115,7 +116,12 @@ describe('slot map contract', () => {
   it('sends a map only where the printer follows it', () => {
     expect(followsSlotMap('bambu-lan', 'plate.gcode.3mf')).toBe(true)
     expect(followsSlotMap('bambu-lan', 'plate.gcode')).toBe(false)
+    expect(followsSlotMap('bambuddy', 'plate.gcode.3mf')).toBe(true)
+    expect(followsSlotMap('bambuddy', 'plate.gcode')).toBe(false)
     expect(followsSlotMap('moonraker', 'plate.gcode.3mf')).toBe(false)
+    expect(printEnding('bambu-lan')).toBe('.gcode.3mf')
+    expect(printEnding('bambuddy')).toBe('.gcode.3mf')
+    expect(printEnding('moonraker')).toBe('.gcode')
     expect(withoutSlotMap({ timelapse: true, slotMap: { 1: 'A1' } })).toEqual({ timelapse: true })
   })
 })

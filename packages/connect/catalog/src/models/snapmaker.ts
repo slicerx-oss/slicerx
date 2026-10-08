@@ -18,7 +18,7 @@ const snap2 = (id: string, name: string, x: number, y: number, z: number): Print
   nozzles: [0.4],
   defaultNozzle: 0.4,
   nozzleCount: 1,
-  connections: ['snapmaker', 'export'],
+  connections: ['snapmaker', 'bambuddy', 'export'],
   find: FIND_2,
   note: 'The 3D printing head only. Laser and CNC heads are refused.',
 })
@@ -35,7 +35,7 @@ export const SNAPMAKER: PrinterModel[] = [
     defaultNozzle: 0.4,
     nozzleCount: 4,
     filamentSystem: 'toolchanger',
-    connections: ['snapmaker', 'moonraker', 'export'],
+    connections: ['snapmaker', 'moonraker', 'bambuddy', 'export'],
     find: find({
       ip: 'On the touchscreen, open Settings, then Network. The IP address is shown with the connected network.',
       credential: 'None on the stock firmware. A key is needed only if you turned on forced logins in custom firmware.',

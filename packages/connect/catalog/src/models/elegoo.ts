@@ -23,7 +23,7 @@ const NEPTUNE = (id: string, name: string, x: number, y: number, z: number): Pri
   nozzles: [0.4, 0.6, 0.8],
   defaultNozzle: 0.4,
   nozzleCount: 1,
-  connections: ['moonraker', 'export'],
+  connections: ['moonraker', 'bambuddy', 'export'],
   find: FIND_NEPTUNE,
   note: 'Moonraker answers on port 7125. The web page is Fluidd on port 80 or 4408, or Mainsail on 4409.',
 })
@@ -39,7 +39,7 @@ export const ELEGOO: PrinterModel[] = [
     nozzles: [0.2, 0.4, 0.6, 0.8],
     defaultNozzle: 0.4,
     nozzleCount: 1,
-    connections: ['elegoo', 'export'],
+    connections: ['elegoo', 'bambuddy', 'export'],
     find: FIND_CC,
   },
   NEPTUNE('elegoo-neptune-4', 'Neptune 4', 230, 230, 265),
