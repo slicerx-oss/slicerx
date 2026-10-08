@@ -38,6 +38,6 @@ describe('the crash host', () => {
 
   it('lets the shell open the Discord bug-reports channel', () => {
     const caps = readFileSync(new URL('../src-tauri/capabilities/slicerx-links.json', import.meta.url), 'utf8')
-    expect(caps).toContain('https://discord.com/channels/1555048815881355324/*')
+    expect(caps).toContain('https://discord.com/channels/1555048815881355324/1556010155802628228')
   })
 })

@@ -194,6 +194,8 @@ describe('website links', () => {
   })
   it('links the privacy section', () => {
     expect(privacyUrl(edition, 'https://github.com/o/r/tree/abc')).toBe('https://github.com/o/r/blob/main/packages/store/README.md#privacy')
+    expect(privacyUrl(edition, 'https://git.example.com/slicer/tree/abc')).toBe('https://git.example.com/slicer/blob/main/packages/store/README.md#privacy')
+    expect(privacyUrl(edition, 'https://gitlab.com/g/sub/r/-/tree/abc')).toBe('https://gitlab.com/g/sub/r/blob/main/packages/store/README.md#privacy')
     expect(privacyUrl({ ...edition, legal: { ...edition.legal, privacy: 'https://slicerx.app/privacy' } }, 'x')).toBe('https://slicerx.app/privacy')
   })
 })
