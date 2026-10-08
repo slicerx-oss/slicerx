@@ -5,7 +5,7 @@
 // Controls that print, send to a printer or delete are refused: a test id starting with `danger-`, anything inside the
 // approval dialog or the Print sheet, or a control marked data-agent-refuse. The bridge acts only on controls with a
 // test id, and test/test-ids.test.ts keeps every test id that names such an action under `danger-`.
-import { isVisible } from './capture'
+import { isVisible, safeUrl } from './capture'
 
 export class BridgeError extends Error {
   constructor(
@@ -50,6 +50,32 @@ export function find(doc: Document, testid: unknown, index = 0): { el: Element; 
   return { el, count: list.length }
 }
 
+/** Images kept per control; a card has a cover and a logo. */
+const IMAGES_MAX = 20
+
+/**
+ * The pictures in a control (or the control itself, an img): the address without its query, and whether it loaded. A
+ * lazy picture far off screen has not started yet (`pending`); one the browser gave up on is `failed`.
+ */
+export function images(el: Element): Record<string, unknown>[] {
+  const view = el.ownerDocument.defaultView
+  const Img = view?.HTMLImageElement ?? HTMLImageElement
+  const list = el instanceof Img ? [el] : [...el.querySelectorAll('img')]
+  return list.slice(0, IMAGES_MAX).map((img) => {
+    const src = img.currentSrc || img.getAttribute('src') || ''
+    const state = !img.complete ? 'pending' : img.naturalWidth > 0 ? 'loaded' : src ? 'failed' : 'empty'
+    const r = img.getBoundingClientRect()
+    const inView = r.width > 0 && r.height > 0 && r.bottom > 0 && r.right > 0 && r.top < (view?.innerHeight ?? 0) && r.left < (view?.innerWidth ?? 0)
+    return {
+      url: safeUrl(src, el.ownerDocument.location?.href),
+      state,
+      ...(state === 'loaded' ? { width: img.naturalWidth, height: img.naturalHeight } : {}),
+      inView,
+      ...(img.getAttribute('loading') === 'lazy' ? { lazy: true } : {}),
+    }
+  })
+}
+
 /** What an agent may read off a control. Password fields never give their value. */
 export function describe(el: Element, index: number): Record<string, unknown> {
   const input = el as HTMLInputElement
@@ -57,6 +83,7 @@ export function describe(el: Element, index: number): Record<string, unknown> {
   // The row's item and state ride on data attributes: data-listing, data-object-id, data-state, data-step, data-tone.
   const data: Record<string, string> = {}
   for (const a of el.attributes) if (a.name.startsWith('data-') && a.name !== 'data-testid') data[a.name.slice(5)] = a.value.slice(0, 200)
+  const pictures = images(el)
   return {
     index,
     tag: el.tagName.toLowerCase(),
@@ -71,6 +98,7 @@ export function describe(el: Element, index: number): Record<string, unknown> {
     ...(el.getAttribute('aria-expanded') ? { expanded: el.getAttribute('aria-expanded') === 'true' } : {}),
     ...(el.getAttribute('aria-current') ? { current: el.getAttribute('aria-current') } : {}),
     ...(Object.keys(data).length ? { data } : {}),
+    ...(pictures.length ? { images: pictures } : {}),
   }
 }
 

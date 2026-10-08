@@ -5,7 +5,7 @@
 // acts go through the controls and commands a person uses (the Vault sheet's Open button, the Slice and Clear the
 // plate commands), so a bridge run exercises the app's own paths. Nothing here prints, sends to a printer or deletes.
 import type { EditionHost, SliceWarning } from '@slicerx/contracts'
-import { runCommand } from '../commands/registry'
+import { isEnabled, listCommands, runCommand } from '../commands/registry'
 import { resolveSlots } from '../filament/slots'
 import { printBlock } from '../plate/heimdall'
 import { objectWarnings } from '../plate/object-list'
@@ -94,6 +94,16 @@ export function appState(s: AppState): Record<string, unknown> {
     setupOpen: s.setup !== null,
     unsavedPrompt: s.unsavedPrompt?.what ?? null,
   }
+}
+
+/**
+ * Which export commands the app offers now, as the File menu and the command palette show them. The mesh exports
+ * (STL, OBJ) stay off while the plate holds a Vault design, which is how a sealed download reads.
+ */
+export function exportCommands(): Record<string, boolean> {
+  const out: Record<string, boolean> = {}
+  for (const c of listCommands()) if (c.id.startsWith('export-') || c.id.startsWith('project-export')) out[c.id] = isEnabled(c)
+  return out
 }
 
 export interface PageBridge {
@@ -226,7 +236,7 @@ export function createPageBridge(capture: Capture, doc: Document = document): Pa
   }
 
   const tools: Record<string, (a: Args) => unknown> = {
-    state: () => ({ ...appState(get()), dialogs: capture.openDialogs(), toasts: capture.visibleToasts(), marker: capture.marker() }),
+    state: () => ({ ...appState(get()), exports: exportCommands(), dialogs: capture.openDialogs(), toasts: capture.visibleToasts(), marker: capture.marker() }),
     toasts: log('toast'),
     dialogs: (a) => ({ ...log('dialog')(a), open: capture.openDialogs() }),
     console: log('console'),

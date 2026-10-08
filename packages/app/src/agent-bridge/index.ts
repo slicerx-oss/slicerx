@@ -4,4 +4,4 @@
 // only when it was built with SLICERX_AGENT_BRIDGE=1, so other builds never carry it.
 export { installCapture, redact, safeUrl, type Capture, type Entry, type LogKind } from './capture'
 export { BridgeError, click, fill, pressKey, refusal, testids, waitFor } from './dom'
-export { appState, createPageBridge, sliceSummary, type PageBridge } from './page'
+export { appState, createPageBridge, exportCommands, sliceSummary, type PageBridge } from './page'
