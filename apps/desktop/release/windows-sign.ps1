@@ -3,7 +3,8 @@
 # Signs SlicerX for Windows with Azure Artifact Signing through SignTool, so the app, its uninstaller and the
 # installers carry the publisher and SmartScreen can build reputation for them. See windows-sign.md.
 #
-#   windows-sign.ps1 -File <path>                     sign one file and verify it (Tauri's signCommand calls this)
+#   windows-sign.ps1 -File <path>                     check one file has no agent bridge, sign it and verify it
+#                                                     (Tauri's signCommand calls this)
 #   windows-sign.ps1 -Release -Out <dir> [-Kit <exe>] build signed installers into <dir>, with .sha256 files,
 #                                                     and sign the dev kit's sx.exe in place
 #   windows-sign.ps1 -VerifyInstalled                 install the signed setup for this user and check the
@@ -96,8 +97,17 @@ function Verify([string]$path) {
   [pscustomobject]@{ File = $path; Publisher = $name; Timestamped = $true; Status = 'Valid' }
 }
 
+# Nothing signed carries the agent bridge (docs/agent-bridge.md): every file is checked before it is signed, the app
+# Tauri hands over with -File, the sidecars and the dev kit's sx.exe alike.
+function Check-NoBridge([string]$path) {
+  $check = Join-Path $repo 'apps/desktop/release/check-agent-bridge.mjs'
+  & node $check --binary $path | Write-Host
+  if ($LASTEXITCODE -ne 0) { throw "Not signed: $path carries the agent bridge, or the check could not run ($LASTEXITCODE)." }
+}
+
 function Sign-One([string]$path) {
   $path = (Resolve-Path -LiteralPath $path).Path
+  Check-NoBridge $path
   Use-Tools
   Check-Azure
   $meta = Metadata

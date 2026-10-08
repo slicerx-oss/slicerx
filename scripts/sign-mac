@@ -25,6 +25,8 @@ profile=${SX_NOTARY_PROFILE:-slicerx-notary}
 ents=""; inherit=""; notarize=1; target=""; mode=sign
 keychain=$HOME/Library/Keychains/login.keychain-db
 
+self=${0:A}
+
 die() { print -u2 -- "FAIL: $1"; exit ${2:-1}; }
 step() { print -- "-- $*"; }
 
@@ -107,6 +109,38 @@ submit() { # file
   fi
 }
 
+# Nothing signed carries the SlicerX agent bridge, which is for test builds only (docs/agent-bridge.md). Each Mach-O
+# file is checked with apps/desktop/release/check-agent-bridge.mjs from the SlicerX checkout this script or the target
+# sits in. An installed copy signing something outside a checkout (an Electron app, say) looks for the same names
+# itself; keep this list in step with SHELL_MARKERS in that check (apps/desktop/test/check-agent-bridge.test.ts does).
+bridge_markers=(SX_AGENT_BRIDGE_PORT agent_bridge_reply sx-agent-bridge)
+bridge_check() { # the SlicerX checkout's check, found by walking up from a folder
+  local d=${1:A}
+  while [[ $d != / && -n $d ]]; do
+    [[ -f $d/apps/desktop/release/check-agent-bridge.mjs ]] && { print -- "$d/apps/desktop/release/check-agent-bridge.mjs"; return 0; }
+    d=${d:h}
+  done
+  return 1
+}
+no_bridge() { # Mach-O files
+  (( $# )) || return 0
+  step "check for the agent bridge"
+  local check f m
+  check=$(bridge_check "${self:h}") || check=$(bridge_check "${target:h}") || check=""
+  if [[ -n $check ]] && command -v node > /dev/null; then
+    local args=()
+    for f in "$@"; do args+=(--binary "$f"); done
+    node "$check" "${args[@]}" || die "not signed: built with the agent bridge, which a release never carries"
+  else
+    for f in "$@"; do
+      for m in $bridge_markers; do
+        LC_ALL=C grep -qaF -- "$m" "$f" && die "not signed: $f is built with the agent bridge (found $m)"
+      done
+    done
+    print -- "ok: no agent bridge in $# file(s)"
+  fi
+}
+
 sign_file() { # path, entitlements
   local args=(--force --sign "$identity" --options runtime --timestamp)
   [[ -n ${2:-} ]] && args+=(--entitlements "$2")
@@ -124,6 +158,9 @@ case $kind in
         # `file` prints one line per slice of a universal binary ("path (for architecture x86_64): ..."); keep the path.
         find "$target/Contents" -type f -print0 | xargs -0 file 2>/dev/null | grep -F 'Mach-O' | cut -d: -f1 | sed 's/ (for architecture [^)]*)$//'
       } | awk -F/ '{print NF "\t" $0}' | sort -rn | cut -f2- | awk '!seen[$0]++')
+    bins=()
+    for p in "${nested[@]}"; do [[ -f $p ]] && bins+=("$p"); done
+    no_bridge "${bins[@]}"
     for p in "${nested[@]}"; do sign_file "$p" "$inherit"; done
     sign_file "$target" "$ents"
     step "verify the signature"
@@ -179,6 +216,7 @@ case $kind in
     submit "$target"
     ;;
   bin)
+    no_bridge "$target"
     preflight
     step "sign the binary"
     sign_file "$target" "$ents"

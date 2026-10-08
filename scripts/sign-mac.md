@@ -13,6 +13,11 @@ Install it once on the Mac that builds: `cp scripts/sign-mac ~/bin/sign-mac`.
 
 Defaults: the SlicerX Developer ID Application certificate (team X2928JZ7GJ) and the notarytool profile `slicerx-notary`. Override with `--identity` and `--profile`, or the environment variables `SX_SIGN_IDENTITY`, `SX_INSTALLER_IDENTITY` and `SX_NOTARY_PROFILE`.
 
+Before anything is signed, every Mach-O file of an app, and a bare binary, is checked for the SlicerX agent bridge,
+which only test builds carry (`docs/agent-bridge.md`): with `apps/desktop/release/check-agent-bridge.mjs` from the
+SlicerX checkout the script or the file sits in, or, outside a checkout, for the same names. A file that has it is not
+signed.
+
 An app is signed inside-out: every nested framework, helper, XPC service and Mach-O file first, then the app, all with the hardened runtime and a secure timestamp. It is then notarized (the script waits), stapled and checked with `codesign --verify --deep --strict` and `spctl`. The last line is `PASS: <name>` or `FAIL: <reason>`. Exit status is 0 pass, 1 fail, 2 usage, 3 a certificate is missing, 4 the keychain is locked.
 
 ## The locked keychain

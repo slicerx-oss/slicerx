@@ -153,8 +153,10 @@ Controls are found by `data-testid`, which is part of the UI contract: see [test
   feature turns on. The page side exists only in a frontend built with `SLICERX_AGENT_BRIDGE=1`; any other build drops it
   as dead code. `apps/desktop/release/check-agent-bridge.mjs` fails on the shell's names in an app binary, the page's
   names in a built frontend, a default feature that turns the bridge on, or a release environment with
-  `SLICERX_AGENT_BRIDGE=1`. The release workflow, `windows-sign.ps1` and `macos-sign.sh` run it, and CI checks the
-  feature set and compiles the bridge on macOS, Windows and Linux.
+  `SLICERX_AGENT_BRIDGE=1`. The release workflow, `windows-sign.ps1` and `macos-sign.sh` run it; `windows-sign.ps1`
+  also runs it on every file it signs (`-File`, as Tauri calls it, the sidecars and the dev kit), and `scripts/sign-mac`
+  on every Mach-O file of an app and on a bare binary before signing. CI checks the feature set and compiles the bridge
+  on macOS, Windows and Linux.
 - **Off unless asked.** Even a bridge build listens only when `SX_AGENT_BRIDGE_PORT` is set.
 - **Loopback and a token.** It binds 127.0.0.1 only. Every request needs `Authorization: Bearer <token>`, a fresh
   random 256-bit token per run, compared in constant time. The Host header must name the loopback port and requests
