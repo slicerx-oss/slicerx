@@ -14,7 +14,8 @@ import { iconsReady } from '../src/icons/icon'
 function writeGallery(out: string, palette: boolean, theme?: Theme) {
   const here = resolve(import.meta.dirname)
   const tokens = readFileSync(resolve(here, '../src/tokens.css'), 'utf8')
-  const styles = readFileSync(resolve(here, '../src/styles.css'), 'utf8').replace('@import "./tokens.css";', tokens)
+  const kit = readFileSync(resolve(here, '../src/kit.css'), 'utf8')
+  const styles = readFileSync(resolve(here, '../src/styles.css'), 'utf8').replace('@import "./tokens.css";', tokens).replace('@import "./kit.css";', kit)
   const body = renderToStaticMarkup(<Gallery palette={palette} theme={theme} />)
   writeFileSync(
     out,

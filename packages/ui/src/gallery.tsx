@@ -11,6 +11,7 @@ import {
   Button,
   ButtonLink,
   Chip,
+  ChipButton,
   CommandPalette,
   Eyebrow,
   Field,
@@ -22,6 +23,7 @@ import {
   KeyValues,
   LinkButton,
   Logo,
+  NOCTURNE,
   Menu,
   MenuAnchor,
   MenuHeading,
@@ -29,12 +31,16 @@ import {
   MenuSeparator,
   Panel,
   Pill,
+  Popover,
   Rail,
   Range,
   VectorField,
   SearchButton,
   Seg,
   Select,
+  SelectionBar,
+  SplitButton,
+  SwatchRing,
   StatusLine,
   SwitchRow,
   Tabs,
@@ -220,6 +226,43 @@ export function Gallery({ palette = false, theme }: { palette?: boolean; theme?:
               </div>
             </section>
             <section className="g-sec">
+              <Eyebrow>Chips, split buttons and selection</Eyebrow>
+              <div className="g-row">
+                <ChipButton icon="printer" menu>Desk A1</ChipButton>
+                <ChipButton menu numeric>0.4 mm</ChipButton>
+                <ChipButton menu aria-expanded>Textured PEI</ChipButton>
+                <ChipButton menu disabled>Offline</ChipButton>
+              </div>
+              <div className="g-stack g-gap">
+                <SplitButton variant="primary" size="lg" full icon="send-to-printer" menuLabel="More ways to print" menuOpen={false} onMenu={noop}>
+                  Print
+                </SplitButton>
+                <SplitButton size="sm" icon="plus" menuLabel="More ways to add" menuOpen={false} onMenu={noop}>
+                  Add
+                </SplitButton>
+                <SelectionBar count="2 selected" onClear={noop}>
+                  <Button size="sm" variant="ghost">Skip</Button>
+                  <Button size="sm" variant="ghost">Lock</Button>
+                  <Button size="sm" variant="ghost" icon="more" aria-label="More for the selection" />
+                </SelectionBar>
+              </div>
+              <div className="g-row g-gap">
+                <SwatchRing color={NOCTURNE.ink0} label="A1" usage={0.62} />
+                <SwatchRing color={NOCTURNE.fg} label="A2" usage={0.3} selected />
+                <SwatchRing color={NOCTURNE.orange} label="A3" usage={0.08} mismatch />
+                <SwatchRing color={NOCTURNE.green} label="A4" dim />
+                <SwatchRing color="unknown" label="Ext" />
+              </div>
+              <div className="g-row g-gap g-pop">
+                <MenuAnchor>
+                  <ChipButton menu aria-expanded>Textured PEI</ChipButton>
+                  <Popover open label="Plate type" onClose={noop}>
+                    <p className="sx-small sx-muted g-pad">Set per plate. Bed temperatures follow it.</p>
+                  </Popover>
+                </MenuAnchor>
+              </div>
+            </section>
+            <section className="g-sec">
               <Eyebrow>Panel</Eyebrow>
               <div className="g-panelbox">
                 <Panel edge="right">
@@ -290,6 +333,8 @@ export const GALLERY_CSS = `
 .g-edge-at{position:absolute}.g-edge-at[data-at=left]{left:120px;top:72px}.g-edge-at[data-at=right]{right:0;top:72px}.g-edge-at[data-at=bottom]{left:50%;bottom:0;margin-left:-28px}
 .g-ctxbox{position:relative;height:300px;max-width:420px;padding:12px;border-radius:var(--r-md);background:repeating-linear-gradient(135deg,color-mix(in srgb,var(--accent) 22%,transparent) 0 10px,transparent 10px 22px),var(--ink-1)}
 .g-ctxat{position:absolute;left:48px;top:52px}
+.g-gap{margin-top:14px}
+.g-pop{min-height:96px;align-items:flex-start}
 .g-panelbox{max-width:300px;border:1px solid var(--line-soft);border-radius:var(--r-md);overflow:hidden}
 .g-icons{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:8px}
 .g-icons-h{width:90px}
