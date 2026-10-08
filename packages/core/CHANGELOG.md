@@ -6,6 +6,7 @@ All notable changes to the `sx_core::api` module. The format follows Keep a Chan
 
 ### Fixed
 
+- Bambu Studio's -1 for auto reads as the value it stands for: `raft_first_layer_expansion` as 2 mm and `tree_support_wall_count` as 0, so a project's own settings slice. The raft expansion range checks run only when the print has a raft or supports.
 - `LongBridge`: a `max_bridge_length` of 0 sets no limit, so presets that ship 0 (Bambu Lab) no longer warn about every bridge; findings past the first five are counted as bridges and regions on separate lines.
 
 ### Added
