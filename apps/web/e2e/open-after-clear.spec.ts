@@ -5,12 +5,11 @@
 // under the design; the untouched example plate is replaced. Neither case asks about unsaved work. (The demo catalog
 // has no files to download, so the Vault's own button is covered by test/seed-example.test.ts, through the same
 // openModelBytes it calls.)
-import { execFileSync } from 'node:child_process'
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, test, type Page } from '@playwright/test'
-import { plateReady, tab } from './fixtures'
+import { plateReady, pnpmSync, tab } from './fixtures'
 
 const root = join(import.meta.dirname, '..', '..', '..')
 let starters = ''
@@ -18,7 +17,7 @@ let starters = ''
 test.beforeAll(() => {
   // The starters are made in code; the output never goes in git.
   starters = mkdtempSync(join(tmpdir(), 'sx-starters-'))
-  execFileSync('pnpm', ['--filter', '@slicerx/store', 'exec', 'tsx', '../app/scripts/vault-starters.ts', starters], { cwd: root, stdio: 'ignore' })
+  pnpmSync(['--filter', '@slicerx/store', 'exec', 'tsx', '../app/scripts/vault-starters.ts', starters], root)
 })
 
 async function open(page: Page): Promise<void> {
