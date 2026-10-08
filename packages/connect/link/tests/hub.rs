@@ -725,7 +725,11 @@ async fn fake_bambuddy() -> (u16, std::sync::Arc<std::sync::Mutex<Vec<String>>>)
                     .find_map(|l| l.to_ascii_lowercase().starts_with("x-api-key:").then(|| l[10..].trim().to_owned()))
                     .unwrap_or_default();
                 log.lock().unwrap().push(format!("{line} key={key}"));
-                let body = r#"{"connected":true,"state":"IDLE"}"#;
+                let body = if line.starts_with("GET /api/v1/printers ") {
+                    r#"[{"id":12,"name":"Shed P1S"}]"#
+                } else {
+                    r#"{"connected":true,"state":"IDLE"}"#
+                };
                 let resp = format!("HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}", body.len());
                 let _ = sock.write_all(resp.as_bytes()).await;
             });
@@ -765,6 +769,10 @@ async fn a_bambuddy_printer_takes_its_server_from_connected_apps() {
         "{list}"
     );
 
+    // Settings, Connected apps shows whether the app answers, and how many printers it lists.
+    let r = call(&mut ws, 61, "services.check", json!({ "pluginId": "bambuddy" })).await;
+    assert_eq!(r["result"]["printers"], 1, "{r}");
+
     // The printer named another host. The connection goes to the app's server, with the app's key,
     // for the printer id the printer holds.
     let r = call(&mut ws, 7, "printers.test", json!({ "config": cfg })).await;
@@ -776,8 +784,12 @@ async fn a_bambuddy_printer_takes_its_server_from_connected_apps() {
     let seen = seen.lock().unwrap().clone();
     assert!(!seen.is_empty(), "the app's server was asked");
     assert!(
-        seen.iter().all(|l| l.contains("/api/v1/printers/12") && l.ends_with("key=bb-key-1")),
+        seen.iter().all(|l| l.contains("/api/v1/printers") && l.ends_with("key=bb-key-1")),
         "{seen:?}"
+    );
+    assert!(
+        seen.iter().filter(|l| !l.starts_with("GET /api/v1/printers ")).all(|l| l.contains("/api/v1/printers/12")),
+        "a printer's calls name its BamBuddy id: {seen:?}"
     );
 }
 

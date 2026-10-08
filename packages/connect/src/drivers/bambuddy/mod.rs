@@ -88,6 +88,20 @@ impl PrinterConnector for BambuddyConnector {
     }
 }
 
+/// How many printers the BamBuddy server at `cfg`'s address lists, read with its API key
+/// (`GET /api/v1/printers`). Settings, Connected apps shows it as the app's status.
+pub async fn server_printers(cfg: &PrinterConfig, secrets: &dyn Secrets) -> Result<usize> {
+    let key = cfg.credential_ref.as_deref().and_then(|r| secrets.get(r));
+    let base = base_url(cfg, DEFAULT_PORT);
+    let mut rb = http::client(cfg)?.get(format!("{base}{API}/printers"));
+    if let Some(k) = key {
+        rb = rb.header("X-API-Key", k);
+    }
+    let resp = http::send(PLUGIN, rb).await?;
+    let body = http::json(PLUGIN, resp).await?;
+    Ok(body.as_array().map_or(0, Vec::len))
+}
+
 struct Inner {
     cfg: PrinterConfig,
     client: Client,

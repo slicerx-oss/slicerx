@@ -1000,6 +1000,21 @@ async fn dispatch(
                 .collect();
             Ok(Value::Array(list))
         }
+        // Whether a connected app answers at its address with its key. BamBuddy only: Spoolman is
+        // checked through its tools.
+        "services.check" => {
+            let plugin = str_arg(&p, "pluginId")?;
+            if plugin != "bambuddy" {
+                return Err(RpcError::new("not_supported", format!("{plugin} has no check")));
+            }
+            let probe: PrinterConfig = serde_json::from_value(json!({
+                "id": "bambuddy", "name": "BamBuddy", "plugin": "bambuddy", "host": ""
+            }))
+            .map_err(|e| RpcError::new("internal", e.to_string()))?;
+            let cfg = through_app(b, probe).await?;
+            let printers = sx_connect::drivers::bambuddy::server_printers(&cfg, b.secrets.as_ref()).await?;
+            Ok(json!({ "ok": true, "printers": printers }))
+        }
         "services.remove" => {
             let plugin = str_arg(&p, "pluginId")?;
             let removed = b.services.lock().await.remove(&plugin).is_some();
