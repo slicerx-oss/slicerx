@@ -262,10 +262,16 @@ export function supabaseAuth(sb: Db, opts: SupabaseOptions): AuthClient {
     },
 
     onSessionChange(cb) {
+      // Each event reads the profile before it is reported, and those reads can finish out of order. Only the newest
+      // event is reported, so a slow read for an earlier sign-in never lands after a sign-out.
+      let latest = 0
       const { data } = sb.auth.onAuthStateChange((_event, s) => {
+        const seq = ++latest
         // Deferred: the auth callback must not await other Supabase calls.
         setTimeout(() => {
-          void toSession(s).then(cb)
+          void toSession(s).then((session) => {
+            if (seq === latest) cb(session)
+          })
         }, 0)
       })
       return () => data.subscription.unsubscribe()
