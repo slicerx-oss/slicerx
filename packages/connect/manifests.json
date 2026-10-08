@@ -1573,18 +1573,7 @@
     "protocols": [
       "http"
     ],
-    "capabilities": [
-      "status",
-      "events",
-      "upload",
-      "start",
-      "pause",
-      "resume",
-      "cancel",
-      "filament_slots",
-      "project_file",
-      "slot_write"
-    ],
+    "capabilities": ["status", "events", "upload", "start", "pause", "resume", "cancel", "filament_slots", "project_file", "slot_write", "rewrites_upload"],
     "tools": [
       {
         "name": "bambuddy.status",

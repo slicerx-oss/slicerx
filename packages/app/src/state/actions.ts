@@ -4,7 +4,7 @@
 // to a printer. Commands, buttons and Pilot tools all call these.
 import { isGcodeName, openGcodeRef } from '../workspaces/preview/gcode-file'
 import type { ApprovalHost, ApprovalRequest, ApprovalToken, FileRef, Host, JobFile, LayerGcode, PermissionClass, PlateObject, PrintConfig, PrinterHost, PrinterInfo, PrinterStatus, SettingValue, SideEffectAction, SlicerHost } from '@slicerx/contracts'
-import { followsSlotMap, grantApproval, hashParams, readPreview, slotMapLine } from '@slicerx/contracts'
+import { followsSlotMap, grantApproval, hashParams, pluginHas, readPreview, slotMapLine } from '@slicerx/contracts'
 import { resolveConfig } from '../adapters/config'
 import { DEFAULT_MODEL, demoModel } from '../lib/demo-models'
 import { defaultColorMode, formatDuration } from '../lib/preview-stats'
@@ -777,9 +777,10 @@ async function sendNow(host: Host, printer: PrinterInfo): Promise<void> {
     // "Send as plain G-code" sends the G-code itself, under the same name with a .gcode ending.
     const plain = !project || picked.plainGcode === true
     let file: JobFile = plain ? { name: withEnding(picked.name, '.gcode'), kind: 'gcode', data, sha256: plainSha } : { name: picked.name, kind: 'gcode.3mf', data: sent, sha256 }
-    // BamBuddy may stamp a non-Bambu profile. The hash on the approval is the hash of the bytes that will be posted.
+    // A plugin that rewrites files (BamBuddy stamps a non-Bambu profile) prepares them first, so the hash on the
+    // approval is the hash of the bytes that will be posted. Every other printer gets the file as it is.
     const prepare = conn?.printers.prepareUpload
-    if (prepare) file = await prepare(printer.id, file)
+    if (prepare && pluginHas(printer.plugin, 'rewrites_upload')) file = await prepare(printer.id, file)
     const check = checkFor(file.name, file.sha256)
     if (check.errors.length) {
       toast(check.errors[0]!, 'error')

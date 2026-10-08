@@ -169,6 +169,7 @@ impl PrinterSession for BambuddySession {
             Capability::FilamentSlots,
             Capability::ProjectFile,
             Capability::SlotWrite,
+            Capability::RewritesUpload,
         ]
     }
 
