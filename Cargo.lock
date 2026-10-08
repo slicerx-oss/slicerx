@@ -5519,6 +5519,7 @@ dependencies = [
  "tokio",
  "tokio-rustls",
  "tokio-tungstenite",
+ "zip",
 ]
 
 [[package]]
