@@ -43,13 +43,13 @@ test('playback through a tool change on the H2C runs clean and keeps its frame r
   expect(info.changes).toBe(info.points)
   // The head drives to the chute and back, on top of the firmware's own seconds for the change.
   expect(info.first!.duration).toBeGreaterThan(10)
-  // Play at 5x from well before the first change to just after it, and time the frames. The change lasts about 16 s of
-  // print time, so at 5 times it plays for about three seconds.
-  await page.getByRole('radio', { name: '5 times real time' }).click()
-  await page.evaluate((t) => (window as unknown as { __pv: Hook }).__pv.seek(t), Math.max(0, info.first!.start - 10))
+  // Play at 2x from 20 s of print time before the first change to just after it, and time the frames. The change lasts
+  // about 16 s of print time, so it plays for about eight seconds, after ten of plain playback.
+  await page.getByRole('radio', { name: '2 times real time' }).click()
+  await page.evaluate((t) => (window as unknown as { __pv: Hook }).__pv.seek(t), Math.max(0, info.first!.start - 20))
   const result = await page.evaluate(async (until) => {
     const w = window as unknown as { __pv: Hook }
-    const dts: number[] = []
+    const plain: number[] = []
     const inChange: number[] = []
     let last = performance.now()
     w.__pv.toggle()
@@ -57,8 +57,9 @@ test('playback through a tool change on the H2C runs clean and keeps its frame r
       const tick = (now: number) => {
         const dt = now - last
         last = now
-        dts.push(dt)
-        if (document.querySelector('[data-testid="pv-change"]')) inChange.push(dt)
+        // A tick under 30 ms redrew nothing: it came one 60 Hz interval (17 ms) after the last, where a frame that
+        // draws the view takes far longer on software WebGL. Counting it would pull either median down.
+        if (dt >= 30) (document.querySelector('[data-testid="pv-change"]') ? inChange : plain).push(dt)
         if (w.__pv.clock() >= until || !w.__pv.playing()) return resolve()
         requestAnimationFrame(tick)
       }
@@ -67,15 +68,20 @@ test('playback through a tool change on the H2C runs clean and keeps its frame r
     const reached = w.__pv.clock() >= until
     if (w.__pv.playing()) w.__pv.toggle()
     const median = (v: number[]) => [...v].sort((a, b) => a - b)[Math.floor(v.length / 2)] ?? 0
-    return { frames: dts.length, longest: Math.max(...dts), inChange: inChange.length, medianInChange: median(inChange), reached }
+    return { plain: plain.length, inChange: inChange.length, medianPlain: median(plain), medianInChange: median(inChange), longestInChange: Math.max(0, ...inChange), reached }
   }, info.first!.start + info.first!.duration + 2)
+  test.info().annotations.push({ type: 'frames', description: JSON.stringify(result) })
   expect(errors).toEqual([])
   expect(result.reached).toBe(true)
+  expect(result.plain).toBeGreaterThan(2)
   expect(result.inChange).toBeGreaterThan(3)
-  // Software WebGL is slow (the head, rack and purge make a change frame several times dearer than a plain one), so the
-  // limits are for a stall and not for a frame rate: playback gets through, no frame takes seconds, a change frame under one.
-  expect(result.longest).toBeLessThan(3000)
-  expect(result.medianInChange).toBeLessThan(1000)
+  // The change keeps the frame rate of plain playback, measured in the same run. Software WebGL draws every playback
+  // frame slowly, at a pace that is the machine's (on a CI runner about a second a frame, plain or not), so a limit in
+  // milliseconds measures the runner and not the app. Drawing the head at the rack, the rack and the purge may cost a
+  // little more: the change's median frame stays within 1.5 times the plain median, and none of its frames takes over
+  // three times as long, which a stall would.
+  expect(result.medianInChange).toBeLessThanOrEqual(1.5 * result.medianPlain)
+  expect(result.longestInChange).toBeLessThanOrEqual(3 * result.medianPlain)
   // Scrubbing the time slider onto the change places the head away from the paths, and back.
   const mid = info.first!.start + info.first!.duration / 2
   await page.evaluate((t) => (window as unknown as { __pv: Hook }).__pv.seek(t), mid)
