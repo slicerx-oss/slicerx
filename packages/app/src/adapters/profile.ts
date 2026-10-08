@@ -7,6 +7,7 @@
 import type { Bed, EasyGoal, PrintConfig, SettingValue } from '@slicerx/contracts'
 import { filamentConfig, gcodeStatus, isCompatibleWithPrinter, listFilamentFamilies, listFilamentProfiles, loadVendorFile, printerConfig, printerProfile, processConfig, resolveFilamentPreset, resolvedProfile, type PrinterContext, type VendorFile } from '@slicerx/settings'
 import { profileIdFor } from '../workspaces/prepare/printer-base'
+import { baseConfig, GOALS } from './config'
 import { GENERIC_BED } from './generic-bed'
 
 export interface SlotFilament {
@@ -67,6 +68,8 @@ export interface ProfileLayer {
   gcodeKeys: string[]
   /** Each slot's filament preset id (`filament_id`, such as `GFA00`), in slot order; empty where no shipped preset applies. */
   filamentIds: string[]
+  /** The layer height and walls each goal's process gives on this printer and nozzle, for the Goal tiles. */
+  goalValues: Record<EasyGoal, Record<string, SettingValue>>
 }
 
 /** Keys whose value is G-code text. */
@@ -200,7 +203,7 @@ export async function buildProfileLayer(input: ProfileInput): Promise<ProfileLay
   // machine settings where the preset has none.
   const clearance = Object.fromEntries(Object.entries(base).filter(([k]) => k.startsWith('extruder_clearance_')))
   const machine = (resolved ? { ...clearance, ...resolved.machine } : { ...base }) as Record<string, SettingValue>
-  const process = (resolved && exact ? { ...resolved.process } : { ...(processConfig(input.tier, nozzle, printerId) as Record<string, SettingValue>) }) as Record<string, SettingValue>
+  const process = await tierProcess(printerId, input.tier, nozzle, exact)
   if (resolved && !exact) {
     for (const k of ['nozzle_diameter', 'min_layer_height', 'max_layer_height'] as const) if (base[k] !== undefined) machine[k] = base[k]!
   }
@@ -243,6 +246,12 @@ export async function buildProfileLayer(input: ProfileInput): Promise<ProfileLay
       }
     }
   }
+  // What every goal gives on this printer and nozzle, for the Goal tiles: the tier in use from its own process.
+  const goalValues = {} as Record<EasyGoal, Record<string, SettingValue>>
+  for (const g of GOALS) {
+    const p = g === input.tier ? process : await tierProcess(printerId, g, nozzle)
+    goalValues[g] = Object.fromEntries(GOAL_KEYS.map((k) => [k, p[k] ?? baseConfig()[k]!]))
+  }
   return {
     printerId,
     nozzle,
@@ -256,7 +265,17 @@ export async function buildProfileLayer(input: ProfileInput): Promise<ProfileLay
     shippedGcode: shipped,
     gcodeKeys,
     filamentIds,
+    goalValues,
   }
+}
+
+/** The settings the Goal tiles read from each goal's process. */
+const GOAL_KEYS = ['layer_height', 'wall_loops'] as const
+
+/** A tier's process preset: Orca's own for this nozzle when it has one, else ours for the size. */
+async function tierProcess(printerId: string, tier: EasyGoal, nozzle: number, exact?: Awaited<ReturnType<typeof resolvedProfile>>): Promise<Record<string, SettingValue>> {
+  const shipped = exact ?? (await resolvedProfile(printerId, tier, nozzle))
+  return (shipped ? { ...shipped.process } : { ...(processConfig(tier, nozzle, printerId) as Record<string, SettingValue>) }) as Record<string, SettingValue>
 }
 
 export type { PrintConfig }
