@@ -35,41 +35,77 @@ export function withoutDirtying(change: () => void): void {
 
 /** An open in progress. Changes it makes through `run` or `during` are its own; `finish` marks the project clean only when nothing else changed it meanwhile. */
 export interface OpenScope {
-  /** Runs changes the open makes. */
+  /** Runs changes the open makes. Throws OpenSuperseded once a newer open has taken over. */
   run<T>(fn: () => T): T
   /** Waits for work of the open whose changes cannot be wrapped one by one (an arrange); changes until it settles are the open's. */
   during<T>(work: Promise<T>): Promise<T>
-  /** The open is done: clean, unless the person edited the project while it ran. */
-  finish(): void
+  /** A newer open has taken over the project; this one's remaining work stops. */
+  readonly superseded: boolean
+  /** The open is done: clean, unless the person edited the project while it ran. `ok` false (it failed) leaves the state as it is. */
+  finish(ok?: boolean): void
 }
 
-/** Starts an open: from here, a project change that is not the open's own (a model dropped while it loads) keeps the project unsaved. */
+/** Thrown into an open that a newer open took over while it was still running. */
+export class OpenSuperseded extends Error {
+  constructor() {
+    super('A newer open took over the project')
+    this.name = 'OpenSuperseded'
+  }
+}
+
+interface LiveOpen {
+  start: number
+  own: number
+  settling: number
+  superseded: boolean
+  /** The project was clean when the open started. */
+  clean: boolean
+}
+
+const live = new Set<LiveOpen>()
+
+/** Every change since a still running open started is that open's own, and the project was clean before it. */
+function onlyOpening(): boolean {
+  for (const o of live) if (!o.superseded && o.clean && o.settling === 0 && edits - o.start === o.own) return true
+  return false
+}
+
+/** Starts an open: from here, a project change that is not the open's own (a model dropped while it loads) keeps the project unsaved. An open still running stops: this one replaces what it was opening. */
 export function beginOpen(): OpenScope {
-  const start = edits
-  let own = 0
-  let open = 0
-  const count = <T>(fn: () => T): T => {
-    const before = edits
-    try {
-      return fn()
-    } finally {
-      own += edits - before
-    }
+  for (const o of live) o.superseded = true
+  const me: LiveOpen = { start: edits, own: 0, settling: 0, superseded: false, clean: !dirty }
+  live.add(me)
+  const alive = () => {
+    if (me.superseded) throw new OpenSuperseded()
   }
   return {
-    run: count,
+    run(fn) {
+      alive()
+      const before = edits
+      try {
+        return fn()
+      } finally {
+        me.own += edits - before
+      }
+    },
     async during(work) {
       const before = edits
-      open++
+      me.settling++
       try {
         return await work
       } finally {
-        open--
-        own += edits - before
+        me.settling--
+        me.own += edits - before
+        alive()
       }
     },
-    finish() {
-      if (open === 0 && edits - start === own) markClean()
+    get superseded() {
+      return me.superseded
+    },
+    finish(ok = true) {
+      live.delete(me)
+      if (ok && !me.superseded && me.settling === 0 && edits - me.start === me.own) markClean()
+      else notify()
     },
   }
 }
@@ -106,7 +142,8 @@ export function startDirtyTracking(): void {
 
 /** Unsaved changes exist and there is something on the plates to lose. */
 export function isDirty(): boolean {
-  return dirty && allPlates(get()).some((p) => p.objects.length > 0)
+  // An open still running is not unsaved work: its changes are the file's.
+  return dirty && !onlyOpening() && allPlates(get()).some((p) => p.objects.length > 0)
 }
 
 /**

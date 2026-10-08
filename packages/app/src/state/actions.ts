@@ -27,7 +27,7 @@ import { plateSequence } from '../plate/plate-sequence'
 import { layerHeightConflict, objectOverrides, partOverridesOf } from '../plate/object-settings'
 import { printBlock } from '../plate/heimdall'
 import { clearProject } from '../project/new'
-import { beginOpen, confirmDiscard, markClean, type OpenScope } from '../project/unsaved'
+import { beginOpen, confirmDiscard, markClean, OpenSuperseded, type OpenScope } from '../project/unsaved'
 import { isExportOnly } from '../lib/hand-printers'
 import { colorModeAfterSlice, get, markStale, set, shownSlice, toast, type AppState, type PlateEntry, type PlateMeta, selectedIds, type PendingApproval, type ModelSource, type PlateVolumeEntry } from './store'
 import { appName, brandAccent, objectPalette } from '../edition'
@@ -273,6 +273,7 @@ async function addProject(host: Host, data: ArrayBuffer, name: string, scope?: O
     }
     for (const k of Object.keys(values)) brought.add(k)
     // Its printer G-code: stock text needs nothing, anything else waits for the person at the next slice.
+    mine(() => undefined)
     await (await import('./project-gcode')).reviewOpenedGcode(name, project.settings)
   }
   if (!geometryOnly && (await import('../plate/layer-ranges')).layerHeightsDiffer(get().plate)) {
@@ -285,6 +286,8 @@ async function addProject(host: Host, data: ArrayBuffer, name: string, scope?: O
   if (brought.size) mine(() => set((s) => ({ projectSettings: { source: name, keys: [...new Set([...(wasEmpty ? [] : (s.projectSettings?.keys ?? [])), ...brought])] } })))
   markStale()
   if (!note) return 'opened'
+  // A newer open took over meanwhile: its note is the one to show.
+  mine(() => undefined)
   toast(note, 'info', match?.kind === 'match' ? pp?.CHANGE_PRINTER : undefined)
   return 'told'
 }
@@ -351,12 +354,16 @@ export async function openModelBytes(host: Host, name: string, data: ArrayBuffer
       if (scope) scope.run(tag)
       else tag()
     }
+    scope?.run(() => undefined)
     scope?.finish()
     if (!told) toast(`Added ${name}`)
   } catch (e) {
+    scope?.finish(false)
+    // A newer open took over: it says what it opened.
+    if (e instanceof OpenSuperseded) return
     toast(e instanceof Error ? e.message : `Could not open ${name}`, 'error')
   } finally {
-    set({ plateLoading: false })
+    if (!scope?.superseded) set({ plateLoading: false })
   }
 }
 
@@ -389,6 +396,7 @@ export async function addFileRefs(host: Host, refs: FileRef[], opts: { fresh?: b
       told = (await addBytes(host, name, data, scope)) || told
       if (keep) void import('../project/autosave').then((m) => m.recordRecent(name, keep))
     }
+    scope?.run(() => undefined)
     if (project && wasEmpty) {
       // Save writes back to an opened .sx3mf; another slicer's 3MF is saved as a new file.
       const only = refs.length === 1 ? refs[0] : undefined
@@ -397,9 +405,12 @@ export async function addFileRefs(host: Host, refs: FileRef[], opts: { fresh?: b
     scope?.finish()
     if (!told || refs.length > 1) toast(refs.length === 1 ? `Added ${refs[0]?.name ?? 'model'}` : `Added ${refs.length} models`)
   } catch (e) {
+    scope?.finish(false)
+    // A newer open took over: it says what it opened.
+    if (e instanceof OpenSuperseded) return
     toast(e instanceof Error ? e.message : 'Could not open the file')
   } finally {
-    set({ plateLoading: false })
+    if (!scope?.superseded) set({ plateLoading: false })
   }
 }
 
