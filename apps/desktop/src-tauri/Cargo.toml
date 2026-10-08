@@ -21,7 +21,7 @@ connect = ["dep:sx-connect", "dep:sx-permit", "dep:sx-link", "dep:tokio", "dep:t
 cloud = []
 # Dev and test builds only: the agent bridge (src/agent_bridge, docs/agent-bridge.md). Never in `default`, never in a
 # release build: apps/desktop/release/check-agent-bridge.mjs fails a release binary or feature set that has it.
-agent-bridge = ["dep:getrandom", "dep:base64", "dep:webkit2gtk", "dep:cairo-rs", "dep:objc2", "dep:objc2-foundation", "dep:objc2-app-kit", "dep:objc2-web-kit", "dep:block2"]
+agent-bridge = ["dep:getrandom", "dep:base64", "dep:libc", "dep:webkit2gtk", "dep:cairo-rs", "dep:objc2", "dep:objc2-foundation", "dep:objc2-app-kit", "dep:objc2-web-kit", "dep:block2"]
 
 [build-dependencies]
 tauri-build = { version = "=2.7.0", features = [] }
@@ -59,6 +59,11 @@ windows = { version = "=0.62.2", features = ["Win32_Foundation", "Win32_UI_Windo
 # Turns off the web view's browser keys (crash::disable_browser_keys) and captures the agent bridge's screenshots. The
 # same version tauri uses.
 webview2-com = "=0.39.1"
+
+# The agent bridge's private export folder and files (src/agent_bridge/private.rs) on macOS and Linux. The same version
+# the rest of the tree uses.
+[target.'cfg(unix)'.dependencies]
+libc = { version = "=0.2.189", optional = true }
 
 # The agent bridge's screenshots (src/agent_bridge/shot.rs) on macOS and Linux, the same versions wry uses.
 [target.'cfg(target_os = "macos")'.dependencies]

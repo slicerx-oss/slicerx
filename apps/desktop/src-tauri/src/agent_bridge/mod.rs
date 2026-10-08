@@ -11,11 +11,12 @@
 //!
 //! The shell answers what only it can do: screenshots (shot.rs), opening a file by path and handing over a sign-in
 //! link (the same code paths a double-clicked file and the deep link take), and writing the slice's G-code to a
-//! temporary folder. Everything else goes to the page (packages/app/src/agent-bridge) as an event and comes back
-//! through `agent_bridge_reply`. Nothing here prints, sends to a printer or deletes anything.
+//! folder only this user can open (private.rs). Everything else goes to the page (packages/app/src/agent-bridge) as an
+//! event and comes back through `agent_bridge_reply`. Nothing here prints, sends to a printer or deletes anything.
 
 mod http;
 mod png;
+mod private;
 mod shot;
 
 use std::collections::HashMap;
@@ -94,24 +95,13 @@ fn new_token() -> Result<String, String> {
     Ok(b.iter().map(|x| format!("{x:02x}")).collect())
 }
 
-/// Writes the connection file anew, readable only by this user on macOS and Linux (Windows keeps the per-user
-/// profile's own permissions). A file or link already at the path is removed first, never written through.
+/// Writes the connection file anew, readable only by this user (private.rs). A file or link already at the path is
+/// removed first, never written through.
 pub fn write_token_file(path: &Path, contents: &str) -> std::io::Result<()> {
-    use std::io::Write;
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir)?;
     }
-    match std::fs::remove_file(path) {
-        Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(e),
-        _ => {}
-    }
-    let mut opts = std::fs::OpenOptions::new();
-    opts.write(true).create_new(true);
-    #[cfg(unix)]
-    std::os::unix::fs::OpenOptionsExt::mode(&mut opts, 0o600);
-    let mut f = opts.open(path)?;
-    f.write_all(contents.as_bytes())?;
-    f.sync_all()
+    private::write_private(path, contents.as_bytes())
 }
 
 /// Starts the bridge when `SX_AGENT_BRIDGE_PORT` is set. Problems are reported on stderr and leave the app running
@@ -399,11 +389,18 @@ pub fn export_name(name: &str) -> String {
     }
 }
 
-/// The folder exports go to: one per app run under the system's temporary folder.
-fn export_dir() -> PathBuf {
-    std::env::temp_dir()
+/// The folder exports go to: one per app run, in a folder only this user can open (`$XDG_RUNTIME_DIR` on Linux when
+/// set, else the app's cache folder), never the shared temporary folder.
+fn export_dir(app: &AppHandle) -> Result<PathBuf, ToolError> {
+    let cache = app
+        .path()
+        .app_cache_dir()
+        .map_err(|e| ToolError::new("write_failed", e.to_string()))?;
+    let dir = private::export_base(cache)
         .join("slicerx-agent-bridge")
-        .join(std::process::id().to_string())
+        .join(std::process::id().to_string());
+    private::private_dir(&dir).map_err(|e| ToolError::new("write_failed", e.to_string()))?;
+    Ok(dir)
 }
 
 /// Writes the G-code of the slice on screen to the export folder. The page names the slice and its file name (and
@@ -430,10 +427,8 @@ fn export_gcode(app: &AppHandle, args: &Value) -> Result<Value, ToolError> {
             .or_else(|| info.get("fileName").and_then(Value::as_str))
             .unwrap_or("plate.gcode"),
     );
-    let dir = export_dir();
-    std::fs::create_dir_all(&dir).map_err(|e| ToolError::new("write_failed", e.to_string()))?;
-    let path = dir.join(&name);
-    std::fs::write(&path, &bytes).map_err(|e| ToolError::new("write_failed", e.to_string()))?;
+    let path = export_dir(app)?.join(&name);
+    private::write_private(&path, &bytes).map_err(|e| ToolError::new("write_failed", e.to_string()))?;
     Ok(json!({ "path": path.to_string_lossy(), "fileName": name, "bytes": bytes.len() }))
 }
 

@@ -20,7 +20,7 @@ MCP client  --stdio-->  packages/app-bridge   --HTTP, 127.0.0.1, bearer token-->
 - **The shell endpoint** (`apps/desktop/src-tauri/src/agent_bridge`, Cargo feature `agent-bridge`). A small HTTP/1.1
   server on 127.0.0.1. It answers what only the shell can do itself: screenshots, opening a file by path and handing
   over a sign-in link (the same code paths a double-clicked file and the deep link take), and writing G-code to a
-  temporary folder. Every other tool goes to the page as an event and comes back through a command.
+  folder only the user can open. Every other tool goes to the page as an event and comes back through a command.
 - **The page side** (`packages/app/src/agent-bridge`, wired in by `apps/desktop/src/agent-bridge.ts` when the frontend
   is built with `SLICERX_AGENT_BRIDGE=1`). It records console lines, page errors, backend calls, toasts and dialogs,
   reads the app's state, and acts through the controls and commands a person uses.
@@ -129,7 +129,7 @@ Acts:
 | `app_open_vault_design` | Opens a Vault design by listing id, slug or exact title through its sheet and Open button, with the download a person sees, and waits until it is on the plate |
 | `app_clear_plate` | Runs Clear the plate; returns the save question instead of answering it |
 | `app_slice` | Runs Slice the plate and waits for the summary: time, grams, layers, tool changes, warnings |
-| `app_export_gcode` | Writes the slice's G-code to `<temp>/slicerx-agent-bridge/<pid>/` and returns the path |
+| `app_export_gcode` | Writes the slice's G-code to `slicerx-agent-bridge/<pid>/` in the app's cache folder (`$XDG_RUNTIME_DIR` on Linux when it is set) and returns the path. Refuses a slice that is stale or unsafe to print |
 | `app_auth_callback` | Hands a sign-in callback link (`slicerx://auth/callback?...`) to the app through the deep link's path |
 
 Reads that keep a log take `since` (the marker from an earlier answer) and `limit`. Errors come back as
@@ -155,7 +155,9 @@ Controls are found by `data-testid`, which is part of the UI contract: see [test
 - **Nothing destructive.** No tool prints, sends to a printer, deletes an account or anything else. The page refuses
   controls with a `danger-` test id and everything in the approval dialog, the Print sheet or marked
   `data-agent-refuse`; `packages/app/test/test-ids.test.ts` fails when a control that prints, sends, deletes or
-  archives has any other test id. Export writes only into the bridge's own temporary folder.
+  archives has any other test id. Export writes only into the bridge's own folder: a folder of the user's that no
+  one else can open (mode 0700, refused when it is a link or another user's), with each file made new (never written
+  through a file or link already there) and readable by the user only.
 - **No secrets out.** Network logs keep the address without its query string and never a body or header. Console text
   has JWTs, bearer tokens and token-like query values masked. `app_user` gives the user id and email only. A sign-in
   link handed over is never echoed or logged. Password fields never give their value.

@@ -235,7 +235,7 @@ export function createAppBridgeServer(client: AppClient): McpServer {
     'app_export_gcode',
     {
       title: 'Export G-code',
-      description: 'Writes the G-code of the slice on screen to a temporary folder the app owns and returns its path and size. Refuses a slice that is stale or unsafe to print, as the Export button does. Never sends it anywhere.',
+      description: 'Writes the G-code of the slice on screen to a folder only this user can open, and returns its path and size. Refuses a slice that is stale or unsafe to print, as the Export button does. Never sends it anywhere.',
       inputSchema: { name: z.string().max(120).optional().describe('File name; the slice\'s own name by default') },
       annotations: act,
     },
