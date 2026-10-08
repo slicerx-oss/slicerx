@@ -173,14 +173,14 @@ async function addProject(host: Host, data: ArrayBuffer, name: string, scope?: O
   const pp = asProject ? await import('../project/project-printer') : null
   let match: import('../project/project-printer').ProjectPrinterMatch | null = null
   if (pp) {
-    const before = get().bed
     // A printer of the person's own that matches it is picked over the project's own.
     const printers = host.printers ? await host.printers.list().catch(() => []) : []
     match = await pp.switchToProjectPrinter(name, project.settings, printers)
-    const bed = get().bed
-    // Plates after the first are laid out by bed size.
-    if (project.plates.length > 1 && (bed.widthMm !== before.widthMm || bed.depthMm !== before.depthMm)) project = await readProject(new Uint8Array(data), bed)
   }
+  // Its objects on the bed the plate slices for: a layout made for a larger bed moves onto this one.
+  const { placeOnSelectedBed } = await import('../project/place-import')
+  let movedOnto = false
+  for (const [i, pl] of project.plates.entries()) if (placeOnSelectedBed(pl.objects, get().bed, i === 0 ? get().plate : []) !== 'kept') movedOnto = true
   const startPlate = get().activePlate
   // Ids up front, so kept dimensions can name objects on any plate.
   const idOf = new Map<string, string>()
@@ -284,6 +284,7 @@ async function addProject(host: Host, data: ArrayBuffer, name: string, scope?: O
   if (!geometryOnly && (await import('../plate/layer-ranges')).layerHeightsDiffer(get().plate)) {
     note = `${note ? `${note} ` : ''}Per-object layer heights are not imported yet: its objects change layer height at different heights, so the plate uses one layer height.`
   }
+  if (movedOnto) note = `${note ? `${note} ` : ''}Its objects were off this bed where the file placed them, so they were moved onto it.`
   if (rangesLeft.size) {
     const { settingDef } = await import('@slicerx/settings')
     note = `${note ? `${note} ` : ''}Not imported from its height ranges: ${[...rangesLeft].map((k) => (settingDef(k)?.label ?? k).toLowerCase()).join(', ')}.`
