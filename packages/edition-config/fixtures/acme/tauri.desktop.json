@@ -17,6 +17,7 @@
     "security": {
       "capabilities": [
         "default",
+        "shared-links",
         {
           "identifier": "edition-links",
           "description": "The edition's own web pages, opened in the system browser.",
@@ -28,7 +29,22 @@
               "identifier": "opener:allow-open-url",
               "allow": [
                 {
-                  "url": "https://slicer.acme.example/*"
+                  "url": "https://slicer.acme.example/docs"
+                },
+                {
+                  "url": "https://slicer.acme.example/help"
+                },
+                {
+                  "url": "https://slicer.acme.example/download"
+                },
+                {
+                  "url": "https://git.acme.example/slicer/tree/*"
+                },
+                {
+                  "url": "https://git.acme.example/slicer/blob/main/packages/store/README.md#privacy"
+                },
+                {
+                  "url": "https://slicer.acme.example/"
                 }
               ]
             }
