@@ -91,6 +91,12 @@ pub trait PrinterSession: Send + Sync {
     fn capabilities(&self) -> Capabilities;
     async fn status(&self) -> Result<PrinterStatus>;
     fn events(&self) -> BoxStream<'static, PrinterEvent>;
+    /// The file [`Self::upload`] will send, with `sha256` of those bytes. The default
+    /// returns the file unchanged. A connector that rewrites the file (BamBuddy stamps
+    /// a non-Bambu profile) returns the rewritten bytes so the approval covers them.
+    async fn prepare_upload(&self, file: JobFile) -> Result<JobFile> {
+        Ok(file)
+    }
     async fn upload(&self, file: JobFile, token: &ApprovalToken) -> Result<RemoteFile>;
     async fn start(&self, file: &RemoteFile, opts: StartOptions, token: &ApprovalToken) -> Result<()>;
     async fn pause(&self, token: &ApprovalToken) -> Result<()>;

@@ -9,6 +9,7 @@ use crate::gate::ApprovalGate;
 
 pub mod anycubic;
 pub mod bambu;
+pub mod bambuddy;
 pub mod creality;
 pub mod duet;
 pub mod elegoo;
@@ -20,6 +21,7 @@ pub mod ultimaker;
 
 pub use anycubic::AnycubicConnector;
 pub use bambu::BambuConnector;
+pub use bambuddy::BambuddyConnector;
 pub use creality::CrealityConnector;
 pub use duet::DuetConnector;
 pub use elegoo::ElegooConnector;
@@ -43,6 +45,7 @@ pub(crate) fn all(
         Box::new(ElegooConnector::new(gate.clone()).with_discovery_bind(discovery_bind)),
         Box::new(SnapmakerConnector::new(gate.clone()).with_discovery_bind(discovery_bind)),
         Box::new(UltiMakerConnector::new(gate.clone())),
-        Box::new(AnycubicConnector::new(gate)),
+        Box::new(AnycubicConnector::new(gate.clone())),
+        Box::new(BambuddyConnector::new(gate)),
     ]
 }

@@ -68,6 +68,7 @@ test('connection methods match the connector manifests and their guides exist', 
 test('start options are listed only for connections that send them', () => {
   const by = Object.fromEntries(CONNECTION_METHODS.map((c) => [c.id, c.startOptions]))
   assert.deepEqual(by['bambu-lan'], ['bedLeveling', 'flowCalibration', 'vibrationCompensation', 'timelapse', 'firstLayerInspection'])
+  assert.deepEqual(by.bambuddy, ['bedLeveling', 'flowCalibration', 'vibrationCompensation', 'timelapse', 'firstLayerInspection'])
   assert.deepEqual(by.elegoo, ['bedLeveling', 'timelapse'])
   for (const id of ['moonraker', 'octoprint', 'prusalink', 'duet', 'creality', 'snapmaker', 'ultimaker', 'anycubic', 'export']) assert.deepEqual(by[id], [], id)
 })
@@ -97,6 +98,7 @@ test('discovery is listed only where a protocol allows it, and says what it send
     elegoo: 'udp-broadcast',
     ultimaker: 'mdns',
     anycubic: 'manual',
+    bambuddy: 'manual',
     export: 'manual',
   })
   for (const c of CONNECTION_METHODS) assert.ok(c.discovery.detail.length > 10)

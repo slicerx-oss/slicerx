@@ -1021,6 +1021,11 @@ export async function connectLink(opts: ConnectOptions): Promise<LinkHost> {
       }
     },
 
+    prepareUpload: async (printerId, file) => {
+      const r = await call<{ name: string; kind: JobFile['kind']; sha256: string; dataBase64: string }>('prepareUpload', { printerId, file: encodeFile(file) })
+      const bytes = base64ToBytes(r.dataBase64)
+      return { name: r.name, kind: r.kind, sha256: r.sha256, data: bytes.buffer }
+    },
     upload: (printerId, file, token) => call<RemoteFile>('upload', { printerId, token, file: encodeFile(file) }),
     start: async (file, opts2: StartOptions, token) => void (await call('start', { file, opts: opts2, token })),
     pause: async (printerId, token) => void (await call('pause', { printerId, token })),

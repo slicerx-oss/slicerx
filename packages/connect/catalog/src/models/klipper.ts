@@ -16,7 +16,7 @@ const voron = (id: string, name: string, kinematics: Kinematics, x: number, y: n
   nozzles: VORON_NOZZLES,
   defaultNozzle: 0.4,
   nozzleCount: 1,
-  connections: ['moonraker', 'export'],
+  connections: ['moonraker', 'bambuddy', 'export'],
   find: FIND_KLIPPER,
   note: 'The build volume is the standard one for this size. Your build may differ.',
 })
