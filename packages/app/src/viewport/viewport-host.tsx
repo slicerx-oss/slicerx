@@ -99,7 +99,6 @@ function platePayload(s: AppState, shown: ShownTower | null): ViewportPlate {
   const tower = shown ? towerMesh(shown.at, shown.heightMm) : null
   return {
     bed: s.bed,
-    surfaceLabel: 'Textured PEI',
     zones: nozzleZones(s.extruderAreas, s.bed).map(({ id, label, color, polygon }) => ({ id, label, color, polygon })),
     objects: [
       ...(tower ? [{ id: TOWER_ID, name: 'Prime tower', transform: tower.transform, parts: [{ name: 'Prime tower', positions: tower.positions, indices: tower.indices, color: '#9aa4c1' }] }] : []),

@@ -9,7 +9,7 @@ import { EnergyRow } from './energy-row'
 import { MoreButton, useMore } from '../../shell/more'
 import type { PrinterState } from '@slicerx/contracts'
 import { Block, Button, Icon, KeyValues, LinkButton, Pill, type PillState, tipAttrs } from '@slicerx/ui'
-import { lazy, Suspense, useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
 import { useHost } from '../../host'
 import { useFleet, type FleetRow } from '../../lib/queries'
 import { formatCost, formatDuration, formatGrams } from '../../lib/preview-stats'
@@ -45,6 +45,9 @@ const PaintPanel = lazy(() => import('./paint-panel').then((m) => ({ default: m.
 import { useTool } from '../../plate/tools'
 const ObjectVolumes = lazy(() => import('./object-volumes').then((m) => ({ default: m.ObjectVolumes })))
 import { PlateList } from './plate-list'
+import { activeMeta } from '../../plate/plates'
+import { plateBedType } from '../../plate/bed-type'
+import { resolveConfig } from '../../adapters/config'
 import { selectObject } from '../../plate/edit'
 import { get, isCadTool, selectedIds, set, setWorkspace, showSliced, shownSlice, useApp } from '../../state/store'
 import { GENERIC_BED } from '../../adapters/generic-bed'
@@ -86,6 +89,12 @@ function PrinterBlock() {
   const profileNozzle = useApp((s) => s.profile?.nozzle ?? 0.4)
   const noPrinter = useApp((s) => s.noPrinter)
   const [open, setOpen] = useFold('printer')
+  const meta = useApp(activeMeta)
+  const easy = useApp((s) => s.easy)
+  const overrides = useApp((s) => s.overrides)
+  const profile = useApp((s) => s.profile)
+  // The plate type the active plate prints on: its own, a project's, or the printer's default.
+  const plate = useMemo(() => plateBedType(meta, resolveConfig(easy, overrides)), [meta, easy, overrides, profile])
   if (!printer) {
     return (
       <Block title="Printer" icon="printer" data-section="printer">
@@ -107,6 +116,7 @@ function PrinterBlock() {
   }
   const pill = printerPill(printer)
   const bed = printer.status.bed
+  const bedTemp = bed && !isExportOnly(printer) && printer.status.state !== 'offline' ? bed.target || bed.current : 0
   const sub = isExportOnly(printer) ? 'No connection, exports G-code' : [printer.filamentSystem === 'ams' || printer.filamentSystem === 'mmu' ? `${filamentUnitName(printer.model, printer.filamentSystem)} connected` : null, printer.status.state].filter(Boolean).join(', ')
   return (
     <Block
@@ -187,8 +197,9 @@ function PrinterBlock() {
       {more ? <KeyValues
         items={[
           { value: `${profileNozzle} mm`, label: 'Nozzle' },
-          { value: <span {...tipAttrs({ title: 'Textured PEI plate' })}>PEI</span>, label: 'Plate' },
-          { value: bed ? degC(bed.target || bed.current) : 'unknown', label: 'Bed' },
+          { value: <span data-testid="slice-machine-plate" {...tipAttrs({ title: 'Set per plate. Change it in plate settings.' })}>{plate.label}</span>, label: 'Plate' },
+          // An export-only or offline printer reports no bed, so the row goes rather than guessing.
+          ...(bedTemp ? [{ value: degC(bedTemp), label: 'Bed' }] : []),
         ]}
       /> : null}
     </Block>
