@@ -99,15 +99,16 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --exclude slicerx-desktop --all-targets -- -D warnings
-      # a pull request runs the unit tests and the G-code goldens; main runs every test
-      - if: github.event_name != 'push'
+      # A pull request runs the unit tests and the G-code goldens. The merge queue, main, and a pull request labeled
+      # full-ci run every test, the integration tests in each crate's tests/ included, so one that breaks never lands.
+      - if: github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'full-ci')
         run: cargo test --workspace --exclude slicerx-desktop --lib --bins
-      - if: github.event_name != 'push'
+      - if: github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'full-ci')
         run: cargo test -p sx-core --test reference
       # sx-link's real-service test runs the sx-cloud binary; it fails here, not skips, when it is missing.
-      - if: github.event_name == 'push'
+      - if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'full-ci')
         run: cargo build -p sx-cloud
-      - if: github.event_name == 'push'
+      - if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'full-ci')
         run: cargo test --workspace --exclude slicerx-desktop
 
   # The desktop app's agent bridge (docs/agent-bridge.md) on every platform it ships to, macOS included: the shell
