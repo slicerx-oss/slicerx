@@ -2,6 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 // User actions that touch the host: loading models, slicing, export, sending
 // to a printer. Commands, buttons and Pilot tools all call these.
+import { engineErrorText } from '../lib/engine-errors'
 import { isGcodeName, openGcodeRef } from '../workspaces/preview/gcode-file'
 import type { ApprovalHost, ApprovalRequest, ApprovalToken, FileRef, Host, JobFile, LayerGcode, PermissionClass, PlateObject, PrintConfig, PrinterHost, PrinterInfo, PrinterStatus, SettingValue, SideEffectAction, SlicerHost } from '@slicerx/contracts'
 import { followsSlotMap, grantApproval, hashParams, pluginHas, readPreview, slotMapLine } from '@slicerx/contracts'
@@ -415,7 +416,7 @@ export async function slicePlate(host: Host, opts: { auto?: boolean } = {}): Pro
       }
       return
     }
-    const message = e instanceof Error ? e.message : String(e)
+    const message = engineErrorText(e instanceof Error ? e.message : String(e))
     if (await dropRefusedProjectSetting(message)) again = true
     else {
       set({ slice: { status: 'error', message } })
