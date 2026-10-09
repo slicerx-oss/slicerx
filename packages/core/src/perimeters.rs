@@ -263,18 +263,17 @@ pub(crate) fn point_in(poly: &[IntPoint<i32>], p: IntPoint<i32>) -> bool {
 
 /// `a` minus `b`.
 pub(crate) fn difference(a: &Shapes, b: &Shapes) -> Shapes {
-    if a.is_empty() || b.is_empty() {
-        return a.clone();
-    }
-    let solver = solver_for(edge_count(&[a, b]));
-    Overlay::from_subj_and_clip_custom(a, b, IntOverlayOptions::default(), solver)
-        .overlay(OverlayRule::Difference, FillRule::NonZero)
+    difference_min_area(a, b, 0)
 }
 
 /// [`difference`] without the islands and holes smaller than `min_area` square units (see [`union_min_area`]).
 pub(crate) fn difference_min_area(a: &Shapes, b: &Shapes, min_area: u64) -> Shapes {
     if a.is_empty() || b.is_empty() {
-        return union_min_area(&[a], min_area);
+        return if min_area == 0 {
+            a.clone()
+        } else {
+            union_min_area(&[a], min_area)
+        };
     }
     let solver = solver_for(edge_count(&[a, b]));
     let options = IntOverlayOptions {
@@ -412,21 +411,17 @@ fn overlap_quick(a: &Shapes, b: &Shapes) -> Option<bool> {
 
 /// Union of several shape sets.
 pub(crate) fn union_all(sets: &[&Shapes]) -> Shapes {
-    let mut all: Shapes = Vec::new();
-    for s in sets {
-        all.extend(s.iter().cloned());
-    }
-    if all.is_empty() {
-        return all;
-    }
-    simplified_shapes(&all, FillRule::NonZero)
+    union_min_area(sets, 0)
 }
 
 /// [`union_all`] without the islands and holes smaller than `min_area` square units. Booleans round their
 /// crossings to whole units, so regions cut from one outline meet again with specks and pinholes between
 /// them; this drops them.
 pub(crate) fn union_min_area(sets: &[&Shapes], min_area: u64) -> Shapes {
-    let all: Shapes = sets.iter().flat_map(|s| s.iter().cloned()).collect();
+    let mut all: Shapes = Vec::new();
+    for s in sets {
+        all.extend(s.iter().cloned());
+    }
     if all.is_empty() {
         return all;
     }
@@ -461,13 +456,6 @@ fn simplified(contours: &[Vec<IntPoint<i32>>], rule: FillRule) -> Shapes {
     let capacity = contours.iter().map(Vec::len).sum();
     Overlay::new_custom(capacity, IntOverlayOptions::default(), solver_for(capacity))
         .simplify_source(contours, rule)
-}
-
-/// [`simplified`] for shapes.
-fn simplified_shapes(shapes: &Shapes, rule: FillRule) -> Shapes {
-    let capacity = shapes.iter().flatten().map(Vec::len).sum();
-    Overlay::new_custom(capacity, IntOverlayOptions::default(), solver_for(capacity))
-        .simplify_source(shapes, rule)
 }
 
 /// Axis-aligned bounds `[min_x, min_y, max_x, max_y]` of shapes.
