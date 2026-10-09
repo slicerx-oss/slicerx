@@ -4,11 +4,12 @@
 // suppress or delete it. Shared by the history list in Slice and the Model tree. The tree's row is calmer: the
 // step's icon before its name, the move, suppress and delete actions in one More menu in a slot of its own at the
 // row's end, and under a sketch extrude or revolve the sketch as a sub-row that opens it (the history is unchanged).
-import { Button, Icon, Menu, MenuAnchor, MenuItem } from '@slicerx/ui'
-import { useEffect, useState } from 'react'
+import { Button, Icon, useContextMenu } from '@slicerx/ui'
+import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react'
 import type { PlateEntry } from '../../state/store'
 import { mainNumber, stepName, type Step } from './model'
 import { toolFor } from './ops'
+import { DeleteStepDialog, StepMenu } from './step-menu'
 import { stepIcon, stepSketch } from './step-icon'
 
 export function StepRow(props: {
@@ -31,6 +32,12 @@ export function StepRow(props: {
   onNumber: (text: string) => string | null
   /** The Model tree: the step's icon before its name, a More menu, and its sketch as a sub-row. */
   tree?: boolean | undefined
+  /** The tree's rename: the new name, or "" for the step's own. A sentence when it is refused. */
+  onRename?: ((label: string) => string | null) | undefined
+  /** The tree's way back to the latest while the part is rolled back. */
+  onEnd?: (() => void) | undefined
+  /** The part is rolled back to some step of this object. */
+  rolledBack?: boolean | undefined
 }) {
   const { step: s, index, skipped, busy, editing } = props
   const name = stepName(s)
@@ -43,8 +50,24 @@ export function StepRow(props: {
   const tipAt = props.tree ? { 'data-tip-avoid': '.cad-step' } : {}
   // In the tree the arrow keys move between rows (history-tree.tsx), so only a row's name is in the tab order.
   const tab = props.tree ? { tabIndex: -1 } : {}
+  const menu = useContextMenu()
+  const [renaming, setRenaming] = useState(false)
+  const [confirm, setConfirm] = useState(false)
+  // F2 renames and Alt+Up and Alt+Down move, as the menu says; Shift+F10 and the menu key open it.
+  const keys = (e: KeyboardEvent<HTMLElement>) => {
+    if (renaming) return
+    if (e.key === 'F2') {
+      e.preventDefault()
+      setRenaming(true)
+    } else if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+      e.preventDefault()
+      e.stopPropagation()
+      const to = index + (e.key === 'ArrowUp' ? -1 : 1)
+      if (!busy && to >= 0 && !(e.key === 'ArrowDown' && props.last)) props.onMove(to)
+    } else menu.bind.onKeyDown(e)
+  }
   const treeRow = props.tree
-    ? { role: 'treeitem', 'aria-level': 2, 'aria-label': name, 'data-testid': 'model-tree-step', 'data-object-id': props.entry.id, 'data-index': index, 'data-state': state }
+    ? { ...menu.bind, onKeyDown: keys, tabIndex: -1, role: 'treeitem', 'aria-level': 2, 'aria-label': name, 'data-testid': 'model-tree-step', 'data-object-id': props.entry.id, 'data-index': index, 'data-state': state }
     : {}
   return (
     <li className="cad-step" data-state={state} data-editing={editing || props.viewing || undefined} data-later={props.later || undefined} aria-busy={busy || undefined} {...treeRow}>
@@ -61,6 +84,16 @@ export function StepRow(props: {
       >
         {index + 1}
       </button>
+      {renaming ? (
+        <RenameField
+          value={s.label ?? name}
+          label={`Name of step ${index + 1}`}
+          onDone={(text) => {
+            setRenaming(false)
+            if (text !== null) props.onRename?.(text)
+          }}
+        />
+      ) : (
       <button
         type="button"
         className="cad-step-name"
@@ -70,6 +103,7 @@ export function StepRow(props: {
         disabled={!tool && !number}
         {...(props.tree ? { 'data-tree-row': '' } : {})}
         onClick={tool ? props.onEdit : props.onOpen}
+        {...(props.tree ? { onDoubleClick: (e: MouseEvent) => (e.preventDefault(), setRenaming(true)) } : {})}
       >
         {props.tree ? (
           <span className="cad-step-icon" data-badge={state === 'broken' ? 'broken' : state === 'done' && s.note ? 'note' : undefined}>
@@ -78,8 +112,48 @@ export function StepRow(props: {
         ) : null}
         <span className="cad-step-label">{name}</span>
       </button>
+      )}
       {props.tree ? (
-        <StepMore name={name} index={index} last={props.last} suppressed={Boolean(s.suppressed)} busy={busy} onMove={props.onMove} onSuppress={props.onSuppress} onDelete={props.onDelete} />
+        <span className="cad-step-more">
+          <button
+            type="button"
+            className="cad-step-more-btn"
+            data-testid="model-tree-more"
+            data-tip-title="More"
+            data-tip-avoid=".cad-step"
+            aria-label={`More for ${name}`}
+            aria-haspopup="menu"
+            aria-expanded={menu.at !== null}
+            tabIndex={-1}
+            disabled={busy}
+            onClick={(e) => {
+              const r = e.currentTarget.getBoundingClientRect()
+              menu.show(e.currentTarget, { x: r.right - 200, y: r.bottom + 4 })
+            }}
+          >
+            <Icon name="more" size={16} />
+          </button>
+          <StepMenu
+            at={menu.at}
+            onClose={menu.close}
+            name={name}
+            index={index}
+            last={props.last}
+            suppressed={Boolean(s.suppressed)}
+            editable={tool !== null}
+            rolledBack={Boolean(props.rolledBack)}
+            viewing={props.viewing}
+            hasSketch={sketch !== null}
+            onEdit={props.onEdit}
+            onView={props.onView}
+            onEnd={() => props.onEnd?.()}
+            onSuppress={props.onSuppress}
+            onMove={props.onMove}
+            onRename={() => setRenaming(true)}
+            onDelete={() => setConfirm(true)}
+          />
+          {confirm ? <DeleteStepDialog name={name} open onCancel={() => setConfirm(false)} onDelete={() => (setConfirm(false), props.onDelete())} /> : null}
+        </span>
       ) : (
         <>
           <Button size="sm" variant="ghost" icon="arrow-up" data-tip="history.earlier" aria-label={`Move ${name} earlier`} disabled={busy || index === 0} onClick={() => props.onMove(index - 1)} />
@@ -103,25 +177,33 @@ export function StepRow(props: {
   )
 }
 
-/** The tree row's More button: in a slot of its own at the row's end, shown on hover or focus, so the name never moves. */
-function StepMore(p: { name: string; index: number; last: boolean; suppressed: boolean; busy: boolean; onMove: (to: number) => void; onSuppress: () => void; onDelete: () => void }) {
-  const [open, setOpen] = useState(false)
-  const run = (fn: () => void) => () => {
-    setOpen(false)
-    fn()
+/** The inline name field: Enter or leaving it saves, Escape keeps the old name. Empty gives the step its own name back. */
+function RenameField({ value, label, onDone }: { value: string; label: string; onDone: (text: string | null) => void }) {
+  const [text, setText] = useState(value)
+  const done = useRef(false)
+  const finish = (t: string | null) => {
+    if (done.current) return
+    done.current = true
+    onDone(t)
   }
   return (
-    <MenuAnchor className="cad-step-more">
-      <button type="button" className="cad-step-more-btn" data-testid="model-tree-more" data-tip-title="More" data-tip-avoid=".cad-step" aria-label={`More for ${p.name}`} aria-haspopup="menu" aria-expanded={open} tabIndex={-1} disabled={p.busy} onClick={() => setOpen(!open)}>
-        <Icon name="more" size={16} />
-      </button>
-      <Menu open={open} onClose={() => setOpen(false)} label={p.name} align="end">
-        <MenuItem icon="arrow-up" aria-label={`Move ${p.name} earlier`} disabled={p.index === 0} onClick={run(() => p.onMove(p.index - 1))}>Move earlier</MenuItem>
-        <MenuItem icon="arrow-down" aria-label={`Move ${p.name} later`} disabled={p.last} onClick={run(() => p.onMove(p.index + 1))}>Move later</MenuItem>
-        <MenuItem icon={p.suppressed ? 'show' : 'hide'} aria-label={p.suppressed ? `Turn ${p.name} back on` : `Suppress ${p.name}`} onClick={run(p.onSuppress)}>{p.suppressed ? 'Turn back on' : 'Suppress'}</MenuItem>
-        <MenuItem icon="delete" tone="danger" data-testid="danger-model-tree-delete" aria-label={`Delete ${p.name}`} onClick={run(p.onDelete)}>Delete</MenuItem>
-      </Menu>
-    </MenuAnchor>
+    <input
+      className="sx-input cad-step-rename"
+      data-size="sm"
+      data-testid="model-tree-rename"
+      aria-label={label}
+      value={text}
+      maxLength={100}
+      autoFocus
+      onFocus={(e) => e.currentTarget.select()}
+      onChange={(e) => setText(e.target.value)}
+      onBlur={() => finish(text)}
+      onKeyDown={(e) => {
+        e.stopPropagation()
+        if (e.key === 'Enter') finish(text)
+        else if (e.key === 'Escape') finish(null)
+      }}
+    />
   )
 }
 

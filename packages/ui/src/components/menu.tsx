@@ -52,6 +52,9 @@ export interface MenuProps {
   /** Open at this window point instead of under the trigger (a context menu). */
   at?: { x: number; y: number } | undefined
   className?: string
+  /** A test id for the open menu, and what it is for (`data-target`), such as a step or an object. */
+  testId?: string
+  target?: string
   children?: ReactNode
 }
 
@@ -59,7 +62,7 @@ export interface MenuProps {
  * A floating menu. The parent owns the open state; Escape, an outside click, or choosing an item
  * calls onClose. Arrow keys move focus between items. Focus lands on the first item when opened.
  */
-export function Menu({ open, onClose, label, align = 'start', static: isStatic, at, className, children }: MenuProps) {
+export function Menu({ open, onClose, label, align = 'start', static: isStatic, at, className, testId, target, children }: MenuProps) {
   const ref = useRef<HTMLDivElement>(null)
   const [place, setPlace] = useState<Place>({ up: false })
   useDismiss(ref, open && !isStatic, onClose)
@@ -152,6 +155,8 @@ export function Menu({ open, onClose, label, align = 'start', static: isStatic, 
       ref={ref}
       role="menu"
       aria-label={label}
+      data-testid={testId}
+      data-target={target}
       className={className ? `sx-menu ${className}` : 'sx-menu'}
       data-align={align === 'start' ? undefined : align}
       data-static={isStatic ? true : undefined}
