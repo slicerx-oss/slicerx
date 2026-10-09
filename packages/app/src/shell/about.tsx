@@ -2,11 +2,12 @@
 // Copyright (C) 2026 The SlicerX contributors
 // About (with Diagnostics) and the shortcut list. Loaded when first opened: neither is part of first paint.
 import { attribution } from '@slicerx/edition-config'
-import { Button, Dialog, Eyebrow, Icon, Kbd, Logo, StatusLine, useToast } from '@slicerx/ui'
+import { Button, Dialog, Eyebrow, Icon, Kbd, keymapFor, Logo, StatusLine, useToast } from '@slicerx/ui'
 import { useEffect, useState } from 'react'
 import { useCommands } from '../commands/registry'
 import { useEdition } from '../edition'
 import { useHost } from '../host'
+import { useLookChoice } from '../first-run/look'
 import { formatShortcut } from '../lib/keys'
 import { set, useApp } from '../state/store'
 import { checkForUpdates, updaterRegistered } from '../updates/updates'
@@ -108,7 +109,14 @@ export function ShortcutsDialog() {
   const open = useApp((s) => s.shortcutsOpen)
   const commands = useCommands()
   const close = () => set({ shortcutsOpen: false })
-  const rows: [string, string][] = [...FIXED, ...commands.filter((c) => c.shortcut).map((c): [string, string] => [c.shortcut ?? '', c.title])]
+  const choice = useLookChoice()
+  const map = keymapFor(choice.id, choice.overrides?.keys ?? {})
+  // The edge tabs' keys come from the look's keymap, so they can be changed in Settings.
+  const panels = (['left', 'right', 'bottom'] as const).flatMap((p): [string, string][] => {
+    const k = map[`panel.${p}`]
+    return k ? [[k, `Show or hide the ${p} panel`]] : []
+  })
+  const rows: [string, string][] = [...FIXED, ...panels, ...commands.filter((c) => c.shortcut).map((c): [string, string] => [c.shortcut ?? '', c.title])]
   return (
     <Dialog open={open} onClose={close} title="Keyboard shortcuts" footer={<Button onClick={close}>Close</Button>}>
       <dl className="keys-list">

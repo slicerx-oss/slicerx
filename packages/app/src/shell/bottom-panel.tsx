@@ -1,12 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// A panel along the bottom of the view with a small ^ tab, that opens and closes by itself (auto-panel.ts). The tab is a
-// real button: Tab reaches it, Enter or Space toggles it, focus moving into the panel opens it and Escape closes it and
-// returns focus to the tab. Its context menu pins it open; the pin is remembered per panel with the pane sizes.
-import { Icon, Menu, MenuAnchor, MenuItem } from '@slicerx/ui'
-import { createContext, useContext, useEffect, useId, useRef, useState, type ReactNode } from 'react'
+// A panel along the bottom of the view with a small ^ edge tab, that opens and closes by itself (auto-panel.ts). The tab
+// is a real button: Tab reaches it, Enter or Space toggles it, as does Mod+J, focus moving into the panel opens it and
+// Escape closes it and returns focus to the tab. Its context menu pins it open; the pin is remembered per panel with
+// the pane sizes.
+import { EdgeTab, keymapFor, Menu, MenuAnchor, MenuItem } from '@slicerx/ui'
+import { createContext, useContext, useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { useLookChoice } from '../first-run/look'
 import { set, useApp } from '../state/store'
 import { AutoPanel } from './auto-panel'
+import { registerEdge } from './edge-keys'
 import './bottom-panel.css'
 
 /** How tall the band along the bottom of the view is that opens the panel. */
@@ -19,7 +22,7 @@ export function useBottomPanel(): { drag(active: boolean): void; menu(open: bool
   return useContext(PanelContext)
 }
 
-export function BottomPanel({ label, memory, attention = 0, children }: { label: string; memory: string; attention?: number; children: ReactNode }) {
+export function BottomPanel({ label, memory, panel, attention = 0, children }: { label: string; memory: string; panel: string; attention?: number; children: ReactNode }) {
   const id = useId()
   const pinKey = `${memory}:pinned`
   const pinned = useApp((s) => s.paneSizes[pinKey] === 1)
@@ -28,9 +31,12 @@ export function BottomPanel({ label, memory, attention = 0, children }: { label:
   const ctl = useRef<AutoPanel | null>(null)
   ctl.current ??= new AutoPanel(setOpen, { pinned })
   const root = useRef<HTMLDivElement>(null)
-  const tab = useRef<HTMLButtonElement>(null)
+  const choice = useLookChoice()
+  const chord = keymapFor(choice.id, choice.overrides?.keys ?? {})['panel.bottom']
+  const focusTab = () => root.current?.querySelector<HTMLButtonElement>('.sx-edge-tab')?.focus()
 
   useEffect(() => () => ctl.current?.dispose(), [])
+  useEffect(() => registerEdge('bottom', () => ctl.current?.toggle()), [])
   useEffect(() => ctl.current?.pin(pinned), [pinned])
   const seen = useRef(attention)
   useEffect(() => {
@@ -52,30 +58,45 @@ export function BottomPanel({ label, memory, attention = 0, children }: { label:
     return () => window.removeEventListener('pointermove', move, true)
   }, [])
 
+  // While open, the view's bottom-left pills (the model size) move up above the panel: its height is on the view as
+  // --bpanel-h. bottom-panel.css reads it.
+  useLayoutEffect(() => {
+    const view = root.current?.parentElement
+    const body = root.current?.querySelector<HTMLElement>('.bpanel-body')
+    if (!view || !body || !open) return
+    const put = () => view.style.setProperty('--bpanel-h', `${Math.round(body.getBoundingClientRect().height + 10)}px`)
+    put()
+    view.setAttribute('data-bpanel-open', '')
+    const ro = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(put)
+    ro?.observe(body)
+    return () => {
+      ro?.disconnect()
+      view.removeAttribute('data-bpanel-open')
+      view.style.removeProperty('--bpanel-h')
+    }
+  }, [open])
+
   const setPinned = (on: boolean) => set((s) => ({ paneSizes: { ...s.paneSizes, [pinKey]: on ? 1 : 0 } }))
   const hold = { drag: (a: boolean) => ctl.current?.drag(a), menu: (o: boolean) => ctl.current?.menuOpen(o) }
 
   return (
     <div ref={root} className="bpanel" data-open={open || undefined} data-pinned={pinned || undefined}>
       <MenuAnchor>
-        <button
-          ref={tab}
-          type="button"
-          className="bpanel-tab sx-overlay"
-          aria-expanded={open}
-          aria-controls={id}
-          aria-label={open ? `Close ${label}` : `Open ${label}`}
-          data-tip-title={label}
-          data-tip-body={pinned ? 'Kept open. Right-click to let it open and close by itself.' : 'Opens when the pointer reaches the bottom of the view. Right-click to keep it open.'}
-          onClick={() => ctl.current?.toggle()}
+        <EdgeTab
+          side="bottom"
+          open={open}
+          label={label}
+          panel={panel}
+          controls={id}
+          {...(chord ? { shortcut: chord } : {})}
+          tip={pinned ? 'Kept open. Right-click to let it open and close by itself.' : 'Opens when the pointer reaches the bottom of the view. Right-click to keep it open.'}
+          onToggle={() => ctl.current?.toggle()}
           onContextMenu={(e) => {
             e.preventDefault()
             setMenu(true)
             ctl.current?.menuOpen(true)
           }}
-        >
-          <Icon name={open ? 'chevron-down' : 'chevron-up'} size={14} />
-        </button>
+        />
         <Menu
           open={menu}
           onClose={() => {
@@ -104,7 +125,7 @@ export function BottomPanel({ label, memory, attention = 0, children }: { label:
           if (e.key !== 'Escape' || pinned) return
           e.stopPropagation()
           ctl.current?.close()
-          tab.current?.focus()
+          focusTab()
         }}
       >
         <PanelContext.Provider value={hold}>{children}</PanelContext.Provider>
