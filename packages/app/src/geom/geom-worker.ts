@@ -67,6 +67,17 @@ function call(x: GeomExports, op: string, request: unknown): unknown {
   throw new Error(message)
 }
 
+/** A file sent as its bytes (`data.bytes`) goes to the engine as base64, encoded here rather than on the page. */
+function bytesAsBase64(request: unknown): unknown {
+  if (request === null || typeof request !== 'object') return request
+  const data = (request as { data?: { bytes?: unknown } }).data
+  const bytes = data?.bytes
+  if (!(bytes instanceof Uint8Array)) return request
+  let text = ''
+  for (let i = 0; i < bytes.length; i += 0x8000) text += String.fromCharCode(...bytes.subarray(i, i + 0x8000))
+  return { ...request, data: { base64: btoa(text) } }
+}
+
 const canceled = new Set<number>()
 
 self.onmessage = async (e: MessageEvent<{ id: number; op: string; request: unknown } | { cancel: number }>) => {
@@ -93,7 +104,7 @@ self.onmessage = async (e: MessageEvent<{ id: number; op: string; request: unkno
       self.postMessage({ id, result: await engine.full() })
       return
     }
-    self.postMessage({ id, result: await engine.run(op, request) })
+    self.postMessage({ id, result: await engine.run(op, bytesAsBase64(request)) })
   } catch (err) {
     canceled.delete(id)
     self.postMessage({ id, error: err instanceof Error ? err.message : String(err) })
