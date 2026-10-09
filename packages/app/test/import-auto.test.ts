@@ -64,6 +64,20 @@ describe('automatic import', () => {
     expect(get().toast?.action).toBeUndefined()
   })
 
+  it('keeps the bodies split from one model where the model has them, centered together, and moves nothing after', async () => {
+    set({ bed: { widthMm: 256, depthMm: 256, heightMm: 256 } as never })
+    await addAutoImport(host, 'two.amf', new ArrayBuffer(4), async () => result({ bodies: 2 }))
+    const [a, b] = get().plate.map((e) => bounds(e.parts, e.transform)!)
+    // the second body sits 5 mm along X from the first, as in the file
+    expect(b!.min[0] - a!.min[0]).toBeCloseTo(5)
+    expect(b!.min[1]).toBeCloseTo(a!.min[1])
+    // the two together are centered on the bed and on it
+    expect((a!.min[0] + b!.max[0]) / 2).toBeCloseTo(128)
+    expect(Math.min(a!.min[2], b!.min[2])).toBeCloseTo(0)
+    // one placement for both: an arrange would have moved them apart
+    expect(get().plate[0]!.transform).toEqual(get().plate[1]!.transform)
+  })
+
   it('refuses a file with nothing in it and a name it does not route', async () => {
     await expect(addAutoImport(host, 'x.obj', new ArrayBuffer(1), async () => ({ ...result(), objects: [] }))).rejects.toThrow(/no geometry/)
     await expect(addAutoImport(host, 'x.txt', new ArrayBuffer(1))).rejects.toThrow(/not an STL/)
