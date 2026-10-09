@@ -1,0 +1,7 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+/* Copyright (C) 2026 The SlicerX contributors */
+/* A slice in progress in the Estimate block: a track of the big button's height takes its place, so nothing above or
+   below moves when a slice starts or ends. The bar runs along its bottom; the row above it is muninn's (ravens/). */
+.slice-track { height: var(--h-lg); display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: var(--s-2); }
+.slice-track .rv-ride { position: relative; align-self: stretch; display: flex; flex-direction: column; justify-content: flex-end; padding-bottom: 8px; }
+.slice-track > .sx-btn { align-self: center; }
