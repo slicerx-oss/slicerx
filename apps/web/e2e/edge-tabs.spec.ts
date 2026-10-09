@@ -11,13 +11,17 @@ const viewWidth = (page: Page) => page.locator('.vp').evaluate((el) => Math.roun
 const canvasWidth = (page: Page) => page.locator('.vp canvas').first().evaluate((el) => Math.round(el.getBoundingClientRect().width))
 const target = (page: Page) => page.evaluate(() => (window as unknown as { __vp: { getCamera(): { target: number[] } } }).__vp.getCamera().target)
 
+/** No pane is sliding: the slow tail of a slide can read the same width twice in a row. */
+const panesStill = (page: Page) =>
+  page.evaluate(() => !document.getAnimations().some((a) => a instanceof CSSTransition && a.playState === 'running' && a.effect instanceof KeyframeEffect && a.effect.target instanceof Element && a.effect.target.matches('.pane, .vp')))
+
 /** Waits for the view to reach a width (the pane's slide is over), then for the canvas to fill it. */
 async function viewAt(page: Page, ok: (w: number) => boolean): Promise<number> {
   let last = -1
   await expect
     .poll(async () => {
       const w = await viewWidth(page)
-      const done = ok(w) && w === last
+      const done = ok(w) && w === last && (await panesStill(page))
       last = w
       return done
     }, { intervals: [100] })
