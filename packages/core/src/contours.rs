@@ -6,10 +6,11 @@
 //! segment runs from the point on the triangle's falling edge to the point on
 //! its rising edge, which leaves the solid on the left, so outer loops come
 //! out counterclockwise and holes clockwise. Segments join through the id of
-//! the mesh edge they share, never through float comparison.
+//! the mesh edge they share, never through float comparison. A vertex on the
+//! plane counts as above it (`layers::on_or_above`, as Orca's slicer has it).
 
 use crate::geom::{Point, Polygon};
-use crate::layers::LayerPlan;
+use crate::layers::{LayerPlan, on_or_above};
 
 /// One part, welded and moved to plate coordinates.
 #[derive(Debug, Clone, Default)]
@@ -31,8 +32,8 @@ impl PreparedPart {
             let z = t.map(|i| verts.get(i as usize).map_or(0.0, |v| v[2]));
             let lo = z[0].min(z[1]).min(z[2]);
             let hi = z[0].max(z[1]).max(z[2]);
-            // A triangle crosses plane p when lo <= p < hi.
-            (plan.first_at_or_above(lo), plan.first_at_or_above(hi))
+            let cut = plan.cutting(lo, hi);
+            (cut.start, cut.end)
         });
         let mut counts = vec![0u32; n + 1];
         for &(a, b) in &spans {
@@ -105,7 +106,7 @@ impl PreparedPart {
             ) else {
                 continue;
             };
-            let (a, b, c) = (a[2] > z, b[2] > z, c[2] > z);
+            let (a, b, c) = (on_or_above(a[2], z), on_or_above(b[2], z), on_or_above(c[2], z));
             let mut down = None;
             let mut up = None;
             for (ea, eb, ia, ib) in [(a, b, i0, i1), (b, c, i1, i2), (c, a, i2, i0)] {
@@ -134,7 +135,12 @@ impl PreparedPart {
             return Point::default();
         };
         let dz = q[2] - p[2];
-        let t = if dz == 0.0 { 0.0 } else { (z - p[2]) / dz };
+        // A vertex counted onto the plane may sit a hair off it.
+        let t = if dz == 0.0 {
+            0.0
+        } else {
+            ((z - p[2]) / dz).clamp(0.0, 1.0)
+        };
         Point::from_mm(p[0] + t * (q[0] - p[0]), p[1] + t * (q[1] - p[1]))
     }
 }
