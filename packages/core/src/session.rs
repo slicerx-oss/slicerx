@@ -124,6 +124,8 @@ impl std::fmt::Debug for FirstInfoMemo {
 pub struct SliceSession {
     /// Per-layer results that the layers around one layer share (`shells::Cache`).
     cache: crate::shells::Cache,
+    /// The outlines of painted parts (`paint::Cache`).
+    paint: crate::paint::Cache,
     /// `first_layer_info` by settings fingerprint: every layer range asks for it.
     first_info: FirstInfoMemo,
     parts: Vec<PreparedPart>,
@@ -569,7 +571,7 @@ fn contact_loops(contact: &Shapes, hang: &Shapes, w: f64) -> (Vec<Vec<crate::geo
 }
 
 /// Stage 2 result for one layer.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 struct LayerRegions {
     /// `(slot, shapes)` in priority order, disjoint.
     regions: Vec<(u8, Shapes)>,
@@ -632,6 +634,28 @@ fn slice_shapes(r: &LayerRegions) -> Shapes {
 }
 
 impl LayerRegions {
+    /// Drops the specks and pinholes from the regions and the outlines beside them, and keeps the outline
+    /// without the gaps between regions. The layers around read the outline: a pinhole in it would come back
+    /// as a hole as wide as the walls in every inset of it.
+    fn drop_specks(&mut self) {
+        let mut cfg = std::mem::take(&mut self.region_cfg).into_iter();
+        let mut kept: Vec<(u8, Shapes)> = Vec::with_capacity(self.regions.len());
+        for (slot, s) in std::mem::take(&mut self.regions) {
+            let c = cfg.next().unwrap_or(0);
+            let s = perimeters::union_min_area(&[&s], crate::paint::SPECK);
+            if !s.is_empty() {
+                kept.push((slot, s));
+                self.region_cfg.push(c);
+            }
+        }
+        self.regions = kept;
+        for s in [&mut self.raw, &mut self.lslices].into_iter().flatten() {
+            *s = perimeters::union_min_area(&[s], crate::paint::SPECK);
+        }
+        let all: Vec<&Shapes> = self.regions.iter().map(|(_, s)| s).collect();
+        self.union = std::sync::OnceLock::from(perimeters::union_min_area(&all, crate::paint::SPECK));
+    }
+
     fn slots(&self) -> impl DoubleEndedIterator<Item = u8> + '_ {
         self.regions
             .iter()
@@ -744,6 +768,19 @@ struct Families {
 }
 
 impl Families {
+    /// What the regions of a layer depend on: the contour resolution, slicing mode and closing radius, the shell
+    /// layers and the painted band. The scanline spacings are not read there.
+    fn cut(&self) -> (i64, perimeters::Slicing, i32, usize, usize, (i32, i32)) {
+        (
+            self.resolution,
+            self.slicing,
+            self.closing,
+            self.top_shell,
+            self.bottom_shell,
+            self.paint_band,
+        )
+    }
+
     fn new(cfg: &PrintConfig) -> Self {
         let w = cfg.spacing_for(cfg.sparse_infill_width());
         let density = cfg.sparse_infill_density / 100.0;
@@ -1408,6 +1445,7 @@ impl SliceSession {
             .collect();
         let mut session = Self {
             cache: crate::shells::Cache::default(),
+            paint: crate::paint::Cache::default(),
             first_info: FirstInfoMemo::default(),
             parts,
             slots,
@@ -5292,8 +5330,12 @@ impl SliceSession {
         all
     }
 
-    /// The regions [`Self::whole_regions`] cut with `fam`, one slot per layer, given up by the session.
+    /// The regions [`Self::whole_regions`] cut with `fam`, one slot per layer, given up by the session. A plate
+    /// with painted parts keeps them instead, and every layer range reads them (`kept_regions`).
     fn take_whole(&self, fam: Families) -> Vec<Option<LayerRegions>> {
+        if self.parts.iter().any(|p| !p.paint.is_empty()) {
+            return Vec::new();
+        }
         let kept = self.whole.0.lock().ok().and_then(|mut g| g.take());
         match kept {
             Some((f, all)) if f == fam => match std::sync::Arc::try_unwrap(all) {
@@ -5304,8 +5346,26 @@ impl SliceSession {
         }
     }
 
+    /// A copy of layer `layer`'s regions from [`Self::whole_regions`] when a part is painted and they were cut
+    /// the way `fam` cuts: cutting a painted layer is the dearest part of a slice, and every range of layers and
+    /// the first layer's plans read the layers again.
+    fn kept_regions(&self, layer: u32, fam: Families) -> Option<LayerRegions> {
+        if self.parts.iter().all(|p| p.paint.is_empty()) {
+            return None;
+        }
+        let all = {
+            let g = self.whole.0.lock().ok()?;
+            let (f, all) = g.as_ref()?;
+            (f.cut() == fam.cut()).then(|| std::sync::Arc::clone(all))?
+        };
+        all.get(layer as usize).cloned()
+    }
+
     /// The slices of the layer before beam interlocking (`base`), or the regions the layer prints.
     fn layer_regions_with(&self, layer: u32, fam: Families, micros: &Micros, base: bool) -> LayerRegions {
+        if !base && let Some(r) = self.kept_regions(layer, fam) {
+            return r;
+        }
         let t = Timer::start();
         let z = self.plan.slice_z.get(layer as usize).copied().unwrap_or(0.0);
         let mut open_chains = 0;
@@ -5313,23 +5373,22 @@ impl SliceSession {
         let mut loops: Vec<Polygon> = Vec::new();
         // Painted parts split into color regions; their pieces join the plain parts of the same slot.
         let mut painted: Vec<(u8, Shapes)> = Vec::new();
-        for p in self.parts.iter().filter(|p| !p.paint.is_empty()) {
+        // A painted part shows more than its own filament on this layer: the regions drop the specks that the
+        // booleans leave where colors meet (`LayerRegions::drop_specks`).
+        let mut colors = false;
+        let cut: crate::paint::CutKey = (fam.resolution, fam.slicing, fam.closing);
+        for (k, p) in self.parts.iter().enumerate().filter(|(_, p)| !p.paint.is_empty()) {
             loops.clear();
             open_chains += p.slice(layer as usize, z, &mut loops);
             if loops.is_empty() {
                 continue;
             }
-            let shapes = perimeters::shapes_from_loops_mode(&loops, fam.resolution, fam.slicing, fam.closing);
+            let shapes =
+                &perimeters::shapes_from_loops_mode(&loops, fam.resolution, fam.slicing, fam.closing);
             let contour_at = |l: i64| -> Shapes {
-                let Ok(idx) = usize::try_from(l) else {
-                    return Vec::new();
-                };
-                let Some(&zl) = self.plan.slice_z.get(idx) else {
-                    return Vec::new();
-                };
-                let mut lp: Vec<Polygon> = Vec::new();
-                p.slice(idx, zl, &mut lp);
-                perimeters::shapes_from_loops_mode(&lp, fam.resolution, fam.slicing, fam.closing)
+                u32::try_from(l)
+                    .map(|l| (*self.painted_outline(k, l, cut)).clone())
+                    .unwrap_or_default()
             };
             let l = i64::from(layer);
             let step = |j: usize| i64::try_from(j).unwrap_or(i64::MAX / 2);
@@ -5337,7 +5396,7 @@ impl SliceSession {
             let below: Vec<Shapes> = (1..=fam.bottom_shell).map(|j| contour_at(l - step(j))).collect();
             let ctx = crate::paint::LayerPaint {
                 default_slot: p.slot,
-                shapes: &shapes,
+                shapes,
                 layer,
                 z,
                 plan: &self.plan,
@@ -5346,6 +5405,13 @@ impl SliceSession {
                 facets: &p.paint,
             };
             let mut split = ctx.split();
+            if split.iter().any(|(slot, _)| *slot != p.slot) {
+                for (_, sh) in &mut split {
+                    *sh = perimeters::union_min_area(&[sh], crate::paint::SPECK);
+                }
+                split.retain(|(_, sh)| !sh.is_empty());
+            }
+            colors |= split.iter().any(|(slot, _)| *slot != p.slot);
             // `mmu_segmented_region_max_width` (Orca's `cut_segmented_layers`): painted colors reach only this far
             // in from the outline, the rest is the part's own filament; with an interlocking depth, even layers
             // use that depth instead, so the colors interlock.
@@ -5356,7 +5422,7 @@ impl SliceSession {
                 width
             };
             if band > 0 && split.iter().any(|(slot, _)| *slot != p.slot) {
-                let core = perimeters::offset(&shapes, -band);
+                let core = perimeters::offset(shapes, -band);
                 let mut moved: Vec<Shapes> = Vec::new();
                 for (_, sh) in split.iter_mut().filter(|(slot, _)| *slot != p.slot) {
                     moved.push(perimeters::intersection(sh, &core));
@@ -5385,13 +5451,23 @@ impl SliceSession {
             } else {
                 perimeters::shapes_from_loops_mode(&loops, fam.resolution, fam.slicing, fam.closing)
             };
-            for (s, extra) in painted.iter().filter(|(s, _)| *s == slot) {
-                let _ = s;
-                shapes = if shapes.is_empty() {
-                    extra.clone()
-                } else {
-                    perimeters::union_all(&[&shapes, extra])
-                };
+            let extra: Vec<&Shapes> = painted
+                .iter()
+                .filter(|(s, _)| *s == slot)
+                .map(|(_, sh)| sh)
+                .collect();
+            if colors && !extra.is_empty() {
+                let mut all = vec![&shapes];
+                all.extend(extra);
+                shapes = perimeters::union_min_area(&all, crate::paint::SPECK);
+            } else {
+                for e in extra {
+                    shapes = if shapes.is_empty() {
+                        e.clone()
+                    } else {
+                        perimeters::union_all(&[&shapes, e])
+                    };
+                }
             }
             if !shapes.is_empty() {
                 regions.push((slot, shapes));
@@ -5428,7 +5504,11 @@ impl SliceSession {
                 perimeters::union_all(&later)
             };
             if let Some((_, s)) = regions.get(i) {
-                let clipped = perimeters::difference(s, &clip);
+                let clipped = if colors {
+                    perimeters::difference_min_area(s, &clip, crate::paint::SPECK)
+                } else {
+                    perimeters::difference(s, &clip)
+                };
                 if let Some(r) = regions.get_mut(i) {
                     r.1 = clipped;
                 }
@@ -5497,7 +5577,7 @@ impl SliceSession {
             }
         }
         if base {
-            return LayerRegions {
+            let mut out = LayerRegions {
                 region_cfg: vec![0; regions.len()],
                 regions,
                 open_chains,
@@ -5505,6 +5585,10 @@ impl SliceSession {
                 lslices,
                 union: std::sync::OnceLock::new(),
             };
+            if colors {
+                out.drop_specks();
+            }
+            return out;
         }
         // Beam interlocking between filaments reshapes the regions of the whole object.
         if let Some(il) = self.interlocked(fam, fam, micros)
@@ -5543,15 +5627,31 @@ impl SliceSession {
             regions = split;
             region_cfg = split_cfg;
         }
-        Micros::add(&micros.contours, &t);
-        LayerRegions {
+        let mut out = LayerRegions {
             regions,
             region_cfg,
             open_chains,
             raw,
             lslices,
             union: std::sync::OnceLock::new(),
+        };
+        if colors {
+            out.drop_specks();
         }
+        Micros::add(&micros.contours, &t);
+        out
+    }
+
+    /// The outline of painted part `k` on `layer`, cut once (`paint::Cache::outline`).
+    fn painted_outline(&self, k: usize, layer: u32, cut: crate::paint::CutKey) -> std::sync::Arc<Shapes> {
+        self.paint.outline(k, layer, cut, || {
+            let (Some(p), Some(&z)) = (self.parts.get(k), self.plan.slice_z.get(layer as usize)) else {
+                return Vec::new();
+            };
+            let mut loops: Vec<Polygon> = Vec::new();
+            p.slice(layer as usize, z, &mut loops);
+            perimeters::shapes_from_loops_mode(&loops, cut.0, cut.1, cut.2)
+        })
     }
 
     /// What depends on a region's own settings: its line width, shell layers and infill pattern.
@@ -9072,5 +9172,105 @@ mod below_bed_tests {
         // bambu writes this, and as an f32 it is -0.00100000005
         assert!(!below_bed(f64::from(-0.001f32)));
         assert!(below_bed(f64::from(-0.01f32)));
+    }
+}
+
+#[cfg(test)]
+mod paint_tests {
+    #![allow(
+        clippy::cast_possible_truncation,
+        clippy::indexing_slicing,
+        reason = "a small procedural model"
+    )]
+    use super::*;
+    use crate::mesh::{Mesh, MeshPart};
+    use crate::paint::PaintFacet;
+
+    /// A 10 mm slab of filament 1 with a wavy disc of filament 2 sunk into its bottom, the disc's side and top
+    /// painted with filament 1. Where the paint meets the disc's outline, each corner the color's tips are
+    /// rounded off at leaves a speck of filament 2.
+    fn painted_disc() -> Mesh {
+        const N: u32 = 48;
+        let mut positions: Vec<[f32; 3]> = Vec::new();
+        for z in [0.0, 0.8] {
+            for k in 0..N {
+                let a = std::f64::consts::TAU * f64::from(k) / f64::from(N);
+                let r = 3.0 + 0.5 * (6.0 * a).m_sin();
+                let (s, c) = a.m_sin_cos();
+                positions.push([(5.0 + r * c) as f32, (5.0 + r * s) as f32, z]);
+            }
+        }
+        positions.extend([[5.0, 5.0, 0.0], [5.0, 5.0, 0.8]]);
+        let (b, t) = (|k: u32| k % N, |k: u32| N + k % N);
+        let mut triangles = Vec::new();
+        let mut painted = Vec::new();
+        for k in 0..N {
+            triangles.push([2 * N, b(k + 1), b(k)]);
+            for tri in [
+                [2 * N + 1, t(k), t(k + 1)],
+                [b(k), b(k + 1), t(k + 1)],
+                [b(k), t(k + 1), t(k)],
+            ] {
+                triangles.push(tri);
+                painted.push(PaintFacet {
+                    v: tri.map(|i| positions[i as usize]),
+                    state: 1,
+                });
+            }
+        }
+        let mut slab = Vec::new();
+        for z in [0.0, 1.2] {
+            for (x, y) in [(0.0, 0.0), (10.0, 0.0), (10.0, 10.0), (0.0, 10.0)] {
+                slab.push([x, y, z]);
+            }
+        }
+        let mut slab_tris = vec![[0, 2, 1], [0, 3, 2], [4, 5, 6], [4, 6, 7]];
+        for k in 0..4u32 {
+            let n = (k + 1) % 4;
+            slab_tris.push([k, n, 4 + n]);
+            slab_tris.push([k, 4 + n, 4 + k]);
+        }
+        Mesh {
+            name: "disc".into(),
+            parts: vec![
+                MeshPart {
+                    name: "slab".into(),
+                    slot: 1,
+                    positions: slab,
+                    triangles: slab_tris,
+                    ..MeshPart::default()
+                },
+                MeshPart {
+                    name: "disc".into(),
+                    slot: 2,
+                    positions,
+                    triangles,
+                    paint: painted,
+                    ..MeshPart::default()
+                },
+            ],
+        }
+    }
+
+    #[test]
+    fn painted_layers_have_no_specks_or_pinholes() {
+        let cfg = PrintConfig::default();
+        let plate = Plate::single_on(painted_disc(), cfg.bed_rect(), cfg.printable_height);
+        let session = SliceSession::new(&plate, &cfg).unwrap();
+        let fam = Families::new(&cfg);
+        // 0.01 mm2 in square units.
+        let speck = |r: &Vec<IntPoint<i32>>| crate::geom::area2_int(r).unsigned_abs() < 2_000_000;
+        let mut painted = 0;
+        for l in 0..session.plan.count() {
+            let r = session.layer_regions(l, fam, &Micros::default());
+            painted += usize::from(r.regions.len() > 1);
+            for (slot, shapes) in &r.regions {
+                let n = shapes.iter().flatten().filter(|r| speck(r)).count();
+                assert_eq!(n, 0, "layer {l}: {n} specks in the region of filament {slot}");
+            }
+            let n = slice_shapes(&r).iter().flatten().filter(|r| speck(r)).count();
+            assert_eq!(n, 0, "layer {l}: {n} specks and pinholes in the outline");
+        }
+        assert!(painted >= 3, "{painted} layers with two filaments");
     }
 }

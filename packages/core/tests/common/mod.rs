@@ -92,3 +92,113 @@ pub fn run_request(
     r.config = with_base(&req.config);
     api::run_request(&r, load)
 }
+
+/// A 12 x 12 x 1.2 mm tile painted the way image keychains are: the bottom face on a 0.6 mm grid in rings of
+/// filament 2 about a millimeter wide, with the cells along each ring's edge split and partly left plain
+/// (so half-size triangles meet whole ones), half of the right side in filament 2 too, a band of filament 3
+/// across the top, and a plain bar of filament 2 sunk into the bottom. Every layer has several colors.
+#[allow(
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    reason = "a small procedural grid"
+)]
+pub fn painted_tile() -> Mesh {
+    const N: u32 = 20;
+    const CELL: f32 = 0.6;
+    const H: f32 = 1.2;
+    let w = CELL * N as f32;
+    let at = |i: u32, j: u32, top: bool| (u32::from(top) * (N + 1) + j) * (N + 1) + i;
+    let mut positions = Vec::new();
+    for z in [0.0, H] {
+        for j in 0..=N {
+            for i in 0..=N {
+                positions.push([i as f32 * CELL, j as f32 * CELL, z]);
+            }
+        }
+    }
+    let mut triangles: Vec<[u32; 3]> = Vec::new();
+    for j in 0..N {
+        for i in 0..N {
+            let b = |di: u32, dj: u32| at(i + di, j + dj, false);
+            let t = |di: u32, dj: u32| at(i + di, j + dj, true);
+            triangles.push([b(0, 0), b(1, 1), b(1, 0)]);
+            triangles.push([b(0, 0), b(0, 1), b(1, 1)]);
+            triangles.push([t(0, 0), t(1, 0), t(1, 1)]);
+            triangles.push([t(0, 0), t(1, 1), t(0, 1)]);
+        }
+    }
+    for k in 0..N {
+        triangles.push([at(k, 0, false), at(k + 1, 0, false), at(k + 1, 0, true)]);
+        triangles.push([at(k, 0, false), at(k + 1, 0, true), at(k, 0, true)]);
+        triangles.push([at(k, N, false), at(k + 1, N, true), at(k + 1, N, false)]);
+        triangles.push([at(k, N, false), at(k, N, true), at(k + 1, N, true)]);
+        triangles.push([at(0, k, false), at(0, k + 1, true), at(0, k + 1, false)]);
+        triangles.push([at(0, k, false), at(0, k, true), at(0, k + 1, true)]);
+        triangles.push([at(N, k, false), at(N, k + 1, false), at(N, k + 1, true)]);
+        triangles.push([at(N, k, false), at(N, k + 1, true), at(N, k, true)]);
+    }
+    let corners = |t: &[u32; 3]| t.map(|v| positions[v as usize]);
+    let mut paint = Vec::new();
+    for t in &triangles {
+        let v = corners(t);
+        let c = [
+            (v[0][0] + v[1][0] + v[2][0]) / 3.0,
+            (v[0][1] + v[1][1] + v[2][1]) / 3.0,
+            (v[0][2] + v[1][2] + v[2][2]) / 3.0,
+        ];
+        let flat = v.iter().all(|p| (p[2] - v[0][2]).abs() < 1e-6);
+        let (dx, dy) = (c[0] - w / 2.0, c[1] - w / 2.0);
+        let ring = (dx * dx + dy * dy).sqrt() / 1.1;
+        let code = if flat && c[2] < 0.1 {
+            // Bottom: even rings, the cells near a ring's edge split in four with one quarter left plain.
+            if (ring / 2.0).fract() < 0.5 && ring < 5.0 {
+                if (ring - ring.round()).abs() < 0.25 {
+                    "88083"
+                } else {
+                    "8"
+                }
+            } else {
+                "0"
+            }
+        } else if flat {
+            if (c[1] - w / 2.0).abs() < 1.5 { "0C" } else { "0" }
+        } else if c[0] > w - 0.01 && c[1] < w / 2.0 {
+            "8"
+        } else {
+            "0"
+        };
+        paint.extend(sx_core::paint::decode(code, v));
+    }
+    let mut bar = Vec::new();
+    for z in [0.0, H / 2.0] {
+        for (x, y) in [(3.0, 5.0), (9.0, 5.0), (9.0, 7.0), (3.0, 7.0)] {
+            bar.push([x, y, z]);
+        }
+    }
+    let mut bar_tris = vec![[0, 2, 1], [0, 3, 2], [4, 5, 6], [4, 6, 7]];
+    for k in 0..4u32 {
+        let n = (k + 1) % 4;
+        bar_tris.push([k, n, 4 + n]);
+        bar_tris.push([k, 4 + n, 4 + k]);
+    }
+    Mesh {
+        name: "tile".into(),
+        parts: vec![
+            api::MeshPart {
+                name: "tile".into(),
+                slot: 1,
+                positions,
+                triangles,
+                paint,
+                ..api::MeshPart::default()
+            },
+            api::MeshPart {
+                name: "bar".into(),
+                slot: 2,
+                positions: bar,
+                triangles: bar_tris,
+                ..api::MeshPart::default()
+            },
+        ],
+    }
+}

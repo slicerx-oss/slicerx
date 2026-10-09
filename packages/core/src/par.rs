@@ -128,26 +128,51 @@ impl<K, V> Default for Memo<K, V> {
     }
 }
 
+/// A job's claim on a [`Memo`] entry it is working out. Dropped unfilled (the work panicked), it takes the claim
+/// back, so jobs waiting for the entry work it out themselves.
+struct Claim<'a, K: std::hash::Hash + Eq, V> {
+    memo: &'a Memo<K, V>,
+    key: Option<K>,
+}
+
+impl<K: std::hash::Hash + Eq, V: Clone> Claim<'_, K, V> {
+    /// Stores the worked out entry and wakes the jobs waiting for it.
+    #[inline(never)]
+    fn fill(mut self, v: V) -> V {
+        if let Some(k) = self.key.take() {
+            self.memo.lock().insert(k, Some(v.clone()));
+            self.memo.ready.notify_all();
+        }
+        v
+    }
+}
+
+impl<K: std::hash::Hash + Eq, V> Drop for Claim<'_, K, V> {
+    fn drop(&mut self) {
+        if let Some(k) = self.key.take() {
+            self.memo.lock().remove(&k);
+            self.memo.ready.notify_all();
+        }
+    }
+}
+
 impl<K: std::hash::Hash + Eq + Clone, V: Clone> Memo<K, V> {
     /// The entry for `key`, from `work` the first time it is asked for.
     pub(crate) fn get_or(&self, key: K, work: impl FnOnce() -> V) -> V {
-        /// Takes the claim back when the work panics, so jobs waiting for it work the entry out themselves.
-        struct Claim<'a, K: std::hash::Hash + Eq, V> {
-            memo: &'a Memo<K, V>,
-            key: Option<K>,
+        match self.claim(key) {
+            Ok(v) => v,
+            Err(claim) => claim.fill(depth::serially(work)),
         }
-        impl<K: std::hash::Hash + Eq, V> Drop for Claim<'_, K, V> {
-            fn drop(&mut self) {
-                if let Some(k) = self.key.take() {
-                    self.memo.lock().remove(&k);
-                    self.memo.ready.notify_all();
-                }
-            }
-        }
+    }
+
+    /// The entry for `key` once it is there, or the claim to work it out. Kept out of `get_or`, which is copied
+    /// for every caller's work, so the browser module carries one copy of this per map.
+    #[inline(never)]
+    fn claim(&self, key: K) -> Result<V, Claim<'_, K, V>> {
         let mut g = self.lock();
         loop {
             match g.get(&key) {
-                Some(Some(v)) => return v.clone(),
+                Some(Some(v)) => return Ok(v.clone()),
                 Some(None) => {
                     g = self
                         .ready
@@ -159,16 +184,10 @@ impl<K: std::hash::Hash + Eq + Clone, V: Clone> Memo<K, V> {
         }
         g.insert(key.clone(), None);
         drop(g);
-        let mut claim = Claim {
+        Err(Claim {
             memo: self,
             key: Some(key),
-        };
-        let v = depth::serially(work);
-        if let Some(k) = claim.key.take() {
-            self.lock().insert(k, Some(v.clone()));
-            self.ready.notify_all();
-        }
-        v
+        })
     }
 }
 

@@ -113,7 +113,7 @@ pub(crate) fn shapes_from_loops(loops: &[Polygon]) -> Shapes {
 }
 
 /// How the loops of a cut become areas (`slicing_mode`; Orca `MeshSlicingParams::SlicingMode`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum Slicing {
     /// Loops keep their winding: counterclockwise ones fill, clockwise ones are holes (non-zero rule).
     Regular,
@@ -271,6 +271,20 @@ pub(crate) fn difference(a: &Shapes, b: &Shapes) -> Shapes {
         .overlay(OverlayRule::Difference, FillRule::NonZero)
 }
 
+/// [`difference`] without the islands and holes smaller than `min_area` square units (see [`union_min_area`]).
+pub(crate) fn difference_min_area(a: &Shapes, b: &Shapes, min_area: u64) -> Shapes {
+    if a.is_empty() || b.is_empty() {
+        return union_min_area(&[a], min_area);
+    }
+    let solver = solver_for(edge_count(&[a, b]));
+    let options = IntOverlayOptions {
+        min_output_area: min_area,
+        ..IntOverlayOptions::default()
+    };
+    Overlay::from_subj_and_clip_custom(a, b, options, solver)
+        .overlay(OverlayRule::Difference, FillRule::NonZero)
+}
+
 /// `a` minus a clip that lies apart from it: the same overlay as [`difference`] with no clip edges to split.
 #[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn difference_apart(a: &Shapes) -> Shapes {
@@ -406,6 +420,22 @@ pub(crate) fn union_all(sets: &[&Shapes]) -> Shapes {
         return all;
     }
     simplified_shapes(&all, FillRule::NonZero)
+}
+
+/// [`union_all`] without the islands and holes smaller than `min_area` square units. Booleans round their
+/// crossings to whole units, so regions cut from one outline meet again with specks and pinholes between
+/// them; this drops them.
+pub(crate) fn union_min_area(sets: &[&Shapes], min_area: u64) -> Shapes {
+    let all: Shapes = sets.iter().flat_map(|s| s.iter().cloned()).collect();
+    if all.is_empty() {
+        return all;
+    }
+    let capacity = all.iter().flatten().map(Vec::len).sum();
+    let options = IntOverlayOptions {
+        min_output_area: min_area,
+        ..IntOverlayOptions::default()
+    };
+    Overlay::new_custom(capacity, options, solver_for(capacity)).simplify_source(&all, FillRule::NonZero)
 }
 
 /// How `i_overlay` finds crossings. Its automatic choice sweeps over x below 4000 edges and moves to an
@@ -1453,6 +1483,40 @@ mod tests {
         let wide = ring(37_800.0, 6_000.0, 64);
         assert_eq!(offset(&wide, -2_250).first().map(Vec::len), Some(2));
         assert!(plain_offsets(&wide, &[1_000.0, 2_250.0], 1.0, |_, _| true));
+    }
+
+    fn rect(x0: i32, y0: i32, x1: i32, y1: i32) -> Vec<IntPoint<i32>> {
+        vec![
+            IntPoint::new(x0, y0),
+            IntPoint::new(x1, y0),
+            IntPoint::new(x1, y1),
+            IntPoint::new(x0, y1),
+        ]
+    }
+
+    #[test]
+    fn specks_and_pinholes_go_and_real_holes_stay() {
+        // A 10 mm square with a 2 mm hole and a 0.05 mm pinhole, and a 0.05 mm speck beside it.
+        let mut pinhole = rect(50_000, 50_000, 50_500, 50_500);
+        pinhole.reverse();
+        let mut hole = rect(20_000, 20_000, 40_000, 40_000);
+        hole.reverse();
+        let shapes: Shapes = vec![
+            vec![rect(0, 0, 100_000, 100_000), hole, pinhole],
+            vec![rect(120_000, 0, 120_500, 500)],
+        ];
+        let all = union_all(&[&shapes]);
+        assert_eq!((all.len(), all.iter().map(Vec::len).sum::<usize>()), (2, 4));
+        // 0.01 mm2: the square keeps its real hole only.
+        let clean = union_min_area(&[&shapes], 1_000_000);
+        assert_eq!((clean.len(), clean.first().map(Vec::len)), (1, Some(2)));
+        // Cut from a square, a sliver half a micron wide is a speck too.
+        let cut = difference_min_area(
+            &vec![vec![rect(0, 0, 100_000, 100_000)]],
+            &vec![vec![rect(-10, 5, 100_010, 100_000)]],
+            1_000_000,
+        );
+        assert!(cut.is_empty(), "{cut:?}");
     }
 
     #[test]

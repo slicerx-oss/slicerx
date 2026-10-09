@@ -69,11 +69,19 @@ impl Comp {
     /// compensation when this layer has one: Orca keeps it as the layer's `lslices`, which the layers next
     /// to it read (bridges and overhangs over the first layer are measured against the uncompensated foot).
     pub(crate) fn apply(&self, regions: &mut [(u8, Shapes)], layer: u32, painted: bool) -> Option<Shapes> {
+        let foot = self.foot > 0 && layer < self.foot_layers;
         let all: Vec<&Shapes> = regions.iter().map(|(_, s)| s).collect();
-        if all.is_empty() {
+        // Painted and above the foot: each region would be cut to the union of all of them, which it already
+        // lies in.
+        if all.is_empty() || (painted && !foot) {
             return None;
         }
-        let merged = perimeters::union_all(&all);
+        // Painted regions meet with specks and pinholes between them, which the foot's insets would widen.
+        let merged = if painted {
+            perimeters::union_min_area(&all, crate::paint::SPECK)
+        } else {
+            perimeters::union_all(&all)
+        };
         let (contour, hole) = if painted {
             (0, 0)
         } else {
@@ -87,7 +95,7 @@ impl Comp {
             comp = shrink_contour_holes(contour.min(0), hole.min(0), &comp);
         }
         let mut uncompensated = None;
-        if self.foot > 0 && layer < self.foot_layers {
+        if foot {
             uncompensated = Some(comp.clone());
             let layers = i64::from(self.foot_layers);
             let e = i64::from(self.foot) - i64::from(self.foot) / layers * i64::from(layer);
