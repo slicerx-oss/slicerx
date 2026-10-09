@@ -10,11 +10,12 @@ import type { MeshHandle, MeshPart } from '@slicerx/contracts'
 import { pickFace, pushFace, type FaceFrame, type FacePick, type MovedFace, type Pick as HitPick, type Polygon, type Vec3 } from '../geom/cad'
 import { fromGeom, toGeom } from '../geom/client'
 import { applyMat } from './cad-ops'
+import { commitMade } from './commit'
 import { followPush } from './dimensions'
 import { findTriangle, followed, followsOf, keyOfTriangle, onFlatFace, stepName, type StepParams } from './history/model'
 import { applyHistory, nowOf, runReplay } from './history/ops'
 import { reserveStepId, settle, withPushBefore, withStep } from './history/record'
-import { get, markStale, set, type PlateEntry } from '../state/store'
+import { get, markStale, type PlateEntry } from '../state/store'
 
 type Loader = { loadParts(name: string, parts: MeshPart[]): Promise<MeshHandle> }
 
@@ -190,8 +191,13 @@ export async function applyPush(host: Loader, face: PushFace, distanceMm: number
   const history = withStep(entry, face.partIndex, params)
   const next: PlateEntry = { ...rest, handle, parts, history }
   // Kept dimensions on the pushed face follow it, in the same undo step as the push.
-  const plate = await followPush(get().plate.map((p) => (p.id === entry.id ? next : p)), entry.id, r.moved)
-  set({ plate })
+  const before = get().plate.map((p) => (p.id === entry.id ? next : p))
+  const plate = await followPush(before, entry.id, r.moved)
+  // Onto the plate as it is now: the object may have moved, or others changed, while the engine worked. Only the
+  // dimensions that followed the push are taken from this job.
+  const others = new Map(plate.flatMap((p, i) => (p.id !== entry.id && p.dimensions && p.dimensions !== before[i]?.dimensions ? [[p.id, { dimensions: p.dimensions }] as const] : [])))
+  const dims = plate.find((p) => p.id === entry.id)?.dimensions
+  if (!commitMade(entry.id, () => ({ handle, parts, history, ...(dims ? { dimensions: dims } : {}) }), { others })) throw new Error('That object is gone. Pick a face again.')
   markStale()
   const volume = `${Math.abs(r.report.volumeChangeMm3 / 1000).toFixed(2)} cm³`
   const message = r.operation === 'join' ? `Added ${volume} to ${entry.name}.` : `Cut ${volume} out of ${entry.name}.`

@@ -10,6 +10,7 @@ import { evaluateDimensions, type Dimension, type FaceFrame, type MovedFace } fr
 import { geom, usesWorker } from '../../geom/client'
 import { quietly } from '../../plate/history'
 import { get, markStale, set, type AppState, type CadTool, type PlateEntry } from '../../state/store'
+import { colorsFor, commitMade } from '../commit'
 import { objectsFor } from '../dimensions'
 import { currentValues } from '../value-table'
 import { bindFor } from '../values'
@@ -108,14 +109,16 @@ export async function applyHistory(host: Loader, objectId: string, next: History
     if (ac.signal.aborted) throw abortError()
     const history: History = { ...next, steps: withStatus(next.steps, r.status, r.found) }
     const { instanceOf: _was, paint: _paint, ...rest } = current
-    const colors = parts.map((_, i) => current.colors[i] ?? current.colors[current.colors.length - 1] ?? brandAccent())
-    let entry: PlateEntry = { ...rest, handle, parts, colors, history }
-    entry = { ...entry, ...(await followDimensions(entry, pushMoves(current.history, history, r.moved, current.transform))) }
+    const entry: PlateEntry = { ...rest, handle, parts, colors: colorsFor(parts.length, current.colors, brandAccent()), history }
+    const dimensions = (await followDimensions(entry, pushMoves(current.history, history, r.moved, current.transform))).dimensions ?? entry.dimensions
     if (ac.signal.aborted) throw abortError()
     // A step open for editing closes: the rollback goes away outside undo, the result is the edit.
     const still = get().historyEdit
     if (still?.objectId === objectId) quietly(() => set((s) => ({ plate: s.plate.map((e) => (e.id === objectId ? still.original : e)), historyEdit: null })))
-    set((s) => ({ plate: s.plate.map((e) => (e.id === objectId ? entry : e)) }))
+    // The geometry, history and dimensions are this job's; placement, colors and the rest are as they are now, since
+    // the person may have moved or recolored the object while it ran. A deleted object takes nothing.
+    const made = commitMade(objectId, (latest) => ({ handle, parts, history, colors: colorsFor(parts.length, latest.colors, brandAccent()), ...(dimensions ? { dimensions } : {}) }))
+    if (!made && still?.objectId !== objectId) throw abortError()
     markStale()
     return { status: r.status, moved: r.moved }
   } finally {

@@ -5,7 +5,8 @@
 import type { MeshHandle, MeshPart } from '@slicerx/contracts'
 import { holeApply, shellBody, threadApply, type MeshItem } from '../geom/cad'
 import { fromGeom, toGeom, type GeomMesh } from '../geom/client'
-import { get, markStale, set } from '../state/store'
+import { get, markStale } from '../state/store'
+import { commitMade } from './commit'
 import { stepName, type StepParams } from './history/model'
 import { reserveStepId, withStep } from './history/record'
 
@@ -49,9 +50,8 @@ async function applyPartStep(
   const r = await run({ mesh: toGeom(part), transform: e.transform })
   const parts = e.parts.map((p, i) => (i === partIndex ? fromGeom(r.mesh, p.name, p.slot) : p))
   const handle = await host.loadParts(e.name, parts)
-  const { instanceOf: _was, paint: _paint, ...rest } = e
   const history = withStep(e, partIndex, params)
-  set({ plate: get().plate.map((p) => (p.id === e.id ? { ...rest, handle, parts, history } : p)) })
+  if (!commitMade(e.id, () => ({ handle, parts, history }))) throw new Error('That object is gone.')
   markStale()
   const label = params.op === 'shell' ? stepName({ params }) : params.label
   return { message: `${label} in ${e.name}.`, warn: !r.watertight }
