@@ -427,21 +427,17 @@ struct Reverse {
 /// thread of the bridge line width (or the nozzle) shrunk by the root of `bridge_flow`, else a flat bead of the
 /// bridge line width (or the inner wall's) at `bridge_flow`. The width in mm, and the flow against a flat bead
 /// of that width at layer height `h`.
-#[allow(clippy::cast_possible_truncation, reason = "a width and a flow ratio")]
-fn bead(cfg: &PrintConfig, h: f64) -> (f32, f32) {
+pub(crate) fn bead(cfg: &PrintConfig, h: f64) -> (f64, f64) {
     let line = crate::session::bridge_line_width(cfg);
     if cfg.thick_bridges {
         let d = line.unwrap_or(cfg.nozzle_diameter) * cfg.bridge_flow.sqrt();
-        let flat = crate::gcode::bead_area(d, h);
-        let flow = if flat > 0.0 {
-            std::f64::consts::PI * d * d / 4.0 / flat
-        } else {
-            1.0
-        };
-        (d as f32, flow as f32)
+        (
+            d,
+            std::f64::consts::PI * d * d / 4.0 / crate::gcode::bead_area(d, h),
+        )
     } else {
         let d = line.unwrap_or_else(|| cfg.inner_wall_width());
-        (d as f32, cfg.bridge_flow as f32)
+        (d, cfg.bridge_flow)
     }
 }
 
@@ -498,7 +494,11 @@ impl Overhang {
         Self {
             tiers,
             reverse,
-            bead: bead(cfg, h),
+            bead: {
+                let (w, flow) = bead(cfg, h);
+                #[allow(clippy::cast_possible_truncation, reason = "a width and a flow ratio")]
+                (w as f32, flow as f32)
+            },
         }
     }
 
