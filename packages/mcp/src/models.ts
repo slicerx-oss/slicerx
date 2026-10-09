@@ -134,8 +134,11 @@ function boxStl([x, y, z]: [number, number, number]): Buffer {
   return buf
 }
 
-/** Samples that ship as files: `sample:x-mark` is the reference X, the same model the docs and benchmarks use. */
-export const SAMPLE_FILES: Record<string, string> = { 'x-mark': 'x-mark.stl' }
+/**
+ * Samples that ship as files: `sample:x-mark` is the SlicerX X mark, the exact-faced showcase version
+ * (packages/core/bench/models/generate_showcase.py). The benchmarks keep their own x-mark.stl.
+ */
+export const SAMPLE_FILES: Record<string, string> = { 'x-mark': 'x-mark-showcase.stl' }
 
 function sampleModel(policy: PathPolicy, name: string): string {
   const shipped = SAMPLE_FILES[name]
