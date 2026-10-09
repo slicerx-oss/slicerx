@@ -12,7 +12,10 @@
 //! the raw binary form (`rawPath`, `TriMesh::from_raw`): JS reserves a buffer with
 //! `geom_file(len)`, writes the mesh into it, and names it `mem:N` (N counts the
 //! buffers reserved since the last call, from 0). The buffers are dropped after
-//! the call. There is no other file access, so `stlPath` requests fail. No unsafe code: the
+//! the call. A request with `meshOutput: "raw"` gets its meshes back the same
+//! way: each as an output buffer in the raw form, named in the answer by
+//! `rawOut: N`, read with `geom_out_files`, `geom_out_file_ptr(N)` and
+//! `geom_out_file_len(N)` until the next call. There is no other file access, so `stlPath` requests fail. No unsafe code: the
 //! only unsafe item is the `no_mangle` export attribute.
 
 use std::cell::RefCell;
@@ -24,6 +27,8 @@ struct State {
     error: Vec<u8>,
     /// Buffers for the next call's `mem:N` paths.
     files: Vec<Vec<u8>>,
+    /// The last call's output buffers (`rawOut: N`).
+    out_files: Vec<Vec<u8>>,
 }
 
 thread_local! {
@@ -72,6 +77,22 @@ pub extern "C" fn geom_out_len() -> u32 {
     with(|s| len(&s.out))
 }
 
+/// How many output buffers the last call wrote.
+#[unsafe(no_mangle)]
+pub extern "C" fn geom_out_files() -> u32 {
+    with(|s| u32::try_from(s.out_files.len()).unwrap_or(0))
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn geom_out_file_ptr(n: u32) -> u32 {
+    with(|s| s.out_files.get(n as usize).map_or(0, |f| ptr(f)))
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn geom_out_file_len(n: u32) -> u32 {
+    with(|s| s.out_files.get(n as usize).map_or(0, |f| len(f)))
+}
+
 #[unsafe(no_mangle)]
 pub extern "C" fn geom_error_ptr() -> u32 {
     with(|s| ptr(&s.error))
@@ -108,14 +129,17 @@ pub extern "C" fn geom_call() -> u32 {
         sx_geom::json::call_with_files(&op, &req, &load)
             .map_err(|e| sx_geom::json::error_value(&e).to_string())
     });
+    let out_files = sx_geom::json::take_out_files();
     with(|s| match result {
         Ok(out) => {
             s.out = out.into_bytes();
+            s.out_files = out_files;
             s.error.clear();
             0
         }
         Err(e) => {
             s.out.clear();
+            s.out_files.clear();
             s.error = e.into_bytes();
             1
         }
@@ -206,6 +230,30 @@ mod tests {
         let (code, err) = call("info", r#"{"mesh":{"rawPath":"mem:0"}}"#);
         assert_eq!(code, 1);
         assert!(err.contains("raw mesh"), "{err}");
+    }
+
+    #[test]
+    fn writes_meshes_to_output_buffers_when_asked() {
+        let box_ = r#"{"solids":[{"type":"box","min":[0,0,0],"max":[10,10,5]}]"#;
+        let (code, out) = call("build", &format!("{box_},\"meshOutput\":\"raw\"}}"));
+        assert_eq!(code, 0, "{out}");
+        assert!(out.contains("\"rawOut\":0"), "{out}");
+        assert!(!out.contains("\"positions\""), "{out}");
+        assert_eq!(geom_out_files(), 1);
+        let raw = with(|s| s.out_files[0].clone());
+        assert_eq!(geom_out_file_ptr(0), with(|s| ptr(&s.out_files[0])));
+        assert_eq!(geom_out_file_len(0) as usize, raw.len());
+        // The buffer is the mesh the flat answer gives.
+        let (_, flat) = call("build", &format!("{box_}}}"));
+        let flat: serde_json::Value = serde_json::from_str(&flat).unwrap();
+        let mesh = sx_geom::TriMesh::from_raw(&raw, "out").unwrap();
+        let positions: Vec<f64> = mesh.positions.iter().flatten().copied().collect();
+        let indices: Vec<u32> = mesh.triangles.iter().flatten().copied().collect();
+        assert_eq!(serde_json::json!(positions), flat["mesh"]["positions"]);
+        assert_eq!(serde_json::json!(indices), flat["mesh"]["indices"]);
+        // A flat call writes none.
+        assert_eq!(geom_out_files(), 0);
+        assert_eq!(geom_out_file_len(0), 0);
     }
 
     fn geom_call_missing_name() -> u32 {
