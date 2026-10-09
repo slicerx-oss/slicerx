@@ -2,9 +2,8 @@
 /* Copyright (C) 2026 The SlicerX contributors */
 /* Huginn and Muninn through the longer waits (waits.tsx). Under reduced motion they keep still. */
 
-/* Muninn riding the Estimate block's slicing bar at the fill's edge (.rv-ride sets --p). */
-.rv-ride { position: relative; }
-.rv-glide { position: absolute; bottom: 3px; left: calc(var(--p, 0) * 100%); transform: translateX(-60%); color: var(--accent); transition: left 120ms linear; filter: drop-shadow(0 1px 2px color-mix(in srgb, var(--ink-0) 60%, transparent)); }
+/* Muninn riding the Estimate block's slicing bar at the fill's edge, in the row above it (.rv-ride sets --p). */
+.rv-glide { position: absolute; bottom: 12px; left: calc(var(--p, 0) * 100%); transform: translateX(-60%); color: var(--accent); transition: left 120ms linear; filter: drop-shadow(0 1px 2px color-mix(in srgb, var(--ink-0) 60%, transparent)); }
 .rv-glide[data-done] { animation: rv-glide-off 420ms ease-in forwards; }
 @keyframes rv-glide-off { to { transform: translate(calc(-60% + 48px), -18px) rotate(-12deg); opacity: 0; } }
 

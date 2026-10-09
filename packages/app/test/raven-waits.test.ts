@@ -70,7 +70,7 @@ describe('ravens through the longer waits', () => {
     expect(has('raven-slice-glide')).toBe(false)
     await wait(RAVEN_WAIT_MS)
     expect(has('raven-slice-glide')).toBe(true)
-    expect(el.querySelector('.slicing .rv-ride [data-testid="raven-slice-glide"]')).not.toBeNull()
+    expect(el.querySelector('[data-testid="slice-track"] .rv-ride [data-testid="raven-slice-glide"]')).not.toBeNull()
     await act(async () => set({ slice: { status: 'idle' } }))
     expect(has('raven-slice-glide')).toBe(false)
   })
