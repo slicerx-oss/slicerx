@@ -13,10 +13,12 @@
 .mc-chips { display: flex; align-items: center; gap: 6px; flex: none; }
 .mc-status { flex: none; font-size: var(--fs-xs); }
 
-/* A narrow card keeps the status as its dot (the label is in its tooltip and read out), so the name keeps its room. */
+/* A narrow card (the default sidebar) has no room for the name beside the chips: the name gets its own line and the
+   chips and the status sit under it, as on a phone. */
 @container (max-width: 380px) {
-  .mc-status { gap: 0; font-size: 0; padding: 4px; }
-  .mc-name .mc-caret { display: none; }
+  .machine-card .mc-row { flex-wrap: wrap; row-gap: 2px; padding-bottom: 4px; }
+  .mc-printer { flex-basis: 100%; }
+  .mc-status { margin-left: auto; }
 }
 
 /* Skeleton width while the printer profile loads, so nothing moves when the chip arrives. */
