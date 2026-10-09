@@ -118,6 +118,24 @@ export function leavesOf(tri: Tri, node: PaintNode, out: PaintLeaf[] = []): Pain
   return out
 }
 
+/** How many leaf pieces of a tree are painted (state other than 0), without building them. */
+export function paintedLeafCount(node: PaintNode): number {
+  if (isLeaf(node)) return node.state === 0 ? 0 : 1
+  let n = 0
+  for (const k of node.kids) n += paintedLeafCount(k)
+  return n
+}
+
+/** Calls `fn` with the corners and state of every painted leaf piece of a triangle, in the order leavesOf lists them. */
+export function forEachPaintedLeaf(tri: Tri, node: PaintNode, fn: (v: Tri, state: number) => void): void {
+  if (isLeaf(node)) {
+    if (node.state !== 0) fn(tri, node.state)
+    return
+  }
+  const cs = childCorners(tri, node.splits, node.special)
+  for (let i = 0; i < node.kids.length; i++) forEachPaintedLeaf(cs[i] as Tri, node.kids[i] as PaintNode, fn)
+}
+
 /** Merges children that are all leaves of one state, so strokes do not grow the text for nothing. */
 export function simplify(node: PaintNode): PaintNode {
   if (isLeaf(node)) return node
