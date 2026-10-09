@@ -491,8 +491,20 @@ impl Builder<'_> {
             if n == last && self.gap > 0.0 {
                 crate::scarf::clip_end(&mut line, self.gap);
             }
-            self.push(tool, f, sp, line.into_iter());
+            self.push_bead(tool, f, sp, line, o);
         }
+    }
+
+    /// A piece of wall; an overhang wall prints with Orca's overhang flow (`Overhang::bead`).
+    fn push_bead(&mut self, tool: u8, feature: Feature, speed: f32, line: Vec<Point>, o: &Overhang) {
+        if feature != Feature::OverhangWall {
+            self.push(tool, feature, speed, line.into_iter());
+            return;
+        }
+        let keep = (self.width_mm, self.flow);
+        (self.width_mm, self.flow) = o.bead();
+        self.push(tool, feature, speed, line.into_iter());
+        (self.width_mm, self.flow) = keep;
     }
 
     /// The variable-width wall lines of an island: the walls in the order the wall sequence asks for,
@@ -626,6 +638,11 @@ impl Builder<'_> {
                         o.speed(t).unwrap_or(speed),
                     ),
                 };
+                if f == Feature::OverhangWall {
+                    let line: Vec<Point> = piece.iter().map(|p| Point::new(p.x, p.y)).collect();
+                    self.push_bead(tool, f, sp, line, o);
+                    continue;
+                }
                 // The width of a cut point is the one of the nearest junction.
                 let piece_widths: Vec<i32> = piece
                     .iter()

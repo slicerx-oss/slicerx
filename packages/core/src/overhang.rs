@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-//! Walls that hang over the layer below. A wall bead whose center lies more
-//! than half its width outside the lower layer hangs completely free; a wall
-//! ring is cut where it crosses that boundary and the stretches outside are
-//! written as overhang walls at the bridge speed, as Orca labels them. The
+//! Walls that hang over the layer below. As in Orca's `PerimeterGenerator`
+//! (`traverse_loops`, `traverse_extrusions`), a wall whose center line lies
+//! more than half the nozzle outside the lower layer hangs completely free: a
+//! wall ring is cut where it crosses the lower layer grown by half the nozzle,
+//! and the stretches outside are written as overhang walls, at the bridge speed
+//! and with Orca's overhang flow (the bridge flow of an inner wall). The
 //! slowdown by how far a wall hangs is set point by point in `quality.rs`.
 //!
 //! Rings are short and support regions have few edges next to the mesh, so
@@ -396,7 +398,7 @@ struct Tier {
     /// Speed for this degree, or the wall's own when unset.
     speed: Option<f32>,
     /// Walls at this degree or beyond are labeled overhang walls: those whose bead
-    /// hangs completely free (its center is more than half a line width past the
+    /// hangs completely free (its center is more than half the nozzle past the
     /// layer below), as `OrcaSlicer` labels them.
     label: bool,
 }
@@ -409,6 +411,8 @@ pub(crate) struct Overhang {
     tiers: Vec<Tier>,
     /// `overhang_reverse`: where a wall counts as steeply overhanging, and whether outer walls stay put.
     reverse: Option<Reverse>,
+    /// The bead overhang walls print with: its width in mm and its flow against a flat bead of that width.
+    bead: (f32, f32),
 }
 
 #[derive(Debug, Clone)]
@@ -419,6 +423,28 @@ struct Reverse {
     internal_only: bool,
 }
 
+/// Orca's `overhang_flow` (`LayerRegion::bridging_flow` for the perimeter role): with `thick_bridges` a round
+/// thread of the bridge line width (or the nozzle) shrunk by the root of `bridge_flow`, else a flat bead of the
+/// bridge line width (or the inner wall's) at `bridge_flow`. The width in mm, and the flow against a flat bead
+/// of that width at layer height `h`.
+#[allow(clippy::cast_possible_truncation, reason = "a width and a flow ratio")]
+fn bead(cfg: &PrintConfig, h: f64) -> (f32, f32) {
+    let line = crate::session::bridge_line_width(cfg);
+    if cfg.thick_bridges {
+        let d = line.unwrap_or(cfg.nozzle_diameter) * cfg.bridge_flow.sqrt();
+        let flat = crate::gcode::bead_area(d, h);
+        let flow = if flat > 0.0 {
+            std::f64::consts::PI * d * d / 4.0 / flat
+        } else {
+            1.0
+        };
+        (d as f32, flow as f32)
+    } else {
+        let d = line.unwrap_or_else(|| cfg.inner_wall_width());
+        (d as f32, cfg.bridge_flow as f32)
+    }
+}
+
 fn speed_of(v: f64) -> Option<f32> {
     #[allow(clippy::cast_possible_truncation, reason = "speeds are small")]
     (v > 0.0).then_some(v as f32)
@@ -426,17 +452,22 @@ fn speed_of(v: f64) -> Option<f32> {
 
 impl Overhang {
     /// `below` is the material of the layer below, `w` the line width in
-    /// internal units.
+    /// internal units, `h` the layer height in mm.
     #[allow(
         clippy::cast_possible_truncation,
         reason = "offsets are a fraction of a line width"
     )]
-    pub(crate) fn new(below: &Shapes, w: i32, cfg: &PrintConfig) -> Self {
+    pub(crate) fn new(below: &Shapes, w: i32, h: f64, cfg: &PrintConfig) -> Self {
         let wf = f64::from(w);
-        // Overhang walls print at the bridge speed (Orca `GCode::_extrude` for `erOverhangPerimeter`); the
-        // slowdown on the way out over the edge is worked out point by point (`quality.rs`).
+        // Orca grows the lower layer by half the nozzle (`generate_lower_polygons_series` and
+        // `lower_slices_polygons`), whatever the line width. Overhang walls print at the bridge speed (Orca
+        // `GCode::_extrude` for `erOverhangPerimeter`); the slowdown on the way out over the edge is worked out
+        // point by point (`quality.rs`).
         let tiers = vec![Tier {
-            support: Support::new(&perimeters::offset(below, (wf * 0.5).round() as i32)),
+            support: Support::new(&perimeters::offset(
+                below,
+                crate::geom::mm(cfg.nozzle_diameter / 2.0),
+            )),
             speed: speed_of(cfg.bridge_speed),
             label: true,
         }];
@@ -464,7 +495,16 @@ impl Overhang {
                 internal_only: crate::tower::flag(cfg, "overhang_reverse_internal_only"),
             }
         });
-        Self { tiers, reverse }
+        Self {
+            tiers,
+            reverse,
+            bead: bead(cfg, h),
+        }
+    }
+
+    /// The width (mm) and flow of an overhang wall's bead.
+    pub(crate) fn bead(&self) -> (f32, f32) {
+        self.bead
     }
 
     /// Whether `overhang_reverse` is on.
