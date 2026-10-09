@@ -80,7 +80,9 @@ export function Studio() {
   const manyPlates = useApp((s) => s.plates.length > 1)
   // The look and feel places the settings sidebar, its width, and the primary Slice action.
   const side = layout.sidebar.side
-  const sliceInSidebar = layout.primaryAction.placement === 'sidebar-footer'
+  // On a phone the sidebar is a sheet, so the Slice action floats on the view instead of waiting inside it.
+  const phone = useMediaQuery('(max-width: 900px)')
+  const sliceInSidebar = layout.primaryAction.placement === 'sidebar-footer' && !phone
   const modelMode = useModelMode()
   useBoundValues(true)
   const design = modelMode === 'design'
@@ -96,7 +98,6 @@ export function Studio() {
   // Toasts center over the viewport and sit above the plate bar and the playback bar, below the toolbar and the view
   // switch, never on a control. On a phone the layer slider runs down the right side, so they keep to the left of it.
   const vpRef = useRef<HTMLElement>(null)
-  const phone = useMediaQuery('(max-width: 900px)')
   useOverlayOffset(vpRef, phone ? PHONE_OVERLAYS : OVERLAYS)
 
   // Painting, brim ears and lay on face are print setup: they close when Design opens.
