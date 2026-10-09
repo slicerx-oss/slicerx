@@ -126,3 +126,25 @@ export function pnpmSync(args: string[], cwd: string): void {
   if (process.platform === 'win32') execSync(['pnpm', ...args.map((a) => `"${a.replace(/"/g, '""')}"`)].join(' '), { cwd, stdio: 'ignore' })
   else execFileSync('pnpm', args, { cwd, stdio: 'ignore' })
 }
+
+/** Opens the Objects card's Add menu and picks an item: "From the Vault", "Add shape", "Export", "Tools" or "Object". */
+export async function addMenu(page: Page, item: 'From the Vault' | 'Add shape' | 'Export' | 'Tools' | 'Object'): Promise<void> {
+  await page.getByTestId('slice-objects-add-menu').click()
+  await page.getByRole('menu', { name: 'Add' }).getByRole('menuitem', { name: item, exact: true }).click()
+}
+
+/** Renames an object from its row: a double-click on the row, the new name, Enter. */
+export async function renameRow(row: Locator, name: string): Promise<void> {
+  await row.locator('[data-testid="object-select"]').dblclick()
+  const field = row.getByTestId('object-rename')
+  await field.fill(name)
+  await field.press('Enter')
+}
+
+/** Sets the filament of an object's first part (or `part`) from the row's tree. */
+export async function setPartFilament(page: Page, row: Locator, slot: number, part = 0): Promise<void> {
+  const expand = row.getByTestId('slice-object-expand')
+  if ((await expand.getAttribute('aria-expanded')) !== 'true') await expand.click()
+  await row.getByTestId('object-part-slot').nth(part).click()
+  await page.getByRole('menu', { name: 'Filament' }).getByRole('menuitemcheckbox').nth(slot - 1).click()
+}

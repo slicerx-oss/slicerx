@@ -1,0 +1,58 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+/* Copyright (C) 2026 The SlicerX contributors */
+/* The Objects card: 36 px rows (44 px on touch), a hover cluster for lock and print, and a tree of parts and volumes. */
+.objs-head { display: inline-flex; align-items: center; gap: 8px; }
+.objs-count { font: var(--fw-medium) var(--fs-xs) var(--f-mono); color: var(--muted); white-space: nowrap; }
+.objects-card .objs { display: grid; gap: 1px; margin: 0 -6px; }
+.objects-card .obj { margin: 0; border-radius: var(--r-md); }
+.objects-card .obj-row { display: flex; align-items: center; gap: 2px; min-height: 36px; padding-right: 2px; border-radius: var(--r-md); }
+.objects-card .obj-row:hover { background: var(--ink-2); }
+.objects-card .obj.sel > .obj-row { background: var(--accent-tint); box-shadow: inset 0 0 0 1px var(--accent-ring); }
+.objects-card .obj-h { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 6px; border: 0; border-radius: var(--r-md); background: none; color: var(--fg); text-align: left; cursor: pointer; }
+.objects-card .obj.sel > .obj-row > .obj-h { background: none; box-shadow: none; }
+.objects-card .obj-h:hover { background: none; }
+.objects-card .obj-thumb { width: 28px; height: 28px; border-radius: var(--r-sm); flex: none; }
+.objects-card .obj-text { display: grid; min-width: 0; flex: 1; }
+.objects-card .obj-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-md); line-height: 1.2; }
+.objects-card .obj-meta { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: 1.2; }
+.obj-swatches { display: inline-flex; align-items: center; gap: 2px; flex: none; }
+.obj-swatches i { width: 10px; height: 10px; border-radius: 50%; box-shadow: 0 0 0 1px var(--line); }
+.obj-swatches b { font: var(--fw-medium) var(--fs-xs) var(--f-mono); color: var(--muted); }
+.obj-badge { display: inline-flex; align-items: center; gap: 3px; flex: none; padding: 0 4px; font: var(--fw-medium) var(--fs-xs) var(--f-mono); color: var(--fg); border-radius: var(--r-xs); }
+.obj-badge i { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+.obj-badge:focus-visible, .obj-warn-ic:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+.obj-warn-ic { display: inline-flex; flex: none; padding: 2px; color: var(--orange); }
+/* Lock and print show on hover or focus, and stay while either is on. */
+.obj-cluster { display: inline-flex; flex: none; }
+@media (hover: hover) and (pointer: fine) {
+  .objects-card .obj-row:not([data-pinned]):not(:hover):not(:focus-within) .obj-cluster { visibility: hidden; }
+  .objects-card .obj-row[data-pinned]:not(:hover):not(:focus-within) .obj-cluster [aria-pressed="false"] { visibility: hidden; }
+}
+.objects-card .obj-chev[aria-expanded="true"] .sx-ic { transform: rotate(180deg); }
+.obj-rename-input { flex: 1; min-width: 0; height: 26px; }
+.objects-card .obj-renaming { cursor: default; }
+.obj-tree { padding: 2px 6px 6px 42px; display: grid; gap: 4px; }
+.obj-tree .parts { list-style: none; margin: 0; padding: 0; display: grid; gap: 1px; }
+.obj-tree .part { display: flex; align-items: center; gap: 8px; min-height: 28px; font-size: var(--fs-sm); }
+.obj-tree .part .n { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.obj-tree .part-role { flex: none; color: var(--muted); }
+.part-slot { display: grid; place-items: center; padding: 2px; border: 0; border-radius: var(--r-sm); background: none; cursor: pointer; }
+.part-slot:hover { background: var(--ink-3); }
+.part-slot:focus-visible { outline: var(--focus-ring); outline-offset: 0; }
+.obj-tree .obj-order { display: flex; align-items: center; gap: 2px; }
+.objs-empty { display: grid; gap: 2px; padding: 6px 0; }
+.objs-empty p { margin: 0; }
+.objects-card .obj.loading { display: flex; align-items: center; gap: 8px; min-height: 36px; padding: 0 6px; }
+.obj-spin { width: 14px; height: 14px; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: obj-spin 0.8s linear infinite; }
+@keyframes obj-spin { to { transform: rotate(360deg); } }
+/* A tool open in the card's place: its own panel, with Done in the header's corner. */
+.tool-slot { position: relative; }
+.tool-slot > .sx-block > .sx-block-h { padding-right: 76px; }
+.tool-slot > .tool-done { position: absolute; top: 8px; right: 10px; z-index: 1; }
+/* Touch: taller rows, and the cluster always shows. */
+@media (pointer: coarse) {
+  .objects-card .obj-row, .objects-card .obj-h { min-height: 44px; height: auto; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .obj-spin { animation: none; }
+}

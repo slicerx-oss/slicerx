@@ -4,7 +4,7 @@
 // tool shelf and the timeline; a modeling tool opens Design from Slice; Slice shows the slice in place in the look
 // picked under the plate toolbar, and there is no Preview tab.
 import { command, freshBox, openStudio, pushTop, steps } from './cad-helpers'
-import { expect, sliceCount, sliced, test } from './fixtures'
+import { expect, sliceCount, sliced, test, addMenu } from './fixtures'
 
 test.describe('Model and Slice', () => {
   test.skip(({ isMobile }) => isMobile, 'Desktop width')
@@ -71,7 +71,7 @@ test.describe('Model and Slice', () => {
 
   test('a modeling tool from the Slice Tools menu opens Design', async ({ page }) => {
     await openStudio(page)
-    await page.getByRole('button', { name: 'Tools', exact: true }).click()
+    await addMenu(page, 'Tools')
     await page.getByRole('menuitem', { name: 'Sketch' }).click()
     await expect(page.locator('.sx-tab[data-mode="design"]')).toHaveAttribute('aria-current', 'page')
     await expect(page.locator('.shelf-tool[data-tool="sketch"]')).toHaveAttribute('aria-pressed', 'true')
