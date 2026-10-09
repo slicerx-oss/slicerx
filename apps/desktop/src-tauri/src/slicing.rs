@@ -8,10 +8,10 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-use sx_core::api::{run_request_with, Cancellable, Progress, SliceRequest, Stage};
+use sx_core::api::{Cancellable, Progress, SliceRequest, Stage, run_request_with};
 use sx_core::{Error, Mesh};
-use tauri::ipc::{Channel, InvokeBody, Request, Response};
 use tauri::State;
+use tauri::ipc::{Channel, InvokeBody, Request, Response};
 
 #[derive(Default)]
 pub struct Slicer {
