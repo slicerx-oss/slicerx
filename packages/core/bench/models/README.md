@@ -31,12 +31,12 @@ Options: `--height` (of the X, default 80 mm), `--thickness` (16 mm), `--twist-d
 
 ## Showcase model
 
-`x-mark-showcase.stl` is the same X built from exact faces, for close-up views, renders and demos: the `sample:x-mark` model of the MCP server is this one. `generate_showcase.py` (Python 3, standard library only, deterministic) extrudes the mark's outline, cuts it into the same eight bands, sets alternate bands in 0.6 mm with a flat face for every step and a 0.6 mm deep, 1.2 mm wide V groove at every band boundary, and rounds the front and back edges (1.5 mm) as ten facets. The X stands on a rounded plinth (2 mm) whose top face has the X's footprint cut in exactly; the outline's corners and the plinth joint stay sharp. Its edges stay straight at any zoom, where the surface nets of `x-mark.stl` show a 1.2 mm sawtooth.
+`x-mark-showcase.stl` is the same X built from exact faces, for close-up views, renders and demos: the `sample:x-mark` model of the MCP server is this one. `generate_showcase.py` (Python 3, standard library only, deterministic) extrudes the mark's outline, cuts it into the same eight bands, sets alternate bands in 0.6 mm with a flat face for every step and a 0.6 mm deep, 1.2 mm wide V groove at every band boundary, gives each band that stands out over the one below a 45 degree underside instead of a ledge, and rounds the front and back edges (1.2 mm) as ten facets. A slice reports no overhang warnings. The X stands on a rounded plinth (2 mm) whose top face has the X's footprint cut in exactly; the outline's corners and the plinth joint stay sharp. Its edges stay straight at any zoom, where the surface nets of `x-mark.stl` show a 1.2 mm sawtooth.
 
 | File | Triangles | Size (mm) |
 | --- | --- | --- |
-| `x-mark-showcase.stl` | 5,876 | 84.7 x 26.0 x 86.0 |
-| `x-mark-showcase-2color.3mf` | 3,788 + 2,132 (two parts) | same |
+| `x-mark-showcase.stl` | 5,436 | 84.7 x 26.0 x 86.0 |
+| `x-mark-showcase-2color.3mf` | 3,748 + 2,132 (two parts) | same |
 
 The 3MF is one object of two parts, as Bambu Studio and OrcaSlicer save a multi-part object: the plinth with the first, third, fifth and seventh bands on filament 1, the other bands on filament 2. The parts keep their places when the file opens, so the bands stay stacked (`x-mark-2color.3mf`'s two separate objects are each set down on the bed). Both files are closed and consistently oriented. The benchmarks keep `x-mark.stl`, so their numbers stay comparable.
 
