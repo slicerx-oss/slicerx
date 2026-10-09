@@ -8,6 +8,9 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { RAVEN_WAIT_MS } from '../src/lib/waited'
 import { set } from '../src/state/store'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { HostContext } from '../src/host'
+import { SliceBlock } from '../src/workspaces/prepare/prepare-panes'
 import { SliceProgress } from '../src/workspaces/slice-progress'
 
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -45,16 +48,6 @@ describe('ravens through the longer waits', () => {
     expect(has('raven-slice-glide')).toBe(false)
   })
 
-  it('a long slice brings muninn to the bar, who leaves with it', async () => {
-    await act(async () => set({ slice: { status: 'running', progress: { stage: 'layers', fraction: 0.5 }, startedAt: 0 } }))
-    await wait(RAVEN_WAIT_MS + 500)
-    expect(has('raven-slice-glide')).toBe(true)
-    await act(async () => set({ slice: { status: 'idle' } }))
-    expect(el.querySelector('[data-testid="raven-slice-glide"][data-done]')).not.toBeNull()
-    await wait(800)
-    expect(has('raven-slice-glide')).toBe(false)
-  })
-
   it('a long load brings the two ravens over the plate, and they fly off when it ends', async () => {
     await act(async () => set({ plateLoading: true }))
     await wait(300)
@@ -65,5 +58,19 @@ describe('ravens through the longer waits', () => {
     expect(el.querySelector('[data-testid="raven-loading"][data-leaving]')).not.toBeNull()
     await wait(600)
     expect(has('raven-loading')).toBe(false)
+  })
+
+  it('a long slice brings muninn to ride the Estimate bar, and he goes when it ends', async () => {
+    set({ plate: [{ id: 'a', name: 'a', handle: { id: 'm', hash: 'h', name: 'a', triangles: 12, bboxMm: [1, 1, 1], openEdges: 0, parts: [] }, parts: [], colors: ['#fff'], transform: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1] }] })
+    const host = { kind: 'web', capabilities: {} }
+    await act(async () => root.render(createElement(QueryClientProvider, { client: new QueryClient() }, createElement(HostContext.Provider, { value: host as never }, createElement(SliceBlock)))))
+    await act(async () => set({ slice: { status: 'running', progress: { stage: 'paths', fraction: 0.5 }, startedAt: 0 } }))
+    await wait(600)
+    expect(has('raven-slice-glide')).toBe(false)
+    await wait(RAVEN_WAIT_MS)
+    expect(has('raven-slice-glide')).toBe(true)
+    expect(el.querySelector('.slicing .rv-ride [data-testid="raven-slice-glide"]')).not.toBeNull()
+    await act(async () => set({ slice: { status: 'idle' } }))
+    expect(has('raven-slice-glide')).toBe(false)
   })
 })

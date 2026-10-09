@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// Huginn and Muninn keeping company through the longer waits: muninn glides along the slicing progress, the two fly in
+// Huginn and Muninn keeping company through the longer waits: muninn rides the Estimate block's slicing bar, the two fly in
 // over the plate while a big model loads, and one carries the file while an upload goes up. Loaded only once a wait
 // has run past about 1.2 s (lib/waited.ts), so the art never weighs on the start. Under reduced motion they keep
 // still where they would be.
 import { Icon, Raven } from '@slicerx/ui'
 import './waits.css'
 
-/** Muninn at the leading edge of the slicing progress; it flies off when the fill completes. */
+/** Muninn riding the slicing bar at the fill's edge; with `done` it flies off. */
 export function SliceGlide({ done }: { done: boolean }) {
   return (
     <span className="rv-glide" data-done={done || undefined} data-testid="raven-slice-glide" aria-hidden="true">
-      <Raven size={20} flap={!done} facing="right" />
+      <Raven size={24} flap={!done} facing="right" />
     </span>
   )
 }
