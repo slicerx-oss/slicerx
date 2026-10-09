@@ -253,6 +253,8 @@ describe('the state an agent reads', () => {
     expect(plate.warnings).toEqual([{ code: 'long_bridge', message: 'Long bridge' }])
     expect(s['printer']).toMatchObject({ id: 'hand-a1', vendor: 'Bambu Lab', model: 'A1' })
     expect(Array.isArray(s['filament'])).toBe(true)
+    // Nothing asked of the geometry engine yet in this session.
+    expect(s['geometry']).toEqual({ answered: {}, failed: {}, lastError: null })
   })
 
   it('summarizes a finished slice and every other status', () => {

@@ -24,6 +24,17 @@ const IDLE_MS = 30_000
 const BIG_IDLE_MS = 2_000
 const BIG_BYTES = 256 * 1024 * 1024
 
+/** The app's own geometry worker: its answers and failures so far, by operation, and the last failure's message. */
+const calls = { answered: {} as Record<string, number>, failed: {} as Record<string, number>, lastError: null as string | null }
+
+/**
+ * What the app's own geometry worker has answered, for the agent bridge: a session whose answers stay empty after a
+ * mesh file opened, or with no fit.check after an object of several parts, never loaded the engine.
+ */
+export function geomCalls(): { answered: Record<string, number>; failed: Record<string, number>; lastError: string | null } {
+  return { answered: { ...calls.answered }, failed: { ...calls.failed }, lastError: calls.lastError }
+}
+
 function workerProvider(): GeomProvider {
   let worker: Worker | null = null
   let idle: ReturnType<typeof setTimeout> | null = null
@@ -62,7 +73,17 @@ function workerProvider(): GeomProvider {
     call<T>(op: string, request: unknown, signal?: AbortSignal) {
       return new Promise<T>((resolve, reject) => {
         const id = ++seq
-        pending.set(id, { resolve: resolve as (v: unknown) => void, reject })
+        pending.set(id, {
+          resolve: (v) => {
+            calls.answered[op] = (calls.answered[op] ?? 0) + 1
+            resolve(v as T)
+          },
+          reject: (e) => {
+            calls.failed[op] = (calls.failed[op] ?? 0) + 1
+            calls.lastError = e.message
+            reject(e)
+          },
+        })
         signal?.addEventListener('abort', () => {
           if (pending.delete(id)) reject(new DOMException('Canceled', 'AbortError'))
           // A history replay stops at its next step; single calls just lose their answer.
