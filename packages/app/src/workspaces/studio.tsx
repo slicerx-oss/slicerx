@@ -15,7 +15,7 @@ import { PlateList } from './prepare/plate-list'
 import { useHost } from '../host'
 import { SidePane, type PaneSection } from '../shell/pane'
 import { seedExamplePlate } from '../state/actions'
-import { get, railOpen, showsLayers, useApp } from '../state/store'
+import { get, isCadTool, railOpen, setRail, showsLayers, useApp } from '../state/store'
 import { usePrinter } from '../lib/use-printer'
 import { useRightAttention } from '../lib/right-attention'
 import { MiddleName } from '../lib/short-name'
@@ -110,6 +110,13 @@ export function Studio() {
   const objectsRight = layout.objectList === 'right-pane' && !phone
   // The right pane stays shut until opened; its tab glows when something in it wants a look.
   const rightOpen = useApp((s) => railOpen(s.rails, 'preview', other, true))
+  // Cut, Paint, Brim ears and the modeling tools open in the Objects card: with the objects in the right pane, opening a
+  // tool opens the pane, which starts shut.
+  const objectTool = useApp((s) => s.objectTool)
+  const toolOpen = !design && (plateTool === 'paint' || plateTool === 'brim' || objectTool === 'cut' || isCadTool(objectTool))
+  useEffect(() => {
+    if (toolOpen && objectsRight && !railOpen(get().rails, 'preview', other, true)) setRail('preview', other, true)
+  }, [toolOpen, objectsRight, other])
   const { printer } = usePrinter()
   const printState = printer?.status.state
   const printResult = printer && (printState === 'finished' || printState === 'error') ? `${printer.id}:${printState}:${printer.status.updatedAt}` : null
