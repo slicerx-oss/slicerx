@@ -293,7 +293,7 @@ button { cursor: pointer; }
 .sx-kv > div { padding: 10px 0 0; min-width: 0; }
 .sx-kv > div + div { padding-left: 12px; border-left: 1px solid var(--line-soft); }
 .sx-kv b { display: block; font: var(--fw-medium) var(--fs-sm) var(--f-mono); color: var(--fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.sx-kv span { font-size: var(--fs-xs); color: var(--dim); }
+.sx-kv > div > span { font-size: var(--fs-xs); color: var(--dim); }
 
 /* rail: a collapsible sidebar that rests as an icon rail and glows near the pointer */
 /* The glow values live on one leaf element and do not inherit, so a pointer move restyles that element only. */

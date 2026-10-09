@@ -197,7 +197,7 @@ function PrinterBlock() {
       {more ? <KeyValues
         items={[
           { value: `${profileNozzle} mm`, label: 'Nozzle' },
-          { value: <span data-testid="slice-machine-plate" {...tipAttrs({ title: 'Set per plate. Change it in plate settings.' })}>{plate.label}</span>, label: 'Plate' },
+          { value: <span data-testid="slice-machine-plate" {...tipAttrs({ title: plate.label, body: 'Set per plate. Change it in plate settings.' })}>{plate.label}</span>, label: 'Plate' },
           // An export-only or offline printer reports no bed, so the row goes rather than guessing.
           ...(bedTemp ? [{ value: degC(bedTemp), label: 'Bed' }] : []),
         ]}
