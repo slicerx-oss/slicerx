@@ -38,7 +38,8 @@ export const MODEL_ICONS = {
   // copies around a center
   'array-polar': '<rect x="10" y="6" width="4" height="4" rx="1"/>' + dash('<rect x="2.5" y="11.25" width="4" height="4" rx="1"/><rect x="17.5" y="11.25" width="4" height="4" rx="1"/>', '1.4 1.6') + DOT(12, 17.5),
   // a mesh with a missing face
-  'repair-mesh': '<path d="M3.5 19 12 4.5 20.5 19z"/>' + dash('<path d="M7.8 11.8h8.4L12 19z"/>'),
+  // a mesh whose open corner closes with a check: fixed
+  'repair-mesh': '<path d="M9 19H3.5L12 4.5l4.2 7.2"/><path d="M13 16.5l2.5 2.5 5-5"/>',
   // the mesh tools: a fan of triangles
   'mesh-menu': '<path d="M12 3.5l7.36 4.25v8.5L12 20.5l-7.36-4.25v-8.5z"/><path d="M12 3.5v17M4.64 7.75l14.72 8.5M19.36 7.75 4.64 16.25"/>',
   // pick whole objects
