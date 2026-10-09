@@ -47,7 +47,7 @@ export interface SlotRailProps {
   slots: readonly ResolvedSlot[]
   /** What is left on a slot's spool, in words, or null. */
   left: (s: ResolvedSlot) => string | null
-  /** The slot's Tune badge, or null. */
+  /** The Tune, Retune or Tuned badge of the slot the line under the rail names, or null. */
   badge?: (s: ResolvedSlot) => ReactNode
   /** Adds a slot (no printer reports slots): a plus ring at the end of the rail. */
   onAdd?: () => void
@@ -97,7 +97,7 @@ export function SlotRail({ slots, left, badge, onAdd }: SlotRailProps) {
                 const m = mismatches.get(s.index)
                 const share = usage[s.index - 1]?.share
                 return (
-                  <div className={s.used ? 'slot' : 'slot unused'} data-slot={s.index} key={s.index}>
+                  <div className={s.used ? 'rail-slot' : 'rail-slot unused'} data-slot={s.index} key={s.index}>
                     <button
                       type="button"
                       className="slot-ring"
@@ -122,7 +122,6 @@ export function SlotRail({ slots, left, badge, onAdd }: SlotRailProps) {
                         {mismatchText(m)}
                       </span>
                     ) : null}
-                    {badge ? badge(s) : null}
                   </div>
                 )
               })}
@@ -138,6 +137,8 @@ export function SlotRail({ slots, left, badge, onAdd }: SlotRailProps) {
       {lineSlot ? (
         <p className="slot-line" data-testid="slice-filament-slot-line" aria-live="polite">
           <span>{slotLine(lineSlot, grams(lineSlot), left(lineSlot))}</span>
+          {/* Tune, Retune or Tuned for the slot the line names, so the rings stay one tight row. */}
+          {badge ? badge(lineSlot) : null}
           {lineMismatch ? (
             <button type="button" className="slot-line-fix" data-testid="slice-filament-use-printer" {...tipAttrs({ title: "Use printer's filament", body: mismatchText(lineMismatch) })} onClick={() => followPrinterSlot(lineMismatch.slot)}>
               Use printer's filament
