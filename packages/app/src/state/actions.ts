@@ -28,7 +28,7 @@ import { layerHeightConflict, objectOverrides, partOverridesOf } from '../plate/
 import { printBlock } from '../plate/heimdall'
 import { clearProject } from '../project/new'
 import { beginOpen, confirmDiscard, markClean, OpenSuperseded, type OpenScope } from '../project/unsaved'
-import { openEnded, openStage, openStarted } from '../lib/open-timing'
+import { markOpenEnded, markOpenStage, markOpenStarted } from '../lib/open-mark'
 import { isExportOnly } from '../lib/hand-printers'
 import { colorModeAfterSlice, fullPlate, get, markStale, set, shownSlice, toast, type AppState, type PlateEntry, type PlateMeta, selectedIds, type PendingApproval, type ModelSource, type PlateVolumeEntry } from './store'
 import { appName, brandAccent, objectPalette } from '../edition'
@@ -163,8 +163,8 @@ async function addProjectShown(
   try {
     // Inflated and scanned in the project worker; only the settings files and the layout are read here.
     scanned = await scanProjectFile(new Uint8Array(data))
-    openStage('unzip', { at: scanned.unzippedAt })
-    openStage('parse', { at: scanned.scannedAt, parsedIn: scanned.parsedIn })
+    markOpenStage('unzip', { at: scanned.unzippedAt })
+    markOpenStage('parse', { at: scanned.scannedAt, parsedIn: scanned.parsedIn })
     project = await projectOf(scanned, get().bed)
   } catch (e) {
     if (e instanceof ProjectReadError && /too many|too large|unsafe|encrypted|inflates|damaged/.test(e.message)) throw e
@@ -203,7 +203,7 @@ async function addProjectShown(
     // A printer of the person's own that matches it is picked over the project's own.
     const printers = host.printers ? await host.printers.list().catch(() => []) : []
     match = await pp.switchToProjectPrinter(name, project.settings, printers)
-    openStage('printer')
+    markOpenStage('printer')
   }
   // Its objects on the bed the plate slices for: a layout made for a larger bed moves onto this one.
   const { placeOnSelectedBed } = await import('../project/place-import')
@@ -269,13 +269,13 @@ async function addProjectShown(
   for (const [i, plate] of project.plates.entries()) {
     if (plate.objects.length === 0) continue
     const made = await entries(plate.objects, loads[i] ?? [])
-    openStage('engine')
+    markOpenStage('engine')
     if (i > 0) {
       const id = mine(() => addPlate({ ...(plate.sequence ? { sequence: plate.sequence } : {}), ...(plate.nozzleMap ? { nozzleMap: plate.nozzleMap } : {}) }))
       mine(() => set((s) => ({ plates: s.plates.map((p) => (p.id === id ? { ...p, name: plate.name } : p)) })))
     }
     mine(() => set((s) => ({ plate: [...s.plate, ...made], selection: made[0]?.id ?? s.selection })))
-    openStage('objects')
+    markOpenStage('objects')
     hidePreview()
     if (plate.marks?.length) {
       const { customGcodeProblem, markId } = await import('../plate/layer-marks')
@@ -296,7 +296,7 @@ async function addProjectShown(
   if (pp) {
     // Another slicer's project: its settings on top of its own printer's profile, or what suits the current printer.
     const r = mine(() => pp.applyProjectSettings(name, project.settings, match))
-    openStage('settings')
+    markOpenStage('settings')
     for (const k of r.keys) brought.add(k)
     note = r.note
   } else if (wasEmpty && hasSettings) {
@@ -310,10 +310,10 @@ async function addProjectShown(
     }
     for (const k of Object.keys(values)) brought.add(k)
     // Its printer G-code: stock text needs nothing, anything else waits for the person at the next slice.
-    openStage('settings')
+    markOpenStage('settings')
     mine(() => undefined)
     await (await import('./project-gcode')).reviewOpenedGcode(name, project.settings)
-    openStage('gcode')
+    markOpenStage('gcode')
   }
   if (!geometryOnly && (await import('../plate/layer-ranges')).layerHeightsDiffer(get().plate)) {
     note = `${note ? `${note} ` : ''}Per-object layer heights are not imported yet: its objects change layer height at different heights, so the plate uses one layer height.`
@@ -391,8 +391,8 @@ export async function openModelBytes(host: Host, name: string, data: ArrayBuffer
   if (opts.fresh && !(await startFresh())) return
   // A new project ends clean, unless the person edited it while it opened.
   const scope = opts.fresh ? beginOpen() : undefined
-  openStarted(name)
-  openStage('read')
+  markOpenStarted(name)
+  markOpenStage('read')
   set({ plateLoading: true })
   try {
     const before = new Set(get().plate.map((p) => p.id))
@@ -414,7 +414,7 @@ export async function openModelBytes(host: Host, name: string, data: ArrayBuffer
   } finally {
     if (!scope?.superseded) {
       set({ plateLoading: false })
-      openEnded()
+      markOpenEnded()
     }
   }
 }
@@ -436,7 +436,7 @@ export async function addFileRefs(host: Host, refs: FileRef[], opts: { fresh?: b
   const wasEmpty = get().plate.length === 0 && get().plates.every((p) => p.objects.length === 0)
   // A new project, or a project onto an empty plate, ends clean, unless the person edited it while it opened.
   const scope = opts.fresh || (project && wasEmpty) ? beginOpen() : undefined
-  openStarted(refs.length === 1 ? (refs[0]?.name ?? '') : `${refs.length} files`)
+  markOpenStarted(refs.length === 1 ? (refs[0]?.name ?? '') : `${refs.length} files`)
   set({ plateLoading: true })
   try {
     let told = false
@@ -444,7 +444,7 @@ export async function addFileRefs(host: Host, refs: FileRef[], opts: { fresh?: b
       const open = unlocked.get(ref)
       const name = open?.name ?? ref.name
       const data = open?.data ?? (await host.files.read(ref))
-      openStage('read')
+      markOpenStage('read')
       // A copy is taken first: a worker may take the original. A locked project is never kept unlocked in recents.
       const keep = !open && /\.(sx3mf|3mf)$/i.test(name) ? data.slice(0) : null
       told = (await addBytes(host, name, data, scope)) || told
@@ -466,7 +466,7 @@ export async function addFileRefs(host: Host, refs: FileRef[], opts: { fresh?: b
   } finally {
     if (!scope?.superseded) {
       set({ plateLoading: false })
-      openEnded()
+      markOpenEnded()
     }
   }
 }
@@ -613,7 +613,7 @@ export async function slicePlate(host: Host, opts: { auto?: boolean } = {}): Pro
     const cur = get()
     set((st) => ({ slicesDone: st.slicesDone + 1 }))
     set({ slice: { status: 'done', result, stale: false }, preview, strikePick: null, strikeJump: null, strikeHover: null, ...layersAfterSlice(cur, preview.layerCount, cur.norn.before !== null), ...colorModeAfterSlice(cur, defaultColorMode(preview)) })
-    openStage('sliced')
+    markOpenStage('sliced')
   } catch (e) {
     if (abort.signal.aborted) {
       // A newer slice may already be running; its state is not ours to reset.
