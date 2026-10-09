@@ -6,6 +6,8 @@
 #
 #   scripts/ci/heavy.sh <command...>          waits for a slot of the lock, runs, releases
 #   scripts/ci/heavy.sh --all <command...>    waits for every slot, for a timing run that needs the machine alone
+#   scripts/ci/heavy.sh --e2e <command...>    an e2e browser run: at most one holds a slot at a time, other jobs
+#                                              share the rest
 #   SX_HEAVY_LOCK=<dir>                        the lock (default ~/.slicerx-heavy.lock); when unset, the value in the
 #                                              ci.env of the CI home this copy runs from ($SX_CI_HOME, or bin/..)
 #   SX_HEAVY_SLOTS=<n>                         how many holders may run at once (default: the number in <lock>.slots,
@@ -20,16 +22,26 @@
 # machine. Waiters take a ticket in <lock>.queue, and only as many of the oldest as there are free slots try one, so
 # they are served in arrival order, CI jobs first (SX_HEAVY_PRIORITY=ci, or a self-hosted runner). A --all waiter
 # takes the slots one by one as they free up; while one waits, only the oldest ticket takes a slot, so it is not
-# passed over. Every waiter judges the holders now and then, so one that cannot does not wedge the queue.
+# passed over. A --e2e holder's record says "class e2e"; while one holds a slot, no other --e2e waiter takes one
+# (two browser suites drawing software WebGL overload a machine), and such waiters do not count toward the positions of
+# the waiters behind them, so other jobs still use the free slots. Every waiter judges the holders now and then, so one
+# that cannot does not wedge the queue.
 #
 # Windows (Git Bash) and WSL on one machine share one lock when both name the same directory on the Windows drive,
 # for example C:\Users\<user>\.slicerx-heavy.lock (a C:\ path works on both sides). The record names the holder's
 # side, and a holder is checked on its own side: through powershell.exe for a Windows holder, through wsl.exe for a
 # WSL one. See README.md for the rules.
 set -uo pipefail
-all=
-[ "${1:-}" = --all ] && { all=1; shift; }
-[ $# -gt 0 ] || { echo "usage: heavy.sh [--all] <command...>" >&2; exit 2; }
+all= e2e=
+while :; do
+  case ${1:-} in
+    --all) all=1; shift ;;
+    --e2e) e2e=1; shift ;;
+    *) break ;;
+  esac
+done
+[ -z "$all" ] || e2e=
+[ $# -gt 0 ] || { echo "usage: heavy.sh [--all | --e2e] <command...>" >&2; exit 2; }
 max=${SX_HEAVY_WAIT:-0}
 poll=${SX_HEAVY_POLL:-5}
 orphan=${SX_HEAVY_ORPHAN:-60}
@@ -139,7 +151,7 @@ mkdir -p "$q" 2> /dev/null
 # CI jobs (a self-hosted runner, or SX_HEAVY_PRIORITY=ci) queue ahead of other waiters; a holder always finishes.
 prio=1
 if [ "${SX_HEAVY_PRIORITY:-}" = ci ] || [ "${RUNNER_ENVIRONMENT:-}" = self-hosted ]; then prio=0; fi
-ticket=$q/$prio-$(date +%s)-$side-$$${all:+-all}
+ticket=$q/$prio-$(date +%s)-$side-$$${all:+-all}${e2e:+-e2e}
 held=()
 # Windows refuses to remove a directory another process is looking into (a waiter reading the record), and a slot
 # left empty that way would have no record to judge, so the removal is tried a few times.
@@ -157,7 +169,8 @@ mtime() { stat -c %Y "$1" 2> /dev/null || stat -f %m "$1" 2> /dev/null; }
 # Takes a free slot: writes this holder's record into it at once, so no waiter ever finds it without one for long.
 take() {
   mkdir "$1" 2> /dev/null || return 1
-  printf 'pid %s since %s: %s\n%s\n' $$ "$(date '+%F %T')" "${all:+(all slots) }$cmd" "$me" > "$1/owner"
+  printf 'pid %s since %s: %s\n%s\n%s' $$ "$(date '+%F %T')" "${all:+(all slots) }$cmd" "$me" "${e2e:+class e2e
+}" > "$1/owner"
   held+=("$1")
 }
 mine() { local d; for d in ${held[@]+"${held[@]}"}; do [ "$d" = "$1" ] && return 0; done; return 1; }
@@ -186,7 +199,11 @@ t0=$SECONDS next=0 judged=0
 while :; do
   # Our ticket, refreshed on every poll. A ticket left alone for 2 minutes is a dead waiter's, and is dropped.
   touch "$ticket" 2> /dev/null || { mkdir -p "$q" 2> /dev/null; touch "$ticket" 2> /dev/null; }
-  # pos: the live tickets ahead of ours. all_ahead: whether one of them, or ours, waits for every slot.
+  # e2e_held: whether another holder runs an e2e job, so no further --e2e waiter may take a slot.
+  e2e_held=
+  for d in "${slot_dirs[@]}"; do mine "$d" || ! grep -qx 'class e2e' "$d/owner" 2> /dev/null || e2e_held=1; done
+  # pos: the live tickets ahead of ours, leaving out --e2e waiters that cannot take a slot now, so a free slot is not
+  # kept from the jobs behind them. all_ahead: whether one of them, or ours, waits for every slot.
   now=$(mtime "$ticket") pos=0 all_ahead=$all
   for t in "$q"/*; do
     [ -e "$t" ] || continue
@@ -194,6 +211,7 @@ while :; do
     if [ -n "$now" ]; then
       m=$(mtime "$t"); [ $((now - ${m:-0})) -lt 120 ] || { rm -f "$t"; continue; }
     fi
+    case $t in *-e2e) [ -n "$e2e_held" ] && continue ;; esac
     pos=$((pos + 1))
     case $t in *-all) all_ahead=1 ;; esac
   done
@@ -207,7 +225,7 @@ while :; do
     if [ -n "$all" ]; then
       for d in "${slot_dirs[@]}"; do mine "$d" || take "$d"; done
       [ "${#held[@]}" = "$slots" ] && break
-    elif [ "$pos" -lt "$free" ]; then
+    elif [ "$pos" -lt "$free" ] && { [ -z "$e2e" ] || [ -z "$e2e_held" ]; }; then
       for d in "${slot_dirs[@]}"; do take "$d" && break 2; done
     fi
     judge=1
