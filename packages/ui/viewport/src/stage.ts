@@ -108,7 +108,7 @@ void main(){
   float shown = mix(step(traced(vP), reveal.x), 1.0, ground);
   float row = mix(rowIn(vP.y), 1.0, ground);
   float px = max(fwidth(d), 1e-3);
-  float line = 1.0 - smoothstep(0.0, 1.0, abs(d) / (px * 1.1));
+  float line = 1.0 - smoothstep(0.0, 1.0, abs(d) / (px * 1.4));
   float glow = exp(-abs(d) / 2.2) * (d < 0.0 ? 0.18 : 0.1);
   // Four identical L brackets starting exactly at each corner, both legs inside the outline.
   vec2 c = hb - abs(vP);
@@ -117,14 +117,17 @@ void main(){
   float by = (1.0 - smoothstep(th, th + px, abs(c.x - inset))) * step(0.0, c.y) * (1.0 - smoothstep(len, len + px, c.y));
   float br = max(bx, by);
   vec2 r = abs(vP) / hb;
-  float fade = 1.0 - smoothstep(0.35, 1.0, max(r.x, r.y));
-  // ground: no outline or corner marks, the grid runs to the quad's edge and fades out there.
+  // ground: no outline or corner marks, the grid runs to the quad's edge and fades out there. On the bed the grid
+  // keeps most of its strength to the far edge, so the whole plate reads from the default camera.
+  float fade = mix(1.0 - 0.3 * smoothstep(0.7, 1.0, max(r.x, r.y)), 1.0 - smoothstep(0.35, 1.0, max(r.x, r.y)), ground);
   float inside = mix(1.0 - smoothstep(-0.4, 0.0, d), 1.0, ground);
-  // On a plate surface the grid is a faint guide over the sheet.
-  float gl = (lines(vP + hb, 10.0) * 0.35 + lines(vP + hb, 50.0) * 0.75) * fade * inside * 0.3 * (1.0 - 0.7 * surface) * row;
+  // 10 mm minor lines and brighter 50 mm major lines. On a plate surface the grid is a fainter guide over the sheet.
+  float gl = (lines(vP + hb, 10.0) * 0.16 + lines(vP + hb, 50.0) * 0.4) * fade * inside * (1.0 - 0.7 * surface) * row;
+  // The bare bed gets a faint fill in the grid color, so the printable area stands apart from the background.
+  float fill = inside * 0.07 * (1.0 - surface) * (1.0 - ground) * row;
   float inner = exp(d / 10.0) * inside * 0.045 * (1.0 - ground) * row;
-  float aEdge = clamp(line * 0.9 + glow + br * 0.7, 0.0, 1.0) * (1.0 - ground) * shown;
-  float aG = clamp(gl + inner, 0.0, 1.0);
+  float aEdge = clamp(line + glow + br * 0.7, 0.0, 1.0) * (1.0 - ground) * shown;
+  float aG = clamp(gl + fill + inner, 0.0, 1.0);
   float wash = reveal.z * 0.16 * inside * (1.0 - ground);
   float a = clamp(aEdge + (aG + wash) * (1.0 - aEdge), 0.0, 1.0);
   vec3 ec = mix(edge, edgeAlt, alert);
@@ -513,8 +516,8 @@ export class Stage {
   }
 
   /**
-   * The bed is an empty floor: a thin glowing outline of the printable area with corner marks and a faint grid
-   * that fades toward the edges, all in one transparent quad, so nothing is shaded and no texture is sampled.
+   * The bed is an empty floor: a crisp glowing outline of the printable area with corner marks, a faint fill and a
+   * 10 mm grid with brighter 50 mm lines, all in one transparent quad, so nothing is shaded and no texture is sampled.
    */
   private buildPlate(): void {
     const bed = this.bed
