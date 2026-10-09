@@ -30,8 +30,14 @@ const noLlm: LlmTransport = {
   },
 }
 
+/** The slicing engine (WebAssembly) failed to start, so nothing can be sliced; main.tsx shows it with a retry. */
+export class EngineStartError extends Error {
+  override name = 'EngineStartError'
+}
+
 /**
- * The WASM worker pool, or the synthetic slicer when the WASM build is missing (a dev tree before `sx-wasm` is built).
+ * The WASM worker pool. Only a dev server falls back to the synthetic slicer (a tree before `sx-wasm` is built): a real
+ * build never slices with it, since its G-code would print nothing useful.
  * The pool's code loads beside the startup shell, not in it: it is needed once the host is made, with the engine module
  * it compiles anyway.
  */
@@ -40,8 +46,11 @@ async function slicer(): Promise<{ host: SlicerHost; wasm: boolean }> {
   try {
     return { host: await createWebSlicer(), wasm: true }
   } catch (e) {
-    console.warn('sx-wasm is not available; using the synthetic slicer', e)
-    return { host: await createWebSlicer({ fake: true }), wasm: false }
+    if (import.meta.env.DEV) {
+      console.warn('sx-wasm is not available; this dev server slices with the synthetic slicer', e)
+      return { host: await createWebSlicer({ fake: true }), wasm: false }
+    }
+    throw new EngineStartError(e instanceof Error ? e.message : String(e), { cause: e })
   }
 }
 
