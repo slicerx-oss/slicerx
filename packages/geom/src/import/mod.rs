@@ -209,7 +209,13 @@ impl ImportedModel {
 }
 
 pub fn import_stl(bytes: &[u8], name: &str, opts: &ImportOptions) -> Result<ImportedModel> {
-    let mesh = TriMesh::from_stl(bytes, name)?.welded();
+    import_stl_read(&TriMesh::from_stl(bytes, name)?, name, opts)
+}
+
+/// An STL already read with its exactly equal corners welded (`TriMesh::from_stl`, or the app's own read of the
+/// file, which `tests/weld_parity.rs` holds to the same mesh), imported as `import_stl` imports the file.
+pub fn import_stl_read(mesh: &TriMesh, name: &str, opts: &ImportOptions) -> Result<ImportedModel> {
+    let mesh = mesh.welded();
     let mut raw = RawModel::new(name, "stl");
     let shells = if opts.split_shells {
         shell_triangles(&mesh)
