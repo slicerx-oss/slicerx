@@ -356,7 +356,10 @@ export function SliceBlock({ label = 'Slice plate', compact }: { label?: string;
   const target = printTarget(printer, rows)
   // With Auto slice on there is no Slice button: Print is the action, ready once the background slice is current. It opens
   // the Print sheet on that printer; without one it shows the preview, where the G-code export lives.
-  const primary = auto ? (
+  // With Auto slice off, Slice is the action until the plate has a current slice; then Print is, as with Auto slice
+  // on (the slice summary has no Print of its own), and Slice again sits under it.
+  const current = done !== null && !done.stale
+  const primary = auto || current ? (
     printer && isExportOnly(printer) ? (
       <Button variant="primary" size="lg" full icon="sd-card" disabled={plate.length === 0 || !fresh} onClick={() => void exportGcode(host)}>
         Export G-code
@@ -436,6 +439,11 @@ export function SliceBlock({ label = 'Slice plate', compact }: { label?: string;
           </div>
         ) : null}
         {running && !auto ? track : primary}
+        {!auto && current && !running ? (
+          <Button size="sm" variant="ghost" icon="slice" onClick={() => void slicePlate(host).then(() => get().slice.status === 'done' && showSliced())}>
+            Slice again
+          </Button>
+        ) : null}
         {problems}
         {sliceNote ? <p className="app-note">{sliceNote}</p> : null}
       </div>
