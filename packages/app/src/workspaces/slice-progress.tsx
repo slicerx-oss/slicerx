@@ -4,8 +4,16 @@
 // (its stage and how far into it). It shows only for a slice that takes longer than 250 ms, stays at least 400 ms once
 // it shows, then fills and fades out, so quick re-slices after an edit never blink. Model loading still sweeps.
 import { SLICE_STAGES } from '@slicerx/contracts'
-import { useEffect, useRef, useState, type CSSProperties } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState, type CSSProperties } from 'react'
+import { useWaited } from '../lib/waited'
 import { useApp } from '../state/store'
+
+// The ravens load only once a wait has run past about 1.2 s.
+const SliceGlide = lazy(() => import('../ravens/waits').then((m) => ({ default: m.SliceGlide })))
+const LoadingRavens = lazy(() => import('../ravens/waits').then((m) => ({ default: m.LoadingRavens })))
+
+/** How long the ravens over a loading plate take to fly off once the model is on it. */
+const LEAVE_MS = 420
 
 const SHOW_AFTER_MS = 250
 const MIN_SHOWN_MS = 400
@@ -33,11 +41,39 @@ export function SliceProgress() {
     const t = setTimeout(() => setShown(false), Math.max(180, MIN_SHOWN_MS - (performance.now() - since.current)))
     return () => clearTimeout(t)
   }, [running, shown])
-  if (loading) return <div className="busy" aria-hidden="true"><i /></div>
-  if (!shown) return null
+  const longSlice = useWaited(running)
+  const [glide, setGlide] = useState(false)
+  useEffect(() => {
+    if (longSlice) setGlide(true)
+    else if (!shown) setGlide(false)
+  }, [longSlice, shown])
+  const p = done ? 1 : fraction
   return (
-    <div className="slice-progress" data-done={done || undefined} role="progressbar" aria-label="Slicing" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round((done ? 1 : fraction) * 100)}>
-      <i style={{ '--p': done ? 1 : fraction } as CSSProperties} />
-    </div>
+    <>
+      {loading ? (
+        <div className="busy" aria-hidden="true"><i /></div>
+      ) : shown ? (
+        <div className="slice-progress" data-done={done || undefined} role="progressbar" aria-label="Slicing" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(p * 100)} style={{ '--p': p } as CSSProperties}>
+          <i style={{ '--p': p } as CSSProperties} />
+          {glide ? <Suspense fallback={null}><SliceGlide done={done} /></Suspense> : null}
+        </div>
+      ) : null}
+      <LoadingWait loading={loading} />
+    </>
   )
+}
+
+/** Huginn and Muninn over the plate while a model takes more than about 1.2 s to load; they fly off once it is on. */
+function LoadingWait({ loading }: { loading: boolean }) {
+  const long = useWaited(loading)
+  const [state, setState] = useState<'off' | 'in' | 'leaving'>('off')
+  useEffect(() => {
+    if (long) return setState('in')
+    if (loading) return
+    setState((st) => (st === 'in' ? 'leaving' : st))
+    const t = window.setTimeout(() => setState('off'), LEAVE_MS)
+    return () => window.clearTimeout(t)
+  }, [long, loading])
+  if (state === 'off') return null
+  return <Suspense fallback={null}><LoadingRavens leaving={state === 'leaving'} /></Suspense>
 }
