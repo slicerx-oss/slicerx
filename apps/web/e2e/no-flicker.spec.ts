@@ -129,7 +129,8 @@ test.describe('no flicker', { tag: '@gpu' }, () => {
   test('a setting change and the slice after it keep the preview drawn', async ({ page }, info) => {
     await start(page, 'preview')
     const view = await boxOf(page, '.vp')
-    const panels = { summary: await boxOf(page, '.studio .pane[aria-label="Slice summary and filament"]') }
+    // The right pane holds the objects and, under them, the slice summary.
+    const panels = { summary: await boxOf(page, '.studio .pane:has([data-testid="slice-summary"])') }
     const stop = await recordFrames(page)
     await page.evaluate(() => (window as unknown as { __sx: Sx }).__sx.setState({ overrides: { sparse_infill_density: '25%' } }))
     await sliced(page)
