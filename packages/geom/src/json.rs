@@ -511,6 +511,13 @@ pub(crate) fn read_model(req: &Value, files: FileLoader<'_>) -> Result<import::I
         Base64 { base64: String },
         Path { path: String },
     }
+    // An STL the caller has read and welded already (the app shows the model from its own read first): the mesh, in
+    // place of the file, so the file is not sent, decoded, read and welded a second time.
+    if let Some(v) = req.get("stlMesh") {
+        let name: String = field_or(req, "name", "model".to_owned())?;
+        let opts: import::ImportOptions = field_or_default(req, "options")?;
+        return import::import_stl_read(&mesh_value(v, "stlMesh", files)?, &name, &opts);
+    }
     let data: Data = field(req, "data")?;
     let (bytes, path) = match data {
         Data::Base64 { base64 } => (

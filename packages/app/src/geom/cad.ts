@@ -689,12 +689,21 @@ export interface AutoImport {
   slotColors: string[]
 }
 
+/** A binary STL as the app read it (export/stl-scan.ts): its corners welded exactly, as the engine's own read does. */
+export interface ReadStl {
+  positions: Float32Array | number[]
+  indices: Uint32Array | number[]
+}
+
 /**
  * Reads an OBJ, AMF or STL, repairs it, suggests a unit and splits loose bodies. Meshes are unscaled. The file goes as
- * base64 or as its bytes, which the geometry worker encodes for the engine, off the page.
+ * base64 or as its bytes, which the geometry worker encodes for the engine, off the page; an STL the app has read
+ * already can go as that mesh (`stlMesh`), which the worker hands the engine in its raw form, so the engine neither
+ * decodes nor reads the file again.
  */
-export function importAuto(file: ({ base64: string } | { bytes: Uint8Array }) & { name: string; format?: 'obj' | 'amf' | 'stl'; mtl?: string }, auto: AutoOptions = {}, signal?: AbortSignal) {
+export function importAuto(file: ({ base64: string } | { bytes: Uint8Array } | { stlMesh: ReadStl }) & { name: string; format?: 'obj' | 'amf' | 'stl'; mtl?: string }, auto: AutoOptions = {}, signal?: AbortSignal) {
   const { name, format, mtl } = file
+  if ('stlMesh' in file) return geom().call<AutoImport>('import.auto', { stlMesh: file.stlMesh, name, format: 'stl', auto }, signal)
   const data = 'bytes' in file ? { bytes: file.bytes } : { base64: file.base64 }
   return geom().call<AutoImport>('import.auto', { data, name, ...(format ? { format } : {}), ...(mtl !== undefined ? { mtl } : {}), auto }, signal)
 }

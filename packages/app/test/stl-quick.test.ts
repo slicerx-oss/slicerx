@@ -6,7 +6,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import type { Host, MeshPart } from '@slicerx/contracts'
 import type { AutoImport } from '../src/geom/cad'
 import { isBinaryStl, sameMesh, scanStl } from '../src/export/stl-scan'
-import { addAutoImport } from '../src/state/import-auto'
+import { addAutoImport, type AutoFile } from '../src/state/import-auto'
 import { bounds, decompose } from '../src/plate/transform'
 import { get, set } from '../src/state/store'
 
@@ -121,6 +121,22 @@ describe('opening a binary STL', () => {
     set({ plate: [] })
     await addAutoImport(counting().host, 'cube.stl', stl(), async () => answer(same, { bodies: 2 }))
     expect(get().plate).toHaveLength(2)
+  })
+
+  it('sends the engine the mesh it read, not the file, and the file when it could not read it', async () => {
+    const sent: AutoFile[] = []
+    const run = async (f: AutoFile) => (sent.push(f), answer(asPlain(scanStl(new Uint8Array(stl()))!)))
+    await addAutoImport(counting().host, 'cube.stl', stl(), run)
+    expect(sent).toHaveLength(1)
+    // The arrays on the plate themselves; the geometry worker writes them into the engine's memory as they are.
+    expect('stlMesh' in sent[0]! && sent[0].stlMesh.positions).toBe(get().plate[0]!.parts[0]!.positions)
+    expect('stlMesh' in sent[0]! && sent[0].stlMesh.indices).toBe(get().plate[0]!.parts[0]!.indices)
+    // A corner that is not a number: the page does not read it, and the engine gets the file.
+    set({ plate: [] })
+    const bad = stl(CORNERS.map((c, i) => (i === 3 ? [Number.NaN, 0, 0] : c)))
+    await addAutoImport(counting().host, 'cube.stl', bad, run).catch(() => undefined)
+    expect(sent).toHaveLength(2)
+    expect('bytes' in sent[1]! && sent[1].bytes.byteLength).toBe(bad.byteLength)
   })
 
   it('keeps the model as it was read when the engine cannot import it', async () => {

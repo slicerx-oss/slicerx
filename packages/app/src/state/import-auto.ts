@@ -41,15 +41,22 @@ export function toBase64(data: ArrayBuffer | Uint8Array): string {
 let seq = 0
 const uid = () => `obj_${Date.now().toString(36)}a${(++seq).toString(36)}`
 
-/** A file for the engine's import: as base64, or as its bytes, which the geometry worker encodes off the page. */
-export type AutoFile = ({ base64: string } | { bytes: Uint8Array }) & { name: string; format: MeshFormat; declaredUnit?: Unit }
+/**
+ * A file for the engine's import: as base64, as its bytes, which the geometry worker encodes off the page, or for a
+ * binary STL, the mesh the page read from it (welded as the engine welds, export/stl-scan.ts).
+ */
+export type AutoFile = ({ base64: string } | { bytes: Uint8Array } | { stlMesh: { positions: Float32Array; indices: Uint32Array } }) & { name: string; format: MeshFormat; declaredUnit?: Unit }
 
 export type AutoRunner = (file: AutoFile) => Promise<AutoImport>
 
 async function engine({ declaredUnit, ...file }: AutoFile): Promise<AutoImport> {
   const { importAuto } = await import('../geom/cad')
-  // A provider other than the app's worker (a test's) takes base64 only.
-  const sent = 'bytes' in file && !usesWorker() ? { name: file.name, format: file.format, base64: toBase64(file.bytes) } : file
+  // A provider other than the app's worker (a test's) takes base64 and plain arrays only.
+  const sent =
+    usesWorker() ? file
+    : 'bytes' in file ? { name: file.name, format: file.format, base64: toBase64(file.bytes) }
+    : 'stlMesh' in file ? { name: file.name, format: file.format, stlMesh: { positions: Array.from(file.stlMesh.positions), indices: Array.from(file.stlMesh.indices) } }
+    : file
   // The check for faces that cross each other runs after the model shows (checkCrossings): it is most of the import's time.
   return importAuto(sent, { ...(declaredUnit ? { declaredUnit } : {}), rebuildMaxTriangles: 0 })
 }
@@ -88,13 +95,14 @@ const QUICK_ON_PAGE = 8 * 1024 * 1024
  * Puts a binary STL on the plate from its own triangles, welded as the engine welds them first, before the engine's
  * import. Null when the file is not a binary STL or cannot be shown this way; the engine's import then shows it.
  */
-async function showQuick(host: Host, name: string, data: ArrayBuffer, edit: (fn: () => void) => void): Promise<{ id: string; part: MeshPart; handle: MeshHandle } | null> {
+async function showQuick(host: Host, name: string, data: ArrayBuffer, edit: (fn: () => void) => void, onRead: (mesh: { positions: Float32Array; indices: Uint32Array }) => void): Promise<{ id: string; part: MeshPart; handle: MeshHandle } | null> {
   const bytes = new Uint8Array(data)
   if (!isBinaryStl(bytes)) return null
   const onPage = bytes.length <= QUICK_ON_PAGE || typeof Worker === 'undefined'
   try {
     const mesh = onPage ? scanStl(bytes) : await (await import('../export/project-worker-client')).scanStlInWorker(bytes)
     if (!mesh || mesh.indices.length === 0) return null
+    onRead(mesh)
     markOpenStage('parse', { parsedIn: onPage ? 'page' : 'worker' })
     const part: MeshPart = { name, slot: 1, positions: mesh.positions, indices: mesh.indices }
     const handle = await host.slicer.loadParts(name, [part])
@@ -120,11 +128,18 @@ export async function addAutoImport(host: Host, name: string, data: ArrayBuffer,
   // One undo step for the object shown at once and the engine's import that may replace it.
   const token = {}
   const edit = (fn: () => void) => inStep(token, () => (scope ? scope.run(fn) : fn()))
-  // The engine's import starts first, in the geometry worker. Meanwhile a binary STL goes on the plate from its own
-  // triangles; the import takes far longer.
-  const started = format === 'step' ? null : run({ bytes: new Uint8Array(data), name, format })
-  started?.catch(() => undefined)
-  const quick = format === 'stl' ? await showQuick(host, name, data, edit) : null
+  // The engine's import runs in the geometry worker. A binary STL is read on the page first and goes on the plate from
+  // its own triangles; the import, which takes far longer, starts on that read mesh as soon as it is there, so the
+  // engine neither decodes nor reads the file again. Any other file goes to the import as it is, at once.
+  let started = null as Promise<AutoImport> | null
+  const start = (file: AutoFile) => {
+    started = run(file)
+    started.catch(() => undefined)
+  }
+  if (format !== 'step' && !(format === 'stl' && isBinaryStl(new Uint8Array(data)))) start({ bytes: new Uint8Array(data), name, format })
+  const quick = format === 'stl' ? await showQuick(host, name, data, edit, (stlMesh) => start({ stlMesh, name, format })) : null
+  // A binary STL the page could not read (a corner that is not a number) goes to the import as a file after all.
+  if (format !== 'step' && !started) start({ bytes: new Uint8Array(data), name, format })
   let stepNotes: string[] = []
   let result: AutoImport
   try {
