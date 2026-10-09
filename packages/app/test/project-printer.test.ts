@@ -203,6 +203,29 @@ describe('a project opens with the process and filaments it was made with', () =
     expect(get().toast?.text).not.toContain('Kept SlicerX')
   })
 
+  // A saved quality tile and saved Simple-mode settings apply to plain models and new plates, never over a project's
+  // own process: opening it shows Custom, and the slice takes the project's layer height.
+  for (const auto of [true, false]) {
+    it(`a saved goal and Simple-mode settings leave a project's process alone (${auto ? 'auto' : 'manual'} slice)`, async () => {
+      const before = get()
+      const kept = { easy: before.easy, easyTouched: before.easyTouched, autoSlice: before.autoSlice, settingsMode: before.settingsMode, handPrinters: before.handPrinters }
+      const p1s = { id: 'local-bambu-p1s', name: 'P1S', vendor: 'Bambu Lab', model: 'P1S', profileId: 'bambu-p1s', nozzleCount: 1 }
+      try {
+        set((s) => ({ handPrinters: [p1s], printerId: p1s.id, printerModel: { id: p1s.id, vendor: p1s.vendor, model: p1s.model }, printerNozzles: { ...s.printerNozzles, [p1s.id]: 0.4 } }))
+        await profileReady()
+        set({ goal: 'standard', autoSlice: auto, settingsMode: 'simple', easy: { detail: 40, strength: 20, speed: 'balanced', supports: 'auto', brim: true, varyLayerHeight: false }, easyTouched: ['varyLayerHeight'] })
+        const { host, requests } = capture([{ id: p1s.id, name: p1s.name, vendor: p1s.vendor, model: p1s.model, plugin: 'export', nozzleCount: 1 }])
+        await openModelBytes(host, 'tangela.3mf', project(FINE_P1S))
+        expect(get().toast?.text).toContain("Opened on P1S, a P1S 0.4 mm like the project's.")
+        expect(get().goal).toBe('custom')
+        await slicePlate(host, auto ? { auto: true } : {}).catch(() => undefined)
+        expect(requests.at(-1)?.config['layer_height']).toBe(0.12)
+      } finally {
+        set(kept)
+      }
+    })
+  }
+
   it('a project for a printer we have no profile for keeps its values on the current printer', async () => {
     const { host } = capture()
     await openModelBytes(host, 'bench.3mf', project(HAND_MADE))
