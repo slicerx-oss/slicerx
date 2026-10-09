@@ -142,13 +142,13 @@ export function Studio() {
         </Suspense>
       ) : null}
       {design ? (
-        <SidePane key={`design-${side}`} side={side} ws={railKey('prepare', 'design')} label="Model" sections={DESIGN_TREE} width={280}>
+        <SidePane key={`design-${side}`} side={side} ws={railKey('prepare', 'design')} label="Model" sections={DESIGN_TREE} width={280} tab={{ panel: 'model-tree', shutFully: true }}>
           <Suspense fallback={<div className="ws-loading" aria-busy="true" />}>
             <DesignLeft />
           </Suspense>
         </SidePane>
       ) : (
-        <SidePane key={`prepare-${side}`} side={side} ws="prepare" label="Printer and settings" sections={PREPARE_LEFT} width={layout.sidebar.width} {...(sliceInSidebar ? { footer: <SliceBlock label={layout.primaryAction.label} compact /> } : {})}>
+        <SidePane key={`prepare-${side}`} side={side} ws="prepare" label="Printer and settings" sections={PREPARE_LEFT} width={layout.sidebar.width} tab={{ panel: 'slice-sidebar' }} {...(sliceInSidebar ? { footer: <SliceBlock label={layout.primaryAction.label} compact /> } : {})}>
           <PrepareLeft layout={layout} />
         </SidePane>
       )}
@@ -217,13 +217,13 @@ export function Studio() {
       </section>
 
       {design ? (
-        <SidePane key={`design-${other}`} side={other} ws={railKey('prepare', 'design')} label="Tool and transform" sections={DESIGN_TOOL} width={312}>
+        <SidePane key={`design-${other}`} side={other} ws={railKey('prepare', 'design')} label="Tool and transform" sections={DESIGN_TOOL} width={312} tab={{ panel: 'model-inspector', shutFully: true }}>
           <Suspense fallback={<div className="ws-loading" aria-busy="true" />}>
             <DesignRight />
           </Suspense>
         </SidePane>
       ) : hasPreview ? (
-        <SidePane key={`sliced-${other}`} side={other} ws="preview" label="Slice summary and filament" sections={manyPlates ? [PLATES_SECTION, ...PREVIEW_RIGHT] : PREVIEW_RIGHT} width={312}>
+        <SidePane key={`sliced-${other}`} side={other} ws="preview" label="Slice summary and filament" sections={manyPlates ? [PLATES_SECTION, ...PREVIEW_RIGHT] : PREVIEW_RIGHT} width={312} tab={{ panel: 'slice-summary' }}>
           <PreviewPlates />
           <PreviewLeft />
           <PreviewRight />

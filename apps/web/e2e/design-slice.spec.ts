@@ -53,7 +53,7 @@ test.describe('Design | Slice', () => {
     await openStudio(page)
     await page.locator('.sx-tab[data-mode="design"]').click()
     const body = page.locator('.bpanel-body')
-    await expect(page.locator('.bpanel-tab')).toBeVisible()
+    await expect(page.getByTestId('edge-tab-bottom')).toBeVisible()
     await expect(body).toBeHidden()
     const view = (await page.locator('.vp').boundingBox())!
     await page.mouse.move(view.x + view.width / 3, view.y + view.height - 30)

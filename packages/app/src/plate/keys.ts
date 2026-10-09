@@ -9,6 +9,7 @@ import { runCommand } from '../commands/registry'
 import { inTextField, matchShortcut } from '../lib/keys'
 import { toggleModelMode } from '../state/model-mode'
 import { get, set } from '../state/store'
+import { toggleEdge } from '../shell/edge-keys'
 import { arrangePlate, centerSelected, dropSelectedToBed, selectAll } from './edit'
 import { history } from './history'
 import { selectAllEars } from './brim-ears'
@@ -56,6 +57,10 @@ export function plateHandlers(): Partial<Record<KeyAction, Handler>> {
     // Tab (in most looks) flips Slice between the toolpaths and the solid models.
     'workspace.toggle': () => set((s) => ({ workspace: 'prepare', modelMode: 'slice', sliceLook: s.workspace === 'prepare' && s.modelMode === 'slice' && s.sliceLook === 'toolpaths' ? 'solid' : 'toolpaths' })),
     'model.mode': toggleModelMode,
+    // The panel on that side of the view with an edge tab: Model's tree and tool pane, Slice's sidebar and summary.
+    'panel.left': () => void toggleEdge('left'),
+    'panel.right': () => void toggleEdge('right'),
+    'panel.bottom': () => void toggleEdge('bottom'),
   }
   for (const [action, preset] of Object.entries(VIEW) as [KeyAction, NonNullable<(typeof VIEW)[KeyAction]>][]) out[action] = () => bus()?.view?.(preset, { animate: true })
   return out

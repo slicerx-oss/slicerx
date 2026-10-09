@@ -1,0 +1,18 @@
+/* SPDX-License-Identifier: Apache-2.0
+   Copyright (C) 2026 The SlicerX contributors */
+/* A pane with an edge tab: the tab sits on the pane's inner edge, centered on it, and stays on the window edge while
+   the pane is shut. The width slides in 160 ms and the view follows it. */
+.pane.edged { transition-duration: 160ms; }
+.pane.edged > .sx-edge-tab { position: absolute; top: 50%; z-index: calc(var(--z-hud) + 1); transform: translateY(-50%); }
+.pane.edged[data-side="left"] > .sx-edge-tab { left: 100%; }
+.pane.edged[data-side="right"] > .sx-edge-tab { right: 100%; }
+/* Shut all the way: no rail, no border, the view takes the width. */
+.pane.shuts.sx-rail[data-collapsed] { width: 0; border: 0; }
+/* Content keeps its width while the pane slides, so it does not rewrap on every frame. */
+.pane.edged > .sx-rail-body { overflow-x: hidden; }
+.pane.edged .pane-body { min-width: calc(var(--w-side) - 32px); }
+/* The view's edge controls step in past the tab. */
+@media (min-width: 901px) {
+  .studio .plate-tools[data-placement="left-of-viewport"] { left: 26px; }
+  .studio .lstrip { right: 26px; }
+}
