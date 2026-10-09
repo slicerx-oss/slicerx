@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { isMac } from '../src/lib/keys'
 import { bindPlateKeys } from '../src/plate/keys'
 import { registerEdge, toggleEdge } from '../src/shell/edge-keys'
-import { SidePane } from '../src/shell/pane'
+import { sheets, SidePane } from '../src/shell/pane'
 import { get, set } from '../src/state/store'
 
 /** A window at a width: the pane reads 1280 px and up as wide and 900 px and under as a phone. */
@@ -75,14 +75,30 @@ describe('edge tabs on the side panes', () => {
     expect(getByTestId('edge-tab-right').getAttribute('data-tip-key')).toBe(']')
   })
 
-  it('has no tab on a phone, and panes without one keep the rail toggle', () => {
+  it('makes a phone pane a bottom sheet: its tab opens it, one sheet at a time, Escape closes it', () => {
     windowAt(390)
-    expect(pane().queryByTestId('edge-tab-left')).toBeNull()
+    const { container } = pane()
+    pane({ side: 'right', label: 'Tool and transform', tab: { panel: 'model-inspector', shutFully: true } })
+    const aside = container.querySelector('aside')!
+    expect(aside.classList.contains('sheet')).toBe(true)
+    expect(aside.inert).toBe(true)
+    const left = document.querySelector<HTMLElement>('[data-testid="edge-tab-left"].sheet-tab')!
+    fireEvent.click(left)
+    expect(sheets.getState().open).toBe('prepare-design:left')
+    expect(aside.classList.contains('sheet-open')).toBe(true)
+    expect(aside.inert).toBe(false)
+    // The rails store, which desktop windows remember, is not touched.
+    expect(get().rails['prepare-design']).toBeUndefined()
+    fireEvent.click(document.querySelector<HTMLElement>('[data-testid="edge-tab-right"].sheet-tab')!)
+    expect(sheets.getState().open).toBe('prepare-design:right')
+    expect(aside.classList.contains('sheet-open')).toBe(false)
+    act(() => void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', cancelable: true })))
+    expect(sheets.getState().open).toBeNull()
     cleanup()
     windowAt(1440)
-    const { container, queryByTestId } = pane({ ws: 'library', label: 'Folders' }, false)
-    expect(queryByTestId('edge-tab-left')).toBeNull()
-    expect(container.querySelector('.sx-rail-toggle')).not.toBeNull()
+    const library = pane({ ws: 'library', label: 'Folders' }, false)
+    expect(library.queryByTestId('edge-tab-left')).toBeNull()
+    expect(library.container.querySelector('.sx-rail-toggle')).not.toBeNull()
   })
 
   it('[ and ] toggle the pane on that side, as Mod+B does', async () => {

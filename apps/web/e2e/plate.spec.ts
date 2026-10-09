@@ -2,7 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 // Plate tools on the plate tab: numeric transform fields, scale to size, undo and redo, tool keys.
 import { type Page } from '@playwright/test'
-import { expect, plateReady, sliceCount, sliced, tab, tabName, test } from './fixtures'
+import { closeSheet, expect, openSheet, plateReady, sliceCount, sliced, tab, tabName, test } from './fixtures'
 
 /**
  * The G-code the printer runs. Files for Bambu Lab printers open with the header and the full settings (hundreds
@@ -26,6 +26,8 @@ async function prepare(page: Page): Promise<void> {
 
 test('numeric fields move and scale the object, and undo puts it back', async ({ page }) => {
   await prepare(page)
+  // On a phone the object's fields are in the sidebar's sheet.
+  await openSheet(page)
   const posX = page.getByRole('group', { name: 'Position' }).getByRole('textbox', { name: /X/ })
   await expect(posX).toBeVisible()
   const before = await posX.inputValue()
@@ -43,6 +45,7 @@ test('numeric fields move and scale the object, and undo puts it back', async ({
   await expect.poll(async () => Math.round(Number(await sizeY.inputValue()) / y0)).toBe(2)
   await expect(page.getByRole('group', { name: 'Scale' }).getByRole('textbox', { name: /X/ })).toHaveValue('200')
 
+  await closeSheet(page)
   await page.locator('.vp').click({ position: { x: 5, y: 200 } })
   await page.getByRole('button', { name: 'Undo' }).click()
   await page.getByRole('button', { name: 'Undo' }).click()
@@ -74,6 +77,7 @@ test('tool keys follow the look and feel keymap', async ({ page, isMobile }) => 
 
 test('instances, fill bed and arrange, each one undo step', async ({ page }) => {
   await prepare(page)
+  await openSheet(page)
   const objs = page.locator('.objs > li')
   await expect(objs).toHaveCount(1)
   await page.getByRole('button', { name: 'Add an instance' }).click()
@@ -83,6 +87,7 @@ test('instances, fill bed and arrange, each one undo step', async ({ page }) => 
   await page.getByRole('button', { name: 'Fill bed' }).click()
   await expect.poll(() => objs.count()).toBeGreaterThan(2)
   const filled = await objs.count()
+  await closeSheet(page)
   await page.getByRole('toolbar', { name: 'Plate tools' }).getByRole('button', { name: 'Arrange all' }).click()
   // Arrange runs in the background; an undo before it lands would undo the fill instead.
   await expect(page.locator('html')).not.toHaveAttribute('data-sx-busy')
@@ -107,7 +112,10 @@ test('plates: add, switch, per-plate sequence, move objects', async ({ page }) =
   await page.getByRole('button', { name: 'Plate 2 settings' }).click()
   await page.getByRole('group', { name: 'Plate 2 settings' }).getByLabel('Print sequence').selectOption('by-object')
   await page.getByRole('button', { name: 'Done' }).click()
+  await openSheet(page)
   await page.locator('.obj-name', { hasText: 'Layered X' }).click()
+  // Move to plate is on the selected object's bar over the view.
+  await closeSheet(page)
   await page.getByRole('button', { name: 'Move to plate' }).click()
   await page.getByRole('menuitem', { name: 'Plate 2' }).click()
   await expect(objs).toHaveCount(0)
@@ -215,6 +223,7 @@ test.describe('printer card close up at 2x', () => {
 
 test('add shapes, merge them, and split them back', async ({ page }) => {
   await prepare(page)
+  await openSheet(page)
   const objs = page.locator('.objs > li')
   const addShape = async (name: string) => {
     await page.getByRole('button', { name: 'Add shape' }).click()
@@ -236,11 +245,13 @@ test('add shapes, merge them, and split them back', async ({ page }) => {
 
 test('object settings: add one, undo it', async ({ page }) => {
   await prepare(page)
+  await openSheet(page)
   await page.locator('.obj-name', { hasText: 'Layered X' }).click()
   await page.getByRole('button', { name: 'Add setting' }).click()
   await page.getByRole('textbox', { name: 'Find a setting to change for this object' }).fill('wall loops')
   await page.getByRole('list', { name: 'Settings you can add' }).getByRole('button').first().click()
   await expect(page.locator('.obj-set-list li')).toHaveCount(1)
+  await closeSheet(page)
   await page.getByRole('toolbar', { name: 'Plate tools' }).getByRole('button', { name: 'Undo' }).click()
   await expect(page.locator('.obj-set-list li')).toHaveCount(0)
 })
@@ -248,6 +259,8 @@ test('object settings: add one, undo it', async ({ page }) => {
 test('geometry tools run in the browser: cut in two, then repair', async ({ page }) => {
   await prepare(page)
   const objs = page.locator('.objs > li')
+  // On a phone the object list, its Tools menu and the cut panel are in the sidebar's sheet.
+  await openSheet(page)
   await page.locator('.obj-name', { hasText: 'Layered X' }).click()
   await page.getByRole('button', { name: 'Tools' }).click()
   await page.getByRole('menuitem', { name: 'Cut' }).click()
@@ -273,6 +286,7 @@ test('save the project as .sx3mf with the SlicerX metadata', async ({ page }) =>
     Reflect.deleteProperty(window, 'showSaveFilePicker')
   })
   await prepare(page)
+  await openSheet(page)
   await page.getByRole('button', { name: 'Export', exact: true }).click()
   await expect(page.getByRole('menuitem', { name: /STL/ })).toHaveCount(0)
   const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('menuitem', { name: /Save project/ }).click()])
@@ -321,6 +335,7 @@ test('sending runs the preflight and needs the bed-clear check', async ({ page }
 
 test('the filament slot editor sets a slot and the panel shows it', async ({ page }) => {
   await prepare(page)
+  await openSheet(page)
   const slot = page.locator('[data-section="filament"] .slot').first()
   await slot.getByRole('button', { name: 'Edit filament 1' }).first().click()
   const dialog = page.getByRole('dialog', { name: /Filament 1/ })
@@ -333,6 +348,7 @@ test('the filament slot editor sets a slot and the panel shows it', async ({ pag
 
 test('a negative volume is added under the object and removed', async ({ page }) => {
   await prepare(page)
+  await openSheet(page)
   const volumes = page.locator('[data-section="volumes"]')
   await volumes.getByRole('button', { name: 'Add' }).click()
   await expect(volumes.getByRole('button', { name: 'Negative volume 1', exact: true })).toBeVisible()
@@ -360,6 +376,7 @@ test('a process preset is saved in Settings, stays after a reload and can be del
 
 test('printer settings open in Orca style tabs and keep a change', async ({ page }) => {
   await prepare(page)
+  await openSheet(page)
   await page.getByRole('button', { name: 'Printer settings' }).click()
   const dialog = page.getByRole('dialog', { name: /Printer settings/ })
   await expect(dialog).toBeVisible()
@@ -436,6 +453,7 @@ test('the paint tool paints the object with a filament color, and undo takes it 
 
 test('a modifier volume takes its own settings', async ({ page }) => {
   await prepare(page)
+  await openSheet(page)
   const volumes = page.locator('[data-section="volumes"]')
   await volumes.getByLabel('Volume type').selectOption('modifier')
   await volumes.getByRole('button', { name: 'Add' }).click()
@@ -541,6 +559,7 @@ test('the shrinkage test builds its model and turns a measured length into a sav
 
 test('the object list renames an object, sets a part filament, and leaves an object out of the print', async ({ page }) => {
   await prepare(page)
+  await openSheet(page)
   const row = page.locator('li.obj').first()
   await row.locator('.obj-h').click()
   const name = row.getByLabel('Name', { exact: true })
@@ -551,6 +570,8 @@ test('the object list renames an object, sets a part filament, and leaves an obj
   await expect(page.locator('[data-section="filament"] .slot[data-slot="3"]')).not.toHaveClass(/unused/)
   await row.getByRole('button', { name: /^Do not print Layered bracket/ }).click()
   await expect(row).toHaveClass(/off/)
+  // The Slice action and Undo are on the view.
+  await closeSheet(page)
   await page.getByRole('button', { name: 'Slice plate' }).click()
   await expect(page.getByText(/set not to print/)).toBeVisible()
   await page.getByRole('button', { name: 'Undo' }).click()
@@ -565,6 +586,7 @@ test('the object row and the estimate use plain words: parts, slot names, and th
   await expect(meta).toHaveText('2 parts')
   await expect(meta).toHaveAttribute('data-tip-title', /^\d[\d,]* triangles$/)
   // A part's filament reads as its slot, type and color, as the printer's slots do.
+  await openSheet(page)
   await row.locator('.obj-h').click()
   const options = await row.getByLabel(/^Filament for /).first().locator('option').allTextContents()
   expect(options[0]).toMatch(/^\S+ [A-Z][\w-]* [A-Z][a-z]+( [a-z]+)?$/)
@@ -575,6 +597,7 @@ test('the object row and the estimate use plain words: parts, slot names, and th
   await page.evaluate(() => (window as unknown as { __sx: { setState(p: unknown): void } }).__sx.setState({ settingsMode: 'advanced' }))
   // After a slice: the time's tooltip says how long it took; no threads note, no Warnings row at zero.
   const before = await sliceCount(page)
+  await closeSheet(page)
   await page.getByRole('button', { name: 'Slice plate' }).click()
   await expect(sliced(page, before)).toBeVisible({ timeout: 120_000 })
   const estimate = page.locator('[data-section="estimate"]')

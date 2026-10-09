@@ -2,7 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 // The Slice sidebar: printer, filament and print settings stand as separate panels, and printer and filament fold to a
 // summary line that stays folded after a reload.
-import { expect, test } from './fixtures'
+import { expect, openSheet, test } from './fixtures'
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
@@ -12,6 +12,7 @@ test.beforeEach(async ({ page }) => {
 
 test('each section is its own panel with an icon in its header', async ({ page }) => {
   await page.goto('./')
+  await openSheet(page)
   for (const id of ['printer', 'filament', 'settings']) {
     const sec = page.locator(`.pane-body > .sx-block[data-section="${id}"]`)
     await expect(sec).toBeVisible()
@@ -37,6 +38,7 @@ test('Simple mode keeps the sections open with no fold', async ({ page }) => {
 
 test('printer and filament fold to a summary line and stay folded', async ({ page }) => {
   await page.goto('./')
+  await openSheet(page)
   const printer = page.locator('.sx-block[data-section="printer"]')
   await printer.getByRole('button', { name: 'Printer', exact: true }).click()
   await expect(printer).toHaveAttribute('data-collapsed', 'true')
@@ -45,6 +47,7 @@ test('printer and filament fold to a summary line and stay folded', async ({ pag
   await filament.getByRole('button', { name: 'Filament', exact: true }).click()
   await expect(filament.locator('.sec-sum')).toContainText('used')
   await page.reload()
+  await openSheet(page)
   await expect(page.locator('.sx-block[data-section="printer"]')).toHaveAttribute('data-collapsed', 'true')
   await page.locator('.sx-block[data-section="printer"]').getByRole('button', { name: 'Printer', exact: true }).click()
   await expect(page.locator('.sx-block[data-section="printer"] .printer')).toBeVisible()
