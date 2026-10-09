@@ -95,6 +95,8 @@ export function useOverlayOffset(viewport: RefObject<HTMLElement | null>, select
     }
     const ro = new ResizeObserver(queue)
     ro.observe(vp)
+    // A side pane that opens, closes or is resized moves the viewport without always resizing it first.
+    for (const el of Array.from(vp.parentElement?.children ?? [])) if (el !== vp) ro.observe(el)
     const watch = () => {
       for (const el of Array.from(vp.querySelectorAll<HTMLElement>(all))) ro.observe(el)
     }
