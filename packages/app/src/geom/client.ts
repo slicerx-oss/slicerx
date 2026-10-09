@@ -4,6 +4,7 @@
 // booleans. Loads on first use in a worker. A host can provide its own (for example native code in
 // the desktop app) with setGeomProvider.
 import type { FaceSurface, MeshPart } from '@slicerx/contracts'
+import type { LoadError } from './modules'
 
 export interface GeomProvider {
   call<T = unknown>(op: string, request: unknown, signal?: AbortSignal): Promise<T>
@@ -24,15 +25,38 @@ const IDLE_MS = 30_000
 const BIG_IDLE_MS = 2_000
 const BIG_BYTES = 256 * 1024 * 1024
 
-/** The app's own geometry worker: its answers and failures so far, by operation, and the last failure's message. */
-const calls = { answered: {} as Record<string, number>, failed: {} as Record<string, number>, lastError: null as string | null }
+/**
+ * The app's own geometry worker: its answers and failures so far, by operation, the last failure's message, and the
+ * last engine build that did not load.
+ */
+const calls = { answered: {} as Record<string, number>, failed: {} as Record<string, number>, lastError: null as string | null, loadError: null as LoadError | null }
 
 /**
  * What the app's own geometry worker has answered, for the agent bridge: a session whose answers stay empty after a
- * mesh file opened, or with no fit.check after an object of several parts, never loaded the engine.
+ * mesh file opened, or with no fit.check after an object of several parts, never loaded the engine; `loadError` says
+ * which build did not load and why.
  */
-export function geomCalls(): { answered: Record<string, number>; failed: Record<string, number>; lastError: string | null } {
-  return { answered: { ...calls.answered }, failed: { ...calls.failed }, lastError: calls.lastError }
+export function geomCalls(): { answered: Record<string, number>; failed: Record<string, number>; lastError: string | null; loadError: LoadError | null } {
+  return { answered: { ...calls.answered }, failed: { ...calls.failed }, lastError: calls.lastError, loadError: calls.loadError && { ...calls.loadError } }
+}
+
+/** Load failures already logged, so a worker that starts again and fails the same way is not logged again. */
+const logged = new Set<string>()
+
+/**
+ * An engine build that did not load (reported by the worker): kept for the bridge, logged once with its reason, and,
+ * with localStorage 'slicerx.debug' set, shown as a notice. The person keeps working; calls that need the engine fail
+ * on their own.
+ */
+export function noteLoadError(e: LoadError): void {
+  calls.loadError = { ...e }
+  const key = `${e.module}: ${e.message}`
+  if (logged.has(key)) return
+  logged.add(key)
+  console.error(`The geometry engine's ${e.module} build did not load: ${e.message}`)
+  if (typeof localStorage !== 'undefined' && localStorage.getItem('slicerx.debug')) {
+    void import('../state/store').then(({ toast }) => toast(`The geometry engine did not load (${e.module}: ${e.message}).`, 'warn'))
+  }
 }
 
 function workerProvider(): GeomProvider {
@@ -51,7 +75,11 @@ function workerProvider(): GeomProvider {
     idle = null
     if (worker) return worker
     worker = new Worker(new URL('./geom-worker.ts', import.meta.url), { type: 'module' })
-    worker.onmessage = (e: MessageEvent<{ id: number; result?: unknown; error?: string; memoryBytes?: number }>) => {
+    worker.onmessage = (e: MessageEvent<{ id: number; result?: unknown; error?: string; memoryBytes?: number } | { loadError: LoadError }>) => {
+      if ('loadError' in e.data) {
+        noteLoadError(e.data.loadError)
+        return
+      }
       const p = pending.get(e.data.id)
       if (pending.size <= 1) {
         if (idle) clearTimeout(idle)

@@ -33,9 +33,11 @@ async function load(url: URL): Promise<EngineModule> {
   return { operations, call: (op, request) => call(x, op, request) }
 }
 
+// A build that does not load is reported to the page (client.ts), ahead of the answer to the call that asked for it.
 const engine = engineModules(
   () => load(new URL('../../../geom/wasm/pkg/sx_geom_core.wasm', import.meta.url)),
   () => load(new URL('../../../geom/wasm/pkg/sx_geom_wasm.wasm', import.meta.url)),
+  (loadError) => self.postMessage({ loadError }),
 )
 
 /**
