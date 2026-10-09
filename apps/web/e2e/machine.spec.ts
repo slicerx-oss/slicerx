@@ -4,7 +4,7 @@
 // per plate, an export-only printer's status, and all of it by keyboard. The no-printer state is covered by the
 // machine card unit test, since the web build always has its demo printers.
 import { type Page } from '@playwright/test'
-import { expect, plateReady, test } from './fixtures'
+import { closeSheet, expect, openSheet, plateReady, test } from './fixtures'
 
 const A1_MINI = { id: 'e2e-a1-mini', name: 'Desk A1 mini', profileId: 'bambu-a1-mini', vendor: 'Bambu Lab', model: 'A1 mini', nozzleCount: 1 }
 
@@ -16,6 +16,8 @@ async function open(page: Page, prefs: Record<string, unknown> = {}): Promise<vo
   }, prefs)
   await page.goto('./')
   await plateReady(page)
+  // On a phone the sidebar is a sheet.
+  await openSheet(page)
   await expect(page.getByTestId('slice-machine-card')).toBeVisible()
 }
 
@@ -74,16 +76,21 @@ test('the plate type is per plate', async ({ page }) => {
   await open(page, { printerId: 'bay-1' })
   const plate = page.getByTestId('slice-machine-plate')
   const first = (await plate.textContent()) ?? ''
+  const plates = page.getByRole('list', { name: 'Plates' })
+  // The plate strip is in the view; on a phone the sidebar sheet closes for it and opens again for the card.
+  await closeSheet(page)
   await page.getByRole('button', { name: 'Add plate' }).first().click()
+  await openSheet(page)
   await plate.click()
   await page.locator('[data-testid="slice-machine-plate-option"][data-bed-type="smooth-pei"]').click()
   await expect(plate).toHaveText('Smooth PEI')
-  const plates = page.getByRole('list', { name: 'Plates' })
+  await closeSheet(page)
   await plates.locator('.plate-card', { hasText: 'Plate 1' }).click()
   await expect(plate).toHaveText(first)
   await plates.locator('.plate-card', { hasText: 'Plate 2' }).click()
   await expect(plate).toHaveText('Smooth PEI')
   // Back to the printer's default.
+  await openSheet(page)
   await plate.click()
   await page.locator('[data-testid="slice-machine-plate-option"][data-bed-type=""]').click()
   await expect(plate).toHaveText(first)
