@@ -46,6 +46,7 @@ fn cuboid(x: [f32; 2], y: [f32; 2], z: [f32; 2], slot: u8) -> Mesh {
             support_paint: Vec::new(),
             seam_paint: Vec::new(),
             fuzzy_paint: Vec::new(),
+            paint_texts: Vec::new(),
         }],
     }
 }
