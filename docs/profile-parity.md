@@ -15,6 +15,8 @@ The code is `packages/app/src/adapters/profile.ts` (the layer), `adapters/config
 
 ## Acceptance against OrcaSlicer 2.4.2
 
+For Bambu Lab printers, Bambu Studio is the reference where it and OrcaSlicer differ in behavior: it is the maker's own slicer, and people compare against it. One case so far: the H2D's automatic filament map, when two maps cost the same, puts filament 1 on the right (master) extruder as Bambu Studio does (`filament_map = 2,1`); OrcaSlicer is not consistent there. Settings themselves still resolve as OrcaSlicer 2.4.2 resolves them, below.
+
 `packages/core/bench/compare/resolved_dump.py` slices a model with OrcaSlicer 2.4.2 on a stock printer, filament and process and writes the settings it resolved (the config block of its G-code). `packages/settings/scripts/gen-resolved.ts` turns the dumps of every printer into the shipped files. `packages/app/test/resolved-parity.test.ts` compares the app's configuration with Orca's key by key when `ORCA_RESOLVED_DIR` points at the dumps (they stay out of the repository).
 
 Result for the default filament and the standard process, 0.4 mm nozzle:
