@@ -6,7 +6,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Host, MeshPart, SliceResult } from '@slicerx/contracts'
 import { fitSettled } from '../src/plate/fit-state'
-import { checkCrossings, crossingEngine, plateQuiet, type CrossingRunner } from '../src/state/import-auto'
+import { checkCrossings, crossingEngine, plateQuiet, plateQuietness, QUIET_MAX_MS, type CrossingRunner } from '../src/state/import-auto'
 import { get, set, type PlateEntry } from '../src/state/store'
 
 const ended = vi.hoisted(() => ({ count: 0 }))
@@ -89,6 +89,23 @@ describe('the crossing check waits for a quiet plate', () => {
     expect(signal?.aborted).toBe(true)
     set({ plateLoading: false })
     expect(await check).toEqual({ fixed: 0, left: 0 })
+  })
+
+  it('never starts while a file opens, even when the fit check never reports', async () => {
+    vi.useFakeTimers()
+    try {
+      set({ plate: [entry('o', [part(1)])], slice: done, plateLoading: true })
+      let resolved = false
+      void plateQuietness.wait().then(() => (resolved = true))
+      // The wait for the fit check runs out while the open still runs: still no check.
+      await vi.advanceTimersByTimeAsync(QUIET_MAX_MS + 1000)
+      expect(resolved).toBe(false)
+      set({ plateLoading: false })
+      await vi.advanceTimersByTimeAsync(0)
+      expect(resolved).toBe(true)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it("ends the geometry worker after each part's check", async () => {

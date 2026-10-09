@@ -100,10 +100,14 @@ export function plateQuiet(s: AppState): boolean {
   return fitSettledFor(s.plate)
 }
 
+/** Never while a file opens or a slice runs, even once the wait has run out. */
+const notBusy = (s: AppState): boolean => !s.plateLoading && s.slice.status !== 'running'
+
 export const plateQuietness: Quiet = {
   wait: () =>
     new Promise<void>((resolve) => {
       if (plateQuiet(get())) return resolve()
+      let overdue = false
       const done = (): void => {
         offStore()
         offFit()
@@ -111,11 +115,17 @@ export const plateQuietness: Quiet = {
         resolve()
       }
       const check = (): void => {
-        if (plateQuiet(get())) done()
+        const s = get()
+        if (overdue ? notBusy(s) : plateQuiet(s)) done()
       }
       const offStore = appStore.subscribe(check)
       const offFit = onFitSettled(check)
-      const late = setTimeout(done, QUIET_MAX_MS)
+      // A fit check or an auto slice that never reports does not hold the check for good; an open or a slice under
+      // way still does.
+      const late = setTimeout(() => {
+        overdue = true
+        check()
+      }, QUIET_MAX_MS)
     }),
   onBusy: (cb) =>
     appStore.subscribe((s, prev) => {
