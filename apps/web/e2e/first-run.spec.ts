@@ -3,7 +3,7 @@
 // First-run setup on a fresh install: the theme, the printer scan, the slicer question, what the plate opens in, then
 // setting up mimir. Also setup opening again for a profile from an earlier onboarding.
 import { type Page } from '@playwright/test'
-import { expect, test } from './fixtures'
+import { expect, expectTabLabel, test } from './fixtures'
 
 async function fresh(page: Page): Promise<void> {
   // A fresh install: nothing stored, so setup opens by itself on the theme.
@@ -94,7 +94,7 @@ test('the scan finds the printer, the connection tests itself, then the slicer q
   await expect(page.locator('.fr')).toHaveCount(0)
 
   // The Bambu style names the Printers workspace Device and keeps the choice and the printer.
-  await expect(page.locator('.sx-tab', { hasText: 'Device' })).toHaveCount(1)
+  await expectTabLabel(page, 'printers', 'Device')
   const stored = await page.evaluate(() => localStorage.getItem('slicerx.prefs.v1') ?? '')
   const prefs = JSON.parse(stored) as { lookAndFeel: { id: string }; firstRun: { completedAt: string | null; printerId: string | null } }
   expect(prefs.lookAndFeel.id).toBe('bambu-studio')
@@ -105,7 +105,7 @@ test('the scan finds the printer, the connection tests itself, then the slicer q
   expect(all).not.toContain('12345678')
 
   await page.reload()
-  await expect(page.locator('.sx-tab', { hasText: 'Device' })).toHaveCount(1)
+  await expectTabLabel(page, 'printers', 'Device')
   await expect(page.getByRole('heading', { name: 'Find your printer' })).toHaveCount(0)
 })
 
