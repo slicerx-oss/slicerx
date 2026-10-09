@@ -30,7 +30,7 @@ How the boolean engine works is in the `convex` module docs: imprint the face pl
 
 `sx-geom <op> [--out-dir DIR] < request.json` prints the response. With `--out-dir`, meshes in the response are written as STL files and replaced by `{"stlPath": ...}`. `sx-geom ops` lists the operations. Errors print `{"error": "..."}` and exit with status 1.
 
-Meshes in requests are `{"positions": [x, y, z, ...], "indices": [...]}`, `{"stlBase64": "..."}` or, for the command only, `{"stlPath": "..."}`. Planes are `{"axis": "z", "at": 40}`, `{"point": [...], "normal": [...]}` or `{"normal": [...], "offset": d}`. All keys are camelCase.
+Meshes in requests are `{"positions": [x, y, z, ...], "indices": [...]}`, `{"stlBase64": "..."}` or, for the command only, `{"stlPath": "..."}`. In the WebAssembly module a mesh can also go in raw, `{"rawPath": "mem:N"}` (a buffer reserved with `geom_file`), and a request with `"meshOutput": "raw"` gets its meshes back the same way, each named `{"rawOut": N}` and read with `geom_out_file_ptr(N)` and `geom_out_file_len(N)` (packages/geom/wasm/src/lib.rs). Planes are `{"axis": "z", "at": 40}`, `{"point": [...], "normal": [...]}` or `{"normal": [...], "offset": d}`. All keys are camelCase.
 
 | Operation | Request | Response |
 | --- | --- | --- |
