@@ -457,9 +457,9 @@ export function plateSliceConfig(s: AppState, meta: PlateMeta | undefined): Prin
 
 /**
  * The engine's objects for a plate's printable entries: placement, slot overrides, volumes, object and part settings and
- * brim ears. Painted color goes to the engine inside a 3MF, so a painted object slices with that model's handle.
+ * brim ears. A painted object goes to the engine as its parts with their paint, and slices with that mesh's handle.
  */
-export async function plateObjects(slicer: Pick<SlicerHost, 'loadModel'>, s: AppState, meta: PlateMeta | undefined, entries: readonly PlateEntry[]): Promise<PlateObject[]> {
+export async function plateObjects(slicer: Pick<SlicerHost, 'loadParts'>, s: AppState, meta: PlateMeta | undefined, entries: readonly PlateEntry[]): Promise<PlateObject[]> {
   const toPrint = entries.filter((p) => p.printable !== false)
   const handles = await Promise.all(toPrint.map((p) => sliceHandle(slicer, p)))
   // The plate counts from its front left corner; the engine takes machine coordinates.
