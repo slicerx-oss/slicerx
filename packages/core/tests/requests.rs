@@ -348,7 +348,7 @@ fn by_feature(g: &str) -> std::collections::HashMap<String, (f64, f64)> {
     let mut placed = false;
     for l in g.lines() {
         if let Some(t) = l.strip_prefix(";TYPE:") {
-            kind = t.to_owned();
+            t.clone_into(&mut kind);
             continue;
         }
         let code = l.split(';').next().unwrap_or("");
