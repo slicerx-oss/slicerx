@@ -7,6 +7,8 @@ import { resolveConfig } from '../adapters/config'
 import { objectPalette } from '../edition'
 import { markOpenStage } from '../lib/open-mark'
 import { bake } from '../plate/mesh-ops'
+import type { ImportedObject } from '../export/import3mf'
+import { clearanceFor } from '../plate/clearance'
 import { bounds, compose } from '../plate/transform'
 import { clearProject } from '../project/new'
 import { confirmDiscard, type OpenScope } from '../project/unsaved'
@@ -74,6 +76,8 @@ async function addProjectShown(
   if (wasEmpty && (get().projectSettings || get().projectPrinter)) mine(() => clearProject())
   // What the person had before this project, so clearing it later puts their values back.
   const overridesBefore = get().overrides
+  // A plain 3MF's objects that touch or overlap are one model's parts: they open as one object with those parts.
+  const joins = !own && !hasSettings ? await joinTouching(project.plates, name) : []
   // Every object goes to the engine now, side by side, while the printer is switched: a mesh does not depend on it.
   const loads = project.plates.map((pl) => pl.objects.map((o) => host.slicer.loadParts(o.name, o.parts)))
   for (const l of loads.flat()) l.catch(() => undefined)
@@ -214,10 +218,78 @@ async function addProjectShown(
     mine(() => set((s) => ({ projectSettings: { source: name, keys: [...new Set([...(wasEmpty ? [] : (s.projectSettings?.keys ?? [])), ...brought])], prior: { ...prior, ...(wasEmpty ? {} : s.projectSettings?.prior) } } })))
   }
   markStale()
+  const joined = joins.flatMap((j) => {
+    const e = get().plate.find((p) => p.id === idOf.get(j.joined.fileId))
+    return e ? [{ ...j, id: e.id, parts: e.parts }] : []
+  })
+  if (joined.length) {
+    const n = joined.reduce((sum, j) => sum + j.from.length, 0)
+    note = `${note ? `${note} ` : ''}${n} of its objects touch, so they were loaded as ${joined.length === 1 ? 'one object' : `${joined.length} objects`} with parts.`
+  }
   if (!note) return 'opened'
   // A newer open took over meanwhile: its note is the one to show.
   mine(() => undefined)
-  toast(note, 'info', match?.kind === 'match' ? pp?.CHANGE_PRINTER : undefined)
+  toast(note, 'info', joined.length ? { label: 'Keep separate', run: () => void keepSeparate(host, joined) } : match?.kind === 'match' ? pp?.CHANGE_PRINTER : undefined)
   return 'told'
+}
+
+/** A joined object, the file's objects it was made of, and where it was before the open placed it on this bed. */
+type Join = { joined: ImportedObject; from: ImportedObject[]; at: number[] }
+
+/** Joins each group of touching objects on each plate into one object with their parts (open-join.ts). */
+async function joinTouching(plates: { objects: ImportedObject[] }[], name: string): Promise<Join[]> {
+  const { touchGroups, touchingPairs, joinObjects } = await import('./open-join')
+  const s = get()
+  const minGapMm = clearanceFor(s).mm
+  const layerHeightMm = Number(resolveConfig(s.easy, s.overrides)['layer_height']) || 0.2
+  const out: Join[] = []
+  for (const pl of plates) {
+    if (pl.objects.length < 2) continue
+    let pairs: [number, number][]
+    try {
+      pairs = await touchingPairs(pl.objects, minGapMm, layerHeightMm)
+    } catch {
+      continue
+    }
+    const groups = touchGroups(pl.objects.length, pairs)
+    if (groups.length === 0) continue
+    // All of the file's objects as one is the file's model, named for it, as Bambu Studio names it.
+    const whole = groups.length === 1 && groups[0]!.length === pl.objects.length
+    const lead = new Map(groups.map((g) => [g[0]!, g]))
+    const taken = new Set(groups.flat())
+    const objects: ImportedObject[] = []
+    pl.objects.forEach((o, k) => {
+      const g = lead.get(k)
+      if (g) {
+        const from = g.map((i) => pl.objects[i]!)
+        const joined = joinObjects(from, whole ? name.replace(/\.3mf$/i, '') : o.name)
+        out.push({ joined, from, at: [...joined.transform] })
+        objects.push(joined)
+      } else if (!taken.has(k)) objects.push(o)
+    })
+    pl.objects = objects
+  }
+  return out
+}
+
+/** The open note's Keep separate: each joined object back to the file's objects, where the joined one is now. */
+async function keepSeparate(host: Host, joined: (Join & { id: string; parts: PlateEntry['parts'] })[]): Promise<void> {
+  const { separateAgain } = await import('./open-join')
+  for (const j of joined) {
+    const now = get().plate.find((p) => p.id === j.id)
+    // A joined object edited since (cut, parts changed) stays as it is.
+    if (!now || now.parts !== j.parts) continue
+    const at = separateAgain(now.transform, j.at, j.from)
+    let k = 0
+    const made: PlateEntry[] = []
+    for (const [i, o] of j.from.entries()) {
+      const colors = o.parts.map(() => now.colors[k++] ?? now.colors[0]!)
+      made.push({ id: i === 0 ? now.id : uid('obj'), name: o.name, handle: await host.slicer.loadParts(o.name, o.parts), parts: o.parts, colors, transform: at[i]!, ...(o.source ? { source: o.source } : {}) })
+    }
+    if (get().plate.find((p) => p.id === j.id)?.parts !== j.parts) continue
+    set((s) => ({ plate: s.plate.flatMap((p) => (p.id === j.id ? made : [p])), selection: made[0]!.id, selectedIds: made.map((e) => e.id) }))
+    host.slicer.release?.(now.handle.id)
+  }
+  markStale()
 }
 

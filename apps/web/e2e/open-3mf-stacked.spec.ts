@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // A plain 3MF whose objects are stacked parts of one model (the two color X mark: its bands are separate objects at
-// their own heights) opens with every object at the height the file gives it, the stack set down as a whole.
+// their own heights) opens with every object at the height the file gives it, the stack set down as a whole. Objects
+// that touch open as one object with those parts, as Bambu Studio offers; the open note can keep them separate.
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { inflateRawSync } from 'node:zlib'
@@ -29,9 +30,9 @@ function fileHeights(bytes: Buffer): Map<string, number> {
   return out
 }
 
-type Sx = { getState(): { plateLoading: boolean; plate: { name: string; parts: { positions: ArrayLike<number> }[]; transform: number[] }[] } }
+type Sx = { getState(): { plateLoading: boolean; plate: { name: string; parts: { name: string; slot: number; positions: ArrayLike<number> }[]; transform: number[] }[] } }
 
-test('a 3MF with stacked objects keeps each object at its height from the file', async ({ page, isMobile }) => {
+test('a 3MF with stacked objects keeps each at its height from the file, joined as one object with parts unless kept separate', async ({ page, isMobile }) => {
   test.skip(isMobile, 'Desktop open')
   const bytes = readFileSync(FILE)
   const want = fileHeights(bytes)
@@ -53,21 +54,35 @@ test('a 3MF with stacked objects keeps each object at its height from the file',
     await page.waitForTimeout(500)
   }
   await seen[0]!.setFiles({ name: 'x-mark-2color.3mf', mimeType: 'model/3mf', buffer: bytes })
-  const heights = () =>
+  // The objects on the plate, each with the world height of its parts' feet and their filaments.
+  const plate = () =>
     page.evaluate(() => {
       const st = (window as unknown as { __sx: Sx }).__sx.getState()
       if (st.plateLoading) return null
-      return st.plate.map((e) => {
-        let lo = Infinity
-        for (const p of e.parts) for (let k = 0; k + 2 < p.positions.length; k += 3) {
-          lo = Math.min(lo, e.transform[2]! * p.positions[k]! + e.transform[6]! * p.positions[k + 1]! + e.transform[10]! * p.positions[k + 2]! + e.transform[14]!)
-        }
-        return [e.name, lo] as [string, number]
-      })
+      return st.plate.map((e) => ({
+        name: e.name,
+        parts: e.parts.map((p) => {
+          let lo = Infinity
+          for (let k = 0; k + 2 < p.positions.length; k += 3) lo = Math.min(lo, e.transform[2]! * p.positions[k]! + e.transform[6]! * p.positions[k + 1]! + e.transform[10]! * p.positions[k + 2]! + e.transform[14]!)
+          return { name: p.name, slot: p.slot, z: lo }
+        }),
+      }))
     })
-  await expect.poll(async () => (await heights())?.length ?? 0, { timeout: 60_000 }).toBe(2)
-  const got = new Map((await heights())!)
-  // each object sits where the file puts it, relative to the stack's foot, and the stack rests on the bed
+  const heights = (objects: NonNullable<Awaited<ReturnType<typeof plate>>>) => new Map(objects.flatMap((o) => o.parts.map((p) => [p.name, p.z] as [string, number])))
+
+  // Opened as one object with the two bands as parts, each band where the file puts it and on its own filament.
+  await expect.poll(async () => (await plate())?.map((o) => o.parts.length), { timeout: 60_000 }).toEqual([2])
+  const joined = (await plate())!
+  expect(joined[0]!.name).toBe('x-mark-2color')
+  expect(joined[0]!.parts.map((p) => p.slot)).toEqual([1, 2])
+  const got = heights(joined)
   for (const [name, z] of want) expect(got.get(name), name).toBeCloseTo(z - lowest, 2)
   expect(Math.min(...got.values())).toBeCloseTo(0, 2)
+
+  // The open note offers to keep them separate: two objects again, at the same heights.
+  await expect(page.getByText(/2 of its objects touch, so they were loaded as one object with parts/)).toBeVisible()
+  await page.getByRole('button', { name: 'Keep separate' }).click()
+  await expect.poll(async () => (await plate())?.map((o) => o.parts.length), { timeout: 30_000 }).toEqual([1, 1])
+  const apart = heights((await plate())!)
+  for (const [name, z] of want) expect(apart.get(name), name).toBeCloseTo(z - lowest, 2)
 })
