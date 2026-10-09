@@ -119,6 +119,11 @@ class Ring {
   }
 }
 
+/** Whether the parts are the very arrays an object was built from (identity, not contents: comparing contents of a big model would cost what a rebuild saves). */
+function sameArrays(from: readonly [Float32Array, Uint32Array | Uint16Array][] | undefined, parts: readonly { positions: Float32Array; indices: Uint32Array | Uint16Array }[]): boolean {
+  return !!from && from.length === parts.length && parts.every((p, i) => from[i]![0] === p.positions && from[i]![1] === p.indices)
+}
+
 function percentile(sorted: number[], p: number): number {
   if (sorted.length === 0) return 0
   const k = Math.min(sorted.length - 1, Math.max(0, Math.ceil(p * sorted.length) - 1))
@@ -252,6 +257,12 @@ class ViewportImpl implements Viewport {
   private afterFrame: (() => void) | null = null
   private cameraMoved = false
   private firstFrameMs: number | null = null
+  /** The part arrays each object was built from, by object id: the same arrays again keep the built object. */
+  private readonly builtFrom = new Map<string, [Float32Array, Uint32Array | Uint16Array][]>()
+  /** Objects built (not kept) by setPlate since the viewport started. */
+  private objectBuilds = 0
+  /** The last setPlate, until the frame that draws it. */
+  private plateSet: { at: number; buildMs: number; built: number; kept: number } | null = null
   private arrangeAnim: ((now: number) => boolean) | null = null
   private dragState: Drag | null = null
   private get drag(): Drag | null {
@@ -622,6 +633,11 @@ class ViewportImpl implements Viewport {
       this.firstFrameMs = t1 - this.previewSetAt
       this.previewSetAt = null
     }
+    if (this.plateSet) {
+      const p = this.plateSet
+      this.plateSet = null
+      this.emit('platedrawn', { buildMs: p.buildMs, drawMs: t1 - p.at, built: p.built, kept: p.kept })
+    }
   }
 
   private resize(): void {
@@ -808,19 +824,49 @@ class ViewportImpl implements Viewport {
   // ---------- plate ----------
 
   setPlate(plate: ViewportPlate, opts: { keepCamera?: boolean } = {}): void {
+    const t0 = performance.now()
     this.stage.setBed(plate.bed, plate.surfaceLabel)
     this.stage.setNozzleZones(plate.zones ?? [])
     if (plate.excluded) this.stage.setExcludedAreas(plate.excluded)
     this.hoverFace(null)
     this.cutPreview.detach()
-    for (const o of this.objects.values()) disposeObject(o)
+    // An object that comes back with the same id and the very same arrays for every part keeps what was built for
+    // it (the GPU buffers, normals and edges, the costly part for a big model); only its name, place and colors follow.
+    // A new plate payload for a change elsewhere (the bed, the slot colors, the printer) then costs no rebuild.
+    const before = new Map(this.objects)
     this.objects.clear()
     const sh = sharedMaterials()
+    let built = 0
+    let kept = 0
     for (const obj of plate.objects) {
+      if (this.objects.has(obj.id)) continue
+      const old = before.get(obj.id)
+      if (old && sameArrays(this.builtFrom.get(obj.id), obj.parts)) {
+        before.delete(obj.id)
+        old.name = obj.name
+        old.group.name = obj.name
+        old.group.matrix.fromArray(obj.transform)
+        old.group.matrixWorldNeedsUpdate = true
+        obj.parts.forEach((p, i) => {
+          const e = old.parts[i]!
+          e.color = p.color
+          e.finish = p.finish ?? 'basic'
+        })
+        this.objects.set(obj.id, old)
+        kept++
+        continue
+      }
       const entry = buildObject(obj, (p) => this.mats.get(this.renderMode, { color: p.color, finish: p.finish ?? 'basic' }), this.renderMode === 'xray' ? sh.edgeXray : sh.edgeDark)
+      this.builtFrom.set(obj.id, obj.parts.map((p) => [p.positions, p.indices]))
       this.objects.set(obj.id, entry)
       this.stage.objectsRoot.add(entry.group)
+      built++
     }
+    for (const [id, o] of before) {
+      disposeObject(o)
+      if (!this.objects.has(id)) this.builtFrom.delete(id)
+    }
+    this.objectBuilds += built
     this.selection = this.selection.filter((id) => this.objects.has(id))
     // The cut follows its model into the new plate by id, or ends when the model is gone.
     if (this.cut) {
@@ -832,6 +878,7 @@ class ViewportImpl implements Viewport {
     this.applyToolpathLook()
     // A fresh plate (the first one, a project opened, a plate swap) opens on the whole build plate, not on its parts.
     if (!opts.keepCamera) this.view('plate')
+    this.plateSet = { at: t0, buildMs: performance.now() - t0, built, kept }
   }
 
   setTransforms(transforms: Record<string, number[]>): void {
@@ -2867,6 +2914,7 @@ class ViewportImpl implements Viewport {
       p95: percentile(sorted, 0.95),
       firstFrameMs: this.firstFrameMs,
       firstDrawMs: this.firstFrame.ms,
+      objectBuilds: this.objectBuilds,
       drawCalls: info.render.calls,
       triangles: info.render.triangles,
       segments: this.toolpaths.segmentCount,
