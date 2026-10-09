@@ -40,10 +40,11 @@ describe('the keys', () => {
     expect(pickKeysOn({ workspace: 'library', modelMode: 'design', objectTool: null })).toBe(false)
   })
 
-  it('take no chord any look already uses', () => {
+  it('take no chord another action in any look already uses', () => {
     const ours = PICK_KINDS.flatMap((k) => [PICK_KEYS[k], `Shift+${PICK_KEYS[k]}`]).map((c) => c.toLowerCase())
     for (const id of LOOK_IDS) {
-      const used = Object.values(KEYMAPS[id]).filter((c): c is string => Boolean(c)).map((c) => c.toLowerCase())
+      // The select.* entries are these keys themselves, listed so the shortcuts sheet shows them.
+      const used = Object.entries(KEYMAPS[id]).filter(([action, c]) => !action.startsWith('select.') && Boolean(c)).map(([, c]) => (c as string).toLowerCase())
       for (const c of ours) expect(used, `${id} ${c}`).not.toContain(c)
     }
   })
