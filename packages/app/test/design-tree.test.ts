@@ -44,7 +44,7 @@ afterEach(() => {
 
 describe('step icons', () => {
   it('follow the tool that made the step', () => {
-    expect(STEPS.map((s) => stepIcon(s.params))).toEqual(['ruler', 'shell-open', 'fillet-edge'])
+    expect(STEPS.map((s) => stepIcon(s.params))).toEqual(['extrude', 'shell-open', 'fillet-edge'])
     expect(stepIcon({ op: 'face.push', at: [0, 0, 0], normal: [0, 0, 1], distanceMm: 2 })).toBe('push-pull')
     expect(stepIcon({ op: 'simplify', targetRatio: 0.5 })).toBe('simplify-mesh')
   })

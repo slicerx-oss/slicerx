@@ -167,7 +167,7 @@ export function StepRow(props: {
       {s.bind !== undefined ? <p className="cad-step-why sx-muted" data-testid="step-bind">Follows {s.bind}</p> : null}
       {props.tree && sketch ? (
         <button type="button" className="cad-step-sketch" data-testid="step-sketch" aria-label={`Open the sketch of ${name}`} disabled={busy || !tool} {...tab} onClick={props.onEdit}>
-          <Icon name="ruler" size={14} />
+          <Icon name="sketch" size={14} />
           <span>Sketch</span>
           <span className="sx-mono sx-muted">{sketch.loops === 1 ? '1 loop' : `${sketch.loops} loops`}</span>
         </button>

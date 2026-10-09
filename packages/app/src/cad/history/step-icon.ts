@@ -9,12 +9,12 @@ export function stepIcon(p: StepParams): IconName {
     case 'face.push':
       return 'push-pull'
     case 'shape.extrude':
-      if (p.shape.type === 'sketch') return 'ruler'
+      if (p.shape.type === 'sketch') return 'extrude'
       if (p.shape.type === 'svg') return 'svg-face'
       if (p.shape.type === 'text') return 'text'
       return p.shape.type === 'circle' && p.spec.operation === 'cut' ? 'hole-fit' : 'on-face'
     case 'sketch.revolve':
-      return 'ruler'
+      return 'revolve'
     case 'subtract':
       return 'subtract-shape'
     case 'hollow':
@@ -22,13 +22,13 @@ export function stepIcon(p: StepParams): IconName {
     case 'shell':
       return 'shell-open'
     case 'repair':
-      return 'settings-reset'
+      return 'repair-mesh'
     case 'simplify':
       return 'simplify-mesh'
     case 'array.merged':
-      return 'grid'
+      return 'array-linear'
     case 'parts.add':
-      return 'cube'
+      return 'box-shape'
     case 'edge.fillet':
     case 'edge.chamfer':
       return 'fillet-edge'

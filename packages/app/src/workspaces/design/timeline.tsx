@@ -121,7 +121,7 @@ export function Timeline() {
                 <span className="tl-n sx-mono">{i + 1}</span>
                 <Icon name={stepIcon(s.params)} size={14} />
                 <span className="tl-name">{chipName(s)}</span>
-                {sketch ? <span className="tl-sketch"><Icon name="ruler" size={11} />{sketch.loops === 1 ? '1 loop' : `${sketch.loops} loops`}</span> : null}
+                {sketch ? <span className="tl-sketch"><Icon name="sketch" size={11} />{sketch.loops === 1 ? '1 loop' : `${sketch.loops} loops`}</span> : null}
               </button>
               {i === at ? (
                 <span
