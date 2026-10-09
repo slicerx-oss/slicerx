@@ -15,7 +15,8 @@ test('the plate is drawn right after setup is skipped on a fresh install', { tag
   await expect(page.getByRole('heading', { name: 'Pick a theme' })).toBeVisible({ timeout: 120_000 })
   const stop = await recordFrames(page)
   await page.getByRole('button', { name: 'Skip, use defaults' }).click()
-  await expect(page.locator('.obj-name', { hasText: 'Layered X' })).toBeVisible({ timeout: 60_000 })
+  // The plate chip names the starter once it is on the plate (the objects list is in the right pane, shut at first).
+  await expect(page.locator('.platechip', { hasText: 'Layered X' })).toBeVisible({ timeout: 60_000 })
   // The 3D view is up from here (the app's own ready mark). The screencast stamps frames with the browser's clock, so
   // this is timed on it too. A slow shared runner takes its time to get here; nothing below counts that time.
   await page.locator('html[data-sx-ready="viewport"]').waitFor({ state: 'attached', timeout: 120_000 })

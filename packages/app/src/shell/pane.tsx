@@ -87,7 +87,7 @@ function useChord(action: 'panel.left' | 'panel.right'): string | undefined {
   return keymapFor(choice.id, choice.overrides?.keys ?? {})[action] ?? undefined
 }
 
-export function SidePane({ side, ws, label, sections, children, footer, pinned, headExtra, width, tab }: { side: Side; ws: Workspace; label: string; sections: readonly PaneSection[]; children: ReactNode; footer?: ReactNode; pinned?: ReactNode; headExtra?: ReactNode; width?: number; tab?: PaneTab }) {
+export function SidePane({ side, ws, label, sections, children, footer, pinned, headExtra, width, tab, attention }: { side: Side; ws: Workspace; label: string; sections: readonly PaneSection[]; children: ReactNode; footer?: ReactNode; pinned?: ReactNode; headExtra?: ReactNode; width?: number; tab?: PaneTab; attention?: boolean }) {
   const wide = useMediaQuery('(min-width: 1280px)')
   const phone = useMediaQuery('(max-width: 900px)')
   const open = useApp((s) => railOpen(s.rails, ws, side, wide))
@@ -151,7 +151,7 @@ export function SidePane({ side, ws, label, sections, children, footer, pinned, 
         : {
             edge: (
               <>
-              {edgeTab ? <EdgeTab side={side} open={open} onToggle={() => setRail(ws, side, !open)} label={label} panel={tab.panel} controls={bodyId} {...(chord ? { shortcut: chord } : {})} /> : null}
+              {edgeTab ? <EdgeTab side={side} open={open} onToggle={() => setRail(ws, side, !open)} label={label} panel={tab.panel} controls={bodyId} attention={attention ?? false} {...(chord ? { shortcut: chord } : {})} /> : null}
               {full && !open ? null : <ResizeEdge
                 pane={side}
                 size={size}
@@ -190,7 +190,7 @@ export function SidePane({ side, ws, label, sections, children, footer, pinned, 
       {createPortal(
         <>
           {sheetOpen ? <div className="sheet-scrim" aria-hidden="true" onClick={() => setSheet(sheetKey, false)} /> : null}
-          <EdgeTab side={side} open={sheetOpen} onToggle={() => setSheet(sheetKey, !sheetOpen)} label={label} panel={tab.panel} controls={bodyId} className="sheet-tab" />
+          <EdgeTab side={side} open={sheetOpen} onToggle={() => setSheet(sheetKey, !sheetOpen)} label={label} panel={tab.panel} controls={bodyId} attention={attention ?? false} className="sheet-tab" />
         </>,
         document.body,
       )}
