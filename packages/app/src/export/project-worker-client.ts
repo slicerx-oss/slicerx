@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// The page's side of the project worker (project-worker.ts): started with the first file it reads, ended after a while
-// without one, which hands its memory back.
+// The page's side of the project worker (project-worker.ts): started with the first file it reads and ended soon after
+// the last, which hands its memory back: after a big project the worker held about 350 MB until it went, and a new one
+// starts in a few tens of milliseconds.
 import type { ScannedProject } from './project-scan'
 import type { ScannedStl } from './stl-scan'
 import { ProjectReadError } from './unzip'
 
-const IDLE_MS = 30_000
+const IDLE_MS = 2_000
 
 let worker: Worker | null = null
 let idle: ReturnType<typeof setTimeout> | null = null
