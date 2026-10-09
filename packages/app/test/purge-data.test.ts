@@ -6,8 +6,8 @@ import { describe, expect, it } from 'vitest'
 import { SXPV_HEADER_BYTES, SXPV_MAGIC, SXPV_SEGMENT_BYTES, SXPV_VERSION, readPreview, type PreviewBuffers } from '@slicerx/contracts'
 import { purgeVolume, toolChangerSpec } from '@slicerx/viewport'
 import { buildTimeline } from '../src/lib/preview-timeline'
-import { indexLines } from '../src/workspaces/preview/gcode-lines'
-import { plansFromText } from '../src/workspaces/preview/purge-data'
+import { indexLines, rangeSource } from '../src/workspaces/preview/gcode-lines'
+import { plansFromText, purgeLines } from '../src/workspaces/preview/purge-data'
 import { purgeReadout } from '../src/workspaces/preview/purge-view'
 
 /** Layers of segments (x0, x1, tool) along y 0, 100 mm/s, 10 s a layer. */
@@ -128,6 +128,13 @@ describe('purge plans from the G-code', () => {
     const done = purgeReadout(plans, { segment: b.segment, seconds: b.window.end + 1 })!
     expect(done.now).toBeCloseTo(b.grams, 12)
     expect(purgeReadout(plans, { segment: 3, seconds: 20 })).toBeNull()
+  })
+
+  it('plans the same from the lines it reads from the host that keeps the text', async () => {
+    const ix = await indexLines(new TextEncoder().encode(GCODE))
+    const src = rangeSource(ix.starts, (a, b) => Promise.resolve(ix.bytes.slice(a, b)))
+    const { lines, toolStarts } = await purgeLines(src, p, tl)
+    expect(plansFromText(lines, p, tl, h2d, toolStarts)).toEqual(plansFromText(ix, p, tl, h2d))
   })
 
   it('has nothing to show for a printer without a chute', async () => {

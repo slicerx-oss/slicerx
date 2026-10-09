@@ -6,7 +6,7 @@
 // comments OrcaSlicer, Bambu Studio, PrusaSlicer and Cura write. Every move keeps its G-code line, so the
 // line view and the toolpaths stay linked. File text is untrusted: only numbers come out of it.
 import { FEATURE, SXPV_EXTRA_BYTES, SXPV_EXTRA_FLAG, SXPV_FLAG_EXTRAS, SXPV_FLAG_TRAVELS, SXPV_HEADER_BYTES, SXPV_MAGIC, SXPV_SEGMENT_BYTES, SXPV_TRAVEL_BYTES, SXPV_VERSION, readPreview, type PreviewBuffers } from '@slicerx/contracts'
-import { yieldToPage, type LineIndex } from './gcode-lines'
+import { wholeSource, windows, yieldToPage, type LineIndex, type LineSource } from './gcode-lines'
 
 const FEATURE_BY_NAME: Record<string, number> = {
   'outer wall': FEATURE.outerWall,
@@ -441,8 +441,8 @@ export interface GcodeMarks {
  * followed in G90 and G91 and through G92, so a marker sits where the printer is when the command runs. Walked
  * in slices like the parse.
  */
-export async function scanMarks(ix: LineIndex, opts: { signal?: AbortSignal; pause?: () => Promise<void>; linesPerSlice?: number } = {}): Promise<GcodeMarks> {
-  const b = ix.bytes
+export async function scanMarks(text: LineIndex | LineSource, opts: { signal?: AbortSignal; pause?: () => Promise<void>; linesPerSlice?: number } = {}): Promise<GcodeMarks> {
+  const src = 'window' in text ? text : wholeSource(text)
   const pause = opts.pause ?? yieldToPage
   const perSlice = opts.linesPerSlice ?? 200_000
   const out: GcodeMarks = { wipes: [], toolChanges: [], pauses: [] }
@@ -451,49 +451,54 @@ export async function scanMarks(ix: LineIndex, opts: { signal?: AbortSignal; pau
   let x = 0
   let y = 0
   let z = 0
-  for (let n = 1; n <= ix.count; n++) {
-    if (n % perSlice === 0) {
+  // A window of lines at a time: the text can be read from the host that keeps it, and none of it stays here.
+  for await (const [w, from, to] of windows(src, perSlice)) {
+    if (from > 1) {
       if (opts.signal?.aborted) throw new DOMException('Stopped', 'AbortError')
       await pause()
     }
-    let i = ix.starts[n - 1] ?? 0
-    const end = ix.starts[n] ?? i
-    while (i < end && (b[i] === SPACE || b[i] === TAB)) i++
-    const c = UPPER(b[i] ?? 0)
-    if (c === 71) {
-      const g = num(b, i + 1, end)
-      if (g === 90) abs = true
-      else if (g === 91) abs = false
-      else if (g === 0 || g === 1 || g === 2 || g === 3 || g === 92) {
-        for (let k = next; k < end && b[k] !== SEMI; ) {
-          const p = UPPER(b[k] ?? 0)
-          if (p !== 88 && p !== 89 && p !== 90) {
-            k++
-            continue
+    const b = w.bytes
+    const base = w.base ?? 0
+    for (let n = from; n <= to; n++) {
+      let i = (w.starts[n - 1] ?? 0) - base
+      const end = (w.starts[n] ?? 0) - base
+      while (i < end && (b[i] === SPACE || b[i] === TAB)) i++
+      const c = UPPER(b[i] ?? 0)
+      if (c === 71) {
+        const g = num(b, i + 1, end)
+        if (g === 90) abs = true
+        else if (g === 91) abs = false
+        else if (g === 0 || g === 1 || g === 2 || g === 3 || g === 92) {
+          for (let k = next; k < end && b[k] !== SEMI; ) {
+            const p = UPPER(b[k] ?? 0)
+            if (p !== 88 && p !== 89 && p !== 90) {
+              k++
+              continue
+            }
+            const v = num(b, k + 1, end)
+            k = next > k + 1 ? next : k + 1
+            if (Number.isNaN(v)) continue
+            if (p === 88) x = g === 92 || abs ? v : x + v
+            else if (p === 89) y = g === 92 || abs ? v : y + v
+            else z = g === 92 || abs ? v : z + v
           }
-          const v = num(b, k + 1, end)
-          k = next > k + 1 ? next : k + 1
-          if (Number.isNaN(v)) continue
-          if (p === 88) x = g === 92 || abs ? v : x + v
-          else if (p === 89) y = g === 92 || abs ? v : y + v
-          else z = g === 92 || abs ? v : z + v
         }
+      } else if (c === SEMI) {
+        if (startsWith(b, i + 1, end, 'WIPE_START')) out.wipes.push({ line: n, x, y, z })
+      } else if (c === 84) {
+        const t = num(b, i + 1, end)
+        if (Number.isNaN(t) || t > 255) continue
+        if (tool >= 0 && t !== tool) out.toolChanges.push({ line: n, x, y, z })
+        tool = t
+      } else if (c === 77) {
+        const m = num(b, i + 1, end)
+        const after = b[next] ?? NL
+        if (!(after === SPACE || after === TAB || after === SEMI || after === NL || after === CR || next >= end)) continue
+        if (m === 600) out.toolChanges.push({ line: n, x, y, z })
+        else if (m === 601 || m === 0 || m === 1 || m === 25) out.pauses.push({ line: n, x, y, z })
+      } else if (c === 80 || c === 64) {
+        if (startsWith(b, i, end, 'PAUSE') || startsWith(b, i, end, '@pause')) out.pauses.push({ line: n, x, y, z })
       }
-    } else if (c === SEMI) {
-      if (startsWith(b, i + 1, end, 'WIPE_START')) out.wipes.push({ line: n, x, y, z })
-    } else if (c === 84) {
-      const t = num(b, i + 1, end)
-      if (Number.isNaN(t) || t > 255) continue
-      if (tool >= 0 && t !== tool) out.toolChanges.push({ line: n, x, y, z })
-      tool = t
-    } else if (c === 77) {
-      const m = num(b, i + 1, end)
-      const after = b[next] ?? NL
-      if (!(after === SPACE || after === TAB || after === SEMI || after === NL || after === CR || next >= end)) continue
-      if (m === 600) out.toolChanges.push({ line: n, x, y, z })
-      else if (m === 601 || m === 0 || m === 1 || m === 25) out.pauses.push({ line: n, x, y, z })
-    } else if (c === 80 || c === 64) {
-      if (startsWith(b, i, end, 'PAUSE') || startsWith(b, i, end, '@pause')) out.pauses.push({ line: n, x, y, z })
     }
   }
   return out

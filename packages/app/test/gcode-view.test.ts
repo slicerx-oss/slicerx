@@ -2,15 +2,25 @@
 // Copyright (C) 2026 The SlicerX contributors
 import { describe, expect, it } from 'vitest'
 import { FEATURE, SXPV_EXTRA_FLAG, type FileRef, type Host } from '@slicerx/contracts'
-import { currentSegment, indexLines, layerOfSegment, lineOfSegment, lineText, scroller, segmentOfLine, slidersFor } from '../src/workspaces/preview/gcode-lines'
+import { currentSegment, indexLines, layerOfSegment, lineOfSegment, lineText, rangeSource, scroller, segmentOfLine, slidersFor, type LineIndex } from '../src/workspaces/preview/gcode-lines'
 import { featureOf, parseGcodePreview, scanMarks } from '../src/workspaces/preview/gcode-parse'
 import { gcodeView } from '../src/workspaces/preview/gcode-file'
 import { positionsOf } from '../src/workspaces/preview/marker-data'
-import { closeFile, openGcodeFile } from '../src/workspaces/preview/gcode-source'
+import { closeFile, holdText, openGcodeFile, textHeld } from '../src/workspaces/preview/gcode-source'
 import { appStore, get, set } from '../src/state/store'
 
 const enc = new TextEncoder()
 const noWait = () => Promise.resolve()
+
+/** A source over `ix` the way a host serves it: the line starts, and copies of the byte ranges asked for. */
+function served(ix: LineIndex) {
+  const reads: [number, number][] = []
+  const src = rangeSource(ix.starts, (a, b) => {
+    reads.push([a, b])
+    return Promise.resolve(ix.bytes.slice(a, b))
+  })
+  return { src, reads }
+}
 
 /** Two layers of a 10 mm square with a wipe, a tool change, an arc and a pause, the way OrcaSlicer writes them. */
 const SAMPLE = [
@@ -96,6 +106,64 @@ describe('G-code line index', () => {
     expect(parsed.preview.segmentCount).toBeGreaterThan(0)
     expect(pauses).toBeGreaterThanOrEqual(Math.floor(ix.count / 150_000))
     console.info(`50 MB: index ${indexMs.toFixed(0)} ms, parse ${parseMs.toFixed(0)} ms, longest slice ${worst.toFixed(1)} ms`)
+  })
+})
+
+describe('lines read from the host that keeps the text', () => {
+  it('reads a window of lines and nothing around it', async () => {
+    const ix = await indexLines(enc.encode(SAMPLE), { pause: noWait })
+    const { src, reads } = served(ix)
+    expect(src.count).toBe(ix.count)
+    const w = await src.window(3, 5)
+    expect([3, 4, 5].map((n) => lineText(w, n))).toEqual(['G90', 'M83', 'M104 S215'])
+    expect(lineText(w, 2)).toBe('')
+    expect(lineText(w, 6)).toBe('')
+    expect(w.bytes.length).toBe('G90\nM83\nM104 S215\n'.length)
+    expect(reads).toEqual([[ix.starts[2], ix.starts[5]]])
+    // Clamped to the text.
+    const end = await src.window(ix.count - 1, ix.count + 10)
+    expect(lineText(end, ix.count)).toBe(lineText(ix, ix.count))
+  })
+
+  it('finds the same markers a window at a time', async () => {
+    const ix = await indexLines(enc.encode(SAMPLE), { pause: noWait })
+    const { src, reads } = served(ix)
+    const whole = await scanMarks(ix, { pause: noWait })
+    expect(await scanMarks(src, { pause: noWait, linesPerSlice: 4 })).toEqual(whole)
+    expect(reads.length).toBe(Math.ceil(ix.count / 4))
+    expect(Math.max(...reads.map(([a, b]) => b - a))).toBeLessThan(ix.bytes.length / 4)
+  })
+
+  it("holds a slice's line starts while something reads them, and never its text", async () => {
+    let startReads = 0
+    const ix = await indexLines(enc.encode(SAMPLE), { pause: noWait })
+    const host = {
+      slicer: {
+        gcodeLineStarts: async () => (startReads++, ix.starts.slice()),
+        gcodeBytes: async (_id: string, a: number, b: number) => ix.bytes.slice(a, b),
+        exportGcode: async () => {
+          throw new Error('the text is read by lines')
+        },
+      },
+    } as unknown as Host
+    set({ slice: { status: 'done', result: { id: 's1', layerCount: 2 } } as never })
+    const a = holdText(host)
+    const b = holdText(host)
+    expect(textHeld()).toBe(true)
+    const [sa, sb] = await Promise.all([a.source!, b.source!])
+    expect(sa).toBe(sb)
+    expect(startReads).toBe(1)
+    expect(lineText(await sa.window(19, 19), 19)).toBe('T1')
+    a.release()
+    expect(textHeld()).toBe(true)
+    b.release()
+    b.release()
+    expect(textHeld()).toBe(false)
+    const c = holdText(host)
+    await c.source
+    expect(startReads).toBe(2)
+    c.release()
+    set({ slice: { status: 'idle' } })
   })
 })
 

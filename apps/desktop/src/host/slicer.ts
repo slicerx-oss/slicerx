@@ -183,6 +183,8 @@ export function createTauriSlicer(): SlicerHost {
       else out.path = target.path
       return out
     },
+    gcodeLineStarts: async (id) => new Uint32Array(await invoke<ArrayBuffer>('get_gcode_line_starts', { id: Number(id) })),
+    gcodeBytes: async (id, start, end) => new Uint8Array(await invoke<ArrayBuffer>('get_gcode_bytes', { id: Number(id), start, end })),
     release: (id) => void invoke('release', { id: Number(id) }),
   }
 }

@@ -523,6 +523,16 @@ export async function createWasmSlicer(opts: PoolOptions): Promise<SlicerHost> {
       else out.path = target.path
       return out
     },
+    gcodeLineStarts(sliceId: string): Promise<Uint32Array> {
+      const s = slices.get(sliceId)
+      if (!s) return Promise.reject(new Error(`Unknown slice ${sliceId}`))
+      return lineStarts(s.gcode)
+    },
+    gcodeBytes(sliceId: string, start: number, end: number): Promise<Uint8Array> {
+      const s = slices.get(sliceId)
+      if (!s) return Promise.reject(new Error(`Unknown slice ${sliceId}`))
+      return Promise.resolve(byteRange(s.gcode, start, end))
+    },
     release(id: string): void {
       sources.delete(id)
       if (meshes.delete(id)) for (const w of workers) w.send({ type: 'release', meshId: id })
@@ -531,3 +541,54 @@ export async function createWasmSlicer(opts: PoolOptions): Promise<SlicerHost> {
   }
 }
 
+/**
+ * Where each line of the text in `chunks` starts, then one past the end. Walked 4 MB at a time with a yield between,
+ * so a big slice's G-code never holds the page.
+ */
+export async function lineStarts(chunks: ArrayBuffer[]): Promise<Uint32Array> {
+  const total = chunks.reduce((n, c) => n + c.byteLength, 0)
+  if (total === 0) return new Uint32Array([0])
+  // About 30 bytes a line in slicer output; grown on demand.
+  let starts = new Uint32Array(Math.max(16, Math.ceil(total / 24)))
+  let n = 0
+  const push = (v: number) => {
+    if (n >= starts.length) {
+      const grown = new Uint32Array(starts.length * 2)
+      grown.set(starts)
+      starts = grown
+    }
+    starts[n++] = v
+  }
+  push(0)
+  let base = 0
+  let walked = 0
+  for (const c of chunks) {
+    const b = new Uint8Array(c)
+    for (let pos = b.indexOf(10); pos >= 0; pos = b.indexOf(10, pos + 1)) {
+      push(base + pos + 1)
+      if (pos - walked > 4 << 20) {
+        walked = pos
+        await new Promise((r) => setTimeout(r, 0))
+      }
+    }
+    base += b.length
+    walked = 0
+  }
+  // A text that ends with a line break has no empty last line: its last start is the end.
+  if (starts[n - 1] !== total) push(total)
+  return starts.slice(0, n)
+}
+
+/** Bytes [start, end) of the text in `chunks`, copied out. */
+export function byteRange(chunks: ArrayBuffer[], start: number, end: number): Uint8Array {
+  const out = new Uint8Array(Math.max(0, end - start))
+  let base = 0
+  for (const c of chunks) {
+    const a = Math.max(start, base)
+    const b = Math.min(end, base + c.byteLength)
+    if (b > a) out.set(new Uint8Array(c, a - base, b - a), a - start)
+    base += c.byteLength
+    if (base >= end) break
+  }
+  return out
+}
