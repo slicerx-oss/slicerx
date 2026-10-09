@@ -12,6 +12,11 @@ type AnyFn = (...args: unknown[]) => unknown
 export interface StoreAuth {
   redirectUrl: () => string
   openExternal?: (url: string) => Promise<void>
+  /**
+   * With no backend, whether the demo catalog starts signed in as its demo member. The web demo does, so the Vault's
+   * signed-in pages show; the desktop app starts signed out, as a fresh install would.
+   */
+  demoSignedIn?: boolean
 }
 
 /** The web page's sign-in callback, under the path the build is served from. */
@@ -30,7 +35,7 @@ export function lazyStore(edition: EditionConfig, auth: StoreAuth = webAuth(), l
   const sb = edition.features.demoData ? null : edition.backend.supabase
   const load = () =>
     (client ??= loadModule().then((m) =>
-      sb ? m.createStore({ url: sb.url, anonKey: sb.anonKey, auth: { redirectUrl: auth.redirectUrl, ...(auth.openExternal ? { openExternal: auth.openExternal } : {}) } }) : m.createStore({ offline: true }),
+      sb ? m.createStore({ url: sb.url, anonKey: sb.anonKey, auth: { redirectUrl: auth.redirectUrl, ...(auth.openExternal ? { openExternal: auth.openExternal } : {}) } }) : m.createStore({ offline: true, ...(auth.demoSignedIn === false ? { signedInAs: null } : {}) }),
     ))
   const method = (c: StoreClient, key: PropertyKey): AnyFn => {
     const fn: unknown = Reflect.get(c, key)
