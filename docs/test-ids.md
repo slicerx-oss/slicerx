@@ -82,6 +82,15 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | `slice-machine-status` | The printer's status: Ready, Printing, Paused, Error, Offline or Export only |
 | `slice-mode-chip` | The settings mode chip in the Slice pane title |
 | `slice-mode-chip-<mode>` | An item in its menu: `slice-mode-chip-simple`, `slice-mode-chip-advanced`, `slice-mode-chip-expert`, `slice-mode-chip-developer` |
+| `slice-filament-rail` | The filament rail: one ring per slot, grouped by unit |
+| `slice-filament-slot` | A slot's ring, with `data-slot`, `data-used` and `data-mismatch`; click edits it, Alt-click selects the objects on it |
+| `slice-filament-slot-line` | The line under the rail: the hovered or focused slot, else the first in use |
+| `slice-filament-total` | Grams and filament changes from the last slice, in the Filament header |
+| `slice-filament-menu` | The Filament options menu |
+| `slice-filament-calibrate` | Calibrate, in that menu |
+| `slice-filament-flush` | Flush volumes, in that menu (two filaments or more) |
+| `slice-filament-reset` | Reset to printer, in that menu (when a slot was edited) |
+| `slice-filament-use-printer` | Use printer's filament, for a slot that differs from what the printer holds |
 | `slice-goal-<tier>` | A Goal tile in Print settings: `slice-goal-draft`, `slice-goal-standard`, `slice-goal-fine`, `slice-goal-strong` |
 | `slice-goal-estimate` | The line under the Goal tiles: about how long and how much from the last slice, or Updating |
 

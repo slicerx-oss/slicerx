@@ -23,7 +23,7 @@ import { pickSub, type EdgeAt } from '../plate/sub-pick'
 import { toGeom } from '../geom/client'
 import { useHost } from '../host'
 import { moveTower, towerMesh, towerShown, TOWER_ID, type ShownTower } from '../plate/tower'
-import { appStore, selectedIds, set, shownSlice, toast, type AppState } from '../state/store'
+import { appStore, selectedIds, set, shownSlice, toast, useApp, type AppState } from '../state/store'
 import { createFallbackViewport } from './fallback'
 import { overlayInsets } from './overlay-insets'
 import { shellGpu } from './shell-gpu'
@@ -63,6 +63,7 @@ export type Drive = Pick<Viewport, 'setMode' | 'setPlate' | 'setTransforms' | 's
   setPreviewGhost?: Viewport['setPreviewGhost']
   setPreviewOrigin?: Viewport['setPreviewOrigin']
   setPreviewStale?: Viewport['setPreviewStale']
+  setHighlightSlot?: Viewport['setHighlightSlot']
   setToolFinishes?: Viewport['setToolFinishes']
   setMarkers?: Viewport['setMarkers']
   setExcludedAreas?: Viewport['setExcludedAreas']
@@ -116,7 +117,7 @@ function platePayload(s: AppState, shown: ShownTower | null): ViewportPlate {
       name: p.name,
       transform: p.transform,
       parts: [
-        ...p.parts.map((part, i) => ({ name: part.name, positions: part.positions, indices: part.indices, color: partColor(s, slots, effectiveSlot(p, part), p.colors[i] ?? p.colors[0] ?? brandAccent(), p.printable !== false) })),
+        ...p.parts.map((part, i) => ({ name: part.name, positions: part.positions, indices: part.indices, slot: effectiveSlot(p, part), color: partColor(s, slots, effectiveSlot(p, part), p.colors[i] ?? p.colors[0] ?? brandAccent(), p.printable !== false) })),
         // Volumes show in place, colored by what they do.
         ...(p.volumes ?? []).map((v) => ({ name: v.name, positions: bake(v.part, v.local).positions, indices: v.part.indices, color: VOLUME_COLOR[v.role] })),
       ],
@@ -307,6 +308,8 @@ export function ViewportHost({ layers }: { layers: boolean }) {
         if (first || s.preview !== prev.preview) vp.setPreview(s.preview)
         // A preview that no longer matches the plate stays drawn, dimmed, until the next slice replaces it.
         if (first || s.slice !== prev.slice) vp.setPreviewStale?.(shownSlice(s.slice)?.stale ?? false)
+        // A slot hovered or focused in the filament rail picks its filament out; the rest dims.
+        if (first || s.hoverSlot !== prev.hoverSlot) vp.setHighlightSlot?.(s.hoverSlot)
         if (first || s.layerHi !== prev.layerHi || s.layerLo !== prev.layerLo || s.preview !== prev.preview) vp.setLayerRange(Math.max(0, Math.min(s.layerLo, s.layerHi) - 1), Math.max(0, s.layerHi - 1))
         if (first || s.moveCut !== prev.moveCut || s.layerHi !== prev.layerHi || s.preview !== prev.preview) vp.setMoveCut(moveCount(s.preview, s.layerHi, s.moveCut))
         // The printer's own toolhead, its tool changer and, during playback, where the head is in a change.
@@ -633,5 +636,7 @@ export function ViewportHost({ layers }: { layers: boolean }) {
     }
   }, [layers])
 
-  return <div ref={stageRef} className="vp-stage" data-mode={mode} />
+  // The filament slot the viewport picks out, for tests and styles (null draws nothing).
+  const highlight = useApp((s) => s.hoverSlot)
+  return <div ref={stageRef} className="vp-stage" data-mode={mode} data-highlight={highlight ?? undefined} />
 }

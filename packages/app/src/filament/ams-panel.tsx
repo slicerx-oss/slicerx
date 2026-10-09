@@ -3,13 +3,16 @@
 // The Filament block of the Prepare sidebar: every slot with its material, brand and color, filled in
 // from the connected printer's AMS or MMU until the person changes it, plus the flush volume dialog
 // and per-plate color swaps.
-import { Block, Button, Icon, Input, LinkButton, Select, SwitchRow, tipAttrs } from '@slicerx/ui'
+import { Block, Button, Icon, Input, LinkButton, Menu, MenuAnchor, MenuItem, Select, SwitchRow, tipAttrs } from '@slicerx/ui'
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
 import { Swatch } from '../parts'
 import { activeMeta } from '../plate/plates'
 import { useHost } from '../host'
 import { spoolFor, useSpools } from '../inventory/spools'
-import { MoreButton, useMore } from '../shell/more'
+import { effectiveMode, useLayout } from '../first-run/look'
+import { estimateLine } from '../lib/estimate-line'
+import { SlotRail, SlotRailEmpty, SlotRailSkeleton } from './slot-rail'
+import { slotLabel } from './rail'
 import { useFold } from '../shell/fold'
 import { set, shownSlice, useApp } from '../state/store'
 import { nozzleText, tuneState } from '../calibration/tuned'
@@ -50,10 +53,6 @@ function usePresetMatch(maker: string): void {
   }, [key, maker, printerSlots])
 }
 
-function unitOf(s: ResolvedSlot): string {
-  return /^[A-Z]/.test(s.label) ? `AMS ${s.label.charCodeAt(0) - 64}` : 'Spools'
-}
-
 function SwapColors({ slots }: { slots: ResolvedSlot[] }) {
   const meta = useApp((s) => activeMeta(s))
   const onPlate = slots.filter((s) => s.used)
@@ -70,7 +69,7 @@ function SwapColors({ slots }: { slots: ResolvedSlot[] }) {
         <Select id="swap-a" size="sm" aria-label="First filament" value={from} onChange={(e) => setA(Number(e.target.value))}>
           {onPlate.map((s) => (
             <option key={s.index} value={s.index}>
-              Filament {s.index}
+              {slotLabel(s)}
             </option>
           ))}
         </Select>
@@ -78,7 +77,7 @@ function SwapColors({ slots }: { slots: ResolvedSlot[] }) {
         <Select id="swap-b" size="sm" aria-label="Second filament" value={to} onChange={(e) => setB(Number(e.target.value))}>
           {onPlate.map((s) => (
             <option key={s.index} value={s.index}>
-              Filament {s.index}
+              {slotLabel(s)}
             </option>
           ))}
         </Select>
@@ -117,26 +116,50 @@ export function AmsPanel({ maker, system }: { maker: string; system?: 'ams' | 'm
   const used = slots.filter((s) => s.used).length
   const fromPrinter = printerSlots.length > 0
   const edited = Object.keys(slotSetup).length > 0
-  const more = useMore('filament')
+  const mode = effectiveMode(useApp((s) => s.settingsMode), useLayout())
+  const advanced = mode !== 'simple'
   const [open, setOpen] = useFold('filament')
   const host = useHost()
   const spools = useSpools(host)
   const links = useApp((s) => s.spoolLinks)
+  const done = shownSlice(useApp((s) => s.slice))
+  const line = estimateLine(done)
   /** What is left on the slot's spool: grams from Spoolman, else the printer's percentage. */
   const left = (s: ResolvedSlot): string | null => {
     const sp = spoolFor(s.index, spools, links, printerSlots[s.index - 1]?.spoolmanId)
     return sp ? `${Math.round(sp.remainingG)} g left` : s.remainingPct !== undefined ? `${s.remainingPct}% left` : null
   }
-  // Simple shows the slots in use, one line each; the rest open with More (the header counts them: "2 of 4 used").
-  const basics = slots.filter((s) => s.used)
-  const shown = more ? slots : basics.length ? basics : slots.slice(0, 1)
-  // One or two filaments in use read as a single line of swatches; More opens the list.
-  const strip = !more && basics.length > 0 && basics.length <= 2
-  const groups = new Map<string, ResolvedSlot[]>()
-  for (const s of shown) {
-    const unit = fromPrinter && s.index <= printerSlots.length ? unitOf(s) : 'Slots'
-    groups.set(unit, [...(groups.get(unit) ?? []), s])
-  }
+  const showUnused = useApp((s) => s.showUnusedSlots)
+  const [menuOpen, setMenuOpen] = useState(false)
+  // The rail shows the slots in use; "Show unused slots" in the menu adds the rest. Nothing in use yet: every slot.
+  const shown = showUnused || used === 0 ? slots : slots.filter((s) => s.used)
+  // The printer has a filament unit but has not reported its slots yet.
+  const loading = (system === 'ams' || system === 'mmu') && !fromPrinter && !edited
+  // After a slice: "148 g, 4 changes" (changes only on a multi-color plate).
+  const total = line ? [line.grams, line.changes].filter(Boolean).join(', ') : null
+  const menu = (
+    <MenuAnchor className="fil-menu">
+      <Button size="sm" variant="ghost" icon="more" aria-label="Filament options" aria-haspopup="menu" aria-expanded={menuOpen} data-testid="slice-filament-menu" tip={{ title: 'Filament options', body: 'Calibrate, flush volumes, reset to the printer, unused slots.' }} onClick={() => setMenuOpen(!menuOpen)} />
+      <Menu open={menuOpen} onClose={() => setMenuOpen(false)} label="Filament options" align="end">
+        <MenuItem icon="calibration" data-testid="slice-filament-calibrate" onClick={() => set({ calibrationOpen: true, calibrationSlot: null })}>
+          Calibrate
+        </MenuItem>
+        {used >= 2 ? (
+          <MenuItem icon="flush-volume" data-testid="slice-filament-flush" onClick={() => set({ flushOpen: true })}>
+            Flush volumes
+          </MenuItem>
+        ) : null}
+        {fromPrinter && edited ? (
+          <MenuItem icon="settings-reset" data-testid="slice-filament-reset" onClick={() => resetSlots()}>
+            Reset to printer
+          </MenuItem>
+        ) : null}
+        <MenuItem checked={showUnused} onClick={() => set({ showUnusedSlots: !showUnused })}>
+          Show unused slots
+        </MenuItem>
+      </Menu>
+    </MenuAnchor>
+  )
   return (
     <Block
       title="Filament"
@@ -146,80 +169,28 @@ export function AmsPanel({ maker, system }: { maker: string; system?: 'ams' | 'm
       aside={
         !open ? (
           <span className="sec-sum">
-            {basics.slice(0, 6).map((s) => (
+            {slots.filter((s) => s.used).slice(0, 6).map((s) => (
               <Swatch key={s.index} color={s.color} size="sm" />
             ))}
             {`${used} of ${slots.length} used`}
           </span>
         ) : (
-        <span className="fil-aside">
-          <span className="fil-count sx-mono">{`${used} of ${slots.length} used`}</span>
-          {more ? (
-            <Button size="sm" variant="ghost" icon="calibration" aria-label="Calibrate" tip={{ title: 'Calibrate', body: 'Run flow, pressure advance and temperature tests for these filaments.' }} onClick={() => set({ calibrationOpen: true, calibrationSlot: null })} />
-          ) : null}
-          {more && used >= 2 ? (
-            <Button size="sm" variant="ghost" icon="flush-volume" aria-label="Flush volumes" tip={{ title: 'Flush volumes', body: 'Set how much filament each color change purges.' }} onClick={() => set({ flushOpen: true })} />
-          ) : null}
-          <MoreButton id="filament" changed={edited} />
-        </span>
+          <span className="fil-head">
+            {total ? <span className="fil-total" data-testid="slice-filament-total">{total}</span> : null}
+            {menu}
+          </span>
         )
       }
       data-section="filament"
     >
-      {more && fromPrinter ? (
-        <p className="sx-small sx-muted fil-sync">
-          {system === 'mmu' ? 'MMU' : 'AMS'} values come from the printer.{' '}
-          {edited ? <LinkButton onClick={() => resetSlots()}>Reset to printer</LinkButton> : null}
-        </p>
-      ) : more ? (
-        <p className="sx-small sx-muted fil-sync">No printer reports slots. Set the filaments yourself.</p>
-      ) : null}
-      {strip ? (
-        <div className="slot-strip">
-          {basics.map((s) => (
-            <div key={s.index} className="slot strip-slot" data-slot={s.index}>
-              <button type="button" className="slot-swatch" aria-label={`Edit filament ${s.index}`} {...tipAttrs({ title: `Filament ${s.label}`, body: `${s.type}${left(s) ? `, ${left(s)}` : ''}. Click to change it.` })} onClick={() => set({ slotDialog: s.index })}>
-                <Swatch color={s.color} />
-              </button>
-              <span className="sname">{s.type}</span>
-              {tuneBadge(s)}
-            </div>
-          ))}
-        </div>
-      ) : null}
-      {strip ? null : [...groups].map(([unit, list]) => (
-        <div key={unit}>
-          {more || groups.size > 1 ? <div className="ams-h">
-            <span>{unit}</span>
-            <span>
-              {list[0]?.label} to {list[list.length - 1]?.label}
-            </span>
-          </div> : null}
-          {list.map((s) => (
-            <div key={s.index} className={s.used ? 'slot' : 'slot unused'} data-slot={s.index}>
-              <button type="button" className="slot-swatch" aria-label={`Edit filament ${s.index}`} onClick={() => set({ slotDialog: s.index })}>
-                <Swatch color={s.color} />
-              </button>
-              <span className="sid">{s.label}</span>
-              <span className="sname">
-                {s.type}
-                {s.brand ? ` · ${s.brand}` : ''} {tuneBadge(s)}
-                <small>
-                  {(more ? [s.family && s.family !== s.brand ? s.family : null, s.used ? 'In use' : 'Not used', left(s)] : [left(s)]).filter(Boolean).join(', ')}
-                </small>
-              </span>
-            </div>
-          ))}
-        </div>
-      ))}
-      {more && !fromPrinter && slots.length < MAX_SLOTS ? (
-        <Button size="sm" variant="ghost" icon="plus" onClick={() => setSlot(slots.length + 1, {})}>
-          Add filament
-        </Button>
-      ) : null}
+      {loading ? <SlotRailSkeleton /> : slots.length === 0 ? <SlotRailEmpty /> : <SlotRail slots={shown} left={left} badge={tuneBadge} {...(advanced && !fromPrinter && slots.length < MAX_SLOTS ? { onAdd: () => setSlot(slots.length + 1, {}) } : {})} />}
       <NozzleRows slots={slots} />
-      {more ? <SwapColors slots={slots} /> : null}
-      {more && used >= 2 ? <TowerRow /> : null}
+      {advanced && (used >= 2) ? (
+        <div className="fil-flat">
+          <SwapColors slots={slots} />
+          <TowerRow />
+        </div>
+      ) : null}
       <SetupNotes />
       <Suspense fallback={null}>{dialogOpen ? <Dialogs /> : null}</Suspense>
     </Block>
