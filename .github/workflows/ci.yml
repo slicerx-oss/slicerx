@@ -237,6 +237,9 @@ jobs:
           SX_HEAVY_LOCK: /mnt/c/Users/musda/.slicerx-heavy.lock
           # a lock that is not free within 20 minutes fails the step with "gave up after 1200 s", not a cancel
           SX_HEAVY_WAIT: 1200
+          # GitHub's runners draw WebGL in software on 4 cores shared by two workers: drawing time budgets in the specs
+          # (e2e/frames.ts GL_SLOW) are three times the project runner's
+          SX_SLOW_GL: ${{ runner.environment == 'self-hosted' && '1' || '3' }}
           # one blob name per job, so the merged report keeps every shard of both projects
           PLAYWRIGHT_BLOB_OUTPUT_NAME: report-${{ matrix.project }}-${{ strategy.job-index }}.zip
           PLAYWRIGHT_JSON_OUTPUT_FILE: ${{ runner.temp }}/e2e-results.json

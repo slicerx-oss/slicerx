@@ -6,7 +6,7 @@
 import { writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { expect, test } from '@playwright/test'
-import { alike, cellsIn, recordFrames, spread } from './frames'
+import { alike, cellsIn, GL_SLOW, recordFrames, spread } from './frames'
 
 test('the plate is drawn right after setup is skipped on a fresh install', async ({ page, isMobile }) => {
   test.skip(isMobile, 'Runs at desktop width')
@@ -21,8 +21,9 @@ test('the plate is drawn right after setup is skipped on a fresh install', async
   // this is timed on it too. A slow shared runner takes its time to get here; nothing below counts that time.
   await page.locator('html[data-sx-ready="viewport"]').waitFor({ state: 'attached', timeout: 120_000 })
   const up = await page.evaluate(() => (performance.timeOrigin + performance.now()) / 1000)
-  // Long enough for the first frames and the first background slice to start and land.
-  await page.waitForTimeout(8000)
+  // Long enough for the first frames and the first background slice to start and land (longer where drawing is slow).
+  const watchS = 8 * GL_SLOW
+  await page.waitForTimeout(watchS * 1000)
   const view = await page.locator('.vp').boundingBox()
   const frames = await stop()
   expect(view, 'the 3D view is on screen').not.toBeNull()
@@ -34,8 +35,8 @@ test('the plate is drawn right after setup is skipped on a fresh install', async
   const before = [...frames].reverse().find((f) => f.t < up)
   const pool = [...(before ? [before] : []), ...frames.filter((f) => f.t >= up)]
   const shown = pool.find((f) => spread(f, cells) > 8)
-  expect(shown, `the plate never showed in the 8 s after the view came up (last spread ${spread(frames.at(-1)!, cells).toFixed(1)})`).toBeTruthy()
-  expect(Math.max(0, shown!.t - up), 'seconds from the view coming up to the plate showing').toBeLessThan(5)
+  expect(shown, `the plate never showed in the ${watchS} s after the view came up (last spread ${spread(frames.at(-1)!, cells).toFixed(1)})`).toBeTruthy()
+  expect(Math.max(0, shown!.t - up), 'seconds from the view coming up to the plate showing').toBeLessThan(5 * GL_SLOW)
   const drawn = spread(shown!, cells)
   const empty = frames.filter((f) => f.t > shown!.t && spread(f, cells) < drawn * 0.35)
   expect(empty.map((f) => `${(f.t - up).toFixed(2)} s after the view came up: spread ${spread(f, cells).toFixed(1)}`), `the view went empty after it showed the plate (drawn ${drawn.toFixed(1)})`).toEqual([])
