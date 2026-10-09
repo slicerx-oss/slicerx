@@ -31,6 +31,26 @@ describe('the picture shown while a project opens', () => {
     expect(openingPreview()).toBeNull()
   })
 
+  it('shows the picture of a project whose model is bigger than any picture may be', async () => {
+    // A 6 MB model: over the picture's own cap, which is for the picture alone.
+    const model = `<model>${'<vertex x="1" y="2" z="3"/>'.repeat(240_000)}</model>`
+    expect(model.length).toBeGreaterThan(4 * 1024 * 1024)
+    const bytes = await zipCompressed([
+      { name: '3D/Objects/object_1.model', data: model },
+      { name: 'Metadata/plate_1.png', data: PNG },
+    ])
+    const hide = showOpeningPreview(bytes, 'big.3mf')
+    await vi.waitFor(() => expect(openingPreview()?.name).toBe('big.3mf'))
+    hide()
+  })
+
+  it('shows nothing for a picture bigger than its cap', async () => {
+    const huge = new Uint8Array(5 * 1024 * 1024).fill(7)
+    showOpeningPreview(await zipCompressed([{ name: 'Metadata/plate_1.png', data: huge }]), 'huge.3mf')
+    await new Promise((r) => setTimeout(r, 100))
+    expect(openingPreview()).toBeNull()
+  })
+
   it('shows nothing for a project without a picture, or one taken down before its picture was read', async () => {
     showOpeningPreview(zip([{ name: '3D/3dmodel.model', data: '<model/>' }]), 'plain.3mf')
     showOpeningPreview(zip([{ name: 'Metadata/plate_1.png', data: PNG }]), 'quick.3mf')()
