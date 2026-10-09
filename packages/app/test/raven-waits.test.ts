@@ -13,6 +13,7 @@ import { HostContext } from '../src/host'
 import { UploadState } from '../src/features/store/upload'
 import { SliceBlock } from '../src/workspaces/prepare/prepare-panes'
 import { SliceProgress } from '../src/workspaces/slice-progress'
+import { markOpenEnded, markOpenStage, markOpenStarted } from '../src/lib/open-mark'
 
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -59,6 +60,25 @@ describe('ravens through the longer waits', () => {
     expect(el.querySelector('[data-testid="raven-loading"][data-leaving]')).not.toBeNull()
     await wait(600)
     expect(has('raven-loading')).toBe(false)
+  })
+
+  it('the ravens fly off once the loading model is drawn, while the rest of the open goes on', async () => {
+    markOpenStarted('tangela-part13.stl')
+    markOpenStage('read')
+    await act(async () => set({ plateLoading: true }))
+    await wait(RAVEN_WAIT_MS + 200)
+    expect(has('raven-loading')).toBe(true)
+    await act(async () => {
+      markOpenStage('objects')
+      markOpenStage('drawn')
+    })
+    expect(el.querySelector('[data-testid="raven-loading"][data-leaving]')).not.toBeNull()
+    await wait(600)
+    expect(has('raven-loading')).toBe(false)
+    await act(async () => {
+      markOpenEnded()
+      set({ plateLoading: false })
+    })
   })
 
   it('a long slice brings muninn to ride the Estimate bar, and he goes when it ends', async () => {

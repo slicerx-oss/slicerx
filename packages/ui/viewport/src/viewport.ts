@@ -6,6 +6,7 @@
 import { FirstFrameGate } from './firstframe'
 import { PlateReveal, REVEAL_HIDDEN, revealPlayed } from './reveal'
 import { crossfadeFrom } from './crossfade'
+import { LoadingWisp, lightStudio } from './wisp'
 import { gpuProfile } from './gpu'
 import type { ToolChangerSpec } from './toolchanger'
 import type { PurgePlan } from './purge'
@@ -642,6 +643,17 @@ class ViewportImpl implements Viewport {
     this.reveal = null
     this.canvas.dataset['reveal'] = 'done'
     return false
+  }
+
+  /** The loading wisp on the plate edge, while it runs or fades. */
+
+  private wisp: LoadingWisp | null = null
+
+  setLoadingWisp(on: boolean): void {
+    if (on) {
+      this.wisp ??= new LoadingWisp(this.canvas, () => ({ camera: this.camera, hx: this.stage.bed.widthMm / 2, hy: this.stage.bed.depthMm / 2, accent: this.theme.scene.selection, still: reducedMotion(), light: lightStudio(this.theme.scene.bgTop) }))
+      this.wisp.start()
+    } else this.wisp?.stop()
   }
 
   private readonly setRevealPlate = (trace: number, gridMs: number, tint: number): void => this.stage.setReveal(trace, gridMs, tint)
@@ -3352,6 +3364,8 @@ class ViewportImpl implements Viewport {
     this.probe = null
     this.reveal?.finish()
     this.reveal = null
+    this.wisp?.dispose()
+    this.wisp = null
     if (this.raf) cancelAnimationFrame(this.raf)
     this.raf = 0
     for (const c of this.cleanups) c()
