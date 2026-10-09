@@ -234,7 +234,7 @@ pub(crate) fn segment_reaches(
             cuts.push(t);
         }
     }
-    crate::sorting::sort_by(&mut cuts, |x, y| x.total_cmp(y));
+    crate::sorting::sort_by(&mut cuts, f64::total_cmp);
     let clear = |t: f64| -> Option<[f64; 2]> {
         let p = [a[0] + t * dx, a[1] + t * dy];
         let depth = (0..n)
