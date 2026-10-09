@@ -11,7 +11,7 @@ import { planeContour } from './contour'
 import type { PaintBindings } from './gizmobindings'
 import type { ObjectEntry } from './model'
 import {
-  autoDetail, cylinderRegion, decodeTree, encodeTree, fillByAngle, fillConnected, forEachPaintedLeaf, gapFill, gridFor, isLeaf, paintDab, paintedLeafCount, paintLeafAt, paintPatch, readPaintTexts, replaceEverywhere,
+  autoDetail, cylinderRegion, decodeTree, decodedEntries, encodeTree, fillByAngle, fillConnected, forEachPaintedLeaf, forEachPaintedLeafOfText, gapFill, gridFor, isLeaf, LazyPaintMap, lazyPaintTexts, paintDab, paintedLeafCount, paintLeafAt, paintPatch, paintTextLeafCount, replaceEverywhere,
   slabRegion, sphereRegion, stateAt, trianglePoints, withPointFilter,
   type PaintMap, type PaintNode, type PaintRecorder, type PaintRegion, type Tri, type V3,
 } from './paint'
@@ -47,7 +47,8 @@ const FUZZY = '#ffb86c'
 const SLOT_FALLBACK = ['#f7d959', '#fec600', '#ebebe6', '#1d1d21', '#ff9016', '#de4343', '#56b7e6', '#61c680']
 
 interface PartPaint {
-  map: PaintMap
+  /** Triangles a tool has touched as trees; the rest stay as their texts until one does. */
+  map: LazyPaintMap
   overlay: Mesh | null
   dirty: boolean
 }
@@ -157,7 +158,7 @@ export class Painter {
     const k = this.key(id, part, layer)
     let p = this.parts.get(k)
     if (!p) {
-      p = { map: new Map(), overlay: null, dirty: true }
+      p = { map: new LazyPaintMap(), overlay: null, dirty: true }
       this.parts.set(k, p)
     }
     return p
@@ -238,7 +239,9 @@ export class Painter {
     const out: Record<number, string> = {}
     const m = this.parts.get(this.key(id, part, layer))?.map
     if (!m) return out
-    for (const [t, n] of m) {
+    // Triangles no tool has touched hand back their text as it came.
+    for (const [t, text] of m.texts) out[t] = text
+    for (const [t, n] of decodedEntries(m)) {
       const s = encodeTree(n)
       if (s) out[t] = s
     }
@@ -247,7 +250,7 @@ export class Painter {
 
   setData(id: string, part: number, layer: PaintLayer, texts: Record<number, string> | null): number[] {
     const p = this.get(id, part, layer)
-    const { map, bad } = readPaintTexts(texts ?? {})
+    const { map, bad } = lazyPaintTexts(texts ?? {})
     p.map = map
     p.dirty = true
     this.invalidate()
@@ -659,7 +662,8 @@ export class Painter {
       // One pass into arrays of their final size: a model with hundreds of thousands of painted pieces made a
       // corner array and a Color per piece and grew two number arrays, which held several times the overlay itself.
       let n = 0
-      for (const node of p.map.values()) n += paintedLeafCount(node)
+      for (const text of p.map.texts.values()) n += Math.max(0, paintTextLeafCount(text))
+      for (const [, node] of decodedEntries(p.map)) n += paintedLeafCount(node)
       if (p.overlay) {
         p.overlay.removeFromParent()
         p.overlay.geometry.dispose()
@@ -674,7 +678,7 @@ export class Painter {
       const put = (v: Tri, state: number): void => {
         let c = rgb.get(state)
         if (!c) rgb.set(state, (c = this.colorOf(layerS, state)))
-        const [a, b, d] = v
+        const a = v[0], b = v[1], d = v[2]
         // The face normal three.js computeVertexNormals gives a triangle of an unindexed geometry: (c - b) x (a - b),
         // from the corners as the position array stores them (32-bit), so every value matches its result exactly.
         const f = Math.fround
@@ -685,14 +689,32 @@ export class Painter {
         const len = Math.sqrt(nx * nx + ny * ny + nz * nz)
         const inv = 1 / (len || 1)
         nx *= inv; ny *= inv; nz *= inv
-        for (const q of v) {
+        for (let k = 0; k < 3; k++) {
+          const q = v[k] as V3
           pos[w] = q[0]; pos[w + 1] = q[1]; pos[w + 2] = q[2]
           col[w] = c.r; col[w + 1] = c.g; col[w + 2] = c.b
           nor[w] = nx; nor[w + 1] = ny; nor[w + 2] = nz
           w += 3
         }
       }
-      for (const [t, node] of p.map) forEachPaintedLeaf(trianglePoints(src.positions, src.indices, t), node, put)
+      // Texts are walked in place; trees a tool made are walked as before.
+      const tri = new Float64Array(9)
+      const piece: Tri = [[0, 0, 0], [0, 0, 0], [0, 0, 0]]
+      const putCorners = (cs: Float64Array, at: number, state: number): void => {
+        for (let k = 0; k < 3; k++) {
+          const q = piece[k] as V3
+          q[0] = cs[at + 3 * k]!; q[1] = cs[at + 3 * k + 1]!; q[2] = cs[at + 3 * k + 2]!
+        }
+        put(piece, state)
+      }
+      for (const [t, text] of p.map.texts) {
+        for (let k = 0; k < 3; k++) {
+          const i = 3 * (src.indices[3 * t + k] ?? 0)
+          tri[3 * k] = src.positions[i] ?? 0; tri[3 * k + 1] = src.positions[i + 1] ?? 0; tri[3 * k + 2] = src.positions[i + 2] ?? 0
+        }
+        forEachPaintedLeafOfText(text, tri, putCorners)
+      }
+      for (const [t, node] of decodedEntries(p.map)) forEachPaintedLeaf(trianglePoints(src.positions, src.indices, t), node, put)
       const g = new BufferGeometry()
       g.setAttribute('position', new BufferAttribute(pos, 3))
       g.setAttribute('color', new BufferAttribute(col, 3))
