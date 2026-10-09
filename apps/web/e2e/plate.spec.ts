@@ -158,6 +158,7 @@ test('the plate chip names the longest plate type on one line, in full in its to
   // The longest plate type in the picker, on the new plate.
   await page.getByRole('button', { name: 'Add plate' }).first().click()
   await setBedType(page, 'Plate 2', 'engineering')
+  await openSheet(page)
   await expect(plateType).toHaveText('Engineering plate')
   await expect(plateType).toHaveAttribute('data-tip-title', 'Engineering plate')
   // The chip stays one line at any width; the card wraps its chips under the name on a phone instead.
