@@ -22,7 +22,7 @@ import {
   type WebGLProgramParametersWithUniforms,
 } from 'three'
 import { HEAT_RAMP, SCENE, displayHex, type SceneColors } from './palette'
-import type { FilamentFinish, RenderMode } from './types'
+import type { DisplayStyle, FilamentFinish, RenderMode } from './types'
 
 /** Uniforms shared by every Prepare material, so one write updates all of them. */
 export const shared = {
@@ -198,7 +198,7 @@ export function xrayMaterial(color: string): ShaderMaterial {
   })
 }
 
-let sharedMats: { clay: MeshStandardMaterial; overhang: MeshStandardMaterial; edgeDark: LineBasicMaterial; edgeXray: LineBasicMaterial } | null = null
+let sharedMats: { clay: MeshStandardMaterial; overhang: MeshStandardMaterial; edgeDark: LineBasicMaterial; edgeXray: LineBasicMaterial; cad: MeshPhysicalMaterial; edgeCad: LineBasicMaterial } | null = null
 
 /** Pulls line vertices a hair toward the camera so feature edges win the depth test against their own faces. */
 function edgeBias<M extends Material>(m: M): M {
@@ -233,7 +233,12 @@ export function sharedMaterials(): NonNullable<typeof sharedMats> {
   overhang.customProgramCacheKey = () => 'sx-over'
   const edgeDark = edgeBias(new LineBasicMaterial({ color: lin(SCENE.edgeDark), transparent: true, opacity: 0.22, depthWrite: false }))
   const edgeXray = edgeBias(new LineBasicMaterial({ color: lin(SCENE.edgeXray), transparent: true, opacity: 0.5, depthWrite: false, ...ADDITIVE_KEEP_ALPHA, blendSrc: SrcAlphaFactor }))
-  sharedMats = { clay, overhang, edgeDark, edgeXray }
+  // Model's CAD look: a mid gray (the studio's key light lifts it to a light gray) with a soft sheen so faces part by
+  // their light, and edges dark enough to draw the shape
+  const look = cadLook(SCENE.bgTop)
+  const cad = new MeshPhysicalMaterial({ color: lin(look.body), roughness: 0.5, metalness: 0, clearcoat: 0.2, clearcoatRoughness: 0.35, envMapIntensity: 0.6, polygonOffset: true })
+  const edgeCad = edgeBias(new LineBasicMaterial({ color: lin(look.edge), transparent: true, opacity: 0.9, depthWrite: false }))
+  sharedMats = { clay, overhang, edgeDark, edgeXray, cad, edgeCad }
   return sharedMats
 }
 
@@ -250,6 +255,7 @@ export class MaterialCache {
     const s = sharedMaterials()
     if (mode === 'clay') return s.clay
     if (mode === 'overhang') return s.overhang
+    if (mode === 'cad') return s.cad
     const key = `${mode}:${look.color}:${look.finish}`
     let m = this.map.get(key)
     if (!m) {
@@ -279,6 +285,24 @@ export function setSharedSceneColors(scene: SceneColors): void {
   sharedMats.overhang.color.copy(lin(scene.overhangBase))
   sharedMats.edgeDark.color.copy(lin(scene.edgeDark))
   sharedMats.edgeXray.color.copy(lin(scene.edgeXray))
+  const look = cadLook(scene.bgTop)
+  sharedMats.cad.color.copy(lin(look.body))
+  sharedMats.edgeCad.color.copy(lin(look.edge))
+}
+
+/** Which edge material a part's feature edges take in a render mode, and whether they show with this display style. */
+export function edgeLook(mode: RenderMode, display: DisplayStyle): { edge: 'xray' | 'cad' | 'dark'; visible: boolean } {
+  if (mode === 'xray') return { edge: 'xray', visible: true }
+  // Model's CAD look always draws the feature edges; wireframe is its own drawing
+  if (mode === 'cad') return { edge: 'cad', visible: display !== 'wireframe' }
+  return { edge: 'dark', visible: display === 'edges' }
+}
+
+/** The CAD gray for a studio: neutral in a light one, a little cooler in a dark one, and its edge color. */
+export function cadLook(bgTop: string): { body: string; edge: string } {
+  const c = new Color(bgTop)
+  const light = 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b > 0.5
+  return light ? { body: '#7b7e83', edge: '#24262c' } : { body: '#6f757e', edge: '#121318' }
 }
 
 /** sleipnir heights for the Prepare shaders. Null clears them. Shared by every viewport on the page. */

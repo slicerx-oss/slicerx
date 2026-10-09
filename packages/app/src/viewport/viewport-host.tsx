@@ -6,7 +6,7 @@
 // keeps both workspaces usable.
 import { fitLines, keepFits, subscribeFits } from '../plate/fit-state'
 import type { PreviewBuffers } from '@slicerx/contracts'
-import type { ToolChangerSpec, Viewport, ViewportPlate } from '@slicerx/viewport'
+import type { RenderMode, ToolChangerSpec, Viewport, ViewportPlate } from '@slicerx/viewport'
 import { onThemeChange } from '@slicerx/ui/theme'
 import { useEffect, useRef, useState } from 'react'
 import { brandAccent, editionHasCad, useEdition } from '../edition'
@@ -44,6 +44,12 @@ import { gantryHits, gantrySpec } from '../plate/heimdall-gantry'
 import { markOpenStage, markViewDrawn } from '../lib/open-mark'
 
 /** The part of the viewport handle the app drives. The 2D fallback implements the same. */
+/** The render mode for the state: Model's CAD look, or the look picked for Slice. */
+export function modelLook(s: Pick<AppState, 'workspace' | 'modelMode' | 'look'>): RenderMode {
+  if (s.workspace === 'prepare' && s.modelMode === 'design') return s.look === 'xray' ? 'xray' : 'cad'
+  return s.look
+}
+
 export type Drive = Pick<Viewport, 'setMode' | 'setPlate' | 'setTransforms' | 'setRenderMode' | 'view' | 'setPreview' | 'setLayerRange' | 'setMoveCut' | 'setColorMode' | 'setToolColors' | 'setSelection' | 'on' | 'dispose'> & {
   backendName(): string
   /** Camera and mouse controls, tools and camera calls; the 2D fallback has none of them. */
@@ -401,7 +407,8 @@ export function ViewportHost({ layers }: { layers: boolean }) {
         if (first || s.colorMode !== prev.colorMode) vp.setColorMode(s.colorMode)
         // norn: the paths from before a change, shown faintly on request.
         if (first || s.norn.ghost !== prev.norn.ghost || s.norn.before !== prev.norn.before) vp.setPreviewGhost?.(s.norn.ghost && s.norn.before ? s.norn.before.preview : null)
-        if (first || s.look !== prev.look) vp.setRenderMode(s.look)
+        // Model draws geometry, not filament: the CAD gray with its edges (X-ray still works there); Slice keeps the look
+        if (first || s.look !== prev.look || s.workspace !== prev.workspace || s.modelMode !== prev.modelMode) vp.setRenderMode(modelLook(s))
         if (!first && s.cameraSeq !== prev.cameraSeq) vp.view(s.camera, { animate: true })
         // The look and feel picks the mouse map; overrides from Settings sit on top.
         if ((first || s.lookAndFeel !== prev.lookAndFeel) && vp.setControls && vp.controlsApi) vp.setControls(controlsFor(vp.controlsApi, s.lookAndFeel ?? { id: defaultLook.current }))

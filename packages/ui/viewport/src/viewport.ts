@@ -53,7 +53,7 @@ import { BrimEars } from './brim'
 import { GapLines, type GapLine } from './gaps'
 import { GuideLines, type Guides } from './guides'
 import { applyInsets, CameraRig, NO_INSETS, reducedMotion, type Insets } from './camera'
-import { MaterialCache, setSharedBandColors, setSharedLayerTops, setSharedSceneColors, shared, sharedMaterials } from './materials'
+import { edgeLook, MaterialCache, setSharedBandColors, setSharedLayerTops, setSharedSceneColors, shared, sharedMaterials } from './materials'
 import { buildObject, disposeObject, type ObjectEntry } from './model'
 import { Pipeline } from './post'
 import { Stage } from './stage'
@@ -817,8 +817,9 @@ class ViewportImpl implements Viewport {
         p.mesh.castShadow = !x && !wire
         p.mesh.receiveShadow = !x && !wire
         p.mesh.renderOrder = x ? 2 : 0
-        p.edges.material = x ? sh.edgeXray : sh.edgeDark
-        p.edges.visible = x || this.display === 'edges'
+        const e = edgeLook(this.renderMode, this.display)
+        p.edges.material = e.edge === 'xray' ? sh.edgeXray : e.edge === 'cad' ? sh.edgeCad : sh.edgeDark
+        p.edges.visible = e.visible
       }
     }
     this.stage.setContactVisible(!x && this.mode === 'prepare')
@@ -926,7 +927,7 @@ class ViewportImpl implements Viewport {
         kept++
         continue
       }
-      const entry = buildObject(obj, (p) => this.mats.get(this.renderMode, { color: p.color, finish: p.finish ?? 'basic' }), this.renderMode === 'xray' ? sh.edgeXray : sh.edgeDark)
+      const entry = buildObject(obj, (p) => this.mats.get(this.renderMode, { color: p.color, finish: p.finish ?? 'basic' }), this.renderMode === 'xray' ? sh.edgeXray : this.renderMode === 'cad' ? sh.edgeCad : sh.edgeDark)
       this.builtFrom.set(obj.id, obj.parts.map((p) => [p.positions, p.indices]))
       this.objects.set(obj.id, entry)
       this.stage.objectsRoot.add(entry.group)
