@@ -102,7 +102,9 @@ export function MachineCard() {
   const loading = profile === null
   const nozzle = loading ? null : profile.nozzle
   const fixedNozzle = profile?.nozzleFrom === 'printer'
-  const modelLine = [printer.vendor, printer.model].filter(Boolean).join(' ') + (nozzle !== null ? `, ${nozzle} mm` : '')
+  // The model beside the name, muted: a bay name alone says little with several printers of different models.
+  const modelName = [printer.vendor, printer.model].filter(Boolean).join(' ')
+  const modelLine = modelName + (nozzle !== null ? `, ${nozzle} mm` : '')
   const summary = machineSummary(printer.name, nozzle, plate.label, pill.label)
   const setPlate = (v: BedType | '') => {
     if (!meta) return
@@ -137,6 +139,11 @@ export function MachineCard() {
           >
             <VendorMark vendor={printer.vendor} size={24} />
             <span className="printer-name">{printer.name}</span>
+            {modelName && modelName !== printer.name ? (
+              <span className="mc-model" data-testid="slice-machine-model">
+                {modelName}
+              </span>
+            ) : null}
             <Icon name="chevron-down" size={14} className="mc-caret" />
           </button>
           <Popover open={printerOpen} onClose={closePrinter} label="Printer" className="mc-pop">
