@@ -176,6 +176,32 @@ impl Usage {
                 }
                 top = top.max(hi);
                 spans.push((slot, lo, hi));
+                // A feature on a filament of its own (`sparse_infill_filament_id` and the like, the object's own
+                // settings first) prints with it over the part's footprint: walls on every layer, sparse infill
+                // between the shells, solid infill and the surfaces on the shell layers at the bottom and the top.
+                let get = |name: &str| o.settings.get(name).or_else(|| cfg.raw.get(name));
+                let (top_n, bottom_n) = cfg.shell_layers(step);
+                let bottom = lo + first + f64::from(bottom_n.saturating_sub(1)) * step;
+                let top = hi - f64::from(top_n) * step;
+                let [outer, inner, sparse, solid, top_f, bottom_f] = crate::session::feature_slots(get, slot);
+                let bands = [
+                    (outer, lo, hi),
+                    (inner, lo, hi),
+                    (sparse, bottom, top),
+                    (solid, lo, bottom),
+                    (solid, top, hi),
+                    (top_f, top, hi),
+                    (bottom_f, lo, bottom),
+                ];
+                for (f, a, b) in bands {
+                    if f != slot && f > 0 && b > a {
+                        spans.push((f, a, b));
+                        if let Some(Some(r)) = boxes.get(usize::from(slot.max(1) - 1)).copied() {
+                            grow(&mut boxes, f, [r[0], r[1], 0.0]);
+                            grow(&mut boxes, f, [r[2], r[3], 0.0]);
+                        }
+                    }
+                }
                 for f in &part.paint {
                     let ps = f.v.map(|v| o.apply(v));
                     let (a, b) = ps
@@ -387,7 +413,11 @@ impl Map {
                     };
                     (placeable, flush * FLUSH_SCORE + time + penalty)
                 };
-                let better = |a: (usize, f64), b: (usize, f64)| a.0 > b.0 || (a.0 == b.0 && a.1 < b.1 - 1e-9);
+                // Between maps that score the same, the one that keeps the lower filaments on the lower extruders, as
+                // OrcaSlicer 2.4.2 most often chooses (filament 1 on the left extruder of an H2D, 2 on the right).
+                let better = |a: (usize, f64, &[u8]), b: (usize, f64, &[u8])| {
+                    a.0 > b.0 || (a.0 == b.0 && (a.1 < b.1 - 1e-9 || (a.1 <= b.1 + 1e-9 && a.2 < b.2)))
+                };
                 let mut best_labels: Vec<u8> = vec![u8::try_from(master).unwrap_or(0); k];
                 let mut best = (0usize, f64::INFINITY);
                 if k <= ENUM_MAX {
@@ -395,7 +425,7 @@ impl Map {
                     for mask in 0u32..(1u32 << k) {
                         let labels: Vec<u8> = (0..k).map(|i| u8::from(mask >> i & 1 == 1)).collect();
                         let s = score_of(&labels);
-                        if better(s, best) {
+                        if better((s.0, s.1, &labels), (best.0, best.1, &best_labels)) {
                             best = s;
                             best_labels = labels;
                         }
@@ -412,7 +442,7 @@ impl Map {
                                 *t = 1 - *t;
                             }
                             let s = score_of(&trial);
-                            if better(s, best) {
+                            if better((s.0, s.1, &trial), (best.0, best.1, &best_labels)) {
                                 best = s;
                                 best_labels = trial;
                                 improved = true;
@@ -685,15 +715,16 @@ mod tests {
 
     #[test]
     fn two_filaments_on_every_layer_take_one_extruder_each() {
-        // Bambu Studio's answer for this plate is "2 1": filament 1 on the right (master) extruder.
+        // Both ways round cost the same. OrcaSlicer 2.4.2 answers "1 2" (filament 1 on the left extruder, 2 on the
+        // right, the master) in most runs of the same plate and "2 1" in the rest; SlicerX takes the first.
         let Some(m) = Map::resolve(&h2d(&[]), 2, &every_layer(&[1, 2], 50)) else {
             panic!("a map")
         };
-        assert_eq!(m.extruder, vec![1, 0]);
-        assert_eq!(m.nozzle, vec![1, 0]);
+        assert_eq!(m.extruder, vec![0, 1]);
+        assert_eq!(m.nozzle, vec![0, 1]);
         assert!(m.auto);
         let c = m.apply(&h2d(&[]));
-        assert_eq!(c.raw.get("filament_map"), Some(&serde_json::json!([2, 1])));
+        assert_eq!(c.raw.get("filament_map"), Some(&serde_json::json!([1, 2])));
     }
 
     #[test]
