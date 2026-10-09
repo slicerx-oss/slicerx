@@ -18,7 +18,7 @@ import { objectWarnings } from '../plate/object-list'
 import { loadExtruderAreas, nozzleZones } from '../plate/nozzle-zones'
 import { commitTransforms, layOnPickedFace } from '../plate/edit'
 import { cutStore, toggleConnector } from '../plate/cut-plane'
-import { cameraBus, probeHandler, setCameraBus, toolStore, type CadView } from '../plate/tools'
+import { probeHandler, setCameraBus, toolStore, type CadView } from '../plate/tools'
 import { pickSub, type EdgeAt } from '../plate/sub-pick'
 import { toGeom } from '../geom/client'
 import { useHost } from '../host'
@@ -57,6 +57,8 @@ export type Drive = Pick<Viewport, 'setMode' | 'setPlate' | 'setTransforms' | 's
   /** Model's picked faces and the face filter's hover. */
   setSelectedFaces?: Viewport['setSelectedFaces']
   setPickFaces?: Viewport['setPickFaces']
+  setPickEdges?: Viewport['setPickEdges']
+  setPickedEdges?: Viewport['setPickedEdges']
   setInsets?: Viewport['setInsets']
   setPreviewGhost?: Viewport['setPreviewGhost']
   setPreviewOrigin?: Viewport['setPreviewOrigin']
@@ -401,14 +403,36 @@ export function ViewportHost({ layers }: { layers: boolean }) {
         }
         selectObject(e)
       }))
-      // The picked faces light up; picked edges draw as guides while no tool is open; the face filter lights the
-      // face under the pointer.
+      // The picked faces light up and picked edges draw as bars; the face filter lights the face under the pointer, and
+      // the edge filter shows the edge a click would pick.
+      let hoverLines: { from: [number, number, number]; to: [number, number, number] }[] = []
       const showPicks = (s: AppState) => {
         const inModel = s.workspace === 'prepare' && s.modelMode === 'design'
+        const free = inModel && s.objectTool === null
         vp.setSelectedFaces?.(inModel ? s.subPicks.filter((p) => p.kind === 'face') : [])
-        vp.setPickFaces?.(inModel && s.pickFilter.includes('face') && s.objectTool === null)
-        if (s.objectTool === null) cameraBus()?.guides?.({ lines: inModel ? s.subPicks.flatMap((p) => p.lines ?? []) : [] })
+        vp.setPickFaces?.(free && s.pickFilter.includes('face'))
+        const edges = free && s.pickFilter.includes('edge') && !s.pickFilter.includes('face')
+        vp.setPickEdges?.(edges)
+        if (!edges) hoverLines = []
+        vp.setPickedEdges?.(inModel ? s.subPicks.flatMap((p) => p.lines ?? []) : [], hoverLines)
       }
+      // The edge under the pointer, from the engine, at most one question at a time.
+      let asking = 0
+      offs.push(vp.on('edgehover', (h) => {
+        const n = ++asking
+        if (!h) {
+          hoverLines = []
+          return showPicks(appStore.getState())
+        }
+        void edgeAt(h.objectId, h.partIndex, h.triangle, h.point).then(
+          (lines) => {
+            if (n !== asking) return
+            hoverLines = lines ?? []
+            showPicks(appStore.getState())
+          },
+          () => undefined,
+        )
+      }))
       showPicks(appStore.getState())
       offs.push(appStore.subscribe((s, prev) => {
         if (s.subPicks !== prev.subPicks || s.plate !== prev.plate || s.pickFilter !== prev.pickFilter || s.objectTool !== prev.objectTool || s.modelMode !== prev.modelMode || s.workspace !== prev.workspace) showPicks(s)

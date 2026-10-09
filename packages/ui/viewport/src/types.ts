@@ -359,6 +359,8 @@ export interface ViewportEvents {
   brimselect: { objectId: string; indices: number[]; mode: 'set' | 'add' | 'remove' }
   /** Model's box select: the objects the box picked, and how (left to right inside, right to left touch). */
   boxselect: { ids: string[]; dir: 'inside' | 'touch' }
+  /** Model's edge filter: the triangle and point under the pointer, or null off the models. */
+  edgehover: { objectId: string; partIndex: number; triangle: number; point: [number, number, number] } | null
   /** Brim tool: an ear dragged. `point` is the hit on the model under the cursor (bed frame, mm). One event per move with `final: false`, then one with `final: true` on release. */
   brimmove: { objectId: string; index: number; point: [number, number, number]; final: boolean }
   /** Brim tool: Ctrl and the wheel (the wheel does not zoom). `delta` is 1 or -1 per notch. */
@@ -502,6 +504,10 @@ export interface Viewport {
   /** Model's box select: a Shift and left drag from empty space selects objects by their screen bounds. */
   setBoxSelect?(on: boolean): void
   /** Model's face filter: light the face under the pointer outside a tool too. */
+  /** Model's edge filter: report the triangle under the pointer for an edge preview. */
+  setPickEdges?(on: boolean): void
+  /** Model's picked edges as solid bars, and a hovered one fainter. */
+  setPickedEdges?(picked: readonly { from: [number, number, number]; to: [number, number, number] }[], hover?: readonly { from: [number, number, number]; to: [number, number, number] }[]): void
   setPickFaces?(on: boolean): void
   /** The faces picked in Model, drawn until changed: each the patch around a triangle. */
   setSelectedFaces?(faces: readonly { objectId: string; partIndex: number; triangle: number }[]): void
