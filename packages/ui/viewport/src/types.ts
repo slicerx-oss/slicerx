@@ -389,13 +389,41 @@ export interface ViewportEvents {
   camera: { preset: ViewPreset | null }
   /**
    * The first frame drawn after setPlate: how long setPlate took (ms, building the objects that changed), how long from
-   * setPlate to that frame, and how many objects it built and how many it kept as they were.
+   * setPlate to that frame, that frame's own CPU time (the meshes' upload to the GPU is in it), and how many objects it
+   * built and how many it kept as they were.
    */
-  platedrawn: { buildMs: number; drawMs: number; built: number; kept: number }
+  platedrawn: { buildMs: number; drawMs: number; frameMs: number; built: number; kept: number }
   /** WebGL context lost or the renderer failed to start. */
   error: { message: string }
   /** The viewport lowered its own quality to keep frames smooth. Show `message` as a toast. */
   degrade: { message: string }
+}
+
+/**
+ * The 3D view's start, ms. The first frame compiles the shader programs of what it draws; the warm-up after it compiles
+ * the toolpath bead's. Compile time is the time spent in the GL calls that compile, link or wait on a link.
+ */
+export interface ViewportStartup {
+  /** Creating the WebGL renderer (the context). */
+  rendererMs: number
+  /** The scene's stage (its environment map is prefiltered on the GPU here) and the render passes. */
+  stageMs: number
+  pipelineMs: number
+  /** The whole constructor, the renderer, stage and passes included, with the programs it linked and their compile time. */
+  constructMs: number
+  constructPrograms: number
+  constructCompileMs: number
+  /** From the end of the constructor to the start of the first frame. */
+  waitMs: number | null
+  /** The first frame, CPU side. */
+  firstFrameMs: number | null
+  /** Programs linked in the first frame, and the time in compile calls during it. */
+  firstFramePrograms: number | null
+  firstFrameCompileMs: number | null
+  /** The bead warm-up, from its start to the end of its frame, with its programs and compile time. */
+  warmMs: number | null
+  warmPrograms: number | null
+  warmCompileMs: number | null
 }
 
 export interface ViewportStats {
@@ -421,6 +449,8 @@ export interface ViewportStats {
   firstDrawMs: number | null
   /** Objects setPlate has built since the viewport started; an object it kept as it was does not count. */
   objectBuilds: number
+  /** How the view's start split up. */
+  startup: ViewportStartup
   drawCalls: number
   triangles: number
   segments: number
