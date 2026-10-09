@@ -82,3 +82,14 @@
   .tl { grid-template-columns: minmax(0, 1fr); }
   .tl-nav, .tl-status { display: none; }
 }
+
+/* The selection pill at the top left of the view: the pick filter, what is picked, and clear. */
+.select-pill { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 3px; border-radius: var(--r-md); max-width: min(520px, calc(100% - 24px)); }
+.select-pill-kinds { display: flex; gap: 1px; padding-right: 4px; border-right: 1px solid var(--line-soft); }
+.select-pill-kind, .select-pill-clear { display: grid; place-items: center; width: 26px; height: 26px; border: 0; border-radius: var(--r-sm); background: none; color: var(--muted); }
+.select-pill-kind:hover, .select-pill-clear:hover { color: var(--fg); background: var(--ink-2); }
+.select-pill-kind[aria-pressed="true"] { color: var(--accent); background: var(--accent-tint); }
+.select-pill-readout { min-width: 0; padding: 0 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: var(--fw-medium) var(--fs-sm) var(--f-body); color: var(--fg); }
+@media (max-width: 900px) {
+  .select-pill-readout { max-width: 120px; }
+}

@@ -243,6 +243,10 @@ Ids that tests read for their text:
 | `about-attribution`, `about-step-reader` | About: the engine attribution and the STEP reader line |
 | `bug-preview` | Report a bug: what the report sends |
 | `step-note`, `step-bind` | A CAD history step's note and binding |
+| `model-select-pill` | Model's selection pill at the top left of the view |
+| `model-select-filter` | A pick filter button in the pill; `data-kind` is `object`, `face` or `edge`, and `aria-pressed` says whether it is on |
+| `model-select-readout` | What is picked, in words ("1 face on Box") |
+| `model-select-clear` | Clears the faces, edges and objects picked |
 | `step-sketch` | A step's sketch line in the Model tree, with its loop count; a click opens the sketch |
 | `model-tree-object` | An object row in the Model tree; `data-object-id`, and `data-kind` is `body` (has a history) or `mesh` |
 | `model-tree-step` | A step row in the Model tree; `data-object-id`, `data-index` and `data-state` (`done`, `broken`, `skipped`, `suppressed`) |

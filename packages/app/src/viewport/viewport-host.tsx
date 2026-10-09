@@ -18,7 +18,9 @@ import { objectWarnings } from '../plate/object-list'
 import { loadExtruderAreas, nozzleZones } from '../plate/nozzle-zones'
 import { commitTransforms, layOnPickedFace } from '../plate/edit'
 import { cutStore, toggleConnector } from '../plate/cut-plane'
-import { probeHandler, setCameraBus, toolStore, type CadView } from '../plate/tools'
+import { cameraBus, probeHandler, setCameraBus, toolStore, type CadView } from '../plate/tools'
+import { pickSub, type EdgeAt } from '../plate/sub-pick'
+import { toGeom } from '../geom/client'
 import { useHost } from '../host'
 import { moveTower, towerMesh, towerShown, TOWER_ID, type ShownTower } from '../plate/tower'
 import { appStore, selectedIds, set, shownSlice, toast, type AppState } from '../state/store'
@@ -50,6 +52,9 @@ export type Drive = Pick<Viewport, 'setMode' | 'setPlate' | 'setTransforms' | 's
   setCutPlane?: Viewport['setCutPlane']
   setGapLines?: Viewport['setGapLines']
   setGuides?: Viewport['setGuides']
+  /** Model's picked faces and the face filter's hover. */
+  setSelectedFaces?: Viewport['setSelectedFaces']
+  setPickFaces?: Viewport['setPickFaces']
   setInsets?: Viewport['setInsets']
   setPreviewGhost?: Viewport['setPreviewGhost']
   setPreviewOrigin?: Viewport['setPreviewOrigin']
@@ -184,6 +189,16 @@ export function moveCount(p: PreviewBuffers | null, layerHi: number, cut: number
 }
 
 /** The plate's viewport. `layers`: Slice shows the toolpaths, with the layer dock and legend over the view. */
+/** The edge under a click in Model, from the geometry engine, as lines to draw. */
+const edgeAt: EdgeAt = async (objectId, partIndex, triangle, at) => {
+  const e = appStore.getState().plate.find((p) => p.id === objectId)
+  const part = e?.parts[partIndex]
+  if (!e || !part) return null
+  const [{ pickEdge }, { edgeLines }] = await Promise.all([import('../geom/cad'), import('../cad/edges')])
+  const r = await pickEdge({ mesh: toGeom(part), transform: e.transform }, { triangle, at })
+  return edgeLines(r.edge)
+}
+
 export function ViewportHost({ layers }: { layers: boolean }) {
   // There is one plate view now; the toolpath look (setToolpathLook) draws the slice in it.
   const mode = 'prepare' as const
@@ -360,11 +375,34 @@ export function ViewportHost({ layers }: { layers: boolean }) {
       }
       loadAreas(appStore.getState().printerId)
       offs.push(appStore.subscribe((s) => loadAreas(s.printerId)))
+      const selectObject = (e: { objectId: string | null }) => {
+        if (e.objectId === TOWER_ID) set({ towerSelected: true, selection: null })
+        else set({ selection: e.objectId, towerSelected: false })
+      }
       offs.push(vp.on('pick', (e) => {
         // A modeling tool is listening: the click is its input and the selection stays.
         if (toolStore.getState().tool === 'probe') return void probeHandler()?.(e)
-        if (e.objectId === TOWER_ID) set({ towerSelected: true, selection: null })
-        else set({ selection: e.objectId, towerSelected: false })
+        // Model with Faces or Edges in the pick filter: the click picks a face or an edge (plate/sub-pick.ts).
+        const st = appStore.getState()
+        if (st.workspace === 'prepare' && st.modelMode === 'design' && st.pickFilter.some((k) => k !== 'object')) {
+          void pickSub(e, edgeAt).then((done) => {
+            if (!done) selectObject(e)
+          })
+          return
+        }
+        selectObject(e)
+      }))
+      // The picked faces light up; picked edges draw as guides while no tool is open; the face filter lights the
+      // face under the pointer.
+      const showPicks = (s: AppState) => {
+        const inModel = s.workspace === 'prepare' && s.modelMode === 'design'
+        vp.setSelectedFaces?.(inModel ? s.subPicks.filter((p) => p.kind === 'face') : [])
+        vp.setPickFaces?.(inModel && s.pickFilter.includes('face') && s.objectTool === null)
+        if (s.objectTool === null) cameraBus()?.guides?.({ lines: inModel ? s.subPicks.flatMap((p) => p.lines ?? []) : [] })
+      }
+      showPicks(appStore.getState())
+      offs.push(appStore.subscribe((s, prev) => {
+        if (s.subPicks !== prev.subPicks || s.plate !== prev.plate || s.pickFilter !== prev.pickFilter || s.objectTool !== prev.objectTool || s.modelMode !== prev.modelMode || s.workspace !== prev.workspace) showPicks(s)
       }))
       // Final transforms that land in the same frame (an arrange moves every object) are one undo step.
       let pending: Record<string, number[]> | null = null

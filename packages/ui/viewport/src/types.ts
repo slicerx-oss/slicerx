@@ -163,6 +163,8 @@ export interface PickEvent {
   bed: [number, number] | null
   /** Shift was down: tools that pick several things add to the picks. */
   shift?: boolean
+  /** Cmd (macOS) or Ctrl was down: Model's select toggles the face or edge under the click. */
+  toggle?: boolean
 }
 
 /** Probe tool with hover on: the model point under the cursor, at most once a frame. */
@@ -495,6 +497,10 @@ export interface Viewport {
   /** The gap fill tool's Perform button (Orca and Bambu Studio): patches smaller than `gapAreaMm2` merge into a neighbor. */
   performGapFill(objectId: string): void
   /** The flat face under a client-space point, or null. Works with any tool. */
+  /** Model's face filter: light the face under the pointer outside a tool too. */
+  setPickFaces?(on: boolean): void
+  /** The faces picked in Model, drawn until changed: each the patch around a triangle. */
+  setSelectedFaces?(faces: readonly { objectId: string; partIndex: number; triangle: number }[]): void
   pickFace(clientX: number, clientY: number): FacePick | null
   /** Packs objects on the bed and emits `transform` events. Returns the new transforms. */
   arrange(opts?: { animate?: boolean; gapMm?: number }): Record<string, number[]>

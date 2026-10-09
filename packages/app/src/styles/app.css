@@ -130,6 +130,7 @@ button.reset:hover { color: var(--fg); background: var(--ink-3); }
 .hud:has([role='menu']) { z-index: 4; }
 .hud-top { top: 12px; left: 12px; right: 12px; display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; flex-wrap: wrap; }
 .hud-col { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+.hud-row { display: flex; gap: 8px; align-items: center; min-width: 0; }
 .hud-col.end { align-items: flex-end; }
 .vp-tag { font-size: calc(11px * var(--text-scale)); color: var(--dim); padding-right: 4px; }
 .hud-bl { left: 12px; bottom: 12px; display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap; right: 12px; }
