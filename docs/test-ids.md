@@ -63,6 +63,7 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 
 | Test id | Control |
 | --- | --- |
+| `slice-machine-plate` | The plate type the active plate prints on, in the printer card |
 | `slice-goal-<tier>` | A Goal tile in Print settings: `slice-goal-draft`, `slice-goal-standard`, `slice-goal-fine`, `slice-goal-strong` |
 | `slice-goal-estimate` | The line under the Goal tiles: about how long and how much from the last slice, or Updating |
 
