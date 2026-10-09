@@ -1,0 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+/* Copyright (C) 2026 The SlicerX contributors */
+/* The Volumes list under a selected object. Its heading reads in sentence case, as every Slice heading does. */
+.obj-volumes-h { margin: 0; font: var(--fw-semibold) var(--fs-sm) / var(--lh-tight) var(--f-body); color: var(--muted); }

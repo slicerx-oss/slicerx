@@ -17,6 +17,8 @@ const PrinterSettingsDialog = lazy(() => import('./printer-settings').then((m) =
 import { printerMinFlush } from '../../filament/flush'
 import type { SettingValue } from '@slicerx/contracts'
 import { useResolvedSlots } from '../../filament/use-slots'
+import { slotLabel } from '../../filament/rail'
+import { estimateLine, partCount, slicedIn, triangles } from '../../lib/estimate-line'
 import { effectiveSlot } from '../../filament/slots'
 import { useFitWatch } from '../../plate/fit-check'
 import { moveObject, objectWarnings, renameObject, searchObjects, setPartSlot, toggleLock, togglePrintable } from '../../plate/object-list'
@@ -302,7 +304,10 @@ export function PrepareObjects() {
   const multi = useApp((s) => s.selectedIds)
   const selected = selectedIds({ selection, selectedIds: multi })
   const [expanded, setExpanded] = useState<string | null>(null)
-  const slotTotal = useResolvedSlots().length
+  const slotList = useResolvedSlots()
+  const slotTotal = slotList.length
+  // Triangle counts are engine detail: in the row's tooltip, and inline only in Developer mode.
+  const developer = effectiveMode(useApp((s) => s.settingsMode), useLayout()) === 'developer'
   const bed = useApp((s) => s.bed)
   const printerSlots = useApp((s) => s.printerSlots)
   const [dropOn, setDropOn] = useState<string | null>(null)
@@ -362,8 +367,9 @@ export function PrepareObjects() {
               <span className="obj-thumb">{p.thumb ? <img src={p.thumb} alt="" /> : p.parts.length ? <Silhouette parts={p.parts} /> : null}</span>
               <span className="min0">
                 <span className="obj-name" data-testid="object-name">{p.name}</span>
-                <span className="obj-meta">
-                  {p.instanceOf ? `Instance of ${names.get(p.instanceOf) ?? p.name}` : `${p.handle.parts.length} parts, ${p.handle.triangles.toLocaleString('en-US')} tris`}
+                <span className="obj-meta" {...tipAttrs({ title: triangles(p.handle.triangles) })}>
+                  {p.instanceOf ? `Instance of ${names.get(p.instanceOf) ?? p.name}` : partCount(p.handle.parts.length)}
+                  {developer ? `, ${triangles(p.handle.triangles)}` : null}
                 </span>
                 {objectWarnings(p, { bed, printerSlots }).map((w) => (
                   <span key={w.kind} className="obj-warn" data-testid="object-warning" data-kind={w.kind} {...tipAttrs({ title: w.text })}>
@@ -403,7 +409,7 @@ export function PrepareObjects() {
                       <select id={`ps-${p.id}-${i}`} className="mini" data-testid="object-part-slot" value={effectiveSlot(p, part)} onChange={(e) => setPartSlot(p.id, part.name, Number(e.target.value))}>
                         {Array.from({ length: Math.max(4, slotTotal, effectiveSlot(p, part)) }, (_, k) => (
                           <option key={k + 1} value={k + 1}>
-                            Filament {k + 1}
+                            {slotList[k] ? slotLabel(slotList[k]) : `${k + 1}, not set up`}
                           </option>
                         ))}
                       </select>
@@ -484,6 +490,7 @@ export function SliceBlock({ label = 'Slice plate', compact }: { label?: string;
     </Button>
   )
   const grams = done ? done.result.stats.filamentG.reduce((a, b) => a + b, 0) : 0
+  const line = estimateLine(done)
   const progress = slice.status === 'running' ? slice.progress : null
   // Why Print or Export is held back: the by-object check, and a slice that failed. Both footers show them.
   const problems = (
@@ -512,10 +519,10 @@ export function SliceBlock({ label = 'Slice plate', compact }: { label?: string;
     <Block title="Estimate" className={compact ? 'slice-block compact' : 'slice-block'} aside={done ? <span className={done.stale ? 'app-tag stale' : 'app-tag'}>{done.stale ? (auto ? 'Updating' : 'Settings changed') : 'From slice'}</span> : undefined} data-section="estimate">
       {done ? (
         <>
-          <div className="est-time">{formatDuration(done.result.stats.timeS)}</div>
-          <div className="est-sub">
-            {done.result.layerCount} layers, sliced in {Math.round(done.result.wallMs)} ms
+          <div className="est-time" {...tipAttrs({ title: slicedIn(done.result.wallMs, host.capabilities.threads) })}>
+            {formatDuration(done.result.stats.timeS)}
           </div>
+          <div className="est-sub">{done.result.layerCount} layers</div>
           <dl className="est-grid">
             <div>
               <dt>Filament</dt>
@@ -530,10 +537,12 @@ export function SliceBlock({ label = 'Slice plate', compact }: { label?: string;
               <dt>Filament changes</dt>
               <dd>{done.result.stats.toolChanges}</dd>
             </div>
-            <div>
-              <dt>Warnings</dt>
-              <dd>{done.result.warnings.length}</dd>
-            </div>
+            {line?.warnings ? (
+              <div>
+                <dt>Warnings</dt>
+                <dd>{done.result.warnings.length}</dd>
+              </div>
+            ) : null}
           </dl>
         </>
       ) : (
@@ -561,7 +570,7 @@ export function SliceBlock({ label = 'Slice plate', compact }: { label?: string;
         primary
       )}
       {problems}
-      <p className="app-note">{sliceNote ?? (host.kind === 'desktop' ? `Slices natively on ${host.capabilities.threads} threads.` : `Slices in your browser on ${host.capabilities.threads} worker threads.`)}</p>
+      {sliceNote ? <p className="app-note">{sliceNote}</p> : null}
     </Block>
   )
 }
