@@ -8,7 +8,7 @@ home (default `~/ci`), never in a developer's working tree.
 
 - per-merge, on every push: `pnpm install`; vitest and `tsc` for the packages changed since the last green run and
   their dependents (`pnpm --filter "...[<green sha>]"`); `cargo test -p` for the crates whose files changed; the
-  engine WASM size gate (`build-wasm.sh`, 1044 KB gzip) and the geom module when engine or geom code changed; the
+  engine WASM size gate (`build-wasm.sh`, 1040 KB gzip) and the geom module when engine or geom code changed; the
   G-code goldens (`cargo test -p sx-core --test reference`), and clippy with `-D warnings` on the changed crates.
   With no green run yet, it tests everything.
 - nightly, at 02:00 local: all vitest and `tsc`, the cargo workspace, the profile parity tests, pgTAP on the local

@@ -15,7 +15,7 @@ import { gzipSync } from 'node:zlib'
 const dist = join(import.meta.dirname, '..', 'dist')
 const manifest = JSON.parse(readFileSync(join(dist, '.vite', 'manifest.json'), 'utf8'))
 const SHELL_KB = 240
-const WASM_KB = 1044
+const WASM_KB = 1040
 const STEP_WASM_KB = 3584
 const FULL_GEOM_WASM_KB = 1536
 const isStepReader = (file) => /occt-import-js/.test(file)

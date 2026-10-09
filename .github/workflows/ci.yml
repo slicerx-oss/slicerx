@@ -196,7 +196,7 @@ jobs:
       - name: The default build has no bridge
         run: node apps/desktop/release/check-agent-bridge.mjs --manifest apps/desktop/src-tauri/Cargo.toml
 
-  # The engine's WASM module and its download budget (build-wasm.sh fails over 1044 KB gzip), then the web
+  # The engine's WASM module and its download budget (build-wasm.sh fails over 1040 KB gzip), then the web
   # bundle's size gate (apps/web/scripts/bundle-size.mjs runs at the end of its build).
   wasm:
     needs: detect
