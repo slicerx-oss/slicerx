@@ -40,23 +40,42 @@
   .cad-step-more-btn { opacity: 1; }
 }
 
-/* The shelf: tool groups over their names, undo and redo at the end. */
-.shelf { display: flex; align-items: stretch; gap: 0; padding: 6px 12px 4px; border-bottom: 1px solid var(--line-soft); background: var(--ink-0); overflow-x: auto; scrollbar-width: none; min-width: 0; }
-.shelf-grp { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 0 10px; border-right: 1px solid var(--line-soft); flex: none; }
+/* The shelf: a lifted bar under the tab bar, tool groups set apart by space and a short hairline, the next slot, then
+   Measure and Values as icons by undo and redo. */
+.shelf { display: flex; align-items: center; gap: 0; margin: 8px 8px 0; padding: 4px 8px; border-radius: var(--r-lg); overflow-x: auto; scrollbar-width: none; min-width: 0; min-height: 44px; box-shadow: var(--shadow-float), var(--lift-edge); }
+.shelf-grp { position: relative; display: flex; align-items: center; padding: 0 6px; flex: none; }
 .shelf-grp:first-child { padding-left: 0; }
+.shelf-grp + .shelf-grp::before, .shelf-next::before { content: ""; position: absolute; left: -0.5px; top: 22.5%; height: 55%; width: 1px; background: var(--line-soft); }
 .shelf-tools { display: flex; align-items: center; gap: 2px; }
-.shelf-tool { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 9px; border: 0; border-radius: var(--r-sm); background: none; color: var(--fg); font: var(--fw-medium) var(--fs-md) var(--f-body); white-space: nowrap; }
-.shelf-tool .sx-ic { width: 17px; height: 17px; color: var(--muted); flex: none; }
+.shelf-tool { display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 8px; border: 0; border-radius: var(--r-sm); background: none; color: var(--fg); font: var(--fw-medium) var(--fs-md) var(--f-body); white-space: nowrap; }
+.shelf-tool .sx-ic { width: 20px; height: 20px; color: var(--muted); flex: none; }
+.shelf-tool .sx-ic + span + .sx-ic { width: 12px; height: 12px; }
 .shelf-tool:hover:not(:disabled) { background: var(--ink-2); }
 .shelf-tool[aria-pressed="true"] { background: color-mix(in srgb, var(--accent) 16%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 55%, transparent); }
 .shelf-tool[aria-pressed="true"] .sx-ic { color: var(--accent); }
 .shelf-tool:disabled { color: var(--dim); }
 .shelf-tool:disabled .sx-ic { color: var(--dim); }
-.shelf-label { font: var(--fw-semibold) calc(10.5px * var(--text-scale)) var(--f-mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--dim); }
+.shelf-icon { padding: 0 7px; }
+.shelf-icon > span { display: none; }
+.shelf-next { position: relative; display: flex; align-items: center; gap: 2px; padding: 0 6px; margin-left: 6px; flex: none; animation: shelf-next-in 120ms linear; }
+@keyframes shelf-next-in { from { opacity: 0; } to { opacity: 1; } }
 .shelf-end { margin-left: auto; display: flex; align-items: center; gap: 2px; padding-left: 10px; flex: none; }
+.shelf-sep { width: 1px; height: 20px; margin: 0 6px; background: var(--line-soft); }
+/* The next slot keeps its labels only where the whole shelf has room for them. */
+@media (max-width: 1599px) {
+  .shelf-next .shelf-tool > span { display: none; }
+  .shelf-next .shelf-tool { padding: 0 7px; }
+}
 @media (max-width: 1100px) {
   .shelf-tool > span { display: none; }
   .shelf-tool { padding: 0 7px; }
+}
+@media (max-width: 900px) {
+  .shelf-next { display: none; }
+}
+/* Phones: the shelf scrolls sideways, fading at its ends. */
+@media (max-width: 720px) {
+  .shelf { -webkit-mask-image: linear-gradient(90deg, transparent, black 16px, black calc(100% - 16px), transparent); mask-image: linear-gradient(90deg, transparent, black 16px, black calc(100% - 16px), transparent); }
 }
 
 /* The timeline: the selected object's steps as chips, the marker after the step the part shows. */
