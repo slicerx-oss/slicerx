@@ -34,7 +34,6 @@ import { ParkedChip } from './prepare/parked-chip'
 import { SliceProgress } from './slice-progress'
 import { useOverlayOffset, type OverlaySelectors } from '../lib/overlay-offset'
 import { useMediaQuery } from '../lib/media'
-import { OpeningPicture } from '../project/opening-preview'
 
 const PREPARE_LEFT: PaneSection[] = [
   { id: 'printer', icon: 'printer', label: 'Printer' },
@@ -57,6 +56,8 @@ const DESIGN_TREE: PaneSection[] = [{ id: 'objects', icon: 'history', label: 'Mo
 const DESIGN_TOOL: PaneSection[] = [{ id: 'transform', icon: 'move', label: 'Transform' }]
 
 // Design's panes load the first time Design opens, so Slice users never download them.
+// The picture a project shows while it opens; its code loads with the view, not with the app.
+const OpeningPicture = lazy(() => import('../project/opening-preview').then((m) => ({ default: m.OpeningPicture })))
 const DesignLeft = lazy(() => import('./design/design-panes').then((m) => ({ default: m.DesignLeft })))
 const DesignRight = lazy(() => import('./design/design-panes').then((m) => ({ default: m.DesignRight })))
 const Shelf = lazy(() => import('./design/design-panes').then((m) => ({ default: m.Shelf })))
@@ -156,7 +157,9 @@ export function Studio() {
 
       <section className="vp" aria-label="Plate" ref={vpRef}>
         <ViewportHost layers={layers} />
-        <OpeningPicture />
+        <Suspense fallback={null}>
+          <OpeningPicture />
+        </Suspense>
         <SliceProgress />
         {design || !hasPreview ? null : <SliceLookSwitch />}
         {design ? null : <ParkedChip />}
