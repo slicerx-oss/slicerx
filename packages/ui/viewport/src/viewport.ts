@@ -32,6 +32,7 @@ import {
   type Object3D,
 } from 'three'
 import type { DragAction } from './controls'
+import { boxDir, boxPicks } from './box-select'
 import { facePatch } from './faces'
 import { Painter, type PaintHit } from './painter'
 import { ScaleGizmo } from './gizmo'
@@ -276,6 +277,10 @@ class ViewportImpl implements Viewport {
   private probeFaces = false
   private brimDrag: { kind: 'ear'; objectId: string; index: number; moved: boolean } | { kind: 'rect'; x0: number; y0: number; mode: 'add' | 'remove'; ear: { objectId: string; index: number } | null; moved: boolean } | null = null
   private brimRectEl: HTMLDivElement | null = null
+  /** Model's box select: Shift and a left drag from empty space (setBoxSelect). */
+  private boxSelect = false
+  private boxDrag: { x0: number; y0: number; moved: boolean } | null = null
+  private boxRectEl: HTMLDivElement | null = null
   private readonly rotRings = new RingSet<RingAxis>(['x', 'y', 'z'])
   private rotSpace: RotateSpace = 'world'
   private rotDrag: (RingDrag & { entry: ObjectEntry; axis: RingAxis; start: number[]; shown: number; snapped: boolean }) | null = null
@@ -919,6 +924,58 @@ class ViewportImpl implements Viewport {
     r.style.width = `${Math.abs(x1 - x0)}px`
     r.style.height = `${Math.abs(y1 - y0)}px`
     r.style.display = 'block'
+  }
+
+  /** Model: a Shift and left drag that starts on empty space draws a box that selects objects (setBoxSelect). */
+  setBoxSelect(on: boolean): void {
+    this.boxSelect = on
+  }
+
+  /** Left to right selects what is fully inside, solid; right to left anything it touches, dashed. */
+  private showBoxRect(x0: number, y0: number, x1: number, y1: number): void {
+    if (typeof document === 'undefined') return
+    let r = this.boxRectEl
+    if (!r) {
+      r = document.createElement('div')
+      r.dataset['testid'] = 'model-box-select'
+      r.style.cssText = 'position:fixed;pointer-events:none;z-index:20;border-radius:2px;border:1px solid'
+      document.body.appendChild(r)
+      this.boxRectEl = r
+    }
+    const dir = boxDir(x0, x1)
+    const c = this.theme.scene.selection
+    r.dataset['dir'] = dir
+    r.style.borderStyle = dir === 'inside' ? 'solid' : 'dashed'
+    r.style.borderColor = c
+    r.style.background = `${c}1a`
+    r.style.left = `${Math.min(x0, x1)}px`
+    r.style.top = `${Math.min(y0, y1)}px`
+    r.style.width = `${Math.abs(x1 - x0)}px`
+    r.style.height = `${Math.abs(y1 - y0)}px`
+    r.style.display = 'block'
+  }
+
+  /** The objects a box picks, by their screen bounds: inside, or touching for a right to left box. */
+  private boxObjects(x0: number, y0: number, x1: number, y1: number): string[] {
+    const rc = this.canvas.getBoundingClientRect()
+    const box = { l: Math.min(x0, x1), r: Math.max(x0, x1), t: Math.min(y0, y1), b: Math.max(y0, y1) }
+    const dir = boxDir(x0, x1)
+    const m = this.stage.bedMatrix()
+    const v = new Vector3()
+    const out: string[] = []
+    for (const o of this.objects.values()) {
+      const b = this.bedBox(o)
+      if (b.isEmpty()) continue
+      let l = Infinity, r = -Infinity, t = Infinity, bt = -Infinity
+      for (let i = 0; i < 8; i++) {
+        v.set(i & 1 ? b.max.x : b.min.x, i & 2 ? b.max.y : b.min.y, i & 4 ? b.max.z : b.min.z).applyMatrix4(m).project(this.camera)
+        const sx = rc.left + (v.x * 0.5 + 0.5) * rc.width
+        const sy = rc.top + (-v.y * 0.5 + 0.5) * rc.height
+        l = Math.min(l, sx); r = Math.max(r, sx); t = Math.min(t, sy); bt = Math.max(bt, sy)
+      }
+      if (boxPicks(box, { l, r, t, b: bt }, dir)) out.push(o.id)
+    }
+    return out
   }
 
   private hideBrimRect(): void {
@@ -2164,6 +2221,14 @@ class ViewportImpl implements Viewport {
         e.stopPropagation()
         return
       }
+      // Model's box select: Shift and a left drag from empty space, with no tool open. On a model the press moves it.
+      if (this.boxSelect && e.button === 0 && e.shiftKey && !p0 && (this.tool === 'select' || this.tool === 'move') && !this.cut && !this.sketchOn()) {
+        this.boxDrag = { x0: e.clientX, y0: e.clientY, moved: false }
+        this.controls.enabled = false
+        el.setPointerCapture(e.pointerId)
+        e.stopPropagation()
+        return
+      }
       if (e.button !== 0 && !(e.button === 2 && this.tool === 'paint')) return
       if (this.cut) {
         setRay(e)
@@ -2243,6 +2308,12 @@ class ViewportImpl implements Viewport {
       e.stopPropagation()
     }
     const onMove = (e: PointerEvent): void => {
+      if (this.boxDrag) {
+        const bx = this.boxDrag
+        if (Math.hypot(e.clientX - bx.x0, e.clientY - bx.y0) >= 4) bx.moved = true
+        if (bx.moved) this.showBoxRect(bx.x0, bx.y0, e.clientX, e.clientY)
+        return
+      }
       if (this.brimDrag) {
         const bd = this.brimDrag
         const dist = down ? Math.hypot(e.clientX - down.x, e.clientY - down.y) : 0
@@ -2340,6 +2411,15 @@ class ViewportImpl implements Viewport {
       this.invalidate()
     }
     const onUp = (e: PointerEvent): void => {
+      if (this.boxDrag) {
+        const bx = this.boxDrag
+        this.boxDrag = null
+        this.controls.enabled = true
+        if (this.boxRectEl) this.boxRectEl.style.display = 'none'
+        down = null
+        if (bx.moved) this.emit('boxselect', { ids: this.boxObjects(bx.x0, bx.y0, e.clientX, e.clientY), dir: boxDir(bx.x0, e.clientX) })
+        return
+      }
       if (this.brimDrag) {
         const bd = this.brimDrag
         this.brimDrag = null
@@ -2934,6 +3014,7 @@ class ViewportImpl implements Viewport {
     this.toolpaths.dispose()
     this.brim.dispose()
     this.brimRectEl?.remove()
+    this.boxRectEl?.remove()
     this.mats.dispose()
     this.pipeline.dispose()
     this.stage.dispose()
@@ -2947,3 +3028,4 @@ class ViewportImpl implements Viewport {
     return { width: this.width, height: this.height }
   }
 }
+
