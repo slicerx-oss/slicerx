@@ -45,7 +45,7 @@ export function Shelf() {
   const groupName = (id: ShelfGroup) => SHELF_GROUPS.find((g) => g.id === id)?.label ?? ''
   const tip = (t: ShelfTool) => (t.tip ? { 'data-tip': t.tip } : { 'data-tip-title': `${groupName(t.shelf?.group ?? 'shape')} · ${t.label}` })
   const toolButton = (t: ShelfTool, extra: { className?: string; next?: boolean } = {}) => (
-    <button key={t.id} type="button" className={extra.className ?? 'shelf-tool'} {...(extra.next ? { 'data-next-tool': t.id, 'data-testid': 'model-shelf-next-tool' } : { 'data-tool': t.id, 'data-testid': 'model-shelf-tool' })} {...tip(t)} aria-label={t.label} aria-pressed={t.tool !== undefined && objectTool === t.tool} disabled={off(t)} onClick={() => choose(t)}>
+    <button key={t.id} type="button" className={extra.className ?? 'shelf-tool'} {...(extra.next ? { 'data-next-tool': t.id, 'data-testid': 'model-shelf-next-tool', 'data-tip-title': `Next for this object · ${t.label}`, 'data-tip-body': 'Shown because an object is picked: a tool that works on it.' } : { 'data-tool': t.id, 'data-testid': 'model-shelf-tool', ...tip(t) })} aria-label={t.label} aria-pressed={t.tool !== undefined && objectTool === t.tool} disabled={off(t)} onClick={() => choose(t)}>
       <Icon name={t.icon} />
       <span>{t.short ?? t.label}</span>
     </button>
