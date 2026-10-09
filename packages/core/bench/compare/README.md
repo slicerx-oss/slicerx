@@ -36,6 +36,16 @@ Everything else stays at each slicer's own default. Known differences left in pl
 
 Generated from formulas by `models.py`, so there are no mesh files to license (see `MODELS.md`): a 20 mm calibration cube, a 40 tooth spur gear, a twisted vase, a trefoil knot tube, a 1.2 million triangle bumpy torus for large-mesh behavior, and `x-reference`, the X plate from `../models/x-mark.stl` (26,268 triangles). Add a model with `models.register(name, builder)`. Every model is closed, manifold, on z = 0 and centered on the bed.
 
+## Painted colors
+
+`paint_parity.py` compares painted models against OrcaSlicer (the reference) and Bambu Studio as black boxes: filament per tool on the model's own features, per layer and in total, where each filament prints on each layer (1 mm cells, each given to the filament that covers it most), and each run's wall time, peak memory and CPU time. It slices generated painted boxes (`faces2`, `faces4`, `slant3`) and any Bambu Studio or Orca project given with `--file`, flattened to one painted object on the P1S. SlicerX gets the settings Orca resolved; Bambu Studio its own P1S presets, as a second opinion on how close two mature slicers come.
+
+```
+python3 paint_parity.py --sx path/to/sx --orca path/to/OrcaSlicer --bambu path/to/BambuStudio --file painted-project.3mf
+```
+
+It exits 1 when a filament's total is more than `--tol` (5 percent, 20 mm floor) from Orca's or its placement agrees with Orca's on less than `--overlap` (0.9) of the cells. The painted keychain this was first run on (a MakerWorld project, not kept here): Orca 2129, 150, 97 and 482 mm for its four filaments, SlicerX 2337, 69, 74 and 360, Bambu Studio 2302, 154, 99 and 324; placement agreeing with Orca 0.91, 0.45, 0.73 and 0.76 for SlicerX, 0.92, 0.93, 0.98 and 0.64 for Bambu Studio.
+
 ## Limits
 
 - Bambu Studio and OrcaSlicer have a fixed startup cost that dominates the smallest models (tens of milliseconds before slicing begins). That is part of using them from a script and is reported as measured, with the phase split next to it.
