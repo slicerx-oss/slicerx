@@ -58,6 +58,51 @@ pub(crate) fn first_filaments(cfg: &PrintConfig, out: &SliceOutput) -> (u8, u8) 
     (first - 1, solid - 1)
 }
 
+/// Per physical extruder (as the printer numbers them, `physical_extruder_map`), the first filament it prints and
+/// the first of those that is not a support filament, 0-based in print order, -1 for an extruder that prints none.
+/// Checked against Orca 2.4.2's output on the H2D: a plate of one filament on the right extruder writes `0, -1`,
+/// two filaments one on each extruder `1, 0`.
+pub(crate) fn first_per_extruder(cfg: &PrintConfig, out: &SliceOutput) -> (Vec<i64>, Vec<i64>) {
+    let n = crate::nozzles::extruders(cfg);
+    let map = crate::nozzles::int_list(cfg, "filament_map");
+    let physical = crate::nozzles::int_list(cfg, "physical_extruder_map");
+    let mut firsts = vec![-1i64; n];
+    let mut solids = vec![-1i64; n];
+    for t in out
+        .layers
+        .iter()
+        .flat_map(|l| l.paths.iter().map(|p| p.tool))
+        .filter(|&t| t > 0)
+    {
+        let logical = map
+            .get(usize::from(t - 1))
+            .map_or(0, |&e| usize::try_from(e - 1).unwrap_or(0));
+        let at = physical
+            .get(logical)
+            .and_then(|&p| usize::try_from(p).ok())
+            .unwrap_or(logical)
+            .min(n - 1);
+        let id = i64::from(t - 1);
+        if let Some(f) = firsts.get_mut(at).filter(|f| **f < 0) {
+            *f = id;
+        }
+        if !raw_flag(cfg, "filament_is_support", t)
+            && let Some(f) = solids.get_mut(at).filter(|f| **f < 0)
+        {
+            *f = id;
+        }
+    }
+    if firsts.iter().all(|&f| f < 0) {
+        // an empty plate: the first filament, as on one nozzle
+        for v in [&mut firsts, &mut solids] {
+            if let Some(f) = v.first_mut() {
+                *f = 0;
+            }
+        }
+    }
+    (firsts, solids)
+}
+
 /// The bed temperatures of the plate type (`curr_bed_type`) per filament, of the first layer or the others
 /// (Orca: `get_bed_temp_1st_layer_key` and `get_bed_temp_key`).
 fn plate_temps(cfg: &PrintConfig, first: bool) -> Vec<f64> {
@@ -936,16 +981,20 @@ fn plate_vars(c: &mut Context<'_>, cfg: &PrintConfig, out: &SliceOutput, tools: 
     // Filament to physical extruder maps: one nozzle, every filament in it.
     put(c, "filament_map", list(&|_| n(1.0)));
     put(c, "physical_extruder_map", list(&|_| n(0.0)));
-    // `first_non_support_hotend`: the hotend of the first filament that is not support; one nozzle here, so 0.
-    for k in [
-        "first_filaments",
-        "first_tools",
-        "first_non_support_filaments",
-        "first_non_support_tools",
-        "first_non_support_hotend",
-    ] {
-        put(c, k, Value::List(vec![n(0.0)]));
+    // Per extruder, the first filament it prints and the first that is not a support filament.
+    let (firsts, solids) = first_per_extruder(cfg, out);
+    let ids = |v: &[i64]| {
+        #[allow(clippy::cast_precision_loss, reason = "filament ids are small")]
+        Value::List(v.iter().map(|&i| n(i as f64)).collect())
+    };
+    for k in ["first_filaments", "first_tools"] {
+        put(c, k, ids(&firsts));
     }
+    for k in ["first_non_support_filaments", "first_non_support_tools"] {
+        put(c, k, ids(&solids));
+    }
+    // `first_non_support_hotend`: the hotend of the first filament that is not support; not worked out, 0.
+    put(c, "first_non_support_hotend", Value::List(vec![n(0.0)]));
     for k in ["most_used_physical_extruder_id", "curr_physical_extruder_id"] {
         put(c, k, n(0.0));
     }
