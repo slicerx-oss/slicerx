@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // Scans a 3MF model part (3D/3dmodel.model or a Bambu Studio and Orca 3D/Objects/*.model) from its bytes: objects,
-// their meshes as typed arrays, components and build items. Model parts run to hundreds of megabytes, so nothing
+// their meshes as typed arrays, components and build items, every length in millimeters whatever the part's unit. Model parts run to hundreds of megabytes, so nothing
 // here makes a string of the whole part or a JS array per coordinate: tags are read in place and numbers parsed
 // from the bytes straight into growing typed arrays. What is left once the vertex and triangle runs are cut out
 // (the skeleton, a few kilobytes) is decoded for the Vault marks, which need a real tag reader.
@@ -189,7 +189,7 @@ function attrMap(b: Uint8Array, at: number[]): Record<string, string> {
  * ` x="…" y="…" z="…"/>` (or `>`) right after a vertex's name, the way every slicer writes it: pushes the vertex and
  * returns the position after the tag, or 0 for anything else (the general reader takes it then).
  */
-function quickVertex(b: Uint8Array, q: number, pos: Floats): number {
+function quickVertex(b: Uint8Array, q: number, pos: Floats, mm: number): number {
   let x = 0
   let y = 0
   let z = 0
@@ -207,7 +207,7 @@ function quickVertex(b: Uint8Array, q: number, pos: Floats): number {
   }
   const end = tagEnd(b, q)
   if (end === 0) return 0
-  pos.push3(x, y, z)
+  pos.push3(x * mm, y * mm, z * mm)
   return end
 }
 
@@ -242,6 +242,18 @@ function tagEnd(b: Uint8Array, q: number): number {
   return 0
 }
 
+/** Millimeters per 3MF unit (3MF core specification, the model element's unit attribute; millimeter by default). */
+const UNIT_MM: Record<string, number> = { micron: 0.001, millimeter: 1, centimeter: 10, inch: 25.4, foot: 304.8, meter: 1000 }
+
+/** A transform read in the part's unit, its translation in millimeters (rotation and scale have no unit). */
+function inMm(m: Mat | null, mm: number): Mat | null {
+  if (!m || mm === 1) return m
+  m[12] = m[12]! * mm
+  m[13] = m[13]! * mm
+  m[14] = m[14]! * mm
+  return m
+}
+
 const PAINT: Record<string, keyof PaintOfPart> = { paint_color: 'color', paint_seam: 'seam', paint_supports: 'support', paint_fuzzy_skin: 'fuzzy' }
 
 /**
@@ -263,6 +275,8 @@ export function scanModelBytes(b: Uint8Array, skeleton?: (bytes: Uint8Array) => 
   let sawVertices = false
   let sawTriangles = false
   let inBuild = false
+  // Millimeters per unit of the part (its model element's unit attribute).
+  let mm = 1
   // Where the current run of vertex or triangle tags started, to cut it out of the skeleton.
   let runStart = -1
   const endRun = (at: number) => {
@@ -328,7 +342,7 @@ export function scanModelBytes(b: Uint8Array, skeleton?: (bytes: Uint8Array) => 
     if (len === 6 && ch === 118 && pos && attrIs(b, ls, q, 'vertex')) {
       if (runStart < 0) runStart = lt
       // What every slicer writes, read without collecting the attributes first.
-      const quick = quickVertex(b, q, pos)
+      const quick = quickVertex(b, q, pos, mm)
       if (quick > 0) {
         p = quick
         continue
@@ -349,7 +363,7 @@ export function scanModelBytes(b: Uint8Array, skeleton?: (bytes: Uint8Array) => 
       }
       // Checked as doubles, before a float rounds a huge value to infinity.
       if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) throw new ModelScanError('The 3MF model has a vertex that is not a number.')
-      pos.push3(x, y, z)
+      pos.push3(x * mm, y * mm, z * mm)
       continue
     }
     if (len === 8 && ch === 116 && idx && attrIs(b, ls, q, 'triangle')) {
@@ -386,7 +400,11 @@ export function scanModelBytes(b: Uint8Array, skeleton?: (bytes: Uint8Array) => 
     // Anything else ends a run of vertices or triangles for the skeleton.
     endRun(lt)
     p = readAttrs(b, q, at)
-    if (len === 6 && ch === 111 && attrIs(b, ls, q, 'object')) {
+    if (len === 5 && ch === 109 && attrIs(b, ls, q, 'model')) {
+      // Lengths in the part are in its unit; everything leaves here in millimeters.
+      const unit = attrMap(b, at)['unit']
+      mm = unit === undefined ? 1 : (UNIT_MM[unit] ?? 1)
+    } else if (len === 6 && ch === 111 && attrIs(b, ls, q, 'object')) {
       const a = attrMap(b, at)
       obj = { id: a['id'] ?? '', ...(a['name'] ? { name: unescapeXml(a['name']) } : {}), components: [], mesh: null, hasMesh: false }
       // A self-closing object has no body.
@@ -406,11 +424,11 @@ export function scanModelBytes(b: Uint8Array, skeleton?: (bytes: Uint8Array) => 
     else if (len === 9 && ch === 116 && idx && attrIs(b, ls, q, 'triangles')) sawTriangles = true
     else if (len === 9 && ch === 99 && obj && attrIs(b, ls, q, 'component')) {
       const a = attrMap(b, at)
-      obj.components.push({ ...(a['p:path'] ? { path: a['p:path'] } : {}), objectId: a['objectid'] ?? '', transform: parseTransform(a['transform']) })
+      obj.components.push({ ...(a['p:path'] ? { path: a['p:path'] } : {}), objectId: a['objectid'] ?? '', transform: inMm(parseTransform(a['transform']), mm) })
     } else if (len === 5 && ch === 98 && attrIs(b, ls, q, 'build')) inBuild = b[p - 2] !== SLASH
     else if (len === 4 && ch === 105 && inBuild && attrIs(b, ls, q, 'item')) {
       const a = attrMap(b, at)
-      items.push({ objectId: a['objectid'] ?? '', transform: parseTransform(a['transform']), printable: a['printable'] !== '0' && a['printable'] !== 'false' })
+      items.push({ objectId: a['objectid'] ?? '', transform: inMm(parseTransform(a['transform']), mm), printable: a['printable'] !== '0' && a['printable'] !== 'false' })
     }
   }
   if (obj) {
