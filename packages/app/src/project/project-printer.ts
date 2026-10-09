@@ -76,14 +76,6 @@ export function changedKeys(settings: Record<string, unknown>): Set<string> | un
   return out
 }
 
-/**
- * Settings a project's process preset sets by itself, which `different_settings_to_system` never lists because they are
- * that preset's own values: its layer heights and what Bambu Studio's presets tie to them (shell layers and
- * thicknesses, support gaps). A project made with "0.12mm Fine" lists none of its 0.12 mm, and our printer profile
- * starts at its standard height, so these come from the file whatever the list says.
- */
-const PRESET_CHOSEN = new Set(['layer_height', 'initial_layer_print_height', 'top_shell_layers', 'bottom_shell_layers', 'top_shell_thickness', 'bottom_shell_thickness', 'support_top_z_distance', 'support_bottom_z_distance'])
-
 /** The overrides split for another printer: what carries over, and what stays with the project printer (`dropped` names the settings, not the G-code). */
 export function carryOver(overrides: Record<string, SettingValue>, gcodeKeys: readonly string[], sameNozzle: boolean): { kept: Record<string, SettingValue>; parked: Record<string, SettingValue>; dropped: string[] } {
   const kept: Record<string, SettingValue> = {}
@@ -135,8 +127,8 @@ export async function switchToProjectPrinter(source: string, settings: Record<st
 }
 
 /**
- * The second step: the project's settings on top of the printer's profile. On its own printer that is what the file
- * changed from its system presets, as Bambu Studio keeps it, and its machine G-code. On the current printer (no profile
+ * The second step: the project's settings on top of the printer's profile. On its own printer that is the file's whole
+ * process, what it changed from its filament and printer presets, and its machine G-code. On the current printer (no profile
  * for the file's) it is the settings that suit it, and no G-code. Returns the keys applied and the note to show.
  */
 export function applyProjectSettings(source: string, settings: Record<string, unknown>, match: ProjectPrinterMatch | null): { keys: string[]; note: string } {
@@ -153,9 +145,17 @@ export function applyProjectSettings(source: string, settings: Record<string, un
     return { keys: Object.keys(kept), note }
   }
   const only = changedKeys(settings)
-  // The layer heights come with the project's process preset; on another nozzle than the file's they would not fit.
-  const chosen = (k: string) => PRESET_CHOSEN.has(k) && !match.asked
-  const applied = only ? Object.fromEntries(Object.entries(values).filter(([k]) => only.has(k) || chosen(k))) : values
+  // The process and the filaments are taken whole: the file holds what it was sliced with, the system presets its
+  // presets came from (inherits_group) with the person's changes on top, and Bambu Studio opens it as it is. Our
+  // profile starts from its own standard process and its own filament, so taking only the listed changes left every
+  // value of other presets behind (a "0.12mm Fine" project sliced at 0.20 mm; a Generic PLA project at Bambu PLA
+  // Basic's flow). The printer keeps to what the file lists, since its profile is that printer's system preset. A
+  // project made for another nozzle keeps to its list too.
+  const whole = (k: string) => {
+    const section = settingDef(k)?.section
+    return !match.asked && (section === 'process' || section === 'filament')
+  }
+  const applied = only ? Object.fromEntries(Object.entries(values).filter(([k]) => only.has(k) || whole(k))) : values
   if (match.own) {
     // One of the person's printers: its own G-code, as on any switch to it.
     const kept = Object.fromEntries(Object.entries(applied).filter(([k]) => !GCODE_TEXT_KEYS.includes(k)))

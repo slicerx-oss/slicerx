@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // A Bambu Studio project opens as its own printer: a P1S 0.2 project on an empty plate switches to our P1S 0.2
-// profile with no question, applies what the file changed from its system presets, and slices with its own machine
-// G-code. Switching to another printer takes that printer's G-code and leaves the settings made for the 0.2 nozzle.
+// profile with no question, takes the file's whole process and what it changed from its other presets, and slices
+// with its own machine G-code. Switching to another printer takes that printer's G-code and leaves the settings made for the 0.2 nozzle.
 import { beforeEach, describe, expect, it } from 'vitest'
 import type { Host, MeshHandle, PrinterInfo, SettingValue, SliceRequest } from '@slicerx/contracts'
 import { resolveConfig } from '../src/adapters/config'
@@ -13,6 +13,7 @@ import { clearProject } from '../src/project/new'
 import { answerOpenProject } from '../src/project/open-ask'
 import { carryOver, changedKeys, matchProjectPrinter, PROJECT_PRINTER_ID, startProjectPrinterSync } from '../src/project/project-printer'
 import { markClean } from '../src/project/unsaved'
+import { slotConfig } from '../src/filament/slots'
 import { openModelBytes, slicePlate } from '../src/state/actions'
 import { profileReady } from '../src/state/profile-sync'
 import { get, set } from '../src/state/store'
@@ -109,6 +110,95 @@ describe('matching the printer a project was made for', () => {
   })
 })
 
+// The settings of three real projects, cut down to what the checks below read (values as the files have them).
+/** Bambu Studio 2.7, a P1S 0.4 project on a process made from "0.12mm Fine", four Bambu PLA Matte filaments. */
+const FINE_P1S: Record<string, unknown> = {
+  printer_settings_id: 'Bambu Lab P1S 0.4 nozzle', printer_model: 'Bambu Lab P1S', printer_variant: '0.4', nozzle_diameter: ['0.4'],
+  print_settings_id: 'N3D - AMS', inherits_group: ['0.12mm Fine @BBL X1C', '', '', '', '', ''],
+  different_settings_to_system: ['outer_wall_speed;overhang_1_4_speed;sparse_infill_density;support_top_z_distance;top_shell_layers;wall_loops', '', '', '', '', ''],
+  layer_height: '0.12', initial_layer_print_height: '0.2', top_shell_layers: '3', bottom_shell_layers: '5', support_top_z_distance: '0.2', sparse_infill_density: '10%', wall_loops: '3',
+  outer_wall_speed: ['50', '200'], inner_wall_speed: ['350', '350'], overhang_1_4_speed: ['50', '60'], default_acceleration: ['10000', '10000'], outer_wall_acceleration: ['5000', '5000'],
+  print_extruder_id: ['1', '1'], print_extruder_variant: ['Direct Drive Standard', 'Direct Drive High Flow'], extruder_type: ['Direct Drive'], nozzle_volume_type: ['Standard'],
+  filament_settings_id: ['Bambu PLA Matte @BBL P1S 0.4 nozzle', 'Bambu PLA Matte @BBL P1S 0.4 nozzle', 'Bambu PLA Matte @BBL P1S 0.4 nozzle', 'Bambu PLA Matte @BBL P1S 0.4 nozzle'],
+  filament_type: ['PLA', 'PLA', 'PLA', 'PLA'], filament_colour: ['#000000', '#0078BF', '#DE4343', '#FFFFFF'],
+  filament_extruder_variant: ['Direct Drive Standard', 'Direct Drive High Flow', 'Direct Drive Standard', 'Direct Drive High Flow', 'Direct Drive Standard', 'Direct Drive High Flow', 'Direct Drive Standard', 'Direct Drive High Flow'],
+  filament_max_volumetric_speed: ['22', '29', '22', '29', '22', '29', '22', '29'], filament_density: ['1.32', '1.32', '1.32', '1.32'], nozzle_temperature: ['220', '220', '220', '220', '220', '220', '220', '220'], fan_max_speed: ['100', '100', '100', '100'],
+}
+
+/** Bambu Studio 2.7, an H2D project on the stock 0.20mm Standard process, two Generic PLA and two Bambu PLA Basic filaments. */
+const H2D_GENERIC: Record<string, unknown> = {
+  printer_settings_id: 'Bambu Lab H2D 0.4 nozzle', printer_model: 'Bambu Lab H2D', printer_variant: '0.4', nozzle_diameter: ['0.4', '0.4'],
+  print_settings_id: '0.20mm Standard @BBL H2D', different_settings_to_system: ['sparse_infill_pattern;support_type', '', '', '', '', ''],
+  layer_height: '0.2', initial_layer_print_height: '0.2', top_shell_layers: '5', bottom_shell_layers: '3', wall_loops: '2', sparse_infill_density: '15%',
+  inner_wall_speed: ['300', '600', '600', '300', '600', '600', '600'], outer_wall_speed: ['200', '500', '500', '200', '500', '500', '500'], default_acceleration: ['8000', '8000', '8000', '8000', '8000', '8000', '8000'],
+  print_extruder_id: ['1', '1', '1', '2', '2', '2', '2'],
+  print_extruder_variant: ['Direct Drive Standard', 'Direct Drive High Flow', 'Direct Drive E3D High Flow', 'Direct Drive Standard', 'Direct Drive High Flow', 'Direct Drive TPU High Flow', 'Direct Drive E3D High Flow'],
+  extruder_type: ['Direct Drive', 'Direct Drive'], nozzle_volume_type: ['Standard', 'Standard'],
+  filament_settings_id: ['Generic PLA @BBL H2D', 'Generic PLA @BBL H2D', 'Bambu PLA Basic @BBL H2D', 'Bambu PLA Basic @BBL H2D'], filament_type: ['PLA', 'PLA', 'PLA', 'PLA'], filament_colour: ['#FFFFFF', '#000000', '#8E9089', '#FF6A13'],
+  filament_extruder_variant: Array.from({ length: 4 }, () => ['Direct Drive Standard', 'Direct Drive High Flow', 'Direct Drive E3D High Flow']).flat(),
+  filament_max_volumetric_speed: ['12', '12', '12', '12', '12', '12', '25', '40', '40', '25', '40', '40'], fan_max_speed: ['100', '100', '80', '80'], filament_density: ['1.24', '1.24', '1.26', '1.26'],
+}
+
+/** A hand-made project for a printer we have no profile for. */
+const HAND_MADE: Record<string, unknown> = {
+  printer_settings_id: 'bench machine', printer_model: '', nozzle_diameter: ['0.4'], print_settings_id: 'bench process',
+  inherits_group: ['0.20mm Standard @BBL X1C', 'Bambu PLA Basic @BBL P1S', 'Bambu Lab P1S 0.4 nozzle'], different_settings_to_system: ['', '', ''],
+  layer_height: '0.2', default_acceleration: ['500'], outer_wall_speed: ['60'], wall_loops: '2', top_shell_layers: '5',
+  print_extruder_id: ['1'], print_extruder_variant: ['Direct Drive Standard'], filament_extruder_variant: ['Direct Drive Standard'], extruder_type: ['Direct Drive'], nozzle_volume_type: ['Standard'],
+  filament_settings_id: ['bench filament'], filament_type: ['PLA'], filament_colour: ['#00AE42'], filament_max_volumetric_speed: ['2'], nozzle_temperature: ['200'],
+}
+
+describe('a project opens with the process and filaments it was made with', () => {
+  it('a P1S project on a "0.12mm Fine" process: the whole process and filaments, the standard hotend values', async () => {
+    const { host } = capture()
+    await openModelBytes(host, 'fine.3mf', project(FINE_P1S))
+    expect(get().printerId).toBe(PROJECT_PRINTER_ID)
+    const cfg = resolved()
+    expect(cfg['layer_height']).toBe(0.12)
+    expect(cfg['bottom_shell_layers']).toBe(5)
+    expect(cfg['top_shell_layers']).toBe(3)
+    expect(cfg['support_top_z_distance']).toBe(0.2)
+    expect(cfg['default_acceleration']).toEqual([10000])
+    expect(cfg['outer_wall_acceleration']).toEqual([5000])
+    // [standard hotend, high flow]: the P1S has the standard one.
+    expect(cfg['outer_wall_speed']).toEqual([50])
+    expect(cfg['inner_wall_speed']).toEqual([350])
+    expect(cfg['overhang_1_4_speed']).toEqual(['50'])
+    // One value per filament, the standard hotend's: Bambu PLA Matte, not our default PLA.
+    const slice = { ...cfg, ...slotConfig(get()) }
+    expect(slice['filament_max_volumetric_speed']).toEqual([22, 22, 22, 22])
+    expect(slice['filament_density']).toEqual([1.32, 1.32, 1.32, 1.32])
+    expect(slice['nozzle_temperature']).toEqual([220, 220, 220, 220])
+  })
+
+  it('an H2D project: one value per extruder and one per filament, from each standard hotend', async () => {
+    const { host } = capture()
+    await openModelBytes(host, 'generic.3mf', project(H2D_GENERIC))
+    expect(get().profile?.printerId).toBe('bambu-h2d')
+    const cfg = resolved()
+    expect(cfg['inner_wall_speed']).toEqual([300, 300])
+    expect(cfg['outer_wall_speed']).toEqual([200, 200])
+    expect(cfg['default_acceleration']).toEqual([8000, 8000])
+    expect(cfg['sparse_infill_density']).toBe(15)
+    const slice = { ...cfg, ...slotConfig(get()) }
+    expect(slice['filament_max_volumetric_speed']).toEqual([12, 12, 25, 25])
+    expect(slice['fan_max_speed']).toEqual([100, 100, 80, 80])
+    expect(slice['filament_density']).toEqual([1.24, 1.24, 1.26, 1.26])
+  })
+
+  it('a project for a printer we have no profile for keeps its values on the current printer', async () => {
+    const { host } = capture()
+    await openModelBytes(host, 'bench.3mf', project(HAND_MADE))
+    expect(get().printerId).toBe(A1_MINI.id)
+    const cfg = resolved()
+    expect(cfg['default_acceleration']).toEqual([500])
+    expect(cfg['outer_wall_speed']).toEqual([60])
+    const slice = { ...cfg, ...slotConfig(get()) }
+    expect(slice['filament_max_volumetric_speed']).toEqual([2])
+    expect(slice['nozzle_temperature']).toEqual([200])
+  })
+})
+
 describe('switch rules', () => {
   it('reads the keys the file changed from its presets', () => {
     expect([...changedKeys(P1S)!].sort()).toEqual(['layer_height', 'line_width', 'wall_loops'])
@@ -123,7 +213,7 @@ describe('switch rules', () => {
 })
 
 describe('a P1S 0.2 project on an empty plate', () => {
-  it('opens as its own printer with no question, and only what the file changed', async () => {
+  it("opens as its own printer with no question, and the file's whole process", async () => {
     const { host } = capture()
     await openModelBytes(host, 'pumpkin.3mf', project())
     const s = get()
@@ -136,7 +226,8 @@ describe('a P1S 0.2 project on an empty plate', () => {
     expect(cfg['layer_height']).toBe(0.08)
     expect(String(cfg['line_width'])).toBe('0.25')
     expect(cfg['wall_loops']).toBe(3)
-    expect(cfg['sparse_infill_density']).not.toBe(35)
+    // Not listed as changed, but part of the process the project was sliced with.
+    expect(cfg['sparse_infill_density']).toBe(35)
     expect(cfg['machine_start_gcode']).toBe(START)
     expect(s.toast?.text).toBe('Opened as P1S 0.2 mm from the project.')
     expect(s.toast?.action?.label).toBe('Change printer')
@@ -168,7 +259,7 @@ describe('a P1S 0.2 project on an empty plate', () => {
     expect(cfg['bottom_shell_layers']).toBe(5)
     expect(cfg['support_top_z_distance']).toBe(0.12)
     expect(cfg['wall_loops']).toBe(4)
-    expect(cfg['sparse_infill_density']).not.toBe(35)
+    expect(cfg['sparse_infill_density']).toBe(35)
     await slicePlate(host, { auto: true })
     expect((requests[0]!.config as Record<string, SettingValue>)['layer_height']).toBe(0.12)
   })
