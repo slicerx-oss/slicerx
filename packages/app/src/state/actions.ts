@@ -137,9 +137,27 @@ async function startFresh(): Promise<boolean> {
  * to the engine's own loader; `told` when it already showed the person a note of its own.
  */
 async function addProject(host: Host, data: ArrayBuffer, name: string, scope?: OpenScope): Promise<false | 'opened' | 'told'> {
+  const { scanProjectFile, projectOf, ProjectReadError } = await import('../export/import3mf')
+  // A project opened onto an empty plate shows its own picture of the plate at once, until its objects are there.
+  const empty = get().plates.every((p) => p.objects.length === 0) && get().plate.length === 0
+  const hidePreview = empty ? (await import('../project/opening-preview')).showOpeningPreview(new Uint8Array(data), name) : () => undefined
+  try {
+    return await addProjectShown(host, data, name, scope, { scanProjectFile, projectOf, ProjectReadError }, hidePreview)
+  } finally {
+    hidePreview()
+  }
+}
+
+async function addProjectShown(
+  host: Host,
+  data: ArrayBuffer,
+  name: string,
+  scope: OpenScope | undefined,
+  { scanProjectFile, projectOf, ProjectReadError }: Pick<typeof import('../export/import3mf'), 'scanProjectFile' | 'projectOf' | 'ProjectReadError'>,
+  hidePreview: () => void,
+): Promise<false | 'opened' | 'told'> {
   // The open's own changes, so an edit made while it runs is not taken for part of it.
   const mine = <T>(fn: () => T): T => (scope ? scope.run(fn) : fn())
-  const { scanProjectFile, projectOf, ProjectReadError } = await import('../export/import3mf')
   let project
   let scanned
   try {
@@ -258,6 +276,7 @@ async function addProject(host: Host, data: ArrayBuffer, name: string, scope?: O
     }
     mine(() => set((s) => ({ plate: [...s.plate, ...made], selection: made[0]?.id ?? s.selection })))
     openStage('objects')
+    hidePreview()
     if (plate.marks?.length) {
       const { customGcodeProblem, markId } = await import('../plate/layer-marks')
       // Custom text from a file is untrusted: it passes the same check as text typed in.
