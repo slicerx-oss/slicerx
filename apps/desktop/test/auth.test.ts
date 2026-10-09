@@ -51,6 +51,27 @@ describe('desktop sign-in', () => {
     expect(seen.open).toBe(true)
   })
 
+  it('starts signed out of the demo catalog when the edition has no backend', async () => {
+    const offline = { ...edition, features: { ...edition.features, demoData: true } }
+    let seen: unknown
+    const store = lazyStore(offline, createDesktopAuth(offline, fakeShell().bridge), async () => ({
+      createStore: ((opts: unknown) => {
+        seen = opts
+        return { signInMethods: () => ['email'] }
+      }) as never,
+    }))
+    await store.signInMethods()
+    expect(seen).toEqual({ offline: true, signedInAs: null })
+  })
+
+  it('a fresh desktop install with no backend has no session, while the web demo keeps its demo member', async () => {
+    const offline = { ...edition, features: { ...edition.features, demoData: true } }
+    const desktop = lazyStore(offline, createDesktopAuth(offline, fakeShell().bridge))
+    expect(await desktop.session()).toBeNull()
+    const web = lazyStore(offline, { redirectUrl: () => 'https://example.com/auth/callback' })
+    expect((await web.session())?.email).toBe('rv@example.com')
+  })
+
   it('hands over a link that opened the app, then each one that arrives later, once each', async () => {
     const shell = fakeShell()
     shell.arrive('harborslice://auth/callback?code=first')

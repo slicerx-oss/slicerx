@@ -23,8 +23,10 @@ export function desktopRedirectUrl(config: EditionConfig): string {
   return `${config.apps.deepLinkScheme}://auth/callback`
 }
 
-export function createDesktopAuth(config: EditionConfig, bridge: () => Promise<ShellBridge> = tauriBridge): AuthHost {
+export function createDesktopAuth(config: EditionConfig, bridge: () => Promise<ShellBridge> = tauriBridge): AuthHost & { demoSignedIn: false } {
   return {
+    // A build with no backend serves the demo catalog; the app starts signed out of it, as a fresh install does.
+    demoSignedIn: false,
     redirectUrl: () => desktopRedirectUrl(config),
     openExternal: async (url) => {
       const { invoke } = await bridge()
