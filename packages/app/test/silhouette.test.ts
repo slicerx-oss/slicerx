@@ -21,6 +21,13 @@ describe('the object list silhouette', () => {
     expect(d).toContain('L')
   })
 
+  it('keeps the exact outline of a model of tens of thousands of triangles', () => {
+    // 40,000 triangles: still drawn triangle by triangle, filled nonzero.
+    const { d, evenOdd } = silhouettePath([tube(100, 200)])
+    expect(evenOdd).toBeUndefined()
+    expect(d.match(/M/g)?.length).toBeGreaterThan(30_000)
+  })
+
   it('keeps the path of a model of millions of triangles to a few kilobytes, outline intact', () => {
     // 2.4 million triangles: drawn whole this was about 150 MB of path text.
     const { d, size, evenOdd } = silhouettePath([tube(1200, 1000)])
