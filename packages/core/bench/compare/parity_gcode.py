@@ -144,9 +144,17 @@ PLATE_TEMPS = {f"{k}_temp{sfx}": [str(settings.MATCHED["bed_temperature"])]
                for k in ("cool_plate", "eng_plate", "hot_plate", "textured_plate") for sfx in ("", "_initial_layer")}
 
 
-def prepare(o, work, models, over):
-    """Orca presets for the matched settings plus the machine G-code under test."""
+def prepare(o, work, models, over, process=None):
+    """Orca presets for the matched settings plus the machine G-code under test, and `process` settings on top."""
     orig = settings.slicer_machine
+    orig_process = settings.slicer_process
+
+    def proc(flavor):
+        p = orig_process(flavor)
+        p.update({k: str(v) for k, v in (process or {}).items()})
+        return p
+
+    settings.slicer_process = proc
 
     def machine(flavor):
         m = orig(flavor)
@@ -166,6 +174,7 @@ def prepare(o, work, models, over):
         o.prepare(work, models)
     finally:
         settings.slicer_machine = orig
+        settings.slicer_process = orig_process
         settings.slicer_filament = orig_filament
 
 
