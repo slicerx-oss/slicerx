@@ -40,7 +40,7 @@ import { buildTimeline, fitOf, type Timeline } from '../lib/preview-timeline'
 import { headFor } from '@slicerx/viewport'
 import { strikeMarks } from '../plate/heimdall'
 import { gantryHits, gantrySpec } from '../plate/heimdall-gantry'
-import { openStage, viewDrawn } from '../lib/open-timing'
+import { markOpenStage, markViewDrawn } from '../lib/open-mark'
 
 /** The part of the viewport handle the app drives. The 2D fallback implements the same. */
 export type Drive = Pick<Viewport, 'setMode' | 'setPlate' | 'setTransforms' | 'setRenderMode' | 'view' | 'setPreview' | 'setLayerRange' | 'setMoveCut' | 'setColorMode' | 'setToolColors' | 'setSelection' | 'on' | 'dispose'> & {
@@ -420,8 +420,8 @@ export function ViewportHost({ layers }: { layers: boolean }) {
       }
       // The open in progress is on screen once a frame with its objects is drawn.
       offs.push(vp.on('platedrawn', (e) => {
-        viewDrawn(mountedAt, (vp as Partial<Pick<Viewport, 'stats'>>).stats?.().firstDrawMs ?? null)
-        if (e.built + e.kept > 0) openStage('drawn')
+        markViewDrawn(mountedAt, (vp as Partial<Pick<Viewport, 'stats'>>).stats?.().firstDrawMs ?? null)
+        if (e.built + e.kept > 0) markOpenStage('drawn')
       }))
       offs.push(vp.on('pick', (e) => {
         // A modeling tool is listening: the click is its input and the selection stays.
