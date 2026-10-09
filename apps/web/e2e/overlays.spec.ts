@@ -80,42 +80,55 @@ async function postToast(page: Page, text: string): Promise<Box> {
   }, text)
 }
 
-/** The visible parts of the plate bar: its children, since the bar itself spans the viewport's width. */
-async function plateBarBoxes(page: Page): Promise<Box[]> {
-  const parts = page.locator('.vp > .hud-bl > *')
-  const boxes: Box[] = []
-  for (let i = 0; i < (await parts.count()); i++) {
-    const b = await parts.nth(i).boundingBox()
-    if (b && b.width > 0 && b.height > 0) boxes.push(b)
-  }
-  expect(boxes.length).toBeGreaterThan(0)
-  return boxes
+/** The boxes of every visible control in the viewport a toast must not cover. */
+async function controls(page: Page): Promise<{ name: string; box: Box }[]> {
+  return page.locator('.vp').evaluate((vp) => {
+    const sel = ['.hud-bl > *', '.dock', '.lstrip', '.plate-tools', '.slice-look', '.hud-top .hud-col > *']
+    return sel.flatMap((s) =>
+      [...vp.querySelectorAll<HTMLElement>(s)]
+        .map((el) => ({ name: `${s} ${el.className}`, r: el.getBoundingClientRect() }))
+        .filter(({ r }) => r.width > 0 && r.height > 0)
+        .map(({ name, r }) => ({ name, box: { x: r.x, y: r.y, width: r.width, height: r.height } })),
+    )
+  })
 }
 
-test('a toast sits above the plate bar, centered over the viewport', async ({ page }) => {
+/** The toast covers none of the viewport's controls. */
+async function clearOfControls(page: Page, toast: Box): Promise<void> {
+  const hits = (await controls(page)).filter((c) => intersects(toast, c.box)).map((c) => c.name)
+  expect(hits).toEqual([])
+}
+
+test('a toast sits above the plate bar, over the viewport, on no control', async ({ page, isMobile }) => {
   await open(page)
   await openProject(page)
   const toast = await postToast(page, 'Saved the plate.')
-  for (const part of await plateBarBoxes(page)) expect(intersects(toast, part)).toBe(false)
-  // Above the bar, not beside it, and centered over the viewport (within a pixel of rounding).
+  await clearOfControls(page, toast)
+  // Above the bar, not beside it.
   const bar = (await page.locator('.vp > .hud-bl').boundingBox())!
   expect(toast.y + toast.height).toBeLessThanOrEqual(bar.y + 1)
   const vp = (await page.locator('.vp').boundingBox())!
-  expect(Math.abs(toast.x + toast.width / 2 - (vp.x + vp.width / 2))).toBeLessThanOrEqual(1)
+  const slider = page.locator('.vp .lstrip').first()
+  if (isMobile && (await slider.count())) {
+    // Left of the layer slider, inside the viewport.
+    const box = (await slider.boundingBox())!
+    expect(toast.x).toBeGreaterThanOrEqual(vp.x)
+    expect(toast.x + toast.width).toBeLessThanOrEqual(box.x)
+  } else {
+    // Centered over the viewport (within a pixel of rounding).
+    expect(Math.abs(toast.x + toast.width / 2 - (vp.x + vp.width / 2))).toBeLessThanOrEqual(1)
+  }
 })
 
-test('with the toolpaths showing, a toast clears the playback bar', async ({ page }) => {
+test('with the toolpaths showing, a toast clears the playback panel, the layer slider and the view switch', async ({ page }) => {
   test.slow()
   await open(page)
   await openProject(page)
   await slice(page)
-  const dock = page.locator('.vp > .dock')
-  await expect(dock).toBeVisible()
+  await expect(page.locator('.vp > .dock')).toBeVisible()
   // On a phone, slicing scrolled the page down to the Slice button; the viewport is at the top.
   await page.evaluate(() => window.scrollTo(0, 0))
-  const toast = await postToast(page, 'Saved the plate.')
-  expect(intersects(toast, (await dock.boundingBox())!)).toBe(false)
-  for (const part of await plateBarBoxes(page)) expect(intersects(toast, part)).toBe(false)
+  await clearOfControls(page, await postToast(page, 'Saved the plate.'))
 })
 
 test('away from the plate tab, toasts keep their place at the window bottom', async ({ page }) => {
@@ -134,27 +147,40 @@ test('shots: a toast over the plate bar and over the playback bar, light and dar
   const dir = process.env['SX_SHOTS_DIR'] ?? info.outputPath('shots')
   const width = page.viewportSize()?.width ?? 0
   const sx = (patch: unknown) => page.evaluate((p) => (window as unknown as { __sx: Sx }).__sx.setState(p), patch)
+  // A toast shows for 2.6 s, less than a full-page shot of the toolpaths can take here; for the shots it stays 8 s.
+  await page.addInitScript(() => {
+    const later = window.setTimeout.bind(window)
+    window.setTimeout = ((fn: TimerHandler, ms?: number, ...rest: unknown[]) => later(fn, ms === 2600 ? 8000 : ms, ...rest)) as typeof window.setTimeout
+  })
   await open(page)
   await openProject(page)
   await slice(page)
-  // One toast per shot, with the viewport in view (on a phone the page scrolls under it).
-  const fresh = async () => {
-    await expect(page.getByTestId('toast')).toHaveCount(0, { timeout: 20_000 })
-    await page.evaluate(() => window.scrollTo(0, 0))
-    await postToast(page, 'Opened as P1S 0.2 mm from the project.')
+  const text = 'Opened as P1S 0.2 mm from the project.'
+  const toast = page.getByTestId('toast').filter({ hasText: text })
+  // One toast per shot, with the viewport in view (on a phone the page scrolls under it). The shot is kept only when
+  // the toast was still showing after it was taken; a toast leaves after 2.6 s.
+  const shoot = async (name: string) => {
+    for (let i = 0; i < 3; i++) {
+      await expect(page.getByTestId('toast')).toHaveCount(0, { timeout: 20_000 })
+      await page.evaluate(() => window.scrollTo(0, 0))
+      await page.mouse.move(0, 0)
+      await postToast(page, text)
+      await page.screenshot({ path: `${dir}/${name}-${width}.png` })
+      if ((await toast.count()) > 0) return
+    }
+    throw new Error(`the toast left before the ${name} shot`)
   }
   for (const scheme of ['light', 'dark'] as const) {
     await sx({ scheme, themeFollowsSystem: false })
+    // The new theme loads and redraws the app; a toast posted before that is gone with it.
+    await expect(page.locator('html')).toHaveAttribute('data-sx-theme', new RegExp(scheme))
     await expect(page.locator('.vp > .dock')).toBeVisible()
-    await fresh()
-    await page.mouse.move(0, 0)
-    await page.waitForTimeout(300)
-    await page.screenshot({ path: `${dir}/toast-toolpaths-${scheme}-${width}.png` })
+    await page.waitForTimeout(1500)
+    await shoot(`toast-toolpaths-${scheme}`)
     await sx({ sliceLook: 'solid' })
     await expect(page.locator('.vp > .dock')).toHaveCount(0)
-    await fresh()
     await page.waitForTimeout(300)
-    await page.screenshot({ path: `${dir}/toast-plate-bar-${scheme}-${width}.png` })
+    await shoot(`toast-plate-bar-${scheme}`)
     await sx({ sliceLook: 'toolpaths' })
   }
 })
