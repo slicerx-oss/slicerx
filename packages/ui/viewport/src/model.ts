@@ -23,6 +23,8 @@ export interface PartEntry {
   color: string
   finish: FilamentFinish
   index: number
+  /** The part's filament slot (1-based), when the app says which: highlighting a slot dims the others. */
+  slot?: number
 }
 
 export interface ObjectEntry {
@@ -321,7 +323,7 @@ export function buildObject(obj: ViewportObject, material: (p: ViewportPart) => 
     edges.raycast = () => {}
     mesh.add(edges)
     group.add(mesh)
-    return { mesh, edges, color: p.color, finish: p.finish ?? 'basic', index: i }
+    return { mesh, edges, color: p.color, finish: p.finish ?? 'basic', index: i, ...(p.slot !== undefined ? { slot: p.slot } : {}) }
   })
   return { id: obj.id, name: obj.name, group, parts }
 }

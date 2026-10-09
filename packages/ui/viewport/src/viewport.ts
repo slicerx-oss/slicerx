@@ -186,6 +186,15 @@ interface PickHit {
   dir: Vector3
 }
 
+/** A #rrggbb color at a quarter of its strength, for parts on a filament that is not picked out. */
+export function dimHex(hex: string): string {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex)
+  if (!m) return hex
+  const n = parseInt(m[1]!, 16)
+  const q = (v: number) => Math.round(v * 0.25).toString(16).padStart(2, '0')
+  return `#${q((n >> 16) & 255)}${q((n >> 8) & 255)}${q(n & 255)}`
+}
+
 class ViewportImpl implements Viewport {
   readonly canvas: HTMLCanvasElement
   private readonly renderer: WebGLRenderer
@@ -213,6 +222,8 @@ class ViewportImpl implements Viewport {
   private readonly cleanups: (() => void)[] = []
   private mode: ViewportMode = 'prepare'
   private renderMode: RenderMode = 'studio'
+  /** The filament slot picked out by setHighlightSlot, or null. */
+  private highlightSlot: number | null = null
   private selection: string[] = []
   private controlsMap: ControlsMap = CONTROL_PRESETS.slicerx
   private spaceDown = false
@@ -810,7 +821,7 @@ class ViewportImpl implements Viewport {
     const sh = sharedMaterials()
     for (const o of this.objects.values()) {
       for (const p of o.parts) {
-        const m = this.mats.get(this.renderMode, { color: p.color, finish: p.finish })
+        const m = this.mats.get(this.renderMode, { color: this.partColor(p), finish: p.finish })
         // Clay and overhang materials are shared by every viewport on the page, so a page has one display style for them.
         ;(m as Material & { wireframe?: boolean }).wireframe = wire
         p.mesh.material = m
@@ -990,7 +1001,7 @@ class ViewportImpl implements Viewport {
     if (style.finish) p.finish = style.finish
     const cutting = this.cutPreview.entry?.id === objectId
     if (cutting) this.cutPreview.detach()
-    p.mesh.material = this.mats.get(this.renderMode, { color: p.color, finish: p.finish })
+    p.mesh.material = this.mats.get(this.renderMode, { color: this.partColor(p), finish: p.finish })
     if (cutting) this.syncCutPreview()
     this.invalidate()
   }
@@ -2922,6 +2933,24 @@ class ViewportImpl implements Viewport {
     this.toolpaths.set(buffers)
     this.shadowDirty = true
     this.invalidate()
+  }
+
+  setHighlightSlot(slot: number | null): void {
+    const next = slot !== null && slot >= 1 ? Math.floor(slot) : null
+    const tools = this.toolpaths.setHighlightTool(next === null ? null : next - 1)
+    if (next === this.highlightSlot) {
+      if (tools) this.invalidate()
+      return
+    }
+    this.highlightSlot = next
+    this.applyMaterials()
+    this.invalidate()
+  }
+
+  /** A part's color as drawn: a quarter of it while another slot is picked out. */
+  private partColor(p: { color: string; slot?: number }): string {
+    if (this.highlightSlot === null || p.slot === undefined || p.slot === this.highlightSlot) return p.color
+    return dimHex(p.color)
   }
 
   setPreviewStale(stale: boolean): void {
