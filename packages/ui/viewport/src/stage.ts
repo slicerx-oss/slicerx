@@ -50,6 +50,7 @@ import { LightProbeGenerator } from 'three/addons/lights/LightProbeGenerator.js'
 import { FullScreenQuad } from 'three/addons/postprocessing/Pass.js'
 import type { Bed } from '@slicerx/contracts'
 import { SCENE, type SceneColors } from './palette'
+import { REVEAL_GRID_SETTLE_MS, REVEAL_GRID_SPAN_MS, REVEAL_SETTLED } from './reveal'
 import type { PlateStyle } from './types'
 
 /** Objects sit this far above the plate top so their bottoms never fight it for depth. */
@@ -87,11 +88,25 @@ varying float vH;
 void main(){ vec4 w = modelMatrix * vec4(position, 1.0); vH = w.y; gl_Position = projectionMatrix * viewMatrix * w; }`
 
 const PLATE_OUTLINE_FS = /* glsl */ `
-uniform vec3 edge; uniform vec3 edgeAlt; uniform float alert; uniform float ground; uniform float surface; uniform vec3 grid; uniform vec2 hb; varying vec2 vP;
+uniform vec3 edge; uniform vec3 edgeAlt; uniform float alert; uniform float ground; uniform float surface; uniform vec3 grid; uniform vec2 hb; uniform vec3 reveal; varying vec2 vP;
 float lines(vec2 p, float s){ vec2 q = p / s; vec2 w = fwidth(q); vec2 g = abs(fract(q - 0.5) - 0.5) / max(w, vec2(1e-4)); return (1.0 - min(min(g.x, g.y), 1.0)) * (1.0 - smoothstep(0.3, 0.7, max(w.x, w.y))); }
+// the first plate reveal (reveal.ts): x is how far the outline is traced, 0 to 1 from the front middle round each side
+// to the back middle; y is ms since the grid started laying, back to front, a row overshooting as it lands; z is the
+// accent wash. Ground ignores it.
+float traced(vec2 p){
+  vec2 q = abs(p) - hb;
+  float s = q.x > q.y ? hb.x + p.y + hb.y : p.y < 0.0 ? abs(p.x) : 2.0 * hb.x + 2.0 * hb.y - abs(p.x);
+  return s / (2.0 * hb.x + 2.0 * hb.y);
+}
+float rowIn(float y){
+  float k = (reveal.y - (hb.y - y) / (2.0 * hb.y) * ${REVEAL_GRID_SPAN_MS.toFixed(1)}) / ${REVEAL_GRID_SETTLE_MS.toFixed(1)};
+  return k <= 0.0 ? 0.0 : k < 0.35 ? k / 0.35 * 1.6 : k < 1.0 ? 1.6 - 0.6 * ((k - 0.35) / 0.65) : 1.0;
+}
 void main(){
   vec2 q = abs(vP) - hb;
   float d = length(max(q, 0.0)) + min(max(q.x, q.y), 0.0);
+  float shown = mix(step(traced(vP), reveal.x), 1.0, ground);
+  float row = mix(rowIn(vP.y), 1.0, ground);
   float px = max(fwidth(d), 1e-3);
   float line = 1.0 - smoothstep(0.0, 1.0, abs(d) / (px * 1.1));
   float glow = exp(-abs(d) / 2.2) * (d < 0.0 ? 0.18 : 0.1);
@@ -106,12 +121,14 @@ void main(){
   // ground: no outline or corner marks, the grid runs to the quad's edge and fades out there.
   float inside = mix(1.0 - smoothstep(-0.4, 0.0, d), 1.0, ground);
   // On a plate surface the grid is a faint guide over the sheet.
-  float gl = (lines(vP + hb, 10.0) * 0.35 + lines(vP + hb, 50.0) * 0.75) * fade * inside * 0.3 * (1.0 - 0.7 * surface);
-  float inner = exp(d / 10.0) * inside * 0.045 * (1.0 - ground);
-  float aEdge = clamp(line * 0.9 + glow + br * 0.7, 0.0, 1.0) * (1.0 - ground);
+  float gl = (lines(vP + hb, 10.0) * 0.35 + lines(vP + hb, 50.0) * 0.75) * fade * inside * 0.3 * (1.0 - 0.7 * surface) * row;
+  float inner = exp(d / 10.0) * inside * 0.045 * (1.0 - ground) * row;
+  float aEdge = clamp(line * 0.9 + glow + br * 0.7, 0.0, 1.0) * (1.0 - ground) * shown;
   float aG = clamp(gl + inner, 0.0, 1.0);
-  float a = clamp(aEdge + aG * (1.0 - aEdge), 0.0, 1.0);
-  vec3 col = (mix(edge, edgeAlt, alert) * aEdge + grid * aG * (1.0 - aEdge));
+  float wash = reveal.z * 0.16 * inside * (1.0 - ground);
+  float a = clamp(aEdge + (aG + wash) * (1.0 - aEdge), 0.0, 1.0);
+  vec3 ec = mix(edge, edgeAlt, alert);
+  vec3 col = ec * aEdge + (grid * aG + edge * wash) * (1.0 - aEdge);
   gl_FragColor = vec4(col, a);
 }`
 
@@ -171,6 +188,8 @@ export class Stage {
   private decor = new Group()
   private zoneGroup = new Group()
   private outline: ShaderMaterial | null = null
+  /** Shared by every rebuild of the plate material, so a theme change during the reveal keeps its place. */
+  private readonly revealU = { value: new Vector3(REVEAL_SETTLED.trace, REVEAL_SETTLED.gridMs, REVEAL_SETTLED.tint) }
   private zoneLabels: { sprite: Sprite; centre: Vector3; thin: Vector3 }[] = []
   private alert = false
   private ground = false
@@ -379,6 +398,15 @@ export class Stage {
     this.excludeGroup.visible = !on
   }
 
+  get isGround(): boolean {
+    return this.ground
+  }
+
+  /** Where the first plate reveal is: outline traced 0 to 1 (below 0 hides it), ms since the grid started, wash 0 to 1. */
+  setReveal(trace: number, gridMs: number, tint: number): void {
+    this.revealU.value.set(trace, gridMs, tint)
+  }
+
   setBedAlert(on: boolean): void {
     this.alert = on
     if (this.outline?.uniforms.alert) this.outline.uniforms.alert.value = on ? 1 : 0
@@ -486,7 +514,7 @@ export class Stage {
     const half = new Vector2(bed.widthMm / 2, bed.depthMm / 2)
     const pad = 24
     const mat = new ShaderMaterial({
-      uniforms: { edge: { value: new Color(this.colors.selection) }, edgeAlt: { value: new Color(this.colors.overhangAmber) }, alert: { value: this.alert ? 1 : 0 }, ground: { value: this.ground ? 1 : 0 }, surface: { value: this.plateStyle === 'grid' ? 0 : 1 }, grid: { value: new Color(this.colors.floorGrid) }, hb: { value: half } },
+      uniforms: { edge: { value: new Color(this.colors.selection) }, edgeAlt: { value: new Color(this.colors.overhangAmber) }, alert: { value: this.alert ? 1 : 0 }, ground: { value: this.ground ? 1 : 0 }, surface: { value: this.plateStyle === 'grid' ? 0 : 1 }, grid: { value: new Color(this.colors.floorGrid) }, hb: { value: half }, reveal: this.revealU },
       transparent: true,
       depthWrite: false,
       vertexShader: 'varying vec2 vP; void main(){ vP = position.xy; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',

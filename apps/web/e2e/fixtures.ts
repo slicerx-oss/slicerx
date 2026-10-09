@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// The specs drive the Slice button, so they start with Auto slice off. auto-slice.spec.ts uses the plain test and gets the default (on).
+// The specs drive the Slice button, so they start with Auto slice off, and with the plate reveal off. auto-slice.spec.ts uses the plain
+// test and gets the default (on); plate-reveal.spec.ts turns the reveal back on.
 //
 // Cold start waits on the app's own ready mark, `data-sx-ready` on the root element: "engine" once the app is up
 // with the slicer loaded, "plate" once the first plate has loaded, "viewport" once the 3D view is up too. Nothing waits on a fixed time, so a slow
@@ -46,7 +47,11 @@ export const test = base.extend<object, { graphics: void }>({
     { scope: 'worker', auto: true, timeout: 300_000 },
   ],
   context: async ({ context }, use) => {
-    await context.addInitScript(() => sessionStorage.setItem('sx-no-auto-slice', '1'))
+    await context.addInitScript(() => {
+      sessionStorage.setItem('sx-no-auto-slice', '1')
+      // The plate reveal plays on a window's first plate; specs that compare pictures want the plate as it settles.
+      sessionStorage.setItem('sx-reveal', 'off')
+    })
     await use(context)
   },
   page: async ({ page }, use) => {

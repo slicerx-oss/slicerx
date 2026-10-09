@@ -22,7 +22,7 @@ const $ = <T extends HTMLElement>(id: string): T => {
 
 if (q.get('bare') === '1') document.body.classList.add('bare')
 const canvas = $<HTMLCanvasElement>('vp')
-const vp = createViewport(canvas, { controls: (q.get('controls') as 'slicerx' | 'bambu-studio' | 'prusaslicer' | 'orcaslicer' | null) ?? 'slicerx', quality, maxPixelRatio: maxPr, adaptive: q.get('adaptive') !== '0' })
+const vp = createViewport(canvas, { controls: (q.get('controls') as 'slicerx' | 'bambu-studio' | 'prusaslicer' | 'orcaslicer' | null) ?? 'slicerx', quality, maxPixelRatio: maxPr, adaptive: q.get('adaptive') !== '0', reveal: q.get('reveal') !== '0' })
 vp.on('degrade', (e) => console.warn(e.message))
 vp.on('error', (e) => console.error(e.message))
 
