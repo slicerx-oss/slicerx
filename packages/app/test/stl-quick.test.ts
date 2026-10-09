@@ -62,6 +62,15 @@ describe('reading a binary STL', () => {
     expect(scanStl(new Uint8Array(stl(CORNERS.map((c, i) => (i === 3 ? [Number.NaN, 0, 0] : c)))))).toBeNull()
   })
 
+  it('drops a triangle whose corners collapsed, and keeps the first corner\'s value of a point, as the engine does', () => {
+    // A cube with -0 for its first corner, plus a triangle with two corners at one point and one with all three.
+    const corners = [[-0, 0, 0], ...CORNERS.slice(1)]
+    const m = scanStl(new Uint8Array(stl(corners, [...TRIS, [1, 1, 2], [6, 6, 6]])))!
+    expect(m.indices.length).toBe(36)
+    expect(m.positions.length / 3).toBe(8)
+    expect(Object.is(m.positions[0], -0)).toBe(true)
+  })
+
   it('leaves an ASCII STL to the engine', () => {
     const text = new TextEncoder().encode('solid cube\nfacet normal 0 0 1\nouter loop\nvertex 0 0 0\nvertex 1 0 0\nvertex 0 1 0\nendloop\nendfacet\nendsolid cube\n')
     expect(isBinaryStl(text)).toBe(false)
