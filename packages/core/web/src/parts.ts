@@ -24,13 +24,33 @@ export function encodeParts(parts: MeshPart[]): Uint8Array {
     const nv = Math.floor(p.positions.length / 3)
     v.setUint32(o, nv, true)
     o += 4
-    for (let k = 0; k < nv * 3; k++, o += 4) v.setFloat32(o, p.positions[k] ?? 0, true)
+    o = putArray(buf, v, o, p.positions, nv * 3, 'float')
     const nt = Math.floor(p.indices.length / 3)
     v.setUint32(o, nt, true)
     o += 4
-    for (let k = 0; k < nt * 3; k++, o += 4) v.setUint32(o, p.indices[k] ?? 0, true)
+    o = putArray(buf, v, o, p.indices, nt * 3, 'uint')
   })
   return buf.subarray(0, o)
+}
+
+const LITTLE = new Uint8Array(new Uint32Array([1]).buffer)[0] === 1
+
+/**
+ * Writes the first `n` values of a float or uint array little-endian at `o`, and returns the offset after them. A
+ * little-endian machine (every one the app runs on) copies the bytes in one go: a model of millions of triangles took
+ * a DataView call per value.
+ */
+function putArray(buf: Uint8Array, v: DataView, o: number, a: ArrayLike<number>, n: number, kind: 'float' | 'uint'): number {
+  if (LITTLE && (kind === 'float' ? a instanceof Float32Array : a instanceof Uint32Array)) {
+    const t = a as Float32Array | Uint32Array
+    buf.set(new Uint8Array(t.buffer, t.byteOffset, n * 4), o)
+    return o + n * 4
+  }
+  for (let k = 0; k < n; k++, o += 4) {
+    if (kind === 'float') v.setFloat32(o, a[k] ?? 0, true)
+    else v.setUint32(o, a[k] ?? 0, true)
+  }
+  return o
 }
 
 /** A 20 mm cube as one part on slot 1, for warming up workers. */
