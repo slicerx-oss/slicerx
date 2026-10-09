@@ -283,12 +283,20 @@ impl TriMesh {
     }
 
     #[must_use]
+    pub fn weld(&self, tol: f64) -> TriMesh {
+        let tol = tol.max(0.0);
+        if tol == 0.0 {
+            return self.weld_exact();
+        }
+        self.weld_grid(tol)
+    }
+
+    /// The weld within `tol` through a grid of cells twice its size, searching the 27 cells around each corner.
     #[allow(
         clippy::cast_possible_truncation,
         reason = "grid cells of print-sized models fit in i64"
     )]
-    pub fn weld(&self, tol: f64) -> TriMesh {
-        let tol = tol.max(0.0);
+    fn weld_grid(&self, tol: f64) -> TriMesh {
         let cell = if tol > 0.0 { tol * 2.0 } else { 1e-12 };
         let key = |p: V3| p.map(|c| (c / cell).floor() as i64);
         let mut grid: HashMap<[i64; 3], Vec<u32>> = HashMap::with_capacity(self.positions.len());
@@ -327,6 +335,11 @@ impl TriMesh {
                 j
             });
         }
+        self.remapped(out, &remap)
+    }
+
+    /// The welded mesh from the kept positions and each old vertex's new index; triangles that collapse go.
+    fn remapped(&self, out: Vec<V3>, remap: &[u32]) -> TriMesh {
         let mapped: Vec<[u32; 3]> = self
             .triangles
             .iter()
@@ -344,6 +357,36 @@ impl TriMesh {
     #[must_use]
     pub fn welded(&self) -> TriMesh {
         self.weld(weld_tolerance(self.bounds()))
+    }
+
+    /// `weld(0.0)`: corners at the same point become one, in the order they are first used, with one lookup per corner
+    /// (the tolerance weld searches the 27 cells around it). -0 is the same point as 0; a corner that is not a number
+    /// is never the same point as another, as the tolerance weld's distance test has it.
+    fn weld_exact(&self) -> TriMesh {
+        let mut used = vec![false; self.positions.len()];
+        for &i in self.triangles.iter().flatten() {
+            used[i as usize] = true;
+        }
+        let mut seen: HashMap<[u64; 3], u32> = HashMap::with_capacity(self.positions.len());
+        let mut remap = vec![u32::MAX; self.positions.len()];
+        let mut out: Vec<V3> = Vec::with_capacity(self.positions.len());
+        for (i, &p) in self.positions.iter().enumerate() {
+            if !used[i] {
+                continue;
+            }
+            #[allow(clippy::cast_possible_truncation, reason = "vertex counts stay below 2^32")]
+            let next = out.len() as u32;
+            remap[i] = if p.iter().any(|c| c.is_nan()) {
+                out.push(p);
+                next
+            } else {
+                *seen.entry(p.map(|c| (c + 0.0).to_bits())).or_insert_with(|| {
+                    out.push(p);
+                    next
+                })
+            };
+        }
+        self.remapped(out, &remap)
     }
 
     pub fn edge_report(&self) -> EdgeReport {
@@ -592,5 +635,40 @@ mod tests {
     #[test]
     fn bad_index_is_rejected() {
         assert!(TriMesh::from_flat(&[0.0; 9], &[0, 1, 3]).is_err());
+    }
+
+    #[test]
+    #[allow(clippy::cast_precision_loss, reason = "small test counts")]
+    fn the_exact_weld_matches_the_grid_weld_at_tolerance_zero() {
+        // A soup with repeated corners, -0 beside 0, points a hair apart, an unused vertex, a triangle that collapses
+        // and corners that are not numbers: one lookup per corner gives what the 27-cell search gives.
+        let mut m = TriMesh::default();
+        let mut x = 0.37_f64;
+        for i in 0..400 {
+            x = (x * 3.9).fract();
+            let p = [
+                f64::from(i % 7) * 0.5,
+                (x * 4.0).floor() * 0.25,
+                if i % 5 == 0 { -0.0 } else { 0.0 },
+            ];
+            let q = [p[0] + 1e-13, p[1], p[2]];
+            let r = [p[0], p[1] + 0.25, 1.0];
+            m.push_triangle(p, if i % 3 == 0 { q } else { r }, [p[0] + 0.5, p[1], p[2]]);
+        }
+        m.push_triangle([0.0; 3], [0.0; 3], [1.0, 0.0, 0.0]);
+        m.push_triangle([f64::NAN, 0.0, 0.0], [f64::NAN, 0.0, 0.0], [2.0, 2.0, 2.0]);
+        m.positions.push([9.0, 9.0, 9.0]);
+        let (exact, grid) = (m.weld(0.0), m.weld_grid(0.0));
+        assert_eq!(exact.triangles, grid.triangles);
+        assert_eq!(exact.positions.len(), grid.positions.len());
+        for (a, b) in exact.positions.iter().zip(&grid.positions) {
+            for k in 0..3 {
+                assert!(
+                    a[k].to_bits() == b[k].to_bits() || (a[k].is_nan() && b[k].is_nan()),
+                    "{a:?} against {b:?}"
+                );
+            }
+        }
+        assert!(exact.positions.len() < 3 * m.triangles.len());
     }
 }
