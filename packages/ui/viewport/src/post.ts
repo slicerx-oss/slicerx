@@ -486,11 +486,13 @@ export class Pipeline {
     const hidden: Object3D[] = []
     for (const root of objects) {
       root.traverse((o) => {
-        if ((o as Mesh).isMesh && o.visible) {
+        // wide edge quads (LineSegments2) are meshes to three.js but lines here: hidden from the mask like the thin ones
+        const wide = (o as { isLineSegments2?: boolean }).isLineSegments2 === true
+        if ((o as Mesh).isMesh && o.visible && !wide) {
           const m = o as Mesh
           swapped.push({ mesh: m, mat: m.material })
           m.material = this.maskMat
-        } else if (o !== root && o.visible && !(o as Mesh).isMesh && (o.type === 'LineSegments' || o.type === 'Line')) {
+        } else if (o !== root && o.visible && (wide || (!(o as Mesh).isMesh && (o.type === 'LineSegments' || o.type === 'Line')))) {
           hidden.push(o)
           o.visible = false
         }

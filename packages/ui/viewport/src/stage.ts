@@ -402,6 +402,13 @@ export class Stage {
     return this.ground
   }
 
+  /** Model's CAD look lights the gray with a white key and a softer, near-white rim, so lit faces stay neutral. */
+  setNeutralLight(on: boolean): void {
+    this.key.color.set(on ? 0xffffff : 0xfff3e6)
+    this.rim.color.set(on ? 0xe9edf3 : 0xb7c3ff)
+    this.rim.intensity = (on ? 0.5 : 0.75) * Math.PI
+  }
+
   /** Where the first plate reveal is: outline traced 0 to 1 (below 0 hides it), ms since the grid started, wash 0 to 1. */
   setReveal(trace: number, gridMs: number, tint: number): void {
     this.revealU.value.set(trace, gridMs, tint)

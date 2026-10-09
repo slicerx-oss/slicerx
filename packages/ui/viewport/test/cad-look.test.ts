@@ -3,8 +3,9 @@
 // Model's CAD look: every part takes one neutral gray with dark feature edges, drawn even in the shaded style; Slice's
 // looks keep the filament colors and their edges only in the edges style.
 import { describe, expect, it } from 'vitest'
-import { Color, type MeshPhysicalMaterial } from 'three'
-import { cadLook, edgeLook, MaterialCache, sharedMaterials } from '../src/materials'
+import { BoxGeometry, Color, type MeshPhysicalMaterial } from 'three'
+import { CAD_EDGE_PX, cadLook, edgeLook, MaterialCache, sharedMaterials } from '../src/materials'
+import { buildObject, wideEdges } from '../src/model'
 
 describe('the CAD look', () => {
   it('gives every part the one shared gray, whatever its filament', () => {
@@ -42,5 +43,23 @@ describe('the CAD look', () => {
     // cooler: more blue than red
     expect(new Color(dark.body).b).toBeGreaterThan(new Color(dark.body).r)
     for (const l of [light, dark]) expect(lum(l.edge)).toBeLessThan(lum(l.body) / 4)
+  })
+
+  it('builds the wide 1.5 px edges once per part, from the same feature edges', () => {
+    const box = new BoxGeometry(10, 10, 10)
+    const positions = box.getAttribute('position').array as Float32Array
+    const indices = new Uint32Array(box.getIndex()!.array)
+    const obj = buildObject({ id: 'a', name: 'Box', transform: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1], parts: [{ name: 'Box', positions, indices, color: '#ff0000' }] } as never, () => sharedMaterials().cad, sharedMaterials().edgeCad)
+    const part = obj.parts[0]!
+    const mat = sharedMaterials().edgeCadWide
+    const w = wideEdges(part, mat)
+    expect(wideEdges(part, mat)).toBe(w)
+    expect(w.parent).toBe(part.mesh)
+    // one quad per feature edge segment
+    const segments = part.edges.geometry.getAttribute('position').count / 2
+    expect(segments).toBeGreaterThanOrEqual(12)
+    expect((w.geometry as unknown as { instanceCount: number }).instanceCount).toBe(segments)
+    expect(mat.linewidth).toBe(CAD_EDGE_PX)
+    expect(CAD_EDGE_PX).toBe(1.5)
   })
 })

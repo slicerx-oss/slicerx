@@ -21,6 +21,7 @@ import {
   ZeroFactor,
   type WebGLProgramParametersWithUniforms,
 } from 'three'
+import { LineMaterial } from 'three/addons/lines/LineMaterial.js'
 import { HEAT_RAMP, SCENE, displayHex, type SceneColors } from './palette'
 import type { DisplayStyle, FilamentFinish, RenderMode } from './types'
 
@@ -198,7 +199,10 @@ export function xrayMaterial(color: string): ShaderMaterial {
   })
 }
 
-let sharedMats: { clay: MeshStandardMaterial; overhang: MeshStandardMaterial; edgeDark: LineBasicMaterial; edgeXray: LineBasicMaterial; cad: MeshPhysicalMaterial; edgeCad: LineBasicMaterial } | null = null
+/** The CAD look's edge width, in CSS pixels. */
+export const CAD_EDGE_PX = 1.5
+
+let sharedMats: { clay: MeshStandardMaterial; overhang: MeshStandardMaterial; edgeDark: LineBasicMaterial; edgeXray: LineBasicMaterial; cad: MeshPhysicalMaterial; edgeCad: LineBasicMaterial; edgeCadWide: LineMaterial } | null = null
 
 /** Pulls line vertices a hair toward the camera so feature edges win the depth test against their own faces. */
 function edgeBias<M extends Material>(m: M): M {
@@ -238,7 +242,13 @@ export function sharedMaterials(): NonNullable<typeof sharedMats> {
   const look = cadLook(SCENE.bgTop)
   const cad = new MeshPhysicalMaterial({ color: lin(look.body), roughness: 0.5, metalness: 0, clearcoat: 0.2, clearcoatRoughness: 0.35, envMapIntensity: 0.6, polygonOffset: true })
   const edgeCad = edgeBias(new LineBasicMaterial({ color: lin(look.edge), transparent: true, opacity: 0.9, depthWrite: false }))
-  sharedMats = { clay, overhang, edgeDark, edgeXray, cad, edgeCad }
+  // the CAD look's edges as screen-space quads, so they keep a 1.5 px width (GL lines draw at 1 px)
+  const edgeCadWide = new LineMaterial({ color: lin(look.edge).getHex(), linewidth: CAD_EDGE_PX, transparent: true, opacity: 0.95, depthWrite: false })
+  edgeCadWide.onBeforeCompile = (sh) => {
+    sh.vertexShader = sh.vertexShader.replace('gl_Position = clip;', 'clip.z -= 0.0006 * clip.w;\n\t\t\tgl_Position = clip;')
+  }
+  edgeCadWide.customProgramCacheKey = () => 'sx-edge-wide'
+  sharedMats = { clay, overhang, edgeDark, edgeXray, cad, edgeCad, edgeCadWide }
   return sharedMats
 }
 
@@ -288,6 +298,12 @@ export function setSharedSceneColors(scene: SceneColors): void {
   const look = cadLook(scene.bgTop)
   sharedMats.cad.color.copy(lin(look.body))
   sharedMats.edgeCad.color.copy(lin(look.edge))
+  sharedMats.edgeCadWide.color.copy(lin(look.edge))
+}
+
+/** The drawing buffer size, for the wide edge material's pixel widths. */
+export function setEdgeResolution(width: number, height: number): void {
+  sharedMaterials().edgeCadWide.resolution.set(width, height)
 }
 
 /** Which edge material a part's feature edges take in a render mode, and whether they show with this display style. */
@@ -302,7 +318,7 @@ export function edgeLook(mode: RenderMode, display: DisplayStyle): { edge: 'xray
 export function cadLook(bgTop: string): { body: string; edge: string } {
   const c = new Color(bgTop)
   const light = 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b > 0.5
-  return light ? { body: '#7b7e83', edge: '#24262c' } : { body: '#6f757e', edge: '#121318' }
+  return light ? { body: '#7b7e83', edge: '#121318' } : { body: '#6f757e', edge: '#08090c' }
 }
 
 /** sleipnir heights for the Prepare shaders. Null clears them. Shared by every viewport on the page. */
