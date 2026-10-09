@@ -127,13 +127,11 @@ export function AmsPanel({ maker, system }: { maker: string; system?: 'ams' | 'm
     const sp = spoolFor(s.index, spools, links, printerSlots[s.index - 1]?.spoolmanId)
     return sp ? `${Math.round(sp.remainingG)} g left` : s.remainingPct !== undefined ? `${s.remainingPct}% left` : null
   }
-  const [showUnused, setShowUnused] = useState(false)
-  // Simple shows the slots in use, one line each; the rest open with More or with the unused-slots row.
+  // Simple shows the slots in use, one line each; the rest open with More (the header counts them: "2 of 4 used").
   const basics = slots.filter((s) => s.used)
-  const unusedCount = slots.length - Math.max(basics.length, 1)
-  const shown = more || showUnused ? slots : basics.length ? basics : slots.slice(0, 1)
-  // One or two filaments in use read as a single line of swatches; More or the unused-slots row opens the list.
-  const strip = !more && !showUnused && basics.length > 0 && basics.length <= 2
+  const shown = more ? slots : basics.length ? basics : slots.slice(0, 1)
+  // One or two filaments in use read as a single line of swatches; More opens the list.
+  const strip = !more && basics.length > 0 && basics.length <= 2
   const groups = new Map<string, ResolvedSlot[]>()
   for (const s of shown) {
     const unit = fromPrinter && s.index <= printerSlots.length ? unitOf(s) : 'Slots'
@@ -214,12 +212,6 @@ export function AmsPanel({ maker, system }: { maker: string; system?: 'ams' | 'm
           ))}
         </div>
       ))}
-      {!more && !showUnused && unusedCount > 0 ? (
-        <button type="button" className="fil-unused" aria-expanded={false} onClick={() => setShowUnused(true)}>
-          <Icon name="chevron-right" size={12} />
-          {unusedCount === 1 ? '1 unused slot' : `${unusedCount} unused slots`}
-        </button>
-      ) : null}
       {more && !fromPrinter && slots.length < MAX_SLOTS ? (
         <Button size="sm" variant="ghost" icon="plus" onClick={() => setSlot(slots.length + 1, {})}>
           Add filament

@@ -31,7 +31,7 @@ test('the viewport ray hits the prime tower, and the settings plan renders', asy
   await page.goto('./')
   await plateReady(page)
   await viewportReady(page)
-  await page.getByRole('button', { name: 'Change', exact: true }).click()
+  await page.getByTestId('slice-machine-printer').click()
   await page.getByRole('list', { name: 'Choose a printer' }).getByRole('button', { name: /Bay 2/ }).click()
   const slices1 = await sliceCount(page)
   await page.getByRole('main').getByRole('button', { name: /^Slice/ }).first().click()
