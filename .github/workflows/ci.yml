@@ -410,7 +410,10 @@ jobs:
           cache: pnpm
       - if: needs.e2e-shard.result != 'skipped' || needs.e2e-gpu.result != 'skipped'
         run: pnpm install --frozen-lockfile
+      # the reports are for reading only, so a download that fails (it has, after its retries) loses the HTML report,
+      # never the result
       - if: needs.e2e-shard.result != 'skipped' || needs.e2e-gpu.result != 'skipped'
+        continue-on-error: true
         uses: actions/download-artifact@v4
         with:
           pattern: e2e-blob-*
