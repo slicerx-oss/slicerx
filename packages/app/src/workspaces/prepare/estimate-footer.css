@@ -21,3 +21,4 @@
 .est-slots li span { flex: 1; }
 .est-slots li b { font: var(--fw-medium) var(--fs-sm) var(--f-mono); }
 .est-breakdown .est-grid { margin: 0; }
+.slice-done .est-again { flex: none; }

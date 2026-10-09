@@ -80,9 +80,9 @@ export function SliceBlock({ label = 'Slice plate' }: { label?: string; compact?
       Print
     </SplitButton>
   )
-  // With Auto slice off and a current slice, Slice again sits beside Print as a quiet button.
-  const again = !auto && done && !done.stale ? (
-    <Button size="sm" variant="ghost" icon="slice" data-testid="slice-estimate-slice" onClick={() => void slicePlate(host).then(() => get().slice.status === 'done' && showSliced())}>
+  // With Auto slice off and a current slice, Slice again sits on the estimate line as a quiet button.
+  const again = !auto && done && !done.stale && !running ? (
+    <Button size="sm" variant="ghost" icon="slice" className="est-again" data-testid="slice-estimate-slice" onClick={() => void slicePlate(host).then(() => get().slice.status === 'done' && showSliced())}>
       Slice again
     </Button>
   ) : null
@@ -158,6 +158,7 @@ export function SliceBlock({ label = 'Slice plate' }: { label?: string; compact?
           </button>
         ) : null}
         {done.stale ? <span className="app-tag stale">{auto ? 'Updating' : 'Settings changed'}</span> : null}
+        {again}
       </div>
       {running && auto ? (
         <div className="slicing-edge" role="status" aria-label="Slicing">
@@ -165,7 +166,6 @@ export function SliceBlock({ label = 'Slice plate' }: { label?: string; compact?
         </div>
       ) : null}
       {running && !auto ? track : primary}
-      {again}
       {problems}
       {sliceNote ? <p className="app-note">{sliceNote}</p> : null}
     </div>
