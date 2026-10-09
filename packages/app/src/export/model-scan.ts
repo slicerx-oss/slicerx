@@ -185,6 +185,63 @@ function attrMap(b: Uint8Array, at: number[]): Record<string, string> {
   return out
 }
 
+/**
+ * ` x="…" y="…" z="…"/>` (or `>`) right after a vertex's name, the way every slicer writes it: pushes the vertex and
+ * returns the position after the tag, or 0 for anything else (the general reader takes it then).
+ */
+function quickVertex(b: Uint8Array, q: number, pos: Floats): number {
+  let x = 0
+  let y = 0
+  let z = 0
+  for (let k = 0; k < 3; k++) {
+    if (b[q] !== 32 || b[q + 1] !== 120 + k || b[q + 2] !== EQ || b[q + 3] !== DQ) return 0
+    const s = q + 4
+    const e = b.indexOf(DQ, s)
+    if (e < 0) return 0
+    const v = parseNumber(b, s, e)
+    if (!Number.isFinite(v)) return 0
+    if (k === 0) x = v
+    else if (k === 1) y = v
+    else z = v
+    q = e + 1
+  }
+  const end = tagEnd(b, q)
+  if (end === 0) return 0
+  pos.push3(x, y, z)
+  return end
+}
+
+/** ` v1="…" v2="…" v3="…"/>` after a triangle's name, nothing else on it (no paint): as quickVertex. */
+function quickTriangle(b: Uint8Array, q: number, idx: Uints): number {
+  let v1 = 0
+  let v2 = 0
+  let v3 = 0
+  for (let k = 0; k < 3; k++) {
+    if (b[q] !== 32 || b[q + 1] !== 118 || b[q + 2] !== 49 + k || b[q + 3] !== EQ || b[q + 4] !== DQ) return 0
+    let v = 0
+    let i = q + 5
+    const s = i
+    for (let c = b[i]!; c >= 48 && c <= 57; c = b[++i]!) v = v * 10 + (c - 48)
+    if (i === s || i - s > 15 || b[i] !== DQ) return 0
+    if (k === 0) v1 = v
+    else if (k === 1) v2 = v
+    else v3 = v
+    q = i + 1
+  }
+  const end = tagEnd(b, q)
+  if (end === 0) return 0
+  idx.push3(v1, v2, v3)
+  return end
+}
+
+/** The position after `/>` or `>` at q (spaces before it allowed), or 0 when something else follows. */
+function tagEnd(b: Uint8Array, q: number): number {
+  while (isSpace(b[q]!)) q++
+  if (b[q] === SLASH && b[q + 1] === GT) return q + 2
+  if (b[q] === GT) return q + 1
+  return 0
+}
+
 const PAINT: Record<string, keyof PaintOfPart> = { paint_color: 'color', paint_seam: 'seam', paint_supports: 'support', paint_fuzzy_skin: 'fuzzy' }
 
 /**
@@ -270,6 +327,12 @@ export function scanModelBytes(b: Uint8Array, skeleton?: (bytes: Uint8Array) => 
     }
     if (len === 6 && ch === 118 && pos && attrIs(b, ls, q, 'vertex')) {
       if (runStart < 0) runStart = lt
+      // What every slicer writes, read without collecting the attributes first.
+      const quick = quickVertex(b, q, pos)
+      if (quick > 0) {
+        p = quick
+        continue
+      }
       p = readAttrs(b, q, at)
       // A missing coordinate is not a number, as Number(undefined) is.
       let x = NaN
@@ -291,6 +354,12 @@ export function scanModelBytes(b: Uint8Array, skeleton?: (bytes: Uint8Array) => 
     }
     if (len === 8 && ch === 116 && idx && attrIs(b, ls, q, 'triangle')) {
       if (runStart < 0) runStart = lt
+      const quick = quickTriangle(b, q, idx)
+      if (quick > 0) {
+        p = quick
+        tri++
+        continue
+      }
       p = readAttrs(b, q, at)
       let v1 = -1
       let v2 = -1
