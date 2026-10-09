@@ -7,6 +7,7 @@
 // are kept from the last replays, so an edit of step k starts at k.
 import type { EdgeRef, MovedFace } from '../../geom/cad'
 import { bakeMesh, findByKey, findTriangle, followed, followsOf, hasFaceOn, invert, keyOfTriangle, type History, type HistoryMesh, type ReplayResult, type Step, type StepStatus } from './model'
+import { madeBy } from './provenance'
 import { stepSalt } from './salt'
 
 export type EngineCall = (op: string, request: unknown) => Promise<unknown>
@@ -365,5 +366,28 @@ export async function replayHistory(call: EngineCall, req: ReplayRequest, o: Rep
       break
     }
   }
-  return { parts, status, moved, ...(Object.keys(found.keys).length ? { found: found.keys } : {}), ...(before ? { before } : {}) }
+  const made = madeAfter(steps, keys, status, parts)
+  return { parts, status, moved, ...(Object.keys(found.keys).length ? { found: found.keys } : {}), ...(made ? { madeBy: made } : {}), ...(before ? { before } : {}) }
+}
+
+/**
+ * The step that made each face of the result, by face key, from the parts kept after each step that went through.
+ * Faces of the base are left out. Undefined when a kept result is gone from the cache or the parts have no keys.
+ */
+function madeAfter(steps: readonly Step[], keys: readonly string[], status: readonly StepStatus[], parts: readonly Flat[]): Record<number, string> | undefined {
+  const last = status.reduce((n, st, i) => (st.state === 'done' || st.state === 'suppressed' ? i : n), -1)
+  if (last < 0 || !parts.some((p) => p.faces?.keys?.length)) return undefined
+  const after: Flat[][] = []
+  for (let i = 0; i <= last; i++) {
+    const kept = cache.get(keys[i]!)
+    if (!kept) return undefined
+    after.push(kept)
+  }
+  const all = madeBy(steps.slice(0, last + 1), after)
+  const out: Record<number, string> = {}
+  for (const p of parts) for (const k of p.faces?.keys ?? []) {
+    const id = all.get(k)
+    if (id) out[k] = id
+  }
+  return out
 }

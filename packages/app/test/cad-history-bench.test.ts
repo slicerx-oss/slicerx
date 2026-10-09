@@ -44,7 +44,7 @@ describe.skipIf(!on)('history replay time', () => {
   it('replays 5, 20 and 50 steps', async () => {
     const g = await wasmGeom()
     const call: EngineCall = (op, r) => g.call(op, r)
-    const rows: string[] = ['| Steps | Triangles at the end | Full replay | Edit the first step | Edit the middle step | Edit the last step |', '| --- | --- | --- | --- | --- | --- |']
+    const rows: string[] = ['| Steps | Triangles at the end | Full replay | Edit the first step | Edit the middle step | Edit the last step | Warm replay with made by |', '| --- | --- | --- | --- | --- | --- | --- |']
     for (const n of [5, 20, 50]) {
       const h = bracket(n)
       clearReplayCache()
@@ -60,7 +60,13 @@ describe.skipIf(!on)('history replay time', () => {
       const first = await edit(0)
       const middle = await edit(Math.floor(n / 2))
       const last = await edit(n - 1)
-      rows.push(`| ${n} | ${r.parts[0]!.indices.length / 3} | ${full.toFixed(0)} ms | ${first.toFixed(0)} ms | ${middle.toFixed(0)} ms | ${last.toFixed(0)} ms |`)
+      // what the selection pill's crumb costs: a replay that finds every step kept and works out who made each face
+      const t = performance.now()
+      const warm = await replayHistory(call, { history: h })
+      const made = performance.now() - t
+      expect(warm.madeBy).toBeDefined()
+      expect(made / n).toBeLessThan(2)
+      rows.push(`| ${n} | ${r.parts[0]!.indices.length / 3} | ${full.toFixed(0)} ms | ${first.toFixed(0)} ms | ${middle.toFixed(0)} ms | ${last.toFixed(0)} ms | ${made.toFixed(1)} ms |`)
     }
     console.log(rows.join('\n'))
   }, 600_000)
