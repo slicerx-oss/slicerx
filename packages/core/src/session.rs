@@ -6321,7 +6321,7 @@ impl SliceSession {
                         {
                             return o.clone();
                         }
-                        let o = crate::overhang::Overhang::new(b, w, cfg);
+                        let o = crate::overhang::Overhang::new(b, w, layer_height, cfg);
                         overhangs.push((w, cfg, o.clone()));
                         o
                     }),
@@ -7716,7 +7716,7 @@ fn create_polyholes(center: (f64, f64), radius: f64, nozzle: f64, multiple: bool
 }
 
 /// `bridge_line_width`: the width bridge strands print at, mm, when set (a percent is of the nozzle).
-fn bridge_line_width(cfg: &PrintConfig) -> Option<f64> {
+pub(crate) fn bridge_line_width(cfg: &PrintConfig) -> Option<f64> {
     // Orca's default is 100 percent of the nozzle; 0 means the feature's own width.
     match cfg.raw.get("bridge_line_width") {
         None => Some(cfg.nozzle_diameter),

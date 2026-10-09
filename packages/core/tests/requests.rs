@@ -321,8 +321,8 @@ fn overhanging_walls_are_labeled_and_slowed_by_degree() {
 
 #[test]
 fn only_completely_free_walls_are_labeled_overhang() {
-    // OrcaSlicer labels a wall an overhang when its bead hangs more than half a line width past
-    // the layer below with nothing under it: a step of one line width (0.42 mm) a layer.
+    // OrcaSlicer labels a wall an overhang when its center line lies more than half the nozzle past
+    // the layer below: a step of 0.41 mm a layer for an outer wall 0.42 mm wide.
     // Measured: 0.4 mm a layer is not labeled, 0.5 mm is.
     for (top, labeled) in [(30.0, false), (50.0, false), (60.0, true), (80.0, true)] {
         let g = text(&frustum_run(top, json!({})));
@@ -374,6 +374,55 @@ fn by_feature(g: &str) -> std::collections::HashMap<String, (f64, f64)> {
         }
     }
     out
+}
+
+#[test]
+fn walls_more_than_half_the_nozzle_past_the_layer_below_are_overhang_walls() {
+    // Orca grows the layer below by half the nozzle, not half the line, before it cuts the walls. A flare
+    // of 0.43 mm a layer puts the 0.42 mm outer wall's center line 0.22 mm past the layer below: more than
+    // half the 0.4 mm nozzle, less than half the 0.45 mm line. Orca 2.4.2 prints it as 6174 mm of overhang
+    // wall and 40 mm of outer wall (the first layer's).
+    let widths = json!({"nozzle_diameter": [0.4], "line_width": 0.45, "inner_wall_line_width": 0.45,
+        "outer_wall_line_width": 0.42});
+    let g = text(&frustum_run(53.0, widths));
+    let f = by_feature(&g);
+    let (over, outer) = (f["Overhang wall"].0, f.get("Outer wall").map_or(0.0, |o| o.0));
+    assert!(
+        over > 0.95 * (over + outer),
+        "overhang wall {over} mm, outer wall {outer} mm"
+    );
+}
+
+#[test]
+fn overhang_walls_print_with_the_bridge_flow() {
+    // Orca's overhang flow is the bridge flow of an inner wall (`bridging_flow(frPerimeter)`): a flat bead of
+    // the bridge line width at `bridge_flow`, or with `thick_bridges` a round thread of it.
+    let run = |extra: Value| {
+        let mut c = json!({"bridge_line_width": "100%"});
+        c.as_object_mut()
+            .unwrap()
+            .extend(extra.as_object().unwrap().clone());
+        let f = by_feature(&text(&frustum_run(60.0, c)));
+        let (path, fil) = f["Overhang wall"];
+        fil / path
+    };
+    let (full, less) = (run(json!({"bridge_flow": 1.0})), run(json!({"bridge_flow": 0.8})));
+    assert!(
+        (less / full - 0.8).abs() < 0.01,
+        "{less} against {full} filament per mm"
+    );
+    // A flat 0.4 mm bead 0.2 mm high, against 1.75 mm filament.
+    let area = 0.2 * (0.4 - 0.2 * (1.0 - std::f64::consts::FRAC_PI_4));
+    let filament = std::f64::consts::PI * 1.75 * 1.75 / 4.0;
+    assert!(
+        (full - area / filament).abs() < 0.01 * full,
+        "{full} filament per mm"
+    );
+    let thick = run(json!({"bridge_flow": 1.0, "thick_bridges": true}));
+    assert!(
+        (thick - std::f64::consts::PI * 0.04 / filament).abs() < 0.01 * thick,
+        "{thick} filament per mm"
+    );
 }
 
 #[test]
