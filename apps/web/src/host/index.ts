@@ -4,7 +4,6 @@
 // Optional features are compiled in by SX_FEATURES; each import sits behind
 // its constant so a build without it carries none of its code.
 import type { ApprovalHost, ApprovalVerifier, FileHost, Host, LlmTransport, SecretsHost, SlicerHost, ThemesHost } from '@slicerx/contracts'
-import { createWebSlicer } from '@slicerx/slicer'
 import { editionFromBuild, SLICERX_SOURCE, sourceUrl } from '@slicerx/edition-config'
 import { createWebFiles } from './files'
 
@@ -31,8 +30,13 @@ const noLlm: LlmTransport = {
   },
 }
 
-/** The WASM worker pool, or the synthetic slicer when the WASM build is missing (a dev tree before `sx-wasm` is built). */
+/**
+ * The WASM worker pool, or the synthetic slicer when the WASM build is missing (a dev tree before `sx-wasm` is built).
+ * The pool's code loads beside the startup shell, not in it: it is needed once the host is made, with the engine module
+ * it compiles anyway.
+ */
 async function slicer(): Promise<{ host: SlicerHost; wasm: boolean }> {
+  const { createWebSlicer } = await import('@slicerx/slicer')
   try {
     return { host: await createWebSlicer(), wasm: true }
   } catch (e) {
