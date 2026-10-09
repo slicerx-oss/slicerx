@@ -4,6 +4,8 @@ import { defineConfig } from '@playwright/test'
 
 // SX_E2E_PORT serves the app on another port, for a second run on the same machine.
 const port = Number(process.env['SX_E2E_PORT'] ?? 4317)
+// SX_E2E_GPU=1 runs the installed Chrome with hardware WebGL, on a machine with a GPU (the project's GPU runner).
+const gpu = process.env['SX_E2E_GPU'] === '1'
 
 export default defineConfig({
   testDir: 'e2e',
@@ -18,8 +20,9 @@ export default defineConfig({
   expect: { timeout: 15_000 },
   use: {
     baseURL: `http://127.0.0.1:${port}/studio/`,
-    // Software WebGL so the viewport runs on machines and CI runners without a GPU.
-    launchOptions: { args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] },
+    // Software WebGL so the viewport runs on machines and CI runners without a GPU, unless SX_E2E_GPU asks for the GPU.
+    ...(gpu ? { channel: 'chrome' } : {}),
+    launchOptions: { args: gpu ? ['--ignore-gpu-blocklist'] : ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] },
   },
   projects: [
     { name: 'desktop', use: { browserName: 'chromium', viewport: { width: 1440, height: 900 } } },
