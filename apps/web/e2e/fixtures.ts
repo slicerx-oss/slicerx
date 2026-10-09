@@ -32,15 +32,20 @@ export const test = base.extend<object, { graphics: void }>({
   // The browser starts its graphics process with the first WebGL context, and drops it when the last page using it
   // closes. On a machine with software graphics that start can take over a minute, so a test that opened the first
   // page paid for it. One page with a live context stays open for the worker's run: the start is paid once, here,
-  // before the first test, and not counted in any test's time.
+  // before the first test, and not counted in any test's time. On the GPU (SX_E2E_GPU=1) the workers start theirs 2 s
+  // apart, since several graphics processes starting at once can fail, and each worker logs the renderer it got.
   graphics: [
-    async ({ browser }, use) => {
+    async ({ browser }, use, worker) => {
+      const gpu = process.env['SX_E2E_GPU'] === '1'
+      if (gpu) await new Promise((r) => setTimeout(r, worker.parallelIndex * 2000))
       const holder = await browser.newPage()
-      await holder.evaluate(() => {
+      const renderer = await holder.evaluate(() => {
         const gl = document.createElement('canvas').getContext('webgl2')
         ;(window as unknown as { __holdGl: unknown }).__holdGl = gl
-        return gl !== null
+        const info = gl?.getExtension('WEBGL_debug_renderer_info')
+        return gl === null ? 'none' : String(info ? gl.getParameter(info.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER))
       })
+      if (gpu) console.log(`worker ${worker.parallelIndex}: WebGL2 renderer ${renderer}`)
       await use()
       await holder.close()
     },
