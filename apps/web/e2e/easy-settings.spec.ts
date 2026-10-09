@@ -84,8 +84,10 @@ test('shots: fresh estimate, Updating, Custom and no slice, light and dark', asy
   const dir = process.env['SX_SHOTS_DIR'] ?? info.outputPath('shots')
   const width = page.viewportSize()?.width ?? 0
   const sx = (patch: unknown) => page.evaluate((p) => (window as unknown as { __sx: Sx }).__sx.setState(p), patch)
+  // Centered, not just scrolled into view: the sticky Estimate footer covers the bottom of the sidebar.
+  const center = () => page.getByRole('radiogroup', { name: 'Goal' }).evaluate((el) => el.scrollIntoView({ block: 'center' }))
   const shoot = async (name: string) => {
-    await page.getByRole('radiogroup', { name: 'Goal' }).scrollIntoViewIfNeeded()
+    await center()
     // Let a tooltip or transition settle so the shot shows the state, not the change.
     await page.mouse.move(0, 0)
     await page.waitForTimeout(400)
@@ -105,7 +107,7 @@ test('shots: fresh estimate, Updating, Custom and no slice, light and dark', asy
     await expect(estimate(page)).toHaveText('Updating')
     await shoot(`updating-${scheme}`)
     await sx({ goal: 'custom', slice: { ...s, stale: false } })
-    await page.getByRole('radiogroup', { name: 'Goal' }).scrollIntoViewIfNeeded()
+    await center()
     await expect(page.locator('.goal-custom')).toBeVisible()
     await page.locator('.goal-custom').hover()
     await page.waitForTimeout(600)
