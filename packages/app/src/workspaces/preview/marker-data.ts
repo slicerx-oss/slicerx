@@ -5,7 +5,7 @@
 import type { Host, PreviewBuffers } from '@slicerx/contracts'
 import { layerOfSegment, segmentOfLine } from './gcode-lines'
 import { scanMarks, type GcodeMark, type GcodeMarks } from './gcode-parse'
-import { currentText } from './gcode-source'
+import { holdText } from './gcode-source'
 
 export type MarkerPositions = Record<keyof GcodeMarks, Float32Array>
 
@@ -42,8 +42,9 @@ export function markerPositions(host: Host, p: PreviewBuffers): Promise<MarkerPo
   const hit = cache.get(p)
   if (hit) return hit
   const empty = { wipes: new Float32Array(0), toolChanges: new Float32Array(0), pauses: new Float32Array(0) }
-  const text = currentText(host)
-  const out = text ? text.then((ix) => scanMarks(ix)).then((marks) => positionsOf(p, marks)) : Promise.resolve(empty)
+  const hold = holdText(host)
+  const out = hold.source ? hold.source.then((src) => scanMarks(src)).then((marks) => positionsOf(p, marks)) : Promise.resolve(empty)
+  void out.then(hold.release, hold.release)
   cache.set(p, out)
   out.catch(() => cache.delete(p))
   return out

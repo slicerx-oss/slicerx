@@ -244,6 +244,64 @@ pub async fn get_gcode(id: u32, state: State<'_, Slicer>) -> Result<Response, St
         .ok_or_else(|| format!("unknown slice {id}"))
 }
 
+/// Where each line of a slice's G-code starts, as little-endian u32 byte offsets, then one past the end. The G-code
+/// stays here: the page's line view reads the lines it shows with `get_gcode_bytes`.
+#[tauri::command]
+pub async fn get_gcode_line_starts(id: u32, state: State<'_, Slicer>) -> Result<Response, String> {
+    state.gcode_line_starts(id).map(Response::new)
+}
+
+/// Bytes `[start, end)` of a slice's G-code, clamped to its length.
+#[tauri::command]
+pub async fn get_gcode_bytes(
+    id: u32,
+    start: u64,
+    end: u64,
+    state: State<'_, Slicer>,
+) -> Result<Response, String> {
+    state.gcode_bytes(id, start, end).map(Response::new)
+}
+
+impl Slicer {
+    /// The line starts of a result this map holds; an unknown id is an error. The page names a result by its id
+    /// only: no path or other source reaches here.
+    fn gcode_line_starts(&self, id: u32) -> Result<Vec<u8>, String> {
+        let results = lock(&self.results);
+        let o = results.get(&id).ok_or_else(|| format!("unknown slice {id}"))?;
+        Ok(line_starts(&o.gcode))
+    }
+
+    /// Bytes `[start, end)` of a result this map holds, clamped to its G-code: a range past the end is cut there,
+    /// and one that ends before it starts is empty.
+    fn gcode_bytes(&self, id: u32, start: u64, end: u64) -> Result<Vec<u8>, String> {
+        let results = lock(&self.results);
+        let o = results.get(&id).ok_or_else(|| format!("unknown slice {id}"))?;
+        let len = o.gcode.len();
+        let a = usize::try_from(start).unwrap_or(len).min(len);
+        let b = usize::try_from(end).unwrap_or(len).clamp(a, len);
+        Ok(o.gcode[a..b].to_vec())
+    }
+}
+
+/// Line starts of `text` as little-endian u32s: 0, the byte after each line break, then the length, with no empty
+/// last line after a final break. An empty text has the one start 0.
+fn line_starts(text: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(text.len() / 6 + 8);
+    out.extend_from_slice(&0u32.to_le_bytes());
+    if text.is_empty() {
+        return out;
+    }
+    for (i, b) in text.iter().enumerate() {
+        if *b == b'\n' {
+            out.extend_from_slice(&u32::try_from(i + 1).unwrap_or(u32::MAX).to_le_bytes());
+        }
+    }
+    if text.last() != Some(&b'\n') {
+        out.extend_from_slice(&u32::try_from(text.len()).unwrap_or(u32::MAX).to_le_bytes());
+    }
+    out
+}
+
 /// Drops a mesh or a slice result.
 #[tauri::command]
 pub fn release(id: u32, state: State<'_, Slicer>) {
@@ -254,6 +312,44 @@ pub fn release(id: u32, state: State<'_, Slicer>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn starts(text: &[u8]) -> Vec<u32> {
+        line_starts(text)
+            .chunks(4)
+            .map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+            .collect()
+    }
+
+    #[test]
+    fn gcode_reads_take_only_a_known_result_and_clamp_the_range() {
+        let state = Slicer::default();
+        lock(&state.results).insert(
+            7,
+            Output {
+                gcode: b"G1\nG2\n".to_vec(),
+                sxpv: Vec::new(),
+            },
+        );
+        assert!(state.gcode_line_starts(8).is_err());
+        assert!(state.gcode_bytes(8, 0, 1).is_err());
+        assert_eq!(state.gcode_line_starts(7).unwrap().len(), 3 * 4);
+        assert_eq!(state.gcode_bytes(7, 3, 6).unwrap(), b"G2\n");
+        assert_eq!(state.gcode_bytes(7, 3, 600).unwrap(), b"G2\n");
+        assert_eq!(state.gcode_bytes(7, 600, 900).unwrap(), b"");
+        assert_eq!(state.gcode_bytes(7, 5, 2).unwrap(), b"");
+        assert_eq!(state.gcode_bytes(7, 0, u64::MAX).unwrap(), b"G1\nG2\n");
+        // Released, it is gone.
+        lock(&state.results).remove(&7);
+        assert!(state.gcode_bytes(7, 0, 1).is_err());
+    }
+
+    #[test]
+    fn line_starts_end_past_the_last_line() {
+        assert_eq!(starts(b""), vec![0]);
+        assert_eq!(starts(b"G1\nG2\n"), vec![0, 3, 6]);
+        assert_eq!(starts(b"G1\nG2"), vec![0, 3, 5]);
+        assert_eq!(starts(b"\n\nM1"), vec![0, 1, 2, 4]);
+    }
     use sx_core::api::NoProgress;
 
     /// A binary STL of an axis-aligned box from (0,0,0) to (x,y,z).
