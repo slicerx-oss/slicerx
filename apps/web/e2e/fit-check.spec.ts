@@ -121,7 +121,7 @@ async function against(page: Page, mover: string, target: string): Promise<void>
   }, { mover, dx: b.max[0]! - a.min[0]!, dy: (b.min[1]! + b.max[1]!) / 2 - (a.min[1]! + a.max[1]!) / 2 })
 }
 
-test('parts of one object that touch never warn; a separate object that touches does, and its marker clears as it moves', async ({ page, isMobile }) => {
+test('parts of one object that touch never warn; a separate object that touches does, and its marker clears as it moves', { tag: '@gpu' }, async ({ page, isMobile }) => {
   test.skip(isMobile, 'Needs a pointer')
   test.slow()
   await open(page)
@@ -155,7 +155,7 @@ test('parts of one object that touch never warn; a separate object that touches 
   await expect.poll(() => lines(page)).toEqual([])
 })
 
-test('every starter opens alone, with no notes and no markers', async ({ page, isMobile }) => {
+test('every starter opens alone, with no notes and no markers', { tag: '@gpu' }, async ({ page, isMobile }) => {
   test.skip(isMobile, 'Runs at desktop width')
   test.slow()
   await open(page)
@@ -171,7 +171,7 @@ test('every starter opens alone, with no notes and no markers', async ({ page, i
   }
 })
 
-test('a design whose parts do not touch gets one note, Show which names them, and its marker follows a drag', async ({ page, isMobile }) => {
+test('a design whose parts do not touch gets one note, Show which names them, and its marker follows a drag', { tag: '@gpu' }, async ({ page, isMobile }) => {
   test.skip(isMobile, 'Needs a pointer')
   test.slow()
   await open(page)
@@ -237,7 +237,7 @@ test('a design whose parts do not touch gets one note, Show which names them, an
   await expect(note).toHaveCount(1)
 })
 
-test('opening a design asks once about unsaved work, and Cancel keeps the plate', async ({ page, isMobile }) => {
+test('opening a design asks once about unsaved work, and Cancel keeps the plate', { tag: '@gpu' }, async ({ page, isMobile }) => {
   test.skip(isMobile, 'Runs at desktop width')
   test.slow()
   await open(page)
@@ -258,7 +258,7 @@ test('opening a design asks once about unsaved work, and Cancel keeps the plate'
   expect(await lines(page)).toEqual([])
 })
 
-test('moving an object does not rebuild the scene, with a prime tower on the plate', async ({ page, isMobile }) => {
+test('moving an object does not rebuild the scene, with a prime tower on the plate', { tag: '@gpu' }, async ({ page, isMobile }) => {
   test.skip(isMobile, 'Needs a pointer')
   test.slow()
   await open(page)

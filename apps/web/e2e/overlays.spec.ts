@@ -99,7 +99,7 @@ async function clearOfControls(page: Page, toast: Box): Promise<void> {
   expect(hits).toEqual([])
 }
 
-test('a toast sits above the plate bar, over the viewport, on no control', async ({ page, isMobile }) => {
+test('a toast sits above the plate bar, over the viewport, on no control', { tag: '@gpu' }, async ({ page, isMobile }) => {
   await open(page)
   await openProject(page)
   const toast = await postToast(page, 'Saved the plate.')
@@ -127,7 +127,7 @@ test('a toast sits above the plate bar, over the viewport, on no control', async
   }
 })
 
-test('with the toolpaths showing, a toast clears the playback panel, the layer slider and the view switch', async ({ page }) => {
+test('with the toolpaths showing, a toast clears the playback panel, the layer slider and the view switch', { tag: '@gpu' }, async ({ page }) => {
   test.slow()
   await open(page)
   await openProject(page)
@@ -138,7 +138,7 @@ test('with the toolpaths showing, a toast clears the playback panel, the layer s
   await clearOfControls(page, await postToast(page, 'Saved the plate.'))
 })
 
-test('away from the plate tab, toasts keep their place at the window bottom', async ({ page }) => {
+test('away from the plate tab, toasts keep their place at the window bottom', { tag: '@gpu' }, async ({ page }) => {
   await open(page)
   await page.evaluate(() => (window as unknown as { __sx: Sx }).__sx.setState({ workspace: 'printers' }))
   await expect(page.locator('.vp')).toHaveCount(0)
@@ -148,7 +148,7 @@ test('away from the plate tab, toasts keep their place at the window bottom', as
 })
 
 // Screenshots for review: SX_SHOTS=1, saved to SX_SHOTS_DIR (test-results/shots by default).
-test('shots: a toast over the plate bar and over the playback bar, light and dark', async ({ page }, info) => {
+test('shots: a toast over the plate bar and over the playback bar, light and dark', { tag: '@gpu' }, async ({ page }, info) => {
   test.skip(!process.env['SX_SHOTS'], 'SX_SHOTS=1 only')
   test.slow()
   const dir = process.env['SX_SHOTS_DIR'] ?? info.outputPath('shots')

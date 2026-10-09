@@ -90,7 +90,7 @@ function cube(): Buffer {
   return Buffer.from(`solid cube\n${facets}\nendsolid cube\n`)
 }
 
-test.describe('no flicker', () => {
+test.describe('no flicker', { tag: '@gpu' }, () => {
   test.skip(({ isMobile }) => isMobile, 'Runs at desktop width')
   test.slow()
 
