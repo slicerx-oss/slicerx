@@ -24,8 +24,8 @@ export const REVEAL_SETTLED = { trace: 1, gridMs: 1e9, tint: 0 } as const
 export const REVEAL_HIDDEN = { trace: -1, gridMs: -1, tint: 0 } as const
 
 const BLOOM_MS = 380
-const SPARK_MS = 240
-const SPARKS = 9
+const SPARK_MS = 300
+const SPARKS = 10
 const TAIL = 0.14
 const TAIL_POINTS = 14
 const AMP = 2.2
@@ -199,34 +199,38 @@ export class PlateReveal {
         // The sparks fly up and out from the meeting point, away from the plate.
         for (let i = 0; i < SPARKS; i++) {
           this.sparks[i * 2] = Math.PI + Math.random() * Math.PI
-          this.sparks[i * 2 + 1] = (10 + Math.random() * 14) * dpr
+          this.sparks[i * 2 + 1] = (26 + Math.random() * 30) * dpr
         }
       }
       const t = ms - this.hitAt
       const k = t / BLOOM_MS
       if (k < 1) {
         const bloom = this.bloomSprite(accent)
-        const r = (18 + 70 * k) * dpr
-        ctx.globalAlpha = 0.32 * (1 - k)
+        const r = (36 + 140 * k) * dpr
+        ctx.globalAlpha = 0.9 * (1 - k) * (1 - k)
         ctx.drawImage(bloom, this.hitX - r, this.hitY - r, r * 2, r * 2)
       }
       const ks = t / SPARK_MS
       if (ks < 1) {
-        ctx.strokeStyle = accent
-        ctx.lineWidth = CORE * dpr
-        ctx.globalAlpha = 0.85 * (1 - ks)
-        ctx.beginPath()
-        for (let i = 0; i < SPARKS; i++) {
-          const a = this.sparks[i * 2]!
-          const l = this.sparks[i * 2 + 1]!
-          const d0 = l * ks
-          const d1 = d0 + l * 0.5 * (1 - ks)
-          const c = Math.cos(a)
-          const sn = Math.sin(a)
-          ctx.moveTo(this.hitX + c * d0, this.hitY + sn * d0)
-          ctx.lineTo(this.hitX + c * d1, this.hitY + sn * d1)
+        // Bright specks flying out and fading: an accent streak with a white core, so they read on a pale plate too.
+        const fade = 1 - ks
+        for (let pass = 0; pass < 2; pass++) {
+          ctx.strokeStyle = pass === 0 ? accent : '#ffffff'
+          ctx.lineWidth = (pass === 0 ? 2.6 : 1.2) * dpr
+          ctx.globalAlpha = pass === 0 ? fade : 0.9 * fade
+          ctx.beginPath()
+          for (let i = 0; i < SPARKS; i++) {
+            const a = this.sparks[i * 2]!
+            const l = this.sparks[i * 2 + 1]!
+            const d1 = l * (1 - (1 - ks) * (1 - ks))
+            const d0 = Math.max(0, d1 - 6 * dpr * fade - 2 * dpr)
+            const c = Math.cos(a)
+            const sn = Math.sin(a)
+            ctx.moveTo(this.hitX + c * d0, this.hitY + sn * d0)
+            ctx.lineTo(this.hitX + c * d1, this.hitY + sn * d1)
+          }
+          ctx.stroke()
         }
-        ctx.stroke()
       }
     }
     ctx.globalAlpha = 1
@@ -318,10 +322,16 @@ export class PlateReveal {
       // as a dull smudge on a light theme.
       g.globalCompositeOperation = 'source-over'
       g.clearRect(0, 0, 128, 128)
-      g.fillStyle = accent
+      // A near white core falling off to the accent.
+      const color = g.createRadialGradient(64, 64, 0, 64, 64, 64)
+      color.addColorStop(0, '#ffffff')
+      color.addColorStop(0.22, accent)
+      color.addColorStop(1, accent)
+      g.fillStyle = color
       g.fillRect(0, 0, 128, 128)
       const grad = g.createRadialGradient(64, 64, 0, 64, 64, 64)
       grad.addColorStop(0, 'rgba(255,255,255,1)')
+      grad.addColorStop(0.35, 'rgba(255,255,255,0.6)')
       grad.addColorStop(1, 'rgba(255,255,255,0)')
       g.globalCompositeOperation = 'destination-in'
       g.fillStyle = grad
