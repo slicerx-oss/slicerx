@@ -154,7 +154,34 @@ uniform vec3 bgBot;
 uniform vec3 bgGlow;
 uniform vec3 edgeVis;
 uniform vec3 edgeHid;
+uniform float silOn;
+uniform vec3 silColor;
+uniform sampler2D tDepth;
+uniform vec2 nearFar;
 varying vec2 vUv;
+
+// Model's silhouette: where a solid model meets what is behind it. Coverage comes from the color's alpha, which only
+// opaque geometry fills, so the ground, its grid and the sky never outline; depth jumps inside the model add the inner
+// contours.
+float covered(vec2 uv) { return step(0.99, texture2D(tColor, uv).a); }
+float viewZ(vec2 uv) {
+  float z = texture2D(tDepth, uv).x * 2.0 - 1.0;
+  return 2.0 * nearFar.x * nearFar.y / (nearFar.y + nearFar.x - z * (nearFar.y - nearFar.x));
+}
+float silhouette(vec2 uv) {
+  float c0 = covered(uv);
+  float z0 = viewZ(uv);
+  float e = 0.0;
+  for (int i = 0; i < 8; i++) {
+    float an = float(i) * 0.7853982;
+    vec2 d = vec2(cos(an), sin(an)) * texel * edgePx * 0.75;
+    float c = covered(uv + d);
+    // the outline sits on the model's side, so it reads as the model's own edge
+    if (c0 > 0.5 && c < 0.5) e = 1.0;
+    else if (c0 > 0.5 && abs(viewZ(uv + d) - z0) > 0.035 * z0 + 0.5) e = max(e, 0.85);
+  }
+  return e;
+}
 
 // Khronos PBR Neutral: filament colors stay saturated instead of washing toward white.
 vec3 neutral(vec3 color) {
@@ -187,6 +214,7 @@ void main() {
   vec3 bg = mix(bgBot, bgTop, smoothstep(0.0, 1.0, vUv.y));
   bg = mix(bg, bgGlow, (1.0 - smoothstep(0.0, 0.85, length(q))) * 0.8);
   vec3 lin = col + pow(bg, vec3(2.2)) * (1.0 - a);
+  if (silOn > 0.5) lin = mix(lin, silColor, silhouette(tuv) * 0.95);
   if (outlineOn > 0.5) {
     float cov = texture2D(tMask, tuv).r;
     float mx = 0.0, vis = 0.0;
@@ -223,6 +251,8 @@ export interface FrameOptions {
   /** Draw without MSAA (the camera is moving; FXAA still runs). Still frames use MSAA 4x. */
   fast: boolean
   outline: readonly Object3D[]
+  /** Model's CAD look: a near-black silhouette where solid models meet what is behind them. */
+  silhouette?: boolean
   /** Increments per frame so AO noise rotates; still frames average it away. */
   frameIndex: number
 }
@@ -252,6 +282,12 @@ export class Pipeline {
   exposure = 1
 
   /** Background gradient and selection outline colors. */
+  /** The silhouette's color, a CSS hex (linear in the shader). */
+  setSilhouetteColor(hex: string): void {
+    const u = this.gradeMat.uniforms.silColor
+    if (u) u.value = linearColor(hex)
+  }
+
   setSceneColors(scene: SceneColors): void {
     const u = this.gradeMat.uniforms
     if (u.bgTop) u.bgTop.value = srgb01(scene.bgTop)
@@ -339,6 +375,10 @@ export class Pipeline {
         bgGlow: { value: [gr, gg, gb] },
         edgeVis: { value: linearColor(SCENE.selection) },
         edgeHid: { value: linearColor(SCENE.selectionHidden) },
+        silOn: { value: 0 },
+        silColor: { value: new Color(0, 0, 0) },
+        tDepth: { value: depthTexture },
+        nearFar: { value: new Vector2(1, 1000) },
       },
       vertexShader: QUAD_VS,
       fragmentShader: GRADE_FS,
@@ -427,6 +467,10 @@ export class Pipeline {
     if (this.aoMat.uniforms.tDepth) this.aoMat.uniforms.tDepth.value = target.depthTexture
     if (this.maskMat.uniforms.tDepth) this.maskMat.uniforms.tDepth.value = target.depthTexture
     if (this.gradeMat.uniforms.tColor) this.gradeMat.uniforms.tColor.value = target.texture
+    const gu = this.gradeMat.uniforms
+    if (gu.tDepth) gu.tDepth.value = target.depthTexture
+    if (gu.silOn) gu.silOn.value = opts.silhouette ? 1 : 0
+    if (gu.nearFar) (gu.nearFar.value as Vector2).set(camera.near, camera.far)
     r.setRenderTarget(target)
     r.setClearColor(0x000000, 0)
     r.clear(true, true, true)
