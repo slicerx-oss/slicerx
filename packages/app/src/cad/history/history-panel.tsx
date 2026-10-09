@@ -15,6 +15,7 @@ import { bindFor } from '../values'
 import { mainNumber, withNumber } from './model'
 import { beginEdit, cancelEdit, deleteStep, renameStep, moveStep, setParams, setSuppressed, toolFor, viewStep } from './ops'
 import { StepRow } from './step-row'
+import { useMadeBy } from '../../workspaces/design/use-made-by'
 import '../cad.css'
 
 const text = (e: unknown) => (e instanceof Error ? e.message : String(e))
@@ -87,6 +88,8 @@ export function HistorySteps({ objectId, tree, only }: { objectId: string; tree?
   const viewingIndex = useApp((s) => (s.historyEdit?.objectId === objectId && s.historyEdit.view ? s.historyEdit.index : null))
   const [busy, setBusy] = useState<number | null>(null)
   const [open, setOpen] = useState<number | null>(null)
+  const made = useMadeBy()
+  const madeAt = tree && made?.objectId === objectId ? made.index : -1
   const h = entry?.history
   if (!entry || !h || (!h.steps.length && !h.ended)) return null
 
@@ -119,6 +122,8 @@ export function HistorySteps({ objectId, tree, only }: { objectId: string; tree?
             open={open === i}
             last={i === h.steps.length - 1}
             viewing={viewingIndex === i}
+            madeBy={madeAt === i}
+            usedBy={tree && made?.objectId === objectId && made.used.includes(i)}
             later={viewingIndex !== null && i > viewingIndex}
             onView={() => void run(i, () => (viewingIndex === i || i === h.steps.length - 1 ? Promise.resolve(cancelEdit()) : viewStep(host.slicer, objectId, i)))}
             onMove={(to) => void run(i, () => moveStep(host.slicer, objectId, i, to))}

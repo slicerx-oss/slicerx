@@ -109,7 +109,7 @@ describe('the Design tree', () => {
     const menu = document.querySelector('[data-testid="model-ctx"]')!
     expect(menu.getAttribute('data-target')).toBe('step')
     expect([...menu.querySelectorAll('.sx-menu-icon')].map((b) => b.getAttribute('aria-label'))).toEqual(['Edit', 'Roll to here', 'Turn off', 'Delete'])
-    expect([...menu.querySelectorAll('.sx-menu-item:not(.sx-menu-icon)')].map((b) => b.textContent?.replace(/[⌥↑↓]|Alt\+(Up|Down)|F2/g, '').trim())).toEqual(['Rename', 'Move earlier', 'Move later', 'Show the sketch'])
+    expect([...menu.querySelectorAll('.sx-menu-item:not(.sx-menu-icon)')].map((b) => b.textContent?.replace(/[⌥↑↓]|Alt\+(Up|Down)|F2/g, '').trim())).toEqual(['Rename', 'Move earlier', 'Move later', 'Select its faces', 'Show the sketch'])
   })
 
   it('renames a step from F2, and gives it its own name back when cleared', () => {

@@ -282,9 +282,11 @@ Ids that tests read for their text:
 | `model-select-filter` | A pick filter button in the pill; `data-kind` is `object`, `face` or `edge`, and `aria-pressed` says whether it is on |
 | `model-select-readout` | What is picked, in words ("1 face on Box") |
 | `model-select-clear` | Clears the faces, edges and objects picked |
+| `model-select-object` | In the readout, the object the faces or edges are on: selects that object alone |
+| `model-select-made-by` | The step that made the one face picked: opens it; `data-step` is its index, or `base` for "from the original mesh" |
 | `step-sketch` | A step's sketch line in the Model tree, with its loop count; a click opens the sketch |
 | `model-tree-object` | An object row in the Model tree; `data-object-id`, and `data-kind` is `body` (has a history) or `mesh` |
-| `model-tree-step` | A step row in the Model tree; `data-object-id`, `data-index` and `data-state` (`done`, `broken`, `skipped`, `suppressed`) |
+| `model-tree-step` | A step row in the Model tree; `data-object-id`, `data-index` and `data-state` (`done`, `broken`, `skipped`, `suppressed`), and `data-made-by` on the step that made the one face picked |
 | `model-tree-more` | A step row's More button, which opens the step's menu |
 | `model-tree-filter` | The tree's filter field, opened by typing in the tree; Escape shuts it |
 | `model-tree-rollback` | The rollback row after the step the part is shown at: drag it, or Up, Down and End with focus |
@@ -296,7 +298,7 @@ Ids that tests read for their text:
 | `model-multi-size` | The size the selected objects take together |
 | `model-multi-object` | A selected object in the multi-selection; `data-object-id`; selects it alone |
 | `model-ctx` | An open Model tree menu, from a right click, a long press, Shift+F10 or More; `data-target` is `step` or `object` |
-| `model-ctx-edit`, `model-ctx-roll`, `model-ctx-suppress`, `model-ctx-rename`, `model-ctx-earlier`, `model-ctx-later`, `model-ctx-sketch`, `model-ctx-end` | A step menu's items: edit it, roll the part back to it, turn it off or on, rename, move, show its sketch, roll back to the latest |
+| `model-ctx-edit`, `model-ctx-roll`, `model-ctx-suppress`, `model-ctx-rename`, `model-ctx-earlier`, `model-ctx-later`, `model-ctx-faces`, `model-ctx-sketch`, `model-ctx-end` | A step menu's items: edit it, roll the part back to it, turn it off or on, rename, move, select the faces it made, show its sketch, roll back to the latest |
 | `model-ctx-lock`, `model-ctx-printable`, `model-ctx-split-objects`, `model-ctx-split-parts`, `model-ctx-merge`, `model-ctx-duplicate`, `model-ctx-center`, `model-ctx-drop`, `model-ctx-slice` | An object menu's items, with `model-ctx-rename`: lock, printable, split, merge, duplicate, center, drop to the bed, go to Slice |
 | `danger-model-ctx-delete` | Delete in a Model tree menu: a step's asks first, an object's removes it as the Delete key does |
 | `danger-model-confirm-delete` | Delete in the dialog that asks before a step is deleted |
