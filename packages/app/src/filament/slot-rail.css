@@ -2,7 +2,7 @@
 /* Copyright (C) 2026 The SlicerX contributors */
 /* The filament rail: rings in a row that scrolls inside the card when it overflows, never the page. */
 .slot-rail-wrap { min-width: 0; }
-.slot-rail { display: flex; gap: 14px; overflow-x: auto; overflow-y: hidden; padding: 4px 2px 6px; scrollbar-width: thin; overscroll-behavior-x: contain; }
+.slot-rail { display: flex; gap: 14px; overflow-x: auto; overflow-y: hidden; padding: 2px 2px 2px; scrollbar-width: thin; overscroll-behavior-x: contain; }
 .slot-rail-group { display: grid; gap: 4px; flex: none; }
 .slot-rail-unit { font: var(--fw-medium) var(--fs-xs) var(--f-body); color: var(--dim); }
 .slot-rail-rings { display: flex; gap: 6px; align-items: flex-start; }
@@ -24,3 +24,6 @@
 .fil-head { display: inline-flex; align-items: center; gap: 6px; }
 .fil-total { font: var(--fw-medium) var(--fs-xs) var(--f-mono); color: var(--muted); white-space: nowrap; }
 .fil-flat { display: grid; gap: 10px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line-soft); }
+/* Swap colors, opened from the Filament options menu. */
+.fil-swap-pop { min-width: 300px; padding: 10px 12px; }
+.fil-swap-pop .swap-colors { margin: 0; padding: 0; border: 0; }

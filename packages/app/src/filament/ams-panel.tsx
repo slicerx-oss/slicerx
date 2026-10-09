@@ -3,7 +3,7 @@
 // The Filament block of the Prepare sidebar: every slot with its material, brand and color, filled in
 // from the connected printer's AMS or MMU until the person changes it, plus the flush volume dialog
 // and per-plate color swaps.
-import { Block, Button, Icon, Input, LinkButton, Menu, MenuAnchor, MenuItem, Select, SwitchRow, tipAttrs } from '@slicerx/ui'
+import { Block, Button, Icon, Input, LinkButton, Menu, MenuAnchor, MenuItem, Popover, Select, SwitchRow, tipAttrs } from '@slicerx/ui'
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
 import { Swatch } from '../parts'
 import { activeMeta } from '../plate/plates'
@@ -131,6 +131,8 @@ export function AmsPanel({ maker, system }: { maker: string; system?: 'ams' | 'm
   }
   const showUnused = useApp((s) => s.showUnusedSlots)
   const [menuOpen, setMenuOpen] = useState(false)
+  // Swap colors opens from the menu, so the rail keeps its one row.
+  const [swapOpen, setSwapOpen] = useState(false)
   // The rail shows the slots in use; "Show unused slots" in the menu adds the rest. Nothing in use yet: every slot.
   const shown = showUnused || used === 0 ? slots : slots.filter((s) => s.used)
   // The printer has a filament unit but has not reported its slots yet.
@@ -139,7 +141,7 @@ export function AmsPanel({ maker, system }: { maker: string; system?: 'ams' | 'm
   const total = line ? [line.grams, line.changes].filter(Boolean).join(', ') : null
   const menu = (
     <MenuAnchor className="fil-menu">
-      <Button size="sm" variant="ghost" icon="more" aria-label="Filament options" aria-haspopup="menu" aria-expanded={menuOpen} data-testid="slice-filament-menu" tip={{ title: 'Filament options', body: 'Calibrate, flush volumes, reset to the printer, unused slots.' }} onClick={() => setMenuOpen(!menuOpen)} />
+      <Button size="sm" variant="ghost" icon="more" aria-label="Filament options" aria-haspopup="menu" aria-expanded={menuOpen} data-testid="slice-filament-menu" tip={{ title: 'Filament options', body: 'Calibrate, flush volumes, swap colors, reset to the printer, unused slots.' }} onClick={() => setMenuOpen(!menuOpen)} />
       <Menu open={menuOpen} onClose={() => setMenuOpen(false)} label="Filament options" align="end">
         <MenuItem icon="calibration" data-testid="slice-filament-calibrate" onClick={() => set({ calibrationOpen: true, calibrationSlot: null })}>
           Calibrate
@@ -154,10 +156,21 @@ export function AmsPanel({ maker, system }: { maker: string; system?: 'ams' | 'm
             Reset to printer
           </MenuItem>
         ) : null}
+        {used >= 2 ? (
+          <MenuItem icon="color-change" data-testid="slice-filament-swap" onClick={() => {
+            setMenuOpen(false)
+            setSwapOpen(true)
+          }}>
+            Swap colors
+          </MenuItem>
+        ) : null}
         <MenuItem checked={showUnused} onClick={() => set({ showUnusedSlots: !showUnused })}>
           Show unused slots
         </MenuItem>
       </Menu>
+      <Popover open={swapOpen} onClose={() => setSwapOpen(false)} label="Swap colors" align="end" className="fil-swap-pop">
+        <SwapColors slots={slots} />
+      </Popover>
     </MenuAnchor>
   )
   return (
@@ -187,7 +200,6 @@ export function AmsPanel({ maker, system }: { maker: string; system?: 'ams' | 'm
       <NozzleRows slots={slots} />
       {advanced && (used >= 2) ? (
         <div className="fil-flat">
-          <SwapColors slots={slots} />
           <TowerRow />
         </div>
       ) : null}

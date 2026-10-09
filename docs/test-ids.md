@@ -91,6 +91,7 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | `slice-filament-calibrate` | Calibrate, in that menu |
 | `slice-filament-flush` | Flush volumes, in that menu (two filaments or more) |
 | `slice-filament-reset` | Reset to printer, in that menu (when a slot was edited) |
+| `slice-filament-swap` | Swap colors, in that menu (two filaments or more); opens the swap in a popover |
 | `slice-filament-use-printer` | Use printer's filament, for a slot that differs from what the printer holds |
 | `slice-goal-<tier>` | A Goal tile in Print settings: `slice-goal-draft`, `slice-goal-standard`, `slice-goal-fine`, `slice-goal-strong`; the picked tile's tooltip gives about how long and how much from the last slice, or "Updating the estimate." |
 | `slice-estimate` | The Slice sidebar footer: the estimate line over the main action; `data-stale` while it updates |
