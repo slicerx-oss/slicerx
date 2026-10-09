@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// Design's shelf and Slice's Tools menu read one list. The shelf groups it as Create, Modify, Fasten and Inspect;
-// the menu keeps its order. A modeling tool opens Design from anywhere; Cut, Measure, Array and the mesh tools do not.
+// Model's shelf and Slice's Tools menu read one list. The shelf groups it as Create, Shape, Fasten and Mesh, with
+// Measure and Values at the end, and offers the tools for the pick in its next slot; the menu keeps its order. A modeling tool opens Design from anywhere; Cut, Measure, Array and the mesh tools do not.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { NEUTRAL, setCurrentEdition } from '../src/edition'
 import { setGeomProvider, type GeomProvider } from '../src/geom/client'
@@ -9,7 +9,7 @@ import { fullEngine, resetFullEngine, warmFullEngine } from '../src/geom/full-en
 import { engineModules } from '../src/geom/modules'
 import { get, set } from '../src/state/store'
 import { openTool } from '../src/workspaces/design/open-tool'
-import { availableTools, opensDesign, SHELF_GROUPS, shelfGroup, SHELF_TOOLS } from '../src/workspaces/design/shelf-tools'
+import { availableTools, nextTools, opensDesign, SHELF_GROUPS, shelfGroup, SHELF_TOOLS } from '../src/workspaces/design/shelf-tools'
 
 const NO_CAD = { ...NEUTRAL, features: { ...NEUTRAL.features, cad: false } }
 const names = (group: (typeof SHELF_GROUPS)[number]['id'], modeling = true, drawing = true) =>
@@ -23,18 +23,31 @@ afterEach(() => {
 })
 
 describe('the shelf', () => {
-  it('groups the tools the way the mockup does', () => {
-    expect(SHELF_GROUPS.map((g) => g.label)).toEqual(['Create', 'Modify', 'Fasten', 'Inspect'])
+  it('groups the tools as the plan does', () => {
+    expect(SHELF_GROUPS.map((g) => g.id)).toEqual(['create', 'shape', 'fasten', 'mesh', 'utility'])
     expect(names('create')).toEqual(['Sketch', 'face: SVG on a face, Shape on a face, Text on a face'])
-    expect(names('modify')).toEqual(['Push and pull', 'Fillet', 'Shell', 'Subtract', 'Cut'])
+    expect(names('shape')).toEqual(['Push and pull', 'Fillet', 'Shell', 'Subtract', 'Cut', 'Array'])
     expect(names('fasten')).toEqual(['Hole', 'Thread'])
-    expect(names('inspect')).toEqual(['Array', 'Measure', 'Values', 'mesh: Hollow, Repair mesh, Simplify mesh'])
+    expect(names('mesh')).toEqual(['mesh: Hollow, Repair mesh, Simplify mesh'])
+    expect(names('utility')).toEqual(['Measure', 'Values'])
   })
 
   it('leaves out the modeling tools in an edition without them, and the drawing tools when Settings turns them off', () => {
     expect(names('create', false)).toEqual([])
     expect(names('fasten', false)).toEqual([])
-    expect(names('modify', true, false)).toEqual(['Push and pull', 'Fillet', 'Shell', 'Cut'])
+    expect(names('shape', true, false)).toEqual(['Push and pull', 'Fillet', 'Shell', 'Cut', 'Array'])
+  })
+
+  it('offers up to three tools for the pick in the next slot, and none for no pick', () => {
+    const tools = availableTools({ modeling: true, drawing: true })
+    const ids = (pick: Parameters<typeof nextTools>[1]) => nextTools(tools, pick).map((t) => t.id)
+    expect(ids('face')).toEqual(['push', 'sketch', 'shell'])
+    expect(ids('round')).toEqual(['holefit', 'thread'])
+    expect(ids('edge')).toEqual(['fillet'])
+    expect(ids('object')).toEqual(['cut', 'array', 'holefit'])
+    expect(ids(null)).toEqual([])
+    // Without the modeling tools an object still gets Cut and Array.
+    expect(nextTools(availableTools({ modeling: false, drawing: true }), 'object').map((t) => t.id)).toEqual(['cut', 'array'])
   })
 
   it('gives every tool its own icon', () => {
