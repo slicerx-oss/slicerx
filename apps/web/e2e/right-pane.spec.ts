@@ -123,6 +123,13 @@ test('a 120-character file name stays on one line in the objects list, the plate
   for (const sel of ['[data-testid="object-name"]', '.platechip', '[data-testid="slice-machine-printer"] .printer-name']) {
     expect(await inside(sel), sel).toEqual({ oneLine: true, fits: true })
   }
+  // The plate chip stays small, so the model size keeps its place beside it on the same row.
+  const chips = await page.evaluate(() => {
+    const a = document.querySelector('.platechip')!.getBoundingClientRect()
+    const b = document.querySelector('.hud-bl .dims')!.getBoundingClientRect()
+    return { narrow: a.width <= 320.5, sameRow: Math.abs(a.top + a.height / 2 - (b.top + b.height / 2)) < 2 }
+  })
+  expect(chips).toEqual({ narrow: true, sameRow: true })
   // The export-only printer's footer action and the summary's Export name the printer without its project.
   await expect(page.getByTestId('slice-machine-printer')).toContainText('H2D 0.4')
   await expect(page.getByTestId('slice-machine-printer')).not.toContainText('CHAINSAW')
