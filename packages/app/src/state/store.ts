@@ -2,6 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 // The one client store. Server data (store listings,
 // printer status) lives in TanStack Query; this holds what the user is doing.
+import type { PickKind } from '../plate/pick-filter'
 import type { NamedValue } from '../cad/value-names'
 import type {
   ApprovalRequest,
@@ -107,6 +108,18 @@ export interface PlateEntry {
 }
 
 /** A history step open for editing: the object shows the result before it while its tool panel is open. */
+/** A face or an edge picked in Model with the pick filter: the click itself, so a tool can take it as if clicked. */
+export interface SubPick {
+  kind: 'face' | 'edge'
+  objectId: string
+  partIndex: number
+  triangle: number
+  /** The click on the part, bed coordinates (mm). */
+  point: [number, number, number]
+  /** An edge as lines in bed coordinates, for drawing it: one for a straight edge, a ring for a round one. */
+  lines?: { from: [number, number, number]; to: [number, number, number] }[]
+}
+
 export interface HistoryEdit {
   objectId: string
   /** The step's index in the object's history. */
@@ -428,6 +441,10 @@ export interface AppState {
   objectTool: 'cut' | 'hole' | 'hollow' | 'simplify' | CadTool | null
   /** A CAD history step being edited, or null. Not an edit itself: undo and autosave skip the rollback. */
   historyEdit: HistoryEdit | null
+  /** What a click picks in Model: whole objects, faces, edges (plate/pick-filter.ts). Session only. */
+  pickFilter: PickKind[]
+  /** Faces and edges picked in Model before a tool opens; the tool takes them as if clicked (cad/panel-kit.tsx). */
+  subPicks: SubPick[]
   /** The modeling tool waiting while Design is closed, shown as a chip in Slice and a dot on the Design tab. */
   parked: Parked | null
   /** A setting the command bar is sending the person to: Expert settings scroll to it, or Printer settings search for it. */
@@ -679,6 +696,8 @@ export const appStore = createStore<AppState>()(() => ({
   projectFile: null,
   objectTool: null,
   historyEdit: null,
+  pickFilter: ['object'],
+  subPicks: [],
   parked: null,
   settingFocus: null,
   bridgeStatus: { state: 'off' },
