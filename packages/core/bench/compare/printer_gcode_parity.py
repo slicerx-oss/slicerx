@@ -3,7 +3,7 @@
 # Copyright (C) 2026 The SlicerX contributors
 """Per-printer G-code parity: every printer of the settings package, sliced by SlicerX and by OrcaSlicer.
 
-    python3 printer_gcode_parity.py --sx <sx> --orca <OrcaSlicer> [--printers bambu-a1,voron-0.1] [--workdir DIR]
+    python3 printer_gcode_parity.py --sx <sx> --orca <OrcaSlicer> [--printers bambu-a1,voron-0.1] [--plates center,corner,skirt] [--workdir DIR]
 
 parity_gcode.py compares the custom G-code of each template family on one generic machine. This
 script goes one step further and runs each printer with its own machine settings (machine.json:
@@ -38,6 +38,14 @@ MOVE = re.compile(r"^G[0123]\b")
 # Lines left out unless --strict: fan speeds (each slicer applies its own cooling defaults), bare tool
 # selects, and the Klipper print statistics SlicerX writes itself when the profile has no such line.
 SOFT = re.compile(r"^(M106|M107|T\d+$|SET_PRINT_STATS_INFO)", re.I)
+# Plates each printer is sliced on. The start G-code reads the first layer's extents (first_layer_print_min, _max
+# and _size, the adaptive bed mesh bounds), so the cube also goes off center, toward the front left corner, and
+# inside a skirt. offset: mm from the bed's center; process: settings both slicers get.
+PLATES = {
+    "center": {},
+    "corner": {"offset": (-0.3, -0.3)},
+    "skirt": {"offset": (0.2, -0.1), "process": {"skirt_loops": 2, "skirt_distance": 3}},
+}
 
 
 def control_commands(path, strict=False):
@@ -137,20 +145,23 @@ def diff_commands(a, b, limit):
     return out
 
 
-def run_printer(printer_id, family, machine, sections, sx_path, orca_path, work, strict=False):
-    d = os.path.join(work, printer_id)
+def run_printer(printer_id, family, machine, sections, sx_path, orca_path, work, strict=False, plate="center"):
+    d = os.path.join(work, printer_id if plate == "center" else f"{printer_id}-{plate}")
     os.makedirs(os.path.join(d, "models"), exist_ok=True)
     stl = os.path.join(d, "models", "cube.stl")
     tris = model_lib.MODELS["cube"]()
-    # Both slicers get the cube in the middle of this printer's bed.
+    # Both slicers get the cube in the middle of this printer's bed, or moved by a share of the bed's size.
     c = bed_center(machine)
     if c:
-        dx, dy = c[0] - model_lib.BED_CENTER[0], c[1] - model_lib.BED_CENTER[1]
+        fx, fy = PLATES[plate].get("offset", (0.0, 0.0))
+        dx, dy = c[0] * (1 + 2 * fx) - model_lib.BED_CENTER[0], c[1] * (1 + 2 * fy) - model_lib.BED_CENTER[1]
         tris = [tuple((v[0] + dx, v[1] + dy, v[2]) for v in t) for t in tris]
     model_lib.write_stl(stl, tris)
     over = {**machine, **sections}
+    process = PLATES[plate].get("process", {})
     cfg = settings.sx_config()
     cfg.update(over)
+    cfg.update(process)
     cfg.update({"filament_max_volumetric_speed": ["100"], "nozzle_temperature_range_high": ["240"], "nozzle_temperature_range_low": ["190"]})
     cfg["slow_down_for_layer_cooling"] = False
     # Orca's compare process prints no skirt
@@ -158,20 +169,24 @@ def run_printer(printer_id, family, machine, sections, sx_path, orca_path, work,
     cfg_path = os.path.join(d, "sx.json")
     json.dump(cfg, open(cfg_path, "w"))
     sx_gcode = os.path.join(d, "sx.gcode")
-    r = slicers.slice_trusted(sx_path, stl, cfg, sx_gcode, bed_size(machine))
+    moved = "offset" in PLATES[plate]
+    r = slicers.slice_trusted(sx_path, stl, cfg, sx_gcode, bed_size(machine), keep=moved)
     if r.returncode != 0:
         return {"printer": printer_id, "family": family, "error": "sx: " + r.stderr.strip()[-200:]}
     o = slicers.Orca(orca_path)
     o.extra_machine = over
-    pg.prepare(o, d, {"cube": stl}, over)
+    pg.prepare(o, d, {"cube": stl}, over, process)
     job = o.job("cube", d)
+    if moved:
+        # where the file puts it, not arranged
+        job.cmd = o._cmd(stl, os.path.dirname(job.gcode), ["--debug", "1", "--arrange", "0"])
     subprocess.run(job.cmd, capture_output=True, text=True)
     if not os.path.exists(job.gcode):
         return {"printer": printer_id, "family": family, "error": "Orca produced no G-code"}
     a, b = control_commands(sx_gcode, strict), control_commands(job.gcode, strict)
     same = same_commands(a, b)
     la, lb = layers(sx_gcode), layers(job.gcode)
-    return {"printer": printer_id, "family": family, "ok": same and abs(la - lb) <= 1, "commands": [len(a), len(b)],
+    return {"printer": printer_id, "plate": plate, "family": family, "ok": same and abs(la - lb) <= 1, "commands": [len(a), len(b)],
             "layers": [la, lb], "diff": [] if same else diff_commands(a, b, 6)}
 
 
@@ -182,6 +197,7 @@ def main():
     ap.add_argument("--profiles", default=PROFILES, help="folder with gcode.json and machine.json")
     ap.add_argument("--strict", action="store_true", help="also compare fan speeds, tool selects and Klipper print statistics")
     ap.add_argument("--printers", default="")
+    ap.add_argument("--plates", default="center", help="comma list of " + ", ".join(PLATES))
     ap.add_argument("--workdir", default="printer-gcode-work")
     ap.add_argument("--out", default="printer-gcode-results.json")
     a = ap.parse_args()
@@ -199,14 +215,16 @@ def main():
         if inputs is None:
             print(f"SKIP {pid}: no machine settings or no G-code family")
             continue
-        res = run_printer(pid, *inputs, sx.path, orca.path, work, a.strict)
-        results.append(res)
-        if "error" in res:
-            print(f"ERROR {pid} ({res['family']}): {res['error']}")
-            continue
-        print(("ok   " if res["ok"] else "DIFF ") + f"{pid} ({res['family']}): {res['commands'][0]} vs {res['commands'][1]} commands, layers {res['layers'][0]} vs {res['layers'][1]}")
-        for ln in res["diff"]:
-            print(ln)
+        for plate in a.plates.split(","):
+            res = run_printer(pid, *inputs, sx.path, orca.path, work, a.strict, plate)
+            results.append(res)
+            name = pid if plate == "center" else f"{pid} on the {plate} plate"
+            if "error" in res:
+                print(f"ERROR {name} ({res['family']}): {res['error']}")
+                continue
+            print(("ok   " if res["ok"] else "DIFF ") + f"{name} ({res['family']}): {res['commands'][0]} vs {res['commands'][1]} commands, layers {res['layers'][0]} vs {res['layers'][1]}")
+            for ln in res["diff"]:
+                print(ln)
     good = sum(1 for r in results if r.get("ok"))
     print(f"{good} of {len(results)} printers produce the same command sequence")
     json.dump({"printers": results}, open(a.out, "w"), indent=1)

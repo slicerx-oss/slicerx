@@ -40,13 +40,16 @@ class Job:
         self.cmd, self.gcode, self.stdout, self.log = cmd, gcode, stdout, log
 
 
-def slice_trusted(sx_path, stl, cfg, gcode, bed=None):
+def slice_trusted(sx_path, stl, cfg, gcode, bed=None, keep=False):
     """Slices one model with `cfg` as the person's own settings, so its custom G-code is trusted (a plain
     `sx slice` treats it as untrusted and refuses commands such as M211 and M500), and writes `gcode`.
-    `bed` is (width, depth) in mm: the model is centered on that bed, as on a 256 mm one without it."""
+    `bed` is (width, depth) in mm: the model is centered on that bed, as on a 256 mm one without it. With
+    `keep` the model stays where the file puts it."""
     base = os.path.splitext(gcode)[0]
     req, out = base + "-request.json", base + "-out"
     plate = {"objects": [{"id": "o1", "name": "model", "mesh": "model"}]}
+    if keep:
+        plate["objects"][0]["transform"] = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
     if bed:
         plate["bed"] = {"widthMm": bed[0], "depthMm": bed[1], "heightMm": 250}
     _write_json(req, {"schemaVersion": 1, "meshes": {"model": os.path.abspath(stl)},
