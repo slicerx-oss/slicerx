@@ -6,7 +6,8 @@ import { Block, Field, Input, VectorField, type Axis } from '@slicerx/ui'
 import { useEffect, useRef, type ReactNode } from 'react'
 import { takePicks } from '../plate/sub-pick'
 import { cameraBus, setProbeHandler, setTool, toolStore } from '../plate/tools'
-import { set } from '../state/store'
+import { set, useApp } from '../state/store'
+import { stepName } from './history/model'
 import { typedNumber } from './value-table'
 
 /** A typed number: plain, or arithmetic over the project's named values (`wall * 2`). NaN when it does not read. */
@@ -68,8 +69,14 @@ export function Shell({ title, aside, children }: { title: string; aside?: strin
   useEffect(() => {
     document.querySelector('[data-section="cad-tool"]')?.scrollIntoView({ block: 'nearest' })
   }, [])
+  // Editing a step, the header names where: the object, then the step.
+  const crumb = useApp((s) => {
+    const e = s.historyEdit
+    const step = e && !e.view ? e.original.history?.steps[e.index] : undefined
+    return e && step ? `${e.original.name} › ${stepName(step)}` : null
+  })
   return (
-    <Block title={title} data-section="cad-tool" aside={aside} className="cad">
+    <Block title={title} data-section="cad-tool" aside={crumb ? <span data-testid="model-tool-crumb">{crumb}</span> : aside} className="cad">
       {children}
     </Block>
   )
