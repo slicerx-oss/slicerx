@@ -16,6 +16,9 @@
 .cad-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: var(--fs-md); }
 .cad-row label { color: var(--fg); }
 .cad-actions { display: flex; justify-content: flex-end; gap: 8px; padding-top: 2px; }
+/* A tool's number: the body font with even figures, the unit once beside the label. */
+.cad-num { font-variant-numeric: tabular-nums; }
+.cad-num-unit { margin-left: 2px; font-size: var(--fs-xs); color: var(--muted); }
 .cad-file { display: flex; align-items: center; height: 32px; padding: 0 10px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--ink-2); font-size: var(--fs-sm); color: var(--muted); cursor: pointer; white-space: nowrap; overflow: hidden; }
 .cad-file:hover { border-color: var(--accent); color: var(--fg); }
 .cad-file:has(:focus-visible) { outline: var(--focus-ring); outline-offset: var(--focus-offset); }

@@ -9,8 +9,10 @@ import { setWorkspace } from '../state/store'
 import { addSvgRelief, svgOptions } from './svg-import'
 import { SvgFileField } from './svg-file'
 import { closeSvgImport, openSvgImport, useSvgImportOpen } from './svg-state'
+import { typedNumber } from './value-table'
 
-const num = (v: string) => Number(v.replace(',', '.'))
+// sizes can follow named values, like a tool's fields
+const num = (v: string) => typedNumber(v.replace(',', '.'))
 const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e))
 
 function Body() {
