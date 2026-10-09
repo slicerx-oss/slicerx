@@ -167,6 +167,54 @@ pub(crate) struct LayerPaint<'a> {
     pub(crate) facets: &'a Facets,
 }
 
+/// Islands and holes of a painted layer's regions smaller than this, square units (0.01 mm2), are specks the
+/// booleans leave where colors meet; no nozzle prints them.
+pub(crate) const SPECK: u64 = 1_000_000;
+
+/// How a part's loops become areas: contour resolution, slicing mode and closing radius.
+pub(crate) type CutKey = (i64, crate::perimeters::Slicing, i32);
+/// The outlines of painted parts by part and layer, each cut once: the color regions of a layer read the
+/// outlines of the shell layers around it.
+#[derive(Default)]
+pub(crate) struct Cache {
+    /// Keyed by the layer, the part beside the contour resolution, and the closing radius beside the slicing mode:
+    /// the key and value types of the shell rule's memos, so the browser module carries one copy of the map.
+    outlines: crate::par::Memo<(i64, i64, i32), std::sync::Arc<Shapes>>,
+}
+
+impl Clone for Cache {
+    /// A copy starts empty: the entries belong to the session they were worked out for.
+    fn clone(&self) -> Self {
+        Self::default()
+    }
+}
+
+impl std::fmt::Debug for Cache {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("paint::Cache")
+    }
+}
+
+impl Cache {
+    /// The outline of part `part` on `layer`, cut as `cut` says.
+    pub(crate) fn outline(
+        &self,
+        part: usize,
+        layer: u32,
+        cut: CutKey,
+        work: impl FnOnce() -> Shapes,
+    ) -> std::sync::Arc<Shapes> {
+        let (resolution, slicing, closing) = cut;
+        let part = i64::try_from(part).unwrap_or(i64::MAX);
+        let key = (
+            i64::from(layer),
+            (resolution << 24) | part,
+            closing.saturating_mul(4).saturating_add(slicing as i32),
+        );
+        self.outlines.get_or(key, || std::sync::Arc::new(work()))
+    }
+}
+
 struct Grid {
     x0: f64,
     y0: f64,
