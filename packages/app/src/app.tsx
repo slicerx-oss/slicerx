@@ -6,7 +6,7 @@ import { AppTooltips } from './lib/tip-host'
 import { startAutoSlice } from './state/auto-slice'
 import { QueueWatcher } from './queue/watcher'
 import { ProfileFollow } from './shell/profile-follow'
-import { Frame, keymapFor, setMotionPreference, ThemeProvider, ToastProvider, type Theme } from '@slicerx/ui'
+import { Frame, keepPressedControlsInPlace, keymapFor, setMotionPreference, ThemeProvider, ToastProvider, type Theme } from '@slicerx/ui'
 import { applyType, DEFAULT_THEMES, themeForScheme, themeFromFile } from '@slicerx/ui/theme'
 import '@slicerx/ui/styles.css'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -229,6 +229,8 @@ function Shell() {
   useEffect(() => {
     performance.mark('sx-interactive')
   }, [])
+  // A pressed radio, tab, switch, checkbox, select or section header never moves: what it changes settles around it.
+  useEffect(() => keepPressedControlsInPlace(), [])
 
   const Feature = current?.component ?? null
   return (

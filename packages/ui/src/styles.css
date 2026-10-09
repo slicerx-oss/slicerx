@@ -194,8 +194,11 @@ button { cursor: pointer; }
 .sx-switch[data-tone="pink"][aria-checked="true"] { background: color-mix(in srgb, var(--pink) 28%, var(--ink-3)); border-color: color-mix(in srgb, var(--pink) 55%, transparent); }
 .sx-switch[data-tone="pink"][aria-checked="true"]::after { background: var(--pink); }
 .sx-switch:disabled { opacity: 0.6; cursor: not-allowed; }
-.sx-switchrow { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.sx-switchrow > label { font: var(--fw-medium) var(--fs-md) var(--f-body); color: var(--fg); cursor: pointer; }
+/* The switch sits level with the label's first line and the label takes the rest of the row, so a detail line that
+   changes with the switch never moves it. */
+.sx-switchrow { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.sx-switchrow > label { flex: 1; min-width: 0; font: var(--fw-medium) var(--fs-md) var(--f-body); color: var(--fg); cursor: pointer; }
+.sx-switchrow > :last-child { flex: none; }
 .sx-switchrow > label small { display: block; font-size: var(--fs-xs); color: var(--dim); font-weight: var(--fw-regular); }
 
 /* menus */
@@ -286,6 +289,11 @@ button { cursor: pointer; }
 .sx-block-h .sx-block-icon { width: 16px; height: 16px; flex: none; color: var(--accent); }
 .sx-block-h .sx-block-aside { font: var(--fw-medium) var(--fs-xs) var(--f-mono); color: var(--dim); }
 .sx-block-h > button.sx-block-toggle { all: unset; cursor: pointer; display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; }
+/* A folding section's header button spans the header, and its aside sits over the right end, so folding (which swaps
+   the aside for a summary) never changes the button's box. */
+.sx-block-h:has(> button.sx-block-toggle) { position: relative; }
+.sx-block-h:has(> button.sx-block-toggle) > button.sx-block-toggle { flex: 1 0 100%; }
+.sx-block-h:has(> button.sx-block-toggle) > .sx-block-aside { position: absolute; right: 0; top: 50%; transform: translateY(-50%); max-width: 60%; }
 .sx-block-toggle > .sx-ic { width: 15px; height: 15px; color: var(--dim); transition: transform var(--t-base) var(--ease); }
 .sx-block-toggle[aria-expanded="false"] > .sx-ic { transform: rotate(-90deg); }
 .sx-block[data-collapsed] .sx-block-h { margin-bottom: 0; }

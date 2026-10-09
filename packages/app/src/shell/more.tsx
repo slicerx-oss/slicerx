@@ -21,7 +21,7 @@ export function MoreButton({ id, changed }: { id: string; changed?: boolean }) {
   const opened = useApp((s) => s.moreOpen[id] === true)
   if (mode !== 'simple') return null
   return (
-    <LinkButton expanded={opened} aria-label={opened ? 'Show less' : changed ? 'More, changed from default' : 'More'} onClick={() => set((s) => ({ moreOpen: { ...s.moreOpen, [id]: !opened } }))} data-more={id}>
+    <LinkButton className="more-btn" expanded={opened} aria-label={opened ? 'Show less' : changed ? 'More, changed from default' : 'More'} onClick={() => set((s) => ({ moreOpen: { ...s.moreOpen, [id]: !opened } }))} data-more={id}>
       {opened ? 'Less' : 'More'}
       {changed && !opened ? <span className="more-dot" aria-hidden="true" /> : null}
     </LinkButton>
