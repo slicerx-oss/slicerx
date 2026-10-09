@@ -55,6 +55,7 @@ test('printer and filament fold to a summary line and stay folded', async ({ pag
 
 test('the mode chip in the pane title changes the mode across the app and keeps it after a reload', async ({ page }) => {
   await page.goto('./')
+  await openSheet(page)
   const chip = page.getByTestId('slice-mode-chip')
   await expect(chip).toHaveText('Advanced')
   // In the pane title, on one line with it.

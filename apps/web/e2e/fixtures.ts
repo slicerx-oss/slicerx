@@ -78,6 +78,30 @@ export function tab(page: Page, id: string): Locator {
   return page.locator(`.sx-tab[data-tab="${id}"]`)
 }
 
+/** Opens a top tab by its id. On a narrow window the tabs past Model and Slice live in More. */
+export async function goTab(page: Page, id: string): Promise<void> {
+  if (await tab(page, id).isVisible()) return tab(page, id).click()
+  await page.getByTestId('tab-overflow').click()
+  await page.getByTestId(`tab-overflow-${id}`).click()
+}
+
+/** Checks that a tab's workspace is open: its tab is current, or More is, with the tab's name as its tip. */
+export async function expectCurrentTab(page: Page, id: string, label: string): Promise<void> {
+  if (await tab(page, id).isVisible()) return expect(tab(page, id)).toHaveAttribute('aria-current', 'page')
+  const more = page.getByTestId('tab-overflow')
+  await expect(more).toHaveAttribute('aria-current', 'page')
+  await expect(more).toHaveAttribute('data-tip-title', label)
+}
+
+/** Checks a top tab's label, reading it from More when the tab is folded in there. */
+export async function expectTabLabel(page: Page, id: string, label: string): Promise<void> {
+  if (await tab(page, id).isVisible()) return expect(tab(page, id)).toContainText(label)
+  await page.getByTestId('tab-overflow').click()
+  await expect(page.getByTestId(`tab-overflow-${id}`)).toContainText(label)
+  await page.keyboard.press('Escape')
+  await expect(page.getByRole('menu', { name: 'More tabs' })).toHaveCount(0)
+}
+
 /**
  * On a phone the side panes are bottom sheets: opens the one holding `panel` (slice-sidebar, slice-summary, model-tree,
  * model-inspector) and waits until it is up. Does nothing at desktop widths, where the panes are always there.
