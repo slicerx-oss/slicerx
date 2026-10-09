@@ -54,13 +54,22 @@ test('free text in Cmd+K goes to the assistant dock', async ({ page }) => {
   await expect(page.locator('.mimir-dock')).toContainText('why is my first layer peeling')
 })
 
-test('Slice runs and shows the layers in place', async ({ page }) => {
+test('Slice runs and shows the layers in place', async ({ page, isMobile }) => {
   await open(page, 'prepare')
   await plateReady(page)
   const slices1 = await sliceCount(page)
   await page.getByRole('button', { name: 'Slice plate' }).click()
   await expect(sliced(page, slices1)).toBeVisible({ timeout: 30_000 })
   await expect(page.getByRole('group', { name: 'Layers and moves' })).toBeVisible()
+  if (isMobile) {
+    // A phone gives the toolpaths the room and drops the legend; the color choice is in Cmd+K.
+    await expect(page.getByTestId('legend-color-by')).toBeHidden()
+    await page.keyboard.press('ControlOrMeta+k')
+    await page.keyboard.type('Color toolpaths by Layer time')
+    await page.locator('.sx-palette-item', { hasText: 'Color toolpaths by Layer time' }).click()
+    await expect(page.getByTestId('legend-color-by')).toContainText('Layer time')
+    return
+  }
   await page.getByTestId('legend-color-by').click()
   await page.getByRole('menuitem', { name: 'Layer time' }).click()
   await expect(page.getByRole('button', { name: 'Color by Layer time' })).toBeVisible()
