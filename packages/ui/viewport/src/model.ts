@@ -13,6 +13,9 @@ import {
   type Material,
 } from 'three'
 import type { FilamentFinish, ViewportObject, ViewportPart } from './types'
+import { LineSegments2 } from 'three/addons/lines/LineSegments2.js'
+import { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js'
+import type { LineMaterial } from 'three/addons/lines/LineMaterial.js'
 
 const CREASE_DEG = 40
 const EDGE_DEG = 38
@@ -20,6 +23,8 @@ const EDGE_DEG = 38
 export interface PartEntry {
   mesh: Mesh
   edges: LineSegments
+  /** The same edges as screen-space quads for the CAD look, made the first time it shows them. */
+  wide?: LineSegments2
   color: string
   finish: FilamentFinish
   index: number
@@ -326,10 +331,23 @@ export function buildObject(obj: ViewportObject, material: (p: ViewportPart) => 
   return { id: obj.id, name: obj.name, group, parts }
 }
 
+/** The part's wide edges, built from its feature edges once and kept on the part. */
+export function wideEdges(p: PartEntry, material: LineMaterial): LineSegments2 {
+  if (p.wide) return p.wide
+  const g = new LineSegmentsGeometry()
+  g.setPositions(p.edges.geometry.getAttribute('position').array as Float32Array)
+  const w = new LineSegments2(g, material)
+  w.raycast = () => {}
+  p.mesh.add(w)
+  p.wide = w
+  return w
+}
+
 export function disposeObject(o: ObjectEntry): void {
   for (const p of o.parts) {
     p.mesh.geometry.dispose()
     p.edges.geometry.dispose()
+    p.wide?.geometry.dispose()
   }
   o.group.removeFromParent()
 }

@@ -8,7 +8,7 @@ import { join } from 'node:path'
 import { type FileChooser, type Page } from '@playwright/test'
 import { expect, plateReady, pnpmSync, test, viewportReady } from './fixtures'
 
-type Part = { edges: { visible: boolean }; mesh: { material: { color: { getHexString(): string } } } }
+type Part = { edges: { visible: boolean }; wide?: { visible: boolean }; mesh: { material: { color: { getHexString(): string } } } }
 type Vp = { renderMode: string; objects: Map<string, { parts: Part[] }> }
 
 const root = join(import.meta.dirname, '..', '..', '..')
@@ -48,7 +48,7 @@ const look = (page: Page) =>
   page.evaluate(() => {
     const vp = (window as unknown as { __vp: Vp }).__vp
     const parts = [...vp.objects.values()].flatMap((o) => o.parts)
-    return { mode: vp.renderMode, edges: parts.every((p) => p.edges.visible), colors: [...new Set(parts.map((p) => p.mesh.material.color.getHexString()))] }
+    return { mode: vp.renderMode, edges: parts.every((p) => p.edges.visible || p.wide?.visible === true), wide: parts.every((p) => p.wide?.visible === true), colors: [...new Set(parts.map((p) => p.mesh.material.color.getHexString()))] }
   })
 
 test.describe('Model CAD look', () => {
@@ -60,10 +60,13 @@ test.describe('Model CAD look', () => {
     await expect.poll(async () => (await look(page)).mode).toBe('cad')
     const model = await look(page)
     expect(model.edges).toBe(true)
+    // drawn wide (1.5 px), not as 1 px GL lines
+    expect(model.wide).toBe(true)
     expect(model.colors).toHaveLength(1)
     await page.locator('.sx-tab[data-mode="slice"]').click()
     await expect.poll(async () => (await look(page)).mode).not.toBe('cad')
     expect((await look(page)).colors).not.toEqual(model.colors)
+    expect((await look(page)).wide).toBe(false)
   })
 
   for (const scheme of ['light', 'dark'] as const) {

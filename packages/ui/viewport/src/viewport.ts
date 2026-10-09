@@ -53,8 +53,8 @@ import { BrimEars } from './brim'
 import { GapLines, type GapLine } from './gaps'
 import { GuideLines, type Guides } from './guides'
 import { applyInsets, CameraRig, NO_INSETS, reducedMotion, type Insets } from './camera'
-import { edgeLook, MaterialCache, setSharedBandColors, setSharedLayerTops, setSharedSceneColors, shared, sharedMaterials } from './materials'
-import { buildObject, disposeObject, type ObjectEntry } from './model'
+import { edgeLook, MaterialCache, setEdgeResolution, setSharedBandColors, setSharedLayerTops, setSharedSceneColors, shared, sharedMaterials } from './materials'
+import { buildObject, disposeObject, wideEdges, type ObjectEntry } from './model'
 import { Pipeline } from './post'
 import { Stage } from './stage'
 import { FrameProbe, probeRequested, type ProbeStats } from './probe'
@@ -714,6 +714,7 @@ class ViewportImpl implements Viewport {
     this.renderer.setPixelRatio(this.pr)
     this.renderer.setSize(w, h, false)
     this.pipeline.setSize(w, h, this.pr)
+    setEdgeResolution(w * this.pr, h * this.pr)
     // On a high density screen the first orbit starts at about half the pixels, so it is smooth from its first frame.
     // tuneMotionScale raises it while frames stay cheap; still frames are always drawn at the full size with MSAA.
     if (!this.motionSeeded) {
@@ -818,10 +819,15 @@ class ViewportImpl implements Viewport {
         p.mesh.receiveShadow = !x && !wire
         p.mesh.renderOrder = x ? 2 : 0
         const e = edgeLook(this.renderMode, this.display)
+        // the CAD look draws its edges wide; the thin lines stay for the other looks
+        const wide = e.edge === 'cad' && e.visible
         p.edges.material = e.edge === 'xray' ? sh.edgeXray : e.edge === 'cad' ? sh.edgeCad : sh.edgeDark
-        p.edges.visible = e.visible
+        p.edges.visible = e.visible && !wide
+        if (wide) wideEdges(p, sh.edgeCadWide).visible = true
+        else if (p.wide) p.wide.visible = false
       }
     }
+    this.stage.setNeutralLight(this.renderMode === 'cad')
     this.stage.setContactVisible(!x && this.mode === 'prepare')
     this.shadowDirty = true
     this.applyClip()
