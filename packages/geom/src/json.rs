@@ -50,6 +50,7 @@ const ALL_OPERATIONS: &[(&str, &str)] = &[
     ("shape.extrude", "cad"),
     ("text.mesh", "cad"),
     ("import.auto", ""),
+    ("import.selfIntersections", ""),
     ("fit.check", ""),
     ("face.push", "cad"),
     ("face.push.preview", "cad"),

@@ -679,6 +679,8 @@ export interface AutoImport {
     name: string
     parts: { name: string; slot: number; color: string | null; mesh: GeomMesh; watertight: boolean }[]
     repair: ObjectRepair
+    /** A body split from a one-part file: a later crossing check rebuilds each of its shells on its own. */
+    perShell?: boolean
   }[]
   unit: UnitSuggestion
   /** One sentence per change, for the import toast. */
@@ -695,6 +697,21 @@ export function importAuto(file: ({ base64: string } | { bytes: Uint8Array }) & 
   const { name, format, mtl } = file
   const data = 'bytes' in file ? { bytes: file.bytes } : { base64: file.base64 }
   return geom().call<AutoImport>('import.auto', { data, name, ...(format ? { format } : {}), ...(mtl !== undefined ? { mtl } : {}), auto }, signal)
+}
+
+/** A part checked for faces that cross each other: whether it does, and the rebuilt mesh when it was rebuilt. */
+export interface SelfCrossing {
+  crossing: boolean
+  mesh?: GeomMesh
+}
+
+/**
+ * Checks a part for faces that cross each other and rebuilds it when it is small enough (as the import does, which
+ * leaves it out with rebuildMaxTriangles 0, so a model shows before this runs). A mesh as typed arrays goes to the
+ * engine without JSON.
+ */
+export function selfIntersections(mesh: GeomMesh | { positions: Float32Array; indices: Uint32Array }, options: { perShell?: boolean; rebuildMaxTriangles?: number } = {}, signal?: AbortSignal) {
+  return geom().call<SelfCrossing>('import.selfIntersections', { mesh, ...options }, signal)
 }
 
 // SVG artwork
