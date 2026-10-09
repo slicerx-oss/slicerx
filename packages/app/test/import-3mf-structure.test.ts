@@ -52,3 +52,34 @@ describe('units', () => {
     expect(Math.max(...xsOf(o.parts)) - Math.min(...xsOf(o.parts))).toBeCloseTo(10, 5)
   })
 })
+
+describe('components', () => {
+  it('keeps direct and nested components, each moved by every transform above it', async () => {
+    const resources = object() + '<object id="2" type="model"><components><component objectid="1" transform="1 0 0 0 1 0 0 0 1 20 0 0"/></components></object><object id="3" type="model"><components><component objectid="1"/><component objectid="2"/></components></object>'
+    const result = await readProject(project('millimeter', resources, '<item objectid="3"/>'), bed)
+    const o = result.plates[0]!.objects[0]!
+    expect(o.parts).toHaveLength(2)
+    expect(Math.max(...xsOf(o.parts)) + o.transform[12]!).toBe(21)
+  })
+
+  it('composes nested transforms in order', async () => {
+    // Object 2 turns object 1 a quarter turn about Z and moves it 10 mm in X; object 3 moves object 2 5 mm in Y.
+    const resources = object() + '<object id="2" type="model"><components><component objectid="1" transform="0 1 0 -1 0 0 0 0 1 10 0 0"/></components></object><object id="3" type="model"><components><component objectid="2" transform="1 0 0 0 1 0 0 0 1 0 5 0"/></components></object>'
+    const result = await readProject(project('millimeter', resources, '<item objectid="3"/>'), bed)
+    const o = result.plates[0]!.objects[0]!
+    const p = Array.from(o.parts[0]!.positions)
+    const t = o.transform
+    // Vertex (1, 0, 0) turns to (0, 1, 0), then moves to (10, 6, 0).
+    const world = (i: number) => [p[i * 3]! + t[12]!, p[i * 3 + 1]! + t[13]!, p[i * 3 + 2]! + t[14]!]
+    const [a, b] = [world(0), world(1)]
+    expect(b[0]! - a[0]!).toBeCloseTo(0, 5)
+    expect(b[1]! - a[1]!).toBeCloseTo(1, 5)
+  })
+
+  it('refuses a component that contains itself or points at a missing object, instead of opening part of the object', async () => {
+    const cycle = object() + '<object id="2" type="model"><components><component objectid="1"/><component objectid="3"/></components></object><object id="3" type="model"><components><component objectid="2"/></components></object>'
+    await expect(readProject(project('millimeter', cycle, '<item objectid="3"/>'), bed)).rejects.toThrow('contains itself')
+    const missing = object() + '<object id="2" type="model"><components><component objectid="1"/><component objectid="9"/></components></object>'
+    await expect(readProject(project('millimeter', missing, '<item objectid="2"/>'), bed)).rejects.toThrow('does not have')
+  })
+})
