@@ -3,6 +3,7 @@
 // A new, empty project: one empty plate, no undo history and no file. Print settings, the printer and
 // the filament stay as they are, the same as a new project in OrcaSlicer, except what an opened project brought.
 import { history } from '../plate/history'
+import { cancelSlice } from '../state/actions'
 import { get, set } from '../state/store'
 import { confirmDiscard, markClean } from './unsaved'
 
@@ -28,6 +29,8 @@ export function clearProject(): void {
       return { overrides }
     })
   }
+  // A slice still running is of the old plate: it stops here and never lands on the new one.
+  cancelSlice({ quiet: true })
   set({
     plate: [],
     plates: [{ id: 'plate-1', name: 'Plate 1', objects: [], settings: {} }],

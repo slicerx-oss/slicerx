@@ -509,7 +509,7 @@ export async function slicePlate(host: Host, opts: { auto?: boolean } = {}): Pro
   const plateLayer = base['layer_height']
   const conflict = layerHeightConflict(s, seqNow, typeof plateLayer === 'number' ? plateLayer : 0.2)
   if (conflict) {
-    set({ slice: { status: 'error', message: conflict } })
+    set({ slice: { status: 'error', message: conflict }, preview: null })
     return
   }
   sliceAbort?.abort()
@@ -519,12 +519,17 @@ export async function slicePlate(host: Host, opts: { auto?: boolean } = {}): Pro
   const before = shownSlice(get().slice)
   set({ slice: { status: 'running', progress: null, startedAt: performance.now(), ...(before ? { last: before.result } : {}) } })
   let again = false
+  // After each wait: a cancel (or a clear of the plate) ends this slice, and a newer slice takes over from it.
+  const canceled = (): void => {
+    if (abort.signal.aborted) throw new DOMException('The slice was canceled', 'AbortError')
+  }
   try {
     // The plate's own print sequence (Bambu Studio and Orca set it per plate).
     const meta = s.plates.find((p) => p.id === s.activePlate)
     const config = plateSliceConfig(s, meta)
     const toPrint = s.plate.filter((p) => p.printable !== false)
     const objects = await plateObjects(host.slicer, s, meta, s.plate)
+    canceled()
     // sleipnir plans the layer tops; a calibration plate keeps its own height bands.
     // Vary layer height reaches the engine as the resolved `smart_layer` mode (quality, or strength for a strong print).
     const smart = (String((config as Record<string, unknown>)['smart_layer'] ?? 'off') as 'off' | 'quality' | 'strength')
@@ -534,6 +539,7 @@ export async function slicePlate(host: Host, opts: { auto?: boolean } = {}): Pro
     const cfg = config as Record<string, unknown>
     const rangeTops = smart === 'off' && !s.calibration[s.activePlate] ? rangeLayerTops(toPrint, Number(cfg['initial_layer_print_height'] ?? 0.2), Number(cfg['layer_height'] ?? 0.2)) : null
     const heightRanges = [...(s.calibration[s.activePlate]?.ranges ?? []), ...heightRangesOf(toPrint)]
+    canceled()
     // A resume plan restarts the failed job's layers, so its layer tops win over a fresh plan.
     const layerTopsMm = s.resume?.layerTopsMm?.length ? s.resume.layerTopsMm : (planned ?? rangeTops)
     // Marks from the layer slider (pause, color change, custom G-code) go by height: the engine places them on its own
@@ -562,9 +568,12 @@ export async function slicePlate(host: Host, opts: { auto?: boolean } = {}): Pro
     // The native engine already spreads layers across threads; shards there only add halo work.
     const sliced = await sliceWith()
     if (sliceAbort !== abort) return
+    canceled()
     // The tower comes back in machine coordinates; the plate counts from its corner.
     const result = sliced.primeTower ? { ...sliced, primeTower: towerToPlate(sliced.primeTower, areaOrigin(config['printable_area'])) } : sliced
     const raw = await host.slicer.getPreview(result.id)
+    if (sliceAbort !== abort) return
+    canceled()
     const preview = readPreview(raw)
     const cur = get()
     set((st) => ({ slicesDone: st.slicesDone + 1 }))
@@ -581,7 +590,8 @@ export async function slicePlate(host: Host, opts: { auto?: boolean } = {}): Pro
     const message = e instanceof Error ? e.message : String(e)
     if (await dropRefusedProjectSetting(message)) again = true
     else {
-      set({ slice: { status: 'error', message } })
+      // A refused slice (off the bed, in an excluded area) must not leave the last slice's toolpaths looking current.
+      set({ slice: { status: 'error', message }, preview: null })
       if (!opts.auto) toast(message, 'error')
     }
   } finally {
@@ -658,10 +668,18 @@ function gcodeName(plate: string): string {
   return `${slug}_plate-1.gcode`
 }
 
+/** Why the shown slice can't leave as the plate's G-code, or null when it can. */
+function notCurrent(s: AppState['slice']): string | null {
+  if (s.status !== 'done') return 'Slice the plate first'
+  if (s.stale) return 'The plate changed after this slice. Slice it again first.'
+  return null
+}
+
 export async function exportGcode(host: Host): Promise<void> {
   const s = get().slice
-  if (s.status !== 'done') {
-    toast('Slice the plate first')
+  const why = notCurrent(s)
+  if (why !== null || s.status !== 'done') {
+    toast(why ?? 'Slice the plate first', s.status === 'done' ? 'warn' : undefined)
     return
   }
   // A slice with a strike, or from before the objects moved, must not leave as the plate's G-code.
@@ -770,8 +788,9 @@ async function sendNow(host: Host, printer: PrinterInfo): Promise<void> {
   const conn = connected(host)
   const s = get().slice
   if (!conn) return
-  if (s.status !== 'done') {
-    toast('Slice the plate first')
+  const why = notCurrent(s)
+  if (why !== null || s.status !== 'done') {
+    toast(why ?? 'Slice the plate first', s.status === 'done' ? 'warn' : undefined)
     return
   }
   const unsafe = printBlock(get())

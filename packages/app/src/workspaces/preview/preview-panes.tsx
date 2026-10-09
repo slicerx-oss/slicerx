@@ -208,6 +208,8 @@ export function PreviewRight() {
   const shown = shownSlice(slice)
   // The result on screen while a new slice runs is the last one: its file is not the plate's, so Print and Export wait.
   const updating = slice.status === 'running'
+  // A slice from before the plate changed shows, dimmed, but never leaves as the plate's G-code.
+  const outdated = !updating && shown?.stale === true
   if (!shown) {
     return (
       <Block title="Filament use" data-section="filament">
@@ -280,19 +282,19 @@ export function PreviewRight() {
         </dl>
         {printer && isExportOnly(printer) ? (
           <>
-            <Button variant="primary" size="lg" full icon="sd-card" disabled={unsafe !== null || updating} onClick={() => void exportGcode(host)}>
+            <Button variant="primary" size="lg" full icon="sd-card" disabled={unsafe !== null || updating || outdated} onClick={() => void exportGcode(host)}>
               {`Export for ${printer.name}`}
             </Button>
             <p className="app-note">No connection. Save the file and copy it to the printer on a USB stick or SD card.</p>
           </>
         ) : (
           <>
-            <Button variant="primary" size="lg" full icon="send-to-printer" aria-label={target ? `Print on ${target.name}` : undefined} disabled={!target || unsafe !== null || updating} onClick={() => target && void sendToPrinter(host, target)}>
+            <Button variant="primary" size="lg" full icon="send-to-printer" aria-label={target ? `Print on ${target.name}` : undefined} disabled={!target || unsafe !== null || updating || outdated} onClick={() => target && void sendToPrinter(host, target)}>
               {target ? 'Print' : 'No idle printer'}
             </Button>
             {target ? <p className="app-note">On {target.name}{target.name !== target.model ? `, ${target.model}` : ''}</p> : null}
             <div className="app-row gap8">
-              <Button size="sm" icon="download" disabled={unsafe !== null || updating} onClick={() => void exportGcode(host)}>
+              <Button size="sm" icon="download" disabled={unsafe !== null || updating || outdated} onClick={() => void exportGcode(host)}>
                 Export G-code
               </Button>
             </div>
@@ -300,6 +302,10 @@ export function PreviewRight() {
             {unsafe !== null ? (
               <p className="app-err" role="alert">
                 {unsafe}
+              </p>
+            ) : outdated ? (
+              <p className="app-note" data-testid="slice-outdated">
+                The plate changed after this slice. Slice again to print or export it.
               </p>
             ) : null}
           </>
