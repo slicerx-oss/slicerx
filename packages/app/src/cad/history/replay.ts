@@ -45,21 +45,29 @@ const next = (part: Flat, m: { positions: number[]; indices: number[]; faces?: F
 
 // Parts after each step, by a hash of the base and every step up to it. Bounded by the numbers held.
 const cache = new Map<string, Flat[]>()
-// The pushes that went through the part up to each cached step, by the same keys.
-const goneAt = new Map<string, string[]>()
+/** What a replay learns up to a step besides the parts, so a warm replay returns what a cold one does. */
+interface Learned {
+  /** The pushes that went through the part. */
+  gone: string[]
+  moved: Record<string, MovedFace>
+  keys: Found['keys']
+  notes: Found['notes']
+}
+// What was learned up to each cached step, by the same keys.
+const learnedAt = new Map<string, Learned>()
 let cachedNumbers = 0
 const CACHE_NUMBERS = 24_000_000
 
-function remember(key: string, parts: Flat[], gone: ReadonlySet<string>): void {
+function remember(key: string, parts: Flat[], learned: { gone: ReadonlySet<string>; moved: Record<string, MovedFace>; found: Found }): void {
   if (cache.has(key)) return
-  if (gone.size) goneAt.set(key, [...gone])
+  learnedAt.set(key, { gone: [...learned.gone], moved: { ...learned.moved }, keys: { ...learned.found.keys }, notes: { ...learned.found.notes } })
   const size = parts.reduce((n, p) => n + p.positions.length + p.indices.length, 0)
   cache.set(key, parts)
   cachedNumbers += size
   for (const [k, v] of cache) {
     if (cachedNumbers <= CACHE_NUMBERS) break
     cache.delete(k)
-    goneAt.delete(k)
+    learnedAt.delete(k)
     cachedNumbers -= v.reduce((n, p) => n + p.positions.length + p.indices.length, 0)
   }
 }
@@ -76,7 +84,8 @@ function recall(key: string): Flat[] | undefined {
 
 export function clearReplayCache(): void {
   cache.clear()
-  goneAt.clear()
+  learnedAt.clear()
+  digests = new WeakMap()
   cachedNumbers = 0
 }
 
@@ -92,15 +101,48 @@ function hash(h: string, text: string): string {
   return a.toString(36).padStart(7, '0') + b.toString(36).padStart(7, '0')
 }
 
-function meshHash(parts: readonly HistoryMesh[]): string {
-  // The base is identified by its sizes and a sample of its numbers; it never changes in place.
-  let s = `${parts.length}`
-  for (const p of parts) {
-    s += `|${p.name}|${p.slot}|${p.positions.length}|${p.indices.length}`
-    const step = Math.max(1, Math.floor(p.positions.length / 64))
-    for (let i = 0; i < p.positions.length; i += step) s += `,${p.positions[i]}`
+// A base mesh never changes in place, so its digest is worked out once per mesh object.
+let digests = new WeakMap<object, string>()
+const word = new Float64Array(1)
+const words = new Uint32Array(word.buffer)
+
+/** A digest of every number in a list: each one's exact bits, so any changed coordinate or index changes it. */
+function numbersDigest(nums: ArrayLike<number>): string {
+  let a = 0x811c9dc5
+  let b = 0x01000193 ^ nums.length
+  for (let i = 0; i < nums.length; i++) {
+    word[0] = nums[i]!
+    a = Math.imul(a ^ words[0]!, 0x01000193) >>> 0
+    b = Math.imul(b ^ words[1]! ^ (a >>> 7), 0x01000193) >>> 0
   }
-  return hash('', s)
+  return a.toString(36).padStart(7, '0') + b.toString(36).padStart(7, '0')
+}
+
+function meshDigest(p: HistoryMesh): string {
+  let d = digests.get(p)
+  if (d === undefined) {
+    d = `${p.name}|${p.slot}|${numbersDigest(p.positions)}|${numbersDigest(p.indices)}`
+    digests.set(p, d)
+  }
+  return d
+}
+
+function meshHash(parts: readonly HistoryMesh[]): string {
+  // The base is identified by all of its numbers, positions and indices both.
+  return hash('', `${parts.length}|${parts.map(meshDigest).join('|')}`)
+}
+
+// Font files by their content, so a font replaced under the same name gives the steps that use it a new key.
+const fontDigests = new Map<string, string>()
+function fontDigest(data: string | undefined): string {
+  if (data === undefined) return '0'
+  let d = fontDigests.get(data)
+  if (d === undefined) {
+    d = hash('', data)
+    if (fontDigests.size > 32) fontDigests.clear()
+    fontDigests.set(data, d)
+  }
+  return d
 }
 
 class Broken extends Error {}
@@ -276,7 +318,7 @@ export async function replayHistory(call: EngineCall, req: ReplayRequest, o: Rep
   const baseKey = k
   const effective = steps.map((s) => followed(s, steps))
   for (const s of effective) {
-    k = hash(k, s.suppressed ? `-${s.id}` : JSON.stringify([s.part, s.transform, s.params, s.params.op === 'shape.extrude' && s.params.font ? Boolean(req.fonts?.[s.params.font]) : 0, s.params.op === 'edge.fillet' || s.params.op === 'edge.chamfer' ? (s.follow ?? 0) : 0]))
+    k = hash(k, s.suppressed ? `-${s.id}` : JSON.stringify([s.part, s.transform, s.params, s.params.op === 'shape.extrude' && s.params.font ? fontDigest(req.fonts?.[s.params.font]) : 0, s.params.op === 'edge.fillet' || s.params.op === 'edge.chamfer' ? (s.follow ?? 0) : 0]))
     keys.push(k)
   }
   // Start after the last step whose result is still known, when every step before it went through.
@@ -287,19 +329,27 @@ export async function replayHistory(call: EngineCall, req: ReplayRequest, o: Rep
     if (hit) {
       start = i + 1
       parts = hit
-      gone = new Set(goneAt.get(keys[i]!))
+      const learned = learnedAt.get(keys[i]!)
+      gone = new Set(learned?.gone)
+      Object.assign(moved, learned?.moved)
+      Object.assign(found.keys, learned?.keys)
+      Object.assign(found.notes, learned?.notes)
       break
     }
   }
-  remember(baseKey, history.base.map(flat), new Set())
+  remember(baseKey, history.base.map(flat), { gone: new Set(), moved: {}, found: { keys: {}, notes: {} } })
   const fonts = req.fonts ?? {}
   let before: Flat[] | undefined = req.before === 0 ? history.base.map(flat) : req.before !== undefined && req.before <= start && req.before > 0 ? recall(keys[req.before - 1]!) : undefined
-  for (let i = 0; i < start; i++) if (!steps[i]!.suppressed) status[i] = { state: 'done' }
+  for (let i = 0; i < start; i++) {
+    if (steps[i]!.suppressed) continue
+    const note = found.notes[steps[i]!.id]
+    status[i] = note ? { state: 'done', note } : { state: 'done' }
+  }
   for (let i = start; i < effective.length; i++) {
     if (req.before === i) before = parts
     const s = effective[i]!
     if (s.suppressed) {
-      remember(keys[i]!, parts, gone)
+      remember(keys[i]!, parts, { gone, moved, found })
       continue
     }
     if (o.yieldStep) await o.yieldStep()
@@ -307,7 +357,7 @@ export async function replayHistory(call: EngineCall, req: ReplayRequest, o: Rep
       parts = await runStep(call, s, parts, fonts, moved, gone, found)
       const note = found.notes[s.id]
       status[i] = note ? { state: 'done', note } : { state: 'done' }
-      remember(keys[i]!, parts, gone)
+      remember(keys[i]!, parts, { gone, moved, found })
     } catch (e) {
       if ((e as { name?: string }).name === 'AbortError') throw e
       status[i] = { state: 'broken', message: e instanceof Error ? e.message : String(e) }
