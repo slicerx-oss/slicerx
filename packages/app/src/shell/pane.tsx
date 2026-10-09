@@ -45,7 +45,7 @@ function useChord(action: 'panel.left' | 'panel.right'): string | undefined {
   return keymapFor(choice.id, choice.overrides?.keys ?? {})[action] ?? undefined
 }
 
-export function SidePane({ side, ws, label, sections, children, footer, width, tab }: { side: Side; ws: Workspace; label: string; sections: readonly PaneSection[]; children: ReactNode; footer?: ReactNode; width?: number; tab?: PaneTab }) {
+export function SidePane({ side, ws, label, sections, children, footer, headExtra, width, tab }: { side: Side; ws: Workspace; label: string; sections: readonly PaneSection[]; children: ReactNode; footer?: ReactNode; headExtra?: ReactNode; width?: number; tab?: PaneTab }) {
   const wide = useMediaQuery('(min-width: 1280px)')
   const phone = useMediaQuery('(max-width: 900px)')
   const open = useApp((s) => railOpen(s.rails, ws, side, wide))
@@ -110,6 +110,7 @@ export function SidePane({ side, ws, label, sections, children, footer, width, t
             ),
           })}
       {...(footer ? { footer } : {})}
+      {...(headExtra ? { headExtra } : {})}
     >
       <div className="pane-body" ref={bodyRef} id={bodyId} {...(tab ? { 'data-testid': tab.panel } : {})}>
         {children}
