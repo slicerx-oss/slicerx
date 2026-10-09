@@ -369,8 +369,9 @@ impl Mesh {
         } else {
             stl_ascii(bytes, name)?
         };
+        // Refusals as short codes the app words (`engine-errors.ts` in the app package), as for a 3MF.
         if soup.is_empty() {
-            return Err(Error::mesh(name, "the STL has no triangles"));
+            return Err(Error::mesh(name, "refused stl-empty 0 0 "));
         }
         if let Some(k) = soup
             .iter()
@@ -378,7 +379,7 @@ impl Mesh {
         {
             return Err(Error::mesh(
                 name,
-                format!("triangle {k} of the STL has a coordinate that is not a number"),
+                ["refused stl-number 0 ", &k.to_string(), " "].concat(),
             ));
         }
         let (positions, triangles) = weld_soup(&soup);
@@ -547,14 +548,8 @@ fn stl_ascii(bytes: &[u8], name: &str) -> Result<Vec<[[f32; 3]; 3]>> {
         }
     }
     if !cur.is_empty() {
-        return Err(Error::mesh(
-            name,
-            format!(
-                "the STL ends inside facet {}, with {} of its 3 vertices",
-                soup.len(),
-                cur.len()
-            ),
-        ));
+        let at = [soup.len().to_string(), " ".into(), cur.len().to_string()].concat();
+        return Err(Error::mesh(name, ["refused stl-cut 0 ", &at].concat()));
     }
     Ok(soup)
 }
@@ -730,13 +725,13 @@ f 1 3 2\nf 1 4 3\nf 5 6 7\nf 5 7 8\nf 1 2 6\nf 1 6 5\nf 2 3 7\nf 2 7 6\nf 3 4 8\
     #[test]
     fn an_empty_cut_off_or_not_a_number_stl_is_refused() {
         let err = |text: &str| Mesh::load(text.as_bytes(), "t.stl").unwrap_err().to_string();
-        assert!(err("solid t\nendsolid t\n").contains("no triangles"));
+        assert!(err("solid t\nendsolid t\n").contains("refused stl-empty"));
         assert!(
             err("solid t\nfacet normal 0 0 1\nouter loop\nvertex 0 0 0\nvertex 1 0 0\n")
-                .contains("ends inside facet 0")
+                .contains("refused stl-cut 0 0 2")
         );
         let nan = "solid t\nfacet normal 0 0 1\nouter loop\nvertex 0 0 0\nvertex nan 0 0\nvertex 0 1 0\nendloop\nendfacet\nendsolid t\n";
-        assert!(err(nan).contains("triangle 0 of the STL has a coordinate that is not a number"));
+        assert!(err(nan).contains("refused stl-number 0 0"));
         // A binary STL whose header starts with "solid" still loads as binary.
         let mut bin = b"solid but binary".to_vec();
         bin.resize(80, b' ');
@@ -754,7 +749,7 @@ f 1 3 2\nf 1 4 3\nf 5 6 7\nf 5 7 8\nf 1 2 6\nf 1 6 5\nf 2 3 7\nf 2 7 6\nf 3 4 8\
             Mesh::load(&empty, "e.stl")
                 .unwrap_err()
                 .to_string()
-                .contains("no triangles")
+                .contains("refused stl-empty")
         );
     }
 }
