@@ -23,11 +23,12 @@ export function loadingPhase({ loading, long, stages }: LoadingInput): LoadingPh
   return long ? 'ravens' : 'quiet'
 }
 
-/** The status line's words for the step a loading open is in. */
+/** The status line's words for the step a loading open is in. Stages only add up, so the words only move forward. */
 export function loadingWords(stages: ReadonlySet<OpenStage>): string {
   if (!stages.has('read')) return 'Reading the file'
   if (!stages.has('drawn')) return 'Loading the model'
-  if (!stages.has('repair') && !stages.has('settings')) return 'Checking the model'
+  // a mesh file goes through the engine's repair; a project (unzipped) has its settings checked
+  if (!stages.has('repair') && !stages.has('settings')) return stages.has('unzip') ? 'Checking the project' : 'Repairing the model'
   if (!stages.has('settings')) return 'Placing the model'
   return 'Finishing the project'
 }

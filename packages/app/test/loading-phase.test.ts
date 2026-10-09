@@ -22,7 +22,8 @@ describe('the loading phases', () => {
   it('names the step', () => {
     expect(loadingWords(st())).toBe('Reading the file')
     expect(loadingWords(st('read', 'parse'))).toBe('Loading the model')
-    expect(loadingWords(st('read', 'objects', 'drawn'))).toBe('Checking the model')
+    expect(loadingWords(st('read', 'objects', 'drawn'))).toBe('Repairing the model')
+    expect(loadingWords(st('read', 'unzip', 'objects', 'drawn'))).toBe('Checking the project')
     expect(loadingWords(st('read', 'drawn', 'repair'))).toBe('Placing the model')
     expect(loadingWords(st('read', 'drawn', 'settings'))).toBe('Finishing the project')
   })
