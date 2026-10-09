@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // A 3MF that is no slicer's project (a CAD export or a downloaded model, in the modeler's own coordinates) opens
-// centered on the bed with every object resting on it, as Orca places one. A project keeps its placement.
+// centered on the bed with every object resting on it, as Orca places one. A project keeps its placement, apart from an
+// object a hair under the bed from the rounding of its transforms, which is set down on it.
 import { describe, expect, it } from 'vitest'
 import { readProject } from '../src/export/import3mf'
 import { zip } from '../src/export/zip'
@@ -39,5 +40,19 @@ describe('a plain 3MF', () => {
     ])
     const [a] = (await readProject(bytes, bed)).plates[0]!.objects.map(box)
     expect(a!.min[0]).toBeCloseTo(-45)
+  })
+
+  it('sets a project object that sits a hair under the bed down on it, and leaves one sunk on purpose', async () => {
+    // A cube on its side, turned by a rotation written to three decimals ("0.001" for 0), lands 0.005 mm under the bed.
+    const turned = `<object id="3" type="model"><components><component objectid="1" transform="1 0 0 0 0.001 -1 0 1 0.001 0 0 0"/></components></object>`
+    const model = `<?xml version="1.0" encoding="UTF-8"?><model unit="millimeter" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02"><resources>${cube(1, 0, -5, -5)}${turned}${cube(2, 0, 0, 0)}</resources><build><item objectid="3" transform="1 0 0 0 1 0 0 0 1 50 50 5"/><item objectid="2" transform="1 0 0 0 1 0 0 0 1 100 50 -1"/></build></model>`
+    const bytes = zip([
+      { name: '3D/3dmodel.model', data: model },
+      { name: 'Metadata/project_settings.config', data: JSON.stringify({ layer_height: '0.2' }) },
+    ])
+    const [a, sunk] = (await readProject(bytes, bed)).plates[0]!.objects.map(box)
+    expect(a!.min[2]).toBeCloseTo(0, 6)
+    expect(a!.max[2]).toBeCloseTo(10, 1)
+    expect(sunk!.min[2]).toBeCloseTo(-1)
   })
 })

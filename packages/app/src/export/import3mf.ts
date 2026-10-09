@@ -562,6 +562,20 @@ function placeOnBed(objects: { parts: MeshPart[]; transform: number[] }[], bed: 
   })
 }
 
+/**
+ * How far under the bed a slicer project's object may sit and still be one resting on it. Bambu Studio writes
+ * transforms to three decimals, so a part turned on its side lands a few thousandths of a mm off (tangela's ring
+ * part at -0.002 mm, from a rotation written as "0.001" instead of 0), and the slice would warn that part of the
+ * plate is cut off at z = 0. An object set lower than this on purpose (sunk into the bed) stays where it is.
+ */
+const SETTLE_MM = 0.05
+
+/** Sets an object that sits a hair under the bed, from the file's rounding, down on it. */
+function settleOnBed(o: { parts: MeshPart[]; transform: number[] }): void {
+  const b = bounds(o.parts, o.transform)
+  if (b && b.min[2] < 0 && b.min[2] > -SETTLE_MM) o.transform[14] = o.transform[14]! - b.min[2]
+}
+
 export async function readProject(bytes: Uint8Array, bed: { widthMm: number; depthMm: number }): Promise<ImportedProject> {
   const files = await unzipEntries(bytes)
   const modelBytes = files.get('3D/3dmodel.model')
@@ -780,6 +794,7 @@ export async function readProject(bytes: Uint8Array, bed: { widthMm: number; dep
   // places one (Plater::priv::load_files: center_instances_around_point, then ensure_on_bed): its objects, as one
   // group, centered on the bed, each resting on it. Its own coordinates are the modeler's, not a print bed's.
   if (!ps && !pe) for (const p of plates) placeOnBed(p.objects, bed)
+  else for (const p of plates) for (const o of p.objects) settleOnBed(o)
   const dimensions = parseDimensions(files.get('Metadata/slicerx_dimensions.json'), new Set(plates.flatMap((p) => p.objects.map((o) => o.fileId))))
   const fileIds = new Set(plates.flatMap((p) => p.objects.map((o) => o.fileId)))
   const note = historyNewer(files)
