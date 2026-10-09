@@ -14,15 +14,19 @@
 //   parsed    the preview is read into its typed arrays
 //   shown     the slice and its preview are in the app's state
 //   drawn     the 3D view has drawn a frame with the preview
-// Besides the stages: `engineMs`, the engine's own time (the sum of its stage times), and `previewBytes`.
+// Besides the stages: `engineMs`, the engine's own wall time when the host reports it (the rest of `result - request`
+// is the request's way in and the report's way out), `engineCpuMs`, the engine's stage times summed over its threads,
+// and `previewBytes`.
 
 export type SliceStage = 'ready' | 'objects' | 'request' | 'result' | 'preview' | 'parsed' | 'shown' | 'drawn'
 
 export interface SliceTiming {
   /** Milliseconds from the start of the slice to the end of each stage. */
   ms: Partial<Record<SliceStage, number>>
-  /** The engine's own time, ms: its stage times summed. The rest of `result - request` is the way in and out. */
+  /** The engine's own wall time, ms, when the host reports it. The rest of `result - request` is the way in and out. */
   engineMs?: number
+  /** The engine's stage times summed over its threads, ms. */
+  engineCpuMs?: number
   /** The size of the preview, bytes. */
   previewBytes?: number
   /** Whether auto slice started it. */
@@ -44,12 +48,13 @@ export function sliceStarted(auto: boolean, now = clock()): number {
 }
 
 /** Ends a stage of slice `id`, the first time only. A stage of a slice that a newer one replaced is dropped. */
-export function sliceStage(id: number, stage: SliceStage, extra: { engineMs?: number; previewBytes?: number; now?: number } = {}): void {
+export function sliceStage(id: number, stage: SliceStage, extra: { engineMs?: number; engineCpuMs?: number; previewBytes?: number; now?: number } = {}): void {
   const c = current
   if (!c || c.id !== id || c.ms[stage] !== undefined) return
   const now = extra.now ?? clock()
   c.ms[stage] = Math.round(now - c.t0)
   if (extra.engineMs !== undefined) c.engineMs = Math.round(extra.engineMs)
+  if (extra.engineCpuMs !== undefined) c.engineCpuMs = Math.round(extra.engineCpuMs)
   if (extra.previewBytes !== undefined) c.previewBytes = extra.previewBytes
   try {
     perf()?.measure(`sx:slice:${stage}`, { start: c.t0, end: now })
@@ -64,6 +69,6 @@ export const currentSlice = (): number => current?.id ?? 0
 /** The last slice's timing, or null before the first. */
 export function sliceTiming(): SliceTiming | null {
   if (!current) return null
-  const { ms, engineMs, previewBytes, auto } = current
-  return { ms: { ...ms }, auto, ...(engineMs !== undefined ? { engineMs } : {}), ...(previewBytes !== undefined ? { previewBytes } : {}) }
+  const { ms, engineMs, engineCpuMs, previewBytes, auto } = current
+  return { ms: { ...ms }, auto, ...(engineMs !== undefined ? { engineMs } : {}), ...(engineCpuMs !== undefined ? { engineCpuMs } : {}), ...(previewBytes !== undefined ? { previewBytes } : {}) }
 }
