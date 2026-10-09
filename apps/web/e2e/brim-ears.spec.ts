@@ -26,8 +26,9 @@ async function open(page: Page): Promise<void> {
     const st = (window as unknown as { __sx: { getState(): { overrides: Record<string, unknown> }; setState(p: unknown): void } }).__sx
     st.setState({ overrides: { ...st.getState().overrides, brim_type: 'painted' } })
   })
-  await page.getByRole('toolbar', { name: 'Plate tools' }).getByRole('button', { name: 'Brim ears' }).click()
+  // Select the model, then open the tool: its panel takes the Objects card's place.
   await page.locator('.obj-name', { hasText: 'Layered X' }).click()
+  await page.getByRole('toolbar', { name: 'Plate tools' }).getByRole('button', { name: 'Brim ears' }).click()
 }
 
 /** Ears the viewport draws, in bed coordinates. */

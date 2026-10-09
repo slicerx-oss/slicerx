@@ -15,21 +15,19 @@ import { availableTools, type ShelfTool, type ToolId } from '../design/shelf-too
 
 const ToolDialog = lazy(() => import('./tool-dialog').then((m) => ({ default: m.ToolDialog })))
 
-export function ObjectTools() {
+/** The geometry tools as a menu; `onClose` runs once one is chosen too. */
+export function ToolsMenu({ open, onClose, align = 'end', at }: { open: boolean; onClose: () => void; align?: 'start' | 'end'; at?: { x: number; y: number } | undefined }) {
   const host = useHost()
   const hasSel = useApp((s) => s.selection !== null)
-  const [open, setOpen] = useState(false)
-  const tool = useApp((s) => s.objectTool)
   const cad = useApp((s) => s.cadTools)
   const modeling = editionHasCad(useEdition())
-  const setTool = (t: ToolId | null) => (t ? openTool(t) : set({ objectTool: null }))
   const direct = (fn: () => Promise<unknown>) => {
-    setOpen(false)
+    onClose()
     void fn().catch((err: unknown) => toast(err instanceof Error ? err.message : String(err), 'error'))
   }
   const pick = (t: ToolId) => {
-    setOpen(false)
-    setTool(t)
+    onClose()
+    openTool(t)
   }
   const tools = availableTools({ modeling, drawing: cad })
   const choose = (t: ShelfTool) => {
@@ -38,23 +36,41 @@ export function ObjectTools() {
     if (t.tool) pick(t.tool)
   }
   return (
+    <Menu open={open} onClose={onClose} label="Object tools" align={align} at={at}>
+      {tools.map((t, i) => (
+        <Fragment key={t.id}>
+          {i > 0 && tools[i - 1]!.menu !== t.menu ? <MenuSeparator /> : null}
+          <MenuItem icon={t.icon} {...(t.tip ? { 'data-tip': t.tip } : {})} disabled={t.needsSelection && !hasSel} onClick={() => choose(t)}>
+            {t.label}
+          </MenuItem>
+        </Fragment>
+      ))}
+    </Menu>
+  )
+}
+
+/** The dialog of a geometry tool that asks for its numbers (simplify, hollow and so on), while one is open. */
+export function ToolDialogHost() {
+  const tool = useApp((s) => s.objectTool)
+  if (!tool || isCadTool(tool) || tool === 'cut') return null
+  return (
+    <Suspense fallback={null}>
+      <ToolDialog tool={tool} onClose={() => set({ objectTool: null })} />
+    </Suspense>
+  )
+}
+
+export function ObjectTools() {
+  const [open, setOpen] = useState(false)
+  return (
     <>
       <MenuAnchor>
         <Button size="sm" variant="ghost" icon="magic-wand" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(!open)}>
           Tools
         </Button>
-        <Menu open={open} onClose={() => setOpen(false)} label="Object tools" align="end">
-          {tools.map((t, i) => (
-            <Fragment key={t.id}>
-              {i > 0 && tools[i - 1]!.menu !== t.menu ? <MenuSeparator /> : null}
-              <MenuItem icon={t.icon} {...(t.tip ? { 'data-tip': t.tip } : {})} disabled={t.needsSelection && !hasSel} onClick={() => choose(t)}>
-                {t.label}
-              </MenuItem>
-            </Fragment>
-          ))}
-        </Menu>
+        <ToolsMenu open={open} onClose={() => setOpen(false)} />
       </MenuAnchor>
-      {tool && !isCadTool(tool) && tool !== 'cut' ? <Suspense fallback={null}><ToolDialog tool={tool} onClose={() => setTool(null)} /></Suspense> : null}
+      <ToolDialogHost />
     </>
   )
 }
