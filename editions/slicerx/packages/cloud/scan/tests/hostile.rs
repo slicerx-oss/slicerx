@@ -854,8 +854,8 @@ async fn out_of_range_indices_in_a_3mf_are_refused() {
         ],
         &[],
     );
-    // sx-core drops triangles that point at missing vertices, leaving no geometry.
-    rejected(&scan("a.3mf", z).await, "mesh_empty");
+    // sx-core refuses a triangle that points at a missing vertex: the file is malformed.
+    rejected(&scan("a.3mf", z).await, "mesh_parse");
 }
 
 #[tokio::test]

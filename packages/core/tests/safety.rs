@@ -376,17 +376,19 @@ fn geometry_past_the_engines_range_is_refused_not_sliced() {
     // A part placed 300 m out overflowed the scaled outlines and crashed the slice.
     let far = blocked_or_error(run(&request(base_config(), json!({}), [3.0e5, 100.0, 0.0])));
     assert!(far.contains("units"), "{far}");
-    // A vertex that is not a number sliced into toolpaths in the wrong place.
-    for corner in [
-        [f32::NAN, 20.0, 20.0],
-        [f32::INFINITY, 20.0, 20.0],
-        [1.0e30, 20.0, 20.0],
-    ] {
-        let m = Arc::new(Mesh::load(&cube_stl(corner), "cube.stl").unwrap());
-        let req = request(base_config(), json!({}), [100.0, 100.0, 0.0]);
-        let e = blocked_or_error(common::run_request(&req, &move |_: &str| Ok(m.clone())));
-        assert!(e.contains("cube.stl"), "{corner:?}: {e}");
+    // A vertex that is not a number sliced into toolpaths in the wrong place: the file is refused when it loads.
+    for corner in [[f32::NAN, 20.0, 20.0], [f32::INFINITY, 20.0, 20.0]] {
+        let e = Mesh::load(&cube_stl(corner), "cube.stl").unwrap_err().to_string();
+        assert!(
+            e.contains("cube.stl") && e.contains("refused stl-number"),
+            "{corner:?}: {e}"
+        );
     }
+    // One far past the engine's range loads, and the slice refuses it.
+    let m = Arc::new(Mesh::load(&cube_stl([1.0e30, 20.0, 20.0]), "cube.stl").unwrap());
+    let req = request(base_config(), json!({}), [100.0, 100.0, 0.0]);
+    let e = blocked_or_error(common::run_request(&req, &move |_: &str| Ok(m.clone())));
+    assert!(e.contains("cube.stl"), "{e}");
 }
 
 fn blocked_or_error(r: api::Result<SliceRun>) -> String {

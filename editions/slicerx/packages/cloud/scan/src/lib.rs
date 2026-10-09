@@ -96,7 +96,31 @@ struct Built {
 fn parse_mesh(bytes: &[u8], name: &str) -> Result<Mesh, Reject> {
     std::panic::catch_unwind(AssertUnwindSafe(|| Mesh::load(bytes, name)))
         .map_err(|_| Reject::new("mesh_parse", "the model could not be parsed"))?
-        .map_err(|e| Reject::new("mesh_parse", format!("the file does not parse as a mesh: {e}")))
+        .map_err(|e| {
+            Reject::new(
+                load_reject_code(&e),
+                format!("the file does not parse as a mesh: {e}"),
+            )
+        })
+}
+
+/// The reject code for a model the engine refuses to load. Its refusals read "refused <code> <object> <element>
+/// <value>": an empty STL is `mesh_empty` and a coordinate that is not a finite number `mesh_not_finite`, as when
+/// the checks here find them; anything else malformed is `mesh_parse`.
+fn load_reject_code(e: &sx_core::Error) -> &'static str {
+    let sx_core::Error::Mesh { reason, .. } = e else {
+        return "mesh_parse";
+    };
+    let mut words = reason.split(' ');
+    if words.next() != Some("refused") {
+        return "mesh_parse";
+    }
+    match (words.next(), words.nth(2)) {
+        (Some("stl-empty"), _) => "mesh_empty",
+        (Some("stl-number"), _) => "mesh_not_finite",
+        (Some("vertex"), Some(v)) if v.parse::<f64>().is_ok_and(|v| !v.is_finite()) => "mesh_not_finite",
+        _ => "mesh_parse",
+    }
 }
 
 /// Parses, checks and converts. Synchronous and CPU bound.
