@@ -28,6 +28,8 @@ export interface ProjectSettings {
 }
 
 const GAP_MM = 5
+/** Room a row leaves at each side of the bed, for a skirt or brim around the parts at its ends. */
+const EDGE_MM = 10
 
 function num(v: SettingValue | undefined): number | undefined {
   const x = Array.isArray(v) ? v[0] : v
@@ -147,20 +149,30 @@ export class McpProject implements PilotProject {
     return { ...this.baseConfig(), ...this.projectOverrides, ...(plate?.overrides ?? {}) } as PrintConfig
   }
 
-  /** Places every copy in rows from the front left corner, a simple layout the core re-centers. */
+  /**
+   * Places every copy in rows, then moves the whole layout to the middle of the printable area (from its own corner, so
+   * a bed that does not start at 0 works too). Nothing downstream re-centers it: the sx CLI slices the plate where it is,
+   * and a layout left in the front left corner put a skirt or brim off the bed.
+   */
   async plate(plateIndex: number): Promise<Plate> {
     const cfg = this.config(plateIndex)
     const area = Array.isArray(cfg['printable_area']) ? (cfg['printable_area'] as unknown[]) : []
     const xs = area.flatMap((p) => (Array.isArray(p) && typeof p[0] === 'number' ? [p[0]] : []))
     const ys = area.flatMap((p) => (Array.isArray(p) && typeof p[1] === 'number' ? [p[1]] : []))
-    const width = xs.length ? Math.max(...xs) - Math.min(...xs) : 256
-    const depth = ys.length ? Math.max(...ys) - Math.min(...ys) : 256
+    const x0 = xs.length ? Math.min(...xs) : 0
+    const y0 = ys.length ? Math.min(...ys) : 0
+    const width = xs.length ? Math.max(...xs) - x0 : 256
+    const depth = ys.length ? Math.max(...ys) - y0 : 256
     const height = num(cfg['printable_height']) ?? 250
     const plate = this.layout.find((p) => p.index === plateIndex)
     if (!plate) throw new Error(`No plate ${plateIndex}`)
     const objects: PlateObject[] = []
-    let x = GAP_MM
-    let y = GAP_MM
+    // The layout's own extent, to center it once every copy is placed.
+    const box = { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity }
+    // A row ends before it would reach into the edge room at either side; a part wider than that still gets a row.
+    const rowWidth = width - 2 * EDGE_MM
+    let x = 0
+    let y = 0
     let rowDepth = 0
     for (const item of plate.items) {
       const e = this.entries.get(item.objectId)
@@ -170,16 +182,28 @@ export class McpProject implements PilotProject {
       const [w, d] = placed?.size ?? e.obj.bboxMm
       const [mx, my, mz] = placed?.min ?? this.host.minCorner(e.meshId)
       for (let c = 0; c < item.copies; c++) {
-        if (x + w > width && x > GAP_MM) {
-          x = GAP_MM
+        if (x > 0 && x + w > rowWidth) {
+          x = 0
           y += rowDepth + GAP_MM
           rowDepth = 0
         }
         // Rotation first (the upper 3x3), then the move that sets the rotated part down at (x, y).
         const r = rot ?? [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
         objects.push({ id: `${item.objectId}-${c + 1}`, name: e.obj.name, mesh: e.meshId, transform: [...r.slice(0, 12), x - mx, y - my, -mz, 1] })
+        box.x0 = Math.min(box.x0, x)
+        box.y0 = Math.min(box.y0, y)
+        box.x1 = Math.max(box.x1, x + w)
+        box.y1 = Math.max(box.y1, y + d)
         x += w + GAP_MM
         rowDepth = Math.max(rowDepth, d)
+      }
+    }
+    if (objects.length) {
+      const dx = x0 + width / 2 - (box.x0 + box.x1) / 2
+      const dy = y0 + depth / 2 - (box.y0 + box.y1) / 2
+      for (const o of objects) {
+        o.transform[12] = (o.transform[12] ?? 0) + dx
+        o.transform[13] = (o.transform[13] ?? 0) + dy
       }
     }
     return { bed: { widthMm: width, depthMm: depth, heightMm: height }, objects }
