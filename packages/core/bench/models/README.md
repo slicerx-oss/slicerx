@@ -31,19 +31,24 @@ Options: `--height` (of the X, default 80 mm), `--thickness` (16 mm), `--twist-d
 
 ## Showcase model
 
-`x-mark-showcase.stl` is the same X built from exact faces, for close-up views, renders and demos: the `sample:x-mark` model of the MCP server is this one. `generate_showcase.py` (Python 3, standard library only, deterministic) extrudes the mark's outline, cuts it into the same eight bands, sets alternate bands in 0.6 mm with a flat face for every step and a 0.6 mm deep, 1.2 mm wide V groove at every band boundary, gives each band that stands out over the one below a 45 degree underside instead of a ledge, and rounds the front and back edges (1.2 mm) as ten facets. A slice reports no overhang warnings. The X stands on a rounded plinth (2 mm) whose top face has the X's footprint cut in exactly; the outline's corners and the plinth joint stay sharp. Its edges stay straight at any zoom, where the surface nets of `x-mark.stl` show a 1.2 mm sawtooth.
+`x-mark-showcase.stl` is a clean X for close-up views, renders, thumbnails and demos: the `sample:x-mark` model of the MCP server is this one. It is modeled with SlicerX's own CAD tools, and `x-mark-showcase.sx3mf` is its editable source, one object with its CAD history:
+
+1. a rectangle sketched on the bed and extruded 6 mm: the plinth, 84.7 x 26 mm;
+2. its top and upright corner edges filleted 2 mm, with sphere corners (the bottom stays sharp);
+3. the X outline sketched upright and extruded 8 mm each way, joined onto the plinth (a union);
+4. the X's front and back edges filleted 1.2 mm, all but the ones along its foot.
+
+The rounds are at a 0.001 mm chord tolerance, about 5 degrees a facet. The faces are flat and the X has no bands, so it reads cleanly at thumbnail size.
 
 | File | Triangles | Size (mm) |
 | --- | --- | --- |
-| `x-mark-showcase.stl` | 5,436 | 84.7 x 26.0 x 86.0 |
-| `x-mark-showcase-2color.3mf` | 3,748 + 2,132 (two parts) | same |
+| `x-mark-showcase.sx3mf` | 6,802 (one object, with history) | 84.7 x 26.0 x 86.0 |
+| `x-mark-showcase.stl` | 6,802 | same |
+| `x-mark-showcase-2color.3mf` | X + plinth (two parts) | same |
 
-The 3MF is one object of two parts, as Bambu Studio and OrcaSlicer save a multi-part object: the plinth with the first, third, fifth and seventh bands on filament 1, the other bands on filament 2. The parts keep their places when the file opens, so the bands stay stacked (`x-mark-2color.3mf`'s two separate objects are each set down on the bed). Both files are closed and consistently oriented. The benchmarks keep `x-mark.stl`, so their numbers stay comparable.
+The 3MF is one object of two parts, as Bambu Studio and OrcaSlicer save a multi-part object: the X on filament 1 and the plinth on filament 2, made by the same steps (the X on its own, its foot flat on the plinth's top). Its project settings name only the two filaments (teal `#26A69A` and off-white `#F2EFE6`, Generic PLA), with no printer or process settings, so a slicer colors the parts without a project to review. Bambu Studio 2.8.2 still loads the geometry only and uses its own colors, as it does for any 3MF without its printer and process presets. All three files are closed and consistently oriented. The benchmarks keep `x-mark.stl`, so their numbers stay comparable.
 
-```
-python3 generate_showcase.py                            # both files
-python3 generate_showcase.py --check x-mark-showcase.stl
-```
+`apps/web/scripts/build-showcase-x.mjs` rebuilds all three by running the app's CAD tools in the web app (start the dev server first; the script says how). The step ids in the history change with each build, and the meshes are the same.
 
 ## Speed benchmark models
 

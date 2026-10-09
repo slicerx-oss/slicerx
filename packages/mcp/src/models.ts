@@ -136,7 +136,7 @@ function boxStl([x, y, z]: [number, number, number]): Buffer {
 
 /**
  * Samples that ship as files: `sample:x-mark` is the SlicerX X mark, the exact-faced showcase version
- * (packages/core/bench/models/generate_showcase.py). The benchmarks keep their own x-mark.stl.
+ * (packages/core/bench/models/x-mark-showcase.sx3mf, modeled with the app's CAD tools). The benchmarks keep their own x-mark.stl.
  */
 export const SAMPLE_FILES: Record<string, string> = { 'x-mark': 'x-mark-showcase.stl' }
 
