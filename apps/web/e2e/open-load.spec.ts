@@ -111,3 +111,41 @@ test('a big project opens with the page answering and each model built once', as
   await page.waitForTimeout(1000)
   expect(await page.evaluate(() => (window as unknown as { __vp?: Vp }).__vp?.stats().objectBuilds ?? -1)).toBe(run.builds)
 })
+
+/** The tube as a binary STL: every triangle with its own three corners, as STL writes them. */
+function tubeStl(rings: number, around: number): Buffer {
+  const xml = tubeModel(rings, around)
+  const v = [...xml.matchAll(/<vertex x="([^"]+)" y="([^"]+)" z="([^"]+)"\/>/g)].map((m) => [Number(m[1]), Number(m[2]), Number(m[3])])
+  const t = [...xml.matchAll(/<triangle v1="(\d+)" v2="(\d+)" v3="(\d+)"\/>/g)].map((m) => [Number(m[1]), Number(m[2]), Number(m[3])])
+  // The tube object only: its vertices and triangles come first, the ring's after.
+  const tris = t.slice(0, rings * around * 2 + around * 2)
+  const out = Buffer.alloc(84 + tris.length * 50)
+  out.writeUInt32LE(tris.length, 80)
+  tris.forEach((tri, i) => tri.forEach((c, k) => v[c]!.forEach((x, a) => out.writeFloatLE(x, 84 + i * 50 + 12 + k * 12 + a * 4))))
+  return out
+}
+
+test('a binary STL is on screen before the engine has imported it, and built once', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'Runs at desktop width')
+  test.slow()
+  await open(page)
+  const builds = await page.evaluate(() => (window as unknown as { __vp?: Vp }).__vp?.stats().objectBuilds ?? -1)
+  // About 60,000 triangles.
+  const file = tubeStl(75, 400)
+  await expect(async () => {
+    const chooser = page.waitForEvent('filechooser', { timeout: 5_000 })
+    await page.keyboard.press('ControlOrMeta+o')
+    await (await chooser).setFiles({ name: 'tube.stl', mimeType: 'model/stl', buffer: file })
+  }).toPass({ timeout: 60_000 })
+  await expect.poll(() => page.evaluate(() => performance.getEntriesByName('sx:open:done').length), { timeout: 120_000 }).toBe(1)
+  const ms = await page.evaluate(() => Object.fromEntries(performance.getEntriesByType('measure').filter((e) => e.name.startsWith('sx:open:')).map((e) => [e.name.slice(8), e.startTime + e.duration])))
+  // Read, welded, in the slicing engine and on screen, in that order, all before the geometry engine's import (repair,
+  // unit, loose bodies) was done. Relative only: a slow runner is slow at both.
+  const stages = ['read', 'parse', 'engine', 'objects', 'drawn', 'repair', 'done']
+  for (const s of stages) expect(ms[s], `stage ${s}`).toBeDefined()
+  const ends = stages.map((s) => ms[s]!)
+  expect(ends).toEqual([...ends].sort((a, b) => a - b))
+  // The tube is clean, so the engine's import changed nothing: the object shown first stays, built once.
+  await expect(page.locator('.obj-name')).toHaveText(['tube.stl'])
+  expect(await page.evaluate(() => (window as unknown as { __vp?: Vp }).__vp?.stats().objectBuilds ?? -1)).toBe(builds + 1)
+})
