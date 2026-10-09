@@ -4,7 +4,7 @@
 // raw bytes; only the small request and info objects are JSON.
 import type { Collision, CollisionFix, GcodeExport, MeshHandle, SliceRequest, SliceResult, SliceStage, SliceWarning, SlicerHost } from '@slicerx/contracts'
 import { encodeParts, sliceClock } from '@slicerx/slicer'
-import { invoke } from '@tauri-apps/api/core'
+import { Channel, invoke } from '@tauri-apps/api/core'
 
 // Small hand-written guards for the two info objects the Rust side returns. No schema library: the
 // desktop entry stays small, and a wrong shape here is a build bug, not user input.
@@ -99,6 +99,32 @@ async function load(bytes: Uint8Array, name: string): Promise<MeshHandle> {
 
 let nextJob = 1
 
+/**
+ * Where each engine stage sits in the whole slice, from and to, roughly as the time goes on a big model: cutting the
+ * layers, working out each layer's walls and surfaces, the paths, then the G-code and the preview. A stage the engine
+ * does not report is passed over; the bar never goes back.
+ */
+const STAGE_SPAN: Partial<Record<SliceStage, [number, number]>> = {
+  layers: [0, 0.02],
+  contours: [0.02, 0.25],
+  perimeters: [0.25, 0.55],
+  surfaces: [0.25, 0.55],
+  infill: [0.25, 0.55],
+  paths: [0.55, 0.9],
+  gcode: [0.9, 0.97],
+  preview: [0.97, 1],
+}
+
+/** The engine's (stage, fraction within it) as one fraction of the whole slice that only grows. */
+export function overallProgress(): (stage: SliceStage, fraction: number) => number {
+  let best = 0
+  return (stage, fraction) => {
+    const [a, b] = STAGE_SPAN[stage] ?? [best, best]
+    best = Math.max(best, a + (b - a) * Math.min(1, Math.max(0, fraction)))
+    return best
+  }
+}
+
 export function createTauriSlicer(): SlicerHost {
   return {
     loadModel: (data, fileName) => load(new Uint8Array(data), fileName),
@@ -113,9 +139,13 @@ export function createTauriSlicer(): SlicerHost {
       const cancel = () => void invoke('cancel_slice', { job }).catch(() => undefined)
       if (signal?.aborted) throw new DOMException('Slice canceled', 'AbortError')
       signal?.addEventListener('abort', cancel, { once: true })
+      // The engine's progress, a few times a second, as one fraction of the whole slice.
+      const onProgress = new Channel<{ stage: SliceStage; fraction: number }>()
+      const overall = overallProgress()
+      onProgress.onmessage = (p) => opts?.onProgress?.({ stage: p.stage, fraction: overall(p.stage, p.fraction) })
       let raw: unknown
       try {
-        raw = await invoke('slice', { request, job })
+        raw = await invoke('slice', { request, job, onProgress })
       } catch (e) {
         if (signal?.aborted) throw new DOMException('Slice canceled', 'AbortError')
         throw e

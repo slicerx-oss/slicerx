@@ -2918,6 +2918,12 @@ impl SliceSession {
         if stopped() {
             return Err(Error::Cancelled);
         }
+        // Each parallel pass reports how many of its layers are done, so a host can show a moving bar.
+        let tick = |stage: Stage, done: &std::sync::atomic::AtomicUsize, total: usize| {
+            let d = done.fetch_add(1, Ordering::Relaxed) + 1;
+            #[allow(clippy::cast_precision_loss, reason = "a progress fraction")]
+            progress.report(stage, d as f32 / total.max(1) as f32);
+        };
         // The whole-object plans are worked out here, before the parallel stages read them (the rule in
         // `par`). Each runs its own parallel pass; planned first inside a layer job, one could hang the
         // thread pool, since the thread planning it picks up other layer jobs while it waits, and those wait
@@ -2981,11 +2987,16 @@ impl SliceSession {
                 })
                 .collect();
             drop(whole);
+            let cut_done = std::sync::atomic::AtomicUsize::new(0);
+            let cut_total = (a_hi - a_lo) as usize;
             let cut: Vec<Option<LayerRegions>> = par::map_range(a_lo..a_hi, |l| {
                 if stopped() || taken.get((l - a_lo) as usize).is_some_and(Option::is_some) {
+                    tick(Stage::Contours, &cut_done, cut_total);
                     return None;
                 }
-                Some(self.layer_regions(l, fam_of(l), &micros))
+                let r = Some(self.layer_regions(l, fam_of(l), &micros));
+                tick(Stage::Contours, &cut_done, cut_total);
+                r
             });
             let regions: Vec<LayerRegions> = taken
                 .into_iter()
@@ -2996,12 +3007,16 @@ impl SliceSession {
             let starts: Vec<Option<LayerStart>> =
                 if cfg!(feature = "parallel") && pending.is_some() && !stopped() {
                     let get = |l: u32| regions.get(l.checked_sub(a_lo)? as usize);
+                    let start_done = std::sync::atomic::AtomicUsize::new(0);
+                    let start_total = layers.len();
                     par::map_range(layers.clone(), |i| {
                         if stopped() {
                             return None;
                         }
-                        object_of(i)
-                            .map(|l| self.layer_start(l, layer_cfg_of(l), &mod_cfgs, &get, &micros, &tags))
+                        let s = object_of(i)
+                            .map(|l| self.layer_start(l, layer_cfg_of(l), &mod_cfgs, &get, &micros, &tags));
+                        tick(Stage::Perimeters, &start_done, start_total);
+                        s
                     })
                 } else {
                     Vec::new()
@@ -3088,8 +3103,16 @@ impl SliceSession {
             p
         };
         // The first layer's area and outlines are worked out next to the layers' paths.
+        let path_done = std::sync::atomic::AtomicUsize::new(0);
+        let path_total = jobs.len();
         let (mut out_layers, first_layer_info) = par::join(
-            || par::map_owned(jobs, print_layer),
+            || {
+                par::map_owned(jobs, |job| {
+                    let p = print_layer(job);
+                    tick(Stage::Paths, &path_done, path_total);
+                    p
+                })
+            },
             || self.first_layer_info(config),
         );
         if stopped() {
