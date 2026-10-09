@@ -214,7 +214,7 @@ test('geometry tools run in the browser: cut in two, then repair', async ({ page
   await expect(panel).toBeVisible()
   const offset = panel.getByLabel('Distance from the center, millimeters')
   await offset.fill('1')
-  await offset.press('Enter')
+  await offset.blur()
   await expect(offset).toHaveValue('1')
   await panel.getByRole('button', { name: 'Cut', exact: true }).click()
   await expect(panel).toBeHidden({ timeout: 30_000 })

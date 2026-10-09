@@ -15,6 +15,7 @@ import { cutSelected, sectionLoops } from '../../plate/geom-ops'
 import { cameraBus } from '../../plate/tools'
 import { bounds, type Vec3 } from '../../plate/transform'
 import { get, set, toast, useApp } from '../../state/store'
+import { ToolFooter } from '../../cad/panel-kit'
 import '../../cad/cad.css'
 
 type Preset = 'z' | 'x' | 'y'
@@ -182,12 +183,7 @@ export function CutPanel() {
         </>
       ) : null}
       {entry.history?.steps.length ? <p className="cad-hint">Cutting ends this object's CAD history: the pieces start without one.</p> : null}
-      <div className="cad-actions">
-        <Button variant="ghost" onClick={close} disabled={busy}>Cancel</Button>
-        <Button variant="primary" onClick={() => void cut()} disabled={busy}>
-          {busy ? 'Working' : 'Cut'}
-        </Button>
-      </div>
+      <ToolFooter verb="Cut" onApply={cut} busy={busy} />
     </Block>
   )
 }

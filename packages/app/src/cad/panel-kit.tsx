@@ -2,8 +2,8 @@
 // Copyright (C) 2026 The SlicerX contributors
 // Pieces every modeling tool panel shares: probe mode for the view, the panel frame and a number field.
 import type { PickEvent } from '@slicerx/viewport'
-import { Block, Field, Input, VectorField, type Axis } from '@slicerx/ui'
-import { useEffect, useRef, type ReactNode } from 'react'
+import { Block, Button, Field, Input, VectorField, type Axis } from '@slicerx/ui'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { takePicks } from '../plate/sub-pick'
 import { cameraBus, setProbeHandler, setTool, toolStore } from '../plate/tools'
 import { set, useApp } from '../state/store'
@@ -53,7 +53,7 @@ export function useProbe(onPick: (hit: PickEvent) => void, faces: boolean): void
 export function Num({ id, label, unit, value, onChange, onEnter }: { id: string; label: string; unit: string; value: string; onChange: (v: string) => void; onEnter?: () => void }) {
   return (
     <Field htmlFor={id} label={label}>
-      <Input id={id} mono unit={unit} inputMode="decimal" value={value} onChange={(e) => onChange(e.target.value)} {...(onEnter ? { onKeyDown: (e: React.KeyboardEvent) => e.key === 'Enter' && onEnter() } : {})} />
+      <Input id={id} mono unit={unit} inputMode="decimal" value={value} onChange={(e) => onChange(e.target.value)} {...(onEnter ? { onKeyDown: (e: React.KeyboardEvent) => e.key === 'Enter' && (e.preventDefault(), onEnter()) } : {})} />
     </Field>
   )
 }
@@ -79,5 +79,78 @@ export function Shell({ title, aside, children }: { title: string; aside?: strin
     <Block title={title} data-section="cad-tool" aside={crumb ? <span data-testid="model-tool-crumb">{crumb}</span> : aside} className="cad">
       {children}
     </Block>
+  )
+}
+
+/** A tool's apply: true when it went through, so Apply can close the tool. */
+export type ApplyRun = () => unknown
+
+export interface ToolFooterProps {
+  /** The tool's verb for Apply: "Make hole", "Pull out", "Cut". */
+  verb: string
+  onApply: ApplyRun
+  /** Apply can't run yet (nothing picked, a bad number). */
+  disabled?: boolean
+  busy?: boolean
+  /** Hole, Fillet and Thread: "Apply and repeat" keeps the tool open with the same settings and an empty pick. */
+  repeat?: boolean
+  /** Buttons at the start of the row, such as Other plane. */
+  extra?: ReactNode
+}
+
+/** Is the key for a control that uses Enter itself: a multi-line field, a button, a list. */
+const ownsEnter = (t: EventTarget | null) => t instanceof HTMLElement && (t.tagName === 'TEXTAREA' || t.tagName === 'BUTTON' || t.tagName === 'SELECT' || t.isContentEditable || t.getAttribute('role') === 'combobox')
+
+/**
+ * The footer every modeling tool shares: Cancel (Esc) closes the tool, Apply (Enter) runs it and closes, and on the
+ * tools made for runs of the same feature, Apply and repeat runs it and stays open for the next pick.
+ */
+export function ToolFooter({ verb, onApply, disabled = false, busy = false, repeat = false, extra }: ToolFooterProps) {
+  const ref = useRef<HTMLDivElement>(null)
+  const [running, setRunning] = useState(false)
+  const working = busy || running
+  const go = async (stay: boolean) => {
+    if (disabled || working) return
+    setRunning(true)
+    try {
+      const ok = await onApply()
+      if (ok && !stay) close()
+    } finally {
+      setRunning(false)
+    }
+  }
+  const latest = useRef(go)
+  latest.current = go
+  useEffect(() => {
+    const panel = ref.current?.closest('.sx-block.cad')
+    const onKey = (e: KeyboardEvent) => {
+      if (e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey || e.isComposing) return
+      // A menu, a dialog or the command bar takes its own keys.
+      if (document.querySelector('[role="menu"], [role="dialog"][aria-modal="true"]')) return
+      // Esc from the tool, the view or nowhere in particular; the tree and the pill keep theirs.
+      const t = e.target as Element | null
+      const here = panel?.contains(t) || t === document.body || (t instanceof HTMLCanvasElement && t.classList.contains('vp-canvas'))
+      const act = e.key === 'Escape' && here ? () => close() : e.key === 'Enter' && !e.shiftKey && panel?.contains(t) && !ownsEnter(t) ? () => void latest.current(false) : null
+      // after every other listener: a sketch's line in progress, a field's own Enter or Esc, take the key first
+      if (act) setTimeout(() => !e.defaultPrevented && act(), 0)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+  return (
+    <div ref={ref} className="cad-actions cad-footer">
+      {extra}
+      <Button variant="ghost" data-testid="model-tool-cancel" onClick={close} disabled={working} tip={{ title: 'Close the tool', key: 'Esc' }}>
+        Cancel
+      </Button>
+      {repeat ? (
+        <Button data-testid="model-tool-repeat" onClick={() => void go(true)} disabled={disabled || working} tip={{ title: 'Apply and pick the next one', body: 'The tool stays open with the same settings.' }}>
+          Apply and repeat
+        </Button>
+      ) : null}
+      <Button variant="primary" data-testid="model-tool-apply" onClick={() => void go(false)} disabled={disabled || working} tip={{ title: verb, key: 'Enter' }}>
+        {working ? 'Working' : verb}
+      </Button>
+    </div>
   )
 }

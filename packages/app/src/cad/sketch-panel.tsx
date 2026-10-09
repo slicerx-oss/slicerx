@@ -24,7 +24,7 @@ import { editing, nowOf, saveEdit } from './history/ops'
 import { bindNext } from './history/record'
 import { chamferSketch, filletSketch } from './edge-api'
 import { flipFor, goesIntoFace } from './extrude-direction'
-import { close, errorText, num, Num, pickWords, Shell, useProbe } from './panel-kit'
+import { close, errorText, num, Num, pickWords, Shell, useProbe, ToolFooter } from './panel-kit'
 import { useDraft, useDraftObject } from './park'
 import {
   axisOf,
@@ -313,6 +313,8 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
         }
       } else if (e.key === 'Escape' || e.key === 'Enter') {
         if (l.draft.points.length) {
+          // the line being drawn ends; the tool's own Esc and Enter wait for the next press
+          e.preventDefault()
           setDraft(emptyDraft(l.draft.tool))
           view?.setSketchCursor(null)
         }
@@ -512,13 +514,13 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
       </div>
       <p className="cad-hint"><Icon name="info" size={15} /> {init ? 'Applying changes this step; the steps after it run again.' : 'Finishing turns the sketch into a solid. The sketch stays in the object\'s history, so you can open it again there.'}</p>
       {note ? <p className="cad-note" role="status"><Icon name="alert" size={14} /> {note}</p> : null}
-      <div className="cad-actions">
-        <Button variant="ghost" onClick={onRestart} disabled={busy}>Other plane</Button>
-        <Button variant="ghost" onClick={close} disabled={busy}>Cancel</Button>
-        <Button variant="primary" onClick={() => void go()} disabled={busy || !ready}>
-          {busy ? 'Working' : finish === 'extrude' ? 'Extrude' : 'Revolve'}
-        </Button>
-      </div>
+      <ToolFooter
+        verb={finish === 'extrude' ? 'Extrude' : 'Revolve'}
+        onApply={go}
+        busy={busy}
+        disabled={!ready}
+        extra={<Button variant="ghost" onClick={onRestart} disabled={busy}>Other plane</Button>}
+      />
       {field && fields.length
         ? createPortal(
             <CursorField

@@ -180,8 +180,8 @@ export async function pushTop(page: Page, objectId: string, mm: number | string)
   await expect(panel).toContainText('A face is picked')
   await panel.locator('#push-dist').fill(String(mm))
   await panel.getByRole('button', { name: String(mm).startsWith('-') ? 'Push in' : 'Pull out' }).click()
-  await expect(panel).toContainText('No face yet', { timeout: 30_000 })
-  await panel.getByRole('button', { name: 'Done' }).click()
+  // Apply runs the push and closes the tool.
+  await expect(panel).toHaveCount(0, { timeout: 30_000 })
 }
 
 /** Moves the selected object to a spot on the bed with the Position fields. */

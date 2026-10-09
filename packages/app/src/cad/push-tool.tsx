@@ -4,7 +4,7 @@
 // drag moves it, in the view (viewport cadtools.ts stretches a 1 mm prism, no boolean) or by the
 // typed distance. The field and the drag stay in step. The push itself runs once, on release or Enter.
 import type { PickEvent, PushEvent } from '@slicerx/viewport'
-import { Button, Icon } from '@slicerx/ui'
+import { Icon } from '@slicerx/ui'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { pushPreview, type Vec3 } from '../geom/cad'
 import type { GeomMesh } from '../geom/client'
@@ -15,7 +15,7 @@ import { findTriangle } from './history/model'
 import { editing, nowOf, saveEdit } from './history/ops'
 import { bindNext } from './history/record'
 import { loopsOf } from './cad-ops'
-import { close, errorText, Num, pickWords, Shell, useProbe } from './panel-kit'
+import { close, errorText, Num, pickWords, Shell, useProbe, ToolFooter } from './panel-kit'
 import { follow, useDraft, useDraftObject, useRestored } from './park'
 import { applyPush, onFace, parseDistance, pickPushFace, pushWords, type PushFace } from './push'
 
@@ -33,11 +33,6 @@ export function PushTool() {
   live.current = { ...live.current, face, text, busy }
   const view = cameraBus()?.cad
   const distance = parseDistance(text)
-  // A typed distance can follow a named value; a dragged one is a plain number.
-  const typed = (go: () => Promise<void>) => {
-    bindNext(text)
-    void go().finally(() => bindNext(undefined))
-  }
   // A push step opened from the history: its face, found again on the part as it was before the step.
   const [edit] = useState(() => {
     const ed = editing()
@@ -105,6 +100,7 @@ export function PushTool() {
         // The mesh changed under the face, so the next push starts from a new pick.
         setFace(null)
         setText('')
+        return true
       } catch (e) {
         setNote(errorText(e))
       } finally {
@@ -168,14 +164,22 @@ export function PushTool() {
       ) : (
         <p className="cad-hint" role="status"><Icon name="info" size={15} /> {words}</p>
       )}
-      <Num id="push-dist" label="Distance along the face normal" unit="mm" value={text} onChange={setText} onEnter={() => typed(() => apply(distance, face))} />
+      <Num id="push-dist" label="Distance along the face normal" unit="mm" value={text} onChange={setText} />
       {note || bad ? <p className="cad-note" role="status"><Icon name="alert" size={14} /> {note ?? 'Type a number, such as 5 or -3.'}</p> : null}
-      <div className="cad-actions">
-        <Button variant="ghost" onClick={close} disabled={busy}>Done</Button>
-        <Button variant="primary" onClick={() => typed(() => apply(distance, face))} disabled={busy || !face || !distance}>
-          {busy ? 'Working' : distance !== null && distance < 0 ? 'Push in' : 'Pull out'}
-        </Button>
-      </div>
+      <ToolFooter
+        verb={distance !== null && distance < 0 ? 'Push in' : 'Pull out'}
+        onApply={async () => {
+          // a typed distance can follow a named value; a dragged one is a plain number
+          bindNext(text)
+          try {
+            return await apply(distance, face)
+          } finally {
+            bindNext(undefined)
+          }
+        }}
+        busy={busy}
+        disabled={!face || !distance}
+      />
     </Shell>
   )
 }

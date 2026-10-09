@@ -83,8 +83,7 @@ async function pushFace(page: Page, objectId: string, dir: [number, number, numb
   await expect(panel).toContainText('A face is picked')
   await panel.locator('#push-dist').fill(String(mm))
   await panel.getByRole('button', { name: 'Pull out' }).click()
-  await expect(panel).toContainText('No face yet', { timeout: 60_000 })
-  await panel.getByRole('button', { name: 'Done' }).click()
+  await expect(panel).toHaveCount(0, { timeout: 60_000 })
 }
 
 test('captures the open step card art', async ({ page, isMobile }) => {
@@ -124,7 +123,6 @@ test('captures the open step card art', async ({ page, isMobile }) => {
   await tool.locator('#edge-size').fill('4')
   await tool.getByRole('button', { name: 'Round' }).click()
   await expect.poll(() => steps(page), { timeout: 120_000 }).toHaveLength(5)
-  await tool.getByRole('button', { name: 'Done' }).click()
   await expect(tool).toHaveCount(0)
   await frame(page, id)
   await capture(page, 'design')
