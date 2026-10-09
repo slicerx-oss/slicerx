@@ -97,9 +97,19 @@ pub(crate) fn load_plate_objects(bytes: &[u8], name: &str) -> Result<Vec<(u32, V
             continue;
         }
         if (scale - 1.0).abs() > f32::EPSILON {
-            for v in parts.iter_mut().flat_map(|p| p.positions.iter_mut()) {
-                for c in v.iter_mut() {
-                    *c *= scale;
+            // Positions and the painted pieces decoded on them move to millimeters together.
+            for p in &mut parts {
+                let facets = p
+                    .paint
+                    .iter_mut()
+                    .chain(p.support_paint.iter_mut())
+                    .chain(p.seam_paint.iter_mut())
+                    .chain(p.fuzzy_paint.iter_mut())
+                    .flat_map(|f| f.v.iter_mut());
+                for v in p.positions.iter_mut().chain(facets) {
+                    for c in v.iter_mut() {
+                        *c *= scale;
+                    }
                 }
             }
         }
@@ -1234,5 +1244,98 @@ mod tests {
     fn rejects_garbage() {
         assert!(Mesh::load(b"PK\x03\x04 not really", "x.3mf").is_err());
         assert!(Mesh::load(&zip(&[("3D/3dmodel.model", b"<model/>", false)]), "x.3mf").is_err());
+    }
+
+    /// A 1 inch cube in `unit`, its side `side` long in that unit, with the top painted for filament 2 and a side
+    /// painted for support: the same cube as a file in millimeters with a side of 25.4.
+    fn painted_cube(unit: &str, side: f32) -> Vec<u8> {
+        let v = |x: u8, y: u8, z: u8| {
+            format!(
+                r#"<vertex x="{}" y="{}" z="{}"/>"#,
+                f32::from(x) * side,
+                f32::from(y) * side,
+                f32::from(z) * side
+            )
+        };
+        let verts = [
+            v(0, 0, 0),
+            v(1, 0, 0),
+            v(1, 1, 0),
+            v(0, 1, 0),
+            v(0, 0, 1),
+            v(1, 0, 1),
+            v(1, 1, 1),
+            v(0, 1, 1),
+        ]
+        .concat();
+        let model = format!(
+            r#"<?xml version="1.0" encoding="UTF-8"?><model unit="{unit}" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02"><resources><object id="2" name="cube" type="model"><mesh><vertices>{verts}</vertices><triangles>
+<triangle v1="0" v2="2" v3="1"/><triangle v1="0" v2="3" v3="2"/><triangle v1="4" v2="5" v3="6" paint_color="8"/><triangle v1="4" v2="6" v3="7" paint_color="8"/>
+<triangle v1="0" v2="1" v3="5" paint_supports="4"/><triangle v1="0" v2="5" v3="4"/><triangle v1="1" v2="2" v3="6"/><triangle v1="1" v2="6" v3="5"/>
+<triangle v1="2" v2="3" v3="7"/><triangle v1="2" v2="7" v3="6"/><triangle v1="3" v2="0" v3="4"/><triangle v1="3" v2="4" v3="7"/>
+</triangles></mesh></object></resources><build><item objectid="2"/></build></model>"#
+        );
+        zip(&[("3D/3dmodel.model", model.as_bytes(), true)])
+    }
+
+    #[test]
+    fn an_inch_file_scales_its_paint_with_its_positions() {
+        let inch = Mesh::load(&painted_cube("inch", 1.0), "inch.3mf").unwrap();
+        let mm = Mesh::load(&painted_cube("millimeter", 25.4), "mm.3mf").unwrap();
+        let (a, b) = (&inch.parts[0], &mm.parts[0]);
+        let close = |p: &[f32; 3], q: &[f32; 3]| p.iter().zip(q).all(|(x, y)| (x - y).abs() < 1e-4);
+        let moved = |p: &[f32; 3]| *p;
+        assert_eq!(a.positions.len(), b.positions.len());
+        assert!(
+            a.positions
+                .iter()
+                .zip(&b.positions)
+                .all(|(p, q)| close(&moved(p), q))
+        );
+        for (fa, fb) in [(&a.paint, &b.paint), (&a.support_paint, &b.support_paint)] {
+            assert!(!fa.is_empty() && fa.len() == fb.len());
+            for (x, y) in fa.iter().zip(fb.iter()) {
+                assert_eq!(x.state, y.state);
+                assert!(
+                    x.v.iter().zip(&y.v).all(|(p, q)| close(&moved(p), q)),
+                    "{:?} {:?}",
+                    x.v,
+                    y.v
+                );
+            }
+        }
+        // The top is painted at the cube's top, 25.4 mm up, not at 1.
+        assert!(
+            a.paint
+                .iter()
+                .all(|f| f.v.iter().all(|p| (p[2] - 25.4).abs() < 1e-4))
+        );
+    }
+
+    #[test]
+    fn an_inch_file_slices_as_its_millimeter_twin_in_one_shard_or_four() {
+        // Two filaments: the painted top prints with filament 2.
+        let slice = |bytes: Vec<u8>, shards: u32| {
+            let mesh = std::sync::Arc::new(Mesh::load(&bytes, "cube.3mf").unwrap());
+            let req: crate::api::SliceRequest = serde_json::from_value(serde_json::json!({
+                "plate": {"objects": [{"mesh": "c"}]},
+                "config": {"nozzle_temperature": [220, 220], "filament_diameter": [1.75, 1.75], "brim_type": "no_brim"},
+                "options": {"shards": shards},
+            }))
+            .unwrap();
+            let run = crate::api::run_request(&req, &move |_: &str| Ok(mesh.clone())).unwrap();
+            String::from_utf8(run.gcode).unwrap()
+        };
+        let mm = slice(painted_cube("millimeter", 25.4), 1);
+        assert!(
+            mm.contains(
+                "
+T1
+"
+            ),
+            "the painted top prints with filament 2"
+        );
+        assert_eq!(slice(painted_cube("inch", 1.0), 1), mm);
+        assert_eq!(slice(painted_cube("inch", 1.0), 4), mm);
     }
 }
