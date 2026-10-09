@@ -98,3 +98,52 @@ test('ten opens in a row leave no held frame, canvas or texture behind', async (
   expect(after.geometries).toBeLessThanOrEqual(base.geometries + 2)
   expect(after.textures).toBeLessThanOrEqual(base.textures + 2)
 })
+
+test('a model added to the plate fades in beside the others, which stay as they are', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'Desktop open')
+  await page.addInitScript(() => {
+    if (sessionStorage.getItem('sx-e2e')) return
+    sessionStorage.setItem('sx-e2e', '1')
+    localStorage.setItem('slicerx.debug', '1')
+    localStorage.setItem('slicerx.prefs.v1', JSON.stringify({ workspace: 'prepare', pilot: { mode: 'off' }, autoSlice: false }))
+  })
+  const seen: FileChooser[] = []
+  page.on('filechooser', (c) => seen.push(c))
+  await page.goto('./')
+  await plateReady(page)
+  await viewportReady(page)
+  type Part = { mesh: { material: { opacity: number; transparent: boolean } } }
+  type FadeVp = { objects: Map<string, { parts: Part[] }>; renderFrame(...a: unknown[]): unknown }
+  // On every drawn frame: the lowest opacity among the objects there before, and whether a new one was see-through.
+  const ids = await page.evaluate(() => {
+    const w = window as unknown as { __vp: FadeVp; __old: number; __faded: boolean }
+    const vp = w.__vp
+    const old = new Set(vp.objects.keys())
+    w.__old = 1
+    w.__faded = false
+    const render = vp.renderFrame.bind(vp)
+    vp.renderFrame = (...a: unknown[]) => {
+      for (const [id, o] of vp.objects) for (const p of o.parts) {
+        if (old.has(id)) w.__old = Math.min(w.__old, p.mesh.material.opacity)
+        else if (p.mesh.material.transparent && p.mesh.material.opacity < 1) w.__faded = true
+      }
+      return render(...a)
+    }
+    return [...old]
+  })
+  expect(ids.length).toBeGreaterThan(0)
+  await page.getByTestId('objects-add-model').click()
+  await expect.poll(() => seen.length).toBe(1)
+  await seen[0]!.setFiles(fileURLToPath(new URL('../../../packages/core/bench/models/x-mark.stl', import.meta.url)))
+  await expect.poll(() => page.evaluate(() => (window as unknown as { __sx: { getState(): { plateLoading: boolean; plate: { name: string }[] } } }).__sx.getState()).then((s) => !s.plateLoading && s.plate.some((p) => /x-mark/i.test(p.name))), { timeout: 60_000 }).toBe(true)
+  await page.waitForTimeout(600)
+  const r = await page.evaluate(() => {
+    const w = window as unknown as { __vp: FadeVp; __old: number; __faded: boolean }
+    return { old: w.__old, faded: w.__faded, now: [...w.__vp.objects.values()].flatMap((o) => o.parts).map((p) => p.mesh.material.opacity) }
+  })
+  // the objects already there never dimmed; the new one drew see-through on its way in, and everything ends whole
+  expect(r.old).toBe(1)
+  expect(r.faded).toBe(true)
+  // and everything ends whole (a slow renderer takes a few frames to get there)
+  await expect.poll(() => page.evaluate(() => Math.min(...[...(window as unknown as { __vp: FadeVp }).__vp.objects.values()].flatMap((o) => o.parts).map((p) => p.mesh.material.opacity)))).toBe(1)
+})

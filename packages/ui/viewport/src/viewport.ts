@@ -56,7 +56,7 @@ import { GapLines, type GapLine } from './gaps'
 import { GuideLines, type Guides } from './guides'
 import { applyInsets, CameraRig, NO_INSETS, reducedMotion, type Insets } from './camera'
 import { edgeLook, MaterialCache, setEdgeResolution, setSharedBandColors, setSharedLayerTops, setSharedSceneColors, shared, sharedMaterials } from './materials'
-import { buildObject, disposeObject, wideEdges, type ObjectEntry } from './model'
+import { buildObject, disposeObject, wideEdges, type ObjectEntry, type PartEntry } from './model'
 import { Pipeline } from './post'
 import { Stage } from './stage'
 import { FrameProbe, probeRequested, type ProbeStats } from './probe'
@@ -98,6 +98,8 @@ import type {
 
 /** How long the camera takes to reach a newly opened model from the old one's framing. */
 const SWAP_REFRAME_MS = 250
+/** How long a model added beside the others takes to fade in. */
+const FADE_IN_MS = 220
 
 const RING = 600
 const SETTLE_FRAMES = 3
@@ -584,6 +586,7 @@ class ViewportImpl implements Viewport {
     }
     const revealing = this.stepReveal(now)
     if (revealing) this.dirty = true
+    if (this.stepFade(now)) this.dirty = true
     if (moving) {
       this.dirty = true
       this.settle = SETTLE_FRAMES
@@ -901,9 +904,19 @@ class ViewportImpl implements Viewport {
         const wide = e.edge === 'cad' && e.visible
         p.edges.material = e.edge === 'xray' ? sh.edgeXray : e.edge === 'cad' ? sh.edgeCad : sh.edgeDark
         p.edges.visible = e.visible && !wide
-        if (wide) wideEdges(p, sh.edgeCadWide).visible = true
+        if (wide) {
+          const w = wideEdges(p, sh.edgeCadWide)
+          w.material = sh.edgeCadWide
+          w.visible = true
+        }
         else if (p.wide) p.wide.visible = false
       }
+    }
+    // parts still fading in keep their stand-in materials through a re-apply (a plate update while they fade)
+    for (const f of this.fade?.parts ?? []) {
+      f.p.mesh.material = f.mesh
+      f.p.edges.material = f.edges
+      if (f.wide && f.p.wide) f.p.wide.material = f.wide as typeof f.p.wide.material
     }
     this.stage.setNeutralLight(this.renderMode === 'cad')
     this.stage.setContactVisible(!x && this.mode === 'prepare')
@@ -1028,6 +1041,10 @@ class ViewportImpl implements Viewport {
     const sh = sharedMaterials()
     let built = 0
     let kept = 0
+    // objects built new in this call, for the fade-in of a model added to a plate that already had some
+    const added: string[] = []
+    let replaced = false
+    const hadAny = before.size > 0
     for (const obj of plate.objects) {
       if (this.objects.has(obj.id)) continue
       const parked = before.has(obj.id) ? undefined : this.parked.get(obj.id)
@@ -1058,6 +1075,9 @@ class ViewportImpl implements Viewport {
       this.objects.set(obj.id, entry)
       this.stage.objectsRoot.add(entry.group)
       built++
+      // an object rebuilt under the same id (new geometry for it) takes its own place: that's a replacement
+      if (before.has(obj.id)) replaced = true
+      else added.push(obj.id)
     }
     for (const [id, o] of before) {
       const from = this.builtFrom.get(id)
@@ -1078,12 +1098,82 @@ class ViewportImpl implements Viewport {
       this.cut = e ? { ...this.cut, entry: e } : null
     }
     this.applyMaterials()
+    // A model added beside the others fades in. Not the first plate, a swap of the whole plate (it crossfades), or an
+    // object taking another's place (the engine's import replacing the quick draw is meant to be invisible).
+    const removed = replaced || [...before.keys()].some((id) => !this.objects.has(id))
+    if (added.length && hadAny && !removed && !this.swapping) this.fadeIn(added)
     this.objectsMoved()
     this.applyToolpathLook()
     // A fresh plate (the first one, a project opened, a plate swap) opens on the whole build plate, not on its parts.
     // a new model swapping in for the old one eases the camera to it from the swap frame (at once under reduced motion)
     if (!opts.keepCamera) this.view('plate', this.swapping ? { animate: true, durationMs: SWAP_REFRAME_MS } : {})
     this.plateSet = { at: t0, buildMs: performance.now() - t0, built, kept }
+  }
+
+  /** Objects fading in, with the stand-in materials they wear until they are whole. */
+  private fade: { t0: number | null; parts: { p: PartEntry; mesh: Material; edges: Material; edgeOpacity: number; wide?: Material; wideOpacity: number }[] } | null = null
+
+  private fadeIn(ids: readonly string[]): void {
+    if (reducedMotion()) return
+    if (this.fade) {
+      // a fade still running finishes at once: its parts take their shared materials back
+      this.endFade()
+      this.applyMaterials()
+    }
+    const parts: NonNullable<ViewportImpl['fade']>['parts'] = []
+    for (const id of ids) {
+      for (const p of this.objects.get(id)?.parts ?? []) {
+        const mesh = (p.mesh.material as Material).clone()
+        mesh.transparent = true
+        mesh.opacity = 0
+        const edges = (p.edges.material as Material).clone()
+        const edgeOpacity = edges.opacity
+        edges.opacity = 0
+        p.mesh.material = mesh
+        p.edges.material = edges
+        // the CAD look's wide edges fade with their part
+        const wide = p.wide?.visible ? (p.wide.material as Material).clone() : undefined
+        const wideOpacity = wide?.opacity ?? 1
+        if (wide && p.wide) {
+          wide.opacity = 0
+          p.wide.material = wide as typeof p.wide.material
+        }
+        parts.push({ p, mesh, edges, edgeOpacity, ...(wide ? { wide } : {}), wideOpacity })
+      }
+    }
+    // the clock starts on the first frame that draws it, so a slow first frame doesn't eat the fade
+    if (parts.length) this.fade = { t0: null, parts }
+    this.invalidate()
+  }
+
+  /** Advances the fade-in; true while it runs. */
+  private stepFade(now: number): boolean {
+    const f = this.fade
+    if (!f) return false
+    f.t0 ??= now
+    const k = Math.min(1, (now - f.t0) / FADE_IN_MS)
+    const e = 1 - (1 - k) * (1 - k)
+    for (const x of f.parts) {
+      x.mesh.opacity = e
+      x.edges.opacity = x.edgeOpacity * e
+      if (x.wide) x.wide.opacity = x.wideOpacity * e
+    }
+    if (k < 1) return true
+    this.endFade()
+    this.applyMaterials()
+    return false
+  }
+
+  /** Drops the stand-in materials (applyMaterials puts the shared ones back). */
+  private endFade(): void {
+    const f = this.fade
+    if (!f) return
+    this.fade = null
+    for (const x of f.parts) {
+      x.mesh.dispose()
+      x.edges.dispose()
+      x.wide?.dispose()
+    }
   }
 
   private park(id: string, entry: ObjectEntry, from: [Float32Array, Uint32Array | Uint16Array][]): void {
