@@ -97,6 +97,8 @@ async function load(bytes: Uint8Array, name: string): Promise<MeshHandle> {
   }
 }
 
+let nextJob = 1
+
 export function createTauriSlicer(): SlicerHost {
   return {
     loadModel: (data, fileName) => load(new Uint8Array(data), fileName),
@@ -105,8 +107,26 @@ export function createTauriSlicer(): SlicerHost {
       const started = performance.now()
       const request = JSON.stringify({ plate: { ...req.plate, objects: req.plate.objects.map((o) => ({ ...o, mesh: Number(o.mesh), ...(o.volumes ? { volumes: o.volumes.map((v) => ({ ...v, mesh: Number(v.mesh) })) } : {}) })) }, config: req.config, options: { ...sliceClock(), ...(req.options ?? {}) } })
       opts?.onProgress?.({ stage: 'layers', fraction: 0 })
-      const info = parseSliceInfo(await invoke('slice', { request }))
-      if (opts?.signal?.aborted) throw new DOMException('Slice canceled', 'AbortError')
+      // A cancel stops the engine between stages; a result that lands anyway is let go at once.
+      const job = nextJob++
+      const signal = opts?.signal
+      const cancel = () => void invoke('cancel_slice', { job }).catch(() => undefined)
+      if (signal?.aborted) throw new DOMException('Slice canceled', 'AbortError')
+      signal?.addEventListener('abort', cancel, { once: true })
+      let raw: unknown
+      try {
+        raw = await invoke('slice', { request, job })
+      } catch (e) {
+        if (signal?.aborted) throw new DOMException('Slice canceled', 'AbortError')
+        throw e
+      } finally {
+        signal?.removeEventListener('abort', cancel)
+      }
+      const info = parseSliceInfo(raw)
+      if (signal?.aborted) {
+        void invoke('release', { id: info.id }).catch(() => undefined)
+        throw new DOMException('Slice canceled', 'AbortError')
+      }
       const stageMicros: SliceResult['stageMicros'] = {}
       for (const [k, v] of Object.entries(info.stageMicros)) stageMicros[k as SliceStage] = v
       return {
