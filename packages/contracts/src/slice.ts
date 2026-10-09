@@ -360,6 +360,8 @@ export interface SliceResult {
   stageMicros: Partial<Record<SliceStage, number>>
   /** Wall time from request to result, ms. */
   wallMs: number
+  /** The engine's own wall time for the slice, ms, when the host reports it (the rest of `wallMs` is the way in and out). */
+  engineWallMs?: number
   warnings: SliceWarning[]
   /** `bgcode` when the profile asked for binary G-code (Prusa); absent for plain text. */
   gcodeFormat?: 'bgcode'
