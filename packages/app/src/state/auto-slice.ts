@@ -10,7 +10,7 @@ import { appStore, type AppState } from './store'
 export const AUTO_SLICE_DELAY_MS = 900
 
 /** Everything a slice reads. A change to any of these changes the print. */
-export const INPUTS = ['plate', 'plates', 'activePlate', 'overrides', 'easy', 'objectSettings', 'slotSetup', 'printerSlots', 'flush', 'tower', 'layerMarks', 'calibration', 'userPresets', 'printerId', 'printerNozzles', 'printerExtruders', 'bed', 'profile'] as const satisfies readonly (keyof AppState)[]
+export const INPUTS = ['plate', 'plates', 'activePlate', 'overrides', 'easy', 'objectSettings', 'slotSetup', 'printerSlots', 'flush', 'tower', 'layerMarks', 'calibration', 'userPresets', 'printerId', 'printerNozzles', 'printerExtruders', 'bed', 'profile', 'resume'] as const satisfies readonly (keyof AppState)[]
 
 const changed = (a: AppState, b: AppState): boolean => INPUTS.some((k) => a[k] !== b[k])
 

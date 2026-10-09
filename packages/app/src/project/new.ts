@@ -47,6 +47,8 @@ export function clearProject(): void {
     projectOpenAsk: null,
     namedValues: [],
     fileSlotColors: [],
+    // A resume plan belongs to the failed job: the next project slices from its first layer.
+    resume: null,
   })
   history().clear()
   markClean()
