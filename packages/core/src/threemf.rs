@@ -949,6 +949,129 @@ mod tests {
 <triangle v1="2" v2="3" v3="7"/><triangle v1="2" v2="7" v3="6"/><triangle v1="3" v2="0" v3="4"/><triangle v1="3" v2="4" v3="7"/>
 </triangles></mesh></object>"#;
 
+    /// The raw parts format with a paint block: one part, slot `slot`, the cube's corners and triangles, and
+    /// `(layer, triangle, text)` paint.
+    fn raw_painted_cube(slot: u8, paint: &[(u8, u32, &str)]) -> Vec<u8> {
+        let corners: [[f32; 3]; 8] = [
+            [0., 0., 0.],
+            [10., 0., 0.],
+            [10., 10., 0.],
+            [0., 10., 0.],
+            [0., 0., 10.],
+            [10., 0., 10.],
+            [10., 10., 10.],
+            [0., 10., 10.],
+        ];
+        let tris: [[u32; 3]; 12] = [
+            [0, 2, 1],
+            [0, 3, 2],
+            [4, 5, 6],
+            [4, 6, 7],
+            [0, 1, 5],
+            [0, 5, 4],
+            [1, 2, 6],
+            [1, 6, 5],
+            [2, 3, 7],
+            [2, 7, 6],
+            [3, 0, 4],
+            [3, 4, 7],
+        ];
+        let mut b = b"SXMP".to_vec();
+        b.extend_from_slice(&1u32.to_le_bytes());
+        b.push(slot);
+        b.extend_from_slice(&4u16.to_le_bytes());
+        b.extend_from_slice(b"cube");
+        b.extend_from_slice(&8u32.to_le_bytes());
+        for c in corners.iter().flatten() {
+            b.extend_from_slice(&c.to_le_bytes());
+        }
+        b.extend_from_slice(&12u32.to_le_bytes());
+        for i in tris.iter().flatten() {
+            b.extend_from_slice(&i.to_le_bytes());
+        }
+        let layers: Vec<u8> = (0..4).filter(|l| paint.iter().any(|p| p.0 == *l)).collect();
+        b.extend_from_slice(b"SXPT");
+        b.extend_from_slice(&(layers.len() as u32).to_le_bytes());
+        for l in layers {
+            let list: Vec<_> = paint.iter().filter(|p| p.0 == l).collect();
+            b.extend_from_slice(&0u32.to_le_bytes());
+            b.push(l);
+            b.extend_from_slice(&(list.len() as u32).to_le_bytes());
+            for (_, t, text) in list {
+                b.extend_from_slice(&t.to_le_bytes());
+                b.extend_from_slice(&(text.len() as u16).to_le_bytes());
+                b.extend_from_slice(text.as_bytes());
+            }
+        }
+        b
+    }
+
+    #[test]
+    fn raw_paint_loads_as_the_same_3mf_paint() {
+        use std::fmt::Write as _;
+        // Real paint texts from a painted keychain, a whole triangle in each of two filaments, and seam, support and
+        // fuzzy skin paint: the painted pieces must come out the same either way, the part's own filament left out.
+        let paint: &[(u8, u32, &str)] = &[
+            (0, 0, "4"),
+            (0, 2, "8"),
+            (0, 5, "004044244640446400AA603"),
+            (0, 8, "0044244244434404424464340446400A6440446400A2044244A33"),
+            (1, 3, "4"),
+            (2, 4, "8"),
+            (2, 9, "04044244640446400AA6044244244A2"),
+            (3, 6, "4"),
+        ];
+        let attr =
+            |l: u8| ["paint_color", "paint_seam", "paint_supports", "paint_fuzzy_skin"][usize::from(l)];
+        // The cube with each triangle's paint attributes, as the app's project writer puts them.
+        let mut pieces = CUBE_OBJECT.split("<triangle ");
+        let mut obj = pieces.next().unwrap_or_default().to_owned();
+        for (i, rest) in pieces.enumerate() {
+            obj.push_str("<triangle ");
+            for (l, t, text) in paint {
+                if *t as usize == i {
+                    let _ = write!(obj, r#"{}="{text}" "#, attr(*l));
+                }
+            }
+            obj.push_str(rest);
+        }
+        let model = format!(
+            r#"<model unit="millimeter"><resources>{obj}</resources><build><item objectid="2"/></build></model>"#
+        );
+        let settings = r#"<config><object id="2"><metadata key="extruder" value="2"/></object></config>"#;
+        let three = Mesh::load(
+            &zip(&[
+                ("3D/3dmodel.model", model.as_bytes(), true),
+                ("Metadata/model_settings.config", settings.as_bytes(), false),
+            ]),
+            "cube.3mf",
+        )
+        .unwrap();
+        let raw = Mesh::load(&raw_painted_cube(2, paint), "cube").unwrap();
+        let (a, b) = (&three.parts[0], &raw.parts[0]);
+        assert_eq!(a.slot, 2);
+        assert_eq!(b.slot, 2);
+        assert_eq!(a.positions, b.positions);
+        assert_eq!(a.triangles, b.triangles);
+        assert!(
+            !b.paint.is_empty()
+                && !b.seam_paint.is_empty()
+                && !b.support_paint.is_empty()
+                && !b.fuzzy_paint.is_empty()
+        );
+        assert!(
+            b.paint.iter().all(|f| f.state != 2),
+            "the part's own filament is left out"
+        );
+        assert_eq!(a.paint, b.paint);
+        assert_eq!(a.seam_paint, b.seam_paint);
+        assert_eq!(a.support_paint, b.support_paint);
+        assert_eq!(a.fuzzy_paint, b.fuzzy_paint);
+        // A paint block cut short is refused, not read as garbage.
+        let bytes = raw_painted_cube(2, paint);
+        assert!(Mesh::from_raw(&bytes[..bytes.len() - 3], "cube").is_err());
+    }
+
     #[test]
     fn plain_3mf_with_transform() {
         let model = format!(
