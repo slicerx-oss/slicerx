@@ -259,6 +259,11 @@ Ids that tests read for their text:
 | `model-tree-filter` | The tree's filter field, opened by typing in the tree; Escape shuts it |
 | `model-tree-rollback` | The rollback row after the step the part is shown at: drag it, or Up, Down and End with focus |
 | `model-tree-rename` | The inline name field of an object or a step being renamed |
+| `model-transform-summary` | Transform's position line while a tool is open and Transform is folded |
+| `model-tool-crumb` | A tool's header while a step is being edited: the object, then the step |
+| `model-inspector-multi` | The inspector with two or more objects selected |
+| `model-multi-size` | The size the selected objects take together |
+| `model-multi-object` | A selected object in the multi-selection; `data-object-id`; selects it alone |
 | `model-ctx` | An open Model tree menu, from a right click, a long press, Shift+F10 or More; `data-target` is `step` or `object` |
 | `model-ctx-edit`, `model-ctx-roll`, `model-ctx-suppress`, `model-ctx-rename`, `model-ctx-earlier`, `model-ctx-later`, `model-ctx-sketch`, `model-ctx-end` | A step menu's items: edit it, roll the part back to it, turn it off or on, rename, move, show its sketch, roll back to the latest |
 | `model-ctx-lock`, `model-ctx-printable`, `model-ctx-split-objects`, `model-ctx-split-parts`, `model-ctx-merge`, `model-ctx-duplicate`, `model-ctx-center`, `model-ctx-drop`, `model-ctx-slice` | An object menu's items, with `model-ctx-rename`: lock, printable, split, merge, duplicate, center, drop to the bed, go to Slice |
