@@ -10,6 +10,7 @@ import { resolveSlots } from '../filament/slots'
 import { printBlock } from '../plate/heimdall'
 import { objectWarnings } from '../plate/object-list'
 import { jobFileName } from '../state/actions'
+import { openTiming } from '../lib/open-timing'
 import { get, setWorkspace, type AppState } from '../state/store'
 import type { Capture, LogKind } from './capture'
 import { BridgeError, click, elements, fill, pressKey, testids, waitFor } from './dom'
@@ -93,6 +94,8 @@ export function appState(s: AppState): Record<string, unknown> {
     slicing: sliceSummary(s),
     setupOpen: s.setup !== null,
     unsavedPrompt: s.unsavedPrompt?.what ?? null,
+    // Where the time of the last file open went (lib/open-timing.ts), or null before the first open.
+    lastOpen: openTiming(),
   }
 }
 
