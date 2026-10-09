@@ -27,6 +27,9 @@ test.describe('Model tree', () => {
     await more.click()
     await expect(page.getByTestId('model-ctx')).toHaveAttribute('data-target', 'step')
     await page.keyboard.press('Escape')
+    // The closed menu hands focus back to More; the keyboard walk starts after that.
+    await expect(page.getByTestId('model-ctx')).toHaveCount(0)
+    await expect(more).toBeFocused()
 
     // The keyboard: the object is the row Tab reaches, Down goes to the step.
     const name = page.locator('.dtree-name', { hasText: 'Box' })
