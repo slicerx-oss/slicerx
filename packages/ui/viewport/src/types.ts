@@ -427,6 +427,8 @@ export interface ViewportStats {
   aoOn: boolean
   /** Moving frames are drawn at this fraction of the still resolution. */
   motionScale: number
+  /** The camera is on its way to a view (a preset, a fit or a zoom), so the picture is not where it will stop. */
+  cameraMoving: boolean
 }
 
 export interface Viewport {
