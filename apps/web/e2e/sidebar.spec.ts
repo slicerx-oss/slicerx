@@ -113,6 +113,18 @@ test('shots: the mode chip in the pane title, closed and open, light and dark', 
     await page.mouse.move(0, 0)
     await page.waitForTimeout(400)
     await page.screenshot({ path: `${dir}/mode-chip-${scheme}-${width}.png` })
+    // The pane head close up: the title, the chip and the pane's edge tab.
+    const head = page.locator('.pane .sx-rail-head').filter({ has: chip })
+    const box = (await head.boundingBox())!
+    await page.screenshot({ path: `${dir}/mode-chip-head-${scheme}-${width}.png`, clip: { x: Math.max(0, box.x - 8), y: Math.max(0, box.y - 8), width: Math.min(width - Math.max(0, box.x - 8), box.width + 48), height: box.height + 16 } })
+    // The whole pane with its edge tab beside it.
+    const tab = page.getByTestId('edge-tab-left')
+    if (await tab.count()) {
+      const pane = (await page.locator('.pane').filter({ has: chip }).boundingBox())!
+      const t = (await tab.boundingBox())!
+      const right = Math.min(width, Math.max(pane.x + pane.width, t.x + t.width) + 8)
+      await page.screenshot({ path: `${dir}/mode-chip-pane-${scheme}-${width}.png`, clip: { x: pane.x, y: pane.y, width: right - pane.x, height: Math.max(box.height, t.y + t.height - pane.y) + 8 } })
+    }
     await chip.click()
     await expect(page.getByRole('menu', { name: 'Settings mode' })).toBeVisible()
     await page.waitForTimeout(300)
