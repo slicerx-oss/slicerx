@@ -439,7 +439,9 @@ export function ViewportHost({ layers }: { layers: boolean }) {
       }
       // The open in progress is on screen once a frame with its objects is drawn.
       offs.push(vp.on('platedrawn', (e) => {
-        markViewDrawn(mountedAt, (vp as Partial<Pick<Viewport, 'stats'>>).stats?.().firstDrawMs ?? null)
+        const stats = (vp as Partial<Pick<Viewport, 'stats'>>).stats?.bind(vp)
+        // A viewport stand-in without the split leaves it out.
+        markViewDrawn(mountedAt, stats?.().firstDrawMs ?? null, () => ({ ...(stats?.().startup ?? {}) }))
         if (e.built + e.kept > 0) markOpenStage('drawn')
       }))
       offs.push(vp.on('pick', (e) => {

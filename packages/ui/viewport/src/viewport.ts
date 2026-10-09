@@ -58,6 +58,7 @@ import { buildObject, disposeObject, type ObjectEntry } from './model'
 import { Pipeline } from './post'
 import { Stage } from './stage'
 import { FrameProbe, probeRequested, type ProbeStats } from './probe'
+import { CompileClock, emptyStartup, markSpan } from './startup'
 import { Toolpaths, warmupBuffers } from './toolpaths'
 import { Strikes, type StrikeMark } from './strikes'
 import type { GantryHit, GantrySpec } from './gantry'
@@ -271,6 +272,10 @@ class ViewportImpl implements Viewport {
   private afterFrame: (() => void) | null = null
   private cameraMoved = false
   private firstFrameMs: number | null = null
+  /** How the view's start split up (stats().startup), and the clock on the compile calls until the warm-up is done. */
+  private readonly startup = emptyStartup()
+  private readonly compileClock = new CompileClock()
+  private constructedAt = 0
   /** The part arrays each object was built from, by object id: the same arrays again keep the built object. */
   private readonly builtFrom = new Map<string, [Float32Array, Uint32Array | Uint16Array][]>()
   /** Objects built (not kept) by setPlate since the viewport started. */
@@ -328,12 +333,16 @@ class ViewportImpl implements Viewport {
 
   constructor(canvas: HTMLCanvasElement, opts: ViewportOptions) {
     this.canvas = canvas
+    const constructStart = performance.now()
     let renderer: WebGLRenderer
     try {
       renderer = new WebGLRenderer({ canvas, antialias: false, alpha: false, stencil: false, powerPreference: 'high-performance' })
     } catch (e) {
       throw new Error('The 3D view needs WebGL2. Turn on hardware acceleration in the browser settings, then reload.', { cause: e })
     }
+    this.startup.rendererMs = performance.now() - constructStart
+    markSpan('renderer', constructStart)
+    this.compileClock.start(renderer.getContext())
     this.renderer = renderer
     renderer.autoClear = false
     renderer.info.autoReset = false
@@ -357,7 +366,11 @@ class ViewportImpl implements Viewport {
     canvas.setAttribute('aria-label', opts.label ?? '3D view of the plate. Drag to orbit, scroll to zoom.')
     canvas.style.touchAction = 'none'
 
+    const stageStart = performance.now()
     this.stage = new Stage(renderer, this.weak)
+    const stageEnd = performance.now()
+    this.startup.stageMs = stageEnd - stageStart
+    markSpan('stage', stageStart, stageEnd)
     // The reveal plays on a window's first plate, once. Reduced motion and software graphics draw the plate at once.
     if (opts.reveal !== false && !revealPlayed() && !reducedMotion() && (opts.reveal === 'always' || !gpu.software)) {
       this.reveal = new PlateReveal(canvas)
@@ -365,7 +378,9 @@ class ViewportImpl implements Viewport {
       canvas.dataset['reveal'] = 'waiting'
     } else canvas.dataset['reveal'] = 'off'
     if (probeRequested()) this.probe = new FrameProbe(renderer)
+    const pipelineStart = performance.now()
     this.pipeline = new Pipeline(renderer, this.quality)
+    this.startup.pipelineMs = performance.now() - pipelineStart
     this.camera = new PerspectiveCamera(30, 1, 20, 1600)
     this.camera.position.set(260, 230, 330)
     this.controls = new OrbitControls(this.camera, canvas)
@@ -465,22 +480,30 @@ class ViewportImpl implements Viewport {
         }),
       ),
     )
+    this.constructedAt = performance.now()
+    this.startup.constructMs = this.constructedAt - constructStart
+    this.startup.constructPrograms = this.compileClock.programs
+    this.startup.constructCompileMs = this.compileClock.ms
+    markSpan('construct', constructStart, this.constructedAt)
   }
 
   /** Compiles the bead shaders in the background so the first real preview frame does not wait for them. */
   private async warmPreview(): Promise<void> {
     // A preview set before the first frame (a slice that finished while the view was being made, such as one run
     // behind first-run setup) compiles the shaders itself. Warming up would swap it for the warm-up bead and then clear it.
-    if (this.toolpaths.segmentCount > 0) return
+    if (this.toolpaths.segmentCount > 0) return this.compileClock.stop()
     const gen = this.previewGen
     const root = this.stage.previewRoot
+    const warmStart = performance.now()
+    const clock = this.compileClock
+    const [ms0, programs0] = [clock.ms, clock.programs]
     this.toolpaths.set(warmupBuffers())
     this.toolpaths.warmNozzle(true)
     root.visible = true
     await this.renderer.compileAsync(this.stage.scene, this.camera).catch(() => {
       // Best effort: if it fails, the first real preview frame compiles the shaders instead.
     })
-    if (this.disposed) return
+    if (this.disposed) return clock.stop()
     // One frame with the warm-up bead and a shadow update also builds the shadow-pass program.
     this.shadowDirty = true
     this.afterFrame = () => {
@@ -490,6 +513,11 @@ class ViewportImpl implements Viewport {
         this.toolpaths.set(null)
       }
       this.shadowDirty = true
+      this.startup.warmMs = performance.now() - warmStart
+      this.startup.warmPrograms = clock.programs - programs0
+      this.startup.warmCompileMs = clock.ms - ms0
+      clock.stop()
+      markSpan('warm', warmStart)
     }
     this.invalidate()
   }
@@ -645,6 +673,8 @@ class ViewportImpl implements Viewport {
 
   private renderFrame(aoMix: number, moving: boolean): void {
     const t0 = performance.now()
+    const first = this.frames === 0
+    const compile0 = first ? [this.compileClock.ms, this.compileClock.programs] : null
     this.edgeMarks.refresh((p) => this.mmPerPx(p))
     this.probe?.begin()
     this.renderer.info.reset()
@@ -685,6 +715,15 @@ class ViewportImpl implements Viewport {
     this.renderMs.push(t1 - t0)
     if (this.gpuTiming) this.costMs.push(t1 - t0)
     this.frames++
+    if (compile0) {
+      const s = this.startup
+      s.waitMs = t0 - this.constructedAt
+      s.firstFrameMs = t1 - t0
+      s.firstFrameCompileMs = this.compileClock.ms - compile0[0]!
+      s.firstFramePrograms = this.compileClock.programs - compile0[1]!
+      markSpan('wait', this.constructedAt, t0)
+      markSpan('first-frame', t0, t1)
+    }
     this.firstFrame.frame()
     if (this.afterFrame) {
       const f = this.afterFrame
@@ -699,7 +738,7 @@ class ViewportImpl implements Viewport {
     if (this.plateSet) {
       const p = this.plateSet
       this.plateSet = null
-      this.emit('platedrawn', { buildMs: p.buildMs, drawMs: t1 - p.at, built: p.built, kept: p.kept })
+      this.emit('platedrawn', { buildMs: p.buildMs, drawMs: t1 - p.at, frameMs: t1 - t0, built: p.built, kept: p.kept })
     }
   }
 
@@ -3167,6 +3206,7 @@ class ViewportImpl implements Viewport {
       firstFrameMs: this.firstFrameMs,
       firstDrawMs: this.firstFrame.ms,
       objectBuilds: this.objectBuilds,
+      startup: { ...this.startup },
       drawCalls: info.render.calls,
       triangles: info.render.triangles,
       segments: this.toolpaths.segmentCount,
@@ -3209,6 +3249,7 @@ class ViewportImpl implements Viewport {
   dispose(): void {
     if (this.disposed) return
     this.disposed = true
+    this.compileClock.stop()
     for (const p of this.parked.values()) {
       clearTimeout(p.timer)
       disposeObject(p.entry)
