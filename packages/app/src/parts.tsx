@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // App-level pieces @slicerx/ui does not have: a filament swatch and generated cover art.
-import type { CSSProperties } from 'react'
+import { useState, type CSSProperties } from 'react'
 
 /** A filament color dot. The color is data (a spool's #rrggbb), not a style token. */
 export function Swatch({ color, size }: { color: string; size?: 'sm' }) {
@@ -50,22 +50,63 @@ export function LayerArt({ seed, layers = 16, muted }: { seed: string; layers?: 
   )
 }
 
+/** Up to this many triangles a silhouette is drawn triangle by triangle; above, it is traced on a grid. */
+const WHOLE_MAX = 50_000
+
+export type SilhouetteParts = readonly { positions: Float32Array; indices: Uint32Array }[]
+
+const drawn = new WeakMap<SilhouetteParts, { d: string; size: number; evenOdd?: boolean }>()
+
+/** The outline tracer for large models (silhouette-trace.ts), loaded with the first one, not with the app. */
+type Trace = typeof import('./silhouette-trace').tracedPath
+let trace: Trace | null = null
+let tracing: Promise<void> | null = null
+const loadTrace = (): Promise<void> => (tracing ??= import('./silhouette-trace').then((m) => void (trace = m.tracedPath)))
+
 /**
- * A model's silhouette, drawn from its triangles and seen along its thinnest
- * axis, so flat parts show their outline. For models small enough to draw whole.
+ * A model's silhouette, drawn from its triangles and seen along its thinnest axis, so flat parts show their outline.
+ * A model of up to WHOLE_MAX triangles is drawn whole; the outline of a larger one is traced on a grid (silhouette-trace.ts),
+ * since a path through millions of triangles is hundreds of megabytes of text for a thumbnail. Kept per parts array, so the
+ * object list does not draw it again on every render.
  */
-export function Silhouette({ parts }: { parts: readonly { positions: Float32Array; indices: Uint32Array }[] }) {
+export function Silhouette({ parts }: { parts: SilhouetteParts }) {
+  const [, redraw] = useState(0)
+  let sil = drawn.get(parts)
+  if (!sil) {
+    const made = silhouettePath(parts, trace)
+    if (made) drawn.set(parts, (sil = made))
+    else void loadTrace().then(() => redraw((n) => n + 1))
+  }
+  // A large model shows its outline once the tracer has loaded.
+  if (!sil) return <svg className="silhouette" aria-hidden="true" />
+  const { d, size, evenOdd } = sil
+  return (
+    <svg className="silhouette" viewBox={`0 0 ${size} ${size}`} aria-hidden="true">
+      <path d={d} {...(evenOdd ? { fillRule: 'evenodd' as const } : {})} />
+    </svg>
+  )
+}
+
+/**
+ * The silhouette's path, the size of its square view box, and whether its holes are filled even-odd. Null for a model
+ * above WHOLE_MAX triangles when no tracer is given.
+ */
+export function silhouettePath(parts: SilhouetteParts, tracer: Trace | null): { d: string; size: number; evenOdd?: boolean } | null {
+  let triangles = 0
+  for (const p of parts) triangles += Math.floor(p.indices.length / 3)
+  if (triangles > WHOLE_MAX && !tracer) return null
   const lo = [Infinity, Infinity, Infinity]
   const hi = [-Infinity, -Infinity, -Infinity]
   for (const p of parts) {
     for (let i = 0; i + 2 < p.positions.length; i += 3) {
       for (let a = 0; a < 3; a++) {
         const v = p.positions[i + a] ?? 0
-        lo[a] = Math.min(lo[a] ?? v, v)
-        hi[a] = Math.max(hi[a] ?? v, v)
+        if (v < lo[a]!) lo[a] = v
+        if (v > hi[a]!) hi[a] = v
       }
     }
   }
+  if (!(lo[0]! <= hi[0]!)) return { d: '', size: 1 }
   const ext = [0, 1, 2].map((a) => (hi[a] ?? 0) - (lo[a] ?? 0))
   const thin = ext.indexOf(Math.min(...ext))
   // Horizontal axis is X unless X is the thin one; vertical is Z unless Z is (then Y, seen from above).
@@ -74,6 +115,7 @@ export function Silhouette({ parts }: { parts: readonly { positions: Float32Arra
   const size = Math.max(ext[u] ?? 1, ext[v] ?? 1, 1)
   const ou = (size - (ext[u] ?? 0)) / 2 - (lo[u] ?? 0)
   const ov = (size - (ext[v] ?? 0)) / 2 + (hi[v] ?? 0)
+  if (tracer && triangles > WHOLE_MAX) return { d: tracer(parts, u, v, ou, ov, size), size, evenOdd: true }
   let d = ''
   for (const p of parts) {
     for (let t = 0; t + 2 < p.indices.length; t += 3) {
@@ -86,9 +128,5 @@ export function Silhouette({ parts }: { parts: readonly { positions: Float32Arra
       d += `M${a[0].toFixed(2)} ${a[1].toFixed(2)}L${p1[0].toFixed(2)} ${p1[1].toFixed(2)}L${p2[0].toFixed(2)} ${p2[1].toFixed(2)}Z`
     }
   }
-  return (
-    <svg className="silhouette" viewBox={`0 0 ${size} ${size}`} aria-hidden="true">
-      <path d={d} />
-    </svg>
-  )
+  return { d, size }
 }

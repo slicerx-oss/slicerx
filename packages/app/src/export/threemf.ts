@@ -16,7 +16,7 @@ import { historyFiles } from './history-file'
 import type { PlateEntry, PlateMeta, VolumeRole } from '../state/store'
 import { md5Hex } from './md5'
 import { plateSequence } from '../plate/plate-sequence'
-import { zip, zipCompressed, type ZipEntry } from './zip'
+import { TextChunks, zip, zipCompressed, type ZipInput } from './zip'
 import { appName } from '../edition'
 
 const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
@@ -34,10 +34,20 @@ export function transformAttr(m: readonly number[]): string {
 const PAINT_ATTR = { color: 'paint_color', seam: 'paint_seam', support: 'paint_supports', fuzzy: 'paint_fuzzy_skin' } as const
 export type PaintOfPart = Partial<Record<keyof typeof PAINT_ATTR, Record<number, string>>>
 
-function meshXml(p: MeshPart, paint?: PaintOfPart): string {
-  const v: string[] = []
-  for (let i = 0; i + 2 < p.positions.length; i += 3) v.push(`<vertex x="${f(p.positions[i]!)}" y="${f(p.positions[i + 1]!)}" z="${f(p.positions[i + 2]!)}"/>`)
-  const t: string[] = []
+/** Vertex and triangle lines are joined into pieces of about this many lines, so a big mesh never becomes one string. */
+const LINES_PER_PIECE = 4096
+
+/** A mesh as 3MF XML, in pieces: millions of triangles stay a few hundred kilobytes of text at a time. */
+function* meshXml(p: MeshPart, paint?: PaintOfPart): Generator<string> {
+  let lines: string[] = ['<mesh><vertices>']
+  for (let i = 0; i + 2 < p.positions.length; i += 3) {
+    lines.push(`<vertex x="${f(p.positions[i]!)}" y="${f(p.positions[i + 1]!)}" z="${f(p.positions[i + 2]!)}"/>`)
+    if (lines.length >= LINES_PER_PIECE) {
+      yield lines.join('')
+      lines = []
+    }
+  }
+  lines.push('</vertices><triangles>')
   for (let i = 0; i + 2 < p.indices.length; i += 3) {
     const tri = i / 3
     let extra = ''
@@ -45,9 +55,24 @@ function meshXml(p: MeshPart, paint?: PaintOfPart): string {
       const text = paint[layer]?.[tri]
       if (text) extra += ` ${attr}="${esc(text)}"`
     }
-    t.push(`<triangle v1="${p.indices[i]}" v2="${p.indices[i + 1]}" v3="${p.indices[i + 2]}"${extra}/>`)
+    lines.push(`<triangle v1="${p.indices[i]}" v2="${p.indices[i + 1]}" v3="${p.indices[i + 2]}"${extra}/>`)
+    if (lines.length >= LINES_PER_PIECE) {
+      yield lines.join('')
+      lines = []
+    }
   }
-  return `<mesh><vertices>${v.join('')}</vertices><triangles>${t.join('')}</triangles></mesh>`
+  lines.push('</triangles></mesh>')
+  yield lines.join('')
+}
+
+/** Text written as it goes: plain strings and mesh XML made on demand. */
+type Piece = string | (() => Iterable<string>)
+
+function* piecesOf(list: readonly Piece[]): Generator<string> {
+  for (const p of list) {
+    if (typeof p === 'string') yield p
+    else yield* p()
+  }
 }
 
 const VOLUME_SUBTYPE: Record<VolumeRole, string> = { negative: 'negative_part', support_blocker: 'support_blocker', support_enforcer: 'support_enforcer', modifier: 'modifier_part' }
@@ -455,10 +480,10 @@ export function dimensionsJson(objects: readonly Pick<PlateEntry, 'id' | 'dimens
   return out.length ? JSON.stringify({ version: 1, dimensions: out }, null, 2) : null
 }
 
-export function projectFiles(input: ProjectInput, splitAt = SPLIT_BYTES): ZipEntry[] {
+export function projectFiles(input: ProjectInput, splitAt = SPLIT_BYTES): ZipInput[] {
   const split = meshBytes(input) > splitAt
-  const objectFiles: ZipEntry[] = []
-  const resources: string[] = []
+  const objectFiles: ZipInput[] = []
+  const resources: Piece[] = []
   const build: string[] = []
   const objectsCfg: string[] = []
   const platesCfg: string[] = []
@@ -478,11 +503,12 @@ export function projectFiles(input: ProjectInput, splitAt = SPLIT_BYTES): ZipEnt
     let printing = 0
     for (const obj of plate.objects) {
       const partIds: number[] = []
-      const meshObjects: string[] = []
+      const meshObjects: Piece[] = []
       for (const [pi, part] of obj.parts.entries()) {
         const id = nextId++
         partIds.push(id)
-        meshObjects.push(`<object id="${id}" type="model">${meshXml(part, obj.paint?.[pi])}</object>`)
+        const paint = obj.paint?.[pi]
+        meshObjects.push(`<object id="${id}" type="model">`, () => meshXml(part, paint), '</object>')
       }
       // Negative volumes and support blockers or enforcers are parts of the object with their own subtype, as Orca writes them.
       const volParts: { id: number; name: string; subtype: string; settings?: Record<string, unknown> }[] = []
@@ -490,13 +516,13 @@ export function projectFiles(input: ProjectInput, splitAt = SPLIT_BYTES): ZipEnt
         const id = nextId++
         partIds.push(id)
         volParts.push({ id, name: v.name, subtype: VOLUME_SUBTYPE[v.role], ...(v.settings ? { settings: v.settings } : {}) })
-        meshObjects.push(`<object id="${id}" type="model">${meshXml(bake(v.part, v.local))}</object>`)
+        meshObjects.push(`<object id="${id}" type="model">`, () => meshXml(bake(v.part, v.local)), '</object>')
       }
       const objId = nextId++
       fileIds.set(obj.id, objId)
       if (split) {
         const path = `3D/Objects/object_${objId}.model`
-        objectFiles.push({ name: path, data: `${MODEL_OPEN}<resources>${meshObjects.join('')}</resources><build/></model>` })
+        objectFiles.push({ name: path, data: new TextChunks(() => piecesOf([`${MODEL_OPEN}<resources>`, ...meshObjects, '</resources><build/></model>'])) })
         resources.push(`<object id="${objId}" type="model"><components>${partIds.map((id) => `<component p:path="/${path}" objectid="${id}"/>`).join('')}</components></object>`)
       } else {
         resources.push(...meshObjects, `<object id="${objId}" type="model"><components>${partIds.map((id) => `<component objectid="${id}"/>`).join('')}</components></object>`)
@@ -548,10 +574,12 @@ export function projectFiles(input: ProjectInput, splitAt = SPLIT_BYTES): ZipEnt
       (sx.creatorId ? `<metadata name="sx:Creator">${esc(sx.creatorId)}</metadata>` : '') +
       `<metadata name="sx:ExportedBy">${esc(sx.exportedBy)}</metadata>`
     : ''
-  const model =
+  const modelHead =
     `<?xml version="1.0" encoding="UTF-8"?>\n<model unit="millimeter" xml:lang="en-US" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02"${split ? ' xmlns:p="http://schemas.microsoft.com/3dmanufacturing/production/2015/06" requiredextensions="p"' : ''}${sx ? ` xmlns:sx="${SX_NS}"` : ''}>` +
     `<metadata name="Application">${app}</metadata><metadata name="Title">${esc(input.plates[0]?.objects[0]?.name ?? 'Project')}</metadata>${sxMeta}` +
-    `<resources>${resources.join('')}</resources><build>${build.join('')}</build></model>`
+    `<resources>`
+  const modelTail = `</resources><build>${build.join('')}</build></model>`
+  const model = new TextChunks(() => piecesOf([modelHead, ...resources, modelTail]))
   // The first sliced plate's picture is the file's cover, under the relationship types Bambu Studio and Orca use
   // (bbs_3mf.cpp, `_add_relationships_file_to_archive`).
   const coverIndex = [...thumbs.keys()].sort((a, b) => a - b)[0]
@@ -560,7 +588,7 @@ export function projectFiles(input: ProjectInput, splitAt = SPLIT_BYTES): ZipEnt
       `<Relationship Target="/Metadata/plate_${coverIndex + 1}.png" Id="rel-4" Type="http://schemas.bambulab.com/package/2021/cover-thumbnail-middle"/>` +
       `<Relationship Target="/Metadata/plate_${coverIndex + 1}_small.png" Id="rel-5" Type="http://schemas.bambulab.com/package/2021/cover-thumbnail-small"/>`
     : ''
-  const files: ZipEntry[] = [
+  const files: ZipInput[] = [
     { name: '[Content_Types].xml', data: `<?xml version="1.0" encoding="UTF-8"?>\n<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="model" ContentType="application/vnd.ms-package.3dmanufacturing-3dmodel+xml"/><Default Extension="png" ContentType="image/png"/><Default Extension="gcode" ContentType="text/x.gcode"/><Default Extension="config" ContentType="text/xml"/><Default Extension="md5" ContentType="text/plain"/><Default Extension="json" ContentType="application/json"/></Types>` },
     { name: '_rels/.rels', data: `<?xml version="1.0" encoding="UTF-8"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Target="/3D/3dmodel.model" Id="rel-1" Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"/>${cover}</Relationships>` },
     { name: '3D/3dmodel.model', data: model },

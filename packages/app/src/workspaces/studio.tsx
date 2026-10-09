@@ -32,6 +32,8 @@ import { useBoundValues } from './prepare/object-tools'
 import { SliceLookSwitch } from './prepare/slice-look'
 import { ParkedChip } from './prepare/parked-chip'
 import { SliceProgress } from './slice-progress'
+import { useOverlayOffset, type OverlaySelectors } from '../lib/overlay-offset'
+import { useMediaQuery } from '../lib/media'
 
 const PREPARE_LEFT: PaneSection[] = [
   { id: 'printer', icon: 'printer', label: 'Printer' },
@@ -44,6 +46,10 @@ const PREVIEW_RIGHT: PaneSection[] = [
   { id: 'filament', icon: 'spool', label: 'Filament use' },
   { id: 'totals', icon: 'weight', label: 'Totals' },
 ]
+
+/** The viewport controls toasts keep off: bottom bars, the top toolbar and view switch, and on a phone the layer slider. */
+const OVERLAYS: OverlaySelectors = { bottom: '.hud-bl, .dock', top: '.plate-tools, .slice-look, .hud-top' }
+const PHONE_OVERLAYS: OverlaySelectors = { ...OVERLAYS, side: '.lstrip' }
 
 const PLATES_SECTION: PaneSection = { id: 'plates', icon: 'plates', label: 'Plates' }
 const DESIGN_TREE: PaneSection[] = [{ id: 'objects', icon: 'history', label: 'Model' }]
@@ -85,6 +91,11 @@ export function Studio() {
   const sliceState = useApp((s) => (s.slice.status === 'done' ? (s.slice.stale ? 'stale' : 'current') : s.slice.status))
   const slicesDone = useApp((s) => s.slicesDone)
   const other = side === 'left' ? 'right' : 'left'
+  // Toasts center over the viewport and sit above the plate bar and the playback bar, below the toolbar and the view
+  // switch, never on a control. On a phone the layer slider runs down the right side, so they keep to the left of it.
+  const vpRef = useRef<HTMLElement>(null)
+  const phone = useMediaQuery('(max-width: 900px)')
+  useOverlayOffset(vpRef, phone ? PHONE_OVERLAYS : OVERLAYS)
 
   // Painting, brim ears and lay on face are print setup: they close when Design opens.
   // The full geometry engine starts loading on the way into Design, so its first tool does not wait.
@@ -142,7 +153,7 @@ export function Studio() {
         </SidePane>
       )}
 
-      <section className="vp" aria-label="Plate">
+      <section className="vp" aria-label="Plate" ref={vpRef}>
         <ViewportHost layers={layers} />
         <SliceProgress />
         {design || !hasPreview ? null : <SliceLookSwitch />}
