@@ -164,7 +164,7 @@ export class CameraRig {
     return { pos: t.clone().add(off.setLength(d)), target: t.clone() }
   }
 
-  go(pose: { pos: Vector3; target: Vector3 }, animate: boolean, now: number): void {
+  go(pose: { pos: Vector3; target: Vector3 }, animate: boolean, now: number, durationMs = 520): void {
     if (!animate || reducedMotion()) {
       this.move = null
       this.camera.position.copy(pose.pos)
@@ -172,7 +172,7 @@ export class CameraRig {
       this.controls.update()
       return
     }
-    this.move = { t0: now, dur: 520, fromPos: this.camera.position.clone(), fromTarget: this.controls.target.clone(), toPos: pose.pos, toTarget: pose.target }
+    this.move = { t0: now, dur: durationMs, fromPos: this.camera.position.clone(), fromTarget: this.controls.target.clone(), toPos: pose.pos, toTarget: pose.target }
   }
 
   /** Advances an animated move. Returns true while it is running. */
