@@ -119,7 +119,8 @@ async function showQuick(host: Host, name: string, data: ArrayBuffer, edit: (fn:
     const transform = dropToBed([part], centerOnBed([part], compose({ position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] }), get().bed))
     const id = uid()
     const color = objectPalette()[0] ?? brandAccent()
-    edit(() => set((s) => ({ plate: [...s.plate, { id, name, handle, parts: [part], colors: [color], transform }], selection: id, selectedIds: [id] })))
+    // The slice may start on it now; if the engine's import changes it, that slice goes stale with the change.
+    edit(() => set((s) => ({ plate: [...s.plate, { id, name, handle, parts: [part], colors: [color], transform }], selection: id, selectedIds: [id], sliceDuringOpen: true })))
     markOpenStage('objects')
     return { id, part, handle }
   } catch {
@@ -200,8 +201,9 @@ export async function addAutoImport(host: Host, name: string, data: ArrayBuffer,
     if (!quick) markOpenStage('objects')
   }
   markOpenStage('repair')
-  // Objects split from one model keep their places, so nothing on the plate moves after it first shows.
-  markStale()
+  // Objects split from one model keep their places, so nothing on the plate moves after it first shows. The object
+  // shown first that stayed as it was keeps a slice of it, started while the open ran.
+  if (!same || entries.length > 1) markStale()
   const ids = entries.map((e) => e.id)
   const notes = [...stepNotes, ...result.summary]
   for (const w of result.warnings) if (!notes.includes(w)) notes.push(w)

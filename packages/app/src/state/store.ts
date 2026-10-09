@@ -254,6 +254,12 @@ export interface AppState {
   bed: Bed
   plate: PlateEntry[]
   plateLoading: boolean
+  /**
+   * An open in progress whose model is already on the plate as it will stay unless the open changes it (a binary STL
+   * shown from its own triangles): the slice may start before the open ends. A change the open makes to the plate
+   * stales that slice as any edit does.
+   */
+  sliceDuringOpen: boolean
   /** A long arrange or fill the bed in progress: layouts tried and planned. */
   arranging: { done: number; total: number } | null
   selection: string | null
@@ -597,6 +603,7 @@ export const appStore = createStore<AppState>()(() => ({
   bed: { ...GENERIC_BED },
   plate: [],
   plateLoading: false,
+  sliceDuringOpen: false,
   arranging: null,
   selection: null,
   selectedIds: [],
