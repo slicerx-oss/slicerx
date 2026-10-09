@@ -616,6 +616,11 @@ export interface Viewport {
    * graphics without `always`, reduced motion).
    */
   playReveal(): boolean
+  /**
+   * The loading wisp: two soft accent wisps running the plate edge (the bed's footprint on the ground) while a model
+   * already drawn is still loading. Off fades it out. Under reduced motion the edge holds a still glow instead.
+   */
+  setLoadingWisp(on: boolean): void
   /** Hatches the parts of the bed nothing may print on (polygons in bed coordinates, mm). An empty list clears them. */
   setExcludedAreas(areas: readonly (readonly [number, number])[][]): void
   /** Brightens one dual nozzle zone (by id); null resets. */
