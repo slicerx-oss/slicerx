@@ -132,6 +132,8 @@ fn main() {
             slicing::cancel_slice,
             slicing::get_preview,
             slicing::get_gcode,
+            slicing::get_gcode_line_starts,
+            slicing::get_gcode_bytes,
             slicing::release,
             files::open_files,
             files::read_file,

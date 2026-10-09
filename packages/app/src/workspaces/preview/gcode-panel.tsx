@@ -2,19 +2,22 @@
 // Copyright (C) 2026 The SlicerX contributors
 // The G-code line view: the text around the move at the nozzle, following the layer and move sliders. A click
 // on a line moves the sliders to it. Only the rows in view exist in the page, so a 50 MB file scrolls like a
-// small one. Loaded with the first open (lazy in studio.tsx).
+// small one, and only their lines' text is read from the host that keeps a slice's G-code, a window around the view
+// at a time. Loaded with the first open (lazy in studio.tsx).
 import type { PreviewBuffers } from '@slicerx/contracts'
 import { Button, Icon } from '@slicerx/ui'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { useHost } from '../../host'
 import { set, shownSlice, useApp } from '../../state/store'
 import { setGcodePanel, useGcodeView } from './gcode-file'
-import { currentSegment, lineOfSegment, lineText, scroller, segmentOfLine, slidersFor, type LineIndex } from './gcode-lines'
-import { currentText, NoTextError } from './gcode-source'
+import { currentSegment, lineOfSegment, lineText, scroller, segmentOfLine, slidersFor, type LineIndex, type LineSource } from './gcode-lines'
+import { holdText, NoTextError } from './gcode-source'
 import './gcode-panel.css'
 
 const ROW = 18
 const OVERSCAN = 6
+/** Lines read beyond the view on each side, so a scroll of a few screens needs no new read. */
+const WINDOW_MARGIN = 400
 
 /** The G-code line at the nozzle for the sliders, or 0 when the preview has no line numbers. */
 export function lineAtNozzle(p: PreviewBuffers, layerHi: number, moveCut: number): number {
@@ -53,7 +56,8 @@ export function GcodePanel() {
   const moveCut = useApp((s) => s.moveCut)
   const slice = useApp((s) => s.slice)
   const file = useGcodeView((s) => s.file)
-  const [ix, setIx] = useState<LineIndex | null>(null)
+  const [ix, setIx] = useState<LineSource | null>(null)
+  const [win, setWin] = useState<{ from: number; to: number; lines: LineIndex } | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [viewPx, setViewPx] = useState(400)
   const [topLine, setTopLine] = useState(1)
@@ -63,11 +67,13 @@ export function GcodePanel() {
   const panelRef = useRef<HTMLElement>(null)
   const sliceId = shownSlice(slice)?.result.id ?? null
 
-  // The text for what Preview shows: loaded once per slice or file.
+  // The lines of what Preview shows, held while the panel is open: their starts read once per slice or file, and let
+  // go when the panel closes, with the window of text in view.
   useEffect(() => {
     let live = true
     setError(null)
-    const p = currentText(host)
+    const hold = holdText(host)
+    const p = hold.source
     if (!p) {
       setIx(null)
       return
@@ -75,6 +81,9 @@ export function GcodePanel() {
     p.then((v) => live && setIx(v)).catch((e: unknown) => live && setError(e instanceof NoTextError ? e.message : 'The G-code could not be loaded.'))
     return () => {
       live = false
+      setIx(null)
+      setWin(null)
+      hold.release()
     }
   }, [host, sliceId, file])
 
@@ -139,6 +148,21 @@ export function GcodePanel() {
 
   const first = Math.max(1, Math.floor(topLine) - OVERSCAN)
   const last = ix ? Math.min(ix.count, Math.ceil(topLine + viewPx / ROW) + OVERSCAN) : 0
+
+  // The text of the rows in view, read a window around them at a time; the last read asked for wins.
+  const covered = !!win && first >= win.from && last <= win.to
+  useEffect(() => {
+    if (!ix || covered || last < first) return
+    let live = true
+    const from = Math.max(1, first - WINDOW_MARGIN)
+    const to = Math.min(ix.count, last + WINDOW_MARGIN)
+    ix.window(from, to)
+      .then((lines) => live && setWin({ from, to, lines }))
+      .catch(() => live && setError('The G-code could not be loaded.'))
+    return () => {
+      live = false
+    }
+  }, [ix, covered, first, last])
   const shift = (topLine - Math.floor(topLine)) * ROW
   const rows: number[] = []
   for (let n = first; n <= last; n++) rows.push(n)
@@ -181,9 +205,9 @@ export function GcodePanel() {
             onScroll={(e) => setTopLine(sc.lineAt(e.currentTarget.scrollTop, viewPx))}
           >
             <div className="gc-rows" style={{ height: viewPx }}>
-              {rows.map((n) => (
-                <Row key={n} ix={ix} n={n} on={n === current} top={(n - Math.floor(topLine)) * ROW - shift} onPick={pick} />
-              ))}
+              {win
+                ? rows.map((n) => <Row key={n} ix={win.lines} n={n} on={n === current} top={(n - Math.floor(topLine)) * ROW - shift} onPick={pick} />)
+                : null}
             </div>
             <div style={{ height: Math.max(0, sc.spacerPx - viewPx) }} aria-hidden="true" />
           </div>

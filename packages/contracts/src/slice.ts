@@ -402,5 +402,13 @@ export interface SlicerHost {
   /** SXPV bytes for a slice result; parse with readPreview(). */
   getPreview(sliceId: string): Promise<ArrayBuffer>
   exportGcode(sliceId: string, target: GcodeTarget): Promise<GcodeExport>
+  /**
+   * Where each line of a slice's G-code text starts (byte offsets, then one past the end: line count + 1 of them).
+   * With gcodeBytes, a reader such as the G-code line view reads lines from the host that keeps the text, without a
+   * copy of its own. Optional: without it the page reads the whole text through exportGcode.
+   */
+  gcodeLineStarts?(sliceId: string): Promise<Uint32Array>
+  /** Bytes [start, end) of a slice's G-code text. Present with gcodeLineStarts. */
+  gcodeBytes?(sliceId: string, start: number, end: number): Promise<Uint8Array>
   release(id: string): void
 }

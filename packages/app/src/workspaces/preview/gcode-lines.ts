@@ -11,6 +11,49 @@ export interface LineIndex {
   /** Byte offset of each line's start, then one past the end: length count + 1. */
   starts: Uint32Array
   count: number
+  /**
+   * The byte offset `bytes` starts at, when it holds only some lines of the text (a window read from the host that
+   * keeps it); 0 or absent for the whole text. Lines outside the window read as empty.
+   */
+  base?: number
+}
+
+/**
+ * The lines of a text, read a window at a time: the text can stay with the host that keeps it (a slice's G-code),
+ * with only the line starts and the lines in use in the page.
+ */
+export interface LineSource {
+  count: number
+  /** Lines from..to (1-based, inclusive, clamped to the text) as an index over just their bytes. */
+  window(from: number, to: number): Promise<LineIndex>
+}
+
+/** A source over a text that is all in hand: every window is the whole index. */
+export function wholeSource(ix: LineIndex): LineSource {
+  return { count: ix.count, window: () => Promise.resolve(ix) }
+}
+
+/** A source over line starts (count + 1 offsets) and a reader of byte ranges. */
+export function rangeSource(starts: Uint32Array, read: (start: number, end: number) => Promise<Uint8Array>): LineSource {
+  const count = Math.max(0, starts.length - 1)
+  return {
+    count,
+    async window(from, to) {
+      const a = Math.max(1, from)
+      const b = Math.min(count, to)
+      if (b < a) return { bytes: new Uint8Array(0), starts, count, base: 0 }
+      const base = starts[a - 1]!
+      return { bytes: await read(base, starts[b]!), starts, count, base }
+    },
+  }
+}
+
+/** Lines `from..to` of `src` in windows of `per` lines, one at a time, for a scan that needs no more than that. */
+export async function* windows(src: LineSource, per: number, from = 1, to = src.count): AsyncGenerator<[LineIndex, number, number]> {
+  for (let a = Math.max(1, from); a <= to; a += per) {
+    const b = Math.min(to, a + per - 1)
+    yield [await src.window(a, b), a, b]
+  }
 }
 
 const NL = 10
@@ -68,8 +111,10 @@ const decoder = new TextDecoder()
 /** Text of line `n` (1-based), without its line break. Empty outside the file. */
 export function lineText(ix: LineIndex, n: number): string {
   if (n < 1 || n > ix.count) return ''
-  const a = ix.starts[n - 1] ?? 0
-  let b = ix.starts[n] ?? a
+  const base = ix.base ?? 0
+  const a = (ix.starts[n - 1] ?? 0) - base
+  let b = (ix.starts[n] ?? 0) - base
+  if (a < 0 || b > ix.bytes.length) return ''
   if (b > a && ix.bytes[b - 1] === NL) b--
   if (b > a && ix.bytes[b - 1] === CR) b--
   return decoder.decode(ix.bytes.subarray(a, b))
