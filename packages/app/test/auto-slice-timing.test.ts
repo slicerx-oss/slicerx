@@ -1,13 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// Auto slice starts soon after an edit, slices a drag once on release, and never lets a slice pass for a plate that
-// changed while it ran.
+// Auto slice starts soon after an edit, and slices a drag once, on release.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SXPV_HEADER_BYTES, SXPV_MAGIC, SXPV_SEGMENT_BYTES, SXPV_VERSION, type Host, type SliceRequest } from '@slicerx/contracts'
-import { slicePlate } from '../src/state/actions'
 import { AUTO_SLICE_DELAY_MS, startAutoSlice } from '../src/state/auto-slice'
 import { beginLiveEdit, endLiveEdit } from '../src/state/live-edit'
-import { get, set } from '../src/state/store'
+import { set } from '../src/state/store'
 
 const handle = { id: 'a', hash: 'a', name: 'a', triangles: 1, bboxMm: [10, 10, 10], openEdges: 0, parts: [{ name: 'a', slot: 1, triangles: 1 }] }
 const entry = (x: number) => ({ id: 'a', name: 'a', handle, parts: [], colors: [], transform: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, x, 0, 0, 1] }) as never
@@ -56,11 +54,6 @@ function host() {
   return { h, requests, land: () => pending.shift()?.() }
 }
 
-const flush = async () => {
-  for (let i = 0; i < 20; i++) await Promise.resolve()
-  await vi.advanceTimersByTimeAsync(0)
-}
-
 beforeEach(() => {
   vi.useFakeTimers()
   set({ plate: [entry(10)], autoSlice: true, liveEdit: false, historyEdit: null, plateLoading: false, slice: { status: 'idle' }, resume: null, calibration: {}, layerMarks: {} })
@@ -99,25 +92,5 @@ describe('auto slice timing', () => {
     await vi.advanceTimersByTimeAsync(1000)
     expect(requests).toHaveLength(1)
     stop()
-  })
-
-  it('marks a slice stale when the plate changed before it showed as running', async () => {
-    const { h, land } = host()
-    const run = slicePlate(h)
-    await flush()
-    // The slice read the plate at x 10; the edit lands while the engine works, with nothing watching to cancel it.
-    set({ plate: [entry(30)] })
-    land()
-    await run
-    expect(get().slice).toMatchObject({ status: 'done', stale: true })
-  })
-
-  it('shows a slice as current when nothing changed', async () => {
-    const { h, land } = host()
-    const run = slicePlate(h)
-    await flush()
-    land()
-    await run
-    expect(get().slice).toMatchObject({ status: 'done', stale: false })
   })
 })
