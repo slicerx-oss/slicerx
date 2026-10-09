@@ -1774,6 +1774,26 @@ fn an_extruder_that_prints_nothing_has_no_first_filament() {
 }
 
 #[test]
+fn a_filament_only_a_feature_prints_with_gets_an_extruder() {
+    // An H2D cube with its sparse infill on filament 2: the map takes filament 2 too, and as OrcaSlicer 2.4.2
+    // most often maps it, filament 1 goes to the left extruder and 2 to the right (`filament_map = 1,2`).
+    let c = json!({
+        "gcode_flavor": "marlin",
+        "printer_model": "Bambu Lab H2D",
+        "nozzle_diameter": [0.4, 0.4],
+        "physical_extruder_map": [1, 0],
+        "master_extruder_id": 2,
+        "single_extruder_multi_material": true,
+        "sparse_infill_filament_id": 2,
+        "nozzle_temperature": [220, 225],
+        "filament_diameter": [1.75, 1.75],
+        "machine_start_gcode": "; map {filament_map[0]} {filament_map[1]}",
+    });
+    let g = cube_on(c, 1);
+    assert_eq!(g.lines().find(|l| l.starts_with("; map ")), Some("; map 1 2"));
+}
+
+#[test]
 fn a_tower_change_reads_the_new_filaments_volumetric_speed() {
     // orca's change at the tower takes outer_wall_volumetric_speed of the new filament (`append_tcr`)
     let mut c = json!({
