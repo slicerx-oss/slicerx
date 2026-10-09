@@ -24,16 +24,26 @@ export function carriesFaces(request: unknown): boolean {
   return false
 }
 
-export function engineModules(loadCore: () => Promise<EngineModule>, loadFull: () => Promise<EngineModule>) {
+/** A build of the engine that did not load, and why. */
+export interface LoadError {
+  module: 'core' | 'full'
+  message: string
+}
+
+/**
+ * The two builds. A build that does not load leaves the other to answer (or every call to fail), and `onLoadError` hears
+ * once which one and why, so a broken or missing build is never silent.
+ */
+export function engineModules(loadCore: () => Promise<EngineModule>, loadFull: () => Promise<EngineModule>, onLoadError?: (e: LoadError) => void) {
   let core: Promise<EngineModule | null> | null = null
   let full: Promise<EngineModule | null> | null = null
   let fullReady: EngineModule | null = null
-  const fullModule = () =>
-    (full ??= loadFull().then(
-      (m) => (fullReady = m),
-      () => null,
-    ))
-  const coreModule = () => (core ??= loadCore().catch(() => null))
+  const failed = (module: LoadError['module']) => (e: unknown) => {
+    onLoadError?.({ module, message: e instanceof Error ? e.message : String(e) })
+    return null
+  }
+  const fullModule = () => (full ??= loadFull().then((m) => (fullReady = m), failed('full')))
+  const coreModule = () => (core ??= loadCore().catch(failed('core')))
   return {
     /** Loads the full engine now (Design asks for it on the way in). True when it is there. */
     async full(): Promise<boolean> {
