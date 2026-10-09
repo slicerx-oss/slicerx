@@ -140,7 +140,10 @@ button.reset:hover { color: var(--fg); background: var(--ink-3); }
 .vp-tag { font-size: calc(11px * var(--text-scale)); color: var(--dim); padding-right: 4px; }
 .hud-bl { left: 12px; bottom: 12px; display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap; right: 12px; }
 .platechip { display: flex; align-items: center; gap: 10px; height: 36px; padding: 0 12px; border-radius: var(--r-md); }
-.platechip b { font: var(--fw-semibold) calc(12.5px * var(--text-scale)) var(--f-body); }
+.platechip b { font: var(--fw-semibold) calc(12.5px * var(--text-scale)) var(--f-body); white-space: nowrap; flex: none; }
+/* A long object name never pushes the chip past the view: it is cut in the middle (lib/short-name.tsx). */
+.platechip { max-width: 100%; min-width: 0; }
+.platechip .platechip-name { display: flex; min-width: 0; }
 .platechip span { font: var(--fw-medium) calc(11px * var(--text-scale)) var(--f-mono); color: var(--muted); }
 .dims { padding: 8px 12px; border-radius: var(--r-md); font-size: calc(11.5px * var(--text-scale)); color: var(--muted); }
 .busy { position: absolute; left: 0; right: 0; top: 0; height: 2px; z-index: 6; overflow: hidden; }

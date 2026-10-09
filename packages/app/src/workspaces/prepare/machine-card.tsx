@@ -9,6 +9,7 @@ import { resolveConfig } from '../../adapters/config'
 import { GENERIC_BED } from '../../adapters/generic-bed'
 import { effectiveMode, openSetup, useLayout } from '../../first-run/look'
 import { usePrinter } from '../../lib/use-printer'
+import { shortPrinterName } from '../../lib/short-name'
 import { BED_TYPE_OPTIONS, plateBedType, type BedType } from '../../plate/bed-type'
 import { activeMeta, setPlateSettings } from '../../plate/plates'
 import { setPrinterNozzle } from '../../state/profile-sync'
@@ -139,7 +140,7 @@ export function MachineCard() {
               <PrinterThumb vendor={printer.vendor} model={printer.model} />
             </Suspense>
             <span className="mc-ptext">
-              <span className="printer-name">{printer.name}</span>
+              <span className="printer-name">{shortPrinterName(printer.name)}</span>
               <span className="mc-pline">
                 {modelName && modelName !== printer.name ? (
                   <span className="mc-model" data-testid="slice-machine-model">

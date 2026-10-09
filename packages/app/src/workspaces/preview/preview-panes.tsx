@@ -16,6 +16,7 @@ import { exportGcode, recordSpoolUse } from '../../state/actions'
 import { setWorkspace, shownSlice, useApp } from '../../state/store'
 import { effectiveMode, useLayout, useTabLabel } from '../../first-run/look'
 import { usePrinter } from '../prepare/prepare-panes'
+import { MiddleName, shortPrinterName } from '../../lib/short-name'
 import { isExportOnly } from '../../lib/hand-printers'
 import { featureStyle } from './preview-hud'
 import { fixApplies, jumpToWarning, runWarningFix, warningFix } from '../../lib/warning-actions'
@@ -279,7 +280,13 @@ export function PreviewRight() {
         {/* The one Print is in the sidebar footer; the summary keeps the file export. */}
         <div className="app-row gap8">
           <Button size="sm" icon="download" disabled={unsafe !== null || updating} onClick={() => void exportGcode(host)}>
-            {printer && isExportOnly(printer) ? `Export for ${printer.name}` : 'Export G-code'}
+            {printer && isExportOnly(printer) ? (
+              <span className="btn-name" {...tipAttrs({ title: `Export for ${printer.name}` })}>
+                Export for <MiddleName name={shortPrinterName(printer.name)} />
+              </span>
+            ) : (
+              'Export G-code'
+            )}
           </Button>
         </div>
         {unsafe !== null ? (

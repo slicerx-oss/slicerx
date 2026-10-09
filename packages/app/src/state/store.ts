@@ -311,6 +311,8 @@ export interface AppState {
   scheme: 'dark' | 'light'
   /** What the viewport reports it renders with, for the status line. */
   viewportBackend: string
+  /** What the right pane last showed when it was open (lib/right-attention.ts): its tab glows for anything newer. Not saved. */
+  rightSeen: string | null
   /** The stored look and feel, or null before one is chosen (the edition default applies). */
   lookAndFeel: LookAndFeelChoice | null
   /** Follow the operating system's light or dark setting instead of `scheme`. */
@@ -639,6 +641,7 @@ export const appStore = createStore<AppState>()(() => ({
   dragging: false,
   liveEdit: false,
   viewportBackend: '',
+  rightSeen: null,
   scheme: prefs.scheme,
   lookAndFeel: (prefs.lookAndFeel ?? null) as LookAndFeelChoice | null,
   themeFollowsSystem: prefs.themeFollowsSystem ?? false,
@@ -886,7 +889,26 @@ export function closeSettings(): void {
 
 /** Default rail state: expanded on wide windows, collapsed below 1200 px */
 export function railOpen(rails: AppState['rails'], ws: Workspace, side: Side, wide: boolean): boolean {
-  return rails[ws]?.[side] ?? wide
+  const chosen = rails[ws]?.[side]
+  if (chosen !== undefined) return chosen
+  // Slice's right pane (the objects and the slice summary) never opens by itself: it stays shut until the person opens
+  // it, and its edge tab glows when something in it wants a look (lib/right-attention.ts).
+  if (ws === 'preview') return rightPaneOpenByDefault()
+  return wide
+}
+
+/**
+ * Browser test runs (session flag `sx-e2e`) start with the right pane open, since most of them work in its objects
+ * list; `sx-right-pane` set to `shut` or `open` decides it either way.
+ */
+function rightPaneOpenByDefault(): boolean {
+  try {
+    const set = sessionStorage.getItem('sx-right-pane')
+    if (set) return set === 'open'
+    return sessionStorage.getItem('sx-e2e') !== null
+  } catch {
+    return false
+  }
 }
 
 export function setRail(ws: Workspace, side: Side, open: boolean): void {

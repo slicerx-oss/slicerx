@@ -20,7 +20,7 @@ test('slices in the background after an edit, and the Slice button returns when 
   const state = () => page.evaluate(() => { const s = (window as unknown as { __sx: Sx }).__sx.getState(); return { status: s.slice.status, stale: s.slice.stale ?? false, id: s.slice.result?.id ?? null, auto: s.autoSlice } })
   expect((await state()).auto).toBe(true)
   await expect(page.getByRole('main').getByRole('button', { name: /^Slice/ })).toHaveCount(0)
-  await expect(page.getByRole('button', { name: 'Print', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: /^Print( on .+)?$/ })).toBeVisible()
   // The first slice starts on its own.
   await expect.poll(async () => (await state()).status, { timeout: 120_000 }).toBe('done')
   await expect.poll(async () => (await state()).stale, { timeout: 10_000 }).toBe(false)
@@ -32,5 +32,5 @@ test('slices in the background after an edit, and the Slice button returns when 
   // Off: nothing slices on its own and a Slice button shows. The current slice keeps Print, with Slice again under it.
   await page.evaluate(() => (window as unknown as { __sx: Sx }).__sx.setState({ autoSlice: false }))
   await expect(page.getByRole('main').getByRole('button', { name: /^Slice/ })).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Print', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: /^Print( on .+)?$/ })).toBeVisible()
 })
