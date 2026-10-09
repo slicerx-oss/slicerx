@@ -4,7 +4,8 @@
 
 The same X as generate.py (the logo mark standing upright on a plinth, eight horizontal bands with alternate bands
 set in 0.6 mm), built from exact faces instead of a meshed distance field: the outline is extruded, every band step
-is a flat face, and the front and back edges are rounded as fine facets. The mesh is closed and consistently
+is a flat face with a V groove at the boundary and a 45 degree underside where a band stands out over the one below,
+and the front and back edges are rounded as fine facets. The mesh is closed and consistently
 oriented, and its edges are clean at any zoom. generate.py's x-mark.stl stays the benchmark model.
 
     python3 generate_showcase.py                  # writes x-mark-showcase.stl and x-mark-showcase-2color.3mf
@@ -241,7 +242,7 @@ class Mesh:
 
 
 class Showcase:
-    def __init__(self, height=80.0, thickness=16.0, inset=0.6, radius=1.5, steps=10, plinth_h=6.0, plinth_r=2.0, groove=0.6,
+    def __init__(self, height=80.0, thickness=16.0, inset=0.6, radius=1.2, steps=10, plinth_h=6.0, plinth_r=2.0, groove=0.6,
                  groove_width=1.2):
         s = height / 24.0
         self.z0 = plinth_h
@@ -282,8 +283,21 @@ class Showcase:
             return 0.0
         return self.groove * max(0.0, 1.0 - abs(z - (self.z0 + k * self.band_h)) / self.groove_w)
 
+    def chamfered(self, k):
+        """Whether band k stands out over the band below it: its step then has a 45 degree underside, not a ledge."""
+        return k > 0 and self.h_of(k) > self.h_of(k - 1)
+
+    def chamfer_h(self, k):
+        """How far above band k's bottom its 45 degree underside reaches its full face."""
+        return self.h_of(k) - (self.h_of(k - 1) - self.groove)
+
     def h_at(self, k, z):
-        return self.h_of(k) - self.groove_at(z)
+        h = self.h_of(k) - self.groove_at(z)
+        if self.chamfered(k):
+            lo = self.bounds_of(k)[0]
+            # From the groove's bottom in the band below, out at 45 degrees to this band's face.
+            h = min(h, self.h_of(k - 1) - self.groove + (z - lo))
+        return h
 
     def wall_rows(self, k, z):
         """The wall's rows at height z. A set-out band's wall has the set-in band's rows too, so its step meets them."""
@@ -299,7 +313,7 @@ class Showcase:
         lo, hi = self.bounds_of(k)
         cuts = [lo]
         if lo is not None:
-            cuts.append(lo + self.groove_w)
+            cuts.append(lo + (self.chamfer_h(k) if self.chamfered(k) else self.groove_w))
         if hi is not None:
             cuts.append(hi - self.groove_w)
         cuts.append(hi)
@@ -316,6 +330,9 @@ class Showcase:
                 # The X stands on the plinth: its bottom edges are a cut, not an outline to round.
                 piece = [(p, 'cut' if p[1] == self.z0 and piece[(i + 1) % n][0][1] == self.z0 else kind) for i, (p, kind) in enumerate(piece)]
                 off = [offset_piece(piece, d) for d in insets]
+                for q in off[-1]:
+                    if not (slo is None or q[1] >= slo - 1e-9) or not (shi is None or q[1] <= shi + 1e-9):
+                        raise ValueError('band %d: the rounded edge does not fit between z %s and %s' % (k, slo, shi))
                 # Each point's face height follows the groove at its own height.
                 ys = [[y for _, y in self.levels(self.h_at(k, q[1]))] for q in off[0]]
                 rows = [self.wall_rows(k, q[1]) for q in off[0]]
@@ -374,6 +391,8 @@ class Showcase:
                     continue
                 if sorted((round(a['xp'][0], 6), round(a['xq'][0], 6))) != sorted((round(b['xp'][0], 6), round(b['xq'][0], 6))):
                     continue
+                if abs(a['ys'][-1] - b['ys'][-1]) < 1e-9:
+                    continue  # a chamfered band meets the band below at the same face: no step there
                 big, small, up = (a, b, 1) if a['ys'][-1] > b['ys'][-1] else (b, a, -1)
                 # The two bands run the cut segment opposite ways: match the ends by x.
                 if abs(big['xp'][0] - small['xp'][0]) > 1e-6:
