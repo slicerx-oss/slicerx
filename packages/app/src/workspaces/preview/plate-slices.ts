@@ -43,6 +43,11 @@ export function keptSlice(plateId: string, s: AppState = appStore.getState()): {
   return { stale: k.slice.stale || !same(k.inputs, now) }
 }
 
+/** The ids of the slices kept for plates out of view. */
+export function keptSliceIds(): string[] {
+  return [...kept.values()].map((k) => k.slice.result.id)
+}
+
 /** The preview kept for a plate, for its thumbnail. */
 export function keptPreview(plateId: string): Kept['preview'] | null {
   return kept.get(plateId)?.preview ?? null
@@ -51,6 +56,9 @@ export function keptPreview(plateId: string): Kept['preview'] | null {
 /** Starts keeping slices per plate. Returns the stop function. */
 export function trackPlateSlices(): () => void {
   return appStore.subscribe((s, prev) => {
+    // A new project (or a cleared plate, which is one) starts with no slices kept, not even the one in view as it
+    // closed: plate ids repeat across projects.
+    if (s.plates !== prev.plates && s.slice.status === 'idle' && s.plate.length === 0 && s.plates.every((p) => p.objects.length === 0)) return kept.clear()
     // Plates that are gone take their slices with them.
     if (s.plates !== prev.plates) for (const id of kept.keys()) if (!s.plates.some((p) => p.id === id)) kept.delete(id)
     if (s.activePlate === prev.activePlate) return

@@ -24,6 +24,7 @@ import { LayerDock, Legend } from './preview/preview-hud'
 import { PreviewLeft, PreviewRight } from './preview/preview-panes'
 import { useGcodeView } from './preview/gcode-file'
 import { trackPlateSlices } from './preview/plate-slices'
+import { startSliceRelease } from './preview/slice-release'
 import { PreviewPlates } from './preview/preview-plates'
 import { railKey, useModelMode } from '../state/model-mode'
 import { setTool, toolStore, useTool } from '../plate/tools'
@@ -104,6 +105,9 @@ export function Studio() {
     if (['paint', 'brim', 'face'].includes(toolStore.getState().tool)) setTool('move')
     warmFullEngine()
   }, [design])
+
+  // Finished slices no view or plate holds any more are let go in the slicer.
+  useEffect(() => startSliceRelease(host.slicer), [host])
 
   // A modeling tool left open when Design closed opens again as it was (cad/park.ts).
   useEffect(() => {
