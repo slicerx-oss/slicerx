@@ -4,7 +4,7 @@
 // suits it comes first), and the thread is cut in place as a step of the object's history. The clearance is the
 // measured fit (plate/clearance.ts), at most a quarter of the pitch (thread-spec.ts).
 import type { PickEvent } from '@slicerx/viewport'
-import { Button, Icon, Select } from '@slicerx/ui'
+import { Icon, Select } from '@slicerx/ui'
 import { useCallback, useEffect, useState } from 'react'
 import { threadFind, type ThreadTarget } from '../geom/cad'
 import { toGeom } from '../geom/client'
@@ -16,7 +16,7 @@ import { edgeLines } from './edges'
 import { applyThread } from './holes'
 import { editing, saveEdit } from './history/ops'
 import { bindNext } from './history/record'
-import { close, errorText, num, Num, Shell, useProbe } from './panel-kit'
+import { close, errorText, num, Num, Shell, useProbe, ToolFooter } from './panel-kit'
 import { follow, useDraft, useDraftObject } from './park'
 import { threadSpecFor } from './thread-spec'
 
@@ -106,6 +106,7 @@ export function ThreadTool() {
       const r = await applyThread(host.slicer, picked.objectId, picked.partIndex, { op: 'thread.apply', thread: place, spec: sized.spec, label: sized.label })
       toast(r.message, r.warn ? 'warn' : 'ok')
       setPicked(null)
+      return true
     } catch (err) {
       setNote(errorText(err))
     } finally {
@@ -142,12 +143,7 @@ export function ThreadTool() {
         </div>
       ) : null}
       {note ? <p className="cad-note" role="status"><Icon name="alert" size={14} /> {note}</p> : null}
-      <div className="cad-actions">
-        <Button variant="ghost" onClick={() => (picked && !edit ? setPicked(null) : close())} disabled={busy}>{picked && !edit ? 'Clear' : 'Done'}</Button>
-        <Button variant="primary" onClick={() => void apply()} disabled={busy || !(sized || edit)}>
-          {busy ? 'Working' : 'Cut thread'}
-        </Button>
-      </div>
+      <ToolFooter verb="Cut thread" onApply={apply} busy={busy} disabled={!target || !(sized || edit)} repeat={!edit} />
     </Shell>
   )
 }

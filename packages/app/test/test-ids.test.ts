@@ -20,6 +20,7 @@ const EXCEPTIONS: Record<string, string> = {
   'unsaved-cancel': 'closes Save changes first? and keeps everything as it is',
   'upload-cancel': 'closes the upload form; nothing was sent',
   'creator-cancel': 'closes the creator page editor without saving',
+  'model-tool-cancel': 'closes a modeling tool; what was applied stays, nothing more is undone',
   'update-sheet': 'the update sheet itself',
   'update-body': 'the sheet body, read for its step',
   'update-download': 'opens the download page for a package install; nothing is installed',

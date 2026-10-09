@@ -21,7 +21,7 @@ import { addEdge, applyEdges, edgeDistance, edgeLines, edgeParams, sameEdge, typ
 import { followed } from './history/model'
 import { editing, nowOf, saveEdit } from './history/ops'
 import { bindNext } from './history/record'
-import { close, errorText, num, Num, Shell, useProbe } from './panel-kit'
+import { close, errorText, num, Num, Shell, useProbe, ToolFooter } from './panel-kit'
 import { follow, useDraft, useDraftObject, type Now } from './park'
 
 interface Picked {
@@ -226,6 +226,7 @@ export function FilletTool() {
       // The edges moved: the next ones are picked on the new mesh.
       setPicked(null)
       live.current.ring = null
+      return true
     } catch (err) {
       setNote(errorText(err))
     } finally {
@@ -248,12 +249,7 @@ export function FilletTool() {
         <Button size="sm" variant="ghost" data-tip="cad.edgeLoop" disabled={!picked?.last || busy} onClick={wholeLoop}>Whole loop</Button>
       </div>
       {note ? <p className="cad-note" role="status"><Icon name="alert" size={14} /> {note}</p> : null}
-      <div className="cad-actions">
-        <Button variant="ghost" onClick={() => (n ? setPicked(null) : close())} disabled={busy}>{n ? 'Clear' : 'Done'}</Button>
-        <Button variant="primary" onClick={() => void apply()} disabled={busy || !n || !sizeOk || (!previewOk && note !== null)}>
-          {busy ? 'Working' : kind === 'fillet' ? 'Round' : 'Bevel'}
-        </Button>
-      </div>
+      <ToolFooter verb={kind === 'fillet' ? 'Round' : 'Bevel'} onApply={apply} busy={busy} disabled={!n || !sizeOk || (!previewOk && note !== null)} repeat={!edit} />
     </Shell>
   )
 }

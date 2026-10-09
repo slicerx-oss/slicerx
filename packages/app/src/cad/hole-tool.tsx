@@ -5,7 +5,7 @@
 // countersink for the head, as a step of the object's history. Clearance holes take the measured fit
 // (plate/clearance.ts); the other sizes come from a table of usual ones (hole-sizes.ts).
 import type { PickEvent } from '@slicerx/viewport'
-import { Button, Icon, Seg, Select } from '@slicerx/ui'
+import { Icon, Seg, Select } from '@slicerx/ui'
 import { useCallback, useEffect, useState } from 'react'
 import { holeFind, type Hole } from '../geom/cad'
 import { toGeom } from '../geom/client'
@@ -18,7 +18,7 @@ import { holeSpecFor, THREADS, type Head, type Purpose, type Thread } from './ho
 import { applyHole } from './holes'
 import { editing, saveEdit } from './history/ops'
 import { bindNext } from './history/record'
-import { close, errorText, num, Num, Shell, useProbe } from './panel-kit'
+import { close, errorText, num, Num, Shell, useProbe, ToolFooter } from './panel-kit'
 import { follow, useDraft, useDraftObject } from './park'
 
 interface Picked {
@@ -100,6 +100,7 @@ export function HoleTool() {
       const r = await applyHole(host.slicer, picked.objectId, picked.partIndex, params)
       toast(r.message, r.warn ? 'warn' : 'ok')
       setPicked(null)
+      return true
     } catch (err) {
       setNote(errorText(err))
     } finally {
@@ -152,12 +153,7 @@ export function HoleTool() {
         </div>
       ) : null}
       {note ? <p className="cad-note" role="status"><Icon name="alert" size={14} /> {note}</p> : null}
-      <div className="cad-actions">
-        <Button variant="ghost" onClick={() => (picked && !edit ? setPicked(null) : close())} disabled={busy}>{picked && !edit ? 'Clear' : 'Done'}</Button>
-        <Button variant="primary" onClick={() => void apply()} disabled={busy || !sized}>
-          {busy ? 'Working' : 'Make hole'}
-        </Button>
-      </div>
+      <ToolFooter verb="Make hole" onApply={apply} busy={busy} disabled={!picked || !sized} repeat={!edit} />
     </Shell>
   )
 }

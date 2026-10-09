@@ -5,7 +5,7 @@
 // a body with curved faces gets the voxel wall, and the toast says so (sx-geom shell.rs). The wall takes named
 // values (values.ts).
 import type { PickEvent } from '@slicerx/viewport'
-import { Button, Icon } from '@slicerx/ui'
+import { Icon } from '@slicerx/ui'
 import { useCallback, useEffect, useState } from 'react'
 import { pickFace, type OpenFace } from '../geom/cad'
 import { toGeom } from '../geom/client'
@@ -17,7 +17,7 @@ import { applyShell } from './holes'
 import { keyOfTriangle } from './history/model'
 import { editing, nowOf, saveEdit } from './history/ops'
 import { bindNext } from './history/record'
-import { close, errorText, num, Num, pickWords, Shell, useProbe } from './panel-kit'
+import { close, errorText, num, Num, pickWords, Shell, useProbe, ToolFooter } from './panel-kit'
 import { follow, useDraft, useDraftObject } from './park'
 
 interface Picked {
@@ -102,6 +102,7 @@ export function ShellTool() {
       const r = await applyShell(host.slicer, target.objectId, target.partIndex, params)
       toast(r.message, r.warn ? 'warn' : 'ok')
       setPicked(null)
+      return true
     } catch (err) {
       setNote(errorText(err))
     } finally {
@@ -118,12 +119,7 @@ export function ShellTool() {
         <Num id="shell-wall" label="Wall" unit="mm" value={wall} onChange={setWall} onEnter={() => void apply()} />
       </div>
       {note ? <p className="cad-note" role="status"><Icon name="alert" size={14} /> {note}</p> : null}
-      <div className="cad-actions">
-        <Button variant="ghost" onClick={() => (picked && !edit ? setPicked(null) : close())} disabled={busy}>{picked && !edit ? 'Clear' : 'Done'}</Button>
-        <Button variant="primary" onClick={() => void apply()} disabled={busy || !ready}>
-          {busy ? 'Working' : 'Make shell'}
-        </Button>
-      </div>
+      <ToolFooter verb="Make shell" onApply={apply} busy={busy} disabled={!ready} />
     </Shell>
   )
 }

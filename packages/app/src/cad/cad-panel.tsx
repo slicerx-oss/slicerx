@@ -19,7 +19,7 @@ import { cancelEdit, editing, nowOf, saveEdit } from './history/ops'
 import { bindNext } from './history/record'
 import { sessionFonts } from './history/record'
 import { applyArray, applyExtrude, arraySpec, extrudeParams, type ExtrudeInput, BED_FRAME, describeFeature, featurePoints, loopsOf, previewArray, readout, type ArrayKind } from './cad-ops'
-import { close, errorText, num, Num, pickWords, Shell, useProbe, Vec } from './panel-kit'
+import { close, errorText, num, Num, pickWords, Shell, useProbe, Vec, ToolFooter } from './panel-kit'
 import { useDraft, useDraftObject } from './park'
 import { SvgFileField } from './svg-file'
 import { KIND_NAMES, dimensionText, keepDimension, keepableKinds, removeDimension, type ObjectPick } from './dimensions'
@@ -221,6 +221,7 @@ function ShapeTool({ textOnly, svgFirst }: { textOnly: boolean; svgFirst?: boole
       toast(r.message, r.warn ? 'warn' : 'ok')
       // The mesh under the face changed, so the face is picked again for the next shape.
       setFace(null)
+      return true
     } catch (e) {
       setNote(errorText(e))
     } finally {
@@ -332,12 +333,7 @@ function ShapeTool({ textOnly, svgFirst }: { textOnly: boolean; svgFirst?: boole
       <Num id="cad-dist" label={op === 'cut' ? 'Depth into the face' : 'Height off the face'} unit="mm" value={distance} onChange={setDistance} />
       <PatternSection value={patternFields} onChange={setPatternFields} />
       {note || (face && problem) ? <p className="cad-note" role="status"><Icon name="alert" size={14} /> {note ?? problem}</p> : null}
-      <div className="cad-actions">
-        <Button variant="ghost" onClick={close} disabled={busy}>Done</Button>
-        <Button variant="primary" onClick={() => void apply()} disabled={busy || !face || problem !== null}>
-          {busy ? 'Working' : op === 'cut' ? 'Cut' : op === 'join' ? 'Join' : 'Add body'}
-        </Button>
-      </div>
+      <ToolFooter verb={op === 'cut' ? 'Cut' : op === 'join' ? 'Join' : 'Add body'} onApply={apply} busy={busy} disabled={!face || problem !== null} />
     </Shell>
   )
 }
@@ -453,12 +449,7 @@ function ArrayTool() {
           {preview.overlapping ? (merge === 'merged' ? `${preview.count} copies that overlap: they fuse into one piece.` : `${preview.count} copies that overlap. Widen the spacing, or merge them into one object.`) : `${preview.count} copies, outlined on the bed.`}
         </p>
       ) : null}
-      <div className="cad-actions">
-        <Button variant="ghost" onClick={close} disabled={busy}>Cancel</Button>
-        <Button variant="primary" onClick={() => void apply()} disabled={busy || problem !== null}>
-          {busy ? 'Working' : merge === 'merged' ? 'Merge copies' : 'Make copies'}
-        </Button>
-      </div>
+      <ToolFooter verb={merge === 'merged' ? 'Merge copies' : 'Make copies'} onApply={apply} busy={busy} disabled={problem !== null} />
     </Shell>
   )
 }
