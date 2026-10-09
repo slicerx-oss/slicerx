@@ -33,6 +33,12 @@ function chord(c: string): string {
   return c.replace(/\bUp$/, 'ArrowUp').replace(/\bDown$/, 'ArrowDown')
 }
 
+/** The key went to the 3D view: its canvas has focus. */
+function inView(e: KeyboardEvent): boolean {
+  const el = (e.target as Element | null) ?? document.activeElement
+  return el instanceof HTMLCanvasElement && el.classList.contains('vp-canvas')
+}
+
 export function plateHandlers(): Partial<Record<KeyAction, Handler>> {
   const bus = () => cameraBus()
   const out: Partial<Record<KeyAction, Handler>> = {
@@ -101,6 +107,8 @@ export function bindPlateKeys(choice: () => LookAndFeelChoice, extra: { dropToBe
       if (!key) continue
       // Tools act on the plate, so only in Prepare; preview keys belong to the layer slider.
       if (!prepare && (action.startsWith('tool.') || action.startsWith('plate.'))) continue
+      // A plain Tab is a view key only while the 3D view has focus; anywhere else it moves focus as usual.
+      if (key === 'Tab' && !inView(e)) continue
       if (matchShortcut(e, chord(key))) {
         // Mod+V stays with the browser so its paste event can carry files from the system clipboard.
         if (action === 'edit.paste' && /^Mod\+V$/i.test(key)) return
