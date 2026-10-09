@@ -59,7 +59,6 @@ test.describe('the Slice sidebar at 1440 x 900', () => {
     await slice(page)
     await expect(page.getByTestId('slice-summary').locator('[data-section="totals"]')).toBeVisible()
     await expect(page.getByTestId('slice-summary').getByRole('button', { name: /^Print/ })).toHaveCount(0)
-    // These specs slice by hand (Auto slice off), so the footer's action reads Slice again; with Auto slice on it is Print.
-    await expect(left(page).locator('.sx-rail-foot').getByRole('button', { name: /^(Print|Slice again)$/ })).toBeVisible()
+    await expect(left(page).locator('.sx-rail-foot').getByTestId('danger-slice-print')).toBeVisible()
   })
 })
