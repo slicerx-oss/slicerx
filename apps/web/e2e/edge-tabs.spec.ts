@@ -95,14 +95,15 @@ test.describe('edge tabs', () => {
     await expect(rail.locator('.sx-rail-item').first()).toBeVisible()
     await page.getByTestId('edge-tab-left').click()
 
-    // The summary pane comes with a slice.
-    await expect(page.getByTestId('edge-tab-right')).toHaveCount(0)
+    // The right pane holds the objects before any slice, and the summary joins them after one.
+    await expect(page.getByTestId('slice-summary').getByTestId('objects-list')).toBeVisible()
+    await shutAndOpen(page, 'right', 'slice-summary', 'BracketRight', false)
     const n = await sliceCount(page)
     // Mod+Enter slices in every look, wherever the look puts the Slice button.
     await page.mouse.click(700, 450)
     await page.keyboard.press('ControlOrMeta+Enter')
     await expect(sliced(page, n)).toBeVisible({ timeout: 120_000 })
-    await shutAndOpen(page, 'right', 'slice-summary', 'BracketRight', false)
+    await expect(page.getByTestId('slice-summary').locator('[data-section="totals"]')).toBeVisible()
   })
 
   test('each tab bar remembers its own panes across a reload', async ({ page }) => {

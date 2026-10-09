@@ -9,6 +9,7 @@ import { Block, Button, Icon, LinkButton, type PillState, tipAttrs } from '@slic
 import { lazy, Suspense, useEffect, useState, type CSSProperties } from 'react'
 import { useWaited } from '../../lib/waited'
 import './slice-track.css'
+import './slice-sidebar.css'
 import { sliceFraction } from '../slice-progress'
 import { useHost } from '../../host'
 import { useFleet, type FleetRow } from '../../lib/queries'
@@ -49,6 +50,7 @@ import { MachineCard } from './machine-card'
 import { selectObject } from '../../plate/edit'
 import { get, isCadTool, selectedIds, set, setWorkspace, showSliced, shownSlice, useApp } from '../../state/store'
 import { useModelMode } from '../../state/model-mode'
+import { useMediaQuery } from '../../lib/media'
 import { EasySettingsPanel } from './easy-settings'
 const ExpertSettings = lazy(() => import('./expert-settings').then((m) => ({ default: m.ExpertSettings })))
 
@@ -97,6 +99,18 @@ function FilamentBlock() {
   return <AmsPanel maker={printer?.vendor ?? ''} system={printer?.filamentSystem} />
 }
 
+/** The top of the settings sidebar: the printer and the filaments stay in view while the settings under them scroll. */
+export function SlicePinned() {
+  // Design models parts: it has no printer or filament.
+  if (useModelMode() === 'design') return null
+  return (
+    <>
+      <MachineCard />
+      <FilamentBlock />
+    </>
+  )
+}
+
 /** The settings sidebar. The look and feel decides where the object list and the mode selector sit. */
 export function PrepareLeft({ layout }: { layout: LayoutSpec }) {
   const tool = useTool()
@@ -106,13 +120,18 @@ export function PrepareLeft({ layout }: { layout: LayoutSpec }) {
   const expertVisible = useExpertVisible(layout)
   const mode = effectiveMode(useApp((s) => s.settingsMode), layout)
   const tierTitle = mode === 'expert' || mode === 'developer' ? 'Expert settings' : 'Advanced settings'
-  const objectsFirst = layout.objectList === 'sidebar-above-settings'
+  // With the objects in the right pane, a phone keeps them here: its panes are sheets, one at a time.
+  const phone = useMediaQuery('(max-width: 900px)')
+  const objectList = layout.objectList === 'right-pane' ? (phone ? 'sidebar-below-settings' : 'right-pane') : layout.objectList
+  const objectsFirst = objectList === 'sidebar-above-settings'
   // Design has no printer, filament or print settings: it models parts; Slice sets them up for printing.
   const design = useModelMode() === 'design'
   // A history step opened for editing gets a fresh panel, even when the same tool is already open.
   const editKey = useApp((s) => (s.historyEdit ? `:${s.historyEdit.objectId}:${s.historyEdit.index}` : ''))
   return (
     <>
+      {/* A phone's sheet scrolls as one, so the printer and filaments lead it instead of sitting pinned. */}
+      {phone ? <SlicePinned /> : null}
       {objectsFirst ? <PrepareObjects /> : null}
       {isCadTool(objectTool) ? <Suspense fallback={null}><CadPanel key={objectTool + editKey} tool={objectTool} /></Suspense> : null}
       {objectTool === 'cut' ? <Suspense fallback={null}><CutPanel /></Suspense> : null}
@@ -120,9 +139,7 @@ export function PrepareLeft({ layout }: { layout: LayoutSpec }) {
       {tool === 'brim' ? <Suspense fallback={null}><BrimEarsPanel /></Suspense> : null}
       {design ? null : (
         <>
-          <MachineCard />
-          <FilamentBlock />
-          {layout.objectList === 'sidebar-after-filament' ? <PrepareObjects /> : null}
+          {objectList === 'sidebar-after-filament' ? <PrepareObjects /> : null}
           <Block
             title="Print settings"
             icon="sliders"
@@ -155,7 +172,7 @@ export function PrepareLeft({ layout }: { layout: LayoutSpec }) {
           ) : null}
         </>
       )}
-      {objectsFirst || (!design && layout.objectList === 'sidebar-after-filament') ? null : <PrepareObjects />}
+      {objectsFirst || objectList === 'right-pane' || (!design && objectList === 'sidebar-after-filament') ? null : <PrepareObjects />}
       {layout.plateList === 'sidebar' ? <PlateList layout={layout} /> : null}
     </>
   )
@@ -400,6 +417,30 @@ export function SliceBlock({ label = 'Slice plate', compact }: { label?: string;
         <p className="est-line">{running ? stageLine : plate.length ? (auto ? 'Time, filament and cost appear after the first slice.' : 'Slice to see time, filament and cost.') : 'Add a model to the plate.'}</p>
         {running ? track : primary}
         {problems}
+      </div>
+    )
+  }
+  // In the sidebar footer a finished slice is one line over the button, so the settings above keep their room.
+  if (compact && done) {
+    return (
+      <div className="slice-lite slice-done" data-section="estimate">
+        <p className="est-row">
+          <span className="est-time" {...tipAttrs({ title: slicedIn(done.result.wallMs, host.capabilities.threads) })}>
+            {formatDuration(done.result.stats.timeS)}
+          </span>
+          <span className="est-sub">
+            {done.result.layerCount} layers{grams > 0 ? `, ${formatGrams(grams)}` : ''}
+          </span>
+          <span className={done.stale ? 'app-tag stale' : 'app-tag'}>{done.stale ? (auto ? 'Updating' : 'Settings changed') : 'From slice'}</span>
+        </p>
+        {slice.status === 'running' && auto ? (
+          <div className="slicing-edge" role="status" aria-label="Slicing">
+            <i style={{ transform: `scaleX(${Math.max(0.04, sliceFraction(progress))})` }} />
+          </div>
+        ) : null}
+        {running && !auto ? track : primary}
+        {problems}
+        {sliceNote ? <p className="app-note">{sliceNote}</p> : null}
       </div>
     )
   }

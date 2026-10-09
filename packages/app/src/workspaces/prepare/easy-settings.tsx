@@ -8,7 +8,7 @@ import { easyConfig, goalEasy, GOALS, inferEasy, matchGoal } from '../../adapter
 import { goalEstimate, goalSubtitle } from '../../lib/estimate-line'
 import { choicePatch, chosenFrom, FIXED_HEIGHTS, SLEIPNIR, SLEIPNIR_LINE, type LayerChoice } from '../../lib/layer-choice'
 import { OPTION_TIPS, settingTipAttrs } from '../../lib/tips'
-import { MoreButton, useMore } from '../../shell/more'
+import { useMore } from '../../shell/more'
 import { beginLiveEdit } from '../../state/live-edit'
 import { markStale, set, shownSlice, useApp, type Goal } from '../../state/store'
 import './goal-tiles.css'
@@ -54,7 +54,6 @@ export function EasySettingsPanel() {
   // With a printer's presets under it, the readouts show the resolved configuration, not the Easy controls alone.
   const cfg = useMemo(() => easyConfig(easy), [easy, profile, overrides])
   const inferred = useMemo(() => (profile ? inferEasy(cfg, easy) : null), [cfg, easy, profile])
-  const detailAt = !inferred || touched.includes('detail') ? easy.detail : inferred.detail
   const strengthAt = !inferred || touched.includes('strength') ? easy.strength : inferred.strength
   const speedIndex = Math.max(0, SPEEDS.findIndex((s) => s.value === easy.speed))
   const speed = SPEEDS[speedIndex]
@@ -76,10 +75,13 @@ export function EasySettingsPanel() {
   // A control the person has not moved shows what the maker's preset does.
   const supports: SupportMode = !profile || touched.includes('supports') ? (easy.supports === 'everywhere' ? 'auto' : easy.supports) : cfg['enable_support'] ? (String(cfg['support_type']) === 'tree(manual)' ? 'painted' : 'auto') : 'off'
   const brim: boolean = !profile || touched.includes('brim') ? easy.brim : String(cfg['brim_type'] ?? 'no_brim') !== 'no_brim'
+  // Simple shows Goal, Layer height and Supports, so the sidebar never scrolls; Advanced and up add the rest.
   const more = useMore('print')
   // What each goal gives on this printer and nozzle: the printer's own tier presets, else SlicerX's goals.
   const goalValues = profile?.goalValues
   const subtitles = useMemo(() => Object.fromEntries(GOALS.map((g) => [g, goalSubtitle(g, goalValues?.[g] ?? easyConfig(goalEasy(g)))])) as Record<EasyGoal, string>, [goalValues, profile])
+  // About how long and how much from the last slice: the picked tile's tooltip says it.
+  const line = useApp((s) => goalEstimate(shownSlice(s.slice)))
   const tiles = useMemo(
     () =>
       GOAL_OPTIONS.map((o) => ({
@@ -90,10 +92,10 @@ export function EasySettingsPanel() {
             <span className="goal-sub sx-mono">{subtitles[o.value]}</span>
           </>
         ),
+        ...(line && o.value === goal ? { tip: { title: o.label, body: line === 'Updating' ? 'Updating the estimate.' : `${line} from the last slice.` } } : {}),
       })),
-    [subtitles],
+    [subtitles, line, goal],
   )
-  const line = useApp((s) => goalEstimate(shownSlice(s.slice)))
   return (
     <>
       <div className="goal-head">
@@ -107,25 +109,6 @@ export function EasySettingsPanel() {
         ) : null}
       </div>
       <Seg<Goal> label="Goal" full className="mt6 goal-seg goal-tiles" value={goal} options={tiles} onChange={(g) => g !== 'custom' && update(goalEasy(g), g)} />
-      {line ? (
-        <p className="goal-estimate" data-testid="slice-goal-estimate" data-stale={line === 'Updating' ? true : undefined} aria-live="polite">
-          {line}
-        </p>
-      ) : null}
-
-      {more ? (
-      <div className="srow">
-        <div className="srow-h">
-          <label htmlFor="easy-detail">Detail</label>
-          <output htmlFor="easy-detail">{layer} mm layers</output>
-        </div>
-        <Range id="easy-detail" onPointerDown={beginLiveEdit} min={0} max={100} step={5} value={detailAt} onChange={(detail) => update({ detail })} aria-valuetext={`${layer} mm layers`} />
-        <div className="ticks">
-          <span>0.28</span>
-          <span>0.08 mm</span>
-        </div>
-      </div>
-      ) : null}
 
       <div className="srow" {...settingTipAttrs('layer_height', '.srow')}>
         <div className="srow-h">
@@ -216,9 +199,6 @@ export function EasySettingsPanel() {
       </div>
 
       {more ? <SwitchRow className="mt14" id="easy-brim" label="Brim" detail={brim ? `${Number(cfg.brim_width) || 5} mm, helps small feet stick` : 'Off'} checked={brim} onChange={(brim) => update({ brim })} /> : null}
-      <div className="more-row">
-        <MoreButton id="print" changed={goal === 'custom'} />
-      </div>
     </>
   )
 }

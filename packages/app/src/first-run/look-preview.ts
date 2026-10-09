@@ -66,6 +66,7 @@ export function sidebarSections(layout: LayoutSpec): string[] {
   const top = ['Printer', 'Filament']
   if (layout.objectList === 'sidebar-above-settings') return ['Objects', ...top, 'Print settings']
   if (layout.objectList === 'sidebar-after-filament') return [...top, 'Objects', 'Print settings']
+  if (layout.objectList === 'right-pane') return [...top, 'Print settings']
   return [...top, 'Print settings', 'Objects']
 }
 

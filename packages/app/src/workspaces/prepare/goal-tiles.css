@@ -8,5 +8,3 @@
 .goal-tiles .goal-name { line-height: 1.2; }
 .goal-tiles .goal-sub { font-size: var(--fs-xs); font-weight: var(--fw-regular); line-height: 1.2; color: var(--dim); }
 .goal-tiles > button[aria-checked="true"] .goal-sub { color: var(--muted); }
-.goal-estimate { margin: 6px 0 0; font-size: var(--fs-sm); color: var(--muted); font-variant-numeric: tabular-nums; }
-.goal-estimate[data-stale] { color: var(--dim); }
