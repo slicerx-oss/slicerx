@@ -258,7 +258,7 @@ impl Usage {
 
 /// A list of whole numbers from the raw settings (a list, or one number, or text joined by commas).
 #[allow(clippy::cast_possible_truncation, reason = "small whole numbers")]
-fn int_list(cfg: &PrintConfig, key: &str) -> Vec<i64> {
+pub(crate) fn int_list(cfg: &PrintConfig, key: &str) -> Vec<i64> {
     let num = |v: &serde_json::Value| {
         v.as_f64()
             .or_else(|| v.as_str().and_then(|t| t.trim().parse().ok()))
