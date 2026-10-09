@@ -209,6 +209,52 @@ function xml(text: string): Document {
 
 const kids = (el: Element, tag: string): Element[] => [...el.children].filter((c) => c.localName === tag)
 
+/** Column-major 4x4 product a * b (b applied first); null is the identity. */
+function mul(a: Mat | null, b: Mat | null): Mat | null {
+  if (!a) return b
+  if (!b) return a
+  const out = new Array<number>(16)
+  for (let c = 0; c < 4; c++) for (let r = 0; r < 4; r++) out[c * 4 + r] = a[r]! * b[c * 4]! + a[4 + r]! * b[c * 4 + 1]! + a[8 + r]! * b[c * 4 + 2]! + a[12 + r]! * b[c * 4 + 3]!
+  return out
+}
+
+/** How deep components may nest, and how many meshes one object may place, before the file is refused. */
+const MAX_COMPONENT_DEPTH = 32
+const MAX_COMPONENT_MESHES = 10_000
+
+/**
+ * The meshes an object of components places, however deep its components nest, each with its transform into the
+ * object's space (null when nothing along the way moves it) and the id of the object that holds the mesh. A
+ * component's object is looked up in the model part its path names, or without a path in the part the component
+ * itself is in. A component that names a missing object, contains itself, or nests too deep refuses the file instead
+ * of opening part of it.
+ */
+function meshLeaves(model: ScannedModel, obj: ScannedObject, modelAt: (path: string | undefined, from: ScannedModel) => ScannedModel): { obj: ScannedObject; id: string; matrix: Mat | null }[] {
+  const out: { obj: ScannedObject; id: string; matrix: Mat | null }[] = []
+  // The objects on the way down, to see a component that contains itself.
+  const open = new Set<ScannedObject>([obj])
+  const walk = (m: ScannedModel, o: ScannedObject, matrix: Mat | null, depth: number) => {
+    if (depth > MAX_COMPONENT_DEPTH) throw new ProjectReadError('The 3MF nests its components too deep.')
+    for (const c of o.components) {
+      const part = modelAt(c.path, m)
+      const child = part.objects.get(c.objectId)
+      if (!child) throw new ProjectReadError('The 3MF has a component that points at an object it does not have.')
+      if (open.has(child)) throw new ProjectReadError('The 3MF has a component that contains itself.')
+      const at = mul(matrix, c.transform)
+      if (child.mesh || !child.components.length) {
+        out.push({ obj: child, id: c.objectId, matrix: at })
+        if (out.length > MAX_COMPONENT_MESHES) throw new ProjectReadError('The 3MF places too many meshes in one object.')
+        continue
+      }
+      open.add(child)
+      walk(part, child, at, depth + 1)
+      open.delete(child)
+    }
+  }
+  walk(model, obj, null, 0)
+  return out
+}
+
 function projectOrigin(config: Uint8Array | undefined): readonly [number, number] {
   return areaOrigin(projectArea(config))
 }
@@ -428,7 +474,8 @@ export async function projectOf(scanned: ScannedProject, bed: { widthMm: number;
   const marks = vaultMarksOf(files, scanned.marks)
   const rootSource = sourceOf(marks.root)
   // Bambu Studio and Orca keep each object's mesh in its own file, named by the component's p:path.
-  const modelAt = (path: string | undefined): ScannedModel => (path ? modelOf(path.replace(/^\/+/, '')) : main)
+  // A component without a path points into the model part it is in.
+  const modelAt = (path: string | undefined, from: ScannedModel = main): ScannedModel => (path ? modelOf(path.replace(/^\/+/, '')) : from)
 
   // Object names, part subtypes and slots from Bambu and Orca's settings file.
   const settingsText = files.get('Metadata/model_settings.config')
@@ -509,7 +556,7 @@ export async function projectOf(scanned: ScannedProject, bed: { widthMm: number;
     const sources: { obj: ScannedObject | undefined; id: string; matrix: Mat | null }[] = pz?.volumes.length && obj.mesh
       ? []
       : obj.components.length
-        ? obj.components.map((c) => ({ obj: modelAt(c.path).objects.get(c.objectId), id: c.objectId, matrix: c.transform }))
+        ? meshLeaves(main, obj, modelAt)
         : [{ obj, id: item.objectId, matrix: null }]
     if (pz?.volumes.length && obj.mesh) {
       // The vertices are stored in the object's space already; a volume's matrix only says how to get its own mesh back.
