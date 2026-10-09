@@ -72,8 +72,10 @@ class PoolWorker {
   readonly ready: Promise<void>
   /** Meshes this worker has loaded. */
   readonly meshIds = new Set<string>()
+  /** Why the worker stopped (it errored, a message could not be read, or it was retired); null while it works. */
+  failed: Error | null = null
 
-  constructor(worker: Worker, module: WebAssembly.Module, warmUp: boolean) {
+  constructor(worker: Worker, module: WebAssembly.Module, warmUp: boolean, private readonly onFail: (w: PoolWorker) => void = () => undefined) {
     this.worker = worker
     this.ready = new Promise((resolve, reject) => {
       worker.onmessage = (ev: MessageEvent<FromWorker>) => {
@@ -92,9 +94,27 @@ class PoolWorker {
         if (msg.type === 'error') p.reject(new Error(msg.message))
         else p.resolve(msg)
       }
-      worker.onerror = (ev) => reject(new Error(ev.message))
+      worker.onerror = (ev) => {
+        const e = new Error(`A slicer worker stopped: ${ev.message || 'it failed'}`)
+        reject(e)
+        this.fail(e)
+      }
+      worker.onmessageerror = () => this.fail(new Error('A slicer worker sent a message that could not be read'))
     })
+    // A start that failed is handled by whoever awaits `ready`; the rejection is not left unhandled here.
+    this.ready.catch(() => undefined)
     this.send({ type: 'init', module, warmUp })
+  }
+
+  /** Stops the worker: every call waiting on it is rejected with `e`, and later calls fail at once. */
+  fail(e: Error): void {
+    if (this.failed) return
+    this.failed = e
+    const waiting = [...this.pending.values()]
+    this.pending.clear()
+    for (const p of waiting) p.reject(e)
+    this.worker.terminate()
+    this.onFail(this)
   }
 
   send(msg: ToWorker, transfer: Transferable[] = []): void {
@@ -102,6 +122,7 @@ class PoolWorker {
   }
 
   call(build: (call: number) => ToWorker, transfer: Transferable[] = []): Promise<FromWorker> {
+    if (this.failed) return Promise.reject(this.failed)
     const call = this.nextCall++
     return new Promise((resolve, reject) => {
       this.pending.set(call, { resolve, reject })
@@ -141,13 +162,46 @@ export async function createWasmSlicer(opts: PoolOptions): Promise<SlicerHost> {
   const warmUp = opts.warmUp ?? true
   // One worker at start; the others start when a slice has shards for them and load the meshes already
   // in the pool before they take a shard. A worker joins `workers` only once it holds every mesh.
-  const workers: PoolWorker[] = [new PoolWorker(make(), module, warmUp)]
+  const workers: PoolWorker[] = []
   let starting = 0
-  await workers[0]?.ready
-
   const meshes = new Map<string, MeshHandle>()
   const slices = new Map<string, StoredSlice>()
   let nextId = 1
+  // Each mesh's bytes as it was loaded, kept as a Blob (outside the page's heap), so a pool whose every worker
+  // stopped can start a new one with the same meshes and paint.
+  const sources = new Map<string, { blob: Blob; fileName: string }>()
+  let restarting: Promise<void> | null = null
+
+  /** A worker that stopped leaves the pool; when it was the last one, a new one starts with every mesh. */
+  const retire = (w: PoolWorker): void => {
+    const i = workers.indexOf(w)
+    if (i >= 0) workers.splice(i, 1)
+    if (workers.length === 0 && !restarting) restarting = restart().finally(() => (restarting = null))
+  }
+  const restart = async (): Promise<void> => {
+    const w = new PoolWorker(make(), module, warmUp, retire)
+    await w.ready
+    for (const [meshId, src] of sources) {
+      const data = await src.blob.arrayBuffer()
+      w.meshIds.add(meshId)
+      await w.call((call) => ({ type: 'load', call, meshId, fileName: src.fileName, data }), [data])
+    }
+    if (!w.failed) workers.push(w)
+  }
+  /** The first worker, after a restart when every worker had stopped. */
+  const firstWorker = async (): Promise<PoolWorker> => {
+    for (let tries = 0; tries < 3; tries++) {
+      const w = workers[0]
+      if (w) return w
+      restarting ??= restart().finally(() => (restarting = null))
+      await restarting.catch(() => undefined)
+    }
+    throw new Error('The slicer could not start a worker')
+  }
+
+  const first = new PoolWorker(make(), module, warmUp, retire)
+  await first.ready
+  workers.push(first)
 
   const load = async (data: Uint8Array, fileName: string): Promise<MeshHandle> => {
     const meshId = `mesh-${nextId++}`
@@ -156,14 +210,16 @@ export async function createWasmSlicer(opts: PoolOptions): Promise<SlicerHost> {
       w.meshIds.add(meshId)
       return w.call((call) => ({ type: 'load', call, meshId, fileName, data: copy }), [copy])
     }
+    await firstWorker()
+    sources.set(meshId, { blob: new Blob([data as BlobPart]), fileName })
     const results = await Promise.all(workers.map(send))
     // A worker that joined while this mesh was loading gets it too.
     for (let late = workers.filter((w) => !w.meshIds.has(meshId)); late.length > 0; late = workers.filter((w) => !w.meshIds.has(meshId))) {
       await Promise.all(late.map(send))
     }
-    const first = results[0]
-    if (!first || first.type !== 'loaded') throw new Error('Mesh load failed')
-    const info: MeshInfo = first.info
+    const loaded = results[0]
+    if (!loaded || loaded.type !== 'loaded') throw new Error('Mesh load failed')
+    const info: MeshInfo = loaded.info
     const handle: MeshHandle = {
       id: meshId,
       hash: info.hash,
@@ -200,7 +256,7 @@ export async function createWasmSlicer(opts: PoolOptions): Promise<SlicerHost> {
     const out: Promise<PoolWorker | null>[] = []
     while (workers.length + starting < Math.min(count, want)) {
       starting++
-      const w = new PoolWorker(make(), module, warmUp)
+      const w = new PoolWorker(make(), module, warmUp, retire)
       out.push(
         join(w)
           .then(() => w as PoolWorker | null)
@@ -224,15 +280,14 @@ export async function createWasmSlicer(opts: PoolOptions): Promise<SlicerHost> {
       return load(encodeParts(parts), name)
     },
     async meshParts(id: string): Promise<MeshPart[]> {
-      const w = workers[0]
-      if (!meshes.has(id) || !w) throw new Error(`Unknown mesh ${id}`)
+      if (!meshes.has(id)) throw new Error(`Unknown mesh ${id}`)
+      const w = await firstWorker()
       const r = await w.call((call) => ({ type: 'parts', call, meshId: id }))
       if (r.type !== 'parts') throw new Error('Mesh parts failed')
       return decodeParts(new Uint8Array(r.data))
     },
     async projectMetadata(data: ArrayBuffer, fileName: string): Promise<ProjectMetadata> {
-      const w = workers[0]
-      if (!w) throw new Error('No worker')
+      const w = await firstWorker()
       const copy = data.slice(0)
       const r = await w.call((call) => ({ type: 'metadata', call, fileName, data: copy }), [copy])
       if (r.type !== 'metadata') throw new Error('Project metadata failed')
@@ -255,23 +310,44 @@ export async function createWasmSlicer(opts: PoolOptions): Promise<SlicerHost> {
       // Shards go to whichever worker is free next, so a worker that drew
       // heavy layers (solid bottoms and tops) does not hold up the rest.
       const results: FromWorker[] = new Array<FromWorker>(shards)
-      let next = 0
+      // Shards a stopped worker had go back in the queue for the others.
+      const todo = Array.from({ length: shards }, (_, i) => i)
+      let lost: Error | null = null
       const drain = async (w: PoolWorker): Promise<void> => {
-        while (next < shards) {
-          const s = next++
-          const r = await w.call((call) => ({ type: 'slice', call, request, shard: s, shards }))
+        for (let s = todo.shift(); s !== undefined; s = todo.shift()) {
+          let r: FromWorker
+          try {
+            r = await w.call((call) => ({ type: 'slice', call, request, shard: s, shards }))
+          } catch (e) {
+            if (!w.failed) throw e
+            todo.push(s)
+            lost = w.failed
+            return
+          }
           results[s] = r
           done++
           o?.onProgress?.({ stage, fraction: done / shards })
         }
       }
       // The workers running now take shards at once; new ones take shards as soon as they hold the meshes.
+      await firstWorker()
       const joining = grow(shards).map((p) => p.then((w) => (w ? drain(w) : undefined)))
-      const jobs = Promise.all([...workers.map(drain), ...joining])
+      const jobs = (async () => {
+        await Promise.all([...workers.map(drain), ...joining])
+        // Shards left by a worker that stopped after the others finished: the workers left take them, or a new one
+        // started with every mesh when none is left. A worker that keeps stopping fails the slice.
+        for (let round = 0; todo.length > 0 && round < 2; round++) {
+          await firstWorker()
+          await Promise.all(workers.map(drain))
+        }
+        if (todo.length > 0) throw lost ?? new Error('The slice stopped before every layer was sliced')
+      })()
       const aborted = new Promise<never>((_, reject) => {
         if (o?.signal?.aborted) reject(new DOMException('Slice canceled', 'AbortError'))
         o?.signal?.addEventListener('abort', () => reject(new DOMException('Slice canceled', 'AbortError')))
       })
+      // A slice given up on (canceled) may still fail later; that failure has no one waiting for it.
+      jobs.catch(() => undefined)
       await Promise.race([jobs, aborted])
       const parts = results.filter((r): r is Extract<FromWorker, { type: 'sliced' }> => r.type === 'sliced')
       const infos = parts.map((p) => p.info)
@@ -310,7 +386,7 @@ export async function createWasmSlicer(opts: PoolOptions): Promise<SlicerHost> {
       // By object: every shard's hits go to finalize, which reports them at the finished file's times.
       const meta = infos.find((i) => i.collide?.meta)?.collide?.meta
       const collide = meta ? JSON.stringify({ meta, hits: infos.flatMap((i) => i.collide?.hits ?? []) }) : undefined
-      const w0 = workers[0]
+      const w0 = gcode.length > 0 ? await firstWorker().catch(() => undefined) : undefined
       if (w0 && gcode.length > 0) {
         try {
           const joined = new Uint8Array(gcode.reduce((n, g) => n + g.byteLength, 0))
@@ -388,6 +464,7 @@ export async function createWasmSlicer(opts: PoolOptions): Promise<SlicerHost> {
       return out
     },
     release(id: string): void {
+      sources.delete(id)
       if (meshes.delete(id)) for (const w of workers) w.send({ type: 'release', meshId: id })
       slices.delete(id)
     },
