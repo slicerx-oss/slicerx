@@ -2,11 +2,13 @@
 // Copyright (C) 2026 The SlicerX contributors
 // A thin glowing bar along the top of the viewport while the plate slices, filled from the engine's own progress
 // (the same fraction as the sidebar's Estimate bar). It shows only for a slice that takes longer than 250 ms, stays at least 400 ms once
-// it shows, then fills and fades out, so quick re-slices after an edit never blink. Model loading still sweeps.
+// it shows, then fills and fades out, so quick re-slices after an edit never blink. Model loading still sweeps, with
+// the ravens before the model's first frame and the 3D view's wisp after it.
 import { lazy, Suspense, useEffect, useRef, useState, type CSSProperties } from 'react'
 import { useWaited } from '../lib/waited'
 import type { SliceProgress as SliceProgressValue } from '@slicerx/contracts'
 import { useApp } from '../state/store'
+import { useLoading } from '../ravens/use-loading'
 
 // The ravens load only once a wait has run past about 1.2 s.
 const LoadingRavens = lazy(() => import('../ravens/waits').then((m) => ({ default: m.LoadingRavens })))
@@ -51,7 +53,7 @@ export function SliceProgress() {
           <i style={{ '--p': p } as CSSProperties} />
         </div>
       ) : null}
-      <LoadingWait loading={loading} />
+      <LoadingWait />
     </>
   )
 }
@@ -61,17 +63,19 @@ export function sliceFraction(progress: SliceProgressValue | null | undefined): 
   return progress ? Math.min(1, Math.max(0, progress.fraction)) : 0
 }
 
-/** Huginn and Muninn over the plate while a model takes more than about 1.2 s to load; they fly off once it is on. */
-function LoadingWait({ loading }: { loading: boolean }) {
-  const long = useWaited(loading)
+/**
+ * Huginn and Muninn over the plate while a model takes more than about 1.2 s to reach its first frame; they fly off
+ * once it is drawn, and the 3D view's wisp runs the plate edge for the rest of the wait (ravens/loading-phase.ts).
+ */
+function LoadingWait() {
+  const { phase } = useLoading()
   const [state, setState] = useState<'off' | 'in' | 'leaving'>('off')
   useEffect(() => {
-    if (long) return setState('in')
-    if (loading) return
+    if (phase === 'ravens') return setState('in')
     setState((st) => (st === 'in' ? 'leaving' : st))
     const t = window.setTimeout(() => setState('off'), LEAVE_MS)
     return () => window.clearTimeout(t)
-  }, [long, loading])
+  }, [phase])
   if (state === 'off') return null
   return <Suspense fallback={null}><LoadingRavens leaving={state === 'leaving'} /></Suspense>
 }

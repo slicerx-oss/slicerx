@@ -41,7 +41,7 @@ import { buildTimeline, fitOf, type Timeline } from '../lib/preview-timeline'
 import { headFor } from '@slicerx/viewport'
 import { strikeMarks } from '../plate/heimdall'
 import { gantryHits, gantrySpec } from '../plate/heimdall-gantry'
-import { markOpenStage, markViewDrawn } from '../lib/open-mark'
+import { markOpenStage, markViewDrawn, onOpenStage, openStagesPassed } from '../lib/open-mark'
 
 /** The part of the viewport handle the app drives. The 2D fallback implements the same. */
 /** The render mode for the state: Model's CAD look, or the look picked for Slice. */
@@ -422,6 +422,15 @@ export function ViewportHost({ layers }: { layers: boolean }) {
       offs.push(onThemeChange(syncScene))
       offs.push(appStore.subscribe((s, p) => s.appearance.colorVision !== p.appearance.colorVision && syncScene()))
       offs.push(appStore.subscribe((s) => apply(s, false)))
+      // The loading wisp runs the plate edge once a loading model is drawn, until the open is done.
+      let wispOn = false
+      const syncWisp = () => {
+        const on = appStore.getState().plateLoading && openStagesPassed().has('drawn')
+        if (on === wispOn) return
+        wispOn = on
+        ;(vp as unknown as Viewport).setLoadingWisp?.(on)
+      }
+      offs.push(appStore.subscribe(syncWisp), onOpenStage(syncWisp))
       // The selected printer's extruder areas come from its profile, loaded when the printer changes.
       let areasFor: string | null | undefined
       const loadAreas = (id: string | null) => {
