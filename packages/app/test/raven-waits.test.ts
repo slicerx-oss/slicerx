@@ -10,6 +10,7 @@ import { RAVEN_WAIT_MS } from '../src/lib/waited'
 import { set } from '../src/state/store'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { HostContext } from '../src/host'
+import { UploadState } from '../src/features/store/upload'
 import { SliceBlock } from '../src/workspaces/prepare/prepare-panes'
 import { SliceProgress } from '../src/workspaces/slice-progress'
 
@@ -72,5 +73,25 @@ describe('ravens through the longer waits', () => {
     expect(el.querySelector('.slicing .rv-ride [data-testid="raven-slice-glide"]')).not.toBeNull()
     await act(async () => set({ slice: { status: 'idle' } }))
     expect(has('raven-slice-glide')).toBe(false)
+  })
+
+  it('an upload past about 1.2 s gets the raven carrying the file, and it goes when the upload is done', async () => {
+    const line = (busy: boolean, text: string) => createElement(UploadState, { busy, text })
+    await act(async () => root.render(line(true, 'Uploading the file')))
+    await wait(600)
+    expect(has('raven-upload-carry')).toBe(false)
+    await wait(RAVEN_WAIT_MS)
+    expect(has('raven-upload-carry')).toBe(true)
+    expect(el.querySelector('[data-testid="upload-state"]')?.textContent).toBe('Uploading the file')
+    await act(async () => root.render(line(false, 'Ready to send')))
+    expect(has('raven-upload-carry')).toBe(false)
+  })
+
+  it('a quick upload never shows the raven', async () => {
+    await act(async () => root.render(createElement(UploadState, { busy: true, text: 'Uploading the file' })))
+    await wait(500)
+    await act(async () => root.render(createElement(UploadState, { busy: false, text: 'Ready to send' })))
+    await wait(RAVEN_WAIT_MS)
+    expect(has('raven-upload-carry')).toBe(false)
   })
 })
