@@ -18,7 +18,7 @@ const CONTROLS = ['detail', 'strength', 'speed', 'supports', 'brim', 'varyLayerH
 
 /** The Easy controls whose value differs between two settings. */
 export function changedControls(a: EasySettings, b: EasySettings): string[] {
-  return CONTROLS.filter((c) => (a[c] ?? (c === 'varyLayerHeight' ? false : undefined)) !== (b[c] ?? (c === 'varyLayerHeight' ? false : undefined)))
+  return CONTROLS.filter((c) => (a[c] ?? (c === 'varyLayerHeight' ? true : undefined)) !== (b[c] ?? (c === 'varyLayerHeight' ? true : undefined)))
 }
 
 const TIERS: readonly EasyGoal[] = ['draft', 'standard', 'fine', 'strong']

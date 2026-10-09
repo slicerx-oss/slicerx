@@ -97,7 +97,11 @@ export function builtinCommands(host: Host, workspaces: readonly { id: string; l
   for (const [mode, label] of supports) {
     out.push({ id: `supports-${mode}`, title: label, section: 'settings', keywords: ['support', 'overhang', 'tree'], workspace: 'prepare', tool: { permission: 'slice' }, run: () => setEasy({ supports: mode }) })
   }
-  out.push({ id: 'vary-layer-height', title: 'Turn sleipnir on or off', section: 'settings', keywords: ['sleipnir', 'smart layer', 'variable layer height', 'adaptive', 'detail', 'curves'], workspace: 'prepare', tool: { permission: 'slice' }, run: () => setEasy({ varyLayerHeight: !(get().easy.varyLayerHeight ?? false) }) })
+  out.push({ id: 'vary-layer-height', title: 'Turn sleipnir on or off', section: 'settings', keywords: ['sleipnir', 'smart layer', 'variable layer height', 'adaptive', 'detail', 'curves'], workspace: 'prepare', tool: { permission: 'slice' }, run: () => {
+      // A choice made here is the person's, so a fresh plate keeps it (lib/sleipnir-default.ts).
+      set((s) => ({ easyTouched: s.easyTouched.includes('varyLayerHeight') ? s.easyTouched : [...s.easyTouched, 'varyLayerHeight'] }))
+      setEasy({ varyLayerHeight: !(get().easy.varyLayerHeight ?? true) })
+    } })
   out.push(
     { id: 'brim-toggle', title: 'Turn brim on or off', section: 'settings', keywords: ['adhesion', 'brim'], workspace: 'prepare', tool: { permission: 'slice' }, run: () => setEasy({ brim: !get().easy.brim }) },
     { id: 'expert-open', title: 'Show expert settings', section: 'settings', keywords: ['advanced', 'all settings', 'orca'], workspace: 'prepare', run: () => { setWorkspace('prepare'); setRail('prepare', 'left', true); set({ expertOpen: true }); focusWhenReady('expert-search') } },
