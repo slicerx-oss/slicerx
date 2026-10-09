@@ -7,6 +7,7 @@
 import type { MeshHandle, MeshPart } from '@slicerx/contracts'
 import { fromGeom, geom, toGeom, type GeomMesh } from '../geom/client'
 import { get, markStale, set, toast, type PlateEntry } from '../state/store'
+import { commitMade } from '../cad/commit'
 import { selectedEntry } from './edit'
 import { bake, invert } from './mesh-ops'
 import { repairHeadline, showRepairReport, sumRepair, type RepairCounts, type RepairEntry } from './repair-report'
@@ -46,10 +47,11 @@ type StepParams = import('../cad/history/model').StepParams
  */
 async function replace(host: Loader, e: PlateEntry, parts: MeshPart[], transform: Mat4 = e.transform, step?: { params: StepParams; start: boolean }): Promise<void> {
   const handle = await host.loadParts(e.name, parts)
-  const { instanceOf: _was, history: had, ...rest } = e
-  let history = had
-  if (step && (had || step.start)) history = (await import('../cad/history/record')).withStep(e, -1, step.params)
-  set({ plate: get().plate.map((p) => (p.id === e.id ? { ...rest, handle, parts, transform, ...(history ? { history } : {}) } : p)) })
+  let history = e.history
+  if (step && (history || step.start)) history = (await import('../cad/history/record')).withStep(e, -1, step.params)
+  // Onto the object as it is now. Placement is the job's only when it baked a new one into the mesh.
+  const baked = transform !== e.transform
+  if (!commitMade(e.id, () => ({ handle, parts, ...(baked ? { transform } : {}), ...(history ? { history } : {}) }), { keepPaint: true })) throw new Error('That object is gone.')
   markStale()
 }
 
@@ -149,6 +151,11 @@ export async function cutSelected(host: Loader, spec: CutSpec): Promise<number> 
   )
   const plate = get().plate
   const at = plate.findIndex((p) => p.id === e.id)
+  // The pieces sit where the object was when the cut started: an object deleted or moved meanwhile keeps its new state.
+  if (at < 0 || plate[at]!.transform !== e.transform) {
+    toast(at < 0 ? 'The object was removed before the cut finished, so nothing changed.' : 'The object moved before the cut finished, so nothing changed. Cut it again.', 'warn')
+    return 0
+  }
   set({ plate: [...plate.slice(0, at), ...entries, ...plate.slice(at + 1)], selection: entries[0]?.id ?? null, selectedIds: entries.map((x) => x.id) })
   markStale()
   return entries.length
