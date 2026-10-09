@@ -45,7 +45,7 @@
 .shelf { display: flex; align-items: center; gap: 0; margin: 8px 8px 0; padding: 4px 8px; border-radius: var(--r-lg); overflow-x: auto; scrollbar-width: none; min-width: 0; min-height: 44px; box-shadow: var(--shadow-float), var(--lift-edge); }
 .shelf-grp { position: relative; display: flex; align-items: center; padding: 0 6px; flex: none; }
 .shelf-grp:first-child { padding-left: 0; }
-.shelf-grp + .shelf-grp::before, .shelf-next::before { content: ""; position: absolute; left: -0.5px; top: 22.5%; height: 55%; width: 1px; background: var(--line-soft); }
+.shelf-grp + .shelf-grp::before { content: ""; position: absolute; left: -0.5px; top: 22.5%; height: 55%; width: 1px; background: var(--line-soft); }
 .shelf-tools { display: flex; align-items: center; gap: 2px; }
 .shelf-tool { display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 8px; border: 0; border-radius: var(--r-sm); background: none; color: var(--fg); font: var(--fw-medium) var(--fs-md) var(--f-body); white-space: nowrap; }
 .shelf-tool .sx-ic { width: 20px; height: 20px; color: var(--muted); flex: none; }
@@ -57,7 +57,7 @@
 .shelf-tool:disabled .sx-ic { color: var(--dim); }
 .shelf-icon { padding: 0 7px; }
 .shelf-icon > span { display: none; }
-.shelf-next { position: relative; display: flex; align-items: center; gap: 2px; padding: 0 6px; margin-left: 6px; flex: none; animation: shelf-next-in 120ms linear; }
+.shelf-next { position: relative; display: flex; align-items: center; gap: 2px; padding: 0 4px; margin-left: 12px; border-radius: var(--r-sm); background: color-mix(in srgb, var(--accent) 7%, transparent); flex: none; animation: shelf-next-in 120ms linear; }
 @keyframes shelf-next-in { from { opacity: 0; } to { opacity: 1; } }
 .shelf-end { margin-left: auto; display: flex; align-items: center; gap: 2px; padding-left: 10px; flex: none; }
 .shelf-sep { width: 1px; height: 20px; margin: 0 6px; background: var(--line-soft); }
@@ -101,3 +101,6 @@
   .tl { grid-template-columns: minmax(0, 1fr); }
   .tl-nav, .tl-status { display: none; }
 }
+/* The next slot reads as a suggestion: a faint accent ground, its icons a step quieter until hovered. */
+.shelf-next .shelf-tool .sx-ic { color: var(--dim); }
+.shelf-next .shelf-tool:hover .sx-ic { color: var(--fg); }
