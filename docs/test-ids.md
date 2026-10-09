@@ -243,6 +243,10 @@ Ids that tests read for their text:
 | `about-attribution`, `about-step-reader` | About: the engine attribution and the STEP reader line |
 | `bug-preview` | Report a bug: what the report sends |
 | `step-note`, `step-bind` | A CAD history step's note and binding |
+| `model-shelf` | Model's tool shelf |
+| `model-shelf-tool` | A tool on the shelf; `data-tool` names it |
+| `model-shelf-next` | The shelf's next slot: up to three tools for what is picked; hidden with nothing picked |
+| `model-shelf-next-tool` | A tool in the next slot; `data-next-tool` names it |
 | `step-sketch` | A step's sketch line in the Design tree, with its loop count |
 | `parked-chip` | The chip that says a modeling tool is parked while you work in Slice |
 | `hole-size-words`, `thread-words` | The hole and thread tools' size in words |

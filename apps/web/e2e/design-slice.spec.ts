@@ -38,7 +38,8 @@ test.describe('Model and Slice', () => {
     await page.locator('.sx-tab[data-mode="design"]').click()
     const shelf = page.getByRole('toolbar', { name: 'Model tools' })
     await expect(shelf).toBeVisible()
-    await expect(shelf.locator('.shelf-label')).toHaveText(['Create', 'Modify', 'Fasten', 'Inspect'])
+    await expect(shelf.locator('.shelf-grp')).toHaveCount(4)
+    await expect(shelf.locator('.shelf-label')).toHaveCount(0)
     await expect(page.locator('.dtree-name', { hasText: 'Box' })).toBeVisible()
     // No plate toolbar and no Slice action in Design.
     await expect(page.getByRole('toolbar', { name: 'Plate tools' })).toHaveCount(0)
