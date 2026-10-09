@@ -54,6 +54,8 @@ export function MachineCard() {
   const profile = useApp((s) => s.profile)
   const noPrinter = useApp((s) => s.noPrinter)
   const printerSettingsOpen = useApp((s) => s.printerSettingsOpen)
+  // The nozzle choice is kept per printer under the id the profile sync uses.
+  const nozzleKey = useApp((s) => s.printerModel?.id)
   // In the store, so a note's "Change printer" can open the printer list.
   const chooserOpen = useApp((s) => s.printerChooserOpen)
   const extruders = useApp((s) => (printer ? s.printerExtruders[printer.id] : undefined))
@@ -96,7 +98,8 @@ export function MachineCard() {
 
   const pill = printerPill(printer)
   const error = printer.status.state === 'error' ? printer.status.message : undefined
-  const loading = profile === null || profile.printerId !== printer.id
+  // The printer's profile loads after the printer is picked; until then the nozzle chip keeps its place as a skeleton.
+  const loading = profile === null
   const nozzle = loading ? null : profile.nozzle
   const fixedNozzle = profile?.nozzleFrom === 'printer'
   const modelLine = [printer.vendor, printer.model].filter(Boolean).join(' ') + (nozzle !== null ? `, ${nozzle} mm` : '')
@@ -223,7 +226,7 @@ export function MachineCard() {
                     data-testid="slice-machine-nozzle-option"
                     data-nozzle={n}
                     onClick={() => {
-                      setPrinterNozzle(printer.id, n)
+                      setPrinterNozzle(nozzleKey ?? printer.id, n)
                       setPop(null)
                     }}
                   >
