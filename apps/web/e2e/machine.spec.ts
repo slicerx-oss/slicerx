@@ -21,11 +21,11 @@ async function open(page: Page, prefs: Record<string, unknown> = {}): Promise<vo
   await expect(page.getByTestId('slice-machine-card')).toBeVisible()
 }
 
-test('the printer, nozzle and plate chips change them in place, in one 44 px row', async ({ page, isMobile }) => {
+test('the printer, nozzle and plate chips change them in place, with the printer\'s name in full', async ({ page }) => {
   await open(page)
-  const card = page.getByTestId('slice-machine-card')
-  const row = card.locator('.mc-row')
-  if (!isMobile) expect(Math.round((await row.boundingBox())!.height)).toBe(44)
+  // The printer's name is never cut to nothing: in the default sidebar the chips go on a line under it.
+  const shownName = page.getByTestId('slice-machine-printer').locator('.printer-name')
+  expect(await shownName.evaluate((el) => el.scrollWidth > el.clientWidth + 1)).toBe(false)
   // Printer: the list names each printer with its status, the current one checked.
   const printer = page.getByTestId('slice-machine-printer')
   await expect(printer).toHaveAttribute('data-tip-title', /mm$/)
@@ -107,8 +107,10 @@ test('Advanced folds the card to one summary line and lists Printer settings', a
   const card = page.getByTestId('slice-machine-card')
   await page.getByTestId('slice-machine-printer').click()
   await page.getByTestId('slice-machine-printer-settings').click()
-  await expect(page.getByRole('dialog', { name: /Printer settings/ })).toBeVisible()
-  await page.keyboard.press('Escape')
+  const dialog = page.getByRole('dialog', { name: /Printer settings/ })
+  await expect(dialog).toBeVisible()
+  await dialog.getByRole('button', { name: 'Done', exact: true }).click()
+  await expect(dialog).toHaveCount(0)
   await card.getByRole('button', { name: 'Printer', exact: true }).click()
   await expect(card).toHaveAttribute('data-collapsed', 'true')
   await expect(card.locator('.sec-sum')).toHaveText(/^Bay 1, \d\.\d+ mm, .+, [A-Z][a-z ]+$/)
