@@ -66,9 +66,10 @@ export function FitNotes({ id }: { id: string }) {
   const easy = useApp((s) => s.easy)
   const overrides = useApp((s) => s.overrides)
   const names = new Map(plate.map((p) => [p.id, p.name]))
+  const splits = new Map(plate.map((p) => [p.id, p.splitOf]))
   const fit = objectFit(id)
   const layerHeightMm = fit?.gaps.some((g) => g.kind === 'vertical') ? Number(resolveConfig(easy, overrides)['layer_height']) || 0.2 : 0.2
-  const notes = fitNotes(id, fit, allTouches(), (o) => names.get(o) ?? 'another object', layerHeightMm)
+  const notes = fitNotes(id, fit, allTouches(), (o) => names.get(o) ?? 'another object', layerHeightMm, (o) => splits.get(o))
   if (!notes.length) return null
   return (
     <ul className="obj-notes" aria-label="Fit check">

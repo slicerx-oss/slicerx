@@ -56,6 +56,11 @@ describe('fit check', () => {
     expect(notes[2]!.text).toBe('1 gap over a part is thinner than a 0.20 mm layer and will close')
     expect(notes[2]!.layerMm).toBe(0.12)
     expect(fitNotes('b', undefined, [touch('a', 'b', 0.1)], name, 0.2)).toEqual([{ kind: 'touch', text: 'Touches Tower, so they will print as one piece', which: ['Tower, 0.10 mm apart'], others: ['a'] }])
+    // pieces the engine split from one model were one model: no note; pieces from different files still get it
+    const split = (id: string) => ({ a: 'k1', b: 'k1', c: 'k2' })[id]
+    expect(fitNotes('b', undefined, [touch('a', 'b', 0.1)], name, 0.2, split)).toEqual([])
+    expect(fitNotes('b', undefined, [touch('c', 'b', 0.1)], name, 0.2, split)).toHaveLength(1)
+    expect(fitNotes('b', undefined, [touch('a', 'b', 0.1)], name, 0.2, () => undefined)).toHaveLength(1)
     expect(fitNotes('c', undefined, [touch('a', 'b')], name, 0.2)).toEqual([])
   })
 

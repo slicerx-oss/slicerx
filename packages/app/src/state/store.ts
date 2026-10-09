@@ -81,6 +81,8 @@ export interface PlateEntry {
   thumb?: string
   /** Set on an instance: the id of the object it copies. Instances share the mesh. */
   instanceOf?: string
+  /** Set on the objects the engine split from one model, the same key for all of them: they were one model. */
+  splitOf?: string
   /**
    * Painted triangles by part index and layer (color, seam, support, fuzzy skin), as the `paint_color` style text Bambu
    * Studio and OrcaSlicer write, keyed by triangle index into the part.

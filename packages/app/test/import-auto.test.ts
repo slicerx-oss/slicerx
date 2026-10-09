@@ -76,6 +76,9 @@ describe('automatic import', () => {
     expect(Math.min(a!.min[2], b!.min[2])).toBeCloseTo(0)
     // one placement for both: an arrange would have moved them apart
     expect(get().plate[0]!.transform).toEqual(get().plate[1]!.transform)
+    // and one split key, so the fit check doesn't tell the person they touch
+    expect(get().plate[0]!.splitOf).toBeDefined()
+    expect(get().plate[1]!.splitOf).toBe(get().plate[0]!.splitOf)
   })
 
   it('refuses a file with nothing in it and a name it does not route', async () => {
