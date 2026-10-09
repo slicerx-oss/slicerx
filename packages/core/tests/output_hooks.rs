@@ -32,6 +32,7 @@ fn cuboid() -> api::MeshPart {
         support_paint: Vec::new(),
         seam_paint: Vec::new(),
         fuzzy_paint: Vec::new(),
+        paint_texts: Vec::new(),
     }
 }
 

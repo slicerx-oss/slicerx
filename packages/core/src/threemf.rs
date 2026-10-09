@@ -619,12 +619,32 @@ impl Resolve<'_> {
                 })
                 .flatten()
                 .collect();
-            let triangles = obj
+            let triangles: Vec<[u32; 3]> = obj
                 .triangles
                 .iter()
                 .filter(|tri| tri.iter().all(|&i| (i as usize) < n))
                 .copied()
                 .collect();
+            // The texts by the index each painted triangle keeps once triangles outside the vertices are dropped.
+            let mut kept = Vec::with_capacity(obj.triangles.len());
+            let mut next = 0u32;
+            for tri in &obj.triangles {
+                kept.push(tri.iter().all(|&i| (i as usize) < n).then_some(next));
+                next += u32::from(kept.last().copied().flatten().is_some());
+            }
+            let mut paint_texts = Vec::new();
+            for (layer, list) in [
+                (0u8, &obj.paint),
+                (1, &obj.seam_paint),
+                (2, &obj.support_paint),
+                (3, &obj.fuzzy_paint),
+            ] {
+                for (k, code) in list {
+                    if let Some(Some(t)) = kept.get(*k) {
+                        paint_texts.push((layer, *t, code.clone()));
+                    }
+                }
+            }
             let name = if obj.name.is_empty() {
                 format!("part {}", self.parts.len() + 1)
             } else {
@@ -640,6 +660,7 @@ impl Resolve<'_> {
                 support_paint,
                 seam_paint,
                 fuzzy_paint,
+                paint_texts,
             });
         }
         for (child, child_path, ct) in &obj.components {
