@@ -32,20 +32,30 @@ export const test = base.extend<object, { graphics: void }>({
   // The browser starts its graphics process with the first WebGL context, and drops it when the last page using it
   // closes. On a machine with software graphics that start can take over a minute, so a test that opened the first
   // page paid for it. One page with a live context stays open for the worker's run: the start is paid once, here,
-  // before the first test, and not counted in any test's time. On the GPU (SX_E2E_GPU=1) the workers start theirs 2 s
-  // apart, since several graphics processes starting at once can fail, and each worker logs the renderer it got.
+  // before the first test, and not counted in any test's time. On the GPU (SX_E2E_GPU=1) the first graphics process a
+  // run starts can exit within half a second of launch, and the browser starts another about 300 ms later: a context
+  // asked for in between fails, and the app would open in its 2D view. So the worker waits for a working context (up
+  // to 10 s, then fails rather than test without one) and logs the renderer it got.
   graphics: [
     async ({ browser }, use, worker) => {
       const gpu = process.env['SX_E2E_GPU'] === '1'
-      if (gpu) await new Promise((r) => setTimeout(r, worker.parallelIndex * 2000))
       const holder = await browser.newPage()
-      const renderer = await holder.evaluate(() => {
-        const gl = document.createElement('canvas').getContext('webgl2')
-        ;(window as unknown as { __holdGl: unknown }).__holdGl = gl
-        const info = gl?.getExtension('WEBGL_debug_renderer_info')
-        return gl === null ? 'none' : String(info ? gl.getParameter(info.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER))
-      })
-      if (gpu) console.log(`worker ${worker.parallelIndex}: WebGL2 renderer ${renderer}`)
+      const tries = gpu ? [0, 250, 500, 1000, 2000, 3000, 3000] : [0]
+      let renderer = 'none'
+      for (const wait of tries) {
+        if (wait) await new Promise((r) => setTimeout(r, wait))
+        renderer = await holder.evaluate(() => {
+          const gl = document.createElement('canvas').getContext('webgl2')
+          ;(window as unknown as { __holdGl: unknown }).__holdGl = gl
+          const info = gl?.getExtension('WEBGL_debug_renderer_info')
+          return gl === null ? 'none' : String(info ? gl.getParameter(info.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER))
+        })
+        if (renderer !== 'none') break
+      }
+      if (gpu) {
+        console.log(`worker ${worker.parallelIndex}: WebGL2 renderer ${renderer}`)
+        if (renderer === 'none') throw new Error('no WebGL2 context on the GPU after 10 s')
+      }
       await use()
       await holder.close()
     },
