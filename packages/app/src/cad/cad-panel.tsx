@@ -166,7 +166,7 @@ function ShapeTool({ textOnly, svgFirst }: { textOnly: boolean; svgFirst?: boole
   }, [type, width, height, corner, diameter, sides, text, size, svg])
   const placed = Number.isFinite(num(x)) && Number.isFinite(num(y)) && Number.isFinite(num(turn))
   const depthOk = Number.isFinite(num(distance)) && num(distance) > 0
-  const pattern = patternFromFields(patternFields)
+  const pattern = patternFromFields(patternFields, num)
   const problem = typeof shape === 'string' ? shape : !placed ? 'Position and rotation need numbers.' : !depthOk ? 'The distance must be more than 0 mm.' : pattern ? patternProblem(pattern) : null
   const patternKey = JSON.stringify(pattern)
 

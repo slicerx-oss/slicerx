@@ -39,7 +39,7 @@ describe('a points pattern', () => {
   it('reads back from its fields unchanged', () => {
     const f = fieldsOf(POINTS)
     expect(f.kind).toBe('points')
-    expect(patternFromFields(f)).toEqual(POINTS)
+    expect(patternFromFields(f, Number)).toEqual(POINTS)
   })
 
   it('stays when its step is edited again and saved', async () => {
