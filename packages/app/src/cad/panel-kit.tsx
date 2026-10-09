@@ -50,18 +50,27 @@ export function useProbe(onPick: (hit: PickEvent) => void, faces: boolean): void
   }, [faces])
 }
 
+/** A typed number for a tool: plain or an expression over named values, the unit once beside the label. */
 export function Num({ id, label, unit, value, onChange, onEnter }: { id: string; label: string; unit: string; value: string; onChange: (v: string) => void; onEnter?: () => void }) {
   return (
-    <Field htmlFor={id} label={label}>
-      <Input id={id} mono unit={unit} inputMode="decimal" value={value} onChange={(e) => onChange(e.target.value)} {...(onEnter ? { onKeyDown: (e: React.KeyboardEvent) => e.key === 'Enter' && (e.preventDefault(), onEnter()) } : {})} />
+    <Field
+      htmlFor={id}
+      label={
+        <>
+          {label} <span className="cad-num-unit">{unit}</span>
+        </>
+      }
+    >
+      <Input id={id} className="cad-num" inputMode="decimal" value={value} onChange={(e) => onChange(e.target.value)} {...(onEnter ? { onKeyDown: (e: React.KeyboardEvent) => e.key === 'Enter' && (e.preventDefault(), onEnter()) } : {})} />
     </Field>
   )
 }
 
-/** An X, Y (and Z) row in one outline, over the panel's text values. A drag on an axis letter edits it live. */
+/** An X, Y (and Z) row in one outline, over the panel's text values. A drag on an axis letter edits it live, and a typed
+ * value can use named values. */
 export function Vec({ id, label, ariaLabel, unit, axes, values, onChange }: { id: string; label: string; ariaLabel?: string; unit: string; axes: readonly Axis[]; values: readonly string[]; onChange: readonly ((v: string) => void)[] }) {
   const set = (i: number, v: number) => onChange[i]?.(String(v))
-  return <VectorField id={id} label={label} {...(ariaLabel ? { ariaLabel } : {})} unit={unit} axes={axes} values={values.map((v) => (Number.isFinite(num(v)) ? num(v) : 0))} onCommit={set} onPreview={set} />
+  return <VectorField id={id} label={label} {...(ariaLabel ? { ariaLabel } : {})} unit={unit} axes={axes} values={values.map((v) => (Number.isFinite(num(v)) ? num(v) : 0))} parse={num} onCommit={set} onPreview={set} />
 }
 
 export function Shell({ title, aside, children }: { title: string; aside?: string; children: ReactNode }) {
