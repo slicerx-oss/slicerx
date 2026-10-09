@@ -438,8 +438,19 @@ class ViewportImpl implements Viewport {
     this.bindPointer()
     this.resize()
     this.view('iso')
-    // The warm-up compiles the bead shaders and shows the bead for a frame; it waits so the plate draws first.
-    this.firstFrame.after(() => requestAnimationFrame(() => void this.warmPreview()))
+    // The warm-up compiles the bead shaders and shows the bead for a frame; it waits until the plate's first frame is on
+    // screen. The compile shares the GPU thread with the compositor: started in the very next frame, it held that first
+    // frame back, and on a software renderer (seconds of compiling) the plate showed late. So it starts two frames after,
+    // and on a weak or software GPU a second later still.
+    this.firstFrame.after(() =>
+      requestAnimationFrame(() =>
+        requestAnimationFrame(() => {
+          if (this.disposed) return
+          if (this.weak) setTimeout(() => void (this.disposed || this.warmPreview()), 1000)
+          else void this.warmPreview()
+        }),
+      ),
+    )
   }
 
   /** Compiles the bead shaders in the background so the first real preview frame does not wait for them. */
