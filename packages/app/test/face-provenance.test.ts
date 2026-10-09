@@ -4,13 +4,15 @@
 // pins the base keys worked out in TypeScript to the ones the engine makes.
 import type { MeshPart } from '@slicerx/contracts'
 import { beforeEach, describe, expect, it } from 'vitest'
-import { faceKeyAt, type History, type HistoryMesh, type StepParams } from '../src/cad/history/model'
+import { faceKeyAt, keyOfTriangle, type History, type HistoryMesh, type StepParams } from '../src/cad/history/model'
 import { clearReplayCache } from '../src/cad/history/replay'
 import { withStep } from '../src/cad/history/record'
 import { runReplay } from '../src/cad/history/ops'
 import { boxMesh } from '../src/plate/mesh-ops'
 import { compose } from '../src/plate/transform'
 import { baseKeys, madeBy, usedBy } from '../src/cad/history/provenance'
+import { faceMadeBy } from '../src/cad/history/made-by'
+import type { PlateEntry } from '../src/state/store'
 import { useGeomEngine } from './geom-engine'
 
 useGeomEngine('face-provenance-replies')
@@ -70,6 +72,30 @@ describe('the step that made a face', () => {
     // and only the faces the push left alone: the top it moved and its new sides are the push's own
     const top = faceKeyAt(first, T, [90, 95, 10], [0, 0, 1])
     expect(baseKeys(0, first.faces?.table.length ?? 0).has(top!)).toBe(false)
+  })
+})
+
+describe('the replay says what made each face', () => {
+  it('returns the step for every face of the result a step made, as the replays cut after each step do', async () => {
+    const r = await runReplay({ history: h })
+    const made = madeBy(h.steps, await partsAfter(h))
+    const keys = new Set(parts[0]!.faces?.keys ?? [])
+    const want = Object.fromEntries([...made].filter(([k]) => keys.has(k)))
+    expect(r.madeBy).toEqual(want)
+    expect(Object.keys(r.madeBy ?? {}).length).toBeGreaterThan(0)
+  })
+
+  it('names the step for a picked triangle, and the base for a face no step made', async () => {
+    const entry = { id: 'o', parts: parts.map((p) => ({ name: p.name, slot: p.slot, positions: new Float32Array(p.positions), indices: new Uint32Array(p.indices) })), history: h } as unknown as PlateEntry
+    const triangleOf = (key: number | undefined) => Array.from({ length: parts[0]!.indices.length / 3 }, (_, t) => t).find((t) => keyOfTriangle(parts[0]!, t) === key)!
+    const bossTop = triangleOf(faceKeyAt(parts[0]!, T, [100, 100, 14], [0, 0, 1]))
+    const bottom = triangleOf(faceKeyAt(parts[0]!, T, [90, 95, 0], [0, 0, -1]))
+    expect(await faceMadeBy(entry, 0, bossTop)).toBe(h.steps[1]!.id)
+    expect(await faceMadeBy(entry, 0, bottom)).toBe('base')
+    // a mesh with no history started that way
+    expect(await faceMadeBy({ ...entry, history: undefined } as unknown as PlateEntry, 0, bottom)).toBe('base')
+    // another mesh on the object (rolled back to edit a step) gets no answer
+    expect(await faceMadeBy({ ...entry, parts: [{ ...entry.parts[0]!, indices: new Uint32Array(3) }] } as PlateEntry, 0, 0)).toBeNull()
   })
 })
 

@@ -111,6 +111,8 @@ export interface ReplayResult {
   /** The face keys steps found their faces by on this replay, by step id, for steps to keep (a step saved
    * without them, from a version 1 file, gets them this way). */
   found?: Record<string, { faceKey?: number; openKeys?: number[]; edgeKeys?: ([number, number] | null)[] }>
+  /** The step that made each face of the result, by face key (cad/history/provenance.ts); base faces are left out. */
+  madeBy?: Record<number, string>
 }
 
 export const HISTORY_VERSION = 1
