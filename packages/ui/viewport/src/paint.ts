@@ -364,6 +364,224 @@ import { adjacencyOf } from './faces'
 /** Painted triangles of one part and one kind of paint (color, seam, supports), by triangle index. */
 export type PaintMap = Map<number, PaintNode>
 
+// ---- paint texts read in place ----
+// The overlay draws a part's paint straight from its texts, and a triangle is decoded into a tree only when a tool
+// touches it: a model with hundreds of thousands of painted pieces kept them all as objects next to the texts, and
+// decoding them left garbage the page held for a long time.
+
+/** The 4-bit code at stream position k of a text read last character first (from index hi down to lo), or -1. */
+function codeAt(text: string, hi: number, k: number): number {
+  const c = text.charCodeAt(hi - k)
+  if (c >= 48 && c <= 57) return c - 48
+  if (c >= 65 && c <= 70) return c - 55
+  if (c >= 97 && c <= 102) return c - 87
+  return -1
+}
+
+/** Whitespace as String.prototype.trim sees it, for the codes a paint text may carry. */
+const isSpace = (c: number): boolean => c === 32 || (c >= 9 && c <= 13) || c === 160 || c === 0xfeff || c === 0x2028 || c === 0x2029 || (c >= 0x2000 && c <= 0x200a) || c === 0x1680 || c === 0x202f || c === 0x205f || c === 0x3000
+
+// One stack for every walk: corners per depth (9 numbers) and the split's points and midpoints (18 numbers).
+const CORNERS = new Float64Array(9 * (MAX_PAINT_DEPTH + 2))
+const POINTS = new Float64Array(18 * (MAX_PAINT_DEPTH + 2))
+let walkText = ''
+let walkHi = 0
+let walkLen = 0
+let walkAt = 0
+
+/** Reads one node at walkAt: the painted leaves under it, or -1 when malformed; `fn` is called for each. */
+function walkNode(depth: number, fn: ((corners: Float64Array, offset: number, state: number) => void) | null): number {
+  if (walkAt >= walkLen) return -1
+  const code = codeAt(walkText, walkHi, walkAt++)
+  if (code < 0) return -1
+  const splits = code & 3
+  const special = code >> 2
+  if (splits === 0) {
+    let state = special
+    if (special === 3) {
+      if (walkAt >= walkLen) return -1
+      const ext = codeAt(walkText, walkHi, walkAt++)
+      if (ext < 0) return -1
+      state = ext + 3
+    }
+    if (state === 0) return 0
+    if (fn) fn(CORNERS, 9 * depth, state)
+    return 1
+  }
+  if (depth >= MAX_PAINT_DEPTH || special > 2) return -1
+  // The same corners childCorners gives, in the same order.
+  if (fn) {
+    const c = 9 * depth
+    const q = 18 * depth
+    for (let k = 0; k < 3; k++) {
+      const from = c + 3 * ((special + k) % 3)
+      POINTS[q + 3 * k] = CORNERS[from]!
+      POINTS[q + 3 * k + 1] = CORNERS[from + 1]!
+      POINTS[q + 3 * k + 2] = CORNERS[from + 2]!
+    }
+    // mA = mid(p0, p1), mB = mid(p2, p0), mC = mid(p1, p2), at points 3, 4 and 5.
+    for (let a = 0; a < 3; a++) {
+      POINTS[q + 9 + a] = (POINTS[q + a]! + POINTS[q + 3 + a]!) / 2
+      POINTS[q + 12 + a] = (POINTS[q + 6 + a]! + POINTS[q + a]!) / 2
+      POINTS[q + 15 + a] = (POINTS[q + 3 + a]! + POINTS[q + 6 + a]!) / 2
+    }
+  }
+  const kids = CHILDREN[splits as 1 | 2 | 3]
+  let n = 0
+  for (const kid of kids) {
+    if (fn) {
+      const q = 18 * depth
+      const c = 9 * (depth + 1)
+      for (let k = 0; k < 3; k++) {
+        const from = q + 3 * kid[k]!
+        CORNERS[c + 3 * k] = POINTS[from]!
+        CORNERS[c + 3 * k + 1] = POINTS[from + 1]!
+        CORNERS[c + 3 * k + 2] = POINTS[from + 2]!
+      }
+    }
+    const m = walkNode(depth + 1, fn)
+    if (m < 0) return -1
+    n += m
+  }
+  return n
+}
+
+/**
+ * Each child's corners as indices into [p0, p1, p2, mA, mB, mC], already rotated, as childCorners lists them:
+ * rot([a, b, c]) is [b, c, a].
+ */
+const CHILDREN: Record<1 | 2 | 3, readonly (readonly number[])[]> = {
+  1: [[5, 2, 0], [0, 1, 5]],
+  2: [[1, 2, 4], [3, 1, 4], [0, 3, 4]],
+  3: [[3, 5, 4], [5, 2, 4], [3, 1, 5], [0, 3, 4]],
+}
+
+/**
+ * Sets the walk up on a text the way decodeTree reads it (trimmed, last character first). False when decodeTree would
+ * refuse it for its characters: empty, or not all hex digits.
+ */
+function startWalk(text: string): boolean {
+  let lo = 0
+  let hi = text.length - 1
+  while (lo <= hi && isSpace(text.charCodeAt(lo))) lo++
+  while (hi >= lo && isSpace(text.charCodeAt(hi))) hi--
+  walkText = text
+  walkHi = hi
+  walkLen = hi - lo + 1
+  walkAt = 0
+  if (walkLen <= 0) return false
+  // decodeTree refuses a text with any character that is not a hex digit, read or not.
+  for (let k = 0; k < walkLen; k++) if (codeAt(text, hi, k) < 0) return false
+  return true
+}
+
+/** The painted leaf pieces of a paint text, without decoding it; -1 when decodeTree would refuse it. */
+export function paintTextLeafCount(text: string): number {
+  return startWalk(text) ? walkNode(0, null) : -1
+}
+
+/**
+ * Calls `fn` for every painted leaf piece of a paint text on triangle `tri` (its corners as 9 numbers), with the
+ * piece's corners at corners[offset..offset + 8]; the same pieces in the same order as forEachPaintedLeaf on its
+ * decoded tree. Nothing is allocated. Returns the count, or -1 when the text is malformed (then `fn` may have run).
+ */
+export function forEachPaintedLeafOfText(text: string, tri: ArrayLike<number>, fn: (corners: Float64Array, offset: number, state: number) => void): number {
+  if (!startWalk(text)) return -1
+  for (let k = 0; k < 9; k++) CORNERS[k] = tri[k]!
+  return walkNode(0, fn)
+}
+
+/**
+ * A paint map that keeps each triangle's paint text as given and decodes it into a tree the first time it is read.
+ * Iterating it decodes everything (only whole-part tools do); the overlay reads `texts` directly.
+ */
+export class LazyPaintMap extends Map<number, PaintNode> {
+  /** The triangles not decoded yet, by triangle, as their texts. */
+  readonly texts = new Map<number, string>()
+
+  override get(t: number): PaintNode | undefined {
+    const n = super.get(t)
+    if (n !== undefined) return n
+    const text = this.texts.get(t)
+    if (text === undefined) return undefined
+    this.texts.delete(t)
+    const tree = decodeTree(text)
+    if (!tree) return undefined
+    super.set(t, tree)
+    return tree
+  }
+  override has(t: number): boolean {
+    return super.has(t) || this.texts.has(t)
+  }
+  override set(t: number, n: PaintNode): this {
+    this.texts?.delete(t)
+    return super.set(t, n)
+  }
+  override delete(t: number): boolean {
+    const a = this.texts.delete(t)
+    return super.delete(t) || a
+  }
+  override clear(): void {
+    this.texts.clear()
+    super.clear()
+  }
+  override get size(): number {
+    return super.size + this.texts.size
+  }
+  /** Decodes every triangle still kept as text. */
+  private decodeAll(): void {
+    for (const t of [...this.texts.keys()]) this.get(t)
+  }
+  override entries(): MapIterator<[number, PaintNode]> {
+    this.decodeAll()
+    return super.entries()
+  }
+  override keys(): MapIterator<number> {
+    this.decodeAll()
+    return super.keys()
+  }
+  override values(): MapIterator<PaintNode> {
+    this.decodeAll()
+    return super.values()
+  }
+  override [Symbol.iterator](): MapIterator<[number, PaintNode]> {
+    return this.entries()
+  }
+  override forEach(fn: (value: PaintNode, key: number, map: Map<number, PaintNode>) => void, thisArg?: unknown): void {
+    this.decodeAll()
+    super.forEach(fn, thisArg)
+  }
+}
+
+/** The triangles of a lazy map that are trees already, without decoding the rest. */
+export function decodedEntries(map: LazyPaintMap): IterableIterator<[number, PaintNode]> {
+  return Map.prototype.entries.call(map) as IterableIterator<[number, PaintNode]>
+}
+
+/**
+ * Reads texts from a 3MF reader into a lazy map: each is checked without decoding it, malformed ones are listed in
+ * `bad`, and a text that is one unpainted leaf is left out, as readPaintTexts does.
+ */
+export function lazyPaintTexts(texts: Record<number, string>): { map: LazyPaintMap; bad: number[] } {
+  const map = new LazyPaintMap()
+  const bad: number[] = []
+  for (const k in texts) {
+    const text = texts[k]!
+    const t = Number(k)
+    const n = paintTextLeafCount(text)
+    if (n < 0) bad.push(t)
+    else if (n > 0 || !isRootUnpainted(text)) map.texts.set(t, text)
+  }
+  return { map, bad }
+}
+
+/** Whether a valid text is a single unpainted leaf (the only valid text with no painted piece that readPaintTexts drops). */
+function isRootUnpainted(text: string): boolean {
+  startWalk(text)
+  const code = codeAt(walkText, walkHi, 0)
+  return (code & 3) === 0 && code >> 2 === 0
+}
+
 export function trianglePoints(positions: ArrayLike<number>, indices: ArrayLike<number>, t: number): Tri {
   const p = (k: number): V3 => {
     const i = 3 * (indices[3 * t + k] ?? 0)

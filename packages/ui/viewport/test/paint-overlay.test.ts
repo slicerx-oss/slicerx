@@ -4,7 +4,7 @@
 // drew: the painted leaf pieces in leavesOf order, their state's color, and the face normals computeVertexNormals gives.
 import { BufferAttribute, BufferGeometry, Color, Group, Mesh } from 'three'
 import { describe, expect, it } from 'vitest'
-import { encodeTree, leavesOf, paintedLeafCount, trianglePoints, type PaintNode } from '../src/paint'
+import { decodeTree, encodeTree, forEachPaintedLeaf, forEachPaintedLeafOfText, lazyPaintTexts, leavesOf, paintedLeafCount, paintTextLeafCount, readPaintTexts, trianglePoints, type PaintNode, type Tri } from '../src/paint'
 import { Painter } from '../src/painter'
 import { CONTROL_PRESETS } from '../src/controls'
 import type { ObjectEntry } from '../src/model'
@@ -70,5 +70,82 @@ describe('paint overlay', () => {
     painter.setData('o', 0, 'color', { 0: encodeTree({ splits: 1, special: 0, kids: [leaf(0), leaf(0)] })! })
     painter.sync()
     expect(mesh.children).toHaveLength(0)
+  })
+
+  it('after an edit the overlay is still what the earlier build drew for the same paint', () => {
+    const { e, mesh } = entry()
+    const painter = new Painter(() => e, new Group(), () => {}, () => {}, () => CONTROL_PRESETS['orcaslicer'].gizmo.paint)
+    const colors = ['#ff0000', '#00ff00', '#0000ff', '#ffff00']
+    painter.setColors(colors)
+    painter.setData('o', 0, 'color', { 0: encodeTree(trees[0]!)! })
+    // A tool's edit turns triangle 1 into a tree; triangle 0 stays as its text.
+    painter.applyEdits('o', 0, 'color', [{ triangle: 1, text: encodeTree(trees[1]!) }])
+    painter.sync()
+    const g = (mesh.children[0] as Mesh).geometry
+    const ref = reference(colors)
+    expect(Array.from(g.getAttribute('position').array).sort()).toEqual(Array.from(new Float32Array(ref.pos)).sort())
+    expect((g.getAttribute('color').array as Float32Array).length).toBe(ref.col.length)
+  })
+})
+
+/** A random paint tree, some splits deep, with states 0 to 6 (4 and up take the extended code). */
+function randomTree(rand: () => number, depth = 0): PaintNode {
+  if (depth >= 5 || rand() < 0.45) return { state: Math.floor(rand() * 7) }
+  const splits = (1 + Math.floor(rand() * 3)) as 1 | 2 | 3
+  return { splits, special: Math.floor(rand() * 3) as 0 | 1 | 2, kids: Array.from({ length: splits + 1 }, () => randomTree(rand, depth + 1)) }
+}
+
+describe('paint texts read in place', () => {
+  let seed = 7
+  const rand = () => ((seed = (seed * 1103515245 + 12345) % 2 ** 31) / 2 ** 31)
+  const tri: Tri = [[0, 0, 0], [12, 1, 0.5], [3, 9, 2]]
+
+  it('walks the same pieces, corners and states as the decoded tree, for many random texts', () => {
+    for (let i = 0; i < 400; i++) {
+      const text = encodeTree(randomTree(rand))
+      if (!text) continue
+      const tree = decodeTree(text)!
+      const want: number[] = []
+      forEachPaintedLeaf(tri, tree, (v, st) => want.push(...v.flat(), st))
+      const got: number[] = []
+      const n = forEachPaintedLeafOfText(text, tri.flat(), (cs, at, st) => got.push(...cs.slice(at, at + 9), st))
+      expect(got).toEqual(want)
+      expect(n).toBe(paintedLeafCount(tree))
+      expect(paintTextLeafCount(text)).toBe(paintedLeafCount(tree))
+    }
+  })
+
+  it('refuses and keeps exactly the texts readPaintTexts does', () => {
+    const texts: Record<number, string> = { 0: '', 1: 'G', 2: '  4 ', 3: '0', 4: '1', 5: '0C', 6: 'fz', 7: 'c', 8: '3', 9: encodeTree(trees[0]!)!, 10: '1000', 11: '\t8\n' }
+    const lazy = lazyPaintTexts(texts)
+    const eager = readPaintTexts(texts)
+    expect(lazy.bad).toEqual(eager.bad)
+    expect([...lazy.map.texts.keys()].sort()).toEqual([...eager.map.keys()].sort())
+  })
+})
+
+describe('paint data round trip', () => {
+  // Texts as a slicer writes them, one with lower case and spaces that a decode and encode would rewrite.
+  const original: Record<number, string> = { 0: encodeTree(trees[0]!)!, 1: ' 8c ' }
+  const painter = () => {
+    const { e } = entry()
+    return new Painter(() => e, new Group(), () => {}, () => {}, () => CONTROL_PRESETS['orcaslicer'].gizmo.paint)
+  }
+
+  it('an untouched part gives back its texts byte for byte', () => {
+    const p = painter()
+    p.setData('o', 0, 'color', original)
+    p.sync()
+    expect(p.getData('o', 0, 'color')).toEqual(original)
+  })
+
+  it('a part edited and then undone gives back its original texts', () => {
+    const p = painter()
+    p.setData('o', 0, 'color', { 0: original[0]! })
+    // An edit, then the undo: the app hands the triangle's earlier text back.
+    p.applyEdits('o', 0, 'color', [{ triangle: 0, text: encodeTree({ state: 2 }) }])
+    expect(p.getData('o', 0, 'color')).toEqual({ 0: '8' })
+    p.applyEdits('o', 0, 'color', [{ triangle: 0, text: original[0]! }])
+    expect(p.getData('o', 0, 'color')).toEqual({ 0: original[0] })
   })
 })
