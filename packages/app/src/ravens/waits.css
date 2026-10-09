@@ -1,0 +1,30 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+/* Copyright (C) 2026 The SlicerX contributors */
+/* Huginn and Muninn through the longer waits (waits.tsx). Under reduced motion they keep still. */
+
+/* Muninn at the leading edge of the slicing progress bar (.slice-progress sets --p). */
+.rv-glide { position: absolute; top: 3px; left: calc(var(--p, 0) * 100%); transform: translateX(-75%); color: var(--accent); transition: left 120ms linear; filter: drop-shadow(0 1px 2px color-mix(in srgb, var(--ink-0) 60%, transparent)); }
+.rv-glide[data-done] { animation: rv-glide-off 420ms ease-in forwards; }
+@keyframes rv-glide-off { to { transform: translate(calc(-75% + 48px), -18px) rotate(-12deg); opacity: 0; } }
+
+/* The two ravens circling over the plate while a model loads. */
+.rv-loading { position: absolute; inset: 0; z-index: 5; display: grid; place-items: center; pointer-events: none; color: var(--muted); animation: rv-in 520ms cubic-bezier(.2, .8, .2, 1) both; }
+.rv-loading[data-leaving] { animation: rv-out 420ms ease-in forwards; }
+.rv-loading-arm { grid-area: 1 / 1; width: 168px; height: 168px; display: flex; justify-content: center; animation: rv-orbit 4.8s linear infinite; }
+.rv-loading-arm .sx-raven { margin-top: -6px; animation: rv-upright 4.8s linear infinite; }
+.rv-loading-late, .rv-loading-late .sx-raven { animation-delay: -2.4s; }
+@keyframes rv-in { from { opacity: 0; transform: scale(1.6); } to { opacity: 1; transform: none; } }
+@keyframes rv-out { to { opacity: 0; transform: translateY(-36px) scale(.8); } }
+@keyframes rv-orbit { to { transform: rotate(360deg); } }
+@keyframes rv-upright { to { transform: rotate(-360deg); } }
+
+/* One raven carrying the file across, beside the upload's status. */
+.rv-carry { display: inline-flex; width: 44px; height: 22px; margin-right: var(--s-2); vertical-align: middle; color: var(--muted); }
+.rv-carry-bird { position: relative; display: inline-flex; animation: rv-carry 1.6s ease-in-out infinite alternate; }
+.rv-carry-file { position: absolute; left: 6px; top: 15px; color: var(--accent); }
+@keyframes rv-carry { from { transform: translate(0, 1px); } to { transform: translate(22px, -1px); } }
+
+:root[data-motion="reduced"] .rv-glide, :root[data-motion="reduced"] .rv-loading, :root[data-motion="reduced"] .rv-loading-arm, :root[data-motion="reduced"] .rv-loading-arm .sx-raven, :root[data-motion="reduced"] .rv-carry-bird { animation: none; transition: none; }
+:root[data-motion="reduced"] .rv-loading-late { transform: rotate(180deg); }
+:root[data-motion="reduced"] .rv-loading-late .sx-raven { transform: rotate(-180deg); }
+:root[data-motion="reduced"] .rv-glide[data-done], :root[data-motion="reduced"] .rv-loading[data-leaving] { opacity: 0; }
