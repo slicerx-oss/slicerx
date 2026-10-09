@@ -8,6 +8,7 @@ import type { ApprovalHost, ApprovalRequest, ApprovalToken, FileRef, Host, JobFi
 import { followsSlotMap, grantApproval, hashParams, pluginHas, readPreview, slotMapLine } from '@slicerx/contracts'
 import { resolveConfig } from '../adapters/config'
 import { DEFAULT_MODEL, demoModel } from '../lib/demo-models'
+import { noteSliceTiming, plateTriangles } from './slice-estimate'
 import { defaultColorMode, formatDuration } from '../lib/preview-stats'
 import type { DecodedModel } from '@slicerx/embed/mesh'
 import { resumeSliceOptions } from '../geom/resume'
@@ -401,6 +402,8 @@ export async function slicePlate(host: Host, opts: { auto?: boolean } = {}): Pro
     // The native engine already spreads layers across threads; shards there only add halo work.
     const sliced = await sliceWith()
     if (sliceAbort !== abort) return
+    // How long this plate took, for the next slice's size estimate (slice-estimate.ts).
+    noteSliceTiming(s.activePlate, { triangles: plateTriangles(toPrint), ms: sliced.wallMs })
     // The tower comes back in machine coordinates; the plate counts from its corner.
     const result = sliced.primeTower ? { ...sliced, primeTower: towerToPlate(sliced.primeTower, areaOrigin(config['printable_area'])) } : sliced
     const raw = await host.slicer.getPreview(result.id)

@@ -10,6 +10,8 @@ import { scanStl } from '../src/export/stl-scan'
 import { startAutoSlice } from '../src/state/auto-slice'
 import { addAutoImport } from '../src/state/import-auto'
 import { appStore, get, set } from '../src/state/store'
+import { noteSliceTiming } from '../src/state/slice-estimate'
+import { fitSettled } from '../src/plate/fit-state'
 
 const CORNERS = [[0, 0, 0], [10, 0, 0], [10, 10, 0], [0, 10, 0], [0, 0, 10], [10, 0, 10], [10, 10, 10], [0, 10, 10]]
 const TRIS = [[0, 2, 1], [0, 3, 2], [4, 5, 6], [4, 6, 7], [0, 1, 5], [0, 5, 4], [1, 2, 6], [1, 6, 5], [2, 3, 7], [2, 7, 6], [3, 0, 4], [3, 4, 7]]
@@ -143,5 +145,54 @@ describe('slicing a binary STL while its open runs', () => {
     await new Promise((r) => setTimeout(r, 50))
     expect(requests).toHaveLength(1)
     expect(seen.ids).toEqual(['r1'])
+  })
+})
+
+describe('a big slice (slice-estimate.ts)', () => {
+  // The last slice of this plate took a minute on the same 12 triangles: the cube's slice now counts as big.
+  beforeEach(() => noteSliceTiming(get().activePlate, { triangles: 12, ms: 60_000 }))
+  afterEach(() => noteSliceTiming(get().activePlate, { triangles: 12, ms: 1 }))
+
+  it('does not start while the file opens, and waits for the fit check after', async () => {
+    const { h, requests, land } = host()
+    stops.push(startAutoSlice(h, 0, 60_000))
+    let reply: (r: AutoImport) => void = () => undefined
+    const open = addAutoImport(h, 'cube.stl', stl(), () => new Promise((r) => (reply = r)))
+    await until(() => get().plate.length === 1)
+    expect(get().sliceDuringOpen).toBe(false)
+    await new Promise((r) => setTimeout(r, 50))
+    expect(requests).toHaveLength(0)
+    const shown = scanStl(new Uint8Array(stl()))!
+    reply(answer({ positions: [...shown.positions], indices: [...shown.indices] }))
+    await open
+    set({ plateLoading: false })
+    // Open over: the slice still waits for the plate's fit check.
+    await new Promise((r) => setTimeout(r, 50))
+    expect(requests).toHaveLength(0)
+    fitSettled(get().plate)
+    await until(() => requests.length === 1)
+    land()
+    await until(() => get().slice.status === 'done')
+  })
+
+  it('goes anyway when the fit check never reports', async () => {
+    const { h, requests } = host()
+    stops.push(startAutoSlice(h, 0, 100))
+    const shown = scanStl(new Uint8Array(stl()))!
+    await addAutoImport(h, 'cube.stl', stl(), async () => answer({ positions: [...shown.positions], indices: [...shown.indices] }))
+    set({ plateLoading: false })
+    await new Promise((r) => setTimeout(r, 40))
+    expect(requests).toHaveLength(0)
+    await until(() => requests.length === 1)
+  })
+
+  it('a small slice does not wait for the fit check', async () => {
+    noteSliceTiming(get().activePlate, { triangles: 12, ms: 1 })
+    const { h, requests } = host()
+    stops.push(startAutoSlice(h, 0, 60_000))
+    const shown = scanStl(new Uint8Array(stl()))!
+    await addAutoImport(h, 'cube.stl', stl(), async () => answer({ positions: [...shown.positions], indices: [...shown.indices] }))
+    set({ plateLoading: false })
+    await until(() => requests.length >= 1)
   })
 })
