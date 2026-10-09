@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // A thin glowing bar along the top of the viewport while the plate slices, filled from the engine's own progress
-// (its stage and how far into it). It shows only for a slice that takes longer than 250 ms, stays at least 400 ms once
+// (the same fraction as the sidebar's Estimate bar). It shows only for a slice that takes longer than 250 ms, stays at least 400 ms once
 // it shows, then fills and fades out, so quick re-slices after an edit never blink. Model loading still sweeps.
-import { SLICE_STAGES } from '@slicerx/contracts'
+import type { SliceProgress as SliceProgressValue } from '@slicerx/contracts'
 import { lazy, Suspense, useEffect, useRef, useState, type CSSProperties } from 'react'
 import { useWaited } from '../lib/waited'
 import { useApp } from '../state/store'
@@ -22,7 +22,8 @@ export function SliceProgress() {
   const slice = useApp((s) => s.slice)
   const loading = useApp((s) => s.plateLoading)
   const running = slice.status === 'running'
-  const fraction = running && slice.progress ? (SLICE_STAGES.indexOf(slice.progress.stage) + Math.min(1, Math.max(0, slice.progress.fraction))) / SLICE_STAGES.length : 0
+  // The same value the sidebar's Estimate bar shows: the hosts report one fraction for the whole slice.
+  const fraction = running ? sliceFraction(slice.progress) : 0
   const [shown, setShown] = useState(false)
   const [done, setDone] = useState(false)
   const since = useRef(0)
@@ -61,6 +62,11 @@ export function SliceProgress() {
       <LoadingWait loading={loading} />
     </>
   )
+}
+
+/** How far a running slice is, 0 to 1, as every progress bar shows it. */
+export function sliceFraction(progress: SliceProgressValue | null | undefined): number {
+  return progress ? Math.min(1, Math.max(0, progress.fraction)) : 0
 }
 
 /** Huginn and Muninn over the plate while a model takes more than about 1.2 s to load; they fly off once it is on. */
