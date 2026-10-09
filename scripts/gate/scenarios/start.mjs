@@ -109,10 +109,43 @@ export async function start(s) {
     s.check(`added the ${PRINTER.name} by hand from Printers, no connection`, await setupByHand(s))
     st = await s.state()
   }
-  // Slice is tab-prepare in every edition; the catch stays for builds from before the Model and Slice tabs.
-  await s.click('tab-prepare').catch(() => undefined)
+  // Slice is tab-prepare in every edition.
+  await s.click('tab-prepare')
   const slot = st.filament?.[0]
   s.check(`the printer is the ${PRINTER.name}, ${PRINTER.nozzleMm} mm`, isGatePrinter(st), st.printer)
   s.check(`filament 1 is ${PRINTER.filament}`, slot?.type === PRINTER.filament, slot)
   await s.shot('ready', `Ready: ${st.printer?.vendor ?? ''} ${st.printer?.model ?? ''}, ${st.printer?.nozzleMm ?? '?'} mm, ${slot?.type ?? '?'}`)
+  await modelHidesTheSlice(s)
+}
+
+// The slice's controls, which only Slice shows: the legend's Color by menu and its filament swatches.
+const SLICE_ONLY = ['legend-color-by', 'legend-slot']
+
+/** Model never shows the slice: after a slice, Model has no legend or swatches, and Slice shows them again. */
+async function modelHidesTheSlice(s) {
+  if (!(await s.ids())['tab-model']) {
+    s.info('no Model tab in this edition; the Model and Slice check is skipped')
+    return
+  }
+  const sl = await s.call('app_slice', { timeoutMs: 600_000 })
+  if (sl.error || sl.data?.status !== 'done') {
+    s.check('the default plate slices before the Model and Slice check', false, sl.error ?? sl.data)
+    return
+  }
+  const shown = async () => Object.keys(await s.ids()).filter((id) => SLICE_ONLY.includes(id))
+  const until = async (want) => {
+    for (let i = 0; i < 20; i++) {
+      const ids = await shown()
+      if (want(ids)) return ids
+      await s.sleep(250)
+    }
+    return shown()
+  }
+  s.check('Slice shows the legend after a slice', (await until((ids) => ids.length > 0)).length > 0)
+  await s.click('tab-model')
+  const inModel = await until((ids) => ids.length === 0)
+  s.check('Model shows no legend or slice swatches after a slice', inModel.length === 0, inModel)
+  await s.shot('model-after-slice', 'Model after a slice: no toolpaths, layer slider or legend')
+  await s.click('tab-prepare')
+  s.check('Slice shows the legend again', (await until((ids) => ids.length > 0)).length > 0)
 }
