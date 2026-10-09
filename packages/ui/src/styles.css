@@ -346,7 +346,8 @@ button { cursor: pointer; }
 .sx-rail[data-collapsed] .sx-rail-item[data-badge]::after { content: ""; position: absolute; top: 6px; right: 6px; width: 6px; height: 6px; border-radius: 50%; background: var(--cyan); }
 .sx-rail-body { flex: 1; min-height: 0; overflow: auto; }
 .sx-rail-foot { flex: none; padding: 8px; border-top: 1px solid var(--line-soft); }
-.sx-rail[data-collapsed] .sx-rail-foot { display: none; }
+.sx-rail-pin { flex: none; }
+.sx-rail[data-collapsed] .sx-rail-foot, .sx-rail[data-collapsed] .sx-rail-pin { display: none; }
 
 /* app frame: rounded framed grid of bar, main and status line (the concept shell) */
 .sx-frame { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto; background: var(--ink-1); border: 1px solid var(--line-soft); border-radius: var(--r-lg); overflow: hidden; }

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// The Goal tiles in the Slice sidebar: each says what it gives on the printer in use, the line under them says about
-// how long and how much from the last slice, and a moved control shows Custom with no tile picked.
+// The Goal tiles in the Slice sidebar: each says what it gives on the printer in use, the picked tile's tooltip says
+// about how long and how much from the last slice, and a moved control shows Custom with no tile picked.
 import type { SliceResult } from '@slicerx/contracts'
 import { createElement } from 'react'
 import { flushSync } from 'react-dom'
@@ -22,7 +22,7 @@ function mount(): void {
 }
 
 const tile = (tier: string) => el.querySelector<HTMLElement>(`[data-testid="slice-goal-${tier}"]`)
-const estimate = () => el.querySelector<HTMLElement>('[data-testid="slice-goal-estimate"]')
+const estimate = () => el.querySelector<HTMLElement>('[role="radio"][aria-checked="true"]')?.getAttribute('data-tip-body') ?? null
 const chip = () => el.querySelector<HTMLElement>('.goal-custom')
 
 beforeEach(() => {
@@ -63,7 +63,7 @@ describe('the Goal tiles', () => {
     expect(['draft', 'standard', 'fine', 'strong'].map((t) => tile(t)?.querySelector('.goal-sub')?.textContent)).toEqual(['0.42 mm', '0.30 mm', '0.18 mm', '3 walls'])
   })
 
-  it('show no estimate line before a slice', () => {
+  it('show no estimate before a slice', () => {
     mount()
     expect(estimate()).toBeNull()
   })
@@ -71,11 +71,11 @@ describe('the Goal tiles', () => {
   it('show about how long and how much from a fresh slice, and Updating while it is stale or slicing again', () => {
     set({ slice: { status: 'done', result, stale: false } })
     mount()
-    expect(estimate()?.textContent).toBe('About 1h 36m, 148 g')
+    expect(estimate()).toBe('About 1h 36m, 148 g from the last slice.')
     flushSync(() => set({ slice: { status: 'done', result, stale: true } }))
-    expect(estimate()?.textContent).toBe('Updating')
+    expect(estimate()).toBe('Updating the estimate.')
     flushSync(() => set({ slice: { status: 'running', progress: null, startedAt: 0, last: result } }))
-    expect(estimate()?.textContent).toBe('Updating')
+    expect(estimate()).toBe('Updating the estimate.')
     flushSync(() => set({ slice: { status: 'error', message: 'no' } }))
     expect(estimate()).toBeNull()
   })

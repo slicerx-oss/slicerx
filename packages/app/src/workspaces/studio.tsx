@@ -19,7 +19,7 @@ import { get, showsLayers, useApp } from '../state/store'
 import { ViewportHost } from '../viewport/viewport-host'
 import { LayerStrip } from './layer-strip'
 import { ZoneLegend } from './zone-legend'
-import { PrepareLeft, SliceBlock } from './prepare/prepare-panes'
+import { PrepareLeft, PrepareObjects, SlicePinned, SliceBlock } from './prepare/prepare-panes'
 import { LayerDock, Legend } from './preview/preview-hud'
 import { PreviewLeft, PreviewRight } from './preview/preview-panes'
 import { useGcodeView } from './preview/gcode-file'
@@ -42,8 +42,8 @@ const PREPARE_LEFT: PaneSection[] = [
   { id: 'printer', icon: 'printer', label: 'Printer' },
   { id: 'filament', icon: 'spool', label: 'Filament' },
   { id: 'settings', icon: 'sliders', label: 'Print settings' },
-  { id: 'objects', icon: 'prepare', label: 'Objects' },
 ]
+const OBJECTS_SECTION: PaneSection = { id: 'objects', icon: 'prepare', label: 'Objects' }
 const PREVIEW_RIGHT: PaneSection[] = [
   { id: 'result', icon: 'slice', label: 'Sliced plate' },
   { id: 'filament', icon: 'spool', label: 'Filament use' },
@@ -99,6 +99,9 @@ export function Studio() {
   const sliceState = useApp((s) => (s.slice.status === 'done' ? (s.slice.stale ? 'stale' : 'current') : s.slice.status))
   const slicesDone = useApp((s) => s.slicesDone)
   const other = side === 'left' ? 'right' : 'left'
+  // The objects list sits at the top of the right pane, above the slice summary; on a phone it stays in the settings sheet.
+  const objectsRight = layout.objectList === 'right-pane' && !phone
+  const rightSections = [...(objectsRight ? [OBJECTS_SECTION] : []), ...(hasPreview ? (manyPlates ? [PLATES_SECTION, ...PREVIEW_RIGHT] : PREVIEW_RIGHT) : [])]
   // Toasts center over the viewport and sit above the plate bar and the playback bar, below the toolbar and the view
   // switch, never on a control. On a phone the layer slider runs down the right side, so they keep to the left of it.
   const vpRef = useRef<HTMLElement>(null)
@@ -160,7 +163,7 @@ export function Studio() {
           </Suspense>
         </SidePane>
       ) : (
-        <SidePane key={`prepare-${side}`} side={side} ws="prepare" label="Printer and settings" sections={PREPARE_LEFT} width={layout.sidebar.width} tab={{ panel: 'slice-sidebar' }} {...(sliceInSidebar ? { footer: <SliceBlock label={layout.primaryAction.label} compact /> } : {})} {...(layout.modeSelector === 'sidebar' ? { headExtra: <ModeChip layout={layout} /> } : {})}>
+        <SidePane key={`prepare-${side}`} side={side} ws="prepare" label="Printer and settings" sections={PREPARE_LEFT} width={layout.sidebar.width} tab={{ panel: 'slice-sidebar' }} {...(phone ? {} : { pinned: <SlicePinned /> })} {...(sliceInSidebar ? { footer: <SliceBlock label={layout.primaryAction.label} compact /> } : {})} {...(layout.modeSelector === 'sidebar' ? { headExtra: <ModeChip layout={layout} /> } : {})}>
           <PrepareLeft layout={layout} />
         </SidePane>
       )}
@@ -244,11 +247,16 @@ export function Studio() {
             <DesignRight />
           </Suspense>
         </SidePane>
-      ) : hasPreview ? (
-        <SidePane key={`sliced-${other}`} side={other} ws="preview" label="Slice summary and filament" sections={manyPlates ? [PLATES_SECTION, ...PREVIEW_RIGHT] : PREVIEW_RIGHT} width={312} tab={{ panel: 'slice-summary' }}>
-          <PreviewPlates />
-          <PreviewLeft />
-          <PreviewRight />
+      ) : objectsRight || hasPreview ? (
+        <SidePane key={`sliced-${other}`} side={other} ws="preview" label={objectsRight ? 'Objects and slice summary' : 'Slice summary and filament'} sections={rightSections} width={312} tab={{ panel: 'slice-summary' }}>
+          {objectsRight ? <PrepareObjects /> : null}
+          {hasPreview ? (
+            <>
+              <PreviewPlates />
+              <PreviewLeft />
+              <PreviewRight />
+            </>
+          ) : null}
         </SidePane>
       ) : null}
     </div>

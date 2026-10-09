@@ -25,7 +25,7 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | `tab-<workspace>` | A workspace tab in the top bar: `tab-prepare`, `tab-preview`, `tab-printers`, `tab-feed` (the Vault). In an edition with modeling tools the first two tabs are Model and Slice: `tab-model` and `tab-prepare` (Slice). The Model tab also answers to its old id, `tab-design`, through `data-testid-alias`, until scripts move to `tab-model` |
 | `tab-overflow` | More, at the end of the tabs on a narrow window, holding the tabs that no longer fit; each item is `tab-overflow-<workspace>` (`tab-overflow-printers` first) |
 | `edge-tab-<side>` | The tab on a panel's edge that shuts and reopens it: `edge-tab-left` (the left sidebar), `edge-tab-right` (the right pane), `edge-tab-bottom` (the bottom panel); `aria-expanded` says whether the panel is open, and `data-panel` says which panel: `model-tree`, `model-inspector`, `model-timeline`, `slice-sidebar` or `slice-summary` |
-| `model-tree`, `model-inspector`, `slice-sidebar`, `slice-summary` | The body of the side pane with that edge tab: Model's tree and its tool and transform pane, Slice's printer and settings sidebar and its slice summary. It is gone while the pane is shut |
+| `model-tree`, `model-inspector`, `slice-sidebar`, `slice-summary` | The body of the side pane with that edge tab: Model's tree and its tool and transform pane, Slice's printer and settings sidebar (its printer and filaments sit above it, pinned) and its right pane with the objects and the slice summary. It is gone while the pane is shut |
 | `toast` | A toast on screen; `data-tone` is ok, info, warn or error |
 | `toast-action` | The button on a toast (Undo and the like) |
 | `dialog-close` | The close button of a dialog |
@@ -82,8 +82,7 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | `slice-machine-status` | The printer's status: Ready, Printing, Paused, Error, Offline or Export only |
 | `slice-mode-chip` | The settings mode chip in the Slice pane title |
 | `slice-mode-chip-<mode>` | An item in its menu: `slice-mode-chip-simple`, `slice-mode-chip-advanced`, `slice-mode-chip-expert`, `slice-mode-chip-developer` |
-| `slice-goal-<tier>` | A Goal tile in Print settings: `slice-goal-draft`, `slice-goal-standard`, `slice-goal-fine`, `slice-goal-strong` |
-| `slice-goal-estimate` | The line under the Goal tiles: about how long and how much from the last slice, or Updating |
+| `slice-goal-<tier>` | A Goal tile in Print settings: `slice-goal-draft`, `slice-goal-standard`, `slice-goal-fine`, `slice-goal-strong`; the picked tile's tooltip gives about how long and how much from the last slice, or "Updating the estimate." |
 
 ## Prepare: the objects list and Export
 

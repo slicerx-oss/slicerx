@@ -21,7 +21,7 @@ const LAYOUT: LayoutSpec = {
   workspaceTabs: ['prepare', 'feed', 'library', 'printers', 'pilot'],
   settingsModel: 'sidebar',
   sidebar: { side: 'left', width: 340, resizable: true, collapseKey: 'Shift+Tab' },
-  objectList: 'sidebar-after-filament',
+  objectList: 'right-pane',
   objectPanel: 'inline-table',
   toolbar: 'top-of-viewport',
   plateList: 'hidden-single',
