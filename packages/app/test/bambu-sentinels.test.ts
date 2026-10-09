@@ -82,6 +82,31 @@ describe("a Bambu Studio project's -1 values", () => {
     expect(get().slice).toEqual({ status: 'error', message: 'stop' })
   })
 
+  it('open as our value for auto on the printer the project is for, where its process is taken whole', async () => {
+    // A P1S project that lists what it changed: the -1s are not in the list, so only the whole process brings them.
+    const p1s = {
+      printer_model: 'Bambu Lab P1S',
+      printer_settings_id: 'Bambu Lab P1S 0.4 nozzle',
+      printer_variant: '0.4',
+      nozzle_diameter: ['0.4'],
+      inherits_group: ['0.12mm Fine @BBL X1C', ''],
+      different_settings_to_system: ['enable_support;support_type', ''],
+      raft_layers: '0',
+    }
+    const { host, requests } = engine()
+    await openModelBytes(host, 'p1s.3mf', project(p1s))
+    expect(get().projectPrinter?.profileId).toBe('bambu-p1s')
+    expect(get().toast?.text).toMatch(/^Opened as P1S 0\.4 mm from the project\./)
+    const cfg = resolveConfig(get().easy, get().overrides) as Record<string, SettingValue>
+    expect(cfg['enable_support']).toBe(true)
+    expect(cfg['raft_first_layer_expansion']).toBe(2)
+    expect(cfg['tree_support_wall_count']).toBe(0)
+    await slicePlate(host, { auto: true })
+    expect(requests).toHaveLength(1)
+    expect(engineRefusal(cfgOf(requests[0]!))).toBeNull()
+    expect(get().slice).toEqual({ status: 'error', message: 'stop' })
+  })
+
   it('a value the engine still refuses is dropped with a note, and the plate slices with the profile value', async () => {
     const { host, requests } = engine()
     await openModelBytes(host, 'a1-mini.3mf', project({ raft_expansion: '-3' }))
