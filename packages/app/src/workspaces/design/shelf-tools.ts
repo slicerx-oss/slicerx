@@ -42,8 +42,8 @@ export const SHELF_TOOLS: readonly ShelfTool[] = [
   { id: 'cut', label: 'Cut', icon: 'cut', tool: 'cut', needsSelection: true, shelf: { group: 'shape' }, menu: 0, command: 'object-cut', accepts: ['object'] },
   { id: 'orient', label: 'Auto orient', icon: 'orient', run: 'orient', needsSelection: true, menu: 0, command: 'object-orient' },
   { id: 'measure', label: 'Measure', icon: 'measure', tool: 'measure', shelf: { group: 'utility' }, menu: 1, command: 'object-measure' },
-  { id: 'array', label: 'Array', icon: 'grid', tool: 'array', needsSelection: true, shelf: { group: 'shape' }, menu: 1, command: 'object-array', accepts: ['object'] },
-  { id: 'sketch', label: 'Sketch', icon: 'ruler', tool: 'sketch', tip: 'sketch.enter', modeling: true, shelf: { group: 'create' }, menu: 1, command: 'object-sketch', accepts: ['face'] },
+  { id: 'array', label: 'Array', icon: 'array-linear', tool: 'array', needsSelection: true, shelf: { group: 'shape' }, menu: 1, command: 'object-array', accepts: ['object'] },
+  { id: 'sketch', label: 'Sketch', icon: 'sketch', tool: 'sketch', tip: 'sketch.enter', modeling: true, shelf: { group: 'create' }, menu: 1, command: 'object-sketch', accepts: ['face'] },
   { id: 'facesvg', label: 'SVG on a face', icon: 'svg-face', tool: 'facesvg', tip: 'cad.svgFace', modeling: true, shelf: { group: 'create', menu: 'face' }, menu: 1, command: 'object-svg-face' },
   { id: 'push', label: 'Push and pull', icon: 'push-pull', tool: 'push', tip: 'cad.push', modeling: true, shelf: { group: 'shape' }, menu: 1, command: 'object-push', accepts: ['face'] },
   { id: 'fillet', label: 'Fillet and chamfer', short: 'Fillet', icon: 'fillet-edge', tool: 'fillet', tip: 'cad.fillet', modeling: true, shelf: { group: 'shape' }, menu: 1, command: 'object-fillet', accepts: ['edge'] },
@@ -55,7 +55,7 @@ export const SHELF_TOOLS: readonly ShelfTool[] = [
   { id: 'facetext', label: 'Text on a face', icon: 'text', tool: 'facetext', modeling: true, drawing: true, shelf: { group: 'create', menu: 'face' }, menu: 2, command: 'object-text' },
   { id: 'subtract', label: 'Subtract a shape', short: 'Subtract', icon: 'subtract-shape', tool: 'hole', needsSelection: true, drawing: true, shelf: { group: 'shape' }, menu: 2, command: 'object-subtract' },
   { id: 'hollow', label: 'Hollow', icon: 'hollow', tool: 'hollow', needsSelection: true, shelf: { group: 'mesh', menu: 'mesh' }, menu: 3, command: 'object-hollow' },
-  { id: 'repair', label: 'Repair mesh', icon: 'settings-reset', run: 'repair', needsSelection: true, shelf: { group: 'mesh', menu: 'mesh' }, menu: 3, command: 'object-repair' },
+  { id: 'repair', label: 'Repair mesh', icon: 'repair-mesh', run: 'repair', needsSelection: true, shelf: { group: 'mesh', menu: 'mesh' }, menu: 3, command: 'object-repair' },
   { id: 'simplify', label: 'Simplify mesh', icon: 'simplify-mesh', tool: 'simplify', needsSelection: true, shelf: { group: 'mesh', menu: 'mesh' }, menu: 3, command: 'object-simplify' },
 ]
 

@@ -20,7 +20,7 @@ import { availableTools, nextTools, SHELF_GROUPS, shelfGroup, type DialogTool, t
 
 const ToolDialog = lazy(() => import('../prepare/tool-dialog').then((m) => ({ default: m.ToolDialog })))
 
-const MENU_LABEL = { face: { label: 'On a face', icon: 'on-face' }, mesh: { label: 'Mesh', icon: 'magic-wand' } } as const
+const MENU_LABEL = { face: { label: 'On a face', icon: 'on-face' }, mesh: { label: 'Mesh', icon: 'mesh-menu' } } as const
 
 export function Shelf() {
   const host = useHost()
@@ -82,7 +82,7 @@ export function Shelf() {
             {g.id === 'create' ? (
               <MenuAnchor>
                 <button type="button" className="shelf-tool" aria-label="Add a shape" aria-haspopup="menu" aria-expanded={menu === 'add'} onClick={() => setMenu(menu === 'add' ? null : 'add')}>
-                  <Icon name="cube" />
+                  <Icon name="box-shape" />
                   <span>Add</span>
                   <Icon name="chevron-down" size={12} />
                 </button>
