@@ -219,7 +219,7 @@ step install pnpm install --frozen-lockfile || true
 # The flaky and quarantine lists: every entry needs an owner, a date and an issue link.
 if [ -f scripts/ci/flaky-check.sh ]; then step flaky-lint bash scripts/ci/flaky-check.sh lint; else skip flaky-lint "no checker in this commit"; fi
 
-# The engine module and its 1040 KB gzip budget; the geom module the app tests load.
+# The engine module and its 1044 KB gzip budget; the geom module the app tests load.
 if [ "$tier" = nightly ] || [ -z "$base" ] || touched '^(packages/core/|packages/geom/|Cargo\.lock|rust-toolchain\.toml)'; then
   if command -v wasm-opt >/dev/null; then
     step wasm-size-gate sh packages/core/web/scripts/build-wasm.sh
