@@ -32,7 +32,7 @@ export const BED_ICON: Record<BedType, IconName> = {
 /** Nozzle types in words, as setup records them. */
 const NOZZLE_TYPE: Record<string, string> = { brass: 'Brass', 'hardened-steel': 'Hardened steel', 'stainless-steel': 'Stainless steel', 'tungsten-carbide': 'Tungsten carbide' }
 
-/** The one-line summary of a folded card: "Desk A1, 0.4 mm, Textured PEI, Ready". */
+/** The one-line summary of a folded card: name, nozzle, plate type and status, such as "Desk A1, 0.4 mm, Cool plate, Ready". */
 export function machineSummary(name: string, nozzle: number | null, plate: string, status: string): string {
   return [name, nozzle !== null ? `${nozzle} mm` : null, plate, status].filter(Boolean).join(', ')
 }
