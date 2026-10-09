@@ -934,7 +934,7 @@ mod tests {
 
     #[test]
     fn a_move_through_an_excluded_area_blocks_though_its_ends_lie_clear() {
-        // The audit's case: a 2 mm excluded square at the bed's center, and an infill move across it from
+        // A 2 mm excluded square at the bed's center, and an infill move across it from
         // (118.991, 118.991) to (137.009, 137.009).
         let c = cfg(json!({
             "printable_area": ["0x0", "256x0", "256x256", "0x256"],
