@@ -68,7 +68,8 @@ export function Menu({ open, onClose, label, align = 'start', static: isStatic, 
   useDismiss(ref, open && !isStatic, onClose)
   // A menu opened near the bottom of a scrolling panel or the window opens upward when there is more room
   // there, and scrolls itself when neither side fits it, so no item is cut off. One a panel would cut off at the side
-  // (the Export menu at the right end of the side pane) is lifted out of the panel and kept inside the window.
+  // (the Export menu at the right end of the side pane), or one too short for it (the Model shelf), is lifted out of
+  // the panel and kept inside the window.
   useLayoutEffect(() => {
     const el = ref.current
     const anchor = el?.parentElement
@@ -91,7 +92,11 @@ export function Menu({ open, onClose, label, align = 'start', static: isStatic, 
     const height = el.scrollHeight
     const start = align === 'start' ? a.left : a.right - width
     const cutAtSide = start < left - 1 || start + width > right + 1
-    if (cutAtSide) {
+    // a short clipping panel (the Model shelf) leaves less room under and over the trigger than the window does
+    const inPanel = Math.max(bottom - a.bottom, a.top - top) - GAP
+    const inWindow = Math.max(window.innerHeight - a.bottom, a.top) - GAP - EDGE
+    const cutInHeight = height > inPanel && inWindow > inPanel
+    if (cutAtSide || cutInHeight) {
       // lifted out: placed against the window, under the trigger or over it, wherever there is more room
       const below = window.innerHeight - a.bottom - GAP - EDGE
       const above = a.top - GAP - EDGE
