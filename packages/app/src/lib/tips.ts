@@ -21,6 +21,12 @@ export interface TipEntry {
 const a = (title: string, body: string, key: KeyAction, reason?: string): TipEntry => ({ title, body, key, action: true, ...(reason ? { reason } : {}) })
 const f = (title: string, body: string, key?: string, reason?: string): TipEntry => ({ title, body, ...(key ? { key } : {}), ...(reason ? { reason } : {}) })
 
+/** The Model tab's tip. A tool left open in Model says so. */
+function modelTip() {
+  const p = get().parked
+  return a('Model', p?.tool ? `${p.label ?? 'A tool'} in progress. Open Model to finish it.` : 'Build and change parts. History, sketches and tools.', 'model.mode')
+}
+
 export const TIPS = {
   'tool.move': a('Move', 'Drag the model across the plate.', 'tool.move', 'Select an object first.'),
   'tool.rotate': a('Rotate', 'Drag a ring to turn the model around that axis. Hold Shift to turn in 15° steps.', 'tool.rotate', 'Select an object first.'),
@@ -54,12 +60,14 @@ export const TIPS = {
   'sketch.look': f('Look at the sketch', 'Turn the view square onto the sketch plane.'),
   'sketch.extrude': f('Extrude', 'Pull a sketch profile into a solid.'),
   'nav.printers': f('Printers', 'Open your printers and their status.'),
-  // A tool left open in Design says so on its tab.
-  get 'mode.design'() {
-    const p = get().parked
-    return a('Design', p?.tool ? `${p.label ?? 'A tool'} in progress. Open Design to finish it.` : 'Model parts: sketches, features and their history, on the same plate.', 'model.mode')
+  get 'mode.model'() {
+    return modelTip()
   },
-  'mode.slice': a('Slice', 'Set up the plate, printer and settings, then slice.', 'model.mode'),
+  // The old key, kept for one release.
+  get 'mode.design'() {
+    return modelTip()
+  },
+  'mode.slice': a('Slice', 'The plate, print settings and the sliced layers.', 'model.mode'),
   get 'nav.settings'() {
     return f('Settings', `Change how ${appName()} looks, behaves and connects.`)
   },

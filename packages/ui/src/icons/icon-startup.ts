@@ -59,6 +59,8 @@ export const STARTUP_ICON_PATHS: Partial<Record<IconName, string>> = {
   "mcp": "<rect x=\"8.5\" y=\"8.5\" width=\"7\" height=\"7\" rx=\"1.5\"/><path d=\"M12 8.5V5.5M12 15.5v3M8.5 12h-3M15.5 12h3\"/><circle cx=\"12\" cy=\"4\" r=\"1.5\" fill=\"currentColor\" stroke=\"none\"/><circle cx=\"12\" cy=\"20\" r=\"1.5\" fill=\"currentColor\" stroke=\"none\"/><circle cx=\"4\" cy=\"12\" r=\"1.5\" fill=\"currentColor\" stroke=\"none\"/><circle cx=\"20\" cy=\"12\" r=\"1.5\" fill=\"currentColor\" stroke=\"none\"/>",
   "measure": "<path d=\"M3.5 7.5v9M20.5 7.5v9M6 12h12M8.5 9.5L6 12l2.5 2.5M15.5 9.5L18 12l-2.5 2.5\"/>",
   "mimir": "<path d=\"M6 3v18M18 3v18\"/><path d=\"M6 3l12 8M18 3L6 11\"/><circle cx=\"12\" cy=\"17\" r=\"1.6\" fill=\"currentColor\" stroke=\"none\"/>",
+  "model": "<path d=\"M4 20.5V11a7.5 7.5 0 0 1 7.5-7.5h9v17z\"/><circle cx=\"14\" cy=\"13.5\" r=\"2.5\"/>",
+  "more": "<path d=\"M5.5 12h.01M12 12h.01M18.5 12h.01\"/>",
   "mouse": "<rect x=\"6.5\" y=\"3\" width=\"11\" height=\"18\" rx=\"5.5\"/><path d=\"M12 7v3\"/>",
   "move": "<path d=\"M12 3v18M3 12h18\"/><path d=\"M9.5 5.5L12 3l2.5 2.5M9.5 18.5L12 21l2.5-2.5M5.5 9.5L3 12l2.5 2.5M18.5 9.5L21 12l-2.5 2.5\"/>",
   "new-plate": "<path d=\"M7 12.5h10.5l-3 6.5H4z\"/><path d=\"M18.5 3.5v6M15.5 6.5h6\"/>",
