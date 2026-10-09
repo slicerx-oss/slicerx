@@ -8018,8 +8018,25 @@ fn feature_id_of<'v>(get: impl Fn(&str) -> Option<&'v serde_json::Value>, key: &
 }
 
 fn feature_tools(cfg: &PrintConfig, slot: u8) -> FeatureTools {
+    feature_tools_from(|name| cfg.raw.get(name), slot)
+}
+
+/// The filaments a part on `slot` prints its features with, from settings read through `get`: the part's own
+/// first, then the plate's, as [`FeatureTools`] keeps them.
+pub(crate) fn feature_slots<'v>(
+    get: impl Fn(&str) -> Option<&'v serde_json::Value> + Copy,
+    slot: u8,
+) -> [u8; 6] {
+    let t = feature_tools_from(get, slot);
+    [t.outer, t.inner, t.sparse, t.solid, t.top, t.bottom]
+}
+
+fn feature_tools_from<'v>(
+    get: impl Fn(&str) -> Option<&'v serde_json::Value> + Copy,
+    slot: u8,
+) -> FeatureTools {
     let [outer, inner, sparse, mut solid, mut top, mut bottom] =
-        FEATURE_KEYS.map(|(k, legacy)| feature_id_of(|name| cfg.raw.get(name), k, legacy));
+        FEATURE_KEYS.map(|(k, legacy)| feature_id_of(get, k, legacy));
     if solid == 0 && sparse > 0 {
         solid = sparse;
     }
