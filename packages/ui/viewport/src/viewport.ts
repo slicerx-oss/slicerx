@@ -5,6 +5,7 @@
 // loop pauses while the canvas is offscreen or the page is hidden.
 import { FirstFrameGate } from './firstframe'
 import { PlateReveal, REVEAL_HIDDEN, revealPlayed } from './reveal'
+import { crossfadeFrom } from './crossfade'
 import { gpuProfile } from './gpu'
 import type { ToolChangerSpec } from './toolchanger'
 import type { PurgePlan } from './purge'
@@ -708,6 +709,14 @@ class ViewportImpl implements Viewport {
     const firstPreviewFrame = this.previewSetAt !== null && this.pathsShown()
     this.stage.bakePendingContact()
     this.pipeline.render(this.stage.scene, this.camera, { ao, aoMix, fast: moving, outline, frameIndex: this.frameIdx++ })
+    if (this.swapNext) {
+      // the old scene is in the drawing buffer now: copy it over the view, then swap the new one in beneath
+      const swap = this.swapNext
+      this.swapNext = null
+      crossfadeFrom(this.canvas, reducedMotion())
+      swap()
+      this.dirty = true
+    }
     this.probe?.end()
     // Timer queries are not used for this: on ANGLE's Metal backend they span queued work and read high.
     if (this.gpuTiming || firstPreviewFrame) this.pipeline.waitForGpu()
@@ -932,7 +941,42 @@ class ViewportImpl implements Viewport {
 
   // ---------- plate ----------
 
+  /**
+   * Holds the scene on screen while a newly opened model replaces it: an empty plate and a cleared preview wait, and
+   * the first plate with objects swaps in under a short crossfade. Off lets anything waiting through at once.
+   */
+  holdScene(on: boolean): void {
+    if (on) {
+      this.held ??= {}
+      return
+    }
+    const h = this.held
+    this.held = null
+    if (h) this.applyHeld(h)
+  }
+
+  private held: { plate?: [ViewportPlate, { keepCamera?: boolean }]; preview?: PreviewBuffers | null } | null = null
+  private swapNext: (() => void) | null = null
+
+  private applyHeld(h: NonNullable<ViewportImpl['held']>): void {
+    if (h.preview !== undefined) this.setPreview(h.preview)
+    if (h.plate) this.setPlate(...h.plate)
+  }
+
   setPlate(plate: ViewportPlate, opts: { keepCamera?: boolean } = {}): void {
+    if (this.held) {
+      if (plate.objects.length === 0) {
+        this.held.plate = [plate, opts]
+        return
+      }
+      // the new model is here: the next frame still shows the old scene, copied over the view, then this swaps in
+      const h = this.held
+      this.held = null
+      h.plate = [plate, opts]
+      this.swapNext = () => this.applyHeld(h)
+      this.invalidate()
+      return
+    }
     const t0 = performance.now()
     this.stage.setBed(plate.bed, plate.surfaceLabel)
     this.stage.setNozzleZones(plate.zones ?? [])
@@ -2962,6 +3006,10 @@ class ViewportImpl implements Viewport {
   // ---------- preview ----------
 
   setPreview(buffers: PreviewBuffers | null): void {
+    if (this.held) {
+      this.held.preview = buffers
+      return
+    }
     this.previewGen++
     this.previewSetAt = performance.now()
     this.firstFrameMs = null
