@@ -54,7 +54,7 @@ import { BrimEars } from './brim'
 import { GapLines, type GapLine } from './gaps'
 import { GuideLines, type Guides } from './guides'
 import { applyInsets, CameraRig, NO_INSETS, reducedMotion, type Insets } from './camera'
-import { edgeLook, MaterialCache, setEdgeResolution, setSharedBandColors, setSharedLayerTops, setSharedSceneColors, shared, sharedMaterials } from './materials'
+import { cadLook, edgeLook, MaterialCache, setEdgeResolution, setSharedBandColors, setSharedLayerTops, setSharedSceneColors, shared, sharedMaterials } from './materials'
 import { buildObject, disposeObject, wideEdges, type ObjectEntry } from './model'
 import { Pipeline } from './post'
 import { Stage } from './stage'
@@ -726,7 +726,7 @@ class ViewportImpl implements Viewport {
     const ao = this.aoOn && aoMix > 0 && this.display !== 'wireframe' && !(this.mode === 'prepare' && this.renderMode === 'xray')
     const firstPreviewFrame = this.previewSetAt !== null && this.pathsShown()
     this.stage.bakePendingContact()
-    this.pipeline.render(this.stage.scene, this.camera, { ao, aoMix, fast: moving, outline, frameIndex: this.frameIdx++ })
+    this.pipeline.render(this.stage.scene, this.camera, { ao, aoMix, fast: moving, outline, silhouette: this.renderMode === 'cad' && this.mode === 'prepare', frameIndex: this.frameIdx++ })
     if (this.swapNext) {
       // the old scene is in the drawing buffer now: copy it over the view, then swap the new one in beneath
       const swap = this.swapNext
@@ -2298,6 +2298,7 @@ class ViewportImpl implements Viewport {
     this.theme = t
     setSharedBandColors(t.heatRamp[0] ?? '#4f6bed', t.heatRamp[Math.floor((t.heatRamp.length - 1) / 2)] ?? '#f1fa8c', t.heatRamp[Math.floor((t.heatRamp.length - 1) * 0.75)] ?? '#ffb86c')
     this.pipeline.setSceneColors(t.scene)
+    this.pipeline.setSilhouetteColor(cadLook(t.scene.bgTop).edge)
     this.faceColor = t.scene.selection
     // Picked faces stand apart from the selected object's own tint, which is the selection color.
     this.pickColor = t.scene.liveLayer
