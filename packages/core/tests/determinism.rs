@@ -98,6 +98,16 @@ fn arachne_walls_are_the_same_at_every_thread_count() {
 }
 
 #[test]
+fn painted_colors_are_the_same_at_every_thread_count() {
+    // The painted outlines and color regions are worked out once per layer and shared between the jobs.
+    let g = same_at_every_thread_count(
+        &[(Arc::new(common::painted_tile()), [100.0, 100.0])],
+        &json!({"brim_width": 0}),
+    );
+    assert!(g.lines().any(|l| l == "T2"), "one color only");
+}
+
+#[test]
 fn organic_tree_supports_are_the_same_at_every_thread_count() {
     let g = same_at_every_thread_count(
         &[(mesh("table.stl"), [128.0, 128.0])],
