@@ -8,14 +8,14 @@ import type { Page } from '@playwright/test'
 import { expect, tab, test, viewportReady } from './fixtures'
 import { alike, cellsIn, diff, recordFrames, type Frame } from './frames'
 
-/** Past setup, on the plate, with the reveal on. */
-const playReveal = (page: Page) =>
-  page.addInitScript(() => {
+/** Past setup, on the plate, with the reveal on; `motion` is the app's own Motion setting. */
+const playReveal = (page: Page, motion?: 'reduced') =>
+  page.addInitScript((motion) => {
     sessionStorage.setItem('sx-reveal', 'always')
     if (sessionStorage.getItem('sx-e2e')) return
     sessionStorage.setItem('sx-e2e', '1')
-    localStorage.setItem('slicerx.prefs.v1', JSON.stringify({ workspace: 'prepare', pilot: { mode: 'off' } }))
-  })
+    localStorage.setItem('slicerx.prefs.v1', JSON.stringify({ workspace: 'prepare', pilot: { mode: 'off' }, ...(motion ? { motion } : {}) }))
+  }, motion)
 
 /** The picture on screen now: a recording starts with it, so a short one is a snapshot. */
 async function snapshot(page: Page): Promise<Frame> {
@@ -45,7 +45,7 @@ test('the plate reveal plays once and ends on the fully drawn plate', async ({ p
   expect(furthest, 'the reveal changed the picture before it settled').toBeGreaterThan(1)
 
   // A later view in the same window (Vault and back builds a new one) draws the plate at once, with no reveal.
-  await tab(page, 'library').click()
+  await tab(page, 'feed').click()
   await expect(page.locator('.vp-canvas')).toHaveCount(0)
   await tab(page, 'prepare').click()
   await expect(page.locator('.vp-canvas')).toHaveAttribute('data-reveal', 'off')
@@ -60,8 +60,8 @@ test('the plate reveal plays once and ends on the fully drawn plate', async ({ p
 })
 
 test('under reduced motion the plate draws at once', async ({ page }) => {
-  await page.emulateMedia({ reducedMotion: 'reduce' })
-  await playReveal(page)
+  // Settings > Appearance > Motion: Reduced. It also follows the system setting when set to Follow system.
+  await playReveal(page, 'reduced')
   await page.goto('./')
   await viewportReady(page)
   await expect(page.locator('.vp-canvas')).toHaveAttribute('data-reveal', 'off')
