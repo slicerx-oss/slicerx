@@ -113,6 +113,13 @@ export interface ViewportOptions {
    * the name WebGL reports when deciding the quality tier and the software rendering warning.
    */
   gpuRenderer?: string | null
+  /**
+   * Play the plate reveal on the first plate this window shows: the outline traced from the front, then the grid laid
+   * back to front, about 2 s. Later views in the same window, reduced motion and software graphics draw the plate at
+   * once; `always` plays on software graphics too (browser tests), `false` turns it off. The canvas carries
+   * `data-reveal` (`waiting`, `playing`, `done` or `off`). Default true.
+   */
+  reveal?: boolean | 'always'
 }
 
 export interface ViewportPart {
