@@ -35,7 +35,7 @@ export const ACTION_LABEL: Record<KeyAction, { label: string; group: ActionGroup
   'edit.duplicate': { label: 'Duplicate', group: 'Prepare' },
   'object.printable': { label: 'Toggle printable for the selected objects', group: 'Prepare' },
   'workspace.toggle': { label: 'Switch between toolpaths and solid models', group: 'Global' },
-  'model.mode': { label: 'Switch between Design and Slice', group: 'Global' },
+  'model.mode': { label: 'Switch between Model and Slice', group: 'Global' },
   slice: { label: 'Slice the plate', group: 'Global' },
   export: { label: 'Export the sliced plate', group: 'Global' },
   palette: { label: 'Open the command bar', group: 'Global' },

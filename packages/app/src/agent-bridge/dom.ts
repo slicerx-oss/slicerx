@@ -19,7 +19,11 @@ export class BridgeError extends Error {
 /** Where the bridge never clicks, types or presses keys. */
 const REFUSED_AREAS = '[data-agent-refuse], .approve-dialog, .print-sheet'
 
-export const sel = (testid: string) => `[data-testid="${testid.replace(/["\\]/g, '\\$&')}"]`
+/** A control by its test id, or by an old id it still answers to while scripts move over (data-testid-alias). */
+export const sel = (testid: string) => {
+  const q = testid.replace(/["\\]/g, '\\$&')
+  return `[data-testid="${q}"], [data-testid-alias="${q}"]`
+}
 
 function needId(testid: unknown): string {
   if (typeof testid !== 'string' || !/^[\w.:-]{1,120}$/.test(testid)) throw new BridgeError('invalid_input', 'testid must be a test id (letters, digits, - _ . :)')

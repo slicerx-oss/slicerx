@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// The first tab has two modes, Design and Slice, over the one `prepare` workspace. The mode is session state that
+// The first two tabs are the two modes, Model and Slice, over the one `prepare` workspace. The mode is session state that
 // starts from a saved default; the switcher, Ctrl+E and the commands change the mode, never the default.
 import type { Host } from '@slicerx/contracts'
 import { createElement } from 'react'
@@ -10,7 +10,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { builtinCommands } from '../src/commands/builtin'
 import { NEUTRAL, setCurrentEdition } from '../src/edition'
 import { plateHandlers } from '../src/plate/keys'
-import { ModeTab } from '../src/shell/mode-tab'
+import { ModeTabs } from '../src/shell/mode-tab'
 import { modelMode, toggleModelMode } from '../src/state/model-mode'
 import { loadPrefs } from '../src/state/prefs'
 import { get, set, setModelMode } from '../src/state/store'
@@ -75,11 +75,12 @@ describe('switching modes', () => {
 describe('the commands', () => {
   const ids = () => builtinCommands({} as Host, []).map((c) => c.id)
 
-  it('offers Switch to Design and Switch to Slice, each only when it would change something', () => {
+  it('offers Go to Model and Go to Slice, each only when it would change something', () => {
     const cmds = builtinCommands({} as Host, [])
     const design = cmds.find((c) => c.id === 'mode-design')!
     const slice = cmds.find((c) => c.id === 'mode-slice')!
-    expect(design.title).toBe('Switch to Design')
+    expect(design.title).toBe('Go to Model')
+    expect(slice.title).toBe('Go to Slice')
     expect(design.enabled?.()).toBe(true)
     expect(slice.enabled?.()).toBe(false)
     void design.run()
@@ -93,30 +94,35 @@ describe('the commands', () => {
   })
 })
 
-describe('the Design | Slice tab', () => {
+describe('the Model and Slice tabs', () => {
   function render(): HTMLElement {
     const el = document.createElement('div')
     document.body.appendChild(el)
-    flushSync(() => createRoot(el).render(createElement(ModeTab)))
+    flushSync(() => createRoot(el).render(createElement(ModeTabs)))
     return el
   }
   const current = (el: HTMLElement) => [...el.querySelectorAll('[aria-current="page"]')].map((b) => b.textContent)
 
-  it('underlines the open mode, and neither half on another tab', () => {
+  it('underlines the open mode, and neither tab on another workspace', () => {
     const el = render()
     expect(current(el)).toEqual(['Slice'])
     flushSync(() => set({ modelMode: 'design' }))
-    expect(current(el)).toEqual(['Design'])
+    expect(current(el)).toEqual(['Model'])
     flushSync(() => set({ workspace: 'preview' }))
     expect(current(el)).toEqual([])
   })
 
-  it('opens the first tab in that mode when a half is clicked from another tab', () => {
+  it('opens the plate in that mode when its tab is clicked from another tab', () => {
     set({ workspace: 'library' })
     const el = render()
     flushSync(() => el.querySelector<HTMLButtonElement>('[data-mode="design"]')!.click())
     expect(get()).toMatchObject({ workspace: 'prepare', modelMode: 'design' })
-    // The Slice half keeps the workspace id, so anything that opens `prepare` by its tab lands on the plate.
+    // Model is tab-model and still answers to tab-design; Slice keeps the workspace id, so anything that opens `prepare` by its tab lands on the plate.
     expect(el.querySelector('[data-tab="prepare"]')?.getAttribute('data-mode')).toBe('slice')
+    const model = el.querySelector('[data-testid="tab-model"]')!
+    expect(model.getAttribute('data-testid-alias')).toBe('tab-design')
+    expect(model.getAttribute('data-tip')).toBe('mode.model')
+    // Two plain tabs, no group around them.
+    expect(el.querySelector('[role="group"]')).toBeNull()
   })
 })

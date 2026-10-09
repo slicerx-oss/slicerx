@@ -13,7 +13,7 @@ const design = new URL('./open-art/design.webp', import.meta.url).href
 
 const OPTIONS: readonly { id: OpenIn; name: string; sum: string; art: string }[] = [
   { id: 'slice', name: 'Slicing', sum: 'Start on the plate: printer, filament and settings, then slice.', art: slicing },
-  { id: 'design', name: 'CAD design', sum: 'Start in Design: sketch, extrude and edit parts with their history.', art: design },
+  { id: 'design', name: 'CAD model', sum: 'Start in Model: sketch, extrude and edit parts with their history.', art: design },
 ]
 
 export function OpenStep({ choice, onChoose }: { choice: OpenIn; onChoose(c: OpenIn): void }) {
@@ -34,7 +34,7 @@ export function OpenStep({ choice, onChoose }: { choice: OpenIn; onChoose(c: Ope
     <div className="fr-open">
       <header className="fr-head">
         <h1 className="fr-title fr-display">What do you want {appName()} to open in?</h1>
-        <p className="fr-lede">Both are one tab, Design | Slice, and {formatShortcut('Mod+E')} switches. This sets where it starts; change it any time in Settings.</p>
+        <p className="fr-lede">Model and Slice are the first two tabs, and {formatShortcut('Mod+E')} switches. This sets where it starts; change it any time in Settings.</p>
       </header>
       <div className="fr-open-cards" role="radiogroup" aria-label="Open models in">
         {OPTIONS.map((o, i) => {

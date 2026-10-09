@@ -44,7 +44,7 @@ export function Shelf() {
   const dialog = objectTool === 'simplify' || objectTool === 'hollow' || objectTool === 'hole' ? (objectTool as DialogTool) : null
 
   return (
-    <div className="shelf" role="toolbar" aria-label="Design tools" aria-busy={engine === 'loading' || undefined}>
+    <div className="shelf" role="toolbar" aria-label="Model tools" aria-busy={engine === 'loading' || undefined}>
       {SHELF_GROUPS.map((g) => (
         <div key={g.id} className="shelf-grp">
           <div className="shelf-tools">

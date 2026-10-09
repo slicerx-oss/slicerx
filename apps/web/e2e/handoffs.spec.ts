@@ -51,8 +51,8 @@ test('a sketch left open waits in Slice through a slice and is finished back in 
   await expect(sliced(page, before)).toBeVisible({ timeout: 60_000 })
   expect((await state(page)).plate.length).toBe(1)
 
-  // Back to Design: the sketch and its distance are as they were.
-  await chip.getByRole('button', { name: 'Back to Design' }).click()
+  // Back to Model: the sketch and its distance are as they were.
+  await chip.getByRole('button', { name: 'Back to Model' }).click()
   await expect(chip).toHaveCount(0)
   await expect(panel).toContainText('The bed')
   await expect(panel.locator('#sk-dist')).toHaveValue('10')

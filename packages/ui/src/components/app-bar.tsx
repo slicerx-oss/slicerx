@@ -34,17 +34,22 @@ export interface TabsProps<K extends string> {
   active: K
   onChange?: (id: K) => void
   label?: string
-  /** A custom first entry, before the tabs (the app's Design | Slice pair). */
+  /** Custom first entries, before the tabs (the app's Model and Slice tabs). */
   lead?: ReactNode
+  /** A custom last entry, after the tabs (the app's More menu on a narrow window). */
+  trail?: ReactNode
+  /** Each tab's label as its tip too, for when the labels are hidden. */
+  tips?: boolean
 }
 
 /** Top tabs with the gradient underline on the active one. Labels hide under 560px. */
-export function Tabs<K extends string>({ tabs, active, onChange, label = 'Workspaces', lead }: TabsProps<K>) {
+export function Tabs<K extends string>({ tabs, active, onChange, label = 'Workspaces', lead, trail, tips = false }: TabsProps<K>) {
   return (
     <nav className="sx-tabs" aria-label={label}>
       {lead}
       {tabs.map((t) => {
         const current = t.id === active ? ('page' as const) : undefined
+        const tip = tips ? tipAttrs({ title: t.label }) : {}
         const inner = (
           <>
             <Icon name={t.icon} />
@@ -53,15 +58,16 @@ export function Tabs<K extends string>({ tabs, active, onChange, label = 'Worksp
           </>
         )
         return t.href ? (
-          <a key={t.id} className="sx-tab" data-tab={t.id} data-testid={`tab-${t.id}`} href={t.href} aria-current={current} aria-label={t.label} onClick={() => onChange?.(t.id)}>
+          <a key={t.id} className="sx-tab" data-tab={t.id} data-testid={`tab-${t.id}`} href={t.href} aria-current={current} aria-label={t.label} {...tip} onClick={() => onChange?.(t.id)}>
             {inner}
           </a>
         ) : (
-          <button key={t.id} type="button" className="sx-tab" data-tab={t.id} data-testid={`tab-${t.id}`} aria-current={current} aria-label={t.label} onClick={() => onChange?.(t.id)}>
+          <button key={t.id} type="button" className="sx-tab" data-tab={t.id} data-testid={`tab-${t.id}`} aria-current={current} aria-label={t.label} {...tip} onClick={() => onChange?.(t.id)}>
             {inner}
           </button>
         )
       })}
+      {trail}
     </nav>
   )
 }

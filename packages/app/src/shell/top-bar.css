@@ -1,0 +1,12 @@
+/* SPDX-License-Identifier: Apache-2.0
+   Copyright (C) 2026 The SlicerX contributors */
+/* The top bar's narrowing steps (top-bar.tsx). The tabs keep their width, so the project name gives up room first. */
+.sx-appbar .sx-tabs { flex-shrink: 0; }
+.sx-appbar[data-narrow-search] .sx-searchbtn { width: 32px; padding: 0; justify-content: center; }
+.sx-appbar[data-narrow-search] .sx-searchbtn > span, .sx-appbar[data-narrow-search] .sx-searchbtn .sx-kbd { display: none; }
+.sx-appbar[data-narrow-tabs] .sx-tab:not([data-mode]) > span, .sx-appbar[data-narrow-modes] .sx-tab > span { display: none; }
+.sx-appbar[data-narrow-tabs] .sx-tab:not([data-mode]), .sx-appbar[data-narrow-modes] .sx-tab { padding: 0 9px; }
+.sx-appbar[data-narrow-tabs] .sx-tab[aria-current="page"]::after { left: 6px; right: 6px; }
+.sx-tab-more { display: flex; height: 100%; }
+.sx-tab-more > .sx-tab .tab-dot { position: absolute; top: 14px; right: 5px; margin: 0; }
+.sx-tab-more .sx-menu-item .tab-dot { margin-left: 8px; }
