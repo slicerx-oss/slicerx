@@ -66,7 +66,8 @@ pub(crate) fn load_plate_objects(bytes: &[u8], name: &str) -> Result<Vec<(u32, V
         })
         .unwrap_or_else(|| "3D/3dmodel.model".to_owned());
     let mut models: HashMap<String, Model> = HashMap::new();
-    let main = parse_model(&zip.read(&root).map_err(|e| Error::mesh(name, e))?);
+    let main = parse_model(&zip.read(&root).map_err(|e| Error::mesh(name, e))?)
+        .map_err(|e| Error::mesh(name, format!("{root}: {e}")))?;
     let settings = zip.read("Metadata/model_settings.config").unwrap_or_default();
     let slots = slot_map(&settings);
     let plate_of = plate_map(&settings);
@@ -231,7 +232,11 @@ pub fn metadata(bytes: &[u8], name: &str) -> Result<ProjectMetadata> {
                         .and_then(|t| t.attr("Target").map(|s| s.trim_start_matches('/').to_owned()))
                 })
                 .unwrap_or_else(|| "3D/3dmodel.model".to_owned());
-            let main = zip.read(&root).map(|b| parse_model(&b)).unwrap_or_default();
+            let main = zip
+                .read(&root)
+                .ok()
+                .and_then(|b| parse_model(&b).ok())
+                .unwrap_or_default();
             ears.into_iter()
                 .map(|(object, pts)| {
                     let item = usize::try_from(object - 1).ok().and_then(|i| main.build.get(i));
@@ -297,14 +302,28 @@ type Transform = [f32; 12];
 
 const IDENTITY: Transform = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0];
 
-fn parse_transform(s: Option<&str>) -> Transform {
-    let Some(s) = s else { return IDENTITY };
+/// A `transform` attribute: twelve finite numbers, or none at all (the identity). Anything else is refused, not
+/// read as the identity.
+fn parse_transform(s: Option<&str>) -> std::result::Result<Transform, String> {
+    let Some(s) = s else { return Ok(IDENTITY) };
     let v: Vec<f32> = s
         .split_ascii_whitespace()
-        .filter_map(|x| x.parse().ok())
-        .collect();
-    v.as_slice().try_into().unwrap_or(IDENTITY)
+        .map(|x| x.parse::<f32>().ok().filter(|f| f.is_finite()))
+        .collect::<Option<_>>()
+        .ok_or_else(|| format!("the transform \"{s}\" has a value that is not a number"))?;
+    v.as_slice()
+        .try_into()
+        .map_err(|_| format!("the transform \"{s}\" has {} values, not 12", v.len()))
 }
+
+/// 3MF extensions whose content this loader reads or may leave out without changing the geometry: production
+/// (components in other model files), materials and properties (colors), and the slicers' own namespaces.
+const READ_EXTENSIONS: &[&str] = &[
+    "http://schemas.microsoft.com/3dmanufacturing/production/2015/06",
+    "http://schemas.microsoft.com/3dmanufacturing/material/2015/02",
+    "http://schemas.bambulab.com/package/2021",
+    "http://schemas.slic3r.org/3mf/2017/06",
+];
 
 /// `a` then `b`.
 fn compose(a: &Transform, b: &Transform) -> Transform {
@@ -364,26 +383,48 @@ struct BuildItem {
     transform: Transform,
 }
 
-fn parse_model(xml: &[u8]) -> Model {
+/// One model file. Refuses, with what and where, what the loader would otherwise have to guess: an unknown unit,
+/// an extension the file requires that is not read here, a vertex coordinate or transform that is not a number,
+/// a triangle whose corner is not one of its object's vertices, an object or item without a usable id.
+fn parse_model(xml: &[u8]) -> std::result::Result<Model, String> {
     let mut model = Model {
         unit_scale: 1.0,
         ..Model::default()
     };
     let mut current: Option<(u32, Object)> = None;
+    let id_of = |t: &Tag<'_>, key: &str, what: &str| -> std::result::Result<u32, String> {
+        let v = t.attr(key).unwrap_or("");
+        v.trim()
+            .parse()
+            .map_err(|_| format!("{what} has no usable {key} (\"{v}\")"))
+    };
     for t in tags(xml) {
         match (t.name, t.closing) {
             ("model", false) => {
                 model.unit_scale = match t.attr("unit").unwrap_or("millimeter") {
                     "micron" => 0.001,
+                    "millimeter" => 1.0,
                     "centimeter" => 10.0,
                     "inch" => 25.4,
                     "foot" => 304.8,
                     "meter" => 1000.0,
-                    _ => 1.0,
+                    other => return Err(format!("the unit \"{other}\" is not one 3MF defines")),
                 };
+                for prefix in t
+                    .attr("requiredextensions")
+                    .unwrap_or("")
+                    .split_ascii_whitespace()
+                {
+                    let ns = t.attr(&format!("xmlns:{prefix}")).unwrap_or(prefix);
+                    if !READ_EXTENSIONS.contains(&ns) {
+                        return Err(format!(
+                            "the file requires the 3MF extension {ns}, which SlicerX does not read"
+                        ));
+                    }
+                }
             }
             ("object", false) => {
-                let id = t.attr("id").and_then(|v| v.parse().ok()).unwrap_or(0);
+                let id = id_of(&t, "id", "an object")?;
                 let name = t.attr("name").unwrap_or("").to_owned();
                 current = Some((
                     id,
@@ -395,69 +436,94 @@ fn parse_model(xml: &[u8]) -> Model {
             }
             ("object", true) => {
                 if let Some((id, o)) = current.take() {
+                    let n = o.positions.len();
+                    if let Some(k) = o
+                        .triangles
+                        .iter()
+                        .position(|tri| tri.iter().any(|&i| i as usize >= n))
+                    {
+                        return Err(format!(
+                            "object {id} triangle {k} names a vertex past its {n} vertices"
+                        ));
+                    }
                     model.objects.insert(id, o);
                 }
             }
             ("vertex", false) => {
-                if let Some((_, o)) = current.as_mut() {
-                    let f = |k: &str| t.attr(k).and_then(|v| v.parse::<f32>().ok()).unwrap_or(0.0);
-                    o.positions.push([f("x"), f("y"), f("z")]);
+                if let Some((id, o)) = current.as_mut() {
+                    let k = o.positions.len();
+                    let f = |c: &str| {
+                        let v = t.attr(c).unwrap_or("");
+                        v.trim()
+                            .parse::<f32>()
+                            .ok()
+                            .filter(|f| f.is_finite())
+                            .ok_or_else(|| format!("object {id} vertex {k}: {c} \"{v}\" is not a number"))
+                    };
+                    o.positions.push([f("x")?, f("y")?, f("z")?]);
                 }
             }
             ("triangle", false) => {
-                if let Some((_, o)) = current.as_mut() {
-                    let f = |k: &str| t.attr(k).and_then(|v| v.parse::<u32>().ok());
-                    if let (Some(a), Some(b), Some(c)) = (f("v1"), f("v2"), f("v3")) {
-                        if let Some(code) = t
-                            .attr("paint_color")
-                            .or_else(|| t.attr("slic3rpe:mmu_segmentation"))
-                            .filter(|c| !c.is_empty())
-                        {
-                            o.paint.push((o.triangles.len(), code.to_owned()));
-                        }
-                        if let Some(code) = t
-                            .attr("paint_supports")
-                            .or_else(|| t.attr("slic3rpe:custom_supports"))
-                            .filter(|c| !c.is_empty())
-                        {
-                            o.support_paint.push((o.triangles.len(), code.to_owned()));
-                        }
-                        if let Some(code) = t
-                            .attr("paint_seam")
-                            .or_else(|| t.attr("slic3rpe:custom_seam"))
-                            .filter(|c| !c.is_empty())
-                        {
-                            o.seam_paint.push((o.triangles.len(), code.to_owned()));
-                        }
-                        if let Some(code) = t.attr("paint_fuzzy_skin").filter(|c| !c.is_empty()) {
-                            o.fuzzy_paint.push((o.triangles.len(), code.to_owned()));
-                        }
-                        o.triangles.push([a, b, c]);
+                if let Some((id, o)) = current.as_mut() {
+                    let k = o.triangles.len();
+                    let f = |c: &str| {
+                        let v = t.attr(c).unwrap_or("");
+                        v.trim().parse::<u32>().map_err(|_| {
+                            format!("object {id} triangle {k}: {c} \"{v}\" is not a vertex number")
+                        })
+                    };
+                    let (a, b, c) = (f("v1")?, f("v2")?, f("v3")?);
+                    if let Some(code) = t
+                        .attr("paint_color")
+                        .or_else(|| t.attr("slic3rpe:mmu_segmentation"))
+                        .filter(|c| !c.is_empty())
+                    {
+                        o.paint.push((o.triangles.len(), code.to_owned()));
                     }
+                    if let Some(code) = t
+                        .attr("paint_supports")
+                        .or_else(|| t.attr("slic3rpe:custom_supports"))
+                        .filter(|c| !c.is_empty())
+                    {
+                        o.support_paint.push((o.triangles.len(), code.to_owned()));
+                    }
+                    if let Some(code) = t
+                        .attr("paint_seam")
+                        .or_else(|| t.attr("slic3rpe:custom_seam"))
+                        .filter(|c| !c.is_empty())
+                    {
+                        o.seam_paint.push((o.triangles.len(), code.to_owned()));
+                    }
+                    if let Some(code) = t.attr("paint_fuzzy_skin").filter(|c| !c.is_empty()) {
+                        o.fuzzy_paint.push((o.triangles.len(), code.to_owned()));
+                    }
+                    o.triangles.push([a, b, c]);
                 }
             }
             ("component", false) => {
-                if let Some((_, o)) = current.as_mut() {
-                    let id = t.attr("objectid").and_then(|v| v.parse().ok()).unwrap_or(0);
+                if let Some((owner, o)) = current.as_mut() {
+                    let id = id_of(&t, "objectid", &format!("a component of object {owner}"))?;
                     let path = t.attr("p:path").unwrap_or("").trim_start_matches('/').to_owned();
-                    o.components
-                        .push((id, path, parse_transform(t.attr("transform"))));
+                    let transform = parse_transform(t.attr("transform"))
+                        .map_err(|e| format!("object {owner}, component {id}: {e}"))?;
+                    o.components.push((id, path, transform));
                 }
             }
             ("item", false) => {
-                let object = t.attr("objectid").and_then(|v| v.parse().ok()).unwrap_or(0);
+                let object = id_of(&t, "objectid", "a build item")?;
                 let printable = t.attr("printable").is_none_or(|v| v != "0");
                 if printable {
                     model.build.push(BuildItem {
                         object,
-                        transform: parse_transform(t.attr("transform")),
+                        transform: parse_transform(t.attr("transform"))
+                            .map_err(|e| format!("build item of object {object}: {e}"))?,
                     });
                 }
             }
             _ => {}
         }
     }
-    model
+    Ok(model)
 }
 
 /// Filament slot per object or part id from Bambu and Orca project metadata.
@@ -531,7 +597,8 @@ impl Resolve<'_> {
             } else {
                 if !self.models.contains_key(child_path) {
                     let bytes = self.zip.read(child_path).map_err(|e| Error::mesh(self.name, e))?;
-                    let m = parse_model(&bytes);
+                    let m = parse_model(&bytes)
+                        .map_err(|e| Error::mesh(self.name, format!("{child_path}: {e}")))?;
                     self.models.insert(child_path.clone(), m);
                 }
                 let sub = self.models.remove(child_path).unwrap_or_default();
@@ -670,7 +737,8 @@ impl Resolve<'_> {
             } else {
                 if !self.models.contains_key(child_path) {
                     let bytes = self.zip.read(child_path).map_err(|e| Error::mesh(self.name, e))?;
-                    let m = parse_model(&bytes);
+                    let m = parse_model(&bytes)
+                        .map_err(|e| Error::mesh(self.name, format!("{child_path}: {e}")))?;
                     self.models.insert(child_path.clone(), m);
                 }
                 let sub = self.models.remove(child_path).unwrap_or_default();
@@ -1234,5 +1302,89 @@ mod tests {
     fn rejects_garbage() {
         assert!(Mesh::load(b"PK\x03\x04 not really", "x.3mf").is_err());
         assert!(Mesh::load(&zip(&[("3D/3dmodel.model", b"<model/>", false)]), "x.3mf").is_err());
+    }
+
+    /// The cube file with `head` as the model tag and `edit` applied to the rest.
+    fn cube_file(head: &str, edit: &dyn Fn(String) -> String) -> std::result::Result<Mesh, String> {
+        let body = edit(format!(
+            r#"<resources>{CUBE_OBJECT}</resources><build><item objectid="2" transform="1 0 0 0 1 0 0 0 1 100 50 0"/></build></model>"#
+        ));
+        let model = format!(r#"<?xml version="1.0" encoding="UTF-8"?>{head}{body}"#);
+        Mesh::load(&zip(&[("3D/3dmodel.model", model.as_bytes(), true)]), "cube.3mf")
+            .map_err(|e| e.to_string())
+    }
+
+    const CORE: &str =
+        r#"<model unit="millimeter" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02">"#;
+
+    #[test]
+    fn a_malformed_3mf_is_refused_with_what_and_where() {
+        let same = |s: String| s;
+        assert_eq!(cube_file(CORE, &same).unwrap().triangle_count(), 12);
+        let refused = |head: &str, edit: &dyn Fn(String) -> String, says: &str| {
+            let e = cube_file(head, edit).unwrap_err();
+            assert!(e.contains(says), "{e}");
+        };
+        refused(r#"<model unit="furlong">"#, &same, r#"the unit "furlong""#);
+        refused(
+            r#"<model unit="millimeter" xmlns:b="http://schemas.microsoft.com/3dmanufacturing/beamlattice/2017/02" requiredextensions="b">"#,
+            &same,
+            "requires the 3MF extension http://schemas.microsoft.com/3dmanufacturing/beamlattice/2017/02",
+        );
+        refused(
+            CORE,
+            &|s| s.replacen(r#"x="10""#, r#"x="ten""#, 1),
+            r#"object 2 vertex 1: x "ten" is not a number"#,
+        );
+        refused(
+            CORE,
+            &|s| s.replacen(r#"x="10""#, r#"x="NaN""#, 1),
+            "object 2 vertex 1",
+        );
+        refused(
+            CORE,
+            &|s| s.replacen(r#"v3="1""#, r#"v3="8""#, 1),
+            "object 2 triangle 0 names a vertex past its 8 vertices",
+        );
+        refused(
+            CORE,
+            &|s| s.replacen(r#"v3="1""#, r#"v3="-1""#, 1),
+            "object 2 triangle 0: v3",
+        );
+        refused(
+            CORE,
+            &|s| s.replace("1 0 0 0 1 0 0 0 1 100 50 0", "1 0 0 0 1 0 0 0 1 100 50"),
+            "build item of object 2: the transform",
+        );
+        refused(
+            CORE,
+            &|s| s.replace("100 50 0", "100 fifty 0"),
+            "has a value that is not a number",
+        );
+        refused(
+            CORE,
+            &|s| s.replace(r#"<item objectid="2""#, r#"<item objectid="two""#),
+            "a build item has no usable objectid",
+        );
+    }
+
+    #[test]
+    fn extensions_the_loader_reads_or_may_leave_out_still_load() {
+        let head = r#"<model unit="millimeter" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02" xmlns:p="http://schemas.microsoft.com/3dmanufacturing/production/2015/06" xmlns:m="http://schemas.microsoft.com/3dmanufacturing/material/2015/02" xmlns:b="http://schemas.microsoft.com/3dmanufacturing/beamlattice/2017/02" requiredextensions="p m">"#;
+        // beam lattice is declared but not required: it is left out
+        assert_eq!(cube_file(head, &|s| s).unwrap().triangle_count(), 12);
+        for unit in ["micron", "millimeter", "centimeter", "inch", "foot", "meter"] {
+            let head = format!(r#"<model unit="{unit}">"#);
+            assert!(cube_file(&head, &|s| s).is_ok(), "{unit}");
+        }
+    }
+
+    #[test]
+    fn the_bench_projects_load_as_before() {
+        for (file, parts) in [("x-mark-2color.3mf", 2), ("x-mark-2color-orca.3mf", 2)] {
+            let bytes = std::fs::read(format!("{}/bench/models/{file}", env!("CARGO_MANIFEST_DIR"))).unwrap();
+            let mesh = Mesh::load(&bytes, file).unwrap();
+            assert_eq!(mesh.parts.len(), parts, "{file}");
+        }
     }
 }
