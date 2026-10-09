@@ -583,7 +583,9 @@ test('the object row and the estimate use plain words: parts, slot names, and th
   await expect(estimate.locator('dt', { hasText: 'Warnings' })).toHaveCount(0)
   // The Sliced plate card: plain words, the engine detail in the line's tooltip, and inline only in Developer mode.
   const result = page.locator('[data-section="result"] .result-line').first()
-  await expect(result).toHaveText(/^Sliced \d+ layers in \d+\.\d\d s\. (No warnings|\d+ warnings?)\.$/)
+  await expect(result).toHaveText(/^Sliced \d+ layers in \d+\.\d\d s\.$/)
+  // The warnings have their own line under it.
+  await expect(page.locator('[data-section="result"] .result-sub').first()).toHaveText(/^(No warnings|\d+ warnings?)\.$/)
   await expect(result).toHaveAttribute('data-tip-title', /^[\d,]+ toolpath segments from the (sx|Orca) engine$/)
   await expect(page.locator('[data-section="result"]')).not.toContainText('toolpath segments')
   await page.evaluate(() => (window as unknown as { __sx: { setState(p: unknown): void } }).__sx.setState({ settingsMode: 'developer' }))
