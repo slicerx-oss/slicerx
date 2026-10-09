@@ -55,6 +55,8 @@ interface StoredSlice {
   /** `bgcode` when the profile asked for binary G-code. */
   format: 'gcode' | 'bgcode'
   preview: ArrayBuffer | null
+  /** The preview went to the page (getPreview hands it over once and keeps no copy). */
+  previewTaken?: boolean
   previewChunks: ArrayBuffer[]
   /** The name `filename_format` gives the file, when the engine returned one. */
   fileName?: string
@@ -497,15 +499,20 @@ export async function createWasmSlicer(opts: PoolOptions): Promise<SlicerHost> {
         ...collisions,
       }
     },
+    // The page reads each slice's preview once and keeps it, so the pool hands it over and keeps no copy; a second ask
+    // is an error, as on the desktop.
     getPreview(sliceId: string): Promise<ArrayBuffer> {
       const s = slices.get(sliceId)
       if (!s) return Promise.reject(new Error(`Unknown slice ${sliceId}`))
-      s.preview ??= stitchPreview(s.previewChunks, s.layerLines, s.progressLines, s.layerTimeS)
+      if (s.previewTaken) return Promise.reject(new Error(`The preview of slice ${sliceId} was already sent`))
+      const preview = s.preview ?? stitchPreview(s.previewChunks, s.layerLines, s.progressLines, s.layerTimeS)
+      s.preview = null
+      s.previewTaken = true
       s.previewChunks = []
       s.layerLines = []
       s.progressLines = []
       s.layerTimeS = []
-      return Promise.resolve(s.preview.slice(0))
+      return Promise.resolve(preview)
     },
     async exportGcode(sliceId: string, target: GcodeTarget): Promise<GcodeExport> {
       const s = slices.get(sliceId)
