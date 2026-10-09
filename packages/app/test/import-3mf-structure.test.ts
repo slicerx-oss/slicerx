@@ -53,6 +53,20 @@ describe('units', () => {
   })
 })
 
+describe('attribute order', () => {
+  it('reads vertices whose attributes come in any order', async () => {
+    const reordered = vertices.replace('<vertex x="1" y="0" z="0"/>', '<vertex y="0" x="1" z="0"/>')
+    const result = await readProject(project('millimeter', object(reordered), '<item objectid="1"/>'), bed)
+    expect(Array.from(result.plates[0]!.objects[0]!.parts[0]!.positions)).toEqual([0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1])
+  })
+
+  it('reads every triangle whatever its attribute order, none dropped', async () => {
+    const reordered = triangles.replace('<triangle v1="0" v2="1" v3="3"/>', '<triangle v3="3" v1="0" v2="1"/>')
+    const result = await readProject(project('millimeter', object(vertices, reordered), '<item objectid="1"/>'), bed)
+    expect(Array.from(result.plates[0]!.objects[0]!.parts[0]!.indices)).toEqual([0, 2, 1, 0, 1, 3, 0, 3, 2, 1, 2, 3])
+  })
+})
+
 describe('components', () => {
   it('keeps direct and nested components, each moved by every transform above it', async () => {
     const resources = object() + '<object id="2" type="model"><components><component objectid="1" transform="1 0 0 0 1 0 0 0 1 20 0 0"/></components></object><object id="3" type="model"><components><component objectid="1"/><component objectid="2"/></components></object>'
