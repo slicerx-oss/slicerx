@@ -1,0 +1,10 @@
+{
+  "note": "The exact weld of each binary STL: its vertex and triangle counts and an FNV-1a digest of its positions (f32) and triangles (u32), little-endian. Held by packages/geom/tests/weld_parity.rs (the engine) and packages/app/test/stl-weld-parity.test.ts (the app). SX_WELD_RECORD=1 cargo test -p sx-geom --test weld_parity writes it again.",
+  "files": [
+    { "path": "packages/core/bench/models/x-mark.stl", "vertices": 13134, "triangles": 26268, "digest": "1165a5c1" },
+    { "path": "packages/core/cli/tests/fixtures/bars.stl", "vertices": 18, "triangles": 32, "digest": "88923fe3" },
+    { "path": "packages/core/cli/tests/fixtures/table.stl", "vertices": 20, "triangles": 36, "digest": "e8245f7d" },
+    { "path": "packages/core/cli/tests/fixtures/wedge.stl", "vertices": 10, "triangles": 16, "digest": "f4c9809b" },
+    { "path": "packages/geom/tests/fixtures/weld-edge-cases.stl", "vertices": 8, "triangles": 5, "digest": "91db045e" }
+  ]
+}
