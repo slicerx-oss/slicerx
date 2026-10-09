@@ -1,19 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-import { degC } from '../../lib/temp'
 import { printTarget, usePrinter } from '../../lib/use-printer'
-import { filamentUnitName } from '@slicerx/printer-catalog'
 import { isExportOnly } from '../../lib/hand-printers'
-import { NozzlePicker } from './nozzle-picker'
 import { EnergyRow } from './energy-row'
 import { MoreButton, useMore } from '../../shell/more'
 import type { PrinterState } from '@slicerx/contracts'
-import { Block, Button, Icon, KeyValues, LinkButton, Pill, type PillState, tipAttrs } from '@slicerx/ui'
-import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
+import { Block, Button, Icon, LinkButton, type PillState, tipAttrs } from '@slicerx/ui'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import { useHost } from '../../host'
 import { useFleet, type FleetRow } from '../../lib/queries'
 import { formatCost, formatDuration, formatGrams } from '../../lib/preview-stats'
-const PrinterSettingsDialog = lazy(() => import('./printer-settings').then((m) => ({ default: m.PrinterSettingsDialog })))
 import { printerMinFlush } from '../../filament/flush'
 import type { SettingValue } from '@slicerx/contracts'
 import { useResolvedSlots } from '../../filament/use-slots'
@@ -27,12 +23,10 @@ import { sequenceProblem } from '../../plate/sequence-check'
 import { removeVolume, ROLE_LABEL } from '../../plate/volumes'
 import { AmsPanel } from '../../filament/ams-panel'
 import { Silhouette, Swatch } from '../../parts'
-import { VendorMark } from '../../lib/vendor-mark'
 import { useSliceNote } from '../../lib/slice-note'
 import { cancelSlice, exportGcode, openModelFiles, sendToPrinter, slicePlate } from '../../state/actions'
 import type { LayoutSpec } from '@slicerx/contracts'
-import { effectiveMode, openSetup, useLayout } from '../../first-run/look'
-import { useFold } from '../../shell/fold'
+import { effectiveMode, useLayout } from '../../first-run/look'
 import { useExpertVisible } from '../../first-run/mode-selector'
 import { ObjectActions } from './object-actions'
 const ObjectSettings = lazy(() => import('./object-settings').then((m) => ({ default: m.ObjectSettings })))
@@ -47,12 +41,9 @@ const PaintPanel = lazy(() => import('./paint-panel').then((m) => ({ default: m.
 import { useTool } from '../../plate/tools'
 const ObjectVolumes = lazy(() => import('./object-volumes').then((m) => ({ default: m.ObjectVolumes })))
 import { PlateList } from './plate-list'
-import { activeMeta } from '../../plate/plates'
-import { plateBedType } from '../../plate/bed-type'
-import { resolveConfig } from '../../adapters/config'
+import { MachineCard } from './machine-card'
 import { selectObject } from '../../plate/edit'
 import { get, isCadTool, selectedIds, set, setWorkspace, showSliced, shownSlice, useApp } from '../../state/store'
-import { GENERIC_BED } from '../../adapters/generic-bed'
 import { useModelMode } from '../../state/model-mode'
 import { EasySettingsPanel } from './easy-settings'
 const ExpertSettings = lazy(() => import('./expert-settings').then((m) => ({ default: m.ExpertSettings })))
@@ -78,135 +69,6 @@ export function printerPill(r: FleetRow): { state: PillState; label: string } {
   return isExportOnly(r) ? { state: 'off', label: 'Export only' } : PRINTER_PILL[r.status.state]
 }
 
-
-function PrinterBlock() {
-  const { rows, printer } = usePrinter()
-  // In the store, so a note's "Change printer" can open it.
-  const choosing = useApp((s) => s.printerChooserOpen)
-  const setChoosing = (open: boolean) => set({ printerChooserOpen: open })
-  const layout = useLayout()
-  const showPrinterSettings = effectiveMode(useApp((s) => s.settingsMode), layout) !== 'simple'
-  const printerSettingsOpen = useApp((s) => s.printerSettingsOpen)
-  const more = useMore('printer')
-  const profileNozzle = useApp((s) => s.profile?.nozzle ?? 0.4)
-  const noPrinter = useApp((s) => s.noPrinter)
-  const [open, setOpen] = useFold('printer')
-  const meta = useApp(activeMeta)
-  const easy = useApp((s) => s.easy)
-  const overrides = useApp((s) => s.overrides)
-  const profile = useApp((s) => s.profile)
-  // The plate type the active plate prints on: its own, a project's, or the printer's default.
-  const plate = useMemo(() => plateBedType(meta, resolveConfig(easy, overrides)), [meta, easy, overrides, profile])
-  if (!printer) {
-    return (
-      <Block title="Printer" icon="printer" data-section="printer">
-        <div className="printer-none">
-          <p className="sx-muted sx-small" {...tipAttrs({ title: 'No printer yet', body: `Until you add one, slices are for a generic ${GENERIC_BED.widthMm} by ${GENERIC_BED.depthMm} mm bed, ${GENERIC_BED.heightMm} mm tall.` })}>
-            Slicing for a generic {GENERIC_BED.widthMm} mm bed.
-          </p>
-          <Button icon="plus" onClick={() => openSetup('printer')}>
-            Add your printer
-          </Button>
-          {noPrinter ? null : (
-            <LinkButton onClick={() => set({ noPrinter: true })} {...tipAttrs({ title: 'Slice without a printer', body: 'Keeps the generic bed and stops opening printer setup at launch. Add a printer here any time.' })}>
-              Slice without a printer
-            </LinkButton>
-          )}
-        </div>
-      </Block>
-    )
-  }
-  const pill = printerPill(printer)
-  const bed = printer.status.bed
-  const bedTemp = bed && !isExportOnly(printer) && printer.status.state !== 'offline' ? bed.target || bed.current : 0
-  const sub = isExportOnly(printer) ? 'No connection, exports G-code' : [printer.filamentSystem === 'ams' || printer.filamentSystem === 'mmu' ? `${filamentUnitName(printer.model, printer.filamentSystem)} connected` : null, printer.status.state].filter(Boolean).join(', ')
-  return (
-    <Block
-      title="Printer"
-      icon="printer"
-      id="printer-fold"
-      {...(setOpen ? { expanded: open, onExpandedChange: setOpen } : {})}
-      data-section="printer"
-      aside={
-        open ? (
-          <span className="fil-aside">
-            {showPrinterSettings ? (
-              <Button size="sm" variant="ghost" icon="sliders" aria-label="Printer settings" tip={{ title: 'Printer settings', body: 'Open the machine settings: bed shape, start and end G-code, limits.' }} onClick={() => set({ printerSettingsOpen: true })} />
-            ) : null}
-            <LinkButton expanded={choosing} onClick={() => setChoosing(!choosing)}>
-              Change
-            </LinkButton>
-          </span>
-        ) : (
-          <span className="sec-sum">
-            {printer.name}, {profileNozzle} mm, {pill.label}
-          </span>
-        )
-      }
-    >
-      <div className="printer">
-        <div className="printer-ic">
-          <VendorMark vendor={printer.vendor} size={28} />
-        </div>
-        <div className="min0">
-          <div className="printer-name">
-            {printer.name} <span className="sx-muted">{printer.vendor} {printer.model}</span>
-          </div>
-          <div className="printer-sub">{more ? sub : `${profileNozzle} mm nozzle`}</div>
-        </div>
-        <Pill state={pill.state}>{pill.label}</Pill>
-      </div>
-      {choosing ? <NozzlePicker id="nozzle-card" /> : null}
-      {choosing ? (
-        <ul className="choose" aria-label="Choose a printer">
-          {rows.map((r) => (
-            <li key={r.id}>
-              <button
-                type="button"
-                aria-pressed={r.id === printer.id}
-                onClick={() => {
-                  set({ printerId: r.id })
-                  setChoosing(false)
-                }}
-              >
-                <span>
-                  {r.name} <span className="sx-muted">{r.model}</span>
-                </span>
-                <Pill state={printerPill(r).state}>{printerPill(r).label}</Pill>
-              </button>
-            </li>
-          ))}
-          <li>
-            <button
-              type="button"
-              className="choose-add"
-              onClick={() => {
-                setChoosing(false)
-                openSetup('printer')
-              }}
-            >
-              <span>Add printer</span>
-              <Icon name="plus" size={14} />
-            </button>
-          </li>
-        </ul>
-      ) : null}
-      {printerSettingsOpen ? (
-        <Suspense fallback={null}>
-          <PrinterSettingsDialog printer={printer} />
-        </Suspense>
-      ) : null}
-      {more ? <KeyValues
-        items={[
-          { value: `${profileNozzle} mm`, label: 'Nozzle' },
-          { value: <span data-testid="slice-machine-plate" {...tipAttrs({ title: plate.label, body: 'Set per plate. Change it in plate settings.' })}>{plate.label}</span>, label: 'Plate' },
-          // An export-only or offline printer reports no bed, so the row goes rather than guessing.
-          ...(bedTemp ? [{ value: degC(bedTemp), label: 'Bed' }] : []),
-        ]}
-      /> : null}
-    </Block>
-  )
-}
 
 function FilamentBlock() {
   const { printer } = usePrinter()
@@ -254,7 +116,7 @@ export function PrepareLeft({ layout }: { layout: LayoutSpec }) {
       {tool === 'brim' ? <Suspense fallback={null}><BrimEarsPanel /></Suspense> : null}
       {design ? null : (
         <>
-          <PrinterBlock />
+          <MachineCard />
           <FilamentBlock />
           {layout.objectList === 'sidebar-after-filament' ? <PrepareObjects /> : null}
           <Block

@@ -13,7 +13,7 @@ test('add it by hand starts with no brand chosen', async ({ page, isMobile }) =>
   })
   await page.goto('./')
   await plateReady(page)
-  await page.getByRole('button', { name: 'Change', exact: true }).click()
+  await page.getByTestId('slice-machine-printer').click()
   await page.locator('.choose-add').click()
   const link = page.getByRole('button', { name: /Add it by hand/ }).first()
   await expect(link).toBeVisible()

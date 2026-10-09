@@ -32,7 +32,7 @@ test('each section is its own panel with an icon in its header', async ({ page }
 test('Simple mode keeps the sections open with no fold', async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem('slicerx.prefs.v1', JSON.stringify({ workspace: 'prepare', printerId: 'bay-1', settingsMode: 'simple', pilot: { mode: 'off' } })))
   await page.goto('./')
-  await expect(page.locator('.sx-block[data-section="printer"] .printer')).toBeVisible()
+  await expect(page.locator('.sx-block[data-section="printer"] .mc-row')).toBeVisible()
   await expect(page.locator('#printer-fold, #filament-fold')).toHaveCount(0)
 })
 
@@ -50,7 +50,7 @@ test('printer and filament fold to a summary line and stay folded', async ({ pag
   await openSheet(page)
   await expect(page.locator('.sx-block[data-section="printer"]')).toHaveAttribute('data-collapsed', 'true')
   await page.locator('.sx-block[data-section="printer"]').getByRole('button', { name: 'Printer', exact: true }).click()
-  await expect(page.locator('.sx-block[data-section="printer"] .printer')).toBeVisible()
+  await expect(page.locator('.sx-block[data-section="printer"] .mc-row')).toBeVisible()
 })
 
 test('the mode chip in the pane title changes the mode across the app and keeps it after a reload', async ({ page }) => {

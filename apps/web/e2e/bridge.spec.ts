@@ -135,7 +135,7 @@ test('printer setup asks the bridge to search the network only when Search my ne
     })
   })
   await connectApp(page)
-  await page.getByRole('button', { name: 'Change', exact: true }).click()
+  await page.getByTestId('slice-machine-printer').click()
   await page.locator('.choose-add').click()
   const search = page.getByRole('button', { name: 'Search my network' })
   await expect(search).toBeVisible()
@@ -165,7 +165,7 @@ async function bridgeOn(page: Page): Promise<void> {
 
 /** Printer setup for a Bambu Lab X1 Carbon, up to its connection choices. */
 async function setupX1(page: Page): Promise<void> {
-  await page.getByRole('button', { name: 'Change', exact: true }).click()
+  await page.getByTestId('slice-machine-printer').click()
   await page.locator('.choose-add').click()
   const byHand = page.getByRole('button', { name: /Add it by hand/ }).first()
   await expect(byHand).toBeVisible()
@@ -324,7 +324,7 @@ async function sheetFor(page: Page, printer: string): Promise<Locator> {
   await page.getByRole('button', { name: 'Connect', exact: true }).click()
   await expect(page.getByText('Connected', { exact: true })).toBeVisible()
   await page.keyboard.press('Escape')
-  await page.getByRole('button', { name: 'Change', exact: true }).click()
+  await page.getByTestId('slice-machine-printer').click()
   await page.getByRole('list', { name: 'Choose a printer' }).getByRole('button', { name: new RegExp(`^${printer}\\b`) }).first().click()
   await page.evaluate(() => (window as unknown as { __sx: { setState(p: unknown): void } }).__sx.setState({ plate: [], selection: null, selectedIds: [] }))
   await command(page, 'Add a box')
