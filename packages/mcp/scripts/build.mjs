@@ -59,9 +59,9 @@ mkdirSync(join(data, 'settings'), { recursive: true })
 mkdirSync(join(data, 'connect'), { recursive: true })
 cpSync(join(repo, 'knowledge'), join(data, 'knowledge'), { recursive: true })
 cpSync(join(repo, 'packages', 'connect', 'fixtures', 'demo-fleet.json'), join(data, 'connect', 'demo-fleet.json'))
-// The reference X, served as sample:x-mark.
+// The X mark, served as sample:x-mark: the showcase model, whose exact faces look right up close.
 mkdirSync(join(data, 'samples'), { recursive: true })
-cpSync(join(repo, 'packages', 'core', 'bench', 'models', 'x-mark.stl'), join(data, 'samples', 'x-mark.stl'))
+cpSync(join(repo, 'packages', 'core', 'bench', 'models', 'x-mark-showcase.stl'), join(data, 'samples', 'x-mark-showcase.stl'))
 // Integrator guides served as slicerx://docs/... resources (see src/docs.ts for the ids).
 const docs = join(data, 'docs')
 mkdirSync(docs, { recursive: true })

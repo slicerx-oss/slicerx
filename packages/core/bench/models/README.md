@@ -29,6 +29,22 @@ python3 generate.py --twist-deg 30 --taper 0.2 --out twisted.stl --out-2color ""
 
 Options: `--height` (of the X, default 80 mm), `--thickness` (16 mm), `--twist-deg` (0), `--taper` (0), `--cell` (mesh grid size, 1.2 mm; smaller gives more triangles). Output is deterministic. The default files are closed and consistently oriented (no open or repeated edges); strong twist can leave a few repeated edges where the surface folds, which slicers tolerate.
 
+## Showcase model
+
+`x-mark-showcase.stl` is the same X built from exact faces, for close-up views, renders and demos: the `sample:x-mark` model of the MCP server is this one. `generate_showcase.py` (Python 3, standard library only, deterministic) extrudes the mark's outline, cuts it into the same eight bands, sets alternate bands in 0.6 mm with a flat face for every step and a 0.6 mm deep, 1.2 mm wide V groove at every band boundary, and rounds the front and back edges (1.5 mm) as ten facets. The X stands on a rounded plinth (2 mm) whose top face has the X's footprint cut in exactly; the outline's corners and the plinth joint stay sharp. Its edges stay straight at any zoom, where the surface nets of `x-mark.stl` show a 1.2 mm sawtooth.
+
+| File | Triangles | Size (mm) |
+| --- | --- | --- |
+| `x-mark-showcase.stl` | 5,876 | 84.7 x 26.0 x 86.0 |
+| `x-mark-showcase-2color.3mf` | 3,788 + 2,132 (two parts) | same |
+
+The 3MF is one object of two parts, as Bambu Studio and OrcaSlicer save a multi-part object: the plinth with the first, third, fifth and seventh bands on filament 1, the other bands on filament 2. The parts keep their places when the file opens, so the bands stay stacked (`x-mark-2color.3mf`'s two separate objects are each set down on the bed). Both files are closed and consistently oriented. The benchmarks keep `x-mark.stl`, so their numbers stay comparable.
+
+```
+python3 generate_showcase.py                            # both files
+python3 generate_showcase.py --check x-mark-showcase.stl
+```
+
 ## Speed benchmark models
 
 `suite.py` writes the models of the speed benchmark against other slicers, each a kind of print people make: `tug` (a 60 mm boat with overhangs, bridges and holes, 154,036 triangles), `holes` (a 200 x 140 x 4 mm plate with 70 holes, 27,968), `spire` (180 mm tall, 14 mm across, 138,432), `knot` (an organic shape that needs supports, 138,240), `dense` (1,200,000) and `plate20` (10 gears and 10 small tugs, 332,440 in all). Each comes as STL and as a 3MF placed on a 256 mm bed; `plates.json` gives the same placements for engine requests. The files are generated on demand and not kept in the repository:

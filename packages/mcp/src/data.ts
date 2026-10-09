@@ -14,7 +14,7 @@ export interface DataPaths {
   layout: 'repo' | 'packaged'
   knowledgeDir: string
   demoFleetFile: string
-  /** Folder holding built-in sample models such as x-mark.stl. */
+  /** Folder holding built-in sample models such as x-mark-showcase.stl. */
   samplesDir: string
 }
 

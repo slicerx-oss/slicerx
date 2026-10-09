@@ -3,9 +3,15 @@
 import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { resolveModel } from '../src/models'
 import { connect, data } from './helpers'
 
 describe('sample:x-mark', () => {
+  it('is the showcase X, not the benchmark model', async () => {
+    const file = await resolveModel({ samplesDir: resolve(__dirname, '../../core/bench/models'), outDir: '/tmp' } as never, 'sample:x-mark')
+    expect(file.endsWith('x-mark-showcase.stl')).toBe(true)
+  })
+
   it('resolves to the reference X and slices', async () => {
     const h = await connect()
     const r = await h.call('slicerx_slice_file', { model: 'sample:x-mark' })
