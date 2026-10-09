@@ -355,6 +355,8 @@ export interface ViewportEvents {
   brimremove: { objectId: string; index: number }
   /** Brim tool: ears picked by a click (`set`, or `add` and `remove` with Shift and Alt), by a rectangle, or none (`set` with no indices) by a click on the model while some are selected. `indices` follow the array passed to `setBrimEars`. */
   brimselect: { objectId: string; indices: number[]; mode: 'set' | 'add' | 'remove' }
+  /** Model's box select: the objects the box picked, and how (left to right inside, right to left touch). */
+  boxselect: { ids: string[]; dir: 'inside' | 'touch' }
   /** Brim tool: an ear dragged. `point` is the hit on the model under the cursor (bed frame, mm). One event per move with `final: false`, then one with `final: true` on release. */
   brimmove: { objectId: string; index: number; point: [number, number, number]; final: boolean }
   /** Brim tool: Ctrl and the wheel (the wheel does not zoom). `delta` is 1 or -1 per notch. */
@@ -495,6 +497,8 @@ export interface Viewport {
   /** The gap fill tool's Perform button (Orca and Bambu Studio): patches smaller than `gapAreaMm2` merge into a neighbor. */
   performGapFill(objectId: string): void
   /** The flat face under a client-space point, or null. Works with any tool. */
+  /** Model's box select: a Shift and left drag from empty space selects objects by their screen bounds. */
+  setBoxSelect?(on: boolean): void
   pickFace(clientX: number, clientY: number): FacePick | null
   /** Packs objects on the bed and emits `transform` events. Returns the new transforms. */
   arrange(opts?: { animate?: boolean; gapMm?: number }): Record<string, number[]>

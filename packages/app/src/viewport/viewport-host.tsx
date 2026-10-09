@@ -50,6 +50,8 @@ export type Drive = Pick<Viewport, 'setMode' | 'setPlate' | 'setTransforms' | 's
   setCutPlane?: Viewport['setCutPlane']
   setGapLines?: Viewport['setGapLines']
   setGuides?: Viewport['setGuides']
+  /** Model's Shift and drag box select. */
+  setBoxSelect?: Viewport['setBoxSelect']
   setInsets?: Viewport['setInsets']
   setPreviewGhost?: Viewport['setPreviewGhost']
   setPreviewOrigin?: Viewport['setPreviewOrigin']
@@ -360,6 +362,13 @@ export function ViewportHost({ layers }: { layers: boolean }) {
       }
       loadAreas(appStore.getState().printerId)
       offs.push(appStore.subscribe((s) => loadAreas(s.printerId)))
+      // Model's box select: on with no tool open; the box picks objects, the first one primary.
+      const boxOn = (st: AppState) => vp.setBoxSelect?.(st.workspace === 'prepare' && st.modelMode === 'design' && st.objectTool === null)
+      boxOn(appStore.getState())
+      offs.push(appStore.subscribe((st, prev) => {
+        if (st.workspace !== prev.workspace || st.modelMode !== prev.modelMode || st.objectTool !== prev.objectTool) boxOn(st)
+      }))
+      offs.push(vp.on('boxselect', (e) => set({ selectedIds: e.ids, selection: e.ids[0] ?? null, towerSelected: false })))
       offs.push(vp.on('pick', (e) => {
         // A modeling tool is listening: the click is its input and the selection stays.
         if (toolStore.getState().tool === 'probe') return void probeHandler()?.(e)
