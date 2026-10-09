@@ -11,6 +11,7 @@ use crate::error::Result;
 use crate::mesh::{Aabb, TriMesh};
 use crate::repair::{self, RepairOptions, RepairReport};
 use crate::vec3::{self, V3};
+use rustc_hash::{FxBuildHasher, FxHashMap};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
@@ -251,7 +252,7 @@ fn tri_key(m: &TriMesh, t: [u32; 3]) -> TriKey {
 
 fn repair_object(parts: &[Part], opts: &AutoOptions) -> Result<(Vec<TriMesh>, RepairReport)> {
     let mut merged = TriMesh::default();
-    let mut owner: HashMap<TriKey, usize> = HashMap::new();
+    let mut owner: FxHashMap<TriKey, usize> = FxHashMap::default();
     for (i, p) in parts.iter().enumerate() {
         for &t in &p.mesh.triangles {
             owner.entry(tri_key(&p.mesh, t)).or_insert(i);
@@ -271,7 +272,7 @@ fn repair_object(parts: &[Part], opts: &AutoOptions) -> Result<(Vec<TriMesh>, Re
         .iter()
         .map(|&t| owner.get(&tri_key(&fixed, t)).copied())
         .collect();
-    let mut by_edge: HashMap<(u32, u32), Vec<usize>> = HashMap::new();
+    let mut by_edge: FxHashMap<(u32, u32), Vec<usize>> = FxHashMap::default();
     for (i, t) in fixed.triangles.iter().enumerate() {
         for j in 0..3 {
             let (a, b) = (t[j], t[(j + 1) % 3]);
@@ -360,7 +361,7 @@ fn rebuild_crossing_shells(m: &TriMesh, per_shell: bool) -> Option<TriMesh> {
 pub(crate) fn edge_shells(m: &TriMesh) -> Vec<TriMesh> {
     let n = m.triangles.len();
     let mut parent: Vec<usize> = (0..n).collect();
-    let mut first: HashMap<(u32, u32), usize> = HashMap::with_capacity(n * 2);
+    let mut first: FxHashMap<(u32, u32), usize> = FxHashMap::with_capacity_and_hasher(n * 2, FxBuildHasher);
     for (i, t) in m.triangles.iter().enumerate() {
         for k in 0..3 {
             let (a, b) = (t[k], t[(k + 1) % 3]);
@@ -375,7 +376,7 @@ pub(crate) fn edge_shells(m: &TriMesh) -> Vec<TriMesh> {
             }
         }
     }
-    let mut groups: HashMap<usize, Vec<[u32; 3]>> = HashMap::new();
+    let mut groups: FxHashMap<usize, Vec<[u32; 3]>> = FxHashMap::default();
     let mut order = Vec::new();
     for (i, t) in m.triangles.iter().enumerate() {
         let r = find(&mut parent, i);

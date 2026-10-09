@@ -33,6 +33,7 @@ The switch hides the drawing tools. It is on by default. It never hides repair o
 ### Design notes
 
 - Booleans use manifold-rust 0.15.0 (Apache-2.0), a pure Rust port of Manifold with an exact engine and a robust one. A pure Rust library keeps the web and mobile builds cargo only. The engine is picked automatically: exact for clean inputs, robust for soup or self-intersecting meshes. Output is always manifold, or the call fails with a message.
+- The mesh code's lookup maps (welds, edges, shells, repair) hash with rustc-hash 2.1.3 (Apache-2.0 or MIT), already in the lockfile through other crates. Its hasher costs a fraction of the standard library's SipHash per key, most of all in WebAssembly. Maps whose order shows in a result keep the standard hasher; the ones changed are only looked up in, so results do not change.
 - Plane cuts use the convex path in `convex.rs`, which is exact and cheap.
 - A shape is its type, its dimensions and its place on the face; a free sketch is its loops. Both are stored as a history step (docs/cad-history.md), so editing one later reopens it with its numbers and replays the steps after it.
 - Face frames: on the bed and on faces that look up or down, `u` is +X; on walls `u` is horizontal and `v` points up, so typed positions read the way the face is seen.

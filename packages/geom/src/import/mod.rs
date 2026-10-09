@@ -22,6 +22,7 @@ pub use obj::import_obj;
 use crate::error::{Error, Result};
 use crate::mesh::TriMesh;
 use crate::vec3::V3;
+use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -260,7 +261,7 @@ fn shell_triangles(mesh: &TriMesh) -> Vec<Vec<[u32; 3]>> {
             }
         }
     }
-    let mut groups: HashMap<u32, Vec<[u32; 3]>> = HashMap::new();
+    let mut groups: FxHashMap<u32, Vec<[u32; 3]>> = FxHashMap::default();
     for t in &mesh.triangles {
         groups.entry(find(&mut parent, t[0])).or_default().push(*t);
     }
@@ -416,7 +417,7 @@ impl RawModel {
     }
 
     fn compact(&self, tris: &[[u32; 3]]) -> TriMesh {
-        let mut remap: HashMap<u32, u32> = HashMap::new();
+        let mut remap: FxHashMap<u32, u32> = FxHashMap::default();
         let mut m = TriMesh::default();
         for t in tris {
             let mut out = [0u32; 3];
