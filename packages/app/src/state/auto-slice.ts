@@ -6,6 +6,8 @@
 // once, on release.
 import type { Host } from '@slicerx/contracts'
 import { cancelSlice, slicePlate } from './actions'
+import { fitSettledFor, onFitSettled } from '../plate/fit-state'
+import { isBigSlice, sliceTimingOf } from './slice-estimate'
 import { inputsChanged as changed } from './slice-inputs'
 import { appStore } from './store'
 
@@ -17,20 +19,47 @@ export { INPUTS } from './slice-inputs'
  */
 export const AUTO_SLICE_DELAY_MS = 150
 
+/**
+ * The longest a big slice waits for the plate's fit check (ms): a check that never reports (its watch not mounted, say)
+ * does not hold the slice back for good.
+ */
+export const FIT_WAIT_MS = 15_000
+
 /** Starts watching the store. Returns the stop function. */
-export function startAutoSlice(host: Host, delayMs = AUTO_SLICE_DELAY_MS): () => void {
+export function startAutoSlice(host: Host, delayMs = AUTO_SLICE_DELAY_MS, fitWaitMs = FIT_WAIT_MS): () => void {
   let timer: ReturnType<typeof setTimeout> | null = null
+  let waiting: (() => void) | null = null
   const clear = (): void => {
     if (timer) clearTimeout(timer)
     timer = null
+    waiting?.()
+    waiting = null
   }
-  const run = (): void => {
+  /** `force`: the wait for the fit check ran out, so a big slice goes anyway. */
+  const run = (force = false): void => {
     timer = null
     const s = appStore.getState()
     // A step open for editing rolls the part back; the slice waits for the edit to end.
     if (!s.autoSlice || s.plate.length === 0 || (s.plateLoading && !s.sliceDuringOpen) || s.historyEdit) return
     // A plate switched back to with its slice still current (workspaces/preview/plate-slices.ts) needs none.
     if (s.slice.status === 'done' && !s.slice.stale) return
+    // A big slice waits for the plate's fit check, so its copy of the meshes and the fit check's are not alive at once
+    // (slice-estimate.ts); a small one goes now.
+    if (!force && !s.plateLoading && !fitSettledFor(s.plate) && isBigSlice(s.plate, sliceTimingOf(s.activePlate))) {
+      const go = (late: boolean): void => {
+        clear()
+        timer = setTimeout(() => run(late), 0)
+      }
+      const off = onFitSettled(() => fitSettledFor(appStore.getState().plate) && go(false))
+      const late = setTimeout(() => go(true), fitWaitMs)
+      waiting = () => {
+        off()
+        clearTimeout(late)
+      }
+      return
+    }
+    waiting?.()
+    waiting = null
     void slicePlate(host, { auto: true })
   }
   const unsubscribe = appStore.subscribe((s, prev) => {
@@ -47,7 +76,7 @@ export function startAutoSlice(host: Host, delayMs = AUTO_SLICE_DELAY_MS): () =>
     clear()
     // Mid-drag the slice would be thrown away on the next move; the release starts it.
     if (s.liveEdit) return
-    timer = setTimeout(run, delayMs)
+    timer = setTimeout(() => run(), delayMs)
   })
   return () => {
     clear()
