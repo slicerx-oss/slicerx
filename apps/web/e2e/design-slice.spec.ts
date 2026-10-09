@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// The plate tab's two modes. Design | Slice is the first tab; Ctrl+E (Cmd+E) flips it; Design has the model tree, the
+// The plate's two modes, the Model and Slice tabs. Ctrl+E (Cmd+E) flips them; Model has the model tree, the
 // tool shelf and the timeline; a modeling tool opens Design from Slice; Slice shows the slice in place in the look
 // picked under the plate toolbar, and there is no Preview tab.
 import { command, freshBox, openStudio, pushTop, steps } from './cad-helpers'
 import { expect, sliceCount, sliced, test } from './fixtures'
 
-test.describe('Design | Slice', () => {
+test.describe('Model and Slice', () => {
   test.skip(({ isMobile }) => isMobile, 'Desktop width')
 
-  test('the first tab is Design | Slice, Ctrl+E flips it, and there is no Preview tab', async ({ page }) => {
+  test('the first tabs are Model and Slice, Ctrl+E flips them, tab-design still opens Model, and there is no Preview tab', async ({ page }) => {
     await openStudio(page)
     const design = page.locator('.sx-tab[data-mode="design"]')
     const slice = page.locator('.sx-tab[data-mode="slice"]')
@@ -20,17 +20,23 @@ test.describe('Design | Slice', () => {
     await expect(page.locator('.studio[data-model-mode="design"]')).toBeVisible()
     await page.keyboard.press('ControlOrMeta+e')
     await expect(slice).toHaveAttribute('aria-current', 'page')
-    // From another tab a half opens the plate tab in that mode in one step.
+    // From another tab, Model or Slice opens the plate in that mode in one step.
     await page.locator('.sx-tab[data-tab="printers"]').click()
     await design.click()
     await expect(design).toHaveAttribute('aria-current', 'page')
+    // Model is tab-model, and answers to its old id, tab-design, while scripts move over.
+    await expect(page.getByTestId('tab-model')).toHaveText('Model')
+    await page.getByTestId('tab-prepare').click()
+    await page.locator('[data-testid-alias="tab-design"]').click()
+    await expect(page.getByTestId('tab-model')).toHaveAttribute('aria-current', 'page')
+    await expect(page.locator('.sx-tab', { hasText: 'Design' })).toHaveCount(0)
   })
 
   test('Design has the tree, the shelf and the timeline; the shelf opens a tool in the side pane', async ({ page }) => {
     await openStudio(page)
     const id = await freshBox(page)
     await page.locator('.sx-tab[data-mode="design"]').click()
-    const shelf = page.getByRole('toolbar', { name: 'Design tools' })
+    const shelf = page.getByRole('toolbar', { name: 'Model tools' })
     await expect(shelf).toBeVisible()
     await expect(shelf.locator('.shelf-label')).toHaveText(['Create', 'Modify', 'Fasten', 'Inspect'])
     await expect(page.locator('.dtree-name', { hasText: 'Box' })).toBeVisible()
