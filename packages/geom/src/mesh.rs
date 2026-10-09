@@ -95,6 +95,46 @@ impl TriMesh {
         Ok(m)
     }
 
+    /// A mesh in the raw form the app's geometry worker writes, so a big mesh crosses into the engine without JSON: the
+    /// vertex count and the triangle count as little-endian u32, then the positions as f32 x, y, z and the triangles as
+    /// u32 corners, little endian.
+    pub fn from_raw(bytes: &[u8], name: &str) -> Result<Self> {
+        let word = |at: usize| -> Option<[u8; 4]> { bytes.get(at..at + 4).and_then(|b| b.try_into().ok()) };
+        let head = |at: usize| {
+            word(at)
+                .map(|b| u32::from_le_bytes(b) as usize)
+                .ok_or_else(|| Error::mesh(name, "raw mesh shorter than its header"))
+        };
+        let (nv, nt) = (head(0)?, head(4)?);
+        let tris_at = nv.checked_mul(12).and_then(|b| b.checked_add(8));
+        let end = tris_at.and_then(|t| nt.checked_mul(12).and_then(|b| t.checked_add(b)));
+        let (Some(tris_at), Some(end)) = (tris_at, end) else {
+            return Err(Error::mesh(name, "raw mesh too large"));
+        };
+        if end != bytes.len() {
+            return Err(Error::mesh(name, "raw mesh size does not match its header"));
+        }
+        let f = |at: usize| word(at).map_or(0.0, |b| f64::from(f32::from_le_bytes(b)));
+        let u = |at: usize| word(at).map_or(0, u32::from_le_bytes);
+        let m = Self {
+            positions: (0..nv)
+                .map(|i| [f(8 + 12 * i), f(12 + 12 * i), f(16 + 12 * i)])
+                .collect(),
+            triangles: (0..nt)
+                .map(|i| {
+                    [
+                        u(tris_at + 12 * i),
+                        u(tris_at + 4 + 12 * i),
+                        u(tris_at + 8 + 12 * i),
+                    ]
+                })
+                .collect(),
+            faces: None,
+        };
+        m.validate(name)?;
+        Ok(m)
+    }
+
     #[allow(clippy::cast_possible_truncation, reason = "print geometry fits in f32")]
     pub fn to_f32(&self) -> (Vec<[f32; 3]>, Vec<[u32; 3]>) {
         (

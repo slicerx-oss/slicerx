@@ -13,6 +13,8 @@ import { engineModules, type EngineModule } from './modules'
 interface GeomExports {
   memory: WebAssembly.Memory
   geom_input(len: number): number
+  /** Reserves a buffer the next call reads as `mem:N`. */
+  geom_file(len: number): number
   geom_call(): number
   geom_ops(): number
   geom_out_ptr(): number
@@ -50,9 +52,41 @@ function plainArrays(v: unknown): unknown {
   return out
 }
 
+/**
+ * The request with each mesh that came as typed arrays (and without faces) written into an engine buffer in the raw
+ * form (`TriMesh::from_raw`) and named by `rawPath`, so a big mesh never becomes JSON: as numbers in a JSON text and
+ * then in the engine's parse of it, a mesh of 1.4 million triangles took the engine's memory to about 800 MB, which a
+ * WebAssembly module never hands back. The buffers are numbered in the order they are reserved.
+ */
+function rawMeshes(x: GeomExports, v: unknown, files = { n: 0 }): unknown {
+  if (Array.isArray(v)) return v.length && typeof v[0] === 'object' ? v.map((e) => rawMeshes(x, e, files)) : v
+  if (v === null || typeof v !== 'object' || ArrayBuffer.isView(v)) return v
+  const o = v as Record<string, unknown>
+  const { positions, indices, faces } = o
+  if (positions instanceof Float32Array && (indices instanceof Uint32Array || indices instanceof Uint16Array) && !faces) {
+    const nv = Math.floor(positions.length / 3)
+    const nt = Math.floor(indices.length / 3)
+    const at = x.geom_file(8 + 12 * nv + 12 * nt)
+    // Views made after the reservation, which may have grown the memory.
+    new Uint32Array(x.memory.buffer, at, 2).set([nv, nt])
+    new Float32Array(x.memory.buffer, at + 8, nv * 3).set(positions.subarray(0, nv * 3))
+    new Uint32Array(x.memory.buffer, at + 8 + 12 * nv, nt * 3).set(indices.subarray(0, nt * 3))
+    const rest = Object.fromEntries(Object.entries(o).filter(([k]) => k !== 'positions' && k !== 'indices' && k !== 'faces'))
+    return { ...rest, rawPath: `mem:${files.n++}` }
+  }
+  const out: Record<string, unknown> = {}
+  for (const [k, e] of Object.entries(o)) out[k] = rawMeshes(x, e, files)
+  return out
+}
+
 // Every mesh comes back with its faces, which the parts keep and send again with the next call.
+/** The engine modules' memory, which only grows; each answer says how big it is, so the page can end a worker that holds a lot. */
+const memories = new Set<WebAssembly.Memory>()
+const memoryBytes = (): number => [...memories].reduce((n, m) => n + m.buffer.byteLength, 0)
+
 function call(x: GeomExports, op: string, request: unknown): unknown {
-  const bytes = new TextEncoder().encode(`${op}\0${JSON.stringify(askFaces(plainArrays(request)))}`)
+  memories.add(x.memory)
+  const bytes = new TextEncoder().encode(`${op}\0${JSON.stringify(askFaces(plainArrays(rawMeshes(x, request))))}`)
   const at = x.geom_input(bytes.length)
   new Uint8Array(x.memory.buffer, at, bytes.length).set(bytes)
   const code = x.geom_call()
@@ -97,16 +131,16 @@ self.onmessage = async (e: MessageEvent<{ id: number; op: string; request: unkno
         },
       })
       canceled.delete(id)
-      self.postMessage({ id, result })
+      self.postMessage({ id, result, memoryBytes: memoryBytes() })
       return
     }
     if (op === 'engine.full') {
-      self.postMessage({ id, result: await engine.full() })
+      self.postMessage({ id, result: await engine.full(), memoryBytes: memoryBytes() })
       return
     }
-    self.postMessage({ id, result: await engine.run(op, bytesAsBase64(request)) })
+    self.postMessage({ id, result: await engine.run(op, bytesAsBase64(request)), memoryBytes: memoryBytes() })
   } catch (err) {
     canceled.delete(id)
-    self.postMessage({ id, error: err instanceof Error ? err.message : String(err) })
+    self.postMessage({ id, error: err instanceof Error ? err.message : String(err), memoryBytes: memoryBytes() })
   }
 }
