@@ -358,7 +358,7 @@ test('editing an earlier step replays the steps after it; suppress and delete wo
 
   // Step 1 opens in the push tool with the part as it was before it; a new distance replays the fillet.
   await page.getByRole('button', { name: 'Edit Pull 5 mm' }).click()
-  await expect(toolPanel(page)).toContainText('Editing step 1')
+  await expect(toolPanel(page).getByTestId('model-tool-crumb')).toHaveText('Box › Pull 5 mm')
   await toolPanel(page).locator('#push-dist').fill('10')
   await toolPanel(page).getByRole('button', { name: 'Pull out' }).click()
   await expect.poll(() => steps(page), { timeout: 30_000 }).toEqual([{ name: 'Pull 10 mm', state: 'done' }, { name: 'Fillet 2 mm', state: 'done' }])
