@@ -548,7 +548,9 @@ class ViewportImpl implements Viewport {
     }
     // Through kick, never a bare requestAnimationFrame: a listener that invalidated during this tick has already
     // queued the next one, and a second request would start a second loop that renders every frame again.
-    if (moving || this.dirty || this.rig.move || this.arrangeAnim || revealing) this.kick()
+    // A reveal still waiting on the plate's first frame needs the tick after it to start.
+    const revealNext = revealing || (this.reveal !== null && !this.reveal.started && !this.stage.isGround)
+    if (moving || this.dirty || this.rig.move || this.arrangeAnim || revealNext) this.kick()
   }
 
   /** Advances the reveal; true while it wants frames. It starts once the plate has drawn with the model and shows the bed. */
