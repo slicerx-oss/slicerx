@@ -36,8 +36,13 @@ export interface ScrubNumberProps {
   disabled?: boolean
   /** Its own outline. A vector field turns this off and draws one outline for all its axes. */
   boxed?: boolean
+  /** Reads typed text as a number, NaN when it does not read; the app passes one that knows named values (`wall * 2`). */
+  parse?: (text: string) => number
   className?: string
 }
+
+/** A plain typed number, with a comma as the decimal point too. */
+const plain = (text: string) => Number(text.replace(',', '.'))
 
 /** 10x with Shift, 0.1x with Alt. */
 export function scrubFactor(e: { shiftKey: boolean; altKey: boolean }): number {
@@ -58,7 +63,7 @@ interface Drag {
 }
 
 /** One number with a scrub handle. A real input, so typing, focus and screen readers work as usual. */
-export function ScrubNumber({ id, value, ariaLabel, onCommit, onPreview, onCancel, axis, handle = axis !== undefined, unit, digits = 2, step = 1, pixelsPerStep = 1, min, max, disabled, boxed = true, className }: ScrubNumberProps) {
+export function ScrubNumber({ id, value, ariaLabel, onCommit, onPreview, onCancel, axis, handle = axis !== undefined, unit, digits = 2, step = 1, pixelsPerStep = 1, min, max, disabled, boxed = true, parse = plain, className }: ScrubNumberProps) {
   const fmt = (n: number) => String(Number(n.toFixed(digits)) || 0)
   const shown = fmt(value)
   const [draft, setDraft] = useState(shown)
@@ -79,7 +84,7 @@ export function ScrubNumber({ id, value, ariaLabel, onCommit, onPreview, onCance
   const round = (n: number) => clamp(Number(n.toFixed(digits)) || 0)
 
   const commit = () => {
-    const v = Number(draft.trim().replace(',', '.'))
+    const v = parse(draft.trim())
     if (draft.trim() === '' || !Number.isFinite(v) || (min !== undefined && v < min) || (max !== undefined && v > max)) {
       setDraft(shown)
       return
@@ -117,7 +122,7 @@ export function ScrubNumber({ id, value, ariaLabel, onCommit, onPreview, onCance
     e.preventDefault()
     const el = e.currentTarget
     el.setPointerCapture?.(e.pointerId)
-    const typed = Number(draft.trim().replace(',', '.'))
+    const typed = parse(draft.trim())
     const start = document.activeElement === input.current && draft.trim() !== '' && Number.isFinite(typed) ? round(typed) : round(value)
     drag.current = { pointer: e.pointerId, el, x: e.clientX, travel: 0, start, raw: start, out: start, previewed: false }
     // Escape belongs to the drag while it lasts, before the panel or the viewport sees it.
@@ -178,7 +183,7 @@ export function ScrubNumber({ id, value, ariaLabel, onCommit, onPreview, onCance
       e.currentTarget.blur()
     } else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
       e.preventDefault()
-      const typed = Number(draft.trim().replace(',', '.'))
+      const typed = parse(draft.trim())
       const base = draft.trim() !== '' && Number.isFinite(typed) ? typed : value
       const next = round(base + (e.key === 'ArrowUp' ? 1 : -1) * step * scrubFactor(e))
       setDraft(fmt(next))
@@ -259,6 +264,8 @@ export interface VectorFieldProps {
   min?: number
   max?: number
   disabled?: boolean
+  /** See ScrubNumber. */
+  parse?: (text: string) => number
   className?: string
 }
 
@@ -268,9 +275,9 @@ const XYZ: readonly Axis[] = ['x', 'y', 'z']
  * A row of axis values in one outline: the name and its unit on the left, then a segment per axis
  * whose colored letter is the scrub handle.
  */
-export function VectorField({ id, label, unit, unitLabel, ariaLabel, values, axes = XYZ, onCommit, onPreview, onCancel, digits, step, pixelsPerStep, min, max, disabled, className }: VectorFieldProps) {
+export function VectorField({ id, label, unit, unitLabel, ariaLabel, values, axes = XYZ, onCommit, onPreview, onCancel, digits, step, pixelsPerStep, min, max, disabled, parse, className }: VectorFieldProps) {
   const spoken = spokenUnit(unit)
-  const opt = { digits, step, pixelsPerStep, min, max, disabled }
+  const opt = { digits, step, pixelsPerStep, min, max, disabled, parse }
   return (
     <div className={['sx-vector', className].filter(Boolean).join(' ')} role="group" aria-label={ariaLabel ?? label}>
       <span className="sx-vector-label" aria-hidden="true">
