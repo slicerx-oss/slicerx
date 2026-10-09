@@ -73,3 +73,27 @@ export function openTiming(): OpenTiming | null {
   if (!current) return null
   return { name: current.name, ms: { ...current.ms }, ...(current.parsedIn ? { parsedIn: current.parsedIn } : {}) }
 }
+
+/** The 3D view's start, once per page: from mounting it (before its code loads) to its first frame, and the viewport's own firstDrawMs (from creating it to that frame). */
+export interface ViewTiming {
+  mountToDrawMs: number
+  firstDrawMs: number | null
+}
+
+let view: ViewTiming | null = null
+
+/** Records the 3D view's first frame; later frames do not count. `mountedAt` is performance.now() when it mounted. */
+export function viewDrawn(mountedAt: number, firstDrawMs: number | null): void {
+  if (view || typeof performance === 'undefined') return
+  const now = performance.now()
+  view = { mountToDrawMs: Math.round(now - mountedAt), firstDrawMs: firstDrawMs === null ? null : Math.round(firstDrawMs) }
+  try {
+    perf()?.measure('sx:view:first-draw', { start: mountedAt, end: now })
+  } catch {
+    // A page without user timing still keeps the numbers.
+  }
+}
+
+export function viewTiming(): ViewTiming | null {
+  return view
+}
