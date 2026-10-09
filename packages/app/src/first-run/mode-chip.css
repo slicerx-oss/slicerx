@@ -1,0 +1,16 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+/* Copyright (C) 2026 The SlicerX contributors */
+/* The settings mode chip in the Slice pane title and its menu. */
+.mode-chip { flex: none; display: inline-flex; align-items: center; }
+.mode-chip .sx-chip-btn { height: 26px; }
+.mode-chip-menu { min-width: 248px; }
+.mode-chip-menu .sx-menu-item { align-items: flex-start; }
+.mode-chip-menu .sx-menu-item > span { display: grid; gap: 2px; min-width: 0; }
+.mode-chip-menu .sx-menu-item b { font-weight: var(--fw-medium); color: var(--fg); }
+.mode-chip-menu .sx-menu-item small { font-size: var(--fs-xs); color: var(--muted); white-space: normal; }
+
+/* Phones stack the pane under the viewport with no head row; the Slice pane keeps one for its title and the chip. */
+@media (max-width: 900px) {
+  .pane .sx-rail-head:has(.mode-chip) { display: flex; }
+  .pane .sx-rail-head:has(.mode-chip) .sx-rail-toggle { display: none; }
+}

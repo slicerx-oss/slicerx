@@ -128,10 +128,17 @@ describe('onboarding version', () => {
     expect(onboardingRerun('beta', done(1))).toEqual({ since: 1 })
     expect(onboardingRerun('stable', done())).toEqual({ since: 1 })
     expect(onboardingRerun('stable', done(ONBOARDING_VERSION))).toBeNull()
-    expect(setupSteps({ cad: true, mimir: true, since: 1 })).toEqual(['theme', 'open'])
-    expect(setupSteps({ cad: false, mimir: false, since: 1 })).toEqual(['theme'])
+    expect(setupSteps({ cad: true, mimir: true, since: 1 })).toEqual(['theme', 'look', 'open'])
+    expect(setupSteps({ cad: false, mimir: false, since: 1 })).toEqual(['theme', 'look'])
     // nothing newer: the whole flow, never an empty one
     expect(setupSteps({ cad: false, mimir: false, since: ONBOARDING_VERSION })).toEqual(['theme', 'printer', 'look'])
+  })
+
+  it('the settings mode question: a version 2 record reruns all of setup in alpha and only the slicer step after', () => {
+    expect(onboardingRerun('alpha', done(2))).toEqual({})
+    expect(onboardingRerun('beta', done(2))).toEqual({ since: 2 })
+    expect(setupSteps({ cad: true, mimir: true, since: 2 })).toEqual(['look'])
+    expect(setupSteps({ cad: false, mimir: false, since: 2 })).toEqual(['look'])
   })
 
   it('a fresh install has no record and opens setup the usual way', () => {

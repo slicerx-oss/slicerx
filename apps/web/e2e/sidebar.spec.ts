@@ -49,3 +49,74 @@ test('printer and filament fold to a summary line and stay folded', async ({ pag
   await page.locator('.sx-block[data-section="printer"]').getByRole('button', { name: 'Printer', exact: true }).click()
   await expect(page.locator('.sx-block[data-section="printer"] .printer')).toBeVisible()
 })
+
+test('the mode chip in the pane title changes the mode across the app and keeps it after a reload', async ({ page }) => {
+  await page.goto('./')
+  const chip = page.getByTestId('slice-mode-chip')
+  await expect(chip).toHaveText('Advanced')
+  // In the pane title, on one line with it.
+  const head = page.locator('.pane .sx-rail-head').filter({ has: chip })
+  await expect(head).toBeVisible()
+  await expect(head.locator('.sx-rail-title')).toHaveText('Printer and settings')
+  // Print settings no longer carries its own mode control.
+  await expect(page.locator('.sx-block[data-section="settings"]').getByRole('radiogroup', { name: 'Settings mode' })).toHaveCount(0)
+  await chip.click()
+  const menu = page.getByRole('menu', { name: 'Settings mode' })
+  await expect(menu.getByTestId('slice-mode-chip-simple')).toContainText('The few settings most prints need.')
+  await expect(menu.getByTestId('slice-mode-chip-advanced')).toHaveAttribute('aria-checked', 'true')
+  await menu.getByTestId('slice-mode-chip-simple').click()
+  await expect(menu).toHaveCount(0)
+  await expect(chip).toHaveText('Simple')
+  // Simple keeps the sections open with no fold, and Expert settings go away.
+  await expect(page.locator('#printer-fold, #filament-fold')).toHaveCount(0)
+  await expect(page.locator('[data-section="expert"]')).toHaveCount(0)
+  // By keyboard: open, move down to Expert, choose it.
+  await chip.focus()
+  await page.keyboard.press('Enter')
+  await expect(menu.getByTestId('slice-mode-chip-simple')).toBeFocused()
+  await page.keyboard.press('ArrowDown')
+  await page.keyboard.press('ArrowDown')
+  await page.keyboard.press('Enter')
+  await expect(chip).toHaveText('Expert')
+  await expect(page.locator('[data-section="expert"]')).toHaveCount(1)
+  await page.reload()
+  await expect(page.getByTestId('slice-mode-chip')).toHaveText('Expert')
+  const prefs = JSON.parse((await page.evaluate(() => localStorage.getItem('slicerx.prefs.v1'))) ?? '{}') as { settingsMode?: string }
+  expect(prefs.settingsMode).toBe('expert')
+})
+
+test('the Print settings header stays one line at the narrowest sidebar width', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'Desktop sidebar width')
+  await page.addInitScript(() => localStorage.setItem('slicerx.prefs.v1', JSON.stringify({ workspace: 'prepare', printerId: 'bay-1', settingsMode: 'simple', pilot: { mode: 'off' }, paneSizes: { 'slicerx:prepare-left': 288 } })))
+  await page.goto('./')
+  await expect(page.getByTestId('slice-mode-chip')).toBeVisible()
+  const pane = await page.locator('.pane[data-side="left"]').boundingBox()
+  expect(Math.round(pane!.width)).toBeLessThanOrEqual(290)
+  const header = page.locator('.sx-block[data-section="settings"] .sx-block-h')
+  const h = await header.evaluate((el) => el.getBoundingClientRect().height)
+  expect(h).toBeLessThan(48)
+  const head = await page.locator('.pane .sx-rail-head').first().evaluate((el) => el.getBoundingClientRect().height)
+  expect(head).toBe(44)
+})
+
+// Screenshots for review: SX_SHOTS=1, saved to SX_SHOTS_DIR (test-results/shots by default).
+test('shots: the mode chip in the pane title, closed and open, light and dark', async ({ page }, info) => {
+  test.skip(!process.env['SX_SHOTS'], 'SX_SHOTS=1 only')
+  const dir = process.env['SX_SHOTS_DIR'] ?? info.outputPath('shots')
+  const width = page.viewportSize()?.width ?? 0
+  await page.addInitScript(() => localStorage.setItem('slicerx.debug', '1'))
+  await page.goto('./')
+  const chip = page.getByTestId('slice-mode-chip')
+  for (const scheme of ['light', 'dark'] as const) {
+    await page.evaluate((s) => (window as unknown as { __sx: { setState(p: unknown): void } }).__sx.setState({ scheme: s, themeFollowsSystem: false, settingsMode: 'simple' }), scheme)
+    await chip.evaluate((el) => el.scrollIntoView({ block: 'center' }))
+    await page.mouse.move(0, 0)
+    await page.waitForTimeout(400)
+    await page.screenshot({ path: `${dir}/mode-chip-${scheme}-${width}.png` })
+    await chip.click()
+    await expect(page.getByRole('menu', { name: 'Settings mode' })).toBeVisible()
+    await page.waitForTimeout(300)
+    await page.screenshot({ path: `${dir}/mode-chip-menu-${scheme}-${width}.png` })
+    await page.keyboard.press('Escape')
+  }
+})
