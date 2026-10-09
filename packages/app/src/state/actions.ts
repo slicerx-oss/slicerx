@@ -29,6 +29,7 @@ import { printBlock } from '../plate/heimdall'
 import { clearProject } from '../project/new'
 import { beginOpen, confirmDiscard, markClean, OpenSuperseded, type OpenScope } from '../project/unsaved'
 import { markOpenEnded, markOpenStage, markOpenStarted } from '../lib/open-mark'
+import { sliceStage, sliceStarted } from '../lib/slice-timing'
 import { isExportOnly } from '../lib/hand-printers'
 import { colorModeAfterSlice, fullPlate, get, markStale, set, shownSlice, toast, type AppState, type PlateEntry, type PlateMeta, selectedIds, type PendingApproval, type ModelSource } from './store'
 import { appName, brandAccent } from '../edition'
@@ -326,6 +327,7 @@ export const GCODE_TEXT_KEYS = ['machine_start_gcode', 'machine_end_gcode', 'bef
 
 /** `auto` is a background slice after an edit: nothing to say when there is nothing to slice, and a failure shows in the panel, not as a toast. */
 export async function slicePlate(host: Host, opts: { auto?: boolean } = {}): Promise<void> {
+  const timed = sliceStarted(opts.auto === true)
   // The printer, filament and process layer must match the printer and quality tier before the configuration is read.
   await (await import('./profile-sync')).profileReady()
   // A project's own printer G-code waits for the person: a slice they start asks first, a background slice uses the
@@ -344,6 +346,7 @@ export async function slicePlate(host: Host, opts: { auto?: boolean } = {}): Pro
     if (!opts.auto) toast('Every object on this plate is set not to print. Turn one on first.')
     return
   }
+  sliceStage(timed, 'ready')
   const base = resolveConfig(s.easy, s.overrides)
   const seqNow = plateSequence(s.plates.find((p) => p.id === s.activePlate), base)
   const plateLayer = base['layer_height']
@@ -365,6 +368,7 @@ export async function slicePlate(host: Host, opts: { auto?: boolean } = {}): Pro
     const config = plateSliceConfig(s, meta)
     const toPrint = s.plate.filter((p) => p.printable !== false)
     const objects = await plateObjects(host.slicer, s, meta, s.plate)
+    sliceStage(timed, 'objects')
     // sleipnir plans the layer tops; a calibration plate keeps its own height bands.
     // Vary layer height reaches the engine as the resolved `smart_layer` mode (quality, or strength for a strong print).
     const smart = (String((config as Record<string, unknown>)['smart_layer'] ?? 'off') as 'off' | 'quality' | 'strength')
@@ -400,15 +404,20 @@ export async function slicePlate(host: Host, opts: { auto?: boolean } = {}): Pro
         },
       )
     // The native engine already spreads layers across threads; shards there only add halo work.
+    sliceStage(timed, 'request')
     const sliced = await sliceWith()
     if (sliceAbort !== abort) return
+    sliceStage(timed, 'result', { engineMs: Object.values(sliced.stageMicros ?? {}).reduce((n: number, us) => n + (us ?? 0), 0) / 1000 })
     // The tower comes back in machine coordinates; the plate counts from its corner.
     const result = sliced.primeTower ? { ...sliced, primeTower: towerToPlate(sliced.primeTower, areaOrigin(config['printable_area'])) } : sliced
     const raw = await host.slicer.getPreview(result.id)
+    sliceStage(timed, 'preview', { previewBytes: raw.byteLength })
     const preview = readPreview(raw)
+    sliceStage(timed, 'parsed')
     const cur = get()
     set((st) => ({ slicesDone: st.slicesDone + 1 }))
     set({ slice: { status: 'done', result, stale: false }, preview, strikePick: null, strikeJump: null, strikeHover: null, ...layersAfterSlice(cur, preview.layerCount, cur.norn.before !== null), ...colorModeAfterSlice(cur, defaultColorMode(preview)) })
+    sliceStage(timed, 'shown')
     markOpenStage('sliced')
   } catch (e) {
     if (abort.signal.aborted) {

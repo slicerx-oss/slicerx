@@ -43,6 +43,7 @@ import { headFor } from '@slicerx/viewport'
 import { strikeMarks } from '../plate/heimdall'
 import { gantryHits, gantrySpec } from '../plate/heimdall-gantry'
 import { markOpenStage, markViewDrawn, onOpenStage, openStagesPassed } from '../lib/open-mark'
+import { currentSlice, sliceStage } from '../lib/slice-timing'
 
 /** The part of the viewport handle the app drives. The 2D fallback implements the same. */
 // One memory a session: a second view (a remount) does not count as Model's first open again.
@@ -367,7 +368,14 @@ export function ViewportHost({ layers }: { layers: boolean }) {
         }
         if (first || rebuilt || s.plate !== prev.plate) pushEars(s)
         if (first || s.selection !== prev.selection || s.selectedIds !== prev.selectedIds || s.towerSelected !== prev.towerSelected) vp.setSelection(s.towerSelected ? [TOWER_ID] : selectedIds(s))
-        if (first || s.preview !== prev.preview) vp.setPreview(s.preview)
+        if (first || s.preview !== prev.preview) {
+          vp.setPreview(s.preview)
+          // The slice's timing (slice-timing.ts) ends at the frame after this one, the first with the preview drawn.
+          if (s.preview && typeof requestAnimationFrame === 'function') {
+            const id = currentSlice()
+            requestAnimationFrame(() => requestAnimationFrame(() => sliceStage(id, 'drawn')))
+          }
+        }
         // A preview that no longer matches the plate stays drawn, dimmed, until the next slice replaces it.
         if (first || s.slice !== prev.slice) vp.setPreviewStale?.(shownSlice(s.slice)?.stale ?? false)
         if (first || s.layerHi !== prev.layerHi || s.layerLo !== prev.layerLo || s.preview !== prev.preview) vp.setLayerRange(Math.max(0, Math.min(s.layerLo, s.layerHi) - 1), Math.max(0, s.layerHi - 1))
