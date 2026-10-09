@@ -206,3 +206,27 @@ describe('the floor under the print', () => {
     for (const s of seen.filter((x) => x.kind === 'Line')) expect(s.order).toBe(FLOOR_ORDER.line)
   })
 })
+
+describe('plate reveal uniform', () => {
+  const plateMaterial = (stage: InstanceType<typeof Stage>) => {
+    let found: { uniforms: { reveal?: { value: { x: number; y: number; z: number } } }; fragmentShader: string } | null = null
+    stage.scene.traverse((o) => {
+      const m = (o as Mesh).material as unknown as { uniforms?: { reveal?: unknown }; fragmentShader?: string } | undefined
+      if (m?.uniforms?.reveal) found = m as never
+    })
+    return found!
+  }
+
+  it('starts settled and keeps its place when the theme rebuilds the plate', async () => {
+    const { stage } = make()
+    const m0 = plateMaterial(stage)
+    expect(m0.fragmentShader).toContain('uniform vec3 reveal')
+    expect(m0.uniforms.reveal!.value).toMatchObject({ x: 1, y: 1e9, z: 0 })
+    stage.setReveal(0.5, 12, 0.3)
+    const { SCENE } = await import('../src/palette')
+    stage.setSceneColors({ ...SCENE, selection: '#ff79c6' })
+    const m1 = plateMaterial(stage)
+    expect(m1).not.toBe(m0)
+    expect(m1.uniforms.reveal!.value).toMatchObject({ x: 0.5, y: 12, z: 0.3 })
+  })
+})

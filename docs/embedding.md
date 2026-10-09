@@ -175,7 +175,9 @@ const off = vp.on('pick', (e) => console.log(e.objectId, e.point))
 // later: off(); vp.dispose()
 ```
 
-Options: `backend` (`auto`, `webgpu` or `webgl2`), `quality` (`high`, `balanced` or `low`), `maxPixelRatio`, `label` and `adaptive`. The handle also has `setTransforms`, `setRenderMode`, `setOverhangAngle`, `setSelection`, `arrange`, `view`, `setCamera`, `setMoveCut`, `setToolColors`, `setTravels`, `stats` and events for `select`, `transform`, `camera`, `error` and `degrade`. `packages/ui/viewport/src/types.ts` has the full types.
+Options: `backend` (`auto`, `webgpu` or `webgl2`), `quality` (`high`, `balanced` or `low`), `maxPixelRatio`, `label`, `adaptive` and `reveal`. The handle also has `setTransforms`, `setRenderMode`, `setOverhangAngle`, `setSelection`, `arrange`, `view`, `setCamera`, `setMoveCut`, `setToolColors`, `setTravels`, `stats` and events for `select`, `transform`, `camera`, `error` and `degrade`. `packages/ui/viewport/src/types.ts` has the full types.
+
+The first plate a page shows plays a short reveal (about 2 s): the outline traces in from the front, then the grid lays down back to front, in the theme's selection color. It plays once per page, draws the plate at once under reduced motion (the `prefers-reduced-motion` media query, or `data-motion="reduced"` on the root element) and on software graphics, and `reveal: false` turns it off. The canvas carries `data-reveal` (`waiting`, `playing`, `done` or `off`) for tests.
 
 ## UI parts
 

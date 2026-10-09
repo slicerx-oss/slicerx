@@ -158,6 +158,19 @@ function makeCanvas(stage: HTMLElement, label: string): HTMLCanvasElement {
 }
 
 /**
+ * The plate reveal. Browser tests compare pictures from the first frame, so they turn it off with this session flag
+ * (`off`); the reveal's own test sets `always` to play it on their software graphics.
+ */
+function revealOption(): boolean | 'always' {
+  try {
+    const v = sessionStorage.getItem('sx-reveal')
+    return v === 'off' ? false : v === 'always' ? 'always' : true
+  } catch {
+    return true
+  }
+}
+
+/**
  * The canvases live in a stage element React never renders into, because a
  * canvas that failed to get a WebGL context cannot give a 2D one either.
  */
@@ -165,7 +178,7 @@ async function start(stage: HTMLElement, webgpu: boolean, label: string): Promis
   const canvas = makeCanvas(stage, label)
   try {
     const [{ createViewport, controlsPreset, withRemap, withGizmo }, gpuRenderer] = await Promise.all([import('@slicerx/viewport'), shellGpu()])
-    const vp = createViewport(canvas, { backend: webgpu ? 'auto' : 'webgl2', label, gpuRenderer })
+    const vp = createViewport(canvas, { backend: webgpu ? 'auto' : 'webgl2', label, gpuRenderer, reveal: revealOption() })
     // Profiling hook: set localStorage 'slicerx.debug' to reach the handle from a script (the store's __sx is there
     // from the first frame, state/store.ts).
     try {

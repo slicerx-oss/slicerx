@@ -4,6 +4,7 @@
 // Frames are rendered on demand; the GPU idles when nothing changes, and the
 // loop pauses while the canvas is offscreen or the page is hidden.
 import { FirstFrameGate } from './firstframe'
+import { PlateReveal, REVEAL_HIDDEN, revealPlayed } from './reveal'
 import { gpuProfile } from './gpu'
 import type { ToolChangerSpec } from './toolchanger'
 import type { PurgePlan } from './purge'
@@ -257,6 +258,8 @@ class ViewportImpl implements Viewport {
   private previewSetAt: number | null = null
   private previewGen = 0
   private readonly firstFrame = new FirstFrameGate()
+  /** The first plate reveal, while it is still to play or playing; null once done or when this view does not play it. */
+  private reveal: PlateReveal | null = null
   private afterFrame: (() => void) | null = null
   private cameraMoved = false
   private firstFrameMs: number | null = null
@@ -339,6 +342,12 @@ class ViewportImpl implements Viewport {
     canvas.style.touchAction = 'none'
 
     this.stage = new Stage(renderer, this.weak)
+    // The reveal plays on a window's first plate, once. Reduced motion and software graphics draw the plate at once.
+    if (opts.reveal !== false && !revealPlayed() && !reducedMotion() && (opts.reveal === 'always' || !gpu.software)) {
+      this.reveal = new PlateReveal(canvas)
+      this.stage.setReveal(REVEAL_HIDDEN.trace, REVEAL_HIDDEN.gridMs, REVEAL_HIDDEN.tint)
+      canvas.dataset['reveal'] = 'waiting'
+    } else canvas.dataset['reveal'] = 'off'
     if (probeRequested()) this.probe = new FrameProbe(renderer)
     this.pipeline = new Pipeline(renderer, this.quality)
     this.camera = new PerspectiveCamera(30, 1, 20, 1600)
@@ -509,6 +518,8 @@ class ViewportImpl implements Viewport {
       this.scrubbed = false
       moving = true
     }
+    const revealing = this.stepReveal(now)
+    if (revealing) this.dirty = true
     if (moving) {
       this.dirty = true
       this.settle = SETTLE_FRAMES
@@ -527,7 +538,8 @@ class ViewportImpl implements Viewport {
       }
       if (!moving && this.settle > 0) this.settle--
       this.renderFrame(aoMix, moving)
-      if (this.lastRenderT) this.trackFrame(now - this.lastRenderT)
+      // Reveal frames are an animation over a still view, not a measure of how the GPU keeps up with orbiting.
+      if (this.lastRenderT && !revealing) this.trackFrame(now - this.lastRenderT)
       if (this.lastRenderT && moving) this.tuneMotionScale(now - this.lastRenderT)
       this.lastRenderT = now
       if (camMoving) this.emit('camera', { preset: this.rig.preset })
@@ -536,8 +548,27 @@ class ViewportImpl implements Viewport {
     }
     // Through kick, never a bare requestAnimationFrame: a listener that invalidated during this tick has already
     // queued the next one, and a second request would start a second loop that renders every frame again.
-    if (moving || this.dirty || this.rig.move || this.arrangeAnim) this.kick()
+    if (moving || this.dirty || this.rig.move || this.arrangeAnim || revealing) this.kick()
   }
+
+  /** Advances the reveal; true while it wants frames. It starts once the plate has drawn with the model and shows the bed. */
+  private stepReveal(now: number): boolean {
+    const r = this.reveal
+    if (!r || this.frames === 0) return false
+    if (this.stage.isGround) {
+      // Design's ground has no bed: wait for the first plate, or end at once if the view left the plate mid-reveal.
+      if (!r.started) return false
+      r.finish(this.setRevealPlate)
+    } else if (r.step(now, this.camera, this.stage.bed.widthMm / 2, this.stage.bed.depthMm / 2, this.theme.scene.selection, this.setRevealPlate)) {
+      if (this.canvas.dataset['reveal'] !== 'playing') this.canvas.dataset['reveal'] = 'playing'
+      return true
+    }
+    this.reveal = null
+    this.canvas.dataset['reveal'] = 'done'
+    return false
+  }
+
+  private readonly setRevealPlate = (trace: number, gridMs: number, tint: number): void => this.stage.setReveal(trace, gridMs, tint)
 
   /**
    * Resolution of moving frames follows the frame time: a GPU that cannot hold 60 fps at the full pixel count
@@ -3082,6 +3113,8 @@ class ViewportImpl implements Viewport {
     this.gizmoLabel?.remove()
     this.probe?.dispose()
     this.probe = null
+    this.reveal?.finish()
+    this.reveal = null
     if (this.raf) cancelAnimationFrame(this.raf)
     this.raf = 0
     for (const c of this.cleanups) c()

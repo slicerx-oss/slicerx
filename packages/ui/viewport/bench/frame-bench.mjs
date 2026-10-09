@@ -22,6 +22,7 @@ const browser =
 const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: dpr })
 await ctx.addInitScript(() => {
   sessionStorage.setItem('sx-no-auto-slice', '1')
+  sessionStorage.setItem('sx-reveal', 'off')
   if (sessionStorage.getItem('vp4')) return
   sessionStorage.setItem('vp4', '1')
   localStorage.setItem('slicerx.debug', '1')

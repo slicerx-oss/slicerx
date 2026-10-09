@@ -107,7 +107,7 @@ async function measure(browser, port, name, withStill) {
     page.on('console', (m) => {
       if (m.type() === 'error') errors.push(m.text())
     })
-    await page.goto(`http://127.0.0.1:${port}/?bare=1&adaptive=0&pr=${dpr}&${scenes[name]}`)
+    await page.goto(`http://127.0.0.1:${port}/?bare=1&adaptive=0&reveal=0&pr=${dpr}&${scenes[name]}`)
     await page.waitForFunction(() => window.sxDemo !== undefined)
     await page.evaluate(() => window.sxDemo.ready)
     // Warm up: compile shaders, upload buffers, fill the shadow map.
