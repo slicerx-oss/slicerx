@@ -28,7 +28,7 @@ export function startAutoSlice(host: Host, delayMs = AUTO_SLICE_DELAY_MS): () =>
     timer = null
     const s = appStore.getState()
     // A step open for editing rolls the part back; the slice waits for the edit to end.
-    if (!s.autoSlice || s.plate.length === 0 || s.plateLoading || s.historyEdit) return
+    if (!s.autoSlice || s.plate.length === 0 || (s.plateLoading && !s.sliceDuringOpen) || s.historyEdit) return
     // A plate switched back to with its slice still current (workspaces/preview/plate-slices.ts) needs none.
     if (s.slice.status === 'done' && !s.slice.stale) return
     void slicePlate(host, { auto: true })
@@ -38,7 +38,10 @@ export function startAutoSlice(host: Host, delayMs = AUTO_SLICE_DELAY_MS): () =>
     // Turning it on slices what is there now.
     const turnedOn = !prev.autoSlice
     const released = prev.liveEdit && !s.liveEdit
-    if (!turnedOn && !released && !changed(s, prev) && !(prev.plateLoading && !s.plateLoading)) return
+    const loaded = prev.plateLoading && !s.plateLoading
+    if (!turnedOn && !released && !changed(s, prev) && !loaded) return
+    // An open whose model sliced while it loaded and did not change since: that slice, running or done, is the one.
+    if (loaded && prev.sliceDuringOpen && !turnedOn && !released && !changed(s, prev) && (s.slice.status === 'running' || (s.slice.status === 'done' && !s.slice.stale))) return
     if (s.slice.status === 'running') cancelSlice({ quiet: true })
     if (s.slice.status === 'done' && !s.slice.stale) appStore.setState({ slice: { ...s.slice, stale: true } })
     clear()
