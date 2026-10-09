@@ -10,6 +10,7 @@ import { describe, expect, it, vi } from 'vitest'
 vi.mock('../src/lib/use-printer', () => ({ usePrinter: () => ({ rows: [], printer: undefined }), printTarget: () => undefined }))
 
 const { MachineCard, machineSummary } = await import('../src/workspaces/prepare/machine-card')
+const { printerPicture } = await import('../src/workspaces/prepare/printer-thumb')
 const { get, set } = await import('../src/state/store')
 
 const mount = () => {
@@ -25,6 +26,14 @@ describe('machine card', () => {
     expect(machineSummary('Desk A1', 0.4, 'Textured PEI', 'Ready')).toBe('Desk A1, 0.4 mm, Textured PEI, Ready')
     // While the printer profile loads there is no nozzle yet.
     expect(machineSummary('Desk A1', null, 'Textured PEI', 'Offline')).toBe('Desk A1, Textured PEI, Offline')
+  })
+
+  it('shows each printer\'s picture, or a drawing of its kind of machine, never an empty box', () => {
+    expect(printerPicture('Bambu Lab', 'A1')).toEqual({ src: expect.stringContaining('bambu-a1.webp') })
+    // In the catalog with no picture: its frame type.
+    expect(printerPicture('Sovol', 'SV04')).toEqual({ icon: expect.stringMatching(/^printer-/) })
+    // Not in the catalog at all: the generic frame.
+    expect(printerPicture('Homebrew', 'Garage special')).toEqual({ icon: 'printer-corexy-open' })
   })
 
   it('with no printer says what the slice is for, offers Add printer, and Slice without a printer until chosen', () => {
