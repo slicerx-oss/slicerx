@@ -8,10 +8,10 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-use sx_core::api::{Cancellable, Progress, SliceRequest, Stage, run_request_with};
+use sx_core::api::{run_request_with, Cancellable, Progress, SliceRequest, Stage};
 use sx_core::{Error, Mesh};
-use tauri::State;
 use tauri::ipc::{Channel, InvokeBody, Request, Response};
+use tauri::State;
 
 #[derive(Default)]
 pub struct Slicer {
@@ -46,14 +46,31 @@ fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 
 /// Loads a model from the raw request body. The file name comes in the
 /// `x-sx-name` header. Returns the same info JSON as `sx_load_mesh`.
+///
+/// Async, with the parse on the blocking pool: a sync command runs on the main thread, and a model of millions of
+/// triangles held it for seconds, so the window could not close or quit while a file opened.
 #[tauri::command]
-pub fn load_mesh(request: Request<'_>, state: State<'_, Slicer>) -> Result<serde_json::Value, String> {
+pub async fn load_mesh(request: Request<'_>, state: State<'_, Slicer>) -> Result<serde_json::Value, String> {
     let InvokeBody::Raw(bytes) = request.body() else {
         return Err("load_mesh expects raw bytes".into());
     };
     let name = crate::header::text(&request, "x-sx-name").unwrap_or_else(|| "model.stl".to_owned());
-    let mesh = Mesh::load(bytes, &name).map_err(|e| e.to_string())?;
+    let bytes = bytes.clone();
+    let (mesh, info) = tauri::async_runtime::spawn_blocking(move || mesh_info(&bytes, &name))
+        .await
+        .map_err(|e| e.to_string())??;
     let id = state.id();
+    let mut info = info;
+    if let Some(map) = info.as_object_mut() {
+        map.insert("id".into(), id.into());
+    }
+    lock(&state.meshes).insert(id, Arc::new(mesh));
+    Ok(info)
+}
+
+/// Parses a model and describes it: the info JSON of `load_mesh`, without the id.
+fn mesh_info(bytes: &[u8], name: &str) -> Result<(Mesh, serde_json::Value), String> {
+    let mesh = Mesh::load(bytes, name).map_err(|e| e.to_string())?;
     let (lo, hi) = mesh.bounds().unwrap_or(([0.0; 3], [0.0; 3]));
     let parts: Vec<serde_json::Value> = mesh
         .parts
@@ -61,12 +78,11 @@ pub fn load_mesh(request: Request<'_>, state: State<'_, Slicer>) -> Result<serde
         .map(|p| serde_json::json!({"name": p.name, "slot": p.slot, "color": p.color, "triangles": p.triangles.len()}))
         .collect();
     let info = serde_json::json!({
-        "id": id, "name": mesh.name, "triangles": mesh.triangle_count(),
+        "name": mesh.name, "triangles": mesh.triangle_count(),
         "hash": format!("{:016x}", mesh.content_hash()),
         "bboxMm": [hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]], "parts": parts,
     });
-    lock(&state.meshes).insert(id, Arc::new(mesh));
-    Ok(info)
+    Ok((mesh, info))
 }
 
 /// One progress report for the page: the engine's stage (`SLICE_STAGES` in packages/contracts) and how far into it.
@@ -211,8 +227,9 @@ pub fn cancel_slice(job: u32, state: State<'_, Slicer>) {
     }
 }
 
+// Async like load_mesh: the copy of a large preview or G-code is not made on the main thread.
 #[tauri::command]
-pub fn get_preview(id: u32, state: State<'_, Slicer>) -> Result<Response, String> {
+pub async fn get_preview(id: u32, state: State<'_, Slicer>) -> Result<Response, String> {
     lock(&state.results)
         .get(&id)
         .map(|o| Response::new(o.sxpv.clone()))
@@ -220,7 +237,7 @@ pub fn get_preview(id: u32, state: State<'_, Slicer>) -> Result<Response, String
 }
 
 #[tauri::command]
-pub fn get_gcode(id: u32, state: State<'_, Slicer>) -> Result<Response, String> {
+pub async fn get_gcode(id: u32, state: State<'_, Slicer>) -> Result<Response, String> {
     lock(&state.results)
         .get(&id)
         .map(|o| Response::new(o.gcode.clone()))
@@ -369,6 +386,23 @@ mod tests {
         assert!(err.to_lowercase().contains("cancel"), "{err}");
         assert!(lock(&state.results).is_empty());
         assert!(run_slice(&req, &meshes, &AtomicBool::new(false), &NoProgress).is_ok());
+    }
+
+    #[test]
+    fn mesh_info_describes_the_model_without_an_id() {
+        let (mesh, info) = mesh_info(&cube_stl(20.0, 30.0, 10.0), "cube.stl").expect("the cube loads");
+        assert_eq!(info["triangles"].as_u64(), Some(12));
+        assert_eq!(mesh.triangle_count(), 12);
+        let bbox: Vec<f64> = info["bboxMm"]
+            .as_array()
+            .expect("a box")
+            .iter()
+            .filter_map(serde_json::Value::as_f64)
+            .collect();
+        assert_eq!(bbox, vec![20.0, 30.0, 10.0]);
+        assert_eq!(info["hash"].as_str().map(str::len), Some(16));
+        // load_mesh adds the id once the mesh is stored.
+        assert!(info.get("id").is_none());
     }
 
     #[test]
