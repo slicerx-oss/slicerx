@@ -369,6 +369,18 @@ impl Mesh {
         } else {
             stl_ascii(bytes, name)?
         };
+        if soup.is_empty() {
+            return Err(Error::mesh(name, "the STL has no triangles"));
+        }
+        if let Some(k) = soup
+            .iter()
+            .position(|t| t.iter().flatten().any(|c| !c.is_finite()))
+        {
+            return Err(Error::mesh(
+                name,
+                format!("triangle {k} of the STL has a coordinate that is not a number"),
+            ));
+        }
         let (positions, triangles) = weld_soup(&soup);
         let part = MeshPart {
             name: name.to_owned(),
@@ -533,6 +545,16 @@ fn stl_ascii(bytes: &[u8], name: &str) -> Result<Vec<[[f32; 3]; 3]>> {
             soup.push([a, b, c]);
             cur.clear();
         }
+    }
+    if !cur.is_empty() {
+        return Err(Error::mesh(
+            name,
+            format!(
+                "the STL ends inside facet {}, with {} of its 3 vertices",
+                soup.len(),
+                cur.len()
+            ),
+        ));
     }
     Ok(soup)
 }
@@ -703,5 +725,36 @@ f 1 3 2\nf 1 4 3\nf 5 6 7\nf 5 7 8\nf 1 2 6\nf 1 6 5\nf 2 3 7\nf 2 7 6\nf 3 4 8\
         let m = Mesh::load(stl.as_bytes(), "t.stl").unwrap();
         assert_eq!(m.triangle_count(), 2);
         assert_eq!(m.parts[0].positions.len(), 4);
+    }
+
+    #[test]
+    fn an_empty_cut_off_or_not_a_number_stl_is_refused() {
+        let err = |text: &str| Mesh::load(text.as_bytes(), "t.stl").unwrap_err().to_string();
+        assert!(err("solid t\nendsolid t\n").contains("no triangles"));
+        assert!(
+            err("solid t\nfacet normal 0 0 1\nouter loop\nvertex 0 0 0\nvertex 1 0 0\n")
+                .contains("ends inside facet 0")
+        );
+        let nan = "solid t\nfacet normal 0 0 1\nouter loop\nvertex 0 0 0\nvertex nan 0 0\nvertex 0 1 0\nendloop\nendfacet\nendsolid t\n";
+        assert!(err(nan).contains("triangle 0 of the STL has a coordinate that is not a number"));
+        // A binary STL whose header starts with "solid" still loads as binary.
+        let mut bin = b"solid but binary".to_vec();
+        bin.resize(80, b' ');
+        bin.extend_from_slice(&1u32.to_le_bytes());
+        for v in [[0.0f32; 3], [0.0; 3], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]] {
+            for c in v {
+                bin.extend_from_slice(&c.to_le_bytes());
+            }
+        }
+        bin.extend_from_slice(&[0, 0]);
+        assert_eq!(Mesh::load(&bin, "b.stl").unwrap().triangle_count(), 1);
+        let mut empty = vec![b' '; 80];
+        empty.extend_from_slice(&0u32.to_le_bytes());
+        assert!(
+            Mesh::load(&empty, "e.stl")
+                .unwrap_err()
+                .to_string()
+                .contains("no triangles")
+        );
     }
 }
