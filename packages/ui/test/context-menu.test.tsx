@@ -3,7 +3,7 @@
 // A context menu opens at the pointer, inside the window, from a right click, a long press or the keyboard.
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
-import { ContextMenu, isMenuKey, LONG_PRESS_SLOP, MenuIcon, MenuIconRow, placeAt, pressStays } from '../src/components/context-menu'
+import { ContextMenu, focusGoesBack, isMenuKey, LONG_PRESS_SLOP, MenuIcon, MenuIconRow, placeAt, pressStays } from '../src/components/context-menu'
 import { MenuItem } from '../src/components/menu'
 
 const view = { width: 1000, height: 800 }
@@ -40,6 +40,22 @@ describe('opening it', () => {
   it('keeps a long press while the finger stays within the slop', () => {
     expect(pressStays({ x: 10, y: 10 }, { x: 10 + LONG_PRESS_SLOP, y: 10 })).toBe(true)
     expect(pressStays({ x: 10, y: 10 }, { x: 10 + LONG_PRESS_SLOP, y: 11 })).toBe(false)
+  })
+})
+
+describe('closing it', () => {
+  const el = (isConnected: boolean) => ({ isConnected }) as Element
+  const body = el(true)
+
+  it('gives focus back to the trigger while nothing else has it', () => {
+    expect(focusGoesBack(null, body)).toBe(true)
+    expect(focusGoesBack(body, body)).toBe(true)
+    // the menu item that had it is gone
+    expect(focusGoesBack(el(false), body)).toBe(true)
+  })
+
+  it('leaves it where the person has gone since', () => {
+    expect(focusGoesBack(el(true), body)).toBe(false)
   })
 })
 

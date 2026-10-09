@@ -26,6 +26,14 @@ export function isMenuKey(e: { key: string; shiftKey: boolean }): boolean {
   return e.key === 'ContextMenu' || (e.key === 'F10' && e.shiftKey)
 }
 
+/**
+ * Whether a closed menu gives focus back to its trigger: only while nothing else has it (it was in the menu, which is
+ * gone). A person who has gone on to another control between the close and the next frame keeps it there.
+ */
+export function focusGoesBack(active: Element | null, body: Element | null): boolean {
+  return !active || active === body || !active.isConnected
+}
+
 /** A long press stays a long press while the finger stays within the slop. */
 export function pressStays(from: MenuPoint, now: MenuPoint): boolean {
   return Math.hypot(now.x - from.x, now.y - from.y) <= LONG_PRESS_SLOP
@@ -62,7 +70,10 @@ export function useContextMenu<T = HTMLElement>(open?: (target: HTMLElement, dat
     const el = back.current
     back.current = null
     // after the menu leaves, so its own focus handling is done
-    if (el?.isConnected) requestAnimationFrame(() => el.focus({ preventScroll: true }))
+    if (el?.isConnected)
+      requestAnimationFrame(() => {
+        if (el.isConnected && focusGoesBack(document.activeElement, document.body)) el.focus({ preventScroll: true })
+      })
   }, [])
   const stop = () => {
     if (press.current) clearTimeout(press.current.timer)
