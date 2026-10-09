@@ -2,6 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AUTOSAVE_ID, MAX_RECENT, findRecovery, listRecent, memorySnapshots, projectSaved, recordRecent, setSnapshotStore, startAutosave, autosaveNow, snapshotStore } from '../src/project/autosave'
+import { markClean, startDirtyTracking } from '../src/project/unsaved'
 import { get, set } from '../src/state/store'
 
 const entry = (id: string) => ({ id, name: id, handle: { id, hash: id, name: id, triangles: 1, bboxMm: [1, 1, 1], openEdges: 0, parts: [] }, parts: [], colors: [], transform: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1] }) as never
@@ -9,6 +10,8 @@ const entry = (id: string) => ({ id, name: id, handle: { id, hash: id, name: id,
 beforeEach(() => {
   setSnapshotStore(memorySnapshots())
   set({ plate: [], plates: [{ id: 'plate-1', name: 'Plate 1', objects: [], settings: { sequence: 'by-layer' } }], activePlate: 'plate-1', plateLoading: false })
+  startDirtyTracking()
+  markClean()
 })
 afterEach(() => vi.useRealTimers())
 
@@ -52,5 +55,20 @@ describe('autosave and recent projects', () => {
     await vi.waitFor(() => expect(writes).toEqual([2]), { timeout: 10000 })
     stop()
     expect(get().plate).toHaveLength(2)
+  })
+
+  it('writes nothing for a project with no change since it was opened or saved', async () => {
+    const writes: number[] = []
+    const real = snapshotStore()
+    setSnapshotStore({ ...real, put: async (snap) => { writes.push(snap.objects); await real.put(snap) } })
+    set({ plate: [entry('a')] })
+    // As an open leaves it: its changes are the file's.
+    markClean()
+    expect(await autosaveNow()).toBe(false)
+    expect(writes).toEqual([])
+    // Then an edit: now there is work to keep.
+    set({ plate: [entry('a'), entry('b')] })
+    expect(await autosaveNow()).toBe(true)
+    expect(writes).toEqual([2])
   })
 })

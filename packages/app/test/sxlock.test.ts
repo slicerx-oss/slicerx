@@ -242,6 +242,8 @@ describe('autosave of a locked project', () => {
     const [{ setSnapshotStore, memorySnapshots }, { setLockedSession }] = await Promise.all([import('../src/project/autosave'), import('../src/project/locked-session')])
     setSnapshotStore(memorySnapshots())
     setLockedSession(null)
+    // Work on the plate that is not in any file yet: what an autosave keeps.
+    ;(await import('../src/project/unsaved')).startDirtyTracking()
     onPlate()
   })
 
