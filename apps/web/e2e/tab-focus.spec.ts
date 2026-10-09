@@ -12,6 +12,8 @@ for (const look of ['slicerx', 'prusaslicer', 'orcaslicer', 'bambu-studio'] as c
   test(`${look}: Tab reaches the Printer card, and switches the view only from the 3D view`, async ({ page, isMobile }) => {
     test.skip(isMobile, 'Keyboard focus at desktop widths')
     await page.addInitScript((id) => {
+      // the debug hooks give the spec the store (window.__sx)
+      localStorage.setItem('slicerx.debug', '1')
       localStorage.setItem('slicerx.prefs.v1', JSON.stringify({ workspace: 'prepare', printerId: 'bay-1', settingsMode: 'advanced', pilot: { mode: 'off' }, lookAndFeel: { id } }))
     }, look)
     await page.goto('./')
