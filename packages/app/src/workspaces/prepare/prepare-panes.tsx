@@ -11,6 +11,7 @@ import type { PrinterState } from '@slicerx/contracts'
 import { Block, Button, Icon, KeyValues, LinkButton, Pill, type PillState, tipAttrs } from '@slicerx/ui'
 import { lazy, Suspense, useEffect, useMemo, useState, type CSSProperties } from 'react'
 import { useWaited } from '../../lib/waited'
+import './slice-track.css'
 import { sliceFraction } from '../slice-progress'
 import { useHost } from '../../host'
 import { useFleet, type FleetRow } from '../../lib/queries'
@@ -510,12 +511,30 @@ export function SliceBlock({ label = 'Slice plate', compact }: { label?: string;
       {slice.status === 'error' ? <p className="app-err">{slice.message}</p> : null}
     </>
   )
-  // Before a slice, the sidebar footer shows one muted line above the button instead of a section.
-  if (compact && !done && slice.status !== 'running') {
+  const running = slice.status === 'running'
+  // A slice in progress takes the button's place in a track of the button's own height, so the footer never moves
+  // when a slice starts or ends; muninn rides the bar in the track's top row, clear of the text above.
+  const track = (
+    <div className="slice-track" role="status" aria-label={progress ? `Slicing, ${progress.stage}` : 'Slicing'} data-testid="slice-track">
+      <div className="rv-ride" style={{ '--p': Math.max(0.04, sliceFraction(progress)) } as CSSProperties}>
+        <div className="app-bar-track">
+          <i style={{ transform: `scaleX(${Math.max(0.04, sliceFraction(progress))})` }} />
+        </div>
+        {longSlice ? <Suspense fallback={null}><SliceGlide done={false} /></Suspense> : null}
+      </div>
+      <Button size="sm" variant="ghost" onClick={() => cancelSlice()}>
+        Cancel
+      </Button>
+    </div>
+  )
+  const stageLine = progress ? `Slicing: ${progress.stage}` : 'Slicing'
+  // Before a first slice, and while it runs, the sidebar footer shows one muted line above the button or the track
+  // instead of a section.
+  if (compact && !done) {
     return (
       <div className="slice-lite" data-section="estimate">
-        <p className="est-line">{plate.length ? (auto ? 'Time, filament and cost appear after the first slice.' : 'Slice to see time, filament and cost.') : 'Add a model to the plate.'}</p>
-        {primary}
+        <p className="est-line">{running ? stageLine : plate.length ? (auto ? 'Time, filament and cost appear after the first slice.' : 'Slice to see time, filament and cost.') : 'Add a model to the plate.'}</p>
+        {running ? track : primary}
         {problems}
       </div>
     )
@@ -551,7 +570,7 @@ export function SliceBlock({ label = 'Slice plate', compact }: { label?: string;
           </dl>
         </>
       ) : (
-        <p className="est-sub">{plate.length ? 'Slice to see print time, filament and cost.' : 'Add a model to the plate.'}</p>
+        <p className="est-sub">{running ? stageLine : plate.length ? 'Slice to see print time, filament and cost.' : 'Add a model to the plate.'}</p>
       )}
       {/* A background slice keeps the action in place and shows its progress on the block's top edge, so nothing moves. */}
       {slice.status === 'running' && auto && done ? (
@@ -559,24 +578,7 @@ export function SliceBlock({ label = 'Slice plate', compact }: { label?: string;
           <i style={{ transform: `scaleX(${Math.max(0.04, sliceFraction(progress))})` }} />
         </div>
       ) : null}
-      {slice.status === 'running' && !(auto && done) ? (
-        <div className="slicing" role="status">
-          <div className="rv-ride" style={{ '--p': Math.max(0.04, sliceFraction(progress)) } as CSSProperties}>
-            <div className="app-bar-track">
-              <i style={{ transform: `scaleX(${Math.max(0.04, sliceFraction(progress))})` }} />
-            </div>
-            {longSlice ? <Suspense fallback={null}><SliceGlide done={false} /></Suspense> : null}
-          </div>
-          <div className="app-row between">
-            <span className="sx-mono sx-small sx-muted">{progress ? `Stage: ${progress.stage}` : 'Starting'}</span>
-            <Button size="sm" variant="ghost" onClick={() => cancelSlice()}>
-              Cancel
-            </Button>
-          </div>
-        </div>
-      ) : (
-        primary
-      )}
+      {running && !(auto && done) ? track : primary}
       {problems}
       {sliceNote ? <p className="app-note">{sliceNote}</p> : null}
     </Block>
