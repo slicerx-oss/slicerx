@@ -412,7 +412,7 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
         if (extentKind === 'twoSides' && !(d2 > 0)) throw new Error('The second distance must be more than 0 mm.')
         const tp = num(taper)
         if (!Number.isFinite(tp) || Math.abs(tp) > 45) throw new Error('The draft is between -45 and 45 degrees.')
-        const pattern = patternFromFields(patternFields)
+        const pattern = patternFromFields(patternFields, num)
         const bad = pattern ? patternProblem(pattern) : null
         if (bad) throw new Error(bad)
         bindNext(distance)

@@ -2,10 +2,9 @@
 // Copyright (C) 2026 The SlicerX contributors
 // Feature patterns: a shape on a face repeated along a line, a grid or a circle, or at points, as one step (sx-geom
 // face.rs, Pattern). The engine makes the copies; this places them for the preview the same way, counts them,
-// reads the panel's fields and says what is wrong with a pattern in words. Positions are face coordinates (u, v),
+// reads the panel's fields (with the panel's number reader, so the geometry worker never loads the panels) and says what is wrong with a pattern in words. Positions are face coordinates (u, v),
 // mm, and the shape itself is always the first copy.
 import type { Vec2 } from '../geom/cad'
-import { num } from './panel-kit'
 
 export type Pattern =
   | { kind: 'linear'; count: number; stepMm: Vec2; count2?: number; step2Mm?: Vec2 }
@@ -72,7 +71,8 @@ export type PatternFields =
   // A pattern at points has no fields: it is kept as it is until another mode is picked.
   | { kind: 'points'; pattern: Extract<Pattern, { kind: 'points' }> }
 
-export function patternFromFields(f: PatternFields): Pattern | null {
+/** The pattern the fields describe; `num` reads a typed number (the panels' own, which takes named values). */
+export function patternFromFields(f: PatternFields, num: (text: string) => number): Pattern | null {
   switch (f.kind) {
     case 'none':
       return null
