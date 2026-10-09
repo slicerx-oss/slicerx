@@ -51,7 +51,7 @@ export function LayerArt({ seed, layers = 16, muted }: { seed: string; layers?: 
 }
 
 /** Up to this many triangles a silhouette is drawn triangle by triangle; above, it is traced on a grid. */
-const WHOLE_MAX = 5_000
+const WHOLE_MAX = 50_000
 /** Cells across the grid a large model's outline is traced on: twice what the largest thumbnail shows. */
 const GRID = 96
 
