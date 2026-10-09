@@ -210,6 +210,8 @@ class ViewportImpl implements Viewport {
   private display: DisplayStyle = 'edges'
   private pickFn: (e: { clientX: number; clientY: number }) => PickHit | null = () => null
   private faceOverlay: Mesh | null = null
+  private pickFaces = false
+  private pickedFaces: Mesh[] = []
   private faceKey = ''
   private featureMask = 0x7fff
   private painter!: Painter
@@ -223,6 +225,7 @@ class ViewportImpl implements Viewport {
   private summaryFor: PreviewBuffers | null = null
   private theme: ResolvedTheme = resolveTheme()
   private faceColor: string = SCENE.selection
+  private pickColor: string = SCENE.liveLayer
   private perspFov = 30
   private aoLevel = 1
   private tool: PlateTool = 'select'
@@ -900,6 +903,52 @@ class ViewportImpl implements Viewport {
   setProbeFaces(on: boolean): void {
     this.probeFaces = on
     if (!on && this.tool === 'probe') this.hoverFace(null)
+  }
+
+  /** Model's face filter: the face under the pointer lights up as it does for lay on face, outside a tool too. */
+  setPickFaces(on: boolean): void {
+    this.pickFaces = on
+    if (!on && this.tool !== 'face' && this.tool !== 'probe') this.hoverFace(null)
+  }
+
+  /** The faces picked in Model, each the patch around a triangle, drawn in the selection color until changed. */
+  setSelectedFaces(faces: readonly { objectId: string; partIndex: number; triangle: number }[]): void {
+    for (const o of this.pickedFaces) {
+      o.removeFromParent()
+      o.geometry.dispose()
+      ;(o.material as MeshBasicMaterial).dispose()
+    }
+    this.pickedFaces = []
+    for (const f of faces) {
+      const entry = this.objects.get(f.objectId)
+      const mesh = entry?.parts[f.partIndex]?.mesh
+      const src = mesh?.userData.source as { positions: Float32Array; indices: Uint32Array | Uint16Array } | undefined
+      if (!mesh || !src) continue
+      const patch = facePatch(src.positions, src.indices, f.triangle)
+      if (!patch) continue
+      const o = this.faceMesh(src, patch.triangles, 0.7, this.pickColor)
+      mesh.add(o)
+      this.pickedFaces.push(o)
+    }
+    this.invalidate()
+  }
+
+  /** A face patch as an overlay mesh in the face color, over the part it lies on. */
+  private faceMesh(src: { positions: Float32Array; indices: Uint32Array | Uint16Array }, triangles: readonly number[], opacity: number, color: string): Mesh {
+    const pos = new Float32Array(triangles.length * 9)
+    triangles.forEach((t, k) => {
+      for (let v = 0; v < 3; v++) {
+        const vi = 3 * (src.indices[3 * t + v] ?? 0)
+        for (let a = 0; a < 3; a++) pos[9 * k + 3 * v + a] = src.positions[vi + a] ?? 0
+      }
+    })
+    const g = new BufferGeometry()
+    g.setAttribute('position', new BufferAttribute(pos, 3))
+    const m = new MeshBasicMaterial({ color: new Color(color), transparent: true, opacity, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -8, toneMapped: false })
+    const o = new Mesh(g, m)
+    o.raycast = () => {}
+    o.renderOrder = 3
+    return o
   }
 
   setBrimHoverRadius(r: number | null): void {
@@ -1989,6 +2038,8 @@ class ViewportImpl implements Viewport {
     setSharedBandColors(t.heatRamp[0] ?? '#4f6bed', t.heatRamp[Math.floor((t.heatRamp.length - 1) / 2)] ?? '#f1fa8c', t.heatRamp[Math.floor((t.heatRamp.length - 1) * 0.75)] ?? '#ffb86c')
     this.pipeline.setSceneColors(t.scene)
     this.faceColor = t.scene.selection
+    // Picked faces stand apart from the selected object's own tint, which is the selection color.
+    this.pickColor = t.scene.liveLayer
     this.guides.setColor(t.scene.selection)
     this.brim.setColors(t.scene)
     this.cutRings.setColor('v', t.scene.selection)
@@ -2370,7 +2421,7 @@ class ViewportImpl implements Viewport {
       const d = this.drag
       if (!d) {
         if (this.toolpathLook.on && this.mode === 'prepare' && e.buttons === 0) this.hoverSolid(pick(e)?.entry.id ?? null)
-        if ((this.tool === 'face' || (this.tool === 'probe' && this.probeFaces)) && this.mode === 'prepare' && e.buttons === 0) this.hoverFace(pick(e))
+        if ((this.tool === 'face' || (this.tool === 'probe' && this.probeFaces) || (this.pickFaces && this.tool !== 'probe')) && this.mode === 'prepare' && e.buttons === 0) this.hoverFace(pick(e))
         if (this.tool === 'probe' && this.probeHover && this.mode === 'prepare' && e.buttons === 0) queueProbe(e)
         if (this.tool === 'paint' && this.mode === 'prepare') this.paintMove(e, pick)
         if (this.tool === 'brim' && this.mode === 'prepare' && e.buttons === 0) {
@@ -2494,7 +2545,7 @@ class ViewportImpl implements Viewport {
       }
       if (moved >= 5 || e.button !== 0) return
       const p = pick(e)
-      this.emit('pick', { objectId: p?.entry.id ?? null, partIndex: p?.part ?? null, point: p ? this.worldToBed(p.point) : null, triangle: p && p.face >= 0 ? p.face : null, bed: bedHit(e), ...(e.shiftKey ? { shift: true } : {}) })
+      this.emit('pick', { objectId: p?.entry.id ?? null, partIndex: p?.part ?? null, point: p ? this.worldToBed(p.point) : null, triangle: p && p.face >= 0 ? p.face : null, bed: bedHit(e), ...(e.shiftKey ? { shift: true } : {}), ...(e.metaKey || e.ctrlKey ? { toggle: true } : {}) })
       if (this.pathsShown() && !p) {
         // A click on a toolpath: which path it is, so the app can show the setting that made it.
         setRay(e)
