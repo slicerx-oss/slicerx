@@ -11,6 +11,7 @@ import { mainNumber, stepName, type Step } from './model'
 import { toolFor } from './ops'
 import { DeleteStepDialog, StepMenu } from './step-menu'
 import { stepIcon, stepSketch } from './step-icon'
+import { selectStepFaces } from '../../workspaces/design/use-made-by'
 
 export function StepRow(props: {
   step: Step
@@ -38,6 +39,10 @@ export function StepRow(props: {
   onEnd?: (() => void) | undefined
   /** The part is rolled back to some step of this object. */
   rolledBack?: boolean | undefined
+  /** This step made the one face picked in Model. */
+  madeBy?: boolean | undefined
+  /** This step works on the one face picked in Model. */
+  usedBy?: boolean | undefined
 }) {
   const { step: s, index, skipped, busy, editing } = props
   const name = stepName(s)
@@ -70,7 +75,7 @@ export function StepRow(props: {
     ? { ...menu.bind, onKeyDown: keys, tabIndex: -1, role: 'treeitem', 'aria-level': 2, 'aria-label': name, 'data-testid': 'model-tree-step', 'data-object-id': props.entry.id, 'data-index': index, 'data-state': state }
     : {}
   return (
-    <li className="cad-step" data-state={state} data-editing={editing || props.viewing || undefined} data-later={props.later || undefined} aria-busy={busy || undefined} {...treeRow}>
+    <li className="cad-step" data-state={state} data-editing={editing || props.viewing || undefined} data-later={props.later || undefined} data-made-by={props.madeBy || undefined} data-used-by={(!props.madeBy && props.usedBy) || undefined} aria-busy={busy || undefined} {...treeRow}>
       <button
         type="button"
         className="cad-step-n sx-mono"
@@ -151,6 +156,7 @@ export function StepRow(props: {
             onMove={props.onMove}
             onRename={() => setRenaming(true)}
             onDelete={() => setConfirm(true)}
+            onSelectFaces={!s.suppressed && s.broken === undefined ? () => void selectStepFaces(props.entry.id, s.id) : undefined}
           />
           {confirm ? <DeleteStepDialog name={name} open onCancel={() => setConfirm(false)} onDelete={() => (setConfirm(false), props.onDelete())} /> : null}
         </span>

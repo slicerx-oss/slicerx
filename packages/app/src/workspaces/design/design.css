@@ -36,6 +36,9 @@
 .cad-step-sketch:hover:not(:disabled) { background: var(--ink-2); color: var(--fg); }
 .cad-step-sketch .sx-mono { margin-left: auto; }
 .dtree-body .cad-step[data-editing] { background: color-mix(in srgb, var(--accent) 12%, transparent); border-radius: var(--r-sm); }
+/* The step that made the one face picked: an accent bar at its start; the steps that work on it, a faint one. */
+.dtree-body .cad-step[data-made-by] { box-shadow: inset 2px 0 0 var(--accent); border-radius: var(--r-sm); }
+.dtree-body .cad-step[data-used-by] { box-shadow: inset 2px 0 0 color-mix(in srgb, var(--accent) 35%, transparent); border-radius: var(--r-sm); }
 @media (hover: none) {
   .cad-step-more-btn { opacity: 1; }
 }
@@ -90,6 +93,8 @@
 .tl-chip[data-current] { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, var(--ink-1)); }
 .tl-chip[data-current] .sx-ic { color: var(--accent); }
 .tl-chip[data-later] { opacity: 0.45; }
+.tl-chip[data-made-by] { box-shadow: inset 2px 0 0 var(--accent); }
+.tl-chip[data-used-by] { box-shadow: inset 2px 0 0 color-mix(in srgb, var(--accent) 35%, transparent); }
 .tl-chip[data-state="suppressed"] .tl-name { text-decoration: line-through; color: var(--dim); }
 .tl-chip[data-state="broken"] { border-color: var(--red); }
 .tl-n { font-size: var(--fs-xs); color: var(--dim); }
@@ -120,6 +125,11 @@
 .select-pill-kind:hover, .select-pill-clear:hover { color: var(--fg); background: var(--ink-2); }
 .select-pill-kind[aria-pressed="true"] { color: var(--accent); background: var(--accent-tint); }
 .select-pill-readout { min-width: 0; padding: 0 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: var(--fw-medium) var(--fs-sm) var(--f-body); color: var(--fg); }
+/* Crumbs in the readout: the object's name, and the step that made the one face picked. */
+.select-pill-crumb { border: 0; padding: 0; background: none; color: inherit; font: inherit; text-decoration: underline; text-decoration-color: var(--line); text-underline-offset: 3px; cursor: pointer; }
+.select-pill-crumb:hover { color: var(--accent); text-decoration-color: currentColor; }
+.select-pill-made { flex: none; max-width: 200px; padding: 0 4px 0 8px; border-left: 1px solid var(--line-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: var(--fs-sm) var(--f-body); color: var(--muted); }
+button.select-pill-made { color: var(--muted); }
 @media (max-width: 900px) {
   .select-pill-readout { max-width: 120px; }
 }

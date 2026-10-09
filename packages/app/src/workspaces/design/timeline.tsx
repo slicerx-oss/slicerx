@@ -9,6 +9,7 @@ import { mainNumber, stepName, type Step } from '../../cad/history/model'
 import { beginEdit, cancelEdit, moveStep, toolFor, viewStep } from '../../cad/history/ops'
 import { stepIcon, stepSketch } from '../../cad/history/step-icon'
 import { useHost } from '../../host'
+import { useMadeBy } from './use-made-by'
 import { useBottomPanel } from '../../shell/bottom-panel'
 import { toast, useApp } from '../../state/store'
 
@@ -33,6 +34,7 @@ export function Timeline() {
   const [dropAt, setDropAt] = useState<number | null>(null)
   const track = useRef<HTMLOListElement>(null)
   const steps = entry?.history?.steps ?? []
+  const made = useMadeBy()
 
   if (!entry) return <p className="tl-empty sx-small sx-muted">Select an object to see its steps.</p>
   if (!steps.length) return <p className="tl-empty sx-small sx-muted">{entry.name} has no steps yet. The tools you use on it add them here.</p>
@@ -87,6 +89,8 @@ export function Timeline() {
                 data-state={state}
                 data-current={editing === i || viewing === i || undefined}
                 data-later={i > at || undefined}
+                data-made-by={(made?.objectId === id && made.index === i) || undefined}
+                data-used-by={(made?.objectId === id && made.index !== i && made.used.includes(i)) || undefined}
                 draggable={!busy}
                 aria-label={`Step ${i + 1}, ${name}`}
                 data-tip-title={name}
