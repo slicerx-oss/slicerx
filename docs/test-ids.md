@@ -83,6 +83,16 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | `slice-mode-chip` | The settings mode chip in the Slice pane title |
 | `slice-mode-chip-<mode>` | An item in its menu: `slice-mode-chip-simple`, `slice-mode-chip-advanced`, `slice-mode-chip-expert`, `slice-mode-chip-developer` |
 | `slice-goal-<tier>` | A Goal tile in Print settings: `slice-goal-draft`, `slice-goal-standard`, `slice-goal-fine`, `slice-goal-strong`; the picked tile's tooltip gives about how long and how much from the last slice, or "Updating the estimate." |
+| `slice-estimate` | The Slice sidebar footer: the estimate line over the main action; `data-stale` while it updates |
+| `slice-estimate-time` | The print time in the footer; opens the breakdown |
+| `slice-estimate-breakdown` | The breakdown: where the time goes, filament per slot, electricity, filament changes and layers |
+| `slice-estimate-warnings` | The warnings chip, shown only with warnings; shows the first one on the plate |
+| `slice-estimate-error` | The engine's message when a slice fails |
+| `danger-slice-print` | Print, the footer's main action (opens the Print sheet; the bridge refuses it) |
+| `slice-estimate-export-gcode` | Export G-code, the main action for an export-only printer |
+| `slice-estimate-slice` | Slice, the main action with Auto slice off, and Slice again beside Print |
+| `slice-output-menu` | The menu half of the main action |
+| `slice-output-export-gcode`, `slice-output-export-3mf` | Export G-code and Export plate 3MF in that menu |
 
 ## Prepare: the objects list and Export
 
