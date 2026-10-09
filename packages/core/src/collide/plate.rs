@@ -59,19 +59,6 @@ fn mm(p: Point) -> [f64; 2] {
     [f64::from(p.x) / SCALE, f64::from(p.y) / SCALE]
 }
 
-fn inside(poly: &[[f64; 2]], p: [f64; 2]) -> bool {
-    let mut c = false;
-    for (i, a) in poly.iter().enumerate() {
-        let Some(b) = poly.get((i + 1) % poly.len()) else {
-            continue;
-        };
-        if (a[1] > p[1]) != (b[1] > p[1]) && p[0] < a[0] + (p[1] - a[1]) * (b[0] - a[0]) / (b[1] - a[1]) {
-            c = !c;
-        }
-    }
-    c
-}
-
 /// Two segments cross, touching aside.
 fn cross(a: [f64; 2], b: [f64; 2], c: [f64; 2], d: [f64; 2]) -> bool {
     let o =
@@ -174,18 +161,29 @@ pub(crate) fn check(out: &SliceOutput, zones: &[(u8, Vec<[f64; 2]>)], crossings:
                 near: f32::MAX,
             });
         };
-        // Print paths in a keep-out zone.
+        // Print paths in a keep-out zone: any move that runs more than the contact tolerance inside it, though its ends
+        // lie clear, as the preflight judges it.
         for s in &segs {
             for (k, ((_, z), b)) in zones.iter().zip(&boxes).enumerate() {
-                for p in [s.a, s.b] {
-                    if p[0] >= b[0] && p[0] <= b[2] && p[1] >= b[1] && p[1] <= b[3] && inside(z, p) {
-                        add(
-                            Kind::KeepOut,
-                            s.owner,
-                            n + 1 + u32::try_from(k).unwrap_or(0),
-                            at(s, p),
-                        );
-                    }
+                let tol = crate::preflight::EDGE_TOL_MM;
+                let reach = [
+                    s.a[0].min(s.b[0]),
+                    s.a[1].min(s.b[1]),
+                    s.a[0].max(s.b[0]),
+                    s.a[1].max(s.b[1]),
+                ];
+                if reach[2] > b[0] + tol
+                    && reach[0] < b[2] - tol
+                    && reach[3] > b[1] + tol
+                    && reach[1] < b[3] - tol
+                    && let Some(p) = crate::preflight::segment_reaches(z, s.a, s.b, true, tol)
+                {
+                    add(
+                        Kind::KeepOut,
+                        s.owner,
+                        n + 1 + u32::try_from(k).unwrap_or(0),
+                        at(s, p),
+                    );
                 }
             }
         }
@@ -392,13 +390,21 @@ mod tests {
         assert!(cross([0.0, 0.0], [2.0, 2.0], [0.0, 2.0], [2.0, 0.0]));
         assert!(!cross([0.0, 0.0], [1.0, 1.0], [1.0, 1.0], [2.0, 0.0]));
         assert!(!cross([0.0, 0.0], [2.0, 0.0], [0.0, 0.4], [2.0, 0.4]));
-        assert!(inside(
-            &[[0.0, 0.0], [18.0, 0.0], [18.0, 28.0], [0.0, 28.0]],
-            [5.0, 5.0]
-        ));
-        assert!(!inside(
-            &[[0.0, 0.0], [18.0, 0.0], [18.0, 28.0], [0.0, 28.0]],
-            [20.0, 5.0]
-        ));
+    }
+
+    #[test]
+    fn a_move_through_a_keep_out_zone_is_found_though_its_ends_lie_clear() {
+        // The tower stroke runs from y 40 to 90 at x 150: through a 4 mm zone around y 62, with both ends outside it.
+        let out = layer((5.0, 5.0), (100.0, 50.0), [(150.0, 40.0), (150.0, 90.0)]);
+        let zone = |x0: f64, x1: f64| {
+            vec![(
+                ZONE_EXCLUSION,
+                vec![[x0, 60.0], [x1, 60.0], [x1, 64.0], [x0, 64.0]],
+            )]
+        };
+        let hits = check(&out, &zone(148.0, 152.0), false);
+        assert_eq!(hits.0.iter().map(|h| h.kind).collect::<Vec<_>>(), [Kind::KeepOut]);
+        // Running along the zone's edge, within the contact tolerance, is not a hit.
+        assert!(check(&out, &zone(149.97, 154.0), false).0.is_empty());
     }
 }
