@@ -241,6 +241,7 @@ them. `packages/app/test/test-ids.test.ts` keeps this table and its own list the
 | `unsaved-cancel` | Closes Save changes first? and keeps everything as it is |
 | `upload-cancel` | Closes the upload form; nothing was sent |
 | `creator-cancel` | Closes the creator page editor without saving |
+| `model-tool-cancel` | Closes a modeling tool; what was applied stays, and nothing more is undone |
 | `update-sheet` | The update sheet itself |
 | `update-body` | The sheet body, read for its step |
 | `update-download` | Opens the download page for a package install; nothing is installed |
@@ -275,6 +276,7 @@ Ids that tests read for their text:
 | `model-tree-rename` | The inline name field of an object or a step being renamed |
 | `model-transform-summary` | Transform's position line while a tool is open and Transform is folded |
 | `model-tool-crumb` | A tool's header while a step is being edited: the object, then the step |
+| `model-tool-apply`, `model-tool-cancel`, `model-tool-repeat` | A tool's footer: Apply (Enter) runs it and closes, Cancel (Esc) closes, Apply and repeat (Hole, Fillet, Thread) runs it and stays open |
 | `model-inspector-multi` | The inspector with two or more objects selected |
 | `model-multi-size` | The size the selected objects take together |
 | `model-multi-object` | A selected object in the multi-selection; `data-object-id`; selects it alone |

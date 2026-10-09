@@ -353,7 +353,7 @@ test('editing an earlier step replays the steps after it; suppress and delete wo
   await panel.locator('#edge-size').fill('2')
   await panel.getByRole('button', { name: 'Round' }).click()
   await expect.poll(() => steps(page), { timeout: 30_000 }).toEqual([{ name: 'Pull 5 mm', state: 'done' }, { name: 'Fillet 2 mm', state: 'done' }])
-  await panel.getByRole('button', { name: 'Done' }).click()
+  await expect(panel).toHaveCount(0)
   const filleted = (await bounds(page, id)).triangles
 
   // Step 1 opens in the push tool with the part as it was before it; a new distance replays the fillet.
