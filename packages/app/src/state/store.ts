@@ -416,6 +416,10 @@ export interface AppState {
   slotMatch: Record<number, Pick<SlotSetup, 'brand' | 'family' | 'vendor'>>
   /** The slot being edited (1-based) and the flush volume dialog. */
   slotDialog: number | null
+  /** The filament slot hovered or focused in the Slice sidebar's rail (and the legend): the viewport picks it out. Not saved. */
+  hoverSlot: number | null
+  /** The filament rail lists the slots nothing on the plate uses too. Not saved. */
+  showUnusedSlots: boolean
   flushOpen: boolean
   calibrationOpen: boolean
   /** The filament slot the calibration dialog opens for (from its card), or null for the first. */
@@ -700,6 +704,8 @@ export const appStore = createStore<AppState>()(() => ({
   flush: FLUSH_DEFAULTS,
   slotMatch: {},
   slotDialog: null,
+  hoverSlot: null,
+  showUnusedSlots: false,
   flushOpen: false,
   calibrationOpen: false,
   calibrationSlot: null,
