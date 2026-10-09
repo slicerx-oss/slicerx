@@ -72,7 +72,9 @@ describe('the Design tree', () => {
     const el = render()
     const objects = [...el.querySelectorAll('.dtree-obj')]
     expect(objects.map((o) => o.querySelector('.dtree-name')?.textContent)).toEqual(['Pi enclosure', 'Ball'])
-    expect(objects.map((o) => o.querySelector('.dtree-count')?.textContent)).toEqual(['3', 'mesh'])
+    // A CAD object shows its step count; a mesh shows nothing there, its icon says it.
+    expect(objects.map((o) => o.querySelector('.dtree-count')?.textContent ?? null)).toEqual(['3', null])
+    expect(objects.map((o) => o.getAttribute('data-kind'))).toEqual(['body', 'mesh'])
     expect([...objects[0]!.querySelectorAll('.cad-step-name')].map((b) => b.textContent)).toEqual(['Sketch extrude 30 mm', 'Shell, 2 mm walls, 1 open face', 'Fillet 5 mm, 2 edges'])
     expect(objects[0]!.querySelectorAll('[data-testid="step-sketch"]')).toHaveLength(1)
     expect(objects[0]!.querySelector('.dtree-parts')?.textContent).toContain('Body')
@@ -83,9 +85,55 @@ describe('the Design tree', () => {
   it("puts a step's tips beside its row, so a tip never covers the step under it", () => {
     set({ plate: [entry('o1', 'Pi enclosure', STEPS)], selection: 'o1', selectedIds: ['o1'] })
     const el = render()
-    const tips = [...el.querySelectorAll('.cad-step')].flatMap((row) => [...row.querySelectorAll(':scope > [data-tip]')])
-    expect(tips.length).toBe(STEPS.length * 6)
+    const tips = [...el.querySelectorAll('.cad-step')].flatMap((row) => [...row.querySelectorAll('[data-tip], [data-tip-title]')])
+    expect(tips.length).toBe(STEPS.length * 3)
     expect(tips.every((b) => b.getAttribute('data-tip-avoid') === '.cad-step')).toBe(true)
+  })
+
+  it('keeps step rows calm: no buttons at rest but one More, with the actions in its menu', () => {
+    set({ plate: [entry('o1', 'Pi enclosure', STEPS)], selection: 'o1', selectedIds: ['o1'] })
+    const el = render()
+    const row = el.querySelector('[data-testid="model-tree-step"]')!
+    expect(row.getAttribute('data-object-id')).toBe('o1')
+    expect(row.getAttribute('data-index')).toBe('0')
+    expect(row.querySelectorAll('.sx-btn')).toHaveLength(0)
+    const more = row.querySelector<HTMLButtonElement>('[data-testid="model-tree-more"]')!
+    expect(more.getAttribute('aria-label')).toBe('More for Sketch extrude 30 mm')
+    flushSync(() => more.click())
+    const items = [...document.querySelectorAll('.sx-menu-item')].map((b) => b.getAttribute('aria-label'))
+    expect(items).toEqual(['Move Sketch extrude 30 mm earlier', 'Move Sketch extrude 30 mm later', 'Suppress Sketch extrude 30 mm', 'Delete Sketch extrude 30 mm'])
+    expect(document.querySelector('[data-testid="danger-model-tree-delete"]')).not.toBeNull()
+  })
+
+  it('badges a broken step in red and a step with a note in orange, and shows lock and printable off', () => {
+    const broken = [{ ...STEPS[0]!, broken: 'The sketch is gone.' }, { ...STEPS[1]!, note: 'Thin wall.' }, STEPS[2]!]
+    set({ plate: [{ ...entry('o1', 'Pi enclosure', broken), locked: true, printable: false }], selection: 'o1', selectedIds: ['o1'] })
+    const el = render()
+    expect([...el.querySelectorAll('.cad-step-icon')].map((i) => i.getAttribute('data-badge'))).toEqual(['broken', null, null])
+    expect([...el.querySelectorAll('.dtree-state')].map((i) => i.getAttribute('aria-label'))).toEqual(['Locked', 'Not printed'])
+  })
+
+  it('is a tree to the keyboard: one row in the tab order, arrows move, Right and Left open and close', () => {
+    set({ plate: [entry('o1', 'Pi enclosure', STEPS), entry('o2', 'Ball')], selection: 'o1', selectedIds: ['o1'] })
+    const el = render()
+    const tree = el.querySelector<HTMLElement>('[role="tree"]')!
+    const tabbable = () => [...tree.querySelectorAll<HTMLElement>('[tabindex="0"]')].map((b) => b.textContent)
+    expect(tabbable()).toEqual(['Pi enclosure'])
+    const press = (key: string) => flushSync(() => document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true })))
+    tree.querySelector<HTMLElement>('.dtree-name')!.focus()
+    press('ArrowDown')
+    expect(document.activeElement?.textContent).toBe('Sketch extrude 30 mm')
+    press('ArrowRight')
+    expect(document.activeElement?.getAttribute('data-testid')).toBe('model-tree-more')
+    press('ArrowLeft')
+    press('ArrowLeft')
+    expect(document.activeElement?.textContent).toBe('Pi enclosure')
+    press('End')
+    expect(document.activeElement?.textContent).toBe('Ball')
+    press('ArrowRight')
+    expect(el.querySelectorAll('.dtree-obj')[1]!.getAttribute('aria-expanded')).toBe('true')
+    press('ArrowLeft')
+    expect(el.querySelectorAll('.dtree-obj')[1]!.getAttribute('aria-expanded')).toBe('false')
   })
 
   it('keeps an object whose first step is being edited, while it is off the plate', () => {

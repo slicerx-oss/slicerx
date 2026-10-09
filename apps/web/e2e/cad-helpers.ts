@@ -143,11 +143,14 @@ export async function sketchAt(page: Page, kind: 'hover' | 'click', at: [number,
   }, { kind, at })
 }
 
-/** Clicks a button on a history step. Design's tree shows them while the pointer is over the step, so it hovers the step first, as a person would. */
+/** Clicks an action on a history step: a button on Slice's history list, or an item in the step's More menu in Model's tree, opened as a person would. */
 export async function clickStepButton(page: Page, step: string, name: string): Promise<void> {
   const row = page.locator('.cad-step').filter({ has: page.locator('.cad-step-name', { hasText: step }) }).first()
   await row.hover()
-  await row.getByRole('button', { name }).click()
+  const direct = row.getByRole('button', { name })
+  if (await direct.count()) return direct.click()
+  await row.getByTestId('model-tree-more').click()
+  await page.getByRole('menuitem', { name }).click()
 }
 
 /** The history panel's steps, by name and state. */
