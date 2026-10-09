@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// Design's tool shelf: Create, Modify, Fasten and Inspect, each a row of labeled tools over its group name, with undo
-// and redo at the end. Narrow windows drop the labels. The tools come from shelf-tools.ts, the same list as the Tools
-// menu in Slice. Modeling tools wait while the full geometry engine loads.
+// Model's tool shelf, a lifted bar over the view: Create, Shape, Fasten and Mesh, set apart by space and a short
+// hairline, then the next slot with the tools for what is picked, then Measure and Values as icons by undo and redo.
+// Narrow windows drop the labels. The tools come from shelf-tools.ts, the same list as the Tools menu in Slice.
+// Modeling tools wait while the full geometry engine loads.
 import { Button, Icon, Menu, MenuAnchor, MenuHeading, MenuItem, MenuSeparator } from '@slicerx/ui'
 import { lazy, Suspense, useState } from 'react'
 import { editionHasCad, useEdition } from '../../edition'
@@ -15,7 +16,7 @@ import { set, toast, useApp } from '../../state/store'
 import { SHAPES } from '../prepare/object-actions'
 import { useHistoryCounts } from '../prepare/plate-toolbar'
 import { openTool } from './open-tool'
-import { availableTools, SHELF_GROUPS, shelfGroup, type DialogTool, type ShelfTool } from './shelf-tools'
+import { availableTools, nextTools, SHELF_GROUPS, shelfGroup, type DialogTool, type ShelfGroup, type ShelfTool } from './shelf-tools'
 
 const ToolDialog = lazy(() => import('../prepare/tool-dialog').then((m) => ({ default: m.ToolDialog })))
 
@@ -41,19 +42,26 @@ export function Shelf() {
     if (t.tool) openTool(t.tool)
   }
   const off = (t: ShelfTool) => Boolean(t.needsSelection && !hasSel) || (Boolean(t.modeling) && engine === 'loading')
+  const groupName = (id: ShelfGroup) => SHELF_GROUPS.find((g) => g.id === id)?.label ?? ''
+  const tip = (t: ShelfTool) => (t.tip ? { 'data-tip': t.tip } : { 'data-tip-title': `${groupName(t.shelf?.group ?? 'shape')} · ${t.label}` })
+  const toolButton = (t: ShelfTool, extra: { className?: string; next?: boolean } = {}) => (
+    <button key={t.id} type="button" className={extra.className ?? 'shelf-tool'} {...(extra.next ? { 'data-next-tool': t.id, 'data-testid': 'model-shelf-next-tool' } : { 'data-tool': t.id, 'data-testid': 'model-shelf-tool' })} {...tip(t)} aria-label={t.label} aria-pressed={t.tool !== undefined && objectTool === t.tool} disabled={off(t)} onClick={() => choose(t)}>
+      <Icon name={t.icon} />
+      <span>{t.short ?? t.label}</span>
+    </button>
+  )
+  // The next slot: what to do with the pick. Faces and edges join with the pick filter.
+  const next = nextTools(tools, hasSel ? 'object' : null)
   const dialog = objectTool === 'simplify' || objectTool === 'hollow' || objectTool === 'hole' ? (objectTool as DialogTool) : null
 
   return (
-    <div className="shelf" role="toolbar" aria-label="Model tools" aria-busy={engine === 'loading' || undefined}>
-      {SHELF_GROUPS.map((g) => (
-        <div key={g.id} className="shelf-grp">
+    <div className="shelf sx-overlay" role="toolbar" aria-label="Model tools" data-testid="model-shelf" aria-busy={engine === 'loading' || undefined}>
+      {SHELF_GROUPS.filter((g) => g.id !== 'utility').map((g) => (
+        <div key={g.id} className="shelf-grp" data-group={g.id}>
           <div className="shelf-tools">
             {shelfGroup(tools, g.id).map((e) =>
               e.kind === 'tool' ? (
-                <button key={e.tool.id} type="button" className="shelf-tool" data-tool={e.tool.id} {...(e.tool.tip ? { 'data-tip': e.tool.tip } : { 'data-tip-title': e.tool.label })} aria-label={e.tool.label} aria-pressed={e.tool.tool !== undefined && objectTool === e.tool.tool} disabled={off(e.tool)} onClick={() => choose(e.tool)}>
-                  <Icon name={e.tool.icon} />
-                  <span>{e.tool.short ?? e.tool.label}</span>
-                </button>
+                toolButton(e.tool)
               ) : (
                 <MenuAnchor key={e.menu}>
                   <button type="button" className="shelf-tool" aria-label={MENU_LABEL[e.menu].label} aria-haspopup="menu" aria-expanded={menu === e.menu} aria-pressed={e.tools.some((t) => t.tool !== undefined && objectTool === t.tool)} onClick={() => setMenu(menu === e.menu ? null : e.menu)}>
@@ -96,10 +104,16 @@ export function Shelf() {
               </MenuAnchor>
             ) : null}
           </div>
-          <span className="shelf-label">{g.label}</span>
         </div>
       ))}
+      {next.length ? (
+        <div className="shelf-next" data-testid="model-shelf-next" data-tip-avoid=".shelf-next" aria-label="For this object" role="group">
+          {next.map((t) => toolButton(t, { next: true }))}
+        </div>
+      ) : null}
       <div className="shelf-end">
+        {shelfGroup(tools, 'utility').map((e) => (e.kind === 'tool' ? toolButton(e.tool, { className: 'shelf-tool shelf-icon' }) : null))}
+        <span className="shelf-sep" aria-hidden="true" />
         <Button variant="ghost" size="sm" icon="undo" aria-label="Undo" tip="edit.undo" disabled={undo === 0} onClick={() => history().undo()} />
         <Button variant="ghost" size="sm" icon="redo" aria-label="Redo" tip="edit.redo" disabled={redo === 0} onClick={() => history().redo()} />
       </div>
