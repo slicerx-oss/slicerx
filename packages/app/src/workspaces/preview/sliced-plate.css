@@ -1,0 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+/* Copyright (C) 2026 The SlicerX contributors */
+/* The Sliced plate card: the warnings line sits under the result line, lined up with its text. */
+.result-sub { margin: 2px 0 0 24px; font: var(--fw-medium) calc(13px * var(--text-scale)) var(--f-mono); color: var(--muted); }

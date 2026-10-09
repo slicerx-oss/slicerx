@@ -23,6 +23,7 @@ import { fixApplies, jumpToWarning, runWarningFix, warningFix } from '../../lib/
 import { repairSelected } from '../../plate/geom-ops'
 import { closeGcodeFile, setGcodePanel, useGcodeView } from './gcode-file'
 import { CollisionList } from './strike-slots'
+import './sliced-plate.css'
 
 /** A G-code file opened on its own: what it is, and the way back to the plate. */
 function GcodeFileBlock() {
@@ -116,8 +117,9 @@ export function PreviewLeft() {
       <Block title="Sliced plate" aside={<span className="fil-aside"><span className={shown.stale ? 'app-tag stale' : 'app-tag'}>{shown.stale ? (slice.status === 'running' ? 'Updating' : 'Settings changed') : 'Current'}</span><MoreButton id="preview" /></span>} data-section="result">
         <p className="result-line" {...tipAttrs({ title: engineLine })}>
           <Icon name="check" />
-          Sliced {r.layerCount} layers in {(r.wallMs / 1000).toFixed(2)} s. {warningsLine}
+          Sliced {r.layerCount} layers in {(r.wallMs / 1000).toFixed(2)} s.
         </p>
+        <p className="result-sub">{warningsLine}</p>
         {resume && resume.plan.resumeLayer > 0 ? (
           <p className="result-line" data-resume>
             <Icon name="layers" />
