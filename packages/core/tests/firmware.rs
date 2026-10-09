@@ -1752,6 +1752,28 @@ fn the_a1_bed_mesh_takes_the_brim_and_skirt_as_orca_does() {
 }
 
 #[test]
+fn an_extruder_that_prints_nothing_has_no_first_filament() {
+    // The H2D numbers its extruders through physical_extruder_map. Orca 2.4.2 writes -1 for an extruder that prints
+    // no filament: one filament, on the right extruder where the map puts it, gives `0, -1`, and the start's
+    // `M620.17 T1 ... L-1` (was L0). Mapped by hand to the other extruder, it moves over.
+    let start = "; ff {first_filaments[0]} {first_filaments[1]} fns {first_non_support_filaments[0]} {first_non_support_filaments[1]}";
+    let mut c = json!({
+        "gcode_flavor": "marlin",
+        "printer_model": "Bambu Lab H2D",
+        "nozzle_diameter": [0.4, 0.4],
+        "physical_extruder_map": [1, 0],
+        "master_extruder_id": 2,
+        "single_extruder_multi_material": true,
+        "machine_start_gcode": start,
+    });
+    let line = |g: &str| g.lines().find(|l| l.starts_with("; ff ")).unwrap().to_owned();
+    assert_eq!(line(&cube_on(c.clone(), 1)), "; ff 0 -1 fns 0 -1");
+    c["filament_map_mode"] = json!("Manual");
+    c["filament_map"] = json!([1]);
+    assert_eq!(line(&cube_on(c, 1)), "; ff -1 0 fns -1 0");
+}
+
+#[test]
 fn a_tower_change_reads_the_new_filaments_volumetric_speed() {
     // orca's change at the tower takes outer_wall_volumetric_speed of the new filament (`append_tcr`)
     let mut c = json!({
