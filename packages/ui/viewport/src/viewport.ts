@@ -3172,6 +3172,7 @@ class ViewportImpl implements Viewport {
       segments: this.toolpaths.segmentCount,
       aoOn: this.aoOn,
       motionScale: this.pipeline.motionScale,
+      cameraMoving: this.rig.move !== null,
     }
   }
 
