@@ -15,7 +15,11 @@ import { PlateList } from './prepare/plate-list'
 import { useHost } from '../host'
 import { SidePane, type PaneSection } from '../shell/pane'
 import { seedExamplePlate } from '../state/actions'
-import { get, showsLayers, useApp } from '../state/store'
+import { get, railOpen, showsLayers, useApp } from '../state/store'
+import { usePrinter } from '../lib/use-printer'
+import { useRightAttention } from '../lib/right-attention'
+import { MiddleName } from '../lib/short-name'
+import { tipAttrs } from '@slicerx/ui'
 import { ViewportHost } from '../viewport/viewport-host'
 import { LayerStrip } from './layer-strip'
 import { ZoneLegend } from './zone-legend'
@@ -101,6 +105,12 @@ export function Studio() {
   const other = side === 'left' ? 'right' : 'left'
   // The objects list sits at the top of the right pane, above the slice summary; on a phone it stays in the settings sheet.
   const objectsRight = layout.objectList === 'right-pane' && !phone
+  // The right pane stays shut until opened; its tab glows when something in it wants a look.
+  const rightOpen = useApp((s) => railOpen(s.rails, 'preview', other, true))
+  const { printer } = usePrinter()
+  const printState = printer?.status.state
+  const printResult = printer && (printState === 'finished' || printState === 'error') ? `${printer.id}:${printState}:${printer.status.updatedAt}` : null
+  const rightAttention = useRightAttention(rightOpen, printResult)
   const rightSections = [...(objectsRight ? [OBJECTS_SECTION] : []), ...(hasPreview ? (manyPlates ? [PLATES_SECTION, ...PREVIEW_RIGHT] : PREVIEW_RIGHT) : [])]
   // Toasts center over the viewport and sit above the plate bar and the playback bar, below the toolbar and the view
   // switch, never on a control. On a phone the layer slider runs down the right side, so they keep to the left of it.
@@ -200,7 +210,7 @@ export function Studio() {
           {design ? null : (
             <div className="platechip sx-overlay">
               <b>{plateName}</b>
-              <span>{selected ? selected.name : plateLoading ? 'Loading' : 'Empty'}</span>
+              <span className="platechip-name" {...(selected ? tipAttrs({ title: selected.name }) : {})}>{selected ? <MiddleName name={selected.name} /> : plateLoading ? 'Loading' : 'Empty'}</span>
               {plate.length > 1 ? <span>+{plate.length - 1}</span> : null}
             </div>
           )}
@@ -248,7 +258,7 @@ export function Studio() {
           </Suspense>
         </SidePane>
       ) : objectsRight || hasPreview ? (
-        <SidePane key={`sliced-${other}`} side={other} ws="preview" label={objectsRight ? 'Objects and slice summary' : 'Slice summary and filament'} sections={rightSections} width={312} tab={{ panel: 'slice-summary' }}>
+        <SidePane key={`sliced-${other}`} side={other} ws="preview" label={objectsRight ? 'Objects and slice summary' : 'Slice summary and filament'} sections={rightSections} width={312} tab={{ panel: 'slice-summary' }} attention={rightAttention}>
           {objectsRight ? <PrepareObjects /> : null}
           {hasPreview ? (
             <>

@@ -29,5 +29,5 @@ test('four arranged copies slice to an estimate', async ({ page, isMobile }) => 
   // whole plate it runs off the bed, and the safety preflight blocks the slice. The slice of the four, not the one before.
   await expect.poll(async () => { const s = await state(); return (s.status === 'done' && !s.stale && s.id !== single) || s.status === 'error' }, { timeout: 120_000 }).toBe(true)
   expect((await state()).message).toBeNull()
-  await expect(page.getByRole('button', { name: 'Print', exact: true })).toBeEnabled()
+  await expect(page.getByRole('button', { name: /^Print( on .+)?$/ })).toBeEnabled()
 })

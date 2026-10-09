@@ -224,6 +224,10 @@ button { cursor: pointer; }
 .sx-edge-tab[data-side="right"] { border-radius: var(--r-md) 0 0 var(--r-md); border-bottom: 1px solid var(--line-soft); border-right: 0; }
 .sx-edge-tab:hover, .sx-edge-tab:focus-visible, .sx-edge-tab[aria-expanded="true"] { color: var(--fg); }
 .sx-edge-tab:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+/* Something in the shut panel wants a look: a soft accent glow that breathes; still under reduced motion. */
+.sx-edge-tab[data-attention] { color: var(--accent); border-color: var(--accent-ring); box-shadow: var(--shadow-float), 0 0 0 1px var(--accent-ring), 0 0 14px 2px var(--accent-tint); animation: sx-edge-glow 2.4s var(--ease) infinite; }
+@keyframes sx-edge-glow { 50% { box-shadow: var(--shadow-float), 0 0 0 1px var(--accent-ring), 0 0 22px 6px var(--accent-tint); } }
+:root[data-motion="reduced"] .sx-edge-tab[data-attention] { animation: none; }
 .sx-edge-tab::after { content: ""; position: absolute; border-radius: 2px; background: color-mix(in srgb, currentColor 30%, transparent); }
 .sx-edge-tab[data-side="bottom"]::after { left: 50%; bottom: 3px; width: 20px; height: 3px; margin-left: -10px; }
 .sx-edge-tab[data-side="left"]::after { top: 50%; left: 3px; width: 3px; height: 20px; margin-top: -10px; }
