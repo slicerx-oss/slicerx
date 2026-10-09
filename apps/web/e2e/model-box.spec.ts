@@ -47,10 +47,12 @@ test.describe('Model box select', () => {
       sx.setState({ plate: sx.getState().plate.map((p, i) => ({ ...p, transform: p.transform.map((v, k) => (k === 12 ? 80 + 40 * i : k === 13 ? 128 : v)) })) })
     })
     await page.locator('.sx-tab[data-mode="design"]').click()
-    // The top view, so bed X and Y run straight across the screen.
+    // The top view, so bed X and Y run straight across the screen. The camera flies there over frames, which come slowly
+    // on a busy machine, so the points are read once it has stopped with bed Y running straight up the screen.
     await page.mouse.move(700, 450)
     await page.keyboard.press('1')
-    await page.waitForTimeout(800)
+    const moving = () => page.evaluate(() => (window as unknown as { __vp: { stats(): { cameraMoving: boolean } } }).__vp.stats().cameraMoving)
+    await expect.poll(async () => !(await moving()) && Math.abs((await screen(page, 60, 100, 0)).x - (await screen(page, 60, 160, 0)).x) < 1).toBe(true)
     await page.evaluate(() => (window as unknown as { __sx: { setState(p: unknown): void } }).__sx.setState({ selection: null, selectedIds: [] }))
     // Bed X 60 to 145 holds the first two boxes (70 to 90, 110 to 130) and not the third (150 to 170).
     const p0 = await screen(page, 60, 100, 0)
