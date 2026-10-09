@@ -2177,6 +2177,20 @@ class ViewportImpl implements Viewport {
       probeLast = key
       this.emit('probehover', ev)
     }
+    // The toolpath look's hover picks at most once per frame too: a pick tests every triangle of the models under the
+    // ray, and pointer moves come faster than frames.
+    let solidPending: { clientX: number; clientY: number } | null = null
+    const flushSolid = (): void => {
+      const p = solidPending
+      solidPending = null
+      if (!p || !this.toolpathLook.on || this.mode !== 'prepare' || this.drag) return
+      this.hoverSolid(pick(p)?.entry.id ?? null)
+    }
+    const queueSolid = (e: PointerEvent): void => {
+      const first = solidPending === null
+      solidPending = { clientX: e.clientX, clientY: e.clientY }
+      if (first) requestAnimationFrame(flushSolid)
+    }
     const queueProbe = (e: PointerEvent): void => {
       const first = probePending === null
       probePending = { clientX: e.clientX, clientY: e.clientY }
@@ -2345,7 +2359,7 @@ class ViewportImpl implements Viewport {
       }
       const d = this.drag
       if (!d) {
-        if (this.toolpathLook.on && this.mode === 'prepare' && e.buttons === 0) this.hoverSolid(pick(e)?.entry.id ?? null)
+        if (this.toolpathLook.on && this.mode === 'prepare' && e.buttons === 0) queueSolid(e)
         if ((this.tool === 'face' || (this.tool === 'probe' && this.probeFaces)) && this.mode === 'prepare' && e.buttons === 0) this.hoverFace(pick(e))
         if (this.tool === 'probe' && this.probeHover && this.mode === 'prepare' && e.buttons === 0) queueProbe(e)
         if (this.tool === 'paint' && this.mode === 'prepare') this.paintMove(e, pick)
