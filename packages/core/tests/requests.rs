@@ -265,6 +265,7 @@ fn frustum(bottom: f32, top: f32, height: f32) -> Mesh {
             support_paint: Vec::new(),
             seam_paint: Vec::new(),
             fuzzy_paint: Vec::new(),
+            paint_texts: Vec::new(),
         }],
     }
 }
@@ -486,6 +487,7 @@ fn cuboid(x: [f32; 2], y: [f32; 2], z: [f32; 2], name: &str) -> api::MeshPart {
         support_paint: Vec::new(),
         seam_paint: Vec::new(),
         fuzzy_paint: Vec::new(),
+        paint_texts: Vec::new(),
     }
 }
 
@@ -727,6 +729,7 @@ fn round_prism(cx: f32, cy: f32, r: f32, sides: u32, z: [f32; 2], inward: bool) 
         support_paint: Vec::new(),
         seam_paint: Vec::new(),
         fuzzy_paint: Vec::new(),
+        paint_texts: Vec::new(),
     }
 }
 

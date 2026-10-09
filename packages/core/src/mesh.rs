@@ -25,6 +25,9 @@ pub struct MeshPart {
     pub seam_paint: Vec<crate::paint::PaintFacet>,
     /// Painted fuzzy skin pieces: state 1 gives the walls there fuzzy skin (`paint_fuzzy_skin`).
     pub fuzzy_paint: Vec<crate::paint::PaintFacet>,
+    /// The paint texts the pieces above were decoded from, as `(layer, triangle, text)` with layer 0 color, 1 seam,
+    /// 2 support and 3 fuzzy skin: what the raw parts format writes back, so a copy of the mesh keeps its paint.
+    pub paint_texts: Vec<(u8, u32, String)>,
 }
 
 /// A loaded model: one or more parts in object space.
@@ -105,6 +108,7 @@ impl Mesh {
                 support_paint: Vec::new(),
                 seam_paint: Vec::new(),
                 fuzzy_paint: Vec::new(),
+                paint_texts: Vec::new(),
             })
             .collect::<Vec<_>>();
         if parts.is_empty() {
@@ -145,6 +149,7 @@ impl Mesh {
                 }
             }
         }
+        write_raw_paint(&self.parts, &mut b);
         b
     }
 
@@ -202,6 +207,7 @@ impl Mesh {
                 support_paint: Vec::new(),
                 seam_paint: Vec::new(),
                 fuzzy_paint: Vec::new(),
+                paint_texts: Vec::new(),
             });
         }
         // An optional paint block after the parts. A reader without it stops before it.
@@ -234,8 +240,8 @@ impl Mesh {
         Some((lo, hi))
     }
 
-    /// A stable 64-bit content hash (FNV-1a over positions, indices and slots),
-    /// used as the cache key for sliced geometry.
+    /// A stable 64-bit content hash (FNV-1a over positions, indices, slots and
+    /// paint texts), used as the cache key for sliced geometry.
     pub fn content_hash(&self) -> u64 {
         let mut h = Fnv::new();
         for p in &self.parts {
@@ -249,6 +255,13 @@ impl Mesh {
                 for i in t {
                     h.write(&i.to_le_bytes());
                 }
+            }
+            // Paint is part of what prints, so a mesh painted otherwise is another mesh.
+            for (layer, tri, text) in &p.paint_texts {
+                h.write(&[*layer]);
+                h.write(&tri.to_le_bytes());
+                h.write(text.as_bytes());
+                h.write(&[0]);
             }
         }
         h.finish()
@@ -336,6 +349,7 @@ impl Mesh {
                 support_paint: Vec::new(),
                 seam_paint: Vec::new(),
                 fuzzy_paint: Vec::new(),
+                paint_texts: Vec::new(),
             });
         }
         Ok(Self { name, parts })
@@ -366,6 +380,7 @@ impl Mesh {
             support_paint: Vec::new(),
             seam_paint: Vec::new(),
             fuzzy_paint: Vec::new(),
+            paint_texts: Vec::new(),
         };
         Ok(Self {
             name: name.to_owned(),
@@ -377,6 +392,34 @@ impl Mesh {
 const RAW_MAGIC: &[u8] = b"SXMP";
 const RAW_PAINT_MAGIC: &[u8] = b"SXPT";
 
+/// The paint block of the raw parts format from the parts' paint texts, grouped by part and layer; nothing when no
+/// part is painted.
+fn write_raw_paint(parts: &[MeshPart], b: &mut Vec<u8>) {
+    fn layers(p: &MeshPart) -> impl Iterator<Item = u8> + '_ {
+        (0..4u8).filter(move |l| p.paint_texts.iter().any(|t| t.0 == *l))
+    }
+    let entries: usize = parts.iter().map(|p| layers(p).count()).sum();
+    if entries == 0 {
+        return;
+    }
+    b.extend_from_slice(RAW_PAINT_MAGIC);
+    b.extend_from_slice(&u32::try_from(entries).unwrap_or(u32::MAX).to_le_bytes());
+    for (i, p) in parts.iter().enumerate() {
+        for layer in layers(p) {
+            b.extend_from_slice(&u32::try_from(i).unwrap_or(u32::MAX).to_le_bytes());
+            b.push(layer);
+            let count = p.paint_texts.iter().filter(|t| t.0 == layer).count();
+            b.extend_from_slice(&u32::try_from(count).unwrap_or(u32::MAX).to_le_bytes());
+            for (_, tri, text) in p.paint_texts.iter().filter(|t| t.0 == layer) {
+                let t = text.as_bytes().get(..text.len().min(65_535)).unwrap_or(&[]);
+                b.extend_from_slice(&tri.to_le_bytes());
+                b.extend_from_slice(&u16::try_from(t.len()).unwrap_or(u16::MAX).to_le_bytes());
+                b.extend_from_slice(t);
+            }
+        }
+    }
+}
+
 /// The paint block of the raw parts format into the parts' paint, as `threemf` decodes paint attributes: color pieces
 /// in the part's own filament are left out, every other layer is kept as painted.
 fn read_raw_paint(r: &mut Reader<'_>, parts: &mut [MeshPart]) -> Result<()> {
@@ -386,9 +429,11 @@ fn read_raw_paint(r: &mut Reader<'_>, parts: &mut [MeshPart]) -> Result<()> {
         let layer = r.take(1)?.first().copied().unwrap_or(u8::MAX);
         let count = r.u32()?;
         let mut facets = Vec::new();
+        let mut texts = Vec::new();
         let p = parts.get(part);
         for _ in 0..count {
-            let tri = r.u32()? as usize;
+            let index = r.u32()?;
+            let tri = index as usize;
             let len = u16::from_le_bytes(r.take(2)?.try_into().map_err(|_| r.err())?);
             let text = std::str::from_utf8(r.take(usize::from(len))?).unwrap_or("");
             let Some(p) = p else { continue };
@@ -397,11 +442,13 @@ fn read_raw_paint(r: &mut Reader<'_>, parts: &mut [MeshPart]) -> Result<()> {
             let (Some(a), Some(b), Some(c)) = (corner(t[0]), corner(t[1]), corner(t[2])) else {
                 continue;
             };
-            if !text.is_empty() {
+            if !text.is_empty() && layer < 4 {
                 facets.extend(crate::paint::decode(text, [a, b, c]));
+                texts.push((layer, index, text.to_owned()));
             }
         }
         let Some(p) = parts.get_mut(part) else { continue };
+        p.paint_texts.append(&mut texts);
         match layer {
             0 => {
                 let slot = p.slot;

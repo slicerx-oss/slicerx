@@ -44,6 +44,7 @@ fn cuboid(x: [f32; 2], y: [f32; 2], z: [f32; 2]) -> api::MeshPart {
         support_paint: Vec::new(),
         seam_paint: Vec::new(),
         fuzzy_paint: Vec::new(),
+        paint_texts: Vec::new(),
     }
 }
 
