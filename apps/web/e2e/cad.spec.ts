@@ -6,7 +6,7 @@
 import { readFileSync } from 'node:fs'
 import { type Page } from '@playwright/test'
 import { bounds, clickStepButton, command, facePick, freshBox, height, openStudio, pick, placeAt, pointsAround, pushTop, roundWall, sketchAt, steps, toolPanel } from './cad-helpers'
-import { expect, tab, test } from './fixtures'
+import { expect, tab, test, addMenu } from './fixtures'
 
 type Dim = { kind: string; value?: number }
 type Sx = { getState(): { plate: { id: string; name: string; dimensions?: Dim[]; history?: { steps: unknown[] } }[]; selection: string | null }; setState(p: unknown): void }
@@ -418,7 +418,7 @@ test('a saved project opens again with its history and dimensions', async ({ pag
   await expect.poll(() => steps(page)).toEqual([{ name: 'Pull 5 mm', state: 'done' }])
   // Push and pull opened Design; Export is in Slice.
   await tab(page, 'prepare').click()
-  await page.getByRole('button', { name: 'Export', exact: true }).click()
+  await addMenu(page, 'Export')
   const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('menuitem', { name: /Save project/ }).click()])
   const bytes = [...readFileSync(await download.path())]
   const name = download.suggestedFilename()

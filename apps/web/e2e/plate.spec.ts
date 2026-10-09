@@ -2,7 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 // Plate tools on the plate tab: numeric transform fields, scale to size, undo and redo, tool keys.
 import { type Page } from '@playwright/test'
-import { closeSheet, expect, openSheet, plateReady, sliceCount, sliced, tab, tabName, test } from './fixtures'
+import { addMenu, closeSheet, expect, openSheet, plateReady, renameRow, setPartFilament, sliceCount, sliced, tab, tabName, test } from './fixtures'
 
 /**
  * The G-code the printer runs. Files for Bambu Lab printers open with the header and the full settings (hundreds
@@ -172,7 +172,7 @@ test('add shapes, merge them, and split them back', async ({ page }) => {
   await openSheet(page)
   const objs = page.locator('.objs > li')
   const addShape = async (name: string) => {
-    await page.getByRole('button', { name: 'Add shape' }).click()
+    await addMenu(page, 'Add shape')
     await page.getByRole('menu', { name: 'Add shape' }).getByRole('menuitem', { name }).first().click()
   }
   await addShape('Box')
@@ -181,10 +181,10 @@ test('add shapes, merge them, and split them back', async ({ page }) => {
   await expect(objs).toHaveCount(3)
   // Select the box too, then merge the two shapes.
   await page.locator('.obj-name', { hasText: 'Box' }).click({ modifiers: ['ControlOrMeta'] })
-  await page.getByRole('button', { name: 'Object', exact: true }).click()
+  await addMenu(page, 'Object')
   await page.getByRole('menuitem', { name: 'Merge selected objects' }).click()
   await expect(objs).toHaveCount(2)
-  await page.getByRole('button', { name: 'Object', exact: true }).click()
+  await addMenu(page, 'Object')
   await page.getByRole('menuitem', { name: 'Split to objects' }).click()
   await expect(objs).toHaveCount(3)
 })
@@ -208,7 +208,7 @@ test('geometry tools run in the browser: cut in two, then repair', async ({ page
   // On a phone the object list, its Tools menu and the cut panel are in the sidebar's sheet.
   await openSheet(page)
   await page.locator('.obj-name', { hasText: 'Layered X' }).click()
-  await page.getByRole('button', { name: 'Tools' }).click()
+  await addMenu(page, 'Tools')
   await page.getByRole('menuitem', { name: 'Cut' }).click()
   // The cut panel sits in the sidebar next to the plane in the view; its fields and the gizmo share the plane.
   const panel = page.locator('[data-section="cut-tool"]')
@@ -221,7 +221,7 @@ test('geometry tools run in the browser: cut in two, then repair', async ({ page
   await expect(panel).toBeHidden({ timeout: 30_000 })
   await expect(objs).toHaveCount(2)
   await expect(page.locator('.obj-name', { hasText: 'lower' })).toBeVisible()
-  await page.getByRole('button', { name: 'Tools' }).click()
+  await addMenu(page, 'Tools')
   await page.getByRole('menuitem', { name: 'Repair mesh' }).click()
   await expect(page.locator('.sx-toast, [role=status]').filter({ hasText: /Repaired|already clean/ }).first()).toBeVisible({ timeout: 30_000 })
 })
@@ -233,7 +233,7 @@ test('save the project as .sx3mf with the SlicerX metadata', async ({ page }) =>
   })
   await prepare(page)
   await openSheet(page)
-  await page.getByRole('button', { name: 'Export', exact: true }).click()
+  await addMenu(page, 'Export')
   await expect(page.getByRole('menuitem', { name: /STL/ })).toHaveCount(0)
   const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('menuitem', { name: /Save project/ }).click()])
   expect(download.suggestedFilename()).toMatch(/\.sx3mf$/)
@@ -372,13 +372,14 @@ test('Settings > Controls changes a shortcut, uses it, and puts it back', async 
 test('the paint tool paints the object with a filament color, and undo takes it back', async ({ page, isMobile }) => {
   test.skip(isMobile, 'Painting needs a mouse')
   await prepare(page)
+  // Select the model first: the Paint panel takes the Objects card's place.
+  await page.locator('.obj-name', { hasText: 'Layered X' }).click()
   await page.getByRole('button', { name: 'Paint', exact: true }).click()
   const panel = page.locator('[data-section="paint"]')
   await expect(panel).toBeVisible()
   await panel.getByRole('radio', { name: /Filament 2/ }).click()
   // The panel shows the brush's state, not a stale one.
   await expect(panel.getByRole('radio', { name: /Filament 2/ })).toHaveAttribute('aria-checked', 'true')
-  await page.locator('.obj-name', { hasText: 'Layered X' }).click()
   // The view opens on the whole plate: the iso view (7) brings the model to the middle before painting it.
   await page.keyboard.press('7')
   await page.waitForTimeout(600)
@@ -508,13 +509,12 @@ test('the object list renames an object, sets a part filament, and leaves an obj
   await prepare(page)
   await openSheet(page)
   const row = page.locator('li.obj').first()
-  await row.locator('.obj-h').click()
-  const name = row.getByLabel('Name', { exact: true })
-  await name.fill('Layered bracket')
-  await name.press('Enter')
+  await renameRow(row, 'Layered bracket')
   await expect(page.locator('.obj-name', { hasText: 'Layered bracket' })).toBeVisible()
-  await row.getByLabel(/^Filament for /).first().selectOption('3')
+  await setPartFilament(page, row, 3)
   await expect(page.locator('[data-section="filament"] .slot[data-slot="3"]')).not.toHaveClass(/unused/)
+  // Lock and print show on the row's hover.
+  await row.locator('.obj-row').first().hover()
   await row.getByRole('button', { name: /^Do not print Layered bracket/ }).click()
   await expect(row).toHaveClass(/off/)
   // The Slice action and Undo are on the view.
@@ -534,8 +534,10 @@ test('the object row and the estimate use plain words: parts, slot names, and th
   await expect(meta).toHaveAttribute('data-tip-title', /^\d[\d,]* triangles$/)
   // A part's filament reads as its slot, type and color, as the printer's slots do.
   await openSheet(page)
-  await row.locator('.obj-h').click()
-  const options = await row.getByLabel(/^Filament for /).first().locator('option').allTextContents()
+  await row.getByTestId('slice-object-expand').click()
+  await row.getByTestId('object-part-slot').first().click()
+  const options = await page.getByRole('menu', { name: 'Filament' }).getByRole('menuitemcheckbox').allTextContents()
+  await page.keyboard.press('Escape')
   expect(options[0]).toMatch(/^\S+ [A-Z][\w-]* [A-Z][a-z]+( [a-z]+)?$/)
   expect(options.join('|')).not.toMatch(/Filament \d/)
   // Developer mode shows the triangles inline.
@@ -583,7 +585,7 @@ test('shots: the object row, part filaments and the estimate in plain words, lig
   const row = page.locator('li.obj').first()
   // On a phone the sidebar is a sheet.
   await openSheet(page)
-  await row.locator('.obj-h').click()
+  await row.getByTestId('slice-object-expand').click()
   for (const scheme of ['light', 'dark'] as const) {
     await page.evaluate((s) => (window as unknown as { __sx: { setState(p: unknown): void } }).__sx.setState({ scheme: s, themeFollowsSystem: false }), scheme)
     await expect(page.locator('html')).toHaveAttribute('data-sx-theme', new RegExp(scheme))
@@ -659,13 +661,11 @@ test('the object list reorders by drag and by buttons, and a locked object stays
   await page.keyboard.press('ControlOrMeta+d')
   const rows = page.locator('li.obj')
   await expect(rows).toHaveCount(2)
-  await rows.nth(0).getByLabel('Name', { exact: true }).fill('First')
-  await rows.nth(0).getByLabel('Name', { exact: true }).press('Enter')
-  await rows.nth(1).locator('.obj-h').click()
-  await rows.nth(1).getByLabel('Name', { exact: true }).fill('Second')
-  await rows.nth(1).getByLabel('Name', { exact: true }).press('Enter')
+  await renameRow(rows.nth(0), 'First')
+  await renameRow(rows.nth(1), 'Second')
   await expect(rows.nth(0).locator('.obj-name')).toHaveText('First')
-  // Buttons.
+  // Buttons, in the row's tree.
+  await rows.nth(1).getByTestId('slice-object-expand').click()
   await rows.nth(1).getByRole('button', { name: 'Move Second up' }).click()
   await expect(rows.nth(0).locator('.obj-name')).toHaveText('Second')
   // Drag: the row at the bottom onto the top one.
@@ -841,7 +841,7 @@ test('sleipnir is on by default in the layer height picker and changes the layer
   await page.locator('.obj-name', { hasText: 'Layered X' }).click()
   await page.keyboard.press('Delete')
   await expect(page.locator('.obj-name', { hasText: 'Layered X' })).toHaveCount(0)
-  await page.getByRole('button', { name: 'Add shape' }).click()
+  await addMenu(page, 'Add shape')
   await page.getByRole('menuitem', { name: 'Sphere' }).first().click()
   await expect(page.locator('.obj-name')).toHaveCount(1)
   const layers = async (): Promise<number> => {
