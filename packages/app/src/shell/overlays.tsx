@@ -9,6 +9,7 @@ import { useHost } from '../host'
 import { formatShortcut } from '../lib/keys'
 import { CheckLines, checkLines } from '../send/check-lines'
 import { set, shownSlice, useApp } from '../state/store'
+import { useLoading } from '../ravens/use-loading'
 
 /**
  * One quiet slot for progress and warnings. Engine and graphics details live in About, under Diagnostics. The line
@@ -17,11 +18,12 @@ import { set, shownSlice, useApp } from '../state/store'
 export function Status() {
   const slice = useApp((s) => s.slice)
   const loading = useApp((s) => s.plateLoading)
+  const { words } = useLoading()
   const arranging = useApp((s) => s.arranging)
   const warnings = shownSlice(slice)?.result.warnings.length ?? 0
   const items = [
     ...(slice.status === 'running' ? ['Slicing'] : []),
-    ...(loading ? ['Loading the model'] : []),
+    ...(loading ? [words] : []),
     ...(arranging ? [arranging.total ? `Arranging, layout ${Math.min(arranging.done + 1, arranging.total)} of ${arranging.total}` : 'Arranging'] : []),
     ...(warnings ? [`${warnings} ${warnings === 1 ? 'warning' : 'warnings'} in the last slice`] : []),
   ]

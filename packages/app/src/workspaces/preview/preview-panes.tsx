@@ -208,6 +208,9 @@ export function PreviewRight() {
   const shown = shownSlice(slice)
   // The result on screen while a new slice runs is the last one: its file is not the plate's, so Print and Export wait.
   const updating = slice.status === 'running'
+  // A model still loading holds Print and Export; the reason is in the tip.
+  const loading = useApp((s) => s.plateLoading)
+  const waitTip = (title: string) => (loading ? { tip: { title, reason: 'The model is still loading.' } } : {})
   if (!shown) {
     return (
       <Block title="Filament use" data-section="filament">
@@ -280,19 +283,19 @@ export function PreviewRight() {
         </dl>
         {printer && isExportOnly(printer) ? (
           <>
-            <Button variant="primary" size="lg" full icon="sd-card" disabled={unsafe !== null || updating} onClick={() => void exportGcode(host)}>
+            <Button variant="primary" size="lg" full icon="sd-card" disabled={unsafe !== null || updating || loading} {...waitTip('Export G-code')} onClick={() => void exportGcode(host)}>
               {`Export for ${printer.name}`}
             </Button>
             <p className="app-note">No connection. Save the file and copy it to the printer on a USB stick or SD card.</p>
           </>
         ) : (
           <>
-            <Button variant="primary" size="lg" full icon="send-to-printer" aria-label={target ? `Print on ${target.name}` : undefined} disabled={!target || unsafe !== null || updating} onClick={() => target && void sendToPrinter(host, target)}>
+            <Button variant="primary" size="lg" full icon="send-to-printer" aria-label={target ? `Print on ${target.name}` : undefined} disabled={!target || unsafe !== null || updating || loading} {...waitTip('Print')} onClick={() => target && void sendToPrinter(host, target)}>
               {target ? 'Print' : 'No idle printer'}
             </Button>
             {target ? <p className="app-note">On {target.name}{target.name !== target.model ? `, ${target.model}` : ''}</p> : null}
             <div className="app-row gap8">
-              <Button size="sm" icon="download" disabled={unsafe !== null || updating} onClick={() => void exportGcode(host)}>
+              <Button size="sm" icon="download" disabled={unsafe !== null || updating || loading} {...waitTip('Export G-code')} onClick={() => void exportGcode(host)}>
                 Export G-code
               </Button>
             </div>
