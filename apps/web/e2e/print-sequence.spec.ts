@@ -14,6 +14,9 @@ type Sx = {
     plates: { id: string; settings: Record<string, unknown> }[]
     activePlate: string
     workspace: string
+    modelMode: string
+    sliceLook: string
+    preview: unknown
     layerHi: number
     strikePick: number | null
     slice: { status: string; stale?: boolean; message?: string; result?: { id: string; collisions?: Collision[] } }
@@ -32,7 +35,7 @@ test('heimdall strikes a plate too close to print by object, and printing by lay
   })
   await page.goto('./')
   await plateReady(page)
-  const sx = () => page.evaluate(() => { const s = (window as unknown as { __sx: Sx }).__sx.getState(); return { n: s.plate.length, workspace: s.workspace, status: s.slice.status, stale: s.slice.stale ?? false, id: s.slice.result?.id ?? null, collisions: s.slice.result?.collisions ?? [], layerHi: s.layerHi, pick: s.strikePick } })
+  const sx = () => page.evaluate(() => { const s = (window as unknown as { __sx: Sx }).__sx.getState(); return { n: s.plate.length, workspace: s.workspace, layers: s.workspace === 'prepare' && s.modelMode === 'slice' && s.sliceLook === 'toolpaths' && s.preview !== null, status: s.slice.status, stale: s.slice.stale ?? false, id: s.slice.result?.id ?? null, collisions: s.slice.result?.collisions ?? [], layerHi: s.layerHi, pick: s.strikePick } })
   const workspace = (w: string) => page.evaluate((ws) => (window as unknown as { __sx: Sx }).__sx.setState({ workspace: ws }), w)
   await page.evaluate(() => (window as unknown as { __sx: Sx }).__sx.setState({ plate: [], selection: null, selectedIds: [] }))
   for (const n of [1, 2]) {
@@ -45,8 +48,8 @@ test('heimdall strikes a plate too close to print by object, and printing by lay
   await expect(print).toBeEnabled()
 
   // By object the boxes stand inside the toolhead's reach: the slice runs and heimdall strikes it. The sequence change
-  // starts a background slice, and it settles first: a command slice still running when the test leaves Preview would
-  // finish later and open Preview again.
+  // starts a background slice, and it settles first: a command slice still running when the test moves on would
+  // finish later and show its toolpaths again.
   await page.evaluate(() => {
     const st = (window as unknown as { __sx: Sx }).__sx
     const s = st.getState()
@@ -55,8 +58,9 @@ test('heimdall strikes a plate too close to print by object, and printing by lay
   await expect.poll(async () => { const s = await sx(); return s.status === 'done' && !s.stale && s.collisions.some((c) => c.severity === 'hit') }, { timeout: 120_000 }).toBe(true)
   const background = (await sx()).id
   await command(page, 'Slice the plate')
-  // The command's own slice is done once its result replaces the background one and the command has opened Preview.
-  await expect.poll(async () => { const s = await sx(); return s.workspace === 'preview' && s.status === 'done' && !s.stale && s.id !== background && s.collisions.some((c) => c.severity === 'hit') }, { timeout: 120_000 }).toBe(true)
+  // The command's own slice is done once its result replaces the background one and Slice shows its toolpaths (there
+  // is no Preview workspace any more: the command shows the slice in Slice).
+  await expect.poll(async () => { const s = await sx(); return s.layers && s.status === 'done' && !s.stale && s.id !== background && s.collisions.some((c) => c.severity === 'hit') }, { timeout: 120_000 }).toBe(true)
   await expect(page.getByRole('alert').filter({ hasText: 'heimdall found' }).first()).toBeVisible()
   await workspace('prepare')
   await expect(print).toBeDisabled()
