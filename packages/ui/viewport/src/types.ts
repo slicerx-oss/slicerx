@@ -424,7 +424,8 @@ export interface Viewport {
   /**
    * The plate's bed and objects. An object with the same id whose parts are the very same position and index arrays
    * as before is kept as it was built (only its name, transform and colors follow), so a payload rebuilt for another
-   * change costs no rebuild; new arrays mean a new build.
+   * change costs no rebuild; new arrays mean a new build. An object that leaves the plate stays built for ten seconds,
+   * so a switch to another plate and back costs no rebuild either.
    */
   setPlate(plate: ViewportPlate, opts?: { keepCamera?: boolean }): void
   /** Move objects without rebuilding geometry. */
