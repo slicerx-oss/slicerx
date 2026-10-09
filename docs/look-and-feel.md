@@ -175,4 +175,4 @@ The first-run picker (see docs/first-run.md) shows each preset as a card and pre
 
 Known difference: OrcaSlicer binds Ctrl+K to "Clone selected" in its object list. In SlicerX, Ctrl+K opens the command bar in every look, so the Orca look puts Duplicate on Ctrl+D instead.
 
-Sidebar order: printer, filament, objects, print settings (`objectList: 'sidebar-after-filament'`). The object row is the selection state, so it stays in view at 1440 x 900 without scrolling.
+Sidebar order: printer and filament pinned at the top, then print settings. The objects list sits at the top of the right pane, above the slice summary (`objectList: 'right-pane'`), so the sidebar fits at 1440 x 900 without scrolling in Simple. On a phone the objects stay in the settings sheet.

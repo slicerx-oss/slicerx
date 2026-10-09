@@ -37,6 +37,8 @@ export interface RailProps {
   children?: ReactNode
   /** Rendered only when expanded, pinned at the bottom. */
   footer?: ReactNode
+  /** Rendered only when expanded, pinned under the header: it stays put while the body scrolls. */
+  pinned?: ReactNode
   /** Rendered in the header after the title while expanded, such as a mode chip. */
   headExtra?: ReactNode
   className?: string
@@ -56,7 +58,7 @@ export interface RailProps {
  * decides the window is wide enough. The inner edge glows as the pointer approaches. The parent
  * owns and remembers the collapsed state per workspace.
  */
-export function Rail({ side, label, collapsed, onCollapsedChange, items = [], onSelect, peekOnHover = true, peekDelay = 320, dropActive, children, footer, headExtra, className, style, edge, railRef, toggle = true }: RailProps) {
+export function Rail({ side, label, collapsed, onCollapsedChange, items = [], onSelect, peekOnHover = true, peekDelay = 320, dropActive, children, footer, pinned, headExtra, className, style, edge, railRef, toggle = true }: RailProps) {
   const own = useRef<HTMLElement>(null)
   const ref = railRef ?? own
   const [peek, setPeek] = useState(false)
@@ -143,6 +145,7 @@ export function Rail({ side, label, collapsed, onCollapsedChange, items = [], on
           })}
         </nav>
       ) : null}
+      {pinned && showExpanded ? <div className="sx-rail-pin">{pinned}</div> : null}
       <div className="sx-rail-body">{showExpanded ? children : null}</div>
       {footer ? <div className="sx-rail-foot">{footer}</div> : null}
     </aside>
