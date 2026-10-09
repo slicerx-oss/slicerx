@@ -360,7 +360,7 @@ export function SliceBlock({ label = 'Slice plate', compact }: { label?: string;
   // With Auto slice on there is no Slice button: Print is the action, ready once the background slice is current. It opens
   // the Print sheet on that printer; without one it shows the preview, where the G-code export lives.
   // With Auto slice off, Slice is the action until the plate has a current slice; then Print is, as with Auto slice
-  // on (the slice summary has no Print of its own), and Slice again sits under it.
+  // on (the slice summary has no Print of its own), and Slice again sits on the estimate line.
   const current = done !== null && !done.stale
   const primary = auto || current ? (
     printer && isExportOnly(printer) ? (
@@ -434,7 +434,13 @@ export function SliceBlock({ label = 'Slice plate', compact }: { label?: string;
           <span className="est-sub">
             {done.result.layerCount} layers{grams > 0 ? `, ${formatGrams(grams)}` : ''}
           </span>
-          <span className={done.stale ? 'app-tag stale' : 'app-tag'}>{done.stale ? (auto ? 'Updating' : 'Settings changed') : 'From slice'}</span>
+          {!auto && current && !running ? (
+            <Button size="sm" variant="ghost" icon="slice" className="est-again" onClick={() => void slicePlate(host).then(() => get().slice.status === 'done' && showSliced())}>
+              Slice again
+            </Button>
+          ) : (
+            <span className={done.stale ? 'app-tag stale' : 'app-tag'}>{done.stale ? (auto ? 'Updating' : 'Settings changed') : 'From slice'}</span>
+          )}
         </p>
         {slice.status === 'running' && auto ? (
           <div className="slicing-edge" role="status" aria-label="Slicing">
@@ -442,11 +448,6 @@ export function SliceBlock({ label = 'Slice plate', compact }: { label?: string;
           </div>
         ) : null}
         {running && !auto ? track : primary}
-        {!auto && current && !running ? (
-          <Button size="sm" variant="ghost" icon="slice" onClick={() => void slicePlate(host).then(() => get().slice.status === 'done' && showSliced())}>
-            Slice again
-          </Button>
-        ) : null}
         {problems}
         {sliceNote ? <p className="app-note">{sliceNote}</p> : null}
       </div>
