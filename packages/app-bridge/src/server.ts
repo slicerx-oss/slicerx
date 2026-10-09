@@ -89,7 +89,7 @@ export function createAppBridgeServer(client: AppClient): McpServer {
     {
       title: 'Read the app state',
       description:
-        'What the app shows now: the active tab (prepare, preview, feed for the Vault, printers...), the plate (each object with its parts, filament slot, size, Vault listing and the last slice\'s warnings for it), the printer and nozzle, the filament slots, the slicing status with the last slice summary (time, grams, layers, warnings), which export commands are on (the mesh exports stay off for a Vault design), whether setup or the save prompt is open, the dialogs and toasts on screen, the current log marker, and where the time of the last file open went (lastOpen: milliseconds from the start of the open to the end of each stage, from reading the file to the slice after it), and how long the 3D view took to its first frame (view).',
+        'What the app shows now: the active tab (prepare, preview, feed for the Vault, printers...), the plate (each object with its parts, filament slot, size, Vault listing and the last slice\'s warnings for it), the printer and nozzle, the filament slots, the slicing status with the last slice summary (time, grams, layers, warnings), which export commands are on (the mesh exports stay off for a Vault design), whether setup or the save prompt is open, the dialogs and toasts on screen, the current log marker, and where the time of the last file open went (lastOpen: milliseconds from the start of the open to the end of each stage, from reading the file to the slice after it), how long the 3D view took to its first frame (view), and what the geometry engine has answered by operation (geometry).',
       inputSchema: {},
       annotations: read,
     },

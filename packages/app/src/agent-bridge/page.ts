@@ -11,6 +11,7 @@ import { printBlock } from '../plate/heimdall'
 import { objectWarnings } from '../plate/object-list'
 import { jobFileName } from '../state/actions'
 import { openTiming, viewTiming } from '../lib/open-timing'
+import { geomCalls } from '../geom/client'
 import { get, setWorkspace, type AppState } from '../state/store'
 import type { Capture, LogKind } from './capture'
 import { BridgeError, click, elements, fill, pressKey, testids, waitFor } from './dom'
@@ -98,6 +99,7 @@ export function appState(s: AppState): Record<string, unknown> {
     lastOpen: openTiming(),
     // How long the 3D view took to its first frame, or null before it.
     view: viewTiming(),
+    geometry: geomCalls(),
   }
 }
 
