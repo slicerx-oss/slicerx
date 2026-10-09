@@ -11,9 +11,9 @@ import { planeContour } from './contour'
 import type { PaintBindings } from './gizmobindings'
 import type { ObjectEntry } from './model'
 import {
-  autoDetail, cylinderRegion, decodeTree, encodeTree, fillByAngle, fillConnected, gapFill, gridFor, isLeaf, leavesOf, paintDab, paintLeafAt, paintPatch, readPaintTexts, replaceEverywhere,
+  autoDetail, cylinderRegion, decodeTree, encodeTree, fillByAngle, fillConnected, forEachPaintedLeaf, gapFill, gridFor, isLeaf, paintDab, paintedLeafCount, paintLeafAt, paintPatch, readPaintTexts, replaceEverywhere,
   slabRegion, sphereRegion, stateAt, trianglePoints, withPointFilter,
-  type PaintMap, type PaintNode, type PaintRecorder, type PaintRegion, type V3,
+  type PaintMap, type PaintNode, type PaintRecorder, type PaintRegion, type Tri, type V3,
 } from './paint'
 import type { PaintEdit, PaintLayer, PaintSettings, PaintStroke } from './types'
 
@@ -656,29 +656,47 @@ export class Painter {
       any = true
       const src = mesh.userData.source as { positions: Float32Array; indices: Uint32Array | Uint16Array } | undefined
       if (!src) continue
-      const pos: number[] = []
-      const col: number[] = []
-      for (const [t, node] of p.map) {
-        const tri = trianglePoints(src.positions, src.indices, t)
-        for (const leaf of leavesOf(tri, node)) {
-          if (leaf.state === 0) continue
-          const c = this.colorOf(layerS, leaf.state)
-          for (const v of leaf.v) {
-            pos.push(v[0], v[1], v[2])
-            col.push(c.r, c.g, c.b)
-          }
-        }
-      }
+      // One pass into arrays of their final size: a model with hundreds of thousands of painted pieces made a
+      // corner array and a Color per piece and grew two number arrays, which held several times the overlay itself.
+      let n = 0
+      for (const node of p.map.values()) n += paintedLeafCount(node)
       if (p.overlay) {
         p.overlay.removeFromParent()
         p.overlay.geometry.dispose()
         p.overlay = null
       }
-      if (!pos.length) continue
+      if (n === 0) continue
+      const pos = new Float32Array(9 * n)
+      const col = new Float32Array(9 * n)
+      const nor = new Float32Array(9 * n)
+      const rgb = new Map<number, Color>()
+      let w = 0
+      const put = (v: Tri, state: number): void => {
+        let c = rgb.get(state)
+        if (!c) rgb.set(state, (c = this.colorOf(layerS, state)))
+        const [a, b, d] = v
+        // The face normal three.js computeVertexNormals gives a triangle of an unindexed geometry: (c - b) x (a - b),
+        // from the corners as the position array stores them (32-bit), so every value matches its result exactly.
+        const f = Math.fround
+        const ex = f(d[0]) - f(b[0]), ey = f(d[1]) - f(b[1]), ez = f(d[2]) - f(b[2])
+        const fx = f(a[0]) - f(b[0]), fy = f(a[1]) - f(b[1]), fz = f(a[2]) - f(b[2])
+        // Stored, then normalized from the stored value, as computeVertexNormals and normalizeNormals do.
+        let nx = f(ey * fz - ez * fy), ny = f(ez * fx - ex * fz), nz = f(ex * fy - ey * fx)
+        const len = Math.sqrt(nx * nx + ny * ny + nz * nz)
+        const inv = 1 / (len || 1)
+        nx *= inv; ny *= inv; nz *= inv
+        for (const q of v) {
+          pos[w] = q[0]; pos[w + 1] = q[1]; pos[w + 2] = q[2]
+          col[w] = c.r; col[w + 1] = c.g; col[w + 2] = c.b
+          nor[w] = nx; nor[w + 1] = ny; nor[w + 2] = nz
+          w += 3
+        }
+      }
+      for (const [t, node] of p.map) forEachPaintedLeaf(trianglePoints(src.positions, src.indices, t), node, put)
       const g = new BufferGeometry()
-      g.setAttribute('position', new BufferAttribute(new Float32Array(pos), 3))
-      g.setAttribute('color', new BufferAttribute(new Float32Array(col), 3))
-      g.computeVertexNormals()
+      g.setAttribute('position', new BufferAttribute(pos, 3))
+      g.setAttribute('color', new BufferAttribute(col, 3))
+      g.setAttribute('normal', new BufferAttribute(nor, 3))
       const m = new MeshStandardMaterial({ vertexColors: true, roughness: 0.85, metalness: 0, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -6 })
       const o = new Mesh(g, m)
       o.raycast = () => {}
