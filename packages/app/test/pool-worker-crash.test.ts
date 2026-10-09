@@ -5,7 +5,9 @@
 // they fail, the worker leaves the pool, its shards go to the others, and a pool left with no worker starts a new one
 // with every mesh it had.
 import { describe, expect, it } from 'vitest'
+import { encodeParts } from '../../core/web/src/parts'
 import { createWasmSlicer } from '../../core/web/src/pool'
+import { boxMesh } from '../src/plate/mesh-ops'
 
 const blank = () => new ArrayBuffer(0)
 const info = { layerCount: 4, layerZ: [0.2], layerTimeS: [1], stats: { filament_mm: [1], filament_g: [1], cost: 0, tool_changes: 0, time_s: 1 }, stageMicros: {}, warnings: [] }
@@ -62,6 +64,15 @@ describe('a slicer worker that stops', () => {
     const loads = made[1]!.got.filter((g) => g.type === 'load')
     expect(loads).toEqual([{ type: 'load', meshId: mesh.id, bytes: 5 }])
     expect(made[1]!.got.findIndex((g) => g.type === 'slice')).toBeGreaterThan(made[1]!.got.findIndex((g) => g.type === 'load'))
+  })
+
+  it('parts are loaded again from the caller own arrays, encoded the same, with no copy kept', async () => {
+    const { slicer, made } = await pool(['error'])
+    const parts = [{ ...boxMesh(10, 10, 10), name: 'Body', slot: 2 }]
+    const mesh = await slicer.loadParts('Body', parts)
+    const r = await within(slicer.slice(request), 2000)
+    expect(r !== 'pending' && r.ok).toBe(true)
+    expect(made[1]!.got.filter((g) => g.type === 'load')).toEqual([{ type: 'load', meshId: mesh.id, bytes: encodeParts(parts).byteLength }])
   })
 
   it('a worker that cannot read its messages fails the same way', async () => {
