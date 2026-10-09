@@ -54,7 +54,7 @@ CASES = {}
 ORCA_ONLY = {"ensure_vertical_shell_thickness": "none", "thick_bridges": 0, "independent_support_layer_height": 0}
 
 
-def case(name, model, overrides=None, checks=None, note="", bbox=True):
+def case(name, model, overrides=None, checks=None, note="", bbox=True, per_layer=None):
     overrides = dict(overrides or {})
     # Orca 2.4.2 names the organic tree style `organic`; it reads `tree_organic` as unknown and falls back to
     # its default style, so the case names keep `tree_organic` and both slicers get `organic`.
@@ -62,7 +62,9 @@ def case(name, model, overrides=None, checks=None, note="", bbox=True):
         overrides["support_style"] = "organic"
     c = dict(DEFAULT_CHECKS)
     c.update(checks or {})
-    CASES[name] = {"model": model, "overrides": overrides or {}, "checks": c, "note": note, "bbox": bbox}
+    # per_layer: {feature: mm} compares the feature layer by layer, so a feature printed on the wrong layer shows.
+    CASES[name] = {"model": model, "overrides": overrides or {}, "checks": c, "note": note, "bbox": bbox,
+                   "per_layer": per_layer or {}}
 
 
 for m in ("cube", "gear", "x-reference"):
@@ -140,6 +142,15 @@ for label, orca in PATTERN_CASES:
 case("flare-overhang", "flare", {}, {"Overhang wall": (0.35, 20.0)})
 for _top in (30, 43, 50, 60, 80):
     case(f"probe-flare-{_top}", f"flare{_top}", {}, {"Overhang wall": (1.0, 1e9)}, "probe: which flare angles Orca labels as overhang walls")
+# Overhang walls as Orca classifies them: a wall whose center line lies more than half the nozzle past the layer
+# below. At 0.15 mm layers the 70 degree slab moves 0.41 mm a layer, which puts its outer wall 0.20 mm out: just
+# past half the nozzle. Two parts meeting on a cutting plane: that layer is the lower part's top.
+# (Orca turns the slabs round on the bed, so their extents are not compared.)
+for _h in (0.2, 0.15):
+    case(f"overhang-slabs-{_h}", "leaning-slabs", {"layer_height": _h}, {"Overhang wall": (0.05, 1.0)}, "overhang walls",
+         bbox=False, per_layer={"Overhang wall": 0.1})
+case("overhang-stacked", "stacked", {}, {"Overhang wall": (0.05, 1.0)}, "overhang walls",
+     per_layer={"Overhang wall": 0.1, "Outer wall": 0.1})
 case("table-bridge", "table", {}, {"Bridge": (0.35, 20.0)})
 case("table-support", "table", SUPPORT, {"Support": (0.35, 40.0), "Support interface": (0.5, 40.0)})
 case("table-support-angle45", "table", {**SUPPORT, "support_angle": 45}, {"Support": (0.35, 40.0), "Support interface": (0.5, 40.0)})
@@ -266,6 +277,7 @@ def parse(path):
     x = y = None
     kind = "unlabeled"
     feats = {}
+    by_layer = {}
     layers = 0
     with open(path, errors="replace") as f:
         for ln in f:
@@ -305,13 +317,15 @@ def parse(path):
             if delta > 0 and ("X" in f_ or "Y" in f_) and nx is not None and ny is not None:
                 d = feats.setdefault(kind, {"mm": 0.0, "bbox": [1e9, 1e9, -1e9, -1e9]})
                 d["mm"] += delta
+                per = by_layer.setdefault(kind, {})
+                per[layers] = per.get(layers, 0.0) + delta
                 b = d["bbox"]
                 for px, py in ((x, y), (nx, ny)):
                     if px is not None:
                         b[0], b[1], b[2], b[3] = min(b[0], px), min(b[1], py), max(b[2], px), max(b[3], py)
             x, y = nx, ny
     return {"layers": layers, "features": feats, "total_mm": sum(d["mm"] for d in feats.values()),
-            "time_s": print_time(path)}
+            "time_s": print_time(path), "by_layer": by_layer}
 
 
 class ParityOrca(slicers.Orca):
@@ -436,6 +450,12 @@ def compare(name, c, a, b):
                 row["ok"] = good and max(abs(v) for v in row["bbox_delta"]) <= 2.0
         rows.append(row)
         ok &= row["ok"]
+    for feat, tol in c.get("per_layer", {}).items():
+        pa, pb = a["by_layer"].get(feat, {}), b["by_layer"].get(feat, {})
+        worst = max([(abs(pa.get(k, 0.0) - pb.get(k, 0.0)), k) for k in set(pa) | set(pb)] or [(0.0, 0)])
+        rows.append({"what": f"{feat} worst layer", "sx": round(pa.get(worst[1], 0.0), 2), "orca": round(pb.get(worst[1], 0.0), 2),
+                     "layer": worst[1], "ok": worst[0] <= tol})
+        ok &= rows[-1]["ok"]
     extra = sorted(set(a["features"]) ^ set(b["features"]))
     return {"name": name, "ok": ok, "rows": rows, "only_in_one": extra, "note": c["note"]}
 

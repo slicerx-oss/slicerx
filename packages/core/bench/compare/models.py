@@ -204,6 +204,31 @@ def block(x=40.0, y=40.0, z=20.0):
     return _finish(_box(0, x, 0, y, 0, z))
 
 
+def _leaning_box(x0, x1, y0, y1, z0, z1, deg):
+    """A box whose top is moved toward +y so its sides lean `deg` degrees from vertical."""
+    d = (z1 - z0) * math.tan(math.radians(deg))
+    v = [(x0, y0, z0), (x1, y0, z0), (x1, y1, z0), (x0, y1, z0), (x0, y0 + d, z1), (x1, y0 + d, z1), (x1, y1 + d, z1), (x0, y1 + d, z1)]
+    t = [(0, 2, 1), (0, 3, 2), (4, 5, 6), (4, 6, 7), (0, 1, 5), (0, 5, 4), (1, 2, 6), (1, 6, 5), (2, 3, 7), (2, 7, 6), (3, 0, 4), (3, 4, 7)]
+    return [(v[a], v[b], v[c]) for a, b, c in t]
+
+
+def leaning_slabs():
+    """A 90 x 14 x 2 mm base with 8 x 4 mm slabs, 12 mm tall, leaning 20 to 70 degrees from vertical in 10 degree
+    steps: which slopes print as overhang walls."""
+    t = _box(-45, 45, -5, 9, 0, 2)
+    for k, deg in enumerate(range(20, 80, 10)):
+        x0 = -39 + 14 * k
+        t += _leaning_box(x0, x0 + 8, -5, -1, 2, 14, deg)
+    return _finish(t)
+
+
+def stacked():
+    """A 20 mm box up to z 5.5 under a 30 mm box: at 0.2 mm layers the two meet on a cutting plane, as the parts
+    of a multi-color model often do. The layer there is the top of the lower box, and the upper box's walls hang
+    over it from the next layer."""
+    return _finish(_box(-10, 10, -10, 10, 0, 5.5) + _box(-15, 15, -15, 15, 5.5, 10))
+
+
 def table():
     """A slab on two pillars 24 mm apart: bridges, and support under the slab."""
     return _finish(_box(0, 8, 0, 20, 0, 10) + _box(32, 40, 0, 20, 0, 10) + _box(0, 40, 0, 20, 10, 12))
@@ -329,7 +354,8 @@ register("x-reference", x_reference)
 for _t in (30, 50, 60, 80):
     register(f"flare{_t}", lambda t=_t: flare(10.0, float(t), 10.0))
 register("flare43", flare)
-for _name, _fn in (("wedge", wedge), ("eccentric-ring", eccentric_ring), ("crossed-bars", crossed_bars), ("block", block), ("table", table), ("mushroom", mushroom), ("thin-plate", thin_plate), ("flare", flare), ("toadstool", toadstool), ("counterbore", counterbore)):
+for _name, _fn in (("wedge", wedge), ("eccentric-ring", eccentric_ring), ("crossed-bars", crossed_bars), ("block", block), ("table", table), ("mushroom", mushroom), ("thin-plate", thin_plate), ("flare", flare), ("toadstool", toadstool), ("counterbore", counterbore),
+                     ("leaning-slabs", leaning_slabs), ("stacked", stacked)):
     register(_name, _fn)
 
 
