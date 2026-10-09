@@ -44,16 +44,28 @@ type StepParams = import('../cad/history/model').StepParams
 /**
  * Puts new parts on the object in one store update. With `step`, the edit is a step of the object's
  * CAD history (docs/cad-history.md): `start` tools begin one, the others add to one that exists.
+ * Paint is per triangle, so a part whose triangles the tool rebuilt (`rebuilt`, part indices; all by default) loses
+ * its paint; Undo brings it back with the old mesh. Resolves to true when paint was dropped.
  */
-async function replace(host: Loader, e: PlateEntry, parts: MeshPart[], transform: Mat4 = e.transform, step?: { params: StepParams; start: boolean }): Promise<void> {
+async function replace(host: Loader, e: PlateEntry, parts: MeshPart[], transform: Mat4 = e.transform, step?: { params: StepParams; start: boolean }, rebuilt?: readonly number[]): Promise<boolean> {
   const handle = await host.loadParts(e.name, parts)
   let history = e.history
   if (step && (history || step.start)) history = (await import('../cad/history/record')).withStep(e, -1, step.params)
   // Onto the object as it is now. Placement is the job's only when it baked a new one into the mesh.
   const baked = transform !== e.transform
-  if (!commitMade(e.id, () => ({ handle, parts, ...(baked ? { transform } : {}), ...(history ? { history } : {}) }), { keepPaint: true })) throw new Error('That object is gone.')
+  let dropped = false
+  const made = (latest: PlateEntry) => {
+    const kept = Object.entries(latest.paint ?? {}).filter(([part]) => (rebuilt ? !rebuilt.includes(Number(part)) : false))
+    dropped = kept.length < Object.keys(latest.paint ?? {}).length
+    return { handle, parts, ...(kept.length ? { paint: Object.fromEntries(kept) } : {}), ...(baked ? { transform } : {}), ...(history ? { history } : {}) }
+  }
+  if (!commitMade(e.id, made)) throw new Error('That object is gone.')
   markStale()
+  return dropped
 }
+
+/** The line a tool's message gets when it cleared paint. */
+const paintNote = (dropped: boolean): string => (dropped ? ' Its paint was cleared, since the triangles changed. Undo brings it back.' : '')
 
 const nonEmpty = (m: GeomMesh | undefined): m is GeomMesh => Boolean(m && m.indices.length >= 3)
 
@@ -68,9 +80,9 @@ export async function repairSelected(host: Loader): Promise<string> {
     parts.push(fromGeom(r.mesh, p.name, p.slot))
     entries.push({ label: p.name || e.name, report: r.report })
   }
-  await replace(host, e, parts, e.transform, { params: { op: 'repair' }, start: false })
+  const dropped = await replace(host, e, parts, e.transform, { params: { op: 'repair' }, start: false })
   const total = sumRepair(entries.map((x) => x.report))
-  const msg = repairHeadline(total)
+  const msg = repairHeadline(total) + paintNote(dropped)
   const open = (total.holesLeftOpen ?? 0) > 0
   toast(msg, open ? 'warn' : 'ok', { label: 'Details', run: () => showRepairReport({ title: `Repair report for ${e.name}`, entries }) })
   return msg
@@ -88,8 +100,8 @@ export async function simplifySelected(host: Loader, targetRatio: number): Promi
     before += r.report.before
     after += r.report.after
   }
-  await replace(host, e, parts, e.transform, { params: { op: 'simplify', targetRatio }, start: false })
-  const msg = `Simplified from ${before.toLocaleString('en-US')} to ${after.toLocaleString('en-US')} triangles.`
+  const dropped = await replace(host, e, parts, e.transform, { params: { op: 'simplify', targetRatio }, start: false })
+  const msg = `Simplified from ${before.toLocaleString('en-US')} to ${after.toLocaleString('en-US')} triangles.${paintNote(dropped)}`
   toast(msg, 'ok')
   return msg
 }
@@ -105,8 +117,8 @@ export async function hollowSelected(host: Loader, wallMm: number): Promise<stri
     parts.push(fromGeom(r.mesh, p.name, p.slot))
     saved = Math.max(saved, r.report.materialSavedPercent)
   }
-  await replace(host, e, parts, e.transform, { params: { op: 'hollow', wallMm }, start: true })
-  const msg = `Hollowed with ${wallMm} mm walls, about ${Math.round(saved)} % less material. Add a drain hole for resin.`
+  const dropped = await replace(host, e, parts, e.transform, { params: { op: 'hollow', wallMm }, start: true })
+  const msg = `Hollowed with ${wallMm} mm walls, about ${Math.round(saved)} % less material. Add a drain hole for resin.${paintNote(dropped)}`
   toast(msg, 'ok')
   return msg
 }
@@ -242,8 +254,8 @@ export async function subtractFromSelected(host: Loader, spec: HoleSpec): Promis
   const back = invert(e.transform)
   const local = parts.map((p) => bake(p, back))
   const label = spec.shape === 'cylinder' ? `Hole ${spec.sizeMm} mm` : `Box cut ${spec.depthMm} mm`
-  await replace(host, e, local, dropToBed(local, e.transform), { params: { op: 'subtract', solids: [solid], label }, start: true })
-  const msg = `Removed ${(removed / 1000).toFixed(2)} cm3.`
+  const dropped = await replace(host, e, local, dropToBed(local, e.transform), { params: { op: 'subtract', solids: [solid], label }, start: true })
+  const msg = `Removed ${(removed / 1000).toFixed(2)} cm3.${paintNote(dropped)}`
   toast(msg, 'ok')
   return msg
 }
@@ -276,8 +288,9 @@ export async function textOnSelected(host: Loader, spec: TextSpec): Promise<stri
   const r = await geom().call<{ mesh: GeomMesh }>('emboss', { mesh: toGeom(target), spec: { text: spec.text, point, normal: [0, 0, 1], up: [0, 1, 0], sizeMm: spec.sizeMm, depthMm: spec.depthMm, mode: spec.mode } })
   const parts = world.map((p, i) => (i === best ? fromGeom(r.mesh, p.name, p.slot) : p))
   const up = standUp(parts)
-  await replace(host, e, up.parts, up.transform)
-  const msg = `${spec.mode === 'emboss' ? 'Raised' : 'Sank'} "${spec.text}" ${spec.depthMm} mm on the top.`
+  // Only the part that carries the text gets new triangles; the others keep theirs, and their paint.
+  const dropped = await replace(host, e, up.parts, up.transform, undefined, [best])
+  const msg = `${spec.mode === 'emboss' ? 'Raised' : 'Sank'} "${spec.text}" ${spec.depthMm} mm on the top.${paintNote(dropped)}`
   toast(msg, 'ok')
   return msg
 }
