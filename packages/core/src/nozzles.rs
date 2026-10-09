@@ -413,11 +413,10 @@ impl Map {
                     };
                     (placeable, flush * FLUSH_SCORE + time + penalty)
                 };
-                // Between maps that score the same, the one that keeps the lower filaments on the lower extruders, as
-                // OrcaSlicer 2.4.2 most often chooses (filament 1 on the left extruder of an H2D, 2 on the right).
-                let better = |a: (usize, f64, &[u8]), b: (usize, f64, &[u8])| {
-                    a.0 > b.0 || (a.0 == b.0 && (a.1 < b.1 - 1e-9 || (a.1 <= b.1 + 1e-9 && a.2 < b.2)))
-                };
+                // Between maps that score the same, the first in Bambu Studio's order wins, as Bambu Studio maps them
+                // (filament 1 on the right, master, extruder of a two-filament H2D plate). For Bambu printers Bambu
+                // Studio is the reference where it and OrcaSlicer differ; OrcaSlicer is not even consistent here.
+                let better = |a: (usize, f64), b: (usize, f64)| a.0 > b.0 || (a.0 == b.0 && a.1 < b.1 - 1e-9);
                 let mut best_labels: Vec<u8> = vec![u8::try_from(master).unwrap_or(0); k];
                 let mut best = (0usize, f64::INFINITY);
                 if k <= ENUM_MAX {
@@ -425,7 +424,7 @@ impl Map {
                     for mask in 0u32..(1u32 << k) {
                         let labels: Vec<u8> = (0..k).map(|i| u8::from(mask >> i & 1 == 1)).collect();
                         let s = score_of(&labels);
-                        if better((s.0, s.1, &labels), (best.0, best.1, &best_labels)) {
+                        if better(s, best) {
                             best = s;
                             best_labels = labels;
                         }
@@ -442,7 +441,7 @@ impl Map {
                                 *t = 1 - *t;
                             }
                             let s = score_of(&trial);
-                            if better((s.0, s.1, &trial), (best.0, best.1, &best_labels)) {
+                            if better(s, best) {
                                 best = s;
                                 best_labels = trial;
                                 improved = true;
@@ -715,16 +714,15 @@ mod tests {
 
     #[test]
     fn two_filaments_on_every_layer_take_one_extruder_each() {
-        // Both ways round cost the same. OrcaSlicer 2.4.2 answers "1 2" (filament 1 on the left extruder, 2 on the
-        // right, the master) in most runs of the same plate and "2 1" in the rest; SlicerX takes the first.
+        // Bambu Studio's answer for this plate is "2 1": filament 1 on the right (master) extruder.
         let Some(m) = Map::resolve(&h2d(&[]), 2, &every_layer(&[1, 2], 50)) else {
             panic!("a map")
         };
-        assert_eq!(m.extruder, vec![0, 1]);
-        assert_eq!(m.nozzle, vec![0, 1]);
+        assert_eq!(m.extruder, vec![1, 0]);
+        assert_eq!(m.nozzle, vec![1, 0]);
         assert!(m.auto);
         let c = m.apply(&h2d(&[]));
-        assert_eq!(c.raw.get("filament_map"), Some(&serde_json::json!([1, 2])));
+        assert_eq!(c.raw.get("filament_map"), Some(&serde_json::json!([2, 1])));
     }
 
     #[test]

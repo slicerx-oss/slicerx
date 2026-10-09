@@ -1775,8 +1775,9 @@ fn an_extruder_that_prints_nothing_has_no_first_filament() {
 
 #[test]
 fn a_filament_only_a_feature_prints_with_gets_an_extruder() {
-    // An H2D cube with its sparse infill on filament 2: the map takes filament 2 too, and as OrcaSlicer 2.4.2
-    // most often maps it, filament 1 goes to the left extruder and 2 to the right (`filament_map = 1,2`).
+    // An H2D cube with its sparse infill on filament 2: the map takes filament 2 too, and as Bambu Studio maps two
+    // filaments that cost the same, filament 1 goes to the right (master) extruder and 2 to the left
+    // (`filament_map = 2,1`).
     let c = json!({
         "gcode_flavor": "marlin",
         "printer_model": "Bambu Lab H2D",
@@ -1790,7 +1791,7 @@ fn a_filament_only_a_feature_prints_with_gets_an_extruder() {
         "machine_start_gcode": "; map {filament_map[0]} {filament_map[1]}",
     });
     let g = cube_on(c, 1);
-    assert_eq!(g.lines().find(|l| l.starts_with("; map ")), Some("; map 1 2"));
+    assert_eq!(g.lines().find(|l| l.starts_with("; map ")), Some("; map 2 1"));
 }
 
 #[test]
