@@ -17,12 +17,13 @@ on:
 permissions:
   contents: read
 
-# A pull request opened with the full-ci label fires two events at once: opened, then labeled for the label. The
-# labeled run does the work. The opened one, and a labeled run for any other label, add nothing: they go in a group of
-# their own (so they neither cancel the real run nor get cancelled by it, since a cancelled required check recorded after
-# a passing one keeps a pull request out of the merge queue) and skip their jobs, and a skipped check counts as passed.
+# A cancelled required check recorded after a passing one keeps a pull request out of the merge queue, so the runs of
+# one pull request never cancel each other across these cases. Adding full-ci (also right after opening: gh and the web
+# both add labels just after the opened event) starts a run in a group of its own, beside the opened or pushed one. A run
+# that adds nothing (opened with full-ci already on it, so a labeled run follows, or labeled with any other label) goes
+# in another group and skips its jobs; a skipped check counts as passed.
 concurrency:
-  group: ci-${{ github.event.pull_request.number || github.ref }}${{ ((github.event.action == 'opened' && contains(github.event.pull_request.labels.*.name, 'full-ci')) || (github.event.action == 'labeled' && github.event.label.name != 'full-ci')) && '-again' || '' }}
+  group: ci-${{ github.event.pull_request.number || github.ref }}${{ ((github.event.action == 'opened' && contains(github.event.pull_request.labels.*.name, 'full-ci')) || (github.event.action == 'labeled' && github.event.label.name != 'full-ci')) && '-again' || (github.event.action == 'labeled' && '-full-ci') || '' }}
   cancel-in-progress: true
 
 jobs:
