@@ -14,6 +14,7 @@ import { PlateToolbar } from './prepare/plate-toolbar'
 import { PlateList } from './prepare/plate-list'
 import { useHost } from '../host'
 import { SidePane, type PaneSection } from '../shell/pane'
+import { ViewHold } from '../shell/boot'
 import { seedExamplePlate } from '../state/actions'
 import { get, showsLayers, useApp } from '../state/store'
 import { ViewportHost } from '../viewport/viewport-host'
@@ -170,6 +171,7 @@ export function Studio() {
 
       <section className="vp" aria-label="Plate" ref={vpRef}>
         <ViewportHost layers={layers} />
+        <ViewHold />
         <Suspense fallback={null}>
           <OpeningPicture />
         </Suspense>

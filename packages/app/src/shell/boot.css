@@ -22,3 +22,8 @@
 @media (prefers-reduced-motion: reduce) {
   .opening, .opening-swap { transition: none; animation: none; }
 }
+
+/* The 3D view's own frame on the window's first Slice: its ground until it is up, then a fade. */
+.vp-hold { position: absolute; inset: 0; z-index: 5; background: var(--ink-0); pointer-events: none; transition: opacity var(--t-slow, 260ms) var(--ease); }
+.vp-hold[data-phase="out"] { opacity: 0; }
+@media (prefers-reduced-motion: reduce) { .vp-hold { transition: none; } }

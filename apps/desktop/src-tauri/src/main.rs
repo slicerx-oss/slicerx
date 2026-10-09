@@ -102,6 +102,17 @@ fn main() {
         .manage(watch_state())
         .setup(|app| {
             crash::set_dir(app.handle());
+            // The window opens hidden and the page shows it once its first frame is painted in the saved theme
+            // (src/boot.ts), so it never flashes the wrong ground. If the page has not by then, it shows anyway.
+            let shown = app.handle().clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(std::time::Duration::from_millis(1500));
+                if let Some(w) = tauri::Manager::get_webview_window(&shown, "main") {
+                    if !w.is_visible().unwrap_or(true) {
+                        let _ = w.show();
+                    }
+                }
+            });
             #[cfg(all(windows, not(debug_assertions)))]
             if let Some(w) = tauri::Manager::get_webview_window(app, "main") {
                 crash::disable_browser_keys(&w);

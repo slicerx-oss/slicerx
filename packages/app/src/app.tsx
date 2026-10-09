@@ -31,7 +31,7 @@ import { addFileRefs } from './state/actions'
 import { isDirty, startDirtyTracking } from './project/unsaved'
 import { useFolderThemes } from './theme/folder'
 import { get, holdToasts, pilotState, pushRecent, set, showsLayers, toast, useApp } from './state/store'
-import { BootFrame, bootDone, whenAppReady } from './shell/boot'
+import { BootFrame, bootDone, whenShellReady } from './shell/boot'
 import { updaterRegistered } from './updates/hold'
 import { toolStore } from './plate/tools'
 import { startReadySignal } from './lib/ready-signal'
@@ -334,8 +334,9 @@ function Shell() {
 
 /**
  * The window's opening: the agreement and setup on one stage, so a step change crossfades instead of cutting to the bare
- * shell, and after them the Slice frame until the plate and its view are up, then one fade into the app. Toasts wait
- * until it ends. With nothing to cover, the static frame from index.html fades once the first screen is ready.
+ * shell, and after them the Slice frame until Slice has mounted, then one fade into the app (its 3D view keeps a frame
+ * of its own until it is up, ViewHold). Toasts wait until it ends. With nothing to cover, the static frame from
+ * index.html fades once the first screen has mounted.
  */
 function Opening({ workspace }: { workspace: string }) {
   const agreementOpen = useApp((s) => s.agreementOpen)
@@ -355,23 +356,17 @@ function Opening({ workspace }: { workspace: string }) {
     } else setPhase((p) => (p === 'cover' ? 'leaving' : p))
   }, [covered])
   useEffect(() => {
-    if (phase === 'done' && !covered) {
-      // Nothing to cover: the static frame fades once the first screen is ready.
-      return whenAppReady(() => {
-        bootDone()
-        set({ introHold: false })
-      }, () => workspaceRef.current !== 'prepare')
-    }
+    // Nothing to cover: the static frame fades once the first screen has mounted.
+    if (phase === 'done' && !covered) return whenShellReady(bootDone, () => workspaceRef.current !== 'prepare')
     if (phase !== 'leaving') return
-    return whenAppReady(() => {
+    return whenShellReady(() => {
       bootDone()
       setPhase('out')
     }, () => workspaceRef.current !== 'prepare')
   }, [phase, covered])
   useEffect(() => {
     if (phase !== 'out') return
-    // The reveal starts as the frame fades, so the plate is traced in view; toasts follow.
-    set({ introHold: false })
+    // Toasts follow the fade.
     const t = setTimeout(() => {
       setPhase('done')
       holdToasts(false)
@@ -399,11 +394,7 @@ function Opening({ workspace }: { workspace: string }) {
 function BootRelease({ workspace }: { workspace?: string } = {}) {
   useEffect(() => {
     if (workspace === undefined) bootDone()
-    else
-      return whenAppReady(() => {
-        bootDone()
-        set({ introHold: false })
-      }, () => workspace !== 'prepare')
+    else return whenShellReady(bootDone, () => workspace !== 'prepare')
   }, [workspace])
   return null
 }

@@ -2,7 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 // The window's opening: the static frame fades once the app is ready under it, and toasts wait for the opening to end.
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { bootDone, whenAppReady } from '../src/shell/boot'
+import { bootDone, whenShellReady, whenViewReady } from '../src/shell/boot'
 import { get, holdToasts, set, toast } from '../src/state/store'
 
 afterEach(() => {
@@ -24,26 +24,37 @@ describe('the opening frame', () => {
     expect(document.getElementById('sx-boot')).toBeNull()
   })
 
-  it('waits for the plate and its view, another workspace, or the time limit', async () => {
+  it('fades once Slice has mounted or another workspace opened, at the latest after the limit', async () => {
     const ready = vi.fn()
-    whenAppReady(ready, () => false)
+    whenShellReady(ready, () => false)
     expect(ready).not.toHaveBeenCalled()
-    document.documentElement.dataset['sxReady'] = 'plate'
-    await Promise.resolve()
-    expect(ready).not.toHaveBeenCalled()
-    document.documentElement.dataset['sxReady'] = 'viewport'
+    const studio = document.createElement('div')
+    studio.className = 'studio'
+    document.body.append(studio)
     await new Promise((r) => setTimeout(r, 0))
     expect(ready).toHaveBeenCalledTimes(1)
+    studio.remove()
 
     const other = vi.fn()
-    whenAppReady(other, () => true)
+    whenShellReady(other, () => true)
     expect(other).toHaveBeenCalledTimes(1)
+  })
+
+  it('holds the 3D view until it is up, at most 1.5 s', async () => {
+    const up = vi.fn()
+    whenViewReady(up)
+    document.documentElement.dataset['sxReady'] = 'plate'
+    await new Promise((r) => setTimeout(r, 0))
+    expect(up).not.toHaveBeenCalled()
+    document.documentElement.dataset['sxReady'] = 'viewport'
+    await new Promise((r) => setTimeout(r, 0))
+    expect(up).toHaveBeenCalledTimes(1)
 
     vi.useFakeTimers()
     delete document.documentElement.dataset['sxReady']
     const late = vi.fn()
-    whenAppReady(late, () => false, 4000)
-    vi.advanceTimersByTime(3999)
+    whenViewReady(late)
+    vi.advanceTimersByTime(1499)
     expect(late).not.toHaveBeenCalled()
     vi.advanceTimersByTime(1)
     expect(late).toHaveBeenCalledTimes(1)

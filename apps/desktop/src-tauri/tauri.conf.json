@@ -19,6 +19,7 @@
         "minWidth": 960,
         "minHeight": 600,
         "backgroundColor": "#282a36",
+        "visible": false,
         "dragDropEnabled": false,
         "titleBarStyle": "Overlay",
         "hiddenTitle": true,
