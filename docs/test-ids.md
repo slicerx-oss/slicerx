@@ -41,7 +41,7 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | `projects-close` | Close (keeps the unsaved work for next time) |
 | `agreement` | The pre-alpha agreement screen |
 | `agreement-check`, `agreement-accept` | Its checkbox and Accept and continue |
-| `raven-slice-glide` | Muninn gliding along the slicing progress, for a slice past about 1.2 s |
+| `raven-slice-glide` | Muninn riding the Estimate block's slicing bar, for a slice past about 1.2 s |
 | `raven-loading` | Huginn and Muninn over the plate while a model loads for more than about 1.2 s |
 
 ## Setup (first run and Printers > Add)

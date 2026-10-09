@@ -3,13 +3,12 @@
 // A thin glowing bar along the top of the viewport while the plate slices, filled from the engine's own progress
 // (the same fraction as the sidebar's Estimate bar). It shows only for a slice that takes longer than 250 ms, stays at least 400 ms once
 // it shows, then fills and fades out, so quick re-slices after an edit never blink. Model loading still sweeps.
-import type { SliceProgress as SliceProgressValue } from '@slicerx/contracts'
 import { lazy, Suspense, useEffect, useRef, useState, type CSSProperties } from 'react'
 import { useWaited } from '../lib/waited'
+import type { SliceProgress as SliceProgressValue } from '@slicerx/contracts'
 import { useApp } from '../state/store'
 
 // The ravens load only once a wait has run past about 1.2 s.
-const SliceGlide = lazy(() => import('../ravens/waits').then((m) => ({ default: m.SliceGlide })))
 const LoadingRavens = lazy(() => import('../ravens/waits').then((m) => ({ default: m.LoadingRavens })))
 
 /** How long the ravens over a loading plate take to fly off once the model is on it. */
@@ -42,21 +41,14 @@ export function SliceProgress() {
     const t = setTimeout(() => setShown(false), Math.max(180, MIN_SHOWN_MS - (performance.now() - since.current)))
     return () => clearTimeout(t)
   }, [running, shown])
-  const longSlice = useWaited(running)
-  const [glide, setGlide] = useState(false)
-  useEffect(() => {
-    if (longSlice) setGlide(true)
-    else if (!shown) setGlide(false)
-  }, [longSlice, shown])
   const p = done ? 1 : fraction
   return (
     <>
       {loading ? (
         <div className="busy" aria-hidden="true"><i /></div>
       ) : shown ? (
-        <div className="slice-progress" data-done={done || undefined} role="progressbar" aria-label="Slicing" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(p * 100)} style={{ '--p': p } as CSSProperties}>
+        <div className="slice-progress" data-done={done || undefined} role="progressbar" aria-label="Slicing" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(p * 100)}>
           <i style={{ '--p': p } as CSSProperties} />
-          {glide ? <Suspense fallback={null}><SliceGlide done={done} /></Suspense> : null}
         </div>
       ) : null}
       <LoadingWait loading={loading} />
