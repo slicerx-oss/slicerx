@@ -17,4 +17,5 @@ function mark(fn: (t: Timing, now: number) => void): void {
 export const markOpenStarted = (name: string): void => mark((t, now) => t.openStarted(name, now))
 export const markOpenStage = (stage: OpenStage, extra?: { parsedIn?: OpenTiming['parsedIn']; at?: number }): void => mark((t, now) => t.openStage(stage, { ...extra, now }))
 export const markOpenEnded = (): void => mark((t, now) => t.openEnded(now))
-export const markViewDrawn = (mountedAt: number, firstDrawMs: number | null): void => mark((t, now) => t.viewDrawn(mountedAt, firstDrawMs, now))
+export const markViewDrawn = (mountedAt: number, firstDrawMs: number | null, startup?: () => Record<string, number | null> | null): void =>
+  mark((t, now) => t.viewDrawn(mountedAt, firstDrawMs, now, startup))

@@ -78,18 +78,28 @@ export function openTiming(): OpenTiming | null {
   return { name: current.name, ms: { ...current.ms }, ...(current.parsedIn ? { parsedIn: current.parsedIn } : {}) }
 }
 
-/** The 3D view's start, once per page: from mounting it (before its code loads) to its first frame, and the viewport's own firstDrawMs (from creating it to that frame). */
+/**
+ * The 3D view's start, once per page: from mounting it (before its code loads) to its first frame, the viewport's own
+ * firstDrawMs (from creating it to that frame), and how the viewport's start split up (its stats().startup), read
+ * when asked, since the shader warm-up ends after the first frame.
+ */
 export interface ViewTiming {
   mountToDrawMs: number
   firstDrawMs: number | null
+  startup?: Record<string, number | null>
 }
 
-let view: ViewTiming | null = null
+let view: Omit<ViewTiming, 'startup'> | null = null
+let startupOf: (() => Record<string, number | null> | null) | null = null
 
-/** Records the 3D view's first frame; later frames do not count. `mountedAt` is performance.now() when it mounted. */
-export function viewDrawn(mountedAt: number, firstDrawMs: number | null, now = clock()): void {
+/**
+ * Records the 3D view's first frame; later frames do not count. `mountedAt` is performance.now() when it mounted;
+ * `startup` reads the viewport's own split of its start.
+ */
+export function viewDrawn(mountedAt: number, firstDrawMs: number | null, now = clock(), startup?: () => Record<string, number | null> | null): void {
   if (view || typeof performance === 'undefined') return
   view = { mountToDrawMs: Math.round(now - mountedAt), firstDrawMs: firstDrawMs === null ? null : Math.round(firstDrawMs) }
+  startupOf = startup ?? null
   try {
     perf()?.measure('sx:view:first-draw', { start: mountedAt, end: now })
   } catch {
@@ -98,5 +108,8 @@ export function viewDrawn(mountedAt: number, firstDrawMs: number | null, now = c
 }
 
 export function viewTiming(): ViewTiming | null {
-  return view
+  if (!view) return null
+  const s = startupOf?.()
+  if (!s) return view
+  return { ...view, startup: Object.fromEntries(Object.entries(s).map(([k, v]) => [k, v === null ? null : Math.round(v)])) }
 }
