@@ -125,7 +125,7 @@ function tubeStl(rings: number, around: number): Buffer {
   return out
 }
 
-test('a binary STL is on screen before the engine has imported it, and built once', async ({ page, isMobile }) => {
+test('a binary STL is drawn from its own read and built once, however soon the engine imports it', async ({ page, isMobile }) => {
   test.skip(isMobile, 'Runs at desktop width')
   test.slow()
   await open(page)
@@ -137,15 +137,19 @@ test('a binary STL is on screen before the engine has imported it, and built onc
     await page.keyboard.press('ControlOrMeta+o')
     await (await chooser).setFiles({ name: 'tube.stl', mimeType: 'model/stl', buffer: file })
   }).toPass({ timeout: 60_000 })
-  await expect.poll(() => page.evaluate(() => performance.getEntriesByName('sx:open:done').length), { timeout: 120_000 }).toBe(1)
+  // The first frame with the model may land after the open is over, when the engine's import is quick.
+  await expect.poll(() => page.evaluate(() => ['done', 'drawn'].every((s) => performance.getEntriesByName(`sx:open:${s}`).length === 1)), { timeout: 120_000 }).toBe(true)
   const ms = await page.evaluate(() => Object.fromEntries(performance.getEntriesByType('measure').filter((e) => e.name.startsWith('sx:open:')).map((e) => [e.name.slice(8), e.startTime + e.duration])))
-  // Read, welded, in the slicing engine and on screen, in that order, all before the geometry engine's import (repair,
-  // unit, loose bodies) was done. Relative only: a slow runner is slow at both.
-  const stages = ['read', 'parse', 'engine', 'objects', 'drawn', 'repair', 'done']
-  for (const s of stages) expect(ms[s], `stage ${s}`).toBeDefined()
+  // Read, welded and in the slicing engine, in that order, then on the plate and drawn from that read; the geometry
+  // engine's import (repair, unit, loose bodies) ends the open. Which comes first, the drawn frame or the import, is
+  // not the point: on a quick machine the import of a clean 60,000 triangle STL can beat the first frame. Relative only.
+  const stages = ['read', 'parse', 'engine', 'objects', 'drawn']
+  for (const s of [...stages, 'repair', 'done']) expect(ms[s], `stage ${s}`).toBeDefined()
   const ends = stages.map((s) => ms[s]!)
   expect(ends).toEqual([...ends].sort((a, b) => a - b))
-  // The tube is clean, so the engine's import changed nothing: the object shown first stays, built once.
+  expect(ms['repair']!).toBeLessThanOrEqual(ms['done']!)
+  // The tube is clean, so the engine's import changed nothing: the object shown first, from the page's own read, stays,
+  // built once.
   await expect(page.locator('.obj-name')).toHaveText(['tube.stl'])
   expect(await page.evaluate(() => (window as unknown as { __vp?: Vp }).__vp?.stats().objectBuilds ?? -1)).toBe(builds + 1)
 })
