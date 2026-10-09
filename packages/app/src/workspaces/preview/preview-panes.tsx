@@ -14,7 +14,7 @@ import { printBlock } from '../../plate/heimdall'
 import { resolveSlots } from '../../filament/slots'
 import { exportGcode, recordSpoolUse, sendToPrinter } from '../../state/actions'
 import { setWorkspace, shownSlice, useApp } from '../../state/store'
-import { useTabLabel } from '../../first-run/look'
+import { effectiveMode, useLayout, useTabLabel } from '../../first-run/look'
 import { usePrinter } from '../prepare/prepare-panes'
 import { printTarget } from '../../lib/use-printer'
 import { isExportOnly } from '../../lib/hand-printers'
@@ -85,6 +85,7 @@ export function PreviewLeft() {
     if (!schema) void loadSettings().then(setSchema)
   }, [schema])
   const more = useMore('preview')
+  const developer = effectiveMode(useApp((s) => s.settingsMode), useLayout()) === 'developer'
   useApp((s) => s.appearance.colorVision)
   const show = (key: string, c: typeof config) => (schema ? schema.show(key, c) : String((c as Record<string, unknown>)[key] ?? ''))
   const file = useGcodeView((s) => s.file)
@@ -106,13 +107,16 @@ export function PreviewLeft() {
       : { ...row, color: featureStyle(Number(row.key) as FeatureId).color, label: featureStyle(Number(row.key) as FeatureId).label },
   )
   const totalStage = SLICE_STAGES.reduce((a, st) => a + (r.stageMicros[st] ?? 0), 0) || 1
+  // Engine detail: in the result line's tooltip, and shown under it only in Developer mode.
+  const engineLine = `${preview.segmentCount.toLocaleString('en-US')} toolpath segments from the ${r.engine === 'sx' ? 'sx' : 'Orca'} engine`
+  const warningsLine = r.warnings.length ? `${r.warnings.length} ${r.warnings.length === 1 ? 'warning' : 'warnings'}.` : 'No warnings.'
   return (
     <>
       <CollisionList />
       <Block title="Sliced plate" aside={<span className="fil-aside"><span className={shown.stale ? 'app-tag stale' : 'app-tag'}>{shown.stale ? (slice.status === 'running' ? 'Updating' : 'Settings changed') : 'Current'}</span><MoreButton id="preview" /></span>} data-section="result">
-        <p className="result-line">
+        <p className="result-line" {...tipAttrs({ title: engineLine })}>
           <Icon name="check" />
-          Sliced {r.layerCount} layers in {(r.wallMs / 1000).toFixed(2)} s
+          Sliced {r.layerCount} layers in {(r.wallMs / 1000).toFixed(2)} s. {warningsLine}
         </p>
         {resume && resume.plan.resumeLayer > 0 ? (
           <p className="result-line" data-resume>
@@ -120,10 +124,7 @@ export function PreviewLeft() {
             Resumes at layer {resume.plan.resumeLayer + 1}, {resume.plan.printedHeightMm.toFixed(2)} mm up. The layers below are already on the bed.
           </p>
         ) : null}
-        <p className="app-note">
-          {preview.segmentCount.toLocaleString('en-US')} toolpath segments from the {r.engine === 'sx' ? 'sx' : 'Orca'} engine.
-          {r.warnings.length ? ` ${r.warnings.length} ${r.warnings.length === 1 ? 'warning' : 'warnings'}.` : ' No warnings.'}
-        </p>
+        {developer ? <p className="app-note">{engineLine}.</p> : null}
         <div className="stagebar" role="img" aria-label="Time per slicing stage">
           {SLICE_STAGES.map((st) => {
             const us = r.stageMicros[st] ?? 0

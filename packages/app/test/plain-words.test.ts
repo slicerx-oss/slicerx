@@ -23,4 +23,11 @@ describe('Slice sidebar words', () => {
     expect(panes).not.toMatch(/worker threads/)
     expect(panes).toMatch(/slicedIn\(done\.result\.wallMs, host\.capabilities\.threads\)/)
   })
+
+  it('keeps the segment count and the engine out of the Sliced plate line, apart from its tooltip and Developer mode', () => {
+    const preview = readFileSync(resolve(import.meta.dirname, '../src/workspaces/preview/preview-panes.tsx'), 'utf8')
+    expect(preview).toMatch(/\{developer \? <p className="app-note">\{engineLine\}\.<\/p> : null\}/)
+    expect(preview).toMatch(/tipAttrs\(\{ title: engineLine \}\)/)
+    expect(preview.match(/toolpath segments/g)).toHaveLength(1)
+  })
 })

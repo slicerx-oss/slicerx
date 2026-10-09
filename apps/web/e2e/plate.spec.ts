@@ -581,6 +581,13 @@ test('the object row and the estimate use plain words: parts, slot names, and th
   await expect(estimate.locator('.est-time')).toHaveAttribute('data-tip-title', /^Sliced in \d+(\.\d)? (ms|s)( on \d+ threads)?$/)
   await expect(estimate).not.toContainText('threads')
   await expect(estimate.locator('dt', { hasText: 'Warnings' })).toHaveCount(0)
+  // The Sliced plate card: plain words, the engine detail in the line's tooltip, and inline only in Developer mode.
+  const result = page.locator('[data-section="result"] .result-line').first()
+  await expect(result).toHaveText(/^Sliced \d+ layers in \d+\.\d\d s\. (No warnings|\d+ warnings?)\.$/)
+  await expect(result).toHaveAttribute('data-tip-title', /^[\d,]+ toolpath segments from the (sx|Orca) engine$/)
+  await expect(page.locator('[data-section="result"]')).not.toContainText('toolpath segments')
+  await page.evaluate(() => (window as unknown as { __sx: { setState(p: unknown): void } }).__sx.setState({ settingsMode: 'developer' }))
+  await expect(page.locator('[data-section="result"]')).toContainText('toolpath segments from the')
 })
 
 test('the Volumes heading reads in sentence case', async ({ page }) => {
@@ -614,9 +621,15 @@ test('shots: the object row, part filaments and the estimate in plain words, lig
     await page.mouse.move(0, 0)
     await page.waitForTimeout(300)
     await time.hover()
-    await expect(page.getByRole('tooltip').filter({ hasText: /^Sliced in/ })).toBeVisible()
-    await page.waitForTimeout(300)
+    const tip = page.getByRole('tooltip').filter({ hasText: /^Sliced in/ })
+    await expect(tip).toBeVisible()
+    await expect(tip).toHaveAttribute('data-ready', /.*/)
     await page.screenshot({ path: `${dir}/plain-estimate-${scheme}-${width}.png` })
+    const card = page.locator('[data-section="result"]').first()
+    await card.scrollIntoViewIfNeeded()
+    await page.mouse.move(0, 0)
+    await page.waitForTimeout(300)
+    await card.screenshot({ path: `${dir}/plain-sliced-plate-${scheme}-${width}.png` })
   }
 })
 
