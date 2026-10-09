@@ -59,6 +59,17 @@ export function noteLoadError(e: LoadError): void {
   }
 }
 
+/** Ends the app's own geometry worker now when no call is waiting on it (endIdleGeomWorker). */
+let endIfIdle: (() => boolean) | null = null
+
+/**
+ * Ends the app's own geometry worker at once when no other call is waiting on it, so the memory its WebAssembly grew
+ * goes now rather than after its idle time; the next call starts a new one. True when it ended (or there was none).
+ */
+export function endIdleGeomWorker(): boolean {
+  return endIfIdle?.() ?? true
+}
+
 function workerProvider(): GeomProvider {
   let worker: Worker | null = null
   let idle: ReturnType<typeof setTimeout> | null = null
@@ -69,6 +80,14 @@ function workerProvider(): GeomProvider {
     if (pending.size > 0) return
     worker?.terminate()
     worker = null
+  }
+  endIfIdle = () => {
+    if (pending.size > 0) return false
+    if (idle) clearTimeout(idle)
+    idle = null
+    worker?.terminate()
+    worker = null
+    return true
   }
   const start = () => {
     if (idle) clearTimeout(idle)

@@ -9,12 +9,13 @@ import type { Bed, Host, MeshHandle, MeshPart } from '@slicerx/contracts'
 import { isBinaryStl, sameMesh, scanStl } from '../export/stl-scan'
 import { isBigSlice, sliceTimingOf } from './slice-estimate'
 import { inStep } from '../plate/history'
-import { fromGeom, toGeom, usesWorker, type GeomMesh } from '../geom/client'
+import { endIdleGeomWorker, fromGeom, toGeom, usesWorker, type GeomMesh } from '../geom/client'
 import type { AutoImport, Unit } from '../geom/cad'
 import type { StepConverter } from './import-step'
 import { centerOnBed, compose, dropToBed, setScale, type Mat4 } from '../plate/transform'
 import { repairChanged, rememberRepair, showRepairReport, type RepairEntry } from '../plate/repair-report'
-import { get, markStale, set, toast, type PlateEntry } from './store'
+import { appStore, get, markStale, set, toast, type AppState, type PlateEntry } from './store'
+import { fitSettledFor, onFitSettled } from '../plate/fit-state'
 import { brandAccent, objectPalette } from '../edition'
 import type { OpenScope } from '../project/unsaved'
 import { markOpenStage } from '../lib/open-mark'
@@ -63,12 +64,63 @@ async function engine({ declaredUnit, ...file }: AutoFile): Promise<AutoImport> 
 }
 
 /** The check for faces that cross each other on one part, as the engine runs it (a test passes its own). */
-export type CrossingRunner = (part: MeshPart, perShell: boolean) => Promise<{ crossing: boolean; mesh?: GeomMesh }>
+export type CrossingRunner = (part: MeshPart, perShell: boolean, signal?: AbortSignal) => Promise<{ crossing: boolean; mesh?: GeomMesh }>
 
-async function crossingEngine(part: MeshPart, perShell: boolean): Promise<{ crossing: boolean; mesh?: GeomMesh }> {
+export async function crossingEngine(part: MeshPart, perShell: boolean, signal?: AbortSignal): Promise<{ crossing: boolean; mesh?: GeomMesh }> {
   const { selfIntersections } = await import('../geom/cad')
   // The app's worker takes the typed arrays as they are; another provider takes plain arrays.
-  return selfIntersections(usesWorker() ? { positions: part.positions, indices: part.indices instanceof Uint32Array ? part.indices : Uint32Array.from(part.indices) } : toGeom(part), { perShell })
+  try {
+    return await selfIntersections(usesWorker() ? { positions: part.positions, indices: part.indices instanceof Uint32Array ? part.indices : Uint32Array.from(part.indices) } : toGeom(part), { perShell }, signal)
+  } finally {
+    // The check grows the worker's WebAssembly memory by about the mesh's size several times over; ending the worker
+    // lets it go now. A canceled check also stops computing this way.
+    endIdleGeomWorker()
+  }
+}
+
+/**
+ * When the crossing check may run: after the slice and the fit check, so it never adds its copies of a big mesh to
+ * theirs. `wait` resolves once the plate is quiet; `onBusy` calls back when a slice or an open starts, which cancels a
+ * check under way (it runs again once the plate is quiet).
+ */
+export interface Quiet {
+  wait(): Promise<void>
+  onBusy(cb: () => void): () => void
+}
+
+/** The longest the check waits for a quiet plate (ms): a fit check or a slice that never reports does not hold it for good. */
+export const QUIET_MAX_MS = 60_000
+
+/** Whether nothing the crossing check would compete with is under way or about to start. */
+export function plateQuiet(s: AppState): boolean {
+  if (s.plateLoading || s.slice.status === 'running') return false
+  // Auto slice is about to slice a plate whose slice is not current.
+  const printable = s.plate.some((p) => p.printable !== false && p.parts.length > 0)
+  if (s.autoSlice && printable && (s.slice.status === 'idle' || (s.slice.status === 'done' && s.slice.stale))) return false
+  return fitSettledFor(s.plate)
+}
+
+export const plateQuietness: Quiet = {
+  wait: () =>
+    new Promise<void>((resolve) => {
+      if (plateQuiet(get())) return resolve()
+      const done = (): void => {
+        offStore()
+        offFit()
+        clearTimeout(late)
+        resolve()
+      }
+      const check = (): void => {
+        if (plateQuiet(get())) done()
+      }
+      const offStore = appStore.subscribe(check)
+      const offFit = onFitSettled(check)
+      const late = setTimeout(done, QUIET_MAX_MS)
+    }),
+  onBusy: (cb) =>
+    appStore.subscribe((s, prev) => {
+      if ((s.slice.status === 'running' && prev.slice.status !== 'running') || (s.plateLoading && !prev.plateLoading)) cb()
+    }),
 }
 
 async function stepConverter(): Promise<StepConverter> {
@@ -235,20 +287,35 @@ export async function addAutoImport(host: Host, name: string, data: ArrayBuffer,
  * part small enough is rebuilt without the crossings and takes the place of the one on the plate, in the open's undo
  * step when nothing else was edited meanwhile; a bigger one gets a note. A part that changed meanwhile is left alone.
  */
-export async function checkCrossings(host: Host, name: string, objects: { id: string; perShell: boolean }[], cross: CrossingRunner, edit: (fn: () => void) => void = (fn) => fn()): Promise<{ fixed: number; left: number }> {
+export async function checkCrossings(host: Host, name: string, objects: { id: string; perShell: boolean }[], cross: CrossingRunner, edit: (fn: () => void) => void = (fn) => fn(), quiet: Quiet = plateQuietness): Promise<{ fixed: number; left: number }> {
   let fixed = 0
   let left = 0
   for (const o of objects) {
+    // One part at a time, each once the plate is quiet (after the slice and the fit check). A slice or an open that
+    // starts meanwhile cancels it, and it runs again when the plate is quiet once more.
     const start = get().plate.find((p) => p.id === o.id)
     if (!start) continue
     for (let i = 0; i < start.parts.length; i++) {
-      const part = start.parts[i]!
-      let r: { crossing: boolean; mesh?: GeomMesh }
-      try {
-        r = await cross(part, o.perShell)
-      } catch {
-        continue
+      let r: { crossing: boolean; mesh?: GeomMesh } | null = null
+      let part = start.parts[i]!
+      for (;;) {
+        await quiet.wait()
+        const now = get().plate.find((p) => p.id === o.id)
+        if (!now || !now.parts[i]) break
+        part = now.parts[i]!
+        const ac = new AbortController()
+        const off = quiet.onBusy(() => ac.abort())
+        try {
+          r = await cross(part, o.perShell, ac.signal)
+        } catch {
+          r = null
+        } finally {
+          off()
+        }
+        if (!ac.signal.aborted) break
+        r = null
       }
+      if (!r) continue
       if (!r.crossing) continue
       if (!r.mesh) {
         left++
