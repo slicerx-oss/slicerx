@@ -26,7 +26,7 @@ import { Silhouette, Swatch } from '../../parts'
 import { useSliceNote } from '../../lib/slice-note'
 import { cancelSlice, exportGcode, openModelFiles, sendToPrinter, slicePlate } from '../../state/actions'
 import type { LayoutSpec } from '@slicerx/contracts'
-import { effectiveMode } from '../../first-run/look'
+import { effectiveMode, useLayout } from '../../first-run/look'
 import { ModeSelector, useExpertVisible } from '../../first-run/mode-selector'
 import { ObjectActions } from './object-actions'
 const ObjectSettings = lazy(() => import('./object-settings').then((m) => ({ default: m.ObjectSettings })))
