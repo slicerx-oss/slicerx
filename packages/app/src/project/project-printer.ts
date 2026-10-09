@@ -76,6 +76,19 @@ export function changedKeys(settings: Record<string, unknown>): Set<string> | un
   return out
 }
 
+/**
+ * Engine choices of SlicerX that stay when a project opens, unless the person changed them in the project (its
+ * different_settings_to_system lists the key): every other value the project inherited from its presets comes from the
+ * file. Each says, in the open's note, what it kept when the project's inherited value differs.
+ */
+export const SLICERX_KEEPS: Readonly<Record<string, string>> = {
+  // aegis: wall widths fitted to the part, so thin features print solid with fewer width changes than Arachne or
+  // Bambu Studio's classic walls (adapters/config.ts SLICERX_PRESET_DEFAULTS sets it over every maker preset).
+  wall_generator: "Kept SlicerX's aegis walls; the project used Bambu's default.",
+  // The outer wall spaced from the inner walls so that the outline, not the wall's center, lands on the model's size.
+  precise_outer_wall: "Kept SlicerX's precise outer wall; the project used Bambu's default.",
+}
+
 /** The overrides split for another printer: what carries over, and what stays with the project printer (`dropped` names the settings, not the G-code). */
 export function carryOver(overrides: Record<string, SettingValue>, gcodeKeys: readonly string[], sameNozzle: boolean): { kept: Record<string, SettingValue>; parked: Record<string, SettingValue>; dropped: string[] } {
   const kept: Record<string, SettingValue> = {}
@@ -151,16 +164,18 @@ export function applyProjectSettings(source: string, settings: Record<string, un
   // value of other presets behind (a "0.12mm Fine" project sliced at 0.20 mm; a Generic PLA project at Bambu PLA
   // Basic's flow). The printer keeps to what the file lists, since its profile is that printer's system preset. A
   // project made for another nozzle keeps to its list too.
+  // A few engine choices of ours stay unless the person changed them in the project (SLICERX_KEEPS); the note says so.
   const whole = (k: string) => {
     const section = settingDef(k)?.section
-    return !match.asked && (section === 'process' || section === 'filament')
+    return !match.asked && (section === 'process' || section === 'filament') && !(k in SLICERX_KEEPS)
   }
   const applied = only ? Object.fromEntries(Object.entries(values).filter(([k]) => only.has(k) || whole(k))) : values
+  const keptNote = only && !match.asked ? Object.keys(values).filter((k) => k in SLICERX_KEEPS && !only.has(k)).map((k) => SLICERX_KEEPS[k]!).join(' ') : ''
   if (match.own) {
     // One of the person's printers: its own G-code, as on any switch to it.
     const kept = Object.fromEntries(Object.entries(applied).filter(([k]) => !GCODE_TEXT_KEYS.includes(k)))
     set((st) => ({ overrides: { ...st.overrides, ...kept }, goal: 'custom' as const }))
-    return { keys: Object.keys(kept), note: `Opened on ${match.own.name}, a ${match.model} ${mm(match.nozzle)} like the project's.` }
+    return { keys: Object.keys(kept), note: `Opened on ${match.own.name}, a ${match.model} ${mm(match.nozzle)} like the project's.${keptNote ? ` ${keptNote}` : ''}` }
   }
   // Its machine G-code, on its own printer. Text with lines the checker never allows stays the profile's.
   const project = importFlat(Object.fromEntries(Object.entries(settings).filter(([k]) => GCODE_TEXT_KEYS.includes(k)))).config as Record<string, unknown>
@@ -178,6 +193,7 @@ export function applyProjectSettings(source: string, settings: Record<string, un
     ? `Opened as ${match.model} with its ${mm(match.nozzle)} nozzle. The project is set up for a ${mm(match.asked)} nozzle, which SlicerX has no ${match.model} profile for.`
     : `Opened as ${match.model} ${mm(match.nozzle)} from the project.`
   if (blocked.length) note += ` Its ${blocked.map((c) => c.label).join(', ')} has lines SlicerX never sends, so the ${match.model} profile's is used.`
+  if (keptNote) note += ` ${keptNote}`
   return { keys: [...Object.keys(applied), ...Object.keys(gcode)], note }
 }
 
