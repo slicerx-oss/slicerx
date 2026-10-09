@@ -367,6 +367,16 @@ if ( vLive > 0.5 ) {
 `
 
 /**
+ * Lets go of an instanced buffer's CPU copy once it is on the GPU. Nothing reads these back: picking, playback, the
+ * markers and the purge view read the preview's own segments, and a lost graphics context reloads the view.
+ */
+function dropArray(this: { array: unknown }): void {
+  this.array = null
+}
+const EMPTY_U8 = new Uint8Array(0)
+const EMPTY_U16 = new Uint16Array(0)
+
+/**
  * Fan, nozzle temperature, retraction and seam markers read from the per-segment extras of an SXPV
  * buffer, or null when it has none. Retractions and seams are placed at the start of the segment
  * that carries the flag.
@@ -679,7 +689,7 @@ export class Toolpaths {
     for (let start = 0; start < S; start += CHUNK) {
       const end = Math.min(S, start + CHUNK)
       const seg = new InstancedInterleavedBuffer(words.subarray(start * 8, end * 8), 8, 1)
-      const lb = new InstancedInterleavedBuffer(layer.subarray(start, end), 1, 1)
+      const lb = new InstancedInterleavedBuffer(layer.subarray(start, end), 1, 1).onUpload(dropArray)
       const geo = new InstancedBufferGeometry()
       geo.index = this.base.index
       geo.setAttribute('position', this.base.getAttribute('position'))
@@ -817,7 +827,11 @@ export class Toolpaths {
    * Passing null clears them.
    */
   setExtras(extras: PreviewExtras | null): void {
-    this.extras = extras
+    // The per-segment fan and temperature go to the GPU below; only the markers and which kinds there are stay.
+    if (extras) {
+      const { fanPct, nozzleC, ...rest } = extras
+      this.extras = { ...rest, ...(fanPct ? { fanPct: EMPTY_U8 } : {}), ...(nozzleC ? { nozzleC: EMPTY_U16 } : {}) }
+    } else this.extras = null
     const b = this.buf
     const u = this.uniforms
     u.uHasExtras.value = extras && (extras.fanPct || extras.nozzleC) ? 1 : 0
@@ -841,7 +855,7 @@ export class Toolpaths {
       }
       if (fmax >= fmin) u.uFanRange.value = [fmin, Math.max(fmax, fmin + 1)]
       if (tmax >= tmin) u.uTempRange.value = [tmin, Math.max(tmax, tmin + 1)]
-      for (const c of this.chunks) c.extra = new InstancedInterleavedBuffer(data.subarray(c.start * 2, c.end * 2), 2, 1)
+      for (const c of this.chunks) c.extra = new InstancedInterleavedBuffer(data.subarray(c.start * 2, c.end * 2), 2, 1).onUpload(dropArray)
     } else {
       for (const c of this.chunks) c.extra = undefined
     }
