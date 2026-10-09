@@ -142,6 +142,37 @@ describe('a P1S 0.2 project on an empty plate', () => {
     expect(s.toast?.action?.label).toBe('Change printer')
   })
 
+  it("takes the layer height of the project's process preset, which the file does not list as changed", async () => {
+    // A Bambu Studio P1S 0.4 project on a user process preset made from "0.12mm Fine": its 0.12 mm layers are the
+    // preset's own, so different_settings_to_system lists only the other changes.
+    const fine = {
+      printer_settings_id: 'Bambu Lab P1S 0.4 nozzle',
+      printer_model: 'Bambu Lab P1S',
+      printer_variant: '0.4',
+      nozzle_diameter: ['0.4'],
+      print_settings_id: 'N3D - AMS',
+      inherits_group: ['0.12mm Fine @BBL X1C', '', ''],
+      layer_height: '0.12',
+      initial_layer_print_height: '0.2',
+      bottom_shell_layers: '5',
+      support_top_z_distance: '0.12',
+      wall_loops: '4',
+      sparse_infill_density: '35%',
+      different_settings_to_system: ['wall_loops', '', ''],
+    }
+    const { host, requests } = capture()
+    await openModelBytes(host, 'tangela.3mf', project(fine))
+    expect(get().printerId).toBe(PROJECT_PRINTER_ID)
+    const cfg = resolved()
+    expect(cfg['layer_height']).toBe(0.12)
+    expect(cfg['bottom_shell_layers']).toBe(5)
+    expect(cfg['support_top_z_distance']).toBe(0.12)
+    expect(cfg['wall_loops']).toBe(4)
+    expect(cfg['sparse_infill_density']).not.toBe(35)
+    await slicePlate(host, { auto: true })
+    expect((requests[0]!.config as Record<string, SettingValue>)['layer_height']).toBe(0.12)
+  })
+
   it('slices with the project G-code, trusted on its own printer', async () => {
     const { host, requests } = capture()
     await openModelBytes(host, 'pumpkin.3mf', project())
