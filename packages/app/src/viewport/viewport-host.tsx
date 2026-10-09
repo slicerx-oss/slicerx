@@ -24,6 +24,7 @@ import { toGeom } from '../geom/client'
 import { useHost } from '../host'
 import { moveTower, towerMesh, towerShown, TOWER_ID, type ShownTower } from '../plate/tower'
 import { appStore, selectedIds, set, shownSlice, toast, type AppState } from '../state/store'
+import { modelReveal, type RevealMemory } from './model-reveal'
 import { webgl2Available, watchFor, withRetries } from './context-retry'
 import { createFallbackViewport } from './fallback'
 import { overlayInsets } from './overlay-insets'
@@ -44,6 +45,10 @@ import { gantryHits, gantrySpec } from '../plate/heimdall-gantry'
 import { markOpenStage, markViewDrawn } from '../lib/open-mark'
 
 /** The part of the viewport handle the app drives. The 2D fallback implements the same. */
+// One memory a session: a second view (a remount) does not count as Model's first open again.
+const revealMemory: RevealMemory = { modelSeen: false }
+const prefersReducedMotion = (): boolean => typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches
+
 /** The render mode for the state: Model's CAD look, or the look picked for Slice. */
 export function modelLook(s: Pick<AppState, 'workspace' | 'modelMode' | 'look'>): RenderMode {
   if (s.workspace === 'prepare' && s.modelMode === 'design') return s.look === 'xray' ? 'xray' : 'cad'
@@ -392,6 +397,9 @@ export function ViewportHost({ layers }: { layers: boolean }) {
         }
         // Design models on a plain ground grid; the bed comes back in Slice. The camera stays where it is.
         if (first || s.modelMode !== prev.modelMode || s.workspace !== prev.workspace) (vp as unknown as Viewport).setGround?.(designing(s))
+        // Model's reveal: its first open this session, or a job opened while it shows
+        const revealNow = { model: designing(s), jobSeq: s.jobSeq }
+        if (modelReveal(first ? null : { model: designing(prev), jobSeq: prev.jobSeq }, revealNow, revealMemory, prefersReducedMotion())) (vp as unknown as Viewport).playReveal?.()
         // The printer's no-print areas follow its profile and any override of them in printer settings.
         // Both are machine coordinates; the plate counts from the printable area's front left corner.
         if (first || s.profile !== prev.profile || s.overrides !== prev.overrides || s.easy !== prev.easy) {
