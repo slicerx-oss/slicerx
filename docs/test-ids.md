@@ -59,6 +59,12 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | `setup-printer-error` | The printer was not saved |
 | `theme-<family>` | A theme card in setup's theme step and in Settings, Look and feel: `theme-subban`, `theme-dracula` and so on |
 
+## Slice: sidebar
+
+| Test id | Control |
+| --- | --- |
+| `slice-machine-plate` | The plate type the active plate prints on, in the printer card |
+
 ## Prepare: the objects list and Export
 
 | Test id | Control |

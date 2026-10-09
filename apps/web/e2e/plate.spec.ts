@@ -115,6 +115,56 @@ test('plates: add, switch, per-plate sequence, move objects', async ({ page }) =
   await expect(objs).toHaveCount(1)
 })
 
+/** Set a plate's type in its plate settings, then close them. */
+async function setBedType(page: Page, plate: string, value: string): Promise<void> {
+  await page.getByRole('button', { name: `${plate} settings` }).click()
+  await page.getByRole('group', { name: `${plate} settings` }).getByLabel('Bed type').selectOption(value)
+  await page.getByRole('button', { name: 'Done' }).click()
+}
+
+test('the printer card shows each plate\'s bed type', async ({ page }) => {
+  await prepare(page)
+  const card = page.locator('[data-section="printer"]')
+  const plateType = page.getByTestId('slice-machine-plate')
+  // Plate 1 prints on the printer's default; the card names it and never reads "unknown".
+  await expect(plateType).toHaveText(/\S/)
+  const first = (await plateType.textContent()) ?? ''
+  expect(['Textured PEI', 'Smooth PEI', 'Cool plate', 'Engineering plate', 'High temp plate']).toContain(first)
+  await expect(card).not.toContainText('unknown')
+  await page.getByRole('button', { name: 'Add plate' }).first().click()
+  const plates = page.getByRole('list', { name: 'Plates' })
+  await setBedType(page, 'Plate 2', 'smooth-pei')
+  await expect(plateType).toHaveText('Smooth PEI')
+  await plates.locator('.plate-card', { hasText: 'Plate 1' }).click()
+  await expect(plateType).toHaveText(first)
+  await plates.locator('.plate-card', { hasText: 'Plate 2' }).click()
+  await expect(plateType).toHaveText('Smooth PEI')
+  // Back to the printer's default.
+  await setBedType(page, 'Plate 2', '')
+  await expect(plateType).toHaveText(first)
+})
+
+// Screenshots of the printer card for review: SX_SHOTS=1, saved to SX_SHOTS_DIR (test-results/shots by default).
+test('shots: the printer card on a plate with its own bed type, light and dark', async ({ page }, info) => {
+  test.skip(!process.env['SX_SHOTS'], 'SX_SHOTS=1 only')
+  const dir = process.env['SX_SHOTS_DIR'] ?? info.outputPath('shots')
+  const width = page.viewportSize()?.width ?? 0
+  // The store hook the theme switch below uses.
+  await page.addInitScript(() => localStorage.setItem('slicerx.debug', '1'))
+  await prepare(page)
+  await page.getByRole('button', { name: 'Add plate' }).first().click()
+  await setBedType(page, 'Plate 2', 'smooth-pei')
+  const plateType = page.getByTestId('slice-machine-plate')
+  await expect(plateType).toHaveText('Smooth PEI')
+  for (const scheme of ['light', 'dark'] as const) {
+    await page.evaluate((s) => (window as unknown as { __sx: { setState(p: unknown): void } }).__sx.setState({ scheme: s, themeFollowsSystem: false }), scheme)
+    await page.locator('[data-section="printer"]').evaluate((el) => el.scrollIntoView({ block: 'center' }))
+    await plateType.hover()
+    await page.waitForTimeout(600)
+    await page.screenshot({ path: `${dir}/printer-card-plate-${scheme}-${width}.png` })
+  }
+})
+
 test('add shapes, merge them, and split them back', async ({ page }) => {
   await prepare(page)
   const objs = page.locator('.objs > li')
