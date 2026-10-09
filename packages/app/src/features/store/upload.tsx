@@ -24,6 +24,17 @@ import { useWaited } from '../../lib/waited'
 
 const UploadCarry = lazy(() => import('../../ravens/waits').then((m) => ({ default: m.UploadCarry })))
 
+/** The upload's status line; an upload that takes more than about 1.2 s gets a raven carrying the file. */
+export function UploadState({ busy, text }: { busy: boolean; text: string }) {
+  const carry = useWaited(busy)
+  return (
+    <span className="ce-state" role="status" data-testid="upload-state">
+      {carry ? <Suspense fallback={null}><UploadCarry /></Suspense> : null}
+      {text}
+    </span>
+  )
+}
+
 export const LICENSE_LABELS: Record<ListingLicense, string> = {
   cc0: 'CC0, free for anything',
   'cc-by': 'CC BY, credit me',
@@ -204,8 +215,6 @@ function UploadForm() {
   const [includeProfile, setIncludeProfile] = useState(true)
   const [tried, setTried] = useState(false)
   const [busy, setBusy] = useState<string | null>(null)
-  // An upload that takes a while gets a raven carrying the file.
-  const carry = useWaited(busy !== null)
   const [fileError, setFileError] = useState<string | null>(null)
   const urls = useRef<string[]>([])
   useEffect(() => () => urls.current.forEach((u) => URL.revokeObjectURL(u)), [])
@@ -468,10 +477,7 @@ function UploadForm() {
             <button type="submit" hidden />
           </form>
           <div className="ce-savebar">
-            <span className="ce-state" role="status" data-testid="upload-state">
-              {carry ? <Suspense fallback={null}><UploadCarry /></Suspense> : null}
-              {busy ?? (preparing ? 'Preparing' : file ? 'Ready to send' : 'Pick what to upload')}
-            </span>
+            <UploadState busy={busy !== null} text={busy ?? (preparing ? 'Preparing' : file ? 'Ready to send' : 'Pick what to upload')} />
             <Button onClick={closeUpload} disabled={busy !== null} data-testid="upload-cancel">
               Cancel
             </Button>
