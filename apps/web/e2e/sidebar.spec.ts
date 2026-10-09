@@ -110,6 +110,8 @@ test('shots: the mode chip in the pane title, closed and open, light and dark', 
   const width = page.viewportSize()?.width ?? 0
   await page.addInitScript(() => localStorage.setItem('slicerx.debug', '1'))
   await page.goto('./')
+  // On a phone the sidebar is a sheet.
+  await openSheet(page)
   const chip = page.getByTestId('slice-mode-chip')
   for (const scheme of ['light', 'dark'] as const) {
     await page.evaluate((s) => (window as unknown as { __sx: { setState(p: unknown): void } }).__sx.setState({ scheme: s, themeFollowsSystem: false, settingsMode: 'simple' }), scheme)

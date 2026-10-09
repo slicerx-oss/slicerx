@@ -623,7 +623,7 @@ test('the Volumes heading reads in sentence case', async ({ page }) => {
 })
 
 // Screenshots for review: SX_SHOTS=1, saved to SX_SHOTS_DIR (test-results/shots by default).
-test('shots: the object row, part filaments and the estimate in plain words, light and dark', async ({ page }, info) => {
+test('shots: the object row, part filaments and the estimate in plain words, light and dark', async ({ page, isMobile }, info) => {
   test.skip(!process.env['SX_SHOTS'], 'SX_SHOTS=1 only')
   test.slow()
   const dir = process.env['SX_SHOTS_DIR'] ?? info.outputPath('shots')
@@ -634,6 +634,8 @@ test('shots: the object row, part filaments and the estimate in plain words, lig
   await page.getByRole('button', { name: 'Slice plate' }).click()
   await expect(sliced(page, before)).toBeVisible({ timeout: 120_000 })
   const row = page.locator('li.obj').first()
+  // On a phone the sidebar is a sheet.
+  await openSheet(page)
   await row.locator('.obj-h').click()
   for (const scheme of ['light', 'dark'] as const) {
     await page.evaluate((s) => (window as unknown as { __sx: { setState(p: unknown): void } }).__sx.setState({ scheme: s, themeFollowsSystem: false }), scheme)
@@ -642,6 +644,8 @@ test('shots: the object row, part filaments and the estimate in plain words, lig
     await row.locator('.obj-meta').hover()
     await page.waitForTimeout(700)
     await page.screenshot({ path: `${dir}/plain-object-row-${scheme}-${width}.png` })
+    // On a phone the footer and the summary are in sheets of their own; the review needs them at desktop width only.
+    if (isMobile) continue
     const time = page.locator('[data-section="estimate"] .est-time')
     await page.mouse.move(0, 0)
     await page.waitForTimeout(300)
