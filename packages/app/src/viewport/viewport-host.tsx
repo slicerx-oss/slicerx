@@ -8,7 +8,7 @@ import { fitLines, keepFits, subscribeFits } from '../plate/fit-state'
 import type { PreviewBuffers } from '@slicerx/contracts'
 import type { ToolChangerSpec, Viewport, ViewportPlate } from '@slicerx/viewport'
 import { onThemeChange } from '@slicerx/ui/theme'
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { brandAccent, editionHasCad, useEdition } from '../edition'
 import { controlsFor, type ControlsApi } from '../first-run/controls'
 import { effectiveSlot, mapSlot, resolveSlots, slotFinish, type ResolvedSlot } from '../filament/slots'
@@ -24,6 +24,7 @@ import { toGeom } from '../geom/client'
 import { useHost } from '../host'
 import { moveTower, towerMesh, towerShown, TOWER_ID, type ShownTower } from '../plate/tower'
 import { appStore, selectedIds, set, shownSlice, toast, type AppState } from '../state/store'
+import { webgl2Available, watchFor, withRetries } from './context-retry'
 import { createFallbackViewport } from './fallback'
 import { overlayInsets } from './overlay-insets'
 import { shellGpu } from './shell-gpu'
@@ -186,13 +187,22 @@ function revealOption(): boolean | 'always' {
 
 /**
  * The canvases live in a stage element React never renders into, because a
- * canvas that failed to get a WebGL context cannot give a 2D one either.
+ * canvas that failed to get a WebGL context cannot give a 2D one either. Each try
+ * gets a canvas of its own. `late3d` is called when the 2D fallback finds that a
+ * WebGL2 context can be had after all, so the host starts the 3D view again.
  */
-async function start(stage: HTMLElement, webgpu: boolean, label: string): Promise<Drive> {
-  const canvas = makeCanvas(stage, label)
+async function start(stage: HTMLElement, webgpu: boolean, label: string, late3d: () => void): Promise<Drive> {
   try {
     const [{ createViewport, controlsPreset, withRemap, withGizmo }, gpuRenderer] = await Promise.all([import('@slicerx/viewport'), shellGpu()])
-    const vp = createViewport(canvas, { backend: webgpu ? 'auto' : 'webgl2', label, gpuRenderer, reveal: revealOption() })
+    const vp = await withRetries(() => {
+      const canvas = makeCanvas(stage, label)
+      try {
+        return createViewport(canvas, { backend: webgpu ? 'auto' : 'webgl2', label, gpuRenderer, reveal: revealOption() })
+      } catch (e) {
+        canvas.remove()
+        throw e
+      }
+    })
     // Profiling hook: set localStorage 'slicerx.debug' to reach the handle from a script (the store's __sx is there
     // from the first frame, state/store.ts).
     try {
@@ -200,12 +210,19 @@ async function start(stage: HTMLElement, webgpu: boolean, label: string): Promis
     } catch { /* storage blocked */ }
     return Object.assign(vp, { backendName: () => (vp.stats().backend === 'webgpu' ? 'WebGPU' : 'WebGL2'), controlsApi: { controlsPreset, withRemap, withGizmo } })
   } catch (e) {
-    // A broken GPU path must not take Prepare down; the 2D fallback still shows the plate.
+    // A broken GPU path must not take Prepare down; the 2D fallback still shows the plate, and the 3D view comes back
+    // when a context can be had.
     console.warn('Viewport failed to start, using the 2D fallback', e)
-    canvas.remove()
     const flat = createFallbackViewport(makeCanvas(stage, label))
     toast('This browser has no WebGL2, so the plate shows in a simple 2D view', 'warn')
-    return flat
+    const stop = watchFor(webgl2Available, late3d)
+    const dispose = flat.dispose.bind(flat)
+    return Object.assign(flat, {
+      dispose() {
+        stop()
+        dispose()
+      },
+    })
   }
 }
 
@@ -240,6 +257,8 @@ export function ViewportHost({ layers }: { layers: boolean }) {
   const stageRef = useRef<HTMLDivElement>(null)
   const vpRef = useRef<Drive | null>(null)
   const modeRef = useRef(mode)
+  // Bumped when the 2D fallback finds WebGL2 after all: the view starts again, in 3D.
+  const [attempt, setAttempt] = useState(0)
 
   useEffect(() => {
     const stage = stageRef.current
@@ -247,7 +266,7 @@ export function ViewportHost({ layers }: { layers: boolean }) {
     let disposed = false
     const offs: (() => void)[] = []
     const mountedAt = performance.now()
-    void start(stage, host.capabilities.webgpu, 'Plate and toolpaths').then((vp) => {
+    void start(stage, host.capabilities.webgpu, 'Plate and toolpaths', () => setAttempt((n) => n + 1)).then((vp) => {
       if (disposed) {
         vp.dispose()
         return
@@ -622,7 +641,7 @@ export function ViewportHost({ layers }: { layers: boolean }) {
       vpRef.current = null
       stage.replaceChildren()
     }
-  }, [host])
+  }, [host, attempt])
 
   // With the toolpaths showing, the legend, the layer strip and the playback bar cover parts of the view: the viewport frames the plate's content in the free area.
   useEffect(() => {
