@@ -4,6 +4,7 @@
 // the filament stay as they are, the same as a new project in OrcaSlicer, except what an opened project brought.
 import { history } from '../plate/history'
 import { get, set } from '../state/store'
+import { freshVary } from '../lib/sleipnir-default'
 import { confirmDiscard, markClean } from './unsaved'
 
 export function clearProject(): void {
@@ -28,6 +29,8 @@ export function clearProject(): void {
       return { overrides }
     })
   }
+  // A new project is a fresh plate: sleipnir comes back on unless the person chose otherwise.
+  set((s) => ({ easy: { ...s.easy, varyLayerHeight: freshVary(s) } }))
   set({
     plate: [],
     plates: [{ id: 'plate-1', name: 'Plate 1', objects: [], settings: {} }],

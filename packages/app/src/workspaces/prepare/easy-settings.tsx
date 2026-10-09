@@ -62,7 +62,7 @@ export function EasySettingsPanel() {
   const walls = Number(cfg.wall_loops)
   const infill = Number(cfg.sparse_infill_density)
   const angle = Number(cfg['support_threshold_angle'] ?? 25) || 25
-  const vary = easy.varyLayerHeight ?? false
+  const vary = easy.varyLayerHeight ?? true
   const [pickerOpen, setPickerOpen] = useState(false)
   const chosen = chosenFrom(vary, Number(cfg.layer_height))
   const sleipnirTip = OPTION_TIPS['smart_layer.sleipnir']
