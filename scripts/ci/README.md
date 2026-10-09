@@ -74,6 +74,15 @@ Waiters take a ticket in `<lock>.queue` and only the oldest one tries the lock. 
 poll; a ticket left alone for two minutes belongs to a waiter that died and is dropped. The queue only orders the
 waiters: `mkdir` alone decides who holds the lock, so an older `heavy.sh` that ignores the queue still never shares it.
 
+Slots: a machine with room for more than one heavy job at a time names how many in `<lock>.slots` (one number, for
+example `2`), and `SX_HEAVY_SLOTS` overrides it for one call. With no file the lock has one slot, as before. Slot 1 is
+`<lock>` itself and slot n is `<lock>.n`, each with its own holder record, judged by the rules above. Of the waiters,
+only as many of the oldest as there are free slots try one, so arrival order and CI first still hold. Pick the number
+from the load two of the heaviest jobs put on the machine together (a merge-queue e2e job is the heaviest), not from
+the core count. `heavy.sh --all <command>` waits for every slot and runs alone, for timing runs and benchmarks: it takes
+the slots one by one as they free up, and while it waits, only the oldest ticket may take a slot, so it is never passed
+over. A `heavy.sh` from before slots knows only `<lock>`, so it shares the machine with one slot-2 holder at most.
+
 `scripts/ci/heavy-test.sh` tests all of this on a temporary lock: alone on any side, and with
 `cross <distro> [<stopped distro>]` from Git Bash, Windows against WSL.
 

@@ -4,25 +4,32 @@
 # Runs a command while holding this machine's heavy-work lock, so a CI run never shares the CPU with a release build,
 # a kit build or another CI run, and timing tests do not flake under load. Machine-wide, not per repo:
 #
-#   scripts/ci/heavy.sh <command...>          waits for the lock, runs, releases
+#   scripts/ci/heavy.sh <command...>          waits for a slot of the lock, runs, releases
+#   scripts/ci/heavy.sh --all <command...>    waits for every slot, for a timing run that needs the machine alone
 #   SX_HEAVY_LOCK=<dir>                        the lock (default ~/.slicerx-heavy.lock); when unset, the value in the
 #                                              ci.env of the CI home this copy runs from ($SX_CI_HOME, or bin/..)
+#   SX_HEAVY_SLOTS=<n>                         how many holders may run at once (default: the number in <lock>.slots,
+#                                              a machine setting beside the lock, or 1 when there is none)
 #   SX_HEAVY_WAIT=<seconds>                    give up after this long (default 0: wait as long as it takes)
 #   SX_HEAVY_POLL=<seconds>                    how often a waiter looks again (default 5; the tests use 1)
 #   SX_HEAVY_ORPHAN=<seconds>                  how old a lock with no holder record must be before it is cleared
 #                                              (default 60; a holder writes its record right after taking the lock)
 #
-# The lock is a directory holding the holder's record (mkdir is atomic; macOS has no flock command). A lock whose
-# holder has died is taken over, so a crashed job never wedges the machine. Waiters take a ticket in <lock>.queue and
-# only the oldest one tries the lock, so they are served in arrival order, CI jobs first (SX_HEAVY_PRIORITY=ci, or a
-# self-hosted runner). Every waiter judges the holder now and then, so one that cannot does not wedge the queue.
+# Each slot is a directory holding its holder's record (mkdir is atomic; macOS has no flock command): <lock> is the
+# first, <lock>.2 the second, and so on. A slot whose holder has died is taken over, so a crashed job never wedges the
+# machine. Waiters take a ticket in <lock>.queue, and only as many of the oldest as there are free slots try one, so
+# they are served in arrival order, CI jobs first (SX_HEAVY_PRIORITY=ci, or a self-hosted runner). A --all waiter
+# takes the slots one by one as they free up; while one waits, only the oldest ticket takes a slot, so it is not
+# passed over. Every waiter judges the holders now and then, so one that cannot does not wedge the queue.
 #
 # Windows (Git Bash) and WSL on one machine share one lock when both name the same directory on the Windows drive,
 # for example C:\Users\<user>\.slicerx-heavy.lock (a C:\ path works on both sides). The record names the holder's
 # side, and a holder is checked on its own side: through powershell.exe for a Windows holder, through wsl.exe for a
 # WSL one. See README.md for the rules.
 set -uo pipefail
-[ $# -gt 0 ] || { echo "usage: heavy.sh <command...>" >&2; exit 2; }
+all=
+[ "${1:-}" = --all ] && { all=1; shift; }
+[ $# -gt 0 ] || { echo "usage: heavy.sh [--all] <command...>" >&2; exit 2; }
 max=${SX_HEAVY_WAIT:-0}
 poll=${SX_HEAVY_POLL:-5}
 orphan=${SX_HEAVY_ORPHAN:-60}
@@ -33,6 +40,12 @@ if [ -z "$lock" ]; then
 fi
 lock=${lock:-$HOME/.slicerx-heavy.lock}
 case $lock in [A-Za-z]:[\\/]*) lock=$(cygpath -u "$lock" 2> /dev/null || wslpath -u "$lock" 2> /dev/null || printf %s "$lock") ;; esac
+slots=${SX_HEAVY_SLOTS:-$(head -n 1 "$lock.slots" 2> /dev/null | tr -dc 0-9)}
+case $slots in '' | *[!0-9]* | 0) slots=1 ;; esac
+[ "$slots" -le 8 ] || slots=8
+# The slot directories: <lock>, then <lock>.2 up to <lock>.<slots>.
+slot_dirs=("$lock")
+for ((i = 2; i <= slots; i++)); do slot_dirs+=("$lock.$i"); done
 
 case "$(uname -s)" in
   Darwin) side=darwin ;;
@@ -126,66 +139,100 @@ mkdir -p "$q" 2> /dev/null
 # CI jobs (a self-hosted runner, or SX_HEAVY_PRIORITY=ci) queue ahead of other waiters; a holder always finishes.
 prio=1
 if [ "${SX_HEAVY_PRIORITY:-}" = ci ] || [ "${RUNNER_ENVIRONMENT:-}" = self-hosted ]; then prio=0; fi
-ticket=$q/$prio-$(date +%s)-$side-$$
-held=
-# Windows refuses to remove a directory another process is looking into (a waiter reading the record), and a lock left
-# empty that way would have no record to judge, so the removal is tried a few times.
+ticket=$q/$prio-$(date +%s)-$side-$$${all:+-all}
+held=()
+# Windows refuses to remove a directory another process is looking into (a waiter reading the record), and a slot
+# left empty that way would have no record to judge, so the removal is tried a few times.
 release() {
   rm -f "$ticket"
-  [ -n "$held" ] || return 0
-  local i
-  for i in 1 2 3 4 5; do rm -rf "$lock" 2> /dev/null; [ -e "$lock" ] || return 0; sleep 1; done
+  local d i
+  for d in ${held[@]+"${held[@]}"}; do
+    for i in 1 2 3 4 5; do rm -rf "$d" 2> /dev/null; [ -e "$d" ] || break; sleep 1; done
+  done
 }
 trap release EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 mtime() { stat -c %Y "$1" 2> /dev/null || stat -f %m "$1" 2> /dev/null; }
+# Takes a free slot: writes this holder's record into it at once, so no waiter ever finds it without one for long.
+take() {
+  mkdir "$1" 2> /dev/null || return 1
+  printf 'pid %s since %s: %s\n%s\n' $$ "$(date '+%F %T')" "${all:+(all slots) }$cmd" "$me" > "$1/owner"
+  held+=("$1")
+}
+mine() { local d; for d in ${held[@]+"${held[@]}"}; do [ "$d" = "$1" ] && return 0; done; return 1; }
+# Judges the holder of slot $1 and frees the slot when the holder is dead (or it was left with no record).
+judge_slot() {
+  local d=$1 rec t m
+  rec=$(cat "$d/owner" 2> /dev/null)
+  # Take over only the record judged dead, not one a new holder wrote meanwhile.
+  if [ -n "$rec" ] && ! alive "$rec" && [ "$(cat "$d/owner" 2> /dev/null)" = "$rec" ]; then
+    echo "heavy.sh: taking over a lock left by $(sed -n '1s/ since.*//p' <<< "$rec") ($(sed -n 's/^side //p' <<< "$rec"))" >&2
+    rm -rf "$d"; return 0
+  fi
+  # No record: a holder between mkdir and writing it, or a slot whose removal failed half way. Only one older than
+  # $orphan seconds is cleared, and rmdir removes it only while it is still empty.
+  if [ -z "$rec" ] && [ -d "$d" ] && [ ! -e "$d/owner" ]; then
+    t=$(date +%s); m=$(mtime "$d")
+    if [ -n "$m" ] && [ $((t - m)) -ge "$orphan" ] && rmdir "$d" 2> /dev/null; then
+      echo "heavy.sh: cleared a lock with no holder record, left for $((t - m)) s" >&2; return 0
+    fi
+  fi
+  return 1
+}
+cmd="$*"
 
 t0=$SECONDS next=0 judged=0
 while :; do
   # Our ticket, refreshed on every poll. A ticket left alone for 2 minutes is a dead waiter's, and is dropped.
   touch "$ticket" 2> /dev/null || { mkdir -p "$q" 2> /dev/null; touch "$ticket" 2> /dev/null; }
-  now=$(mtime "$ticket") first=
+  # pos: the live tickets ahead of ours. all_ahead: whether one of them, or ours, waits for every slot.
+  now=$(mtime "$ticket") pos=0 all_ahead=$all
   for t in "$q"/*; do
     [ -e "$t" ] || continue
-    if [ "$t" != "$ticket" ] && [ -n "$now" ]; then
+    [ "$t" = "$ticket" ] && break
+    if [ -n "$now" ]; then
       m=$(mtime "$t"); [ $((now - ${m:-0})) -lt 120 ] || { rm -f "$t"; continue; }
     fi
-    first=$t; break
+    pos=$((pos + 1))
+    case $t in *-all) all_ahead=1 ;; esac
   done
-  if [ -z "$first" ] || [ "$first" = "$ticket" ]; then
-    mkdir "$lock" 2> /dev/null && break
+  free=0
+  for d in "${slot_dirs[@]}"; do [ -e "$d" ] || free=$((free + 1)); done
+  # The front of the queue: as many of the oldest tickets as there are slots, or only the oldest while a --all waits.
+  # Of those, only as many as there are free slots try one; all of them judge the holders on every poll.
+  front=
+  if [ -n "$all_ahead" ]; then [ "$pos" = 0 ] && front=1; else [ "$pos" -lt "$slots" ] && front=1; fi
+  if [ -n "$front" ]; then
+    if [ -n "$all" ]; then
+      for d in "${slot_dirs[@]}"; do mine "$d" || take "$d"; done
+      [ "${#held[@]}" = "$slots" ] && break
+    elif [ "$pos" -lt "$free" ]; then
+      for d in "${slot_dirs[@]}"; do take "$d" && break 2; done
+    fi
     judge=1
   else
-    # Every waiter judges the holder once a minute, so one that cannot (a record from a side it cannot ask) does not
-    # keep a dead holder's lock for the whole queue. Only the first ticket takes the lock.
+    # Every waiter judges the holders once a minute, so one that cannot (a record from a side it cannot ask) does not
+    # keep a dead holder's slot for the whole queue.
     judge=; [ $((SECONDS - judged)) -lt 60 ] || judge=1
   fi
   if [ -n "$judge" ]; then
-    judged=$SECONDS
-    rec=$(cat "$lock/owner" 2> /dev/null)
-    # Take over only the record judged dead, not one a new holder wrote meanwhile.
-    if [ -n "$rec" ] && ! alive "$rec" && [ "$(cat "$lock/owner" 2> /dev/null)" = "$rec" ]; then
-      echo "heavy.sh: taking over a lock left by $(sed -n '1s/ since.*//p' <<< "$rec") ($(sed -n 's/^side //p' <<< "$rec"))" >&2
-      rm -rf "$lock"; continue
-    fi
-    # No record: a holder between mkdir and writing it, or a lock whose removal failed half way. Only one older than
-    # $orphan seconds is cleared, and rmdir removes it only while it is still empty.
-    if [ -z "$rec" ] && [ -d "$lock" ] && [ ! -e "$lock/owner" ]; then
-      t=$(date +%s); m=$(mtime "$lock")
-      if [ -n "$m" ] && [ $((t - m)) -ge "$orphan" ] && rmdir "$lock" 2> /dev/null; then
-        echo "heavy.sh: cleared a lock with no holder record, left for $((t - m)) s" >&2; continue
-      fi
-    fi
+    judged=$SECONDS freed=
+    for d in "${slot_dirs[@]}"; do if ! mine "$d" && judge_slot "$d"; then freed=1; fi; done
+    [ -n "$freed" ] && continue
   fi
   waited=$((SECONDS - t0))
   if [ "$waited" -ge "$next" ]; then
-    echo "heavy.sh: waiting for $lock ($(head -n 1 "$lock/owner" 2> /dev/null || echo 'holder starting'))" >&2; next=$((next + 300))
+    holders=
+    for d in "${slot_dirs[@]}"; do
+      mine "$d" && continue
+      [ -e "$d" ] && holders="$holders${holders:+; }$(head -n 1 "$d/owner" 2> /dev/null || echo 'holder starting')"
+    done
+    echo "heavy.sh: waiting for $lock ($slots slot$([ "$slots" = 1 ] || echo s)${all:+, all of them}: ${holders:-queue ahead})" >&2
+    next=$((next + 300))
   fi
   if [ "$max" -gt 0 ] && [ "$waited" -ge "$max" ]; then echo "heavy.sh: gave up after $max s" >&2; exit 75; fi
   sleep "$poll"
 done
-held=1
-printf 'pid %s since %s: %s\n%s\n' $$ "$(date '+%F %T')" "$*" "$me" > "$lock/owner"
 rm -f "$ticket"
 "$@"
