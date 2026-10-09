@@ -297,6 +297,8 @@ export interface AppState {
   fleetRefresh: number
   /** Files are being dragged over the window; drop targets glow. */
   dragging: boolean
+  /** A scrub or slider drag is changing the print; Auto slice waits for its release (state/live-edit.ts). */
+  liveEdit: boolean
   scheme: 'dark' | 'light'
   /** What the viewport reports it renders with, for the status line. */
   viewportBackend: string
@@ -621,6 +623,7 @@ export const appStore = createStore<AppState>()(() => ({
   pilotPrompt: null,
   fleetRefresh: 0,
   dragging: false,
+  liveEdit: false,
   viewportBackend: '',
   scheme: prefs.scheme,
   lookAndFeel: (prefs.lookAndFeel ?? null) as LookAndFeelChoice | null,

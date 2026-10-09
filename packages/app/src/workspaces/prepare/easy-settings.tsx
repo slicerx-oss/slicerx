@@ -9,6 +9,7 @@ import { goalEstimate, goalSubtitle } from '../../lib/estimate-line'
 import { choicePatch, chosenFrom, FIXED_HEIGHTS, SLEIPNIR, SLEIPNIR_LINE, type LayerChoice } from '../../lib/layer-choice'
 import { OPTION_TIPS, settingTipAttrs } from '../../lib/tips'
 import { MoreButton, useMore } from '../../shell/more'
+import { beginLiveEdit } from '../../state/live-edit'
 import { markStale, set, shownSlice, useApp, type Goal } from '../../state/store'
 import './goal-tiles.css'
 
@@ -118,7 +119,7 @@ export function EasySettingsPanel() {
           <label htmlFor="easy-detail">Detail</label>
           <output htmlFor="easy-detail">{layer} mm layers</output>
         </div>
-        <Range id="easy-detail" min={0} max={100} step={5} value={detailAt} onChange={(detail) => update({ detail })} aria-valuetext={`${layer} mm layers`} />
+        <Range id="easy-detail" onPointerDown={beginLiveEdit} min={0} max={100} step={5} value={detailAt} onChange={(detail) => update({ detail })} aria-valuetext={`${layer} mm layers`} />
         <div className="ticks">
           <span>0.28</span>
           <span>0.08 mm</span>
@@ -176,7 +177,7 @@ export function EasySettingsPanel() {
             {walls} walls, {infill}% infill
           </output>
         </div>
-        <Range id="easy-strength" min={0} max={100} step={5} value={strengthAt} onChange={(strength) => update({ strength })} aria-valuetext={`${walls} walls, ${infill} percent infill`} />
+        <Range id="easy-strength" onPointerDown={beginLiveEdit} min={0} max={100} step={5} value={strengthAt} onChange={(strength) => update({ strength })} aria-valuetext={`${walls} walls, ${infill} percent infill`} />
         <div className="ticks">
           <span>2 walls</span>
           <span>6 walls</span>
@@ -190,7 +191,7 @@ export function EasySettingsPanel() {
             {speed?.label} ({speed?.pct}%)
           </output>
         </div>
-        <Range id="easy-speed" min={0} max={3} step={1} value={speedIndex} onChange={(i) => update({ speed: SPEEDS[i]?.value ?? 'balanced' })} aria-valuetext={speed?.label ?? ''} />
+        <Range id="easy-speed" onPointerDown={beginLiveEdit} min={0} max={3} step={1} value={speedIndex} onChange={(i) => update({ speed: SPEEDS[i]?.value ?? 'balanced' })} aria-valuetext={speed?.label ?? ''} />
         <div className="ticks">
           <span>Quality</span>
           <span>Fastest</span>
