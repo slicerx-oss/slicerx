@@ -51,6 +51,7 @@ import { selectObject } from '../../plate/edit'
 import { get, isCadTool, selectedIds, set, setWorkspace, showSliced, shownSlice, useApp } from '../../state/store'
 import { useModelMode } from '../../state/model-mode'
 import { useMediaQuery } from '../../lib/media'
+import { MiddleName, shortPrinterName } from '../../lib/short-name'
 import { EasySettingsPanel } from './easy-settings'
 const ExpertSettings = lazy(() => import('./expert-settings').then((m) => ({ default: m.ExpertSettings })))
 
@@ -248,7 +249,7 @@ export function PrepareObjects() {
             >
               <span className="obj-thumb">{p.thumb ? <img src={p.thumb} alt="" /> : p.parts.length ? <Silhouette parts={p.parts} /> : null}</span>
               <span className="min0">
-                <span className="obj-name" data-testid="object-name">{p.name}</span>
+                <span className="obj-name" data-testid="object-name" {...tipAttrs({ title: p.name })}><MiddleName name={p.name} /></span>
                 <span className="obj-meta" {...tipAttrs({ title: triangles(p.handle.triangles) })}>
                   {p.instanceOf ? `Instance of ${names.get(p.instanceOf) ?? p.name}` : partCount(p.handle.parts.length)}
                   {developer ? `, ${triangles(p.handle.triangles)}` : null}
@@ -368,8 +369,14 @@ export function SliceBlock({ label = 'Slice plate', compact }: { label?: string;
         Export G-code
       </Button>
     ) : (
-      <Button variant="primary" size="lg" full icon="send-to-printer" disabled={plate.length === 0 || !fresh || loading} {...waitTip('Print')} onClick={() => (target ? void sendToPrinter(host, target) : showSliced())}>
-        Print
+      <Button variant="primary" size="lg" full icon="send-to-printer" disabled={plate.length === 0 || !fresh || loading} aria-label={target ? `Print on ${target.name}` : 'Print'} {...(loading ? waitTip('Print') : target ? { tip: { title: `Print on ${target.name}` } } : {})} onClick={() => (target ? void sendToPrinter(host, target) : showSliced())}>
+        {target ? (
+          <span className="btn-name">
+            Print on <MiddleName name={shortPrinterName(target.name)} />
+          </span>
+        ) : (
+          'Print'
+        )}
       </Button>
     )
   ) : (

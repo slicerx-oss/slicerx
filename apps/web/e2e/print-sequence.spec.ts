@@ -43,7 +43,7 @@ test('heimdall strikes a plate too close to print by object, and printing by lay
     await expect.poll(async () => (await sx()).n).toBe(n)
   }
   await command(page, 'Arrange all objects')
-  const print = page.getByRole('button', { name: 'Print', exact: true })
+  const print = page.getByRole('button', { name: /^Print( on .+)?$/ })
   await expect.poll(async () => { const s = await sx(); return s.status === 'done' && !s.stale }, { timeout: 120_000 }).toBe(true)
   await expect(print).toBeEnabled()
 

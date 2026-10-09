@@ -26,6 +26,8 @@ export interface EdgeTabProps {
   tip?: string
   onContextMenu?: (e: MouseEvent<HTMLButtonElement>) => void
   className?: string
+  /** Something in the shut panel wants a look: the tab glows softly in the accent until the panel opens. */
+  attention?: boolean
 }
 
 /** Which way the chevron points: toward where the panel goes when the tab is pressed. */
@@ -35,7 +37,7 @@ export function edgeChevron(side: EdgeSide, open: boolean): 'left' | 'right' | '
   return open ? 'right' : 'left'
 }
 
-export function EdgeTab({ side, open, onToggle, label, shortcut, controls, panel, tip, onContextMenu, className }: EdgeTabProps) {
+export function EdgeTab({ side, open, onToggle, label, shortcut, controls, panel, tip, onContextMenu, className, attention }: EdgeTabProps) {
   return (
     <button
       type="button"
@@ -43,9 +45,10 @@ export function EdgeTab({ side, open, onToggle, label, shortcut, controls, panel
       data-side={side}
       data-panel={panel}
       data-testid={`edge-tab-${side}`}
+      data-attention={attention && !open ? true : undefined}
       aria-expanded={open}
       aria-controls={controls}
-      aria-label={open ? `Close ${label}` : `Open ${label}`}
+      aria-label={open ? `Close ${label}` : attention ? `Open ${label}, something needs a look` : `Open ${label}`}
       {...tipAttrs({ title: label, ...(tip ? { body: tip } : {}), ...(shortcut ? { key: shortcut } : {}) })}
       onClick={onToggle}
       onContextMenu={onContextMenu}
