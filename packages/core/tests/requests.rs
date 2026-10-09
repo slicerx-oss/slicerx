@@ -342,12 +342,24 @@ fn straight_walls_have_no_overhang_pieces() {
 
 /// The path (mm) and filament (mm) of the moves under each `;TYPE:` label of `g`.
 fn by_feature(g: &str) -> std::collections::HashMap<String, (f64, f64)> {
+    by_feature_on(g, None)
+}
+
+/// [`by_feature`] for the moves of one layer (0 based) of a whole file, or of every layer. The nozzle is followed
+/// through the whole file, so a layer whose first move extrudes from where the layer below ended counts it.
+fn by_feature_on(g: &str, layer: Option<usize>) -> std::collections::HashMap<String, (f64, f64)> {
     let mut out: std::collections::HashMap<String, (f64, f64)> = std::collections::HashMap::new();
     let (mut kind, mut relative) = (String::new(), false);
     let (mut x, mut y, mut e) = (0.0, 0.0, 0.0);
-    // A chunk of a file starts where the nozzle is not known yet: its first move only places it.
+    let mark = sx_core::extras::layer_mark(g).trim();
+    let mut at: Option<usize> = None;
+    // A file starts where the nozzle is not known yet: its first move only places it.
     let mut placed = false;
     for l in g.lines() {
+        if l.trim() == mark {
+            at = Some(at.map_or(0, |n| n + 1));
+            continue;
+        }
         if let Some(t) = l.strip_prefix(";TYPE:") {
             t.clone_into(&mut kind);
             continue;
@@ -362,7 +374,7 @@ fn by_feature(g: &str) -> std::collections::HashMap<String, (f64, f64)> {
                 if let Some(v) = field(code, 'E') {
                     let d = if relative { v } else { v - e };
                     e = if relative { e } else { v };
-                    if placed && d > 0.0 && (nx != x || ny != y) {
+                    if placed && d > 0.0 && (nx != x || ny != y) && (layer.is_none() || at == layer) {
                         let f = out.entry(kind.clone()).or_default();
                         f.0 += (nx - x).hypot(ny - y);
                         f.1 += d;
@@ -447,17 +459,16 @@ fn two_parts_meeting_on_a_layer_plane_cut_as_the_lower_one() {
     let r = common::run_request(&req, &move |_: &str| Ok(mesh.clone())).unwrap();
     assert_valid(&r);
     let g = text(&r);
-    let layers: Vec<&str> = g.split(sx_core::extras::layer_mark(&g)).skip(1).collect();
-    let span = |l: &str, label: &str| {
-        let f = by_feature(l);
+    let span = |layer: usize, label: &str| {
+        let f = by_feature_on(&g, Some(layer));
         f.get(label).map_or(0.0, |v| v.0)
     };
     // Layer 27: the lower box's walls, nothing over air.
-    assert!(span(layers[27], "Overhang wall") < 1e-6);
-    let outer = span(layers[27], "Outer wall");
+    assert!(span(27, "Overhang wall") < 1e-6);
+    let outer = span(27, "Outer wall");
     assert!((outer - 78.3).abs() < 2.0, "{outer} mm of outer wall on layer 27");
     // Layer 28: the upper box's outer and inner walls hang.
-    let over = span(layers[28], "Overhang wall");
+    let over = span(28, "Overhang wall");
     assert!(
         (over - 233.2).abs() < 5.0,
         "{over} mm of overhang wall on layer 28"
