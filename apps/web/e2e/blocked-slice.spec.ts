@@ -20,12 +20,12 @@ test('a refused slice clears the toolpaths of the slice before it', async ({ pag
   await page.getByRole('button', { name: 'Slice plate' }).first().click()
   await expect(sliced(page, n)).toBeVisible({ timeout: 60_000 })
   await expect.poll(() => page.evaluate(() => (window as unknown as { __vp?: Vp }).__vp?.stats().segments ?? 0)).toBeGreaterThan(0)
-  // Half a meter to the right: off any bed.
+  // Half a meter to the right, off any bed, with Auto slice on so the move slices at once.
   await page.evaluate(() => {
     const sx = (window as unknown as { __sx: Sx }).__sx
+    sx.setState({ autoSlice: true })
     sx.setState({ plate: sx.getState().plate.map((e) => ({ ...e, transform: e.transform.map((v, i) => (i === 12 ? v + 500 : v)) })) })
   })
-  await page.getByRole('button', { name: 'Slice plate' }).first().click()
   await expect.poll(() => page.evaluate(() => (window as unknown as { __sx: Sx }).__sx.getState().slice.status), { timeout: 60_000 }).toBe('error')
   expect(await page.evaluate(() => (window as unknown as { __sx: Sx }).__sx.getState().preview)).toBeNull()
   await expect.poll(() => page.evaluate(() => (window as unknown as { __vp?: Vp }).__vp?.stats().segments ?? -1)).toBe(0)
