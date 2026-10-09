@@ -99,17 +99,69 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --exclude slicerx-desktop --all-targets -- -D warnings
-      # A pull request runs the unit tests and the G-code goldens. The merge queue, main, and a pull request labeled
-      # full-ci run every test, the integration tests in each crate's tests/ included, so one that breaks never lands.
-      - if: github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'full-ci')
+      # A pull request and the merge queue run the unit tests and the G-code goldens here, and the integration tests in
+      # rust-tests below; main runs every test here.
+      - if: github.event_name != 'push'
         run: cargo test --workspace --exclude slicerx-desktop --lib --bins
-      - if: github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'full-ci')
+      - if: github.event_name != 'push'
         run: cargo test -p sx-core --test reference
       # sx-link's real-service test runs the sx-cloud binary; it fails here, not skips, when it is missing.
-      - if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'full-ci')
+      - if: github.event_name == 'push'
         run: cargo build -p sx-cloud
-      - if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'full-ci')
+      - if: github.event_name == 'push'
         run: cargo test --workspace --exclude slicerx-desktop
+
+  # The integration tests (each crate's tests/) for the merge queue and for a pull request labeled full-ci, so one that
+  # breaks never lands; main runs them in the rust job. One run takes about 18 minutes, so they are split in four that
+  # run side by side: sx-core's two longest (firmware, requests), the rest of sx-core, and every other crate.
+  rust-tests-part:
+    name: rust tests (${{ matrix.part }})
+    needs: detect
+    if: needs.detect.outputs.rust == 'true' && (github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'full-ci'))
+    strategy:
+      fail-fast: false
+      matrix:
+        part: [firmware, requests, core, crates]
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: tests-${{ matrix.part }}
+      - if: matrix.part == 'firmware' || matrix.part == 'requests'
+        run: cargo test -p sx-core --test ${{ matrix.part }}
+      # every other test file of sx-core, read from the directory so a new one is never left out
+      - if: matrix.part == 'core'
+        run: |
+          args=""
+          for t in packages/core/tests/*.rs; do
+            n=$(basename "$t" .rs)
+            case $n in firmware | requests) ;; *) args="$args --test $n" ;; esac
+          done
+          cargo test -p sx-core $args
+      # sx-link's real-service test runs the sx-cloud binary; it fails here, not skips, when it is missing.
+      - if: matrix.part == 'crates'
+        run: |
+          cargo build -p sx-cloud
+          cargo test --workspace --exclude slicerx-desktop --exclude sx-core --test '*'
+
+  # One result for the integration test parts: the name to require. Passes when they were not run (a pull request
+  # without full-ci, or no Rust change).
+  rust-tests:
+    needs: [detect, rust-tests-part]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - env:
+          DETECT: ${{ needs.detect.result }}
+          PARTS: ${{ needs.rust-tests-part.result }}
+        run: |
+          echo "detect: $DETECT, parts: $PARTS"
+          [ "$DETECT" = success ] || exit 1
+          [ "$PARTS" = success ] || [ "$PARTS" = skipped ]
 
   # The desktop app's agent bridge (docs/agent-bridge.md) on every platform it ships to, macOS included: the shell
   # compiles with the agent-bridge feature (its screenshot code is per platform) and the bridge's own tests pass. The
