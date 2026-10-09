@@ -20,8 +20,11 @@ export interface ZipLimits {
 
 const PROJECT_LIMITS: ZipLimits = { entries: MAX_ENTRIES, entry: MAX_ENTRY, total: MAX_TOTAL, what: 'a 3MF archive' }
 
-/** Reads the archive's entries. Stored and deflated entries only; anything else is refused. */
-export async function unzipEntries(bytes: Uint8Array, limits: ZipLimits = PROJECT_LIMITS): Promise<Map<string, Uint8Array>> {
+/**
+ * Reads the archive's entries. Stored and deflated entries only; anything else is refused. With `keep`, only the entries
+ * it accepts are inflated and returned (every name and size is still checked).
+ */
+export async function unzipEntries(bytes: Uint8Array, limits: ZipLimits = PROJECT_LIMITS, keep?: (name: string) => boolean): Promise<Map<string, Uint8Array>> {
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
   let eocd = -1
   for (let i = bytes.length - 22; i >= Math.max(0, bytes.length - 22 - 65535); i--) {
@@ -78,6 +81,7 @@ export async function unzipEntries(bytes: Uint8Array, limits: ZipLimits = PROJEC
     if (usize > limits.entry || (total += usize) > limits.total) throw new ProjectReadError('The archive is too large to open.')
     if (local + 30 > bytes.length) throw new ProjectReadError('The archive is damaged.')
     const start = local + 30 + view.getUint16(local + 26, true) + view.getUint16(local + 28, true)
+    if (keep && !keep(name)) continue
     const raw = bytes.subarray(start, start + csize)
     if (raw.length !== csize) throw new ProjectReadError('The archive is damaged.')
     if (method === 0) out.set(name, raw.length === usize ? raw : raw.subarray(0, Math.min(raw.length, usize)))
