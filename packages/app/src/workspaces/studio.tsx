@@ -34,6 +34,7 @@ import { ParkedChip } from './prepare/parked-chip'
 import { SliceProgress } from './slice-progress'
 import { useOverlayOffset, type OverlaySelectors } from '../lib/overlay-offset'
 import { useMediaQuery } from '../lib/media'
+import { OpeningPicture } from '../project/opening-preview'
 
 const PREPARE_LEFT: PaneSection[] = [
   { id: 'printer', icon: 'printer', label: 'Printer' },
@@ -155,6 +156,7 @@ export function Studio() {
 
       <section className="vp" aria-label="Plate" ref={vpRef}>
         <ViewportHost layers={layers} />
+        <OpeningPicture />
         <SliceProgress />
         {design || !hasPreview ? null : <SliceLookSwitch />}
         {design ? null : <ParkedChip />}
