@@ -38,6 +38,7 @@ import { buildTimeline, fitOf, type Timeline } from '../lib/preview-timeline'
 import { headFor } from '@slicerx/viewport'
 import { strikeMarks } from '../plate/heimdall'
 import { gantryHits, gantrySpec } from '../plate/heimdall-gantry'
+import { openStage } from '../lib/open-timing'
 
 /** The part of the viewport handle the app drives. The 2D fallback implements the same. */
 export type Drive = Pick<Viewport, 'setMode' | 'setPlate' | 'setTransforms' | 'setRenderMode' | 'view' | 'setPreview' | 'setLayerRange' | 'setMoveCut' | 'setColorMode' | 'setToolColors' | 'setSelection' | 'on' | 'dispose'> & {
@@ -94,6 +95,19 @@ const VOLUME_COLOR = { negative: '#ff5555', support_blocker: '#ffb86c', support_
 /** Design models parts on a plain ground: no prime tower, which is print setup. */
 const designing = (s: AppState): boolean => s.workspace === 'prepare' && s.modelMode === 'design' && editionHasCad()
 
+/**
+ * A volume's positions in its object's space, baked once per part and placement: the viewport keeps an object built
+ * while its arrays stay the same ones, so a payload made for another change must not bake them anew.
+ */
+const baked = new WeakMap<object, { local: readonly number[]; positions: Float32Array }>()
+function bakedVolume(v: { part: Parameters<typeof bake>[0]; local: Parameters<typeof bake>[1] }): Float32Array {
+  const hit = baked.get(v.part)
+  if (hit && hit.local === v.local) return hit.positions
+  const positions = bake(v.part, v.local).positions
+  baked.set(v.part, { local: v.local, positions })
+  return positions
+}
+
 function platePayload(s: AppState, shown: ShownTower | null): ViewportPlate {
   const slots = resolveSlots(s)
   const tower = shown ? towerMesh(shown.at, shown.heightMm) : null
@@ -110,7 +124,7 @@ function platePayload(s: AppState, shown: ShownTower | null): ViewportPlate {
       parts: [
         ...p.parts.map((part, i) => ({ name: part.name, positions: part.positions, indices: part.indices, color: partColor(s, slots, effectiveSlot(p, part), p.colors[i] ?? p.colors[0] ?? brandAccent(), p.printable !== false) })),
         // Volumes show in place, colored by what they do.
-        ...(p.volumes ?? []).map((v) => ({ name: v.name, positions: bake(v.part, v.local).positions, indices: v.part.indices, color: VOLUME_COLOR[v.role] })),
+        ...(p.volumes ?? []).map((v) => ({ name: v.name, positions: bakedVolume(v), indices: v.part.indices, color: VOLUME_COLOR[v.role] })),
       ],
     })),
     ],
@@ -361,6 +375,10 @@ export function ViewportHost({ layers }: { layers: boolean }) {
       }
       loadAreas(appStore.getState().printerId)
       offs.push(appStore.subscribe((s) => loadAreas(s.printerId)))
+      // The open in progress is on screen once a frame with its objects is drawn.
+      offs.push(vp.on('platedrawn', (e) => {
+        if (e.built + e.kept > 0) openStage('drawn')
+      }))
       offs.push(vp.on('pick', (e) => {
         // A modeling tool is listening: the click is its input and the selection stays.
         if (toolStore.getState().tool === 'probe') return void probeHandler()?.(e)
