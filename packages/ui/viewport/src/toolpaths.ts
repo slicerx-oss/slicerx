@@ -99,6 +99,7 @@ uniform vec2 uTempRange;
 uniform float uHasExtras;
 uniform float uCurLayer;
 uniform int uColorMode;
+uniform int uHighlight;
 uniform sampler2D uFeatureLut;
 uniform sampler2D uToolLut;
 uniform sampler2D uFinishLut;
@@ -185,6 +186,8 @@ const BEAD_COLOR = /* glsl */ `
     float t = texelFetch(uLayerLut, ivec2(li % ${LAYER_LUT_W}, li / ${LAYER_LUT_W}), 0).r;
     c = texture(uRamp, vec2(t, 0.5)).rgb;
   }
+  // One filament picked out (hovering its slot in the sidebar): every other one's beads drop to a quarter.
+  if (uHighlight >= 0 && int(tool) != uHighlight) c *= 0.25;
   vSegColor = c;
   vFinish = texelFetch(uFinishLut, ivec2(int(min(tool, 15u)), 0), 0);
   // What surface the bead belongs to from afar: a wall (1), a flat top, bottom or solid layer (2), anything else (0).
@@ -535,6 +538,7 @@ export class Toolpaths {
   private readonly uniforms = {
     uCurLayer: { value: -1 },
     uColorMode: { value: 0 },
+    uHighlight: { value: -1 },
     uFeatureLut: { value: lutTexture(FEATURE_COLORS.map((f) => f.color)) },
     uToolLut: { value: lutTexture(DEFAULT_TOOL_COLORS) },
     uFinishLut: { value: finishTexture([]) },
@@ -643,6 +647,23 @@ export class Toolpaths {
     }
     this.depthMaterial.customProgramCacheKey = () => 'sx-bead-depth'
     this.root.add(this.head.root, this.purge.root, this.gantry.root)
+  }
+
+  /**
+   * Picks one filament out: beads of every other tool draw at a quarter of their color. `tool` is 0-based (slot 1 is
+   * tool 0); null shows all. Only a uniform changes, never the buffers. Returns whether that changed.
+   */
+  setHighlightTool(tool: number | null): boolean {
+    const v = tool === null || tool < 0 ? -1 : Math.floor(tool)
+    if (this.uniforms.uHighlight.value === v) return false
+    this.uniforms.uHighlight.value = v
+    return true
+  }
+
+  /** The tool picked out by setHighlightTool, or null. */
+  get highlightTool(): number | null {
+    const v = this.uniforms.uHighlight.value
+    return v < 0 ? null : v
   }
 
   /** Draws the paths dimmed while they are stale. Returns whether that changed. */
