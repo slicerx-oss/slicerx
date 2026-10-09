@@ -359,7 +359,8 @@ export async function createWasmSlicer(opts: PoolOptions): Promise<SlicerHost> {
       const todo = Array.from({ length: shards }, (_, i) => i)
       let lost: Error | null = null
       const drain = async (w: PoolWorker): Promise<void> => {
-        for (let s = todo.shift(); s !== undefined; s = todo.shift()) {
+        // A canceled slice hands out no more shards; the ones running finish and are dropped.
+        for (let s = o?.signal?.aborted ? undefined : todo.shift(); s !== undefined; s = o?.signal?.aborted ? undefined : todo.shift()) {
           let r: FromWorker
           try {
             r = await w.call((call) => ({ type: 'slice', call, request, shard: s, shards }))
@@ -376,12 +377,12 @@ export async function createWasmSlicer(opts: PoolOptions): Promise<SlicerHost> {
       }
       // The workers running now take shards at once; new ones take shards as soon as they hold the meshes.
       await firstWorker()
-      const joining = grow(shards).map((p) => p.then((w) => (w ? drain(w) : undefined)))
+      const joining = o?.signal?.aborted ? [] : grow(shards).map((p) => p.then((w) => (w ? drain(w) : undefined)))
       const jobs = (async () => {
         await Promise.all([...workers.map(drain), ...joining])
         // Shards left by a worker that stopped after the others finished: the workers left take them, or a new one
         // started with every mesh when none is left. A worker that keeps stopping fails the slice.
-        for (let round = 0; todo.length > 0 && round < 2; round++) {
+        for (let round = 0; todo.length > 0 && round < 2 && !o?.signal?.aborted; round++) {
           await firstWorker()
           await Promise.all(workers.map(drain))
         }

@@ -5,9 +5,9 @@
 //! hosts builds the same `SliceResult`. Preview and G-code bytes return raw
 //! (`tauri::ipc::Response`), never as JSON arrays.
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
-use sx_core::api::{SliceRequest, run_request};
+use sx_core::api::{Cancellable, NoProgress, SliceRequest, run_request_with};
 use sx_core::{Error, Mesh};
 use tauri::State;
 use tauri::ipc::{InvokeBody, Request, Response};
@@ -16,6 +16,8 @@ use tauri::ipc::{InvokeBody, Request, Response};
 pub struct Slicer {
     meshes: Mutex<HashMap<u32, Arc<Mesh>>>,
     results: Mutex<HashMap<u32, Output>>,
+    /// The cancel flag of each slice running, by the job number the page gave it.
+    jobs: Mutex<HashMap<u32, Arc<AtomicBool>>>,
     next: AtomicU32,
 }
 
@@ -72,6 +74,7 @@ pub fn load_mesh(request: Request<'_>, state: State<'_, Slicer>) -> Result<serde
 fn run_slice(
     req: &SliceRequest,
     meshes: &HashMap<u32, Arc<Mesh>>,
+    cancel: &AtomicBool,
 ) -> Result<(serde_json::Value, Output), String> {
     let lookup = |r: &str| -> sx_core::Result<Arc<Mesh>> {
         r.parse::<u32>()
@@ -82,7 +85,11 @@ fn run_slice(
                 reason: format!("unknown mesh {r}"),
             })
     };
-    let run = run_request(req, &lookup).map_err(|e| e.to_string())?;
+    let progress = Cancellable {
+        progress: &NoProgress,
+        flag: cancel,
+    };
+    let run = run_request_with(req, &lookup, &progress).map_err(|e| e.to_string())?;
     let info = serde_json::to_value(&run.report).map_err(|e| e.to_string())?;
     Ok((
         info,
@@ -95,13 +102,27 @@ fn run_slice(
 
 /// Slices the whole plate off the main thread and keeps G-code and SXPV for
 /// `get_gcode` and `get_preview`. Returns the report JSON with the result id.
+/// With `job`, `cancel_slice` with the same number stops it between stages, and it returns an error.
 #[tauri::command]
-pub async fn slice(request: String, state: State<'_, Slicer>) -> Result<serde_json::Value, String> {
+pub async fn slice(
+    request: String,
+    job: Option<u32>,
+    state: State<'_, Slicer>,
+) -> Result<serde_json::Value, String> {
     let req: SliceRequest = serde_json::from_str(&request).map_err(|e| format!("request: {e}"))?;
     let meshes = lock(&state.meshes).clone();
-    let (info, output) = tauri::async_runtime::spawn_blocking(move || run_slice(&req, &meshes))
+    let flag = Arc::new(AtomicBool::new(false));
+    if let Some(j) = job {
+        lock(&state.jobs).insert(j, flag.clone());
+    }
+    let run_flag = flag.clone();
+    let ran = tauri::async_runtime::spawn_blocking(move || run_slice(&req, &meshes, &run_flag))
         .await
-        .map_err(|e| e.to_string())??;
+        .map_err(|e| e.to_string());
+    if let Some(j) = job {
+        lock(&state.jobs).remove(&j);
+    }
+    let (info, output) = ran??;
     let id = state.id();
     lock(&state.results).insert(id, output);
     let mut info = info;
@@ -109,6 +130,14 @@ pub async fn slice(request: String, state: State<'_, Slicer>) -> Result<serde_js
         map.insert("id".into(), id.into());
     }
     Ok(info)
+}
+
+/// Stops the slice running as `job`, if it still is. Its result is not kept.
+#[tauri::command]
+pub fn cancel_slice(job: u32, state: State<'_, Slicer>) {
+    if let Some(flag) = lock(&state.jobs).get(&job) {
+        flag.store(true, Ordering::Relaxed);
+    }
 }
 
 #[tauri::command]
@@ -198,7 +227,7 @@ mod tests {
         let req: SliceRequest =
             serde_json::from_str(&request.to_string()).map_err(|e| format!("request: {e}"))?;
         let meshes = lock(&state.meshes).clone();
-        run_slice(&req, &meshes)
+        run_slice(&req, &meshes, &AtomicBool::new(false))
     }
 
     fn plate(object: serde_json::Value) -> serde_json::Value {
@@ -213,6 +242,23 @@ mod tests {
         info["stats"]["filamentG"]
             .as_array()
             .map_or(0.0, |a| a.iter().filter_map(serde_json::Value::as_f64).sum())
+    }
+
+    #[test]
+    fn a_canceled_slice_stops_with_an_error_and_keeps_nothing() {
+        let state = Slicer::default();
+        let cube = add(&state, "cube.stl", &cube_stl(20.0, 20.0, 10.0));
+        let request = plate(
+            serde_json::json!({ "id": "a", "name": "cube", "mesh": cube, "transform": at(100.0, 100.0, 0.0) }),
+        );
+        let req: SliceRequest = serde_json::from_str(&request.to_string()).expect("the request reads");
+        let meshes = lock(&state.meshes).clone();
+        let err = run_slice(&req, &meshes, &AtomicBool::new(true))
+            .err()
+            .expect("a canceled slice fails");
+        assert!(err.to_lowercase().contains("cancel"), "{err}");
+        assert!(lock(&state.results).is_empty());
+        assert!(run_slice(&req, &meshes, &AtomicBool::new(false)).is_ok());
     }
 
     #[test]
