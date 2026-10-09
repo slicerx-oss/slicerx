@@ -152,7 +152,7 @@ test('the printer card shows each plate\'s bed type', async ({ page }) => {
   await expect(plateType).toHaveText(first)
 })
 
-test('the plate chip names the longest plate type on one line, in full in its tooltip', async ({ page }) => {
+test('the plate box names the longest plate type in its tooltip and keeps the printer row one line', async ({ page }) => {
   await prepare(page)
   const plateType = page.getByTestId('slice-machine-plate')
   // The longest plate type in the picker, on the new plate.
@@ -161,8 +161,9 @@ test('the plate chip names the longest plate type on one line, in full in its to
   await openSheet(page)
   await expect(plateType).toHaveText('Engineering plate')
   await expect(plateType).toHaveAttribute('data-tip-title', 'Engineering plate')
-  // The chip stays one line at any width; the card wraps its chips under the name on a phone instead.
-  expect((await plateType.boundingBox())!.height).toBeLessThan(32)
+  await expect(plateType).toHaveAttribute('aria-label', 'Plate: Engineering plate')
+  // The box shows the type's icon, so the row keeps its height: the plate box is as tall as the printer box.
+  expect(Math.abs((await plateType.boundingBox())!.height - (await page.getByTestId('slice-machine-printer').boundingBox())!.height)).toBeLessThan(1)
   expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0)
 })
 
@@ -1102,12 +1103,12 @@ test('the nozzle size is chosen per printer from its chip, and the slice uses th
   await prepare(page)
   const fs = await import('node:fs')
   const chip = page.getByTestId('slice-machine-nozzle')
-  await expect(chip).toHaveText('0.4 mm')
+  await expect(chip).toHaveAttribute('aria-label', 'Nozzle: 0.4 mm')
   await chip.click()
   const sizes = page.getByRole('radiogroup', { name: 'Nozzle size' })
   await expect(sizes.getByRole('radio', { name: '0.4 mm' })).toHaveAttribute('aria-checked', 'true')
   await sizes.getByRole('radio', { name: '0.6 mm' }).click()
-  await expect(chip).toHaveText('0.6 mm')
+  await expect(chip).toHaveAttribute('aria-label', 'Nozzle: 0.6 mm')
   const slices14 = await sliceCount(page)
   await page.getByRole('main').getByRole('button', { name: /^Slice/ }).first().click()
   await expect(sliced(page, slices14)).toBeVisible({ timeout: 120_000 })

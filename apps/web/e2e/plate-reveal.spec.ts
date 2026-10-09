@@ -65,6 +65,8 @@ test('under reduced motion the plate draws at once', async ({ page, isMobile }) 
   await page.goto('./')
   await viewportReady(page)
   await expect(page.locator('.vp-canvas')).toHaveAttribute('data-reveal', 'off')
+  // A toast (such as the software graphics note) may arrive in these seconds over the view; it is not the plate.
+  await page.addStyleTag({ content: '.sx-toasts { visibility: hidden !important; }' })
   // The plate a moment after the view came up is the plate a few seconds later: nothing was still to draw.
   const first = await snapshot(page)
   await page.waitForTimeout(2500)
