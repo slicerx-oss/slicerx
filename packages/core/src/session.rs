@@ -8470,9 +8470,8 @@ fn plan_tools(
     // (slot, first layer, last layer) each covers.
     let mut spans: Vec<(u8, usize, usize)> = Vec::new();
     let layers_of = |lo: f64, hi: f64| -> Option<(usize, usize)> {
-        let a = plan.first_at_or_above(lo);
-        let b = plan.first_at_or_above(hi);
-        (b > a).then(|| (a, b - 1))
+        let cut = plan.cutting(lo, hi);
+        (cut.end > cut.start).then(|| (cut.start, cut.end - 1))
     };
     for p in parts {
         let (lo, hi) = p
