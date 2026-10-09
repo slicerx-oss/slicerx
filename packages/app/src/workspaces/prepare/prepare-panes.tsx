@@ -10,6 +10,7 @@ import { MoreButton, useMore } from '../../shell/more'
 import type { PrinterState } from '@slicerx/contracts'
 import { Block, Button, Icon, KeyValues, LinkButton, Pill, type PillState, tipAttrs } from '@slicerx/ui'
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
+import { sliceFraction } from '../slice-progress'
 import { useHost } from '../../host'
 import { useFleet, type FleetRow } from '../../lib/queries'
 import { formatCost, formatDuration, formatGrams } from '../../lib/preview-stats'
@@ -550,13 +551,13 @@ export function SliceBlock({ label = 'Slice plate', compact }: { label?: string;
       {/* A background slice keeps the action in place and shows its progress on the block's top edge, so nothing moves. */}
       {slice.status === 'running' && auto && done ? (
         <div className="slicing-edge" role="status" aria-label="Slicing">
-          <i style={{ transform: `scaleX(${progress ? Math.max(0.04, progress.fraction) : 0.04})` }} />
+          <i style={{ transform: `scaleX(${Math.max(0.04, sliceFraction(progress))})` }} />
         </div>
       ) : null}
       {slice.status === 'running' && !(auto && done) ? (
         <div className="slicing" role="status">
           <div className="app-bar-track">
-            <i style={{ transform: `scaleX(${progress ? Math.max(0.04, progress.fraction) : 0.04})` }} />
+            <i style={{ transform: `scaleX(${Math.max(0.04, sliceFraction(progress))})` }} />
           </div>
           <div className="app-row between">
             <span className="sx-mono sx-small sx-muted">{progress ? `Stage: ${progress.stage}` : 'Starting'}</span>
