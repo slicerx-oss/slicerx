@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // A step's menu in the Model tree, from a right click, a long press, Shift+F10 or its More button: the likeliest
-// verbs as an icon row, then rename, the moves, the sketch and the way back to the latest. Delete asks first, since
+// verbs as an icon row, then rename, the moves, its faces, the sketch and the way back to the latest. Delete asks first, since
 // later steps that use the step may break.
 import { formatShortcut } from '../../lib/keys'
 import { Button, ContextMenu, Dialog, MenuIcon, MenuIconRow, MenuItem, type MenuPoint } from '@slicerx/ui'
@@ -26,6 +26,8 @@ export interface StepMenuProps {
   onMove: (to: number) => void
   onRename: () => void
   onDelete: () => void
+  /** Picks the faces this step made, for a tool next. */
+  onSelectFaces?: (() => void) | undefined
 }
 
 export function StepMenu(p: StepMenuProps) {
@@ -50,8 +52,13 @@ export function StepMenu(p: StepMenuProps) {
       <MenuItem icon="arrow-down" aside={formatShortcut('Alt+Down')} disabled={p.last} data-testid="model-ctx-later" onClick={run(() => p.onMove(p.index + 1))}>
         Move later
       </MenuItem>
+      {p.onSelectFaces ? (
+        <MenuItem icon="select-face" data-testid="model-ctx-faces" onClick={run(p.onSelectFaces)}>
+          Select its faces
+        </MenuItem>
+      ) : null}
       {p.hasSketch ? (
-        <MenuItem icon="ruler" disabled={!p.editable} data-testid="model-ctx-sketch" onClick={run(p.onEdit)}>
+        <MenuItem icon="sketch" disabled={!p.editable} data-testid="model-ctx-sketch" onClick={run(p.onEdit)}>
           Show the sketch
         </MenuItem>
       ) : null}
