@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 import { describe, expect, it } from 'vitest'
-import { OVERLAY_GAP, overlayBottom, TOAST_ROOM } from '../src/lib/overlay-offset'
+import { OVERLAY_GAP, overlayBottom, TOAST_ROOM, toastPlace } from '../src/lib/overlay-offset'
 
 const rect = (top: number, height: number, width = 100) => ({ top, bottom: top + height, height, width, left: 0, right: width, x: 0, y: top, toJSON: () => ({}) }) as DOMRectReadOnly
 
@@ -28,10 +28,31 @@ describe('where toasts sit', () => {
     expect(overlayBottom(rect(-420, 490, 390), [rect(18, 40, 366)], 844)).toBeNull()
     // Scrolled past it entirely.
     expect(overlayBottom(rect(-600, 490, 390), [rect(-162, 40, 366)], 844)).toBeNull()
-    expect(overlayBottom(phone, [rect(TOAST_ROOM + OVERLAY_GAP, 40, 366)], 844)).toBe(844 - TOAST_ROOM)
+    // Just room enough for a toast above the bar.
+    expect(overlayBottom(phone, [rect(TOAST_ROOM + 2 * OVERLAY_GAP, 40, 366)], 844)).toBe(844 - TOAST_ROOM - OVERLAY_GAP)
   })
 
   it('measures from the window bottom when the viewport runs past it', () => {
     expect(overlayBottom(rect(0, 1200, 390), [], 844)).toBe(OVERLAY_GAP)
+  })
+
+  const box = (left: number, top: number, width: number, height: number) => ({ top, bottom: top + height, height, width, left, right: left + width, x: left, y: top, toJSON: () => ({}) }) as DOMRectReadOnly
+
+  it('on a phone keeps to the room left of the layer slider, between the view switch and the bars', () => {
+    // The phone viewport with the toolpaths: view switch at the top, slider down the right, playback panel below.
+    const vp = box(17, 70, 356, 620)
+    const place = toastPlace(vp, { bottom: [box(29, 400, 330, 40), box(29, 430, 330, 250)], top: [box(97, 82, 196, 36)], side: [box(245, 272, 115, 160)] }, 844)
+    expect(place).toEqual({ bottom: 844 - 400 + OVERLAY_GAP, center: Math.round((17 + OVERLAY_GAP + 245 - OVERLAY_GAP) / 2), width: 245 - OVERLAY_GAP - 17 - OVERLAY_GAP })
+  })
+
+  it('goes under the top controls when there is no room above the bars', () => {
+    const vp = box(0, 0, 800, 300)
+    const place = toastPlace(vp, { bottom: [box(12, 200, 300, 40)], top: [box(300, 12, 200, 160)] }, 300)
+    expect(place).toEqual({ top: 172 + OVERLAY_GAP, center: 400 })
+  })
+
+  it('a hidden control takes no room', () => {
+    const vp = box(0, 0, 800, 600)
+    expect(toastPlace(vp, { bottom: [box(12, 548, 300, 40)], top: [box(0, 0, 0, 0)], side: [box(0, 0, 0, 0)] }, 600)).toEqual({ bottom: 600 - 548 + OVERLAY_GAP, center: 400 })
   })
 })

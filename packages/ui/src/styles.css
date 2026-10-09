@@ -401,7 +401,7 @@ button { cursor: pointer; }
 .sx-ticks { display: flex; justify-content: space-between; font: var(--fw-medium) var(--fs-xs) var(--f-mono); color: var(--dim); margin-top: 2px; }
 
 /* toasts */
-.sx-toasts { position: fixed; left: var(--overlay-center, 50%); bottom: var(--overlay-bottom, calc(28px + env(safe-area-inset-bottom, 0px))); transform: translateX(-50%); z-index: var(--z-toast); display: flex; flex-direction: column; gap: 8px; align-items: center; width: max-content; max-width: calc(100vw - 2 * var(--gutter)); pointer-events: none; }
+.sx-toasts { position: fixed; left: var(--overlay-center, 50%); top: var(--overlay-top, auto); bottom: var(--overlay-bottom, calc(28px + env(safe-area-inset-bottom, 0px))); transform: translateX(-50%); z-index: var(--z-toast); display: flex; flex-direction: column; gap: 8px; align-items: center; width: max-content; max-width: var(--overlay-width, calc(100vw - 2 * var(--gutter))); pointer-events: none; }
 .sx-toast { pointer-events: auto; background: color-mix(in srgb, var(--ink-4) 90%, transparent); border: 1px solid var(--line); padding: 9px 14px; border-radius: var(--r-md); font-size: var(--fs-md); box-shadow: var(--shadow-float); display: flex; align-items: center; gap: 10px; max-width: 100%; animation: sx-toast-in var(--t-slow) var(--ease); }
 .sx-toast .sx-ic { width: 16px; height: 16px; flex: none; }
 .sx-toast[data-tone="ok"] .sx-ic { color: var(--green); }
