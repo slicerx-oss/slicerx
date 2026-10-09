@@ -44,7 +44,7 @@ test('a sketch left open waits in Slice through a slice and is finished back in 
   await tab(page, 'prepare').click()
   const chip = page.getByTestId('parked-chip')
   await expect(chip).toContainText('Sketch in progress')
-  await expect(tab(page, 'design')).toHaveAttribute('data-parked', '')
+  await expect(tab(page, 'model')).toHaveAttribute('data-parked', '')
   await expect(panel).toHaveCount(0)
   const before = await sliceCount(page)
   await page.locator('body').press('ControlOrMeta+Enter')
@@ -91,7 +91,7 @@ test('a history step being edited is put back whole before Mod+Enter slices, and
   expect(await topZ(page)).toBeGreaterThan(24.5)
 
   // Back in Design the step opens again with the typed distance, and finishing it replays.
-  await tab(page, 'design').click()
+  await tab(page, 'model').click()
   await expect(panel).toContainText('Editing step 1')
   await expect(panel.locator('#push-dist')).toHaveValue('10')
   await expect.poll(() => height(page, id)).toBe(20)
@@ -148,7 +148,7 @@ test('Measure closes on the way to Slice, so the toolpaths show', async ({ page 
   test.slow()
   await openStudio(page)
   await freshBox(page)
-  await tab(page, 'design').click()
+  await tab(page, 'model').click()
   await command(page, 'Measure distance, angle and radius')
   await expect(toolPanel(page)).toContainText('Nothing picked')
   await tab(page, 'prepare').click()

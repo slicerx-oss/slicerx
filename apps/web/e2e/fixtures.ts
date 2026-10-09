@@ -73,7 +73,7 @@ export const test = base.extend<object, { graphics: void }>({
 })
 export { expect }
 
-/** A top tab by its workspace id (`prepare`, `preview`, `library`, `printers`). The look can rename a tab, so specs do not type its label. */
+/** A top tab by its id (`model`, `prepare` for Slice, `library`, `printers`). The look can rename a tab, so specs do not type its label. */
 export function tab(page: Page, id: string): Locator {
   return page.locator(`.sx-tab[data-tab="${id}"]`)
 }
