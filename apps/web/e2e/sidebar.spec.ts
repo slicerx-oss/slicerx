@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// The Slice sidebar: printer, filament and print settings stand as separate panels, and printer and filament fold to a
-// summary line that stays folded after a reload.
+// The Slice sidebar: the printer row of three boxes, then filament and print settings as separate panels; filament
+// folds to a summary line that stays folded after a reload.
 import { expect, openSheet, test } from './fixtures'
 
 test.beforeEach(async ({ page }) => {
@@ -10,10 +10,13 @@ test.beforeEach(async ({ page }) => {
   })
 })
 
-test('each section is its own panel with an icon in its header', async ({ page }) => {
+test('the printer row is three boxes, and each other section is its own panel with an icon in its header', async ({ page }) => {
   await page.goto('./')
   await openSheet(page)
-  for (const id of ['printer', 'filament', 'settings']) {
+  const row = page.locator('.sx-block[data-section="printer"] .mc-row')
+  await expect(row).toBeVisible()
+  for (const id of ['slice-machine-printer', 'slice-machine-nozzle', 'slice-machine-plate']) await expect(row.getByTestId(id)).toBeVisible()
+  for (const id of ['filament', 'settings']) {
     const sec = page.locator(`.pane-body > .sx-block[data-section="${id}"]`)
     await expect(sec).toBeVisible()
     await expect(sec.locator('.sx-block-h .sx-block-icon')).toHaveCount(1)
@@ -25,7 +28,7 @@ test('each section is its own panel with an icon in its header', async ({ page }
     expect(look.border).toBe('solid')
   }
   // The panels sit apart on the darker ground.
-  const gap = await page.locator('.pane-body').evaluate((el) => parseFloat(getComputedStyle(el).rowGap))
+  const gap = await page.locator('.pane-body').first().evaluate((el) => parseFloat(getComputedStyle(el).rowGap))
   expect(gap).toBeGreaterThan(0)
 })
 
@@ -36,20 +39,19 @@ test('Simple mode keeps the sections open with no fold', async ({ page }) => {
   await expect(page.locator('#printer-fold, #filament-fold')).toHaveCount(0)
 })
 
-test('printer and filament fold to a summary line and stay folded', async ({ page }) => {
+test('filament folds to a summary line and stays folded; the printer row has no fold', async ({ page }) => {
   await page.goto('./')
   await openSheet(page)
-  const printer = page.locator('.sx-block[data-section="printer"]')
-  await printer.getByRole('button', { name: 'Printer', exact: true }).click()
-  await expect(printer).toHaveAttribute('data-collapsed', 'true')
-  await expect(printer.locator('.sec-sum')).toContainText('mm')
+  await expect(page.locator('#printer-fold')).toHaveCount(0)
   const filament = page.locator('.sx-block[data-section="filament"]')
   await filament.getByRole('button', { name: 'Filament', exact: true }).click()
+  await expect(filament).toHaveAttribute('data-collapsed', 'true')
   await expect(filament.locator('.sec-sum')).toContainText('used')
   await page.reload()
   await openSheet(page)
-  await expect(page.locator('.sx-block[data-section="printer"]')).toHaveAttribute('data-collapsed', 'true')
-  await page.locator('.sx-block[data-section="printer"]').getByRole('button', { name: 'Printer', exact: true }).click()
+  await expect(page.locator('.sx-block[data-section="filament"]')).toHaveAttribute('data-collapsed', 'true')
+  await page.locator('.sx-block[data-section="filament"]').getByRole('button', { name: 'Filament', exact: true }).click()
+  await expect(page.locator('.sx-block[data-section="filament"]')).not.toHaveAttribute('data-collapsed', 'true')
   await expect(page.locator('.sx-block[data-section="printer"] .mc-row')).toBeVisible()
 })
 
