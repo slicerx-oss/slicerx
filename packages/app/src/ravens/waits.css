@@ -2,10 +2,11 @@
 /* Copyright (C) 2026 The SlicerX contributors */
 /* Huginn and Muninn through the longer waits (waits.tsx). Under reduced motion they keep still. */
 
-/* Muninn at the leading edge of the slicing progress bar (.slice-progress sets --p). */
-.rv-glide { position: absolute; top: 3px; left: calc(var(--p, 0) * 100%); transform: translateX(-75%); color: var(--accent); transition: left 120ms linear; filter: drop-shadow(0 1px 2px color-mix(in srgb, var(--ink-0) 60%, transparent)); }
+/* Muninn riding the Estimate block's slicing bar at the fill's edge (.rv-ride sets --p). */
+.rv-ride { position: relative; }
+.rv-glide { position: absolute; bottom: 3px; left: calc(var(--p, 0) * 100%); transform: translateX(-60%); color: var(--accent); transition: left 120ms linear; filter: drop-shadow(0 1px 2px color-mix(in srgb, var(--ink-0) 60%, transparent)); }
 .rv-glide[data-done] { animation: rv-glide-off 420ms ease-in forwards; }
-@keyframes rv-glide-off { to { transform: translate(calc(-75% + 48px), -18px) rotate(-12deg); opacity: 0; } }
+@keyframes rv-glide-off { to { transform: translate(calc(-60% + 48px), -18px) rotate(-12deg); opacity: 0; } }
 
 /* The two ravens circling over the plate while a model loads. */
 .rv-loading { position: absolute; inset: 0; z-index: 5; display: grid; place-items: center; pointer-events: none; color: var(--muted); animation: rv-in 520ms cubic-bezier(.2, .8, .2, 1) both; }

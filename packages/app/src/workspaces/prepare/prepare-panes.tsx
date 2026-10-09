@@ -9,7 +9,8 @@ import { EnergyRow } from './energy-row'
 import { MoreButton, useMore } from '../../shell/more'
 import type { PrinterState } from '@slicerx/contracts'
 import { Block, Button, Icon, KeyValues, LinkButton, Pill, type PillState, tipAttrs } from '@slicerx/ui'
-import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useState, type CSSProperties } from 'react'
+import { useWaited } from '../../lib/waited'
 import { sliceFraction } from '../slice-progress'
 import { useHost } from '../../host'
 import { useFleet, type FleetRow } from '../../lib/queries'
@@ -39,6 +40,7 @@ import { ObjectActions } from './object-actions'
 const ObjectSettings = lazy(() => import('./object-settings').then((m) => ({ default: m.ObjectSettings })))
 import { ObjectTransform } from './object-transform'
 // Fit check notes: their code loads with the first object list, not at startup.
+const SliceGlide = lazy(() => import('../../ravens/waits').then((m) => ({ default: m.SliceGlide })))
 const FitNotes = lazy(() => import('./fit-notes').then((m) => ({ default: m.FitNotes })))
 const BrimEarsPanel = lazy(() => import('./brim-ears-panel').then((m) => ({ default: m.BrimEarsPanel })))
 const CadPanel = lazy(() => import('../../cad/cad-panel').then((m) => ({ default: m.CadPanel })))
@@ -492,6 +494,8 @@ export function SliceBlock({ label = 'Slice plate', compact }: { label?: string;
   const grams = done ? done.result.stats.filamentG.reduce((a, b) => a + b, 0) : 0
   const line = estimateLine(done)
   const progress = slice.status === 'running' ? slice.progress : null
+  // A slice past about 1.2 s gets muninn riding its bar.
+  const longSlice = useWaited(slice.status === 'running')
   // Why Print or Export is held back: the by-object check, and a slice that failed. Both footers show them.
   const problems = (
     <>
@@ -556,8 +560,11 @@ export function SliceBlock({ label = 'Slice plate', compact }: { label?: string;
       ) : null}
       {slice.status === 'running' && !(auto && done) ? (
         <div className="slicing" role="status">
-          <div className="app-bar-track">
-            <i style={{ transform: `scaleX(${Math.max(0.04, sliceFraction(progress))})` }} />
+          <div className="rv-ride" style={{ '--p': Math.max(0.04, sliceFraction(progress)) } as CSSProperties}>
+            <div className="app-bar-track">
+              <i style={{ transform: `scaleX(${Math.max(0.04, sliceFraction(progress))})` }} />
+            </div>
+            {longSlice ? <Suspense fallback={null}><SliceGlide done={false} /></Suspense> : null}
           </div>
           <div className="app-row between">
             <span className="sx-mono sx-small sx-muted">{progress ? `Stage: ${progress.stage}` : 'Starting'}</span>
