@@ -123,3 +123,10 @@
 @media (max-width: 900px) {
   .select-pill-readout { max-width: 120px; }
 }
+
+/* The inspector: Transform's position line while a tool has the room, and two or more objects selected. */
+.design-tf-line { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.design-multi { display: grid; gap: 2px; margin: 0 0 8px; padding: 0; list-style: none; }
+.design-multi-row { display: flex; align-items: center; gap: 8px; width: 100%; height: 28px; padding: 0 8px; border: 0; border-radius: var(--r-sm); background: none; color: var(--fg); font: var(--fs-sm) var(--f-body); text-align: left; }
+.design-multi-row:hover { background: var(--ink-2); }
+.design-multi-row .sx-ic { color: var(--muted); }
