@@ -1258,6 +1258,7 @@ mod tests {
             support_paint: Vec::new(),
             seam_paint: Vec::new(),
             fuzzy_paint: Vec::new(),
+            paint_texts: Vec::new(),
         };
         Arc::new(Mesh {
             name: "cube".into(),
