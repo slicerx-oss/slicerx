@@ -8,7 +8,7 @@
 import type { Host } from '@slicerx/contracts'
 import { allPlates } from '../plate/plates'
 import { lockedSession, setLockedSession } from './locked-session'
-import { confirmDiscard } from './unsaved'
+import { confirmDiscard, isDirty } from './unsaved'
 import { appStore, get, set, type AppState } from '../state/store'
 
 export const AUTOSAVE_DELAY_MS = 4000
@@ -104,6 +104,10 @@ export async function autosaveNow(): Promise<boolean> {
     await snapshotStore().remove(AUTOSAVE_ID)
     return false
   }
+  // A project with no change since it was opened or saved is in its file already (an opened one in the recent projects
+  // too), so there is nothing to offer back after a crash; writing it again cost a big project seconds of the page's
+  // time and over a gigabyte of memory right after it opened.
+  if (!isDirty()) return false
   const { sx3mfBytes } = await import('../export/actions')
   const plain = await sx3mfBytes(allPlates(get()))
   if (plain.byteLength > MAX_SNAPSHOT_BYTES) return false
