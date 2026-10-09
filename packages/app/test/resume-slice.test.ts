@@ -2,6 +2,8 @@
 // Copyright (C) 2026 The SlicerX contributors
 import { beforeEach, describe, expect, it } from 'vitest'
 import type { Host, SliceRequest } from '@slicerx/contracts'
+import { clearProject } from '../src/project/new'
+import { INPUTS, startAutoSlice } from '../src/state/auto-slice'
 import { slicePlate } from '../src/state/actions'
 import { get, set } from '../src/state/store'
 
@@ -37,6 +39,29 @@ describe('slice with a resume plan', () => {
     await slicePlate(b.host)
     expect(b.requests[0]!.options).not.toHaveProperty('resumeFromLayer')
     expect(get().resume).toBeNull()
+  })
+})
+
+describe('a resume plan ends with its project', () => {
+  it('slices a new project from layer 1', async () => {
+    set({ resume: { plan: { resumeLayer: 5, printedHeightMm: 1.2 }, declareZ: true, layerTopsMm: [0.2, 0.4, 0.6, 0.8, 1.0, 1.2] } })
+    clearProject()
+    expect(get().resume).toBeNull()
+    set({ plate: [entry] })
+    const { host, requests } = capture()
+    await slicePlate(host)
+    expect(requests[0]!.options).not.toHaveProperty('resumeFromLayer')
+    expect(requests[0]!.options).not.toHaveProperty('resumeZ')
+    expect(requests[0]!.options?.layerTopsMm).not.toEqual([0.2, 0.4, 0.6, 0.8, 1.0, 1.2])
+  })
+
+  it('marks a finished slice stale when the plan changes, so Auto slice reslices', () => {
+    expect(INPUTS).toContain('resume')
+    set({ autoSlice: true, slice: { status: 'done' } as never })
+    const stop = startAutoSlice(capture().host, 60_000)
+    set({ resume: { plan: { resumeLayer: 2, printedHeightMm: 0.4 } } })
+    stop()
+    expect(get().slice).toMatchObject({ status: 'done', stale: true })
   })
 })
 
