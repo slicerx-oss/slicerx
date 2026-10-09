@@ -6,8 +6,8 @@
 //! - [`clamp_config`] runs before slicing. It pulls layer height, line width,
 //!   temperatures and speeds inside the nozzle and machine limits and reports
 //!   each change as a warning, and it rejects values no printer can use.
-//! - [`check_toolpaths`] runs on the sliced paths. Every extrusion point must
-//!   lie on the real bed polygon and outside every `bed_exclude_area`, and
+//! - [`check_toolpaths`] runs on the sliced paths. Every extrusion move must
+//!   stay on the real bed polygon and outside every `bed_exclude_area`, and
 //!   every layer (with its z-hop) must fit under the printable height. Any
 //!   miss is an error that blocks the file.
 //!
