@@ -40,7 +40,7 @@ import { buildTimeline, fitOf, type Timeline } from '../lib/preview-timeline'
 import { headFor } from '@slicerx/viewport'
 import { strikeMarks } from '../plate/heimdall'
 import { gantryHits, gantrySpec } from '../plate/heimdall-gantry'
-import { openStage } from '../lib/open-timing'
+import { openStage, viewDrawn } from '../lib/open-timing'
 
 /** The part of the viewport handle the app drives. The 2D fallback implements the same. */
 export type Drive = Pick<Viewport, 'setMode' | 'setPlate' | 'setTransforms' | 'setRenderMode' | 'view' | 'setPreview' | 'setLayerRange' | 'setMoveCut' | 'setColorMode' | 'setToolColors' | 'setSelection' | 'on' | 'dispose'> & {
@@ -233,6 +233,7 @@ export function ViewportHost({ layers }: { layers: boolean }) {
     if (!stage) return
     let disposed = false
     const offs: (() => void)[] = []
+    const mountedAt = performance.now()
     void start(stage, host.capabilities.webgpu, 'Plate and toolpaths').then((vp) => {
       if (disposed) {
         vp.dispose()
@@ -406,6 +407,7 @@ export function ViewportHost({ layers }: { layers: boolean }) {
       }
       // The open in progress is on screen once a frame with its objects is drawn.
       offs.push(vp.on('platedrawn', (e) => {
+        viewDrawn(mountedAt, (vp as Partial<Pick<Viewport, 'stats'>>).stats?.().firstDrawMs ?? null)
         if (e.built + e.kept > 0) openStage('drawn')
       }))
       offs.push(vp.on('pick', (e) => {
