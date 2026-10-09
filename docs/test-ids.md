@@ -110,24 +110,29 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | `slice-output-menu` | The menu half of the main action |
 | `slice-output-export-gcode`, `slice-output-export-3mf` | Export G-code and Export plate 3MF in that menu |
 
-## Prepare: the objects list and Export
+## Slice: objects and Export
 
 | Test id | Control |
 | --- | --- |
 | `objects-list` | The Objects list |
 | `objects-search` | Search objects and parts (two or more objects) |
 | `object-row` | One object; `data-object-id` is its id |
-| `object-select` | The row's button: selects it and opens its details |
+| `object-select` | The row's button: selects it (Cmd or Ctrl adds it); a double-click or F2 renames it |
 | `object-name` | The object's name in the row |
-| `object-warning` | A warning on the row (off the bed, a missing filament); `data-kind` names it |
+| `object-warning` | The row's warning icon (off the bed, a missing filament); `data-kind` names the first, the tooltip lists all |
 | `object-lock`, `object-printable` | Lock, and leave out of the print |
-| `object-rename` | The name field in the details |
-| `object-part-slot` | The filament of a part, one per part |
-| `objects-add-model` | Add model (opens the system's file dialog) |
-| `objects-from-vault` | From the Vault |
-| `add-shape` | Add shape |
-| `object-menu` | Object (split, merge) |
-| `export-menu` | Export |
+| `object-rename` | The name field that replaces the row's name while renaming |
+| `object-part-slot` | The filament ring of a part in the row's tree, one per part; opens the slot menu |
+| `objects-add-model` | Add, the main half of the Add button (opens the system's file dialog) |
+| `objects-from-vault` | From the Vault, in the Add menu |
+| `add-shape` | Add shape, in the Add menu (Design's shelf keeps its own button) |
+| `object-menu` | Object (split, merge), in the Add menu |
+| `export-menu` | Export, in the Add menu |
+| `slice-objects-add-menu` | The Add button's menu half |
+| `slice-object-expand` | The row's chevron: opens its tree of parts and volumes |
+| `slice-object-override-badge` | The badge for settings an object has of its own |
+| `slice-object-volume` | A volume in the row's tree, with `data-role` |
+| `slice-tool-done` | Done on a tool open in the Objects card's place (Cut, Paint, Brim ears, the modeling tools) |
 | `export-save-project`, `export-locked-project`, `export-gcode-3mf`, `export-all-plates` | Its items (each opens the system's save dialog) |
 
 ## Opening a project

@@ -2,7 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 // The Export menu at the right end of the Objects actions opens whole: nothing in the side pane cuts it off, and
 // it stays inside the window.
-import { expect, plateReady, test } from './fixtures'
+import { expect, plateReady, test, addMenu } from './fixtures'
 
 test('the Export menu is not cut off by the side pane', async ({ page }, info) => {
   test.skip(info.project.name !== 'desktop', 'the side pane sits beside the plate on a desktop window')
@@ -13,7 +13,7 @@ test('the Export menu is not cut off by the side pane', async ({ page }, info) =
   })
   await page.goto('./')
   await plateReady(page)
-  await page.getByRole('button', { name: 'Export', exact: true }).first().click()
+  await addMenu(page, 'Export')
   const menu = page.getByRole('menu', { name: 'Export' })
   await expect(menu).toBeVisible()
   const box = (await menu.boundingBox())!

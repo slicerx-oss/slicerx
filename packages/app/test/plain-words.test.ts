@@ -8,16 +8,20 @@ import { describe, expect, it } from 'vitest'
 
 const panes = readFileSync(resolve(import.meta.dirname, '../src/workspaces/prepare/prepare-panes.tsx'), 'utf8')
 const footer = readFileSync(resolve(import.meta.dirname, '../src/workspaces/prepare/estimate-footer.tsx'), 'utf8')
+// The object rows, with their part filaments and triangle counts.
+const rows = readFileSync(resolve(import.meta.dirname, '../src/workspaces/prepare/object-row.tsx'), 'utf8')
 
 describe('Slice sidebar words', () => {
   it('shows no "tris" and names part filaments by slot, type and color', () => {
-    expect(panes).not.toMatch(/\btris\b/)
-    expect(panes).not.toMatch(/>\s*Filament \{k \+ 1\}/)
-    expect(panes).toMatch(/slotLabel\(slotList\[k\]\)/)
+    for (const src of [panes, rows]) {
+      expect(src).not.toMatch(/\btris\b/)
+      expect(src).not.toMatch(/>\s*Filament \{k \+ 1\}/)
+    }
+    expect(rows).toMatch(/slotLabel\(s\)/)
   })
 
   it('shows the triangle count inline only in Developer mode', () => {
-    expect(panes).toMatch(/\{developer \? `, \$\{triangles\(p\.handle\.triangles\)\}` : null\}/)
+    expect(rows).toMatch(/\{developer \? `, \$\{triangles\(p\.handle\.triangles\)\}` : null\}/)
   })
 
   it('puts the threads in the time tooltip, not a note under the button', () => {

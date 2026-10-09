@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { type Page } from '@playwright/test'
 import { command, openStudio } from './cad-helpers'
-import { expect, sliced, tab, test } from './fixtures'
+import { expect, sliced, tab, test, setPartFilament } from './fixtures'
 
 type Sx = { getState(): { plate: { name: string }[]; slice: { status: string; stale?: boolean; error?: unknown; result?: { id: string } } }; setState(p: unknown): void }
 const state = (page: Page) => page.evaluate(() => (window as unknown as { __sx: Sx }).__sx.getState())
@@ -82,8 +82,7 @@ test('a two-color plate keeps its prime tower and the filament order reaches the
   await command(page, 'Add a cylinder')
   await expect.poll(async () => (await state(page)).plate.length).toBe(2)
   const cylinder = page.locator('li.obj').nth(1)
-  await cylinder.locator('.obj-h').click()
-  await cylinder.getByLabel(/^Filament for /).first().selectOption('2')
+  await setPartFilament(page, cylinder, 2)
   const plain = await exportGcode()
   expect(plain).toMatch(/;\s*(?:TYPE|FEATURE):\s*Prime tower/i)
   const before = firstLayerTools(plain)
