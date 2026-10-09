@@ -143,6 +143,7 @@ function readHistory(v: Record<string, unknown>, files: ReadonlyMap<string, Uint
       ...(s['suppressed'] === true ? { suppressed: true } : {}),
       ...(typeof s['broken'] === 'string' ? { broken: s['broken'].slice(0, 500) } : {}),
       ...(typeof s['bind'] === 'string' && s['bind'].length <= 200 ? { bind: s['bind'] } : {}),
+      ...(typeof s['label'] === 'string' && s['label'].trim() ? { label: s['label'].trim().slice(0, 100) } : {}),
     })
   }
   return { version: 1, base, steps, ...(typeof v['ended'] === 'string' ? { ended: v['ended'].slice(0, 200) } : {}) }

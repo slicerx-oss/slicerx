@@ -11,7 +11,8 @@ import type { Step, StepParams } from '../src/cad/history/model'
 import { stepIcon, stepSketch } from '../src/cad/history/step-icon'
 import { HostContext } from '../src/host'
 import { railKey } from '../src/state/model-mode'
-import { set, type PlateEntry } from '../src/state/store'
+import { renameStep } from '../src/cad/history/ops'
+import { get, set, type PlateEntry } from '../src/state/store'
 import { HistoryTree } from '../src/workspaces/design/history-tree'
 
 const I = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
@@ -90,7 +91,7 @@ describe('the Design tree', () => {
     expect(tips.every((b) => b.getAttribute('data-tip-avoid') === '.cad-step')).toBe(true)
   })
 
-  it('keeps step rows calm: no buttons at rest but one More, with the actions in its menu', () => {
+  it('keeps step rows calm: no buttons at rest but one More, which opens the step menu', () => {
     set({ plate: [entry('o1', 'Pi enclosure', STEPS)], selection: 'o1', selectedIds: ['o1'] })
     const el = render()
     const row = el.querySelector('[data-testid="model-tree-step"]')!
@@ -100,9 +101,47 @@ describe('the Design tree', () => {
     const more = row.querySelector<HTMLButtonElement>('[data-testid="model-tree-more"]')!
     expect(more.getAttribute('aria-label')).toBe('More for Sketch extrude 30 mm')
     flushSync(() => more.click())
-    const items = [...document.querySelectorAll('.sx-menu-item')].map((b) => b.getAttribute('aria-label'))
-    expect(items).toEqual(['Move Sketch extrude 30 mm earlier', 'Move Sketch extrude 30 mm later', 'Suppress Sketch extrude 30 mm', 'Delete Sketch extrude 30 mm'])
-    expect(document.querySelector('[data-testid="danger-model-tree-delete"]')).not.toBeNull()
+    const menu = document.querySelector('[data-testid="model-ctx"]')!
+    expect(menu.getAttribute('data-target')).toBe('step')
+    expect([...menu.querySelectorAll('.sx-menu-icon')].map((b) => b.getAttribute('aria-label'))).toEqual(['Edit', 'Roll to here', 'Turn off', 'Delete'])
+    expect([...menu.querySelectorAll('.sx-menu-item:not(.sx-menu-icon)')].map((b) => b.textContent?.replace(/[⌥↑↓]|Alt\+(Up|Down)|F2/g, '').trim())).toEqual(['Rename', 'Move earlier', 'Move later', 'Show the sketch'])
+  })
+
+  it('renames a step from F2, and gives it its own name back when cleared', () => {
+    set({ plate: [entry('o1', 'Pi enclosure', STEPS)], selection: 'o1', selectedIds: ['o1'] })
+    const el = render()
+    const row = el.querySelector<HTMLElement>('[data-testid="model-tree-step"]')!
+    flushSync(() => row.dispatchEvent(new KeyboardEvent('keydown', { key: 'F2', bubbles: true })))
+    const field = el.querySelector<HTMLInputElement>('[data-testid="model-tree-rename"]')!
+    expect(field.value).toBe('Sketch extrude 30 mm')
+    flushSync(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(field, 'Base plate')
+      field.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    flushSync(() => field.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })))
+    expect(get().plate[0]!.history!.steps[0]!.label).toBe('Base plate')
+    expect(el.querySelector('.cad-step-label')?.textContent).toBe('Base plate')
+    renameStep('o1', 0, '')
+    expect(get().plate[0]!.history!.steps[0]!.label).toBeUndefined()
+  })
+
+  it('refuses to rename the step being edited', () => {
+    const original = entry('o1', 'Pi enclosure', STEPS)
+    set({ plate: [original], historyEdit: { objectId: 'o1', index: 1, original } as never })
+    expect(() => renameStep('o1', 1, 'Walls')).toThrow("That step can't be renamed while it's being edited.")
+    renameStep('o1', 0, 'Base')
+    expect(get().historyEdit!.original.history!.steps[0]!.label).toBe('Base')
+  })
+
+  it("opens an object's menu with Shift+F10, selecting it first", () => {
+    set({ plate: [entry('o1', 'Pi enclosure', STEPS), entry('o2', 'Ball')], selection: 'o1', selectedIds: ['o1'] })
+    const el = render()
+    const name = el.querySelectorAll<HTMLElement>('.dtree-name')[1]!
+    flushSync(() => name.dispatchEvent(new KeyboardEvent('keydown', { key: 'F10', shiftKey: true, bubbles: true })))
+    expect(get().selectedIds).toEqual(['o2'])
+    const menu = document.querySelector('[data-testid="model-ctx"][data-target="object"]')!
+    expect([...menu.querySelectorAll('.sx-menu-icon')].map((b) => b.getAttribute('aria-label'))).toEqual(['Rename', 'Lock', 'Leave out of the print', 'Delete'])
+    expect(menu.querySelector<HTMLButtonElement>('[data-testid="model-ctx-merge"]')!.disabled).toBe(true)
   })
 
   it('badges a broken step in red and a step with a note in orange, and shows lock and printable off', () => {

@@ -149,8 +149,16 @@ export async function clickStepButton(page: Page, step: string, name: string): P
   await row.hover()
   const direct = row.getByRole('button', { name })
   if (await direct.count()) return direct.click()
+  // Model's tree: the step's menu, from its More button. Delete there asks first.
   await row.getByTestId('model-tree-more').click()
-  await page.getByRole('menuitem', { name }).click()
+  const menu = page.getByTestId('model-ctx')
+  if (/^Delete /.test(name)) {
+    await menu.getByTestId('danger-model-ctx-delete').click()
+    await page.getByTestId('danger-model-confirm-delete').click()
+  } else if (/^Suppress |^Turn .* back on$/.test(name)) await menu.getByTestId('model-ctx-suppress').click()
+  else if (/^Move .* earlier$/.test(name)) await menu.getByTestId('model-ctx-earlier').click()
+  else if (/^Move .* later$/.test(name)) await menu.getByTestId('model-ctx-later').click()
+  else throw new Error(`No step action named ${name}`)
 }
 
 /** The history panel's steps, by name and state. */

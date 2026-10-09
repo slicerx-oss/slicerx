@@ -14,7 +14,7 @@ import { colorsFor, commitMade } from '../commit'
 import { objectsFor } from '../dimensions'
 import { currentValues } from '../value-table'
 import { bindFor } from '../values'
-import { direction, followField, followFor, followsOf, invert, mainNumber, multiply, point, type History, type HistoryMesh, type ReplayResult, type Step, type StepParams, type StepStatus } from './model'
+import { direction, followField, followFor, followsOf, invert, madeName, mainNumber, multiply, point, type History, type HistoryMesh, type ReplayResult, type Step, type StepParams, type StepStatus } from './model'
 import { sessionFonts, takeBind } from './record'
 import { replayHistory, type ReplayRequest } from './replay'
 import { brandAccent, editionHasCad } from '../../edition'
@@ -273,6 +273,27 @@ export function deleteStep(host: Loader, objectId: string, index: number): Promi
     return { ...r, ...followField(keep) }
   }
   return applyHistory(host, objectId, { ...h, steps: h.steps.filter((_, i) => i !== index).map(without) })
+}
+
+/** The longest name a step can have, as for objects. */
+export const MAX_STEP_NAME = 100
+
+/** Names a step, or gives it back its own name when `label` is empty. Only the name changes, so nothing replays. */
+export function renameStep(objectId: string, index: number, label: string): void {
+  const open = get().historyEdit
+  if (open?.objectId === objectId && open.index === index && !open.view) throw new Error("That step can't be renamed while it's being edited.")
+  const name = label.trim().slice(0, MAX_STEP_NAME)
+  const named = (e: PlateEntry): PlateEntry => {
+    if (e.id !== objectId || !e.history?.steps[index]) return e
+    const steps = e.history.steps.map((st, i) => {
+      if (i !== index) return st
+      const { label: _was, ...rest } = st
+      return name && name !== madeName(st) ? { ...rest, label: name } : rest
+    })
+    return { ...e, history: { ...e.history, steps } }
+  }
+  // While the part is rolled back to look at a step, the full history is the one put back afterwards.
+  set((s) => ({ plate: s.plate.map(named), ...(s.historyEdit?.objectId === objectId ? { historyEdit: { ...s.historyEdit, original: named(s.historyEdit.original) } } : {}) }))
 }
 
 /** The step's parameters changed in place; `bind` is the expression its main number now follows, if any. */

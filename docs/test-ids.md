@@ -247,8 +247,13 @@ Ids that tests read for their text:
 | `step-sketch` | A step's sketch line in the Model tree, with its loop count; a click opens the sketch |
 | `model-tree-object` | An object row in the Model tree; `data-object-id`, and `data-kind` is `body` (has a history) or `mesh` |
 | `model-tree-step` | A step row in the Model tree; `data-object-id`, `data-index` and `data-state` (`done`, `broken`, `skipped`, `suppressed`) |
-| `model-tree-more` | A step row's More button, which opens its actions |
-| `danger-model-tree-delete` | Delete in a step's More menu |
+| `model-tree-more` | A step row's More button, which opens the step's menu |
+| `model-tree-rename` | The inline name field of an object or a step being renamed |
+| `model-ctx` | An open Model tree menu, from a right click, a long press, Shift+F10 or More; `data-target` is `step` or `object` |
+| `model-ctx-edit`, `model-ctx-roll`, `model-ctx-suppress`, `model-ctx-rename`, `model-ctx-earlier`, `model-ctx-later`, `model-ctx-sketch`, `model-ctx-end` | A step menu's items: edit it, roll the part back to it, turn it off or on, rename, move, show its sketch, roll back to the latest |
+| `model-ctx-lock`, `model-ctx-printable`, `model-ctx-split-objects`, `model-ctx-split-parts`, `model-ctx-merge`, `model-ctx-duplicate`, `model-ctx-center`, `model-ctx-drop`, `model-ctx-slice` | An object menu's items, with `model-ctx-rename`: lock, printable, split, merge, duplicate, center, drop to the bed, go to Slice |
+| `danger-model-ctx-delete` | Delete in a Model tree menu: a step's asks first, an object's removes it as the Delete key does |
+| `danger-model-confirm-delete` | Delete in the dialog that asks before a step is deleted |
 | `parked-chip` | The chip that says a modeling tool is parked while you work in Slice |
 | `hole-size-words`, `thread-words` | The hole and thread tools' size in words |
 | `value-<name>` | A named value in the values panel |

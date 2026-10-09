@@ -108,12 +108,15 @@ export interface ContextMenuProps {
   /** Accessible name, such as "Bracket" or "Fillet 3". */
   label: string
   className?: string
+  /** A test id for the open menu, and what it is for (`data-target`). */
+  testId?: string
+  target?: string
   children?: ReactNode
 }
 
-export function ContextMenu({ at, onClose, label, className, children }: ContextMenuProps) {
+export function ContextMenu({ at, onClose, label, className, testId, target, children }: ContextMenuProps) {
   return (
-    <Menu open={at !== null} onClose={onClose} label={label} at={at ?? undefined} className={className ? `sx-ctx ${className}` : 'sx-ctx'}>
+    <Menu open={at !== null} onClose={onClose} label={label} at={at ?? undefined} className={className ? `sx-ctx ${className}` : 'sx-ctx'} {...(testId ? { testId } : {})} {...(target ? { target } : {})}>
       {children}
     </Menu>
   )
