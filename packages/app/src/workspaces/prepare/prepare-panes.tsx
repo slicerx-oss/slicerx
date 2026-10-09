@@ -337,14 +337,14 @@ export function SliceBlock({ label = 'Slice plate', compact }: { label?: string;
   const fresh = done !== null && !done.stale && unsafe === null
   const { printer, rows } = usePrinter()
   const target = printTarget(printer, rows)
-  // Slice and Print wait while a model is still loading; everything else stays usable.
+  // Slice and Print wait while a model is still loading; everything else, Export included, stays usable.
   const loading = useApp((s) => s.plateLoading)
   const waitTip = (title: string) => (loading ? { tip: { title, reason: 'The model is still loading.' } } : {})
   // With Auto slice on there is no Slice button: Print is the action, ready once the background slice is current. It opens
   // the Print sheet on that printer; without one it shows the preview, where the G-code export lives.
   const primary = auto ? (
     printer && isExportOnly(printer) ? (
-      <Button variant="primary" size="lg" full icon="sd-card" disabled={plate.length === 0 || !fresh || loading} {...waitTip('Export G-code')} onClick={() => void exportGcode(host)}>
+      <Button variant="primary" size="lg" full icon="sd-card" disabled={plate.length === 0 || !fresh} onClick={() => void exportGcode(host)}>
         Export G-code
       </Button>
     ) : (

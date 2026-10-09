@@ -208,7 +208,7 @@ export function PreviewRight() {
   const shown = shownSlice(slice)
   // The result on screen while a new slice runs is the last one: its file is not the plate's, so Print and Export wait.
   const updating = slice.status === 'running'
-  // A model still loading holds Print and Export; the reason is in the tip.
+  // A model still loading holds Print; the reason is in the tip. Export works from what is drawn.
   const loading = useApp((s) => s.plateLoading)
   const waitTip = (title: string) => (loading ? { tip: { title, reason: 'The model is still loading.' } } : {})
   if (!shown) {
@@ -283,7 +283,7 @@ export function PreviewRight() {
         </dl>
         {printer && isExportOnly(printer) ? (
           <>
-            <Button variant="primary" size="lg" full icon="sd-card" disabled={unsafe !== null || updating || loading} {...waitTip('Export G-code')} onClick={() => void exportGcode(host)}>
+            <Button variant="primary" size="lg" full icon="sd-card" disabled={unsafe !== null || updating} onClick={() => void exportGcode(host)}>
               {`Export for ${printer.name}`}
             </Button>
             <p className="app-note">No connection. Save the file and copy it to the printer on a USB stick or SD card.</p>
@@ -295,7 +295,7 @@ export function PreviewRight() {
             </Button>
             {target ? <p className="app-note">On {target.name}{target.name !== target.model ? `, ${target.model}` : ''}</p> : null}
             <div className="app-row gap8">
-              <Button size="sm" icon="download" disabled={unsafe !== null || updating || loading} {...waitTip('Export G-code')} onClick={() => void exportGcode(host)}>
+              <Button size="sm" icon="download" disabled={unsafe !== null || updating} onClick={() => void exportGcode(host)}>
                 Export G-code
               </Button>
             </div>
