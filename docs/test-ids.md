@@ -69,7 +69,16 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 
 | Test id | Control |
 | --- | --- |
-| `slice-machine-plate` | The plate type the active plate prints on, in the printer card |
+| `slice-machine-card` | The machine card at the top of the Slice sidebar: printer, nozzle, plate type and status |
+| `slice-machine-printer` | The printer chip; opens the printer list |
+| `slice-machine-printer-option` | A printer in that list, with `data-printer-id` |
+| `slice-machine-printer-add` | Add printer, in the list or on the card with no printer |
+| `slice-machine-printer-settings` | Printer settings in the list (Advanced and up) |
+| `slice-machine-nozzle` | The nozzle chip |
+| `slice-machine-nozzle-option` | A nozzle size in its popover, with `data-nozzle` |
+| `slice-machine-plate` | The plate type chip: the type the active plate prints on, with `data-bed-type` |
+| `slice-machine-plate-option` | A plate type in its popover, with `data-bed-type` (empty for the printer's default) |
+| `slice-machine-status` | The printer's status: Ready, Printing, Paused, Error, Offline or Export only |
 | `slice-mode-chip` | The settings mode chip in the Slice pane title |
 | `slice-mode-chip-<mode>` | An item in its menu: `slice-mode-chip-simple`, `slice-mode-chip-advanced`, `slice-mode-chip-expert`, `slice-mode-chip-developer` |
 | `slice-goal-<tier>` | A Goal tile in Print settings: `slice-goal-draft`, `slice-goal-standard`, `slice-goal-fine`, `slice-goal-strong` |

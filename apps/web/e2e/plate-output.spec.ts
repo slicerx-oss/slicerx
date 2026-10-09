@@ -66,7 +66,7 @@ test('a two-color plate keeps its prime tower and the filament order reaches the
   test.slow()
   await page.addInitScript(() => Reflect.deleteProperty(window, 'showSaveFilePicker'))
   await openStudio(page)
-  await page.getByRole('button', { name: 'Change', exact: true }).click()
+  await page.getByTestId('slice-machine-printer').click()
   await page.getByRole('list', { name: 'Choose a printer' }).getByRole('button', { name: /Bay 2/ }).click()
   const exportGcode = async (): Promise<string> => {
     await sliceDone(page)

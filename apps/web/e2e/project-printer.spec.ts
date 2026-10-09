@@ -70,7 +70,7 @@ test('a P1S 0.2 project opens as its own printer, and the A1 mini slices it with
   expect(own).toMatch(/^; layer_height = 0\.08$/m)
   // The person's A1 mini, from the note's Change printer.
   await tab(page, 'prepare').click()
-  await page.locator('[data-section="printer"]').getByRole('button', { name: 'Change' }).click()
+  await page.getByTestId('slice-machine-printer').click()
   await page.locator('[data-section="printer"] ul.choose').getByRole('button', { name: /Desk A1 mini/ }).click()
   await expect(page.getByTestId('toast').filter({ hasText: 'Slicing for the A1 mini' })).toContainText("Slicing for the A1 mini with its own G-code. Not carried over, made for the project's 0.2 mm nozzle: layer height.")
   const theirs = await sliceAndExport(page)

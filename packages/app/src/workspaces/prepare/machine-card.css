@@ -1,0 +1,46 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+/* Copyright (C) 2026 The SlicerX contributors */
+/* The machine card: one 44 px row with the printer, the nozzle and plate chips, and the status. */
+.machine-card .mc-row { display: flex; align-items: center; gap: 6px; min-height: 44px; min-width: 0; }
+.mc-printer { flex: 1 1 auto; min-width: 0; }
+.mc-name { display: flex; align-items: center; gap: 8px; min-width: 0; max-width: 100%; height: 36px; padding: 0 6px 0 2px; border: 1px solid transparent; border-radius: var(--r-md); background: none; color: var(--fg); cursor: pointer; text-align: left; }
+.mc-name:hover, .mc-name[aria-expanded="true"] { background: var(--ink-3); border-color: var(--line-soft); }
+.mc-name:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+.mc-name .printer-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: var(--fw-semibold) var(--fs-md) var(--f-body); }
+.mc-name > svg:first-child, .mc-name > .vendor-mark { flex: none; }
+.mc-caret { flex: none; color: var(--muted); }
+.mc-chips { display: flex; align-items: center; gap: 6px; flex: none; }
+.mc-status { flex: none; font-size: var(--fs-xs); }
+
+/* Skeleton width while the printer profile loads, so nothing moves when the chip arrives. */
+.mc-skel { display: inline-block; height: 26px; border-radius: 999px; background: var(--ink-3); }
+.mc-skel[data-w="nozzle"] { width: 64px; }
+
+/* Popovers: a list of options with a check on the current one. */
+.mc-pop { min-width: 220px; padding: 4px; }
+.mc-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 1px; }
+.mc-list button { width: 100%; display: flex; align-items: center; gap: 8px; padding: 7px 8px; border: 0; border-radius: var(--r-sm); background: none; color: var(--fg); cursor: pointer; font-size: var(--fs-md); text-align: left; }
+.mc-list button:hover, .mc-list button:focus-visible { background: var(--ink-3); outline: none; }
+.mc-list button:disabled { opacity: 0.5; cursor: default; }
+.mc-list .mc-opt { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mc-list .mc-check { flex: none; visibility: hidden; color: var(--accent); }
+.mc-list [aria-pressed="true"] .mc-check, .mc-list [aria-checked="true"] .mc-check { visibility: visible; }
+.mc-list [aria-checked="true"] > .sx-ic:first-child { color: var(--accent); }
+.mc-list .choose-add { color: var(--accent); }
+.mc-sep { height: 1px; margin: 4px 6px; background: var(--line-soft); }
+.mc-note { margin: 6px 8px 2px; font-size: var(--fs-xs); color: var(--muted); }
+.mc-extruders { margin: 6px 0 0; padding: 6px 8px 2px; border-top: 1px solid var(--line-soft); display: grid; gap: 2px; font-size: var(--fs-xs); }
+.mc-extruders div { display: flex; gap: 8px; }
+.mc-extruders dt { color: var(--muted); min-width: 44px; }
+.mc-extruders dd { margin: 0; color: var(--fg); }
+
+/* No printer: the generic bed, Add printer and the way to keep it. */
+.mc-none { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 10px; min-height: 44px; }
+.mc-generic { display: inline-flex; align-items: center; gap: 6px; margin-right: auto; font-size: var(--fs-md); color: var(--muted); }
+
+/* Phone: the chips and status wrap to a second line under the name. */
+@media (max-width: 900px) {
+  .machine-card .mc-row { flex-wrap: wrap; row-gap: 4px; }
+  .mc-printer { flex-basis: 100%; }
+  .mc-status { margin-left: auto; }
+}

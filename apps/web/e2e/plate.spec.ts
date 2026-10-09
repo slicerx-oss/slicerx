@@ -152,73 +152,17 @@ test('the printer card shows each plate\'s bed type', async ({ page }) => {
   await expect(plateType).toHaveText(first)
 })
 
-test('the plate type reads like the other printer card values, and a long one truncates with its name in the tooltip', async ({ page }) => {
+test('the plate chip names the longest plate type on one line, in full in its tooltip', async ({ page }) => {
   await prepare(page)
   const plateType = page.getByTestId('slice-machine-plate')
-  const look = (el: Element) => {
-    const c = getComputedStyle(el)
-    return { size: c.fontSize, weight: c.fontWeight, family: c.fontFamily, color: c.color }
-  }
-  const nozzle = page.locator('[data-section="printer"] .sx-kv > div').first().locator('b')
   // The longest plate type in the picker, on the new plate.
   await page.getByRole('button', { name: 'Add plate' }).first().click()
   await setBedType(page, 'Plate 2', 'engineering')
   await expect(plateType).toHaveText('Engineering plate')
-  expect(await plateType.evaluate(look)).toEqual(await nozzle.evaluate(look))
-  await expect(plateType.locator('xpath=ancestor::div[1]/span')).toHaveText('Plate')
   await expect(plateType).toHaveAttribute('data-tip-title', 'Engineering plate')
-  const value = plateType.locator('xpath=..')
-  const cut = await value.evaluate((b) => ({ over: b.scrollWidth > b.clientWidth, overflow: getComputedStyle(b).textOverflow }))
-  expect(cut.overflow).toBe('ellipsis')
-  // At phone width the three columns are too narrow for it: it is cut short with an ellipsis, not wrapped.
-  if ((page.viewportSize()?.width ?? 0) <= 390) expect(cut.over).toBe(true)
-  expect((await value.boundingBox())!.height).toBeLessThan(24)
-})
-
-// Screenshots of the printer card for review: SX_SHOTS=1, saved to SX_SHOTS_DIR (test-results/shots by default).
-test('shots: the printer card on a plate with its own bed type, light and dark', async ({ page }, info) => {
-  test.skip(!process.env['SX_SHOTS'], 'SX_SHOTS=1 only')
-  const dir = process.env['SX_SHOTS_DIR'] ?? info.outputPath('shots')
-  const width = page.viewportSize()?.width ?? 0
-  // The store hook the theme switch below uses.
-  await page.addInitScript(() => localStorage.setItem('slicerx.debug', '1'))
-  await prepare(page)
-  await page.getByRole('button', { name: 'Add plate' }).first().click()
-  await setBedType(page, 'Plate 2', 'smooth-pei')
-  const plateType = page.getByTestId('slice-machine-plate')
-  await expect(plateType).toHaveText('Smooth PEI')
-  for (const scheme of ['light', 'dark'] as const) {
-    await page.evaluate((s) => (window as unknown as { __sx: { setState(p: unknown): void } }).__sx.setState({ scheme: s, themeFollowsSystem: false }), scheme)
-    await page.locator('[data-section="printer"]').evaluate((el) => el.scrollIntoView({ block: 'center' }))
-    await plateType.hover()
-    await page.waitForTimeout(600)
-    await page.screenshot({ path: `${dir}/printer-card-plate-${scheme}-${width}.png` })
-  }
-})
-
-test.describe('printer card close up at 2x', () => {
-  test.use({ deviceScaleFactor: 2 })
-  test('shots: the printer card, Smooth PEI and the longest plate type, light and dark', async ({ page }, info) => {
-    test.skip(!process.env['SX_SHOTS'], 'SX_SHOTS=1 only')
-    const dir = process.env['SX_SHOTS_DIR'] ?? info.outputPath('shots')
-    const width = page.viewportSize()?.width ?? 0
-    await page.addInitScript(() => localStorage.setItem('slicerx.debug', '1'))
-    await prepare(page)
-    const card = page.locator('[data-section="printer"]')
-    const plateType = page.getByTestId('slice-machine-plate')
-    await page.getByRole('button', { name: 'Add plate' }).first().click()
-    for (const [value, name] of [['smooth-pei', 'smooth-pei'], ['engineering', 'engineering']] as const) {
-      await setBedType(page, 'Plate 2', value)
-      for (const scheme of ['light', 'dark'] as const) {
-        await page.evaluate((s) => (window as unknown as { __sx: { setState(p: unknown): void } }).__sx.setState({ scheme: s, themeFollowsSystem: false }), scheme)
-        await card.evaluate((el) => el.scrollIntoView({ block: 'center' }))
-        await page.mouse.move(0, 0)
-        await page.waitForTimeout(400)
-        await card.screenshot({ path: `${dir}/printer-card-crop-${name}-${scheme}-${width}@2x.png` })
-      }
-    }
-    await expect(plateType).toHaveText('Engineering plate')
-  })
+  // The chip stays one line at any width; the card wraps its chips under the name on a phone instead.
+  expect((await plateType.boundingBox())!.height).toBeLessThan(32)
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0)
 })
 
 test('add shapes, merge them, and split them back', async ({ page }) => {
@@ -1133,7 +1077,7 @@ for (const printer of [
     })
     await prepare(page)
     const fs = await import('node:fs')
-    await page.getByRole('button', { name: 'Change', exact: true }).click()
+    await page.getByTestId('slice-machine-printer').click()
     await page.getByRole('list', { name: 'Choose a printer' }).getByRole('button', { name: new RegExp(printer.name) }).click()
     await expect(page.locator('.printer-name')).toContainText(printer.name)
     const slices13 = await sliceCount(page)
@@ -1147,7 +1091,7 @@ for (const printer of [
   })
 }
 
-test('the nozzle size is chosen per printer, shows on the printer card, and the slice uses the matching presets', async ({ page, isMobile }) => {
+test('the nozzle size is chosen per printer from its chip, and the slice uses the matching presets', async ({ page, isMobile }) => {
   test.skip(isMobile, 'Runs at desktop width')
   test.slow()
   await page.addInitScript(() => {
@@ -1155,11 +1099,13 @@ test('the nozzle size is chosen per printer, shows on the printer card, and the 
   })
   await prepare(page)
   const fs = await import('node:fs')
-  await page.getByRole('button', { name: 'Change', exact: true }).click()
+  const chip = page.getByTestId('slice-machine-nozzle')
+  await expect(chip).toHaveText('0.4 mm')
+  await chip.click()
   const sizes = page.getByRole('radiogroup', { name: 'Nozzle size' })
   await expect(sizes.getByRole('radio', { name: '0.4 mm' })).toHaveAttribute('aria-checked', 'true')
   await sizes.getByRole('radio', { name: '0.6 mm' }).click()
-  await expect(sizes.getByRole('radio', { name: '0.6 mm' })).toHaveAttribute('aria-checked', 'true')
+  await expect(chip).toHaveText('0.6 mm')
   const slices14 = await sliceCount(page)
   await page.getByRole('main').getByRole('button', { name: /^Slice/ }).first().click()
   await expect(sliced(page, slices14)).toBeVisible({ timeout: 120_000 })
@@ -1170,8 +1116,7 @@ test('the nozzle size is chosen per printer, shows on the printer card, and the 
   // The choice stays after a reload.
   await page.reload()
   await tab(page, 'prepare').click()
-  await page.getByRole('button', { name: 'Change', exact: true }).click()
-  await expect(page.getByRole('radiogroup', { name: 'Nozzle size' }).getByRole('radio', { name: '0.6 mm' })).toHaveAttribute('aria-checked', 'true')
+  await expect(page.getByTestId('slice-machine-nozzle')).toHaveText('0.6 mm')
 })
 
 test('brim ears: click the model to add ears, they print as discs on the first layer, and remove all clears them', async ({ page, isMobile }) => {
@@ -1297,7 +1242,7 @@ test('a two-color plate on a Bambu printer gets a prime tower from the printer p
   })
   await prepare(page)
   const fs = await import('node:fs')
-  await page.getByRole('button', { name: 'Change', exact: true }).click()
+  await page.getByTestId('slice-machine-printer').click()
   await page.getByRole('list', { name: 'Choose a printer' }).getByRole('button', { name: /Bay 2/ }).click()
   // Layered X has two parts, on the printer's AMS slots A1 and A2 (black and dark gray, the measured pair #000000 to #545454: 236 plus the printer minimum).
   const slices17 = await sliceCount(page)
