@@ -20,7 +20,7 @@ const MODES = ['simple', 'advanced', 'expert', 'developer'] as const
 const LAYOUT: LayoutSpec = {
   workspaceTabs: ['prepare', 'feed', 'library', 'printers', 'pilot'],
   settingsModel: 'sidebar',
-  sidebar: { side: 'left', width: 340, resizable: true, collapseKey: 'Shift+Tab' },
+  sidebar: { side: 'left', width: 404, resizable: true, collapseKey: 'Shift+Tab' },
   objectList: 'right-pane',
   objectPanel: 'inline-table',
   toolbar: 'top-of-viewport',

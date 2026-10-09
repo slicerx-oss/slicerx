@@ -1118,7 +1118,7 @@ test('the nozzle size is chosen per printer from its chip, and the slice uses th
   // The choice stays after a reload.
   await page.reload()
   await tab(page, 'prepare').click()
-  await expect(page.getByTestId('slice-machine-nozzle')).toHaveText('0.6 mm')
+  await expect(page.getByTestId('slice-machine-nozzle')).toHaveAttribute('aria-label', 'Nozzle: 0.6 mm')
 })
 
 test('brim ears: click the model to add ears, they print as discs on the first layer, and remove all clears them', async ({ page, isMobile }) => {

@@ -69,15 +69,15 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 
 | Test id | Control |
 | --- | --- |
-| `slice-machine-card` | The machine card at the top of the Slice sidebar: printer, nozzle, plate type and status |
-| `slice-machine-printer` | The printer chip; opens the printer list |
+| `slice-machine-card` | The machine card at the top of the Slice sidebar: one row of printer, nozzle and plate type boxes; its row's `data-summary` reads like "Bay 1, 0.4 mm, Textured PEI, Ready" |
+| `slice-machine-printer` | The printer box (picture, name, model and status); opens the printer list |
 | `slice-machine-printer-option` | A printer in that list, with `data-printer-id` |
 | `slice-machine-printer-add` | Add printer, in the list or on the card with no printer |
 | `slice-machine-printer-settings` | Printer settings in the list (Advanced and up) |
-| `slice-machine-model` | The printer's maker and model, muted after its name on the card |
-| `slice-machine-nozzle` | The nozzle chip |
+| `slice-machine-model` | The printer's maker and model, muted under its name in the printer box |
+| `slice-machine-nozzle` | The nozzle box ("Nozzle", the size and the type), with `data-nozzle` and an `aria-label` such as "Nozzle: 0.4 mm" |
 | `slice-machine-nozzle-option` | A nozzle size in its popover, with `data-nozzle` |
-| `slice-machine-plate` | The plate type chip: the type the active plate prints on, with `data-bed-type` |
+| `slice-machine-plate` | The plate box: the icon of the type the active plate prints on, with `data-bed-type` and an `aria-label` such as "Plate: Textured PEI" |
 | `slice-machine-plate-option` | A plate type in its popover, with `data-bed-type` (empty for the printer's default) |
 | `slice-machine-status` | The printer's status: Ready, Printing, Paused, Error, Offline or Export only |
 | `slice-mode-chip` | The settings mode chip in the Slice pane title |

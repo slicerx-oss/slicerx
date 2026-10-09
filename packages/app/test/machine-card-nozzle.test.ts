@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// The nozzle chip shows its size as soon as the printer's profile has loaded, and a skeleton only before that.
+// The nozzle box shows its size as soon as the printer's profile has loaded, and a skeleton only before that.
 import { createElement } from 'react'
 import { flushSync } from 'react-dom'
 import { createRoot } from 'react-dom/client'
@@ -12,7 +12,7 @@ vi.mock('../src/lib/use-printer', () => ({ usePrinter: () => ({ rows: [row], pri
 const { MachineCard } = await import('../src/workspaces/prepare/machine-card')
 const { set } = await import('../src/state/store')
 
-describe('machine card nozzle chip', () => {
+describe('machine card nozzle box', () => {
   it('is a skeleton until the profile loads, then reads the nozzle size', () => {
     set({ profile: null, settingsMode: 'simple' })
     const el = document.createElement('div')
@@ -21,9 +21,11 @@ describe('machine card nozzle chip', () => {
     flushSync(() => root.render(createElement(MachineCard)))
     expect(el.querySelector('[data-testid="slice-machine-nozzle"]')).toBeNull()
     expect(el.querySelector('.mc-skel')).not.toBeNull()
-    // The profile's own printer id differs from the printer row's id; the chip shows all the same.
+    // The profile's own printer id differs from the printer row's id; the box shows all the same.
     flushSync(() => set({ profile: { printerId: 'bambu-a1', nozzle: 0.4, nozzles: [0.2, 0.4, 0.6, 0.8], nozzleFrom: 'default', tier: 'standard', source: 'slicerx', shippedGcode: true, gcodeKeys: [], limits: {} } }))
-    expect(el.querySelector('[data-testid="slice-machine-nozzle"]')?.textContent).toBe('0.4 mm')
+    const box = el.querySelector('[data-testid="slice-machine-nozzle"]')
+    expect(box?.getAttribute('aria-label')).toBe('Nozzle: 0.4 mm')
+    expect(box?.querySelector('.mc-nsize')?.textContent).toBe('0.4 mm')
     expect(el.querySelector('.mc-skel')).toBeNull()
     root.unmount()
     el.remove()

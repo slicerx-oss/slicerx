@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// The machine card in the Slice sidebar: printer, nozzle and plate type as chips that change in place, the plate type
-// per plate, an export-only printer's status, and all of it by keyboard. The no-printer state is covered by the
+// The machine card in the Slice sidebar: printer, nozzle and plate type as three boxes that change in place, the plate
+// type per plate, an export-only printer's status, and all of it by keyboard. The no-printer state is covered by the
 // machine card unit test, since the web build always has its demo printers.
 import { type Page } from '@playwright/test'
 import { closeSheet, expect, openSheet, plateReady, test } from './fixtures'
@@ -21,9 +21,9 @@ async function open(page: Page, prefs: Record<string, unknown> = {}): Promise<vo
   await expect(page.getByTestId('slice-machine-card')).toBeVisible()
 }
 
-test('the printer, nozzle and plate chips change them in place, with the printer\'s name in full', async ({ page }) => {
+test('the printer, nozzle and plate boxes change them in place, with the printer\'s name in full', async ({ page }) => {
   await open(page)
-  // The printer's name is never cut to nothing: in the default sidebar the chips go on a line under it.
+  // The printer's name is never cut to nothing: the printer box has the room the nozzle and plate boxes leave.
   const shownName = page.getByTestId('slice-machine-printer').locator('.printer-name')
   expect(await shownName.evaluate((el) => el.scrollWidth > el.clientWidth + 1)).toBe(false)
   // The model follows the name, muted: in full, or cut with an ellipsis and in full in the tooltip.
@@ -54,13 +54,13 @@ test('the printer, nozzle and plate chips change them in place, with the printer
   await page.locator(`[data-testid="slice-machine-printer-option"]:not([data-printer-id="${id}"])`).first().click()
   // Nozzle.
   const nozzle = page.getByTestId('slice-machine-nozzle')
-  await expect(nozzle).toHaveText(/^\d\.\d mm$/)
+  await expect(nozzle).toHaveAttribute('aria-label', /^Nozzle: \d\.\d mm$/)
   await nozzle.click()
   const other = page.locator('[data-testid="slice-machine-nozzle-option"][aria-checked="false"]:not(:disabled)').first()
   if (await other.count()) {
     const mm = await other.getAttribute('data-nozzle')
     await other.click()
-    await expect(nozzle).toHaveText(`${mm} mm`)
+    await expect(nozzle).toHaveAttribute('aria-label', `Nozzle: ${mm} mm`)
   } else {
     // The printer reports its nozzle: it is shown, and the others cannot be picked.
     await expect(page.getByRole('dialog', { name: 'Nozzle' })).toContainText('The printer reports this nozzle.')
@@ -73,7 +73,7 @@ test('the printer, nozzle and plate chips change them in place, with the printer
   await expect(types.first()).toHaveText(/^Printer default \(.+\)$/)
   await expect(types).toHaveCount(6)
   await page.locator('[data-testid="slice-machine-plate-option"][data-bed-type="cool"]').click()
-  await expect(plate).toHaveText('Cool plate')
+  await expect(plate).toHaveAttribute('aria-label', 'Plate: Cool plate')
   await expect(plate).toHaveAttribute('data-bed-type', 'cool')
   // Every control of the card is on screen at once, with the status beside them.
   await expect(page.getByTestId('slice-machine-status')).toBeVisible()
@@ -82,7 +82,7 @@ test('the printer, nozzle and plate chips change them in place, with the printer
 test('the plate type is per plate', async ({ page }) => {
   await open(page, { printerId: 'bay-1' })
   const plate = page.getByTestId('slice-machine-plate')
-  const first = (await plate.textContent()) ?? ''
+  const first = (await plate.getAttribute('aria-label')) ?? ''
   const plates = page.getByRole('list', { name: 'Plates' })
   // The plate strip is in the view; on a phone the sidebar sheet closes for it and opens again for the card.
   await closeSheet(page)
@@ -90,17 +90,17 @@ test('the plate type is per plate', async ({ page }) => {
   await openSheet(page)
   await plate.click()
   await page.locator('[data-testid="slice-machine-plate-option"][data-bed-type="smooth-pei"]').click()
-  await expect(plate).toHaveText('Smooth PEI')
+  await expect(plate).toHaveAttribute('aria-label', 'Plate: Smooth PEI')
   await closeSheet(page)
   await plates.locator('.plate-card', { hasText: 'Plate 1' }).click()
-  await expect(plate).toHaveText(first)
+  await expect(plate).toHaveAttribute('aria-label', first)
   await plates.locator('.plate-card', { hasText: 'Plate 2' }).click()
-  await expect(plate).toHaveText('Smooth PEI')
+  await expect(plate).toHaveAttribute('aria-label', 'Plate: Smooth PEI')
   // Back to the printer's default.
   await openSheet(page)
   await plate.click()
   await page.locator('[data-testid="slice-machine-plate-option"][data-bed-type=""]').click()
-  await expect(plate).toHaveText(first)
+  await expect(plate).toHaveAttribute('aria-label', first)
 })
 
 test('a printer with no connection reads Export only', async ({ page }) => {
@@ -109,7 +109,7 @@ test('a printer with no connection reads Export only', async ({ page }) => {
   await expect(page.getByTestId('slice-machine-status')).toHaveText('Export only')
 })
 
-test('Advanced folds the card to one summary line and lists Printer settings', async ({ page }) => {
+test('Advanced lists Printer settings, and the card stays one row of boxes', async ({ page }) => {
   await open(page, { printerId: 'bay-1', settingsMode: 'advanced' })
   const card = page.getByTestId('slice-machine-card')
   await page.getByTestId('slice-machine-printer').click()
@@ -118,17 +118,18 @@ test('Advanced folds the card to one summary line and lists Printer settings', a
   await expect(dialog).toBeVisible()
   await dialog.getByRole('button', { name: 'Done', exact: true }).click()
   await expect(dialog).toHaveCount(0)
-  await card.getByRole('button', { name: 'Printer', exact: true }).click()
-  await expect(card).toHaveAttribute('data-collapsed', 'true')
-  await expect(card.locator('.sec-sum')).toHaveText(/^Bay 1, \d\.\d+ mm, .+, [A-Z][a-z ]+$/)
+  await expect(card.locator('.mc-row')).toHaveAttribute('data-summary', /^Bay 1, \d\.\d+ mm, .+, [A-Z][a-z ]+$/)
+  // The three boxes share one row: the same top edge.
+  const tops = await Promise.all(['slice-machine-printer', 'slice-machine-nozzle', 'slice-machine-plate'].map(async (id) => (await page.getByTestId(id).boundingBox())!.y))
+  expect(Math.max(...tops) - Math.min(...tops)).toBeLessThan(1)
 })
 
-test('the card works by keyboard: Enter opens a chip, arrows move, Escape closes', async ({ page, isMobile }) => {
+test('the card works by keyboard: Enter opens a box, arrows move, Escape closes', async ({ page, isMobile }) => {
   test.skip(isMobile, 'Needs a keyboard')
   await open(page, { printerId: 'bay-1' })
   const plate = page.getByTestId('slice-machine-plate')
   const nozzle = page.getByTestId('slice-machine-nozzle')
-  // Tab is the look's Model and Slice switch here, so the chip gets focus directly.
+  // Tab is the look's Model and Slice switch here, so the box gets focus directly.
   await expect(nozzle).toBeVisible()
   await plate.focus()
   await expect(plate).toBeFocused()
@@ -144,7 +145,7 @@ test('the card works by keyboard: Enter opens a chip, arrows move, Escape closes
   await page.keyboard.press('End')
   await expect(types.last()).toBeFocused()
   await page.keyboard.press('Enter')
-  await expect(plate).toHaveText('High temp plate')
+  await expect(plate).toHaveAttribute('aria-label', 'Plate: High temp plate')
 })
 
 test('Simple at 1440 by 900 with nothing selected has Supports on screen', async ({ page, isMobile }) => {
@@ -160,7 +161,7 @@ test('Simple at 1440 by 900 with nothing selected has Supports on screen', async
 })
 
 // Screenshots for review: SX_SHOTS=1, saved to SX_SHOTS_DIR (test-results/shots by default).
-test('shots: the machine card, its popovers, folded and export only, light and dark', async ({ page }, info) => {
+test('shots: the machine card and its popovers, light and dark', async ({ page }, info) => {
   test.skip(!process.env['SX_SHOTS'], 'SX_SHOTS=1 only')
   test.slow()
   const dir = process.env['SX_SHOTS_DIR'] ?? info.outputPath('shots')
@@ -180,14 +181,10 @@ test('shots: the machine card, its popovers, folded and export only, light and d
     await page.mouse.move(0, 0)
     await shoot(`card-${scheme}`)
     await card.screenshot({ path: `${dir}/machine-card-crop-${scheme}-${width}.png` })
-    for (const chip of ['printer', 'nozzle', 'plate'] as const) {
-      await page.getByTestId(`slice-machine-${chip}`).click()
-      await shoot(`${chip}-${scheme}`)
+    for (const box of ['printer', 'nozzle', 'plate'] as const) {
+      await page.getByTestId(`slice-machine-${box}`).click()
+      await shoot(`${box}-${scheme}`)
       await page.keyboard.press('Escape')
     }
-    await sx({ settingsMode: 'advanced' })
-    await card.getByRole('button', { name: 'Printer', exact: true }).click()
-    await shoot(`folded-${scheme}`)
-    await card.getByRole('button', { name: 'Printer', exact: true }).click()
   }
 })

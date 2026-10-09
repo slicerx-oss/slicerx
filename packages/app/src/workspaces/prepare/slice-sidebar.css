@@ -9,3 +9,5 @@
 .slice-done .est-sub { margin: 0; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* Until the filament rail lands, Advanced lists every slot: the pinned top keeps at most 40% of the sidebar and scrolls inside. */
 .pane .sx-rail-pin { max-height: 40%; overflow: auto; }
+/* The printer row is three boxes of its own, with no card around them. */
+.studio[data-mode="prepare"]:not([data-model-mode="design"]) > .pane .pane-body > .sx-block.machine-card { padding: 0; border: 0; background: none; }

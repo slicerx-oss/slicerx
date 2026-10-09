@@ -1,23 +1,23 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// The machine card at the top of the Slice sidebar: one row with the printer, its nozzle and the active plate's plate
-// type as chips, and the printer's status. Each chip opens a popover to change it in place. Without a printer the
-// card says what the slice is for and offers to add one.
-import { Block, Button, ChipButton, Icon, LinkButton, MenuAnchor, Pill, Popover, tipAttrs, type IconName } from '@slicerx/ui'
+// The machine card at the top of the Slice sidebar: one row of three boxes, the printer (its picture, name, model and
+// status), its nozzle (size and type) and the active plate's plate type (its icon). Each box opens a popover to change
+// it in place. Without a printer the card says what the slice is for and offers to add one.
+import { Block, Button, Icon, LinkButton, MenuAnchor, Pill, Popover, tipAttrs, type IconName } from '@slicerx/ui'
 import { lazy, Suspense, useMemo, useState, type KeyboardEvent } from 'react'
 import { resolveConfig } from '../../adapters/config'
 import { GENERIC_BED } from '../../adapters/generic-bed'
 import { effectiveMode, openSetup, useLayout } from '../../first-run/look'
 import { usePrinter } from '../../lib/use-printer'
-import { VendorMark } from '../../lib/vendor-mark'
 import { BED_TYPE_OPTIONS, plateBedType, type BedType } from '../../plate/bed-type'
 import { activeMeta, setPlateSettings } from '../../plate/plates'
-import { useFold } from '../../shell/fold'
 import { setPrinterNozzle } from '../../state/profile-sync'
 import { set, useApp } from '../../state/store'
 import { printerPill } from './prepare-panes'
 import './machine-card.css'
 
+// The printer's picture needs the printer catalog, which stays out of the startup code.
+const PrinterThumb = lazy(() => import('./printer-thumb').then((m) => ({ default: m.PrinterThumb })))
 const PrinterSettingsDialog = lazy(() => import('./printer-settings').then((m) => ({ default: m.PrinterSettingsDialog })))
 
 /** Each plate type's icon in the plate popover. */
@@ -31,6 +31,8 @@ export const BED_ICON: Record<BedType, IconName> = {
 
 /** Nozzle types in words, as setup records them. */
 const NOZZLE_TYPE: Record<string, string> = { brass: 'Brass', 'hardened-steel': 'Hardened steel', 'stainless-steel': 'Stainless steel', 'tungsten-carbide': 'Tungsten carbide' }
+/** The nozzle type in one word for the nozzle box. */
+const NOZZLE_SHORT: Record<string, string> = { brass: 'Brass', 'hardened-steel': 'Hardened', 'stainless-steel': 'Stainless', 'tungsten-carbide': 'Carbide' }
 
 /** The one-line summary of a folded card: name, nozzle, plate type and status, such as "Desk A1, 0.4 mm, Cool plate, Ready". */
 export function machineSummary(name: string, nozzle: number | null, plate: string, status: string): string {
@@ -62,7 +64,6 @@ export function MachineCard() {
   const meta = useApp(activeMeta)
   const easy = useApp((s) => s.easy)
   const overrides = useApp((s) => s.overrides)
-  const [open, setOpen] = useFold('printer')
   // Which chip's popover is open; one at a time.
   const [pop, setPop] = useState<string | null>(null)
   const cfg = useMemo(() => resolveConfig(easy, overrides), [easy, overrides, profile])
@@ -118,32 +119,36 @@ export function MachineCard() {
       {pill.label}
     </Pill>
   )
+  const nozzleType = extruders?.[0]?.type
+  const nozzleWord = nozzleType ? (NOZZLE_SHORT[nozzleType] ?? nozzleType) : null
 
   return (
-    <Block
-      className="machine-card"
-      data-section="printer"
-      data-testid="slice-machine-card"
-      {...(setOpen ? { title: 'Printer', icon: 'printer' as const, id: 'printer-fold', expanded: open, onExpandedChange: setOpen, aside: open ? undefined : <span className="sec-sum">{summary}</span> } : {})}
-    >
-      <div className="mc-row">
+    <Block className="machine-card" data-section="printer" data-testid="slice-machine-card">
+      <div className="mc-row" data-summary={summary}>
         <MenuAnchor className="mc-printer">
           <button
             type="button"
-            className="mc-name"
+            className="mc-box mc-name"
             data-testid="slice-machine-printer"
             aria-haspopup="dialog"
             aria-expanded={printerOpen}
             {...tipAttrs({ title: modelLine, body: 'Pick another printer, or add one.' })}
             onClick={() => (printerOpen ? closePrinter() : setPop('printer'))}
           >
-            <VendorMark vendor={printer.vendor} size={24} />
-            <span className="printer-name">{printer.name}</span>
-            {modelName && modelName !== printer.name ? (
-              <span className="mc-model" data-testid="slice-machine-model">
-                {modelName}
+            <Suspense fallback={<span className="mc-thumb" aria-hidden="true" />}>
+              <PrinterThumb vendor={printer.vendor} model={printer.model} />
+            </Suspense>
+            <span className="mc-ptext">
+              <span className="printer-name">{printer.name}</span>
+              <span className="mc-pline">
+                {modelName && modelName !== printer.name ? (
+                  <span className="mc-model" data-testid="slice-machine-model">
+                    {modelName}
+                  </span>
+                ) : null}
+                {status}
               </span>
-            ) : null}
+            </span>
             <Icon name="chevron-down" size={14} className="mc-caret" />
           </button>
           <Popover open={printerOpen} onClose={closePrinter} label="Printer" className="mc-pop">
@@ -204,24 +209,34 @@ export function MachineCard() {
           </Popover>
         </MenuAnchor>
 
-        <span className="mc-chips">
-          <MenuAnchor>
-            {loading ? (
-              <span className="mc-skel" aria-hidden="true" data-w="nozzle" />
-            ) : (
-              <ChipButton
-                menu
-                numeric
-                data-testid="slice-machine-nozzle"
-                aria-expanded={pop === 'nozzle'}
-                aria-label={`Nozzle: ${nozzle} mm`}
-                tip={{ title: 'Nozzle', body: fixedNozzle ? 'The printer reports this nozzle.' : 'The size picks the presets that match it.' }}
-                onClick={() => setPop(pop === 'nozzle' ? null : 'nozzle')}
-              >
-                {nozzle} mm
-              </ChipButton>
-            )}
-            <Popover open={pop === 'nozzle'} onClose={() => setPop(null)} label="Nozzle" className="mc-pop">
+        <MenuAnchor className="mc-nozzle">
+          {loading ? (
+            <span className="mc-box mc-skel" aria-hidden="true" data-w="nozzle" />
+          ) : (
+            <button
+              type="button"
+              className="mc-box mc-nbox"
+              data-testid="slice-machine-nozzle"
+              data-nozzle={nozzle}
+              aria-haspopup="dialog"
+              aria-expanded={pop === 'nozzle'}
+              aria-label={`Nozzle: ${nozzle} mm`}
+              {...tipAttrs({ title: `Nozzle, ${nozzle} mm${nozzleType ? `, ${(NOZZLE_TYPE[nozzleType] ?? nozzleType).toLowerCase()}` : ''}`, body: fixedNozzle ? 'The printer reports this nozzle.' : 'The size picks the presets that match it.' })}
+              onClick={() => setPop(pop === 'nozzle' ? null : 'nozzle')}
+            >
+              <span className="mc-nhead">
+                <Icon name="nozzle" size={14} />
+                Nozzle
+              </span>
+              <span className="mc-nsize">
+                {nozzle}
+                <small> mm</small>
+              </span>
+              {nozzleWord ? <span className="mc-ntype">{nozzleWord}</span> : null}
+              <Icon name="chevron-down" size={12} className="mc-caret" />
+            </button>
+          )}
+          <Popover open={pop === 'nozzle'} onClose={() => setPop(null)} label="Nozzle" className="mc-pop">
               <div className="mc-list" role="radiogroup" aria-label="Nozzle size" onKeyDown={arrows}>
                 {(profile?.nozzles ?? []).map((n) => (
                   <button
@@ -257,20 +272,24 @@ export function MachineCard() {
                 </dl>
               ) : null}
             </Popover>
-          </MenuAnchor>
+        </MenuAnchor>
 
-          <MenuAnchor>
-            <ChipButton
-              menu
-              data-testid="slice-machine-plate"
-              data-bed-type={plate.value}
-              aria-expanded={pop === 'plate'}
-              aria-label={`Plate: ${plate.label}`}
-              tip={{ title: plate.label, body: 'Set per plate. Change it here or in plate settings.' }}
-              onClick={() => setPop(pop === 'plate' ? null : 'plate')}
-            >
-              {plate.label}
-            </ChipButton>
+        <MenuAnchor className="mc-plate">
+          <button
+            type="button"
+            className="mc-box mc-bbox"
+            data-testid="slice-machine-plate"
+            data-bed-type={plate.value}
+            aria-haspopup="dialog"
+            aria-expanded={pop === 'plate'}
+            aria-label={`Plate: ${plate.label}`}
+            {...tipAttrs({ title: plate.label, body: 'Set per plate. Change it here or in plate settings.' })}
+            onClick={() => setPop(pop === 'plate' ? null : 'plate')}
+          >
+            <Icon name={BED_ICON[plate.value]} size={28} />
+            <span className="sr-only">{plate.label}</span>
+            <Icon name="chevron-down" size={12} className="mc-caret" />
+          </button>
             <Popover open={pop === 'plate'} onClose={() => setPop(null)} label="Plate type" align="end" className="mc-pop">
               <div className="mc-list" role="radiogroup" aria-label="Plate type" onKeyDown={arrows}>
                 <button type="button" role="radio" aria-checked={!meta?.settings.bedType} data-testid="slice-machine-plate-option" data-bed-type="" onClick={() => setPlate('')}>
@@ -285,10 +304,7 @@ export function MachineCard() {
                 ))}
               </div>
             </Popover>
-          </MenuAnchor>
-        </span>
-
-        {status}
+        </MenuAnchor>
       </div>
       {printerSettingsOpen ? (
         <Suspense fallback={null}>
