@@ -95,6 +95,9 @@ import type {
   PlateStyle,
 } from './types'
 
+/** How long the camera takes to reach a newly opened model from the old one's framing. */
+const SWAP_REFRAME_MS = 250
+
 const RING = 600
 const SETTLE_FRAMES = 3
 /** Field of view of the orthographic stand-in, degrees. */
@@ -958,9 +961,16 @@ class ViewportImpl implements Viewport {
   private held: { plate?: [ViewportPlate, { keepCamera?: boolean }]; preview?: PreviewBuffers | null } | null = null
   private swapNext: (() => void) | null = null
 
+  private swapping = false
+
   private applyHeld(h: NonNullable<ViewportImpl['held']>): void {
-    if (h.preview !== undefined) this.setPreview(h.preview)
-    if (h.plate) this.setPlate(...h.plate)
+    this.swapping = true
+    try {
+      if (h.preview !== undefined) this.setPreview(h.preview)
+      if (h.plate) this.setPlate(...h.plate)
+    } finally {
+      this.swapping = false
+    }
   }
 
   setPlate(plate: ViewportPlate, opts: { keepCamera?: boolean } = {}): void {
@@ -1044,7 +1054,8 @@ class ViewportImpl implements Viewport {
     this.objectsMoved()
     this.applyToolpathLook()
     // A fresh plate (the first one, a project opened, a plate swap) opens on the whole build plate, not on its parts.
-    if (!opts.keepCamera) this.view('plate')
+    // a new model swapping in for the old one eases the camera to it from the swap frame (at once under reduced motion)
+    if (!opts.keepCamera) this.view('plate', this.swapping ? { animate: true, durationMs: SWAP_REFRAME_MS } : {})
     this.plateSet = { at: t0, buildMs: performance.now() - t0, built, kept }
   }
 
@@ -2183,11 +2194,11 @@ class ViewportImpl implements Viewport {
     return box
   }
 
-  view(preset: ViewPreset, opts: { animate?: boolean } = {}): void {
+  view(preset: ViewPreset, opts: { animate?: boolean; durationMs?: number } = {}): void {
     const bed = this.stage.bed
     const pose = this.rig.presetPose(preset, this.framingBox(), Math.max(bed.widthMm, bed.depthMm))
     this.rig.preset = preset
-    this.rig.go(pose, opts.animate ?? false, performance.now())
+    this.rig.go(pose, opts.animate ?? false, performance.now(), opts.durationMs)
     this.invalidate()
   }
 
