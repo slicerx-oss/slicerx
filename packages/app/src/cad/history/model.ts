@@ -81,6 +81,8 @@ export interface Step {
   note?: string
   /** The expression over named values the step's main number follows (`height + 2`); see cad/values.ts. */
   bind?: string
+  /** A name the person gave the step, shown instead of the one made from its numbers. */
+  label?: string
 }
 
 export interface History {
@@ -508,7 +510,14 @@ const n2 = (v: number) => String(Math.round(v * 100) / 100)
 const SHAPE_WORDS: Record<string, string> = { rectangle: 'Rectangle', circle: 'Circle', slot: 'Slot', polygon: 'Polygon', text: 'Text', svg: 'SVG outline', sketch: 'Sketch' }
 
 /** A step in a few plain words, such as "Pull 5 mm", "Hole 6 mm" or "Sketch extrude 12 mm". */
-export function stepName(s: Pick<Step, 'params'>): string {
+/** A step's name: the one the person gave it, or one made from what it does. */
+export function stepName(s: Pick<Step, 'params'> & { label?: string | undefined }): string {
+  const own = s.label?.trim()
+  return own ? own : madeName(s)
+}
+
+/** The name a step's numbers give it ("Pull 5 mm"). */
+export function madeName(s: Pick<Step, 'params'>): string {
   const p = s.params
   switch (p.op) {
     case 'face.push':

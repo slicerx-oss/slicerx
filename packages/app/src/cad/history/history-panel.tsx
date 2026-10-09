@@ -13,7 +13,7 @@ import { num } from '../panel-kit'
 import { currentValues } from '../value-table'
 import { bindFor } from '../values'
 import { mainNumber, withNumber } from './model'
-import { beginEdit, cancelEdit, deleteStep, moveStep, setParams, setSuppressed, toolFor, viewStep } from './ops'
+import { beginEdit, cancelEdit, deleteStep, renameStep, moveStep, setParams, setSuppressed, toolFor, viewStep } from './ops'
 import { StepRow } from './step-row'
 import '../cad.css'
 
@@ -82,6 +82,17 @@ export function HistorySteps({ objectId, tree }: { objectId: string; tree?: bool
             onEdit={() => void run(i, () => (toolFor(s.params) ? beginEdit(host.slicer, objectId, i) : Promise.resolve(setOpen(i))))}
             onSuppress={() => void run(i, () => setSuppressed(host.slicer, objectId, i, !s.suppressed))}
             onDelete={() => void run(i, () => deleteStep(host.slicer, objectId, i))}
+            onRename={(label) => {
+              try {
+                renameStep(objectId, i, label)
+                return null
+              } catch (e) {
+                toast(text(e), 'warn')
+                return text(e)
+              }
+            }}
+            onEnd={cancelEdit}
+            rolledBack={viewingIndex !== null}
             onNumber={(text) => {
               const v = num(text)
               if (!Number.isFinite(v)) return 'That is not a number, or a sum of named values that works out.'

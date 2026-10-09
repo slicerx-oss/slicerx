@@ -25,7 +25,7 @@ test.describe('Model tree', () => {
     await expect(more).toHaveCSS('opacity', '1')
     expect(await label.boundingBox()).toEqual(before)
     await more.click()
-    await expect(page.getByRole('menuitem', { name: 'Suppress Pull 5 mm' })).toBeVisible()
+    await expect(page.getByTestId('model-ctx')).toHaveAttribute('data-target', 'step')
     await page.keyboard.press('Escape')
 
     // The keyboard: the object is the row Tab reaches, Down goes to the step.

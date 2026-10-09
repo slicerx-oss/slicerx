@@ -29,6 +29,12 @@ describe('history steps in the project file', () => {
     })
   }
 
+  it("keeps a step's own name", () => {
+    const history: History = { version: 1, base: [boxMesh(10, 10, 5)], steps: [{ id: 's1', part: 0, transform: T, params: STEPS[2]!, label: 'Walls' }] }
+    const files = new Map(historyFiles([{ id: 'o1', history }], new Map([['o1', 1]])).map((f) => [f.name, typeof f.data === 'string' ? new TextEncoder().encode(f.data) : f.data]))
+    expect(parseHistories(files, new Set(['1'])).get('1')?.steps[0]?.label).toBe('Walls')
+  })
+
   it('drops a step whose parameters are wrong', () => {
     expect(roundTrip({ op: 'shape.extrude', frame: { origin: [0, 0, 5], normal: [0, 0, 1], u: [1, 0, 0], v: [0, 1, 0] }, shape: { type: 'circle', diameterMm: 4 }, placement: {}, spec: { distanceMm: 5, operation: 'cut' }, pattern: { kind: 'spiral', count: 3 } } as unknown as StepParams)).toBeUndefined()
     expect(roundTrip({ op: 'shell', open: [{ at: [0, 0], normal: [0, 0, 1] }], wallMm: 2 } as unknown as StepParams)).toBeUndefined()
