@@ -112,6 +112,29 @@ fn a_part_inside_an_excluded_area_blocks_the_file() {
 }
 
 #[test]
+fn infill_across_a_small_excluded_area_blocks_the_file_though_no_point_lies_in_it() {
+    // A 2 mm square excluded at the center of a 20 mm cube: the sparse infill lines run across it from wall to wall
+    // with every point of them outside it. Each move is checked, not only its ends.
+    let bytes = std::fs::read(format!("{}/packages/core/cli/tests/fixtures/cube.stl", root())).unwrap();
+    let m = Arc::new(Mesh::load(&bytes, "cube.stl").unwrap());
+    let config = json!({
+        "layer_height": 0.2,
+        "initial_layer_print_height": 0.2,
+        "wall_generator": "classic",
+        "sparse_infill_pattern": "rectilinear",
+        "sparse_infill_density": 15,
+        "brim_type": "no_brim",
+        "skirt_loops": 0,
+        "printable_area": ["0x0", "256x0", "256x256", "0x256"],
+        "bed_exclude_area": ["127x127", "129x127", "129x129", "127x129"],
+    });
+    let req: SliceRequest =
+        serde_json::from_value(json!({ "plate": {"objects": [{"mesh": "c"}]}, "config": config })).unwrap();
+    let msg = blocked(common::run_request(&req, &move |_: &str| Ok(m.clone())));
+    assert!(msg.contains("excluded bed area"), "{msg}");
+}
+
+#[test]
 fn a_part_above_the_printable_height_blocks_the_file() {
     let mut c = base_config();
     c["printable_height"] = json!(3.0);

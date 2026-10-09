@@ -117,7 +117,7 @@ pub(crate) fn vet_text(
 }
 
 /// Tolerance for a point on the edge of the bed or a zone, mm.
-const EDGE_TOL_MM: f64 = 0.05;
+pub(crate) const EDGE_TOL_MM: f64 = 0.05;
 
 fn number(v: &Value) -> Option<f64> {
     match v {
@@ -202,6 +202,57 @@ fn near_or_inside(poly: &[[f64; 2]], x: f64, y: f64, tol: f64) -> bool {
     inside
 }
 
+/// A point of the segment `a`-`b` that lies more than `tol` inside `poly` (with `inside`) or more than `tol` outside
+/// it (without), or None. The segment is cut where it crosses the polygon's edges and each piece is tried at its
+/// quarter points and middle (and at the segment's own ends), so a move whose ends both lie clear can still be
+/// caught running through the polygon. A segment that only runs along or touches an edge, within `tol`, is clear.
+pub(crate) fn segment_reaches(
+    poly: &[[f64; 2]],
+    a: [f64; 2],
+    b: [f64; 2],
+    inside: bool,
+    tol: f64,
+) -> Option<[f64; 2]> {
+    let n = poly.len();
+    if n < 3 {
+        return None;
+    }
+    let (dx, dy) = (b[0] - a[0], b[1] - a[1]);
+    let mut cuts = vec![0.0, 1.0];
+    for i in 0..n {
+        let (Some(c), Some(d)) = (poly.get(i), poly.get((i + 1) % n)) else {
+            continue;
+        };
+        let (ex, ey) = (d[0] - c[0], d[1] - c[1]);
+        let den = dx * ey - dy * ex;
+        if den.abs() < 1e-12 {
+            continue;
+        }
+        let t = ((c[0] - a[0]) * ey - (c[1] - a[1]) * ex) / den;
+        let u = ((c[0] - a[0]) * dy - (c[1] - a[1]) * dx) / den;
+        if t > 0.0 && t < 1.0 && (-1e-9..=1.0 + 1e-9).contains(&u) {
+            cuts.push(t);
+        }
+    }
+    crate::sorting::sort_by(&mut cuts, |x, y| x.total_cmp(y));
+    let clear = |t: f64| -> Option<[f64; 2]> {
+        let p = [a[0] + t * dx, a[1] + t * dy];
+        let depth = (0..n)
+            .filter_map(|i| Some(dist_to_segment(p[0], p[1], poly.get(i)?, poly.get((i + 1) % n)?)))
+            .fold(f64::INFINITY, f64::min);
+        (depth > tol && near_or_inside(poly, p[0], p[1], 0.0) == inside).then_some(p)
+    };
+    if let Some(p) = clear(0.0).or_else(|| clear(1.0)) {
+        return Some(p);
+    }
+    cuts.windows(2).find_map(|w| {
+        let [t0, t1] = w else { return None };
+        [0.5, 0.25, 0.75]
+            .into_iter()
+            .find_map(|f| clear(t0 + (t1 - t0) * f))
+    })
+}
+
 fn dist_to_segment(x: f64, y: f64, a: &[f64; 2], b: &[f64; 2]) -> f64 {
     let (dx, dy) = (b[0] - a[0], b[1] - a[1]);
     let len2 = dx * dx + dy * dy;
@@ -282,8 +333,15 @@ pub fn check_toolpaths(out: &SliceOutput, base: &PrintConfig) -> Vec<Issue> {
             too_tall.hit(l.index, 0.0, f64::from(l.z), top);
         }
         for p in &l.paths {
-            for pt in l.path_points(p) {
+            let pts = l.path_points(p);
+            for (i, pt) in pts.iter().enumerate() {
                 let (x, y) = (f64::from(pt.x) / SCALE, f64::from(pt.y) / SCALE);
+                // The move from the point before: on a bed or zone that is not convex, or a zone the move runs
+                // through, its ends alone do not tell.
+                let from = i
+                    .checked_sub(1)
+                    .and_then(|k| pts.get(k))
+                    .map_or([x, y], |q| [f64::from(q.x) / SCALE, f64::from(q.y) / SCALE]);
                 let in_bbox = x >= bb[0] - EDGE_TOL_MM
                     && x <= bb[2] + EDGE_TOL_MM
                     && y >= bb[1] - EDGE_TOL_MM
@@ -293,6 +351,13 @@ pub fn check_toolpaths(out: &SliceOutput, base: &PrintConfig) -> Vec<Issue> {
                         outside_feature = Some(p.feature);
                     }
                     outside.hit(l.index, x, y, 0.0);
+                    continue;
+                }
+                if !*rect && let Some(q) = segment_reaches(poly, from, [x, y], false, EDGE_TOL_MM) {
+                    if outside.n == 0 {
+                        outside_feature = Some(p.feature);
+                    }
+                    outside.hit(l.index, q[0], q[1], 0.0);
                     continue;
                 }
                 if let Some((m, boxes)) = &reach {
@@ -310,15 +375,15 @@ pub fn check_toolpaths(out: &SliceOutput, base: &PrintConfig) -> Vec<Issue> {
                     }
                 }
                 for z in zones {
-                    // Only points clearly inside a zone: touching its edge is allowed.
-                    if x > z.bbox[0] + EDGE_TOL_MM
-                        && x < z.bbox[2] - EDGE_TOL_MM
-                        && y > z.bbox[1] + EDGE_TOL_MM
-                        && y < z.bbox[3] - EDGE_TOL_MM
-                        && near_or_inside(&z.poly, x, y, 0.0)
-                        && !on_border(&z.poly, x, y)
+                    // Only moves that run clearly inside a zone: touching or running along its edge is allowed.
+                    let reach = [from[0].min(x), from[1].min(y), from[0].max(x), from[1].max(y)];
+                    if reach[2] > z.bbox[0] + EDGE_TOL_MM
+                        && reach[0] < z.bbox[2] - EDGE_TOL_MM
+                        && reach[3] > z.bbox[1] + EDGE_TOL_MM
+                        && reach[1] < z.bbox[3] - EDGE_TOL_MM
+                        && let Some(q) = segment_reaches(&z.poly, from, [x, y], true, EDGE_TOL_MM)
                     {
-                        in_zone.hit(l.index, x, y, 0.0);
+                        in_zone.hit(l.index, q[0], q[1], 0.0);
                     }
                 }
             }
@@ -367,7 +432,7 @@ pub fn check_toolpaths(out: &SliceOutput, base: &PrintConfig) -> Vec<Issue> {
             "in_exclusion_zone",
             Severity::Error,
             format!(
-                "{} toolpath points enter an excluded bed area, first at layer {} (X{:.1} Y{:.1})",
+                "{} toolpath moves enter an excluded bed area, first at layer {} (X{:.1} Y{:.1})",
                 in_zone.n,
                 in_zone.layer + 1,
                 in_zone.x,
@@ -392,14 +457,6 @@ pub fn check_toolpaths(out: &SliceOutput, base: &PrintConfig) -> Vec<Issue> {
         issues.push(i);
     }
     issues
-}
-
-fn on_border(poly: &[[f64; 2]], x: f64, y: f64) -> bool {
-    let n = poly.len();
-    (0..n).any(|i| match (poly.get(i), poly.get((i + 1) % n)) {
-        (Some(a), Some(b)) => dist_to_segment(x, y, a, b) <= EDGE_TOL_MM,
-        _ => false,
-    })
 }
 
 #[derive(Default)]
@@ -873,6 +930,51 @@ mod tests {
             issues[0].message
         );
         assert!(blocks(&issues));
+    }
+
+    #[test]
+    fn a_move_through_an_excluded_area_blocks_though_its_ends_lie_clear() {
+        // The audit's case: a 2 mm excluded square at the bed's center, and an infill move across it from
+        // (118.991, 118.991) to (137.009, 137.009).
+        let c = cfg(json!({
+            "printable_area": ["0x0", "256x0", "256x256", "0x256"],
+            "bed_exclude_area": ["127x127", "129x127", "129x129", "127x129"]
+        }));
+        let issues = check_toolpaths(&output_with(&[(118.991, 118.991), (137.009, 137.009)], 0.2), &c);
+        assert_eq!(
+            issues.iter().map(|i| i.code).collect::<Vec<_>>(),
+            ["in_exclusion_zone"]
+        );
+        assert!(
+            issues[0].message.contains("X128.0 Y128.0"),
+            "{}",
+            issues[0].message
+        );
+        // Along the edge, 0.03 mm inside it, is within the 0.05 mm contact tolerance; 0.1 mm inside is not.
+        assert!(check_toolpaths(&output_with(&[(120.0, 127.03), (135.0, 127.03)], 0.2), &c).is_empty());
+        assert_eq!(
+            check_toolpaths(&output_with(&[(120.0, 127.1), (135.0, 127.1)], 0.2), &c)[0].code,
+            "in_exclusion_zone"
+        );
+        // Past the zone, clear of it.
+        assert!(check_toolpaths(&output_with(&[(120.0, 126.9), (135.0, 126.9)], 0.2), &c).is_empty());
+    }
+
+    #[test]
+    fn a_move_across_the_notch_of_an_l_shaped_bed_is_outside() {
+        // Both ends on the bed, the move between them over the notch.
+        let c = cfg(json!({ "printable_area": ["0x0", "200x0", "200x100", "100x100", "100x200", "0x200"] }));
+        assert!(
+            check_toolpaths(
+                &output_with(&[(50.0, 150.0), (50.0, 50.0), (150.0, 50.0)], 0.2),
+                &c
+            )
+            .is_empty()
+        );
+        assert_eq!(
+            check_toolpaths(&output_with(&[(90.0, 190.0), (190.0, 90.0)], 0.2), &c)[0].code,
+            "outside_bed"
+        );
     }
 
     #[test]
