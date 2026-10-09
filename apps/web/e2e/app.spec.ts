@@ -2,7 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 // The main flows of the browser build, at desktop and phone widths.
 import { type Page } from '@playwright/test'
-import { COLD_START_MS, expect, plateReady, sliceCount, sliced, tab, tabName, test } from './fixtures'
+import { COLD_START_MS, expect, expectCurrentTab, goTab, plateReady, sliceCount, sliced, tab, tabName, test } from './fixtures'
 
 async function open(page: Page, workspace: string): Promise<void> {
   // Seed the starting workspace once per test; a reload must keep what the app saved.
@@ -30,7 +30,7 @@ test('the reference plate loads on the plate tab', async ({ page }) => {
 test('Cmd+K opens from every workspace and lists at least 30 commands', async ({ page }) => {
   await open(page, 'prepare')
   for (const id of ['prepare', 'feed', 'printers']) {
-    await tab(page, id).click()
+    await goTab(page, id)
     await page.keyboard.press('ControlOrMeta+k')
     await expect(page.getByRole('dialog', { name: 'Commands' })).toBeVisible()
     await page.keyboard.press('Escape')
@@ -41,7 +41,7 @@ test('Cmd+K opens from every workspace and lists at least 30 commands', async ({
   expect(total).toBeGreaterThanOrEqual(30)
   await page.keyboard.type('go printers')
   await page.keyboard.press('Enter')
-  await expect(page.locator('.sx-tab[aria-current=page]')).toContainText('Printers')
+  await expectCurrentTab(page, 'printers', 'Printers')
 })
 
 test('free text in Cmd+K goes to the assistant dock', async ({ page }) => {
