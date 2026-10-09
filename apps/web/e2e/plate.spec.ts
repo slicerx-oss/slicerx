@@ -282,14 +282,13 @@ test('sending runs the preflight and needs the bed-clear check', async ({ page }
 test('the filament slot editor sets a slot and the panel shows it', async ({ page }) => {
   await prepare(page)
   await openSheet(page)
-  const slot = page.locator('[data-section="filament"] .slot').first()
-  await slot.getByRole('button', { name: 'Edit filament 1' }).first().click()
+  await page.locator('[data-section="filament"]').getByRole('button', { name: 'Edit filament 1' }).first().click()
   const dialog = page.getByRole('dialog', { name: /Filament 1/ })
   await expect(dialog).toBeVisible()
   await dialog.getByLabel('Material').selectOption('PETG')
   await dialog.getByRole('button', { name: 'Done' }).click()
   await expect(dialog).toBeHidden()
-  await expect(slot).toContainText('PETG')
+  await expect(page.getByTestId('slice-filament-slot-line')).toContainText('PETG')
 })
 
 test('a negative volume is added under the object and removed', async ({ page }) => {
@@ -514,7 +513,7 @@ test('the object list renames an object, sets a part filament, and leaves an obj
   await name.press('Enter')
   await expect(page.locator('.obj-name', { hasText: 'Layered bracket' })).toBeVisible()
   await row.getByLabel(/^Filament for /).first().selectOption('3')
-  await expect(page.locator('[data-section="filament"] .slot[data-slot="3"]')).not.toHaveClass(/unused/)
+  await expect(page.locator('[data-testid="slice-filament-slot"][data-slot="3"]')).toHaveAttribute('data-used', 'true')
   await row.getByRole('button', { name: /^Do not print Layered bracket/ }).click()
   await expect(row).toHaveClass(/off/)
   // The Slice action and Undo are on the view.
