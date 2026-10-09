@@ -9,6 +9,7 @@ import { arrayCopies, arrayMerged, extrudeShape, revolveSketch, type ArraySpec, 
 import { fromGeom, toGeom, type GeomMesh } from '../geom/client'
 import { bake } from '../plate/mesh-ops'
 import { bodyHistory, historyField, rememberFont, reserveStepId, withStep } from './history/record'
+import { commitMade } from './commit'
 import type { StepParams } from './history/model'
 import { sourceId } from '../plate/object-settings'
 import { bounds, compose, identity, type Mat4 } from '../plate/transform'
@@ -123,10 +124,9 @@ async function land(host: Loader, r: MeshResult & { frame: 'target' | 'world'; r
   if (r.frame === 'target' && entry && part && t) {
     const parts = entry.parts.map((p, i) => (i === t.partIndex ? fromGeom(r.mesh, p.name, p.slot) : p))
     const handle = await host.loadParts(entry.name, parts)
-    const { instanceOf: _was, paint: _paint, ...rest } = entry
     // A shape that misses the body changes nothing and is not a step.
     const history = r.report.touches ? withStep(entry, t.partIndex, params) : entry.history
-    set({ plate: get().plate.map((p) => (p.id === entry.id ? { ...rest, handle, parts, ...historyField(history) } : p)) })
+    if (!commitMade(entry.id, () => ({ handle, parts, ...historyField(history) }))) throw new Error('That object is gone.')
     markStale()
     if (!r.report.touches) return { message: 'The shape does not reach the body, so nothing changed. Check the distance and the direction.', warn: true }
     return { message: operation === 'cut' ? `Cut ${volume} out of ${entry.name}.` : `Joined ${volume} to ${entry.name}.`, warn: !r.report.watertight }
@@ -207,10 +207,9 @@ export async function applyArray(host: Loader, objectId: string, spec: ArraySpec
       count = r.count
     }
     const handle = await host.loadParts(e.name, parts)
-    const { instanceOf: _was, paint: _paint, ...rest } = e
     // Merging copies is a step only in a history the object already has.
     const history = e.history ? withStep(e, -1, { op: 'array.merged', spec }) : undefined
-    set({ plate: get().plate.map((p) => (p.id === e.id ? { ...rest, handle, parts, ...historyField(history) } : p)) })
+    if (!commitMade(e.id, () => ({ handle, parts, ...historyField(history) }))) throw new Error('That object is gone.')
     markStale()
     return count
   }
@@ -220,6 +219,8 @@ export async function applyArray(host: Loader, objectId: string, spec: ArraySpec
   // Kept dimensions stay with the original.
   const { dimensions: _d, ...plain } = e
   const copies: PlateEntry[] = r.transforms.slice(1).map((t) => ({ ...plain, id: `${root}~${Date.now().toString(36)}a${(++seq).toString(36)}`, instanceOf: root, transform: [...t] }))
+  // No copies of an object deleted while they were laid out.
+  if (!get().plate.some((p) => p.id === e.id)) throw new Error('That object is gone.')
   set((s) => ({ plate: [...s.plate, ...copies] }))
   markStale()
   return r.count
