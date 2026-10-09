@@ -99,26 +99,41 @@ function workerProvider(): GeomProvider {
   }
   return {
     call<T>(op: string, request: unknown, signal?: AbortSignal) {
-      return new Promise<T>((resolve, reject) => {
-        const id = ++seq
+      const id = ++seq
+      const answer = new Promise<T>((resolve, reject) => {
+        const onAbort = () => {
+          if (pending.delete(id)) reject(new DOMException('Canceled', 'AbortError'))
+          // A history replay stops at its next step; single calls just lose their answer.
+          if (op === 'history.replay') worker?.postMessage({ cancel: id })
+        }
+        // The abort listener goes once the call is answered: a signal that outlives the call (a fit check's lives
+        // until the plate changes) would otherwise keep this closure, and what it can reach, alive.
+        const settle = () => signal?.removeEventListener('abort', onAbort)
         pending.set(id, {
           resolve: (v) => {
+            settle()
             calls.answered[op] = (calls.answered[op] ?? 0) + 1
             resolve(v as T)
           },
           reject: (e) => {
+            settle()
             calls.failed[op] = (calls.failed[op] ?? 0) + 1
             calls.lastError = e.message
             reject(e)
           },
         })
-        signal?.addEventListener('abort', () => {
-          if (pending.delete(id)) reject(new DOMException('Canceled', 'AbortError'))
-          // A history replay stops at its next step; single calls just lose their answer.
-          if (op === 'history.replay') worker?.postMessage({ cancel: id })
-        }, { once: true })
-        start().postMessage({ id, op, request })
+        signal?.addEventListener('abort', onAbort, { once: true })
       })
+      // Posted outside the promise's closures, so none of them holds the request (it can be a big mesh). A request
+      // that cannot be sent fails the call, as before.
+      try {
+        start().postMessage({ id, op, request })
+      } catch (e) {
+        const p = pending.get(id)
+        pending.delete(id)
+        p?.reject(e instanceof Error ? e : new Error(String(e)))
+      }
+      return answer
     },
   }
 }
