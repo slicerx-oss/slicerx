@@ -129,6 +129,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             slicing::load_mesh,
             slicing::slice,
+            slicing::cancel_slice,
             slicing::get_preview,
             slicing::get_gcode,
             slicing::release,
