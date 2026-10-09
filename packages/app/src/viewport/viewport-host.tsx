@@ -48,6 +48,7 @@ export type Drive = Pick<Viewport, 'setMode' | 'setPlate' | 'setTransforms' | 's
   /** Camera and mouse controls, tools and camera calls; the 2D fallback has none of them. */
   setControls?: Viewport['setControls']
   setTheme?: Viewport['setTheme']
+  holdReveal?: Viewport['holdReveal']
   setTool?: Viewport['setTool']
   setRotateSpace?: Viewport['setRotateSpace']
   setCutPlane?: Viewport['setCutPlane']
@@ -254,6 +255,11 @@ export function ViewportHost({ layers }: { layers: boolean }) {
       }
       vpRef.current = vp
       set({ viewportBackend: vp.backendName() })
+      // The plate reveal waits while the window's opening still covers the view and while the plate's models load, so
+      // the models are on the plate when its outline is traced.
+      const holdReveal = (st: AppState) => vp.holdReveal?.(st.introHold || st.plateLoading)
+      holdReveal(appStore.getState())
+      offs.push(appStore.subscribe(holdReveal))
       let prev = appStore.getState()
       // Paint the viewport already holds (a stroke it just made) is not pushed back.
       let fromViewport = false

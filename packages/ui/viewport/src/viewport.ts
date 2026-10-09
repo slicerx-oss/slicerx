@@ -268,6 +268,8 @@ class ViewportImpl implements Viewport {
   private readonly firstFrame = new FirstFrameGate()
   /** The first plate reveal, while it is still to play or playing; null once done or when this view does not play it. */
   private reveal: PlateReveal | null = null
+  /** The app holds the reveal before it starts (holdReveal). */
+  private revealHeld = false
   private afterFrame: (() => void) | null = null
   private cameraMoved = false
   private firstFrameMs: number | null = null
@@ -576,7 +578,7 @@ class ViewportImpl implements Viewport {
     // Through kick, never a bare requestAnimationFrame: a listener that invalidated during this tick has already
     // queued the next one, and a second request would start a second loop that renders every frame again.
     // A reveal still waiting on the plate's first frame needs the tick after it to start.
-    const revealNext = revealing || (this.reveal !== null && !this.reveal.started && !this.stage.isGround)
+    const revealNext = revealing || (this.reveal !== null && !this.reveal.started && !this.stage.isGround && !this.revealHeld)
     if (moving || this.dirty || this.rig.move || this.arrangeAnim || revealNext) this.kick()
   }
 
@@ -584,6 +586,8 @@ class ViewportImpl implements Viewport {
   private stepReveal(now: number): boolean {
     const r = this.reveal
     if (!r || this.frames === 0) return false
+    // Held before it starts: the plate stays hidden and the models show on the dark ground until the app lets it go.
+    if (this.revealHeld && !r.started) return false
     if (this.stage.isGround) {
       // Design's ground has no bed: wait for the first plate, or end at once if the view left the plate mid-reveal.
       if (!r.started) return false
@@ -885,6 +889,12 @@ class ViewportImpl implements Viewport {
   }
 
   // ---------- plate ----------
+
+  holdReveal(on: boolean): void {
+    if (this.revealHeld === on) return
+    this.revealHeld = on
+    if (!on) this.kick()
+  }
 
   setPlate(plate: ViewportPlate, opts: { keepCamera?: boolean } = {}): void {
     const t0 = performance.now()

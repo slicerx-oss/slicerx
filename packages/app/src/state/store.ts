@@ -302,6 +302,11 @@ export interface AppState {
   scheme: 'dark' | 'light'
   /** What the viewport reports it renders with, for the status line. */
   viewportBackend: string
+  /**
+   * True while the window's opening (the boot frame, the agreement and setup) still covers the view: the plate reveal
+   * waits for it, and toasts are held until it ends. Not saved.
+   */
+  introHold: boolean
   /** The stored look and feel, or null before one is chosen (the edition default applies). */
   lookAndFeel: LookAndFeelChoice | null
   /** Follow the operating system's light or dark setting instead of `scheme`. */
@@ -625,6 +630,7 @@ export const appStore = createStore<AppState>()(() => ({
   dragging: false,
   liveEdit: false,
   viewportBackend: '',
+  introHold: true,
   scheme: prefs.scheme,
   lookAndFeel: (prefs.lookAndFeel ?? null) as LookAndFeelChoice | null,
   themeFollowsSystem: prefs.themeFollowsSystem ?? false,
@@ -810,7 +816,24 @@ export interface ToastAction {
 }
 
 export function toast(text: string, tone?: 'ok' | 'info' | 'warn' | 'error', action?: ToastAction): void {
+  if (holdingToasts) {
+    heldToasts.push({ text, tone, action })
+    return
+  }
   set({ toast: { id: ++toastSeq, text, ...(tone ? { tone } : {}), ...(action ? { action } : {}) } })
+}
+
+let holdingToasts = false
+const heldToasts: { text: string; tone: 'ok' | 'info' | 'warn' | 'error' | undefined; action: ToastAction | undefined }[] = []
+
+/**
+ * Holds toasts while the window's opening (the agreement and setup) covers the app, and shows them once it ends, one
+ * after another, so none flashes over a screen that is changing.
+ */
+export function holdToasts(on: boolean): void {
+  holdingToasts = on
+  if (on) return
+  heldToasts.splice(0).forEach((t, i) => setTimeout(() => toast(t.text, t.tone, t.action), i * 1200))
 }
 
 /** The selected objects: the multi-selection when it includes the primary, else just the primary. */

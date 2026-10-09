@@ -9,9 +9,35 @@
     <meta name="theme-color" content="#282a36" />
     <title>SlicerX</title>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <style>
+      /* The opening frame, painted before any code loads (packages/app/src/shell/boot.tsx removes it). */
+      html, body { margin: 0; height: 100%; background: #282a36; }
+      html[data-boot-scheme="light"], html[data-boot-scheme="light"] body { background: #fbf8ff; }
+      #sx-boot { position: fixed; inset: 0; z-index: 70; background: #282a36; transition: opacity 0.26s cubic-bezier(0.2, 0.7, 0.2, 1); }
+      #sx-boot[data-leaving] { opacity: 0; pointer-events: none; }
+      #sx-boot .b-top { height: 52px; border-bottom: 1px solid #3c3e4f; }
+      #sx-boot .b-rail { height: 2px; background: #3c3e4f; }
+      #sx-boot .b-card { max-width: 1040px; margin: 48px auto 0; padding: 0 24px; display: grid; gap: 14px; }
+      #sx-boot .b-card i { display: block; height: 14px; border-radius: 7px; background: #2f3241; }
+      #sx-boot .b-card i:nth-child(1) { width: 38%; height: 28px; }
+      #sx-boot .b-card i:nth-child(2) { width: 70%; }
+      #sx-boot .b-card i:nth-child(3) { width: 55%; }
+      #sx-boot .b-left { position: absolute; left: 0; top: 53px; bottom: 28px; width: 404px; border-right: 1px solid #3c3e4f; }
+      #sx-boot .b-right { position: absolute; right: 0; top: 53px; bottom: 28px; width: 312px; border-left: 1px solid #3c3e4f; }
+      html:not([data-boot="setup"]) #sx-boot .b-rail, html:not([data-boot="setup"]) #sx-boot .b-card { display: none; }
+      html:not([data-boot="studio"]) #sx-boot .b-left, html:not([data-boot="studio"]) #sx-boot .b-right { display: none; }
+      @media (max-width: 1279px) { #sx-boot .b-left, #sx-boot .b-right { display: none; } }
+      html[data-boot-scheme="light"] #sx-boot { background: #fbf8ff; }
+      html[data-boot-scheme="light"] #sx-boot .b-top { border-color: #e4daee; }
+      html[data-boot-scheme="light"] #sx-boot .b-rail { background: #e4daee; }
+      html[data-boot-scheme="light"] #sx-boot .b-card i { background: #f5effa; }
+      html[data-boot-scheme="light"] #sx-boot .b-left, html[data-boot-scheme="light"] #sx-boot .b-right { border-color: #e4daee; }
+    </style>
   </head>
   <body>
+    <div id="sx-boot" aria-hidden="true"><div class="b-top"></div><div class="b-rail"></div><div class="b-card"><i></i><i></i><i></i></div><div class="b-left"></div><div class="b-right"></div></div>
     <div id="root"></div>
+    <script type="module" src="/src/boot.ts"></script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

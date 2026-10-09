@@ -441,6 +441,11 @@ export interface Viewport {
    * so a switch to another plate and back costs no rebuild either.
    */
   setPlate(plate: ViewportPlate, opts?: { keepCamera?: boolean }): void
+  /**
+   * Holds the plate reveal before it starts, while the app still covers the view or the plate's models are loading,
+   * so the models are on the plate when the outline is traced. Releasing it starts the reveal on the next frame.
+   */
+  holdReveal?(on: boolean): void
   /** Move objects without rebuilding geometry. */
   setTransforms(transforms: Record<string, number[]>): void
   setPartStyle(objectId: string, partIndex: number, style: PartStyle): void

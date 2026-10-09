@@ -30,7 +30,8 @@ import { useAskForPrinter } from './first-run/ask-printer'
 import { addFileRefs } from './state/actions'
 import { isDirty, startDirtyTracking } from './project/unsaved'
 import { useFolderThemes } from './theme/folder'
-import { get, pilotState, pushRecent, set, showsLayers, toast, useApp } from './state/store'
+import { get, holdToasts, pilotState, pushRecent, set, showsLayers, toast, useApp } from './state/store'
+import { BootFrame, bootDone, whenAppReady } from './shell/boot'
 import { updaterRegistered } from './updates/hold'
 import { toolStore } from './plate/tools'
 import { startReadySignal } from './lib/ready-signal'
@@ -326,17 +327,85 @@ function Shell() {
           <BugReportDialog />
         </Suspense>
       ) : null}
-      {agreementOpen && host.kind !== 'embedded' ? (
-        <Suspense fallback={<div className="fr-loading" aria-busy="true" />}>
-          <Agreement />
-        </Suspense>
-      ) : setup && host.kind !== 'embedded' ? (
-        <Suspense fallback={<div className="fr-loading" aria-busy="true" />}>
-          <FirstRun />
-        </Suspense>
-      ) : null}
+      {host.kind !== 'embedded' ? <Opening workspace={workspace} /> : <BootRelease workspace={workspace} />}
     </>
   )
+}
+
+/**
+ * The window's opening: the agreement and setup on one stage, so a step change crossfades instead of cutting to the bare
+ * shell, and after them the Slice frame until the plate and its view are up, then one fade into the app. Toasts wait
+ * until it ends. With nothing to cover, the static frame from index.html fades once the first screen is ready.
+ */
+function Opening({ workspace }: { workspace: string }) {
+  const agreementOpen = useApp((s) => s.agreementOpen)
+  const setup = useApp((s) => s.setup !== null)
+  const covered = agreementOpen || setup
+  // 'cover' while the agreement or setup shows, 'leaving' until the app is ready under the frame, 'out' while it fades.
+  const [phase, setPhase] = useState<'cover' | 'leaving' | 'out' | 'done'>(covered ? 'cover' : 'done')
+  const workspaceRef = useRef(workspace)
+  workspaceRef.current = workspace
+  useEffect(() => {
+    if (covered) {
+      holdToasts(true)
+      setPhase('cover')
+      // The next screens' code loads while this one is read.
+      void import('./first-run/first-run')
+      void import('./workspaces/studio')
+    } else setPhase((p) => (p === 'cover' ? 'leaving' : p))
+  }, [covered])
+  useEffect(() => {
+    if (phase === 'done' && !covered) {
+      // Nothing to cover: the static frame fades once the first screen is ready.
+      return whenAppReady(() => {
+        bootDone()
+        set({ introHold: false })
+      }, () => workspaceRef.current !== 'prepare')
+    }
+    if (phase !== 'leaving') return
+    return whenAppReady(() => {
+      bootDone()
+      setPhase('out')
+    }, () => workspaceRef.current !== 'prepare')
+  }, [phase, covered])
+  useEffect(() => {
+    if (phase !== 'out') return
+    // The reveal starts as the frame fades, so the plate is traced in view; toasts follow.
+    set({ introHold: false })
+    const t = setTimeout(() => {
+      setPhase('done')
+      holdToasts(false)
+    }, 280)
+    return () => clearTimeout(t)
+  }, [phase])
+  if (phase === 'done' && !covered) return null
+  return (
+    <div className="opening" data-phase={phase}>
+      {covered ? (
+        <Suspense fallback={<BootFrame kind="setup" />}>
+          <div className="opening-swap" key={agreementOpen ? 'agreement' : 'setup'}>
+            {agreementOpen ? <Agreement /> : <FirstRun />}
+            <BootRelease />
+          </div>
+        </Suspense>
+      ) : (
+        <BootFrame kind="studio" />
+      )}
+    </div>
+  )
+}
+
+/** Fades the static frame once the screen it sits in has drawn: a covering screen's first frame, or (embedded) the app's. */
+function BootRelease({ workspace }: { workspace?: string } = {}) {
+  useEffect(() => {
+    if (workspace === undefined) bootDone()
+    else
+      return whenAppReady(() => {
+        bootDone()
+        set({ introHold: false })
+      }, () => workspace !== 'prepare')
+  }, [workspace])
+  return null
 }
 
 function runShortcut(id: string): void {

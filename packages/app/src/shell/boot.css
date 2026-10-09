@@ -1,0 +1,24 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+/* Copyright (C) 2026 The SlicerX contributors */
+/* The app's copy of the opening frame in index.html, in the theme's tokens. Same shapes, so the two never jump. */
+.sx-bootframe { position: fixed; inset: 0; background: var(--ink-0); }
+.sx-bootframe .b-top { height: 52px; border-bottom: 1px solid var(--line-soft); }
+.sx-bootframe .b-rail { height: 2px; background: var(--line-soft); }
+.sx-bootframe .b-card { max-width: 1040px; margin: 48px auto 0; padding: 0 24px; display: grid; gap: 14px; }
+.sx-bootframe .b-card i { display: block; height: 14px; border-radius: 7px; background: var(--ink-2); }
+.sx-bootframe .b-card i:nth-child(1) { width: 38%; height: 28px; }
+.sx-bootframe .b-card i:nth-child(2) { width: 70%; }
+.sx-bootframe .b-card i:nth-child(3) { width: 55%; }
+.sx-bootframe .b-left { position: absolute; left: 0; top: 53px; bottom: 28px; width: 404px; border-right: 1px solid var(--line-soft); }
+.sx-bootframe .b-right { position: absolute; right: 0; top: 53px; bottom: 28px; width: 312px; border-left: 1px solid var(--line-soft); }
+@media (max-width: 1279px) { .sx-bootframe .b-left, .sx-bootframe .b-right { display: none; } }
+
+/* The opening stage: the agreement and setup, then the Slice frame, over the app until it is ready. */
+.opening { position: fixed; inset: 0; z-index: 44; background: var(--ink-0); transition: opacity var(--t-slow, 260ms) var(--ease); }
+.opening[data-phase="out"] { opacity: 0; pointer-events: none; }
+/* Each screen fades in over the same ground: no cut, and no bare shell between screens. */
+.opening-swap { animation: opening-in var(--t-slow, 260ms) var(--ease) both; }
+@keyframes opening-in { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .opening, .opening-swap { transition: none; animation: none; }
+}
