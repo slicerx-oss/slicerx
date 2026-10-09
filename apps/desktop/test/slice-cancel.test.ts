@@ -8,6 +8,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const tauri = vi.hoisted(() => ({ calls: [] as { cmd: string; args: unknown }[], slice: null as null | ((args: { job: number }) => Promise<unknown>) }))
 
 vi.mock('@tauri-apps/api/core', () => ({
+  Channel: class {
+    onmessage: (m: unknown) => void = () => undefined
+  },
   invoke: async (cmd: string, args?: unknown) => {
     tauri.calls.push({ cmd, args })
     if (cmd === 'slice' && tauri.slice) return tauri.slice(args as { job: number })

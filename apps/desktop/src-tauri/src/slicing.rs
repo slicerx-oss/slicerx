@@ -7,10 +7,11 @@
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
-use sx_core::api::{Cancellable, NoProgress, SliceRequest, run_request_with};
+use std::time::{Duration, Instant};
+use sx_core::api::{Cancellable, Progress, SliceRequest, Stage, run_request_with};
 use sx_core::{Error, Mesh};
 use tauri::State;
-use tauri::ipc::{InvokeBody, Request, Response};
+use tauri::ipc::{Channel, InvokeBody, Request, Response};
 
 #[derive(Default)]
 pub struct Slicer {
@@ -68,6 +69,68 @@ pub fn load_mesh(request: Request<'_>, state: State<'_, Slicer>) -> Result<serde
     Ok(info)
 }
 
+/// One progress report for the page: the engine's stage (`SLICE_STAGES` in packages/contracts) and how far into it.
+#[derive(Clone, serde::Serialize)]
+pub struct SliceStep {
+    stage: &'static str,
+    fraction: f32,
+}
+
+fn stage_name(stage: Stage) -> &'static str {
+    match stage {
+        Stage::Layers => "layers",
+        Stage::Contours => "contours",
+        Stage::Perimeters => "perimeters",
+        Stage::Surfaces => "surfaces",
+        Stage::Infill => "infill",
+        Stage::Paths => "paths",
+        Stage::Gcode => "gcode",
+        Stage::Preview => "preview",
+    }
+}
+
+/// How often progress goes to the page at most, besides each new stage and each stage's end.
+const PROGRESS_EVERY: Duration = Duration::from_millis(200);
+
+/// Sends the engine's progress to the page, a few times a second: a new stage and the end of one always go, the
+/// reports in between at most every [`PROGRESS_EVERY`]. Layers finish on several threads, so a report can come in
+/// behind a later one; within a stage only a larger fraction goes.
+pub struct SendProgress<F: Fn(SliceStep) + Sync> {
+    send: F,
+    last: Mutex<Option<(Instant, Stage, f32)>>,
+}
+
+impl<F: Fn(SliceStep) + Sync> SendProgress<F> {
+    pub fn new(send: F) -> Self {
+        Self {
+            send,
+            last: Mutex::new(None),
+        }
+    }
+}
+
+impl<F: Fn(SliceStep) + Sync> Progress for SendProgress<F> {
+    fn report(&self, stage: Stage, fraction: f32) {
+        let now = Instant::now();
+        {
+            let mut last = lock(&self.last);
+            let due = match *last {
+                Some((_, s, f)) if s == stage && fraction <= f => false,
+                Some((at, s, _)) => s != stage || fraction >= 1.0 || now.duration_since(at) >= PROGRESS_EVERY,
+                None => true,
+            };
+            if !due {
+                return;
+            }
+            *last = Some((now, stage, fraction));
+        }
+        (self.send)(SliceStep {
+            stage: stage_name(stage),
+            fraction: fraction.clamp(0.0, 1.0),
+        });
+    }
+}
+
 /// Runs a request through the engine's own request path (the one the CLI, MCP and WebAssembly builds use), so
 /// sleipnir plans, height ranges, safety limits, object settings, volumes, thumbnails and G-code
 /// substitution all behave the same here. Meshes are named by their numeric id.
@@ -75,6 +138,7 @@ fn run_slice(
     req: &SliceRequest,
     meshes: &HashMap<u32, Arc<Mesh>>,
     cancel: &AtomicBool,
+    progress: &dyn Progress,
 ) -> Result<(serde_json::Value, Output), String> {
     let lookup = |r: &str| -> sx_core::Result<Arc<Mesh>> {
         r.parse::<u32>()
@@ -86,7 +150,7 @@ fn run_slice(
             })
     };
     let progress = Cancellable {
-        progress: &NoProgress,
+        progress,
         flag: cancel,
     };
     let run = run_request_with(req, &lookup, &progress).map_err(|e| e.to_string())?;
@@ -102,11 +166,13 @@ fn run_slice(
 
 /// Slices the whole plate off the main thread and keeps G-code and SXPV for
 /// `get_gcode` and `get_preview`. Returns the report JSON with the result id.
-/// With `job`, `cancel_slice` with the same number stops it between stages, and it returns an error.
+/// With `job`, `cancel_slice` with the same number stops it between stages, and it returns an error. The engine's
+/// progress goes to the page on `on_progress`, a few times a second.
 #[tauri::command]
 pub async fn slice(
     request: String,
     job: Option<u32>,
+    on_progress: Channel<SliceStep>,
     state: State<'_, Slicer>,
 ) -> Result<serde_json::Value, String> {
     let req: SliceRequest = serde_json::from_str(&request).map_err(|e| format!("request: {e}"))?;
@@ -116,9 +182,14 @@ pub async fn slice(
         lock(&state.jobs).insert(j, flag.clone());
     }
     let run_flag = flag.clone();
-    let ran = tauri::async_runtime::spawn_blocking(move || run_slice(&req, &meshes, &run_flag))
-        .await
-        .map_err(|e| e.to_string());
+    let ran = tauri::async_runtime::spawn_blocking(move || {
+        let progress = SendProgress::new(move |step| {
+            let _ = on_progress.send(step);
+        });
+        run_slice(&req, &meshes, &run_flag, &progress)
+    })
+    .await
+    .map_err(|e| e.to_string());
     if let Some(j) = job {
         lock(&state.jobs).remove(&j);
     }
@@ -166,6 +237,7 @@ pub fn release(id: u32, state: State<'_, Slicer>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sx_core::api::NoProgress;
 
     /// A binary STL of an axis-aligned box from (0,0,0) to (x,y,z).
     fn cube_stl(x: f32, y: f32, z: f32) -> Vec<u8> {
@@ -227,7 +299,7 @@ mod tests {
         let req: SliceRequest =
             serde_json::from_str(&request.to_string()).map_err(|e| format!("request: {e}"))?;
         let meshes = lock(&state.meshes).clone();
-        run_slice(&req, &meshes, &AtomicBool::new(false))
+        run_slice(&req, &meshes, &AtomicBool::new(false), &NoProgress)
     }
 
     fn plate(object: serde_json::Value) -> serde_json::Value {
@@ -245,6 +317,44 @@ mod tests {
     }
 
     #[test]
+    fn a_slice_reports_its_progress_a_few_times_a_second_and_ends_each_stage() {
+        let state = Slicer::default();
+        let cube = add(&state, "cube.stl", &cube_stl(20.0, 20.0, 30.0));
+        let request = plate(
+            serde_json::json!({ "id": "a", "name": "cube", "mesh": cube, "transform": at(100.0, 100.0, 0.0) }),
+        );
+        let req: SliceRequest = serde_json::from_str(&request.to_string()).expect("the request reads");
+        let meshes = lock(&state.meshes).clone();
+        let got = Mutex::new(Vec::<(String, f32)>::new());
+        let progress = SendProgress::new(|s: SliceStep| lock(&got).push((s.stage.to_owned(), s.fraction)));
+        run_slice(&req, &meshes, &AtomicBool::new(false), &progress).expect("it slices");
+        let got = got.into_inner().unwrap_or_default();
+        // Every pass the engine reports reaches its end, and within a stage the fraction only grows.
+        for stage in ["contours", "paths", "gcode"] {
+            let of: Vec<f32> = got.iter().filter(|(s, _)| s == stage).map(|(_, f)| *f).collect();
+            assert!(
+                of.last().is_some_and(|f| (*f - 1.0).abs() < 1e-6),
+                "{stage}: {of:?}"
+            );
+            assert!(of.windows(2).all(|w| w[0] <= w[1]), "{stage}: {of:?}");
+        }
+        // A 150-layer cube slices in well under a second here: the throttle keeps it to a few dozen reports.
+        assert!(got.len() < 60, "{} reports", got.len());
+    }
+
+    #[test]
+    fn progress_in_between_waits_for_the_throttle() {
+        let sent = Mutex::new(Vec::<f32>::new());
+        let p = SendProgress::new(|s: SliceStep| lock(&sent).push(s.fraction));
+        for k in 0..100u8 {
+            p.report(Stage::Paths, f32::from(k) / 100.0);
+        }
+        p.report(Stage::Paths, 1.0);
+        // The first report, then the end; the 98 between came within the throttle.
+        assert_eq!(sent.into_inner().unwrap_or_default(), vec![0.0, 1.0]);
+    }
+
+    #[test]
     fn a_canceled_slice_stops_with_an_error_and_keeps_nothing() {
         let state = Slicer::default();
         let cube = add(&state, "cube.stl", &cube_stl(20.0, 20.0, 10.0));
@@ -253,12 +363,12 @@ mod tests {
         );
         let req: SliceRequest = serde_json::from_str(&request.to_string()).expect("the request reads");
         let meshes = lock(&state.meshes).clone();
-        let err = run_slice(&req, &meshes, &AtomicBool::new(true))
+        let err = run_slice(&req, &meshes, &AtomicBool::new(true), &NoProgress)
             .err()
             .expect("a canceled slice fails");
         assert!(err.to_lowercase().contains("cancel"), "{err}");
         assert!(lock(&state.results).is_empty());
-        assert!(run_slice(&req, &meshes, &AtomicBool::new(false)).is_ok());
+        assert!(run_slice(&req, &meshes, &AtomicBool::new(false), &NoProgress).is_ok());
     }
 
     #[test]
