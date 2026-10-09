@@ -38,6 +38,7 @@ import { DEFAULT_THEME_IDS, THEME_FONT_CHOICE, type FontChoice, type ThemeFile, 
 import { setTool, toolStore } from '../plate/tools'
 import { createStore, useStore } from 'zustand'
 import { normalizeEasy } from '../lib/easy-values'
+import { freshVary } from '../lib/sleipnir-default'
 import { GENERIC_BED } from '../adapters/generic-bed'
 import { loadUserThemes } from '../theme/load'
 import { DEFAULT_APPEARANCE, DEFAULT_PLAYBACK_SPEED, hasStoredPrefs, loadPrefs, savePrefs, type Appearance, type HandPrinter, type PrinterBay, type Prefs } from './prefs'
@@ -571,6 +572,7 @@ export const DEFAULT_ELECTRICITY = { pricePerKwh: 0.15, symbol: '$' }
 
 const firstLaunch = !hasStoredPrefs()
 const prefs = loadPrefs()
+const freshEasy = (easy: EasySettings): EasySettings => ({ ...easy, varyLayerHeight: freshVary({ easy, easyTouched: prefs.easyTouched ?? [], goal: prefs.goal }) })
 
 export const appStore = createStore<AppState>()(() => ({
   workspace: prefs.workspace,
@@ -599,7 +601,8 @@ export const appStore = createStore<AppState>()(() => ({
   printerId: prefs.printerId,
   extruderAreas: [],
   zoneHover: null,
-  easy: normalizeEasy(prefs.easy ? { ...EASY_DEFAULTS, ...prefs.easy } : EASY_DEFAULTS),
+  // Every start is a fresh plate: sleipnir is on unless the person chose otherwise (lib/sleipnir-default.ts).
+  easy: freshEasy(normalizeEasy(prefs.easy ? { ...EASY_DEFAULTS, ...prefs.easy } : EASY_DEFAULTS)),
   goal: prefs.goal,
   overrides: {},
   expertOpen: false,
