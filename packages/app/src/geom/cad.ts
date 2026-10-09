@@ -687,10 +687,14 @@ export interface AutoImport {
   slotColors: string[]
 }
 
-/** Reads an OBJ, AMF or STL, repairs it, suggests a unit and splits loose bodies. Meshes are unscaled. */
-export function importAuto(file: { base64: string; name: string; format?: 'obj' | 'amf' | 'stl'; mtl?: string }, auto: AutoOptions = {}, signal?: AbortSignal) {
-  const { base64, ...rest } = file
-  return geom().call<AutoImport>('import.auto', { data: { base64 }, ...rest, auto }, signal)
+/**
+ * Reads an OBJ, AMF or STL, repairs it, suggests a unit and splits loose bodies. Meshes are unscaled. The file goes as
+ * base64 or as its bytes, which the geometry worker encodes for the engine, off the page.
+ */
+export function importAuto(file: ({ base64: string } | { bytes: Uint8Array }) & { name: string; format?: 'obj' | 'amf' | 'stl'; mtl?: string }, auto: AutoOptions = {}, signal?: AbortSignal) {
+  const { name, format, mtl } = file
+  const data = 'bytes' in file ? { bytes: file.bytes } : { base64: file.base64 }
+  return geom().call<AutoImport>('import.auto', { data, name, ...(format ? { format } : {}), ...(mtl !== undefined ? { mtl } : {}), auto }, signal)
 }
 
 // SVG artwork
