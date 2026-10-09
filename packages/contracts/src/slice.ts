@@ -76,6 +76,12 @@ export interface MeshFaces {
 }
 
 /** Raw geometry for hosts that take buffers directly (tests, the benchmark, Pilot's cut skill). */
+/**
+ * Paint on a part's surface by layer: triangle index (into the part's `indices`) to the paint text a 3MF carries for it
+ * (`paint_color`, `paint_seam`, `paint_supports`, `paint_fuzzy_skin`), Orca's TriangleSelector text unchanged.
+ */
+export type PartPaint = Partial<Record<'color' | 'seam' | 'support' | 'fuzzy', Record<number, string>>>
+
 export interface MeshPart {
   name: string
   slot: number
@@ -83,6 +89,8 @@ export interface MeshPart {
   indices: Uint32Array
   /** The part's faces, when the geometry engine knows them. Code that changes the triangles leaves them out. */
   faces?: MeshFaces
+  /** Painted triangles, which the engine slices with (filament color, seams, supports, fuzzy skin). */
+  paint?: PartPaint
 }
 
 export interface Bed {

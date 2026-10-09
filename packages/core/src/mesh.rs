@@ -152,7 +152,10 @@ impl Mesh {
     /// (`MeshPart` in `packages/contracts/src/slice.ts`), all little-endian:
     /// magic `SXMP`, u32 part count, then per part: u8 slot, u16 name length,
     /// UTF-8 name, u32 vertex count, f32 xyz per vertex, u32 triangle count,
-    /// u32 index triples.
+    /// u32 index triples. An optional paint block may follow the parts: magic `SXPT`, u32 entry count, then per entry
+    /// u32 part index, u8 layer (0 color, 1 seam, 2 support, 3 fuzzy skin), u32 triangle count, and per triangle u32
+    /// triangle index, u16 text length and the paint text as a 3MF carries it (`paint_color`, `paint_seam`,
+    /// `paint_supports`, `paint_fuzzy_skin`). The texts are decoded as the 3MF loader decodes them.
     pub fn from_raw(bytes: &[u8], name: &str) -> Result<Self> {
         let mut r = Reader {
             b: bytes,
@@ -200,6 +203,11 @@ impl Mesh {
                 seam_paint: Vec::new(),
                 fuzzy_paint: Vec::new(),
             });
+        }
+        // An optional paint block after the parts. A reader without it stops before it.
+        if r.b.get(r.at..r.at + RAW_PAINT_MAGIC.len()) == Some(RAW_PAINT_MAGIC) {
+            r.at += RAW_PAINT_MAGIC.len();
+            read_raw_paint(&mut r, &mut parts)?;
         }
         Ok(Self {
             name: name.to_owned(),
@@ -367,6 +375,46 @@ impl Mesh {
 }
 
 const RAW_MAGIC: &[u8] = b"SXMP";
+const RAW_PAINT_MAGIC: &[u8] = b"SXPT";
+
+/// The paint block of the raw parts format into the parts' paint, as `threemf` decodes paint attributes: color pieces
+/// in the part's own filament are left out, every other layer is kept as painted.
+fn read_raw_paint(r: &mut Reader<'_>, parts: &mut [MeshPart]) -> Result<()> {
+    let entries = r.u32()?;
+    for _ in 0..entries {
+        let part = r.u32()? as usize;
+        let layer = r.take(1)?.first().copied().unwrap_or(u8::MAX);
+        let count = r.u32()?;
+        let mut facets = Vec::new();
+        let p = parts.get(part);
+        for _ in 0..count {
+            let tri = r.u32()? as usize;
+            let len = u16::from_le_bytes(r.take(2)?.try_into().map_err(|_| r.err())?);
+            let text = std::str::from_utf8(r.take(usize::from(len))?).unwrap_or("");
+            let Some(p) = p else { continue };
+            let Some(t) = p.triangles.get(tri) else { continue };
+            let corner = |i: u32| p.positions.get(i as usize).copied();
+            let (Some(a), Some(b), Some(c)) = (corner(t[0]), corner(t[1]), corner(t[2])) else {
+                continue;
+            };
+            if !text.is_empty() {
+                facets.extend(crate::paint::decode(text, [a, b, c]));
+            }
+        }
+        let Some(p) = parts.get_mut(part) else { continue };
+        match layer {
+            0 => {
+                let slot = p.slot;
+                p.paint.extend(facets.into_iter().filter(|f| f.state != slot));
+            }
+            1 => p.seam_paint.extend(facets),
+            2 => p.support_paint.extend(facets),
+            3 => p.fuzzy_paint.extend(facets),
+            _ => {}
+        }
+    }
+    Ok(())
+}
 
 struct Reader<'a> {
     b: &'a [u8],
