@@ -119,14 +119,19 @@ fn unknown(op: &str) -> Error {
 pub type FileLoader<'a> = &'a dyn Fn(&str) -> Result<Vec<u8>>;
 
 pub fn call(op: &str, request: &str) -> Result<String> {
-    let v: Value = serde_json::from_str(request).map_err(|e| Error::Json(e.to_string()))?;
     let no_files = |p: &str| -> Result<Vec<u8>> {
         Err(Error::invalid(
             "stlPath",
             format!("{p}: file paths need a host with file access"),
         ))
     };
-    let out = call_value(op, &v, &no_files)?;
+    call_with_files(op, request, &no_files)
+}
+
+/// Runs one operation on a request in JSON, its file paths (`stlPath`, `rawPath`) read through `files`.
+pub fn call_with_files(op: &str, request: &str, files: FileLoader<'_>) -> Result<String> {
+    let v: Value = serde_json::from_str(request).map_err(|e| Error::Json(e.to_string()))?;
+    let out = call_value(op, &v, files)?;
     serde_json::to_string(&out).map_err(|e| Error::Json(e.to_string()))
 }
 
@@ -637,6 +642,9 @@ pub(crate) enum MeshIn {
     Stl { stl_base64: String },
     #[serde(rename_all = "camelCase")]
     Path { stl_path: String },
+    /// A mesh in the raw binary form (`TriMesh::from_raw`), read through the host's files.
+    #[serde(rename_all = "camelCase")]
+    Raw { raw_path: String },
     Flat {
         positions: Vec<f64>,
         indices: Vec<u32>,
@@ -671,6 +679,7 @@ pub(crate) fn mesh_value(v: &Value, key: &str, files: FileLoader<'_>) -> Result<
             TriMesh::from_stl(&bytes, key)?
         }
         MeshIn::Path { stl_path } => TriMesh::from_stl(&files(&stl_path)?, &stl_path)?,
+        MeshIn::Raw { raw_path } => TriMesh::from_raw(&files(&raw_path)?, &raw_path)?,
         MeshIn::Flat {
             positions,
             indices,
