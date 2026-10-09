@@ -161,8 +161,21 @@ export function toGeom(part: Pick<MeshPart, 'positions' | 'indices' | 'faces'>):
   return mesh
 }
 
-export function fromGeom(mesh: GeomMesh, name: string, slot: number): MeshPart {
-  const part: MeshPart = { name, slot, positions: new Float32Array(mesh.positions), indices: new Uint32Array(mesh.indices) }
+/** A mesh of the engine's that came back as typed arrays (geom-worker.ts reads raw output buffers so). */
+export interface TypedGeomMesh {
+  positions: Float32Array
+  indices: Uint32Array
+  faces?: GeomMesh['faces']
+}
+
+export function fromGeom(mesh: GeomMesh | TypedGeomMesh, name: string, slot: number): MeshPart {
+  // Typed arrays from the worker are the part's own; plain ones are copied into typed arrays.
+  const part: MeshPart = {
+    name,
+    slot,
+    positions: mesh.positions instanceof Float32Array ? mesh.positions : new Float32Array(mesh.positions),
+    indices: mesh.indices instanceof Uint32Array ? mesh.indices : new Uint32Array(mesh.indices),
+  }
   if (mesh.faces) part.faces = { ids: new Uint32Array(mesh.faces.ids), table: mesh.faces.table, ...(mesh.faces.keys?.length ? { keys: mesh.faces.keys } : {}) }
   return part
 }

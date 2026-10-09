@@ -135,6 +135,25 @@ impl TriMesh {
         Ok(m)
     }
 
+    /// The mesh in the raw form `from_raw` reads, positions as f32.
+    #[must_use]
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "raw positions are f32 like the contracts; counts stay below 2^32"
+    )]
+    pub fn to_raw(&self) -> Vec<u8> {
+        let mut b = Vec::with_capacity(8 + 12 * (self.positions.len() + self.triangles.len()));
+        b.extend_from_slice(&(self.positions.len() as u32).to_le_bytes());
+        b.extend_from_slice(&(self.triangles.len() as u32).to_le_bytes());
+        for &c in self.positions.iter().flatten() {
+            b.extend_from_slice(&(c as f32).to_le_bytes());
+        }
+        for &i in self.triangles.iter().flatten() {
+            b.extend_from_slice(&i.to_le_bytes());
+        }
+        b
+    }
+
     #[allow(clippy::cast_possible_truncation, reason = "print geometry fits in f32")]
     pub fn to_f32(&self) -> (Vec<[f32; 3]>, Vec<[u32; 3]>) {
         (

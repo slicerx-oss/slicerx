@@ -131,6 +131,7 @@ pub fn call(op: &str, request: &str) -> Result<String> {
 
 /// Runs one operation on a request in JSON, its file paths (`stlPath`, `rawPath`) read through `files`.
 pub fn call_with_files(op: &str, request: &str, files: FileLoader<'_>) -> Result<String> {
+    take_out_files();
     let v: Value = serde_json::from_str(request).map_err(|e| Error::Json(e.to_string()))?;
     let out = call_value(op, &v, files)?;
     serde_json::to_string(&out).map_err(|e| Error::Json(e.to_string()))
@@ -601,12 +602,27 @@ pub(crate) enum MeshOut {
     #[cfg(feature = "cad")]
     FlatFaces,
     StlBase64,
+    /// Each mesh in the raw form (`TriMesh::to_raw`) as an output buffer of the call (`take_out_files`), named in the
+    /// answer by its number (`rawOut`), with its faces beside it when it has them. A big mesh then leaves the engine
+    /// without JSON.
+    Raw,
+}
+
+thread_local! {
+    /// The output buffers of the current call (`MeshOut::Raw`).
+    static OUT_FILES: std::cell::RefCell<Vec<Vec<u8>>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// The output buffers the last call wrote (`meshOutput: "raw"`), in the order its answer numbers them; taken once.
+pub fn take_out_files() -> Vec<Vec<u8>> {
+    OUT_FILES.with(|f| std::mem::take(&mut *f.borrow_mut()))
 }
 
 impl MeshOut {
     fn from_request(req: &Value) -> Self {
         match req.get("meshOutput").and_then(Value::as_str) {
             Some("stlBase64") => Self::StlBase64,
+            Some("raw") => Self::Raw,
             #[cfg(feature = "cad")]
             _ if req.get("withFaces").and_then(Value::as_bool) == Some(true) => Self::FlatFaces,
             _ => Self::Flat,
@@ -639,6 +655,20 @@ impl MeshOut {
                 v
             }
             Self::StlBase64 => json!({ "stlBase64": base64_encode(&m.to_stl("sx-geom")) }),
+            Self::Raw => {
+                let n = OUT_FILES.with(|f| {
+                    let mut f = f.borrow_mut();
+                    f.push(m.to_raw());
+                    f.len() - 1
+                });
+                #[allow(unused_mut, reason = "faces are written only in builds with the cad feature")]
+                let mut v = json!({ "rawOut": n });
+                #[cfg(feature = "cad")]
+                if let (Some(f), Some(o)) = (&m.faces, v.as_object_mut()) {
+                    o.insert("faces".to_owned(), json!(f));
+                }
+                v
+            }
         }
     }
 }

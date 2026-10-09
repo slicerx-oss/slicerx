@@ -85,7 +85,7 @@ export function entriesFromImport(result: AutoImport, bed: Bed, base?: Mat4): { 
   const palette = result.slotColors.length ? result.slotColors : objectPalette()
   const objects = result.objects
     .filter((o) => o.parts.some((p) => p.mesh.indices.length > 0))
-    .map((o) => ({ o, parts: o.parts.map((p) => fromGeom(p.mesh as GeomMesh, p.name || o.name, p.slot)) }))
+    .map((o) => ({ o, parts: o.parts.map((p) => fromGeom(p.mesh, p.name || o.name, p.slot)) }))
   const all = objects.flatMap((x) => x.parts)
   const m = base ?? dropToBed(all, centerOnBed(all, compose({ position: [0, 0, 0], rotation: [0, 0, 0], scale: [scale, scale, scale] }), bed))
   return objects.map(({ o, parts }) => ({
