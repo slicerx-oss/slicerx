@@ -201,24 +201,27 @@ fn root(p: &mut [usize], mut i: usize) -> usize {
     i
 }
 
+/// shells by their index in the mesh
+type Shells = Vec<(usize, TriMesh)>;
+
 fn bodies(mesh: &TriMesh) -> Vec<TriMesh> {
     let shells = edge_shells(mesh);
     let vols: Vec<f64> = shells.iter().map(TriMesh::volume).collect();
     let boxes: Vec<Option<Aabb>> = shells.iter().map(TriMesh::bounds).collect();
-    let mut out: Vec<(usize, TriMesh)> = shells
-        .iter()
-        .zip(&vols)
-        .enumerate()
-        .filter(|&(_, (_, &v))| v > 0.0)
-        .map(|(i, (s, _))| (i, s.clone()))
-        .collect();
-    for (i, s) in shells.iter().enumerate() {
+    // the shells move into the bodies (no copy of a big mesh); the inside-out ones wait for a holder
+    let (mut out, mut cavities): (Shells, Shells) = (Vec::new(), Vec::new());
+    for (i, s) in shells.into_iter().enumerate() {
+        if vols[i] > 0.0 {
+            out.push((i, s));
+        } else if vols[i] < 0.0 {
+            cavities.push((i, s));
+        }
+    }
+    for (i, s) in &cavities {
+        let i = *i;
         let (Some(bi), Some(&probe)) = (boxes[i], s.positions.first()) else {
             continue;
         };
-        if vols[i] >= 0.0 {
-            continue;
-        }
         let holder = out
             .iter_mut()
             .filter(|(j, h)| {
@@ -293,22 +296,26 @@ fn pair_gap(a: &TriMesh, b: &TriMesh, ba: &Aabb, bb: &Aabb, reach: f64) -> Optio
     }
     let lo = [0, 1, 2].map(|k| ba.min[k].max(bb.min[k]) - reach);
     let hi = [0, 1, 2].map(|k| ba.max[k].min(bb.max[k]) + reach);
-    let near = |m: &TriMesh| -> Vec<[V3; 3]> {
-        m.triangles
-            .iter()
-            .map(|&t| m.corners(t))
-            .filter(|c| {
+    // the triangles in reach of the other body's box, by index: corners are read from the mesh when needed, so a part
+    // of millions of triangles is not copied
+    let near = |m: &TriMesh| -> Vec<u32> {
+        (0..m.triangles.len())
+            .filter(|&n| {
+                let c = m.corners(m.triangles[n]);
                 (0..3).all(|k| {
-                    let (mn, mx) = span(c, k);
+                    let (mn, mx) = span(&c, k);
                     mn <= hi[k] && mx >= lo[k]
                 })
             })
+            .map(|n| n as u32)
             .collect()
     };
     let (ta, tb) = (near(a), near(b));
     if ta.is_empty() || tb.is_empty() {
         return None;
     }
+    let corners_a = |m: usize| a.corners(a.triangles[ta[m] as usize]);
+    let corners_b = |n: usize| b.corners(b.triangles[tb[n] as usize]);
     let size = [0, 1, 2].map(|k| (hi[k] - lo[k]).max(1e-9));
     let longest = size.iter().copied().fold(0.0, f64::max);
     let cell = (longest / 64.0).max(reach).max(1e-6);
@@ -320,34 +327,36 @@ fn pair_gap(a: &TriMesh, b: &TriMesh, ba: &Aabb, bb: &Aabb, reach: f64) -> Optio
             (idx(mn - grow, k), idx(mx + grow, k))
         })
     };
-    let mut grid: HashMap<(usize, usize, usize), Vec<u32>> = HashMap::new();
-    for (n, c) in tb.iter().enumerate() {
-        let r = range(c, reach);
-        for x in r[0].0..=r[0].1 {
-            for y in r[1].0..=r[1].1 {
-                for z in r[2].0..=r[2].1 {
-                    grid.entry((x, y, z)).or_default().push(n as u32);
-                }
-            }
-        }
-    }
+    let grid = CellLists::new(
+        &(0..tb.len())
+            .map(|n| range(&corners_b(n), reach))
+            .collect::<Vec<_>>(),
+    );
     let mut seen = vec![u32::MAX; tb.len()];
     let mut best: Option<Closest> = None;
-    for (m, c) in ta.iter().enumerate() {
-        let r = range(c, 0.0);
+    for m in 0..ta.len() {
+        let c = corners_a(m);
+        let r = range(&c, 0.0);
+        let cb = [0, 1, 2].map(|k| span(&c, k));
         for x in r[0].0..=r[0].1 {
             for y in r[1].0..=r[1].1 {
                 for z in r[2].0..=r[2].1 {
-                    let Some(list) = grid.get(&(x, y, z)) else {
-                        continue;
-                    };
-                    for &n in list {
+                    for &n in grid.get(x, y, z) {
                         let n = n as usize;
                         if seen[n] == m as u32 {
                             continue;
                         }
                         seen[n] = m as u32;
-                        let (d, p, q, crosses) = tri_tri(c, &tb[n]);
+                        let t = corners_b(n);
+                        // no pair of points of two triangles is closer than their boxes: a pair whose boxes are farther
+                        // apart than the closest pair so far cannot take its place (with room for rounding)
+                        if let Some(b) = &best {
+                            let reach = b.d + 1e-9 * b.d.max(1.0);
+                            if box_gap2(&cb, &t) > reach * reach {
+                                continue;
+                            }
+                        }
+                        let (d, p, q, crosses) = tri_tri(&c, &t);
                         if best.as_ref().is_none_or(|b| d < b.d) {
                             best = Some(Closest {
                                 d,
@@ -355,6 +364,10 @@ fn pair_gap(a: &TriMesh, b: &TriMesh, ba: &Aabb, bb: &Aabb, reach: f64) -> Optio
                                 q,
                                 fused: crosses,
                             });
+                            // nothing is closer than touching: the first such pair is the answer
+                            if d == 0.0 {
+                                return best;
+                            }
                         }
                     }
                 }
@@ -362,6 +375,83 @@ fn pair_gap(a: &TriMesh, b: &TriMesh, ba: &Aabb, bb: &Aabb, reach: f64) -> Optio
         }
     }
     best.filter(|b| b.d < reach || b.fused)
+}
+
+/// The squared distance between a box (its span on each axis) and a triangle's box.
+fn box_gap2(cb: &[(f64, f64); 3], t: &[V3; 3]) -> f64 {
+    (0..3)
+        .map(|k| {
+            let (mn, mx) = span(t, k);
+            let g = (cb[k].0 - mx).max(mn - cb[k].1).max(0.0);
+            g * g
+        })
+        .sum()
+}
+
+/// The grid of a fit check as compact lists: the triangles of each occupied cell, side by side in one array, in
+/// triangle order within a cell, so a search visits them as a map of lists would, without a list per cell. A cell fits 8
+/// bits per axis (at most 256 cells).
+struct CellLists {
+    /// occupied cell -> its place in `starts`
+    at: HashMap<u32, u32>,
+    starts: Vec<u32>,
+    tris: Vec<u32>,
+}
+
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "cells are under 256 per axis and triangles and grid entries under 2^32"
+)]
+impl CellLists {
+    fn key(x: usize, y: usize, z: usize) -> u32 {
+        ((x << 16) | (y << 8) | z) as u32
+    }
+
+    /// `ranges`: the cells each triangle covers, per axis, in triangle order
+    fn new(ranges: &[[(usize, usize); 3]]) -> Self {
+        let cells = |r: &[(usize, usize); 3]| {
+            let r = *r;
+            (r[0].0..=r[0].1).flat_map(move |x| {
+                (r[1].0..=r[1].1).flat_map(move |y| (r[2].0..=r[2].1).map(move |z| Self::key(x, y, z)))
+            })
+        };
+        let mut count: HashMap<u32, u32> = HashMap::new();
+        for r in ranges {
+            for k in cells(r) {
+                *count.entry(k).or_insert(0) += 1;
+            }
+        }
+        let mut keys: Vec<u32> = count.keys().copied().collect();
+        keys.sort_unstable();
+        let mut starts = Vec::with_capacity(keys.len() + 1);
+        let mut at = HashMap::with_capacity(keys.len());
+        let mut total = 0u32;
+        for (i, k) in keys.iter().enumerate() {
+            at.insert(*k, i as u32);
+            starts.push(total);
+            total += count[k];
+        }
+        starts.push(total);
+        drop(count);
+        let mut fill: Vec<u32> = starts.clone();
+        let mut tris = vec![0u32; total as usize];
+        for (n, r) in ranges.iter().enumerate() {
+            for k in cells(r) {
+                let i = at[&k] as usize;
+                tris[fill[i] as usize] = n as u32;
+                fill[i] += 1;
+            }
+        }
+        Self { at, starts, tris }
+    }
+
+    /// the triangles in a cell
+    fn get(&self, x: usize, y: usize, z: usize) -> &[u32] {
+        self.at.get(&Self::key(x, y, z)).map_or(&[], |&i| {
+            let i = i as usize;
+            &self.tris[self.starts[i] as usize..self.starts[i + 1] as usize]
+        })
+    }
 }
 
 fn span(c: &[V3; 3], k: usize) -> (f64, f64) {
@@ -608,6 +698,31 @@ mod tests {
             ..far
         };
         assert!(fit_check(&m, &close).unwrap().gaps.is_empty());
+    }
+
+    #[test]
+    fn the_grid_and_its_shortcuts_find_the_closest_pair_of_all() {
+        // two faceted cylinders side by side (a gap, a near miss, and crossing), against every pair of triangles
+        let w = crate::vec3::Frame::WORLD;
+        for (dx, segments) in [(10.13, 131), (10.6, 127), (9.6, 113)] {
+            let a = build::cylinder(&w, 5.0, 0.0, 6.0, 120);
+            let mut b = build::cylinder(&w, 5.0, 0.3, 5.0, segments);
+            for p in &mut b.positions {
+                p[0] += dx;
+            }
+            let (ba, bb) = (a.bounds().unwrap(), b.bounds().unwrap());
+            let reach = 1.0;
+            let mut every = f64::INFINITY;
+            for &x in &a.triangles {
+                for &y in &b.triangles {
+                    every = every.min(tri_tri(&a.corners(x), &b.corners(y)).0);
+                }
+            }
+            match pair_gap(&a, &b, &ba, &bb, reach) {
+                Some(c) => assert!((c.d - every).abs() < 1e-12, "{dx}: {} against {every}", c.d),
+                None => assert!(every >= reach, "{dx}: none against {every}"),
+            }
+        }
     }
 
     #[test]
