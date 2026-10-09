@@ -46,6 +46,8 @@ Two colors against OrcaSlicer 2.4.2, on `models/x-mark-2color-orca.3mf` with the
 | Bridge | 64 | 60 |
 | Overhang wall | 55 | 41 |
 
+On 2026-10-08 overhang walls became Orca's (cut half a nozzle past the layer below, printed at the bridge flow) and a face on a cutting plane became the top of the part under it, as in Orca's slicer: the band boundaries of this file lie on cutting planes. Overhang wall is now 40.6 against 40.4 mm and internal bridge 350 against 354 mm. Bridge reads 56.4 against 59.8 mm: the total matched before only because the misplaced band layers added bridge where Orca has none; layer by layer it is closer now.
+
 The settings pin `filament_flow_ratio` at 1 for every slicer. A project file carries its own filament values, and Orca keeps the project's over an inherited one: left out, Orca took Generic PLA's 0.98 from this project and printed 2 percent less on walls and infill with both filaments. On one color (`x-mark.stl`) the comparison agrees to 0.1 percent as well (8.56 m against 8.57 m). The 2-color speed baseline (`configs/baseline-x-mark-2color-0.20.json`) has not been moved for this.
 
 Interleaved A/B runs still vary by a few percent when the machine has other work, so single gains near the 2 percent line are within noise.
