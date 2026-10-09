@@ -2,17 +2,20 @@
 // Copyright (C) 2026 The SlicerX contributors
 // Background slicing. When Auto slice is on, any edit that changes the print starts a new slice after a short pause. A slice
 // still running for an older edit is canceled the moment the newer edit lands, and a finished slice is marked stale at once, so
-// the numbers and the preview never pass for the current plate.
+// the numbers and the preview never pass for the current plate. A drag that edits on every move (a scrub, a slider) slices
+// once, on release.
 import type { Host } from '@slicerx/contracts'
 import { cancelSlice, slicePlate } from './actions'
-import { appStore, type AppState } from './store'
+import { inputsChanged as changed } from './slice-inputs'
+import { appStore } from './store'
 
-export const AUTO_SLICE_DELAY_MS = 900
+export { INPUTS } from './slice-inputs'
 
-/** Everything a slice reads. A change to any of these changes the print. */
-export const INPUTS = ['plate', 'plates', 'activePlate', 'overrides', 'easy', 'objectSettings', 'slotSetup', 'printerSlots', 'flush', 'tower', 'layerMarks', 'calibration', 'userPresets', 'printerId', 'printerNozzles', 'printerExtruders', 'bed', 'profile', 'resume'] as const satisfies readonly (keyof AppState)[]
-
-const changed = (a: AppState, b: AppState): boolean => INPUTS.some((k) => a[k] !== b[k])
+/**
+ * The pause after an edit before the slice starts. Edits arrive whole (a typed value on Enter, a click, a drag on
+ * release), so this only gathers ones that land together, such as a tile that sets several values.
+ */
+export const AUTO_SLICE_DELAY_MS = 150
 
 /** Starts watching the store. Returns the stop function. */
 export function startAutoSlice(host: Host, delayMs = AUTO_SLICE_DELAY_MS): () => void {
@@ -34,10 +37,13 @@ export function startAutoSlice(host: Host, delayMs = AUTO_SLICE_DELAY_MS): () =>
     if (!s.autoSlice) return clear()
     // Turning it on slices what is there now.
     const turnedOn = !prev.autoSlice
-    if (!turnedOn && !changed(s, prev) && !(prev.plateLoading && !s.plateLoading)) return
+    const released = prev.liveEdit && !s.liveEdit
+    if (!turnedOn && !released && !changed(s, prev) && !(prev.plateLoading && !s.plateLoading)) return
     if (s.slice.status === 'running') cancelSlice({ quiet: true })
     if (s.slice.status === 'done' && !s.slice.stale) appStore.setState({ slice: { ...s.slice, stale: true } })
     clear()
+    // Mid-drag the slice would be thrown away on the next move; the release starts it.
+    if (s.liveEdit) return
     timer = setTimeout(run, delayMs)
   })
   return () => {

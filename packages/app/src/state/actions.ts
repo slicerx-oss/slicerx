@@ -29,6 +29,7 @@ import { printBlock } from '../plate/heimdall'
 import { clearProject } from '../project/new'
 import { beginOpen, confirmDiscard, markClean, OpenSuperseded, type OpenScope } from '../project/unsaved'
 import { isExportOnly } from '../lib/hand-printers'
+import { inputsChanged } from './slice-inputs'
 import { colorModeAfterSlice, fullPlate, get, markStale, set, shownSlice, toast, type AppState, type PlateEntry, type PlateMeta, selectedIds, type PendingApproval, type ModelSource, type PlateVolumeEntry } from './store'
 import { appName, brandAccent, objectPalette } from '../edition'
 import { handOffCopy, handToBambuConnect, onLinux, printRoute } from '../send/bambu-connect'
@@ -568,7 +569,10 @@ export async function slicePlate(host: Host, opts: { auto?: boolean } = {}): Pro
     const preview = readPreview(raw)
     const cur = get()
     set((st) => ({ slicesDone: st.slicesDone + 1 }))
-    set({ slice: { status: 'done', result, stale: false }, preview, strikePick: null, strikeJump: null, strikeHover: null, ...layersAfterSlice(cur, preview.layerCount, cur.norn.before !== null), ...colorModeAfterSlice(cur, defaultColorMode(preview)) })
+    // An edit that landed after this slice read the plate (before it showed as running, so nothing canceled it) leaves
+    // the result stale: it shows, but never passes for the current plate.
+    const stale = inputsChanged(at, cur)
+    set({ slice: { status: 'done', result, stale }, preview, strikePick: null, strikeJump: null, strikeHover: null, ...layersAfterSlice(cur, preview.layerCount, cur.norn.before !== null), ...colorModeAfterSlice(cur, defaultColorMode(preview)) })
   } catch (e) {
     if (abort.signal.aborted) {
       // A newer slice may already be running; its state is not ours to reset.
