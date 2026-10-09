@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // A 3MF that is no slicer's project (a CAD export or a downloaded model, in the modeler's own coordinates) opens
-// centered on the bed with every object resting on it, as Orca places one. A project keeps its placement, apart from an
-// object a hair under the bed from the rounding of its transforms, which is set down on it.
+// centered on the bed and set down on it as one group, each object keeping its height in it, as Orca places one. A
+// project keeps its placement, apart from an object a hair under the bed from the rounding of its transforms, which is
+// set down on it.
 import { describe, expect, it } from 'vitest'
 import { readProject } from '../src/export/import3mf'
 import { zip } from '../src/export/zip'
@@ -22,15 +23,25 @@ const MODEL = `<?xml version="1.0" encoding="UTF-8"?><model unit="millimeter" xm
 const box = (o: { parts: Parameters<typeof bounds>[0]; transform: number[] }) => bounds(o.parts, o.transform)!
 
 describe('a plain 3MF', () => {
-  it('opens centered on the bed, each object resting on it, the objects keeping their layout', async () => {
+  it('opens centered on the bed, the objects keeping their layout and their heights', async () => {
     const p = await readProject(zip([{ name: '3D/3dmodel.model', data: MODEL }]), bed)
     const [a, b] = p.plates[0]!.objects.map(box)
     // The pair spans x -45 to 30 and y -12 to -2 in the file: 75 by 10 mm, centered on (128, 128).
     expect((a!.min[0] + b!.max[0]) / 2).toBeCloseTo(128)
     expect((a!.min[1] + a!.max[1]) / 2).toBeCloseTo(128)
     expect(b!.min[0] - a!.max[0]).toBeCloseTo(55)
-    expect(a!.min[2]).toBeCloseTo(0)
+    // The group already rests on the bed (b at z = 0), so a stays 2 mm up.
+    expect(a!.min[2]).toBeCloseTo(2)
     expect(b!.min[2]).toBeCloseTo(0)
+  })
+
+  it('keeps objects stacked in the file stacked, and sets a floating stack down as a whole', async () => {
+    // Two bands of one model as separate objects, the stack floating 5 mm up in the file.
+    const model = `<?xml version="1.0" encoding="UTF-8"?><model unit="millimeter" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02"><resources>${cube(1, 0, 0, 5)}${cube(2, 0, 0, 15)}</resources><build><item objectid="1"/><item objectid="2"/></build></model>`
+    const [low, high] = (await readProject(zip([{ name: '3D/3dmodel.model', data: model }]), bed)).plates[0]!.objects.map(box)
+    expect(low!.min[2]).toBeCloseTo(0)
+    expect(high!.min[2]).toBeCloseTo(10)
+    expect(high!.min[0]).toBeCloseTo(low!.min[0])
   })
 
   it('keeps a project where it was placed', async () => {
