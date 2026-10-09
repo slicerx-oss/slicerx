@@ -252,6 +252,7 @@ export async function addFileRefs(host: Host, refs: FileRef[], opts: { fresh?: b
       set({ projectFile: only?.path && /\.sx3mf$/i.test(only.name) ? only : null })
     }
     scope?.finish()
+    if (scope && !scope.superseded) set((s) => ({ jobSeq: s.jobSeq + 1 }))
     if (!told || refs.length > 1) toast(refs.length === 1 ? `Added ${refs[0]?.name ?? 'model'}` : `Added ${refs.length} models`)
   } catch (e) {
     scope?.finish(false)

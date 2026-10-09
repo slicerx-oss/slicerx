@@ -610,6 +610,12 @@ export interface Viewport {
    * that failed leaves the plate empty).
    */
   holdScene(on: boolean): void
+  /**
+   * Plays the plate reveal again from the start (on the ground too): the app asks for it when Model first opens in a
+   * session and when a job opens while Model shows. False when this view does not play it (`reveal: false`, software
+   * graphics without `always`, reduced motion).
+   */
+  playReveal(): boolean
   /** Hatches the parts of the bed nothing may print on (polygons in bed coordinates, mm). An empty list clears them. */
   setExcludedAreas(areas: readonly (readonly [number, number])[][]): void
   /** Brightens one dual nozzle zone (by id); null resets. */
