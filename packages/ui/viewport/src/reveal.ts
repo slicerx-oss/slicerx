@@ -24,6 +24,10 @@ export const REVEAL_SETTLED = { trace: 1, gridMs: 1e9, tint: 0 } as const
 export const REVEAL_HIDDEN = { trace: -1, gridMs: -1, tint: 0 } as const
 
 const BLOOM_MS = 380
+/** The bloom where the heads meet: its peak brightness, and its radius at the hit and how far it grows (px). */
+export const BLOOM_PEAK = 0.6
+const BLOOM_R0 = 28
+const BLOOM_GROW = 100
 const SPARK_MS = 300
 const SPARKS = 10
 const TAIL = 0.14
@@ -41,13 +45,49 @@ export interface RevealPlate {
   tint: number
 }
 
-const easeInOut = (t: number): number => (t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2)
+/** How long each head rests at a corner before pulling away again. */
+export const REVEAL_DWELL_MS = 40
+/** A head runs three legs per side: half the front, the side, half the back. */
+const LEGS = 3
+const LEG_MS = (REVEAL_TRACE_MS - (LEGS - 1) * REVEAL_DWELL_MS) / LEGS
+
+/**
+ * How far along one leg a head is at `t` (0 to 1 of the leg's time), as a share of the leg: a mass on a track that
+ * starts from rest, is fastest mid-leg and comes to rest at the end. Its speed is 2 sin²(πt), smooth and never jumps.
+ */
+export function legShare(t: number): number {
+  const k = Math.min(1, Math.max(0, t))
+  return k - Math.sin(2 * Math.PI * k) / (2 * Math.PI)
+}
+
+/**
+ * How far round its half of the outline a head is, `ms` into the trace (0 to 1, outlinePoint's `s`). Each leg takes
+ * the same time, so its peak speed scales with its length and a short leg feels like a long one; the head brakes into
+ * every corner, rests there a moment and pulls away, and both heads arrive at the back slowly.
+ */
+export function traceShare(ms: number, hx: number, hy: number): number {
+  if (ms <= 0) return 0
+  if (ms >= REVEAL_TRACE_MS) return 1
+  const legs = [hx, 2 * hy, hx]
+  const total = 2 * hx + 2 * hy
+  let at = 0
+  let done = 0
+  for (let i = 0; i < LEGS; i++) {
+    const end = at + LEG_MS
+    if (ms < end) return (done + legs[i]! * legShare((ms - at) / LEG_MS)) / total
+    done += legs[i]!
+    at = end + REVEAL_DWELL_MS
+    // resting in the corner
+    if (ms < at) return done / total
+  }
+  return 1
+}
 
 /**
  * The plate at `ms` from the start of the trace, written into `out`. The wash swells on the hit, eases down to a faint
  * tint while the grid lands and is gone by the end, so the plate ends on its normal look.
  */
-export function revealPlate(ms: number, out: RevealPlate): RevealPlate {
+export function revealPlate(ms: number, out: RevealPlate, hx = 1, hy = 1): RevealPlate {
   if (ms < 0) {
     out.trace = REVEAL_HIDDEN.trace
     out.gridMs = REVEAL_HIDDEN.gridMs
@@ -60,7 +100,7 @@ export function revealPlate(ms: number, out: RevealPlate): RevealPlate {
     out.tint = REVEAL_SETTLED.tint
     return out
   }
-  out.trace = easeInOut(Math.min(1, ms / REVEAL_TRACE_MS))
+  out.trace = traceShare(ms, hx, hy)
   out.gridMs = ms - REVEAL_TRACE_MS - REVEAL_GRID_AFTER_MS
   const h = (ms - REVEAL_TRACE_MS) / 420
   const swell = h <= 0 ? 0 : h < 0.3 ? h / 0.3 : Math.max(0.45, 1 - (h - 0.3) * 0.8)
@@ -144,7 +184,7 @@ export class PlateReveal {
       played.done = true
     }
     const ms = now - this.t0
-    const plate = revealPlate(ms, this.plate)
+    const plate = revealPlate(ms, this.plate, hx, hy)
     setPlate(plate.trace, plate.gridMs, plate.tint)
     if (ms >= REVEAL_END_MS) {
       this.finish(setPlate)
@@ -184,7 +224,7 @@ export class PlateReveal {
     ctx.lineJoin = 'round'
     const dpr = this.dpr
     if (ms < REVEAL_TRACE_MS) {
-      const s = easeInOut(ms / REVEAL_TRACE_MS)
+      const s = traceShare(ms, hx, hy)
       for (const side of SIDES) {
         this.crackle(s, side, camera, hx, hy)
         this.stroke(ctx, TAIL_POINTS + 1, GLOW * dpr, accent, GLOW_ALPHA)
@@ -206,8 +246,8 @@ export class PlateReveal {
       const k = t / BLOOM_MS
       if (k < 1) {
         const bloom = this.bloomSprite(accent)
-        const r = (36 + 140 * k) * dpr
-        ctx.globalAlpha = 0.9 * (1 - k) * (1 - k)
+        const r = (BLOOM_R0 + BLOOM_GROW * k) * dpr
+        ctx.globalAlpha = BLOOM_PEAK * (1 - k) * (1 - k)
         ctx.drawImage(bloom, this.hitX - r, this.hitY - r, r * 2, r * 2)
       }
       const ks = t / SPARK_MS
