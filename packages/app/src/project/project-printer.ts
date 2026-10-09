@@ -76,6 +76,14 @@ export function changedKeys(settings: Record<string, unknown>): Set<string> | un
   return out
 }
 
+/**
+ * Settings a project's process preset sets by itself, which `different_settings_to_system` never lists because they are
+ * that preset's own values: its layer heights and what Bambu Studio's presets tie to them (shell layers and
+ * thicknesses, support gaps). A project made with "0.12mm Fine" lists none of its 0.12 mm, and our printer profile
+ * starts at its standard height, so these come from the file whatever the list says.
+ */
+const PRESET_CHOSEN = new Set(['layer_height', 'initial_layer_print_height', 'top_shell_layers', 'bottom_shell_layers', 'top_shell_thickness', 'bottom_shell_thickness', 'support_top_z_distance', 'support_bottom_z_distance'])
+
 /** The overrides split for another printer: what carries over, and what stays with the project printer (`dropped` names the settings, not the G-code). */
 export function carryOver(overrides: Record<string, SettingValue>, gcodeKeys: readonly string[], sameNozzle: boolean): { kept: Record<string, SettingValue>; parked: Record<string, SettingValue>; dropped: string[] } {
   const kept: Record<string, SettingValue> = {}
@@ -145,7 +153,9 @@ export function applyProjectSettings(source: string, settings: Record<string, un
     return { keys: Object.keys(kept), note }
   }
   const only = changedKeys(settings)
-  const applied = only ? Object.fromEntries(Object.entries(values).filter(([k]) => only.has(k))) : values
+  // The layer heights come with the project's process preset; on another nozzle than the file's they would not fit.
+  const chosen = (k: string) => PRESET_CHOSEN.has(k) && !match.asked
+  const applied = only ? Object.fromEntries(Object.entries(values).filter(([k]) => only.has(k) || chosen(k))) : values
   if (match.own) {
     // One of the person's printers: its own G-code, as on any switch to it.
     const kept = Object.fromEntries(Object.entries(applied).filter(([k]) => !GCODE_TEXT_KEYS.includes(k)))
