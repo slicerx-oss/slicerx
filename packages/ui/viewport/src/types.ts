@@ -380,6 +380,11 @@ export interface ViewportEvents {
   sketch: SketchEvent
   /** The camera moved (throttled to one per frame). For overlays such as dimension labels. */
   camera: { preset: ViewPreset | null }
+  /**
+   * The first frame drawn after setPlate: how long setPlate took (ms, building the objects that changed), how long from
+   * setPlate to that frame, and how many objects it built and how many it kept as they were.
+   */
+  platedrawn: { buildMs: number; drawMs: number; built: number; kept: number }
   /** WebGL context lost or the renderer failed to start. */
   error: { message: string }
   /** The viewport lowered its own quality to keep frames smooth. Show `message` as a toast. */
@@ -407,6 +412,8 @@ export interface ViewportStats {
   firstFrameMs: number | null
   /** Milliseconds from creating the viewport to its first drawn frame (plate and bed). */
   firstDrawMs: number | null
+  /** Objects setPlate has built since the viewport started; an object it kept as it was does not count. */
+  objectBuilds: number
   drawCalls: number
   triangles: number
   segments: number
@@ -420,6 +427,11 @@ export interface Viewport {
   setMode(mode: ViewportMode): void
 
   // Prepare
+  /**
+   * The plate's bed and objects. An object with the same id whose parts are the very same position and index arrays
+   * as before is kept as it was built (only its name, transform and colors follow), so a payload rebuilt for another
+   * change costs no rebuild; new arrays mean a new build.
+   */
   setPlate(plate: ViewportPlate, opts?: { keepCamera?: boolean }): void
   /** Move objects without rebuilding geometry. */
   setTransforms(transforms: Record<string, number[]>): void
