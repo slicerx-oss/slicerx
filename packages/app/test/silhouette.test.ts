@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 import { describe, expect, it } from 'vitest'
-import { contours, silhouettePath, simplifyLoop } from '../src/parts'
+import { silhouettePath } from '../src/parts'
+import { contours, simplifyLoop, tracedPath } from '../src/silhouette-trace'
 
 /** A tube of `rings` by `around` quads, two triangles each: 2 * rings * around triangles. */
 function tube(rings: number, around: number): { positions: Float32Array; indices: Uint32Array } {
@@ -15,7 +16,7 @@ function tube(rings: number, around: number): { positions: Float32Array; indices
 
 describe('the object list silhouette', () => {
   it('draws a small model triangle by triangle', () => {
-    const { d, size } = silhouettePath([tube(4, 8)])
+    const { d, size } = silhouettePath([tube(4, 8)], null)!
     expect(size).toBeCloseTo(30, 3)
     expect(d.match(/M/g)?.length).toBeGreaterThan(20)
     expect(d).toContain('L')
@@ -23,14 +24,16 @@ describe('the object list silhouette', () => {
 
   it('keeps the exact outline of a model of tens of thousands of triangles', () => {
     // 40,000 triangles: still drawn triangle by triangle, filled nonzero.
-    const { d, evenOdd } = silhouettePath([tube(100, 200)])
+    const { d, evenOdd } = silhouettePath([tube(100, 200)], null)!
     expect(evenOdd).toBeUndefined()
     expect(d.match(/M/g)?.length).toBeGreaterThan(30_000)
   })
 
   it('keeps the path of a model of millions of triangles to a few kilobytes, outline intact', () => {
-    // 2.4 million triangles: drawn whole this was about 150 MB of path text.
-    const { d, size, evenOdd } = silhouettePath([tube(1200, 1000)])
+    // 2.4 million triangles: drawn whole this was about 150 MB of path text. Without the tracer (it loads on demand)
+    // there is no path yet.
+    expect(silhouettePath([tube(1200, 1000)], null)).toBeNull()
+    const { d, size, evenOdd } = silhouettePath([tube(1200, 1000)], tracedPath)!
     expect(size).toBeCloseTo(30, 3)
     expect(evenOdd).toBe(true)
     expect(d.length).toBeLessThan(4000)
@@ -70,6 +73,6 @@ describe('the object list silhouette', () => {
   })
 
   it('gives an empty path for no geometry', () => {
-    expect(silhouettePath([{ positions: new Float32Array(), indices: new Uint32Array() }])).toEqual({ d: '', size: 1 })
+    expect(silhouettePath([{ positions: new Float32Array(), indices: new Uint32Array() }], null)).toEqual({ d: '', size: 1 })
   })
 })
