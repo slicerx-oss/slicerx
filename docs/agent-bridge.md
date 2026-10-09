@@ -59,9 +59,11 @@ way round). Quit the installed app first, and expect whatever the run changes to
 app starts.
 
 The edition config comes from `SLICERX_CONFIG` and the `SLICERX_*` variables as for any build. Without
-`SLICERX_SUPABASE_URL` the Vault runs on demo data and nothing reaches a backend. The engine's WASM module and the CAD
-module are not built by this script; build them first (`pnpm --filter @slicerx/slicer build:wasm` and
-`sh packages/geom/wasm/scripts/build.sh`) when a run needs the browser engine fallback or the CAD tools.
+`SLICERX_SUPABASE_URL` the Vault runs on demo data and nothing reaches a backend. The script builds the geometry
+engine's WASM first (`sh packages/geom/wasm/scripts/build.sh`, which on Windows needs Git's `sh` on the PATH) and stops
+if it fails: opening a model runs that engine's repair and fit check, and an app without it skips both without a word.
+`--no-geom` leaves it out, for a build that only needs the shell. The slicing engine's own WASM module is not built
+here; build it first (`pnpm --filter @slicerx/slicer build:wasm`) when a run needs the browser engine fallback.
 
 For development, `SLICERX_AGENT_BRIDGE=1 pnpm dev:desktop -- --features agent-bridge` runs the dev server and a debug
 shell with the bridge.
