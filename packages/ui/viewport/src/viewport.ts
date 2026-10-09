@@ -122,6 +122,9 @@ class Ring {
   }
 }
 
+/** How long an object that left the plate stays built, for a plate switch that brings it back. */
+const PARK_MS = 10_000
+
 /** Whether the parts are the very arrays an object was built from (identity, not contents: comparing contents of a big model would cost what a rebuild saves). */
 function sameArrays(from: readonly [Float32Array, Uint32Array | Uint16Array][] | undefined, parts: readonly { positions: Float32Array; indices: Uint32Array | Uint16Array }[]): boolean {
   return !!from && from.length === parts.length && parts.every((p, i) => from[i]![0] === p.positions && from[i]![1] === p.indices)
@@ -274,6 +277,8 @@ class ViewportImpl implements Viewport {
   private objectBuilds = 0
   /** The last setPlate, until the frame that draws it. */
   private plateSet: { at: number; buildMs: number; built: number; kept: number } | null = null
+  /** Objects off the plate, still built, by id, until PARK_MS passes without them coming back. */
+  private readonly parked = new Map<string, { entry: ObjectEntry; from: [Float32Array, Uint32Array | Uint16Array][]; timer: ReturnType<typeof setTimeout> }>()
   private arrangeAnim: ((now: number) => boolean) | null = null
   private dragState: Drag | null = null
   private get drag(): Drag | null {
@@ -898,9 +903,16 @@ class ViewportImpl implements Viewport {
     let kept = 0
     for (const obj of plate.objects) {
       if (this.objects.has(obj.id)) continue
-      const old = before.get(obj.id)
-      if (old && sameArrays(this.builtFrom.get(obj.id), obj.parts)) {
+      const parked = before.has(obj.id) ? undefined : this.parked.get(obj.id)
+      const old = before.get(obj.id) ?? parked?.entry
+      if (old && sameArrays(parked ? parked.from : this.builtFrom.get(obj.id), obj.parts)) {
         before.delete(obj.id)
+        if (parked) {
+          clearTimeout(parked.timer)
+          this.parked.delete(obj.id)
+          this.builtFrom.set(obj.id, parked.from)
+          this.stage.objectsRoot.add(old.group)
+        }
         old.name = obj.name
         old.group.name = obj.name
         old.group.matrix.fromArray(obj.transform)
@@ -921,8 +933,15 @@ class ViewportImpl implements Viewport {
       built++
     }
     for (const [id, o] of before) {
-      disposeObject(o)
-      if (!this.objects.has(id)) this.builtFrom.delete(id)
+      const from = this.builtFrom.get(id)
+      if (this.objects.has(id) || !from) {
+        disposeObject(o)
+        continue
+      }
+      // An object that leaves the plate is kept built for a while: switching to another plate and back, as opening a
+      // project of several plates does, then costs no rebuild.
+      this.builtFrom.delete(id)
+      this.park(id, o, from)
     }
     this.objectBuilds += built
     this.selection = this.selection.filter((id) => this.objects.has(id))
@@ -937,6 +956,21 @@ class ViewportImpl implements Viewport {
     // A fresh plate (the first one, a project opened, a plate swap) opens on the whole build plate, not on its parts.
     if (!opts.keepCamera) this.view('plate')
     this.plateSet = { at: t0, buildMs: performance.now() - t0, built, kept }
+  }
+
+  private park(id: string, entry: ObjectEntry, from: [Float32Array, Uint32Array | Uint16Array][]): void {
+    const was = this.parked.get(id)
+    if (was) {
+      clearTimeout(was.timer)
+      disposeObject(was.entry)
+    }
+    entry.group.removeFromParent()
+    const timer = setTimeout(() => {
+      if (this.parked.get(id)?.entry !== entry) return
+      this.parked.delete(id)
+      disposeObject(entry)
+    }, PARK_MS)
+    this.parked.set(id, { entry, from, timer })
   }
 
   setTransforms(transforms: Record<string, number[]>): void {
@@ -3174,6 +3208,11 @@ class ViewportImpl implements Viewport {
   dispose(): void {
     if (this.disposed) return
     this.disposed = true
+    for (const p of this.parked.values()) {
+      clearTimeout(p.timer)
+      disposeObject(p.entry)
+    }
+    this.parked.clear()
     this.strikes.dispose()
     this.painter.dispose()
     this.gizmo.dispose()
