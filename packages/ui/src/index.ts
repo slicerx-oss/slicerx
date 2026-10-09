@@ -84,4 +84,5 @@ export type { ThemeProviderProps, ThemeContextValue, IconOverrides } from './the
 export { useEdgeGlow } from './hooks/use-edge-glow'
 export type { EdgeGlowOptions } from './hooks/use-edge-glow'
 export { useDismiss } from './hooks/use-dismiss'
+export { keepInPlace, keepPressedControlsInPlace, STATIC_CONTROLS } from './hooks/keep-in-place'
 export * from './lookfeel'
