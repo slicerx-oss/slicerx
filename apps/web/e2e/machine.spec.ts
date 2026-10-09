@@ -26,6 +26,13 @@ test('the printer, nozzle and plate chips change them in place, with the printer
   // The printer's name is never cut to nothing: in the default sidebar the chips go on a line under it.
   const shownName = page.getByTestId('slice-machine-printer').locator('.printer-name')
   expect(await shownName.evaluate((el) => el.scrollWidth > el.clientWidth + 1)).toBe(false)
+  // The model follows the name, muted: in full, or cut with an ellipsis and in full in the tooltip.
+  const model = page.getByTestId('slice-machine-model')
+  const full = (await model.textContent()) ?? ''
+  expect(full).toMatch(/\S/)
+  const shown = await model.evaluate((el) => ({ cut: el.scrollWidth > el.clientWidth + 1, ellipsis: getComputedStyle(el).textOverflow }))
+  expect(shown.ellipsis).toBe('ellipsis')
+  if (shown.cut) await expect(page.getByTestId('slice-machine-printer')).toHaveAttribute('data-tip-title', new RegExp(`^${full}`))
   // Printer: the list names each printer with its status, the current one checked.
   const printer = page.getByTestId('slice-machine-printer')
   await expect(printer).toHaveAttribute('data-tip-title', /mm$/)
@@ -172,6 +179,7 @@ test('shots: the machine card, its popovers, folded and export only, light and d
     await card.evaluate((el) => el.scrollIntoView({ block: 'center' }))
     await page.mouse.move(0, 0)
     await shoot(`card-${scheme}`)
+    await card.screenshot({ path: `${dir}/machine-card-crop-${scheme}-${width}.png` })
     for (const chip of ['printer', 'nozzle', 'plate'] as const) {
       await page.getByTestId(`slice-machine-${chip}`).click()
       await shoot(`${chip}-${scheme}`)
