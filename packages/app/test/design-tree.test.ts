@@ -4,7 +4,7 @@
 // Each step shows its tool's icon. Design keeps its own pane state apart from Slice.
 import { createElement } from 'react'
 import { flushSync } from 'react-dom'
-import { createRoot } from 'react-dom/client'
+import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, describe, expect, it } from 'vitest'
 import type { Host } from '@slicerx/contracts'
 import type { Step, StepParams } from '../src/cad/history/model'
@@ -34,7 +34,10 @@ function entry(id: string, name: string, steps?: Step[]): PlateEntry {
   } as unknown as PlateEntry
 }
 
+// Roots unmount before the page is cleared, so an open menu's portal is not pulled out from under React.
+const roots: Root[] = []
 afterEach(() => {
+  for (const r of roots.splice(0)) flushSync(() => r.unmount())
   document.body.innerHTML = ''
   set({ plate: [], selection: null, selectedIds: [], historyEdit: null })
 })
@@ -64,7 +67,9 @@ describe('the Design tree', () => {
   function render(): HTMLElement {
     const el = document.createElement('div')
     document.body.appendChild(el)
-    flushSync(() => createRoot(el).render(createElement(HostContext.Provider, { value: {} as Host }, createElement(HistoryTree))))
+    const root = createRoot(el)
+    roots.push(root)
+    flushSync(() => root.render(createElement(HostContext.Provider, { value: {} as Host }, createElement(HistoryTree))))
     return el
   }
 
