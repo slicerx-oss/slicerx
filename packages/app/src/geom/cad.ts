@@ -8,7 +8,7 @@
 // local to world). Picks, features, face frames and new bodies are in world coordinates. A mesh
 // that replaces an input (a boolean result, a merged array, a join or cut) comes back in that
 // input's local frame, so the object keeps its transform.
-import { geom, type GeomMesh } from './client'
+import { geom, usesWorker, type GeomMesh, type TypedGeomMesh } from './client'
 
 export type Vec2 = [number, number]
 export type Vec3 = [number, number, number]
@@ -677,7 +677,8 @@ export interface AutoImport {
   format: string
   objects: {
     name: string
-    parts: { name: string; slot: number; color: string | null; mesh: GeomMesh; watertight: boolean }[]
+    /** Typed arrays when the app's worker read the mesh from the engine's memory (`meshOutput: "raw"`). */
+    parts: { name: string; slot: number; color: string | null; mesh: GeomMesh | TypedGeomMesh; watertight: boolean }[]
     repair: ObjectRepair
     /** A body split from a one-part file: a later crossing check rebuilds each of its shells on its own. */
     perShell?: boolean
@@ -703,9 +704,11 @@ export interface ReadStl {
  */
 export function importAuto(file: ({ base64: string } | { bytes: Uint8Array } | { stlMesh: ReadStl }) & { name: string; format?: 'obj' | 'amf' | 'stl'; mtl?: string }, auto: AutoOptions = {}, signal?: AbortSignal) {
   const { name, format, mtl } = file
-  if ('stlMesh' in file) return geom().call<AutoImport>('import.auto', { stlMesh: file.stlMesh, name, format: 'stl', auto }, signal)
+  // The app's worker reads the meshes back from the engine's memory as typed arrays (geom-worker.ts, rawOut).
+  const out = usesWorker() ? { meshOutput: 'raw' } : {}
+  if ('stlMesh' in file) return geom().call<AutoImport>('import.auto', { stlMesh: file.stlMesh, name, format: 'stl', auto, ...out }, signal)
   const data = 'bytes' in file ? { bytes: file.bytes } : { base64: file.base64 }
-  return geom().call<AutoImport>('import.auto', { data, name, ...(format ? { format } : {}), ...(mtl !== undefined ? { mtl } : {}), auto }, signal)
+  return geom().call<AutoImport>('import.auto', { data, name, ...(format ? { format } : {}), ...(mtl !== undefined ? { mtl } : {}), auto, ...out }, signal)
 }
 
 /** A part checked for faces that cross each other: whether it does, and the rebuilt mesh when it was rebuilt. */

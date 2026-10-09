@@ -5594,6 +5594,7 @@ dependencies = [
 name = "sx-geom-wasm"
 version = "0.1.2"
 dependencies = [
+ "serde_json",
  "sx-geom",
 ]
 

@@ -7,21 +7,8 @@
 // requests still get answers meanwhile, and stops when its caller cancels. The engine is two builds (modules.ts):
 // the core loads first, the full engine the first time a call needs it.
 import { replayHistory, type ReplayRequest } from '../cad/history/replay'
-import { askFaces } from './client'
 import { engineModules, type EngineModule } from './modules'
-
-interface GeomExports {
-  memory: WebAssembly.Memory
-  geom_input(len: number): number
-  /** Reserves a buffer the next call reads as `mem:N`. */
-  geom_file(len: number): number
-  geom_call(): number
-  geom_ops(): number
-  geom_out_ptr(): number
-  geom_out_len(): number
-  geom_error_ptr(): number
-  geom_error_len(): number
-}
+import { callEngine, transferables, type GeomExports } from './engine-call'
 
 async function load(url: URL): Promise<EngineModule> {
   const response = await fetch(url)
@@ -40,67 +27,13 @@ const engine = engineModules(
   (loadError) => self.postMessage({ loadError }),
 )
 
-/**
- * The request with its typed arrays as plain arrays, for the engine's JSON. A caller may send a mesh's Float32Array and
- * Uint32Array as they are (a structured clone of them is one copy), so the conversion of a big mesh happens here
- * instead of on the page.
- */
-function plainArrays(v: unknown): unknown {
-  if (ArrayBuffer.isView(v)) return Array.from(v as unknown as ArrayLike<number>)
-  if (Array.isArray(v)) return v.length && typeof v[0] === 'object' ? v.map(plainArrays) : v
-  if (v === null || typeof v !== 'object') return v
-  const out: Record<string, unknown> = {}
-  for (const [k, x] of Object.entries(v)) out[k] = plainArrays(x)
-  return out
-}
-
-/**
- * The request with each mesh that came as typed arrays (and without faces) written into an engine buffer in the raw
- * form (`TriMesh::from_raw`) and named by `rawPath`, so a big mesh never becomes JSON: as numbers in a JSON text and
- * then in the engine's parse of it, a mesh of 1.4 million triangles took the engine's memory to about 800 MB, which a
- * WebAssembly module never hands back. The buffers are numbered in the order they are reserved.
- */
-function rawMeshes(x: GeomExports, v: unknown, files = { n: 0 }): unknown {
-  if (Array.isArray(v)) return v.length && typeof v[0] === 'object' ? v.map((e) => rawMeshes(x, e, files)) : v
-  if (v === null || typeof v !== 'object' || ArrayBuffer.isView(v)) return v
-  const o = v as Record<string, unknown>
-  const { positions, indices, faces } = o
-  if (positions instanceof Float32Array && (indices instanceof Uint32Array || indices instanceof Uint16Array) && !faces) {
-    const nv = Math.floor(positions.length / 3)
-    const nt = Math.floor(indices.length / 3)
-    const at = x.geom_file(8 + 12 * nv + 12 * nt)
-    // Views made after the reservation, which may have grown the memory.
-    new Uint32Array(x.memory.buffer, at, 2).set([nv, nt])
-    new Float32Array(x.memory.buffer, at + 8, nv * 3).set(positions.subarray(0, nv * 3))
-    new Uint32Array(x.memory.buffer, at + 8 + 12 * nv, nt * 3).set(indices.subarray(0, nt * 3))
-    const rest = Object.fromEntries(Object.entries(o).filter(([k]) => k !== 'positions' && k !== 'indices' && k !== 'faces'))
-    return { ...rest, rawPath: `mem:${files.n++}` }
-  }
-  const out: Record<string, unknown> = {}
-  for (const [k, e] of Object.entries(o)) out[k] = rawMeshes(x, e, files)
-  return out
-}
-
-// Every mesh comes back with its faces, which the parts keep and send again with the next call.
 /** The engine modules' memory, which only grows; each answer says how big it is, so the page can end a worker that holds a lot. */
 const memories = new Set<WebAssembly.Memory>()
 const memoryBytes = (): number => [...memories].reduce((n, m) => n + m.buffer.byteLength, 0)
 
 function call(x: GeomExports, op: string, request: unknown): unknown {
   memories.add(x.memory)
-  const bytes = new TextEncoder().encode(`${op}\0${JSON.stringify(askFaces(plainArrays(rawMeshes(x, request))))}`)
-  const at = x.geom_input(bytes.length)
-  new Uint8Array(x.memory.buffer, at, bytes.length).set(bytes)
-  const code = x.geom_call()
-  const text = (ptr: number, len: number) => new TextDecoder().decode(new Uint8Array(x.memory.buffer, ptr, len))
-  if (code === 0) return JSON.parse(text(x.geom_out_ptr(), x.geom_out_len()))
-  let message = text(x.geom_error_ptr(), x.geom_error_len())
-  try {
-    message = (JSON.parse(message) as { error?: string }).error ?? message
-  } catch {
-    // A plain message stays as it is.
-  }
-  throw new Error(message)
+  return callEngine(x, op, request)
 }
 
 /** A file sent as its bytes (`data.bytes`) goes to the engine as base64, encoded here rather than on the page. */
@@ -140,7 +73,8 @@ self.onmessage = async (e: MessageEvent<{ id: number; op: string; request: unkno
       self.postMessage({ id, result: await engine.full(), memoryBytes: memoryBytes() })
       return
     }
-    self.postMessage({ id, result: await engine.run(op, bytesAsBase64(request)), memoryBytes: memoryBytes() })
+    const result = await engine.run(op, bytesAsBase64(request))
+    self.postMessage({ id, result, memoryBytes: memoryBytes() }, { transfer: transferables(result) })
   } catch (err) {
     canceled.delete(id)
     self.postMessage({ id, error: err instanceof Error ? err.message : String(err), memoryBytes: memoryBytes() })
