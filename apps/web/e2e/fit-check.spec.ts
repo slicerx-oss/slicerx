@@ -53,12 +53,28 @@ async function open(page: Page): Promise<void> {
   await viewportReady(page)
 }
 
-/** Presses Open (Mod+O) once and answers the dialog it opens with `path`. */
+/**
+ * Presses Open (Mod+O) once and answers the dialog it opens with `path`. Mod+O has, once on a CI runner, opened no
+ * dialog (#291): when none has come after 10 s, the test notes what could have held the key (an open dialog or panel
+ * in the app's state, the focused element) before it goes on waiting, so a failure says why.
+ */
 async function pick(page: Page, path: string): Promise<void> {
   const seen = choosers.get(page)!
   const before = seen.length
   await page.keyboard.press('ControlOrMeta+o')
-  await expect.poll(() => seen.length, { timeout: 60_000 }).toBe(before + 1)
+  const came = await expect.poll(() => seen.length, { timeout: 10_000 }).toBe(before + 1).then(() => true, () => false)
+  if (!came) {
+    const held = await page.evaluate(() => {
+      const s = (window as unknown as { __sx: { getState(): Record<string, unknown> } }).__sx.getState()
+      const flags = ['setup', 'commandOpen', 'approval', 'aboutOpen', 'settingsOpen', 'shortcutsOpen'].filter((k) => Boolean(s[k]))
+      const a = document.activeElement
+      const focus = a ? `${a.tagName.toLowerCase()}${a.id ? `#${a.id}` : ''}${a.getAttribute('aria-label') ? ` "${a.getAttribute('aria-label')}"` : ''}` : 'none'
+      return `open in the app: ${flags.join(', ') || 'nothing'}; focus: ${focus}; dialogs on screen: ${document.querySelectorAll('[role="dialog"], [role="alertdialog"]').length}`
+    })
+    test.info().annotations.push({ type: 'Mod+O opened no dialog in 10 s', description: held })
+    console.log(`fit-check: Mod+O opened no dialog in 10 s (${held})`)
+    await expect.poll(() => seen.length, { timeout: 50_000 }).toBe(before + 1)
+  }
   await seen[before]!.setFiles(path)
 }
 
