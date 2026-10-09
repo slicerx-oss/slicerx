@@ -51,7 +51,7 @@ export async function checkObject(e: PlateEntry, minGapMm: number, layerHeightMm
 }
 
 /** Separate objects that touch: only boxes that come close are measured, part against part. */
-export async function checkTouches(entries: readonly PlateEntry[], minGapMm: number, layerHeightMm: number, signal: AbortSignal): Promise<Touch[]> {
+export async function checkTouches(entries: readonly Pick<PlateEntry, 'id' | 'parts' | 'transform'>[], minGapMm: number, layerHeightMm: number, signal: AbortSignal): Promise<Touch[]> {
   const reach = Math.max(minGapMm, layerHeightMm)
   const boxed = entries.flatMap((e) => {
     const box = bounds(e.parts, e.transform)
