@@ -49,6 +49,23 @@ export function goalEstimate(done: { result: Pick<SliceResult, 'stats'>; stale: 
   return grams ? `About ${time}, ${grams}` : `About ${time}`
 }
 
+/** How long the engine took, for the tooltip on the estimate's time: "Sliced in 73 ms on 12 threads". */
+export function slicedIn(wallMs: number, threads: number): string {
+  const ms = Math.round(wallMs)
+  const took = ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixed(1)} s`
+  return threads > 1 ? `Sliced in ${took} on ${threads} threads` : `Sliced in ${took}`
+}
+
+/** An object row's part count in plain words: "1 part", "2 parts". */
+export function partCount(n: number): string {
+  return n === 1 ? '1 part' : `${n} parts`
+}
+
+/** A mesh's triangle count, for the object row's tooltip and Developer mode: "56 triangles". */
+export function triangles(n: number): string {
+  return `${n.toLocaleString('en-US')} ${n === 1 ? 'triangle' : 'triangles'}`
+}
+
 const num = (v: SettingValue | undefined): number => Number(Array.isArray(v) ? v[0] : v)
 
 /** What a goal gives on this printer, from that goal's resolved settings: a layer height, or the walls for Strong. */

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 import { describe, expect, it } from 'vitest'
-import { estimateLine, goalEstimate, goalSubtitle } from '../src/lib/estimate-line'
+import { estimateLine, goalEstimate, goalSubtitle, partCount, slicedIn, triangles } from '../src/lib/estimate-line'
 
 const done = (stats: { timeS: number; filamentG: number[]; cost: number; toolChanges: number }, warnings = 0, stale = false) => ({
   result: { stats: { filamentMm: [], ...stats }, warnings: Array.from({ length: warnings }, () => ({ code: 'thin_wall' as const, message: 'thin' })) },
@@ -24,6 +24,22 @@ describe('the footer line', () => {
   it('is nothing before a slice', () => {
     expect(estimateLine(null)).toBeNull()
     expect(goalEstimate(null)).toBeNull()
+  })
+})
+
+describe('plain words for engine detail', () => {
+  it('says how long the slice took in the time tooltip, with the threads', () => {
+    expect(slicedIn(73.4, 12)).toBe('Sliced in 73 ms on 12 threads')
+    expect(slicedIn(1520, 8)).toBe('Sliced in 1.5 s on 8 threads')
+    expect(slicedIn(40, 1)).toBe('Sliced in 40 ms')
+  })
+
+  it('counts parts and triangles in words', () => {
+    expect(partCount(1)).toBe('1 part')
+    expect(partCount(2)).toBe('2 parts')
+    expect(triangles(56)).toBe('56 triangles')
+    expect(triangles(12345)).toBe('12,345 triangles')
+    expect(triangles(1)).toBe('1 triangle')
   })
 })
 
