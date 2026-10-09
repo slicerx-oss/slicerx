@@ -80,6 +80,8 @@ export function bindPlateKeys(choice: () => LookAndFeelChoice, extra: { dropToBe
   const handlers = plateHandlers()
   const onKey = (e: KeyboardEvent) => {
     if (e.defaultPrevented || inTextField(e)) return
+    // A list that filters as you type (Model's tree) takes plain characters typed in it, before the single key tools.
+    if (e.key.length === 1 && e.key !== ' ' && !e.metaKey && !e.ctrlKey && !e.altKey && e.target instanceof Element && e.target.closest('[data-typeahead]')) return
     const s = get()
     if (s.setup || s.commandOpen || s.approval || s.aboutOpen || s.shortcutsOpen || s.settingsOpen) return
     if (s.workspace !== 'prepare') return
