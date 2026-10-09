@@ -6353,18 +6353,12 @@ impl SliceSession {
                 && crate::tower::flag_or(cfg, "detect_overhang_wall", true)
                 && crate::tower::flag(cfg, "extra_perimeters_on_overhangs")
             {
-                let line = bridge_line_width(cfg);
-                let (width, spacing, flow) = if cfg.thick_bridges {
-                    let d = line.unwrap_or(cfg.nozzle_diameter) * cfg.bridge_flow.sqrt();
-                    let h = self.plan.thickness(layer);
-                    (
-                        d,
-                        d + 0.05,
-                        std::f64::consts::PI * d * d / 4.0 / crate::gcode::bead_area(d, h),
-                    )
+                // The loops print with the overhang walls' bead (Orca's `overhang_flow`).
+                let (width, flow) = crate::overhang::bead(cfg, self.plan.thickness(layer));
+                let spacing = if cfg.thick_bridges {
+                    width + 0.05
                 } else {
-                    let d = line.unwrap_or_else(|| cfg.inner_wall_width());
-                    (d, cfg.spacing_for(d), cfg.bridge_flow)
+                    cfg.spacing_for(width)
                 };
                 // Orca measures against the layer below grown by half the nozzle (`lower_slices_polygons`).
                 let grown = perimeters::offset(under, mm(cfg.nozzle_diameter / 2.0));
