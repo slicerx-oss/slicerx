@@ -61,7 +61,7 @@ export function HistorySteps({ objectId, tree }: { objectId: string; tree?: bool
   return (
     <>
       {h.ended ? <p className="cad-hint"><Icon name="info" size={14} /> {h.ended}</p> : null}
-      <ol className="cad-steps">
+      <ol className="cad-steps" role={tree ? 'group' : undefined}>
         {h.steps.map((s, i) => (
           <StepRow
             key={s.id}

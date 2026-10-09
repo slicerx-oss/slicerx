@@ -243,7 +243,11 @@ Ids that tests read for their text:
 | `about-attribution`, `about-step-reader` | About: the engine attribution and the STEP reader line |
 | `bug-preview` | Report a bug: what the report sends |
 | `step-note`, `step-bind` | A CAD history step's note and binding |
-| `step-sketch` | A step's sketch line in the Design tree, with its loop count |
+| `step-sketch` | A step's sketch line in the Model tree, with its loop count; a click opens the sketch |
+| `model-tree-object` | An object row in the Model tree; `data-object-id`, and `data-kind` is `body` (has a history) or `mesh` |
+| `model-tree-step` | A step row in the Model tree; `data-object-id`, `data-index` and `data-state` (`done`, `broken`, `skipped`, `suppressed`) |
+| `model-tree-more` | A step row's More button, which opens its actions |
+| `danger-model-tree-delete` | Delete in a step's More menu |
 | `parked-chip` | The chip that says a modeling tool is parked while you work in Slice |
 | `hole-size-words`, `thread-words` | The hole and thread tools' size in words |
 | `value-<name>` | A named value in the values panel |
