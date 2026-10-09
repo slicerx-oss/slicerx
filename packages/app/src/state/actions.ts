@@ -410,7 +410,7 @@ export async function slicePlate(host: Host, opts: { auto?: boolean } = {}): Pro
     if (sliceAbort !== abort) return
     // How long this plate took, for the next slice's size estimate (slice-estimate.ts).
     noteSliceTiming(s.activePlate, { triangles: plateTriangles(toPrint), ms: sliced.wallMs })
-    sliceStage(timed, 'result', { engineMs: Object.values(sliced.stageMicros ?? {}).reduce((n: number, us) => n + (us ?? 0), 0) / 1000 })
+    sliceStage(timed, 'result', { ...(sliced.engineWallMs !== undefined ? { engineMs: sliced.engineWallMs } : {}), engineCpuMs: Object.values(sliced.stageMicros ?? {}).reduce((n: number, us) => n + (us ?? 0), 0) / 1000 })
     // The tower comes back in machine coordinates; the plate counts from its corner.
     const result = sliced.primeTower ? { ...sliced, primeTower: towerToPlate(sliced.primeTower, areaOrigin(config['printable_area'])) } : sliced
     const raw = await host.slicer.getPreview(result.id)

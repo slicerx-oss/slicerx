@@ -10,11 +10,11 @@ describe('slice timing', () => {
     const id = sliceStarted(false, 1000)
     sliceStage(id, 'ready', { now: 1010 })
     sliceStage(id, 'request', { now: 1030 })
-    sliceStage(id, 'result', { now: 1530, engineMs: 412.6 })
+    sliceStage(id, 'result', { now: 1530, engineMs: 412.6, engineCpuMs: 980.2 })
     sliceStage(id, 'result', { now: 1900 })
     sliceStage(id, 'preview', { now: 1560, previewBytes: 1234 })
     sliceStage(id, 'drawn', { now: 1700 })
-    expect(sliceTiming()).toEqual({ ms: { ready: 10, request: 30, result: 530, preview: 560, drawn: 700 }, engineMs: 413, previewBytes: 1234, auto: false })
+    expect(sliceTiming()).toEqual({ ms: { ready: 10, request: 30, result: 530, preview: 560, drawn: 700 }, engineMs: 413, engineCpuMs: 980, previewBytes: 1234, auto: false })
     expect(currentSlice()).toBe(id)
   })
 

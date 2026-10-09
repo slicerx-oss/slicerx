@@ -47,6 +47,7 @@ interface SliceInfo {
   layerTimeS: number[]
   stats: { timeS: number; prepareS?: number; filamentMm: number[]; filamentG: number[]; cost: number; toolChanges: number }
   stageMicros: Record<string, number>
+  engineWallMs?: number
   warnings: { code: string; message: string; layer?: number }[]
   gcodeFormat?: 'bgcode'
   fileName?: string
@@ -67,6 +68,7 @@ function parseSliceInfo(v: unknown): SliceInfo {
     layerTimeS: nums(v['layerTimeS']),
     stats: { timeS: Number(st['timeS']) || 0, ...(Number(st['prepareS']) > 0 ? { prepareS: Number(st['prepareS']) } : {}), filamentMm: nums(st['filamentMm']), filamentG: nums(st['filamentG']), cost: Number(st['cost']) || 0, toolChanges: Number(st['toolChanges']) || 0 },
     stageMicros,
+    ...(typeof v['wallMs'] === 'number' ? { engineWallMs: v['wallMs'] } : {}),
     warnings: (v['warnings'] as unknown[]).flatMap((w) => (isRec(w) && typeof w['code'] === 'string' && typeof w['message'] === 'string' ? [{ code: w['code'], message: w['message'], ...(typeof w['layer'] === 'number' ? { layer: w['layer'] } : {}) }] : [])),
     ...(v['gcodeFormat'] === 'bgcode' ? { gcodeFormat: 'bgcode' as const } : {}),
     ...(typeof v['fileName'] === 'string' && v['fileName'] ? { fileName: v['fileName'] } : {}),
@@ -168,6 +170,7 @@ export function createTauriSlicer(): SlicerHost {
         stats: info.stats,
         stageMicros,
         wallMs: performance.now() - started,
+        ...(info.engineWallMs !== undefined ? { engineWallMs: info.engineWallMs } : {}),
         warnings: info.warnings.map((w) => ({ code: WARNING_CODES.has(w.code as SliceWarning['code']) ? (w.code as SliceWarning['code']) : 'unsupported_setting', message: w.message, ...(w.layer !== undefined ? { layer: w.layer } : {}) })),
         ...(info.gcodeFormat ? { gcodeFormat: info.gcodeFormat } : {}),
         ...(info.fileName ? { fileName: info.fileName } : {}),
