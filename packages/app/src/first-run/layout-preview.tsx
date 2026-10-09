@@ -10,6 +10,7 @@ import { formatShortcut } from '../lib/keys'
 import type { LookPreview, PreviewNote } from './look-preview'
 import { MouseTry } from './mouse-try'
 import { appName } from '../edition'
+import { useApp } from '../state/store'
 
 /** The glyph on a plate note's chip. */
 const GESTURE_ICON: Record<string, IconName> = { scroll: 'trackpad-scroll', 'space-pan': 'keyboard', 'object-drag': 'move', views: 'iso-view', 'one-layer': 'layers', orbit: 'gesture-orbit', 'double-click': 'mouse-left' }
@@ -62,6 +63,9 @@ export function LayoutPreview({ preview, map, label, paintKey, autoSlice, head, 
   const bar = useRef<HTMLDivElement>(null)
   const [pins, setPins] = useState<Pin[]>([])
   useTabIds(bar, preview.tabs.map((t) => t.id))
+  // The settings mode chip in the pane title shows the mode picked beside the preview.
+  const stored = useApp((s) => s.settingsMode)
+  const mode = preview.modes.includes(stored) ? stored : 'advanced'
 
   useLayoutEffect(() => {
     const el = win.current
@@ -101,19 +105,18 @@ export function LayoutPreview({ preview, map, label, paintKey, autoSlice, head, 
           </div>
           <div className="frp-body">
             <div className="frp-side" aria-hidden="true" inert>
-              <span className="frp-side-h">Printer and settings</span>
+              <span className="frp-side-h">
+                <span>Printer and settings</span>
+                <i className="frp-mode-chip">
+                  {MODE_LABEL[mode] ?? mode}
+                  <Icon name="chevron-down" size={8} />
+                </i>
+              </span>
               {preview.sidebar.map((s) => (
                 <div className="frp-sec" key={s} data-sec={s}>
                   <span className="frp-sec-h">{s}</span>
                   {s === 'Print settings' ? (
                     <>
-                      <span className="frp-modes">
-                        {preview.modes.map((m, i) => (
-                          <i key={m} data-on={i === 0 ? true : undefined}>
-                            {MODE_LABEL[m] ?? m}
-                          </i>
-                        ))}
-                      </span>
                       <span className="frp-goal">
                         {GOALS.map((g, i) => (
                           <i key={g.label} data-on={i === 1 ? true : undefined}>

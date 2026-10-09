@@ -204,6 +204,10 @@
 .fr-card-sum { color: var(--muted); font-size: var(--fs-md); }
 .fr-card .fr-radio { margin-top: 0; }
 
+.fr-mode { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: var(--s-2) var(--s-3); }
+.fr-mode-h { font-size: var(--fs-body); font-weight: var(--fw-semibold); }
+.fr-mode .sx-seg { justify-self: start; }
+.fr-mode-hint { grid-column: 1 / -1; margin: 0; color: var(--muted); font-size: var(--fs-md); }
 .fr-import { border: 1px solid var(--line-soft); border-radius: var(--r-md); background: var(--ink-1); padding: var(--s-4); }
 .fr-import[data-off] { border-style: dashed; background: none; }
 .fr-import-h { display: flex; align-items: center; gap: 8px; font-size: var(--fs-body); font-weight: var(--fw-semibold); margin: 0 0 var(--s-1); }
@@ -248,15 +252,14 @@
 
 .frp-body { display: grid; grid-template-columns: 24.2% minmax(0, 1fr); min-height: 0; border-radius: 0 0 var(--r-md) var(--r-md); overflow: hidden; }
 .frp-side { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--line-soft); background: var(--ink-1); font-size: var(--m-fs); overflow: hidden; }
-.frp-side-h { padding: 7px 10px; font-weight: var(--fw-semibold); border-bottom: 1px solid var(--line-soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.frp-side-h { display: flex; align-items: center; gap: 6px; padding: 7px 10px; font-weight: var(--fw-semibold); border-bottom: 1px solid var(--line-soft); white-space: nowrap; }
+.frp-side-h > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.frp-mode-chip { flex: none; display: inline-flex; align-items: center; gap: 2px; font-style: normal; font-weight: var(--fw-medium); font-size: calc(8px * var(--text-scale)); color: var(--fg); padding: 1px 5px; border: 1px solid var(--line); border-radius: 999px; background: var(--ink-2); }
 .frp-sec { display: flex; flex-direction: column; gap: 5px; padding: 7px 10px 8px; border-bottom: 1px solid var(--line-soft); }
 .frp-sec-h { font-weight: var(--fw-semibold); font-size: var(--m-fs-s); }
 .frp-sk { display: flex; flex-direction: column; gap: 4px; }
 .frp-sk i { display: block; height: 4px; border-radius: 2px; background: var(--ink-3); width: 78%; }
 .frp-sk i + i { width: 52%; }
-.frp-modes { display: flex; gap: 2px; padding: 2px; border: 1px solid var(--line-soft); border-radius: 5px; background: var(--ink-2); }
-.frp-modes i { flex: 1; min-width: 0; font-style: normal; font-size: calc(8px * var(--text-scale)); text-align: center; color: var(--muted); padding: 2px 0; border-radius: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.frp-modes i[data-on] { background: var(--ink-4); color: var(--fg); }
 .frp-goal { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin-top: 3px; border: 1px solid var(--line-soft); border-radius: 5px; overflow: hidden; }
 .frp-goal i { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 4px 0 3px; font-style: normal; font-size: calc(7.5px * var(--text-scale)); color: var(--muted); min-width: 0; overflow: hidden; }
 .frp-goal i + i { border-left: 1px solid var(--line-soft); }
