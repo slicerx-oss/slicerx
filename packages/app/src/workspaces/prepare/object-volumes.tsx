@@ -17,6 +17,7 @@ import { useFilamentCount } from '../../filament/count'
 import { fuzzyScore } from '../../commands/fuzzy'
 import { EDITABLE, Field, visibleLevels } from './expert-settings'
 import { effectiveMode, useLayout } from '../../first-run/look'
+import './object-volumes.css'
 
 const ROLES = Object.keys(ROLE_LABEL) as VolumeRole[]
 const SHAPES: { value: PrimitiveShape; label: string }[] = [
@@ -114,7 +115,7 @@ export function ObjectVolumes() {
   const run = (fn: () => Promise<string>) => void fn().then(setOpen).catch((e: unknown) => toast(e instanceof Error ? e.message : String(e), 'error'))
   return (
     <section className="obj-volumes" aria-label="Volumes" data-section="volumes">
-      <h4 className="sx-eyebrow">Volumes</h4>
+      <h4 className="obj-volumes-h">Volumes</h4>
       {volumes.length === 0 ? <p className="sx-small sx-muted">Cut a hole, keep support out of a spot or force it in. Add a volume from a shape.</p> : null}
       <ul className="vol-list">
         {volumes.map((v) => (

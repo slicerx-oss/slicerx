@@ -557,6 +557,69 @@ test('the object list renames an object, sets a part filament, and leaves an obj
   await expect(row).not.toHaveClass(/off/)
 })
 
+test('the object row and the estimate use plain words: parts, slot names, and the engine detail in tooltips', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('slicerx.debug', '1'))
+  await prepare(page)
+  const row = page.locator('li.obj').first()
+  const meta = row.locator('.obj-meta')
+  await expect(meta).toHaveText('2 parts')
+  await expect(meta).toHaveAttribute('data-tip-title', /^\d[\d,]* triangles$/)
+  // A part's filament reads as its slot, type and color, as the printer's slots do.
+  await row.locator('.obj-h').click()
+  const options = await row.getByLabel(/^Filament for /).first().locator('option').allTextContents()
+  expect(options[0]).toMatch(/^\S+ [A-Z][\w-]* [A-Z][a-z]+( [a-z]+)?$/)
+  expect(options.join('|')).not.toMatch(/Filament \d/)
+  // Developer mode shows the triangles inline.
+  await page.evaluate(() => (window as unknown as { __sx: { setState(p: unknown): void } }).__sx.setState({ settingsMode: 'developer' }))
+  await expect(meta).toHaveText(/^2 parts, \d[\d,]* triangles$/)
+  await page.evaluate(() => (window as unknown as { __sx: { setState(p: unknown): void } }).__sx.setState({ settingsMode: 'advanced' }))
+  // After a slice: the time's tooltip says how long it took; no threads note, no Warnings row at zero.
+  const before = await sliceCount(page)
+  await page.getByRole('button', { name: 'Slice plate' }).click()
+  await expect(sliced(page, before)).toBeVisible({ timeout: 120_000 })
+  const estimate = page.locator('[data-section="estimate"]')
+  await expect(estimate.locator('.est-time')).toHaveAttribute('data-tip-title', /^Sliced in \d+(\.\d)? (ms|s)( on \d+ threads)?$/)
+  await expect(estimate).not.toContainText('threads')
+  await expect(estimate.locator('dt', { hasText: 'Warnings' })).toHaveCount(0)
+})
+
+test('the Volumes heading reads in sentence case', async ({ page }) => {
+  await prepare(page)
+  const heading = page.locator('[data-section="volumes"] .obj-volumes-h')
+  await expect(heading).toHaveText('Volumes')
+  expect(await heading.evaluate((el) => getComputedStyle(el).textTransform)).toBe('none')
+})
+
+// Screenshots for review: SX_SHOTS=1, saved to SX_SHOTS_DIR (test-results/shots by default).
+test('shots: the object row, part filaments and the estimate in plain words, light and dark', async ({ page }, info) => {
+  test.skip(!process.env['SX_SHOTS'], 'SX_SHOTS=1 only')
+  test.slow()
+  const dir = process.env['SX_SHOTS_DIR'] ?? info.outputPath('shots')
+  const width = page.viewportSize()?.width ?? 0
+  await page.addInitScript(() => localStorage.setItem('slicerx.debug', '1'))
+  await prepare(page)
+  const before = await sliceCount(page)
+  await page.getByRole('button', { name: 'Slice plate' }).click()
+  await expect(sliced(page, before)).toBeVisible({ timeout: 120_000 })
+  const row = page.locator('li.obj').first()
+  await row.locator('.obj-h').click()
+  for (const scheme of ['light', 'dark'] as const) {
+    await page.evaluate((s) => (window as unknown as { __sx: { setState(p: unknown): void } }).__sx.setState({ scheme: s, themeFollowsSystem: false }), scheme)
+    await expect(page.locator('html')).toHaveAttribute('data-sx-theme', new RegExp(scheme))
+    await row.evaluate((el) => el.scrollIntoView({ block: 'center' }))
+    await row.locator('.obj-meta').hover()
+    await page.waitForTimeout(700)
+    await page.screenshot({ path: `${dir}/plain-object-row-${scheme}-${width}.png` })
+    const time = page.locator('[data-section="estimate"] .est-time')
+    await page.mouse.move(0, 0)
+    await page.waitForTimeout(300)
+    await time.hover()
+    await expect(page.getByRole('tooltip').filter({ hasText: /^Sliced in/ })).toBeVisible()
+    await page.waitForTimeout(300)
+    await page.screenshot({ path: `${dir}/plain-estimate-${scheme}-${width}.png` })
+  }
+})
+
 test('seam paint changes where the seam lands in the sliced G-code', async ({ page, isMobile }) => {
   test.skip(isMobile, 'Painting needs a mouse')
   test.slow()
