@@ -314,12 +314,19 @@ export class PlateReveal {
     b.height = 128
     const g = b.getContext('2d')
     if (g) {
+      // The accent, faded by an alpha-only mask: a gradient straight to 'transparent' passes through gray, which shows
+      // as a dull smudge on a light theme.
+      g.globalCompositeOperation = 'source-over'
       g.clearRect(0, 0, 128, 128)
+      g.fillStyle = accent
+      g.fillRect(0, 0, 128, 128)
       const grad = g.createRadialGradient(64, 64, 0, 64, 64, 64)
-      grad.addColorStop(0, accent)
-      grad.addColorStop(1, 'transparent')
+      grad.addColorStop(0, 'rgba(255,255,255,1)')
+      grad.addColorStop(1, 'rgba(255,255,255,0)')
+      g.globalCompositeOperation = 'destination-in'
       g.fillStyle = grad
       g.fillRect(0, 0, 128, 128)
+      g.globalCompositeOperation = 'source-over'
     }
     this.bloom = b
     this.bloomColor = accent
