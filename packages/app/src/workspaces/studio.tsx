@@ -32,6 +32,7 @@ import { useBoundValues } from './prepare/object-tools'
 import { SliceLookSwitch } from './prepare/slice-look'
 import { ParkedChip } from './prepare/parked-chip'
 import { SliceProgress } from './slice-progress'
+import { useOverlayOffset } from '../lib/overlay-offset'
 
 const PREPARE_LEFT: PaneSection[] = [
   { id: 'printer', icon: 'printer', label: 'Printer' },
@@ -85,6 +86,9 @@ export function Studio() {
   const sliceState = useApp((s) => (s.slice.status === 'done' ? (s.slice.stale ? 'stale' : 'current') : s.slice.status))
   const slicesDone = useApp((s) => s.slicesDone)
   const other = side === 'left' ? 'right' : 'left'
+  // Toasts center over the viewport and sit above the plate bar and the playback bar, not on top of them.
+  const vpRef = useRef<HTMLElement>(null)
+  useOverlayOffset(vpRef)
 
   // Painting, brim ears and lay on face are print setup: they close when Design opens.
   // The full geometry engine starts loading on the way into Design, so its first tool does not wait.
@@ -142,7 +146,7 @@ export function Studio() {
         </SidePane>
       )}
 
-      <section className="vp" aria-label="Plate">
+      <section className="vp" aria-label="Plate" ref={vpRef}>
         <ViewportHost layers={layers} />
         <SliceProgress />
         {design || !hasPreview ? null : <SliceLookSwitch />}
