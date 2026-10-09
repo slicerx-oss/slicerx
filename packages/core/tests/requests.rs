@@ -186,9 +186,12 @@ fn height_ranges_change_temperature_flow_speed_and_pressure_advance() {
     assert!(g.contains("SET_PRESSURE_ADVANCE ADVANCE=0.04\n"));
     assert!(g.contains("SET_PRESSURE_ADVANCE ADVANCE=0\n"));
     assert!(!plain.gcode.windows(20).any(|w| w == b"SET_PRESSURE_ADVANCE"));
-    // Outer walls slow to 77 mm/s in the third range only.
-    assert!(g.contains("G1 F4620\n"));
-    assert!(!text(&plain).contains("G1 F4620\n"));
+    // Outer walls slow to 77 mm/s in the third range: on every layer there. Without the range a few stretches of
+    // outer wall still pass 77 mm/s on their way to an overhang (the slowdown is point by point), so the plain run
+    // is allowed those.
+    let at_77 = |t: &str| t.matches("G1 F4620\n").count();
+    let (with, without) = (at_77(&g), at_77(&text(&plain)));
+    assert!(with > without + 50, "{with} against {without} feeds of 77 mm/s");
     // Higher flow in the second range uses more filament than the plain run.
     assert!(r.report.stats.filament_mm[0] > plain.report.stats.filament_mm[0]);
     // Shards write the same bytes.
