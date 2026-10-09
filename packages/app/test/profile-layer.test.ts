@@ -2,7 +2,8 @@
 // Copyright (C) 2026 The SlicerX contributors
 import { afterEach, describe, expect, it } from 'vitest'
 import { defaultConfig } from '@slicerx/settings/defaults'
-import { goalEasy, presetOwnValue, resolveConfig, setProfileLayer } from '../src/adapters/config'
+import { GOALS, goalEasy, presetOwnValue, resolveConfig, setProfileLayer } from '../src/adapters/config'
+import { goalSubtitle } from '../src/lib/estimate-line'
 import { buildProfileLayer } from '../src/adapters/profile'
 import { changedControls } from '../src/state/profile-sync'
 import { trustOptions } from '../src/state/actions'
@@ -121,6 +122,48 @@ describe('nozzle size', () => {
     const w = (l: typeof four): number => Number({ ...defaultConfig(), ...l!.values }['outer_wall_line_width'])
     expect(w(six)).toBeGreaterThan(w(four))
     expect(six!.nozzles).toContain(0.8)
+  })
+
+  it('carries what each goal gives on the printer and nozzle in use, for the Goal tiles', async () => {
+    const four = await buildProfileLayer({ printer: P1S, tier: 'standard', slots: [{ type: 'PLA' }] })
+    const six = await buildProfileLayer({ printer: P1S, tier: 'fine', slots: [{ type: 'PLA' }], nozzle: 0.6, nozzleFrom: 'choice' })
+    const lines = (l: typeof four) => GOALS.map((g) => goalSubtitle(g, l!.goalValues[g]))
+    // Every tile has words, the tier in use reads what the layer slices with, and the layers get thinner from Draft to Fine.
+    for (const line of [...lines(four), ...lines(six)]) expect(line).toMatch(/^(\d\.\d\d mm|\d+ walls)$/)
+    expect(goalSubtitle('standard', four!.goalValues.standard)).toBe(`${Number({ ...defaultConfig(), ...four!.values }['layer_height']).toFixed(2)} mm`)
+    expect(goalSubtitle('fine', six!.goalValues.fine)).toBe(`${Number({ ...defaultConfig(), ...six!.values }['layer_height']).toFixed(2)} mm`)
+    const h = (l: typeof four, g: 'draft' | 'standard' | 'fine') => Number(l!.goalValues[g]['layer_height'])
+    expect(h(four, 'draft')).toBeGreaterThan(h(four, 'standard'))
+    expect(h(four, 'standard')).toBeGreaterThan(h(four, 'fine'))
+    // A 0.6 mm nozzle shows its own numbers, not the 0.4 mm ones.
+    expect(lines(six)).not.toEqual(lines(four))
+    expect(h(six, 'standard')).not.toBe(h(four, 'standard'))
+    // The 0.6 mm Standard is the maker's default for the nozzle (0.30 mm), not the thinnest preset Bambu also calls Standard.
+    expect(h(six, 'standard')).toBe(0.3)
+  })
+
+  it('every nozzle has Draft thicker than Standard and Fine thinner, deriving only the tiers the maker has no preset for', async () => {
+    const ladder: Record<string, [number, number, number]> = {}
+    for (const nozzle of [0.2, 0.4, 0.6, 0.8]) {
+      const l = await buildProfileLayer({ printer: P1S, tier: 'standard', slots: [{ type: 'PLA' }], nozzle, nozzleFrom: 'choice' })
+      const v = (g: 'draft' | 'standard' | 'fine') => Number(l!.goalValues[g]['layer_height'])
+      ladder[String(nozzle)] = [v('draft'), v('standard'), v('fine')]
+      expect(v('draft'), `${nozzle} draft`).toBeGreaterThan(v('standard'))
+      expect(v('standard'), `${nozzle} standard`).toBeGreaterThan(v('fine'))
+      // Within 25 to 75 percent of the nozzle.
+      for (const g of ['draft', 'fine'] as const) {
+        expect(v(g)).toBeGreaterThanOrEqual(0.25 * nozzle - 1e-9)
+        expect(v(g)).toBeLessThanOrEqual(0.75 * nozzle + 1e-9)
+      }
+    }
+    // The maker's presets where it has them (0.4 mm, the 0.2 mm Fine), the others scaled from that nozzle's Standard by the 0.4 mm ratios.
+    expect(ladder).toEqual({ '0.2': [0.14, 0.1, 0.06], '0.4': [0.28, 0.2, 0.12], '0.6': [0.42, 0.3, 0.18], '0.8': [0.56, 0.4, 0.24] })
+  })
+
+  it('slices a derived tier at its own layer height, so the tile and the print agree', async () => {
+    const layer = await buildProfileLayer({ printer: P1S, tier: 'draft', slots: [{ type: 'PLA' }], nozzle: 0.6, nozzleFrom: 'choice' })
+    expect(Number(layer!.values['layer_height'])).toBe(0.42)
+    expect(goalSubtitle('draft', layer!.goalValues.draft)).toBe('0.42 mm')
   })
 
   it('a size the printer does not offer falls back to its default nozzle', async () => {
