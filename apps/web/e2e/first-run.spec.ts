@@ -73,6 +73,9 @@ test('the scan finds the printer, the connection tests itself, then the slicer q
   await expect(cards.nth(1)).toHaveAttribute('aria-checked', 'true')
   await cards.nth(1).press('ArrowUp')
   await expect(page.locator('html')).toHaveAttribute('data-look', 'bambu-studio')
+  // The settings mode, prefilled: a fresh install starts in Simple.
+  await expect(page.getByTestId('setup-mode-simple')).toHaveAttribute('aria-checked', 'true')
+  await expect(page.getByText('Change it any time from the chip at the top of the Slice sidebar.')).toBeVisible()
   await noHorizontalScroll(page)
   await page.locator('.fr-foot').getByRole('button', { name: 'Next' }).click()
 
@@ -176,7 +179,7 @@ test('the theme step: every theme as a card, the mode and flavors apply at once 
   const prefs = JSON.parse((await page.evaluate(() => localStorage.getItem('slicerx.prefs.v1'))) ?? '{}') as { themeIds: { dark: string; light: string }; appearance: { colorVision: string }; firstRun: { version: number } }
   expect(prefs.themeIds).toEqual({ dark: 'subban-dark', light: 'subban-light' })
   expect(prefs.appearance.colorVision).toBe('redgreen')
-  expect(prefs.firstRun.version).toBe(2)
+  expect(prefs.firstRun.version).toBe(3)
 })
 
 test('Settings, Look and feel: theme, accent, text and accessibility; Slicing and modeling holds auto slice', async ({ page }) => {
@@ -221,7 +224,7 @@ test('a profile from an earlier onboarding goes through setup again, prefilled, 
     // As 0.2.2 left it: setup finished with no version, the old SlicerX theme ids, the Bambu look, a printer, slicing on open.
     localStorage.setItem(
       'slicerx.prefs.v1',
-      JSON.stringify({ workspace: 'prepare', printerId: 'bay-1', scheme: 'dark', themeIds: { dark: 'slicerx-dark', light: 'slicerx-light' }, lookAndFeel: { id: 'bambu-studio' }, toolpathPalette: 'colorblind', modelModeDefault: 'slice', firstRun: { completedAt: '2026-10-01T00:00:00.000Z', step: 'done', look: { id: 'bambu-studio' }, printerId: 'bay-1' } }),
+      JSON.stringify({ workspace: 'prepare', printerId: 'bay-1', scheme: 'dark', themeIds: { dark: 'slicerx-dark', light: 'slicerx-light' }, lookAndFeel: { id: 'bambu-studio' }, toolpathPalette: 'colorblind', modelModeDefault: 'slice', settingsMode: 'advanced', firstRun: { completedAt: '2026-10-01T00:00:00.000Z', step: 'done', look: { id: 'bambu-studio' }, printerId: 'bay-1' } }),
     )
   })
   await page.goto('./')
@@ -237,11 +240,35 @@ test('a profile from an earlier onboarding goes through setup again, prefilled, 
   await expect(page.getByRole('list', { name: 'Your printers' }).locator('li').first()).toContainText('Slices for this one')
   await page.locator('.fr-foot').getByRole('button', { name: 'Next' }).click()
   await expect(page.getByRole('radiogroup', { name: 'Slicer you use now' }).getByRole('radio', { name: /Bambu Studio/ })).toHaveAttribute('aria-checked', 'true')
+  // The settings mode question is new in this onboarding, prefilled with the mode they use.
+  await expect(page.getByTestId('setup-mode-advanced')).toHaveAttribute('aria-checked', 'true')
+  await page.getByTestId('setup-mode-expert').click()
+  await expect(page.getByTestId('setup-mode-expert')).toHaveAttribute('aria-checked', 'true')
   await page.getByRole('button', { name: 'Skip, use defaults' }).click()
   await expect(page.locator('.fr')).toHaveCount(0)
   const prefs = JSON.parse((await page.evaluate(() => localStorage.getItem('slicerx.prefs.v1'))) ?? '{}') as Record<string, unknown>
-  expect(prefs).toMatchObject({ printerId: 'bay-1', lookAndFeel: { id: 'bambu-studio' }, themeIds: { dark: 'subban-dark', light: 'subban-light' }, appearance: { colorVision: 'redgreen' }, firstRun: { version: 2, printerId: 'bay-1' } })
+  expect(prefs).toMatchObject({ printerId: 'bay-1', lookAndFeel: { id: 'bambu-studio' }, themeIds: { dark: 'subban-dark', light: 'subban-light' }, appearance: { colorVision: 'redgreen' }, settingsMode: 'expert', firstRun: { version: 3, printerId: 'bay-1' } })
   // Once through, it does not come back.
+  await page.reload()
+  await expect(page.locator('.fr')).toHaveCount(0)
+})
+
+test('a profile that finished the version 2 onboarding goes through setup again for the settings mode question', async ({ page }) => {
+  await page.addInitScript(() => {
+    if (localStorage.getItem('sx-e2e-seeded')) return
+    localStorage.setItem('sx-e2e-seeded', '1')
+    localStorage.setItem('slicerx.prefs.v1', JSON.stringify({ workspace: 'prepare', printerId: 'bay-1', settingsMode: 'simple', firstRun: { completedAt: '2026-10-07T00:00:00.000Z', step: 'done', look: { id: 'slicerx' }, printerId: 'bay-1', version: 2 } }))
+  })
+  await page.goto('./')
+  await expect(page.getByRole('heading', { name: 'Pick a theme' })).toBeVisible()
+  await page.locator('.fr-foot').getByRole('button', { name: 'Next' }).click()
+  await page.locator('.fr-foot').getByRole('button', { name: 'Next' }).click()
+  await expect(page.getByRole('heading', { name: 'Which slicer do you use now?' })).toBeVisible()
+  await expect(page.getByTestId('setup-mode-simple')).toHaveAttribute('aria-checked', 'true')
+  await page.getByTestId('setup-mode-advanced').click()
+  await page.getByRole('button', { name: 'Skip, use defaults' }).click()
+  await expect(page.locator('.fr')).toHaveCount(0)
+  await expect(page.getByTestId('slice-mode-chip')).toHaveText('Advanced')
   await page.reload()
   await expect(page.locator('.fr')).toHaveCount(0)
 })
@@ -294,4 +321,29 @@ test('choosing CAD design opens the plate in Design, now and on the next launch,
   await expect(page.locator('.sx-tab[data-mode="design"]')).toHaveAttribute('aria-current', 'page')
   await page.reload()
   await expect(page.locator('.sx-tab[data-mode="slice"]')).toHaveAttribute('aria-current', 'page')
+})
+
+// Screenshots for review: SX_SHOTS=1, saved to SX_SHOTS_DIR (test-results/shots by default).
+test('shots: the settings mode question in the slicer step, light and dark', async ({ page }, info) => {
+  test.skip(!process.env['SX_SHOTS'], 'SX_SHOTS=1 only')
+  const dir = process.env['SX_SHOTS_DIR'] ?? info.outputPath('shots')
+  const width = page.viewportSize()?.width ?? 0
+  await page.addInitScript(() => localStorage.setItem('slicerx.debug', '1'))
+  await page.addInitScript(() => {
+    if (localStorage.getItem('sx-e2e-seeded')) return
+    localStorage.setItem('sx-e2e-seeded', '1')
+    localStorage.setItem('slicerx.prefs.v1', JSON.stringify({ workspace: 'prepare', printerId: 'bay-1', settingsMode: 'advanced', firstRun: { completedAt: '2026-10-07T00:00:00.000Z', step: 'done', look: { id: 'slicerx' }, printerId: 'bay-1', version: 2 } }))
+  })
+  await page.goto('./')
+  await page.locator('.fr-foot').getByRole('button', { name: 'Next' }).click()
+  await page.locator('.fr-foot').getByRole('button', { name: 'Next' }).click()
+  const question = page.getByRole('group', { name: 'Settings mode' })
+  await expect(question).toBeVisible()
+  for (const scheme of ['light', 'dark'] as const) {
+    await page.evaluate((s) => (window as unknown as { __sx: { setState(p: unknown): void } }).__sx.setState({ scheme: s, themeFollowsSystem: false }), scheme)
+    await question.evaluate((el) => el.scrollIntoView({ block: 'center' }))
+    await page.mouse.move(0, 0)
+    await page.waitForTimeout(400)
+    await page.screenshot({ path: `${dir}/setup-mode-${scheme}-${width}.png` })
+  }
 })
