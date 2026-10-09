@@ -127,6 +127,8 @@ export async function openModelFiles(host: Host, opts: { fresh?: boolean } = {})
 async function startFresh(): Promise<boolean> {
   opened++
   if (!(await confirmDiscard('open another design'))) return false
+  // loading first, so the 3D view holds the old scene through the clear until the new model draws
+  set({ plateLoading: true })
   clearProject()
   return true
 }

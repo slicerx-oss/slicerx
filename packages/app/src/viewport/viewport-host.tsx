@@ -335,6 +335,11 @@ export function ViewportHost({ layers }: { layers: boolean }) {
         const rebuilt = first || key !== keyBefore || s.bed !== prev.bed || s.extruderAreas !== prev.extruderAreas
         towerBefore = shown
         keyBefore = key
+        // A new project opening over the old one: the view keeps the old scene until the new model's first frame and
+        // crossfades to it, so it never shows an empty plate in between. An open that ends empty lets go.
+        const view = vp as unknown as Viewport
+        if (!first && s.plateLoading && s.plate.length === 0 && prev.plate.length > 0) view.holdScene?.(true)
+        else if (!first && !s.plateLoading && prev.plateLoading) view.holdScene?.(false)
         // Fit notes and markers belong to the objects on the plate: a new project or a removed object takes its own along.
         if (s.plate !== prev.plate) keepFits(s.plate.map((p) => p.id))
         if (rebuilt) vp.setPlate(platePayload(s, shown), { keepCamera: !first && !reframesOnRebuild(prev, s) })

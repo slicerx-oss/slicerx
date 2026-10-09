@@ -603,6 +603,12 @@ export interface Viewport {
   setBedAlert(on: boolean): void
   /** Hides the bed for modeling: a plain ground grid at bed level, the camera and objects unchanged. */
   setGround(on: boolean): void
+  /**
+   * Holds the scene on screen while a newly opened model replaces it: an empty plate and a cleared preview wait, and
+   * the first plate with objects swaps in under a short crossfade. Off lets anything waiting through at once (an open
+   * that failed leaves the plate empty).
+   */
+  holdScene(on: boolean): void
   /** Hatches the parts of the bed nothing may print on (polygons in bed coordinates, mm). An empty list clears them. */
   setExcludedAreas(areas: readonly (readonly [number, number])[][]): void
   /** Brightens one dual nozzle zone (by id); null resets. */
