@@ -104,6 +104,8 @@ describe('keymaps', () => {
     for (const id of LOOK_IDS) expect(KEYMAPS[id]['model.mode'], id).toBe('Mod+E')
     // The edge tabs' keys are the same everywhere: [ and ] for the side panels, Mod+J for the bottom one.
     for (const id of LOOK_IDS) expect([KEYMAPS[id]['panel.left'], KEYMAPS[id]['panel.right'], KEYMAPS[id]['panel.bottom']], id).toEqual(['[', ']', 'Mod+J'])
+    // Model's pick filter: Alt and a digit in every look, since bare digits are views.
+    for (const id of LOOK_IDS) expect([KEYMAPS[id]['select.object'], KEYMAPS[id]['select.face'], KEYMAPS[id]['select.edge']], id).toEqual(['Alt+1', 'Alt+2', 'Alt+3'])
   })
 
   it('matches the research on the disputed keys', () => {
