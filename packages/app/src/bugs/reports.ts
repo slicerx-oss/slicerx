@@ -7,48 +7,12 @@
 import type { Host } from '@slicerx/contracts'
 import { crashReportsRequired, isFork, UPSTREAM_REPORTS, type EditionConfig } from '@slicerx/edition-config'
 import { appStore, get, set, type AppState } from '../state/store'
+import { nativeCrashHost, startCrashCapture, takeOver, type CrashInfo } from './crash'
 import { logTail, note, previousLogTail, startLogCapture, unloadedCleanly } from './log'
 import { enqueue, flush, supabaseSender, type FlushResult, type SendResult, type Sender } from './outbox'
 import { browserFromUserAgent, finishReport, LIMITS, osFromUserAgent, type BugReport, type RawReport } from './report'
 
-/** A crash the desktop shell recorded: a Rust panic, or the web view's process dying. */
-export interface NativeCrash {
-  /** The report file's name, handed back to ack once the report is queued. */
-  file: string
-  source: 'panic' | 'webview'
-  title: string
-  stack: string
-  /** When it happened, in ms since the epoch. */
-  at: number
-}
-
-export interface NativeCrashes {
-  reports: NativeCrash[]
-  /** How many times the page has loaded in this run of the shell; more than 1 means the web view reloaded. */
-  pageLoads: number
-  /** The operating system and its version, as the shell reads it. */
-  os: string
-}
-
-/** The desktop shell's side of crash reporting (apps/desktop/src/host/crash.ts). */
-export interface CrashHost {
-  /** `pageLoad` is true once per page load, so the shell can count reloads. */
-  take(pageLoad: boolean): Promise<NativeCrashes>
-  ack(files: string[]): Promise<void>
-  /** Panics on a background thread of the shell, for the developer test command. */
-  testPanic(): Promise<void>
-}
-
-let crashHost: CrashHost | null = null
-
-/** Called once by an app entry with a native shell (the desktop app). */
-export function registerCrashHost(h: CrashHost | null): void {
-  crashHost = h
-}
-
-export function nativeCrashHost(): CrashHost | null {
-  return crashHost
-}
+export { nativeCrashHost, registerCrashHost, type CrashHost, type NativeCrash, type NativeCrashes } from './crash'
 
 const MAX_CRASHES_PER_SESSION = 5
 /** Errors browsers raise that are not crashes of ours. */
@@ -206,7 +170,8 @@ async function queueCrash(raw: Omit<RawReport, 'appVersion' | 'commit' | 'os' | 
  * Reports a crash: an error nothing handled, or one a boundary caught. `componentStack` is React's, from
  * an error boundary.
  */
-export function reportCrash(error: unknown, o: { where?: string; componentStack?: string } = {}): void {
+export function reportCrash(error: unknown, o: CrashInfo = {}): void {
+  if (o.rejection && !(error instanceof Error)) error = messageOf(error).title.replace(/^Non-error thrown: /, 'Unhandled rejection: ')
   const { title, stack } = messageOf(error)
   if (NOISE.test(title.replace(/^Error: /, ''))) return
   const fullStack = [stack, o.componentStack ? `Component stack:${o.componentStack}` : null].filter(Boolean).join('\n\n') || null
@@ -216,6 +181,7 @@ export function reportCrash(error: unknown, o: { where?: string; componentStack?
 
 /** Queues what the shell recorded since the last launch, and a report when the web view reloaded by itself. */
 async function takeNative(host: Host, pageLoad: boolean): Promise<void> {
+  const crashHost = nativeCrashHost()
   if (!crashHost) return
   const got = await crashHost.take(pageLoad)
   if (ctx) ctx.os = got.os || ctx.os
@@ -268,11 +234,10 @@ export function startBugReports(host: Host, edition: EditionConfig): () => void 
   const offNotes = appStore.subscribe(noteChanges)
   if (crashReportsRequired(edition) && !get().crashReports) set({ crashReports: true })
   installId()
-  const onError = (e: ErrorEvent) => reportCrash(e.error ?? (e.message ? new Error(`${e.message}${e.filename ? ` (${e.filename}:${e.lineno}:${e.colno})` : ''}`) : 'Unknown error'))
-  const onRejection = (e: PromiseRejectionEvent) => reportCrash(e.reason instanceof Error ? e.reason : messageOf(e.reason).title.replace(/^Non-error thrown: /, 'Unhandled rejection: '))
   const onOnline = () => void sendQueued()
-  window.addEventListener('error', onError)
-  window.addEventListener('unhandledrejection', onRejection)
+  // The error listeners are crash.ts's, from startup; crashes that came before this loaded arrive now.
+  const offCapture = startCrashCapture()
+  takeOver(reportCrash)
   window.addEventListener('online', onOnline)
   // Once per page: a second start (React's development double mount) must not count as a reload.
   const first = !pageCounted
@@ -283,8 +248,8 @@ export function startBugReports(host: Host, edition: EditionConfig): () => void 
     .catch(() => undefined)
   return () => {
     offNotes()
-    window.removeEventListener('error', onError)
-    window.removeEventListener('unhandledrejection', onRejection)
+    takeOver(null)
+    offCapture()
     window.removeEventListener('online', onOnline)
   }
 }
@@ -316,6 +281,7 @@ export function triggerTestCrash(): void {
 
 /** The developer test for the shell: a Rust panic, picked up and queued right after. */
 export async function triggerTestPanic(): Promise<void> {
+  const crashHost = nativeCrashHost()
   if (!crashHost || !ctx) return
   seen.clear()
   crashCount = 0

@@ -5,7 +5,7 @@
 // offers Add your printer.
 import { useEffect } from 'react'
 import { useHost } from '../host'
-import { bridgeConnector } from '../link/bridge'
+import { bridgeConnector } from '../link/connector'
 import { useFleet, usePrinters } from '../lib/queries'
 import { useApp } from '../state/store'
 import { openSetup } from './look'

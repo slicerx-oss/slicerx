@@ -6,7 +6,7 @@
 import { noteViewClosing } from '../camera/closing'
 import { Button, Icon } from '@slicerx/ui'
 import { Component, type ErrorInfo, type ReactNode } from 'react'
-import { reportCrash } from '../bugs/reports'
+import { reportCrash } from '../bugs/crash'
 
 interface State {
   error: Error | null

@@ -15,7 +15,7 @@ The SlicerX application, shared by the browser and desktop builds. It talks only
 useHost(), setWorkspace(id), toast(text, tone?), openModelBytes(host, name, bytes)
 registerCommand(spec), searchCommands(query), runCommand(id, input?), commandTools()  // mimir sees tool commands as app.<id>
 setVendorMarks(render)  // optional printer brand artwork, registered by an app entry
-DEMO_MODELS, LayerArt, Swatch, SidePane
+DEMO_MODELS, LayerArt, Swatch
 ```
 
 Shortcuts: Cmd+K (Ctrl+K) command bar, Cmd+1 to Cmd+6 workspaces, Cmd+B and Cmd+Alt+B sidebars, Cmd+Enter slice, Cmd+E export G-code, Cmd+O open a model, ? for the full list.
