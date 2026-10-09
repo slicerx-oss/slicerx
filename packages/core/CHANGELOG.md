@@ -4,14 +4,23 @@ All notable changes to the `sx_core::api` module. The format follows Keep a Chan
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-10-09
+
 ### Fixed
 
 - Bambu Studio's -1 for auto reads as the value it stands for: `raft_first_layer_expansion` as 2 mm and `tree_support_wall_count` as 0, so a project's own settings slice. The raft expansion range checks run only when the print has a raft or supports.
 - `LongBridge`: a `max_bridge_length` of 0 sets no limit, so presets that ship 0 (Bambu Lab) no longer warn about every bridge; findings past the first five are counted as bridges and regions on separate lines.
 
+## [0.1.1] - 2026-10-06
+
 ### Added
 
 - `RequestOptions::stock_gcode_keys` (never read from JSON) and `PrintConfig::trusted_gcode_keys`: custom G-code keys a native caller checked as the maker's stock text, linted as trusted when the rest is not.
+
+## [0.1.0] - 2026-10-05
+
+### Added
+
 - Custom G-code: `machine_start_gcode`, `machine_end_gcode`, `before_layer_change_gcode`, `layer_change_gcode`, `change_filament_gcode`, `filament_start_gcode`, `filament_end_gcode`, run through the placeholder language (`sx_core::template`, `api::render_gcode_template`); `options.layerGcode` for pauses, color changes and custom G-code at a layer.
 - `Mesh::load` reads OBJ and AMF through `sx-geom` (cargo feature `import`, on by default, off in the web WASM build, which loads those formats with the separate `sx-geom` module), with per-part filament slots and colors.
 - Parity with OrcaSlicer, found by `bench/compare/parity.py`: flow spacing between beads, connected sparse infill (`sparse_infill_anchor_max`), internal bridges (feature 16), `thick_bridges`, overhang walls only where a bead hangs completely free, the top surface only on the visible top layer, skirt (`skirt_loops`, `skirt_distance`, `skirt_height`, feature 15).
