@@ -21,8 +21,15 @@ export default defineConfig({
   use: {
     baseURL: `http://127.0.0.1:${port}/studio/`,
     // Software WebGL so the viewport runs on machines and CI runners without a GPU, unless SX_E2E_GPU asks for the GPU.
+    // On the GPU, a graphics process that restarts (several browsers starting theirs at once) leaves Chrome blocking
+    // WebGL for the page, or, after a few restarts, turning hardware graphics off for the browser: the app then opens
+    // in its 2D view and the test fails until a retry gets a new browser. Neither block helps a test run.
     ...(gpu ? { channel: 'chrome' } : {}),
-    launchOptions: { args: gpu ? ['--ignore-gpu-blocklist'] : ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] },
+    launchOptions: {
+      args: gpu
+        ? ['--ignore-gpu-blocklist', '--disable-domain-blocking-for-3d-apis', '--disable-gpu-process-crash-limit']
+        : ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'],
+    },
   },
   projects: [
     { name: 'desktop', use: { browserName: 'chromium', viewport: { width: 1440, height: 900 } } },
