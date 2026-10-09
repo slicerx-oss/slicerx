@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url'
 import { expect, test } from '@playwright/test'
 import { cellsIn, GL_SLOW, recordFrames, spread } from './frames'
 
-test('the plate is drawn right after setup is skipped on a fresh install', async ({ page, isMobile }) => {
+test('the plate is drawn right after setup is skipped on a fresh install', { tag: '@gpu' }, async ({ page, isMobile }) => {
   test.skip(isMobile, 'Runs at desktop width')
   test.slow()
   await page.goto('./')
@@ -44,7 +44,7 @@ test('the plate is drawn right after setup is skipped on a fresh install', async
 type Sx = { getState(): { slice: { status: string; stale?: boolean }; preview: unknown; plate: { name: string }[]; workspace: string; modelMode: string; sliceLook: string } }
 type Vp = { stats(): { segments: number } }
 
-test('a model sliced while setup is open shows its toolpaths in place after setup closes', async ({ page, isMobile }, info) => {
+test('a model sliced while setup is open shows its toolpaths in place after setup closes', { tag: '@gpu' }, async ({ page, isMobile }, info) => {
   test.skip(isMobile, 'Runs at desktop width')
   test.slow()
   await page.addInitScript(() => localStorage.setItem('slicerx.debug', '1'))

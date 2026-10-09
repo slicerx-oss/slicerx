@@ -608,7 +608,7 @@ test('shots: the object row, part filaments and the estimate in plain words, lig
   }
 })
 
-test('seam paint changes where the seam lands in the sliced G-code', async ({ page, isMobile }) => {
+test('seam paint changes where the seam lands in the sliced G-code', { tag: '@gpu' }, async ({ page, isMobile }) => {
   test.skip(isMobile, 'Painting needs a mouse')
   test.slow()
   await page.addInitScript(() => {

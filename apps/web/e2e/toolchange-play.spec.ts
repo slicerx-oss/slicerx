@@ -26,7 +26,7 @@ async function slicedOnTheH2C(page: Page): Promise<void> {
   await expect(page.getByRole('group', { name: 'Layers and moves' })).toBeVisible({ timeout: 120_000 })
 }
 
-test('playback through a tool change on the H2C runs clean and keeps its frame rate', async ({ page, isMobile }) => {
+test('playback through a tool change on the H2C runs clean and keeps its frame rate', { tag: '@gpu' }, async ({ page, isMobile }) => {
   test.skip(isMobile, 'Desktop layout')
   test.slow()
   const errors: string[] = []
