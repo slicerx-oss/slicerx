@@ -255,6 +255,8 @@ describe('the state an agent reads', () => {
     expect(Array.isArray(s['filament'])).toBe(true)
     // Nothing asked of the geometry engine yet in this session.
     expect(s['geometry']).toEqual({ answered: {}, failed: {}, lastError: null, loadError: null })
+    // No slice yet in this session.
+    expect(s['lastSlice']).toBeNull()
   })
 
   it('summarizes a finished slice and every other status', () => {
