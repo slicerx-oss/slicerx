@@ -339,6 +339,81 @@ fn straight_walls_have_no_overhang_pieces() {
     assert!(!text(&run).contains("Overhang wall"));
 }
 
+/// The path (mm) and filament (mm) of the moves under each `;TYPE:` label of `g`.
+fn by_feature(g: &str) -> std::collections::HashMap<String, (f64, f64)> {
+    let mut out: std::collections::HashMap<String, (f64, f64)> = std::collections::HashMap::new();
+    let (mut kind, mut relative) = (String::new(), false);
+    let (mut x, mut y, mut e) = (0.0, 0.0, 0.0);
+    // A chunk of a file starts where the nozzle is not known yet: its first move only places it.
+    let mut placed = false;
+    for l in g.lines() {
+        if let Some(t) = l.strip_prefix(";TYPE:") {
+            kind = t.to_owned();
+            continue;
+        }
+        let code = l.split(';').next().unwrap_or("");
+        match code.split_whitespace().next() {
+            Some("M83") => relative = true,
+            Some("M82") => relative = false,
+            Some("G92") => e = field(code, 'E').unwrap_or(e),
+            Some("G0" | "G1") => {
+                let (nx, ny) = (field(code, 'X').unwrap_or(x), field(code, 'Y').unwrap_or(y));
+                if let Some(v) = field(code, 'E') {
+                    let d = if relative { v } else { v - e };
+                    e = if relative { e } else { v };
+                    if placed && d > 0.0 && (nx != x || ny != y) {
+                        let f = out.entry(kind.clone()).or_default();
+                        f.0 += (nx - x).hypot(ny - y);
+                        f.1 += d;
+                    }
+                }
+                placed |= field(code, 'X').is_some() && field(code, 'Y').is_some();
+                (x, y) = (nx, ny);
+            }
+            _ => {}
+        }
+    }
+    out
+}
+
+#[test]
+fn two_parts_meeting_on_a_layer_plane_cut_as_the_lower_one() {
+    // A 20 mm box up to z 5.5 under a 30 mm box: z 5.5 is the cutting plane of layer 27. Orca's slicer counts
+    // a point on the plane as above it, so that layer is the top of the lower box, and the upper box starts
+    // on layer 28 with its walls over air (Orca 2.4.2: 78.3 mm of outer wall round the lower box on layer 27,
+    // 233.2 mm of overhang wall on layer 28). Two parts of a 3MF meeting on a band boundary hit this.
+    let mesh = Arc::new(Mesh {
+        name: "stacked".into(),
+        parts: vec![
+            cuboid([5.0, 25.0], [5.0, 25.0], [0.0, 5.5], "lower"),
+            cuboid([0.0, 30.0], [0.0, 30.0], [5.5, 10.0], "upper"),
+        ],
+    });
+    let req: SliceRequest = serde_json::from_value(json!({
+        "plate": {"objects": [{"mesh": "s", "transform": [1,0,0,0, 0,1,0,0, 0,0,1,0, 100,100,0,1]}]},
+        "config": {"layer_height": 0.2, "initial_layer_print_height": 0.2, "brim_type": "no_brim"},
+    }))
+    .unwrap();
+    let r = common::run_request(&req, &move |_: &str| Ok(mesh.clone())).unwrap();
+    assert_valid(&r);
+    let g = text(&r);
+    let layers: Vec<&str> = g.split(sx_core::extras::layer_mark(&g)).skip(1).collect();
+    let span = |l: &str, label: &str| {
+        let f = by_feature(l);
+        f.get(label).map_or(0.0, |v| v.0)
+    };
+    // Layer 27: the lower box's walls, nothing over air.
+    assert!(span(layers[27], "Overhang wall") < 1e-6);
+    let outer = span(layers[27], "Outer wall");
+    assert!((outer - 78.3).abs() < 2.0, "{outer} mm of outer wall on layer 27");
+    // Layer 28: the upper box's outer and inner walls hang.
+    let over = span(layers[28], "Overhang wall");
+    assert!(
+        (over - 233.2).abs() < 5.0,
+        "{over} mm of overhang wall on layer 28"
+    );
+}
+
 fn cuboid(x: [f32; 2], y: [f32; 2], z: [f32; 2], name: &str) -> api::MeshPart {
     let mut positions = Vec::new();
     for zi in z {

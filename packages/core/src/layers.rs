@@ -184,6 +184,26 @@ impl LayerPlan {
     pub(crate) fn first_at_or_above(&self, z: f64) -> usize {
         self.slice_z.partition_point(|&s| s < z)
     }
+
+    /// The layers whose cutting plane cuts a span of the mesh from `lo` to `hi`, with points sorted to either
+    /// side as [`on_or_above`] does: a part whose top lies on a plane is cut there, one whose bottom does is not.
+    pub(crate) fn cutting(&self, lo: f64, hi: f64) -> std::ops::Range<usize> {
+        let a = self.slice_z.partition_point(|&s| on_or_above(lo, s));
+        let b = self.slice_z.partition_point(|&s| on_or_above(hi, s));
+        a..b.max(a)
+    }
+}
+
+/// How close to a cutting plane a mesh point counts as lying on it, mm: the rounding of a part's placement
+/// and of the layer heights (Orca slices in single precision, where such points land on the plane).
+const ON_PLANE: f64 = 1e-6;
+
+/// Whether a mesh point at height `z` lies on the upper side of the cutting plane at `plane`. A point on the
+/// plane counts as above it, as in Orca's `slice_facet`: a triangle owns its top edge and vertex, not its
+/// bottom ones, so a face lying on the plane is cut as the top of the part below it. Where two parts meet on
+/// a plane, that layer gets the lower part's outline.
+pub(crate) fn on_or_above(z: f64, plane: f64) -> bool {
+    z >= plane - ON_PLANE
 }
 
 /// One layer of the print where support has layers of its own: its top and thickness (mm), the
