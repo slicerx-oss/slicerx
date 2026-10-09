@@ -147,6 +147,32 @@ pC=$!; lpids="$lpids $!"; sleep 1.5
 release h3 "$h3"; wait "$pA" "$pB" "$pC"
 ok eval '[ "$(tr "\n" " " < "$tmp/order")" = "C A B " ]'
 
+# Slots: <lock>.slots names how many holders may run at once, SX_HEAVY_SLOTS overrides it, and --all takes them all.
+echo 2 > "$dir.slots"
+name="with 2 slots in <lock>.slots, two holders run at once and a third waiter waits"
+hold h4; h4=$!
+hold h5; h5=$!
+waiter 3 w9
+ok eval '[ "$rc" = 75 ] && [ -d "$dir" ] && [ -d "$dir.2" ]'
+name="SX_HEAVY_SLOTS=1 overrides <lock>.slots"
+release h5 "$h5"
+SX_HEAVY_SLOTS=1 waiter 3 w10; ok eval '[ "$rc" = 75 ] && [ ! -d "$dir.2" ]'
+name="a dead holder in the second slot is taken over"
+sleep 0 & dead=$!; wait $dead
+mkdir "$dir.2" && printf 'pid %s since 2026-01-01 00:00:00: fake\n' "$dead" > "$dir.2/owner"
+waiter 20 w11; ok eval '[ "$rc" = 0 ] && [ ! -d "$dir.2" ] && grep -q "taking over a lock left by pid $dead" "$tmp/waiter.out"'
+name="--all waits for every slot, runs alone, and a later waiter does not pass it"
+: > "$tmp/order"
+SX_HEAVY_LOCK=$lock SX_HEAVY_WAIT=60 bash "$heavy" --all sh -c '[ -d "$1" ] && [ -d "$1.2" ] && echo ALL >> "$2"' sh "$dir" "$tmp/order" > /dev/null 2>&1 &
+pAll=$!; lpids="$lpids $!"; sleep 1.5
+SX_HEAVY_LOCK=$lock SX_HEAVY_WAIT=60 bash "$heavy" sh -c 'echo "$1" >> "$2"' sh B "$tmp/order" > /dev/null 2>&1 &
+pB=$!; lpids="$lpids $!"; sleep 3
+# B came after the --all waiter, so it may not take the second slot while the first is still held.
+b_waited=$([ -s "$tmp/order" ] && echo no || echo yes)
+release h4 "$h4"; wait "$pAll" "$pB"
+ok eval '[ "$b_waited" = yes ] && [ "$(tr "\n" " " < "$tmp/order")" = "ALL B " ] && [ ! -d "$dir" ] && [ ! -d "$dir.2" ]'
+rm -f "$dir.slots"
+
 if [ "${1:-}" = cross ]; then
   distro=${2:?usage: heavy-test.sh cross <distro> [<stopped distro>]} stopped=${3:-}
   [ "$side" = msys ] || { echo "cross runs from Git Bash" >&2; exit 2; }
