@@ -3,7 +3,7 @@
 // User actions that touch the host: loading models, slicing, export, sending
 // to a printer. Commands, buttons and Pilot tools all call these.
 import { isGcodeName, openGcodeRef } from '../workspaces/preview/gcode-file'
-import type { ApprovalHost, ApprovalRequest, ApprovalToken, FileRef, Host, JobFile, LayerGcode, PermissionClass, PlateObject, PrintConfig, PrinterHost, PrinterInfo, PrinterStatus, SettingValue, SideEffectAction, SlicerHost } from '@slicerx/contracts'
+import type { ApprovalHost, ApprovalRequest, ApprovalToken, FileRef, Host, JobFile, LayerGcode, MeshHandle, PermissionClass, PlateObject, PrintConfig, PrinterHost, PrinterInfo, PrinterStatus, SettingValue, SideEffectAction, SlicerHost } from '@slicerx/contracts'
 import { followsSlotMap, grantApproval, hashParams, pluginHas, readPreview, slotMapLine } from '@slicerx/contracts'
 import { resolveConfig } from '../adapters/config'
 import { DEFAULT_MODEL, demoModel } from '../lib/demo-models'
@@ -192,6 +192,9 @@ async function addProjectShown(
   if (wasEmpty && (get().projectSettings || get().projectPrinter)) mine(() => clearProject())
   // What the person had before this project, so clearing it later puts their values back.
   const overridesBefore = get().overrides
+  // Every object goes to the engine now, side by side, while the printer is switched: a mesh does not depend on it.
+  const loads = project.plates.map((pl) => pl.objects.map((o) => host.slicer.loadParts(o.name, o.parts)))
+  for (const l of loads.flat()) l.catch(() => undefined)
   // Another slicer's project opens as its own printer, first, so its objects land on that printer's bed.
   const asProject = wasEmpty && !own && project.settingsFrom === 'orca' && hasSettings
   const pp = asProject ? await import('../project/project-printer') : null
@@ -226,13 +229,10 @@ async function addProjectShown(
   const brought = new Set<string>()
   const rangesLeft = new Set<string>()
   const { usableRanges } = await import('../plate/layer-ranges')
-  const entries = async (objects: typeof project.plates[number]['objects']): Promise<PlateEntry[]> => {
+  const entries = async (objects: typeof project.plates[number]['objects'], handles: Promise<MeshHandle>[]): Promise<PlateEntry[]> => {
     const out: PlateEntry[] = []
-    // Every object goes to the engine at once, so the shell parses them side by side instead of one after another.
-    const handles = objects.map((o) => host.slicer.loadParts(o.name, o.parts))
-    for (const h of handles) h.catch(() => undefined)
     for (const [k, o] of objects.entries()) {
-      const handle = await handles[k]!
+      const handle = await (handles[k] ?? host.slicer.loadParts(o.name, o.parts))
       const volumes: PlateVolumeEntry[] = []
       for (const v of o.volumes) {
         // Centered on its own origin with the placement in `local`, so the position fields read as an offset.
@@ -268,7 +268,7 @@ async function addProjectShown(
   }
   for (const [i, plate] of project.plates.entries()) {
     if (plate.objects.length === 0) continue
-    const made = await entries(plate.objects)
+    const made = await entries(plate.objects, loads[i] ?? [])
     openStage('engine')
     if (i > 0) {
       const id = mine(() => addPlate({ ...(plate.sequence ? { sequence: plate.sequence } : {}), ...(plate.nozzleMap ? { nozzleMap: plate.nozzleMap } : {}) }))
