@@ -74,6 +74,7 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | `slice-machine-printer-option` | A printer in that list, with `data-printer-id` |
 | `slice-machine-printer-add` | Add printer, in the list or on the card with no printer |
 | `slice-machine-printer-settings` | Printer settings in the list (Advanced and up) |
+| `slice-machine-model` | The printer's maker and model, muted after its name on the card |
 | `slice-machine-nozzle` | The nozzle chip |
 | `slice-machine-nozzle-option` | A nozzle size in its popover, with `data-nozzle` |
 | `slice-machine-plate` | The plate type chip: the type the active plate prints on, with `data-bed-type` |

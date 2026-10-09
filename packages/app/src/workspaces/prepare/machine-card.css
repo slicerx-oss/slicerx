@@ -7,7 +7,8 @@
 .mc-name { display: flex; align-items: center; gap: 8px; min-width: 0; max-width: 100%; height: 36px; padding: 0 6px 0 2px; border: 1px solid transparent; border-radius: var(--r-md); background: none; color: var(--fg); cursor: pointer; text-align: left; }
 .mc-name:hover, .mc-name[aria-expanded="true"] { background: var(--ink-3); border-color: var(--line-soft); }
 .mc-name:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
-.mc-name .printer-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: var(--fw-semibold) var(--fs-md) var(--f-body); }
+.mc-name .printer-name { flex: none; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: var(--fw-semibold) var(--fs-md) var(--f-body); }
+.mc-name .mc-model { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-md); color: var(--muted); }
 .mc-name > svg:first-child, .mc-name > .vendor-mark { flex: none; }
 .mc-caret { flex: none; color: var(--muted); }
 .mc-chips { display: flex; align-items: center; gap: 6px; flex: none; }
