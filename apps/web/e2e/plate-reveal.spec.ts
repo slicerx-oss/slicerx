@@ -8,7 +8,14 @@ import type { Page } from '@playwright/test'
 import { expect, tab, test, viewportReady } from './fixtures'
 import { alike, cellsIn, diff, recordFrames, type Frame } from './frames'
 
-const playReveal = (page: Page) => page.addInitScript(() => sessionStorage.setItem('sx-reveal', 'always'))
+/** Past setup, on the plate, with the reveal on. */
+const playReveal = (page: Page) =>
+  page.addInitScript(() => {
+    sessionStorage.setItem('sx-reveal', 'always')
+    if (sessionStorage.getItem('sx-e2e')) return
+    sessionStorage.setItem('sx-e2e', '1')
+    localStorage.setItem('slicerx.prefs.v1', JSON.stringify({ workspace: 'prepare', pilot: { mode: 'off' } }))
+  })
 
 /** The picture on screen now: a recording starts with it, so a short one is a snapshot. */
 async function snapshot(page: Page): Promise<Frame> {
