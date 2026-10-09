@@ -18,8 +18,8 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.31.0",
-    "@slicerx/embed": "0.1.0",
-    "@slicerx/mcp": "0.1.0",
+    "@slicerx/embed": "0.1.1",
+    "@slicerx/mcp": "0.1.1",
     "react": "19.3.0",
     "react-dom": "19.3.0"
   },
