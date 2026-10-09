@@ -169,16 +169,18 @@ float viewZ(vec2 uv) {
   return 2.0 * nearFar.x * nearFar.y / (nearFar.y + nearFar.x - z * (nearFar.y - nearFar.x));
 }
 float silhouette(vec2 uv) {
-  float c0 = covered(uv);
+  // only the model's own pixels carry the line, so the background and the ground cost one read
+  if (covered(uv) < 0.5) return 0.0;
   float z0 = viewZ(uv);
+  float k = 0.035 * z0 + 0.5;
   float e = 0.0;
-  for (int i = 0; i < 8; i++) {
-    float an = float(i) * 0.7853982;
-    vec2 d = vec2(cos(an), sin(an)) * texel * edgePx * 0.75;
-    float c = covered(uv + d);
-    // the outline sits on the model's side, so it reads as the model's own edge
-    if (c0 > 0.5 && c < 0.5) e = 1.0;
-    else if (c0 > 0.5 && abs(viewZ(uv + d) - z0) > 0.035 * z0 + 0.5) e = max(e, 0.85);
+  vec2 d = texel * edgePx * 0.75;
+  vec2 o[4];
+  o[0] = vec2(d.x, 0.0); o[1] = vec2(-d.x, 0.0); o[2] = vec2(0.0, d.y); o[3] = vec2(0.0, -d.y);
+  for (int i = 0; i < 4; i++) {
+    vec2 q = uv + o[i];
+    if (covered(q) < 0.5) return 1.0;
+    if (abs(viewZ(q) - z0) > k) e = 0.85;
   }
   return e;
 }
