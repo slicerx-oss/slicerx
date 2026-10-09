@@ -9,8 +9,9 @@ use crate::error::Result;
 use crate::mesh::{self, TriMesh};
 use crate::poly2d::{self, Polygon};
 use crate::vec3::{self, Frame, V2, V3};
+use rustc_hash::{FxBuildHasher, FxHashMap, FxHashSet};
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 const NONE: u32 = u32::MAX;
 
@@ -117,7 +118,7 @@ fn remove_degenerate(m: &mut TriMesh) -> usize {
 
 fn remove_duplicates(m: &mut TriMesh) -> usize {
     let before = m.triangles.len();
-    let mut seen = HashSet::with_capacity(before);
+    let mut seen = FxHashSet::with_capacity_and_hasher(before, FxBuildHasher);
     m.triangles.retain(|t| {
         let mut k = *t;
         k.sort_unstable();
@@ -234,7 +235,7 @@ fn boundary_loops(tris: &[[u32; 3]]) -> Vec<Vec<u32>> {
 }
 
 fn loops_from(boundary: &[(u32, u32, u32)]) -> Vec<Vec<u32>> {
-    let mut out_edges: HashMap<u32, Vec<u32>> = HashMap::new();
+    let mut out_edges: FxHashMap<u32, Vec<u32>> = FxHashMap::default();
     for &(a, b, _) in boundary {
         out_edges.entry(a).or_default().push(b);
     }

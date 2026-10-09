@@ -8,8 +8,8 @@
 use crate::error::{Error, Result};
 use crate::faces::Faces;
 use crate::vec3::{self, V3};
+use rustc_hash::{FxBuildHasher, FxHashMap};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Aabb {
@@ -299,7 +299,8 @@ impl TriMesh {
     fn weld_grid(&self, tol: f64) -> TriMesh {
         let cell = if tol > 0.0 { tol * 2.0 } else { 1e-12 };
         let key = |p: V3| p.map(|c| (c / cell).floor() as i64);
-        let mut grid: HashMap<[i64; 3], Vec<u32>> = HashMap::with_capacity(self.positions.len());
+        let mut grid: FxHashMap<[i64; 3], Vec<u32>> =
+            FxHashMap::with_capacity_and_hasher(self.positions.len(), FxBuildHasher);
         let mut remap = vec![u32::MAX; self.positions.len()];
         let mut out = Vec::with_capacity(self.positions.len());
         let tol2 = tol * tol;
@@ -367,7 +368,8 @@ impl TriMesh {
         for &i in self.triangles.iter().flatten() {
             used[i as usize] = true;
         }
-        let mut seen: HashMap<[u64; 3], u32> = HashMap::with_capacity(self.positions.len());
+        let mut seen: FxHashMap<[u64; 3], u32> =
+            FxHashMap::with_capacity_and_hasher(self.positions.len(), FxBuildHasher);
         let mut remap = vec![u32::MAX; self.positions.len()];
         let mut out: Vec<V3> = Vec::with_capacity(self.positions.len());
         for (i, &p) in self.positions.iter().enumerate() {
@@ -390,7 +392,8 @@ impl TriMesh {
     }
 
     pub fn edge_report(&self) -> EdgeReport {
-        let mut edges: HashMap<(u32, u32), (u32, u32)> = HashMap::with_capacity(self.triangles.len() * 2);
+        let mut edges: FxHashMap<(u32, u32), (u32, u32)> =
+            FxHashMap::with_capacity_and_hasher(self.triangles.len() * 2, FxBuildHasher);
         for t in &self.triangles {
             for k in 0..3 {
                 let (a, b) = (t[k], t[(k + 1) % 3]);
@@ -434,7 +437,7 @@ impl TriMesh {
                 }
             }
         }
-        let mut groups: HashMap<u32, Vec<usize>> = HashMap::new();
+        let mut groups: FxHashMap<u32, Vec<usize>> = FxHashMap::default();
         let mut order = Vec::new();
         for (i, t) in self.triangles.iter().enumerate() {
             let r = find(&mut parent, t[0]);
@@ -474,7 +477,7 @@ impl TriMesh {
     /// These triangles with only the vertices they use. They carry no faces; `subset_of` keeps them.
     #[must_use]
     pub fn subset(&self, tris: &[[u32; 3]]) -> TriMesh {
-        let mut remap: HashMap<u32, u32> = HashMap::new();
+        let mut remap: FxHashMap<u32, u32> = FxHashMap::default();
         let mut out = TriMesh::default();
         for t in tris {
             let t2 = t.map(|i| {
