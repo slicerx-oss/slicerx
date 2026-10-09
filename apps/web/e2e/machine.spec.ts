@@ -107,13 +107,14 @@ test('Advanced folds the card to one summary line and lists Printer settings', a
   await expect(card.locator('.sec-sum')).toHaveText(/^Bay 1, \d\.\d+ mm, .+, [A-Z][a-z ]+$/)
 })
 
-test('the card works by keyboard: Tab to a chip, Enter opens it, arrows move, Escape closes', async ({ page, isMobile }) => {
+test('the card works by keyboard: Enter opens a chip, arrows move, Escape closes', async ({ page, isMobile }) => {
   test.skip(isMobile, 'Needs a keyboard')
   await open(page, { printerId: 'bay-1' })
   const plate = page.getByTestId('slice-machine-plate')
   const nozzle = page.getByTestId('slice-machine-nozzle')
-  await nozzle.focus()
-  await page.keyboard.press('Tab')
+  // Tab is the look's Model and Slice switch here, so the chip gets focus directly.
+  await expect(nozzle).toBeVisible()
+  await plate.focus()
   await expect(plate).toBeFocused()
   await page.keyboard.press('Enter')
   const types = page.getByTestId('slice-machine-plate-option')
