@@ -7,6 +7,7 @@ import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 const panes = readFileSync(resolve(import.meta.dirname, '../src/workspaces/prepare/prepare-panes.tsx'), 'utf8')
+const footer = readFileSync(resolve(import.meta.dirname, '../src/workspaces/prepare/estimate-footer.tsx'), 'utf8')
 
 describe('Slice sidebar words', () => {
   it('shows no "tris" and names part filaments by slot, type and color', () => {
@@ -20,8 +21,8 @@ describe('Slice sidebar words', () => {
   })
 
   it('puts the threads in the time tooltip, not a note under the button', () => {
-    expect(panes).not.toMatch(/worker threads/)
-    expect(panes).toMatch(/slicedIn\(done\.result\.wallMs, host\.capabilities\.threads\)/)
+    expect(footer).not.toMatch(/worker threads/)
+    expect(footer).toMatch(/slicedIn\(r\.wallMs, host\.capabilities\.threads\)/)
   })
 
   it('keeps the segment count and the engine out of the Sliced plate line, apart from its tooltip and Developer mode', () => {
