@@ -12,13 +12,14 @@
 //   engine    the engine holds every mesh (load_mesh)
 //   objects   the objects are on the plate and the 3D view has built them
 //   drawn     the 3D view has drawn a frame with them
+//   repair    a mesh file's import in the engine is done (repair, unit, loose bodies); its objects showed before it
 //   settings  the project's settings are applied (the "Opened as" note is ready)
 //   gcode     its printer G-code is checked
 //   done      the open is over (the plate stops loading)
 //   sliced    the slice that follows it is done
 // A stage that did not happen in an open (a plain STL has no printer) is absent.
 
-export type OpenStage = 'read' | 'unzip' | 'parse' | 'printer' | 'engine' | 'objects' | 'drawn' | 'settings' | 'gcode' | 'done' | 'sliced'
+export type OpenStage = 'read' | 'unzip' | 'parse' | 'printer' | 'engine' | 'objects' | 'drawn' | 'repair' | 'settings' | 'gcode' | 'done' | 'sliced'
 
 export interface OpenTiming {
   /** The file's name. */

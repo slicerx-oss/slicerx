@@ -5,8 +5,10 @@
 // undoes it) and a file with several loose bodies becomes several objects. Meshes arrive unscaled; the
 // scale is the object's transform, so undoing it is one edit. A STEP file is meshed first in a worker
 // of its own (import-step.ts) and arrives in millimeters, since STEP declares its unit.
-import type { Bed, Host, MeshPart } from '@slicerx/contracts'
-import { fromGeom, type GeomMesh } from '../geom/client'
+import type { Bed, Host, MeshHandle, MeshPart } from '@slicerx/contracts'
+import { isBinaryStl, sameMesh, scanStl } from '../export/stl-scan'
+import { inStep } from '../plate/history'
+import { fromGeom, usesWorker, type GeomMesh } from '../geom/client'
 import type { AutoImport, Unit } from '../geom/cad'
 import type { StepConverter } from './import-step'
 import { centerOnBed, compose, dropToBed, setScale } from '../plate/transform'
@@ -14,6 +16,7 @@ import { repairChanged, rememberRepair, showRepairReport, type RepairEntry } fro
 import { get, markStale, set, toast, type PlateEntry } from './store'
 import { brandAccent, objectPalette } from '../edition'
 import type { OpenScope } from '../project/unsaved'
+import { markOpenStage } from '../lib/open-mark'
 
 export type AutoFormat = 'stl' | 'obj' | 'amf' | 'step'
 type MeshFormat = Exclude<AutoFormat, 'step'>
@@ -38,11 +41,16 @@ export function toBase64(data: ArrayBuffer | Uint8Array): string {
 let seq = 0
 const uid = () => `obj_${Date.now().toString(36)}a${(++seq).toString(36)}`
 
-export type AutoRunner = (file: { base64: string; name: string; format: MeshFormat; declaredUnit?: Unit }) => Promise<AutoImport>
+/** A file for the engine's import: as base64, or as its bytes, which the geometry worker encodes off the page. */
+export type AutoFile = ({ base64: string } | { bytes: Uint8Array }) & { name: string; format: MeshFormat; declaredUnit?: Unit }
 
-async function engine({ declaredUnit, ...file }: { base64: string; name: string; format: MeshFormat; declaredUnit?: Unit }): Promise<AutoImport> {
+export type AutoRunner = (file: AutoFile) => Promise<AutoImport>
+
+async function engine({ declaredUnit, ...file }: AutoFile): Promise<AutoImport> {
   const { importAuto } = await import('../geom/cad')
-  return importAuto(file, declaredUnit ? { declaredUnit } : {})
+  // A provider other than the app's worker (a test's) takes base64 only.
+  const sent = 'bytes' in file && !usesWorker() ? { name: file.name, format: file.format, base64: toBase64(file.bytes) } : file
+  return importAuto(sent, declaredUnit ? { declaredUnit } : {})
 }
 
 async function stepConverter(): Promise<StepConverter> {
@@ -63,6 +71,35 @@ export function entriesFromImport(result: AutoImport, bed: Bed): { parts: MeshPa
     })
 }
 
+/** Up to this size a binary STL is read on the page; a bigger one in the project worker, so the page keeps answering. */
+const QUICK_ON_PAGE = 8 * 1024 * 1024
+
+/**
+ * Puts a binary STL on the plate from its own triangles, welded as the engine welds them first, before the engine's
+ * import. Null when the file is not a binary STL or cannot be shown this way; the engine's import then shows it.
+ */
+async function showQuick(host: Host, name: string, data: ArrayBuffer, edit: (fn: () => void) => void): Promise<{ id: string; part: MeshPart; handle: MeshHandle } | null> {
+  const bytes = new Uint8Array(data)
+  if (!isBinaryStl(bytes)) return null
+  const onPage = bytes.length <= QUICK_ON_PAGE || typeof Worker === 'undefined'
+  try {
+    const mesh = onPage ? scanStl(bytes) : await (await import('../export/project-worker-client')).scanStlInWorker(bytes)
+    if (!mesh || mesh.indices.length === 0) return null
+    markOpenStage('parse', { parsedIn: onPage ? 'page' : 'worker' })
+    const part: MeshPart = { name, slot: 1, positions: mesh.positions, indices: mesh.indices }
+    const handle = await host.slicer.loadParts(name, [part])
+    markOpenStage('engine')
+    const transform = dropToBed([part], centerOnBed([part], compose({ position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] }), get().bed))
+    const id = uid()
+    const color = objectPalette()[0] ?? brandAccent()
+    edit(() => set((s) => ({ plate: [...s.plate, { id, name, handle, parts: [part], colors: [color], transform }], selection: id, selectedIds: [id] })))
+    markOpenStage('objects')
+    return { id, part, handle }
+  } catch {
+    return null
+  }
+}
+
 /**
  * Adds a file to the plate through the engine. `run` is the engine call and `step` the STEP reader (a
  * test passes its own). Returns the ids of the new objects. Nothing is added when any step fails.
@@ -70,30 +107,60 @@ export function entriesFromImport(result: AutoImport, bed: Bed): { parts: MeshPa
 export async function addAutoImport(host: Host, name: string, data: ArrayBuffer, run: AutoRunner = engine, step?: StepConverter, scope?: OpenScope): Promise<string[]> {
   const format = autoFormatOf(name)
   if (!format) throw new Error(`${name} is not an STL, OBJ, AMF or STEP file`)
+  // One undo step for the object shown at once and the engine's import that may replace it.
+  const token = {}
+  const edit = (fn: () => void) => inStep(token, () => (scope ? scope.run(fn) : fn()))
+  // The engine's import starts first, in the geometry worker. Meanwhile a binary STL goes on the plate from its own
+  // triangles; the import takes far longer.
+  const started = format === 'step' ? null : run({ bytes: new Uint8Array(data), name, format })
+  started?.catch(() => undefined)
+  const quick = format === 'stl' ? await showQuick(host, name, data, edit) : null
   let stepNotes: string[] = []
   let result: AutoImport
-  if (format === 'step') {
-    const convert = step ?? (await stepConverter())
-    let mesh
-    try {
-      mesh = await convert({ name, data })
-    } catch (e) {
-      throw new Error(`${name} ${e instanceof Error ? e.message : 'could not be read.'}`)
-    }
-    stepNotes = mesh.notes
-    result = await run({ base64: mesh.base64, name, format: 'obj', declaredUnit: 'millimeter' })
-  } else result = await run({ base64: toBase64(data), name, format })
+  try {
+    if (format === 'step') {
+      const convert = step ?? (await stepConverter())
+      let mesh
+      try {
+        mesh = await convert({ name, data })
+      } catch (e) {
+        throw new Error(`${name} ${e instanceof Error ? e.message : 'could not be read.'}`)
+      }
+      stepNotes = mesh.notes
+      result = await run({ base64: mesh.base64, name, format: 'obj', declaredUnit: 'millimeter' })
+    } else result = await started!
+  } catch (e) {
+    // Without the engine's import (a host with no engine, or a failure) the model stays as it was read.
+    if (!quick) throw e
+    markStale()
+    toast(`Added ${name}`)
+    return [quick.id]
+  }
   const { bed } = get()
   const made = entriesFromImport(result, bed)
-  if (made.length === 0) throw new Error(`${name} has no geometry`)
-  const entries: PlateEntry[] = []
-  for (const m of made) {
-    const handle = await host.slicer.loadParts(m.name, m.parts)
-    entries.push({ id: uid(), name: m.name, handle, parts: m.parts, colors: m.colors, transform: m.transform })
+  if (!quick) markOpenStage('parse', { parsedIn: 'worker' })
+  const here = quick ? get().plate.find((p) => p.id === quick.id) : undefined
+  // The engine changed nothing (no repair, one body, millimeters): the object on the plate is already its result.
+  const same = here && made.length === 1 && made[0]!.parts.length === 1 && !result.unit.autoApply && sameMesh(made[0]!.parts[0]!, quick!.part)
+  let entries: PlateEntry[]
+  if (same) entries = [here]
+  else {
+    if (made.length === 0) {
+      if (quick) edit(() => set((s) => ({ plate: s.plate.filter((p) => p.id !== quick.id) })))
+      throw new Error(`${name} has no geometry`)
+    }
+    entries = []
+    for (const m of made) {
+      const handle = await host.slicer.loadParts(m.name, m.parts)
+      entries.push({ id: uid(), name: m.name, handle, parts: m.parts, colors: m.colors, transform: m.transform })
+    }
+    if (!quick) markOpenStage('engine')
+    // The engine's result takes the place of the object shown before it.
+    edit(() => set((s) => ({ plate: [...s.plate.filter((p) => p.id !== quick?.id), ...entries], selection: entries[0]!.id, selectedIds: entries.map((e) => e.id) })))
+    if (quick) host.slicer.release?.(quick.handle.id)
+    if (!quick) markOpenStage('objects')
   }
-  const add = () => set((s) => ({ plate: [...s.plate, ...entries], selection: entries[0]!.id, selectedIds: entries.map((e) => e.id) }))
-  if (scope) scope.run(add)
-  else add()
+  markOpenStage('repair')
   if (entries.length > 1) {
     const arranged = (await import('../plate/edit')).arrangePlate('all')
     await (scope ? scope.during(arranged) : arranged)
