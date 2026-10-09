@@ -20,8 +20,8 @@ export function ObjectMenu({ at, onClose, entry, onRename }: { at: MenuPoint | n
     <ContextMenu at={at} onClose={onClose} label={entry.name} testId="model-ctx" target="object">
       <MenuIconRow>
         <MenuIcon icon="rename" label="Rename" shortcut="F2" onClick={run(onRename)} data-testid="model-ctx-rename" />
-        <MenuIcon icon={entry.locked ? 'unlock' : 'lock'} label={entry.locked ? 'Unlock' : 'Lock'} pressed={Boolean(entry.locked)} onClick={run(() => void toggleLock([entry.id]))} data-testid="model-ctx-lock" />
-        <MenuIcon icon={entry.printable === false ? 'show' : 'hide'} label={entry.printable === false ? 'Print it' : 'Leave out of the print'} pressed={entry.printable === false} onClick={run(() => void togglePrintable([entry.id]))} data-testid="model-ctx-printable" />
+        <MenuIcon icon={entry.locked ? 'lock' : 'unlock'} label={entry.locked ? 'Unlock' : 'Lock'} pressed={Boolean(entry.locked)} onClick={run(() => void toggleLock([entry.id]))} data-testid="model-ctx-lock" />
+        <MenuIcon icon={entry.printable === false ? 'hide' : 'show'} label={entry.printable === false ? 'Print it' : 'Leave out of the print'} pressed={entry.printable === false} onClick={run(() => void togglePrintable([entry.id]))} data-testid="model-ctx-printable" />
         <MenuIcon icon="delete" label="Delete" tone="danger" shortcut="Delete" onClick={cmd('plate-remove')} data-testid="danger-model-ctx-delete" />
       </MenuIconRow>
       <MenuItem icon="split" data-testid="model-ctx-split-objects" onClick={cmd('split-objects')}>
@@ -39,7 +39,7 @@ export function ObjectMenu({ at, onClose, entry, onRename }: { at: MenuPoint | n
       <MenuItem icon="fit" data-testid="model-ctx-center" onClick={cmd('center-object')}>
         Center on the bed
       </MenuItem>
-      <MenuItem icon="drop" data-testid="model-ctx-drop" onClick={cmd('drop-to-bed')}>
+      <MenuItem icon="arrow-down" data-testid="model-ctx-drop" onClick={cmd('drop-to-bed')}>
         Drop to the bed
       </MenuItem>
       <MenuItem icon="slice" data-testid="model-ctx-slice" onClick={run(() => setModelMode('slice'))}>
