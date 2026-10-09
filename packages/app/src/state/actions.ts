@@ -98,7 +98,7 @@ export async function loadDemoModel(host: Host, slug: string, opts: { replace?: 
   } catch (e) {
     toast(e instanceof Error ? e.message : 'Could not load the model', 'error')
   } finally {
-    set({ plateLoading: false })
+    set({ plateLoading: false, sliceDuringOpen: false })
   }
 }
 
@@ -208,7 +208,7 @@ export async function openModelBytes(host: Host, name: string, data: ArrayBuffer
     toast(e instanceof Error ? e.message : `Could not open ${name}`, 'error')
   } finally {
     if (!scope?.superseded) {
-      set({ plateLoading: false })
+      set({ plateLoading: false, sliceDuringOpen: false })
       markOpenEnded()
     }
   }
@@ -260,7 +260,7 @@ export async function addFileRefs(host: Host, refs: FileRef[], opts: { fresh?: b
     toast(e instanceof Error ? e.message : 'Could not open the file')
   } finally {
     if (!scope?.superseded) {
-      set({ plateLoading: false })
+      set({ plateLoading: false, sliceDuringOpen: false })
       markOpenEnded()
     }
   }
