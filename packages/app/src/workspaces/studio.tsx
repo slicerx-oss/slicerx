@@ -63,6 +63,7 @@ const DesignLeft = lazy(() => import('./design/design-panes').then((m) => ({ def
 const DesignRight = lazy(() => import('./design/design-panes').then((m) => ({ default: m.DesignRight })))
 const Shelf = lazy(() => import('./design/design-panes').then((m) => ({ default: m.Shelf })))
 const DesignTimeline = lazy(() => import('./design/design-panes').then((m) => ({ default: m.DesignTimeline })))
+const SelectPill = lazy(() => import('./design/design-panes').then((m) => ({ default: m.SelectPill })))
 
 // norn (edit from Preview) loads with the first click on a toolpath.
 const NornLayer = lazy(() => import('../norn/norn-layer').then((m) => ({ default: m.NornLayer })))
@@ -169,7 +170,14 @@ export function Studio() {
         {design ? null : <ParkedChip />}
         <div className="hud hud-top">
           <div className="hud-col">
-            <RenderMenu />
+            <div className="hud-row">
+              <RenderMenu />
+              {design ? (
+                <Suspense fallback={null}>
+                  <SelectPill />
+                </Suspense>
+              ) : null}
+            </div>
             {layers ? (
               <Legend />
             ) : null}

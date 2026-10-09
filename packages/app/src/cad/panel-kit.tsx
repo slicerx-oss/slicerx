@@ -4,6 +4,7 @@
 import type { PickEvent } from '@slicerx/viewport'
 import { Block, Field, Input, VectorField, type Axis } from '@slicerx/ui'
 import { useEffect, useRef, type ReactNode } from 'react'
+import { takePicks } from '../plate/sub-pick'
 import { cameraBus, setProbeHandler, setTool, toolStore } from '../plate/tools'
 import { set } from '../state/store'
 import { typedNumber } from './value-table'
@@ -37,6 +38,8 @@ export function useProbe(onPick: (hit: PickEvent) => void, faces: boolean): void
     setTool('probe')
     cameraBus()?.probeFaces?.(faces)
     setProbeHandler((hit) => handler.current(hit))
+    // Faces or edges picked before the tool opened are its first clicks, the later ones with Shift so they add.
+    takePicks(faces).forEach((p, i) => handler.current({ objectId: p.objectId, partIndex: p.partIndex, triangle: p.triangle, point: p.point, bed: null, ...(i > 0 ? { shift: true } : {}) }))
     return () => {
       setProbeHandler(null)
       cameraBus()?.probeFaces?.(false)

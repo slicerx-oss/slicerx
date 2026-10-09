@@ -60,6 +60,7 @@ export function DesignRight() {
 }
 
 export { Shelf } from './shelf'
+export { SelectPill } from './select-pill'
 
 /** The timeline in its bottom panel. A step that breaks after an edit asks for attention. */
 export function DesignTimeline() {

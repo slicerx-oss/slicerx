@@ -10,6 +10,8 @@ import { inTextField, matchShortcut } from '../lib/keys'
 import { toggleModelMode } from '../state/model-mode'
 import { get, set } from '../state/store'
 import { toggleEdge } from '../shell/edge-keys'
+import { PICK_KINDS, pickKeysOn } from './pick-filter'
+import { clearPicks, setPickKind } from './sub-pick'
 import { arrangePlate, centerSelected, dropSelectedToBed, selectAll } from './edit'
 import { history } from './history'
 import { selectAllEars } from './brim-ears'
@@ -103,6 +105,16 @@ export function bindPlateKeys(choice: () => LookAndFeelChoice, extra: { dropToBe
     if (extra.center && matchShortcut(e, extra.center)) return run(() => void centerSelected())
     const c = choice()
     const map = keymapFor(c.id, c.overrides?.keys ?? {})
+    // Model's pick filter: its key picks one kind, with Shift it adds or drops it. Esc drops faces and edges first.
+    if (pickKeysOn(s)) {
+      for (const kind of PICK_KINDS) {
+        const key = map[`select.${kind}`]
+        if (!key) continue
+        if (matchShortcut(e, key)) return run(() => setPickKind(kind, 'only'))
+        if (matchShortcut(e, `Shift+${key}`)) return run(() => setPickKind(kind, 'toggle'))
+      }
+      if (e.key === 'Escape' && s.subPicks.length) return run(() => void clearPicks())
+    }
     const prepare = s.workspace === 'prepare'
     for (const [action, h] of Object.entries(handlers) as [KeyAction, Handler][]) {
       const key = map[action]

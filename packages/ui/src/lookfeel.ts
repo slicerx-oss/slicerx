@@ -150,6 +150,7 @@ export const KEY_ACTIONS = [
   'edit.copy', 'edit.cut', 'edit.paste', 'edit.duplicate', 'object.printable',
   'workspace.toggle', 'model.mode', 'slice', 'export', 'palette',
   'panel.left', 'panel.right', 'panel.bottom',
+  'select.object', 'select.face', 'select.edge',
   'preview.legend', 'preview.singleLayer', 'preview.jumpToLayer', 'preview.layerUp', 'preview.layerDown',
   'help.shortcuts',
 ] as const
@@ -164,6 +165,7 @@ const COMMON: Keymap = {
   'edit.copy': 'Mod+C', 'edit.cut': 'Mod+X', 'edit.paste': 'Mod+V', 'edit.duplicate': null, 'object.printable': 'V',
   'workspace.toggle': null, 'model.mode': 'Mod+E', 'slice': 'Mod+G', 'export': 'Mod+Shift+E', 'palette': 'Mod+K',
   'panel.left': '[', 'panel.right': ']', 'panel.bottom': 'Mod+J',
+  'select.object': 'Alt+1', 'select.face': 'Alt+2', 'select.edge': 'Alt+3',
   'preview.legend': 'L', 'preview.singleLayer': 'Shift+L', 'preview.jumpToLayer': 'Shift+G', 'preview.layerUp': 'Up', 'preview.layerDown': 'Down',
   'help.shortcuts': 'Shift+?',
 }
