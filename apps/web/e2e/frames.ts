@@ -14,6 +14,13 @@ export interface Frame {
 export const GRID_W = 96
 export const GRID_H = 60
 
+/**
+ * How many times slower this runner draws than the project's own machine, from SX_SLOW_GL (CI sets 3 on GitHub's
+ * runners, which draw WebGL in software on 4 cores shared by two workers). Drawing time budgets scale by it; what a
+ * spec checks stays the same.
+ */
+export const GL_SLOW = Math.max(1, Number(process.env['SX_SLOW_GL']) || 1)
+
 /** A region of the page, in CSS pixels. */
 export interface Box {
   x: number
