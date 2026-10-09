@@ -543,7 +543,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cargo-deny-dl
-          key: cargo-deny-0.20.2-9f12ed4c
+          key: cargo-deny-0.20.2
       - name: cargo-deny
         if: needs.detect.outputs.rust == 'true'
         env:
