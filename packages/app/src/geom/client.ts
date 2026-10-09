@@ -15,15 +15,37 @@ export function setGeomProvider(p: GeomProvider | null): void {
   provider = p
 }
 
+/**
+ * The worker ends this long after its last answer. A WebAssembly module's memory only grows: a fit check of a mesh of
+ * millions of triangles leaves the engine holding hundreds of megabytes until the worker goes, so a worker holding more
+ * than BIG_BYTES ends soon after; a new one starts in a fraction of a second.
+ */
+const IDLE_MS = 30_000
+const BIG_IDLE_MS = 2_000
+const BIG_BYTES = 256 * 1024 * 1024
+
 function workerProvider(): GeomProvider {
   let worker: Worker | null = null
+  let idle: ReturnType<typeof setTimeout> | null = null
   let seq = 0
   const pending = new Map<number, { resolve: (v: unknown) => void; reject: (e: Error) => void }>()
+  const stop = () => {
+    idle = null
+    if (pending.size > 0) return
+    worker?.terminate()
+    worker = null
+  }
   const start = () => {
+    if (idle) clearTimeout(idle)
+    idle = null
     if (worker) return worker
     worker = new Worker(new URL('./geom-worker.ts', import.meta.url), { type: 'module' })
-    worker.onmessage = (e: MessageEvent<{ id: number; result?: unknown; error?: string }>) => {
+    worker.onmessage = (e: MessageEvent<{ id: number; result?: unknown; error?: string; memoryBytes?: number }>) => {
       const p = pending.get(e.data.id)
+      if (pending.size <= 1) {
+        if (idle) clearTimeout(idle)
+        idle = setTimeout(stop, (e.data.memoryBytes ?? 0) > BIG_BYTES ? BIG_IDLE_MS : IDLE_MS)
+      }
       if (!p) return
       pending.delete(e.data.id)
       if (e.data.error !== undefined) p.reject(new Error(e.data.error))
