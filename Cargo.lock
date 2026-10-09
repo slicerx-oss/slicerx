@@ -5583,6 +5583,7 @@ dependencies = [
  "libm",
  "manifold-rust",
  "miniz_oxide 0.9.1",
+ "rustc-hash",
  "serde",
  "serde_json",
  "sx-i-overlay",
