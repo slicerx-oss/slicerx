@@ -82,17 +82,30 @@ test('the context menu offers the printer filament, by mouse and by keyboard', a
   await expect(slot(page, 2)).not.toHaveAttribute('data-mismatch', 'true')
 })
 
-test('the menu holds Calibrate, Flush volumes, Reset to printer and Show unused slots', async ({ page }) => {
+test('the menu holds Calibrate, Flush volumes, Swap colors, Reset to printer and Show unused slots', async ({ page }) => {
   await open(page)
   const all = await page.getByTestId('slice-filament-slot').count()
   await page.getByTestId('slice-filament-menu').click()
   await expect(page.getByTestId('slice-filament-calibrate')).toBeVisible()
   await expect(page.getByTestId('slice-filament-flush')).toBeVisible()
+  await expect(page.getByTestId('slice-filament-swap')).toBeVisible()
   // Nothing edited: no reset.
   await expect(page.getByTestId('slice-filament-reset')).toHaveCount(0)
   await page.getByRole('menuitemcheckbox', { name: 'Show unused slots' }).click()
   await expect.poll(() => page.getByTestId('slice-filament-slot').count()).toBeGreaterThan(all)
   await expect(page.locator('[data-testid="slice-filament-slot"][data-used="false"]').first()).toBeVisible()
+})
+
+test('Swap colors opens from the menu and swaps the two filaments on the plate', async ({ page }) => {
+  await open(page)
+  await page.getByTestId('slice-filament-menu').click()
+  await page.getByTestId('slice-filament-swap').click()
+  const swap = page.getByRole('group', { name: 'Swap colors on this plate' })
+  await expect(swap).toBeVisible()
+  await swap.getByRole('button', { name: 'Swap', exact: true }).click()
+  await expect(swap).toContainText('prints as')
+  await swap.getByRole('button', { name: 'Undo swaps' }).click()
+  await expect(swap).not.toContainText('prints as')
 })
 
 test('a full rail scrolls inside the card, never the page, at any width', async ({ page }) => {
