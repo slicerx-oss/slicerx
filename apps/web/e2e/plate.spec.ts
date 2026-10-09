@@ -321,7 +321,8 @@ test('a process preset is saved in Settings, stays after a reload and can be del
 test('printer settings open in Orca style tabs and keep a change', async ({ page }) => {
   await prepare(page)
   await openSheet(page)
-  await page.getByRole('button', { name: 'Printer settings' }).click()
+  await page.getByTestId('slice-machine-printer').click()
+  await page.getByTestId('slice-machine-printer-settings').click()
   const dialog = page.getByRole('dialog', { name: /Printer settings/ })
   await expect(dialog).toBeVisible()
   await dialog.getByRole('radio', { name: 'Extruder and retraction' }).click()
