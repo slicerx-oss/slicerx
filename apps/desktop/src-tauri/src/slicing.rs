@@ -227,13 +227,22 @@ pub fn cancel_slice(job: u32, state: State<'_, Slicer>) {
     }
 }
 
-// Async like load_mesh: the copy of a large preview or G-code is not made on the main thread.
+/// Hands the page a slice's preview, once: the bytes move to the response instead of being copied, and the slice keeps
+/// none. The page reads each slice's preview once and keeps it; a second ask is an error.
 #[tauri::command]
 pub async fn get_preview(id: u32, state: State<'_, Slicer>) -> Result<Response, String> {
-    lock(&state.results)
-        .get(&id)
-        .map(|o| Response::new(o.sxpv.clone()))
-        .ok_or_else(|| format!("unknown slice {id}"))
+    take_preview(&state, id).map(Response::new)
+}
+
+fn take_preview(state: &Slicer, id: u32) -> Result<Vec<u8>, String> {
+    let mut results = lock(&state.results);
+    let out = results
+        .get_mut(&id)
+        .ok_or_else(|| format!("unknown slice {id}"))?;
+    if out.sxpv.is_empty() {
+        return Err(format!("the preview of slice {id} was already sent"));
+    }
+    Ok(std::mem::take(&mut out.sxpv))
 }
 
 #[tauri::command]
@@ -413,6 +422,27 @@ mod tests {
         assert!(info["layerCount"].as_u64().unwrap_or(0) > 10);
         assert!(String::from_utf8_lossy(&out.gcode).contains("G1"));
         assert!(!out.sxpv.is_empty());
+    }
+
+    #[test]
+    fn the_preview_moves_to_the_page_once() {
+        let state = Slicer::default();
+        let preview = vec![1_u8, 2, 3];
+        lock(&state.results).insert(
+            7,
+            Output {
+                gcode: b"G1".to_vec(),
+                sxpv: preview.clone(),
+            },
+        );
+        assert_eq!(take_preview(&state, 7), Ok(preview));
+        // The slice keeps no copy: a second ask is an error, and the G-code stays.
+        assert!(take_preview(&state, 7).is_err());
+        assert!(take_preview(&state, 8).is_err());
+        assert_eq!(
+            lock(&state.results).get(&7).map(|o| o.gcode.clone()),
+            Some(b"G1".to_vec())
+        );
     }
 
     #[test]
