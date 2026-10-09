@@ -78,6 +78,28 @@ export function tab(page: Page, id: string): Locator {
   return page.locator(`.sx-tab[data-tab="${id}"]`)
 }
 
+/**
+ * On a phone the side panes are bottom sheets: opens the one holding `panel` (slice-sidebar, slice-summary, model-tree,
+ * model-inspector) and waits until it is up. Does nothing at desktop widths, where the panes are always there.
+ */
+export async function openSheet(page: Page, panel = 'slice-sidebar'): Promise<void> {
+  // The studio settles once the plate is in; a sheet opened before that can close again as the panes mount.
+  await page.locator('html[data-sx-ready="plate"], html[data-sx-ready="viewport"]').waitFor({ state: 'attached', timeout: COLD_START_MS })
+  const tab = page.locator(`.sheet-tab[data-panel="${panel}"]`)
+  if (!(await tab.count())) return
+  if ((await tab.getAttribute('aria-expanded')) !== 'true') await tab.click()
+  await expect.poll(() => page.getByTestId(panel).evaluate((el) => el.closest('aside')!.getBoundingClientRect().top < innerHeight * 0.5)).toBe(true)
+}
+
+/** On a phone, closes an open side sheet so the view under it can be used. Does nothing when none is open. */
+export async function closeSheet(page: Page): Promise<void> {
+  const open = page.locator('.sheet-tab[aria-expanded="true"]')
+  if (!(await open.count())) return
+  await page.keyboard.press('Escape')
+  await expect(open).toHaveCount(0)
+  await expect.poll(() => page.locator('aside.pane.sheet').first().evaluate((el) => el.getBoundingClientRect().top >= innerHeight - 2)).toBe(true)
+}
+
 /** How many slices have finished so far. Read it before starting a slice, and pass it to `sliced`. */
 export async function sliceCount(page: Page): Promise<number> {
   return Number((await page.locator('.studio').getAttribute('data-slices')) ?? 0)

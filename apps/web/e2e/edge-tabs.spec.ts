@@ -98,7 +98,9 @@ test.describe('edge tabs', () => {
     // The summary pane comes with a slice.
     await expect(page.getByTestId('edge-tab-right')).toHaveCount(0)
     const n = await sliceCount(page)
-    await page.getByRole('button', { name: 'Slice plate' }).click()
+    // Mod+Enter slices in every look, wherever the look puts the Slice button.
+    await page.mouse.click(700, 450)
+    await page.keyboard.press('ControlOrMeta+Enter')
     await expect(sliced(page, n)).toBeVisible({ timeout: 120_000 })
     await shutAndOpen(page, 'right', 'slice-summary', 'BracketRight', false)
   })
@@ -130,5 +132,39 @@ test.describe('edge tabs', () => {
     const list = page.getByRole('dialog', { name: 'Keyboard shortcuts' })
     await expect(list.getByText('Show or hide the left panel')).toBeVisible()
     await expect(list.getByText('Show or hide the bottom panel')).toBeVisible()
+  })
+})
+
+test.describe('edge tabs on a phone', () => {
+  test.skip(({ isMobile }) => !isMobile, 'Phone width')
+
+  /** The sheet's top edge is on screen when it is open. */
+  const onScreen = (page: Page, panel: string) =>
+    page.getByTestId(panel).evaluate((el) => {
+      const r = el.closest('aside')!.getBoundingClientRect()
+      return r.top < innerHeight - 40
+    })
+
+  test('each tab opens its sheet, one at a time, and Escape and a tap outside close it', async ({ page }) => {
+    await openStudio(page)
+    const left = page.getByTestId('edge-tab-left')
+    await expect(left).toHaveAttribute('data-panel', 'slice-sidebar')
+    expect(await onScreen(page, 'slice-sidebar')).toBe(false)
+    await left.tap()
+    await expect(left).toHaveAttribute('aria-expanded', 'true')
+    await expect.poll(() => onScreen(page, 'slice-sidebar')).toBe(true)
+    await page.keyboard.press('Escape')
+    await expect.poll(() => onScreen(page, 'slice-sidebar')).toBe(false)
+
+    await page.locator('.sx-tab[data-mode="design"]').tap()
+    await expect(page.locator('.studio[data-model-mode="design"]')).toBeVisible()
+    await page.getByTestId('edge-tab-left').tap()
+    await expect.poll(() => onScreen(page, 'model-tree')).toBe(true)
+    // Opening the other sheet closes the first.
+    await page.locator('.sheet-scrim').tap({ position: { x: 380, y: 200 } })
+    await expect.poll(() => onScreen(page, 'model-tree')).toBe(false)
+    await page.getByTestId('edge-tab-right').tap()
+    await expect.poll(() => onScreen(page, 'model-inspector')).toBe(true)
+    await expect(page.getByTestId('edge-tab-left')).toHaveAttribute('aria-expanded', 'false')
   })
 })
