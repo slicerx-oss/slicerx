@@ -83,6 +83,11 @@ the core count. `heavy.sh --all <command>` waits for every slot and runs alone, 
 the slots one by one as they free up, and while it waits, only the oldest ticket may take a slot, so it is never passed
 over. A `heavy.sh` from before slots knows only `<lock>`, so it shares the machine with one slot-2 holder at most.
 
+`heavy.sh --e2e <command>` marks a browser suite run (its record says `class e2e`): while one holds a slot, no other
+`--e2e` waiter takes one, because two suites drawing software WebGL overload a machine (two 5-worker desktop runs took
+a 24-thread machine to a load of 80). Waiting `--e2e` tickets do not count toward the positions of the waiters behind
+them, so builds and other jobs still use the free slots.
+
 `scripts/ci/heavy-test.sh` tests all of this on a temporary lock: alone on any side, and with
 `cross <distro> [<stopped distro>]` from Git Bash, Windows against WSL.
 

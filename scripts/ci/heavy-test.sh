@@ -171,6 +171,24 @@ pB=$!; lpids="$lpids $!"; sleep 3
 b_waited=$([ -s "$tmp/order" ] && echo no || echo yes)
 release h4 "$h4"; wait "$pAll" "$pB"
 ok eval '[ "$b_waited" = yes ] && [ "$(tr "\n" " " < "$tmp/order")" = "ALL B " ] && [ ! -d "$dir" ] && [ ! -d "$dir.2" ]'
+
+# --e2e: one e2e holder at a time; other jobs still share the free slot, even behind a waiting --e2e ticket.
+SX_HEAVY_LOCK=$lock bash "$heavy" --e2e sh -c 'echo $$ > "$1"; exec sleep 600' sh "$tmp/e1.child" > /dev/null 2>&1 &
+e1=$!; wait_for "$tmp/e1.child"; lpids="$lpids $(cat "$tmp/e1.child") $e1"
+name="an --e2e holder's record says class e2e"
+ok grep -qx 'class e2e' "$dir/owner"
+name="a second --e2e waiter waits while one --e2e holds a slot, with a slot free"
+SX_HEAVY_LOCK=$lock SX_HEAVY_WAIT=3 bash "$heavy" --e2e true > /dev/null 2>&1; rc=$?
+ok eval '[ "$rc" = 75 ] && [ ! -d "$dir.2" ]'
+name="a plain waiter behind a waiting --e2e ticket takes the free slot"
+SX_HEAVY_LOCK=$lock SX_HEAVY_WAIT=60 bash "$heavy" --e2e true > /dev/null 2>&1 &
+pE=$!; lpids="$lpids $!"; sleep 1.5
+waiter 20 w12
+ok eval '[ "$rc" = 0 ] && [ $secs -le 5 ]'
+name="the waiting --e2e ticket runs once the --e2e holder is gone"
+release e1 "$e1"
+t0=$SECONDS; wait "$pE"; rc=$?
+ok eval '[ "$rc" = 0 ] && [ $((SECONDS - t0)) -le 10 ]'
 rm -f "$dir.slots"
 
 if [ "${1:-}" = cross ]; then
