@@ -90,9 +90,10 @@ pub async fn open_files(
     Ok(out)
 }
 
-/// Bytes of a file the user picked in `open_files`.
+/// Bytes of a file the user picked in `open_files`. Read off the main thread: a large file must not hold up the
+/// window (closing it, quitting) while it loads.
 #[tauri::command]
-pub fn read_file(id: u32, state: State<'_, OpenFiles>) -> Result<Response, String> {
+pub async fn read_file(id: u32, state: State<'_, OpenFiles>) -> Result<Response, String> {
     let path = state
         .paths
         .lock()
@@ -100,9 +101,13 @@ pub fn read_file(id: u32, state: State<'_, OpenFiles>) -> Result<Response, Strin
         .get(&id)
         .cloned()
         .ok_or("that file was not opened through the dialog")?;
-    std::fs::read(&path)
-        .map(Response::new)
-        .map_err(|e| format!("{}: {e}", path.display()))
+    tauri::async_runtime::spawn_blocking(move || {
+        std::fs::read(&path)
+            .map(Response::new)
+            .map_err(|e| format!("{}: {e}", path.display()))
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 /// Shows the save dialog and writes the raw request body to the chosen path.
