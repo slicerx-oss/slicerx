@@ -17,6 +17,7 @@ import { bounds } from '../plate/transform'
 import { ProjectReadError, unzipEntries } from './unzip'
 import type { Mat, PaintOfPart, ScannedModel, ScannedObject } from './model-scan'
 import { scanProject, type ScannedProject } from './project-scan'
+import { scanProjectInWorker } from './project-worker-client'
 
 export { ProjectReadError, unzipEntries, type ZipLimits } from './unzip'
 export type { PaintOfPart } from './model-scan'
@@ -415,53 +416,13 @@ function settleOnBed(o: { parts: MeshPart[]; transform: number[] }): void {
   if (b && b.min[2] < 0 && b.min[2] > -SETTLE_MM) o.transform[14] = o.transform[14]! - b.min[2]
 }
 
-const SCAN_IDLE_MS = 30_000
-
-let scanWorker: Worker | null = null
-let scanIdle: ReturnType<typeof setTimeout> | null = null
-let scanSeq = 0
-const scanPending = new Map<number, { resolve: (p: ScannedProject) => void; reject: (e: Error) => void }>()
-
-function stopScanWorker(): void {
-  scanWorker?.terminate()
-  scanWorker = null
-}
-
-/** The project worker, started on the first project and ended after a while without one, which hands its memory back. */
-function scanWorkerFor(): Worker {
-  if (scanIdle) clearTimeout(scanIdle)
-  scanIdle = null
-  if (scanWorker) return scanWorker
-  const w = new Worker(new URL('./project-worker.ts', import.meta.url), { type: 'module' })
-  w.onmessage = (e: MessageEvent<{ id: number; result?: ScannedProject; error?: string; plain?: boolean }>) => {
-    const p = scanPending.get(e.data.id)
-    if (!p) return
-    scanPending.delete(e.data.id)
-    if (e.data.result) p.resolve(e.data.result)
-    else p.reject(e.data.plain ? new ProjectReadError(e.data.error ?? '') : new Error(e.data.error ?? 'The project could not be read.'))
-    if (scanPending.size === 0 && scanWorker) scanIdle = setTimeout(stopScanWorker, SCAN_IDLE_MS)
-  }
-  w.onerror = (e) => {
-    for (const p of scanPending.values()) p.reject(new Error(e.message || 'The project reader did not start.'))
-    scanPending.clear()
-    stopScanWorker()
-  }
-  scanWorker = w
-  return w
-}
-
 /**
  * Inflates and scans a 3MF project: in the project worker when the page can start one, else here. The caller keeps
  * its bytes (the worker gets a copy).
  */
 export function scanProjectFile(bytes: Uint8Array): Promise<ScannedProject & { parsedIn: 'worker' | 'page' }> {
   if (typeof Worker === 'undefined') return scanProject(bytes).then((p) => ({ ...p, parsedIn: 'page' as const }))
-  return new Promise((resolve, reject) => {
-    const id = ++scanSeq
-    scanPending.set(id, { resolve: (p) => resolve({ ...p, parsedIn: 'worker' }), reject })
-    const copy = bytes.slice().buffer
-    scanWorkerFor().postMessage({ id, data: copy }, [copy])
-  })
+  return scanProjectInWorker(bytes).then((p) => ({ ...p, parsedIn: 'worker' as const }))
 }
 
 export async function readProject(bytes: Uint8Array, bed: { widthMm: number; depthMm: number }): Promise<ImportedProject> {
