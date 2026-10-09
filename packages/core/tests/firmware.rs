@@ -1725,6 +1725,33 @@ fn the_bed_mesh_follows_orcas_first_layer_hull() {
 }
 
 #[test]
+fn the_a1_bed_mesh_takes_the_brim_and_skirt_as_orca_does() {
+    // Measured with Orca 2.4.2 on the same 20 mm cube (bench/compare/printer_gcode_parity.py, plates center and
+    // skirt): a 5 mm outer brim of 0.42 mm lines puts the hull 6.525 mm out, two skirt loops 3 mm away 8.279 mm.
+    let start = "G29 A1 X{first_layer_print_min[0]} Y{first_layer_print_min[1]} I{first_layer_print_size[0]} J{first_layer_print_size[1]}";
+    let mut c = json!({
+        "gcode_flavor": "marlin",
+        "printer_model": "Bambu Lab A1",
+        "machine_start_gcode": start,
+        "brim_type": "outer_only",
+        "brim_width": 5,
+        "line_width": 0.42,
+        "initial_layer_line_width": 0.42,
+        "initial_layer_print_height": 0.2,
+        "skirt_loops": 0,
+    });
+    let line = |g: &str| g.lines().find(|l| l.starts_with("G29 A1")).unwrap().to_owned();
+    assert_eq!(
+        line(&cube_on(c.clone(), 1)),
+        "G29 A1 X111.475 Y111.475 I33.0499 J33.0499"
+    );
+    c["skirt_loops"] = json!(2);
+    c["skirt_distance"] = json!(3);
+    c["skirt_height"] = json!(1);
+    assert_eq!(line(&cube_on(c, 1)), "G29 A1 X109.721 Y109.721 I36.5582 J36.5582");
+}
+
+#[test]
 fn a_tower_change_reads_the_new_filaments_volumetric_speed() {
     // orca's change at the tower takes outer_wall_volumetric_speed of the new filament (`append_tcr`)
     let mut c = json!({
