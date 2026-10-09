@@ -17,12 +17,18 @@ on:
 permissions:
   contents: read
 
+# A pull request opened with the full-ci label fires two events at once: opened, then labeled for the label. The
+# labeled run does the work. The opened one, and a labeled run for any other label, add nothing: they go in a group of
+# their own (so they neither cancel the real run nor get cancelled by it, since a cancelled required check recorded after
+# a passing one keeps a pull request out of the merge queue) and skip their jobs, and a skipped check counts as passed.
 concurrency:
-  group: ci-${{ github.event.pull_request.number || github.ref }}
+  group: ci-${{ github.event.pull_request.number || github.ref }}${{ ((github.event.action == 'opened' && contains(github.event.pull_request.labels.*.name, 'full-ci')) || (github.event.action == 'labeled' && github.event.label.name != 'full-ci')) && '-again' || '' }}
   cancel-in-progress: true
 
 jobs:
   detect:
+    # a duplicate run (the concurrency comment above) skips this, and every job after it
+    if: ${{ !((github.event.action == 'opened' && contains(github.event.pull_request.labels.*.name, 'full-ci')) || (github.event.action == 'labeled' && github.event.label.name != 'full-ci')) }}
     runs-on: ubuntu-latest
     outputs:
       node: ${{ steps.f.outputs.node }}
@@ -158,8 +164,10 @@ jobs:
       - env:
           DETECT: ${{ needs.detect.result }}
           PARTS: ${{ needs.rust-tests-part.result }}
+          AGAIN: ${{ (github.event.action == 'opened' && contains(github.event.pull_request.labels.*.name, 'full-ci')) || (github.event.action == 'labeled' && github.event.label.name != 'full-ci') }}
         run: |
-          echo "detect: $DETECT, parts: $PARTS"
+          echo "detect: $DETECT, parts: $PARTS, duplicate run: $AGAIN"
+          [ "$DETECT" = skipped ] && [ "$AGAIN" = true ] && exit 0
           [ "$DETECT" = success ] || exit 1
           [ "$PARTS" = success ] || [ "$PARTS" = skipped ]
 
@@ -438,8 +446,10 @@ jobs:
           SHARDS: ${{ needs.e2e-shard.result }}
           GPU: ${{ needs.e2e-gpu.result }}
           GPU_LANE: ${{ github.event_name != 'pull_request' && vars.E2E_ON_PC != 'true' && vars.E2E_GPU_LANE != 'false' }}
+          AGAIN: ${{ (github.event.action == 'opened' && contains(github.event.pull_request.labels.*.name, 'full-ci')) || (github.event.action == 'labeled' && github.event.label.name != 'full-ci') }}
         run: |
-          echo "detect: $DETECT, e2e wanted: $WANTED, shards: $SHARDS, GPU lane: $GPU_LANE, @gpu run: $GPU"
+          echo "detect: $DETECT, e2e wanted: $WANTED, shards: $SHARDS, GPU lane: $GPU_LANE, @gpu run: $GPU, duplicate run: $AGAIN"
+          [ "$DETECT" = skipped ] && [ "$AGAIN" = true ] && exit 0
           [ "$DETECT" = success ] || exit 1
           [ "$WANTED" != true ] && exit 0
           [ "$SHARDS" = success ] || exit 1
