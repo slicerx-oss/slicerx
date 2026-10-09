@@ -11,7 +11,7 @@ import { inStep } from '../plate/history'
 import { fromGeom, toGeom, usesWorker, type GeomMesh } from '../geom/client'
 import type { AutoImport, Unit } from '../geom/cad'
 import type { StepConverter } from './import-step'
-import { centerOnBed, compose, dropToBed, setScale } from '../plate/transform'
+import { centerOnBed, compose, dropToBed, setScale, type Mat4 } from '../plate/transform'
 import { repairChanged, rememberRepair, showRepairReport, type RepairEntry } from '../plate/repair-report'
 import { get, markStale, set, toast, type PlateEntry } from './store'
 import { brandAccent, objectPalette } from '../edition'
@@ -68,17 +68,26 @@ async function stepConverter(): Promise<StepConverter> {
 }
 
 /** Turns the engine's answer into plate entries, placed on the bed at the detected size. */
-export function entriesFromImport(result: AutoImport, bed: Bed): { parts: MeshPart[]; name: string; colors: string[]; transform: number[]; perShell: boolean }[] {
+/**
+ * The plate entries for an import. The objects keep their places relative to each other, as the file has them (one
+ * model the engine split into loose bodies stays the model as designed): one placement for all of them, `base` when
+ * the model already shows on the plate (its quick draw, maybe moved since), else centered on the bed and on it.
+ */
+export function entriesFromImport(result: AutoImport, bed: Bed, base?: Mat4): { parts: MeshPart[]; name: string; colors: string[]; transform: number[]; perShell: boolean }[] {
   const scale = result.unit.autoApply ? result.unit.scale : 1
   const palette = result.slotColors.length ? result.slotColors : objectPalette()
-  return result.objects
+  const objects = result.objects
     .filter((o) => o.parts.some((p) => p.mesh.indices.length > 0))
-    .map((o) => {
-      const parts = o.parts.map((p) => fromGeom(p.mesh as GeomMesh, p.name || o.name, p.slot))
-      let m = compose({ position: [0, 0, 0], rotation: [0, 0, 0], scale: [scale, scale, scale] })
-      m = dropToBed(parts, centerOnBed(parts, m, bed))
-      return { perShell: o.perShell ?? false, parts, name: o.name || result.name, colors: parts.map((p) => o.parts.find((q) => (q.name || o.name) === p.name)?.color ?? palette[(p.slot - 1) % palette.length] ?? brandAccent()), transform: m }
-    })
+    .map((o) => ({ o, parts: o.parts.map((p) => fromGeom(p.mesh as GeomMesh, p.name || o.name, p.slot)) }))
+  const all = objects.flatMap((x) => x.parts)
+  const m = base ?? dropToBed(all, centerOnBed(all, compose({ position: [0, 0, 0], rotation: [0, 0, 0], scale: [scale, scale, scale] }), bed))
+  return objects.map(({ o, parts }) => ({
+    perShell: o.perShell ?? false,
+    parts,
+    name: o.name || result.name,
+    colors: parts.map((p) => o.parts.find((q) => (q.name || o.name) === p.name)?.color ?? palette[(p.slot - 1) % palette.length] ?? brandAccent()),
+    transform: [...m],
+  }))
 }
 
 /** Up to this size a binary STL is read on the page; a bigger one in the project worker, so the page keeps answering. */
@@ -147,7 +156,10 @@ export async function addAutoImport(host: Host, name: string, data: ArrayBuffer,
     return [quick.id]
   }
   const { bed } = get()
-  const made = entriesFromImport(result, bed)
+  // The model already on the plate from its quick draw keeps its place (and any move made while it loaded): the engine's
+  // objects are in the file's own coordinates, as it was, unless the engine changed the unit.
+  const shown = quick && !result.unit.autoApply ? get().plate.find((p) => p.id === quick.id)?.transform : undefined
+  const made = entriesFromImport(result, bed, shown)
   if (!quick) markOpenStage('parse', { parsedIn: 'worker' })
   const here = quick ? get().plate.find((p) => p.id === quick.id) : undefined
   // The engine changed nothing (no repair, one body, millimeters): the object on the plate is already its result.
@@ -171,10 +183,7 @@ export async function addAutoImport(host: Host, name: string, data: ArrayBuffer,
     if (!quick) markOpenStage('objects')
   }
   markOpenStage('repair')
-  if (entries.length > 1) {
-    const arranged = (await import('../plate/edit')).arrangePlate('all')
-    await (scope ? scope.during(arranged) : arranged)
-  }
+  // Objects split from one model keep their places, so nothing on the plate moves after it first shows.
   markStale()
   const ids = entries.map((e) => e.id)
   const notes = [...stepNotes, ...result.summary]
