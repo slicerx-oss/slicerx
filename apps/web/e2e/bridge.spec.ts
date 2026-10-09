@@ -246,7 +246,8 @@ test('Connected apps: Home Assistant shows only with experimental connectors on,
     await page.keyboard.press('Escape')
 
     // Developer mode shows the switch; turning it on shows Home Assistant, labeled Experimental.
-    await page.getByRole('radiogroup', { name: 'Settings mode' }).getByRole('radio', { name: 'Developer' }).click()
+    await page.getByTestId('slice-mode-chip').click()
+    await page.getByTestId('slice-mode-chip-developer').click()
     await page.getByRole('button', { name: 'Settings', exact: true }).click()
     await apps.click()
     const sw = page.getByTestId('connected-apps-experimental')

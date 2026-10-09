@@ -279,6 +279,26 @@ function CrashReports() {
   )
 }
 
+const SETUP_MODES = [
+  { value: 'simple', label: 'Simple', testId: 'setup-mode-simple' },
+  { value: 'advanced', label: 'Advanced', testId: 'setup-mode-advanced' },
+  { value: 'expert', label: 'Expert', testId: 'setup-mode-expert' },
+] as const
+
+/** How many settings the Slice sidebar shows. Developer mode reads as Expert here; it is chosen from the chip. */
+function SettingsModeQuestion() {
+  const mode = useApp((s) => s.settingsMode)
+  return (
+    <div className="fr-mode" role="group" aria-labelledby="fr-mode-h">
+      <span className="fr-mode-h" id="fr-mode-h">
+        Settings mode
+      </span>
+      <Seg label="Settings mode" size="sm" value={mode === 'developer' ? 'expert' : mode} options={SETUP_MODES} onChange={(v) => set({ settingsMode: v })} />
+      <p className="fr-mode-hint">Change it any time from the chip at the top of the Slice sidebar.</p>
+    </div>
+  )
+}
+
 export function SlicerStep({ choice, onPick, phone }: { choice: LookAndFeelChoice; onPick: (c: LookAndFeelChoice) => void; phone: boolean }) {
   const host = useHost()
   const download = editionLinks(useEdition()).download
@@ -368,6 +388,7 @@ export function SlicerStep({ choice, onPick, phone }: { choice: LookAndFeelChoic
               )
             })}
           </div>
+          <SettingsModeQuestion />
           <PresetImport app={app} />
           <div className="fr-slicer-more">
             <CrashReports />

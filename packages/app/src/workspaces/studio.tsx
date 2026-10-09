@@ -34,6 +34,7 @@ import { ParkedChip } from './prepare/parked-chip'
 import { SliceProgress } from './slice-progress'
 import { useOverlayOffset, type OverlaySelectors } from '../lib/overlay-offset'
 import { useMediaQuery } from '../lib/media'
+import { ModeChip } from '../first-run/mode-chip'
 
 const PREPARE_LEFT: PaneSection[] = [
   { id: 'printer', icon: 'printer', label: 'Printer' },
@@ -148,7 +149,7 @@ export function Studio() {
           </Suspense>
         </SidePane>
       ) : (
-        <SidePane key={`prepare-${side}`} side={side} ws="prepare" label="Printer and settings" sections={PREPARE_LEFT} width={layout.sidebar.width} {...(sliceInSidebar ? { footer: <SliceBlock label={layout.primaryAction.label} compact /> } : {})}>
+        <SidePane key={`prepare-${side}`} side={side} ws="prepare" label="Printer and settings" sections={PREPARE_LEFT} width={layout.sidebar.width} {...(sliceInSidebar ? { footer: <SliceBlock label={layout.primaryAction.label} compact /> } : {})} {...(layout.modeSelector === 'sidebar' ? { headExtra: <ModeChip layout={layout} /> } : {})}>
           <PrepareLeft layout={layout} />
         </SidePane>
       )}

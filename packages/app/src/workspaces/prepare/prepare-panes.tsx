@@ -31,7 +31,7 @@ import { cancelSlice, exportGcode, openModelFiles, sendToPrinter, slicePlate } f
 import type { LayoutSpec } from '@slicerx/contracts'
 import { effectiveMode, openSetup, useLayout } from '../../first-run/look'
 import { useFold } from '../../shell/fold'
-import { ModeSelector, useExpertVisible } from '../../first-run/mode-selector'
+import { useExpertVisible } from '../../first-run/mode-selector'
 import { ObjectActions } from './object-actions'
 const ObjectSettings = lazy(() => import('./object-settings').then((m) => ({ default: m.ObjectSettings })))
 import { ObjectTransform } from './object-transform'
@@ -259,9 +259,8 @@ export function PrepareLeft({ layout }: { layout: LayoutSpec }) {
             title="Print settings"
             icon="sliders"
             aside={
-              layout.modeSelector === 'sidebar' ? (
-                <ModeSelector layout={layout} id="mode-side" />
-              ) : expertVisible ? (
+              // The mode chip in the pane title sets the mode where the look puts it in the sidebar.
+              layout.modeSelector !== 'sidebar' && expertVisible ? (
               <LinkButton
                 icon="sliders"
                 onClick={() => {

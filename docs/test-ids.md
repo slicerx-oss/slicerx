@@ -57,6 +57,7 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | `setup-connection-<method>` | A connection choice; `setup-connection-export` is No connection (export files) |
 | `setup-printer-step-<step>` | A step in the printer form's step list |
 | `setup-printer-error` | The printer was not saved |
+| `setup-mode-<mode>` | The settings mode in setup's slicer step: `setup-mode-simple`, `setup-mode-advanced`, `setup-mode-expert` |
 | `theme-<family>` | A theme card in setup's theme step and in Settings, Look and feel: `theme-subban`, `theme-dracula` and so on |
 
 ## Slice: sidebar
@@ -64,6 +65,8 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | Test id | Control |
 | --- | --- |
 | `slice-machine-plate` | The plate type the active plate prints on, in the printer card |
+| `slice-mode-chip` | The settings mode chip in the Slice pane title |
+| `slice-mode-chip-<mode>` | An item in its menu: `slice-mode-chip-simple`, `slice-mode-chip-advanced`, `slice-mode-chip-expert`, `slice-mode-chip-developer` |
 | `slice-goal-<tier>` | A Goal tile in Print settings: `slice-goal-draft`, `slice-goal-standard`, `slice-goal-fine`, `slice-goal-strong` |
 | `slice-goal-estimate` | The line under the Goal tiles: about how long and how much from the last slice, or Updating |
 
