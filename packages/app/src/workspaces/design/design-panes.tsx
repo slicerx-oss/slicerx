@@ -74,7 +74,7 @@ export function DesignTimeline() {
     last.current = broken
   }, [broken])
   return (
-    <BottomPanel label="Timeline" memory="prepare-design:timeline" attention={attention}>
+    <BottomPanel label="Timeline" memory="prepare-design:timeline" panel="model-timeline" attention={attention}>
       <Timeline />
     </BottomPanel>
   )

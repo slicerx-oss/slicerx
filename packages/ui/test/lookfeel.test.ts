@@ -102,6 +102,8 @@ describe('keymaps', () => {
     for (const id of LOOK_IDS) expect(keymapConflicts(KEYMAPS[id]), id).toEqual([])
     // Design | Slice is Mod+E in all four looks (Tab is Preview in three of them; sketching takes bare digits).
     for (const id of LOOK_IDS) expect(KEYMAPS[id]['model.mode'], id).toBe('Mod+E')
+    // The edge tabs' keys are the same everywhere: [ and ] for the side panels, Mod+J for the bottom one.
+    for (const id of LOOK_IDS) expect([KEYMAPS[id]['panel.left'], KEYMAPS[id]['panel.right'], KEYMAPS[id]['panel.bottom']], id).toEqual(['[', ']', 'Mod+J'])
   })
 
   it('matches the research on the disputed keys', () => {

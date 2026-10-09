@@ -131,7 +131,7 @@ test('Settings opens with Account and Phone access', async ({ page }) => {
 test('side panes collapse to a rail and remember it', async ({ page, isMobile }) => {
   test.skip(isMobile, 'Phones stack the panes instead')
   await open(page, 'prepare')
-  await page.getByRole('button', { name: /Collapse Printer and settings/ }).click()
+  await page.getByRole('button', { name: /Close Printer and settings/ }).click()
   // Move away so the hover peek does not reopen the rail.
   await page.mouse.move(700, 450)
   await expect(page.locator('.sx-rail[data-side=left]')).toHaveAttribute('data-collapsed', 'true')

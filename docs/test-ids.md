@@ -23,7 +23,8 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | Test id | Control |
 | --- | --- |
 | `tab-<workspace>` | A workspace tab in the top bar: `tab-prepare`, `tab-preview`, `tab-printers`, `tab-feed` (the Vault). In an edition with modeling tools the first tab is the Design and Slice pair: `tab-design` and `tab-prepare` (Slice) |
-| `edge-tab-<side>` | The tab on a panel's edge that shuts and reopens it: `edge-tab-left` (the left sidebar), `edge-tab-right` (the right pane), `edge-tab-bottom` (the bottom panel); `aria-expanded` says whether the panel is open |
+| `edge-tab-<side>` | The tab on a panel's edge that shuts and reopens it: `edge-tab-left` (the left sidebar), `edge-tab-right` (the right pane), `edge-tab-bottom` (the bottom panel); `aria-expanded` says whether the panel is open, and `data-panel` says which panel: `model-tree`, `model-inspector`, `model-timeline`, `slice-sidebar` or `slice-summary` |
+| `model-tree`, `model-inspector`, `slice-sidebar`, `slice-summary` | The body of the side pane with that edge tab: Model's tree and its tool and transform pane, Slice's printer and settings sidebar and its slice summary. It is gone while the pane is shut |
 | `toast` | A toast on screen; `data-tone` is ok, info, warn or error |
 | `toast-action` | The button on a toast (Undo and the like) |
 | `dialog-close` | The close button of a dialog |

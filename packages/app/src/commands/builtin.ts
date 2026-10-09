@@ -16,6 +16,7 @@ import { appName, currentEdition, editionHasCad } from '../edition'
 import { modelMode, railKey } from '../state/model-mode'
 import { bugReportsOff } from '../bugs/where'
 import { updaterRegistered } from '../updates/hold'
+import { toggleEdge } from '../shell/edge-keys'
 
 /** Focuses an element once a lazy workspace has rendered it. */
 export function focusWhenReady(id: string, tries = 30): void {
@@ -108,6 +109,7 @@ export function builtinCommands(host: Host, workspaces: readonly { id: string; l
     { id: 'theme-dark', title: 'Use the dark theme', section: 'view', keywords: ['appearance', 'night'], enabled: () => get().scheme !== 'dark', run: () => set({ scheme: 'dark' }) },
     { id: 'toggle-left', title: 'Toggle the left sidebar', section: 'view', keywords: ['panel', 'collapse', 'rail'], shortcut: 'Mod+B', run: () => toggleRail('left') },
     { id: 'toggle-right', title: 'Toggle the right sidebar', section: 'view', keywords: ['panel', 'collapse', 'rail'], shortcut: 'Mod+Alt+B', run: () => toggleRail('right') },
+    { id: 'toggle-bottom', title: 'Show or hide the bottom panel', section: 'view', keywords: ['panel', 'timeline', 'collapse'], workspace: 'prepare', run: () => void toggleEdge('bottom') },
   )
   const looks: [PrepareLook, string][] = [['studio', 'Studio'], ['clay', 'Clay'], ['xray', 'X-ray'], ['overhang', 'Overhang heat map'], ['filament', 'Filament colors']]
   for (const [look, label] of looks) {
@@ -148,6 +150,8 @@ export function builtinCommands(host: Host, workspaces: readonly { id: string; l
 }
 
 export function toggleRail(side: 'left' | 'right'): void {
+  // Model and Slice: the panel on that side with an edge tab, whichever key it keeps its state under.
+  if (toggleEdge(side)) return
   const ws = railKey(get().workspace, modelMode())
   const cur = get().rails[ws]?.[side]
   const wide = window.matchMedia('(min-width: 1280px)').matches
