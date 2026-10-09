@@ -11,15 +11,9 @@ import { addPlate, duplicatePlate, moveSelectedToPlate, removePlate, renamePlate
 import { useApp, type PlateEntry, type PlateMeta, type PlateSettings } from '../../state/store'
 import { PlateThumb } from '../preview/plate-thumb'
 import { plateSequence } from '../../plate/plate-sequence'
+import { BED_TYPE_OPTIONS, type BedType } from '../../plate/bed-type'
 
-const BED_TYPES: { value: NonNullable<PlateSettings['bedType']> | ''; label: string }[] = [
-  { value: '', label: 'Printer default' },
-  { value: 'textured-pei', label: 'Textured PEI' },
-  { value: 'smooth-pei', label: 'Smooth PEI' },
-  { value: 'cool', label: 'Cool plate' },
-  { value: 'engineering', label: 'Engineering plate' },
-  { value: 'high-temp', label: 'High temp plate' },
-]
+const BED_TYPES: readonly { value: BedType | ''; label: string }[] = [{ value: '', label: 'Printer default' }, ...BED_TYPE_OPTIONS]
 
 function usePlates(): { plates: PlateMeta[]; active: string; activeCount: number } {
   const plates = useApp((s) => s.plates)
