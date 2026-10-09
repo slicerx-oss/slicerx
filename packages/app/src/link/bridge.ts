@@ -12,6 +12,7 @@ import { pairSourceFor, pairStorage, phoneAccessFor } from '../features/phone/wi
 import { getPhoneAccess, setPhoneAccess } from '../lib/phone'
 import { get, set, toast } from '../state/store'
 import { promoteHandPrinters, withHandPrinters } from '../lib/hand-printers'
+import { bridgeConnector, forgetConnector } from './connector'
 
 /** What a connected bridge gives the app. */
 export interface ConnectedBridge {
@@ -61,22 +62,9 @@ export interface BridgeSetup {
   addPrinter(input: { profileId: string; nozzleMm: number; connection?: PrinterConnection; name?: string }): Promise<{ printerId: string }>
 }
 
-export interface BridgeConnector {
-  /** True when the app starts the bridge itself and needs no code (desktop). */
-  automatic: boolean
-  /** Connects. `code` is the pairing code for a bridge the person started. */
-  connect(code?: string): Promise<ConnectedBridge>
-}
-
-let connector: BridgeConnector | null = null
 let live: { bridge: ConnectedBridge; before: Pick<Host, 'printers' | 'approvals' | 'secrets'>; caps: Pick<Host['capabilities'], 'printers' | 'secureStorage'> } | null = null
 
-export function setBridgeConnector(c: BridgeConnector | null): void {
-  connector = c
-  set({ bridgeStatus: { state: 'off' } })
-}
-
-export const bridgeConnector = (): BridgeConnector | null => connector
+export { bridgeConnector, setBridgeConnector, type BridgeConnector } from './connector'
 
 /** The setup host for the setup screens when a bridge is connected: the bridge does discovery, tests and adds. */
 function setupFor(_host: Host, setup: BridgeSetup): AppSetupHost {
@@ -140,6 +128,7 @@ export function connectBridge(host: Host, code?: string): Promise<boolean> {
 }
 
 async function connect(host: Host, code?: string): Promise<boolean> {
+  const connector = bridgeConnector()
   if (!connector) return false
   if (live) return true
   set({ bridgeStatus: { state: 'connecting' } })
@@ -221,7 +210,7 @@ export function resetBridge(): void {
   stopFinished?.()
   stopFinished = null
   live = null
-  connector = null
+  forgetConnector()
   connecting = null
 }
 

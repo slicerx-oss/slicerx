@@ -22,7 +22,7 @@ import { inTextField, matchShortcut } from './lib/keys'
 import { lookCommandFor, onControl } from './controls/global-keys'
 import { WorkspaceBoundary } from './shell/boundary'
 import { CommandBar } from './shell/command-bar'
-import { bridgeConnector, connectBridge } from './link/bridge'
+import { bridgeConnector } from './link/connector'
 import { ApprovalDialog, Status, ToastBridge } from './shell/overlays'
 import { TopBar } from './shell/top-bar'
 import { orderWorkspaces, setupCommands, useApplyLook, useLayout, useLookChoice } from './first-run/look'
@@ -34,7 +34,7 @@ import { get, pilotState, pushRecent, set, showsLayers, toast, useApp } from './
 import { updaterRegistered } from './updates/hold'
 import { toolStore } from './plate/tools'
 import { startReadySignal } from './lib/ready-signal'
-import { startBugReports } from './bugs/reports'
+import { startCrashCapture } from './bugs/crash'
 import { needsAgreement } from './first-run/agreement-check'
 import { onboardingRerun } from './first-run/onboarding'
 import { hasLegacySetupPrinters, withHandPrinters } from './lib/hand-printers'
@@ -108,7 +108,19 @@ export function SlicerXApp({ host, features = [], theme, edition = NEUTRAL, logo
     if (host.printers) host.printers = withHandPrinters(host.printers)
     if (hasLegacySetupPrinters()) void import('./first-run/setup-host').then((m) => m.migrateSetupPrinters())
   })
-  useEffect(() => startBugReports(host, edition), [host, edition])
+  // Crashes are caught from the start; the report code loads after the first frame and takes the early ones.
+  useEffect(() => startCrashCapture(), [])
+  useEffect(() => {
+    let stop: (() => void) | null = null
+    let gone = false
+    void import('./bugs/reports').then((m) => {
+      if (!gone) stop = m.startBugReports(host, edition)
+    })
+    return () => {
+      gone = true
+      stop?.()
+    }
+  }, [host, edition])
   // Settings > Appearance > Motion, else the edition's default, on the root before paint (ui motion.ts)
   const motion = useApp((s) => s.motion) ?? edition.firstRun.defaultMotion ?? 'full'
   useLayoutEffect(() => setMotionPreference(motion), [motion])
@@ -193,7 +205,7 @@ function Shell() {
   useEffect(() => registerCommands(setupCommands()), [])
   // The desktop app starts its own bridge and connects to it without asking.
   useEffect(() => {
-    if (bridgeConnector()?.automatic) void connectBridge(host)
+    if (bridgeConnector()?.automatic) void import('./link/bridge').then((m) => m.connectBridge(host))
   }, [host])
   // Presets in use come back at startup; the preset code loads only when there is one.
   useEffect(() => {
