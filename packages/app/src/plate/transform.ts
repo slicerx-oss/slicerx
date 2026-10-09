@@ -110,16 +110,37 @@ export interface Box {
 export function bounds(parts: readonly Pick<MeshPart, 'positions'>[], m: Mat4): Box | null {
   const min: Vec3 = [Infinity, Infinity, Infinity]
   const max: Vec3 = [-Infinity, -Infinity, -Infinity]
+  // The transform inline, with no array per vertex: this runs over every vertex of the plate on many changes.
+  const [m0, m1, m2, , m4, m5, m6, , m8, m9, m10, , m12, m13, m14] = Array.from({ length: 16 }, (_, k) => m[k] ?? 0) as number[]
+  let x0 = Infinity
+  let y0 = Infinity
+  let z0 = Infinity
+  let x1 = -Infinity
+  let y1 = -Infinity
+  let z1 = -Infinity
   for (const part of parts) {
     const p = part.positions
     for (let i = 0; i + 2 < p.length; i += 3) {
-      const w = apply(m, [p[i] ?? 0, p[i + 1] ?? 0, p[i + 2] ?? 0])
-      for (let k = 0; k < 3; k++) {
-        if (w[k]! < min[k]!) min[k] = w[k]!
-        if (w[k]! > max[k]!) max[k] = w[k]!
-      }
+      const a = p[i] ?? 0
+      const b = p[i + 1] ?? 0
+      const c = p[i + 2] ?? 0
+      const x = m0! * a + m4! * b + m8! * c + m12!
+      const y = m1! * a + m5! * b + m9! * c + m13!
+      const z = m2! * a + m6! * b + m10! * c + m14!
+      if (x < x0) x0 = x
+      if (x > x1) x1 = x
+      if (y < y0) y0 = y
+      if (y > y1) y1 = y
+      if (z < z0) z0 = z
+      if (z > z1) z1 = z
     }
   }
+  min[0] = x0
+  min[1] = y0
+  min[2] = z0
+  max[0] = x1
+  max[1] = y1
+  max[2] = z1
   return Number.isFinite(min[0]) ? { min, max } : null
 }
 
