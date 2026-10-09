@@ -6,7 +6,7 @@
 // after it. Each step can move earlier or later, be suppressed or deleted; a broken step says why.
 // Loads with the CAD tools, only for an object that has a history.
 import { Button, Icon } from '@slicerx/ui'
-import { useState } from 'react'
+import { Fragment, useRef, useState } from 'react'
 import { useHost } from '../../host'
 import { toast, useApp } from '../../state/store'
 import { num } from '../panel-kit'
@@ -37,7 +37,50 @@ export function HistoryPanel({ objectId }: { objectId: string }) {
 }
 
 /** An object's steps, each with view, edit, move, suppress and delete. The Design tree shows them with icons and sketch rows. */
-export function HistorySteps({ objectId, tree }: { objectId: string; tree?: boolean }) {
+/**
+ * The tree's rollback row: a thin bar after the step the part is shown at. Drag it to another step, or with focus
+ * use Up and Down to move it a step and End to go back to the latest. The tree hides it at the latest.
+ */
+function RollbackRow({ index, count, onTo }: { index: number; count: number; onTo: (to: number) => void }) {
+  const at = useRef(index)
+  at.current = index
+  const go = (to: number) => {
+    const t = Math.max(0, Math.min(count - 1, to))
+    if (t !== at.current) onTo(t)
+  }
+  return (
+    <li
+      className="cad-rollback"
+      data-testid="model-tree-rollback"
+      role="slider"
+      tabIndex={0}
+      aria-label="History position"
+      aria-valuemin={1}
+      aria-valuemax={count}
+      aria-valuenow={index + 1}
+      aria-valuetext={`After step ${index + 1} of ${count}`}
+      data-tip-title="History position"
+      data-tip-body="Drag, or use the arrow keys, to see the part at any step."
+      onKeyDown={(e) => {
+        if (e.key === 'ArrowUp') go(index - 1)
+        else if (e.key === 'ArrowDown') go(index + 1)
+        else if (e.key === 'End') onTo(count - 1)
+        else return
+        e.preventDefault()
+        e.stopPropagation()
+      }}
+      onPointerDown={(e) => e.currentTarget.setPointerCapture(e.pointerId)}
+      onPointerMove={(e) => {
+        if (!e.currentTarget.hasPointerCapture(e.pointerId)) return
+        // The step row under the pointer, from its index; above the first row is step 1.
+        const row = document.elementsFromPoint(e.clientX, e.clientY).find((el) => el instanceof HTMLElement && el.dataset['index'] !== undefined && el.dataset['testid'] === 'model-tree-step') as HTMLElement | undefined
+        if (row) go(Number(row.dataset['index']))
+      }}
+    />
+  )
+}
+
+export function HistorySteps({ objectId, tree, only }: { objectId: string; tree?: boolean; only?: ReadonlySet<number> | null }) {
   const host = useHost()
   const entry = useApp((s) => (s.historyEdit?.objectId === objectId ? s.historyEdit.original : s.plate.find((p) => p.id === objectId)))
   const editingIndex = useApp((s) => (s.historyEdit?.objectId === objectId && !s.historyEdit.view ? s.historyEdit.index : null))
@@ -62,7 +105,8 @@ export function HistorySteps({ objectId, tree }: { objectId: string; tree?: bool
     <>
       {h.ended ? <p className="cad-hint"><Icon name="info" size={14} /> {h.ended}</p> : null}
       <ol className="cad-steps" role={tree ? 'group' : undefined}>
-        {h.steps.map((s, i) => (
+        {h.steps.map((s, i) => (only && !only.has(i) ? null : (
+          <Fragment key={s.id}>
           <StepRow
             key={s.id}
             step={s}
@@ -104,7 +148,15 @@ export function HistorySteps({ objectId, tree }: { objectId: string; tree?: bool
               return null
             }}
           />
-        ))}
+          {tree && viewingIndex === i ? (
+            <RollbackRow
+              index={i}
+              count={h.steps.length}
+              onTo={(to) => void run(to, () => (to >= h.steps.length - 1 ? Promise.resolve(cancelEdit()) : viewStep(host.slicer, objectId, to)))}
+            />
+          ) : null}
+          </Fragment>
+        )))}
       </ol>
       {editingIndex !== null ? (
         <div className="cad-row">

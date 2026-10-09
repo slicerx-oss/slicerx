@@ -252,6 +252,8 @@ Ids that tests read for their text:
 | `model-tree-object` | An object row in the Model tree; `data-object-id`, and `data-kind` is `body` (has a history) or `mesh` |
 | `model-tree-step` | A step row in the Model tree; `data-object-id`, `data-index` and `data-state` (`done`, `broken`, `skipped`, `suppressed`) |
 | `model-tree-more` | A step row's More button, which opens the step's menu |
+| `model-tree-filter` | The tree's filter field, opened by typing in the tree; Escape shuts it |
+| `model-tree-rollback` | The rollback row after the step the part is shown at: drag it, or Up, Down and End with focus |
 | `model-tree-rename` | The inline name field of an object or a step being renamed |
 | `model-ctx` | An open Model tree menu, from a right click, a long press, Shift+F10 or More; `data-target` is `step` or `object` |
 | `model-ctx-edit`, `model-ctx-roll`, `model-ctx-suppress`, `model-ctx-rename`, `model-ctx-earlier`, `model-ctx-later`, `model-ctx-sketch`, `model-ctx-end` | A step menu's items: edit it, roll the part back to it, turn it off or on, rename, move, show its sketch, roll back to the latest |

@@ -104,3 +104,12 @@
 /* The next slot reads as a suggestion: a faint accent ground, its icons a step quieter until hovered. */
 .shelf-next .shelf-tool .sx-ic { color: var(--dim); }
 .shelf-next .shelf-tool:hover .sx-ic { color: var(--fg); }
+
+/* The tree's filter field, opened by typing in the tree, with how many objects it keeps. */
+.dtree-filter { display: flex; align-items: center; gap: 8px; margin: 0 0 6px; }
+.dtree-filter .sx-input { flex: 1; min-width: 0; }
+/* The rollback row: a thin accent bar after the step the part is shown at, dragged or moved with the arrow keys. */
+.cad-rollback { position: relative; height: 8px; margin: 0 0 0 22px; border-radius: 2px; cursor: ns-resize; touch-action: none; list-style: none; }
+.cad-rollback::before { content: ""; position: absolute; left: 0; right: 0; top: 3px; height: 2px; border-radius: 1px; background: var(--accent); }
+.cad-rollback:hover::before, .cad-rollback:focus-visible::before { top: 2px; height: 4px; }
+.cad-rollback:focus-visible { outline: var(--focus-ring); outline-offset: 1px; }

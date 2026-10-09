@@ -412,7 +412,7 @@ function useGlobalKeys(order: readonly string[]): void {
         // With the brim ears tool on, Delete removes the selected ears, never the object (Orca's gizmo does the same).
         if (toolStore.getState().tool === 'brim') void import('./plate/brim-ears').then((m) => m.removeSelectedEars(s.selection!))
         else void runCommand('plate-remove')
-      } else if (e.key === '?' && !e.metaKey && !e.ctrlKey) {
+      } else if (e.key === '?' && !e.metaKey && !e.ctrlKey && !e.defaultPrevented) {
         set({ shortcutsOpen: true })
       }
     }

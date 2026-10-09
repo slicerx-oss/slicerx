@@ -12,6 +12,7 @@ import { selectObject } from '../../plate/edit'
 import { MAX_NAME, renameObject } from '../../plate/object-list'
 import { get, useApp, type PlateEntry } from '../../state/store'
 import { ObjectMenu } from './context-menus'
+import { filterTree, startsFilter } from './tree-filter'
 
 const ROW = '[data-tree-row]'
 
@@ -61,8 +62,16 @@ export function HistoryTree() {
   const selection = useApp((s) => s.selection)
   const selected = useApp((s) => s.selectedIds)
   const [open, setOpen] = useState<Record<string, boolean>>({})
+  // The filter: null while it is shut; typing in the tree opens it with that character.
+  const [query, setQuery] = useState<string | null>(null)
   const ref = useRef<HTMLUListElement>(null)
   const objects: PlateEntry[] = editing && !plate.some((p) => p.id === editing.objectId) ? [...plate, editing.original] : plate
+  const shown = filterTree(objects.map((p) => (editing?.objectId === p.id ? { ...p, history: editing.original.history } : p)), query ?? '')
+  const visible = objects.filter((p) => shown.get(p.id)?.show !== false)
+  const closeFilter = () => {
+    setQuery(null)
+    requestAnimationFrame(() => ref.current?.querySelector<HTMLElement>('[data-tree-row][tabindex="0"]')?.focus())
+  }
 
   // Roving focus: the focused row, or else the selected object, or else the first row, is the one Tab reaches.
   useLayoutEffect(() => {
@@ -75,20 +84,62 @@ export function HistoryTree() {
 
   if (!objects.length) return <p className="dtree-empty sx-small sx-muted">Add a model or a shape to start.</p>
   return (
+    <>
+    {query !== null ? (
+      <div className="dtree-filter">
+        <input
+          className="sx-input"
+          data-size="sm"
+          data-testid="model-tree-filter"
+          placeholder="Filter"
+          aria-label="Filter the objects and steps"
+          value={query}
+          autoFocus
+          onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') {
+              e.preventDefault()
+              e.stopPropagation()
+              closeFilter()
+            } else if (e.key === 'ArrowDown') {
+              e.preventDefault()
+              ref.current?.querySelector<HTMLElement>('[data-tree-row]')?.focus()
+            }
+          }}
+        />
+        <span className="sx-small sx-muted sx-mono" aria-live="polite">{`${visible.length} of ${objects.length}`}</span>
+      </div>
+    ) : null}
+    {query !== null && !visible.length ? <p className="dtree-empty sx-small sx-muted">{`Nothing matches "${query.trim()}"`}</p> : null}
     <ul
       ref={ref}
       className="dtree"
       role="tree"
       aria-label="Objects and their steps"
+      data-typeahead=""
       onFocus={(e) => {
         const row = (e.target as HTMLElement).closest<HTMLElement>(ROW)
         if (row) for (const el of e.currentTarget.querySelectorAll<HTMLElement>(ROW)) el.tabIndex = el === row ? 0 : -1
       }}
-      onKeyDown={(e) => treeKey(e.currentTarget, e, (id, o) => setOpen((s) => ({ ...s, [id]: o })))}
+      onKeyDown={(e) => {
+        // Typing in the tree filters it; the field opens with the first character.
+        if (startsFilter(e) && !(e.target instanceof HTMLInputElement)) {
+          e.preventDefault()
+          setQuery((q) => (q ?? '') + e.key)
+          return
+        }
+        if (e.key === 'Escape' && query !== null) {
+          e.preventDefault()
+          e.stopPropagation()
+          return closeFilter()
+        }
+        treeKey(e.currentTarget, e, (id, o) => setOpen((s) => ({ ...s, [id]: o })))
+      }}
     >
-      {objects.map((p) => {
+      {visible.map((p) => {
         const steps = (editing?.objectId === p.id ? editing.original : p).history?.steps.length ?? 0
-        const isOpen = open[p.id] ?? (p.id === selection || p.id === editing?.objectId)
+        const only = (shown.get(p.id) as { steps: ReadonlySet<number> | null } | undefined)?.steps ?? null
+        const isOpen = only ? true : (open[p.id] ?? (p.id === selection || p.id === editing?.objectId))
         const isSel = p.id === selection || selected.includes(p.id)
         const kind = p.history ? 'body' : 'mesh'
         return (
@@ -96,7 +147,7 @@ export function HistoryTree() {
             <ObjectRow entry={p} kind={kind} steps={steps} isOpen={isOpen} isSel={isSel} setOpen={(o) => setOpen((m) => ({ ...m, [p.id]: o }))} />
             {isOpen ? (
               <div className="dtree-body" role="group">
-                {steps ? <HistorySteps objectId={p.id} tree /> : null}
+                {steps ? <HistorySteps objectId={p.id} tree only={only} /> : null}
                 <ul className="dtree-parts" role="group" aria-label={`Parts of ${p.name}`}>
                   {p.handle.parts.map((part, i) => (
                     <li key={`${part.name}-${i}`} role="treeitem" aria-level={2} aria-label={part.name}>
@@ -121,6 +172,7 @@ export function HistoryTree() {
         )
       })}
     </ul>
+    </>
   )
 }
 
