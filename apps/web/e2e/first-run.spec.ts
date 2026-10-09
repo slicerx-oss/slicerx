@@ -268,14 +268,14 @@ test('Skip, use defaults closes setup; mimir shows and opens the connect step un
   await expect(dialog.getByRole('radiogroup', { name: 'Model provider' })).toBeVisible()
 })
 
-test('choosing CAD design opens the plate in Design, now and on the next launch, and Settings changes it', async ({ page }) => {
+test('choosing CAD model opens the plate in Model, now and on the next launch, and Settings changes it', async ({ page }) => {
   await fresh(page)
   // Straight to the open step: no printer, the slicer as it is.
   await page.getByRole('button', { name: 'I do not have a printer yet' }).first().click()
   await expect(page.locator('#fr-step-label')).toHaveText('Step 3 of 5')
   await page.locator('.fr-foot').getByRole('button', { name: 'Next' }).click()
   await expect(page.locator('#fr-step-label')).toHaveText('Step 4 of 5')
-  const cad = page.getByRole('radio', { name: /^CAD design/ })
+  const cad = page.getByRole('radio', { name: /^CAD model/ })
   await cad.click()
   await expect(cad).toHaveAttribute('aria-checked', 'true')
   await page.locator('.fr-foot').getByRole('button', { name: 'Next' }).click()
@@ -288,7 +288,7 @@ test('choosing CAD design opens the plate in Design, now and on the next launch,
   await page.getByRole('button', { name: 'Settings', exact: true }).click()
   await page.getByRole('navigation', { name: 'Settings sections' }).getByRole('button', { name: 'Look and feel' }).click()
   const row = page.getByRole('radiogroup', { name: 'Open models in' })
-  await expect(row.getByRole('radio', { name: 'CAD design' })).toHaveAttribute('aria-checked', 'true')
+  await expect(row.getByRole('radio', { name: 'Model' })).toHaveAttribute('aria-checked', 'true')
   await row.getByRole('radio', { name: 'Slicing' }).click()
   await page.keyboard.press('Escape')
   await expect(page.locator('.sx-tab[data-mode="design"]')).toHaveAttribute('aria-current', 'page')

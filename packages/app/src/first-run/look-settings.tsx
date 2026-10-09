@@ -80,7 +80,7 @@ export function LookSettingsSection() {
           <div className="set-seg-row">
             <span className="set-seg-text">
               <span>Open models in</span>
-              <small>The mode the first tab starts in. {formatShortcut('Mod+E')} switches any time.</small>
+              <small>The tab the plate opens in. {formatShortcut('Mod+E')} switches any time.</small>
             </span>
             <Seg
               size="sm"
@@ -89,7 +89,7 @@ export function LookSettingsSection() {
               onChange={(v) => set({ modelModeDefault: v })}
               options={[
                 { value: 'slice', label: 'Slicing' },
-                { value: 'design', label: 'CAD design' },
+                { value: 'design', label: 'Model' },
               ]}
             />
           </div>

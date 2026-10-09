@@ -128,6 +128,12 @@ describe('controls by test id', () => {
     expect(seen).toEqual(['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'])
   })
 
+  it('finds a control by an old id it still answers to', () => {
+    document.body.innerHTML = '<button data-testid="tab-model" data-testid-alias="tab-design">Model</button>'
+    expect(click(document, 'tab-design')).toEqual({ clicked: 'tab-model', matches: 1 })
+    expect(elements(document, 'tab-model')).toHaveLength(1)
+  })
+
   it('refuses disabled, missing and destructive controls', () => {
     document.body.innerHTML = [
       '<button data-testid="send-again" disabled>Send again in 30 s</button>',

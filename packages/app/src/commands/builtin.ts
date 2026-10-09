@@ -61,8 +61,8 @@ export function builtinCommands(host: Host, workspaces: readonly { id: string; l
   if (editionHasCad()) {
     const inMode = (m: 'design' | 'slice') => () => get().workspace === 'prepare' && get().modelMode === m
     out.push(
-      { id: 'mode-design', title: 'Switch to Design', section: 'navigate', keywords: ['model', 'cad', 'sketch'], enabled: () => !inMode('design')(), tool: { permission: 'read' }, run: () => setModelMode('design') },
-      { id: 'mode-slice', title: 'Switch to Slice', section: 'navigate', keywords: ['plate', 'prepare'], enabled: () => !inMode('slice')(), tool: { permission: 'read' }, run: () => setModelMode('slice') },
+      { id: 'mode-design', title: 'Go to Model', section: 'navigate', keywords: ['design', 'cad', 'sketch'], enabled: () => !inMode('design')(), tool: { permission: 'read' }, run: () => setModelMode('design') },
+      { id: 'mode-slice', title: 'Go to Slice', section: 'navigate', keywords: ['plate', 'prepare'], enabled: () => !inMode('slice')(), tool: { permission: 'read' }, run: () => setModelMode('slice') },
     )
   }
 
