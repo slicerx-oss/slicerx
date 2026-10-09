@@ -41,6 +41,8 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | `projects-close` | Close (keeps the unsaved work for next time) |
 | `agreement` | The pre-alpha agreement screen |
 | `agreement-check`, `agreement-accept` | Its checkbox and Accept and continue |
+| `raven-slice-glide` | Muninn gliding along the slicing progress, for a slice past about 1.2 s |
+| `raven-loading` | Huginn and Muninn over the plate while a model loads for more than about 1.2 s |
 
 ## Setup (first run and Printers > Add)
 
@@ -152,6 +154,7 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | `colors-row` | One color of the design (upload and Colors); `data-hex` is the color |
 | `upload-include-profile` | Show how it printed on the listing |
 | `upload-state` | The status line (Ready to send, Uploading) |
+| `raven-upload-carry` | The raven carrying the file, in the status line of an upload past about 1.2 s |
 | `upload-cancel`, `upload-publish` | Cancel and Submit for review (sends the design to the Vault, where it waits for review) |
 | `upload-your-uploads` | Your uploads |
 | `uploads-list` | Your uploads |

@@ -7,7 +7,7 @@
 // review until it is live or sent back with a note.
 import type { FileFormat, Listing, ListingColors, ListingLicense, StoreClient, UploadPrintProfile } from '@slicerx/contracts'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useEffect, useId, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { Button, Icon, Seg } from '@slicerx/ui'
 import { coverForFile, coverInColors, currentProjectUpload, fileModel, projectHasModels, projectModel, toast, vaultCreatorsInFile, type CoverImage, type UploadModel } from '@slicerx/app'
 import { DrawingArt } from './drawing-art'
@@ -20,6 +20,9 @@ import { CreatorAvatar, count } from './creator-sheet'
 import { LIBRARY_KEY, myCreatorQuery, useSession, useStore } from './queries'
 import { closeUpload, openEditor, openListing, openUpload, useLibrarySheets } from './sheets'
 import { CATEGORIES } from './filter'
+import { useWaited } from '../../lib/waited'
+
+const UploadCarry = lazy(() => import('../../ravens/waits').then((m) => ({ default: m.UploadCarry })))
 
 export const LICENSE_LABELS: Record<ListingLicense, string> = {
   cc0: 'CC0, free for anything',
@@ -201,6 +204,8 @@ function UploadForm() {
   const [includeProfile, setIncludeProfile] = useState(true)
   const [tried, setTried] = useState(false)
   const [busy, setBusy] = useState<string | null>(null)
+  // An upload that takes a while gets a raven carrying the file.
+  const carry = useWaited(busy !== null)
   const [fileError, setFileError] = useState<string | null>(null)
   const urls = useRef<string[]>([])
   useEffect(() => () => urls.current.forEach((u) => URL.revokeObjectURL(u)), [])
@@ -464,6 +469,7 @@ function UploadForm() {
           </form>
           <div className="ce-savebar">
             <span className="ce-state" role="status" data-testid="upload-state">
+              {carry ? <Suspense fallback={null}><UploadCarry /></Suspense> : null}
               {busy ?? (preparing ? 'Preparing' : file ? 'Ready to send' : 'Pick what to upload')}
             </span>
             <Button onClick={closeUpload} disabled={busy !== null} data-testid="upload-cancel">
