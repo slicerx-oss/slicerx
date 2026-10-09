@@ -20,6 +20,7 @@ import type {
 } from '@slicerx/contracts'
 import type { FromWorker, MeshInfo, ShardInfo, ToWorker } from './protocol'
 import { decodeParts, encodeParts } from './parts'
+import { shardCount } from './shards'
 import { stitchPreview } from './stitch'
 
 /** A time the caller set on the request wins over the clock (tests and reproducible runs). */
@@ -349,7 +350,13 @@ export async function createWasmSlicer(opts: PoolOptions): Promise<SlicerHost> {
         | { width: number; height: number; rgba: Uint8Array | ArrayBuffer }
         | undefined
       const request = JSON.stringify({ plate: req.plate, config: req.config, options })
-      const shards = Math.max(1, Math.min(req.options?.shards ?? count * shardsPerWorker, 64))
+      // Fewer ranges than the pool could take when the plate has few layers (`shardCount`).
+      const cap = Math.max(1, Math.min(count * shardsPerWorker, 64))
+      const asked = req.options?.shards
+      const shards =
+        asked !== undefined
+          ? Math.max(1, Math.min(asked, 64))
+          : shardCount(req.plate.objects, req.config as unknown as Record<string, unknown>, (id) => meshes.get(id)?.bboxMm, cap)
       let done = 0
       const stage: SliceStage = 'paths'
       // Shards go to whichever worker is free next, so a worker that drew
