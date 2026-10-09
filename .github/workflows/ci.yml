@@ -24,7 +24,9 @@ permissions:
 # in another group and skips its jobs; a skipped check counts as passed.
 concurrency:
   group: ci-${{ github.event.pull_request.number || github.ref }}${{ ((github.event.action == 'opened' && contains(github.event.pull_request.labels.*.name, 'full-ci')) || (github.event.action == 'labeled' && github.event.label.name != 'full-ci')) && '-again' || (github.event.action == 'labeled' && '-full-ci') || '' }}
-  cancel-in-progress: true
+  # Only a pull request's superseded runs are cancelled. A merge queue entry's run is never cut short: the queue rebuilds
+  # the same commit on the same ref when an entry is requeued, and a cancelled run's checks there failed the new entry.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   detect:
