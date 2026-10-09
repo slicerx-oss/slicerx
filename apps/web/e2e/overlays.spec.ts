@@ -117,6 +117,13 @@ test('a toast sits above the plate bar, over the viewport, on no control', async
   } else {
     // Centered over the viewport (within a pixel of rounding).
     expect(Math.abs(toast.x + toast.width / 2 - (vp.x + vp.width / 2))).toBeLessThanOrEqual(1)
+    // Still centered after the side pane changes width: the viewport moved, the stack follows.
+    await page.evaluate(() => (window as unknown as { __sx: Sx }).__sx.setState({ paneSizes: { 'slicerx:prepare-left': 300 } }))
+    await expect.poll(async () => {
+      const t = await postToast(page, 'Saved the plate again.')
+      const v = (await page.locator('.vp').boundingBox())!
+      return Math.round(Math.abs(t.x + t.width / 2 - (v.x + v.width / 2)))
+    }).toBeLessThanOrEqual(1)
   }
 })
 
