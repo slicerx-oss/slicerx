@@ -3,7 +3,7 @@
 // The first plate reveal: its timeline, the outline path the crackles follow, and once per window.
 import { beforeEach, describe, expect, it } from 'vitest'
 import { PerspectiveCamera } from 'three'
-import { outlinePoint, PlateReveal, REVEAL_DELAY_MS, REVEAL_END_MS, REVEAL_GRID_AFTER_MS, REVEAL_TRACE_MS, revealPlate, revealPlayed, resetRevealPlayed, type RevealPlate } from '../src/reveal'
+import { BLOOM_PEAK, legShare, outlinePoint, PlateReveal, REVEAL_DELAY_MS, REVEAL_DWELL_MS, REVEAL_END_MS, REVEAL_GRID_AFTER_MS, REVEAL_TRACE_MS, revealPlate, revealPlayed, resetRevealPlayed, traceShare, type RevealPlate } from '../src/reveal'
 
 const at = (ms: number): RevealPlate => revealPlate(ms, { trace: 0, gridMs: 0, tint: 0 })
 
@@ -105,5 +105,55 @@ describe('plate reveal', () => {
     r.finish((a, b, c) => void calls.push([a, b, c]))
     expect(calls).toEqual([[1, 1e9, 0]])
     expect(r.done).toBe(true)
+  })
+})
+
+describe('the trace moves like a mass on a track', () => {
+  // a 256 by 200 mm bed: half the front is 128 mm, the side 200 mm
+  const hx = 128
+  const hy = 100
+  const total = 2 * hx + 2 * hy
+  const step = 1
+  const speed = (ms: number) => ((traceShare(ms + step, hx, hy) - traceShare(ms - step, hx, hy)) * total) / (2 * step)
+  const legMs = (REVEAL_TRACE_MS - 2 * REVEAL_DWELL_MS) / 3
+  const corners = [legMs, 2 * legMs + REVEAL_DWELL_MS]
+
+  it('starts from rest, rests in each corner, and arrives at the back slowly', () => {
+    expect(speed(1)).toBeLessThan(0.01)
+    for (const c of corners) {
+      expect(speed(c - 2)).toBeLessThan(0.02)
+      expect(speed(c + REVEAL_DWELL_MS / 2)).toBe(0)
+      expect(speed(c + REVEAL_DWELL_MS + 2)).toBeLessThan(0.02)
+    }
+    expect(speed(REVEAL_TRACE_MS - 2)).toBeLessThan(0.02)
+    // the corners are where the outline turns: the front corner after half the front, the back one after the side
+    expect(traceShare(corners[0]! + 1, hx, hy) * total).toBeCloseTo(hx, 0)
+    expect(traceShare(corners[1]! + 1, hx, hy) * total).toBeCloseTo(hx + 2 * hy, 0)
+  })
+
+  it('is fastest mid-leg, with peak speed scaled to the leg so every leg takes the same time', () => {
+    const mids = [legMs / 2, legMs * 1.5 + REVEAL_DWELL_MS, legMs * 2.5 + 2 * REVEAL_DWELL_MS]
+    for (const m of mids) {
+      expect(speed(m)).toBeGreaterThan(speed(m - legMs / 4))
+      expect(speed(m)).toBeGreaterThan(speed(m + legMs / 4))
+    }
+    // the side is 200 mm against 128 mm for half the front: its peak is that much faster
+    expect(speed(mids[1]!) / speed(mids[0]!)).toBeCloseTo((2 * hy) / hx, 1)
+  })
+
+  it('never jumps: the speed changes smoothly from one millisecond to the next', () => {
+    let last = speed(1)
+    for (let ms = 2; ms < REVEAL_TRACE_MS - 1; ms += 1) {
+      const v = speed(ms)
+      expect(Math.abs(v - last)).toBeLessThan(0.05)
+      last = v
+    }
+  })
+
+  it('keeps the old timing: traced in REVEAL_TRACE_MS, a softer bloom', () => {
+    expect(traceShare(REVEAL_TRACE_MS, hx, hy)).toBe(1)
+    expect(traceShare(0, hx, hy)).toBe(0)
+    expect(legShare(0.5)).toBeCloseTo(0.5)
+    expect(BLOOM_PEAK).toBeLessThan(0.9)
   })
 })
