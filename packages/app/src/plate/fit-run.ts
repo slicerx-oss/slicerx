@@ -5,7 +5,7 @@
 // close without touching (they print loose). Between objects, any touch or tight gap counts: separate objects that
 // meet print as one piece by accident.
 import { fitCheck, type FitGap, type FitReport } from '../geom/cad'
-import { toGeom } from '../geom/client'
+import { toGeom, usesWorker, type GeomMesh } from '../geom/client'
 import { bounds, type Box } from './transform'
 import type { PlateEntry } from '../state/store'
 import { setFit, type Touch } from './fit-state'
@@ -22,6 +22,15 @@ export function objectGaps(report: FitReport): FitGap[] {
   return report.gaps.filter((g) => g.kind !== 'fused').map((g) => ({ ...g, parts: [part(g.parts[0]), part(g.parts[1])] }))
 }
 
+/**
+ * A part as the fit check sends it. The app's own geometry worker takes the typed arrays as they are and flattens them
+ * itself (geom-worker.ts), so a model of millions of triangles is not turned into JS arrays on the page; another
+ * provider gets plain arrays.
+ */
+function fitMesh(part: PlateEntry['parts'][number]): GeomMesh {
+  return usesWorker() ? ({ positions: part.positions, indices: part.indices } as unknown as GeomMesh) : toGeom(part)
+}
+
 /** Whether two boxes come within `reach` of each other on every axis. */
 export function near(a: Box, b: Box, reach: number): boolean {
   return [0, 1, 2].every((k) => a.min[k]! - reach <= b.max[k]! && b.min[k]! - reach <= a.max[k]!)
@@ -35,7 +44,7 @@ export function crossGap(report: FitReport): FitGap | null {
 }
 
 export async function checkObject(e: PlateEntry, minGapMm: number, layerHeightMm: number, signal: AbortSignal): Promise<void> {
-  const parts = e.parts.map((p) => ({ mesh: toGeom(p), transform: e.transform }))
+  const parts = e.parts.map((p) => ({ mesh: fitMesh(p), transform: e.transform }))
   const report = await fitCheck(parts, { minGapMm, layerHeightMm, skipFused: true, apartMm: APART_MM }, signal)
   if (signal.aborted) return
   setFit(e.id, { gaps: objectGaps(report), names: e.parts.map((p) => p.name), limitMm: report.limitMm, verticalLimitMm: report.verticalLimitMm, transform: e.transform })
@@ -60,7 +69,7 @@ export async function checkTouches(entries: readonly PlateEntry[], minGapMm: num
         for (const pb of b.e.parts) {
           const bb = bounds([pb], b.e.transform)
           if (!ba || !bb || !near(ba, bb, reach)) continue
-          const report = await fitCheck([{ mesh: toGeom(pa), transform: a.e.transform }, { mesh: toGeom(pb), transform: b.e.transform }], { minGapMm, layerHeightMm }, signal)
+          const report = await fitCheck([{ mesh: fitMesh(pa), transform: a.e.transform }, { mesh: fitMesh(pb), transform: b.e.transform }], { minGapMm, layerHeightMm }, signal)
           if (signal.aborted) return out
           const g = crossGap(report)
           if (g && (!best || g.gapMm < best.gapMm)) best = g

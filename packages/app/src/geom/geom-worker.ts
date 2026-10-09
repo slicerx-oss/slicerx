@@ -36,9 +36,23 @@ const engine = engineModules(
   () => load(new URL('../../../geom/wasm/pkg/sx_geom_wasm.wasm', import.meta.url)),
 )
 
+/**
+ * The request with its typed arrays as plain arrays, for the engine's JSON. A caller may send a mesh's Float32Array and
+ * Uint32Array as they are (a structured clone of them is one copy), so the conversion of a big mesh happens here
+ * instead of on the page.
+ */
+function plainArrays(v: unknown): unknown {
+  if (ArrayBuffer.isView(v)) return Array.from(v as unknown as ArrayLike<number>)
+  if (Array.isArray(v)) return v.length && typeof v[0] === 'object' ? v.map(plainArrays) : v
+  if (v === null || typeof v !== 'object') return v
+  const out: Record<string, unknown> = {}
+  for (const [k, x] of Object.entries(v)) out[k] = plainArrays(x)
+  return out
+}
+
 // Every mesh comes back with its faces, which the parts keep and send again with the next call.
 function call(x: GeomExports, op: string, request: unknown): unknown {
-  const bytes = new TextEncoder().encode(`${op}\0${JSON.stringify(askFaces(request))}`)
+  const bytes = new TextEncoder().encode(`${op}\0${JSON.stringify(askFaces(plainArrays(request)))}`)
   const at = x.geom_input(bytes.length)
   new Uint8Array(x.memory.buffer, at, bytes.length).set(bytes)
   const code = x.geom_call()
