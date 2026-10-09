@@ -40,7 +40,7 @@ test('the prime tower is automatic, a hand move turns that off, and a spot off t
   })
   await page.goto('./')
   await plateReady(page)
-  await page.getByRole('button', { name: 'Change', exact: true }).click()
+  await page.getByTestId('slice-machine-printer').click()
   await page.getByRole('list', { name: 'Choose a printer' }).getByRole('button', { name: /Bay 2/ }).click()
 
   const auto = await sliceAgain(page)

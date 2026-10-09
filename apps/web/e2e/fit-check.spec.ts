@@ -263,7 +263,7 @@ test('moving an object does not rebuild the scene, with a prime tower on the pla
   test.slow()
   await open(page)
   // A printer with a filament unit, so the two color X gets a prime tower.
-  await page.getByRole('button', { name: 'Change', exact: true }).click()
+  await page.getByTestId('slice-machine-printer').click()
   await page.getByRole('list', { name: 'Choose a printer' }).getByRole('button', { name: /Bay 2/ }).click()
   const sliceId = () => page.evaluate(() => (window as unknown as { __sx: Sx }).__sx.getState().slice.result?.id ?? null)
   const current = () => page.evaluate(() => { const s = (window as unknown as { __sx: Sx }).__sx.getState().slice; return s.status === 'done' && !s.stale })
