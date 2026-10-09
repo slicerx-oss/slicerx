@@ -3,6 +3,7 @@
 // One pool worker: its own sx-wasm instance and copies of the loaded meshes.
 import type { FromWorker, MeshInfo, ShardInfo, ToWorker } from './protocol'
 import { cubePart, encodeParts } from './parts'
+import { workerRequest } from './request-meshes'
 import { OUT_GCODE, OUT_SXPV, SxWasm } from './wasm'
 
 declare const self: DedicatedWorkerGlobalScope
@@ -15,13 +16,7 @@ function post(msg: FromWorker, transfer: Transferable[] = []): void {
 }
 
 function mapRequest(request: string): Uint8Array {
-  const req = JSON.parse(request) as { plate: { objects: { mesh: string | number }[] } }
-  for (const o of req.plate.objects) {
-    const id = meshIds.get(String(o.mesh))
-    if (id === undefined) throw new Error(`Mesh ${String(o.mesh)} is not loaded in this worker`)
-    o.mesh = id
-  }
-  return new TextEncoder().encode(JSON.stringify(req))
+  return new TextEncoder().encode(workerRequest(request, (id) => meshIds.get(id)))
 }
 
 self.onmessage = async (ev: MessageEvent<ToWorker>) => {
