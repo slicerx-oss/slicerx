@@ -182,9 +182,10 @@ jobs:
   # no backend, so the store and feed run on the bundled demo catalog (features.demoData). Specs that need a
   # real service skip themselves: vault-flow.spec.ts without the stack from e2e/stack/vault-stack.sh, and
   # bridge.spec.ts without a built sx-link. Most phone tests skip (desktop width only), so the desktop project gets
-  # six shards and the phone project one; a new project in playwright.config.ts needs its own line here.
-  # --fully-parallel spreads the tests of the big files over the shards, and two workers leave the four cores
-  # room for the app's own slicer workers and software WebGL. The e2e job after them is the one name to require.
+  # twelve shards and the phone project one; a new project in playwright.config.ts needs its own line here.
+  # --fully-parallel spreads the tests of the big files over the shards. A GitHub runner has 4 cores and one worker
+  # drawing WebGL in software takes about 2.3 of them, so each shard runs one worker, leaving room for the app's own
+  # slicer workers. The e2e job after them is the one name to require.
   # Pull requests, the merge queue and main all run on GitHub's runners. Setting the repository variable E2E_ON_PC
   # to true moves the merge queue and main back to the project's own runners (label sx-pc), each project whole
   # under the machine's heavy lock; pull requests stay on GitHub's runners either way.
@@ -198,7 +199,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include: ${{ (github.event_name != 'pull_request' && vars.E2E_ON_PC == 'true') && fromJSON('[{"project":"desktop","shard":"1/1"},{"project":"phone","shard":"1/1"}]') || fromJSON('[{"project":"desktop","shard":"1/6"},{"project":"desktop","shard":"2/6"},{"project":"desktop","shard":"3/6"},{"project":"desktop","shard":"4/6"},{"project":"desktop","shard":"5/6"},{"project":"desktop","shard":"6/6"},{"project":"phone","shard":"1/1"}]') }}
+        include: ${{ (github.event_name != 'pull_request' && vars.E2E_ON_PC == 'true') && fromJSON('[{"project":"desktop","shard":"1/1"},{"project":"phone","shard":"1/1"}]') || fromJSON('[{"project":"desktop","shard":"1/12"},{"project":"desktop","shard":"2/12"},{"project":"desktop","shard":"3/12"},{"project":"desktop","shard":"4/12"},{"project":"desktop","shard":"5/12"},{"project":"desktop","shard":"6/12"},{"project":"desktop","shard":"7/12"},{"project":"desktop","shard":"8/12"},{"project":"desktop","shard":"9/12"},{"project":"desktop","shard":"10/12"},{"project":"desktop","shard":"11/12"},{"project":"desktop","shard":"12/12"},{"project":"phone","shard":"1/1"}]') }}
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -231,13 +232,22 @@ jobs:
       # and uses 5 workers: each one draws software WebGL on more than two threads, and 8 drove the load near 70 on 24
       - run: |
           run=""
-          [ "$RUNNER_ENVIRONMENT" = self-hosted ] && run="bash scripts/ci/heavy.sh timeout 900"
-          $run pnpm --filter @slicerx/web exec playwright test --project=${{ matrix.project }} --shard=${{ matrix.shard }} --fully-parallel --workers=${{ runner.environment == 'self-hosted' && 5 || 2 }} --retries=1 --reporter=blob,list,json --trace=retain-on-failure || echo "playwright exited $?"
+          [ "$RUNNER_ENVIRONMENT" = self-hosted ] && run="bash scripts/ci/heavy.sh --e2e timeout 900"
+          # on GitHub's runners, the load during the run, so a starved shard shows in its log
+          sampler=
+          if [ "$RUNNER_ENVIRONMENT" != self-hosted ]; then
+            ( while :; do cut -d ' ' -f1 /proc/loadavg; sleep 10; done ) > "$RUNNER_TEMP/load.txt" & sampler=$!
+          fi
+          $run pnpm --filter @slicerx/web exec playwright test --project=${{ matrix.project }} --shard=${{ matrix.shard }} --fully-parallel --workers=${{ runner.environment == 'self-hosted' && 5 || 1 }} --retries=1 --reporter=blob,list,json --trace=retain-on-failure || echo "playwright exited $?"
+          if [ -n "$sampler" ]; then
+            kill "$sampler"
+            sort -n "$RUNNER_TEMP/load.txt" | awk -v c="$(nproc)" '{a[NR]=$1} END {if (NR) print "runner load (1 min average, every 10 s, " c " cores): max " a[NR] ", median " a[int((NR+1)/2)] ", " NR " samples"}'
+          fi
         env:
           SX_HEAVY_LOCK: /mnt/c/Users/musda/.slicerx-heavy.lock
           # a lock that is not free within 20 minutes fails the step with "gave up after 1200 s", not a cancel
           SX_HEAVY_WAIT: 1200
-          # GitHub's runners draw WebGL in software on 4 cores shared by two workers: drawing time budgets in the specs
+          # GitHub's runners draw WebGL in software, slower than the project runner: drawing time budgets in the specs
           # (e2e/frames.ts GL_SLOW) are three times the project runner's
           SX_SLOW_GL: ${{ runner.environment == 'self-hosted' && '1' || '3' }}
           # one blob name per job, so the merged report keeps every shard of both projects
