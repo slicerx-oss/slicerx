@@ -14,116 +14,12 @@ import { historyNewer, parseHistories } from './history-read'
 import type { VolumeRole } from '../state/store'
 import { areaOrigin, areaSize } from '../plate/bed-origin'
 import { bounds } from '../plate/transform'
+import { ProjectReadError, unzipEntries } from './unzip'
+import type { Mat, PaintOfPart, ScannedModel, ScannedObject } from './model-scan'
+import { scanProject, type ScannedProject } from './project-scan'
 
-const MAX_ENTRIES = 4000
-const MAX_ENTRY = 256 * 1024 * 1024
-const MAX_TOTAL = 768 * 1024 * 1024
-
-export class ProjectReadError extends Error {}
-
-/** Caps for an untrusted archive: how many entries, how large one entry and all of them may be once inflated. */
-export interface ZipLimits {
-  entries: number
-  entry: number
-  total: number
-  /** What the archive should be, for the message when it is not a zip at all. */
-  what?: string
-}
-
-const PROJECT_LIMITS: ZipLimits = { entries: MAX_ENTRIES, entry: MAX_ENTRY, total: MAX_TOTAL, what: 'a 3MF archive' }
-
-/** Reads the archive's entries. Stored and deflated entries only; anything else is refused. */
-export async function unzipEntries(bytes: Uint8Array, limits: ZipLimits = PROJECT_LIMITS): Promise<Map<string, Uint8Array>> {
-  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
-  let eocd = -1
-  for (let i = bytes.length - 22; i >= Math.max(0, bytes.length - 22 - 65535); i--) {
-    if (view.getUint32(i, true) === 0x06054b50) {
-      eocd = i
-      break
-    }
-  }
-  if (eocd < 0) throw new ProjectReadError(`This is not ${limits.what ?? 'a zip archive'}.`)
-  let count = view.getUint16(eocd + 10, true)
-  let at = view.getUint32(eocd + 16, true)
-  // ZIP64: the real count and directory offset sit in a record the locator before the end record points to.
-  if ((count === 0xffff || at === 0xffffffff) && eocd >= 20 && view.getUint32(eocd - 20, true) === 0x07064b50) {
-    const rec = Number(view.getBigUint64(eocd - 20 + 8, true))
-    if (rec + 56 > bytes.length || view.getUint32(rec, true) !== 0x06064b50) throw new ProjectReadError('The archive is damaged.')
-    count = Number(view.getBigUint64(rec + 32, true))
-    at = Number(view.getBigUint64(rec + 48, true))
-  }
-  if (count > limits.entries) throw new ProjectReadError('The archive has too many files.')
-  const dec = new TextDecoder()
-  const out = new Map<string, Uint8Array>()
-  let total = 0
-  for (let n = 0; n < count; n++) {
-    if (at + 46 > bytes.length || view.getUint32(at, true) !== 0x02014b50) throw new ProjectReadError('The archive is damaged.')
-    const flags = view.getUint16(at + 8, true)
-    const method = view.getUint16(at + 10, true)
-    let csize = view.getUint32(at + 20, true)
-    let usize = view.getUint32(at + 24, true)
-    const nameLen = view.getUint16(at + 28, true)
-    const extraLen = view.getUint16(at + 30, true)
-    const commentLen = view.getUint16(at + 32, true)
-    let local = view.getUint32(at + 42, true)
-    const name = dec.decode(bytes.subarray(at + 46, at + 46 + nameLen))
-    // ZIP64 extra field: the values that did not fit in 32 bits, in this order.
-    if (usize === 0xffffffff || csize === 0xffffffff || local === 0xffffffff) {
-      let e = at + 46 + nameLen
-      const end = e + extraLen
-      while (e + 4 <= end) {
-        const tag = view.getUint16(e, true)
-        const size = view.getUint16(e + 2, true)
-        if (tag === 1) {
-          let p = e + 4
-          if (usize === 0xffffffff) (usize = Number(view.getBigUint64(p, true))), (p += 8)
-          if (csize === 0xffffffff) (csize = Number(view.getBigUint64(p, true))), (p += 8)
-          if (local === 0xffffffff) local = Number(view.getBigUint64(p, true))
-        }
-        e += 4 + size
-      }
-    }
-    at += 46 + nameLen + extraLen + commentLen
-    if (name.endsWith('/')) continue
-    if (flags & 1) throw new ProjectReadError('The archive is encrypted.')
-    if (name.startsWith('/') || name.startsWith('\\') || /^[A-Za-z]:/.test(name) || name.includes('\0') || name.split(/[\\/]/).includes('..')) throw new ProjectReadError('The archive has a file with an unsafe path.')
-    if (usize > limits.entry || (total += usize) > limits.total) throw new ProjectReadError('The archive is too large to open.')
-    if (local + 30 > bytes.length) throw new ProjectReadError('The archive is damaged.')
-    const start = local + 30 + view.getUint16(local + 26, true) + view.getUint16(local + 28, true)
-    const raw = bytes.subarray(start, start + csize)
-    if (raw.length !== csize) throw new ProjectReadError('The archive is damaged.')
-    if (method === 0) out.set(name, raw.length === usize ? raw : raw.subarray(0, Math.min(raw.length, usize)))
-    else if (method === 8) out.set(name, await inflate(raw, usize, limits.entry))
-    else throw new ProjectReadError('The archive uses a compression this app cannot read.')
-  }
-  return out
-}
-
-async function inflate(raw: Uint8Array, expected: number, cap: number): Promise<Uint8Array> {
-  const source = new ReadableStream<Uint8Array>({ start: (c) => (c.enqueue(raw), c.close()) })
-  const stream = source.pipeThrough(new DecompressionStream('deflate-raw') as unknown as ReadableWritablePair<Uint8Array, Uint8Array>)
-  const reader = stream.getReader()
-  const chunks: Uint8Array[] = []
-  let size = 0
-  for (;;) {
-    const { done, value } = await reader.read()
-    if (done) break
-    size += value.length
-    // A lying header cannot make the output bigger than it declared.
-    if (size > expected || size > cap) {
-      await reader.cancel()
-      throw new ProjectReadError('A file in the archive inflates to more than it declares.')
-    }
-    chunks.push(value)
-  }
-  const out = new Uint8Array(size)
-  let off = 0
-  for (const c of chunks) {
-    out.set(c, off)
-    off += c.length
-  }
-  return out
-}
+export { ProjectReadError, unzipEntries, type ZipLimits } from './unzip'
+export type { PaintOfPart } from './model-scan'
 
 export interface ImportedVolume {
   name: string
@@ -134,8 +30,6 @@ export interface ImportedVolume {
   rawSettings?: Record<string, string>
 }
 
-/** Painted triangles of one part by layer, as the file's paint texts. */
-export type PaintOfPart = Partial<Record<'color' | 'seam' | 'support' | 'fuzzy', Record<number, string>>>
 
 export interface ImportedObject {
   name: string
@@ -255,15 +149,6 @@ const ROLE: Record<string, VolumeRole> = { negative_part: 'negative', support_bl
 /** Part metadata keys that are not settings. */
 const PART_META = new Set(['name', 'matrix', 'extruder', 'volume_type', 'mesh_stat', 'source_file', 'source_object_id', 'source_volume_id', 'source_offset_x', 'source_offset_y', 'source_offset_z', 'source_in_inches', 'source_in_meters'])
 
-type Mat = number[]
-
-function parseTransform(s: string | null): Mat | null {
-  if (!s) return null
-  const v = s.trim().split(/\s+/).map(Number)
-  if (v.length !== 12 || v.some((x) => !Number.isFinite(x))) return null
-  return [v[0]!, v[1]!, v[2]!, 0, v[3]!, v[4]!, v[5]!, 0, v[6]!, v[7]!, v[8]!, 0, v[9]!, v[10]!, v[11]!, 1]
-}
-
 function bakeMesh(p: MeshPart, m: Mat | null, name: string, slot: number): MeshPart {
   if (!m) return { ...p, name, slot }
   const out = new Float32Array(p.positions.length)
@@ -323,99 +208,6 @@ function xml(text: string): Document {
 }
 
 const kids = (el: Element, tag: string): Element[] => [...el.children].filter((c) => c.localName === tag)
-
-// Model files hold the meshes and can run to tens of megabytes, so they are scanned as text instead of built
-// as a DOM: a million vertices as elements would need hundreds of megabytes of memory.
-
-interface ScannedObject {
-  name?: string
-  mesh: (MeshPart & { paint?: PaintOfPart }) | null
-  components: { path?: string; objectId: string; transform: Mat | null }[]
-}
-
-interface ScannedModel {
-  objects: Map<string, ScannedObject>
-  items: { objectId: string; transform: Mat | null; printable: boolean }[]
-}
-
-function attrsOf(s: string): Record<string, string> {
-  const out: Record<string, string> = {}
-  for (const m of s.matchAll(/([\w:.-]+)\s*=\s*"([^"]*)"/g)) out[m[1]!] = m[2]!
-  return out
-}
-
-const unescapeXml = (s: string): string => s.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, '&')
-
-function scanMesh(body: string): (MeshPart & { paint?: PaintOfPart }) | null {
-  const vs = body.indexOf('<vertices')
-  const ts = body.indexOf('<triangles')
-  if (vs < 0 || ts < 0) return null
-  const vEnd = body.indexOf('</vertices>', vs)
-  const tEnd = body.indexOf('</triangles>', ts)
-  const vText = body.slice(vs, vEnd < 0 ? undefined : vEnd)
-  const tText = body.slice(ts, tEnd < 0 ? undefined : tEnd)
-  const pos: number[] = []
-  let fast = /<vertex x="([^"]*)" y="([^"]*)" z="([^"]*)"/g
-  for (let m = fast.exec(vText); m; m = fast.exec(vText)) pos.push(Number(m[1]), Number(m[2]), Number(m[3]))
-  if (pos.length === 0) {
-    for (const m of vText.matchAll(/<vertex\b([^>]*)>/g)) {
-      const a = attrsOf(m[1]!)
-      pos.push(Number(a['x']), Number(a['y']), Number(a['z']))
-    }
-  }
-  const idx: number[] = []
-  const paint: PaintOfPart = {}
-  fast = /<triangle v1="(\d+)" v2="(\d+)" v3="(\d+)"/g
-  for (let m = fast.exec(tText); m; m = fast.exec(tText)) idx.push(Number(m[1]), Number(m[2]), Number(m[3]))
-  if (idx.length === 0) {
-    for (const m of tText.matchAll(/<triangle\b([^>]*)>/g)) {
-      const a = attrsOf(m[1]!)
-      idx.push(Number(a['v1']), Number(a['v2']), Number(a['v3']))
-    }
-  }
-  // Painted triangles carry extra attributes, so a second pass runs only when the text has any.
-  if (/paint_(color|seam|supports|fuzzy_skin)=/.test(tText)) {
-    let tri = 0
-    for (const m of tText.matchAll(/<triangle\b([^>]*)>/g)) {
-      const a = attrsOf(m[1]!)
-      if (a['paint_color']) (paint.color ??= {})[tri] = a['paint_color']
-      if (a['paint_seam']) (paint.seam ??= {})[tri] = a['paint_seam']
-      if (a['paint_supports']) (paint.support ??= {})[tri] = a['paint_supports']
-      if (a['paint_fuzzy_skin']) (paint.fuzzy ??= {})[tri] = a['paint_fuzzy_skin']
-      tri++
-    }
-  }
-  const vertexCount = pos.length / 3
-  if (pos.some((n) => !Number.isFinite(n))) throw new ProjectReadError('The 3MF model has a vertex that is not a number.')
-  for (const n of idx) if (!Number.isInteger(n) || n < 0 || n >= vertexCount) throw new ProjectReadError('The 3MF model has a triangle that points outside its vertices.')
-  return { name: '', slot: 1, positions: new Float32Array(pos), indices: new Uint32Array(idx), ...(Object.keys(paint).length ? { paint } : {}) }
-}
-
-function scanModel(text: string): ScannedModel {
-  const objects = new Map<string, ScannedObject>()
-  const objRe = /<object\b([^>]*?)(\/?)>/g
-  for (let m = objRe.exec(text); m; m = objRe.exec(text)) {
-    const a = attrsOf(m[1]!)
-    const id = a['id'] ?? ''
-    let body = ''
-    if (m[2] !== '/') {
-      const end = text.indexOf('</object>', objRe.lastIndex)
-      body = text.slice(objRe.lastIndex, end < 0 ? undefined : end)
-      objRe.lastIndex = end < 0 ? text.length : end + 9
-    }
-    const components = [...body.matchAll(/<component\b([^>]*)>/g)].map((c) => {
-      const ca = attrsOf(c[1]!)
-      return { ...(ca['p:path'] ? { path: ca['p:path'] } : {}), objectId: ca['objectid'] ?? '', transform: parseTransform(ca['transform'] ?? null) }
-    })
-    objects.set(id, { ...(a['name'] ? { name: unescapeXml(a['name']) } : {}), mesh: body.includes('<mesh') ? scanMesh(body) : null, components })
-  }
-  const bs = text.indexOf('<build')
-  const items = bs < 0 ? [] : [...text.slice(bs).matchAll(/<item\b([^>]*)>/g)].map((i) => {
-    const ia = attrsOf(i[1]!)
-    return { objectId: ia['objectid'] ?? '', transform: parseTransform(ia['transform'] ?? null), printable: ia['printable'] !== '0' && ia['printable'] !== 'false' }
-  })
-  return { objects, items }
-}
 
 function projectOrigin(config: Uint8Array | undefined): readonly [number, number] {
   return areaOrigin(projectArea(config))
@@ -497,8 +289,9 @@ const MARKED_SETTINGS = ['Metadata/model_settings.config', 'Metadata/Slic3r_PE_m
  * The Vault marks of an unzipped 3MF, read as XML (packages/contracts/src/sx3mf-marks.ts), not by pattern. A mark in
  * any model part is a root mark; one in a settings file belongs to its object.
  */
-export function vaultMarksOf(files: ReadonlyMap<string, Uint8Array>, mainText?: string): VaultMarks {
-  const out: VaultMarks = { root: {}, objects: new Map() }
+export function vaultMarksOf(files: ReadonlyMap<string, Uint8Array>, modelRoot?: VaultMark): VaultMarks {
+  // The marks of model parts read already (the project worker's), which `files` then leaves out.
+  const out: VaultMarks = { root: { ...modelRoot }, objects: new Map() }
   const merge = (to: VaultMark, from: VaultMark) => {
     if (from.listing && !to.listing) to.listing = from.listing
     if (from.creator && !to.creator) to.creator = from.creator
@@ -507,7 +300,7 @@ export function vaultMarksOf(files: ReadonlyMap<string, Uint8Array>, mainText?: 
   try {
     for (const [name, bytes] of files) {
       if (!/\.model$/i.test(name)) continue
-      merge(out.root, readVaultMarks(name === '3D/3dmodel.model' && mainText !== undefined ? mainText : dec.decode(bytes)).root)
+      merge(out.root, readVaultMarks(dec.decode(bytes)).root)
     }
     for (const name of MARKED_SETTINGS) {
       const bytes = files.get(name)
@@ -576,30 +369,80 @@ function settleOnBed(o: { parts: MeshPart[]; transform: number[] }): void {
   if (b && b.min[2] < 0 && b.min[2] > -SETTLE_MM) o.transform[14] = o.transform[14]! - b.min[2]
 }
 
+const SCAN_IDLE_MS = 30_000
+
+let scanWorker: Worker | null = null
+let scanIdle: ReturnType<typeof setTimeout> | null = null
+let scanSeq = 0
+const scanPending = new Map<number, { resolve: (p: ScannedProject) => void; reject: (e: Error) => void }>()
+
+function stopScanWorker(): void {
+  scanWorker?.terminate()
+  scanWorker = null
+}
+
+/** The project worker, started on the first project and ended after a while without one, which hands its memory back. */
+function scanWorkerFor(): Worker {
+  if (scanIdle) clearTimeout(scanIdle)
+  scanIdle = null
+  if (scanWorker) return scanWorker
+  const w = new Worker(new URL('./project-worker.ts', import.meta.url), { type: 'module' })
+  w.onmessage = (e: MessageEvent<{ id: number; result?: ScannedProject; error?: string; plain?: boolean }>) => {
+    const p = scanPending.get(e.data.id)
+    if (!p) return
+    scanPending.delete(e.data.id)
+    if (e.data.result) p.resolve(e.data.result)
+    else p.reject(e.data.plain ? new ProjectReadError(e.data.error ?? '') : new Error(e.data.error ?? 'The project could not be read.'))
+    if (scanPending.size === 0 && scanWorker) scanIdle = setTimeout(stopScanWorker, SCAN_IDLE_MS)
+  }
+  w.onerror = (e) => {
+    for (const p of scanPending.values()) p.reject(new Error(e.message || 'The project reader did not start.'))
+    scanPending.clear()
+    stopScanWorker()
+  }
+  scanWorker = w
+  return w
+}
+
+/**
+ * Inflates and scans a 3MF project: in the project worker when the page can start one, else here. The caller keeps
+ * its bytes (the worker gets a copy).
+ */
+export function scanProjectFile(bytes: Uint8Array): Promise<ScannedProject & { parsedIn: 'worker' | 'page' }> {
+  if (typeof Worker === 'undefined') return scanProject(bytes).then((p) => ({ ...p, parsedIn: 'page' as const }))
+  return new Promise((resolve, reject) => {
+    const id = ++scanSeq
+    scanPending.set(id, { resolve: (p) => resolve({ ...p, parsedIn: 'worker' }), reject })
+    const copy = bytes.slice().buffer
+    scanWorkerFor().postMessage({ id, data: copy }, [copy])
+  })
+}
+
 export async function readProject(bytes: Uint8Array, bed: { widthMm: number; depthMm: number }): Promise<ImportedProject> {
-  const files = await unzipEntries(bytes)
-  const modelBytes = files.get('3D/3dmodel.model')
-  if (!modelBytes) throw new ProjectReadError('The 3MF has no model file.')
-  const dec = new TextDecoder()
-  const mainText = dec.decode(modelBytes)
-  const main = scanModel(mainText)
-  // The library stamps sx:Listing and sx:Creator on the root model; they apply to every object without its own.
-  const marks = vaultMarksOf(files, mainText)
-  const rootSource = sourceOf(marks.root)
-  // Bambu Studio and Orca keep each object's mesh in its own file, named by the component's p:path.
-  const others = new Map<string, ScannedModel>()
-  const modelAt = (path: string | undefined): ScannedModel => {
-    if (!path) return main
-    const key = path.replace(/^\/+/, '')
-    let m = others.get(key)
-    if (!m) {
-      const b = files.get(key)
-      if (!b) throw new ProjectReadError(`The 3MF points at ${key}, which is not in the file.`)
-      m = scanModel(dec.decode(b))
-      others.set(key, m)
-    }
+  return projectOf(await scanProjectFile(bytes), bed)
+}
+
+/**
+ * Puts a scanned project together for a bed: objects, parts and volumes from the model parts with the settings files,
+ * plates laid out by the bed's size. Cheap next to the scan, so a project is laid out again for another bed without
+ * reading it again.
+ */
+export async function projectOf(scanned: ScannedProject, bed: { widthMm: number; depthMm: number }): Promise<ImportedProject> {
+  const { files } = scanned
+  if (scanned.markError) throw new ProjectReadError(scanned.markError)
+  const modelOf = (key: string): ScannedModel => {
+    const m = scanned.models.get(key)
+    if (!m) throw new ProjectReadError(key === '3D/3dmodel.model' ? 'The 3MF has no model file.' : `The 3MF points at ${key}, which is not in the file.`)
+    if ('error' in m) throw new ProjectReadError(m.error)
     return m
   }
+  const main = modelOf('3D/3dmodel.model')
+  const dec = new TextDecoder()
+  // The library stamps sx:Listing and sx:Creator on the root model; they apply to every object without its own.
+  const marks = vaultMarksOf(files, scanned.marks)
+  const rootSource = sourceOf(marks.root)
+  // Bambu Studio and Orca keep each object's mesh in its own file, named by the component's p:path.
+  const modelAt = (path: string | undefined): ScannedModel => (path ? modelOf(path.replace(/^\/+/, '')) : main)
 
   // Object names, part subtypes and slots from Bambu and Orca's settings file.
   const settingsText = files.get('Metadata/model_settings.config')
