@@ -5,8 +5,10 @@
 .slot-rail { display: flex; gap: 14px; overflow-x: auto; overflow-y: hidden; padding: 2px 2px 2px; scrollbar-width: thin; overscroll-behavior-x: contain; }
 .slot-rail-group { display: grid; gap: 4px; flex: none; }
 .slot-rail-unit { font: var(--fw-medium) var(--fs-xs) var(--f-body); color: var(--dim); }
-.slot-rail-rings { display: flex; gap: 6px; align-items: flex-start; }
-.slot-rail .slot { display: grid; justify-items: center; gap: 3px; flex: none; }
+.slot-rail-rings { display: flex; gap: 8px; align-items: flex-start; }
+/* Each slot is a column: the ring with its label. */
+.slot-rail .rail-slot { display: grid; justify-items: center; align-content: start; gap: 4px; flex: none; min-width: 40px; }
+.slot-line .tuned-badge { flex: none; margin: 0; }
 .slot-ring { display: grid; place-items: center; padding: 2px; border: 0; border-radius: var(--r-md); background: none; cursor: pointer; }
 .slot-ring:hover { background: var(--ink-3); }
 .slot-ring:focus-visible { outline: var(--focus-ring); outline-offset: 0; }
@@ -27,3 +29,7 @@
 /* Swap colors, opened from the Filament options menu. */
 .fil-swap-pop { min-width: 300px; padding: 10px 12px; }
 .fil-swap-pop .swap-colors { margin: 0; padding: 0; border: 0; }
+/* The Filament options button reads as a control: full text color and a soft outline, like the other header buttons. */
+.fil-menu .sx-btn { color: var(--fg); opacity: 1; border: 1px solid var(--line-soft); }
+.fil-menu .sx-btn:hover, .fil-menu .sx-btn[aria-expanded="true"] { background: var(--ink-3); }
+.fil-menu .sx-btn .sx-ic path { stroke-width: 3px; }
