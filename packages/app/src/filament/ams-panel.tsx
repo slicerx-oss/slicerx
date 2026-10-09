@@ -154,12 +154,13 @@ export function AmsPanel({ maker, system }: { maker: string; system?: 'ams' | 'm
         ) : (
         <span className="fil-aside">
           <span className="fil-count sx-mono">{`${used} of ${slots.length} used`}</span>
-          {more ? (
-            <Button size="sm" variant="ghost" icon="calibration" aria-label="Calibrate" tip={{ title: 'Calibrate', body: 'Run flow, pressure advance and temperature tests for these filaments.' }} onClick={() => set({ calibrationOpen: true, calibrationSlot: null })} />
-          ) : null}
-          {more && used >= 2 ? (
-            <Button size="sm" variant="ghost" icon="flush-volume" aria-label="Flush volumes" tip={{ title: 'Flush volumes', body: 'Set how much filament each color change purges.' }} onClick={() => set({ flushOpen: true })} />
-          ) : null}
+          {/* The tools keep their place while More is shut (hidden, not gone), so opening it moves nothing in the header. */}
+          <span className="fil-tools" data-shut={more ? undefined : true} aria-hidden={more ? undefined : true}>
+            <Button size="sm" variant="ghost" icon="calibration" aria-label="Calibrate" tabIndex={more ? undefined : -1} tip={{ title: 'Calibrate', body: 'Run flow, pressure advance and temperature tests for these filaments.' }} onClick={() => set({ calibrationOpen: true, calibrationSlot: null })} />
+            {used >= 2 ? (
+              <Button size="sm" variant="ghost" icon="flush-volume" aria-label="Flush volumes" tabIndex={more ? undefined : -1} tip={{ title: 'Flush volumes', body: 'Set how much filament each color change purges.' }} onClick={() => set({ flushOpen: true })} />
+            ) : null}
+          </span>
           <MoreButton id="filament" changed={edited} />
         </span>
         )

@@ -14,6 +14,9 @@ import { objectOverrides, partOverridesOf, setObjectSetting, setPartSetting } fr
 import { useApp } from '../../state/store'
 import { EDITABLE, Field, visibleLevels } from './expert-settings'
 
+// the search takes focus as it opens, without scrolling the pane: Add setting stays where it was pressed
+const focusQuietly = (el: HTMLInputElement | null) => el?.focus({ preventScroll: true })
+
 export function ObjectSettings() {
   const entry = useApp((s) => s.plate.find((p) => p.id === s.selection))
   const objectSettings = useApp((s) => s.objectSettings)
@@ -81,7 +84,7 @@ export function ObjectSettings() {
           <label className="sr-only" htmlFor="obj-set-search">
             Find a setting to change for this object
           </label>
-          <input id="obj-set-search" className="sx-input" placeholder="Find a setting, such as wall loops" value={query} autoFocus onChange={(e) => setQuery(e.target.value)} />
+          <input id="obj-set-search" className="sx-input" placeholder="Find a setting, such as wall loops" value={query} ref={focusQuietly} onChange={(e) => setQuery(e.target.value)} />
           <ul className="obj-set-hits" aria-label="Settings you can add">
             {hits.map((d) => (
               <li key={d.key}>

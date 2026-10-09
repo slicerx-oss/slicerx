@@ -502,6 +502,9 @@ button.reset:hover { color: var(--fg); background: var(--ink-3); }
 
 /* settings dialog */
 .settings-dialog { width: min(760px, calc(100vw - 24px)); }
+/* one height for every section and option: a centered dialog that changed height would move everything in it */
+.settings-dialog[open] { display: flex; flex-direction: column; height: min(720px, calc(100dvh - 2 * var(--gutter))); }
+.settings-dialog .sx-dialog-body { flex: 1 0 auto; }
 .settings { display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 24px; min-height: 320px; }
 .settings-nav { display: grid; align-content: start; gap: 2px; }
 .settings-nav button { display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 10px; border: 0; border-radius: 8px; background: none; color: var(--muted); font: var(--fw-semibold) calc(13px * var(--text-scale)) var(--f-body); cursor: pointer; text-align: left; }
@@ -624,6 +627,10 @@ button.reset:hover { color: var(--fg); background: var(--ink-3); }
 /* Filament slots, slot editor, flush volumes */
 .fil-aside { display: inline-flex; gap: 6px; align-items: center; white-space: nowrap; flex: none; }
 .fil-count { font-size: var(--fs-sm); color: var(--dim); margin-right: 2px; }
+.fil-tools { display: inline-flex; gap: 2px; }
+.fil-tools[data-shut] { visibility: hidden; }
+/* More and Less take the same room, so the label beside them never shifts. */
+.more-btn { min-width: 5.4em; justify-content: flex-end; }
 .fil-sync { margin: 0 0 8px; }
 .slot-swatch { all: unset; cursor: pointer; display: inline-flex; border-radius: 50%; }
 .slot { grid-template-columns: 22px 30px minmax(0, 1fr) auto; }
@@ -921,7 +928,7 @@ button.tuned-badge:hover { background: color-mix(in srgb, currentColor 14%, tran
 .studio[data-mode="prepare"]:not([data-model-mode="design"]) > .pane .pane-body > .sx-block { padding: 0 var(--s-3) var(--s-3); border: 1px solid var(--line-soft); border-radius: var(--r-md); background: var(--ink-1); }
 .studio[data-mode="prepare"]:not([data-model-mode="design"]) > .pane .pane-body > .sx-block > .sx-block-h { min-height: 40px; margin: 0 calc(-1 * var(--s-3)) var(--s-3); padding: 6px var(--s-3); background: var(--ink-2); border-bottom: 1px solid var(--line-soft); border-radius: calc(var(--r-md) - 1px) calc(var(--r-md) - 1px) 0 0; }
 .studio[data-mode="prepare"]:not([data-model-mode="design"]) > .pane .pane-body > .sx-block[data-collapsed] { padding-bottom: 0; }
-.studio[data-mode="prepare"]:not([data-model-mode="design"]) > .pane .pane-body > .sx-block[data-collapsed] > .sx-block-h { margin-bottom: 0; border-bottom: 0; border-radius: calc(var(--r-md) - 1px); }
+.studio[data-mode="prepare"]:not([data-model-mode="design"]) > .pane .pane-body > .sx-block[data-collapsed] > .sx-block-h { margin-bottom: 0; border-bottom-color: transparent; border-radius: calc(var(--r-md) - 1px); }
 .sec-sum { display: flex; align-items: center; gap: 4px; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font: var(--fw-regular) var(--fs-xs) var(--f-body); color: var(--muted); }
 .sec-sum .swatch { flex: none; }
 .studio[data-mode="prepare"]:not([data-model-mode="design"]) > .pane .pane-body > .sx-block > .sx-block-h { flex-wrap: wrap; row-gap: 6px; }
