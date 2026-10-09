@@ -2918,11 +2918,14 @@ impl SliceSession {
         if stopped() {
             return Err(Error::Cancelled);
         }
-        // Each parallel pass reports how many of its layers are done, so a host can show a moving bar.
+        // Each parallel pass reports how many of its layers are done, so a host can show a moving bar. The end of a
+        // stage stays the one report the stage makes when it is done.
         let tick = |stage: Stage, done: &std::sync::atomic::AtomicUsize, total: usize| {
             let d = done.fetch_add(1, Ordering::Relaxed) + 1;
-            #[allow(clippy::cast_precision_loss, reason = "a progress fraction")]
-            progress.report(stage, d as f32 / total.max(1) as f32);
+            if d < total {
+                #[allow(clippy::cast_precision_loss, reason = "a progress fraction")]
+                progress.report(stage, d as f32 / total as f32);
+            }
         };
         // The whole-object plans are worked out here, before the parallel stages read them (the rule in
         // `par`). Each runs its own parallel pass; planned first inside a layer job, one could hang the
