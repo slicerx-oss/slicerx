@@ -6,7 +6,7 @@ import { useEffect } from 'react'
 import { clearanceFor } from './clearance'
 import { resolveConfig } from '../adapters/settings'
 import { get, useApp } from '../state/store'
-import { keepFits, setFit, setTouches } from './fit-state'
+import { fitSettled, keepFits, setFit, setTouches } from './fit-state'
 
 /** The smallest side-by-side gap the printer keeps open, per side: the fit clearance (`clearance.ts`). */
 export function minGapFor(s: ReturnType<typeof get>): number {
@@ -25,19 +25,26 @@ export function useFitWatch(): void {
     const multi = printed.filter((p) => p.parts.length > 1)
     for (const p of plate) if (p.parts.length < 2 || p.printable === false) setFit(p.id, null)
     if (printed.length < 2) setTouches([])
-    if (multi.length === 0 && printed.length < 2) return
+    if (multi.length === 0 && printed.length < 2) {
+      fitSettled(plate)
+      return
+    }
     const ac = new AbortController()
     const t = setTimeout(() => {
       const s = get()
       const minGapMm = minGapFor(s)
       const layerHeightMm = Number(resolveConfig(easy, overrides)['layer_height']) || 0.2
-      void import('./fit-run').then(({ checkObject, checkTouches }) => {
+      void import('./fit-run').then(async ({ checkObject, checkTouches }) => {
         if (ac.signal.aborted) return
-        for (const e of multi) void checkObject(e, minGapMm, layerHeightMm, ac.signal).catch(() => !ac.signal.aborted && setFit(e.id, null))
+        const runs: Promise<unknown>[] = multi.map((e) => checkObject(e, minGapMm, layerHeightMm, ac.signal).catch(() => !ac.signal.aborted && setFit(e.id, null)))
         if (printed.length > 1)
-          void checkTouches(printed, minGapMm, layerHeightMm, ac.signal)
-            .then((found) => !ac.signal.aborted && setTouches(found))
-            .catch(() => !ac.signal.aborted && setTouches([]))
+          runs.push(
+            checkTouches(printed, minGapMm, layerHeightMm, ac.signal)
+              .then((found) => !ac.signal.aborted && setTouches(found))
+              .catch(() => !ac.signal.aborted && setTouches([])),
+          )
+        await Promise.all(runs)
+        if (!ac.signal.aborted) fitSettled(plate)
       })
     }, 600)
     return () => {

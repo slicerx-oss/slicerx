@@ -67,6 +67,28 @@ export function keepFits(ids: readonly string[]): void {
   changed()
 }
 
+/** The plate (the store's plate array) whose fit check last ran to its end, or needed none. */
+let settledPlate: unknown = null
+const settleListeners = new Set<() => void>()
+
+/**
+ * The fit check of this plate is over (or it needed none): its copies of the meshes are gone from the geometry worker's
+ * queue. Auto slice holds a big slice until then (auto-slice.ts).
+ */
+export function fitSettled(plate: unknown): void {
+  settledPlate = plate
+  for (const l of [...settleListeners]) l()
+}
+
+/** Whether the fit check of this plate is over. */
+export const fitSettledFor = (plate: unknown): boolean => settledPlate === plate
+
+/** Calls back each time a plate's fit check is over. Returns the unsubscribe function. */
+export function onFitSettled(cb: () => void): () => void {
+  settleListeners.add(cb)
+  return () => settleListeners.delete(cb)
+}
+
 export function subscribeFits(cb: () => void): () => void {
   listeners.add(cb)
   return () => listeners.delete(cb)
