@@ -15,6 +15,7 @@ Standard library only. The same arguments always give the same bytes.
 """
 
 import argparse
+import json
 import math
 import sys
 
@@ -466,10 +467,22 @@ def write_stl(path, verts, tris):
             fh.write(struct.pack('<12fH', *normal(a, b, c), *a, *b, *c, 0))
 
 
+# The two filaments of the 3MF: the X mark's teal and an off-white, both Generic PLA. Only filament keys go in the
+# project settings, so opening the file never asks about a project's printer, process or G-code.
+FILAMENTS = (('#26A69A', 'PLA', 'Generic PLA @System'), ('#F2EFE6', 'PLA', 'Generic PLA @System'))
+
+
+def project_settings(filaments):
+    """Metadata/project_settings.config with the filament colour, type and preset of each slot, nothing else."""
+    keys = {'filament_colour': [f[0] for f in filaments], 'filament_type': [f[1] for f in filaments],
+            'filament_settings_id': [f[2] for f in filaments]}
+    return json.dumps(keys, indent=4) + '\n'
+
+
 def write_3mf_parts(path, name, parts):
     """One object made of parts (name, verts, tris, slot), as Bambu Studio and OrcaSlicer save a multi-part object:
     each part a mesh object, joined by components, its filament in Metadata/model_settings.config. Slicers keep the
-    parts where they are, so the bands stay stacked."""
+    parts where they are, so the bands stay stacked. The filaments' colours are in Metadata/project_settings.config."""
     objs = []
     for oid, (pname, verts, tris, _) in enumerate(parts, start=1):
         vs = ''.join('<vertex x="%.4f" y="%.4f" z="%.4f"/>' % p for p in verts)
@@ -499,7 +512,8 @@ def write_3mf_parts(path, name, parts):
             'Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"/></Relationships>\n')
     with zipfile.ZipFile(path, 'w', zipfile.ZIP_DEFLATED) as z:
         for fname, text in (('[Content_Types].xml', content_types), ('_rels/.rels', rels),
-                            ('3D/3dmodel.model', model), ('Metadata/model_settings.config', settings)):
+                            ('3D/3dmodel.model', model), ('Metadata/model_settings.config', settings),
+                            ('Metadata/project_settings.config', project_settings(FILAMENTS))):
             info = zipfile.ZipInfo(fname, date_time=(2026, 1, 1, 0, 0, 0))
             info.compress_type = zipfile.ZIP_DEFLATED
             z.writestr(info, text)

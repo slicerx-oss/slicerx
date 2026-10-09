@@ -38,7 +38,7 @@ Options: `--height` (of the X, default 80 mm), `--thickness` (16 mm), `--twist-d
 | `x-mark-showcase.stl` | 5,436 | 84.7 x 26.0 x 86.0 |
 | `x-mark-showcase-2color.3mf` | 3,748 + 2,132 (two parts) | same |
 
-The 3MF is one object of two parts, as Bambu Studio and OrcaSlicer save a multi-part object: the plinth with the first, third, fifth and seventh bands on filament 1, the other bands on filament 2. The parts keep their places when the file opens, so the bands stay stacked (`x-mark-2color.3mf`'s two separate objects are each set down on the bed). Both files are closed and consistently oriented. The benchmarks keep `x-mark.stl`, so their numbers stay comparable.
+The 3MF is one object of two parts, as Bambu Studio and OrcaSlicer save a multi-part object: the plinth with the first, third, fifth and seventh bands on filament 1, the other bands on filament 2. Its project settings name only the two filaments (teal `#26A69A` and off-white `#F2EFE6`, Generic PLA), with no printer or process settings, so a slicer colors the parts without a project to review. Bambu Studio 2.8.2 still loads the geometry only and uses its own colors, as it does for any 3MF without its printer and process presets. The parts keep their places when the file opens, so the bands stay stacked (`x-mark-2color.3mf`'s two separate objects are each set down on the bed). Both files are closed and consistently oriented. The benchmarks keep `x-mark.stl`, so their numbers stay comparable.
 
 ```
 python3 generate_showcase.py                            # both files
