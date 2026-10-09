@@ -18,6 +18,8 @@ export interface History {
   canRedo(): boolean
   /** Forget everything, for a new project. */
   clear(): void
+  /** The states undo and redo can bring back, oldest first. */
+  snapshots(): readonly Snapshot[]
   /** Called with the counts after every change, for the toolbar. */
   subscribe(cb: (s: { undo: number; redo: number }) => void): () => void
   dispose(): void
@@ -113,6 +115,7 @@ export function createHistory(store = appStore, limit = 100): History {
       redo.length = 0
       notify()
     },
+    snapshots: () => [...undo, ...redo],
     subscribe(cb) {
       listeners.add(cb)
       return () => listeners.delete(cb)

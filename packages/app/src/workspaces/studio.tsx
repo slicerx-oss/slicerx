@@ -24,6 +24,7 @@ import { LayerDock, Legend } from './preview/preview-hud'
 import { PreviewLeft, PreviewRight } from './preview/preview-panes'
 import { useGcodeView } from './preview/gcode-file'
 import { trackPlateSlices } from './preview/plate-slices'
+import { startMeshRelease } from '../plate/mesh-release'
 import { PreviewPlates } from './preview/preview-plates'
 import { railKey, useModelMode } from '../state/model-mode'
 import { setTool, toolStore, useTool } from '../plate/tools'
@@ -117,6 +118,8 @@ export function Studio() {
 
   // Each plate keeps its slice while another one is in view.
   useEffect(() => trackPlateSlices(), [])
+  // Meshes nothing can bring back to a plate are let go in the slicer.
+  useEffect(() => startMeshRelease(host.slicer), [host])
 
   // Plate keys follow the look and feel's keymap; undo starts recording as soon as the studio opens.
   const choice = useLookChoice()
