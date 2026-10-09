@@ -92,7 +92,7 @@ uniform vec3 edge; uniform vec3 edgeAlt; uniform float alert; uniform float grou
 float lines(vec2 p, float s){ vec2 q = p / s; vec2 w = fwidth(q); vec2 g = abs(fract(q - 0.5) - 0.5) / max(w, vec2(1e-4)); return (1.0 - min(min(g.x, g.y), 1.0)) * (1.0 - smoothstep(0.3, 0.7, max(w.x, w.y))); }
 // the first plate reveal (reveal.ts): x is how far the outline is traced, 0 to 1 from the front middle round each side
 // to the back middle; y is ms since the grid started laying, back to front, a row overshooting as it lands; z is the
-// accent wash. Ground ignores it.
+// accent wash. On the ground the grid lays the same way and the outline shows only while it runs.
 float traced(vec2 p){
   vec2 q = abs(p) - hb;
   float s = q.x > q.y ? hb.x + p.y + hb.y : p.y < 0.0 ? abs(p.x) : 2.0 * hb.x + 2.0 * hb.y - abs(p.x);
@@ -105,8 +105,10 @@ float rowIn(float y){
 void main(){
   vec2 q = abs(vP) - hb;
   float d = length(max(q, 0.0)) + min(max(q.x, q.y), 0.0);
-  float shown = mix(step(traced(vP), reveal.x), 1.0, ground);
-  float row = mix(rowIn(vP.y), 1.0, ground);
+  float shown = step(traced(vP), reveal.x);
+  float row = rowIn(vP.y);
+  // On the ground the traced outline only shows while the reveal runs: through the trace, then fading with the wash.
+  float groundEdge = clamp(1.0 - step(1.0, reveal.x) + reveal.z * 2.0, 0.0, 1.0);
   float px = max(fwidth(d), 1e-3);
   float line = 1.0 - smoothstep(0.0, 1.0, abs(d) / (px * 1.4));
   float glow = exp(-abs(d) / 2.2) * (d < 0.0 ? 0.18 : 0.1);
@@ -126,7 +128,7 @@ void main(){
   // The bare bed gets a faint fill in the grid color, so the printable area stands apart from the background.
   float fill = inside * 0.07 * (1.0 - surface) * (1.0 - ground) * row;
   float inner = exp(d / 10.0) * inside * 0.045 * (1.0 - ground) * row;
-  float aEdge = clamp(line + glow + br * 0.7, 0.0, 1.0) * (1.0 - ground) * shown;
+  float aEdge = clamp(line + glow + br * 0.7, 0.0, 1.0) * mix(1.0, groundEdge, ground) * shown;
   float aG = clamp(gl + fill + inner, 0.0, 1.0);
   float wash = reveal.z * 0.16 * inside * (1.0 - ground);
   float a = clamp(aEdge + (aG + wash) * (1.0 - aEdge), 0.0, 1.0);

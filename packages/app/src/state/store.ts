@@ -448,6 +448,8 @@ export interface AppState {
   vouchedGcode: Record<string, SettingValue>
   /** The .sx3mf file the project was opened from or last saved to, where Save writes without asking. */
   projectFile: FileRef | null
+  /** Counts jobs opened as a new project (a fresh open, or a project onto an empty plate); Model's reveal plays on a change. */
+  jobSeq: number
   /** The object tool whose dialog is open (cut, hollow and so on). */
   objectTool: 'cut' | 'hole' | 'hollow' | 'simplify' | CadTool | null
   /** A CAD history step being edited, or null. Not an edit itself: undo and autosave skip the rollback. */
@@ -709,6 +711,7 @@ export const appStore = createStore<AppState>()(() => ({
   printerChooserOpen: false,
   vouchedGcode: {},
   projectFile: null,
+  jobSeq: 0,
   objectTool: null,
   historyEdit: null,
   pickFilter: ['object'],

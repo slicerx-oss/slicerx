@@ -273,6 +273,8 @@ class ViewportImpl implements Viewport {
   private readonly firstFrame = new FirstFrameGate()
   /** The first plate reveal, while it is still to play or playing; null once done or when this view does not play it. */
   private reveal: PlateReveal | null = null
+  /** This view may play the reveal at all: not turned off, and real graphics (or `always`). */
+  private revealAllowed = false
   private afterFrame: (() => void) | null = null
   private cameraMoved = false
   private firstFrameMs: number | null = null
@@ -375,8 +377,10 @@ class ViewportImpl implements Viewport {
     const stageEnd = performance.now()
     this.startup.stageMs = stageEnd - stageStart
     markSpan('stage', stageStart, stageEnd)
-    // The reveal plays on a window's first plate, once. Reduced motion and software graphics draw the plate at once.
-    if (opts.reveal !== false && !revealPlayed() && !reducedMotion() && (opts.reveal === 'always' || !gpu.software)) {
+    // The reveal plays on a window's first plate, once, and again when the app asks (playReveal). Reduced motion and
+    // software graphics draw the plate at once.
+    this.revealAllowed = opts.reveal !== false && (opts.reveal === 'always' || !gpu.software)
+    if (this.revealAllowed && !revealPlayed() && !reducedMotion()) {
       this.reveal = new PlateReveal(canvas)
       this.stage.setReveal(REVEAL_HIDDEN.trace, REVEAL_HIDDEN.gridMs, REVEAL_HIDDEN.tint)
       canvas.dataset['reveal'] = 'waiting'
@@ -608,19 +612,30 @@ class ViewportImpl implements Viewport {
     // Through kick, never a bare requestAnimationFrame: a listener that invalidated during this tick has already
     // queued the next one, and a second request would start a second loop that renders every frame again.
     // A reveal still waiting on the plate's first frame needs the tick after it to start.
-    const revealNext = revealing || (this.reveal !== null && !this.reveal.started && !this.stage.isGround)
+    const revealNext = revealing || (this.reveal !== null && !this.reveal.started)
     if (moving || this.dirty || this.rig.move || this.arrangeAnim || revealNext) this.kick()
   }
 
-  /** Advances the reveal; true while it wants frames. It starts once the plate has drawn with the model and shows the bed. */
+  /**
+   * Plays the reveal again from the start: Model's first open in a session, or a job opened while Model shows. False
+   * when this view does not play it (turned off, software graphics, reduced motion).
+   */
+  playReveal(): boolean {
+    if (!this.revealAllowed || reducedMotion()) return false
+    this.reveal?.finish()
+    this.reveal = new PlateReveal(this.canvas)
+    this.stage.setReveal(REVEAL_HIDDEN.trace, REVEAL_HIDDEN.gridMs, REVEAL_HIDDEN.tint)
+    this.canvas.dataset['reveal'] = 'waiting'
+    this.invalidate()
+    return true
+  }
+
+  /** Advances the reveal; true while it wants frames. It starts once the plate has drawn with the model. */
   private stepReveal(now: number): boolean {
     const r = this.reveal
     if (!r || this.frames === 0) return false
-    if (this.stage.isGround) {
-      // Design's ground has no bed: wait for the first plate, or end at once if the view left the plate mid-reveal.
-      if (!r.started) return false
-      r.finish(this.setRevealPlate)
-    } else if (r.step(now, this.camera, this.stage.bed.widthMm / 2, this.stage.bed.depthMm / 2, this.theme.scene.selection, this.setRevealPlate)) {
+    // On Model's ground the outline traces the bed's footprint and fades once the grid is down (stage.ts).
+    if (r.step(now, this.camera, this.stage.bed.widthMm / 2, this.stage.bed.depthMm / 2, this.theme.scene.selection, this.setRevealPlate)) {
       if (this.canvas.dataset['reveal'] !== 'playing') this.canvas.dataset['reveal'] = 'playing'
       return true
     }
