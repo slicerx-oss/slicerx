@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // Getting paint to the engine: filament color, seam position, support blockers and enforcers, and fuzzy skin. A painted
-// object goes to the engine as its parts with their paint (the raw parts format's paint block), loaded as a mesh of its
-// own whose handle stands in for the object's when slicing. The result is kept until the paint or mesh changes.
+// object goes to the engine as its parts with their paint (raw parts with the paint block, plate/raw-parts.ts), loaded
+// as a mesh of its own whose handle stands in for the object's when slicing. The result is kept until the paint or
+// mesh changes.
 import type { MeshHandle, MeshPart, SlicerHost } from '@slicerx/contracts'
 import type { PlateEntry } from '../state/store'
 
@@ -34,13 +35,15 @@ export function paintedParts(e: Pick<PlateEntry, 'parts' | 'paint' | 'slotOverri
 }
 
 /** The engine handle to slice this object with: its own, or one loaded from its parts with their paint. */
-export async function sliceHandle(slicer: Pick<SlicerHost, 'loadParts'>, e: PlateEntry): Promise<MeshHandle> {
+export async function sliceHandle(slicer: Pick<SlicerHost, 'loadModel'>, e: PlateEntry): Promise<MeshHandle> {
   const key = paintKey(e)
   if (!key) return e.handle
   const id = `${e.handle.id}|${JSON.stringify(e.slotOverrides ?? {})}|${key}`
   let hit = cache.get(id)
   if (!hit) {
-    hit = slicer.loadParts(`${e.name} (painted)`, paintedParts(e))
+    // The encoder loads with the first painted object, not with the app.
+    const bytes = (await import('./raw-parts')).encodePaintedParts(paintedParts(e))
+    hit = slicer.loadModel(bytes.buffer as ArrayBuffer, `${e.name} (painted)`)
     cache.set(id, hit)
     // A failed load is not kept: the next slice tries again.
     hit.catch(() => cache.delete(id))

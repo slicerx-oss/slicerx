@@ -100,8 +100,7 @@ async function load(bytes: Uint8Array, name: string): Promise<MeshHandle> {
 export function createTauriSlicer(): SlicerHost {
   return {
     loadModel: (data, fileName) => load(new Uint8Array(data), fileName),
-    // Painted parts carry their paint block, whose writer loads only when there is paint.
-    loadParts: async (name, parts) => load(parts.some((p) => p.paint) ? (await import('@slicerx/slicer/parts-paint')).encodePaintedParts(parts) : encodeParts(parts), `${name}.sxmp`),
+    loadParts: (name, parts) => load(encodeParts(parts), `${name}.sxmp`),
     async slice(req: SliceRequest, opts): Promise<SliceResult> {
       const started = performance.now()
       const request = JSON.stringify({ plate: { ...req.plate, objects: req.plate.objects.map((o) => ({ ...o, mesh: Number(o.mesh), ...(o.volumes ? { volumes: o.volumes.map((v) => ({ ...v, mesh: Number(v.mesh) })) } : {}) })) }, config: req.config, options: { ...sliceClock(), ...(req.options ?? {}) } })

@@ -220,10 +220,8 @@ export async function createWasmSlicer(opts: PoolOptions): Promise<SlicerHost> {
     loadModel(data: ArrayBuffer, fileName: string): Promise<MeshHandle> {
       return load(new Uint8Array(data), fileName)
     },
-    async loadParts(name: string, parts: MeshPart[]): Promise<MeshHandle> {
-      // Painted parts carry their paint block, whose writer loads only when there is paint.
-      const bytes = parts.some((p) => p.paint) ? (await import('./parts-paint')).encodePaintedParts(parts) : encodeParts(parts)
-      return load(bytes, name)
+    loadParts(name: string, parts: MeshPart[]): Promise<MeshHandle> {
+      return load(encodeParts(parts), name)
     },
     async meshParts(id: string): Promise<MeshPart[]> {
       const w = workers[0]

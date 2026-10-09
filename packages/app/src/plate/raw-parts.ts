@@ -1,10 +1,71 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// The paint block of the raw parts format (packages/core/src/mesh.rs, `from_raw`): each painted triangle's text, so a
-// painted object reaches the engine as its parts. Kept out of parts.ts, which loads with the app: only painted parts
-// need it.
+// A painted object for the engine: its parts in the raw parts format with the paint block after them
+// (packages/core/src/mesh.rs, `from_raw`), loaded through the slicer's loadModel, which takes raw parts as it takes
+// a file. Only painted objects need it, so it loads with them and not with the app.
 import type { MeshPart } from '@slicerx/contracts'
-import { decodePartsAt, encodeParts } from './parts'
+
+const LITTLE = new Uint8Array(new Uint16Array([1]).buffer)[0] === 1
+
+/** Copies the values into the buffer as little-endian 32-bit numbers. */
+function put(buf: Uint8Array, v: DataView, at: number, a: Float32Array | Uint32Array, float: boolean): number {
+  if (LITTLE) {
+    buf.set(new Uint8Array(a.buffer, a.byteOffset, a.length * 4), at)
+    return at + a.length * 4
+  }
+  for (let k = 0; k < a.length; k++, at += 4) {
+    if (float) v.setFloat32(at, a[k] ?? 0, true)
+    else v.setUint32(at, a[k] ?? 0, true)
+  }
+  return at
+}
+
+/** The parts and their paint in the raw parts format: what `Mesh::from_raw` reads. */
+export function encodePaintedParts(parts: readonly MeshPart[]): Uint8Array {
+  const enc = new TextEncoder()
+  const names = parts.map((p) => enc.encode(p.name).slice(0, 65535))
+  const paint = paintEntries(parts)
+  let size = 8 + paintBytes(paint)
+  parts.forEach((p, i) => {
+    size += 3 + (names[i]?.length ?? 0) + 4 + Math.floor(p.positions.length / 3) * 12 + 4 + Math.floor(p.indices.length / 3) * 12
+  })
+  const buf = new Uint8Array(size)
+  const v = new DataView(buf.buffer)
+  buf.set(enc.encode('SXMP'))
+  v.setUint32(4, parts.length, true)
+  let o = 8
+  parts.forEach((p, i) => {
+    const name = names[i] ?? new Uint8Array()
+    v.setUint8(o, Math.max(1, Math.min(255, p.slot)))
+    v.setUint16(o + 1, name.length, true)
+    buf.set(name, o + 3)
+    o += 3 + name.length
+    const nv = Math.floor(p.positions.length / 3)
+    v.setUint32(o, nv, true)
+    o = put(buf, v, o + 4, p.positions.subarray(0, nv * 3), true)
+    const nt = Math.floor(p.indices.length / 3)
+    v.setUint32(o, nt, true)
+    o = put(buf, v, o + 4, p.indices.subarray(0, nt * 3), false)
+  })
+  writePaint(buf, v, o, paint)
+  return buf
+}
+
+/** The paint of each part in raw parts bytes, by part, or a part's undefined when it has none. A block cut short is refused. */
+export function decodePartPaint(raw: Uint8Array): (MeshPart['paint'] | undefined)[] {
+  const v = new DataView(raw.buffer, raw.byteOffset, raw.byteLength)
+  const count = v.getUint32(4, true)
+  let o = 8
+  const parts: MeshPart[] = []
+  for (let i = 0; i < count; i++) {
+    o += 3 + v.getUint16(o + 1, true)
+    o += 4 + v.getUint32(o, true) * 12
+    o += 4 + v.getUint32(o, true) * 12
+    parts.push({ name: '', slot: 1, positions: new Float32Array(), indices: new Uint32Array() })
+  }
+  if (o + 4 <= raw.length && PAINT_MAGIC.every((b, i) => raw[o + i] === b)) readPaint(raw, v, o, parts)
+  return parts.map((p) => p.paint)
+}
 
 /** The paint layers in the order of their numbers in the paint block. */
 const PAINT_LAYERS = ['color', 'seam', 'support', 'fuzzy'] as const
@@ -105,23 +166,3 @@ function readPaint(raw: Uint8Array, v: DataView, at: number, parts: MeshPart[]):
   }
 }
 
-/** The paint block for these parts, or nothing when none is painted. */
-export function paintBlock(parts: readonly MeshPart[]): Uint8Array | undefined {
-  const entries = paintEntries(parts)
-  if (!entries.length) return undefined
-  const buf = new Uint8Array(paintBytes(entries))
-  writePaint(buf, new DataView(buf.buffer), 0, entries)
-  return buf
-}
-
-/** Raw parts with their paint block. */
-export function encodePaintedParts(parts: MeshPart[]): Uint8Array {
-  return encodeParts(parts, paintBlock(parts))
-}
-
-/** Reads raw parts and their paint block (the inverse of `encodePaintedParts`). A block cut short is refused. */
-export function decodePaintedParts(raw: Uint8Array): MeshPart[] {
-  const { parts, end } = decodePartsAt(raw)
-  if (end + 4 <= raw.length && PAINT_MAGIC.every((b, i) => raw[end + i] === b)) readPaint(raw, new DataView(raw.buffer, raw.byteOffset, raw.byteLength), end, parts)
-  return parts
-}

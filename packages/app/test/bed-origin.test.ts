@@ -23,7 +23,7 @@ afterEach(() => {
 })
 
 const handle = (id: string): MeshHandle => ({ id, hash: id, name: id, triangles: 12, bboxMm: [20, 20, 20], openEdges: 0, parts: [] })
-const slicer = { loadParts: async () => handle('m') }
+const slicer = { loadModel: async () => handle('m') }
 const at = (x: number, y: number): PlateEntry => ({ id: 'o1', name: 'Cube', handle: handle('o1'), parts: [boxMesh(20, 20, 20)], colors: ['#bd93f9'], transform: compose({ position: [x, y, 0], rotation: [0, 0, 0], scale: [1, 1, 1] }) })
 
 describe('the printable area origin', () => {

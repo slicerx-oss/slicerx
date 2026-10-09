@@ -4,8 +4,7 @@
   "private": false,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts",
-    "./parts-paint": "./src/parts-paint.ts"
+    ".": "./src/index.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",

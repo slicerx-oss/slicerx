@@ -5,7 +5,13 @@
 import { describe, expect, it } from 'vitest'
 import type { MeshPart } from '@slicerx/contracts'
 import { decodeParts, encodeParts } from '../../core/web/src/parts'
-import { decodePaintedParts, encodePaintedParts } from '../../core/web/src/parts-paint'
+import { decodePartPaint, encodePaintedParts } from '../src/plate/raw-parts'
+
+/** The parts, geometry by the slicer's own reader, paint by the paint block. */
+const decodePaintedParts = (raw: Uint8Array): MeshPart[] => {
+  const paint = decodePartPaint(raw)
+  return decodeParts(raw).map((p, i) => (paint[i] ? { ...p, paint: paint[i] } : p))
+}
 import { boxMesh } from '../src/plate/mesh-ops'
 
 const part = (name: string, slot: number): MeshPart => ({ ...boxMesh(10, 10, 10), name, slot })

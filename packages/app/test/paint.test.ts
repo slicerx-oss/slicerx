@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 import { beforeEach, describe, expect, it } from 'vitest'
-import type { MeshHandle, MeshPart } from '@slicerx/contracts'
+import type { MeshHandle } from '@slicerx/contracts'
+import { decodeParts } from '../../core/web/src/parts'
+import { decodePartPaint } from '../src/plate/raw-parts'
 import { readProject } from '../src/export/import3mf'
 import { projectFiles, writeProject } from '../src/export/threemf'
 import { boxMesh } from '../src/plate/mesh-ops'
@@ -75,8 +77,8 @@ describe('paint on objects', () => {
 
   it('an unpainted object slices with its own handle; a painted one with a handle loaded from its parts and paint', async () => {
     const loads: string[] = []
-    const sent: MeshPart[][] = []
-    const slicer = { loadParts: async (name: string, parts: MeshPart[]): Promise<MeshHandle> => (loads.push(name), sent.push(parts), handle(`painted-${loads.length}`)) }
+    const sent: Uint8Array[] = []
+    const slicer = { loadModel: async (data: ArrayBuffer, name: string): Promise<MeshHandle> => (loads.push(name), sent.push(new Uint8Array(data)), handle(`painted-${loads.length}`)) }
     expect((await sliceHandle(slicer, get().plate[0]!)).id).toBe('h1')
     expect(loads).toEqual([])
     commitStroke({ objectId: 'a', partIndex: 0, layer: 'color', edits: [{ triangle: 2, after: '8' }] })
@@ -85,9 +87,9 @@ describe('paint on objects', () => {
     expect(a.id).toBe('painted-1')
     expect(b.id).toBe('painted-1')
     expect(loads).toEqual(['Widget (painted)'])
-    // The parts go as they are, with the paint texts as the store holds them.
-    expect(sent[0]![0]!.positions).toBe(get().plate[0]!.parts[0]!.positions)
-    expect(sent[0]![0]!.paint).toEqual({ color: { 2: '8' } })
+    // The parts go as raw parts, with the paint texts as the store holds them.
+    expect(decodeParts(sent[0]!)[0]!.positions).toEqual(get().plate[0]!.parts[0]!.positions)
+    expect(decodePartPaint(sent[0]!)).toEqual([{ color: { 2: '8' } }])
     // Seam and support paint reach the engine too, in the same mesh; a new paint text loads a new one.
     clearPaint('a', 'color')
     commitStroke({ objectId: 'a', partIndex: 0, layer: 'seam', edits: [{ triangle: 2, after: '4' }] })
@@ -105,7 +107,7 @@ describe('paint on objects', () => {
     expect(paintedParts(e)[0]!.slot).toBe(3)
     expect(paintedParts({ ...e, slotOverrides: {} })[0]!.slot).toBe(entry().parts[0]!.slot)
     const loads: string[] = []
-    const slicer = { loadParts: async (name: string): Promise<MeshHandle> => (loads.push(name), handle(`p${loads.length}`)) }
+    const slicer = { loadModel: async (_d: ArrayBuffer, name: string): Promise<MeshHandle> => (loads.push(name), handle(`p${loads.length}`)) }
     const a = await sliceHandle(slicer, e)
     const b = await sliceHandle(slicer, { ...e, slotOverrides: { [entry().parts[0]!.name]: 2 } })
     expect(a.id).not.toBe(b.id)
