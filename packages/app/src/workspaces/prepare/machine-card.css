@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 /* Copyright (C) 2026 The SlicerX contributors */
 /* The machine card: one 44 px row with the printer, the nozzle and plate chips, and the status. */
+.machine-card { container-type: inline-size; }
 .machine-card .mc-row { display: flex; align-items: center; gap: 6px; min-height: 44px; min-width: 0; }
 .mc-printer { flex: 1 1 auto; min-width: 0; }
 .mc-name { display: flex; align-items: center; gap: 8px; min-width: 0; max-width: 100%; height: 36px; padding: 0 6px 0 2px; border: 1px solid transparent; border-radius: var(--r-md); background: none; color: var(--fg); cursor: pointer; text-align: left; }
@@ -11,6 +12,12 @@
 .mc-caret { flex: none; color: var(--muted); }
 .mc-chips { display: flex; align-items: center; gap: 6px; flex: none; }
 .mc-status { flex: none; font-size: var(--fs-xs); }
+
+/* A narrow card keeps the status as its dot (the label is in its tooltip and read out), so the name keeps its room. */
+@container (max-width: 380px) {
+  .mc-status { gap: 0; font-size: 0; padding: 4px; }
+  .mc-name .mc-caret { display: none; }
+}
 
 /* Skeleton width while the printer profile loads, so nothing moves when the chip arrives. */
 .mc-skel { display: inline-block; height: 26px; border-radius: 999px; background: var(--ink-3); }
