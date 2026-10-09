@@ -75,7 +75,7 @@ test('a history step being edited is put back whole before Mod+Enter slices, and
   // Editing step 1 rolls the part back to before it.
   await clickStepButton(page, 'Pull 5 mm', 'Edit Pull 5 mm')
   const panel = toolPanel(page)
-  await expect(panel).toContainText('Editing step 1')
+  await expect(panel.getByTestId('model-tool-crumb')).toHaveText('Box › Pull 5 mm')
   await expect.poll(() => height(page, id)).toBe(20)
   await panel.locator('#push-dist').fill('10')
   await panel.locator('#push-dist').blur()
@@ -92,7 +92,7 @@ test('a history step being edited is put back whole before Mod+Enter slices, and
 
   // Back in Design the step opens again with the typed distance, and finishing it replays.
   await tab(page, 'model').click()
-  await expect(panel).toContainText('Editing step 1')
+  await expect(panel.getByTestId('model-tool-crumb')).toHaveText('Box › Pull 5 mm')
   await expect(panel.locator('#push-dist')).toHaveValue('10')
   await expect.poll(() => height(page, id)).toBe(20)
   await panel.getByRole('button', { name: 'Pull out' }).click()
@@ -132,7 +132,7 @@ test('Mod+Enter slices while the first step of the only body is being edited', a
   const row = page.locator('.cad-step').first()
   await row.hover()
   await row.getByRole('button', { name: /^Edit / }).click()
-  await expect(panel).toContainText('Editing step 1')
+  await expect(panel.getByTestId('model-tool-crumb')).toHaveText('Sketch body › Sketch extrude 10 mm')
   await expect.poll(async () => (await state(page)).plate.length).toBe(0)
   await page.locator('#sk-dist').blur()
 
