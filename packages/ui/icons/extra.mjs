@@ -278,7 +278,8 @@ export const EXTRA_ICONS = {
   'shell-open': '<path d="M4 5.5V18a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V5.5"/><path d="M7.5 5.5v11h9v-11"/><path d="M4 5.5h3.5M16.5 5.5H20"/>',
   'subtract-shape': '<rect x="3.5" y="3.5" width="11" height="11" rx="2"/><path d="M14.5 9.5h4a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2h-7a2 2 0 0 1-2-2v-4" stroke-dasharray="2 2"/><path d="M6.5 9h5"/>',
   'named-values': '<path d="M4 8l5.5 8M9.5 8 4 16"/><path d="M13.5 10.5h7M13.5 14h7"/>',
-  'simplify-mesh': '<path d="M3.5 19 12 4.5 20.5 19z"/><path d="M7.8 11.8h8.4L12 19z"/>',
+  // fewer facets: the outline split once
+  'simplify-mesh': '<path d="M3.5 19 12 4.5 20.5 19z"/><path d="M12 4.5V19"/>',
   sphere: '<circle cx="12" cy="12" r="8.5"/><ellipse cx="12" cy="12" rx="8.5" ry="3"/>',
   cube: CUBE,
   cylinder: '<ellipse cx="12" cy="6" rx="7" ry="2.5"/><path d="M5 6v12c0 1.4 3.1 2.5 7 2.5s7-1.1 7-2.5V6"/>',
