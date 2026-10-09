@@ -8,8 +8,11 @@
 //! On success (0) the response JSON is at `geom_out_ptr` and `geom_out_len`;
 //! otherwise (1) the message is at `geom_error_ptr` and `geom_error_len`. The
 //! operation names are `sx_geom::json::operations()`, the ones this build has, listed by `geom_ops`.
-//! Meshes travel in the flat form (`positions`, `indices`) or as base64 STL;
-//! there is no file access, so `stlPath` requests fail. No unsafe code: the
+//! Meshes travel in the flat form (`positions`, `indices`), as base64 STL, or in
+//! the raw binary form (`rawPath`, `TriMesh::from_raw`): JS reserves a buffer with
+//! `geom_file(len)`, writes the mesh into it, and names it `mem:N` (N counts the
+//! buffers reserved since the last call, from 0). The buffers are dropped after
+//! the call. There is no other file access, so `stlPath` requests fail. No unsafe code: the
 //! only unsafe item is the `no_mangle` export attribute.
 
 use std::cell::RefCell;
@@ -19,6 +22,8 @@ struct State {
     input: Vec<u8>,
     out: Vec<u8>,
     error: Vec<u8>,
+    /// Buffers for the next call's `mem:N` paths.
+    files: Vec<Vec<u8>>,
 }
 
 thread_local! {
@@ -45,6 +50,15 @@ pub extern "C" fn geom_input(len: u32) -> u32 {
         s.input.clear();
         s.input.resize(len as usize, 0);
         ptr(&s.input)
+    })
+}
+
+/// Reserves a buffer of `len` bytes for the next call, named `mem:N` in order, and returns its address.
+#[unsafe(no_mangle)]
+pub extern "C" fn geom_file(len: u32) -> u32 {
+    with(|s| {
+        s.files.push(vec![0; len as usize]);
+        s.files.last().map_or(0, |f| ptr(f))
     })
 }
 
@@ -80,7 +94,19 @@ pub extern "C" fn geom_call() -> u32 {
             .ok_or_else(|| "missing operation name".to_owned())?;
         let op = String::from_utf8_lossy(s.input.get(..split).unwrap_or(&[])).into_owned();
         let req = String::from_utf8_lossy(s.input.get(split + 1..).unwrap_or(&[])).into_owned();
-        sx_geom::json::call(&op, &req).map_err(|e| sx_geom::json::error_value(&e).to_string())
+        // Each buffer is handed over once, without a copy.
+        let files = RefCell::new(std::mem::take(&mut s.files));
+        let load = |path: &str| -> sx_geom::Result<Vec<u8>> {
+            path.strip_prefix("mem:")
+                .and_then(|n| n.parse::<usize>().ok())
+                .and_then(|n| files.borrow_mut().get_mut(n).map(std::mem::take))
+                .ok_or_else(|| sx_geom::Error::Invalid {
+                    what: "rawPath",
+                    why: format!("{path}: no such buffer"),
+                })
+        };
+        sx_geom::json::call_with_files(&op, &req, &load)
+            .map_err(|e| sx_geom::json::error_value(&e).to_string())
     });
     with(|s| match result {
         Ok(out) => {
@@ -147,6 +173,39 @@ mod tests {
         assert_eq!(geom_call_missing_name(), 1);
         assert_eq!(geom_ops(), 0);
         assert!(with(|s| String::from_utf8(s.out.clone()).unwrap()).contains("\"subtract\""));
+    }
+
+    #[test]
+    fn reads_a_raw_mesh_from_a_buffer_once() {
+        // A tetrahedron: 4 vertices, 4 triangles.
+        let pos: [f32; 12] = [0.0, 0.0, 0.0, 10.0, 0.0, 0.0, 0.0, 10.0, 0.0, 0.0, 0.0, 10.0];
+        let tri: [u32; 12] = [0, 2, 1, 0, 1, 3, 1, 2, 3, 0, 3, 2];
+        let mut raw = Vec::new();
+        raw.extend_from_slice(&4u32.to_le_bytes());
+        raw.extend_from_slice(&4u32.to_le_bytes());
+        for v in pos {
+            raw.extend_from_slice(&v.to_le_bytes());
+        }
+        for i in tri {
+            raw.extend_from_slice(&i.to_le_bytes());
+        }
+        let at = geom_file(u32::try_from(raw.len()).unwrap());
+        with(|s| {
+            assert_eq!(ptr(&s.files[0]), at);
+            s.files[0].copy_from_slice(&raw);
+        });
+        let (code, out) = call("info", r#"{"mesh":{"rawPath":"mem:0"}}"#);
+        assert_eq!(code, 0, "{out}");
+        assert!(out.contains("\"watertight\":true"), "{out}");
+        // The buffers go with the call: the next one has none.
+        let (code, err) = call("info", r#"{"mesh":{"rawPath":"mem:0"}}"#);
+        assert_eq!(code, 1);
+        assert!(err.contains("no such buffer"), "{err}");
+        // A buffer whose size does not match its header is refused.
+        geom_file(9);
+        let (code, err) = call("info", r#"{"mesh":{"rawPath":"mem:0"}}"#);
+        assert_eq!(code, 1);
+        assert!(err.contains("raw mesh"), "{err}");
     }
 
     fn geom_call_missing_name() -> u32 {
