@@ -12,11 +12,10 @@ import { formatCost, formatDuration, formatGrams, previewStats, timeRows } from 
 import { Swatch } from '../../parts'
 import { printBlock } from '../../plate/heimdall'
 import { resolveSlots } from '../../filament/slots'
-import { exportGcode, recordSpoolUse, sendToPrinter } from '../../state/actions'
+import { exportGcode, recordSpoolUse } from '../../state/actions'
 import { setWorkspace, shownSlice, useApp } from '../../state/store'
 import { effectiveMode, useLayout, useTabLabel } from '../../first-run/look'
 import { usePrinter } from '../prepare/prepare-panes'
-import { printTarget } from '../../lib/use-printer'
 import { isExportOnly } from '../../lib/hand-printers'
 import { featureStyle } from './preview-hud'
 import { fixApplies, jumpToWarning, runWarningFix, warningFix } from '../../lib/warning-actions'
@@ -200,7 +199,7 @@ export function PreviewRight() {
   const slice = useApp((s) => s.slice)
   // The swatches are the slots' colors, as the slice used them; a string, so the selector stays stable.
   const slotColors = useApp((s) => resolveSlots(s).map((r) => r.color).join())
-  const { printer, rows } = usePrinter()
+  const { printer } = usePrinter()
   const spools = useSpools(host)
   const links = useApp((s) => s.spoolLinks)
   // A strike in the slice, or by object objects moved too close or too tall since it: Print and Export wait.
@@ -208,9 +207,6 @@ export function PreviewRight() {
   const shown = shownSlice(slice)
   // The result on screen while a new slice runs is the last one: its file is not the plate's, so Print and Export wait.
   const updating = slice.status === 'running'
-  // A model still loading holds Print; the reason is in the tip. Export works from what is drawn.
-  const loading = useApp((s) => s.plateLoading)
-  const waitTip = (title: string) => (loading ? { tip: { title, reason: 'The model is still loading.' } } : {})
   if (!shown) {
     return (
       <Block title="Filament use" data-section="filament">
@@ -226,7 +222,6 @@ export function PreviewRight() {
   const r = shown.result
   const colors = slotColors.split(',')
   const grams = r.stats.filamentG.reduce((a, b) => a + b, 0)
-  const target = printTarget(printer, rows)
   const spoolOf = (slot: number) => spoolFor(slot, spools, links, printer?.status.slots[slot - 1]?.spoolmanId)
   const short = shortfalls(r.stats.filamentG, spoolOf)
   const uses = r.stats.filamentG.flatMap((g, i) => {
@@ -281,32 +276,17 @@ export function PreviewRight() {
             <dd>{r.layerCount}</dd>
           </div>
         </dl>
-        {printer && isExportOnly(printer) ? (
-          <>
-            <Button variant="primary" size="lg" full icon="sd-card" disabled={unsafe !== null || updating} onClick={() => void exportGcode(host)}>
-              {`Export for ${printer.name}`}
-            </Button>
-            <p className="app-note">No connection. Save the file and copy it to the printer on a USB stick or SD card.</p>
-          </>
-        ) : (
-          <>
-            <Button variant="primary" size="lg" full icon="send-to-printer" aria-label={target ? `Print on ${target.name}` : undefined} disabled={!target || unsafe !== null || updating || loading} {...waitTip('Print')} onClick={() => target && void sendToPrinter(host, target)}>
-              {target ? 'Print' : 'No idle printer'}
-            </Button>
-            {target ? <p className="app-note">On {target.name}{target.name !== target.model ? `, ${target.model}` : ''}</p> : null}
-            <div className="app-row gap8">
-              <Button size="sm" icon="download" disabled={unsafe !== null || updating} onClick={() => void exportGcode(host)}>
-                Export G-code
-              </Button>
-            </div>
-            {target ? null : <p className="app-note">Printers that finish a job show up here.</p>}
-            {unsafe !== null ? (
-              <p className="app-err" role="alert">
-                {unsafe}
-              </p>
-            ) : null}
-          </>
-        )}
+        {/* The one Print is in the sidebar footer; the summary keeps the file export. */}
+        <div className="app-row gap8">
+          <Button size="sm" icon="download" disabled={unsafe !== null || updating} onClick={() => void exportGcode(host)}>
+            {printer && isExportOnly(printer) ? `Export for ${printer.name}` : 'Export G-code'}
+          </Button>
+        </div>
+        {unsafe !== null ? (
+          <p className="app-err" role="alert">
+            {unsafe}
+          </p>
+        ) : null}
       </Block>
     </>
   )

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 import type { ReactNode } from 'react'
-import { tipAttrs } from './tooltip'
+import { tipAttrs, type TipSpec } from './tooltip'
 import { Icon } from '../icons/icon'
 import type { IconName } from '../icons/icon-paths'
 
@@ -12,6 +12,8 @@ export interface SegOption<V extends string> {
   icon?: IconName
   /** Tooltip and accessible name when the label is only an icon. */
   title?: string
+  /** A tooltip for an option whose label already names it; the accessible name stays the label. */
+  tip?: TipSpec
   disabled?: boolean
   /** The option's data-testid (docs/test-ids.md). */
   testId?: string
@@ -64,7 +66,7 @@ export function Seg<V extends string>({ label, value, onChange, options, size = 
             aria-checked={checked}
             aria-label={opt.title}
             data-testid={opt.testId}
-            {...tipAttrs(opt.title ? { title: opt.title } : undefined)}
+            {...tipAttrs(opt.title ? { title: opt.title } : opt.tip)}
             tabIndex={checked || (!hasChecked && i === firstEnabled) ? 0 : -1}
             disabled={opt.disabled}
             onClick={() => onChange(opt.value)}

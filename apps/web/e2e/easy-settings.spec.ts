@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// The Goal tiles in Simple mode: each tile says what it gives on the printer in use, the line under them says about
-// how long and how much from the last slice, and moving a control the goal sets shows Custom. Auto slice stays on
+// The Goal tiles in Simple mode: each tile says what it gives on the printer in use, the picked tile's tooltip says
+// about how long and how much from the last slice, and moving a control the goal sets shows Custom. Auto slice stays on
 // here (the plain Playwright test, as in auto-slice.spec.ts), so a pick slices again on its own.
 import { expect, test, type Page } from '@playwright/test'
 import { plateReady } from './fixtures'
@@ -21,28 +21,29 @@ async function open(page: Page, prefs: Record<string, unknown> = {}): Promise<vo
   await plateReady(page)
 }
 
-const estimate = (page: Page) => page.getByTestId('slice-goal-estimate')
+// The picked tile carries the estimate in its tooltip.
+const estimate = (page: Page) => page.getByRole('radiogroup', { name: 'Goal' }).getByRole('radio', { checked: true })
 const subtitles = (page: Page) => Promise.all(TIERS.map((t) => page.getByTestId(`slice-goal-${t}`).locator('.goal-sub').textContent()))
 
 async function sliced(page: Page): Promise<void> {
   await expect.poll(() => page.evaluate(() => { const s = (window as unknown as { __sx: Sx }).__sx.getState().slice; return s.status === 'done' && !s.stale }), { timeout: 120_000 }).toBe(true)
 }
 
-test('picking Fine slices again and the line under the tiles changes', async ({ page, isMobile }) => {
+test('picking Fine slices again and the picked tile\'s estimate changes', async ({ page, isMobile }) => {
   test.skip(isMobile, 'Runs at desktop width')
   test.slow()
   await open(page)
   await sliced(page)
-  await expect(estimate(page)).toHaveText(/^About \d/)
-  const before = await estimate(page).textContent()
+  await expect(estimate(page)).toHaveAttribute('data-tip-body', /^About \d/)
+  const before = await estimate(page).getAttribute('data-tip-body')
   const firstId = await page.evaluate(() => (window as unknown as { __sx: Sx }).__sx.getState().slice.result?.id)
   await page.getByTestId('slice-goal-fine').click()
   await expect(page.getByTestId('slice-goal-fine')).toHaveAttribute('aria-checked', 'true')
   await expect(page.getByTestId('slice-goal-fine').locator('.goal-sub')).toHaveText(/^0\.\d\d mm$/)
   // A new slice lands (a new id), and the line reads it.
   await expect.poll(() => page.evaluate((first) => { const s = (window as unknown as { __sx: Sx }).__sx.getState().slice; return s.status === 'done' && !s.stale && s.result?.id !== first }, firstId), { timeout: 120_000 }).toBe(true)
-  await expect(estimate(page)).toHaveText(/^About \d/)
-  expect(await estimate(page).textContent()).not.toBe(before)
+  await expect(estimate(page)).toHaveAttribute('data-tip-body', /^About \d/)
+  expect(await estimate(page).getAttribute('data-tip-body')).not.toBe(before)
 })
 
 test('a 0.6 mm nozzle shows its own numbers on the tiles', async ({ page, isMobile }) => {
@@ -64,8 +65,8 @@ test('moving the layer height shows Custom with no tile picked, and a goal start
   const goal = page.getByRole('radiogroup', { name: 'Goal' })
   await expect(goal.getByRole('radio', { checked: true })).toHaveCount(1)
   await expect(page.locator('.goal-custom')).toHaveCount(0)
-  // No slice yet: no line under the tiles.
-  await expect(estimate(page)).toHaveCount(0)
+  // No slice yet: no estimate on the picked tile.
+  await expect(estimate(page)).not.toHaveAttribute('data-tip-body')
   await page.locator('#easy-layer').click()
   await page.getByRole('menuitemcheckbox', { name: '0.16 mm' }).click()
   await expect(page.locator('.goal-custom')).toHaveText('Custom')
@@ -100,10 +101,10 @@ test('shots: fresh estimate, Updating, Custom and no slice, light and dark', asy
     await page.waitForTimeout(300)
     const s = await page.evaluate(() => (window as unknown as { __sx: Sx }).__sx.getState().slice)
     await sx({ slice: { ...s, stale: false } })
-    await expect(estimate(page)).toHaveText(/^About \d/)
+    await expect(estimate(page)).toHaveAttribute('data-tip-body', /^About \d/)
     await shoot(`fresh-${scheme}`)
     await sx({ slice: { ...s, stale: true } })
-    await expect(estimate(page)).toHaveText('Updating')
+    await expect(estimate(page)).toHaveAttribute('data-tip-body', 'Updating the estimate.')
     await shoot(`updating-${scheme}`)
     await sx({ goal: 'custom', slice: { ...s, stale: false } })
     await center()
@@ -112,7 +113,7 @@ test('shots: fresh estimate, Updating, Custom and no slice, light and dark', asy
     await page.waitForTimeout(600)
     await page.screenshot({ path: `${dir}/goal-tiles-custom-${scheme}-${width}.png` })
     await sx({ goal: 'standard', slice: { status: 'idle' } })
-    await expect(estimate(page)).toHaveCount(0)
+    await expect(estimate(page)).not.toHaveAttribute('data-tip-body')
     await shoot(`no-slice-${scheme}`)
     await sx({ slice: { ...s, stale: false } })
   }

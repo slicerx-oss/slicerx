@@ -64,7 +64,7 @@ describe('setup preview', () => {
     expect(preview('bambu-studio').tabs.map((t) => t.label)).toEqual(['Slice', 'Device', 'Vault'])
     expect(preview('prusaslicer').tabs.some((t) => t.renamed)).toBe(false)
     expect(preview('slicerx').tabs.some((t) => t.renamed)).toBe(false)
-    expect(preview('slicerx').sidebar).toEqual(['Printer', 'Filament', 'Objects', 'Print settings'])
+    expect(preview('slicerx').sidebar).toEqual(['Printer', 'Filament', 'Print settings'])
     const paint = (id: LookId) => preview(id).tools.find((t) => t.label === 'Paint')?.key
     expect([paint('bambu-studio'), paint('orcaslicer'), paint('prusaslicer')]).toEqual(['I', 'L', null])
   })

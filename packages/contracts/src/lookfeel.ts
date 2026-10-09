@@ -26,8 +26,8 @@ export interface LayoutSpec {
   /** Sidebar sections, or separate Print, Filament and Printer tabs. */
   settingsModel: 'sidebar' | 'tabs'
   sidebar: { side: 'left' | 'right'; width: number; resizable: true; collapseKey: string | null }
-  /** Where the object list sits in the sidebar: under the settings, above everything, or between the filament and the print settings. */
-  objectList: 'sidebar-below-settings' | 'sidebar-above-settings' | 'sidebar-after-filament'
+  /** Where the object list sits: in the sidebar under the settings, above everything, or between the filament and the print settings; or at the top of the right pane, above the slice summary. */
+  objectList: 'sidebar-below-settings' | 'sidebar-above-settings' | 'sidebar-after-filament' | 'right-pane'
   objectPanel: 'inline-table' | 'popover'
   toolbar: 'top-of-viewport' | 'left-of-viewport'
   plateList: 'thumbnails-bottom' | 'sidebar' | 'hidden-single'

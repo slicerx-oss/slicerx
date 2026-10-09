@@ -1,0 +1,11 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+/* Copyright (C) 2026 The SlicerX contributors */
+/* The Slice sidebar's pinned top: the printer and the filaments stay in view while the settings under them scroll. */
+.studio[data-mode="prepare"]:not([data-model-mode="design"]) > .pane .pane-body.pane-pin { padding-bottom: var(--s-2); border-bottom: 1px solid var(--line-soft); }
+/* A finished slice in the footer: time, layers and grams on one line over the button. */
+.slice-done { position: relative; }
+.slice-done .est-row { display: flex; align-items: baseline; gap: var(--s-2); margin: 0; min-width: 0; }
+.slice-done .est-time { margin: 0; font-size: var(--fs-xl); }
+.slice-done .est-sub { margin: 0; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Until the filament rail lands, Advanced lists every slot: the pinned top keeps at most 40% of the sidebar and scrolls inside. */
+.pane .sx-rail-pin { max-height: 40%; overflow: auto; }
