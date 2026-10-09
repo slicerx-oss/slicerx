@@ -5,6 +5,7 @@
 import { describe, expect, it } from 'vitest'
 import type { MeshPart } from '@slicerx/contracts'
 import { decodeParts, encodeParts } from '../../core/web/src/parts'
+import { decodePaintedParts, encodePaintedParts } from '../../core/web/src/parts-paint'
 import { boxMesh } from '../src/plate/mesh-ops'
 
 const part = (name: string, slot: number): MeshPart => ({ ...boxMesh(10, 10, 10), name, slot })
@@ -12,11 +13,10 @@ const part = (name: string, slot: number): MeshPart => ({ ...boxMesh(10, 10, 10)
 describe('paint in the raw parts format', () => {
   it('adds nothing when nothing is painted, so older readers see the same bytes', () => {
     const plain = [part('a', 1), part('b', 2)]
-    const bytes = encodeParts(plain)
-    const tail = bytes.subarray(bytes.length - 4)
-    expect(new TextDecoder().decode(tail)).not.toBe('SXPT')
-    expect(decodeParts(bytes).map((p) => p.paint)).toEqual([undefined, undefined])
-    expect(encodeParts([{ ...part('a', 1), paint: { color: {} } }])).toEqual(encodeParts([part('a', 1)]))
+    const bytes = encodePaintedParts(plain)
+    expect(bytes).toEqual(encodeParts(plain))
+    expect(decodePaintedParts(bytes).map((p) => p.paint)).toEqual([undefined, undefined])
+    expect(encodePaintedParts([{ ...part('a', 1), paint: { color: {} } }])).toEqual(encodeParts([part('a', 1)]))
   })
 
   it('carries every layer of every part through, triangle by triangle', () => {
@@ -25,8 +25,11 @@ describe('paint in the raw parts format', () => {
       part('Plain', 2),
       { ...part('Fin', 3), paint: { support: { 1: '8' }, fuzzy: { 7: '4' } } },
     ]
-    const back = decodeParts(encodeParts(parts))
+    const bytes = encodePaintedParts(parts)
+    const back = decodePaintedParts(bytes)
     expect(back.map((p) => p.name)).toEqual(['Body', 'Plain', 'Fin'])
+    // A reader that does not know the paint block reads the parts and stops before it.
+    expect(decodeParts(bytes).map((p) => p.name)).toEqual(['Body', 'Plain', 'Fin'])
     expect(back[0]!.paint).toEqual({ color: { 0: '0C34', 5: '4', 11: '8' }, seam: { 2: '4' } })
     expect(back[1]!.paint).toBeUndefined()
     expect(back[2]!.paint).toEqual({ support: { 1: '8' }, fuzzy: { 7: '4' } })
@@ -35,13 +38,13 @@ describe('paint in the raw parts format', () => {
   })
 
   it('leaves out texts on triangles the part does not have, and empty texts', () => {
-    const back = decodeParts(encodeParts([{ ...part('a', 1), paint: { color: { 3: '8', 12: '4', 99: '4', 4: '' } } }]))
+    const back = decodePaintedParts(encodePaintedParts([{ ...part('a', 1), paint: { color: { 3: '8', 12: '4', 99: '4', 4: '' } } }]))
     expect(back[0]!.paint).toEqual({ color: { 3: '8' } })
   })
 
   it('refuses a paint block that runs past the end of the buffer', () => {
-    const bytes = encodeParts([{ ...part('a', 1), paint: { color: { 3: '0C34' } } }])
-    expect(() => decodeParts(bytes.subarray(0, bytes.length - 2))).toThrow(/Truncated paint/)
-    expect(() => decodeParts(bytes.subarray(0, bytes.length - 8))).toThrow(/Truncated paint/)
+    const bytes = encodePaintedParts([{ ...part('a', 1), paint: { color: { 3: '0C34' } } }])
+    expect(() => decodePaintedParts(bytes.subarray(0, bytes.length - 2))).toThrow(/Truncated paint/)
+    expect(() => decodePaintedParts(bytes.subarray(0, bytes.length - 8))).toThrow(/Truncated paint/)
   })
 })
