@@ -131,6 +131,33 @@ class PoolWorker {
   }
 }
 
+/** A part held by weak references to its arrays and its paint (when the part has any), which stay the caller's. */
+interface WeakPart {
+  name: string
+  slot: number
+  positions: WeakRef<Float32Array>
+  indices: WeakRef<Uint32Array>
+  paint?: WeakRef<object>
+}
+
+function weakPart(p: MeshPart): WeakPart {
+  const paint = (p as { paint?: object }).paint
+  return { name: p.name, slot: p.slot, positions: new WeakRef(p.positions), indices: new WeakRef(p.indices), ...(paint ? { paint: new WeakRef(paint) } : {}) }
+}
+
+/** The parts again, or null when the caller dropped any of their arrays or paint. */
+function strongParts(list: readonly WeakPart[]): MeshPart[] | null {
+  const out: MeshPart[] = []
+  for (const w of list) {
+    const positions = w.positions.deref()
+    const indices = w.indices.deref()
+    const paint = w.paint?.deref()
+    if (!positions || !indices || (w.paint && !paint)) return null
+    out.push({ name: w.name, slot: w.slot, positions, indices, ...(paint ? { paint } : {}) } as MeshPart)
+  }
+  return out
+}
+
 const WARNING_CODES: readonly SliceWarningCode[] = ['open_edges', 'thin_wall', 'floating_region', 'long_bridge', 'outside_bed', 'unsupported_setting', 'manual_step']
 
 function toWarning(w: ShardInfo['warnings'][number]): SliceWarning {
@@ -167,9 +194,11 @@ export async function createWasmSlicer(opts: PoolOptions): Promise<SlicerHost> {
   const meshes = new Map<string, MeshHandle>()
   const slices = new Map<string, StoredSlice>()
   let nextId = 1
-  // Each mesh's bytes as it was loaded, kept as a Blob (outside the page's heap), so a pool whose every worker
-  // stopped can start a new one with the same meshes and paint.
-  const sources = new Map<string, { blob: Blob; fileName: string }>()
+  // What each mesh was loaded from, so a pool whose every worker stopped can start a new one with the same meshes
+  // and paint. For parts, weak references to the caller's own arrays and paint (no copy, and nothing kept alive the
+  // caller dropped), encoded again only for a restart; for a file the caller passed as bytes, those bytes as a Blob
+  // (outside the page's heap).
+  const sources = new Map<string, { fileName: string; parts?: WeakPart[]; blob?: Blob }>()
   let restarting: Promise<void> | null = null
 
   /** A worker that stopped leaves the pool; when it was the last one, a new one starts with every mesh. */
@@ -182,7 +211,14 @@ export async function createWasmSlicer(opts: PoolOptions): Promise<SlicerHost> {
     const w = new PoolWorker(make(), module, warmUp, retire)
     await w.ready
     for (const [meshId, src] of sources) {
-      const data = await src.blob.arrayBuffer()
+      const parts = src.parts ? strongParts(src.parts) : null
+      // Parts the caller no longer holds belong to no plate any more: that mesh is not loaded again.
+      if (src.parts && !parts) {
+        sources.delete(meshId)
+        meshes.delete(meshId)
+        continue
+      }
+      const data = parts ? (encodeParts(parts).slice().buffer as ArrayBuffer) : await (src.blob ?? new Blob()).arrayBuffer()
       w.meshIds.add(meshId)
       await w.call((call) => ({ type: 'load', call, meshId, fileName: src.fileName, data }), [data])
     }
@@ -203,15 +239,24 @@ export async function createWasmSlicer(opts: PoolOptions): Promise<SlicerHost> {
   await first.ready
   workers.push(first)
 
-  const load = async (data: Uint8Array, fileName: string): Promise<MeshHandle> => {
+  const load = async (data: Uint8Array, fileName: string, parts?: MeshPart[]): Promise<MeshHandle> => {
     const meshId = `mesh-${nextId++}`
+    await firstWorker()
+    sources.set(meshId, parts ? { fileName, parts: parts.map(weakPart) } : { fileName, blob: new Blob([data as BlobPart]) })
+    try {
+      return await loadIn(meshId, data, fileName)
+    } catch (e) {
+      sources.delete(meshId)
+      throw e
+    }
+  }
+
+  const loadIn = async (meshId: string, data: Uint8Array, fileName: string): Promise<MeshHandle> => {
     const send = (w: PoolWorker) => {
       const copy = data.slice().buffer
       w.meshIds.add(meshId)
       return w.call((call) => ({ type: 'load', call, meshId, fileName, data: copy }), [copy])
     }
-    await firstWorker()
-    sources.set(meshId, { blob: new Blob([data as BlobPart]), fileName })
     const results = await Promise.all(workers.map(send))
     // A worker that joined while this mesh was loading gets it too.
     for (let late = workers.filter((w) => !w.meshIds.has(meshId)); late.length > 0; late = workers.filter((w) => !w.meshIds.has(meshId))) {
@@ -277,7 +322,7 @@ export async function createWasmSlicer(opts: PoolOptions): Promise<SlicerHost> {
       return load(new Uint8Array(data), fileName)
     },
     loadParts(name: string, parts: MeshPart[]): Promise<MeshHandle> {
-      return load(encodeParts(parts), name)
+      return load(encodeParts(parts), name, parts)
     },
     async meshParts(id: string): Promise<MeshPart[]> {
       if (!meshes.has(id)) throw new Error(`Unknown mesh ${id}`)
