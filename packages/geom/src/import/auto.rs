@@ -66,6 +66,8 @@ pub struct OutObject {
     pub name: String,
     pub parts: Vec<Part>,
     pub repair: ObjectRepair,
+    /// a body split from a one-part file: a later crossing check rebuilds each of its shells on its own, as the import does
+    pub per_shell: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -303,6 +305,30 @@ fn repair_object(parts: &[Part], opts: &AutoOptions) -> Result<(Vec<TriMesh>, Re
     Ok((out.iter().map(|tris| fixed.subset(tris)).collect(), report))
 }
 
+/// What a closed mesh that crosses itself becomes.
+#[derive(Debug, Clone, PartialEq)]
+pub enum SelfCrossing {
+    /// open, or closed without crossing itself
+    None,
+    /// rebuilt without the crossings
+    Fixed(TriMesh),
+    /// it crosses itself and stays so: bigger than `max_triangles`, or the rebuild failed
+    Left,
+}
+
+/// Checks a closed mesh for faces that cross each other and rebuilds it when it has at most `max_triangles`; with
+/// `per_shell`, each crossing shell is rebuilt on its own, so loose bodies stay apart. The import runs this on each
+/// part, and an app can run it later on its own (`import.selfIntersections`), after it has shown the model.
+pub fn self_crossing(m: &TriMesh, max_triangles: usize, per_shell: bool) -> SelfCrossing {
+    if !m.edge_report().is_watertight() || !Solid::new(m).is_ok_and(|s| s.self_intersects()) {
+        return SelfCrossing::None;
+    }
+    if m.triangles.len() > max_triangles {
+        return SelfCrossing::Left;
+    }
+    rebuild_crossing_shells(m, per_shell).map_or(SelfCrossing::Left, SelfCrossing::Fixed)
+}
+
 fn rebuild_crossing_shells(m: &TriMesh, per_shell: bool) -> Option<TriMesh> {
     let shells = if per_shell { edge_shells(m) } else { Vec::new() };
     if shells.len() < 2 {
@@ -536,22 +562,14 @@ pub fn auto_import(objects: Vec<InObject>, file_unit: &UnitInfo, opts: &AutoOpti
         };
         let mut parts = Vec::new();
         for (p, mut m) in obj.parts.iter().zip(meshes) {
-            if opts.repair
-                && opts.rebuild_max_triangles > 0
-                && m.edge_report().is_watertight()
-                && let Ok(s) = Solid::new(&m)
-                && s.self_intersects()
-            {
-                if m.triangles.len() <= opts.rebuild_max_triangles {
-                    match rebuild_crossing_shells(&m, opts.split && obj.parts.len() == 1) {
-                        Some(r) => {
-                            m = r;
-                            rep.self_intersections_fixed += 1;
-                        }
-                        None => rep.self_intersecting_left += 1,
+            if opts.repair && opts.rebuild_max_triangles > 0 {
+                match self_crossing(&m, opts.rebuild_max_triangles, opts.split && obj.parts.len() == 1) {
+                    SelfCrossing::None => {}
+                    SelfCrossing::Fixed(r) => {
+                        m = r;
+                        rep.self_intersections_fixed += 1;
                     }
-                } else {
-                    rep.self_intersecting_left += 1;
+                    SelfCrossing::Left => rep.self_intersecting_left += 1,
                 }
             }
             parts.push(Part {
@@ -594,6 +612,7 @@ pub fn auto_import(objects: Vec<InObject>, file_unit: &UnitInfo, opts: &AutoOpti
                     } else {
                         ObjectRepair::default()
                     },
+                    per_shell: true,
                 });
             }
         } else {
@@ -601,6 +620,7 @@ pub fn auto_import(objects: Vec<InObject>, file_unit: &UnitInfo, opts: &AutoOpti
                 name: obj.name,
                 parts,
                 repair: rep,
+                per_shell: false,
             });
         }
     }
@@ -808,5 +828,30 @@ mod tests {
         let o = &r.objects[0];
         assert_eq!(o.repair.self_intersections_fixed, 1, "{:?}", o.repair);
         assert!((o.parts[0].mesh.volume() - (2000.0 - 125.0)).abs() < 1e-6);
+    }
+
+    #[test]
+    fn the_crossing_check_runs_on_its_own_too() {
+        let mut m = build::box_mesh([0.0; 3], [10.0, 10.0, 10.0]);
+        m.append(&build::box_mesh([5.0, 5.0, 5.0], [15.0, 15.0, 15.0]));
+        match self_crossing(&m, 150_000, false) {
+            SelfCrossing::Fixed(r) => assert!((r.volume() - (2000.0 - 125.0)).abs() < 1e-6),
+            other => panic!("{other:?}"),
+        }
+        // Too big to rebuild: it says so and leaves the mesh.
+        assert_eq!(self_crossing(&m, 11, false), SelfCrossing::Left);
+        assert_eq!(
+            self_crossing(&build::box_mesh([0.0; 3], [1.0; 3]), 150_000, true),
+            SelfCrossing::None
+        );
+        // The import with the check left out keeps the crossing mesh as it is.
+        let skip = AutoOptions {
+            split: false,
+            rebuild_max_triangles: 0,
+            ..AutoOptions::default()
+        };
+        let r = auto_import(one(m), &mm(), &skip).unwrap();
+        assert_eq!(r.objects[0].repair.self_intersections_fixed, 0);
+        assert_eq!(r.objects[0].repair.self_intersecting_left, 0);
     }
 }

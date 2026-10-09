@@ -20,8 +20,8 @@ use crate::import::auto::{self, AutoOptions};
 #[cfg(feature = "cad")]
 use crate::json::base64_decode;
 use crate::json::{
-    FileLoader, MeshOut, field, field_or, field_or_default, mesh_report, mesh_value, parse, read_model,
-    to_value,
+    FileLoader, MeshOut, field, field_or, field_or_default, mesh_field, mesh_report, mesh_value, parse,
+    read_model, to_value,
 };
 use crate::measure::{self, Feature, Pick};
 use crate::mesh::TriMesh;
@@ -143,6 +143,7 @@ pub(crate) fn call(op: &str, req: &Value, enc: MeshOut, files: FileLoader<'_>) -
         #[cfg(feature = "cad")]
         "text.mesh" => text_op(req, enc),
         "import.auto" => import_auto_op(req, enc, files),
+        "import.selfIntersections" => self_crossing_op(req, enc, files),
         "fit.check" => fit_op(req, files),
         #[cfg(feature = "cad")]
         "face.push" => push_op(req, enc, files),
@@ -436,7 +437,7 @@ fn import_auto_op(req: &Value, enc: MeshOut, files: FileLoader<'_>) -> Result<Va
                 })
             })
             .collect();
-        objects.push(json!({ "name": o.name, "parts": parts, "repair": to_value(&o.repair)? }));
+        objects.push(json!({ "name": o.name, "parts": parts, "repair": to_value(&o.repair)?, "perShell": o.per_shell }));
     }
     let mut warnings = model.warnings.clone();
     warnings.extend(r.warnings.iter().cloned());
@@ -449,6 +450,23 @@ fn import_auto_op(req: &Value, enc: MeshOut, files: FileLoader<'_>) -> Result<Va
         "warnings": warnings,
         "slotColors": model.slot_colors,
     }))
+}
+
+/// A part checked for faces that cross each other after the import showed it (the import itself can skip this with
+/// `rebuildMaxTriangles` 0): `crossing`, and the rebuilt mesh when it was rebuilt.
+fn self_crossing_op(req: &Value, enc: MeshOut, files: FileLoader<'_>) -> Result<Value> {
+    let m = mesh_field(req, "mesh", files)?;
+    let max: usize = field_or(
+        req,
+        "rebuildMaxTriangles",
+        AutoOptions::default().rebuild_max_triangles,
+    )?;
+    let per_shell: bool = field_or(req, "perShell", true)?;
+    Ok(match auto::self_crossing(&m, max, per_shell) {
+        auto::SelfCrossing::None => json!({ "crossing": false }),
+        auto::SelfCrossing::Fixed(r) => json!({ "crossing": true, "mesh": enc.mesh(&r) }),
+        auto::SelfCrossing::Left => json!({ "crossing": true }),
+    })
 }
 
 fn fit_op(req: &Value, files: FileLoader<'_>) -> Result<Value> {

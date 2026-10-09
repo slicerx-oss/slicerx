@@ -8,7 +8,7 @@
 import type { Bed, Host, MeshHandle, MeshPart } from '@slicerx/contracts'
 import { isBinaryStl, sameMesh, scanStl } from '../export/stl-scan'
 import { inStep } from '../plate/history'
-import { fromGeom, usesWorker, type GeomMesh } from '../geom/client'
+import { fromGeom, toGeom, usesWorker, type GeomMesh } from '../geom/client'
 import type { AutoImport, Unit } from '../geom/cad'
 import type { StepConverter } from './import-step'
 import { centerOnBed, compose, dropToBed, setScale } from '../plate/transform'
@@ -50,7 +50,17 @@ async function engine({ declaredUnit, ...file }: AutoFile): Promise<AutoImport> 
   const { importAuto } = await import('../geom/cad')
   // A provider other than the app's worker (a test's) takes base64 only.
   const sent = 'bytes' in file && !usesWorker() ? { name: file.name, format: file.format, base64: toBase64(file.bytes) } : file
-  return importAuto(sent, declaredUnit ? { declaredUnit } : {})
+  // The check for faces that cross each other runs after the model shows (checkCrossings): it is most of the import's time.
+  return importAuto(sent, { ...(declaredUnit ? { declaredUnit } : {}), rebuildMaxTriangles: 0 })
+}
+
+/** The check for faces that cross each other on one part, as the engine runs it (a test passes its own). */
+export type CrossingRunner = (part: MeshPart, perShell: boolean) => Promise<{ crossing: boolean; mesh?: GeomMesh }>
+
+async function crossingEngine(part: MeshPart, perShell: boolean): Promise<{ crossing: boolean; mesh?: GeomMesh }> {
+  const { selfIntersections } = await import('../geom/cad')
+  // The app's worker takes the typed arrays as they are; another provider takes plain arrays.
+  return selfIntersections(usesWorker() ? { positions: part.positions, indices: part.indices instanceof Uint32Array ? part.indices : Uint32Array.from(part.indices) } : toGeom(part), { perShell })
 }
 
 async function stepConverter(): Promise<StepConverter> {
@@ -58,7 +68,7 @@ async function stepConverter(): Promise<StepConverter> {
 }
 
 /** Turns the engine's answer into plate entries, placed on the bed at the detected size. */
-export function entriesFromImport(result: AutoImport, bed: Bed): { parts: MeshPart[]; name: string; colors: string[]; transform: number[] }[] {
+export function entriesFromImport(result: AutoImport, bed: Bed): { parts: MeshPart[]; name: string; colors: string[]; transform: number[]; perShell: boolean }[] {
   const scale = result.unit.autoApply ? result.unit.scale : 1
   const palette = result.slotColors.length ? result.slotColors : objectPalette()
   return result.objects
@@ -67,7 +77,7 @@ export function entriesFromImport(result: AutoImport, bed: Bed): { parts: MeshPa
       const parts = o.parts.map((p) => fromGeom(p.mesh as GeomMesh, p.name || o.name, p.slot))
       let m = compose({ position: [0, 0, 0], rotation: [0, 0, 0], scale: [scale, scale, scale] })
       m = dropToBed(parts, centerOnBed(parts, m, bed))
-      return { parts, name: o.name || result.name, colors: parts.map((p) => o.parts.find((q) => (q.name || o.name) === p.name)?.color ?? palette[(p.slot - 1) % palette.length] ?? brandAccent()), transform: m }
+      return { perShell: o.perShell ?? false, parts, name: o.name || result.name, colors: parts.map((p) => o.parts.find((q) => (q.name || o.name) === p.name)?.color ?? palette[(p.slot - 1) % palette.length] ?? brandAccent()), transform: m }
     })
 }
 
@@ -104,7 +114,7 @@ async function showQuick(host: Host, name: string, data: ArrayBuffer, edit: (fn:
  * Adds a file to the plate through the engine. `run` is the engine call and `step` the STEP reader (a
  * test passes its own). Returns the ids of the new objects. Nothing is added when any step fails.
  */
-export async function addAutoImport(host: Host, name: string, data: ArrayBuffer, run: AutoRunner = engine, step?: StepConverter, scope?: OpenScope): Promise<string[]> {
+export async function addAutoImport(host: Host, name: string, data: ArrayBuffer, run: AutoRunner = engine, step?: StepConverter, scope?: OpenScope, cross: CrossingRunner = crossingEngine): Promise<string[]> {
   const format = autoFormatOf(name)
   if (!format) throw new Error(`${name} is not an STL, OBJ, AMF or STEP file`)
   // One undo step for the object shown at once and the engine's import that may replace it.
@@ -180,7 +190,54 @@ export async function addAutoImport(host: Host, name: string, data: ArrayBuffer,
     toast(notes.join(' '), 'info', { label: 'Use as millimeters', run: () => useAsMillimeters(ids) })
   } else if (notes.length) toast(`${name}: ${notes.join(' ')}`, result.warnings.length ? 'warn' : 'info', repairAction ?? undefined)
   else toast(`Added ${name}`)
+  if (run === engine) void checkCrossings(host, name, entries.map((e, i) => ({ id: e.id, perShell: same ? (made[0]?.perShell ?? true) : (made[i]?.perShell ?? false) })), cross, edit)
   return ids
+}
+
+/**
+ * After the model shows: each part checked for faces that cross each other, as the import used to before showing it. A
+ * part small enough is rebuilt without the crossings and takes the place of the one on the plate, in the open's undo
+ * step when nothing else was edited meanwhile; a bigger one gets a note. A part that changed meanwhile is left alone.
+ */
+export async function checkCrossings(host: Host, name: string, objects: { id: string; perShell: boolean }[], cross: CrossingRunner, edit: (fn: () => void) => void = (fn) => fn()): Promise<{ fixed: number; left: number }> {
+  let fixed = 0
+  let left = 0
+  for (const o of objects) {
+    const start = get().plate.find((p) => p.id === o.id)
+    if (!start) continue
+    for (let i = 0; i < start.parts.length; i++) {
+      const part = start.parts[i]!
+      let r: { crossing: boolean; mesh?: GeomMesh }
+      try {
+        r = await cross(part, o.perShell)
+      } catch {
+        continue
+      }
+      if (!r.crossing) continue
+      if (!r.mesh) {
+        left++
+        continue
+      }
+      const now = get().plate.find((p) => p.id === o.id)
+      if (now?.parts[i] !== part) continue
+      const parts = now.parts.map((p, k) => (k === i ? fromGeom(r.mesh!, part.name, part.slot) : p))
+      const handle = await host.slicer.loadParts(now.name, parts)
+      const still = get().plate.find((p) => p.id === o.id)
+      if (still?.parts !== now.parts) {
+        host.slicer.release?.(handle.id)
+        continue
+      }
+      edit(() => set((s) => ({ plate: s.plate.map((p) => (p.id === o.id ? { ...p, parts, handle } : p)) })))
+      host.slicer.release?.(now.handle.id)
+      fixed++
+    }
+  }
+  if (fixed) {
+    markStale()
+    toast(`${name}: Repaired: fixed self-intersections in ${fixed} ${fixed === 1 ? 'part' : 'parts'}.`)
+  }
+  if (left) toast(`${name}: ${left} ${left === 1 ? 'part still crosses itself' : 'parts still cross themselves'} (too large to rebuild during import).`, 'warn')
+  return { fixed, left }
 }
 
 /** Takes the unit scale back off the given objects (the undo for a detected unit). */
