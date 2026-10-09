@@ -6,7 +6,7 @@ import { Button, Dialog, Icon, Switch, type IconName } from '@slicerx/ui'
 import { lazy, Suspense, useState } from 'react'
 import { useEdition, appName } from '../edition'
 import { useFeatures } from '../features'
-import { bridgeConnector } from '../link/bridge'
+import { bridgeConnector } from '../link/connector'
 import { LookSettingsSection, SlicingSettingsSection } from '../first-run/look-settings'
 
 import { usePhoneAccess, usePhoneState, type PhoneAccess } from '../lib/phone'
