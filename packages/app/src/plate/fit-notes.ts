@@ -17,10 +17,14 @@ export interface FitNote {
 const mm = (v: number) => `${v.toFixed(2)} mm`
 const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`
 
-/** One note per kind of problem, never one per pair. */
-export function fitNotes(id: string, fit: ObjectFit | undefined, touches: readonly Touch[], nameOf: (id: string) => string, layerHeightMm: number): FitNote[] {
+/**
+ * One note per kind of problem, never one per pair. Pieces the engine split from one model (`splitOf` gives the same
+ * key) were one model, so their touching is no news: the touch stays in the fit check's data, just not in a note.
+ */
+export function fitNotes(id: string, fit: ObjectFit | undefined, touches: readonly Touch[], nameOf: (id: string) => string, layerHeightMm: number, splitOf: (id: string) => string | undefined = () => undefined): FitNote[] {
   const out: FitNote[] = []
-  const mine = touches.filter((t) => t.ids.includes(id))
+  const split = (a: string, b: string) => splitOf(a) !== undefined && splitOf(a) === splitOf(b)
+  const mine = touches.filter((t) => t.ids.includes(id) && !split(t.ids[0], t.ids[1]))
   if (mine.length) {
     const others = mine.map((t) => (t.ids[0] === id ? t.ids[1] : t.ids[0]))
     out.push({

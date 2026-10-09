@@ -172,9 +172,11 @@ export async function addAutoImport(host: Host, name: string, data: ArrayBuffer,
       throw new Error(`${name} has no geometry`)
     }
     entries = []
+    // pieces split from one model share a key, so the fit check keeps quiet about them touching
+    const split = made.length > 1 ? uid() : undefined
     for (const m of made) {
       const handle = await host.slicer.loadParts(m.name, m.parts)
-      entries.push({ id: uid(), name: m.name, handle, parts: m.parts, colors: m.colors, transform: m.transform })
+      entries.push({ id: uid(), name: m.name, handle, parts: m.parts, colors: m.colors, transform: m.transform, ...(split ? { splitOf: split } : {}) })
     }
     if (!quick) markOpenStage('engine')
     // The engine's result takes the place of the object shown before it.
