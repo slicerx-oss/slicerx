@@ -33,6 +33,7 @@ import {
 } from 'three'
 import type { DragAction } from './controls'
 import { boxDir, boxPicks } from './box-select'
+import { EdgeMarks, type MarkLine } from './edge-marks'
 import { facePatch } from './faces'
 import { Painter, type PaintHit } from './painter'
 import { ScaleGizmo } from './gizmo'
@@ -211,6 +212,9 @@ class ViewportImpl implements Viewport {
   private pickFn: (e: { clientX: number; clientY: number }) => PickHit | null = () => null
   private faceOverlay: Mesh | null = null
   private pickFaces = false
+  private pickEdges = false
+  private readonly edgeMarks = new EdgeMarks()
+  private edgeHoverAt = '' 
   private pickedFaces: Mesh[] = []
   private faceKey = ''
   private featureMask = 0x7fff
@@ -384,6 +388,7 @@ class ViewportImpl implements Viewport {
     this.stage.objectsRoot.add(this.brim.group)
     this.stage.objectsRoot.add(this.gaps.group)
     this.stage.objectsRoot.add(this.guides.group)
+    this.stage.objectsRoot.add(this.edgeMarks.group)
     this.stage.objectsRoot.add(this.rotRings.group, this.cutGizmo.group, this.cutRings.group, this.pushView.group, this.edgeView.group, this.sketchLayer.group, this.dims.group)
     this.stage.envSH.then(
       (sh) => {
@@ -580,6 +585,7 @@ class ViewportImpl implements Viewport {
 
   private renderFrame(aoMix: number, moving: boolean): void {
     const t0 = performance.now()
+    this.edgeMarks.refresh((p) => this.mmPerPx(p))
     this.probe?.begin()
     this.renderer.info.reset()
     const bed = this.stage.bed
@@ -909,6 +915,20 @@ class ViewportImpl implements Viewport {
   setPickFaces(on: boolean): void {
     this.pickFaces = on
     if (!on && this.tool !== 'face' && this.tool !== 'probe') this.hoverFace(null)
+  }
+
+  /** Model's edge filter: report the triangle under the pointer (`edgehover`) so the app can show the edge it would pick. */
+  setPickEdges(on: boolean): void {
+    this.pickEdges = on
+    if (!on && this.edgeHoverAt) {
+      this.edgeHoverAt = ''
+      this.emit('edgehover', null)
+    }
+  }
+
+  /** Model's picked edges as solid bars, and the hovered one fainter, in the pick color. */
+  setPickedEdges(picked: readonly MarkLine[], hover: readonly MarkLine[] = []): void {
+    if (this.edgeMarks.set(picked, hover, (p) => this.mmPerPx(p))) this.invalidate()
   }
 
   /** The faces picked in Model, each the patch around a triangle, drawn in the selection color until changed. */
@@ -2040,6 +2060,7 @@ class ViewportImpl implements Viewport {
     this.faceColor = t.scene.selection
     // Picked faces stand apart from the selected object's own tint, which is the selection color.
     this.pickColor = t.scene.liveLayer
+    this.edgeMarks.setColor(t.scene.liveLayer)
     this.guides.setColor(t.scene.selection)
     this.brim.setColors(t.scene)
     this.cutRings.setColor('v', t.scene.selection)
@@ -2422,6 +2443,14 @@ class ViewportImpl implements Viewport {
       if (!d) {
         if (this.toolpathLook.on && this.mode === 'prepare' && e.buttons === 0) this.hoverSolid(pick(e)?.entry.id ?? null)
         if ((this.tool === 'face' || (this.tool === 'probe' && this.probeFaces) || (this.pickFaces && this.tool !== 'probe')) && this.mode === 'prepare' && e.buttons === 0) this.hoverFace(pick(e))
+        if (this.pickEdges && this.tool !== 'probe' && this.mode === 'prepare' && e.buttons === 0) {
+          const h = pick(e)
+          const key = h && h.face >= 0 ? `${h.entry.id}:${h.part}:${h.face}:${Math.round(h.point.x * 4)}:${Math.round(h.point.y * 4)}:${Math.round(h.point.z * 4)}` : ''
+          if (key !== this.edgeHoverAt) {
+            this.edgeHoverAt = key
+            this.emit('edgehover', h && h.face >= 0 ? { objectId: h.entry.id, partIndex: h.part, triangle: h.face, point: this.worldToBed(h.point) } : null)
+          }
+        }
         if (this.tool === 'probe' && this.probeHover && this.mode === 'prepare' && e.buttons === 0) queueProbe(e)
         if (this.tool === 'paint' && this.mode === 'prepare') this.paintMove(e, pick)
         if (this.tool === 'brim' && this.mode === 'prepare' && e.buttons === 0) {
