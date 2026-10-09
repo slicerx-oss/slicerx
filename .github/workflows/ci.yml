@@ -182,7 +182,7 @@ jobs:
   # no backend, so the store and feed run on the bundled demo catalog (features.demoData). Specs that need a
   # real service skip themselves: vault-flow.spec.ts without the stack from e2e/stack/vault-stack.sh, and
   # bridge.spec.ts without a built sx-link. Most phone tests skip (desktop width only), so the desktop project gets
-  # twelve shards and the phone project one; a new project in playwright.config.ts needs its own line here.
+  # twelve shards and the phone project four; a new project in playwright.config.ts needs its own line here.
   # --fully-parallel spreads the tests of the big files over the shards. A GitHub runner has 4 cores and one worker
   # drawing WebGL in software takes about 2.3 of them, so each shard runs one worker, leaving room for the app's own
   # slicer workers. The e2e job after them is the one name to require.
@@ -199,7 +199,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include: ${{ (github.event_name != 'pull_request' && vars.E2E_ON_PC == 'true') && fromJSON('[{"project":"desktop","shard":"1/1"},{"project":"phone","shard":"1/1"}]') || fromJSON('[{"project":"desktop","shard":"1/12"},{"project":"desktop","shard":"2/12"},{"project":"desktop","shard":"3/12"},{"project":"desktop","shard":"4/12"},{"project":"desktop","shard":"5/12"},{"project":"desktop","shard":"6/12"},{"project":"desktop","shard":"7/12"},{"project":"desktop","shard":"8/12"},{"project":"desktop","shard":"9/12"},{"project":"desktop","shard":"10/12"},{"project":"desktop","shard":"11/12"},{"project":"desktop","shard":"12/12"},{"project":"phone","shard":"1/1"}]') }}
+        include: ${{ (github.event_name != 'pull_request' && vars.E2E_ON_PC == 'true') && fromJSON('[{"project":"desktop","shard":"1/1"},{"project":"phone","shard":"1/1"}]') || fromJSON('[{"project":"desktop","shard":"1/12"},{"project":"desktop","shard":"2/12"},{"project":"desktop","shard":"3/12"},{"project":"desktop","shard":"4/12"},{"project":"desktop","shard":"5/12"},{"project":"desktop","shard":"6/12"},{"project":"desktop","shard":"7/12"},{"project":"desktop","shard":"8/12"},{"project":"desktop","shard":"9/12"},{"project":"desktop","shard":"10/12"},{"project":"desktop","shard":"11/12"},{"project":"desktop","shard":"12/12"},{"project":"phone","shard":"1/4"},{"project":"phone","shard":"2/4"},{"project":"phone","shard":"3/4"},{"project":"phone","shard":"4/4"}]') }}
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
