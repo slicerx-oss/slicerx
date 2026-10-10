@@ -50,7 +50,7 @@ export const PERSONAS = {
       'Yes, go ahead. When you are done, make sure the edition builds and tell me what still says SlicerX.',
     ],
   },
-  // Path B with the engine: places parts in the viewport and slices with sx itself, no MCP server for slicing.
+  // Path B with the engine: places parts in the viewport, slices with sx itself and prints through the bridge with a partner key.
   engine: {
     path: 'B-engine',
     expect: { parts: ['viewport', 'slicing'], accent: '#e8590c', scheme: 'dark' },
@@ -59,7 +59,8 @@ export const PERSONAS = {
       `I make Printbay, a print queue app, and I want a Prepare step in it: people put their models on a plate in the SlicerX 3D viewport, move and turn them, then slice. We want to run the sx engine ourselves for the slice, not through an MCP server. The SlicerX dev kit is in ./${kit}. There is no app yet, so start one here in this folder. What do you need from me?`,
       [
         'Answers:',
-        '- Parts: the viewport with its Prepare tools, and slicing with the sx engine directly. Show the toolpath preview and the print time and grams after a slice. No printers, no settings panel and no locked projects for now.',
+        '- Parts: the viewport with its Prepare tools, slicing with the sx engine directly, and a Print button that sends the sliced file to a printer through SlicerX. Show the toolpath preview and the print time and grams after a slice. No settings panel and no locked projects for now.',
+        '- Printers: through the SlicerX printer bridge with a partner app key. I made the key in SlicerX; for now it is in the PRINTBAY_PARTNER_KEY environment variable, and the bridge public key is in ~/.slicerx/link/hub-key.pub. There is no bridge running here, so the Print button only has to build and handle errors.',
         '- Stack: React with Vite and TypeScript for the window, plus a small Node server (Express) that runs sx. npm.',
         '- Brand: accent #e8590c on dark surfaces (#14110f and #1d1916), system font, dark only.',
         '- Models: STL files in ./data/models (there is one there to try). Bambu Lab A1 with a 0.4 mm nozzle and Bambu PLA Basic; a hard-coded config of OrcaSlicer keys is fine for now.',
