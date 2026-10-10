@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-import { existsSync, readFileSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import * as pilot from '@slicerx/pilot'
 import { parseSxOutput, sxConfig } from '../src/sx'
-import { connect, data } from './helpers'
+import { connect, data, noSx, sxBin, sxTimeout } from './helpers'
 
 describe('sx output', () => {
   it('reads the one-line summary', () => {
@@ -32,9 +32,8 @@ describe('sx output', () => {
   })
 })
 
-// Runs only where the core has been built (cargo build -p sx-cli --release).
-const sxBin = resolve(__dirname, '../../../target/release/sx')
-describe.skipIf(!existsSync(sxBin))('slicing with the real sx CLI', () => {
+// Runs only where the core has been built (helpers.ts, sxBin).
+describe.skipIf(noSx())('slicing with the real sx CLI', { timeout: sxTimeout }, () => {
   it('slices a cube to G-code', async () => {
     const h = await connect({ engine: 'sx', sxBin })
     const r = await h.call('slicerx_slice_file', { model: join(h.dir, 'cube.stl'), profiles: ['filament:pla'], overrides: { layer_height: 0.2 } })
@@ -48,7 +47,7 @@ describe.skipIf(!existsSync(sxBin))('slicing with the real sx CLI', () => {
 })
 
 const hasRegistry = typeof (pilot as unknown as Record<string, unknown>)['builtinTools'] === 'function'
-describe.skipIf(!existsSync(sxBin) || !hasRegistry)('a project through mimir with the real core', () => {
+describe.skipIf(noSx() || !hasRegistry)('a project through mimir with the real core', { timeout: sxTimeout }, () => {
   it('slices two cubes with the real core and leaves the start to a person', async () => {
     const h = await connect({ engine: 'sx', sxBin })
     await h.call('slicerx_project_open', { name: 'Cubes', printer: 'bambu_p1s', filament: 'pla' })

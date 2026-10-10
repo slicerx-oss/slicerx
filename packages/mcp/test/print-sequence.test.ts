@@ -4,11 +4,11 @@
 // as G-code. Each object must finish before the next starts, the nozzle must clear what is already printed before it
 // travels on, and a plate the toolhead or gantry would hit must be refused with a stable error code. A plate only closer
 // than the profile's clearance radius, where the head itself clears, slices.
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { readFileSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { writeZip } from '../src/zip'
-import { connect, data, text } from './helpers'
+import { connect, data, noSx, sxBin, sxTimeout, text } from './helpers'
 
 type Err = { error: { code: string; message: string } }
 
@@ -185,12 +185,11 @@ function checkByObject(gcode: string, boxes: Box[], bed: number): { order: strin
   return { order: p.order.map((k) => boxes[k]!.name), lifts }
 }
 
-// Runs only where the core has been built (cargo build -p sx-cli --release), or SLICERX_TEST_SX_BIN names a build.
-const sxBin = process.env['SLICERX_TEST_SX_BIN'] ?? resolve(__dirname, '../../../target/release/sx')
+// Runs only where the core has been built (helpers.ts, sxBin).
 const A1 = ['machine:bambu-a1', 'process:standard']
 const A1_MINI = ['machine:bambu-a1-mini', 'process:standard']
 
-describe.skipIf(!existsSync(sxBin))('print by object with the real sx CLI', () => {
+describe.skipIf(noSx())('print by object with the real sx CLI', { timeout: sxTimeout }, () => {
   // The A1 and A1 mini keep 73 mm around the nozzle (extruder_clearance_max_radius, the larger of the profile's two
   // radii), since their head is not measured, 25 mm under the gantry rod, which sits 56.5 mm behind the nozzle, and
   // their lid is the printable height.
