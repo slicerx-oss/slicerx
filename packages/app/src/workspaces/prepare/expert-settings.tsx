@@ -32,7 +32,7 @@ export const INTENTS: readonly { id: SettingIntent; label: string; icon: IconNam
   { id: 'adhesion', label: 'Adhesion', icon: 'tab-adhesion', blurb: 'Brim, skirt and raft' },
   { id: 'multicolor', label: 'Color', icon: 'tab-color', blurb: 'Prime tower, flushing and which filament prints what' },
   { id: 'effects', label: 'Surface', icon: 'tab-surface', blurb: 'Ironing, fuzzy skin and spiral vase' },
-  { id: 'output', label: 'Output', icon: 'tab-output', blurb: 'G-code and file options' },
+  { id: 'output', label: 'Output and print order', icon: 'tab-output', blurb: 'Print order, G-code and file options' },
 ]
 
 /** Units as a person reads them; a temperature difference is still in degrees Celsius. */
@@ -310,18 +310,26 @@ export function ExpertSettings() {
       if (!changed && !isVisible(def, { filamentCount })) continue
       // The tower's place is atlas's, under the Prime tower switch (prime-tower-row.tsx), not a row of its own.
       if (ATLAS_KEYS.has(def.key)) continue
-      const g = out.find((x) => x.intent.id === def.intent)
+      // Print sequence (all together or one object at a time) is print order: it heads Output, not Surface.
+      const intent = def.key === 'print_sequence' ? 'output' : def.intent
+      const g = out.find((x) => x.intent.id === intent)
       if (!g) continue
+      if (def.key === 'print_sequence' && (def.mode === 'simple' || def.mode === 'advanced' || (expert && levels.has(def.mode)))) {
+        g.shown.push(def)
+        continue
+      }
       // Simple keys are the Easy controls above; they are listed once changed by hand, or when a search asks for them
       // (the command palette jumps here with the setting's name as the search).
       if (def.mode === 'simple' && !changed && !q) continue
       if (def.mode === 'advanced' || def.mode === 'simple') g.shown.push(def)
       else if (expert && levels.has(def.mode)) g.more.push(def)
     }
-    // The prime tower switch heads the Color tab, with atlas's placement under it.
+    // The prime tower switch heads the Color tab, with atlas's placement under it, and print sequence heads Output.
     for (const g of out) {
-      const i = g.shown.findIndex((d) => d.key === 'enable_prime_tower')
-      if (i > 0) g.shown.unshift(...g.shown.splice(i, 1))
+      for (const key of ['enable_prime_tower', 'print_sequence']) {
+        const i = g.shown.findIndex((d) => d.key === key)
+        if (i > 0) g.shown.unshift(...g.shown.splice(i, 1))
+      }
     }
     return out
   }, [editable, overrides, filamentCount, expert, levels, q])
