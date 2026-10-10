@@ -13,7 +13,7 @@ import type { StepConverter } from '../src/state/import-step'
 import { addAutoImport, autoFormatOf, toBase64 } from '../src/state/import-auto'
 import { readStep, STEP_MAX_MB, StepError, stepToObj, stepUnit, type Occt, type StepQuality } from '../src/state/step-read'
 import { bounds, decompose, sizeOf } from '../src/plate/transform'
-import { get, set } from '../src/state/store'
+import { appStore, get, set } from '../src/state/store'
 import { useGeomEngine } from './geom-engine'
 
 useGeomEngine('step-replies')
@@ -127,6 +127,25 @@ describe('adding STEP files to the plate', () => {
     expect(decompose(e.transform).scale[0]).toBeCloseTo(1)
     expect(sizeOf(bounds(e.parts, e.transform)!)[0]).toBeCloseTo(50.8, 2)
     expect(get().toast?.text).toMatch(/Converted from inches to millimeters/)
+  })
+
+  it('says what an assembly became as its objects show, so it never talks over the next file', async () => {
+    // A file dropped as soon as the assembly shows ends with its own toast, not the assembly's arriving after it.
+    let shown: string | undefined
+    let seen = false
+    const off = appStore.subscribe((s, prev) => {
+      if (seen || s.plate.length <= prev.plate.length) return
+      seen = true
+      queueMicrotask(() => (shown = get().toast?.text ?? ''))
+    })
+    try {
+      await addAutoImport(host, 'assembly.step', buffer(file('assembly.step')), undefined, convert)
+    } finally {
+      off()
+    }
+    expect(shown).toBe('assembly.step: Split into 2 objects.')
+    await addAutoImport(host, 'bracket-inch.stp', buffer(file('bracket-inch.stp')), undefined, convert)
+    expect(get().toast?.text).toMatch(/^bracket-inch\.stp: Converted from inches to millimeters/)
   })
 
   it('adds nothing when the file cannot be read', async () => {
