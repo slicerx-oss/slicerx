@@ -76,3 +76,51 @@ describe.skipIf(!existsSync(sxBin))('with the real sx CLI', () => {
     for (const [k, v] of Object.entries(KEYS)) expect(request.config[k], k).toEqual(v)
   })
 })
+
+/** A Bambu project with Arachne walls, and the list of keys the person changed (Bambu Studio's process entry first). */
+function wallsProject(dir: string, name: string, changed: string | undefined): string {
+  const path = join(dir, name)
+  writeFileSync(
+    path,
+    writeZip([
+      { name: '3D/3dmodel.model', data: MODEL },
+      {
+        name: 'Metadata/project_settings.config',
+        data: JSON.stringify({
+          printer_settings_id: 'Bambu Lab A1 0.4 nozzle',
+          printer_model: 'Bambu Lab A1',
+          wall_generator: 'arachne',
+          precise_outer_wall: '1',
+          ...(changed !== undefined ? { different_settings_to_system: [changed, '', ''] } : {}),
+        }),
+      },
+    ]),
+  )
+  return path
+}
+
+describe("SlicerX's engine choices in an opened project", () => {
+  it('keep aegis walls when the project inherited its wall generator', async () => {
+    const h = await connect()
+    const read = readProjectFile(wallsProject(h.dir, 'inherited.3mf', 'sparse_infill_density'))
+    expect(read.config['wall_generator']).toBeUndefined()
+    expect(read.config['precise_outer_wall']).toBeUndefined()
+    const r = resolveSliceConfig(h.ctx.store, h.ctx.profiles, [], undefined, { project: { name: 'inherited.3mf', config: read.config } })
+    expect(r.config['wall_generator']).toBe('aegis')
+  })
+
+  it("take the file's wall generator when the person changed it there", async () => {
+    const h = await connect()
+    const read = readProjectFile(wallsProject(h.dir, 'changed.3mf', 'wall_generator;sparse_infill_density'))
+    expect(read.config['wall_generator']).toBe('arachne')
+    expect(read.config['precise_outer_wall']).toBeUndefined()
+    const r = resolveSliceConfig(h.ctx.store, h.ctx.profiles, [], undefined, { project: { name: 'changed.3mf', config: read.config } })
+    expect(r.config['wall_generator']).toBe('arachne')
+  })
+
+  it("take every value from a file that does not say what was changed", async () => {
+    const h = await connect()
+    const read = readProjectFile(wallsProject(h.dir, 'silent.3mf', undefined))
+    expect(read.config['wall_generator']).toBe('arachne')
+  })
+})
