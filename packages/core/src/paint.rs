@@ -177,9 +177,11 @@ pub(crate) struct LayerPaint<'a> {
     pub(crate) memo: Option<(&'a Cache, usize, CutKey)>,
 }
 
-/// Islands and holes of a painted layer's regions smaller than this, square units (0.01 mm2), are specks the
-/// booleans leave where colors meet; no nozzle prints them.
-pub(crate) const SPECK: u64 = 1_000_000;
+/// Islands and holes of a painted layer's regions smaller than this, square units (0.1 mm2), are specks the
+/// booleans leave where colors meet; no nozzle prints them. Bambu Studio drops painted pieces and outline islands
+/// and holes under 0.1 mm2 as well; at 0.01 mm2, slivers along the parts' meeting faces printed as walls a tenth
+/// of a millimetre long, each a filament change.
+pub(crate) const SPECK: u64 = 10_000_000;
 
 /// How a part's loops become areas: contour resolution, slicing mode and closing radius.
 pub(crate) type CutKey = (i64, crate::perimeters::Slicing, i32);
