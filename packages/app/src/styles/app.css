@@ -779,8 +779,6 @@ button.reset:hover { color: var(--fg); background: var(--ink-3); }
 @media (hover: none) { .hud-bl .plate-strip.single { opacity: 1; order: -1; flex: 1 0 100%; } }
 .obj .obj-row > .sx-btn { opacity: 0; transition: opacity 120ms var(--ease); }
 .obj:hover .obj-row > .sx-btn, .obj:focus-within .obj-row > .sx-btn, .obj .obj-row > .sx-btn[aria-pressed="true"] { opacity: 1; }
-.arrange-opts { opacity: 0; width: 0; overflow: visible; transition: opacity 120ms var(--ease); }
-.plate-tools:hover .arrange-opts, .arrange-opts:focus-within, .arrange-opts:has(.arrange-pop) { opacity: 1; width: auto; }
 .about-diag { margin-top: 8px; }
 .about-diag summary { cursor: pointer; color: var(--muted); font-size: var(--fs-sm); }
 .about-diag ul { margin: 6px 0 0; padding: 0; list-style: none; color: var(--dim); }

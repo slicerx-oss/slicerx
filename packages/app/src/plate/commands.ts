@@ -70,7 +70,7 @@ export function plateCommands(choice: () => LookAndFeelChoice, full?: Host): Com
   const list: CommandSpec[] = [
     { id: 'undo', title: 'Undo', section: 'plate', keywords: ['revert', 'back'], shortcut: 'Mod+Z', enabled: () => history().canUndo(), run: () => void history().undo() },
     { id: 'redo', title: 'Redo', section: 'plate', keywords: ['again'], shortcut: 'Mod+Shift+Z', enabled: () => history().canRedo(), run: () => void history().redo() },
-    withKey({ id: 'tool-move', title: 'Move tool', section: 'plate', keywords: ['gizmo', 'translate', 'position'], workspace: 'prepare', run: () => setTool('move') }, 'tool.move'),
+    withKey({ id: 'tool-move', title: 'Move tool', section: 'plate', keywords: ['gizmo', 'translate', 'position'], workspace: 'prepare', run: () => setTool('move', true) }, 'tool.move'),
     withKey({ id: 'tool-rotate', title: 'Rotate tool', section: 'plate', keywords: ['gizmo', 'turn', 'angle'], workspace: 'prepare', run: () => setTool('rotate') }, 'tool.rotate'),
     withKey({ id: 'tool-scale', title: 'Scale tool', section: 'plate', keywords: ['size', 'resize', 'percent'], workspace: 'prepare', run: () => setTool('scale') }, 'tool.scale'),
     withKey({ id: 'tool-face', title: 'Lay on face', section: 'plate', keywords: ['place on face', 'flat', 'orient'], workspace: 'prepare', run: () => setTool('face') }, 'tool.placeOnFace'),
