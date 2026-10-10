@@ -23,6 +23,10 @@ use i_overlay::i_float::int::point::IntPoint;
 use std::ops::Range;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+/// The warning for manual supports on a plate with no enforcers.
+const NO_ENFORCERS: &str =
+    "Manual supports print only where enforcers ask, and the plate has none, so none are printed";
+
 /// Slot, welded plate-space vertices and triangles of one part.
 /// A part with settings of its own: its welded mesh and the settings.
 type PartRegion = (Vec<[f64; 3]>, Vec<[u32; 3]>, serde_json::Value);
@@ -1091,6 +1095,12 @@ impl SliceSession {
             return Self::build_one(plate, config, tops, ranges, false);
         }
         let own_bounds: Vec<[f64; 4]> = subs.iter().map(|s| s.bounds).collect();
+        // Each object's session sees only its own enforcers; the plate has none only when no object has any.
+        if subs.iter().any(Self::has_enforcers) {
+            for s in &mut subs {
+                s.warnings.retain(|w| w.message != NO_ENFORCERS);
+            }
+        }
         let mut first = subs.remove(0);
         for f in &subs {
             first.bounds = [
@@ -1338,8 +1348,7 @@ impl SliceSession {
         {
             warnings.push(SliceWarning {
                 code: WarningCode::UnsupportedSetting,
-                message: "Manual supports print only where enforcers ask, and the plate has none, so none are printed"
-                    .to_owned(),
+                message: NO_ENFORCERS.to_owned(),
                 layer: None,
             });
         }
