@@ -59,7 +59,8 @@ test('Shift selects a range, Mod toggles, and Esc clears the selection and hides
   await expect(bar(page)).toHaveCount(0)
 })
 
-test('Simple keeps the bar to its count and its menu, with every verb and Clear selection in the menu', async ({ page }) => {
+test('Simple keeps the bar to its count and its menu, with every verb and Clear selection in the menu', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'Desktop: a phone has no selection bar (its verbs are edits)')
   await open(page)
   await select(page, 0)
   await expect(bar(page).getByRole('button')).toHaveCount(1)
@@ -75,7 +76,8 @@ test('Simple keeps the bar to its count and its menu, with every verb and Clear 
   await expect(menu.getByTestId('slice-ctx-more')).toHaveText('Hide volumes')
 })
 
-test('the bar skips, locks and deletes the selection, and Undo in the toast brings it back', async ({ page }) => {
+test('the bar skips, locks and deletes the selection, and Undo in the toast brings it back', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'Desktop: a phone has no selection bar (its verbs are edits)')
   await open(page, 'advanced')
   await select(page, 0)
   await expect(bar(page)).toBeVisible()
@@ -106,7 +108,8 @@ test('the bar skips, locks and deletes the selection, and Undo in the toast brin
   await expect(rows(page)).toHaveCount(1)
 })
 
-test('Advanced shows Arrange and Transform on the bar, and Transform opens the number rows in a popover', async ({ page }) => {
+test('Advanced shows Arrange and Transform on the bar, and Transform opens the number rows in a popover', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'Desktop: a phone has Simple settings and no selection bar')
   await open(page, 'advanced')
   await select(page, 0)
   await expect(page.getByTestId('slice-selection-arrange')).toBeVisible()
@@ -151,17 +154,4 @@ test('a right click on an object in the view opens the same menu there', async (
   await expect(ctx).toBeVisible()
   await ctx.getByTestId('slice-ctx-skip').click()
   expect((await state(page)).plate[0]!.printable).toBe(false)
-})
-
-test('on a phone the bar fits the sheet', async ({ page, isMobile }) => {
-  test.skip(!isMobile, 'Phone only')
-  await open(page, 'advanced')
-  await select(page, 0)
-  await expect(bar(page)).toBeVisible()
-  const b = (await bar(page).boundingBox())!
-  expect(b.x).toBeGreaterThanOrEqual(0)
-  expect(b.x + b.width).toBeLessThanOrEqual(page.viewportSize()!.width)
-  await page.getByTestId('slice-selection-skip').click()
-  await expect(page.getByTestId('slice-selection-skip')).toHaveAttribute('aria-label', 'Print')
-  await closeSheet(page)
 })

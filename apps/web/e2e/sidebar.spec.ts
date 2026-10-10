@@ -39,7 +39,8 @@ test('Simple mode keeps the sections open with no fold', async ({ page }) => {
   await expect(page.locator('#printer-fold, #filament-fold')).toHaveCount(0)
 })
 
-test('filament folds to a summary line and stays folded; the printer row has no fold', async ({ page }) => {
+test('filament folds to a summary line and stays folded; the printer row has no fold', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'Desktop: filament folds in Advanced, and a phone has Simple only')
   await page.goto('./')
   await openSheet(page)
   await expect(page.locator('#printer-fold')).toHaveCount(0)
@@ -55,7 +56,8 @@ test('filament folds to a summary line and stays folded; the printer row has no 
   await expect(page.locator('.sx-block[data-section="printer"] .mc-row')).toBeVisible()
 })
 
-test('the mode chip in the pane title changes the mode across the app and keeps it after a reload', async ({ page }) => {
+test('the mode chip in the pane title changes the mode across the app and keeps it after a reload', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'Desktop: a phone has no mode chip (Simple only)')
   await page.goto('./')
   await openSheet(page)
   const chip = page.getByTestId('slice-mode-chip')

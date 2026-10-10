@@ -10,6 +10,7 @@ import { effectiveSlot } from '../../filament/slots'
 import { useResolvedSlots } from '../../filament/use-slots'
 import { effectiveMode, useLayout } from '../../first-run/look'
 import { partCount, triangles } from '../../lib/estimate-line'
+import { usePhoneLayout } from '../../lib/phone-layout'
 import { MiddleName } from '../../lib/short-name'
 import { Silhouette } from '../../parts'
 import { selectObject } from '../../plate/edit'
@@ -49,6 +50,8 @@ export function ObjectRow({ entry: p, index, count, instanceOf, match, searching
   const own = useApp((s) => s.objectSettings[p.id])
   const developer = effectiveMode(useApp((s) => s.settingsMode), useLayout()) === 'developer'
   const slots = useResolvedSlots()
+  // a phone shows the row and its print toggle; renaming, locking, parts and reordering wait for the desktop
+  const phone = usePhoneLayout()
   const [open, setOpen] = useState(false)
   const [renaming, setRenaming] = useState(false)
   const [drop, setDrop] = useState(false)
@@ -58,7 +61,7 @@ export function ObjectRow({ entry: p, index, count, instanceOf, match, searching
   const colors = p.handle.parts.map((part, i) => slots[effectiveSlot(p, part) - 1]?.color ?? p.colors[i] ?? 'var(--dim)')
   const sw = rowSwatches(colors)
   // A search that finds a part or a volume opens the tree to show it.
-  const treeOpen = open || (searching && !match.self)
+  const treeOpen = !phone && (open || (searching && !match.self))
   const commit = (value: string) => {
     renameObject(p.id, value)
     setRenaming(false)
@@ -82,7 +85,7 @@ export function ObjectRow({ entry: p, index, count, instanceOf, match, searching
       data-testid="object-row"
       data-object-id={p.id}
       className={`${selected ? 'obj sel' : 'obj'}${p.printable === false ? ' off' : ''}${drop ? ' drop' : ''}`}
-      draggable={!renaming}
+      draggable={!renaming && !phone}
       onDragStart={(e) => {
         e.dataTransfer.setData(DRAG_TYPE, p.id)
         e.dataTransfer.effectAllowed = 'move'
@@ -101,7 +104,7 @@ export function ObjectRow({ entry: p, index, count, instanceOf, match, searching
         if (id) moveObject(id, index)
       }}
     >
-      <div className="obj-row" data-pinned={p.locked || p.printable === false ? true : undefined} {...(renaming ? {} : ctx.bind)}>
+      <div className="obj-row" data-pinned={p.locked || p.printable === false ? true : undefined} {...(renaming || phone ? {} : ctx.bind)}>
         {renaming ? (
           <span className="obj-h obj-renaming">
             <span className="obj-thumb">{p.thumb ? <img src={p.thumb} alt="" /> : p.parts.length ? <Silhouette parts={p.parts} /> : null}</span>
@@ -131,7 +134,7 @@ export function ObjectRow({ entry: p, index, count, instanceOf, match, searching
             aria-pressed={selected}
             {...tipAttrs({ title: p.name, body: `${instanceOf ? `Instance of ${instanceOf}` : partCount(p.handle.parts.length)}, ${triangles(p.handle.triangles)}. Double-click or F2 to rename.` })}
             onClick={(e) => selectObject(p.id, e.shiftKey ? 'range' : e.metaKey || e.ctrlKey ? 'toggle' : 'set')}
-            onDoubleClick={() => setRenaming(true)}
+            onDoubleClick={phone ? undefined : () => setRenaming(true)}
             onKeyDown={onKey}
           >
             <span className="obj-thumb">{p.thumb ? <img src={p.thumb} alt="" /> : p.parts.length ? <Silhouette parts={p.parts} /> : null}</span>
@@ -164,10 +167,10 @@ export function ObjectRow({ entry: p, index, count, instanceOf, match, searching
           </span>
         ) : null}
         <span className="obj-cluster">
-          <Button size="sm" variant="ghost" icon={p.locked ? 'lock' : 'unlock'} data-testid="object-lock" aria-label={`${p.locked ? 'Unlock' : 'Lock'} ${p.name}`} tip={{ title: p.locked ? 'Locked' : 'Lock', body: p.locked ? 'Click to let it move again.' : 'Keep it from moving, scaling or arranging.' }} pressed={Boolean(p.locked)} onClick={() => toggleLock([p.id])} />
+          {phone ? null : <Button size="sm" variant="ghost" icon={p.locked ? 'lock' : 'unlock'} data-testid="object-lock" aria-label={`${p.locked ? 'Unlock' : 'Lock'} ${p.name}`} tip={{ title: p.locked ? 'Locked' : 'Lock', body: p.locked ? 'Click to let it move again.' : 'Keep it from moving, scaling or arranging.' }} pressed={Boolean(p.locked)} onClick={() => toggleLock([p.id])} />}
           <Button size="sm" variant="ghost" icon={p.printable === false ? 'hide' : 'show'} data-testid="object-printable" aria-label={`${p.printable === false ? 'Print' : 'Do not print'} ${p.name}`} tip={{ title: p.printable === false ? 'Not printed' : 'Printed', body: p.printable === false ? 'Click to print it again.' : 'Click to leave it out of the print.', key: 'V' }} pressed={p.printable === false} onClick={() => togglePrintable([p.id])} />
         </span>
-        <Button size="sm" variant="ghost" icon="chevron-down" className="obj-chev" data-testid="slice-object-expand" aria-expanded={treeOpen} aria-label={`${treeOpen ? 'Hide' : 'Show'} the parts of ${p.name}`} tip={{ title: treeOpen ? 'Hide parts' : 'Parts', body: 'Its parts and volumes, and a filament for each part.' }} onClick={() => setOpen(!treeOpen)} />
+        {phone ? null : <Button size="sm" variant="ghost" icon="chevron-down" className="obj-chev" data-testid="slice-object-expand" aria-expanded={treeOpen} aria-label={`${treeOpen ? 'Hide' : 'Show'} the parts of ${p.name}`} tip={{ title: treeOpen ? 'Hide parts' : 'Parts', body: 'Its parts and volumes, and a filament for each part.' }} onClick={() => setOpen(!treeOpen)} />}
       </div>
       <Suspense fallback={null}>
         <FitNotes id={p.id} />
@@ -224,7 +227,7 @@ export function ObjectRow({ entry: p, index, count, instanceOf, match, searching
           </div>
         </div>
       ) : null}
-      <SelectionMenu at={ctx.at} onClose={ctx.close} label={p.name} />
+      {phone ? null : <SelectionMenu at={ctx.at} onClose={ctx.close} label={p.name} />}
       <Menu open={slotMenu !== null} onClose={() => setSlotMenu(null)} label="Filament" at={slotMenu?.at}>
         {Array.from({ length: slotCount }, (_, k) => {
           const s = slots[k]

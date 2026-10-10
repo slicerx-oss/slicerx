@@ -28,5 +28,7 @@ export function ModeSelector({ layout, id }: { layout: LayoutSpec; id: string })
 export function useExpertVisible(layout: LayoutSpec): boolean {
   const stored = useApp((s) => s.settingsMode)
   const open = useApp((s) => s.expertOpen)
+  // a layout with Simple alone (a phone) never shows them, whatever was left open
+  if (!layout.modes.some((m) => m !== 'simple')) return false
   return effectiveMode(stored, layout) !== 'simple' || open
 }

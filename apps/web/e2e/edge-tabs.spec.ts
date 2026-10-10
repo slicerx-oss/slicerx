@@ -161,7 +161,7 @@ test.describe('edge tabs on a phone', () => {
       return r.top < innerHeight - 40
     })
 
-  test('each tab opens its sheet, one at a time, and Escape and a tap outside close it', async ({ page }) => {
+  test('the tab opens its sheet, and Escape and a tap outside close it', async ({ page }) => {
     await openStudio(page)
     const left = page.getByTestId('edge-tab-left')
     await expect(left).toHaveAttribute('data-panel', 'slice-sidebar')
@@ -172,15 +172,11 @@ test.describe('edge tabs on a phone', () => {
     await page.keyboard.press('Escape')
     await expect.poll(() => onScreen(page, 'slice-sidebar')).toBe(false)
 
-    await page.locator('.sx-tab[data-mode="design"]').tap()
-    await expect(page.locator('.studio[data-model-mode="design"]')).toBeVisible()
+    // A tap outside, on the scrim, closes it too. (A phone has Slice only, with no Model and its sheets.)
     await page.getByTestId('edge-tab-left').tap()
-    await expect.poll(() => onScreen(page, 'model-tree')).toBe(true)
-    // Opening the other sheet closes the first.
+    await expect.poll(() => onScreen(page, 'slice-sidebar')).toBe(true)
     await page.locator('.sheet-scrim').tap({ position: { x: 380, y: 200 } })
-    await expect.poll(() => onScreen(page, 'model-tree')).toBe(false)
-    await page.getByTestId('edge-tab-right').tap()
-    await expect.poll(() => onScreen(page, 'model-inspector')).toBe(true)
+    await expect.poll(() => onScreen(page, 'slice-sidebar')).toBe(false)
     await expect(page.getByTestId('edge-tab-left')).toHaveAttribute('aria-expanded', 'false')
   })
 })
