@@ -572,8 +572,15 @@ pub fn build_session(req: &SliceRequest, plate: &Plate, config: &PrintConfig) ->
             objects: r.objects.clone(),
         })
         .collect();
-    let mut session =
-        SliceSession::with_options(plate, config, req.options.layer_tops_mm.as_deref(), &ranges)?;
+    #[cfg(feature = "sleipnir")]
+    let planned = match (&req.options.layer_tops_mm, crate::sleipnir::requested(&req.config)) {
+        (None, Some(mode)) => crate::sleipnir::plan(plate, config, mode),
+        _ => None,
+    };
+    #[cfg(not(feature = "sleipnir"))]
+    let planned: Option<Vec<f64>> = None;
+    let tops = req.options.layer_tops_mm.as_deref().or(planned.as_deref());
+    let mut session = SliceSession::with_options(plate, config, tops, &ranges)?;
     let zones = crate::collide::plate::zones(config);
     let kinds: Vec<u8> = zones.iter().map(|z| z.0).collect();
     if let Some(m) = collide_model(req, plate, config, &session, kinds.clone()) {

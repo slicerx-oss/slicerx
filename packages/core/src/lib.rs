@@ -125,6 +125,8 @@ pub mod ironing;
 #[doc(hidden)]
 pub mod jpeg;
 mod layers;
+#[cfg(feature = "sleipnir")]
+mod sleipnir;
 mod lightning;
 #[doc(hidden)]
 pub mod mesh;

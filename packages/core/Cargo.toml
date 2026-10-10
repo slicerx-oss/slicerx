@@ -19,13 +19,16 @@ include = ["/src/**", "/data/**", "/build.rs", "/README.md", "/CHANGELOG.md", "/
 workspace = true
 
 [features]
-default = ["parallel", "import"]
+default = ["parallel", "import", "sleipnir"]
 # Per-layer parallelism on rayon. The WASM build turns it off and shards in
 # Web Workers instead.
 parallel = ["dep:rayon"]
 # OBJ and AMF loading through sx-geom. The browser build leaves it out and loads
 # those formats with the separate sx-geom module.
 import = ["dep:sx-geom"]
+# sleipnir layer tops planned by the engine for a request that turns smart_layer on and sends none (the app plans
+# them in sx-geom and sends them). The browser build leaves it out to stay in its size budget.
+sleipnir = ["dep:sx-geom"]
 
 [dependencies]
 sx-geom = { path = "../geom", version = "=0.1.2", optional = true }
