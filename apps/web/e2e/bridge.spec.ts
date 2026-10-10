@@ -564,7 +564,8 @@ test('the camera guard pauses for a hand and brings its card up on Printers', as
     try {
       expect(Buffer.from(det.frame).equals(HAND_FRAME), 'the detector got the hand frame').toBe(true)
       expect(det.paused).toBe(true)
-      expect(await mockLog()).toMatch(/pause/)
+      // The report comes back once the hub has sent the pause; the mock logs it when it gets there, a moment later.
+      await expect.poll(mockLog, { message: 'the printer got the pause', timeout: 20_000 }).toMatch(/pause/)
       // The app comes to Printers on its own, with the card in view: the frame, the strike, and Resume.
       const card = page.locator('.guard-card')
       await expect(card.getByRole('heading', { name: 'Paused: a hand in the printer' })).toBeVisible()
