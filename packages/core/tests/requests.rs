@@ -5740,3 +5740,76 @@ fn a_tool_change_retracts_and_spirals_up_first() {
         "{changes} of {total} tool changes retract and spiral"
     );
 }
+
+/// The x-mark sliced with `extra` over the bench settings.
+fn with(extra: Value) -> String {
+    let mut config = base_config();
+    if let (Some(c), Some(e)) = (config.as_object_mut(), extra.as_object()) {
+        c.extend(e.clone());
+    }
+    let req: SliceRequest = serde_json::from_value(json!({
+        "plate": {"objects": [{"mesh": "x"}]},
+        "config": config,
+    }))
+    .unwrap();
+    text(&run(&req).unwrap())
+}
+
+/// The extrusion runs of one `;TYPE:` block kind and the extruding moves in them: a joined fill has many moves
+/// per run, unjoined lines one or two.
+fn runs_of(g: &str, label: &str) -> (usize, usize) {
+    let (mut inside, mut extruding, mut runs, mut moves) = (false, false, 0, 0);
+    for line in g.lines() {
+        if let Some(t) = line.strip_prefix(";TYPE:") {
+            inside = t == label;
+            extruding = false;
+            continue;
+        }
+        if !inside || !line.starts_with("G1") {
+            continue;
+        }
+        let e = line
+            .split_whitespace()
+            .find_map(|w| w.strip_prefix('E').and_then(|v| v.parse::<f64>().ok()))
+            .unwrap_or(0.0);
+        let xy = line.contains(" X") || line.contains(" Y");
+        if xy && e > 0.0 {
+            if !extruding {
+                runs += 1;
+            }
+            extruding = true;
+            moves += 1;
+        } else if xy {
+            extruding = false;
+        }
+    }
+    (runs, moves)
+}
+
+#[test]
+fn bambu_zig_zag_is_rectilinear_in_every_pattern_key() {
+    // Bambu Studio writes `zig-zag` for rectilinear; a request that did not go through the importers still means it.
+    let keys = [
+        "internal_solid_infill_pattern",
+        "top_surface_pattern",
+        "bottom_surface_pattern",
+        "sparse_infill_pattern",
+    ];
+    for key in keys {
+        let bambu = with(json!({ key: "zig-zag" }));
+        assert!(
+            bambu == with(json!({ key: "rectilinear" })),
+            "{key}: zig-zag sliced unlike rectilinear"
+        );
+    }
+    // The surface comes out as joined lines, not one move per line.
+    let solid = with(json!({"internal_solid_infill_pattern": "zig-zag"}));
+    let (runs, moves) = runs_of(&solid, "Internal solid infill");
+    assert!(runs > 0 && moves > 3 * runs, "{runs} runs of {moves} moves");
+    // `zigzag`, without the dash, is still the layer-consistent zigzag: a different sparse fill.
+    assert!(
+        with(json!({"sparse_infill_pattern": "zigzag"}))
+            != with(json!({"sparse_infill_pattern": "rectilinear"})),
+        "zigzag sliced like rectilinear"
+    );
+}
