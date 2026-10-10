@@ -119,7 +119,7 @@ test('addPrinter registers with the catalog model from the bridge', { skip }, as
 
 test('addPrinter refuses bad input and cleans up after a failure', { skip }, async () => {
   const setup = createPrinterSetup(host)
-  await assert.rejects(setup.addPrinter({ profileId: 'bambu-a1', nozzleMm: 0.4, connection: { family: 'bambu-lan', address: '192.168.1.9', credential: '12345678' } }), { code: 'bad_request' })
+  await assert.rejects(setup.addPrinter({ profileId: 'bambu-a1', nozzleMm: 0.4, connection: { family: 'bambu-lan', address: '192.168.1.9:99999', credential: '12345678' } }), { code: 'bad_request' })
   await assert.rejects(setup.addPrinter({ profileId: 'bambu-a1', nozzleMm: 5 }), { code: 'bad_request' })
   await assert.rejects(setup.addPrinter({ profileId: 'bambu-a1', nozzleMm: 0.4, connection: { family: 'nope', address: 'x' } }), { code: 'bad_request' })
   // A public address is refused by the bridge; the stored secret is removed again.
