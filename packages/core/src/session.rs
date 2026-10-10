@@ -7071,10 +7071,11 @@ impl SliceSession {
                 } else {
                     cfg.spacing_for(cfg.solid_infill_width())
                 });
-                // Orca's FillMonotonic, FillRectilinear and FillAlignedRectilinear join neighboring lines along
-                // the edge of the surface; FillMonotonicLines keeps them apart (anchor length 0).
+                // Monotonic, rectilinear and aligned rectilinear join each line to its neighbor along the edge of the
+                // surface however long the turn is: which ends are neighbors decides it, not a length (only ironing
+                // keeps a limit, ironing.rs). Monotonic line keeps its lines apart.
                 let link = match name {
-                    "monotonic" | "rectilinear" | "alignedrectilinear" => Some(3.0 * surface_mm),
+                    "monotonic" | "rectilinear" | "alignedrectilinear" => Some(f64::MAX),
                     "monotonicline" => Some(0.0),
                     _ => None,
                 };
