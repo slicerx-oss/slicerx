@@ -738,6 +738,10 @@ fn slice_shard_paths(
     if progress.cancelled() {
         return Err(Error::Cancelled);
     }
+    // A join of a solid surface never crosses another path of its layer: it stays a travel there.
+    if !config.print_by_object() {
+        crate::collide::plate::drop_crossing_joins(&mut out);
+    }
     if session.collide_meta().is_some() {
         let zones = crate::collide::plate::zones(config);
         let found = crate::collide::plate::check(
