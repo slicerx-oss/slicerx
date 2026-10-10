@@ -25,6 +25,8 @@ export interface ResolvedConfig {
   trustedGcode: boolean
   /** The project's G-code settings used as they are, because they are the printer's stock text or the profile's. */
   gcodeKept: GcodeKept[]
+  /** No printer profile, printer preset file or project named a printer: the engine slices for its generic machine. */
+  noPrinter: boolean
   /** The project's G-code settings left for the printer profile's (project.gcode "profile"). */
   gcodeReplaced: string[]
 }
@@ -79,6 +81,8 @@ export function resolveSliceConfig(store: DataStore, profiles: ProfileCatalog, n
   // A slice that names no process gets a fresh SlicerX plate's, as the app does
   const choosesProcess = extra.project || names.some((n) => profiles.get(n)?.section === 'process') || (extra.presets ?? []).some((l) => l.section === 'process')
   const fallback = choosesProcess ? undefined : profiles.get(SLICERX_DEFAULT_PROCESS)
+  // No printer named anywhere: the engine falls back to its generic machine, which the result says
+  const noPrinter = !extra.project && !names.some((n) => profiles.get(n)?.section === 'printer') && !(extra.presets ?? []).some((l) => l.section === 'printer')
   if (fallback) {
     Object.assign(explicit, fallback.config)
     applied.push(fallback.id)
@@ -121,7 +125,7 @@ export function resolveSliceConfig(store: DataStore, profiles: ProfileCatalog, n
   // A preset file's G-code inherited from a shipped profile is that profile's text; only its own G-code is untrusted.
   // The project's G-code that is left is stock text, which projectGcode checked.
   const untrusted = (extra.presets ?? []).some((l) => l.customGcode) || Object.keys(typed).some(isGcodeKey) || Object.keys(extra.project?.config ?? {}).some((k) => isGcodeKey(k) && !GCODE_TEXT_KEYS.includes(k))
-  return { config: { ...defaultConfig(store), ...explicit }, explicit, applied, trustedGcode: !untrusted && !untrustedProfile && !untrustedSlot, gcodeKept: kept, gcodeReplaced: replaced }
+  return { config: { ...defaultConfig(store), ...explicit }, explicit, applied, trustedGcode: !untrusted && !untrustedProfile && !untrustedSlot, gcodeKept: kept, gcodeReplaced: replaced, noPrinter }
 }
 
 /** The refusal for a project whose G-code is not the printer's stock text: the diff and flags for a person to see. */

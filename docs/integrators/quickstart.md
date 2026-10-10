@@ -153,6 +153,7 @@ A project's own printer G-code (`project_settings: true`) is compared with the p
 | `preview_path` | The SXPV toolpath preview, when you asked for one |
 | `applied` | The settings layers that were applied, in order |
 | `warnings` | Things the user should know, such as a model larger than the bed |
+| `notices` | Warnings with a code an app can act on; each one is also in `warnings`. `no_printer`: the slice named no printer (no printer profile, printer preset file or project), so the engine used its generic machine and the time and limits are not for the user's printer. Ask the user to pick a printer, or label the numbers. |
 
 ### Progress
 
