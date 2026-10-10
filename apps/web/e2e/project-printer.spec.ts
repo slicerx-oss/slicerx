@@ -63,7 +63,9 @@ test('a P1S 0.2 project opens as its own printer, and the A1 mini slices it with
   await expect(page.locator('.obj-name')).toHaveText(['Cube'], { timeout: 60_000 })
   // Toasts stack; the note is the one that names the printer.
   await expect(page.getByTestId('toast').filter({ hasText: 'Opened as P1S' })).toContainText('Opened as P1S 0.2 mm from the project.')
-  await expect(page.locator('[data-section="printer"] .printer-name')).toContainText('P1S 0.2 from keychain.3mf')
+  // The button names the printer; the project it came from is in the tooltip.
+  await expect(page.locator('[data-section="printer"] .printer-name')).toHaveText('P1S 0.2')
+  await expect(page.getByTestId('slice-machine-printer')).toHaveAttribute('data-tip-body', /^P1S 0\.2 from keychain\.3mf\. /)
   await expect(page.getByTestId('project-gcode-dialog')).toHaveCount(0)
   const own = await sliceAndExport(page)
   expect(own).toContain('M290 Z0.02 ; baby step from the project')
