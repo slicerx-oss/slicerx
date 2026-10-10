@@ -914,8 +914,8 @@ pub(crate) async fn settings_call(b: &Arc<Bridge>, method: &str, p: &Value) -> R
 
 pub(crate) async fn clients_call(b: &Arc<Bridge>, method: &str, p: &Value) -> Rpc<Value> {
     match method {
-        // A key for an AI agent or a detector the person connects from the app ("Connect your AI
-        // agent"). Shown once in the reply; only its hash is kept.
+        // A key for an AI agent, a partner app or a detector the person connects from the app
+        // ("Connect your AI agent"). Shown once in the reply; only its hash is kept.
         "clients.create" => {
             let name = str_arg(p, "name")?;
             if name.trim().is_empty() || name.chars().count() > 80 {
@@ -933,8 +933,22 @@ pub(crate) async fn clients_call(b: &Arc<Bridge>, method: &str, p: &Value) -> Rp
                     "only an agent key works over remote access",
                 ));
             }
-            let (key, id) = b.hub.remember_client(name.trim(), role);
-            b.hub.audit(json!({ "origin": "local_click", "action": "clients.create", "clientId": id, "role": role.as_str(), "remote": remote }));
+            // A partner app is an agent with less (roles.rs), never a detector.
+            let partner = p.get("partner").and_then(Value::as_bool) == Some(true);
+            if partner && role != crate::roles::Role::Agent {
+                return Err(RpcError::new(
+                    "bad_request",
+                    "a partner app key has the agent role",
+                ));
+            }
+            let (key, id) = if partner {
+                b.hub
+                    .remember_partner(name.trim())
+                    .map_err(|e| RpcError::new("failed", e))?
+            } else {
+                b.hub.remember_client(name.trim(), role)
+            };
+            b.hub.audit(json!({ "origin": "local_click", "action": "clients.create", "clientId": id, "role": role.as_str(), "partner": partner, "remote": remote }));
             // A remote agent also gets a pairing the hub answers on the relay, revoked with the key.
             let remote_access = if remote {
                 Some(crate::remote::create_agent(b, &id, name.trim())?)
@@ -945,6 +959,9 @@ pub(crate) async fn clients_call(b: &Arc<Bridge>, method: &str, p: &Value) -> Rp
             // A remote agent gets only its relay pairing: the control socket key would give it the
             // full agent role on this machine, which a hosted provider has no use for.
             let mut out = json!({ "clientId": id, "role": role.as_str() });
+            if partner && let Some(o) = out.as_object_mut() {
+                o.insert("partner".into(), json!(true));
+            }
             if let Some(o) = out.as_object_mut() {
                 match remote_access {
                     Some(r) => o.insert("remote".into(), r),
@@ -958,8 +975,10 @@ pub(crate) async fn clients_call(b: &Arc<Bridge>, method: &str, p: &Value) -> Rp
                 .iter()
                 .map(|c| {
                     json!({
-                        "id": c.id, "name": c.name, "role": c.role.as_str(),
-                        "createdAt": iso(c.created_at_ms), "lastSeenAt": iso(c.last_seen_ms),
+                        "id": c.id, "name": c.name, "role": c.role.as_str(), "partner": c.partner,
+                        "createdAt": iso(c.created_at_ms),
+                        // A partner key nobody has used yet was never seen.
+                        "lastSeenAt": (c.last_seen_ms > 0).then(|| iso(c.last_seen_ms)),
                     })
                 })
                 .collect(),

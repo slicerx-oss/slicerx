@@ -2501,6 +2501,305 @@ async fn the_app_creates_an_agent_key_shown_once_and_revoking_it_cuts_the_agent_
     assert_eq!(r["error"]["code"], "unauthorized", "{r}");
 }
 
+// ---- partner apps ----
+
+/// Makes a partner key from the app and pairs a connection with it.
+async fn partner(link: &Link, app: &mut Ws, name: &str) -> (Ws, String, Value) {
+    let r = call(
+        app,
+        90,
+        "clients.create",
+        json!({ "name": name, "role": "agent", "partner": true }),
+    )
+    .await;
+    let key = r["result"]["clientKey"].as_str().unwrap().to_owned();
+    let id = r["result"]["clientId"].clone();
+    let mut ws = connect(link).await;
+    let r = call(&mut ws, 1, "pair", json!({ "clientKey": key, "role": "watch" })).await;
+    assert_eq!(
+        r["result"]["role"], "agent",
+        "a partner never narrows to a detector: {r}"
+    );
+    assert_eq!(r["result"]["partner"], true, "{r}");
+    (ws, key, id)
+}
+
+fn card(id: &str, tool: &str, action: &str, params: &Value) -> Value {
+    json!({
+        "id": id, "sessionId": "s", "tool": tool, "permission": "start", "title": id, "lines": ["The partner's words"],
+        "printerId": "bay-4", "paramsHash": hash_of(&json!({})),
+        "actions": [{ "action": action, "target": "bay-4", "paramsHash": hash_of(params) }],
+        "expiresAt": "2099-01-01T00:00:00.000Z",
+    })
+}
+
+#[tokio::test]
+async fn a_partner_key_is_named_shown_once_listed_and_kept_across_a_restart() {
+    let dir = temp_dir("partner");
+    let link = hub(Some(dir.clone())).await;
+    let mut app = paired(&link).await;
+    for bad in [
+        json!({ "name": "LayerMate", "role": "watch", "partner": true }),
+        json!({ "name": "LayerMate", "role": "app", "partner": true }),
+        json!({ "name": " ", "role": "agent", "partner": true }),
+    ] {
+        let r = call(&mut app, 2, "clients.create", bad).await;
+        assert_eq!(r["error"]["code"], "bad_request", "{r}");
+    }
+    let r = call(
+        &mut app,
+        3,
+        "clients.create",
+        json!({ "name": "LayerMate", "role": "agent", "partner": true }),
+    )
+    .await;
+    let key = r["result"]["clientKey"].as_str().unwrap().to_owned();
+    assert_eq!(r["result"]["role"], "agent", "{r}");
+    assert_eq!(r["result"]["partner"], true, "{r}");
+    assert!(
+        key.starts_with("sxp_") && key.len() == 68,
+        "sxp_ and 64 hex digits"
+    );
+    assert!(key[4..].bytes().all(|b| b.is_ascii_hexdigit()));
+    // A second key for the same partner is its own entry, revoked on its own.
+    let r2 = call(
+        &mut app,
+        4,
+        "clients.create",
+        json!({ "name": "LayerMate", "role": "agent", "partner": true }),
+    )
+    .await;
+    assert_ne!(r2["result"]["clientKey"], r["result"]["clientKey"]);
+    let list = call(&mut app, 5, "clients.list", json!({})).await;
+    let rows = list["result"].as_array().unwrap();
+    assert_eq!(rows.len(), 2, "{list}");
+    assert!(
+        rows.iter()
+            .all(|c| c["partner"] == true && c["name"] == "LayerMate"),
+        "{list}"
+    );
+    assert!(rows[0]["lastSeenAt"].is_null(), "not used yet: {list}");
+    assert!(
+        !list.to_string().contains(&key[4..]),
+        "the key is never shown again"
+    );
+
+    let mut p = connect(&link).await;
+    let r = call(&mut p, 1, "pair", json!({ "clientKey": key })).await;
+    assert_eq!(r["result"]["partner"], true, "{r}");
+    let list = call(&mut app, 6, "clients.list", json!({})).await;
+    assert!(list["result"][0]["lastSeenAt"].is_string(), "{list}");
+    // Neither the key nor its hash is in the saved state in a form that pairs.
+    drop((p, app));
+    drop(link);
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    let saved = std::fs::read_to_string(dir.join("hub.json")).unwrap();
+    assert!(!saved.contains(&key[4..]), "only the hash is saved");
+    let link = hub(Some(dir.clone())).await;
+    let mut p = connect(&link).await;
+    let r = call(&mut p, 1, "pair", json!({ "clientKey": key })).await;
+    assert_eq!(
+        r["result"]["partner"], true,
+        "still a partner after a restart: {r}"
+    );
+    let r = call(&mut p, 2, "approvals.grant", json!({ "requestId": "x" })).await;
+    assert_eq!(r["error"]["code"], "forbidden", "{r}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[tokio::test]
+async fn a_partner_app_reads_and_asks_but_never_approves_starts_resumes_sends_gcode_or_adjusts() {
+    let link = hub(None).await;
+    let mocks = common::Mocks::start("moonraker", &[]).await;
+    let mut app = paired(&link).await;
+    add_bay4(&mut app, &mocks).await;
+    let (mut p, _, _) = partner(&link, &mut app, "LayerMate").await;
+    let r = call(&mut p, 2, "list", json!({})).await;
+    assert_eq!(r["result"][0]["id"], "bay-4", "{r}");
+    let r = call(&mut p, 3, "status", json!({ "printerId": "bay-4" })).await;
+    assert!(r["result"].is_object(), "{r}");
+
+    let (f, sha) = file("cube.gcode", 7);
+    let token = json!({ "requestId": "x", "action": "printer.start", "target": "bay-4", "paramsHash": "", "expiresAt": "2099-01-01T00:00:00.000Z", "signature": "" });
+    for (i, (method, params)) in [
+        ("start", json!({ "file": { "printerId": "bay-4", "path": "cube.gcode", "name": "cube.gcode" }, "token": token })),
+        ("pause", json!({ "printerId": "bay-4", "token": token })),
+        ("resume", json!({ "printerId": "bay-4", "token": token })),
+        ("cancel", json!({ "printerId": "bay-4", "token": token })),
+        ("gcode", json!({ "printerId": "bay-4", "line": "G28", "token": token })),
+        ("upload", json!({ "printerId": "bay-4", "file": f, "token": token })),
+        ("adjust", json!({ "printerId": "bay-4", "change": {}, "token": token })),
+        ("callTool", json!({ "pluginId": "spoolman", "tool": "use", "args": {}, "token": token })),
+        ("approvals.grant", json!({ "requestId": "x" })),
+        ("print.local", json!({ "printerId": "bay-4", "file": f, "bedClear": true })),
+        ("objects.skip", json!({ "printerId": "bay-4", "ids": ["a"] })),
+        ("jog", json!({ "printerId": "bay-4" })),
+        ("queue.add", json!({ "printerId": "bay-4", "file": f })),
+        ("fleets.create", json!({ "name": "x" })),
+        ("watch.report", json!({})),
+        ("discover", json!({})),
+        ("clients.create", json!({ "name": "x", "role": "agent", "partner": true })),
+        ("clients.list", json!({})),
+        ("secrets.set", json!({ "name": "x", "value": "y" })),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let r = call(&mut p, 10 + i as u64, method, params).await;
+        assert_eq!(r["error"]["code"], "forbidden", "{method}: {r}");
+    }
+
+    // Resume, G-code, adjustments and power switching are never a partner's to ask for.
+    let printer = json!({ "printerId": "bay-4" });
+    let asks = [
+        (
+            card("r-1", "printer.resume", "printer.resume", &printer),
+            json!({ "kind": "resume", "printerId": "bay-4" }),
+        ),
+        (
+            card(
+                "g-1",
+                "printer.gcode",
+                "printer.gcode",
+                &json!({ "printerId": "bay-4", "line": "G28" }),
+            ),
+            json!({ "kind": "gcode", "printerId": "bay-4", "line": "G28" }),
+        ),
+        (
+            card("a-1", "printer.adjust", "printer.adjust", &printer),
+            json!({ "kind": "adjust", "printerId": "bay-4", "change": {} }),
+        ),
+    ];
+    for (i, (c, work)) in asks.into_iter().enumerate() {
+        let r = call(
+            &mut p,
+            40 + i as u64,
+            "approvals.register",
+            json!({ "request": c, "work": work }),
+        )
+        .await;
+        assert_eq!(r["error"]["code"], "forbidden", "{r}");
+    }
+    let mut ha = card("h-1", "plugin.call", "plugin.call", &printer);
+    ha["actions"][0]["target"] = json!("home-assistant");
+    let r = call(&mut p, 45, "approvals.register", json!({ "request": ha })).await;
+    assert_eq!(r["error"]["code"], "forbidden", "{r}");
+    // Even a pause needs its work: the partner approves nothing, so the hub runs it.
+    let r = call(
+        &mut p,
+        46,
+        "approvals.register",
+        json!({ "request": card("p-0", "printer.pause", "printer.pause", &printer) }),
+    )
+    .await;
+    assert_eq!(r["error"]["code"], "bad_request", "{r}");
+
+    // A print it asks for waits for a person, says who asked, and runs only once the app approves.
+    let work = json!({ "kind": "print", "printerId": "bay-4", "file": f });
+    let mut c = start_card("lm-1", "cube.gcode", &sha, Some("local_click"));
+    c["origin"] = json!("local_click");
+    let r = call(
+        &mut p,
+        50,
+        "approvals.register",
+        json!({ "request": c, "work": work }),
+    )
+    .await;
+    assert_eq!(r["result"]["answeredIn"], "app", "{r}");
+    let pending = call(&mut app, 51, "approvals.pending", json!({})).await;
+    let shown = pending["result"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["id"] == "lm-1")
+        .unwrap()
+        .clone();
+    assert_eq!(shown["origin"], "mcp", "{shown}");
+    assert_eq!(shown["lines"][0], "Asked by LayerMate, a partner app", "{shown}");
+    assert_eq!(shown["work"]["kind"], "print", "{shown}");
+    let r = call(
+        &mut p,
+        52,
+        "approvals.grant",
+        json!({ "requestId": "lm-1", "bedClear": true }),
+    )
+    .await;
+    assert_eq!(r["error"]["code"], "forbidden", "{r}");
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert_eq!(starts(&mock_log(&mocks).await), 0);
+    let r = call(
+        &mut app,
+        53,
+        "approvals.grant",
+        json!({ "requestId": "lm-1", "bedClear": true }),
+    )
+    .await;
+    assert_eq!(r["result"]["runBy"], "hub", "{r}");
+    assert!(r["result"]["token"].is_null(), "no token leaves the hub: {r}");
+    let done = wait_event(&mut p, "approval.done", |d| d["requestId"] == "lm-1").await;
+    assert_eq!(done["ok"], true, "{done}");
+    assert_eq!(starts(&mock_log(&mocks).await), 1);
+
+    // A pause it asks for also waits for a person.
+    let r = call(
+        &mut p,
+        60,
+        "approvals.register",
+        json!({ "request": card("p-1", "printer.pause", "printer.pause", &printer), "work": { "kind": "pause", "printerId": "bay-4" } }),
+    )
+    .await;
+    assert_eq!(r["result"]["answeredIn"], "app", "{r}");
+    let r = call(&mut p, 61, "approvals.grant", json!({ "requestId": "p-1" })).await;
+    assert_eq!(r["error"]["code"], "forbidden", "{r}");
+    assert!(!mock_log(&mocks).await.iter().any(|l| l.contains("pause")));
+    let r = call(&mut app, 62, "approvals.grant", json!({ "requestId": "p-1" })).await;
+    assert_eq!(r["result"]["runBy"], "hub", "{r}");
+    wait_event(&mut p, "approval.done", |d| d["requestId"] == "p-1").await;
+    assert!(
+        mock_log(&mocks).await.iter().any(|l| l.contains("pause")),
+        "{:?}",
+        mock_log(&mocks).await
+    );
+    // It can withdraw its own card.
+    let r = call(
+        &mut p,
+        63,
+        "approvals.register",
+        json!({ "request": card("c-1", "printer.cancel", "printer.cancel", &printer), "work": { "kind": "cancel", "printerId": "bay-4" } }),
+    )
+    .await;
+    assert_eq!(r["result"]["registered"], true, "{r}");
+    let r = call(&mut p, 64, "approvals.deny", json!({ "requestId": "c-1" })).await;
+    assert_eq!(r["result"]["denied"], true, "{r}");
+}
+
+#[tokio::test]
+async fn revoking_a_partner_key_cuts_its_live_connection_and_it_cannot_pair_again() {
+    let link = hub(None).await;
+    let mut app = paired(&link).await;
+    let (mut p, key, id) = partner(&link, &mut app, "LayerMate").await;
+    let r = call(&mut p, 2, "list", json!({})).await;
+    assert!(r["result"].is_array(), "{r}");
+    let r = call(&mut app, 3, "clients.revoke", json!({ "clientId": id })).await;
+    assert_eq!(r["result"]["revoked"], true, "{r}");
+    // Closed by the hub, without the partner calling anything first.
+    let closed = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            match p.next().await {
+                None | Some(Err(_) | Ok(Message::Close(_))) => break,
+                Some(Ok(_)) => {}
+            }
+        }
+    })
+    .await;
+    assert!(closed.is_ok(), "the hub closed the partner's socket");
+    let mut again = connect(&link).await;
+    let r = call(&mut again, 1, "pair", json!({ "clientKey": key })).await;
+    assert_eq!(r["error"]["code"], "unauthorized", "{r}");
+    let list = call(&mut app, 4, "clients.list", json!({})).await;
+    assert_eq!(list["result"], json!([]), "{list}");
+}
+
 // ---- the device page: files, history, objects, jog ----
 
 async fn started_print(ws: &mut Ws, name: &str) {

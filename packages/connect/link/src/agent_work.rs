@@ -56,7 +56,8 @@ pub(crate) enum Work {
 
 impl Work {
     /// `work: {kind: "print", printerId, file: {name, kind, sha256, dataBase64}, opts?}`,
-    /// `{kind: "resume", printerId}` or `{kind: "gcode", printerId, line}`.
+    /// `{kind: "resume", printerId}`, `{kind: "gcode", printerId, line}`, `{kind: "adjust",
+    /// printerId, change}`, or `{kind: "pause" | "cancel", printerId}`.
     pub(crate) fn parse(p: &Value) -> Rpc<Self> {
         let printer = str_arg(p, "printerId")?;
         match p.get("kind").and_then(Value::as_str) {
@@ -94,6 +95,9 @@ impl Work {
                 }
                 Ok(Work::Gcode { printer, line })
             }
+            // Only a partner app's cards carry these: an agent approves its own pause and cancel.
+            Some("pause") => Ok(Work::Pause { printer }),
+            Some("cancel") => Ok(Work::Cancel { printer }),
             Some("adjust") => Ok(Work::Adjust {
                 printer,
                 change: serde_json::from_value(p.get("change").cloned().unwrap_or(Value::Null))
@@ -101,7 +105,7 @@ impl Work {
             }),
             _ => Err(RpcError::new(
                 "bad_request",
-                "work.kind is print, resume, gcode or adjust",
+                "work.kind is print, resume, gcode, adjust, pause or cancel",
             )),
         }
     }

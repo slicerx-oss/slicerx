@@ -720,6 +720,54 @@ async fn an_agent_key_from_clients_create_works_over_the_relay_until_revoked() {
     assert!(Device::open(&s.relay, &key).await.is_none());
 }
 
+#[tokio::test]
+async fn a_partner_key_over_the_relay_asks_only_to_pause_or_cancel_and_approves_nothing() {
+    let mut s = setup().await;
+    let r = call(
+        &mut s.app,
+        20,
+        "clients.create",
+        json!({ "name": "LayerMate", "role": "agent", "partner": true, "remote": true }),
+    )
+    .await;
+    assert_eq!(r["result"]["partner"], true, "{r}");
+    assert!(
+        r["result"]["clientKey"].is_null(),
+        "no key for the control socket: {r}"
+    );
+    let remote = r["result"]["remote"].clone();
+    let key: [u8; 32] = ps::unb64(remote["deviceKey"].as_str().unwrap())
+        .unwrap()
+        .try_into()
+        .unwrap();
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    let mut p = Device::open(&s.relay, &key).await.expect("a session");
+    let info = p.call("host.info", json!({})).await;
+    assert_eq!(info["r"]["rights"]["approve"], false, "{info}");
+    let resume = p
+        .call(
+            "jobs.control",
+            json!({ "printerId": "bay-4", "action": "resume" }),
+        )
+        .await;
+    assert_eq!(resume["ok"], false, "{resume}");
+    for m in [
+        "print.local",
+        "upload.begin",
+        "clients.create",
+        "approvals.grant",
+        "gcode",
+    ] {
+        let r = p.call(m, json!({})).await;
+        assert_eq!(r["ok"], false, "{m}: {r}");
+    }
+    let id = r["result"]["clientId"].clone();
+    let rv = call(&mut s.app, 22, "clients.revoke", json!({ "clientId": id })).await;
+    assert_eq!(rv["result"]["revoked"], true, "{rv}");
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    assert!(Device::open(&s.relay, &key).await.is_none());
+}
+
 /// A phone's WebRTC end, played by str0m: a complete offer (receive video, one data channel), then
 /// a run loop until the first picture arrives over the data channel.
 async fn phone_rtc_until_picture(phone: &mut Device, printer: &str) -> Vec<u8> {

@@ -270,7 +270,7 @@ impl Link {
     pub fn agent_ids_named(&self, name: &str) -> Vec<String> {
         hub::lock(&self.bridge.hub.clients)
             .iter()
-            .filter(|c| c.role == roles::Role::Agent && c.name == name)
+            .filter(|c| c.role == roles::Role::Agent && !c.partner && c.name == name)
             .map(|c| c.id.clone())
             .collect()
     }
