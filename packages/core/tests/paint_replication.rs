@@ -175,3 +175,70 @@ fn a_raw_copy_slices_to_the_same_gcode() {
         "the painted top prints in filament 2"
     );
 }
+
+/// The web pool as it grows: the first worker loads the file, a worker that joins later gets its copy through the raw
+/// parts format (`sx_mesh_parts`, then `sx_load_mesh`), and the layer ranges go to whichever worker is free. Any mix
+/// of ranges from the two prints the bytes the first worker prints alone, and a copy without paint would not.
+#[test]
+fn a_late_worker_prints_its_ranges_as_the_first_worker_does() {
+    use sx_core::api;
+    let first = Arc::new(Mesh::load(&painted_cube(SPLIT), "cube.3mf").unwrap());
+    let late = Arc::new(Mesh::load(&first.to_raw(), "cube.3mf").unwrap());
+    let mut bare = (*first).clone();
+    for p in &mut bare.parts {
+        p.paint.clear();
+        p.seam_paint.clear();
+        p.support_paint.clear();
+        p.fuzzy_paint.clear();
+        p.paint_texts.clear();
+    }
+    let bare = Arc::new(bare);
+    let req: SliceRequest = serde_json::from_value(json!({
+        "plate": { "objects": [{ "id": "a", "mesh": "x", "transform": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 100, 100, 0, 1] }] },
+        "config": common::with_base(&json!({ "filament_colour": ["#FF0000", "#0000FF"], "enable_prime_tower": false, "enable_support": true, "support_type": "normal(manual)", "fuzzy_skin": "none" })),
+        "options": {}
+    }))
+    .unwrap();
+    let (config, _) = api::request_config_checked(&req).unwrap();
+    let session = |m: &Arc<Mesh>| {
+        let m = m.clone();
+        let plate = api::build_plate(&req, &move |_: &str| Ok(m.clone())).unwrap();
+        api::build_session(&req, &plate, &config).unwrap()
+    };
+    // The sessions of the first worker, of the late worker and of a late copy without paint.
+    let workers = [session(&first), session(&late), session(&bare)];
+    let layers = workers[0].layer_count();
+    // `shards` ranges, `pick` naming the worker that slices each.
+    let print = |shards: u32, pick: &dyn Fn(u32) -> usize| {
+        let mut gcode = Vec::new();
+        for s in 0..shards {
+            api::slice_shard(
+                &req,
+                &workers[pick(s)],
+                &config,
+                layers * s / shards..layers * (s + 1) / shards,
+                &sx_core::NoProgress,
+                &mut gcode,
+            )
+            .unwrap();
+        }
+        gcode
+    };
+    let alone = print(1, &|_| 0);
+    for shards in [4, 8] {
+        let mixed = print(shards, &|s| usize::from(s % 2 == 1));
+        assert!(
+            mixed == alone,
+            "{shards} ranges, every other one on the late worker"
+        );
+        let late_only = print(shards, &|_| 1);
+        assert!(late_only == alone, "{shards} ranges, all on the late worker");
+    }
+    let without = print(4, &|s| if s % 2 == 1 { 2 } else { 0 });
+    assert!(
+        without != alone,
+        "a late copy without the paint prints other bytes"
+    );
+    assert_ne!(first.content_hash(), bare.content_hash());
+    assert_eq!(first.content_hash(), late.content_hash());
+}
