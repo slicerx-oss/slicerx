@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url'
 import { type FileChooser } from '@playwright/test'
 import { expect, plateReady, test, viewportReady } from './fixtures'
 
-type Vp = { objects: Map<string, unknown> }
+type Vp = { objects: Map<string, unknown>; frames: number }
 
 test('opening a model over the example plate never draws an empty plate', async ({ page, isMobile }) => {
   test.skip(isMobile, 'Desktop open')
@@ -22,19 +22,25 @@ test('opening a model over the example plate never draws an empty plate', async 
   await plateReady(page)
   await viewportReady(page)
   await expect.poll(() => page.evaluate(() => (window as unknown as { __vp: Vp }).__vp.objects.size)).toBeGreaterThan(0)
-  // From now on, on every frame the view draws: how many objects it holds (a slow renderer draws few frames, but each
-  // one is seen), and where the right pane is.
+  // The view's ready mark comes when the view is made, before it draws. A software renderer on a busy runner can take
+  // seconds over its first frame, so start once the example plate is on screen.
+  await expect.poll(() => page.evaluate(() => (window as unknown as { __vp: Vp }).__vp.frames), { timeout: 60_000 }).toBeGreaterThan(0)
+  // From now on, on every frame the view draws: how many objects it draws (a slow renderer draws few frames, but each
+  // one is seen), whether one of them is new, and where the right pane is.
   await page.evaluate(() => {
-    const w = window as unknown as { __vp: Vp & { renderFrame(...a: unknown[]): unknown }; __least: number; __panes: number[]; __drawn: number }
+    const w = window as unknown as { __vp: Vp & { renderFrame(...a: unknown[]): unknown }; __least: number; __panes: number[]; __drawn: number; __arrived: boolean }
     const vp = w.__vp
+    const old = new Set(vp.objects.keys())
     w.__least = vp.objects.size
     w.__panes = []
     w.__drawn = 0
+    w.__arrived = false
     const render = vp.renderFrame.bind(vp)
     vp.renderFrame = (...a: unknown[]) => {
+      w.__least = Math.min(w.__least, vp.objects.size)
+      if ([...vp.objects.keys()].some((id) => !old.has(id))) w.__arrived = true
       const r = render(...a)
       w.__drawn++
-      w.__least = Math.min(w.__least, vp.objects.size)
       w.__panes.push(Math.round(document.querySelector('.pane[data-side="right"]')?.getBoundingClientRect().left ?? -1))
       return r
     }
@@ -45,7 +51,9 @@ test('opening a model over the example plate never draws an empty plate', async 
   }
   await seen[0]!.setFiles(fileURLToPath(new URL('../../../packages/core/bench/models/x-mark.stl', import.meta.url)))
   await expect.poll(() => page.evaluate(() => (window as unknown as { __sx: { getState(): { plateLoading: boolean; plate: { name: string }[] } } }).__sx.getState()).then((s) => !s.plateLoading && s.plate.some((p) => /x-mark/i.test(p.name))), { timeout: 60_000 }).toBe(true)
-  await page.waitForTimeout(500)
+  // The plate is open; the view swaps it in on a frame of its own, which a slow renderer draws later. The check covers
+  // every frame up to the first one that draws the new model.
+  await expect.poll(() => page.evaluate(() => (window as unknown as { __arrived: boolean }).__arrived), { timeout: 60_000 }).toBe(true)
   const seenNow = await page.evaluate(() => {
     const w = window as unknown as { __least: number; __panes: number[]; __drawn: number }
     return { least: w.__least, panes: w.__panes, drawn: w.__drawn }
