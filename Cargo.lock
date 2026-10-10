@@ -5769,6 +5769,7 @@ name = "sx-wasm"
 version = "0.1.2"
 dependencies = [
  "getrandom 0.3.4",
+ "libm",
  "serde_json",
  "sx-core",
 ]
