@@ -48,7 +48,7 @@ async function visibleControls(page: Page): Promise<string[]> {
   }, INTERACTIVE)
 }
 
-test('The plate tab with an object selected shows 38 controls or fewer, Simple mode', async ({ page, isMobile }) => {
+test('The plate tab with an object selected shows 39 controls or fewer, Simple mode', async ({ page, isMobile }) => {
   test.skip(isMobile, 'Desktop width')
   await open(page, 'prepare')
   const list = await visibleControls(page)
@@ -58,7 +58,9 @@ test('The plate tab with an object selected shows 38 controls or fewer, Simple m
   // 37: the drawing tools are on by default, which shows Add shape beside Add model.
   // 38: the drying note's It's dry is not counted (see visibleControls): the note appears when the settings plan
   // finishes loading, before or after the count, which made the total 38 or 39 from run to run.
-  expect(list.length).toBeLessThanOrEqual(38)
+  // 39: the plate toolbar keeps still (static controls), so Drop to bed stays in place, disabled with nothing
+  // selected, and Arrange options always shows beside Arrange all.
+  expect(list.length).toBeLessThanOrEqual(39)
 })
 
 test('a saved Preview tab opens Slice, with no Preview tab in the bar', async ({ page }) => {
