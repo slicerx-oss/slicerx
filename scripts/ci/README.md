@@ -70,9 +70,20 @@ the lock over only on evidence from the holder's own side:
 From WSL, Windows programs run through `/init`, as WSL's binfmt entry would run them: a distro with systemd can lose
 that entry, and then `powershell.exe` and `wsl.exe` fail when called directly.
 
-Waiters take a ticket in `<lock>.queue` and only the oldest one tries the lock. A waiter refreshes its ticket on every
-poll; a ticket left alone for two minutes belongs to a waiter that died and is dropped. The queue only orders the
-waiters: `mkdir` alone decides who holds the lock, so an older `heavy.sh` that ignores the queue still never shares it.
+Waiters take a ticket in `<lock>.queue`, named `<class>-<seconds>-<sequence>-<side>-<pid>`, so CI tickets sort first
+and tickets from the same second keep their order. Admission is decided under a short `mkdir` gate (`<lock>.gate`,
+held only for the decision and cleared when older than 30 s): the deciding waiter walks the queue from its head, hands
+the free slots to the tickets in order, and takes one only if one is left for its own ticket, so several slots freeing
+at once never let in more waiters than there are slots, and back-to-back holds by others never pass a waiter over. A
+waiter refreshes its ticket between its checks; a ticket left alone for two minutes belongs to a waiter that died and
+is dropped. `mkdir` alone still decides who holds a slot, so an older `heavy.sh` never shares one, but a copy from
+before the ticket format sorts last and can wait a long time: every machine should run the same copy, and a waiter
+that sees an old ticket says so once.
+
+Each take and release is also a line in `history.log` beside the lock (time, mode, slots, side and pid, user, label,
+session, rc and hold time on release, command), renamed to `history.log.1` at 1 MB. `SX_HEAVY_HISTORY` picks another
+file, and an empty value turns it off. `SX_HEAVY_LABEL` names a hold in its record and in the log (for example
+`"nightly bench"`), so a hold that is only a `sleep` still says whose it is; `SX_HEAVY_SESSION` adds a session id.
 
 Slots: a machine with room for more than one heavy job at a time names how many in `<lock>.slots` (one number, for
 example `2`), and `SX_HEAVY_SLOTS` overrides it for one call. With no file the lock has one slot, as before. Slot 1 is
