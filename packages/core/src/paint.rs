@@ -149,6 +149,8 @@ const MAX_CELLS: f64 = 4.0e6;
 type EdgeId = (usize, usize, bool);
 /// A wall segment in mm.
 type Seg = ((f64, f64), (f64, f64));
+/// A flat painted face's filament, whether it faces up, and how many layers it is from the layer at hand.
+type FlatKey = (u8, bool, usize);
 /// Painted pieces of a part in mm, with the filament each carries.
 pub(crate) type Facets = Vec<([[f64; 3]; 3], u8)>;
 
@@ -165,6 +167,14 @@ pub(crate) struct LayerPaint<'a> {
     pub(crate) above: &'a [Shapes],
     pub(crate) below: &'a [Shapes],
     pub(crate) facets: &'a Facets,
+    /// How much farther in a painted top or bottom reaches on each layer of the shell beyond it (the outer
+    /// wall's line spacing plus its width), and the narrowest painted piece kept (half the small-region
+    /// width), internal units.
+    pub(crate) step: i32,
+    pub(crate) small: i32,
+    /// The session's cache, the part's index in it and how the part is cut: each painted face is worked out once
+    /// for all the shell layers that read it (`Cache::face`).
+    pub(crate) memo: Option<(&'a Cache, usize, CutKey)>,
 }
 
 /// Islands and holes of a painted layer's regions smaller than this, square units (0.01 mm2), are specks the
@@ -202,7 +212,7 @@ impl Cache {
         part: usize,
         layer: u32,
         cut: CutKey,
-        work: impl FnOnce() -> Shapes,
+        mut work: impl FnMut() -> Shapes,
     ) -> std::sync::Arc<Shapes> {
         let (resolution, slicing, closing) = cut;
         let part = i64::try_from(part).unwrap_or(i64::MAX);
@@ -211,6 +221,37 @@ impl Cache {
             (resolution << 24) | part,
             closing.saturating_mul(4).saturating_add(slicing as i32),
         );
+        self.entry(key, &mut work)
+    }
+
+    /// Part `part`'s painted face of filament `state` on `layer` (`top` when it faces up), opened by `small`, from
+    /// `work` the first time. Kept in the outlines' map under keys of their own (a negative last part).
+    pub(crate) fn face(
+        &self,
+        part: usize,
+        layer: u32,
+        cut: CutKey,
+        (state, top, small): (u8, bool, i32),
+        work: &mut dyn FnMut() -> Shapes,
+    ) -> std::sync::Arc<Shapes> {
+        let (resolution, slicing, closing) = cut;
+        let part = i64::try_from(part).unwrap_or(i64::MAX);
+        let kind = i32::from(state) * 2 + i32::from(top);
+        let key = (
+            i64::from(layer),
+            (i64::from(small) << 48) | (resolution << 24) | part,
+            -1 - kind
+                - closing
+                    .saturating_mul(4)
+                    .saturating_add(slicing as i32)
+                    .saturating_mul(1024),
+        );
+        self.entry(key, work)
+    }
+
+    /// One copy of the map's lookup for every caller.
+    #[inline(never)]
+    fn entry(&self, key: (i64, i64, i32), work: &mut dyn FnMut() -> Shapes) -> std::sync::Arc<Shapes> {
         self.outlines.get_or(key, || std::sync::Arc::new(work()))
     }
 }
@@ -577,10 +618,10 @@ impl LayerPaint<'_> {
         }
         // Painted walls cut by the plane, and painted flat faces near this layer.
         let mut walls: BTreeMap<u8, Vec<Seg>> = BTreeMap::new();
-        let mut flat: BTreeMap<u8, Shapes> = BTreeMap::new();
         let top_shell = self.above.len();
         let bottom_shell = self.below.len();
-        let mut flat_tris: BTreeMap<(u8, usize), Vec<Vec<IntPoint<i32>>>> = BTreeMap::new();
+        // Flat painted faces near this layer.
+        let mut flat_tris: BTreeMap<FlatKey, Vec<Vec<IntPoint<i32>>>> = BTreeMap::new();
         for (tri, state) in self.facets {
             let [a, b, c] = *tri;
             let n = [
@@ -594,22 +635,17 @@ impl LayerPaint<'_> {
             }
             let nz = n[2] / len;
             if nz.abs() >= FLAT {
-                // The layer of the face and how far this layer is from it.
-                let zf = a[2];
-                let first = self.plan.first_at_or_above(zf);
-                let (surface, j, ok) = if nz > 0.0 {
+                // The layer of the face (the last one under a top, the first one over a bottom) and how far this
+                // layer is from it.
+                let first = self.plan.first_at_or_above(a[2]);
+                let l = self.layer as usize;
+                let top = nz > 0.0;
+                let (s, ok) = if top {
                     let k = first.saturating_sub(1);
-                    let l = self.layer as usize;
-                    (k, k.wrapping_sub(l).wrapping_add(1), k >= l && k - l < top_shell)
+                    (k.wrapping_sub(l), k >= l && k - l < top_shell)
                 } else {
-                    let l = self.layer as usize;
-                    (
-                        first,
-                        l.wrapping_sub(first).wrapping_add(1),
-                        l >= first && l - first < bottom_shell,
-                    )
+                    (l.wrapping_sub(first), l >= first && l - first < bottom_shell)
                 };
-                let _ = surface;
                 if ok {
                     let ring: Vec<IntPoint<i32>> = [a, b, c]
                         .iter()
@@ -622,7 +658,7 @@ impl LayerPaint<'_> {
                     if crate::geom::area2_int(&ring) < 0 {
                         ring.reverse();
                     }
-                    flat_tris.entry((*state, j)).or_default().push(ring);
+                    flat_tris.entry((*state, top, s)).or_default().push(ring);
                 }
                 continue;
             }
@@ -643,27 +679,104 @@ impl LayerPaint<'_> {
                 walls.entry(*state).or_default().push((*s, *e));
             }
         }
-        for ((state, j), tris) in flat_tris {
-            let projected: Shapes =
-                perimeters::union_all(&[&tris.iter().map(|r| vec![r.clone()]).collect::<Shapes>()]);
-            #[allow(clippy::cast_precision_loss, reason = "shell layer counts are small")]
-            let inset = TAPER * (j as f64 - 1.0);
-            let inside = perimeters::intersection(&projected, self.shapes);
-            let shrunk = if inset > 0.0 {
-                perimeters::offset(&inside, -crate::geom::mm(inset))
-            } else {
-                inside
+        // A painted top or bottom: on its own layer, the face less what the layer beyond it covers; on the shell
+        // layers beyond, the same face inside the outlines of every layer from it to this one, drawn in by one
+        // step for each layer. Both are opened, so slivers narrower than a line go.
+        let mut faces: BTreeMap<u8, Shapes> = BTreeMap::new();
+        let mut shell: BTreeMap<u8, Shapes> = BTreeMap::new();
+        // Every face of this layer, whatever its filament.
+        let mut own: Shapes = Vec::new();
+        // Per direction, by distance: this layer's outline inside every outline up to that far, drawn in a step
+        // at a time.
+        let mut limits: [Vec<Shapes>; 2] = [vec![self.shapes.clone()], vec![self.shapes.clone()]];
+        for ((state, top, s), tris) in flat_tris {
+            let mut work = || {
+                let mut face =
+                    perimeters::union_all(&[&tris.iter().map(|r| vec![r.clone()]).collect::<Shapes>()]);
+                // the mesh's every edge is a point of the face; at the contour resolution like the outlines
+                if let Some((_, _, (resolution, _, _))) = self.memo {
+                    face = face
+                        .iter()
+                        .map(|s| {
+                            s.iter()
+                                .map(|ring| perimeters::simplify_ring(ring, resolution))
+                                .filter(|ring| ring.len() >= 3)
+                                .collect::<Vec<_>>()
+                        })
+                        .filter(|s| !s.is_empty())
+                        .collect();
+                }
+                let beyond = if top { self.above.get(s) } else { self.below.get(s) };
+                self.opened(&match beyond {
+                    Some(b) => perimeters::difference(&face, b),
+                    None => face,
+                })
             };
-            if !shrunk.is_empty() {
-                let entry = flat.entry(state).or_default();
-                *entry = perimeters::union_all(&[entry, &shrunk]);
+            // The face's own layer, where it is kept for every layer that reads it.
+            let at = i64::try_from(s).ok().and_then(|s| {
+                let l = i64::from(self.layer);
+                u32::try_from(if top { l.saturating_add(s) } else { l - s }).ok()
+            });
+            let face = match (self.memo, at) {
+                (Some((cache, part, cut)), Some(at)) => {
+                    cache.face(part, at, cut, (state, top, self.small), &mut work)
+                }
+                _ => std::sync::Arc::new(work()),
+            };
+            if face.is_empty() {
+                continue;
+            }
+            let area = if s == 0 {
+                perimeters::intersection(&face, self.shapes)
+            } else {
+                let near = if top { self.above } else { self.below };
+                let mut limit: &Shapes = &Vec::new();
+                if let Some(steps) = limits.get_mut(usize::from(top)) {
+                    while steps.len() <= s {
+                        let inside = match (steps.last(), near.get(steps.len() - 1)) {
+                            (Some(last), Some(o)) => perimeters::intersection(last, o),
+                            _ => Vec::new(),
+                        };
+                        steps.push(perimeters::offset(&inside, -self.step));
+                    }
+                    limit = steps.get(s).unwrap_or(limit);
+                }
+                self.opened(&perimeters::intersection(&face, limit))
+            };
+            if !area.is_empty() {
+                if s == 0 {
+                    own = perimeters::union_all(&[&own, &area]);
+                }
+                let into = if s == 0 { &mut faces } else { &mut shell };
+                let entry = into.entry(state).or_default();
+                *entry = perimeters::union_all(&[entry, &area]);
+            }
+        }
+        // The faces of this layer win over the shell beyond other layers' faces, and where colors meet there the
+        // lower filament wins.
+        for (state, more) in shell {
+            let entry = faces.entry(state).or_default();
+            *entry = perimeters::union_all(&[entry, &perimeters::difference(&more, &own)]);
+        }
+        let mut flat: Vec<(u8, Shapes)> = Vec::new();
+        let mut taken: Shapes = Vec::new();
+        for (state, area) in faces {
+            let area = perimeters::difference(&area, &taken);
+            if !area.is_empty() {
+                taken = perimeters::union_all(&[&taken, &area]);
+                flat.push((state, area));
             }
         }
         let mut colored: Vec<(u8, Shapes)> = Vec::new();
         if !walls.is_empty() {
             colored = self.voronoi(&walls, top_shell, bottom_shell);
         }
-        // Merge in the flat faces.
+        // Painted tops and bottoms win over the colors of the walls.
+        if !taken.is_empty() {
+            for (_, have) in &mut colored {
+                *have = perimeters::difference(have, &taken);
+            }
+        }
         for (state, shapes) in flat {
             match colored.iter_mut().find(|(s, _)| *s == state) {
                 Some((_, have)) => *have = perimeters::union_all(&[have, &shapes]),
@@ -697,6 +810,15 @@ impl LayerPaint<'_> {
             }
         }
         out
+    }
+
+    /// `area` without the pieces narrower than twice `small` (an opening) and without specks.
+    fn opened(&self, area: &Shapes) -> Shapes {
+        if self.small <= 0 || area.is_empty() {
+            return perimeters::union_min_area(&[area], SPECK);
+        }
+        let area = perimeters::offset(&perimeters::offset(area, -self.small), self.small);
+        perimeters::union_min_area(&[&area], SPECK)
     }
 
     /// Regions painted on the walls: each cell of the layer takes the color of the nearest wall
@@ -782,13 +904,15 @@ impl LayerPaint<'_> {
         if bottom_shell > 0 {
             apply(&mut limit, self.below);
         }
-        let dist: BTreeMap<u8, Vec<f32>> = sources
+        // In filament order already (a map's order), so a list: collecting a map sorts again.
+        let dist: Vec<(u8, Vec<f32>)> = sources
             .iter()
             .filter(|(_, m)| m.iter().any(|&x| x))
             .map(|(s, m)| (*s, distance(&g, m)))
             .collect();
         let mut out = Vec::new();
-        for (&state, own) in &dist {
+        for (state, own) in &dist {
+            let state = *state;
             if state == self.default_slot {
                 continue;
             }
@@ -797,7 +921,7 @@ impl LayerPaint<'_> {
                     let mine = own.get(c).copied().unwrap_or(f32::INFINITY);
                     let other = dist
                         .iter()
-                        .filter(|(s, _)| **s != state)
+                        .filter(|(s, _)| *s != state)
                         .map(|(_, d)| d.get(c).copied().unwrap_or(f32::INFINITY))
                         .fold(f32::INFINITY, f32::min);
                     let closer = if other.is_finite() { other - mine } else { 1.0 };
@@ -937,6 +1061,9 @@ mod tests {
             above: &above,
             below: &below,
             facets: &facets,
+            step: 7_970,
+            small: 1_050,
+            memo: None,
         };
         let parts = ctx.split();
         let colored = parts.iter().find(|(s, _)| *s == 2).map(|(_, s)| s).unwrap();
@@ -949,6 +1076,58 @@ mod tests {
         let b = perimeters::bounds(colored).unwrap();
         assert!(f64::from(b[2]) / SCALE <= 138.0 + 1e-3, "{b:?}");
         eprintln!("colored bounds {b:?}");
+    }
+
+    #[test]
+    fn a_painted_top_fills_its_layer_and_reaches_a_step_in_below() {
+        let plan = LayerPlan::new(10.0, 0.2, 0.2);
+        let outline = square(100.0, 100.0, 160.0, 160.0);
+        let facets: Facets = vec![
+            (
+                [[100.0, 100.0, 10.0], [160.0, 100.0, 10.0], [160.0, 160.0, 10.0]],
+                2,
+            ),
+            (
+                [[100.0, 100.0, 10.0], [160.0, 160.0, 10.0], [100.0, 160.0, 10.0]],
+                2,
+            ),
+        ];
+        let top = plan.first_at_or_above(10.0) - 1;
+        let colors = |layer: usize, above: &[Shapes]| {
+            let ctx = LayerPaint {
+                default_slot: 1,
+                shapes: &outline,
+                layer: u32::try_from(layer).unwrap(),
+                z: plan.slice_z[layer],
+                plan: &plan,
+                above,
+                below: &[],
+                facets: &facets,
+                step: 7_970,
+                small: 1_050,
+                memo: None,
+            };
+            let parts = ctx.split();
+            let area = |slot| {
+                parts
+                    .iter()
+                    .find(|(s, _)| *s == slot)
+                    .map_or(0.0, |(_, s)| area_mm2(s))
+            };
+            (area(2), area(1))
+        };
+        let none = Vec::new();
+        // The top layer is all painted.
+        let (painted, plain) = colors(top, &[none.clone(), none.clone(), none.clone()]);
+        assert!((painted - 3600.0).abs() < 1.0 && plain < 1.0, "{painted} {plain}");
+        // One layer down, the paint stays a step (0.797 mm) inside the outline.
+        let (painted, plain) = colors(top - 1, &[outline.clone(), none.clone(), none.clone()]);
+        let inner = (60.0 - 2.0 * 0.797) * (60.0 - 2.0 * 0.797);
+        assert!((painted - inner).abs() < 1.0, "{painted} vs {inner}");
+        assert!((painted + plain - 3600.0).abs() < 1.0);
+        // Past the top shell layers, nothing.
+        let (painted, _) = colors(top - 3, &[outline.clone(), outline.clone(), outline.clone()]);
+        assert!(painted < 1e-6, "{painted}");
     }
 
     #[test]
