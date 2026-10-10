@@ -639,7 +639,9 @@ mod tests {
             &BooleanOptions::default(),
         )
         .unwrap();
-        let rim_at = [13.0, 10.0, 4.0];
+        // on the rim, half way along its first segment: a pick on the top face beside the rim
+        let a = 7.5f64.to_radians();
+        let rim_at = [10.0 + 1.5 * (1.0 + a.m_cos()), 10.0 + 1.5 * a.m_sin(), 4.0];
         let (t, _) = (0..m.triangles.len())
             .map(|i| {
                 let [a, b, c] = m.corners(m.triangles[i]);

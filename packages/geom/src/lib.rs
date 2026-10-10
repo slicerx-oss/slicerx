@@ -57,6 +57,7 @@ pub mod pa;
 pub mod poly2d;
 #[cfg(feature = "cad")]
 pub mod push;
+pub mod remesh;
 pub mod repair;
 pub mod resume;
 #[cfg(feature = "shell")]

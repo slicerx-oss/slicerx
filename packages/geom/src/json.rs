@@ -39,6 +39,7 @@ const ALL_OPERATIONS: &[(&str, &str)] = &[
     ("subtract", ""),
     ("import", ""),
     ("simplify", ""),
+    ("remesh", ""),
     ("extrude.svg", "svg"),
     ("text.polygons", "text"),
     ("boolean", ""),
@@ -315,6 +316,22 @@ fn run(op: &str, req: &Value, files: FileLoader<'_>) -> Result<Value> {
             Ok(v)
         }
         "import" => import_op(req, enc, files),
+        "remesh" => {
+            let m = mesh_field(req, "mesh", files)?;
+            let out = if req.get("coarsen").and_then(Value::as_bool) == Some(true) {
+                crate::remesh::coarsen_flat(&m)
+            } else {
+                crate::remesh::remesh_flat(&m, &crate::remesh::RemeshOptions::default())
+            };
+            let e = out.edge_report();
+            Ok(json!({
+                "mesh": enc.mesh(&out),
+                "changed": out != m,
+                "triangles": out.triangles.len(),
+                "volumeMm3": out.volume(),
+                "watertight": e.is_watertight(),
+            }))
+        }
         "simplify" => {
             let m = mesh_field(req, "mesh", files)?;
             let opts: simplify::SimplifyOptions = field_or_default(req, "options")?;
