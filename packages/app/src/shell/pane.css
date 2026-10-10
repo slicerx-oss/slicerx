@@ -17,13 +17,13 @@
   .studio .lstrip { right: 26px; }
 }
 /* Phones: a pane with an edge tab is a bottom sheet over the view, opened from its tab on the screen edge. The view
-   takes the screen. A shut sheet waits below the screen, inert. An open sheet keeps one height and scrolls inside: sized
-   to its content, it grew upward when a section opened, and moved every control above the one pressed. */
+   takes the screen. A shut sheet waits below the screen, inert. An open sheet takes its content's height and keeps it
+   (SidePane locks it): growing upward when a section opened, it moved every control above the one pressed. */
 @media (max-width: 900px) {
   .studio:has(> .pane.sheet) > .vp { height: calc(100dvh - var(--h-bar) - 34px); }
   .studio[data-model-mode="design"]:has(> .pane.sheet) > .vp { height: calc(100dvh - var(--h-bar) - 84px); }
   .pane.sheet.sx-rail[data-side], .pane.sheet.sx-rail[data-side=right]:not([data-collapsed]) {
-    position: fixed; left: 0; right: 0; bottom: 0; z-index: calc(var(--z-rail-peek) + 2); width: auto; height: 70dvh;
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: calc(var(--z-rail-peek) + 2); width: auto; max-height: 70dvh;
     border: 0; border-radius: var(--r-lg) var(--r-lg) 0 0;
     background: color-mix(in srgb, var(--ink-1) 94%, transparent); -webkit-backdrop-filter: var(--lift-glass); backdrop-filter: var(--lift-glass); box-shadow: var(--shadow-pop), var(--lift-edge);
     transform: translateY(105%); transition: transform 200ms var(--ease);

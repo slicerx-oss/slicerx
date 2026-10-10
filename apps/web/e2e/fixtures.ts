@@ -134,7 +134,8 @@ export async function openSheet(page: Page, panel = 'slice-sidebar'): Promise<vo
   const tab = page.locator(`.sheet-tab[data-panel="${panel}"]`)
   if (!(await tab.count())) return
   if ((await tab.getAttribute('aria-expanded')) !== 'true') await tab.click()
-  await expect.poll(() => page.getByTestId(panel).evaluate((el) => el.closest('aside')!.getBoundingClientRect().top < innerHeight * 0.5)).toBe(true)
+  // Open means slid all the way up: its foot on the screen's bottom edge. A short sheet stops low, so its top says nothing.
+  await expect.poll(() => page.getByTestId(panel).evaluate((el) => Math.abs(el.closest('aside')!.getBoundingClientRect().bottom - innerHeight) < 2)).toBe(true)
 }
 
 /** On a phone, closes an open side sheet so the view under it can be used. Does nothing when none is open. */
