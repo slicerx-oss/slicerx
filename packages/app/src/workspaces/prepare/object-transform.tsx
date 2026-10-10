@@ -10,7 +10,7 @@ import { useState } from 'react'
 import { centerSelected, dropSelectedToBed, fillBed, instanceCount, mirrorSelected, scaleSelectedToSize, setInstanceCount, setTrs } from '../../plate/edit'
 import { plateScrub } from '../../plate/scrub'
 import { bounds, decompose, sizeOf, type Vec3 } from '../../plate/transform'
-import { useApp } from '../../state/store'
+import { selectedIds, useApp } from '../../state/store'
 
 const AXES = ['X', 'Y', 'Z'] as const
 
@@ -23,6 +23,7 @@ export function ObjectTransform() {
     const root = e ? (e.instanceOf ?? e.id) : null
     return root ? s.plate.filter((p) => (p.instanceOf ?? p.id) === root).length : 0
   })
+  const several = useApp((s) => selectedIds(s).length > 1)
   const [uniform, setUniform] = useState(true)
   const tool = useTool()
   const space = useRotateSpace()
@@ -106,6 +107,8 @@ export function ObjectTransform() {
         </span> : null}
         <MoreButton id="object" />
       </div>
+      {/* below the actions, so nothing above it moves when it shows */}
+      {several && tool === 'scale' ? <p className="tf-note">Several objects scale evenly, from the corner handles, so turned parts keep their shape.</p> : null}
     </div>
   )
 }

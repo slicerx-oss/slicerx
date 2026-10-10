@@ -575,6 +575,7 @@ button.reset:hover { color: var(--fg); background: var(--ink-3); }
 .tf-input:focus { outline: none; }
 .tf-unit { font: var(--fs-xs) var(--f-mono); color: var(--dim); }
 .tf-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 2px; }
+.tf-note { margin: 0; font-size: var(--fs-sm); color: var(--muted); }
 .tf-lock { display: flex; align-items: center; gap: 6px; font-size: var(--fs-sm); color: var(--muted); margin-right: auto; }
 .tf-mirror { display: inline-flex; }
 @media (max-width: 900px) { .plate-tools { top: 52px; } }
