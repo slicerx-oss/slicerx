@@ -1,6 +1,6 @@
 {
   "name": "@slicerx/embed",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": false,
   "description": "SlicerX pieces for other apps: the 3D viewport and the print settings panel as React components and as <sx-viewport> and <sx-settings-panel> custom elements",
   "license": "Apache-2.0",

@@ -1,6 +1,6 @@
 {
   "name": "@slicerx/viewport",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": false,
   "description": "Framework-free three.js viewport for SlicerX: models on a printer bed, painting and modeling tools, and SXPV toolpath previews",
   "license": "Apache-2.0",

@@ -31,7 +31,7 @@ import = ["dep:sx-geom"]
 sleipnir = ["dep:sx-geom"]
 
 [dependencies]
-sx-geom = { path = "../geom", version = "=0.1.2", optional = true }
+sx-geom = { path = "../geom", version = "=0.1.3", optional = true }
 # Forks published with SlicerX; each keeps the original library name. See packages/vendor/*/SOURCE.md.
 i_overlay = { package = "sx-i-overlay", path = "../vendor/i_overlay", version = "=9.0.0" }
 # The time estimate takes its trigonometry from here so native and WASM builds round alike.
