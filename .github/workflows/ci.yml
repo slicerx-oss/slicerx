@@ -108,6 +108,9 @@ jobs:
         with:
           components: clippy, rustfmt
       - uses: Swatinem/rust-cache@v2
+      # A Cargo.lock that no longer matches the manifests fails here, before a build quietly rewrites it.
+      - run: cargo metadata --locked --format-version 1 > /dev/null
+        shell: bash
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --exclude slicerx-desktop --all-targets -- -D warnings
       # A pull request and the merge queue run the unit tests and the G-code goldens here, and the integration tests in
