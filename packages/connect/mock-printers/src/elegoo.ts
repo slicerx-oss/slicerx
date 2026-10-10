@@ -5,7 +5,8 @@
 import { createHash } from 'node:crypto'
 import { createServer, type IncomingMessage } from 'node:http'
 import type { AddressInfo, Socket } from 'node:net'
-import { JPEG, MockError, type MockMachine } from './machine.ts'
+import { MockError, type MockMachine } from './machine.ts'
+import { mjpeg, offlineGate } from './http-util.ts'
 import { acceptWebSocket, frame, readFrames } from './ws-server.ts'
 
 export const MOCK_MAINBOARD = '000000000001d354'
@@ -60,6 +61,28 @@ export async function startElegoo(m: MockMachine, extra: ElegooExtra = { remaini
   const broadcast = () => { const f = frame(statusMessage(m)); for (const s of sockets) s.write(f) }
   let port = 0
 
+  // Faults. SDCP V3.0.0 has no filament runout code and no door: a runout pauses the print as a pause command
+  // does (CurrentStatus 1, PrintInfo.Status 10), with no error code, and a door is only logged. Both stand in
+  // until the Centauri Carbon's real reporting is written up; neither code may be made up here.
+  m.faultProfile = { door: false }
+
+  // The doc's status reports: one when the status changes (sent after the command's answer), and while printing
+  // one a second, so progress and time move on the client.
+  let pending = false
+  let gate: { dropAll(): void } | undefined
+  m.onChange(() => {
+    if (m.faults.has('offline')) {
+      // Off the network: the WebSocket drops and reconnects are refused until the fault clears.
+      gate?.dropAll()
+      return
+    }
+    if (pending) return
+    pending = true
+    setImmediate(() => { pending = false; broadcast() })
+  })
+  const tick = setInterval(() => { if (m.state === 'printing') broadcast() }, 1000)
+  tick.unref()
+
   const respond = (sock: Socket, cmd: number, rid: string, data: Record<string, unknown>) => {
     sock.write(frame(JSON.stringify({ Id: '', Data: { Cmd: cmd, Data: data, RequestID: rid, MainboardID: MOCK_MAINBOARD, TimeStamp: Date.now() }, Topic: `sdcp/response/${MOCK_MAINBOARD}` })))
   }
@@ -77,6 +100,7 @@ export async function startElegoo(m: MockMachine, extra: ElegooExtra = { remaini
         return void sock.write(frame(attributesMessage(m, extra)))
       }
       if (cmd === 258) return respond(sock, cmd, rid, { Ack: 0, FileList: [...m.files.values()].map((f) => ({ name: `/local/${f.name}`, usedSize: f.size, totalSize: 0, storageType: 0, type: 1 })) })
+      // Each state change below pushes a status report after this answer.
       if (cmd === 128) m.start(String(args.Filename).replace(/^\/local\//, ''))
       else if (cmd === 129) m.pause()
       else if (cmd === 130) m.cancel()
@@ -84,7 +108,6 @@ export async function startElegoo(m: MockMachine, extra: ElegooExtra = { remaini
       else if (cmd === 386) return respond(sock, cmd, rid, { Ack: 0, VideoUrl: `http://127.0.0.1:${port}/video` })
       else return respond(sock, cmd, rid, { Ack: 1 })
       respond(sock, cmd, rid, { Ack: 0 })
-      broadcast()
     } catch (e) {
       respond(sock, cmd, rid, { Ack: e instanceof MockError && e.status === 404 ? 2 : 1 })
     }
@@ -94,7 +117,11 @@ export async function startElegoo(m: MockMachine, extra: ElegooExtra = { remaini
     const url = new URL(req.url ?? '/', 'http://mock')
     if (url.pathname === '/uploadFile/upload' && req.method === 'POST') {
       const chunks: Buffer[] = []
-      for await (const c of req) chunks.push(c as Buffer)
+      try {
+        for await (const c of req) chunks.push(c as Buffer)
+      } catch {
+        return
+      }
       const form = await new Response(Buffer.concat(chunks), { headers: { 'content-type': String(req.headers['content-type'] ?? '') } }).formData()
       const file = form.get('File')
       const uuid = String(form.get('Uuid'))
@@ -116,9 +143,11 @@ export async function startElegoo(m: MockMachine, extra: ElegooExtra = { remaini
       return
     }
     if (url.pathname === '/video') {
-      res.writeHead(200, { 'content-type': 'multipart/x-mixed-replace; boundary=frame' })
-      for (let i = 0; i < 3; i++) res.write(Buffer.concat([Buffer.from('--frame\r\nContent-Type: image/jpeg\r\n\r\n'), JPEG, Buffer.from('\r\n')]))
-      res.end()
+      // The MJPEG stream Cmd 386 names: a frame every 100 ms, the picture `POST /camera` chose, until the client closes.
+      const stream = mjpeg(() => m.frame(), 100)
+      res.writeHead(200, { 'content-type': stream.type })
+      const stop = stream.start((b) => void res.write(b))
+      res.on('close', stop)
       return
     }
     res.writeHead(404).end()
@@ -140,6 +169,8 @@ export async function startElegoo(m: MockMachine, extra: ElegooExtra = { remaini
       }
     })
   })
+  server.on('close', () => clearInterval(tick))
+  gate = offlineGate(server, () => m.faults.has('offline'))
 
   await new Promise<void>((r) => server.listen(0, '127.0.0.1', r))
   port = (server.address() as AddressInfo).port

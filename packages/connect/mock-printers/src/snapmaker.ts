@@ -2,9 +2,12 @@
 // Copyright (C) 2026 The SlicerX contributors
 // Snapmaker 2.0 (A150, A250, A350) HTTP API fake, as Snapmaker Luban speaks it:
 // https://github.com/Snapmaker/Luban (src/server/services/machine/channels/SstpHttpChannel.ts)
+// The faults follow the status fields packages/connect/docs/snapmaker.md lists (`isFilamentOut`,
+// `isEnclosureDoorOpen`) and its "is unreachable" case for a machine that dropped off the Wi-Fi. No camera.
 import { randomBytes } from 'node:crypto'
 import { MockError, type MockMachine } from './machine.ts'
 import { listen, readFilePart, type Handler, type Req } from './http-util.ts'
+import type { Socket } from 'node:net'
 
 const STATUS: Record<string, string> = { idle: 'IDLE', finished: 'IDLE', error: 'IDLE', offline: 'IDLE', preparing: 'RUNNING', printing: 'RUNNING', paused: 'PAUSED' }
 
@@ -40,7 +43,20 @@ export async function startSnapmakerLuban(m: MockMachine, opts: { confirmAfter?:
     return !!t && t.polls >= confirmAfter
   }
 
+  // A runout and an open door are the status flags; the runout also pauses a running print. The machine leaves
+  // no message of its own: the flags are what the status carries.
+  m.faultProfile = { door: true }
+  // Offline: the machine has dropped off the Wi-Fi. Requests get no answer at all, as to a machine that is gone,
+  // until the client gives up; clearing the fault closes the held connections, and new ones are answered again.
+  const held = new Set<Socket>()
+  m.onChange(() => {
+    if (m.faults.has('offline')) return
+    for (const s of held) s.destroy()
+    held.clear()
+  })
+
   const handler: Handler = async (req) => {
+    if (m.faults.has('offline')) return new Promise<never>(() => undefined)
     const p = req.path
     if (p === '/api/v1/connect' && req.method === 'POST') {
       const given = (await form(req)).get('token')
@@ -76,12 +92,12 @@ export async function startSnapmakerLuban(m: MockMachine, opts: { confirmAfter?:
           heatedBedTargetTemperature: m.fx.bed?.target ?? 0,
           fileName: active && m.job ? m.job.name : '',
           progress: active && m.job ? m.job.progress : 0,
-          elapsedTime: 0,
+          elapsedTime: active ? m.printedS : 0,
           remainingTime: active && m.job ? m.job.timeLeftS : 0,
           totalLines: 1000,
           currentLine: active && m.job ? Math.round(m.job.progress * 1000) : 0,
-          isEnclosureDoorOpen: false,
-          isFilamentOut: false,
+          isEnclosureDoorOpen: m.faults.has('door'),
+          isFilamentOut: m.faults.has('runout'),
           homed: true,
           x: m.position[0], y: m.position[1], z: m.position[2],
         },
@@ -106,5 +122,6 @@ export async function startSnapmakerLuban(m: MockMachine, opts: { confirmAfter?:
     throw new MockError(404, p)
   }
   const r = await listen(handler)
+  r.server.prependListener('request', (rq: { socket: Socket }) => { if (m.faults.has('offline')) held.add(rq.socket) })
   return { ...r, extra }
 }
