@@ -2608,7 +2608,7 @@ async fn a_partner_key_is_named_shown_once_listed_and_kept_across_a_restart() {
 }
 
 #[tokio::test]
-async fn a_partner_app_reads_and_asks_but_never_approves_starts_resumes_sends_gcode_or_adjusts() {
+async fn a_partner_app_pauses_and_cancels_but_never_approves_a_start_resumes_sends_gcode_or_adjusts() {
     let link = hub(None).await;
     let mocks = common::Mocks::start("moonraker", &[]).await;
     let mut app = paired(&link).await;
@@ -2623,9 +2623,7 @@ async fn a_partner_app_reads_and_asks_but_never_approves_starts_resumes_sends_gc
     let token = json!({ "requestId": "x", "action": "printer.start", "target": "bay-4", "paramsHash": "", "expiresAt": "2099-01-01T00:00:00.000Z", "signature": "" });
     for (i, (method, params)) in [
         ("start", json!({ "file": { "printerId": "bay-4", "path": "cube.gcode", "name": "cube.gcode" }, "token": token })),
-        ("pause", json!({ "printerId": "bay-4", "token": token })),
         ("resume", json!({ "printerId": "bay-4", "token": token })),
-        ("cancel", json!({ "printerId": "bay-4", "token": token })),
         ("gcode", json!({ "printerId": "bay-4", "line": "G28", "token": token })),
         ("upload", json!({ "printerId": "bay-4", "file": f, "token": token })),
         ("adjust", json!({ "printerId": "bay-4", "change": {}, "token": token })),
@@ -2684,12 +2682,12 @@ async fn a_partner_app_reads_and_asks_but_never_approves_starts_resumes_sends_gc
     ha["actions"][0]["target"] = json!("home-assistant");
     let r = call(&mut p, 45, "approvals.register", json!({ "request": ha })).await;
     assert_eq!(r["error"]["code"], "forbidden", "{r}");
-    // Even a pause needs its work: the partner approves nothing, so the hub runs it.
+    // A pause or cancel card is its own to answer, so it carries no work.
     let r = call(
         &mut p,
         46,
         "approvals.register",
-        json!({ "request": card("p-0", "printer.pause", "printer.pause", &printer) }),
+        json!({ "request": card("p-0", "printer.pause", "printer.pause", &printer), "work": { "kind": "pause", "printerId": "bay-4" } }),
     )
     .await;
     assert_eq!(r["error"]["code"], "bad_request", "{r}");
@@ -2740,36 +2738,79 @@ async fn a_partner_app_reads_and_asks_but_never_approves_starts_resumes_sends_gc
     assert_eq!(done["ok"], true, "{done}");
     assert_eq!(starts(&mock_log(&mocks).await), 1);
 
-    // A pause it asks for also waits for a person.
+    // Pause and cancel only stop a print: it answers its own card and uses the token, as an agent does.
     let r = call(
         &mut p,
         60,
         "approvals.register",
-        json!({ "request": card("p-1", "printer.pause", "printer.pause", &printer), "work": { "kind": "pause", "printerId": "bay-4" } }),
+        json!({ "request": card("p-1", "printer.pause", "printer.pause", &printer) }),
     )
     .await;
-    assert_eq!(r["result"]["answeredIn"], "app", "{r}");
-    let r = call(&mut p, 61, "approvals.grant", json!({ "requestId": "p-1" })).await;
-    assert_eq!(r["error"]["code"], "forbidden", "{r}");
-    assert!(!mock_log(&mocks).await.iter().any(|l| l.contains("pause")));
-    let r = call(&mut app, 62, "approvals.grant", json!({ "requestId": "p-1" })).await;
-    assert_eq!(r["result"]["runBy"], "hub", "{r}");
-    wait_event(&mut p, "approval.done", |d| d["requestId"] == "p-1").await;
+    assert_eq!(r["result"]["answeredIn"], "here", "{r}");
+    let token = call(&mut p, 61, "approvals.grant", json!({ "requestId": "p-1" })).await["result"].clone();
+    assert!(token.is_object(), "{token}");
+    let r = call(
+        &mut p,
+        62,
+        "pause",
+        json!({ "printerId": "bay-4", "token": token }),
+    )
+    .await;
+    assert_eq!(r["result"]["ok"], true, "{r}");
     assert!(
         mock_log(&mocks).await.iter().any(|l| l.contains("pause")),
         "{:?}",
         mock_log(&mocks).await
     );
-    // It can withdraw its own card.
+    // A pause token never resumes.
     let r = call(
         &mut p,
         63,
+        "resume",
+        json!({ "printerId": "bay-4", "token": token }),
+    )
+    .await;
+    assert_eq!(r["error"]["code"], "forbidden", "{r}");
+    let r = call(
+        &mut p,
+        64,
         "approvals.register",
-        json!({ "request": card("c-1", "printer.cancel", "printer.cancel", &printer), "work": { "kind": "cancel", "printerId": "bay-4" } }),
+        json!({ "request": card("c-1", "printer.cancel", "printer.cancel", &printer) }),
+    )
+    .await;
+    assert_eq!(r["result"]["answeredIn"], "here", "{r}");
+    let token = call(&mut p, 65, "approvals.grant", json!({ "requestId": "c-1" })).await["result"].clone();
+    let r = call(
+        &mut p,
+        66,
+        "cancel",
+        json!({ "printerId": "bay-4", "token": token }),
+    )
+    .await;
+    assert_eq!(r["result"]["ok"], true, "{r}");
+    assert!(mock_log(&mocks).await.iter().any(|l| l.contains("cancel")));
+    // It answers only its own cards: a pause another agent raised is not its to grant.
+    let mut ag = agent(&link).await;
+    let r = call(
+        &mut ag,
+        2,
+        "approvals.register",
+        json!({ "request": card("a-p", "printer.pause", "printer.pause", &printer) }),
     )
     .await;
     assert_eq!(r["result"]["registered"], true, "{r}");
-    let r = call(&mut p, 64, "approvals.deny", json!({ "requestId": "c-1" })).await;
+    let r = call(&mut p, 67, "approvals.grant", json!({ "requestId": "a-p" })).await;
+    assert_eq!(r["error"]["code"], "forbidden", "{r}");
+    // It can withdraw its own card.
+    let r = call(
+        &mut p,
+        68,
+        "approvals.register",
+        json!({ "request": card("c-2", "printer.cancel", "printer.cancel", &printer) }),
+    )
+    .await;
+    assert_eq!(r["result"]["registered"], true, "{r}");
+    let r = call(&mut p, 69, "approvals.deny", json!({ "requestId": "c-2" })).await;
     assert_eq!(r["result"]["denied"], true, "{r}");
 }
 

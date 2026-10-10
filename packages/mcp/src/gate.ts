@@ -38,7 +38,7 @@ export interface ApprovalDone {
  * work the hub runs once a person approves it, and hear how the work went.
  */
 export interface PersonHandOff {
-  /** Paired with a partner app key: the hub lets it approve nothing, so every card for the hub goes to a person. */
+  /** Paired with a partner app key: the hub lets it answer only its pause and cancel cards, so every other card for the hub goes to a person. */
   partner?: boolean
   register(request: ApprovalRequest, work: AgentWork): Promise<void>
   onDone(cb: (d: ApprovalDone) => void): () => void
@@ -59,6 +59,9 @@ const PERSON_ONLY_ACTIONS = new Set<string>(['printer.start', 'printer.resume', 
 export function needsPerson(req: Pick<ApprovalRequest, 'actions'>): boolean {
   return req.actions.some((a) => PERSON_ONLY_ACTIONS.has(a.action) || (a.action === 'plugin.call' && a.target === 'home-assistant'))
 }
+
+/** A card that only pauses or cancels, which a partner app may approve itself. */
+const onlyStops = (req: Pick<ApprovalRequest, 'actions'>): boolean => req.actions.length > 0 && req.actions.every((a) => a.action === 'printer.pause' || a.action === 'printer.cancel')
 
 /** Cards the hub's broker answers: printer calls (not printer setup) and plugin calls. */
 export const forHub = (req: Pick<ApprovalRequest, 'actions'>): boolean => req.actions.some((a) => (a.action.startsWith('printer.') && a.action !== 'printer.config') || a.action === 'plugin.call')
@@ -221,7 +224,7 @@ export async function gatedCall(server: McpServer, deps: GateDeps, tool: PilotTo
   } catch (e) {
     return failFrom(e)
   }
-  if (needsPerson(request) || (deps.handOff?.partner && forHub(request))) {
+  if (needsPerson(request) || (deps.handOff?.partner && forHub(request) && !onlyStops(request))) {
     // The card goes to SlicerX with its work; the hub runs the work once a person approves.
     // With no hub (demo printers) nothing can approve it, and the request only waits.
     if (deps.handOff) {

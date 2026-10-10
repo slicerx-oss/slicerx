@@ -1388,8 +1388,9 @@ fn register_card(b: &Arc<Bridge>, broker: &sx_permit::ApprovalBroker, conn: &Con
     }
     let id = req.id.clone();
     let printer = req.printer_id.clone();
-    // A partner approves nothing, so every card it raises waits for a person.
-    let person = conn.partner.is_some()
+    // A partner answers only its pause and cancel cards; anything else it raises waits for a person.
+    let person = (conn.partner.is_some()
+        && !roles::partner_may_grant(req.actions.iter().map(|a| a.action.as_str())))
         || roles::person_only(req.actions.iter().map(|a| (a.action.as_str(), a.target.as_str())));
     let mut card = serde_json::to_value(&req).unwrap_or(Value::Null);
     // An agent's person-only card carries its work; the hub runs it once a person approves.
@@ -1460,7 +1461,15 @@ async fn approval_call(b: &Arc<Bridge>, conn: &Conn, method: &str, p: &Value) ->
         "approvals.grant" => {
             let id = str_arg(p, "requestId")?;
             let own = owner(&id) == Some(conn.id);
-            if conn.partner.is_some() || !roles::may_answer(conn.role, own, needs_person(&id)) {
+            // A partner answers only its own pause or cancel card.
+            let partner_stop = || {
+                broker
+                    .request(&id)
+                    .is_some_and(|r| roles::partner_may_grant(r.actions.iter().map(|a| a.action.as_str())))
+            };
+            if (conn.partner.is_some() && !partner_stop())
+                || !roles::may_answer(conn.role, own, needs_person(&id))
+            {
                 return Err(RpcError::new(
                     "forbidden",
                     "a person answers this card in the SlicerX app or on a paired phone",

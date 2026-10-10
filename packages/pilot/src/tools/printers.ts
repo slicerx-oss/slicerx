@@ -229,8 +229,7 @@ export function printerTools(shared: ToolShared): PilotTool<never>[] {
           actions: [{ action: `printer.${name}`, target: i.printerId, params: hostParams.simple(i.printerId) }],
         }
       },
-      // Resume always waits for a person; pause and cancel only on a partner app's connection.
-      agentWork: async (i: { printerId: string }) => ({ kind: name, printerId: i.printerId }),
+      ...(name === 'resume' ? { agentWork: async (i: { printerId: string }) => ({ kind: 'resume' as const, printerId: i.printerId }) } : {}),
       async run(i, ctx) {
         if (!ctx.token) return { ok: false, summary: 'Not approved' }
         await ctx.host.printers[name](i.printerId, ctx.token)

@@ -15,9 +15,9 @@
 //! pair phones, manage remembered clients, secrets, printers, services or settings.
 //!
 //! A partner app (another program the person connects, such as `LayerMate`) holds a named key from
-//! `clients.create` with `partner: true`. It is an agent with less: it calls only [`PARTNER_METHODS`],
-//! approves nothing, and every card it raises waits for a person and carries its work, which may only
-//! print, pause or cancel.
+//! `clients.create` with `partner: true`. It is an agent with less: it calls only [`PARTNER_METHODS`]
+//! and raises cards only to print, pause or cancel. It may pause and cancel on its own card, as an
+//! agent does, since those only stop a print; a print waits for a person and carries its work.
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -138,8 +138,8 @@ pub(crate) fn tool_needs_person(plugin: &str, tool: &str) -> bool {
     plugin == "home-assistant" && tool.trim_start_matches("home-assistant.") != "list_entities"
 }
 
-/// The only methods a partner app may call: reading, stills and live view, preparing a file, and
-/// raising or withdrawing its own cards. Anything that takes an approval token is missing on purpose.
+/// The only methods a partner app may call: reading, stills and live view, preparing a file, its own
+/// cards, and pause and cancel with the token of its own card. Every other token taker is missing.
 const PARTNER_METHODS: &[&str] = &[
     "plugins",
     "list",
@@ -164,8 +164,11 @@ const PARTNER_METHODS: &[&str] = &[
     "queue.list",
     "inbox.list",
     "approvals.register",
+    "approvals.grant",
     "approvals.deny",
     "approvals.pending",
+    "pause",
+    "cancel",
 ];
 
 /// Whether a partner app may call `method`.
@@ -184,6 +187,18 @@ const PARTNER_ACTIONS: &[&str] = &[
 /// Whether a partner may raise a card with these actions.
 pub(crate) fn partner_may_ask<'a>(mut actions: impl Iterator<Item = &'a str>) -> bool {
     actions.all(|a| PARTNER_ACTIONS.contains(&a))
+}
+
+/// Whether a partner may answer its own card with these actions: only one that pauses or cancels.
+pub(crate) fn partner_may_grant<'a>(actions: impl Iterator<Item = &'a str>) -> bool {
+    let mut any = false;
+    for a in actions {
+        if !matches!(a, "printer.pause" | "printer.cancel") {
+            return false;
+        }
+        any = true;
+    }
+    any
 }
 
 /// Whether a connection may grant or deny a card. `own` is true when this connection registered it.
@@ -277,24 +292,24 @@ mod tests {
     }
 
     #[test]
-    fn partners_call_only_their_list_and_nothing_that_takes_a_token() {
+    fn partners_call_only_their_list_and_grant_only_pause_and_cancel() {
         for m in [
             "list",
             "status",
             "camera.grab",
             "prepareUpload",
             "approvals.register",
+            "approvals.grant",
             "approvals.deny",
             "approvals.pending",
+            "pause",
+            "cancel",
         ] {
             assert!(partner_allowed(m), "{m}");
         }
         for m in [
-            "approvals.grant",
             "start",
             "resume",
-            "pause",
-            "cancel",
             "gcode",
             "upload",
             "adjust",
@@ -331,6 +346,19 @@ mod tests {
             "printer.config",
         ] {
             assert!(!partner_may_ask(["printer.pause", a].into_iter()), "{a}");
+        }
+        assert!(partner_may_grant(["printer.pause"].into_iter()));
+        assert!(partner_may_grant(["printer.cancel"].into_iter()));
+        assert!(!partner_may_grant(std::iter::empty()));
+        for a in [
+            "printer.upload",
+            "printer.start",
+            "printer.resume",
+            "printer.gcode",
+            "printer.adjust",
+            "plugin.call",
+        ] {
+            assert!(!partner_may_grant(["printer.pause", a].into_iter()), "{a}");
         }
     }
 }
