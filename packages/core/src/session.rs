@@ -9300,3 +9300,80 @@ mod paint_tests {
         assert!(painted >= 3, "{painted} layers with two filaments");
     }
 }
+
+#[cfg(test)]
+mod footprint_tests {
+    use crate::config::PrintConfig;
+    use crate::mesh::{Mesh, MeshPart};
+    use crate::plate::Plate;
+    use crate::session::SliceSession;
+
+    /// An axis-aligned box from (0,0,0) to (x,y,z).
+    fn block(name: &str, x: f32, y: f32, z: f32) -> Mesh {
+        let positions = vec![
+            [0.0, 0.0, 0.0],
+            [x, 0.0, 0.0],
+            [x, y, 0.0],
+            [0.0, y, 0.0],
+            [0.0, 0.0, z],
+            [x, 0.0, z],
+            [x, y, z],
+            [0.0, y, z],
+        ];
+        let triangles = vec![
+            [0, 2, 1],
+            [0, 3, 2],
+            [4, 5, 6],
+            [4, 6, 7],
+            [0, 1, 5],
+            [0, 5, 4],
+            [1, 2, 6],
+            [1, 6, 5],
+            [2, 3, 7],
+            [2, 7, 6],
+            [3, 0, 4],
+            [3, 4, 7],
+        ];
+        Mesh {
+            name: name.to_owned(),
+            parts: vec![MeshPart {
+                name: name.to_owned(),
+                slot: 1,
+                color: None,
+                positions,
+                triangles,
+                paint: Vec::new(),
+                support_paint: Vec::new(),
+                seam_paint: Vec::new(),
+                fuzzy_paint: Vec::new(),
+                paint_texts: Vec::new(),
+            }],
+        }
+    }
+
+    /// Objects with settings of their own are sliced apart, each in a session of its own: worked out once for
+    /// the plate, every footprint is what the object alone would give, in the plate's order.
+    #[test]
+    fn a_plate_sliced_apart_keeps_every_object_footprint() {
+        let mut plate = Plate::single(block("a", 20.0, 10.0, 5.0));
+        let mut b = plate.objects[0].clone();
+        b.id = "object-2".to_owned();
+        b.name = "b".to_owned();
+        b.mesh = std::sync::Arc::new(block("b", 8.0, 30.0, 12.0));
+        b.transform[12] += 40.0;
+        b.settings = serde_json::json!({ "wall_loops": 3 });
+        plate.objects.push(b);
+        let alone = |i: usize| {
+            crate::firmware::footprints(&Plate {
+                bed: plate.bed,
+                objects: vec![plate.objects[i].clone()],
+            })
+        };
+        let all = crate::firmware::footprints(&plate);
+        assert_eq!(all.len(), 2);
+        assert_eq!(all[0], alone(0)[0]);
+        assert_eq!(all[1], alone(1)[0]);
+        let session = SliceSession::new(&plate, &PrintConfig::default()).expect("the plate builds");
+        assert_eq!(session.footprints(), all.as_slice());
+    }
+}
