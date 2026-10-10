@@ -41,7 +41,7 @@ import { MachineCard } from './machine-card'
 import { selectObject } from '../../plate/edit'
 import { get, isCadTool, selectedIds, set, setWorkspace, showSliced, shownSlice, useApp } from '../../state/store'
 import { useModelMode } from '../../state/model-mode'
-import { useMediaQuery } from '../../lib/media'
+import { useCompactLayout } from '../../lib/phone-layout'
 import { MiddleName, shortPrinterName } from '../../lib/short-name'
 import { EasySettingsPanel } from './easy-settings'
 const ExpertSettings = lazy(() => import('./expert-settings').then((m) => ({ default: m.ExpertSettings })))
@@ -109,15 +109,15 @@ export function PrepareLeft({ layout }: { layout: LayoutSpec }) {
   const mode = effectiveMode(useApp((s) => s.settingsMode), layout)
   const tierTitle = mode === 'expert' || mode === 'developer' ? 'Expert settings' : 'Advanced settings'
   // With the objects in the right pane, a phone keeps them here: its panes are sheets, one at a time.
-  const phone = useMediaQuery('(max-width: 900px)')
-  const objectList = layout.objectList === 'right-pane' ? (phone ? 'sidebar-below-settings' : 'right-pane') : layout.objectList
+  const compact = useCompactLayout()
+  const objectList = layout.objectList === 'right-pane' ? (compact ? 'sidebar-below-settings' : 'right-pane') : layout.objectList
   const objectsFirst = objectList === 'sidebar-above-settings'
   // Design has no printer, filament or print settings: it models parts; Slice sets them up for printing.
   const design = useModelMode() === 'design'
   return (
     <>
       {/* A phone's sheet scrolls as one, so the printer and filaments lead it instead of sitting pinned. */}
-      {phone ? <SlicePinned /> : null}
+      {compact ? <SlicePinned /> : null}
       {objectsFirst ? <PrepareObjects /> : null}
       {design ? null : (
         <>

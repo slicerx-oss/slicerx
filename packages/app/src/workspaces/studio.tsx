@@ -39,7 +39,7 @@ import { SliceLookSwitch } from './prepare/slice-look'
 import { ParkedChip } from './prepare/parked-chip'
 import { SliceProgress } from './slice-progress'
 import { useOverlayOffset, type OverlaySelectors } from '../lib/overlay-offset'
-import { useMediaQuery } from '../lib/media'
+import { useCompactLayout } from '../lib/phone-layout'
 import { ModeChip } from '../first-run/mode-chip'
 
 const PREPARE_LEFT: PaneSection[] = [
@@ -95,8 +95,8 @@ export function Studio() {
   // The look and feel places the settings sidebar, its width, and the primary Slice action.
   const side = layout.sidebar.side
   // On a phone the sidebar is a sheet, so the Slice action floats on the view instead of waiting inside it.
-  const phone = useMediaQuery('(max-width: 900px)')
-  const sliceInSidebar = layout.primaryAction.placement === 'sidebar-footer' && !phone
+  const compact = useCompactLayout()
+  const sliceInSidebar = layout.primaryAction.placement === 'sidebar-footer' && !compact
   const modelMode = useModelMode()
   useBoundValues(true)
   const design = modelMode === 'design'
@@ -110,7 +110,7 @@ export function Studio() {
   const slicesDone = useApp((s) => s.slicesDone)
   const other = side === 'left' ? 'right' : 'left'
   // The objects list sits at the top of the right pane, above the slice summary; on a phone it stays in the settings sheet.
-  const objectsRight = layout.objectList === 'right-pane' && !phone
+  const objectsRight = layout.objectList === 'right-pane' && !compact
   // The right pane stays shut until opened; its tab glows when something in it wants a look.
   const rightOpen = useApp((s) => railOpen(s.rails, 'preview', other, true))
   // Cut, Paint, Brim ears and the modeling tools open in the Objects card: with the objects in the right pane, opening a
@@ -128,7 +128,7 @@ export function Studio() {
   // Toasts center over the viewport and sit above the plate bar and the playback bar, below the toolbar and the view
   // switch, never on a control. On a phone the layer slider runs down the right side, so they keep to the left of it.
   const vpRef = useRef<HTMLElement>(null)
-  useOverlayOffset(vpRef, phone ? PHONE_OVERLAYS : layers ? SIDE_OVERLAYS : OVERLAYS)
+  useOverlayOffset(vpRef, compact ? PHONE_OVERLAYS : layers ? SIDE_OVERLAYS : OVERLAYS)
 
   // Painting, brim ears and lay on face are print setup: they close when Design opens.
   // The full geometry engine starts loading on the way into Design, so its first tool does not wait.
@@ -186,7 +186,7 @@ export function Studio() {
           </Suspense>
         </SidePane>
       ) : (
-        <SidePane key={`prepare-${side}`} side={side} ws="prepare" label="Printer and settings" sections={PREPARE_LEFT} width={layout.sidebar.width} tab={{ panel: 'slice-sidebar' }} {...(phone ? {} : { pinned: <SlicePinned /> })} {...(sliceInSidebar ? { footer: <SliceBlock label={layout.primaryAction.label} compact /> } : {})} {...(layout.modeSelector === 'sidebar' ? { headExtra: <ModeChip layout={layout} /> } : {})}>
+        <SidePane key={`prepare-${side}`} side={side} ws="prepare" label="Printer and settings" sections={PREPARE_LEFT} width={layout.sidebar.width} tab={{ panel: 'slice-sidebar' }} {...(compact ? {} : { pinned: <SlicePinned /> })} {...(sliceInSidebar ? { footer: <SliceBlock label={layout.primaryAction.label} compact /> } : {})} {...(layout.modeSelector === 'sidebar' ? { headExtra: <ModeChip layout={layout} /> } : {})}>
           <PrepareLeft layout={layout} />
         </SidePane>
       )}

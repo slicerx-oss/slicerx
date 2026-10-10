@@ -13,7 +13,7 @@ import { ColorBy } from '../view-menus'
 import { LayerTrack } from './layer-track'
 import { layerKeyStep, stepLayer } from './layer-step'
 import { usePaneSize } from '../../shell/pane'
-import { useMediaQuery } from '../../lib/media'
+import { useCompactLayout } from '../../lib/phone-layout'
 import { colorblindToolpaths, get, set, shownSlice, useApp } from '../../state/store'
 import { PLAYBACK_SPEEDS } from '../../state/prefs'
 import { setGcodePanel, useGcodeView } from './gcode-file'
@@ -248,11 +248,11 @@ export function LayerDock() {
   const dockRef = useRef<HTMLDivElement>(null)
   const [dockSize, setDockSize] = usePaneSize('preview-bottom', DOCK.full, DOCK)
   // On a phone the bar sits under the view as one row of transport and readout; the rest opens below that row.
-  const phone = useMediaQuery('(max-width: 900px)')
+  const compact = useCompactLayout()
   const [opened, setOpened] = useState(false)
   if (!preview || !timeline) return null
   // Tall shows every slider, medium the time and layer ones, and the slim bar only the transport.
-  const mode = phone ? 'full' : dockSize <= DOCK.min ? 'slim' : dockSize < 150 ? 'compact' : 'full'
+  const mode = compact ? 'full' : dockSize <= DOCK.min ? 'slim' : dockSize < 150 ? 'compact' : 'full'
   const z = preview.layerZ[top - 1] ?? 0
   const layerT = preview.layerTimeS[top - 1] ?? 0
   const segs = (preview.layerStart[top] ?? 0) - (preview.layerStart[top - 1] ?? 0)
@@ -295,8 +295,8 @@ export function LayerDock() {
   )
 
   return (
-    <div className="dock sx-overlay" role="group" aria-label="Layers and moves" data-mode={mode} data-phone={phone || undefined} ref={dockRef}>
-      {phone ? null : <ResizeEdge
+    <div className="dock sx-overlay" role="group" aria-label="Layers and moves" data-mode={mode} data-phone={compact || undefined} ref={dockRef}>
+      {compact ? null : <ResizeEdge
         pane="bottom"
         size={dockSize}
         min={DOCK.min + 24}
@@ -326,7 +326,7 @@ export function LayerDock() {
         <button type="button" className="play step ghost" aria-label="Next layer" aria-disabled={top >= n} {...tipAttrs({ title: 'Next layer', ...(top >= n ? { reason: 'This is the last layer.' } : {}) })} onClick={() => top < n && (setPlaying(false), set({ layerHi: top + 1, moveCut: 1, toolChange: null }))}>
           <Icon name="chevron-right" />
         </button>
-        {phone ? null : opts}
+        {compact ? null : opts}
         <span className="dock-read sx-mono sx-dim">
           {/* During a purge its grams take the layer's place (the layer slider shows both), so the line keeps its length. */}
           {purge ? null : (
@@ -356,16 +356,16 @@ export function LayerDock() {
             </span>
           ) : null}
         </span>
-        {phone ? (
+        {compact ? (
           <button type="button" className="play step ghost dock-more" aria-expanded={opened} aria-label={opened ? 'Fewer playback controls' : 'More playback controls'} onClick={() => setOpened(!opened)}>
             <Icon name={opened ? 'chevron-down' : 'chevron-up'} />
           </button>
         ) : null}
       </div>
       {/* On a phone the rest opens as a panel over the foot of the view, so the bar's row and Print stay put. */}
-      {phone && !opened ? null : (
-        <div className={phone ? 'dock-body sx-overlay' : 'dock-body'}>
-          {phone ? <div className="dock-opts">{opts}</div> : null}
+      {compact && !opened ? null : (
+        <div className={compact ? 'dock-body sx-overlay' : 'dock-body'}>
+          {compact ? <div className="dock-opts">{opts}</div> : null}
           <div className="dock-row">
             <label htmlFor="pv-time">Time</label>
             <div className="strike-rail">
