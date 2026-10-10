@@ -284,8 +284,9 @@ export interface VaryLayerCost {
 /** What of the machine meets a printed part. */
 /**
  * What of the machine meets a printed part; or `path_conflict`, the paths of two objects (or of an object and the prime
- * tower, `prime-tower`) crossing on one layer; or `keep_out`, a print path in a zone the printer keeps clear
- * (`exclusion-area`, `wrap-check-zone`).
+ * tower, `prime-tower`) crossing on one layer; or `keep_out`, a print path or a travel in a zone the printer keeps clear
+ * (`exclusion-area`, `wrap-check-zone`), or a travel passing within the nozzle's width of one that no way round or lift
+ * over clears.
  */
 export type CollisionKind = 'gantry' | 'hotend' | 'nozzle_travel_through_part' | 'tool_change' | 'dock' | 'path_conflict' | 'keep_out'
 
