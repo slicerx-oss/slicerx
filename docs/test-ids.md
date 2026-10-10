@@ -132,6 +132,7 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | `slice-object-expand` | The row's chevron: opens its tree of parts and volumes |
 | `slice-object-override-badge` | The badge for settings an object has of its own |
 | `slice-object-volume` | A volume in the row's tree, with `data-role` |
+| `slice-object-part` | A part's name in the row's tree: picks the part, so Print settings edit it |
 | `slice-tool-done` | Done on a tool open in the Objects card's place (Cut, Paint, Brim ears, the modeling tools) |
 | `slice-selection-bar` | The selection bar under the object list, shown while objects are selected |
 | `slice-selection-count` | Its count, "2 selected" |
@@ -139,12 +140,17 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | `slice-selection-move-plate` | Move to plate, with two plates or more |
 | `slice-selection-skip`, `slice-selection-lock` | Skip or Print, and Lock or Unlock, for every selected object (Advanced and up; in Simple they are in its menu) |
 | `slice-selection-more` | The bar's menu button; `slice-selection-menu` is the menu |
-| `slice-selection-clear` | Clear selection (Esc does the same) |
+| `slice-selection-clear` | Clear selection, Advanced and up (Esc does the same; Simple has it in the bar's menu) |
 | `slice-ctx` | The selection's context menu, on a row or in the view (`data-target="selection"`) |
 | `slice-ctx-arrange`, `slice-ctx-transform`, `slice-ctx-move-plate`, `slice-ctx-skip`, `slice-ctx-lock`, `slice-ctx-center`, `slice-ctx-drop`, `slice-ctx-duplicate` | Its items, the same in the bar's menu |
 | `slice-ctx-more` | Volumes, in Simple's bar menu: shows the selected object's volumes |
+| `slice-ctx-clear` | Clear selection, in Simple's bar menu |
 | `slice-ctx-plate-<n>` | A plate to move the selection to, by its number |
 | `danger-slice-ctx-delete` | Delete in the selection's menus; it is one undo step and the toast offers Undo |
+| `slice-scope-plate`, `slice-scope-object` | The scope pill over Print settings: the plate, or the selection (or the part picked in the tree) |
+| `slice-scope-label` | The selection's name in the pill, with how many settings it has of its own |
+| `slice-setting-row` | A setting's row, with `data-key` and `data-source` (`plate`, `own` or `mixed` in the selection's scope) |
+| `slice-setting-reset` | A row's reset, with `data-key`: back to the Easy value, or in the selection's scope to the plate's |
 | `export-save-project`, `export-locked-project`, `export-gcode-3mf`, `export-all-plates` | Its items (each opens the system's save dialog) |
 
 ## Opening a project

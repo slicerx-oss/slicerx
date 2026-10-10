@@ -35,6 +35,9 @@
 .obj-tree .parts { list-style: none; margin: 0; padding: 0; display: grid; gap: 1px; }
 .obj-tree .part { display: flex; align-items: center; gap: 8px; min-height: 28px; font-size: var(--fs-sm); }
 .obj-tree .part .n { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.obj-tree .part-pick { border: 0; background: none; padding: 2px 4px; margin-left: -4px; border-radius: var(--r-xs); color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.obj-tree .part-pick:hover { background: var(--ink-3); }
+.obj-tree .part-pick[aria-pressed="true"] { color: var(--accent); background: var(--accent-tint); }
 .obj-tree .part-role { flex: none; color: var(--muted); }
 .part-slot { display: grid; place-items: center; padding: 2px; border: 0; border-radius: var(--r-sm); background: none; cursor: pointer; }
 .part-slot:hover { background: var(--ink-3); }

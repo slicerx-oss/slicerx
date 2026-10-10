@@ -5,6 +5,7 @@
 // overrides in plate/object-settings.ts.
 import type { SettingValue } from '@slicerx/contracts'
 import type { AppState, PlateEntry } from '../state/store'
+import { inStep } from './history'
 import { objectOverrides, partOverridesOf, setObjectSetting, setPartSetting, sourceId } from './object-settings'
 
 export type SettingsScope = { kind: 'plate' } | { kind: 'objects'; ids: string[] } | { kind: 'part'; id: string; part: string }
@@ -56,8 +57,27 @@ function targets(plate: readonly PlateEntry[], ids: readonly string[]): PlateEnt
 
 /** Sets or, with undefined, resets a setting in a scope. The plate scope is the caller's: it writes the print settings. */
 export function setScoped(s: Pick<AppState, 'plate'>, scope: SettingsScope, key: string, value: SettingValue | undefined): void {
-  if (scope.kind === 'part') setPartSetting(scope.id, scope.part, key, value)
-  else if (scope.kind === 'objects') for (const p of targets(s.plate, scope.ids)) setObjectSetting(p.id, key, value)
+  setScopedMany(s, scope, [[key, value]])
+}
+
+/** Several settings in a scope as one undo step, for every target: an Easy choice sets a few keys at once. */
+export function setScopedMany(s: Pick<AppState, 'plate'>, scope: SettingsScope, entries: readonly (readonly [string, SettingValue | undefined])[]): void {
+  inStep({}, () => {
+    for (const [key, value] of entries) {
+      if (scope.kind === 'part') setPartSetting(scope.id, scope.part, key, value)
+      else if (scope.kind === 'objects') for (const p of targets(s.plate, scope.ids)) setObjectSetting(p.id, key, value)
+    }
+  })
+}
+
+/** The settings the scope's targets have of their own: listed in Print settings even when they would be behind search. */
+export function ownKeys(s: Pick<AppState, 'plate' | 'objectSettings'>, scope: SettingsScope): Set<string> {
+  if (scope.kind === 'plate') return new Set()
+  if (scope.kind === 'part') {
+    const entry = s.plate.find((p) => p.id === scope.id)
+    return new Set(entry ? [...Object.keys(objectOverrides(s, entry)), ...Object.keys(partOverridesOf(s.plate, entry)[scope.part] ?? {})] : [])
+  }
+  return new Set(targets(s.plate, scope.ids).flatMap((p) => Object.keys(objectOverrides(s, p))))
 }
 
 /** How many settings an object has of its own, its parts' included: the badge on its row. */

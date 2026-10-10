@@ -12,21 +12,25 @@ export interface SelectionBarProps extends Omit<HTMLAttributes<HTMLDivElement>, 
   clearLabel?: string
   /** A test id for the clear button. */
   clearTestId?: string
+  /** False leaves the clear button out, for a caller that offers it elsewhere (a menu) and on Escape. */
+  clearable?: boolean
   /** The actions for the selection, buttons or menu anchors. */
   children?: ReactNode
 }
 
 /** A lifted bar over a list while something in it is selected: how many, what you can do with them, and a way out. */
-export function SelectionBar({ count, onClear, clearLabel = 'Clear selection', clearTestId, className, children, ...rest }: SelectionBarProps) {
+export function SelectionBar({ count, onClear, clearLabel = 'Clear selection', clearTestId, clearable = true, className, children, ...rest }: SelectionBarProps) {
   return (
     <div role="toolbar" aria-label="Selection" className={className ? `sx-selbar sx-overlay ${className}` : 'sx-selbar sx-overlay'} {...rest}>
       <span className="sx-selbar-count" aria-live="polite">
         {count}
       </span>
       <span className="sx-selbar-actions">{children}</span>
-      <button type="button" className="sx-selbar-clear" aria-label={clearLabel} {...(clearTestId ? { 'data-testid': clearTestId } : {})} {...tipAttrs({ title: clearLabel, key: 'Esc' })} onClick={onClear}>
-        <Icon name="close" size={14} />
-      </button>
+      {clearable ? (
+        <button type="button" className="sx-selbar-clear" aria-label={clearLabel} {...(clearTestId ? { 'data-testid': clearTestId } : {})} {...tipAttrs({ title: clearLabel, key: 'Esc' })} onClick={onClear}>
+          <Icon name="close" size={14} />
+        </button>
+      ) : null}
     </div>
   )
 }

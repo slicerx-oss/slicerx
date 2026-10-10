@@ -15,7 +15,7 @@ import { Silhouette } from '../../parts'
 import { selectObject } from '../../plate/edit'
 import { moveObject, objectWarnings, renameObject, setPartSlot, toggleLock, togglePrintable, type ObjectMatch } from '../../plate/object-list'
 import { removeVolume, ROLE_LABEL } from '../../plate/volumes'
-import { get, selectedIds, useApp, type PlateEntry, type VolumeRole } from '../../state/store'
+import { get, selectedIds, set, useApp, type PlateEntry, type VolumeRole } from '../../state/store'
 import { SelectionMenu } from './selection-bar'
 
 const FitNotes = lazy(() => import('./fit-notes').then((m) => ({ default: m.FitNotes })))
@@ -70,6 +70,7 @@ export function ObjectRow({ entry: p, index, count, instanceOf, match, searching
     }
   }
   const slotCount = Math.max(4, slots.length)
+  const scopePart = useApp((s) => s.scopePart)
   // A right click, a long press or Shift+F10 on a row outside the selection selects it first, as Finder does.
   const ctx = useContextMenu(() => {
     if (!selectedIds(get()).includes(p.id)) selectObject(p.id, 'set')
@@ -178,7 +179,16 @@ export function ObjectRow({ entry: p, index, count, instanceOf, match, searching
               !match.parts.includes(i) ? null : (
                 <li key={`${part.name}-${i}`} className="part">
                   <Icon name="part" size={14} className="part-role" />
-                  <span className="n">{part.name}</span>
+                  <button
+                    type="button"
+                    className="n part-pick"
+                    data-testid="slice-object-part"
+                    aria-pressed={scopePart?.id === p.id && scopePart.part === part.name}
+                    {...tipAttrs({ title: part.name, body: 'Pick this part to give it settings of its own.' })}
+                    onClick={() => set({ selection: p.id, selectedIds: [p.id], scopePart: { id: p.id, part: part.name }, settingsScope: 'objects' })}
+                  >
+                    {part.name}
+                  </button>
                   <button
                     type="button"
                     className="part-slot"

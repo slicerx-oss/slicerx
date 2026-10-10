@@ -199,17 +199,20 @@ test('add shapes, merge them, and split them back', async ({ page }) => {
   await expect(objs).toHaveCount(3)
 })
 
-test('object settings: add one, undo it', async ({ page }) => {
+test('object settings: in the scope of the selection the object gets a value of its own, and undo takes it back', async ({ page }) => {
   await prepare(page)
   await openSheet(page)
   await page.locator('.obj-name', { hasText: 'Layered X' }).click()
-  await page.getByRole('button', { name: 'Add setting' }).click()
-  await page.getByRole('textbox', { name: 'Find a setting to change for this object' }).fill('wall loops')
-  await page.getByRole('list', { name: 'Settings you can add' }).getByRole('button').first().click()
-  await expect(page.locator('.obj-set-list li')).toHaveCount(1)
+  await page.getByTestId('slice-scope-object').click()
+  await expect(page.locator('[data-section="settings"]')).toHaveAttribute('data-scope', 'objects')
+  // Supports on for this object only: its row gets the badge for a setting of its own.
+  await page.getByRole('radiogroup', { name: 'Supports' }).getByRole('radio', { name: 'Auto' }).click()
+  const badge = page.getByTestId('slice-object-override-badge')
+  await expect(badge).toBeVisible()
   await closeSheet(page)
   await page.getByRole('toolbar', { name: 'Plate tools' }).getByRole('button', { name: 'Undo' }).click()
-  await expect(page.locator('.obj-set-list li')).toHaveCount(0)
+  await openSheet(page)
+  await expect(badge).toHaveCount(0)
 })
 
 test('geometry tools run in the browser: cut in two, then repair', async ({ page }) => {
@@ -805,7 +808,7 @@ test('feature tooltips show with their key, hand over quickly, explain a disable
   await expect(tip).toContainText('Move')
 })
 
-test('a part takes its own setting: it is listed under the part only, and the slice uses it', async ({ page, isMobile }) => {
+test('a part picked in the tree takes a setting of its own, the plate keeps its value, and the slice uses it', async ({ page, isMobile }) => {
   test.skip(isMobile, 'Runs at desktop width')
   test.slow()
   await page.addInitScript(() => {
@@ -823,21 +826,22 @@ test('a part takes its own setting: it is listed under the part only, and the sl
     return Number(/; total filament used \[g\] = ([\d.]+)/.exec(text)?.[1])
   }
   const before = await gramsOf()
-  await page.locator('.obj-name', { hasText: 'Layered X' }).click()
-  const target = page.getByLabel('Settings apply to')
-  const options = await target.locator('option').allTextContents()
-  expect(options.length).toBeGreaterThan(2)
-  await target.selectOption({ index: 1 })
-  await page.getByRole('button', { name: 'Add setting' }).click()
-  await page.getByRole('textbox', { name: 'Find a setting to change for this object' }).fill('sparse infill density')
-  await page.getByRole('list', { name: 'Settings you can add' }).getByRole('button').first().click()
-  const field = page.locator('.obj-set-list li').first().getByRole('textbox')
-  await field.fill('100')
-  await field.press('Enter')
-  await target.selectOption('')
-  await expect(page.locator('.obj-set-list li')).toHaveCount(0)
-  await target.selectOption({ index: 1 })
-  await expect(page.locator('.obj-set-list li')).toHaveCount(1)
+  // A part picked in the object's tree: the scope is that part, and its infill is its own.
+  const row = page.getByTestId('object-row').first()
+  await row.getByTestId('slice-object-expand').click()
+  await row.getByTestId('slice-object-part').first().click()
+  await expect(page.getByTestId('slice-scope-label')).toContainText(await row.getByTestId('slice-object-part').first().innerText())
+  await page.keyboard.press('ControlOrMeta+k')
+  await page.locator('.sx-palette-input').fill('sparse infill density')
+  await page.locator('.sx-palette-item', { hasText: 'now' }).first().click()
+  const density = page.locator('[data-testid="slice-setting-row"][data-key="sparse_infill_density"]')
+  await expect(density).toHaveAttribute('data-source', 'plate')
+  await density.getByRole('textbox').fill('100')
+  await density.getByRole('textbox').press('Enter')
+  await expect(density).toHaveAttribute('data-source', 'own')
+  // The plate keeps its own: on the Plate scope the row is the plate's value again.
+  await page.getByTestId('slice-scope-plate').click()
+  await expect(density.getByRole('textbox')).not.toHaveValue('100')
   const after = await gramsOf()
   expect(after).toBeGreaterThan(before)
 })
