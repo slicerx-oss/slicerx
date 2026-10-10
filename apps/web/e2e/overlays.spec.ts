@@ -80,16 +80,12 @@ async function postToast(page: Page, text: string): Promise<Box> {
   }, text)
 }
 
-/**
- * The boxes of every visible control in the viewport a toast must not cover. A control drawn at no opacity (the lone
- * plate's strip, until hover or focus shows it) is not on screen, so a toast over it covers nothing.
- */
+/** The boxes of every visible control in the viewport a toast must not cover. */
 async function controls(page: Page): Promise<{ name: string; box: Box }[]> {
   return page.locator('.vp').evaluate((vp) => {
     const sel = ['.hud-bl > *', '.dock', '.lstrip', '.plate-tools', '.slice-look', '.hud-top .hud-col > *']
     return sel.flatMap((s) =>
       [...vp.querySelectorAll<HTMLElement>(s)]
-        .filter((el) => getComputedStyle(el).opacity !== '0')
         .map((el) => ({ name: `${s} ${el.className}`, r: el.getBoundingClientRect() }))
         .filter(({ r }) => r.width > 0 && r.height > 0)
         .map(({ name, r }) => ({ name, box: { x: r.x, y: r.y, width: r.width, height: r.height } })),
