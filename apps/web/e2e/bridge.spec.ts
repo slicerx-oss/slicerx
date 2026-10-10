@@ -266,7 +266,9 @@ test('sends a sliced plate with the preflight and an approval, and the printer r
 })
 
 test.describe(BAMBU, () => {
-  test.beforeAll(async () => {
+  test.beforeAll(async ({}, testInfo) => {
+    // The phone project starts no hub (e2e/bridge-hub.ts), so there is nothing to add the printer to.
+    if (testInfo.project.use.isMobile) return
     await addBambu('a1', 'A1', 'A1')
   })
 
