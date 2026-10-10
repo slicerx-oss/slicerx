@@ -157,6 +157,51 @@ function workerProvider(): GeomProvider {
   }
 }
 
+/**
+ * One call in a geometry worker of its own, which ends with its answer, its failure or `end`. For a long call (the
+ * sleipnir layer plan takes seconds on a big plate) that the shared worker would make every other call wait behind:
+ * the fit check and the modeling tools keep answering meanwhile, and a call no longer wanted stops at once rather than
+ * running on. Its engine memory goes with the worker. `transfer` hands buffers the caller no longer needs (a mesh made for
+ * this call) to the worker rather than copying them.
+ */
+export function soloCall<T>(op: string, request: unknown, transfer: Transferable[] = []): { answer: Promise<T>; end: () => void } {
+  let worker: Worker | null = new Worker(new URL('./geom-worker.ts', import.meta.url), { type: 'module' })
+  const w = worker
+  let fail: (e: Error) => void = () => undefined
+  const stop = () => {
+    worker?.terminate()
+    worker = null
+  }
+  const answer = new Promise<T>((resolve, reject) => {
+    fail = (e) => {
+      stop()
+      calls.failed[op] = (calls.failed[op] ?? 0) + 1
+      calls.lastError = e.message
+      reject(e)
+    }
+    w.onmessage = (e: MessageEvent<{ id: number; result?: unknown; error?: string } | { loadError: LoadError }>) => {
+      if ('loadError' in e.data) return noteLoadError(e.data.loadError)
+      if (e.data.error !== undefined) return fail(new Error(e.data.error))
+      stop()
+      calls.answered[op] = (calls.answered[op] ?? 0) + 1
+      resolve(e.data.result as T)
+    }
+    w.onerror = (e) => fail(new Error(e.message || 'The geometry engine did not start'))
+  })
+  // Posted outside the closures above, so none of them holds the request (it can be a big mesh).
+  try {
+    w.postMessage({ id: 1, op, request }, transfer)
+  } catch (e) {
+    fail(e instanceof Error ? e : new Error(String(e)))
+  }
+  return {
+    answer,
+    end: () => {
+      if (worker) fail(new DOMException('Canceled', 'AbortError'))
+    },
+  }
+}
+
 let own: GeomProvider | null = null
 // The salt of the history step a tool is about to record (cad/history/record.ts, reserveStepId): every call meanwhile
 // gives it to the engine, so the faces the step makes get the keys a replay of the step will give them.

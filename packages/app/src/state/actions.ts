@@ -373,7 +373,9 @@ export async function slicePlate(host: Host, opts: { auto?: boolean } = {}): Pro
     // sleipnir plans the layer tops; a calibration plate keeps its own height bands.
     // Vary layer height reaches the engine as the resolved `smart_layer` mode (quality, or strength for a strong print).
     const smart = (String((config as Record<string, unknown>)['smart_layer'] ?? 'off') as 'off' | 'quality' | 'strength')
-    const planned = smart !== 'off' && !s.calibration[s.activePlate] ? await (await import('../plate/smart-layer')).planSmartLayers(toPrint, config, smart).catch(() => null) : null
+    // A slice canceled while its plan runs goes no further; the plan stops unless the next slice takes it over.
+    const planned = smart !== 'off' && !s.calibration[s.activePlate] ? await (await import('../plate/smart-layer')).planSmartLayers(toPrint, config, smart, abort.signal).catch(() => null) : null
+    abort.signal.throwIfAborted()
     // A project's settings by height: range keys by object, and layer height ranges as the plate's layer tops.
     const { heightRangesOf, rangeLayerTops } = await import('../plate/layer-ranges')
     const cfg = config as Record<string, unknown>
