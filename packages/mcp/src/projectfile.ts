@@ -5,7 +5,7 @@
 import { readFileSync } from 'node:fs'
 import { basename } from 'node:path'
 import type { SettingValue } from '@slicerx/contracts'
-import { importProject, keptEngineChoices, parseXml } from '@slicerx/settings'
+import { importProject, keptEngineChoices, parseXml, selectVariants } from '@slicerx/settings'
 import { ToolInputError } from './models'
 import { readZip } from './zip'
 
@@ -73,7 +73,8 @@ export function readProjectFile(path: string): ProjectRead {
     }
   }
   const dropped = Object.keys(raw).filter(isNeverImported).sort()
-  const kept = Object.fromEntries(Object.entries(raw).filter(([k]) => !isNeverImported(k)))
+  // Bambu Studio 2 writes some values once per hotend variant: the ones that slice, as the app takes them.
+  const kept = selectVariants(Object.fromEntries(Object.entries(raw).filter(([k]) => !isNeverImported(k))))
   const imported = importProject({ projectSettings: kept, ...(modelSettings ? { modelSettings } : {}) })
 
   // Plates and how many objects sit on each, from model_settings.config; a plain 3MF is one plate.
