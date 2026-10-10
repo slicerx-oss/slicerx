@@ -1109,6 +1109,19 @@ impl Reader {
             self.segment += 1;
         } else if c == "LAYER_CHANGE" || c == " CHANGE_LAYER" {
             self.layer += 1;
+        } else if let Some(rest) = c.strip_prefix("VG1 ") {
+            // Bambu Studio's H2D change template writes the in-printer flush as comment lines the printer skips
+            // (`;VG1 E<length> F<feed>`); its estimate times each as a move of the extruder alone. The position
+            // stays where it was.
+            let words: Vec<&str> = rest.split_ascii_whitespace().collect();
+            if let Some(len) = value(&words, b'E').filter(|l| *l != 0.0) {
+                let (e, feed) = (self.start[3], self.feedrate);
+                let mut target = self.start;
+                target[3] = e + len * self.scale();
+                self.move_to(target, value(&words, b'F'));
+                self.end[3] = e;
+                self.feedrate = feed;
+            }
         } else if c.starts_with(" WIPE_START") || c.starts_with("WIPE_START") {
             self.wiping = true;
         } else if c.starts_with(" WIPE_END") || c.starts_with("WIPE_END") {
@@ -1521,6 +1534,19 @@ mod tests {
             e.total,
             base + 85.5
         );
+    }
+
+    #[test]
+    fn a_virtual_flush_line_takes_its_extruder_time_and_moves_nothing() {
+        // `;VG1 E30 F600`: 30 mm of filament at 10 mm/s, about 3 s with the extruder's ramps; the
+        // next move starts from where the head was.
+        let c = marlin();
+        let plain = estimate(b"M83\nG1 X10 F600\nG1 X20 E1\nG1 X30\n", &c, false).total;
+        let with = estimate(b"M83\nG1 X10 F600\n;VG1 E30 F600\nG1 X20 E1\nG1 X30\n", &c, false).total;
+        assert!((with - plain - 3.0).abs() < 0.1, "{with} vs {plain}");
+        // A comment of any other kind is not timed.
+        let other = estimate(b"M83\nG1 X10 F600\n;G1 E30 F600\nG1 X20 E1\nG1 X30\n", &c, false).total;
+        assert!((other - plain).abs() < 1e-9);
     }
 
     #[test]
