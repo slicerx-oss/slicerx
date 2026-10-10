@@ -54,9 +54,12 @@ const PREVIEW_RIGHT: PaneSection[] = [
   { id: 'totals', icon: 'weight', label: 'Totals' },
 ]
 
-/** The viewport controls toasts keep off: bottom bars, the top toolbar and view switch, and on a phone the layer slider. */
+/**
+ * The viewport controls toasts keep off: bottom bars, the top toolbar and view switch, and on a phone the layer slider
+ * and an open sheet, which a toast floats above rather than over.
+ */
 const OVERLAYS: OverlaySelectors = { bottom: '.hud-bl, .dock', top: '.plate-tools, .slice-look, .hud-top' }
-const PHONE_OVERLAYS: OverlaySelectors = { ...OVERLAYS, side: '.lstrip' }
+const PHONE_OVERLAYS: OverlaySelectors = { ...OVERLAYS, side: '.lstrip', cover: '.pane.sheet.sheet-open' }
 
 const PLATES_SECTION: PaneSection = { id: 'plates', icon: 'plates', label: 'Plates' }
 const DESIGN_TREE: PaneSection[] = [{ id: 'objects', icon: 'history', label: 'Model' }]
