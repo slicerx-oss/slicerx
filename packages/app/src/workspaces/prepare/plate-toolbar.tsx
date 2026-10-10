@@ -76,10 +76,11 @@ export function PlateToolbar({ layout }: { layout: LayoutSpec }) {
   return (
     <div className="plate-tools sx-overlay" role="toolbar" aria-label="Plate tools" data-placement={layout.toolbar} aria-orientation={layout.toolbar === 'left-of-viewport' ? 'vertical' : 'horizontal'}>
       {(painted ? [...PLATE_TOOLS, BRIM_TOOL] : PLATE_TOOLS).map((t) => (
-        <Button key={t.tool} variant="ghost" size="sm" icon={t.icon} aria-label={t.label} tip={t.tip} pressed={tool === t.tool} onClick={() => setTool(tool === t.tool && t.tool !== 'move' ? 'move' : t.tool)} />
+        <Button key={t.tool} variant="ghost" size="sm" icon={t.icon} aria-label={t.label} tip={t.tip} pressed={tool === t.tool} onClick={() => (tool === t.tool && t.tool !== 'move' ? setTool('move') : setTool(t.tool, true))} />
       ))}
       <span className="plate-tools-sep" aria-hidden="true" />
-      {hasSel ? <Button variant="ghost" size="sm" icon="arrow-down" aria-label="Drop to bed" tip="plate.drop" onClick={() => dropSelectedToBed()} /> : null}
+      {/* always in its place, so selecting a model never shifts the toolbar */}
+      <Button variant="ghost" size="sm" icon="arrow-down" aria-label="Drop to bed" tip="plate.drop" disabled={!hasSel} onClick={() => dropSelectedToBed()} />
       <Button variant="ghost" size="sm" icon="arrange" aria-label="Arrange all" tip="plate.arrange" disabled={count === 0} onClick={() => void arrangePlate('all')} />
       <ArrangeOptionsButton />
       <span className="plate-tools-sep" aria-hidden="true" />
