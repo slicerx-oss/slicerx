@@ -133,6 +133,12 @@ pub(crate) fn slice_range(
         Some(m) => m,
         None => session.slice_object_range(config, 0..0, progress)?,
     };
+    // The plate's top, not the top of the objects this range prints: `max_layer_z` in the end G-code and the
+    // header's `max_z_height` read it, so every range reports the whole plate's, as one range does.
+    #[allow(clippy::cast_possible_truncation, reason = "preview data is f32")]
+    {
+        out.plate_top_z = below_top as f32;
+    }
     out.layer_count = total;
     out.first_layer = layers.start;
     out.tool_count = session.tool_count();
