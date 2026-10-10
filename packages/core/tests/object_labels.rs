@@ -282,7 +282,10 @@ fn support_belongs_to_the_object_it_holds_up() {
         .filter(|m| m.label.as_deref() != Some("shelf"))
         .map(|m| m.len)
         .sum();
-    assert!(wrong < 1e-6, "{wrong} mm of the shelf's support not labelled shelf");
+    assert!(
+        wrong < 1e-6,
+        "{wrong} mm of the shelf's support not labelled shelf"
+    );
 }
 
 #[test]
