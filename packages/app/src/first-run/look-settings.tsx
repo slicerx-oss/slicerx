@@ -8,7 +8,8 @@ import { Button, Seg, SwitchRow } from '@slicerx/ui'
 import { useEffect, useState } from 'react'
 import { editionHasCad, useEdition } from '../edition'
 import { formatShortcut } from '../lib/keys'
-import { AccentGroup, AccessibilityGroup, TextGroup } from '../shell/appearance-settings'
+import { AccentGroup, AccessibilityGroup, SetRow, TextGroup } from '../shell/appearance-settings'
+import { AUTO_SLICE_DETAIL, AUTO_SLICE_MODES, autoSliceFields, autoSliceMode } from '../state/auto-slice-mode'
 import { ThemeSettingsSection } from '../shell/theme-settings'
 import { get, set, useApp } from '../state/store'
 import { openSetup, resumeSetup, useLookChoice } from './look'
@@ -116,14 +117,16 @@ export function LookSettingsSection() {
 
 export function SlicingSettingsSection() {
   const cad = useApp((s) => s.cadTools)
-  const autoSlice = useApp((s) => s.autoSlice)
+  const mode = useApp(autoSliceMode)
   const modeling = editionHasCad(useEdition())
   return (
     <section className="set-sec" aria-labelledby="slicing-h">
       <h3 id="slicing-h" className="sr-only">Slicing and modeling</h3>
       <div className="set-group">
         <h4>Slicing</h4>
-        <SwitchRow id="set-autoslice" icon="slice" label="Slice automatically" detail="Slices in the background after every edit, so time and filament are always current. Off shows a Slice button and slices only when you press it." checked={autoSlice} onChange={(v) => set({ autoSlice: v })} />
+        <SetRow id="set-autoslice" icon="slice" label="Auto slice" detail={AUTO_SLICE_DETAIL}>
+          <Seg label="Auto slice" size="sm" value={mode} onChange={(v) => set(autoSliceFields(v))} options={AUTO_SLICE_MODES.map((m) => ({ value: m.value, label: m.label, title: m.title, testId: `set-autoslice-${m.value}` }))} />
+        </SetRow>
       </div>
       <ElectricityFields />
       <div className="set-group">

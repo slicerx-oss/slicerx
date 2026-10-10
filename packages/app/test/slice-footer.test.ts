@@ -14,7 +14,7 @@ import { SliceBlock } from '../src/workspaces/prepare/prepare-panes'
 const host = { kind: 'web', capabilities: { threads: 4 } } as never
 const before = get()
 
-afterEach(() => set({ slice: before.slice, plate: before.plate, autoSlice: before.autoSlice }))
+afterEach(() => set({ slice: before.slice, plate: before.plate, autoSlice: before.autoSlice, sliceHeld: false }))
 
 function footer(compact: boolean): HTMLElement {
   const el = document.createElement('div')
@@ -35,4 +35,14 @@ describe('slice footer', () => {
       el.remove()
     })
   }
+
+  it('with a big plate held by Auto slice, Slice is the action and a quiet line says why', () => {
+    const box = { id: 'b', name: 'Box', parts: [], colors: [], transform: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1] }
+    set({ plate: [box] as never, autoSlice: true, sliceHeld: true, slice: { status: 'idle' } })
+    const el = footer(true)
+    expect(el.querySelector('[data-testid="slice-estimate-held"]')?.textContent).toBe('A big plate: it slices when you press Slice.')
+    expect(el.querySelector('[data-testid="slice-estimate-slice"]')).not.toBeNull()
+    expect(el.querySelector('[data-testid="danger-slice-print"]')).toBeNull()
+    el.remove()
+  })
 })
