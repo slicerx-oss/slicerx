@@ -7,6 +7,7 @@ import { useEffect, useMemo } from 'react'
 import { overrideCount, scopeOf, type SettingsScope } from '../../plate/scope'
 import { selectedIds, set, useApp } from '../../state/store'
 import { useSimpleGroups } from './simple-groups'
+import { usePhoneLayout } from '../../lib/phone-layout'
 import './scope.css'
 
 /** The scope Print settings edits now, and its name for the pill. */
@@ -17,16 +18,18 @@ export function useScope(): { scope: SettingsScope; name: string } {
   const part = useApp((s) => s.scopePart)
   const plate = useApp((s) => s.plate)
   const ids = useMemo(() => selectedIds({ selection, selectedIds: multi }), [selection, multi])
+  // a phone views and prints: its settings are the plate's, with no values of an object's own
+  const phone = usePhoneLayout()
   // A selection that ends puts the next one back on the plate, the default.
   useEffect(() => {
     if (!ids.length && (which !== 'plate' || part)) set({ settingsScope: 'plate', scopePart: null })
   }, [ids.length, which, part])
   return useMemo(() => {
-    const scope = which === 'objects' && ids.length ? scopeOf(ids, part) : ({ kind: 'plate' } as const)
+    const scope = which === 'objects' && ids.length && !phone ? scopeOf(ids, part) : ({ kind: 'plate' } as const)
     const first = plate.find((p) => p.id === ids[0])
     const name = scope.kind === 'part' ? scope.part : ids.length === 1 ? (first?.name ?? 'Object') : `${ids.length} objects`
     return { scope, name }
-  }, [which, ids, part, plate])
+  }, [which, ids, part, plate, phone])
 }
 
 /**
@@ -44,6 +47,9 @@ export function ScopeBar() {
     return entry ? overrideCount(s, entry, groups) : 0
   })
   const objectName = useApp((s) => s.plate.find((p) => p.id === s.selection)?.name ?? '')
+  // a phone views and prints: its settings are the plate's, so it has no pill
+  const phone = usePhoneLayout()
+  if (phone) return null
   const label = !ids ? (
     <span className="scope-label" data-testid="slice-scope-label">
       <span className="scope-name">Selection</span>

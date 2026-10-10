@@ -13,6 +13,7 @@ import { ObjectTools } from './object-tools'
 import { printBlock } from '../../plate/heimdall'
 import { exportAllPlates, exportGcode3mf, saveProject } from '../../export/actions'
 import { appName } from '../../edition'
+import { usePhoneLayout } from '../../lib/phone-layout'
 
 export const SHAPES: { shape: PrimitiveShape; label: string; icon: IconName }[] = [
   { shape: 'box', label: 'Box', icon: 'cube' },
@@ -62,15 +63,21 @@ export function ExportMenu({ open, onClose, align = 'start' }: MenuProps) {
   const unsafe = useApp(printBlock)
   const plates = useApp((s) => s.plates.length)
   const run = runner(onClose)
+  // a phone exports for the printer only; projects go to the desktop
+  const phone = usePhoneLayout()
   return (
     <Menu open={open} onClose={onClose} label="Export" align={align}>
-      <MenuItem icon="sx3mf" aside="sx3mf" data-testid="export-save-project" onClick={() => run(() => saveProject(host))}>
-        Save project
-      </MenuItem>
-      <MenuItem icon="lock" aside="sxlock" data-testid="export-locked-project" onClick={() => run(() => import('../../export/locked').then((m) => m.exportLockedProject(host)))}>
-        Locked {appName()} project (.sxlock)
-      </MenuItem>
-      <MenuSeparator />
+      {phone ? null : (
+        <>
+          <MenuItem icon="sx3mf" aside="sx3mf" data-testid="export-save-project" onClick={() => run(() => saveProject(host))}>
+            Save project
+          </MenuItem>
+          <MenuItem icon="lock" aside="sxlock" data-testid="export-locked-project" onClick={() => run(() => import('../../export/locked').then((m) => m.exportLockedProject(host)))}>
+            Locked {appName()} project (.sxlock)
+          </MenuItem>
+          <MenuSeparator />
+        </>
+      )}
       <MenuHeading>For the printer</MenuHeading>
       <MenuItem icon="send-to-printer" data-testid="export-gcode-3mf" aria-disabled={unsafe ? true : undefined} {...(unsafe ? tipAttrs({ title: 'Sliced plate as .gcode.3mf', reason: unsafe }) : {})} onClick={() => run(() => exportGcode3mf(host))}>
         Sliced plate as .gcode.3mf
