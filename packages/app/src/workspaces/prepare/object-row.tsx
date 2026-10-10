@@ -3,7 +3,7 @@
 // One object in the Objects card: a 36 px row with its thumbnail, name, part colors, a badge for settings of its own,
 // one warning icon, lock and print toggles that show on hover (and stay while on), and a chevron that opens the tree
 // of its parts and volumes. A click selects it, Cmd or Ctrl adds it, a double-click or F2 renames it in place.
-import { Button, Icon, Menu, MenuItem, SwatchRing, tipAttrs, type IconName } from '@slicerx/ui'
+import { Button, Icon, Menu, MenuItem, SwatchRing, tipAttrs, useContextMenu, type IconName } from '@slicerx/ui'
 import { lazy, Suspense, useState, type KeyboardEvent } from 'react'
 import { slotLabel } from '../../filament/rail'
 import { effectiveSlot } from '../../filament/slots'
@@ -15,7 +15,8 @@ import { Silhouette } from '../../parts'
 import { selectObject } from '../../plate/edit'
 import { moveObject, objectWarnings, renameObject, setPartSlot, toggleLock, togglePrintable, type ObjectMatch } from '../../plate/object-list'
 import { removeVolume, ROLE_LABEL } from '../../plate/volumes'
-import { selectedIds, useApp, type PlateEntry, type VolumeRole } from '../../state/store'
+import { get, selectedIds, useApp, type PlateEntry, type VolumeRole } from '../../state/store'
+import { SelectionMenu } from './selection-bar'
 
 const FitNotes = lazy(() => import('./fit-notes').then((m) => ({ default: m.FitNotes })))
 
@@ -69,6 +70,10 @@ export function ObjectRow({ entry: p, index, count, instanceOf, match, searching
     }
   }
   const slotCount = Math.max(4, slots.length)
+  // A right click, a long press or Shift+F10 on a row outside the selection selects it first, as Finder does.
+  const ctx = useContextMenu(() => {
+    if (!selectedIds(get()).includes(p.id)) selectObject(p.id, 'set')
+  })
   const order = `Position ${index + 1} of ${count}. Drag a row to reorder.`
 
   return (
@@ -95,7 +100,7 @@ export function ObjectRow({ entry: p, index, count, instanceOf, match, searching
         if (id) moveObject(id, index)
       }}
     >
-      <div className="obj-row" data-pinned={p.locked || p.printable === false ? true : undefined}>
+      <div className="obj-row" data-pinned={p.locked || p.printable === false ? true : undefined} {...(renaming ? {} : ctx.bind)}>
         {renaming ? (
           <span className="obj-h obj-renaming">
             <span className="obj-thumb">{p.thumb ? <img src={p.thumb} alt="" /> : p.parts.length ? <Silhouette parts={p.parts} /> : null}</span>
@@ -124,7 +129,7 @@ export function ObjectRow({ entry: p, index, count, instanceOf, match, searching
             data-testid="object-select"
             aria-pressed={selected}
             {...tipAttrs({ title: p.name, body: `${instanceOf ? `Instance of ${instanceOf}` : partCount(p.handle.parts.length)}, ${triangles(p.handle.triangles)}. Double-click or F2 to rename.` })}
-            onClick={(e) => selectObject(p.id, e.metaKey || e.ctrlKey || e.shiftKey)}
+            onClick={(e) => selectObject(p.id, e.shiftKey ? 'range' : e.metaKey || e.ctrlKey ? 'toggle' : 'set')}
             onDoubleClick={() => setRenaming(true)}
             onKeyDown={onKey}
           >
@@ -209,6 +214,7 @@ export function ObjectRow({ entry: p, index, count, instanceOf, match, searching
           </div>
         </div>
       ) : null}
+      <SelectionMenu at={ctx.at} onClose={ctx.close} label={p.name} />
       <Menu open={slotMenu !== null} onClose={() => setSlotMenu(null)} label="Filament" at={slotMenu?.at}>
         {Array.from({ length: slotCount }, (_, k) => {
           const s = slots[k]

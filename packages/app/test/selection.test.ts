@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
+import { clearSelection, selectObject } from '../src/plate/edit'
 import { rangeSelect, selectByFilament, selectionSummary } from '../src/plate/selection'
+import { appStore, get, selectedIds, type PlateEntry } from '../src/state/store'
 
 const order = ['a', 'b', 'c', 'd']
 
@@ -47,5 +49,40 @@ describe('what a selection holds', () => {
     expect(selectionSummary(plate, ['a', 'b'])).toEqual({ count: 2, names: ['Benchy', 'Clip'], allLocked: true, allSkipped: false })
     expect(selectionSummary(plate, ['b'])).toMatchObject({ allLocked: true, allSkipped: true })
     expect(selectionSummary(plate, [])).toEqual({ count: 0, names: [], allLocked: false, allSkipped: false })
+  })
+})
+
+describe('clicks in the object list', () => {
+  const ids = ['a', 'b', 'c', 'd', 'e']
+  beforeEach(() => appStore.setState({ plate: ids.map((id) => ({ id, name: id }) as PlateEntry), selection: null, selectedIds: [] }))
+  const picked = () => selectedIds(get())
+
+  it('selects a Shift range from the last plain or Mod click, and keeps that anchor for the next range', () => {
+    selectObject('b', 'set')
+    selectObject('d', 'range')
+    expect(picked()).toEqual(['b', 'c', 'd'])
+    selectObject('a', 'range')
+    expect(picked()).toEqual(['a', 'b'])
+    selectObject('e', 'toggle')
+    selectObject('c', 'range')
+    expect(picked()).toEqual(['c', 'd', 'e'])
+  })
+
+  it('starts a range at the primary when the selection came from elsewhere', () => {
+    selectObject('a', 'set')
+    appStore.setState({ selection: 'd', selectedIds: ['d'] })
+    selectObject('b', 'range')
+    expect(picked()).toEqual(['b', 'c', 'd'])
+  })
+
+  it('Mod toggles, true and false still mean toggle and set, and clear empties it', () => {
+    selectObject('a', false)
+    selectObject('c', true)
+    expect(picked()).toEqual(['a', 'c'])
+    selectObject('a', 'toggle')
+    expect(picked()).toEqual(['c'])
+    clearSelection()
+    expect(get().selection).toBeNull()
+    expect(picked()).toEqual([])
   })
 })

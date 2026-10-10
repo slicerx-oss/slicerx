@@ -4,7 +4,7 @@
 // viewport sends for it (found on the object's own mesh here), so the tools get exact faces and edges
 // whatever the camera shows. Everything after the pick goes through the tool panels.
 import { type Page } from '@playwright/test'
-import { expect, plateReady } from './fixtures'
+import { expect, openTransform, plateReady } from './fixtures'
 
 export type V3 = [number, number, number]
 
@@ -184,14 +184,20 @@ export async function pushTop(page: Page, objectId: string, mm: number | string)
   await expect(panel).toHaveCount(0, { timeout: 30_000 })
 }
 
-/** Moves the selected object to a spot on the bed with the Position fields. */
+/** Moves the selected object to a spot on the bed with the Position fields (in Slice, in the Transform popover). */
 export async function placeAt(page: Page, x: number, y: number): Promise<void> {
   const pos = page.getByRole('group', { name: 'Position' })
+  const popover = !(await pos.isVisible())
+  if (popover) await openTransform(page)
   for (const [axis, v] of [[/X/, x], [/Y/, y]] as const) {
     const field = pos.getByRole('textbox', { name: axis })
     await field.fill(String(v))
     await field.press('Enter')
     await field.blur()
+  }
+  if (popover) {
+    await page.keyboard.press('Escape')
+    await expect(page.locator('.selbar-transform')).toHaveCount(0)
   }
 }
 

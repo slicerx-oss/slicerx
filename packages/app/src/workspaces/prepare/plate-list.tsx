@@ -7,7 +7,7 @@ import type { LayoutSpec } from '@slicerx/contracts'
 import { Block, Button, Icon, Select, tipAttrs } from '@slicerx/ui'
 import { useMemo, useState } from 'react'
 import { resolveConfig } from '../../adapters/settings'
-import { addPlate, duplicatePlate, moveSelectedToPlate, removePlate, renamePlate, setPlateSettings, switchPlate } from '../../plate/plates'
+import { addPlate, duplicatePlate, removePlate, renamePlate, setPlateSettings, switchPlate } from '../../plate/plates'
 import { useApp, type PlateEntry, type PlateMeta, type PlateSettings } from '../../state/store'
 import { PlateThumb } from '../preview/plate-thumb'
 import { plateSequence } from '../../plate/plate-sequence'
@@ -119,8 +119,6 @@ export function PlateList({ layout }: { layout: LayoutSpec }) {
   const bed = useApp((s) => s.bed)
   const [editing, setEditing] = useState<string | null>(null)
   const slots = useSlots()
-  const hasSelection = useApp((s) => s.selection !== null)
-  const [moveOpen, setMoveOpen] = useState(false)
   const editingPlate = plates.find((p) => p.id === editing)
   const global = useGlobalSequence()
   // The SlicerX preset hides a lone plate; a second one shows the list.
@@ -157,22 +155,6 @@ export function PlateList({ layout }: { layout: LayoutSpec }) {
           Add plate
         </Button>
       </li>
-      {plates.length > 1 ? (
-        <li className="plate-move">
-          <Button size="sm" variant="ghost" icon="arrow-right" disabled={!hasSelection} aria-expanded={moveOpen} onClick={() => setMoveOpen(!moveOpen)}>
-            Move to plate
-          </Button>
-          {moveOpen ? (
-            <span className="plate-move-pop sx-overlay" role="menu" aria-label="Move the selection to">
-              {plates.filter((p) => p.id !== active).map((p) => (
-                <button key={p.id} type="button" role="menuitem" onClick={() => { moveSelectedToPlate(p.id); setMoveOpen(false) }}>
-                  {p.name}
-                </button>
-              ))}
-            </span>
-          ) : null}
-        </li>
-      ) : null}
     </ul>
   )
   const form = editingPlate ? <PlateSettingsForm key={editingPlate.id} plate={editingPlate} slots={slots} canDelete={plates.length > 1} onDone={() => setEditing(null)} /> : null

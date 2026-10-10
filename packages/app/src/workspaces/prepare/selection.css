@@ -1,0 +1,9 @@
+/* The selection bar under the object list, and the Transform popover it opens. */
+/* The glass makes the bar its own stacking context, so it sits above what follows it for its menu and popover. */
+.slice-selbar { position: relative; z-index: 2; margin-top: var(--s-2); }
+/* One row in the narrow card: the actions keep their row and the count gives way. */
+.slice-selbar .sx-selbar-actions { flex-wrap: nowrap; }
+.slice-selbar .sx-selbar-actions .sx-btn { padding-inline: 6px; }
+.slice-selbar .sx-selbar-count { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.selbar-transform { width: 320px; max-width: calc(100vw - 24px); padding: var(--s-3); }
+.selbar-transform .tf { margin-top: 0; padding-top: 0; border-top: 0; }

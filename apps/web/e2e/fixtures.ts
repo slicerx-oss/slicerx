@@ -145,6 +145,9 @@ export async function openSheet(page: Page, panel = 'slice-sidebar'): Promise<vo
 export async function closeSheet(page: Page): Promise<void> {
   const open = page.locator('.sheet-tab[aria-expanded="true"]')
   if (!(await open.count())) return
+  // A popover or a menu in the sheet (the selection bar's Transform) takes the first Escape.
+  const over = page.locator('.sx-popover, [role="menu"]')
+  for (let i = 0; i < 3 && (await over.count()); i++) await page.keyboard.press('Escape')
   await page.keyboard.press('Escape')
   await expect(open).toHaveCount(0)
   await expect.poll(() => page.locator('aside.pane.sheet').first().evaluate((el) => el.getBoundingClientRect().top >= innerHeight - 2)).toBe(true)
@@ -155,6 +158,19 @@ export async function panesSettled(page: Page): Promise<void> {
   await expect
     .poll(() => page.evaluate(() => !document.getAnimations().some((a) => a instanceof CSSTransition && a.playState === 'running' && a.effect instanceof KeyframeEffect && a.effect.target instanceof Element && a.effect.target.matches('.pane, .vp'))))
     .toBe(true)
+}
+
+/** Opens the selection bar's Transform popover (from its menu in Simple), where the number rows are. */
+export async function openTransform(page: Page): Promise<void> {
+  const pop = page.locator('.selbar-transform')
+  if (await pop.isVisible()) return
+  const button = page.getByTestId('slice-selection-transform')
+  if (await button.isVisible()) await button.click()
+  else {
+    await page.getByTestId('slice-selection-more').click()
+    await page.getByTestId('slice-ctx-transform').click()
+  }
+  await expect(pop).toBeVisible()
 }
 
 /** How many slices have finished so far. Read it before starting a slice, and pass it to `sliced`. */

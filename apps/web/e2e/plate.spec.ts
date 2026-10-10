@@ -2,7 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 // Plate tools on the plate tab: numeric transform fields, scale to size, undo and redo, tool keys.
 import { type Page } from '@playwright/test'
-import { addMenu, closeSheet, expect, openSheet, panesSettled, plateReady, renameRow, setPartFilament, sliceCount, sliced, tab, tabName, test } from './fixtures'
+import { addMenu, closeSheet, expect, openSheet, openTransform, panesSettled, plateReady, renameRow, setPartFilament, sliceCount, sliced, tab, tabName, test } from './fixtures'
 
 /**
  * The G-code the printer runs. Files for Bambu Lab printers open with the header and the full settings (hundreds
@@ -26,8 +26,9 @@ async function prepare(page: Page): Promise<void> {
 
 test('numeric fields move and scale the object, and undo puts it back', async ({ page }) => {
   await prepare(page)
-  // On a phone the object's fields are in the sidebar's sheet.
+  // On a phone the object's fields are in the sidebar's sheet; they open from the selection bar's Transform.
   await openSheet(page)
+  await openTransform(page)
   const posX = page.getByRole('group', { name: 'Position' }).getByRole('textbox', { name: /X/ })
   await expect(posX).toBeVisible()
   const before = await posX.inputValue()
@@ -49,8 +50,14 @@ test('numeric fields move and scale the object, and undo puts it back', async ({
   await page.locator('.vp').click({ position: { x: 5, y: 200 } })
   await page.getByRole('button', { name: 'Undo' }).click()
   await page.getByRole('button', { name: 'Undo' }).click()
+  await openSheet(page)
+  await openTransform(page)
   await expect(posX).toHaveValue(before)
+  await page.keyboard.press('Escape')
+  await closeSheet(page)
   await page.getByRole('button', { name: 'Redo' }).click()
+  await openSheet(page)
+  await openTransform(page)
   await expect(posX).toHaveValue('100')
 })
 
@@ -66,12 +73,14 @@ test('tool keys follow the look and feel keymap', async ({ page, isMobile }) => 
   await page.locator('body').press('m')
   await expect(toolbar.getByRole('button', { name: 'Move' })).toHaveAttribute('aria-pressed', 'true')
   // Keyboard undo works from the canvas too.
+  await openTransform(page)
   const posX = page.getByRole('group', { name: 'Position' }).getByRole('textbox', { name: /X/ })
   const before = await posX.inputValue()
   await posX.fill('90')
   await posX.press('Enter')
   await page.locator('body').click({ position: { x: 5, y: 5 } })
   await page.keyboard.press('ControlOrMeta+z')
+  await openTransform(page)
   await expect(posX).toHaveValue(before)
 })
 
@@ -80,6 +89,7 @@ test('instances, fill bed and arrange, each one undo step', async ({ page }) => 
   await openSheet(page)
   const objs = page.locator('.objs > li')
   await expect(objs).toHaveCount(1)
+  await openTransform(page)
   await page.getByRole('button', { name: 'Add an instance' }).click()
   await expect(objs).toHaveCount(2)
   await expect(page.locator('.obj-meta', { hasText: 'Instance of Layered X' })).toHaveCount(1)
@@ -114,11 +124,11 @@ test('plates: add, switch, per-plate sequence, move objects', async ({ page }) =
   await page.getByRole('button', { name: 'Done' }).click()
   await openSheet(page)
   await page.locator('.obj-name', { hasText: 'Layered X' }).click()
-  // Move to plate is on the selected object's bar over the view.
-  await closeSheet(page)
-  await page.getByRole('button', { name: 'Move to plate' }).click()
+  // Move to plate is on the selection bar under the object list.
+  await page.getByTestId('slice-selection-move-plate').click()
   await page.getByRole('menuitem', { name: 'Plate 2' }).click()
   await expect(objs).toHaveCount(0)
+  await closeSheet(page)
   await plates.locator('.plate-card', { hasText: 'Plate 2' }).click()
   await expect(objs).toHaveCount(1)
 })
@@ -679,13 +689,16 @@ test('the object list reorders by drag and by buttons, and a locked object stays
   await rows.nth(0).locator('.obj-row').first().hover()
   await rows.nth(0).getByRole('button', { name: 'Lock Second' }).click()
   await rows.nth(0).locator('.obj-h').click()
+  await openTransform(page)
   const posX = page.getByRole('group', { name: 'Position' }).getByRole('textbox', { name: /X/ })
   const before = await posX.inputValue()
   await posX.fill('30')
   await posX.press('Enter')
   await expect(page.getByText(/Second is locked/)).toBeVisible()
   await expect(posX).toHaveValue(before)
+  await page.keyboard.press('Escape')
   await rows.nth(0).getByRole('button', { name: 'Unlock Second' }).click()
+  await openTransform(page)
   await posX.fill('30')
   await posX.press('Enter')
   await expect(posX).toHaveValue('30')
