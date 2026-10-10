@@ -28,6 +28,14 @@ export interface ProfileDetail extends ProfileSummary {
 
 const STOCK_FILAMENT = 'stock-filament:'
 
+/**
+ * A fresh SlicerX plate's process: the Standard preset (0.20 mm) with sleipnir (variable layer height, Quality) and
+ * aegis walls. The default when a slice names no process. sx plans sleipnir's layers itself in a coming release;
+ * until then a slice through this server prints at one layer height.
+ */
+export const SLICERX_DEFAULT_PROCESS = 'process:slicerx-default'
+const DEFAULT_PROCESS_KEYS = { smart_layer: 'quality', wall_generator: 'aegis' } as const
+
 /** `stock-filament:BBL/Bambu PLA Basic @BBL A1` into its vendor folder, product and printer variant. */
 function stockParts(id: string): { vendor: string; family: string; variant?: string } | undefined {
   const rest = id.slice(STOCK_FILAMENT.length)
@@ -67,6 +75,7 @@ export class ProfileCatalog {
       if (e.kind === 'printer') out.push({ id: `printer:${e.id}`, name: e.name, section: 'printer', source: 'knowledge', ...(typeof e.data['vendor'] === 'string' ? { vendor: e.data['vendor'] } : {}) })
       if (e.kind === 'filament') out.push({ id: `filament:${e.id}`, name: e.name, section: 'filament', source: 'knowledge' })
     }
+    out.push({ id: SLICERX_DEFAULT_PROCESS, name: 'SlicerX default (Standard 0.20 mm, sleipnir, aegis walls)', section: 'process', source: 'slicerx' })
     for (const goal of Object.keys(EASY_GOALS) as EasyGoal[]) out.push({ id: `intent:${goal}`, name: `${goal[0]?.toUpperCase() ?? ''}${goal.slice(1)} (Easy goal)`, section: 'process', source: 'intent' })
     for (const p of listPrinterProfiles()) out.push({ id: `machine:${p.id}`, name: `${p.vendor} ${p.model}`, section: 'printer', source: 'slicerx', vendor: p.vendor })
     for (const t of listProcessPresets()) out.push({ id: `process:${t.id}`, name: t.label, section: 'process', source: 'slicerx' })
@@ -119,6 +128,10 @@ export class ProfileCatalog {
       const file = parts ? this.vendors.get(parts.vendor) : undefined
       const preset = parts && file ? resolveFilamentPreset(file, parts.family, parts.variant) : undefined
       return preset ? { ...summary, config: preset.config as unknown as Record<string, SettingValue>, chain: [preset.name], unknown_keys: Object.keys(preset.extras).sort() } : undefined
+    }
+    if (summary.id === SLICERX_DEFAULT_PROCESS) {
+      const config = processConfig('standard')
+      return config ? { ...summary, config: { ...(config as unknown as Record<string, SettingValue>), ...DEFAULT_PROCESS_KEYS }, chain: ['Standard', summary.name], unknown_keys: [] } : undefined
     }
     if (kind === 'process') {
       const config = processConfig(id)
