@@ -64,3 +64,11 @@ it('words the heading by who asked', () => {
   expect(headingFor({ hostName: 'Mac', source: 'pair', requestedBy: 'Sam iPad' })).toBe('Sam iPad asks Mac')
   expect(headingFor({ hostName: 'Mac', source: 'host' })).toBe('Mac needs your approval')
 })
+
+it('shows how a request answered elsewhere went, without its buttons', async () => {
+  await render(<ComputerApprovalSheet pending={[item('a', 'Start Benchy on Bay 1?', { answered: 'Approved in SlicerX.' })]} onSettled={jest.fn()} now={() => NOW} />)
+  expect(screen.getByTestId('approval-answered')).toBeTruthy()
+  expect(screen.getByText('Approved in SlicerX.')).toBeTruthy()
+  expect(screen.queryByTestId('approval-approve')).toBeNull()
+  expect(screen.queryByTestId('approval-deny')).toBeNull()
+})

@@ -13,12 +13,16 @@ import { t } from './theme'
 export interface PendingComputerApproval {
   id: string
   hostName: string
+  /** The paired computer that asked. */
+  pairingId?: string | undefined
   request: ApprovalRequest
   source: 'pilot' | 'pair' | 'host'
   requestedBy?: string | undefined
   blocked?: string | undefined
   /** A G-code line the hub checked, shown whole in a monospace font. */
   code?: string | undefined
+  /** Answered somewhere else: the card shows this note instead of its buttons. */
+  answered?: string | undefined
   decide: (decision: 'approve' | 'deny', opts?: { bedClear?: boolean }) => Promise<void>
 }
 
@@ -78,6 +82,7 @@ export function ComputerApprovalSheet({ pending, onSettled, now = Date.now }: Co
           requestedBy={a.source === 'pilot' ? a.requestedBy : undefined}
           blocked={a.blocked}
           code={a.code}
+          answered={a.answered}
           now={now}
           onApprove={async (r, o) => {
             await a.decide('approve', o)
