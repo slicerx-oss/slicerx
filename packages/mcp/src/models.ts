@@ -40,6 +40,7 @@ export const ERROR_CODES = [
   'preflight_blocked',
   'project_gcode_review',
   'sequence_clearance',
+  'collision',
   'not_configured',
   'auth_failed',
   'not_invited',

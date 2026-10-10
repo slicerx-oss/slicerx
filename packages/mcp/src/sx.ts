@@ -7,6 +7,7 @@ import { spawn } from 'node:child_process'
 import { accessSync, constants, mkdirSync, writeFileSync } from 'node:fs'
 import { basename, delimiter, extname, join } from 'node:path'
 import type { SettingValue } from '@slicerx/contracts'
+import { collisionError } from './collide'
 import { ToolInputError } from './models'
 import type { SlicerBackend, SliceSummary } from './slicer'
 import { formatDuration } from './slicer'
@@ -145,11 +146,14 @@ export function createSxSlicer(bin: string, timeoutMs = 10 * 60_000): SlicerBack
       }
       const requestPath = join(job.outDir, 'request.json')
       writeFileSync(requestPath, JSON.stringify(request))
-      const { code, stdout, stderr } = await run(bin, ['slice', '--request', requestPath, '--out-dir', job.outDir], timeoutMs)
+      const { code, stdout, stderr } = await run(bin, ['slice', '--request', requestPath, '--out-dir', job.outDir, ...(job.allowCollisions ? ['--allow-collisions'] : [])], timeoutMs)
       if (code !== 0) {
         const why = stderr.trim().split('\n').slice(-3).join(' ') || 'no error output'
+        // Collisions come back as their own code, in words for a person and with the objects and layers as details.
+        const collided = code === 3 ? collisionError(why, objects.map((o) => o.name)) : undefined
+        if (collided) throw collided
         // Exit codes: 1 slicing failed, 2 usage, 3 invalid input (docs/embedding.md).
-        throw new ToolInputError(`sx exited with code ${code}: ${why}`, /no plate \d+/.test(why) ? 'no_such_plate' : /safety preflight/.test(why) ? 'preflight_blocked' : /printing by object is not safe|Paths cross: |A print path enters /.test(why) ? 'sequence_clearance' : code === 3 ? 'invalid_model' : 'slice_failed')
+        throw new ToolInputError(`sx exited with code ${code}: ${why}`, /no plate \d+/.test(why) ? 'no_such_plate' : /safety preflight/.test(why) ? 'preflight_blocked' : code === 3 ? 'invalid_model' : 'slice_failed')
       }
       const out = JSON.parse(stdout.trim()) as {
         layerCount?: number

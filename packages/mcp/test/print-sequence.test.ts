@@ -282,10 +282,29 @@ describe.skipIf(!existsSync(sxBin))('print by object with the real sx CLI', () =
       const e = data<Err>(r).error
       expect(e.code).toBe('sequence_clearance')
       expect(e.message).toMatch(c.says)
-      expect(e.message).toMatch(/printing by object is not safe/)
+      expect(e.message).toMatch(/printing by object is not safe/i)
+      expect(e.message).not.toMatch(/--allow-collisions/)
       // The estimate refuses the same plate, and by layer it slices.
       expect(data<Err>(await h.call('slicerx_estimate_file', { model: file, profiles: c.profiles, overrides: { print_sequence: 'by object', ...c.overrides } })).error.code).toBe('sequence_clearance')
       expect((await h.call('slicerx_estimate_file', { model: file, profiles: c.profiles })).isError).toBeFalsy()
     }
+  })
+
+  it('refuses a path into a keep-out zone with collision, in words for a person, and slices it with allow_collisions', async () => {
+    const h = await connect({ engine: 'sx', sxBin })
+    const file = project(join(h.dir, 'keep-out.3mf'), [{ name: 'Cube A', x: 128, y: 128, w: 20, d: 20, h: 8 }])
+    // an A1 style nozzle wrap check corner over the cube
+    const overrides = { head_wrap_detect_zone: ['0x0', '256x0', '256x256', '0x256'] }
+    const r = await h.call('slicerx_slice_file', { model: file, profiles: A1, overrides })
+    expect(r.isError, text(r)).toBe(true)
+    const e = data<Err & { error: { details?: { collisions?: { kind: string; object?: string }[]; allow_collisions?: boolean } } }>(r).error
+    expect(e.code).toBe('collision')
+    // sx names a project sliced from its file after the file
+    expect(e.message).toMatch(/^Keep-out\.3mf prints into the nozzle wrap check corner on layers? 1/)
+    expect(e.message).not.toMatch(/--allow-collisions|sx exited|sx slice/)
+    expect(e.details?.collisions?.[0]).toMatchObject({ kind: 'keep_out', zone: 'the nozzle wrap check corner', object: 'keep-out.3mf' })
+    expect(e.details?.allow_collisions).toBe(true)
+    const ok = await h.call('slicerx_slice_file', { model: file, profiles: A1, overrides, allow_collisions: true })
+    expect(ok.isError, text(ok)).toBeFalsy()
   })
 })
