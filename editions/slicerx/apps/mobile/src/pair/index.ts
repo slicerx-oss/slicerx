@@ -12,9 +12,9 @@ import type { PairedCamera } from '../camera/feed'
 import type { PushRegistrar } from '../notify/push'
 import type { JoinRequestView, PairedHostView, PairingScreenProps, PairingStage } from '../screens/pairing-screen'
 import { lazyCamera, lazyPush } from './lazy'
-import { pairService, type ComputerApproval, type HostState, type PairService } from './service'
+import { pairService, type ComputerApproval, type ComputerResolved, type HostState, type PairService } from './service'
 
-export type { ComputerApproval } from './service'
+export type { ComputerApproval, ComputerResolved } from './service'
 export { sendSlice, sliceOnComputer, type ComputerSliceOutcome } from './computer'
 export type PairingController = Omit<PairingScreenProps, 'onBack' | 'now'>
 
@@ -227,4 +227,22 @@ export function watchComputerApprovals(pocket: PocketHost, cb: (a: ComputerAppro
     live = false
     stop()
   }
+}
+
+/** Requests a paired computer reports answered, wherever they were answered. */
+export function watchResolvedApprovals(pocket: PocketHost, cb: (r: ComputerResolved) => void): () => void {
+  let stop = () => undefined as void
+  let live = true
+  void pairService(pocket).then((svc) => {
+    if (live) stop = svc.onResolved(cb)
+  })
+  return () => {
+    live = false
+    stop()
+  }
+}
+
+/** The ids of the requests a paired computer still lists for this phone. Rejects when it cannot be reached. */
+export async function openComputerApprovals(pocket: PocketHost, pairingId: string): Promise<string[]> {
+  return (await pairService(pocket)).openApprovals(pairingId)
 }
