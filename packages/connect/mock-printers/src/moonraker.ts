@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // Moonraker HTTP API fake: https://moonraker.readthedocs.io/en/latest/web_api/
+// The Snapmaker U1 profile is this fake with the U1's identity (packages/connect/docs/snapmaker.md) and one webcam
+// in Moonraker's webcam list shape (the web API doc's webcam section).
 import { createHash } from 'node:crypto'
-import { JPEG, MockError, type MockMachine } from './machine.ts'
-import { listen, mjpeg, readFilePart, type Handler } from './http-util.ts'
+import { MockError, type MockMachine } from './machine.ts'
+import { listen, mjpeg, offlineGate, readFilePart, type Handler } from './http-util.ts'
 
 export function moonrakerStatus(m: MockMachine): Record<string, unknown> {
   const stats: Record<string, string> = { idle: 'standby', printing: 'printing', paused: 'paused', finished: 'complete', error: 'error', preparing: 'printing', offline: 'standby' }
@@ -53,7 +55,7 @@ function objectNames(m: MockMachine, c: MoonrakerControl): string[] {
 }
 
 /** The objects only a QIDI printer or a U1 has: a QIDI Box with two spools in, the U1's four toolheads. */
-function variantStatus(c: MoonrakerControl): Record<string, unknown> {
+function variantStatus(c: MoonrakerControl, m: MockMachine): Record<string, unknown> {
   if (c.variant === 'qidi') {
     return {
       save_variables: { variables: { box_count: 1, filament_slot0: 1, color_slot0: 2, filament_slot1: 3, color_slot1: 1 } },
@@ -64,15 +66,22 @@ function variantStatus(c: MoonrakerControl): Record<string, unknown> {
     }
   }
   if (c.variant === 'u1') {
-    return { print_task_config: { filament_exist: [true, true, false, true], filament_type: ['PLA', 'PETG', '', 'PLA'], filament_sub_type: ['SnapSpeed', 'NONE', '', 'Matte'], filament_color_rgba: ['FF0000FF', '00FF00FF', '', '000000FF'], filament_vendor: ['Snapmaker', 'Generic', '', 'Generic'] } }
+    // A runout empties the first toolhead.
+    return { print_task_config: { filament_exist: [!m.faults.has('runout'), true, false, true], filament_type: ['PLA', 'PETG', '', 'PLA'], filament_sub_type: ['SnapSpeed', 'NONE', '', 'Matte'], filament_color_rgba: ['FF0000FF', '00FF00FF', '', '000000FF'], filament_vendor: ['Snapmaker', 'Generic', '', 'Generic'] } }
   }
   return {}
 }
 
-export async function startMoonraker(m: MockMachine, opts: { apiKey?: string; forceLogins?: boolean } = {}) {
+/**
+ * `variant` starts the fake as that printer. `webcam` lists one webcam whatever the fixture says, for the U1
+ * profile, whose faults it also turns on: a runout pauses the print and empties the first toolhead, the door is
+ * only logged (no door object is known), and offline refuses connections until cleared.
+ */
+export async function startMoonraker(m: MockMachine, opts: { apiKey?: string; forceLogins?: boolean; variant?: MoonrakerControl['variant']; webcam?: boolean } = {}) {
   let port = 0
   let issued = 0
-  const control: MoonrakerControl = { klippy: 'ready', message: '', tokens: new Set(), refresh: new Set() }
+  const control: MoonrakerControl = { klippy: 'ready', message: '', tokens: new Set(), refresh: new Set(), ...(opts.variant ? { variant: opts.variant } : {}) }
+  if (opts.webcam) m.faultProfile = { door: false }
   const unauthorized = { status: 401, json: { error: { code: 401, message: 'Unauthorized' } } }
   const handler: Handler = async (req) => {
     // Open to everyone, as in Moonraker: what sign-in the server wants, and the user login.
@@ -105,13 +114,17 @@ export async function startMoonraker(m: MockMachine, opts: { apiKey?: string; fo
     if (p === '/server/files/config/officiall_filas_list.cfg' && control.variant === 'qidi') return { body: Buffer.from('[colordict]\n1 = FFFFFFFF\n2 = 0000FFFF\n\n[fila1]\nfilament = PLA Rapido\n[fila3]\nfilament = PETG Tough\n'), type: 'text/plain' }
     if (p === '/server/webcams/list') {
       m.log.push('webcams list')
+      if (opts.webcam) {
+        return { json: { result: { webcams: [{ name: 'U1 Camera', enabled: true, service: 'mjpegstreamer', snapshot_url: `http://127.0.0.1:${port}/webcam/snapshot`, stream_url: `http://127.0.0.1:${port}/webcam/stream`, flip_horizontal: false, flip_vertical: false, rotation: 0, aspect_ratio: '16:9' }] } } }
+      }
       return { json: { result: { webcams: m.fx.cameraAvailable ? [{ name: 'disabled', enabled: false, service: 'mjpegstreamer', stream_url: '/nowhere/stream', snapshot_url: '/nowhere/snapshot' },
         { name: 'cam', snapshot_url: `http://127.0.0.1:${port}/webcam/snapshot`, stream_url: `http://127.0.0.1:${port}/webcam/stream`, flip_horizontal: true, rotation: 180 },
         { name: 'crowsnest-webrtc', service: 'webrtc-camerastreamer', stream_url: `http://127.0.0.1:${port}/webcam/webrtc` },
         { name: 'mediamtx', service: 'webrtc-mediamtx', stream_url: `http://127.0.0.1:${port}/webcam/whep` }] : [] } } }
     }
-    if (p === '/webcam/snapshot') return { body: JPEG, type: 'image/jpeg' }
-    if (p === '/webcam/stream') return { stream: mjpeg(JPEG) }
+    // The picture follows `POST /camera`: the placeholder until a test picks another.
+    if (p === '/webcam/snapshot') return { body: m.frame(), type: 'image/jpeg' }
+    if (p === '/webcam/stream') return { stream: mjpeg(() => m.frame()) }
     // WebRTC signaling. Each route checks the request format its real counterpart expects and answers
     // with a marker so a test can tell which one it reached.
     const answer = (route: string) => `v=0\r\no=- 1 1 IN IP4 127.0.0.1\r\ns=mock\r\nt=0 0\r\na=sx-mock-answer:${route}\r\nm=video 9 UDP/TLS/RTP/SAVPF 96\r\n`
@@ -133,7 +146,7 @@ export async function startMoonraker(m: MockMachine, opts: { apiKey?: string; fo
     }
     if (p === '/printer/objects/query') {
       if (m.state === 'offline' || control.klippy === 'startup') return { status: 503, json: { error: 'not ready' } }
-      const status: Record<string, unknown> = { ...moonrakerStatus(m), ...variantStatus(control), webhooks: { state: control.klippy, state_message: control.message || 'Printer is ready' } }
+      const status: Record<string, unknown> = { ...moonrakerStatus(m), ...variantStatus(control, m), webhooks: { state: control.klippy, state_message: control.message || 'Printer is ready' } }
       // The parts of Klipper's config the setup reads: one 0.4 mm nozzle per extruder.
       if (req.query.has('configfile')) status.configfile = { settings: { printer: { kinematics: 'corexy', max_velocity: 500, max_accel: 10000 }, ...Object.fromEntries(Array.from({ length: m.fx.nozzleCount }, (_, i) => [i === 0 ? 'extruder' : `extruder${i}`, { nozzle_diameter: 0.4 }])) } }
       if (req.query.has('toolhead')) status.toolhead = { position: [...m.position, 0], homed_axes: m.homed, axis_minimum: [...m.axisMin, 0], axis_maximum: [...m.axisMax, 0] }
@@ -170,5 +183,9 @@ export async function startMoonraker(m: MockMachine, opts: { apiKey?: string; fo
   }
   const { server, port: bound } = await listen(handler)
   port = bound
+  if (opts.webcam) {
+    const gate = offlineGate(server, () => m.faults.has('offline'))
+    m.onChange(() => { if (m.faults.has('offline')) gate.dropAll() })
+  }
   return { server, port, control }
 }
