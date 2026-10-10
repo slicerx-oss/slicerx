@@ -30,8 +30,8 @@ const STOCK_FILAMENT = 'stock-filament:'
 
 /**
  * A fresh SlicerX plate's process: the Standard preset (0.20 mm) with sleipnir (variable layer height, Quality) and
- * aegis walls. The default when a slice names no process. sx plans sleipnir's layers itself in a coming release;
- * until then a slice through this server prints at one layer height.
+ * aegis walls. The default when a slice names no process. sx plans sleipnir's layers itself, with the planner the
+ * app uses, so a slice through this server gets the app's layers.
  */
 export const SLICERX_DEFAULT_PROCESS = 'process:slicerx-default'
 const DEFAULT_PROCESS_KEYS = { smart_layer: 'quality', wall_generator: 'aegis' } as const
