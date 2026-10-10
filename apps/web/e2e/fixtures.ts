@@ -71,9 +71,11 @@ export const test = base.extend<object, { graphics: void }>({
   },
   page: async ({ page }, use) => {
     // A reload can find the autosave of a plate a test never saved and offer it back before the reference plate
-    // loads. No spec tests that offer, so it is dismissed wherever it shows up.
+    // loads. No spec tests that offer, so it is dismissed wherever it shows up. The handler runs in the middle of a
+    // spec's step, so it leaves the pointer where the spec put it: a click would move it onto Discard, and a spec that
+    // hovers a control and then presses a key (the ? tip) would find nothing under the pointer.
     await page.addLocatorHandler(page.getByRole('dialog', { name: 'Restore unsaved work?' }), async (dialog) => {
-      await dialog.getByRole('button', { name: 'Discard' }).click()
+      await dialog.getByRole('button', { name: 'Discard' }).dispatchEvent('click')
     })
     // A page that goes to the app or reloads it has the app up, with the slicer loaded, before the spec goes on.
     const goto = page.goto.bind(page)
