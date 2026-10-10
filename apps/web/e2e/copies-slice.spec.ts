@@ -14,7 +14,8 @@ test('four arranged copies slice to an estimate', async ({ page, isMobile }) => 
     if (sessionStorage.getItem('sx-e2e')) return
     sessionStorage.setItem('sx-e2e', '1')
     localStorage.setItem('slicerx.debug', '1')
-    localStorage.setItem('slicerx.prefs.v1', JSON.stringify({ workspace: 'prepare', settingsMode: 'advanced', pilot: { mode: 'off' } }))
+    // Always: Auto would hold a plate whose last slice took as long as a test runner's.
+    localStorage.setItem('slicerx.prefs.v1', JSON.stringify({ workspace: 'prepare', settingsMode: 'advanced', pilot: { mode: 'off' }, autoSliceBySize: false }))
   })
   await page.goto('./')
   await plateReady(page)
