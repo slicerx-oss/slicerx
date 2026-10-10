@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ApprovalHost, Host, PrinterHost } from '@slicerx/contracts'
 import { bridgeConnector, connectBridge, disconnectBridge, resetBridge, setBridgeConnector, type ConnectedBridge } from '../src/link/bridge'
 import { setupHostFor } from '../src/first-run/setup-host'
-import { get } from '../src/state/store'
+import { get, set } from '../src/state/store'
 
 const demoPrinters = { id: 'demo' } as unknown as PrinterHost
 const demoApprovals = { id: 'demo-approvals' } as unknown as ApprovalHost
@@ -70,6 +70,28 @@ describe('printer bridge', () => {
     expect(await connectBridge(h, 'WRONG123')).toBe(false)
     expect(get().bridgeStatus).toEqual({ state: 'error', message: 'That pairing code was not accepted.' })
     expect(h.printers).toBe(demoPrinters)
+  })
+
+  it('has the camera guard listening once it says Connected, so a trip right after brings Printers up', async () => {
+    let onGuard: ((t: unknown) => void) | null = null
+    const bridge = fakeBridge([])
+    Object.assign(bridge.printers, {
+      list: async () => [],
+      watch: {
+        onGuard: (cb: (t: unknown) => void) => ((onGuard = cb), () => (onGuard = null)),
+        guardState: async () => ({ trips: {}, off: [], plates: {}, detector: true }),
+      },
+    })
+    setBridgeConnector({ automatic: false, connect: async () => bridge })
+    set({ workspace: 'prepare' })
+    const h = host()
+    expect(await connectBridge(h, 'ABCD1234')).toBe(true)
+    expect(get().bridgeStatus.state).toBe('on')
+    expect(onGuard).not.toBeNull()
+    onGuard!({ printerId: 'a1', kind: 'hand', state: 'paused', at: '2026-10-10T00:00:00.000Z' })
+    expect(get().workspace).toBe('printers')
+    disconnectBridge(h)
+    expect(onGuard).toBeNull()
   })
 
   it('does nothing without a connector', async () => {
