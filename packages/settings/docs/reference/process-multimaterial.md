@@ -313,7 +313,7 @@ Puts the prime tower on a free spot next to the objects, clear of the printer's 
 
 ### `wipe_tower_bridging`
 
-**Wipe tower bridging**
+**Prime tower bridging**
 
 - Type: number
 - Unit: mm
@@ -324,7 +324,7 @@ Puts the prime tower on a free spot next to the objects, clear of the printer's 
 
 ### `wipe_tower_cone_angle`
 
-**Wipe tower cone angle**
+**Prime tower cone angle**
 
 - Type: number
 - Unit: degrees
@@ -337,7 +337,7 @@ Puts the prime tower on a free spot next to the objects, clear of the printer's 
 
 ### `wipe_tower_extra_flow`
 
-**Wipe tower extra flow**
+**Prime tower extra flow**
 
 - Type: percent (a number, 15 means 15%)
 - Unit: %
@@ -350,7 +350,7 @@ Puts the prime tower on a free spot next to the objects, clear of the printer's 
 
 ### `wipe_tower_extra_rib_length`
 
-**Wipe tower extra rib length**
+**Prime tower extra rib length**
 
 - Type: number
 - Unit: mm
@@ -362,7 +362,7 @@ Puts the prime tower on a free spot next to the objects, clear of the printer's 
 
 ### `wipe_tower_extra_spacing`
 
-**Wipe tower extra spacing**
+**Prime tower extra spacing**
 
 - Type: percent (a number, 15 means 15%)
 - Unit: %
@@ -375,7 +375,7 @@ Puts the prime tower on a free spot next to the objects, clear of the printer's 
 
 ### `wipe_tower_filament`
 
-**Wipe tower filament**
+**Prime tower filament**
 
 - Type: integer
 - Default: 0
@@ -386,7 +386,7 @@ Puts the prime tower on a free spot next to the objects, clear of the printer's 
 
 ### `wipe_tower_fillet_wall`
 
-**Wipe tower fillet wall**
+**Prime tower fillet wall**
 
 - Type: boolean
 - Default: on
@@ -396,7 +396,7 @@ Puts the prime tower on a free spot next to the objects, clear of the printer's 
 
 ### `wipe_tower_max_purge_speed`
 
-**Wipe tower max purge speed**
+**Prime tower max purge speed**
 
 - Type: number
 - Unit: mm/s
@@ -409,7 +409,7 @@ Puts the prime tower on a free spot next to the objects, clear of the printer's 
 
 ### `wipe_tower_no_sparse_layers`
 
-**Wipe tower no sparse layers**
+**Prime tower no sparse layers**
 
 - Type: boolean
 - Default: off
@@ -420,7 +420,7 @@ Puts the prime tower on a free spot next to the objects, clear of the printer's 
 
 ### `wipe_tower_rib_width`
 
-**Wipe tower rib width**
+**Prime tower rib width**
 
 - Type: number
 - Unit: mm
@@ -432,7 +432,7 @@ Puts the prime tower on a free spot next to the objects, clear of the printer's 
 
 ### `wipe_tower_rotation_angle`
 
-**Rotation of the wipe tower**
+**Rotation of the prime tower**
 
 - Type: number
 - Unit: degrees
@@ -444,7 +444,7 @@ Puts the prime tower on a free spot next to the objects, clear of the printer's 
 
 ### `wipe_tower_sparse_layers_combination`
 
-**Wipe tower sparse layers combination**
+**Prime tower sparse layers combination**
 
 - Type: boolean
 - Default: off
@@ -454,7 +454,7 @@ Puts the prime tower on a free spot next to the objects, clear of the printer's 
 
 ### `wipe_tower_wall_type`
 
-**Wipe tower wall type**
+**Prime tower wall type**
 
 - Type: enum
 - Default: "rectangle"

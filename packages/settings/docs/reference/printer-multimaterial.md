@@ -176,7 +176,7 @@
 
 ### `tool_change_on_wipe_tower`
 
-**Change tools on the wipe tower**
+**Change tools on the prime tower**
 
 - Type: boolean
 - Default: off
@@ -198,7 +198,7 @@ How far under its printing temperature a print core may start printing after a t
 
 ### `wait_for_temp_on_wipe_tower`
 
-**Wait for temp on wipe tower**
+**Wait for temp on prime tower**
 
 - Type: boolean
 - Default: off

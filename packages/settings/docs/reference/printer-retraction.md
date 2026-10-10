@@ -251,7 +251,7 @@ How fast the filament pulls back by the tool change retraction length, beyond th
 
 ### `wipe_tower_type`
 
-**Wipe tower type**
+**Prime tower type**
 
 - Type: enum
 - Default: "type1"

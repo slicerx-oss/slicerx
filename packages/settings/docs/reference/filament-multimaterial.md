@@ -60,7 +60,7 @@
 
 ### `filament_minimal_purge_on_wipe_tower`
 
-**Filament minimal purge on wipe tower**
+**Filament minimal purge on prime tower**
 
 - Type: list of numbers, one per extruder
 - Unit: mm3
