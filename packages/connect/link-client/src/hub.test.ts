@@ -257,6 +257,21 @@ test('agent work is registered with the card and its outcome arrives as approval
   assert.equal(h.sent().find((s) => s.method === 'pair' && s.params['confirm'])?.params['role'], 'agent')
 })
 
+test('a card answered by another client arrives as approval.resolved', async () => {
+  const real = await hubKeys()
+  const h = hubWith(real, (method, _params, sock) => {
+    if (method === 'approvals.pending') {
+      setTimeout(() => sock.event({ event: 'approval.resolved', data: { requestId: 'p-1', decision: 'granted', via: 'partner', by: 'LayerMate' } }), 5)
+      return []
+    }
+    return {}
+  })
+  const host = await connectLink({ code: 'AGNT-CODE', role: 'agent', WebSocket: h.WS })
+  const got = new Promise((resolve) => host.approvals.onResolved(resolve))
+  await host.approvals.pending()
+  assert.deepEqual(await got, { requestId: 'p-1', decision: 'granted', via: 'partner', by: 'LayerMate' })
+})
+
 test('the app makes an agent key through clients.create', async () => {
   const real = await hubKeys()
   const h = hubWith(real, (method, params) => {

@@ -570,6 +570,7 @@ async fn decide(b: &Arc<Bridge>, ctx: &Arc<SessCtx>, pairing: &RemotePairing, p:
         let out = crate::hub_rpc::grant(b, broker, &json!({ "requestId": id, "bedClear": false }))
             .await
             .map_err(|e| from_rpc(&e))?;
+        crate::hub_rpc::resolved(b, &id, true, "phone", None);
         if let Some((owner, work)) = b.agent_work.take(&id) {
             let token = serde_json::from_value(out).map_err(|_| err("failed", "the broker gave no token"))?;
             crate::agent_work::run(b, id.clone(), work, token, owner);
@@ -577,6 +578,7 @@ async fn decide(b: &Arc<Bridge>, ctx: &Arc<SessCtx>, pairing: &RemotePairing, p:
     } else {
         crate::hub_rpc::declined(b, &id);
         broker.deny(&id).map_err(|e| err("bad_request", e.to_string()))?;
+        crate::hub_rpc::resolved(b, &id, false, "phone", None);
         let _ = b.agent_work.take(&id);
         if let Some(owner) = lock(&b.card_owners).get(&id).copied() {
             b.hub
