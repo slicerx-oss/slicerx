@@ -6,4 +6,3 @@
 # test name | owner | added (YYYY-MM-DD) | deadline (YYYY-MM-DD) | issue | why
 Model: the tree, the tool pane and the timeline shut and open from their tabs and keys | test-program | 2026-10-09 | 2026-10-10 | https://github.com/slicerx-oss/slicerx/issues/267 | a pane not visible in time on a CI runner (e2e/edge-tabs.spec.ts)
 under reduced motion the plate draws at once | slice-reshape | 2026-10-09 | 2026-10-10 | https://github.com/slicerx-oss/slicerx/issues/317 | the frame recorder gets no frames from a page already still; fixed in the first-run seams branch (e2e/plate-reveal.spec.ts)
-moving an object does not rebuild the scene, with a prime tower on the plate | test-program | 2026-10-10 | 2026-10-11 | https://github.com/slicerx-oss/slicerx/issues/472 | no new current slice within 120 s after the drag on the GPU lane; passed on its retry (e2e/fit-check.spec.ts)
