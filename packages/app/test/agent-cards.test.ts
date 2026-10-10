@@ -38,6 +38,20 @@ describe('agent cards', () => {
     expect(t.lines.join(' ')).not.toContain('Safe to approve')
   })
 
+  it('names a partner app by the name the hub sends, with no AI wording on its card', () => {
+    const work = { kind: 'print' as const, printerId: 'bay-4', file: { name: 'keychain.gcode.3mf', sizeBytes: 1_000_000 } }
+    const t = describeCard(card({ partner: 'LayerMate', work, lines: ['Asked by LayerMate, a partner app', 'Ready to go.'] }), names)
+    expect(t.lines[0]).toBe('Asked by LayerMate, a partner app.')
+    expect(t.lines.some((l) => l.startsWith('File (named by LayerMate): keychain.gcode.3mf'))).toBe(true)
+    expect(t.lines.some((l) => l.startsWith('Note from LayerMate, not checked by SlicerX'))).toBe(true)
+    expect(t.lines.join(' ')).not.toMatch(/\bAI\b|MCP|agent/)
+    // The partner's own lines still never show.
+    expect(t.lines.join(' ')).not.toContain('Ready to go')
+    // A card with no hub-set partner is an AI agent's, whatever its lines claim.
+    const plain = describeCard(card({ lines: ['Asked by LayerMate, a partner app'] }), names)
+    expect(plain.lines[0]).toBe('Asked by an AI agent over MCP. It cannot approve this itself.')
+  })
+
   it('shows the file, hash and options the hub sent, and ignores work for another printer', () => {
     const work = { kind: 'print' as const, printerId: 'bay-4', file: { name: 'bracket.gcode', sizeBytes: 2_500_000, sha256: 'ab'.repeat(32) }, opts: { timelapse: true } }
     const t = describeCard(card({ work }), names)
