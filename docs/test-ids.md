@@ -229,6 +229,22 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 
 Once BamBuddy is added, printer setup offers `setup-connection-bambuddy` for the models that can use it.
 
+## Settings: Partner app and Devices
+
+| Test id | Control |
+| --- | --- |
+| `agent-partner` | The Partner app tile in Connect your AI agent (Settings, mimir) |
+| `partner-name` | The partner app's name |
+| `partner-create` | Create key |
+| `partner-made` | The result once a key is made |
+| `partner-key` | The key, shown once |
+| `partner-copy` | Copy key |
+| `partner-hide` | Hide key |
+| `devices-list` | Devices in Settings, Printer bridge: the keys the hub holds for partner apps, agents and detectors |
+| `devices-empty` | The line shown when no key is held |
+| `device-<id>` | A key's row; `<id>` is the hub's client id |
+| `device-revoke-<id>` | Revoke on that row; it also closes the connection the key has open |
+
 ## Exceptions to the danger- rule
 
 These ids carry one of the rule's words but name no destructive act, so they keep their names and the bridge may use
