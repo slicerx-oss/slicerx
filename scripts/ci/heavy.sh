@@ -7,8 +7,13 @@
 #   scripts/ci/heavy.sh <command...>          waits for a slot of the lock, runs, releases
 #   scripts/ci/heavy.sh --all <command...>    waits for every slot, for a timing run that needs the machine alone
 #   scripts/ci/heavy.sh --e2e <command...>    an e2e browser run: at most one holds a slot at a time, other jobs
-#                                              share the rest
-#   SX_HEAVY_LOCK=<dir>                        the lock (default ~/.slicerx-heavy.lock); when unset, the value in the
+#                                              share the rest; it also waits until no --gpu run holds, so a timing
+#                                              spec on the GPU lane runs with no other browser suite
+#   scripts/ci/heavy.sh --gpu <command...>    a GPU-drawn browser run: several run at once, in their own slots
+#                                              (<lock>.gpu.1 and on), never beside a --e2e or --all holder
+#   SX_HEAVY_GPU_SLOTS=<n>                     how many --gpu holders may run at once (default: the number in
+#                                              <lock>.gpu-slots, or 1 when there is none)
+#   SX_HEAVY_LOCK=<dir>                       the lock (default ~/.slicerx-heavy.lock); when unset, the value in the
 #                                              ci.env of the CI home this copy runs from ($SX_CI_HOME, or bin/..)
 #   SX_HEAVY_SLOTS=<n>                         how many holders may run at once (default: the number in <lock>.slots,
 #                                              a machine setting beside the lock, or 1 when there is none)
@@ -27,21 +32,28 @@
 # the waiters behind them, so other jobs still use the free slots. Every waiter judges the holders now and then, so one
 # that cannot does not wedge the queue.
 #
+# A --gpu holder's record says "class gpu", in one of the GPU slots, which plain waiters neither take nor count: the
+# GPU lane's suites draw on the GPU and run side by side, while agents keep their own slots. A --gpu waiter takes a GPU
+# slot only while no --e2e or --all holder holds and no --e2e or --all ticket is older than its own, so an exclusive
+# run is never starved; --gpu waiters are served in arrival order among themselves.
+#
 # Windows (Git Bash) and WSL on one machine share one lock when both name the same directory on the Windows drive,
 # for example C:\Users\<user>\.slicerx-heavy.lock (a C:\ path works on both sides). The record names the holder's
 # side, and a holder is checked on its own side: through powershell.exe for a Windows holder, through wsl.exe for a
 # WSL one. See README.md for the rules.
 set -uo pipefail
-all= e2e=
+all= e2e= gpu=
 while :; do
   case ${1:-} in
     --all) all=1; shift ;;
     --e2e) e2e=1; shift ;;
+    --gpu) gpu=1; shift ;;
     *) break ;;
   esac
 done
-[ -z "$all" ] || e2e=
-[ $# -gt 0 ] || { echo "usage: heavy.sh [--all | --e2e] <command...>" >&2; exit 2; }
+[ -z "$all" ] || { e2e=; gpu=; }
+[ -z "$e2e" ] || gpu=
+[ $# -gt 0 ] || { echo "usage: heavy.sh [--all | --e2e | --gpu] <command...>" >&2; exit 2; }
 max=${SX_HEAVY_WAIT:-0}
 poll=${SX_HEAVY_POLL:-5}
 orphan=${SX_HEAVY_ORPHAN:-60}
@@ -58,6 +70,12 @@ case $slots in '' | *[!0-9]* | 0) slots=1 ;; esac
 # The slot directories: <lock>, then <lock>.2 up to <lock>.<slots>.
 slot_dirs=("$lock")
 for ((i = 2; i <= slots; i++)); do slot_dirs+=("$lock.$i"); done
+gslots=${SX_HEAVY_GPU_SLOTS:-$(head -n 1 "$lock.gpu-slots" 2> /dev/null | tr -dc 0-9)}
+case $gslots in '' | *[!0-9]* | 0) gslots=1 ;; esac
+[ "$gslots" -le 8 ] || gslots=8
+# The GPU slot directories, for --gpu holders only: <lock>.gpu.1 up to <lock>.gpu.<gslots>.
+gpu_dirs=()
+for ((i = 1; i <= gslots; i++)); do gpu_dirs+=("$lock.gpu.$i"); done
 
 case "$(uname -s)" in
   Darwin) side=darwin ;;
@@ -151,7 +169,7 @@ mkdir -p "$q" 2> /dev/null
 # CI jobs (a self-hosted runner, or SX_HEAVY_PRIORITY=ci) queue ahead of other waiters; a holder always finishes.
 prio=1
 if [ "${SX_HEAVY_PRIORITY:-}" = ci ] || [ "${RUNNER_ENVIRONMENT:-}" = self-hosted ]; then prio=0; fi
-ticket=$q/$prio-$(date +%s)-$side-$$${all:+-all}${e2e:+-e2e}
+ticket=$q/$prio-$(date +%s)-$side-$$${all:+-all}${e2e:+-e2e}${gpu:+-gpu}
 held=()
 # Windows refuses to remove a directory another process is looking into (a waiter reading the record), and a slot
 # left empty that way would have no record to judge, so the removal is tried a few times.
@@ -170,6 +188,7 @@ mtime() { stat -c %Y "$1" 2> /dev/null || stat -f %m "$1" 2> /dev/null; }
 take() {
   mkdir "$1" 2> /dev/null || return 1
   printf 'pid %s since %s: %s\n%s\n%s' $$ "$(date '+%F %T')" "${all:+(all slots) }$cmd" "$me" "${e2e:+class e2e
+}${gpu:+class gpu
 }" > "$1/owner"
   held+=("$1")
 }
@@ -199,22 +218,58 @@ t0=$SECONDS next=0 judged=0
 while :; do
   # Our ticket, refreshed on every poll. A ticket left alone for 2 minutes is a dead waiter's, and is dropped.
   touch "$ticket" 2> /dev/null || { mkdir -p "$q" 2> /dev/null; touch "$ticket" 2> /dev/null; }
-  # e2e_held: whether another holder runs an e2e job, so no further --e2e waiter may take a slot.
-  e2e_held=
-  for d in "${slot_dirs[@]}"; do mine "$d" || ! grep -qx 'class e2e' "$d/owner" 2> /dev/null || e2e_held=1; done
-  # pos: the live tickets ahead of ours, leaving out --e2e waiters that cannot take a slot now, so a free slot is not
-  # kept from the jobs behind them. all_ahead: whether one of them, or ours, waits for every slot.
-  now=$(mtime "$ticket") pos=0 all_ahead=$all
+  # e2e_held: whether another holder runs an e2e job, so no further --e2e waiter may take a slot. excl_held: whether
+  # one runs an e2e job or holds every slot, so no --gpu waiter may take a GPU slot. gpu_held: whether another holder
+  # holds a GPU slot, so no --e2e waiter may take a slot and a --all waiter does not start.
+  e2e_held= excl_held= gpu_held=
+  for d in "${slot_dirs[@]}"; do
+    mine "$d" && continue
+    grep -qx 'class e2e' "$d/owner" 2> /dev/null && { e2e_held=1; excl_held=1; }
+    head -n 1 "$d/owner" 2> /dev/null | grep -q ': (all slots) ' && excl_held=1
+  done
+  for d in "${gpu_dirs[@]}"; do mine "$d" || [ ! -e "$d" ] || gpu_held=1; done
+  # pos: the live tickets ahead of ours, leaving out --e2e waiters that cannot take a slot now and --gpu waiters (they
+  # take GPU slots), so a free slot is not kept from the jobs behind them. all_ahead: whether one of them, or ours,
+  # waits for every slot. For a --gpu waiter, gpos counts the --gpu tickets ahead and excl_ahead whether a --e2e or
+  # --all ticket is ahead.
+  now=$(mtime "$ticket") pos=0 all_ahead=$all gpos=0 excl_ahead=
   for t in "$q"/*; do
     [ -e "$t" ] || continue
     [ "$t" = "$ticket" ] && break
     if [ -n "$now" ]; then
       m=$(mtime "$t"); [ $((now - ${m:-0})) -lt 120 ] || { rm -f "$t"; continue; }
     fi
-    case $t in *-e2e) [ -n "$e2e_held" ] && continue ;; esac
+    case $t in
+      *-gpu) gpos=$((gpos + 1)); continue ;;
+      *-e2e | *-all) excl_ahead=1 ;;
+    esac
+    case $t in *-e2e) { [ -n "$e2e_held" ] || [ -n "$gpu_held" ]; } && continue ;; esac
     pos=$((pos + 1))
     case $t in *-all) all_ahead=1 ;; esac
   done
+  if [ -n "$gpu" ]; then
+    # A --gpu waiter: the oldest --gpu tickets take the free GPU slots, while no exclusive run holds or waits ahead.
+    gfree=0
+    for d in "${gpu_dirs[@]}"; do [ -e "$d" ] || gfree=$((gfree + 1)); done
+    if [ -z "$excl_held" ] && [ -z "$excl_ahead" ] && [ "$gpos" -lt "$gfree" ]; then
+      for d in "${gpu_dirs[@]}"; do take "$d" && break 2; done
+    fi
+    freed=
+    for d in "${gpu_dirs[@]}" "${slot_dirs[@]}"; do if ! mine "$d" && judge_slot "$d"; then freed=1; fi; done
+    [ -n "$freed" ] && continue
+    waited=$((SECONDS - t0))
+    if [ "$waited" -ge "$next" ]; then
+      holders=
+      for d in "${gpu_dirs[@]}" "${slot_dirs[@]}"; do
+        [ -e "$d" ] && holders="$holders${holders:+; }$(head -n 1 "$d/owner" 2> /dev/null || echo 'holder starting')"
+      done
+      echo "heavy.sh: waiting for a GPU slot of $lock ($gslots GPU slot$([ "$gslots" = 1 ] || echo s): ${holders:-queue ahead})" >&2
+      next=$((next + 300))
+    fi
+    if [ "$max" -gt 0 ] && [ "$waited" -ge "$max" ]; then echo "heavy.sh: gave up after $max s" >&2; exit 75; fi
+    sleep "$poll"
+    continue
+  fi
   free=0
   for d in "${slot_dirs[@]}"; do [ -e "$d" ] || free=$((free + 1)); done
   # The front of the queue: as many of the oldest tickets as there are slots, or only the oldest while a --all waits.
@@ -224,8 +279,9 @@ while :; do
   if [ -n "$front" ]; then
     if [ -n "$all" ]; then
       for d in "${slot_dirs[@]}"; do mine "$d" || take "$d"; done
-      [ "${#held[@]}" = "$slots" ] && break
-    elif [ "$pos" -lt "$free" ] && { [ -z "$e2e" ] || [ -z "$e2e_held" ]; }; then
+      # The machine alone: also no GPU run left (none starts while this waits or holds).
+      [ "${#held[@]}" = "$slots" ] && [ -z "$gpu_held" ] && break
+    elif [ "$pos" -lt "$free" ] && { [ -z "$e2e" ] || { [ -z "$e2e_held" ] && [ -z "$gpu_held" ]; }; }; then
       for d in "${slot_dirs[@]}"; do take "$d" && break 2; done
     fi
     judge=1
@@ -236,7 +292,7 @@ while :; do
   fi
   if [ -n "$judge" ]; then
     judged=$SECONDS freed=
-    for d in "${slot_dirs[@]}"; do if ! mine "$d" && judge_slot "$d"; then freed=1; fi; done
+    for d in "${slot_dirs[@]}" "${gpu_dirs[@]}"; do if ! mine "$d" && judge_slot "$d"; then freed=1; fi; done
     [ -n "$freed" ] && continue
   fi
   waited=$((SECONDS - t0))
