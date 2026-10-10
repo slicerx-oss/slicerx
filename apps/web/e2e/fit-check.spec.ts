@@ -67,7 +67,8 @@ async function open(page: Page): Promise<void> {
     if (sessionStorage.getItem('sx-e2e')) return
     sessionStorage.setItem('sx-e2e', '1')
     localStorage.setItem('slicerx.debug', '1')
-    localStorage.setItem('slicerx.prefs.v1', JSON.stringify({ workspace: 'prepare', settingsMode: 'advanced', sliceLook: 'toolpaths', pilot: { mode: 'off' } }))
+    // Always: the spec is about auto slicing again after a move, which Auto may hold when a runner slices slowly.
+    localStorage.setItem('slicerx.prefs.v1', JSON.stringify({ workspace: 'prepare', settingsMode: 'advanced', sliceLook: 'toolpaths', pilot: { mode: 'off' }, autoSliceBySize: false }))
   })
   await page.goto('./')
   await plateReady(page)
