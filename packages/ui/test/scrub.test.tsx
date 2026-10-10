@@ -39,9 +39,9 @@ describe('vector field', () => {
     })
   }
 
-  it('says degrees and percent in full', () => {
+  it('shows the short unit beside the name, and says degrees and percent in full', () => {
     const rot = renderToStaticMarkup(<VectorField id="r" label="Rotation" unit="°" values={[0, 0, 90]} onCommit={noop} />)
-    expect(rot).toContain('Rotation<small>degrees</small>')
+    expect(rot).toContain('Rotation<small>°</small>')
     expect(rot).toContain('aria-label="Rotation Z, degrees"')
     expect(spokenUnit('%')).toBe('percent')
   })

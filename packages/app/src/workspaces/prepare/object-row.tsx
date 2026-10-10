@@ -69,6 +69,7 @@ export function ObjectRow({ entry: p, index, count, instanceOf, match, searching
     }
   }
   const slotCount = Math.max(4, slots.length)
+  const order = `Position ${index + 1} of ${count}. Drag a row to reorder.`
 
   return (
     <li
@@ -203,11 +204,8 @@ export function ObjectRow({ entry: p, index, count, instanceOf, match, searching
             )}
           </ul>
           <div className="obj-order">
-            <Button size="sm" variant="ghost" icon="arrow-up" aria-label={`Move ${p.name} up`} disabled={index === 0} onClick={() => moveObject(p.id, index - 1)} />
-            <Button size="sm" variant="ghost" icon="arrow-down" aria-label={`Move ${p.name} down`} disabled={index === count - 1} onClick={() => moveObject(p.id, index + 1)} />
-            <span className="sx-small sx-muted">
-              Position {index + 1} of {count}. Drag a row to reorder.
-            </span>
+            <Button size="sm" variant="ghost" icon="arrow-up" aria-label={`Move ${p.name} up`} disabled={index === 0} onClick={() => moveObject(p.id, index - 1)} tip={{ title: 'Move up', body: order }} />
+            <Button size="sm" variant="ghost" icon="arrow-down" aria-label={`Move ${p.name} down`} disabled={index === count - 1} onClick={() => moveObject(p.id, index + 1)} tip={{ title: 'Move down', body: order }} />
           </div>
         </div>
       ) : null}
