@@ -242,3 +242,44 @@ fn a_late_worker_prints_its_ranges_as_the_first_worker_does() {
     assert_ne!(first.content_hash(), bare.content_hash());
     assert_eq!(first.content_hash(), late.content_hash());
 }
+
+/// The raw parts the web code's `encodeParts` writes (`packages/app/test/parts-paint.test.ts` checks it against this
+/// file) are the bytes `Mesh::to_raw` writes for the painted cube, so a mesh the browser hands the engine has the
+/// same content hash and slices to the same G-code as the file it came from. `SX_BLESS=1` writes the file again.
+#[test]
+fn the_raw_parts_fixture_is_the_engines_own_copy() {
+    let path = format!("{}/tests/fixtures/painted-cube.sxmp", env!("CARGO_MANIFEST_DIR"));
+    let direct = Arc::new(Mesh::load(&painted_cube(SPLIT), "cube.3mf").unwrap());
+    if std::env::var_os("SX_BLESS").is_some() {
+        std::fs::write(&path, direct.to_raw()).unwrap();
+    }
+    let raw = std::fs::read(&path).unwrap();
+    assert!(
+        raw == direct.to_raw(),
+        "{path} is not the engine's raw copy of the painted cube"
+    );
+    let copy = Arc::new(Mesh::load(&raw, "cube.3mf").unwrap());
+    assert_eq!(copy.content_hash(), direct.content_hash());
+    for layer in 0..4u8 {
+        assert!(
+            copy.parts[0].paint_texts.iter().any(|t| t.0 == layer),
+            "paint layer {layer} in the fixture"
+        );
+    }
+    let req: SliceRequest = serde_json::from_value(json!({
+        "plate": { "objects": [{ "id": "a", "mesh": "x", "transform": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 100, 100, 0, 1] }] },
+        "config": { "filament_colour": ["#FF0000", "#0000FF"], "enable_prime_tower": false, "enable_support": true, "support_type": "normal(manual)", "fuzzy_skin": "none" },
+        "options": {}
+    }))
+    .unwrap();
+    let slice = |m: &Arc<Mesh>| {
+        let m = m.clone();
+        common::run_request(&req, &move |_: &str| Ok(m.clone()))
+            .unwrap()
+            .gcode
+    };
+    assert!(
+        slice(&copy) == slice(&direct),
+        "the fixture slices as the file does"
+    );
+}
