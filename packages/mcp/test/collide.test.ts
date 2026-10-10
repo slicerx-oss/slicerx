@@ -27,6 +27,11 @@ describe('sx collision refusals', () => {
     expect(g?.fixes).toEqual(['print in the order Tower, Base', 'print by layer'])
   })
 
+  it('reads a keep-out zone in the words sx uses once travels count too', () => {
+    const both = 'sx slice: A print path or travel enters the exclusion area: cube.stl on layers 2 to 9. To slice it anyway, add --allow-collisions.'
+    expect(parseCollisions(both)?.items).toEqual([{ kind: 'keep_out', zone: 'the exclusion area', object: 'cube.stl', first_layer: 2, last_layer: 9 }])
+  })
+
   it('says it for a person, with no command line flags', () => {
     const p = parseCollisions(CROSS)!
     const msg = collisionMessage(p.items, p.fixes)

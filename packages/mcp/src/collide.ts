@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// sx refuses a plate whose paths cross, enter a keep-out zone or meet the toolhead (exit code 3), in the command
-// line's words. This turns those words into an error code, a message for a person and the facts as details.
+// sx refuses a plate whose paths cross, enter a keep-out zone (print paths, and travels in newer sx) or meet the
+// toolhead (exit code 3), in the command line's words. This turns those words into an error code, a message for a person and the facts as details.
 import { ToolInputError } from './models'
 
 export type CollisionItem =
@@ -32,13 +32,13 @@ export function parseCollisions(why: string, objectNames: readonly string[] = []
   const text = why.replace(/^.*?sx slice: /s, '').replace(/\s+/g, ' ')
   const names = [...ZONES, ...objectNames]
   const items: CollisionItem[] = []
-  const clear = /printing by object is not safe: (.+?)(?= Paths cross: | A print path enters | To fix it: | To slice it anyway|$)/.exec(text)
+  const clear = /printing by object is not safe: (.+?)(?= Paths cross: | A print path(?: or travel)? enters | To fix it: | To slice it anyway|$)/.exec(text)
   if (clear?.[1]) items.push({ kind: 'clearance', text: clear[1].trim() })
   for (const m of text.matchAll(new RegExp(String.raw`Paths cross: (.+?) on ${LAYERS}\.`, 'g'))) {
     const first = Number(m[2])
     items.push({ kind: 'paths_cross', objects: pair(m[1] ?? '', names), first_layer: first, last_layer: Number(m[3] ?? first) })
   }
-  for (const m of text.matchAll(new RegExp(String.raw`A print path enters (.+?) on ${LAYERS}\.`, 'g'))) {
+  for (const m of text.matchAll(new RegExp(String.raw`A print path(?: or travel)? enters (.+?) on ${LAYERS}\.`, 'g'))) {
     const body = m[1] ?? ''
     const zone = ZONES.find((z) => body.startsWith(`${z}: `)) ?? body.slice(0, Math.max(0, body.indexOf(': ')))
     const first = Number(m[2])
