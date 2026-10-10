@@ -31,9 +31,23 @@ async function open(page: Page): Promise<void> {
     sessionStorage.setItem('sx-e2e', '1')
     localStorage.setItem('slicerx.prefs.v1', JSON.stringify({ workspace: 'prepare', settingsMode: 'advanced', pilot: { mode: 'off' }, handPrinters: [a1], printerId: a1.id }))
   }, A1_MINI)
+  // Every toast's text as it is drawn: a note without a button is on screen for 2.6 s, and a busy runner can take
+  // longer than that between the click that posts it and the first look.
+  await page.addInitScript(() => {
+    const seen: string[] = []
+    Object.assign(window, { __toasts: seen })
+    new MutationObserver(() => {
+      for (const el of document.querySelectorAll('[data-testid="toast"]')) if (el.textContent && !seen.includes(el.textContent)) seen.push(el.textContent)
+    }).observe(document, { childList: true, subtree: true, characterData: true })
+  })
   await page.goto('./')
   await plateReady(page)
   await expect(page.locator('[data-section="printer"] .printer-name')).toContainText('A1 mini')
+}
+
+/** The text of the toast that has `has` in it, from every toast drawn so far, gone or not. */
+async function toastWith(page: Page, has: string): Promise<string | undefined> {
+  return (await page.evaluate(() => (window as unknown as { __toasts: string[] }).__toasts)).find((t) => t.includes(has))
 }
 
 /** Picks the file in the dialog that `key` opens: Mod+O opens a new project, Mod+I adds to the plate. */
@@ -75,7 +89,7 @@ test('a P1S 0.2 project opens as its own printer, and the A1 mini slices it with
   const list = page.getByRole('list', { name: 'Choose a printer' })
   if (!(await list.isVisible())) await page.getByTestId('slice-machine-printer').click()
   await list.getByRole('button', { name: /Desk A1 mini/ }).click()
-  await expect(page.getByTestId('toast').filter({ hasText: 'Slicing for the A1 mini' })).toContainText("Slicing for the A1 mini with its own G-code. Not carried over, made for the project's 0.2 mm nozzle: layer height.")
+  await expect.poll(() => toastWith(page, 'Slicing for the A1 mini')).toBe("Slicing for the A1 mini with its own G-code. Not carried over, made for the project's 0.2 mm nozzle: layer height.")
   const theirs = await sliceAndExport(page)
   expect(theirs).not.toContain('baby step from the project')
   expect(theirs).not.toMatch(/^M500/m)
