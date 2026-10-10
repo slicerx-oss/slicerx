@@ -20,7 +20,7 @@ import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
 import { AGENTS } from './agents.mjs'
 import { PERSONAS } from './personas.mjs'
-import { askedAOrB, hostHooked, recommendedA, score } from './score.mjs'
+import { askedAOrB, hostHooked, prepareTools, recommendedA, runsSx, score } from './score.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const repo = resolve(here, '..', '..')
@@ -111,6 +111,12 @@ function dryRun() {
     const both = 'Two ways to do this. Path A is your own edition, a separate app that LayerMate launches. Path B embeds the viewport inside your window. Which one?'
     need(askedAOrB(both) && !askedAOrB('What is your brand color?'), 'Path A or B question is recognized')
     need(recommendedA('I recommend Path A, your own edition, because LayerMate is a desktop app.') && !recommendedA('I recommend Path B: embed the viewport.'), 'recommending A is told from recommending B')
+  }
+  if (persona.path === 'B-engine') {
+    need(existsSync(sxBin), `sx engine at ${sxBin}`)
+    const good = "const sx = spawn(sxPath, ['slice', '--request', '-', '--out-dir', dir])"
+    need(runsSx(good) && !runsSx("spawn(sxPath, ['slice', 'model.stl'])"), 'a request slice through sx is recognized')
+    need(prepareTools('<Viewport plate={plate} tools onTransform={keep} />') && prepareTools('<sx-viewport tools></sx-viewport>') && !prepareTools('<Viewport plate={plate} />'), 'the Prepare tools are recognized')
   }
   console.log(problems.length ? `\n${problems.length} problem(s)` : '\ndry run ok')
   console.log(out)

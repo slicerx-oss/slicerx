@@ -67,6 +67,7 @@ const WIN = process.platform === 'win32'
 
 export function score({ app, clone, turns, transcript, persona, spawnSync }) {
   if (persona.path === 'A') return scoreEdition({ app, clone, turns, transcript, persona, spawnSync })
+  if (persona.path === 'B-engine') return scoreEngine({ app, turns, transcript, persona, spawnSync })
   const src = files(app)
   const code = src.filter((f) => /\.(m?[jt]sx?|vue|svelte)$/.test(f.path))
   const all = (re) => code.some((f) => re.test(f.text))
@@ -120,6 +121,70 @@ export function score({ app, clone, turns, transcript, persona, spawnSync }) {
   check('kept the rules (no approvals, no tokens in code)', !all(/slicerx_approve/) && !src.some((f) => /sxk_[A-Za-z0-9]{8,}/.test(f.text)))
 
   // The app builds.
+  let build = { status: 1, stdout: '', stderr: 'no package.json' }
+  if (pkg) {
+    if (!existsSync(join(app, 'node_modules'))) spawnSync('npm', ['install', '--no-audit', '--no-fund'], { cwd: app, encoding: 'utf8', shell: WIN })
+    build = spawnSync('npm', ['run', 'build'], { cwd: app, encoding: 'utf8', timeout: 10 * 60_000, shell: WIN })
+  }
+  check('npm run build passes', build.status === 0, build.status === 0 ? undefined : `${build.stdout}${build.stderr}`.split('\n').filter((l) => /error/i.test(l)).slice(0, 3).join(' | '))
+
+  return { points: checks.filter((c) => c.ok).length, max: checks.length, checks, cost_usd: turns.reduce((n, t) => n + (t.cost_usd ?? 0), 0) }
+}
+
+/** Code that runs in Node: it imports a Node module or a server framework. */
+const isNode = (f) => /from ['"]node:|require\(['"]node:|from ['"](express|electron|fastify|hono|child_process)['"]/.test(f.text)
+
+/** Runs sx on a request: a spawn or exec of the engine with `slice` and `--request`. */
+export function runsSx(text) {
+  return /\b(spawn|spawnSync|execFile|execFileSync|exec)\s*\(/.test(text) && /['"]slice['"]/.test(text) && /['"]--request['"]/.test(text)
+}
+
+/** The viewport with its Prepare tools: `tools` on <Viewport> or on <sx-viewport>. */
+export function prepareTools(text) {
+  return /<Viewport\b[^>]*\btools\b/s.test(text) || /<sx-viewport\b[^>]*\btools\b/s.test(text)
+}
+
+/**
+ * Path B with the engine (engine-path.md): the plate in the viewport with the Prepare tools, the transforms kept and
+ * put through fileTransform into a request, sx run from Node, the preview shown, and no MCP slicing.
+ */
+function scoreEngine({ app, turns, transcript, persona, spawnSync }) {
+  const src = files(app)
+  const code = src.filter((f) => /\.(m?[jt]sx?|vue|svelte)$/.test(f.path))
+  const all = (re) => code.some((f) => re.test(f.text))
+  const ran = commands(transcript)
+  const pkg = src.find((f) => f.path === 'package.json')
+  const deps = pkg ? JSON.stringify({ ...JSON.parse(pkg.text).dependencies, ...JSON.parse(pkg.text).devDependencies }) : ''
+  const checks = []
+  const check = (name, ok, note) => checks.push({ name, ok: Boolean(ok), ...(note ? { note } : {}) })
+
+  const first = (turns[0]?.said ?? '').toLowerCase()
+  const asked = ['viewport', 'slic', 'react', 'brand', 'color', 'font', 'printer', 'model', 'theme', 'stack'].filter((w) => first.includes(w))
+  const codeAfterFirst = (turns[0]?.files ?? []).filter((f) => /\.(m?[jt]sx?|vue|svelte)$/.test(f) && !/config\./.test(f))
+  check('interviewed before writing code', first.includes('?') && asked.length >= 4 && codeAfterFirst.length === 0, `asked about ${asked.join(', ')}; code files after turn 1: ${codeAfterFirst.length}`)
+
+  check('installed @slicerx/embed from the kit', deps.includes('@slicerx/embed'), deps.slice(0, 200))
+  check('the viewport with its Prepare tools', all(/from ['"]@slicerx\/embed['"]/) && code.some((f) => prepareTools(f.text)))
+  check('keeps the transforms people make', all(/onTransform|addEventListener\(\s*['"]transform['"]/))
+  check('puts the decoder offset back with fileTransform', all(/fileTransform\(/))
+  const node = code.filter(isNode)
+  const sx = node.find((f) => runsSx(f.text))
+  const inBrowser = code.find((f) => !isNode(f) && runsSx(f.text))
+  check('runs sx on a request from a Node process', sx && !inBrowser, [sx?.path, inBrowser ? `browser: ${inBrowser.path}` : ''].filter(Boolean).join(', '))
+  check('shows the preview and the numbers', all(/preview=|\.preview\s*=/) && all(/sxpv|files\.preview/i) && all(/timeS|filamentG/))
+  check('sliced once to check it', ran.some((c) => /curl|fetch|node\s/.test(c) && /slice/i.test(c)) || ran.some((c) => /\bsx\b.*slice/.test(c)))
+  const unasked = [
+    ['MCP slicing', /slicerx_slice_file|StdioClientTransport/],
+    ['printers', /slicerx_printer_queue|sx-link/],
+    ['locked', /sealSxlock|openSxlock|slicerx_sxlock_/],
+    ['settings panel', /<SettingsPanel\b|sx-settings-panel/],
+  ].filter(([, re]) => all(re))
+  check('no parts the developer did not ask for', unasked.length === 0, unasked.map(([p]) => p).join(', '))
+
+  check('shows the pre-alpha agreement', all(/<Agreement\b|sx-agreement/) && all(/agreementNeeded|readAgreement/))
+  check('themed with the brand', all(/createTheme\(/) && code.some((f) => f.text.toLowerCase().includes(persona.expect.accent)) && all(/<EmbedTheme\b/))
+  check('kept the rules (no approvals, no tokens in code)', !all(/slicerx_approve/) && !src.some((f) => /sxk_[A-Za-z0-9]{8,}/.test(f.text)))
+
   let build = { status: 1, stdout: '', stderr: 'no package.json' }
   if (pkg) {
     if (!existsSync(join(app, 'node_modules'))) spawnSync('npm', ['install', '--no-audit', '--no-fund'], { cwd: app, encoding: 'utf8', shell: WIN })

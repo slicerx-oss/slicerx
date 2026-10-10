@@ -187,6 +187,8 @@ This is a summary of the files in the repository, not legal advice. Read `NOTICE
 
 Steps 1 to 6 are for an app that adds SlicerX parts to itself. If the user chose Path A or C, skip to "Before you finish" and use the checks that apply.
 
+An app that wants the slice under its own control can run the `sx` engine itself instead of slicing over MCP: people place parts with the viewport's Prepare tools, the main process turns the plate into a slice request for `sx`, and the preview goes back into the viewport. [engine-path.md](engine-path.md) covers it, with what the app then takes on. Offer it when the user asks to call the engine or the CLI directly; otherwise slice over MCP.
+
 Two things come first. Install `@slicerx/mcp` (step 1), then register it as one of your own tools (step 2). Probing it with the SDK is not enough: until the client lists its tools, you cannot slice, check profiles or test printers yourself while you build.
 
 ## Step 1: get the packages
@@ -284,6 +286,7 @@ Write the plan back to the user in a few lines and wait for a yes before you bui
 | --- | --- |
 | viewport | `Viewport` from `@slicerx/embed` (React) or `<sx-viewport>` (anything else). Show toolpaths from a slice with `preview: true`, or an STL with `src` or `decodeStl`. Recipe A. |
 | slicing | Start `@slicerx/mcp` from the main process or a Node service and call `slicerx_slice_file`. Recipe B. Never from the browser: the server reads files and runs `sx`. |
+| slicing with the engine directly | Run `sx slice --request` from the main process with the plate from the viewport, its transforms put through `fileTransform`. [engine-path.md](engine-path.md). |
 | viewport and slicing | Both, wired together: slice with `preview: true`, read `preview_path` in the main process, pass the bytes to the renderer. Recipes A and B. |
 | printers and sending | Two choices. If the app already talks to printers, it sends the `.gcode.3mf` or G-code from a slice itself, and SlicerX stays out of it. Otherwise run the server with `--printers link` and SlicerX's printer bridge `sx-link`; `slicerx_printer_queue` asks the person to approve each start in SlicerX or on their phone. The app cannot approve starts. Recipe E. |
 | profiles and presets | `slicerx_list_profiles` and `slicerx_get_profile` for pickers, `profile_files` for the user's own presets, `filaments` for a preset per slot, `SettingsPanel` for an editor whose `overrides` go straight into a slice. Recipe C. |
