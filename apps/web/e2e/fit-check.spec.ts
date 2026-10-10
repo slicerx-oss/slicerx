@@ -148,6 +148,28 @@ const screen = (page: Page, x: number, y: number, z: number) =>
     return { x: r.left + ((v.x + 1) / 2) * r.width, y: r.top + ((1 - v.y) / 2) * r.height }
   }, [x, y, z] as const)
 
+/**
+ * Where a bed point is on screen once the view has settled for a press. A plate change slices on its own; when that
+ * slice lands, the toolpath look's legend, layer strip and playback bar come up over the view and the camera frames
+ * the plate again in the space they leave, so a press aimed before then lands somewhere else and turns the view. This
+ * waits for the slice to be current, then for the same spot twice, further apart than the view's second look at its
+ * overlays (600 ms).
+ */
+async function aim(page: Page, x: number, y: number, z: number): Promise<{ x: number; y: number }> {
+  const sliced = () => page.evaluate(() => { const s = (window as unknown as { __sx: Sx }).__sx.getState().slice; return s.status === 'done' && !s.stale })
+  await expect.poll(sliced, { timeout: 60_000 }).toBe(true)
+  let at = await screen(page, x, y, z)
+  await expect
+    .poll(async () => {
+      const again = await screen(page, x, y, z)
+      const still = Math.hypot(again.x - at.x, again.y - at.y) < 0.5
+      at = again
+      return still
+    }, { intervals: [700] })
+    .toBe(true)
+  return at
+}
+
 const lines = (page: Page) => page.evaluate(() => (window as unknown as { __vp: Vp }).__vp.gaps.group.children.map((c) => c.visible))
 
 /** Puts one object's +X side against another's -X side, centered on it in Y. */
@@ -184,7 +206,7 @@ test('parts of one object that touch never warn; a separate object that touches 
 
   // Drag the cube away: the marker hides with the first move, before the drop.
   const c = await box(page, '20 mm calibration cube')
-  const at = await screen(page, (c.min[0]! + c.max[0]!) / 2, (c.min[1]! + c.max[1]!) / 2, c.max[2]! / 2)
+  const at = await aim(page, (c.min[0]! + c.max[0]!) / 2, (c.min[1]! + c.max[1]!) / 2, c.max[2]! / 2)
   await page.mouse.move(at.x, at.y)
   await page.mouse.down()
   for (let i = 1; i <= 8; i++) await page.mouse.move(at.x + i * 6, at.y + i * 3)
@@ -251,21 +273,8 @@ test('a design whose parts do not touch gets one note, Show which names them, an
     }
     return { x: (min[0]! + max[0]!) / 2, y: (min[1]! + max[1]!) / 2, z: max[2]! }
   })
-  // The open slices the plate on its own. When that slice lands, the toolpath look's legend, layer strip and playback
-  // bar come up over the view and the camera frames the plate again in the space they leave, so a press aimed before
-  // then lands on the bed beside the clip and turns the view instead of moving it. Aim once the slice is in and the
-  // camera has stopped: the same spot twice, further apart than the view's second look at its overlays (600 ms).
-  const sliced = () => page.evaluate(() => { const s = (window as unknown as { __sx: Sx }).__sx.getState().slice; return s.status === 'done' && !s.stale })
-  await expect.poll(sliced, { timeout: 60_000 }).toBe(true)
-  let at = await screen(page, foot.x, foot.y, foot.z)
-  await expect
-    .poll(async () => {
-      const again = await screen(page, foot.x, foot.y, foot.z)
-      const still = Math.hypot(again.x - at.x, again.y - at.y) < 0.5
-      at = again
-      return still
-    }, { intervals: [700] })
-    .toBe(true)
+  // Aimed once the open's own slice is in: before then the press can land on the bed beside the clip.
+  const at = await aim(page, foot.x, foot.y, foot.z)
   await page.mouse.move(at.x, at.y)
   await page.mouse.down()
   for (let i = 1; i <= 8; i++) await page.mouse.move(at.x + i * 6, at.y + i * 3)
