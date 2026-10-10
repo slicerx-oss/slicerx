@@ -88,6 +88,13 @@ over. A `heavy.sh` from before slots knows only `<lock>`, so it shares the machi
 a 24-thread machine to a load of 80). Waiting `--e2e` tickets do not count toward the positions of the waiters behind
 them, so builds and other jobs still use the free slots.
 
+`heavy.sh --gpu <command>` marks a GPU-drawn browser suite run (`class gpu`). It takes one of the GPU slots
+(`<lock>.gpu.1` and on; how many is the number in `<lock>.gpu-slots`, default 1, or `SX_HEAVY_GPU_SLOTS`), never a
+plain slot, so several GPU runners' suites run side by side while agents keep the plain slots. A `--gpu` waiter waits
+while an `--e2e` or `--all` run holds or is queued ahead of it, and an `--e2e` or `--all` waiter waits until no
+`--gpu` run holds. The GPU lane runs its `@gpu` specs under `--gpu` and its frame timing specs (`@gpu-timing`) after
+them under `--e2e`, alone.
+
 `scripts/ci/heavy-test.sh` tests all of this on a temporary lock: alone on any side, and with
 `cross <distro> [<stopped distro>]` from Git Bash, Windows against WSL.
 
