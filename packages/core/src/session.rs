@@ -755,36 +755,29 @@ impl Clone for WholeRegions {
     }
 }
 
-/// An object with painted parts: its parts (indexes into the session's parts) and the paint of all of them.
+/// An object with painted parts: its parts, as indexes into the session's parts (their paint stays with them).
 #[derive(Debug, Clone)]
 struct PaintedObject {
     parts: Vec<usize>,
-    paint: crate::paint::Facets,
 }
 
 impl PaintedObject {
     /// The objects among `parts` (`object` gives each part's) that have any painted part.
     fn of(parts: &[PreparedPart], object: &[usize]) -> Vec<Self> {
-        let mut out: Vec<(usize, Self)> = Vec::new();
+        let mut out: Vec<(usize, Self, bool)> = Vec::new();
         for (k, p) in parts.iter().enumerate() {
             let Some(&o) = object.get(k) else { continue };
-            match out.iter_mut().find(|(id, _)| *id == o) {
-                Some((_, obj)) => {
+            match out.iter_mut().find(|(id, _, _)| *id == o) {
+                Some((_, obj, painted)) => {
                     obj.parts.push(k);
-                    obj.paint.extend(p.paint.iter().copied());
+                    *painted |= !p.paint.is_empty();
                 }
-                None => out.push((
-                    o,
-                    Self {
-                        parts: vec![k],
-                        paint: p.paint.clone(),
-                    },
-                )),
+                None => out.push((o, Self { parts: vec![k] }, !p.paint.is_empty())),
             }
         }
         out.into_iter()
-            .filter(|(_, obj)| !obj.paint.is_empty())
-            .map(|(_, obj)| obj)
+            .filter(|(_, _, painted)| *painted)
+            .map(|(_, obj, _)| obj)
             .collect()
     }
 }
@@ -3391,7 +3384,7 @@ impl SliceSession {
                 plan: &self.plan,
                 above: &[],
                 below: &[],
-                facets: &painted,
+                facets: &[&painted],
                 step: 0,
                 small: 0,
                 memo: None,
@@ -5544,6 +5537,12 @@ impl SliceSession {
             let above: Vec<Shapes> = (1..=fam.top_shell).map(|j| contour_at(l + step(j))).collect();
             let below: Vec<Shapes> = (1..=fam.bottom_shell).map(|j| contour_at(l - step(j))).collect();
             // Slot 0 marks what no paint claims; the parts' own filaments take it below.
+            let facets: Vec<&crate::paint::Facets> = obj
+                .parts
+                .iter()
+                .filter_map(|&k| self.parts.get(k).map(|p| &p.paint))
+                .filter(|f| !f.is_empty())
+                .collect();
             let ctx = crate::paint::LayerPaint {
                 default_slot: 0,
                 shapes: &merged,
@@ -5552,7 +5551,7 @@ impl SliceSession {
                 plan: &self.plan,
                 above: &above,
                 below: &below,
-                facets: &obj.paint,
+                facets: &facets,
                 step: fam.paint_step,
                 small: fam.paint_small,
                 memo: Some((&self.paint, self.parts.len() + o, cut)),
