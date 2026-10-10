@@ -185,6 +185,10 @@ async function addProjectShown(
     markOpenStage('settings')
     for (const k of r.keys) brought.add(k)
     note = r.note
+    // the file's flush volumes and tower spot, as Bambu Studio opens them
+    const { keepProjectFlushAndTower } = await import('../filament/project-kept')
+    const kept = mine(() => keepProjectFlushAndTower(project.settings))
+    if (kept) note = `${note} ${kept}`
   } else if (wasEmpty && hasSettings) {
     // Our own project, or a PrusaSlicer one: its print and filament settings on the current printer.
     const { projectSettingChanges } = await import('../export/project-settings')

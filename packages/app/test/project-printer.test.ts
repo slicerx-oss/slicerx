@@ -84,7 +84,7 @@ const until = async (ok: () => boolean): Promise<void> => {
 const A1_MINI = { id: 'a1-mini', vendor: 'Bambu Lab', model: 'A1 mini' }
 
 beforeEach(async () => {
-  set((s) => ({ plate: [], plates: s.plates.map((p) => ({ ...p, objects: [] })), overrides: {}, vouchedGcode: {}, projectGcode: null, projectSettings: null, projectPrinter: null, projectOpenAsk: null, printerId: A1_MINI.id, printerModel: A1_MINI, printerNozzles: {}, nozzleReported: {}, resume: null, calibration: {}, layerMarks: {}, slice: { status: 'idle' }, toast: null, goal: 'standard' }))
+  set((s) => ({ plate: [], plates: s.plates.map((p) => ({ ...p, objects: [] })), slotSetup: {}, projectFlush: null, towerFromProject: false, tower: { auto: true, x: 0, y: 0 }, overrides: {}, vouchedGcode: {}, projectGcode: null, projectSettings: null, projectPrinter: null, projectOpenAsk: null, printerId: A1_MINI.id, printerModel: A1_MINI, printerNozzles: {}, nozzleReported: {}, resume: null, calibration: {}, layerMarks: {}, slice: { status: 'idle' }, toast: null, goal: 'standard' }))
   await profileReady()
   startProjectPrinterSync()
   markClean()
@@ -485,5 +485,52 @@ describe('a project added to a plate with objects', () => {
     expect(get().plate).toHaveLength(1)
     expect(get().printerId).toBe(PROJECT_PRINTER_ID)
     expect(resolved()['layer_height']).toBe(0.08)
+  })
+})
+
+describe("a project's flush volumes and tower spot", () => {
+  // Bambu Studio writes one 4 by 4 block per nozzle (the H2D has two), the multiplier per nozzle, and the tower per plate.
+  const MATRIX = Array.from({ length: 32 }, (_, i) => String(100 + i))
+  const H2D_FLUSH = { ...H2D_GENERIC, flush_volumes_matrix: MATRIX, flush_multiplier: ['1.2', '0.8'], wipe_tower_x: ['165.5'], wipe_tower_y: ['220'] }
+  /** Slots 1 and 2 in use: the object's handle with a part on each (the slots a slice uses come from the handles). */
+  const twoSlots = () => set((s) => ({ plate: s.plate.map((e) => ({ ...e, handle: { ...e.handle, parts: [{ name: 'a', slot: 1 }, { name: 'b', slot: 2 }] } as typeof e.handle })) }))
+
+  it('slices with the file\'s matrix, multiplier and tower spot, and names them', async () => {
+    const { host, requests } = capture()
+    await openModelBytes(host, 'flush.3mf', project(H2D_FLUSH))
+    expect(get().toast?.text).toContain("Kept the project's flush volumes and prime tower position.")
+    twoSlots()
+    await slicePlate(host, { auto: true }).catch(() => undefined)
+    const cfg = requests.at(-1)!.config as Record<string, SettingValue>
+    // each nozzle's block cut to the two slots in use: rows 0 and 1, columns 0 and 1
+    expect(cfg['flush_volumes_matrix']).toEqual([100, 101, 104, 105, 116, 117, 120, 121])
+    expect(cfg['flush_multiplier']).toEqual([1.2, 0.8])
+    // the tower where the file put it, in the printer's coordinates
+    expect(cfg['prime_tower_auto_position']).toBe(false)
+    expect(cfg['wipe_tower_x']).toBe(165.5)
+    expect(cfg['wipe_tower_y']).toBe(220)
+  })
+
+  it('works the matrix out again once a slot changes, and a new project sets the tower back to auto', async () => {
+    const { host } = capture()
+    await openModelBytes(host, 'flush.3mf', project(H2D_FLUSH))
+    twoSlots()
+    expect(slotConfig(get())['flush_volumes_matrix']).toEqual([100, 101, 104, 105, 116, 117, 120, 121])
+    set({ slotSetup: { 1: { type: 'PLA', brand: '', color: '#123456' } } })
+    const after = slotConfig(get())
+    expect(after['flush_volumes_matrix']).not.toEqual([100, 101, 104, 105, 116, 117, 120, 121])
+    expect(after['flush_multiplier']).not.toEqual([1.2, 0.8])
+    clearProject()
+    expect(get().projectFlush).toBeNull()
+    expect(get().tower.auto).toBe(true)
+  })
+
+  it('a tower the person moved stays theirs', async () => {
+    const { host } = capture()
+    await openModelBytes(host, 'flush.3mf', project(H2D_FLUSH))
+    const { moveTower } = await import('../src/plate/tower')
+    moveTower(40, 60)
+    clearProject()
+    expect(get().tower).toEqual({ auto: false, x: 40, y: 60 })
   })
 })
