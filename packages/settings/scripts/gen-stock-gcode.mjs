@@ -12,9 +12,15 @@
 //
 // Run: node scripts/gen-stock-gcode.mjs --bambu <BambuStudio clone> --orca <OrcaSlicer clone>
 // Both clones need their full history of resources/profiles (a blobless clone works: fetch the profile blobs first).
+//
+// Or from the presets an installed app ships, added to the table as it is (nothing already there is dropped):
+// node scripts/gen-stock-gcode.mjs --bambu-profiles <dir> --bambu-version <v> --orca-profiles <dir> --orca-version <v>
+// where <dir> is the app's profiles directory (on macOS, BambuStudio.app/Contents/Resources/profiles) and <v> its
+// version, recorded in the table's sources.
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 
 const here = (p) => new URL(p, import.meta.url)
 const arg = (name) => {
@@ -25,7 +31,14 @@ const repos = [
   ['bambuStudio', arg('--bambu')],
   ['orcaSlicer', arg('--orca')],
 ].filter(([, dir]) => dir)
-if (repos.length === 0) throw new Error('usage: gen-stock-gcode.mjs --bambu <dir> --orca <dir>')
+const installed = [
+  ['bambuStudio', arg('--bambu-profiles'), arg('--bambu-version')],
+  ['orcaSlicer', arg('--orca-profiles'), arg('--orca-version')],
+].filter(([, dir]) => dir)
+if (repos.length === 0 && installed.length === 0)
+  throw new Error('usage: gen-stock-gcode.mjs --bambu <clone> --orca <clone>, or --bambu-profiles <dir> --bambu-version <v> --orca-profiles <dir> --orca-version <v>')
+if (repos.length > 0 && installed.length > 0) throw new Error('gen-stock-gcode.mjs: clones or installed presets, not both')
+for (const [name, dir, version] of installed) if (!version) throw new Error(`gen-stock-gcode.mjs: the version of ${name}'s presets at ${dir} is missing`)
 
 const MACHINES = JSON.parse(readFileSync(here('../../profiles/machine.json'), 'utf8')).models
 const GCODE = JSON.parse(readFileSync(here('../../profiles/gcode.json'), 'utf8'))
@@ -146,6 +159,72 @@ function filamentFingerprints(dir, vendor) {
   return out
 }
 
+/** The machine presets of an installed app's profiles directory: one version of each, resolved as above. */
+function installedMachineFingerprints(dir, vendor, profiles) {
+  const cache = new Map()
+  const at = (name) => {
+    if (!cache.has(name)) {
+      const file = join(dir, vendor, 'machine', `${name}.json`)
+      let j = null
+      try {
+        j = existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : null
+      } catch {
+        j = null
+      }
+      cache.set(name, j)
+    }
+    return cache.get(name)
+  }
+  const resolve = (name, key, depth = 0) => {
+    if (depth > 12) return undefined
+    const j = at(name)
+    if (!j) return undefined
+    if (key in j) return textOf(j[key])
+    for (const inc of Array.isArray(j.include) ? [...j.include].reverse() : []) {
+      const i = at(inc)
+      if (i && key in i) return textOf(i[key])
+    }
+    return typeof j.inherits === 'string' && j.inherits ? resolve(j.inherits, key, depth + 1) : undefined
+  }
+  const out = {}
+  for (const p of profiles) {
+    if (!at(p)) continue
+    for (const key of MACHINE_KEYS) {
+      const text = resolve(p, key)
+      if (text === undefined || !normalize(text)) continue
+      ;(out[key] ??= new Set()).add(fingerprint(text))
+    }
+  }
+  return out
+}
+
+/** The filament presets of a vendor in an installed app's profiles directory, every file under its filament folder. */
+function installedFilamentFingerprints(dir, vendor) {
+  const out = {}
+  const walk = (d) => {
+    if (!existsSync(d)) return
+    for (const name of readdirSync(d).sort()) {
+      const path = join(d, name)
+      if (statSync(path).isDirectory()) walk(path)
+      else if (name.endsWith('.json')) {
+        let j = null
+        try {
+          j = JSON.parse(readFileSync(path, 'utf8'))
+        } catch {
+          j = null
+        }
+        if (!j) continue
+        for (const key of FILAMENT_KEYS) {
+          const text = textOf(j[key])
+          if (text !== undefined && normalize(text)) (out[key] ??= new Set()).add(fingerprint(text))
+        }
+      }
+    }
+  }
+  walk(join(dir, vendor, 'filament'))
+  return out
+}
+
 const merge = (into, from) => {
   for (const [k, set] of Object.entries(from)) for (const f of set) (into[k] ??= new Set()).add(f)
 }
@@ -154,6 +233,29 @@ const sorted = (o) => Object.fromEntries(Object.entries(o).sort(([a], [b]) => a.
 const models = {}
 const vendors = {}
 const sources = {}
+// Presets of installed apps go on top of the table as it is.
+if (installed.length > 0) {
+  const old = JSON.parse(readFileSync(here('../profiles/stock-gcode.json'), 'utf8'))
+  Object.assign(sources, old.sources)
+  const sets = (keys) => Object.fromEntries(Object.entries(keys).map(([k, list]) => [k, new Set(list)]))
+  for (const [id, keys] of Object.entries(old.models)) models[id] = sets(keys)
+  for (const [v, keys] of Object.entries(old.vendors)) vendors[v] = sets(keys)
+}
+const pairs = (name) => Object.entries(MACHINES).filter(([id, m]) => m.orca && (GCODE.models[id] ?? '').startsWith('maker_') && !(name === 'bambuStudio' && m.orca.vendor !== 'BBL'))
+const profilesOf = (m) => [m.orca.profile, ...Object.values(m.nozzles ?? {}).map((n) => n.orcaProfile).filter(Boolean)]
+const filamentVendors = (name) =>
+  [...new Set([...Object.values(MACHINES).flatMap((m) => (m.orca ? [m.orca.vendor] : [])), 'OrcaFilamentLibrary'])].filter((v) => name !== 'bambuStudio' || v === 'BBL')
+for (const [name, dir, version] of installed) {
+  // Every installed version whose presets were added, oldest run first.
+  const key = `${name}App`
+  const seen = Array.isArray(sources[key]) ? sources[key] : sources[key] ? [sources[key]] : []
+  sources[key] = seen.includes(version) ? seen : [...seen, version]
+  for (const [id, m] of pairs(name)) {
+    merge((models[id] ??= {}), installedMachineFingerprints(dir, m.orca.vendor, profilesOf(m)))
+    process.stderr.write(`${name} ${version} ${id}: ${Object.values(models[id]).reduce((n, s) => n + s.size, 0)}\n`)
+  }
+  for (const vendor of filamentVendors(name)) merge((vendors[vendor] ??= {}), installedFilamentFingerprints(dir, vendor))
+}
 for (const [name, dir] of repos) {
   sources[name] = git(dir, 'rev-parse', 'HEAD').trim()
   for (const [id, m] of Object.entries(MACHINES)) {
@@ -172,7 +274,7 @@ for (const [name, dir] of repos) {
 
 const doc = {
   comment:
-    'Fingerprints of the printer G-code the makers shipped for each model in the history of Bambu Studio and OrcaSlicer, and of their filament presets per vendor: the first 128 bits of the SHA-256 of the text with line breaks as \\n, trailing spaces and blank lines dropped. Made by scripts/gen-stock-gcode.mjs; read by js/gcode-review.ts.',
+    'Fingerprints of the printer G-code the makers shipped for each model in the history of Bambu Studio and OrcaSlicer, and of their filament presets per vendor: the first 128 bits of the SHA-256 of the text with line breaks as \\n, trailing spaces and blank lines dropped. Made by scripts/gen-stock-gcode.mjs; read by js/gcode-review.ts. Sources: the commits of the clones, and as bambuStudioApp and orcaSlicerApp the versions of the installed apps whose shipped presets were added.',
   sources,
   models: Object.fromEntries(Object.entries(models).sort(([a], [b]) => a.localeCompare(b)).map(([id, keys]) => [id, sorted(keys)])),
   vendors: Object.fromEntries(Object.entries(vendors).sort(([a], [b]) => a.localeCompare(b)).map(([v, keys]) => [v, sorted(keys)])),
