@@ -6883,7 +6883,11 @@ impl SliceSession {
             if crate::tower::flag_or(cfg, "detect_narrow_internal_solid_infill", true)
                 && !shell_area.is_empty()
             {
-                let (normal, narrow) = if matches!(
+                // Bambu Lab printers decide per connected piece (`narrow::split_pieces`); the others split inside a
+                // piece, as Orca does.
+                let (normal, narrow) = if crate::firmware::bambu_printer(cfg, cfg.gcode_flavor) {
+                    crate::narrow::split_pieces(&shell_area)
+                } else if matches!(
                     solid_name,
                     "monotonic" | "monotonicline" | "rectilinear" | "alignedrectilinear"
                 ) {
