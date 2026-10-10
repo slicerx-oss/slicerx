@@ -7163,11 +7163,25 @@ impl SliceSession {
                     };
                     if let Some(slot_lines) = curved.get_mut(which) {
                         for pl in pls {
+                            // The turns: pieces between two points on different scanlines (a line keeps its own).
+                            let turns: Vec<bool> = pl
+                                .windows(2)
+                                .map(|w| match w {
+                                    [a, b] => d.st(a.x, a.y).0 != d.st(b.x, b.y).0,
+                                    _ => false,
+                                })
+                                .collect();
                             let pl = if turn == 0.0 {
                                 pl
                             } else {
                                 crate::patterns::rotate_points(&pl, turn)
                             };
+                            work.joins.extend(
+                                pl.windows(2)
+                                    .zip(&turns)
+                                    .filter(|(_, t)| **t)
+                                    .filter_map(|(w, _)| Some([*w.first()?, *w.get(1)?])),
+                            );
                             slot_lines.extend(pl.windows(2).filter_map(|s| Some([*s.first()?, *s.get(1)?])));
                         }
                     }

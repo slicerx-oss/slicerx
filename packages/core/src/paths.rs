@@ -48,6 +48,9 @@ pub(crate) struct ToolWork {
     pub(crate) bottom: Vec<[Point; 2]>,
     /// Solid infill of the top shell under the visible top surface.
     pub(crate) shell: Vec<[Point; 2]>,
+    /// The turns along the edge that join one solid surface line to the next (top, bottom and internal solid), so
+    /// the plate can keep one that would cross another path a travel (`collide::plate::drop_crossing_joins`).
+    pub(crate) joins: Vec<[Point; 2]>,
     /// Narrow bands of the solid shell, filled with variable-width beads.
     pub(crate) shell_thick: Vec<crate::arachne::WallLine>,
     /// Gap beads between a surface's lines and its edge (`gap_fill_target`).
@@ -1681,6 +1684,7 @@ pub(crate) fn plan_layer_paths(
     // Per work: its paths and how they slow down over the layer below.
     let mut vary: Vec<(usize, usize, &crate::quality::Context)> = Vec::new();
     for w in works {
+        b.out.joins.extend_from_slice(&w.joins);
         b.fuzzy_mask.clone_from(&w.fuzzy_paint);
         b.hang = w.overhang.as_ref();
         let work_from = b.out.paths.len();
