@@ -12,8 +12,8 @@ const MODELS = join(import.meta.dirname, '..', '..', '..', 'packages/core/bench/
 const COLORS = { teal: '#1f9e9a', red: '#d63a32', white: '#f2f2f0', black: '#202022' } as const
 const ANGLES = ['iso', 'front', 'back', 'left', 'right', 'top'] as const
 
-type Sx = { getState(): { plate: { id: string; colors: string[] }[]; plateLoading: boolean }; setState(p: unknown): void }
-type Vp = { view(p: string, o?: { animate?: boolean }): void; objects: Map<string, { group: { visible: boolean } }>; shadowDirty: boolean; invalidate(): void }
+type Sx = { getState(): { plate: { id: string; name: string; colors: string[] }[]; plateLoading: boolean }; setState(p: unknown): void }
+type Vp = { view(p: string, o?: { animate?: boolean }): void; camera: { matrixWorld: { elements: number[] } }; objects: Map<string, { group: { visible: boolean } }>; shadowDirty: boolean; invalidate(): void }
 
 /** Hue (degrees) and saturation of an sRGB hex. */
 function hsv(hex: string): { h: number; s: number } {
@@ -28,9 +28,9 @@ function hsv(hex: string): { h: number; s: number } {
  * The model's pixels in the view: those that differ from the same view with the plate empty. For each, its hue's
  * distance from `hue` (colored pixels only: lit, saturation above 0.2) and its saturation (lit pixels).
  */
-async function measure(page: Page, withModel: string, without: string, hue: number): Promise<{ n: number; hueDev: number[]; sat: number[] }> {
+async function measure(page: Page, withModel: string, without: string, after: string, hue: number): Promise<{ n: number; hueDev: number[]; sat: number[]; moving: number }> {
   return page.evaluate(
-    async ({ withModel, without, hue }) => {
+    async ({ withModel, without, after, hue }) => {
       const load = async (b64: string) => {
         const img = new Image()
         img.src = `data:image/png;base64,${b64}`
@@ -44,12 +44,19 @@ async function measure(page: Page, withModel: string, without: string, hue: numb
       }
       const a = await load(withModel)
       const b = await load(without)
+      const c = await load(after)
       const hueDev: number[] = []
       const sat: number[] = []
       let n = 0
+      let moving = 0
       for (let i = 0; i < a.length; i += 4) {
         const d = Math.abs(a[i]! - b[i]!) + Math.abs(a[i + 1]! - b[i + 1]!) + Math.abs(a[i + 2]! - b[i + 2]!)
         if (d < 30) continue
+        // the view without the model, before and after: where they differ, something else moved, not the model
+        if (Math.abs(b[i]! - c[i]!) + Math.abs(b[i + 1]! - c[i + 1]!) + Math.abs(b[i + 2]! - c[i + 2]!) >= 30) {
+          moving++
+          continue
+        }
         n++
         const r = a[i]! / 255
         const gg = a[i + 1]! / 255
@@ -64,9 +71,9 @@ async function measure(page: Page, withModel: string, without: string, hue: numb
         const h = (mx === r ? ((gg - bb) / dd + 6) % 6 : mx === gg ? (bb - r) / dd + 2 : (r - gg) / dd + 4) * 60
         hueDev.push(((h - hue + 540) % 360) - 180)
       }
-      return { n, hueDev, sat }
+      return { n, hueDev, sat, moving }
     },
-    { withModel, without, hue },
+    { withModel, without, after, hue },
   )
 }
 
@@ -82,7 +89,11 @@ async function openModel(page: Page, seen: FileChooser[], file: string): Promise
     await page.waitForTimeout(500)
   }
   await seen[before]!.setFiles({ name: file, mimeType: 'model/stl', buffer: readFileSync(join(MODELS, file)) })
-  await expect.poll(() => page.evaluate(() => { const s = (window as unknown as { __sx: Sx }).__sx.getState(); return !s.plateLoading && s.plate.length === 1 }), { timeout: 60_000 }).toBe(true)
+  // the opened file by name: the plate the app starts with is one object too
+  const name = file.replace(/\.stl$/, '')
+  await expect
+    .poll(() => page.evaluate((name) => { const s = (window as unknown as { __sx: Sx }).__sx.getState(); return !s.plateLoading && s.plate.length === 1 && s.plate[0]!.name.startsWith(name) }, name), { timeout: 60_000 })
+    .toBe(true)
 }
 
 for (const scheme of ['dark', 'light'] as const) {
@@ -103,6 +114,7 @@ for (const scheme of ['dark', 'light'] as const) {
     const rows: string[] = []
     const vp = page.locator('.vp-canvas')
     const file = 'x-mark-showcase.stl'
+    await page.evaluate(() => (window as unknown as { __sx: Sx }).__sx.setState({ plate: [], selection: null, selectedIds: [] }))
     await openModel(page, seen, file)
     await page.evaluate(() => (window as unknown as { __sx: Sx }).__sx.setState({ selection: null, selectedIds: [] }))
     const paint = (hex: string) =>
@@ -119,23 +131,49 @@ for (const scheme of ['dark', 'light'] as const) {
         vp.shadowDirty = true
         vp.invalidate()
       }, on)
+    // the view at rest: the camera where it is, not where it is going, reads the same twice in a row (an open frames
+    // the new model with a camera move that can still run into the first view)
+    const camera = () => page.evaluate(() => (window as unknown as { __vp: Vp }).__vp.camera.matrixWorld.elements.map((v) => v.toFixed(3)).join(','))
+    const still = async () => {
+      let last = await camera()
+      for (let i = 0; i < 50; i++) {
+        await page.waitForTimeout(300)
+        const now = await camera()
+        if (now === last) return
+        last = now
+      }
+    }
+    // the contact shadow under the model is baked into the floor and stays when the model is hidden; it bakes a moment
+    // after the model shows, so the first view waits for it, and every shot of a view then differs from its empty
+    // plate by the model alone
+    await paint(COLORS.teal)
+    await still()
+    await page.waitForTimeout(1500)
     for (const angle of ANGLES) {
       await shown(false)
       await page.evaluate((a) => (window as unknown as { __vp: Vp }).__vp.view(a, { animate: false }), angle)
-      await page.waitForTimeout(900)
+      await still()
+      await page.waitForTimeout(600)
       const without = (await vp.screenshot()).toString('base64')
       await shown(true)
+      const shots: [string, string, string][] = []
       for (const [name, hex] of Object.entries(COLORS)) {
         await paint(hex)
         await page.waitForTimeout(600)
-        const withModel = (await vp.screenshot()).toString('base64')
+        shots.push([name, hex, (await vp.screenshot()).toString('base64')])
+      }
+      await shown(false)
+      await page.waitForTimeout(600)
+      const after = (await vp.screenshot()).toString('base64')
+      await shown(true)
+      for (const [name, hex, withModel] of shots) {
         const target = hsv(hex)
-        const m = await measure(page, withModel, without, target.h)
+        const m = await measure(page, withModel, without, after, target.h)
         const colored = target.s > 0.3
         const lo = pct(m.hueDev, 0.02)
         const hi = pct(m.hueDev, 0.98)
         const sat98 = pct(m.sat, 0.98)
-        rows.push(`${name} ${angle}: model px ${m.n}, colored ${m.hueDev.length}, hue p2..p98 ${lo.toFixed(1)}..${hi.toFixed(1)}, sat p98 ${sat98.toFixed(3)}`)
+        rows.push(`${name} ${angle}: model px ${m.n}, moving ${m.moving}, colored ${m.hueDev.length}, hue p2..p98 ${lo.toFixed(1)}..${hi.toFixed(1)}, sat p98 ${sat98.toFixed(3)}`)
         if (process.env['SX_HUE_SHOTS']) writeFileSync(join(process.env['SX_HUE_SHOTS'], `${file}-${name}-${angle}-${scheme}.png`), Buffer.from(withModel, 'base64'))
         if (colored) {
           expect.soft(m.hueDev.length, `${name} ${angle}: colored pixels`).toBeGreaterThan(500)
