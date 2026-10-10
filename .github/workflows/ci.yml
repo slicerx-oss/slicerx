@@ -13,6 +13,14 @@ on:
     types: [opened, synchronize, reopened, labeled]
   # the merge queue tests each queued pull request on top of main before it lands
   merge_group:
+  # by hand (write access): the integration test parts on a branch, with core and crates on the self-hosted Linux
+  # runners as the merge queue runs them, to try a change to that path before it is queued
+  workflow_dispatch:
+    inputs:
+      rust_tests_on_pc:
+        description: Run the rust test parts, core and crates on the self-hosted Linux runners
+        type: boolean
+        default: true
 
 permissions:
   contents: read
@@ -55,7 +63,8 @@ jobs:
           # touch what changed (or this file).
           changed=$(git diff --name-only HEAD^1 HEAD)
           touched() {
-            [ "$GITHUB_EVENT_NAME" = push ] && return 1
+            # a run by hand is for the rust test parts only
+            case $GITHUB_EVENT_NAME in push | workflow_dispatch) return 1 ;; esac
             [ "$GITHUB_EVENT_NAME" != pull_request ] && return 0
             [ "$FULL_CI" = true ] || return 1
             printf '%s\n' "$changed" | grep -qE "$1"
@@ -132,7 +141,7 @@ jobs:
   rust-tests-part:
     name: rust tests (${{ matrix.part }})
     needs: detect
-    if: needs.detect.outputs.rust == 'true' && (github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'full-ci'))
+    if: needs.detect.outputs.rust == 'true' && (github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch' || contains(github.event.pull_request.labels.*.name, 'full-ci'))
     strategy:
       fail-fast: false
       matrix:
@@ -141,7 +150,7 @@ jobs:
     # warm between runs: there they take about 2 minutes, against 8 to 11 on a fresh hosted runner, and they leave the
     # hosted job limit to the e2e shards. A pull request always runs them hosted. Setting the repository variable
     # RUST_TESTS_ON_PC to false sends them back to hosted runners at once.
-    runs-on: ${{ (github.event_name == 'merge_group' && vars.RUST_TESTS_ON_PC != 'false' && (matrix.part == 'core' || matrix.part == 'crates')) && fromJSON('["self-hosted","sx-pc"]') || 'ubuntu-latest' }}
+    runs-on: ${{ (((github.event_name == 'merge_group' && vars.RUST_TESTS_ON_PC != 'false') || (github.event_name == 'workflow_dispatch' && inputs.rust_tests_on_pc)) && (matrix.part == 'core' || matrix.part == 'crates')) && fromJSON('["self-hosted","sx-pc"]') || 'ubuntu-latest' }}
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
@@ -153,8 +162,13 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           key: tests-${{ matrix.part }}
+      # The runner service sets HOME but not PATH: the toolchain in that HOME goes on PATH here, and a missing one stops
+      # the job at once with a clear message instead of failing every cargo step.
       - if: runner.environment != 'github-hosted'
         run: |
+          [ -x "$HOME/.cargo/bin/cargo" ] || { echo "::error::no cargo in $HOME/.cargo/bin on $RUNNER_NAME: install the pinned toolchain for this runner HOME"; exit 1; }
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          "$HOME/.cargo/bin/cargo" --version || { echo "::error::the pinned toolchain on $RUNNER_NAME does not run cargo (see rust-toolchain.toml)"; exit 1; }
           echo "CARGO_TARGET_DIR=$HOME/target/$RUNNER_NAME" >> "$GITHUB_ENV"
           echo "SX_HEAVY_LOCK=/mnt/c/builds/heavy-lock/lock" >> "$GITHUB_ENV"
           echo "SX_HEAVY_WAIT=1200" >> "$GITHUB_ENV"
