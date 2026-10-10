@@ -133,9 +133,10 @@ describe('a person approves anything that moves or heats a printer', () => {
 })
 
 describe('person-only work goes to the hub', () => {
-  function fakeHub(h: Awaited<ReturnType<typeof connect>>, fail?: string) {
+  function fakeHub(h: Awaited<ReturnType<typeof connect>>, fail?: string, partner?: boolean) {
     const sent: { request: ApprovalRequest; work: AgentWork }[] = []
     h.ctx.gate.handOff = {
+      ...(partner ? { partner: true } : {}),
       register: async (request, work) => {
         if (fail) throw new Error(fail)
         sent.push({ request, work })
@@ -162,6 +163,26 @@ describe('person-only work goes to the hub', () => {
     const done = data<{ pending: { status: string }[] }>(await h.call('slicerx_pending_approvals'))
     expect(done.pending[0]?.status).toBe('done')
     expect(log(h).at(-1)).toMatchObject({ decision: 'approved', by: 'person' })
+  })
+
+  it('on a partner app key, a pause and a cancel also wait for a person, as pause and cancel work', async () => {
+    const h = await connect()
+    const sent = fakeHub(h, undefined, true)
+    const p = data<{ status: string; request_id: string }>(await h.call('slicerx_printer_pause', pause))
+    expect(p.status).toBe('needs_person')
+    expect(sent[0]?.work).toEqual({ kind: 'pause', printerId: 'bay-1' })
+    expect(sent[0]?.request.actions).toEqual([{ action: 'printer.pause', target: 'bay-1', paramsHash: await hashParams({ printerId: 'bay-1' }) }])
+    expect((await h.call('slicerx_approve', { request_id: p.request_id, approve: true })).isError).toBe(true)
+    await h.call('slicerx_printer_cancel', pause)
+    expect(sent[1]?.work).toEqual({ kind: 'cancel', printerId: 'bay-1' })
+    expect(data<{ output: { state: string } }>(await h.call('slicerx_printer_status', pause)).output.state).toBe('printing')
+  })
+
+  it('without a partner key, a pause stays approvable here', async () => {
+    const h = await connect()
+    const sent = fakeHub(h)
+    expect(data<{ status: string }>(await h.call('slicerx_printer_pause', pause)).status).toBe('approval_required')
+    expect(sent).toHaveLength(0)
   })
 
   it('sends a resume as resume work', async () => {

@@ -234,7 +234,7 @@ The browser build has no keychain, so it cannot hold a per-agent credential. The
 | (environment only) | `SLICERX_MCP_SUPABASE_URL` and `SLICERX_MCP_SUPABASE_ANON_KEY`, or `SLICERX_CONFIG`; token from the keychain item `slicerx-sxlock` or `SLICERX_MCP_SXLOCK_TOKEN` | locked projects off |
 | `--sx-bin <path>` | `SLICERX_MCP_SX_BIN` or `SLICERX_SX_BIN` | `sx` on `PATH` |
 | `--printers demo\|link\|off` | `SLICERX_MCP_PRINTERS` | `demo` |
-| `--link-url`, `--link-state-dir` | `SLICERX_MCP_LINK_URL`, `SLICERX_MCP_LINK_STATE_DIR`, `SLICERX_MCP_LINK_CODE`, `SLICERX_MCP_LINK_HUB_KEY` | `ws://127.0.0.1:47615`, the hub's default state directory, none, `hub-key.pub` from the state directory. The server checks the hub's signed hello against the key before it sends anything and pairs with a proof, never the code itself. |
+| `--link-url`, `--link-state-dir` | `SLICERX_MCP_LINK_URL`, `SLICERX_MCP_LINK_STATE_DIR`, `SLICERX_MCP_LINK_CODE`, `SLICERX_MCP_LINK_HUB_KEY`, `SLICERX_MCP_LINK_KEY` (a partner app key, read once and removed from the environment; see docs/integrators/partner-app-key.md) | `ws://127.0.0.1:47615`, the hub's default state directory, none, `hub-key.pub` from the state directory. The server checks the hub's signed hello against the key before it sends anything and pairs with a proof, never the code itself. |
 | `--policy <file>` | `SLICERX_MCP_POLICY` | `~/.config/slicerx/mcp-policy.json` if present, else the defaults |
 | `--log <file>` | `SLICERX_MCP_LOG` | `<out-dir>/actions.jsonl` |
 | `--profiles-dir <dir>` | `SLICERX_MCP_PROFILES_DIR` | `~/.config/slicerx/profiles` |
