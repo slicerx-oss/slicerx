@@ -60,6 +60,7 @@ python3 scripts/gen-easy-cases.py
 pnpm gen:knowledge                      # after knowledge/ changes
 pnpm gen:reference                      # after schema.json changes
 node scripts/gen-stock-gcode.mjs --bambu <BambuStudio clone> --orca <OrcaSlicer clone>   # after either app ships new printer G-code
+node scripts/gen-stock-gcode.mjs --bambu-profiles <app>/Contents/Resources/profiles --bambu-version <v>   # adds the presets a released app ships (also --orca-profiles, --orca-version)
 ```
 
 `schema.json` and `legacy.json` are checked in as this package's own data: facts (keys, types, units, defaults, ranges, key renames) and labels written for SlicerX in `scripts/labels.json`. Edit them directly; `fixtures/knowledge-catalog.json` is the bounds table the tests compare with the schema.
