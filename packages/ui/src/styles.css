@@ -446,7 +446,7 @@ button { cursor: pointer; }
 }
 
 /* Feature tooltip (one element for the app). */
-.sx-tip { position: fixed; z-index: var(--z-tip); min-width: 168px; max-width: 248px; padding: 10px 12px; border-radius: var(--r-md); user-select: none; opacity: 0; pointer-events: auto; }
+.sx-tip { position: fixed; z-index: var(--z-tip); min-width: 168px; max-width: 248px; padding: 10px 12px; border-radius: var(--r-md); user-select: none; opacity: 0; pointer-events: none; }
 /* The tip is a popover in the top layer: drop the browser's popover box so the tip's own placement and look apply. */
 .sx-tip[popover] { inset: auto; margin: 0; color: var(--fg); overflow: visible; }
 .sx-tip[data-ready] { opacity: 1; animation: sx-tip-in 120ms var(--ease); }
