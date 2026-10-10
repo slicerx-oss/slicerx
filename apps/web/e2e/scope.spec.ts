@@ -38,7 +38,8 @@ async function goTo(page: Page, name: string): Promise<void> {
   await expect(page.locator('#expert-panel')).toBeVisible()
 }
 
-test('Simple: the pill starts on the plate, the selection gets its own supports, the plate keeps its own, and the goal stays the plate\'s', async ({ page }) => {
+test('Simple: the pill starts on the plate, the selection gets its own supports, the plate keeps its own, and the goal stays the plate\'s', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'Desktop: a phone has no scope pill (its settings are the plate\'s)')
   await open(page, 'simple')
   // The plate opens with its object selected; with nothing selected there is no pill.
   await select(page, 0)

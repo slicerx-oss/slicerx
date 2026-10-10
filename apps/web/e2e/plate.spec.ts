@@ -24,7 +24,8 @@ async function prepare(page: Page): Promise<void> {
   await plateReady(page)
 }
 
-test('numeric fields move and scale the object, and undo puts it back', async ({ page }) => {
+test('numeric fields move and scale the object, and undo puts it back', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'Desktop: a phone has no transform fields')
   await prepare(page)
   // On a phone the object's fields are in the sidebar's sheet; they open from the selection bar's Transform.
   await openSheet(page)
@@ -84,7 +85,8 @@ test('tool keys follow the look and feel keymap', async ({ page, isMobile }) => 
   await expect(posX).toHaveValue(before)
 })
 
-test('instances, fill bed and arrange, each one undo step', async ({ page }) => {
+test('instances, fill bed and arrange, each one undo step', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'Desktop: a phone has no plate tools')
   await prepare(page)
   await openSheet(page)
   const objs = page.locator('.objs > li')
@@ -110,7 +112,8 @@ test('instances, fill bed and arrange, each one undo step', async ({ page }) => 
   await expect(objs).toHaveCount(1)
 })
 
-test('plates: add, switch, per-plate sequence, move objects', async ({ page }) => {
+test('plates: add, switch, per-plate sequence, move objects', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'Desktop: moving objects between plates uses the selection bar, which a phone does not show')
   await prepare(page)
   const objs = page.locator('.objs > li')
   await page.getByRole('button', { name: 'Add plate' }).first().click()
@@ -177,7 +180,8 @@ test('the plate box names the longest plate type in its tooltip and keeps the pr
   expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0)
 })
 
-test('add shapes, merge them, and split them back', async ({ page }) => {
+test('add shapes, merge them, and split them back', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'Desktop: a phone has no shapes or object edits')
   await prepare(page)
   await openSheet(page)
   const objs = page.locator('.objs > li')
@@ -199,7 +203,8 @@ test('add shapes, merge them, and split them back', async ({ page }) => {
   await expect(objs).toHaveCount(3)
 })
 
-test('object settings: in the scope of the selection the object gets a value of its own, and undo takes it back', async ({ page }) => {
+test('object settings: in the scope of the selection the object gets a value of its own, and undo takes it back', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'Desktop: a phone has no per-object settings')
   await prepare(page)
   await openSheet(page)
   await page.locator('.obj-name', { hasText: 'Layered X' }).click()
@@ -215,7 +220,8 @@ test('object settings: in the scope of the selection the object gets a value of 
   await expect(badge).toHaveCount(0)
 })
 
-test('geometry tools run in the browser: cut in two, then repair', async ({ page }) => {
+test('geometry tools run in the browser: cut in two, then repair', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'Desktop: a phone has no geometry tools')
   await prepare(page)
   const objs = page.locator('.objs > li')
   // On a phone the object list, its Tools menu and the cut panel are in the sidebar's sheet.
@@ -239,7 +245,8 @@ test('geometry tools run in the browser: cut in two, then repair', async ({ page
   await expect(page.locator('.sx-toast, [role=status]').filter({ hasText: /Repaired|already clean/ }).first()).toBeVisible({ timeout: 30_000 })
 })
 
-test('save the project as .sx3mf with the SlicerX metadata', async ({ page }) => {
+test('save the project as .sx3mf with the SlicerX metadata', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'Desktop: a phone\'s Export is for the printer only')
   // Headless Chromium has no save dialog; the host falls back to a download without the picker.
   await page.addInitScript(() => {
     Reflect.deleteProperty(window, 'showSaveFilePicker')
@@ -304,7 +311,8 @@ test('the filament slot editor sets a slot and the panel shows it', async ({ pag
   await expect(page.getByTestId('slice-filament-slot-line')).toContainText('PETG')
 })
 
-test('a negative volume is added under the object and removed', async ({ page }) => {
+test('a negative volume is added under the object and removed', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'Desktop: a phone has no object edits')
   await prepare(page)
   await openSheet(page)
   const volumes = page.locator('[data-section="volumes"]')
@@ -332,7 +340,8 @@ test('a process preset is saved in Settings, stays after a reload and can be del
   await expect(page.getByText('My fast print')).toHaveCount(0)
 })
 
-test('printer settings open in Orca style tabs and keep a change', async ({ page }) => {
+test('printer settings open in Orca style tabs and keep a change', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'Desktop: printer settings are in Advanced, and a phone has Simple only')
   await prepare(page)
   await openSheet(page)
   await page.getByTestId('slice-machine-printer').click()
@@ -411,7 +420,8 @@ test('the paint tool paints the object with a filament color, and undo takes it 
   await expect(clear).toBeEnabled()
 })
 
-test('a modifier volume takes its own settings', async ({ page }) => {
+test('a modifier volume takes its own settings', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'Desktop: a phone has no object edits')
   await prepare(page)
   await openSheet(page)
   const volumes = page.locator('[data-section="volumes"]')
@@ -444,7 +454,8 @@ test('copy and paste with the keys adds a copy beside the object, and undo takes
   await expect(names).toHaveCount(3)
 })
 
-test('the command bar finds commands by alias, jumps to a setting, and offers the assistant for a question', async ({ page }) => {
+test('the command bar finds commands by alias, jumps to a setting, and offers the assistant for a question', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'Desktop: jumping to a setting opens it in Advanced, and a phone has Simple only')
   await prepare(page)
   await page.keyboard.press('ControlOrMeta+k')
   await page.keyboard.type('clone')
@@ -517,7 +528,8 @@ test('the shrinkage test builds its model and turns a measured length into a sav
   await expect(page.getByText(/saved for .* nozzle in "/)).toBeVisible()
 })
 
-test('the object list renames an object, sets a part filament, and leaves an object out of the print', async ({ page }) => {
+test('the object list renames an object, sets a part filament, and leaves an object out of the print', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'Desktop: renaming and part filaments are edits, which wait for the desktop on a phone')
   await prepare(page)
   await openSheet(page)
   const row = page.locator('li.obj').first()
@@ -537,7 +549,8 @@ test('the object list renames an object, sets a part filament, and leaves an obj
   await expect(row).not.toHaveClass(/off/)
 })
 
-test('the object row and the estimate use plain words: parts, slot names, and the engine detail in tooltips', async ({ page }) => {
+test('the object row and the estimate use plain words: parts, slot names, and the engine detail in tooltips', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'Desktop: the parts tree, which a phone doesn\'t show')
   await page.addInitScript(() => localStorage.setItem('slicerx.debug', '1'))
   await prepare(page)
   const row = page.locator('li.obj').first()
@@ -576,7 +589,8 @@ test('the object row and the estimate use plain words: parts, slot names, and th
   await expect(page.locator('[data-section="result"]')).toContainText('toolpath segments from the')
 })
 
-test('the Volumes heading reads in sentence case', async ({ page }) => {
+test('the Volumes heading reads in sentence case', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'Desktop: the volumes, which a phone doesn\'t show')
   await prepare(page)
   const heading = page.locator('[data-section="volumes"] .obj-volumes-h')
   await expect(heading).toHaveText('Volumes')

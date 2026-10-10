@@ -8,6 +8,7 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useReducer, useRef, us
 import { editionHasCad, useEdition } from '../edition'
 import { useHost } from '../host'
 import { useMediaQuery } from '../lib/media'
+import { isPhoneLayout } from '../lib/phone-layout'
 import { get, set, useApp, type AppState } from '../state/store'
 import { Footer } from './frame'
 import { useLookChoice } from './look'
@@ -39,7 +40,7 @@ export function FirstRun() {
   const edition = useEdition()
   // The open screen is offered when the edition has the modeling tools, the mimir screen when it has mimir and it is not connected yet.
   // After alpha, a changed onboarding shows only the steps added since the person last ran it (`since`).
-  const [steps] = useState<readonly SetupStep[]>(() => setupSteps({ cad: editionHasCad(edition), mimir: edition.features.pilot && get().pilot?.mode !== 'on' && get().pilot?.mode !== 'off', ...(since !== undefined ? { since } : {}) }))
+  const [steps] = useState<readonly SetupStep[]>(() => setupSteps({ cad: editionHasCad(edition) && !isPhoneLayout(), mimir: edition.features.pilot && get().pilot?.mode !== 'on' && get().pilot?.mode !== 'off', ...(since !== undefined ? { since } : {}) }))
   // Someone who already has a printer keeps it with one click: setup run again (or from Settings) shows it instead of the scan. Adding a printer from Settings always scans.
   const [keepPrinter, setKeepPrinter] = useState(() => opened !== 'printer' && Boolean(get().firstRun) && get().printerId !== null)
   const [flow, dispatch] = useReducer(reduceFlow, null, () => initialFlow(normalizeStep(opened, steps), choice, null, steps, get().modelModeDefault))
