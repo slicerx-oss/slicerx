@@ -20,14 +20,20 @@ test('slices in the background after an edit, and the Slice button returns when 
   const state = () => page.evaluate(() => { const s = (window as unknown as { __sx: Sx }).__sx.getState(); return { status: s.slice.status, stale: s.slice.stale ?? false, id: s.slice.result?.id ?? null, auto: s.autoSlice } })
   expect((await state()).auto).toBe(true)
   await expect(page.getByRole('main').getByRole('button', { name: /^Slice/ })).toHaveCount(0)
-  await expect(page.getByRole('button', { name: 'Print', exact: true })).toBeVisible()
-  // The first slice starts on its own.
+  // The first slice starts on its own. Its progress has the button's place while it runs; then Print is the action.
   await expect.poll(async () => (await state()).status, { timeout: 120_000 }).toBe('done')
   await expect.poll(async () => (await state()).stale, { timeout: 10_000 }).toBe(false)
+  await expect(page.getByRole('button', { name: 'Print', exact: true })).toBeVisible()
   // An edit makes the result stale at once, then a new slice (a new id) makes it current again.
   const first = (await state()).id
-  await page.evaluate(() => { const st = (window as unknown as { __sx: Sx }).__sx; st.setState({ overrides: { sparse_infill_density: '25%' } }) })
-  expect((await state()).status === 'done' ? (await state()).stale : true).toBe(true)
+  // Read in the same turn as the edit, before the new slice can start: a later read can find that slice running.
+  const after = await page.evaluate(() => {
+    const st = (window as unknown as { __sx: Sx }).__sx
+    st.setState({ overrides: { sparse_infill_density: '25%' } })
+    const sl = st.getState().slice
+    return { status: sl.status, stale: sl.stale ?? false }
+  })
+  expect(after).toEqual({ status: 'done', stale: true })
   await expect.poll(async () => { const s = await state(); return s.status === 'done' && !s.stale && s.id !== first }, { timeout: 120_000 }).toBe(true)
   // Off: nothing slices on its own and a Slice button shows. The current slice keeps Print, with Slice again under it.
   await page.evaluate(() => (window as unknown as { __sx: Sx }).__sx.setState({ autoSlice: false }))
