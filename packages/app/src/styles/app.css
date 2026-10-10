@@ -574,6 +574,8 @@ button.reset:hover { color: var(--fg); background: var(--ink-3); }
 .tf-input { flex: 1; min-width: 0; width: 100%; border: 0; background: none; color: var(--fg); font-size: var(--fs-sm); text-align: right; padding: 0; }
 .tf-input:focus { outline: none; }
 .tf-unit { font: var(--fs-xs) var(--f-mono); color: var(--dim); }
+.tf-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.tf-title { font: var(--fw-medium) var(--fs-md)/1.15 var(--f-body); color: var(--muted); }
 .tf-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 2px; }
 .tf-note { margin: 0; font-size: var(--fs-sm); color: var(--muted); }
 .tf-lock { display: flex; align-items: center; gap: 6px; font-size: var(--fs-sm); color: var(--muted); margin-right: auto; }

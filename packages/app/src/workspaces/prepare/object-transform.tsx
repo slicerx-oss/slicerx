@@ -49,6 +49,11 @@ export function ObjectTransform() {
   )
   return (
     <div className="tf" data-section="transform">
+      {/* more sits above what it opens, so pressing it moves nothing */}
+      <div className="tf-head">
+        <span className="tf-title">Transform</span>
+        <MoreButton id="object" />
+      </div>
       {!more && tool !== 'rotate' && tool !== 'scale' ? (
         <p className="tf-readout" aria-label="Position">
           X {fmt(t.position[0])} Y {fmt(t.position[1])} Z {fmt(t.position[2])} mm
@@ -86,7 +91,7 @@ export function ObjectTransform() {
           Fill bed
         </Button>
       </div> : null}
-      <div className="tf-actions">
+      {more || tool === 'scale' ? <div className="tf-actions">
         {more || tool === 'scale' ? <label className="tf-lock">
           <input type="checkbox" checked={uniform} onChange={(e) => setUniform(e.target.checked)} /> Uniform scale
         </label> : null}
@@ -105,8 +110,7 @@ export function ObjectTransform() {
             </Button>
           ))}
         </span> : null}
-        <MoreButton id="object" />
-      </div>
+      </div> : null}
       {/* below the actions, so nothing above it moves when it shows */}
       {several && tool === 'scale' ? <p className="tf-note">Several objects scale evenly, from the corner handles, so turned parts keep their shape.</p> : null}
     </div>
