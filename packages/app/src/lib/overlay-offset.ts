@@ -58,24 +58,27 @@ export interface OverlaySelectors {
   bottom: string
   top?: string
   side?: string
+  /** Beside the viewport rather than in it, rising over its bottom (a phone's open sheet): the toast keeps above them. */
+  cover?: string
 }
 
 const VARS = ['--overlay-bottom', '--overlay-top', '--overlay-center', '--overlay-width'] as const
 
 /** Keeps the toast offsets current while `viewport` is mounted. Unmounting puts the defaults back. */
 export function useOverlayOffset(viewport: RefObject<HTMLElement | null>, selectors: OverlaySelectors = { bottom: '.hud-bl, .dock' }): void {
-  const { bottom, top, side } = selectors
+  const { bottom, top, side, cover } = selectors
   useEffect(() => {
     const vp = viewport.current
     if (!vp || typeof ResizeObserver === 'undefined') return
     const root = document.documentElement
     const all = [bottom, top, side].filter(Boolean).join(', ')
-    const boxes = (sel: string | undefined) => (sel ? Array.from(vp.querySelectorAll<HTMLElement>(sel)).map((el) => el.getBoundingClientRect()) : [])
+    const boxes = (sel: string | undefined, within: ParentNode = vp) => (sel ? Array.from(within.querySelectorAll<HTMLElement>(sel)).map((el) => el.getBoundingClientRect()) : [])
     let frame = 0
     let last = ''
     const measure = () => {
       frame = 0
-      const place = toastPlace(vp.getBoundingClientRect(), { bottom: boxes(bottom), top: boxes(top), side: boxes(side) }, window.innerHeight)
+      const covers = vp.parentElement ? boxes(cover, vp.parentElement) : []
+      const place = toastPlace(vp.getBoundingClientRect(), { bottom: [...boxes(bottom), ...covers], top: boxes(top), side: boxes(side) }, window.innerHeight)
       // The layer readouts change every frame while the print plays; the root's style changes only when the place does.
       const key = JSON.stringify(place)
       if (key === last) return
@@ -107,6 +110,11 @@ export function useOverlayOffset(viewport: RefObject<HTMLElement | null>, select
     })
     mo.observe(vp, { childList: true, subtree: true })
     watch()
+    // A sheet slides over the viewport without resizing anything: it is followed as it opens, shuts or is dragged.
+    const studio = vp.parentElement
+    const slides = new MutationObserver(queue)
+    if (cover && studio) for (const el of Array.from(studio.children)) if (el !== vp) slides.observe(el, { attributes: true, attributeFilter: ['class', 'style'] })
+    if (cover) studio?.addEventListener('transitionend', queue)
     window.addEventListener('resize', queue)
     // On a phone the page scrolls and the viewport with it.
     window.addEventListener('scroll', queue, { passive: true })
@@ -115,9 +123,11 @@ export function useOverlayOffset(viewport: RefObject<HTMLElement | null>, select
       if (frame) cancelAnimationFrame(frame)
       ro.disconnect()
       mo.disconnect()
+      slides.disconnect()
+      studio?.removeEventListener('transitionend', queue)
       window.removeEventListener('resize', queue)
       window.removeEventListener('scroll', queue)
       for (const v of VARS) root.style.removeProperty(v)
     }
-  }, [viewport, bottom, top, side])
+  }, [viewport, bottom, top, side, cover])
 }

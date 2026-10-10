@@ -3,7 +3,7 @@
 // Toasts never cover the plate bar or the playback bar: on the plate tab they center over the viewport and sit above
 // what it stacks along its bottom edge, at desktop and phone width.
 import { expect, type Locator, type Page } from '@playwright/test'
-import { plateReady, sliceCount, sliced, test } from './fixtures'
+import { closeSheet, openSheet, plateReady, sliceCount, sliced, test } from './fixtures'
 import { projectZip } from './project-zip'
 
 type Sx = { setState(p: unknown): void }
@@ -125,6 +125,28 @@ test('a toast sits above the plate bar, over the viewport, on no control', { tag
       return Math.round(Math.abs(t.x + t.width / 2 - (v.x + v.width / 2)))
     }).toBeLessThanOrEqual(1)
   }
+})
+
+test('on a phone, a toast floats above an open sheet and leaves it where it is', async ({ page, isMobile }) => {
+  test.skip(!isMobile, 'Phone width')
+  await open(page)
+  await openSheet(page)
+  const sheet = page.locator('aside.pane.sheet-open')
+  // measured once it has finished sliding up
+  await sheet.evaluate((el) => Promise.all(el.getAnimations().map((a) => a.finished.catch(() => undefined))))
+  const before = (await sheet.boundingBox())!
+  // A toast on the sheet would take the tap meant for the control under it.
+  const toast = await postToast(page, 'Saved the plate.')
+  expect(toast.y + toast.height).toBeLessThanOrEqual(before.y + 1)
+  expect((await sheet.boundingBox())!.y).toBe(before.y)
+  // Shut, the sheet frees the bottom again, and the stack goes back down over the plate bar.
+  await closeSheet(page)
+  const bar = (await page.locator('.vp > .hud-bl').boundingBox())!
+  await expect.poll(async () => {
+    const t = await postToast(page, 'Saved the plate again.')
+    return Math.round(bar.y - (t.y + t.height))
+  }).toBeGreaterThanOrEqual(0)
+  expect((await postToast(page, 'Saved it once more.')).y).toBeGreaterThan(before.y)
 })
 
 test('with the toolpaths showing, a toast clears the playback panel, the layer slider and the view switch', { tag: '@gpu' }, async ({ page }) => {
