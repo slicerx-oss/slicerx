@@ -79,3 +79,53 @@ test('in Expert, print sequence heads Output, and a search finds it there', asyn
   await expect(page.locator('#set-tab-panel section[aria-label="Output and print order"] #set-print_sequence')).toHaveCount(1)
   await expect(page.locator('#set-tab-panel section[aria-label="Surface"] #set-print_sequence')).toHaveCount(0)
 })
+
+test('on a phone the tabs are one row of 44 px targets that scrolls sideways, stays still and keeps the open tab in view', async ({ page, isMobile }) => {
+  test.skip(!isMobile, 'Phone only')
+  await open(page, isMobile, 'expert')
+  const row = page.getByRole('tablist', { name: 'Setting groups' })
+  const all = tabs(page)
+  await expect(all.first()).toBeVisible()
+  const n = await all.count()
+  expect(n).toBeGreaterThan(6)
+  const boxes = await Promise.all(Array.from({ length: n }, (_, i) => all.nth(i).boundingBox()))
+  // One row, never wrapped, every tab a finger can hit.
+  expect(new Set(boxes.map((b) => Math.round(b!.y))).size).toBe(1)
+  for (const b of boxes) {
+    expect(b!.height).toBeGreaterThanOrEqual(44)
+    expect(b!.width).toBeGreaterThanOrEqual(44)
+  }
+  const heading = page.locator('[data-section="expert"] .sx-block-h').first()
+  for (let i = n - 1; i >= 0; i--) {
+    // The click's own scroll (into view) is not the app moving anything: measure after it.
+    await all.nth(i).scrollIntoViewIfNeeded()
+    const before = (await heading.boundingBox())!.y
+    const rowY = (await row.boundingBox())!.y
+    await all.nth(i).click()
+    await expect(all.nth(i)).toHaveAttribute('aria-selected', 'true')
+    // Nothing above the row moves, nor the row itself.
+    expect((await heading.boundingBox())!.y).toBe(before)
+    expect((await row.boundingBox())!.y).toBe(rowY)
+    // The open tab is inside the row's view.
+    const r = (await row.boundingBox())!
+    const t = (await all.nth(i).boundingBox())!
+    expect(t.x).toBeGreaterThanOrEqual(r.x - 1)
+    expect(t.x + t.width).toBeLessThanOrEqual(r.x + r.width + 1)
+  }
+})
+
+// Screenshots for review: SX_SHOTS=1, saved to SX_SHOTS_DIR (test-results/shots by default).
+test('shots: the tabs in the phone sheet, Advanced and Expert, light and dark', async ({ page, isMobile }, info) => {
+  test.skip(!process.env['SX_SHOTS'] || !isMobile, 'SX_SHOTS=1 on a phone only')
+  const dir = process.env['SX_SHOTS_DIR'] ?? info.outputPath('shots')
+  await open(page, isMobile, 'advanced')
+  for (const scheme of ['light', 'dark'] as const) {
+    for (const mode of ['advanced', 'expert'] as const) {
+      await page.evaluate((p) => (window as unknown as { __sx: Sx }).__sx.setState(p), { scheme, themeFollowsSystem: false, settingsMode: mode, expertOpen: true })
+      await page.getByRole('tablist', { name: 'Setting groups' }).evaluate((el) => el.scrollIntoView({ block: 'start' }))
+      await page.mouse.move(0, 0)
+      await page.waitForTimeout(400)
+      await page.screenshot({ path: `${dir}/phone-tabs-${mode}-${scheme}.png` })
+    }
+  }
+})
