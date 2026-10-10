@@ -153,7 +153,7 @@ export function TooltipHost({ resolve, enabled = true, media = true, summonKey =
   const tipRef = useRef<HTMLDivElement>(null)
   const live = useRef({ enabled, resolve })
   live.current = { enabled, resolve }
-  const state = useRef({ show: 0, hide: 0, lastHidden: 0, hover: null as HTMLElement | null, down: false, dialogAt: 0, overTip: false, current: null as HTMLElement | null, described: [] as HTMLElement[], pinned: false, pending: null as HTMLElement | null, press: 0, pressAt: null as { x: number; y: number } | null, touchShown: false, suppressClick: false, clickPinned: false, wasClickPinned: false })
+  const state = useRef({ show: 0, hide: 0, lastHidden: 0, hover: null as HTMLElement | null, down: false, dialogAt: 0, current: null as HTMLElement | null, described: [] as HTMLElement[], pinned: false, pending: null as HTMLElement | null, press: 0, pressAt: null as { x: number; y: number } | null, touchShown: false, suppressClick: false, clickPinned: false, wasClickPinned: false })
 
   useEffect(() => {
     const s = state.current
@@ -210,12 +210,11 @@ export function TooltipHost({ resolve, enabled = true, media = true, summonKey =
     const leave = () => {
       s.pending = null
       window.clearTimeout(s.show)
-      // A tip opened by a click stays until the next click or Esc, so a touch lifting off does not close it.
-      if (s.clickPinned || (s.pinned && s.overTip)) return
+      // A tip opened by a click stays until the next click or Esc, so a touch lifting off does not close it. Any other
+      // tip closes once the pointer leaves its control: tips never take the pointer, so one can't hold the next press.
+      if (s.clickPinned) return
       window.clearTimeout(s.hide)
-      s.hide = window.setTimeout(() => {
-        if (!s.overTip) hide()
-      }, TIP_TIMING.hide)
+      s.hide = window.setTimeout(hide, TIP_TIMING.hide)
     }
     const over = (e: PointerEvent) => {
       if (e.pointerType === 'touch') return
@@ -401,19 +400,6 @@ export function TooltipHost({ resolve, enabled = true, media = true, summonKey =
       data-still={shown.still ? true : undefined}
       data-ready={pos ? true : undefined}
       style={{ left: pos?.x ?? 0, top: pos?.y ?? 0 }}
-      onPointerEnter={() => {
-        state.current.overTip = true
-        window.clearTimeout(state.current.hide)
-      }}
-      onPointerLeave={() => {
-        state.current.overTip = false
-        state.current.hide = window.setTimeout(() => {
-          for (const el of state.current.described) undescribeEl(el)
-          state.current.described = []
-          state.current.current = null
-          setShown(null)
-        }, TIP_TIMING.hide)
-      }}
     >
       <div className="sx-tip-head">
         <span className="sx-tip-title">{content.title}</span>
