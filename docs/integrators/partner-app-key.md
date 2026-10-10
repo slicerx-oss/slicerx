@@ -7,10 +7,11 @@ An app that runs next to SlicerX on the same computer, such as LayerMate, reache
 A partner app key has the agent role with tighter limits:
 
 - It reads printers, their status and camera stills, and prepares a file for a printer.
-- It can ask to print a sliced plate, pause a print or cancel one. Each request shows up as a card in SlicerX and on the user's paired phones, with "Asked by <your app's name>, a partner app" on top. Nothing runs until the user approves it there.
-- Over remote access it can only ask to pause or cancel.
+- It can pause or cancel a print. Like an AI agent, it raises a card for that and answers it itself, since those only stop a print.
+- It can ask to print a sliced plate. The card shows up in SlicerX and on the user's paired phones, with "Asked by <your app's name>, a partner app" on top, and nothing prints until the user approves it there.
+- Over remote access it can only ask to pause or cancel, and the user answers those.
 
-It can never approve a card, its own included, and it can't start, resume, pause or cancel anything without the user's tap. It can't send G-code, change a running print (temperatures, fans, speed, AMS slots), switch Home Assistant devices, or touch the user's settings, keys, printers, connected apps or other devices. The bridge refuses those calls with `forbidden`.
+It can't approve a print or any card other than its own pause and cancel cards, and it can't resume a print or send G-code, change a running print (temperatures, fans, speed, AMS slots), switch Home Assistant devices, or touch the user's settings, keys, printers, connected apps or other devices. The bridge refuses those calls with `forbidden`.
 
 ## Getting a key
 
@@ -36,7 +37,7 @@ SLICERX_MCP_LINK_KEY=<the key> node node_modules/@slicerx/mcp/dist/cli.js --prin
 
 The server reads `SLICERX_MCP_LINK_KEY` once at start and removes it from its own environment, so nothing it launches inherits the key. It checks the bridge's signed hello against `hub-key.pub` from `--link-state-dir` (or `SLICERX_MCP_LINK_HUB_KEY`) before the key leaves your process. A key in any other format is refused, and the error never repeats it.
 
-Printer tools that change something answer with `status: "needs_person"` and a `request_id`. `slicerx_pending_approvals` reports `waiting_for_person`, then `done` or `failed` once the user has answered in SlicerX and the bridge has run the request.
+Pause and cancel answer with `status: "approval_required"`, which your app approves with `slicerx_approve`. A print answers with `status: "needs_person"` and a `request_id`. `slicerx_pending_approvals` reports `waiting_for_person`, then `done` or `failed` once the user has answered in SlicerX and the bridge has run it.
 
 ## Using it with @slicerx/link-client
 
@@ -47,7 +48,7 @@ const link = await connectLink({ clientKey: key, hubKey })
 link.partner // true
 ```
 
-`hubKey` is the contents of `hub-key.pub`. Ask for a print with `link.approvals.registerWork(card, { kind: 'print', printerId, file })`, or `{ kind: 'pause' | 'cancel', printerId }`, and listen with `link.onApprovalDone`. The card's actions have to match the work exactly, the same as for an AI agent.
+`hubKey` is the contents of `hub-key.pub`. Ask for a print with `link.approvals.registerWork(card, { kind: 'print', printerId, file })` and listen with `link.onApprovalDone`. The card's actions have to match the work exactly, the same as for an AI agent. To pause or cancel, register a card with just that action, grant it with `link.approvals.grant`, and pass the token to `link.pause` or `link.cancel`.
 
 ## When the key stops working
 

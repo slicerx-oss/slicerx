@@ -420,8 +420,6 @@ export type AgentWork =
   | { kind: 'resume'; printerId: string }
   | { kind: 'gcode'; printerId: string; line: string }
   | { kind: 'adjust'; printerId: string; change: PrintAdjustment }
-  /** A partner app's pause or cancel: it approves nothing, so even these wait for a person. */
-  | { kind: 'pause' | 'cancel'; printerId: string }
 
 export interface ApprovalDone {
   requestId: string
