@@ -1,7 +1,7 @@
 'use client'
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-import { createContext, useCallback, useContext, useMemo, useRef, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Icon } from '../icons/icon'
 import type { IconName } from '../icons/icon-paths'
 
@@ -19,6 +19,7 @@ interface ToastRecord {
   id: number
   message: ReactNode
   tone: ToastTone
+  duration: number
   action?: { label: string; run: () => void }
 }
 
@@ -34,29 +35,46 @@ export function ToastProvider({ children, max = 3 }: { children?: ReactNode; max
     (message: ReactNode, options?: ToastOptions) => {
       const id = next.current++
       const tone = options?.tone ?? 'plain'
-      setToasts((list) => [...list, { id, message, tone, ...(options?.action ? { action: options.action } : {}) }].slice(-max))
-      window.setTimeout(() => setToasts((list) => list.filter((t) => t.id !== id)), options?.duration ?? 2600)
+      setToasts((list) => [...list, { id, message, tone, duration: options?.duration ?? 2600, ...(options?.action ? { action: options.action } : {}) }].slice(-max))
     },
     [max],
   )
+  const remove = useCallback((id: number) => setToasts((list) => list.filter((t) => t.id !== id)), [])
   const value = useMemo(() => toast, [toast])
   return (
     <ToastContext.Provider value={value}>
       {children}
       <div className="sx-toasts" role="status" aria-live="polite">
         {toasts.map((t) => (
-          <div key={t.id} className="sx-toast" data-testid="toast" data-tone={t.tone === 'plain' ? undefined : t.tone}>
-            {t.tone === 'plain' ? null : <Icon name={TONE_ICON[t.tone]} />}
-            <span>{t.message}</span>
-            {t.action ? (
-              <button type="button" className="sx-toast-action" data-testid="toast-action" onClick={() => { t.action?.run(); setToasts((list) => list.filter((x) => x.id !== t.id)) }}>
-                {t.action.label}
-              </button>
-            ) : null}
-          </div>
+          <ToastItem key={t.id} toast={t} onDone={remove} />
         ))}
       </div>
     </ToastContext.Provider>
+  )
+}
+
+/** One toast. Its time starts once it is on screen, so a page busy when it was posted does not eat into it. */
+function ToastItem({ toast: t, onDone }: { toast: ToastRecord; onDone: (id: number) => void }) {
+  useEffect(() => {
+    let timer = 0
+    const frame = requestAnimationFrame(() => {
+      timer = window.setTimeout(() => onDone(t.id), t.duration)
+    })
+    return () => {
+      cancelAnimationFrame(frame)
+      window.clearTimeout(timer)
+    }
+  }, [t.id, t.duration, onDone])
+  return (
+    <div className="sx-toast" data-testid="toast" data-tone={t.tone === 'plain' ? undefined : t.tone}>
+      {t.tone === 'plain' ? null : <Icon name={TONE_ICON[t.tone]} />}
+      <span>{t.message}</span>
+      {t.action ? (
+        <button type="button" className="sx-toast-action" data-testid="toast-action" onClick={() => { t.action?.run(); onDone(t.id) }}>
+          {t.action.label}
+        </button>
+      ) : null}
+    </div>
   )
 }
 
