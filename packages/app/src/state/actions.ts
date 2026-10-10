@@ -21,7 +21,7 @@ import { requestVolumes } from '../plate/volumes'
 import { areaOrigin, objectToMachine, towerToPlate } from '../plate/bed-origin'
 import { holdUpdates } from '../updates/hold'
 import { exportPlateGcode, sha256Hex } from '../calibration/gcode'
-import { sliceHandle } from '../plate/painted'
+import { sliceHandle, sliceShards } from '../plate/painted'
 import { nameOptions, plateConfig } from '../plate/plates'
 import { bedTypeConfig } from '../plate/bed-type'
 import { plateSequence } from '../plate/plate-sequence'
@@ -397,7 +397,7 @@ export async function slicePlate(host: Host, opts: { auto?: boolean } = {}): Pro
             objects,
           },
           config,
-          options: { emitGcode: true, emitPreview: true, shards: host.kind === 'desktop' ? 1 : host.capabilities.threads, ...trustOptions(s), ...nameOptions(s), ...(s.profile?.printerId ? { printerId: s.profile.printerId } : {}), ...(layerTopsMm ? { layerTopsMm } : {}), ...(heightRanges.length ? { heightRanges } : {}), ...(layerGcode.length ? { layerGcode } : {}), ...(s.resume ? resumeSliceOptions(s.resume.plan, s.resume.declareZ) : {}) },
+          options: { emitGcode: true, emitPreview: true, shards: sliceShards(host, toPrint), ...trustOptions(s), ...nameOptions(s), ...(s.profile?.printerId ? { printerId: s.profile.printerId } : {}), ...(layerTopsMm ? { layerTopsMm } : {}), ...(heightRanges.length ? { heightRanges } : {}), ...(layerGcode.length ? { layerGcode } : {}), ...(s.resume ? resumeSliceOptions(s.resume.plan, s.resume.declareZ) : {}) },
         },
         {
           signal: abort.signal,
