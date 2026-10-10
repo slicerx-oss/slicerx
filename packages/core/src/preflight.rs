@@ -944,6 +944,7 @@ mod tests {
                     flow: 1.0,
                     dz: 0.0,
                     overhang_fan: false,
+                    owner: crate::preview::OBJECT_NONE,
                 }],
                 ..LayerPaths::default()
             }],

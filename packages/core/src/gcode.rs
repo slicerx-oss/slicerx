@@ -1813,12 +1813,13 @@ fn emit_layer(
         // `printing_by_object_gcode`, over the next object before coming down (Orca's `_do_export`), with
         // `current_object_idx` the object's place in the plate list.
         if crate::customgcode::text(base, "printing_by_object_gcode").is_some_and(|t| !t.trim().is_empty()) {
-            let (x, y) = (first_pt.x_mm(), first_pt.y_mm());
-            let k = out
-                .objects
+            // The object the layer's paths belong to (`owners.rs`).
+            let k = l
+                .paths
                 .iter()
-                .position(|o| crate::firmware::inside(&o.hull, x, y, 0.0))
-                .unwrap_or(0);
+                .map(|p| p.owner)
+                .find(|&o| o != crate::preview::OBJECT_NONE)
+                .map_or(0, usize::from);
             if let Some(ctx) = ctx.as_mut() {
                 #[allow(clippy::cast_precision_loss, reason = "object counts are small")]
                 ctx.set_num("current_object_idx", k as f64);
@@ -1979,11 +1980,8 @@ fn emit_layer(
     let mut blocks: Vec<(crate::timelapse::Spot, String)> = Vec::new();
     if let Some(spot) = lapse.filter(|s| *s != crate::timelapse::Spot::LayerChange) {
         let wrap = labels.as_ref().and_then(|lb| {
-            let objects: std::collections::BTreeSet<usize> = l
-                .paths
-                .iter()
-                .filter_map(|p| l.path_points(p).first().and_then(|&s| lb.object_of(s, p.feature)))
-                .collect();
+            let objects: std::collections::BTreeSet<usize> =
+                l.paths.iter().filter_map(|p| lb.owner_of(p)).collect();
             lb.layer_wrap(l.index, &objects)
         });
         let mut text = String::new();
@@ -2103,7 +2101,7 @@ fn emit_layer(
                 cursor = None;
             }
         }
-        let want_object = labels.as_ref().and_then(|lb| lb.object_of(start, p.feature));
+        let want_object = labels.as_ref().and_then(|lb| lb.owner_of(p));
         if let Some(lb) = labels.as_ref()
             && want_object != open_object
         {

@@ -319,6 +319,7 @@ impl Builder<'_> {
                 flow: self.flow,
                 dz: 0.0,
                 overhang_fan: false,
+                owner: crate::preview::OBJECT_NONE,
             });
         } else {
             self.out.points.truncate(start as usize);
