@@ -48,7 +48,7 @@ export interface ViewportProps {
    * graphics draw the plate at once.
    */
   reveal?: boolean | 'each-plate'
-  /** The bed outline: `default`, a crisp glowing line, or `subtle`, thin and half strength for a calm theme. */
+  /** The bed outline: `default`, a crisp glowing line, or `subtle`, a faint hairline for a calm theme. */
   bedOutline?: BedOutline
   /**
    * Prepare tools over the view: `true` for all of them, or a list of `select`, `move`, `rotate`, `scale`, `arrange`
@@ -93,12 +93,21 @@ export function Viewport({ plate, preview, look = 'studio', colorMode = 'feature
   const actions = tools === true ? EMBED_ACTIONS : tools ? EMBED_ACTIONS.filter((a) => tools.includes(a)) : []
   const [ownTool, setOwnTool] = useState<EmbedTool | null>(null)
   const active: EmbedTool = tool ?? ownTool ?? (actions.length ? 'move' : 'select')
+  const [picked, setPicked] = useState<readonly string[]>([])
+  const selected = selection ?? picked
   const pickTool = (t: EmbedTool) => {
     if (tool === undefined) setOwnTool(t)
     onToolChange?.(t)
+    // rotate and scale draw their handles on the selection: with one object and nothing picked, pick it
+    const only = plate?.objects.length === 1 ? plate.objects[0]!.id : null
+    if ((t === 'rotate' || t === 'scale') && only && selected.length === 0) {
+      if (selection === undefined) {
+        vp?.setSelection([only])
+        setPicked([only])
+      }
+      onSelect?.([only])
+    }
   }
-  const [picked, setPicked] = useState<readonly string[]>([])
-  const selected = selection ?? picked
   const { theme } = useTheme()
   const scene = useMemo(() => {
     const auto = sceneFor(theme)

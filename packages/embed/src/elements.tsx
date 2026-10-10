@@ -61,7 +61,7 @@ async function plateFrom(url: string): Promise<ViewportPlate> {
         id: 'model',
         name: model.name,
         transform: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, bed.widthMm / 2, bed.depthMm / 2, 0, 1],
-        parts: model.parts.map((p, i) => ({ name: p.name, positions: p.positions, indices: p.indices, color: model.colors[i] ?? model.colors[0] ?? '#bd93f9' })),
+        parts: model.parts.map((p, i) => ({ name: p.name, positions: p.positions, indices: p.indices, color: model.colors[i] ?? model.colors[0] ?? '#ebebe6' })),
       },
     ],
   }

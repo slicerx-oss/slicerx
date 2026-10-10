@@ -11,13 +11,14 @@ All notable changes to `@slicerx/embed` are listed here. The format follows Keep
 
 ### Changed
 
+- `decodeStl` and `<sx-viewport src>` color a plain STL white PLA (`#ebebe6`) instead of the accent purple, which hid the selection outline. Picking rotate or scale with one object on the plate and nothing selected selects it, so its handles show.
 - The default theme is now called Subban: `subban` and `subbanLight` replace `nocturne` and `nocturneLight`, which stay as deprecated names for the same themes. Subban light uses a new pale violet palette.
 
 ### Added
 
 - Prepare tools in `Viewport` and `<sx-viewport>`: `tools` puts a toolbar over the view with select, move, rotate, scale, arrange and drop to bed (keys M, R, S and A). `tool`, `selection`, `onToolChange`, `onSelect` and `onTransform` (`tool`, `select` and `transform` events on the element), and `arrange()` and `dropToBed()` on the element.
 - `reveal: 'each-plate'` (`reveal="each-plate"`) plays the plate reveal for every new plate; `playReveal()` on the element plays it on demand.
-- `bedOutline: 'subtle'` (`bed-outline="subtle"`): a thin, half strength bed outline without the glow.
+- `bedOutline: 'subtle'` (`bed-outline="subtle"`): a faint hairline bed outline without the glow.
 - `look="cad"` on `<sx-viewport>`.
 
 - `LocalAiSetup` and `useLocalAi`: Set up local AI as one piece or a hook, themed like the other pieces, with the models an edition allows.
