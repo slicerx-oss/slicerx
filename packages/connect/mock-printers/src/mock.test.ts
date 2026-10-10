@@ -511,3 +511,16 @@ test('Bambu: the camera follows POST /camera, and faults are not modeled', async
     await mocks.stop()
   }
 })
+
+test('stopping the mocks closes the Elegoo WebSocket clients too', async () => {
+  const mocks = await startMocks({ only: ['elegoo'] })
+  const ws = new WebSocket(`ws://127.0.0.1:${mocks.ports.elegoo}/websocket`)
+  await new Promise<void>((resolve, reject) => {
+    ws.onopen = () => resolve()
+    ws.onerror = () => reject(new Error('no websocket'))
+  })
+  const closed = new Promise<void>((resolve) => { ws.onclose = () => resolve() })
+  const stopped = await Promise.race([mocks.stop().then(() => 'stopped'), new Promise((r) => setTimeout(() => r('hung'), 5000))])
+  assert.equal(stopped, 'stopped')
+  await closed
+})
