@@ -2,7 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 // Plate tools on the plate tab: numeric transform fields, scale to size, undo and redo, tool keys.
 import { type Page } from '@playwright/test'
-import { addMenu, closeSheet, expect, openSheet, plateReady, renameRow, setPartFilament, sliceCount, sliced, tab, tabName, test } from './fixtures'
+import { addMenu, closeSheet, expect, openSheet, panesSettled, plateReady, renameRow, setPartFilament, sliceCount, sliced, tab, tabName, test } from './fixtures'
 
 /**
  * The G-code the printer runs. Files for Bambu Lab printers open with the header and the full settings (hundreds
@@ -631,12 +631,15 @@ test('seam paint changes where the seam lands in the sliced G-code', { tag: '@gp
   const plain = await sliceAndExport()
   expect(plain).toContain('G1')
   await tab(page, 'prepare').click()
+  // The tool takes the objects card's place, so the model is selected first.
+  await page.locator('.obj-name', { hasText: 'Layered X' }).click()
   await page.getByRole('button', { name: 'Paint', exact: true }).click()
   const panel = page.locator('[data-section="paint"]')
   await panel.getByRole('radio', { name: 'Seam' }).click()
   await panel.getByRole('radiogroup', { name: 'Brush' }).getByRole('radio', { name: 'Fill', exact: true }).click()
-  await page.locator('.obj-name', { hasText: 'Layered X' }).click()
-  // The view opens on the whole plate: bring the model to the middle of the view before painting it.
+  // The view opens on the whole plate: bring the model to the middle of the view before painting it, once the right
+  // pane the tool opens has finished sliding.
+  await panesSettled(page)
   await page.keyboard.press('z')
   await page.waitForTimeout(600)
   const box = await page.locator('.vp-canvas').first().boundingBox()
@@ -673,7 +676,8 @@ test('the object list reorders by drag and by buttons, and a locked object stays
   await expect(rows.nth(0).locator('.obj-name')).toHaveText('First')
   await page.getByRole('button', { name: 'Undo' }).click()
   await expect(rows.nth(0).locator('.obj-name')).toHaveText('Second')
-  // Lock: the numeric position will not change.
+  // Lock: the numeric position will not change. The row's buttons show on hover.
+  await rows.nth(0).locator('.obj-row').first().hover()
   await rows.nth(0).getByRole('button', { name: 'Lock Second' }).click()
   await rows.nth(0).locator('.obj-h').click()
   const posX = page.getByRole('group', { name: 'Position' }).getByRole('textbox', { name: /X/ })
@@ -1137,11 +1141,12 @@ test('brim ears: click the model to add ears, they print as discs on the first l
   await page.locator('.sx-palette-item', { hasText: 'now' }).first().click()
   await expect(page.locator('#expert-panel')).toBeVisible()
   await page.locator('#expert-panel').getByLabel('Brim type').selectOption('painted')
+  await page.locator('.obj-name', { hasText: 'Layered X' }).click()
   const toolbar = page.getByRole('toolbar', { name: 'Plate tools' })
   await toolbar.getByRole('button', { name: 'Brim ears' }).click()
   const panel = page.locator('[data-section=brim-ears]')
   await expect(panel.getByTestId('brim-ear-count')).toHaveText(/No ears yet/)
-  await page.locator('.obj-name', { hasText: 'Layered X' }).click()
+  await panesSettled(page)
   const vp = page.locator('.vp-canvas').first()
   const box = (await vp.boundingBox())!
   await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2)
@@ -1184,7 +1189,8 @@ test('brim ears: click the model to add ears, they print as discs on the first l
   await expect(panel.getByTestId('brim-ear-count')).toHaveText(/1 selected/)
   await page.keyboard.press('Delete')
   await expect(panel.getByTestId('brim-ear-count')).toHaveText(new RegExp(`${generated - 1} ears?`))
-  await expect(page.locator('.obj-name', { hasText: 'Layered X' })).toBeVisible()
+  // The object stays: the tool holds the card, so the plate is read from the store.
+  expect(await page.evaluate(() => (window as unknown as { __sx: { getState(): { plate: unknown[] } } }).__sx.getState().plate.length)).toBe(1)
   const slices15 = await sliceCount(page)
   await page.getByRole('main').getByRole('button', { name: /^Slice/ }).first().click()
   await expect(sliced(page, slices15)).toBeVisible({ timeout: 120_000 })
