@@ -585,6 +585,22 @@ struct LayerRegions {
     lslices: Option<Shapes>,
     /// The union of `regions`, worked out on first use: every region of this layer and its neighbors reads it.
     union: std::sync::OnceLock<Shapes>,
+    /// What hangs past the layer below, for the auto lift ([`lift_overhangs`]).
+    lift_hang: LiftHang,
+}
+
+/// One layer's overhang for the auto lift, worked out on first use: the layer's own lift and those of the
+/// layers up to 0.4 mm above read it. It is kept with what it was worked out from, the growth and opening
+/// and the layer below (by address, within the one list of layers), and a reader with other values works
+/// it out again, so a stored one is always the one a new run would give. A copy starts empty, since its
+/// layer below is another.
+#[derive(Debug, Default)]
+struct LiftHang(std::sync::OnceLock<((i32, i32, usize), Shapes)>);
+
+impl Clone for LiftHang {
+    fn clone(&self) -> Self {
+        Self::default()
+    }
 }
 
 /// The overhangs an auto lift spirals over (orca's `detect_overhangs_for_lift`, read by
@@ -600,20 +616,36 @@ fn lift_overhangs<'a>(
     #[allow(clippy::cast_possible_truncation, reason = "a line width in internal units")]
     let (grow, open) = ((0.3 * lw).round() as i32, (0.1 * lw).round() as i32);
     let top = plan.top(layer);
-    let mut sets: Vec<Shapes> = Vec::new();
+    let mut sets: Vec<std::borrow::Cow<'a, Shapes>> = Vec::new();
     let mut l = layer;
     while l >= 1 && plan.top(l) >= top - 0.4 - 1e-6 {
         if let (Some(here), Some(below)) = (get(l), get(l - 1)) {
-            let held = crate::perimeters::offset(&lower_shapes(below), grow);
-            let hang = crate::perimeters::difference(&lower_shapes(here), &held);
-            let hang = crate::perimeters::offset(&crate::perimeters::offset(&hang, -open), open);
+            let hang = || {
+                let held = crate::perimeters::offset(&lower_shapes(below), grow);
+                let hang = crate::perimeters::difference(&lower_shapes(here), &held);
+                crate::perimeters::offset(&crate::perimeters::offset(&hang, -open), open)
+            };
+            // Not `once`: a layer reading a neighbor's overhang while another thread works it out works it
+            // out too rather than wait.
+            let key = (grow, open, std::ptr::from_ref(below).addr());
+            let hang = match here.lift_hang.0.get() {
+                Some((k, stored)) if *k == key => std::borrow::Cow::Borrowed(stored),
+                Some(_) => std::borrow::Cow::Owned(hang()),
+                None => match here.lift_hang.0.set((key, hang())) {
+                    Ok(()) => here.lift_hang.0.get().map_or_else(
+                        || std::borrow::Cow::Owned(hang()),
+                        |(_, s)| std::borrow::Cow::Borrowed(s),
+                    ),
+                    Err((_, own)) => std::borrow::Cow::Owned(own),
+                },
+            };
             if !hang.is_empty() {
                 sets.push(hang);
             }
         }
         l -= 1;
     }
-    let refs: Vec<&Shapes> = sets.iter().collect();
+    let refs: Vec<&Shapes> = sets.iter().map(AsRef::as_ref).collect();
     (!refs.is_empty()).then(|| Box::new(crate::perimeters::union_all(&refs)))
 }
 
@@ -5584,6 +5616,7 @@ impl SliceSession {
                 raw,
                 lslices,
                 union: std::sync::OnceLock::new(),
+                lift_hang: LiftHang::default(),
             };
             if colors {
                 out.drop_specks();
@@ -5634,6 +5667,7 @@ impl SliceSession {
             raw,
             lslices,
             union: std::sync::OnceLock::new(),
+            lift_hang: LiftHang::default(),
         };
         if colors {
             out.drop_specks();
