@@ -13,6 +13,11 @@
 //! never one that starts a print, sends raw G-code or changes a running print: a person answers
 //! those on the app's card or on a phone. It may not press Print, say the plate is clear, queue,
 //! pair phones, manage remembered clients, secrets, printers, services or settings.
+//!
+//! A partner app (another program the person connects, such as `LayerMate`) holds a named key from
+//! `clients.create` with `partner: true`. It is an agent with less: it calls only [`PARTNER_METHODS`],
+//! approves nothing, and every card it raises waits for a person and carries its work, which may only
+//! print, pause or cancel.
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -133,6 +138,54 @@ pub(crate) fn tool_needs_person(plugin: &str, tool: &str) -> bool {
     plugin == "home-assistant" && tool.trim_start_matches("home-assistant.") != "list_entities"
 }
 
+/// The only methods a partner app may call: reading, stills and live view, preparing a file, and
+/// raising or withdrawing its own cards. Anything that takes an approval token is missing on purpose.
+const PARTNER_METHODS: &[&str] = &[
+    "plugins",
+    "list",
+    "status",
+    "subscribe",
+    "unsubscribe",
+    "snapshot",
+    "camera.grab",
+    "camera.open",
+    "camera.close",
+    "camera.quality",
+    "camera.probe",
+    "camera.webrtc",
+    "prepareUpload",
+    "files.list",
+    "history.list",
+    "issues.list",
+    "objects.list",
+    "bed.state",
+    "adjust.limits",
+    "fleets.list",
+    "queue.list",
+    "inbox.list",
+    "approvals.register",
+    "approvals.deny",
+    "approvals.pending",
+];
+
+/// Whether a partner app may call `method`.
+pub(crate) fn partner_allowed(method: &str) -> bool {
+    PARTNER_METHODS.contains(&method) && allowed(Role::Agent, method)
+}
+
+/// Card actions a partner may ask a person for: a print (upload and start), pause or cancel.
+const PARTNER_ACTIONS: &[&str] = &[
+    "printer.upload",
+    "printer.start",
+    "printer.pause",
+    "printer.cancel",
+];
+
+/// Whether a partner may raise a card with these actions.
+pub(crate) fn partner_may_ask<'a>(mut actions: impl Iterator<Item = &'a str>) -> bool {
+    actions.all(|a| PARTNER_ACTIONS.contains(&a))
+}
+
 /// Whether a connection may grant or deny a card. `own` is true when this connection registered it.
 pub(crate) fn may_answer(role: Role, own: bool, needs_person: bool) -> bool {
     match role {
@@ -214,11 +267,70 @@ mod tests {
             assert!(!allowed(Role::Watch, m), "{m}");
         }
         assert!(!may_answer(Role::Watch, true, false));
+        assert_eq!(narrowed(Role::Agent, Some("watch")), Role::Watch);
         assert_eq!(narrowed(Role::Watch, Some("agent")), Role::Watch, "never wider");
         assert_eq!(narrowed(Role::Agent, Some("app")), Role::Agent);
         assert_eq!(narrowed(Role::App, Some("watch")), Role::Watch);
         assert!(sees_broadcast(Role::Watch, "watch.dismissed") && !sees_broadcast(Role::Watch, "bed"));
         assert!(sees_broadcast(Role::Watch, "watch.plate") && !sees_broadcast(Role::App, "watch.plate"));
         assert!(!sees_broadcast(Role::Watch, "watch.guard") && sees_broadcast(Role::App, "watch.guard"));
+    }
+
+    #[test]
+    fn partners_call_only_their_list_and_nothing_that_takes_a_token() {
+        for m in [
+            "list",
+            "status",
+            "camera.grab",
+            "prepareUpload",
+            "approvals.register",
+            "approvals.deny",
+            "approvals.pending",
+        ] {
+            assert!(partner_allowed(m), "{m}");
+        }
+        for m in [
+            "approvals.grant",
+            "start",
+            "resume",
+            "pause",
+            "cancel",
+            "gcode",
+            "upload",
+            "adjust",
+            "adjust.slot",
+            "adjust.light",
+            "callTool",
+            "print.local",
+            "files.start",
+            "objects.skip",
+            "jog",
+            "queue.add",
+            "fleets.create",
+            "fleets.delete",
+            "discover",
+            "watch.report",
+            "watch.resume",
+            "clients.create",
+            "clients.revoke",
+            "secrets.set",
+            "remote.status",
+            "settings.set",
+            "printers.add",
+        ] {
+            assert!(!partner_allowed(m), "{m}");
+        }
+        assert!(partner_may_ask(["printer.upload", "printer.start"].into_iter()));
+        assert!(partner_may_ask(["printer.pause"].into_iter()));
+        assert!(partner_may_ask(["printer.cancel"].into_iter()));
+        for a in [
+            "printer.resume",
+            "printer.gcode",
+            "printer.adjust",
+            "plugin.call",
+            "printer.config",
+        ] {
+            assert!(!partner_may_ask(["printer.pause", a].into_iter()), "{a}");
+        }
     }
 }

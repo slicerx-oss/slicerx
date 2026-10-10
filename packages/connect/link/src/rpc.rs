@@ -348,6 +348,7 @@ pub(crate) async fn handle_connection(bridge: Arc<Bridge>, stream: TcpStream) {
         next_stream: 1,
         queued,
         client: None,
+        partner: None,
     };
     while let Some(Ok(msg)) = source.next().await {
         let Message::Text(text) = msg else {
@@ -446,13 +447,19 @@ pub(crate) async fn handle_connection(bridge: Arc<Bridge>, stream: TcpStream) {
                         Some((role, confirm))
                     });
             }
-            let role = by_key.as_ref().map(|(_, r)| *r).or(by_code.map(|(r, _)| r));
+            let role = by_key.as_ref().map(|(_, r, _)| *r).or(by_code.map(|(r, _)| r));
             if let Some(role) = role {
-                // A client may ask for the narrower role, never a wider one.
-                let role = roles::narrowed(role, params.get("role").and_then(Value::as_str));
+                let partner = by_key.as_ref().and_then(|(_, _, p)| p.clone());
+                // A client may ask for the narrower role, never a wider one. A partner app stays an
+                // agent: the detector's reports could pause a print with no card.
+                let role = if partner.is_some() {
+                    Role::Agent
+                } else {
+                    roles::narrowed(role, params.get("role").and_then(Value::as_str))
+                };
                 conn.paired = true;
                 conn.role = role;
-                if let Some((client_id, _)) = &by_key {
+                if let Some((client_id, _, _)) = &by_key {
                     conn.client = Some(client_id.clone());
                     let mut live = crate::hub::lock(&bridge.live_clients);
                     live.retain(|(_, t)| !t.is_closed());
@@ -461,6 +468,10 @@ pub(crate) async fn handle_connection(bridge: Arc<Bridge>, stream: TcpStream) {
                 let mut out = serde_json::Map::new();
                 out.insert("paired".into(), json!(true));
                 out.insert("role".into(), json!(role.as_str()));
+                if partner.is_some() {
+                    out.insert("partner".into(), json!(true));
+                }
+                conn.partner = partner;
                 // The hub's half of the key confirmation: proof that it holds the same code.
                 if let Some((_, confirm)) = &by_code {
                     out.insert("confirm".into(), json!(B64.encode(confirm)));
@@ -658,6 +669,8 @@ struct Conn {
     queued: Arc<AtomicUsize>,
     /// The remembered client this connection paired as, so a revoked key stops at its next call.
     client: Option<String>,
+    /// The partner app's name, when it paired with a partner key (roles.rs).
+    partner: Option<String>,
 }
 
 fn parse_request(text: &str) -> Rpc<(Value, String, Value)> {
@@ -718,6 +731,12 @@ async fn dispatch(
         return Err(RpcError::new(
             "forbidden",
             format!("{method} is for the SlicerX app; this connection paired with the agent code"),
+        ));
+    }
+    if conn.partner.is_some() && !roles::partner_allowed(method) {
+        return Err(RpcError::new(
+            "forbidden",
+            format!("{method} is not open to partner apps; a person does it in the SlicerX app"),
         ));
     }
     match method {
@@ -1357,9 +1376,21 @@ fn register_card(b: &Arc<Bridge>, broker: &sx_permit::ApprovalBroker, conn: &Con
         req.origin = Some(sx_permit::StartOrigin::Mcp);
         broker.cap_expiry(&mut req, crate::agent_work::AGENT_CARD_TTL);
     }
+    if let Some(name) = &conn.partner {
+        if !roles::partner_may_ask(req.actions.iter().map(|a| a.action.as_str())) {
+            return Err(RpcError::new(
+                "forbidden",
+                "a partner app may ask only to print, pause or cancel",
+            ));
+        }
+        // The card says who asked, in the hub's words, above the partner's own lines.
+        req.lines.insert(0, format!("Asked by {name}, a partner app"));
+    }
     let id = req.id.clone();
     let printer = req.printer_id.clone();
-    let person = roles::person_only(req.actions.iter().map(|a| (a.action.as_str(), a.target.as_str())));
+    // A partner approves nothing, so every card it raises waits for a person.
+    let person = conn.partner.is_some()
+        || roles::person_only(req.actions.iter().map(|a| (a.action.as_str(), a.target.as_str())));
     let mut card = serde_json::to_value(&req).unwrap_or(Value::Null);
     // An agent's person-only card carries its work; the hub runs it once a person approves.
     let work = crate::agent_work::work_arg(p)?;
@@ -1373,7 +1404,11 @@ fn register_card(b: &Arc<Bridge>, broker: &sx_permit::ApprovalBroker, conn: &Con
         (Role::Agent, true, None) => {
             return Err(RpcError::new(
                 "bad_request",
-                "a card that starts a print, resumes or sends G-code needs its work, which the hub runs once a person approves",
+                if conn.partner.is_some() {
+                    "a partner app's card needs its work, which the hub runs once a person approves"
+                } else {
+                    "a card that starts a print, resumes or sends G-code needs its work, which the hub runs once a person approves"
+                },
             ));
         }
         (_, _, Some(_)) => {
@@ -1425,7 +1460,7 @@ async fn approval_call(b: &Arc<Bridge>, conn: &Conn, method: &str, p: &Value) ->
         "approvals.grant" => {
             let id = str_arg(p, "requestId")?;
             let own = owner(&id) == Some(conn.id);
-            if !roles::may_answer(conn.role, own, needs_person(&id)) {
+            if conn.partner.is_some() || !roles::may_answer(conn.role, own, needs_person(&id)) {
                 return Err(RpcError::new(
                     "forbidden",
                     "a person answers this card in the SlicerX app or on a paired phone",
