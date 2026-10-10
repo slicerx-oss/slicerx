@@ -146,14 +146,25 @@ pub enum InfillPattern {
     LockedZag,
 }
 
+/// The pattern keys where Bambu Studio's `zig-zag` means rectilinear.
+const ZIG_ZAG_KEYS: &[&str] = &[
+    "sparse_infill_pattern",
+    "top_surface_pattern",
+    "bottom_surface_pattern",
+    "internal_solid_infill_pattern",
+    "ironing_pattern",
+    "support_ironing_pattern",
+];
+
 impl InfillPattern {
     /// The pattern a setting value names, when the engine draws it. The straight line patterns of the surface
     /// settings (`monotonic`, `monotonicline`) are not here: they are rectilinear fills with their own joins.
     pub fn from_key(key: &str) -> Option<Self> {
         Some(match key {
-            "rectilinear" => Self::Rectilinear,
+            // `zig-zag` is Bambu Studio's name for rectilinear; our layer-consistent zigzag is `zigzag`, without the dash.
+            "rectilinear" | "zig-zag" => Self::Rectilinear,
             "alignedrectilinear" => Self::AlignedRectilinear,
-            "zigzag" | "zig-zag" => Self::ZigZag,
+            "zigzag" => Self::ZigZag,
             "crosszag" => Self::CrossZag,
             "lockedzag" => Self::LockedZag,
             "line" => Self::Line,
@@ -700,6 +711,24 @@ impl PrintConfig {
                 key: "(root)",
                 reason: "expected an object".to_owned(),
             });
+        };
+        // Bambu Studio writes `zig-zag` for rectilinear in its pattern keys (the importers rename it; a request that
+        // skips them still means rectilinear). Our layer-consistent zigzag is `zigzag`, without the dash.
+        let renamed;
+        let map = if ZIG_ZAG_KEYS
+            .iter()
+            .any(|k| map.get(*k).and_then(Value::as_str) == Some("zig-zag"))
+        {
+            let mut m = map.clone();
+            for k in ZIG_ZAG_KEYS {
+                if m.get(*k).and_then(Value::as_str) == Some("zig-zag") {
+                    m.insert((*k).to_owned(), Value::String("rectilinear".to_owned()));
+                }
+            }
+            renamed = m;
+            &renamed
+        } else {
+            map
         };
         let c = self;
         for (k, v) in map {
