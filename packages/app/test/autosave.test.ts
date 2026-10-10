@@ -57,6 +57,54 @@ describe('autosave and recent projects', () => {
     expect(get().plate).toHaveLength(2)
   })
 
+  it('waits for a running slice, so the write never holds the page while the progress bars should move', async () => {
+    // Real time throughout, with a short delay: the write itself (module import, compression) runs on real time.
+    const writes: number[] = []
+    const real = snapshotStore()
+    setSnapshotStore({ ...real, put: async (s) => { writes.push(s.objects); await real.put(s) } })
+    const stop = startAutosave(100)
+    set({ plate: [entry('a')], slice: { status: 'running', progress: null, startedAt: 0 } })
+    // Long enough for a write started on time to have landed.
+    await new Promise((r) => setTimeout(r, 3000))
+    expect(writes).toEqual([])
+    set({ slice: { status: 'idle' } })
+    await vi.waitFor(() => expect(writes).toEqual([1]), { timeout: 10000 })
+    stop()
+  })
+
+  it('writes as soon as a slice finishes when the slice held the write back', async () => {
+    vi.useFakeTimers()
+    const writes: number[] = []
+    const real = snapshotStore()
+    setSnapshotStore({ ...real, put: async (s) => { writes.push(s.objects); await real.put(s) } })
+    const stop = startAutosave(4000)
+    set({ plate: [entry('a')], slice: { status: 'running', progress: null, startedAt: 0 } })
+    // Due at 4 s, held back by the slice; the next look would be at 8 s.
+    await vi.advanceTimersByTimeAsync(5000)
+    // Real time from here (the pending look is dropped with the fake timers): only the slice's end can start the write.
+    vi.useRealTimers()
+    set({ slice: { status: 'done', result: {} as never, stale: false } })
+    await vi.waitFor(() => expect(writes).toEqual([1]), { timeout: 10000 })
+    stop()
+    set({ slice: { status: 'idle' } })
+  })
+
+  it('writes anyway once slices back to back have held it back for the longest wait', async () => {
+    vi.useFakeTimers()
+    const writes: number[] = []
+    const real = snapshotStore()
+    setSnapshotStore({ ...real, put: async (s) => { writes.push(s.objects); await real.put(s) } })
+    const stop = startAutosave(4000, 10_000)
+    set({ plate: [entry('a')], slice: { status: 'running', progress: null, startedAt: 0 } })
+    // First held at 4 s, so the write goes at 14 s with the slice still running.
+    await vi.advanceTimersByTimeAsync(14_100)
+    vi.useRealTimers()
+    await vi.waitFor(() => expect(writes).toEqual([1]), { timeout: 10000 })
+    expect(get().slice.status).toBe('running')
+    stop()
+    set({ slice: { status: 'idle' } })
+  })
+
   it('writes nothing for a project with no change since it was opened or saved', async () => {
     const writes: number[] = []
     const real = snapshotStore()

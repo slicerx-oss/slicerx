@@ -12,6 +12,8 @@ import { confirmDiscard, isDirty } from './unsaved'
 import { appStore, get, set, type AppState } from '../state/store'
 
 export const AUTOSAVE_DELAY_MS = 4000
+/** The longest slices back to back hold back a due autosave. */
+export const AUTOSAVE_MAX_WAIT_MS = 60_000
 export const MAX_RECENT = 6
 /** Bigger projects are not copied into storage. */
 export const MAX_SNAPSHOT_BYTES = 64 * 1024 * 1024
@@ -122,18 +124,37 @@ export async function autosaveNow(): Promise<boolean> {
   return true
 }
 
-/** Watches the store and autosaves a few seconds after the last change. Returns the stop function. */
-export function startAutosave(delayMs = AUTOSAVE_DELAY_MS): () => void {
+/**
+ * Watches the store and autosaves a few seconds after the last change. Returns the stop function. The write waits
+ * while a model opens or a slice runs: writing a big project holds the page for seconds, which in a slice kept both
+ * progress bars still and the request from reaching the engine. A write a slice held back goes as soon as a slice
+ * finishes, and slices back to back hold it back for at most `maxWaitMs`.
+ */
+export function startAutosave(delayMs = AUTOSAVE_DELAY_MS, maxWaitMs = AUTOSAVE_MAX_WAIT_MS): () => void {
   let timer: ReturnType<typeof setTimeout> | null = null
+  /** When a slice first held back the write that is due, or null. */
+  let heldSince: number | null = null
+  const later = (ms: number): void => {
+    if (timer) clearTimeout(timer)
+    timer = setTimeout(fire, ms)
+  }
   const fire = (): void => {
     timer = null
-    if (appStore.getState().plateLoading) return void (timer = setTimeout(fire, delayMs))
+    const s = appStore.getState()
+    if (s.plateLoading) return later(delayMs)
+    if (s.slice.status === 'running') {
+      heldSince ??= Date.now()
+      const left = maxWaitMs - (Date.now() - heldSince)
+      if (left > 0) return later(Math.min(delayMs, left))
+    }
+    heldSince = null
     void autosaveNow().catch(() => undefined)
   }
   const unsubscribe = appStore.subscribe((s, prev) => {
-    if (!INPUTS.some((k) => s[k] !== prev[k])) return
-    if (timer) clearTimeout(timer)
-    timer = setTimeout(fire, delayMs)
+    if (INPUTS.some((k) => s[k] !== prev[k])) return later(delayMs)
+    // A slice that finished (not one an edit canceled, which another follows) lets a held-back write go now.
+    const finished = s.slice.status === 'error' || (s.slice.status === 'done' && !s.slice.stale)
+    if (heldSince !== null && prev.slice.status === 'running' && finished) later(0)
   })
   return () => {
     if (timer) clearTimeout(timer)
