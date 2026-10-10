@@ -10,9 +10,9 @@ All notable changes to the `sx_core::api` module. The format follows Keep a Chan
 
 - Partner apps: a partner app key can pause and cancel prints on its own cards through sx-link, and the MCP server takes a partner key from `SLICERX_MCP_LINK_KEY`.
 - Smart layer heights (sleipnir): when a request turns `smart_layer` on and sends no layer tops, sx-core plans them itself.
-- sx-geom fills a remeshed model's flat faces again with well shaped triangles.
+- sx-geom refills flat faces with well shaped triangles after booleans, fillets and pushes.
 - Viewport: a near-black silhouette round Model's parts in the CAD look, a model added to the plate fades in beside the others, the plate reveal plays in Model too, and the selected model shows move arrows.
-- Embed: Prepare's tools in the embedded view, a reveal for each plate, and a calm bed outline that shows what is selected.
+- Embed: Prepare's tools in the embedded view (select, move, rotate, scale, arrange, drop to bed), a reveal for each plate, and an optional calm bed outline (`bedOutline: 'subtle'`).
 - MCP: a slice that names no printer says so.
 - Settings: stock G-code fingerprints from the presets the released slicer apps ship, so their stock start and end G-code is recognized as the maker's.
 - Integrator guide: preparing a plate in the viewport and slicing it with sx.
@@ -35,7 +35,7 @@ All notable changes to the `sx_core::api` module. The format follows Keep a Chan
 - Painted tops and bottoms color the shell layers beyond them, as deep as the project's color penetration settings ask, and specks too small to print are dropped.
 - No "plate has none" support warning for an object that has support enforcers.
 - Smart layer heights end exactly on the model's top, without a sliver.
-- Seam visibility finds the nearest face.
+- Seam placement sees the nearest face on grazing rays, so a seam can move slightly on some painted models.
 - A pulled box is a plain box again after the flat face fill.
 - The camera eases to a newly opened model from the swap frame.
 
