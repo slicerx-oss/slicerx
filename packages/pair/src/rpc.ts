@@ -324,7 +324,8 @@ export const EVENTS = {
   'slice.failed': z.object({ sliceId: Id16, message: z.string().max(500) }),
   job: JobUpdate,
   'approval.request': ApprovalView,
-  'approval.resolved': z.object({ requestId: z.string().max(128), decision: z.enum(['approve', 'deny', 'expired']), by: z.string().max(64) }),
+  /** `by` names who answered; `via`, when the host says, which kind of client it was (sx-link: a partner app's `by` is its name). */
+  'approval.resolved': z.object({ requestId: z.string().max(128), decision: z.enum(['approve', 'deny', 'expired']), by: z.string().max(64), via: z.enum(['app', 'phone', 'partner', 'agent']).optional() }),
   'pairing.revoked': z.object({}),
   'pairing.rights': z.object({ rights: Rights }),
   /** The hub's relay quota changed (on connect and every five minutes). */
@@ -343,7 +344,7 @@ export interface EventMap {
   'slice.failed': { sliceId: string; message: string }
   job: JobUpdate
   'approval.request': ApprovalView
-  'approval.resolved': { requestId: string; decision: 'approve' | 'deny' | 'expired'; by: string }
+  'approval.resolved': { requestId: string; decision: 'approve' | 'deny' | 'expired'; by: string; via?: 'app' | 'phone' | 'partner' | 'agent' }
   'pairing.revoked': Record<string, never>
   'pairing.rights': { rights: Rights }
   'remote.quota': RemoteQuota

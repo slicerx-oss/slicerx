@@ -40,6 +40,17 @@ export interface ComputerApproval {
   decide(decision: 'approve' | 'deny', opts?: { bedClear?: boolean }): Promise<void>
 }
 
+/** A computer's word that one of its requests was answered (`approval.resolved`), here or somewhere else. */
+export interface ComputerResolved {
+  pairingId: string
+  requestId: string
+  decision: 'approve' | 'deny' | 'expired'
+  /** Who answered: a partner app's or a phone's name, or the kind of client. */
+  by: string
+  /** Which kind of client answered, when the computer says. */
+  via?: 'app' | 'phone' | 'partner' | 'agent' | undefined
+}
+
 export interface PairService {
   client: PairClient
   enabled: boolean
@@ -56,6 +67,9 @@ export interface PairService {
   accountRelay(): Promise<RelayConnection | null>
   onChange(cb: () => void): () => void
   onApproval(cb: (a: ComputerApproval) => void): () => void
+  onResolved(cb: (r: ComputerResolved) => void): () => void
+  /** The ids of the requests a computer still lists for this phone to decide. */
+  openApprovals(pairingId: string): Promise<string[]>
 }
 
 /** The edition config names the relay by its https URL; the relay itself speaks WebSocket. */
@@ -118,6 +132,7 @@ async function createService(pocket: PocketHost): Promise<PairService> {
   const printerHosts = new Map<string, PairedPrinterHost>()
   const changed = new Set<() => void>()
   const approvalCbs = new Set<(a: ComputerApproval) => void>()
+  const resolvedCbs = new Set<(r: ComputerResolved) => void>()
   const notify = () => {
     for (const cb of [...changed]) cb()
   }
@@ -148,6 +163,9 @@ async function createService(pocket: PocketHost): Promise<PairService> {
             decide: (d, o) => (d === 'approve' ? conn.approve(view, { bedClear: o?.bedClear === true }) : conn.deny(view)),
           }
           for (const cb of [...approvalCbs]) cb(a)
+        })
+        conn.on('approval.resolved', (r) => {
+          for (const cb of [...resolvedCbs]) cb({ pairingId, ...r })
         })
         return conn
       })
@@ -229,6 +247,13 @@ async function createService(pocket: PocketHost): Promise<PairService> {
     onApproval(cb) {
       approvalCbs.add(cb)
       return () => approvalCbs.delete(cb)
+    },
+    onResolved(cb) {
+      resolvedCbs.add(cb)
+      return () => resolvedCbs.delete(cb)
+    },
+    async openApprovals(pairingId) {
+      return (await (await connection(pairingId)).approvals()).map((v) => v.request.id)
     },
   }
   void service.refresh()

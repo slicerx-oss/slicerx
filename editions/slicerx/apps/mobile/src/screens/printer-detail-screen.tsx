@@ -31,6 +31,8 @@ export interface WaitingApproval {
   blocked?: string | undefined
   /** A G-code line the hub checked, shown whole in a monospace font. */
   code?: string | undefined
+  /** How it was answered somewhere else; the card shows this note until it closes. */
+  answered?: string | undefined
   decide: (decision: 'approve' | 'deny', opts?: { bedClear?: boolean }) => Promise<void>
 }
 
@@ -170,6 +172,7 @@ export function PrinterDetailScreen(p: PrinterDetailScreenProps) {
                 requestedBy={a.requestedBy}
                 blocked={a.blocked}
                 code={a.code}
+                answered={a.answered}
                 onApprove={(_r, o) => a.decide('approve', o)}
                 onDeny={() => a.decide('deny')}
               />

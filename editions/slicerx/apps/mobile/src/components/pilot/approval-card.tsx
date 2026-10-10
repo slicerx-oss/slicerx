@@ -27,6 +27,8 @@ export interface ApprovalCardProps {
   blocked?: string | undefined
   /** A G-code line the hub checked: shown whole, wrapped, in a monospace font, never cut short. */
   code?: string | undefined
+  /** Set when the request was answered somewhere else (in SlicerX, by a partner app, by the agent that asked): the card shows this instead of its buttons. */
+  answered?: string | undefined
   /** Line above the title. Defaults to mimir's; a computer's own requests name the computer. */
   heading?: string | undefined
   /** Clock source, for tests. */
@@ -45,8 +47,8 @@ function resolvedText(r: ApprovalResolution): { text: string; ok: boolean } {
   return { text: 'Denied. Nothing was sent', ok: false }
 }
 
-export function ApprovalCard({ request, resolution, actionable, onApprove, onDeny, requestedBy, blocked, code, heading = 'mimir needs your approval', now = Date.now }: ApprovalCardProps) {
-  const live = resolution === null && actionable
+export function ApprovalCard({ request, resolution, actionable, onApprove, onDeny, requestedBy, blocked, code, answered, heading = 'mimir needs your approval', now = Date.now }: ApprovalCardProps) {
+  const live = resolution === null && actionable && answered === undefined
   const expiresAt = Date.parse(request.expiresAt)
   const [shownAt] = useState(now)
   const [clock, setClock] = useState(shownAt)
@@ -165,6 +167,12 @@ export function ApprovalCard({ request, resolution, actionable, onApprove, onDen
           {done.ok ? <Icon name="check" size={16} color={t.color.green} /> : null}
           <Txt variant="caption" color={done.ok ? t.color.green : t.color.dim} style={{ fontFamily: font.bodyMedium }}>
             {done.text}
+          </Txt>
+        </View>
+      ) : answered !== undefined ? (
+        <View style={styles.res} testID="approval-answered" aria-live="polite">
+          <Txt variant="caption" tone="dim" style={{ fontFamily: font.bodyMedium }}>
+            {answered}
           </Txt>
         </View>
       ) : (

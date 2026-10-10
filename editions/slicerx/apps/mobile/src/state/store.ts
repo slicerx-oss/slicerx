@@ -40,6 +40,10 @@ export interface WaitingApproval {
   blocked?: string | undefined
   /** A G-code line the hub checked, shown whole in a monospace font. */
   code?: string | undefined
+  /** The paired computer that asked, so its list of open requests can be read again. */
+  pairingId?: string | undefined
+  /** Set once it was answered somewhere else: the note the card shows until it closes. */
+  answered?: string | undefined
   decide: (decision: 'approve' | 'deny', opts?: { bedClear?: boolean }) => Promise<void>
 }
 
@@ -109,6 +113,11 @@ export function markRead(id: string): void {
 
 export function addWaiting(a: WaitingApproval): void {
   set((s) => (s.waiting.some((x) => x.id === a.id) ? s : { waiting: [...s.waiting, a] }))
+}
+
+/** The request was answered somewhere else: its card shows `note` instead of its buttons. */
+export function markAnswered(id: string, note: string): void {
+  set((s) => (s.waiting.some((x) => x.id === id && x.answered === undefined) ? { waiting: s.waiting.map((x) => (x.id === id ? { ...x, answered: note } : x)) } : s))
 }
 
 export function settleWaiting(id: string): void {
