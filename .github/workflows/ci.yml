@@ -82,7 +82,7 @@ jobs:
       - run: pnpm lint
       - run: pnpm typecheck
       # One retry per failing test; one that passes only on the retry is flaky (scripts/ci/README.md, "Flaky tests"):
-      # the reporter annotates it, and the next step fails the job unless scripts/ci/flaky.txt lists it.
+      # the reporter annotates it, and the next step fails the job unless scripts/ci/flaky.d lists it.
       - run: bash scripts/ci/flaky-check.sh lint
       - run: pnpm -r exec bash "$GITHUB_WORKSPACE/scripts/ci/pr-test.sh"
         env:
@@ -383,7 +383,7 @@ jobs:
           [ "$RUNNER_ENVIRONMENT" = self-hosted ] && deps=""
           pnpm --filter @slicerx/web exec playwright install $deps chromium
       # One retry per failing test, as in the web job. The next step decides from the results: a test that passed only
-      # on the retry, or failed both times, fails the job unless scripts/ci/flaky.txt or quarantine.txt lists it
+      # on the retry, or failed both times, fails the job unless scripts/ci/flaky.d or quarantine.d lists it
       # (scripts/ci/README.md, "Flaky tests"). Playwright's own exit code is left to that step.
       # on the PC the run holds the machine's heavy lock, so it never shares the CPU with an agent's test run
       # and uses 5 workers: each one draws software WebGL on more than two threads, and 8 drove the load near 70 on 24

@@ -4,7 +4,7 @@
 // Reads a Playwright JSON report (reporter json) and writes, one name per line, the tests that passed only on a
 // retry to <retried file> and the tests that failed on every try to <failed file>, for flaky-check.sh (see
 // "Flaky tests" in scripts/ci/README.md). A name is "<spec file> > <describe> > <title> [<project>]", so a
-// flaky.txt or quarantine.txt entry that is a Playwright title matches it.
+// flaky.d or quarantine.d entry that is a Playwright title matches it.
 //
 //   node scripts/ci/playwright-results.mjs <report.json> <retried file> <failed file>
 //

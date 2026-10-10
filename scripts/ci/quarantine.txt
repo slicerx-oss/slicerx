@@ -1,7 +1,0 @@
-# Flaky tests that must not fail a CI run. One per line: name (a substring of the failing test name as the run
-# reports it) | owner | date added | issue link | why. A quarantined failure still shows in the summary as a count.
-# Remove the line when the test is fixed; nothing stays here without an owner, a date and an issue
-# (scripts/ci/flaky-check.sh lint fails otherwise). A flaky.txt entry past its deadline counts as quarantined.
-#
-# test name | owner | added (YYYY-MM-DD) | issue | why
-playback through a tool change on the H2C runs clean and keeps its frame rate | test-program | 2026-10-08 | https://github.com/slicerx-oss/slicerx/issues/51 | fails on both attempts on CI runners and on main, blocking every merge; was flaky.txt (passes alone, fails in the full e2e run (e2e/toolchange-play.spec.ts))

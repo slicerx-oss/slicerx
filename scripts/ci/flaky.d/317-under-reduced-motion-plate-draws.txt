@@ -1,0 +1,1 @@
+under reduced motion the plate draws at once | slice-reshape | 2026-10-09 | 2026-10-10 | https://github.com/slicerx-oss/slicerx/issues/317 | the frame recorder gets no frames from a page already still; fixed in the first-run seams branch (e2e/plate-reveal.spec.ts)
