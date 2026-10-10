@@ -151,10 +151,11 @@ async function connect(host: Host, code?: string): Promise<boolean> {
     // One saved by hand with an address the bridge can reach without a code becomes a real connection.
     void promoteHandPrinters((input) => bridge.setup.addPrinter(input))
     watchCards(bridge)
-    // The camera guard brings a tripped printer's card up on the Printers tab.
-    void import('../features/fleet/guard').then((g) => {
-      if (live?.bridge === bridge) stopGuard = g.watchGuard(host)
-    })
+    // The camera guard brings a tripped printer's card up on the Printers tab. It listens before the bridge counts as
+    // connected: a trip that came while its module loaded would reach the list but bring no card up.
+    const guard = await import('../features/fleet/guard').catch(() => null)
+    if (live?.bridge !== bridge) return false
+    if (guard) stopGuard = guard.watchGuard(host)
     // A finished print offers to subtract its filament from the linked Spoolman spools.
     void Promise.all([import('../inventory/usage'), import('../state/actions')]).then(([u, a]) => {
       if (live?.bridge === bridge) stopFinished = u.watchFinishedPrints(host, a.recordSpoolUse)
