@@ -125,7 +125,16 @@ export function useBridge(mocks: MockName[], setup: (ctl: Ctl) => Promise<void>)
 
   test.afterAll(async () => {
     hub.admin?.close()
-    proc?.kill()
+    // Gone before the mocks stop, so no connection of its own keeps a mock open; a hub that ignores the signal is
+    // killed outright after 10 s.
+    if (proc && proc.exitCode === null && proc.signalCode === null) {
+      const p = proc
+      const exited = new Promise<void>((r) => p.once('exit', () => r()))
+      p.kill()
+      const late = setTimeout(() => p.kill('SIGKILL'), 10_000)
+      await exited
+      clearTimeout(late)
+    }
     if (hub.stateDir) rmSync(hub.stateDir, { recursive: true, force: true })
     await stopMocks?.()
     dropHubLock()
