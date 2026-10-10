@@ -57,9 +57,9 @@ test('pairs, lists plugins, reads a printer and streams events', { skip }, async
   const host: LinkHost = await connectLink({ url, code })
   try {
     // Connectors not yet tested on real printers stay hidden until the person turns them on.
-    assert.equal((await host.plugins()).length, 6)
+    assert.equal((await host.plugins()).length, 7)
     await host.settings.set({ experimentalConnectors: true })
-    assert.equal((await host.plugins()).length, 10)
+    assert.equal((await host.plugins()).length, 13)
     await host.settings.set({ experimentalConnectors: false })
     const info = await host.addPrinter({ id: 'bay-4', name: 'Bay 4', plugin: 'moonraker', host: '127.0.0.1', port: mocks.ports.moonraker ?? 0, pollMs: 50 }, { model: 'Voron 2.4 350' })
     assert.equal(info.model, 'Voron 2.4 350')
