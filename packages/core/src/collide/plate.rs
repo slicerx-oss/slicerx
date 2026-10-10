@@ -697,6 +697,64 @@ mod tests {
         assert!(check(&two_walls(), &zone, false, 0.4, None).is_empty());
     }
 
+    /// Two internal solid lines joined by a turn along the top, and one more path across the turn: `other` with its
+    /// feature and width.
+    fn joined_lines(other: Feature, width: f32) -> SliceOutput {
+        let pts: Vec<Point> = [
+            (0.0, 0.0),
+            (0.0, 10.0),
+            (0.0, 10.0),
+            (1.0, 10.0),
+            (1.0, 10.0),
+            (1.0, 0.0),
+            (0.5, 9.5),
+            (0.5, 10.5),
+        ]
+        .into_iter()
+        .map(|(x, y)| Point::from_mm(x, y))
+        .collect();
+        let mut cross = path(6, 8, other);
+        cross.width_mm = width;
+        SliceOutput {
+            layers: vec![LayerPaths {
+                index: 3,
+                z: 0.8,
+                height: 0.2,
+                joins: vec![[Point::from_mm(0.0, 10.0), Point::from_mm(1.0, 10.0)]],
+                points: pts,
+                paths: vec![
+                    path(0, 2, Feature::InternalSolid),
+                    path(2, 4, Feature::InternalSolid),
+                    path(4, 6, Feature::InternalSolid),
+                    cross,
+                ],
+                ..LayerPaths::default()
+            }],
+            ..SliceOutput::default()
+        }
+    }
+
+    #[test]
+    fn a_join_that_meets_another_path_stays_a_travel() {
+        // A narrow band's bead (internal solid at its own width) or a wall across the turn: the turn is dropped, the
+        // lines stay.
+        for (other, width) in [(Feature::InternalSolid, 0.372), (Feature::InnerWall, 0.45)] {
+            let mut out = joined_lines(other, width);
+            assert_eq!(drop_crossing_joins(&mut out), 1, "{other:?}");
+            let l = &out.layers[0];
+            assert_eq!(l.paths.len(), 3);
+            assert!(
+                l.paths
+                    .iter()
+                    .all(|p| l.path_points(p) != [Point::from_mm(0.0, 10.0), Point::from_mm(1.0, 10.0)])
+            );
+        }
+        // A line of the same fill there (same feature, tool and width) is laid out by the neighbor rules: kept.
+        let mut out = joined_lines(Feature::InternalSolid, 0.42);
+        assert_eq!(drop_crossing_joins(&mut out), 0);
+        assert_eq!(out.layers[0].paths.len(), 4);
+    }
+
     #[test]
     fn segments_cross_only_through_each_other() {
         assert!(cross([0.0, 0.0], [2.0, 2.0], [0.0, 2.0], [2.0, 0.0]));
