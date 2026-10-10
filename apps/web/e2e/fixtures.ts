@@ -147,6 +147,13 @@ export async function closeSheet(page: Page): Promise<void> {
   await expect.poll(() => page.locator('aside.pane.sheet').first().evaluate((el) => el.getBoundingClientRect().top >= innerHeight - 2)).toBe(true)
 }
 
+/** Waits until no pane or view is sliding, so a point measured on the canvas stays where it was measured. */
+export async function panesSettled(page: Page): Promise<void> {
+  await expect
+    .poll(() => page.evaluate(() => !document.getAnimations().some((a) => a instanceof CSSTransition && a.playState === 'running' && a.effect instanceof KeyframeEffect && a.effect.target instanceof Element && a.effect.target.matches('.pane, .vp'))))
+    .toBe(true)
+}
+
 /** How many slices have finished so far. Read it before starting a slice, and pass it to `sliced`. */
 export async function sliceCount(page: Page): Promise<number> {
   return Number((await page.locator('.studio').getAttribute('data-slices')) ?? 0)
