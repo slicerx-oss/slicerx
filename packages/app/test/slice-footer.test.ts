@@ -5,7 +5,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { createElement } from 'react'
 import { flushSync } from 'react-dom'
-import { createRoot } from 'react-dom/client'
+import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, describe, expect, it } from 'vitest'
 import { HostContext } from '../src/host'
 import { get, set } from '../src/state/store'
@@ -14,12 +14,19 @@ import { SliceBlock } from '../src/workspaces/prepare/prepare-panes'
 const host = { kind: 'web', capabilities: { threads: 4 } } as never
 const before = get()
 
-afterEach(() => set({ slice: before.slice, plate: before.plate, autoSlice: before.autoSlice, sliceHeld: false }))
+const roots: Root[] = []
+
+// The roots go before the store is put back, so no render lands after the test's DOM is gone.
+afterEach(() => {
+  for (const r of roots.splice(0)) flushSync(() => r.unmount())
+  set({ slice: before.slice, plate: before.plate, autoSlice: before.autoSlice, sliceHeld: false })
+})
 
 function footer(compact: boolean): HTMLElement {
   const el = document.createElement('div')
   document.body.append(el)
   const root = createRoot(el)
+  roots.push(root)
   const client = new QueryClient()
   flushSync(() => root.render(createElement(QueryClientProvider, { client }, createElement(HostContext.Provider, { value: host }, createElement(SliceBlock, { compact })))))
   return el
