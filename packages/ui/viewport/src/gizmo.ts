@@ -42,6 +42,7 @@ export class ScaleGizmo {
   }
 
   private layout: ScaleLayout = 'bottom'
+  private uniformOnly = false
   private rootPivot: 'bottom-center' | 'center' = 'bottom-center'
 
   /** World position of each handle of the current layout for a model whose local box is `box`. */
@@ -54,8 +55,9 @@ export class ScaleGizmo {
   }
 
   /** Places the handles for this model and camera, or hides the gizmo with null. `ctrl` shows the pinned handle in gray. */
-  update(obj: Object3D | null, box: Box3 | null, camera: Camera, viewHeightPx: number, fovDeg: number, opts: { layout: ScaleLayout; pivot: 'bottom-center' | 'center'; pinned: boolean }): void {
+  update(obj: Object3D | null, box: Box3 | null, camera: Camera, viewHeightPx: number, fovDeg: number, opts: { layout: ScaleLayout; pivot: 'bottom-center' | 'center'; pinned: boolean; uniformOnly?: boolean }): void {
     this.layout = opts.layout
+    this.uniformOnly = opts.uniformOnly ?? false
     this.rootPivot = opts.pivot
     const ctrl = opts.pinned
     this.group.visible = !!obj && !!box && !box.isEmpty()
@@ -65,7 +67,7 @@ export class ScaleGizmo {
     const min = box.min.toArray() as V3
     const max = box.max.toArray() as V3
     const root = obj.localToWorld(new Vector3((min[0] + max[0]) / 2, (min[1] + max[1]) / 2, this.rootPivot === 'center' ? (min[2] + max[2]) / 2 : min[2]))
-    const shown = new Set(handleIds(this.layout))
+    const shown = new Set(this.shownIds())
     const active = this.dragging ?? this.hover
     for (const [id, h] of this.handles) {
       h.visible = shown.has(id)
@@ -91,6 +93,12 @@ export class ScaleGizmo {
     }
   }
 
+  /** The handles drawn: every one of the layout, or only the even ones for a multi-selection. */
+  private shownIds(): HandleId[] {
+    // a multi-selection scales as one, evenly: an axis scale of turned objects would shear them
+    return handleIds(this.layout).filter((id) => !this.uniformOnly || handleAxis(id) === 'uniform')
+  }
+
   hit(ray: Raycaster): HandleId | null {
     if (!this.group.visible) return null
     const h = ray.intersectObjects([...this.handles.values()].filter((m) => m.visible), false)[0]
@@ -111,7 +119,7 @@ export class ScaleGizmo {
   handleWorld(obj: Object3D, box: Box3): Partial<Record<HandleId, V3>> {
     const p = this.positions(obj, box)
     const out: Partial<Record<HandleId, V3>> = {}
-    for (const id of handleIds(this.layout)) {
+    for (const id of this.shownIds()) {
       const v = p[id]
       if (v) out[id] = v.toArray() as V3
     }
