@@ -11,8 +11,9 @@ use std::sync::Arc;
 
 use sx_core::api::{self, Mesh, SliceRequest};
 
-/// A binary STL of a wedge: `len` x `wide` mm, `low` mm tall at x = 0 rising to `high` mm at x = `len` (a box
-/// when the two are equal).
+/// A binary STL of a wedge: `len` x `wide` mm, `low` mm tall at x = 0 rising to `high` mm at x = `len`. Each
+/// layer of the shallow slope has an internal bridge over the sparse infill of the layer below, so a layer's
+/// bridges read a cluster of layers further down than its shells do.
 fn wedge(len: f32, wide: f32, low: f32, high: f32) -> Arc<Mesh> {
     let profile = [(0.0, 0.0), (len, 0.0), (len, high), (0.0, low)];
     let front: Vec<[f32; 3]> = profile.iter().map(|&(x, z)| [x, 0.0, z]).collect();
@@ -134,6 +135,16 @@ fn same_bytes_every_way(req: &SliceRequest, meshes: &dyn Fn(&str) -> sx_core::Re
         "8 ranges again on that session: {}",
         first_difference(&one, &joined)
     );
+}
+
+#[test]
+fn bridge_clusters_slice_the_same_in_any_ranges() {
+    let mesh = wedge(40.0, 30.0, 2.0, 4.0);
+    let req = request(
+        &[("w", [128.0, 128.0])],
+        &json!({"layer_height": 0.12, "initial_layer_print_height": 0.12}),
+    );
+    same_bytes_every_way(&req, &move |_: &str| Ok(mesh.clone()));
 }
 
 #[test]

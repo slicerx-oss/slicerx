@@ -70,7 +70,7 @@ sequenceDiagram
 
 A `SliceRequest` (`packages/contracts/src/slice.ts`, JSON Schema from `sx schema request`) holds the plate, the resolved settings and the options. Every settings key declares the first stage it invalidates (`invalidates` in the settings schema).
 
-`slice_range(plate, config, layers, halo)` slices a range of layers and reads `halo` layers on each side, so top and bottom detection matches a full run. The G-code uses relative extrusion, so chunks concatenate without rewriting E values, and the web host offsets the preview's layer tables when it stitches them. Tests check that different shard counts give identical G-code and SXPV bytes, and the output never depends on the wall clock or on randomness.
+`slice_range(plate, config, layers, halo)` slices a range of layers and reads `halo` layers on each side, so top and bottom detection matches a full run. A rule that reads further than the halo (an internal bridge looks down through every layer of its bridge cluster, however many) gets that layer cut on demand, once per range, so no rule ever sees a missing neighbor and the session's caches never keep a value worked out from one. The G-code uses relative extrusion, so chunks concatenate without rewriting E values, and the web host offsets the preview's layer tables when it stitches them. Tests check that different shard counts give identical G-code and SXPV bytes, and the output never depends on the wall clock or on randomness.
 
 ## SXPV preview buffer format
 
