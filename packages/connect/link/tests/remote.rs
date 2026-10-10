@@ -1127,6 +1127,86 @@ async fn h1_h2_away_from_home_a_phone_approves_only_pause_and_cancel_and_sees_th
 }
 
 #[tokio::test]
+async fn a_card_answered_in_the_app_or_withdrawn_by_its_agent_closes_on_the_phone() {
+    let mut s = setup().await;
+    let _mocks = printing_bay4(&mut s).await;
+    let key: [u8; 32] = rand_bytes();
+    let (_, peer) = signing_phone(62);
+    put_peer(&mut s.app, &key, "phone", 62, peer).await;
+    let mut phone = Device::open(&s.relay, &key).await.expect("a session");
+    let h = sx_permit::hash_params;
+    let line = "M117 Hello";
+    let cards = [
+        (
+            "r-app",
+            "printer.resume",
+            json!([{ "action": "printer.resume", "target": "bay-4", "paramsHash": h(&json!({ "printerId": "bay-4" })) }]),
+            json!({ "kind": "resume", "printerId": "bay-4" }),
+        ),
+        (
+            "r-agent",
+            "printer.gcode",
+            json!([{ "action": "printer.gcode", "target": "bay-4", "paramsHash": h(&json!({ "printerId": "bay-4", "line": line })) }]),
+            json!({ "kind": "gcode", "printerId": "bay-4", "line": line }),
+        ),
+    ];
+
+    // A local agent raises two cards with their work; both reach the phone.
+    for (i, (id, tool, actions, work)) in cards.into_iter().enumerate() {
+        let r = call(
+            &mut s.agent,
+            80 + i as u64,
+            "approvals.register",
+            json!({ "request": agent_card(id, tool, actions), "work": work }),
+        )
+        .await;
+        assert_eq!(r["result"]["registered"], true, "{r}");
+        phone
+            .event("approval.request", |d| d["request"]["id"] == id)
+            .await;
+    }
+
+    // The person approves one in the app: the phone hears it, as its own protocol words it.
+    let r = call(&mut s.app, 82, "approvals.grant", json!({ "requestId": "r-app" })).await;
+    assert!(r["result"].is_object(), "{r}");
+    let done = phone
+        .event("approval.resolved", |d| d["requestId"] == "r-app")
+        .await;
+    assert_eq!(
+        done,
+        json!({ "requestId": "r-app", "decision": "approve", "by": "app", "via": "app" })
+    );
+
+    // The agent withdraws the other.
+    let r = call(
+        &mut s.agent,
+        83,
+        "approvals.deny",
+        json!({ "requestId": "r-agent" }),
+    )
+    .await;
+    assert_eq!(r["result"]["denied"], true, "{r}");
+    let done = phone
+        .event("approval.resolved", |d| d["requestId"] == "r-agent")
+        .await;
+    assert_eq!(
+        done,
+        json!({ "requestId": "r-agent", "decision": "deny", "by": "agent", "via": "agent" })
+    );
+
+    // Neither is listed any more, so the phone's re-read drops them too.
+    let list = phone.call("approvals.list", json!({})).await;
+    assert!(
+        !list["r"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|v| v["request"]["id"] == "r-app" || v["request"]["id"] == "r-agent"),
+        "{list}"
+    );
+}
+
+#[tokio::test]
 async fn m5_remote_stills_are_shared_and_requests_per_session_are_bounded() {
     let mocks = common::Mocks::start("moonraker", &["--camera"]).await;
     let mut s = setup().await;
