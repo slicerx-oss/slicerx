@@ -7110,13 +7110,31 @@ impl SliceSession {
                         max: link_max,
                         chord_fallback: false,
                     };
-                    let pls = crate::monotonic::polylines_outer(
-                        &crate::monotonic::orca_spans(&own, d),
-                        &crate::monotonic::orca_spans(&own_out, d),
-                        surface_spacing,
-                        links,
-                        &|k, t| crate::monotonic::orca_point(d, k, t),
+                    // Rectilinear and aligned rectilinear are one sweep from the left (a turn to the neighbor on
+                    // either side, the shorter when both are free, round a notch on the same line only when neither
+                    // is); monotonic and monotonic line are monotonic regions.
+                    let (spans_in, spans_out) = (
+                        crate::monotonic::orca_spans(&own, d),
+                        crate::monotonic::orca_spans(&own_out, d),
                     );
+                    let to_point = |k: i64, t: i64| crate::monotonic::orca_point(d, k, t);
+                    let pls = if matches!(name, "rectilinear" | "alignedrectilinear") {
+                        crate::monotonic::zigzag_with(
+                            &spans_in,
+                            surface_spacing,
+                            &spans_out,
+                            links,
+                            &to_point,
+                        )
+                    } else {
+                        crate::monotonic::polylines_outer(
+                            &spans_in,
+                            &spans_out,
+                            surface_spacing,
+                            links,
+                            &to_point,
+                        )
+                    };
                     if let Some(slot_lines) = curved.get_mut(which) {
                         for pl in pls {
                             let pl = if turn == 0.0 {
