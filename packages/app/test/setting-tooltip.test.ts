@@ -86,6 +86,25 @@ describe('setting tooltip', () => {
     expect(tip()?.getAttribute('role')).toBe('tooltip')
   })
 
+  it('hands over to a neighbor after the short warm delay, not the cold one', () => {
+    const next = document.createElement('li')
+    next.className = 'field'
+    for (const [k, v] of Object.entries(settingTipAttrs('top_shell_layers'))) next.setAttribute(k, v)
+    document.body.append(next)
+    hover(row)
+    wait(TIP_TIMING.cold)
+    expect(tip()?.hasAttribute('data-warm')).toBe(false)
+    act(() => void row.dispatchEvent(new MouseEvent('pointerout', { bubbles: true, relatedTarget: next })))
+    hover(next)
+    wait(TIP_TIMING.warm - 1)
+    expect(tip()?.querySelector('.sx-tip-title')?.textContent).toBe('Wall loops')
+    wait(1)
+    expect(tip()?.querySelector('.sx-tip-title')?.textContent).not.toBe('Wall loops')
+    expect(tip()?.hasAttribute('data-warm')).toBe(true)
+    expect(next.getAttribute('aria-describedby')).toBe('sx-tip')
+    next.remove()
+  })
+
   it('sits beside the row and never covers the control', () => {
     hover(input)
     wait(TIP_TIMING.cold)
