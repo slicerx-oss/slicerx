@@ -75,12 +75,13 @@ struct Seg {
 /// The crossings and keep-out moves of `out`'s layers. Owners are the plate's objects (`out.objects`), then the prime
 /// tower; zone `k` is obstacle `objects + 1 + k`. `crossings` is off for a plate printed by object, whose objects do not
 /// share layers. A travel meets a zone when it runs into it or passes within `clearance` of it (the nozzle's width),
-/// and counts for the object it leaves.
+/// and counts for the object it leaves, unless `router` takes it round the zone or over it, as the G-code does.
 pub(crate) fn check(
     out: &SliceOutput,
     zones: &[(u8, Vec<[f64; 2]>)],
     crossings: bool,
     clearance: f64,
+    router: Option<&crate::zoneroute::Router>,
 ) -> Hits {
     let mut hits = Hits::default();
     let n = u32::try_from(out.objects.len()).unwrap_or(u32::MAX);
@@ -216,6 +217,9 @@ pub(crate) fn check(
                             clearance,
                             crate::preflight::EDGE_TOL_MM,
                         )
+                        && router.is_none_or(|r| {
+                            r.route(s.a, s.b, f64::from(l.z)) == crate::zoneroute::Route::Blocked
+                        })
                     {
                         add(
                             Kind::KeepOut,
@@ -296,13 +300,21 @@ pub(crate) fn check(
 }
 
 /// A layer's travels, straight from the end of one path to the start of the next (the travel into the layer from where
-/// the layer below ended first), each owned by the object it leaves, else the one it goes to. Travels to or from a
+/// the layer below's last path ended first), each owned by the object it leaves, else the one it goes to. Travels to or from a
 /// custom path (the printer's own G-code may go into its zones on purpose) and between skirt paths are left out. Its
 /// index is the first segment of the path it goes to, as the preview counts them.
 fn travels(l: &LayerPaths, finder: &crate::preview::ObjectFinder<'_>, tower: u32) -> Vec<Seg> {
     let mut out = Vec::new();
     let mut index = 0u32;
-    let mut last: Option<(Point, Option<u32>, bool)> = l.enter_from.map(|q| (q, None, false));
+    // The layer below ended where its last path ends (its last stored point is not that when its paths were
+    // reordered).
+    let mut last: Option<(Point, Option<u32>, bool)> = l
+        .below_wipe
+        .points
+        .last()
+        .copied()
+        .or(l.enter_from)
+        .map(|q| (q, None, false));
     for p in &l.paths {
         let pts = l.path_points(p);
         let (Some(first), Some(end)) = (pts.first(), pts.last()) else {
@@ -426,7 +438,7 @@ mod tests {
     fn every_pair_that_crosses_is_found_the_tower_included() {
         // b overlaps a's corner, and the tower stroke runs through both
         let out = layer((50.0, 50.0), (60.0, 35.0), [(65.0, 40.0), (65.0, 90.0)]);
-        let hits = check(&out, &[], true, 0.4);
+        let hits = check(&out, &[], true, 0.4, None);
         let mut pairs: Vec<(Kind, u32, u32)> = hits.0.iter().map(|h| (h.kind, h.mover, h.obstacle)).collect();
         pairs.sort();
         // object b against a, and the tower (owner 2) against both
@@ -446,10 +458,11 @@ mod tests {
                 &[],
                 true,
                 0.4,
+                None,
             )
             .is_empty()
         );
-        assert!(check(&out, &[], false, 0.4).is_empty());
+        assert!(check(&out, &[], false, 0.4, None).is_empty());
     }
 
     #[test]
@@ -481,7 +494,7 @@ mod tests {
             ZONE_EXCLUSION,
             vec![[0.0, 0.0], [18.0, 0.0], [18.0, 28.0], [0.0, 28.0]],
         )];
-        let hits = check(&out, &zone, false, 0.4);
+        let hits = check(&out, &zone, false, 0.4, None);
         assert_eq!(hits.0.len(), 1);
         // object a meets zone 0, named after the objects and the tower
         assert_eq!(
@@ -505,10 +518,22 @@ mod tests {
 
     #[test]
     fn a_travel_through_a_keep_out_zone_is_found() {
-        let hits = check(&two_walls(), &zone_box([70.0, 80.0], [35.0, 39.0]), false, 0.4);
+        let hits = check(
+            &two_walls(),
+            &zone_box([70.0, 80.0], [35.0, 39.0]),
+            false,
+            0.4,
+            None,
+        );
         // The travel from a to b runs along y 40, 1 mm over the zone's top: clear.
         assert!(hits.is_empty(), "{hits:?}");
-        let hits = check(&two_walls(), &zone_box([70.0, 80.0], [35.0, 45.0]), false, 0.4);
+        let hits = check(
+            &two_walls(),
+            &zone_box([70.0, 80.0], [35.0, 45.0]),
+            false,
+            0.4,
+            None,
+        );
         assert_eq!(
             hits.0
                 .iter()
@@ -525,11 +550,25 @@ mod tests {
     }
 
     #[test]
+    fn a_travel_the_router_takes_round_the_zone_is_not_a_hit() {
+        let cfg = crate::config::PrintConfig::from_value(&serde_json::json!({
+            "bed_exclude_area": [[70, 35], [80, 35], [80, 45], [70, 45]],
+            "printable_area": [[0, 0], [256, 0], [256, 256], [0, 256]],
+            "nozzle_diameter": [0.4],
+        }))
+        .unwrap();
+        let router = crate::zoneroute::Router::of(&cfg).unwrap();
+        let zone = zone_box([70.0, 80.0], [35.0, 45.0]);
+        assert!(check(&two_walls(), &zone, false, 0.4, Some(&router)).is_empty());
+        assert_eq!(check(&two_walls(), &zone, false, 0.4, None).0.len(), 1);
+    }
+
+    #[test]
     fn a_travel_within_the_nozzle_width_of_a_zone_is_found() {
         // 0.3 mm under the travel: inside a 0.4 mm nozzle's width, outside a 0.2 mm one.
         let zone = zone_box([70.0, 80.0], [35.0, 39.7]);
-        assert_eq!(check(&two_walls(), &zone, false, 0.4).0.len(), 1);
-        assert!(check(&two_walls(), &zone, false, 0.2).is_empty());
+        assert_eq!(check(&two_walls(), &zone, false, 0.4, None).0.len(), 1);
+        assert!(check(&two_walls(), &zone, false, 0.2, None).is_empty());
     }
 
     #[test]
@@ -537,7 +576,7 @@ mod tests {
         // a's wall runs 0.2 mm from the zone along its left side: the print path is allowed there, and the travel to
         // b leaves the zone behind.
         let zone = zone_box([30.0, 39.8], [30.0, 70.0]);
-        assert!(check(&two_walls(), &zone, false, 0.4).is_empty());
+        assert!(check(&two_walls(), &zone, false, 0.4, None).is_empty());
     }
 
     #[test]
@@ -557,9 +596,9 @@ mod tests {
                 vec![[x0, 60.0], [x1, 60.0], [x1, 64.0], [x0, 64.0]],
             )]
         };
-        let hits = check(&out, &zone(148.0, 152.0), false, 0.4);
+        let hits = check(&out, &zone(148.0, 152.0), false, 0.4, None);
         assert_eq!(hits.0.iter().map(|h| h.kind).collect::<Vec<_>>(), [Kind::KeepOut]);
         // Running along the zone's edge, within the contact tolerance, is not a hit.
-        assert!(check(&out, &zone(149.97, 154.0), false, 0.4).0.is_empty());
+        assert!(check(&out, &zone(149.97, 154.0), false, 0.4, None).0.is_empty());
     }
 }

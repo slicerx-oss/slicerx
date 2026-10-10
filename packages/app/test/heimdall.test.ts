@@ -229,7 +229,7 @@ describe('heimdall in the app', () => {
     expect(collisionTitle(cross, name)).toBe('Paths of Hook cross the prime tower')
     expect(collisionDetail(cross, name)).toBe('The paths of Hook and the prime tower cross where they overlap on the plate, layers 3 to 4.')
     const wrap: Collision = { ...cross, kind: 'keep_out', objectId: 'a', hitId: 'wrap-check-zone', lastLayer: 2 }
-    expect(collisionTitle(wrap, name)).toBe('Bracket prints into the nozzle wrap check corner')
+    expect(collisionTitle(wrap, name)).toBe('The nozzle goes into the nozzle wrap check corner while Bracket prints')
     expect(collisionDetail(wrap, name)).toContain('checks this corner for filament wrapped round the nozzle')
     const list = [cross, wrap]
     expect(fixTitle({ kind: 'arrange', costS: 0, clears: [0], oneClick: true }, name, [], undefined, list)).toBe('Arrange the plate')

@@ -34,7 +34,7 @@ const mm = (v: number, digits = 1) => `${v.toFixed(digits)} mm`
 export function collisionTitle(c: Collision, name: Names, station = 'tool changer'): string {
   const b = name(c.hitId)
   if (c.kind === 'path_conflict') return `Paths of ${name(c.objectId)} cross ${b}`
-  if (c.kind === 'keep_out') return `${name(c.objectId)} prints into ${b}`
+  if (c.kind === 'keep_out') return `The nozzle goes into ${b} while ${name(c.objectId)} prints`
   if (c.severity === 'close') return `The toolhead passes close to ${b}`
   if (c.part === 'clearance') return `The toolhead comes too close to ${b}`
   if (c.kind === 'gantry') return `The ${c.part === 'lid' ? 'frame' : 'gantry'} hits ${b}`
@@ -65,7 +65,9 @@ export function collisionDetail(c: Collision, name: Names, station = 'tool chang
   const limit = c.limitMm ?? 0
   if (c.kind === 'path_conflict') return `The paths of ${a} and ${b} cross where they overlap on the plate${r}.`
   if (c.kind === 'keep_out')
-    return c.hitId === 'wrap-check-zone' ? `The printer checks this corner for filament wrapped round the nozzle, and ${a} prints into it${r}.` : `${a} prints into an area the printer keeps clear${r}.`
+    return c.hitId === 'wrap-check-zone'
+      ? `The printer checks this corner for filament wrapped round the nozzle. While ${a} prints, the nozzle prints in it, moves through it, or passes within a nozzle's width of it${r}.`
+      : `While ${a} prints, the nozzle prints in an area the printer keeps clear, moves through it, or passes within a nozzle's width of it${r}.`
   if (c.severity === 'close')
     return `While ${a} prints, the nozzle comes within ${mm(Math.max(0, limit - c.depthMm))} of ${b}. The printer profile asks for ${limit.toFixed(0)} mm around the nozzle; the head's own shape clears ${b}, so this is the profile's margin, not a hit${r}.`
   if (c.part === 'clearance')

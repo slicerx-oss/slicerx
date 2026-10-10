@@ -1921,6 +1921,16 @@ fn emit_layer(
     } else {
         start_at.or(layer_wiped.as_ref().map(|w| w.end)).or(l.enter_from)
     };
+    // Where the nozzle really is when the layer starts, for the travel round the keep-out zones: the end of the
+    // layer below's last path, which `enter_from` (its last point stored) is not when its paths were reordered.
+    let mut zone_from: Option<Point> = if spiral && !l.spiral_start {
+        cursor
+    } else {
+        start_at
+            .or(layer_wiped.as_ref().map(|w| w.end))
+            .or(l.below_wipe.points.last().copied())
+            .or(l.enter_from)
+    };
     let mut feature: Option<Feature> = None;
     // Extrusion role change G-code (`change_extrusion_role_gcode` and the filament's and process's).
     let mut role_ctx = crate::customgcode::role_hooks(c).then(|| shared.role_context(l.cfg));
@@ -2023,6 +2033,8 @@ fn emit_layer(
     let travel_layout = (comb || reduce_infill)
         .then(|| crate::travel::Layout::for_travels(l, c, comb))
         .flatten();
+    // The printer's keep-out zones, which travels go round (zoneroute.rs).
+    let zone_router = crate::zoneroute::Router::of(c);
     let accel_on = crate::motion::accel_enabled(c);
     // Extrusion rate smoothing turns arc fitting off (as Orca's tooltip says): it works on straight moves.
     let smoothing = crate::equalizer::Params::of(c, out.tool_count);
@@ -2442,6 +2454,57 @@ fn emit_layer(
             }
             _ => None,
         };
+        // Round the keep-out zones, leg by leg, or over them: the same router the collision check asks. A travel
+        // routed round a zone leaves the part, so the retraction rule below reads it as any travel out of it.
+        let mut zone_lift: Option<i64> = None;
+        // Only while the nozzle is where the layer started: a change or custom G-code before the first path leaves it
+        // unknown (`cursor` None), and the first travel of the layer uses it up.
+        let travel_from = cursor.and_then(|c| zone_from.take().or(Some(c)));
+        zone_from = None;
+        let plan = match (travel_from, zone_router.as_ref()) {
+            (Some(cur), Some(zr))
+                if cur != start && feature != Some(Feature::Custom) && p.feature != Feature::Custom =>
+            {
+                // The planned route starts at `cursor`; from anywhere else the travel goes straight.
+                let legs = match plan.as_ref() {
+                    Some(p) if Some(cur) == cursor => p.route.clone(),
+                    _ => vec![start],
+                };
+                let mut from = cur;
+                let mut routed: Vec<Point> = Vec::with_capacity(legs.len());
+                let mut around = false;
+                for q in legs {
+                    match zr.route([from.x_mm(), from.y_mm()], [q.x_mm(), q.y_mm()], f64::from(l.z)) {
+                        crate::zoneroute::Route::Around(way) => {
+                            around = true;
+                            let k = way.len().saturating_sub(1);
+                            routed.extend(way.iter().take(k).map(|w| Point::from_mm(w[0], w[1])));
+                            routed.push(q);
+                        }
+                        crate::zoneroute::Route::Lift(h) => {
+                            #[allow(
+                                clippy::cast_possible_truncation,
+                                reason = "a lift of a few mm in thousandths"
+                            )]
+                            let h = (h * 1000.0).round() as i64;
+                            zone_lift = Some(zone_lift.map_or(h, |v| v.max(h)));
+                            routed.push(q);
+                        }
+                        crate::zoneroute::Route::Clear | crate::zoneroute::Route::Blocked => routed.push(q),
+                    }
+                    from = q;
+                }
+                if around || zone_lift.is_some() {
+                    Some(crate::travel::Plan {
+                        route: routed,
+                        internal: false,
+                    })
+                } else {
+                    plan
+                }
+            }
+            _ => plan,
+        };
         // Orca's rule (GCode::needs_retraction): leaving an outer or overhang wall always retracts; a travel to
         // anything but a wall needs none when it stays inside an internal region of the layer and sparse infill is on.
         let left_outer = matches!(feature, Some(Feature::OuterWall | Feature::OverhangWall));
@@ -2485,10 +2548,8 @@ fn emit_layer(
             });
         let need_retract = style.active(retract)
             && !retracted
-            && route_len > rc.retraction_minimum_travel
-            && !in_infill
-            && !in_support
-            && !within_tower;
+            && (zone_lift.is_some()
+                || (route_len > rc.retraction_minimum_travel && !in_infill && !in_support && !within_tower));
         // Orca's GCode::_extrude calls travel_to, which writes the travel's acceleration and jerk, only when the
         // nozzle is not already at the path's first point or a layer change still owes its lift: paths that
         // join end to start (a zig-zag fill) get no travel lines between them.
@@ -2568,6 +2629,13 @@ fn emit_layer(
                 b.extend_from_slice(t.as_bytes());
             }
             open_object = want_object;
+        }
+        // Over a zone no way round clears: lifted by the profile's travel lift, whatever the lift rules say.
+        if let Some(h) = zone_lift
+            && !lifted
+        {
+            write_normal_lift(b, z + h, z_feed);
+            lifted = true;
         }
         // Wipe before external loop: with the outer wall first, the nozzle lands a little before
         // the start of the loop, unretracts there and then moves onto the start.
