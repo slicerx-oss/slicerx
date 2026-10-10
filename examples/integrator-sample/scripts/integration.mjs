@@ -168,23 +168,45 @@ try {
       assert.equal(await accent('.sxe-agreement'), '#e8a33d', 'the agreement takes the brand accent')
       assert.equal(await page.getByRole('button', { name: 'Accept and continue' }).isDisabled(), true)
       await page.getByRole('checkbox').check()
-      await page.getByRole('button', { name: 'Accept and continue' }).click()
+      // In software WebGL the first frame with the toolpaths holds the page for 10 to 50 s: it waits on the main thread
+      // while the bead shaders compile and the plate draws, and the frames after it queue up behind it on the GPU
+      // for a minute or more on a loaded machine. Any action or screenshot in that window runs into its 30 s timeout
+      // (the screenshot waits for a stable canvas that gets no frame). So the test waits until the viewport says the
+      // preview is drawn, the camera has stopped and no frame came for half a second, then reads one pixel, which
+      // returns once the GPU has finished every frame queued so far.
+      const viewportReady = () =>
+        page.waitForFunction(
+          (key) => {
+            const vp = window.spoolhouseViewport
+            const s = vp?.stats()
+            if (!s || s.segments === 0 || s.firstFrameMs === null || s.cameraMoving) return false
+            const still = window.spoolhouseWait?.key === key && window.spoolhouseWait.frames === s.frames
+            window.spoolhouseWait = { key, frames: s.frames }
+            if (!still) return false
+            const gl = document.querySelector('.sxe-viewport canvas').getContext('webgl2')
+            gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4))
+            return vp.stats().frames === s.frames
+          },
+          Math.random(),
+          { polling: 500, timeout: 240_000 },
+        )
+      // Accepting mounts the viewport, and the page is busy right after; the click must not wait on it.
+      await page.getByRole('button', { name: 'Accept and continue' }).click({ noWaitAfter: true })
+      await viewportReady()
       const stored = await page.evaluate(() => JSON.parse(localStorage.getItem('slicerx.embed.agreement') ?? 'null'))
       assert.equal(stored?.version, 1, 'acceptance is recorded with its version')
-      await page.locator('.sxe-viewport canvas').waitFor()
       await page.getByTestId('slots').getByText('Slot 2').waitFor()
       assert.equal(await accent('.sxe-viewport'), '#e8a33d', 'the viewport takes the brand accent')
       assert.equal(await accent('.sxe-settings'), '#e8a33d', 'the settings panel takes the brand accent')
       const ink = await page.locator('.sxe-settings').evaluate((el) => getComputedStyle(el).backgroundColor)
       assert.equal(ink, 'rgb(29, 25, 21)', 'the settings panel takes the brand surface')
-      await page.waitForTimeout(1500)
       // The 3D scene behind the plate is the brand's, not the default studio.
       const shot = await page.locator('.sxe-viewport canvas').screenshot()
       assert.ok(shot.length > 5000, 'the viewport drew a frame')
       await page.screenshot({ path: join(app, 'out', 'window-dark.png') })
       await page.getByTestId('scheme').click()
       assert.equal(await accent('.sxe-settings'), '#a8650f', 'the light brand theme applies at runtime')
-      await page.waitForTimeout(1000)
+      await viewportReady()
       await page.screenshot({ path: join(app, 'out', 'window-light.png') })
       assert.deepEqual(errors, [], 'no errors in the page')
     } finally {
