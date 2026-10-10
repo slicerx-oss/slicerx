@@ -129,7 +129,7 @@ fn number(v: &Value) -> Option<f64> {
 }
 
 /// A point as `"12x34"`, `"12,34"` or `[12, 34]`.
-fn point(v: &Value) -> Option<[f64; 2]> {
+pub(crate) fn point(v: &Value) -> Option<[f64; 2]> {
     match v {
         Value::String(s) => {
             let (a, b) = s.split_once('x').or_else(|| s.split_once(','))?;

@@ -41,13 +41,8 @@ pub(crate) fn zones(config: &crate::config::PrintConfig) -> Vec<(u8, Vec<[f64; 2
         out.push((ZONE_EXCLUSION, z));
     }
     if let Some(serde_json::Value::Array(pts)) = config.raw.get("head_wrap_detect_zone") {
-        let mut poly = Vec::new();
-        for p in pts {
-            let xy = p.as_str().and_then(|p| p.split_once('x'));
-            if let Some((Ok(x), Ok(y))) = xy.map(|(x, y)| (x.trim().parse(), y.trim().parse())) {
-                poly.push([x, y]);
-            }
-        }
+        // "80x95" from a preset, or [80, 95] once a host has read it into the schema's shape
+        let poly: Vec<[f64; 2]> = pts.iter().filter_map(crate::preflight::point).collect();
         if poly.len() >= 3 {
             out.push((ZONE_WRAP_CHECK, poly));
         }
@@ -367,6 +362,28 @@ mod tests {
             .is_empty()
         );
         assert!(check(&out, &[], false).is_empty());
+    }
+
+    #[test]
+    fn the_wrap_check_zone_reads_strings_and_number_pairs() {
+        let zone = |v| {
+            let c =
+                crate::config::PrintConfig::from_value(&serde_json::json!({ "head_wrap_detect_zone": v }))
+                    .unwrap();
+            zones(&c)
+        };
+        let want = vec![(
+            ZONE_WRAP_CHECK,
+            vec![[80.0, 95.0], [115.0, 95.0], [115.0, 125.0], [80.0, 125.0]],
+        )];
+        assert_eq!(
+            zone(serde_json::json!(["80x95", "115x95", "115x125", "80x125"])),
+            want
+        );
+        assert_eq!(
+            zone(serde_json::json!([[80, 95], [115, 95], [115, 125], [80, 125]])),
+            want
+        );
     }
 
     #[test]
