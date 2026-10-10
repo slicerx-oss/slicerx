@@ -292,6 +292,36 @@ jobs:
           retention-days: 3
           if-no-files-found: error
 
+  # The Node suites that drive a real sx-link (link-client, setup, mcp, pair), on the binary built above. They skip
+  # without SX_LINK_BIN, so nothing else runs them. Each test starts sx-link with --loopback, so nothing listens on the
+  # network. The e2e job below counts this one, so a failure here fails the required e2e check.
+  sx-link-suites:
+    needs: [detect, sx-link]
+    if: needs.detect.outputs.e2e == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # an artifact does not keep the file mode
+      - uses: actions/download-artifact@v4
+        with:
+          name: sx-link
+          path: ${{ runner.temp }}/sx-link
+      # the job's env cannot name runner.temp, so the binary's path goes to the later steps through GITHUB_ENV
+      - run: |
+          chmod +x "$RUNNER_TEMP/sx-link/sx-link"
+          echo "SX_LINK_BIN=$RUNNER_TEMP/sx-link/sx-link" >> "$GITHUB_ENV"
+      - run: pnpm --filter @slicerx/link-client test
+      - run: pnpm --filter @slicerx/connect test
+      - run: pnpm --filter @slicerx/mcp exec vitest run test/link.test.ts
+      - run: pnpm --filter @slicerx/pair exec vitest run test/link.integration.test.ts
+
   # The browser suite (apps/web/e2e) against `vite preview` of the web build. playwright.config.ts builds it with
   # no backend, so the store and feed run on the bundled demo catalog (features.demoData). Specs that need a
   # real service skip themselves: vault-flow.spec.ts without the stack from e2e/stack/vault-stack.sh. bridge.spec.ts
@@ -488,7 +518,7 @@ jobs:
   # One result for the shards and the @gpu run, and their reports merged into one HTML report, with the traces of
   # failures.
   e2e:
-    needs: [detect, e2e-shard, e2e-gpu]
+    needs: [detect, e2e-shard, e2e-gpu, sx-link-suites]
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -524,21 +554,24 @@ jobs:
           name: e2e-report
           path: apps/web/playwright-report/
           retention-days: 14
-      # Passes when the suite was not needed; fails when it was and a shard, the @gpu run, or the build before them did
-      # not pass. The @gpu run is skipped when this event does not use it (pull requests, or the lane switched off).
+      # Passes when the suite was not needed; fails when it was and a shard, the @gpu run, the sx-link suites, or the
+      # build before them did not pass. The @gpu run is skipped when this event does not use it (pull requests, or the
+      # lane switched off).
       - env:
           DETECT: ${{ needs.detect.result }}
           WANTED: ${{ needs.detect.outputs.e2e }}
           SHARDS: ${{ needs.e2e-shard.result }}
+          BRIDGE: ${{ needs.sx-link-suites.result }}
           GPU: ${{ needs.e2e-gpu.result }}
           GPU_LANE: ${{ github.event_name != 'pull_request' && vars.E2E_ON_PC != 'true' && vars.E2E_GPU_LANE != 'false' }}
           AGAIN: ${{ (github.event.action == 'opened' && contains(github.event.pull_request.labels.*.name, 'full-ci')) || (github.event.action == 'labeled' && github.event.label.name != 'full-ci') }}
         run: |
-          echo "detect: $DETECT, e2e wanted: $WANTED, shards: $SHARDS, GPU lane: $GPU_LANE, @gpu run: $GPU, duplicate run: $AGAIN"
+          echo "detect: $DETECT, e2e wanted: $WANTED, shards: $SHARDS, sx-link suites: $BRIDGE, GPU lane: $GPU_LANE, @gpu run: $GPU, duplicate run: $AGAIN"
           [ "$DETECT" = skipped ] && [ "$AGAIN" = true ] && exit 0
           [ "$DETECT" = success ] || exit 1
           [ "$WANTED" != true ] && exit 0
           [ "$SHARDS" = success ] || exit 1
+          [ "$BRIDGE" = success ] || exit 1
           if [ "$GPU_LANE" = true ]; then [ "$GPU" = success ]; fi
 
   # The database tests (pgTAP) on a throwaway local Supabase with only the services they use: the database, auth
