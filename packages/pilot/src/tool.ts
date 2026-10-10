@@ -95,8 +95,6 @@ export type AgentWork =
   | { kind: 'print'; printerId: string; file: JobFile; opts?: StartOptions }
   | { kind: 'resume'; printerId: string }
   | { kind: 'gcode'; printerId: string; line: string }
-  /** Only for a partner app's hub connection, which approves nothing: pause and cancel wait for a person too. */
-  | { kind: 'pause' | 'cancel'; printerId: string }
 
 export interface PilotTool<I = unknown> {
   name: string

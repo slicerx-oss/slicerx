@@ -94,7 +94,7 @@ describe.skipIf(!bin || !existsSync(bin))('real printers through sx-link', () =>
     app.close()
   })
 
-  it('Partner app: a partner key reads printers, hands even a pause to a person, and is refused G-code', async () => {
+  it('Partner app: a partner key reads printers, answers its own pause card, and is refused G-code', async () => {
     const app = await connectLink({ url, code })
     const { clientId, clientKey, partner } = await app.clients.create('LayerMate', 'agent', { partner: true })
     expect(partner).toBe(true)
@@ -103,10 +103,11 @@ describe.skipIf(!bin || !existsSync(bin))('real printers through sx-link', () =>
     const st = await h.call('slicerx_printer_status', { printerId: 'bay-4' })
     expect(st.isError, text(st)).toBeFalsy()
     const pause = data<{ status: string; request_id: string }>(await h.call('slicerx_printer_pause', { printerId: 'bay-4' }))
-    expect(pause.status).toBe('needs_person')
-    expect((await h.call('slicerx_approve', { request_id: pause.request_id, approve: true })).isError).toBe(true)
+    expect(pause.status).toBe('approval_required')
     const card = (await app.approvals.pending()).find((r) => r.id === pause.request_id)
     expect(card?.lines[0]).toBe('Asked by LayerMate, a partner app')
+    // Bay 4 is idle, so withdraw the card rather than pause.
+    await h.call('slicerx_approve', { request_id: pause.request_id, approve: false })
     const g = await h.call('slicerx_printer_gcode', { printerId: 'bay-4', line: 'G28' })
     expect(g.isError).toBe(true)
     expect(text(g)).toMatch(/partner app may ask only to print, pause or cancel/)

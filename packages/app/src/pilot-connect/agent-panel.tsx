@@ -146,12 +146,12 @@ export function AgentPanel({ idPrefix = 'ag' }: { idPrefix?: string }) {
       )}
       {partner ? (
         <p className="ag-rule">
-          <Icon name="shield" size={15} /> A partner app can see your printers and ask to print, pause or cancel. You approve every request.{' '}
+          <Icon name="shield" size={15} /> A partner app can see your printers, pause or cancel a print, and ask to print. You approve every print.{' '}
           <button
             type="button"
             className="fra-more"
             data-tip-title="What a partner app cannot do"
-            data-tip-body={`It approves nothing: every print, pause or cancel it asks for waits for your tap in ${appName()} or on your phone. It can never resume a print, send G-code, change a running print, or reach your settings, keys or other devices.`}
+            data-tip-body={`Every print it asks for waits for your tap in ${appName()} or on your phone. It can never resume a print, send G-code, change a running print, or reach your settings, keys or other devices.`}
           >
             Details
           </button>

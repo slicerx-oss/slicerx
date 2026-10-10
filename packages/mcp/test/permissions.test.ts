@@ -165,17 +165,17 @@ describe('person-only work goes to the hub', () => {
     expect(log(h).at(-1)).toMatchObject({ decision: 'approved', by: 'person' })
   })
 
-  it('on a partner app key, a pause and a cancel also wait for a person, as pause and cancel work', async () => {
+  it('on a partner app key, pause and cancel stay approvable here, and the rest goes to a person', async () => {
     const h = await connect()
     const sent = fakeHub(h, undefined, true)
     const p = data<{ status: string; request_id: string }>(await h.call('slicerx_printer_pause', pause))
-    expect(p.status).toBe('needs_person')
-    expect(sent[0]?.work).toEqual({ kind: 'pause', printerId: 'bay-1' })
-    expect(sent[0]?.request.actions).toEqual([{ action: 'printer.pause', target: 'bay-1', paramsHash: await hashParams({ printerId: 'bay-1' }) }])
-    expect((await h.call('slicerx_approve', { request_id: p.request_id, approve: true })).isError).toBe(true)
-    await h.call('slicerx_printer_cancel', pause)
-    expect(sent[1]?.work).toEqual({ kind: 'cancel', printerId: 'bay-1' })
-    expect(data<{ output: { state: string } }>(await h.call('slicerx_printer_status', pause)).output.state).toBe('printing')
+    expect(p.status).toBe('approval_required')
+    expect((await h.call('slicerx_approve', { request_id: p.request_id, approve: true })).isError).toBeFalsy()
+    expect(data<{ output: { state: string } }>(await h.call('slicerx_printer_status', pause)).output.state).toBe('paused')
+    expect(data<{ status: string }>(await h.call('slicerx_printer_cancel', pause)).status).toBe('approval_required')
+    expect(sent).toHaveLength(0)
+    expect(data<{ status: string }>(await h.call('slicerx_printer_resume', pause)).status).toBe('needs_person')
+    expect(sent[0]?.work).toEqual({ kind: 'resume', printerId: 'bay-1' })
   })
 
   it('without a partner key, a pause stays approvable here', async () => {
