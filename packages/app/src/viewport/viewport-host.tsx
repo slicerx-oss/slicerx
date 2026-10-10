@@ -63,6 +63,7 @@ export type Drive = Pick<Viewport, 'setMode' | 'setPlate' | 'setTransforms' | 's
   setTheme?: Viewport['setTheme']
   setTool?: Viewport['setTool']
   setRotateSpace?: Viewport['setRotateSpace']
+  setMoveHandles?: Viewport['setMoveHandles']
   setCutPlane?: Viewport['setCutPlane']
   setGapLines?: Viewport['setGapLines']
   setGuides?: Viewport['setGuides']
@@ -580,6 +581,7 @@ export function ViewportHost({ layers }: { layers: boolean }) {
         // The brim tool needs the viewport's own `brim` mode; without it the tool is a plain selection.
         vp.setTool?.(t === 'scale' || (t === 'brim' && !brimVp.setBrimEars) ? 'select' : (t as Parameters<NonNullable<typeof vp.setTool>>[0]))
         vp.setRotateSpace?.(toolStore.getState().rotateSpace)
+        vp.setMoveHandles?.(t === 'move' && toolStore.getState().moveArrows)
         brimVp.setBrimHoverRadius?.(t === 'brim' ? headDiameter() / 2 : null)
       }
       offs.push(onHeadDiameter(applyTool))

@@ -8,15 +8,20 @@ import { createStore, useStore } from 'zustand'
 /** `probe` belongs to the modeling tools: clicks report what is under the cursor and nothing is selected or moved. */
 export type Tool = 'select' | 'move' | 'rotate' | 'scale' | 'face' | 'paint' | 'brim' | 'probe'
 
-/** `rotateSpace`: the rotate rings turn about the bed's axes (`world`) or the object's own (`local`). */
-export const toolStore = createStore<{ tool: Tool; rotateSpace: 'world' | 'local' }>()(() => ({ tool: 'move', rotateSpace: 'world' }))
+/**
+ * `rotateSpace`: the rotate rings turn about the bed's axes (`world`) or the object's own (`local`). `moveArrows`: the
+ * move tool shows its X, Y and Z arrows, only when the person picked Move (its button, M or the command), as Bambu
+ * Studio and OrcaSlicer show the move gizmo. Move as the default tool selects and drags without them.
+ */
+export const toolStore = createStore<{ tool: Tool; rotateSpace: 'world' | 'local'; moveArrows: boolean }>()(() => ({ tool: 'move', rotateSpace: 'world', moveArrows: false }))
 
 export function useTool(): Tool {
   return useStore(toolStore, (s) => s.tool)
 }
 
-export function setTool(tool: Tool): void {
-  toolStore.setState({ tool })
+/** Sets the tool. `picked`: the person chose it (a button, a key or a command), not a return to the default. */
+export function setTool(tool: Tool, picked = false): void {
+  toolStore.setState({ tool, moveArrows: picked && tool === 'move' })
 }
 
 export function useRotateSpace(): 'world' | 'local' {
