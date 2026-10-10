@@ -13,6 +13,7 @@ import { ColorBy } from '../view-menus'
 import { LayerTrack } from './layer-track'
 import { layerKeyStep, stepLayer } from './layer-step'
 import { usePaneSize } from '../../shell/pane'
+import { useMediaQuery } from '../../lib/media'
 import { colorblindToolpaths, get, set, shownSlice, useApp } from '../../state/store'
 import { PLAYBACK_SPEEDS } from '../../state/prefs'
 import { setGcodePanel, useGcodeView } from './gcode-file'
@@ -246,9 +247,12 @@ export function LayerDock() {
 
   const dockRef = useRef<HTMLDivElement>(null)
   const [dockSize, setDockSize] = usePaneSize('preview-bottom', DOCK.full, DOCK)
+  // On a phone the bar sits under the view as one row of transport and readout; the rest opens below that row.
+  const phone = useMediaQuery('(max-width: 900px)')
+  const [opened, setOpened] = useState(false)
   if (!preview || !timeline) return null
   // Tall shows every slider, medium the time and layer ones, and the slim bar only the transport.
-  const mode = dockSize <= DOCK.min ? 'slim' : dockSize < 150 ? 'compact' : 'full'
+  const mode = phone ? 'full' : dockSize <= DOCK.min ? 'slim' : dockSize < 150 ? 'compact' : 'full'
   const z = preview.layerZ[top - 1] ?? 0
   const layerT = preview.layerTimeS[top - 1] ?? 0
   const segs = (preview.layerStart[top] ?? 0) - (preview.layerStart[top - 1] ?? 0)
@@ -257,9 +261,42 @@ export function LayerDock() {
   const changeTo = changeIndex >= 0 ? (timeline.changes[changeIndex]?.to ?? 0) : 0
   const purge = purgeReadout(purges, toolChange)
 
+  // Speed, the toolhead and nozzle checks and the G-code lines: beside the transport, or on a phone in the opened bar.
+  const opts = (
+    <>
+      <span className="dock-cap">Speed</span>
+      <Seg
+        label="Playback speed"
+        size="sm"
+        mono
+        value={String(speed)}
+        onChange={(v) => set({ playbackSpeed: Number(v) })}
+        options={PLAYBACK_SPEEDS.map((v) => ({ value: String(v), label: speedLabel(v), title: v === 1 ? 'Real time: as fast as the printer moves' : v < 1 ? `${v === 0.25 ? 'Quarter' : 'Half'} of real time` : `${v} times real time` }))}
+      />
+      <label className="dock-check" {...tipAttrs({ title: 'Show toolhead', body: 'Draw the moving toolhead at the current move. The tool rack or dock, the purge chute and the wiper stay in view either way.' })}>
+        <input type="checkbox" checked={showToolhead} onChange={(e) => set({ showToolhead: e.target.checked })} />
+        Show toolhead
+      </label>
+      <label className="dock-check" {...tipAttrs({ title: 'Follow the nozzle', body: 'Keep the camera on the nozzle while the print plays. Your angle and zoom stay as they are.' })}>
+        <input type="checkbox" checked={followNozzle} onChange={(e) => set({ followNozzle: e.target.checked })} />
+        Follow nozzle
+      </label>
+      <button
+        type="button"
+        className="play step ghost"
+        aria-label="G-code"
+        aria-pressed={gcodeOn}
+        {...tipAttrs({ title: gcodeOn ? 'Hide the G-code' : 'Show the G-code', body: 'The G-code around the move at the nozzle. Click a line to move there.' })}
+        onClick={() => setGcodePanel(!gcodeOn)}
+      >
+        <Icon name="list" />
+      </button>
+    </>
+  )
+
   return (
-    <div className="dock sx-overlay" role="group" aria-label="Layers and moves" data-mode={mode} ref={dockRef}>
-      <ResizeEdge
+    <div className="dock sx-overlay" role="group" aria-label="Layers and moves" data-mode={mode} data-phone={phone || undefined} ref={dockRef}>
+      {phone ? null : <ResizeEdge
         pane="bottom"
         size={dockSize}
         min={DOCK.min + 24}
@@ -271,7 +308,7 @@ export function LayerDock() {
         onResize={setDockSize}
         onCollapse={() => setDockSize(DOCK.min)}
         onExpand={(px) => setDockSize(px ?? DOCK.full)}
-      />
+      />}
       <div className="dock-h">
         <button
           type="button"
@@ -289,33 +326,7 @@ export function LayerDock() {
         <button type="button" className="play step ghost" aria-label="Next layer" aria-disabled={top >= n} {...tipAttrs({ title: 'Next layer', ...(top >= n ? { reason: 'This is the last layer.' } : {}) })} onClick={() => top < n && (setPlaying(false), set({ layerHi: top + 1, moveCut: 1, toolChange: null }))}>
           <Icon name="chevron-right" />
         </button>
-        <span className="dock-cap">Speed</span>
-        <Seg
-          label="Playback speed"
-          size="sm"
-          mono
-          value={String(speed)}
-          onChange={(v) => set({ playbackSpeed: Number(v) })}
-          options={PLAYBACK_SPEEDS.map((v) => ({ value: String(v), label: speedLabel(v), title: v === 1 ? 'Real time: as fast as the printer moves' : v < 1 ? `${v === 0.25 ? 'Quarter' : 'Half'} of real time` : `${v} times real time` }))}
-        />
-        <label className="dock-check" {...tipAttrs({ title: 'Show toolhead', body: 'Draw the moving toolhead at the current move. The tool rack or dock, the purge chute and the wiper stay in view either way.' })}>
-          <input type="checkbox" checked={showToolhead} onChange={(e) => set({ showToolhead: e.target.checked })} />
-          Show toolhead
-        </label>
-        <label className="dock-check" {...tipAttrs({ title: 'Follow the nozzle', body: 'Keep the camera on the nozzle while the print plays. Your angle and zoom stay as they are.' })}>
-          <input type="checkbox" checked={followNozzle} onChange={(e) => set({ followNozzle: e.target.checked })} />
-          Follow nozzle
-        </label>
-        <button
-          type="button"
-          className="play step ghost"
-          aria-label="G-code"
-          aria-pressed={gcodeOn}
-          {...tipAttrs({ title: gcodeOn ? 'Hide the G-code' : 'Show the G-code', body: 'The G-code around the move at the nozzle. Click a line to move there.' })}
-          onClick={() => setGcodePanel(!gcodeOn)}
-        >
-          <Icon name="list" />
-        </button>
+        {phone ? null : opts}
         <span className="dock-read sx-mono sx-dim">
           {/* During a purge its grams take the layer's place (the layer slider shows both), so the line keeps its length. */}
           {purge ? null : (
@@ -323,7 +334,7 @@ export function LayerDock() {
               <span>
                 Layer <b>{top}</b> of {n}
               </span>
-              <span>
+              <span className="hide-sm">
                 Z <b>{z.toFixed(2)}</b> mm
               </span>
             </>
@@ -345,70 +356,81 @@ export function LayerDock() {
             </span>
           ) : null}
         </span>
+        {phone ? (
+          <button type="button" className="play step ghost dock-more" aria-expanded={opened} aria-label={opened ? 'Fewer playback controls' : 'More playback controls'} onClick={() => setOpened(!opened)}>
+            <Icon name={opened ? 'chevron-down' : 'chevron-up'} />
+          </button>
+        ) : null}
       </div>
-      <div className="dock-row">
-        <label htmlFor="pv-time">Time</label>
-        <div className="strike-rail">
-          <Range
-          id="pv-time"
-          min={0}
-          max={Math.max(1, timeline.total)}
-          step={0.001}
-          value={sliderOf(timeline, now)}
-          onChange={(v) => ((stopAt.current = null), seek(timeOfSlider(timeline, v)))}
-          onKeyDown={(e) => {
-            // The track is in fine steps for dragging; the keys step by print time.
-            const by = e.key === 'ArrowRight' || e.key === 'ArrowUp' ? 1 : e.key === 'ArrowLeft' || e.key === 'ArrowDown' ? -1 : e.key === 'PageUp' ? 60 : e.key === 'PageDown' ? -60 : 0
-            if (e.key === 'Home' || e.key === 'End') {
-              e.preventDefault()
-              seek(e.key === 'Home' ? 0 : timeline.total)
-            } else if (by) {
-              e.preventDefault()
-              seek(now + by * (e.shiftKey ? 10 : 1))
-            }
-          }}
-          aria-valuetext={`${clock(now)} of ${clock(timeline.total)}`}
-          />
-          <TimeStrikes timeline={timeline} />
-        </div>
-        <output className="sx-mono" htmlFor="pv-time">
-          {clock(now)} / {clock(timeline.total)}
-        </output>
-      </div>
-      <div className="dock-row">
-        <label htmlFor="pv-layer">Layer</label>
-        <LayerTrack id="pv-layer" n={n} top={top} layerZ={preview.layerZ} onKeyDown={(e) => { const by = layerKeyStep(e.key); if (by && !e.altKey && !e.ctrlKey && !e.metaKey) { e.preventDefault(); setPlaying(false); stepLayer(by) } }} onChange={(v) => (setPlaying(false), set({ layerHi: v, moveCut: 1, toolChange: null }))} />
-        <output className="sx-mono" htmlFor="pv-layer">
-          {z.toFixed(2)} mm
-        </output>
-      </div>
-      {advanced ? (
-        <div className="dock-row">
-          <label htmlFor="pv-moves">Moves</label>
-          <div className="strike-rail">
-          <Range
-            id="pv-moves"
-            className="thin"
-            min={0}
-            max={1000}
-            step={0.01}
-            value={1000 * movesOf(timeline, preview, top, moveCut, toolChange)}
-            onChange={(v) => {
-              stopAt.current = null
-              setPlaying(false)
-              // A tool change inside the layer has its own stretch of this track: dragging through it plays it.
-              const at = movesAt(timeline, preview, top, v / 1000)
-              set({ moveCut: at.moveCut, toolChange: at.change ?? null })
-            }}
-            aria-valuetext={`${moves} of ${segs} moves`}
-          />
-          <MoveStrikes timeline={timeline} preview={preview} top={top} segs={segs} />
+      {/* On a phone the rest opens as a panel over the foot of the view, so the bar's row and Print stay put. */}
+      {phone && !opened ? null : (
+        <div className={phone ? 'dock-body sx-overlay' : 'dock-body'}>
+          {phone ? <div className="dock-opts">{opts}</div> : null}
+          <div className="dock-row">
+            <label htmlFor="pv-time">Time</label>
+            <div className="strike-rail">
+              <Range
+              id="pv-time"
+              min={0}
+              max={Math.max(1, timeline.total)}
+              step={0.001}
+              value={sliderOf(timeline, now)}
+              onChange={(v) => ((stopAt.current = null), seek(timeOfSlider(timeline, v)))}
+              onKeyDown={(e) => {
+                // The track is in fine steps for dragging; the keys step by print time.
+                const by = e.key === 'ArrowRight' || e.key === 'ArrowUp' ? 1 : e.key === 'ArrowLeft' || e.key === 'ArrowDown' ? -1 : e.key === 'PageUp' ? 60 : e.key === 'PageDown' ? -60 : 0
+                if (e.key === 'Home' || e.key === 'End') {
+                  e.preventDefault()
+                  seek(e.key === 'Home' ? 0 : timeline.total)
+                } else if (by) {
+                  e.preventDefault()
+                  seek(now + by * (e.shiftKey ? 10 : 1))
+                }
+              }}
+              aria-valuetext={`${clock(now)} of ${clock(timeline.total)}`}
+              />
+              <TimeStrikes timeline={timeline} />
+            </div>
+            <output className="sx-mono" htmlFor="pv-time">
+              {clock(now)} / {clock(timeline.total)}
+            </output>
           </div>
-          <output className="sx-mono" htmlFor="pv-moves">
-            {moves} / {segs}
-          </output>
+          <div className="dock-row">
+            <label htmlFor="pv-layer">Layer</label>
+            <LayerTrack id="pv-layer" n={n} top={top} layerZ={preview.layerZ} onKeyDown={(e) => { const by = layerKeyStep(e.key); if (by && !e.altKey && !e.ctrlKey && !e.metaKey) { e.preventDefault(); setPlaying(false); stepLayer(by) } }} onChange={(v) => (setPlaying(false), set({ layerHi: v, moveCut: 1, toolChange: null }))} />
+            <output className="sx-mono" htmlFor="pv-layer">
+              {z.toFixed(2)} mm
+            </output>
+          </div>
+          {advanced ? (
+            <div className="dock-row">
+              <label htmlFor="pv-moves">Moves</label>
+              <div className="strike-rail">
+              <Range
+                id="pv-moves"
+                className="thin"
+                min={0}
+                max={1000}
+                step={0.01}
+                value={1000 * movesOf(timeline, preview, top, moveCut, toolChange)}
+                onChange={(v) => {
+                  stopAt.current = null
+                  setPlaying(false)
+                  // A tool change inside the layer has its own stretch of this track: dragging through it plays it.
+                  const at = movesAt(timeline, preview, top, v / 1000)
+                  set({ moveCut: at.moveCut, toolChange: at.change ?? null })
+                }}
+                aria-valuetext={`${moves} of ${segs} moves`}
+              />
+              <MoveStrikes timeline={timeline} preview={preview} top={top} segs={segs} />
+              </div>
+              <output className="sx-mono" htmlFor="pv-moves">
+                {moves} / {segs}
+              </output>
+            </div>
+          ) : null}
         </div>
-      ) : null}
+      )}
     </div>
   )
 }

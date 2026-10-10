@@ -55,4 +55,10 @@ describe('where toasts sit', () => {
     const vp = box(0, 0, 800, 600)
     expect(toastPlace(vp, { bottom: [box(12, 548, 300, 40)], top: [box(0, 0, 0, 0)], side: [box(0, 0, 0, 0)] }, 600)).toEqual({ bottom: 600 - 548 + OVERLAY_GAP, center: 400 })
   })
+
+  it('keeps to the room right of the color legend', () => {
+    const vp = box(433, 69, 677, 786)
+    const place = toastPlace(vp, { bottom: [box(445, 560, 300, 36)], top: [box(608, 125, 317, 40)], left: [box(445, 220, 170, 330)] }, 900)
+    expect(place).toEqual({ bottom: 900 - 560 + OVERLAY_GAP, center: Math.round((615 + OVERLAY_GAP + 1110 - OVERLAY_GAP) / 2), width: 1110 - OVERLAY_GAP - 615 - OVERLAY_GAP })
+  })
 })

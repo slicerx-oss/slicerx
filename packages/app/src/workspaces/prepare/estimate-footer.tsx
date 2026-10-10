@@ -94,8 +94,8 @@ export function SliceBlock({ label = 'Slice plate' }: { label?: string; compact?
   )
   // With Auto slice off and a current slice, Slice again sits on the estimate line as a quiet button.
   const again = (!auto || held) && done && !done.stale && !running ? (
-    <Button size="sm" variant="ghost" icon="slice" className="est-again" data-testid="slice-estimate-slice" onClick={() => void slicePlate(host).then(() => get().slice.status === 'done' && showSliced())}>
-      Slice again
+    <Button size="sm" variant="ghost" icon="slice" className="est-again" data-testid="slice-estimate-slice" aria-label="Slice again" onClick={() => void slicePlate(host).then(() => get().slice.status === 'done' && showSliced())}>
+      <span className="est-again-label">Slice again</span>
     </Button>
   ) : null
 

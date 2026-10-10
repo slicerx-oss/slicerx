@@ -18,8 +18,10 @@ export interface OverlayBoxes {
   bottom: readonly DOMRectReadOnly[]
   /** Along the top edge: the toolbar and the view switch. The toast stays below them. */
   top?: readonly DOMRectReadOnly[]
-  /** Down the right side (the layer slider on a phone): the toast keeps to the room left of them. */
+  /** Down the right side (the layer slider): the toast keeps to the room left of them. */
   side?: readonly DOMRectReadOnly[]
+  /** Down the left side (the color legend): the toast keeps to the room right of them. */
+  left?: readonly DOMRectReadOnly[]
 }
 
 /** Where the toast stack goes, in window px. `bottom` or `top` is the stack's edge, `center` and `width` its lane. */
@@ -40,9 +42,10 @@ export function toastPlace(viewport: DOMRectReadOnly, boxes: OverlayBoxes, windo
   if (floor - OVERLAY_GAP < TOAST_ROOM || visBottom - visTop < TOAST_ROOM) return null
   const ceiling = (boxes.top ?? []).filter(shown).reduce((max, r) => Math.max(max, r.bottom), visTop)
   const side = (boxes.side ?? []).filter(shown)
-  const left = viewport.left + OVERLAY_GAP
+  const lefts = (boxes.left ?? []).filter(shown)
+  const left = lefts.length ? Math.max(...lefts.map((r) => r.right)) + OVERLAY_GAP : viewport.left + OVERLAY_GAP
   const right = side.length ? Math.min(...side.map((r) => r.left)) - OVERLAY_GAP : viewport.right - OVERLAY_GAP
-  const lane = side.length ? { center: Math.round((left + right) / 2), width: Math.max(0, Math.round(right - left)) } : { center: Math.round(viewport.left + viewport.width / 2) }
+  const lane = side.length || lefts.length ? { center: Math.round((left + right) / 2), width: Math.max(0, Math.round(right - left)) } : { center: Math.round(viewport.left + viewport.width / 2) }
   if (floor - ceiling - 2 * OVERLAY_GAP >= TOAST_ROOM) return { bottom: Math.max(0, Math.round(windowHeight - floor + OVERLAY_GAP)), ...lane }
   return { top: Math.round(ceiling + OVERLAY_GAP), ...lane }
 }
@@ -60,25 +63,26 @@ export interface OverlaySelectors {
   side?: string
   /** Beside the viewport rather than in it, rising over its bottom (a phone's open sheet): the toast keeps above them. */
   cover?: string
+  left?: string
 }
 
 const VARS = ['--overlay-bottom', '--overlay-top', '--overlay-center', '--overlay-width'] as const
 
 /** Keeps the toast offsets current while `viewport` is mounted. Unmounting puts the defaults back. */
 export function useOverlayOffset(viewport: RefObject<HTMLElement | null>, selectors: OverlaySelectors = { bottom: '.hud-bl, .dock' }): void {
-  const { bottom, top, side, cover } = selectors
+  const { bottom, top, side, cover, left } = selectors
   useEffect(() => {
     const vp = viewport.current
     if (!vp || typeof ResizeObserver === 'undefined') return
     const root = document.documentElement
-    const all = [bottom, top, side].filter(Boolean).join(', ')
+    const all = [bottom, top, side, left].filter(Boolean).join(', ')
     const boxes = (sel: string | undefined, within: ParentNode = vp) => (sel ? Array.from(within.querySelectorAll<HTMLElement>(sel)).map((el) => el.getBoundingClientRect()) : [])
     let frame = 0
     let last = ''
     const measure = () => {
       frame = 0
       const covers = vp.parentElement ? boxes(cover, vp.parentElement) : []
-      const place = toastPlace(vp.getBoundingClientRect(), { bottom: [...boxes(bottom), ...covers], top: boxes(top), side: boxes(side) }, window.innerHeight)
+      const place = toastPlace(vp.getBoundingClientRect(), { bottom: [...boxes(bottom), ...covers], top: boxes(top), side: boxes(side), left: boxes(left) }, window.innerHeight)
       // The layer readouts change every frame while the print plays; the root's style changes only when the place does.
       const key = JSON.stringify(place)
       if (key === last) return
@@ -129,5 +133,5 @@ export function useOverlayOffset(viewport: RefObject<HTMLElement | null>, select
       window.removeEventListener('scroll', queue)
       for (const v of VARS) root.style.removeProperty(v)
     }
-  }, [viewport, bottom, top, side, cover])
+  }, [viewport, bottom, top, side, cover, left])
 }
