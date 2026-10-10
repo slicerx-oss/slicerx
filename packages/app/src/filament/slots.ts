@@ -6,6 +6,7 @@
 import type { FilamentSlot, PlateObject, SettingValue } from '@slicerx/contracts'
 import { resolveConfig } from '../adapters/config'
 import { extruderCount, flushInputs, flushValues, FLUSH_DEFAULTS, printerMinFlush, variantIndex, type FlushSettings } from './flush'
+import { keptFlush } from './project-kept'
 import { defaultConfig } from '@slicerx/settings/defaults'
 import { tunedValues, tuneContext } from '../calibration/tuned'
 import { allPlates } from '../plate/plates'
@@ -250,6 +251,8 @@ export function slotConfig(s: AppState): Record<string, SettingValue> {
   if (top < 2) return tuned
   const list = slots.slice(0, top)
   const plan = flushPlan(s, top)
+  // an opened project's own matrix while its slots are as the file has them
+  const kept = s.projectFlush ? keptFlush(s.projectFlush, list.map((r) => ({ color: r.color, type: r.type })), plan.nozzles.length) : null
   // A hand placed tower is a plate spot; the engine reads wipe_tower_x and wipe_tower_y on the machine.
   const [ox, oy] = s.tower.auto ? [0, 0] : areaOrigin(resolveConfig(s.easy, s.overrides)['printable_area'])
   return {
@@ -258,8 +261,8 @@ export function slotConfig(s: AppState): Record<string, SettingValue> {
     filament_type: list.map((r) => r.type),
     filament_vendor: list.map((r) => r.brand || '(Undefined)'),
     // One n by n block per nozzle, in nozzle order (Orca's get_flush_volumes_matrix reads block extruder_id).
-    flush_volumes_matrix: plan.nozzles.flatMap((z) => flushValues(list.map((r) => r.color), s.flush, z.mins, z.dataset)),
-    flush_multiplier: plan.multiplier,
+    flush_volumes_matrix: kept ?? plan.nozzles.flatMap((z) => flushValues(list.map((r) => r.color), s.flush, z.mins, z.dataset)),
+    flush_multiplier: kept && s.projectFlush ? s.projectFlush.multiplier : plan.multiplier,
     // The engine picks the tower's spot unless the person placed it.
     prime_tower_auto_position: s.tower.auto,
     ...(s.tower.auto ? {} : { wipe_tower_x: s.tower.x + ox, wipe_tower_y: s.tower.y + oy }),

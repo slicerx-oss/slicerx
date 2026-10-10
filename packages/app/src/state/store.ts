@@ -405,6 +405,10 @@ export interface AppState {
   printerNozzleVolume: number
   /** The prime tower: the engine picks the spot while auto is on; moving it by hand turns auto off. x and y are the front left corner, mm. */
   tower: { auto: boolean; x: number; y: number }
+  /** An opened project's own flush volumes, kept while its slots are as the file has them (filament/project-kept.ts). */
+  projectFlush: import('../filament/project-kept').ProjectFlush | null
+  /** The tower stands where the opened project put it; a new project sets it back to auto. */
+  towerFromProject: boolean
   /** The tower is the selected thing in the 3D view. */
   towerSelected: boolean
   /** Slots set by hand, by 1-based slot number. */
@@ -694,6 +698,8 @@ export const appStore = createStore<AppState>()(() => ({
   printerSlots: [],
   printerNozzleVolume: 0,
   tower: { auto: true, x: 0, y: 0 },
+  projectFlush: null,
+  towerFromProject: false,
   towerSelected: false,
   slotSetup: {},
   fileSlotColors: [],
