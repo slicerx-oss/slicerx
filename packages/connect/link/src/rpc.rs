@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 //! The WebSocket protocol: pairing, then JSON requests mirroring `PrinterHost`.
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::sync::Mutex as StdMutex;
 use std::sync::atomic::{AtomicU8, AtomicU64, AtomicUsize, Ordering};
@@ -75,9 +75,14 @@ pub(crate) struct Bridge {
     pub(crate) live_clients: StdMutex<Vec<(String, mpsc::UnboundedSender<Message>)>>,
     /// Pairings the hub answers over the relay, and the relay connection.
     pub(crate) remote: crate::remote::Remote,
-    /// Names Bambu Lab printers announce for themselves (SSDP `DevName`), by serial. Heard only by a
-    /// search or a probe the person started; the hub never listens for them on its own.
+    /// Names Bambu Lab printers announce for themselves (SSDP `DevName`), by serial. Heard by a
+    /// search or a probe the person started, or by asking the one printer (`ask_own_name`); the hub
+    /// never listens for them on the network on its own.
     own_names: StdMutex<crate::own_names::OwnNames>,
+    /// The serials asked for their name since the hub started: once each per launch.
+    names_asked: StdMutex<HashSet<String>>,
+    /// The ports a Bambu Lab printer answers that question on (2021 and 1990).
+    name_ports: Vec<u16>,
 }
 
 pub(crate) struct Registered {
@@ -107,6 +112,7 @@ impl Bridge {
         mdns: MdnsConfig,
         lan_bind: Option<std::net::IpAddr>,
         discovery_bind: Option<std::net::IpAddr>,
+        name_ports: Vec<u16>,
         hub: Hub,
         loaded: Loaded,
     ) -> Self {
@@ -175,6 +181,8 @@ impl Bridge {
             live_clients: StdMutex::new(Vec::new()),
             remote,
             own_names: StdMutex::new(crate::own_names::OwnNames::default()),
+            names_asked: StdMutex::new(HashSet::new()),
+            name_ports,
         }
     }
 
@@ -723,6 +731,9 @@ async fn dispatch(
         "printers.add" => {
             let out = add_printer(b, &p).await?;
             hub_rpc::save(b).await;
+            if let Some(id) = out.get("id").and_then(Value::as_str) {
+                ask_own_name(b, id).await;
+            }
             Ok(out)
         }
         "printers.remove" => {
@@ -1221,6 +1232,7 @@ fn offline(id: &str, e: &ConnectError) -> PrinterStatus {
 /// `approvals.register`. An agent's card gets origin `mcp`; a person-only one must carry its work.
 /// One printer's status with its print watch state. A printer that is off reads as offline.
 pub(crate) async fn printer_status(b: &Arc<Bridge>, id: &str) -> Rpc<Value> {
+    ask_own_name(b, id).await;
     match session(b, id).await {
         Ok(s) => match s.status().await {
             Ok(st) => {
@@ -1285,6 +1297,46 @@ fn note_own_name(b: &Bridge, serial: Option<&str>, st: &mut serde_json::Map<Stri
     if let Some(n) = serial.and_then(|s| b.own_name(s)) {
         st.insert("ownName".into(), json!(n));
     }
+}
+
+/// How long the hub waits for a printer to answer when it asks for its name.
+const NAME_ASK: Duration = Duration::from_secs(2);
+
+/// Asks a Bambu Lab printer for the name it announces, once per launch, when the hub does not know
+/// it yet: the search question sent to that printer's own address only (`bambu::ask_one`), from a
+/// connected socket on an ephemeral port. It listens on no discovery port and broadcasts nothing,
+/// so it is not a network search.
+async fn ask_own_name(b: &Arc<Bridge>, id: &str) {
+    let (serial, host) = {
+        let printers = b.printers.lock().await;
+        let Some(r) = printers.get(id) else { return };
+        let c = &r.config;
+        if c.plugin != "bambu-lan" {
+            return;
+        }
+        let Some(serial) = c.serial.clone() else {
+            return;
+        };
+        (serial, c.host.clone())
+    };
+    let Ok(ip) = host.parse::<std::net::Ipv4Addr>() else {
+        return;
+    };
+    if b.own_name(&serial).is_some()
+        || !b
+            .names_asked
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .insert(serial)
+    {
+        return;
+    }
+    let b = b.clone();
+    tokio::spawn(async move {
+        if let Some(found) = sx_connect::drivers::bambu::ask_one(ip, &b.name_ports, NAME_ASK).await {
+            b.remember_names(&[found]);
+        }
+    });
 }
 
 /// Events of one printer, with the print watch state on status events.

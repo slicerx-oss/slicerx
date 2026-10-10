@@ -110,6 +110,9 @@ pub struct LinkConfig {
     /// The address printer discovery (Bambu and Elegoo) listens and sends on. `None`: all addresses.
     /// Tests use 127.0.0.1, so the OS firewall has nothing to ask.
     pub discovery_bind: Option<std::net::IpAddr>,
+    /// The ports a Bambu Lab printer is asked its own name on, at its own address only: 2021 and
+    /// 1990 on real printers. Tests point it at a mock's.
+    pub name_ports: Vec<u16>,
 }
 
 /// Secret store entry for the app code when [`LinkConfig::code_in_secrets`] is set.
@@ -135,6 +138,7 @@ impl Default for LinkConfig {
             rtc_bind: None,
             lan_bind: None,
             discovery_bind: None,
+            name_ports: sx_connect::drivers::bambu::SSDP_PORTS.to_vec(),
         }
     }
 }
@@ -374,6 +378,7 @@ pub async fn serve_with_approvals(
         cfg.mdns.clone(),
         cfg.lan_bind,
         cfg.discovery_bind,
+        cfg.name_ports.clone(),
         hub_state,
         loaded,
     ));
