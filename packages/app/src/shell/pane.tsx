@@ -15,6 +15,7 @@ import { createPortal } from 'react-dom'
 import { createStore, useStore } from 'zustand'
 import { useLookChoice } from '../first-run/look'
 import { useMediaQuery } from '../lib/media'
+import { useCompactLayout } from '../lib/phone-layout'
 import { get, railOpen, set, setRail, useApp, type Side } from '../state/store'
 import { registerEdge } from './edge-keys'
 import './pane.css'
@@ -89,13 +90,13 @@ function useChord(action: 'panel.left' | 'panel.right'): string | undefined {
 
 export function SidePane({ side, ws, label, sections, children, footer, pinned, headExtra, width, tab, attention }: { side: Side; ws: Workspace; label: string; sections: readonly PaneSection[]; children: ReactNode; footer?: ReactNode; pinned?: ReactNode; headExtra?: ReactNode; width?: number; tab?: PaneTab; attention?: boolean }) {
   const wide = useMediaQuery('(min-width: 1280px)')
-  const phone = useMediaQuery('(max-width: 900px)')
+  const compact = useCompactLayout()
   const open = useApp((s) => railOpen(s.rails, ws, side, wide))
   const bodyId = useId()
   const chord = useChord(side === 'left' ? 'panel.left' : 'panel.right')
-  const edgeTab = tab !== undefined && !phone
+  const edgeTab = tab !== undefined && !compact
   const full = edgeTab && tab.shutFully === true
-  const sheet = tab !== undefined && phone
+  const sheet = tab !== undefined && compact
   const sheetKey = `${ws}:${side}`
   const sheetOpen = useStore(sheets, (s) => s.open === sheetKey)
   const dragging = useApp((s) => s.dragging)
@@ -167,16 +168,16 @@ export function SidePane({ side, ws, label, sections, children, footer, pinned, 
     <Rail
       side={side}
       label={label}
-      collapsed={phone ? false : !open}
+      collapsed={compact ? false : !open}
       onCollapsedChange={(collapsed) => setRail(ws, side, !collapsed)}
-      items={phone || open || full ? [] : sections.map((s) => ({ id: s.id, label: s.label, icon: s.icon }))}
+      items={compact || open || full ? [] : sections.map((s) => ({ id: s.id, label: s.label, icon: s.icon }))}
       onSelect={onSelect}
       dropActive={dragging && side === 'right' && ws === 'prepare'}
       className={['pane', resizing ? 'resizing' : '', edgeTab ? 'edged' : '', full ? 'shuts' : '', sheet ? 'sheet' : '', sheet && sheetOpen ? 'sheet-open' : ''].filter(Boolean).join(' ')}
       railRef={railRef}
       style={{ '--w-side': `${side === 'right' ? size - 24 : size}px` } as CSSProperties}
       {...(tab ? { toggle: false, peekOnHover: false } : {})}
-      {...(phone
+      {...(compact
         ? sheet
           ? { edge: <SheetHandle sheet={() => railRef.current} onClose={() => setSheet(sheetKey, false)} /> }
           : {}

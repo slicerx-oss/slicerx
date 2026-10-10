@@ -34,6 +34,7 @@ import { get, pilotState, pushRecent, set, showsLayers, toast, useApp } from './
 import { updaterRegistered } from './updates/hold'
 import { toolStore } from './plate/tools'
 import { startReadySignal } from './lib/ready-signal'
+import { usePhoneRoot } from './lib/phone-layout'
 import { startCrashCapture } from './bugs/crash'
 import { needsAgreement } from './first-run/agreement-check'
 import { onboardingRerun } from './first-run/onboarding'
@@ -218,6 +219,7 @@ function Shell() {
   useGlobalKeys(workspaces.map((w) => w.id))
   useNativeMenu()
   useFileDrops()
+  usePhoneRoot()
 
   useEffect(() => {
     if (stored !== workspace) set({ workspace })
