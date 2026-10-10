@@ -107,6 +107,7 @@ export function decodeStl(buf: ArrayBuffer, name: string): DecodedModel {
     bboxMm: [maxX - minX, maxY - minY, maxZ - minZ],
     triangles: indices.length / 3,
     parts: [{ name: 'Part 1', slot: 1, positions, indices }],
-    colors: ['#bd93f9'],
+    // white PLA: a part in the accent color would hide the accent selection outline
+    colors: ['#ebebe6'],
   }
 }

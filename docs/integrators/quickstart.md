@@ -209,7 +209,7 @@ With `tools`, the viewport is a Prepare step: a toolbar over the view with selec
 
 `tools` also takes a list, such as `['move', 'rotate', 'arrange']`. `tool` and `selection` make the active tool and the selection yours to control. Drop to bed sets the selection down, or every object when nothing is selected. Without React: `<sx-viewport tools>`, the `transform`, `select` and `tool` events, and the `arrange()` and `dropToBed()` methods.
 
-The plate reveal (the outline traced and the grid laid) plays on the first plate. `reveal="each-plate"` plays it for every new plate, such as each job, and `playReveal()` plays it when you ask. `bedOutline="subtle"` draws a thinner, quieter bed outline for a calm theme, and `look="cad"` draws parts in a neutral gray with dark edges.
+The plate reveal (the outline traced and the grid laid) plays on the first plate. `reveal="each-plate"` plays it for every new plate, such as each job, and `playReveal()` plays it when you ask. `bedOutline="subtle"` draws a faint hairline bed outline for a calm theme, and `look="cad"` draws parts in a neutral gray with dark edges.
 
 ### Let the user change settings
 
