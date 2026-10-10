@@ -63,6 +63,32 @@ function asObject(v: unknown): Record<string, unknown> | undefined {
   return v !== null && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : undefined
 }
 
+/**
+ * Bambu Studio 2.8 replaced the `reduce_infill_retraction` switch with `reduce_infill_retraction_mode`. Its tooltip:
+ * "Enabled" always skips retraction for travels within the infill area, "Disabled" always retracts, and "Auto" skips it
+ * for filaments with low metal stickiness (PLA) but not medium or high (PETG), where `filament_metal_stickiness` "None"
+ * (untested) counts as low. The engine has one switch for the print, so Auto turns it on when every filament of the
+ * file is low (or when it names no filament). Undefined when the file has no mode, or one of another name, which then imports as before.
+ */
+export function infillRetractionFromMode(merged: Record<string, unknown>): boolean | undefined {
+  const one = (v: unknown): unknown => (Array.isArray(v) && v.length === 1 ? v[0] : v)
+  const mode = one(merged['reduce_infill_retraction_mode'])
+  if (typeof mode !== 'string') return undefined
+  switch (mode.trim().toLowerCase()) {
+    case 'enabled':
+      return true
+    case 'disabled':
+      return false
+    case 'auto': {
+      const raw = merged['filament_metal_stickiness']
+      const list = Array.isArray(raw) ? raw : raw === undefined ? [] : [raw]
+      return list.every((x) => typeof x === 'string' && ['none', 'low', 'nil'].includes(x.trim().toLowerCase()))
+    }
+    default:
+      return undefined
+  }
+}
+
 export interface FlatImport {
   config: PrintConfig
   unknownKeys: string[]
@@ -78,8 +104,11 @@ export function importFlat(merged: Record<string, unknown>): FlatImport {
   const ignoredKeys: string[] = []
   const nilKeys: string[] = []
   const invalidKeys: string[] = []
+  const fromMode = infillRetractionFromMode(merged)
   for (const [rawKey, rawValue] of Object.entries(merged)) {
     if (PROFILE_META_KEYS.has(rawKey)) continue
+    // The mode replaces the old switch when the file has both (see infillRetractionFromMode).
+    if (fromMode !== undefined && (rawKey === 'reduce_infill_retraction_mode' || rawKey === 'reduce_infill_retraction')) continue
     if (OBSOLETE.has(rawKey) && !settingDef(rawKey)) {
       ignoredKeys.push(rawKey)
       continue
@@ -100,6 +129,7 @@ export function importFlat(merged: Record<string, unknown>): FlatImport {
     else if (c.ok === 'nil') nilKeys.push(key)
     else invalidKeys.push(key)
   }
+  if (fromMode !== undefined) config['reduce_infill_retraction'] = fromMode
   return { config, unknownKeys: unknownKeys.sort(), ignoredKeys: ignoredKeys.sort(), nilKeys: nilKeys.sort(), invalidKeys: invalidKeys.sort() }
 }
 
