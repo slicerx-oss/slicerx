@@ -9,6 +9,7 @@ Coding agents: read AGENTS.md first, choose a path (A: your own edition, B: embe
 - [AGENTS.md](AGENTS.md): step-by-step instructions for coding agents, with MCP setup per client, the interview, recipes, theming and the rules
 - [Credit kit](credit-kit/README.md): "Made possible by SlicerX" badges, a Support SlicerX button, copy to paste, usage rules and screenshots
 - [../integrating.md](../integrating.md): the long guide to building your own edition, with a worked example
+- [engine-path.md](engine-path.md): Path B with the sx engine instead of the MCP server for slicing: Prepare tools in the viewport, the plate as a slice request, settings, exit codes and the preview
 - [quickstart.md](quickstart.md): the reference for the server options, tools, settings layers, result fields, progress, token scopes and error codes
 
 ## Packages

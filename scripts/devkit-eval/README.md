@@ -18,6 +18,19 @@ The `layermate` persona is Chris, who asks for "a slicer in my LayerMate" and do
 node scripts/devkit-eval/run.mjs --persona layermate --dry-run
 ```
 
+The `engine` persona is Path B with the engine ([engine-path.md](../../docs/integrators/engine-path.md)): a print queue app whose developer wants a Prepare step in the viewport and runs `sx` itself rather than slicing over MCP. It gets `x-mark.stl` in `data/models` and is scored on that path:
+
+- interviewed before writing code
+- installed `@slicerx/embed` from the kit
+- the viewport with its Prepare tools (`tools`)
+- kept the transforms people make (`onTransform` or the `transform` event)
+- put the decoder's offset back with `fileTransform`
+- ran `sx slice --request` from a Node process, never the browser
+- showed the preview and the time and grams
+- sliced once to check it
+- no parts the developer did not ask for (MCP slicing, printers, locked projects, the settings panel)
+- the pre-alpha agreement, the brand theme, the rules, and `npm run build`
+
 The `whitelabel` persona makes its own edition (Path A). The run copies the developer's brand files into the app folder and clones this repository beside it with SlicerX as the `upstream` remote (`--clone <path>` uses an existing clone). The agent may also run `cargo`, `rustc`, `rustup`, `wasm-opt`, `sh scripts/install-binaryen.sh`, read-only git commands and the `SLICERX_CONFIG=` and `SX_WASM_OPT=` forms of the build there. `pnpm edition:build` needs none of the variable forms.
 
 Each run bills the agent's account. Results go to a temporary folder (printed at the end): `score.json`, `transcript.jsonl` and the app the agent built. Servers the agent starts itself (such as `npm run dev`) keep running after the eval; stop them by PID.
