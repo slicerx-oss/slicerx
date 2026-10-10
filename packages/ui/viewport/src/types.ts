@@ -351,6 +351,8 @@ export interface PathPick {
 
 export interface ViewportEvents {
   pick: PickEvent
+  /** Prepare: a right click that did not drag, on an object or not. `screen` is the client point for a menu there. */
+  contextpick: { objectId: string | null; screen: [number, number] }
   select: { ids: string[] }
   /** While a scale handle is dragged: the factors applied to the model's own axes since the drag began (`snapped`: Shift is down). */
   scale: { id: string; factors: [number, number, number]; uniform: boolean; snapped: boolean }

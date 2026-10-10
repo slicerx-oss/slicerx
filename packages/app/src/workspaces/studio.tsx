@@ -37,6 +37,7 @@ import { warmFullEngine } from '../geom/full-engine'
 import { useBoundValues } from './prepare/object-tools'
 import { SliceLookSwitch } from './prepare/slice-look'
 import { ParkedChip } from './prepare/parked-chip'
+import { ViewSelectionMenu } from './prepare/selection-bar'
 import { SliceProgress } from './slice-progress'
 import { useOverlayOffset, type OverlaySelectors } from '../lib/overlay-offset'
 import { useMediaQuery } from '../lib/media'
@@ -197,6 +198,7 @@ export function Studio() {
           <OpeningPicture />
         </Suspense>
         <SliceProgress />
+        {design ? null : <ViewSelectionMenu />}
         {design || !hasPreview ? null : <SliceLookSwitch />}
         {design ? null : <ParkedChip />}
         <div className="hud hud-top">

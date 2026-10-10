@@ -12,7 +12,7 @@ import { useTool, setTool } from '../../plate/tools'
 import { searchObjects } from '../../plate/object-list'
 import { ExportMenu, ObjectMenu, ShapeMenu } from './object-actions'
 import { ToolDialogHost, ToolsMenu } from './object-tools'
-import { ObjectTransform } from './object-transform'
+import { SelectionActions } from './selection-bar'
 import { ObjectRow } from './object-row'
 import { useMore } from '../../shell/more'
 import './objects.css'
@@ -198,7 +198,7 @@ export function PrepareObjects() {
           {plate.map((p, index) => (matches.has(p.id) ? <ObjectRow key={p.id} entry={p} index={index} count={plate.length} instanceOf={p.instanceOf ? names.get(p.instanceOf) : undefined} match={matches.get(p.id)!} searching={searching} /> : null))}
         </ul>
       )}
-      <ObjectTransform />
+      <SelectionActions />
       {historyOf ? (
         <Suspense fallback={null}>
           <HistoryPanel objectId={historyOf} />
