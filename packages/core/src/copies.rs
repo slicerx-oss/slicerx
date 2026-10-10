@@ -198,6 +198,10 @@ fn move_layer(l: &mut LayerPaths, shift: [i32; 2]) {
     if let Some(s) = l.lift_overhangs.as_mut() {
         moved(s);
     }
+    for p in l.joins.iter_mut().flatten() {
+        p.x += shift[0];
+        p.y += shift[1];
+    }
 }
 
 /// Adds the paths and areas of `l` after those of `dst` (the same layer of another copy).
@@ -241,4 +245,5 @@ fn append_layer(dst: &mut LayerPaths, mut l: LayerPaths) {
         (None, Some(a)) => dst.lift_overhangs = Some(a),
         _ => {}
     }
+    dst.joins.append(&mut l.joins);
 }

@@ -167,6 +167,9 @@ pub struct LayerPaths {
     pub(crate) support_areas: Option<Box<SupportAreas>>,
     /// With auto lift: the overhangs of this layer and the layers up to 0.4 mm below, where a travel spirals.
     pub(crate) lift_overhangs: Option<Box<crate::perimeters::Shapes>>,
+    /// The solid surface turns along the edge on this layer (each as its two ends): the joins
+    /// `collide::plate::drop_crossing_joins` may turn into travels.
+    pub(crate) joins: Vec<[Point; 2]>,
     /// Each path's speed before the cooling slowdown, kept when the slowdown changed some, so the slowdown
     /// can be worked out again once the written layer's time is known (`gcode::settle_cooling`).
     pub(crate) unslowed: Option<Box<[f32]>>,

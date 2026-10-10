@@ -380,3 +380,18 @@ fn a_line_no_one_can_approve_stays_blocked_when_trusted() {
     );
     assert_eq!(err.matches("blocked by the safety preflight").count(), 1, "{err}");
 }
+
+/// Two band objects of the two-color x-mark overlap on layer 33 (z 5.92): a turn of one object's internal solid there
+/// would cross a short internal solid path of the other near X91.5 Y134.9. A join never crosses another object's path,
+/// so it is a travel, and the plate slices without a collision (the MCP integrator's A1 request).
+#[test]
+fn a_solid_join_never_crosses_another_objects_path() {
+    let out = sx()
+        .args(["slice", "--request", &fixture("xmark-2color-a1-request.json")])
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let collisions = v["collisions"].as_array().cloned().unwrap_or_default();
+    assert!(collisions.is_empty(), "{collisions:?}");
+}
