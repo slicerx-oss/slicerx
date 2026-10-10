@@ -251,7 +251,12 @@ test('a design whose parts do not touch gets one note, Show which names them, an
     }
     return { x: (min[0]! + max[0]!) / 2, y: (min[1]! + max[1]!) / 2, z: max[2]! }
   })
-  // The camera frames a newly opened design with a short move; aim once it has stopped.
+  // The open slices the plate on its own. When that slice lands, the toolpath look's legend, layer strip and playback
+  // bar come up over the view and the camera frames the plate again in the space they leave, so a press aimed before
+  // then lands on the bed beside the clip and turns the view instead of moving it. Aim once the slice is in and the
+  // camera has stopped: the same spot twice, further apart than the view's second look at its overlays (600 ms).
+  const sliced = () => page.evaluate(() => { const s = (window as unknown as { __sx: Sx }).__sx.getState().slice; return s.status === 'done' && !s.stale })
+  await expect.poll(sliced, { timeout: 60_000 }).toBe(true)
   let at = await screen(page, foot.x, foot.y, foot.z)
   await expect
     .poll(async () => {
@@ -259,7 +264,7 @@ test('a design whose parts do not touch gets one note, Show which names them, an
       const still = Math.hypot(again.x - at.x, again.y - at.y) < 0.5
       at = again
       return still
-    })
+    }, { intervals: [700] })
     .toBe(true)
   await page.mouse.move(at.x, at.y)
   await page.mouse.down()
