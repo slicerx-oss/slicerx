@@ -83,6 +83,8 @@ input.bare::placeholder { color: var(--dim); }
 .reset .sx-ic { width: 14px; height: 14px; }
 button.reset:hover { color: var(--fg); background: var(--ink-3); }
 .app-note { font: var(--fw-medium) calc(11.5px * var(--text-scale))/1.5 var(--f-mono); color: var(--dim); margin: 10px 0 0; }
+/* A note that is a sentence, not figures, reads in the body font. */
+.app-note.prose { font-family: var(--f-body); }
 
 /* objects and estimate */
 .objs { list-style: none; margin: 0; padding: 0; }
