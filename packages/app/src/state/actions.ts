@@ -408,12 +408,15 @@ export async function slicePlate(host: Host, opts: { auto?: boolean } = {}): Pro
     sliceStage(timed, 'request')
     const sliced = await sliceWith()
     if (sliceAbort !== abort) return
+    // A slice canceled as it finished is still canceled: its plate may be gone.
+    if (abort.signal.aborted) throw new DOMException('Slice canceled', 'AbortError')
     // How long this plate took, for the next slice's size estimate (slice-estimate.ts).
     noteSliceTiming(s.activePlate, { triangles: plateTriangles(toPrint), ms: sliced.wallMs })
     sliceStage(timed, 'result', { ...(sliced.engineWallMs !== undefined ? { engineMs: sliced.engineWallMs } : {}), engineCpuMs: Object.values(sliced.stageMicros ?? {}).reduce((n: number, us) => n + (us ?? 0), 0) / 1000 })
     // The tower comes back in machine coordinates; the plate counts from its corner.
     const result = sliced.primeTower ? { ...sliced, primeTower: towerToPlate(sliced.primeTower, areaOrigin(config['printable_area'])) } : sliced
     const raw = await host.slicer.getPreview(result.id)
+    if (abort.signal.aborted) throw new DOMException('Slice canceled', 'AbortError')
     sliceStage(timed, 'preview', { previewBytes: raw.byteLength })
     const preview = readPreview(raw)
     sliceStage(timed, 'parsed')

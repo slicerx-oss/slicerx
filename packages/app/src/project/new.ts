@@ -3,11 +3,14 @@
 // A new, empty project: one empty plate, no undo history and no file. Print settings, the printer and
 // the filament stay as they are, the same as a new project in OrcaSlicer, except what an opened project brought.
 import { history } from '../plate/history'
+import { cancelSlice } from '../state/actions'
 import { get, set } from '../state/store'
 import { freshVary } from '../lib/sleipnir-default'
 import { confirmDiscard, markClean } from './unsaved'
 
 export function clearProject(): void {
+  // A slice still running is for a plate that is going: it stops, so the next design does not wait for the slicer.
+  cancelSlice({ quiet: true })
   // The project's printer goes with it, and so do the settings and machine G-code the project brought: the plate
   // returns to the printer chosen before, with its own settings.
   const pp = get().projectPrinter
