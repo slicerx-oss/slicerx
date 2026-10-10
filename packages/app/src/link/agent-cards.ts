@@ -182,9 +182,41 @@ export function describeCard(card: HubCard, printerName: (id: string) => string 
   return { title, lines, startsPrint, ...(blocked ? { blocked } : {}) }
 }
 
+/** The hub's word that a card was answered, by whichever client answered it (`approval.resolved`). */
+export interface CardResolved {
+  requestId: string
+  decision: 'granted' | 'denied'
+  /** Who answered: an app window, a paired phone, a partner app, or the agent that raised the card. */
+  via: 'app' | 'phone' | 'partner' | 'agent'
+  /** The partner app's name, from its key, when a partner answered. */
+  by?: string
+}
+
+/** The note shown when a card the person had open was answered somewhere else. */
+export function answeredNote(r: CardResolved): string {
+  const yes = r.decision === 'granted'
+  switch (r.via) {
+    case 'phone':
+      return yes ? 'Approved on your phone.' : 'Denied on your phone.'
+    case 'partner': {
+      const name = oneLine(r.by ?? '').slice(0, 60) || 'The partner app'
+      return yes ? `${name} answered it.` : `${name} withdrew it.`
+    }
+    case 'agent':
+      return yes ? 'The agent that asked answered it.' : 'The agent that asked withdrew it.'
+    default:
+      return yes ? `Approved in another ${appName()} window.` : `Denied in another ${appName()} window.`
+  }
+}
+
+/** How often an open hub card is checked against the hub's list, in case the word it was answered got lost. */
+export const RECHECK_MS = 10_000
+
 /** The part of the bridge's approval broker the card screen uses. */
 export interface HubCards {
   onRequest(cb: (r: ApprovalRequest) => void): () => void
+  /** A card was answered, here or by another client. */
+  onResolved?(cb: (r: CardResolved) => void): () => void
   pending?(): Promise<ApprovalRequest[]>
   grantWith(requestId: string, opts: { bedClear: boolean }): Promise<ApprovalToken | { queued: true }>
   deny(requestId: string, reason?: string): Promise<unknown>
@@ -194,12 +226,17 @@ export const BED_CLEAR = 'The build plate is clear'
 
 /**
  * Shows the hub's cards in the approval dialog, one at a time, oldest first. Approve and Deny are the only
- * ways a card is answered. Returns a function that stops listening and drops the cards not yet shown.
+ * ways a card is answered here. A card answered by another client (a phone, a partner app) closes with a
+ * note, and so does one the hub no longer lists. Returns a function that stops listening and drops the
+ * cards not yet shown.
  */
 export function watchHubCards(cards: HubCards, printerName: (id: string) => string = (id) => id, refreshNames?: () => Promise<unknown>): () => void {
   let queue: HubCard[] = []
   let showing: string | null = null
+  let shown: PendingApproval | null = null
   const seen = new Set<string>()
+  /** Cards answered elsewhere: never shown, even when their event beats the card to the queue. */
+  const gone = new Set<string>()
   const next = () => {
     if (showing || get().approval) return
     const card = queue.shift()
@@ -209,6 +246,7 @@ export function watchHubCards(cards: HubCards, printerName: (id: string) => stri
     showing = card.id
     const done = () => {
       showing = null
+      shown = null
       set({ approval: null })
     }
     const pending: PendingApproval = {
@@ -228,12 +266,26 @@ export function watchHubCards(cards: HubCards, printerName: (id: string) => stri
         await cards.deny(card.id, 'Denied in the approval dialog').catch(() => undefined)
       },
     }
+    shown = pending
     set({ approval: pending })
+  }
+  /** The hub has the card answered: it leaves the queue, and an open dialog closes so the next card can show. */
+  const answered = (id: string, note: string) => {
+    gone.add(id)
+    queue = queue.filter((c) => c.id !== id)
+    if (showing !== id) return
+    const open = shown
+    showing = null
+    shown = null
+    if (open && get().approval === open) set({ approval: null })
+    if (note) toast(note, 'info')
+    next()
   }
   const add = (r: ApprovalRequest) => {
     if (seen.has(r.id)) return
     seen.add(r.id)
     const go = () => {
+      if (gone.has(r.id)) return
       queue.push(r as HubCard)
       next()
     }
@@ -242,8 +294,22 @@ export function watchHubCards(cards: HubCards, printerName: (id: string) => stri
     else go()
   }
   const offRequest = cards.onRequest(add)
+  const offResolved = cards.onResolved?.((r) => answered(r.requestId, answeredNote(r)))
   // Cards raised before this app connected are waiting on the hub.
   void cards.pending?.().then((list) => list.filter((r) => r.origin === 'mcp' || r.origin === 'phone' || r.origin === 'queue' || r.origin === 'schedule').forEach(add), () => undefined)
+  // While a card is open, the hub's list is read again now and then: a card it no longer lists was answered
+  // or expired, and its event was missed (a hub without it, a dropped message).
+  const recheck = setInterval(() => {
+    if (!showing || !cards.pending) return
+    const id = showing
+    const waiting = queue.map((c) => c.id)
+    void cards.pending().then((list) => {
+      const open = new Set(list.map((r) => r.id))
+      // The waiting ones first, so the card that takes the dialog's place is one the hub still holds.
+      for (const w of waiting) if (!open.has(w)) answered(w, '')
+      if (!open.has(id)) answered(id, 'This request was answered elsewhere.')
+    }, () => undefined)
+  }, RECHECK_MS)
   // When any approval closes, the next card takes its place.
   const offStore = appStore.subscribe((now, was) => {
     if (was.approval && !now.approval) {
@@ -253,9 +319,12 @@ export function watchHubCards(cards: HubCards, printerName: (id: string) => stri
   })
   return () => {
     offRequest()
+    offResolved?.()
+    clearInterval(recheck)
     offStore()
     queue = []
     if (showing) set({ approval: null })
     showing = null
+    shown = null
   }
 }

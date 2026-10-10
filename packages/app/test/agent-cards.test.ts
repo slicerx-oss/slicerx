@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-import { beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ApprovalRequest } from '@slicerx/contracts'
-import { BED_CLEAR, describeCard, printerLabels, watchHubCards, type HubCard, type HubCards } from '../src/link/agent-cards'
+import { BED_CLEAR, RECHECK_MS, describeCard, printerLabels, watchHubCards, type CardResolved, type HubCard, type HubCards } from '../src/link/agent-cards'
 import { get, set } from '../src/state/store'
 
 const card = (over: Partial<HubCard> = {}): HubCard => ({
@@ -194,5 +194,80 @@ describe('agent cards', () => {
     expect(pause.startsPrint).toBe(false)
     const cancel = describeCard(card({ origin: 'phone', actions: [{ action: 'printer.cancel', target: 'bay-4', paramsHash: 'c' }] } as Partial<HubCard>), names)
     expect(cancel.title).toBe('Cancel the print on Bay 4?')
+  })
+})
+
+describe('cards answered elsewhere', () => {
+  beforeEach(() => set({ approval: null, toast: null }))
+  afterEach(() => vi.useRealTimers())
+
+  const pause = (id: string) => card({ id, actions: [{ action: 'printer.pause', target: 'bay-4', paramsHash: 'p' }], work: { kind: 'pause', printerId: 'bay-4' } })
+
+  it('closes the open card when the hub says another client answered it, and shows the next one', () => {
+    const calls: string[] = []
+    let emit: (r: ApprovalRequest) => void = () => undefined
+    let resolved: (r: CardResolved) => void = () => undefined
+    const hub: HubCards = {
+      onRequest: (cb) => ((emit = cb), () => undefined),
+      onResolved: (cb) => ((resolved = cb), () => undefined),
+      grantWith: async (id) => (calls.push(`grant ${id}`), { queued: true as const }),
+      deny: async (id) => void calls.push(`deny ${id}`),
+    }
+    const stop = watchHubCards(hub, names)
+    emit(pause('p-1'))
+    emit(pause('p-2'))
+    emit(pause('p-3'))
+    expect(get().approval?.requests[0]?.id).toBe('p-1')
+    resolved({ requestId: 'p-1', decision: 'granted', via: 'phone' })
+    expect(get().toast?.text).toBe('Approved on your phone.')
+    // The dialog is free again: the next card takes its place.
+    expect(get().approval?.requests[0]?.id).toBe('p-2')
+    // A waiting card answered elsewhere never shows.
+    resolved({ requestId: 'p-3', decision: 'granted', via: 'partner', by: 'LayerMate' })
+    expect(get().approval?.requests[0]?.id).toBe('p-2')
+    resolved({ requestId: 'p-2', decision: 'denied', via: 'partner', by: 'LayerMate' })
+    expect(get().approval).toBeNull()
+    expect(get().toast?.text).toBe('LayerMate withdrew it.')
+    expect(calls).toEqual([])
+    stop()
+  })
+
+  it('takes no note for a card this app answered itself', async () => {
+    let emit: (r: ApprovalRequest) => void = () => undefined
+    let resolved: (r: CardResolved) => void = () => undefined
+    const hub: HubCards = {
+      onRequest: (cb) => ((emit = cb), () => undefined),
+      onResolved: (cb) => ((resolved = cb), () => undefined),
+      grantWith: async () => ({ queued: true as const }),
+      deny: async () => undefined,
+    }
+    const stop = watchHubCards(hub, names)
+    emit(pause('p-1'))
+    await get().approval!.deny()
+    resolved({ requestId: 'p-1', decision: 'denied', via: 'app' })
+    expect(get().approval).toBeNull()
+    expect(get().toast).toBeNull()
+    stop()
+  })
+
+  it('drops an open card the hub no longer lists, so a missed answer does not hold the dialog', async () => {
+    vi.useFakeTimers()
+    let listed = [pause('p-1'), pause('p-2')]
+    const hub: HubCards = {
+      onRequest: () => () => undefined,
+      pending: async () => listed,
+      grantWith: async () => ({ queued: true as const }),
+      deny: async () => undefined,
+    }
+    const stop = watchHubCards(hub, names)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(get().approval?.requests[0]?.id).toBe('p-1')
+    await vi.advanceTimersByTimeAsync(RECHECK_MS)
+    expect(get().approval?.requests[0]?.id).toBe('p-1')
+    listed = []
+    await vi.advanceTimersByTimeAsync(RECHECK_MS)
+    expect(get().approval).toBeNull()
+    expect(get().toast?.text).toBe('This request was answered elsewhere.')
+    stop()
   })
 })
