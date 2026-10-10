@@ -1561,6 +1561,16 @@ impl PrintConfig {
         .any(|v| (v - self.line_width).abs() > 1e-9)
     }
 
+    /// The outer wall's line width as the profile sets it, mm, on the first layer too (where
+    /// [`Self::for_first_layer`] puts the first layer's own width in the line width).
+    pub(crate) fn profile_outer_wall_width(&self) -> f64 {
+        self.raw
+            .get("outer_wall_line_width")
+            .or_else(|| self.raw.get("line_width"))
+            .and_then(|v| width(v, self.nozzle_diameter))
+            .unwrap_or_else(|| self.outer_wall_width())
+    }
+
     /// The settings for the first layer: every width is `initial_layer_line_width` when it is set.
     #[must_use]
     pub fn for_first_layer(&self) -> Self {

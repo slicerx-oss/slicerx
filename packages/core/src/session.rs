@@ -765,12 +765,27 @@ struct Families {
     /// `mmu_segmented_region_max_width` and `mmu_segmented_region_interlocking_depth` in internal units
     /// (0 when off or when beam interlocking is on).
     paint_band: (i32, i32),
+    /// Painted tops and bottoms: how much farther in they reach on each shell layer beyond them, and the
+    /// narrowest piece kept (`paint::LayerPaint`), internal units.
+    paint_step: i32,
+    paint_small: i32,
 }
+
+/// What a layer's regions depend on, see [`Families::cut`].
+type RegionCut = (
+    i64,
+    perimeters::Slicing,
+    i32,
+    usize,
+    usize,
+    (i32, i32),
+    (i32, i32),
+);
 
 impl Families {
     /// What the regions of a layer depend on: the contour resolution, slicing mode and closing radius, the shell
     /// layers and the painted band. The scanline spacings are not read there.
-    fn cut(&self) -> (i64, perimeters::Slicing, i32, usize, usize, (i32, i32)) {
+    fn cut(&self) -> RegionCut {
         (
             self.resolution,
             self.slicing,
@@ -778,6 +793,7 @@ impl Families {
             self.top_shell,
             self.bottom_shell,
             self.paint_band,
+            (self.paint_step, self.paint_small),
         )
     }
 
@@ -826,6 +842,13 @@ impl Families {
                         .max(0.0)),
                 )
             },
+            // The outer wall's spacing plus its width a layer, and pieces narrower than half the outer wall
+            // width go; the profile's widths, so the first layer cuts the same colors.
+            paint_step: {
+                let w = cfg.profile_outer_wall_width();
+                mm(cfg.spacing_for(w) + w)
+            },
+            paint_small: mm(0.25 * cfg.profile_outer_wall_width()),
             slicing: match cfg.raw.get("slicing_mode") {
                 Some(serde_json::Value::String(t)) if t == "even_odd" => perimeters::Slicing::EvenOdd,
                 Some(serde_json::Value::String(t)) if t == "close_holes" => perimeters::Slicing::CloseHoles,
@@ -3274,6 +3297,9 @@ impl SliceSession {
                 above: &[],
                 below: &[],
                 facets: &painted,
+                step: 0,
+                small: 0,
+                memo: None,
             };
             pieces.extend(
                 ctx.split()
@@ -5385,9 +5411,10 @@ impl SliceSession {
             }
             let shapes =
                 &perimeters::shapes_from_loops_mode(&loops, fam.resolution, fam.slicing, fam.closing);
+            // The layers around read the whole plate's outline: a painted face another part covers is no surface.
             let contour_at = |l: i64| -> Shapes {
                 u32::try_from(l)
-                    .map(|l| (*self.painted_outline(k, l, cut)).clone())
+                    .map(|l| (*self.plate_outline(l, cut)).clone())
                     .unwrap_or_default()
             };
             let l = i64::from(layer);
@@ -5403,6 +5430,9 @@ impl SliceSession {
                 above: &above,
                 below: &below,
                 facets: &p.paint,
+                step: fam.paint_step,
+                small: fam.paint_small,
+                memo: Some((&self.paint, k, cut)),
             };
             let mut split = ctx.split();
             if split.iter().any(|(slot, _)| *slot != p.slot) {
@@ -5640,6 +5670,15 @@ impl SliceSession {
         }
         Micros::add(&micros.contours, &t);
         out
+    }
+
+    /// Every part's outline on `layer` together, cut once (kept under the index after the last part).
+    fn plate_outline(&self, layer: u32, cut: crate::paint::CutKey) -> std::sync::Arc<Shapes> {
+        self.paint.outline(self.parts.len(), layer, cut, || {
+            (0..self.parts.len()).fold(Vec::new(), |all, k| {
+                perimeters::union_all(&[&all, &self.painted_outline(k, layer, cut)])
+            })
+        })
     }
 
     /// The outline of painted part `k` on `layer`, cut once (`paint::Cache::outline`).
