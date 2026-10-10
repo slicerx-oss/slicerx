@@ -1010,6 +1010,16 @@ impl SliceSession {
                 .collect(),
             None => printable.clone(),
         };
+        // Each object's footprint, worked out once for its own session and the plate's.
+        let hulls = crate::firmware::footprints(plate);
+        let hull_of = |obj: &crate::plate::PlateObject| {
+            plate
+                .objects
+                .iter()
+                .position(|o| std::ptr::eq(o, obj))
+                .and_then(|i| hulls.get(i).cloned())
+                .map(|h| vec![h])
+        };
         let mut subs: Vec<Self> = Vec::with_capacity(sliced.len());
         for obj in &sliced {
             let own_cfg = object_config(config, &obj.settings)?;
@@ -1034,12 +1044,13 @@ impl SliceSession {
             } else {
                 ranges.to_vec()
             };
-            subs.push(Self::build_one(
+            subs.push(Self::build_one_with(
                 &sub,
                 &own_cfg,
                 own.as_deref(),
                 &own_ranges,
                 interleaved,
+                hull_of(obj),
             )?);
         }
         if interleaved && let Some(s) = subs.first_mut() {
@@ -1070,7 +1081,7 @@ impl SliceSession {
                 first.push_warning(w);
             }
         }
-        first.objects = crate::firmware::footprints(plate);
+        first.objects = hulls;
         // Orca refuses a by-object plate whose objects stand closer than the clearance radius or taller than the
         // gantry; here it slices, and the collision check (`collide`) reports every move that would meet a part.
         first.object_settings = sliced.iter().map(|o| o.settings.clone()).collect();
@@ -1174,7 +1185,22 @@ impl SliceSession {
         ranges: &[HeightRange],
         interleaved: bool,
     ) -> Result<Self> {
+        Self::build_one_with(plate, config, tops, ranges, interleaved, None)
+    }
+
+    /// [`Self::build_one`] with the plate's footprints when they are known already (`firmware::footprints`): the
+    /// hull of every vertex of each object, which on a part of millions of vertices takes a good part of a second.
+    fn build_one_with(
+        plate: &Plate,
+        config: &PrintConfig,
+        tops: Option<&[f64]>,
+        ranges: &[HeightRange],
+        interleaved: bool,
+        hulls: Option<Vec<crate::output::ObjectFootprint>>,
+    ) -> Result<Self> {
         config.check()?;
+        // Worked out once here, for the prime tower's placement and the session's objects.
+        let hulls = hulls.unwrap_or_else(|| crate::firmware::footprints(plate));
         let timer = Timer::start();
         let mut raw: Vec<RawPart> = Vec::new();
         // Parts with settings of their own: their welded mesh and the settings.
@@ -1416,7 +1442,7 @@ impl SliceSession {
                     &|l| plan.thickness(u32::try_from(l).unwrap_or(0)),
                     t as usize,
                 ),
-                &crate::firmware::footprints(plate),
+                &hulls,
                 &plate
                     .objects
                     .iter()
@@ -1463,7 +1489,7 @@ impl SliceSession {
             object_settings: Vec::new(),
             interleave: false,
             overrides,
-            objects: crate::firmware::footprints(plate),
+            objects: hulls,
             object_heights,
             layer_cfg,
             support_cfg: config.support.clone(),

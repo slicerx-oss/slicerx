@@ -50,47 +50,44 @@ pub(crate) fn convex_hull(mut pts: Vec<[f64; 2]>) -> Vec<[f64; 2]> {
     hull
 }
 
-/// A footprint per plate object: the hull of every part's transformed vertices.
+/// A footprint per plate object: the hull of every part's transformed vertices. The objects' hulls are worked
+/// out side by side: on a part of millions of vertices each takes a good part of a second on one thread.
 pub fn footprints(plate: &Plate) -> Vec<ObjectFootprint> {
-    plate
-        .objects
-        .iter()
-        .map(|obj| {
-            let pts: Vec<[f64; 2]> = obj
-                .mesh
-                .parts
-                .iter()
-                .filter(|p| !p.triangles.is_empty())
-                .flat_map(|p| p.positions.iter())
-                .map(|&v| {
-                    let w = obj.apply(v);
-                    [w[0], w[1]]
-                })
-                .collect();
-            let hull = convex_hull(pts);
-            let bb = hull
-                .iter()
-                .fold([f64::MAX, f64::MAX, f64::MIN, f64::MIN], |b, p| {
-                    [b[0].min(p[0]), b[1].min(p[1]), b[2].max(p[0]), b[3].max(p[1])]
-                });
-            let center = if hull.is_empty() {
-                [0.0, 0.0]
-            } else {
-                [f64::midpoint(bb[0], bb[2]), f64::midpoint(bb[1], bb[3])]
-            };
-            let name = if obj.name.is_empty() {
-                obj.mesh.name.clone()
-            } else {
-                obj.name.clone()
-            };
-            ObjectFootprint {
-                id: obj.id.clone(),
-                name,
-                hull,
-                center,
-            }
-        })
-        .collect()
+    crate::par::map(&plate.objects, |obj| {
+        let pts: Vec<[f64; 2]> = obj
+            .mesh
+            .parts
+            .iter()
+            .filter(|p| !p.triangles.is_empty())
+            .flat_map(|p| p.positions.iter())
+            .map(|&v| {
+                let w = obj.apply(v);
+                [w[0], w[1]]
+            })
+            .collect();
+        let hull = convex_hull(pts);
+        let bb = hull
+            .iter()
+            .fold([f64::MAX, f64::MAX, f64::MIN, f64::MIN], |b, p| {
+                [b[0].min(p[0]), b[1].min(p[1]), b[2].max(p[0]), b[3].max(p[1])]
+            });
+        let center = if hull.is_empty() {
+            [0.0, 0.0]
+        } else {
+            [f64::midpoint(bb[0], bb[2]), f64::midpoint(bb[1], bb[3])]
+        };
+        let name = if obj.name.is_empty() {
+            obj.mesh.name.clone()
+        } else {
+            obj.name.clone()
+        };
+        ObjectFootprint {
+            id: obj.id.clone(),
+            name,
+            hull,
+            center,
+        }
+    })
 }
 
 /// `printf("%g")`: six significant digits, no trailing zeros, exponent form for very large or small values.
