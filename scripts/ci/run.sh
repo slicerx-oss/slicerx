@@ -10,7 +10,7 @@
 # to $SX_CI_HOME/logs/<run>/, the last 20 runs are kept, and only a short summary (pass or fail, the failing steps
 # and tests, the sha) leaves the machine, through $SX_CI_NOTIFY. A green run records its sha per platform, and the
 # next per-merge run tests what changed since then. Machine settings live in $SX_CI_HOME/ci.env, never in the repo.
-# A failing test gets one rerun: passed is flaky (reported, tracked in scripts/ci/flaky.txt), failed again is real.
+# A failing test gets one rerun: passed is flaky (reported, tracked in scripts/ci/flaky.d), failed again is real.
 set -uo pipefail
 
 tier=${1:-}; sha=${2:-}
@@ -95,7 +95,7 @@ failures_of() {
 }
 
 
-# Lists: scripts/ci/quarantine.txt and flaky.txt, through flaky-check.sh in the checkout. A flaky entry past its
+# Lists: scripts/ci/quarantine.d and flaky.d, through flaky-check.sh in the checkout. A flaky entry past its
 # deadline counts as quarantined. A commit from before the checker has no lists: nothing is quarantined.
 list_status() { # name -> quarantined | flaky | none
   if [ -f scripts/ci/flaky-check.sh ]; then bash scripts/ci/flaky-check.sh status "$1" 2>/dev/null || echo none; else echo none; fi
@@ -282,13 +282,13 @@ if [ "$fails" = 0 ]; then verdict=PASS; else verdict=FAIL; fi
     awk -F'\t' '$2=="fail"{print "- " $1 ": " $3}' "$out/failures.txt" | head -12
   fi
   q=$(awk -F'\t' '$2=="quarantined"' "$out/failures.txt" | wc -l | tr -d ' ')
-  [ "$q" != 0 ] && echo "Quarantined failures: $q (scripts/ci/quarantine.txt, scripts/ci/flaky.txt)"
-  # Failed once, passed on the rerun: the run is not red, but each one needs an entry in flaky.txt (owner, a deadline a
+  [ "$q" != 0 ] && echo "Quarantined failures: $q (scripts/ci/quarantine.d, scripts/ci/flaky.d)"
+  # Failed once, passed on the rerun: the run is not red, but each one needs an entry in flaky.d (owner, a deadline a
   # day out, an issue) or it is untracked, and a flaky entry past its deadline is already quarantined.
   nf=$(awk -F'\t' '$2 ~ /^flaky-/' "$out/failures.txt" | wc -l | tr -d ' ')
   if [ "$nf" != 0 ]; then
     echo "Flaky (passed on the rerun): $nf"
-    awk -F'\t' '$2=="flaky-flaky"{print "- " $1 ": " $3 " (tracked)"} $2=="flaky-untracked"{print "- " $1 ": " $3 " (UNTRACKED: add to scripts/ci/flaky.txt)"}' "$out/failures.txt" | head -12
+    awk -F'\t' '$2=="flaky-flaky"{print "- " $1 ": " $3 " (tracked)"} $2=="flaky-untracked"{print "- " $1 ": " $3 " (UNTRACKED: add a file to scripts/ci/flaky.d)"}' "$out/failures.txt" | head -12
   fi
   [ -f scripts/ci/flaky-check.sh ] && bash scripts/ci/flaky-check.sh report 2>/dev/null | grep OVERDUE | sed 's/^ *OVERDUE /Overdue, now quarantined: /' | head -5
   echo "Logs: $out on $(hostname -s)"

@@ -28,7 +28,7 @@ Each run writes `logs/<run>/`: `run.log`, one log per step, `steps.tsv`, `failur
 20 runs are kept. Only the summary (pass or fail, the failing steps and test names, the sha) leaves the machine,
 through the command in `SX_CI_NOTIFY`. A green run records its sha in `state/last-green-<platform>`.
 
-A failing test is rerun once; flaky and quarantined tests are tracked in `flaky.txt` and `quarantine.txt` (see "Flaky tests").
+A failing test is rerun once; flaky and quarantined tests are tracked as one file per entry in `flaky.d/` and `quarantine.d/` (see "Flaky tests").
 
 ## Setup
 
@@ -105,37 +105,41 @@ A red `main` blocks every merge and every release bump (`require-green.sh`, belo
 
 Files, all in `scripts/ci/`:
 
-- `flaky.txt`: tests that failed once and passed on the rerun. `name | owner | added | deadline | issue | why`. The
-  deadline is at most one day after the date added. Past it, the entry counts as quarantined from the next day on
-  (the run does not fail on it, and every report marks it OVERDUE) until someone fixes the test and deletes the line.
-  It does not fail the run, so an unfixed flake never blocks `main` for a day-old deadline; the daily report is what
-  keeps it visible.
-- `quarantine.txt`: tests whose failures are counted, not failed on. `name | owner | added | issue | why`. Nothing is
-  skipped silently: every entry has an owner, a date and a link to its issue.
+- `flaky.d/`: tests that failed once and passed on the rerun, one file per test, named `<issue>-<slug>.txt` (the issue
+  number from its link and a few lowercase words, so two tests on one issue get two files). The file holds one line,
+  `name | owner | added | deadline | issue | why`. The deadline is at most one day after the date added. Past it, the
+  entry counts as quarantined from the next day on (the run does not fail on it, and every report marks it OVERDUE)
+  until someone fixes the test and deletes the file. It does not fail the run, so an unfixed flake never blocks `main`
+  for a day-old deadline; the daily report is what keeps it visible. One file per entry means adding or removing an
+  entry never touches another's lines, so two pull requests listing different tests do not conflict.
+- `quarantine.d/`: tests whose failures are counted, not failed on, one file per test as above, holding
+  `name | owner | added | issue | why`. Nothing is skipped silently: every entry has an owner, a date and a link to its
+  issue.
 - `flaky-check.sh`: `lint` fails on an entry without an owner, a valid date, a deadline within a day, or an issue link
-  (`https://github.com/<org>/<repo>/issues/<n>`); `status <name>` prints quarantined, flaky or none; `report` lists both
-  files with ages and deadlines; `retried <file>` is the pull request check below. A name is a substring of the test
+  (`https://github.com/<org>/<repo>/issues/<n>`), on a file with more or less than one entry line, a file not named for
+  its issue, a test listed twice, or a leftover `flaky.txt` or `quarantine.txt`; `status <name>` prints quarantined,
+  flaky or none; `report` lists both folders with ages and deadlines; `retried <file>` is the pull request check below. A name is a substring of the test
   name as the run reports it (`path/to/file.test.ts > suite > test`, a cargo test path, or a Playwright title).
 - `require-green.sh` and `required-checks.txt`: see "Release gate".
 
 Machine runs (`run.sh`): when a step fails, only the failing tests run again, once. vitest reruns the failing files in
 their packages, cargo test reruns the failing tests by exact name, Playwright reruns the failing spec files. A test
-that passes is reported in the summary as flaky, tracked or UNTRACKED (not in `flaky.txt`), and does not fail the step;
+that passes is reported in the summary as flaky, tracked or UNTRACKED (not in `flaky.d/`), and does not fail the step;
 a test that fails again fails the step. Anything the rerun cannot tell apart from a real failure (a failure it cannot
 name, more failures than the 15 names kept, clippy, tsc, a build step, a compile error) stays a real failure.
 Quarantined failures are not rerun. `flaky-lint` runs first in every run, and the summary lists overdue entries.
 
 Pull requests (`ci.yml`, the `web` job): `pr-test.sh` runs each package's tests, vitest packages with `--retry=1`
 and the reporter in `vitest-flaky-reporter.mjs`, which
-annotates each test that passed only on a retry, and the next step fails the job unless `flaky.txt` or
-`quarantine.txt` lists it, so a retry cannot hide a flake: the pull request that meets one adds the entry (owner, a
+annotates each test that passed only on a retry, and the next step fails the job unless `flaky.d/` or
+`quarantine.d/` lists it, so a retry cannot hide a flake: the pull request that meets one adds the entry (owner, a
 deadline a day out, an issue) or fixes the test. The e2e shards (`ci.yml`, `e2e-shard`) hold to the same rule with
 Playwright's `--retries=1`: `playwright-results.mjs` reads the JSON report, a test that passed only on the retry must be
 on either list, and a test that failed both times fails the job unless it counts as quarantined. The cargo job on pull
 requests has no retry; the machine runs rerun it.
 
-Adding an entry: open an issue for the test, add the line, run `bash scripts/ci/flaky-check.sh lint`. Fixing one:
-fix the test and delete its line in the same change.
+Adding an entry: open an issue for the test, add its file (for example `flaky.d/481-guard-hold-card.txt`), run
+`bash scripts/ci/flaky-check.sh lint`. Fixing one: fix the test and delete its file in the same change.
 
 ## Nightly shuffled run (proposal)
 
