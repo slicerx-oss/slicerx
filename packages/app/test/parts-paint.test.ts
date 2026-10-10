@@ -2,6 +2,8 @@
 // Copyright (C) 2026 The SlicerX contributors
 // Paint in the raw parts format (packages/core/src/mesh.rs, `from_raw`): an optional block after the parts with each
 // painted triangle's text, so a painted object reaches the engine without a 3MF.
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import type { MeshPart } from '@slicerx/contracts'
 import { decodeParts, encodeParts } from '../../core/web/src/parts'
@@ -52,5 +54,18 @@ describe('paint in the raw parts format', () => {
     const bytes = encodePaintedParts([{ ...part('a', 1), paint: { color: { 3: '0C34' } } }])
     expect(() => decodePaintedParts(bytes.subarray(0, bytes.length - 2))).toThrow(/Truncated paint/)
     expect(() => decodePaintedParts(bytes.subarray(0, bytes.length - 8))).toThrow(/Truncated paint/)
+  })
+
+  it('is what the slicer package writes too, byte for byte as the engine writes it', () => {
+    // packages/core/tests/paint_replication.rs checks this file is `Mesh::to_raw` of a painted cube with color, seam,
+    // support and fuzzy skin paint, and that it slices as the cube's 3MF does.
+    const golden = new Uint8Array(readFileSync(resolve(__dirname, '../../core/tests/fixtures/painted-cube.sxmp')))
+    const parts = decodePaintedParts(golden)
+    expect(Object.keys(parts[0]!.paint ?? {}).sort()).toEqual(['color', 'fuzzy', 'seam', 'support'])
+    expect(encodeParts(parts)).toEqual(golden)
+    expect(encodePaintedParts(parts)).toEqual(golden)
+    // The geometry alone is the start of the same bytes.
+    const bare = parts.map(({ paint: _paint, ...p }) => p)
+    expect(golden.subarray(0, encodeParts(bare).length)).toEqual(encodeParts(bare))
   })
 })

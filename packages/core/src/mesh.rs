@@ -30,6 +30,22 @@ pub struct MeshPart {
     pub paint_texts: Vec<(u8, u32, String)>,
 }
 
+impl MeshPart {
+    /// Every layer of decoded paint has the paint texts it was decoded from ([`Mesh::content_hash`] reads the texts).
+    fn paint_has_texts(&self) -> bool {
+        let has = |layer: u8| self.paint_texts.iter().any(|t| t.0 == layer);
+        [
+            &self.paint,
+            &self.seam_paint,
+            &self.support_paint,
+            &self.fuzzy_paint,
+        ]
+        .iter()
+        .zip(0u8..)
+        .all(|(facets, layer)| facets.is_empty() || has(layer))
+    }
+}
+
 /// A loaded model: one or more parts in object space.
 #[derive(Debug, Clone, Default)]
 pub struct Mesh {
@@ -243,6 +259,13 @@ impl Mesh {
     /// A stable 64-bit content hash (FNV-1a over positions, indices, slots and
     /// paint texts), used as the cache key for sliced geometry.
     pub fn content_hash(&self) -> u64 {
+        // The hash reads the paint texts, not the decoded paint the slicer reads: a part given decoded paint without
+        // the texts it came from would hash as the unpainted part (and a cache keyed on it would mix them up).
+        debug_assert!(
+            self.parts.iter().all(MeshPart::paint_has_texts),
+            "a part of {} has decoded paint without its paint texts",
+            self.name
+        );
         let mut h = Fnv::new();
         for p in &self.parts {
             h.write(&[p.slot]);

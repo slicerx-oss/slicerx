@@ -2,11 +2,15 @@
 // Copyright (C) 2026 The SlicerX contributors
 import type { MeshPart } from '@slicerx/contracts'
 
-/** Encodes geometry buffers in the raw parts format sx-core reads (`Mesh::from_raw`). */
+/**
+ * Encodes geometry buffers and their paint in the raw parts format sx-core reads (`Mesh::from_raw`): the bytes
+ * `Mesh::to_raw` writes for the same parts, so the engine's copy has the same content hash and slices the same.
+ */
 export function encodeParts(parts: MeshPart[]): Uint8Array {
   const enc = new TextEncoder()
   const names = parts.map((p) => enc.encode(p.name).slice(0, 65535))
-  let size = 8
+  const paint = paintEntries(parts)
+  let size = 8 + paintBytes(paint)
   parts.forEach((p, i) => {
     size += 1 + 2 + (names[i]?.length ?? 0) + 4 + p.positions.length * 4 + 4 + p.indices.length * 4
   })
@@ -30,7 +34,77 @@ export function encodeParts(parts: MeshPart[]): Uint8Array {
     o += 4
     o = putArray(buf, v, o, p.indices, nt * 3, 'uint')
   })
+  o = writePaint(buf, v, o, paint)
   return buf.subarray(0, o)
+}
+
+/** The paint layers in the order of their numbers in the paint block. */
+const PAINT_LAYERS = ['color', 'seam', 'support', 'fuzzy'] as const
+const PAINT_MAGIC = new Uint8Array([0x53, 0x58, 0x50, 0x54])
+
+interface PaintEntry {
+  part: number
+  layer: number
+  /** Triangle index and paint text, ascending by triangle. Texts are ASCII hex. */
+  tris: [number, Uint8Array][]
+}
+
+/** Every painted layer of every part, with a text, as the paint block lists them. */
+function paintEntries(parts: readonly MeshPart[]): PaintEntry[] {
+  const enc = new TextEncoder()
+  const out: PaintEntry[] = []
+  parts.forEach((p, part) => {
+    PAINT_LAYERS.forEach((name, layer) => {
+      const texts = p.paint?.[name]
+      if (!texts) return
+      const nt = Math.floor(p.indices.length / 3)
+      const tris: [number, Uint8Array][] = []
+      for (const [k, text] of Object.entries(texts)) {
+        const t = Number(k)
+        if (!text || !Number.isInteger(t) || t < 0 || t >= nt) continue
+        tris.push([t, enc.encode(text).slice(0, 65535)])
+      }
+      if (tris.length) out.push({ part, layer, tris: tris.sort((a, b) => a[0] - b[0]) })
+    })
+  })
+  return out
+}
+
+function paintBytes(entries: readonly PaintEntry[]): number {
+  if (!entries.length) return 0
+  let n = 4 + 4
+  for (const e of entries) {
+    n += 4 + 1 + 4
+    for (const [, text] of e.tris) n += 4 + 2 + text.length
+  }
+  return n
+}
+
+/**
+ * The optional paint block after the parts (packages/core/src/mesh.rs, `from_raw`, and `Mesh::to_raw` writes the
+ * same): magic `SXPT`, u32 entry count, then per entry u32 part, u8 layer (0 color, 1 seam, 2 support, 3 fuzzy), u32
+ * triangle count, and per triangle u32 triangle index, u16 text length and the text. Nothing is written when nothing
+ * is painted, so a plain mesh's bytes are what they were.
+ */
+function writePaint(buf: Uint8Array, v: DataView, at: number, entries: readonly PaintEntry[]): number {
+  if (!entries.length) return at
+  let o = at
+  buf.set(PAINT_MAGIC, o)
+  v.setUint32(o + 4, entries.length, true)
+  o += 8
+  for (const e of entries) {
+    v.setUint32(o, e.part, true)
+    v.setUint8(o + 4, e.layer)
+    v.setUint32(o + 5, e.tris.length, true)
+    o += 9
+    for (const [t, text] of e.tris) {
+      v.setUint32(o, t, true)
+      v.setUint16(o + 4, text.length, true)
+      buf.set(text, o + 6)
+      o += 6 + text.length
+    }
+  }
+  return o
 }
 
 const LITTLE = new Uint8Array(new Uint32Array([1]).buffer)[0] === 1
@@ -60,7 +134,7 @@ export function cubePart(): MeshPart {
   return { name: 'warm-up cube', slot: 1, positions, indices }
 }
 
-/** Reads the raw parts format back into geometry buffers (the inverse of `encodeParts`). */
+/** Reads the raw parts format back into geometry buffers (the inverse of `encodeParts` for the geometry; it stops before the paint block). */
 export function decodeParts(raw: Uint8Array): MeshPart[] {
   const v = new DataView(raw.buffer, raw.byteOffset, raw.byteLength)
   if (raw.length < 8 || new TextDecoder().decode(raw.subarray(0, 4)) !== 'SXMP') throw new Error('Not a raw parts buffer')
