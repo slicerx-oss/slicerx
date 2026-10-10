@@ -113,8 +113,8 @@ fn emit(out: &mpsc::UnboundedSender<(String, String)>, sid: &str, event: &str, d
     let _ = out.send((sid.to_owned(), Value::Object(msg).to_string()));
 }
 
-/// Hub events a remote session cares about: new cards (for approver phones), the outcome of the
-/// pause or cancel it asked for, and the relay quota.
+/// Hub events a remote session cares about: new cards and answered ones (for approver phones), the
+/// outcome of the pause or cancel it asked for, and the relay quota.
 async fn forward(
     b: Arc<Bridge>,
     sid: String,
@@ -142,6 +142,11 @@ async fn forward(
                     emit(&out, &sid, "approval.request", view);
                 }
             }
+            Some("approval.resolved") if approver => {
+                if let Some(r) = phone_resolved(&data) {
+                    emit(&out, &sid, "approval.resolved", r);
+                }
+            }
             Some("remote.quota") => emit(&out, &sid, "remote.quota", data),
             Some("approval.done") => {
                 let Some(rid) = data.get("requestId").and_then(Value::as_str) else {
@@ -163,6 +168,31 @@ async fn forward(
             _ => {}
         }
     }
+}
+
+/// The hub's `approval.resolved` as a phone reads it (`approval.resolved` in rpc.ts): `decision`
+/// is `approve` or `deny`, `by` names who answered (a partner app's name, else `app`, `phone` or
+/// `agent`, at most 64 UTF-16 units) and `via` says which kind of client it was. The phone closes
+/// the card if it still shows it.
+fn phone_resolved(d: &Value) -> Option<Value> {
+    let id = d.get("requestId")?.as_str()?;
+    let decision = match d.get("decision")?.as_str()? {
+        "granted" => "approve",
+        "denied" => "deny",
+        _ => return None,
+    };
+    let via = d.get("via")?.as_str()?;
+    let name = d.get("by").and_then(Value::as_str).filter(|_| via == "partner");
+    let mut units = 0;
+    let by: String = name
+        .unwrap_or(via)
+        .chars()
+        .take_while(|c| {
+            units += c.len_utf16();
+            units <= 64
+        })
+        .collect();
+    Some(json!({ "requestId": id, "decision": decision, "by": by, "via": via }))
 }
 
 fn err(code: &'static str, message: impl Into<String>) -> (&'static str, String) {
