@@ -6,6 +6,8 @@ All notable changes to `@slicerx/mcp` are documented here. The format follows [K
 
 ### Added
 
+- Slice and estimate results carry `notices`, warnings with a code. `no_printer` says the slice named no printer, so the engine used its generic machine ("No printer chosen, so this slice used a generic 200 mm machine; times and limits are not for your printer."). The same line is in `warnings`.
+
 - Set up local AI: `slicerx_local_ai_check` (hardware, one recommended model with its reason, size and license, running Ollama or LM Studio), `slicerx_local_ai_status` (installed local models and the one set up last) and `slicerx_local_ai_setup` (an Ollama download with progress notifications, then a tool call and speed check). Setup always asks the user first. Requests go only to 127.0.0.1. An edition config turns them off (`features.localAi`) or limits the models (`ai.allowedLocalModels`).
 - A tool that must ask for a particular call (`mustAsk`) now asks over MCP even when its class is set to Allow, as it does in the app.
 
