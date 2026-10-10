@@ -7,7 +7,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>SlicerX embed demo</title>
     <style>
-      /* A plain host page: its own fonts and colors, only the two elements come from SlicerX. */
+      /* A plain host page: its own fonts and colors, only the two elements come from SlicerX. The view has the Prepare tools. */
       body { margin: 0; padding: 24px 16px; font: 15px/1.5 Georgia, serif; background: #f4f1ea; color: #222; }
       main { max-width: 1080px; margin: 0 auto; display: grid; gap: 20px; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); }
       h1 { grid-column: 1 / -1; margin: 0; font-size: 26px; }
@@ -19,9 +19,9 @@
   <body>
     <main>
       <h1>Print farm dashboard, with SlicerX pieces</h1>
-      <sx-viewport id="vp" aria-label="Bracket on the plate"></sx-viewport>
+      <sx-viewport id="vp" aria-label="Bracket on the plate" tools reveal="each-plate" bed-outline="subtle"></sx-viewport>
       <sx-settings-panel id="settings"></sx-settings-panel>
-      <pre id="out">Change a setting to see the Orca config it produces.</pre>
+      <pre id="out">Move a model or change a setting to see what the page receives.</pre>
     </main>
     <script type="module" src="./main.ts"></script>
   </body>
