@@ -84,7 +84,13 @@ export function keepInPlace(el: Element, ms = 450): void {
   // where el should be on screen; a scroll by the person moves that place along with it
   let top = el.getBoundingClientRect().top
   let st = box.scrollTop
-  const end = performance.now() + ms
+  // The hold lasts `ms`, and on a slow machine a while past the last change it saw, up to 4 times `ms`: a change
+  // that lands late (a busy main thread) is still caught.
+  const start = performance.now()
+  let end = start + ms
+  const later = () => {
+    end = Math.min(start + 4 * ms, Math.max(end, performance.now() + ms / 2))
+  }
   const hold = () => {
     const now = box.scrollTop
     const max = box.scrollHeight - box.clientHeight
@@ -98,17 +104,31 @@ export function keepInPlace(el: Element, ms = 450): void {
     if (Math.abs(want - now) > 0.25) {
       if (want > max) addRoom(box, Math.ceil(want - max) + 1)
       box.scrollTop = want
+      later()
       const e = added.get(box)
       if (e) e.last = box.scrollTop
     }
     st = want
   }
   // a resize inside the box is seen after layout and before paint; the frame loop catches anything else
-  const ro = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(() => id === job && el.isConnected && hold())
+  const ro = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(() => {
+    if (id !== job || !el.isConnected) return
+    later()
+    hold()
+  })
   if (ro) for (const c of [el, ...Array.from(box.children)]) ro.observe(c)
+  // A change to the content is corrected in the same task, right after it lands (a mutation's callback runs before
+  // the next frame), so it holds even when frames come late or not at all (a page in the background, a busy machine).
+  const mo = typeof MutationObserver === 'undefined' ? null : new MutationObserver(() => {
+    if (id !== job || !el.isConnected) return
+    later()
+    hold()
+  })
+  mo?.observe(box, { childList: true, subtree: true, attributes: true, characterData: true })
   const step = () => {
     if (id !== job || !el.isConnected || performance.now() >= end) {
       ro?.disconnect()
+      mo?.disconnect()
       release()
       return
     }
