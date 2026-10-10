@@ -18,7 +18,7 @@ export function setTowerAuto(on: boolean): void {
 /** A hand move: the new front left corner, mm. Turns auto off. */
 export function moveTower(x: number, y: number): void {
   if (!Number.isFinite(x) || !Number.isFinite(y)) return
-  set({ tower: { auto: false, x: Math.round(x * 10) / 10, y: Math.round(y * 10) / 10 } })
+  set({ tower: { auto: false, x: Math.round(x * 10) / 10, y: Math.round(y * 10) / 10 }, towerFromProject: false })
   markStale()
 }
 
