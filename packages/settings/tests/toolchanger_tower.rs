@@ -272,6 +272,26 @@ fn the_xl_tower_is_prusaslicers() {
     per_layer_near("prusa-xl-5-toolhead", (39.94, 4.36));
 }
 
+/// sleipnir ends the 12 mm boxes exactly on their top with no sliver, so the tower (as deep as its thinnest layer
+/// with a change needs) stays the size it is on even layers.
+#[test]
+fn sleipnir_ends_the_boxes_on_their_top_and_keeps_the_tower() {
+    let (even_g, _) = slice("bambu-h2d", 12.0, &json!({}));
+    let (g, report) = slice("bambu-h2d", 12.0, &json!({"smart_layer": "quality"}));
+    let z = &report.layer_z;
+    assert_eq!(z.last().copied(), Some(12.0), "{z:?}");
+    let thinnest = z.windows(2).map(|w| w[1] - w[0]).fold(f32::INFINITY, f32::min);
+    assert!(thinnest >= 0.15 - 1e-4, "a {thinnest} mm layer in {z:?}");
+    let (even, _) = tower(&even_g, 10, 50);
+    let (planned, _) = tower(&g, 10, 50);
+    assert!(
+        (planned - even).abs() <= 0.02 * even,
+        "tower {:.1} mm3 a layer against {:.1} on even layers",
+        planned / 40.0,
+        even / 40.0
+    );
+}
+
 /// The flush lengths the H2D's change G-code hands the firmware (`M620.10 A1 ... L<mm>`).
 fn flushes(g: &str) -> Vec<f64> {
     g.lines()
