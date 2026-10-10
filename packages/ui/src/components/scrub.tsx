@@ -247,9 +247,9 @@ export interface VectorFieldProps {
   id: string
   /** The row name, such as Position. */
   label: string
-  /** The unit, shown once under the name: mm, °, %. */
+  /** The unit, shown once beside the name: mm, °, %. */
   unit: string
-  /** The unit under the name when it should read differently from the short one (degrees for °). */
+  /** The unit beside the name when it should read differently from the short one. */
   unitLabel?: string
   /** The group's spoken name when it differs from the label. */
   ariaLabel?: string
@@ -272,7 +272,7 @@ export interface VectorFieldProps {
 const XYZ: readonly Axis[] = ['x', 'y', 'z']
 
 /**
- * A row of axis values in one outline: the name and its unit on the left, then a segment per axis
+ * A row of axis values in one outline: the name with its unit beside it on the left, then a segment per axis
  * whose colored letter is the scrub handle.
  */
 export function VectorField({ id, label, unit, unitLabel, ariaLabel, values, axes = XYZ, onCommit, onPreview, onCancel, digits, step, pixelsPerStep, min, max, disabled, parse, className }: VectorFieldProps) {
@@ -282,7 +282,7 @@ export function VectorField({ id, label, unit, unitLabel, ariaLabel, values, axe
     <div className={['sx-vector', className].filter(Boolean).join(' ')} role="group" aria-label={ariaLabel ?? label}>
       <span className="sx-vector-label" aria-hidden="true">
         {label}
-        {unit ? <small>{unitLabel ?? (unit === '°' ? 'degrees' : unit)}</small> : null}
+        {unit ? <small>{unitLabel ?? unit}</small> : null}
       </span>
       <span className="sx-vector-box">
         {axes.map((a, i) => (

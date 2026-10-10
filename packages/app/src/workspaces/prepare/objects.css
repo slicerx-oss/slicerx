@@ -47,7 +47,7 @@
 @keyframes obj-spin { to { transform: rotate(360deg); } }
 /* A tool open in the card's place: its own panel, with Done in the header's corner. */
 .tool-slot { position: relative; }
-.tool-slot > .sx-block > .sx-block-h { padding-right: 76px; }
+.tool-slot[data-done] > .sx-block > .sx-block-h { padding-right: 76px; }
 .tool-slot > .tool-done { position: absolute; top: 8px; right: 10px; z-index: 1; }
 /* Touch: taller rows, and the cluster always shows. */
 @media (pointer: coarse) {

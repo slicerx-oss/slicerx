@@ -564,8 +564,8 @@ button.reset:hover { color: var(--fg); background: var(--ink-3); }
 .plate-tools-sep { width: 1px; height: 20px; background: var(--line-soft); margin: 0 4px; }
 .plate-tools[data-placement="left-of-viewport"] .plate-tools-sep { width: 20px; height: 1px; margin: 4px 0; }
 .tf { display: flex; flex-direction: column; gap: 6px; margin-top: var(--s-3); padding-top: var(--s-3); border-top: 1px solid var(--line-soft); }
-.tf-row:not(.sx-vector) { display: grid; grid-template-columns: 64px repeat(3, minmax(0, 1fr)); gap: 6px; align-items: center; }
-.tf-name { display: flex; flex-direction: column; gap: 2px; font: var(--fw-medium) var(--fs-md)/1.15 var(--f-body); color: var(--muted); }
+.tf-row:not(.sx-vector) { display: grid; grid-template-columns: 84px repeat(3, minmax(0, 1fr)); gap: 6px; align-items: center; }
+.tf-name { display: flex; align-items: baseline; gap: 4px; white-space: nowrap; font: var(--fw-medium) var(--fs-md)/1.15 var(--f-body); color: var(--muted); }
 .tf-name small { font-size: var(--fs-xs); font-weight: var(--fw-regular); color: var(--dim); }
 /* the arrange options popover still uses the small labeled field */
 .tf-field { display: flex; align-items: center; gap: 2px; height: var(--h-sm); padding: 0 6px; border: 1px solid var(--line-soft); border-radius: var(--r-sm); background: var(--ink-2); min-width: 0; }
@@ -581,7 +581,7 @@ button.reset:hover { color: var(--fg); background: var(--ink-3); }
 .tf-lock { display: flex; align-items: center; gap: 6px; font-size: var(--fs-sm); color: var(--muted); margin-right: auto; }
 .tf-mirror { display: inline-flex; }
 @media (max-width: 900px) { .plate-tools { top: 52px; } }
-.tf-row.tf-inst { grid-template-columns: 64px auto auto; justify-content: start; }
+.tf-row.tf-inst { grid-template-columns: 84px auto auto; justify-content: start; }
 .tf-stepper { display: inline-flex; align-items: center; gap: 2px; }
 .tf-stepper .sx-scrub { width: 56px; }
 .obj-h:focus-visible { outline-offset: var(--focus-offset-inset); }

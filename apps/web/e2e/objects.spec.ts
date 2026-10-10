@@ -96,7 +96,7 @@ test('one Add button: the file dialog, and the Vault, shapes, Export, Tools and 
   await expect(page.getByTestId('export-save-project')).toBeVisible()
 })
 
-test('a tool takes the card\'s place, nothing above moves, and Done brings the list back', async ({ page }) => {
+test('a tool takes the card\'s place, nothing above moves, and one way out brings the list back', async ({ page, isMobile }) => {
   await open(page)
   const filament = page.locator('[data-section="filament"]')
   // Measured from the top of the pane's content: a phone's sheet scrolls to the tool and grows with it, which moves
@@ -113,9 +113,18 @@ test('a tool takes the card\'s place, nothing above moves, and Done brings the l
   await expect(page.locator('.tool-slot [data-section="cut-tool"]')).toBeVisible()
   await expect(page.getByTestId('objects-list')).toHaveCount(0)
   expect(await topInPane()).toBe(top)
-  await page.getByTestId('slice-tool-done').click()
+  // Cut has its own Cancel and Cut, so it has no Done: one way out.
+  await expect(page.getByTestId('slice-tool-done')).toHaveCount(0)
+  await page.locator('[data-section="cut-tool"]').getByRole('button', { name: 'Cancel' }).click()
   await expect(page.getByTestId('objects-list')).toBeVisible()
   expect(await page.evaluate(() => (window as unknown as { __sx: Sx }).__sx.getState().objectTool)).toBeNull()
+  // Paint has nothing to apply, so Done closes it.
+  if (isMobile) return
+  await rows(page).first().locator('.obj-row').click()
+  await page.getByRole('button', { name: 'Paint', exact: true }).click()
+  await expect(page.locator('.tool-slot[data-tool="Paint"]')).toBeVisible()
+  await page.getByTestId('slice-tool-done').click()
+  await expect(page.getByTestId('objects-list')).toBeVisible()
 })
 
 test('an empty plate says so and points at Add', async ({ page }) => {
@@ -154,9 +163,9 @@ test('shots: rows, the tree, the Add menu, a tool in the card and an empty plate
     await page.keyboard.press('Escape')
     await addMenu(page, 'Tools')
     await page.getByRole('menu', { name: 'Object tools' }).getByRole('menuitem', { name: 'Cut' }).click()
-    await expect(page.getByTestId('slice-tool-done')).toBeVisible()
+    await expect(page.locator('.tool-slot [data-section="cut-tool"]')).toBeVisible()
     await shoot(`tool-${scheme}`)
-    await page.getByTestId('slice-tool-done').click()
+    await page.locator('[data-section="cut-tool"]').getByRole('button', { name: 'Cancel' }).click()
   }
   await sx(page, { plate: [], selection: null, selectedIds: [] })
   await shoot('empty-dark')
