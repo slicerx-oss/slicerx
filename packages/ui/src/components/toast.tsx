@@ -9,7 +9,7 @@ export type ToastTone = 'plain' | 'ok' | 'info' | 'warn' | 'error'
 
 export interface ToastOptions {
   tone?: ToastTone
-  /** Milliseconds before it goes away. */
+  /** Milliseconds before it goes away, at least its reading time (readingTime). */
   duration?: number
   /** A button on the toast, for example an undo. */
   action?: { label: string; run: () => void }
@@ -25,6 +25,25 @@ interface ToastRecord {
 const ToastContext = createContext<((message: ReactNode, options?: ToastOptions) => void) | null>(null)
 
 const TONE_ICON: Record<Exclude<ToastTone, 'plain'>, IconName> = { ok: 'check', info: 'thinking', warn: 'alert', error: 'alert' }
+
+/** The text a toast reads out, from a string or the strings inside its elements. */
+function textOf(node: ReactNode): string {
+  if (node == null || typeof node === 'boolean') return ''
+  if (typeof node === 'string' || typeof node === 'number') return String(node)
+  if (Array.isArray(node)) return node.map(textOf).join('')
+  if (typeof node === 'object' && 'props' in node) return textOf((node.props as { children?: ReactNode }).children)
+  return ''
+}
+
+/**
+ * How long a toast stays up so it can be read: 2.6 s, and 60 ms more for each character past 40; a warning or an error
+ * at least 6 s. A longer duration a caller asks for wins.
+ */
+export function readingTime(message: ReactNode, tone: ToastTone = 'plain', asked?: number): number {
+  const read = 2600 + Math.max(0, textOf(message).length - 40) * 60
+  const least = tone === 'warn' || tone === 'error' ? Math.max(read, 6000) : read
+  return Math.max(least, asked ?? 0)
+}
 
 /**
  * A toast's time on screen that can stop: `hold` while the pointer is over it or it has focus, `release` when both
@@ -72,8 +91,9 @@ export class ToastClock {
 
 /**
  * Mount once near the root. Toasts render bottom center and announce through role status. A toast's time starts once
- * it is on screen, so a page busy when it was posted does not eat into it, and a toast with a button waits while it
- * is hovered or focused, so nobody has to beat its timer to press the button (WCAG 2.2.1).
+ * it is on screen, so a page busy when it was posted does not eat into it, it lasts as long as its text takes to read
+ * (readingTime), and it waits while it is hovered or focused, so nobody has to beat its timer to read it or press its
+ * button (WCAG 2.2.1).
  */
 export function ToastProvider({ children, max = 3 }: { children?: ReactNode; max?: number }) {
   const [toasts, setToasts] = useState<ToastRecord[]>([])
@@ -89,7 +109,7 @@ export function ToastProvider({ children, max = 3 }: { children?: ReactNode; max
       const id = next.current++
       const tone = options?.tone ?? 'plain'
       setToasts((list) => [...list, { id, message, tone, ...(options?.action ? { action: options.action } : {}) }].slice(-max))
-      clocks.current.set(id, new ToastClock(options?.duration ?? 2600, () => drop(id), ['unseen']))
+      clocks.current.set(id, new ToastClock(readingTime(message, tone, options?.duration), () => drop(id), ['unseen']))
     },
     [max, drop],
   )
@@ -109,16 +129,12 @@ export function ToastProvider({ children, max = 3 }: { children?: ReactNode; max
             className="sx-toast"
             data-testid="toast"
             data-tone={t.tone === 'plain' ? undefined : t.tone}
-            {...(t.action
-              ? {
-                  onPointerEnter: () => clocks.current.get(t.id)?.hold('pointer'),
-                  onPointerLeave: () => clocks.current.get(t.id)?.release('pointer'),
-                  onFocus: () => clocks.current.get(t.id)?.hold('focus'),
-                  onBlur: (e: FocusEvent<HTMLDivElement>) => {
-                    if (!e.currentTarget.contains(e.relatedTarget as Node | null)) clocks.current.get(t.id)?.release('focus')
-                  },
-                }
-              : {})}
+            onPointerEnter={() => clocks.current.get(t.id)?.hold('pointer')}
+            onPointerLeave={() => clocks.current.get(t.id)?.release('pointer')}
+            onFocus={() => clocks.current.get(t.id)?.hold('focus')}
+            onBlur={(e: FocusEvent<HTMLDivElement>) => {
+              if (!e.currentTarget.contains(e.relatedTarget as Node | null)) clocks.current.get(t.id)?.release('focus')
+            }}
           >
             {t.tone === 'plain' ? null : <Icon name={TONE_ICON[t.tone]} />}
             <span>{t.message}</span>

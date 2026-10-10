@@ -1,12 +1,37 @@
 // @vitest-environment jsdom
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// A toast's time starts on its first frame, not when it is posted. A toast with a button waits while it is hovered or
-// focused and runs on with the time it had left; a plain toast leaves on time.
+// A toast's time starts on its first frame, not when it is posted, and lasts as long as its text takes to read. Any
+// toast waits while it is hovered or focused and runs on with the time it had left.
 import { act, useEffect } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { ToastClock, ToastProvider, useToast, type ToastOptions } from '../src/components/toast'
+import { readingTime, ToastClock, ToastProvider, useToast, type ToastOptions } from '../src/components/toast'
+
+const NOZZLE_NOTE = "Slicing for the A1 mini with its own G-code. Not carried over, made for the project's 0.2 mm nozzle: layer height."
+
+describe("a toast's reading time", () => {
+  it('is 2.6 s for a short note, and 60 ms more for each character past 40', () => {
+    expect(readingTime('Saved')).toBe(2600)
+    expect(readingTime('x'.repeat(40))).toBe(2600)
+    expect(readingTime('x'.repeat(41))).toBe(2660)
+    expect(readingTime(NOZZLE_NOTE)).toBe(2600 + (NOZZLE_NOTE.length - 40) * 60)
+    // The long nozzle note stays up long enough to read: about 7 s.
+    expect(readingTime(NOZZLE_NOTE)).toBeGreaterThan(6500)
+  })
+
+  it('gives a warning or an error at least 6 s, and keeps a longer time a caller asks for', () => {
+    expect(readingTime('Check the bed', 'warn')).toBe(6000)
+    expect(readingTime('Could not save', 'error')).toBe(6000)
+    expect(readingTime(NOZZLE_NOTE, 'warn')).toBe(readingTime(NOZZLE_NOTE))
+    expect(readingTime('Saved', 'plain', 8000)).toBe(8000)
+    expect(readingTime(NOZZLE_NOTE, 'plain', 1000)).toBe(readingTime(NOZZLE_NOTE))
+  })
+
+  it('reads the text inside elements', () => {
+    expect(readingTime(<span>{'x'.repeat(30)}<b>{'y'.repeat(30)}</b></span>)).toBe(2600 + 20 * 60)
+  })
+})
 
 describe('the toast clock', () => {
   beforeEach(() => void vi.useFakeTimers())
@@ -106,15 +131,37 @@ describe('toasts on screen', () => {
     expect(shown()).toBe(0)
   })
 
-  it('lets a plain toast go on time after its first frame, hovered or not', () => {
+  it('lets a plain toast go on time after its first frame', () => {
     act(() => post('Saved'))
-    const el = host.querySelector<HTMLElement>('[data-testid=toast]')!
-    act(() => void el.dispatchEvent(ptr('pointerover')))
     // The first frame starts its time.
     act(() => void vi.advanceTimersByTime(20))
     act(() => void vi.advanceTimersByTime(2580))
     expect(shown()).toBe(1)
     act(() => void vi.advanceTimersByTime(20))
+    expect(shown()).toBe(0)
+  })
+
+  it('keeps a plain toast while hovered, then runs on with its time left', () => {
+    act(() => post('Saved'))
+    const el = host.querySelector<HTMLElement>('[data-testid=toast]')!
+    act(() => void vi.advanceTimersByTime(20))
+    act(() => void vi.advanceTimersByTime(1000))
+    act(() => void el.dispatchEvent(ptr('pointerover')))
+    act(() => void vi.advanceTimersByTime(30_000))
+    expect(shown()).toBe(1)
+    act(() => void el.dispatchEvent(ptr('pointerout')))
+    act(() => void vi.advanceTimersByTime(1500))
+    expect(shown()).toBe(1)
+    act(() => void vi.advanceTimersByTime(200))
+    expect(shown()).toBe(0)
+  })
+
+  it('keeps the long nozzle note up for its reading time', () => {
+    act(() => post(NOZZLE_NOTE))
+    act(() => void vi.advanceTimersByTime(20))
+    act(() => void vi.advanceTimersByTime(readingTime(NOZZLE_NOTE) - 100))
+    expect(shown()).toBe(1)
+    act(() => void vi.advanceTimersByTime(200))
     expect(shown()).toBe(0)
   })
 
