@@ -124,7 +124,8 @@ jobs:
 
   # The integration tests (each crate's tests/) for the merge queue and for a pull request labeled full-ci, so one that
   # breaks never lands; main runs them in the rust job. One run takes about 18 minutes, so they are split in four that
-  # run side by side: sx-core's two longest (firmware, requests), the rest of sx-core, and every other crate.
+  # run side by side: sx-core's two longest (firmware, requests), the rest of sx-core, and every other crate (with the
+  # MCP server's tests on the real core).
   rust-tests-part:
     name: rust tests (${{ matrix.part }})
     needs: detect
@@ -157,6 +158,27 @@ jobs:
         run: |
           cargo build -p sx-cloud
           cargo test --workspace --exclude slicerx-desktop --exclude sx-core --test '*'
+      # The MCP server's tests that slice with the real core, on the sx that sx-cli's tests above built. They skip
+      # where there is no sx (the web job); here SLICERX_TEST_REQUIRE_SX makes a missing one fail them.
+      - if: matrix.part == 'crates'
+        uses: pnpm/action-setup@v4
+      - if: matrix.part == 'crates'
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - if: matrix.part == 'crates'
+        run: |
+          pnpm install --frozen-lockfile
+          cd packages/mcp && bash "$GITHUB_WORKSPACE/scripts/ci/pr-test.sh"
+        env:
+          SLICERX_TEST_SX_BIN: ${{ github.workspace }}/target/debug/sx
+          SLICERX_TEST_REQUIRE_SX: '1'
+          SX_FLAKY_OUT: ${{ runner.temp }}/retried.txt
+      - if: always() && matrix.part == 'crates'
+        run: bash scripts/ci/flaky-check.sh retried "$SX_FLAKY_OUT"
+        env:
+          SX_FLAKY_OUT: ${{ runner.temp }}/retried.txt
 
   # One result for the integration test parts: the name to require. Passes when they were not run (a pull request
   # without full-ci, or no Rust change).
