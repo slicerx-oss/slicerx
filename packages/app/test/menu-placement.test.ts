@@ -28,10 +28,18 @@ function openMenu(): HTMLElement {
     createElement(MenuAnchor, { className: 'trigger' }, createElement(Menu, { open: true, onClose: () => undefined, label: 'Tools' }, [1, 2, 3].map(item))),
   )
   flushSync(() => createRoot(host).render(tree))
-  return host.querySelector<HTMLElement>('.sx-menu')!
+  // a menu lifted out of its panel is drawn in the page's body
+  return document.querySelector<HTMLElement>('.sx-menu')!
+}
+
+const tall = window.innerHeight
+/** The window's height, for a test that needs a window with no more room than its panel. */
+function windowHeight(px: number): void {
+  Object.defineProperty(window, 'innerHeight', { value: px, configurable: true })
 }
 
 afterEach(() => {
+  windowHeight(tall)
   vi.restoreAllMocks()
   document.body.innerHTML = ''
 })
@@ -53,11 +61,24 @@ describe('menu placement', () => {
     expect(m.style.maxHeight).toBe('')
   })
 
-  it('scrolls itself when neither side has room for all of it', () => {
-    Object.assign(boxes, { pane: { top: 100, bottom: 500 }, trigger: { top: 300, bottom: 330 } })
+  it('scrolls itself when neither side has room for all of it, in the panel or the window', () => {
+    // the panel fills the window, so lifting the menu out would give it no more room
+    windowHeight(520)
+    Object.assign(boxes, { pane: { top: 0, bottom: 520 }, trigger: { top: 300, bottom: 330 } })
     layout(465)
     const m = openMenu()
+    expect(m.dataset['lifted']).toBeUndefined()
     expect(m.dataset['side']).toBe('top')
-    expect(m.style.maxHeight).toBe('196px')
+    expect(m.style.maxHeight).toBe('296px')
+  })
+
+  it('lifts itself out of a panel too short for it when the window has room', () => {
+    Object.assign(boxes, { pane: { top: 100, bottom: 260 }, trigger: { top: 120, bottom: 150 } })
+    layout(465)
+    const m = openMenu()
+    expect(m.dataset['lifted']).toBe('true')
+    expect(m.parentElement).toBe(document.body)
+    expect(m.style.position).toBe('fixed')
+    expect(m.style.maxHeight).toBe('')
   })
 })
