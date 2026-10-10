@@ -23,7 +23,7 @@ injectStyles() // once, on a page that does not load @slicerx/ui
 </EmbedTheme>
 ```
 
-- `Viewport` props: `plate`, `preview` (SXPV bytes or parsed buffers), `look` (`studio`, `clay`, `xray`, `overhang`, `filament`, `cad`), `colorMode` (`feature`, `tool`, `speed`, `flow`, `layerTime`), `layer` (top visible layer, 1-based), `view` (`iso`, `top`, `front`, `fit`), `quality`, `onPick`, `onReady` (the live viewport handle), `label`, `className`, `style`.
+- `Viewport` props: `plate`, `preview` (SXPV bytes or parsed buffers), `look` (`studio`, `clay`, `xray`, `overhang`, `filament`, `cad`), `colorMode` (`feature`, `tool`, `speed`, `flow`, `layerTime`), `layer` (top visible layer, 1-based), `view` (`iso`, `top`, `front`, `fit`), `quality` (`auto`, the default, picks from the graphics it finds: `low` without ambient occlusion on a weak or software GPU; or `high`, `balanced`, `low`), `onPick`, `onReady` (the live viewport handle), `label`, `className`, `style`.
 - `SettingsPanel` props: `config` (a base profile; schema defaults when omitted), `easy`, `mode` (`easy` or `advanced`), `onChange`, which receives the Easy values, the Advanced overrides and the resolved config keyed by Orca setting names.
 - `EmbedTheme` takes `dark`, `light` or any theme made with `createTheme` (exported here), and themes only its children. The 3D scene follows it: the accent marks the selection, and a light theme gets a light studio. `sceneTheme` on `Viewport` sets any scene, toolpath or heat ramp color on top.
 - `Viewport` also takes `toolColors` (the filament color per slot, for `colorMode="tool"`) and `onError`, called when the 3D view cannot start or fails.

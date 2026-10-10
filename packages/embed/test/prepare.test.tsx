@@ -169,6 +169,17 @@ describe('the plate reveal', () => {
   })
 })
 
+describe('quality', () => {
+  it('lets the viewport pick from the graphics by default, and takes a level the host sets', async () => {
+    await draw({ plate: plate('a') })
+    expect(created[0]).not.toHaveProperty('quality')
+    act(() => root.unmount())
+    root = createRoot(host)
+    await draw({ plate: plate('a'), quality: 'balanced' })
+    expect(created[1]?.['quality']).toBe('balanced')
+  })
+})
+
 describe('the bed outline', () => {
   it('is the default unless asked to be subtle', async () => {
     await draw({ plate: plate('a') })
