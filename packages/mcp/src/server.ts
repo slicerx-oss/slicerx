@@ -139,12 +139,25 @@ const summaryShape = {
   /** How the project's own printer G-code was used (project_settings). */
   project_gcode: z.array(z.object({ key: z.string(), slot: z.number().optional(), use: z.enum(['project', 'profile']), message: z.string() })).optional(),
   warnings: z.array(z.string()),
+  /** Warnings with a code an app can act on, each also in `warnings`: `no_printer` when no printer was named. */
+  notices: z.array(z.object({ code: z.enum(['no_printer']), message: z.string() })).optional(),
   note: z.string().optional(),
 }
 
 type ToolExtra = RequestHandlerExtra<ServerRequest, ServerNotification>
 
 /** A tool's progress lines as MCP progress notifications, sent only when the request carries a progress token. */
+/** The warning for a slice that named no printer, with the size of the generic bed the engine used. */
+export function noPrinterMessage(config: Record<string, unknown>): string {
+  const pts = (Array.isArray(config['printable_area']) ? config['printable_area'] : [])
+    .map((p) => (Array.isArray(p) ? p.map(Number) : String(p).split('x').map(Number)))
+    .filter((p): p is number[] => p.length === 2 && p.every(Number.isFinite))
+  const span = (i: number) => (pts.length ? Math.round(Math.max(...pts.map((p) => p[i]!)) - Math.min(...pts.map((p) => p[i]!))) : 0)
+  const [w, d] = [span(0), span(1)]
+  const size = w > 0 && d > 0 ? (w === d ? `${w} mm` : `${w} by ${d} mm`) : ''
+  return `No printer chosen, so this slice used a generic ${size ? `${size} ` : ''}machine; times and limits are not for your printer.`
+}
+
 function progressOf(extra: ToolExtra): ToolProgress | undefined {
   const token = extra._meta?.progressToken
   if (token === undefined) return undefined
@@ -233,7 +246,7 @@ export function createSlicerxServer(ctx: ServerContext, opts: SlicerxServerOptio
     await profiles.prepare([...args.profiles, ...(args.filaments ?? []).flatMap((s) => (s.profile ? [s.profile] : []))])
     const presets = args.profile_files.length ? await readPresetFiles(ctx.policy, args.profile_files) : undefined
     const slots = args.filaments?.length ? await slotLayers(args.filaments) : undefined
-    const { config, explicit, applied, trustedGcode, gcodeKept, gcodeReplaced } = resolveSliceConfig(store, profiles, args.profiles, args.overrides, { project, presets, slots })
+    const { config, explicit, applied, trustedGcode, gcodeKept, gcodeReplaced, noPrinter } = resolveSliceConfig(store, profiles, args.profiles, args.overrides, { project, presets, slots })
     const projectGcode = [
       ...gcodeKept.map((k) => ({ key: k.key, ...(k.slot !== undefined ? { slot: k.slot } : {}), use: 'project' as const, message: `The project's ${k.label} ${k.message}.` })),
       ...gcodeReplaced.map((k) => ({ key: k, use: 'profile' as const, message: `Used the printer profile's ${gcodeLabel(k)} instead of the project's.` })),
@@ -262,6 +275,8 @@ export function createSlicerxServer(ctx: ServerContext, opts: SlicerxServerOptio
       result.gcode_3mf_path = path
     }
     await progress(1, 'Done')
+    const notices = noPrinter ? [{ code: 'no_printer' as const, message: noPrinterMessage(config) }] : []
+    for (const n of notices) result.warnings.push(n.message)
     const lines = [
       `${result.model.name}${result.plate ? `, plate ${result.plate}` : ''}: ${result.layer_count} layers, ${result.time_text}, ${result.filament_g} g (${(result.filament_mm / 1000).toFixed(2)} m) [engine ${result.engine}]`,
       ...(result.filaments.length > 1 ? [`Filaments: ${result.filaments.map((f) => `slot ${f.slot} ${f.filament_g} g`).join(', ')}`] : []),
@@ -272,7 +287,7 @@ export function createSlicerxServer(ctx: ServerContext, opts: SlicerxServerOptio
       ...result.warnings.map((w) => `Warning: ${w}`),
       ...(result.note ? [result.note] : []),
     ]
-    return ok({ ...result, applied, ...(projectGcode.length ? { project_gcode: projectGcode } : {}) }, [...lines, ...projectGcode.map((g) => g.message)].join('\n'))
+    return ok({ ...result, applied, ...(projectGcode.length ? { project_gcode: projectGcode } : {}), ...(notices.length ? { notices } : {}) }, [...lines, ...projectGcode.map((g) => g.message)].join('\n'))
   }
 
   server.registerTool(

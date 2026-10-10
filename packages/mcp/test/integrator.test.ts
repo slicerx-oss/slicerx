@@ -109,6 +109,23 @@ describe('profiles', () => {
     expect(await applied(['intent:strong'])).not.toContain('process:slicerx-default')
   })
 
+  it('says when a slice names no printer, with a no_printer notice, and stays quiet when one is named', async () => {
+    const h = await connect()
+    const cube = join(h.dir, 'cube.stl')
+    type Est = { warnings: string[]; notices?: { code: string; message: string }[] }
+    const bare = data<Est>(await h.call('slicerx_estimate_file', { model: cube, profiles: [] }))
+    expect(bare.notices).toEqual([{ code: 'no_printer', message: expect.stringMatching(/^No printer chosen, so this slice used a generic \d+( by \d+)? mm machine; times and limits are not for your printer\.$/) }])
+    expect(bare.warnings).toContain(bare.notices?.[0]?.message)
+    expect(bare.notices?.[0]?.message).not.toMatch(/[\u2013\u2014]/)
+    for (const profiles of [['machine:bambu-a1'], ['printer:bambu_x1c', 'filament:pla'], ['machine:bambu-p1s', 'process:fine']]) {
+      const named = data<Est>(await h.call('slicerx_estimate_file', { model: cube, profiles }))
+      expect(named.notices, profiles.join(', ')).toBeUndefined()
+      expect(named.warnings.some((w) => w.startsWith('No printer chosen'))).toBe(false)
+    }
+    // A process alone still names no printer.
+    expect(data<Est>(await h.call('slicerx_estimate_file', { model: cube, profiles: ['process:fine'] })).notices?.[0]?.code).toBe('no_printer')
+  })
+
   it("applies the user's own Bambu Studio presets, inherits resolved", async () => {
     const h = await connect()
     const file = join(h.dir, 'My PLA.json')
