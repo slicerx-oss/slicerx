@@ -76,10 +76,10 @@ async function open(page: Page): Promise<void> {
 }
 
 /**
- * Presses Open (Mod+O) once and answers the dialog it opens with `path`. On the GPU runner the first Mod+O after a
- * load sometimes opens no dialog (#291): when none has come after 10 s, the test notes what could have held the key
- * (an open dialog or panel in the app's state, the focused element, the O keys the page saw) before it goes on
- * waiting, so a failure says why.
+ * Presses Open (Mod+O) once and answers the dialog it opens with `path`. When no dialog has come after 10 s, the test
+ * notes what could have held the key (an open dialog or panel in the app's state, the focused element, the O keys the
+ * page saw) before it goes on waiting, so a failure says why. (#291 was the app's file input, garbage collected while
+ * its dialog was open on a busy page: the browser reported the dialog, but for an input that no longer existed.)
  */
 async function pick(page: Page, path: string): Promise<void> {
   const seen = choosers.get(page)!
