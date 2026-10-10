@@ -519,6 +519,8 @@ export interface Viewport {
   scaleHandles(): Partial<Record<'xn' | 'xp' | 'yn' | 'yp' | 'zn' | 'zp' | 'cnn' | 'cpn' | 'cpp' | 'cnp', [number, number]>> | null
   /** Rotate tool: whether the rings turn the model about the bed's axes (`world`, the default) or its own (`local`). */
   setRotateSpace(space: 'world' | 'local'): void
+  /** Move tool: X, Y and Z arrows on the selected model, each a drag along its axis (Z stops at the bed). Off by default. */
+  setMoveHandles?(on: boolean): void
   /** Screen positions (CSS pixels from the canvas corner) of a grab point on each rotate ring, or null when the rotate tool is off. */
   rotateHandles(): Partial<Record<'x' | 'y' | 'z', [number, number]>> | null
   /** Cut tool: shows the plane with its grabber and tilt rings on the model and clips the model there. Null ends it. */

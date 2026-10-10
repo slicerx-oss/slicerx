@@ -164,6 +164,9 @@ export function Viewport({ plate, preview, look = 'studio', colorMode = 'feature
   }, [vp, sel])
   useEffect(() => vp?.setTool(active), [vp, active])
   useEffect(() => vp?.setBedOutline?.(bedOutline), [vp, bedOutline])
+  // the move tool's axis arrows come with the toolbar
+  const handles = actions.length > 0
+  useEffect(() => vp?.setMoveHandles?.(handles), [vp, handles])
   useEffect(() => {
     if (!vp) return
     vp.setPreview(buffers)
