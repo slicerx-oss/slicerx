@@ -483,11 +483,42 @@ fn flat_regions(mesh: &TriMesh, ids: Option<&Vec<u32>>, dist_tol: f64) -> Option
 /// filled again from its corners alone: what an edge round wants, since its strips follow every vertex of the edge.
 /// The mesh itself when there are none.
 pub fn coarsen_flat(mesh: &TriMesh) -> TriMesh {
-    coarsen_inner(mesh).unwrap_or_else(|| mesh.clone())
+    coarsen_inner(mesh, false).unwrap_or_else(|| mesh.clone())
+}
+
+/// the flat faces filled again (`remesh_flat`), or the same from the mesh coarsened first (`coarsen_flat`, a face
+/// id's part of a plane counted as a face of its own, so the line between two faces on one plane stays where it was),
+/// whichever has fewer poor triangles. A boolean leaves its inputs' corners behind on the result's straight edges: a
+/// pushed box keeps its old top's corners and the tool's, 0.01 mm apart, on its side edges, and filling round those
+/// gave a plain box 128 triangles, dozens of them slivers. Filling a face again from its corners alone drops the points
+/// an earlier fill put inside it, though, which a face next to a round cannot always win back: hence the choice.
+pub fn tidy_flat(mesh: &TriMesh, opts: &RemeshOptions) -> TriMesh {
+    let plain = remesh_flat(mesh, opts);
+    let Some(coarse) = coarsen_inner(mesh, true) else {
+        return plain;
+    };
+    let coarse = remesh_flat(&coarse, opts);
+    if quality(&coarse, opts.min_angle_deg) < quality(&plain, opts.min_angle_deg) {
+        coarse
+    } else {
+        plain
+    }
+}
+
+/// triangles under 5 degrees, under `target` degrees, and all triangles: the fewer the better, in that order
+fn quality(m: &TriMesh, target: f64) -> (usize, usize, usize) {
+    let (mut sliver, mut poor) = (0, 0);
+    for t in &m.triangles {
+        let [a, b, c] = t.map(|i| m.positions[i as usize]);
+        let angle = min_angle(a, b, c);
+        sliver += usize::from(angle < 5.0);
+        poor += usize::from(angle < target);
+    }
+    (sliver, poor, m.triangles.len())
 }
 
 #[allow(clippy::too_many_lines, reason = "one pass, read top to bottom")]
-fn coarsen_inner(original: &TriMesh) -> Option<TriMesh> {
+fn coarsen_inner(original: &TriMesh, by_id: bool) -> Option<TriMesh> {
     let mesh = original;
     let n = mesh.triangles.len();
     let pos = &mesh.positions;
@@ -498,7 +529,7 @@ fn coarsen_inner(original: &TriMesh) -> Option<TriMesh> {
         region_of,
         regions,
         ..
-    } = flat_regions(mesh, None, (diag * 1e-7).max(1e-9))?;
+    } = flat_regions(mesh, ids.filter(|_| by_id), (diag * 1e-7).max(1e-9))?;
     // a vertex goes when every triangle round it is on a flat face and it is no corner of any of them
     let mut faces_at: Vec<Vec<usize>> = vec![Vec::new(); pos.len()];
     for (t, tri) in mesh.triangles.iter().enumerate() {
