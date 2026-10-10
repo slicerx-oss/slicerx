@@ -45,7 +45,11 @@ mkdir -p "\$H/bin" "\$H/state"
 cat > "\$H/incoming.bundle"
 [ -d "\$H/slicerx.git" ] || git init -q --bare "\$H/slicerx.git"
 git -C "\$H/slicerx.git" fetch -q "\$H/incoming.bundle" +refs/heads/ci-tip:refs/heads/ci-tip || exit 3
-for f in run.sh worker.sh heavy.sh; do git -C "\$H/slicerx.git" show $sha:scripts/ci/\$f > "\$H/bin/\$f" 2>/dev/null && chmod +x "\$H/bin/\$f"; done
+for f in run.sh worker.sh; do git -C "\$H/slicerx.git" show $sha:scripts/ci/\$f > "\$H/bin/\$f" 2>/dev/null && chmod +x "\$H/bin/\$f"; done
+# heavy.sh is the machine's own lock, shared with everything else that runs there, and its owner deploys it: never
+# replace it with the copy in the commit under test (an old commit put back an old lock without slots). Only a remote
+# without one gets it.
+[ -s "\$H/bin/heavy.sh" ] || { git -C "\$H/slicerx.git" show $sha:scripts/ci/heavy.sh > "\$H/bin/heavy.sh" 2>/dev/null && chmod +x "\$H/bin/heavy.sh"; }
 if [ -s "\$H/bin/heavy.sh" ] && [ -x "\$H/bin/heavy.sh" ]; then SX_CI_HOME="\$H" SX_CI_NOTIFY= "\$H/bin/heavy.sh" "\$H/bin/run.sh" $tier $sha
 else SX_CI_HOME="\$H" SX_CI_NOTIFY= "\$H/bin/run.sh" $tier $sha; fi
 EOS
