@@ -688,6 +688,9 @@ test('the object list reorders by drag and by buttons, and a locked object stays
   // Lock: the numeric position will not change. The row's buttons show on hover.
   await rows.nth(0).locator('.obj-row').first().hover()
   await rows.nth(0).getByRole('button', { name: 'Lock Second' }).click()
+  // off the lock button, so its Locked tip closes before the name is pressed
+  await page.mouse.move(0, 0)
+  await expect(page.locator('#sx-tip')).toBeHidden()
   await rows.nth(0).locator('.obj-h').click()
   await openTransform(page)
   const posX = page.getByRole('group', { name: 'Position' }).getByRole('textbox', { name: /X/ })
