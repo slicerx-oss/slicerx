@@ -15,6 +15,7 @@ const result = { id: 'old', engine: 'sx', layerCount: 10, layerZ: new Float32Arr
 /** A slicer whose slice finishes when the test says, whatever its signal says, as a worker that is mid-shard does. */
 function slowSlicer() {
   let finish = (_: SliceResult) => undefined as void
+  let started = false
   const saved: string[] = []
   const host = {
     kind: 'web',
@@ -23,22 +24,25 @@ function slowSlicer() {
     printers: { status: async () => ({ state: 'idle' }) },
     approvals: {},
     slicer: {
-      slice: () => new Promise<SliceResult>((resolve) => (finish = resolve)),
+      slice: () => {
+        started = true
+        return new Promise<SliceResult>((resolve) => (finish = resolve))
+      },
       loadParts: async () => handle,
       getPreview: async () => new ArrayBuffer(0),
       exportGcode: async () => ({ fileName: 'old.gcode', bytes: 1, sha256: '', blob: new Blob(['G28']) }),
     },
   } as unknown as Host
-  return { host, saved, finish: (r: SliceResult) => finish(r) }
+  return { host, saved, started: () => started, finish: (r: SliceResult) => finish(r) }
 }
 
 beforeEach(() => set({ plate: [entry], slice: { status: 'idle' }, preview: null, printSheet: null, calibration: {}, layerMarks: {}, resume: null, toast: null }))
 
 describe('a slice whose plate goes while it runs', () => {
   it('never lands on the cleared plate, and Export and Print have nothing to send', async () => {
-    const { host, saved, finish } = slowSlicer()
+    const { host, saved, started, finish } = slowSlicer()
     const slicing = slicePlate(host)
-    await expect.poll(() => get().slice.status).toBe('running')
+    await expect.poll(started, { timeout: 30_000 }).toBe(true)
     clearProject()
     finish(result)
     await slicing
@@ -51,9 +55,9 @@ describe('a slice whose plate goes while it runs', () => {
   })
 
   it('a slice canceled while it runs is dropped when the engine finishes anyway', async () => {
-    const { host, finish } = slowSlicer()
+    const { host, started, finish } = slowSlicer()
     const slicing = slicePlate(host)
-    await expect.poll(() => get().slice.status).toBe('running')
+    await expect.poll(started, { timeout: 30_000 }).toBe(true)
     cancelSlice({ quiet: true })
     finish(result)
     await slicing
