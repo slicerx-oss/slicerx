@@ -196,7 +196,7 @@ The preview shows toolpaths, so it works for every input format.
 
 ### Prepare the plate
 
-With `tools`, the viewport is a Prepare step: a toolbar over the view with select, move, rotate, scale, arrange and drop to bed, and the keys M, R, S and A. Pass the plate, and store each transform when a move ends, so the next `plate` you pass keeps it. Then write the transforms into the project you slice.
+With `tools`, the viewport is a Prepare step: a toolbar over the view with select, move, rotate, scale, arrange and drop to bed, and the keys M, R, S and A. Move shows X, Y and Z arrows on the selected part; Z stops at the bed. Pass the plate, and store each transform when a move ends, so the next `plate` you pass keeps it. Then write the transforms into the project you slice.
 
 ```tsx
 <Viewport

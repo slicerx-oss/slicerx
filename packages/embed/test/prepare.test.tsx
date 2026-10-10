@@ -64,6 +64,7 @@ describe('the Prepare toolbar', () => {
     await draw({ plate: plate('a') })
     expect(host.querySelector('[role=toolbar]')).toBeNull()
     expect(named('setTool').at(-1)).toEqual(['select'])
+    expect(named('setMoveHandles').at(-1)).toEqual([false])
   })
 
   it('shows every tool with tools on, starts on move, and keeps each button in place when pressed', async () => {
@@ -72,6 +73,7 @@ describe('the Prepare toolbar', () => {
     expect(labels).toEqual(['Select', 'Move', 'Rotate', 'Scale', 'Arrange', 'Drop to bed'])
     expect(named('setTool').at(-1)).toEqual(['move'])
     expect(button('Move').getAttribute('aria-pressed')).toBe('true')
+    expect(named('setMoveHandles').at(-1)).toEqual([true])
     await act(() => button('Rotate').click())
     expect(named('setTool').at(-1)).toEqual(['rotate'])
     expect(button('Rotate').getAttribute('aria-pressed')).toBe('true')

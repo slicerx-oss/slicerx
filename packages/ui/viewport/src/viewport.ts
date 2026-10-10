@@ -40,6 +40,7 @@ import { EdgeMarks, type MarkLine } from './edge-marks'
 import { facePatch } from './faces'
 import { Painter, type PaintHit } from './painter'
 import { ScaleGizmo } from './gizmo'
+import { alongAxis, arrowDir, ARROW_PX, MoveArrows, rayToSegment, type ArrowAxis } from './arrows'
 import { RingSet, angleAround, pickRing, rayPlane, ringAxes, rotateAbout, snapAngle, turnVector, unit, unwrapAngle, type RingAxis, type RotateSpace } from './rings'
 import { CutGizmo, CutPreview, extentAlong, movePlane, tiltAxes, type CutKeep } from './cutplane'
 import { DimensionLayer, EdgePreview, PushPreview, SketchLayer, fromPlane, rayOnPlane, type DimensionMark, type SketchCursor, type SketchScene, type V2 } from './cadtools'
@@ -325,6 +326,9 @@ class ViewportImpl implements Viewport {
   private readonly rotRings = new RingSet<RingAxis>(['x', 'y', 'z'])
   private rotSpace: RotateSpace = 'world'
   private rotDrag: (RingDrag & { entry: ObjectEntry; axis: RingAxis; start: number[]; shown: number; snapped: boolean }) | null = null
+  private readonly moveArrows = new MoveArrows()
+  private moveHandles = false
+  private arrowDrag: { entry: ObjectEntry; axis: ArrowAxis; start: number[]; origin: [number, number, number]; t0: number; minDelta: number; delta: number } | null = null
   private readonly cutGizmo = new CutGizmo()
   private readonly cutRings = new RingSet<'u' | 'v'>(['u', 'v'], { u: '#ff79c6', v: '#bd93f9' })
   private readonly cutPreview = new CutPreview()
@@ -441,7 +445,7 @@ class ViewportImpl implements Viewport {
     this.stage.objectsRoot.add(this.gaps.group)
     this.stage.objectsRoot.add(this.guides.group)
     this.stage.objectsRoot.add(this.edgeMarks.group)
-    this.stage.objectsRoot.add(this.rotRings.group, this.cutGizmo.group, this.cutRings.group, this.pushView.group, this.edgeView.group, this.sketchLayer.group, this.dims.group)
+    this.stage.objectsRoot.add(this.moveArrows.group, this.rotRings.group, this.cutGizmo.group, this.cutRings.group, this.pushView.group, this.edgeView.group, this.sketchLayer.group, this.dims.group)
     this.stage.envSH.then(
       (sh) => {
         if (this.disposed) return
@@ -737,6 +741,7 @@ class ViewportImpl implements Viewport {
     this.updateGizmo()
     // Only while their tool is on: the rings follow the selection, the cut gizmo its plane.
     if (this.tool === 'rotate' || this.rotRings.visible) this.updateRings()
+    if (this.tool === 'move' || this.moveArrows.visible) this.updateArrows()
     if (this.cut || this.cutGizmo.group.visible) this.updateCutGizmo()
     this.dims.fit(this.camera.fov, this.height)
     const ao = this.aoOn && aoMix > 0 && this.display !== 'wireframe' && !(this.mode === 'prepare' && this.renderMode === 'xray')
@@ -1584,6 +1589,121 @@ class ViewportImpl implements Viewport {
     } else this.emit('transform', { id: d.entry.id, transform: d.entry.group.matrix.toArray(), final: true })
     this.objectsMoved()
     this.invalidate()
+  }
+
+  // ---------- move arrows ----------
+
+  setMoveHandles(on: boolean): void {
+    this.moveHandles = on
+    this.invalidate()
+  }
+
+  private moveTarget(): ObjectEntry | null {
+    if (!this.moveHandles || this.tool !== 'move' || this.mode !== 'prepare' || this.cut) return null
+    const id = this.selection[0]
+    return (id ? this.objects.get(id) : undefined) ?? null
+  }
+
+  /** Where the arrows start (the middle of the model's box, bed mm) and how long they are, mm. */
+  private arrowLayout(entry: ObjectEntry): { origin: [number, number, number]; length: number } {
+    const b = this.localBox(entry)
+    if (b.isEmpty()) b.set(new Vector3(), new Vector3())
+    const origin = b.getCenter(new Vector3()).applyMatrix4(entry.group.matrix).toArray() as [number, number, number]
+    return { origin, length: ARROW_PX * this.mmPerPx(origin) }
+  }
+
+  private updateArrows(): void {
+    const t = this.moveTarget()
+    if (!t) {
+      if (this.moveArrows.visible) this.moveArrows.show(false)
+      return
+    }
+    const l = this.arrowLayout(t)
+    this.moveArrows.place(l.origin, l.length)
+    this.moveArrows.show(true)
+  }
+
+  private arrowUnder(ray: Raycaster): ArrowAxis | null {
+    const t = this.moveTarget()
+    if (!t) return null
+    const { o, d } = this.bedRay(ray)
+    const l = this.arrowLayout(t)
+    const reach = 7 * this.mmPerPx(l.origin)
+    let best: ArrowAxis | null = null
+    let bestD = reach
+    for (const id of ['x', 'y', 'z'] as const) {
+      const dist = rayToSegment(o, d, l.origin, arrowDir(id), l.length)
+      if (dist < bestD) {
+        bestD = dist
+        best = id
+      }
+    }
+    return best
+  }
+
+  private arrowHover(ray: Raycaster): void {
+    const id = this.arrowUnder(ray)
+    if (this.moveArrows.setHover(id)) {
+      this.canvas.style.cursor = id ? 'pointer' : ''
+      this.invalidate()
+    }
+  }
+
+  private arrowDown(ray: Raycaster, e: PointerEvent): boolean {
+    const t = this.moveTarget()
+    const axis = t ? this.arrowUnder(ray) : null
+    if (!t || !axis) return false
+    const { o, d } = this.bedRay(ray)
+    const { origin } = this.arrowLayout(t)
+    const t0 = alongAxis(o, d, origin, arrowDir(axis))
+    if (t0 === null) return false
+    t.group.updateMatrixWorld(true)
+    // z stops where the model's lowest point meets the bed
+    const minZ = new Box3().setFromObject(t.group, true).applyMatrix4(this.stage.bedMatrix().invert()).min.z
+    this.arrowDrag = { entry: t, axis, start: t.group.matrix.toArray(), origin, t0, minDelta: axis === 'z' ? -Math.max(0, minZ) : -Infinity, delta: 0 }
+    this.moveArrows.setActive(axis)
+    this.controls.enabled = false
+    this.showGizmoLabel(e.clientX, e.clientY, this.arrowText(0))
+    this.invalidate()
+    return true
+  }
+
+  private arrowText(delta: number): string {
+    const a = this.arrowDrag?.axis.toUpperCase() ?? ''
+    return `${a} ${delta >= 0 ? '+' : ''}${delta.toFixed(1)} mm`
+  }
+
+  private arrowMove(ray: Raycaster): void {
+    const g = this.arrowDrag
+    if (!g) return
+    const { o, d } = this.bedRay(ray)
+    const dir = arrowDir(g.axis)
+    const t = alongAxis(o, d, g.origin, dir)
+    if (t === null) return
+    g.delta = Math.max(g.minDelta, t - g.t0)
+    const m = g.start.slice()
+    m[12] = (m[12] ?? 0) + dir[0] * g.delta
+    m[13] = (m[13] ?? 0) + dir[1] * g.delta
+    m[14] = (m[14] ?? 0) + dir[2] * g.delta
+    g.entry.group.matrix.fromArray(m)
+    g.entry.group.matrixWorldNeedsUpdate = true
+    this.setGizmoLabel(this.arrowText(g.delta))
+    this.emit('transform', { id: g.entry.id, transform: m, final: false })
+    this.invalidate()
+  }
+
+  private arrowEnd(cancel: boolean): void {
+    const g = this.arrowDrag
+    if (!g) return
+    this.arrowDrag = null
+    this.moveArrows.setActive(null)
+    this.controls.enabled = true
+    this.hideGizmoLabel()
+    if (cancel) {
+      g.entry.group.matrix.fromArray(g.start)
+      g.entry.group.matrixWorldNeedsUpdate = true
+    } else this.emit('transform', { id: g.entry.id, transform: g.entry.group.matrix.toArray(), final: true })
+    this.objectsMoved()
   }
 
   // ---------- rotate rings ----------
@@ -2690,6 +2810,14 @@ class ViewportImpl implements Viewport {
         }
         return
       }
+      if (this.tool === 'move') {
+        setRay(e)
+        if (this.arrowDown(ray, e)) {
+          el.setPointerCapture(e.pointerId)
+          e.stopPropagation()
+          return
+        }
+      }
       if (this.tool === 'rotate') {
         setRay(e)
         if (this.rotDown(ray, e)) {
@@ -2765,6 +2893,11 @@ class ViewportImpl implements Viewport {
         this.rotMove(ray, e)
         return
       }
+      if (this.arrowDrag) {
+        setRay(e)
+        this.arrowMove(ray)
+        return
+      }
       if (this.cutDrag) {
         setRay(e)
         this.cutMove(ray, e)
@@ -2786,6 +2919,9 @@ class ViewportImpl implements Viewport {
         } else if (this.tool === 'rotate') {
           setRay(e)
           this.ringHover(ray)
+        } else if (this.tool === 'move' && this.moveHandles) {
+          setRay(e)
+          this.arrowHover(ray)
         }
       }
       if (this.tool === 'scale' && e.buttons === 0) {
@@ -2888,6 +3024,11 @@ class ViewportImpl implements Viewport {
         down = null
         return
       }
+      if (this.arrowDrag) {
+        this.arrowEnd(false)
+        down = null
+        return
+      }
       if (this.cutDrag) {
         this.cutEnd(false)
         down = null
@@ -2967,6 +3108,7 @@ class ViewportImpl implements Viewport {
       this.hideBrimRect()
       this.scaleEnd(true)
       this.rotEnd(true)
+      this.arrowEnd(true)
       this.cutEnd(true)
       this.pushEnd(true)
       if (this.sketchDrag) {
@@ -3468,6 +3610,7 @@ class ViewportImpl implements Viewport {
     this.gizmo.dispose()
     this.cutPreview.detach()
     this.rotRings.dispose()
+    this.moveArrows.dispose()
     this.cutRings.dispose()
     this.cutGizmo.dispose()
     this.pushView.dispose()
