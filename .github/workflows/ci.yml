@@ -92,7 +92,9 @@ jobs:
 
   rust:
     needs: detect
-    if: needs.detect.outputs.rust == 'true'
+    # Also in a duplicate run, whose detect is skipped (the concurrency comment above): a skipped matrix job reports as
+    # plain "rust", and that newer suite then hid the required "rust (ubuntu-latest)" from a pull request.
+    if: ${{ !cancelled() && (needs.detect.outputs.rust == 'true' || needs.detect.result == 'skipped') }}
     strategy:
       fail-fast: false
       matrix:
