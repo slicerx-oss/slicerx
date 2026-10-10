@@ -139,3 +139,27 @@ test('a 120-character file name stays on one line in the objects list, the plate
   expect(await inside('[data-testid="slice-summary"] .btn-name')).toEqual({ oneLine: true, fits: true })
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(0)
 })
+
+test('on a phone, a long name gives way in the plate chip and the model size keeps the row', async ({ page, isMobile }) => {
+  test.skip(!isMobile, 'Phone width')
+  await page.addInitScript(() => {
+    if (sessionStorage.getItem('sx-e2e')) return
+    sessionStorage.setItem('sx-e2e', '1')
+    localStorage.setItem('slicerx.debug', '1')
+    localStorage.setItem('slicerx.prefs.v1', JSON.stringify({ workspace: 'prepare', settingsMode: 'simple', pilot: { mode: 'off' } }))
+  })
+  await page.goto('./')
+  await expect(page.locator('.hud-bl .dims')).toBeVisible({ timeout: 120_000 })
+  await page.evaluate(() => {
+    const sx = (window as unknown as { __sx: { getState(): { plate: { name: string }[] }; setState(p: unknown): void } }).__sx
+    const [o, ...rest] = sx.getState().plate
+    sx.setState({ plate: [{ ...o, name: `${'Very_long_model_name_from_a_marketplace_download_'.repeat(2)}v2.stl` }, ...rest] })
+  })
+  const row = () =>
+    page.evaluate(() => {
+      const a = document.querySelector('.platechip')!.getBoundingClientRect()
+      const b = document.querySelector('.hud-bl .dims')!.getBoundingClientRect()
+      return { sameRow: Math.abs(a.top + a.height / 2 - (b.top + b.height / 2)) < 2, inView: b.right <= innerWidth }
+    })
+  await expect.poll(row).toEqual({ sameRow: true, inView: true })
+})
