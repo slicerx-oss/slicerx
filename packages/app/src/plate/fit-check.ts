@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // Runs the fit check (fit-run.ts) whenever the plate changes, and keeps the results in fit-state. The check's code
-// loads the first time a plate needs it, not at startup.
+// loads the first time a plate needs it, not at startup. It runs whatever is on screen: auto slice holds a big slice
+// for it (auto-slice.ts), and the shut right pane's tab glows for its notes, so it is not tied to the objects list.
 import { useEffect } from 'react'
 import { clearanceFor } from './clearance'
 import { resolveConfig } from '../adapters/settings'
@@ -13,7 +14,7 @@ export function minGapFor(s: ReturnType<typeof get>): number {
   return clearanceFor(s).mm
 }
 
-/** Mount once with the objects list: checks the plate as it changes, a moment after the last edit. */
+/** Checks the plate as it changes, a moment after the last edit. Mounted once, by FitWatch. */
 export function useFitWatch(): void {
   const plate = useApp((s) => s.plate)
   const easy = useApp((s) => s.easy)
@@ -52,4 +53,13 @@ export function useFitWatch(): void {
       ac.abort()
     }
   }, [plate, easy, overrides, presets])
+}
+
+/**
+ * The one fit watch, mounted with the app shell. In the objects list it ran only while the list was drawn: with Slice's
+ * right pane shut no fit check ran, and every big auto slice waited the full FIT_WAIT_MS.
+ */
+export function FitWatch(): null {
+  useFitWatch()
+  return null
 }

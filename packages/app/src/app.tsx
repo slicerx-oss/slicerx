@@ -48,6 +48,8 @@ const ProjectOpenDialog = lazy(() => import('./project/open-dialog').then((m) =>
 const ProjectsDialog = lazy(() => import('./project/projects-dialog').then((m) => ({ default: m.ProjectsDialog })))
 const CameraPlayer = lazy(() => import('./camera/player').then((m) => ({ default: m.CameraPlayer })))
 const Studio = lazy(() => import('./workspaces/studio').then((m) => ({ default: m.Studio })))
+// The plate's fit check, wherever the person is (plate/fit-check.ts); its code stays out of the shell.
+const FitWatch = lazy(() => import('./plate/fit-check').then((m) => ({ default: m.FitWatch })))
 const Library = lazy(() => import('./workspaces/library/library').then((m) => ({ default: m.Library })))
 // Not part of first paint: each loads the first time it opens. The command bar stays eager so the first keystroke after Cmd+K lands.
 const SettingsDialog = lazy(() => import('./shell/settings').then((m) => ({ default: m.SettingsDialog })))
@@ -276,6 +278,9 @@ function Shell() {
       <AppTooltips />
       <QueueWatcher />
       <ProfileFollow />
+      <Suspense fallback={null}>
+        <FitWatch />
+      </Suspense>
       {aboutOpen ? (
         <Suspense fallback={null}>
           <AboutDialog />
