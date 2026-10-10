@@ -753,7 +753,9 @@ impl Clone for WholeRegions {
 struct Families {
     sparse_spacing: i64,
     solid_spacing: i64,
-    /// Layers of top and bottom shell, for painted regions under a surface.
+    /// How many layers a painted top or bottom colors, the surface layer included (`top_color_penetration_layers`
+    /// and `bottom_color_penetration_layers`, else the top and bottom shell layers), and how deep unpainted ones keep
+    /// the walls' paint off.
     top_shell: usize,
     bottom_shell: usize,
     /// Contour resolution in internal units (finer with arc fitting).
@@ -811,11 +813,27 @@ impl Families {
             1000.0
         };
         let (top, bottom) = cfg.shell_layers(cfg.layer_height.max(0.01));
+        // A file's penetration counts as it carries them (at least 1); without them, the shell layers.
+        let penetration = |key: &str, shell: u32| -> usize {
+            let n = cfg.raw_number(key, -1.0);
+            if n.is_finite() && n >= 1.0 {
+                #[allow(
+                    clippy::cast_possible_truncation,
+                    clippy::cast_sign_loss,
+                    reason = "a layer count, clamped"
+                )]
+                {
+                    n.round().min(1000.0) as usize
+                }
+            } else {
+                shell as usize
+            }
+        };
         Self {
             sparse_spacing: paths::t_units(sparse_mm),
             solid_spacing: paths::t_units(cfg.spacing_for(cfg.solid_infill_width())),
-            top_shell: top as usize,
-            bottom_shell: bottom as usize,
+            top_shell: penetration("top_color_penetration_layers", top),
+            bottom_shell: penetration("bottom_color_penetration_layers", bottom),
             // Extrusion rate smoothing turns arc fitting off, so walls keep the plain resolution then.
             // Orca (`PerimeterGenerator`, `surface_simplify_resolution`): the profile's `resolution`, a fifth of it
             // with arc fitting. A fixed 0.0125 mm dropped every other vertex of a 128-sided circle of 10 mm radius

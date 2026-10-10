@@ -2723,10 +2723,18 @@ fn painted_box(face_top: bool) -> Mesh {
 }
 
 fn painted_run(mesh: Mesh) -> SliceRun {
+    painted_run_with(mesh, json!({}))
+}
+
+fn painted_run_with(mesh: Mesh, extra: Value) -> SliceRun {
     let mesh = Arc::new(mesh);
+    let mut config = json!({"brim_width": 0});
+    if let (Some(c), Some(e)) = (config.as_object_mut(), extra.as_object()) {
+        c.extend(e.clone());
+    }
     let req: SliceRequest = serde_json::from_value(json!({
         "plate": {"objects": [{"mesh": "p", "transform": [1,0,0,0, 0,1,0,0, 0,0,1,0, 100,100,0,1]}]},
-        "config": {"brim_width": 0},
+        "config": config,
         "options": {"flavor": "marlin2"},
     }))
     .unwrap();
@@ -2817,6 +2825,19 @@ fn a_painted_top_face_colors_the_top_layers_in_a_shrinking_square() {
         span(&below)
     );
     assert!(tool_xs(&g, 44, 1).is_empty());
+}
+
+/// `top_color_penetration_layers` (Bambu Studio's project setting): a painted top colors that many layers, the
+/// surface layer included, whatever the top shell; a project writes it as text.
+#[test]
+fn a_painted_top_colors_as_many_layers_as_the_project_says() {
+    let r = painted_run_with(painted_box(true), json!({"top_color_penetration_layers": "2"}));
+    let g = text(&r);
+    assert!(!tool_xs(&g, 50, 1).is_empty() && !tool_xs(&g, 49, 1).is_empty());
+    assert!(tool_xs(&g, 48, 1).is_empty() && tool_xs(&g, 47, 1).is_empty());
+    // Without it, the top shell layers (4 here) hold, as before.
+    let g = text(&painted_run(painted_box(true)));
+    assert!(!tool_xs(&g, 47, 1).is_empty());
 }
 
 #[test]
