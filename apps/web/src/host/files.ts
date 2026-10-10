@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // Browser files: the File System Access API where it exists, a hidden file
-// input and a download link where it does not, and window drag and drop.
+// input (kept in the page until its dialog answers) and a download link where
+// it does not, and window drag and drop.
 import type { FileHost, FileRef } from '@slicerx/contracts'
 
 interface PickerWindow {
