@@ -45,6 +45,17 @@ export function isNeverImported(key: string): boolean {
   return ['password', 'apikey', 'api_key', 'access_code', 'secret', 'token', 'bearer'].some((s) => k.includes(s))
 }
 
+/**
+ * A project key's value as the file holds it (Bambu Studio and Orca write numbers as strings), when it is one the
+ * engine can read: a plain value or a flat list of them. Anything else is left out.
+ */
+function projectValue(v: unknown): SettingValue | undefined {
+  const plain = (x: unknown) => typeof x === 'string' || typeof x === 'number' || typeof x === 'boolean'
+  if (plain(v)) return v as SettingValue
+  if (Array.isArray(v) && v.every(plain)) return v as SettingValue
+  return undefined
+}
+
 const listOf = (v: unknown): string[] => (Array.isArray(v) ? v.map(String) : typeof v === 'string' && v !== '' ? v.split(';') : [])
 
 export function readProjectFile(path: string): ProjectRead {
@@ -89,6 +100,17 @@ export function readProjectFile(path: string): ProjectRead {
     ...(presets[i] ? { preset: presets[i] } : {}),
   }))
 
+  // Project keys (the flush volumes, the filament to nozzle map and its mode, the AMS units, the prime tower's spot,
+  // the bed type, the print sequences) are not preset settings, so the import keeps them apart; the engine reads
+  // them from the request as the file has them, so they go with the print settings. The file's own values win, as
+  // for every other setting of an opened project.
+  const projectKeys = Object.fromEntries(
+    Object.entries(imported.extras).flatMap(([k, v]) => {
+      const value = projectValue(v)
+      return value === undefined ? [] : [[k, value]]
+    }),
+  )
+
   return {
     summary: {
       file: path,
@@ -99,6 +121,6 @@ export function readProjectFile(path: string): ProjectRead {
       unknown_keys: [...imported.unknownKeys, ...imported.invalidKeys].sort(),
       dropped_keys: dropped,
     },
-    config: imported.config as unknown as Record<string, SettingValue>,
+    config: { ...projectKeys, ...(imported.config as unknown as Record<string, SettingValue>) },
   }
 }
