@@ -14,7 +14,7 @@ import { startCreality, type CrealityControl } from './creality.ts'
 import { startDuet } from './duet.ts'
 import { startElegoo, type ElegooExtra } from './elegoo.ts'
 import { listen } from './http-util.ts'
-import { MockMachine } from './machine.ts'
+import { MockMachine, type CameraFrame, type Fault } from './machine.ts'
 import { MOCK_MOONRAKER_LOGIN, startMoonraker, type MoonrakerControl } from './moonraker.ts'
 import { startOctoPrint } from './octoprint.ts'
 import { startSnapmakerLuban, type LubanExtra } from './snapmaker.ts'
@@ -31,11 +31,17 @@ export const MOCK_DIGEST = { user: 'maker', password: 'mock-digest-pass' }
 /** Login of the generic RTSP camera mock (`rtsp://HOST:PORT/live`, Basic). */
 export const MOCK_RTSP_CAMERA = { user: 'cam', password: 'cam-pass', path: '/live' }
 
-export type MockName = 'moonraker' | 'prusalink' | 'octoprint' | 'duet' | 'elegoo' | 'creality' | 'snapmaker-luban' | 'ultimaker' | 'anycubic' | 'cloud' | 'bambu' | 'spoolman' | 'home-assistant' | 'rtsp-camera'
-export const ALL_MOCKS: MockName[] = ['moonraker', 'prusalink', 'octoprint', 'duet', 'elegoo', 'creality', 'snapmaker-luban', 'ultimaker', 'anycubic', 'cloud', 'bambu', 'spoolman', 'home-assistant', 'rtsp-camera']
+export type MockName = 'moonraker' | 'prusalink' | 'octoprint' | 'duet' | 'elegoo' | 'creality' | 'snapmaker-luban' | 'snapmaker-u1' | 'ultimaker' | 'anycubic' | 'cloud' | 'bambu' | 'spoolman' | 'home-assistant' | 'rtsp-camera'
+export const ALL_MOCKS: MockName[] = ['moonraker', 'prusalink', 'octoprint', 'duet', 'elegoo', 'creality', 'snapmaker-luban', 'snapmaker-u1', 'ultimaker', 'anycubic', 'cloud', 'bambu', 'spoolman', 'home-assistant', 'rtsp-camera']
 
 /** Which fixture printer backs each protocol. */
-const BACKING: Record<string, string> = { moonraker: 'bay-4', prusalink: 'bay-3', octoprint: 'bay-2', duet: 'bay-4', elegoo: 'bay-4', creality: 'bay-5', 'snapmaker-luban': 'bay-2', ultimaker: 'bay-4', anycubic: 'bay-4', bambu: 'bay-1' }
+const BACKING: Record<string, string> = { moonraker: 'bay-4', prusalink: 'bay-3', octoprint: 'bay-2', duet: 'bay-4', elegoo: 'bay-4', creality: 'bay-5', 'snapmaker-luban': 'bay-2', 'snapmaker-u1': 'bay-4', ultimaker: 'bay-4', anycubic: 'bay-4', bambu: 'bay-1' }
+
+/** The mocks whose camera sends the frame `POST /camera` picks. */
+const CAMERA_MOCKS = new Set(['prusalink', 'elegoo', 'snapmaker-u1', 'moonraker', 'bambu'])
+
+/** The job tick `--tick` turns on: 36 s of print a second, 1% of a fresh hour long job. */
+export const DEFAULT_TICK = { everyMs: 1000, seconds: 36 }
 
 export interface StartOptions {
   only?: MockName[]
@@ -49,6 +55,8 @@ export interface StartOptions {
   forceLogins?: boolean
   /** Give every printer a camera, including the ones the fixture says have none. */
   camera?: boolean
+  /** Move printing jobs on by themselves: `true` is `DEFAULT_TICK`. Off by default, so states only change on request. */
+  tick?: boolean | { everyMs: number; seconds: number }
   fixturePath?: string
 }
 
@@ -71,6 +79,7 @@ export async function startMocks(opts: StartOptions = {}): Promise<RunningMocks>
   const machine = (name: string) => {
     const m = new MockMachine(fixture, BACKING[name] ?? 'bay-1', opts.state)
     if (opts.camera) m.fx.cameraAvailable = true
+    if (opts.tick) { const t = opts.tick === true ? DEFAULT_TICK : opts.tick; m.autoTick(t.everyMs, t.seconds) }
     machines.set(name, m)
     return m
   }
@@ -104,6 +113,8 @@ export async function startMocks(opts: StartOptions = {}): Promise<RunningMocks>
     lubanExtra = l.extra
     add('snapmaker-luban', l)
   }
+  // The Snapmaker U1: Moonraker with the U1's objects and host name, and one webcam.
+  if (only.includes('snapmaker-u1')) add('snapmaker-u1', await startMoonraker(machine('snapmaker-u1'), { ...(apiKey ? { apiKey } : {}), variant: 'u1', webcam: true }))
   if (only.includes('ultimaker')) {
     const u = await startUltiMaker(machine('ultimaker'))
     add('ultimaker', u.api)
@@ -143,6 +154,8 @@ export async function startMocks(opts: StartOptions = {}): Promise<RunningMocks>
     ports['onvif-discovery'] = onvOpen.discoveryPort
   }
   let bambuExtra: BambuExtra | undefined
+  // What `POST /bambu {cameraFrame, cameraFrameFile}` set, kept apart so dropping the file brings the hand back.
+  let bambuCamera: { hand: boolean; file?: string } = { hand: false }
   if (only.includes('bambu')) {
     const b = await startBambu(machine('bambu'), log)
     bambuExtra = b.extra
@@ -174,7 +187,41 @@ export async function startMocks(opts: StartOptions = {}): Promise<RunningMocks>
       if (b.state === 'idle') m.job = undefined
       else if (m.job && b.state === 'finished') m.job = { ...m.job, progress: 1, timeLeftS: 0 }
       m.log.push(`set ${b.state}`)
+      m.changed()
       return { json: { state: m.state } }
+    }
+    // POST /camera {mock, frame}: what that mock's camera sends from now on. `frame` is `placeholder` (the tiny
+    // JPEG), `hand` (HAND_FRAME, a hand reaching in) or the path of a JPEG file, read for each frame.
+    if (req.path === '/camera' && req.method === 'POST') {
+      const b = req.json() as { mock: string; frame: string }
+      const m = machines.get(b.mock)
+      if (!m) return { status: 404 }
+      if (!CAMERA_MOCKS.has(b.mock)) return { status: 400, json: { error: `${b.mock} has no camera that follows /camera` } }
+      if (typeof b.frame !== 'string' || !b.frame) return { status: 400, json: { error: 'frame is placeholder, hand or a file path' } }
+      const frame: CameraFrame = b.frame === 'placeholder' || b.frame === 'hand' ? b.frame : { file: b.frame }
+      m.setCamera(frame)
+      if (b.mock === 'bambu') bambuCamera = { hand: frame === 'hand', ...(typeof frame === 'object' ? { file: frame.file } : {}) }
+      return { json: { camera: b.frame } }
+    }
+    // POST /fault {mock, kind}: `runout`, `door`, `offline` or `clear`, each as that brand reports it (see README).
+    if (req.path === '/fault' && req.method === 'POST') {
+      const b = req.json() as { mock: string; kind: Fault | 'clear' }
+      const m = machines.get(b.mock)
+      if (!m) return { status: 404 }
+      if (!['runout', 'door', 'offline', 'clear'].includes(b.kind)) return { status: 400, json: { error: 'kind is runout, door, offline or clear' } }
+      if (!m.faultProfile) return { status: 400, json: { error: `${b.mock} takes no faults` } }
+      m.fault(b.kind)
+      return { json: { state: m.state, faults: [...m.faults] } }
+    }
+    // POST /tick {mock, seconds?, everyMs?}: moves a printing job on by `seconds` now, or, with `everyMs`, every
+    // `everyMs` from now on (0 stops it).
+    if (req.path === '/tick' && req.method === 'POST') {
+      const b = req.json() as { mock: string; seconds?: number; everyMs?: number }
+      const m = machines.get(b.mock)
+      if (!m) return { status: 404 }
+      if (b.everyMs !== undefined) m.autoTick(Math.max(0, Number(b.everyMs) || 0), Number(b.seconds ?? DEFAULT_TICK.seconds))
+      else if (b.seconds !== undefined) m.tick(Number(b.seconds))
+      return { json: { state: m.state, job: m.job ?? null } }
     }
     // POST /bambu {refuse?, model?, ams?, external?, tagged?, liveview?}: the Bambu fake refuses project starts with `refuse` (null or
     // absent: accepts them); `model`, `ams` and `external` make it another printer (an A1 with an AMS lite, an A1 mini
@@ -197,10 +244,13 @@ export async function startMocks(opts: StartOptions = {}): Promise<RunningMocks>
       if (b.emmc !== undefined) bambuExtra.emmc = b.emmc
       if (b.developerMode === null) delete bambuExtra.developerMode
       else if (b.developerMode !== undefined) bambuExtra.developerMode = b.developerMode
-      if (b.cameraFrame === null) delete bambuExtra.cameraFrame
-      else if (b.cameraFrame) bambuExtra.cameraFrame = b.cameraFrame
-      if (b.cameraFrameFile === null) delete bambuExtra.cameraFrameFile
-      else if (b.cameraFrameFile) bambuExtra.cameraFrameFile = b.cameraFrameFile
+      // The older names for `POST /camera`: a file wins over the hand, and dropping the file shows the hand again.
+      if (b.cameraFrame !== undefined || b.cameraFrameFile !== undefined) {
+        if (b.cameraFrame !== undefined) bambuCamera.hand = b.cameraFrame === 'hand'
+        if (b.cameraFrameFile === null) delete bambuCamera.file
+        else if (b.cameraFrameFile) bambuCamera.file = b.cameraFrameFile
+        machines.get('bambu')?.setCamera(bambuCamera.file ? { file: bambuCamera.file } : bambuCamera.hand ? 'hand' : 'placeholder')
+      }
       if (b.liveview !== undefined) bambuExtra.liveview = b.liveview
       if (b.inBandParameterSets !== undefined) bambuExtra.inBandParameterSets = b.inBandParameterSets
       if (b.cameraCode) bambuExtra.cameraCode = b.cameraCode
@@ -297,7 +347,7 @@ export async function startMocks(opts: StartOptions = {}): Promise<RunningMocks>
     }
     if (req.path !== '/state') return { status: 404 }
     const out: Record<string, unknown> = { log }
-    for (const [name, m] of machines) out[name] = { state: m.state, files: [...m.files.values()], log: m.log, position: m.position, relative: m.relative }
+    for (const [name, m] of machines) out[name] = { state: m.state, files: [...m.files.values()], log: m.log, position: m.position, relative: m.relative, job: m.job ?? null, faults: [...m.faults], camera: typeof m.camera === 'object' ? m.camera.file : m.camera }
     return { json: out }
   })
   servers.push(ctl.server)
@@ -306,6 +356,7 @@ export async function startMocks(opts: StartOptions = {}): Promise<RunningMocks>
     ports,
     control: ctl.port,
     stop: async () => {
+      for (const m of machines.values()) m.autoTick(0, 0)
       await Promise.all(servers.map((s) => new Promise<void>((r) => { s.close(() => r()); (s as Server).closeAllConnections?.() })))
     },
   }
