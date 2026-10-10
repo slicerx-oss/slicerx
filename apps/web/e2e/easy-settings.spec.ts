@@ -15,7 +15,8 @@ async function open(page: Page, prefs: Record<string, unknown> = {}): Promise<vo
     if (sessionStorage.getItem('sx-e2e')) return
     sessionStorage.setItem('sx-e2e', '1')
     localStorage.setItem('slicerx.debug', '1')
-    localStorage.setItem('slicerx.prefs.v1', JSON.stringify({ workspace: 'prepare', settingsMode: 'simple', goal: 'standard', pilot: { mode: 'off' }, ...extra }))
+    // Auto slice on Always: picking a goal slices again in the background, which Auto would hold on a slow runner.
+    localStorage.setItem('slicerx.prefs.v1', JSON.stringify({ workspace: 'prepare', settingsMode: 'simple', goal: 'standard', pilot: { mode: 'off' }, autoSliceBySize: false, ...extra }))
   }, prefs)
   await page.goto('./')
   await plateReady(page)
