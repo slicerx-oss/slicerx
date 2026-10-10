@@ -133,7 +133,7 @@ export function MachineCard() {
             data-testid="slice-machine-printer"
             aria-haspopup="dialog"
             aria-expanded={printerOpen}
-            {...tipAttrs({ title: modelLine, body: 'Pick another printer, or add one.' })}
+            {...tipAttrs({ title: modelLine, body: `${shortPrinterName(printer.name) === printer.name ? '' : `${printer.name}. `}Pick another printer, or add one.` })}
             onClick={() => (printerOpen ? closePrinter() : setPop('printer'))}
           >
             <Suspense fallback={<span className="mc-thumb" aria-hidden="true" />}>
