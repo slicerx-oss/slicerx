@@ -1026,6 +1026,24 @@ impl Hub {
         lock(&self.starting).remove(printer);
     }
 
+    /// Whether a reading that went from `prev` to `now` shows a print this hub did not start. A
+    /// start of the hub's own can show up running before it returns and marks itself (a Bambu
+    /// start waits for the printer to take the job), so nothing that begins while one is in flight
+    /// on the printer counts.
+    pub(crate) fn began_elsewhere(
+        &self,
+        printer: &str,
+        prev: Option<PrinterState>,
+        now: PrinterState,
+    ) -> bool {
+        matches!(now, PrinterState::Preparing | PrinterState::Printing)
+            && matches!(
+                prev,
+                Some(PrinterState::Idle | PrinterState::Finished | PrinterState::Error)
+            )
+            && !lock(&self.starting).contains(printer)
+    }
+
     /// The lock uploads and starts on `printer` hold for their whole run.
     pub(crate) fn printer_lock(&self, printer: &str) -> Arc<tokio::sync::Mutex<()>> {
         lock(&self.printer_locks)
@@ -1356,6 +1374,58 @@ mod tests {
         // Another printer is not held up.
         let other = hub.printer_lock("bay-5");
         assert!(other.try_lock().is_ok());
+    }
+
+    /// One reading of `printer` as the status watch feeds it to `record`: notes it, and says whether
+    /// it shows a print someone else began.
+    fn reading(hub: &Hub, printer: &str, state: &str) -> bool {
+        let st: PrinterStatus = serde_json::from_value(json!({
+            "printerId": printer, "state": state, "nozzles": [], "slots": [], "cameraAvailable": false, "updatedAt": "",
+        }))
+        .unwrap();
+        let (_, prev) = hub.alert(&st);
+        hub.began_elsewhere(printer, prev, st.state)
+    }
+
+    #[test]
+    fn a_print_the_hub_starts_is_never_taken_for_someone_elses() {
+        use PrinterState::{Error, Finished, Idle, Paused, Preparing, Printing};
+        let (hub, _) = Hub::open(None, Duration::from_secs(5), "");
+        assert!(!reading(&hub, "bay-4", "idle"), "the first reading");
+        // The printer reports running while the hub's start still waits on it (a Bambu start waits
+        // for the printer to take the job): not someone else's.
+        assert!(hub.begin_start("bay-4"));
+        assert!(!reading(&hub, "bay-4", "printing"));
+        hub.note_started("bay-4");
+        hub.end_start("bay-4");
+        assert!(!reading(&hub, "bay-4", "printing"));
+        // The running reading comes only after the start returned and marked itself.
+        assert!(!reading(&hub, "bay-4", "idle"));
+        assert!(hub.begin_start("bay-4"));
+        hub.note_started("bay-4");
+        hub.end_start("bay-4");
+        assert!(!reading(&hub, "bay-4", "printing"));
+        // A start that failed leaves nothing behind: the next print from the printer's own screen is checked.
+        assert!(!reading(&hub, "bay-4", "idle"));
+        assert!(hub.begin_start("bay-4"));
+        hub.end_start("bay-4");
+        assert!(reading(&hub, "bay-4", "printing"));
+        // Someone else's start, from each state a print can begin in.
+        for (prev, now) in [(Idle, Printing), (Finished, Preparing), (Error, Printing)] {
+            assert!(
+                hub.began_elsewhere("bay-4", Some(prev), now),
+                "{prev:?} to {now:?}"
+            );
+        }
+        assert!(!hub.began_elsewhere("bay-4", Some(Paused), Printing), "a resume");
+        assert!(!hub.began_elsewhere("bay-4", Some(Printing), Printing));
+        // A start in flight on one printer says nothing about another.
+        assert!(hub.begin_start("bay-4"));
+        assert!(!reading(&hub, "bay-4", "idle"));
+        assert!(!reading(&hub, "bay-4", "printing"));
+        assert!(!reading(&hub, "bay-5", "idle"));
+        assert!(reading(&hub, "bay-5", "printing"));
+        hub.end_start("bay-4");
     }
 
     #[test]
