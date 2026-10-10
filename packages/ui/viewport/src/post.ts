@@ -30,6 +30,7 @@ import {
 } from 'three'
 import { FullScreenQuad } from 'three/addons/postprocessing/Pass.js'
 import { FXAAShader } from 'three/addons/shaders/FXAAShader.js'
+import { gpuDone } from './gpudone'
 import { SCENE, hexToRgb, type SceneColors } from './palette'
 import type { Quality } from './types'
 
@@ -416,6 +417,11 @@ export class Pipeline {
     r.clear(true, false, false)
     r.readRenderTargetPixels(this.probe, 0, 0, 1, 1, this.probePx)
     r.setRenderTarget(prev)
+  }
+
+  /** When the GPU has finished every command issued so far, without stalling the page (gpudone.ts). */
+  gpuDone(): Promise<number> {
+    return gpuDone(this.renderer.getContext(), () => this.waitForGpu())
   }
 
   get fxaa(): boolean {

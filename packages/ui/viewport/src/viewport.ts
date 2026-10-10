@@ -774,7 +774,16 @@ class ViewportImpl implements Viewport {
     }
     this.probe?.end()
     // Timer queries are not used for this: on ANGLE's Metal backend they span queued work and read high.
-    if (this.gpuTiming || firstPreviewFrame) this.pipeline.waitForGpu()
+    if (this.gpuTiming) this.pipeline.waitForGpu()
+    else if (firstPreviewFrame && this.previewSetAt !== null) {
+      // the first frame with toolpaths counts until the GPU has drawn it, found with a fence so the page keeps
+      // running: a readback here held software WebGL's main thread for the whole draw, many seconds on a big preview
+      const at = this.previewSetAt
+      const gen = this.previewGen
+      void this.pipeline.gpuDone().then((done) => {
+        if (gen === this.previewGen) this.firstFrameMs = done - at
+      })
+    }
     const t1 = performance.now()
     this.renderMs.push(t1 - t0)
     if (this.gpuTiming) this.costMs.push(t1 - t0)
@@ -796,7 +805,7 @@ class ViewportImpl implements Viewport {
       this.invalidate()
     }
     if (this.previewSetAt !== null && this.pathsShown()) {
-      this.firstFrameMs = t1 - this.previewSetAt
+      if (this.gpuTiming) this.firstFrameMs = t1 - this.previewSetAt
       this.previewSetAt = null
     }
     if (this.plateSet) {
