@@ -26,6 +26,8 @@ export interface SliceJob {
   trustedGcode?: boolean
   /** Also write the SXPV preview buffer (sx engine only). */
   emitPreview?: boolean
+  /** Slice even when paths cross or meet the toolhead (sx engine only); refused by default. */
+  allowCollisions?: boolean
   /** A whole plate: every object's mesh file and transform (sx engine). `modelPath` is then a combined STL for engines that take one file. */
   plate?: { bed?: { widthMm: number; depthMm: number; heightMm: number }; objects: { path: string; name: string; transform?: number[] }[] }
 }

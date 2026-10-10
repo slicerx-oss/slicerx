@@ -85,6 +85,10 @@ const sliceInput = {
     .describe(
       "With project_settings: what to do with the project's printer G-code (start, end, layer change and the rest) when it is not the printer's stock text. review (the default): refuse with error code project_gcode_review and the diff and flagged lines in structuredContent.error.details, for the person to see. profile: slice with the printer profile's G-code instead. Stock text is always used as it is. Only a person can choose a project's own G-code, in SlicerX; no tool call can.",
     ),
+  allow_collisions: z
+    .boolean()
+    .default(false)
+    .describe('Slice even when paths cross, enter a keep-out zone or would meet the toolhead. Leave it off unless the person asked: by default such a plate is refused with error code collision (or sequence_clearance when printing by object), the objects and layers in structuredContent.error.details.'),
   profiles: z
     .array(z.string())
     .max(8)
@@ -174,7 +178,7 @@ export function createSlicerxServer(ctx: ServerContext, opts: SlicerxServerOptio
   const { store, profiles } = ctx
 
   type SlotArg = { slot: number; profile?: string | undefined; file?: string | undefined; color?: string | undefined }
-  type SliceArgs = { model: string; plate?: number | undefined; project_settings: boolean; project_gcode: 'review' | 'profile'; profiles: string[]; profile_files: string[]; filaments?: SlotArg[] | undefined; overrides?: Record<string, unknown> | undefined; output?: 'gcode' | 'gcode.3mf'; preview?: boolean }
+  type SliceArgs = { model: string; plate?: number | undefined; project_settings: boolean; project_gcode: 'review' | 'profile'; allow_collisions?: boolean; profiles: string[]; profile_files: string[]; filaments?: SlotArg[] | undefined; overrides?: Record<string, unknown> | undefined; output?: 'gcode' | 'gcode.3mf'; preview?: boolean }
 
   /** The filament of each slot entry, as a layer for resolveSliceConfig. Profiles must be prepared first. */
   const slotLayers = async (slots: SlotArg[]): Promise<SlotLayer[]> => {
@@ -249,6 +253,7 @@ export function createSlicerxServer(ctx: ServerContext, opts: SlicerxServerOptio
       emitGcode,
       trustedGcode,
       emitPreview: emitGcode && args.preview === true && ctx.slicer.kind === 'sx',
+      ...(args.allow_collisions ? { allowCollisions: true } : {}),
     })
     if (asked3mf && result.gcode_path) {
       await progress(0.9, 'Writing the .gcode.3mf')
