@@ -209,7 +209,7 @@ function Shell() {
   }, [host])
   // Presets in use come back at startup; the preset code loads only when there is one.
   useEffect(() => {
-    if (Object.keys(get().activePresets).length) void import('./presets/presets').then((m) => m.loadPresets()).catch(() => undefined)
+    if (Object.keys(get().activePresets).length) void import('./presets/presets').then((m) => m.restorePresets()).catch(() => undefined)
   }, [])
   useApplyLook()
   useFolderThemes(host)

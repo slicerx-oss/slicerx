@@ -2,7 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 import { beforeEach, describe, expect, it } from 'vitest'
 import { applyCalibrationResult } from '../src/calibration/actions'
-import { applyPreset, capture, deletePreset, exportOrcaJson, exportPresetJson, importPresetText, loadPresets, parsePresetFile, renamePreset, savePreset, updatePreset } from '../src/presets/presets'
+import { applyPreset, capture, deletePreset, exportOrcaJson, exportPresetJson, importPresetText, loadPresets, parsePresetFile, renamePreset, restorePresets, savePreset, updatePreset } from '../src/presets/presets'
 import { memoryStore, setPresetStore } from '../src/presets/store'
 import { get, set } from '../src/state/store'
 
@@ -42,14 +42,29 @@ describe('user presets', () => {
     expect([a.name, b.name, c.name]).toEqual(['Fast', 'fast 2', 'Fast'])
   })
 
-  it('persists and comes back, putting the presets in use back in place', async () => {
+  it('persists and comes back at startup, putting the presets in use back in place', async () => {
     set({ overrides: { nozzle_temperature: [212] } })
     const p = await savePreset('filament', 'PETG')
+    // A restart: changed settings are not kept, the presets and which ones are in use are.
     set({ overrides: {}, userPresets: [] })
-    await loadPresets()
+    await restorePresets()
     expect(get().userPresets.map((x) => x.name)).toEqual(['PETG'])
     expect(get().overrides['nozzle_temperature']).toEqual([212])
     expect(get().activePresets.filament).toBe(p.id)
+  })
+
+  it('loading the list, as Settings > Presets and the command bar do, keeps a setting changed after applying a preset', async () => {
+    const p = await savePreset('process', 'My fast print', { values: { wall_loops: 4 } })
+    applyPreset(p.id)
+    set((s) => ({ overrides: { ...s.overrides, wall_loops: 6 } }))
+    // Settings > Presets loads the list each time it opens.
+    await loadPresets()
+    expect(get().overrides['wall_loops']).toBe(6)
+    // The command bar loads it when it opens while the list is empty.
+    set({ userPresets: [] })
+    await loadPresets()
+    expect(get().overrides['wall_loops']).toBe(6)
+    expect(get().activePresets.process).toBe(p.id)
   })
 
   it('a reload that finds the same presets keeps the list, so a fresh slice stays fresh', async () => {
