@@ -206,6 +206,26 @@ mod tests {
     }
 
     #[test]
+    fn a_pulled_box_is_a_box_again() {
+        // the old top's corners and the tool's (0.01 mm below them) are left on the side edges: a plain box
+        // still, with its six faces where they were
+        let mut m = build::box_mesh([0.0; 3], [20.0, 20.0, 20.0]);
+        m.faces = Some(crate::faces::recognize(&m));
+        for d in [5.0, 10.0] {
+            let r = push(&m, [0.0, 0.0, 1.0], 20.0, d).unwrap();
+            assert_eq!(r.mesh.triangles.len(), 12, "pull {d}");
+            assert!(r.mesh.edge_report().is_watertight());
+            assert!((r.mesh.volume() - 400.0 * (20.0 + d)).abs() < 1e-6);
+            let f = r.mesh.faces.as_ref().unwrap();
+            let mut per_face = vec![0; f.table.len()];
+            for &i in &f.ids {
+                per_face[i as usize] += 1;
+            }
+            assert_eq!(per_face, vec![2; 6], "pull {d}");
+        }
+    }
+
+    #[test]
     fn pull_and_push_a_box_top() {
         let m = build::box_mesh([0.0; 3], [20.0, 10.0, 5.0]);
         let r = push(&m, [0.0, 0.0, 1.0], 5.0, 3.0).unwrap();
