@@ -166,7 +166,8 @@ pub(crate) struct LayerPaint<'a> {
     /// Outlines of the layers above and below (one entry per shell layer, empty where there is no layer).
     pub(crate) above: &'a [Shapes],
     pub(crate) below: &'a [Shapes],
-    pub(crate) facets: &'a Facets,
+    /// The painted pieces, by part: an object's parts each keep their own list.
+    pub(crate) facets: &'a [&'a Facets],
     /// How much farther in a painted top or bottom reaches on each layer of the shell beyond it (the outer
     /// wall's line spacing plus its width), and the narrowest painted piece kept (half the small-region
     /// width), internal units.
@@ -615,7 +616,7 @@ impl LayerPaint<'_> {
     pub(crate) fn split(&self) -> Vec<(u8, Shapes)> {
         let d = self.default_slot;
         let whole = || vec![(d, self.shapes.clone())];
-        if self.shapes.is_empty() || self.facets.is_empty() {
+        if self.shapes.is_empty() || self.facets.iter().all(|f| f.is_empty()) {
             return whole();
         }
         // Painted walls cut by the plane, and painted flat faces near this layer.
@@ -624,7 +625,7 @@ impl LayerPaint<'_> {
         let bottom_shell = self.below.len();
         // Flat painted faces near this layer.
         let mut flat_tris: BTreeMap<FlatKey, Vec<Vec<IntPoint<i32>>>> = BTreeMap::new();
-        for (tri, state) in self.facets {
+        for (tri, state) in self.facets.iter().flat_map(|f| f.iter()) {
             let [a, b, c] = *tri;
             let n = [
                 (b[1] - a[1]) * (c[2] - a[2]) - (b[2] - a[2]) * (c[1] - a[1]),
@@ -1062,7 +1063,7 @@ mod tests {
             plan: &plan,
             above: &above,
             below: &below,
-            facets: &facets,
+            facets: &[&facets],
             step: 7_970,
             small: 1_050,
             memo: None,
@@ -1104,7 +1105,7 @@ mod tests {
                 plan: &plan,
                 above,
                 below: &[],
-                facets: &facets,
+                facets: &[&facets],
                 step: 7_970,
                 small: 1_050,
                 memo: None,
