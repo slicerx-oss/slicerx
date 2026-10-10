@@ -154,6 +154,8 @@ function lin(hex: string): Color {
 export function studioMaterial(color: string, finish: FilamentFinish): MeshPhysicalMaterial {
   const c = lin(displayHex(color))
   const white = new Color(1, 1, 1)
+  // Plastics reflect little and softly, and the room's reflection stays weak, so a face never takes on another hue.
+  // Silk keeps its sheen, its reflection tinted by the filament.
   const base = {
     color: c,
     polygonOffset: true,
@@ -162,19 +164,19 @@ export function studioMaterial(color: string, finish: FilamentFinish): MeshPhysi
   let m: MeshPhysicalMaterial
   switch (finish) {
     case 'silk':
-      m = new MeshPhysicalMaterial({ ...base, roughness: 0.26, metalness: 0.28, clearcoat: 1, clearcoatRoughness: 0.07, sheen: 0.9, sheenRoughness: 0.3, envMapIntensity: 1.25 })
+      m = new MeshPhysicalMaterial({ ...base, roughness: 0.26, metalness: 0.28, specularColor: c.clone().lerp(white, 0.3), clearcoat: 1, clearcoatRoughness: 0.07, sheen: 0.9, sheenRoughness: 0.3, envMapIntensity: 1.1 })
       break
     case 'matte':
-      m = new MeshPhysicalMaterial({ ...base, roughness: 0.82, metalness: 0, clearcoat: 0, sheen: 0.35, sheenRoughness: 0.7, envMapIntensity: 0.85 })
+      m = new MeshPhysicalMaterial({ ...base, roughness: 0.82, metalness: 0, specularIntensity: 0.5, clearcoat: 0, sheen: 0.35, sheenRoughness: 0.7, envMapIntensity: 0.55 })
       break
     case 'petg':
-      m = new MeshPhysicalMaterial({ ...base, roughness: 0.3, metalness: 0, clearcoat: 0.6, clearcoatRoughness: 0.12, sheen: 0.2, sheenRoughness: 0.4, envMapIntensity: 1.05 })
+      m = new MeshPhysicalMaterial({ ...base, roughness: 0.6, metalness: 0, specularIntensity: 0.7, clearcoat: 0.45, clearcoatRoughness: 0.2, sheen: 0.2, sheenRoughness: 0.4, envMapIntensity: 0.65 })
       break
     case 'translucent':
-      m = new MeshPhysicalMaterial({ ...base, roughness: 0.28, metalness: 0, transmission: 0.55, thickness: 6, ior: 1.5, attenuationColor: c, attenuationDistance: 12, clearcoat: 0.3, clearcoatRoughness: 0.2, envMapIntensity: 1 })
+      m = new MeshPhysicalMaterial({ ...base, roughness: 0.28, metalness: 0, transmission: 0.55, thickness: 6, ior: 1.5, attenuationColor: c, attenuationDistance: 12, clearcoat: 0.3, clearcoatRoughness: 0.2, envMapIntensity: 0.8 })
       break
     default:
-      m = new MeshPhysicalMaterial({ ...base, roughness: 0.52, metalness: 0, clearcoat: 0.16, clearcoatRoughness: 0.42, sheen: 0.3, sheenRoughness: 0.55, envMapIntensity: 0.95 })
+      m = new MeshPhysicalMaterial({ ...base, roughness: 0.65, metalness: 0, specularIntensity: 0.6, clearcoat: 0.08, clearcoatRoughness: 0.5, sheen: 0.3, sheenRoughness: 0.55, envMapIntensity: 0.6 })
   }
   return withLayerLines(m, 'studio')
 }

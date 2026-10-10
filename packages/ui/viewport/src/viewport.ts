@@ -918,7 +918,6 @@ class ViewportImpl implements Viewport {
       f.p.edges.material = f.edges
       if (f.wide && f.p.wide) f.p.wide.material = f.wide as typeof f.p.wide.material
     }
-    this.stage.setNeutralLight(this.renderMode === 'cad')
     this.stage.setContactVisible(!x && this.mode === 'prepare')
     this.shadowDirty = true
     this.applyClip()

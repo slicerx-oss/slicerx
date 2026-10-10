@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// The studio set: generated room environment (PMREM, no HDR files), key light
-// with soft PCF shadows, cool rim light, the textured build plate, the floor
-// grid and the baked contact shadow under objects.
+// The studio set: generated room environment (PMREM, no HDR files), white key
+// light with soft PCF shadows, white fill and rim lights, the textured build
+// plate, the floor grid and the baked contact shadow under objects.
 import {
   BufferGeometry,
   DoubleSide,
@@ -188,6 +188,7 @@ export class Stage {
   readonly objectsRoot = new Group()
   readonly previewRoot = new Group()
   readonly key: DirectionalLight
+  readonly fill: DirectionalLight
   readonly rim: DirectionalLight
   bed: Bed = { widthMm: 256, depthMm: 256, heightMm: 256 }
   private decor = new Group()
@@ -236,7 +237,8 @@ export class Stage {
     this.envSH = this.bakeSH(room).finally(() => room.dispose())
 
     // Intensities are the concept's legacy-light values times pi (three.js now uses physical units).
-    const key = new DirectionalLight(new Color(0xfff3e6), 1.6 * Math.PI)
+    // Every light is white, so shading changes a filament's brightness and never its hue.
+    const key = new DirectionalLight(new Color(0xffffff), 1.6 * Math.PI)
     key.position.set(-150, 300, 190)
     key.castShadow = true
     const sz = weak ? 1024 : 2048
@@ -246,7 +248,12 @@ export class Stage {
     key.shadow.radius = 3
     this.scene.add(key, key.target)
     this.key = key
-    const rim = new DirectionalLight(new Color(0xb7c3ff), 0.75 * Math.PI)
+    // the fill lifts the sides the key misses, from the front right and lower
+    const fill = new DirectionalLight(new Color(0xffffff), 0.35 * Math.PI)
+    fill.position.set(220, 80, 200)
+    this.scene.add(fill)
+    this.fill = fill
+    const rim = new DirectionalLight(new Color(0xffffff), 0.5 * Math.PI)
     rim.position.set(180, 140, -260)
     this.scene.add(rim)
     this.rim = rim
@@ -405,13 +412,6 @@ export class Stage {
 
   get isGround(): boolean {
     return this.ground
-  }
-
-  /** Model's CAD look lights the gray with a white key and a softer, near-white rim, so lit faces stay neutral. */
-  setNeutralLight(on: boolean): void {
-    this.key.color.set(on ? 0xffffff : 0xfff3e6)
-    this.rim.color.set(on ? 0xe9edf3 : 0xb7c3ff)
-    this.rim.intensity = (on ? 0.5 : 0.75) * Math.PI
   }
 
   /** Where the first plate reveal is: outline traced 0 to 1 (below 0 hides it), ms since the grid started, wash 0 to 1. */
