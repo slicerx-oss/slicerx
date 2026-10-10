@@ -8,6 +8,10 @@
 //! The split follows Orca's anti-vibration rule (from `PrusaSlicer`'s `FillEnsuring.cpp`): scanline
 //! sections longer than one spacing are kept, chains of short ones are dropped, and the area the kept
 //! sections cover is the normal infill.
+//!
+//! Bambu Lab printers decide per connected piece instead ([`split_pieces`], card ohvk spec 2): a piece no 3 mm
+//! inward offset survives (no 6 mm circle fits) is narrow as a whole, any other piece keeps its lines, thin arms
+//! included.
 
 use crate::fm::Fm as _;
 use crate::geom::mm;
@@ -351,6 +355,25 @@ pub(crate) fn split_lines(region: &Shapes, dir: Dir, spacing: i64, spacing_mm: f
     (normal_out, keep)
 }
 
+/// How far a piece is pulled in for Bambu's narrow test, mm: a piece no circle of this radius fits in is narrow.
+const BAMBU_NARROW_MM: f64 = 3.0;
+
+/// Normal and narrow pieces as Bambu Lab printers decide them: each connected piece (an outline with its holes) is
+/// narrow as a whole when pulling it in by 3 mm leaves nothing, whatever the pattern, line direction or width, and
+/// normal as a whole otherwise. A piece is never cut into a narrow and a normal part.
+pub(crate) fn split_pieces(region: &Shapes) -> (Shapes, Shapes) {
+    let (mut normal, mut narrow) = (Vec::new(), Vec::new());
+    for shape in region {
+        let one: Shapes = vec![shape.clone()];
+        if perimeters::offset(&one, -mm(BAMBU_NARROW_MM)).is_empty() {
+            narrow.push(shape.clone());
+        } else {
+            normal.push(shape.clone());
+        }
+    }
+    (normal, narrow)
+}
+
 /// Normal and narrow parts for patterns that are not straight lines: the region opened by one spacing is normal.
 pub(crate) fn split_core(region: &Shapes, spacing_mm: f64) -> (Shapes, Shapes) {
     if region.is_empty() {
@@ -632,5 +655,75 @@ fn clip_end(points: &mut Vec<IntPoint<i32>>, widths: &mut Vec<i32>, d: f64) {
         left -= len;
         points.pop();
         widths.pop();
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::indexing_slicing)]
+mod tests {
+    use super::*;
+
+    /// A shape from rings of points in mm (outer counterclockwise, holes clockwise).
+    fn shape(rings: &[&[[f64; 2]]]) -> Vec<Vec<IntPoint<i32>>> {
+        rings
+            .iter()
+            .map(|r| r.iter().map(|p| IntPoint::new(mm(p[0]), mm(p[1]))).collect())
+            .collect()
+    }
+
+    fn rect(x0: f64, y0: f64, x1: f64, y1: f64) -> Vec<[f64; 2]> {
+        vec![[x0, y0], [x1, y0], [x1, y1], [x0, y1]]
+    }
+
+    #[test]
+    fn a_bambu_piece_is_narrow_when_no_6_mm_circle_fits() {
+        // A 40 mm bar just under and just over 6 mm wide.
+        let thin = vec![shape(&[&rect(0.0, 0.0, 40.0, 5.95)])];
+        let wide = vec![shape(&[&rect(0.0, 0.0, 40.0, 6.05)])];
+        assert_eq!(split_pieces(&thin), (Vec::new(), thin.clone()));
+        assert_eq!(split_pieces(&wide), (wide.clone(), Vec::new()));
+        // Turned, it is the same: no line direction enters the test.
+        let diag = |w: f64| {
+            let (c, s) = (std::f64::consts::FRAC_1_SQRT_2, std::f64::consts::FRAC_1_SQRT_2);
+            let pts: Vec<[f64; 2]> = rect(0.0, 0.0, 40.0, w)
+                .iter()
+                .map(|p| [50.0 + p[0] * c - p[1] * s, 50.0 + p[0] * s + p[1] * c])
+                .collect();
+            vec![shape(&[&pts])]
+        };
+        assert!(split_pieces(&diag(5.95)).0.is_empty());
+        assert!(split_pieces(&diag(6.05)).1.is_empty());
+    }
+
+    #[test]
+    fn a_bambu_piece_is_never_cut() {
+        // A 30 by 12 mm body with a 2.5 mm wide arm: one piece, wide somewhere, so all of it keeps its lines.
+        let t: Vec<[f64; 2]> = vec![
+            [0.0, 0.0],
+            [30.0, 0.0],
+            [30.0, 12.0],
+            [16.25, 12.0],
+            [16.25, 27.5],
+            [13.75, 27.5],
+            [13.75, 12.0],
+            [0.0, 12.0],
+        ];
+        let piece = vec![shape(&[&t])];
+        assert_eq!(split_pieces(&piece), (piece.clone(), Vec::new()));
+        // Two pieces side by side are decided apart.
+        let two = vec![
+            shape(&[&rect(0.0, 0.0, 30.0, 5.0)]),
+            shape(&[&rect(0.0, 11.0, 30.0, 23.0)]),
+        ];
+        let (normal, narrow) = split_pieces(&two);
+        assert_eq!((normal, narrow), (vec![two[1].clone()], vec![two[0].clone()]));
+    }
+
+    #[test]
+    fn a_ring_round_a_hole_is_narrow() {
+        // A 12 mm square round a 7 mm hole: a 2.5 mm ring.
+        let hole: Vec<[f64; 2]> = rect(2.5, 2.5, 9.5, 9.5).into_iter().rev().collect();
+        let ring = vec![shape(&[&rect(0.0, 0.0, 12.0, 12.0), &hole])];
+        assert_eq!(split_pieces(&ring), (Vec::new(), ring.clone()));
     }
 }
