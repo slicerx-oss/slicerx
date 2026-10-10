@@ -761,12 +761,11 @@ test('feature tooltips show with their key, hand over quickly, explain a disable
   // Never earlier than the spec's 450 ms. A loaded machine can be much later, so there is no upper bound here.
   const cold = await delay()
   expect(cold).toBeGreaterThanOrEqual(430)
-  // A neighbor right after shows almost at once.
-  await page.evaluate(() => { (window as unknown as { __tip: { over: number; shown: number } }).__tip = { over: 0, shown: 0 } })
+  // A neighbor right after takes the quick hand over. Its 60 ms is checked in the unit test with a fake clock: here a
+  // frame of the software-drawn 3D view can hold the page for a second or more, longer than either delay.
   await rotate.hover()
   await expect(tip).toContainText('Drag a ring to turn the model around that axis.')
-  // Warm is the quick hand over: clearly faster than the cold delay.
-  expect(await delay()).toBeLessThan(cold * 0.6)
+  await expect(tip).toHaveAttribute('data-warm', 'true')
   await page.keyboard.press('Escape')
   await expect(tip).toHaveCount(0)
   // A disabled tool still explains itself.
