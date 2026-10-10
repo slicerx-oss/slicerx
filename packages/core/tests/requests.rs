@@ -2591,6 +2591,31 @@ fn objects_can_carry_their_own_settings() {
 }
 
 #[test]
+fn an_object_printed_by_object_keeps_its_own_layer_height() {
+    // Two 6 mm boxes printed one after the other, the right one with 0.1 mm layers: it gets about twice the
+    // layers of the left one, which keeps the plate's 0.2 mm.
+    let run = boxes_with_settings(
+        json!({"layer_height": 0.1}),
+        json!({"brim_width": 0, "layer_height": 0.2, "print_sequence": "by object"}),
+    );
+    let layers = |right: bool| {
+        let mut zs: Vec<f64> = features_by_layer(&text(&run))
+            .into_iter()
+            .filter(|m| (m.2 > 120.0) == right)
+            .map(|m| m.0)
+            .collect();
+        zs.sort_by(f64::total_cmp);
+        zs.dedup();
+        zs.len()
+    };
+    let (left, right) = (layers(false), layers(true));
+    assert!(
+        right + 2 >= left * 2 && right <= left * 2 + 2,
+        "left {left} layers, right {right}"
+    );
+}
+
+#[test]
 fn sleipnir_keeps_fixed_layers_where_colors_change() {
     // A 12 mm box on filament 1 beside a 6 mm box on filament 2, asked for 0.1 mm layers all the way
     // up. Up to 6 mm every layer prints both filaments, so those layers stay at the fixed 0.2 mm and

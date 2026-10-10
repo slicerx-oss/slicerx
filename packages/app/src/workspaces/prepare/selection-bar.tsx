@@ -44,7 +44,7 @@ function useSelectionVerbs() {
   const sum = selectionSummary(plate, ids)
   const others = plates.filter((p) => p.id !== active)
   const moreOpen = useApp((s) => s.moreOpen['object'] === true)
-  const verbs: Record<'arrange' | 'transform' | 'move' | 'skip' | 'lock' | 'center' | 'drop' | 'duplicate' | 'delete' | 'more', MenuEntry> = {
+  const verbs: Record<'arrange' | 'transform' | 'move' | 'skip' | 'lock' | 'center' | 'drop' | 'duplicate' | 'delete' | 'more' | 'clear', MenuEntry> = {
     arrange: { id: 'arrange', label: 'Arrange', icon: 'arrange', testId: 'slice-ctx-arrange', run: () => void runCommand('arrange-selection') },
     transform: { id: 'transform', label: 'Transform', icon: 'move', testId: 'slice-ctx-transform', run: () => setTransform(true) },
     move: {
@@ -66,6 +66,8 @@ function useSelectionVerbs() {
     delete: { id: 'delete', label: 'Delete', icon: 'delete', shortcut: 'Delete', danger: true, testId: 'danger-slice-ctx-delete', run: deleteSelection },
     // Simple's More for the object (its volumes), which has no button of its own there.
     more: { id: 'more', label: moreOpen ? 'Hide volumes' : 'Volumes', icon: 'sliders', testId: 'slice-ctx-more', run: () => set((s) => ({ moreOpen: { ...s.moreOpen, object: !moreOpen } })) },
+    // Simple's way out of the selection, in its menu: Esc does the same.
+    clear: { id: 'clear', label: 'Clear selection', icon: 'close', shortcut: 'Esc', testId: 'slice-ctx-clear', run: clearSelection },
   }
   return { ids, sum, verbs, hasPlates: others.length > 0 }
 }
@@ -104,8 +106,9 @@ export function SelectionActions() {
   }, [shown])
   if (!shown) return null
   const close = () => setMenu(null)
-  // Simple keeps the bar to its count, the menu and the way out (the rows have their own lock and print toggles).
-  const more = simple ? [verbs.skip, verbs.lock, verbs.arrange, verbs.transform, verbs.center, verbs.drop, verbs.duplicate, verbs.more, verbs.delete] : [verbs.center, verbs.drop, verbs.duplicate, verbs.delete]
+  // The rows have their own lock and print toggles.
+  // Simple keeps the bar to its count and the menu: the Simple control budget (minimal.spec) has room for no more.
+  const more = simple ? [verbs.skip, verbs.lock, verbs.arrange, verbs.transform, verbs.center, verbs.drop, verbs.duplicate, verbs.more, verbs.clear, verbs.delete] : [verbs.center, verbs.drop, verbs.duplicate, verbs.delete]
   const popover = (
     <Popover open={transform} onClose={() => setTransform(false)} label="Transform" align="end" className="selbar-transform">
       <ObjectTransform full />
@@ -119,6 +122,7 @@ export function SelectionActions() {
       count={<span data-testid="slice-selection-count">{sum.count} selected</span>}
       onClear={clearSelection}
       clearTestId="slice-selection-clear"
+      clearable={!simple}
     >
       {simple ? null : (
         <>

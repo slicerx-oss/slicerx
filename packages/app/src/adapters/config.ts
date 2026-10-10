@@ -95,6 +95,11 @@ export function easyConfig(easy: EasySettings): PrintConfig {
   return profile ? applyEasy(easy, { ...baseConfig(), ...profile.values } as PrintConfig, profile.touched) : applyEasy(easy, baseConfig())
 }
 
+/** easyConfig with `controls` applied as if the person had moved them: what a choice for one object gives. */
+export function easyConfigFor(easy: EasySettings, controls: readonly string[]): PrintConfig {
+  return profile ? applyEasy(easy, { ...baseConfig(), ...profile.values } as PrintConfig, new Set([...profile.touched, ...controls])) : applyEasy(easy, baseConfig())
+}
+
 export const GOALS: readonly EasyGoal[] = ['draft', 'standard', 'fine', 'strong']
 
 export function isGoal(v: string): v is EasyGoal {

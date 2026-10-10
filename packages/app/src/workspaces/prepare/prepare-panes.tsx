@@ -44,6 +44,7 @@ import { useModelMode } from '../../state/model-mode'
 import { useCompactLayout } from '../../lib/phone-layout'
 import { MiddleName, shortPrinterName } from '../../lib/short-name'
 import { EasySettingsPanel } from './easy-settings'
+import { ScopeBar, useScope } from './scope-bar'
 const ExpertSettings = lazy(() => import('./expert-settings').then((m) => ({ default: m.ExpertSettings })))
 
 
@@ -114,6 +115,7 @@ export function PrepareLeft({ layout }: { layout: LayoutSpec }) {
   const objectsFirst = objectList === 'sidebar-above-settings'
   // Design has no printer, filament or print settings: it models parts; Slice sets them up for printing.
   const design = useModelMode() === 'design'
+  const scoped = useScope().scope.kind !== 'plate'
   return (
     <>
       {/* A phone's sheet scrolls as one, so the printer and filaments lead it instead of sitting pinned. */}
@@ -140,11 +142,13 @@ export function PrepareLeft({ layout }: { layout: LayoutSpec }) {
               ) : undefined
             }
             data-section="settings"
+            data-scope={scoped ? 'objects' : undefined}
           >
+            <ScopeBar />
             <EasySettingsPanel />
           </Block>
           {expertVisible ? (
-            <Block title={tierTitle} icon="settings" expanded={expertOpen} onExpandedChange={(v) => set({ expertOpen: v })} id="expert-toggle" data-section="expert">
+            <Block title={tierTitle} icon="settings" expanded={expertOpen} onExpandedChange={(v) => set({ expertOpen: v })} id="expert-toggle" data-section="expert" data-scope={scoped ? 'objects' : undefined}>
               {expertOpen ? (
                 <Suspense fallback={<div className="ws-loading" aria-busy="true" />}>
                   <ExpertSettings />

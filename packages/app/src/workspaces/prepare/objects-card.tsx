@@ -17,7 +17,6 @@ import { ObjectRow } from './object-row'
 import { useMore } from '../../shell/more'
 import './objects.css'
 
-const ObjectSettings = lazy(() => import('./object-settings').then((m) => ({ default: m.ObjectSettings })))
 const ObjectVolumes = lazy(() => import('./object-volumes').then((m) => ({ default: m.ObjectVolumes })))
 const HistoryPanel = lazy(() => import('../../cad/history/history-panel').then((m) => ({ default: m.HistoryPanel })))
 const CadPanel = lazy(() => import('../../cad/cad-panel').then((m) => ({ default: m.CadPanel })))
@@ -205,14 +204,9 @@ export function PrepareObjects() {
         </Suspense>
       ) : null}
       {more ? (
-        <>
-          <Suspense fallback={null}>
-            <ObjectVolumes />
-          </Suspense>
-          <Suspense fallback={null}>
-            <ObjectSettings />
-          </Suspense>
-        </>
+        <Suspense fallback={null}>
+          <ObjectVolumes />
+        </Suspense>
       ) : null}
       <ToolDialogHost />
     </Block>

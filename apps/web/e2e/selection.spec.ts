@@ -52,19 +52,20 @@ test('Shift selects a range, Mod toggles, and Esc clears the selection and hides
   await page.keyboard.press('Escape')
   await expect(bar(page)).toHaveCount(0)
   expect((await state(page)).selection).toBeNull()
-  // The bar's close button does the same.
+  // Simple's Actions menu does the same.
   await select(page, 1)
-  await page.getByTestId('slice-selection-clear').click()
+  await page.getByTestId('slice-selection-more').click()
+  await page.getByTestId('slice-ctx-clear').click()
   await expect(bar(page)).toHaveCount(0)
 })
 
-test('Simple keeps the bar to its count, its menu and Clear, with every verb in the menu', async ({ page }) => {
+test('Simple keeps the bar to its count and its menu, with every verb and Clear selection in the menu', async ({ page }) => {
   await open(page)
   await select(page, 0)
-  await expect(bar(page).getByRole('button')).toHaveCount(2)
+  await expect(bar(page).getByRole('button')).toHaveCount(1)
   await page.getByTestId('slice-selection-more').click()
   const menu = page.getByTestId('slice-selection-menu')
-  await expect(menu.getByRole('menuitem')).toHaveText(['Skip', 'Lock', 'Arrange', 'Transform', 'Center', 'Drop to bed', /^Duplicate/, 'Volumes', /^Delete/])
+  await expect(menu.getByRole('menuitem')).toHaveText(['Skip', 'Lock', 'Arrange', 'Transform', 'Center', 'Drop to bed', /^Duplicate/, 'Volumes', /^Clear selection/, /^Delete/])
   await menu.getByTestId('slice-ctx-skip').click()
   expect((await state(page)).plate[0]!.printable).toBe(false)
   // The object's volumes, Simple's More for it.

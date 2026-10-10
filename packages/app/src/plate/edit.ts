@@ -129,7 +129,7 @@ export function selectObject(id: string, mode: SelectMode | boolean): void {
 
 /** Nothing selected. */
 export function clearSelection(): void {
-  set({ selection: null, selectedIds: [] })
+  set({ selection: null, selectedIds: [], settingsScope: 'plate', scopePart: null })
 }
 
 export function selectAll(): void {

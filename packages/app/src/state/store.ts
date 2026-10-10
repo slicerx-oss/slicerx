@@ -403,6 +403,10 @@ export interface AppState {
   activePlate: string
   /** Per-object setting overrides by object id, in Orca keys. */
   objectSettings: Record<string, Record<string, SettingValue>>
+  /** What Print settings edits while objects are selected: the plate (the default) or the selection. plate/scope.ts */
+  settingsScope: 'plate' | 'objects'
+  /** A part picked in an object's tree: with that object alone selected, the object scope is that part. */
+  scopePart: { id: string; part: string } | null
   /** What the connected printer reports for its filament slots; the AMS panel keeps it current. */
   printerSlots: FilamentSlot[]
   /** The selected printer's `nozzle_volume` from its profile, the base of every flush volume. */
@@ -707,6 +711,8 @@ export const appStore = createStore<AppState>()(() => ({
   plates: [{ id: 'plate-1', name: 'Plate 1', objects: [], settings: {} }],
   activePlate: 'plate-1',
   objectSettings: {},
+  settingsScope: 'plate',
+  scopePart: null,
   printerSlots: [],
   printerNozzleVolume: 0,
   tower: { auto: true, x: 0, y: 0 },

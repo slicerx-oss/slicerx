@@ -16,10 +16,13 @@ import { useFilamentCount } from '../../filament/count'
 import { fuzzyScore } from '../../commands/fuzzy'
 import { effectiveMode, useLayout } from '../../first-run/look'
 import { OPTION_TIPS, settingTipAttrs } from '../../lib/tips'
+import { variesPerObject } from '../../plate/plate-wide'
 import { setPlateSettings } from '../../plate/plates'
+import { ownKeys, scopeValue, setScoped } from '../../plate/scope'
 import { plateSequence } from '../../plate/plate-sequence'
 import { get, markStale, set, useApp, type PlateMeta, type SettingsMode } from '../../state/store'
 import { appName } from '../../edition'
+import { useScope } from './scope-bar'
 
 export const EDITABLE = new Set(['float', 'int', 'percent', 'bool', 'enum', 'floats', 'ints', 'percents', 'floatOrPercent'])
 
@@ -93,9 +96,22 @@ function optionTipAttrs(key: string, value: unknown): Record<string, string> {
 /** Named marks for the values that carry one: aegis in the wall generator, shown as a segmented picker. */
 const MARKED: Record<string, Partial<Record<string, IconName>>> = { wall_generator: { aegis: 'aegis' } }
 
-export function Field({ def, value, overridden, onSet = setOverride, idPrefix = 'set', note }: { def: SettingDef; value: SettingValue | undefined; overridden: boolean; onSet?: (key: string, value: SettingValue | undefined) => void; idPrefix?: string; note?: ReactNode }) {
+/**
+ * A row read through the selection's scope: inherited from the plate, the selection's own, or mixed across it.
+ * `locked` says why the setting holds for the whole plate.
+ */
+export interface FieldScope {
+  source: 'own' | 'plate' | 'mixed'
+  plateValue: SettingValue | undefined
+  locked?: string
+}
+
+export function Field({ def, value, overridden, onSet = setOverride, idPrefix = 'set', note, scoped }: { def: SettingDef; value: SettingValue | undefined; overridden: boolean; onSet?: (key: string, value: SettingValue | undefined) => void; idPrefix?: string; note?: ReactNode; scoped?: FieldScope }) {
   const id = `${idPrefix}-${def.key}`
   const setOverride = onSet
+  const mixed = scoped?.source === 'mixed'
+  const locked = scoped?.locked
+  const lockTip = locked ? { 'data-tip-title': def.label ?? def.key, 'data-tip-reason': locked } : {}
   // The setting's key shows under its label in developer mode only; the row's tooltip carries the note.
   const showKey = useApp((s) => s.settingsMode === 'developer')
   const scalar = Array.isArray(value) ? value[0] : value
@@ -103,17 +119,18 @@ export function Field({ def, value, overridden, onSet = setOverride, idPrefix = 
   const own = presetOwnValue(def.key)
   let control
   if (def.type === 'bool') {
-    control = <Switch id={id} checked={value === true} onChange={(v) => setOverride(def.key, v)} />
+    control = <Switch id={id} checked={value === true} disabled={Boolean(locked)} onChange={(v) => setOverride(def.key, v)} />
   } else if (def.type === 'enum' && marks) {
     const options = offeredValues(def, scalar).map(({ value: v, label }) => {
       const icon = marks[v]
       const tip = OPTION_TIPS[`${def.key}.${v}`]
       return { value: v, label: icon ? <span className="seg-mark"><Icon name={icon} size={15} />{label}</span> : label, ...(tip ? { title: tip.body } : {}) }
     })
-    control = <Seg label={def.label ?? def.key} size="sm" value={String(scalar ?? '')} options={options} onChange={(v) => setOverride(def.key, v)} className="tier-seg" />
+    control = <Seg label={def.label ?? def.key} size="sm" value={String(scalar ?? '')} options={locked ? options.map((o) => ({ ...o, disabled: true })) : options} onChange={(v) => setOverride(def.key, v)} className="tier-seg" />
   } else if (def.type === 'enum') {
     control = (
-      <select id={id} className="mini" value={String(scalar ?? '')} {...optionTipAttrs(def.key, scalar)} onChange={(e) => setOverride(def.key, e.currentTarget.value)}>
+      <select id={id} className="mini" value={mixed ? '' : String(scalar ?? '')} disabled={Boolean(locked)} {...optionTipAttrs(def.key, scalar)} onChange={(e) => e.currentTarget.value && setOverride(def.key, e.currentTarget.value)}>
+        {mixed ? <option value="">Mixed</option> : null}
         {offeredValues(def, scalar).map(({ value: v, label, gone }) => (
           <option key={v} value={v}>
             {label}
@@ -130,10 +147,11 @@ export function Field({ def, value, overridden, onSet = setOverride, idPrefix = 
           key={String(scalar)}
           className="mini sx-mono"
           inputMode="decimal"
-          placeholder={def.auto ? 'Auto' : undefined}
-          defaultValue={isAuto(def, scalar) ? '' : String(scalar ?? '')}
+          placeholder={mixed ? 'Mixed' : def.auto ? 'Auto' : undefined}
+          disabled={Boolean(locked)}
+          defaultValue={mixed || isAuto(def, scalar) ? '' : String(scalar ?? '')}
           onBlur={(e) => {
-            const shown = isAuto(def, scalar) ? '' : String(scalar ?? '')
+            const shown = mixed || isAuto(def, scalar) ? '' : String(scalar ?? '')
             if (e.currentTarget.value === shown) return
             const v = parseInput(def, e.currentTarget.value)
             if (v !== undefined) setOverride(def.key, v)
@@ -155,13 +173,22 @@ export function Field({ def, value, overridden, onSet = setOverride, idPrefix = 
     )
   }
   return (
-    <li className={overridden ? 'field changed' : 'field'} data-wide={marks ? true : undefined} {...settingTipAttrs(def.key)}>
+    <li
+      className={[overridden ? 'field changed' : 'field', scoped?.source === 'plate' ? 'inherited' : '', locked ? 'locked' : ''].filter(Boolean).join(' ')}
+      data-wide={marks ? true : undefined}
+      data-testid="slice-setting-row"
+      data-key={def.key}
+      data-source={scoped ? scoped.source : 'plate'}
+      {...settingTipAttrs(def.key)}
+      {...lockTip}
+    >
       <label htmlFor={id}>
         {def.label}
         {showKey ? <span className="key">{def.key}</span> : null}
+        {scoped && !locked ? <span className="scope-from">{scoped.source === 'plate' ? 'from plate' : scoped.source === 'mixed' ? 'differs across the selection' : `plate ${formatValue(def, scoped.plateValue)}`}</span> : null}
       </label>
       {control}
-      {!overridden && own !== null ? (
+      {!scoped && !overridden && own !== null ? (
         <p className="sx-small sx-muted slicerx-default" style={{ gridColumn: '1 / -1', margin: 0 }}>
           {appName()} default. This printer's preset says {String(Array.isArray(own) ? own[0] : own)}.{' '}
           <LinkButton onClick={() => setOverride(def.key, own)}>Use this preset's own ({String(Array.isArray(own) ? own[0] : own)})</LinkButton>
@@ -173,7 +200,7 @@ export function Field({ def, value, overridden, onSet = setOverride, idPrefix = 
         </p>
       ) : null}
       {overridden ? (
-        <button type="button" className="reset" onClick={() => setOverride(def.key, undefined)} aria-label={`Reset ${def.label}`} {...tipAttrs({ title: 'Reset', body: 'Go back to the Easy value.' })}>
+        <button type="button" className="reset" data-testid="slice-setting-reset" data-key={def.key} onClick={() => setOverride(def.key, undefined)} aria-label={`Reset ${def.label}`} {...tipAttrs({ title: 'Reset', body: scoped ? 'Go back to the plate\'s value.' : 'Go back to the Easy value.' })}>
           <Icon name="rotate" />
         </button>
       ) : (
@@ -291,21 +318,33 @@ export function ExpertSettings() {
   const config = useMemo(() => resolveConfig(easy, overrides), [easy, overrides])
   const activeMeta = useApp((s) => s.plates.find((p) => p.id === s.activePlate))
   const seqNote = plateSequenceNote(activeMeta, config)
-  const field = (def: SettingDef) =>
+  // With the selection's scope picked, each row reads and writes the selection's own values over the plate's.
+  const { scope, name: scopeName } = useScope()
+  const plate = useApp((s) => s.plate)
+  const objectSettings = useApp((s) => s.objectSettings)
+  const scoped = scope.kind !== 'plate'
+  const own = useMemo(() => ownKeys({ plate, objectSettings }, scope), [plate, objectSettings, scope])
+  const field = (def: SettingDef) => {
+    if (scoped) {
+      const sv = scopeValue({ plate, objectSettings }, config, def.key, scope)
+      const locked = variesPerObject(def) ? undefined : 'Set for the whole plate'
+      return <Field key={def.key} def={def} value={sv.value} overridden={!locked && sv.source !== 'plate'} onSet={(k, v) => setScoped(get(), scope, k, v)} scoped={{ source: sv.source, plateValue: sv.plateValue, ...(locked ? { locked } : {}) }} />
+    }
     // The prime tower is one switch with atlas's placement under it (prime-tower-row.tsx).
-    def.key === 'enable_prime_tower' ? (
+    return def.key === 'enable_prime_tower' ? (
       <PrimeTowerRow key={def.key} enabled={on(config[def.key])} onEnable={(v) => setOverride(def.key, v)} />
     ) : def.key === 'print_sequence' ? (
       <Field key={def.key} def={def} value={config[def.key]} overridden={def.key in overrides} onSet={setSequence} note={seqNote} />
     ) : (
       <Field key={def.key} def={def} value={config[def.key]} overridden={def.key in overrides} />
     )
+  }
   const editable = useMemo(() => SETTINGS.filter((d) => EDITABLE.has(d.type) && d.section === 'process'), [])
   const matches = (def: SettingDef) => !q || fuzzyScore(q, def.label) >= 0 || fuzzyScore(q, def.key) >= 0
   const groups = useMemo((): Group[] => {
     const out: Group[] = INTENTS.map((intent) => ({ intent, shown: [], more: [] }))
     for (const def of editable) {
-      const changed = def.key in overrides
+      const changed = def.key in overrides || own.has(def.key)
       // Profile keys show nowhere, and multi-color keys only with two or more filaments (a key the person already changed stays listed).
       if (!changed && !isVisible(def, { filamentCount })) continue
       // The tower's place is atlas's, under the Prime tower switch (prime-tower-row.tsx), not a row of its own.
@@ -332,13 +371,14 @@ export function ExpertSettings() {
       }
     }
     return out
-  }, [editable, overrides, filamentCount, expert, levels, q])
+  }, [editable, overrides, own, filamentCount, expert, levels, q])
   const visible = groups
     .map((g) => {
       const open = Boolean(q) || opened.has(g.intent.id)
       const shown = g.shown.filter(matches)
-      const more = (open ? g.more : g.more.filter((d) => d.key in overrides)).filter(matches)
-      return { ...g, open, shown, more, hidden: open ? 0 : g.more.length - g.more.filter((d) => d.key in overrides).length }
+      const kept = (d: SettingDef) => d.key in overrides || own.has(d.key)
+      const more = (open ? g.more : g.more.filter(kept)).filter(matches)
+      return { ...g, open, shown, more, hidden: open ? 0 : g.more.length - g.more.filter(kept).length }
     })
     .filter((g) => g.shown.length || g.more.length || (!q && g.hidden))
   const count = visible.reduce((n, g) => n + g.shown.length + g.more.length, 0)
@@ -426,7 +466,7 @@ export function ExpertSettings() {
           </h4>
           {!q ? <p className="tier-blurb">{g.intent.blurb}</p> : null}
           <ul>
-            {g.intent.id === 'quality' && !q ? (
+            {g.intent.id === 'quality' && !q && !scoped ? (
               <>
                 <ChoiceRow name="overhangSlowdown" config={config} overrides={overrides} />
                 <ChoiceRow name="unsupportedOverhangs" config={config} overrides={overrides} />
@@ -447,7 +487,8 @@ export function ExpertSettings() {
       </div>
       {/* Print sequence is an Expert row; below Expert the note still shows when the plate prints otherwise. */}
       {!expert && seqNote ? <p className="app-note">{seqNote}</p> : null}
-      <p className="app-note">Changes apply to this plate. Saved profiles stay as they are. {Object.keys(overrides).length ? `${Object.keys(overrides).length} changed: ${Object.keys(overrides).slice(0, 3).map((k) => { const d = SETTINGS.find((x) => x.key === k); return `${d?.label ?? k} ${formatValue(d, config[k])}` }).join(', ')}` : ''}</p>
+      {scoped ? <p className="app-note">Changes apply to {scopeName} only, over the plate's settings.</p> : null}
+      <p className="app-note" hidden={scoped}>Changes apply to this plate. Saved profiles stay as they are. {Object.keys(overrides).length ? `${Object.keys(overrides).length} changed: ${Object.keys(overrides).slice(0, 3).map((k) => { const d = SETTINGS.find((x) => x.key === k); return `${d?.label ?? k} ${formatValue(d, config[k])}` }).join(', ')}` : ''}</p>
     </div>
   )
 }
