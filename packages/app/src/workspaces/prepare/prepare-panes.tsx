@@ -20,7 +20,6 @@ import { useResolvedSlots } from '../../filament/use-slots'
 import { slotLabel } from '../../filament/rail'
 import { estimateLine, partCount, slicedIn, triangles } from '../../lib/estimate-line'
 import { effectiveSlot } from '../../filament/slots'
-import { useFitWatch } from '../../plate/fit-check'
 import { moveObject, objectWarnings, renameObject, searchObjects, setPartSlot, toggleLock, togglePrintable } from '../../plate/object-list'
 import { printBlock } from '../../plate/heimdall'
 import { sequenceProblem } from '../../plate/sequence-check'
@@ -199,7 +198,6 @@ export function PrepareObjects() {
   // The CAD history list loads only for a selected object that has one (or whose step is open).
   const historyOf = useApp((s) => (s.historyEdit ? s.historyEdit.objectId : s.plate.find((p) => p.id === s.selection)?.history ? s.selection : null))
   const names = new Map(plate.map((p) => [p.id, p.name]))
-  useFitWatch()
   const matches = new Map(searchObjects(plate, query).map((m) => [m.id, m]))
   const searching = query.trim() !== ''
   return (
