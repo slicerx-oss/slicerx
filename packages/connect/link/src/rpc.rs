@@ -69,6 +69,10 @@ pub(crate) struct Bridge {
     next_conn: AtomicU64,
     /// Request id to the connection that registered it, for cards agents raise.
     pub(crate) card_owners: StdMutex<HashMap<String, u64>>,
+    /// Request id to the partner app that raised it, by the name its key was made with. The hub
+    /// adds it to the card as `partner`, so the app can say who asked without reading the
+    /// partner's own lines.
+    pub(crate) card_partners: StdMutex<HashMap<String, String>>,
     /// Agent work waiting for a person's answer.
     pub(crate) agent_work: crate::agent_work::Waiting,
     /// Live connections of remembered clients, so revoking a key closes them at once.
@@ -172,6 +176,7 @@ impl Bridge {
             hub,
             next_conn: AtomicU64::new(1),
             card_owners: StdMutex::new(HashMap::new()),
+            card_partners: StdMutex::new(HashMap::new()),
             agent_work: crate::agent_work::Waiting::default(),
             live_clients: StdMutex::new(Vec::new()),
             remote,
@@ -1398,6 +1403,9 @@ fn register_card(b: &Arc<Bridge>, broker: &sx_permit::ApprovalBroker, conn: &Con
     if let (Some(w), Some(o)) = (&work, card.as_object_mut()) {
         o.insert("work".into(), w.summary());
     }
+    if let (Some(name), Some(o)) = (&conn.partner, card.as_object_mut()) {
+        o.insert("partner".into(), json!(name));
+    }
     match (conn.role, person, work) {
         (Role::Agent, true, Some(w)) => b
             .agent_work
@@ -1423,6 +1431,9 @@ fn register_card(b: &Arc<Bridge>, broker: &sx_permit::ApprovalBroker, conn: &Con
     if let Err(e) = broker.register(req) {
         let _ = b.agent_work.take(&id);
         return Err(bad(e));
+    }
+    if let Some(name) = &conn.partner {
+        crate::hub::lock(&b.card_partners).insert(id.clone(), name.clone());
     }
     if conn.role == Role::Agent {
         crate::hub::lock(&b.card_owners).insert(id.clone(), conn.id);
@@ -1512,6 +1523,12 @@ async fn approval_call(b: &Arc<Bridge>, conn: &Conn, method: &str, p: &Value) ->
                     let mut v = serde_json::to_value(&r).unwrap_or(Value::Null);
                     if let (Some(w), Some(o)) = (b.agent_work.summary(&r.id), v.as_object_mut()) {
                         o.insert("work".into(), w);
+                    }
+                    if let (Some(name), Some(o)) = (
+                        crate::hub::lock(&b.card_partners).get(&r.id).cloned(),
+                        v.as_object_mut(),
+                    ) {
+                        o.insert("partner".into(), json!(name));
                     }
                     v
                 })
