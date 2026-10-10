@@ -2815,6 +2815,69 @@ async fn a_partner_app_pauses_and_cancels_but_never_approves_a_start_resumes_sen
 }
 
 #[tokio::test]
+async fn the_app_hears_when_another_client_answers_a_card_it_lists() {
+    let link = hub(None).await;
+    let mocks = common::Mocks::start("moonraker", &[]).await;
+    let mut app = paired(&link).await;
+    add_bay4(&mut app, &mocks).await;
+    let (mut p, _, _) = partner(&link, &mut app, "LayerMate").await;
+    let printer = json!({ "printerId": "bay-4" });
+    let listed = |r: &Value, id: &str| r["result"].as_array().unwrap().iter().any(|c| c["id"] == id);
+
+    // A partner's own pause card is in the app's list until the partner answers it.
+    for (i, id) in ["lp-1", "lp-2"].into_iter().enumerate() {
+        let r = call(
+            &mut p,
+            10 + i as u64,
+            "approvals.register",
+            json!({ "request": card(id, "printer.pause", "printer.pause", &printer) }),
+        )
+        .await;
+        assert_eq!(r["result"]["answeredIn"], "here", "{r}");
+    }
+    let r = call(&mut app, 20, "approvals.pending", json!({})).await;
+    assert!(listed(&r, "lp-1") && listed(&r, "lp-2"), "{r}");
+    let r = call(&mut p, 21, "approvals.grant", json!({ "requestId": "lp-1" })).await;
+    assert!(r["result"].is_object(), "{r}");
+    let done = wait_event(&mut app, "approval.resolved", |d| d["requestId"] == "lp-1").await;
+    assert_eq!(
+        done,
+        json!({ "requestId": "lp-1", "decision": "granted", "via": "partner", "by": "LayerMate" })
+    );
+    let r = call(&mut p, 22, "approvals.deny", json!({ "requestId": "lp-2" })).await;
+    assert_eq!(r["result"]["denied"], true, "{r}");
+    let done = wait_event(&mut app, "approval.resolved", |d| d["requestId"] == "lp-2").await;
+    assert_eq!(done["decision"], "denied", "{done}");
+    assert_eq!(done["via"], "partner", "{done}");
+    let r = call(&mut app, 23, "approvals.pending", json!({})).await;
+    assert!(!listed(&r, "lp-1") && !listed(&r, "lp-2"), "{r}");
+
+    // An agent withdrawing its card, and an answer in the app, say so too.
+    let mut ag = agent(&link).await;
+    for (i, id) in ["ap-1", "ap-2"].into_iter().enumerate() {
+        let r = call(
+            &mut ag,
+            30 + i as u64,
+            "approvals.register",
+            json!({ "request": card(id, "printer.pause", "printer.pause", &printer) }),
+        )
+        .await;
+        assert_eq!(r["result"]["registered"], true, "{r}");
+    }
+    let r = call(&mut ag, 32, "approvals.deny", json!({ "requestId": "ap-1" })).await;
+    assert_eq!(r["result"]["denied"], true, "{r}");
+    let done = wait_event(&mut app, "approval.resolved", |d| d["requestId"] == "ap-1").await;
+    assert_eq!(
+        done,
+        json!({ "requestId": "ap-1", "decision": "denied", "via": "agent" })
+    );
+    let r = call(&mut app, 33, "approvals.deny", json!({ "requestId": "ap-2" })).await;
+    assert_eq!(r["result"]["denied"], true, "{r}");
+    let done = wait_event(&mut app, "approval.resolved", |d| d["requestId"] == "ap-2").await;
+    assert_eq!(done["via"], "app", "{done}");
+}
+
+#[tokio::test]
 async fn revoking_a_partner_key_cuts_its_live_connection_and_it_cannot_pair_again() {
     let link = hub(None).await;
     let mut app = paired(&link).await;
