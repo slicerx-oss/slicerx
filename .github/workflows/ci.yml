@@ -361,7 +361,14 @@ jobs:
       run:
         shell: 'C:\PROGRA~1\Git\bin\bash.exe --noprofile --norc -eo pipefail {0}'
     steps:
+      # The runner keeps its workspace between jobs. Checkout's own clean deletes every node_modules (and fails on
+      # Windows' path limit inside them), so pnpm relinks the whole tree each run. Instead: long paths on, checkout
+      # without its clean, then clean everything but node_modules; pnpm install brings those up to the lockfile.
+      - run: git config --global core.longpaths true
       - uses: actions/checkout@v4
+        with:
+          clean: false
+      - run: git clean -ffdxq -e node_modules
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
