@@ -222,7 +222,7 @@ describe.skipIf(!linkBuilt)('a phone reaching sx-link through the hosted relay',
     const dir = mkdtempSync(join(tmpdir(), 'sx-remote-'))
     // Its own relay: one address may hold only four connections without an account.
     const own = await startRelay()
-    const link = spawn(linkBin, ['--port', '0', '--state-dir', dir, '--secrets', 'file', '--no-mdns'], { stdio: ['ignore', 'pipe', 'pipe'] })
+    const link = spawn(linkBin, ['--port', '0', '--state-dir', dir, '--secrets', 'file', '--no-mdns', ...(process.env['SX_TEST_LAN'] === '1' ? [] : ['--loopback'])], { stdio: ['ignore', 'pipe', 'pipe'] })
     try {
       let out = ''
       const { linkUrl, code } = await new Promise<{ linkUrl: string; code: string }>((resolve, reject) => {

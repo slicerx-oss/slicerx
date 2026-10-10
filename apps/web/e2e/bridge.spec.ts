@@ -66,7 +66,7 @@ test.beforeAll(async ({}, testInfo) => {
   // The Bambu mock as an A1 with an AMS lite and white PLA on the side holder.
   await ctl('/bambu', { model: 'N2S', ams: 'lite', external: { type: 'PLA', color: '#FFFFFF' } })
   stateDir = mkdtempSync(join(tmpdir(), 'sx-link-e2e-'))
-  proc = spawn(bin!, ['--port', '47615', '--state-dir', stateDir, '--secrets', 'file', '--no-mdns'], { stdio: ['ignore', 'pipe', 'pipe'] })
+  proc = spawn(bin!, ['--port', '47615', '--state-dir', stateDir, '--secrets', 'file', '--no-mdns', ...(process.env['SX_TEST_LAN'] === '1' ? [] : ['--loopback'])], { stdio: ['ignore', 'pipe', 'pipe'] })
   let out = ''
   const url = await new Promise<string>((resolve, reject) => {
     proc!.stdout.on('data', (d: Buffer) => {

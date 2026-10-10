@@ -3,7 +3,7 @@
 Localhost bridge for the browser build. It serves connectors and approvals over one WebSocket, through the same code the desktop app links directly.
 
 ```
-sx-link [--port 47615] [--allow-origin https://staging.example] [--no-mdns]
+sx-link [--port 47615] [--allow-origin https://staging.example] [--no-mdns] [--loopback]
 ```
 
 ## Security
@@ -91,6 +91,10 @@ The listener is a byte pipe. The bridge does not read, log or interpret what a p
 With the listener on, the bridge announces `SlicerX-xxxx._slicerx._tcp.local` on UDP 5353 with the listener's port, this machine's private IPv4 addresses and the text record `v=1`. The instance name and the `sx-xxxxxxxx.local` host name are random per start, so the announcement says nothing about the user or the computer, and it never contains a pairing code or key. It is a hint about where to connect; a phone still has to complete the pairing handshake. It sends two announcements at start (one second apart), answers queries for `_slicerx._tcp` and for the instance and host names (at most 20 replies a second), and sends a goodbye when the listener stops or its owner leaves. The socket shares port 5353 with the system's own responder (`SO_REUSEPORT`), joins the multicast group on each private interface address, and needs no elevated rights.
 
 `sx-link --no-mdns` turns off advertising and the mDNS part of `discover`. Advertising is best effort: with no private IPv4 address, or a system that refuses the group, `pair.listen` still succeeds with `advertised: false`.
+
+### Test runs on loopback
+
+`sx-link --loopback` keeps every socket on `127.0.0.1`: the phone listener, printer discovery and probing, and direct video, with mDNS off (`LinkConfig::loopback()` in Rust). Nothing listens on the network, so a fresh test build never makes the OS firewall ask, and `discover` finds only printers on this machine, such as the mock printers. The tests that start sx-link (`SX_LINK_BIN`) pass it, and the Rust tests build their hubs on `LinkConfig::loopback()`. To run those Node tests against the real network on purpose, for example to see `discover` find the printers on your LAN, set `SX_TEST_LAN=1`: sx-link then starts without `--loopback`, and the firewall may ask once for that binary.
 
 ## Remote access (opt-in)
 

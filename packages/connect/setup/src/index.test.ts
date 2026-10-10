@@ -53,7 +53,7 @@ let host: LinkHost
 before(async () => {
   if (skip) return
   mocks = await startMocks({ only: ['moonraker'], state: 'idle' })
-  proc = spawn(bin, ['--port', '0', '--state-dir', dir, '--secrets', 'file', '--no-mdns'], { stdio: ['ignore', 'pipe', 'pipe'] })
+  proc = spawn(bin, ['--port', '0', '--state-dir', dir, '--secrets', 'file', '--no-mdns', ...(process.env['SX_TEST_LAN'] === '1' ? [] : ['--loopback'])], { stdio: ['ignore', 'pipe', 'pipe'] })
   let out = ''
   const [url, code] = await new Promise<[string, string]>((resolve, reject) => {
     proc.stdout.on('data', (d: Buffer) => {
