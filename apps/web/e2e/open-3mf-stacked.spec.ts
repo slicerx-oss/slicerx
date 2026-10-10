@@ -80,8 +80,13 @@ test('a 3MF with stacked objects keeps each at its height from the file, joined 
   expect(Math.min(...got.values())).toBeCloseTo(0, 2)
 
   // The open note offers to keep them separate: two objects again, at the same heights.
-  await expect(page.getByText(/2 of its objects touch, so they were loaded as one object with parts/)).toBeVisible()
-  await page.getByRole('button', { name: 'Keep separate' }).click()
+  // The note is a toast that closes after 8 s. A click waits for its enter animation to settle, and on a loaded
+  // machine that can outlast the toast, so the button is pressed as soon as the note shows.
+  const note = page.getByTestId('toast').filter({ hasText: /2 of its objects touch, so they were loaded as one object with parts/ })
+  await expect(note).toBeVisible()
+  const keep = note.getByRole('button', { name: 'Keep separate' })
+  await expect(keep).toBeVisible()
+  await keep.dispatchEvent('click')
   await expect.poll(async () => (await plate())?.map((o) => o.parts.length), { timeout: 30_000 }).toEqual([1, 1])
   const apart = heights((await plate())!)
   for (const [name, z] of want) expect(apart.get(name), name).toBeCloseTo(z - lowest, 2)
