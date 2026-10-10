@@ -166,6 +166,36 @@ fn has_percent(raw: &Json) -> bool {
     }
 }
 
+/// Bambu Studio 2.8 replaced the `reduce_infill_retraction` switch with `reduce_infill_retraction_mode`. Its tooltip:
+/// "Enabled" always skips retraction for travels within the infill area, "Disabled" always retracts, and "Auto" skips it
+/// for filaments with low metal stickiness (PLA) but not medium or high (PETG), where `filament_metal_stickiness` "None"
+/// (untested) counts as low. The engine has one switch for the print, so Auto turns it on when every filament of the
+/// file is low (or when it names no filament). `None` when the file has no mode, or one of another name, which then
+/// imports as before.
+pub(crate) fn infill_retraction_from_mode(merged: &BTreeMap<String, Json>) -> Option<bool> {
+    let one = |v: &Json| match v {
+        Json::Array(a) if a.len() == 1 => a.first().cloned().unwrap_or(Json::Null),
+        other => other.clone(),
+    };
+    let mode = one(merged.get("reduce_infill_retraction_mode")?);
+    match mode.as_str()?.trim().to_ascii_lowercase().as_str() {
+        "enabled" => Some(true),
+        "disabled" => Some(false),
+        "auto" => {
+            let low = |x: &Json| {
+                x.as_str()
+                    .is_some_and(|s| matches!(s.trim().to_ascii_lowercase().as_str(), "none" | "low" | "nil"))
+            };
+            Some(match merged.get("filament_metal_stickiness") {
+                None => true,
+                Some(Json::Array(a)) => a.iter().all(low),
+                Some(v) => low(v),
+            })
+        }
+        _ => None,
+    }
+}
+
 /// The result of reading one flat object of Orca JSON values.
 pub(crate) struct Flat {
     pub config: PrintConfig,
@@ -181,8 +211,15 @@ pub(crate) fn import_flat(merged: &BTreeMap<String, Json>) -> Flat {
     let mut config = PrintConfig::new();
     let (mut unknown, mut ignored, mut nil, mut invalid) =
         (BTreeSet::new(), BTreeSet::new(), BTreeSet::new(), BTreeSet::new());
+    let from_mode = infill_retraction_from_mode(merged);
     for (raw_key, raw_value) in merged {
         if rules.meta.contains(raw_key) {
+            continue;
+        }
+        // The mode replaces the old switch when the file has both (see `infill_retraction_from_mode`).
+        if from_mode.is_some()
+            && (raw_key == "reduce_infill_retraction_mode" || raw_key == "reduce_infill_retraction")
+        {
             continue;
         }
         if rules.ignored.contains(raw_key) && setting_def(raw_key).is_none() {
@@ -215,6 +252,9 @@ pub(crate) fn import_flat(merged: &BTreeMap<String, Json>) -> Flat {
                 invalid.insert(key);
             }
         }
+    }
+    if let Some(on) = from_mode {
+        config.set("reduce_infill_retraction", crate::value::Value::Bool(on));
     }
     Flat {
         config,

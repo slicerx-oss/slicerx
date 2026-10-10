@@ -124,3 +124,41 @@ describe("SlicerX's engine choices in an opened project", () => {
     expect(read.config['wall_generator']).toBe('arachne')
   })
 })
+
+/** A Bambu Studio 2.8 project: its infill retraction is a mode, with each filament's metal stickiness beside it. */
+function retractionProject(dir: string, name: string, mode: string, stickiness: string[]): string {
+  const path = join(dir, name)
+  writeFileSync(
+    path,
+    writeZip([
+      { name: '3D/3dmodel.model', data: MODEL },
+      {
+        name: 'Metadata/project_settings.config',
+        data: JSON.stringify({
+          printer_settings_id: 'Bambu Lab H2D 0.4 nozzle',
+          printer_model: 'Bambu Lab H2D',
+          reduce_infill_retraction_mode: mode,
+          filament_metal_stickiness: stickiness,
+        }),
+      },
+    ]),
+  )
+  return path
+}
+
+describe("a project's reduce_infill_retraction_mode", () => {
+  it('reaches the engine as reduce_infill_retraction: Auto with PLA skips retraction inside infill', async () => {
+    const h = await connect()
+    const read = readProjectFile(retractionProject(h.dir, 'auto.3mf', 'Auto', ['None', 'None', 'None', 'None']))
+    expect(read.config['reduce_infill_retraction']).toBe(true)
+    const r = resolveSliceConfig(h.ctx.store, h.ctx.profiles, [], undefined, { project: { name: 'auto.3mf', config: read.config } })
+    expect(sxConfig(r.explicit)['reduce_infill_retraction']).toBe(true)
+  })
+
+  it('keeps the retraction for a high stickiness filament on Auto, and when the mode is Disabled', async () => {
+    const h = await connect()
+    expect(readProjectFile(retractionProject(h.dir, 'petg.3mf', 'Auto', ['None', 'High'])).config['reduce_infill_retraction']).toBe(false)
+    expect(readProjectFile(retractionProject(h.dir, 'off.3mf', 'Disabled', ['None'])).config['reduce_infill_retraction']).toBe(false)
+    expect(readProjectFile(retractionProject(h.dir, 'on.3mf', 'Enabled', ['High'])).config['reduce_infill_retraction']).toBe(true)
+  })
+})
