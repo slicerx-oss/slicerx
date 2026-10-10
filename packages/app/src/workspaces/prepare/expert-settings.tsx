@@ -35,6 +35,9 @@ export const INTENTS: readonly { id: SettingIntent; label: string; icon: IconNam
   { id: 'output', label: 'Output', icon: 'tab-output', blurb: 'G-code and file options' },
 ]
 
+/** Units as a person reads them; a temperature difference is still in degrees Celsius. */
+const UNIT_TEXT: Readonly<Record<string, string>> = { C: '°C', 'delta-C': '°C', deg: '°', mm3: 'mm³', 'mm3/s': 'mm³/s', 'mm/s2': 'mm/s²' }
+
 /** Settings the prime tower row's atlas line sets: they are not listed as rows. */
 const ATLAS_KEYS = new Set(['prime_tower_auto_position', 'wipe_tower_x', 'wipe_tower_y'])
 
@@ -147,7 +150,7 @@ export function Field({ def, value, overridden, onSet = setOverride, idPrefix = 
           }}
           onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
         />
-        <span className="unit">{def.unit && def.unit !== '%' ? def.unit : def.type === 'percent' ? '%' : ''}</span>
+        <span className="unit">{def.unit && def.unit !== '%' ? (UNIT_TEXT[def.unit] ?? def.unit) : def.type === 'percent' ? '%' : ''}</span>
       </span>
     )
   }
