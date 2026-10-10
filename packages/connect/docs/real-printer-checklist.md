@@ -2,6 +2,18 @@
 
 The connectors in `packages/connect` are tested against mock printers. This list is what to run on real hardware before a connector loses its "experimental" label or a release says it works. Run it on each printer you have, and keep the report folders: they hold no secrets, only states, timings and camera stills.
 
+## What is covered where
+
+Bambu Lab is checked on real printers only. Prusa, Elegoo and Snapmaker run on simulated printers in every pull request (`packages/connect/mock-printers`, with the app end to end in `apps/web/e2e/prusa-bridge.spec.ts`, `elegoo-bridge.spec.ts` and `snapmaker-bridge.spec.ts`), and the last column is what the simulator cannot settle.
+
+| Printer | Connector | Simulated in the app tests | Check on a real machine |
+| --- | --- | --- | --- |
+| Bambu Lab A1, A1 mini | `bambu-lan` | Only the Bambu Lab cases in `bridge.spec.ts`; the shared flows do not run on Bambu | Everything: this checklist and its Bambu Lab section |
+| Prusa Core One, MK4 | `prusalink` | Pair, send with preflight and approval, live progress, pause, resume, cancel, the camera guard's hand pause, runout, offline, a partner key | Digest login, the storages, the `ATTENTION` state and its words during a real runout, the camera still |
+| Elegoo Centauri Carbon | `elegoo` | The same flows; a runout is simulated as a plain pause and the door as nothing | The status codes for a runout and an open door (SDCP V3.0.0 names neither), the camera stream, discovery |
+| Snapmaker A350 | `snapmaker` (2.0 API) | The same flows; it has no camera, so the guard shows as unavailable | Pairing on the touchscreen, the runout and door flags, a dropped session, how long offline takes to show |
+| Snapmaker U1 | `snapmaker` (Moonraker) | Listing with its webcam, and the camera guard's hand pause | Which webcam the stock firmware lists, how a runout is reported, the four toolheads |
+
 ## Before you start
 
 - Stay at the printer for every step that heats or moves it. Use a small first-layer test you sliced for that printer (a 20 mm square, one or two layers), with a clean plate.
