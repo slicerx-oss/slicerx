@@ -1795,6 +1795,67 @@ fn a_filament_only_a_feature_prints_with_gets_an_extruder() {
 }
 
 #[test]
+fn the_in_printer_flush_counts_in_the_filament_used() {
+    // Bambu Studio's used weight takes in the flush the H2D's change template writes as `;VG1` lines: the nozzle's
+    // volume of it (130 mm3) is the filament the nozzle held, the rest the new filament. Filament 1 to 2 flushes
+    // 347 mm3 (130 to 1, 217 to 2), 2 to 1 flushes 120 mm3 (all of it to 2, as it is under 130).
+    let mut c = json!({
+        "gcode_flavor": "marlin",
+        "printer_model": "Bambu Lab H2D",
+        "nozzle_diameter": [0.4, 0.4],
+        "physical_extruder_map": [1, 0],
+        "master_extruder_id": 2,
+        "single_extruder_multi_material": true,
+        "filament_map_mode": "Manual",
+        "filament_map": [1, 1],
+        "outer_wall_filament_id": 2,
+        "filament_diameter": [1.75, 1.75],
+        "nozzle_volume": [130, 145],
+        "flush_volumes_matrix": [0, 347, 120, 0, 0, 347, 120, 0],
+        "flush_multiplier": [1, 1],
+        "change_filament_gcode": "; change {current_filament_id} {next_filament_id}\n; VFLUSH_START\n;VG1 E{flush_length}\n; VFLUSH_END",
+    });
+    let run = |config: Value| -> (String, Vec<f64>) {
+        let bytes = std::fs::read(format!("{}/packages/core/cli/tests/fixtures/cube.stl", root())).unwrap();
+        let m = Arc::new(Mesh::load(&bytes, "cube.stl").unwrap());
+        let req: SliceRequest = serde_json::from_value(json!({
+            "plate": {"objects": [{"id": "a", "name": "cube", "mesh": "c", "slotOverrides": {"cube.stl": 1}}]},
+            "config": config,
+            "options": {"trustedGcode": true},
+        }))
+        .unwrap();
+        let r = common::run_request(&req, &move |_: &str| Ok(m.clone())).unwrap();
+        (String::from_utf8(r.gcode).unwrap(), r.report.stats.filament_mm)
+    };
+    let (g, with) = run(c.clone());
+    let count = |from: &str| {
+        g.lines()
+            .filter(|l| l.starts_with(&format!("; change {from} ")))
+            .count() as f64
+    };
+    let (n12, n21) = (count("0"), count("1"));
+    assert!(n12 > 2.0 && n21 > 2.0);
+    c["change_filament_gcode"] = json!("; change {current_filament_id} {next_filament_id}");
+    let (_, plain) = run(c);
+    let area = std::f64::consts::PI * 0.875 * 0.875;
+    // The first change into filament 2 finds its nozzle holding filament 1 too: every 1 to 2 change flushes.
+    let one = (n12 * 130.0) / area;
+    let two = (n12 * 217.0 + n21 * 120.0) / area;
+    assert!(
+        (with[0] - plain[0] - one).abs() < 0.05,
+        "{} vs {}",
+        with[0] - plain[0],
+        one
+    );
+    assert!(
+        (with[1] - plain[1] - two).abs() < 0.05,
+        "{} vs {}",
+        with[1] - plain[1],
+        two
+    );
+}
+
+#[test]
 fn a_tower_change_reads_the_new_filaments_volumetric_speed() {
     // orca's change at the tower takes outer_wall_volumetric_speed of the new filament (`append_tcr`)
     let mut c = json!({

@@ -2297,6 +2297,37 @@ fn emit_layer(
                     let text = custom(base, "change_filament_gcode", Some(&*ctx), &mut error);
                     // orca's cooling buffer drops the feed rates that change nothing in the layer's g-code
                     let text = strip_feeds(&text, last_feed(b).unwrap_or(0));
+                    // The in-printer flush the template writes (`;VG1` lines between `; VFLUSH_START` and
+                    // `; VFLUSH_END`) is filament used though never printed: the nozzle's volume of it is the filament
+                    // the nozzle held, the rest the new one (Bambu Studio's used weight).
+                    // The template's own extrusion (a chute flush on the X1 and P1 series, its retractions and
+                    // primes) is filament used as well: the old filament's before the template selects the new
+                    // one, the new filament's after.
+                    let (before, after) = change_extrusion_mm(&text);
+                    if let Some(e) = usize::try_from(prev).ok().and_then(|o| chunk.e_units.get_mut(o)) {
+                        *e += e_units(before);
+                    }
+                    if let Some(e) = usize::try_from(next).ok().and_then(|n| chunk.e_units.get_mut(n)) {
+                        *e += e_units(after);
+                    }
+                    let flushed = virtual_flush_mm(&text);
+                    if flushed > 0.0 {
+                        let nozzle = out.filament_map.as_ref().map_or(0, |m| m.nozzle_of(p.tool));
+                        let old = flush_from
+                            .filter(|&o| o != next)
+                            .and_then(|o| usize::try_from(o).ok());
+                        let held = old.map_or(0.0, |_| nozzle_volume(c, nozzle) / fil_area);
+                        let to_old = flushed.min(held);
+                        let to_new = flushed - to_old;
+                        if let Some(o) = old
+                            && let Some(e) = chunk.e_units.get_mut(o)
+                        {
+                            *e += e_units(to_old);
+                        }
+                        if let Some(e) = usize::try_from(next).ok().and_then(|n| chunk.e_units.get_mut(n)) {
+                            *e += e_units(to_new);
+                        }
+                    }
                     push_lines(b, &text);
                     // orca's cooling buffer sets the fans again after the change (`_FORCE_RESUME_FAN_SPEED`):
                     // the auxiliary fan, then the part fan of the new filament
@@ -3094,6 +3125,103 @@ fn push_text(s: &mut String, text: &str) {
             s.push('\n');
         }
     }
+}
+
+/// Net extrusion of a change template's own moves (`G0` to `G3` with an `E`, relative extrusion), mm: before the line
+/// that selects the new tool (`T<n>`, or Bambu Lab's `M1020 S<n>`), and from it on.
+fn change_extrusion_mm(text: &str) -> (f64, f64) {
+    let (mut before, mut after, mut switched) = (0.0, 0.0, false);
+    for line in text.lines() {
+        let code = line.split(';').next().unwrap_or("").trim();
+        let mut words = code.split_ascii_whitespace();
+        let Some(cmd) = words.next() else { continue };
+        let is_tool = (cmd.len() > 1 && cmd.starts_with('T') && cmd[1..].chars().all(|c| c.is_ascii_digit()))
+            || (cmd == "M1020" && code.contains(" S"));
+        if is_tool {
+            switched = true;
+            continue;
+        }
+        if !matches!(cmd, "G0" | "G1" | "G2" | "G3") {
+            continue;
+        }
+        if let Some(e) = words
+            .find_map(|w| w.strip_prefix('E'))
+            .and_then(|v| v.parse::<f64>().ok())
+        {
+            if switched {
+                after += e;
+            } else {
+                before += e;
+            }
+        }
+    }
+    (before, after)
+}
+
+/// Filament the in-printer flush of a change template uses, mm: the `;VG1 E<length>` lines between `; VFLUSH_START`
+/// and `; VFLUSH_END` (the deretracts before the start are not flush).
+fn virtual_flush_mm(text: &str) -> f64 {
+    let mut inside = false;
+    let mut mm = 0.0;
+    for line in text.lines() {
+        let t = line.trim();
+        if t.starts_with("; VFLUSH_START") {
+            inside = true;
+        } else if t.starts_with("; VFLUSH_END") {
+            inside = false;
+        } else if inside && let Some(rest) = t.strip_prefix(";VG1 ") {
+            mm += rest
+                .split_ascii_whitespace()
+                .find_map(|w| w.strip_prefix('E'))
+                .and_then(|v| v.parse::<f64>().ok())
+                .filter(|v| *v > 0.0)
+                .unwrap_or(0.0);
+        }
+    }
+    mm
+}
+
+/// The volume nozzle `nozzle` (0-based) holds, mm3 (`nozzle_volume`): the entry of its own extruder variant when the
+/// list has one per variant (`printer_extruder_id`, `printer_extruder_variant`, the extruder's `extruder_type` and
+/// `nozzle_volume_type`), else the nozzle's entry. 0 when the printer gives none.
+fn nozzle_volume(c: &PrintConfig, nozzle: usize) -> f64 {
+    let strings = |k: &str| -> Vec<String> {
+        match c.raw.get(k) {
+            Some(serde_json::Value::Array(a)) => a
+                .iter()
+                .map(|v| v.as_str().map_or_else(|| v.to_string(), str::to_owned))
+                .collect(),
+            Some(serde_json::Value::String(t)) => t
+                .split([';', ','])
+                .map(|x| x.trim().trim_matches('"').to_owned())
+                .collect(),
+            _ => Vec::new(),
+        }
+    };
+    let vols: Vec<f64> = strings("nozzle_volume")
+        .iter()
+        .filter_map(|v| v.trim().parse().ok())
+        .collect();
+    let ids = strings("printer_extruder_id");
+    let variants = strings("printer_extruder_variant");
+    let id = (nozzle + 1).to_string();
+    if vols.len() == ids.len() && ids.len() == variants.len() && ids.iter().filter(|i| **i == id).count() > 1
+    {
+        let types = strings("extruder_type");
+        let sizes = strings("nozzle_volume_type");
+        let pick = |v: &[String], d: &str| {
+            v.get(nozzle)
+                .or_else(|| v.first())
+                .cloned()
+                .unwrap_or_else(|| d.to_owned())
+        };
+        let want = format!("{} {}", pick(&types, "Direct Drive"), pick(&sizes, "Standard"));
+        let at = (0..ids.len())
+            .find(|&i| ids.get(i) == Some(&id) && variants.get(i) == Some(&want))
+            .or_else(|| ids.iter().position(|i| *i == id));
+        return at.and_then(|i| vols.get(i)).copied().unwrap_or(0.0);
+    }
+    vols.get(nozzle).or_else(|| vols.first()).copied().unwrap_or(0.0)
 }
 
 fn push_lines(b: &mut Vec<u8>, text: &str) {
