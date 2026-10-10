@@ -74,12 +74,18 @@ fn seg_dist(p: [f64; 2], a: [f64; 2], b: [f64; 2]) -> f64 {
 
 /// The object whose slice is nearest `p` (its edge), within `reach` mm; the first in plate order on a tie.
 pub(crate) fn nearest(slices: &[ObjectSlice], p: Point, reach: f64) -> Option<u16> {
-    if let Some(o) = holder(slices, p) {
-        return Some(o);
+    nearest_of(slices, p, reach, &|_| true)
+}
+
+/// [`nearest`] among the objects `keep` passes.
+fn nearest_of(slices: &[ObjectSlice], p: Point, reach: f64, keep: &dyn Fn(u16) -> bool) -> Option<u16> {
+    let kept = || slices.iter().filter(|s| keep(s.object));
+    if let Some(s) = kept().find(|s| holder(std::slice::from_ref(*s), p).is_some()) {
+        return Some(s.object);
     }
     let q = mm(p);
     let mut best: Option<(f64, u16)> = None;
-    for s in slices {
+    for s in kept() {
         let r = reach * SCALE;
         #[allow(
             clippy::cast_possible_truncation,
@@ -340,8 +346,9 @@ fn brim_owner(here: &[ObjectSlice], pts: &[Point]) -> u16 {
     }
 }
 
-/// Support's object: the first one up from this layer that its start point lies inside (what it holds up), else
-/// the nearest on its own layer.
+/// Support's object: the first one up from this layer within the support's margin of the middle of the path
+/// (what it holds up), passing over objects already beside the path on its own layer while another is found;
+/// else the nearest on its own layer.
 fn support_owner(
     here: &[ObjectSlice],
     pts: &[Point],
@@ -359,11 +366,24 @@ fn support_owner(
         y1 = y1.max(q.y);
     }
     let mid = Point::new(i32::midpoint(x0, x1), i32::midpoint(y0, y1));
-    // Support reaches a little past the object it holds up (its outline grows by the support's own margin).
-    for k in 1..=SUPPORT_REACH {
-        let Some(s) = above(k) else { break };
-        if let Some(o) = nearest(&s, mid, SUPPORT_MARGIN_MM) {
-            return o;
+    // An object already standing beside the path on its own layer is a neighbor the support passes, not the
+    // one it holds up (border support on the first layer runs close round a neighbor that rises past the
+    // overhang). Look for an object above that is not beside it first, then for any.
+    let beside: Vec<u16> = here
+        .iter()
+        .filter(|s| nearest(std::slice::from_ref(*s), mid, SUPPORT_MARGIN_MM).is_some())
+        .map(|s| s.object)
+        .collect();
+    let apart = |o: u16| !beside.contains(&o);
+    let any = |_: u16| true;
+    let rules: [&dyn Fn(u16) -> bool; 2] = [&apart, &any];
+    for keep in rules.iter().take(if beside.is_empty() { 1 } else { 2 }) {
+        // Support reaches a little past the object it holds up (its outline grows by the support's own margin).
+        for k in 1..=SUPPORT_REACH {
+            let Some(s) = above(k) else { break };
+            if let Some(o) = nearest_of(&s, mid, SUPPORT_MARGIN_MM, keep) {
+                return o;
+            }
         }
     }
     nearest(here, mid, NEAR_MM).unwrap_or(OBJECT_NONE)
