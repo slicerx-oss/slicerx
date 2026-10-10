@@ -27,6 +27,7 @@ The default path is local. Everything runs on the user's machine from the app's 
 The other files in this folder:
 
 - [quickstart.md](quickstart.md): the reference for every tool, option, result field and error code.
+- [partner-app-key.md](partner-app-key.md): how an app on the same computer reaches the user's printers through SlicerX's bridge, with a key the user makes in SlicerX and can revoke.
 - [llms.txt](llms.txt): an index of these files for tools that read `llms.txt`.
 
 The same files ship inside the npm packages, at `node_modules/@slicerx/mcp/AGENTS.md` and `node_modules/@slicerx/embed/AGENTS.md`, with the quickstart folded into `llms-full.txt` next to them.

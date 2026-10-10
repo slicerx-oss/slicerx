@@ -9,6 +9,7 @@ Coding agents: read AGENTS.md first, choose a path (A: your own edition, B: embe
 - [AGENTS.md](AGENTS.md): step-by-step instructions for coding agents, with MCP setup per client, the interview, recipes, theming and the rules
 - [Credit kit](credit-kit/README.md): "Made possible by SlicerX" badges, a Support SlicerX button, copy to paste, usage rules and screenshots
 - [../integrating.md](../integrating.md): the long guide to building your own edition, with a worked example
+- [partner-app-key.md](partner-app-key.md): reaching the user's printers through SlicerX's bridge with a partner app key the user makes and revokes
 - [quickstart.md](quickstart.md): the reference for the server options, tools, settings layers, result fields, progress, token scopes and error codes
 
 ## Packages
