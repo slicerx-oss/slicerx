@@ -171,6 +171,13 @@ export async function startElegoo(m: MockMachine, extra: ElegooExtra = { remaini
   })
   server.on('close', () => clearInterval(tick))
   gate = offlineGate(server, () => m.faults.has('offline'))
+  // A WebSocket is an upgraded connection the HTTP server no longer counts, so closing the server would wait on the
+  // clients' sockets forever: close them with it.
+  const close = server.close.bind(server)
+  server.close = (cb?: (err?: Error) => void) => {
+    for (const s of sockets) s.destroy()
+    return close(cb)
+  }
 
   await new Promise<void>((r) => server.listen(0, '127.0.0.1', r))
   port = (server.address() as AddressInfo).port
