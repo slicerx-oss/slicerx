@@ -162,6 +162,8 @@ Pass a progress token (in the TypeScript SDK, an `onprogress` callback) and the 
 
 The printer tools (`--printers link`) read printer state and can queue a sliced plate. Starting or resuming a print and sending G-code always need a person to approve it in SlicerX or on a paired phone. An app cannot approve that through MCP, and the user's policy file cannot loosen it. An app that runs its own printer connection can take the `.gcode.3mf` or G-code from a slice and send it itself.
 
+An app on the same computer as SlicerX connects to the bridge with a partner app key that the user makes in SlicerX and can revoke. It never reads the bridge's pairing codes. See [partner-app-key.md](partner-app-key.md).
+
 ## Build it in with @slicerx/embed
 
 ### Show a slice
