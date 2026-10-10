@@ -220,7 +220,7 @@ fn keep_out_paths_are_refused_in_their_own_words() {
     assert_eq!(out.status.code(), Some(3));
     let err = String::from_utf8_lossy(&out.stderr);
     assert!(
-        err.contains("A print path enters the nozzle wrap check corner: c1 on layers 1 to"),
+        err.contains("A print path or travel enters the nozzle wrap check corner: c1 on layers 1 to"),
         "{err}"
     );
     assert!(!err.contains("printing by object"), "{err}");

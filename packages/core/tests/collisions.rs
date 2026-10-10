@@ -815,6 +815,66 @@ fn overlapping_objects_printed_by_layer_report_their_crossing_paths_and_the_arra
     );
 }
 
+/// The X1's exclusion area (the cutter and purge corner) and bed, from the shipped profile.
+fn x1_bed() -> Value {
+    let root = format!("{}/../..", env!("CARGO_MANIFEST_DIR"));
+    let all: Value = serde_json::from_slice(
+        &std::fs::read(format!("{root}/packages/profiles/resolved/bambu-lab.json")).unwrap(),
+    )
+    .unwrap();
+    let machine = &all["models"]["bambu-x1"]["machine"];
+    assert!(
+        machine["bed_exclude_area"]
+            .as_array()
+            .is_some_and(|z| z.len() == 4)
+    );
+    json!({
+        "bed_exclude_area": machine["bed_exclude_area"],
+        "printable_area": machine["printable_area"],
+        "print_sequence": "by layer",
+    })
+}
+
+#[test]
+fn a_travel_across_the_x1_exclusion_area_is_a_keep_out_hit() {
+    // The X1 keeps 0 to 18 mm by 0 to 28 mm clear. One box stands over that corner and one to its right: printed by
+    // layer, the travel between them cuts across the corner, though neither box prints in it.
+    let corner = run(
+        &[
+            ("over", block(10.0, 10.0, 1.0), 2.0, 32.0),
+            ("right", block(10.0, 10.0, 1.0), 30.0, 2.0),
+        ],
+        x1_bed(),
+        json!({}),
+    );
+    let hits: Vec<_> = corner
+        .report
+        .collisions
+        .iter()
+        .filter(|c| c.kind == Kind::KeepOut)
+        .collect();
+    assert!(!hits.is_empty(), "{:?}", kinds(&corner));
+    assert!(
+        hits.iter().all(|c| c.hit_id == "exclusion-area"),
+        "{:?}",
+        kinds(&corner)
+    );
+    // The same boxes side by side above the corner: the travel stays clear of it.
+    let clear = run(
+        &[
+            ("over", block(10.0, 10.0, 1.0), 2.0, 32.0),
+            ("right", block(10.0, 10.0, 1.0), 30.0, 32.0),
+        ],
+        x1_bed(),
+        json!({}),
+    );
+    assert!(
+        clear.report.collisions.iter().all(|c| c.kind != Kind::KeepOut),
+        "{:?}",
+        kinds(&clear)
+    );
+}
+
 #[test]
 fn a_print_in_the_a1_wrap_check_corner_is_a_keep_out_hit() {
     let zone = json!({"head_wrap_detect_zone": ["226x224", "256x224", "256x256", "226x256"], "printable_area": ["0x0", "256x0", "256x256", "0x256"]});

@@ -347,7 +347,7 @@ fn collision_refusal(
                 continue;
             }
             (Kind::KeepOut, _) => {
-                plate.push(format!("A print path enters {b}: {a} on {layers}."));
+                plate.push(format!("A print path or travel enters {b}: {a} on {layers}."));
                 continue;
             }
             (Kind::Hotend, Part::Clearance) => {

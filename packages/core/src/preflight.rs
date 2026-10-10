@@ -253,6 +253,54 @@ pub(crate) fn segment_reaches(
     })
 }
 
+/// Where a travel from `a` to `b` meets the zone `poly`, or None: a travel that runs more than `tol` inside it, or
+/// one that passes closer to it than `clearance` (the nozzle's width) and closer than either of its own ends. A travel
+/// leaving a print path that runs along the zone's edge starts that close by right, so only coming closer on the way
+/// counts.
+pub(crate) fn travel_meets(
+    poly: &[[f64; 2]],
+    a: [f64; 2],
+    b: [f64; 2],
+    clearance: f64,
+    tol: f64,
+) -> Option<[f64; 2]> {
+    if let Some(p) = segment_reaches(poly, a, b, true, tol) {
+        return Some(p);
+    }
+    let n = poly.len();
+    let edge_dist = |p: [f64; 2]| {
+        (0..n)
+            .filter_map(|i| Some(dist_to_segment(p[0], p[1], poly.get(i)?, poly.get((i + 1) % n)?)))
+            .fold(f64::INFINITY, f64::min)
+    };
+    // The travel's closest approach to the zone's edge: at a corner of the zone, or at an end of the travel.
+    let mut best: Option<(f64, [f64; 2])> = None;
+    let mut consider = |d: f64, p: [f64; 2]| {
+        if best.is_none_or(|(bd, _)| d < bd) {
+            best = Some((d, p));
+        }
+    };
+    let (dx, dy) = (b[0] - a[0], b[1] - a[1]);
+    let len2 = dx * dx + dy * dy;
+    for c in poly {
+        let t = if len2 == 0.0 {
+            0.0
+        } else {
+            (((c[0] - a[0]) * dx + (c[1] - a[1]) * dy) / len2).clamp(0.0, 1.0)
+        };
+        let p = [a[0] + t * dx, a[1] + t * dy];
+        consider(dist_to_segment(c[0], c[1], &a, &b), p);
+    }
+    for p in [a, b] {
+        consider(edge_dist(p), p);
+    }
+    // Two segments that do not cross are closest at an end of one of them; one that crosses an edge enters the
+    // zone, which the first test found unless it only grazes a corner, within `tol`.
+    let (d, p) = best?;
+    let ends = edge_dist(a).min(edge_dist(b));
+    (d < clearance && d + tol < ends).then_some(p)
+}
+
 fn dist_to_segment(x: f64, y: f64, a: &[f64; 2], b: &[f64; 2]) -> f64 {
     let (dx, dy) = (b[0] - a[0], b[1] - a[1]);
     let len2 = dx * dx + dy * dy;
