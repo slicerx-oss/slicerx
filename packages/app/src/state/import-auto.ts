@@ -7,7 +7,7 @@
 // of its own (import-step.ts) and arrives in millimeters, since STEP declares its unit.
 import type { Bed, Host, MeshHandle, MeshPart } from '@slicerx/contracts'
 import { isBinaryStl, sameMesh, scanStl } from '../export/stl-scan'
-import { isBigSlice, sliceTimingOf } from './slice-estimate'
+import { isBigSlice, sliceTimingsOf } from './slice-estimate'
 import { inStep } from '../plate/history'
 import { endIdleGeomWorker, fromGeom, toGeom, usesWorker, type GeomMesh } from '../geom/client'
 import type { AutoImport, Unit } from '../geom/cad'
@@ -188,7 +188,7 @@ async function showQuick(host: Host, name: string, data: ArrayBuffer, edit: (fn:
     edit(() =>
       set((s) => {
         const plate = [...s.plate, { id, name, handle, parts: [part], colors: [color], transform }]
-        return { plate, selection: id, selectedIds: [id], sliceDuringOpen: !isBigSlice(plate, sliceTimingOf(s.activePlate)) }
+        return { plate, selection: id, selectedIds: [id], sliceDuringOpen: !isBigSlice(plate, sliceTimingsOf(s.activePlate)) }
       }),
     )
     markOpenStage('objects')

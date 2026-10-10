@@ -8,7 +8,7 @@
 import type { Host } from '@slicerx/contracts'
 import { cancelSlice, slicePlate } from './actions'
 import { fitSettledFor, onFitSettled } from '../plate/fit-state'
-import { isBigSlice, sliceTimingOf } from './slice-estimate'
+import { isBigSlice, sliceTimingsOf } from './slice-estimate'
 import { inputsChanged as changed } from './slice-inputs'
 import { appStore } from './store'
 
@@ -46,7 +46,7 @@ export function startAutoSlice(host: Host, delayMs = AUTO_SLICE_DELAY_MS, fitWai
     // A plate switched back to with its slice still current (workspaces/preview/plate-slices.ts) needs none.
     if (s.slice.status === 'done' && !s.slice.stale) return
     // Auto by size: a big slice waits for Slice, and the footer says so.
-    const big = isBigSlice(s.plate, sliceTimingOf(s.activePlate))
+    const big = isBigSlice(s.plate, sliceTimingsOf(s.activePlate))
     if (s.autoSliceBySize && big) {
       if (!s.sliceHeld) appStore.setState({ sliceHeld: true })
       return

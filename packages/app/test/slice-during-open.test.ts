@@ -103,6 +103,11 @@ afterEach(() => {
   stops = []
 })
 
+/** The plate's last three slices of the cube took `ms` each: the times the big-slice rule reads. */
+const seed = (ms: number) => {
+  for (let i = 0; i < 3; i++) noteSliceTiming(get().activePlate, { triangles: 12, ms })
+}
+
 describe('slicing a binary STL while its open runs', () => {
   it('when the import changes the mesh, the early slice never stands and the new mesh is sliced', async () => {
     const { h, requests, land } = host()
@@ -149,13 +154,13 @@ describe('slicing a binary STL while its open runs', () => {
 })
 
 describe('a big slice (slice-estimate.ts), with Auto slice set to Always', () => {
-  // The last slice of this plate took a minute on the same 12 triangles: the cube's slice now counts as big.
+  // The last three slices of this plate took a minute on the same 12 triangles: the cube's slice now counts as big.
   beforeEach(() => {
-    noteSliceTiming(get().activePlate, { triangles: 12, ms: 60_000 })
+    seed(60_000)
     set({ autoSliceBySize: false })
   })
   afterEach(() => {
-    noteSliceTiming(get().activePlate, { triangles: 12, ms: 1 })
+    seed(1)
     set({ autoSliceBySize: true, sliceHeld: false })
   })
 
@@ -193,7 +198,7 @@ describe('a big slice (slice-estimate.ts), with Auto slice set to Always', () =>
   })
 
   it('a small slice does not wait for the fit check', async () => {
-    noteSliceTiming(get().activePlate, { triangles: 12, ms: 1 })
+    seed(1)
     const { h, requests } = host()
     stops.push(startAutoSlice(h, 0, 60_000))
     const shown = scanStl(new Uint8Array(stl()))!
@@ -204,9 +209,9 @@ describe('a big slice (slice-estimate.ts), with Auto slice set to Always', () =>
 })
 
 describe('a big slice, with Auto slice set to Auto (by size)', () => {
-  beforeEach(() => noteSliceTiming(get().activePlate, { triangles: 12, ms: 60_000 }))
+  beforeEach(() => seed(60_000))
   afterEach(() => {
-    noteSliceTiming(get().activePlate, { triangles: 12, ms: 1 })
+    seed(1)
     set({ sliceHeld: false })
   })
 

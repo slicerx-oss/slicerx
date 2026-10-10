@@ -3,9 +3,10 @@
 // How long a plate's slice is expected to take, and whether that makes it a big slice. One rule for every caller:
 // auto slice starts a small slice at once, even while a file is still opening (on the mesh shown first), and holds a
 // big one until the open is over and the fit check is done with its copy of the meshes, so a big model's copies are
-// not all alive at once. The estimate is the plate's last slice time, scaled to its triangles now, when the plate is
-// still about the size it was then; else the plate's triangles times a factor from the bench. The functions are pure;
-// the record of last slice times below them is the one piece of state.
+// not all alive at once. The estimate is the median of the plate's last three slice times, each scaled to its triangles
+// now, when those slices were of about this size; with fewer than three such slices it is the plate's triangles times
+// a factor from the bench, so one slow slice on a busy machine cannot put a normal plate on Slice. The functions are
+// pure; the record of recent slice times below them is the one piece of state.
 
 /** A slice that takes this long or longer is a big one (ms). */
 export const BIG_SLICE_MS = 1500
@@ -38,32 +39,37 @@ export function plateTriangles(plate: PlateLike): number {
  */
 export const SAME_PLATE_RATIO = 2
 
+/** Slice times that decide together: their median, so one outlier cannot. */
+export const RECENT_SLICES = 3
+
 /**
- * The expected slice time of a plate (ms): the last slice's time scaled by the plate's triangles against that slice's,
- * when the plate is still about that size (SAME_PLATE_RATIO), else the triangles times SLICE_MS_PER_TRIANGLE.
+ * The expected slice time of a plate (ms): the median of the recent slices' times, each scaled by the plate's
+ * triangles against that slice's, when RECENT_SLICES of them were of about this size (SAME_PLATE_RATIO); else the
+ * triangles times SLICE_MS_PER_TRIANGLE.
  */
-export function expectedSliceMs(plate: PlateLike, last?: SliceTiming | null): number {
+export function expectedSliceMs(plate: PlateLike, recent: readonly SliceTiming[] = []): number {
   const triangles = plateTriangles(plate)
-  if (last && last.triangles > 0 && last.ms >= 0) {
-    const ratio = triangles / last.triangles
-    if (ratio >= 1 / SAME_PLATE_RATIO && ratio <= SAME_PLATE_RATIO) return last.ms * ratio
-  }
+  const scaled = recent
+    .filter((t) => t.triangles > 0 && t.ms >= 0 && triangles / t.triangles >= 1 / SAME_PLATE_RATIO && triangles / t.triangles <= SAME_PLATE_RATIO)
+    .map((t) => (t.ms * triangles) / t.triangles)
+    .sort((a, b) => a - b)
+  if (scaled.length >= RECENT_SLICES) return scaled[Math.floor(scaled.length / 2)]!
   return triangles * SLICE_MS_PER_TRIANGLE
 }
 
 /** Whether the plate's slice is expected to take BIG_SLICE_MS or longer. */
-export function isBigSlice(plate: PlateLike, last?: SliceTiming | null): boolean {
-  return expectedSliceMs(plate, last) >= BIG_SLICE_MS
+export function isBigSlice(plate: PlateLike, recent: readonly SliceTiming[] = []): boolean {
+  return expectedSliceMs(plate, recent) >= BIG_SLICE_MS
 }
 
-const timings = new Map<string, SliceTiming>()
+const timings = new Map<string, SliceTiming[]>()
 
-/** Keeps a finished slice's timing for its plate (the plate tab's id). */
+/** Keeps a finished slice's timing for its plate (the plate tab's id), the last RECENT_SLICES of them. */
 export function noteSliceTiming(plateId: string, timing: SliceTiming): void {
-  timings.set(plateId, timing)
+  timings.set(plateId, [...(timings.get(plateId) ?? []), timing].slice(-RECENT_SLICES))
 }
 
-/** The last slice timing kept for a plate, if any. */
-export function sliceTimingOf(plateId: string): SliceTiming | null {
-  return timings.get(plateId) ?? null
+/** The recent slice timings kept for a plate, oldest first. */
+export function sliceTimingsOf(plateId: string): readonly SliceTiming[] {
+  return timings.get(plateId) ?? []
 }
