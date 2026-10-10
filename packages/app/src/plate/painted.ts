@@ -24,6 +24,22 @@ export function hasEnginePaint(e: PlateEntry): boolean {
   return paintKey(e) !== ''
 }
 
+/** Most layer ranges a browser slice of a plate with paint asks for (`sliceShards`). */
+export const PAINTED_SHARDS = 4
+
+/**
+ * The layer ranges a slice asks the engine for. The desktop's native engine spreads one range over every core. The
+ * browser slices a range per worker, and every worker that takes one builds the plate's whole session first; with
+ * paint that is most of the slice (the colors of every layer), so a painted plate goes out in at most
+ * `PAINTED_SHARDS` ranges. Snorlax (painted, 382 layers) took 33.3 to 34.1 s in 11 ranges and 25.0 s in 4 on an
+ * 11-core Mac, the Pochita keychain (painted, 10 layers) 10.4 to 10.6 s and 7.9 s, with the same G-code.
+ */
+export function sliceShards(host: { kind: string; capabilities: { threads: number } }, entries: readonly PlateEntry[]): number {
+  if (host.kind === 'desktop') return 1
+  const threads = Math.max(1, host.capabilities.threads)
+  return entries.some(hasEnginePaint) ? Math.min(PAINTED_SHARDS, threads) : threads
+}
+
 /** Which painted copy an object slices with: its mesh, its parts' slots and its paint. Empty when nothing is painted. */
 function copyId(e: PlateEntry): string {
   const key = paintKey(e)
