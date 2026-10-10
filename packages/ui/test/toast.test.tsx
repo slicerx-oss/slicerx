@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// A toast with a button waits while it is hovered or focused and runs on with the time it had left; a plain toast
-// leaves on time.
+// A toast's time starts on its first frame, not when it is posted. A toast with a button waits while it is hovered or
+// focused and runs on with the time it had left; a plain toast leaves on time.
 import { act, useEffect } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -21,6 +21,32 @@ describe('the toast clock', () => {
     expect(done).not.toHaveBeenCalled()
     c.release('pointer')
     vi.advanceTimersByTime(2999)
+    expect(done).not.toHaveBeenCalled()
+    vi.advanceTimersByTime(1)
+    expect(done).toHaveBeenCalledOnce()
+  })
+
+  it('starts held until it is drawn, then runs its whole time', () => {
+    const done = vi.fn()
+    const c = new ToastClock(1000, done, ['unseen'])
+    vi.advanceTimersByTime(5000)
+    expect(done).not.toHaveBeenCalled()
+    c.release('unseen')
+    vi.advanceTimersByTime(999)
+    expect(done).not.toHaveBeenCalled()
+    vi.advanceTimersByTime(1)
+    expect(done).toHaveBeenCalledOnce()
+  })
+
+  it('a toast hovered before it is drawn waits for both, then runs its whole time', () => {
+    const done = vi.fn()
+    const c = new ToastClock(1000, done, ['unseen'])
+    c.hold('pointer')
+    c.release('unseen')
+    vi.advanceTimersByTime(5000)
+    expect(done).not.toHaveBeenCalled()
+    c.release('pointer')
+    vi.advanceTimersByTime(999)
     expect(done).not.toHaveBeenCalled()
     vi.advanceTimersByTime(1)
     expect(done).toHaveBeenCalledOnce()
@@ -80,11 +106,15 @@ describe('toasts on screen', () => {
     expect(shown()).toBe(0)
   })
 
-  it('lets a plain toast go on time, hovered or not', () => {
+  it('lets a plain toast go on time after its first frame, hovered or not', () => {
     act(() => post('Saved'))
     const el = host.querySelector<HTMLElement>('[data-testid=toast]')!
     act(() => void el.dispatchEvent(ptr('pointerover')))
-    act(() => void vi.advanceTimersByTime(2600))
+    // The first frame starts its time.
+    act(() => void vi.advanceTimersByTime(20))
+    act(() => void vi.advanceTimersByTime(2580))
+    expect(shown()).toBe(1)
+    act(() => void vi.advanceTimersByTime(20))
     expect(shown()).toBe(0)
   })
 

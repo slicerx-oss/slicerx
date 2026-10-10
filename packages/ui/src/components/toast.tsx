@@ -1,7 +1,7 @@
 'use client'
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type FocusEvent, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type FocusEvent, type HTMLAttributes, type ReactNode } from 'react'
 import { Icon } from '../icons/icon'
 import type { IconName } from '../icons/icon-paths'
 
@@ -28,7 +28,7 @@ const TONE_ICON: Record<Exclude<ToastTone, 'plain'>, IconName> = { ok: 'check', 
 
 /**
  * A toast's time on screen that can stop: `hold` while the pointer is over it or it has focus, `release` when both
- * are gone, and the time left runs on from where it stopped.
+ * are gone, and the time left runs on from where it stopped. It can start held (`unseen` until it is drawn).
  */
 export class ToastClock {
   private left: number
@@ -39,9 +39,11 @@ export class ToastClock {
   constructor(
     ms: number,
     private readonly done: () => void,
+    holds: readonly string[] = [],
   ) {
     this.left = ms
-    this.run()
+    for (const h of holds) this.holds.add(h)
+    if (this.holds.size === 0) this.run()
   }
 
   hold(why: string): void {
@@ -69,8 +71,9 @@ export class ToastClock {
 }
 
 /**
- * Mount once near the root. Toasts render bottom center and announce through role status. A toast with a button
- * waits while it is hovered or focused, so nobody has to beat its timer to press the button (WCAG 2.2.1).
+ * Mount once near the root. Toasts render bottom center and announce through role status. A toast's time starts once
+ * it is on screen, so a page busy when it was posted does not eat into it, and a toast with a button waits while it
+ * is hovered or focused, so nobody has to beat its timer to press the button (WCAG 2.2.1).
  */
 export function ToastProvider({ children, max = 3 }: { children?: ReactNode; max?: number }) {
   const [toasts, setToasts] = useState<ToastRecord[]>([])
@@ -86,7 +89,7 @@ export function ToastProvider({ children, max = 3 }: { children?: ReactNode; max
       const id = next.current++
       const tone = options?.tone ?? 'plain'
       setToasts((list) => [...list, { id, message, tone, ...(options?.action ? { action: options.action } : {}) }].slice(-max))
-      clocks.current.set(id, new ToastClock(options?.duration ?? 2600, () => drop(id)))
+      clocks.current.set(id, new ToastClock(options?.duration ?? 2600, () => drop(id), ['unseen']))
     },
     [max, drop],
   )
@@ -100,8 +103,9 @@ export function ToastProvider({ children, max = 3 }: { children?: ReactNode; max
       {children}
       <div className="sx-toasts" role="status" aria-live="polite">
         {toasts.map((t) => (
-          <div
+          <ToastItem
             key={t.id}
+            clock={clocks.current.get(t.id)}
             className="sx-toast"
             data-testid="toast"
             data-tone={t.tone === 'plain' ? undefined : t.tone}
@@ -123,11 +127,20 @@ export function ToastProvider({ children, max = 3 }: { children?: ReactNode; max
                 {t.action.label}
               </button>
             ) : null}
-          </div>
+          </ToastItem>
         ))}
       </div>
     </ToastContext.Provider>
   )
+}
+
+/** One toast: its clock lets go of `unseen` on the first frame after it mounts. */
+function ToastItem({ clock, children, ...rest }: { clock: ToastClock | undefined; children?: ReactNode } & HTMLAttributes<HTMLDivElement> & Record<`data-${string}`, string | undefined>) {
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => clock?.release('unseen'))
+    return () => cancelAnimationFrame(frame)
+  }, [clock])
+  return <div {...rest}>{children}</div>
 }
 
 /** Returns toast(message, { tone, duration }). Throws outside a ToastProvider, which is a bug. */
