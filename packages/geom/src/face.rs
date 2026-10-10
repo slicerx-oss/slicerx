@@ -773,7 +773,8 @@ pub fn apply(tool: TriMesh, operation: Operation, target: Option<&TriMesh>) -> R
     let opts = BooleanOptions::default();
     match (operation, target) {
         (Operation::New, _) => {
-            let (mesh, r) = boolean::boolean(std::slice::from_ref(&tool), &[], BoolOp::Union, &opts)?;
+            let (mesh, mut r) = boolean::boolean(std::slice::from_ref(&tool), &[], BoolOp::Union, &opts)?;
+            let mesh = boolean::tidy(mesh, &mut r);
             Ok(ExtrudeResult {
                 report: ExtrudeReport {
                     volume_change_mm3: r.volume_mm3,
@@ -797,7 +798,8 @@ pub fn apply(tool: TriMesh, operation: Operation, target: Option<&TriMesh>) -> R
             } else {
                 BoolOp::Difference
             };
-            let (mesh, r) = boolean::boolean_solids(&[before], &[tool_solid], bop, &opts)?;
+            let (mesh, mut r) = boolean::boolean_solids(&[before], &[tool_solid], bop, &opts)?;
+            let mesh = boolean::tidy(mesh, &mut r);
             if op == Operation::Cut && r.empty {
                 return Err(Error::geometry("extrude", "the cut removes the whole body"));
             }
