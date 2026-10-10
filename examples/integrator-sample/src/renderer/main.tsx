@@ -57,7 +57,8 @@ function App() {
           </div>
         ) : (
           <main style={{ display: 'grid', gridTemplateColumns: '1fr 320px', gap: 12, padding: 12, minHeight: 0 }}>
-            <Viewport preview={preview} colorMode="tool" toolColors={SLOT_COLORS} view="iso" onError={reportCrash} style={{ minHeight: 320 }} />
+            {/* onReady hands over the live viewport; the integration test reads its stats() to know the plate is drawn. */}
+            <Viewport preview={preview} colorMode="tool" toolColors={SLOT_COLORS} view="iso" onError={reportCrash} onReady={(vp) => Object.assign(window, { spoolhouseViewport: vp })} style={{ minHeight: 320 }} />
             <aside style={{ display: 'grid', gap: 12, alignContent: 'start', overflow: 'auto' }}>
               <ul data-testid="slots" style={{ margin: 0, padding: 12, listStyle: 'none', background: 'var(--ink-1)', borderRadius: 'var(--r-lg)' }}>
                 {slice?.filaments.map((f) => (
