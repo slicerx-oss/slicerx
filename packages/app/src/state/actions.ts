@@ -91,7 +91,7 @@ export async function loadDemoModel(host: Host, slug: string, opts: { replace?: 
   set({ plateLoading: true })
   try {
     const { parts, colors } = await demo.build()
-    const model: DecodedModel = { name: demo.name, bboxMm: [0, 0, 0], triangles: parts.reduce((n, p) => n + p.indices.length / 3, 0), parts, colors }
+    const model: DecodedModel = { name: demo.name, bboxMm: [0, 0, 0], triangles: parts.reduce((n, p) => n + p.indices.length / 3, 0), parts, colors, offset: [0, 0, 0] }
     const added = await addDecoded(host, model, { replace: opts.replace ?? true, ...(opts.keep ? { keep: opts.keep } : {}) })
     if (added && (opts.replace ?? true)) {
       set({ slice: { status: 'idle' }, preview: null, projectFile: null })

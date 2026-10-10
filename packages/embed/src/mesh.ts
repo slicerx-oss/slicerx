@@ -31,6 +31,22 @@ export interface DecodedModel {
   triangles: number
   parts: MeshPart[]
   colors: string[]
+  /**
+   * What was taken off the file's coordinates, mm: an STL is centered in X and Y and set down on Z 0. Turn a
+   * viewport transform into one for the file itself with `fileTransform` before a slice request names the file.
+   */
+  offset: [number, number, number]
+}
+
+/**
+ * A plate transform for a decoded model (4x4 column-major, mm) turned into the transform of the model file it came
+ * from, for an `sx slice` request that names the file: the same placement, with the decoder's `offset` put back.
+ */
+export function fileTransform(transform: readonly number[], offset: readonly [number, number, number]): number[] {
+  const m = Array.from(transform)
+  const [x, y, z] = offset
+  for (let r = 0; r < 3; r++) m[12 + r] = (m[12 + r] ?? 0) - ((m[r] ?? 0) * x + (m[4 + r] ?? 0) * y + (m[8 + r] ?? 0) * z)
+  return m
 }
 
 function b64(s: string): Uint8Array {
@@ -59,7 +75,7 @@ export function decodeQuantized(json: unknown): DecodedModel {
     const indices = p.idx32 ? new Uint32Array(ib.buffer, 0, ib.length >> 2) : Uint32Array.from(new Uint16Array(ib.buffer, 0, ib.length >> 1))
     return { name: p.name, slot: p.extruder ?? i + 1, positions, indices }
   })
-  return { name: m.name, bboxMm: m.bboxMm, triangles: m.tris, parts, colors: m.parts.map((p) => p.color) }
+  return { name: m.name, bboxMm: m.bboxMm, triangles: m.tris, parts, colors: m.parts.map((p) => p.color), offset: [0, 0, 0] }
 }
 
 /** Binary or ASCII STL to one part, vertices unwelded. */
@@ -109,5 +125,6 @@ export function decodeStl(buf: ArrayBuffer, name: string): DecodedModel {
     parts: [{ name: 'Part 1', slot: 1, positions, indices }],
     // white PLA: a part in the accent color would hide the accent selection outline
     colors: ['#ebebe6'],
+    offset: [cx, cy, minZ],
   }
 }
