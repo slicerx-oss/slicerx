@@ -61,7 +61,10 @@ jobs:
             printf '%s\n' "$changed" | grep -qE "$1"
           }
           touched '^(supabase/|packages/store/|\.github/workflows/ci\.yml$)' && echo "pgtap=true" >> "$GITHUB_OUTPUT" || echo "pgtap=false" >> "$GITHUB_OUTPUT"
-          touched '^(apps/web/|packages/(app|ui|core|geom|connect)/|pnpm-lock\.yaml$|scripts/ci/playwright-results\.mjs$|\.github/workflows/ci\.yml$)' && echo "e2e=true" >> "$GITHUB_OUTPUT" || echo "e2e=false" >> "$GITHUB_OUTPUT"
+          # A pull request that changes the browser specs, the printer simulators or the CI scripts runs the browser
+          # suites without the label: those are the changes whose mistakes otherwise first show up in the merge queue.
+          own_e2e() { [ "$GITHUB_EVENT_NAME" = pull_request ] && printf '%s\n' "$changed" | grep -qE '^(apps/web/e2e/|packages/connect/mock-printers/|scripts/ci/)'; }
+          { touched '^(apps/web/|packages/(app|ui|core|geom|connect)/|pnpm-lock\.yaml$|scripts/ci/playwright-results\.mjs$|\.github/workflows/ci\.yml$)' || own_e2e; } && echo "e2e=true" >> "$GITHUB_OUTPUT" || echo "e2e=false" >> "$GITHUB_OUTPUT"
 
   web:
     needs: detect
