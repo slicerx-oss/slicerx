@@ -44,7 +44,7 @@ function inView(e: KeyboardEvent): boolean {
 export function plateHandlers(): Partial<Record<KeyAction, Handler>> {
   const bus = () => cameraBus()
   const out: Partial<Record<KeyAction, Handler>> = {
-    'tool.move': () => setTool('move'),
+    'tool.move': () => setTool('move', true),
     'tool.rotate': () => setTool('rotate'),
     'tool.scale': () => setTool('scale'),
     'tool.placeOnFace': () => setTool('face'),
