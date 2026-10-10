@@ -2783,6 +2783,40 @@ fn tool_xs(g: &str, layer: usize, tool: u8) -> Vec<f64> {
     out
 }
 
+/// Extrusion end points of one tool on one layer (1-based), as (x, y); a move keeps the last x or y it does not set.
+fn tool_points(g: &str, layer: usize, tool: u8) -> Vec<(f64, f64)> {
+    let mut out = Vec::new();
+    let (mut l, mut t, mut x, mut y) = (0usize, 0u8, 0.0f64, 0.0f64);
+    for line in g.lines() {
+        if sx_core::extras::is_layer_mark(line) {
+            l += 1;
+            continue;
+        }
+        if line.len() == 2 && line.starts_with('T') {
+            t = line[1..].parse::<u8>().unwrap_or(0);
+            continue;
+        }
+        if !(line.starts_with("G1 ")
+            || line.starts_with("G0 ")
+            || line.starts_with("G2 ")
+            || line.starts_with("G3 "))
+        {
+            continue;
+        }
+        let word = |c: char| {
+            line.split_whitespace()
+                .find_map(|w| w.strip_prefix(c))
+                .and_then(|v| v.parse::<f64>().ok())
+        };
+        x = word('X').unwrap_or(x);
+        y = word('Y').unwrap_or(y);
+        if l == layer && t == tool && line.contains(" E") && word('E').is_some_and(|e| e > 0.0) {
+            out.push((x, y));
+        }
+    }
+    out
+}
+
 #[test]
 fn a_painted_wall_colors_the_wedge_behind_it_and_only_the_skin_near_the_top_and_bottom() {
     let r = painted_run(painted_box(false));
@@ -2825,6 +2859,137 @@ fn a_painted_top_face_colors_the_top_layers_in_a_shrinking_square() {
         span(&below)
     );
     assert!(tool_xs(&g, 44, 1).is_empty());
+}
+
+/// Two 10 x 20 x 1 mm inlays side by side in filaments 2 and 3, their outer sides painted filament 1 and their
+/// bottoms not, under a 20 x 20 x 1 mm cap of filament 1: a keychain's color layer. The face where the inlays meet
+/// is unpainted.
+fn inlays() -> Mesh {
+    let side = |a: [f32; 2], b: [f32; 2]| {
+        [
+            sx_core::paint::PaintFacet {
+                v: [[a[0], a[1], 0.0], [b[0], b[1], 0.0], [b[0], b[1], 1.0]],
+                state: 1,
+            },
+            sx_core::paint::PaintFacet {
+                v: [[a[0], a[1], 0.0], [b[0], b[1], 1.0], [a[0], a[1], 1.0]],
+                state: 1,
+            },
+        ]
+    };
+    let mut left = cuboid([-10.0, 0.0], [-10.0, 10.0], [0.0, 1.0], "left");
+    left.slot = 2;
+    left.paint = [
+        side([-10.0, -10.0], [0.0, -10.0]),
+        side([0.0, 10.0], [-10.0, 10.0]),
+        side([-10.0, 10.0], [-10.0, -10.0]),
+    ]
+    .concat();
+    let mut right = cuboid([0.0, 10.0], [-10.0, 10.0], [0.0, 1.0], "right");
+    right.slot = 3;
+    right.paint = [
+        side([0.0, -10.0], [10.0, -10.0]),
+        side([10.0, -10.0], [10.0, 10.0]),
+        side([10.0, 10.0], [0.0, 10.0]),
+    ]
+    .concat();
+    let cap = cuboid([-10.0, 10.0], [-10.0, 10.0], [1.0, 2.0], "cap");
+    Mesh {
+        name: "inlays".into(),
+        parts: vec![cap, left, right],
+    }
+}
+
+/// Paint is cut on the object's outline, the union of its parts (Bambu Studio's color segmentation), so the face
+/// where two parts meet carries no color. The unpainted bottoms bring each inlay's own filament up through the
+/// three bottom color layers; above them the painted sides fill the whole cross-section with filament 1. Cut part
+/// by part, the meeting face was unpainted outline and left a band of each inlay's filament on layers 4 and 5.
+#[test]
+fn paint_is_cut_on_the_union_of_an_objects_parts() {
+    let r = painted_run_with(
+        inlays(),
+        json!({"layer_height": 0.2, "initial_layer_print_height": 0.2, "bottom_shell_layers": 3, "top_shell_layers": 4}),
+    );
+    let g = text(&r);
+    for layer in 1..=3 {
+        assert!(
+            !tool_xs(&g, layer, 1).is_empty() && !tool_xs(&g, layer, 2).is_empty(),
+            "layer {layer}"
+        );
+    }
+    for layer in 4..=5 {
+        assert!(
+            tool_xs(&g, layer, 1).is_empty() && tool_xs(&g, layer, 2).is_empty(),
+            "layer {layer}"
+        );
+        assert!(!tool_xs(&g, layer, 0).is_empty(), "layer {layer}");
+    }
+}
+
+/// The painted top of a part as two facets at height `z`.
+fn top_paint(x: [f32; 2], y: [f32; 2], z: f32, state: u8) -> Vec<sx_core::paint::PaintFacet> {
+    vec![
+        sx_core::paint::PaintFacet {
+            v: [[x[0], y[0], z], [x[1], y[0], z], [x[1], y[1], z]],
+            state,
+        },
+        sx_core::paint::PaintFacet {
+            v: [[x[0], y[0], z], [x[1], y[1], z], [x[0], y[1], z]],
+            state,
+        },
+    ]
+}
+
+/// Bambu Studio's worked example: a painted top on a thin part reaches into the part below. Part A, 20 x 20 x 2 mm
+/// in filament 1; part B, 20 x 20 x 0.6 mm on it in filament 4 with its top painted 2; top color layers 5. Layers
+/// 9 to 13 show filament 2 (B's three and two of A's), layer 8 and below only filament 1.
+#[test]
+fn a_painted_top_reaches_into_the_part_below() {
+    let a = cuboid([-10.0, 10.0], [-10.0, 10.0], [0.0, 2.0], "a");
+    let mut b = cuboid([-10.0, 10.0], [-10.0, 10.0], [2.0, 2.6], "b");
+    b.slot = 4;
+    b.paint = top_paint([-10.0, 10.0], [-10.0, 10.0], 2.6, 2);
+    let r = painted_run_with(
+        Mesh {
+            name: "two".into(),
+            parts: vec![a, b],
+        },
+        json!({"layer_height": 0.2, "initial_layer_print_height": 0.2, "top_shell_layers": 5, "bottom_shell_layers": 3}),
+    );
+    let g = text(&r);
+    for layer in 9..=13 {
+        assert!(!tool_xs(&g, layer, 1).is_empty(), "layer {layer}");
+    }
+    assert!(tool_xs(&g, 8, 1).is_empty() && tool_xs(&g, 8, 3).is_empty());
+    // B's own filament rings its two lower layers; A's rings the two below.
+    assert!(!tool_xs(&g, 11, 3).is_empty() && !tool_xs(&g, 12, 3).is_empty());
+    assert!(!tool_xs(&g, 9, 0).is_empty() && !tool_xs(&g, 10, 0).is_empty());
+}
+
+/// Bambu Studio's worked example: a part covering the middle of a painted top. Part A, 20 x 20 x 2 mm in filament
+/// 1 with its top painted 2; part B, 10 x 10 x 2 mm on its middle in filament 4. On A's top layer filament 2 prints
+/// only outside the middle, which is no surface and keeps filament 1.
+#[test]
+fn a_painted_top_another_part_covers_keeps_its_own_filament_there() {
+    let mut a = cuboid([-10.0, 10.0], [-10.0, 10.0], [0.0, 2.0], "a");
+    a.paint = top_paint([-10.0, 10.0], [-10.0, 10.0], 2.0, 2);
+    let mut b = cuboid([-5.0, 5.0], [-5.0, 5.0], [2.0, 4.0], "b");
+    b.slot = 4;
+    let r = painted_run_with(
+        Mesh {
+            name: "two".into(),
+            parts: vec![a, b],
+        },
+        json!({"layer_height": 0.2, "initial_layer_print_height": 0.2, "top_shell_layers": 5, "bottom_shell_layers": 3}),
+    );
+    let g = text(&r);
+    // Inside the covered middle (with half a line to spare) no filament 2, and filament 1 there.
+    let inside = |p: &(f64, f64)| (p.0 - 100.0).abs() < 4.7 && (p.1 - 100.0).abs() < 4.7;
+    let painted = tool_points(&g, 10, 1);
+    assert!(!painted.is_empty());
+    assert!(!painted.iter().any(inside), "{painted:?}");
+    assert!(tool_points(&g, 10, 0).iter().any(inside));
+    assert!(!tool_xs(&g, 11, 3).is_empty());
 }
 
 /// `top_color_penetration_layers` (Bambu Studio's project setting): a painted top colors that many layers, the
