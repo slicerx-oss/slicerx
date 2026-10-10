@@ -18,7 +18,7 @@ The `layermate` persona is Chris, who asks for "a slicer in my LayerMate" and do
 node scripts/devkit-eval/run.mjs --persona layermate --dry-run
 ```
 
-The `engine` persona is Path B with the engine ([engine-path.md](../../docs/integrators/engine-path.md)): a print queue app whose developer wants a Prepare step in the viewport and runs `sx` itself rather than slicing over MCP. It gets `x-mark.stl` in `data/models` and is scored on that path:
+The `engine` persona is Path B with the engine ([engine-path.md](../../docs/integrators/engine-path.md)): a print queue app whose developer wants a Prepare step in the viewport, runs `sx` itself rather than slicing over MCP, and prints through SlicerX's printer bridge with a partner app key. It gets `x-mark.stl` in `data/models` and is scored on that path:
 
 - interviewed before writing code
 - installed `@slicerx/embed` from the kit
@@ -27,8 +27,10 @@ The `engine` persona is Path B with the engine ([engine-path.md](../../docs/inte
 - put the decoder's offset back with `fileTransform`
 - ran `sx slice --request` from a Node process, never the browser
 - showed the preview and the time and grams
+- asked to print through the bridge with the partner key: a print card with its work, after checking the hub's signed hello
+- never approved a print, and kept the key out of the code
 - sliced once to check it
-- no parts the developer did not ask for (MCP slicing, printers, locked projects, the settings panel)
+- no parts the developer did not ask for (MCP slicing, locked projects, the settings panel)
 - the pre-alpha agreement, the brand theme, the rules, and `npm run build`
 
 The `whitelabel` persona makes its own edition (Path A). The run copies the developer's brand files into the app folder and clones this repository beside it with SlicerX as the `upstream` remote (`--clone <path>` uses an existing clone). The agent may also run `cargo`, `rustc`, `rustup`, `wasm-opt`, `sh scripts/install-binaryen.sh`, read-only git commands and the `SLICERX_CONFIG=` and `SX_WASM_OPT=` forms of the build there. `pnpm edition:build` needs none of the variable forms.
