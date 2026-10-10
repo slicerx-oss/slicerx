@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// Auto slice: on by default, no Slice button, Print is the action, an edit makes the numbers stale at once and a new slice follows.
+// Auto slice on Always: no Slice button, Print is the action, an edit makes the numbers stale at once and a new slice
+// follows. Auto, which holds a big plate for Slice, is in packages/app/test/auto-slice-by-size.test.ts.
 import { expect, test } from '@playwright/test'
 import { plateReady } from './fixtures'
 
@@ -13,7 +14,8 @@ test('slices in the background after an edit, and the Slice button returns when 
     if (sessionStorage.getItem('sx-e2e')) return
     sessionStorage.setItem('sx-e2e', '1')
     localStorage.setItem('slicerx.debug', '1')
-    localStorage.setItem('slicerx.prefs.v1', JSON.stringify({ workspace: 'prepare', settingsMode: 'advanced', pilot: { mode: 'off' } }))
+    // Always: Auto would hold a plate whose last slice took as long as a test runner's.
+    localStorage.setItem('slicerx.prefs.v1', JSON.stringify({ workspace: 'prepare', settingsMode: 'advanced', pilot: { mode: 'off' }, autoSliceBySize: false }))
   })
   await page.goto('./')
   await plateReady(page)

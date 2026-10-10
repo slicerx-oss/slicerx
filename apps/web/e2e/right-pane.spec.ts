@@ -101,7 +101,7 @@ test('a 120-character file name stays on one line in the objects list, the plate
     if (sessionStorage.getItem('sx-e2e')) return
     sessionStorage.setItem('sx-e2e', '1')
     localStorage.setItem('slicerx.debug', '1')
-    localStorage.setItem('slicerx.prefs.v1', JSON.stringify({ workspace: 'prepare', settingsMode: 'simple', pilot: { mode: 'off' }, autoSlice: true, handPrinters: [p], printerId: p.id }))
+    localStorage.setItem('slicerx.prefs.v1', JSON.stringify({ workspace: 'prepare', settingsMode: 'simple', pilot: { mode: 'off' }, autoSlice: true, autoSliceBySize: false, handPrinters: [p], printerId: p.id }))
   }, printer)
   await page.goto('./')
   await plateReady(page)
