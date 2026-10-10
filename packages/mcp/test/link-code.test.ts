@@ -4,7 +4,7 @@ import { chmodSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { linkCodeFrom, readAgentCode, readHubKey } from '../src/link-code'
+import { linkCodeFrom, linkKeyFrom, readAgentCode, readHubKey } from '../src/link-code'
 
 describe('the sx-link agent code stays off the command line', () => {
   it('refuses --link-code', () => {
@@ -24,6 +24,18 @@ describe('the sx-link agent code stays off the command line', () => {
       expect(() => readAgentCode(dir)).toThrow(/readable by other users/)
     }
     expect(readAgentCode(join(dir, 'missing'))).toBeUndefined()
+  })
+  it('takes a partner app key in its own format and never repeats a bad one', () => {
+    const key = `sxp_${'0123456789abcdef'.repeat(4)}`
+    expect(linkKeyFrom(` ${key}\n`)).toBe(key)
+    for (const bad of ['sxp_short', 'f'.repeat(64), `sxp_${'G'.repeat(64)}`, `${key}x`]) {
+      expect(() => linkKeyFrom(bad)).toThrow(/not a SlicerX partner app key/)
+      try {
+        linkKeyFrom(bad)
+      } catch (e) {
+        expect((e as Error).message).not.toContain(bad)
+      }
+    }
   })
   it('reads the hub key the client checks before sending the code', () => {
     const dir = mkdtempSync(join(tmpdir(), 'sx-hub-'))

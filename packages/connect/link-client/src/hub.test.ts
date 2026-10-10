@@ -164,6 +164,19 @@ test('a saved client key goes only to a hub that proves the pinned key', async (
   assert.deepEqual(ok.sent().map((s) => s.method), ['hello', 'pair'])
 })
 
+test('a partner app key pairs as an agent and the host says it is a partner', async () => {
+  const real = await hubKeys()
+  const key = `sxp_${'a'.repeat(64)}`
+  const h = hubWith(real, (method, params) => (method === 'pair' && params['clientKey'] === key ? { paired: true, role: 'agent', partner: true } : method === 'clients.create' ? { clientId: 'client-2', clientKey: key, role: 'agent', partner: true } : {}))
+  const host = await connectLink({ clientKey: key, hubKey: real.pub, WebSocket: h.WS })
+  assert.equal(host.partner, true)
+  await host.clients.create('LayerMate', 'agent', { partner: true })
+  assert.deepEqual(h.sent().find((s) => s.method === 'clients.create')?.params, { name: 'LayerMate', role: 'agent', partner: true })
+  // A plain agent key says nothing about partners.
+  const plain = hubWith(real, (method) => (method === 'pair' ? { paired: true, role: 'agent' } : {}))
+  assert.equal((await connectLink({ clientKey: 'k'.repeat(64), hubKey: real.pub, WebSocket: plain.WS })).partner, undefined)
+})
+
 test('without a pinned key the client reports the key to pin', async () => {
   const real = await hubKeys()
   const h = hubWith(real)
