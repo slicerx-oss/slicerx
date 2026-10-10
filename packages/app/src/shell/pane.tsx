@@ -10,7 +10,7 @@
 // panes shut all the way, so the view takes the whole width; Slice's keep the icon rail.
 import type { Workspace } from '@slicerx/contracts'
 import { EdgeTab, keymapFor, Rail, ResizeEdge, type IconName, type RailItem } from '@slicerx/ui'
-import { useEffect, useId, useRef, useState, type CSSProperties, type PointerEvent, type ReactNode } from 'react'
+import { useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties, type PointerEvent, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { createStore, useStore } from 'zustand'
 import { useLookChoice } from '../first-run/look'
@@ -120,6 +120,38 @@ export function SidePane({ side, ws, label, sections, children, footer, pinned, 
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [sheet, sheetOpen, sheetKey])
+  // An open sheet takes its content's height (up to its 70% cap) and holds it, so a section opening inside scrolls
+  // there instead of growing the sheet upward under the finger. Content that lands late (a lazy panel) may still size
+  // it until the first press or key inside; from then on it holds.
+  useLayoutEffect(() => {
+    const el = railRef.current
+    if (!el || !sheet) return
+    if (!sheetOpen) {
+      el.style.removeProperty('height')
+      return
+    }
+    let held = false
+    const fit = () => {
+      if (held) return
+      el.style.removeProperty('height')
+      el.style.height = `${Math.round(el.getBoundingClientRect().height)}px`
+    }
+    fit()
+    const content = el.querySelector('.sx-rail-body')
+    const ro = typeof ResizeObserver === 'undefined' || !content ? null : new ResizeObserver(() => fit())
+    if (ro && content) for (const c of Array.from(content.children)) ro.observe(c)
+    const hold = () => {
+      held = true
+      ro?.disconnect()
+    }
+    el.addEventListener('pointerdown', hold, true)
+    el.addEventListener('keydown', hold, true)
+    return () => {
+      ro?.disconnect()
+      el.removeEventListener('pointerdown', hold, true)
+      el.removeEventListener('keydown', hold, true)
+    }
+  }, [sheet, sheetOpen])
   // A sheet closes when its pane goes (switching between Model and Slice).
   useEffect(() => () => setSheet(sheetKey, false), [sheetKey])
 
