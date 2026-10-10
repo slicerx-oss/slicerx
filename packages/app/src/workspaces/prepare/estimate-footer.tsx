@@ -9,6 +9,7 @@ import { slicedIn } from '../../lib/estimate-line'
 import { isExportOnly } from '../../lib/hand-printers'
 import { formatCost, formatDuration, formatGrams } from '../../lib/preview-stats'
 import { useSliceNote } from '../../lib/slice-note'
+import { MiddleName, shortPrinterName } from '../../lib/short-name'
 import { printTarget, usePrinter } from '../../lib/use-printer'
 import { useWaited } from '../../lib/waited'
 import { printBlock } from '../../plate/heimdall'
@@ -76,8 +77,14 @@ export function SliceBlock({ label = 'Slice plate' }: { label?: string; compact?
       Export G-code
     </SplitButton>
   ) : (
-    <SplitButton variant="primary" size="lg" full icon="send-to-printer" data-testid="danger-slice-print" disabled={!fresh || loading} {...(reason ? { tip: { title: 'Print', reason } } : {})} menuLabel="More output" menuOpen={menu} onMenu={() => setMenu(!menu)} menuProps={{ 'data-testid': 'slice-output-menu' }} menu={outputMenu} onClick={() => (target ? void sendToPrinter(host, target) : showSliced())}>
-      Print
+    <SplitButton variant="primary" size="lg" full icon="send-to-printer" data-testid="danger-slice-print" aria-label={target ? `Print on ${target.name}` : 'Print'} disabled={!fresh || loading} {...(reason ? { tip: { title: target ? `Print on ${target.name}` : 'Print', reason } } : target ? { tip: { title: `Print on ${target.name}` } } : {})} menuLabel="More output" menuOpen={menu} onMenu={() => setMenu(!menu)} menuProps={{ 'data-testid': 'slice-output-menu' }} menu={outputMenu} onClick={() => (target ? void sendToPrinter(host, target) : showSliced())}>
+      {target ? (
+        <span className="btn-name">
+          Print on <MiddleName name={shortPrinterName(target.name)} />
+        </span>
+      ) : (
+        'Print'
+      )}
     </SplitButton>
   )
   // With Auto slice off and a current slice, Slice again sits on the estimate line as a quiet button.

@@ -51,6 +51,9 @@ test('Print is a split button: its menu has the exports, and an edit marks the e
   await open(page)
   await slice(page)
   await expect(page.getByTestId('danger-slice-print')).toBeEnabled()
+  // It names the printer it prints on, on one line.
+  await expect(page.getByTestId('danger-slice-print')).toHaveAccessibleName(/^Print on .+/)
+  expect((await page.getByTestId('danger-slice-print').boundingBox())!.height).toBeLessThan(60)
   await page.getByTestId('slice-output-menu').click()
   await expect(page.getByTestId('slice-output-export-gcode')).toBeVisible()
   await expect(page.getByTestId('slice-output-export-3mf')).toBeVisible()
