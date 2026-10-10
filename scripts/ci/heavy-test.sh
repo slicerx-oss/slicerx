@@ -104,7 +104,9 @@ fake $$ ''; waiter 2 w5; ok kept $$
 name="a new lock with no record is kept"
 rm -rf "$dir" && mkdir "$dir"; SX_HEAVY_ORPHAN=60 waiter 2 w6; ok eval '[ "$rc" = 75 ] && [ -d "$dir" ]'
 name="an old lock with no record is cleared"
-rm -rf "$dir" && mkdir "$dir" && touch -d '-120 seconds' "$dir"; SX_HEAVY_ORPHAN=60 waiter 20 w7
+# GNU touch takes -d '-120 seconds'; macOS's BSD touch refuses it, so there the time goes in with -t.
+rm -rf "$dir" && mkdir "$dir" && { touch -d '-120 seconds' "$dir" 2> /dev/null || touch -t "$(date -v-120S +%Y%m%d%H%M.%S)" "$dir"; }
+SX_HEAVY_ORPHAN=60 waiter 20 w7
 ok eval 'taken_over && grep -q "cleared a lock with no holder record" "$tmp/waiter.out"'
 sleep 0 & dead=$!; wait $dead
 name="an old record (no side) with a dead pid is taken over"
