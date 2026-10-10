@@ -5,7 +5,7 @@
 // exports G-code and slices with the project's machine G-code. Switching to one of the person's printers takes that
 // printer's G-code wholesale and keeps the settings that suit it, so no project G-code reaches another machine.
 import type { PrinterInfo, SettingValue } from '@slicerx/contracts'
-import { GCODE_TEXT_KEYS, LEGACY_KEYS, importFlat, listPrinterProfiles, machineEntry, printerProfile, reviewProjectGcode, settingDef } from '@slicerx/settings'
+import { GCODE_TEXT_KEYS, SLICERX_KEEPS, changedKeys, importFlat, listPrinterProfiles, machineEntry, printerProfile, reviewProjectGcode, settingDef } from '@slicerx/settings'
 import { resolveConfig } from '../adapters/config'
 import { projectSettingChanges } from '../export/project-settings'
 import { slotConfig } from '../filament/slots'
@@ -61,33 +61,9 @@ export function nozzleBound(key: string): boolean {
   return key === 'layer_height' || key === 'initial_layer_print_height' || key.endsWith('line_width')
 }
 
-/**
- * The keys a project lists as changed from its system presets (`different_settings_to_system`: the process, then each
- * filament, then the printer), in our key names. Undefined when the file does not say, so every key counts.
- */
-export function changedKeys(settings: Record<string, unknown>): Set<string> | undefined {
-  const v = settings['different_settings_to_system']
-  if (!Array.isArray(v)) return undefined
-  const out = new Set<string>()
-  for (const entry of v) {
-    if (typeof entry !== 'string') continue
-    for (const k of entry.split(';').map((x) => x.trim()).filter(Boolean)) out.add(LEGACY_KEYS[k] ?? k)
-  }
-  return out
-}
-
-/**
- * Engine choices of SlicerX that stay when a project opens, unless the person changed them in the project (its
- * different_settings_to_system lists the key): every other value the project inherited from its presets comes from the
- * file. Each says, in the open's note, what it kept when the project's inherited value differs.
- */
-export const SLICERX_KEEPS: Readonly<Record<string, string>> = {
-  // aegis: wall widths fitted to the part, so thin features print solid with fewer width changes than Arachne or
-  // Bambu Studio's classic walls (adapters/config.ts SLICERX_PRESET_DEFAULTS sets it over every maker preset).
-  wall_generator: "Kept SlicerX's aegis walls; the project used Bambu's default.",
-  // The outer wall spaced from the inner walls so that the outline, not the wall's center, lands on the model's size.
-  precise_outer_wall: "Kept SlicerX's precise outer wall; the project used Bambu's default.",
-}
+// The engine choices kept on open and the project's list of changed keys live in @slicerx/settings, shared with the
+// MCP server's project_settings.
+export { SLICERX_KEEPS, changedKeys } from '@slicerx/settings'
 
 /** The overrides split for another printer: what carries over, and what stays with the project printer (`dropped` names the settings, not the G-code). */
 export function carryOver(overrides: Record<string, SettingValue>, gcodeKeys: readonly string[], sameNozzle: boolean): { kept: Record<string, SettingValue>; parked: Record<string, SettingValue>; dropped: string[] } {
