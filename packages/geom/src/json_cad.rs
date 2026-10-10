@@ -205,7 +205,8 @@ fn boolean_op(req: &Value, enc: MeshOut, files: FileLoader<'_>) -> Result<Value>
     let opts: BooleanOptions = field_or_default(req, "options")?;
     let wa: Vec<TriMesh> = a.iter().map(Item::world).collect();
     let wb: Vec<TriMesh> = b.iter().map(Item::world).collect();
-    let (m, r) = boolean::boolean(&wa, &wb, op, &opts)?;
+    let (m, mut r) = boolean::boolean(&wa, &wb, op, &opts)?;
+    let m = boolean::tidy(m, &mut r);
     let mut v = mesh_report(&first.to_local(&m)?, enc);
     insert(&mut v, "report", to_value(&r)?);
     Ok(v)

@@ -304,6 +304,14 @@ fn from_gl(gl: &MeshGL64) -> TriMesh {
     TriMesh::new(positions, triangles)
 }
 
+/// a boolean's result with its flat faces filled again (remesh.rs), for results people see
+pub fn tidy(mut out: TriMesh, report: &mut BooleanReport) -> TriMesh {
+    out = crate::remesh::remesh_flat(&out, &crate::remesh::RemeshOptions::default());
+    report.triangles = out.triangles.len();
+    report.volume_mm3 = out.volume();
+    out
+}
+
 pub fn boolean(
     a: &[TriMesh],
     b: &[TriMesh],

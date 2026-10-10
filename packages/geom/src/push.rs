@@ -148,10 +148,11 @@ pub fn push_face(
     } else {
         BoolOp::Difference
     };
-    let (out, r) = boolean::boolean_solids(&[before], &[solid], op, opts)?;
+    let (out, mut r) = boolean::boolean_solids(&[before], &[solid], op, opts)?;
     if r.empty || out.triangles.is_empty() {
         return Err(Error::geometry("face.push", "the cut removes the whole body"));
     }
+    let out = boolean::tidy(out, &mut r);
     Ok(PushResult {
         report: ExtrudeReport {
             volume_change_mm3: r.volume_mm3 - v0,

@@ -35,6 +35,9 @@ interface Flat {
   faces?: Faces
 }
 
+/** Positions rounded to f32, as the app keeps them (Float32Array). */
+const asStored = (p: ArrayLike<number>): number[] => Array.from(p, Math.fround)
+
 const flat = (m: HistoryMesh): Flat => ({ name: m.name, slot: m.slot, positions: Array.from(m.positions), indices: Array.from(m.indices), ...(m.faces ? { faces: m.faces } : {}) })
 
 /** The part with a step's result mesh, its faces with it. */
@@ -214,7 +217,8 @@ async function runStep(engine: EngineCall, s: Step, parts: Flat[], fonts: Record
       }
       case 'subtract': {
         const world = bakeMesh(part, s.transform)
-        const r = (await call('subtract', { mesh: { positions: world.positions, indices: world.indices }, solids: p.solids })) as { mesh: Flat; removedVolumeMm3: number }
+        // in world space as the tool sends it: baked to f32 (plate/mesh-ops.ts bake)
+        const r = (await call('subtract', { mesh: { positions: asStored(world.positions), indices: world.indices }, solids: p.solids })) as { mesh: Flat; removedVolumeMm3: number }
         if (!(r.removedVolumeMm3 > 0)) throw new Broken('The shape no longer reaches the part.')
         out[i] = local(r.mesh, part)
         break

@@ -1535,6 +1535,9 @@ pub fn apply(
     profile: Profile,
     opts: &BooleanOptions,
 ) -> Result<EdgeResult> {
+    // the round's strips follow every vertex along the edge: the flat faces from their corners alone first
+    let coarse = crate::remesh::coarsen_flat(mesh);
+    let mesh = &coarse;
     let t = tools(mesh, edges, profile)?;
     let mut solid = Solid::new(mesh)?;
     let v0 = solid.volume();
@@ -1554,9 +1557,10 @@ pub fn apply(
             opts,
         )?);
     }
-    let Some((out, r)) = last else {
+    let Some((out, mut r)) = last else {
         return Err(Error::invalid("edges", "pick at least one edge"));
     };
+    let out = boolean::tidy(out, &mut r);
     if r.empty || out.triangles.is_empty() {
         return Err(Error::geometry("edges", "the change removes the whole body"));
     }
