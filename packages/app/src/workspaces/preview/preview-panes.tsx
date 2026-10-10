@@ -296,7 +296,7 @@ export function PreviewRight() {
             {unsafe}
           </p>
         ) : outdated ? (
-          <p className="app-note" data-testid="slice-outdated">
+          <p className="app-note prose" data-testid="slice-outdated">
             The plate changed after this slice. Slice again to print or export it.
           </p>
         ) : null}
