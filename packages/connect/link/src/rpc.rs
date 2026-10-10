@@ -1484,6 +1484,13 @@ async fn approval_call(b: &Arc<Bridge>, conn: &Conn, method: &str, p: &Value) ->
             roles::person_only(r.actions.iter().map(|a| (a.action.as_str(), a.target.as_str())))
         })
     };
+    let via = if conn.partner.is_some() {
+        "partner"
+    } else if conn.role == Role::Agent {
+        "agent"
+    } else {
+        "app"
+    };
     match method {
         "approvals.register" => register_card(b, broker, conn, p),
         "approvals.grant" => {
@@ -1504,6 +1511,7 @@ async fn approval_call(b: &Arc<Bridge>, conn: &Conn, method: &str, p: &Value) ->
                 ));
             }
             let out = hub_rpc::grant(b, broker, p).await?;
+            hub_rpc::resolved(b, &id, true, via, conn.partner.as_deref());
             // Agent work runs here, under the person's token; the agent never gets the token.
             if let Some((owner, work)) = b.agent_work.take(&id) {
                 let token: ApprovalToken = serde_json::from_value(out.clone())
@@ -1524,6 +1532,7 @@ async fn approval_call(b: &Arc<Bridge>, conn: &Conn, method: &str, p: &Value) ->
             }
             hub_rpc::declined(b, &id);
             broker.deny(&id).map_err(bad)?;
+            hub_rpc::resolved(b, &id, false, via, conn.partner.as_deref());
             let _ = b.agent_work.take(&id);
             if let Some(to) = owner(&id).filter(|o| *o != conn.id) {
                 b.hub.emit_to("approval.denied", json!({ "requestId": id }), to);

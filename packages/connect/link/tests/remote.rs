@@ -272,6 +272,21 @@ async fn next_body(ws: &mut Ws) -> Option<String> {
     }
 }
 
+async fn app_event(ws: &mut Ws, name: &str, pred: impl Fn(&Value) -> bool) -> Value {
+    for _ in 0..200 {
+        let Ok(Some(Ok(Message::Text(t)))) =
+            tokio::time::timeout(Duration::from_millis(100), ws.next()).await
+        else {
+            continue;
+        };
+        let v: Value = serde_json::from_str(t.as_str()).unwrap();
+        if v["event"] == name && pred(&v["data"]) {
+            return v["data"].clone();
+        }
+    }
+    panic!("no matching {name} event");
+}
+
 async fn wait_connected(app: &mut Ws) -> Value {
     for i in 0..100 {
         let s = call(app, 900 + i, "remote.status", json!({})).await;
@@ -1079,6 +1094,12 @@ async fn h1_h2_away_from_home_a_phone_approves_only_pause_and_cancel_and_sees_th
         )
         .await;
     assert_eq!(r["ok"], true, "{r}");
+    // The app's card for it closes: the hub tells the app the phone answered.
+    let done = app_event(&mut s.app, "approval.resolved", |d| d["requestId"] == "w-gcode").await;
+    assert_eq!(
+        done,
+        json!({ "requestId": "w-gcode", "decision": "denied", "via": "phone" })
+    );
     let pending = call(&mut s.app, 71, "approvals.pending", json!({})).await;
     assert!(
         !pending["result"]

@@ -669,6 +669,21 @@ pub(crate) fn declined(b: &Bridge, request_id: &str) {
     }
 }
 
+/// A card was answered: `approval.resolved {requestId, decision, via, by?}` to the app, so a card
+/// it still shows closes when a phone, a partner app or the agent that raised it answered first.
+/// `via` is `app`, `phone`, `partner` or `agent`; `by` is a partner's name, from its key.
+pub(crate) fn resolved(b: &Bridge, request_id: &str, granted: bool, via: &str, by: Option<&str>) {
+    let mut data = json!({
+        "requestId": request_id,
+        "decision": if granted { "granted" } else { "denied" },
+        "via": via,
+    });
+    if let (Some(by), Some(o)) = (by, data.as_object_mut()) {
+        o.insert("by".into(), json!(by));
+    }
+    b.hub.emit("approval.resolved", data);
+}
+
 // ---- the queue ----
 
 async fn raise_card(b: &Arc<Bridge>, item: &QueueItem, now: u64) {

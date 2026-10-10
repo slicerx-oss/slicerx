@@ -429,6 +429,17 @@ export interface ApprovalDone {
   message?: string
 }
 
+/**
+ * A card was answered (`approval.resolved`), by whichever client answered it: an app window, a paired
+ * phone over the relay, a partner app (its own pause or cancel, `by` is its name) or the agent that raised it.
+ */
+export interface ApprovalResolved {
+  requestId: string
+  decision: 'granted' | 'denied'
+  via: 'app' | 'phone' | 'partner' | 'agent'
+  by?: string
+}
+
 /** Which alerts a phone wants pushed. Same names as the phone's notification settings. */
 export interface PushPrefs {
   printDone: boolean
@@ -535,6 +546,8 @@ export interface LinkHost extends PrinterHost {
     pending(): Promise<ApprovalRequest[]>
     /** A card the hub raised (queued plate whose turn came, scheduled plate). */
     onRequest(cb: (r: ApprovalRequest) => void): () => void
+    /** A card was answered, on this connection or another. App connections only. */
+    onResolved(cb: (r: ApprovalResolved) => void): () => void
     /**
      * For agents (MCP): registers a card that only a person may answer (start, resume, G-code,
      * adjust) together with its work. The hub checks that the card's actions are exactly the work's,
@@ -818,6 +831,7 @@ export async function connectLink(opts: ConnectOptions): Promise<LinkHost> {
   const guardListeners = new Set<(t: GuardTrip) => void>()
   const alertListeners = new Set<(a: HubAlert) => void>()
   const requestListeners = new Set<(r: ApprovalRequest) => void>()
+  const resolvedListeners = new Set<(r: ApprovalResolved) => void>()
   ws.binaryType = 'arraybuffer'
   interface StreamSink { frame: Set<(f: CameraFrame) => void>; stats: Set<(s: CameraStats) => void>; ended: Set<() => void>; status: Set<(s: CameraStatus) => void>; last?: CameraStatus; early: CameraFrame[] }
   const sinks = new Map<number, StreamSink>()
@@ -878,6 +892,10 @@ export async function connectLink(opts: ConnectOptions): Promise<LinkHost> {
     }
     if (msg.event === 'approval.done' && msg.data) {
       for (const cb of approvalDoneListeners) cb(msg.data as unknown as ApprovalDone)
+      return
+    }
+    if (msg.event === 'approval.resolved' && msg.data) {
+      for (const cb of resolvedListeners) cb(msg.data as unknown as ApprovalResolved)
       return
     }
     if (msg.event === 'watch.frame' && msg.data) {
@@ -1102,6 +1120,10 @@ export async function connectLink(opts: ConnectOptions): Promise<LinkHost> {
       onRequest: (cb) => {
         requestListeners.add(cb)
         return () => void requestListeners.delete(cb)
+      },
+      onResolved: (cb) => {
+        resolvedListeners.add(cb)
+        return () => void resolvedListeners.delete(cb)
       },
       registerWork: (req, work) =>
         call<{ registered: true; answeredIn: 'app' | 'here' }>('approvals.register', { request: req, work: work.kind === 'print' ? { ...work, file: encodeFile(work.file) } : work }),
