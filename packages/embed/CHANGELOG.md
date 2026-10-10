@@ -16,7 +16,7 @@ All notable changes to `@slicerx/embed` are listed here. The format follows Keep
 
 ### Added
 
-- Prepare tools in `Viewport` and `<sx-viewport>`: `tools` puts a toolbar over the view with select, move, rotate, scale, arrange and drop to bed (keys M, R, S and A). `tool`, `selection`, `onToolChange`, `onSelect` and `onTransform` (`tool`, `select` and `transform` events on the element), and `arrange()` and `dropToBed()` on the element.
+- Prepare tools in `Viewport` and `<sx-viewport>`: `tools` puts a toolbar over the view with select, move, rotate, scale, arrange and drop to bed (keys M, R, S and A). Move shows X, Y and Z arrows on the selected model, each a drag along its axis, Z stopping at the bed. `tool`, `selection`, `onToolChange`, `onSelect` and `onTransform` (`tool`, `select` and `transform` events on the element), and `arrange()` and `dropToBed()` on the element.
 - `reveal: 'each-plate'` (`reveal="each-plate"`) plays the plate reveal for every new plate; `playReveal()` on the element plays it on demand.
 - `bedOutline: 'subtle'` (`bed-outline="subtle"`): a faint hairline bed outline without the glow.
 - `look="cad"` on `<sx-viewport>`.
