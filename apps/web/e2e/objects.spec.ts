@@ -137,7 +137,7 @@ test('an empty plate says so and points at Add', async ({ page }) => {
 })
 
 // Screenshots for review: SX_SHOTS=1, saved to SX_SHOTS_DIR (test-results/shots by default).
-test('shots: rows, the tree, the Add menu, a tool in the card and an empty plate, light and dark', async ({ page }, info) => {
+test('shots: rows, the tree, the Add menu, a tool in the card, the number rows and an empty plate, light and dark', async ({ page }, info) => {
   test.skip(!process.env['SX_SHOTS'], 'SX_SHOTS=1 only')
   test.slow()
   const dir = process.env['SX_SHOTS_DIR'] ?? info.outputPath('shots')
@@ -166,6 +166,16 @@ test('shots: rows, the tree, the Add menu, a tool in the card and an empty plate
     await expect(page.locator('.tool-slot [data-section="cut-tool"]')).toBeVisible()
     await shoot(`tool-${scheme}`)
     await page.locator('[data-section="cut-tool"]').getByRole('button', { name: 'Cancel' }).click()
+    // The number rows of the selected object: one outline per row, with the unit beside the name.
+    await sx(page, { moreOpen: { object: true } })
+    await rows(page).first().locator('.obj-row').click()
+    const tf = page.locator('[data-section="transform"]')
+    await expect(tf.getByRole('group', { name: 'Size' })).toBeVisible()
+    await tf.evaluate((el) => el.scrollIntoView({ block: 'center' }))
+    await page.mouse.move(0, 0)
+    await page.waitForTimeout(400)
+    await page.screenshot({ path: `${dir}/objects-transform-${scheme}-${width}.png` })
+    await sx(page, { moreOpen: {} })
   }
   await sx(page, { plate: [], selection: null, selectedIds: [] })
   await shoot('empty-dark')
