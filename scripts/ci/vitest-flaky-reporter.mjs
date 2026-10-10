@@ -2,7 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 // A vitest reporter for runs with --retry: it names each test that failed and then passed on a retry, so a retry
 // cannot hide a flaky test. It prints a GitHub annotation and appends the test's name to the file in SX_FLAKY_OUT,
-// which `flaky-check.sh retried` then checks against scripts/ci/flaky.txt. See "Flaky tests" in scripts/ci/README.md.
+// which `flaky-check.sh retried` then checks against scripts/ci/flaky.d. See "Flaky tests" in scripts/ci/README.md.
 //   pnpm exec vitest run --retry=1 --reporter=default --reporter=<this file> (scripts/ci/pr-test.sh does it per package)
 import { appendFileSync } from 'node:fs'
 import { relative, sep } from 'node:path'

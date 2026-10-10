@@ -1,0 +1,1 @@
+playback through a tool change on the H2C runs clean and keeps its frame rate | test-program | 2026-10-08 | https://github.com/slicerx-oss/slicerx/issues/51 | fails on both attempts on CI runners and on main, blocking every merge; was flaky.txt (passes alone, fails in the full e2e run (e2e/toolchange-play.spec.ts))
