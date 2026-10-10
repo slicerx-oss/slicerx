@@ -353,7 +353,7 @@ export async function slicePlate(host: Host, opts: { auto?: boolean } = {}): Pro
   const plateLayer = base['layer_height']
   const conflict = layerHeightConflict(s, seqNow, typeof plateLayer === 'number' ? plateLayer : 0.2)
   if (conflict) {
-    set({ slice: { status: 'error', message: conflict } })
+    set({ slice: { status: 'error', message: conflict }, preview: null })
     return
   }
   sliceAbort?.abort()
@@ -369,6 +369,7 @@ export async function slicePlate(host: Host, opts: { auto?: boolean } = {}): Pro
     const config = plateSliceConfig(s, meta)
     const toPrint = s.plate.filter((p) => p.printable !== false)
     const objects = await plateObjects(host.slicer, s, meta, s.plate)
+    if (abort.signal.aborted) throw new DOMException('Slice canceled', 'AbortError')
     sliceStage(timed, 'objects')
     // sleipnir plans the layer tops; a calibration plate keeps its own height bands.
     // Vary layer height reaches the engine as the resolved `smart_layer` mode (quality, or strength for a strong print).
@@ -439,7 +440,8 @@ export async function slicePlate(host: Host, opts: { auto?: boolean } = {}): Pro
     const message = engineErrorText(e instanceof Error ? e.message : String(e))
     if (await dropRefusedProjectSetting(message)) again = true
     else {
-      set({ slice: { status: 'error', message } })
+      // A refused slice (off the bed, in an excluded area) must not leave the last slice's toolpaths looking current.
+      set({ slice: { status: 'error', message }, preview: null })
       if (!opts.auto) toast(message, 'error')
     }
   } finally {
@@ -516,6 +518,9 @@ function gcodeName(plate: string): string {
   return `${slug}_plate-1.gcode`
 }
 
+/** What Export and Print say when the slice on screen is from before the plate changed. */
+const STALE_SLICE = 'The plate changed after this slice. Slice it again first.'
+
 export async function exportGcode(host: Host): Promise<void> {
   const s = get().slice
   if (s.status !== 'done') {
@@ -526,6 +531,11 @@ export async function exportGcode(host: Host): Promise<void> {
   const unsafe = printBlock(get())
   if (unsafe) {
     toast(unsafe, 'error')
+    return
+  }
+  // A slice from before the plate changed is not the plate's G-code.
+  if (s.stale) {
+    toast(STALE_SLICE, 'warn')
     return
   }
   const name = jobFileName(get(), s.result.fileName)
@@ -635,6 +645,10 @@ async function sendNow(host: Host, printer: PrinterInfo): Promise<void> {
   const unsafe = printBlock(get())
   if (unsafe) {
     toast(unsafe, 'error')
+    return
+  }
+  if (s.stale) {
+    toast(STALE_SLICE, 'warn')
     return
   }
   const plateName = jobName(get())

@@ -43,6 +43,7 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | `agreement-check`, `agreement-accept` | Its checkbox and Accept and continue |
 | `slice-track` | A slice in progress in the Estimate block: its bar and Cancel, in the big button's place |
 | `raven-slice-glide` | Muninn riding the Estimate block's slicing bar, for a slice past about 1.2 s |
+| `slice-outdated` | The note under the slice summary's Export when the plate changed after the slice shown: Export waits for a new slice |
 | `raven-loading` | Huginn and Muninn over the plate while a model loads for more than about 1.2 s |
 
 ## Setup (first run and Printers > Add)

@@ -208,6 +208,8 @@ export function PreviewRight() {
   const shown = shownSlice(slice)
   // The result on screen while a new slice runs is the last one: its file is not the plate's, so Print and Export wait.
   const updating = slice.status === 'running'
+  // A slice from before the plate changed shows, dimmed, but never leaves as the plate's G-code.
+  const outdated = !updating && shown?.stale === true
   if (!shown) {
     return (
       <Block title="Filament use" data-section="filament">
@@ -279,7 +281,7 @@ export function PreviewRight() {
         </dl>
         {/* The one Print is in the sidebar footer; the summary keeps the file export. */}
         <div className="app-row gap8">
-          <Button size="sm" icon="download" disabled={unsafe !== null || updating} onClick={() => void exportGcode(host)}>
+          <Button size="sm" icon="download" disabled={unsafe !== null || updating || outdated} onClick={() => void exportGcode(host)}>
             {printer && isExportOnly(printer) ? (
               <span className="btn-name" {...tipAttrs({ title: `Export for ${printer.name}` })}>
                 Export for <MiddleName name={shortPrinterName(printer.name)} />
@@ -292,6 +294,10 @@ export function PreviewRight() {
         {unsafe !== null ? (
           <p className="app-err" role="alert">
             {unsafe}
+          </p>
+        ) : outdated ? (
+          <p className="app-note" data-testid="slice-outdated">
+            The plate changed after this slice. Slice again to print or export it.
           </p>
         ) : null}
       </Block>
