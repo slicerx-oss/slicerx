@@ -152,6 +152,60 @@ async fn collect(
     out
 }
 
+/// Asks one printer the search question directly, for the name it announces (and its model and
+/// serial). Each port in `ports` (2021 and 1990 on real printers) gets its own socket on an
+/// ephemeral port, bound to the one address the route to the printer leaves from and connected to
+/// the printer, so it hears only that printer's answer. Nothing listens on the discovery ports and
+/// nothing is broadcast: this is not a network search.
+pub async fn ask_one(ip: Ipv4Addr, ports: &[u16], timeout: Duration) -> Option<DiscoveredPrinter> {
+    let asks = ports.iter().map(|&port| async move {
+        let sock = connected_to(SocketAddr::from((ip, port))).ok()?;
+        let msg = search_message();
+        let end = tokio::time::Instant::now() + timeout;
+        let step = (timeout / 3).max(Duration::from_millis(100));
+        let mut next_send = tokio::time::Instant::now();
+        let mut buf = vec![0_u8; 4096];
+        loop {
+            let now = tokio::time::Instant::now();
+            if now >= end {
+                return None;
+            }
+            if now >= next_send {
+                let _ = sock.send(msg.as_bytes()).await;
+                next_send = now + step;
+            }
+            match tokio::time::timeout_at(next_send.min(end), sock.recv(&mut buf)).await {
+                Ok(Ok(n)) => {
+                    let heard = buf
+                        .get(..n)
+                        .and_then(|d| std::str::from_utf8(d).ok())
+                        .and_then(parse_ssdp);
+                    if let Some(p) = heard.filter(|p| p.host == ip.to_string()) {
+                        return Some(p);
+                    }
+                }
+                // An ICMP port unreachable reads as an error on Windows; the next send tries again.
+                Ok(Err(_)) => tokio::time::sleep(Duration::from_millis(20)).await,
+                Err(_) => {}
+            }
+        }
+    });
+    futures::future::join_all(asks).await.into_iter().flatten().next()
+}
+
+/// A UDP socket connected to `to`, on an ephemeral port of the local address the route to `to`
+/// leaves from (found with a socket that is connected but never sends).
+fn connected_to(to: SocketAddr) -> std::io::Result<UdpSocket> {
+    let route = std::net::UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0))?;
+    route.connect(to)?;
+    let local = route.local_addr()?.ip();
+    drop(route);
+    let s = std::net::UdpSocket::bind((local, 0))?;
+    s.connect(to)?;
+    s.set_nonblocking(true)?;
+    UdpSocket::from_std(s)
+}
+
 fn merge_found(lists: Vec<Vec<DiscoveredPrinter>>) -> Vec<DiscoveredPrinter> {
     let mut found: BTreeMap<String, DiscoveredPrinter> = BTreeMap::new();
     for p in lists.into_iter().flatten() {
@@ -2776,6 +2830,35 @@ mod tests {
         let p = c.probe("127.0.0.1", Duration::from_millis(300)).await.unwrap();
         assert_eq!(p.serial.as_deref(), Some("0948AA000000001"));
         assert!(c.probe("127.0.0.2", Duration::from_millis(100)).await.is_none());
+    }
+
+    #[tokio::test]
+    async fn ask_one_hears_the_printer_it_asked_from_a_connected_socket() {
+        let printer = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let at = printer.local_addr().unwrap();
+        let answer = H2D_ANSWER.replace("192.168.68.52", "127.0.0.1");
+        tokio::spawn(async move {
+            let mut buf = [0_u8; 1024];
+            while let Ok((n, from)) = printer.recv_from(&mut buf).await {
+                assert!(from.port() != 2021 && from.port() != 1990, "asked from {from}");
+                if std::str::from_utf8(&buf[..n]).unwrap().starts_with("M-SEARCH") {
+                    printer.send_to(answer.as_bytes(), from).await.unwrap();
+                }
+            }
+        });
+        let p = ask_one(Ipv4Addr::LOCALHOST, &[at.port()], Duration::from_millis(600))
+            .await
+            .unwrap();
+        assert_eq!(p.name.as_deref(), Some("Workshop H2D"));
+        assert_eq!(p.serial.as_deref(), Some("0948AA000000001"));
+        // Nothing answers on another port: no name, and no wait past the timeout.
+        let quiet = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
+        let port = quiet.local_addr().unwrap().port();
+        assert!(
+            ask_one(Ipv4Addr::LOCALHOST, &[port], Duration::from_millis(200))
+                .await
+                .is_none()
+        );
     }
 
     #[test]
