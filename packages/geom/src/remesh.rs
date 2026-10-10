@@ -483,7 +483,13 @@ fn flat_regions(mesh: &TriMesh, ids: Option<&Vec<u32>>, dist_tol: f64) -> Option
 /// filled again from its corners alone: what an edge round wants, since its strips follow every vertex of the edge.
 /// The mesh itself when there are none.
 pub fn coarsen_flat(mesh: &TriMesh) -> TriMesh {
-    coarsen_inner(mesh, false).unwrap_or_else(|| mesh.clone())
+    coarsen_inner(mesh, false, None).unwrap_or_else(|| mesh.clone())
+}
+
+/// `coarsen_flat` for an edge round on `segments` (each edge's ends): only the flat faces that touch them go back to
+/// their corners, so faces the round does not reach keep the points an earlier fill gave them.
+pub fn coarsen_flat_touching(mesh: &TriMesh, segments: &[(V3, V3)]) -> TriMesh {
+    coarsen_inner(mesh, false, Some(segments)).unwrap_or_else(|| mesh.clone())
 }
 
 /// the flat faces filled again (`remesh_flat`), or the same from the mesh coarsened first (`coarsen_flat`, a face
@@ -494,7 +500,7 @@ pub fn coarsen_flat(mesh: &TriMesh) -> TriMesh {
 /// an earlier fill put inside it, though, which a face next to a round cannot always win back: hence the choice.
 pub fn tidy_flat(mesh: &TriMesh, opts: &RemeshOptions) -> TriMesh {
     let plain = remesh_flat(mesh, opts);
-    let Some(coarse) = coarsen_inner(mesh, true) else {
+    let Some(coarse) = coarsen_inner(mesh, true, None) else {
         return plain;
     };
     let coarse = remesh_flat(&coarse, opts);
@@ -518,7 +524,7 @@ fn quality(m: &TriMesh, target: f64) -> (usize, usize, usize) {
 }
 
 #[allow(clippy::too_many_lines, reason = "one pass, read top to bottom")]
-fn coarsen_inner(original: &TriMesh, by_id: bool) -> Option<TriMesh> {
+fn coarsen_inner(original: &TriMesh, by_id: bool, touching: Option<&[(V3, V3)]>) -> Option<TriMesh> {
     let mesh = original;
     let n = mesh.triangles.len();
     let pos = &mesh.positions;
@@ -580,6 +586,37 @@ fn coarsen_inner(original: &TriMesh, by_id: bool) -> Option<TriMesh> {
                 && vec3::dot(d0, d1) > 0.0;
             if !straight {
                 corner[v as usize] = true;
+            }
+        }
+    }
+    // Only the faces that touch the given segments (an edge round's edges, by their ends) are coarsened: every
+    // vertex of any other face stays, so their earlier fill survives.
+    if let Some(segs) = touching {
+        let tol = (diag * 1e-6).max(1e-6);
+        let near = |p: V3| {
+            segs.iter().any(|&(a, b)| {
+                let d = vec3::sub(b, a);
+                let l2 = vec3::dot(d, d);
+                let w = vec3::sub(p, a);
+                let t = if l2 > 0.0 {
+                    (vec3::dot(w, d) / l2).clamp(0.0, 1.0)
+                } else {
+                    0.0
+                };
+                vec3::len(vec3::sub(w, vec3::scale(d, t))) <= tol
+            })
+        };
+        for (r, reg) in regions.iter().enumerate() {
+            if reg.kind != Kind::Face {
+                continue;
+            }
+            let touched = rim(r).iter().any(|&(a, _)| near(pos[a as usize]));
+            if !touched {
+                for &t in &reg.tris {
+                    for &v in &mesh.triangles[t] {
+                        corner[v as usize] = true;
+                    }
+                }
             }
         }
     }

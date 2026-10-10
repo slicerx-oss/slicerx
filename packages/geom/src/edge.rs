@@ -1535,8 +1535,14 @@ pub fn apply(
     profile: Profile,
     opts: &BooleanOptions,
 ) -> Result<EdgeResult> {
-    // the round's strips follow every vertex along the edge: the flat faces from their corners alone first
-    let coarse = crate::remesh::coarsen_flat(mesh);
+    // the round's strips follow every vertex along the edge: the faces the edges touch from their corners alone
+    // first (a round edge, a circle, every flat face as before)
+    let coarse = if edges.iter().any(|e| e.center.is_some()) {
+        crate::remesh::coarsen_flat(mesh)
+    } else {
+        let segments: Vec<(V3, V3)> = edges.iter().map(|e| (e.a, e.b)).collect();
+        crate::remesh::coarsen_flat_touching(mesh, &segments)
+    };
     let mesh = &coarse;
     let t = tools(mesh, edges, profile)?;
     let mut solid = Solid::new(mesh)?;
@@ -1663,6 +1669,62 @@ mod tests {
             e([x, y, z], [0.0, y, z], up),
             e([0.0, y, z], [0.0, 0.0, z], up),
         ]
+    }
+
+    /// The smallest angles of the triangles on the plane z = `z`, sorted.
+    fn angles_at(m: &TriMesh, z: f64) -> Vec<f64> {
+        let mut out: Vec<f64> = m
+            .triangles
+            .iter()
+            .map(|&t| m.corners(t))
+            .filter(|c| c.iter().all(|p| (p[2] - z).abs() < 1e-6))
+            .map(|[a, b, c]| crate::remesh::min_angle(a, b, c))
+            .collect();
+        out.sort_by(f64::total_cmp);
+        out
+    }
+
+    #[test]
+    fn a_round_leaves_the_fill_of_faces_it_does_not_reach() {
+        // A plinth with its top edges and upright corners rounded: the result's flat faces are filled again, the
+        // bottom too, round the corner arcs. Rounding an edge of a block joined on top then must not take the
+        // bottom back to a fan from its corners: next to the corner rounds the fill cannot win it back.
+        let up = [0.0, 0.0, 1.0];
+        let side = |x: f64, y: f64, n: V3| e([x, y, 0.0], [x, y, 6.0], n);
+        let plinth = build::box_mesh([0.0; 3], [80.0, 26.0, 6.0]);
+        let corners = [
+            side(0.0, 0.0, [0.0, -1.0, 0.0]),
+            side(80.0, 0.0, [1.0, 0.0, 0.0]),
+            side(80.0, 26.0, [0.0, 1.0, 0.0]),
+            side(0.0, 26.0, [-1.0, 0.0, 0.0]),
+        ];
+        let mut edges = corners.to_vec();
+        edges.extend(top_loop(80.0, 26.0, 6.0));
+        let first = run(&plinth, &edges, fillet(2.0)).unwrap();
+        sound(&first);
+        let before = angles_at(&first.mesh, 0.0);
+        assert!(before[before.len() / 2] > 20.0, "{before:?}");
+        // a block joined on top, its own top front edge rounded
+        let block = build::box_mesh([30.0, 8.0, 6.0], [50.0, 18.0, 16.0]);
+        let joined = boolean::boolean(&[first.mesh], &[block], BoolOp::Union, &BooleanOptions::default())
+            .unwrap()
+            .0;
+        let between = angles_at(&joined, 0.0);
+        assert!(between[between.len() / 2] > 20.0, "{between:?}");
+        let second = run(
+            &joined,
+            &[e([30.0, 8.0, 16.0], [50.0, 8.0, 16.0], up)],
+            fillet(1.0),
+        )
+        .unwrap();
+        sound(&second);
+        let after = angles_at(&second.mesh, 0.0);
+        assert!(
+            after[after.len() / 2] > 20.0,
+            "median {} of {:?}",
+            after[after.len() / 2],
+            after
+        );
     }
 
     fn l_bracket() -> TriMesh {
