@@ -4,10 +4,9 @@
 //! `packages/contracts/src/preview.ts`, which also has the reader.
 
 use crate::error::{Error, Result};
-use crate::fm::Fm as _;
 use crate::gcode::bead_area;
 use crate::geom::Point;
-use crate::output::SliceOutput;
+use crate::output::{Feature, SliceOutput};
 
 pub const MAGIC: u32 = 0x5650_5853;
 pub const VERSION: u16 = 1;
@@ -90,7 +89,8 @@ pub fn preview_buffers(out: &SliceOutput) -> Vec<u8> {
         acc += l.paths.len().saturating_sub(1);
     }
     u32le(&mut b, acc);
-    let finder = (out.objects.len() > 1).then(|| ObjectFinder::new(&out.objects));
+    // Each segment's object: its path's owner (`owners.rs`), when the plate has more than one.
+    let finder = (out.objects.len() > 1).then_some(());
     // Segment records are formatted per layer in parallel, each into its own place in the buffer, so the
     // records are never held twice.
     let head = b.len();
@@ -124,8 +124,13 @@ pub fn preview_buffers(out: &SliceOutput) -> Vec<u8> {
         let h_um = (h * 1000.0).round().clamp(0.0, 65535.0) as u16;
         for p in &l.paths {
             let pts = l.path_points(p);
-            if let Some(f) = &finder {
-                let k = f.object_of(p.feature, pts).to_le_bytes();
+            if finder.is_some() {
+                let k = if matches!(p.feature, Feature::Skirt | Feature::PrimeTower | Feature::Custom) {
+                    OBJECT_NONE
+                } else {
+                    p.owner
+                }
+                .to_le_bytes();
                 for _ in 1..pts.len() {
                     objects.extend_from_slice(&k);
                 }
@@ -192,131 +197,6 @@ fn set_flag(b: &mut [u8], flag: u16) {
 fn pad4(b: &mut Vec<u8>) {
     while !b.len().is_multiple_of(4) {
         b.push(0);
-    }
-}
-
-/// Which object of the plate a path belongs to, from the objects' outlines: the one whose outline holds
-/// the path's first point (the smallest when outlines overlap), else the nearest. The skirt, the prime
-/// tower, custom G-code and a brim around several objects belong to none.
-pub(crate) struct ObjectFinder<'a> {
-    objects: &'a [crate::output::ObjectFootprint],
-    boxes: Vec<[f64; 4]>,
-    areas: Vec<f64>,
-}
-
-impl<'a> ObjectFinder<'a> {
-    pub(crate) fn new(objects: &'a [crate::output::ObjectFootprint]) -> Self {
-        let boxes = objects
-            .iter()
-            .map(|o| {
-                o.hull
-                    .iter()
-                    .fold([f64::MAX, f64::MAX, f64::MIN, f64::MIN], |b, p| {
-                        [b[0].min(p[0]), b[1].min(p[1]), b[2].max(p[0]), b[3].max(p[1])]
-                    })
-            })
-            .collect();
-        let areas = objects
-            .iter()
-            .map(|o| {
-                o.hull
-                    .iter()
-                    .zip(o.hull.iter().cycle().skip(1))
-                    .map(|(a, b)| a[0] * b[1] - b[0] * a[1])
-                    .sum::<f64>()
-                    .abs()
-                    / 2.0
-            })
-            .collect();
-        Self {
-            objects,
-            boxes,
-            areas,
-        }
-    }
-
-    /// Distance from `p` to the outline of object `k`, 0 inside, mm.
-    fn distance(&self, k: usize, p: [f64; 2]) -> f64 {
-        let Some(h) = self.objects.get(k).map(|o| &o.hull) else {
-            return f64::MAX;
-        };
-        if h.is_empty() {
-            return f64::MAX;
-        }
-        let mut inside = h.len() >= 3;
-        let mut best = f64::MAX;
-        for (a, b) in h.iter().zip(h.iter().cycle().skip(1)) {
-            let (ex, ey) = (b[0] - a[0], b[1] - a[1]);
-            if ex * (p[1] - a[1]) - ey * (p[0] - a[0]) < 0.0 {
-                inside = false;
-            }
-            let len2 = ex * ex + ey * ey;
-            let t = if len2 > 0.0 {
-                (((p[0] - a[0]) * ex + (p[1] - a[1]) * ey) / len2).clamp(0.0, 1.0)
-            } else {
-                0.0
-            };
-            best = best.min((a[0] + t * ex - p[0]).m_hypot(a[1] + t * ey - p[1]));
-        }
-        if inside { 0.0 } else { best }
-    }
-
-    fn nearest(&self, p: [f64; 2], among: impl Iterator<Item = usize>) -> u16 {
-        let mut best: Option<(f64, f64, usize)> = None;
-        for k in among {
-            let d = self.distance(k, p);
-            // A point on or inside several outlines goes to the smallest object.
-            let key = (
-                if d < 0.05 { 0.0 } else { d },
-                self.areas.get(k).copied().unwrap_or(0.0),
-            );
-            if best.is_none_or(|b| key.0.total_cmp(&b.0).then(key.1.total_cmp(&b.1)).is_lt()) {
-                best = Some((key.0, key.1, k));
-            }
-        }
-        best.and_then(|b| u16::try_from(b.2).ok())
-            .filter(|&k| k != OBJECT_NONE)
-            .unwrap_or(OBJECT_NONE)
-    }
-
-    pub(crate) fn object_of(&self, feature: crate::output::Feature, pts: &[Point]) -> u16 {
-        use crate::output::Feature as F;
-        let Some(first) = pts.first() else {
-            return OBJECT_NONE;
-        };
-        let p = [f64::from(mm(first.x)), f64::from(mm(first.y))];
-        match feature {
-            F::Skirt | F::PrimeTower | F::Custom => return OBJECT_NONE,
-            F::Brim => {
-                // A brim loop that goes round the middle of two objects is shared.
-                let b = pts.iter().fold([f64::MAX, f64::MAX, f64::MIN, f64::MIN], |b, q| {
-                    let (x, y) = (f64::from(mm(q.x)), f64::from(mm(q.y)));
-                    [b[0].min(x), b[1].min(y), b[2].max(x), b[3].max(y)]
-                });
-                let around = self
-                    .objects
-                    .iter()
-                    .filter(|o| {
-                        o.center[0] > b[0] && o.center[0] < b[2] && o.center[1] > b[1] && o.center[1] < b[3]
-                    })
-                    .count();
-                if around > 1 {
-                    return OBJECT_NONE;
-                }
-            }
-            _ => {}
-        }
-        let near = |b: &[f64; 4]| {
-            p[0] >= b[0] - 0.5 && p[0] <= b[2] + 0.5 && p[1] >= b[1] - 0.5 && p[1] <= b[3] + 0.5
-        };
-        let hits: Vec<usize> = (0..self.boxes.len())
-            .filter(|&k| self.boxes.get(k).is_some_and(near))
-            .collect();
-        match hits.as_slice() {
-            [k] => u16::try_from(*k).unwrap_or(OBJECT_NONE),
-            [] => self.nearest(p, 0..self.objects.len()),
-            _ => self.nearest(p, hits.into_iter()),
-        }
     }
 }
 

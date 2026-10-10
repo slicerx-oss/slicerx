@@ -45,6 +45,10 @@ pub(crate) fn slice_range(
             }
             let cfg = session.object_config(k, config)?;
             let mut out = sub.slice_object_range(&cfg, lo - offset..hi - offset, progress)?;
+            // Its paths carry the object's index on the plate (`owners.rs`).
+            for l in &mut out.layers {
+                crate::owners::to_plate(l, sub.plate_index());
+            }
             // Layers outside a height range are written with the plate's settings: the object's own flow
             // goes into its paths.
             if session.has_object_settings(k) {
@@ -231,6 +235,10 @@ fn slice_interleaved_from(
         }
         let cfg = session.object_config(k, config)?;
         let mut out = sub.slice_object_range(&cfg, layers.start..hi, progress)?;
+        // Its paths carry the object's index on the plate (`owners.rs`).
+        for l in &mut out.layers {
+            crate::owners::to_plate(l, sub.plate_index());
+        }
         let Some(m) = merged.as_mut() else {
             for l in out.layers.iter_mut().filter(|l| l.cfg == 0) {
                 carry_flow(&mut l.paths, &cfg, config, l.index == 0);
@@ -319,6 +327,10 @@ fn slice_interleaved_by_height(
         }
         let cfg = session.object_config(k, config)?;
         let mut out = sub.slice_object_range(&cfg, lo..hi + 1, progress)?;
+        // Its paths carry the object's index on the plate (`owners.rs`).
+        for l in &mut out.layers {
+            crate::owners::to_plate(l, sub.plate_index());
+        }
         let base = merged
             .as_ref()
             .map_or(0, |m| u16::try_from(m.configs.len()).unwrap_or(u16::MAX));

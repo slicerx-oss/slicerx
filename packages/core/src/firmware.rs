@@ -6,7 +6,6 @@
 
 use crate::config::{GcodeFlavor, PrintConfig};
 use crate::fm::Fm as _;
-use crate::geom::Point;
 use crate::output::{Feature, ObjectFootprint};
 use crate::plate::Plate;
 use std::fmt::Write as _;
@@ -119,6 +118,7 @@ pub fn fmt_g(v: f64) -> String {
     }
 }
 
+#[cfg(test)]
 fn area(hull: &[[f64; 2]]) -> f64 {
     let n = hull.len();
     (0..n)
@@ -129,36 +129,6 @@ fn area(hull: &[[f64; 2]]) -> f64 {
         .sum::<f64>()
         .abs()
         / 2.0
-}
-
-pub(crate) fn inside(hull: &[[f64; 2]], x: f64, y: f64, grow: f64) -> bool {
-    let n = hull.len();
-    if n < 3 {
-        return false;
-    }
-    let mut inside = false;
-    let mut near = false;
-    for i in 0..n {
-        let (Some(a), Some(b)) = (hull.get(i), hull.get((i + 1) % n)) else {
-            continue;
-        };
-        if grow > 0.0 {
-            let (dx, dy) = (b[0] - a[0], b[1] - a[1]);
-            let len2 = dx * dx + dy * dy;
-            let t = if len2 == 0.0 {
-                0.0
-            } else {
-                (((x - a[0]) * dx + (y - a[1]) * dy) / len2).clamp(0.0, 1.0)
-            };
-            if ((x - (a[0] + t * dx)).m_powi(2) + (y - (a[1] + t * dy)).m_powi(2)).sqrt() <= grow {
-                near = true;
-            }
-        }
-        if (a[1] > y) != (b[1] > y) && x < (b[0] - a[0]) * (y - a[1]) / (b[1] - a[1]) + a[0] {
-            inside = !inside;
-        }
-    }
-    inside || near
 }
 
 /// Which firmware syntax marks an object.
@@ -192,9 +162,6 @@ pub fn bambu_printer(cfg: &PrintConfig, flavor: GcodeFlavor) -> bool {
 /// `M486` on Marlin flavors. Bambu Lab printers always get theirs (`M624`), as Orca writes them.
 pub struct Labels<'a> {
     objects: &'a [ObjectFootprint],
-    areas: Vec<f64>,
-    /// Bounds of each hull, `[min x, min y, max x, max y]`, mm: a point outside them is not inside the hull.
-    bounds: Vec<[f64; 4]>,
     comments: bool,
     firmware: Option<Firmware>,
 }
@@ -240,17 +207,6 @@ impl<'a> Labels<'a> {
             return None;
         }
         Some(Self {
-            areas: objects.iter().map(|o| area(&o.hull)).collect(),
-            bounds: objects
-                .iter()
-                .map(|o| {
-                    o.hull
-                        .iter()
-                        .fold([f64::MAX, f64::MAX, f64::MIN, f64::MIN], |b, p| {
-                            [b[0].min(p[0]), b[1].min(p[1]), b[2].max(p[0]), b[3].max(p[1])]
-                        })
-                })
-                .collect(),
             objects,
             comments,
             firmware,
@@ -364,39 +320,17 @@ impl<'a> Labels<'a> {
         s
     }
 
-    /// The object a path belongs to, by where it starts. Brim, skirt and tower belong to none.
-    pub fn object_of(&self, p: Point, feature: Feature) -> Option<usize> {
+    /// The object a path is labelled with: its owner ([`PathInfo::owner`], set as the layer was made). Brim,
+    /// skirt, prime tower and custom paths are labelled with none, as Orca labels them.
+    pub fn owner_of(&self, p: &crate::output::PathInfo) -> Option<usize> {
         if matches!(
-            feature,
+            p.feature,
             Feature::Brim | Feature::Skirt | Feature::PrimeTower | Feature::Custom
-        ) {
+        ) || p.owner == crate::preview::OBJECT_NONE
+        {
             return None;
         }
-        let (x, y) = (p.x_mm(), p.y_mm());
-        let pick = |grow: f64| {
-            // A point farther than `grow` outside a hull's bounds is neither inside nor near it; the margin
-            // covers rounding in the exact test.
-            let reach = grow + 1e-6;
-            self.objects
-                .iter()
-                .enumerate()
-                .filter(|(i, _)| {
-                    self.bounds.get(*i).is_none_or(|b| {
-                        x >= b[0] - reach && y >= b[1] - reach && x <= b[2] + reach && y <= b[3] + reach
-                    })
-                })
-                .filter(|(_, o)| inside(&o.hull, x, y, grow))
-                .min_by(|(i, _), (j, _)| {
-                    let (a, b) = (
-                        self.areas.get(*i).copied().unwrap_or(0.0),
-                        self.areas.get(*j).copied().unwrap_or(0.0),
-                    );
-                    a.partial_cmp(&b).unwrap_or(std::cmp::Ordering::Equal)
-                })
-                .map(|(i, _)| i)
-        };
-        // Supports and wipes can stray a little outside the hull.
-        pick(0.0).or_else(|| pick(3.0))
+        Some(usize::from(p.owner)).filter(|&i| i < self.objects.len())
     }
 
     /// Text before the retract that leaves an object (comment style).
@@ -1436,14 +1370,27 @@ mod tests {
         let mut cfg = PrintConfig::default();
         cfg.raw.insert("exclude_object".into(), serde_json::json!(true));
         let l = Labels::new(&objs, &cfg, GcodeFlavor::Klipper).unwrap();
-        assert_eq!(l.object_of(Point::from_mm(5.0, 5.0), Feature::OuterWall), Some(0));
+        let path = |feature: Feature, owner: u16| crate::output::PathInfo {
+            start: 0,
+            end: 2,
+            tool: 1,
+            feature,
+            speed_mm_s: 50.0,
+            width_mm: 0.42,
+            flow: 1.0,
+            dz: 0.0,
+            overhang_fan: false,
+            owner,
+        };
+        assert_eq!(l.owner_of(&path(Feature::OuterWall, 0)), Some(0));
+        assert_eq!(l.owner_of(&path(Feature::SparseInfill, 1)), Some(1));
+        assert_eq!(l.owner_of(&path(Feature::Brim, 0)), None);
         assert_eq!(
-            l.object_of(Point::from_mm(50.0, 5.0), Feature::SparseInfill),
-            Some(1)
+            l.owner_of(&path(Feature::OuterWall, crate::preview::OBJECT_NONE)),
+            None
         );
-        assert_eq!(l.object_of(Point::from_mm(5.0, 5.0), Feature::Brim), None);
-        assert_eq!(l.object_of(Point::from_mm(30.0, 5.0), Feature::OuterWall), None);
-        assert_eq!(l.object_of(Point::from_mm(21.5, 5.0), Feature::Support), Some(0));
+        assert_eq!(l.owner_of(&path(Feature::Support, 0)), Some(0));
+        assert_eq!(l.owner_of(&path(Feature::OuterWall, 7)), None);
         let h = l.header();
         assert!(h.starts_with("EXCLUDE_OBJECT_DEFINE NAME=a_b.stl_id_0_copy_0 CENTER=10,10 POLYGON=[[0,0],[20,0],[20,20],[0,20],[0,0]]"), "{h}");
         assert_eq!(

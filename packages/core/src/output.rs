@@ -97,6 +97,11 @@ pub struct PathInfo {
     /// The overhang fan runs while this piece prints: it hangs past `overhang_fan_threshold` over the layer
     /// below (Orca turns the fan on point by point along walls whose overhang slows them).
     pub overhang_fan: bool,
+    /// The plate object this path belongs to: an index into [`SliceOutput::objects`], or
+    /// [`crate::preview::OBJECT_NONE`] for a path of no single object (skirt, prime tower, a brim the objects
+    /// share). Set as the layer is made (`owners.rs`); the object labels, the preview's object pick and the
+    /// plate check all read it.
+    pub owner: u16,
 }
 
 /// a layer's last path, which the next layer's change retraction wipes along (orca's `Wipe` path)
