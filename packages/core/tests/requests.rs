@@ -1938,6 +1938,58 @@ fn support_columns_stand_on_the_raft() {
     );
 }
 
+/// The "starts in mid-air" warnings of a slice with support off.
+fn mid_air(mesh: Arc<Mesh>, config: Value) -> Vec<api::SliceWarning> {
+    let req: SliceRequest =
+        serde_json::from_value(json!({"plate": {"objects": [{"mesh": "m"}]}, "config": config})).unwrap();
+    common::run_request(&req, &move |_: &str| Ok(mesh.clone()))
+        .unwrap()
+        .report
+        .warnings
+        .into_iter()
+        .filter(|w| w.code == api::WarningCode::FloatingRegion && w.message.contains("mid-air"))
+        .collect()
+}
+
+#[test]
+fn a_ledge_narrower_than_the_outer_wall_is_not_in_mid_air() {
+    // A block standing on a narrower one, as a band set out over the band under it: its lowest corners are
+    // more than half a millimeter from the block below, and its first layer juts out by the step all round.
+    let width = 0.42;
+    let stepped = |step: f32| {
+        Arc::new(Mesh {
+            name: "stepped".into(),
+            parts: vec![
+                cuboid([0.0, 10.0], [0.0, 10.0], [0.0, 5.0], "below"),
+                cuboid([-step, 10.0 + step], [-step, 10.0 + step], [5.0, 8.0], "band"),
+            ],
+        })
+    };
+    let config = json!({"outer_wall_line_width": width});
+    // Just under the outer wall's width: the wall over it rests on the block below.
+    let under = mid_air(stepped(0.36), config.clone());
+    assert!(under.is_empty(), "{under:?}");
+    // Just over it: reported, as before.
+    let over = mid_air(stepped(0.5), config.clone());
+    assert_eq!(over.len(), 1, "{over:?}");
+    // The threshold follows the outer wall's width: a wider wall holds the wider step.
+    assert!(mid_air(stepped(0.5), json!({"outer_wall_line_width": 0.6})).is_empty());
+    // A wide ledge, as the arms of a T over its stem, still starts in mid-air.
+    assert_eq!(mid_air(stepped(3.0), config).len(), 1);
+}
+
+#[test]
+fn the_showcase_x_has_no_mid_air_warning() {
+    let bytes = std::fs::read(format!(
+        "{}/packages/core/bench/models/x-mark-showcase.stl",
+        root()
+    ))
+    .unwrap();
+    let mesh = Arc::new(Mesh::load(&bytes, "x-mark-showcase.stl").unwrap());
+    let found = mid_air(mesh, base_config());
+    assert!(found.is_empty(), "{found:?}");
+}
+
 #[test]
 fn a_part_floating_in_the_air_is_named_when_support_is_off() {
     let mesh = Arc::new(Mesh {
