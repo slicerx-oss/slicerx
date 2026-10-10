@@ -39,7 +39,30 @@ export interface ConnectedBridge {
   relayUrl?: string | null
   /** The hub's public key, as it proved it on connect. Its fingerprint is shown in Settings. */
   hubKey?: string
+  /** Keys the hub remembers: partner app keys (Connect your AI agent) and the Devices list (Printer bridge). */
+  clients?: BridgeClients
   close(): void
+}
+
+/** A key the hub remembers, as Devices lists it. Never the key itself. */
+export interface RememberedClient {
+  id: string
+  name: string
+  role: 'app' | 'agent' | 'watch'
+  /** A partner app's key. */
+  partner?: boolean
+  createdAt: string
+  /** Null for a partner key nobody has used yet. */
+  lastSeenAt: string | null
+}
+
+/** The hub's `clients.*`, app role only. */
+export interface BridgeClients {
+  /** A partner app key (agent role with the partner limits). The key is in this reply once and never again. */
+  createPartner(name: string): Promise<{ clientId: string; clientKey: string }>
+  list(): Promise<RememberedClient[]>
+  /** Also closes the client's open connections. */
+  revoke(clientId: string): Promise<void>
 }
 
 /**

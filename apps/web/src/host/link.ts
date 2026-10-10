@@ -52,6 +52,20 @@ export function wrapLink(link: LinkHost, relay?: string | null): ConnectedBridge
     push: link.push,
     secrets: { has: (n) => link.hasSecret(n), set: (n, v) => link.setSecret(n, v), delete: (n) => link.deleteSecret(n) },
     ...(link.hubKey ? { hubKey: link.hubKey } : {}),
+    // Partner app keys and the Devices list.
+    ...(typeof (link as { clients?: { create?: unknown } }).clients?.create === 'function'
+      ? {
+          clients: {
+            async createPartner(name: string) {
+              const r = await link.clients.create(name, 'agent', { partner: true })
+              if (!r.clientKey || !r.partner) throw new Error('This printer bridge is too old for partner app keys. Update the app.')
+              return { clientId: r.clientId, clientKey: r.clientKey }
+            },
+            list: () => link.clients.list(),
+            revoke: (id: string) => link.clients.revoke(id),
+          },
+        }
+      : {}),
     close: () => link.close(),
   }
 }

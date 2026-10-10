@@ -12,6 +12,7 @@ import { bridgeConnector, connectBridge, disconnectBridge, liveBridge } from './
 import { forgetHub, hubPinned, pinnedHubKey, trustHub } from './hub-pin'
 import { usePrintWatchRuns } from './watch-support'
 import { appName } from '../edition'
+import { DeviceRows } from './devices'
 
 /** A hub key's fingerprint as `sx-link code` prints it, or null while it is worked out or for no key. */
 export function useFingerprint(key: string | undefined): string | null {
@@ -169,6 +170,7 @@ export function BridgeSection() {
         </form>
       )}
       {on ? <WatchRows /> : null}
+      {on ? <DeviceRows /> : null}
       {pinned ? (
         <p className="bridge-forget">
           <span className="sx-small sx-muted">This browser remembers the bridge it paired with and sends the code to no other program.</span>
