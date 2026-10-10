@@ -15,7 +15,7 @@ const SPEC: Record<EmbedAction, { label: string; icon: IconName; key: string | n
   select: { label: 'Select', icon: 'select-object', key: null, tip: 'Click a model to select it' },
   move: { label: 'Move', icon: 'move', key: 'M', tip: 'Drag a model across the plate' },
   rotate: { label: 'Rotate', icon: 'rotate', key: 'R', tip: 'Drag a ring to turn the selected model' },
-  scale: { label: 'Scale', icon: 'scale', key: 'S', tip: 'Drag a handle to resize the selected model' },
+  scale: { label: 'Scale', icon: 'scale', key: 'S', tip: 'Drag a handle to resize the selected model. Several models scale evenly, from the corner handles' },
   arrange: { label: 'Arrange', icon: 'arrange', key: 'A', tip: 'Spread every model out on the plate' },
   drop: { label: 'Drop to bed', icon: 'arrow-down', key: null, tip: 'Set the selection, or every model, down on the bed' },
 }
