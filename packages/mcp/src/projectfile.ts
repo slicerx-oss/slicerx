@@ -5,7 +5,7 @@
 import { readFileSync } from 'node:fs'
 import { basename } from 'node:path'
 import type { SettingValue } from '@slicerx/contracts'
-import { importProject, parseXml } from '@slicerx/settings'
+import { importProject, keptEngineChoices, parseXml } from '@slicerx/settings'
 import { ToolInputError } from './models'
 import { readZip } from './zip'
 
@@ -111,6 +111,11 @@ export function readProjectFile(path: string): ProjectRead {
     }),
   )
 
+  // The file's values, except SlicerX's engine choices the person left as the presets had them (the app's project
+  // open keeps the same ones, engine-choices.ts in @slicerx/settings).
+  const config: Record<string, SettingValue> = { ...projectKeys, ...(imported.config as unknown as Record<string, SettingValue>) }
+  for (const k of keptEngineChoices(raw)) delete config[k]
+
   return {
     summary: {
       file: path,
@@ -121,6 +126,6 @@ export function readProjectFile(path: string): ProjectRead {
       unknown_keys: [...imported.unknownKeys, ...imported.invalidKeys].sort(),
       dropped_keys: dropped,
     },
-    config: { ...projectKeys, ...(imported.config as unknown as Record<string, SettingValue>) },
+    config,
   }
 }
