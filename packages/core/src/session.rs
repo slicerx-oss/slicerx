@@ -4505,6 +4505,9 @@ impl SliceSession {
             } else {
                 f64::INFINITY
             },
+            // The outer wall is the bead that prints along the edge of a ledge: one narrower than it rests on
+            // the layer under it, as the next wall of any slope does.
+            ledge_mm: cfg.outer_wall_width(),
         };
         let mut found = crate::floating::find(&self.parts, &layers);
         crate::sorting::sort_by_key(&mut found, |f| f.layers.0);

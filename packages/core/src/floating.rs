@@ -5,7 +5,8 @@
 //! with sharp tails and cantilevers longer than 6 mm):
 //!
 //! - a floating region: a lowest point or lowest flat face of a part (no neighbor lower on the mesh) above the
-//!   first layer with nothing of any part under it;
+//!   first layer with nothing of any part under it. A region whose first layer only juts out of the layer under
+//!   it by a ledge narrower than the outer wall is held: that wall rests on the layer below;
 //! - a long overhang: a patch of nearly flat downward faces whose farthest point lies more than 6 mm from the
 //!   material of the layer under it;
 //! - a long bridge: such a patch whose every strand lands on material at both ends, reported when its longest
@@ -60,6 +61,9 @@ pub(crate) struct Layers<'a> {
     pub(crate) threshold_deg: f64,
     /// Bridges up to this long need no support (`max_bridge_length`), mm.
     pub(crate) max_bridge_mm: f64,
+    /// A region that juts out of the layer under it by less than this on its first layer is held, mm
+    /// ([`narrow_ledge`]).
+    pub(crate) ledge_mm: f64,
 }
 
 /// What a patch of flat downward faces is over the layer under it.
@@ -217,10 +221,38 @@ fn distance_to(s: &Shapes, p: [f64; 2]) -> f64 {
     best
 }
 
+/// Whether a region whose lowest points are `at` (mm) only juts out of the layer under it by a ledge narrower
+/// than `width` on `first`, the first layer it prints on: that layer touches `under` beside it, and what it
+/// adds past `under` near those points vanishes when pulled in by half of `width`. The bead printed there rests
+/// on the layer below, so the region does not start in mid-air.
+fn narrow_ledge(at: &[[f64; 2]], first: &Shapes, under: &Shapes, width: f64) -> bool {
+    use crate::perimeters::{difference, intersection, offset};
+    if width <= 0.0 || first.is_empty() || under.is_empty() {
+        return false;
+    }
+    let near = |s: &Shapes| at.iter().any(|&p| distance_to(s, p) <= width);
+    let here: Shapes = first
+        .iter()
+        .filter(|sh| near(&vec![(*sh).clone()]))
+        .cloned()
+        .collect();
+    if here.is_empty() || intersection(&here, under).is_empty() {
+        return false;
+    }
+    let ledge: Shapes = difference(&here, under)
+        .into_iter()
+        .filter(|sh| near(&vec![sh.clone()]))
+        .collect();
+    offset(&ledge, -crate::geom::mm(width / 2.0)).is_empty()
+}
+
 /// The parallel finder (native builds): parts, plateaus and patches in parallel, each layer's outline cut once.
 #[cfg(feature = "parallel")]
 mod parallel {
-    use super::{CANTILEVER_MM, Finding, Kind, Layers, Patch, classify, distance_to, layer_above, layer_at};
+    use super::{
+        CANTILEVER_MM, Finding, Kind, Layers, Patch, classify, distance_to, layer_above, layer_at,
+        narrow_ledge,
+    };
     use crate::contours::PreparedPart;
     use crate::fm::Fm as _;
     use crate::perimeters::Shapes;
@@ -386,6 +418,14 @@ mod parallel {
             if held {
                 return None;
             }
+            // A ledge narrower than a line on its first layer rests on the layer under it.
+            let pts: Vec<[f64; 2]> = plateau
+                .iter()
+                .map(|&v| [part.verts[v as usize][0], part.verts[v as usize][1]])
+                .collect();
+            if narrow_ledge(&pts, &below(l), &under, layers.ledge_mm) {
+                return None;
+            }
             let n = plateau.len() as f64;
             let at = plateau.iter().fold([0.0, 0.0], |a, &v| {
                 [
@@ -548,7 +588,10 @@ pub(crate) use parallel::find;
 /// The finder in one pass (WASM, which has no threads), the same findings in the same order.
 #[cfg(not(feature = "parallel"))]
 mod serial {
-    use super::{CANTILEVER_MM, Finding, Kind, Layers, Patch, classify, distance_to, layer_above, layer_at};
+    use super::{
+        CANTILEVER_MM, Finding, Kind, Layers, Patch, classify, distance_to, layer_above, layer_at,
+        narrow_ledge,
+    };
     use crate::contours::PreparedPart;
     use crate::fm::Fm as _;
     use crate::perimeters::Shapes;
@@ -638,6 +681,14 @@ mod serial {
                     distance_to(&under, [p[0], p[1]]) < 0.5
                 });
                 if held {
+                    continue;
+                }
+                // A ledge narrower than a line on its first layer rests on the layer under it.
+                let pts: Vec<[f64; 2]> = plateau
+                    .iter()
+                    .map(|&v| [part.verts[v as usize][0], part.verts[v as usize][1]])
+                    .collect();
+                if narrow_ledge(&pts, &below(l), &under, layers.ledge_mm) {
                     continue;
                 }
                 let n = plateau.len() as f64;
@@ -837,6 +888,7 @@ mod tests {
                 slice: &slice,
                 threshold_deg: 30.0,
                 max_bridge_mm: 10.0,
+                ledge_mm: 0.42,
             },
         )
     }
