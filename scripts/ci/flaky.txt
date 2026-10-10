@@ -4,7 +4,6 @@
 # line. A listed test that fails again on the rerun is a real failure. scripts/ci/flaky-check.sh lint checks this file.
 #
 # test name | owner | added (YYYY-MM-DD) | deadline (YYYY-MM-DD) | issue | why
-the camera guard holds a start from the Print sheet, and It's fine starts it anyway | test-program | 2026-10-10 | 2026-10-11 | https://github.com/slicerx-oss/slicerx/issues/481 | the guard card was still up 15 s after the start went ahead; passed on its retry (e2e/bridge.spec.ts)
 Model: the tree, the tool pane and the timeline shut and open from their tabs and keys | test-program | 2026-10-09 | 2026-10-10 | https://github.com/slicerx-oss/slicerx/issues/267 | a pane not visible in time on a CI runner (e2e/edge-tabs.spec.ts)
 a design whose parts do not touch gets one note, Show which names them, and its marker follows a drag | test-program | 2026-10-09 | 2026-10-10 | https://github.com/slicerx-oss/slicerx/issues/291 | Mod+O sometimes opens no file dialog in 60 s on the GPU lane; its drag no longer starts before the first slice reframes the view (e2e/fit-check.spec.ts)
 under reduced motion the plate draws at once | slice-reshape | 2026-10-09 | 2026-10-10 | https://github.com/slicerx-oss/slicerx/issues/317 | the frame recorder gets no frames from a page already still; fixed in the first-run seams branch (e2e/plate-reveal.spec.ts)
