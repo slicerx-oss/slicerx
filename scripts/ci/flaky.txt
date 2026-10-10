@@ -4,5 +4,4 @@
 # line. A listed test that fails again on the rerun is a real failure. scripts/ci/flaky-check.sh lint checks this file.
 #
 # test name | owner | added (YYYY-MM-DD) | deadline (YYYY-MM-DD) | issue | why
-Model: the tree, the tool pane and the timeline shut and open from their tabs and keys | test-program | 2026-10-09 | 2026-10-10 | https://github.com/slicerx-oss/slicerx/issues/267 | a pane not visible in time on a CI runner (e2e/edge-tabs.spec.ts)
 under reduced motion the plate draws at once | slice-reshape | 2026-10-09 | 2026-10-10 | https://github.com/slicerx-oss/slicerx/issues/317 | the frame recorder gets no frames from a page already still; fixed in the first-run seams branch (e2e/plate-reveal.spec.ts)

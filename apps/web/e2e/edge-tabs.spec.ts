@@ -76,12 +76,20 @@ test.describe('edge tabs', () => {
     const left = Math.round((await page.locator('.studio').boundingBox())!.x)
     await expect.poll(async () => Math.round((await page.getByTestId('edge-tab-left').boundingBox())!.x)).toBe(left)
     await page.getByTestId('edge-tab-left').click()
+    // The bottom tab sits at the middle of the view: it slides along while the tree opens.
+    await expect(page.getByTestId('model-tree')).toBeVisible()
+    await viewAt(page, () => true)
 
     const bottom = page.getByTestId('edge-tab-bottom')
     const timeline = page.locator('.bpanel-body')
     await expect(bottom).toHaveAttribute('data-panel', 'model-timeline')
     await expect(timeline).toBeHidden()
-    await bottom.click()
+    // One press where the tab is, not locator.click(): the pointer on the tab is in the band that opens the panel by
+    // itself after a moment, and the tab then moves up above the panel. A click that Playwright retries chases the tab
+    // there and shuts the panel again. A press that lands after the band opened it falls on the panel, which stays
+    // open, as it does for a person.
+    const tabBox = (await bottom.boundingBox())!
+    await page.mouse.click(tabBox.x + tabBox.width / 2, tabBox.y + tabBox.height / 2)
     await expect(timeline).toBeVisible()
     await expect(bottom).toHaveAttribute('aria-expanded', 'true')
     // The model size pill moves up above the open panel instead of sitting under it.
