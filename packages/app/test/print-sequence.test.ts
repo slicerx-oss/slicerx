@@ -175,7 +175,7 @@ describe('one print sequence for the plate', () => {
     const { flushSync } = await import('react-dom')
     const { createRoot } = await import('react-dom/client')
     const { ExpertSettings } = await import('../src/workspaces/prepare/expert-settings')
-    set({ settingsMode: 'expert', plate: two, plates: [{ id: 'p1', name: 'Plate 1', objects: [], settings: { sequence: 'by-layer', bedType: 'cool' } }], activePlate: 'p1', overrides: { print_sequence: 'by object' }, settingsTab: 'effects' })
+    set({ settingsMode: 'expert', plate: two, plates: [{ id: 'p1', name: 'Plate 1', objects: [], settings: { sequence: 'by-layer', bedType: 'cool' } }], activePlate: 'p1', overrides: { print_sequence: 'by object' }, settingsTab: 'output' })
     const el = document.createElement('div')
     document.body.append(el)
     const root = createRoot(el)
