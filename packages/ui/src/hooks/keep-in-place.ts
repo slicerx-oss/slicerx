@@ -11,15 +11,34 @@ function scroller(el: Element): HTMLElement | null {
   let could: HTMLElement | null = null
   for (let p = el.parentElement; p; p = p.parentElement) {
     const oy = getComputedStyle(p).overflowY
-    if (oy !== 'auto' && oy !== 'scroll') continue
-    // the nearest container that scrolls now; failing that, the nearest that can, given room at its end
-    if (p.scrollHeight > p.clientHeight + 1) return p
-    could ??= p
+    if (oy === 'auto' || oy === 'scroll') {
+      // the nearest container that scrolls now; failing that, the nearest that can, given room at its end
+      if (p.scrollHeight > p.clientHeight + 1) return p
+      could ??= p
+    }
+    // A modal dialog or an open popover draws over the page, so the pane its markup sits in does not move it.
+    if (inTopLayer(p)) return could
   }
   return could
 }
 
+function inTopLayer(el: Element): boolean {
+  try {
+    return el.matches('dialog:modal, :popover-open')
+  } catch {
+    // an engine without those selectors: an open dialog is the likeliest case
+    return el instanceof HTMLDialogElement && el.open
+  }
+}
+
 const added = new WeakMap<HTMLElement, { px: number; spacer: HTMLElement; last: number }>()
+
+/** A mutation the hold itself made: the room at the end of the box, or the box's own scroll anchoring style. */
+function ownWrite(box: HTMLElement, r: MutationRecord): boolean {
+  if (r.target instanceof HTMLElement && r.target.dataset.sxRoom !== undefined) return true
+  if (r.target === box && r.type === 'attributes' && r.attributeName === 'style') return true
+  return r.type === 'childList' && [...r.addedNodes, ...r.removedNodes].every((n) => n instanceof HTMLElement && n.dataset.sxRoom !== undefined)
+}
 
 /**
  * Room at the bottom of `box`, so a section closing above the end of a long list never pulls the scroll back (the
@@ -91,7 +110,9 @@ export function keepInPlace(el: Element, ms = 450): void {
   const later = () => {
     end = Math.min(start + 4 * ms, Math.max(end, performance.now() + ms / 2))
   }
+  let stuck = false
   const hold = () => {
+    if (stuck) return
     const now = box.scrollTop
     const max = box.scrollHeight - box.clientHeight
     // a scroll we did not make is the person's, unless it is the browser pulling the end back to shorter content
@@ -100,10 +121,17 @@ export function keepInPlace(el: Element, ms = 450): void {
       top -= now - st
       st = now
     }
-    const want = now + el.getBoundingClientRect().top - top
+    const at = el.getBoundingClientRect().top
+    const want = now + at - top
     if (Math.abs(want - now) > 0.25) {
       if (want > max) addRoom(box, Math.ceil(want - max) + 1)
       box.scrollTop = want
+      // A control that the scroll does not move (fixed, or drawn over the page) cannot be held this way: stop, rather
+      // than add room and scroll again on every change it makes.
+      if (box.scrollTop !== now && Math.abs(el.getBoundingClientRect().top - at) < 0.25) {
+        stuck = true
+        return
+      }
       later()
       const e = added.get(box)
       if (e) e.last = box.scrollTop
@@ -119,14 +147,16 @@ export function keepInPlace(el: Element, ms = 450): void {
   if (ro) for (const c of [el, ...Array.from(box.children)]) ro.observe(c)
   // A change to the content is corrected in the same task, right after it lands (a mutation's callback runs before
   // the next frame), so it holds even when frames come late or not at all (a page in the background, a busy machine).
-  const mo = typeof MutationObserver === 'undefined' ? null : new MutationObserver(() => {
+  const mo = typeof MutationObserver === 'undefined' ? null : new MutationObserver((records) => {
     if (id !== job || !el.isConnected) return
+    // the hold's own writes are not a change to the content; reacting to them would never settle
+    if (records.every((r) => ownWrite(box, r))) return
     later()
     hold()
   })
   mo?.observe(box, { childList: true, subtree: true, attributes: true, characterData: true })
   const step = () => {
-    if (id !== job || !el.isConnected || performance.now() >= end) {
+    if (id !== job || !el.isConnected || stuck || performance.now() >= end) {
       ro?.disconnect()
       mo?.disconnect()
       release()
