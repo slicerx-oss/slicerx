@@ -37,11 +37,3 @@
   .sx-edge-tab.sheet-tab[data-side="left"] { left: 0; }
   .sx-edge-tab.sheet-tab[data-side="right"] { right: 0; }
 }
-@media (max-width: 900px) {
-  /* The Slice action floats at the foot of the view, the plate pills above it. */
-  .studio:has(> .pane.sheet) .slice-float { position: absolute; left: 12px; right: 12px; top: auto; bottom: 12px; width: auto; border-radius: var(--r-md); background: var(--overlay); box-shadow: var(--shadow-float); }
-  .studio:has(> .pane.sheet):not([data-model-mode="design"]):not([data-layers]) .hud-bl { bottom: 96px; }
-  /* With the toolpaths showing, the layer dock has the foot of the view: the Slice action sits on it, the pills above. */
-  .studio[data-layers]:has(> .pane.sheet) .slice-float { top: auto; bottom: 216px; }
-  .studio[data-layers]:has(> .pane.sheet) .hud-bl { bottom: 300px; }
-}

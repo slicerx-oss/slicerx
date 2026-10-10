@@ -933,3 +933,37 @@ button.tuned-badge:hover { background: color-mix(in srgb, currentColor 14%, tran
 .sec-sum .swatch { flex: none; }
 .studio[data-mode="prepare"]:not([data-model-mode="design"]) > .pane .pane-body > .sx-block > .sx-block-h { flex-wrap: wrap; row-gap: 6px; }
 .studio[data-mode="prepare"]:not([data-model-mode="design"]) > .pane .pane-body > .sx-block > .sx-block-h h3 { white-space: nowrap; }
+
+/* With the toolpaths showing, the color legend starts under the plate toolbar and the view switch, which sit across the
+   middle of the view's top, so a wide legend (by feature type) never runs under them. */
+.studio[data-layers]:not([data-model-mode="design"]) > .vp .hud-top .legend { margin-top: 98px; }
+
+/* Slice on a phone: one screen in rows, so nothing sits over anything else. The 3D view takes the top rows with its top
+   controls, the layer slider down its right side and the plate chips along its foot; under it come the playback bar's
+   one row and the estimate with Print, always on screen. The rest of the playback bar opens as a panel over the foot
+   of the view, so opening it moves nothing. */
+.dock-body { display: contents; }
+@media (max-width: 900px) {
+  .studio[data-mode="prepare"]:not([data-model-mode="design"]) > .vp {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-rows: auto minmax(0, 1fr) auto auto auto;
+    grid-template-areas: "top top" "mid side" "chips chips" "dock dock" "foot foot";
+  }
+  .studio[data-mode="prepare"]:not([data-model-mode="design"]) > .vp > .vp-stage { position: relative; inset: auto; grid-row: 1 / 4; grid-column: 1 / -1; min-height: 0; }
+  .studio[data-mode="prepare"]:not([data-model-mode="design"]) > .vp > .hud-top { position: relative; grid-area: top; inset: auto; margin: 12px 12px 0; }
+  .studio[data-mode="prepare"]:not([data-model-mode="design"]) > .vp > .lstrip { position: relative; grid-area: side; inset: auto; transform: none; align-self: center; margin: 8px 26px 8px 0; }
+  .studio[data-mode="prepare"]:not([data-model-mode="design"]) > .vp > .hud-bl { position: relative; grid-area: chips; inset: auto; margin: 0 12px 8px; }
+  .studio[data-mode="prepare"]:not([data-model-mode="design"]) > .vp > .dock { position: relative; grid-area: dock; inset: auto; margin: 0 12px 8px; }
+  .studio[data-mode="prepare"]:not([data-model-mode="design"]) > .vp > .slice-float { position: relative; grid-area: foot; inset: auto; width: auto; margin: 0 12px 12px; border-radius: var(--r-md); background: var(--overlay); box-shadow: var(--shadow-float); }
+  .studio[data-mode="prepare"]:not([data-model-mode="design"]) > .vp > .zone-legend { display: none; }
+  .dock[data-phone] { padding-block: 8px; }
+  .dock[data-phone] .dock-h { flex-wrap: nowrap; gap: 8px; }
+  .dock[data-phone] .dock-read { min-width: 0; overflow: hidden; white-space: nowrap; }
+  .dock[data-phone] .dock-more { flex: none; }
+  /* It opens over the plate chips and the view, so its surface is solid: nothing behind it reads through. */
+  .dock[data-phone] .dock-body { position: absolute; left: 0; right: 0; bottom: calc(100% + 8px); z-index: 1; display: grid; gap: 8px; padding: 10px 14px 12px; border-radius: var(--r-md); background: var(--ink-1); -webkit-backdrop-filter: none; backdrop-filter: none; box-shadow: var(--shadow-pop); }
+  .dock-opts { display: flex; align-items: center; gap: 8px 14px; flex-wrap: wrap; }
+  .dock-opts .sx-seg { max-width: 100%; overflow-x: auto; scrollbar-width: none; }
+  .dock[data-phone] .dock-row { grid-template-columns: 44px minmax(0, 1fr) auto; }
+}
