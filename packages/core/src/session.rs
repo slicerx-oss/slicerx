@@ -3146,6 +3146,18 @@ impl SliceSession {
             Some(pl) if pl.raft.is_none() => pl.object,
             Some(_) => None,
         };
+        let fam_of = |l: u32| if l == 0 && !on_raft { fam0 } else { fam };
+        // A layer outside `a_lo..a_hi` that a neighbor reads after all (the shell, bridge and tool order rules can
+        // look further than the window above): cut on demand, once, so what a layer reads never depends on where
+        // its range starts. Ranges that concatenate give the bytes one range gives, and the session's own caches
+        // (`shells::Cache`) never keep a value worked out from a missing neighbor.
+        let spill: Vec<std::sync::OnceLock<LayerRegions>> =
+            (0..n).map(|_| std::sync::OnceLock::new()).collect();
+        let beyond = |l: u32| {
+            spill
+                .get(l as usize)
+                .map(|c| c.once(|| self.layer_regions(l, fam_of(l), &micros)))
+        };
         let rest = || {
             if let Some(c) = first_with(|c| {
                 c.sparse_infill_pattern == InfillPattern::Lightning && c.sparse_infill_density > 0.0
@@ -3160,7 +3172,6 @@ impl SliceSession {
             progress.report(Stage::Contours, 0.0);
             // Layers the whole-object plans already cut with the same families are taken over, not cut again.
             let mut whole = self.take_whole(fam);
-            let fam_of = |l: u32| if l == 0 && !on_raft { fam0 } else { fam };
             let taken: Vec<Option<LayerRegions>> = (a_lo..a_hi)
                 .map(|l| {
                     if fam_of(l) == fam {
@@ -3190,7 +3201,11 @@ impl SliceSession {
             // Without threads nothing runs beside the plan, so each layer is worked out in one go after it.
             let starts: Vec<Option<LayerStart>> =
                 if cfg!(feature = "parallel") && pending.is_some() && !stopped() {
-                    let get = |l: u32| regions.get(l.checked_sub(a_lo)? as usize);
+                    let get = |l: u32| {
+                        l.checked_sub(a_lo)
+                            .and_then(|i| regions.get(i as usize))
+                            .or_else(|| beyond(l))
+                    };
                     let start_done = std::sync::atomic::AtomicUsize::new(0);
                     let start_total = layers.len();
                     par::map_range(layers.clone(), |i| {
@@ -3239,7 +3254,11 @@ impl SliceSession {
             return Err(Error::Cancelled);
         }
         progress.report(Stage::Contours, 1.0);
-        let get = |l: u32| regions.get(l.checked_sub(a_lo)? as usize);
+        let get = |l: u32| {
+            l.checked_sub(a_lo)
+                .and_then(|i| regions.get(i as usize))
+                .or_else(|| beyond(l))
+        };
         let object_paths = |l: u32, start: Option<LayerStart>| {
             let mut p = match start {
                 Some(s) => self.layer_finish(s, l, layer_cfg_of(l), &mod_cfgs, &get, &micros, &tags, true),
