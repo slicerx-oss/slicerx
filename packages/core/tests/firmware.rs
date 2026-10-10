@@ -1795,6 +1795,44 @@ fn a_filament_only_a_feature_prints_with_gets_an_extruder() {
 }
 
 #[test]
+fn a_first_layer_change_flushes_at_the_first_layer_temperature_without_cooling() {
+    // Bambu Studio's H2D change template waits for the nozzle to go from the new filament's print temperature
+    // (less its cooling before the tower) to its flush temperature. On the first layer that is the first layer
+    // temperature and no cooling (worked example: SYNC T10 and T5.55556 on layer 0, T15 and T8.33333 later). The
+    // flush feed is the filament's volumetric limit as whole mm/min (25 mm3/s is F623).
+    let c = json!({
+        "gcode_flavor": "marlin",
+        "printer_model": "Bambu Lab H2D",
+        "nozzle_diameter": [0.4, 0.4],
+        "physical_extruder_map": [1, 0],
+        "master_extruder_id": 2,
+        "single_extruder_multi_material": true,
+        "filament_map_mode": "Manual",
+        "filament_map": [1, 1],
+        "outer_wall_filament_id": 2,
+        "filament_diameter": [1.75, 1.75],
+        "nozzle_temperature": [220, 225],
+        "nozzle_temperature_initial_layer": [230, 235],
+        "filament_cooling_before_tower": [10, 10],
+        "filament_max_volumetric_speed": [12, 25],
+        "change_filament_gcode": "; change {new_filament_temp} {filament_cooling_before_tower[next_filament_id]} F{new_filament_e_feedrate}",
+    });
+    let g = cube_on(c, 1);
+    let changes: Vec<&str> = g.lines().filter(|l| l.starts_with("; change ")).collect();
+    assert!(changes.len() > 2, "{changes:?}");
+    // The first layer changes to filament 1, or to 2, at its first layer temperature with no cooling.
+    assert!(
+        matches!(
+            changes.first().copied(),
+            Some("; change 230 0 F299" | "; change 235 0 F623")
+        ),
+        "{changes:?}"
+    );
+    assert!(changes.contains(&"; change 225 10 F623"), "{changes:?}");
+    assert!(changes.contains(&"; change 220 10 F299"), "{changes:?}");
+}
+
+#[test]
 fn a_tower_change_reads_the_new_filaments_volumetric_speed() {
     // orca's change at the tower takes outer_wall_volumetric_speed of the new filament (`append_tcr`)
     let mut c = json!({

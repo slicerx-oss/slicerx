@@ -1625,10 +1625,15 @@ pub(crate) fn tool_change_vars(
 ) {
     let slot = |i: i64| u8::try_from(i.max(0) + 1).unwrap_or(1);
     let area = std::f64::consts::PI * (cfg.filament_diameter / 2.0).m_powi(2);
-    // Feed rate that melts filament at the filament's volumetric limit, mm/min.
+    // Feed rate that melts filament at the filament's volumetric limit, mm/min, in whole units as Bambu Studio
+    // writes it (`;VG1 E... F623` for 25 mm3/s), 100 when that is 0; 200 for the old filament before the first.
     let feed = |i: i64| {
+        if i < 0 {
+            return 200.0;
+        }
         let v = per_slot_raw(cfg, "filament_max_volumetric_speed", slot(i), 15.0);
-        (v / area * 60.0).round()
+        let f = (v / area * 60.0).floor();
+        if f > 0.0 { f } else { 100.0 }
     };
     for (k, i) in [("old_filament_temp", prev), ("new_filament_temp", next)] {
         ctx.set_num(k, PrintConfig::per_slot(&cfg.nozzle_temperature, slot(i), 220.0));

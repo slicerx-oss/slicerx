@@ -2269,6 +2269,19 @@ fn emit_layer(
                         flush_from,
                         p.feature == Feature::PrimeTower,
                     );
+                    // On the first layer the new filament prints at its first layer temperature and does not cool
+                    // before the tower: the flush template's temperature waits read both (Bambu Studio).
+                    if l.index == 0 {
+                        let slot = u8::try_from(next.max(0) + 1).unwrap_or(1);
+                        ctx.set_num("new_filament_temp", print_temp(c, slot, 0));
+                        if let Some(serde_json::Value::Array(a)) = c.raw.get("filament_cooling_before_tower")
+                        {
+                            ctx.vars.insert(
+                                "filament_cooling_before_tower".into(),
+                                crate::template::Value::List(vec![crate::template::Value::Num(0.0); a.len()]),
+                            );
+                        }
+                    }
                     // orca counts the changes of the print, this one included (`m_toolchange_count`)
                     ctx.set_num(
                         "toolchange_count",

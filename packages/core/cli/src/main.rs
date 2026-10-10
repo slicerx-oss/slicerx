@@ -436,6 +436,8 @@ fn cmd_time(args: &[String]) -> Res<ExitCode> {
         None => PrintConfig::default(),
     };
     let text = std::fs::read(file)?;
+    // A file sliced for two nozzles says in its configuration block which nozzle each filament went to.
+    let config = sx_core::firmware::map_from_gcode(&text, &config).unwrap_or(config);
     let trace = has(args, "--trace");
     let e = sx_core::printtime::estimate(&text, &config, trace);
     println!(
