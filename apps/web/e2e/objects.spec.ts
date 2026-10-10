@@ -112,7 +112,8 @@ test('a tool takes the card\'s place, nothing above moves, and one way out bring
   await page.getByRole('menu', { name: 'Object tools' }).getByRole('menuitem', { name: 'Cut' }).click()
   await expect(page.locator('.tool-slot [data-section="cut-tool"]')).toBeVisible()
   await expect(page.getByTestId('objects-list')).toHaveCount(0)
-  expect(await topInPane()).toBe(top)
+  // to half a pixel, as in layout-stability: on a phone the pane once read 119.99998 for 120
+  expect(Math.abs((await topInPane()) - top)).toBeLessThanOrEqual(0.5)
   // Cut has its own Cancel and Cut, so it has no Done: one way out.
   await expect(page.getByTestId('slice-tool-done')).toHaveCount(0)
   await page.locator('[data-section="cut-tool"]').getByRole('button', { name: 'Cancel' }).click()
