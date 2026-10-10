@@ -273,6 +273,41 @@ test('Connected apps: Home Assistant shows only with experimental connectors on,
   }
 })
 
+test('Partner app: a named key shown once, listed in Devices, and revoking it cuts the partner off', async ({ page }) => {
+  const { connectLink } = await import('../../../packages/connect/link-client/src/index.ts')
+  await connectApp(page)
+  await page.getByRole('button', { name: 'Settings', exact: true }).click()
+  await page.getByRole('navigation', { name: 'Settings sections' }).getByRole('button', { name: 'mimir' }).click()
+  await page.getByTestId('agent-partner').click()
+  await page.getByTestId('partner-name').fill('LayerMate')
+  await page.getByTestId('partner-create').click()
+  const shown = page.getByTestId('partner-key')
+  await expect(shown).toHaveText(/^sxp_[0-9a-f]{64}$/)
+  // Held in memory for this test only, against a throwaway hub.
+  const key = (await shown.textContent()) ?? ''
+  await page.getByTestId('partner-hide').click()
+  await expect(shown).toHaveCount(0)
+  await expect(page.getByText(key)).toHaveCount(0)
+
+  // The partner app pairs with it, reads printers, and approves nothing.
+  const hubKey = (admin as unknown as { hubKey: string }).hubKey
+  const partner = await connectLink({ url: linkUrl, clientKey: key, hubKey })
+  expect(partner.partner).toBe(true)
+  expect((await partner.list()).map((p) => p.id)).toContain('voron')
+  await expect(partner.approvals.grant('nothing')).rejects.toThrow(/partner|person|forbidden/i)
+
+  await page.getByRole('navigation', { name: 'Settings sections' }).getByRole('button', { name: 'Printer bridge' }).click()
+  const list = page.getByTestId('devices-list')
+  const row = list.locator('li', { hasText: 'LayerMate' })
+  await expect(row).toContainText('Partner app')
+  await row.getByRole('button', { name: 'Revoke' }).click()
+  await expect(row).toHaveCount(0)
+  // The hub closed the partner's open connection, and the key no longer pairs.
+  await expect.poll(() => partner.list().then(() => 'open', () => 'closed'), { timeout: 10_000 }).toBe('closed')
+  await expect(connectLink({ url: linkUrl, clientKey: key, hubKey })).rejects.toThrow()
+  partner.close()
+})
+
 test('a wrong code is refused with a plain message', async ({ page }) => {
   await seed(page)
   await page.getByRole('button', { name: 'Settings', exact: true }).click()

@@ -1,17 +1,24 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // Connect your AI agent: pick the client, one "Add to <client>" button, one line on what happens,
-// and the rule that stays true for every client: it can never start a print without your tap.
+// and the rule that stays true for every client: it can never start a print without your tap. The
+// last tile, Partner app, makes a named key for another app instead (partner-key.tsx).
 import { ASSISTANT_NAME } from '@slicerx/pilot/name'
 import { Button, Icon } from '@slicerx/ui'
 import { useEffect, useState, type KeyboardEvent } from 'react'
 import { AGENTS, agentMark, installAgent, needsRelay, useAgentInstall, type AgentId, type InstallResult } from './agents'
+import { PartnerKeyRows } from './partner-key'
 import './connect.css'
 import { appName } from '../edition'
 
+const PARTNER = 'partner'
+type Choice = AgentId | typeof PARTNER
+const PICKS: readonly Choice[] = [...AGENTS.map((a) => a.id), PARTNER]
+
 export function AgentPanel({ idPrefix = 'ag' }: { idPrefix?: string }) {
   const host = useAgentInstall()
-  const [picked, setPicked] = useState<AgentId>('claude-desktop')
+  const [picked, setPicked] = useState<Choice>('claude-desktop')
+  const partner = picked === PARTNER
   const [busy, setBusy] = useState(false)
   const [result, setResult] = useState<InstallResult | null>(null)
   const [relay, setRelay] = useState(false)
@@ -29,7 +36,7 @@ export function AgentPanel({ idPrefix = 'ag' }: { idPrefix?: string }) {
   useEffect(() => {
     let live = true
     setLinked(false)
-    void host.connected?.(picked).then((c) => live && setLinked(c), () => undefined)
+    if (picked !== PARTNER) void host.connected?.(picked).then((c) => live && setLinked(c), () => undefined)
     return () => {
       live = false
     }
@@ -67,9 +74,9 @@ export function AgentPanel({ idPrefix = 'ag' }: { idPrefix?: string }) {
     const d = e.key === 'ArrowRight' || e.key === 'ArrowDown' ? 1 : e.key === 'ArrowLeft' || e.key === 'ArrowUp' ? -1 : 0
     if (!d) return
     e.preventDefault()
-    const next = AGENTS[(i + d + AGENTS.length) % AGENTS.length]!
-    setPicked(next.id)
-    document.getElementById(`${idPrefix}-${next.id}`)?.focus()
+    const next = PICKS[(i + d + PICKS.length) % PICKS.length]!
+    setPicked(next)
+    document.getElementById(`${idPrefix}-${next}`)?.focus()
   }
 
   return (
@@ -96,7 +103,16 @@ export function AgentPanel({ idPrefix = 'ag' }: { idPrefix?: string }) {
             </button>
           )
         })}
+        <button id={`${idPrefix}-${PARTNER}`} data-testid="agent-partner" type="button" role="radio" aria-checked={partner} tabIndex={partner ? 0 : -1} className="ag-tile" data-on={partner ? true : undefined} onClick={() => setPicked(PARTNER)} onKeyDown={(e) => onKey(e, AGENTS.length)}>
+          <span className="ag-mark" aria-hidden="true">
+            <Icon name="plugin" size={26} />
+          </span>
+          <span className="ag-name">Partner app</span>
+        </button>
       </div>
+      {partner ? <PartnerKeyRows idPrefix={idPrefix} /> : null}
+      {partner ? null : (
+      <>
       <div className="ag-act">
         <Button variant="primary" icon="plus" disabled={busy || blocked} onClick={() => void add()}>
           {busy ? 'Working' : linked ? `Add to ${agent.name} again` : `Add to ${agent.name}`}
@@ -126,17 +142,33 @@ export function AgentPanel({ idPrefix = 'ag' }: { idPrefix?: string }) {
           ) : null}
         </div>
       ) : null}
-      <p className="ag-rule">
-        <Icon name="shield" size={15} /> The agent can watch, slice and queue. It never starts a print without your tap.{' '}
-        <button
-          type="button"
-          className="fra-more"
-          data-tip-title="What the agent cannot do"
-          data-tip-body={`It can never start a print, resume one or send G-code without your tap in ${appName()} or on your phone.`}
-        >
-          Details
-        </button>
-      </p>
+      </>
+      )}
+      {partner ? (
+        <p className="ag-rule">
+          <Icon name="shield" size={15} /> A partner app can see your printers and ask to print, pause or cancel. You approve every request.{' '}
+          <button
+            type="button"
+            className="fra-more"
+            data-tip-title="What a partner app cannot do"
+            data-tip-body={`It approves nothing: every print, pause or cancel it asks for waits for your tap in ${appName()} or on your phone. It can never resume a print, send G-code, change a running print, or reach your settings, keys or other devices.`}
+          >
+            Details
+          </button>
+        </p>
+      ) : (
+        <p className="ag-rule">
+          <Icon name="shield" size={15} /> The agent can watch, slice and queue. It never starts a print without your tap.{' '}
+          <button
+            type="button"
+            className="fra-more"
+            data-tip-title="What the agent cannot do"
+            data-tip-body={`It can never start a print, resume one or send G-code without your tap in ${appName()} or on your phone.`}
+          >
+            Details
+          </button>
+        </p>
+      )}
       </div>
     </section>
   )

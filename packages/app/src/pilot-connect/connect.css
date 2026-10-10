@@ -41,7 +41,7 @@
 .ag-head b { display: block; font-weight: var(--fw-semibold); font-size: var(--fs-md); }
 .ag-head small { display: block; color: var(--muted); font-size: var(--fs-sm); margin-top: 2px; }
 .ag-lbl { margin: var(--s-2) 0 0; font: var(--fw-medium) var(--fs-sm) var(--f-body); color: var(--muted); }
-.ag-pick { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: var(--s-2); }
+.ag-pick { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: var(--s-2); }
 .ag-tile { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 12px 6px 10px; border: 1px solid var(--line-soft); border-radius: var(--r-md); background: var(--ink-2); color: var(--fg); font: var(--fw-medium) var(--fs-sm) var(--f-body); cursor: pointer; }
 .ag-tile:hover { border-color: var(--line); }
 .ag-tile[data-on] { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--ink-2)); }
@@ -56,6 +56,8 @@
 .ag-result.bad .sx-ic { color: var(--orange); }
 .ag-into { margin: 8px 0 0; font-size: var(--fs-xs); color: var(--muted); }
 .ag-paste { margin: 8px 0 0; padding: 8px 10px; border-radius: var(--r-xs); background: var(--ink-0); font-size: var(--fs-xs); white-space: pre-wrap; word-break: break-all; max-height: 160px; overflow: auto; }
+.ag-keybtns { margin-top: 8px; }
+.ag-act .sx-input { flex: 1; min-width: 180px; max-width: 280px; }
 .ag-rule { margin: 0; display: flex; gap: 8px; align-items: flex-start; color: var(--muted); font-size: var(--fs-sm); border-top: 1px solid var(--line-soft); padding-top: var(--s-3); }
 .ag-rule .sx-ic { color: var(--cyan); flex: none; margin-top: 2px; }
 @media (max-width: 720px) { .ag-pick { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
