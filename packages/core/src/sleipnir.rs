@@ -29,9 +29,11 @@ fn plate_mesh(plate: &Plate) -> TriMesh {
         for part in &obj.mesh.parts {
             let base = u32::try_from(positions.len()).unwrap_or(u32::MAX);
             #[allow(clippy::cast_possible_truncation, reason = "the app's baked mesh is f32")]
-            positions.extend(part.positions.iter().map(|p| {
-                PlateObject::apply_with(&obj.transform, *p).map(|c| f64::from(c as f32))
-            }));
+            positions.extend(
+                part.positions
+                    .iter()
+                    .map(|p| PlateObject::apply_with(&obj.transform, *p).map(|c| f64::from(c as f32))),
+            );
             // A mirroring transform flips the winding; turn triangles back so normals point out.
             triangles.extend(part.triangles.iter().map(|t| {
                 let t = t.map(|i| base + i);
@@ -55,6 +57,8 @@ pub(crate) fn plan(plate: &Plate, config: &PrintConfig, mode: LayerMode) -> Opti
         first_layer_mm: config.initial_layer_print_height,
         ..LayerOptions::default()
     };
-    let tops = plan_layers(&plate_mesh(plate), nozzle, mode, &opts).ok()?.layer_tops_mm;
+    let tops = plan_layers(&plate_mesh(plate), nozzle, mode, &opts)
+        .ok()?
+        .layer_tops_mm;
     (tops.len() > 1).then_some(tops)
 }

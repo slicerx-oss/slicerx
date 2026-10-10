@@ -573,7 +573,10 @@ pub fn build_session(req: &SliceRequest, plate: &Plate, config: &PrintConfig) ->
         })
         .collect();
     #[cfg(feature = "sleipnir")]
-    let planned = match (&req.options.layer_tops_mm, crate::sleipnir::requested(&req.config)) {
+    let planned = match (
+        &req.options.layer_tops_mm,
+        crate::sleipnir::requested(&req.config),
+    ) {
         (None, Some(mode)) => crate::sleipnir::plan(plate, config, mode),
         _ => None,
     };
@@ -1348,6 +1351,102 @@ mod tests {
                 2,
                 "{stage:?}"
             );
+        }
+    }
+
+    /// A 20 mm box, 10 mm tall, under a roof rising 2 mm to its middle: walls sleipnir prints at full height and a
+    /// shallow roof it thins.
+    fn house() -> Arc<Mesh> {
+        let part = MeshPart {
+            name: "house".into(),
+            slot: 1,
+            color: None,
+            positions: vec![
+                [0.0, 0.0, 0.0],
+                [20.0, 0.0, 0.0],
+                [20.0, 20.0, 0.0],
+                [0.0, 20.0, 0.0],
+                [0.0, 0.0, 10.0],
+                [20.0, 0.0, 10.0],
+                [20.0, 20.0, 10.0],
+                [0.0, 20.0, 10.0],
+                [10.0, 10.0, 12.0],
+            ],
+            triangles: vec![
+                [0, 2, 1],
+                [0, 3, 2],
+                [0, 1, 5],
+                [0, 5, 4],
+                [1, 2, 6],
+                [1, 6, 5],
+                [2, 3, 7],
+                [2, 7, 6],
+                [3, 0, 4],
+                [3, 4, 7],
+                [4, 5, 8],
+                [5, 6, 8],
+                [6, 7, 8],
+                [7, 4, 8],
+            ],
+            paint: Vec::new(),
+            support_paint: Vec::new(),
+            seam_paint: Vec::new(),
+            fuzzy_paint: Vec::new(),
+            paint_texts: Vec::new(),
+        };
+        Arc::new(Mesh {
+            name: "house".into(),
+            parts: vec![part],
+        })
+    }
+
+    fn house_layers(config: &str, options: &str) -> Vec<f32> {
+        let mesh = house();
+        let body =
+            format!(r#"{{"plate":{{"objects":[{{"mesh":1}}]}},"config":{config},"options":{options}}}"#);
+        let req: SliceRequest = serde_json::from_str(&body).unwrap();
+        run_request(&req, &|_: &str| Ok(mesh.clone()))
+            .unwrap()
+            .report
+            .layer_z
+    }
+
+    fn uniform(z: &[f32]) -> bool {
+        z.windows(2).all(|w| ((w[1] - w[0]) - 0.2).abs() < 1e-4)
+    }
+
+    #[cfg(feature = "sleipnir")]
+    #[test]
+    fn smart_layer_without_tops_plans_layers() {
+        let z = house_layers(r#"{"layer_height":0.2,"smart_layer":"quality"}"#, "{}");
+        // Full 0.2 mm layers up the walls, thinner ones on the shallow roof.
+        assert!((z[10] - 2.2).abs() < 1e-4, "{z:?}");
+        assert!(z.windows(2).any(|w| w[1] - w[0] < 0.19), "{z:?}");
+        assert!(z.windows(2).all(|w| w[1] > w[0]), "tops ascend");
+        assert!((z.last().unwrap() - 12.0).abs() < 1e-3, "reaches the roof, {z:?}");
+    }
+
+    #[test]
+    fn layer_tops_win_over_smart_layer() {
+        // 0.5 mm tops up to the roof, where sleipnir would plan 0.2 mm and thinner.
+        let tops: Vec<String> = (1..=24).map(|i| format!("{:.1}", f64::from(i) * 0.5)).collect();
+        let z = house_layers(
+            r#"{"layer_height":0.2,"smart_layer":"quality"}"#,
+            &format!(r#"{{"layerTopsMm":[{}]}}"#, tops.join(",")),
+        );
+        assert_eq!(z.len(), 24);
+        assert!((z[3] - 2.0).abs() < 1e-4);
+    }
+
+    #[test]
+    fn no_smart_layer_keeps_layer_height() {
+        for config in [
+            r#"{"layer_height":0.2}"#,
+            r#"{"layer_height":0.2,"smart_layer":"off"}"#,
+        ] {
+            let z = house_layers(config, "{}");
+            assert_eq!(z.len(), 60, "{config}");
+            assert!(uniform(&z), "{config}: {z:?}");
         }
     }
 

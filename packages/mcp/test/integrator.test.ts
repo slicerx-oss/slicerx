@@ -3,7 +3,7 @@
 // What an app that builds SlicerX in relies on: 3MF projects and plates, the user's own presets,
 // stock filament presets, progress, and .gcode.3mf output.
 import { createHash } from 'node:crypto'
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { CallToolResultSchema } from '@modelcontextprotocol/sdk/types.js'
 import { describe, expect, it } from 'vitest'
@@ -270,6 +270,20 @@ describe.skipIf(!existsSync(sxBin))('with the real sx CLI', () => {
     expect(plain).toMatch(/^; layer_height = 0\.2$/m)
     expect(plain).toBe(await gcode({ profiles: ['process:standard'], overrides: { smart_layer: 'quality', wall_generator: 'aegis' } }))
     expect(plain).not.toBe(await gcode({ profiles: ['process:standard'], overrides: { wall_generator: 'classic' } }))
+  })
+
+  it('plans sleipnir layers in sx for the default process, as the app does', async () => {
+    const h = await connect({ engine: 'sx', sxBin })
+    const xMark = join(h.dir, 'x-mark.stl')
+    copyFileSync(resolve(__dirname, '../../core/bench/models/x-mark.stl'), xMark)
+    const layers = async (args: Record<string, unknown>) => {
+      const r = await h.call('slicerx_estimate_file', { model: xMark, ...args })
+      expect(r.isError, text(r)).toBeFalsy()
+      return data<{ layer_count: number }>(r).layer_count
+    }
+    // The app's planSmartLayers gives this x-mark 445 layers (427 at an even 0.2 mm).
+    expect(await layers({})).toBe(445)
+    expect(await layers({ overrides: { smart_layer: 'off' } })).toBe(427)
   })
 
   it('slices for a Bambu Lab A1 with a stock filament and process preset', async () => {

@@ -123,7 +123,7 @@ A slice starts from SlicerX's defaults and applies, in this order:
 1. The project file's own print settings, with `project_settings: true` (3MF and `.sx3mf` only). This is how you slice a Bambu Studio or OrcaSlicer project the way the user saved it.
 2. `profiles`, in the order given. Ids come from `slicerx_list_profiles`:
    - `machine:<model>` for SlicerX printer profiles, such as `machine:bambu-a1` or `machine:prusa-mk4s`
-   - `process:slicerx-default`: a fresh SlicerX plate, the Standard preset with sleipnir (variable layer height, Quality) and aegis walls. A slice that names no process, process file or project uses it. sx plans sleipnir's layers in a coming release; until then these slices print at one layer height.
+   - `process:slicerx-default`: a fresh SlicerX plate, the Standard preset with sleipnir (variable layer height, Quality) and aegis walls. A slice that names no process, process file or project uses it. sx plans sleipnir's layers with the planner the app uses, so these slices get the same layers as the app.
    - `process:<tier>`: `draft`, `standard`, `fine`, `extra_fine` or `strong`
    - `stock-filament:<vendor>/<preset>` for the makers' own filament presets, such as `stock-filament:BBL/Bambu PLA Basic @BBL A1`
    - `filament:<material>` and `printer:<id>` for knowledge base materials and printers, and `intent:<goal>` for an Easy goal
