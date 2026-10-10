@@ -840,7 +840,7 @@ fn replace_mark(line: &[u8], mark: &str, text: &str) -> Option<Vec<u8>> {
 
 /// `cfg` with the `filament_map` of the file's configuration block (`; filament_map = 2,1`), on a printer
 /// with a filament map whose settings do not already carry that map.
-fn map_from_gcode(gcode: &[u8], cfg: &crate::config::PrintConfig) -> Option<crate::config::PrintConfig> {
+pub fn map_from_gcode(gcode: &[u8], cfg: &crate::config::PrintConfig) -> Option<crate::config::PrintConfig> {
     if !crate::nozzles::shared(cfg) {
         return None;
     }
