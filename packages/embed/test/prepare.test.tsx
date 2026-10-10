@@ -101,6 +101,22 @@ describe('the Prepare toolbar', () => {
     expect(button('Scale').getAttribute('aria-pressed')).toBe('true')
   })
 
+  it('selects the only object for rotate and scale, so their handles show', async () => {
+    const picked: string[][] = []
+    await draw({ plate: plate('a'), tools: true, onSelect: (ids) => picked.push(ids) })
+    await act(() => button('Rotate').click())
+    expect(named('setSelection')).toEqual([[['a']]])
+    expect(picked).toEqual([['a']])
+    // already selected, nothing changes; two objects, the person picks one
+    await act(() => button('Scale').click())
+    expect(named('setSelection')).toHaveLength(1)
+    calls = []
+    await draw({ plate: plate('b', 'c'), tools: true })
+    await emit('select', { ids: [] })
+    await act(() => button('Rotate').click())
+    expect(named('setSelection')).toHaveLength(0)
+  })
+
   it('drops the selection to the bed, or every object with nothing selected', async () => {
     await draw({ plate: plate('a', 'b'), tools: true })
     await act(() => button('Drop to bed').click())

@@ -110,7 +110,7 @@ void main(){
   // On the ground the traced outline only shows while the reveal runs: through the trace, then fading with the wash.
   float groundEdge = clamp(1.0 - step(1.0, reveal.x) + reveal.z * 2.0, 0.0, 1.0);
   float px = max(fwidth(d), 1e-3);
-  float line = 1.0 - smoothstep(0.0, 1.0, abs(d) / (px * 1.4));
+  float line = 1.0 - smoothstep(0.0, 1.0, abs(d) / (px * mix(1.4, 0.8, subtle)));
   float glow = exp(-abs(d) / 2.2) * (d < 0.0 ? 0.18 : 0.1);
   // Four identical L brackets starting exactly at each corner, both legs inside the outline.
   vec2 c = hb - abs(vP);
@@ -128,12 +128,12 @@ void main(){
   // The bare bed gets a faint fill in the grid color, so the printable area stands apart from the background.
   float fill = inside * 0.07 * (1.0 - surface) * (1.0 - ground) * row;
   float inner = exp(d / 10.0) * inside * 0.045 * (1.0 - ground) * row;
-  // a subtle outline (hosts with a calm theme) is a thin half strength line without the glow, the corner marks fainter
-  float aEdge = clamp(line * mix(1.0, 0.5, subtle) + glow * (1.0 - subtle) + br * mix(0.7, 0.3, subtle), 0.0, 1.0) * mix(1.0, groundEdge, ground) * shown;
+  // a subtle outline (hosts with a calm theme): a hairline at 0.35 alpha without the glow, the corner marks at 0.2
+  float aEdge = clamp(line * mix(1.0, 0.35, subtle) + glow * (1.0 - subtle) + br * mix(0.7, 0.2, subtle), 0.0, 1.0) * mix(1.0, groundEdge, ground) * shown;
   float aG = clamp(gl + fill + inner, 0.0, 1.0);
   float wash = reveal.z * 0.16 * inside * (1.0 - ground);
   float a = clamp(aEdge + (aG + wash) * (1.0 - aEdge), 0.0, 1.0);
-  vec3 ec = mix(mix(edge, grid, 0.4 * subtle), edgeAlt, alert);
+  vec3 ec = mix(mix(edge, grid, 0.6 * subtle), edgeAlt, alert);
   vec3 col = ec * aEdge + (grid * aG + edge * wash) * (1.0 - aEdge);
   gl_FragColor = vec4(col, a);
 }`
@@ -339,7 +339,7 @@ export class Stage {
     this.setSceneColors(this.colors)
   }
 
-  /** How strong the bed outline is: `default` (a crisp glowing line) or `subtle` (thin, half strength, no glow). */
+  /** How strong the bed outline is: `default` (a crisp glowing line) or `subtle` (a faint hairline, no glow). */
   setBedOutline(style: BedOutline): void {
     this.bedOutline = style
     if (this.outline?.uniforms.subtle) this.outline.uniforms.subtle.value = style === 'subtle' ? 1 : 0

@@ -44,7 +44,7 @@ export type ToolpathFinish = 'matte' | 'satin' | 'glossy' | 'silk'
 /** The bed under the print: the outline and grid only, or a build plate surface under them. */
 export type PlateStyle = 'grid' | 'textured-pei' | 'smooth-pei' | 'cool' | 'engineering'
 
-/** How strong the bed outline is: `default` is a crisp glowing line, `subtle` a thin half strength one for calm themes. */
+/** How strong the bed outline is: `default` is a crisp glowing line, `subtle` a faint hairline for calm themes. */
 export type BedOutline = 'default' | 'subtle'
 
 /** Preview data beyond SXPV v1. Per-segment arrays follow the segment order of the buffer. */
