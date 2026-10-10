@@ -1,8 +1,23 @@
 {
- "comment": "Fingerprints of the printer G-code the makers shipped for each model in the history of Bambu Studio and OrcaSlicer, and of their filament presets per vendor: the first 128 bits of the SHA-256 of the text with line breaks as \\n, trailing spaces and blank lines dropped. Made by scripts/gen-stock-gcode.mjs; read by js/gcode-review.ts.",
+ "comment": "Fingerprints of the printer G-code the makers shipped for each model in the history of Bambu Studio and OrcaSlicer, and of their filament presets per vendor: the first 128 bits of the SHA-256 of the text with line breaks as \\n, trailing spaces and blank lines dropped. Made by scripts/gen-stock-gcode.mjs; read by js/gcode-review.ts. Sources: the commits of the clones, and as bambuStudioApp and orcaSlicerApp the versions of the installed apps whose shipped presets were added.",
  "sources": {
   "bambuStudio": "da8b44ee34dd349f2ae0df3f1cbae366df482354",
-  "orcaSlicer": "1d577ea4e219d3fcd56ed52648c5d0b1cb8dce8e"
+  "orcaSlicer": "1d577ea4e219d3fcd56ed52648c5d0b1cb8dce8e",
+  "bambuStudioApp": [
+   "02.07.00.55",
+   "02.07.01.57",
+   "02.07.01.62",
+   "02.08.00.50",
+   "02.08.01.55",
+   "02.08.02.60",
+   "02.08.02.61",
+   "02.08.03.66",
+   "02.08.04.57",
+   "02.08.04.61"
+  ],
+  "orcaSlicerApp": [
+   "2.4.2"
+  ]
  },
  "models": {
   "anycubic-kobra-x": {
