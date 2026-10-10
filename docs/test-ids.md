@@ -93,6 +93,8 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | `slice-filament-reset` | Reset to printer, in that menu (when a slot was edited) |
 | `slice-filament-swap` | Swap colors, in that menu (two filaments or more); opens the swap in a popover |
 | `slice-filament-use-printer` | Use printer's filament, for a slot that differs from what the printer holds |
+| `slice-settings-tab-<group>` | A print settings tab in Advanced and Expert: `quality`, `strength`, `speed`, `supports`, `adhesion`, `multicolor` (Color, with two or more filaments), `effects` (Surface), `output` |
+| `slice-tower-atlas` | Under the Prime tower switch in the Color tab: where atlas puts the tower; `data-auto` is `true` while atlas places it, `false` once set by hand (with Place automatically) |
 | `slice-goal-<tier>` | A Goal tile in Print settings: `slice-goal-draft`, `slice-goal-standard`, `slice-goal-fine`, `slice-goal-strong`; the picked tile's tooltip gives about how long and how much from the last slice, or "Updating the estimate." |
 | `slice-estimate` | The Slice sidebar footer: the estimate line over the main action; `data-stale` while it updates |
 | `slice-estimate-time` | The print time in the footer; opens the breakdown |

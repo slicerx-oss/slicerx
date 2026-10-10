@@ -1,0 +1,13 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+/* Copyright (C) 2026 The SlicerX contributors */
+/* The print settings tabs in Advanced and Expert: one row of icons, the open tab underlined; the tab's name is the
+   heading of the panel under it and the tooltip of its icon. */
+.set-tabs { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 2px; margin: var(--s-2) 0; padding: 2px; border-radius: var(--r-md); background: var(--ink-2); border: 1px solid var(--line-soft); }
+.set-tab { display: grid; place-items: center; min-width: 0; height: 34px; padding: 0; border: 0; border-radius: calc(var(--r-md) - 2px); background: none; color: var(--muted); cursor: pointer; box-shadow: inset 0 -2px 0 transparent; }
+.set-tab:hover { color: var(--fg); background: var(--ink-3); }
+.set-tab:focus-visible { outline: var(--focus-ring); outline-offset: -2px; }
+.set-tab[aria-selected="true"] { color: var(--accent); background: var(--accent-tint); box-shadow: inset 0 -2px 0 var(--accent); }
+/* Color's palette shows filament colors on its dots, in the tab and in the tab's heading; the icon itself stays one color. */
+.set-tab[data-tab="multicolor"] svg circle:nth-of-type(1), .tier-group[data-intent="multicolor"] .tier-h svg circle:nth-of-type(1) { fill: var(--red); }
+.set-tab[data-tab="multicolor"] svg circle:nth-of-type(2), .tier-group[data-intent="multicolor"] .tier-h svg circle:nth-of-type(2) { fill: var(--green); }
+.set-tab[data-tab="multicolor"] svg circle:nth-of-type(3), .tier-group[data-intent="multicolor"] .tier-h svg circle:nth-of-type(3) { fill: var(--cyan); }

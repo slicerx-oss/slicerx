@@ -107,7 +107,7 @@ export const OPTION_TIPS: Readonly<Record<string, { title: string; body: string 
   },
   'prime_tower.atlas': {
     title: 'atlas',
-    body: "atlas places and sizes the prime tower for you: clear of your objects and the printer's no-go zones, and reshaped when the plate leaves little room. Turn it off to drag the tower in the view or type a spot.",
+    body: "atlas places and sizes the prime tower for you: clear of your objects and the printer's no-go zones, and reshaped when the plate leaves little room. Drag the tower in the view or type a spot to set it by hand; Place automatically hands it back.",
   },
   'smart_layer.sleipnir': {
     title: 'sleipnir',

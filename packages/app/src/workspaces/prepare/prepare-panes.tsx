@@ -142,7 +142,7 @@ export function PrepareLeft({ layout }: { layout: LayoutSpec }) {
           {objectList === 'sidebar-after-filament' ? <PrepareObjects /> : null}
           <Block
             title="Print settings"
-            icon="sliders"
+            icon="section-print-settings"
             aside={
               // The mode chip in the pane title sets the mode where the look puts it in the sidebar.
               layout.modeSelector !== 'sidebar' && expertVisible ? (
