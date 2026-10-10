@@ -227,4 +227,18 @@ describe('sync files', () => {
     expect(get().userPresets.map((x) => x.name)).toContain('Remote PLA')
     expect(get().presetSync.changes.some((c) => c.name === 'Remote PLA')).toBe(true)
   })
+
+  it('a synced change to the preset in use keeps the live edits, and takes effect when the preset is next picked', async () => {
+    const { mergeSyncText } = await import('../src/presets/presets')
+    const { makeBundle } = await import('../src/presets/sync')
+    const p = await savePreset('process', 'Fast', { values: { wall_loops: 4 } })
+    applyPreset(p.id)
+    set((s) => ({ overrides: { ...s.overrides, wall_loops: 6 } }))
+    const remote = makeBundle([{ ...p, values: { wall_loops: 5 }, updatedAt: p.updatedAt + 10 }], [], [])
+    await mergeSyncText(JSON.stringify(remote))
+    expect(get().userPresets.find((x) => x.id === p.id)?.values['wall_loops']).toBe(5)
+    expect(get().overrides['wall_loops']).toBe(6)
+    applyPreset(p.id)
+    expect(get().overrides['wall_loops']).toBe(5)
+  })
 })
