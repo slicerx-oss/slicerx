@@ -3,7 +3,8 @@
 /* A name cut in the middle: the start gives way with an ellipsis, the end (and a file's extension) stays. */
 .mid-name { display: inline-flex; min-width: 0; max-width: 100%; white-space: nowrap; vertical-align: bottom; }
 .mid-head { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.mid-tail { flex: none; }
+/* The end gives way only once the start is gone, so a short name in a narrow chip still ends in an ellipsis. */
+.mid-tail { flex: 0 0.001 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 /* A button label with a name in it: one line that gives way inside the button. */
 .btn-name { display: inline-flex; gap: 0.3em; min-width: 0; max-width: 100%; white-space: nowrap; overflow: hidden; }
 .sx-btn:has(> .btn-name) { min-width: 0; max-width: 100%; }
