@@ -6,4 +6,3 @@
 # test name | owner | added (YYYY-MM-DD) | issue | why
 playback through a tool change on the H2C runs clean and keeps its frame rate | test-program | 2026-10-08 | https://github.com/slicerx-oss/slicerx/issues/51 | fails on both attempts on CI runners and on main, blocking every merge; was flaky.txt (passes alone, fails in the full e2e run (e2e/toolchange-play.spec.ts))
 the filament slot editor sets a slot and the panel shows it | slice-reshape | 2026-10-10 | https://github.com/slicerx-oss/slicerx/issues/448 | fails on main in 3 of 4 runs since the filament rail landed, dropping queue groups (e2e/plate.spec.ts)
-controls never move when pressed > Slice in Simple | research-model | 2026-10-10 | https://github.com/slicerx-oss/slicerx/issues/449 | a toast over the open phone sheet takes the click, so the sheet scrolls; fails on main (e2e/layout-stability.spec.ts)
