@@ -50,7 +50,7 @@ async fn hub_with_push(state_dir: Option<PathBuf>, push_url: &str) -> Link {
         state_dir,
         watch_every: Duration::from_millis(100),
         push_url: push_url.to_owned(),
-        ..LinkConfig::default()
+        ..LinkConfig::loopback()
     };
     serve_with_approvals(
         cfg,
@@ -2072,7 +2072,7 @@ async fn n4_with_the_keychain_the_app_code_is_not_on_disk_beside_the_agent_code(
         state_dir: Some(dir.clone()),
         push_url: String::new(),
         code_in_secrets: true,
-        ..LinkConfig::default()
+        ..LinkConfig::loopback()
     };
     let _link = serve_with_approvals(
         cfg,
@@ -2352,7 +2352,7 @@ async fn an_unanswered_watch_pause_turns_the_bed_then_the_nozzle_off() {
         push_url: String::new(),
         pause_bed_off_after: Duration::from_millis(600),
         pause_heaters_off_after: Duration::from_millis(1500),
-        ..LinkConfig::default()
+        ..LinkConfig::loopback()
     };
     let link = serve_with_approvals(
         cfg,
@@ -2418,7 +2418,7 @@ async fn an_answered_watch_pause_keeps_its_heaters() {
         push_url: String::new(),
         pause_bed_off_after: Duration::from_millis(800),
         pause_heaters_off_after: Duration::from_millis(1200),
-        ..LinkConfig::default()
+        ..LinkConfig::loopback()
     };
     let link = serve_with_approvals(
         cfg,

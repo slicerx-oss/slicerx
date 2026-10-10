@@ -14,7 +14,9 @@ use sx_permit::ApprovalBroker;
 
 const USAGE: &str = "usage:
   sx-link [--port 47615] [--state-dir DIR | --no-state] [--headless] [--secrets keychain|file]
-          [--allow-origin ORIGIN] [--inbox-url https://cloud.example] [--no-mdns]
+          [--allow-origin ORIGIN] [--inbox-url https://cloud.example] [--no-mdns] [--loopback]
+                                                 --loopback keeps every socket on 127.0.0.1 (tests): the
+                                                 phone listener, printer discovery and direct video, mDNS off
   sx-link code [--agent|--watch] [--state-dir DIR]
                                                  print the running hub's app code, with --agent the code
                                                  for the MCP server and other tools, with --watch the
@@ -151,6 +153,7 @@ async fn run(args: Vec<String>) {
     let mut state_dir = default_state_dir();
     let mut headless = false;
     let mut secrets_kind: Option<String> = None;
+    let mut loopback = false;
     let mut it = args.into_iter();
     while let Some(a) = it.next() {
         match a.as_str() {
@@ -177,6 +180,7 @@ async fn run(args: Vec<String>) {
                 _ => fail("--secrets is keychain or file"),
             },
             "--no-mdns" => mdns.disabled = true,
+            "--loopback" => loopback = true,
             "-h" | "--help" => {
                 eprintln!("{USAGE}");
                 return;
@@ -210,6 +214,13 @@ async fn run(args: Vec<String>) {
         };
         InboxConfig { url, token }
     });
+    // Nothing on the network: what a test run needs, so the OS firewall has nothing to ask.
+    let base = if loopback {
+        mdns.disabled = true;
+        LinkConfig::loopback()
+    } else {
+        LinkConfig::default()
+    };
     let broker = match ApprovalBroker::new() {
         Ok(b) => Arc::new(b),
         Err(e) => fail(&format!("cannot start the approval broker: {e}")),
@@ -225,7 +236,7 @@ async fn run(args: Vec<String>) {
             // With the OS keychain, the app code lives there, apart from the agent code on disk.
             code_in_secrets: !use_file && state_dir.is_some(),
             state_dir,
-            ..LinkConfig::default()
+            ..base
         },
         Arc::new(BrokerGate(broker.clone())),
         secrets,

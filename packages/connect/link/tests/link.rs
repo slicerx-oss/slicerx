@@ -38,8 +38,7 @@ async fn start(gate: Arc<MemoryGate>) -> Link {
         fixed_code: Some(CODE.to_owned()),
         inbox: None,
         pair_limits: PairLimits::default(),
-        mdns: MdnsConfig::default(),
-        ..LinkConfig::default()
+        ..LinkConfig::loopback()
     };
     serve(cfg, gate, Arc::new(MemorySecrets::new())).await.unwrap()
 }
@@ -570,8 +569,7 @@ async fn the_real_broker_gates_upload_start_and_pause() {
         fixed_code: Some(CODE.to_owned()),
         inbox: None,
         pair_limits: PairLimits::default(),
-        mdns: MdnsConfig::default(),
-        ..LinkConfig::default()
+        ..LinkConfig::loopback()
     };
     let link = serve_with_approvals(
         cfg,
@@ -695,8 +693,7 @@ async fn inbox_rig() -> (Link, common::Mocks, Ws) {
             token: mocks.str("cloudToken"),
         }),
         pair_limits: PairLimits::default(),
-        mdns: MdnsConfig::default(),
-        ..LinkConfig::default()
+        ..LinkConfig::loopback()
     };
     let link = serve_with_approvals(
         cfg,
@@ -963,8 +960,7 @@ async fn the_inbox_needs_a_safe_address_and_a_token() {
             token: token.to_owned(),
         }),
         pair_limits: PairLimits::default(),
-        mdns: MdnsConfig::default(),
-        ..LinkConfig::default()
+        ..LinkConfig::loopback()
     };
     for (url, token) in [
         ("http://cloud.example.com", "sxk_t"),
@@ -996,12 +992,7 @@ async fn lan_rig(limits: PairLimits) -> (Link, Ws, u16) {
         inbox: None,
         pair_limits: limits,
         // Loopback only and no mDNS: the phones here are local, and the OS firewall has nothing to ask.
-        mdns: MdnsConfig {
-            disabled: true,
-            ..MdnsConfig::default()
-        },
-        lan_bind: Some(std::net::IpAddr::from([127, 0, 0, 1])),
-        ..LinkConfig::default()
+        ..LinkConfig::loopback()
     };
     let link = serve(cfg, Arc::new(MemoryGate::new()), Arc::new(MemorySecrets::new()))
         .await
@@ -1262,7 +1253,17 @@ async fn the_listener_stops_when_asked_and_stays_up_when_the_app_leaves() {
 
 // ---- mDNS: advertising the phone listener, and discovering printers ----
 
-fn mdns_rig(mdns: MdnsConfig) -> LinkConfig {
+/// mDNS as the test sets it, on loopback: a browse, probe or advert the test leaves unset goes to a
+/// loopback port nobody answers on instead of the network, so the OS firewall has nothing to ask.
+fn mdns_rig(mut mdns: MdnsConfig) -> LinkConfig {
+    let nobody = || {
+        let closed = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
+        Some(closed.local_addr().unwrap())
+    };
+    mdns.browse_target = mdns.browse_target.or_else(nobody);
+    mdns.onvif_target = mdns.onvif_target.or_else(nobody);
+    mdns.advert_bind = mdns.advert_bind.or_else(|| Some(([127, 0, 0, 1], 0).into()));
+    mdns.advert_to = mdns.advert_to.or_else(nobody);
     LinkConfig {
         port: 0,
         extra_origins: Vec::new(),
@@ -1270,9 +1271,7 @@ fn mdns_rig(mdns: MdnsConfig) -> LinkConfig {
         inbox: None,
         pair_limits: PairLimits::default(),
         mdns,
-        lan_bind: Some(std::net::IpAddr::from([127, 0, 0, 1])),
-        discovery_bind: Some(std::net::IpAddr::from([127, 0, 0, 1])),
-        ..LinkConfig::default()
+        ..LinkConfig::loopback()
     }
 }
 
@@ -2561,8 +2560,7 @@ async fn cloud_sliced_job_through_the_real_service() {
             token: TOKEN.to_owned(),
         }),
         pair_limits: PairLimits::default(),
-        mdns: MdnsConfig::default(),
-        ..LinkConfig::default()
+        ..LinkConfig::loopback()
     };
     let link = serve_with_approvals(
         cfg,
@@ -2728,7 +2726,7 @@ async fn a_keychain_that_refuses_keeps_the_credential_for_the_session() {
     let cfg = LinkConfig {
         port: 0,
         fixed_code: Some(CODE.to_owned()),
-        ..LinkConfig::default()
+        ..LinkConfig::loopback()
     };
     let link = serve(cfg, Arc::new(MemoryGate::new()), Arc::new(Refusing))
         .await
