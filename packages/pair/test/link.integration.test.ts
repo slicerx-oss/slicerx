@@ -29,7 +29,7 @@ let code = ''
 beforeAll(async () => {
   if (!built) return
   mocks = await startMocks({ only: ['moonraker'], state: 'idle' })
-  const p = spawn(bin, ['--port', '0', '--state-dir', dir, '--secrets', 'file', '--no-mdns'], { stdio: ['ignore', 'pipe', 'pipe'] })
+  const p = spawn(bin, ['--port', '0', '--state-dir', dir, '--secrets', 'file', '--no-mdns', ...(process.env['SX_TEST_LAN'] === '1' ? [] : ['--loopback'])], { stdio: ['ignore', 'pipe', 'pipe'] })
   proc = p
   let out = ''
   await new Promise<void>((resolve, reject) => {
