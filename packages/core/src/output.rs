@@ -379,12 +379,14 @@ impl SliceOutput {
 
     /// True when this output covers the plate's first layer.
     pub fn has_first_layer(&self) -> bool {
-        self.first_layer == 0
+        // An empty range at the start (more ranges than layers) does not: the range after it starts the print.
+        self.first_layer == 0 && (!self.layers.is_empty() || self.layer_count == 0)
     }
 
     /// True when this output covers the plate's last layer.
     pub fn has_last_layer(&self) -> bool {
-        self.first_layer as usize + self.layers.len() >= self.layer_count as usize
+        (!self.layers.is_empty() || self.layer_count == 0)
+            && self.first_layer as usize + self.layers.len() >= self.layer_count as usize
     }
 }
 
