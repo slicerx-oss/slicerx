@@ -134,9 +134,17 @@ async function probe(page: Page, screen: string, root: Locator): Promise<Moved[]
     if (!pressed) continue
     await page.waitForTimeout(350)
     const after = await remeasure(page, control, Object.keys(before))
-    // Text size and font weight restyle every text on screen, the pressed option with it: they are left out.
+    // Text size and font weight restyle every text on screen, the pressed option with it. They are exempt from the
+    // half pixel, but the pressed option must still be under the pointer: the middle of its old box is inside the new.
     const restyles = await control.evaluate((el) => Boolean(el.closest('[role="radiogroup"][aria-label="Text size"], [role="radiogroup"][aria-label="Font weight"]')))
-    if (restyles) continue
+    if (restyles) {
+      const b = before['control']!
+      const a = after['control']
+      const x = b.x + b.w / 2
+      const y = b.y + b.h / 2
+      if (!a || x < a.x || x > a.x + a.w || y < a.y || y > a.y + a.h) moved.push({ control: `${screen}: ${name}`, what: 'control, off the pointer', dx: a ? a.x - b.x : NaN, dy: a ? a.y - b.y : NaN, dw: a ? a.w - b.w : NaN, dh: a ? a.h - b.h : NaN })
+      continue
+    }
     for (const [k, b] of Object.entries(before)) {
       const a = after[k]
       if (!a) continue

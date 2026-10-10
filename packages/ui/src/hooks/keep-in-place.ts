@@ -8,12 +8,15 @@
 export const STATIC_CONTROLS = '[role="radio"], [role="tab"], [role="switch"], input[type="checkbox"], select, button[aria-expanded]:not([aria-haspopup]):not(.sx-edge-tab)'
 
 function scroller(el: Element): HTMLElement | null {
+  let could: HTMLElement | null = null
   for (let p = el.parentElement; p; p = p.parentElement) {
     const oy = getComputedStyle(p).overflowY
-    // The nearest container that scrolls now; one that could scroll but has nothing to scroll is passed over.
-    if ((oy === 'auto' || oy === 'scroll') && p.scrollHeight > p.clientHeight + 1) return p
+    if (oy !== 'auto' && oy !== 'scroll') continue
+    // the nearest container that scrolls now; failing that, the nearest that can, given room at its end
+    if (p.scrollHeight > p.clientHeight + 1) return p
+    could ??= p
   }
-  return null
+  return could
 }
 
 const added = new WeakMap<HTMLElement, { px: number; spacer: HTMLElement; last: number }>()
@@ -55,6 +58,7 @@ function addRoom(box: HTMLElement, px: number): void {
 }
 
 let job = 0
+const anchors = new Map<HTMLElement, { n: number; was: string }>()
 
 /**
  * Keeps `el` at its height on screen for `ms`, by scrolling its container against any shift in the layout. The
@@ -65,9 +69,20 @@ export function keepInPlace(el: Element, ms = 450): void {
   const box = scroller(el)
   if (!box) return
   const id = ++job
-  // where el sits in the scrolled content, so a layout shift and a scroll tell apart
-  const at = () => el.getBoundingClientRect().top - box.getBoundingClientRect().top + box.scrollTop
-  let y = at()
+  // the browser's own scroll anchoring would move the box too, after its own pick of an anchor: off while held
+  const held = anchors.get(box)
+  if (held) held.n++
+  else anchors.set(box, { n: 1, was: box.style.overflowAnchor })
+  box.style.overflowAnchor = 'none'
+  const release = () => {
+    const h = anchors.get(box)
+    if (h && --h.n === 0) {
+      box.style.overflowAnchor = h.was
+      anchors.delete(box)
+    }
+  }
+  // where el should be on screen; a scroll by the person moves that place along with it
+  let top = el.getBoundingClientRect().top
   let st = box.scrollTop
   const end = performance.now() + ms
   const hold = () => {
@@ -75,10 +90,11 @@ export function keepInPlace(el: Element, ms = 450): void {
     const max = box.scrollHeight - box.clientHeight
     // a scroll we did not make is the person's, unless it is the browser pulling the end back to shorter content
     const clamped = now < st && now >= max - 1
-    if (Math.abs(now - st) > 0.5 && !clamped) st = now
-    const next = at()
-    const want = st + (next - y)
-    y = next
+    if (Math.abs(now - st) > 0.5 && !clamped) {
+      top -= now - st
+      st = now
+    }
+    const want = now + el.getBoundingClientRect().top - top
     if (Math.abs(want - now) > 0.25) {
       if (want > max) addRoom(box, Math.ceil(want - max) + 1)
       box.scrollTop = want
@@ -91,7 +107,11 @@ export function keepInPlace(el: Element, ms = 450): void {
   const ro = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(() => id === job && el.isConnected && hold())
   if (ro) for (const c of [el, ...Array.from(box.children)]) ro.observe(c)
   const step = () => {
-    if (id !== job || !el.isConnected || performance.now() >= end) return ro?.disconnect()
+    if (id !== job || !el.isConnected || performance.now() >= end) {
+      ro?.disconnect()
+      release()
+      return
+    }
     hold()
     requestAnimationFrame(step)
   }
