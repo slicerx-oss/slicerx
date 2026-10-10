@@ -54,6 +54,9 @@ fn cuboid(x: [f32; 2], y: [f32; 2], z: [f32; 2], slot: u8) -> Mesh {
 /// The reference slicer's values for the machine, over the shipped profile.
 fn as_reference(id: &str) -> Value {
     let common = json!({
+        // Even 0.2 mm layers, as the references were sliced: sleipnir would split the box tops into thinner
+        // layers, and the tower is as deep as its thinnest layer with a change needs.
+        "smart_layer": "off",
         "layer_height": 0.2,
         "initial_layer_print_height": 0.2,
         "filament_type": ["PLA", "PLA"],
