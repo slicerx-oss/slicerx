@@ -244,6 +244,9 @@ pub(crate) struct ClientRecord {
     /// The role it paired with. Records from before roles existed read as `agent`, the narrower one.
     #[serde(default = "agent_role")]
     pub role: crate::roles::Role,
+    /// A partner app's key (`clients.create` with `partner`): an agent with the partner limits.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub partner: bool,
     pub created_at_ms: u64,
     #[serde(default)]
     pub last_seen_ms: u64,
@@ -903,14 +906,35 @@ impl Hub {
             name: name.chars().take(80).collect(),
             key_hash: sha256_hex(key.as_bytes()),
             role,
+            partner: false,
             created_at_ms: now_ms(),
             last_seen_ms: now_ms(),
         });
         (key, id)
     }
 
-    /// The client id and role for a remembered key. Compares hashes in constant time.
-    pub(crate) fn client_for_key(&self, key: &str) -> Option<(String, crate::roles::Role)> {
+    /// Remembers a partner app and returns its key (`sxp_` and 64 hex digits, shown once) and id.
+    /// Refuses when the OS has no randomness, rather than hand out a guessable key.
+    pub(crate) fn remember_partner(&self, name: &str) -> Result<(String, String), String> {
+        let mut raw = [0_u8; 32];
+        getrandom::fill(&mut raw).map_err(|_| "this computer gave no randomness for a key".to_owned())?;
+        let key = format!("sxp_{}", hex(&raw));
+        let id = format!("client-{}", random_hex(6));
+        lock(&self.clients).push(ClientRecord {
+            id: id.clone(),
+            name: name.chars().take(80).collect(),
+            key_hash: sha256_hex(key.as_bytes()),
+            role: crate::roles::Role::Agent,
+            partner: true,
+            created_at_ms: now_ms(),
+            last_seen_ms: 0,
+        });
+        Ok((key, id))
+    }
+
+    /// The client id, role and, for a partner app, its name, for a remembered key. Compares hashes
+    /// in constant time.
+    pub(crate) fn client_for_key(&self, key: &str) -> Option<(String, crate::roles::Role, Option<String>)> {
         let want = sha256_hex(key.as_bytes());
         let mut clients = lock(&self.clients);
         let mut found = None;
@@ -923,7 +947,7 @@ impl Hub {
                 == 0;
             if same {
                 c.last_seen_ms = now_ms();
-                found = Some((c.id.clone(), c.role));
+                found = Some((c.id.clone(), c.role, c.partner.then(|| c.name.clone())));
             }
         }
         found
