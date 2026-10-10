@@ -20,6 +20,7 @@ All notable changes to `@slicerx/embed` are listed here. The format follows Keep
 - `reveal: 'each-plate'` (`reveal="each-plate"`) plays the plate reveal for every new plate; `playReveal()` on the element plays it on demand.
 - `bedOutline: 'subtle'` (`bed-outline="subtle"`): a faint hairline bed outline without the glow.
 - `look="cad"` on `<sx-viewport>`.
+- `fileTransform(transform, offset)` and `offset` on a decoded model: a viewport transform turned into one for the model file itself, for an `sx slice` request that names the file.
 
 - `LocalAiSetup` and `useLocalAi`: Set up local AI as one piece or a hook, themed like the other pieces, with the models an edition allows.
 

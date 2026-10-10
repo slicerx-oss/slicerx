@@ -50,6 +50,26 @@ export const PERSONAS = {
       'Yes, go ahead. When you are done, make sure the edition builds and tell me what still says SlicerX.',
     ],
   },
+  // Path B with the engine: places parts in the viewport and slices with sx itself, no MCP server for slicing.
+  engine: {
+    path: 'B-engine',
+    expect: { parts: ['viewport', 'slicing'], accent: '#e8590c', scheme: 'dark' },
+    assets: { 'data/models/x-mark.stl': 'packages/core/bench/models/x-mark.stl' },
+    turns: ({ sxBin, kit }) => [
+      `I make Printbay, a print queue app, and I want a Prepare step in it: people put their models on a plate in the SlicerX 3D viewport, move and turn them, then slice. We want to run the sx engine ourselves for the slice, not through an MCP server. The SlicerX dev kit is in ./${kit}. There is no app yet, so start one here in this folder. What do you need from me?`,
+      [
+        'Answers:',
+        '- Parts: the viewport with its Prepare tools, and slicing with the sx engine directly. Show the toolpath preview and the print time and grams after a slice. No printers, no settings panel and no locked projects for now.',
+        '- Stack: React with Vite and TypeScript for the window, plus a small Node server (Express) that runs sx. npm.',
+        '- Brand: accent #e8590c on dark surfaces (#14110f and #1d1916), system font, dark only.',
+        '- Models: STL files in ./data/models (there is one there to try). Bambu Lab A1 with a 0.4 mm nozzle and Bambu PLA Basic; a hard-coded config of OrcaSlicer keys is fine for now.',
+        `- The sx engine is at ${sxBin}. I have no SlicerX account token.`,
+        '- Set things up for this project only. Do not change my global settings.',
+        'If your plan matches this, go ahead and build it.',
+      ].join('\n'),
+      'Yes, go ahead. When you are done, make sure npm run build passes, slice the model in ./data/models once through your server to check it, and tell me what is left.',
+    ],
+  },
   tracker: {
     expect: { parts: ['viewport', 'slicing'], accent: '#2fbf71', scheme: 'dark' },
     turns: ({ sxBin, kit }) => [
