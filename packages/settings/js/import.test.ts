@@ -93,6 +93,29 @@ describe('errors and legacy keys', () => {
     expect(r.config['wall_sequence']).toBe('outer wall/inner wall')
     expect(r.unknownKeys).toEqual([])
   })
+  it("reads Bambu Studio's reduce_infill_retraction_mode as the reduce_infill_retraction switch", () => {
+    const read = (extra: Record<string, unknown>) => {
+      const r = importFlat(extra)
+      return { v: r.config['reduce_infill_retraction'], ignored: r.ignoredKeys }
+    }
+    // Auto skips the retraction for low stickiness filaments; "None" (untested) counts as low.
+    const auto = read({ reduce_infill_retraction_mode: 'Auto', filament_metal_stickiness: ['None', 'Low', 'None', 'None'] })
+    expect(auto.v).toBe(true)
+    expect(auto.ignored.filter((k) => k.startsWith('reduce_infill_retraction'))).toEqual([])
+    expect(read({ reduce_infill_retraction_mode: 'Auto' }).v).toBe(true)
+    // A medium or high stickiness filament (PETG) keeps the retraction on Auto.
+    expect(read({ reduce_infill_retraction_mode: 'Auto', filament_metal_stickiness: ['Low', 'High'] }).v).toBe(false)
+    expect(read({ reduce_infill_retraction_mode: 'Auto', filament_metal_stickiness: 'Medium' }).v).toBe(false)
+    expect(read({ reduce_infill_retraction_mode: 'Enabled', filament_metal_stickiness: ['High'] }).v).toBe(true)
+    expect(read({ reduce_infill_retraction_mode: 'Disabled' }).v).toBe(false)
+    // The mode wins over the old switch when a file has both.
+    expect(read({ reduce_infill_retraction_mode: 'Disabled', reduce_infill_retraction: '1' }).v).toBe(false)
+    // The old switch alone reads as before, and a mode of another name leaves it alone.
+    expect(read({ reduce_infill_retraction: '1' }).v).toBe(true)
+    expect(read({ reduce_infill_retraction: '0' }).v).toBe(false)
+    expect(read({ reduce_infill_retraction_mode: 'Sometimes', reduce_infill_retraction: '1' }).v).toBe(true)
+    expect(read({}).v).toBeUndefined()
+  })
   it('reports unknown keys and bad values instead of guessing', () => {
     const r = importOrcaProfile({ name: 'p', type: 'process', made_up_key: '1', layer_height: 'thick', wall_loops: '3' }, () => undefined)
     expect(r.unknownKeys).toEqual(['made_up_key'])

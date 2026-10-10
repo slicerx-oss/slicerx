@@ -17,6 +17,15 @@ describe('project settings', () => {
     expect(r.values).toEqual({})
   })
 
+  it("reads Bambu Studio 2.8's reduce_infill_retraction_mode: Auto with PLA skips retraction inside infill", () => {
+    const auto = projectSettingChanges({ reduce_infill_retraction_mode: 'Auto', filament_metal_stickiness: ['None', 'None'] }, baseConfig())
+    expect(auto.values['reduce_infill_retraction']).toBe(true)
+    // A high stickiness filament keeps the retraction; the old switch still reads as before.
+    const petg = projectSettingChanges({ reduce_infill_retraction_mode: 'Auto', filament_metal_stickiness: ['None', 'High'] }, { ...baseConfig(), reduce_infill_retraction: true })
+    expect(petg.values['reduce_infill_retraction']).toBe(false)
+    expect(projectSettingChanges({ reduce_infill_retraction: '1' }, baseConfig()).values['reduce_infill_retraction']).toBe(true)
+  })
+
   it('leaves out G-code, scripts, credentials and printer settings', () => {
     const r = projectSettingChanges(
       { machine_start_gcode: 'M104 S300', post_process: ['rm -rf /'], printhost_apikey: 'secret', printable_height: '999', nozzle_temperature: ['215'] },

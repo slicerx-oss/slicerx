@@ -133,6 +133,55 @@ fn legacy_keys_and_values() {
 }
 
 #[test]
+fn bambu_infill_retraction_mode() {
+    let read = |extra: serde_json::Value| {
+        let mut p = json!({"name": "p", "type": "process"});
+        if let (Some(o), Some(e)) = (p.as_object_mut(), extra.as_object()) {
+            o.extend(e.clone());
+        }
+        let r = import_orca(&p, &|_| None).unwrap();
+        (r.config.get("reduce_infill_retraction").cloned(), r.ignored_keys)
+    };
+    let on = Some(Value::Bool(true));
+    let off = Some(Value::Bool(false));
+    // Auto skips the retraction for low stickiness filaments; "None" (untested) counts as low.
+    let (v, ignored) = read(
+        json!({"reduce_infill_retraction_mode": "Auto", "filament_metal_stickiness": ["None", "Low", "None", "None"]}),
+    );
+    assert_eq!(v, on);
+    assert!(!ignored.iter().any(|k| k.starts_with("reduce_infill_retraction")));
+    assert_eq!(read(json!({"reduce_infill_retraction_mode": "Auto"})).0, on);
+    // A medium or high stickiness filament (PETG) keeps the retraction on Auto.
+    assert_eq!(
+        read(json!({"reduce_infill_retraction_mode": "Auto", "filament_metal_stickiness": ["Low", "High"]}))
+            .0,
+        off
+    );
+    assert_eq!(
+        read(json!({"reduce_infill_retraction_mode": "Auto", "filament_metal_stickiness": "Medium"})).0,
+        off
+    );
+    assert_eq!(
+        read(json!({"reduce_infill_retraction_mode": "Enabled", "filament_metal_stickiness": ["High"]})).0,
+        on
+    );
+    assert_eq!(read(json!({"reduce_infill_retraction_mode": "Disabled"})).0, off);
+    // The mode wins over the old switch when a file has both.
+    assert_eq!(
+        read(json!({"reduce_infill_retraction_mode": "Disabled", "reduce_infill_retraction": "1"})).0,
+        off
+    );
+    // The old switch alone reads as before, and a mode of another name leaves it alone.
+    assert_eq!(read(json!({"reduce_infill_retraction": "1"})).0, on);
+    assert_eq!(read(json!({"reduce_infill_retraction": "0"})).0, off);
+    assert_eq!(
+        read(json!({"reduce_infill_retraction_mode": "Sometimes", "reduce_infill_retraction": "1"})).0,
+        on
+    );
+    assert_eq!(read(json!({})).0, None);
+}
+
+#[test]
 fn bambu_auto_sentinels() {
     // Bambu Studio writes -1 for auto: its raft first layer grows 2 mm, and its auto wall count is Orca's 0.
     let r = import_orca(
