@@ -12,6 +12,7 @@ import { useEdition, appName } from '../edition'
 import { useFeatures } from '../features'
 import { useHost } from '../host'
 import { formatShortcut } from '../lib/keys'
+import { usePhoneLayout } from '../lib/phone-layout'
 import { set, useApp } from '../state/store'
 import { AUTO_SLICE_DETAIL, AUTO_SLICE_MODES, autoSliceFields, autoSliceMode } from '../state/auto-slice-mode'
 import { controlOverrides, controlsFor, withControlOverrides, type ControlOverrides } from './controls'
@@ -316,6 +317,8 @@ function SettingsModeQuestion() {
 
 export function SlicerStep({ choice, onPick, phone }: { choice: LookAndFeelChoice; onPick: (c: LookAndFeelChoice) => void; phone: boolean }) {
   const host = useHost()
+  // a phone has Simple settings only, so setup doesn't ask
+  const slim = usePhoneLayout()
   const download = editionLinks(useEdition()).download
   const scheme = useApp((s) => s.scheme)
   const follow = useApp((s) => s.themeFollowsSystem)
@@ -403,7 +406,7 @@ export function SlicerStep({ choice, onPick, phone }: { choice: LookAndFeelChoic
               )
             })}
           </div>
-          <SettingsModeQuestion />
+          {slim ? null : <SettingsModeQuestion />}
           <AutoSliceQuestion />
           <PresetImport app={app} />
           <div className="fr-slicer-more">

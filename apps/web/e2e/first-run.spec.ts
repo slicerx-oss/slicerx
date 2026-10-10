@@ -5,22 +5,25 @@
 import { type Page } from '@playwright/test'
 import { expect, expectTabLabel, test } from './fixtures'
 
-async function fresh(page: Page): Promise<void> {
+/** Steps in setup: the theme, the printer, the slicer you use now, what the plate tab opens in, and mimir (until mimir is turned on or off). A phone has no modeling, so it skips "Opens in". */
+const steps = (phone: boolean) => (phone ? 4 : 5)
+
+async function fresh(page: Page, phone = false): Promise<void> {
   // A fresh install: nothing stored, so setup opens by itself on the theme.
   await page.goto('./')
   await expect(page.getByRole('heading', { name: 'Pick a theme' })).toBeVisible()
-  // Five steps: the theme, the printer, the slicer you use now, what the plate tab opens in, and mimir (until mimir is turned on or off).
-  await expect(page.locator('#fr-step-label')).toHaveText('Step 1 of 5')
+  await expect(page.locator('#fr-step-label')).toHaveText(`Step 1 of ${steps(phone)}`)
   await page.locator('.fr-foot').getByRole('button', { name: 'Next' }).click()
   await expect(page.getByRole('heading', { name: 'Find your printer' })).toBeVisible()
-  await expect(page.locator('#fr-step-label')).toHaveText('Step 2 of 5')
+  await expect(page.locator('#fr-step-label')).toHaveText(`Step 2 of ${steps(phone)}`)
 }
 
 async function noHorizontalScroll(page: Page): Promise<void> {
   expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0)
 }
 
-test('the scan finds the printer, the connection tests itself, then the slicer question', async ({ page }) => {
+test('the scan finds the printer, the connection tests itself, then the slicer question', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'Desktop: the full setup with Opens in; phone-slim.spec covers a phone setup')
   await fresh(page)
   await noHorizontalScroll(page)
 
@@ -109,8 +112,8 @@ test('the scan finds the printer, the connection tests itself, then the slicer q
   await expect(page.getByRole('heading', { name: 'Find your printer' })).toHaveCount(0)
 })
 
-test('adding by hand: a failed test names the step and cause, and setup can continue without it', async ({ page }) => {
-  await fresh(page)
+test('adding by hand: a failed test names the step and cause, and setup can continue without it', async ({ page, isMobile }) => {
+  await fresh(page, isMobile)
   await page.getByRole('button', { name: 'Not listed? Add it by hand' }).click()
   await expect(page.getByRole('heading', { name: 'Add your printer' })).toBeVisible()
   await page.getByRole('textbox', { name: 'Search brand or model' }).fill('voron 2.4')
@@ -124,22 +127,22 @@ test('adding by hand: a failed test names the step and cause, and setup can cont
   await expect(page.getByRole('heading', { name: 'Which slicer do you use now?' })).toBeVisible()
 })
 
-test('Escape asks before leaving, and Settings brings the slicer screen back', async ({ page }) => {
-  await fresh(page)
+test('Escape asks before leaving, and Settings brings the slicer screen back', async ({ page, isMobile }) => {
+  await fresh(page, isMobile)
   await page.keyboard.press('Escape')
   const dialog = page.getByRole('dialog', { name: 'Leave setup?' })
   await expect(dialog).toBeVisible()
   await expect(dialog).toContainText('You can finish it later from Settings.')
   await dialog.getByRole('button', { name: 'Stay' }).click()
   await expect(dialog).toBeHidden()
-  await expect(page.locator('#fr-step-label')).toHaveText('Step 2 of 5')
+  await expect(page.locator('#fr-step-label')).toHaveText(`Step 2 of ${steps(isMobile)}`)
   await page.keyboard.press('Escape')
   await page.getByRole('dialog', { name: 'Leave setup?' }).getByRole('button', { name: 'Leave' }).click()
   await expect(page.locator('.fr')).toHaveCount(0)
   await page.keyboard.press('ControlOrMeta+k')
   await page.keyboard.type('change look and feel')
   await page.keyboard.press('Enter')
-  await expect(page.locator('#fr-step-label')).toHaveText('Step 3 of 5')
+  await expect(page.locator('#fr-step-label')).toHaveText(`Step 3 of ${steps(isMobile)}`)
 })
 
 test('the theme step: every theme as a card, the mode and flavors apply at once and stay after a reload', async ({ page }) => {
@@ -217,7 +220,8 @@ test('Settings, Look and feel: theme, accent, text and accessibility; Slicing an
   await expect(page.locator('html')).toHaveAttribute('data-sx-theme', 'nord')
 })
 
-test('a profile from an earlier onboarding goes through setup again, prefilled, and keeps everything', async ({ page }) => {
+test('a profile from an earlier onboarding goes through setup again, prefilled, and keeps everything', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'Desktop: it checks the settings mode question, which a phone (Simple only) does not ask')
   await page.addInitScript(() => {
     // The real default for a saved on is Auto: without the test fixture's Always.
     sessionStorage.removeItem('sx-auto-slice-always')
@@ -258,7 +262,8 @@ test('a profile from an earlier onboarding goes through setup again, prefilled, 
   await expect(page.locator('.fr')).toHaveCount(0)
 })
 
-test('a profile that finished the version 2 onboarding goes through setup again for the settings mode question', async ({ page }) => {
+test('a profile that finished the version 2 onboarding goes through setup again for the settings mode question', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'Desktop: a phone (Simple only) does not ask the settings mode question')
   await page.addInitScript(() => {
     if (localStorage.getItem('sx-e2e-seeded')) return
     localStorage.setItem('sx-e2e-seeded', '1')
@@ -278,8 +283,8 @@ test('a profile that finished the version 2 onboarding goes through setup again 
   await expect(page.locator('.fr')).toHaveCount(0)
 })
 
-test('Skip, use defaults closes setup; mimir shows and opens the connect step until a model is connected', async ({ page }) => {
-  await fresh(page)
+test('Skip, use defaults closes setup; mimir shows and opens the connect step until a model is connected', async ({ page, isMobile }) => {
+  await fresh(page, isMobile)
   await page.getByRole('button', { name: 'Skip, use defaults' }).click()
   await expect(page.locator('.fr')).toHaveCount(0)
   await page.locator('.mimir-btn').click()
@@ -300,7 +305,8 @@ test('Skip, use defaults closes setup; mimir shows and opens the connect step un
   await expect(dialog.getByRole('radiogroup', { name: 'Model provider' })).toBeVisible()
 })
 
-test('choosing CAD model opens the plate in Model, now and on the next launch, and Settings changes it', async ({ page }) => {
+test('choosing CAD model opens the plate in Model, now and on the next launch, and Settings changes it', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'Desktop: a phone has no Model tab')
   await fresh(page)
   // Straight to the open step: no printer, the slicer as it is.
   await page.getByRole('button', { name: 'I do not have a printer yet' }).first().click()

@@ -19,6 +19,19 @@ export function usePhoneLayout(): boolean {
   return useMediaQuery(PHONE_QUERY)
 }
 
+/** The same, read once, for code outside React (stores, commands, the 3D view's wiring). */
+export function isPhoneLayout(): boolean {
+  return typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia(PHONE_QUERY).matches
+}
+
+/** Calls `cb` whenever the phone layout starts or stops applying. Returns the unsubscribe. */
+export function onPhoneLayout(cb: () => void): () => void {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return () => {}
+  const m = window.matchMedia(PHONE_QUERY)
+  m.addEventListener('change', cb)
+  return () => m.removeEventListener('change', cb)
+}
+
 /** Marks the document root with `data-phone` while the phone layout applies, so styles key off one attribute. */
 export function usePhoneRoot(): void {
   const phone = usePhoneLayout()

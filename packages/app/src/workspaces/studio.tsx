@@ -40,7 +40,7 @@ import { ParkedChip } from './prepare/parked-chip'
 import { ViewSelectionMenu } from './prepare/selection-bar'
 import { SliceProgress } from './slice-progress'
 import { useOverlayOffset, type OverlaySelectors } from '../lib/overlay-offset'
-import { useCompactLayout } from '../lib/phone-layout'
+import { useCompactLayout, usePhoneLayout } from '../lib/phone-layout'
 import { ModeChip } from '../first-run/mode-chip'
 
 const PREPARE_LEFT: PaneSection[] = [
@@ -97,6 +97,7 @@ export function Studio() {
   const side = layout.sidebar.side
   // On a phone the sidebar is a sheet, so the Slice action floats on the view instead of waiting inside it.
   const compact = useCompactLayout()
+  const phone = usePhoneLayout()
   const sliceInSidebar = layout.primaryAction.placement === 'sidebar-footer' && !compact
   const modelMode = useModelMode()
   useBoundValues(true)
@@ -200,7 +201,7 @@ export function Studio() {
         <SliceProgress />
         {design ? null : <ViewSelectionMenu />}
         {design || !hasPreview ? null : <SliceLookSwitch />}
-        {design ? null : <ParkedChip />}
+        {design || phone ? null : <ParkedChip />}
         <div className="hud hud-top">
           <div className="hud-col">
             <div className="hud-row">
@@ -236,7 +237,8 @@ export function Studio() {
           ) : null}
         </div>
 
-        {design ? null : <PlateToolbar layout={layout} />}
+        {/* a phone views and prints: no plate tools */}
+        {design || phone ? null : <PlateToolbar layout={layout} />}
         {layers ? <LayerDock /> : null}
         {/* After the playback bar: on a phone it sits under it, so opening the bar moves nothing above it. */}
         {!design && !sliceInSidebar ? (

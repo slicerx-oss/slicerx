@@ -109,7 +109,8 @@ test('a printer with no connection reads Export only', async ({ page }) => {
   await expect(page.getByTestId('slice-machine-status')).toHaveText('Export only')
 })
 
-test('Advanced lists Printer settings, and the card stays one row of boxes', async ({ page }) => {
+test('Advanced lists Printer settings, and the card stays one row of boxes', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'Desktop: a phone has Simple settings only')
   await open(page, { printerId: 'bay-1', settingsMode: 'advanced' })
   const card = page.getByTestId('slice-machine-card')
   await page.getByTestId('slice-machine-printer').click()

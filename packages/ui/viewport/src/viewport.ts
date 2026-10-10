@@ -268,6 +268,8 @@ class ViewportImpl implements Viewport {
   private perspFov = 30
   private aoLevel = 1
   private tool: PlateTool = 'select'
+  /** False where the plate is only viewed (a phone): presses select, drags turn the view, and nothing moves. */
+  private movable = true
   private pr = 1
   private aoOn: boolean
   private dirty = true
@@ -1458,6 +1460,12 @@ class ViewportImpl implements Viewport {
       if (visible(at) || visible(above)) hits.set(id, [...(hits.get(id) ?? []), i])
     })
     for (const [objectId, indices] of hits) this.emit('brimselect', { objectId, indices, mode })
+  }
+
+  /** Lets presses on a model move it (the default), or only select it. */
+  setMovable(on: boolean): void {
+    this.movable = on
+    if (!on) this.drag = null
   }
 
   setTool(tool: PlateTool): void {
@@ -2972,6 +2980,8 @@ class ViewportImpl implements Viewport {
         if (this.paintDown(e, p)) e.stopPropagation()
         return
       }
+      // a plate that is only viewed: the press selects on release, as a click does, and a drag turns the view
+      if (!this.movable) return
       const explicit = this.tool !== 'select'
       // With the select tool the preset decides whether the press moves the model or orbits the view.
       if (!explicit && !dragStartsOnModel(this.controlsMap, modifiersOf(e, this.spaceDown), action, this.selection.includes(p.entry.id))) return

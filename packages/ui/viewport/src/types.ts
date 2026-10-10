@@ -525,6 +525,8 @@ export interface Viewport {
   setRotateSpace(space: 'world' | 'local'): void
   /** Move tool: X, Y and Z arrows on the selected model, each a drag along its axis (Z stops at the bed). Off by default. */
   setMoveHandles?(on: boolean): void
+  /** Whether a press on a model can move it (the default). Off where the plate is only viewed, as on a phone: presses select and drags turn the view. */
+  setMovable?(on: boolean): void
   /** Screen positions (CSS pixels from the canvas corner) of a grab point on each rotate ring, or null when the rotate tool is off. */
   rotateHandles(): Partial<Record<'x' | 'y' | 'z', [number, number]>> | null
   /** Cut tool: shows the plane with its grabber and tilt rings on the model and clips the model there. Null ends it. */
