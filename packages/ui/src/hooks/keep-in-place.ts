@@ -77,6 +77,9 @@ function addRoom(box: HTMLElement, px: number): void {
   e.spacer.style.height = `${e.px}px`
 }
 
+/** Corrections one press may make. A layout that keeps moving past this is not settling, and holding on would cost the page. */
+export const MAX_CORRECTIONS = 120
+
 let job = 0
 const anchors = new Map<HTMLElement, { n: number; was: string }>()
 
@@ -112,6 +115,7 @@ export function keepInPlace(el: Element, ms = 450): void {
     end = Math.min(start + 4 * ms, Math.max(end, performance.now() + ms / 2))
   }
   let stuck = false
+  let corrections = 0
   const hold = () => {
     if (stuck) return
     const now = box.scrollTop
@@ -125,6 +129,11 @@ export function keepInPlace(el: Element, ms = 450): void {
     const at = el.getBoundingClientRect().top
     const want = now + at - top
     if (Math.abs(want - now) > 0.25) {
+      // a hard stop, whatever the cause: no press may correct without end
+      if (++corrections > MAX_CORRECTIONS) {
+        stuck = true
+        return
+      }
       if (want > max) addRoom(box, Math.ceil(want - max) + 1)
       box.scrollTop = want
       // A control that the scroll does not move (fixed, or drawn over the page) cannot be held this way: stop, rather
