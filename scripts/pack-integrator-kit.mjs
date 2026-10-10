@@ -5,7 +5,7 @@
 // @slicerx/mcp) into one folder, built, as npm would publish them, with the credit kit
 // (docs/integrators/credit-kit) beside them. Use it for a build that is not on npm yet:
 //   node scripts/pack-integrator-kit.mjs ~/slicerx-kit
-//   npm install ~/slicerx-kit/slicerx-viewport-0.1.1.tgz ~/slicerx-kit/slicerx-embed-0.1.1.tgz ~/slicerx-kit/slicerx-mcp-0.1.1.tgz
+//   npm install ~/slicerx-kit/slicerx-viewport-0.1.2.tgz ~/slicerx-kit/slicerx-embed-0.1.2.tgz ~/slicerx-kit/slicerx-mcp-0.1.2.tgz
 import { execFileSync } from 'node:child_process'
 import { cpSync, mkdirSync, readdirSync, rmSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
