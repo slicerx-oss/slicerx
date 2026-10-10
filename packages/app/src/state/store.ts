@@ -834,6 +834,14 @@ export function selectedIds(s: Pick<AppState, 'selection' | 'selectedIds'> = get
   return s.selectedIds.includes(s.selection) ? s.selectedIds : [s.selection]
 }
 
+/** The selection with `id` added, or taken out when it was in. The primary stays unless it is the one taken out. */
+export function toggledSelection(s: Pick<AppState, 'selection' | 'selectedIds'>, id: string): Pick<AppState, 'selection' | 'selectedIds' | 'towerSelected'> {
+  const now = selectedIds(s)
+  const next = now.includes(id) ? now.filter((x) => x !== id) : [...now, id]
+  const selection = s.selection && next.includes(s.selection) ? s.selection : (next[next.length - 1] ?? null)
+  return { selection, selectedIds: next, towerSelected: false }
+}
+
 /**
  * The toolpath colors after a slice: the preview's own default (defaultColorMode) unless the person picked colors and
  * the default is the same kind as last time. Orca and Bambu Studio switch the same way when a print gains or loses colors.

@@ -23,7 +23,7 @@ import { pickSub, type EdgeAt } from '../plate/sub-pick'
 import { toGeom } from '../geom/client'
 import { useHost } from '../host'
 import { moveTower, towerMesh, towerShown, TOWER_ID, type ShownTower } from '../plate/tower'
-import { appStore, selectedIds, set, shownSlice, toast, type AppState } from '../state/store'
+import { appStore, selectedIds, set, shownSlice, toast, toggledSelection, type AppState } from '../state/store'
 import { modelReveal, type RevealMemory } from './model-reveal'
 import { webgl2Available, watchFor, withRetries } from './context-retry'
 import { createFallbackViewport } from './fallback'
@@ -471,9 +471,11 @@ export function ViewportHost({ layers }: { layers: boolean }) {
         if (st.workspace !== prev.workspace || st.modelMode !== prev.modelMode || st.objectTool !== prev.objectTool) boxOn(st)
       }))
       offs.push(vp.on('boxselect', (e) => set({ selectedIds: e.ids, selection: e.ids[0] ?? null, towerSelected: false })))
-      const selectObject = (e: { objectId: string | null }) => {
-        if (e.objectId === TOWER_ID) set({ towerSelected: true, selection: null })
-        else set({ selection: e.objectId, towerSelected: false })
+      const selectObject = (e: { objectId: string | null; toggle?: boolean }) => {
+        if (e.objectId === TOWER_ID) return void set({ towerSelected: true, selection: null })
+        // Ctrl (Cmd) adds the object to the selection or takes it out, as the view does
+        if (e.toggle && e.objectId) return void set(toggledSelection(appStore.getState(), e.objectId))
+        set({ selection: e.objectId, towerSelected: false })
       }
       // The open in progress is on screen once a frame with its objects is drawn.
       offs.push(vp.on('platedrawn', (e) => {

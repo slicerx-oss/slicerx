@@ -30,7 +30,7 @@ import {
   Vector2,
   Vector3,
   WebGLRenderer,
-  type Group,
+  Group,
   type Material,
   type Object3D,
 } from 'three'
@@ -41,6 +41,7 @@ import { facePatch } from './faces'
 import { Painter, type PaintHit } from './painter'
 import { ScaleGizmo } from './gizmo'
 import { alongAxis, arrowDir, ARROW_PX, MoveArrows, rayToSegment, type ArrowAxis } from './arrows'
+import { applyToAll } from './group'
 import { RingSet, angleAround, pickRing, rayPlane, ringAxes, rotateAbout, snapAngle, turnVector, unit, unwrapAngle, type RingAxis, type RotateSpace } from './rings'
 import { CutGizmo, CutPreview, extentAlong, movePlane, tiltAxes, type CutKeep } from './cutplane'
 import { DimensionLayer, EdgePreview, PushPreview, SketchLayer, fromPlane, rayOnPlane, type DimensionMark, type SketchCursor, type SketchScene, type V2 } from './cadtools'
@@ -158,6 +159,8 @@ type Listener = (payload: never) => void
 
 interface Drag {
   entry: ObjectEntry
+  /** A multi-selection dragged as one: each object's transform at the start, by id. */
+  group: Map<string, number[]> | null
   kind: 'move' | 'rotate'
   start: number[]
   offset: [number, number]
@@ -239,7 +242,9 @@ class ViewportImpl implements Viewport {
   private featureMask = 0x7fff
   private painter!: Painter
   private readonly gizmo = new ScaleGizmo()
-  private scaleDrag: { entry: ObjectEntry; kind: HandleId; start: number[]; box: Box3; startRay: { o: V3; d: V3 }; pinAtStart: boolean; startRatioT: number | null } | null = null
+  private scaleDrag: { entry: ObjectEntry; obj: Object3D; group: Map<string, number[]> | null; kind: HandleId; start: number[]; box: Box3; startRay: { o: V3; d: V3 }; pinAtStart: boolean; startRatioT: number | null } | null = null
+  /** The frame a multi-selection scales in: the bed's own, so its box is the box round every selected object. */
+  private readonly multiFrame = new Group()
   private keys = { shift: false, ctrl: false, alt: false }
   private painting: { x: number; y: number; pointerId: number } | null = null
   private layerTops: number[] | null = null
@@ -325,10 +330,10 @@ class ViewportImpl implements Viewport {
   private boxRectEl: HTMLDivElement | null = null
   private readonly rotRings = new RingSet<RingAxis>(['x', 'y', 'z'])
   private rotSpace: RotateSpace = 'world'
-  private rotDrag: (RingDrag & { entry: ObjectEntry; axis: RingAxis; start: number[]; shown: number; snapped: boolean }) | null = null
+  private rotDrag: (RingDrag & { entry: ObjectEntry; group: Map<string, number[]> | null; axis: RingAxis; start: number[]; shown: number; snapped: boolean }) | null = null
   private readonly moveArrows = new MoveArrows()
   private moveHandles = false
-  private arrowDrag: { entry: ObjectEntry; axis: ArrowAxis; start: number[]; origin: [number, number, number]; t0: number; minDelta: number; delta: number } | null = null
+  private arrowDrag: { entry: ObjectEntry; group: Map<string, number[]> | null; axis: ArrowAxis; start: number[]; origin: [number, number, number]; t0: number; minDelta: number; delta: number } | null = null
   private readonly cutGizmo = new CutGizmo()
   private readonly cutRings = new RingSet<'u' | 'v'>(['u', 'v'], { u: '#ff79c6', v: '#bd93f9' })
   private readonly cutPreview = new CutPreview()
@@ -445,7 +450,7 @@ class ViewportImpl implements Viewport {
     this.stage.objectsRoot.add(this.gaps.group)
     this.stage.objectsRoot.add(this.guides.group)
     this.stage.objectsRoot.add(this.edgeMarks.group)
-    this.stage.objectsRoot.add(this.moveArrows.group, this.rotRings.group, this.cutGizmo.group, this.cutRings.group, this.pushView.group, this.edgeView.group, this.sketchLayer.group, this.dims.group)
+    this.stage.objectsRoot.add(this.multiFrame, this.moveArrows.group, this.rotRings.group, this.cutGizmo.group, this.cutRings.group, this.pushView.group, this.edgeView.group, this.sketchLayer.group, this.dims.group)
     this.stage.envSH.then(
       (sh) => {
         if (this.disposed) return
@@ -1457,17 +1462,21 @@ class ViewportImpl implements Viewport {
     return b
   }
 
-  private scaleTarget(): ObjectEntry | null {
+  /** What the scale handles act on: one object in its own frame, or a multi-selection in the bed's frame. */
+  private scaleTarget(): { entry: ObjectEntry; obj: Object3D; box: Box3; group: ObjectEntry[] | null } | null {
     if (this.tool !== 'scale' || this.mode !== 'prepare') return null
-    const id = this.selection[0]
-    return (id ? this.objects.get(id) : undefined) ?? null
+    const sel = this.selectedEntries()
+    const first = sel[0]
+    if (!first) return null
+    if (sel.length === 1) return { entry: first, obj: first.group, box: this.localBox(first), group: null }
+    return { entry: first, obj: this.multiFrame, box: this.groupBedBox(sel), group: sel }
   }
 
   scaleHandles(): Partial<Record<HandleId, [number, number]>> | null {
     const t = this.scaleTarget()
     if (!t) return null
     this.updateGizmo()
-    const world = this.gizmo.handleWorld(t.group, this.localBox(t))
+    const world = this.gizmo.handleWorld(t.obj, t.box)
     const r = this.canvas.getBoundingClientRect()
     const out: Partial<Record<HandleId, [number, number]>> = {}
     for (const k of Object.keys(world) as HandleId[]) {
@@ -1488,7 +1497,7 @@ class ViewportImpl implements Viewport {
     const t = this.scaleTarget()
     const b = this.controlsMap.gizmo.scale
     const pinned = this.scaleDrag ? this.pinned(this.scaleDrag.pinAtStart) : this.modDown(b.pinKey)
-    this.gizmo.update(t?.group ?? null, t ? this.localBox(t) : null, this.camera, this.height, this.camera.fov, { layout: b.layout, pivot: b.pivot, pinned })
+    this.gizmo.update(t?.obj ?? null, t?.box ?? null, this.camera, this.height, this.camera.fov, { layout: b.layout, pivot: b.pivot, pinned, uniformOnly: !!t?.group })
   }
 
   /** Whether the pin key counts as held: read at the start of the drag (Orca) or live (Bambu Studio). */
@@ -1503,13 +1512,15 @@ class ViewportImpl implements Viewport {
     this.updateGizmo()
     const kind = this.gizmo.hit(ray)
     if (!kind) return false
-    t.group.updateMatrixWorld(true)
+    t.obj.updateMatrixWorld(true)
     const b = this.controlsMap.gizmo.scale
     this.scaleDrag = {
-      entry: t,
+      entry: t.entry,
+      obj: t.obj,
+      group: t.group ? this.startsOf(t.group) : null,
       kind,
-      start: t.group.matrix.toArray(),
-      box: this.localBox(t),
+      start: t.obj.matrix.toArray(),
+      box: t.box.clone(),
       startRay: { o: ray.ray.origin.toArray() as V3, d: ray.ray.direction.toArray() as V3 },
       pinAtStart: this.modDown(b.pinKey),
       startRatioT: null,
@@ -1527,13 +1538,13 @@ class ViewportImpl implements Viewport {
     const d = this.scaleDrag
     if (!d) return null
     const b = this.controlsMap.gizmo.scale
-    const { entry, kind, box } = d
+    const { kind, box } = d
     const min = box.min.toArray() as V3
     const max = box.max.toArray() as V3
     const origin = { layout: b.layout, pivot: b.pivot, cornerPinLocksZ: b.cornerPinLocksZ }
     const pinned = this.pinned(d.pinAtStart)
     const m = new Matrix4().fromArray(d.start)
-    const parent = entry.group.parent
+    const parent = d.obj.parent
     parent?.updateMatrixWorld(true)
     const toWorld = new Matrix4().multiplyMatrices(parent?.matrixWorld ?? new Matrix4(), m)
     const world = (p: V3): V3 => new Vector3(...p).applyMatrix4(toWorld).toArray() as V3
@@ -1570,10 +1581,14 @@ class ViewportImpl implements Viewport {
     const r = this.scaleFactors({ o: ray.ray.origin.toArray() as V3, d: ray.ray.direction.toArray() as V3 })
     if (!r) return
     const m = scaleTransform(d.start, r.factors, r.anchor)
-    d.entry.group.matrix.fromArray(m)
-    d.entry.group.matrixWorldNeedsUpdate = true
     this.emit('scale', { id: d.entry.id, factors: r.factors, uniform: handleAxis(d.kind) === 'uniform', snapped: this.modDown(this.controlsMap.gizmo.scale.snapKey) })
-    this.emit('transform', { id: d.entry.id, transform: m, final: false })
+    // a multi-selection: the frame starts as the bed's, so m is the scale about the group's anchor in bed coordinates
+    if (d.group) this.placeGroup(applyToAll(d.group, m), false)
+    else {
+      d.entry.group.matrix.fromArray(m)
+      d.entry.group.matrixWorldNeedsUpdate = true
+      this.emit('transform', { id: d.entry.id, transform: m, final: false })
+    }
     this.invalidate()
   }
 
@@ -1583,12 +1598,70 @@ class ViewportImpl implements Viewport {
     this.scaleDrag = null
     this.gizmo.setDragging(null)
     this.controls.enabled = true
-    if (cancel) {
+    if (d.group) this.endGroup(d.group, cancel)
+    else if (cancel) {
       d.entry.group.matrix.fromArray(d.start)
       d.entry.group.matrixWorldNeedsUpdate = true
     } else this.emit('transform', { id: d.entry.id, transform: d.entry.group.matrix.toArray(), final: true })
     this.objectsMoved()
     this.invalidate()
+  }
+
+  // ---------- multi-selection ----------
+
+  /** The selected objects, in selection order. */
+  private selectedEntries(): ObjectEntry[] {
+    return this.selection.map((id) => this.objects.get(id)).filter((o): o is ObjectEntry => !!o)
+  }
+
+  /** The box round several objects, in bed coordinates. */
+  private groupBedBox(entries: readonly ObjectEntry[]): Box3 {
+    const b = new Box3()
+    for (const o of entries) b.union(this.bedBox(o))
+    return b
+  }
+
+  private startsOf(entries: readonly ObjectEntry[]): Map<string, number[]> {
+    return new Map(entries.map((o) => [o.id, o.group.matrix.toArray()]))
+  }
+
+  /** Puts each object of a group where `transforms` says and reports it. */
+  private placeGroup(transforms: ReadonlyMap<string, number[]>, final: boolean): void {
+    for (const [id, m] of transforms) {
+      const o = this.objects.get(id)
+      if (!o) continue
+      o.group.matrix.fromArray(m)
+      o.group.matrixWorldNeedsUpdate = true
+      this.emit('transform', { id, transform: m, final })
+    }
+  }
+
+  /** Ends a group's drag: back to the starts, or the final transform of each. */
+  private endGroup(starts: ReadonlyMap<string, number[]>, cancel: boolean): void {
+    if (cancel) {
+      for (const [id, m] of starts) {
+        const o = this.objects.get(id)
+        if (!o) continue
+        o.group.matrix.fromArray(m)
+        o.group.matrixWorldNeedsUpdate = true
+      }
+      return
+    }
+    for (const id of starts.keys()) {
+      const o = this.objects.get(id)
+      if (o) this.emit('transform', { id, transform: o.group.matrix.toArray(), final: true })
+    }
+  }
+
+  /** The lowest point of several objects over the bed, from their vertices. */
+  private groupMinZ(entries: readonly ObjectEntry[]): number {
+    let z = Infinity
+    const toBed = this.stage.bedMatrix().invert()
+    for (const o of entries) {
+      o.group.updateMatrixWorld(true)
+      z = Math.min(z, new Box3().setFromObject(o.group, true).applyMatrix4(toBed).min.z)
+    }
+    return z
   }
 
   // ---------- move arrows ----------
@@ -1598,17 +1671,19 @@ class ViewportImpl implements Viewport {
     this.invalidate()
   }
 
-  private moveTarget(): ObjectEntry | null {
+  private moveTarget(): ObjectEntry[] | null {
     if (!this.moveHandles || this.tool !== 'move' || this.mode !== 'prepare' || this.cut) return null
-    const id = this.selection[0]
-    return (id ? this.objects.get(id) : undefined) ?? null
+    const sel = this.selectedEntries()
+    return sel.length ? sel : null
   }
 
-  /** Where the arrows start (the middle of the model's box, bed mm) and how long they are, mm. */
-  private arrowLayout(entry: ObjectEntry): { origin: [number, number, number]; length: number } {
-    const b = this.localBox(entry)
+  /** Where the arrows start (the middle of the model's box, or of a multi-selection's, bed mm) and how long they are, mm. */
+  private arrowLayout(entries: readonly ObjectEntry[]): { origin: [number, number, number]; length: number } {
+    const one = entries.length === 1 ? entries[0] : undefined
+    const b = one ? this.localBox(one) : this.groupBedBox(entries)
     if (b.isEmpty()) b.set(new Vector3(), new Vector3())
-    const origin = b.getCenter(new Vector3()).applyMatrix4(entry.group.matrix).toArray() as [number, number, number]
+    const c = b.getCenter(new Vector3())
+    const origin = (one ? c.applyMatrix4(one.group.matrix) : c).toArray() as [number, number, number]
     return { origin, length: ARROW_PX * this.mmPerPx(origin) }
   }
 
@@ -1657,10 +1732,10 @@ class ViewportImpl implements Viewport {
     const { origin } = this.arrowLayout(t)
     const t0 = alongAxis(o, d, origin, arrowDir(axis))
     if (t0 === null) return false
-    t.group.updateMatrixWorld(true)
-    // z stops where the model's lowest point meets the bed
-    const minZ = new Box3().setFromObject(t.group, true).applyMatrix4(this.stage.bedMatrix().invert()).min.z
-    this.arrowDrag = { entry: t, axis, start: t.group.matrix.toArray(), origin, t0, minDelta: axis === 'z' ? -Math.max(0, minZ) : -Infinity, delta: 0 }
+    // z stops where the lowest point of the model, or of the whole selection, meets the bed
+    const minZ = this.groupMinZ(t)
+    const first = t[0]!
+    this.arrowDrag = { entry: first, group: t.length > 1 ? this.startsOf(t) : null, axis, start: first.group.matrix.toArray(), origin, t0, minDelta: axis === 'z' ? -Math.max(0, minZ) : -Infinity, delta: 0 }
     this.moveArrows.setActive(axis)
     this.controls.enabled = false
     this.showGizmoLabel(e.clientX, e.clientY, this.arrowText(0))
@@ -1681,13 +1756,17 @@ class ViewportImpl implements Viewport {
     const t = alongAxis(o, d, g.origin, dir)
     if (t === null) return
     g.delta = Math.max(g.minDelta, t - g.t0)
+    this.setGizmoLabel(this.arrowText(g.delta))
+    if (g.group) {
+      this.placeGroup(applyToAll(g.group, new Matrix4().makeTranslation(dir[0] * g.delta, dir[1] * g.delta, dir[2] * g.delta).toArray()), false)
+      return this.invalidate()
+    }
     const m = g.start.slice()
     m[12] = (m[12] ?? 0) + dir[0] * g.delta
     m[13] = (m[13] ?? 0) + dir[1] * g.delta
     m[14] = (m[14] ?? 0) + dir[2] * g.delta
     g.entry.group.matrix.fromArray(m)
     g.entry.group.matrixWorldNeedsUpdate = true
-    this.setGizmoLabel(this.arrowText(g.delta))
     this.emit('transform', { id: g.entry.id, transform: m, final: false })
     this.invalidate()
   }
@@ -1699,7 +1778,8 @@ class ViewportImpl implements Viewport {
     this.moveArrows.setActive(null)
     this.controls.enabled = true
     this.hideGizmoLabel()
-    if (cancel) {
+    if (g.group) this.endGroup(g.group, cancel)
+    else if (cancel) {
       g.entry.group.matrix.fromArray(g.start)
       g.entry.group.matrixWorldNeedsUpdate = true
     } else this.emit('transform', { id: g.entry.id, transform: g.entry.group.matrix.toArray(), final: true })
@@ -1708,20 +1788,31 @@ class ViewportImpl implements Viewport {
 
   // ---------- rotate rings ----------
 
-  private rotateTarget(): ObjectEntry | null {
+  private rotateTarget(): ObjectEntry[] | null {
     if (this.tool !== 'rotate' || this.mode !== 'prepare' || this.cut) return null
-    const id = this.selection[0]
-    return (id ? this.objects.get(id) : undefined) ?? null
+    const sel = this.selectedEntries()
+    return sel.length ? sel : null
   }
 
-  /** Center of the model's box and a ring radius a little wider than the box, in bed coordinates. */
-  private ringLayout(entry: ObjectEntry): { center: V3; radius: number } {
-    const b = this.localBox(entry)
+  /** Center of the model's box, or of a multi-selection's, and a ring radius a little wider than the box, bed coordinates. */
+  private ringLayout(entries: readonly ObjectEntry[]): { center: V3; radius: number } {
+    const one = entries.length === 1 ? entries[0] : undefined
+    if (!one) {
+      const g = this.groupBedBox(entries)
+      return { center: g.getCenter(new Vector3()).toArray() as V3, radius: Math.max(4, (g.getSize(new Vector3()).length() / 2) * 1.08) }
+    }
+    const b = this.localBox(one)
     if (b.isEmpty()) b.set(new Vector3(), new Vector3())
-    const m = entry.group.matrix
+    const m = one.group.matrix
     const c = b.getCenter(new Vector3()).applyMatrix4(m)
     const half = b.getSize(new Vector3()).length() / 2
     return { center: c.toArray() as V3, radius: Math.max(4, half * m.getMaxScaleOnAxis() * 1.08) }
+  }
+
+  /** The rings' axes: the bed's or the model's own; a multi-selection turns about the bed's. */
+  private ringAxesOf(entries: readonly ObjectEntry[]): ReturnType<typeof ringAxes> {
+    const one = entries.length === 1 ? entries[0] : undefined
+    return one ? ringAxes(one.group.matrix.elements, this.rotSpace) : ringAxes(new Matrix4().elements, 'world')
   }
 
   /** A ray in bed coordinates. */
@@ -1778,7 +1869,7 @@ class ViewportImpl implements Viewport {
       return
     }
     const l = this.rotDrag ?? this.ringLayout(t)
-    const axes = ringAxes(t.group.matrix.elements, this.rotSpace)
+    const axes = this.ringAxesOf(t)
     for (const id of ['x', 'y', 'z'] as const) this.rotRings.place(id, l.center, axes[id], l.radius)
     this.rotRings.show(true)
   }
@@ -1788,7 +1879,7 @@ class ViewportImpl implements Viewport {
     if (!t) return null
     const { o, d } = this.bedRay(ray)
     const l = this.ringLayout(t)
-    const axes = ringAxes(t.group.matrix.elements, this.rotSpace)
+    const axes = this.ringAxesOf(t)
     return pickRing(o, d, l.center, (['x', 'y', 'z'] as const).map((id) => ({ id, axis: axes[id] })), l.radius, 7 * this.mmPerPx(l.center))
   }
 
@@ -1806,8 +1897,9 @@ class ViewportImpl implements Viewport {
     if (!t || !axis) return false
     const { o, d } = this.bedRay(ray)
     const l = this.ringLayout(t)
-    const dir = ringAxes(t.group.matrix.elements, this.rotSpace)[axis]
-    this.rotDrag = { ...this.ringStart(o, d, l.center, dir, l.radius, e), entry: t, axis, start: t.group.matrix.toArray(), shown: 0, snapped: false }
+    const dir = this.ringAxesOf(t)[axis]
+    const first = t[0]!
+    this.rotDrag = { ...this.ringStart(o, d, l.center, dir, l.radius, e), entry: first, group: t.length > 1 ? this.startsOf(t) : null, axis, start: first.group.matrix.toArray(), shown: 0, snapped: false }
     this.rotRings.setActive(axis)
     this.controls.enabled = false
     this.showGizmoLabel(e.clientX, e.clientY, this.rotText(0, false))
@@ -1831,12 +1923,17 @@ class ViewportImpl implements Viewport {
     const a = snapped ? snapAngle(d.angle, rb.snapStepDeg) : d.angle
     d.shown = a
     d.snapped = snapped
+    this.rotRings.sweep(d.center, d.dir, d.from, a, d.radius)
+    this.setGizmoLabel(this.rotText(a, snapped))
+    this.emit('rotate', { id: d.entry.id, axis: d.axis, space: d.group ? 'world' : this.rotSpace, angleDeg: (a * 180) / Math.PI, snapped, final: false })
+    if (d.group) {
+      // the whole selection turns about its middle, each object with it
+      this.placeGroup(applyToAll(d.group, rotateAbout(new Matrix4().elements, d.center, d.dir, a)), false)
+      return this.invalidate()
+    }
     const m = rotateAbout(d.start, d.center, d.dir, a)
     d.entry.group.matrix.fromArray(m)
     d.entry.group.matrixWorldNeedsUpdate = true
-    this.rotRings.sweep(d.center, d.dir, d.from, a, d.radius)
-    this.setGizmoLabel(this.rotText(a, snapped))
-    this.emit('rotate', { id: d.entry.id, axis: d.axis, space: this.rotSpace, angleDeg: (a * 180) / Math.PI, snapped, final: false })
     this.emit('transform', { id: d.entry.id, transform: m, final: false })
     this.invalidate()
   }
@@ -1848,6 +1945,20 @@ class ViewportImpl implements Viewport {
     this.rotRings.setActive(null)
     this.controls.enabled = true
     this.hideGizmoLabel()
+    if (d.group) {
+      // a turn about a tilted axis sets the selection down on the bed as a whole, the way one model is
+      if (!cancel && Math.abs(d.dir[2]) < 0.9999) {
+        const entries = [...d.group.keys()].map((id) => this.objects.get(id)).filter((o): o is ObjectEntry => !!o)
+        const z = this.groupMinZ(entries)
+        if (Number.isFinite(z)) for (const o of entries) {
+          o.group.matrix.elements[14] = (o.group.matrix.elements[14] ?? 0) - z
+          o.group.matrixWorldNeedsUpdate = true
+        }
+      }
+      if (!cancel) this.emit('rotate', { id: d.entry.id, axis: d.axis, space: 'world', angleDeg: (d.shown * 180) / Math.PI, snapped: d.snapped, final: true })
+      this.endGroup(d.group, cancel)
+      return this.objectsMoved()
+    }
     const g = d.entry.group
     if (cancel) {
       g.matrix.fromArray(d.start)
@@ -1876,7 +1987,7 @@ class ViewportImpl implements Viewport {
     const t = this.rotateTarget()
     if (!t) return null
     const l = this.ringLayout(t)
-    const axes = ringAxes(t.group.matrix.elements, this.rotSpace)
+    const axes = this.ringAxesOf(t)
     const cam = this.camera.position.clone().applyMatrix4(this.stage.bedMatrix().invert())
     const toCam: V3 = [cam.x - l.center[0], cam.y - l.center[1], cam.z - l.center[2]]
     const r = this.canvas.getBoundingClientRect()
@@ -1959,7 +2070,7 @@ class ViewportImpl implements Viewport {
     this.cutGizmo.group.visible = !!c
     this.cutRings.show(!!c)
     if (!c) return
-    const r = this.ringLayout(c.entry).radius
+    const r = this.ringLayout([c.entry]).radius
     this.cutGizmo.place(c.point, c.normal, r, this.mmPerPx(c.point))
     const g = this.cutDrag?.kind === 'tilt' ? this.cutDrag : null
     const { u, v } = tiltAxes(g ? g.normal0 : c.normal)
@@ -1976,7 +2087,7 @@ class ViewportImpl implements Viewport {
     if (ray.intersectObject(this.cutGizmo.grabber, false).length) return 'grabber'
     const { o, d } = this.bedRay(ray)
     const { u, v } = tiltAxes(c.normal)
-    const ring = pickRing(o, d, c.point, [{ id: 'u' as const, axis: u }, { id: 'v' as const, axis: v }], this.ringLayout(c.entry).radius * 0.8, 7 * this.mmPerPx(c.point))
+    const ring = pickRing(o, d, c.point, [{ id: 'u' as const, axis: u }, { id: 'v' as const, axis: v }], this.ringLayout([c.entry]).radius * 0.8, 7 * this.mmPerPx(c.point))
     if (ring) return ring
     return ray.intersectObject(this.cutGizmo.quad, false).length ? 'plane' : null
   }
@@ -2007,7 +2118,7 @@ class ViewportImpl implements Viewport {
     }
     if (part === 'u' || part === 'v') {
       const axis = tiltAxes(c.normal)[part]
-      this.cutDrag = { ...this.ringStart(o, d, c.point, axis, this.ringLayout(c.entry).radius * 0.8, e), kind: 'tilt', ring: part, normal0: c.normal }
+      this.cutDrag = { ...this.ringStart(o, d, c.point, axis, this.ringLayout([c.entry]).radius * 0.8, e), kind: 'tilt', ring: part, normal0: c.normal }
       this.cutRings.setActive(part)
       this.showGizmoLabel(e.clientX, e.clientY, 'Tilt 0°')
     } else {
@@ -2083,7 +2194,7 @@ class ViewportImpl implements Viewport {
   cutHandles(): { grabber: [number, number]; u: [number, number]; v: [number, number] } | null {
     const c = this.mode === 'prepare' ? this.cut : null
     if (!c) return null
-    const r = this.ringLayout(c.entry).radius
+    const r = this.ringLayout([c.entry]).radius
     const { u, v } = tiltAxes(c.normal)
     const rc = this.canvas.getBoundingClientRect()
     const at = (p: V3): [number, number] => {
@@ -2845,15 +2956,22 @@ class ViewportImpl implements Viewport {
       const explicit = this.tool !== 'select'
       // With the select tool the preset decides whether the press moves the model or orbits the view.
       if (!explicit && !dragStartsOnModel(this.controlsMap, modifiersOf(e, this.spaceDown), action, this.selection.includes(p.entry.id))) return
-      this.selectIds([p.entry.id])
+      // with Ctrl (Cmd) the press is a click that adds or takes out an object, not a drag
+      if (e.ctrlKey || e.metaKey) return
+      // a press on one object of a multi-selection drags all of it; anywhere else it picks that one object
+      const sel = this.selectedEntries()
+      const together = sel.length > 1 && sel.some((o) => o.id === p.entry.id)
+      if (!together) this.selectIds([p.entry.id])
       const bh = bedHit(e)
       if (!bh) return
       const m = p.entry.group.matrix.toArray()
-      const box = this.bedBox(p.entry)
+      // the box that has to stay on the bed: the object's, or the whole selection's
+      const box = together ? this.groupBedBox(sel) : this.bedBox(p.entry)
       const tx = m[12] ?? 0
       const ty = m[13] ?? 0
       this.drag = {
         entry: p.entry,
+        group: together ? this.startsOf(sel) : null,
         kind: this.tool === 'rotate' ? 'rotate' : 'move',
         start: m,
         offset: [tx - bh[0], ty - bh[1]],
@@ -2980,6 +3098,12 @@ class ViewportImpl implements Viewport {
         const r = new Matrix4().makeTranslation(cx, cy, 0).multiply(new Matrix4().makeRotationZ(yaw - d.startYaw)).multiply(new Matrix4().makeTranslation(-cx, -cy, 0))
         m.premultiply(r)
       }
+      if (d.group) {
+        // the pressed object's change, start to now, applied to every object of the selection
+        const change = m.clone().multiply(new Matrix4().fromArray(d.start).invert())
+        this.placeGroup(applyToAll(d.group, change.toArray()), false)
+        return this.invalidate()
+      }
       d.entry.group.matrix.copy(m)
       d.entry.group.matrixWorldNeedsUpdate = true
       this.emit('transform', { id: d.entry.id, transform: m.toArray(), final: false })
@@ -3059,7 +3183,8 @@ class ViewportImpl implements Viewport {
       if (d) {
         this.drag = null
         this.controls.enabled = true
-        this.emit('transform', { id: d.entry.id, transform: d.entry.group.matrix.toArray(), final: true })
+        if (d.group) this.endGroup(d.group, false)
+        else this.emit('transform', { id: d.entry.id, transform: d.entry.group.matrix.toArray(), final: true })
         this.objectsMoved()
         down = null
         return
@@ -3074,6 +3199,8 @@ class ViewportImpl implements Viewport {
       }
       if (moved >= 5 || e.button !== 0) return
       const p = pick(e)
+      // the selection as it was before the pick: a host may set its own selection while it answers the pick
+      const was = [...this.selection]
       this.emit('pick', { objectId: p?.entry.id ?? null, partIndex: p?.part ?? null, point: p ? this.worldToBed(p.point) : null, triangle: p && p.face >= 0 ? p.face : null, bed: bedHit(e), ...(e.shiftKey ? { shift: true } : {}), ...(e.metaKey || e.ctrlKey ? { toggle: true } : {}) })
       if (this.pathsShown() && !p) {
         // A click on a toolpath: which path it is, so the app can show the setting that made it.
@@ -3101,7 +3228,12 @@ class ViewportImpl implements Viewport {
         }
         return
       }
-      if (this.mode === 'prepare') this.selectIds(p ? [p.entry.id] : [])
+      if (this.mode !== 'prepare') return
+      // Ctrl (Cmd) adds an object to the selection or takes it out, as in Bambu Studio and OrcaSlicer
+      if (p && (e.ctrlKey || e.metaKey)) {
+        const id = p.entry.id
+        this.selectIds(was.includes(id) ? was.filter((x) => x !== id) : [...was, id])
+      } else this.selectIds(p ? [p.entry.id] : [])
     }
     const onCancel = (): void => {
       this.brimDrag = null
