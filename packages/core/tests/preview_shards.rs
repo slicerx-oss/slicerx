@@ -158,3 +158,107 @@ fn bambu_shards_point_at_the_finished_files_lines() {
         assert!(stitched == one.preview, "{shards} shards differ from one run");
     }
 }
+
+/// A 20 x 20 x `h` mm box as a binary STL.
+fn box_mesh(h: f32) -> Arc<Mesh> {
+    let c = |x: f32, y: f32, z: f32| [x, y, z];
+    let v = [
+        c(0.0, 0.0, 0.0),
+        c(20.0, 0.0, 0.0),
+        c(20.0, 20.0, 0.0),
+        c(0.0, 20.0, 0.0),
+        c(0.0, 0.0, h),
+        c(20.0, 0.0, h),
+        c(20.0, 20.0, h),
+        c(0.0, 20.0, h),
+    ];
+    let faces: [[usize; 3]; 12] = [
+        [0, 2, 1],
+        [0, 3, 2],
+        [4, 5, 6],
+        [4, 6, 7],
+        [0, 1, 5],
+        [0, 5, 4],
+        [1, 2, 6],
+        [1, 6, 5],
+        [2, 3, 7],
+        [2, 7, 6],
+        [3, 0, 4],
+        [3, 4, 7],
+    ];
+    let mut bytes = vec![0u8; 80];
+    bytes.extend_from_slice(&12u32.to_le_bytes());
+    for f in faces {
+        bytes.extend_from_slice(&[0u8; 12]);
+        for i in f {
+            for x in v[i] {
+                bytes.extend_from_slice(&x.to_le_bytes());
+            }
+        }
+        bytes.extend_from_slice(&[0, 0]);
+    }
+    Arc::new(Mesh::load(&bytes, "box.stl").unwrap())
+}
+
+/// The web app slices in as many ranges as it has threads, so a short plate (a keychain of 10 layers on a
+/// machine with 11) gets more ranges than layers, some of them empty. An empty range at the start wrote the
+/// printer's start sequence, and the range with the first layer wrote it again.
+#[test]
+fn more_ranges_than_layers_start_and_end_the_print_once() {
+    let mesh = box_mesh(1.0);
+    let bench: Value = serde_json::from_slice(
+        &std::fs::read(format!(
+            "{}/packages/core/bench/configs/reference-0.20.json",
+            root()
+        ))
+        .unwrap(),
+    )
+    .unwrap();
+    let req: SliceRequest = serde_json::from_value(json!({
+        "plate": {"objects": [{"id": "a", "name": "a", "mesh": "x", "transform": [
+            1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 118.0, 118.0, 0.0, 1.0]}]},
+        "config": bench["config"].clone(),
+        "options": {"flavor": "marlin2"},
+    }))
+    .unwrap();
+    let m = mesh.clone();
+    let one = api::run_request(&req, &move |_: &str| Ok(m.clone())).unwrap();
+    let layers = one.report.layer_count;
+    assert!((3..8).contains(&layers), "{layers} layers");
+    for shards in [layers, layers + 1, 8, 11] {
+        let (stitched, finished) = sharded_with_file(&req, &mesh, shards);
+        assert!(
+            finished == one.gcode,
+            "{shards} ranges for {layers} layers: the file differs from one run"
+        );
+        assert!(
+            stitched == one.preview,
+            "{shards} ranges for {layers} layers: the preview differs from one run"
+        );
+    }
+    // Empty ranges at either end and between: neither the start nor the end sequence twice.
+    let (config, _) = api::request_config_checked(&req).unwrap();
+    let m = mesh.clone();
+    let plate = api::build_plate(&req, &move |_: &str| Ok(m.clone())).unwrap();
+    let session = api::build_session(&req, &plate, &config).unwrap();
+    let text = |ranges: &[std::ops::Range<u32>]| {
+        let mut g = Vec::new();
+        for r in ranges {
+            api::slice_shard(&req, &session, &config, r.clone(), &sx_core::NoProgress, &mut g).unwrap();
+        }
+        g
+    };
+    let n = layers;
+    let whole = text(std::slice::from_ref(&(0..n)));
+    for ranges in [
+        vec![0..0, 0..n],
+        vec![0..n, n..n],
+        vec![0..0, 0..1, 1..1, 1..n, n..n],
+        vec![0..0, 0..0, 0..n, n..n, n..n],
+    ] {
+        assert!(
+            text(&ranges) == whole,
+            "ranges {ranges:?}: the start or end sequence is written twice"
+        );
+    }
+}
