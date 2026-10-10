@@ -138,10 +138,10 @@ impl PrinterConnector for ElegooConnector {
         let std::net::IpAddr::V4(v4) = host.parse().ok()? else {
             return None;
         };
-        let bind = if v4.is_loopback() {
-            std::net::Ipv4Addr::LOCALHOST
-        } else {
-            std::net::Ipv4Addr::UNSPECIFIED
+        let bind = match self.discovery_bind {
+            _ if v4.is_loopback() => std::net::Ipv4Addr::LOCALHOST.into(),
+            ip @ std::net::IpAddr::V4(_) => ip,
+            std::net::IpAddr::V6(_) => std::net::Ipv4Addr::UNSPECIFIED.into(),
         };
         let sock = UdpSocket::bind((bind, 0)).await.ok()?;
         sock.send_to(b"M99999", (v4, self.discovery_port)).await.ok()?;

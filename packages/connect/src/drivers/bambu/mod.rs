@@ -194,12 +194,16 @@ pub async fn ask_one(ip: Ipv4Addr, ports: &[u16], timeout: Duration) -> Option<D
 }
 
 /// A UDP socket connected to `to`, on an ephemeral port of the local address the route to `to`
-/// leaves from (found with a socket that is connected but never sends).
+/// leaves from (found with a socket that is connected but never sends). A printer on loopback (a
+/// test's mock) is reached from loopback without that probe, so no socket is on all addresses.
 fn connected_to(to: SocketAddr) -> std::io::Result<UdpSocket> {
-    let route = std::net::UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0))?;
-    route.connect(to)?;
-    let local = route.local_addr()?.ip();
-    drop(route);
+    let local = if to.ip().is_loopback() {
+        to.ip()
+    } else {
+        let route = std::net::UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0))?;
+        route.connect(to)?;
+        route.local_addr()?.ip()
+    };
     let s = std::net::UdpSocket::bind((local, 0))?;
     s.connect(to)?;
     s.set_nonblocking(true)?;
@@ -278,7 +282,7 @@ impl PrinterConnector for BambuConnector {
         let bind = if v4.is_loopback() {
             Ipv4Addr::LOCALHOST
         } else {
-            Ipv4Addr::UNSPECIFIED
+            self.bind_v4()
         };
         let sock = netif::sender(bind).ok()?;
         // The ports the printer answers on; a test's mock answers on the port of its search target.

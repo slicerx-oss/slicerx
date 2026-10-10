@@ -44,7 +44,7 @@ pub(crate) fn all(
         Box::new(CrealityConnector::new(gate.clone())),
         Box::new(ElegooConnector::new(gate.clone()).with_discovery_bind(discovery_bind)),
         Box::new(SnapmakerConnector::new(gate.clone()).with_discovery_bind(discovery_bind)),
-        Box::new(UltiMakerConnector::new(gate.clone())),
+        Box::new(UltiMakerConnector::new(gate.clone()).with_discovery_bind(discovery_bind)),
         Box::new(AnycubicConnector::new(gate.clone())),
         Box::new(BambuddyConnector::new(gate)),
     ]

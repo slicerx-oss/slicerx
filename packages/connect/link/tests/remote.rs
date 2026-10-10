@@ -64,9 +64,9 @@ async fn hub() -> Link {
         port: 0,
         fixed_code: Some(CODE.to_owned()),
         fixed_agent_code: Some(AGENT_CODE.to_owned()),
-        // Loopback: the test machine's firewall may hold back UDP to unsigned test binaries.
-        rtc_bind: Some(std::net::IpAddr::from([127, 0, 0, 1])),
-        ..LinkConfig::default()
+        // Direct video on loopback: the test machine's firewall may hold back UDP to unsigned test
+        // binaries.
+        ..LinkConfig::loopback()
     };
     serve_with_approvals(
         cfg,

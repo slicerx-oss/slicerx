@@ -137,7 +137,7 @@ impl PrinterConnector for SnapmakerConnector {
             let std::net::IpAddr::V4(v4) = host.parse().ok()? else {
                 return None;
             };
-            discover::ask_one(v4, self.discovery_port, timeout).await
+            discover::ask_one(self.discovery_bind, v4, self.discovery_port, timeout).await
         };
         let (u1, other) = tokio::join!(self.probe_u1(host, timeout), udp);
         u1.or(other)

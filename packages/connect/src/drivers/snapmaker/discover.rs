@@ -91,12 +91,18 @@ pub(crate) async fn broadcast(bind: IpAddr, port: u16, window: Duration) -> Vec<
     found
 }
 
-/// Sends `discover` to one address and waits for its reply, for a typed IP.
-pub(crate) async fn ask_one(host: Ipv4Addr, port: u16, window: Duration) -> Option<DiscoveredPrinter> {
-    let bind = if host.is_loopback() {
-        Ipv4Addr::LOCALHOST
-    } else {
-        Ipv4Addr::UNSPECIFIED
+/// Sends `discover` to one address from `bind` (all addresses in the app, 127.0.0.1 in tests) and
+/// waits for its reply, for a typed IP.
+pub(crate) async fn ask_one(
+    bind: IpAddr,
+    host: Ipv4Addr,
+    port: u16,
+    window: Duration,
+) -> Option<DiscoveredPrinter> {
+    let bind = match bind {
+        _ if host.is_loopback() => Ipv4Addr::LOCALHOST,
+        IpAddr::V4(ip) => ip,
+        IpAddr::V6(_) => Ipv4Addr::UNSPECIFIED,
     };
     let sock = UdpSocket::bind((bind, 0)).await.ok()?;
     let mut found = ask(&sock, &[(host, port).into()], window).await;
@@ -176,9 +182,14 @@ mod tests {
                 }
             }
         });
-        let p = ask_one(Ipv4Addr::LOCALHOST, port, Duration::from_millis(300))
-            .await
-            .unwrap();
+        let p = ask_one(
+            Ipv4Addr::LOCALHOST.into(),
+            Ipv4Addr::LOCALHOST,
+            port,
+            Duration::from_millis(300),
+        )
+        .await
+        .unwrap();
         assert_eq!((p.host.as_str(), p.model.as_deref()), ("127.0.0.1", Some("A350")));
         let all = broadcast(Ipv4Addr::LOCALHOST.into(), port, Duration::from_millis(300)).await;
         assert_eq!(all.len(), 1);

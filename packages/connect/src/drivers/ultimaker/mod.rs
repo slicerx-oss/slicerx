@@ -135,6 +135,16 @@ impl UltiMakerConnector {
         self
     }
 
+    /// Discovery on `ip`, as the other connectors take it: a loopback address (tests) asks the mDNS
+    /// question on loopback, so no socket is on the network. Any other address keeps the group.
+    #[must_use]
+    pub fn with_discovery_bind(mut self, ip: std::net::IpAddr) -> Self {
+        if ip.is_loopback() {
+            self.mdns_target = (ip, crate::mdns::MDNS_PORT).into();
+        }
+        self
+    }
+
     /// Probes `port` instead of 80.
     #[must_use]
     pub fn with_probe_port(mut self, port: u16) -> Self {
@@ -840,6 +850,21 @@ impl PrinterSession for UltiMakerSession {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_loopback_discovery_bind_keeps_the_mdns_question_on_loopback() {
+        let gate = || Arc::new(crate::MemoryGate::new());
+        let local = UltiMakerConnector::new(gate()).with_discovery_bind(std::net::Ipv4Addr::LOCALHOST.into());
+        assert_eq!(
+            local.mdns_target,
+            SocketAddr::from((std::net::Ipv4Addr::LOCALHOST, crate::mdns::MDNS_PORT))
+        );
+        let app = UltiMakerConnector::new(gate()).with_discovery_bind(std::net::Ipv4Addr::UNSPECIFIED.into());
+        assert_eq!(
+            app.mdns_target,
+            SocketAddr::from((crate::mdns::MDNS_GROUP_V4, crate::mdns::MDNS_PORT))
+        );
+    }
 
     #[test]
     fn txt_records_are_read_as_cura_reads_them() {
