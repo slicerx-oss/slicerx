@@ -4,6 +4,41 @@ All notable changes to the `sx_core::api` module. The format follows Keep a Chan
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-10-10
+
+### Added
+
+- Partner apps: a partner app key can pause and cancel prints on its own cards through sx-link, and the MCP server takes a partner key from `SLICERX_MCP_LINK_KEY`.
+- Smart layer heights (sleipnir): when a request turns `smart_layer` on and sends no layer tops, sx-core plans them itself.
+- sx-geom fills a remeshed model's flat faces again with well shaped triangles.
+- Viewport: a near-black silhouette round Model's parts in the CAD look, a model added to the plate fades in beside the others, the plate reveal plays in Model too, and the selected model shows move arrows.
+- Embed: Prepare's tools in the embedded view, a reveal for each plate, and a calm bed outline that shows what is selected.
+- MCP: a slice that names no printer says so.
+- Settings: stock G-code fingerprints from the presets the released slicer apps ship, so their stock start and end G-code is recognized as the maker's.
+- Integrator guide: preparing a plate in the viewport and slicing it with sx.
+
+### Changed
+
+- MCP: a slice with no process named uses the SlicerX default process, and an opened project keeps SlicerX's engine choices, as the app does.
+- Viewport: white lights and quieter plastics, so a filament keeps its hue on every face, and a softer bloom on the plate reveal.
+- Faster: each object's footprint is worked out once, each layer's auto lift overhang is worked out once, an object's paint stays with its parts instead of being cut again, a layer's regions share one cut of each neighbor, mesh lookups use a faster hash, and the WebAssembly build's square roots use the module's own float instructions. The viewport lets go of its toolpath copies once they are uploaded and builds a model's paint overlay in one pass.
+
+### Fixed
+
+- MCP: a project's flush volumes, nozzle map and prime tower position reach the engine. Before, they were dropped and the project sliced with defaults.
+- MCP: opening a Bambu Studio project with nozzle variants now gives each filament its own settings, temperatures included; before, values could shift to the wrong filament.
+- The H2D's print time estimate counts the time the printer spends flushing between filaments.
+- Filament use counts the filament flushed between colors, including the H2D's flush inside the printer, so totals match what the printer uses.
+- Bambu Studio 2.8 projects keep their "reduce infill retraction" choice, so travels inside infill no longer retract every time.
+- MCP: plate collisions are reported as collisions, with the objects and layers involved.
+- Paint on an object of several parts is worked out on the object's whole layer outline, with the paint of all its parts, so colors no longer stop at the boundary between parts. Where no paint reaches, the filament of the part underneath prints.
+- Painted tops and bottoms color the shell layers beyond them, as deep as the project's color penetration settings ask, and specks too small to print are dropped.
+- No "plate has none" support warning for an object that has support enforcers.
+- Smart layer heights end exactly on the model's top, without a sliver.
+- Seam visibility finds the nearest face.
+- A pulled box is a plain box again after the flat face fill.
+- The camera eases to a newly opened model from the swap frame.
+
 ## [0.1.2] - 2026-10-09
 
 ### Fixed
