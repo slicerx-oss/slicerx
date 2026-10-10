@@ -148,10 +148,16 @@ describe('slicing a binary STL while its open runs', () => {
   })
 })
 
-describe('a big slice (slice-estimate.ts)', () => {
+describe('a big slice (slice-estimate.ts), with Auto slice set to Always', () => {
   // The last slice of this plate took a minute on the same 12 triangles: the cube's slice now counts as big.
-  beforeEach(() => noteSliceTiming(get().activePlate, { triangles: 12, ms: 60_000 }))
-  afterEach(() => noteSliceTiming(get().activePlate, { triangles: 12, ms: 1 }))
+  beforeEach(() => {
+    noteSliceTiming(get().activePlate, { triangles: 12, ms: 60_000 })
+    set({ autoSliceBySize: false })
+  })
+  afterEach(() => {
+    noteSliceTiming(get().activePlate, { triangles: 12, ms: 1 })
+    set({ autoSliceBySize: true, sliceHeld: false })
+  })
 
   it('does not start while the file opens, and waits for the fit check after', async () => {
     const { h, requests, land } = host()
@@ -194,5 +200,25 @@ describe('a big slice (slice-estimate.ts)', () => {
     await addAutoImport(h, 'cube.stl', stl(), async () => answer({ positions: [...shown.positions], indices: [...shown.indices] }))
     set({ plateLoading: false })
     await until(() => requests.length >= 1)
+  })
+})
+
+describe('a big slice, with Auto slice set to Auto (by size)', () => {
+  beforeEach(() => noteSliceTiming(get().activePlate, { triangles: 12, ms: 60_000 }))
+  afterEach(() => {
+    noteSliceTiming(get().activePlate, { triangles: 12, ms: 1 })
+    set({ sliceHeld: false })
+  })
+
+  it('waits for Slice once the file has opened, and says so', async () => {
+    const { h, requests } = host()
+    stops.push(startAutoSlice(h, 0, 100))
+    const shown = scanStl(new Uint8Array(stl()))!
+    await addAutoImport(h, 'cube.stl', stl(), async () => answer({ positions: [...shown.positions], indices: [...shown.indices] }))
+    set({ plateLoading: false })
+    fitSettled(get().plate)
+    await until(() => get().sliceHeld)
+    await new Promise((r) => setTimeout(r, 200))
+    expect(requests).toHaveLength(0)
   })
 })

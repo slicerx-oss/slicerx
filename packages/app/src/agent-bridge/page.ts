@@ -16,6 +16,7 @@ import { sliceTiming } from '../lib/slice-timing'
 import { get, setWorkspace, type AppState } from '../state/store'
 import type { Capture, LogKind } from './capture'
 import { BridgeError, click, elements, fill, pressKey, testids, waitFor } from './dom'
+import { autoSliceMode } from '../state/auto-slice-mode'
 
 export { BridgeError } from './dom'
 
@@ -25,21 +26,23 @@ const num = (v: unknown, fallback: number, min: number, max: number): number => 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
 /** The last slice as an agent reads it: status, and for a finished one its time, filament, layers and warnings. */
-export function sliceSummary(s: Pick<AppState, 'slice' | 'plate' | 'plates' | 'activePlate' | 'autoSlice'>): Record<string, unknown> {
+export function sliceSummary(s: Pick<AppState, 'slice' | 'plate' | 'plates' | 'activePlate' | 'autoSlice' | 'autoSliceBySize' | 'sliceHeld'>): Record<string, unknown> {
   const sl = s.slice
+  // The auto slice choice, and whether it is holding this plate's big slice for Slice.
+  const auto = { autoSlice: s.autoSlice, autoSliceMode: autoSliceMode(s), ...(s.autoSlice && s.sliceHeld ? { held: true } : {}) }
   switch (sl.status) {
     case 'idle':
-      return { status: 'idle', autoSlice: s.autoSlice }
+      return { status: 'idle', ...auto }
     case 'running':
-      return { status: 'running', autoSlice: s.autoSlice, startedAt: new Date(sl.startedAt).toISOString(), ...(sl.progress ? { progress: sl.progress } : {}) }
+      return { status: 'running', ...auto, startedAt: new Date(sl.startedAt).toISOString(), ...(sl.progress ? { progress: sl.progress } : {}) }
     case 'error':
-      return { status: 'error', autoSlice: s.autoSlice, message: sl.message }
+      return { status: 'error', ...auto, message: sl.message }
     case 'done': {
       const r = sl.result
       const grams = r.stats.filamentG.reduce((a, b) => a + b, 0)
       return {
         status: 'done',
-        autoSlice: s.autoSlice,
+        ...auto,
         stale: sl.stale,
         id: r.id,
         engine: r.engine,

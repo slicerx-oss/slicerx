@@ -331,6 +331,10 @@ export interface AppState {
   tooltips: { enabled: boolean; media: boolean }
   /** Slice in the background after every edit; off shows the Slice button. */
   autoSlice: boolean
+  /** With autoSlice on: slice in the background only when the slice is expected to be quick (Auto), or always. state/auto-slice-mode.ts */
+  autoSliceBySize: boolean
+  /** Auto slice held a big plate's slice: it waits for Slice, with a note. Not saved. */
+  sliceHeld: boolean
   cadTools: boolean
   /** What a kWh costs the person and the currency symbol in front of it, for the electricity estimate. */
   electricity: { pricePerKwh: number; symbol: string }
@@ -663,6 +667,8 @@ export const appStore = createStore<AppState>()(() => ({
   settingsMode: prefs.settingsMode ?? 'simple',
   tooltips: prefs.tooltips ?? { enabled: true, media: true },
   autoSlice: prefs.autoSlice ?? !noAutoSliceDefault(),
+  autoSliceBySize: prefs.autoSliceBySize ?? true,
+  sliceHeld: false,
   cadTools: prefs.cadTools ?? true,
   electricity: prefs.electricity ?? DEFAULT_ELECTRICITY,
   showDimensions: false,
@@ -759,7 +765,7 @@ function noAutoSliceDefault(): boolean {
 }
 
 
-const PERSISTED = ['workspace', 'modelModeDefault', 'sliceLook', 'rails', 'recents', 'appearance', 'sidebarFolds', 'showToolhead', 'playbackSpeed', 'followNozzle', 'easy', 'goal', 'printerId', 'scheme', 'lookAndFeel', 'themeFollowsSystem', 'themeIds', 'userThemes', 'themeCache', 'fonts', 'settingsMode', 'tooltips', 'autoSlice', 'cadTools', 'electricity', 'printerNozzles', 'printerExtruders', 'handPrinters', 'bays', 'printerBays', 'printersView', 'easyTouched', 'paneSizes', 'queue', 'spoolLinks', 'presetSync', 'firstRun', 'crashReports', 'motion', 'agreement', 'installId', 'setupPilotOff', 'noPrinter', 'pilot', 'sendChoices', 'dryMarks', 'activePresets'] as const satisfies readonly (keyof AppState)[]
+const PERSISTED = ['workspace', 'modelModeDefault', 'sliceLook', 'rails', 'recents', 'appearance', 'sidebarFolds', 'showToolhead', 'playbackSpeed', 'followNozzle', 'easy', 'goal', 'printerId', 'scheme', 'lookAndFeel', 'themeFollowsSystem', 'themeIds', 'userThemes', 'themeCache', 'fonts', 'settingsMode', 'tooltips', 'autoSlice', 'autoSliceBySize', 'cadTools', 'electricity', 'printerNozzles', 'printerExtruders', 'handPrinters', 'bays', 'printerBays', 'printersView', 'easyTouched', 'paneSizes', 'queue', 'spoolLinks', 'presetSync', 'firstRun', 'crashReports', 'motion', 'agreement', 'installId', 'setupPilotOff', 'noPrinter', 'pilot', 'sendChoices', 'dryMarks', 'activePresets'] as const satisfies readonly (keyof AppState)[]
 
 appStore.subscribe((s, prev) => {
   if (PERSISTED.some((k) => s[k] !== prev[k])) {
@@ -787,6 +793,7 @@ appStore.subscribe((s, prev) => {
       settingsMode: s.settingsMode,
       tooltips: s.tooltips,
       autoSlice: s.autoSlice,
+      autoSliceBySize: s.autoSliceBySize,
       cadTools: s.cadTools,
       electricity: s.electricity,
       printerNozzles: s.printerNozzles,

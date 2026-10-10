@@ -179,7 +179,7 @@ test('the theme step: every theme as a card, the mode and flavors apply at once 
   const prefs = JSON.parse((await page.evaluate(() => localStorage.getItem('slicerx.prefs.v1'))) ?? '{}') as { themeIds: { dark: string; light: string }; appearance: { colorVision: string }; firstRun: { version: number } }
   expect(prefs.themeIds).toEqual({ dark: 'subban-dark', light: 'subban-light' })
   expect(prefs.appearance.colorVision).toBe('redgreen')
-  expect(prefs.firstRun.version).toBe(3)
+  expect(prefs.firstRun.version).toBe(4)
 })
 
 test('Settings, Look and feel: theme, accent, text and accessibility; Slicing and modeling holds auto slice', async ({ page }) => {
@@ -209,9 +209,9 @@ test('Settings, Look and feel: theme, accent, text and accessibility; Slicing an
   await expect(dialog.getByText('Body text at 16 px.', { exact: false })).toBeVisible()
   await noHorizontalScroll(page)
   // Auto slice, the electricity price and the drawing tools moved to their own page.
-  await expect(dialog.getByText('Slice automatically')).toHaveCount(0)
+  await expect(dialog.getByRole('radiogroup', { name: 'Auto slice' })).toHaveCount(0)
   await nav.getByRole('button', { name: 'Slicing and modeling' }).click()
-  await expect(dialog.getByText('Slice automatically')).toBeVisible()
+  await expect(dialog.getByRole('radiogroup', { name: 'Auto slice' })).toBeVisible()
   await expect(dialog.getByText('Drawing tools')).toBeVisible()
   await page.reload()
   await expect(page.locator('html')).toHaveAttribute('data-sx-theme', 'nord')
@@ -224,7 +224,7 @@ test('a profile from an earlier onboarding goes through setup again, prefilled, 
     // As 0.2.2 left it: setup finished with no version, the old SlicerX theme ids, the Bambu look, a printer, slicing on open.
     localStorage.setItem(
       'slicerx.prefs.v1',
-      JSON.stringify({ workspace: 'prepare', printerId: 'bay-1', scheme: 'dark', themeIds: { dark: 'slicerx-dark', light: 'slicerx-light' }, lookAndFeel: { id: 'bambu-studio' }, toolpathPalette: 'colorblind', modelModeDefault: 'slice', settingsMode: 'advanced', firstRun: { completedAt: '2026-10-01T00:00:00.000Z', step: 'done', look: { id: 'bambu-studio' }, printerId: 'bay-1' } }),
+      JSON.stringify({ workspace: 'prepare', printerId: 'bay-1', scheme: 'dark', themeIds: { dark: 'slicerx-dark', light: 'slicerx-light' }, lookAndFeel: { id: 'bambu-studio' }, toolpathPalette: 'colorblind', modelModeDefault: 'slice', settingsMode: 'advanced', autoSlice: true, firstRun: { completedAt: '2026-10-01T00:00:00.000Z', step: 'done', look: { id: 'bambu-studio' }, printerId: 'bay-1' } }),
     )
   })
   await page.goto('./')
@@ -244,10 +244,13 @@ test('a profile from an earlier onboarding goes through setup again, prefilled, 
   await expect(page.getByTestId('setup-mode-advanced')).toHaveAttribute('aria-checked', 'true')
   await page.getByTestId('setup-mode-expert').click()
   await expect(page.getByTestId('setup-mode-expert')).toHaveAttribute('aria-checked', 'true')
+  // So is the auto slice question: their saved on reads as Auto, the new default.
+  await expect(page.getByTestId('setup-autoslice-auto')).toHaveAttribute('aria-checked', 'true')
+  await page.getByTestId('setup-autoslice-always').click()
   await page.getByRole('button', { name: 'Skip, use defaults' }).click()
   await expect(page.locator('.fr')).toHaveCount(0)
   const prefs = JSON.parse((await page.evaluate(() => localStorage.getItem('slicerx.prefs.v1'))) ?? '{}') as Record<string, unknown>
-  expect(prefs).toMatchObject({ printerId: 'bay-1', lookAndFeel: { id: 'bambu-studio' }, themeIds: { dark: 'subban-dark', light: 'subban-light' }, appearance: { colorVision: 'redgreen' }, settingsMode: 'expert', firstRun: { version: 3, printerId: 'bay-1' } })
+  expect(prefs).toMatchObject({ printerId: 'bay-1', lookAndFeel: { id: 'bambu-studio' }, themeIds: { dark: 'subban-dark', light: 'subban-light' }, appearance: { colorVision: 'redgreen' }, settingsMode: 'expert', autoSlice: true, autoSliceBySize: false, firstRun: { version: 4, printerId: 'bay-1' } })
   // Once through, it does not come back.
   await page.reload()
   await expect(page.locator('.fr')).toHaveCount(0)

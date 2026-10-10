@@ -64,6 +64,8 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | `setup-printer-step-<step>` | A step in the printer form's step list |
 | `setup-printer-error` | The printer was not saved |
 | `setup-mode-<mode>` | The settings mode in setup's slicer step: `setup-mode-simple`, `setup-mode-advanced`, `setup-mode-expert` |
+| `setup-autoslice-<mode>` | Auto slice in setup's slicer step: `setup-autoslice-auto`, `setup-autoslice-always`, `setup-autoslice-off` |
+| `set-autoslice-<mode>` | Auto slice in Settings, Slicing and modeling: `set-autoslice-auto`, `set-autoslice-always`, `set-autoslice-off` |
 | `theme-<family>` | A theme card in setup's theme step and in Settings, Look and feel: `theme-subban`, `theme-dracula` and so on |
 
 ## Slice: sidebar
@@ -101,6 +103,7 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | `slice-estimate-breakdown` | The breakdown: where the time goes, filament per slot, electricity, filament changes and layers |
 | `slice-estimate-warnings` | The warnings chip, shown only with warnings; shows the first one on the plate |
 | `slice-estimate-error` | The engine's message when a slice fails |
+| `slice-estimate-held` | The footer's quiet line when Auto slice holds a big plate's slice for Slice |
 | `danger-slice-print` | Print, the footer's main action (opens the Print sheet; the bridge refuses it) |
 | `slice-estimate-export-gcode` | Export G-code, the main action for an export-only printer |
 | `slice-estimate-slice` | Slice, the main action with Auto slice off, and Slice again beside Print |

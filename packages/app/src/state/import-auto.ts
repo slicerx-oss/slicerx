@@ -94,9 +94,9 @@ export const QUIET_MAX_MS = 60_000
 /** Whether nothing the crossing check would compete with is under way or about to start. */
 export function plateQuiet(s: AppState): boolean {
   if (s.plateLoading || s.slice.status === 'running') return false
-  // Auto slice is about to slice a plate whose slice is not current.
+  // Auto slice is about to slice a plate whose slice is not current (unless it holds a big one for Slice).
   const printable = s.plate.some((p) => p.printable !== false && p.parts.length > 0)
-  if (s.autoSlice && printable && (s.slice.status === 'idle' || (s.slice.status === 'done' && s.slice.stale))) return false
+  if (s.autoSlice && !s.sliceHeld && printable && (s.slice.status === 'idle' || (s.slice.status === 'done' && s.slice.stale))) return false
   return fitSettledFor(s.plate)
 }
 

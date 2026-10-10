@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// Background slicing. When Auto slice is on, any edit that changes the print starts a new slice after a short pause. A slice
+// Background slicing. When Auto slice is on, any edit that changes the print starts a new slice after a short pause; set
+// to Auto (by size, the default) a plate whose slice is expected to be big waits for Slice instead (auto-slice-mode.ts). A slice
 // still running for an older edit is canceled the moment the newer edit lands, and a finished slice is marked stale at once, so
 // the numbers and the preview never pass for the current plate. A drag that edits on every move (a scrub, a slider) slices
 // once, on release.
@@ -39,13 +40,21 @@ export function startAutoSlice(host: Host, delayMs = AUTO_SLICE_DELAY_MS, fitWai
   const run = (force = false): void => {
     timer = null
     const s = appStore.getState()
+    if (s.plate.length === 0 && s.sliceHeld) appStore.setState({ sliceHeld: false })
     // A step open for editing rolls the part back; the slice waits for the edit to end.
     if (!s.autoSlice || s.plate.length === 0 || (s.plateLoading && !s.sliceDuringOpen) || s.historyEdit) return
     // A plate switched back to with its slice still current (workspaces/preview/plate-slices.ts) needs none.
     if (s.slice.status === 'done' && !s.slice.stale) return
+    // Auto by size: a big slice waits for Slice, and the footer says so.
+    const big = isBigSlice(s.plate, sliceTimingOf(s.activePlate))
+    if (s.autoSliceBySize && big) {
+      if (!s.sliceHeld) appStore.setState({ sliceHeld: true })
+      return
+    }
+    if (s.sliceHeld) appStore.setState({ sliceHeld: false })
     // A big slice waits for the plate's fit check, so its copy of the meshes and the fit check's are not alive at once
     // (slice-estimate.ts); a small one goes now.
-    if (!force && !s.plateLoading && !fitSettledFor(s.plate) && isBigSlice(s.plate, sliceTimingOf(s.activePlate))) {
+    if (!force && !s.plateLoading && !fitSettledFor(s.plate) && big) {
       const go = (late: boolean): void => {
         clear()
         timer = setTimeout(() => run(late), 0)
@@ -63,9 +72,12 @@ export function startAutoSlice(host: Host, delayMs = AUTO_SLICE_DELAY_MS, fitWai
     void slicePlate(host, { auto: true })
   }
   const unsubscribe = appStore.subscribe((s, prev) => {
-    if (!s.autoSlice) return clear()
-    // Turning it on slices what is there now.
-    const turnedOn = !prev.autoSlice
+    if (!s.autoSlice) {
+      if (s.sliceHeld) appStore.setState({ sliceHeld: false })
+      return clear()
+    }
+    // Turning it on, or from Auto to Always, slices what is there now.
+    const turnedOn = !prev.autoSlice || (prev.autoSliceBySize && !s.autoSliceBySize)
     const released = prev.liveEdit && !s.liveEdit
     const loaded = prev.plateLoading && !s.plateLoading
     if (!turnedOn && !released && !changed(s, prev) && !loaded) return

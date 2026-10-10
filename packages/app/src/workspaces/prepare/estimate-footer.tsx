@@ -23,6 +23,9 @@ const SliceGlide = lazy(() => import('../../ravens/waits').then((m) => ({ defaul
 // The breakdown reads the toolpath summary; its code loads when it is first opened.
 const Breakdown = lazy(() => import('./estimate-breakdown').then((m) => ({ default: m.EstimateBreakdown })))
 
+/** What the footer says when Auto slice holds a big plate's slice for Slice. */
+const HELD_LINE = 'A big plate: it slices when you press Slice.'
+
 /** The estimate and the one Print. `label` is the look's name for the Slice action. */
 export function SliceBlock({ label = 'Slice plate' }: { label?: string; compact?: boolean }) {
   const host = useHost()
@@ -30,6 +33,8 @@ export function SliceBlock({ label = 'Slice plate' }: { label?: string; compact?
   const slice = useApp((s) => s.slice)
   const plate = useApp((s) => s.plate)
   const auto = useApp((s) => s.autoSlice)
+  // Auto by size held a big plate's slice: Slice is the action, with a quiet line saying why.
+  const held = useApp((s) => s.autoSlice && s.sliceHeld)
   // While a new slice runs the last one stays, stale, so the estimate never empties and comes back.
   const done = shownSlice(slice)
   // A strike in the slice holds Print and Export back. Before a slice, objects closer or taller than the printer
@@ -68,7 +73,7 @@ export function SliceBlock({ label = 'Slice plate' }: { label?: string; compact?
   // With Auto slice on there is no Slice button: Print is the action, ready once the background slice is current. It
   // opens the Print sheet on that printer; without one it shows the preview, where the G-code export lives. An
   // export-only printer's action is Export G-code.
-  const primary = !auto && !(done && !done.stale) ? (
+  const primary = (!auto || held) && !(done && !done.stale) ? (
     <Button variant="primary" size="lg" full icon="slice" data-testid="slice-estimate-slice" disabled={plate.length === 0 || loading} {...(loading ? { tip: { title: label, reason: 'The model is still loading.' } } : {})} onClick={() => void slicePlate(host).then(() => get().slice.status === 'done' && showSliced())}>
       {done && !done.stale ? 'Slice again' : label}
     </Button>
@@ -88,7 +93,7 @@ export function SliceBlock({ label = 'Slice plate' }: { label?: string; compact?
     </SplitButton>
   )
   // With Auto slice off and a current slice, Slice again sits on the estimate line as a quiet button.
-  const again = !auto && done && !done.stale && !running ? (
+  const again = (!auto || held) && done && !done.stale && !running ? (
     <Button size="sm" variant="ghost" icon="slice" className="est-again" data-testid="slice-estimate-slice" onClick={() => void slicePlate(host).then(() => get().slice.status === 'done' && showSliced())}>
       Slice again
     </Button>
@@ -131,7 +136,7 @@ export function SliceBlock({ label = 'Slice plate' }: { label?: string; compact?
     const stageLine = progress ? `Slicing: ${progress.stage}` : 'Slicing'
     return (
       <div className="slice-lite" data-section="estimate" data-testid="slice-estimate">
-        <p className="est-line">{running ? stageLine : plate.length ? (auto ? 'Time, filament and cost appear after the first slice.' : 'Slice to see time, filament and cost.') : 'Add a model to the plate.'}</p>
+        <p className="est-line" {...(held && !running ? { 'data-testid': 'slice-estimate-held' } : {})}>{running ? stageLine : plate.length ? (held ? HELD_LINE : auto ? 'Time, filament and cost appear after the first slice.' : 'Slice to see time, filament and cost.') : 'Add a model to the plate.'}</p>
         {running ? track : primary}
         {problems}
       </div>
@@ -164,15 +169,20 @@ export function SliceBlock({ label = 'Slice plate' }: { label?: string; compact?
             {warnings} {warnings === 1 ? 'warning' : 'warnings'}
           </button>
         ) : null}
-        {done.stale ? <span className="app-tag stale">{auto ? 'Updating' : 'Settings changed'}</span> : null}
+        {done.stale ? <span className="app-tag stale">{auto && !held ? 'Updating' : 'Settings changed'}</span> : null}
         {again}
       </div>
+      {held && done.stale && !running ? (
+        <p className="est-line est-held" data-testid="slice-estimate-held">
+          {HELD_LINE}
+        </p>
+      ) : null}
       {running && auto ? (
         <div className="slicing-edge" role="status" aria-label="Slicing">
           <i style={{ transform: `scaleX(${Math.max(0.04, sliceFraction(progress))})` }} />
         </div>
       ) : null}
-      {running && !auto ? track : primary}
+      {running && (!auto || held) ? track : primary}
       {problems}
       {sliceNote ? <p className="app-note">{sliceNote}</p> : null}
     </div>
