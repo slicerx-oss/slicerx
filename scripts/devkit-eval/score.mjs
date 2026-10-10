@@ -172,10 +172,13 @@ function scoreEngine({ app, turns, transcript, persona, spawnSync }) {
   const inBrowser = code.find((f) => !isNode(f) && runsSx(f.text))
   check('runs sx on a request from a Node process', sx && !inBrowser, [sx?.path, inBrowser ? `browser: ${inBrowser.path}` : ''].filter(Boolean).join(', '))
   check('shows the preview and the numbers', all(/preview=|\.preview\s*=/) && all(/sxpv|files\.preview/i) && all(/timeS|filamentG/))
+  // Printing through the bridge with the partner key: a print card with its work, the hub's hello checked, no approving.
+  const bridge = node.find((f) => /approvals\.register/.test(f.text) && /work/.test(f.text) && /clientKey/.test(f.text))
+  check('asks to print through the bridge with the partner key', bridge && node.some((f) => /sx-link hello v2|hub-key\.pub/.test(f.text)), bridge?.path)
+  check('never approves a print and keeps the key out of the code', !code.some((f) => /approvals\.grant/.test(f.text) && /printer\.start/.test(f.text) && !/pause|cancel/.test(f.text)) && !src.some((f) => /sxp_[0-9a-f]{16,}/.test(f.text)) && all(/PRINTBAY_PARTNER_KEY/))
   check('sliced once to check it', ran.some((c) => /curl|fetch|node\s/.test(c) && /slice/i.test(c)) || ran.some((c) => /\bsx\b.*slice/.test(c)))
   const unasked = [
     ['MCP slicing', /slicerx_slice_file|StdioClientTransport/],
-    ['printers', /slicerx_printer_queue|sx-link/],
     ['locked', /sealSxlock|openSxlock|slicerx_sxlock_/],
     ['settings panel', /<SettingsPanel\b|sx-settings-panel/],
   ].filter(([, re]) => all(re))
