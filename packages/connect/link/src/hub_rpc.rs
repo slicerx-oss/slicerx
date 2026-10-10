@@ -209,14 +209,9 @@ pub(crate) fn record(b: &Arc<Bridge>, id: &str, st: &PrinterStatus) {
         b.hub.mark_dirty();
     }
     let (alert, prev) = b.hub.alert(st);
-    let running = matches!(st.state, PrinterState::Preparing | PrinterState::Printing);
-    if running
-        && matches!(
-            prev,
-            Some(PrinterState::Idle | PrinterState::Finished | PrinterState::Error)
-        )
-    {
-        // The hub marks its own starts as printing when it makes them, so this is someone else's.
+    // The hub's own starts were checked before they went out (`guard::before_start`), and "start
+    // anyway" means start: only a print someone else began gets the check here.
+    if b.hub.began_elsewhere(id, prev, st.state) {
         tokio::spawn(crate::guard::job_began(b.clone(), id.to_owned()));
     }
     crate::guard::observed(b, id, prev, st.state);
