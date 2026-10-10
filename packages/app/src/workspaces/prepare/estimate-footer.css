@@ -22,3 +22,5 @@
 .est-slots li b { font: var(--fw-medium) var(--fs-sm) var(--f-mono); }
 .est-breakdown .est-grid { margin: 0; }
 .slice-done .est-again { flex: none; }
+/* On the narrowest phones Slice again is its icon, so the estimate keeps its line. */
+@media (max-width: 400px) { .slice-done .est-again-label { display: none; } }
