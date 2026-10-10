@@ -146,6 +146,9 @@ pub struct SliceSession {
     seam_faces: Vec<crate::seam::SeamFace>,
     /// Painted fuzzy skin pieces in plate coordinates, by the index of the part they are on (state 1 is painted).
     fuzzy_paint: Vec<(usize, crate::paint::Facets)>,
+    /// Objects with painted parts: their parts (indexes into `parts`) and the paint of all of them. Color is cut
+    /// on the union of an object's parts, so a face where two parts meet is no outline and carries no color.
+    painted_objects: Vec<PaintedObject>,
     /// The objects printed after this one when the plate prints by object; each is a session of
     /// its own, so it has its own layers, supports and first layer.
     followers: Vec<SliceSession>,
@@ -748,6 +751,40 @@ impl Clone for WholeRegions {
     }
 }
 
+/// An object with painted parts: its parts (indexes into the session's parts) and the paint of all of them.
+#[derive(Debug, Clone)]
+struct PaintedObject {
+    parts: Vec<usize>,
+    paint: crate::paint::Facets,
+}
+
+impl PaintedObject {
+    /// The objects among `parts` (`object` gives each part's) that have any painted part.
+    fn of(parts: &[PreparedPart], object: &[usize]) -> Vec<Self> {
+        let mut out: Vec<(usize, Self)> = Vec::new();
+        for (k, p) in parts.iter().enumerate() {
+            let Some(&o) = object.get(k) else { continue };
+            match out.iter_mut().find(|(id, _)| *id == o) {
+                Some((_, obj)) => {
+                    obj.parts.push(k);
+                    obj.paint.extend(p.paint.iter().copied());
+                }
+                None => out.push((
+                    o,
+                    Self {
+                        parts: vec![k],
+                        paint: p.paint.clone(),
+                    },
+                )),
+            }
+        }
+        out.into_iter()
+            .filter(|(_, obj)| !obj.paint.is_empty())
+            .map(|(_, obj)| obj)
+            .collect()
+    }
+}
+
 /// Scanline families for one layer.
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct Families {
@@ -1256,7 +1293,9 @@ impl SliceSession {
         let mut object_heights: Vec<f64> = Vec::with_capacity(plate.objects.len());
         // Each object's footprint and top, to refuse one that cannot fit before anything is sliced.
         let mut extents: Vec<(&str, [f64; 4], f64)> = Vec::with_capacity(plate.objects.len());
-        for obj in &plate.objects {
+        // The object of each part in `raw`.
+        let mut part_object: Vec<usize> = Vec::new();
+        for (obj_index, obj) in plate.objects.iter().enumerate() {
             let (mut lo, mut hi) = (f64::MAX, f64::MIN);
             let mut oxy = [f64::MAX, f64::MAX, f64::MIN, f64::MIN];
             for part in &obj.mesh.parts {
@@ -1309,6 +1348,7 @@ impl SliceSession {
                     ));
                 }
                 raw.push((slot, verts, tris, paint));
+                part_object.push(obj_index);
             }
             object_heights.push(if hi >= lo { hi - lo.max(0.0) } else { 0.0 });
             if hi >= lo {
@@ -1406,6 +1446,7 @@ impl SliceSession {
         let parts: Vec<PreparedPart> = par::map_owned(raw, |(slot, v, t, paint)| {
             PreparedPart::new(slot, v, t, &plan).with_paint(paint)
         });
+        let painted_objects = PaintedObject::of(&parts, &part_object);
         let mut volumes = Vec::new();
         let mut volume_settings: Vec<serde_json::Value> = Vec::new();
         for obj in &plate.objects {
@@ -1526,6 +1567,7 @@ impl SliceSession {
             painted_supports,
             seam_faces,
             fuzzy_paint,
+            painted_objects,
             followers: Vec::new(),
             object_settings: Vec::new(),
             interleave: false,
@@ -5447,14 +5489,41 @@ impl SliceSession {
         // booleans leave where colors meet (`LayerRegions::drop_specks`).
         let mut colors = false;
         let cut: crate::paint::CutKey = (fam.resolution, fam.slicing, fam.closing);
-        for (k, p) in self.parts.iter().enumerate().filter(|(_, p)| !p.paint.is_empty()) {
-            loops.clear();
-            open_chains += p.slice(layer as usize, z, &mut loops);
-            if loops.is_empty() {
+        let in_painted: Vec<bool> = {
+            let mut v = vec![false; self.parts.len()];
+            for o in &self.painted_objects {
+                for &k in &o.parts {
+                    if let Some(f) = v.get_mut(k) {
+                        *f = true;
+                    }
+                }
+            }
+            v
+        };
+        for (o, obj) in self.painted_objects.iter().enumerate() {
+            // Each part's outline, then their union: the outline the paint splits (Bambu Studio's color segmentation
+            // works on the object's merged layer outline, so a face where two parts meet is not on it).
+            let mut own: Vec<(u8, Shapes)> = Vec::with_capacity(obj.parts.len());
+            for &k in &obj.parts {
+                let Some(p) = self.parts.get(k) else { continue };
+                loops.clear();
+                open_chains += p.slice(layer as usize, z, &mut loops);
+                if loops.is_empty() {
+                    continue;
+                }
+                own.push((
+                    p.slot,
+                    perimeters::shapes_from_loops_mode(&loops, fam.resolution, fam.slicing, fam.closing),
+                ));
+            }
+            if own.is_empty() {
                 continue;
             }
-            let shapes =
-                &perimeters::shapes_from_loops_mode(&loops, fam.resolution, fam.slicing, fam.closing);
+            let merged = if own.len() == 1 {
+                own.first().map(|(_, s)| s.clone()).unwrap_or_default()
+            } else {
+                perimeters::union_all(&own.iter().map(|(_, s)| s).collect::<Vec<_>>())
+            };
             // The layers around read the whole plate's outline: a painted face another part covers is no surface.
             let contour_at = |l: i64| -> Shapes {
                 u32::try_from(l)
@@ -5465,29 +5534,32 @@ impl SliceSession {
             let step = |j: usize| i64::try_from(j).unwrap_or(i64::MAX / 2);
             let above: Vec<Shapes> = (1..=fam.top_shell).map(|j| contour_at(l + step(j))).collect();
             let below: Vec<Shapes> = (1..=fam.bottom_shell).map(|j| contour_at(l - step(j))).collect();
+            // Slot 0 marks what no paint claims; the parts' own filaments take it below.
             let ctx = crate::paint::LayerPaint {
-                default_slot: p.slot,
-                shapes,
+                default_slot: 0,
+                shapes: &merged,
                 layer,
                 z,
                 plan: &self.plan,
                 above: &above,
                 below: &below,
-                facets: &p.paint,
+                facets: &obj.paint,
                 step: fam.paint_step,
                 small: fam.paint_small,
-                memo: Some((&self.paint, k, cut)),
+                memo: Some((&self.paint, self.parts.len() + o, cut)),
             };
-            let mut split = ctx.split();
-            if split.iter().any(|(slot, _)| *slot != p.slot) {
-                for (_, sh) in &mut split {
-                    *sh = perimeters::union_min_area(&[sh], crate::paint::SPECK);
+            let split = ctx.split();
+            let mut free: Vec<Shapes> = Vec::new();
+            let mut colored: Vec<(u8, Shapes)> = Vec::new();
+            for (slot, sh) in split {
+                if slot == 0 {
+                    free.push(sh);
+                } else {
+                    colored.push((slot, sh));
                 }
-                split.retain(|(_, sh)| !sh.is_empty());
             }
-            colors |= split.iter().any(|(slot, _)| *slot != p.slot);
             // `mmu_segmented_region_max_width` (Orca's `cut_segmented_layers`): painted colors reach only this far
-            // in from the outline, the rest is the part's own filament; with an interlocking depth, even layers
+            // in from the outline, the rest is the parts' own filaments; with an interlocking depth, even layers
             // use that depth instead, so the colors interlock.
             let (width, depth) = fam.paint_band;
             let band = if layer.is_multiple_of(2) && depth > 0 {
@@ -5495,29 +5567,55 @@ impl SliceSession {
             } else {
                 width
             };
-            if band > 0 && split.iter().any(|(slot, _)| *slot != p.slot) {
-                let core = perimeters::offset(shapes, -band);
-                let mut moved: Vec<Shapes> = Vec::new();
-                for (_, sh) in split.iter_mut().filter(|(slot, _)| *slot != p.slot) {
-                    moved.push(perimeters::intersection(sh, &core));
+            if band > 0 && !colored.is_empty() {
+                let core = perimeters::offset(&merged, -band);
+                for (_, sh) in &mut colored {
+                    free.push(perimeters::intersection(sh, &core));
                     *sh = perimeters::difference(sh, &core);
                 }
-                let mut own: Vec<&Shapes> = moved.iter().collect();
-                let rest: Vec<Shapes> = split
-                    .iter()
-                    .filter(|(slot, _)| *slot == p.slot)
-                    .map(|(_, sh)| sh.clone())
-                    .collect();
-                own.extend(rest.iter());
-                let own = perimeters::union_all(&own);
-                split.retain(|(slot, sh)| *slot != p.slot && !sh.is_empty());
-                split.push((p.slot, own));
             }
-            painted.extend(split);
+            colored.retain(|(_, sh)| !sh.is_empty());
+            let free = match free.len() {
+                0 => Vec::new(),
+                1 => free.pop().unwrap_or_default(),
+                _ => perimeters::union_all(&free.iter().collect::<Vec<_>>()),
+            };
+            // What no paint claims prints in the filament of the part it lies in. Paint, whatever part it lies in,
+            // joins the other areas of its filament as one region (Bambu Studio prints a filament painted across
+            // several parts as one region, walled only where the filament changes).
+            let mut pieces = colored;
+            if !free.is_empty() {
+                if own.len() == 1 {
+                    if let Some((slot, _)) = own.first() {
+                        pieces.push((*slot, free));
+                    }
+                } else {
+                    for (slot, sh) in &own {
+                        let piece = perimeters::intersection(&free, sh);
+                        if !piece.is_empty() {
+                            pieces.push((*slot, piece));
+                        }
+                    }
+                }
+            }
+            let first = pieces.first().map(|(s, _)| *s);
+            if pieces.iter().any(|(slot, _)| Some(*slot) != first) {
+                colors = true;
+                for (_, sh) in &mut pieces {
+                    *sh = perimeters::union_min_area(&[sh], crate::paint::SPECK);
+                }
+                pieces.retain(|(_, sh)| !sh.is_empty());
+            }
+            painted.extend(pieces);
         }
         for &slot in &self.slots {
             loops.clear();
-            for p in self.parts.iter().filter(|p| p.slot == slot && p.paint.is_empty()) {
+            for (_, p) in self
+                .parts
+                .iter()
+                .enumerate()
+                .filter(|(k, p)| p.slot == slot && !in_painted.get(*k).copied().unwrap_or(false))
+            {
                 open_chains += p.slice(layer as usize, z, &mut loops);
             }
             let mut shapes = if loops.is_empty() {
