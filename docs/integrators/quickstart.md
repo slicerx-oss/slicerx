@@ -197,6 +197,23 @@ Without React, use the custom element and set its `preview` property:
 
 The preview shows toolpaths, so it works for every input format.
 
+### Prepare the plate
+
+With `tools`, the viewport is a Prepare step: a toolbar over the view with select, move, rotate, scale, arrange and drop to bed, and the keys M, R, S and A. Pass the plate, and store each transform when a move ends, so the next `plate` you pass keeps it. Then write the transforms into the project you slice.
+
+```tsx
+<Viewport
+  plate={plate}
+  tools
+  onTransform={({ id, transform, final }) => final && setPlate((p) => withTransform(p, id, transform))}
+  onSelect={(ids) => setSelected(ids)}
+/>
+```
+
+`tools` also takes a list, such as `['move', 'rotate', 'arrange']`. `tool` and `selection` make the active tool and the selection yours to control. Drop to bed sets the selection down, or every object when nothing is selected. Without React: `<sx-viewport tools>`, the `transform`, `select` and `tool` events, and the `arrange()` and `dropToBed()` methods.
+
+The plate reveal (the outline traced and the grid laid) plays on the first plate. `reveal="each-plate"` plays it for every new plate, such as each job, and `playReveal()` plays it when you ask. `bedOutline="subtle"` draws a thinner, quieter bed outline for a calm theme, and `look="cad"` draws parts in a neutral gray with dark edges.
+
 ### Let the user change settings
 
 `SettingsPanel` (or `<sx-settings-panel>`) is SlicerX's settings panel, in Easy or Advanced mode. Its change event carries `overrides` keyed by OrcaSlicer setting names, which you pass straight to `slicerx_slice_file` as `overrides`.

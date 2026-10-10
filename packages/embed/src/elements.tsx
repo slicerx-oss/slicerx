@@ -4,13 +4,14 @@
 // the React piece into its own shadow root with the embed styles.
 import type { PrintConfig } from '@slicerx/contracts'
 import type { Theme } from '@slicerx/ui'
-import type { ColorMode, PlateStyle, RenderMode, ToolpathFinish, ViewPreset, ViewportPlate, ViewportTheme } from '@slicerx/viewport'
+import type { BedOutline, ColorMode, PlateStyle, RenderMode, ToolpathFinish, ViewPreset, Viewport as Handle, ViewportPlate, ViewportTheme } from '@slicerx/viewport'
 import { createRoot, type Root } from 'react-dom/client'
 import { Agreement } from './agreement'
 import { decodeQuantized, decodeStl } from './mesh'
 import { SettingsPanel, type SettingsChange } from './settings-panel'
 import { EMBED_CSS } from './styles'
 import { EmbedTheme } from './theme'
+import { EMBED_ACTIONS, type EmbedAction, type EmbedTool } from './tools'
 import { Viewport } from './viewport'
 
 // Server rendering (Next.js and the like) imports this module where HTMLElement does not exist.
@@ -22,16 +23,24 @@ function themeOf(el: HTMLElement, own: Theme | null): Theme | 'dark' | 'light' {
   return el.getAttribute('theme') === 'light' ? 'light' : 'dark'
 }
 
-const LOOKS: readonly string[] = ['studio', 'clay', 'xray', 'overhang', 'filament']
+const LOOKS: readonly string[] = ['studio', 'clay', 'xray', 'overhang', 'filament', 'cad']
 const COLORS: readonly string[] = ['feature', 'tool', 'speed', 'flow', 'layerTime']
 const VIEWS: readonly string[] = ['iso', 'top', 'front', 'fit']
 const FINISHES: readonly string[] = ['matte', 'satin', 'glossy', 'silk'] satisfies ToolpathFinish[]
 const PLATE_STYLES: readonly string[] = ['grid', 'textured-pei', 'smooth-pei', 'cool', 'engineering'] satisfies PlateStyle[]
+const TOOLS: readonly string[] = ['select', 'move', 'rotate', 'scale'] satisfies EmbedTool[]
+
+/** The tools attribute: present (empty or "true") for every tool, or a list such as "move rotate arrange". */
+export function toolsAttr(value: string | null): boolean | EmbedAction[] {
+  if (value === null || value === 'false') return false
+  const list = value.split(/[\s,]+/).filter((a): a is EmbedAction => (EMBED_ACTIONS as readonly string[]).includes(a))
+  return list.length ? list : value.trim() === '' || value === 'true'
+}
 
 function shadow(host: HTMLElement): { root: Root; mount: HTMLElement } {
   const sr = host.attachShadow({ mode: 'open' })
   const style = document.createElement('style')
-  style.textContent = `${EMBED_CSS}\n:host { display: block; }\n.sxe-viewport { height: 100%; }`
+  style.textContent = `${EMBED_CSS}\n:host { display: block; }\n.sx-theme-scope, .sxe-viewport { height: 100%; }`
   const mount = document.createElement('div')
   mount.style.height = '100%'
   sr.append(style, mount)
@@ -59,8 +68,10 @@ async function plateFrom(url: string): Promise<ViewportPlate> {
 }
 
 class SxViewportElement extends Base {
-  static observedAttributes = ['src', 'look', 'color-mode', 'view', 'layer', 'theme', 'finish', 'plate-style']
+  static observedAttributes = ['src', 'look', 'color-mode', 'view', 'layer', 'theme', 'finish', 'plate-style', 'tools', 'tool', 'reveal', 'bed-outline']
   #root: Root | null = null
+  #vp: Handle | null = null
+  #selection: string[] | undefined
   #plate: ViewportPlate | null = null
   #preview: ArrayBuffer | null = null
   #theme: Theme | null = null
@@ -109,6 +120,28 @@ class SxViewportElement extends Base {
     this.#render()
   }
 
+  /** Selected object ids. Unset, the view keeps its own selection; a `select` event reports each change. */
+  get selection(): string[] | undefined {
+    return this.#selection
+  }
+  set selection(ids: string[] | undefined) {
+    this.#selection = ids
+    this.#render()
+  }
+
+  /** Plays the plate reveal again, for a plate the host calls new. False when this view does not play it. */
+  playReveal(): boolean {
+    return this.#vp?.playReveal() ?? false
+  }
+  /** Spreads every model out on the plate; `transform` events follow. */
+  arrange(): void {
+    this.#vp?.arrange({ animate: true })
+  }
+  /** Sets models down on the bed: these ids, or every model. `transform` events follow. */
+  dropToBed(ids?: string[]): void {
+    this.#vp?.dropToBed?.(ids)
+  }
+
   connectedCallback(): void {
     this.#root ??= shadow(this).root
     this.#render()
@@ -117,6 +150,7 @@ class SxViewportElement extends Base {
   disconnectedCallback(): void {
     this.#root?.unmount()
     this.#root = null
+    this.#vp = null
   }
 
   attributeChangedCallback(name: string): void {
@@ -144,6 +178,8 @@ class SxViewportElement extends Base {
     // finish="silk" for every slot, or one per slot: finish="satin silk matte".
     const finishes = (this.getAttribute('finish') ?? '').split(/[\s,]+/).filter((f): f is ToolpathFinish => FINISHES.includes(f))
     const plateStyle = this.getAttribute('plate-style') ?? ''
+    const tool = this.getAttribute('tool') ?? ''
+    const reveal = this.getAttribute('reveal')
     this.#root.render(
       <EmbedTheme theme={themeOf(this, this.#theme)}>
       <Viewport
@@ -158,6 +194,19 @@ class SxViewportElement extends Base {
         {...(this.#toolColors ? { toolColors: this.#toolColors } : {})}
         {...(finishes.length ? { toolFinishes: finishes } : {})}
         {...(PLATE_STYLES.includes(plateStyle) ? { plateStyle: plateStyle as PlateStyle } : {})}
+        tools={toolsAttr(this.getAttribute('tools'))}
+        {...(TOOLS.includes(tool) ? { tool: tool as EmbedTool } : {})}
+        reveal={reveal === 'each-plate' ? 'each-plate' : reveal !== 'off' && reveal !== 'false'}
+        bedOutline={(this.getAttribute('bed-outline') === 'subtle' ? 'subtle' : 'default') as BedOutline}
+        {...(this.#selection ? { selection: this.#selection } : {})}
+        onReady={(vp) => (this.#vp = vp)}
+        onToolChange={(t) => {
+          // a tool attribute follows the toolbar, so the page reads the tool in use from it
+          if (this.hasAttribute('tool')) this.setAttribute('tool', t)
+          this.dispatchEvent(new CustomEvent('tool', { detail: t }))
+        }}
+        onSelect={(ids) => this.dispatchEvent(new CustomEvent('select', { detail: ids }))}
+        onTransform={(e) => this.dispatchEvent(new CustomEvent('transform', { detail: e }))}
         onPick={(e) => this.dispatchEvent(new CustomEvent('pick', { detail: e }))}
         onError={(e) => this.dispatchEvent(new CustomEvent('error', { detail: e.message }))}
       />

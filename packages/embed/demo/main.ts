@@ -20,6 +20,11 @@ const url = URL.createObjectURL(new Blob([stl], { type: 'model/stl' }))
 document.getElementById('vp')?.setAttribute('src', `${url}#bracket.stl`)
 
 const out = document.getElementById('out')
+// the page keeps each object's transform when a move ends, as an app would store it in its plate
+document.getElementById('vp')?.addEventListener('transform', (e) => {
+  const { id, transform, final } = (e as CustomEvent<{ id: string; transform: number[]; final: boolean }>).detail
+  if (final && out) out.textContent = JSON.stringify({ moved: id, x: transform[12]?.toFixed(1), y: transform[13]?.toFixed(1), z: transform[14]?.toFixed(1) }, null, 2)
+})
 document.getElementById('settings')?.addEventListener('change', (e) => {
   const { config } = (e as CustomEvent<{ config: Record<string, unknown> }>).detail
   const keys = ['layer_height', 'wall_loops', 'sparse_infill_density', 'outer_wall_speed', 'enable_support', 'brim_width']

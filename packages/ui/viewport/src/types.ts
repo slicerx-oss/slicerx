@@ -44,6 +44,9 @@ export type ToolpathFinish = 'matte' | 'satin' | 'glossy' | 'silk'
 /** The bed under the print: the outline and grid only, or a build plate surface under them. */
 export type PlateStyle = 'grid' | 'textured-pei' | 'smooth-pei' | 'cool' | 'engineering'
 
+/** How strong the bed outline is: `default` is a crisp glowing line, `subtle` a thin half strength one for calm themes. */
+export type BedOutline = 'default' | 'subtle'
+
 /** Preview data beyond SXPV v1. Per-segment arrays follow the segment order of the buffer. */
 export interface PreviewExtras {
   /** Fan speed, 0 to 100, per segment. */
@@ -567,6 +570,8 @@ export interface Viewport {
   pickFace(clientX: number, clientY: number): FacePick | null
   /** Packs objects on the bed and emits `transform` events. Returns the new transforms. */
   arrange(opts?: { animate?: boolean; gapMm?: number }): Record<string, number[]>
+  /** Sets objects down on the bed, their lowest point at Z 0, and emits `transform` events. Every object when `ids` is omitted. Returns the new transforms. */
+  dropToBed?(ids?: readonly string[]): Record<string, number[]>
   view(preset: ViewPreset, opts?: { animate?: boolean }): void
   /** Frame the selection, or every model when nothing is selected. Animated by default. */
   zoomToSelection(opts?: { animate?: boolean }): void
@@ -635,6 +640,8 @@ export interface Viewport {
   setToolFinishes?(finishes: ToolpathFinish[]): void
   /** The bed under the print: `grid` (the default) or a build plate surface (textured or smooth PEI, cool, engineering). */
   setPlateStyle?(style: PlateStyle): void
+  /** The bed outline's strength: `default` or `subtle`. */
+  setBedOutline?(style: BedOutline): void
   /** The printer family's toolhead for a printer with one nozzle (`headFor` maps a profile id to it). */
   setHeadModel(model: HeadModel): void
   /** The printer's tool changer: the toolhead, rack or dock Preview draws. Null draws the printer's own single head. */
