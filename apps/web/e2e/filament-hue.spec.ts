@@ -28,9 +28,9 @@ function hsv(hex: string): { h: number; s: number } {
  * The model's pixels in the view: those that differ from the same view with the plate empty. For each, its hue's
  * distance from `hue` (colored pixels only: lit, saturation above 0.2) and its saturation (lit pixels).
  */
-async function measure(page: Page, withModel: string, without: string, after: string, hue: number): Promise<{ n: number; hueDev: number[]; sat: number[]; moving: number }> {
+async function measure(page: Page, withModel: string, again: string, without: string, after: string, hue: number): Promise<{ n: number; hueDev: number[]; sat: number[]; moving: number }> {
   return page.evaluate(
-    async ({ withModel, without, after, hue }) => {
+    async ({ withModel, again, without, after, hue }) => {
       const load = async (b64: string) => {
         const img = new Image()
         img.src = `data:image/png;base64,${b64}`
@@ -45,6 +45,7 @@ async function measure(page: Page, withModel: string, without: string, after: st
       const a = await load(withModel)
       const b = await load(without)
       const c = await load(after)
+      const a2 = await load(again)
       const hueDev: number[] = []
       const sat: number[] = []
       let n = 0
@@ -53,7 +54,9 @@ async function measure(page: Page, withModel: string, without: string, after: st
         const d = Math.abs(a[i]! - b[i]!) + Math.abs(a[i + 1]! - b[i + 1]!) + Math.abs(a[i + 2]! - b[i + 2]!)
         if (d < 30) continue
         // the view without the model, before and after: where they differ, something else moved, not the model
-        if (Math.abs(b[i]! - c[i]!) + Math.abs(b[i + 1]! - c[i + 1]!) + Math.abs(b[i + 2]! - c[i + 2]!) >= 30) {
+        // and the view with the model, shot twice: where those differ, something passed over it (a toast, a fade)
+        const still = (x: Uint8ClampedArray, y: Uint8ClampedArray) => Math.abs(x[i]! - y[i]!) + Math.abs(x[i + 1]! - y[i + 1]!) + Math.abs(x[i + 2]! - y[i + 2]!) < 30
+        if (!still(b, c) || !still(a, a2)) {
           moving++
           continue
         }
@@ -73,7 +76,7 @@ async function measure(page: Page, withModel: string, without: string, after: st
       }
       return { n, hueDev, sat, moving }
     },
-    { withModel, without, after, hue },
+    { withModel, again, without, after, hue },
   )
 }
 
@@ -111,6 +114,8 @@ for (const scheme of ['dark', 'light'] as const) {
     await page.goto('./')
     await plateReady(page)
     await viewportReady(page)
+    // a toast floats over the view (on a runner without a GPU, the hardware acceleration note); it is not the model
+    await page.addStyleTag({ content: '.sx-toasts { display: none !important; }' })
     const rows: string[] = []
     const vp = page.locator('.vp-canvas')
     const file = 'x-mark-showcase.stl'
@@ -156,19 +161,21 @@ for (const scheme of ['dark', 'light'] as const) {
       await page.waitForTimeout(600)
       const without = (await vp.screenshot()).toString('base64')
       await shown(true)
-      const shots: [string, string, string][] = []
+      const shots: [string, string, string, string][] = []
       for (const [name, hex] of Object.entries(COLORS)) {
         await paint(hex)
         await page.waitForTimeout(600)
-        shots.push([name, hex, (await vp.screenshot()).toString('base64')])
+        const first = (await vp.screenshot()).toString('base64')
+        await page.waitForTimeout(300)
+        shots.push([name, hex, first, (await vp.screenshot()).toString('base64')])
       }
       await shown(false)
       await page.waitForTimeout(600)
       const after = (await vp.screenshot()).toString('base64')
       await shown(true)
-      for (const [name, hex, withModel] of shots) {
+      for (const [name, hex, withModel, again] of shots) {
         const target = hsv(hex)
-        const m = await measure(page, withModel, without, after, target.h)
+        const m = await measure(page, withModel, again, without, after, target.h)
         const colored = target.s > 0.3
         const lo = pct(m.hueDev, 0.02)
         const hi = pct(m.hueDev, 0.98)
