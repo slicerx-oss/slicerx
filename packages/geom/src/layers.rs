@@ -396,14 +396,22 @@ fn march(dem: &Demand, top_z: f64, bounds: LayerBounds, o: &LayerOptions) -> Vec
     tops
 }
 
+/// Ends the plan exactly on the model's top: a layer marched past it is dropped, what is left goes to the layers
+/// below while they stay within the bounds, and the rest becomes the last layer without leaving a sliver
+/// (see [`finish_top`]). The first layer is never changed.
 fn reach_top(tops: &mut Vec<f64>, top_z: f64, bounds: LayerBounds, step: f64) {
+    while tops.len() > 1 && tops.last().is_some_and(|&t| t > top_z + 1e-9) {
+        tops.pop();
+    }
     let Some(&last) = tops.last() else { return };
     let mut short = top_z - last;
     if short <= 1e-9 {
+        if tops.len() > 1
+            && let Some(t) = tops.last_mut()
+        {
+            *t = top_z;
+        }
         return;
-    }
-    if step > 0.0 {
-        short = (short / step - 1e-9).ceil() * step;
     }
     let mut hs = heights(tops);
     let unit = if step > 0.0 { step } else { short / 8.0 };
@@ -428,7 +436,33 @@ fn reach_top(tops: &mut Vec<f64>, top_z: f64, bounds: LayerBounds, step: f64) {
         *t = z;
     }
     if short > 1e-9 {
-        tops.push(z + short.max(bounds.min_mm));
+        finish_top(tops, short, top_z, bounds);
+    } else if tops.len() > 1
+        && let Some(t) = tops.last_mut()
+    {
+        *t = top_z;
+    }
+}
+
+/// The last `short` mm up to `top_z`. A remainder of at least about three quarters of the layer below (and the
+/// least height) is its own layer. A thinner one is folded into the layer below when that stays within the
+/// greatest height; otherwise the last two layers share the height evenly.
+fn finish_top(tops: &mut Vec<f64>, short: f64, top_z: f64, bounds: LayerBounds) {
+    let n = tops.len();
+    let below = if n > 1 { tops[n - 2] } else { 0.0 };
+    let h_last = tops[n - 1] - below;
+    if n == 1 || short >= (0.75 * h_last).max(bounds.min_mm) - 1e-9 {
+        tops.push(top_z);
+    } else if h_last + short <= bounds.max_mm + 1e-9 {
+        tops[n - 1] = top_z;
+    } else {
+        let half = (top_z - below) / 2.0;
+        if half >= bounds.min_mm - 1e-9 {
+            tops[n - 1] = below + half;
+            tops.push(top_z);
+        } else {
+            tops[n - 1] = top_z;
+        }
     }
 }
 
@@ -713,7 +747,7 @@ mod tests {
         let mid = &p.heights_mm[4..p.heights_mm.len() - 26];
         assert!(mid.iter().all(|&h| (h - 0.2).abs() < 1e-9), "{mid:?}");
         assert!(*p.heights_mm.last().unwrap() < 0.2);
-        assert!(p.overshoot_mm >= -1e-9 && p.overshoot_mm < 0.1);
+        assert!(p.overshoot_mm == 0.0, "{}", p.overshoot_mm);
     }
 
     #[test]
@@ -759,12 +793,8 @@ mod tests {
                 for mode in [LayerMode::Quality, LayerMode::Strength] {
                     let p = plan_layers(&b, 0.4, mode, &o).unwrap();
                     let top = *p.layer_tops_mm.last().unwrap();
-                    assert!(top >= h - 1e-9, "h {h} step {step}: top {top}");
-                    assert!(
-                        p.overshoot_mm < p.bounds.min_mm + 1e-9,
-                        "h {h} step {step}: {}",
-                        p.overshoot_mm
-                    );
+                    assert!(top.to_bits() == h.to_bits(), "h {h} step {step}: top {top}");
+                    assert!(p.overshoot_mm == 0.0, "h {h} step {step}: {}", p.overshoot_mm);
                     assert_within(&p);
                 }
             }
