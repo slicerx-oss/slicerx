@@ -40,8 +40,16 @@ export function createWebFiles(): FileHost {
         input.type = 'file'
         input.accept = accept.join(',')
         input.multiple = multiple ?? false
-        input.addEventListener('change', () => resolve([...(input.files ?? [])].map(remember)))
-        input.addEventListener('cancel', () => resolve([]))
+        // In the document, hidden, until the dialog answers: an input nothing holds can be garbage collected while the
+        // dialog is open, and the pick is then lost (no change event comes).
+        input.hidden = true
+        const done = (refs: FileRef[]) => {
+          input.remove()
+          resolve(refs)
+        }
+        input.addEventListener('change', () => done([...(input.files ?? [])].map(remember)))
+        input.addEventListener('cancel', () => done([]))
+        document.body.append(input)
         input.click()
       })
     },
