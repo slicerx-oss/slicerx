@@ -94,6 +94,34 @@ test.afterAll(async () => {
   await stopMocks?.()
 })
 
+// Every toast's text as it is drawn, gone or not: a note is on screen for a few seconds, and a busy runner can take
+// longer than that between the click that posts it and the first look (the Printers tab mounting under it, say).
+test.beforeEach(async ({ page }) => {
+  await page.addInitScript(() => {
+    const seen: string[] = []
+    const drawn = new WeakSet<Element>()
+    Object.assign(window, { __toasts: seen })
+    new MutationObserver(() => {
+      for (const el of document.querySelectorAll('[data-testid="toast"]')) {
+        if (drawn.has(el) || !el.textContent) continue
+        drawn.add(el)
+        seen.push(el.textContent)
+      }
+    }).observe(document, { childList: true, subtree: true, characterData: true })
+  })
+})
+
+/** How many toasts drawn on this page so far read `has`. */
+async function toastsWith(page: Page, has: RegExp): Promise<number> {
+  const all = await page.evaluate(() => (window as unknown as { __toasts?: string[] }).__toasts ?? [])
+  return all.filter((t) => has.test(t)).length
+}
+
+/** Waits for a toast reading `has`, the first one, or one more than `after` when given. */
+async function sawToast(page: Page, has: RegExp, { after = 0, timeout = 15_000 }: { after?: number; timeout?: number } = {}): Promise<void> {
+  await expect.poll(() => toastsWith(page, has), { message: `a toast reading ${has}`, timeout }).toBeGreaterThan(after)
+}
+
 async function seed(page: Page): Promise<void> {
   // Setup already done, as after any first launch: printer setup opened by a test then records no unfinished onboarding
   // that a reload would open again.
@@ -354,7 +382,7 @@ test('sends a sliced plate with the preflight and an approval, and the printer r
   // Errors from the preflight would keep the button disabled; say what they were.
   if (await go.isDisabled()) throw new Error(`Start is disabled: ${await sheet.locator('.cl-list').innerText()}`)
   await go.click()
-  await expect(page.getByText(/started on Voron/)).toBeVisible({ timeout: 30_000 })
+  await sawToast(page, /started on Voron/, { timeout: 30_000 })
   const state = (await (await fetch(`http://127.0.0.1:${controlPort}/state`)).json()) as Record<string, unknown>
   expect(JSON.stringify(state)).toMatch(/\.gcode/)
 })
@@ -400,7 +428,7 @@ test('A1 with an AMS lite: the sheet sends a .gcode.3mf from the matched slot', 
   await expect(sheet.getByRole('switch', { name: 'Vibration compensation' })).toBeVisible()
   await expect(sheet).not.toContainText('First layer inspection')
   await start(sheet)
-  await expect(page.getByText(/started on A1/)).toBeVisible({ timeout: 30_000 })
+  await sawToast(page, /started on A1/, { timeout: 30_000 })
   const log = await mockLog()
   expect(log).toMatch(/project_file/)
   expect(log).toMatch(/\.gcode\.3mf/)
@@ -426,7 +454,7 @@ test('A1: a refused start shows the reason and offers plain G-code', async ({ pa
     await expect(plain).toBeEnabled()
     await ctl('/bambu', { refuse: null })
     await plain.click()
-    await expect(page.getByText(/started on A1/)).toBeVisible({ timeout: 30_000 })
+    await sawToast(page, /started on A1/, { timeout: 30_000 })
     const log = await mockLog()
     expect(log).toMatch(/project_file refused/)
     // gcode_file started the plain file, not the .gcode.3mf.
@@ -450,7 +478,7 @@ test('A1 mini with the external spool only: filament 1 goes to the external spoo
       expect(opts.filter((o) => /^A\d/.test(o))).toEqual([])
     }
     await start(sheet)
-    await expect(page.getByText(/started on A1 mini/)).toBeVisible({ timeout: 30_000 })
+    await sawToast(page, /started on A1 mini/, { timeout: 30_000 })
     const log = await mockLog()
     // The external spool is tray 254 (vt_tray).
     expect(log).toMatch(/project_file[^\n]*ams_mapping\\":\[254\]|ams_mapping\\":\[-1\]|use_ams\\":false/)
@@ -487,7 +515,7 @@ test('A1 with Developer Mode off: status keeps coming, and Print saves the file 
     expect((await download).suggestedFilename()).toMatch(/\.gcode\.3mf$/)
     // Bambu Lab makes no Bambu Connect for Linux, so there the line says to take the file to the printer instead.
     const linux = await page.evaluate(() => /Linux/.test(navigator.userAgent) && !/Android/.test(navigator.userAgent))
-    await expect(page.getByText(linux ? /Bambu Connect isn't available for Linux yet/ : /Open it in Bambu Connect and press Print there/)).toBeVisible()
+    await sawToast(page, linux ? /Bambu Connect isn't available for Linux yet/ : /Open it in Bambu Connect and press Print there/)
     // Nothing went to the printer: no upload, no start, nothing it had to refuse.
     expect(await logs()).toEqual(before)
   } finally {
@@ -547,7 +575,7 @@ test('the camera guard pauses for a hand and brings its card up on Printers', as
       await expect(card.getByText('Paused', { exact: true })).toHaveCount(1)
       // Check again asks the detector about a new frame (QA M7): still a hand, so the card stays as it was.
       await card.getByRole('button', { name: 'Check again' }).click()
-      await expect(page.getByText('There is still a hand in the new picture')).toBeVisible()
+      await sawToast(page, /There is still a hand in the new picture/)
       expect(det.looks.count).toBe(1)
       await expect(card.getByRole('heading', { name: 'Paused: a hand in the printer' })).toBeVisible()
       // The hand is gone: answered, still paused, with Resume (QA 0.2.0: the card vanished, the printer paused).
@@ -582,8 +610,9 @@ test('the camera guard pauses for a hand and brings its card up on Printers', as
 
 /** Resume on the guard card. The click is the approval: no second card opens (QA M9). */
 async function resumeFromCard(page: Page, card: Locator): Promise<void> {
+  const before = await toastsWith(page, /Resumed on A1/)
   await card.getByRole('button', { name: 'Resume' }).click()
-  await expect(page.getByText(/Resumed on A1/).first()).toBeVisible()
+  await sawToast(page, /Resumed on A1/, { after: before })
   await expect(page.locator('dialog.approve-dialog[open]')).toHaveCount(0)
 }
 
@@ -658,7 +687,7 @@ test('the camera guard holds a start from the Print sheet, and It\'s fine starts
     const sheet = await sheetFor(page, 'A1')
     const before = (await mockLog()).match(/project_file/g)?.length ?? 0
     await start(sheet)
-    await expect(page.getByText(/something is on the plate/)).toBeVisible({ timeout: 30_000 })
+    await sawToast(page, /something is on the plate/, { timeout: 30_000 })
     expect((await mockLog()).match(/project_file/g)?.length ?? 0, 'nothing started').toBe(before)
     const card = page.locator('.guard-card')
     await expect(card.getByRole('heading', { name: 'Something on the plate' })).toBeVisible()
@@ -674,7 +703,7 @@ test('the camera guard holds a start from the Print sheet, and It\'s fine starts
     expect(Math.abs(spot.y - (pic.y + scrap[1]! * pic.height))).toBeLessThan(2)
     expect(spot.y + spot.height).toBeLessThanOrEqual(frame.y + frame.height + 1)
     await card.getByRole('button', { name: "It's fine, start anyway" }).click()
-    await expect(page.getByText(/started on A1/)).toBeVisible({ timeout: 30_000 })
+    await sawToast(page, /started on A1/, { timeout: 30_000 })
     expect((await mockLog()).match(/project_file/g)?.length ?? 0).toBe(before + 1)
     await expect(card).toHaveCount(0)
   } finally {
