@@ -835,10 +835,59 @@ fn x1_bed() -> Value {
     })
 }
 
+/// The travels of `gcode`'s layers (from the first layer change on), as XY segments, mm.
+fn travels(gcode: &[u8]) -> Vec<([f64; 2], [f64; 2])> {
+    let text = String::from_utf8_lossy(gcode);
+    let mut at: Option<[f64; 2]> = None;
+    let mut started = false;
+    let mut out = Vec::new();
+    for line in text.lines() {
+        if line.starts_with(";LAYER_CHANGE") || line.starts_with("; CHANGE_LAYER") {
+            started = true;
+        }
+        let code = line.split(';').next().unwrap_or("");
+        if !(code.starts_with("G0") || code.starts_with("G1")) {
+            continue;
+        }
+        let word = |c: char| {
+            code.split_whitespace()
+                .find_map(|w| w.strip_prefix(c).and_then(|v| v.parse::<f64>().ok()))
+        };
+        let (x, y) = (word('X'), word('Y'));
+        let next = match (x, y, at) {
+            (None, None, _) => continue,
+            (x, y, Some(p)) => [x.unwrap_or(p[0]), y.unwrap_or(p[1])],
+            (Some(x), Some(y), None) => [x, y],
+            _ => continue,
+        };
+        if started
+            && word('E').is_none_or(|e| e <= 0.0)
+            && let Some(p) = at
+        {
+            out.push((p, next));
+        }
+        at = Some(next);
+    }
+    out
+}
+
+/// The nearest a segment comes to the box `[x0, y0, x1, y1]` (0 inside), sampled at 2000 points along it.
+fn nearest_to_box(from: [f64; 2], to: [f64; 2], area: [f64; 4]) -> f64 {
+    (0..=2000_u32)
+        .map(|k| {
+            let t = f64::from(k) / 2000.0;
+            let at = [from[0] + t * (to[0] - from[0]), from[1] + t * (to[1] - from[1])];
+            let dx = (area[0] - at[0]).max(at[0] - area[2]).max(0.0);
+            let dy = (area[1] - at[1]).max(at[1] - area[3]).max(0.0);
+            (dx * dx + dy * dy).sqrt()
+        })
+        .fold(f64::INFINITY, f64::min)
+}
+
 #[test]
-fn a_travel_across_the_x1_exclusion_area_is_a_keep_out_hit() {
+fn a_travel_across_the_x1_exclusion_area_goes_round_it() {
     // The X1 keeps 0 to 18 mm by 0 to 28 mm clear. One box stands over that corner and one to its right: printed by
-    // layer, the travel between them cuts across the corner, though neither box prints in it.
+    // layer, the straight travel between them would cut across the corner, though neither box prints in it.
     let corner = run(
         &[
             ("over", block(10.0, 10.0, 1.0), 2.0, 32.0),
@@ -847,32 +896,95 @@ fn a_travel_across_the_x1_exclusion_area_is_a_keep_out_hit() {
         x1_bed(),
         json!({}),
     );
-    let hits: Vec<_> = corner
+    assert!(
+        corner.report.collisions.iter().all(|c| c.kind != Kind::KeepOut),
+        "{:?}",
+        kinds(&corner)
+    );
+    // Every travel keeps the nozzle's width (0.4 mm) from the corner and stays on the bed.
+    let moves = travels(&corner.gcode);
+    assert!(!moves.is_empty());
+    for (a, b) in moves {
+        assert!(
+            nearest_to_box(a, b, [0.0, 0.0, 18.0, 28.0]) >= 0.4 - 0.05,
+            "{a:?} to {b:?}"
+        );
+        for p in [a, b] {
+            assert!(
+                (0.0..=256.0).contains(&p[0]) && (0.0..=256.0).contains(&p[1]),
+                "{p:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn a_zone_across_the_bed_is_lifted_over_or_still_reported() {
+    // A band from edge to edge, a box on each side: no way round stays on the bed.
+    let band = |hop: f64| {
+        json!({
+            "bed_exclude_area": [[0, 100], [256, 100], [256, 110], [0, 110]],
+            "printable_area": [[0, 0], [256, 0], [256, 256], [0, 256]],
+            "print_sequence": "by layer",
+            "z_hop": hop,
+        })
+    };
+    let plate = [
+        ("below", block(10.0, 10.0, 1.0), 50.0, 80.0),
+        ("above", block(10.0, 10.0, 1.0), 50.0, 120.0),
+    ];
+    // With a travel lift in the profile, the travel lifts over the band: no hit, and a lift on every layer.
+    let lifted = run(&plate, band(0.4), json!({}));
+    assert!(
+        lifted.report.collisions.iter().all(|c| c.kind != Kind::KeepOut),
+        "{:?}",
+        kinds(&lifted)
+    );
+    // Every travel across the band runs above the layer by the lift.
+    let text = String::from_utf8_lossy(&lifted.gcode);
+    let (mut layer_z, mut z, mut at) = (0.0_f64, 0.0_f64, None::<f64>);
+    let mut crossings = 0;
+    for line in text.lines() {
+        if let Some(v) = line.strip_prefix(";Z:") {
+            layer_z = v.trim().parse().unwrap_or(layer_z);
+        }
+        let code = line.split(';').next().unwrap_or("");
+        let word = |c: char| {
+            code.split_whitespace()
+                .find_map(|w| w.strip_prefix(c).and_then(|v| v.parse::<f64>().ok()))
+        };
+        if !(code.starts_with("G0") || code.starts_with("G1")) {
+            continue;
+        }
+        if let Some(v) = word('Z') {
+            z = v;
+        }
+        if let Some(y) = word('Y') {
+            if let Some(y0) = at
+                && word('E').is_none()
+                && (y0 - 105.0) * (y - 105.0) < 0.0
+                && layer_z > 0.0
+            {
+                crossings += 1;
+                assert!(
+                    z >= layer_z + 0.4 - 1e-6,
+                    "a travel across the band at Z {z} on the layer at {layer_z}"
+                );
+            }
+            at = Some(y);
+        }
+    }
+    assert!(crossings > 0);
+    // Without one, it cannot be cleared: reported as before.
+    let flat = run(&plate, band(0.0), json!({}));
+    let hits: Vec<_> = flat
         .report
         .collisions
         .iter()
         .filter(|c| c.kind == Kind::KeepOut)
         .collect();
-    assert!(!hits.is_empty(), "{:?}", kinds(&corner));
-    assert!(
-        hits.iter().all(|c| c.hit_id == "exclusion-area"),
-        "{:?}",
-        kinds(&corner)
-    );
-    // The same boxes side by side above the corner: the travel stays clear of it.
-    let clear = run(
-        &[
-            ("over", block(10.0, 10.0, 1.0), 2.0, 32.0),
-            ("right", block(10.0, 10.0, 1.0), 30.0, 32.0),
-        ],
-        x1_bed(),
-        json!({}),
-    );
-    assert!(
-        clear.report.collisions.iter().all(|c| c.kind != Kind::KeepOut),
-        "{:?}",
-        kinds(&clear)
-    );
+    assert!(!hits.is_empty(), "{:?}", kinds(&flat));
+    assert!(hits.iter().all(|c| c.hit_id == "exclusion-area"));
 }
 
 #[test]
