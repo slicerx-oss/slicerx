@@ -191,12 +191,13 @@ const A1 = ['machine:bambu-a1', 'process:standard']
 const A1_MINI = ['machine:bambu-a1-mini', 'process:standard']
 
 describe.skipIf(!existsSync(sxBin))('print by object with the real sx CLI', () => {
-  // The A1 and A1 mini keep 40 mm around the nozzle (extruder_clearance_radius), 25 mm under the gantry rod, which
-  // sits 56.5 mm behind the nozzle, and their lid is the printable height.
+  // The A1 and A1 mini keep 73 mm around the nozzle (extruder_clearance_max_radius, the larger of the profile's two
+  // radii), since their head is not measured, 25 mm under the gantry rod, which sits 56.5 mm behind the nozzle, and
+  // their lid is the printable height.
   const three: Box[] = [
-    { name: 'tall', x: 60, y: 128, w: 20, d: 20, h: 18 },
+    { name: 'tall', x: 24, y: 128, w: 20, d: 20, h: 18 },
     { name: 'short', x: 128, y: 128, w: 20, d: 20, h: 6 },
-    { name: 'middle', x: 196, y: 128, w: 20, d: 20, h: 10 },
+    { name: 'middle', x: 232, y: 128, w: 20, d: 20, h: 10 },
   ]
 
   it('prints each object of a 3MF in turn on an A1 and lifts over the tallest finished one', async () => {
@@ -254,16 +255,32 @@ describe.skipIf(!existsSync(sxBin))('print by object with the real sx CLI', () =
     expect(checkByObject(readFileSync(data<{ gcode_path: string }>(r).gcode_path, 'utf8'), apart, 256).lifts[0]).toBeGreaterThan(30)
   })
 
-  it('slices objects closer than the clearance radius when the head itself clears them', async () => {
+  it('holds the A1 and A1 mini to the profile radius, as their head is not measured', async () => {
     const h = await connect({ engine: 'sx', sxBin })
-    // 30 and 25 mm apart, under the A1's 73 mm radius; the A1 head reaches 21 mm to the side, over 10 mm boxes less.
+    // 30 and 25 mm apart, under the 73 mm radius: refused as the profile's rule, never as the head clearing.
     for (const [boxes, profiles] of [
       [[{ name: 'Cube A', x: 100, y: 128, w: 20, d: 20, h: 10 }, { name: 'Cube B', x: 150, y: 128, w: 20, d: 20, h: 10 }], A1],
       [[{ name: 'Cube A', x: 50, y: 90, w: 20, d: 20, h: 10 }, { name: 'Cube B', x: 95, y: 90, w: 20, d: 20, h: 10 }], A1_MINI],
     ] as [Box[], string[]][]) {
-      const r = await h.call('slicerx_slice_file', { model: project(join(h.dir, 'close.3mf'), boxes), profiles, overrides: { print_sequence: 'by object' } })
-      expect(r.isError, text(r)).toBeFalsy()
+      const file = project(join(h.dir, 'close.3mf'), boxes)
+      const r = await h.call('slicerx_slice_file', { model: file, profiles, overrides: { print_sequence: 'by object' } })
+      expect(r.isError).toBe(true)
+      const e = data<Err>(r).error
+      expect(e.code).toBe('sequence_clearance')
+      expect(e.message).toMatch(/inside the 73 mm the printer profile asks for around the nozzle/)
+      expect(e.message).toMatch(/print by layer/)
+      expect(e.message).not.toMatch(/clears it/)
+      // By layer the same plate slices.
+      expect((await h.call('slicerx_estimate_file', { model: file, profiles })).isError).toBeFalsy()
     }
+  })
+
+  it('slices objects closer than the clearance radius when a measured head clears them', async () => {
+    const h = await connect({ engine: 'sx', sxBin })
+    // 45 mm apart, under the X1 Carbon's 68 mm radius; its measured head reaches 38 mm to the side over 10 mm boxes.
+    const boxes: Box[] = [{ name: 'Cube A', x: 100, y: 128, w: 20, d: 20, h: 10 }, { name: 'Cube B', x: 165, y: 128, w: 20, d: 20, h: 10 }]
+    const r = await h.call('slicerx_slice_file', { model: project(join(h.dir, 'close.3mf'), boxes, { printer: 'Bambu Lab X1 Carbon 0.4 nozzle' }), profiles: ['machine:bambu-x1-carbon', 'process:standard'], overrides: { print_sequence: 'by object' } })
+    expect(r.isError, text(r)).toBeFalsy()
   })
 
   it('refuses objects the gantry or the frame would hit with sequence_clearance', async () => {
