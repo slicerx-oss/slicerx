@@ -33,7 +33,7 @@ import type { Spool } from '../inventory/spools'
 import type { QueueItem } from '../queue/queue'
 import type { SendOptionId } from '../send/options'
 import type { PrintSheetAsk } from '../send/print-sheet'
-import { EASY_DEFAULTS, type FirstRunState, type LookAndFeelChoice } from '@slicerx/contracts'
+import { EASY_DEFAULTS, type FirstRunState, type LookAndFeelChoice, type SettingIntent } from '@slicerx/contracts'
 import { DEFAULT_THEME_IDS, THEME_FONT_CHOICE, type FontChoice, type ThemeFile, type ThemeIds } from '@slicerx/ui/theme'
 import { setTool, toolStore } from '../plate/tools'
 import { createStore, useStore } from 'zustand'
@@ -472,6 +472,8 @@ export interface AppState {
   parked: Parked | null
   /** A setting the command bar is sending the person to: Expert settings scroll to it, or Printer settings search for it. */
   settingFocus: { key: string; label: string } | null
+  /** The settings tab open in Advanced and Expert (expert-settings.tsx). Not saved. */
+  settingsTab: SettingIntent
   /** The printer bridge (sx-link) connection, and a counter that changes whenever the host's printers do. */
   /** `hubKey`: the key of the connected hub. `presentedKey`: after a hub mismatch, the key the program on the port proved. */
   bridgeStatus: { state: 'off' | 'connecting' | 'on' | 'error'; message?: string; hubKey?: string; presentedKey?: string }
@@ -733,6 +735,7 @@ export const appStore = createStore<AppState>()(() => ({
   subPicks: [],
   parked: null,
   settingFocus: null,
+  settingsTab: 'quality',
   bridgeStatus: { state: 'off' },
   linkEpoch: 0,
   connectedApps: [],

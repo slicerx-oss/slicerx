@@ -47,18 +47,21 @@ test('the prime tower is automatic, a hand move turns that off, and a spot off t
   expect(auto.reason).toBe('auto')
   const state = () => page.evaluate(() => (window as unknown as { __sx: Sx }).__sx.getState().tower)
   expect(await state()).toMatchObject({ auto: true })
-  const toggle = page.locator('#tower-auto')
-  await expect(toggle).toHaveAttribute('aria-checked', 'true')
+  // The atlas row is in the Color tab of the print settings.
+  await page.evaluate(() => (window as unknown as { __sx: { setState(p: unknown): void } }).__sx.setState({ expertOpen: true }))
+  await page.getByTestId('slice-settings-tab-multicolor').click()
+  const atlas = page.getByTestId('slice-tower-atlas')
+  await expect(atlas).toHaveAttribute('data-auto', 'true')
 
   // Drag it: auto turns off at once, and the engine keeps the spot.
   await moveTower(page, 190, 30)
   expect(await state()).toEqual({ auto: false, x: 190, y: 30 })
-  await expect(toggle).toHaveAttribute('aria-checked', 'false')
+  await expect(atlas).toHaveAttribute('data-auto', 'false')
   const kept = await sliceAgain(page)
   expect(kept).toMatchObject({ x: 190, y: 30, reason: 'kept' })
 
-  // Auto on again: the engine picks its own spot.
-  await toggle.click()
+  // Placed automatically again: the engine picks its own spot.
+  await atlas.getByRole('button', { name: 'Place automatically' }).click()
   expect(await state()).toMatchObject({ auto: true })
   const again = await sliceAgain(page)
   expect(again.reason).toBe('auto')

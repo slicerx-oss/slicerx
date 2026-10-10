@@ -3,7 +3,7 @@
 // The Filament block of the Prepare sidebar: every slot with its material, brand and color, filled in
 // from the connected printer's AMS or MMU until the person changes it, plus the flush volume dialog
 // and per-plate color swaps.
-import { Block, Button, Icon, Input, LinkButton, Menu, MenuAnchor, MenuItem, Popover, Select, SwitchRow, tipAttrs } from '@slicerx/ui'
+import { Block, Button, Icon, LinkButton, Menu, MenuAnchor, MenuItem, Popover, Select, SwitchRow, tipAttrs } from '@slicerx/ui'
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
 import { Swatch } from '../parts'
 import { activeMeta } from '../plate/plates'
@@ -18,8 +18,6 @@ import { set, shownSlice, useApp } from '../state/store'
 import { nozzleText, tuneState } from '../calibration/tuned'
 import { useResolvedSlots } from './use-slots'
 import { SetupNotes } from './setup-plan'
-import { OPTION_TIPS } from '../lib/tips'
-import { moveTower, setTowerAuto, towerNote } from '../plate/tower'
 import { MAX_SLOTS, resetSlots, setSlot, swapPlateSlots, type ResolvedSlot } from './slots'
 import { resolveConfig } from '../adapters/config'
 import { currentMap, hasRack, mapExtruders, masterExtruder, nozzleName, pickedMap, setNozzleAuto, setSlotNozzle } from './nozzle-map'
@@ -198,11 +196,6 @@ export function AmsPanel({ maker, system }: { maker: string; system?: 'ams' | 'm
     >
       {loading ? <SlotRailSkeleton /> : slots.length === 0 ? <SlotRailEmpty /> : <SlotRail slots={shown} left={left} badge={tuneBadge} {...(advanced && !fromPrinter && slots.length < MAX_SLOTS ? { onAdd: () => setSlot(slots.length + 1, {}) } : {})} />}
       <NozzleRows slots={slots} />
-      {advanced && (used >= 2) ? (
-        <div className="fil-flat">
-          <TowerRow />
-        </div>
-      ) : null}
       <SetupNotes />
       <Suspense fallback={null}>{dialogOpen ? <Dialogs /> : null}</Suspense>
     </Block>
@@ -256,43 +249,3 @@ export function NozzleRows({ slots }: { slots: ResolvedSlot[] }) {
   )
 }
 
-const ATLAS_TIP = OPTION_TIPS['prime_tower.atlas']!
-
-/** The prime tower's place: automatic by default, or typed (dragging it in the 3D view does the same). */
-function TowerRow() {
-  const tower = useApp((s) => s.tower)
-  const reported = useApp((s) => shownSlice(s.slice)?.result.primeTower)
-  const note = towerNote(reported, tower.auto)
-  return (
-    <div className="tower-row">
-      <div data-tip-title={ATLAS_TIP.title} data-tip-body={ATLAS_TIP.body}>
-        <SwitchRow
-          id="tower-auto"
-          icon="atlas"
-          label="atlas prime tower"
-          detail={tower.auto ? 'Automatic: clear of the objects and the printer\'s no-go zones' : 'Set by hand. Drag the tower in the view or type a spot.'}
-          checked={tower.auto}
-          onChange={setTowerAuto}
-        />
-      </div>
-      {tower.auto ? null : (
-        <div className="tower-xy">
-          <label>
-            X (mm)
-            <Input id="tower-x" type="number" value={tower.x} onChange={(e) => moveTower(Number(e.currentTarget.value), tower.y)} />
-          </label>
-          <label>
-            Y (mm)
-            <Input id="tower-y" type="number" value={tower.y} onChange={(e) => moveTower(tower.x, Number(e.currentTarget.value))} />
-          </label>
-        </div>
-      )}
-      {note ? (
-        <p className="sx-small sx-muted seg-mark mark-atlas" role="status" data-tip-title={ATLAS_TIP.title} data-tip-body={ATLAS_TIP.body}>
-          <Icon name="atlas" size={14} />
-          {note}
-        </p>
-      ) : null}
-    </div>
-  )
-}

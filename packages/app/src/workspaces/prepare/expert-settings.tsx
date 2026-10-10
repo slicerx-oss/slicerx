@@ -7,7 +7,9 @@
 import type { SettingDef, SettingIntent, SettingValue } from '@slicerx/contracts'
 import { EASY_MAP } from '@slicerx/settings'
 import { Icon, LinkButton, Seg, Switch, tipAttrs, type IconName } from '@slicerx/ui'
-import { useDeferredValue, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useDeferredValue, useEffect, useMemo, useState, type KeyboardEvent, type ReactNode } from 'react'
+import { PrimeTowerRow } from './prime-tower-row'
+import './settings-tabs.css'
 import { formatValue, isVisible, resolveConfig, SETTINGS } from '../../adapters/settings'
 import { presetOwnValue } from '../../adapters/config'
 import { useFilamentCount } from '../../filament/count'
@@ -23,15 +25,24 @@ export const EDITABLE = new Set(['float', 'int', 'percent', 'bool', 'enum', 'flo
 
 /** The intents in the order the panel shows them. Output (G-code and file keys) is Expert only. */
 export const INTENTS: readonly { id: SettingIntent; label: string; icon: IconName; blurb: string }[] = [
-  { id: 'quality', label: 'Quality', icon: 'sparkle', blurb: 'Surfaces, walls, seams and dimensional accuracy' },
-  { id: 'strength', label: 'Strength', icon: 'walls', blurb: 'Shells and infill' },
-  { id: 'speed', label: 'Speed', icon: 'speed', blurb: 'How fast each feature prints' },
+  { id: 'quality', label: 'Quality', icon: 'tab-quality', blurb: 'Surfaces, walls, seams and dimensional accuracy' },
+  { id: 'strength', label: 'Strength', icon: 'tab-strength', blurb: 'Shells and infill' },
+  { id: 'speed', label: 'Speed', icon: 'tab-speed', blurb: 'How fast each feature prints' },
   { id: 'supports', label: 'Supports', icon: 'support', blurb: 'Where supports go and how they touch the part' },
-  { id: 'adhesion', label: 'Adhesion', icon: 'brim', blurb: 'Brim, skirt and raft' },
-  { id: 'multicolor', label: 'Multi-color', icon: 'multi-material', blurb: 'Prime tower, flushing and which filament prints what' },
-  { id: 'effects', label: 'Effects', icon: 'magic-wand', blurb: 'Fuzzy skin, spiral vase, ironing' },
-  { id: 'output', label: 'Output', icon: 'export', blurb: 'G-code and file options' },
+  { id: 'adhesion', label: 'Adhesion', icon: 'tab-adhesion', blurb: 'Brim, skirt and raft' },
+  { id: 'multicolor', label: 'Color', icon: 'tab-color', blurb: 'Prime tower, flushing and which filament prints what' },
+  { id: 'effects', label: 'Surface', icon: 'tab-surface', blurb: 'Ironing, fuzzy skin and spiral vase' },
+  { id: 'output', label: 'Output', icon: 'tab-output', blurb: 'G-code and file options' },
 ]
+
+/** Settings the prime tower row's atlas line sets: they are not listed as rows. */
+const ATLAS_KEYS = new Set(['prime_tower_auto_position', 'wipe_tower_x', 'wipe_tower_y'])
+
+/** A switch setting's value as on or off: engine values come as booleans, numbers or strings. */
+function on(v: SettingValue | undefined): boolean {
+  const x = Array.isArray(v) ? v[0] : v
+  return x === true || x === 1 || x === '1' || x === 'true'
+}
 
 function setOverride(key: string, value: SettingValue | undefined): void {
   set((s) => {
@@ -278,7 +289,10 @@ export function ExpertSettings() {
   const activeMeta = useApp((s) => s.plates.find((p) => p.id === s.activePlate))
   const seqNote = plateSequenceNote(activeMeta, config)
   const field = (def: SettingDef) =>
-    def.key === 'print_sequence' ? (
+    // The prime tower is one switch with atlas's placement under it (prime-tower-row.tsx).
+    def.key === 'enable_prime_tower' ? (
+      <PrimeTowerRow key={def.key} enabled={on(config[def.key])} onEnable={(v) => setOverride(def.key, v)} />
+    ) : def.key === 'print_sequence' ? (
       <Field key={def.key} def={def} value={config[def.key]} overridden={def.key in overrides} onSet={setSequence} note={seqNote} />
     ) : (
       <Field key={def.key} def={def} value={config[def.key]} overridden={def.key in overrides} />
@@ -291,6 +305,8 @@ export function ExpertSettings() {
       const changed = def.key in overrides
       // Profile keys show nowhere, and multi-color keys only with two or more filaments (a key the person already changed stays listed).
       if (!changed && !isVisible(def, { filamentCount })) continue
+      // The tower's place is atlas's, under the Prime tower switch (prime-tower-row.tsx), not a row of its own.
+      if (ATLAS_KEYS.has(def.key)) continue
       const g = out.find((x) => x.intent.id === def.intent)
       if (!g) continue
       // Simple keys are the Easy controls above; they are listed once changed by hand, or when a search asks for them
@@ -299,9 +315,13 @@ export function ExpertSettings() {
       if (def.mode === 'advanced' || def.mode === 'simple') g.shown.push(def)
       else if (expert && levels.has(def.mode)) g.more.push(def)
     }
+    // The prime tower switch heads the Color tab, with atlas's placement under it.
+    for (const g of out) {
+      const i = g.shown.findIndex((d) => d.key === 'enable_prime_tower')
+      if (i > 0) g.shown.unshift(...g.shown.splice(i, 1))
+    }
     return out
   }, [editable, overrides, filamentCount, expert, levels, q])
-  const expertCount = groups.reduce((n, g) => n + g.more.length, 0)
   const visible = groups
     .map((g) => {
       const open = Boolean(q) || opened.has(g.intent.id)
@@ -311,6 +331,20 @@ export function ExpertSettings() {
     })
     .filter((g) => g.shown.length || g.more.length || (!q && g.hidden))
   const count = visible.reduce((n, g) => n + g.shown.length + g.more.length, 0)
+  // The tabs: one per group, Color only with two or more filaments. A search looks through every tab.
+  const tabs = INTENTS.filter((i) => i.id !== 'multicolor' || filamentCount >= 2)
+  const stored = useApp((s) => s.settingsTab)
+  const tab = tabs.some((t) => t.id === stored) ? stored : 'quality'
+  const shownGroups = q ? visible : visible.filter((g) => g.intent.id === tab)
+  const onTabKey = (e: KeyboardEvent<HTMLButtonElement>, i: number) => {
+    const by = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0
+    const to = e.key === 'Home' ? 0 : e.key === 'End' ? tabs.length - 1 : by ? (i + by + tabs.length) % tabs.length : -1
+    if (to < 0) return
+    e.preventDefault()
+    const next = tabs[to]!
+    set({ settingsTab: next.id })
+    document.getElementById(`set-tab-${next.id}`)?.focus()
+  }
   const toggle = (id: SettingIntent) =>
     setOpened((s) => {
       const next = new Set(s)
@@ -327,13 +361,42 @@ export function ExpertSettings() {
         </label>
         <input id="expert-search" className="bare" placeholder={expert ? `Search all ${editable.length} process settings` : `Search ${groups.reduce((n, g) => n + g.shown.length, 0)} advanced settings`} value={query} onChange={(e) => setQuery(e.currentTarget.value)} />
       </div>
-      <div className="expert-opts">
-        <span className="sx-mono sx-small sx-dim">{count} shown</span>
-        <span className="sx-small sx-muted">{expert ? `${expertCount} expert settings behind search and "more"` : 'Grouped by what they are for. Expert adds the rest behind search.'}</span>
+      <div className="set-tabs" role="tablist" aria-label="Setting groups">
+        {tabs.map((t, i) => (
+          <button
+            key={t.id}
+            type="button"
+            role="tab"
+            id={`set-tab-${t.id}`}
+            data-testid={`slice-settings-tab-${t.id}`}
+            className="set-tab"
+            data-tab={t.id}
+            aria-selected={!q && t.id === tab}
+            aria-controls="set-tab-panel"
+            aria-label={t.label}
+            tabIndex={t.id === tab ? 0 : -1}
+            {...tipAttrs({ title: t.label, body: t.blurb })}
+            onClick={() => {
+              setQuery('')
+              set({ settingsTab: t.id })
+            }}
+            onKeyDown={(e) => onTabKey(e, i)}
+          >
+            <Icon name={t.icon} size={18} />
+          </button>
+        ))}
       </div>
-      {visible.length === 0 ? <p className="sx-muted sx-small">No setting matches "{query}"</p> : null}
-      {visible.map((g) => (
-        <section key={g.intent.id} className="expert-group tier-group" aria-label={g.intent.label}>
+      {/* The open tab names itself in its heading; a search says how many it found across the tabs. */}
+      {q ? (
+        <div className="expert-opts">
+          <span className="sx-mono sx-small sx-dim">{count} found</span>
+          <span className="sx-small sx-muted">{expert ? 'In every tab, the expert settings too.' : 'In every tab. Expert adds the rest.'}</span>
+        </div>
+      ) : null}
+      {q && visible.length === 0 ? <p className="sx-muted sx-small">No setting matches "{query}"</p> : null}
+      <div id="set-tab-panel" role="tabpanel" aria-labelledby={q ? undefined : `set-tab-${tab}`} aria-label={q ? 'Search results' : undefined}>
+      {shownGroups.map((g) => (
+        <section key={g.intent.id} className="expert-group tier-group" data-intent={g.intent.id} aria-label={g.intent.label}>
           <h4>
             <span className="tier-h">
               <Icon name={g.intent.icon} size={14} />
@@ -361,6 +424,7 @@ export function ExpertSettings() {
           ) : null}
         </section>
       ))}
+      </div>
       {/* Print sequence is an Expert row; below Expert the note still shows when the plate prints otherwise. */}
       {!expert && seqNote ? <p className="app-note">{seqNote}</p> : null}
       <p className="app-note">Changes apply to this plate. Saved profiles stay as they are. {Object.keys(overrides).length ? `${Object.keys(overrides).length} changed: ${Object.keys(overrides).slice(0, 3).map((k) => { const d = SETTINGS.find((x) => x.key === k); return `${d?.label ?? k} ${formatValue(d, config[k])}` }).join(', ')}` : ''}</p>

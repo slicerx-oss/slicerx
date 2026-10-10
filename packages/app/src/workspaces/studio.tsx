@@ -43,9 +43,9 @@ import { useMediaQuery } from '../lib/media'
 import { ModeChip } from '../first-run/mode-chip'
 
 const PREPARE_LEFT: PaneSection[] = [
-  { id: 'printer', icon: 'printer', label: 'Printer' },
+  { id: 'printer', icon: 'section-printer', label: 'Printer' },
   { id: 'filament', icon: 'spool', label: 'Filament' },
-  { id: 'settings', icon: 'sliders', label: 'Print settings' },
+  { id: 'settings', icon: 'section-print-settings', label: 'Print settings' },
 ]
 const OBJECTS_SECTION: PaneSection = { id: 'objects', icon: 'prepare', label: 'Objects' }
 const PREVIEW_RIGHT: PaneSection[] = [
