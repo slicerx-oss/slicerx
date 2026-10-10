@@ -20,7 +20,11 @@ export interface VerifiedWork {
   change?: Record<string, unknown>
 }
 
-export type HubCard = ApprovalRequest & { work?: VerifiedWork }
+export type HubCard = ApprovalRequest & {
+  work?: VerifiedWork
+  /** Set by the hub on a partner app's card: the name the partner's key was made with. Never the asker's own words. */
+  partner?: string
+}
 
 export interface CardText {
   title: string
@@ -133,7 +137,10 @@ export function describeCard(card: HubCard, printerName: (id: string) => string 
   const printer = printerId ? printerName(printerId) : null
   const on = printer ? ` on ${printer}` : ''
   const startsPrint = has('printer.start')
-  const asker = card.origin === 'phone' ? 'a paired phone' : 'an AI agent'
+  // A partner app's card names the partner, by the name only the hub sets, and says nothing about AI.
+  const partner = card.origin === 'mcp' && card.partner ? oneLine(card.partner).slice(0, 60) : ''
+  const asker = card.origin === 'phone' ? 'a paired phone' : partner || 'an AI agent'
+  const who = card.origin === 'phone' ? 'the phone' : partner || 'the agent'
   const title = startsPrint
     ? `Start a print${on}?`
     : has('printer.pause')
@@ -147,7 +154,7 @@ export function describeCard(card: HubCard, printerName: (id: string) => string 
         : has('printer.config') || has('printer.adjust')
           ? `Change the running print${on}?`
           : `Let ${asker} ${ACTION_WORDS[card.actions[0]?.action ?? ''] ?? 'act'}${on}?`
-  const lines: string[] = [card.origin === 'phone' ? 'Asked by a paired phone. Only you can approve it here.' : 'Asked by an AI agent over MCP. It cannot approve this itself.']
+  const lines: string[] = [card.origin === 'phone' ? 'Asked by a paired phone. Only you can approve it here.' : partner ? `Asked by ${partner}, a partner app.` : 'Asked by an AI agent over MCP. It cannot approve this itself.']
   const did = [...new Set(card.actions.map((a) => ACTION_WORDS[a.action] ?? a.action))]
   lines.push(`If you approve, the hub will ${did.join(', then ')}${on}.`)
   // Every card from an agent or a phone carries the hub's work. Without it, or with work that is not exactly what the
@@ -157,7 +164,7 @@ export function describeCard(card: HubCard, printerName: (id: string) => string 
   if (w?.file) {
     const name = oneLine(w.file.name)
     // The name is the agent's: it is what the file is called on the printer, not a description of it.
-    lines.push(`File (named by the ${card.origin === 'phone' ? 'phone' : 'agent'}): ${name.length > 120 ? `${name.slice(0, 120)}...` : name}${w.file.sizeBytes ? `, ${size(w.file.sizeBytes)}` : ''}`)
+    lines.push(`File (named by ${who}): ${name.length > 120 ? `${name.slice(0, 120)}...` : name}${w.file.sizeBytes ? `, ${size(w.file.sizeBytes)}` : ''}`)
     if (w.file.sha256) lines.push(`SHA-256: ${w.file.sha256.slice(0, 16)}`)
   }
   // The whole line, never cut: a cut line could hide a second command after a long first one.
@@ -178,7 +185,7 @@ export function describeCard(card: HubCard, printerName: (id: string) => string 
   const slots = slotWords(w?.opts?.['slotMap'])
   if (slots) lines.push(slots)
   const said = oneLine(card.title)
-  if (said) lines.push(`Note from the ${card.origin === 'phone' ? 'phone' : 'agent'}, not checked by ${appName()}: "${said.length > NOTE_MAX ? `${said.slice(0, NOTE_MAX)}...` : said}"`)
+  if (said) lines.push(`Note from ${who}, not checked by ${appName()}: "${said.length > NOTE_MAX ? `${said.slice(0, NOTE_MAX)}...` : said}"`)
   return { title, lines, startsPrint, ...(blocked ? { blocked } : {}) }
 }
 

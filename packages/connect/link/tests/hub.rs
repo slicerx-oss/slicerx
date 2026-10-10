@@ -1238,11 +1238,14 @@ async fn h3_an_mcp_start_runs_only_after_a_person_approves_it_in_the_app() {
         "a card showing other content: {r}"
     );
 
+    // An agent cannot pass itself off as a partner app: only the hub names a partner.
+    let mut c = start_card("mcp-1", "cube.gcode", &sha, Some("mcp"));
+    c["partner"] = json!("LayerMate");
     let r = call(
         &mut ag,
         4,
         "approvals.register",
-        json!({ "request": start_card("mcp-1", "cube.gcode", &sha, Some("mcp")), "work": work }),
+        json!({ "request": c, "work": work }),
     )
     .await;
     assert_eq!(r["result"]["answeredIn"], "app", "{r}");
@@ -1256,6 +1259,7 @@ async fn h3_an_mcp_start_runs_only_after_a_person_approves_it_in_the_app() {
         .unwrap()
         .clone();
     assert_eq!(card["work"]["kind"], "print", "{card}");
+    assert!(card.get("partner").is_none(), "{card}");
     assert_eq!(card["work"]["file"]["sha256"], sha.as_str(), "{card}");
     assert_eq!(card["work"]["file"]["name"], "cube.gcode", "{card}");
     assert!(card["work"]["file"]["sizeBytes"].as_u64().unwrap() > 0, "{card}");
@@ -2696,6 +2700,8 @@ async fn a_partner_app_pauses_and_cancels_but_never_approves_a_start_resumes_sen
     let work = json!({ "kind": "print", "printerId": "bay-4", "file": f });
     let mut c = start_card("lm-1", "cube.gcode", &sha, Some("local_click"));
     c["origin"] = json!("local_click");
+    // Whatever name the partner puts on its card, the hub names it by its key.
+    c["partner"] = json!("Someone else");
     let r = call(
         &mut p,
         50,
@@ -2714,6 +2720,7 @@ async fn a_partner_app_pauses_and_cancels_but_never_approves_a_start_resumes_sen
         .clone();
     assert_eq!(shown["origin"], "mcp", "{shown}");
     assert_eq!(shown["lines"][0], "Asked by LayerMate, a partner app", "{shown}");
+    assert_eq!(shown["partner"], "LayerMate", "{shown}");
     assert_eq!(shown["work"]["kind"], "print", "{shown}");
     let r = call(
         &mut p,

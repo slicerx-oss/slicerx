@@ -474,6 +474,9 @@ fn card_view(b: &Bridge, id: &str) -> Option<Value> {
     if let (Some(work), Some(o)) = (b.agent_work.summary(id), view.as_object_mut()) {
         o.insert("work".into(), work);
     }
+    if let (Some(name), Some(o)) = (lock(&b.card_partners).get(id).cloned(), view.as_object_mut()) {
+        o.insert("partner".into(), json!(name));
+    }
     Some(view)
 }
 
