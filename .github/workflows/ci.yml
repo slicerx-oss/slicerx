@@ -61,7 +61,7 @@ jobs:
             printf '%s\n' "$changed" | grep -qE "$1"
           }
           touched '^(supabase/|packages/store/|\.github/workflows/ci\.yml$)' && echo "pgtap=true" >> "$GITHUB_OUTPUT" || echo "pgtap=false" >> "$GITHUB_OUTPUT"
-          touched '^(apps/web/|packages/(app|ui|core|geom)/|pnpm-lock\.yaml$|scripts/ci/playwright-results\.mjs$|\.github/workflows/ci\.yml$)' && echo "e2e=true" >> "$GITHUB_OUTPUT" || echo "e2e=false" >> "$GITHUB_OUTPUT"
+          touched '^(apps/web/|packages/(app|ui|core|geom|connect)/|pnpm-lock\.yaml$|scripts/ci/playwright-results\.mjs$|\.github/workflows/ci\.yml$)' && echo "e2e=true" >> "$GITHUB_OUTPUT" || echo "e2e=false" >> "$GITHUB_OUTPUT"
 
   web:
     needs: detect
@@ -244,11 +244,35 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @slicerx/web build
 
+  # The printer bridge (sx-link) for bridge.spec.ts, built beside the WASM modules so the shards do not wait longer.
+  # A debug build without debug info: quicker to build, and a smaller artifact.
+  sx-link:
+    needs: detect
+    if: needs.detect.outputs.e2e == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: sx-link
+      - run: cargo build -p sx-link
+        env:
+          CARGO_PROFILE_DEV_DEBUG: '0'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sx-link
+          path: target/debug/sx-link
+          retention-days: 3
+          if-no-files-found: error
+
   # The browser suite (apps/web/e2e) against `vite preview` of the web build. playwright.config.ts builds it with
   # no backend, so the store and feed run on the bundled demo catalog (features.demoData). Specs that need a
-  # real service skip themselves: vault-flow.spec.ts without the stack from e2e/stack/vault-stack.sh, and
-  # bridge.spec.ts without a built sx-link. Most phone tests skip (desktop width only), so the desktop project gets
-  # twelve shards and the phone project four; a new project in playwright.config.ts needs its own line here.
+  # real service skip themselves: vault-flow.spec.ts without the stack from e2e/stack/vault-stack.sh. bridge.spec.ts
+  # runs on the sx-link built above; SX_LINK_REQUIRE makes a missing one fail it, not skip it. Most phone tests skip
+  # (desktop width only), so the desktop project gets twelve shards and the phone project four; a new project in
+  # playwright.config.ts needs its own line here.
   # --fully-parallel spreads the tests of the big files over the shards. A GitHub runner has 4 cores and one worker
   # drawing WebGL in software takes about 2.3 of them, so each shard runs one worker, leaving room for the app's own
   # slicer workers. The e2e job after them is the one name to require.
@@ -260,7 +284,7 @@ jobs:
   # (label sx-pc), each project whole under the machine's heavy lock, with the @gpu specs included and no GPU lane.
   e2e-shard:
     name: e2e (${{ matrix.project }} ${{ matrix.shard }})
-    needs: [detect, wasm]
+    needs: [detect, wasm, sx-link]
     if: needs.detect.outputs.e2e == 'true'
     runs-on: ${{ (github.event_name != 'pull_request' && vars.E2E_ON_PC == 'true') && fromJSON('["self-hosted","sx-pc"]') || 'ubuntu-latest' }}
     # on the PC: up to 20 minutes for the heavy lock (SX_HEAVY_WAIT) plus 15 for the run (timeout 900) plus setup
@@ -282,6 +306,12 @@ jobs:
         with:
           name: wasm-modules
           path: packages
+      # an artifact does not keep the file mode
+      - uses: actions/download-artifact@v4
+        with:
+          name: sx-link
+          path: ${{ runner.temp }}/sx-link
+      - run: chmod +x "$RUNNER_TEMP/sx-link/sx-link"
       - id: pw
         run: echo "version=$(pnpm --filter @slicerx/web exec playwright --version | cut -d ' ' -f 2)" >> "$GITHUB_OUTPUT"
       - if: runner.environment != 'self-hosted'
@@ -319,6 +349,8 @@ jobs:
           # GitHub's runners draw WebGL in software, slower than the project runner: drawing time budgets in the specs
           # (e2e/frames.ts GL_SLOW) are three times the project runner's
           SX_SLOW_GL: ${{ runner.environment == 'self-hosted' && '1' || '3' }}
+          SX_LINK_BIN: ${{ runner.temp }}/sx-link/sx-link
+          SX_LINK_REQUIRE: '1'
           # one blob name per job, so the merged report keeps every shard of both projects
           PLAYWRIGHT_BLOB_OUTPUT_NAME: report-${{ matrix.project }}-${{ strategy.job-index }}.zip
           PLAYWRIGHT_JSON_OUTPUT_FILE: ${{ runner.temp }}/e2e-results.json

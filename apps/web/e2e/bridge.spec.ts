@@ -4,18 +4,20 @@
 // and approval, and the Print sheet for a Bambu Lab A1 with an AMS lite and an A1 mini with only the
 // external spool (slot choice, the .gcode.3mf start, a refused start with its reason and the plain
 // G-code offer). Runs only when SX_LINK_BIN names a built sx-link (cargo build -p sx-link); otherwise
-// skipped. The app pairs with the hub on its fixed port, so every hub test lives in this one file.
+// skipped. CI builds it and sets SX_LINK_REQUIRE=1, and there a missing binary fails the tests instead.
+// The app pairs with the hub on its fixed port, so every hub test lives in this one file.
 import { type Locator, type Page } from '@playwright/test'
 import { command, openStudio } from './cad-helpers'
 import { expect, plateReady, sliceCount, sliced, test } from './fixtures'
 import { spawn, type ChildProcessByStdio } from 'node:child_process'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Readable } from 'node:stream'
 
 const bin = process.env['SX_LINK_BIN']
-test.skip(!bin, 'SX_LINK_BIN is not set')
+const required = process.env['SX_LINK_REQUIRE'] === '1'
+test.skip(!bin && !required, 'SX_LINK_BIN is not set')
 test.describe.configure({ mode: 'serial' })
 test.skip(({ isMobile }) => isMobile, 'The bridge flow runs at desktop width')
 
@@ -54,6 +56,7 @@ async function addBambu(id: string, name: string, model: string): Promise<void> 
 test.beforeAll(async ({}, testInfo) => {
   // The phone project skips every test here; it must not start a second bridge on the same port as the desktop one.
   if (testInfo.project.use.isMobile) return
+  if (!bin || !existsSync(bin)) throw new Error(`There is no sx-link at ${bin || '(SX_LINK_BIN is not set)'}: build it (cargo build -p sx-link) and name it in SX_LINK_BIN`)
   const { startMocks } = await import('../../../packages/connect/mock-printers/src/index.ts')
   const { connectLink } = await import('../../../packages/connect/link-client/src/index.ts')
   const mocks = await startMocks({ only: ['moonraker', 'bambu'], state: 'idle', camera: true })
