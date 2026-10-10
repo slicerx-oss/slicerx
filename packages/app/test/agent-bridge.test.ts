@@ -260,10 +260,14 @@ describe('the state an agent reads', () => {
   })
 
   it('summarizes a finished slice and every other status', () => {
-    const base = { plate: [entry('cube')], plates: [], activePlate: 'plate-1', autoSlice: true }
+    const base = { plate: [entry('cube')], plates: [], activePlate: 'plate-1', autoSlice: true, autoSliceBySize: true, sliceHeld: false }
     expect(sliceSummary({ ...base, slice: { status: 'done', result: result(), stale: false } })).toMatchObject({ status: 'done', layers: 50, timeS: 1234, filamentG: 3.71, toolChanges: 2, warnings: [{ code: 'thin_wall' }, { code: 'long_bridge' }] })
-    expect(sliceSummary({ ...base, slice: { status: 'idle' } })).toEqual({ status: 'idle', autoSlice: true })
-    expect(sliceSummary({ ...base, slice: { status: 'error', message: 'No room' } })).toEqual({ status: 'error', autoSlice: true, message: 'No room' })
+    expect(sliceSummary({ ...base, slice: { status: 'idle' } })).toEqual({ status: 'idle', autoSlice: true, autoSliceMode: 'auto' })
+    expect(sliceSummary({ ...base, slice: { status: 'error', message: 'No room' } })).toEqual({ status: 'error', autoSlice: true, autoSliceMode: 'auto', message: 'No room' })
+    // Auto holding a big plate's slice says so; Always and Off name themselves.
+    expect(sliceSummary({ ...base, sliceHeld: true, slice: { status: 'idle' } })).toEqual({ status: 'idle', autoSlice: true, autoSliceMode: 'auto', held: true })
+    expect(sliceSummary({ ...base, autoSliceBySize: false, slice: { status: 'idle' } })).toMatchObject({ autoSliceMode: 'always' })
+    expect(sliceSummary({ ...base, autoSlice: false, sliceHeld: true, slice: { status: 'idle' } })).toEqual({ status: 'idle', autoSlice: false, autoSliceMode: 'off' })
     expect(sliceSummary({ ...base, slice: { status: 'running', progress: null, startedAt: 0 } })).toMatchObject({ status: 'running' })
   })
 

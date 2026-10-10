@@ -13,6 +13,7 @@ import { useFeatures } from '../features'
 import { useHost } from '../host'
 import { formatShortcut } from '../lib/keys'
 import { set, useApp } from '../state/store'
+import { AUTO_SLICE_DETAIL, AUTO_SLICE_MODES, autoSliceFields, autoSliceMode } from '../state/auto-slice-mode'
 import { controlOverrides, controlsFor, withControlOverrides, type ControlOverrides } from './controls'
 import { LayoutPreview } from './layout-preview'
 import { lookPreview, mouseLine, type LookPreview } from './look-preview'
@@ -285,6 +286,20 @@ const SETUP_MODES = [
   { value: 'expert', label: 'Expert', testId: 'setup-mode-expert' },
 ] as const
 
+/** When the plate slices by itself. The same three choices as Settings > Slicing and modeling. */
+function AutoSliceQuestion() {
+  const mode = useApp(autoSliceMode)
+  return (
+    <div className="fr-mode" role="group" aria-labelledby="fr-autoslice-h">
+      <span className="fr-mode-h" id="fr-autoslice-h">
+        Auto slice
+      </span>
+      <Seg label="Auto slice" size="sm" value={mode} options={AUTO_SLICE_MODES.map((m) => ({ value: m.value, label: m.label, title: m.title, testId: `setup-autoslice-${m.value}` }))} onChange={(v) => set(autoSliceFields(v))} />
+      <p className="fr-mode-hint">{AUTO_SLICE_DETAIL}</p>
+    </div>
+  )
+}
+
 /** How many settings the Slice sidebar shows. Developer mode reads as Expert here; it is chosen from the chip. */
 function SettingsModeQuestion() {
   const mode = useApp((s) => s.settingsMode)
@@ -389,6 +404,7 @@ export function SlicerStep({ choice, onPick, phone }: { choice: LookAndFeelChoic
             })}
           </div>
           <SettingsModeQuestion />
+          <AutoSliceQuestion />
           <PresetImport app={app} />
           <div className="fr-slicer-more">
             <CrashReports />
