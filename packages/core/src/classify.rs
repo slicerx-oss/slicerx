@@ -72,6 +72,17 @@ fn meet(a: &Shapes, b: &Shapes) -> Shapes {
     }
 }
 
+/// `a` meeting `b`, reading only the pieces of `a` whose bounds reach `b`'s.
+fn meet_near(a: &Shapes, b: &Shapes) -> Shapes {
+    let reach = perimeters::bounds(b);
+    let near: Shapes = a
+        .iter()
+        .filter(|s| perimeters::overlaps(perimeters::bounds(std::slice::from_ref(*s)), reach))
+        .cloned()
+        .collect();
+    meet(&near, b)
+}
+
 /// `src` grown by `d` mm into the pieces of `zone` it touches (Orca's wave propagation, here the
 /// offset cut by the zone), as the part of the zone the surface now covers.
 fn grown_into(src: &Shapes, zone: &Shapes, d: f64, tiny: f64) -> Shapes {
@@ -127,14 +138,22 @@ pub(crate) fn classify(i: &In<'_>) -> Classes {
     let lower = if i.layer > 0 { (i.slice)(layer - 1) } else { None };
     // A region that is the layer's whole outline has the same free surfaces the shell rule works out for
     // the layers around, so they are shared.
-    let whole = i
+    let here = i
         .cache
         .filter(|_| i.top_layers > 0 || i.bottom_layers > 0)
-        .filter(|_| (i.slice)(layer).as_ref() == Some(i.region));
+        .and_then(|c| (i.slice)(layer).map(|h| (c, h)));
+    let empty = Vec::new();
     let free = |toward: i64, other: Option<&Shapes>| -> Shapes {
-        let work = || crate::shells::opened(&sub(i.region, other.unwrap_or(&Vec::new())), opening);
-        match whole {
-            Some(c) => c.free(layer, toward, opening, work),
+        let other = other.unwrap_or(&empty);
+        let work = || crate::shells::opened(&sub(i.region, other), opening);
+        match &here {
+            Some((c, h)) if h == i.region => c.free(layer, toward, opening, work),
+            // A region of a layer of several is uncovered where it meets the layer's own uncovered part, which
+            // is mostly small or empty, so the region does not cut the whole neighbor again.
+            Some((c, h)) => {
+                let cut = c.cut(layer, toward, || perimeters::difference(h, other));
+                crate::shells::opened(&meet_near(i.region, &cut), opening)
+            }
             None => work(),
         }
     };
