@@ -99,12 +99,20 @@ test('one Add button: the file dialog, and the Vault, shapes, Export, Tools and 
 test('a tool takes the card\'s place, nothing above moves, and Done brings the list back', async ({ page }) => {
   await open(page)
   const filament = page.locator('[data-section="filament"]')
-  const top = (await filament.boundingBox())!.y
+  // Measured from the top of the pane's content: a phone's sheet scrolls to the tool and grows with it, which moves
+  // nothing in it.
+  const topInPane = () =>
+    filament.evaluate((el) => {
+      const pane = el.closest('.pane')!
+      const body = el.closest('.sx-rail-body')
+      return el.getBoundingClientRect().top - pane.getBoundingClientRect().top + (body?.scrollTop ?? 0)
+    })
+  const top = await topInPane()
   await addMenu(page, 'Tools')
   await page.getByRole('menu', { name: 'Object tools' }).getByRole('menuitem', { name: 'Cut' }).click()
   await expect(page.locator('.tool-slot [data-section="cut-tool"]')).toBeVisible()
   await expect(page.getByTestId('objects-list')).toHaveCount(0)
-  expect((await filament.boundingBox())!.y).toBe(top)
+  expect(await topInPane()).toBe(top)
   await page.getByTestId('slice-tool-done').click()
   await expect(page.getByTestId('objects-list')).toBeVisible()
   expect(await page.evaluate(() => (window as unknown as { __sx: Sx }).__sx.getState().objectTool)).toBeNull()
