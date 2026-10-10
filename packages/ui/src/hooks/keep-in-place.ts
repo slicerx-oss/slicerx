@@ -37,7 +37,8 @@ const added = new WeakMap<HTMLElement, { px: number; spacer: HTMLElement; last: 
 function ownWrite(box: HTMLElement, r: MutationRecord): boolean {
   if (r.target instanceof HTMLElement && r.target.dataset.sxRoom !== undefined) return true
   if (r.target === box && r.type === 'attributes' && r.attributeName === 'style') return true
-  return r.type === 'childList' && [...r.addedNodes, ...r.removedNodes].every((n) => n instanceof HTMLElement && n.dataset.sxRoom !== undefined)
+  const room = (n: Node) => n instanceof HTMLElement && n.dataset.sxRoom !== undefined
+  return r.type === 'childList' && Array.from(r.addedNodes).every(room) && Array.from(r.removedNodes).every(room)
 }
 
 /**
