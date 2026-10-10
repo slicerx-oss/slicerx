@@ -107,8 +107,9 @@ pub struct LinkConfig {
     /// The address the phone listener (`pair.listen`) binds. `None`: all addresses, so phones on the
     /// home network reach it. Tests use 127.0.0.1, which also keeps the OS firewall from asking.
     pub lan_bind: Option<std::net::IpAddr>,
-    /// The address printer discovery (Bambu and Elegoo) listens and sends on. `None`: all addresses.
-    /// Tests use 127.0.0.1, so the OS firewall has nothing to ask.
+    /// The address printer discovery and probing (Bambu Lab, Elegoo, Snapmaker) listens and sends
+    /// on. `None`: all addresses. Tests use 127.0.0.1, so the OS firewall has nothing to ask; there
+    /// the mDNS question for Ultimaker printers goes to 127.0.0.1 too.
     pub discovery_bind: Option<std::net::IpAddr>,
     /// The ports a Bambu Lab printer is asked its own name on, at its own address only: 2021 and
     /// 1990 on real printers. Tests point it at a mock's.
@@ -139,6 +140,26 @@ impl Default for LinkConfig {
             lan_bind: None,
             discovery_bind: None,
             name_ports: sx_connect::drivers::bambu::SSDP_PORTS.to_vec(),
+        }
+    }
+}
+
+impl LinkConfig {
+    /// The defaults with every socket on 127.0.0.1: the phone listener, printer discovery and direct
+    /// video, with mDNS off. For tests and `sx-link --loopback`: nothing listens on the network, so
+    /// the OS firewall has nothing to ask, and a scan finds only what runs on this machine.
+    #[must_use]
+    pub fn loopback() -> Self {
+        let local = Some(std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST));
+        Self {
+            mdns: MdnsConfig {
+                disabled: true,
+                ..MdnsConfig::default()
+            },
+            rtc_bind: local,
+            lan_bind: local,
+            discovery_bind: local,
+            ..Self::default()
         }
     }
 }
@@ -413,4 +434,25 @@ pub async fn serve_with_approvals(
         state_dir: cfg.state_dir.clone(),
         bridge: kept,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use std::net::{IpAddr, Ipv4Addr};
+
+    use super::LinkConfig;
+
+    #[test]
+    fn loopback_binds_every_socket_to_127_0_0_1_and_the_defaults_stay_on_the_network() {
+        let local = Some(IpAddr::V4(Ipv4Addr::LOCALHOST));
+        let l = LinkConfig::loopback();
+        assert_eq!((l.lan_bind, l.discovery_bind, l.rtc_bind), (local, local, local));
+        assert!(l.mdns.disabled);
+        assert_eq!(l.port, super::DEFAULT_PORT);
+        // The app and sx-link without --loopback keep the phone listener and discovery on every
+        // address, and direct video on the default route.
+        let d = LinkConfig::default();
+        assert_eq!((d.lan_bind, d.discovery_bind, d.rtc_bind), (None, None, None));
+        assert!(!d.mdns.disabled);
+    }
 }
