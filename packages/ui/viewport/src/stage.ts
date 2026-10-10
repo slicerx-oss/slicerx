@@ -51,7 +51,7 @@ import { FullScreenQuad } from 'three/addons/postprocessing/Pass.js'
 import type { Bed } from '@slicerx/contracts'
 import { SCENE, type SceneColors } from './palette'
 import { REVEAL_GRID_SETTLE_MS, REVEAL_GRID_SPAN_MS, REVEAL_SETTLED } from './reveal'
-import type { PlateStyle } from './types'
+import type { BedOutline, PlateStyle } from './types'
 
 /** Objects sit this far above the plate top so their bottoms never fight it for depth. */
 export const LIFT_MM = 0.02
@@ -88,7 +88,7 @@ varying float vH;
 void main(){ vec4 w = modelMatrix * vec4(position, 1.0); vH = w.y; gl_Position = projectionMatrix * viewMatrix * w; }`
 
 const PLATE_OUTLINE_FS = /* glsl */ `
-uniform vec3 edge; uniform vec3 edgeAlt; uniform float alert; uniform float ground; uniform float surface; uniform vec3 grid; uniform vec2 hb; uniform vec3 reveal; varying vec2 vP;
+uniform vec3 edge; uniform vec3 edgeAlt; uniform float alert; uniform float ground; uniform float surface; uniform float subtle; uniform vec3 grid; uniform vec2 hb; uniform vec3 reveal; varying vec2 vP;
 float lines(vec2 p, float s){ vec2 q = p / s; vec2 w = fwidth(q); vec2 g = abs(fract(q - 0.5) - 0.5) / max(w, vec2(1e-4)); return (1.0 - min(min(g.x, g.y), 1.0)) * (1.0 - smoothstep(0.3, 0.7, max(w.x, w.y))); }
 // the first plate reveal (reveal.ts): x is how far the outline is traced, 0 to 1 from the front middle round each side
 // to the back middle; y is ms since the grid started laying, back to front, a row overshooting as it lands; z is the
@@ -128,11 +128,12 @@ void main(){
   // The bare bed gets a faint fill in the grid color, so the printable area stands apart from the background.
   float fill = inside * 0.07 * (1.0 - surface) * (1.0 - ground) * row;
   float inner = exp(d / 10.0) * inside * 0.045 * (1.0 - ground) * row;
-  float aEdge = clamp(line + glow + br * 0.7, 0.0, 1.0) * mix(1.0, groundEdge, ground) * shown;
+  // a subtle outline (hosts with a calm theme) is a thin half strength line without the glow, the corner marks fainter
+  float aEdge = clamp(line * mix(1.0, 0.5, subtle) + glow * (1.0 - subtle) + br * mix(0.7, 0.3, subtle), 0.0, 1.0) * mix(1.0, groundEdge, ground) * shown;
   float aG = clamp(gl + fill + inner, 0.0, 1.0);
   float wash = reveal.z * 0.16 * inside * (1.0 - ground);
   float a = clamp(aEdge + (aG + wash) * (1.0 - aEdge), 0.0, 1.0);
-  vec3 ec = mix(edge, edgeAlt, alert);
+  vec3 ec = mix(mix(edge, grid, 0.4 * subtle), edgeAlt, alert);
   vec3 col = ec * aEdge + (grid * aG + edge * wash) * (1.0 - aEdge);
   gl_FragColor = vec4(col, a);
 }`
@@ -216,6 +217,7 @@ export class Stage {
   } | null = null
   private label = 'Textured PEI'
   private plateStyle: PlateStyle = 'grid'
+  private bedOutline: BedOutline = 'default'
   private colors: SceneColors = SCENE
   private disposables: { dispose(): void }[] = []
 
@@ -328,6 +330,12 @@ export class Stage {
     if (style === this.plateStyle) return
     this.plateStyle = style
     this.setSceneColors(this.colors)
+  }
+
+  /** How strong the bed outline is: `default` (a crisp glowing line) or `subtle` (thin, half strength, no glow). */
+  setBedOutline(style: BedOutline): void {
+    this.bedOutline = style
+    if (this.outline?.uniforms.subtle) this.outline.uniforms.subtle.value = style === 'subtle' ? 1 : 0
   }
 
   /** Bed and floor colors. Rebuilds the plate decor. */
@@ -526,7 +534,7 @@ export class Stage {
     const half = new Vector2(bed.widthMm / 2, bed.depthMm / 2)
     const pad = 24
     const mat = new ShaderMaterial({
-      uniforms: { edge: { value: new Color(this.colors.selection) }, edgeAlt: { value: new Color(this.colors.overhangAmber) }, alert: { value: this.alert ? 1 : 0 }, ground: { value: this.ground ? 1 : 0 }, surface: { value: this.plateStyle === 'grid' ? 0 : 1 }, grid: { value: new Color(this.colors.floorGrid) }, hb: { value: half }, reveal: this.revealU },
+      uniforms: { edge: { value: new Color(this.colors.selection) }, edgeAlt: { value: new Color(this.colors.overhangAmber) }, alert: { value: this.alert ? 1 : 0 }, ground: { value: this.ground ? 1 : 0 }, surface: { value: this.plateStyle === 'grid' ? 0 : 1 }, subtle: { value: this.bedOutline === 'subtle' ? 1 : 0 }, grid: { value: new Color(this.colors.floorGrid) }, hb: { value: half }, reveal: this.revealU },
       transparent: true,
       depthWrite: false,
       vertexShader: 'varying vec2 vP; void main(){ vP = position.xy; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',

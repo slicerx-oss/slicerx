@@ -94,6 +94,7 @@ import type {
   ViewportStats,
   ToolpathFinish,
   PlateStyle,
+  BedOutline,
 } from './types'
 
 /** How long the camera takes to reach a newly opened model from the old one's framing. */
@@ -3056,6 +3057,24 @@ class ViewportImpl implements Viewport {
     return b.applyMatrix4(this.stage.bedMatrix().invert())
   }
 
+  dropToBed(ids?: readonly string[]): Record<string, number[]> {
+    const out: Record<string, number[]> = {}
+    for (const o of this.objects.values()) {
+      if (ids && !ids.includes(o.id)) continue
+      o.group.updateMatrixWorld(true)
+      // precise: a turned part's loose box reaches below its lowest vertex and would leave it floating
+      const z = new Box3().setFromObject(o.group, true).applyMatrix4(this.stage.bedMatrix().invert()).min.z
+      if (!Number.isFinite(z) || Math.abs(z) < 1e-4) continue
+      o.group.matrix.elements[14] = (o.group.matrix.elements[14] ?? 0) - z
+      o.group.matrixWorldNeedsUpdate = true
+      out[o.id] = o.group.matrix.toArray()
+    }
+    if (Object.keys(out).length === 0) return out
+    for (const [id, m] of Object.entries(out)) this.emit('transform', { id, transform: m, final: true })
+    this.objectsMoved()
+    return out
+  }
+
   arrange(opts: { animate?: boolean; gapMm?: number } = {}): Record<string, number[]> {
     const gap = opts.gapMm ?? 14
     const bed = this.stage.bed
@@ -3231,6 +3250,11 @@ class ViewportImpl implements Viewport {
   setPlateStyle(style: PlateStyle): void {
     this.stage.setPlateStyle(style)
     this.shadowDirty = true
+    this.invalidate()
+  }
+
+  setBedOutline(style: BedOutline): void {
+    this.stage.setBedOutline(style)
     this.invalidate()
   }
 

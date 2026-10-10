@@ -12,6 +12,13 @@ const SCOPE = ':is(.sxe-viewport, .sxe-settings, .sxe-agreement, .sxe-localai):n
 export const EMBED_CSS = tokens.replace(/:root\b/g, SCOPE) + `
 .sxe-viewport { position: relative; min-height: 240px; background: var(--ink-1); border-radius: 12px; overflow: hidden; }
 .sxe-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; outline: none; }
+.sxe-tools { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 2px; padding: 4px; border-radius: 10px; background: var(--overlay); border: 1px solid var(--line-soft); box-shadow: var(--shadow-float); -webkit-backdrop-filter: var(--lift-glass); backdrop-filter: var(--lift-glass); }
+.sxe-tool { box-sizing: border-box; width: 32px; height: 32px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 7px; background: none; color: var(--muted); cursor: pointer; }
+.sxe-tool:hover { color: var(--fg); background: var(--ink-3); }
+.sxe-tool[aria-pressed=true] { color: var(--fg); background: var(--accent-tint); box-shadow: inset 0 -2px 0 var(--accent); }
+.sxe-tool:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.sxe-tools-sep { width: 1px; height: 20px; margin: 0 4px; background: var(--line-soft); }
+@media (pointer: coarse) { .sxe-tool { width: 40px; height: 40px; } }
 .sxe-error { position: absolute; inset: 0; margin: 0; display: grid; place-items: center; padding: 24px; text-align: center; color: var(--muted); font: 13px/1.5 system-ui, sans-serif; }
 .sxe-settings { font: 13px/1.5 var(--f-body); color: var(--fg); background: var(--ink-1); border: 1px solid var(--line-soft); border-radius: 12px; padding: 14px 16px; }
 .sxe-tabs { display: inline-flex; gap: 2px; padding: 2px; border-radius: 9px; background: var(--ink-2); border: 1px solid var(--line-soft); margin-bottom: 10px; }
