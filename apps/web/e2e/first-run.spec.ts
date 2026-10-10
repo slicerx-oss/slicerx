@@ -219,6 +219,8 @@ test('Settings, Look and feel: theme, accent, text and accessibility; Slicing an
 
 test('a profile from an earlier onboarding goes through setup again, prefilled, and keeps everything', async ({ page }) => {
   await page.addInitScript(() => {
+    // The real default for a saved on is Auto: without the test fixture's Always.
+    sessionStorage.removeItem('sx-auto-slice-always')
     if (localStorage.getItem('sx-e2e-seeded')) return
     localStorage.setItem('sx-e2e-seeded', '1')
     // As 0.2.2 left it: setup finished with no version, the old SlicerX theme ids, the Bambu look, a printer, slicing on open.
