@@ -137,14 +137,28 @@ jobs:
       fail-fast: false
       matrix:
         part: [firmware, requests, core, crates]
-    runs-on: ubuntu-latest
+    # In the merge queue the two longest parts run on the self-hosted Linux runners (sx-pc), whose build directory stays
+    # warm between runs: there they take about 2 minutes, against 8 to 11 on a fresh hosted runner, and they leave the
+    # hosted job limit to the e2e shards. A pull request always runs them hosted. Setting the repository variable
+    # RUST_TESTS_ON_PC to false sends them back to hosted runners at once.
+    runs-on: ${{ (github.event_name == 'merge_group' && vars.RUST_TESTS_ON_PC != 'false' && (matrix.part == 'core' || matrix.part == 'crates')) && fromJSON('["self-hosted","sx-pc"]') || 'ubuntu-latest' }}
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      # Hosted runners install the toolchain and restore a cache. The self-hosted runners have the pinned toolchain
+      # installed and keep one build directory per runner, and each cargo step there holds the machine's heavy lock.
+      - if: runner.environment == 'github-hosted'
+        uses: dtolnay/rust-toolchain@stable
+      - if: runner.environment == 'github-hosted'
+        uses: Swatinem/rust-cache@v2
         with:
           key: tests-${{ matrix.part }}
+      - if: runner.environment != 'github-hosted'
+        run: |
+          echo "CARGO_TARGET_DIR=$HOME/target/$RUNNER_NAME" >> "$GITHUB_ENV"
+          echo "SX_HEAVY_LOCK=/mnt/c/builds/heavy-lock/lock" >> "$GITHUB_ENV"
+          echo "SX_HEAVY_WAIT=1200" >> "$GITHUB_ENV"
+          echo "HEAVY=bash $GITHUB_WORKSPACE/scripts/ci/heavy.sh timeout 1500" >> "$GITHUB_ENV"
       - if: matrix.part == 'firmware' || matrix.part == 'requests'
         run: cargo test -p sx-core --test ${{ matrix.part }}
       # every other test file of sx-core, read from the directory so a new one is never left out
@@ -155,12 +169,12 @@ jobs:
             n=$(basename "$t" .rs)
             case $n in firmware | requests) ;; *) args="$args --test $n" ;; esac
           done
-          cargo test -p sx-core $args
+          ${HEAVY:-} cargo test -p sx-core $args
       # sx-link's real-service test runs the sx-cloud binary; it fails here, not skips, when it is missing.
       - if: matrix.part == 'crates'
         run: |
-          cargo build -p sx-cloud
-          cargo test --workspace --exclude slicerx-desktop --exclude sx-core --test '*'
+          ${HEAVY:-} cargo build -p sx-cloud
+          ${HEAVY:-} cargo test --workspace --exclude slicerx-desktop --exclude sx-core --test '*'
       # The MCP server's tests that slice with the real core, on the sx that sx-cli's tests above built. They skip
       # where there is no sx (the web job); here SLICERX_TEST_REQUIRE_SX makes a missing one fail them.
       - if: matrix.part == 'crates'
@@ -173,9 +187,9 @@ jobs:
       - if: matrix.part == 'crates'
         run: |
           pnpm install --frozen-lockfile
-          cd packages/mcp && bash "$GITHUB_WORKSPACE/scripts/ci/pr-test.sh"
+          export SLICERX_TEST_SX_BIN="${CARGO_TARGET_DIR:-$GITHUB_WORKSPACE/target}/debug/sx"
+          cd packages/mcp && ${HEAVY:-} bash "$GITHUB_WORKSPACE/scripts/ci/pr-test.sh"
         env:
-          SLICERX_TEST_SX_BIN: ${{ github.workspace }}/target/debug/sx
           SLICERX_TEST_REQUIRE_SX: '1'
           SX_FLAKY_OUT: ${{ runner.temp }}/retried.txt
       - if: always() && matrix.part == 'crates'
