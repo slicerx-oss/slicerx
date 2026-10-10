@@ -141,10 +141,11 @@ button.reset:hover { color: var(--fg); background: var(--ink-3); }
 .hud-bl { left: 12px; bottom: 12px; display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap; right: 12px; }
 .platechip { display: flex; align-items: center; gap: 10px; height: 36px; padding: 0 12px; border-radius: var(--r-md); }
 .platechip b { font: var(--fw-semibold) calc(12.5px * var(--text-scale)) var(--f-body); white-space: nowrap; flex: none; }
-/* A long object name is cut in the middle (lib/short-name.tsx) and the chip stays small, so the size chip keeps its row. */
-.platechip { max-width: min(320px, 35%); min-width: 0; }
+/* A long object name is cut in the middle (lib/short-name.tsx) and the chip stays small, so the size chip keeps its row.
+   It starts from zero and grows to its content, so on a phone it gives way before the size chip wraps. */
+.platechip { flex: 1 1 0; max-width: max-content; min-width: 0; }
 .hud-bl .dims { flex: none; }
-.platechip .platechip-name { display: flex; min-width: 0; }
+.platechip .platechip-name { display: flex; min-width: 0; max-width: 220px; }
 .platechip span { font: var(--fw-medium) calc(11px * var(--text-scale)) var(--f-mono); color: var(--muted); }
 .dims { padding: 8px 12px; border-radius: var(--r-md); font-size: calc(11.5px * var(--text-scale)); color: var(--muted); }
 .busy { position: absolute; left: 0; right: 0; top: 0; height: 2px; z-index: 6; overflow: hidden; }
