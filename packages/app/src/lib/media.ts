@@ -4,13 +4,16 @@ import { useSyncExternalStore } from 'react'
 import { motionReduced } from '@slicerx/ui'
 
 export function useMediaQuery(query: string): boolean {
+  // Without matchMedia (a test DOM, an old embedded view) no query matches.
+  const has = typeof window !== 'undefined' && typeof window.matchMedia === 'function'
   return useSyncExternalStore(
     (cb) => {
+      if (!has) return () => {}
       const m = window.matchMedia(query)
       m.addEventListener('change', cb)
       return () => m.removeEventListener('change', cb)
     },
-    () => window.matchMedia(query).matches,
+    () => has && window.matchMedia(query).matches,
     () => false,
   )
 }
