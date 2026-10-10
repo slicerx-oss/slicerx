@@ -9,7 +9,7 @@ import { GCODE_TEXT_KEYS, printerConfig, printerProfile, reviewProjectGcode, typ
 import type { DataStore } from './data'
 import type { PresetLayer } from './presets'
 import { ToolInputError } from './models'
-import type { ProfileCatalog } from './profiles'
+import { SLICERX_DEFAULT_PROCESS, type ProfileCatalog } from './profiles'
 import { defaultConfig, toSchemaValue, validateConfig } from './settings'
 
 export interface ResolvedConfig {
@@ -76,6 +76,13 @@ export function setSlot(list: readonly unknown[], slot: number, value: unknown, 
 export function resolveSliceConfig(store: DataStore, profiles: ProfileCatalog, names: string[], overrides: Record<string, unknown> | undefined, extra: ExtraLayers = {}): ResolvedConfig {
   const explicit: Record<string, SettingValue> = {}
   const applied: string[] = []
+  // A slice that names no process gets a fresh SlicerX plate's, as the app does
+  const choosesProcess = extra.project || names.some((n) => profiles.get(n)?.section === 'process') || (extra.presets ?? []).some((l) => l.section === 'process')
+  const fallback = choosesProcess ? undefined : profiles.get(SLICERX_DEFAULT_PROCESS)
+  if (fallback) {
+    Object.assign(explicit, fallback.config)
+    applied.push(fallback.id)
+  }
   if (extra.project) {
     Object.assign(explicit, extra.project.config)
     applied.push(`project:${extra.project.name}`)
