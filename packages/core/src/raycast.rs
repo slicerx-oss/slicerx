@@ -383,8 +383,7 @@ pub(crate) struct Bvh {
     mesh: Soup,
     nodes: Vec<Node>,
     order: Vec<u32>,
-    /// Per slot of `order`, its place when the leaves are read right subtree first: the order a plain
-    /// depth-first walk meets the triangles in, which settles hits at the same distance.
+    /// Per slot of `order`, its triangle's [`tie_ranks`] entry, which settles hits at the same distance.
     rank: Vec<u32>,
     /// Per slot of `order`, its triangle's first corner and the two edges from it, as the hit test reads them.
     edges: Vec<[V3; 3]>,
@@ -508,30 +507,32 @@ impl Bvh {
                 mul(add(add(a, b), c), 1.0 / 3.0)
             })
             .collect();
+        let boxes: Vec<[V3; 2]> = (0..mesh.tris.len())
+            .map(|t| {
+                let [a, b, c] = mesh.corners(t);
+                let lo = [
+                    a[0].min(b[0]).min(c[0]),
+                    a[1].min(b[1]).min(c[1]),
+                    a[2].min(b[2]).min(c[2]),
+                ];
+                let hi = [
+                    a[0].max(b[0]).max(c[0]),
+                    a[1].max(b[1]).max(c[1]),
+                    a[2].max(b[2]).max(c[2]),
+                ];
+                [lo, hi]
+            })
+            .collect();
         let mut nodes = Vec::with_capacity(mesh.tris.len() / 2 + 1);
         if !order.is_empty() {
             let n = order.len();
-            build(&mesh, &centers, &mut order, 0, n, &mut nodes);
+            build(&boxes, &centers, &mut order, 0, n, 0, &mut nodes);
         }
-        let mut rank = vec![0u32; order.len()];
-        let mut next = 0u32;
-        let mut stack = vec![0u32];
-        while let Some(i) = stack.pop() {
-            let Some(node) = nodes.get(i as usize) else {
-                continue;
-            };
-            if node.n > 0 {
-                for s in node.a..node.a + node.n {
-                    if let Some(r) = rank.get_mut(s as usize) {
-                        *r = next;
-                    }
-                    next += 1;
-                }
-            } else {
-                stack.push(node.a);
-                stack.push(node.right);
-            }
-        }
+        let first = tie_ranks(&centers);
+        let rank: Vec<u32> = order
+            .iter()
+            .map(|&t| first.get(t as usize).copied().unwrap_or(u32::MAX))
+            .collect();
         let edges = order
             .iter()
             .map(|&t| {
@@ -563,8 +564,8 @@ impl Bvh {
     }
 
     /// The nearest triangle the ray `o + t d` (t > 0) hits, and whether it is hit on its front
-    /// (the ray runs against the triangle's normal). Of hits at the same distance, the one a depth-first walk
-    /// of the right subtrees first meets wins (`rank`); the walk itself goes to the nearest child first, so far
+    /// (the ray runs against the triangle's normal). Of hits at the same distance, the one with the lower
+    /// [`tie_ranks`] entry wins (`rank`); the walk itself goes to the nearest child first, so far
     /// boxes are mostly cut off by a hit already found.
     ///
     /// The nearest child is taken next without going on the stack, and a child the ray misses (or meets beyond the
@@ -736,32 +737,61 @@ impl Bvh {
     }
 }
 
-fn build(mesh: &Soup, centers: &[V3], order: &mut [u32], lo: usize, hi: usize, nodes: &mut Vec<Node>) -> u32 {
+/// Bins along an axis when the tree looks for its cheapest split.
+const BINS: usize = 16;
+/// Below this depth a node splits where the surface area heuristic puts it; deeper ones (rare) split at the
+/// median, which keeps the walk's fixed stack of 64 entries enough.
+const SAH_DEPTH: usize = 36;
+/// Each box reaches this far (mm) past its triangles. A ray that meets a triangle lying in a box's face, or at
+/// a box's edge, meets the box a rounding error later than the triangle, and the walk then passed the box by as
+/// beyond the best hit or missed: a front face tied with a back face at the same distance, or the nearest
+/// face of all, was lost. A micrometer is far more than the rounding at plate sizes, so every triangle the hit
+/// test accepts at or before the best hit is tested, whatever the tree, and the hits are those of testing
+/// every triangle.
+const PAD: f32 = 1e-3;
+
+/// Half the surface area of the box `lo hi`.
+fn half_area(lo: V3, hi: V3) -> f32 {
+    let d = sub(hi, lo);
+    d[0] * d[1] + d[1] * d[2] + d[2] * d[0]
+}
+
+/// The tree over `order[lo..hi]`: a leaf of up to 4 triangles, else two children split where the surface area
+/// heuristic finds the cheapest (binned triangle centers on each axis), so rays test fewer triangles than with
+/// a split at the median. The hits do not depend on the shape of the tree; ties go by [`tie_ranks`].
+#[allow(
+    clippy::too_many_arguments,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    clippy::cast_precision_loss
+)]
+fn build(
+    boxes: &[[V3; 2]],
+    centers: &[V3],
+    order: &mut [u32],
+    lo: usize,
+    hi: usize,
+    depth: usize,
+    nodes: &mut Vec<Node>,
+) -> u32 {
     let mut bmin = [f32::MAX; 3];
     let mut bmax = [f32::MIN; 3];
     let mut cmin = [f32::MAX; 3];
     let mut cmax = [f32::MIN; 3];
     for &t in order.get(lo..hi).unwrap_or(&[]) {
-        for p in mesh.corners(t as usize) {
-            for k in 0..3 {
-                if let (Some(a), Some(b), Some(&v)) = (bmin.get_mut(k), bmax.get_mut(k), p.get(k)) {
-                    *a = a.min(v);
-                    *b = b.max(v);
-                }
-            }
-        }
+        let [blo, bhi] = boxes.get(t as usize).copied().unwrap_or([[0.0; 3]; 2]);
         let c = centers.get(t as usize).copied().unwrap_or([0.0; 3]);
         for k in 0..3 {
-            if let (Some(a), Some(b), Some(&v)) = (cmin.get_mut(k), cmax.get_mut(k), c.get(k)) {
-                *a = a.min(v);
-                *b = b.max(v);
-            }
+            bmin[k] = bmin[k].min(blo[k]);
+            bmax[k] = bmax[k].max(bhi[k]);
+            cmin[k] = cmin[k].min(c[k]);
+            cmax[k] = cmax[k].max(c[k]);
         }
     }
     let id = nodes.len() as u32;
     nodes.push(Node {
-        lo: bmin,
-        hi: bmax,
+        lo: bmin.map(|v| v - PAD),
+        hi: bmax.map(|v| v + PAD),
         a: lo as u32,
         n: (hi - lo) as u32,
         right: 0,
@@ -769,28 +799,142 @@ fn build(mesh: &Soup, centers: &[V3], order: &mut [u32], lo: usize, hi: usize, n
     if hi - lo <= 4 {
         return id;
     }
-    let axis = (0..3)
-        .max_by(|&x, &y| {
-            let (dx, dy) = (cmax[x] - cmin[x], cmax[y] - cmin[y]);
-            dx.total_cmp(&dy)
-        })
-        .unwrap_or(0);
-    if let Some(slice) = order.get_mut(lo..hi) {
-        crate::sorting::sort_by(slice, |&p, &q| {
-            let cp = centers.get(p as usize).map_or(0.0, |c| c[axis]);
-            let cq = centers.get(q as usize).map_or(0.0, |c| c[axis]);
-            cp.total_cmp(&cq)
-        });
+    let bin = |c: f32, axis: usize| -> usize {
+        let ext = cmax[axis] - cmin[axis];
+        (((c - cmin[axis]) * (BINS as f32 / ext)) as usize).min(BINS - 1)
+    };
+    // The cheapest split: axis and the first bin of the right side.
+    let mut best: Option<(f32, usize, usize)> = None;
+    if depth < SAH_DEPTH {
+        for axis in 0..3 {
+            if cmax[axis] - cmin[axis] <= 0.0 {
+                continue;
+            }
+            let mut count = [0usize; BINS];
+            let mut blo = [[f32::MAX; 3]; BINS];
+            let mut bhi = [[f32::MIN; 3]; BINS];
+            for &t in order.get(lo..hi).unwrap_or(&[]) {
+                let c = centers.get(t as usize).copied().unwrap_or([0.0; 3]);
+                let [tlo, thi] = boxes.get(t as usize).copied().unwrap_or([[0.0; 3]; 2]);
+                let b = bin(c[axis], axis);
+                count[b] += 1;
+                for k in 0..3 {
+                    blo[b][k] = blo[b][k].min(tlo[k]);
+                    bhi[b][k] = bhi[b][k].max(thi[k]);
+                }
+            }
+            // Area and count left of each boundary, then sweep from the right.
+            let mut left = [(0.0f32, 0usize); BINS];
+            let (mut l, mut h, mut n) = ([f32::MAX; 3], [f32::MIN; 3], 0usize);
+            for b in 0..BINS - 1 {
+                for k in 0..3 {
+                    l[k] = l[k].min(blo[b][k]);
+                    h[k] = h[k].max(bhi[b][k]);
+                }
+                n += count[b];
+                left[b + 1] = (if n > 0 { half_area(l, h) } else { 0.0 }, n);
+            }
+            let (mut l, mut h, mut n) = ([f32::MAX; 3], [f32::MIN; 3], 0usize);
+            for b in (1..BINS).rev() {
+                for k in 0..3 {
+                    l[k] = l[k].min(blo[b][k]);
+                    h[k] = h[k].max(bhi[b][k]);
+                }
+                n += count[b];
+                let (la, ln) = left[b];
+                if ln == 0 || n == 0 {
+                    continue;
+                }
+                let cost = la * ln as f32 + half_area(l, h) * n as f32;
+                if best.is_none_or(|(c, _, _)| cost < c) {
+                    best = Some((cost, axis, b));
+                }
+            }
+        }
     }
-    let mid = lo + (hi - lo) / 2;
-    let left = build(mesh, centers, order, lo, mid, nodes);
-    let right = build(mesh, centers, order, mid, hi, nodes);
+    let mid = match (best, order.get_mut(lo..hi)) {
+        (Some((_, axis, split)), Some(slice)) => {
+            // Triangles whose centers fall left of the split first.
+            let mut m = 0usize;
+            for i in 0..slice.len() {
+                let c = centers.get(slice[i] as usize).copied().unwrap_or([0.0; 3]);
+                if bin(c[axis], axis) < split {
+                    slice.swap(i, m);
+                    m += 1;
+                }
+            }
+            lo + m
+        }
+        (_, slice) => {
+            let axis = (0..3)
+                .max_by(|&x, &y| (cmax[x] - cmin[x]).total_cmp(&(cmax[y] - cmin[y])))
+                .unwrap_or(0);
+            if let Some(slice) = slice {
+                crate::sorting::sort_by(slice, |&p, &q| {
+                    let cp = centers.get(p as usize).map_or(0.0, |c| c[axis]);
+                    let cq = centers.get(q as usize).map_or(0.0, |c| c[axis]);
+                    cp.total_cmp(&cq)
+                });
+            }
+            lo + (hi - lo) / 2
+        }
+    };
+    let left = build(boxes, centers, order, lo, mid, depth + 1, nodes);
+    let right = build(boxes, centers, order, mid, hi, depth + 1, nodes);
     if let Some(n) = nodes.get_mut(id as usize) {
         n.a = left;
         n.n = 0;
         n.right = right;
     }
     id
+}
+
+/// Per triangle, which of two hits at exactly the same distance wins: the order in which a depth-first walk,
+/// right subtree first, meets the triangles of a tree split at the median of the longest axis of the centers
+/// into leaves of up to 4. The tree is never built; only its order is kept, so a ray grazing an edge shared by
+/// a front and a back face takes the same face whatever tree finds the hit.
+#[allow(clippy::cast_possible_truncation)]
+fn tie_ranks(centers: &[V3]) -> Vec<u32> {
+    let mut order: Vec<u32> = (0..centers.len() as u32).collect();
+    let mut rank = vec![0u32; centers.len()];
+    let mut next = 0u32;
+    let mut todo = vec![(0usize, order.len())];
+    while let Some((lo, hi)) = todo.pop() {
+        let Some(slice) = order.get_mut(lo..hi) else {
+            continue;
+        };
+        if hi - lo <= 4 {
+            for &t in slice.iter() {
+                if let Some(r) = rank.get_mut(t as usize) {
+                    *r = next;
+                }
+                next += 1;
+            }
+            continue;
+        }
+        let mut cmin = [f32::MAX; 3];
+        let mut cmax = [f32::MIN; 3];
+        for &t in slice.iter() {
+            let c = centers.get(t as usize).copied().unwrap_or([0.0; 3]);
+            for k in 0..3 {
+                cmin[k] = cmin[k].min(c[k]);
+                cmax[k] = cmax[k].max(c[k]);
+            }
+        }
+        let axis = (0..3)
+            .max_by(|&x, &y| (cmax[x] - cmin[x]).total_cmp(&(cmax[y] - cmin[y])))
+            .unwrap_or(0);
+        crate::sorting::sort_by(slice, |&p, &q| {
+            let cp = centers.get(p as usize).map_or(0.0, |c| c[axis]);
+            let cq = centers.get(q as usize).map_or(0.0, |c| c[axis]);
+            cp.total_cmp(&cq)
+        });
+        let mid = lo + (hi - lo) / 2;
+        // The right half is taken first.
+        todo.push((lo, mid));
+        todo.push((mid, hi));
+    }
+    rank
 }
 
 /// A sample frame around a normal, as Orca's `Frame::set_from_z`.
@@ -1172,5 +1316,176 @@ mod tests {
         collapse(&mut m, 200);
         assert!(m.tris.len() <= 210 && m.tris.len() < before, "{}", m.tris.len());
         assert!(m.verts.iter().all(|v| v[2] == 0.0));
+    }
+    /// A ray cast through the tree with the triangles `tris` over the corners `verts` (bits of f32 mm, as the
+    /// keychain's decimated mesh has them), from `o` along `d`.
+    fn grazing(
+        verts: &[[u32; 3]],
+        tris: &[[u32; 3]],
+        o: [u32; 3],
+        d: [u32; 3],
+    ) -> (Option<bool>, Vec<(f32, usize, f32)>) {
+        let soup = Soup {
+            verts: verts.iter().map(|v| v.map(f32::from_bits)).collect(),
+            tris: tris.to_vec(),
+        };
+        let (o, d) = (o.map(f32::from_bits), d.map(f32::from_bits));
+        let bvh = Bvh::new(soup);
+        let mut stack = [Visit::default(); 64];
+        (bvh.first_hit(o, d, &mut stack), bvh.all_hits(o, d))
+    }
+
+    #[test]
+    fn grazing_ray_finds_the_nearest_face() {
+        // From a sample of the keychain, a ray meets the back of one face at 0.84293836 mm and the front of
+        // another one rounding step farther, at 0.8429384 mm. The walk used to find the farther hit first and then
+        // pass the nearer face's box by, entering it a rounding step beyond that hit, so it took the front.
+        let (hit, hits) = grazing(
+            &[
+                [0x42b9_3518, 0x42d4_a5ec, 0x3f80_0000],
+                [0x42b7_f148, 0x42d4_4f84, 0x3f80_0000],
+                [0x4289_e500, 0x4307_fe49, 0x3f80_0000],
+                [0x432e_6dd7, 0x42fe_e76a, 0x0000_0000],
+                [0x432e_6b86, 0x42ff_f15a, 0x3f80_0000],
+                [0x432e_6dd7, 0x42fe_e76a, 0x3f80_0000],
+                [0x433f_1702, 0x430c_062b, 0x0000_0000],
+                [0x433f_83b9, 0x430b_140e, 0x3f80_0000],
+                [0x433e_db72, 0x430c_8ce7, 0x3f80_0000],
+                [0x429e_76a0, 0x4316_6be6, 0x3f80_0000],
+                [0x429d_1de6, 0x4317_014f, 0x3f80_0000],
+                [0x429d_b500, 0x4316_128d, 0x3f80_0000],
+                [0x42d1_d332, 0x4311_8966, 0x0000_0000],
+                [0x42d2_c77a, 0x4311_2631, 0x3f80_0000],
+                [0x42d1_d332, 0x4311_8966, 0x3f80_0000],
+                [0x4288_2d26, 0x430c_27d9, 0x0000_0000],
+                [0x428a_3ee2, 0x430b_7420, 0x0000_0000],
+                [0x428a_3ee2, 0x430b_7420, 0x3f80_0000],
+                [0x42ca_ce88, 0x42e0_f436, 0x0000_0000],
+                [0x42c9_eb04, 0x42e0_65a8, 0x0000_0000],
+                [0x42c9_eb04, 0x42e0_65a8, 0x3f80_0000],
+                [0x42d0_2b6a, 0x430b_dc00, 0x0000_0000],
+                [0x42cf_3382, 0x430c_1b7c, 0x3f80_0000],
+                [0x42d0_2b6a, 0x430b_dc00, 0x3f80_0000],
+                [0x4334_86be, 0x4318_038b, 0x3f80_0000],
+                [0x4335_4370, 0x4318_242b, 0x3f80_0000],
+                [0x4334_7b5f, 0x4318_8fc7, 0x3f80_0000],
+                [0x42cc_5676, 0x4300_767b, 0x3f80_0000],
+                [0x42cc_9f7e, 0x4300_f714, 0x3f80_0000],
+                [0x42bc_4698, 0x430e_01df, 0x3f80_0000],
+                [0x433d_ec23, 0x4308_0199, 0x0000_0000],
+                [0x433d_195f, 0x4308_e678, 0x0000_0000],
+                [0x433d_cdff, 0x4309_fc9a, 0x0000_0000],
+                [0x433f_4c8d, 0x4306_22df, 0x0000_0000],
+                [0x433e_5c73, 0x4304_52cd, 0x0000_0000],
+                [0x433d_cedd, 0x4304_84fa, 0x0000_0000],
+                [0x432a_8315, 0x42d4_fb1e, 0x0000_0000],
+                [0x4327_984a, 0x42dc_5bee, 0x0000_0000],
+                [0x4328_0e7b, 0x42db_7644, 0x0000_0000],
+                [0x431c_1d28, 0x4317_6b4a, 0x0000_0000],
+                [0x431d_6d21, 0x4317_1d7d, 0x0000_0000],
+                [0x431c_1d28, 0x4317_6b4a, 0x3f80_0000],
+                [0x432e_4ba5, 0x42fc_a42c, 0x0000_0000],
+                [0x432e_6a2f, 0x42fe_57fa, 0x0000_0000],
+                [0x432e_6a2f, 0x42fe_57fa, 0x3f80_0000],
+                [0x42d5_8a1a, 0x430d_43fb, 0x3f80_0000],
+                [0x42d7_5aae, 0x430c_c4d2, 0x3f80_0000],
+                [0x42d6_abaa, 0x430d_2f91, 0x3f80_0000],
+                [0x42ae_d14e, 0x4319_0b2c, 0x0000_0000],
+                [0x42ad_f243, 0x4318_ef03, 0x3f80_0000],
+                [0x42ac_a55d, 0x4318_c02c, 0x3f80_0000],
+                [0x42ae_0391, 0x42fa_a336, 0x3f80_0000],
+                [0x42b9_261a, 0x4301_55b0, 0x3f80_0000],
+                [0x42b8_ab4c, 0x4301_c282, 0x3f80_0000],
+                [0x42b7_09b6, 0x42d8_31de, 0x3f80_0000],
+                [0x42b7_f148, 0x42d4_4f84, 0x3f80_0000],
+                [0x42b9_3518, 0x42d4_a5ec, 0x3f80_0000],
+                [0x4336_5ccc, 0x42dc_ffbc, 0x0000_0000],
+                [0x4335_dce0, 0x42dc_73fc, 0x0000_0000],
+                [0x4335_6329, 0x42e0_7782, 0x0000_0000],
+            ],
+            &[
+                [0, 1, 2],
+                [3, 4, 5],
+                [6, 7, 8],
+                [9, 10, 11],
+                [12, 13, 14],
+                [15, 16, 17],
+                [18, 19, 20],
+                [21, 22, 23],
+                [24, 25, 26],
+                [27, 28, 29],
+                [30, 31, 32],
+                [33, 34, 35],
+                [36, 37, 38],
+                [39, 40, 41],
+                [42, 43, 44],
+                [45, 46, 47],
+                [48, 49, 50],
+                [51, 52, 53],
+                [54, 55, 56],
+                [57, 58, 59],
+            ],
+            [0x42b6_ae67, 0x42d5_643a, 0x3fbd_91b6],
+            [0x3f4c_ccce, 0xbe3d_dc1c, 0xbf12_1510],
+        );
+        assert_eq!(hit, Some(false));
+        assert!(hits.len() >= 2 && hits[0].0 < hits[1].0 && hits[0].2 > 0.0 && hits[1].2 < 0.0);
+    }
+
+    #[test]
+    fn grazing_ray_settles_a_tie_by_rank() {
+        // A ray meets the back of one face and the front of another at exactly the same distance, 0.2643671 mm.
+        // The tie goes to the back face, first in tie order; the walk used to pass its box by and returned the
+        // front.
+        let (hit, hits) = grazing(
+            &[
+                [0x42b7_f148, 0x42d4_4f84, 0x3f80_0000],
+                [0x42b6_aafc, 0x42d4_03e6, 0x3f80_0000],
+                [0x4289_e500, 0x4307_fe49, 0x3f80_0000],
+                [0x42b5_dfac, 0x42d7_ef82, 0x3f80_0000],
+                [0x42b6_35f6, 0x42d3_f022, 0x3f80_0000],
+                [0x42b7_f148, 0x42d4_4f84, 0x3f80_0000],
+                [0x4286_b1b2, 0x42f9_91a8, 0x0000_0000],
+                [0x4287_0dbd, 0x42f8_4cdc, 0x0000_0000],
+                [0x4287_0dbd, 0x42f8_4cdc, 0x3f80_0000],
+                [0x428c_b24b, 0x42de_ca66, 0x3f80_0000],
+                [0x428c_da6d, 0x42dc_6d70, 0x3f80_0000],
+                [0x428c_db44, 0x42df_d20a, 0x3f80_0000],
+                [0x427e_04b0, 0x430f_c80a, 0x0000_0000],
+                [0x427f_8fb0, 0x430f_5fd0, 0x0000_0000],
+                [0x427e_04b0, 0x430f_c80a, 0x3f80_0000],
+                [0x42d9_cdf8, 0x430a_6044, 0x0000_0000],
+                [0x42d9_79d4, 0x4309_ec12, 0x0000_0000],
+                [0x42d1_a570, 0x430c_24c4, 0x0000_0000],
+                [0x42c2_be90, 0x42fc_2e8c, 0x3f80_0000],
+                [0x42c3_000e, 0x42fd_8528, 0x3f80_0000],
+                [0x42bb_d94e, 0x42ff_106a, 0x3f80_0000],
+                [0x4319_3b1e, 0x4318_9ac5, 0x3f80_0000],
+                [0x4319_d8e7, 0x4319_0e23, 0x3f80_0000],
+                [0x4339_b143, 0x42ff_823c, 0x3f80_0000],
+                [0x433e_22e5, 0x4311_d677, 0x3f80_0000],
+                [0x433e_8dbc, 0x4311_479b, 0x3f80_0000],
+                [0x433b_2354, 0x4306_92ee, 0x3f80_0000],
+                [0x4317_6b78, 0x42d7_d8ca, 0x3f80_0000],
+                [0x4316_7c2a, 0x42d4_4ec2, 0x3f80_0000],
+                [0x4317_ad35, 0x42d3_538c, 0x3f80_0000],
+            ],
+            &[
+                [0, 1, 2],
+                [3, 4, 5],
+                [6, 7, 8],
+                [9, 10, 11],
+                [12, 13, 14],
+                [15, 16, 17],
+                [18, 19, 20],
+                [21, 22, 23],
+                [24, 25, 26],
+                [27, 28, 29],
+            ],
+            [0x42b6_ae67, 0x42d4_ec8f, 0x3f9d_7efb],
+            [0x3ecc_ccd0, 0xbe91_0201, 0xbf5f_24f6],
+        );
+        assert_eq!(hit, Some(false));
+        assert!(hits.len() >= 2 && hits[0].0.to_bits() == hits[1].0.to_bits() && hits[0].2 * hits[1].2 < 0.0);
     }
 }
