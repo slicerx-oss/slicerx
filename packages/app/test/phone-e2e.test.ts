@@ -77,7 +77,7 @@ beforeAll(async () => {
   relayUrl = /ws:\/\/127\.0\.0\.1:\d+\/v1/.exec(relay.out)![0]
   const dir = mkdtempSync(join(tmpdir(), 'sx-app-e2e-'))
   dirs.push(dir)
-  const hub = await start(linkBin, ['--port', '0', '--state-dir', dir, '--secrets', 'file', '--no-mdns'], {}, [/ws:\/\/127\.0\.0\.1:\d+/, /pairing code: [A-Z0-9]{4}-[A-Z0-9]{4}/])
+  const hub = await start(linkBin, ['--port', '0', '--state-dir', dir, '--secrets', 'file', '--no-mdns', ...(process.env['SX_TEST_LAN'] === '1' ? [] : ['--loopback'])], {}, [/ws:\/\/127\.0\.0\.1:\d+/, /pairing code: [A-Z0-9]{4}-[A-Z0-9]{4}/])
   const url = /ws:\/\/127\.0\.0\.1:\d+/.exec(hub.out)![0]
   const code = /pairing code: ([A-Z0-9]{4}-[A-Z0-9]{4})/.exec(hub.out)![1]!
   link = await connectLink({ url, code })
