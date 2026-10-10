@@ -6,7 +6,7 @@
 import { readFileSync } from 'node:fs'
 import type { ApprovalHost, ApprovalRequest, ApprovalVerifier, DemoFleet, JobFile, PrinterHost } from '@slicerx/contracts'
 import type { AgentWork, ApprovalBroker } from '@slicerx/pilot'
-import type { ApprovalDone, PersonHandOff } from './gate'
+import { forHub, type ApprovalDone, type PersonHandOff } from './gate'
 import { createFleetSim } from '@slicerx/fleet-sim'
 import { connectLink } from '@slicerx/link-client'
 import { STUB_MARKER } from './slicer'
@@ -32,6 +32,7 @@ function handOffOf(host: unknown): PersonHandOff | undefined {
   const onDone = h.onApprovalDone
   if (typeof registerWork !== 'function' || typeof onDone !== 'function') return undefined
   return {
+    ...((host as { partner?: boolean }).partner ? { partner: true } : {}),
     register: async (request, work) => {
       // The same guard as uploads: stub engine output never goes to a printer.
       if (work.kind === 'print' && new TextDecoder().decode(new Uint8Array(work.file.data).subarray(0, 200)).includes(STUB_MARKER)) {
@@ -78,7 +79,7 @@ export async function createLinkPrinters(url: string, auth: { code: string } | {
  */
 export function createRoutedBroker(local: ApprovalBroker, bridge: ApprovalHost): ApprovalBroker {
   const onBridge = new Set<string>()
-  const forBridge = (req: ApprovalRequest): boolean => req.actions.some((a) => (a.action.startsWith('printer.') && a.action !== 'printer.config') || a.action === 'plugin.call')
+  const forBridge = forHub
   return {
     async register(req) {
       if (forBridge(req)) {

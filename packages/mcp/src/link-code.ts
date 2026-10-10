@@ -70,3 +70,13 @@ export function readKeychainKey(ref: string, run: (cmd: string, args: string[]) 
   if (!key) throw new Error(`The keychain item ${ref} is empty. Connect this app again from SlicerX.`)
   return key
 }
+
+/**
+ * A partner app's hub key from `SLICERX_MCP_LINK_KEY`: `sxp_` and 64 hex digits, made in SlicerX
+ * (Connect your AI agent, Partner app). The message on a bad key never repeats it.
+ */
+export function linkKeyFrom(key: string): string {
+  const k = key.trim()
+  if (!/^sxp_[0-9a-f]{64}$/.test(k)) throw new Error('SLICERX_MCP_LINK_KEY is not a SlicerX partner app key. Make one in SlicerX (Settings, Connect your AI agent, Partner app) and paste it whole.')
+  return k
+}

@@ -12,7 +12,7 @@ import { createContext, createSlicerxServer, startHttp, SERVER_VERSION, type Eng
 import { cloudFromEnv } from './cloud'
 import { localAiFromEnv } from './localai'
 import { sxlockFromEnv } from './sxlock'
-import { linkCodeFrom, readHubKey, readKeychainKey } from './link-code'
+import { linkCodeFrom, linkKeyFrom, readHubKey, readKeychainKey } from './link-code'
 
 const HELP = `slicerx-mcp ${SERVER_VERSION}: SlicerX tools for MCP clients
 
@@ -46,6 +46,7 @@ Printers
   --link-url <ws-url>      sx-link address (default ws://127.0.0.1:47615)
                            The hub's agent code is read from its state directory
                            (agent-code, written with mode 0600), or from SLICERX_MCP_LINK_CODE.
+                           A partner app passes its key in SLICERX_MCP_LINK_KEY instead.
   --link-state-dir <dir>   sx-link's state directory, when it is not the default
 
 Permissions and records
@@ -105,6 +106,10 @@ async function main(): Promise<void> {
   const printers = values.printers ?? env('PRINTERS') ?? 'demo'
   if (printers !== 'demo' && printers !== 'link' && printers !== 'off') throw new Error(`--printers must be demo, link or off, not ${printers}`)
   const envDirs = env('ALLOW_DIR')?.split(':').filter(Boolean)
+  const keyRef = env('LINK_KEY_REF')
+  // Read once, then gone from the environment, so the engine and anything else this server runs never inherit it.
+  const partnerKey = env('LINK_KEY')
+  delete process.env['SLICERX_MCP_LINK_KEY']
   const allowDirs = values['allow-dir'] ?? envDirs ?? (http ? [] : undefined)
 
   const ctx = await createContext({
@@ -119,9 +124,10 @@ async function main(): Promise<void> {
     localAi: localAiFromEnv(process.env),
     printers,
     linkUrl: values['link-url'] ?? env('LINK_URL'),
-    // A client set up from the "Connect your AI agent" panel names its own credential in the keychain.
-    ...(printers === 'link' && env('LINK_KEY_REF') ? { linkClientKey: readKeychainKey(env('LINK_KEY_REF') ?? '') } : {}),
-    linkCode: env('LINK_KEY_REF') ? undefined : linkCodeFrom({ argvCode: values['link-code'], stateDir: values['link-state-dir'] ?? env('LINK_STATE_DIR'), envCode: env('LINK_CODE'), needed: printers === 'link' }),
+    // A client set up from the "Connect your AI agent" panel names its own credential in the keychain;
+    // a partner app hands over the key it keeps itself.
+    ...(printers === 'link' && keyRef ? { linkClientKey: readKeychainKey(keyRef) } : printers === 'link' && partnerKey ? { linkClientKey: linkKeyFrom(partnerKey) } : {}),
+    linkCode: keyRef || partnerKey ? undefined : linkCodeFrom({ argvCode: values['link-code'], stateDir: values['link-state-dir'] ?? env('LINK_STATE_DIR'), envCode: env('LINK_CODE'), needed: printers === 'link' }),
     // The hub's key from its state directory is checked even when the code comes from the environment.
     linkHubKey: printers === 'link' ? (env('LINK_HUB_KEY') ?? readHubKey(values['link-state-dir'] ?? env('LINK_STATE_DIR'))) : undefined,
     policyFile: values.policy ?? env('POLICY'),

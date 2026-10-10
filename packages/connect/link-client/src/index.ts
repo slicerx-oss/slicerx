@@ -420,6 +420,8 @@ export type AgentWork =
   | { kind: 'resume'; printerId: string }
   | { kind: 'gcode'; printerId: string; line: string }
   | { kind: 'adjust'; printerId: string; change: PrintAdjustment }
+  /** A partner app's pause or cancel: it approves nothing, so even these wait for a person. */
+  | { kind: 'pause' | 'cancel'; printerId: string }
 
 export interface ApprovalDone {
   requestId: string
@@ -492,6 +494,17 @@ export interface RemoteStatus {
   quota: RemoteQuota | null
 }
 
+/** A key the hub remembers, as Settings, Devices lists it. Never the key itself. */
+export interface RememberedClient {
+  id: string
+  name: string
+  role: 'app' | 'agent' | 'watch'
+  /** A partner app's key (absent on an older hub). */
+  partner?: boolean
+  createdAt: string
+  lastSeenAt: string | null
+}
+
 /** What a remote agent needs, from `clients.create(name, 'agent', { remote: true })`. Shown once. */
 export interface RemoteAgentAccess {
   pairingId: string
@@ -561,14 +574,15 @@ export interface LinkHost extends PrinterHost {
   /** Phone push registrations (Expo). */
   push: LinkPush
   /**
-   * Remembered clients (Settings, Devices), app only. `create` makes a key for an AI agent or a
-   * failure detector: it is in this reply once and never again. `revoke` also closes the client's
-   * open connections.
+   * Remembered clients (Settings, Devices), app only. `create` makes a key for an AI agent, a
+   * partner app (`partner: true`, role agent) or a failure detector: it is in this reply once and
+   * never again. `revoke` also closes the client's open connections.
    */
   clients: {
     /** `clientKey` for a local client; a remote agent (`remote: true`) gets only `remote`, its relay pairing. */
-    create(name: string, role: 'agent' | 'watch', opts?: { remote?: boolean }): Promise<{ clientId: string; clientKey?: string; role: 'agent' | 'watch'; remote?: RemoteAgentAccess }>
-    list(): Promise<{ id: string; name: string; role: 'app' | 'agent' | 'watch'; createdAt: string; lastSeenAt: string }[]>
+    create(name: string, role: 'agent' | 'watch', opts?: { remote?: boolean; partner?: boolean }): Promise<{ clientId: string; clientKey?: string; role: 'agent' | 'watch'; partner?: boolean; remote?: RemoteAgentAccess }>
+    /** `lastSeenAt` is null for a partner key nobody has used yet. */
+    list(): Promise<RememberedClient[]>
     revoke(clientId: string): Promise<void>
   }
   /**
@@ -733,6 +747,8 @@ export interface LinkHost extends PrinterHost {
   clientKey?: string
   /** The hub's verified public key. Pin it after a first pairing and pass it as `hubKey` next time. */
   hubKey?: string
+  /** True when this client paired with a partner app key: it reads and asks, and a person approves every card it raises. */
+  partner?: boolean
   close(): void
 }
 
@@ -931,15 +947,17 @@ export async function connectLink(opts: ConnectOptions): Promise<LinkHost> {
   const hubKey = hello.hubKey
 
   let clientKey: string | undefined
+  let partner = false
   try {
     const extra = { ...(opts.role ? { role: opts.role } : {}), ...(opts.remember ? { remember: true, name: opts.remember.name } : {}) }
     // After a verified hello the code is used only in the code exchange bound to this hello: it never
     // goes on the socket, and a program posing as the hub gets one guess, nothing to test offline.
     const r =
       opts.clientKey && !opts.code
-        ? await call<{ paired: boolean; clientKey?: string }>('pair', { clientKey: opts.clientKey, ...(opts.role ? { role: opts.role } : {}) })
+        ? await call<{ paired: boolean; clientKey?: string; partner?: boolean }>('pair', { clientKey: opts.clientKey, ...(opts.role ? { role: opts.role } : {}) })
         : await pairWithCode(call, hello, opts.code ?? '', extra)
     clientKey = r.clientKey
+    partner = (r as { partner?: boolean }).partner === true
   } catch (e) {
     ws.close()
     throw e
@@ -1119,7 +1137,7 @@ export async function connectLink(opts: ConnectOptions): Promise<LinkHost> {
       return () => void alertListeners.delete(cb)
     },
     clients: {
-      create: (name, role, opts) => call('clients.create', { name, role, ...(opts?.remote ? { remote: true } : {}) }),
+      create: (name, role, opts) => call('clients.create', { name, role, ...(opts?.remote ? { remote: true } : {}), ...(opts?.partner ? { partner: true } : {}) }),
       list: () => call('clients.list'),
       revoke: async (clientId) => void (await call('clients.revoke', { clientId })),
     },
@@ -1224,6 +1242,7 @@ export async function connectLink(opts: ConnectOptions): Promise<LinkHost> {
     },
     ...(clientKey ? { clientKey } : {}),
     ...(hubKey ? { hubKey } : {}),
+    ...(partner ? { partner } : {}),
     close: () => ws.close(),
   }
   return host
