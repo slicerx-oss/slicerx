@@ -667,7 +667,7 @@ export const appStore = createStore<AppState>()(() => ({
   settingsMode: prefs.settingsMode ?? 'simple',
   tooltips: prefs.tooltips ?? { enabled: true, media: true },
   autoSlice: prefs.autoSlice ?? !noAutoSliceDefault(),
-  autoSliceBySize: prefs.autoSliceBySize ?? true,
+  autoSliceBySize: prefs.autoSliceBySize ?? !alwaysAutoSliceDefault(),
   sliceHeld: false,
   cadTools: prefs.cadTools ?? true,
   electricity: prefs.electricity ?? DEFAULT_ELECTRICITY,
@@ -759,6 +759,15 @@ export const appStore = createStore<AppState>()(() => ({
 function noAutoSliceDefault(): boolean {
   try {
     return sessionStorage.getItem('sx-no-auto-slice') === '1'
+  } catch {
+    return false
+  }
+}
+
+/** Browser tests that turn auto slice on check the background slice, so it starts as Always there, not Auto. */
+function alwaysAutoSliceDefault(): boolean {
+  try {
+    return sessionStorage.getItem('sx-auto-slice-always') === '1'
   } catch {
     return false
   }
