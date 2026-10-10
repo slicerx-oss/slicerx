@@ -11,6 +11,7 @@
 //! not overlap costs a box test per owner.
 
 use super::{Hit, Hits, Kind, Moment, Part, Severity};
+use crate::fm::Fm as _;
 use crate::geom::{Point, SCALE};
 use crate::output::{Feature, LayerPaths, SliceOutput};
 use std::collections::HashMap;
@@ -248,6 +249,123 @@ pub(crate) fn check(out: &SliceOutput, zones: &[(u8, Vec<[f64; 2]>)], crossings:
         }
     }
     hits
+}
+
+/// How close a join may come to another owner's path before it stays a travel, mm.
+const JOIN_CLEAR_MM: f64 = 0.05;
+
+/// Distance between the segments `a`-`b` and `c`-`d` (0 when they cross).
+fn seg_dist(a: [f64; 2], b: [f64; 2], c: [f64; 2], d: [f64; 2]) -> f64 {
+    let o =
+        |p: [f64; 2], q: [f64; 2], r: [f64; 2]| (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0]);
+    let (d1, d2, d3, d4) = (o(a, b, c), o(a, b, d), o(c, d, a), o(c, d, b));
+    if d1 * d2 <= 0.0 && d3 * d4 <= 0.0 && (d1 != 0.0 || d2 != 0.0 || d3 != 0.0 || d4 != 0.0) {
+        return 0.0;
+    }
+    let pd = |p: [f64; 2], u: [f64; 2], v: [f64; 2]| {
+        let (dx, dy) = (v[0] - u[0], v[1] - u[1]);
+        let len2 = dx * dx + dy * dy;
+        let t = if len2 == 0.0 {
+            0.0
+        } else {
+            (((p[0] - u[0]) * dx + (p[1] - u[1]) * dy) / len2).clamp(0.0, 1.0)
+        };
+        let (x, y) = (u[0] + t * dx - p[0], u[1] + t * dy - p[1]);
+        x.m_hypot(y)
+    };
+    pd(a, c, d).min(pd(b, c, d)).min(pd(c, a, b)).min(pd(d, a, b))
+}
+
+/// Drops the joins of the solid surfaces (top, bottom, internal solid) that would cross or touch any other path on their
+/// layer: a turn along the edge from one fill line to the next is new material, so where it meets another object's
+/// path, the prime tower, a wall or a narrow band's beads beside the surface, the nozzle travels instead (the writer then
+/// moves between the two lines as between any two paths). The joins are the ones the fill made (`LayerPaths::joins`);
+/// the fill's own lines and joins, laid out by the neighbor rules, and the paths a join connects do not count. Owners are not asked: objects that share a
+/// footprint cannot be told apart by place. Returns how many were dropped.
+pub(crate) fn drop_crossing_joins(out: &mut SliceOutput) -> usize {
+    let surface = |f: Feature| {
+        matches!(
+            f,
+            Feature::TopSurface | Feature::BottomSurface | Feature::InternalSolid
+        )
+    };
+    let same = |p: [f64; 2], q: [f64; 2]| (p[0] - q[0]).abs() < 1e-3 && (p[1] - q[1]).abs() < 1e-3;
+    let mut dropped = 0;
+    for l in &mut out.layers {
+        if l.joins.is_empty() {
+            continue;
+        }
+        let joins: std::collections::HashSet<(Point, Point)> =
+            l.joins.iter().flat_map(|&[a, b]| [(a, b), (b, a)]).collect();
+        // Every segment of the layer, with the path it belongs to, by 1 mm cell of the bed.
+        let segs: Vec<(usize, [f64; 2], [f64; 2])> = l
+            .paths
+            .iter()
+            .enumerate()
+            .filter(|(_, p)| p.feature != Feature::Custom)
+            .flat_map(|(i, p)| {
+                l.path_points(p)
+                    .windows(2)
+                    .filter_map(move |w| match w {
+                        [a, b] => Some((i, mm(*a), mm(*b))),
+                        _ => None,
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .collect();
+        #[allow(clippy::cast_possible_truncation, reason = "1 mm cells of the bed")]
+        let cell = |v: f64| v.floor() as i32;
+        let mut grid: HashMap<(i32, i32), Vec<usize>> = HashMap::new();
+        for (k, &(_, c, d)) in segs.iter().enumerate() {
+            for x in cell(c[0].min(d[0]) - JOIN_CLEAR_MM)..=cell(c[0].max(d[0]) + JOIN_CLEAR_MM) {
+                for y in cell(c[1].min(d[1]) - JOIN_CLEAR_MM)..=cell(c[1].max(d[1]) + JOIN_CLEAR_MM) {
+                    grid.entry((x, y)).or_default().push(k);
+                }
+            }
+        }
+        let keep: Vec<bool> = l
+            .paths
+            .iter()
+            .enumerate()
+            .map(|(i, p)| {
+                if !surface(p.feature) {
+                    return true;
+                }
+                let [pa, pb] = l.path_points(p) else { return true };
+                if !joins.contains(&(*pa, *pb)) {
+                    return true;
+                }
+                let (a, b) = (mm(*pa), mm(*pb));
+                let mut near: Vec<usize> = Vec::new();
+                for x in cell(a[0].min(b[0]))..=cell(a[0].max(b[0])) {
+                    for y in cell(a[1].min(b[1]))..=cell(a[1].max(b[1])) {
+                        if let Some(ks) = grid.get(&(x, y)) {
+                            near.extend_from_slice(ks);
+                        }
+                    }
+                }
+                // The fill's own lines and joins (two-point paths of the same surface, tool and width) are laid out by
+                // the neighbor rules and may end right beside a turn; everything else counts.
+                let own = |o: &crate::output::PathInfo| {
+                    o.feature == p.feature
+                        && o.tool == p.tool
+                        && o.end - o.start == 2
+                        && (o.width_mm - p.width_mm).abs() < 1e-4
+                };
+                !near.into_iter().filter_map(|k| segs.get(k)).any(|&(j, c, d)| {
+                    j != i
+                        && !l.paths.get(j).is_some_and(own)
+                        && !(same(c, a) || same(c, b) || same(d, a) || same(d, b))
+                        && seg_dist(a, b, c, d) < JOIN_CLEAR_MM
+                })
+            })
+            .collect();
+        let before = l.paths.len();
+        let mut it = keep.iter();
+        l.paths.retain(|_| it.next().copied().unwrap_or(true));
+        dropped += before - l.paths.len();
+    }
+    dropped
 }
 
 /// A layer's extrusion segments with their owners; skirts and custom paths own nothing and are left out.
