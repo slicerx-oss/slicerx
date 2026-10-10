@@ -1751,6 +1751,74 @@ async fn reading_a_status_never_listens_for_printers() {
     assert_eq!(r["result"]["ownName"], "Workshop H2D", "{r}");
 }
 
+// A Bambu Lab printer added by address gets its own name with no search: the hub asks that one
+// printer, at its own address, and the status carries the answer. Announcements on the discovery
+// ports stay unheard, since the hub still listens on none of them.
+#[tokio::test]
+async fn a_printer_added_by_address_is_asked_its_own_name() {
+    let mocks = common::Mocks::start("bambu", &[]).await;
+    let serial = mocks.str("serial");
+    let link = serve(
+        LinkConfig {
+            name_ports: vec![mocks.port("bambu-ssdp")],
+            ..mdns_rig(MdnsConfig::default())
+        },
+        Arc::new(MemoryGate::new()),
+        Arc::new(MemorySecrets::new()),
+    )
+    .await
+    .unwrap();
+    let mut ws = paired(&link).await;
+    let r = call(
+        &mut ws,
+        2,
+        "secrets.set",
+        json!({ "name": "bambu-code", "value": mocks.str("accessCode") }),
+    )
+    .await;
+    assert!(r["error"].is_null(), "{r}");
+    let notify = format!(
+        "NOTIFY * HTTP/1.1\r\nHost: 239.255.255.250:1990\r\nLocation: 127.0.0.1\r\nNT: urn:bambulab-com:device:3dprinter:1\r\nNTS: ssdp:alive\r\nUSN: {serial}\r\nDevModel.bambu.com: O1D\r\nDevName.bambu.com: Workshop H2D\r\n\r\n"
+    );
+    let announcer = tokio::spawn(async move {
+        let sock = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        loop {
+            for port in [2021, 1990] {
+                let _ = sock.send_to(notify.as_bytes(), ("127.0.0.1", port)).await;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    });
+    let r = call(
+        &mut ws,
+        3,
+        "printers.add",
+        json!({ "config": {
+            "id": "h2d", "name": "H2D", "plugin": "bambu-lan", "host": "127.0.0.1", "port": mocks.port("bambu"),
+            "serial": serial, "credentialRef": "bambu-code",
+        } }),
+    )
+    .await;
+    assert!(r["error"].is_null(), "{r}");
+    let mut named = Value::Null;
+    for id in 4..40 {
+        let r = call(&mut ws, id, "status", json!({ "printerId": "h2d" })).await;
+        assert_eq!(r["result"]["state"], "idle", "{r}");
+        named = r["result"]["ownName"].clone();
+        if !named.is_null() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    announcer.abort();
+    assert_eq!(named, "Bay 1", "the printer's own answer, not an announcement");
+    let log = mocks.state().await["log"].clone();
+    assert!(
+        log.as_array().unwrap().iter().any(|l| l == "ssdp search"),
+        "{log}"
+    );
+}
+
 // The printer view open on an H2D for 10 seconds: subscribed to its events, reading its status
 // twice a second and showing its camera, with the bridge's own watcher running too. All of it
 // shares one MQTT connection, which stays up the whole time.
