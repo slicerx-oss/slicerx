@@ -189,6 +189,42 @@ name="the waiting --e2e ticket runs once the --e2e holder is gone"
 release e1 "$e1"
 t0=$SECONDS; wait "$pE"; rc=$?
 ok eval '[ "$rc" = 0 ] && [ $((SECONDS - t0)) -le 10 ]'
+
+# --gpu: GPU slots of their own (<lock>.gpu-slots), several at once, never beside an exclusive run.
+echo 2 > "$dir.gpu-slots"
+gpu_hold() {
+  SX_HEAVY_LOCK=$lock bash "$heavy" --gpu sh -c 'echo $$ > "$1"; exec sleep 600' sh "$tmp/$1.child" > /dev/null 2>&1 &
+  eval "$1=\$!"; wait_for "$tmp/$1.child"; lpids="$lpids $(cat "$tmp/$1.child") $!"
+}
+gpu_hold g1; gpu_hold g2
+name="two --gpu holders run at once in the GPU slots, leaving the plain slots free"
+ok eval '[ -d "$dir.gpu.1" ] && [ -d "$dir.gpu.2" ] && [ ! -d "$dir" ] && [ ! -d "$dir.2" ] && grep -qx "class gpu" "$dir.gpu.1/owner"'
+name="a plain waiter takes a plain slot beside the --gpu holders"
+waiter 20 w13
+ok eval '[ "$rc" = 0 ] && [ $secs -le 5 ]'
+name="a third --gpu waiter waits while the GPU slots are full"
+SX_HEAVY_LOCK=$lock SX_HEAVY_WAIT=3 bash "$heavy" --gpu true > /dev/null 2>&1; rc=$?
+ok eval '[ "$rc" = 75 ]'
+name="an --e2e waiter waits while a --gpu run holds, with the plain slots free"
+SX_HEAVY_LOCK=$lock SX_HEAVY_WAIT=3 bash "$heavy" --e2e true > /dev/null 2>&1; rc=$?
+ok eval '[ "$rc" = 75 ] && [ ! -d "$dir" ]'
+name="a --gpu waiter behind a waiting --e2e ticket waits, with a GPU slot free"
+release g2 "$g2"
+SX_HEAVY_LOCK=$lock SX_HEAVY_WAIT=60 bash "$heavy" --e2e sh -c 'echo $$ > "$1"; exec sleep 600' sh "$tmp/e3.child" > /dev/null 2>&1 &
+e3=$!; lpids="$lpids $!"; sleep 1.5
+SX_HEAVY_LOCK=$lock SX_HEAVY_WAIT=3 bash "$heavy" --gpu true > /dev/null 2>&1; rc=$?
+ok eval '[ "$rc" = 75 ] && [ ! -d "$dir.gpu.2" ]'
+name="the --e2e ticket runs once the last --gpu holder is gone"
+release g1 "$g1"; wait_for "$tmp/e3.child"; lpids="$lpids $(cat "$tmp/e3.child")"
+ok eval 'grep -qx "class e2e" "$dir/owner"'
+name="a --gpu waiter waits while an --e2e run holds"
+SX_HEAVY_LOCK=$lock SX_HEAVY_WAIT=3 bash "$heavy" --gpu true > /dev/null 2>&1; rc=$?
+ok eval '[ "$rc" = 75 ] && [ ! -d "$dir.gpu.1" ]'
+name="the --gpu waiter runs once the --e2e holder is gone"
+release e3 "$e3"
+SX_HEAVY_LOCK=$lock SX_HEAVY_WAIT=20 bash "$heavy" --gpu true > /dev/null 2>&1; rc=$?
+ok eval '[ "$rc" = 0 ]'
+rm -f "$dir.gpu-slots"
 rm -f "$dir.slots"
 
 if [ "${1:-}" = cross ]; then

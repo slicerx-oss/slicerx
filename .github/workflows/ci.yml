@@ -367,18 +367,22 @@ jobs:
           path: apps/web/test-results/
           retention-days: 14
 
-  # The @gpu specs for the merge queue and main on the project's GPU runner (label sx-gpu, Windows): the installed
+  # The @gpu specs for the merge queue and main on the project's GPU runners (label sx-gpu, Windows): the installed
   # Chrome draws WebGL on the GPU, so they run fast and steady. Six workers: each page also starts the app's own slicer
-  # workers, and the machine's CPU is the limit, not the GPU. The run holds the machine's heavy lock as its one e2e
-  # job. Steps run in Git Bash, named by path (the runner's account has no bash on its PATH and Windows' default
-  # PowerShell script policy). Never for pull requests. If the runner is offline, set E2E_GPU_LANE to false.
+  # workers, and the machine's CPU is the limit, not the GPU. Several runners share the machine: the @gpu specs run
+  # under a shared GPU hold of the heavy lock (heavy.sh --gpu, as many at once as <lock>.gpu-slots allows), and the
+  # frame timing specs (@gpu-timing) after them under the exclusive e2e hold, with no other browser suite running.
+  # Each runner serves on its own port, SX_E2E_PORT from the runner's .env (sx-gpu-1 has 4419, the others 4420 and
+  # on). Steps run in Git Bash, named by path (the runners' accounts have no bash on their PATH and Windows' default
+  # PowerShell script policy). Never for pull requests. If the runners are offline, set E2E_GPU_LANE to false.
   e2e-gpu:
     name: e2e (desktop @gpu)
     needs: [detect, wasm]
     if: needs.detect.outputs.e2e == 'true' && github.event_name != 'pull_request' && vars.E2E_ON_PC != 'true' && vars.E2E_GPU_LANE != 'false'
     runs-on: [self-hosted, sx-gpu]
-    # up to 20 minutes for the heavy lock (SX_HEAVY_WAIT) plus 15 for the run (timeout 900) plus setup
-    timeout-minutes: 40
+    # up to 20 minutes for each hold of the heavy lock (SX_HEAVY_WAIT), 15 for the run (timeout 900), 5 for the
+    # timing run (timeout 300), plus setup
+    timeout-minutes: 65
     defaults:
       run:
         shell: 'C:\PROGRA~1\Git\bin\bash.exe --noprofile --norc -eo pipefail {0}'
@@ -400,19 +404,32 @@ jobs:
         with:
           name: wasm-modules
           path: packages
-      # One retry per failing test; the next step decides from the results, as in e2e-shard.
-      - run: bash scripts/ci/heavy.sh --e2e timeout 900 pnpm --filter @slicerx/web exec playwright test --project=desktop --grep @gpu --fully-parallel --workers=6 --retries=1 --reporter=blob,list,json --trace=retain-on-failure || echo "playwright exited $?"
+      # One retry per failing test; the next step decides from the results, as in e2e-shard. The runner's port comes
+      # from its .env (4317 is the default on a developer's machine, 4417 and 4418 are the WSL runners'), 4419 when it
+      # sets none.
+      - run: SX_E2E_PORT=${SX_E2E_PORT:-4419} bash scripts/ci/heavy.sh --gpu timeout 900 pnpm --filter @slicerx/web exec playwright test --project=desktop --grep @gpu --grep-invert @gpu-timing --fully-parallel --workers=6 --retries=1 --reporter=blob,list,json --trace=retain-on-failure || echo "playwright exited $?"
         env:
           SX_HEAVY_LOCK: C:/builds/heavy-lock/lock
           SX_HEAVY_WAIT: 1200
           SX_E2E_GPU: '1'
-          # the GPU runner's own port: 4317 is the default on a developer's machine, 4417 and 4418 are the WSL runners'
-          SX_E2E_PORT: '4419'
           PLAYWRIGHT_BLOB_OUTPUT_NAME: report-desktop-gpu.zip
           PLAYWRIGHT_JSON_OUTPUT_FILE: ${{ runner.temp }}/e2e-results.json
+      # The frame timing specs, alone on the machine: they measure frame gaps, which another suite's load would skew.
+      # Their blob joins the first run's (PWTEST_BLOB_DO_NOT_REMOVE) and their failures go to their own folder.
+      - run: SX_E2E_PORT=${SX_E2E_PORT:-4419} bash scripts/ci/heavy.sh --e2e timeout 300 pnpm --filter @slicerx/web exec playwright test --project=desktop --grep @gpu-timing --workers=6 --retries=1 --reporter=blob,list,json --trace=retain-on-failure --output=test-results/timing || echo "playwright exited $?"
+        env:
+          SX_HEAVY_LOCK: C:/builds/heavy-lock/lock
+          SX_HEAVY_WAIT: 1200
+          SX_E2E_GPU: '1'
+          PWTEST_BLOB_DO_NOT_REMOVE: '1'
+          PLAYWRIGHT_BLOB_OUTPUT_NAME: report-desktop-gpu-timing.zip
+          PLAYWRIGHT_JSON_OUTPUT_FILE: ${{ runner.temp }}/e2e-results-timing.json
       - name: flaky and quarantined tests
         run: |
           node scripts/ci/playwright-results.mjs "$RUNNER_TEMP/e2e-results.json" "$RUNNER_TEMP/retried.txt" "$RUNNER_TEMP/failed.txt"
+          node scripts/ci/playwright-results.mjs "$RUNNER_TEMP/e2e-results-timing.json" "$RUNNER_TEMP/retried-timing.txt" "$RUNNER_TEMP/failed-timing.txt"
+          cat "$RUNNER_TEMP/retried-timing.txt" >> "$RUNNER_TEMP/retried.txt"
+          cat "$RUNNER_TEMP/failed-timing.txt" >> "$RUNNER_TEMP/failed.txt"
           bad=0
           bash scripts/ci/flaky-check.sh retried "$RUNNER_TEMP/retried.txt" || bad=1
           while IFS= read -r t; do
