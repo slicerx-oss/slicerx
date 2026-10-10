@@ -5,6 +5,7 @@
 // profile).
 import type { Host, PrintConfig, SettingValue } from '@slicerx/contracts'
 import { importOrcaProfile, exportOrcaProfile, presetKind, ProfileError, settingDef } from '@slicerx/settings'
+import { withoutDirtying } from '../project/unsaved'
 import { get, markStale, set, toast, type AppState } from '../state/store'
 import { presetStore, type PresetKind, type UserPreset } from './store'
 import { appName } from '../edition'
@@ -40,11 +41,15 @@ export async function loadPresets(): Promise<void> {
   // The same presets keep the same list: the list is a slice input, and the command bar loads it each time it opens
   // while there are none, which would otherwise mark a fresh slice stale and slice again on every Cmd+K.
   if (JSON.stringify(rows) !== JSON.stringify(get().userPresets)) set({ userPresets: rows })
-  // Changed settings are not kept between sessions, presets are: put the ones in use back.
+  // Changed settings are not kept between sessions, presets are: put the ones in use back. That is not an edit of the
+  // project: on a slow start the presets come back after the example plate is in, and it would be autosaved and
+  // offered back at the next start as unsaved work.
   const active = get().activePresets
   const live = Object.fromEntries(Object.entries(active).filter(([, id]) => rows.some((r) => r.id === id)))
   if (Object.keys(live).length !== Object.keys(active).length) set({ activePresets: live })
-  for (const id of Object.values(live)) applyPreset(id)
+  withoutDirtying(() => {
+    for (const id of Object.values(live)) applyPreset(id)
+  })
 }
 
 function replaceInState(p: UserPreset): void {
