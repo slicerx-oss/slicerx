@@ -13,6 +13,7 @@ import { printBlock } from '../plate/heimdall'
 import { markClean } from '../project/unsaved'
 import { slicePlate } from '../state/actions'
 import { get, set, toast, type PlateEntry, type PlateMeta } from '../state/store'
+import { appName } from '../edition'
 import { exportingUserId } from './identity'
 import type { ProjectInput } from './threemf'
 import { fromVault } from './vault'
@@ -69,11 +70,14 @@ async function printMarks(plates: readonly PlateMeta[]): Promise<Pick<ProjectInp
   return fromVault(plates.flatMap((p) => p.objects)) ? { sx: { ...sharedSource(plates), exportedBy: await exportingUserId() } } : {}
 }
 
-/** Builds the .sx3mf bytes for plates. */
-export async function sx3mfBytes(plates: readonly PlateMeta[], extra: Partial<Pick<ProjectInput, 'settings' | 'gcode'>> = {}): Promise<Uint8Array> {
+/**
+ * Builds the .sx3mf bytes for plates. `offPage` writes them in the project worker, so a big project no longer holds
+ * the page for seconds; without a worker, or when it fails, the page writes them.
+ */
+export async function sx3mfBytes(plates: readonly PlateMeta[], extra: Partial<Pick<ProjectInput, 'settings' | 'gcode'>> = {}, opts: { offPage?: boolean } = {}): Promise<Uint8Array> {
   const s = get()
   const settings = extra.settings ?? orcaSettings(await loadSettings())
-  return (await import('./threemf')).writeProjectCompressed({
+  const input: ProjectInput = {
     plates,
     bed: s.bed,
     settings,
@@ -81,7 +85,17 @@ export async function sx3mfBytes(plates: readonly PlateMeta[], extra: Partial<Pi
     layerMarks: Object.fromEntries(plates.flatMap((p, i) => ((s.layerMarks[p.id] ?? []).length ? [[i, s.layerMarks[p.id]!.map(({ z, kind, gcode }) => ({ z, kind, ...(gcode ? { gcode } : {}) }))]] : []))),
     sx: { ...sharedSource(plates), exportedBy: await exportingUserId() },
     namedValues: s.namedValues,
-  })
+    // Named here: the worker does not know the edition the page runs as.
+    application: appName(),
+  }
+  if (opts.offPage && typeof Worker !== 'undefined') {
+    try {
+      return await (await import('./project-worker-client')).writeProjectInWorker(input)
+    } catch {
+      // Written on the page below.
+    }
+  }
+  return (await import('./threemf')).writeProjectCompressed(input)
 }
 
 /** Save the project: every plate, as .sx3mf. */

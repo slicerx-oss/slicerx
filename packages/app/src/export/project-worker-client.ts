@@ -5,6 +5,7 @@
 // starts in a few tens of milliseconds.
 import type { ScannedProject } from './project-scan'
 import type { ScannedStl } from './stl-scan'
+import type { ProjectInput } from './threemf'
 import { ProjectReadError } from './unzip'
 
 const IDLE_MS = 2_000
@@ -41,22 +42,58 @@ function workerFor(): Worker {
   return w
 }
 
-function ask<T>(message: Record<string, unknown>, buffer: ArrayBuffer): Promise<T> {
+function ask<T>(message: Record<string, unknown>, transfer: Transferable[]): Promise<T> {
   return new Promise((resolve, reject) => {
     const id = ++seq
     pending.set(id, { resolve: resolve as (r: unknown) => void, reject })
-    workerFor().postMessage({ id, ...message }, [buffer])
+    try {
+      workerFor().postMessage({ id, ...message }, transfer)
+    } catch (e) {
+      pending.delete(id)
+      reject(e instanceof Error ? e : new Error(String(e)))
+    }
   })
+}
+
+/** An ArrayBuffer (not a shared one, which cannot be handed over), from any realm. */
+const isBuffer = (v: unknown): v is ArrayBuffer => Object.prototype.toString.call(v) === '[object ArrayBuffer]'
+
+/** Every buffer under `value` (typed arrays, once each), to hand over with it. */
+export function buffersIn(value: unknown): ArrayBuffer[] {
+  const out = new Set<ArrayBuffer>()
+  const seen = new Set<object>()
+  const walk = (v: unknown): void => {
+    if (!v || typeof v !== 'object' || seen.has(v)) return
+    seen.add(v)
+    if (ArrayBuffer.isView(v)) {
+      if (isBuffer(v.buffer)) out.add(v.buffer)
+      return
+    }
+    if (isBuffer(v)) return void out.add(v)
+    for (const x of v instanceof Map ? v.values() : v instanceof Set ? v.values() : Object.values(v)) walk(x)
+  }
+  walk(value)
+  return [...out]
+}
+
+/**
+ * Writes a project file (threemf.ts, deflated) in the worker. The page keeps its plates and meshes: the worker gets
+ * one copy of them, handed over rather than copied again, and the file comes back handed over. Rejects when the
+ * project cannot be copied or the worker fails; the caller writes it on the page then.
+ */
+export function writeProjectInWorker(input: ProjectInput): Promise<Uint8Array> {
+  const copy = structuredClone(input)
+  return ask<Uint8Array>({ write: copy }, buffersIn(copy))
 }
 
 /** Inflates and scans a 3MF project in the worker. The caller keeps its bytes (the worker gets a copy). */
 export function scanProjectInWorker(bytes: Uint8Array): Promise<ScannedProject> {
   const copy = bytes.slice().buffer
-  return ask<ScannedProject>({ data: copy }, copy)
+  return ask<ScannedProject>({ data: copy }, [copy])
 }
 
 /** Reads a binary STL in the worker (stl-scan.ts); null when it is not one. The caller keeps its bytes. */
 export function scanStlInWorker(bytes: Uint8Array): Promise<ScannedStl | null> {
   const copy = bytes.slice().buffer
-  return ask<ScannedStl | null>({ stl: copy }, copy)
+  return ask<ScannedStl | null>({ stl: copy }, [copy])
 }

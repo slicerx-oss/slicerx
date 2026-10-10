@@ -111,7 +111,7 @@ export async function autosaveNow(): Promise<boolean> {
   // time and over a gigabyte of memory right after it opened.
   if (!isDirty()) return false
   const { sx3mfBytes } = await import('../export/actions')
-  const plain = await sx3mfBytes(allPlates(get()))
+  const plain = await sx3mfBytes(allPlates(get()), {}, { offPage: true })
   if (plain.byteLength > MAX_SNAPSHOT_BYTES) return false
   const key = lockedSession()
   if (key) {
