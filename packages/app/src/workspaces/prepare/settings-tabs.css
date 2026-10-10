@@ -11,3 +11,9 @@
 .set-tab[data-tab="multicolor"] svg circle:nth-of-type(1), .tier-group[data-intent="multicolor"] .tier-h svg circle:nth-of-type(1) { fill: var(--red); }
 .set-tab[data-tab="multicolor"] svg circle:nth-of-type(2), .tier-group[data-intent="multicolor"] .tier-h svg circle:nth-of-type(2) { fill: var(--green); }
 .set-tab[data-tab="multicolor"] svg circle:nth-of-type(3), .tier-group[data-intent="multicolor"] .tier-h svg circle:nth-of-type(3) { fill: var(--cyan); }
+/* Touch: tabs a finger can hit (44 px), one row that scrolls sideways when they do not fit, never wrapping. */
+@media (pointer: coarse), (max-width: 900px) {
+  .set-tabs { grid-auto-columns: minmax(44px, 1fr); overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none; }
+  .set-tabs::-webkit-scrollbar { display: none; }
+  .set-tab { height: 44px; }
+}

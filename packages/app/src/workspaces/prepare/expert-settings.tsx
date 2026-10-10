@@ -7,7 +7,7 @@
 import type { SettingDef, SettingIntent, SettingValue } from '@slicerx/contracts'
 import { EASY_MAP } from '@slicerx/settings'
 import { Icon, LinkButton, Seg, Switch, tipAttrs, type IconName } from '@slicerx/ui'
-import { useDeferredValue, useEffect, useMemo, useState, type KeyboardEvent, type ReactNode } from 'react'
+import { useDeferredValue, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { PrimeTowerRow } from './prime-tower-row'
 import './settings-tabs.css'
 import { formatValue, isVisible, resolveConfig, SETTINGS } from '../../adapters/settings'
@@ -356,6 +356,15 @@ export function ExpertSettings() {
     set({ settingsTab: next.id })
     document.getElementById(`set-tab-${next.id}`)?.focus()
   }
+  // A row that scrolls sideways (a phone) keeps the open tab in view, by its own scroll only: the page never moves.
+  const tabRow = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const row = tabRow.current
+    const on = row?.querySelector<HTMLElement>('[aria-selected="true"]')
+    if (!row || !on || row.scrollWidth <= row.clientWidth) return
+    if (on.offsetLeft < row.scrollLeft) row.scrollLeft = on.offsetLeft
+    else if (on.offsetLeft + on.offsetWidth > row.scrollLeft + row.clientWidth) row.scrollLeft = on.offsetLeft + on.offsetWidth - row.clientWidth
+  }, [tab])
   const toggle = (id: SettingIntent) =>
     setOpened((s) => {
       const next = new Set(s)
@@ -372,7 +381,7 @@ export function ExpertSettings() {
         </label>
         <input id="expert-search" className="bare" placeholder={expert ? `Search all ${editable.length} process settings` : `Search ${groups.reduce((n, g) => n + g.shown.length, 0)} advanced settings`} value={query} onChange={(e) => setQuery(e.currentTarget.value)} />
       </div>
-      <div className="set-tabs" role="tablist" aria-label="Setting groups">
+      <div className="set-tabs" role="tablist" aria-label="Setting groups" ref={tabRow}>
         {tabs.map((t, i) => (
           <button
             key={t.id}
