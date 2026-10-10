@@ -36,7 +36,8 @@ test('a big plate slices soon after it opens and after a preset edit, with the r
     localStorage.setItem('slicerx.debug', '1')
     if (sessionStorage.getItem('sx-e2e')) return
     sessionStorage.setItem('sx-e2e', '1')
-    localStorage.setItem('slicerx.prefs.v1', JSON.stringify({ workspace: 'prepare', settingsMode: 'simple', pilot: { mode: 'off' } }))
+    // Always: Auto holds a big plate for Slice, and this is about how soon a big plate's background slice starts.
+    localStorage.setItem('slicerx.prefs.v1', JSON.stringify({ workspace: 'prepare', settingsMode: 'simple', pilot: { mode: 'off' }, autoSliceBySize: false }))
   })
   await page.goto('./')
   await expect(page.locator('.platechip', { hasText: 'Layered X' })).toBeVisible({ timeout: 120_000 })
