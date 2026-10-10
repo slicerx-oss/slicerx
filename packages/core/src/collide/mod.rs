@@ -52,7 +52,8 @@ pub enum Kind {
     Dock,
     /// The paths of two objects, or of an object and the prime tower, cross on one layer.
     PathConflict,
-    /// A print path in a zone the printer keeps clear: an exclusion area, or the nozzle wrap check's corner.
+    /// A print path or a travel in a zone the printer keeps clear (an exclusion area, or the nozzle wrap check's
+    /// corner), or a travel passing within the nozzle's width of one.
     KeepOut,
 }
 

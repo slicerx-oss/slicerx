@@ -740,7 +740,8 @@ fn slice_shard_paths(
     }
     if session.collide_meta().is_some() {
         let zones = crate::collide::plate::zones(config);
-        let found = crate::collide::plate::check(&out, &zones, !config.print_by_object());
+        let found =
+            crate::collide::plate::check(&out, &zones, !config.print_by_object(), config.nozzle_diameter);
         out.collisions.merge(found);
     }
     if let Some(z) = req.options.resume_z.as_ref().map(|z| z.z_mm)
