@@ -8,3 +8,7 @@
 .studio[data-mode="prepare"]:not([data-model-mode="design"]) > .pane .pane-body > .sx-block.machine-card { padding: 0; border: 0; background: none; }
 .slice-done .est-again { flex: none; }
 .studio[data-mode="prepare"]:not([data-model-mode="design"]) > .pane .pane-body > .sx-block > .sx-block-h:has(> button.sx-block-toggle) > .sx-block-aside { right: var(--s-3); }
+/* The footer holds Slice and Print below the scroller, so the scroller ends at its last panel: no dead room under it. */
+@media (min-width: 901px) {
+  .studio[data-mode="prepare"]:not([data-model-mode="design"]) > .pane:has(.sx-rail-foot) .sx-rail-body > .pane-body { padding-bottom: var(--s-2); }
+}
