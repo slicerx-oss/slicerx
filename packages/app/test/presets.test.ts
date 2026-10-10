@@ -4,7 +4,10 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { applyCalibrationResult } from '../src/calibration/actions'
 import { applyPreset, capture, deletePreset, exportOrcaJson, exportPresetJson, importPresetText, loadPresets, parsePresetFile, renamePreset, savePreset, updatePreset } from '../src/presets/presets'
 import { memoryStore, setPresetStore } from '../src/presets/store'
+import { isDirty, markClean, startDirtyTracking } from '../src/project/unsaved'
 import { get, set } from '../src/state/store'
+
+const entry = (id: string) => ({ id, name: id, handle: { id, hash: id, name: id, triangles: 1, bboxMm: [1, 1, 1], openEdges: 0, parts: [] }, parts: [], colors: [], transform: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1] }) as never
 
 beforeEach(() => {
   setPresetStore(memoryStore())
@@ -50,6 +53,22 @@ describe('user presets', () => {
     expect(get().userPresets.map((x) => x.name)).toEqual(['PETG'])
     expect(get().overrides['nozzle_temperature']).toEqual([212])
     expect(get().activePresets.filament).toBe(p.id)
+  })
+
+  it('a preset in use that comes back is not an edit, so the untouched example plate is not offered back after a restart', async () => {
+    const p = await savePreset('process', 'My fast print', { values: { wall_loops: 4 } })
+    // A slow start: the example plate is in before the saved presets are read.
+    set({ overrides: {}, userPresets: [], activePresets: { process: p.id }, plate: [entry('x')], plates: [{ id: 'plate-1', name: 'Plate 1', objects: [], settings: { sequence: 'by-layer' } }], activePlate: 'plate-1' })
+    startDirtyTracking()
+    markClean()
+    await loadPresets()
+    expect(get().overrides['wall_loops']).toBe(4)
+    expect(isDirty()).toBe(false)
+    // An edit made before the presets came back still counts.
+    set({ plate: [entry('x'), entry('y')] })
+    await loadPresets()
+    expect(isDirty()).toBe(true)
+    set({ plate: [] })
   })
 
   it('a reload that finds the same presets keeps the list, so a fresh slice stays fresh', async () => {
