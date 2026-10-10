@@ -75,10 +75,9 @@ pub(crate) struct Bridge {
     pub(crate) live_clients: StdMutex<Vec<(String, mpsc::UnboundedSender<Message>)>>,
     /// Pairings the hub answers over the relay, and the relay connection.
     pub(crate) remote: crate::remote::Remote,
-    /// Names Bambu Lab printers announce for themselves (SSDP `DevName`), by serial.
+    /// Names Bambu Lab printers announce for themselves (SSDP `DevName`), by serial. Heard only by a
+    /// search or a probe the person started; the hub never listens for them on its own.
     own_names: StdMutex<crate::own_names::OwnNames>,
-    /// When the hub last listened for those announcements.
-    names_heard: StdMutex<Option<Instant>>,
 }
 
 pub(crate) struct Registered {
@@ -176,7 +175,6 @@ impl Bridge {
             live_clients: StdMutex::new(Vec::new()),
             remote,
             own_names: StdMutex::new(crate::own_names::OwnNames::default()),
-            names_heard: StdMutex::new(None),
         }
     }
 
@@ -1247,7 +1245,6 @@ pub(crate) async fn printer_status(b: &Arc<Bridge>, id: &str) -> Rpc<Value> {
             Ok(st) => {
                 hub_rpc::record(b, id, &st);
                 let serial = announced_serial(b, id).await;
-                learn_own_names(b, serial.as_deref());
                 let mut v = to_json(&st)?;
                 if let Some(o) = v.as_object_mut() {
                     note_model(s.as_ref(), o);
@@ -1290,11 +1287,6 @@ fn note_model(s: &dyn PrinterSession, st: &mut serde_json::Map<String, Value>) {
     }
 }
 
-/// How long the hub listens for printer announcements when it needs a name, and how long it waits
-/// before listening again. Bambu Lab printers announce themselves every few seconds.
-const NAME_LISTEN: Duration = Duration::from_secs(6);
-const NAME_RETRY: Duration = Duration::from_secs(60);
-
 /// The serial of a registered Bambu Lab printer, the key its announced name is kept under.
 async fn announced_serial(b: &Bridge, id: &str) -> Option<String> {
     let printers = b.printers.lock().await;
@@ -1312,33 +1304,6 @@ fn note_own_name(b: &Bridge, serial: Option<&str>, st: &mut serde_json::Map<Stri
     if let Some(n) = serial.and_then(|s| b.own_name(s)) {
         st.insert("ownName".into(), json!(n));
     }
-}
-
-/// Listens for printer announcements in the background when a Bambu Lab printer's own name is not
-/// known yet, at most once a minute. Passive: nothing is sent to the printer.
-fn learn_own_names(b: &Arc<Bridge>, serial: Option<&str>) {
-    let Some(serial) = serial else { return };
-    if b.own_name(serial).is_some() {
-        return;
-    }
-    {
-        let mut last = b
-            .names_heard
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if last.is_some_and(|t| t.elapsed() < NAME_RETRY) {
-            return;
-        }
-        *last = Some(Instant::now());
-    }
-    let b = b.clone();
-    tokio::spawn(async move {
-        let Some(c) = b.connectors.iter().find(|c| c.manifest().id == "bambu-lan") else {
-            return;
-        };
-        let found = c.discover(NAME_LISTEN).await;
-        b.remember_names(&found);
-    });
 }
 
 /// Events of one printer, with the print watch state on status events.
@@ -1844,6 +1809,7 @@ async fn probe(b: &Bridge, p: &Value) -> Rpc<Value> {
             .flatten()
             .filter(|d| experimental || !sx_connect::is_experimental(&d.plugin))
             .collect();
+    b.remember_names(&found);
     Ok(json!({ "printers": found }))
 }
 
