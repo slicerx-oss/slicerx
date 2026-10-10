@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { expect, plateReady, test } from './fixtures'
 
-type Sx = { getState(): { plate: { name: string; parts: { name: string }[] }[]; slice: { status: string; stale?: boolean; result?: { id: string } }; toast: { text: string; kind?: string } | null }; setState(p: unknown): void }
+type Sx = { getState(): { plate: { name: string; parts: { name: string }[] }[]; slice: { status: string; stale?: boolean; result?: { id: string } }; toast: { text: string; kind?: string } | null; plateLoading: boolean }; setState(p: unknown): void }
 
 const fixtures = join(import.meta.dirname, '..', '..', '..', 'packages', 'app', 'test', 'fixtures', 'step')
 
@@ -37,11 +37,14 @@ test('a dropped STEP assembly becomes named objects and slices', async ({ page, 
   await expect(page.locator('.obj-name', { hasText: 'cube' })).toBeVisible()
   const plate = (await state()).plate
   expect(plate.find((p) => p.name === 'assembly')?.parts.map((p) => p.name)).toEqual(['assembly base', 'assembly post'])
+  // The open ends with the toast that says what the file became. The next file is dropped after that, so the last toast
+  // is its own and not one still on its way from this file.
+  await expect.poll(async () => { const s = await state(); return s.plateLoading ? 'loading' : (s.toast?.text ?? '') }).toBe('assembly.step: Split into 2 objects.')
 
   // An inch file arrives at its real size, and the toast says it was converted.
   await drop(page, 'bracket-inch.stp')
   await expect(page.locator('.obj-name', { hasText: 'bracket-inch' })).toBeVisible({ timeout: 60_000 })
-  await expect.poll(async () => (await state()).toast?.text ?? '').toMatch(/Converted from inches to millimeters/)
+  await expect.poll(async () => (await state()).toast?.text ?? '').toMatch(/^bracket-inch\.stp: Converted from inches to millimeters/)
 
   // A file with nothing in it is refused in words and adds nothing.
   const before = (await state()).plate.length
