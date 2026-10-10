@@ -141,8 +141,8 @@ button { cursor: pointer; }
 
 /* number fields with a scrub handle. A vector field is one outline split by hairlines, a segment per axis,
    the unit said once under the row name. Numbers are the body face with even width digits. */
-.sx-vector { display: grid; grid-template-columns: var(--sx-vector-label, 64px) minmax(0, 1fr); gap: 6px; align-items: center; min-width: 0; }
-.sx-vector-label { display: flex; flex-direction: column; gap: 2px; min-width: 0; font: var(--fw-medium) var(--fs-md)/1.15 var(--f-body); color: var(--muted); }
+.sx-vector { display: grid; grid-template-columns: var(--sx-vector-label, 84px) minmax(0, 1fr); gap: 6px; align-items: center; min-width: 0; }
+.sx-vector-label { display: flex; align-items: baseline; gap: 4px; min-width: 0; white-space: nowrap; font: var(--fw-medium) var(--fs-md)/1.15 var(--f-body); color: var(--muted); }
 .sx-vector-label small { font-size: var(--fs-xs); font-weight: var(--fw-regular); color: var(--dim); }
 .sx-vector-box, .sx-scrub[data-boxed] { height: var(--h-sm); border: 1px solid var(--line-soft); border-radius: var(--r-sm); background: var(--ink-2); transition: border-color var(--t-fast) var(--ease), box-shadow var(--t-fast) var(--ease); }
 .sx-vector-box { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); min-width: 0; }

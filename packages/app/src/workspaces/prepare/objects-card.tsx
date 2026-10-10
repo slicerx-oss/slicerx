@@ -88,18 +88,23 @@ function AddButton() {
 /** The open tool's name for the card header. */
 const TOOL_LABEL: Record<string, string> = { cut: 'Cut', paint: 'Paint', brim: 'Brim ears' }
 
-/** While a tool is open its panel takes the card's place; Done or Escape brings the list back where it was. */
-function ToolSlot({ children, onDone, label }: { children: React.ReactNode; onDone: () => void; label: string }) {
+/**
+ * While a tool is open its panel takes the card's place; Done or Escape brings the list back where it was. A tool with
+ * its own Cancel and Apply has no Done: one way out.
+ */
+function ToolSlot({ children, onDone, label, footer }: { children: React.ReactNode; onDone: () => void; label: string; footer: boolean }) {
   const onKey = (e: KeyboardEvent<HTMLDivElement>) => {
     if (e.key !== 'Escape' || e.defaultPrevented) return
     e.preventDefault()
     onDone()
   }
   return (
-    <div className="tool-slot" data-section="objects" data-tool={label} onKeyDown={onKey}>
-      <Button size="sm" className="tool-done" data-testid="slice-tool-done" onClick={onDone} tip={{ title: 'Done', body: `Close ${label} and go back to the objects.` }}>
-        Done
-      </Button>
+    <div className="tool-slot" data-section="objects" data-tool={label} data-done={footer ? undefined : ''} onKeyDown={onKey}>
+      {footer ? null : (
+        <Button size="sm" className="tool-done" data-testid="slice-tool-done" onClick={onDone} tip={{ title: 'Done', body: `Close ${label} and go back to the objects.` }}>
+          Done
+        </Button>
+      )}
       <Suspense fallback={<div className="ws-loading" aria-busy="true" />}>{children}</Suspense>
     </div>
   )
@@ -141,7 +146,7 @@ export function PrepareObjects() {
     }
     return (
       <>
-        <ToolSlot onDone={done} label={label}>
+        <ToolSlot onDone={done} label={label} footer={isCadTool(objectTool) || objectTool === 'cut'}>
           {panel}
         </ToolSlot>
         <ToolDialogHost />
