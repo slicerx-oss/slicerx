@@ -765,6 +765,8 @@ button.reset:hover { color: var(--fg); background: var(--ink-3); }
 /* Hover-revealed controls: they stay reachable by keyboard and appear with their neighbor. */
 .plate-strip.single { opacity: 0; transition: opacity 120ms var(--ease); }
 .hud-bl:hover .plate-strip.single, .plate-strip.single:focus-within { opacity: 1; }
+/* On touch there is no hover, so the lone plate's strip sits above the chips and leaves them the row. */
+@media (hover: none) { .hud-bl .plate-strip.single { position: absolute; left: 0; bottom: calc(100% + 8px); } }
 .obj .obj-row > .sx-btn { opacity: 0; transition: opacity 120ms var(--ease); }
 .obj:hover .obj-row > .sx-btn, .obj:focus-within .obj-row > .sx-btn, .obj .obj-row > .sx-btn[aria-pressed="true"] { opacity: 1; }
 .arrange-opts { opacity: 0; width: 0; overflow: visible; transition: opacity 120ms var(--ease); }
