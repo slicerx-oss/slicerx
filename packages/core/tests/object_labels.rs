@@ -270,25 +270,19 @@ fn support_belongs_to_the_object_it_holds_up() {
         &plate,
         json!({"enable_support": true, "support_type": "normal(auto)"}),
     );
-    // The support under the shelf's overhang (X 90 to 100, Y 100 to 110 on the plate).
-    let under: Vec<Move> = moves(&g)
+    // All of it, the first layer's border round the support area too, which runs close by the post.
+    let support: Vec<Move> = moves(&g)
         .into_iter()
-        .filter(|m| {
-            m.feature.starts_with("Support")
-                && (90.5..=99.5).contains(&m.mid[0])
-                && (100.5..=109.5).contains(&m.mid[1])
-        })
+        .filter(|m| m.feature.starts_with("Support"))
         .collect();
-    assert!(under.iter().map(|m| m.len).sum::<f64>() > 100.0);
-    let wrong: f64 = under
+    let under = |m: &&Move| (90.5..=99.5).contains(&m.mid[0]) && (100.5..=109.5).contains(&m.mid[1]);
+    assert!(support.iter().filter(under).map(|m| m.len).sum::<f64>() > 100.0);
+    let wrong: f64 = support
         .iter()
         .filter(|m| m.label.as_deref() != Some("shelf"))
         .map(|m| m.len)
         .sum();
-    assert!(
-        wrong < 1e-6,
-        "{wrong} mm of the support under the shelf not labelled shelf"
-    );
+    assert!(wrong < 1e-6, "{wrong} mm of the shelf's support not labelled shelf");
 }
 
 #[test]
