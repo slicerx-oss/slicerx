@@ -64,6 +64,9 @@ export const test = base.extend<object, { graphics: void }>({
   context: async ({ context }, use) => {
     await context.addInitScript(() => {
       sessionStorage.setItem('sx-no-auto-slice', '1')
+      // A spec that turns auto slice on checks the background slice: Always, since Auto would hold a plate whose
+      // last slice took as long as a test runner's.
+      sessionStorage.setItem('sx-auto-slice-always', '1')
       // The plate reveal plays on a window's first plate; specs that compare pictures want the plate as it settles.
       sessionStorage.setItem('sx-reveal', 'off')
     })
