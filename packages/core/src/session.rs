@@ -205,6 +205,14 @@ pub struct SliceSession {
     /// `print_order` as object list: the hull of each object in the plate's list order, which the islands
     /// of a layer follow; empty for the default order.
     object_hulls: Vec<Vec<IntPoint<i32>>>,
+    /// The plate object of each part in `parts`, as [`Self::footprints`] numbers them.
+    part_object: Vec<u16>,
+    /// Each object's own slice per layer, worked out on first use for the owners of the paths (`owners.rs`); only
+    /// a session of more than one object reads it.
+    object_slices: Vec<std::sync::OnceLock<std::sync::Arc<crate::owners::Slices>>>,
+    /// The session of one object of a plate sliced object by object (`followers`): that object's index on the
+    /// plate, which its paths are stamped with when the plate's layers are put together.
+    plate_index: u16,
     /// The raft under the part: its layers come before the part's, which sit on top of it.
     raft: Option<crate::raft::Plan>,
     support: std::sync::OnceLock<Vec<crate::support::SupportLayer>>,
@@ -282,6 +290,8 @@ pub(crate) struct Instance {
     pub(crate) sub: usize,
     /// How far the copy moves, internal units.
     pub(crate) shift: [i32; 2],
+    /// The plate object it is.
+    pub(crate) object: u16,
 }
 
 /// The plate a session of copies was built from, to slice it whole when the copies cannot be placed apart.
@@ -1127,6 +1137,16 @@ impl SliceSession {
                 .and_then(|i| hulls.get(i).cloned())
                 .map(|h| vec![h])
         };
+        // Each printable object's index on the plate, which its paths are stamped with (`owners.rs`).
+        let plate_index_of = |obj: &crate::plate::PlateObject| {
+            plate
+                .objects
+                .iter()
+                .position(|o| std::ptr::eq(o, obj))
+                .and_then(|i| u16::try_from(i).ok())
+                .unwrap_or(u16::MAX)
+        };
+        let printable_index: Vec<u16> = printable.iter().map(|o| plate_index_of(o)).collect();
         let mut subs: Vec<Self> = Vec::with_capacity(sliced.len());
         for obj in &sliced {
             let own_cfg = object_config(config, &obj.settings)?;
@@ -1151,14 +1171,16 @@ impl SliceSession {
             } else {
                 ranges.to_vec()
             };
-            subs.push(Self::build_one_with(
+            let mut one = Self::build_one_with(
                 &sub,
                 &own_cfg,
                 own.as_deref(),
                 &own_ranges,
                 interleaved,
                 hull_of(obj),
-            )?);
+            )?;
+            one.plate_index = plate_index_of(obj);
+            subs.push(one);
         }
         if interleaved && let Some(s) = subs.first_mut() {
             for w in layer_wide_conflicts(ranges) {
@@ -1219,7 +1241,7 @@ impl SliceSession {
         }
         first.followers = subs;
         if let Some(placed) = copies {
-            first.place_copies(plate, config, tops, &placed, &own_bounds);
+            first.place_copies(plate, config, tops, &placed, &own_bounds, &printable_index);
         }
         if first.interleave {
             first.plan_interleaved();
@@ -1236,6 +1258,7 @@ impl SliceSession {
         tops: Option<&[f64]>,
         placed: &[(usize, [f64; 2])],
         own_bounds: &[[f64; 4]],
+        printable_index: &[u16],
     ) {
         let originals: Vec<usize> = (0..placed.len())
             .filter(|&i| placed.get(i).is_some_and(|c| c.0 == i))
@@ -1254,6 +1277,10 @@ impl SliceSession {
             self.instances.push(Instance {
                 sub,
                 shift: [mm(off[0]), mm(off[1])],
+                object: printable_index
+                    .get(self.instances.len())
+                    .copied()
+                    .unwrap_or(u16::MAX),
             });
         }
         self.bounds = bounds;
@@ -1585,6 +1612,7 @@ impl SliceSession {
                 })
             })
             .collect();
+        let object_slices = (0..plan.count()).map(|_| std::sync::OnceLock::new()).collect();
         let mut session = Self {
             cache: crate::shells::Cache::default(),
             paint: crate::paint::Cache::default(),
@@ -1660,6 +1688,12 @@ impl SliceSession {
                 }
             },
             octree: std::sync::OnceLock::new(),
+            part_object: part_object
+                .iter()
+                .map(|&o| u16::try_from(o).unwrap_or(u16::MAX))
+                .collect(),
+            object_slices,
+            plate_index: 0,
             instances: Vec::new(),
             whole_plate: None,
             nozzle_map: None,
@@ -2034,6 +2068,56 @@ impl SliceSession {
 
     pub(crate) fn footprints(&self) -> &[crate::output::ObjectFootprint] {
         &self.objects
+    }
+
+    /// This session's index on the plate when it is one object of a plate sliced object by object.
+    pub(crate) fn plate_index(&self) -> u16 {
+        self.plate_index
+    }
+
+    /// Each object's own slice on object layer `layer` (`owners.rs`), worked out once.
+    fn object_slices_at(&self, layer: usize) -> Option<std::sync::Arc<crate::owners::Slices>> {
+        let cell = self.object_slices.get(layer)?;
+        Some(
+            cell.once(|| {
+                let z = self.plan.slice_z.get(layer).copied().unwrap_or(0.0);
+                let loops: Vec<Vec<Polygon>> = self
+                    .parts
+                    .iter()
+                    .map(|p| {
+                        let mut v = Vec::new();
+                        p.slice(layer, z, &mut v);
+                        v
+                    })
+                    .collect();
+                std::sync::Arc::new(crate::owners::slices_of(&self.part_object, &loops))
+            })
+            .clone(),
+        )
+    }
+
+    /// The owners of a print layer's paths (`owners.rs`): `object` is the object layer it prints (None for a raft
+    /// or support only layer, `next` then the first object layer over it).
+    fn stamp_owners(&self, l: &mut LayerPaths, object: Option<u32>, next: Option<u32>) {
+        let mut objects = self.part_object.clone();
+        objects.sort_unstable();
+        objects.dedup();
+        match objects.as_slice() {
+            [] => {}
+            [one] => crate::owners::stamp(l, *one),
+            _ => {
+                let here = object
+                    .and_then(|k| self.object_slices_at(k as usize))
+                    .unwrap_or_default();
+                // Layers up from the object layer (or, under it, from the first object layer).
+                let base = object.or(next.map(|n| n.saturating_sub(1)));
+                let above = |k: usize| {
+                    let b = base? as usize;
+                    self.object_slices_at(b + k)
+                };
+                crate::owners::assign(l, &here, &above);
+            }
+        }
     }
 
     pub(crate) fn is_interleaved(&self) -> bool {
@@ -3254,7 +3338,7 @@ impl SliceSession {
         } else {
             layers.clone().zip(starts).collect()
         };
-        let print_layer = |(i, start): (u32, Option<LayerStart>)| {
+        let print_layer_raw = |(i, start): (u32, Option<LayerStart>)| {
             if stopped() {
                 return LayerPaths::default();
             }
@@ -3284,6 +3368,22 @@ impl SliceSession {
             let mut p = self.support_only_paths(i, pl, below.map_or(&first_cfg, cfg_of), below, ended);
             p.cfg = below.map_or(0, cfg_index);
             p.prev_cfg = p.cfg;
+            p
+        };
+        // Each path's object (`owners.rs`).
+        let print_layer = |job: (u32, Option<LayerStart>)| {
+            let i = job.0;
+            let mut p = print_layer_raw(job);
+            let (object, next) = match self.print.get(i as usize) {
+                None => (Some(i), None),
+                Some(pl) => (
+                    pl.object,
+                    self.print
+                        .get(i as usize..)
+                        .and_then(|r| r.iter().find_map(|l| l.object)),
+                ),
+            };
+            self.stamp_owners(&mut p, object, next);
             p
         };
         // The first layer's area and outlines are worked out next to the layers' paths.

@@ -85,7 +85,6 @@ pub(crate) fn check(
 ) -> Hits {
     let mut hits = Hits::default();
     let n = u32::try_from(out.objects.len()).unwrap_or(u32::MAX);
-    let finder = crate::preview::ObjectFinder::new(&out.objects);
     let mut boxes = Vec::with_capacity(zones.len());
     for (_, z) in zones {
         boxes.push(bounds(z, 0.0));
@@ -135,7 +134,7 @@ pub(crate) fn check(
         if !(near_zone || (crossings && owners)) {
             continue;
         }
-        let segs = segments(l, &finder, n);
+        let segs = segments(l, n);
         if segs.is_empty() {
             continue;
         }
@@ -198,7 +197,7 @@ pub(crate) fn check(
         }
         // Travels in a keep-out zone, or passing within the nozzle's width of it.
         if near_zone {
-            for s in &travels(l, &finder, n) {
+            for s in &travels(l, n) {
                 for (k, ((_, z), b)) in zones.iter().zip(&boxes).enumerate() {
                     let reach = [
                         s.a[0].min(s.b[0]),
@@ -303,7 +302,7 @@ pub(crate) fn check(
 /// the layer below's last path ended first), each owned by the object it leaves, else the one it goes to. Travels to or from a
 /// custom path (the printer's own G-code may go into its zones on purpose) and between skirt paths are left out. Its
 /// index is the first segment of the path it goes to, as the preview counts them.
-fn travels(l: &LayerPaths, finder: &crate::preview::ObjectFinder<'_>, tower: u32) -> Vec<Seg> {
+fn travels(l: &LayerPaths, tower: u32) -> Vec<Seg> {
     let mut out = Vec::new();
     let mut index = 0u32;
     // The layer below ended where its last path ends (its last stored point is not that when its paths were
@@ -324,10 +323,7 @@ fn travels(l: &LayerPaths, finder: &crate::preview::ObjectFinder<'_>, tower: u32
         let owner = match p.feature {
             Feature::PrimeTower => Some(tower),
             Feature::Skirt | Feature::Custom => None,
-            f => {
-                let k = finder.object_of(f, pts);
-                (k != crate::preview::OBJECT_NONE).then_some(u32::from(k))
-            }
+            _ => (p.owner != crate::preview::OBJECT_NONE).then_some(u32::from(p.owner)),
         };
         if let Some((from, from_owner, from_custom)) = last
             && !custom
@@ -350,7 +346,7 @@ fn travels(l: &LayerPaths, finder: &crate::preview::ObjectFinder<'_>, tower: u32
 }
 
 /// A layer's extrusion segments with their owners; skirts and custom paths own nothing and are left out.
-fn segments(l: &LayerPaths, finder: &crate::preview::ObjectFinder<'_>, tower: u32) -> Vec<Seg> {
+fn segments(l: &LayerPaths, tower: u32) -> Vec<Seg> {
     let mut out = Vec::new();
     let mut index = 0u32;
     for p in &l.paths {
@@ -358,10 +354,7 @@ fn segments(l: &LayerPaths, finder: &crate::preview::ObjectFinder<'_>, tower: u3
         let owner = match p.feature {
             Feature::PrimeTower => Some(tower),
             Feature::Skirt | Feature::Custom => None,
-            f => {
-                let k = finder.object_of(f, pts);
-                (k != crate::preview::OBJECT_NONE).then_some(u32::from(k))
-            }
+            _ => (p.owner != crate::preview::OBJECT_NONE).then_some(u32::from(p.owner)),
         };
         let support = matches!(p.feature, Feature::Support | Feature::SupportInterface);
         for w in pts.windows(2) {
@@ -396,6 +389,7 @@ mod tests {
             flow: 1.0,
             dz: 0.0,
             overhang_fan: false,
+            owner: crate::preview::OBJECT_NONE,
         }
     }
 
@@ -423,8 +417,14 @@ mod tests {
                 height: 0.2,
                 points: pts,
                 paths: vec![
-                    path(0, 5, Feature::OuterWall),
-                    path(5, 10, Feature::OuterWall),
+                    PathInfo {
+                        owner: 0,
+                        ..path(0, 5, Feature::OuterWall)
+                    },
+                    PathInfo {
+                        owner: 1,
+                        ..path(5, 10, Feature::OuterWall)
+                    },
                     path(10, 12, Feature::PrimeTower),
                 ],
                 ..LayerPaths::default()

@@ -251,6 +251,7 @@ pub(crate) fn add(
             flow: flow as f32,
             dz: 0.0,
             overhang_fan: false,
+            owner: crate::preview::OBJECT_NONE,
         });
         added = true;
     }

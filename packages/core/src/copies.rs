@@ -132,6 +132,7 @@ pub(crate) fn slice(
         for (i, l) in out.layers.iter().enumerate() {
             let mut l = l.clone();
             move_layer(&mut l, c.shift);
+            crate::owners::to_plate(&mut l, c.object);
             match merged.get_mut(i) {
                 Some(dst) => append_layer(dst, l),
                 None => merged.push(l),
