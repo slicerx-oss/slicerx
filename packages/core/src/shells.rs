@@ -33,6 +33,7 @@ pub(crate) struct Cache {
     cands: Memo<(i64, u64), Shared<Vec<Shapes>>>,
     facts: Memo<(i64, u64), Option<Shared<crate::bridging::Facts>>>,
     free: Memo<(i64, i64, i32), Shared<Shapes>>,
+    cut: Memo<(i64, i64), Shared<Shapes>>,
     grown: Memo<(i64, i64, i32, i32), Option<Shared<Shapes>>>,
     inset: Memo<(i64, i32), Shared<Shapes>>,
     inner: Memo<(i64, u64), Option<Shared<Walls>>>,
@@ -58,6 +59,12 @@ impl Cache {
     pub(crate) fn free(&self, m: i64, toward: i64, opening: f64, work: impl FnOnce() -> Shapes) -> Shapes {
         let key = (m, toward, mm(opening));
         (*self.free.get_or(key, || std::sync::Arc::new(work()))).clone()
+    }
+
+    /// The part of layer `m`'s outline that layer `m + toward` does not cover, before the opening. A region of
+    /// the layer is uncovered where it meets this, so the layer's regions cut the neighbor once between them.
+    pub(crate) fn cut(&self, m: i64, toward: i64, work: impl FnOnce() -> Shapes) -> Shared<Shapes> {
+        self.cut.get_or((m, toward), || std::sync::Arc::new(work()))
     }
 
     /// [`Self::free`] grown by `grow` internal units, `None` where nothing is free.
@@ -197,10 +204,14 @@ fn around(i: &Input<'_>) -> Around {
         }
     };
     let free_of = |m: i64, toward: i64, here: &Shapes, other: &Shapes| -> Shapes {
-        let work = || opened(&perimeters::difference(here, other), i.opening);
         match i.cache {
-            Some(c) => c.free(m, toward, i.opening, work),
-            None => work(),
+            Some(c) => c.free(m, toward, i.opening, || {
+                opened(
+                    &c.cut(m, toward, || perimeters::difference(here, other)),
+                    i.opening,
+                )
+            }),
+            None => opened(&perimeters::difference(here, other), i.opening),
         }
     };
     let mine = (i.slice)(i.layer).map(|s| inset_of(i.layer, &s));
