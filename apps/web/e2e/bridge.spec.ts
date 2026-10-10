@@ -24,7 +24,7 @@ let stopMocks: (() => Promise<void>) | undefined
 let code = ''
 let linkUrl = ''
 let controlPort = 0
-let admin: { close(): void; addPrinter(c: unknown, i?: unknown): Promise<unknown>; setSecret(n: string, v: string): Promise<void>; status(id: string): Promise<{ state: string }> } | undefined
+let admin: { close(): void; addPrinter(c: unknown, i?: unknown): Promise<unknown>; removePrinter(id: string): Promise<void>; setSecret(n: string, v: string): Promise<void>; status(id: string): Promise<{ state: string }> } | undefined
 let ports: Record<string, number> = {}
 // A throwaway state directory with file secrets: the test never touches the real hub or the keychain.
 let stateDir = ''
@@ -92,11 +92,15 @@ test.afterAll(async () => {
 })
 
 async function seed(page: Page): Promise<void> {
-  await page.addInitScript(() => {
+  // Setup already done, as after any first launch: printer setup opened by a test then records no unfinished onboarding
+  // that a reload would open again.
+  const { ONBOARDING_VERSION } = await import('../../../packages/app/src/first-run/onboarding.ts')
+  const firstRun = { completedAt: '2026-10-01T00:00:00.000Z', step: 'done', look: { id: 'slicerx' }, printerId: null, version: ONBOARDING_VERSION }
+  await page.addInitScript((firstRun) => {
     if (sessionStorage.getItem('sx-e2e')) return
     sessionStorage.setItem('sx-e2e', '1')
-    localStorage.setItem('slicerx.prefs.v1', JSON.stringify({ workspace: 'prepare', settingsMode: 'advanced', cadTools: true }))
-  })
+    localStorage.setItem('slicerx.prefs.v1', JSON.stringify({ workspace: 'prepare', settingsMode: 'advanced', cadTools: true, firstRun }))
+  }, firstRun)
   await page.goto('./')
 }
 
@@ -176,6 +180,8 @@ async function setupX1(page: Page): Promise<void> {
 }
 
 test('Connected apps: BamBuddy shows as a printer connection only once it is added', async ({ page }) => {
+  // The app starts three times.
+  test.slow()
   // A stand-in BamBuddy on this computer that lists one printer.
   const { createServer } = await import('node:http')
   const keys: string[] = []
@@ -372,11 +378,12 @@ test('A1: a refused start shows the reason and offers plain G-code', async ({ pa
     await start(sheet)
     const again = page.locator('dialog.print-sheet[open]')
     // On a miss, say what the printer was asked to do.
-    await expect(again).toContainText('A1 did not start the print. It said:', { timeout: 30_000 }).catch(async (e: unknown) => {
+    await expect(again).toContainText('A1 did not start the print', { timeout: 30_000 }).catch(async (e: unknown) => {
       const app = await page.evaluate(() => JSON.stringify((window as unknown as { __sx: { getState(): { toast: unknown } } }).__sx.getState().toast))
       throw new Error(`${String(e).slice(0, 300)}\napp toast: ${app}\nmock log: ${(await mockLog()).slice(-600)}`)
     })
-    await expect(again).toContainText('The file could not be parsed (mock)')
+    // The printer's own words are in the line's Details.
+    await expect(again.locator('.cl-more[data-tip-title="A1 did not start the print"]')).toHaveAttribute('data-tip-body', /^It said: The file could not be parsed \(mock\)/)
     const plain = again.getByRole('button', { name: 'Send as plain G-code' })
     await expect(plain).toBeEnabled()
     await ctl('/bambu', { refuse: null })
@@ -384,7 +391,8 @@ test('A1: a refused start shows the reason and offers plain G-code', async ({ pa
     await expect(page.getByText(/started on A1/)).toBeVisible({ timeout: 30_000 })
     const log = await mockLog()
     expect(log).toMatch(/project_file refused/)
-    expect(log).toMatch(/gcode_file|\.gcode\\"/)
+    // gcode_file started the plain file, not the .gcode.3mf.
+    expect(log).toMatch(/"start [^"]+\.gcode"/)
   } finally {
     await ctl('/bambu', { refuse: null })
     await idleAgain('a1')
@@ -395,18 +403,26 @@ test('A1 mini with the external spool only: filament 1 goes to the external spoo
   test.slow()
   await ctl('/bambu', { model: 'N1', ams: 'none', external: { type: 'PLA', color: '#FFFFFF' } })
   await addBambu('a1mini', 'A1 mini', 'A1 mini')
-  const sheet = await sheetFor(page, 'A1 mini')
-  await expect(sheet.locator('.ps-fil').first()).toContainText('External spool')
-  const slot = sheet.locator('#ps-map-1')
-  if (await slot.count()) {
-    const opts = (await slot.locator('option').allTextContents()).map((o) => o.trim())
-    expect(opts.filter((o) => /^A\d/.test(o))).toEqual([])
+  try {
+    const sheet = await sheetFor(page, 'A1 mini')
+    await expect(sheet.locator('.ps-fil').first()).toContainText('External spool')
+    const slot = sheet.locator('#ps-map-1')
+    if (await slot.count()) {
+      const opts = (await slot.locator('option').allTextContents()).map((o) => o.trim())
+      expect(opts.filter((o) => /^A\d/.test(o))).toEqual([])
+    }
+    await start(sheet)
+    await expect(page.getByText(/started on A1 mini/)).toBeVisible({ timeout: 30_000 })
+    const log = await mockLog()
+    // The external spool is tray 254 (vt_tray).
+    expect(log).toMatch(/project_file[^\n]*ams_mapping\\":\[254\]|ams_mapping\\":\[-1\]|use_ams\\":false/)
+  } finally {
+    // The A1 mini is the same mock as A1: leave A1 alone on it, as the tests after this one expect, and the mock an A1
+    // again.
+    await admin!.removePrinter('a1mini')
+    await ctl('/bambu', { model: 'N2S', ams: 'lite', external: { type: 'PLA', color: '#FFFFFF' } })
+    await idleAgain('a1')
   }
-  await start(sheet)
-  await expect(page.getByText(/started on A1 mini/)).toBeVisible({ timeout: 30_000 })
-  const log = await mockLog()
-  // The external spool is tray 254 (vt_tray).
-  expect(log).toMatch(/project_file[^\n]*ams_mapping\\":\[254\]|ams_mapping\\":\[-1\]|use_ams\\":false/)
 })
 
 test('A1 with Developer Mode off: status keeps coming, and Print saves the file for Bambu Connect', async ({ page }) => {
@@ -435,7 +451,10 @@ test('A1 with Developer Mode off: status keeps coming, and Print saves the file 
     // Nothing went to the printer: no upload, no start, nothing it had to refuse.
     expect(await logs()).toEqual(before)
   } finally {
-    await ctl('/bambu', { developerMode: null })
+    // Back on, said in the report: a report that leaves the flag out keeps the hub's last reading, as a printer's
+    // partial reports do. The tests after this one need A1 to take commands, so this waits until the hub has seen it.
+    await ctl('/bambu', { developerMode: true })
+    await expect.poll(async () => ((await admin!.status('a1')) as { live?: { monitorOnly?: boolean } }).live?.monitorOnly ?? false, { timeout: 20_000 }).toBe(false)
   }
 })
 
@@ -524,7 +543,7 @@ test('the camera guard pauses for a hand and brings its card up on Printers', as
 /** Resume on the guard card. The click is the approval: no second card opens (QA M9). */
 async function resumeFromCard(page: Page, card: Locator): Promise<void> {
   await card.getByRole('button', { name: 'Resume' }).click()
-  await expect(page.getByText(/Resumed on A1/)).toBeVisible()
+  await expect(page.getByText(/Resumed on A1/).first()).toBeVisible()
   await expect(page.locator('dialog.approve-dialog[open]')).toHaveCount(0)
 }
 
