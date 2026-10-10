@@ -581,9 +581,9 @@ button.reset:hover { color: var(--fg); background: var(--ink-3); }
 .tf-lock { display: flex; align-items: center; gap: 6px; font-size: var(--fs-sm); color: var(--muted); margin-right: auto; }
 .tf-mirror { display: inline-flex; }
 @media (max-width: 900px) { .plate-tools { top: 52px; } }
-.tf-row.tf-inst { grid-template-columns: 84px auto auto; justify-content: start; }
-.tf-stepper { display: inline-flex; align-items: center; gap: 2px; }
-.tf-stepper .sx-scrub { width: 56px; }
+.tf-row.tf-inst { grid-template-columns: 84px minmax(0, 1fr) auto; }
+.tf-stepper { display: flex; align-items: center; gap: 2px; min-width: 0; }
+.tf-stepper .sx-scrub { flex: 0 1 56px; min-width: 36px; }
 .obj-h:focus-visible { outline-offset: var(--focus-offset-inset); }
 .arrange-opts { position: relative; display: inline-flex; }
 .arrange-pop { position: absolute; top: calc(100% + 6px); left: 50%; transform: translateX(-50%); z-index: var(--z-menu); display: flex; flex-direction: column; gap: 8px; padding: 10px; border-radius: var(--r-md); min-width: 220px; box-shadow: var(--shadow-pop); }
