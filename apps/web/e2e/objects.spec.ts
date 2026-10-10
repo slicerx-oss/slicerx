@@ -3,7 +3,7 @@
 // The Objects card in the Slice sidebar: compact rows that open into a tree of parts and volumes, one Add button with
 // its menu, renaming in place, and a tool that takes the card's place until Done.
 import { type Page } from '@playwright/test'
-import { addMenu, expect, openSheet, plateReady, renameRow, setPartFilament, test } from './fixtures'
+import { addMenu, expect, openSheet, openTransform, plateReady, renameRow, setPartFilament, test } from './fixtures'
 
 type Sx = { getState(): { selectedIds: string[]; objectTool: string | null }; setState(p: unknown): void }
 const sx = (page: Page, p: unknown) => page.evaluate((x) => (window as unknown as { __sx: Sx }).__sx.setState(x), p)
@@ -166,16 +166,16 @@ test('shots: rows, the tree, the Add menu, a tool in the card, the number rows a
     await expect(page.locator('.tool-slot [data-section="cut-tool"]')).toBeVisible()
     await shoot(`tool-${scheme}`)
     await page.locator('[data-section="cut-tool"]').getByRole('button', { name: 'Cancel' }).click()
-    // The number rows of the selected object: one outline per row, with the unit beside the name.
-    await sx(page, { moreOpen: { object: true } })
+    // The selection bar under the list, and its Transform popover with the number rows.
     await rows(page).first().locator('.obj-row').click()
-    const tf = page.locator('[data-section="transform"]')
-    await expect(tf.getByRole('group', { name: 'Size' })).toBeVisible()
-    await tf.evaluate((el) => el.scrollIntoView({ block: 'center' }))
+    await expect(page.getByTestId('slice-selection-bar')).toBeVisible()
+    await page.mouse.move(0, 0)
+    await shoot(`selection-${scheme}`)
+    await openTransform(page)
     await page.mouse.move(0, 0)
     await page.waitForTimeout(400)
     await page.screenshot({ path: `${dir}/objects-transform-${scheme}-${width}.png` })
-    await sx(page, { moreOpen: {} })
+    await page.keyboard.press('Escape')
   }
   await sx(page, { plate: [], selection: null, selectedIds: [] })
   await shoot('empty-dark')

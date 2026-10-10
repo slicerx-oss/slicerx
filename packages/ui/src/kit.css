@@ -64,3 +64,4 @@
 .sx-swatch-ring[data-selected] > svg { border-radius: 50%; box-shadow: 0 0 0 2px var(--ink-1), 0 0 0 4px var(--accent); }
 .sx-swatch-mismatch { position: absolute; top: -1px; right: -1px; width: 9px; height: 9px; border-radius: 50%; background: var(--orange); box-shadow: 0 0 0 2px var(--ink-1); }
 .sx-swatch-label { font: 500 var(--fs-xs) / 1 var(--f-mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+.sx-menu-group { display: contents; }

@@ -3216,6 +3216,11 @@ class ViewportImpl implements Viewport {
         this.sketchEvent(e.button === 0 ? 'click' : 'context', e)
         return
       }
+      // A right click that stayed put asks for a menu; paint erases with that button and brim removes ears with it.
+      if (moved < 5 && e.button === 2 && this.mode === 'prepare' && this.tool !== 'paint' && this.tool !== 'brim') {
+        this.emit('contextpick', { objectId: pick(e)?.entry.id ?? null, screen: [e.clientX, e.clientY] })
+        return
+      }
       if (moved >= 5 || e.button !== 0) return
       const p = pick(e)
       // the selection as it was before the pick: a host may set its own selection while it answers the pick

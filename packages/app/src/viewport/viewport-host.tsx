@@ -17,6 +17,7 @@ import { bake } from '../plate/mesh-ops'
 import { objectWarnings } from '../plate/object-list'
 import { loadExtruderAreas, nozzleZones } from '../plate/nozzle-zones'
 import { commitTransforms, layOnPickedFace } from '../plate/edit'
+import { openViewMenu } from '../plate/view-menu'
 import { cutStore, toggleConnector } from '../plate/cut-plane'
 import { probeHandler, setCameraBus, toolStore, type CadView } from '../plate/tools'
 import { pickSub, type EdgeAt } from '../plate/sub-pick'
@@ -499,6 +500,13 @@ export function ViewportHost({ layers }: { layers: boolean }) {
           return
         }
         selectObject(e)
+      }))
+      // A right click on an object in Slice opens the selection's menu there; outside the selection it selects first.
+      offs.push(vp.on('contextpick', (e) => {
+        const st = appStore.getState()
+        if (st.workspace !== 'prepare' || st.modelMode !== 'slice' || st.objectTool !== null || !e.objectId || e.objectId === TOWER_ID) return
+        if (!selectedIds(st).includes(e.objectId)) selectObject(e)
+        openViewMenu(e.screen[0], e.screen[1])
       }))
       // The picked faces light up and picked edges draw as bars; the face filter lights the face under the pointer, and
       // the edge filter shows the edge a click would pick.

@@ -12,7 +12,7 @@ import { get, set } from '../state/store'
 import { toggleEdge } from '../shell/edge-keys'
 import { PICK_KINDS, pickKeysOn } from './pick-filter'
 import { clearPicks, setPickKind } from './sub-pick'
-import { arrangePlate, centerSelected, dropSelectedToBed, selectAll } from './edit'
+import { arrangePlate, centerSelected, clearSelection, dropSelectedToBed, selectAll } from './edit'
 import { history } from './history'
 import { selectAllEars } from './brim-ears'
 import { cameraBus, getPaintBus, setTool, toolStore } from './tools'
@@ -74,6 +74,9 @@ export function plateHandlers(): Partial<Record<KeyAction, Handler>> {
   return out
 }
 
+/** Tools whose panel or gizmo takes Esc for itself. */
+const TOOLS_WITH_ESC = new Set(['face', 'paint', 'brim', 'probe'])
+
 /** Undo and redo are the same in every preset. */
 const FIXED: [string, Handler][] = [
   ['Mod+S', () => void runCommand('project-save')],
@@ -114,6 +117,12 @@ export function bindPlateKeys(choice: () => LookAndFeelChoice, extra: { dropToBe
         if (matchShortcut(e, `Shift+${key}`)) return run(() => setPickKind(kind, 'toggle'))
       }
       if (e.key === 'Escape' && s.subPicks.length) return run(() => void clearPicks())
+    }
+    // Esc clears the selection in Slice while no tool is open; a menu, a popover, a phone's sheet or a tool panel keeps
+    // its own Esc.
+    if (e.key === 'Escape' && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey && s.modelMode === 'slice' && s.objectTool === null && s.selection !== null && !TOOLS_WITH_ESC.has(toolStore.getState().tool)) {
+      const t = e.target instanceof Element ? e.target : null
+      if (!t?.closest('.tool-slot') && !document.querySelector('[role="menu"], [role="dialog"], .sx-popover, .pane.sheet-open')) return run(clearSelection)
     }
     const prepare = s.workspace === 'prepare'
     for (const [action, h] of Object.entries(handlers) as [KeyAction, Handler][]) {

@@ -7,7 +7,7 @@ import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type Mous
 import { tipAttrs } from './tooltip'
 import { Icon } from '../icons/icon'
 import type { IconName } from '../icons/icon-paths'
-import { Menu, placeAt } from './menu'
+import { Menu, MenuHeading, MenuItem, MenuSeparator, placeAt } from './menu'
 
 /** A press held this long without moving opens the menu on touch, ms. */
 export const LONG_PRESS_MS = 500
@@ -174,5 +174,59 @@ export function MenuIcon({ icon, label, shortcut, disabled, reason, pressed, ton
     >
       <Icon name={icon} size={16} />
     </button>
+  )
+}
+
+/** One item of a menu built from data: the selection bar's menu and the context menus share one list. */
+export interface MenuEntry {
+  id: string
+  label: string
+  icon?: IconName
+  /** A shortcut, shown at the right edge. */
+  shortcut?: string
+  disabled?: boolean
+  /** Why it is off, in its tip instead of a silent gray. */
+  reason?: string
+  danger?: boolean
+  testId?: string
+  /** A group under a heading (Move to plate: one item per plate). */
+  children?: MenuEntry[]
+  run?: () => void
+}
+
+/** The items for a list of entries, closing the menu before each runs. A separator goes between groups. */
+export function MenuItems({ items, onClose }: { items: readonly MenuEntry[]; onClose: () => void }) {
+  return (
+    <>
+      {items.map((it) =>
+        it.children ? (
+          <span key={it.id} role="group" aria-label={it.label} className="sx-menu-group">
+            <MenuSeparator />
+            <MenuHeading>{it.label}</MenuHeading>
+            <MenuItems items={it.children} onClose={onClose} />
+          </span>
+        ) : (
+          <MenuItem
+            key={it.id}
+            {...(it.icon ? { icon: it.icon } : {})}
+            {...(it.shortcut ? { aside: it.shortcut } : {})}
+            tone={it.danger ? 'danger' : 'default'}
+            aria-disabled={it.disabled || undefined}
+            {...(it.testId ? { 'data-testid': it.testId } : {})}
+            {...(it.disabled && it.reason ? tipAttrs({ title: it.label, reason: it.reason }) : {})}
+            onClick={
+              it.disabled
+                ? undefined
+                : () => {
+                    onClose()
+                    it.run?.()
+                  }
+            }
+          >
+            {it.label}
+          </MenuItem>
+        ),
+      )}
+    </>
   )
 }

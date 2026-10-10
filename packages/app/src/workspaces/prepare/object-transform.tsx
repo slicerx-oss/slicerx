@@ -5,7 +5,7 @@
 // letter moves the object live, so one edit or one drag is one undo step.
 import { MoreButton, useMore } from '../../shell/more'
 import { setRotateSpace, useRotateSpace, useTool } from '../../plate/tools'
-import { Button, ScrubNumber, Seg, VectorField } from '@slicerx/ui'
+import { Button, Icon, ScrubNumber, Seg, VectorField } from '@slicerx/ui'
 import { useState } from 'react'
 import { centerSelected, dropSelectedToBed, fillBed, instanceCount, mirrorSelected, scaleSelectedToSize, setInstanceCount, setTrs } from '../../plate/edit'
 import { plateScrub } from '../../plate/scrub'
@@ -16,7 +16,8 @@ const AXES = ['X', 'Y', 'Z'] as const
 
 const fmt = (n: number | undefined): string => String(Math.round((n ?? 0) * 10) / 10)
 
-export function ObjectTransform() {
+/** `full`: every row and button at once, without More (the selection bar's Transform popover). */
+export function ObjectTransform({ full = false }: { full?: boolean } = {}) {
   const entry = useApp((s) => s.plate.find((p) => p.id === s.selection))
   const count = useApp((s) => {
     const e = s.plate.find((p) => p.id === s.selection)
@@ -27,7 +28,7 @@ export function ObjectTransform() {
   const [uniform, setUniform] = useState(true)
   const tool = useTool()
   const space = useRotateSpace()
-  const more = useMore('object')
+  const more = useMore('object') || full
   if (!entry) return null
   const t = decompose(entry.transform)
   const b = bounds(entry.parts, entry.transform)
@@ -50,10 +51,10 @@ export function ObjectTransform() {
   return (
     <div className="tf" data-section="transform">
       {/* more sits above what it opens, so pressing it moves nothing */}
-      <div className="tf-head">
+      {full ? null : <div className="tf-head">
         <span className="tf-title">Transform</span>
         <MoreButton id="object" />
-      </div>
+      </div>}
       {!more && tool !== 'rotate' && tool !== 'scale' ? (
         <p className="tf-readout" aria-label="Position">
           X {fmt(t.position[0])} Y {fmt(t.position[1])} Z {fmt(t.position[2])} mm
@@ -104,8 +105,11 @@ export function ObjectTransform() {
         </Button>
         </> : null}
         {more ? <span className="tf-mirror" role="group" aria-label="Mirror">
+          {/* One mark for the group, the axes as plain letters: the icon on each read as noise. */}
+          <Icon name="mirror" size={14} className="tf-mirror-mark" aria-hidden="true" />
+          <span className="tf-mirror-label">Mirror</span>
           {AXES.map((a, i) => (
-            <Button key={a} size="sm" variant="ghost" icon="mirror" onClick={() => mirrorSelected(i as 0 | 1 | 2)} tip={{ title: `Mirror along ${a}`, body: `Flip the object across the ${a} axis.` }}>
+            <Button key={a} size="sm" variant="ghost" aria-label={`Mirror along ${a}`} onClick={() => mirrorSelected(i as 0 | 1 | 2)} tip={{ title: `Mirror along ${a}`, body: `Flip the object across the ${a} axis.` }}>
               {a}
             </Button>
           ))}

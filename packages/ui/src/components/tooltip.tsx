@@ -178,6 +178,8 @@ export function TooltipHost({ resolve, enabled = true, media = true, summonKey =
       setPos(null)
     }
     const reveal = (anchor: HTMLElement, pinned: boolean, touch = false) => {
+      // A control whose menu or popover is open says what it does there; a tip would cover the menu and take its clicks.
+      if (!pinned && anchor.getAttribute('aria-expanded') === 'true') return
       const content = live.current.resolve(anchor)
       if (!content) return
       if (!pinned && !live.current.enabled && !(isDisabled(anchor) && content.reason)) return
