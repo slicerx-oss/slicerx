@@ -125,8 +125,6 @@ pub mod ironing;
 #[doc(hidden)]
 pub mod jpeg;
 mod layers;
-#[cfg(feature = "sleipnir")]
-mod sleipnir;
 mod lightning;
 #[doc(hidden)]
 pub mod mesh;
@@ -156,6 +154,8 @@ mod preheat;
 #[doc(hidden)]
 pub mod preview;
 pub mod printtime;
+#[cfg(feature = "sleipnir")]
+mod sleipnir;
 // Indices walk the point lists they index, as Orca's loops do.
 #[allow(clippy::indexing_slicing)]
 mod extraperim;

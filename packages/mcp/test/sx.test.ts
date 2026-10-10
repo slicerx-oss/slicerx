@@ -37,7 +37,7 @@ const sxBin = resolve(__dirname, '../../../target/release/sx')
 describe.skipIf(!existsSync(sxBin))('slicing with the real sx CLI', () => {
   it('slices a cube to G-code', async () => {
     const h = await connect({ engine: 'sx', sxBin })
-    const r = await h.call('slicerx_slice_file', { model: join(h.dir, 'cube.stl'), profiles: ['filament:pla'], overrides: { layer_height: 0.2 } })
+    const r = await h.call('slicerx_slice_file', { model: join(h.dir, 'cube.stl'), profiles: ['filament:pla'], overrides: { layer_height: 0.2, smart_layer: 'off' } })
     expect(r.isError, JSON.stringify(r.content)).toBeFalsy()
     const s = data<{ engine: string; layer_count: number; gcode_path: string; filament_g: number }>(r)
     expect(s.engine).toBe('sx')
