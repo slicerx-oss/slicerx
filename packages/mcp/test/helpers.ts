@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-import { mkdtempSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 import { ElicitRequestSchema, type CallToolResult } from '@modelcontextprotocol/sdk/types.js'
@@ -63,4 +63,25 @@ export function text(r: CallToolResult): string {
 
 export function data<T = Record<string, unknown>>(r: CallToolResult): T {
   return r.structuredContent as T
+}
+
+/**
+ * The real core's CLI for the tests that slice with it: SLICERX_TEST_SX_BIN, or a release build
+ * (cargo build -p sx-cli --release).
+ */
+export const sxBin = process.env['SLICERX_TEST_SX_BIN'] ?? resolve(__dirname, '../../../target/release', process.platform === 'win32' ? 'sx.exe' : 'sx')
+
+/**
+ * True when there is no sx to run, so the real-core tests skip. CI builds sx and sets SLICERX_TEST_REQUIRE_SX=1,
+ * and there a missing binary fails the run instead of skipping it.
+ */
+/** A real slice takes seconds, more with the debug build CI runs or on a loaded machine, over vitest's 5 s default. */
+export const sxTimeout = 60_000
+
+export function noSx(): boolean {
+  if (existsSync(sxBin)) return false
+  if (process.env['SLICERX_TEST_REQUIRE_SX'] === '1') {
+    throw new Error(`SLICERX_TEST_REQUIRE_SX=1 but there is no sx at ${sxBin}: build it (cargo build -p sx-cli) and name it in SLICERX_TEST_SX_BIN`)
+  }
+  return true
 }

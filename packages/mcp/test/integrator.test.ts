@@ -10,7 +10,7 @@ import { describe, expect, it } from 'vitest'
 import { gcode3mf } from '../src/gcode3mf'
 import type { SliceSummary } from '../src/slicer'
 import { readZip, writeZip } from '../src/zip'
-import { connect, data, text } from './helpers'
+import { connect, data, noSx, sxBin, sxTimeout, text } from './helpers'
 
 type Err = { error: { code: string; message: string } }
 
@@ -212,10 +212,9 @@ describe('.gcode.3mf', () => {
   })
 })
 
-// Runs only where the core has been built (cargo build -p sx-cli --release), or SLICERX_TEST_SX_BIN names a build.
-const sxBin = process.env['SLICERX_TEST_SX_BIN'] ?? resolve(__dirname, '../../../target/release/sx')
+// Runs only where the core has been built (helpers.ts, sxBin).
 const twoColor = resolve(__dirname, '../../core/bench/models/x-mark-2color.3mf')
-describe.skipIf(!existsSync(sxBin))('with the real sx CLI', () => {
+describe.skipIf(noSx())('with the real sx CLI', { timeout: sxTimeout }, () => {
   it('slices one plate of a two-color project to a .gcode.3mf with use per filament', async () => {
     const h = await connect({ engine: 'sx', sxBin, allowDirs: [resolve(__dirname, '../../core/bench/models')] })
     const r = await h.call('slicerx_slice_file', { model: twoColor, plate: 1, project_settings: true, output: 'gcode.3mf', preview: true, overrides: { layer_height: 0.3 } })

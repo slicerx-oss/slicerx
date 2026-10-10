@@ -2,14 +2,14 @@
 // Copyright (C) 2026 The SlicerX contributors
 // A Bambu Studio project's own printer G-code: stock text slices as it is, anything else comes back as a diff with its
 // flagged lines for a person to see, and no tool call can approve it. The project is made from SlicerX's own A1 profile.
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { readFileSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { printerConfig } from '@slicerx/settings'
 import { describe, expect, it } from 'vitest'
 import { resolveSliceConfig } from '../src/config'
 import { readProjectFile } from '../src/projectfile'
 import { writeZip } from '../src/zip'
-import { connect, data, text } from './helpers'
+import { connect, data, noSx, sxBin, sxTimeout, text } from './helpers'
 
 const MODEL = `<?xml version="1.0" encoding="UTF-8"?><model unit="millimeter" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02"><resources><object id="1" type="model"><mesh><vertices><vertex x="0" y="0" z="0"/><vertex x="20" y="0" z="0"/><vertex x="20" y="20" z="0"/><vertex x="0" y="20" z="0"/><vertex x="0" y="0" z="10"/><vertex x="20" y="0" z="10"/><vertex x="20" y="20" z="10"/><vertex x="0" y="20" z="10"/></vertices><triangles><triangle v1="0" v2="2" v3="1"/><triangle v1="0" v2="3" v3="2"/><triangle v1="4" v2="5" v3="6"/><triangle v1="4" v2="6" v3="7"/><triangle v1="0" v2="1" v3="5"/><triangle v1="0" v2="5" v3="4"/><triangle v1="1" v2="2" v3="6"/><triangle v1="1" v2="6" v3="5"/><triangle v1="2" v2="3" v3="7"/><triangle v1="2" v2="7" v3="6"/><triangle v1="3" v2="0" v3="4"/><triangle v1="3" v2="4" v3="7"/></triangles></mesh></object></resources><build><item objectid="1" transform="1 0 0 0 1 0 0 0 1 128 128 0"/></build></model>`
 
@@ -99,8 +99,7 @@ describe('a project with its own printer G-code', () => {
   })
 })
 
-const sxBin = process.env['SLICERX_TEST_SX_BIN'] ?? resolve(__dirname, '../../../target/release/sx')
-describe.skipIf(!existsSync(sxBin))('with the real sx CLI', () => {
+describe.skipIf(noSx())('with the real sx CLI', { timeout: sxTimeout }, () => {
   it('slices the stock A1 project with no question, the stock start in the G-code', async () => {
     const h = await connect({ engine: 'sx', sxBin })
     const r = await h.call('slicerx_slice_file', { model: a1Project(h.dir, 'stock.3mf', STOCK_START), project_settings: true })
