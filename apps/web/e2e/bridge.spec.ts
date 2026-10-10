@@ -450,7 +450,9 @@ test('A1 with Developer Mode off: status keeps coming, and Print saves the file 
     const download = page.waitForEvent('download')
     await sheet.getByRole('button', { name: 'Save file' }).click()
     expect((await download).suggestedFilename()).toMatch(/\.gcode\.3mf$/)
-    await expect(page.getByText(/Open it in Bambu Connect and press Print there/)).toBeVisible()
+    // Bambu Lab makes no Bambu Connect for Linux, so there the line says to take the file to the printer instead.
+    const linux = await page.evaluate(() => /Linux/.test(navigator.userAgent) && !/Android/.test(navigator.userAgent))
+    await expect(page.getByText(linux ? /Bambu Connect isn't available for Linux yet/ : /Open it in Bambu Connect and press Print there/)).toBeVisible()
     // Nothing went to the printer: no upload, no start, nothing it had to refuse.
     expect(await logs()).toEqual(before)
   } finally {
