@@ -43,6 +43,27 @@ async function open(page: Page): Promise<void> {
   choosers.set(page, seen)
   page.on('filechooser', (c) => seen.push(c))
   await page.addInitScript(() => {
+    // Where each O key went, for pick()'s note: how late the page got it, whether it had a user activation, whether a
+    // capture handler stopped it (it never reached the document), whether the app took it, and every file input click.
+    const keys: string[] = []
+    ;(window as unknown as { __sxKeys: string[] }).__sxKeys = keys
+    window.addEventListener('keydown', (e) => {
+      if (e.key.toLowerCase() !== 'o') return
+      const late = Math.round(performance.now() - e.timeStamp)
+      const active = navigator.userActivation?.isActive
+      let reached = false
+      const reach = () => (reached = true)
+      document.addEventListener('keydown', reach, { once: true })
+      setTimeout(() => {
+        document.removeEventListener('keydown', reach)
+        keys.push(`${e.ctrlKey || e.metaKey ? 'Mod+' : ''}O ${late} ms late, activation ${active}, reached the document ${reached}, taken ${e.defaultPrevented}`)
+      })
+    }, true)
+    const click = HTMLInputElement.prototype.click
+    HTMLInputElement.prototype.click = function (this: HTMLInputElement) {
+      if (this.type === 'file') keys.push(`file input clicked, activation ${navigator.userActivation?.isActive}`)
+      click.call(this)
+    }
     if (sessionStorage.getItem('sx-e2e')) return
     sessionStorage.setItem('sx-e2e', '1')
     localStorage.setItem('slicerx.debug', '1')
@@ -54,9 +75,10 @@ async function open(page: Page): Promise<void> {
 }
 
 /**
- * Presses Open (Mod+O) once and answers the dialog it opens with `path`. Mod+O has, once on a CI runner, opened no
- * dialog (#291): when none has come after 10 s, the test notes what could have held the key (an open dialog or panel
- * in the app's state, the focused element) before it goes on waiting, so a failure says why.
+ * Presses Open (Mod+O) once and answers the dialog it opens with `path`. On the GPU runner the first Mod+O after a
+ * load sometimes opens no dialog (#291): when none has come after 10 s, the test notes what could have held the key
+ * (an open dialog or panel in the app's state, the focused element, the O keys the page saw) before it goes on
+ * waiting, so a failure says why.
  */
 async function pick(page: Page, path: string): Promise<void> {
   const seen = choosers.get(page)!
@@ -69,7 +91,8 @@ async function pick(page: Page, path: string): Promise<void> {
       const flags = ['setup', 'commandOpen', 'approval', 'aboutOpen', 'settingsOpen', 'shortcutsOpen'].filter((k) => Boolean(s[k]))
       const a = document.activeElement
       const focus = a ? `${a.tagName.toLowerCase()}${a.id ? `#${a.id}` : ''}${a.getAttribute('aria-label') ? ` "${a.getAttribute('aria-label')}"` : ''}` : 'none'
-      return `open in the app: ${flags.join(', ') || 'nothing'}; focus: ${focus}; dialogs on screen: ${document.querySelectorAll('[role="dialog"], [role="alertdialog"]').length}`
+      const keys = (window as unknown as { __sxKeys: string[] }).__sxKeys.join('; ') || 'none'
+      return `open in the app: ${flags.join(', ') || 'nothing'}; focus: ${focus}; dialogs on screen: ${document.querySelectorAll('[role="dialog"], [role="alertdialog"]').length}; O keys: ${keys}`
     })
     test.info().annotations.push({ type: 'Mod+O opened no dialog in 10 s', description: held })
     console.log(`fit-check: Mod+O opened no dialog in 10 s (${held})`)
