@@ -6,6 +6,7 @@ All notable changes to `@slicerx/embed` are listed here. The format follows Keep
 
 ### Fixed
 
+- `Viewport` no longer forces `quality="high"`: its default is `auto`, which lets the viewport pick `low` without ambient occlusion on a weak or software GPU. A host's `quality` still overrides it.
 - `<sx-viewport>` fills the element's height again; the view stopped at 240 px inside its theme wrapper.
 - `tokenKeys` sends a publishable key (`sb_publishable_`) only as `apikey`, since it is not a JWT; the account token stays in the body. A legacy anon JWT is still also sent as the bearer.
 

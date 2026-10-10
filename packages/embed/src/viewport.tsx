@@ -22,7 +22,11 @@ export interface ViewportProps {
   /** Top visible layer, 1-based; default all. */
   layer?: number
   view?: ViewPreset
-  quality?: 'high' | 'balanced' | 'low'
+  /**
+   * `auto` (the default) lets the viewport pick from the graphics it finds: `low`, without ambient occlusion, on a
+   * weak or software GPU, else `high`. A level forces it.
+   */
+  quality?: 'auto' | 'high' | 'balanced' | 'low'
   onPick?: (e: PickEvent) => void
   /** The live handle, for anything the props do not cover. */
   onReady?: (viewport: Handle) => void
@@ -76,7 +80,7 @@ export function plateKey(plate: ViewportPlate | null | undefined): string {
   return plate ? plate.objects.map((o) => o.id).join('\n') : ''
 }
 
-export function Viewport({ plate, preview, look = 'studio', colorMode = 'feature', layer, view, quality = 'high', onPick, onReady, sceneTheme, toolColors, toolFinishes, plateStyle = 'grid', onError, reveal = true, bedOutline = 'default', tools, tool, onToolChange, selection, onSelect, onTransform, label = '3D view', className, style }: ViewportProps) {
+export function Viewport({ plate, preview, look = 'studio', colorMode = 'feature', layer, view, quality = 'auto', onPick, onReady, sceneTheme, toolColors, toolFinishes, plateStyle = 'grid', onError, reveal = true, bedOutline = 'default', tools, tool, onToolChange, selection, onSelect, onTransform, label = '3D view', className, style }: ViewportProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [vp, setVp] = useState<Handle | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -120,7 +124,7 @@ export function Viewport({ plate, preview, look = 'studio', colorMode = 'feature
     if (!canvas) return
     let handle: Handle
     try {
-      handle = createViewport(canvas, { quality, label, reveal: reveal !== false })
+      handle = createViewport(canvas, { ...(quality === 'auto' ? {} : { quality }), label, reveal: reveal !== false })
     } catch (e) {
       const err = e instanceof Error ? e : new Error(String(e))
       setError(err.message)
