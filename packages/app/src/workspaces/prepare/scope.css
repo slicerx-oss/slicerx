@@ -1,0 +1,14 @@
+/* The scope pill over Print settings, and the accent edge of the settings while they edit the selection. */
+.scope-bar { margin-bottom: var(--s-3); }
+.scope-seg { border-radius: var(--r-md); }
+.scope-label { display: inline-flex; align-items: center; gap: 4px; min-width: 0; max-width: 100%; }
+.scope-label .scope-obj, .scope-label .scope-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.scope-label .scope-obj { color: var(--muted); }
+.scope-count { flex: none; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; background: var(--accent-tint); color: var(--accent); font-size: var(--fs-xs); line-height: 16px; text-align: center; }
+.scope-line { margin: 6px 2px 0; }
+.sx-block[data-scope="objects"] { box-shadow: inset 2px 0 0 var(--accent); }
+/* A row in the selection's scope: inherited values read muted, the selection's own carry the plate's as ghost text. */
+.expert .field.inherited input, .expert .field.inherited select { color: var(--muted); }
+.expert .field .scope-from { display: block; font-size: var(--fs-xs); font-weight: var(--fw-regular); color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.expert .field.changed .scope-from { color: var(--muted); }
+.expert .field.locked { opacity: 0.55; }
