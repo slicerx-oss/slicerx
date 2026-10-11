@@ -8,7 +8,7 @@
 // Speed: the view reports the cursor at most once a frame (viewport cadtools.ts). The hover path
 // here snaps, moves the rubber band in its fixed buffer and writes one text node; it renders no
 // React. React renders on clicks, drags of points and edits only.
-import { patternFromFields, patternProblem, type Pattern, type PatternFields } from './pattern'
+import { patternFromFields, patternProblem, type Pattern, type PatternFields } from '@slicerx/cad-history'
 import { fieldsOf, PatternSection } from './pattern-fields'
 import type { PickEvent, SketchEvent, SketchScene, SketchTone } from '@slicerx/viewport'
 import { Button, Field, Icon, Seg, Select, Switch } from '@slicerx/ui'

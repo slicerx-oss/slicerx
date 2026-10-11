@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // Reads the CAD history parts of a project (docs/cad-history.md, "Storage"), written by
-// history-file.ts. Untrusted: a bad step or mesh drops that object's history, never the project.
-import { HISTORY_FILE_VERSION } from './history-file'
-import { followField, type Follow, type History, type HistoryMesh, type Step, type StepParams } from '../cad/history/model'
-import { BIN_VERSION, MAGIC } from './history-file'
+// file.ts. Untrusted: a bad step or mesh drops that object's history, never the project.
+import { BIN_VERSION, HISTORY_FILE_VERSION, MAGIC } from './file'
+import { followField, type Follow, type History, type HistoryMesh, type Step, type StepParams } from './model'
 
 const MAX_STEPS = 2000
 const MAX_TRIANGLES = 20_000_000
