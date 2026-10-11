@@ -68,6 +68,18 @@ Signed-off-by: Your Name <you@example.com>
 - A change to a public surface (npm package, crate, CLI JSON, C ABI, MCP tools) adds a line to that package's `CHANGELOG.md`.
 - Fill in the pull request template. A maintainer reviews within a week; ping the thread if it has been longer.
 
+### What CI runs
+
+A pull request gets the quick checks: lint, typecheck, unit tests, Rust build, clippy and tests, and, when it touches
+the app, one browser smoke job (a few quick specs that start the app, load the plate and slice). The full browser
+suite runs in the merge queue on every queued pull request, before it lands, so nothing merges less tested.
+
+Add the `full-ci` label only when a pull request changes the browser suite's harness (the specs, their helpers,
+`apps/web/playwright.config.ts`, the printer simulators) or a maintainer asks for it. It runs the full browser suite,
+the database tests and the Rust integration tests on the pull request, the browser suite on half as many jobs as the
+merge queue uses. A pull request that changes the specs or the printer simulators runs the suite without the label.
+The runners are shared with the merge queue, so the label slows every queued pull request while it runs.
+
 ## Code and writing style
 
 - New source files start with the license header:

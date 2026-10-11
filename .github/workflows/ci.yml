@@ -49,6 +49,8 @@ jobs:
       rust: ${{ steps.f.outputs.rust }}
       pgtap: ${{ steps.f.outputs.pgtap }}
       e2e: ${{ steps.f.outputs.e2e }}
+      shards: ${{ steps.f.outputs.shards }}
+      smoke: ${{ steps.f.outputs.smoke }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -73,10 +75,22 @@ jobs:
             printf '%s\n' "$changed" | grep -qE "$1"
           }
           touched '^(supabase/|packages/store/|\.github/workflows/ci\.yml$)' && echo "pgtap=true" >> "$GITHUB_OUTPUT" || echo "pgtap=false" >> "$GITHUB_OUTPUT"
-          # A pull request that changes the browser specs, the printer simulators or the CI scripts runs the browser
-          # suites without the label: those are the changes whose mistakes otherwise first show up in the merge queue.
-          own_e2e() { [ "$GITHUB_EVENT_NAME" = pull_request ] && printf '%s\n' "$changed" | grep -qE '^(apps/web/e2e/|packages/connect/mock-printers/|scripts/ci/)'; }
-          { touched '^(apps/web/|packages/(app|ui|core|geom|connect)/|pnpm-lock\.yaml$|scripts/ci/playwright-results\.mjs$|\.github/workflows/ci\.yml$)' || own_e2e; } && echo "e2e=true" >> "$GITHUB_OUTPUT" || echo "e2e=false" >> "$GITHUB_OUTPUT"
+          # A pull request that changes the browser suite's own harness (the specs, their config, the printer
+          # simulators, the results script) runs the suite without the label: those are the changes whose mistakes
+          # otherwise first show up in the merge queue.
+          own_e2e() { [ "$GITHUB_EVENT_NAME" = pull_request ] && printf '%s\n' "$changed" | grep -qE '^(apps/web/e2e/|apps/web/playwright\.config\.ts$|packages/connect/mock-printers/|scripts/ci/playwright-results\.mjs$)'; }
+          browser='^(apps/web/|packages/(app|ui|core|geom|connect)/|pnpm-lock\.yaml$|scripts/ci/playwright-results\.mjs$|\.github/workflows/ci\.yml$)'
+          { touched "$browser" || own_e2e; } && e2e=true || e2e=false
+          echo "e2e=$e2e" >> "$GITHUB_OUTPUT"
+          # The hosted runners are shared by pull requests and the merge queue, and the full browser suite is 16 jobs.
+          # The merge queue runs it as it is. A pull request that runs it (full-ci, or a change to the suite itself)
+          # runs it on half as many jobs, each with twice the tests, so every test still runs. Any other pull request
+          # that touches the app gets one smoke job instead: a few quick specs that start the app, load the plate and
+          # slice, so a change that breaks the start shows before the queue.
+          [ "$GITHUB_EVENT_NAME" = pull_request ] && echo "shards=half" >> "$GITHUB_OUTPUT" || echo "shards=full" >> "$GITHUB_OUTPUT"
+          smoke=false
+          if [ "$GITHUB_EVENT_NAME" = pull_request ] && [ "$e2e" = false ] && printf '%s\n' "$changed" | grep -qE "$browser"; then smoke=true; fi
+          echo "smoke=$smoke" >> "$GITHUB_OUTPUT"
 
   web:
     needs: detect
@@ -108,7 +122,8 @@ jobs:
   rust:
     needs: detect
     # Also in a duplicate run, whose detect is skipped (the concurrency comment above): a skipped matrix job reports as
-    # plain "rust", and that newer suite then hid the required "rust (ubuntu-latest)" from a pull request.
+    # plain "rust", and that newer suite then hid the required "rust (ubuntu-latest)" from a pull request. There it
+    # starts and skips every step (DUP), so it reports "rust (ubuntu-latest)" passed in seconds instead of building.
     if: ${{ !cancelled() && (needs.detect.outputs.rust == 'true' || needs.detect.result == 'skipped') }}
     strategy:
       fail-fast: false
@@ -117,27 +132,35 @@ jobs:
         os: ${{ github.event_name != 'push' && fromJSON('["ubuntu-latest"]') || fromJSON('["ubuntu-latest","macos-latest","windows-latest"]') }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
+    env:
+      DUP: ${{ needs.detect.result == 'skipped' }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - if: env.DUP != 'true'
+        uses: actions/checkout@v4
+      - if: env.DUP != 'true'
+        uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy, rustfmt
-      - uses: Swatinem/rust-cache@v2
+      - if: env.DUP != 'true'
+        uses: Swatinem/rust-cache@v2
       # A Cargo.lock that no longer matches the manifests fails here, before a build quietly rewrites it.
-      - run: cargo metadata --locked --format-version 1 > /dev/null
+      - if: env.DUP != 'true'
+        run: cargo metadata --locked --format-version 1 > /dev/null
         shell: bash
-      - run: cargo fmt --all --check
-      - run: cargo clippy --workspace --exclude slicerx-desktop --all-targets -- -D warnings
+      - if: env.DUP != 'true'
+        run: cargo fmt --all --check
+      - if: env.DUP != 'true'
+        run: cargo clippy --workspace --exclude slicerx-desktop --all-targets -- -D warnings
       # A pull request and the merge queue run the unit tests and the G-code goldens here, and the integration tests in
       # rust-tests below; main runs every test here.
-      - if: github.event_name != 'push'
+      - if: env.DUP != 'true' && github.event_name != 'push'
         run: cargo test --workspace --exclude slicerx-desktop --lib --bins
-      - if: github.event_name != 'push'
+      - if: env.DUP != 'true' && github.event_name != 'push'
         run: cargo test -p sx-core --test reference
       # sx-link's real-service test runs the sx-cloud binary; it fails here, not skips, when it is missing.
-      - if: github.event_name == 'push'
+      - if: env.DUP != 'true' && github.event_name == 'push'
         run: cargo build -p sx-cloud
-      - if: github.event_name == 'push'
+      - if: env.DUP != 'true' && github.event_name == 'push'
         run: cargo test --workspace --exclude slicerx-desktop
 
   # The integration tests (each crate's tests/) for the merge queue and for a pull request labeled full-ci, so one that
@@ -242,7 +265,8 @@ jobs:
   # without full-ci, or no Rust change).
   rust-tests:
     needs: [detect, rust-tests-part]
-    if: ${{ !cancelled() }}
+    # skipped in a duplicate run (the concurrency comment at the top), which counts as passed
+    if: ${{ !cancelled() && !((github.event.action == 'opened' && contains(github.event.pull_request.labels.*.name, 'full-ci')) || (github.event.action == 'labeled' && github.event.label.name != 'full-ci')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -309,10 +333,10 @@ jobs:
           key: wasm-geom
       - run: sh scripts/install-binaryen.sh "$RUNNER_TEMP/binaryen" >> "$GITHUB_PATH"
       - run: sh packages/core/web/scripts/build-wasm.sh
-      # The geometry module the app's worker loads, then both modules for the e2e shards.
-      - if: needs.detect.outputs.e2e == 'true'
+      # The geometry module the app's worker loads, then both modules for the e2e shards or the smoke job.
+      - if: needs.detect.outputs.e2e == 'true' || needs.detect.outputs.smoke == 'true'
         run: sh packages/geom/wasm/scripts/build.sh
-      - if: needs.detect.outputs.e2e == 'true'
+      - if: needs.detect.outputs.e2e == 'true' || needs.detect.outputs.smoke == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: wasm-modules
@@ -381,8 +405,9 @@ jobs:
   # no backend, so the store and feed run on the bundled demo catalog (features.demoData). Specs that need a
   # real service skip themselves: vault-flow.spec.ts without the stack from e2e/stack/vault-stack.sh. bridge.spec.ts
   # runs on the sx-link built above; SX_LINK_REQUIRE makes a missing one fail it, not skip it. Most phone tests skip
-  # (desktop width only), so the desktop project gets twelve shards and the phone project four; a new project in
-  # playwright.config.ts needs its own line here.
+  # (desktop width only), so the desktop project gets twelve shards and the phone project four (six and two on a pull
+  # request, which runs the suite only with full-ci or a change to its harness); a new project in playwright.config.ts
+  # needs its own line in both lists.
   # --fully-parallel spreads the tests of the big files over the shards. A GitHub runner has 4 cores and one worker
   # drawing WebGL in software takes about 2.3 of them, so each shard runs one worker, leaving room for the app's own
   # slicer workers. The e2e job after them is the one name to require.
@@ -397,12 +422,13 @@ jobs:
     needs: [detect, wasm, sx-link]
     if: needs.detect.outputs.e2e == 'true'
     runs-on: ${{ (github.event_name != 'pull_request' && vars.E2E_ON_PC == 'true') && fromJSON('["self-hosted","sx-pc"]') || 'ubuntu-latest' }}
-    # on the PC: up to 20 minutes for the heavy lock (SX_HEAVY_WAIT) plus 15 for the run (timeout 900) plus setup
-    timeout-minutes: ${{ (github.event_name != 'pull_request' && vars.E2E_ON_PC == 'true') && 40 || 25 }}
+    # on the PC: up to 20 minutes for the heavy lock (SX_HEAVY_WAIT) plus 15 for the run (timeout 900) plus setup; a
+    # pull request's half-size matrix gives each shard twice the tests
+    timeout-minutes: ${{ (github.event_name != 'pull_request' && vars.E2E_ON_PC == 'true') && 40 || needs.detect.outputs.shards == 'half' && 35 || 25 }}
     strategy:
       fail-fast: false
       matrix:
-        include: ${{ (github.event_name != 'pull_request' && vars.E2E_ON_PC == 'true') && fromJSON('[{"project":"desktop","shard":"1/1"},{"project":"phone","shard":"1/1"}]') || fromJSON('[{"project":"desktop","shard":"1/12"},{"project":"desktop","shard":"2/12"},{"project":"desktop","shard":"3/12"},{"project":"desktop","shard":"4/12"},{"project":"desktop","shard":"5/12"},{"project":"desktop","shard":"6/12"},{"project":"desktop","shard":"7/12"},{"project":"desktop","shard":"8/12"},{"project":"desktop","shard":"9/12"},{"project":"desktop","shard":"10/12"},{"project":"desktop","shard":"11/12"},{"project":"desktop","shard":"12/12"},{"project":"phone","shard":"1/4"},{"project":"phone","shard":"2/4"},{"project":"phone","shard":"3/4"},{"project":"phone","shard":"4/4"}]') }}
+        include: ${{ (github.event_name != 'pull_request' && vars.E2E_ON_PC == 'true') && fromJSON('[{"project":"desktop","shard":"1/1"},{"project":"phone","shard":"1/1"}]') || needs.detect.outputs.shards == 'half' && fromJSON('[{"project":"desktop","shard":"1/6"},{"project":"desktop","shard":"2/6"},{"project":"desktop","shard":"3/6"},{"project":"desktop","shard":"4/6"},{"project":"desktop","shard":"5/6"},{"project":"desktop","shard":"6/6"},{"project":"phone","shard":"1/2"},{"project":"phone","shard":"2/2"}]') || fromJSON('[{"project":"desktop","shard":"1/12"},{"project":"desktop","shard":"2/12"},{"project":"desktop","shard":"3/12"},{"project":"desktop","shard":"4/12"},{"project":"desktop","shard":"5/12"},{"project":"desktop","shard":"6/12"},{"project":"desktop","shard":"7/12"},{"project":"desktop","shard":"8/12"},{"project":"desktop","shard":"9/12"},{"project":"desktop","shard":"10/12"},{"project":"desktop","shard":"11/12"},{"project":"desktop","shard":"12/12"},{"project":"phone","shard":"1/4"},{"project":"phone","shard":"2/4"},{"project":"phone","shard":"3/4"},{"project":"phone","shard":"4/4"}]') }}
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -484,6 +510,55 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: e2e-failures-${{ matrix.project }}-${{ strategy.job-index }}
+          path: apps/web/test-results/
+          retention-days: 14
+
+  # A pull request that touches the app but does not run the browser suite runs these few quick specs in one job: the
+  # app starts, loads the plate, slices, and draws each workspace (detect, "smoke"). Software WebGL, no sx-link.
+  e2e-smoke:
+    name: e2e smoke
+    needs: [detect, wasm]
+    if: needs.detect.outputs.smoke == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@v4
+        with:
+          name: wasm-modules
+          path: packages
+      - id: pw
+        run: echo "version=$(pnpm --filter @slicerx/web exec playwright --version | cut -d ' ' -f 2)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}
+      - run: pnpm --filter @slicerx/web exec playwright install --with-deps chromium
+      # One retry per failing test, decided by the results as in e2e-shard.
+      - run: pnpm --filter @slicerx/web exec playwright test --project=desktop e2e/minimal.spec.ts e2e/blocked-slice.spec.ts e2e/slice-track.spec.ts e2e/icons.spec.ts --grep-invert @gpu --workers=1 --retries=1 --reporter=list,json --trace=retain-on-failure || echo "playwright exited $?"
+        env:
+          SX_SLOW_GL: '3'
+          PLAYWRIGHT_JSON_OUTPUT_FILE: ${{ runner.temp }}/e2e-results.json
+      - name: flaky and quarantined tests
+        run: |
+          node scripts/ci/playwright-results.mjs "$RUNNER_TEMP/e2e-results.json" "$RUNNER_TEMP/retried.txt" "$RUNNER_TEMP/failed.txt"
+          bad=0
+          bash scripts/ci/flaky-check.sh retried "$RUNNER_TEMP/retried.txt" || bad=1
+          while IFS= read -r t; do
+            if [ "$(bash scripts/ci/flaky-check.sh status "$t")" = quarantined ]; then echo "flaky-check: failed, quarantined and counted: $t"
+            else echo "::error title=Failed test::$t"; bad=1; fi
+          done < "$RUNNER_TEMP/failed.txt"
+          exit $bad
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-failures-smoke
           path: apps/web/test-results/
           retention-days: 14
 
@@ -573,8 +648,9 @@ jobs:
   # One result for the shards and the @gpu run, and their reports merged into one HTML report, with the traces of
   # failures.
   e2e:
-    needs: [detect, e2e-shard, e2e-gpu, sx-link-suites]
-    if: ${{ !cancelled() }}
+    needs: [detect, e2e-shard, e2e-smoke, e2e-gpu, sx-link-suites]
+    # skipped in a duplicate run (the concurrency comment at the top), which counts as passed
+    if: ${{ !cancelled() && !((github.event.action == 'opened' && contains(github.event.pull_request.labels.*.name, 'full-ci')) || (github.event.action == 'labeled' && github.event.label.name != 'full-ci')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -610,20 +686,23 @@ jobs:
           path: apps/web/playwright-report/
           retention-days: 14
       # Passes when the suite was not needed; fails when it was and a shard, the @gpu run, the sx-link suites, or the
-      # build before them did not pass. The @gpu run is skipped when this event does not use it (pull requests, or the
-      # lane switched off).
+      # build before them did not pass, or when the smoke job was needed and did not pass. The @gpu run is skipped
+      # when this event does not use it (pull requests, or the lane switched off).
       - env:
           DETECT: ${{ needs.detect.result }}
           WANTED: ${{ needs.detect.outputs.e2e }}
           SHARDS: ${{ needs.e2e-shard.result }}
+          SMOKE_WANTED: ${{ needs.detect.outputs.smoke }}
+          SMOKE: ${{ needs.e2e-smoke.result }}
           BRIDGE: ${{ needs.sx-link-suites.result }}
           GPU: ${{ needs.e2e-gpu.result }}
           GPU_LANE: ${{ github.event_name != 'pull_request' && vars.E2E_ON_PC != 'true' && vars.E2E_GPU_LANE != 'false' }}
           AGAIN: ${{ (github.event.action == 'opened' && contains(github.event.pull_request.labels.*.name, 'full-ci')) || (github.event.action == 'labeled' && github.event.label.name != 'full-ci') }}
         run: |
-          echo "detect: $DETECT, e2e wanted: $WANTED, shards: $SHARDS, sx-link suites: $BRIDGE, GPU lane: $GPU_LANE, @gpu run: $GPU, duplicate run: $AGAIN"
+          echo "detect: $DETECT, e2e wanted: $WANTED, shards: $SHARDS, smoke wanted: $SMOKE_WANTED, smoke: $SMOKE, sx-link suites: $BRIDGE, GPU lane: $GPU_LANE, @gpu run: $GPU, duplicate run: $AGAIN"
           [ "$DETECT" = skipped ] && [ "$AGAIN" = true ] && exit 0
           [ "$DETECT" = success ] || exit 1
+          if [ "$SMOKE_WANTED" = true ]; then [ "$SMOKE" = success ] || exit 1; fi
           [ "$WANTED" != true ] && exit 0
           [ "$SHARDS" = success ] || exit 1
           [ "$BRIDGE" = success ] || exit 1
@@ -674,7 +753,8 @@ jobs:
 
   # The heavy-work lock of the self-hosted CI (scripts/ci/heavy.sh), on a temporary lock.
   heavy-lock:
-    if: github.event_name != 'merge_group'
+    # nothing to do in a duplicate run (the concurrency comment at the top); a skipped job counts as passed
+    if: ${{ github.event_name != 'merge_group' && !((github.event.action == 'opened' && contains(github.event.pull_request.labels.*.name, 'full-ci')) || (github.event.action == 'labeled' && github.event.label.name != 'full-ci')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -682,6 +762,8 @@ jobs:
       - run: bash scripts/ci/heavy-test.sh
 
   secrets:
+    # nothing to do in a duplicate run (the concurrency comment at the top); a skipped job counts as passed
+    if: ${{ !((github.event.action == 'opened' && contains(github.event.pull_request.labels.*.name, 'full-ci')) || (github.event.action == 'labeled' && github.event.label.name != 'full-ci')) }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -740,7 +822,8 @@ jobs:
             --onlyAllow "MIT;ISC;BSD-2-Clause;BSD-3-Clause;Apache-2.0;0BSD;CC0-1.0;MPL-2.0;Unlicense;BlueOak-1.0.0;Python-2.0;CC-BY-4.0;AGPL-3.0-only;AGPL-3.0-or-later;GPL-3.0-only;GPL-3.0-or-later;LGPL-3.0-only;LGPL-3.0-or-later"
 
   dco:
-    if: github.event_name == 'pull_request'
+    # nothing to do in a duplicate run (the concurrency comment at the top); a skipped job counts as passed
+    if: ${{ github.event_name == 'pull_request' && !((github.event.action == 'opened' && contains(github.event.pull_request.labels.*.name, 'full-ci')) || (github.event.action == 'labeled' && github.event.label.name != 'full-ci')) }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -760,6 +843,8 @@ jobs:
           exit $bad
 
   hygiene:
+    # nothing to do in a duplicate run (the concurrency comment at the top); a skipped job counts as passed
+    if: ${{ !((github.event.action == 'opened' && contains(github.event.pull_request.labels.*.name, 'full-ci')) || (github.event.action == 'labeled' && github.event.label.name != 'full-ci')) }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
