@@ -74,8 +74,18 @@ pub(crate) fn load_plates(bytes: &[u8], name: &str) -> Result<Vec<(u32, Mesh)>> 
 }
 
 /// Every plate with each build item as a mesh of its own, named after its object, in plate order.
-/// Positions are in the file's build space, like [`load_plates`].
+/// Positions are in the file's build space, like [`load_plates`]. The file is read by `sx-geom`'s 3MF reader;
+/// a build without it (the WebAssembly engine) reads it with [`load_plate_objects_legacy`].
 pub(crate) fn load_plate_objects(bytes: &[u8], name: &str) -> Result<Vec<(u32, Vec<Mesh>)>> {
+    #[cfg(feature = "import")]
+    return from_geom(bytes, name);
+    #[cfg(not(feature = "import"))]
+    return load_plate_objects_legacy(bytes, name);
+}
+
+/// The engine's own 3MF reader, kept until the one in `sx-geom` has replaced it everywhere: the format corpus
+/// (`scripts/format-corpus`) holds the two to the same meshes and the same G-code.
+pub(crate) fn load_plate_objects_legacy(bytes: &[u8], name: &str) -> Result<Vec<(u32, Vec<Mesh>)>> {
     let zip = Zip::open(bytes).map_err(|e| Error::mesh(name, e))?;
     let root = zip
         .read("_rels/.rels")
@@ -185,6 +195,220 @@ pub(crate) fn load_plate_objects(bytes: &[u8], name: &str) -> Result<Vec<(u32, V
         return Err(Error::mesh(name, "the 3MF file has no printable objects"));
     }
     Ok(plates.into_iter().collect())
+}
+
+/// A project read by `sx-geom` (`format::read_3mf`) as the meshes the engine slices: printable build items with a
+/// printed part, each part placed on the plate with its paint decoded, the volumes that do not print, the part and
+/// object settings, and the notes the legacy reader gives, worded the same.
+#[cfg(feature = "import")]
+fn from_geom(bytes: &[u8], name: &str) -> Result<Vec<(u32, Vec<Mesh>)>> {
+    use sx_geom::format::{Layout, PartKind};
+    let project = sx_geom::format::read_3mf(bytes).map_err(|e| match e {
+        sx_geom::Error::Invalid { why, .. } => Error::mesh(name, why),
+        other => Error::mesh(name, other.to_string()),
+    })?;
+    // PrusaSlicer's volumes are read by the legacy reader as one printed mesh; this keeps that until the switch
+    if project.layout == Layout::Prusa {
+        return load_plate_objects_legacy(bytes, name);
+    }
+    let scale = project.unit_scale;
+    let to_map = |list: &[(String, String)]| -> serde_json::Map<String, serde_json::Value> {
+        list.iter()
+            .map(|(k, v)| (k.clone(), serde_json::Value::String(v.clone())))
+            .collect()
+    };
+    let mut plates: std::collections::BTreeMap<u32, Vec<Mesh>> = std::collections::BTreeMap::new();
+    for o in project.objects {
+        if !o.printable {
+            continue;
+        }
+        let object = to_map(&o.settings);
+        let mut parts: Vec<MeshPart> = Vec::new();
+        let mut volumes: Vec<MeshVolume> = Vec::new();
+        let mut with_settings = Vec::new();
+        let mut notes: Vec<String> = Vec::new();
+        // the name a part without one gets, numbered as the legacy reader numbers it: once per mesh placed
+        let mut fallback = String::new();
+        let mut leaf: Option<(u32, Vec<[f32; 12]>)> = None;
+        for p in o.parts {
+            let same_leaf = p.range.is_some()
+                && leaf
+                    .as_ref()
+                    .is_some_and(|(id, chain)| *id == p.id && *chain == p.chain);
+            if !same_leaf {
+                fallback = if p.mesh_name.is_empty() {
+                    format!("part {}", parts.len() + volumes.len() + 1)
+                } else {
+                    p.mesh_name.clone()
+                };
+                leaf = Some((p.id, p.chain.clone()));
+            }
+            let slot = p.slot.or(o.slot).unwrap_or(1).max(1);
+            let info_name = (p.name != p.mesh_name || p.range.is_some())
+                .then(|| p.name.clone())
+                .filter(|n| !n.is_empty());
+            let shown = info_name.clone().unwrap_or_else(|| fallback.clone());
+            let part_name = if p.range.is_some() {
+                shown.clone()
+            } else {
+                fallback.clone()
+            };
+            let role = match p.kind {
+                PartKind::Normal => None,
+                PartKind::Negative => Some(VolumeRole::Negative),
+                PartKind::Modifier => Some(VolumeRole::Modifier),
+                PartKind::SupportBlocker => Some(VolumeRole::SupportBlocker),
+                PartKind::SupportEnforcer => Some(VolumeRole::SupportEnforcer),
+            };
+            if let Some(other) = &p.kind_text {
+                notes.push(format!(
+                    "{shown}: part type {other} is not one this engine knows; it prints as a normal part"
+                ));
+            }
+            let own = to_map(&p.settings);
+            for k in object.keys().chain(own.keys()) {
+                if crate::config::READ_KEYS.contains(&k.as_str())
+                    || crate::config::FUZZY_KEYS.contains(&k.as_str())
+                {
+                    continue;
+                }
+                let line = format!("{k} is not applied by this engine (project part or object setting)");
+                if !notes.contains(&line) {
+                    notes.push(line);
+                }
+            }
+            let part = geom_part(&p, &o.transform, slot, part_name);
+            match role {
+                None => {
+                    let mut settings = object.clone();
+                    settings.extend(own);
+                    if !settings.is_empty() {
+                        with_settings.push((parts.len(), p.id, serde_json::Value::Object(settings)));
+                    }
+                    parts.push(part);
+                }
+                Some(role) => {
+                    let settings = if role == VolumeRole::Modifier {
+                        let mut s = object.clone();
+                        s.extend(own);
+                        serde_json::Value::Object(s)
+                    } else {
+                        if !own.is_empty() {
+                            notes.push(format!(
+                                "{shown}: settings on a {} are not used ({})",
+                                role_name(role),
+                                own.keys().cloned().collect::<Vec<_>>().join(", ")
+                            ));
+                        }
+                        serde_json::Value::Null
+                    };
+                    volumes.push(MeshVolume {
+                        role,
+                        part: MeshPart { name: shown, ..part },
+                        settings,
+                    });
+                }
+            }
+        }
+        if parts.is_empty() {
+            continue;
+        }
+        if (scale - 1.0).abs() > f32::EPSILON {
+            for p in parts.iter_mut().chain(volumes.iter_mut().map(|v| &mut v.part)) {
+                let facets = p
+                    .paint
+                    .iter_mut()
+                    .chain(p.support_paint.iter_mut())
+                    .chain(p.seam_paint.iter_mut())
+                    .chain(p.fuzzy_paint.iter_mut())
+                    .flat_map(|f| f.v.iter_mut());
+                for v in p.positions.iter_mut().chain(facets) {
+                    for c in v.iter_mut() {
+                        *c *= scale;
+                    }
+                }
+            }
+        }
+        let mut part_settings = Vec::with_capacity(with_settings.len());
+        for (k, id, settings) in with_settings {
+            let shared = parts
+                .get(k)
+                .is_some_and(|p| parts.iter().filter(|q| q.name == p.name).count() > 1);
+            if let Some(p) = parts.get_mut(k) {
+                if shared {
+                    p.name = format!("{} #{id}", p.name);
+                }
+                part_settings.push((p.name.clone(), settings));
+            }
+        }
+        let own = if o.name.is_empty() {
+            name.to_owned()
+        } else {
+            o.name
+        };
+        plates.entry(o.plate.unwrap_or(1)).or_default().push(Mesh {
+            name: own,
+            parts,
+            volumes,
+            part_settings,
+            notes,
+        });
+    }
+    if plates.is_empty() {
+        return Err(Error::mesh(name, "the 3MF file has no printable objects"));
+    }
+    Ok(plates.into_iter().collect())
+}
+
+/// One part placed by the build item's transform and its components, with its paint decoded in place, as
+/// [`make_part`] places a mesh object.
+#[cfg(feature = "import")]
+fn geom_part(p: &sx_geom::format::Part, item: &Transform, slot: u8, name: String) -> MeshPart {
+    let positions = p.placed(item, 1.0);
+    let decode_all = |list: &[(u32, String)]| -> Vec<crate::paint::PaintFacet> {
+        list.iter()
+            .filter_map(|(k, code)| {
+                let tri = p.triangles.get(*k as usize)?;
+                let corners = [
+                    *positions.get(tri[0] as usize)?,
+                    *positions.get(tri[1] as usize)?,
+                    *positions.get(tri[2] as usize)?,
+                ];
+                Some(crate::paint::decode(code, corners))
+            })
+            .flatten()
+            .collect()
+    };
+    let paint: Vec<crate::paint::PaintFacet> = decode_all(&p.paint.color)
+        .into_iter()
+        .filter(|f| f.state != slot)
+        .collect();
+    let seam_paint = decode_all(&p.paint.seam);
+    let fuzzy_paint = decode_all(&p.paint.fuzzy);
+    let support_paint = decode_all(&p.paint.support);
+    let mut paint_texts = Vec::new();
+    for (layer, list) in [
+        (0u8, &p.paint.color),
+        (1, &p.paint.seam),
+        (2, &p.paint.support),
+        (3, &p.paint.fuzzy),
+    ] {
+        for (k, code) in list {
+            paint_texts.push((layer, *k, code.clone()));
+        }
+    }
+    MeshPart {
+        name,
+        slot,
+        color: None,
+        positions,
+        triangles: p.triangles.clone(),
+        paint,
+        support_paint,
+        seam_paint,
+        fuzzy_paint,
+        paint_texts,
+    }
 }
 
 /// Object names from Bambu and Orca project metadata (`<object id>` with a `name` entry).

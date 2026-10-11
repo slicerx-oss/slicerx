@@ -65,6 +65,10 @@ pub struct Part {
     pub id: u32,
     /// empty when the file names none
     pub name: String,
+    /// the mesh object's own name in the model file
+    pub mesh_name: String,
+    /// the triangles of the mesh object this part is, when the project lists parts by range
+    pub range: Option<(u32, u32)>,
     pub kind: PartKind,
     /// a type this reader does not know; the part is read as a normal one
     pub kind_text: Option<String>,
@@ -248,9 +252,9 @@ pub fn read_3mf(bytes: &[u8]) -> Result<Project> {
     let mut placed: Vec<Vec<Leaf>> = Vec::with_capacity(build.len());
     for item in &build {
         let cost = cost(&zip, &mut models, &root, item.object, 0, &mut memo)?;
-        work = work
-            .checked_sub(cost)
-            .ok_or_else(|| Error::invalid("3mf", "components repeat their meshes too many times to load"))?;
+        work = work.checked_sub(cost).ok_or_else(|| {
+            Error::invalid("3mf", "3MF components repeat their meshes too many times to load")
+        })?;
         let mut leaves = Vec::new();
         leaves_of(&models, &root, item.object, &mut Vec::new(), 0, &mut leaves)?;
         placed.push(leaves);
@@ -320,6 +324,8 @@ fn objects_of(
                     if part.triangles.is_empty() {
                         continue;
                     }
+                    part.id = leaf.id;
+                    part.range = Some((first, last));
                     part.chain.clone_from(&leaf.chain);
                     info.fill(&mut part, notes);
                     parts.push(part);
@@ -387,6 +393,7 @@ impl MeshObject {
     fn take(&mut self) -> Part {
         Part {
             name: self.name.clone(),
+            mesh_name: self.name.clone(),
             positions: std::mem::take(&mut self.positions),
             triangles: std::mem::take(&mut self.triangles),
             paint: std::mem::take(&mut self.paint),
@@ -397,6 +404,7 @@ impl MeshObject {
     fn copy(&self) -> Part {
         Part {
             name: self.name.clone(),
+            mesh_name: self.name.clone(),
             positions: self.positions.clone(),
             triangles: self.triangles.clone(),
             paint: self.paint.clone(),
@@ -432,6 +440,7 @@ impl MeshObject {
         }
         Part {
             name: self.name.clone(),
+            mesh_name: self.name.clone(),
             positions,
             triangles,
             paint,
@@ -723,7 +732,7 @@ fn cost(
     memo: &mut HashMap<(String, u32), u64>,
 ) -> Result<u64> {
     if depth > MAX_DEPTH {
-        return Err(Error::invalid("3mf", "components nest too deep"));
+        return Err(Error::invalid("3mf", "3MF components nest too deep"));
     }
     if let Some(&c) = memo.get(&(path.to_owned(), id)) {
         return Ok(c);
@@ -733,7 +742,7 @@ fn cost(
         let obj = models
             .get(path)
             .and_then(|m| m.objects.get(&id))
-            .ok_or_else(|| Error::invalid("3mf", format!("object {id} is missing in {path}")))?;
+            .ok_or_else(|| Error::invalid("3mf", format!("3MF object {id} is missing in {path}")))?;
         let children: Vec<(u32, String)> = obj
             .components
             .iter()
@@ -758,12 +767,12 @@ fn leaves_of(
     out: &mut Vec<Leaf>,
 ) -> Result<()> {
     if depth > MAX_DEPTH {
-        return Err(Error::invalid("3mf", "components nest too deep"));
+        return Err(Error::invalid("3mf", "3MF components nest too deep"));
     }
     let obj = models
         .get(path)
         .and_then(|m| m.objects.get(&id))
-        .ok_or_else(|| Error::invalid("3mf", format!("object {id} is missing in {path}")))?;
+        .ok_or_else(|| Error::invalid("3mf", format!("3MF object {id} is missing in {path}")))?;
     if !obj.triangles.is_empty() {
         out.push(Leaf {
             path: path.to_owned(),

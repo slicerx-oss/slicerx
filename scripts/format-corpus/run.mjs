@@ -3,7 +3,8 @@
 // Runs every model file reader on the format corpus (packages/geom/tests/corpus/corpus.json) and reports where they
 // disagree and what each costs:
 //
-//   core   sx-core's loader (threemf.rs, mesh.rs; OBJ and AMF through sx-geom), what `sx` and the desktop slice
+//   core   sx-core's loader (mesh.rs; 3MF, OBJ and AMF through sx-geom), what `sx` and the desktop slice
+//   legacy sx-core's own 3MF reader (threemf.rs), kept until the switch to sx-geom's is proven
 //   geom   sx-geom's import (STL, OBJ, AMF) and its 3MF reader (format::read_3mf)
 //   app    the app's own readers (export/import3mf.ts for 3MF projects, export/stl-scan.ts for binary STL)
 //   sx3mf  the sx3mf crate's package inspection (the sx: entries), what the library upload scan reads
@@ -47,6 +48,7 @@ const tsScript = join(root, 'packages/app/scripts/format-read.ts')
 
 const READERS = {
   core: { exts: ['stl', 'obj', 'amf', '3mf', 'sx3mf'], cmd: (f) => [rust, 'core', f, String(repeats)], none: [rust, 'none', '-'] },
+  legacy: { exts: ['3mf', 'sx3mf'], cmd: (f) => [rust, 'legacy', f, String(repeats)], none: [rust, 'none', '-'] },
   geom: { exts: ['stl', 'obj', 'amf', '3mf', 'sx3mf'], cmd: (f) => [rust, 'geom', f, String(repeats)], none: [rust, 'none', '-'] },
   app: { exts: ['stl', '3mf', 'sx3mf'], cmd: (f) => [tsx, tsScript, f, String(repeats)], none: [tsx, tsScript, '--none'] },
   sx3mf: { exts: ['3mf', 'sx3mf'], cmd: (f) => [rust, 'sx3mf', f, String(repeats)], none: [rust, 'none', '-'] },
@@ -136,7 +138,7 @@ function disagreements(row) {
     const values = {}
     for (const [n, m] of Object.entries(all)) if (m.has(key)) values[n] = m.get(key)
     // only the readers that read this kind of fact take part: sx3mf reads no geometry, geom no settings
-    const kind = key.startsWith('sx ') ? ['sx3mf', 'app', 'geom'] : key.startsWith('settings') ? ['core', 'app', 'geom'] : ['core', 'geom', 'app']
+    const kind = key.startsWith('sx ') ? ['sx3mf', 'app', 'geom'] : key.startsWith('settings') ? ['core', 'legacy', 'app', 'geom'] : ['core', 'legacy', 'geom', 'app']
     const readers = kind.filter((n) => n in all)
     for (const n of readers) if (!(n in values)) values[n] = key.includes(' paint ') || key.includes(' painted ') ? 0 : '(none)'
     if (new Set(readers.map((n) => String(values[n]))).size > 1) out.push({ key, values })
@@ -170,15 +172,15 @@ function summarize(d) {
 }
 const known = {}
 let summary = '| File | Made by | Where the readers disagree |\n| --- | --- | --- |\n'
-let detail = '| File | Where | core | geom | app | sx3mf |\n| --- | --- | --- | --- | --- | --- |\n'
+let detail = '| File | Where | core | legacy | geom | app | sx3mf |\n| --- | --- | --- | --- | --- | --- | --- |\n'
 for (const row of results) {
   const d = disagreements(row)
   if (row.public) known[row.name] = d.map((x) => x.key).sort()
   const file = row.name.replace(/^.*\//, '')
   summary += `| ${file} | ${row.made} | ${summarize(d).map(fmt).join('<br>') || 'agree'} |\n`
-  for (const x of d) detail += `| ${file} | ${x.key} | ${['core', 'geom', 'app', 'sx3mf'].map((n) => fmt(short(x.values[n] ?? ''))).join(' | ')} |\n`
+  for (const x of d) detail += `| ${file} | ${x.key} | ${['core', 'legacy', 'geom', 'app', 'sx3mf'].map((n) => fmt(short(x.values[n] ?? ''))).join(' | ')} |\n`
 }
-let md = `# Format corpus\n\n${results.length} files, readers: core, geom, app, sx3mf. Times are the first read and the fastest of ${repeats}, peak memory is over each reader's own idle process.\n\n## Summary\n\n${summary}\n## Every difference\n\n${detail}`
+let md = `# Format corpus\n\n${results.length} files, readers: core, legacy, geom, app, sx3mf. Times are the first read and the fastest of ${repeats}, peak memory is over each reader's own idle process.\n\n## Summary\n\n${summary}\n## Every difference\n\n${detail}`
 md += `\n## Speed and memory\n\n| File | Size | Reader | First ms | Fastest ms | Peak MB |\n| --- | --- | --- | --- | --- | --- |\n`
 for (const row of results) {
   for (const [n, r] of Object.entries(row.readers)) {
