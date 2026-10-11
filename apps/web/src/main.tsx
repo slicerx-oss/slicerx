@@ -13,6 +13,7 @@ declare const __SX_FEATURE_STORE__: boolean
 declare const __SX_FEATURE_PILOT__: boolean
 declare const __SX_FEATURE_CONNECT__: boolean
 declare const __SX_FEATURE_CLOUD__: boolean
+declare const __SX_TEST_HUB_PORT__: string
 declare const __SX_E2E__: boolean
 
 // The edition names the app from the first frame: the window title, menus and setup read it before the app renders.
@@ -44,8 +45,9 @@ if (__SX_FEATURE_CONNECT__) {
 
 // The browser build connects to sx-link when the person asks (Settings > Printer bridge).
 if (__SX_FEATURE_CONNECT__) {
-  const [{ setBridgeConnector }, { browserBridge }] = await Promise.all([import('@slicerx/app'), import('./host/link')])
-  setBridgeConnector(browserBridge(undefined, editionFromBuild().backend.relay))
+  const [{ setBridgeConnector, testHubUrl }, { browserBridge }] = await Promise.all([import('@slicerx/app'), import('./host/link')])
+  // An end-to-end test build pairs with its run's own hub port (SX_TEST_HUB_PORT); every other build with sx-link's.
+  setBridgeConnector(browserBridge(testHubUrl(__SX_TEST_HUB_PORT__), editionFromBuild().backend.relay))
   // Phone access keeps its identity and pairings sealed in this browser (features/phone/sealed.ts).
   const { setPairStorage, sealedPairStores, browserDocStore } = await import('@slicerx/app')
   setPairStorage({ ...sealedPairStores(browserDocStore()), name: 'SlicerX in the browser', kind: 'web' })

@@ -4,9 +4,10 @@
 // app paired with it. Runs only when SX_LINK_BIN names a built sx-link (cargo build -p sx-link); otherwise skipped.
 // CI builds it and sets SX_LINK_REQUIRE=1, and there a missing binary fails the tests instead.
 //
-// The app pairs with the hub on its fixed port, 47615, with no way to name another, so two bridge files must never
-// run at once on one machine: each file holds HUB_LOCK while its hub runs. A worker that waits for it gives up after
-// HUB_LOCK_WAIT_MS with a message that names the holder.
+// The hub listens on the run's hub port: SX_TEST_HUB_PORT (apps/web/playwright.config.ts), which the test build of the
+// app pairs with, or sx-link's 47615. Two runs on one machine pass different ports. Within a run the port is one, so two
+// bridge files must never run at once: each file holds HUB_LOCK while its hub runs. A worker that waits for it gives up
+// after HUB_LOCK_WAIT_MS with a message that names the holder.
 import { type Locator, type Page } from '@playwright/test'
 import { command, openStudio } from './cad-helpers'
 import { expect, plateReady, sliceCount, sliced, test } from './fixtures'
@@ -17,7 +18,9 @@ import { join } from 'node:path'
 import type { Readable } from 'node:stream'
 import type { MockName } from '../../../packages/connect/mock-printers/src/index.ts'
 
-export const HUB_PORT = 47615
+export const HUB_PORT = Number(process.env['SX_TEST_HUB_PORT'] || 47615)
+/** The hub's address in a page's WebSocket routes. */
+export const HUB_ROUTE = new RegExp(`127\\.0\\.0\\.1:${HUB_PORT}(?!\\d)`)
 const HUB_LOCK = join(tmpdir(), `sx-e2e-hub-${HUB_PORT}.lock`)
 const HUB_LOCK_WAIT_MS = 10 * 60_000
 

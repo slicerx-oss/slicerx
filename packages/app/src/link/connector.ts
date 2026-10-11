@@ -8,6 +8,8 @@ import { set } from '../state/store'
 export interface BridgeConnector {
   /** True when the app starts the bridge itself and needs no code (desktop). */
   automatic: boolean
+  /** The hub address a browser connects to, when it is not sx-link's default (an end-to-end test build's own port). */
+  url?: string
   /** Connects. `code` is the pairing code for a bridge the person started. */
   connect(code?: string): Promise<ConnectedBridge>
 }

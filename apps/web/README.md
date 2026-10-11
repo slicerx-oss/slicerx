@@ -22,7 +22,7 @@ SX_FEATURES= pnpm --filter @slicerx/web build       # base app only
 pnpm --filter @slicerx/web e2e                      # Playwright, headless, 1440 and 390 px
 ```
 
-The e2e build has no backend, so the store and feed run on the bundled demo catalog. `SX_E2E_PORT` serves it on another port than 4317. CI runs the suite in shards, five for the desktop project and one for the phone (job `e2e` in `.github/workflows/ci.yml`), on every change to the web app, the app, the UI or the engine; `vault-flow.spec.ts` and `bridge.spec.ts` skip there, since they need the stack from `e2e/stack/vault-stack.sh` or a built sx-link.
+The e2e build has no backend, so the store and feed run on the bundled demo catalog. `SX_E2E_PORT` serves it on another port than 4317, and `SX_TEST_HUB_PORT` moves the bridge specs' sx-link (and the hub the test build pairs with) off 47615, so a second run, the release gate or a running sx-link can share the machine. CI runs the suite in shards, five for the desktop project and one for the phone (job `e2e` in `.github/workflows/ci.yml`), on every change to the web app, the app, the UI or the engine; `vault-flow.spec.ts` and `bridge.spec.ts` skip there, since they need the stack from `e2e/stack/vault-stack.sh` or a built sx-link.
 
 `scripts/bundle-size.mjs` fails the build when the JS loaded before the viewport passes 250 KB gzip or a WASM module passes 1.0 MB gzip.
 

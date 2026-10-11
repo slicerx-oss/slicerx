@@ -3,12 +3,29 @@
 import { describe, expect, it } from 'vitest'
 import { connectLink } from '../../connect/link-client/src/index'
 import { hubFingerprint } from '@slicerx/contracts'
-import { connectPinned, forgetHub, hubPinned, HUB_MISMATCH, HubMismatchError, localHubPins, shellLinkOptions, trustHub, type HubPins } from '../src/link/hub-pin'
+import { connectPinned, forgetHub, hubPinned, HUB_MISMATCH, HubMismatchError, localHubPins, shellLinkOptions, testHubUrl, trustHub, type HubPins } from '../src/link/hub-pin'
 
 const memory = (): HubPins & { map: Map<string, string> } => {
   const map = new Map<string, string>()
   return { map, get: (u) => map.get(u), set: (u, k) => void map.set(u, k) }
 }
+
+describe("a test build's hub address", () => {
+  it("is the run's own loopback port, and sx-link's default for anything that is not a port", () => {
+    expect(testHubUrl('47715')).toBe('ws://127.0.0.1:47715')
+    expect(testHubUrl(' 50000 ')).toBe('ws://127.0.0.1:50000')
+    expect(testHubUrl(51000)).toBe('ws://127.0.0.1:51000')
+    for (const bad of ['', '80', '0', '70000', '4.5', 'port', undefined, null]) expect(testHubUrl(bad), String(bad)).toBeUndefined()
+  })
+
+  it("pins per address, so a test hub never takes the default hub's key", async () => {
+    const pins = memory()
+    const url = testHubUrl('47715')!
+    await connectPinned(async () => ({ hubKey: 'KEY-T' }), { code: 'ABCD', url }, pins)
+    expect(hubPinned(url, pins)).toBe(true)
+    expect(hubPinned(undefined, pins)).toBe(false)
+  })
+})
 
 describe('pinning the hub', () => {
   it('passes no key on the first pairing and pins the key the hub proved', async () => {

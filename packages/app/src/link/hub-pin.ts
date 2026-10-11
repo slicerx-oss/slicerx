@@ -85,6 +85,16 @@ export function trustHub(key: string, url: string = DEFAULT_URL, pins: HubPins =
   pins.set(url, key)
 }
 
+/**
+ * The hub address an end-to-end test build connects to, from the port its run gave it (SX_TEST_HUB_PORT at build
+ * time, apps/web/playwright.config.ts): a loopback address, or undefined for sx-link's default. Ports below 1024 and
+ * anything that is not a port are ignored.
+ */
+export function testHubUrl(port: unknown): string | undefined {
+  const n = typeof port === 'number' ? port : typeof port === 'string' && /^\d+$/.test(port.trim()) ? Number(port.trim()) : NaN
+  return Number.isInteger(n) && n >= 1024 && n <= 65535 ? `ws://127.0.0.1:${n}` : undefined
+}
+
 type ConnectFn<T> = (o: { url?: string; code: string; hubKey?: string; appId?: string }) => Promise<T>
 
 /**
