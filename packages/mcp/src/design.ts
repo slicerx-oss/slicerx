@@ -31,6 +31,7 @@ import { defineTool, type PilotTool } from '@slicerx/pilot'
 import { z } from 'zod'
 import { meshStats, readStlPositions, writeBinaryStl } from './mesh'
 import { resolveModel, ToolInputError, type PathPolicy } from './models'
+import { readFileObjects, type FilePart } from './threemf'
 import { readZip, writeZip } from './zip'
 
 type V3 = [number, number, number]
@@ -50,6 +51,8 @@ export interface Design {
   stl?: string
   /** How many STL files this design has written, for their names. */
   written: number
+  /** Steps undone, last undone last; a new step clears them. */
+  redo: Step[]
 }
 
 export interface DesignDeps {
@@ -78,7 +81,7 @@ export class Designs {
 
   async create(name: string, base: HistoryMesh[], history?: History, transform: Mat4 = [...IDENTITY]): Promise<Design> {
     const id = `d${++this.seq}`
-    const d: Design = { id, name, history: history ?? { version: HISTORY_VERSION, base, steps: [] }, transform, parts: base, status: [], madeBy: {}, written: 0 }
+    const d: Design = { id, name, history: history ?? { version: HISTORY_VERSION, base, steps: [] }, transform, parts: base, status: [], madeBy: {}, written: 0, redo: [] }
     if (d.history.steps.length) await this.replay(d)
     else this.export(d)
     this.all.set(id, d)
@@ -93,6 +96,7 @@ export class Designs {
     const st = r.status[r.status.length - 1]
     if (st?.state !== 'done') throw new ToolInputError(`The step did not go through: ${st?.message ?? 'the steps before it are broken'}. The design is unchanged.`, 'invalid_input', { design: d.id })
     this.keep(d, history, r)
+    d.redo = []
     return history.steps[history.steps.length - 1]!
   }
 
@@ -258,7 +262,9 @@ const r3 = (v: number): number => Math.round(v * 1000) / 1000
 export function designSummary(d: Design): Record<string, unknown> {
   const parts = d.parts.map((p, i) => {
     const s = meshStats(soup([bakeMesh(p, d.transform)]))
-    return { index: i, name: p.name, slot: p.slot, triangles: s.triangles, minMm: s.minMm, sizeMm: s.bboxMm, volumeMm3: r3(s.volumeMm3) }
+    const paint = (p as FilePart).paint
+    const painted = paint ? Object.fromEntries(Object.entries(paint).map(([k, v]) => [k, Object.keys(v ?? {}).length])) : undefined
+    return { index: i, name: p.name, slot: p.slot, triangles: s.triangles, minMm: s.minMm, sizeMm: s.bboxMm, volumeMm3: r3(s.volumeMm3), ...(painted ? { paintedTriangles: painted } : {}) }
   })
   const all = d.parts.length ? meshStats(soup(d.parts.map((p) => bakeMesh(p, d.transform)))) : null
   const last = d.history.steps.length ? stepRow(d, d.history.steps.length - 1) : null
@@ -348,39 +354,21 @@ export function design3mf(d: Design): Buffer {
   ])
 }
 
-const attrs = (tag: string): Record<string, string> => Object.fromEntries([...tag.matchAll(/([\w:]+)="([^"]*)"/g)].map((m) => [m[1]!, m[2]!.replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&')]))
-
-/** A 3MF transform attribute (row-major 3x4) as a column-major Mat4. */
-function matOf(attr: string | undefined): Mat4 {
-  const v = attr?.trim().split(/\s+/).map(Number)
-  if (!v || v.length !== 12 || v.some((x) => !Number.isFinite(x))) return [...IDENTITY]
-  return [v[0]!, v[1]!, v[2]!, 0, v[3]!, v[4]!, v[5]!, 0, v[6]!, v[7]!, v[8]!, 0, v[9]!, v[10]!, v[11]!, 1]
-}
-
-/** The objects of a 3MF with a CAD history: their file id, name, transform and history. Objects without one are named in `without`. */
-export function readDesigns(buf: Buffer, label: string): { found: { name: string; transform: Mat4; history: History }[]; without: string[] } {
+/**
+ * The objects of a 3MF as designs to open: those with a SlicerX CAD history keep it, the others start from their
+ * printed parts (component transforms baked in, slots and paint kept) with no steps yet.
+ */
+export function readDesigns(buf: Buffer, label: string): { name: string; transform: Mat4; history?: History; base: FilePart[]; skipped: string[] }[] {
   const zip = readZip(buf, label)
-  const model = zip.text('3D/3dmodel.model')
-  if (!model) throw new ToolInputError(`${label} is not a 3MF project: it has no 3D/3dmodel.model`, 'unsupported_format')
-  const names = new Map<string, string>()
-  for (const m of model.matchAll(/<object\b[^>]*>/g)) {
-    const a = attrs(m[0])
-    if (a['id']) names.set(a['id'], a['name'] ?? `Object ${a['id']}`)
-  }
-  const items = [...model.matchAll(/<item\b[^>]*\/?>/g)].map((m) => attrs(m[0])).filter((a) => a['objectid'])
+  if (zip.text('3D/3dmodel.model') === undefined) throw new ToolInputError(`${label} is not a 3MF project: it has no 3D/3dmodel.model`, 'unsupported_format')
+  const objects = readFileObjects(zip, label)
   const files = new Map<string, Uint8Array>()
   for (const n of zip.names()) if (n.startsWith('Metadata/slicerx_history')) files.set(n, zip.read(n) ?? new Uint8Array())
-  const histories = parseHistories(files, new Set(items.map((a) => a['objectid']!)))
-  const found: { name: string; transform: Mat4; history: History }[] = []
-  const without: string[] = []
-  for (const a of items) {
-    const id = a['objectid']!
-    const h = histories.get(id)
-    const name = names.get(id) ?? `Object ${id}`
-    if (h) found.push({ name, transform: matOf(a['transform']), history: h })
-    else without.push(name)
-  }
-  return { found, without }
+  const histories = parseHistories(files, new Set(objects.map((o) => o.id)))
+  return objects.map((o) => {
+    const h = histories.get(o.id)
+    return { name: o.name, transform: o.transform, ...(h ? { history: h } : {}), base: o.parts, skipped: o.skipped }
+  })
 }
 
 export function designTools(designs: Designs): PilotTool<never>[] {
@@ -410,15 +398,16 @@ export function designTools(designs: Designs): PilotTool<never>[] {
     version: '1.0.0',
     source: 'command',
     permission: 'read',
-    description: 'Open the designs in a 3MF project that carry a SlicerX CAD history (saved by slicerx_design_save or by SlicerX), with their steps replayed. Returns a design id per object; objects without a history are listed by name.',
+    description:
+      'Open the objects of any 3MF project (SlicerX, Bambu Studio, Orca) as designs, one per object. An object with a SlicerX CAD history opens with its steps replayed; any other starts from its printed parts, with their filament slots and paint, and no steps yet. Modifiers and other volumes are left out and named.',
     input: z.object({ path: z.string().min(1).describe('Path of the .3mf file') }),
     async run(i) {
       const path = await resolveModel(policy, i.path)
-      const { found, without } = readDesigns(readFileSync(path), i.path)
-      if (!found.length) throw new ToolInputError(`${i.path} has no object with a SlicerX CAD history${without.length ? ` (${without.join(', ')})` : ''}; start a design from an STL with slicerx_design_new instead`)
+      const found = readDesigns(readFileSync(path), i.path)
+      if (!found.length) throw new ToolInputError(`${i.path} has no printed parts to open`)
       const opened = []
-      for (const f of found) opened.push(designSummary(await designs.create(f.name, f.history.base, f.history, f.transform)))
-      return { summary: `Opened ${plural(opened.length, 'design')}`, output: { designs: opened, ...(without.length ? { withoutHistory: without } : {}) } }
+      for (const f of found) opened.push({ ...designSummary(await designs.create(f.name, f.history?.base ?? f.base, f.history, f.transform)), fromHistory: f.history !== undefined, ...(f.skipped.length ? { leftOut: f.skipped } : {}) })
+      return { summary: `Opened ${plural(opened.length, 'design')}`, output: { designs: opened } }
     },
   })
 
@@ -509,7 +498,25 @@ export function designTools(designs: Designs): PilotTool<never>[] {
         d.status = []
         d.madeBy = {}
       }
+      d.redo.push(last)
       return { summary: `Removed ${stepName(last)}`, output: designSummary(d) }
+    },
+  })
+
+  const redo = defineTool({
+    name: 'design.redo',
+    version: '1.0.0',
+    source: 'command',
+    permission: 'slice',
+    description: 'Put back the step slicerx_design_undo last removed. A new step clears what can be redone.',
+    input: z.object({ design: designArg }),
+    async run(i) {
+      const d = designs.get(i.design)
+      const step = d.redo.pop()
+      if (!step) throw new ToolInputError('Nothing to redo.')
+      d.history = { ...d.history, steps: [...d.history.steps, step] }
+      await designs.replay(d)
+      return { summary: `Put back ${stepName(step)}`, output: designSummary(d) }
     },
   })
 
@@ -533,5 +540,5 @@ export function designTools(designs: Designs): PilotTool<never>[] {
     },
   })
 
-  return [create, open, list, steps, edit, undo, save] as PilotTool<never>[]
+  return [create, open, list, steps, edit, undo, redo, save] as PilotTool<never>[]
 }

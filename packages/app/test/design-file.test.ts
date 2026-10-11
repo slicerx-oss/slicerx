@@ -26,6 +26,7 @@ describe('a design saved over MCP', () => {
       status: [],
       madeBy: {},
       written: 0,
+      redo: [],
     }
     const bed = { widthMm: 256, depthMm: 256 }
     const p = await readProject(new Uint8Array(design3mf(d)), bed)
