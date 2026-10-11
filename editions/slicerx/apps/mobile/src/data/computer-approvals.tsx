@@ -13,12 +13,16 @@ import { forDisplay, relayBlock } from './verified-card'
 import { checkWork, MISMATCH, type WorkCheck } from './work-card'
 import { usePocketHost } from './provider'
 
+export const IN_APP = 'Approve this in SlicerX on your computer'
+
 /** The card is built from what the hub verified (printer, action, hash), never from the requester's own title or lines. */
 export function toPending(a: ComputerApproval, names: Record<string, string> = {}, work: WorkCheck = { state: 'none' }): PendingComputerApproval {
   const base = forDisplay(a.view.request, a.view.source, names)
   // The hub's own summary of the work, checked against the card's hashes, words the card. One that does not match gets no Approve.
   const request = work.state === 'verified' ? { ...base, title: work.title, lines: work.lines } : base
-  const blocked = work.state === 'mismatch' ? MISMATCH : relayBlock(a.view.request, a.via)
+  // A connected app's call (switching a Home Assistant device) is approved in SlicerX on the computer only; the hub refuses it from a phone.
+  const inApp = a.view.request.actions.some((x) => x.action === 'plugin.call')
+  const blocked = work.state === 'mismatch' ? MISMATCH : inApp ? IN_APP : relayBlock(a.view.request, a.via)
   const code = work.state === 'verified' ? work.code : undefined
   return { id: a.view.request.id, hostName: a.hostName, pairingId: a.pairingId, request, blocked, ...(code !== undefined ? { code } : {}), source: a.view.source, requestedBy: a.view.requestedBy, decide: a.decide }
 }
@@ -41,7 +45,8 @@ export function ComputerApprovals() {
       const names: Record<string, string> = {}
       for (const p of await host.printers.list().catch(() => [])) names[p.id] = p.name
       // The hub sends its checked work next to the request (not inside it, so the signed hash is unchanged).
-      const viewWork = (a.view as { work?: unknown }).work
+      // A connected app's work comes under its own key (`connectedAppWork`), so older phones skip it.
+      const viewWork = (a.view as { work?: unknown; connectedAppWork?: unknown }).work ?? (a.view as { connectedAppWork?: unknown }).connectedAppWork
       const work = await checkWork(viewWork === undefined ? a.view.request : ({ ...a.view.request, work: viewWork } as typeof a.view.request), (id) => names[id] ?? id).catch((): WorkCheck => ({ state: 'mismatch' }))
       const p = answered.own(toPending(a, names, work))
       // A request that already ran out, or was answered meanwhile, is not worth showing; a repeat of one on screen is ignored.

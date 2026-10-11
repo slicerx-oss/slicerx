@@ -94,3 +94,15 @@ it('words a Home Assistant call only when the hash and the words check out', asy
   })
   expect((await checkWork(r, name)).state).toBe('mismatch')
 })
+
+it('offers no Approve for a connected app or tool it does not know', async () => {
+  const input = { domain: 'switch', service: 'turn_off', entityId: 'switch.bay_1_power' }
+  for (const [pluginId, tool] of [['home-assistant', 'restart'], ['obico', 'call_service'], ['spoolman', 'record_usage']] as const) {
+    const r = {
+      id: 'r10', sessionId: 's', tool: `${pluginId}.${tool}`, permission: 'start', title: '', lines: [], paramsHash: 'x', origin: 'mcp', expiresAt: '2026-10-02T00:05:00Z',
+      actions: [{ action: 'plugin.call', target: pluginId, paramsHash: await hashParams({ pluginId, tool, input }) }],
+      work: { kind: 'plugin', printerId: '', pluginId, tool, input },
+    } as unknown as ApprovalRequest
+    expect((await checkWork(r, name)).state).toBe('mismatch')
+  }
+})

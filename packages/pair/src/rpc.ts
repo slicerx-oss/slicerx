@@ -139,12 +139,18 @@ export const ApprovalView = z.object({
   requestedBy: z.string().max(64).optional(),
   /** The hub's checked work, for cards an agent raised (`WorkSummary`). */
   work: WorkSummary.optional(),
+  /**
+   * A connected app's work (kind `plugin`), kept apart from `work` so a phone built before the kind
+   * existed parses the list and shows the card with no Approve.
+   */
+  connectedAppWork: WorkSummary.optional(),
 })
 export interface ApprovalView {
   request: ApprovalRequest
   source: 'pilot' | 'pair' | 'host'
   requestedBy?: string
   work?: WorkSummary
+  connectedAppWork?: WorkSummary
 }
 
 /** The relay's numbers for the hub the phone reaches (sx-link `remote.status.quota`). */

@@ -46,6 +46,8 @@ describe('agent cards', () => {
       { kind: 'plugin', printerId: '', pluginId: 'home-assistant', tool: 'call_service', input: { ...input, service: 'unlock' } },
       { kind: 'plugin', printerId: '', pluginId: 'home-assistant', tool: 'call_service', input: { domain: 'lock', service: 'turn_off', entityId: 'lock.front_door' } },
       { kind: 'plugin', printerId: '', pluginId: 'spoolman', tool: 'call_service', input },
+      { kind: 'plugin', printerId: '', pluginId: 'home-assistant', tool: 'restart', input },
+      { kind: 'plugin', printerId: '', pluginId: 'obico', tool: 'call_service', input },
     ] as const) {
       expect(describeCard(ha({ work: bad as NonNullable<HubCard['work']> }), names).blocked, JSON.stringify(bad)).toBeTruthy()
     }

@@ -134,6 +134,8 @@ describe.skipIf(!bin || !existsSync(bin))('real printers through sx-link', () =>
     expect(card?.work).toMatchObject({ kind: 'plugin', pluginId: 'home-assistant', input: { entityId: 'switch.bay_2_power' } })
     await app.approvals.grant(req.request_id)
     await expect.poll(() => state('switch.bay_2_power'), { timeout: 5000 }).toBe('off')
+    // The approval was used: granting the same card again is refused, and nothing runs twice.
+    await expect(app.approvals.grant(req.request_id)).rejects.toThrow()
     app.close()
   })
 

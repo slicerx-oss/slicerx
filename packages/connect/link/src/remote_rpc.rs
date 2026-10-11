@@ -484,9 +484,16 @@ async fn watch(b: &Arc<Bridge>, ctx: &Arc<SessCtx>, p: &Value) -> Reply {
 
 /// Cards a phone sees from afar: ones whose work the hub runs itself after a person's answer
 /// (agent work, remote pause and cancel) and queued or scheduled plates. Cards whose token goes
-/// back to the app that raised them are answered in the app.
+/// back to the app that raised them are answered in the app, and so is a connected app's call
+/// (switching a Home Assistant device): a phone could only deny it, and a phone built before the
+/// kind existed would show an Approve the hub then refuses.
 fn decidable(b: &Bridge, id: &str) -> bool {
-    b.agent_work.holds(id) || b.hub.item_for_request(id).is_some()
+    shown_to_phones(b.agent_work.kind(id)) || b.hub.item_for_request(id).is_some()
+}
+
+/// Whether a card holding agent work of this kind goes to phones.
+fn shown_to_phones(kind: Option<&str>) -> bool {
+    kind.is_some_and(|k| k != "plugin")
 }
 
 /// Cards a phone may approve over the relay: pausing or stopping a print, nothing that heats,
@@ -502,12 +509,24 @@ fn card_view(b: &Bridge, id: &str) -> Option<Value> {
     let request = serde_json::to_value(b.broker.as_ref()?.request(id)?).ok()?;
     let mut view = json!({ "request": request, "source": "host" });
     if let (Some(work), Some(o)) = (b.agent_work.summary(id), view.as_object_mut()) {
-        o.insert("work".into(), work);
+        o.insert(work_key(&work).into(), work);
     }
     if let (Some(name), Some(o)) = (lock(&b.card_partners).get(id).cloned(), view.as_object_mut()) {
         o.insert("partner".into(), json!(name));
     }
     Some(view)
+}
+
+/// Where a card's work summary goes in the view. A connected app's work has its own key: a phone built
+/// before it knew that kind checks `work` against a fixed list and would refuse the whole approvals
+/// list over one card. Without `work`, such a phone shows the card with no Approve, as for any card it
+/// cannot check.
+fn work_key(summary: &Value) -> &'static str {
+    if summary["kind"] == "plugin" {
+        "connectedAppWork"
+    } else {
+        "work"
+    }
 }
 
 fn approvals_list(b: &Bridge, p: &RemotePairing) -> Value {
@@ -732,4 +751,29 @@ async fn control(b: &Arc<Bridge>, ctx: &Arc<SessCtx>, pairing: &RemotePairing, p
         json!({ "jobId": job_id, "state": "awaiting_approval", "printerId": printer }),
     );
     Ok(json!({ "jobId": job_id, "requestId": request_id }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_connected_app_card_stays_in_the_app() {
+        assert!(!shown_to_phones(Some("plugin")));
+        assert!(!shown_to_phones(None));
+        for kind in ["print", "resume", "gcode", "adjust", "pause", "cancel"] {
+            assert!(shown_to_phones(Some(kind)), "{kind}");
+        }
+    }
+
+    #[test]
+    fn a_connected_app_card_keeps_its_work_away_from_older_phones() {
+        assert_eq!(
+            work_key(&json!({ "kind": "plugin", "pluginId": "home-assistant" })),
+            "connectedAppWork"
+        );
+        for kind in ["print", "resume", "gcode", "adjust", "pause", "cancel"] {
+            assert_eq!(work_key(&json!({ "kind": kind })), "work", "{kind}");
+        }
+    }
 }

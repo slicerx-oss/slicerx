@@ -334,6 +334,7 @@ impl Waiting {
         lock(&self.0).get(request_id).map(|h| h.work.kind())
     }
 
+    #[cfg(test)]
     pub(crate) fn holds(&self, request_id: &str) -> bool {
         lock(&self.0).contains_key(request_id)
     }
@@ -487,6 +488,21 @@ mod tests {
         );
         assert_eq!(w.summary()["entityId"], Value::Null);
         assert_eq!(w.summary()["input"]["entityId"], "switch.bay_1_power");
+        // A card raised for one input holds no other: the work cannot change after the card is made.
+        let other = Work::parse(
+            &json!({ "kind": "plugin", "pluginId": "home-assistant", "tool": "call_service",
+            "input": { "domain": "switch", "service": "turn_off", "entityId": "switch.bay_2_power" } }),
+        )
+        .unwrap();
+        let waiting = Waiting::default();
+        let refused = waiting.hold(&card("p1", &w), 0, other, None, |_| true);
+        assert_eq!(refused.map_err(|e| e.code), Err("bad_request".to_owned()));
+        assert!(!waiting.holds("p1"));
+        waiting.hold(&card("p2", &w), 0, w, None, |_| true).unwrap();
+        assert!(waiting.holds("p2"));
+        // Taking the work hands it out once: an approval replayed for the same card finds nothing to run.
+        assert!(waiting.take("p2").is_some());
+        assert!(waiting.take("p2").is_none());
         // Only the connected apps the hub runs, a bare tool name and an object input.
         for bad in [
             json!({ "kind": "plugin", "pluginId": "duet", "tool": "x", "input": {} }),
