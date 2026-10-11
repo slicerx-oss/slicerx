@@ -267,7 +267,9 @@ fn json_operation_gives_meshes_as_buffers() {
         ]
     );
     let buffers = sx_geom::json::take_out_files();
-    assert_eq!(buffers.len(), 5);
-    // 8 corners and 12 triangles of a box, in the raw mesh form
-    assert_eq!(buffers[0].len(), 8 + 12 * 8 + 12 * 12);
+    // positions and triangles of each of the five parts
+    assert_eq!(buffers.len(), 10);
+    // 8 corners and 12 triangles of a box
+    assert_eq!(buffers[0].to_bytes().len(), 8 * 12);
+    assert_eq!(buffers[1].to_bytes().len(), 12 * 12);
 }

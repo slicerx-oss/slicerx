@@ -3,13 +3,12 @@
 //! zip archives: the central directory, entries read whole or as they inflate
 
 use crate::error::{Error, Result};
-use miniz_oxide::inflate::stream::{InflateState, inflate};
-use miniz_oxide::{DataFormat, MZError, MZFlush, MZStatus};
+use flate2::{Decompress, FlushDecompress, Status};
 
 /// largest entry inflated, against zip bombs
 pub const MAX_ENTRY: usize = 1 << 30;
 const MAX_ENTRIES: usize = 1 << 16;
-const CHUNK: usize = 1 << 18;
+const CHUNK: usize = 1 << 20;
 
 pub struct Zip<'a> {
     data: &'a [u8],
@@ -182,31 +181,34 @@ impl<'a> Zip<'a> {
                 Ok(())
             }
             8 => {
-                let mut state = InflateState::new_boxed(DataFormat::Raw);
+                let mut inflate = Decompress::new(false);
                 let mut out = vec![0u8; CHUNK];
                 let mut input = raw;
                 let mut total = 0usize;
                 loop {
-                    let r = inflate(&mut state, input, &mut out, MZFlush::None);
-                    input = input.get(r.bytes_consumed..).unwrap_or(&[]);
-                    total += r.bytes_written;
+                    let (was_in, was_out) = (inflate.total_in(), inflate.total_out());
+                    let status = inflate
+                        .decompress(input, &mut out, FlushDecompress::None)
+                        .map_err(|e| bad(format!("{name}: deflate error {e}")))?;
+                    let read = usize::try_from(inflate.total_in() - was_in).unwrap_or(usize::MAX);
+                    let wrote = usize::try_from(inflate.total_out() - was_out).unwrap_or(usize::MAX);
+                    input = input.get(read..).unwrap_or(&[]);
+                    total += wrote;
                     // the declared size is the limit: an entry that inflates past it is refused
                     if total > e.size.max(1) {
                         return Err(bad(format!("{name} inflates past its size")));
                     }
-                    if let Some(piece) = out.get(..r.bytes_written)
+                    if let Some(piece) = out.get(..wrote)
                         && !piece.is_empty()
                     {
                         sink(piece)?;
                     }
-                    match r.status {
-                        Ok(MZStatus::StreamEnd) => return Ok(()),
-                        Ok(_) | Err(MZError::Buf) => {
-                            if r.bytes_consumed == 0 && r.bytes_written == 0 {
-                                return Err(bad(format!("{name}: truncated deflate data")));
-                            }
+                    match status {
+                        Status::StreamEnd => return Ok(()),
+                        Status::Ok | Status::BufError if read == 0 && wrote == 0 => {
+                            return Err(bad(format!("{name}: truncated deflate data")));
                         }
-                        Err(err) => return Err(bad(format!("{name}: deflate error {err:?}"))),
+                        Status::Ok | Status::BufError => {}
                     }
                 }
             }

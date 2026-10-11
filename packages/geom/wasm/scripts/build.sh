@@ -13,10 +13,10 @@ cd "$root"
 mkdir -p "$here/pkg"
 out="${CARGO_TARGET_DIR:-target}"/wasm32-unknown-unknown/wasm-release/sx_geom_wasm.wasm
 build() {
-  # Without the name section: about 330 KB smaller, nothing else changes. Inflating is built for speed: at the size
-  # setting a 35 MB project took 3.1 s to read in the engine, at speed 1.4 s, for 0.7 KB gzip.
+  # Without the name section: about 330 KB smaller, nothing else changes. Inflating a 3MF (zlib-rs) is built for
+  # speed: most of the time of reading a big project goes there.
   CARGO_PROFILE_WASM_RELEASE_STRIP=symbols cargo build -q -p sx-geom-wasm --target wasm32-unknown-unknown --profile wasm-release \
-    --config 'profile.wasm-release.package.miniz_oxide.opt-level=3' "$@"
+    --config 'profile.wasm-release.package.zlib-rs.opt-level=3' "$@"
 }
 report() {
   echo "pkg/$1: $(wc -c < "$here/pkg/$1") bytes, $(gzip -9c "$here/pkg/$1" | wc -c) gzip"

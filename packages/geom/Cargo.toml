@@ -39,6 +39,8 @@ i_overlay = { package = "sx-i-overlay", path = "../vendor/i_overlay", version = 
 libm = "=0.2.16"
 manifold-rust = { version = "=0.15.0", default-features = false }
 miniz_oxide = "=0.9.1"
+# inflating 3MF model parts: zlib-rs reads a big project in about half the time of miniz_oxide
+flate2 = { version = "=1.1.10", default-features = false, features = ["zlib-rs"], optional = true }
 # A fast hasher for the mesh code's lookup maps (src/mesh.rs, repair.rs, import/): SipHash costs several times as much
 # per key, most of all in WebAssembly. Already in the lockfile through other crates; Apache-2.0 OR MIT.
 rustc-hash = "=2.1.3"
@@ -74,4 +76,4 @@ calib = []
 # Hollow with drain holes.
 hollow = []
 # 3MF projects read whole: parts and their types, paint, plates and settings.
-formats = []
+formats = ["dep:flate2"]

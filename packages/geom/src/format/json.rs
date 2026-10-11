@@ -1,37 +1,39 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-//! `format.read3mf` for the json api: the project as json, each part's mesh as a raw output buffer
+//! `format.read3mf` for the json api: the project as json, each part's positions and triangles as output buffers
 
 use super::threemf::{Paint, PartKind, read_3mf};
 use crate::error::{Error, Result};
-use crate::json::{FileLoader, base64_decode, push_out_file};
+use crate::json::{FileLoader, OutFile, base64_decode, push_out_file};
 use serde_json::{Value, json};
 
 fn pairs(list: &[(String, String)]) -> Value {
     Value::Array(list.iter().map(|(k, v)| json!([k, v])).collect())
 }
 
+/// the paint codes as one output buffer: for each layer (color, seam, support, fuzzy) a count, then per painted
+/// triangle its number, the code's length and the code; `null` when nothing is painted
 fn paint(p: &Paint) -> Value {
-    let layer = |l: &[(u32, String)]| Value::Array(l.iter().map(|(t, c)| json!([t, c])).collect());
-    json!({ "color": layer(&p.color), "seam": layer(&p.seam), "support": layer(&p.support), "fuzzy": layer(&p.fuzzy) })
-}
-
-/// the raw form of `TriMesh::from_raw`: counts, then f32 positions, then u32 triangles
-fn raw(positions: &[[f32; 3]], triangles: &[[u32; 3]]) -> Vec<u8> {
-    let mut out = Vec::with_capacity(8 + 12 * (positions.len() + triangles.len()));
-    for n in [positions.len(), triangles.len()] {
+    if p.is_empty() {
+        return Value::Null;
+    }
+    let mut out = Vec::new();
+    let u32le = |out: &mut Vec<u8>, n: usize| {
         out.extend_from_slice(&u32::try_from(n).unwrap_or(u32::MAX).to_le_bytes());
+    };
+    for layer in [&p.color, &p.seam, &p.support, &p.fuzzy] {
+        u32le(&mut out, layer.len());
+        for (t, code) in layer {
+            out.extend_from_slice(&t.to_le_bytes());
+            u32le(&mut out, code.len());
+            out.extend_from_slice(code.as_bytes());
+        }
     }
-    for c in positions.iter().flatten() {
-        out.extend_from_slice(&c.to_le_bytes());
-    }
-    for i in triangles.iter().flatten() {
-        out.extend_from_slice(&i.to_le_bytes());
-    }
-    out
+    json!({ "rawBytes": push_out_file(OutFile::Bytes(out)) })
 }
 
-/// `{ data: { path } | { base64 } }`: parts in their object's space in millimeters, with `rawOut`
+/// `{ data: { path } | { base64 } }`: parts in their object's space in millimeters, with `positionsOut` and
+/// `trianglesOut`
 pub fn read(req: &Value, files: FileLoader<'_>) -> Result<Value> {
     let data = req.get("data").ok_or_else(|| Error::invalid("data", "missing"))?;
     let bytes = if let Some(p) = data.get("path").and_then(Value::as_str) {
@@ -47,7 +49,7 @@ pub fn read(req: &Value, files: FileLoader<'_>) -> Result<Value> {
     let mut objects = Vec::with_capacity(project.objects.len());
     for o in project.objects {
         let mut parts = Vec::with_capacity(o.parts.len());
-        for p in o.parts {
+        for mut p in o.parts {
             let kind = match p.kind {
                 PartKind::Normal => "normal",
                 PartKind::Negative => "negative",
@@ -55,7 +57,13 @@ pub fn read(req: &Value, files: FileLoader<'_>) -> Result<Value> {
                 PartKind::SupportBlocker => "support_blocker",
                 PartKind::SupportEnforcer => "support_enforcer",
             };
-            let n = push_out_file(raw(&p.in_object(scale), &p.triangles));
+            // a part no component moves, in millimeters already, goes out as read
+            let positions = if p.chain.is_empty() && (scale - 1.0).abs() <= f32::EPSILON {
+                std::mem::take(&mut p.positions)
+            } else {
+                p.in_object(scale)
+            };
+            let triangles = std::mem::take(&mut p.triangles);
             parts.push(json!({
                 "id": p.id,
                 "name": p.name,
@@ -67,7 +75,8 @@ pub fn read(req: &Value, files: FileLoader<'_>) -> Result<Value> {
                 "settings": pairs(&p.settings),
                 "paint": paint(&p.paint),
                 "transformed": p.transformed,
-                "rawOut": n,
+                "positionsOut": push_out_file(OutFile::Positions(positions)),
+                "trianglesOut": push_out_file(OutFile::Triangles(triangles)),
             }));
         }
         objects.push(json!({
