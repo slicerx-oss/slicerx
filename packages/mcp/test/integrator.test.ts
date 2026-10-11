@@ -88,6 +88,7 @@ describe('3MF projects', () => {
 })
 
 describe('profiles', () => {
+  // The first read of the stock catalog in its file: about 4.8 s in CI beside the rest of the suite.
   it('lists and resolves the makers\' filament presets', async () => {
     const h = await connect()
     const list = data<{ profiles: { id: string; source: string }[] }>(await h.call('slicerx_list_profiles', { source: 'stock', query: 'Bambu PLA Basic @BBL A1', limit: 5 }))
@@ -98,7 +99,7 @@ describe('profiles', () => {
     const est = await h.call('slicerx_estimate_file', { model: join(h.dir, 'cube.stl'), profiles: [id!] })
     expect(est.isError, text(est)).toBeFalsy()
     expect(data<{ applied: string[] }>(est).applied).toEqual(['process:slicerx-default', id])
-  })
+  }, 30_000)
 
   it('lists the SlicerX default process first and applies it only when no process is named', async () => {
     const h = await connect()

@@ -88,6 +88,8 @@ describe('locked projects through MCP', () => {
     expect(readFileSync(opened.path).equals(project)).toBe(true)
   })
 
+  // Three servers in a row: under 1 s alone, about 4 s beside the rest of the suite on a loaded machine, and past
+  // vitest's 5 s default now and then.
   it('a token only does what its scopes allow, and only for its own account', async () => {
     const svc = accountService({ sxk_rv: { user: RV, scopes: ['sxlock_seal'] }, sxk_rv_open: { user: RV, scopes: ['sxlock_open'] }, sxk_ash: { user: ASH, scopes: ['sxlock_open', 'sxlock_seal'] } })
     const exporter = await connect({ sxlock: conf('sxk_rv', svc.fetch) })
@@ -104,7 +106,7 @@ describe('locked projects through MCP', () => {
     const other = await connect({ sxlock: conf('sxk_ash', svc.fetch), allowDirs: [exporter.dir] })
     const r = await other.call('slicerx_sxlock_open', { file: locked.path })
     expect(text(r)).toMatch(/another SlicerX account/)
-  })
+  }, 30_000)
 
   it('offline or tampered, nothing is written and the reason is plain', async () => {
     const svc = accountService({ sxk_both: { user: RV, scopes: ['sxlock_open', 'sxlock_seal'] } })

@@ -125,6 +125,7 @@ describe('cloud slicing against the API contract', () => {
     return text(r)
   }
 
+  // Three servers in a row, as in the next test: about 4.6 s in CI beside the rest of the suite.
   it('checks access first: an uninvited account, a used up day and a large model stop before any upload', async () => {
     let f = fakeCloud({ invited: false })
     expect(await sliceWith(f.cloud)).toMatch(/not invited to cloud slicing/)
@@ -135,7 +136,7 @@ describe('cloud slicing against the API contract', () => {
     f = fakeCloud({ invited: true, jobsPerDay: 20, jobsToday: 0, maxUploadBytes: 100 })
     expect(await sliceWith(f.cloud)).toMatch(/over this account's cloud upload limit/)
     expect(f.calls).toHaveLength(1)
-  })
+  }, 30_000)
 
   // Five servers in a row: about 2 s alone on Windows, over 5 s beside other heavy work.
   it('maps not_invited, upload too large, the daily job limit and the rate limit to clear errors', async () => {
