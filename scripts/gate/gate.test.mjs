@@ -3,10 +3,12 @@
 // The release gate's own rules, without an app: masking, bounded waits, the tower's G-code check, the upload model,
 // the gate printer, the command line, the starter list against the starters the Vault is seeded with, and the report.
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { describe, it } from 'node:test'
 import { inflateRawSync } from 'node:zlib'
+import { START_WAIT_S, waitForFile } from './lib/app.mjs'
 import { coaster3mf } from './lib/coaster.mjs'
 import { options } from './lib/options.mjs'
 import { renderReport, runStatus } from './lib/report.mjs'
@@ -175,12 +177,40 @@ describe('the upload model', () => {
   })
 })
 
+describe('the wait for the app to start', () => {
+  const dir = () => mkdtempSync(join(tmpdir(), 'sx-gate-test-'))
+  it('returns once the connection file shows, however late within the limit', async () => {
+    const d = dir()
+    const file = join(d, 'agent-bridge.json')
+    setTimeout(() => writeFileSync(file, '{}'), 60)
+    assert.equal(await waitForFile(file, { timeoutMs: 2000, everyMs: 10 }), true)
+    rmSync(d, { recursive: true, force: true })
+  })
+  it('gives up when the limit runs out or the app has ended', async () => {
+    const d = dir()
+    const file = join(d, 'agent-bridge.json')
+    const started = Date.now()
+    assert.equal(await waitForFile(file, { timeoutMs: 50, everyMs: 10 }), false)
+    assert.ok(Date.now() - started >= 50)
+    assert.equal(await waitForFile(file, { timeoutMs: 60_000, everyMs: 10, gone: () => true }), false)
+    rmSync(d, { recursive: true, force: true })
+  })
+})
+
 describe('the command line', () => {
   it('runs every scenario by default and checks the account', () => {
     const o = options(['--account', 'QA-Win@qa.slicerx.app', '--platform', 'windows', '--out', 'x'])
     assert.deepEqual(o.run, ['a', 'b', 'c', 'd', 'e', 'w'])
     assert.equal(o.account, 'qa-win@qa.slicerx.app')
     assert.deepEqual([o.waitSignin, o.waitScan, o.waitReview], [10, 15, 60])
+    assert.equal(o.waitStart, START_WAIT_S)
+    assert.ok(START_WAIT_S >= 120, 'a loaded machine took over half a minute to start the app')
+  })
+  it('takes a longer or shorter start wait in seconds, within bounds', () => {
+    assert.equal(options(['--only', 'a', '--wait-start', '300']).waitStart, 300)
+    assert.throws(() => options(['--only', 'a', '--wait-start', '0']), /--wait-start is seconds/)
+    assert.throws(() => options(['--only', 'a', '--wait-start', 'soon']), /--wait-start is seconds/)
+    assert.throws(() => options(['--only', 'a', '--wait-start', '4000']), /--wait-start is seconds/)
   })
   it('refuses addresses outside the qa domain, unknown scenarios and c or d without an account', () => {
     assert.throws(() => options(['--account', 'someone@slicerx.app']), /not a release-gate account/)
