@@ -51,6 +51,7 @@ export function clearProject(): void {
     // A project's G-code waiting for a choice goes with the project; G-code already chosen is a print setting and stays.
     projectGcode: null,
     projectSettings: null,
+    projectImport: null,
     projectOpenAsk: null,
     // the next plate's flush volumes come from its slots again, and a tower the project placed goes back to auto
     projectFlush: null,

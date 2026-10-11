@@ -21,10 +21,15 @@ function PresetReport({ report, keys }: { report: ImportReport; keys: boolean })
       <summary>
         <span className="imp-name">{report.name}</span>
         <span className="imp-count">
-          {KIND_WORD[report.section]} preset, {n === 0 ? 'every setting carried over' : `${n} ${n === 1 ? 'setting' : 'settings'} did not carry over`}
+          {report.project ? 'Project settings' : `${KIND_WORD[report.section]} preset`}, {n === 0 ? 'every setting carried over' : `${n} ${n === 1 ? 'setting' : 'settings'} did not carry over`}
         </span>
       </summary>
       {parent ? <p className="imp-note">{parent}</p> : null}
+      {(report.notes ?? []).map((note) => (
+        <p key={note} className="imp-note">
+          {note}
+        </p>
+      ))}
       {n ? (
         <ul className="imp-items">
           {report.items.map((it) => (
@@ -44,8 +49,11 @@ function PresetReport({ report, keys }: { report: ImportReport; keys: boolean })
   )
 }
 
-/** The summary line, the report of each imported preset and the files that could not be imported. */
-export function ImportReportView({ results }: { results: readonly ImportResult[] }) {
+/**
+ * The summary line, the report of each imported preset and the files that could not be imported. `summary` replaces
+ * the presets' line (an opened project's report).
+ */
+export function ImportReportView({ results, summary }: { results: readonly ImportResult[]; summary?: string }) {
   const host = useHost()
   const keys = useApp((s) => s.settingsMode === 'developer')
   const reports = results.filter((r) => r.ok && r.report)
@@ -58,7 +66,7 @@ export function ImportReportView({ results }: { results: readonly ImportResult[]
   return (
     <div className="imp-report" role="status">
       <p className="imp-sum">
-        <Icon name={results.some((r) => r.ok) ? 'check' : 'alert'} size={16} /> {importSummary(results)}
+        <Icon name={results.some((r) => r.ok) ? 'check' : 'alert'} size={16} /> {summary ?? importSummary(results)}
       </p>
       {reports.length ? (
         <div className="imp-list">

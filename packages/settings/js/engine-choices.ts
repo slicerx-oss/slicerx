@@ -46,3 +46,46 @@ export function keptEngineChoices(settings: Record<string, unknown>): string[] {
   const changed = changedKeys(settings)
   return changed ? Object.keys(SLICERX_KEEPS).filter((k) => !changed.has(k)) : []
 }
+
+/**
+ * Which wall generator a project slices with, where that comes from, and the sentence that says so: `kept` (SlicerX's
+ * choice over the one the project inherited), `project` (the project's own, listed as changed), `request` (a call's
+ * overrides) or `profile` (the printer profile).
+ */
+export interface WallsNote {
+  generator: string
+  source: 'kept' | 'project' | 'request' | 'profile'
+  text: string
+}
+
+/** A setting value as one string: `"classic"`, `["classic"]`. */
+const oneText = (v: unknown): string | undefined => (typeof v === 'string' ? v : Array.isArray(v) && typeof v[0] === 'string' ? v[0] : undefined)
+
+/**
+ * The walls a project's settings give, by the rule above: SlicerX's where the project inherited its generator, else
+ * the project's own. `source` is the app that wrote the file (`BambuStudio-…`, `OrcaSlicer-…`), when known. Undefined
+ * when the project names none and says nothing about what it changed.
+ */
+export function projectWalls(raw: Record<string, unknown>, source?: string): WallsNote | undefined {
+  const own = oneText(raw['wall_generator'])
+  const ours = String(SLICERX_KEEP_VALUES['wall_generator'] ?? 'aegis')
+  const changed = changedKeys(raw)
+  if (changed && !changed.has('wall_generator')) {
+    const maker = source?.startsWith('OrcaSlicer') ? "OrcaSlicer's" : source?.startsWith('BambuStudio') ? "Bambu's" : "its preset's"
+    const text = own === undefined ? `${ours} walls, kept by ${productName()}; the project names none` : own === ours ? `${ours} walls, as the project has them` : `${ours} walls, kept by ${productName()}; the project used ${maker} default ${own}`
+    return { generator: ours, source: 'kept', text }
+  }
+  return own === undefined ? undefined : { generator: own, source: 'project', text: `${own} walls, the project's own choice` }
+}
+
+/** The same setting value written either way: `true` and `"1"`, `"aegis"` and `["aegis"]`. */
+export function sameChoice(a: unknown, b: unknown): boolean {
+  const t = (v: unknown): string | undefined => {
+    const x = Array.isArray(v) && v.length === 1 ? v[0] : v
+    if (typeof x === 'boolean') return x ? '1' : '0'
+    if (x === 'true') return '1'
+    if (x === 'false') return '0'
+    return typeof x === 'string' || typeof x === 'number' ? String(x) : undefined
+  }
+  return t(a) !== undefined && t(a) === t(b)
+}

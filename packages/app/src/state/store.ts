@@ -482,6 +482,11 @@ export interface AppState {
    * project puts those back.
    */
   projectSettings: { source: string; keys: string[]; prior?: Record<string, SettingValue | null> } | null
+  /**
+   * What the last opened project's own settings (another slicer's) did not carry over, and the engine choices and walls
+   * SlicerX used: Settings > Presets shows it in the import report.
+   */
+  projectImport: { name: string; report: import('@slicerx/settings').ImportReport } | null
   /** The printer an opened project was made for, while the project is open (project/project-printer.ts). */
   projectPrinter: ProjectPrinter | null
   /** Another slicer's project added to a plate that has objects, waiting for "Open as project" or "Import geometry only". */
@@ -772,6 +777,7 @@ export const appStore = createStore<AppState>()(() => ({
   unsavedPrompt: null,
   projectGcode: null,
   projectSettings: null,
+  projectImport: null,
   projectPrinter: null,
   projectOpenAsk: null,
   printerChooserOpen: false,

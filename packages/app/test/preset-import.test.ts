@@ -168,4 +168,19 @@ describe('report view', () => {
     expect(dev.el.textContent).toContain('top_one_wall_type')
     dev.root.unmount()
   })
+
+  it("shows an opened project's report with its notes, under the line it is given", async () => {
+    const { projectReport } = await import('@slicerx/settings')
+    const report = projectReport('dragon.3mf', { wall_generator: 'classic', top_one_wall_type: 'all top', different_settings_to_system: ['layer_height', '', ''] })
+    const el = document.createElement('div')
+    const root = createRoot(el)
+    const host = { kind: 'web', capabilities: {}, files: { save: async () => null } } as never
+    const results = [{ name: 'dragon.3mf', ok: true, skipped: report.items.length, report }]
+    flushSync(() => root.render(createElement(HostContext.Provider, { value: host }, createElement(ImportReportView, { results, summary: 'Opened dragon.3mf: 1 setting did not carry over' }))))
+    await new Promise((r) => setTimeout(r, 0))
+    expect(el.querySelector('.imp-sum')?.textContent).toContain('Opened dragon.3mf: 1 setting did not carry over')
+    expect(el.querySelector('.imp-count')?.textContent).toContain('Project settings, 1 setting did not carry over')
+    expect(el.textContent).toContain("Walls: aegis walls, kept by SlicerX; the project used its preset's default classic.")
+    root.unmount()
+  })
 })
