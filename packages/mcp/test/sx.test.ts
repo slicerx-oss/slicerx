@@ -26,10 +26,17 @@ describe('sx output', () => {
     expect(e.message).toContain('slicerx_arrange')
     expect(e.details).toEqual({ reason: 'outside_bed', fix: 'slicerx_arrange', layers: [1, 30] })
     expect(sxFailure(1, why.replace('in layers 1 to 30', 'in layer 1')).details).toEqual({ reason: 'outside_bed', fix: 'slicerx_arrange', layers: [1, 1] })
-    // Other refusals keep their code and words, with no arrange hint.
-    const other = sxFailure(1, 'sx slice: blocked by the safety preflight: 3 layers reach above the printable height')
-    expect(other.code).toBe('preflight_blocked')
-    expect(other.message).not.toContain('slicerx_arrange')
+    // The other toolpath refusals carry their reason and the layers their count covers.
+    const tall = sxFailure(1, 'sx slice: blocked by the safety preflight: layers reach above the printable height (with z-hop) from layer 98 (Z19.60 mm, "cube"), 3 layers in layers 76 to 100')
+    expect(tall.code).toBe('preflight_blocked')
+    expect(tall.message).not.toContain('slicerx_arrange')
+    expect(tall.details).toEqual({ reason: 'over_height', layers: [76, 100] })
+    const reach = sxFailure(1, 'sx slice: blocked by the safety preflight: toolpaths of filament 1 lie outside the reach of extruder 2 from layer 1 (X10.0 Y100.0, outer wall of "cube"), 40 points in layers 1 to 25; map the filament to the other extruder or move "cube"')
+    expect(reach.details).toEqual({ reason: 'outside_extruder_reach', layers: [1, 25] })
+    const zone = sxFailure(1, 'sx slice: blocked by the safety preflight: toolpaths enter an excluded bed area from layer 2 (X128.0 Y128.0, sparse infill of "cube"), 1 move in layer 2; move "cube" out of it or arrange the plate')
+    expect(zone.details).toEqual({ reason: 'in_exclusion_zone', fix: 'slicerx_arrange', layers: [2, 2] })
+    // A refusal of the settings (no toolpaths) carries no details.
+    expect(sxFailure(1, 'sx slice: blocked by the safety preflight: the start G-code turns off the motors').details).toBeUndefined()
     expect(sxFailure(3, 'cube.stl: no plate 2').code).toBe('no_such_plate')
     expect(sxFailure(3, 'bad mesh').code).toBe('invalid_model')
     expect(sxFailure(1, 'out of memory').code).toBe('slice_failed')
