@@ -391,7 +391,7 @@ struct Obstacle {
 
 impl Obstacle {
     fn grid(&self) -> &Grid {
-        crate::par::Init::once(&self.grid, || Grid::of_object(&self.object))
+        crate::par::Init::once(&self.grid, || Grid::of_surface(self.surface()))
     }
 
     fn surface(&self) -> &grid::Surface {
