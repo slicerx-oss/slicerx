@@ -25,6 +25,7 @@ import {
   shorten,
   startUpdates,
   updateNow,
+  updaterRegistered,
   updatesHeld,
   watchBusy,
   type FoundUpdate,
@@ -255,6 +256,14 @@ describe('the update flow', () => {
     await checkForUpdates({ manual: true })
     expect(getUpdateState()).toMatchObject({ phase: { kind: 'idle' }, open: false })
     expect(startUpdates()).toBeTypeOf('function')
+  })
+
+  // A test build (debug, or with the agent bridge) registers no updater, whatever its version: no sheet at launch,
+  // no background check, and no Check for updates in Help or About.
+  it('shows no sheet and no Check for updates in a build that registered no updater', async () => {
+    expect(updaterRegistered()).toBe(false)
+    expect(await launchCheck({ timeoutMs: 10 })).toBe('off')
+    expect(getUpdateState()).toMatchObject({ phase: { kind: 'idle' }, open: false })
   })
 })
 
