@@ -89,6 +89,7 @@ pub mod collide;
 mod compensate;
 #[doc(hidden)]
 pub mod config;
+pub mod session_key;
 // The chain joining walks its own index lists, as Orca's does.
 #[allow(clippy::indexing_slicing)]
 mod contours;
