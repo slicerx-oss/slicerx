@@ -174,6 +174,30 @@ export function parseHistories(files: ReadonlyMap<string, Uint8Array>, objectIds
 }
 
 /**
+ * The sentence to show when saved CAD history does not read (a damaged or hand-edited file): the objects open as they
+ * print, without that history, and the person is told so rather than finding the timeline empty. Null when every
+ * history saved for the project's objects was read, or when the histories are from a newer SlicerX ([`historyNewer`]
+ * says so then).
+ */
+export function historyLost(files: ReadonlyMap<string, Uint8Array>, objectIds: ReadonlySet<string>, read: ReadonlyMap<string, History>): string | null {
+  const bytes = files.get('Metadata/slicerx_history.json')
+  if (!bytes) return null
+  const whole = "This project's CAD history could not be read, so its objects open without it."
+  let j: unknown
+  try {
+    j = JSON.parse(new TextDecoder().decode(bytes))
+  } catch {
+    return whole
+  }
+  if (!obj(j)) return whole
+  if (typeof j['version'] === 'number' && j['version'] > HISTORY_FILE_VERSION) return null
+  if ((j['version'] !== 1 && j['version'] !== HISTORY_FILE_VERSION) || !Array.isArray(j['objects'])) return whole
+  const lost = j['objects'].filter((o) => obj(o) && typeof o['object'] === 'string' && objectIds.has(o['object']) && !read.has(o['object'])).length
+  if (lost === 0) return null
+  return lost === 1 ? 'The CAD history of 1 object could not be read, so it opens without it.' : `The CAD history of ${lost} objects could not be read, so they open without it.`
+}
+
+/**
  * The sentence to show when the project's histories come from a newer SlicerX than this one reads: the objects
  * open, without their history. Null when there is nothing to say.
  */

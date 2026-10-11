@@ -10,7 +10,7 @@ import type { MeshPart } from '@slicerx/contracts'
 import { MarkReadError, readVaultMarks, type VaultMark, type VaultMarks } from '@slicerx/contracts/sx3mf-marks'
 import type { Dimension, DimensionAnchor, Feature } from '../geom/cad'
 import type { History } from '../cad/history/model'
-import { historyNewer, parseHistories } from './history-read'
+import { historyLost, historyNewer, parseHistories } from './history-read'
 import type { VolumeRole } from '../state/store'
 import { areaOrigin, areaSize } from '../plate/bed-origin'
 import { bounds } from '../plate/transform'
@@ -650,6 +650,7 @@ export async function projectOf(scanned: ScannedProject, bed: { widthMm: number;
   else for (const p of plates) for (const o of p.objects) settleOnBed(o)
   const dimensions = parseDimensions(files.get('Metadata/slicerx_dimensions.json'), new Set(plates.flatMap((p) => p.objects.map((o) => o.fileId))))
   const fileIds = new Set(plates.flatMap((p) => p.objects.map((o) => o.fileId)))
-  const note = historyNewer(files)
-  return { plates, colors, settings, settingsFrom, dimensions, histories: parseHistories(files, fileIds), namedValues: parseValues(files), ...(note ? { historyNote: note } : {}) }
+  const histories = parseHistories(files, fileIds)
+  const note = historyNewer(files) ?? historyLost(files, fileIds, histories)
+  return { plates, colors, settings, settingsFrom, dimensions, histories, namedValues: parseValues(files), ...(note ? { historyNote: note } : {}) }
 }
