@@ -106,7 +106,9 @@ only as many of the oldest as there are free slots try one, so arrival order and
 from the load two of the heaviest jobs put on the machine together (a merge-queue e2e job is the heaviest), not from
 the core count. `heavy.sh --all <command>` waits for every slot and runs alone, for timing runs and benchmarks: it takes
 the slots one by one as they free up, and while it waits, only the oldest ticket may take a slot, so it is never passed
-over. A `heavy.sh` from before slots knows only `<lock>`, so it shares the machine with one slot-2 holder at most.
+over. A `--all` waiter that is not a CI job gives its slots back, and takes none, while any CI ticket waits, so CI never
+waits for a manual `--all` run to collect the machine; it goes once no CI ticket is waiting. A CI `--all` waiter keeps
+its slots. A `heavy.sh` from before slots knows only `<lock>`, so it shares the machine with one slot-2 holder at most.
 
 `heavy.sh --e2e <command>` marks a browser suite run (its record says `class e2e`): while one holds a slot, no other
 `--e2e` waiter takes one, because two suites drawing software WebGL overload a machine (two 5-worker desktop runs took
@@ -116,8 +118,10 @@ them, so builds and other jobs still use the free slots.
 `heavy.sh --gpu <command>` marks a GPU-drawn browser suite run (`class gpu`). It takes one of the GPU slots
 (`<lock>.gpu.1` and on; how many is the number in `<lock>.gpu-slots`, default 1, or `SX_HEAVY_GPU_SLOTS`), never a
 plain slot, so several GPU runners' suites run side by side while agents keep the plain slots. A `--gpu` waiter waits
-while an `--e2e` or `--all` run holds or is queued ahead of it, and an `--e2e` or `--all` waiter waits until no
-`--gpu` run holds. The GPU lane runs its `@gpu` specs under `--gpu` and its frame timing specs (`@gpu-timing`) after
+while an `--e2e` or `--all` run holds or is queued ahead of it in queue order (CI first, then arrival), and an `--e2e`
+or `--all` waiter waits until no `--gpu` run holds or is handed a GPU slot ahead of it. The slots a `--all` waiter has
+collected while it still waits do not count as a run: a `--gpu` ticket ahead of it in the queue still gets its GPU
+slot, and the `--all` run starts after that one ends. The GPU lane runs its `@gpu` specs under `--gpu` and its frame timing specs (`@gpu-timing`) after
 them under `--e2e`, alone.
 
 `scripts/ci/heavy-test.sh` tests all of this on a temporary lock: alone on any side, and with

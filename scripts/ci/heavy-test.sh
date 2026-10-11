@@ -231,6 +231,74 @@ name="the --gpu waiter runs once the --e2e holder is gone"
 release e3 "$e3"
 SX_HEAVY_LOCK=$lock SX_HEAVY_WAIT=20 bash "$heavy" --gpu true > /dev/null 2>&1; rc=$?
 ok eval '[ "$rc" = 0 ]'
+
+# Fairness for CI: a manual (class 1) --all waiter gives its slots back while a CI ticket waits, and slots a --all
+# waiter holds while it still waits do not keep a --gpu ticket ahead of it in the queue out of the GPU lane.
+echo 1 > "$dir.gpu-slots"
+# A --all waiter in the background, its command writing ALL to the order file if it runs with every plain slot and no
+# --gpu run. Extra variables before it (RUNNER_ENVIRONMENT=self-hosted) make it a CI one.
+all_wait() {
+  env "$@" SX_HEAVY_LOCK="$lock" SX_HEAVY_WAIT=60 bash "$heavy" --all \
+    sh -c '[ -d "$1" ] && [ -d "$1.2" ] && [ ! -d "$1.gpu.1" ] && echo ALL >> "$2"' sh "$dir" "$tmp/order" > /dev/null 2>&1 &
+  pAll=$!; lpids="$lpids $!"
+  for _ in $(seq 50); do grep -q '(all slots)' "$dir.2/owner" 2> /dev/null && return 0; sleep 0.2; done
+  return 1
+}
+name="a manual --all waiter holding a slot gives it to a CI waiter that comes later"
+: > "$tmp/order"
+hold f1; f1=$!
+all_wait; partial=$?
+t0=$SECONDS
+SX_HEAVY_LOCK=$lock SX_HEAVY_WAIT=20 RUNNER_ENVIRONMENT=self-hosted bash "$heavy" sh -c 'echo "$1" >> "$2"' sh C "$tmp/order" > /dev/null 2>&1
+rc=$? secs=$((SECONDS - t0))
+ok eval '[ "$partial" = 0 ] && [ "$rc" = 0 ] && [ $secs -le 5 ] && [ "$(tr "\n" " " < "$tmp/order")" = "C " ]'
+name="the manual --all waiter still runs, alone, once no CI ticket waits"
+release f1 "$f1"; wait "$pAll"
+ok eval '[ "$(tr "\n" " " < "$tmp/order")" = "C ALL " ] && [ ! -d "$dir" ] && [ ! -d "$dir.2" ]'
+
+name="a CI --all waiter keeps the slot it holds while a CI waiter waits"
+: > "$tmp/order"
+hold f2; f2=$!
+all_wait RUNNER_ENVIRONMENT=self-hosted; partial=$?
+SX_HEAVY_LOCK=$lock SX_HEAVY_WAIT=3 RUNNER_ENVIRONMENT=self-hosted bash "$heavy" true > /dev/null 2>&1; rc=$?
+ok eval '[ "$partial" = 0 ] && [ "$rc" = 75 ] && grep -q "(all slots)" "$dir.2/owner"'
+release f2 "$f2"; wait "$pAll"
+
+name="a --gpu ticket ahead of a --all waiter in the queue gets the GPU slot the --all waiter's slots kept from it"
+: > "$tmp/order"
+gpu_hold g3
+hold f3; f3=$!
+SX_HEAVY_LOCK=$lock SX_HEAVY_WAIT=60 bash "$heavy" --gpu sh -c 'echo G >> "$1"' sh "$tmp/order" > /dev/null 2>&1 &
+pG=$!; lpids="$lpids $!"; sleep 1.5
+all_wait; partial=$?
+release g3 "$g3"
+t0=$SECONDS; wait "$pG"; rc=$? secs=$((SECONDS - t0))
+ok eval '[ "$partial" = 0 ] && [ "$rc" = 0 ] && [ $secs -le 5 ] && [ "$(tr "\n" " " < "$tmp/order")" = "G " ]'
+name="the --all waiter runs after that --gpu run, with no --gpu run beside it"
+release f3 "$f3"; wait "$pAll"
+ok eval '[ "$(tr "\n" " " < "$tmp/order")" = "G ALL " ]'
+
+name="a CI --gpu ticket that queued after a manual --all waiter runs first"
+: > "$tmp/order"
+gpu_hold g4
+hold f4; f4=$!
+all_wait; partial=$?
+SX_HEAVY_LOCK=$lock SX_HEAVY_WAIT=60 RUNNER_ENVIRONMENT=self-hosted bash "$heavy" --gpu sh -c 'echo G >> "$1"' sh "$tmp/order" > /dev/null 2>&1 &
+pG=$!; lpids="$lpids $!"; sleep 1.5
+release g4 "$g4"
+t0=$SECONDS; wait "$pG"; rc=$? secs=$((SECONDS - t0))
+ok eval '[ "$partial" = 0 ] && [ "$rc" = 0 ] && [ $secs -le 5 ] && [ "$(tr "\n" " " < "$tmp/order")" = "G " ]'
+release f4 "$f4"; wait "$pAll"
+name="and the --all waiter runs after it"
+ok eval '[ "$(tr "\n" " " < "$tmp/order")" = "G ALL " ]'
+
+name="a --gpu ticket behind a --all waiter in the queue still waits for the --all run"
+: > "$tmp/order"
+hold f5; f5=$!
+all_wait; partial=$?
+SX_HEAVY_LOCK=$lock SX_HEAVY_WAIT=3 bash "$heavy" --gpu true > /dev/null 2>&1; rc=$?
+ok eval '[ "$partial" = 0 ] && [ "$rc" = 75 ] && [ ! -d "$dir.gpu.1" ]'
+release f5 "$f5"; wait "$pAll"
 rm -f "$dir.gpu-slots"
 rm -f "$dir.slots"
 

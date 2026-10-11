@@ -41,7 +41,11 @@
 # that happens to look first, and in a poll no more waiters get in than there are free slots.
 #
 # A --all waiter at the head takes the slots one by one as they free up, and the tickets behind it get none, so it is
-# not passed over; a --all waiter behind another one gives back what it holds. A --e2e holder's record says "class e2e";
+# not passed over; a --all waiter behind another one gives back what it holds. A --all waiter that is not a CI job
+# (class 1) also gives back what it holds, and takes nothing, while any CI ticket waits: CI jobs never wait for a manual
+# --all run to collect the machine. It goes when no CI ticket is waiting. A CI --all waiter keeps its slots. Slots a
+# --all waiter holds while it still waits (its ticket still in the queue) are not an exclusive run: its ticket's place
+# in the queue counts, as every other ticket's does. A --e2e holder's record says "class e2e";
 # while one holds or is handed a slot, no other --e2e waiter takes one (two browser suites drawing software WebGL
 # overload a machine). A waiting --e2e ticket that may take a slot keeps one free for itself while it waits for the
 # --gpu runs to end, so the jobs behind it cannot starve it; one that waits for another --e2e run needs no such slot
@@ -51,8 +55,10 @@
 #
 # A --gpu holder's record says "class gpu", in one of the GPU slots, which plain waiters neither take nor count: the
 # GPU lane's suites draw on the GPU and run side by side, while agents keep their own slots. The free GPU slots go to
-# the --gpu tickets in order, and only while no --e2e or --all holder holds and no --e2e or --all ticket is older, so an
-# exclusive run is never starved; an --e2e waiter behind a --gpu ticket that is handed a GPU slot waits for it.
+# the --gpu tickets in order, and only while no --e2e holder or admitted --all holder holds and no --e2e or --all ticket
+# is ahead in the queue (class first, then time), so an exclusive run is never starved and is never passed by a ticket
+# that queued behind it. An --e2e or --all waiter behind a --gpu ticket that is handed a GPU slot waits for it: no
+# --e2e or --all run ever starts beside a --gpu run.
 #
 # The history log gets a line for every take, release, take-over and give-up: the time, the event, the mode, the slots,
 # the side and pid, the user, the label, the session, the details and the command, separated by tabs. It is renamed to
@@ -303,13 +309,13 @@ take() {
   held+=("$1")
 }
 mine() { local d; for d in ${held[@]+"${held[@]}"}; do [ "$d" = "$1" ] && return 0; done; return 1; }
-# Reads the record in slot $1: r_head its first line, r_class e2e or gpu, r_label its label.
+# Reads the record in slot $1: r_head its first line, r_class e2e or gpu, r_label its label, r_side its side.
 read_rec() {
   local l n=0
-  r_head= r_class= r_label=
+  r_head= r_class= r_label= r_side=
   while IFS= read -r l || [ -n "$l" ]; do
     n=$((n + 1)); [ $n = 1 ] && r_head=$l
-    case $l in 'class e2e') r_class=e2e ;; 'class gpu') r_class=gpu ;; 'label '*) r_label=${l#label } ;; esac
+    case $l in 'class e2e') r_class=e2e ;; 'class gpu') r_class=gpu ;; 'label '*) r_label=${l#label } ;; 'side '*) r_side=${l#side } ;; esac
   done 2> /dev/null < "$1/owner"
 }
 # The holders, for the waiting message.
@@ -372,26 +378,32 @@ old_warned=
 # as every waiter would; takes this waiter's slot when one is left for it. Sets admitted, and front when the waiter is
 # near enough to the head to judge the holders on every poll.
 decide() {
-  local d t F=0 GF=0 e2e_blk= gpu_blk= gpu_held= excl_blk= excl_ahead= all_ahead= ahead=0 gahead=0
+  local d t p F=0 GF=0 e2e_blk= gpu_blk= excl_blk= excl_ahead= all_ahead= ci_ahead= ahead=0 gahead=0
   admitted= front=
   # F: free plain slots. e2e_blk: an --e2e run holds or is handed a plain slot, so no other --e2e may take one.
-  # excl_blk: an --e2e run or a --all holder holds a plain slot, so no --gpu may take a GPU slot.
+  # excl_blk: an --e2e run or an admitted --all run holds a plain slot, so no --gpu may take a GPU slot. A --all waiter
+  # still collecting slots has its ticket in the queue: the walk below meets it in queue order, so a --gpu ticket ahead
+  # of it still gets its GPU slot, and the --all waiter then waits for that run to end.
   for d in "${slot_dirs[@]}"; do
     [ -e "$d" ] || { F=$((F + 1)); continue; }
     mine "$d" && continue
     read_rec "$d"
     [ "$r_class" = e2e ] && { e2e_blk=1; excl_blk=1; }
-    case $r_head in *': (all slots) '*) excl_blk=1 ;; esac
+    case $r_head in
+      *': (all slots) '*)
+        p=${r_head#pid }; p=${p%% *}
+        [ -n "$r_side" ] && compgen -G "$q/[01]-*-$r_side-$p-all" > /dev/null || excl_blk=1 ;;
+    esac
   done
-  # GF: free GPU slots. gpu_held: a --gpu run holds a GPU slot. gpu_blk: one holds or is handed one, so no --e2e may
-  # start. A --all waiter waits for the holders only: an older --gpu waiter does not take a GPU slot beside its held
-  # slots, so it goes after the --all run.
+  # GF: free GPU slots. gpu_blk: a --gpu run holds a GPU slot or is handed one, so no --e2e or --all may start.
   for d in "${gpu_dirs[@]}"; do
-    if [ -e "$d" ]; then mine "$d" || { gpu_blk=1; gpu_held=1; }; else GF=$((GF + 1)); fi
+    if [ -e "$d" ]; then mine "$d" || gpu_blk=1; else GF=$((GF + 1)); fi
   done
   for t in "$q"/*; do
     [ -e "$t" ] || continue
     [ "$t" = "$ticket" ] && break
+    # ci_ahead: a CI ticket waits (CI tickets sort first, so for a class 1 ticket every one of them is ahead).
+    case ${t##*/} in 0-*) ci_ahead=1 ;; esac
     case ${t##*/} in
       *-gpu)
         gahead=$((gahead + 1))
@@ -414,8 +426,9 @@ decide() {
       [ -z "$excl_blk" ] && [ -z "$excl_ahead" ] && [ "$GF" -gt 0 ] || return 0
       for d in "${gpu_dirs[@]}"; do take "$d" && { admitted=1; return 0; }; done ;;
     all)
-      if [ -n "$all_ahead" ]; then
-        # Another --all waits ahead: give back what this one holds, or the two would wait for each other.
+      if [ -n "$all_ahead" ] || { [ "$prio" = 1 ] && [ -n "$ci_ahead" ]; }; then
+        # Another --all waits ahead: give back what this one holds, or the two would wait for each other. Not a CI
+        # job while a CI ticket waits: give back what it holds and take nothing, so the CI jobs run first.
         if [ "${#held[@]}" -gt 0 ]; then
           for d in "${held[@]}"; do rm -rf "$d" 2> /dev/null; done
           held=()
@@ -426,8 +439,9 @@ decide() {
         [ "$F" -gt 0 ] || break
         mine "$d" || ! take "$d" || F=$((F - 1))
       done
-      # The machine alone: also no GPU run left (none starts while this waits or holds).
-      [ "${#held[@]}" = "$slots" ] && [ -z "$gpu_held" ] && admitted=1 ;;
+      # The machine alone: also no GPU run left, and none handed a GPU slot ahead of this ticket (none behind it
+      # starts while this waits or holds).
+      [ "${#held[@]}" = "$slots" ] && [ -z "$gpu_blk" ] && admitted=1 ;;
   esac
   return 0
 }
