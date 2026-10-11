@@ -43,7 +43,7 @@ function dropLayer(): void {
   setProfileLayer(null, [])
   setAvoidAreas([])
   const { bed, profile } = get()
-  const generic = bed.widthMm === GENERIC_BED.widthMm && bed.depthMm === GENERIC_BED.depthMm && bed.heightMm === GENERIC_BED.heightMm
+  const generic = bed.widthMm === GENERIC_BED.widthMm && bed.depthMm === GENERIC_BED.depthMm && bed.heightMm === GENERIC_BED.heightMm && !bed.round
   if (profile || !generic) withoutDirtying(() => set({ profile: null, ...(generic ? {} : { bed: { ...GENERIC_BED } }), overrides: { ...get().overrides } }))
 }
 
@@ -69,7 +69,7 @@ async function rebuild(): Promise<void> {
   const [ox, oy] = areaOrigin(layer.values['printable_area'])
   setAvoidAreas(excludeBoxes(layer.values['bed_exclude_area']).map((r) => ({ ...r, x: r.x - ox, y: r.y - oy })))
   const bed = get().bed
-  const same = bed.widthMm === layer.bed.widthMm && bed.depthMm === layer.bed.depthMm && bed.heightMm === layer.bed.heightMm
+  const same = bed.widthMm === layer.bed.widthMm && bed.depthMm === layer.bed.depthMm && bed.heightMm === layer.bed.heightMm && !bed.round === !layer.bed.round
   // A new overrides object makes every panel that reads the resolved configuration read it again. Following the
   // printer is not an edit of the project, so a plate that was clean stays clean.
   withoutDirtying(() =>

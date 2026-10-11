@@ -97,6 +97,8 @@ export interface Bed {
   widthMm: number
   depthMm: number
   heightMm: number
+  /** A round bed (a delta): a circle of diameter widthMm (= depthMm) inside the box. Absent or false for a rectangle. */
+  round?: boolean
 }
 
 /** What an extra volume of an object does: cut material away, keep support out, force it in, or print the object inside it with other settings. */

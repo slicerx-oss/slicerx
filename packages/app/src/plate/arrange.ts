@@ -9,6 +9,7 @@
 // tower. Pure and deterministic, so it runs without a GPU and is unit tested.
 import type { Bed } from '@slicerx/contracts'
 import { excludedPolygons } from '../viewport/bed-exclude'
+import { bedCircle, boxInBed } from './bed-shape'
 import { bounds, compose, decompose, multiply, type Box, type Mat4 } from './transform'
 
 export interface ArrangeItem {
@@ -187,22 +188,41 @@ function findSpot(want: Want, placed: readonly Placed[], zones: readonly Rect[],
   const sortedY = [...ys].sort((a, b) => a - b)
   const sortedX = [...xs].sort((a, b) => a - b)
   const grown = (r: Rect, by: number): Rect => ({ x: r.x - by, y: r.y - by, w: r.w + 2 * by, h: r.h + 2 * by })
-  for (const y of sortedY) {
-    if (y + h > bed.depthMm - edge + 1e-6) continue
-    for (const x of sortedX) {
-      if (x + w > bed.widthMm - edge + 1e-6) continue
-      const me: Rect = { x, y, w, h }
-      if (placed.some((p) => {
-        const sep = Math.max(sepOf(want.grow, p.grow, gap), apart)
-        return !(x >= p.r.x + p.r.w + sep - 1e-6 || x + w <= p.r.x - sep + 1e-6 || y >= p.r.y + p.r.h + sep - 1e-6 || y + h <= p.r.y - sep + 1e-6)
-      })) continue
-      if (zones.some((z) => !(x >= z.x + z.w + edge - 1e-6 || x + w <= z.x - edge + 1e-6 || y >= z.y + z.h + edge - 1e-6 || y + h <= z.y - edge + 1e-6))) continue
-      if (skirt && zones.length > 0) {
-        const hull = hullOf([...placed.map((p) => grown(p.r, p.reach)), grown(me, want.reach)].flatMap((r): [number, number][] => [[r.x, r.y], [r.x + r.w, r.y], [r.x + r.w, r.y + r.h], [r.x, r.y + r.h]]))
-        if (zones.some((z) => hullHitsRect(hull, z))) continue
-      }
-      return { x, y }
+  const circle = bedCircle(bed)
+  // A round bed has no front left corner to start from: try the spots beside the other objects and the middle of the
+  // bed, nearest the middle first, so a lone object sits in the center and a plate fills outward.
+  let order: [number, number][]
+  if (circle) {
+    const cxs = new Set<number>([...sortedX, circle.cx - w / 2])
+    const cys = new Set<number>([...sortedY, circle.cy - h / 2])
+    for (const p of placed) {
+      const sep = Math.max(sepOf(want.grow, p.grow, gap), apart)
+      cxs.add(p.r.x - sep - w)
+      cys.add(p.r.y - sep - h)
     }
+    const near = (x: number, y: number) => (x + w / 2 - circle.cx) ** 2 + (y + h / 2 - circle.cy) ** 2
+    order = []
+    for (const y of cys) for (const x of cxs) if (boxInBed(bed, x, y, x + w, y + h, edge - 1e-6)) order.push([x, y])
+    order.sort((a, b) => near(a[0], a[1]) - near(b[0], b[1]) || a[1] - b[1] || a[0] - b[0])
+  } else {
+    order = []
+    for (const y of sortedY) {
+      if (y + h > bed.depthMm - edge + 1e-6) continue
+      for (const x of sortedX) if (x + w <= bed.widthMm - edge + 1e-6) order.push([x, y])
+    }
+  }
+  for (const [x, y] of order) {
+    const me: Rect = { x, y, w, h }
+    if (placed.some((p) => {
+      const sep = Math.max(sepOf(want.grow, p.grow, gap), apart)
+      return !(x >= p.r.x + p.r.w + sep - 1e-6 || x + w <= p.r.x - sep + 1e-6 || y >= p.r.y + p.r.h + sep - 1e-6 || y + h <= p.r.y - sep + 1e-6)
+    })) continue
+    if (zones.some((z) => !(x >= z.x + z.w + edge - 1e-6 || x + w <= z.x - edge + 1e-6 || y >= z.y + z.h + edge - 1e-6 || y + h <= z.y - edge + 1e-6))) continue
+    if (skirt && zones.length > 0) {
+      const hull = hullOf([...placed.map((p) => grown(p.r, p.reach)), grown(me, want.reach)].flatMap((r): [number, number][] => [[r.x, r.y], [r.x + r.w, r.y], [r.x + r.w, r.y + r.h], [r.x, r.y + r.h]]))
+      if (zones.some((z) => hullHitsRect(hull, z))) continue
+    }
+    return { x, y }
   }
   return null
 }
@@ -237,7 +257,8 @@ export function arrange(moving: readonly ArrangeItem[], fixed: readonly ArrangeI
   const transforms: Record<string, Mat4> = {}
   const leftOver: string[] = []
   const tooLarge: ArrangeResult['tooLarge'] = []
-  const fitsAlone = (w: number, h: number, edge: number) => w + 2 * edge <= bed.widthMm + 1e-6 && h + 2 * edge <= bed.depthMm + 1e-6
+  const circle = bedCircle(bed)
+  const fitsAlone = (w: number, h: number, edge: number) => (circle ? Math.hypot(w, h) / 2 + edge <= circle.r + 1e-6 : w + 2 * edge <= bed.widthMm + 1e-6 && h + 2 * edge <= bed.depthMm + 1e-6)
   for (const { it, b } of items) {
     const size = printSizeOf(b)
     const { w, h } = size

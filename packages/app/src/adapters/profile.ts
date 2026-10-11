@@ -8,6 +8,8 @@ import type { Bed, EasyGoal, PrintConfig, SettingValue } from '@slicerx/contract
 import { filamentConfig, gcodeStatus, isCompatibleWithPrinter, listFilamentFamilies, listFilamentProfiles, loadVendorFile, printerConfig, printerProfile, processConfig, resolveFilamentPreset, resolvedProfile, type PrinterContext, type VendorFile } from '@slicerx/settings'
 import { profileIdFor } from '../workspaces/prepare/printer-base'
 import { baseConfig, GOALS } from './config'
+import { point } from '../plate/bed-origin'
+import { circleOfArea } from '../plate/bed-shape'
 import { GENERIC_BED } from './generic-bed'
 
 export interface SlotFilament {
@@ -177,13 +179,14 @@ function materialId(type: string): string {
 
 export function bedOf(values: Record<string, SettingValue>): Bed {
   const area = values['printable_area']
-  const pts = Array.isArray(area) ? (area as unknown as [number, number][]).filter((p) => Array.isArray(p)) : []
-  const xs = pts.map((p) => Number(p[0]))
-  const ys = pts.map((p) => Number(p[1]))
+  const pts = Array.isArray(area) ? (area as unknown[]).map(point).filter((p): p is [number, number] => p !== null) : []
+  const xs = pts.map((p) => p[0])
+  const ys = pts.map((p) => p[1])
   const h = Number(first(values['printable_height']))
   const height = Number.isFinite(h) && h > 0 ? h : GENERIC_BED.heightMm
   if (!xs.length) return { widthMm: GENERIC_BED.widthMm, depthMm: GENERIC_BED.depthMm, heightMm: height }
-  return { widthMm: Math.max(...xs) - Math.min(...xs), depthMm: Math.max(...ys) - Math.min(...ys), heightMm: height }
+  const box = { widthMm: Math.max(...xs) - Math.min(...xs), depthMm: Math.max(...ys) - Math.min(...ys), heightMm: height }
+  return circleOfArea(area) ? { ...box, round: true } : box
 }
 
 /** The layer for a printer, tier and slot filaments. Null when the printer matches none of our profiles. */

@@ -4,6 +4,7 @@
 // left corner (the Plate contract). Pure functions, so every edit is unit tested. Rotation is kept
 // as XYZ Euler angles in degrees for the numeric fields, the way Bambu Studio and OrcaSlicer show it.
 import type { Bed, MeshPart } from '@slicerx/contracts'
+import { boxInBed } from './bed-shape'
 
 export type Mat4 = number[]
 export type Vec3 = [number, number, number]
@@ -253,5 +254,5 @@ export function mirror(parts: readonly Pick<MeshPart, 'positions'>[], m: Mat4, a
 
 /** True when the bounds sit inside the bed volume, with a small tolerance. */
 export function fitsBed(b: Box, bed: Bed, tol = 0.01): boolean {
-  return b.min[0] >= -tol && b.min[1] >= -tol && b.min[2] >= -tol && b.max[0] <= bed.widthMm + tol && b.max[1] <= bed.depthMm + tol && b.max[2] <= bed.heightMm + tol
+  return b.min[2] >= -tol && b.max[2] <= bed.heightMm + tol && boxInBed(bed, b.min[0], b.min[1], b.max[0], b.max[1], -tol)
 }

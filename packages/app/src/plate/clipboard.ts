@@ -6,8 +6,9 @@
 // the nearest free spot to where it came from (a group moves as a whole, one bounding box over the other, then
 // finds its spot), so it works across plates. A paste or cut is one undo step: it is one store update.
 // A volume pasted into an object from another object is placed beside the object, as Orca does.
-import type { SettingValue } from '@slicerx/contracts'
+import type { Bed, SettingValue } from '@slicerx/contracts'
 import { get, markStale, selectedIds, set, toast, type PlateEntry, type PlateVolumeEntry } from '../state/store'
+import { bedCircle, boxInBed } from './bed-shape'
 import { arrange, currentMargins, MARGIN_SAFETY_MM, printSizeOf } from './arrange'
 import { sourceId } from './object-settings'
 import { bounds, compose, identity, type Box, type Mat4 } from './transform'
@@ -82,20 +83,21 @@ function rectOf(b: Box): { x0: number; y0: number; x1: number; y1: number } {
  * The shift (x, y) from where a group sits now to the nearest spot where it fits on the bed clear of the others,
  * searching outward in rings. Null when nothing fits.
  */
-export function nearestFreeShift(group: Box, others: readonly Box[], bed: { widthMm: number; depthMm: number }, gapMm = 2, stepMm = 2, edgeMm = 0): [number, number] | null {
+export function nearestFreeShift(group: Box, others: readonly Box[], bed: Pick<Bed, 'widthMm' | 'depthMm' | 'round'>, gapMm = 2, stepMm = 2, edgeMm = 0): [number, number] | null {
   const g = rectOf(group)
   const w = g.x1 - g.x0
   const h = g.y1 - g.y0
-  if (w + 2 * edgeMm > bed.widthMm || h + 2 * edgeMm > bed.depthMm) return null
+  const circle = bedCircle(bed)
+  if (circle ? Math.hypot(w, h) / 2 > circle.r - edgeMm : w + 2 * edgeMm > bed.widthMm || h + 2 * edgeMm > bed.depthMm) return null
   const fixed = others.map(rectOf)
   const free = (dx: number, dy: number) => {
     const x0 = g.x0 + dx
     const y0 = g.y0 + dy
-    if (x0 < edgeMm || y0 < edgeMm || x0 + w > bed.widthMm - edgeMm || y0 + h > bed.depthMm - edgeMm) return false
+    if (!boxInBed(bed, x0, y0, x0 + w, y0 + h, edgeMm)) return false
     return fixed.every((o) => x0 >= o.x1 + gapMm || x0 + w <= o.x0 - gapMm || y0 >= o.y1 + gapMm || y0 + h <= o.y0 - gapMm)
   }
   // A group that starts off the bed begins from the bed's center.
-  const offBed = g.x0 < edgeMm || g.y0 < edgeMm || g.x1 > bed.widthMm - edgeMm || g.y1 > bed.depthMm - edgeMm
+  const offBed = !boxInBed(bed, g.x0, g.y0, g.x1, g.y1, edgeMm)
   const base: [number, number] = offBed ? [bed.widthMm / 2 - (g.x0 + w / 2), bed.depthMm / 2 - (g.y0 + h / 2)] : [0, 0]
   const maxRing = Math.ceil(Math.max(bed.widthMm, bed.depthMm) / stepMm)
   for (let ring = 0; ring <= maxRing; ring++) {

@@ -66,7 +66,7 @@ export function PlateThumb({ objects, bed, size = 44, label }: { objects: readon
   const aspect = d / w
   return (
     <svg className="plate-thumb" width={size} height={Math.round(size * aspect)} viewBox={`0 0 ${w} ${d}`} role={label ? 'img' : undefined} aria-label={label} aria-hidden={label ? undefined : true}>
-      <rect x={0} y={0} width={w} height={d} rx={Math.min(w, d) * 0.04} className="plate-thumb-bed" />
+      {bed.round ? <circle cx={w / 2} cy={d / 2} r={Math.min(w, d) / 2} className="plate-thumb-bed" /> : <rect x={0} y={0} width={w} height={d} rx={Math.min(w, d) * 0.04} className="plate-thumb-bed" />}
       {/* Bed y runs up, SVG y down. */}
       <g transform={`translate(0 ${d}) scale(1 -1)`}>
         {objects.map((e) => {
