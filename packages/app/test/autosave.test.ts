@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { AUTOSAVE_ID, MAX_RECENT, findRecovery, listRecent, memorySnapshots, projectSaved, recordRecent, setSnapshotStore, startAutosave, autosaveNow, snapshotStore } from '../src/project/autosave'
+import { AUTOSAVE_ID, MAX_RECENT, SNAPSHOT_VERSION, findRecovery, listRecent, memorySnapshots, projectSaved, recordRecent, setSnapshotStore, startAutosave, autosaveNow, snapshotStore } from '../src/project/autosave'
 import { markClean, startDirtyTracking } from '../src/project/unsaved'
 import { get, set } from '../src/state/store'
 
@@ -103,6 +103,22 @@ describe('autosave and recent projects', () => {
     expect(get().slice.status).toBe('running')
     stop()
     set({ slice: { status: 'idle' } })
+  })
+
+  it('drops an old autosave of the untouched example plate instead of offering it back', async () => {
+    // 0.2.3 autosaved the example plate at every start, so every upgrader who never saved had one.
+    await snapshotStore().put({ id: AUTOSAVE_ID, name: 'Layered_X.sx3mf', savedAt: 1, objects: 1, data: new Uint8Array([1]) })
+    expect(await findRecovery()).toBeNull()
+    expect(await snapshotStore().list()).toEqual([])
+  })
+
+  it('still offers real work back: a stamped autosave of the example, and old ones of anything else', async () => {
+    await snapshotStore().put({ id: AUTOSAVE_ID, name: 'Layered_X.sx3mf', savedAt: 1, objects: 1, data: new Uint8Array([1]), v: SNAPSHOT_VERSION })
+    expect((await findRecovery())?.name).toBe('Layered_X.sx3mf')
+    await snapshotStore().put({ id: AUTOSAVE_ID, name: 'Layered_X.sx3mf', savedAt: 1, objects: 2, data: new Uint8Array([1]) })
+    expect((await findRecovery())?.objects).toBe(2)
+    await snapshotStore().put({ id: AUTOSAVE_ID, name: 'bracket.sx3mf', savedAt: 1, objects: 1, data: new Uint8Array([1]) })
+    expect((await findRecovery())?.name).toBe('bracket.sx3mf')
   })
 
   it('writes nothing for a project with no change since it was opened or saved', async () => {
