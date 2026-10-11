@@ -11,6 +11,18 @@ import { loadEnv, type UserConfig } from 'vite'
 
 const root = resolve(import.meta.dirname, '../..')
 
+/** Font files a build may hold. */
+const FONT_FILE = /\.(woff2?|ttf|otf)$/i
+
+/**
+ * Vite's asset inlining, minus fonts: a font always ships as a file. Vite inlines any asset under 4 KB as a data URL,
+ * which catches the smallest subsets of the bundled variable fonts, and the desktop shell's CSP (font-src 'self') refuses
+ * a data: font, as WebKitGTK does on Linux. Every other asset keeps Vite's default (`undefined`).
+ */
+export function inlineAsset(file: string): boolean | undefined {
+  return FONT_FILE.test(file) ? false : undefined
+}
+
 /**
  * `base` is the public path: './' for the desktop shell, '/studio/' for the hosted web app.
  * Base config for an app entry in `appDir` (its package.json gives the version). The commit comes from
@@ -41,7 +53,7 @@ export async function sharedConfig(appDir: string, port: number, editionFile?: s
       ...viteDefines(edition, env),
     },
     server: { port, strictPort: false, fs: { allow: [root] } },
-    build: { target: 'es2023', sourcemap: false, assetsDir: 'static', manifest: true },
+    build: { target: 'es2023', sourcemap: false, assetsDir: 'static', manifest: true, assetsInlineLimit: inlineAsset },
     worker: { format: 'es' },
   }
 }
