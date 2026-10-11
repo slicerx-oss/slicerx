@@ -36,6 +36,15 @@ describe('setup flow', () => {
     expect(outcome(s, NOW, null)).toMatchObject({ printerId: null, firstRun: { completedAt: NOW, printerId: null } })
   })
 
+  it('Skip, use defaults stops the launch printer ask, unless a printer is already set up', () => {
+    const s = run(initialFlow('theme', { id: 'slicerx' }), { type: 'skip-all' })
+    expect(outcome(s, NOW, null).noPrinter).toBe(true)
+    expect(outcome(s, NOW, { completedAt: NOW, step: 'done', look: { id: 'slicerx' }, printerId: 'bay-1' }).noPrinter).toBeUndefined()
+    // Finishing the steps without a printer keeps asking: only an explicit no-printer answer stops it.
+    const done = run(initialFlow('printer', { id: 'slicerx' }), { type: 'skip' })
+    expect(outcome(done, NOW, null).noPrinter).toBeUndefined()
+  })
+
   it('Back from the slicer screen restores the look it opened with and keeps the printer', () => {
     let s = run(initialFlow('printer', { id: 'slicerx' }), { type: 'printer-saved', printer })
     s = run(s, { type: 'pick-look', look: { id: 'prusaslicer' } })
