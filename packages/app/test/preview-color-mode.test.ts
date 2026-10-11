@@ -76,6 +76,18 @@ describe('the legend', () => {
     expect((rows[0]!.querySelector('.swatch') as HTMLElement).style.getPropertyValue('--c')).toBe('#ff0000')
   })
 
+  it('reads each slot\'s filament as Filament use does, so the two agree', () => {
+    const before = get().slice
+    set({ plate: [entry([1, 2], ['#ff0000', '#00ff00'])] })
+    act(() => land(preview([0, 1, 1])))
+    act(() => set({ slice: { status: 'done', stale: false, result: { stats: { filamentMm: [370, 21870] } } } as never }))
+    render(createElement(Legend))
+    const rows = screen.getAllByTestId('legend-slot')
+    expect(rows[0]!.textContent).toContain('0.37 m')
+    expect(rows[1]!.textContent).toContain('21.87 m')
+    set({ slice: before })
+  })
+
   it('picks the colors from its labeled Color by menu', () => {
     act(() => land(preview([0])))
     render(createElement(Legend))
