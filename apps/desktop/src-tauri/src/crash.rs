@@ -400,7 +400,7 @@ mod tests {
         assert_eq!(ours.source, "panic");
         assert!(ours.stack.contains("on thread 'sx-hook-test'"), "{}", ours.stack);
         assert!(ours.stack.contains("crash.rs"), "{}", ours.stack);
-        remove_reports(&[dir()], &[ours.file.clone()]);
+        remove_reports(&[dir()], std::slice::from_ref(&ours.file));
     }
 
     #[test]
