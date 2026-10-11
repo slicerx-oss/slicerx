@@ -731,7 +731,10 @@ async fn dispatch(
     {
         return Err(RpcError::new(
             "forbidden",
-            "Home Assistant service calls switch power; a person makes them in the SlicerX app",
+            format!(
+                "Home Assistant service calls switch power; a person makes them in the {} app",
+                crate::app_name()
+            ),
         ));
     }
     // Agents queue nothing and receive no deliveries, so these lists hold nothing of theirs.
@@ -741,13 +744,19 @@ async fn dispatch(
     if !roles::allowed(conn.role, method) {
         return Err(RpcError::new(
             "forbidden",
-            format!("{method} is for the SlicerX app; this connection paired with the agent code"),
+            format!(
+                "{method} is for the {} app; this connection paired with the agent code",
+                crate::app_name()
+            ),
         ));
     }
     if conn.partner.is_some() && !roles::partner_allowed(method) {
         return Err(RpcError::new(
             "forbidden",
-            format!("{method} is not open to partner apps; a person does it in the SlicerX app"),
+            format!(
+                "{method} is not open to partner apps; a person does it in the {} app",
+                crate::app_name()
+            ),
         ));
     }
     match method {
@@ -1507,7 +1516,10 @@ async fn approval_call(b: &Arc<Bridge>, conn: &Conn, method: &str, p: &Value) ->
             {
                 return Err(RpcError::new(
                     "forbidden",
-                    "a person answers this card in the SlicerX app or on a paired phone",
+                    format!(
+                        "a person answers this card in the {} app or on a paired phone",
+                        crate::app_name()
+                    ),
                 ));
             }
             let out = hub_rpc::grant(b, broker, p).await?;

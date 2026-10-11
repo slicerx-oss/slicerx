@@ -119,7 +119,10 @@ impl Limits {
         match change {
             Adjustment::Fan { fan, percent } => {
                 if !self.fans.contains(&fan) {
-                    return out("this printer's fan cannot be set from SlicerX".into());
+                    return out(format!(
+                        "this printer's fan cannot be set from {}",
+                        crate::app_name()
+                    ));
                 }
                 if percent > 100 {
                     return out("fan speed is 0 to 100 %".into());

@@ -4,8 +4,11 @@
 // left is the Made possible by SlicerX credit; the .sx3mf and .sxlock formats keep their names.
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import type { Host } from '@slicerx/contracts'
+import { LOOK_OPTIONS, productName, type Host } from '@slicerx/contracts'
 import { parseEditionConfig, POWERED_BY, type EditionConfig } from '@slicerx/edition-config'
+import { checkHub } from '../../connect/link-client/src/index'
+import { BRANDS, CONNECTION_METHODS, PRINTER_MODELS } from '@slicerx/printer-catalog'
+import { insteadText, reasonText, reportText, SLICERX_KEEPS, sourceText, type ReportItem } from '@slicerx/settings'
 import { createElement } from 'react'
 import { flushSync } from 'react-dom'
 import { createRoot } from 'react-dom/client'
@@ -16,6 +19,7 @@ import { builtinCommands } from '../src/commands/builtin'
 import { menuModel } from '../src/commands/menu'
 import { appName, currentEdition, setCurrentEdition } from '../src/edition'
 import { TOPICS } from '../src/first-run/help-topics'
+import { engineErrorText } from '../src/lib/engine-errors'
 import { helpLinks } from '../src/lib/links'
 import { TIPS } from '../src/lib/tips'
 import { AGENTS, serverApp } from '../src/pilot-connect/agents'
@@ -124,6 +128,34 @@ describe('a white-label edition', () => {
     expect(strings).toContain('Quit Acme Slicer')
     expect(serverApp()).toEqual({ id: 'acmeslicer', name: 'Acme Slicer', author: { name: 'Acme Printers Inc.', url: 'https://slicer.acme.example' } })
     expect(helpLinks().docs).toBe('https://slicer.acme.example/docs')
+  })
+
+  it('names itself in the printer catalog, preset import reports, hub messages and the default look', async () => {
+    setCurrentEdition(acme)
+    const strings = [
+      JSON.stringify([BRANDS, CONNECTION_METHODS, PRINTER_MODELS]),
+      reasonText('unsupported'),
+      reasonText('invalid'),
+      sourceText({ source: 'default' } as Parameters<typeof sourceText>[0]),
+      insteadText({ reason: 'unsupported' } as ReportItem),
+      reportText([{ name: 'Old PLA', section: 'filament', parent: { name: 'Bambu PLA Basic', found: false }, items: [], defaulted: 0 }]),
+      ...Object.values(SLICERX_KEEPS),
+      LOOK_OPTIONS.slicerx.label,
+      engineErrorText('a.3mf: refused extension 0 0 http://example.com/ext'),
+      await checkHub(() => Promise.reject(new Error('no hello')), 7311).then(
+        () => '',
+        (e: Error) => e.message,
+      ),
+    ].join('\n')
+    expect(productName()).toBe('Acme Slicer')
+    expect(leftover(strings)).toEqual([])
+    expect(strings).toContain('Acme Slicer import report')
+    expect(strings).toContain('did not prove it is the printer hub for Acme Slicer')
+    expect(LOOK_OPTIONS.slicerx.label).toBe('Acme Slicer')
+    expect(JSON.stringify(CONNECTION_METHODS)).toContain('Acme Slicer')
+    // Back to SlicerX, the catalog says SlicerX again.
+    setCurrentEdition(before)
+    expect(JSON.stringify(CONNECTION_METHODS)).not.toContain('Acme Slicer')
   })
 
   it('has bug reports off without a link or a backend of its own', () => {

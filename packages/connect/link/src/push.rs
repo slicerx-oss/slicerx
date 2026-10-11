@@ -83,20 +83,24 @@ impl PushKind {
     }
 
     /// Title and body. Fixed text: nothing that names a file, a model or a printer.
-    pub(crate) fn text(self) -> (&'static str, &'static str) {
+    pub(crate) fn text(self) -> (&'static str, String) {
+        let app = crate::app_name();
         match self {
-            PushKind::PrintDone => ("Print finished", "A printer is done. Open SlicerX to see which."),
+            PushKind::PrintDone => (
+                "Print finished",
+                format!("A printer is done. Open {app} to see which."),
+            ),
             PushKind::PrintFailed => (
                 "Print stopped",
-                "A print did not finish. Open SlicerX for details.",
+                format!("A print did not finish. Open {app} for details."),
             ),
             PushKind::Attention => (
                 "A printer needs you",
-                "Open SlicerX to see what it is waiting for.",
+                format!("Open {app} to see what it is waiting for."),
             ),
             PushKind::Approval => (
                 "Approval waiting",
-                "Something is waiting for your answer in SlicerX.",
+                format!("Something is waiting for your answer in {app}."),
             ),
         }
     }

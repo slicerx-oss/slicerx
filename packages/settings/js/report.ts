@@ -4,6 +4,7 @@
 // was left out and the value SlicerX uses instead, with where that value comes from. Settings that mapped cleanly are
 // not listed. `importLayers` reads a preset and the presets it inherits from into one config and the list of what
 // was dropped; `buildReport` turns that into the report. src/report.rs mirrors both.
+import { productName } from '@slicerx/contracts/brand'
 import type { PrintConfig, SettingDef, SettingSection, SettingValue } from '@slicerx/contracts/settings'
 import nearestJson from '../import-nearest.json'
 import { formatValue } from './diff'
@@ -282,7 +283,7 @@ const KIND_WORD: Record<SettingSection, string> = { process: 'process', filament
 
 /** Why, in words. */
 export function reasonText(r: DropReason): string {
-  return r === 'unsupported' ? 'SlicerX has no such setting' : r === 'invalid' ? 'SlicerX cannot use this value' : 'Obsolete setting'
+  return r === 'unsupported' ? `${productName()} has no such setting` : r === 'invalid' ? `${productName()} cannot use this value` : 'Obsolete setting'
 }
 
 /** Where the value comes from, in words. */
@@ -290,14 +291,14 @@ export function sourceText(i: Instead): string {
   if (i.source === 'preset') return 'this preset'
   if (i.source === 'profile') return `the ${i.from ?? 'parent'} profile`
   if (i.source === 'printer') return `the ${i.from ?? 'printer'} printer profile`
-  return 'the SlicerX default'
+  return `the ${productName()} default`
 }
 
 /** What SlicerX does instead, in words: "Uses Lateral lattice, the nearest value." */
 export function insteadText(item: ReportItem): string {
   const i = item.instead
-  if (!i) return 'Nothing in SlicerX does this.'
-  if (item.reason === 'invalid') return i.nearest ? `Uses ${i.value}, the nearest value SlicerX has.` : `Uses ${i.value}, from ${sourceText(i)}.`
+  if (!i) return `Nothing in ${productName()} does this.`
+  if (item.reason === 'invalid') return i.nearest ? `Uses ${i.value}, the nearest value ${productName()} has.` : `Uses ${i.value}, from ${sourceText(i)}.`
   return `${i.nearest ? 'Nearest equivalent is' : 'Uses'} ${i.label}: ${i.value}, from ${sourceText(i)}.`
 }
 
@@ -311,12 +312,12 @@ export function defaultedText(r: ImportReport): string {
 export function parentText(r: ImportReport): string {
   if (!r.parent) return ''
   if (r.parent.bundled) return `Settings it does not change come from ${r.parent.name}, imported with it.`
-  return r.parent.found ? `Settings it does not change come from SlicerX's copy of ${r.parent.name}.` : `It inherits from ${r.parent.name}, which SlicerX does not have.`
+  return r.parent.found ? `Settings it does not change come from ${productName()}'s copy of ${r.parent.name}.` : `It inherits from ${r.parent.name}, which ${productName()} does not have.`
 }
 
 /** The reports as plain text, for saving or pasting. Keys appear only when `keys` is set (developer mode). */
 export function reportText(reports: readonly ImportReport[], opts: { keys?: boolean; source?: string } = {}): string {
-  const out: string[] = ['SlicerX import report' + (opts.source ? `: ${opts.source}` : ''), '']
+  const out: string[] = [`${productName()} import report` + (opts.source ? `: ${opts.source}` : ''), '']
   for (const r of reports) {
     out.push(`${r.name} (${KIND_WORD[r.section]} preset)`)
     const p = parentText(r)

@@ -75,7 +75,8 @@ fn print_code(args: &[String]) {
                 .and_then(sx_link::hub_fingerprint)
             {
                 eprintln!(
-                    "Bridge fingerprint: {f}\nBefore you trust a bridge again in SlicerX, check that the app shows this same fingerprint."
+                    "Bridge fingerprint: {f}\nBefore you trust a bridge again in {}, check that the app shows this same fingerprint.",
+                    sx_link::app_name()
                 );
             }
         }
@@ -253,14 +254,20 @@ async fn run(args: Vec<String>) {
         None => println!("state in memory only (--no-state)"),
     }
     if let Some(f) = sx_link::hub_fingerprint(link.hub_key()) {
-        println!("bridge fingerprint: {f} (SlicerX shows the same one for this bridge)");
+        println!(
+            "bridge fingerprint: {f} ({} shows the same one for this bridge)",
+            sx_link::app_name()
+        );
     }
     if headless {
         println!("pairing code: run `sx-link code` on this machine to see it");
         println!("agent code (MCP server, scripts): run `sx-link code --agent`");
     } else {
         println!("pairing code: {}", link.pairing_code());
-        println!("Enter the code in SlicerX when it asks. Press Ctrl+C to stop.");
+        println!(
+            "Enter the code in {} when it asks. Press Ctrl+C to stop.",
+            sx_link::app_name()
+        );
         // The agent code is not printed: tools read it from the state directory.
         println!("agent code (MCP server, scripts): run `sx-link code --agent`");
     }
