@@ -2,9 +2,10 @@
 // Copyright (C) 2026 The SlicerX contributors
 //! sx: slice from the command line and run the slicing benchmark.
 //!
-//! sx slice <model> [--plate N] [--config <json>] [-o out.gcode | -o -] [--preview out.sxpv]
+//! sx slice <model> [--plate N] [--config <json>] [--no-project-settings] [-o out.gcode | -o -] [--preview out.sxpv]
+//!          [--strict]
 //! sx time <file.gcode> --config <json> [--trace [--at <line prefix>]]
-//! sx slice --request <req.json | -> [--out-dir <dir>] [--allow-collisions]
+//! sx slice --request <req.json | -> [--out-dir <dir>] [--allow-collisions] [--strict]
 //! sx schema [request | result]
 //! sx metadata <project.3mf>
 //! sx bench --config <bench.json> [--runs 15] [--warmup 3] [--threads N]
@@ -12,7 +13,13 @@
 //!          [--write-baseline] [--json]
 //!
 //! `sx slice <model>` writes the G-code to `-o`, or to stdout without it; the
-//! one-line summary and warnings go to stderr.
+//! one-line summary and warnings go to stderr. A Bambu Studio or `OrcaSlicer`
+//! project slices with its own settings (`Metadata/project_settings.config`,
+//! and each object's own), except our engine choices the project did not
+//! change (`packages/settings/engine-choices.json`); `--config` goes over them,
+//! and `--no-project-settings` leaves them out. What the settings set that the
+//! engine does not use is listed on stderr, and `--strict` refuses the slice
+//! over it (exit code 3).
 //!
 //! `sx slice --request` reads a `SliceRequest` JSON (`sx schema request`) from
 //! a file or stdin and prints a result JSON (`sx schema result`) with
@@ -57,7 +64,7 @@ fn main() -> ExitCode {
         Some("time") => cmd_time(&args[1..]),
         _ => {
             eprintln!(
-                "usage: sx metadata <project.3mf>\n       sx slice <model> [--plate N] [--config <json>] [-o out.gcode] [--preview out.sxpv] [--strict]\n       sx slice --request <req.json | -> [--out-dir <dir>] [--allow-collisions] [--strict]\n       sx schema [request | result]\n       sx bench --config <bench.json> [--runs N] [--warmup N] [--threads N] [--append file] [--change text] [--ab <baseline sx>] [--write-baseline] [--json]\n       sx time <file.gcode> --config <json> [--trace [--at <line prefix>]]"
+                "usage: sx metadata <project.3mf>\n       sx slice <model> [--plate N] [--config <json>] [--no-project-settings] [-o out.gcode] [--preview out.sxpv] [--strict]\n       sx slice --request <req.json | -> [--out-dir <dir>] [--allow-collisions] [--strict]\n       sx schema [request | result]\n       sx bench --config <bench.json> [--runs N] [--warmup N] [--threads N] [--append file] [--change text] [--ab <baseline sx>] [--write-baseline] [--json]\n       sx time <file.gcode> --config <json> [--trace [--at <line prefix>]]"
             );
             return ExitCode::from(2);
         }
@@ -515,11 +522,10 @@ fn cmd_time(args: &[String]) -> Res<ExitCode> {
     Ok(ExitCode::SUCCESS)
 }
 
-/// Reads a config file over `config` a key at a time, and what it set that the engine does not use.
-fn read_config_file(config: &mut PrintConfig, path: &str) -> Res<sx_core::api::ConfigReport> {
-    let value: Value = serde_json::from_slice(&std::fs::read(path)?)?;
+/// Reads `value` over `config` a key at a time, and what it set that the engine does not use.
+fn read_config_value(config: &mut PrintConfig, value: &Value) -> Res<sx_core::api::ConfigReport> {
     let mut report = sx_core::api::ConfigReport {
-        invalid: config.apply_value_lenient(&value)?,
+        invalid: config.apply_value_lenient(value)?,
         ..Default::default()
     };
     if let Some(map) = value.as_object() {
@@ -534,34 +540,44 @@ fn read_config_file(config: &mut PrintConfig, path: &str) -> Res<sx_core::api::C
     Ok(report)
 }
 
+/// The settings `sx slice <model>` prints with, lowest first: the engine's defaults, a project's own settings (our
+/// engine choices kept where it did not change them), the object's own settings, then `--config`; and what they set
+/// that the engine does not use.
+fn layered_config(
+    args: &[String],
+    model: &str,
+    bytes: &[u8],
+    mesh: &Mesh,
+) -> Res<(PrintConfig, sx_core::api::ConfigReport)> {
+    let mut config = PrintConfig::default();
+    let mut report = sx_core::api::ConfigReport::default();
+    let is_3mf = Path::new(model)
+        .extension()
+        .is_some_and(|e| e.eq_ignore_ascii_case("3mf"));
+    if is_3mf
+        && !has(args, "--no-project-settings")
+        && let Some(project) = sx_core::api::project_config(bytes, model)?
+    {
+        report.merge(read_config_value(&mut config, &Value::Object(project.settings))?);
+        report.not_applied.extend(project.dropped);
+        report.not_applied.sort();
+        report.kept = project.kept;
+    }
+    if mesh.settings.as_object().is_some_and(|m| !m.is_empty()) {
+        report.merge(read_config_value(&mut config, &mesh.settings)?);
+    }
+    if let Some(p) = flag(args, "--config") {
+        let value: Value = serde_json::from_slice(&std::fs::read(p)?)?;
+        report.merge(read_config_value(&mut config, &value)?);
+    }
+    Ok((config, report))
+}
+
 fn cmd_slice(args: &[String]) -> Res<ExitCode> {
     let model = args
         .first()
         .filter(|a| !a.starts_with('-'))
         .ok_or("missing model path")?;
-    let mut config = PrintConfig::default();
-    if let Some(p) = flag(args, "--config") {
-        let report = read_config_file(&mut config, p)?;
-        if !report.is_empty() {
-            print_config_report(&report);
-            if has(args, "--strict") {
-                eprintln!("sx slice: --strict: {}", report.lines().join("; "));
-                return Ok(ExitCode::from(EXIT_INPUT));
-            }
-        }
-    }
-    #[cfg(feature = "stock-gcode")]
-    {
-        config.trusted_gcode_keys = stock::stock_keys(&config.raw);
-    }
-    // The same limits every entry point applies: settings past the nozzle and machine limits are lowered.
-    let issues = sx_core::preflight::clamp_config(&mut config, &sx_core::gcode_lint::Limits::default());
-    if sx_core::preflight::blocks(&issues) {
-        return Err(sx_core::preflight::blocking_text(&issues).into());
-    }
-    for i in &issues {
-        eprintln!("warning: {}", i.message);
-    }
     let bytes = std::fs::read(model)?;
     let mesh = match flag(args, "--plate") {
         Some(n) => {
@@ -574,17 +590,25 @@ fn cmd_slice(args: &[String]) -> Res<ExitCode> {
         }
         None => Mesh::load(&bytes, model)?,
     };
-    // The object's own settings from a project file go over the config, as a request applies them.
-    if mesh.settings.as_object().is_some_and(|m| !m.is_empty()) {
-        config.apply_value(&mesh.settings)?;
-        config.check()?;
-        let issues = sx_core::preflight::clamp_config(&mut config, &sx_core::gcode_lint::Limits::default());
-        if sx_core::preflight::blocks(&issues) {
-            return Err(sx_core::preflight::blocking_text(&issues).into());
-        }
-        for i in &issues {
-            eprintln!("warning: {}", i.message);
-        }
+    let (mut config, report) = layered_config(args, model, &bytes, &mesh)?;
+    if !report.is_empty() || !report.kept.is_empty() {
+        print_config_report(&report);
+    }
+    if has(args, "--strict") && !report.is_empty() {
+        eprintln!("sx slice: --strict: {}", report.lines().join("; "));
+        return Ok(ExitCode::from(EXIT_INPUT));
+    }
+    #[cfg(feature = "stock-gcode")]
+    {
+        config.trusted_gcode_keys = stock::stock_keys(&config.raw);
+    }
+    // The same limits every entry point applies: settings past the nozzle and machine limits are lowered.
+    let issues = sx_core::preflight::clamp_config(&mut config, &sx_core::gcode_lint::Limits::default());
+    if sx_core::preflight::blocks(&issues) {
+        return Err(sx_core::preflight::blocking_text(&issues).into());
+    }
+    for i in &issues {
+        eprintln!("warning: {}", i.message);
     }
     // The mesh goes to the middle of the profile's bed, as the desktop slicers do.
     let plate = Plate::single_on(mesh, config.bed_rect(), config.printable_height);

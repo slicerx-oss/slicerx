@@ -75,7 +75,9 @@ sx slice packages/core/bench/models/x-mark.stl --config config.json -o x-mark.gc
 ```
 
 - `x-mark.stl`: the model, here the SlicerX reference model: binary or ASCII STL, or a Bambu Lab or OrcaSlicer 3MF project (`--plate N` picks the plate). OBJ is planned.
-- `--config config.json`: a JSON object with OrcaSlicer setting names, such as `{"layer_height": 0.16, "wall_loops": 3, "sparse_infill_density": 20, "gcode_flavor": "klipper"}`. Missing keys keep the core's defaults, and keys the core does not implement yet are ignored. Without `--config` the defaults apply.
+- `--config config.json`: a JSON object with OrcaSlicer setting names, such as `{"layer_height": 0.16, "wall_loops": 3, "sparse_infill_density": 20, "gcode_flavor": "klipper"}`. Missing keys keep the core's defaults (or a project's own settings), and keys the core does not implement are listed on stderr. A value the core cannot read keeps that setting's default and is named.
+- A 3MF project slices with its own settings, with SlicerX's engine choices kept where the project did not change them; `--config` goes over them, and `--no-project-settings` slices with the defaults instead.
+- `--strict`: refuse the slice (exit code 3) when the settings carry a key the core does not use or a value it cannot read.
 - `-o x-mark.gcode`: where to write the G-code. Without it, nothing is written.
 - `--preview x-mark.sxpv`: the SXPV preview buffer, for the viewport.
 

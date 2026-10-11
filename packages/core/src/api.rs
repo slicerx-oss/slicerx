@@ -375,6 +375,118 @@ pub struct ConfigReport {
     /// Values the engine could not use, in the order found; those settings kept their defaults.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub invalid: Vec<crate::config::ConfigIssue>,
+    /// Our engine choices a project's settings did not change, kept over what the project inherited.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub kept: Vec<KeptChoice>,
+}
+/// One of our engine choices a project kept, and the note that says so.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct KeptChoice {
+    pub key: String,
+    pub note: String,
+}
+
+/// A project's own print settings (`Metadata/project_settings.config`), as a config: the file's values, keys a file
+/// may never set (scripts, credentials) left out, and our engine choices
+/// (`packages/settings/engine-choices.json`) kept where the project did not change them, as the app and the MCP
+/// server open a project.
+#[derive(Debug, Clone, Default)]
+pub struct ProjectConfig {
+    pub settings: serde_json::Map<String, serde_json::Value>,
+    /// The engine choices kept over a different value the project inherited.
+    pub kept: Vec<KeptChoice>,
+    /// Keys left out because a file may never set them.
+    pub dropped: Vec<String>,
+}
+
+/// Our engine choices: key, the value we print with, and the note.
+fn engine_choices() -> &'static [(String, serde_json::Value, String)] {
+    use crate::par::Init as _;
+    static CHOICES: std::sync::OnceLock<Vec<(String, serde_json::Value, String)>> =
+        std::sync::OnceLock::new();
+    CHOICES.once(|| {
+        let parsed: serde_json::Value =
+            serde_json::from_str(include_str!(concat!(env!("OUT_DIR"), "/engine-choices.json")))
+                .unwrap_or_default();
+        parsed
+            .get("keeps")
+            .and_then(serde_json::Value::as_object)
+            .map(|m| {
+                m.iter()
+                    .map(|(k, v)| {
+                        (
+                            k.clone(),
+                            v.get("value").cloned().unwrap_or_default(),
+                            v.get("note")
+                                .and_then(serde_json::Value::as_str)
+                                .unwrap_or_default()
+                                .to_owned(),
+                        )
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
+    })
+}
+
+/// The same setting value written either way: `true` and `"1"`, `"aegis"` and `["aegis"]`.
+fn same_value(a: &serde_json::Value, b: &serde_json::Value) -> bool {
+    fn text(v: &serde_json::Value) -> Option<String> {
+        match v {
+            serde_json::Value::Array(a) if a.len() == 1 => a.first().and_then(text),
+            serde_json::Value::Bool(b) => Some(if *b { "1" } else { "0" }.to_owned()),
+            serde_json::Value::String(s) => Some(match s.as_str() {
+                "true" => "1".to_owned(),
+                "false" => "0".to_owned(),
+                other => other.to_owned(),
+            }),
+            serde_json::Value::Number(n) => Some(n.to_string()),
+            _ => None,
+        }
+    }
+    a == b || text(a).is_some_and(|t| text(b).as_ref() == Some(&t))
+}
+
+/// A project file's own print settings as a config, or `None` when the file has none (a plain 3MF).
+pub fn project_config(bytes: &[u8], name: &str) -> Result<Option<ProjectConfig>> {
+    let meta = crate::threemf::metadata(bytes, name)?;
+    let Some(serde_json::Value::Object(mut settings)) = meta.project_settings else {
+        return Ok(None);
+    };
+    // The keys the project lists as changed from its presets; when it does not say, every value is its own.
+    let changed: Option<std::collections::HashSet<String>> = settings
+        .get("different_settings_to_system")
+        .and_then(serde_json::Value::as_array)
+        .map(|entries| {
+            entries
+                .iter()
+                .filter_map(serde_json::Value::as_str)
+                .flat_map(|e| e.split(';'))
+                .map(str::trim)
+                .filter(|k| !k.is_empty())
+                .map(str::to_owned)
+                .collect()
+        });
+    let mut kept = Vec::new();
+    if let Some(changed) = changed {
+        for (key, value, note) in engine_choices() {
+            if changed.contains(key) {
+                continue;
+            }
+            if settings.get(key).is_some_and(|v| !same_value(v, value)) {
+                kept.push(KeptChoice {
+                    key: key.clone(),
+                    note: note.clone(),
+                });
+            }
+            settings.insert(key.clone(), value.clone());
+        }
+    }
+    Ok(Some(ProjectConfig {
+        settings,
+        kept,
+        dropped: meta.dropped_keys,
+    }))
 }
 
 /// How many keys a warning names before it counts the rest.
@@ -394,8 +506,21 @@ fn names_capped(names: &[String]) -> String {
 }
 
 impl ConfigReport {
+    /// Nothing went unused (kept engine choices are not counted: they are what we print with).
     pub fn is_empty(&self) -> bool {
         self.not_applied.is_empty() && self.invalid.is_empty()
+    }
+
+    /// Adds `other`'s keys, each key once.
+    pub fn merge(&mut self, other: Self) {
+        for k in other.not_applied {
+            if !self.not_applied.contains(&k) {
+                self.not_applied.push(k);
+            }
+        }
+        self.not_applied.sort();
+        self.invalid.extend(other.invalid);
+        self.kept.extend(other.kept);
     }
 
     /// One line per kind, the first [`REPORT_NAMES`] keys named and the rest counted.
@@ -431,6 +556,7 @@ impl ConfigReport {
                 names_capped(&self.not_applied)
             ));
         }
+        out.extend(self.kept.iter().map(|k| k.note.clone()));
         out
     }
 }
