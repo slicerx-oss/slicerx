@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 /* Copyright (C) 2026 The SlicerX contributors */
-/* The Goal tiles: icon, label and what the goal gives, with the Custom chip in the label row and the estimate under them. */
+/* The Goal tiles: icon, label and what the goal gives, with the Edited chip in the label row and the estimate under them. */
 .goal-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 22px; }
 .goal-custom { cursor: help; }
 .sx-seg.goal-seg.goal-tiles > button { height: auto; min-height: 60px; padding: 7px 4px 6px; gap: 2px; white-space: normal; }
@@ -8,3 +8,6 @@
 .goal-tiles .goal-name { line-height: 1.2; }
 .goal-tiles .goal-sub { font-size: var(--fs-xs); font-weight: var(--fw-regular); line-height: 1.2; color: var(--dim); }
 .goal-tiles > button[aria-checked="true"] .goal-sub { color: var(--muted); }
+.sx-seg.goal-seg.goal-tiles > button { position: relative; }
+/* the edited mark sits over the tile's corner: marking a tile never moves it or its neighbors */
+.goal-tiles .goal-edited-dot { position: absolute; top: 6px; right: 6px; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); pointer-events: none; }

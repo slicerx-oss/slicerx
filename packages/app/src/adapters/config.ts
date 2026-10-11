@@ -102,6 +102,26 @@ export function easyConfigFor(easy: EasySettings, controls: readonly string[]): 
 
 export const GOALS: readonly EasyGoal[] = ['draft', 'standard', 'fine', 'strong']
 
+/**
+ * What picking `goal` gives on this printer: its Easy values with nothing moved by the person and no overrides. With a
+ * maker preset, the layer is the one built for the tier in use, so this holds for that goal (the plate's base goal).
+ */
+export function goalConfig(goal: EasyGoal): PrintConfig {
+  const easy = goalEasy(goal)
+  return profile ? applyEasy(easy, { ...baseConfig(), ...profile.values } as PrintConfig, new Set(['smartLayer', 'varyLayerHeight'])) : applyEasy(easy, { ...baseConfig(), ...bedSettings(GENERIC_BED) } as PrintConfig)
+}
+
+let goalKeyList: string[] | null = null
+
+/** The keys a goal decides: those SlicerX's own goals set differently. A goal pick sets them; the edited mark lists them. */
+export function goalKeys(): readonly string[] {
+  if (goalKeyList) return goalKeyList
+  const cfgs = GOALS.map((g) => applyEasy(goalEasy(g), baseConfig()))
+  const text = (v: SettingValue | undefined) => JSON.stringify(v)
+  goalKeyList = Object.keys(cfgs[0]!).filter((k) => cfgs.some((c) => text(c[k]) !== text(cfgs[0]![k])))
+  return goalKeyList
+}
+
 export function isGoal(v: string): v is EasyGoal {
   return (GOALS as readonly string[]).includes(v)
 }

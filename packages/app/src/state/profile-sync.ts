@@ -21,14 +21,12 @@ export function changedControls(a: EasySettings, b: EasySettings): string[] {
   return CONTROLS.filter((c) => (a[c] ?? (c === 'varyLayerHeight' ? true : undefined)) !== (b[c] ?? (c === 'varyLayerHeight' ? true : undefined)))
 }
 
-const TIERS: readonly EasyGoal[] = ['draft', 'standard', 'fine', 'strong']
-let lastTier: EasyGoal = 'standard'
 let key = ''
 let building: Promise<void> = Promise.resolve()
 
-function tierOf(s: Pick<AppState, 'goal'>): EasyGoal {
-  if ((TIERS as readonly string[]).includes(s.goal)) lastTier = s.goal as EasyGoal
-  return lastTier
+/** The maker's tier the layer builds from: the goal, or while the settings are edited, the goal they started from. */
+function tierOf(s: Pick<AppState, 'goal' | 'goalBase'>): EasyGoal {
+  return s.goal === 'custom' ? s.goalBase : s.goal
 }
 
 function slotsOf(s: AppState): { type: string; vendor?: string; family?: string }[] {
@@ -112,6 +110,8 @@ export function startProfileSync(): void {
   started = true
   installPrintMargins(get)
   appStore.subscribe((s, prev) => {
+    // A goal picked, or settings that came out equal to one, is the base the next edit starts from.
+    if (s.goal !== prev.goal && s.goal !== 'custom' && s.goalBase !== s.goal) set({ goalBase: s.goal })
     if (s.easy !== prev.easy || s.goal !== prev.goal) {
       let touched = s.easyTouched
       // A change that says which controls it moved (the Easy panel) is taken as it is. Otherwise picking a quality
@@ -131,7 +131,7 @@ export function startProfileSync(): void {
       schedule()
       return
     }
-    if (s.printerModel !== prev.printerModel || s.printerNozzles !== prev.printerNozzles || s.printerExtruders !== prev.printerExtruders || s.nozzleReported !== prev.nozzleReported || s.goal !== prev.goal || s.slotSetup !== prev.slotSetup || s.printerSlots !== prev.printerSlots || s.plate !== prev.plate || s.plates !== prev.plates) void profileReady()
+    if (s.printerModel !== prev.printerModel || s.printerNozzles !== prev.printerNozzles || s.printerExtruders !== prev.printerExtruders || s.nozzleReported !== prev.nozzleReported || s.goal !== prev.goal || s.goalBase !== prev.goalBase || s.slotSetup !== prev.slotSetup || s.printerSlots !== prev.printerSlots || s.plate !== prev.plate || s.plates !== prev.plates) void profileReady()
   })
   void profileReady()
 }

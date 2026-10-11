@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // The Goal tiles in the Slice sidebar: each says what it gives on the printer in use, the picked tile's tooltip says
-// about how long and how much from the last slice, and a moved control shows Custom with no tile picked.
+// about how long and how much from the last slice, and a moved control keeps the goal's tile picked, marked edited.
 import type { SliceResult } from '@slicerx/contracts'
 import { createElement } from 'react'
 import { flushSync } from 'react-dom'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { goalEasy } from '../src/adapters/config'
+import { goalConfig, goalEasy, resolveConfig } from '../src/adapters/config'
+import { goalEdits, goalEditsText, nearestGoal } from '../src/lib/goal-edits'
 import { get, set, type AppState } from '../src/state/store'
 import { EasySettingsPanel } from '../src/workspaces/prepare/easy-settings'
 
@@ -24,9 +25,11 @@ function mount(): void {
 const tile = (tier: string) => el.querySelector<HTMLElement>(`[data-testid="slice-goal-${tier}"]`)
 const estimate = () => el.querySelector<HTMLElement>('[role="radio"][aria-checked="true"]')?.getAttribute('data-tip-body') ?? null
 const chip = () => el.querySelector<HTMLElement>('.goal-custom')
+const checked = () => [...el.querySelectorAll<HTMLElement>('[aria-label="Goal"] [role="radio"][aria-checked="true"]')].map((t) => t.dataset['testid'])
+const dot = (tier: string) => tile(tier)?.querySelector('.goal-edited-dot') ?? null
 
 beforeEach(() => {
-  set({ settingsMode: 'simple', goal: 'standard', easy: goalEasy('standard'), easyTouched: [], profile: null, slice: { status: 'idle' } })
+  set({ settingsMode: 'simple', goal: 'standard', goalBase: 'standard', easy: goalEasy('standard'), easyTouched: [], overrides: {}, profile: null, slice: { status: 'idle' } })
   el = document.createElement('div')
   document.body.append(el)
   root = createRoot(el)
@@ -35,7 +38,7 @@ beforeEach(() => {
 afterEach(() => {
   root.unmount()
   el.remove()
-  set({ settingsMode: initial.settingsMode, goal: initial.goal, easy: initial.easy, easyTouched: initial.easyTouched, profile: initial.profile, slice: initial.slice })
+  set({ settingsMode: initial.settingsMode, goal: initial.goal, goalBase: initial.goalBase, overrides: initial.overrides, easy: initial.easy, easyTouched: initial.easyTouched, profile: initial.profile, slice: initial.slice })
 })
 
 describe('the Goal tiles', () => {
@@ -80,19 +83,78 @@ describe('the Goal tiles', () => {
     expect(estimate()).toBeNull()
   })
 
-  it('show Custom with no tile picked once a control moves, and picking a goal starts over', () => {
+  it('keep the goal it started from picked, marked edited, with the changed settings in its tip', () => {
     mount()
     expect(chip()).toBeNull()
-    flushSync(() => set({ goal: 'custom' as AppState['goal'], easy: { ...goalEasy('standard'), detail: 55 }, easyTouched: ['detail'] }))
-    expect(el.querySelectorAll('[aria-label="Goal"] [role="radio"][aria-checked="true"]')).toHaveLength(0)
-    expect(chip()?.textContent).toBe('Custom')
-    expect(chip()?.getAttribute('data-tip')).toBe('You changed a setting the goal sets. Pick a goal to start over.')
+    expect(dot('standard')).toBeNull()
+    flushSync(() => set({ goal: 'custom' as AppState['goal'], easy: { ...goalEasy('standard'), detail: 80 }, easyTouched: ['detail'] }))
+    expect(checked()).toEqual(['slice-goal-standard'])
+    expect(dot('standard')).not.toBeNull()
+    expect(dot('fine')).toBeNull()
+    expect(chip()?.textContent).toBe('Edited')
     // The chip is a note, not another control.
     expect(chip()?.closest('button')).toBeNull()
+    const body = tile('standard')?.getAttribute('data-tip-body') ?? ''
+    expect(body).toMatch(/^Changed from Standard: Layer height 0\.1\d mm \(Standard 0\.2 mm\)/)
+    expect(body).toMatch(/Press Standard to go back to its settings\.$/)
+    expect(chip()?.getAttribute('data-tip-body')).toBe(body)
+  })
+
+  it('go back to the stock values when the edited tile is pressed, overrides of what the goal sets included', () => {
+    mount()
+    flushSync(() => set({ goal: 'custom' as AppState['goal'], easy: { ...goalEasy('standard'), strength: 60 }, easyTouched: ['strength'], overrides: { wall_loops: 6, seam_position: 'back' } }))
+    expect(dot('standard')).not.toBeNull()
+    flushSync(() => tile('standard')?.click())
+    expect(get().goal).toBe('standard')
+    expect(get().easy).toEqual(goalEasy('standard'))
+    expect(get().easyTouched).toEqual([])
+    // What a goal decides goes back; other settings of the person's stay.
+    expect(get().overrides).toEqual({ seam_position: 'back' })
+    expect(chip()).toBeNull()
+    expect(dot('standard')).toBeNull()
+  })
+
+  it('picking another goal starts over from it', () => {
+    mount()
+    flushSync(() => set({ goal: 'custom' as AppState['goal'], easy: { ...goalEasy('standard'), detail: 55 }, easyTouched: ['detail'] }))
     flushSync(() => tile('fine')?.click())
     expect(get().goal).toBe('fine')
     expect(get().easyTouched).toEqual([])
+    expect(checked()).toEqual(['slice-goal-fine'])
     expect(chip()).toBeNull()
-    expect(tile('fine')?.getAttribute('aria-checked')).toBe('true')
+  })
+
+  it('show no mark for settings that came back to the goal', () => {
+    mount()
+    flushSync(() => set({ goal: 'custom' as AppState['goal'], easy: goalEasy('fine'), goalBase: 'fine' }))
+    expect(checked()).toEqual(['slice-goal-fine'])
+    expect(dot('fine')).toBeNull()
+    expect(chip()).toBeNull()
+  })
+})
+
+describe('goal edits', () => {
+  it('list only what a goal decides, the layer height first', () => {
+    const cfg = { ...resolveConfig({ ...goalEasy('standard'), detail: 80 }, { seam_position: 'back', wall_loops: 5 }) }
+    const edits = goalEdits(cfg, 'standard')
+    expect(edits[0]?.key).toBe('layer_height')
+    expect(edits.map((e) => e.key)).toContain('wall_loops')
+    expect(edits.map((e) => e.key)).not.toContain('seam_position')
+    expect(goalEdits(goalConfig('standard'), 'standard')).toEqual([])
+  })
+
+  it('say how many more past the first few', () => {
+    const e = (k: string) => ({ key: k, label: k, now: '1', goal: '2' })
+    expect(goalEditsText([e('a'), e('b')], 'Fine')).toBe('Changed from Fine: a 1 (Fine 2), b 1 (Fine 2). Press Fine to go back to its settings.')
+    expect(goalEditsText(['a', 'b', 'c', 'd', 'e', 'f'].map(e), 'Fine')).toMatch(/d 1 \(Fine 2\) and 2 more\./)
+  })
+
+  it('start a project that matches no goal from the nearest by layer height', () => {
+    expect(nearestGoal({ layer_height: 0.14 })).toBe('fine')
+    expect(nearestGoal({ layer_height: 0.3 })).toBe('draft')
+    // Standard and Strong share a height: Standard.
+    expect(nearestGoal({ layer_height: 0.2 })).toBe('standard')
+    expect(nearestGoal({ layer_height: 0.2 }, { draft: { layer_height: 0.3 }, standard: { layer_height: 0.24 }, fine: { layer_height: 0.18 }, strong: { layer_height: 0.24 } })).toBe('fine')
+    expect(nearestGoal({})).toBe('standard')
   })
 })
