@@ -42,18 +42,21 @@ export async function recordFrames(page: Page): Promise<() => Promise<Frame[]>> 
   // The screencast starts with the picture as it is; wait for that frame, so the step's first change is recorded after it.
   for (let i = 0; i < 10 && raw.length === 0; i++) await page.waitForTimeout(50)
   // It sends a frame only when the page draws one, and a page already at rest draws none: a nearly clear pixel in the
-  // corner, for a moment, makes it draw the picture once.
-  if (raw.length === 0) {
-    await page
-      .evaluate(() => {
-        const d = document.createElement('div')
-        d.style.cssText = 'position:fixed;left:0;top:0;width:1px;height:1px;background:rgba(128,128,128,0.02);pointer-events:none;z-index:2147483647'
-        document.body.append(d)
-        setTimeout(() => d.remove(), 120)
-      })
-      .catch(() => undefined)
+  // corner, for a moment, makes it draw the picture once. On a loaded runner that one draw can pass with no frame
+  // sent, so the pixel goes up again every 400 ms until a frame comes, for up to 10 s.
+  for (let i = 0; i < 200 && raw.length === 0; i++) {
+    if (i % 8 === 0) {
+      await page
+        .evaluate(() => {
+          const d = document.createElement('div')
+          d.style.cssText = 'position:fixed;left:0;top:0;width:1px;height:1px;background:rgba(128,128,128,0.02);pointer-events:none;z-index:2147483647'
+          document.body.append(d)
+          setTimeout(() => d.remove(), 120)
+        })
+        .catch(() => undefined)
+    }
+    await page.waitForTimeout(50)
   }
-  for (let i = 0; i < 50 && raw.length === 0; i++) await page.waitForTimeout(50)
   return async () => {
     await cdp.send('Page.stopScreencast').catch(() => undefined)
     await cdp.detach().catch(() => undefined)
