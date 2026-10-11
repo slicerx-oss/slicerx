@@ -5,9 +5,8 @@
 // the step that made each key.
 import type { MeshPart } from '@slicerx/contracts'
 import type { PlateEntry } from '../../state/store'
-import { keyOfTriangle, type HistoryMesh } from './model'
+import { keyOfTriangle, usedBy, type HistoryMesh } from '@slicerx/cad-history'
 import { runReplay } from './ops'
-import { usedBy } from './provenance'
 
 type Faces = HistoryMesh['faces']
 interface Known {

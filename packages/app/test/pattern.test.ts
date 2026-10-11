@@ -4,7 +4,7 @@
 // way the engine does (sx-geom face.rs, Pattern), counts them for the step's name, and says what is wrong with a
 // pattern before it is sent.
 import { describe, expect, it } from 'vitest'
-import { copyCount, patternCopies, patternProblem, patternFromFields } from '../src/cad/pattern'
+import { copyCount, patternCopies, patternProblem, patternFromFields } from '@slicerx/cad-history'
 
 const close = (a: [number, number], b: [number, number]) => Math.hypot(a[0] - b[0], a[1] - b[1]) < 1e-9
 

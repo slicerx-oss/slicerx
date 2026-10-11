@@ -4,12 +4,11 @@
 // was before the tool changed it, for the tool's own store update. Ending a history (a split) keeps a
 // note and makes the new parts the base. No engine calls in here.
 import { setKeySalt } from '../../geom/client'
-import { stepSalt } from './salt'
+import { HISTORY_VERSION, direction, followField, followFor, followed, followsOf, invert, mainNumber, multiply, onFlatFace, point, refPoints, stepId, stepSalt, type FlatFace, type Follow, type History, type Step, type StepParams } from '@slicerx/cad-history'
 import type { MeshPart } from '@slicerx/contracts'
 import type { PlateEntry } from '../../state/store'
 import { bindFor } from '../values'
 import { currentValues } from '../value-table'
-import { direction, followed, followField, followFor, followsOf, HISTORY_VERSION, invert, mainNumber, multiply, onFlatFace, point, refPoints, stepId, type FlatFace, type Follow, type History, type Step, type StepParams } from './model'
 
 // Fonts loaded this session, by name, for text steps that use one. Fonts are not saved in projects.
 const fonts = new Map<string, string>()

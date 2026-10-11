@@ -8,7 +8,7 @@ import { fromGeom, toGeom } from '../geom/client'
 import { get, markStale } from '../state/store'
 import { commitMade } from './commit'
 import { edgeOp, type EdgeRef } from './edge-api'
-import type { StepParams } from './history/model'
+import type { StepParams } from '@slicerx/cad-history'
 import { reserveStepId, withStep } from './history/record'
 
 type Loader = { loadParts(name: string, parts: MeshPart[]): Promise<MeshHandle> }

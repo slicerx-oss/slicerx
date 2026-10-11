@@ -9,11 +9,9 @@
 // that replaces an input (a boolean result, a merged array, a join or cut) comes back in that
 // input's local frame, so the object keeps its transform.
 import { geom, usesWorker, type GeomMesh, type TypedGeomMesh } from './client'
+import type { ArraySpec, EdgeRef, ExtrudeSpec, FaceFrame, FreeShape, Hole, HoleSpec, Mat4, MovedFace, OpenFace, Placement, Polygon, Shape, SketchLoop, ThreadPlace, ThreadSpec, ThreadTarget, Vec2, Vec3 } from '@slicerx/cad-history'
 
-export type Vec2 = [number, number]
-export type Vec3 = [number, number, number]
-/** 16 numbers, column-major, like three.js Matrix4.elements. */
-export type Mat4 = number[]
+export type { ArraySpec, EdgeRef, ExtrudeSpec, FaceFrame, FreeShape, Hole, HoleSpec, Mat4, MovedFace, OpenFace, Placement, Polygon, Shape, SketchLoop, SketchSegment, ThreadPlace, ThreadSize, ThreadSpec, ThreadTarget, Vec2, Vec3 } from '@slicerx/cad-history'
 
 /** A mesh, optionally with its local-to-world transform. */
 export type MeshItem = GeomMesh | { mesh: GeomMesh; transform?: Mat4 }
@@ -62,10 +60,6 @@ export function booleanOp(op: BoolOp, a: MeshItem[], b: MeshItem[] = [], options
 }
 
 // Arrays
-
-export type ArraySpec =
-  | { kind: 'linear'; count: number; step: Vec3; count2?: number; step2?: Vec3 }
-  | { kind: 'circular'; count: number; center: Vec3; axis?: Vec3; angleDeg?: number; rotateCopies?: boolean }
 
 export interface ArrayResult {
   count: number
@@ -129,19 +123,6 @@ export function measure(a: Feature, b?: Feature, signal?: AbortSignal) {
 
 // Face shape tool
 
-export interface FaceFrame {
-  origin: Vec3
-  /** Outward normal. */
-  normal: Vec3
-  u: Vec3
-  v: Vec3
-}
-
-export interface Polygon {
-  outer: Vec2[]
-  holes: Vec2[][]
-}
-
 export interface FacePick {
   frame: FaceFrame
   /** Outline in frame coordinates, for drawing and snaps. */
@@ -151,36 +132,6 @@ export interface FacePick {
   min: Vec2
   max: Vec2
   triangles: number[]
-}
-
-export type Shape =
-  | { type: 'rectangle'; widthMm: number; heightMm: number; cornerRadiusMm?: number }
-  | { type: 'circle'; diameterMm: number }
-  | { type: 'slot'; lengthMm: number; widthMm: number }
-  | { type: 'polygon'; sides: number; diameterMm: number; fit?: 'inscribed' | 'circumscribed' }
-  | { type: 'text'; text: string; sizeMm: number; letterSpacingMm?: number; lineSpacing?: number; align?: 'left' | 'center' | 'right' }
-
-/** Free outlines for shapeProfile and extrudeShape, beside the typed shapes. */
-export type FreeShape =
-  /** Closed loops in frame coordinates; check them first with checkSketch. */
-  | { type: 'sketch'; loops: SketchLoop[] }
-  /** The filled outline of SVG artwork (colors merged), widthMm wide, centered on the placement, SVG up along v. */
-  | { type: 'svg'; svg: string; widthMm: number; toleranceMm?: number }
-
-export interface Placement {
-  /** Center in frame coordinates. */
-  center?: Vec2
-  rotationDeg?: number
-}
-
-export interface ExtrudeSpec {
-  distanceMm: number
-  extent?: 'oneSide' | 'symmetric' | 'twoSides'
-  distance2Mm?: number
-  flip?: boolean
-  /** -45 to 45; positive narrows away from the face. */
-  taperDeg?: number
-  operation?: 'new' | 'join' | 'cut'
 }
 
 export interface ExtrudeReport {
@@ -212,8 +163,8 @@ export interface ExtrudeRequest {
   /** The body to join to or cut from. */
   target?: MeshItem
   fontBase64?: string
-  /** Copies of the shape on its face, made in the same step (cad/pattern.ts). */
-  pattern?: import('../cad/pattern').Pattern
+  /** Copies of the shape on its face, made in the same step (@slicerx/cad-history pattern.ts). */
+  pattern?: import('@slicerx/cad-history').Pattern
 }
 
 /**
@@ -226,26 +177,6 @@ export function extrudeShape(req: ExtrudeRequest, signal?: AbortSignal) {
 
 // Sketches: closed loops of lines, arcs and circles on a face frame (or the bed). No constraint
 // solver: the engine checks what was typed and names the loop and segment of each problem.
-
-/** One piece of a loop, starting where the previous one ended. */
-export type SketchSegment =
-  | { type: 'line'; to: Vec2 }
-  /** angleDeg: direction in the plane, 0 along u, counterclockwise. */
-  | { type: 'line'; lengthMm: number; angleDeg: number }
-  /** turnDeg: relative to the end of the previous segment, positive turns left. */
-  | { type: 'line'; lengthMm: number; turnDeg: number }
-  /** Around center, sweepDeg positive counterclockwise. */
-  | { type: 'arc'; center: Vec2; sweepDeg: number }
-  | { type: 'arc'; to: Vec2; through: Vec2 }
-  | { type: 'arc'; to: Vec2; radiusMm: number; clockwise?: boolean; large?: boolean }
-  /** Tangent to the previous segment; positive sweepDeg turns left. */
-  | { type: 'arc'; radiusMm: number; sweepDeg: number }
-
-/** A loop closes when its last segment ends within 0.001 mm of start. */
-export type SketchLoop =
-  | { start: Vec2; segments: SketchSegment[] }
-  | { type: 'circle'; center: Vec2; diameterMm: number }
-  | { points: Vec2[] }
 
 export type SketchIssueKind = 'open' | 'zeroLength' | 'selfCrossing' | 'loopsCross' | 'badArc' | 'tooSmall'
 
@@ -315,13 +246,6 @@ export function offsetSketch(source: { loops: SketchLoop[] } | { polygons: Polyg
 
 // Push and pull
 
-/** A face that moved, as face.push reports it (world). Pass it to evaluateDimensions. */
-export interface MovedFace {
-  frame: FaceFrame
-  outline: Polygon[]
-  distanceMm: number
-}
-
 export interface PushRequest {
   mesh: MeshItem
   /** The pick on the face, as for pickFace (world). */
@@ -347,20 +271,6 @@ export function pushPreview(face: { frame: FaceFrame; outline: Polygon[] }, dist
 // Fillet and chamfer (docs/cad-fillet.md): round or bevel the straight edge where two flat faces
 // meet. Convex edges lose material, concave edges gain it. Edges next to curved faces are reported
 // as not supported.
-
-/** An edge as the ops take it: its end points and the outward normal of its first face (world). Store it as is. */
-export interface EdgeRef {
-  a: Vec3
-  b: Vec3
-  /** The face that takes distanceMm in a two distance chamfer. */
-  face: Vec3
-  /** The ends moved with a face they lie on (a history replay): the edge is found along its line. */
-  moved?: boolean
-  /** A round edge (a hole's rim, a boss's root): the center of the circle; `a` is a corner of it and `b` the same. */
-  center?: Vec3
-  /** The keys of the two faces either side, the one `face` faces first: the edge is found between them first. */
-  keys?: [number, number]
-}
 
 export interface EdgeFace {
   normal: Vec3
@@ -435,25 +345,6 @@ export function edgePreview(req: EdgeRequest, signal?: AbortSignal) {
 
 // Holes (sx-geom hole.rs)
 
-/** A round hole: its entry center (world) and the way out through it, its size and depth. */
-export interface Hole {
-  entry: Vec3
-  axis: Vec3
-  diameterMm: number
-  depthMm: number
-  /** Open at the far end too. */
-  through: boolean
-}
-
-/** What a hole becomes, mm. A counterbore or a countersink is at the entry. */
-export interface HoleSpec {
-  diameterMm: number
-  /** A blind hole's new depth; its own depth when absent. A through hole stays through. */
-  depthMm?: number
-  counterbore?: { diameterMm: number; depthMm: number }
-  countersink?: { diameterMm: number; angleDeg: number }
-}
-
 /** The hole whose wall the pick is on, entered from the end nearest the pick. */
 export function holeFind(mesh: MeshItem, pick: Pick, signal?: AbortSignal) {
   return geom().call<Hole>('hole.find', { mesh, triangle: pick.triangle, at: pick.at }, signal)
@@ -465,14 +356,6 @@ export function holeApply(mesh: MeshItem, hole: Hole, spec: HoleSpec, signal?: A
 }
 
 // Shell (sx-geom shell.rs)
-
-/** A face to leave open: a point on it and its outward normal, world. */
-export interface OpenFace {
-  at: Vec3
-  normal: Vec3
-  /** The face's key, looked for first (docs/cad-history.md, "Face keys"). */
-  key?: number
-}
 
 export interface ShellReport {
   /** Every face moved in by the wall; otherwise `note` says why the voxel wall was used. */
@@ -492,39 +375,6 @@ export function shellBody(mesh: MeshItem, open: OpenFace[], wallMm: number, sign
 }
 
 // Threads (sx-geom thread.rs)
-
-/** An ISO coarse size. */
-export interface ThreadSize {
-  name: string
-  majorMm: number
-  pitchMm: number
-}
-
-/** A round surface a thread can go on (world): where it starts, the way out through that end, its size and length. */
-export interface ThreadTarget {
-  start: Vec3
-  axis: Vec3
-  diameterMm: number
-  lengthMm: number
-  /** A hole's wall, not a boss or rod. */
-  internal: boolean
-  /** Open at the far end too; otherwise the thread stops half a pitch short of it. */
-  openEnd: boolean
-  /** The size that suits it, and every size there is. */
-  suggested: string
-  sizes: ThreadSize[]
-}
-
-/** Where a thread goes, as a history step keeps it. */
-export type ThreadPlace = Omit<ThreadTarget, 'suggested' | 'sizes'>
-
-export interface ThreadSpec {
-  size: string
-  /** From the start; the whole surface when absent. */
-  lengthMm?: number
-  /** Per side: an external thread this much smaller, an internal one this much larger. */
-  clearanceMm: number
-}
 
 /** The hole, boss or rod the pick is on, starting at the end nearest the pick. */
 export function threadFind(mesh: MeshItem, pick: Pick, signal?: AbortSignal) {

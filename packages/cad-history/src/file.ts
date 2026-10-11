@@ -3,12 +3,17 @@
 // CAD history in a project file (docs/cad-history.md, "Storage"): Metadata/slicerx_history.json with
 // the steps, and one binary part per stored mesh set (an object's base, the parts a merge added) under
 // Metadata/slicerx_history/. Both are optional parts other slicers ignore; the model part keeps the
-// current mesh, so the file prints the same anywhere. Reading is in history-read.ts, loaded with the
+// current mesh, so the file prints the same anywhere. Reading is in read.ts, loaded with the
 // project reader.
 // Version 2 names faces by key (docs/cad-history.md, "Face keys"); version 1 files still open.
 export const HISTORY_FILE_VERSION = 2
-import type { History, HistoryMesh } from '../cad/history/model'
-import type { ZipEntry } from './zip'
+import type { History, HistoryMesh } from './model'
+
+/** A part of the project's zip, as the app's writer takes it. */
+export interface ZipEntry {
+  name: string
+  data: Uint8Array | string
+}
 
 export const MAGIC = 0x4d485853 // "SXHM" little endian
 export const BIN_VERSION = 1

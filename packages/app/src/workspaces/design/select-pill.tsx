@@ -6,7 +6,7 @@
 // made it and opens that step.
 import { Icon, keymapFor, tipAttrs } from '@slicerx/ui'
 import { beginEdit, toolFor, viewStep } from '../../cad/history/ops'
-import { stepName } from '../../cad/history/model'
+import { stepName } from '@slicerx/cad-history'
 import { useLookChoice } from '../../first-run/look'
 import { useHost } from '../../host'
 import { PICK_KINDS, PICK_LABEL, pickReadout, type PickKind } from '../../plate/pick-filter'

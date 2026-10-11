@@ -3,7 +3,7 @@
 // The Model tree's filter: typed in the tree, it keeps the objects whose names match with all their steps, and the
 // objects with matching steps showing only those. A few words find a kind: "broken", "off" (suppressed), "mesh" and
 // "sketch".
-import { stepName, type Step } from '../../cad/history/model'
+import { stepName, type Step } from '@slicerx/cad-history'
 import { stepSketch } from '../../cad/history/step-icon'
 
 export interface Filterable {

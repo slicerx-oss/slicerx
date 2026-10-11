@@ -6,7 +6,7 @@
 // shows on every plate the person looks at.
 import { get, set, type PlateEntry } from '../state/store'
 import { applyHistory } from './history/ops'
-import { mainNumber, withNumber, type Step } from './history/model'
+import { mainNumber, withNumber, type Step } from '@slicerx/cad-history'
 import { valueTable } from './value-table'
 import { evaluate, validName, type NamedValue } from './values'
 

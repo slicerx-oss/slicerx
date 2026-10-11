@@ -5,7 +5,7 @@
 // face it sits on moves in a history replay, both move with it, so the engine finds the rim at its new place.
 import type { MeshPart } from '@slicerx/contracts'
 import { describe, expect, it } from 'vitest'
-import { followed, type History, type StepParams } from '../src/cad/history/model'
+import { followed, type History, type StepParams } from '@slicerx/cad-history'
 import { withStep } from '../src/cad/history/record'
 import { boxMesh } from '../src/plate/mesh-ops'
 import { compose } from '../src/plate/transform'

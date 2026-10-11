@@ -3,14 +3,13 @@
 // What the modeling tools do to the plate, on the typed geometry calls in geom/cad.ts: extrude a shape
 // from a face or the bed, copy an object in a line, a grid or a circle, and describe a measurement.
 // Each change lands in one store update, so undo takes it back in one step. No React in here.
-import type { Pattern } from './pattern'
+import type { Pattern, StepParams } from '@slicerx/cad-history'
 import type { MeshHandle, MeshPart } from '@slicerx/contracts'
 import { arrayCopies, arrayMerged, extrudeShape, revolveSketch, type ArraySpec, type ExtrudeReport, type ExtrudeSpec, type FaceFrame, type Feature, type FreeShape, type Measurement, type MeshResult, type Placement, type Polygon, type RevolveRequest, type Shape, type Vec2, type Vec3 } from '../geom/cad'
 import { fromGeom, toGeom, type GeomMesh } from '../geom/client'
 import { bake } from '../plate/mesh-ops'
 import { bodyHistory, historyField, rememberFont, reserveStepId, withStep } from './history/record'
 import { commitMade } from './commit'
-import type { StepParams } from './history/model'
 import { sourceId } from '../plate/object-settings'
 import { bounds, compose, identity, type Mat4 } from '../plate/transform'
 import { get, markStale, set, type PlateEntry } from '../state/store'

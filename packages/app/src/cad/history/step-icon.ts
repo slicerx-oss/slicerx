@@ -2,7 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 // The icon a step shows in the Design tree and timeline: the icon of the tool that made it.
 import type { IconName } from '@slicerx/ui'
-import type { StepParams } from './model'
+import type { StepParams } from '@slicerx/cad-history'
 
 export function stepIcon(p: StepParams): IconName {
   switch (p.op) {

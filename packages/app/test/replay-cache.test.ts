@@ -4,8 +4,7 @@
 // The replay cache returns a step's result only for exactly the same inputs: every base coordinate and index, and the
 // content of a font, not just its name. A warm replay returns what a cold one does, moved faces included.
 import { beforeEach, expect, it } from 'vitest'
-import { IDENTITY, type History, type HistoryMesh } from '../src/cad/history/model'
-import { clearReplayCache, replayHistory } from '../src/cad/history/replay'
+import { IDENTITY, clearReplayCache, replayHistory, type History, type HistoryMesh } from '@slicerx/cad-history'
 
 const mesh = (): HistoryMesh => ({ name: 'same-name', slot: 1, positions: [0, 0, 0, 10, 0, 0, 10, 10, 0, 0, 10, 0], indices: [0, 1, 2] })
 const hist = (base: HistoryMesh): History => ({ version: 1, base: [base], steps: [{ id: 'repair-1', part: 0, transform: [...IDENTITY], params: { op: 'repair' } }] })
