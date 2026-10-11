@@ -10,6 +10,7 @@ import { describe, it } from 'node:test'
 import { inflateRawSync } from 'node:zlib'
 import { START_WAIT_S, waitForFile } from './lib/app.mjs'
 import { coaster3mf } from './lib/coaster.mjs'
+import { fontFailures } from './scenarios/vault.mjs'
 import { options } from './lib/options.mjs'
 import { renderReport, runStatus } from './lib/report.mjs'
 import { showObjects } from './scenarios/open.mjs'
@@ -141,6 +142,20 @@ describe('the objects list', () => {
     const s = fake({ right: false, tabs: [] })
     assert.deepEqual(await showObjects(s), { shown: false, opened: [] })
     assert.deepEqual(s.clicks, [])
+  })
+})
+
+describe('the font faces', () => {
+  it('passes when every face loaded, and names each one that did not', () => {
+    const ok = { family: 'Inter Variable', weight: '100 900', style: 'normal', unicodeRange: 'U+0000-00FF', status: 'loaded' }
+    assert.deepEqual(fontFailures([ok]), [])
+    const range = 'U+0460-052F, U+1C80-1C8A, U+20B4'
+    const refused = ['Hanken Grotesk Variable', 'JetBrains Mono Variable', 'Unbounded Variable'].map((family) => ({ family, weight: '100 900', style: 'normal', unicodeRange: range, status: 'error', error: 'NetworkError: A network error occurred.' }))
+    assert.deepEqual(
+      fontFailures([ok, ...refused]),
+      refused.map((f) => `${f.family} 100 900 normal (${range}): error, NetworkError: A network error occurred.`),
+    )
+    assert.deepEqual(fontFailures([{ ...ok, unicodeRange: 'U+0-10FFFF', status: 'loading' }]), ['Inter Variable 100 900 normal: loading'])
   })
 })
 
