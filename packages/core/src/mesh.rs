@@ -50,7 +50,26 @@ impl MeshPart {
 #[derive(Debug, Clone, Default)]
 pub struct Mesh {
     pub name: String,
+    /// The parts that print.
     pub parts: Vec<MeshPart>,
+    /// Parts of the model that do not print themselves (cuts, modifiers, support blockers and enforcers), in the
+    /// same space as `parts`, as a project file marks them.
+    pub volumes: Vec<MeshVolume>,
+    /// Setting overrides the file gives single printed parts (the object's own settings under the part's), by part
+    /// name, in the shape of `PlateObject::part_settings`.
+    pub part_settings: Vec<(String, serde_json::Value)>,
+    /// What the loader read but changed or could not apply, one line each, for the slice's warnings.
+    pub notes: Vec<String>,
+}
+
+/// A part of a model that shapes the print without printing: see [`crate::plate::VolumeRole`].
+#[derive(Debug, Clone)]
+pub struct MeshVolume {
+    pub role: crate::plate::VolumeRole,
+    /// The geometry, in the space of the mesh's parts; its slot and paint are not used.
+    pub part: MeshPart,
+    /// A modifier's setting overrides (an object of setting keys); `Null` for the other roles.
+    pub settings: serde_json::Value,
 }
 
 impl Mesh {
@@ -133,6 +152,7 @@ impl Mesh {
         Ok(Self {
             name: file_name.to_owned(),
             parts,
+            ..Self::default()
         })
     }
 
@@ -166,6 +186,7 @@ impl Mesh {
             }
         }
         write_raw_paint(&self.parts, &mut b);
+        write_raw_volumes(self, &mut b);
         b
     }
 
@@ -231,10 +252,17 @@ impl Mesh {
             r.at += RAW_PAINT_MAGIC.len();
             read_raw_paint(&mut r, &mut parts)?;
         }
-        Ok(Self {
+        let mut mesh = Self {
             name: name.to_owned(),
             parts,
-        })
+            ..Self::default()
+        };
+        // An optional block of the parts that do not print, after the paint block (see `write_raw_volumes`).
+        if r.b.get(r.at..r.at + RAW_VOLUME_MAGIC.len()) == Some(RAW_VOLUME_MAGIC) {
+            r.at += RAW_VOLUME_MAGIC.len();
+            read_raw_volumes(&mut r, &mut mesh)?;
+        }
+        Ok(mesh)
     }
 
     /// Total triangle count over all parts.
@@ -286,6 +314,29 @@ impl Mesh {
                 h.write(text.as_bytes());
                 h.write(&[0]);
             }
+        }
+        // Cuts, modifiers, support volumes and part settings change what prints too. A mesh without them hashes as
+        // it always has.
+        for v in &self.volumes {
+            h.write(b"volume");
+            h.write(&[v.role as u8]);
+            for p in &v.part.positions {
+                for c in p {
+                    h.write(&c.to_le_bytes());
+                }
+            }
+            for t in &v.part.triangles {
+                for i in t {
+                    h.write(&i.to_le_bytes());
+                }
+            }
+            h.write(v.settings.to_string().as_bytes());
+        }
+        for (name, s) in &self.part_settings {
+            h.write(b"part settings");
+            h.write(name.as_bytes());
+            h.write(&[0]);
+            h.write(s.to_string().as_bytes());
         }
         h.finish()
     }
@@ -375,7 +426,11 @@ impl Mesh {
                 paint_texts: Vec::new(),
             });
         }
-        Ok(Self { name, parts })
+        Ok(Self {
+            name,
+            parts,
+            ..Self::default()
+        })
     }
 
     /// Loads binary or ASCII STL as a single part on slot 1.
@@ -421,12 +476,105 @@ impl Mesh {
         Ok(Self {
             name: name.to_owned(),
             parts: vec![part],
+            ..Self::default()
         })
     }
 }
 
 const RAW_MAGIC: &[u8] = b"SXMP";
 const RAW_PAINT_MAGIC: &[u8] = b"SXPT";
+const RAW_VOLUME_MAGIC: &[u8] = b"SXVL";
+
+/// The block of the raw parts format that carries a mesh's volumes, part settings and loader notes: magic `SXVL`, u32
+/// byte length, then that many bytes of JSON, `{"volumes": [{"role", "name", "positions", "triangles", "settings"}],
+/// "partSettings": [[name, settings]], "notes": [text]}`, positions as `[x, y, z]` numbers. Nothing when the mesh has
+/// none of them, so a mesh without them writes the bytes it always has.
+fn write_raw_volumes(mesh: &Mesh, b: &mut Vec<u8>) {
+    if mesh.volumes.is_empty() && mesh.part_settings.is_empty() && mesh.notes.is_empty() {
+        return;
+    }
+    let volumes: Vec<serde_json::Value> = mesh
+        .volumes
+        .iter()
+        .map(|v| {
+            serde_json::json!({
+                "role": role_text(v.role),
+                "name": v.part.name,
+                "positions": v.part.positions,
+                "triangles": v.part.triangles,
+                "settings": v.settings,
+            })
+        })
+        .collect();
+    let body = serde_json::json!({
+        "volumes": volumes,
+        "partSettings": mesh.part_settings,
+        "notes": mesh.notes,
+    })
+    .to_string();
+    b.extend_from_slice(RAW_VOLUME_MAGIC);
+    b.extend_from_slice(&u32::try_from(body.len()).unwrap_or(u32::MAX).to_le_bytes());
+    b.extend_from_slice(body.as_bytes());
+}
+
+fn role_text(role: crate::plate::VolumeRole) -> &'static str {
+    match role {
+        crate::plate::VolumeRole::Negative => "negative",
+        crate::plate::VolumeRole::SupportBlocker => "support_blocker",
+        crate::plate::VolumeRole::SupportEnforcer => "support_enforcer",
+        crate::plate::VolumeRole::Modifier => "modifier",
+    }
+}
+
+/// Reads the block [`write_raw_volumes`] writes into `mesh`.
+fn read_raw_volumes(r: &mut Reader<'_>, mesh: &mut Mesh) -> Result<()> {
+    let len = r.u32()? as usize;
+    let body: serde_json::Value = serde_json::from_slice(r.take(len)?).map_err(|_| r.err())?;
+    for v in body
+        .get("volumes")
+        .and_then(serde_json::Value::as_array)
+        .into_iter()
+        .flatten()
+    {
+        let role = match v.get("role").and_then(serde_json::Value::as_str) {
+            Some("negative") => crate::plate::VolumeRole::Negative,
+            Some("support_blocker") => crate::plate::VolumeRole::SupportBlocker,
+            Some("support_enforcer") => crate::plate::VolumeRole::SupportEnforcer,
+            Some("modifier") => crate::plate::VolumeRole::Modifier,
+            _ => return Err(r.err()),
+        };
+        let positions: Vec<[f32; 3]> =
+            serde_json::from_value(v.get("positions").cloned().unwrap_or_default()).map_err(|_| r.err())?;
+        let flat: Vec<u32> =
+            serde_json::from_value::<Vec<[u32; 3]>>(v.get("triangles").cloned().unwrap_or_default())
+                .map_err(|_| r.err())?
+                .concat();
+        let name = v
+            .get("name")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("")
+            .to_owned();
+        let triangles = triangles_from_indices(&flat, positions.len(), &name)?;
+        mesh.volumes.push(MeshVolume {
+            role,
+            part: MeshPart {
+                name,
+                slot: 1,
+                positions,
+                triangles,
+                ..MeshPart::default()
+            },
+            settings: v.get("settings").cloned().unwrap_or_default(),
+        });
+    }
+    if let Some(list) = body.get("partSettings") {
+        mesh.part_settings = serde_json::from_value(list.clone()).map_err(|_| r.err())?;
+    }
+    if let Some(list) = body.get("notes") {
+        mesh.notes = serde_json::from_value(list.clone()).map_err(|_| r.err())?;
+    }
+    Ok(())
+}
 
 /// The paint block of the raw parts format from the parts' paint texts, grouped by part and layer; nothing when no
 /// part is painted.

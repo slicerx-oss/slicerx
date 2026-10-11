@@ -26,6 +26,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 /// The warning for manual supports on a plate with no enforcers.
 const NO_ENFORCERS: &str =
     "Manual supports print only where enforcers ask, and the plate has none, so none are printed";
+/// Support enforcers on a plate with support turned off.
+const ENFORCERS_UNUSED: &str = "Support enforcers are on the plate but support is off, so they print no support; turn on supports to use them";
 
 /// Slot, welded plate-space vertices and triangles of one part.
 /// A part with settings of its own: its welded mesh and the settings.
@@ -1447,6 +1449,31 @@ impl SliceSession {
                 layer: None,
             });
         }
+        // What the loaders read but changed or could not apply (a project's unknown part types, say).
+        for n in plate.objects.iter().flat_map(|o| &o.mesh.notes) {
+            if !warnings.iter().any(|w: &SliceWarning| w.message == *n) {
+                warnings.push(SliceWarning {
+                    code: WarningCode::UnsupportedSetting,
+                    message: n.clone(),
+                    layer: None,
+                });
+            }
+        }
+        // Enforcers only add support when support is on; with it off they do nothing, which is easy to miss.
+        if !config.enable_support
+            && (painted_supports.iter().any(|(_, s)| *s == 1)
+                || plate
+                    .objects
+                    .iter()
+                    .flat_map(|o| &o.volumes)
+                    .any(|v| v.role == crate::plate::VolumeRole::SupportEnforcer))
+        {
+            warnings.push(SliceWarning {
+                code: WarningCode::UnsupportedSetting,
+                message: ENFORCERS_UNUSED.to_owned(),
+                layer: None,
+            });
+        }
         if config.enable_support
             && config.support.manual
             && !painted_supports.iter().any(|(_, s)| *s == 1)
@@ -1510,6 +1537,16 @@ impl SliceSession {
         let painted_objects = PaintedObject::of(&parts, &part_object);
         let mut volumes = Vec::new();
         let mut volume_settings: Vec<serde_json::Value> = Vec::new();
+        // A part with its own settings prints its area like a modifier shaped as the part. These come before the
+        // objects' modifier volumes, so a modifier wins over the part's settings where it reaches into the part
+        // (the last modifier wins where they overlap).
+        for (v, t, settings) in part_regions {
+            volumes.push((
+                crate::plate::VolumeRole::Modifier,
+                PreparedPart::new(1, v, t, &plan),
+            ));
+            volume_settings.push(settings);
+        }
         for obj in &plate.objects {
             for vol in &obj.volumes {
                 let tr = vol.transform.as_ref().unwrap_or(&obj.transform);
@@ -1521,14 +1558,6 @@ impl SliceSession {
                     volume_settings.push(vol.settings.clone());
                 }
             }
-        }
-        // A part with its own settings prints its area like a modifier shaped as the part.
-        for (v, t, settings) in part_regions {
-            volumes.push((
-                crate::plate::VolumeRole::Modifier,
-                PreparedPart::new(1, v, t, &plan),
-            ));
-            volume_settings.push(settings);
         }
         let mut slots: Vec<u8> = parts
             .iter()
@@ -9712,6 +9741,7 @@ mod paint_tests {
                     ..MeshPart::default()
                 },
             ],
+            ..Mesh::default()
         }
     }
 
@@ -9785,6 +9815,7 @@ mod footprint_tests {
                 fuzzy_paint: Vec::new(),
                 paint_texts: Vec::new(),
             }],
+            ..Mesh::default()
         }
     }
 

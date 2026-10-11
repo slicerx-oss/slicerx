@@ -42,6 +42,7 @@ fn mesh(parts: Vec<MeshPart>) -> Arc<Mesh> {
     Arc::new(Mesh {
         name: "box".into(),
         parts,
+        ..Mesh::default()
     })
 }
 

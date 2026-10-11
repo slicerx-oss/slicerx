@@ -44,6 +44,7 @@ fn slice(config: Value) -> String {
     let cube = Arc::new(Mesh {
         name: "box".into(),
         parts: vec![cuboid([0.0, 20.0], [0.0, 20.0], [0.0, 4.0])],
+        ..Mesh::default()
     });
     let mut cfg = json!({"brim_width": 0, "skirt_loops": 0, "sparse_infill_density": 15});
     cfg.as_object_mut()
@@ -217,6 +218,7 @@ fn interface_shells_put_solid_layers_where_filaments_meet() {
     let mesh = Arc::new(Mesh {
         name: "column".into(),
         parts: vec![lower, upper],
+        ..Mesh::default()
     });
     let run = |extra: Value| {
         let mut cfg = json!({"brim_width": 0, "skirt_loops": 0, "enable_prime_tower": false, "sparse_infill_density": 15});

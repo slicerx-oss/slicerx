@@ -52,10 +52,12 @@ fn slice(parts: &[api::MeshPart], config: &Value, object: &Value) -> String {
     let mesh = Arc::new(Mesh {
         name: "m".into(),
         parts: parts.to_vec(),
+        ..Mesh::default()
     });
     let half = Arc::new(Mesh {
         name: "v".into(),
         parts: vec![cuboid([10.0, 30.0], [-5.0, 25.0], [-1.0, 5.0], 1)],
+        ..Mesh::default()
     });
     let mut cfg = json!({
         "brim_width": 0, "skirt_loops": 0, "sparse_infill_density": 20, "sparse_infill_pattern": "rectilinear",

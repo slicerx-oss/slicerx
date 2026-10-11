@@ -58,10 +58,12 @@ fn two_boxes(enforced: bool, config: Value, right: Value) -> SliceRun {
     let painted = Arc::new(Mesh {
         name: "painted".into(),
         parts: vec![cuboid(enforced)],
+        ..Mesh::default()
     });
     let plain = Arc::new(Mesh {
         name: "plain".into(),
         parts: vec![cuboid(false)],
+        ..Mesh::default()
     });
     let mut cfg = json!({
         "brim_width": 0,
