@@ -2385,18 +2385,21 @@ async fn an_unanswered_watch_pause_turns_the_bed_then_the_nozzle_off() {
     )
     .await;
     assert_eq!(r["result"]["paused"], true, "{r}");
-    // The bed goes first, the nozzle later; nothing else is sent.
+    // The bed goes first, the nozzle later; nothing else is sent. The printer logs the nozzle
+    // command as it arrives, and the hub writes the step to the audit log once the printer has
+    // answered, so wait for both.
     let mut log = Vec::new();
+    let mut audit = String::new();
     for _ in 0..60 {
         log = mock_log(&mocks).await;
-        if log.iter().any(|l| l == "gcode M104 S0") {
+        audit = std::fs::read_to_string(dir.join("audit.jsonl")).unwrap_or_default();
+        if log.iter().any(|l| l == "gcode M104 S0") && audit.contains("\"step\":\"heaters_off\"") {
             break;
         }
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
     let gcode: Vec<&String> = log.iter().filter(|l| l.starts_with("gcode ")).collect();
     assert_eq!(gcode, vec!["gcode M140 S0", "gcode M104 S0"], "{log:?}");
-    let audit = std::fs::read_to_string(dir.join("audit.jsonl")).unwrap();
     for needle in [
         "\"action\":\"printer.pause\"",
         "\"step\":\"bed_off\"",
