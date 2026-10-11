@@ -29,6 +29,7 @@ The other files in this folder:
 - [quickstart.md](quickstart.md): the reference for every tool, option, result field and error code.
 - [partner-app-key.md](partner-app-key.md): how an app on the same computer reaches the user's printers through SlicerX's bridge, with a key the user makes in SlicerX and can revoke.
 - [mimir-cloud.md](mimir-cloud.md): how an app that runs its own mimir chat calls SlicerX's hosted model proxy: register, messages, quota, refusals and testing.
+- [connected-apps.md](connected-apps.md): the user's Spoolman, Home Assistant and BamBuddy through SlicerX's bridge: the MCP tools an agent reads them with, what needs an approval or a person, and how a new connected app is added. A runnable sample is in `connected-apps/`.
 - [llms.txt](llms.txt): an index of these files for tools that read `llms.txt`.
 - [updates.md](updates.md): which release tags and labels to watch so an edition or integration stays current.
 
