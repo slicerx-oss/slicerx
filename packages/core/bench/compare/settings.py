@@ -17,6 +17,8 @@ MATCHED = {
     "bottom_shell_layers": 3,
     "sparse_infill_density": 15,  # percent
     "line_width": 0.42,
+    # A project file's own bridge_flow (0.95 in x-mark-2color-orca.3mf) is kept by Orca when the preset leaves it out.
+    "bridge_flow": 1,
     "infill_wall_overlap": 15,  # percent
     "brim_width": 5.0,
     "nozzle_diameter": 0.4,
@@ -111,6 +113,7 @@ def sx_config():
         "filament_diameter": m["filament_diameter"],
         "filament_density": [m["filament_density"]],
         "filament_flow_ratio": [1],
+        "bridge_flow": m["bridge_flow"],
         "printable_area": m["printable_area"],
         "printable_height": m["printable_height"],
         "gcode_flavor": "marlin2",
@@ -147,6 +150,7 @@ def slicer_process(flavor):
         "enable_prime_tower": "0",
         "ironing_type": "no ironing",
         "enable_arc_fitting": "0",
+        "bridge_flow": _s(m["bridge_flow"]),
         "gcode_flavor": flavor,
     }
     for k in LINE_WIDTH_KEYS:

@@ -31,23 +31,23 @@ Speed tuning so far (`LOG.md`, 22 steps on an earlier plate of similar size, 11 
 
 Numbers for `models/x-mark.stl` on the reference machine are measured once it is free of other load and will be listed here.
 
-Two colors against OrcaSlicer 2.4.2, on `models/x-mark-2color-orca.3mf` with the shared settings of `compare/settings.py` (2026-10-05, SlicerX 0de94e29): both slice 427 layers with filament 2 from z 15.6 to 85.4. SlicerX extrudes 9015 mm (5664 and 3352 per filament) and Orca 9026 mm (5668 and 3358), 0.1 percent less. By feature, in mm, SlicerX against Orca:
+Two colors against OrcaSlicer 2.4.2, on `models/x-mark-2color-orca.3mf` with the shared settings of `compare/settings.py` (2026-10-11, SlicerX e5b5da39): both slice 427 layers with filament 2 from z 15.8 to 85.4. SlicerX extrudes 9010 mm (5657 and 3353 per filament) and Orca 9035 mm (5673 and 3362), 0.3 percent less. By feature, in mm of filament, SlicerX against Orca:
 
 | Feature | SlicerX | Orca |
 | --- | --- | --- |
-| Sparse infill | 3179 | 3181 |
-| Internal solid infill | 1787 | 1798 |
-| Outer wall | 1604 | 1608 |
+| Sparse infill | 3181 | 3181 |
+| Internal solid infill | 1780 | 1800 |
+| Outer wall | 1608 | 1608 |
 | Inner wall | 1578 | 1578 |
-| Internal bridge | 349 | 356 |
-| Top surface | 180 | 185 |
+| Internal bridge | 359 | 361 |
+| Top surface | 181 | 185 |
 | Bottom surface | 137 | 137 |
 | Brim | 82 | 83 |
-| Bridge | 64 | 60 |
-| Overhang wall | 55 | 41 |
+| Bridge | 60 | 60 |
+| Overhang wall | 43 | 43 |
 
-On 2026-10-08 overhang walls became Orca's (cut half a nozzle past the layer below, printed at the bridge flow) and a face on a cutting plane became the top of the part under it, as in Orca's slicer: the band boundaries of this file lie on cutting planes. Overhang wall is now 40.6 against 40.4 mm and internal bridge 350 against 354 mm. Bridge reads 56.4 against 59.8 mm: the total matched before only because the misplaced band layers added bridge where Orca has none; layer by layer it is closer now.
+The settings pin `filament_flow_ratio` and `bridge_flow` at 1 for every slicer. A project file carries its own values, and Orca keeps the project's for any key the preset leaves out: left out, Orca took Generic PLA's 0.98 flow ratio from this project and printed 2 percent less on walls and infill, and took the project's `bridge_flow` of 0.95, which printed overhang walls and bridges at 0.382 mm wide. That second one made overhang walls read 55 against 41 mm here before. Orca reads a user preset's values only as strings: a number in the preset JSON is skipped without a warning. On one color (`x-mark.stl`) the comparison agrees to 0.2 percent (8.55 m against 8.57 m), and overhang wall is 6.3 mm in both. The 2-color speed baseline (`configs/baseline-x-mark-2color-0.20.json`) has not been moved for this.
 
-The settings pin `filament_flow_ratio` at 1 for every slicer. A project file carries its own filament values, and Orca keeps the project's over an inherited one: left out, Orca took Generic PLA's 0.98 from this project and printed 2 percent less on walls and infill with both filaments. On one color (`x-mark.stl`) the comparison agrees to 0.1 percent as well (8.56 m against 8.57 m). The 2-color speed baseline (`configs/baseline-x-mark-2color-0.20.json`) has not been moved for this.
+Bridge path length still differs: on one color SlicerX draws 471 mm of bridge lines to Orca's 488, and with `bridge_flow` below 1 Orca packs its bridge lines closer while SlicerX keeps the same spacing (2010 against 2131 mm at 0.95 on two colors).
 
 Interleaved A/B runs still vary by a few percent when the machine has other work, so single gains near the 2 percent line are within noise.
