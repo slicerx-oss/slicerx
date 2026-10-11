@@ -297,6 +297,11 @@ mod tests {
             "clients.revoke",
             "secrets.set",
             "pair.send",
+            // connected apps are added, listed and removed by a person in the app
+            "services.configure",
+            "services.list",
+            "services.check",
+            "services.remove",
         ] {
             assert!(!allowed(Role::Agent, m), "{m}");
             assert!(allowed(Role::App, m), "{m}");
@@ -309,6 +314,7 @@ mod tests {
             "start",
             "queue.list",
             "camera.grab",
+            "callTool",
         ] {
             assert!(allowed(Role::Agent, m), "{m}");
         }
