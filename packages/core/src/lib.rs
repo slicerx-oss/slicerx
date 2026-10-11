@@ -159,6 +159,8 @@ mod preheat;
 #[doc(hidden)]
 pub mod preview;
 pub mod printtime;
+#[cfg(feature = "import")]
+mod prusa;
 #[cfg(feature = "sleipnir")]
 mod sleipnir;
 // Indices walk the point lists they index, as Orca's loops do.
