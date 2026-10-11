@@ -517,6 +517,43 @@ pub fn layer_marker(time_s: f32, e_units: &[i64], tools: &[u8]) -> String {
     format!(";@L {time_s:.3} {} {}\n", e.join(","), t.join(","))
 }
 
+/// The end of a layer's own fan line (`M106 S255 ;@N`): [`finalize`] drops the line when the fan already runs at that
+/// speed and removes the mark otherwise. Left in place it is a plain comment.
+pub(crate) const FAN_MARK: &[u8] = b" ;@N";
+
+/// `cmd` (a fan command and its line break) marked as a layer's own fan line.
+pub(crate) fn layer_fan_line(cmd: &str) -> String {
+    format!("{} ;@N\n", cmd.trim_end())
+}
+
+/// What a line does to the fans, for dropping repeated layer fan lines.
+enum FanChange {
+    /// A fan command, its words one space apart.
+    Set(Vec<u8>),
+    /// A pause: the fans are not known after it.
+    Unknown,
+}
+
+/// What a line does to the fans, or None when it does nothing to them. Every fan command counts, the part fan's or
+/// another's: a layer fan line is dropped only after the very same command, so a line that is needed is never dropped.
+fn fan_change(line: &[u8]) -> Option<FanChange> {
+    let code = line.split(|&b| b == b';').next().unwrap_or_default();
+    let mut words = code.split(u8::is_ascii_whitespace).filter(|w| !w.is_empty());
+    let first = words.next()?;
+    match first {
+        b"M106" | b"M107" | b"M126" | b"M127" => {
+            let mut v = first.to_vec();
+            for w in words {
+                v.push(b' ');
+                v.extend_from_slice(w);
+            }
+            Some(FanChange::Set(v))
+        }
+        b"M600" | b"M601" | b"M0" | b"M1" | b"M25" | b"PAUSE" => Some(FanChange::Unknown),
+        _ => None,
+    }
+}
+
 /// Where the thumbnails go: `;@T` with the sizes the profile asks for. Nothing when it asks for none.
 pub fn thumbnail_marker(cfg: &PrintConfig) -> String {
     let (ok, _) = crate::thumbnail::specs(cfg);
@@ -948,9 +985,36 @@ pub fn finalize_timed(
         )
     };
     let per_move = footer.m73 && total > 0.0 && !line_times.is_empty();
+    // The fan command in force, from the first layer's own fan line on (the start G-code's are not counted, as Orca's
+    // cooling buffer writes the first layer's fan whatever the start did); None while it is not known.
+    let mut fan: Option<Vec<u8>> = None;
+    let mut fan_known = false;
     while let Some((li, line)) = lines.next() {
         // The piece after the final newline has none of its own.
         let newline = lines.peek().is_some();
+        if let Some(cmd) = line.strip_suffix(FAN_MARK) {
+            let cmd = cmd.trim_ascii_end();
+            let now = match fan_change(cmd) {
+                Some(FanChange::Set(v)) => Some(v),
+                _ => None,
+            };
+            if fan_known && now.is_some() && fan == now {
+                continue;
+            }
+            fan_known = true;
+            fan = now;
+            out.extend_from_slice(cmd);
+            if newline {
+                out.push(b'\n');
+            }
+            continue;
+        }
+        if fan_known && let Some(change) = fan_change(line) {
+            fan = match change {
+                FanChange::Set(v) => Some(v),
+                FanChange::Unknown => None,
+            };
+        }
         if line.starts_with(b";@L ") {
             continue;
         }
