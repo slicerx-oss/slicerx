@@ -20,6 +20,9 @@ mod private;
 mod shot;
 #[cfg(unix)]
 mod signal;
+mod window;
+
+pub use window::open_main_window;
 
 use std::collections::HashMap;
 use std::net::{TcpListener, TcpStream};
