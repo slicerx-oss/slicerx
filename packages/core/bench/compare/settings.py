@@ -37,6 +37,15 @@ MATCHED = {
     "retraction_length": 0.8,
     "retraction_speed": 30,
     "retraction_minimum_travel": 1.0,
+    # Cooling: the fan curve both slicers follow, from the layer time (OrcaSlicer's Generic PLA values). Left out,
+    # each slicer takes its own defaults and the fans differ for that reason alone.
+    "fan_min_speed": 20,
+    "fan_max_speed": 100,
+    "fan_cooling_layer_time": 60,
+    "slow_down_layer_time": 5,
+    "slow_down_min_speed": 10,
+    "close_fan_the_first_x_layers": 1,
+    "full_fan_speed_layer": 0,
     # SlicerX's time estimate has no acceleration model, so the other two are set to a high value
     # to keep their estimates in the same range. It is still an estimate, not a measured print time.
     "acceleration": 10000,
@@ -51,6 +60,7 @@ ACCEL_KEYS = (
     "default_acceleration", "outer_wall_acceleration", "inner_wall_acceleration", "top_surface_acceleration",
     "sparse_infill_acceleration", "initial_layer_acceleration", "travel_acceleration",
 )
+COOLING_KEYS = ("fan_min_speed", "fan_max_speed", "fan_cooling_layer_time", "slow_down_layer_time", "slow_down_min_speed")
 SPEED_KEYS = (
     "outer_wall_speed", "inner_wall_speed", "sparse_infill_speed", "internal_solid_infill_speed",
     "top_surface_speed", "initial_layer_speed", "initial_layer_infill_speed", "travel_speed",
@@ -108,6 +118,10 @@ def sx_config():
         "retraction_length": m["retraction_length"],
         "retraction_speed": m["retraction_speed"],
         "retraction_minimum_travel": m["retraction_minimum_travel"],
+        **{k: [m[k]] for k in COOLING_KEYS},
+        "close_fan_the_first_x_layers": m["close_fan_the_first_x_layers"],
+        "full_fan_speed_layer": m["full_fan_speed_layer"],
+        "reduce_fan_stop_start_freq": [False],
     }
 
 
@@ -171,12 +185,16 @@ def slicer_filament():
         "nozzle_temperature_initial_layer": [_s(m["nozzle_temperature"])],
         "hot_plate_temp": [_s(m["bed_temperature"])],
         "hot_plate_temp_initial_layer": [_s(m["bed_temperature"])],
-        # SlicerX has no cooling slowdown or volumetric speed limit, so both are off here.
+        # The cooling slowdown and the volumetric speed limit are off, so the layer times compare without them.
         "slow_down_for_layer_cooling": ["0"],
         "filament_max_volumetric_speed": ["100"],
         # Set, not inherited: a project file carries its own (Generic PLA in Orca's GUI is 0.98), and
         # Orca keeps the project's value over an inherited one.
         "filament_flow_ratio": ["1"],
+        **{k: [_s(m[k])] for k in COOLING_KEYS},
+        "close_fan_the_first_x_layers": [_s(m["close_fan_the_first_x_layers"])],
+        "full_fan_speed_layer": [_s(m["full_fan_speed_layer"])],
+        "reduce_fan_stop_start_freq": ["0"],
     }
 
 
