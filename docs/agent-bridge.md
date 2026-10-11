@@ -89,6 +89,7 @@ The bridge starts only when `SX_AGENT_BRIDGE_PORT` is set:
 | Variable | Meaning |
 | --- | --- |
 | `SX_AGENT_BRIDGE_PORT` | The port on 127.0.0.1. `0` picks a free one. Unset: no bridge. |
+| `SX_TEST_HUB_PORT` | The loopback port of the app's printer hub (sx-link inside the app), 1024 or above. Default and anything else: 47615. A bridge build only; its page may connect to any loopback port, so the release gate and the end-to-end tests can run beside each other or beside an sx-link. |
 | `SX_AGENT_BRIDGE_TOKEN_FILE` | Where the connection file goes. Default: `agent-bridge.json` in the app's data folder (`%APPDATA%\app.slicerx.desktop.agent-bridge` on Windows, `~/Library/Application Support/app.slicerx.desktop.agent-bridge` on macOS, `~/.local/share/app.slicerx.desktop.agent-bridge` on Linux; without `.agent-bridge` for a dev run). |
 
 ```sh
