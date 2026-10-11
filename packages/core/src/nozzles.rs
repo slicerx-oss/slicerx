@@ -239,12 +239,7 @@ impl Usage {
         }
         if cfg.enable_support {
             for key in ["support_filament", "support_interface_filament"] {
-                #[allow(
-                    clippy::cast_possible_truncation,
-                    clippy::cast_sign_loss,
-                    reason = "a filament slot"
-                )]
-                let s = cfg.raw_number(key, 0.0).clamp(0.0, 64.0) as u8;
+                let s = crate::session::support_slot(cfg, key).min(64);
                 if s > 0 {
                     spans.push((s, 0.0, top));
                 }

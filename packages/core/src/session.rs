@@ -1447,6 +1447,9 @@ impl SliceSession {
                 layer: None,
             });
         }
+        if config.enable_support {
+            warnings.extend(support_slot_warnings(config));
+        }
         if config.enable_support
             && config.support.manual
             && !painted_supports.iter().any(|(_, s)| *s == 1)
@@ -8775,7 +8778,20 @@ fn split_by_feature(work: ToolWork, t: FeatureTools) -> Vec<ToolWork> {
 }
 
 /// The filament slot a support setting names, 0 for the active one.
-fn support_slot(cfg: &PrintConfig, key: &str) -> u8 {
+/// The filament `key` (`support_filament` or `support_interface_filament`) asks support to print with, 1-based;
+/// 0 is whichever filament is active. A filament past the ones the settings set up is 0 as well: support then
+/// prints with the active filament instead of changing to one that is not there (the slice warns, see
+/// [`support_slot_warnings`]).
+pub(crate) fn support_slot(cfg: &PrintConfig, key: &str) -> u8 {
+    let asked = support_slot_asked(cfg, key);
+    match filament_count(cfg) {
+        Some(n) if usize::from(asked) > n => 0,
+        _ => asked,
+    }
+}
+
+/// The value of `key` as a filament slot, as the settings give it.
+fn support_slot_asked(cfg: &PrintConfig, key: &str) -> u8 {
     #[allow(
         clippy::cast_possible_truncation,
         clippy::cast_sign_loss,
@@ -8784,6 +8800,36 @@ fn support_slot(cfg: &PrintConfig, key: &str) -> u8 {
     {
         cfg.raw_number(key, 0.0).clamp(0.0, 255.0).round() as u8
     }
+}
+
+/// How many filaments the settings set up: the length of `filament_colour`, which hosts and projects give per
+/// filament. `None` when the settings have no such list, so nothing is checked against it.
+fn filament_count(cfg: &PrintConfig) -> Option<usize> {
+    cfg.raw
+        .get("filament_colour")
+        .and_then(serde_json::Value::as_array)
+        .map(Vec::len)
+        .filter(|n| *n > 0)
+}
+
+/// A warning for each support filament key that asks for a filament the settings do not set up.
+fn support_slot_warnings(cfg: &PrintConfig) -> Vec<SliceWarning> {
+    let Some(n) = filament_count(cfg) else {
+        return Vec::new();
+    };
+    ["support_filament", "support_interface_filament"]
+        .into_iter()
+        .filter_map(|key| {
+            let asked = support_slot_asked(cfg, key);
+            (usize::from(asked) > n).then(|| SliceWarning {
+                code: WarningCode::UnsupportedSetting,
+                message: format!(
+                    "{key} asks for filament {asked}, but this print has {n}; support prints with the current filament instead"
+                ),
+                layer: None,
+            })
+        })
+        .collect()
 }
 
 /// The filaments of the support base and interface on a layer that starts on `active`.
