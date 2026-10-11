@@ -93,6 +93,36 @@ pub fn run_request(
     api::run_request(&r, load)
 }
 
+/// The color paint text of a triangle `v` of the painted tile `w` mm wide (see [`painted_tile`]).
+fn tile_paint_code(v: [[f32; 3]; 3], w: f32) -> &'static str {
+    let c = [
+        (v[0][0] + v[1][0] + v[2][0]) / 3.0,
+        (v[0][1] + v[1][1] + v[2][1]) / 3.0,
+        (v[0][2] + v[1][2] + v[2][2]) / 3.0,
+    ];
+    let flat = v.iter().all(|p| (p[2] - v[0][2]).abs() < 1e-6);
+    let (dx, dy) = (c[0] - w / 2.0, c[1] - w / 2.0);
+    let ring = (dx * dx + dy * dy).sqrt() / 1.1;
+    if flat && c[2] < 0.1 {
+        // Bottom: even rings, the cells near a ring's edge split in four with one quarter left plain.
+        if (ring / 2.0).fract() < 0.5 && ring < 5.0 {
+            if (ring - ring.round()).abs() < 0.25 {
+                "88083"
+            } else {
+                "8"
+            }
+        } else {
+            "0"
+        }
+    } else if flat {
+        if (c[1] - w / 2.0).abs() < 1.5 { "0C" } else { "0" }
+    } else if c[0] > w - 0.01 && c[1] < w / 2.0 {
+        "8"
+    } else {
+        "0"
+    }
+}
+
 /// A 12 x 12 x 1.2 mm tile painted the way image keychains are: the bottom face on a 0.6 mm grid in rings of
 /// filament 2 about a millimeter wide, with the cells along each ring's edge split and partly left plain
 /// (so half-size triangles meet whole ones), half of the right side in filament 2 too, a band of filament 3
@@ -139,35 +169,15 @@ pub fn painted_tile() -> Mesh {
     }
     let corners = |t: &[u32; 3]| t.map(|v| positions[v as usize]);
     let mut paint = Vec::new();
-    for t in &triangles {
+    // The texts the paint is decoded from, as a 3MF load keeps them: the content hash reads them, not the paint.
+    let mut paint_texts = Vec::new();
+    for (index, t) in (0u32..).zip(&triangles) {
         let v = corners(t);
-        let c = [
-            (v[0][0] + v[1][0] + v[2][0]) / 3.0,
-            (v[0][1] + v[1][1] + v[2][1]) / 3.0,
-            (v[0][2] + v[1][2] + v[2][2]) / 3.0,
-        ];
-        let flat = v.iter().all(|p| (p[2] - v[0][2]).abs() < 1e-6);
-        let (dx, dy) = (c[0] - w / 2.0, c[1] - w / 2.0);
-        let ring = (dx * dx + dy * dy).sqrt() / 1.1;
-        let code = if flat && c[2] < 0.1 {
-            // Bottom: even rings, the cells near a ring's edge split in four with one quarter left plain.
-            if (ring / 2.0).fract() < 0.5 && ring < 5.0 {
-                if (ring - ring.round()).abs() < 0.25 {
-                    "88083"
-                } else {
-                    "8"
-                }
-            } else {
-                "0"
-            }
-        } else if flat {
-            if (c[1] - w / 2.0).abs() < 1.5 { "0C" } else { "0" }
-        } else if c[0] > w - 0.01 && c[1] < w / 2.0 {
-            "8"
-        } else {
-            "0"
-        };
+        let code = tile_paint_code(v, w);
         paint.extend(sx_core::paint::decode(code, v));
+        if code != "0" {
+            paint_texts.push((0, index, code.to_owned()));
+        }
     }
     let mut bar = Vec::new();
     for z in [0.0, H / 2.0] {
@@ -190,6 +200,7 @@ pub fn painted_tile() -> Mesh {
                 positions,
                 triangles,
                 paint,
+                paint_texts,
                 ..api::MeshPart::default()
             },
             api::MeshPart {
