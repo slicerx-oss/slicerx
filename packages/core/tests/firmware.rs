@@ -1795,6 +1795,37 @@ fn a_filament_only_a_feature_prints_with_gets_an_extruder() {
 }
 
 #[test]
+fn a_filament_whose_features_all_print_with_others_is_left_out_of_the_map() {
+    // An H2D cube with its walls on filament 2, sparse infill on 3 and solid infill and surfaces on 4: filament 1
+    // prints nothing and goes to the left extruder. Filament 2 prints on every layer and 3 and 4 never on the same
+    // one, so 2 has the left extruder to itself and 3 and 4 share the right (master): `1,1,2,2`, as Bambu Studio
+    // maps this plate.
+    let flush: Vec<u32> = (0..2)
+        .flat_map(|_| (0..16).map(|i| if i % 5 == 0 { 0 } else { 280 }))
+        .collect();
+    let c = json!({
+        "gcode_flavor": "marlin",
+        "printer_model": "Bambu Lab H2D",
+        "nozzle_diameter": [0.4, 0.4],
+        "physical_extruder_map": [1, 0],
+        "master_extruder_id": 2,
+        "single_extruder_multi_material": true,
+        "outer_wall_filament_id": 2,
+        "inner_wall_filament_id": 2,
+        "sparse_infill_filament_id": 3,
+        "internal_solid_filament_id": 4,
+        "top_surface_filament_id": 4,
+        "bottom_surface_filament_id": 4,
+        "flush_volumes_matrix": flush,
+        "nozzle_temperature": [220, 225, 230, 235],
+        "filament_diameter": [1.75, 1.75, 1.75, 1.75],
+        "machine_start_gcode": "; map {filament_map[0]} {filament_map[1]} {filament_map[2]} {filament_map[3]}",
+    });
+    let g = cube_on(c, 1);
+    assert_eq!(g.lines().find(|l| l.starts_with("; map ")), Some("; map 1 1 2 2"));
+}
+
+#[test]
 fn a_first_layer_change_flushes_at_the_first_layer_temperature_without_cooling() {
     // Bambu Studio's H2D change template waits for the nozzle to go from the new filament's print temperature
     // (less its cooling before the tower) to its flush temperature. On the first layer that is the first layer
