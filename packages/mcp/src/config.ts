@@ -5,7 +5,7 @@
 // then overrides.
 // Shared by the file tools and cloud slicing.
 import type { SettingValue } from '@slicerx/contracts'
-import { GCODE_TEXT_KEYS, printerConfig, printerProfile, reviewProjectGcode, type GcodeChange, type GcodeKept } from '@slicerx/settings'
+import { GCODE_TEXT_KEYS, printerConfig, printerForProfile, printerProfile, reviewProjectGcode, type GcodeChange, type GcodeKept } from '@slicerx/settings'
 import type { DataStore } from './data'
 import type { PresetLayer } from './presets'
 import { ToolInputError } from './models'
@@ -74,7 +74,22 @@ export function setSlot(list: readonly unknown[], slot: number, value: unknown, 
   return out
 }
 
-/** Profiles must be loaded with `profiles.prepare(names)` first, for stock filament presets. */
+/**
+ * The printer model the slice is for: the last printer layer's, in the order the layers merge (profiles, then preset
+ * files). Undefined when no layer names a printer, or the last one is not one of the printer models.
+ */
+function slicePrinter(profiles: ProfileCatalog, names: string[], presets: PresetLayer[]): { printerId: string; nozzle?: number } | undefined {
+  let printer: { printerId: string; nozzle?: number } | undefined
+  for (const name of names) {
+    if (profiles.find(name)?.section !== 'printer') continue
+    const id = profiles.printerModel(name)
+    printer = id ? { printerId: id } : undefined
+  }
+  for (const layer of presets) if (layer.section === 'printer') printer = printerForProfile(layer.inherits ?? layer.name)
+  return printer
+}
+
+/** Profiles must be loaded with `profiles.prepare(names)` first, for stock filament presets and the makers' supports. */
 export function resolveSliceConfig(store: DataStore, profiles: ProfileCatalog, names: string[], overrides: Record<string, unknown> | undefined, extra: ExtraLayers = {}): ResolvedConfig {
   const explicit: Record<string, SettingValue> = {}
   const applied: string[] = []
@@ -84,7 +99,8 @@ export function resolveSliceConfig(store: DataStore, profiles: ProfileCatalog, n
   // No printer named anywhere: the engine falls back to its generic machine, which the result says
   const noPrinter = !extra.project && !names.some((n) => profiles.get(n)?.section === 'printer') && !(extra.presets ?? []).some((l) => l.section === 'printer')
   if (fallback) {
-    Object.assign(explicit, fallback.config)
+    // Its supports are what the app gives this printer on a fresh plate: the maker's preset's where it has one
+    Object.assign(explicit, fallback.config, profiles.defaultSupports(slicePrinter(profiles, names, extra.presets ?? [])))
     applied.push(fallback.id)
   }
   if (extra.project) {
