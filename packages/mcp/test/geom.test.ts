@@ -35,7 +35,7 @@ describe.skipIf(!existsSync(geomBin))('mesh tools with the real sx-geom', () => 
   it('lists the tools', async () => {
     const h = await connect({ sxGeomBin: geomBin })
     const names = (await h.client.listTools()).tools.map((t) => t.name)
-    for (const n of ['cut', 'split', 'orient', 'repair', 'hollow', 'emboss', 'calibration_model', 'resume_plan', 'layers_plan', 'build', 'subtract', 'render']) expect(names).toContain(`slicerx_geom_${n}`)
+    for (const n of ['cut', 'split', 'orient', 'repair', 'hollow', 'emboss', 'calibration_model', 'resume_plan', 'layers_plan', 'build', 'subtract', 'render', 'paint_regions']) expect(names).toContain(`slicerx_geom_${n}`)
   })
 
   it('cuts a cube in two and writes both parts', async () => {
@@ -99,6 +99,18 @@ describe.skipIf(!existsSync(geomBin))('mesh tools with the real sx-geom', () => 
     const painted = await h.call('slicerx_geom_render', { model: 'sample:cube-20', paint: { '0': '8' }, colors: ['#ff8000', '#ffff80'] })
     const area = data<{ output: { paintedAreaMm2: Record<string, number> } }>(painted).output.paintedAreaMm2
     expect(area['2']).toBeCloseTo(200, 1)
+  })
+
+  it('reads paint back as regions per state', async () => {
+    const h = await connect({ sxGeomBin: geomBin })
+    const r = await h.call('slicerx_geom_paint_regions', { model: 'sample:cube-20', paint: { '0': '8', '1': '8', '2': '0C' } })
+    expect(r.isError, JSON.stringify(r.content)).toBeFalsy()
+    const out = data<{ output: { states: { state: number; areaMm2: number; regionCount: number }[]; badPaint: number } }>(r).output
+    expect(out.badPaint).toBe(0)
+    expect(out.states.map((s) => s.state)).toEqual([2, 3])
+    expect(out.states[0]?.areaMm2).toBeCloseTo(400, 1)
+    const bad = data<{ output: { badPaint: number } }>(await h.call('slicerx_geom_paint_regions', { model: 'sample:cube-20', paint: { '0': 'zz' } })).output
+    expect(bad.badPaint).toBe(1)
   })
 
   it('follows the permission policy for mesh-writing tools', async () => {
