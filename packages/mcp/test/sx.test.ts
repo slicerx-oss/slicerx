@@ -44,6 +44,21 @@ describe.skipIf(noSx())('slicing with the real sx CLI', { timeout: sxTimeout }, 
     expect(s.filament_g).toBeGreaterThan(0)
     expect(readFileSync(s.gcode_path, 'utf8')).toMatch(/^G1 /m)
   })
+
+  it('slices with paint given in the call, and refuses paint that does not read', async () => {
+    const h = await connect({ engine: 'sx', sxBin })
+    const base = { model: join(h.dir, 'cube.stl'), profiles: ['filament:pla'], filaments: [{ slot: 2, profile: 'filament:pla', color: '#00AE42' }], overrides: { layer_height: 0.2, smart_layer: 'off' } }
+    const plain = data<{ filaments: { slot: number; filament_mm: number }[] }>(await h.call('slicerx_slice_file', base))
+    const r = await h.call('slicerx_slice_file', { ...base, paint: { '0': { color: { '0': '8', '1': '8' } } } })
+    expect(r.isError, JSON.stringify(r.content)).toBeFalsy()
+    const painted = data<{ filaments: { slot: number; filament_mm: number }[] }>(r)
+    const slot2 = (s: { filaments: { slot: number; filament_mm: number }[] }) => s.filaments.find((f) => f.slot === 2)?.filament_mm ?? 0
+    expect(slot2(plain)).toBe(0)
+    expect(slot2(painted)).toBeGreaterThan(0)
+    const bad = await h.call('slicerx_slice_file', { ...base, paint: { '0': { color: { '0': 'zz' } } } })
+    expect(bad.isError).toBe(true)
+    expect(JSON.stringify(bad.content)).toMatch(/does not read/)
+  })
 })
 
 const hasRegistry = typeof (pilot as unknown as Record<string, unknown>)['builtinTools'] === 'function'

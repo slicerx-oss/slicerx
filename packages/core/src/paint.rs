@@ -96,6 +96,21 @@ impl Reader {
     }
 }
 
+/// Whether `text` is a paint text that reads through (unpainted counts).
+#[must_use]
+pub fn is_valid(text: &str) -> bool {
+    let Some(stream) = nibbles(text.trim()) else {
+        return false;
+    };
+    if stream.is_empty() {
+        return false;
+    }
+    let mut r = Reader { stream, at: 0 };
+    let mut out = Vec::new();
+    r.node([[0.0; 3], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]], 0, &mut out)
+        .is_some()
+}
+
 /// The painted pieces of triangle `tri` (mm) that `text` describes, unpainted pieces (state 0) left out.
 /// A text that does not parse gives nothing.
 #[must_use]

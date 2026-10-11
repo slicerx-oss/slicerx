@@ -428,6 +428,125 @@ impl Mesh {
     }
 }
 
+/// The paint layers by name, in the order of their numbers (the raw format's and `paint_texts`').
+pub const PAINT_LAYERS: [&str; 4] = ["color", "seam", "support", "fuzzy"];
+
+impl MeshPart {
+    /// Writes paint texts of one layer (0 color, 1 seam, 2 support, 3 fuzzy skin) by triangle over the part's own: a
+    /// text replaces the triangle's, an empty text clears it. The layer's painted pieces are read again from all its
+    /// texts, as a load reads them (color painted with the part's own filament is no piece). Refuses a triangle the
+    /// part does not have or a text that does not read.
+    pub fn set_paint_texts(
+        &mut self,
+        layer: u8,
+        texts: &std::collections::BTreeMap<u32, String>,
+    ) -> Result<()> {
+        if usize::from(layer) >= PAINT_LAYERS.len() {
+            return Err(Error::mesh(
+                &self.name,
+                format!("paint layer {layer} does not exist"),
+            ));
+        }
+        let mut merged: std::collections::BTreeMap<u32, String> = self
+            .paint_texts
+            .iter()
+            .filter(|(l, _, _)| *l == layer)
+            .map(|(_, t, text)| (*t, text.clone()))
+            .collect();
+        for (&tri, text) in texts {
+            if tri as usize >= self.triangles.len() {
+                return Err(Error::mesh(
+                    &self.name,
+                    format!(
+                        "triangle {tri} is past the part's {} triangles",
+                        self.triangles.len()
+                    ),
+                ));
+            }
+            if text.is_empty() {
+                merged.remove(&tri);
+            } else if crate::paint::is_valid(text) {
+                merged.insert(tri, text.clone());
+            } else {
+                return Err(Error::mesh(
+                    &self.name,
+                    format!("paint text {text} for triangle {tri} does not read"),
+                ));
+            }
+        }
+        let mut facets = Vec::new();
+        for (&tri, text) in &merged {
+            let Some(t) = self.triangles.get(tri as usize) else {
+                continue;
+            };
+            let corner = |i: u32| self.positions.get(i as usize).copied();
+            if let (Some(a), Some(b), Some(c)) = (corner(t[0]), corner(t[1]), corner(t[2])) {
+                facets.extend(crate::paint::decode(text, [a, b, c]));
+            }
+        }
+        match layer {
+            0 => {
+                let slot = self.slot;
+                self.paint = facets.into_iter().filter(|f| f.state != slot).collect();
+            }
+            1 => self.seam_paint = facets,
+            2 => self.support_paint = facets,
+            _ => self.fuzzy_paint = facets,
+        }
+        self.paint_texts.retain(|(l, _, _)| *l != layer);
+        self.paint_texts
+            .extend(merged.into_iter().map(|(t, text)| (layer, t, text)));
+        // By layer, then triangle, as a 3MF load lists them: the same paint hashes alike however it was written.
+        self.paint_texts.sort_by_key(|(l, t, _)| (*l, *t));
+        Ok(())
+    }
+}
+
+impl Mesh {
+    /// Paint in the app's shape, `{ "<part>": { "color" | "seam" | "support" | "fuzzy": { "<triangle>": "<text>" } } }`
+    /// (parts and triangles by index, texts as a 3MF's per-triangle paint), written over the mesh's own paint: a text
+    /// replaces a triangle's, an empty text clears it. Refuses parts, layers, triangles or texts that do not exist or
+    /// read, and changes nothing then.
+    pub fn apply_paint(&mut self, paint: &serde_json::Value) -> Result<()> {
+        type Layers = std::collections::BTreeMap<String, std::collections::BTreeMap<String, String>>;
+        let by_part: std::collections::BTreeMap<String, Layers> = serde_json::from_value(paint.clone())
+            .map_err(|e| Error::mesh(&self.name, format!("paint: {e}")))?;
+        let mut next = self.parts.clone();
+        for (part, layers) in by_part {
+            let k: usize = part
+                .parse()
+                .map_err(|_| Error::mesh(&self.name, format!("paint part {part} is not an index")))?;
+            let count = next.len();
+            let p = next.get_mut(k).ok_or_else(|| {
+                Error::mesh(
+                    &self.name,
+                    format!("paint part {k} is past the mesh's {count} parts"),
+                )
+            })?;
+            for (layer, texts) in layers {
+                let l = PAINT_LAYERS.iter().position(|n| *n == layer).ok_or_else(|| {
+                    Error::mesh(
+                        &self.name,
+                        format!("paint layer {layer} is not color, seam, support or fuzzy"),
+                    )
+                })?;
+                let texts = texts
+                    .into_iter()
+                    .map(|(t, text)| {
+                        t.parse::<u32>().map(|t| (t, text)).map_err(|_| {
+                            Error::mesh(&self.name, format!("paint triangle {t} is not an index"))
+                        })
+                    })
+                    .collect::<Result<std::collections::BTreeMap<u32, String>>>()?;
+                #[allow(clippy::cast_possible_truncation, reason = "one of four layers")]
+                p.set_paint_texts(l as u8, &texts)?;
+            }
+        }
+        self.parts = next;
+        Ok(())
+    }
+}
+
 const RAW_MAGIC: &[u8] = b"SXMP";
 const RAW_PAINT_MAGIC: &[u8] = b"SXPT";
 const RAW_VOLUME_MAGIC: &[u8] = b"SXVL";
@@ -814,6 +933,76 @@ impl Fnv {
 
 #[cfg(test)]
 mod tests {
+    /// A two-triangle square part on filament 1.
+    fn square_part() -> MeshPart {
+        MeshPart {
+            name: "sq".into(),
+            slot: 1,
+            positions: vec![
+                [0.0, 0.0, 0.0],
+                [10.0, 0.0, 0.0],
+                [10.0, 10.0, 0.0],
+                [0.0, 10.0, 0.0],
+            ],
+            triangles: vec![[0, 1, 2], [0, 2, 3]],
+            ..MeshPart::default()
+        }
+    }
+
+    #[test]
+    fn request_paint_writes_over_a_parts_paint_and_keeps_through_the_raw_format() {
+        let mut m = Mesh {
+            name: "m".into(),
+            parts: vec![square_part()],
+            ..Mesh::default()
+        };
+        m.apply_paint(&serde_json::json!({ "0": { "color": { "0": "8", "1": "4" }, "seam": { "1": "4" } } }))
+            .unwrap();
+        let p = &m.parts[0];
+        // Slot 2 on triangle 0; slot 1 on triangle 1 is the part's own filament, so no piece.
+        assert_eq!(p.paint.len(), 1);
+        assert_eq!(p.paint[0].state, 2);
+        assert_eq!(p.seam_paint.len(), 1);
+        assert_eq!(p.paint_texts.len(), 3);
+        // Written again: triangle 0 cleared, triangle 1 to slot 3.
+        m.apply_paint(&serde_json::json!({ "0": { "color": { "0": "", "1": "0C" } } }))
+            .unwrap();
+        let p = &m.parts[0];
+        assert_eq!(p.paint.iter().map(|f| f.state).collect::<Vec<_>>(), vec![3]);
+        assert_eq!(p.seam_paint.len(), 1, "the seam layer is kept");
+        // Through the raw parts format and back: the same texts and pieces.
+        let back = Mesh::from_raw(&m.to_raw(), "m").unwrap();
+        let mut a = m.parts[0].paint_texts.clone();
+        let mut b = back.parts[0].paint_texts.clone();
+        a.sort();
+        b.sort();
+        assert_eq!(a, b);
+        assert_eq!(back.parts[0].paint, m.parts[0].paint);
+        assert_eq!(back.content_hash(), m.content_hash());
+    }
+
+    #[test]
+    fn bad_request_paint_changes_nothing() {
+        let mut m = Mesh {
+            name: "m".into(),
+            parts: vec![square_part()],
+            ..Mesh::default()
+        };
+        m.apply_paint(&serde_json::json!({ "0": { "color": { "0": "8" } } }))
+            .unwrap();
+        let before = m.content_hash();
+        for bad in [
+            serde_json::json!({ "1": { "color": { "0": "8" } } }),
+            serde_json::json!({ "0": { "glitter": { "0": "8" } } }),
+            serde_json::json!({ "0": { "color": { "2": "8" } } }),
+            serde_json::json!({ "0": { "color": { "1": "8", "0": "zz" } } }),
+            serde_json::json!([1, 2]),
+        ] {
+            assert!(m.apply_paint(&bad).is_err(), "{bad}");
+            assert_eq!(m.content_hash(), before, "{bad}");
+        }
+    }
+
     use super::*;
 
     #[cfg(feature = "import")]
