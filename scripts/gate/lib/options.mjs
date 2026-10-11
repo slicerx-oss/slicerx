@@ -33,6 +33,7 @@ export const HELP = `node scripts/gate/run.mjs --app <bridge build> [options]
   --profile <dir>       Reuse this web profile folder instead of a fresh one (Windows, Linux)
   --commit <hash>       The commit the build was made from (default: git HEAD of this checkout)
   --hub-dir <dir>       The bridge build's printer hub folder for w (default: <app data>/app.slicerx.desktop.agent-bridge/hub)
+  --hub-port <n>        The loopback port the app's printer hub listens on (default: a free one, as SX_TEST_HUB_PORT)
 
 Scenarios:
 ${Object.entries(SCENARIOS).map(([k, v]) => `  ${k}  ${v}`).join('\n')}
@@ -61,6 +62,7 @@ export function options(argv) {
       profile: { type: 'string' },
       commit: { type: 'string' },
       'hub-dir': { type: 'string' },
+      'hub-port': { type: 'string' },
       help: { type: 'boolean', short: 'h' },
     },
     strict: true,
@@ -85,6 +87,8 @@ export function options(argv) {
   }
   const waitStart = values['wait-start'] === undefined ? START_WAIT_S : Number(values['wait-start'])
   if (!Number.isFinite(waitStart) || waitStart <= 0 || waitStart > 1800) throw new Error('--wait-start is seconds between 0 and 1800')
+  const hubPort = values['hub-port'] === undefined ? null : Number(values['hub-port'])
+  if (hubPort !== null && !(Number.isInteger(hubPort) && hubPort >= 1024 && hubPort <= 65535)) throw new Error('--hub-port is a port from 1024 to 65535')
   const startersList = list(values.starters)
   for (const st of startersList) if (!STARTERS.includes(st)) throw new Error(`no starter ${st}; the starters are ${STARTERS.join(', ')}`)
   const win = process.platform === 'win32'
@@ -102,5 +106,6 @@ export function options(argv) {
     profile: values.profile ?? null,
     commit: values.commit ?? null,
     hubDir: values['hub-dir'] ? resolve(values['hub-dir']) : null,
+    hubPort,
   }
 }

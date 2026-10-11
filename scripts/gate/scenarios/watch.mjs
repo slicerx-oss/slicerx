@@ -103,7 +103,8 @@ async function linkClient() {
 
 const PRINTER = 'gate-watch'
 
-export async function watchPause(s, { hub, timings = WATCH_TIMINGS }) {
+/** `url` is the app's hub (the port the gate gave it in SX_TEST_HUB_PORT); without it, sx-link's default port. */
+export async function watchPause(s, { hub, url, timings = WATCH_TIMINGS }) {
   const plan = racePlan(timings)
   s.info('the hub\'s watch timings for this run', { ...timings, hold: plan })
   const read = (name) => readFileSync(join(hub, name), 'utf8').trim()
@@ -116,8 +117,9 @@ export async function watchPause(s, { hub, timings = WATCH_TIMINGS }) {
   let watch = null
   try {
     const hubKey = read('hub-key.pub')
-    app = await connectLink({ code: read('pairing-code'), hubKey })
-    watch = await connectLink({ code: read('watch-code'), hubKey, role: 'watch' })
+    const at = url ? { url } : {}
+    app = await connectLink({ ...at, code: read('pairing-code'), hubKey })
+    watch = await connectLink({ ...at, code: read('watch-code'), hubKey, role: 'watch' })
     s.check('paired with the app\'s hub as an app and as a failure detector', app && watch)
     await app.removePrinter(PRINTER).catch(() => undefined)
     await app.addPrinter({ id: PRINTER, name: 'Gate watch (fake)', plugin: 'moonraker', host: '127.0.0.1', port: fake.port })

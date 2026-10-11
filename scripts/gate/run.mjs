@@ -11,7 +11,7 @@ import { spawnSync } from 'node:child_process'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { release } from 'node:os'
 import { basename, join } from 'node:path'
-import { appExecutable, connectBridge, repo, startApp } from './lib/app.mjs'
+import { appExecutable, connectBridge, freePort, repo, startApp } from './lib/app.mjs'
 import { createContext } from './lib/context.mjs'
 import { HELP, options, SCENARIOS } from './lib/options.mjs'
 import { renderReport, runStatus } from './lib/report.mjs'
@@ -82,8 +82,13 @@ async function main() {
   })
   try {
     result.build.sha256 = await sha256File(exe).catch(() => 'unreadable')
-    // w needs the hub's watch pause steps in seconds; a bridge build reads them from SX_GATE_WATCH_PAUSE.
-    app = await startApp({ app: opts.app, profile: opts.profile, waitS: opts.waitStart, log, extraEnv: opts.run.includes('w') ? { SX_GATE_WATCH_PAUSE: watchPauseEnv() } : {} })
+    // The app's printer hub listens on a port of the run's own (a bridge build reads SX_TEST_HUB_PORT), so the gate
+    // runs next to an sx-link or the end-to-end tests. w needs the hub's watch pause steps in seconds; a bridge build
+    // reads them from SX_GATE_WATCH_PAUSE.
+    const hubPort = opts.hubPort ?? (await freePort())
+    log(`the app's printer hub: ws://127.0.0.1:${hubPort}`)
+    const extraEnv = { SX_TEST_HUB_PORT: String(hubPort), ...(opts.run.includes('w') ? { SX_GATE_WATCH_PAUSE: watchPauseEnv() } : {}) }
+    app = await startApp({ app: opts.app, profile: opts.profile, waitS: opts.waitStart, log, extraEnv })
     bridge = await connectBridge(app.tokenFile)
     if (opts.platform === 'macos') result.notes.push('macOS uses the bridge build\'s own data folder; start from a fresh one for first run (docs/release-gate.md).')
     const { scenario } = createContext({ bridge, out: opts.out, opts, tokenFile: app.tokenFile, log })
@@ -106,7 +111,7 @@ async function main() {
     else if (has('b')) result.notes.push('b2 (open signed in) did not run: not signed in')
     if (has('e')) add(await scenario('e', SCENARIOS.e, (s) => starters(s, { only: opts.starters })))
     if (has('d')) add(await scenario('d', SCENARIOS.d, (s) => upload(s, opts)))
-    if (has('w')) add(await scenario('w', SCENARIOS.w, (s) => watchPause(s, { hub: opts.hubDir ?? hubDir({ platform: opts.platform, env: app.env }) })))
+    if (has('w')) add(await scenario('w', SCENARIOS.w, (s) => watchPause(s, { hub: opts.hubDir ?? hubDir({ platform: opts.platform, env: app.env }), url: `ws://127.0.0.1:${hubPort}` })))
   } catch (e) {
     result.notes.push(mask(`could not run: ${e instanceof Error ? e.message : String(e)}`))
     log(`could not run: ${e instanceof Error ? e.message : String(e)}`)
