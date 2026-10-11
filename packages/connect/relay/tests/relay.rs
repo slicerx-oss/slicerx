@@ -325,8 +325,12 @@ async fn m2_a_route_has_few_subscribers_and_the_sender_pays_for_every_copy() {
     let mut a = dial(&r).await;
     let mut b = dial(&r).await;
     let mut c = dial(&r).await;
+    // Each connection's frames are read on their own, so a and b wait for a reply to a later frame
+    // (`quota`) before c asks; otherwise c's `sub` can arrive first and take a place.
     for ws in [&mut a, &mut b] {
         op(ws, json!({ "op": "sub", "route": A })).await;
+        op(ws, json!({ "op": "quota" })).await;
+        assert_eq!(next(ws).await.unwrap()["op"], "quota");
     }
     op(&mut c, json!({ "op": "sub", "route": A })).await;
     let refused = next(&mut c).await.unwrap();
