@@ -3,9 +3,10 @@
 // A client models a clip for a 6 mm cable over MCP, the way an agent would: base, ring, snap opening, screw holes
 // and a rounded end, each one a step in the design's history. The design is checked by its size and volume, saved
 // as a 3MF, opened again with the same steps, and edited.
-import { readFileSync } from 'node:fs'
+import { readFileSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { readZip } from '../src/zip'
+import { readZip, writeZip } from '../src/zip'
 import { connect, data, text } from './helpers'
 import { useGeomEngine } from './geom-engine'
 
@@ -64,7 +65,7 @@ async function buildClip() {
   const e = await h.call('slicerx_geom_edge_pick', { design: d, face: { at: [11.9, 0, 3], normal: [0, 0, 1] } })
   expect(e.isError, text(e)).toBeFalsy()
   const edge = data<{ output: { edge: unknown; supported: boolean; lengthMm: number } }>(e).output
-  const rounded = await ok('slicerx_geom_fillet', { design: d, edges: [edge.edge], radius_mm: 1 })
+  const rounded = await ok('slicerx_geom_fillet', { design: d, edges: [edge.edge], radius_mm: 1, tolerance_mm: 0.1 })
   return { h, d, ok, base, ring, opening, holes, edge, rounded }
 }
 
@@ -84,10 +85,12 @@ describe('a client models a cable clip as a design', () => {
     // Two 3.2 mm holes through the 3 mm base.
     expect(opening.volumeMm3 - holes.volumeMm3).toBeGreaterThan(2 * Math.PI * 1.6 ** 2 * 3 * 0.97)
     expect(opening.volumeMm3 - holes.volumeMm3).toBeLessThan(2 * Math.PI * 1.6 ** 2 * 3 * 1.01)
-    // A 1 mm round on the 10 mm end edge takes (1 - pi / 4) mm2 along it.
+    // A 1 mm round on the 10 mm end edge takes about (1 - pi / 4) mm2 along it, a bit more at 0.1 mm chord
+    // tolerance; a 1 mm bevel would take 5 mm3.
     expect(edge.supported).toBe(true)
     expect(edge.lengthMm).toBeCloseTo(10, 3)
-    expect(holes.volumeMm3 - rounded.volumeMm3).toBeCloseTo((1 - Math.PI / 4) * 10, 0)
+    expect(holes.volumeMm3 - rounded.volumeMm3).toBeGreaterThan((1 - Math.PI / 4) * 10)
+    expect(holes.volumeMm3 - rounded.volumeMm3).toBeLessThan(4)
     expect(rounded.parts).toHaveLength(1)
     expect(readFileSync(rounded.stlPath!).length).toBeGreaterThan(84)
 
@@ -120,18 +123,61 @@ describe('a client models a cable clip as a design', () => {
     expect(again.volumeMm3).toBeCloseTo(rounded.volumeMm3, 2)
     again.sizeMm.forEach((c, k) => expect(c).toBeCloseTo(rounded.sizeMm[k]!, 3))
 
-    // A longer ring, 12 mm instead of 10: every later step replays on it.
-    const edited = await h.call('slicerx_design_edit_step', { design: again.design, step: 2, value: 6 })
-    expect(edited.isError, text(edited)).toBeFalsy()
-    const out = data<{ output: Omit<Summary, 'steps'> & { steps: Row[] } }>(edited).output
-    expect(out.steps.map((s) => s.state)).toEqual(['done', 'done', 'done', 'done', 'done'])
-    expect(out.sizeMm[1]).toBeCloseTo(12, 3)
+    // A longer ring, 12 mm instead of 10: the round on the end no longer fits, and the step says by how much.
+    const longer = await h.call('slicerx_design_edit_step', { design: again.design, step: 2, value: 6 })
+    const broke = data<{ ok: boolean; output: Omit<Summary, 'steps'> & { steps: Row[] } }>(longer)
+    expect(broke.ok).toBe(false)
+    expect(broke.output.steps.map((s) => s.state)).toEqual(['done', 'done', 'done', 'done', 'broken'])
+    expect(broke.output.steps[4]?.message).toMatch(/at most/)
+    expect(broke.output.sizeMm[1]).toBeCloseTo(12, 3)
+
+    // Back to 10 mm, everything goes through again; then a smaller round.
+    const back = data<{ output: Omit<Summary, 'steps'> & { steps: Row[] } }>(await h.call('slicerx_design_edit_step', { design: again.design, step: 2, value: 5 })).output
+    expect(back.steps.every((s) => s.state === 'done')).toBe(true)
+    expect(back.volumeMm3).toBeCloseTo(rounded.volumeMm3, 2)
+    const smaller = await h.call('slicerx_design_edit_step', { design: again.design, step: 5, value: 0.5 })
+    expect(smaller.isError, text(smaller)).toBeFalsy()
+    const out = data<{ output: Omit<Summary, 'steps'> & { steps: Row[] } }>(smaller).output
+    expect(out.steps[4]).toMatchObject({ name: 'Fillet 0.5 mm', state: 'done' })
     expect(out.volumeMm3).toBeGreaterThan(rounded.volumeMm3)
 
-    // Undo drops the round.
+    // Undo drops the round, redo puts it back.
     const undone = await ok('slicerx_design_undo', { design: again.design })
     expect(undone.steps).toBe(4)
     expect(undone.lastStep?.name).toBe('Screw holes M3')
+    const redone = await ok('slicerx_design_redo', { design: again.design })
+    expect(redone.steps).toBe(5)
+    expect(redone.volumeMm3).toBeCloseTo(out.volumeMm3, 2)
+    await ok('slicerx_design_undo', { design: again.design })
+    await ok('slicerx_design_undo', { design: again.design })
+    const fresh = await h.call('slicerx_geom_extrude', { design: again.design, frame: { origin: [0, 0, 3], normal: [0, 0, 1] }, shape: { type: 'rectangle', widthMm: 2, heightMm: 2 }, placement: { center: [-11, 0] }, distance_mm: 0.6, operation: 'join' })
+    expect(fresh.isError, text(fresh)).toBeFalsy()
+    const none = await h.call('slicerx_design_redo', { design: again.design })
+    expect(none.isError).toBe(true)
+    expect(text(none)).toMatch(/Nothing to redo/)
+  }, 60_000)
+
+  it('opens a plain 3MF: printed parts with their slots and paint, modifiers left out', async () => {
+    const h = await connect({ geomEngine: engine })
+    const v = (x: number, y: number, z: number): string => `<vertex x="${x}" y="${y}" z="${z}"/>`
+    const cube = (s: number, painted: boolean): string => {
+      const c = [0, 1, 2, 3, 4, 5, 6, 7].map((i) => v(i & 1 ? s : 0, i & 2 ? s : 0, i & 4 ? s : 0)).join('')
+      const t = [[0, 2, 1], [1, 2, 3], [4, 5, 6], [5, 7, 6], [0, 1, 4], [1, 5, 4], [2, 6, 3], [3, 6, 7], [0, 4, 2], [2, 4, 6], [1, 3, 5], [3, 7, 5]]
+      return `<mesh><vertices>${c}</vertices><triangles>${t.map(([a, b, d], k) => `<triangle v1="${a}" v2="${b}" v3="${d}"${painted && k === 2 ? ' paint_color="8"' : ''}/>`).join('')}</triangles></mesh>`
+    }
+    const model = `<?xml version="1.0"?><model unit="millimeter" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02" xmlns:p="http://schemas.microsoft.com/3dmanufacturing/production/2015/06"><resources><object id="1" type="model">${cube(20, true)}</object><object id="2" type="model">${cube(5, false)}</object><object id="3" type="model"><components><component objectid="1" transform="1 0 0 0 1 0 0 0 1 -10 -10 0"/><component objectid="2"/></components></object></resources><build><item objectid="3" transform="1 0 0 0 1 0 0 0 1 100 100 0"/></build></model>`
+    const settings = `<?xml version="1.0"?><config><object id="3"><metadata key="name" value="Charizard ball"/><metadata key="extruder" value="1"/><part id="1" subtype="normal_part"><metadata key="name" value="Shell"/><metadata key="extruder" value="2"/></part><part id="2" subtype="modifier_part"><metadata key="name" value="Infill box"/></part></object></config>`
+    const file = join(h.dir, 'plain.3mf')
+    writeFileSync(file, writeZip([{ name: '3D/3dmodel.model', data: model }, { name: 'Metadata/model_settings.config', data: settings }]))
+    const r = await h.call('slicerx_design_open', { path: file })
+    expect(r.isError, text(r)).toBeFalsy()
+    const d = data<{ output: { designs: (Summary & { fromHistory: boolean; leftOut?: string[] })[] } }>(r).output.designs
+    expect(d).toHaveLength(1)
+    expect(d[0]).toMatchObject({ name: 'Charizard ball', steps: 0, fromHistory: false, leftOut: ['Infill box (modifier part)'] })
+    expect(d[0]?.parts.map((p) => [p.name, p.slot])).toEqual([['Shell', 2]])
+    expect((d[0]?.parts[0] as { paintedTriangles?: unknown }).paintedTriangles).toEqual({ color: 1 })
+    expect(d[0]?.sizeMm).toEqual([20, 20, 20])
+    expect(d[0]?.minMm).toEqual([90, 90, 0])
   })
 
   it('needs a model or a design, and says which', async () => {
