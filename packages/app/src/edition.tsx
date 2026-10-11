@@ -4,7 +4,6 @@
 // the app was built with. Without one the neutral defaults apply.
 import { setProductName } from '@slicerx/contracts'
 import { fontStack, neutralEdition, type EditionConfig, type PrinterFamily } from '@slicerx/edition-config'
-import { setCatalogAppName } from '@slicerx/printer-catalog'
 import { createTheme, subban, subbanLight, type Theme, type ThemeColors, type ThemeInput } from '@slicerx/ui'
 import { createContext, useContext } from 'react'
 
@@ -23,7 +22,6 @@ export function setCurrentEdition(edition: EditionConfig): void {
   current = edition
   // the packages with no edition of their own (settings, the link client, the printer catalog) name it too
   setProductName(edition.brand.name)
-  setCatalogAppName(edition.brand.name)
 }
 
 export function currentEdition(): EditionConfig {

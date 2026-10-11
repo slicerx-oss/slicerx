@@ -11,6 +11,9 @@
     "typecheck": "tsc -p tsconfig.json",
     "test": "node --test src/catalog.test.ts"
   },
+  "dependencies": {
+    "@slicerx/contracts": "workspace:*"
+  },
   "devDependencies": {
     "@types/node": "24.19.0"
   },
