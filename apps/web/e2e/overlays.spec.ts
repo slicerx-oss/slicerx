@@ -160,6 +160,30 @@ test('with the toolpaths showing, a toast clears the playback panel, the layer s
   await clearOfControls(page, await postToast(page, 'Saved the plate.'))
 })
 
+test('with the toolpaths showing, the plate bar stops short of the layer slider', { tag: '@gpu' }, async ({ page, isMobile }) => {
+  test.skip(isMobile, 'A phone stacks the plate bar under the view, apart from the slider')
+  test.slow()
+  await open(page)
+  await openProject(page)
+  // a second plate, so the bar holds more than one chip and Add plate
+  await page.getByRole('button', { name: 'Add plate' }).first().click()
+  await page.getByRole('list', { name: 'Plates' }).locator('.plate-card').first().click()
+  await slice(page)
+  const strip = page.locator('.vp .lstrip').first()
+  await expect(strip).toBeVisible()
+  await expect
+    .poll(async () => {
+      const bar = (await page.locator('.vp > .hud-bl').boundingBox())!
+      const s = (await strip.boundingBox())!
+      return Math.round(s.x - (bar.x + bar.width))
+    })
+    .toBeGreaterThanOrEqual(0)
+  // and nothing in it reaches under the slider
+  for (const box of await page.locator('.vp > .hud-bl > *').evaluateAll((els) => els.map((e) => e.getBoundingClientRect().right))) {
+    expect(box).toBeLessThanOrEqual((await strip.boundingBox())!.x)
+  }
+})
+
 test('away from the plate tab, toasts keep their place at the window bottom', { tag: '@gpu' }, async ({ page }) => {
   await open(page)
   await page.evaluate(() => (window as unknown as { __sx: Sx }).__sx.setState({ workspace: 'printers' }))
