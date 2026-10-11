@@ -41,4 +41,14 @@ describe('a design saved over MCP', () => {
     expect(h?.steps.map((s) => s.params.op)).toEqual(['face.push'])
     expect(h?.base[0]?.indices.length).toBe(36)
   })
+
+  it('keeps each part\'s paint per triangle, as Bambu Studio and OrcaSlicer write it', async () => {
+    const base = { ...box('Base', 1, [0, 0, 0], [20, 10, 3]), paint: { color: { 0: '8', 1: '8' }, seam: { 4: '4' } } }
+    const button = { ...box('Button', 1, [8, 3, 3], [12, 7, 5]), paint: { color: { 2: '0C' } } }
+    const d: Design = { id: 'd2', name: 'Painted', history: { version: 1, base: [base, button], steps: [] }, transform: [...IDENTITY], parts: [base, button], status: [], madeBy: {}, written: 0 }
+    const bytes = design3mf(d)
+    const p = await readProject(new Uint8Array(bytes), { widthMm: 256, depthMm: 256 })
+    const o = p.plates.flatMap((pl) => pl.objects)[0]!
+    expect(o.paint).toEqual({ 0: { color: { 0: '8', 1: '8' }, seam: { 4: '4' } }, 1: { color: { 2: '0C' } } })
+  })
 })

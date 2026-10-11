@@ -299,6 +299,20 @@ function stepIndex(d: Design, step: number | string): number {
   return i
 }
 
+/** The paint attributes Bambu Studio and OrcaSlicer write on a painted triangle, by layer. */
+const PAINT_ATTR = { color: 'paint_color', seam: 'paint_seam', support: 'paint_supports', fuzzy: 'paint_fuzzy_skin' } as const
+
+/** A triangle's paint as 3MF attributes (none when it is not painted), so every slicer sees the colors. */
+function paintAttrs(p: HistoryMesh, t: number): string {
+  if (!p.paint) return ''
+  let out = ''
+  for (const [layer, attr] of Object.entries(PAINT_ATTR) as [keyof typeof PAINT_ATTR, string][]) {
+    const text = p.paint[layer]?.[t]
+    if (text && /^[0-9A-Fa-f]+$/.test(text)) out += ` ${attr}="${text}"`
+  }
+  return out
+}
+
 const esc = (s: string): string => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 const num = (v: number): string => String(Math.fround(v))
 
@@ -318,7 +332,7 @@ export function design3mf(d: Design): Buffer {
       const v: string[] = []
       for (let k = 0; k + 2 < p.positions.length; k += 3) v.push(`<vertex x="${num(p.positions[k]!)}" y="${num(p.positions[k + 1]!)}" z="${num(p.positions[k + 2]!)}"/>`)
       const t: string[] = []
-      for (let k = 0; k + 2 < p.indices.length; k += 3) t.push(`<triangle v1="${p.indices[k]}" v2="${p.indices[k + 1]}" v3="${p.indices[k + 2]}"/>`)
+      for (let k = 0; k + 2 < p.indices.length; k += 3) t.push(`<triangle v1="${p.indices[k]}" v2="${p.indices[k + 1]}" v3="${p.indices[k + 2]}"${paintAttrs(p, k / 3)}/>`)
       return `<object id="${i + 1}" type="model" name="${esc(p.name)}"><mesh><vertices>${v.join('')}</vertices><triangles>${t.join('')}</triangles></mesh></object>`
     })
     .join('')
