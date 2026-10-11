@@ -363,17 +363,52 @@ function storage(): Storage | null {
   }
 }
 
-/** True when this install has stored preferences, so it has run before (first-run setup shows only when false). */
-export function hasStoredPrefs(): boolean {
+/**
+ * A second copy of the prefs outside the web view: the desktop shell's file. The web view writes its storage to disk a
+ * moment after a change, and an app quit right after a change (25 to 100 ms on Windows) lost it; the shell writes the
+ * file before the call returns. The shell hands the file's copy back at the next launch as `window.__sxPrefs`.
+ */
+let mirror: ((json: string) => void) | null = null
+
+/** The desktop shell's writer for the second copy. */
+export function setPrefsMirror(write: ((json: string) => void) | null): void {
+  mirror = write
+}
+
+function mirrored(): string | null {
+  const v = (globalThis as { __sxPrefs?: unknown }).__sxPrefs
+  return typeof v === 'string' && v ? v : null
+}
+
+const savedAt = (raw: string): number => {
   try {
-    return Boolean(storage()?.getItem(KEY))
+    const t = (JSON.parse(raw) as { savedAt?: unknown }).savedAt
+    return typeof t === 'number' ? t : 0
   } catch {
-    return false
+    return -1
   }
 }
 
+/** The newer of the web view's copy and the shell's: each save stamps the time. */
+function storedRaw(): string | null {
+  let local: string | null = null
+  try {
+    local = storage()?.getItem(KEY) ?? null
+  } catch {
+    local = null
+  }
+  const file = mirrored()
+  if (!local || !file) return local ?? file
+  return savedAt(file) > savedAt(local) ? file : local
+}
+
+/** True when this install has stored preferences, so it has run before (first-run setup shows only when false). */
+export function hasStoredPrefs(): boolean {
+  return Boolean(storedRaw())
+}
+
 export function loadPrefs(): Prefs {
-  const raw = storage()?.getItem(KEY)
+  const raw = storedRaw()
   if (!raw) return DEFAULTS
   try {
     return normalizePrefs(JSON.parse(raw))
@@ -384,11 +419,13 @@ export function loadPrefs(): Prefs {
 }
 
 export function savePrefs(p: Prefs): void {
+  const json = JSON.stringify({ ...p, savedAt: Date.now() })
   try {
-    storage()?.setItem(KEY, JSON.stringify(p))
+    storage()?.setItem(KEY, json)
   } catch {
     // Quota or access errors only cost the convenience, never the session.
   }
+  mirror?.(json)
 }
 
 /** One extruder's nozzle on a printer with more than one (an H2D's left and right), in the slicer's extruder order. */

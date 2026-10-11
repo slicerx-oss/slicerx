@@ -31,6 +31,7 @@ mod opened;
 #[cfg(feature = "connect")]
 mod pairdoc;
 mod platform;
+mod prefs;
 mod presets;
 mod probe;
 mod slicing;
@@ -70,6 +71,8 @@ fn main() {
             }
         }))
         .plugin(tauri_plugin_dialog::init())
+        // The prefs saved by the last run, handed to the page before its scripts.
+        .plugin(prefs::plugin(&context.config().identifier))
         // Links in the page open through the app's own opener (packages/app/src/lib/links.ts), which
         // shows a refused link instead of an unhandled rejection.
         .plugin(
@@ -127,6 +130,7 @@ fn main() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            prefs::prefs_save,
             slicing::load_mesh,
             slicing::slice,
             slicing::cancel_slice,

@@ -3,11 +3,12 @@
 // First: Zod must be jitless before any module makes a schema (packages/app/src/zod-jitless.ts).
 import '@slicerx/app/zod-jitless'
 import type { AppFeature, EditionHost } from '@slicerx/contracts'
-import { editionLogo, registerCrashHost, registerShellArch, setCurrentEdition, SlicerXApp } from '@slicerx/app'
+import { editionLogo, registerCrashHost, registerShellArch, setCurrentEdition, setPrefsMirror, SlicerXApp } from '@slicerx/app'
 import { editionFromBuild } from '@slicerx/edition-config'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { createDesktopHost } from './host'
+import { prefsWriter } from './host/prefs'
 import { createTauriCrash } from './host/crash'
 import { shellArch } from './host/platform'
 import { blockReloadKeys } from './reload-keys'
@@ -24,6 +25,9 @@ declare const __SX_AGENT_BRIDGE__: boolean
 // First, so it sees the app's backend calls from the start.
 let attachAgentBridge: ((host: EditionHost) => void) | null = null
 if (__SX_AGENT_BRIDGE__) attachAgentBridge = await (await import('./agent-bridge')).startAgentBridge()
+
+// Settings and setup progress also go to the shell's file, which a quit right after a change cannot lose.
+setPrefsMirror(prefsWriter())
 
 // The edition names the app from the first frame: the window title, menus and setup read it before the app renders.
 setCurrentEdition(editionFromBuild())
