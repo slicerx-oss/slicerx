@@ -43,13 +43,18 @@ test('Simple: the pill starts on the plate, the selection gets its own supports,
   // The plate opens with its object selected; with nothing selected there is no pill.
   await select(page, 0)
   await clear(page)
-  await expect(page.getByTestId('slice-scope-plate')).toHaveCount(0)
+  // With nothing selected the pill stays, its second option unavailable, so nothing under it moves as a selection
+  // starts or ends.
+  await expect(page.getByTestId('slice-scope-object')).toBeDisabled()
+  const goal = page.getByRole('radiogroup', { name: 'Goal' })
+  const before = (await goal.boundingBox())!.y
   await select(page, 0)
+  expect((await goal.boundingBox())!.y).toBe(before)
   await expect(page.getByTestId('slice-scope-plate')).toHaveAttribute('aria-checked', 'true')
-  await expect(settings(page).getByText('Every object on the plate changes.')).toBeVisible()
   await page.getByTestId('slice-scope-object').click()
   await expect(settings(page)).toHaveAttribute('data-scope', 'objects')
-  await expect(settings(page).getByText('Only Layered X changes.')).toBeVisible()
+  expect((await goal.boundingBox())!.y).toBe(before)
+  await expect(settings(page).getByText('Set on the plate')).toBeVisible()
   // A goal is for the whole plate: its tiles stay, still.
   await expect(page.getByRole('radiogroup', { name: 'Goal' }).getByRole('radio').first()).toBeDisabled()
   await settings(page).getByRole('radiogroup', { name: 'Supports' }).getByRole('radio', { name: 'Auto' }).click()
@@ -61,7 +66,7 @@ test('Simple: the pill starts on the plate, the selection gets its own supports,
   // A selection that ends puts the next one back on the plate.
   await page.getByTestId('slice-scope-object').click()
   await clear(page)
-  await expect(page.getByTestId('slice-scope-plate')).toHaveCount(0)
+  await expect(page.getByTestId('slice-scope-object')).toBeDisabled()
   await select(page, 0)
   await expect(page.getByTestId('slice-scope-plate')).toHaveAttribute('aria-checked', 'true')
   await closeSheet(page)
