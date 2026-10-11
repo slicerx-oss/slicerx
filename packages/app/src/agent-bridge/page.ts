@@ -16,6 +16,7 @@ import { sliceTiming } from '../lib/slice-timing'
 import { get, setWorkspace, type AppState } from '../state/store'
 import type { Capture, LogKind } from './capture'
 import { BridgeError, click, elements, fill, pressKey, testids, waitFor } from './dom'
+import { loadFaces } from './fonts'
 import { autoSliceMode } from '../state/auto-slice-mode'
 
 export { BridgeError } from './dom'
@@ -271,6 +272,7 @@ export function createPageBridge(capture: Capture, doc: Document = document): Pa
     clear_plate: clearPlate,
     slice,
     export_info: exportInfo,
+    fonts: async (a) => ({ faces: await loadFaces(doc.fonts, Array.isArray(a['families']) ? a['families'].filter((x): x is string => typeof x === 'string') : null) }),
   }
 
   return {
