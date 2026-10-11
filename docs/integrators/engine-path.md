@@ -13,7 +13,7 @@ What you take on with `sx` directly:
 
 ## What you need
 
-- `sx` from an [engine release](https://github.com/slicerx-oss/slicerx/releases): the archive for your platform has `sx`, `sx-geom` and `sx-link` in `bin/`. Ship `sx` with your app and run it from your main process.
+- `sx` from an [engine release](https://github.com/slicerx-oss/slicerx/releases): the archive for your platform has `sx`, `sx-geom` and `sx-link` in `bin/`. A kit packed with `--engine` has all three platforms under `engine/` (`macos-universal`, `windows-x64`, `linux-x64`), each with `bin/`. Ship the `sx` for your app's platform and run it from your main process; `sx --version` prints its version.
 - `@slicerx/embed` from the kit, for the viewport and the theme ([AGENTS.md](AGENTS.md), Step 1).
 - The pre-alpha agreement before the pieces are first used ([AGENTS.md](AGENTS.md), Step 5).
 

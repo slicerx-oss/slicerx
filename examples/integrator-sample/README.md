@@ -12,12 +12,13 @@ Spoolhouse is a made-up filament tracker that uses SlicerX the way an outside ap
 ## Run it
 
 ```sh
-cargo build -p sx-cli --release                         # once, at the repository root
-node ../../scripts/pack-integrator-kit.mjs .kit         # builds and packs the three packages
+node ../../scripts/pack-integrator-kit.mjs .kit --engine engine-v0.1.3   # packs the three packages and the engine
 npm install .kit/*.tgz                                  # the line the pack script prints
-SLICERX_SX_BIN=../../target/release/sx npm run slice    # slices, writes out/report.json and public/
+npm run slice                                           # slices, writes out/report.json and public/
 npm run build && npm run preview                        # the window on http://127.0.0.1:4388
 ```
+
+`--engine` downloads the engine release's archives, checks them against its `SHA256SUMS.txt` and unpacks one folder per platform: `.kit/engine/macos-universal`, `windows-x64` and `linux-x64`, each with `sx`, `sx-geom` and `sx-link` in `bin/`. `npm run slice` picks the one for this machine (`kitSx` in `src/main/slicerx.ts`); a real app ships only that one. To slice with an `sx` you built (`cargo build -p sx-cli --release` at the repository root), set `SLICERX_SX_BIN=../../target/release/sx`; it wins over the kit.
 
 The locked project step needs `SLICERX_MCP_SXLOCK_TOKEN` (an `sxk_` token with `sxlock_open` and `sxlock_seal`), `SLICERX_MCP_SUPABASE_URL` and `SLICERX_MCP_SUPABASE_ANON_KEY` in the environment, and is skipped without them.
 

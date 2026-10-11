@@ -3,10 +3,25 @@
 // The main process side of Spoolhouse: starts the SlicerX MCP server and slices through it.
 // In an Electron app this file runs in the main process; here it runs in plain Node.
 // It follows docs/integrators/quickstart.md step for step.
+import { existsSync } from 'node:fs'
 import { createRequire } from 'node:module'
+import { join } from 'node:path'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { CallToolResultSchema, type CallToolResult } from '@modelcontextprotocol/sdk/types.js'
+
+/**
+ * The sx in a kit packed with `pack-integrator-kit.mjs --engine`, for this machine: `<kit>/engine/macos-universal/bin/sx`
+ * on a Mac (one build for Apple silicon and Intel), `windows-x64/bin/sx.exe` on Windows and `linux-x64/bin/sx` on Linux.
+ * Undefined when the kit has no engine for this machine. Your app ships the one for the platform it installs on.
+ */
+export function kitSx(kit: string, platform: string = process.platform, arch: string = process.arch): string | undefined {
+  const folder =
+    platform === 'darwin' ? 'macos-universal' : platform === 'win32' && arch === 'x64' ? 'windows-x64' : platform === 'linux' && arch === 'x64' ? 'linux-x64' : undefined
+  if (!folder) return undefined
+  const sx = join(kit, 'engine', folder, 'bin', platform === 'win32' ? 'sx.exe' : 'sx')
+  return existsSync(sx) ? sx : undefined
+}
 
 export interface SlicerXOptions {
   /** The sx slicing engine you ship with your app. */

@@ -3,20 +3,24 @@
 // Runs everything the main process of Spoolhouse does once: read the project, slice its plate with the
 // user's presets and a filament per slot, show the error codes, and lock and open a project when an
 // account token is configured. Writes out/report.json and public/preview.sxpv for the window.
-//   SLICERX_SX_BIN=/path/to/sx npm run slice
+//   npm run slice                              # uses the kit's engine, .kit/engine/<this platform>/bin/sx
+//   SLICERX_SX_BIN=/path/to/sx npm run slice   # or an sx you built
 import { copyFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { accountFromEnv, lockAndOpen, notLocked } from './locked.ts'
-import { SlicerXError, startSlicerX } from './slicerx.ts'
+import { kitSx, SlicerXError, startSlicerX } from './slicerx.ts'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..')
 const library = join(root, 'fixtures')
 const out = resolve(process.env['SPOOLHOUSE_OUT'] ?? join(root, 'out'))
 const work = join(out, 'private')
-const sxBin = process.env['SLICERX_SX_BIN']
+const sxBin = process.env['SLICERX_SX_BIN'] || kitSx(join(root, '.kit'))
 if (!sxBin) {
-  console.error('Set SLICERX_SX_BIN to the sx engine (cargo build -p sx-cli --release builds target/release/sx).')
+  console.error(
+    'No sx engine. Pack the kit with --engine (node ../../scripts/pack-integrator-kit.mjs .kit --engine engine-v0.1.3), ' +
+      'or set SLICERX_SX_BIN to an sx you built (cargo build -p sx-cli --release builds target/release/sx).',
+  )
   process.exit(2)
 }
 rmSync(out, { recursive: true, force: true })
