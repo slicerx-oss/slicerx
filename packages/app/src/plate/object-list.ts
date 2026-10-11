@@ -6,7 +6,7 @@
 import { get, markStale, selectedIds, set, type AppState, type PlateEntry } from '../state/store'
 import { effectiveSlot } from '../filament/slots'
 import { avoidAreas, currentMargins, printSizeOf, type PrintMargins } from './arrange'
-import { bounds, fitsBed } from './transform'
+import { bounds, fitsBed, reachFrom } from './transform'
 
 import { ROLE_LABEL } from './volumes'
 
@@ -118,10 +118,11 @@ export function moveObject(id: string, toIndex: number): boolean {
 }
 
 /** True when what prints around the object (brim, raft, support pad, skirt) goes past the bed edge or onto an excluded area. */
-export function printPastBed(b: NonNullable<ReturnType<typeof bounds>>, bed: AppState['bed'], margins: PrintMargins): boolean {
+export function printPastBed(b: NonNullable<ReturnType<typeof bounds>>, bed: AppState['bed'], margins: PrintMargins, outlineReach?: number): boolean {
   const reach = margins.reach(printSizeOf(b))
   const grown = { min: [b.min[0] - reach, b.min[1] - reach, b.min[2]] as [number, number, number], max: [b.max[0] + reach, b.max[1] + reach, b.max[2]] as [number, number, number] }
-  if (!fitsBed(grown, bed)) return true
+  // On a round bed what prints around the outline is a band of `reach` mm, so the outline plus the reach must stay inside the circle.
+  if (!fitsBed(grown, bed, 0.01, outlineReach === undefined ? undefined : outlineReach + reach)) return true
   return [...avoidAreas(), ...margins.keepOut].some((z) => grown.min[0] < z.x + z.w && z.x < grown.max[0] && grown.min[1] < z.y + z.h && z.y < grown.max[1])
 }
 
@@ -134,8 +135,9 @@ export interface ObjectWarning {
 export function objectWarnings(e: PlateEntry, s: Pick<AppState, 'bed' | 'printerSlots'>, margins: PrintMargins = currentMargins()): ObjectWarning[] {
   const out: ObjectWarning[] = []
   const b = bounds(e.parts, e.transform)
-  if (b && !fitsBed(b, s.bed)) out.push({ kind: 'off-bed', text: 'Off the bed' })
-  else if (b && printPastBed(b, s.bed, margins)) out.push({ kind: 'off-bed', text: 'Brim or skirt reaches past the bed edge' })
+  const outline = b && s.bed.round ? reachFrom(e.parts, e.transform, s.bed.widthMm / 2, s.bed.depthMm / 2) : undefined
+  if (b && !fitsBed(b, s.bed, 0.01, outline)) out.push({ kind: 'off-bed', text: 'Off the bed' })
+  else if (b && printPastBed(b, s.bed, margins, outline)) out.push({ kind: 'off-bed', text: 'Brim or skirt reaches past the bed edge' })
   const have = s.printerSlots.length
   if (have > 0) {
     const missing = [...new Set(e.handle.parts.map((p) => effectiveSlot(e, p)).filter((n) => n > have))]
