@@ -4,13 +4,14 @@
 // the gate printer, the command line, the starter list against the starters the Vault is seeded with, and the report.
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { describe, it } from 'node:test'
 import { inflateRawSync } from 'node:zlib'
 import { coaster3mf } from './lib/coaster.mjs'
 import { options } from './lib/options.mjs'
 import { renderReport, runStatus } from './lib/report.mjs'
 import { isGatePrinter, plateLoaded, waitForPlate } from './scenarios/start.mjs'
+import { heaterSteps, hubDir, racePlan, WATCH_TIMINGS, watchPauseEnv } from './scenarios/watch.mjs'
 import { STARTERS, TOWER } from './lib/starters.mjs'
 import { mask, temperatureChanges, towerCheck, waitUntil } from './lib/util.mjs'
 
@@ -147,7 +148,7 @@ describe('the upload model', () => {
 describe('the command line', () => {
   it('runs every scenario by default and checks the account', () => {
     const o = options(['--account', 'QA-Win@qa.slicerx.app', '--platform', 'windows', '--out', 'x'])
-    assert.deepEqual(o.run, ['a', 'b', 'c', 'd', 'e'])
+    assert.deepEqual(o.run, ['a', 'b', 'c', 'd', 'e', 'w'])
     assert.equal(o.account, 'qa-win@qa.slicerx.app')
     assert.deepEqual([o.waitSignin, o.waitScan, o.waitReview], [10, 15, 60])
   })
@@ -163,7 +164,46 @@ describe('the command line', () => {
     const o = options(['--only', 'a,b,e', '--wait-signin', '1'])
     assert.deepEqual(o.run, ['a', 'b', 'e'])
     assert.equal(o.account, null)
-    assert.deepEqual(options(['--skip', 'c,d']).run, ['a', 'b', 'e'])
+    assert.deepEqual(options(['--skip', 'c,d']).run, ['a', 'b', 'e', 'w'])
+  })
+  it('runs the watch pause alone, with a hub folder of its own', () => {
+    const o = options(['--only', 'w', '--hub-dir', 'hub-here'])
+    assert.deepEqual(o.run, ['w'])
+    assert.equal(o.hubDir, resolve('hub-here'))
+    assert.equal(options(['--only', 'w']).hubDir, null)
+  })
+})
+
+describe('the watch pause', () => {
+  it("holds a read across one hub tick and reports while it is held, inside the hub's limits", () => {
+    const plan = racePlan(WATCH_TIMINGS)
+    assert.ok(plan.fireAfterMs > WATCH_TIMINGS.everyMs && plan.fireAfterMs < plan.windowMs, 'the report goes after a tick has started its read, inside the hold window')
+    assert.ok(plan.holdMs > plan.fireAfterMs, 'the read is still held when the report goes')
+    assert.ok(plan.holdMs < 10_000, "the held read answers within the hub's status limit")
+    assert.equal(watchPauseEnv(), '2000,12000,20000')
+    assert.throws(() => racePlan({ everyMs: 9000, bedMs: 60_000, heatersMs: 90_000 }), /10 s status limit/)
+    assert.throws(() => racePlan({ everyMs: 2000, bedMs: 5000, heatersMs: 9000 }), /bed step/)
+  })
+
+  it("finds the bridge build's hub folder on each platform", () => {
+    assert.equal(hubDir({ platform: 'windows', env: { APPDATA: 'C:/Users/q/AppData/Roaming' } }), join('C:/Users/q/AppData/Roaming', 'app.slicerx.desktop.agent-bridge', 'hub'))
+    assert.equal(hubDir({ platform: 'linux', env: { XDG_DATA_HOME: '/tmp/p/data' } }), join('/tmp/p/data', 'app.slicerx.desktop.agent-bridge', 'hub'))
+    assert.equal(hubDir({ platform: 'macos', env: {}, home: '/Users/q' }), join('/Users/q', 'Library', 'Application Support', 'app.slicerx.desktop.agent-bridge', 'hub'))
+    assert.throws(() => hubDir({ platform: 'windows', env: {} }), /APPDATA/)
+  })
+
+  it('passes the bed, then the nozzle, after a pause that a held read raced', () => {
+    const log = ['set printing', 'status read held', 'pause', 'status read held', 'gcode M140 S0', 'gcode M104 S0']
+    assert.deepEqual(heaterSteps(log), { ok: true, paused: true, held: true, gcode: ['gcode M140 S0', 'gcode M104 S0'], why: '' })
+  })
+
+  it('names what went wrong: no steps (the dropped pause), the wrong order, a missing nozzle step, no race', () => {
+    assert.equal(heaterSteps(['status read held', 'pause']).why, 'no heater was turned off')
+    assert.match(heaterSteps(['pause', 'gcode M104 S0', 'gcode M140 S0']).why, /first step was gcode M104 S0/)
+    assert.equal(heaterSteps(['pause', 'gcode M140 S0']).why, 'the bed went off but the nozzle never did')
+    assert.match(heaterSteps(['pause', 'gcode M140 S0', 'gcode M104 S0', 'gcode G28']).why, /unexpected G-code/)
+    assert.equal(heaterSteps(['set printing']).paused, false)
+    assert.equal(heaterSteps(['pause', 'status read held', 'gcode M140 S0', 'gcode M104 S0']).held, false)
   })
 })
 

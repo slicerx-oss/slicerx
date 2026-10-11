@@ -94,6 +94,9 @@ pub(crate) async fn start_bridge(
         state_dir,
         ..LinkConfig::default()
     };
+    // A bridge test build only: the release gate shortens the watch pause's steps (docs/release-gate.md, w).
+    #[cfg(feature = "agent-bridge")]
+    let cfg = gate_watch_pause(cfg, std::env::var("SX_GATE_WATCH_PAUSE").ok().as_deref());
     match serve_with_approvals(cfg, Arc::new(BrokerGate(broker.clone())), secrets, Some(broker)).await {
         Ok(link) => Ok(link),
         Err(e) if e.kind() == std::io::ErrorKind::AddrInUse => Err(format!(
@@ -104,12 +107,75 @@ pub(crate) async fn start_bridge(
     }
 }
 
+/// The release gate's watch pause timings for a bridge test build: `SX_GATE_WATCH_PAUSE` as
+/// `<watch every ms>,<bed off after ms>,<heaters off after ms>`, so scenario w sees the bed and nozzle
+/// steps in seconds instead of 30 minutes and 2 hours. Anything else leaves the hub's own timings.
+/// Compiled into bridge builds only; a release binary never reads the variable
+/// (apps/desktop/release/check-agent-bridge.mjs looks for its name).
+#[cfg(all(feature = "connect", feature = "agent-bridge"))]
+pub(crate) fn gate_watch_pause(mut cfg: sx_link::LinkConfig, value: Option<&str>) -> sx_link::LinkConfig {
+    use std::time::Duration;
+    let ms: Vec<u64> = value
+        .unwrap_or("")
+        .split(',')
+        .filter_map(|v| v.trim().parse().ok())
+        .collect();
+    if let [every, bed, heaters] = ms[..]
+        && every >= 100
+        && bed < heaters
+    {
+        cfg.watch_every = Duration::from_millis(every);
+        cfg.pause_bed_off_after = Duration::from_millis(bed);
+        cfg.pause_heaters_off_after = Duration::from_millis(heaters);
+    }
+    cfg
+}
+
 #[cfg(feature = "connect")]
 fn info(link: &sx_link::Link) -> LinkInfo {
     LinkInfo {
         url: format!("ws://{}", link.addr()),
         code: link.pairing_code().to_string(),
         hub_key: link.hub_key().to_owned(),
+    }
+}
+
+#[cfg(all(test, feature = "connect", feature = "agent-bridge"))]
+mod gate_tests {
+    use std::time::Duration;
+
+    use super::gate_watch_pause;
+
+    #[test]
+    fn the_gate_shortens_the_watch_pause_steps_and_nothing_else_changes_them() {
+        let cfg = gate_watch_pause(sx_link::LinkConfig::default(), Some("2000,12000,20000"));
+        assert_eq!(cfg.watch_every, Duration::from_secs(2));
+        assert_eq!(cfg.pause_bed_off_after, Duration::from_secs(12));
+        assert_eq!(cfg.pause_heaters_off_after, Duration::from_secs(20));
+        let own = sx_link::LinkConfig::default();
+        for bad in [
+            None,
+            Some(""),
+            Some("2000,12000"),
+            Some("50,12000,20000"),
+            Some("2000,20000,12000"),
+            Some("a,b,c"),
+        ] {
+            let cfg = gate_watch_pause(sx_link::LinkConfig::default(), bad);
+            assert_eq!(
+                (
+                    cfg.watch_every,
+                    cfg.pause_bed_off_after,
+                    cfg.pause_heaters_off_after
+                ),
+                (
+                    own.watch_every,
+                    own.pause_bed_off_after,
+                    own.pause_heaters_off_after
+                ),
+                "{bad:?}"
+            );
+        }
     }
 }
 

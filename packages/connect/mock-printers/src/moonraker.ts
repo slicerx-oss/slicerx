@@ -153,6 +153,11 @@ export async function startMoonraker(m: MockMachine, opts: { apiKey?: string; fo
       if (req.query.has('exclude_object') && m.job && (m.state === 'printing' || m.state === 'paused')) {
         status.exclude_object = { objects: m.objects.map((name, i) => ({ name, center: [40 + i * 60, 50], polygon: [[30 + i * 60, 40], [50 + i * 60, 40], [50 + i * 60, 60], [30 + i * 60, 60]] })), excluded_objects: [...m.excluded], current_object: null }
       }
+      // A slow read (POST /slow {statusHoldMs}): it answers with the state it started with, after something changed it.
+      if (Date.now() < m.statusHoldUntil) {
+        m.log.push('status read held')
+        await new Promise((r) => setTimeout(r, m.statusHoldMs))
+      }
       return { json: { result: { status } } }
     }
     if (p === '/server/files/upload' && req.method === 'POST') {
