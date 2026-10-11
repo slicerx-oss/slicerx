@@ -11,13 +11,11 @@ Lets SlicerX see the switches, lights and fans in your Home Assistant, and (afte
 
 ### In SlicerX
 
-Home Assistant is experimental: it is built from Home Assistant's API documentation but not yet tested against a real Home Assistant.
-
-1. Turn on Developer mode (the settings mode switch), then open Settings, Connected apps and switch on Try experimental connectors at the bottom.
-2. The Home Assistant card appears, labeled Experimental. Enter the address and paste the token, then Add Home Assistant. SlicerX stores the token in your keychain and never shows it again.
+1. Open Settings, Connected apps. The Home Assistant card is there in every settings mode.
+2. Enter the address and paste the token, then Add Home Assistant. SlicerX stores the token in your keychain and never shows it again.
 3. The card shows whether Home Assistant answers and how many switches, lights and fans it lists.
 
-The address must be `http://` on your local network; `https://` and internet addresses are refused for now. Turning experimental connectors off hides the card and stops SlicerX from using Home Assistant.
+The address must be `http://` on your local network; `https://` and internet addresses are refused for now.
 
 ### What SlicerX can see and do
 
@@ -115,3 +113,14 @@ There is no rate limiting in the plugin. SlicerX does not publish printer entiti
 ### Sources
 
 Home Assistant REST API: https://developers.home-assistant.io/docs/api/rest/.
+
+## Real check
+
+Checked on 2026-10-11 against Home Assistant 2026.10.1 (the official container, with the demo integration and an `input_boolean.printing_lights` helper) by `packages/connect/tests/home_assistant_live.rs`:
+
+- a wrong token is refused as an auth error;
+- listing shows switches, lights, fans, the input boolean and a button, and nothing from other domains;
+- `switch.turn_off` and `turn_on`, `light.turn_off`, `fan.turn_on`, `input_boolean.toggle` and `button.press` each change the real state, each only with an approval minted for exactly that call, and each approval works once;
+- a domain off the list is refused even with a token, and a service Home Assistant doesn't have comes back as an error.
+
+Run it again with `SX_HA_URL` and `SX_HA_TOKEN` set: `cargo test -p sx-connect --test home_assistant_live -- --ignored`.
