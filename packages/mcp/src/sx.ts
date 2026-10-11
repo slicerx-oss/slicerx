@@ -21,13 +21,17 @@ import { formatDuration } from './slicer'
 export function sxFailure(code: number | null, why: string): ToolInputError {
   if (/no plate \d+/.test(why)) return new ToolInputError(`sx exited with code ${code}: ${why}`, 'no_such_plate')
   if (/safety preflight/.test(why)) {
+    // A toolpath refusal's count covers the layers the engine checked before it refused, which the message names.
+    const range = /\bin layers? (\d+)(?: to (\d+))?/.exec(why)
+    const layers = range ? { layers: [Number(range[1]), Number(range[2] ?? range[1])] } : {}
     if (/outside the printable area/.test(why)) {
-      // The count covers the layers the engine checked before it refused, which the message names.
-      const range = /\bin layers? (\d+)(?: to (\d+))?/.exec(why)
-      const layers = range ? { layers: [Number(range[1]), Number(range[2] ?? range[1])] } : {}
       return new ToolInputError(`sx exited with code ${code}: ${why}. In a project, slicerx_arrange places the objects on the bed.`, 'preflight_blocked', { reason: 'outside_bed', fix: 'slicerx_arrange', ...layers })
     }
-    return new ToolInputError(`sx exited with code ${code}: ${why}`, 'preflight_blocked')
+    if (/excluded bed area/.test(why)) {
+      return new ToolInputError(`sx exited with code ${code}: ${why}. In a project, slicerx_arrange places the objects clear of it.`, 'preflight_blocked', { reason: 'in_exclusion_zone', fix: 'slicerx_arrange', ...layers })
+    }
+    const reason = /outside the reach of extruder/.test(why) ? 'outside_extruder_reach' : /above the printable height/.test(why) ? 'over_height' : undefined
+    return new ToolInputError(`sx exited with code ${code}: ${why}`, 'preflight_blocked', reason ? { reason, ...layers } : undefined)
   }
   return new ToolInputError(`sx exited with code ${code}: ${why}`, code === 3 ? 'invalid_model' : 'slice_failed')
 }

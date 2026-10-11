@@ -300,7 +300,7 @@ A refused call has `isError: true`, text such as `Error: no_such_plate: Benchy.3
 | `invalid_settings` | An override names an unknown setting or a value out of range |
 | `engine_unavailable` | No slicing engine, or the stub engine was asked for something only `sx` does |
 | `slice_failed` | The engine could not slice the model; the message has its reason |
-| `preflight_blocked` | The engine's safety checks refused the settings, the custom G-code or toolpaths that leave the bed. For the bed, the message names the object to move, and `details` is `{"reason": "outside_bed", "fix": "slicerx_arrange"}` |
+| `preflight_blocked` | The engine's safety checks refused the settings, the custom G-code or toolpaths that leave the bed. The message leads with the first point and its object, and its count covers only the layers it names. `details.reason` is `outside_bed`, `outside_extruder_reach`, `in_exclusion_zone` or `over_height`, `details.layers` is `[first, last]`, and `details.fix` is `slicerx_arrange` for the bed and excluded areas |
 | `project_gcode_review` | The project carries printer G-code that is not the printer's stock text; `details` has the diff and the flagged lines |
 | `project_settings_unused` | With `strict_settings`, the project's print settings carry keys SlicerX does not know or values it cannot read; the message lists them, and `slicerx_inspect_project`'s `import_report` has them all |
 | `sequence_clearance` | The plate prints by object, and objects sit closer than the printer's extruder clearance or one that prints before another is taller than the gantry or lid clears; the message names them |

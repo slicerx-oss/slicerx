@@ -360,6 +360,11 @@ pub fn check_toolpaths(out: &SliceOutput, base: &PrintConfig) -> Vec<Issue> {
     });
     let mut unreachable = Count::default();
     let mut unreachable_by = (0u8, 0usize, Feature::OuterWall);
+    // The object of the first path past its extruder's reach, of the first move into an excluded area (with its
+    // feature), and of the first layer over the height.
+    let mut unreachable_owner: Option<usize> = None;
+    let mut zone_first: (Feature, Option<usize>) = (Feature::OuterWall, None);
+    let mut tall_owner: Option<usize> = None;
     let mut bed_cache: Vec<BedCache> = Vec::new();
     for l in &out.layers {
         if !bed_cache.iter().any(|(k, ..)| *k == l.cfg) {
@@ -382,6 +387,9 @@ pub fn check_toolpaths(out: &SliceOutput, base: &PrintConfig) -> Vec<Issue> {
         let c = out.config_at(base, l.cfg);
         let top = f64::from(l.z) + if c.z_hop > 0.0 { c.z_hop } else { 0.0 };
         if top > c.printable_height + 1e-3 {
+            if too_tall.n == 0 {
+                tall_owner = l.paths.iter().find_map(|p| object_of(out, p));
+            }
             too_tall.hit(l.index, 0.0, f64::from(l.z), top);
         }
         for p in &l.paths {
@@ -425,6 +433,7 @@ pub fn check_toolpaths(out: &SliceOutput, base: &PrintConfig) -> Vec<Issue> {
                     {
                         if unreachable.n == 0 {
                             unreachable_by = (p.tool, e, p.feature);
+                            unreachable_owner = object_of(out, p);
                         }
                         unreachable.hit(l.index, x, y, 0.0);
                     }
@@ -438,6 +447,9 @@ pub fn check_toolpaths(out: &SliceOutput, base: &PrintConfig) -> Vec<Issue> {
                         && reach[1] < z.bbox[3] - EDGE_TOL_MM
                         && let Some(q) = segment_reaches(&z.poly, from, [x, y], true, EDGE_TOL_MM)
                     {
+                        if in_zone.n == 0 {
+                            zone_first = (p.feature, object_of(out, p));
+                        }
                         in_zone.hit(l.index, q[0], q[1], 0.0);
                     }
                 }
@@ -457,11 +469,7 @@ pub fn check_toolpaths(out: &SliceOutput, base: &PrintConfig) -> Vec<Issue> {
         } else {
             None
         };
-        let whose = match (first_owner, nearest) {
-            (Some(o), _) => format!("{feature} of {}", object_name(out, o)),
-            (None, Some(o)) => format!("{feature} nearest {}", object_name(out, o)),
-            (None, None) => feature,
-        };
+        let whose = whose(out, &feature, first_owner, nearest);
         let mut movers: Vec<usize> = off_objects.iter().copied().collect();
         if movers.is_empty() {
             movers.extend(nearest);
@@ -485,27 +493,15 @@ pub fn check_toolpaths(out: &SliceOutput, base: &PrintConfig) -> Vec<Issue> {
                 ),
             }
         };
-        // A sliced plate is checked one shard of layers at a time and refused at the first shard that fails, so the
-        // count covers the layers checked, never the whole plate.
-        let (lo, hi) = checked_layers(out);
-        let range = if lo == hi {
-            format!("in layer {lo}")
-        } else {
-            format!("in layers {lo} to {hi}")
-        };
-        let points = if outside.n == 1 {
-            "1 point".to_owned()
-        } else {
-            format!("{} points", outside.n)
-        };
         let mut i = Issue::new(
             "outside_bed",
             Severity::Error,
             format!(
-                "toolpaths lie outside the printable area from layer {} (X{:.1} Y{:.1}, {whose}), {points} {range}; {fix}",
+                "toolpaths lie outside the printable area from layer {} (X{:.1} Y{:.1}, {whose}), {}; {fix}",
                 outside.layer + 1,
                 outside.x,
                 outside.y,
+                counted(out, outside.n, "point", "points"),
             ),
         );
         i.layer = Some(outside.layer);
@@ -513,35 +509,53 @@ pub fn check_toolpaths(out: &SliceOutput, base: &PrintConfig) -> Vec<Issue> {
     }
     if unreachable.n > 0 {
         let (slot, e, feature) = unreachable_by;
+        let feature = feature.gcode_label().to_lowercase();
+        let nearest = if unreachable_owner.is_none() {
+            nearest_object(out, [unreachable.x, unreachable.y])
+        } else {
+            None
+        };
+        let part = unreachable_owner
+            .or(nearest)
+            .map_or_else(|| "the part".to_owned(), |o| object_name(out, o));
         let mut i = Issue::new(
             "outside_extruder_reach",
             Severity::Error,
             format!(
-                "{} toolpath points of filament {} lie outside the reach of extruder {}, first at layer {} (X{:.1} Y{:.1}, {}); map the filament to the other extruder or move the part",
-                unreachable.n,
-                slot,
+                "toolpaths of filament {slot} lie outside the reach of extruder {} from layer {} (X{:.1} Y{:.1}, {}), {}; map the filament to the other extruder or move {part}",
                 e + 1,
                 unreachable.layer + 1,
                 unreachable.x,
                 unreachable.y,
-                feature.gcode_label().to_lowercase()
+                whose(out, &feature, unreachable_owner, nearest),
+                counted(out, unreachable.n, "point", "points"),
             ),
         );
         i.layer = Some(unreachable.layer);
         issues.push(i);
     }
     if in_zone.n > 0 {
-        let mut i = Issue::new(
-            "in_exclusion_zone",
-            Severity::Error,
+        let mut i = Issue::new("in_exclusion_zone", Severity::Error, {
+            let (feature, owner) = zone_first;
+            let feature = feature.gcode_label().to_lowercase();
+            let nearest = if owner.is_none() {
+                nearest_object(out, [in_zone.x, in_zone.y])
+            } else {
+                None
+            };
+            let fix = owner.or(nearest).map_or_else(
+                || "move the objects out of it or arrange the plate".to_owned(),
+                |o| format!("move {} out of it or arrange the plate", object_name(out, o)),
+            );
             format!(
-                "{} toolpath moves enter an excluded bed area, first at layer {} (X{:.1} Y{:.1})",
-                in_zone.n,
+                "toolpaths enter an excluded bed area from layer {} (X{:.1} Y{:.1}, {}), {}; {fix}",
                 in_zone.layer + 1,
                 in_zone.x,
-                in_zone.y
-            ),
-        );
+                in_zone.y,
+                whose(out, &feature, owner, nearest),
+                counted(out, in_zone.n, "move", "moves"),
+            )
+        });
         i.layer = Some(in_zone.layer);
         issues.push(i);
     }
@@ -550,16 +564,44 @@ pub fn check_toolpaths(out: &SliceOutput, base: &PrintConfig) -> Vec<Issue> {
             "over_height",
             Severity::Error,
             format!(
-                "{} layers reach above the printable height (with z-hop), first at layer {} (Z{:.2} mm)",
-                too_tall.n,
+                "layers reach above the printable height (with z-hop) from layer {} (Z{:.2} mm{}), {}",
                 too_tall.layer + 1,
-                too_tall.z
+                too_tall.z,
+                tall_owner.map_or_else(String::new, |o| format!(", {}", object_name(out, o))),
+                counted(out, too_tall.n, "layer", "layers"),
             ),
         );
         i.layer = Some(too_tall.layer);
         issues.push(i);
     }
     issues
+}
+
+/// A count with the layers it covers: "1 point in layer 3", "5 points in layers 1 to 27". A sliced plate is
+/// checked one shard of layers at a time and refused at the first shard that fails, so a count covers the layers
+/// checked, never the whole plate.
+fn counted(out: &SliceOutput, n: u64, one: &str, many: &str) -> String {
+    let (lo, hi) = checked_layers(out);
+    let what = if n == 1 {
+        format!("1 {one}")
+    } else {
+        format!("{n} {many}")
+    };
+    if lo == hi {
+        format!("{what} in layer {lo}")
+    } else {
+        format!("{what} in layers {lo} to {hi}")
+    }
+}
+
+/// The feature at a point and the object it belongs to: "outer wall of "cube"", or for a point of no object (the
+/// skirt, a shared brim) "skirt nearest "cube"".
+fn whose(out: &SliceOutput, feature: &str, owner: Option<usize>, nearest: Option<usize>) -> String {
+    match (owner, nearest) {
+        (Some(o), _) => format!("{feature} of {}", object_name(out, o)),
+        (None, Some(o)) => format!("{feature} nearest {}", object_name(out, o)),
+        (None, None) => feature.to_owned(),
+    }
 }
 
 /// The first and last layer of `out` (1-based), the layers a check of it covers.
