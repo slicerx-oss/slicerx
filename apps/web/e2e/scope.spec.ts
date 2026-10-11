@@ -67,6 +67,26 @@ test('Simple: the pill starts on the plate, the selection gets its own supports,
   await closeSheet(page)
 })
 
+test('in the selection\'s scope the layer height says sleipnir until the selection has its own, and the goal reads as unavailable', async ({ page }) => {
+  await open(page, 'simple')
+  const layer = page.locator('#easy-layer')
+  await expect(layer).toContainText('sleipnir')
+  await select(page, 0)
+  await page.getByTestId('slice-scope-object').click()
+  // The object prints on the plate's layers until it has a height of its own.
+  await expect(layer).toContainText('sleipnir')
+  const draft = page.getByTestId('slice-goal-draft')
+  await expect(draft).toBeDisabled()
+  expect(Number(await draft.evaluate((el) => getComputedStyle(el).opacity))).toBeLessThan(0.6)
+  await layer.click()
+  await page.getByRole('menu', { name: 'Layer height' }).getByText('0.16 mm').click()
+  await expect(layer).toHaveText('0.16 mm')
+  // The plate keeps sleipnir.
+  await page.getByTestId('slice-scope-plate').click()
+  await expect(layer).toContainText('sleipnir')
+  await closeSheet(page)
+})
+
 test('Expert in the selection\'s scope: own values over the plate, Mixed across objects, reset, and plate-wide settings held', async ({ page, isMobile }) => {
   test.skip(isMobile, 'Modifier keys need a keyboard')
   await open(page, 'advanced')

@@ -97,15 +97,17 @@ export function EasySettingsPanel() {
     [easy, profile],
   )
   const view = useMemo(() => {
-    if (!scoped) return { cfg: plateCfg, mixed: new Set<string>() }
+    if (!scoped) return { cfg: plateCfg, mixed: new Set<string>(), own: new Set<string>() }
     const out: PrintConfig = { ...plateCfg }
     const mixed = new Set<string>()
+    const own = new Set<string>()
     for (const k of new Set(Object.values(keys).flat())) {
       const sv = scopeValue({ plate: plateEntries, objectSettings }, plateCfg, k, scope)
       if (sv.source === 'mixed') mixed.add(k)
       else if (sv.value !== undefined) out[k] = sv.value
+      if (sv.source === 'own') own.add(k)
     }
-    return { cfg: out, mixed }
+    return { cfg: out, mixed, own }
   }, [scoped, plateCfg, keys, plateEntries, objectSettings, scope])
   const cfg = view.cfg
   const mixedIn = (ks: readonly string[]) => ks.some((k) => view.mixed.has(k))
@@ -122,7 +124,10 @@ export function EasySettingsPanel() {
   const angle = Number(cfg['support_threshold_angle'] ?? 25) || 25
   const vary = easy.varyLayerHeight ?? true
   const [pickerOpen, setPickerOpen] = useState(false)
-  // The selection's layer height is a fixed one: sleipnir plans the plate's layers.
+  // The selection's own layer height is a fixed one: sleipnir plans the plate's layers. Until it has one, it prints
+  // on the plate's layers, sleipnir's included.
+  const layerOwn = scoped && keys.layer.some((k) => view.own.has(k))
+  const sleipnirShown = vary && !layerOwn
   const chosen = chosenFrom(scoped ? false : vary, Number(cfg.layer_height))
   const layerMixed = scoped && mixedIn(keys.layer)
   const sleipnirTip = OPTION_TIPS['smart_layer.sleipnir']
@@ -188,10 +193,10 @@ export function EasySettingsPanel() {
             aria-haspopup="menu"
             aria-expanded={pickerOpen}
             aria-labelledby="easy-layer-label easy-layer"
-            {...(vary && !scoped ? { 'data-tip-title': sleipnirTip?.title ?? '', 'data-tip-body': sleipnirTip?.body ?? '' } : {})}
+            {...(sleipnirShown ? { 'data-tip-title': sleipnirTip?.title ?? '', 'data-tip-body': sleipnirTip?.body ?? '' } : {})}
             onClick={() => setPickerOpen(!pickerOpen)}
           >
-            {layerMixed ? 'Mixed' : vary && !scoped ? <span className="seg-mark mark-sleipnir"><Icon name="sleipnir" size={15} />{SLEIPNIR}</span> : `${layer} mm`}
+            {layerMixed ? 'Mixed' : sleipnirShown ? <span className="seg-mark mark-sleipnir"><Icon name="sleipnir" size={15} />{SLEIPNIR}</span> : `${layer} mm`}
           </button>
           <Menu open={pickerOpen} onClose={() => setPickerOpen(false)} label="Layer height">
             {FIXED_HEIGHTS.map((h) => (
