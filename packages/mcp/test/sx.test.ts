@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import * as pilot from '@slicerx/pilot'
-import { parseSxOutput, sxConfig } from '../src/sx'
+import { parseSxOutput, sxConfig, sxFailure } from '../src/sx'
 import { connect, data, noSx, sxBin, sxTimeout } from './helpers'
 
 describe('sx output', () => {
@@ -16,6 +16,22 @@ describe('sx output', () => {
   it('reads a JSON result', () => {
     const p = parseSxOutput('{"schema_version":1,"layer_count":42,"stats":{"time_s":600,"filament_mm":[800,200]}}')
     expect(p).toEqual({ layers: 42, timeS: 600, filamentMm: 1000 })
+  })
+
+  it('turns an off-bed refusal into a preflight error that names the object and the arrange tool', () => {
+    const why = 'sx slice: blocked by the safety preflight: 5 toolpath points lie outside the printable area, first at layer 1 (X78.8 Y211.1, skirt nearest "cube"); move "cube" onto the bed or arrange the plate'
+    const e = sxFailure(1, why)
+    expect(e.code).toBe('preflight_blocked')
+    expect(e.message).toContain('move "cube" onto the bed or arrange the plate')
+    expect(e.message).toContain('slicerx_arrange')
+    expect(e.details).toEqual({ reason: 'outside_bed', fix: 'slicerx_arrange' })
+    // Other refusals keep their code and words, with no arrange hint.
+    const other = sxFailure(1, 'sx slice: blocked by the safety preflight: 3 layers reach above the printable height')
+    expect(other.code).toBe('preflight_blocked')
+    expect(other.message).not.toContain('slicerx_arrange')
+    expect(sxFailure(3, 'cube.stl: no plate 2').code).toBe('no_such_plate')
+    expect(sxFailure(3, 'bad mesh').code).toBe('invalid_model')
+    expect(sxFailure(1, 'out of memory').code).toBe('slice_failed')
   })
 
   it('rejects output it cannot read', () => {

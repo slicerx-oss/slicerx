@@ -346,6 +346,10 @@ struct Zone {
 pub fn check_toolpaths(out: &SliceOutput, base: &PrintConfig) -> Vec<Issue> {
     let mut outside = Count::default();
     let mut outside_feature = None;
+    // The objects whose own paths leave the bed, and the object the first point off it belongs to (none for the
+    // skirt, a shared brim or the prime tower).
+    let mut off_objects = std::collections::BTreeSet::new();
+    let mut first_owner: Option<usize> = None;
     let mut in_zone = Count::default();
     let mut too_tall = Count::default();
     // On a printer with two extruders, each filament's paths stay inside its extruder's reach
@@ -394,17 +398,20 @@ pub fn check_toolpaths(out: &SliceOutput, base: &PrintConfig) -> Vec<Issue> {
                     && x <= bb[2] + EDGE_TOL_MM
                     && y >= bb[1] - EDGE_TOL_MM
                     && y <= bb[3] + EDGE_TOL_MM;
-                if !in_bbox || (!*rect && !near_or_inside(poly, x, y, EDGE_TOL_MM)) {
+                let off = if !in_bbox || (!*rect && !near_or_inside(poly, x, y, EDGE_TOL_MM)) {
+                    Some([x, y])
+                } else if *rect {
+                    None
+                } else {
+                    segment_reaches(poly, from, [x, y], false, EDGE_TOL_MM)
+                };
+                if let Some(q) = off {
+                    let owner = object_of(out, p);
                     if outside.n == 0 {
                         outside_feature = Some(p.feature);
+                        first_owner = owner;
                     }
-                    outside.hit(l.index, x, y, 0.0);
-                    continue;
-                }
-                if !*rect && let Some(q) = segment_reaches(poly, from, [x, y], false, EDGE_TOL_MM) {
-                    if outside.n == 0 {
-                        outside_feature = Some(p.feature);
-                    }
+                    off_objects.extend(owner);
                     outside.hit(l.index, q[0], q[1], 0.0);
                     continue;
                 }
@@ -439,18 +446,54 @@ pub fn check_toolpaths(out: &SliceOutput, base: &PrintConfig) -> Vec<Issue> {
     }
     let mut issues = Vec::new();
     if outside.n > 0 {
+        let feature = outside_feature
+            .map_or("toolpath", Feature::gcode_label)
+            .to_lowercase();
+        let tower = outside_feature == Some(Feature::PrimeTower) && off_objects.is_empty();
+        // A point that belongs to no object (the skirt, a shared brim) goes with the object nearest it, as moving that
+        // object moves it too. The prime tower has a place of its own.
+        let nearest = if first_owner.is_none() && !tower {
+            nearest_object(out, [outside.x, outside.y])
+        } else {
+            None
+        };
+        let whose = match (first_owner, nearest) {
+            (Some(o), _) => format!("{feature} of {}", object_name(out, o)),
+            (None, Some(o)) => format!("{feature} nearest {}", object_name(out, o)),
+            (None, None) => feature,
+        };
+        let mut movers: Vec<usize> = off_objects.iter().copied().collect();
+        if movers.is_empty() {
+            movers.extend(nearest);
+        }
+        let fix = if tower {
+            "move the prime tower onto the bed".to_owned()
+        } else {
+            match movers.as_slice() {
+                [] => "move the objects onto the bed or arrange the plate".to_owned(),
+                [one] => format!(
+                    "move {} onto the bed or arrange the plate",
+                    object_name(out, *one)
+                ),
+                many if many.len() <= 3 => format!(
+                    "move {} onto the bed or arrange the plate",
+                    join_and(&many.iter().map(|&o| object_name(out, o)).collect::<Vec<_>>())
+                ),
+                many => format!(
+                    "move the {} objects onto the bed or arrange the plate",
+                    many.len()
+                ),
+            }
+        };
         let mut i = Issue::new(
             "outside_bed",
             Severity::Error,
             format!(
-                "{} toolpath points lie outside the printable area, first at layer {} (X{:.1} Y{:.1}, {})",
+                "{} toolpath points lie outside the printable area, first at layer {} (X{:.1} Y{:.1}, {whose}); {fix}",
                 outside.n,
                 outside.layer + 1,
                 outside.x,
                 outside.y,
-                outside_feature
-                    .map_or("toolpath", Feature::gcode_label)
-                    .to_lowercase()
             ),
         );
         i.layer = Some(outside.layer);
@@ -505,6 +548,65 @@ pub fn check_toolpaths(out: &SliceOutput, base: &PrintConfig) -> Vec<Issue> {
         issues.push(i);
     }
     issues
+}
+
+/// The plate object a path prints, when it belongs to one (not the skirt, a shared brim or the prime tower).
+fn object_of(out: &SliceOutput, p: &crate::output::PathInfo) -> Option<usize> {
+    if matches!(p.feature, Feature::Skirt | Feature::PrimeTower | Feature::Custom)
+        || p.owner == crate::preview::OBJECT_NONE
+    {
+        return None;
+    }
+    Some(usize::from(p.owner)).filter(|&i| i < out.objects.len())
+}
+
+/// The object whose outline lies nearest the point `q`, mm.
+fn nearest_object(out: &SliceOutput, q: [f64; 2]) -> Option<usize> {
+    let gap = |hull: &[[f64; 2]]| -> f64 {
+        match hull {
+            [] => f64::INFINITY,
+            [only] => (only[0] - q[0]).m_hypot(only[1] - q[1]),
+            _ => (0..hull.len())
+                .filter_map(|k| Some((hull.get(k)?, hull.get((k + 1) % hull.len())?)))
+                .map(|(a, b)| {
+                    let (dx, dy) = (b[0] - a[0], b[1] - a[1]);
+                    let len2 = dx * dx + dy * dy;
+                    let t = if len2 > 0.0 {
+                        (((q[0] - a[0]) * dx + (q[1] - a[1]) * dy) / len2).clamp(0.0, 1.0)
+                    } else {
+                        0.0
+                    };
+                    (a[0] + t * dx - q[0]).m_hypot(a[1] + t * dy - q[1])
+                })
+                .fold(f64::INFINITY, f64::min),
+        }
+    };
+    out.objects
+        .iter()
+        .enumerate()
+        .map(|(i, o)| (i, gap(&o.hull)))
+        .min_by(|a, b| a.1.total_cmp(&b.1))
+        .map(|(i, _)| i)
+}
+
+/// An object as the messages name it: its name in quotes, or its id when it has none.
+fn object_name(out: &SliceOutput, i: usize) -> String {
+    out.objects.get(i).map_or_else(
+        || format!("object {}", i + 1),
+        |o| {
+            let n = if o.name.is_empty() { &o.id } else { &o.name };
+            format!("\"{n}\"")
+        },
+    )
+}
+
+/// `a`, `a and b`, `a, b and c`.
+fn join_and(items: &[String]) -> String {
+    match items {
+        [] => String::new(),
+        [one] => one.clone(),
+        [rest @ .., last] => format!("{} and {last}", rest.join(", ")),
+    }
 }
 
 #[derive(Default)]
@@ -974,7 +1076,9 @@ mod tests {
         let issues = check_toolpaths(&output_with(&[(100.0, 100.0), (190.0, 190.0)], 0.2), &c);
         assert_eq!(issues.iter().map(|i| i.code).collect::<Vec<_>>(), ["outside_bed"]);
         assert!(
-            issues[0].message.ends_with("(X190.0 Y190.0, outer wall)"),
+            issues[0]
+                .message
+                .ends_with("(X190.0 Y190.0, outer wall); move the objects onto the bed or arrange the plate"),
             "{}",
             issues[0].message
         );
