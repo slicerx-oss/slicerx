@@ -414,7 +414,7 @@ impl Mesh {
                 ["refused stl-number 0 ", &k.to_string(), " "].concat(),
             ));
         }
-        let (positions, triangles) = weld_soup(&soup);
+        let (positions, triangles) = weld_soup(soup);
         let part = MeshPart {
             name: name.to_owned(),
             slot: 1,
@@ -846,12 +846,56 @@ fn stl_ascii(bytes: &[u8], name: &str) -> Result<Vec<[[f32; 3]; 3]>> {
     Ok(soup)
 }
 
-/// Merges bit-identical vertices of a triangle soup.
-fn weld_soup(soup: &[[[f32; 3]; 3]]) -> (Vec<[f32; 3]>, Vec<[u32; 3]>) {
-    let flat: Vec<[f32; 3]> = soup.iter().flat_map(|t| t.iter().copied()).collect();
-    let (unique, remap) = dedupe(&flat);
-    let triangles = remap.as_chunks::<3>().0.to_vec();
+/// Merges bit-identical vertices of a triangle soup. The soup is let go once its sort keys are made, and the
+/// triangles are written in place, so a big STL is not held two or three times over while it welds.
+fn weld_soup(soup: Vec<[[f32; 3]; 3]>) -> (Vec<[f32; 3]>, Vec<[u32; 3]>) {
+    let mut keys = sort_keys(soup.as_flattened());
+    drop(soup);
+    crate::par::sort(&mut keys);
+    let mut triangles = vec![[0u32; 3]; keys.len() / 3];
+    let unique = unique_sorted(&keys, triangles.as_flattened_mut());
     (unique, triangles)
+}
+
+/// The bits of x, y, z and the index of every point in one key, so the sort compares one number.
+fn sort_keys(points: &[[f32; 3]]) -> Vec<u128> {
+    #[allow(clippy::cast_possible_truncation, reason = "vertex counts fit in u32")]
+    points
+        .iter()
+        .enumerate()
+        .map(|(i, p)| {
+            let [x, y, z] = p.map(f32::to_bits);
+            (u128::from(x) << 96) | (u128::from(y) << 64) | (u128::from(z) << 32) | i as u128
+        })
+        .collect()
+}
+
+/// The unique points of sorted `keys` ([`sort_keys`]), and in `remap` each input point's index among them.
+fn unique_sorted(keys: &[u128], remap: &mut [u32]) -> Vec<[f32; 3]> {
+    // Counted first, so the list is made at its size rather than at the input's.
+    let count = usize::from(!keys.is_empty())
+        + keys
+            .windows(2)
+            .filter(|w| matches!(w, [a, b] if a >> 32 != b >> 32))
+            .count();
+    let mut unique = Vec::with_capacity(count);
+    let mut last: Option<u128> = None;
+    for &key in keys {
+        let k = key >> 32;
+        if last != Some(k) {
+            #[allow(
+                clippy::cast_possible_truncation,
+                reason = "each coordinate is 32 bits of the key"
+            )]
+            unique.push([(k >> 64) as u32, (k >> 32) as u32, k as u32].map(f32::from_bits));
+            last = Some(k);
+        }
+        #[allow(clippy::cast_possible_truncation, reason = "vertex counts fit in u32")]
+        if let Some(slot) = remap.get_mut((key as u32) as usize) {
+            *slot = (unique.len() - 1) as u32;
+        }
+    }
+    unique
 }
 
 /// Unique points by bit pattern and, for every input point, its index in
@@ -867,35 +911,10 @@ pub(crate) fn dedupe(points: &[[f32; 3]]) -> (Vec<[f32; 3]>, Vec<u32>) {
         #[allow(clippy::cast_possible_truncation, reason = "vertex counts fit in u32")]
         return (points.to_vec(), (0..points.len() as u32).collect());
     }
-    // The bits of x, y, z and the index in one key, so the sort compares one number.
-    #[allow(clippy::cast_possible_truncation, reason = "vertex counts fit in u32")]
-    let mut keys: Vec<u128> = points
-        .iter()
-        .enumerate()
-        .map(|(i, p)| {
-            let [x, y, z] = bits(p);
-            (u128::from(x) << 96) | (u128::from(y) << 64) | (u128::from(z) << 32) | i as u128
-        })
-        .collect();
+    let mut keys = sort_keys(points);
     crate::par::sort(&mut keys);
-    let mut unique = Vec::with_capacity(points.len());
     let mut remap = vec![0u32; points.len()];
-    let mut last: Option<u128> = None;
-    for &key in &keys {
-        let k = key >> 32;
-        if last != Some(k) {
-            #[allow(
-                clippy::cast_possible_truncation,
-                reason = "each coordinate is 32 bits of the key"
-            )]
-            unique.push([(k >> 64) as u32, (k >> 32) as u32, k as u32].map(f32::from_bits));
-            last = Some(k);
-        }
-        #[allow(clippy::cast_possible_truncation, reason = "vertex counts fit in u32")]
-        if let Some(slot) = remap.get_mut((key as u32) as usize) {
-            *slot = (unique.len() - 1) as u32;
-        }
-    }
+    let unique = unique_sorted(&keys, &mut remap);
     (unique, remap)
 }
 
