@@ -15,6 +15,7 @@ import { collisionTime, jumpTo } from '../src/plate/heimdall-jump'
 import { gantryHits, gantrySpec } from '../src/plate/heimdall-gantry'
 import { collisionDetail, collisionTitle, fixDetail, fixTitle, namesOf } from '../src/plate/heimdall-words'
 import { preflight } from '../src/plate/preflight'
+import { showSpot } from '../src/plate/preflight-show'
 import { get, set } from '../src/state/store'
 import { HostContext } from '../src/host'
 import { CollisionList } from '../src/workspaces/preview/collision-list'
@@ -134,6 +135,16 @@ describe('heimdall in the app', () => {
     expect(r.warnings).toContain("Low passes inside the profile's margin around Tall. The nozzle comes within 18.0 mm of it, where the profile asks for 40 mm; the head's own shape clears it, layers 3 to 4.")
     // One short line on the sheet, the numbers behind Details.
     expect(noteOf(r.warnings.find((w) => w.startsWith('Low passes'))!).text).toBe("Low passes inside the profile's margin around Tall.")
+    // The hit's Show me goes to it by its place in the slice's collisions.
+    expect(r.spots[r.errors[0]!]).toEqual({ kind: 'collision', index: 0 })
+  })
+
+  it("Show me on a Print sheet hit opens Slice's toolpaths at the strike, as the list's jump does", async () => {
+    set({ plate: [entry('tall', 'Tall'), entry('low', 'Low')], slice: { status: 'done', result: result([hit, close]), stale: false }, preview: preview(4, 10), strikePick: null, sliceLook: 'solid' as never })
+    await showSpot({ kind: 'collision', index: 0 })
+    expect(get().strikePick).toBe(0)
+    expect(get().layerHi).toBe(hit.layer + 1)
+    expect(get().sliceLook).toBe('toolpaths')
   })
 
   it('lists the strikes with when and how deep, a jump for each, and the fixes with their cost', async () => {
