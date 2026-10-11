@@ -453,8 +453,9 @@ fn with(mut parts: Vec<(&'static str, Solid, String)>, more: &[(&'static str, So
     project(&parts, "")
 }
 
-const LEFT_ARM: ([f32; 3], [f32; 3]) = ([-1.0, -1.0, -1.0], [14.0, 11.0, 13.0]);
-const RIGHT_ARM: ([f32; 3], [f32; 3]) = ([26.0, -1.0, -1.0], [41.0, 11.0, 13.0]);
+// Each box covers its whole arm and reaches 1 mm into the column, so no strip of the overhang is left outside it.
+const LEFT_ARM: ([f32; 3], [f32; 3]) = ([-1.0, -1.0, -1.0], [16.0, 11.0, 13.0]);
+const RIGHT_ARM: ([f32; 3], [f32; 3]) = ([24.0, -1.0, -1.0], [41.0, 11.0, 13.0]);
 
 #[test]
 fn a_blocker_keeps_support_out_and_an_enforcer_wins_over_it() {
