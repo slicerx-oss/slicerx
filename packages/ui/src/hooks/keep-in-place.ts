@@ -81,6 +81,9 @@ function addRoom(box: HTMLElement, px: number): void {
 export const MAX_CORRECTIONS = 120
 
 let job = 0
+// True from a press until its release: a scroll then is the browser bringing the focused control into view (a control
+// half under a footer), never the person, so the hold undoes it
+let pressing = false
 const anchors = new Map<HTMLElement, { n: number; was: string }>()
 
 /**
@@ -122,7 +125,7 @@ export function keepInPlace(el: Element, ms = 450): void {
     const max = box.scrollHeight - box.clientHeight
     // a scroll we did not make is the person's, unless it is the browser pulling the end back to shorter content
     const clamped = now < st && now >= max - 1
-    if (Math.abs(now - st) > 0.5 && !clamped) {
+    if (Math.abs(now - st) > 0.5 && !clamped && !pressing) {
       top -= now - st
       st = now
     }
@@ -182,14 +185,24 @@ export function keepInPlace(el: Element, ms = 450): void {
 export function keepPressedControlsInPlace(root: Document = document): () => void {
   const onPress = (e: Event) => {
     const t = e.target instanceof Element ? e.target.closest(STATIC_CONTROLS) : null
-    if (t) keepInPlace(t)
+    if (!t) return
+    if (e.type === 'pointerdown') pressing = true
+    keepInPlace(t)
+  }
+  const onRelease = () => {
+    pressing = false
   }
   root.addEventListener('pointerdown', onPress, true)
   root.addEventListener('keydown', onPress, true)
   root.addEventListener('change', onPress, true)
+  root.addEventListener('pointerup', onRelease, true)
+  root.addEventListener('pointercancel', onRelease, true)
   return () => {
     root.removeEventListener('pointerdown', onPress, true)
     root.removeEventListener('keydown', onPress, true)
     root.removeEventListener('change', onPress, true)
+    root.removeEventListener('pointerup', onRelease, true)
+    root.removeEventListener('pointercancel', onRelease, true)
+    pressing = false
   }
 }

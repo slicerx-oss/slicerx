@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// The scope pill at the top of Print settings while objects are selected: the settings edit the plate, or the
-// selected objects (or the part picked in the tree), which then print with values of their own.
+// The scope pill at the top of Print settings: the settings edit the plate, or the selected objects (or the part
+// picked in the tree), which then print with values of their own.
 import { Icon, Seg } from '@slicerx/ui'
 import { useEffect, useMemo } from 'react'
-import { effectiveMode, useLayout } from '../../first-run/look'
 import { overrideCount, scopeOf, type SettingsScope } from '../../plate/scope'
 import { selectedIds, set, useApp } from '../../state/store'
 import './scope.css'
@@ -29,7 +28,11 @@ export function useScope(): { scope: SettingsScope; name: string } {
   }, [which, ids, part, plate])
 }
 
-/** The pill: Plate, or the selection with how many settings it has of its own. Absent with nothing selected. */
+/**
+ * The pill: Plate, or the selection with how many settings it has of its own. One row of the same height whatever is
+ * selected, so nothing under it moves as a selection starts or ends: with nothing selected the second option waits,
+ * unavailable. What a change reaches is in each option's tip.
+ */
 export function ScopeBar() {
   const ids = useApp((s) => selectedIds(s).length)
   const { scope, name } = useScope()
@@ -39,9 +42,11 @@ export function ScopeBar() {
     return entry ? overrideCount(s, entry) : 0
   })
   const objectName = useApp((s) => s.plate.find((p) => p.id === s.selection)?.name ?? '')
-  const simple = effectiveMode(useApp((s) => s.settingsMode), useLayout()) === 'simple'
-  if (!ids) return null
-  const label = (
+  const label = !ids ? (
+    <span className="scope-label" data-testid="slice-scope-label">
+      <span className="scope-name">Selection</span>
+    </span>
+  ) : (
     <span className="scope-label" data-testid="slice-scope-label">
       {scope.kind === 'part' ? (
         <>
@@ -53,6 +58,8 @@ export function ScopeBar() {
       {own ? <span className="scope-count sx-mono">{own}</span> : null}
     </span>
   )
+  const who = scope.kind === 'part' ? scope.part : ids === 1 ? name : `these ${ids} objects`
+  const reach = `Only ${who} ${ids === 1 || scope.kind === 'part' ? 'changes' : 'change'}, over the plate's settings.`
   return (
     <div className="scope-bar">
       <Seg<'plate' | 'objects'>
@@ -63,16 +70,12 @@ export function ScopeBar() {
         value={scope.kind === 'plate' ? 'plate' : 'objects'}
         onChange={(v) => set({ settingsScope: v })}
         options={[
-          { value: 'plate', label: 'Plate', testId: 'slice-scope-plate', tip: { title: 'Plate', body: 'Settings change for everything on the plate.' } },
-          { value: 'objects', label, testId: 'slice-scope-object', tip: { title: name, body: 'Settings change for the selection only, over the plate.' } },
+          { value: 'plate', label: 'Plate', testId: 'slice-scope-plate', tip: { title: 'Plate', body: 'Every object on the plate changes.' } },
+          ids
+            ? { value: 'objects', label, testId: 'slice-scope-object', tip: { title: name, body: reach } }
+            : { value: 'objects', label, testId: 'slice-scope-object', disabled: true, tip: { title: 'Selection', reason: 'Select objects to give them settings of their own.' } },
         ]}
       />
-      {/* Simple says what a change reaches, on either side, so the settings below never move as the pill flips. */}
-      {simple ? (
-        <p className="scope-line sx-small sx-muted">
-          {scope.kind === 'plate' ? 'Every object on the plate changes.' : `Only ${scope.kind === 'part' ? scope.part : ids === 1 ? name : `these ${ids} objects`} ${ids === 1 || scope.kind === 'part' ? 'changes' : 'change'}.`}
-        </p>
-      ) : null}
     </div>
   )
 }
