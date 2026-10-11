@@ -8,6 +8,7 @@
     "./features/fleet": "./src/features/fleet/index.ts",
     "./features/pilot": "./src/features/pilot/index.ts",
     "./features/phone": "./src/features/phone/controller.ts",
+    "./pilot-connect/agents": "./src/pilot-connect/agents.ts",
     "./zod-jitless": "./src/zod-jitless.ts"
   },
   "scripts": {
