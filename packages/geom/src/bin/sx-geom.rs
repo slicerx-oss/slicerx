@@ -50,6 +50,10 @@ fn run(args: &[String]) -> sx_geom::Result<Value> {
         && let Some(obj) = req.as_object_mut()
     {
         obj.insert("meshOutput".to_owned(), Value::from("stlBase64"));
+        // A picture asked for with an output folder is written there as a PNG file.
+        if op == "render" {
+            obj.insert("image".to_owned(), Value::from(true));
+        }
     }
     let loader = |p: &str| -> sx_geom::Result<Vec<u8>> {
         std::fs::read(p).map_err(|e| sx_geom::Error::invalid_arg(format!("{p}: {e}")))
@@ -60,6 +64,18 @@ fn run(args: &[String]) -> sx_geom::Result<Value> {
             .map_err(|e| sx_geom::Error::invalid_arg(format!("{}: {e}", dir.display())))?;
         let mut n = 0usize;
         write_meshes(&mut out, &dir, op, &mut n)?;
+        if let Some(obj) = out.as_object_mut()
+            && let Some(png) = obj.remove("pngBase64")
+        {
+            let bytes = png
+                .as_str()
+                .and_then(json::base64_decode)
+                .ok_or_else(|| sx_geom::Error::invalid_arg("the picture did not decode"))?;
+            let path = dir.join(format!("{}.png", op.replace('.', "-")));
+            std::fs::write(&path, bytes)
+                .map_err(|e| sx_geom::Error::invalid_arg(format!("{}: {e}", path.display())))?;
+            obj.insert("pngPath".to_owned(), Value::from(path.display().to_string()));
+        }
     }
     Ok(out)
 }

@@ -15,7 +15,7 @@ use crate::solids::SolidSpec;
 #[cfg(feature = "svg")]
 use crate::svg;
 use crate::vec3::{Plane, V3};
-use crate::{convex, cut, emboss, import, layers, orient, repair, resume, simplify, split};
+use crate::{convex, cut, emboss, import, layers, orient, render, repair, resume, simplify, split};
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
@@ -23,6 +23,7 @@ use serde_json::{Value, json};
 /// Every operation, with the cargo feature it needs ("" for one every build has).
 const ALL_OPERATIONS: &[(&str, &str)] = &[
     ("info", ""),
+    ("render", ""),
     ("section", ""),
     ("cut", ""),
     ("split", ""),
@@ -157,6 +158,7 @@ pub fn call_value(op: &str, req: &Value, files: FileLoader<'_>) -> Result<Value>
 fn run(op: &str, req: &Value, files: FileLoader<'_>) -> Result<Value> {
     let enc = MeshOut::from_request(req);
     match op {
+        "render" => render_op(req, files),
         "info" => {
             let m = mesh_field(req, "mesh", files)?;
             Ok(info(&m))
@@ -883,6 +885,99 @@ pub fn base64_decode(s: &str) -> Option<Vec<u8>> {
 
 pub fn error_value(e: &Error) -> Value {
     json!({ "error": e.to_string() })
+}
+
+/// `#rrggbb` as a color.
+fn hex_color(s: &str) -> Option<[u8; 3]> {
+    let h = s.trim().strip_prefix('#')?;
+    if h.len() != 6 {
+        return None;
+    }
+    let byte = |i: usize| h.get(i..i + 2).and_then(|b| u8::from_str_radix(b, 16).ok());
+    Some([byte(0)?, byte(2)?, byte(4)?])
+}
+
+/// One object of a render request: `mesh` (any mesh form), and optionally `transform` (16 numbers, column-major),
+/// `slot` (its filament, 1-based), `color` (`#rrggbb`) and `paint` (paint texts by triangle index).
+fn render_object(v: &Value, files: FileLoader<'_>) -> Result<render::Object> {
+    let mesh = mesh_field(v, "mesh", files)?;
+    let transform: Option<Vec<f64>> = field_or(v, "transform", None)?;
+    let transform = match transform {
+        Some(t) => Some(
+            <[f64; 16]>::try_from(t)
+                .map_err(|_| Error::invalid("transform", "needs 16 numbers, column-major"))?,
+        ),
+        None => None,
+    };
+    let color: Option<String> = field_or(v, "color", None)?;
+    let color = match color {
+        Some(c) => Some(hex_color(&c).ok_or_else(|| Error::invalid("color", format!("{c} is not #rrggbb")))?),
+        None => None,
+    };
+    let paint: std::collections::BTreeMap<String, String> = field_or_default(v, "paint")?;
+    let paint = paint
+        .into_iter()
+        .map(|(k, t)| {
+            k.parse::<u32>()
+                .map(|i| (i, t))
+                .map_err(|_| Error::invalid("paint", format!("{k} is not a triangle index")))
+        })
+        .collect::<Result<_>>()?;
+    Ok(render::Object {
+        mesh,
+        transform,
+        slot: field_or(v, "slot", 1)?,
+        color,
+        paint,
+    })
+}
+
+/// `render`: a picture of `objects` (or of one `mesh` with its `paint`), from `view` (`iso`, `top`, `front` or `fit`,
+/// framed on `focus` or on the paint), `size` px on the long side (384 by default), filaments colored from `colors`.
+/// The reply says what is in the picture; the PNG comes with it only when `image` is true.
+fn render_op(req: &Value, files: FileLoader<'_>) -> Result<Value> {
+    let objects: Vec<render::Object> = match req.get("objects").and_then(Value::as_array) {
+        Some(list) => list
+            .iter()
+            .map(|o| render_object(o, files))
+            .collect::<Result<_>>()?,
+        None => vec![render_object(req, files)?],
+    };
+    let view: String = field_or(req, "view", "iso".to_owned())?;
+    let view = render::View::parse(&view)
+        .ok_or_else(|| Error::invalid("view", format!("{view} is not iso, top, front or fit")))?;
+    let colors: Vec<String> = field_or_default(req, "colors")?;
+    let colors = colors
+        .iter()
+        .map(|c| hex_color(c).ok_or_else(|| Error::invalid("colors", format!("{c} is not #rrggbb"))))
+        .collect::<Result<Vec<_>>>()?;
+    let opts = render::Options {
+        view,
+        size: field_or(req, "size", render::DEFAULT_SIZE)?,
+        colors,
+        focus: field_or(req, "focus", None)?,
+    };
+    let (img, s) = render::render(&objects, &opts)?;
+    let mut out = json!({
+        "view": s.view.name(),
+        "widthPx": s.width,
+        "heightPx": s.height,
+        "boundsMm": { "min": s.bounds.min, "max": s.bounds.max },
+        "framedMm": { "min": s.framed.min, "max": s.framed.max },
+        "objects": s.objects,
+        "triangles": s.triangles,
+        "paintedAreaMm2": s.painted_mm2.iter().map(|(k, v)| (k.to_string(), json!((v * 100.0).round() / 100.0))).collect::<serde_json::Map<_, _>>(),
+        "badPaint": s.bad_paint,
+    });
+    if field_or(req, "image", false)?
+        && let Some(o) = out.as_object_mut()
+    {
+        o.insert(
+            "pngBase64".to_owned(),
+            Value::from(base64_encode(&render::png(&img))),
+        );
+    }
+    Ok(out)
 }
 
 #[cfg(test)]
