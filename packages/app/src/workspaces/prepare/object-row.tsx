@@ -14,9 +14,11 @@ import { MiddleName } from '../../lib/short-name'
 import { Silhouette } from '../../parts'
 import { selectObject } from '../../plate/edit'
 import { moveObject, objectWarnings, renameObject, setPartSlot, toggleLock, togglePrintable, type ObjectMatch } from '../../plate/object-list'
+import { countSettings } from '../../plate/easy-groups'
 import { removeVolume, ROLE_LABEL } from '../../plate/volumes'
 import { get, selectedIds, set, useApp, type PlateEntry, type VolumeRole } from '../../state/store'
 import { SelectionMenu } from './selection-bar'
+import { useSimpleGroups } from './simple-groups'
 
 const FitNotes = lazy(() => import('./fit-notes').then((m) => ({ default: m.FitNotes })))
 
@@ -25,9 +27,9 @@ const DRAG_TYPE = 'text/x-sx-object'
 /** The icon for each volume role in the tree, instead of a colored dot. */
 export const ROLE_ICON: Record<VolumeRole, IconName> = { negative: 'negative-part', support_blocker: 'support-blocker', support_enforcer: 'support-enforcer', modifier: 'modifier' }
 
-/** How many settings an object has of its own, its parts' included. */
-export function overrideCount(objectSettings: Readonly<Record<string, unknown>> | undefined, partSettings: PlateEntry['partSettings']): number {
-  return Object.keys(objectSettings ?? {}).length + Object.values(partSettings ?? {}).reduce((n, s) => n + Object.keys(s).length, 0)
+/** How many settings an object has of its own, its parts' included; keys one Simple control writes count once. */
+export function overrideCount(objectSettings: Readonly<Record<string, unknown>> | undefined, partSettings: PlateEntry['partSettings'], groups: readonly (readonly string[])[] = []): number {
+  return countSettings(Object.keys(objectSettings ?? {}), groups) + Object.values(partSettings ?? {}).reduce((n, s) => n + countSettings(Object.keys(s), groups), 0)
 }
 
 /** "2 settings differ from the plate". */
@@ -54,7 +56,8 @@ export function ObjectRow({ entry: p, index, count, instanceOf, match, searching
   const [drop, setDrop] = useState(false)
   const [slotMenu, setSlotMenu] = useState<{ part: string; at: { x: number; y: number } } | null>(null)
   const warnings = objectWarnings(p, { bed, printerSlots })
-  const overrides = overrideCount(own, p.partSettings)
+  const groups = useSimpleGroups()
+  const overrides = overrideCount(own, p.partSettings, groups)
   const colors = p.handle.parts.map((part, i) => slots[effectiveSlot(p, part) - 1]?.color ?? p.colors[i] ?? 'var(--dim)')
   const sw = rowSwatches(colors)
   // A search that finds a part or a volume opens the tree to show it.

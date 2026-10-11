@@ -6,6 +6,7 @@ import { Icon, Seg } from '@slicerx/ui'
 import { useEffect, useMemo } from 'react'
 import { overrideCount, scopeOf, type SettingsScope } from '../../plate/scope'
 import { selectedIds, set, useApp } from '../../state/store'
+import { useSimpleGroups } from './simple-groups'
 import './scope.css'
 
 /** The scope Print settings edits now, and its name for the pill. */
@@ -36,10 +37,11 @@ export function useScope(): { scope: SettingsScope; name: string } {
 export function ScopeBar() {
   const ids = useApp((s) => selectedIds(s).length)
   const { scope, name } = useScope()
+  const groups = useSimpleGroups()
   const own = useApp((s) => {
     const sel = selectedIds(s)
     const entry = sel.length === 1 ? s.plate.find((p) => p.id === sel[0]) : undefined
-    return entry ? overrideCount(s, entry) : 0
+    return entry ? overrideCount(s, entry, groups) : 0
   })
   const objectName = useApp((s) => s.plate.find((p) => p.id === s.selection)?.name ?? '')
   const label = !ids ? (
