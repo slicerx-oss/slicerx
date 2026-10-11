@@ -1694,6 +1694,42 @@ fn zhop_is_the_current_tools_lift_as_one_number() {
 }
 
 #[test]
+fn the_start_gcode_lines_are_drawn_with_the_first_layer() {
+    // An A1's extrusion calibration lines along the front, then the layers.
+    let start = "G28\nG90\nM83\nG1 X18 Y0.5 Z0.3 F12000\nG1 X68 E5 F1200\nG1 X118 E5\nG1 E-.8\nG1 Z1";
+    let r = block_run(json!({"brim_width": 0, "machine_start_gcode": start}), json!({})).unwrap();
+    let g = text(&r);
+    let lines: Vec<&str> = g.lines().collect();
+    let b = &r.preview;
+    let u32at = |o: usize| u32::from_le_bytes(b[o..o + 4].try_into().unwrap()) as usize;
+    let f32at = |o: usize| f32::from_le_bytes(b[o..o + 4].try_into().unwrap());
+    let (segs, layers, travels) = (u32at(8), u32at(12), u32at(16));
+    let segments_at = 32 + (layers + 1) * 4 + layers * 4 + layers * 4 + (layers + 1) * 4;
+    let extras_at = segments_at + segs * 32 + travels * 16;
+    // The first layer starts with the two lines, as custom paths (feature 14), each pointing at its G-code line.
+    let seg = |s: usize| {
+        (
+            f32at(segments_at + s * 32),
+            f32at(segments_at + s * 32 + 8),
+            b[segments_at + s * 32 + 24],
+        )
+    };
+    assert_eq!(seg(0), (18.0, 68.0, 14));
+    assert_eq!(seg(1), (68.0, 118.0, 14));
+    assert_ne!(seg(2).2, 14, "the layer's own paths follow");
+    assert_eq!(lines[u32at(extras_at + 4) - 1], "G1 X68 E5 F1200");
+    assert_eq!(lines[u32at(extras_at + 8 + 4) - 1], "G1 X118 E5");
+    // The tables still add up: every layer after the first starts two segments on, and the last ends at the count.
+    assert_eq!(u32at(32), 0);
+    assert_eq!(u32at(32 + layers * 4), segs);
+    // A file whose start lays no line draws none.
+    let plain = block_run(json!({"brim_width": 0, "machine_start_gcode": "G28"}), json!({})).unwrap();
+    let p = &plain.preview;
+    let first = 32 + (layers + 1) * 4 + layers * 4 + layers * 4 + (layers + 1) * 4;
+    assert_ne!(p[first + 24], 14);
+}
+
+#[test]
 fn a_start_template_without_temperatures_gets_them_first() {
     let r = block_run(
         json!({"brim_width": 0, "machine_start_gcode": "G28\nG1 X0 Y0"}),
