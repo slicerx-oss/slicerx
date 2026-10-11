@@ -486,26 +486,26 @@ pub(crate) fn dismiss_call(b: &Arc<Bridge>, p: &Value) -> Rpc<Value> {
 /// the first limit, both heaters off after the second. A printer that left the paused state was
 /// answered and is forgotten. Each step is in the audit log with origin `watch`.
 pub(crate) async fn heater_steps(b: &Arc<Bridge>) {
-    let (bed_after, all_after) = b.hub.pause_steps;
+    let steps = b.hub.pause_steps;
     let now = now_ms();
     let waiting: Vec<(String, crate::hub::AutoPaused)> = crate::hub::lock(&b.hub.auto_paused)
         .iter()
         .map(|(k, v)| (k.clone(), *v))
         .collect();
-    for (printer, rec) in waiting {
-        if b.hub.state_of(&printer) != Some(sx_connect::PrinterState::Paused) {
-            crate::hub::lock(&b.hub.auto_paused).remove(&printer);
-            continue;
+    for (printer, mut rec) in waiting {
+        let round = pause_round(&mut rec, b.hub.state_of(&printer), now, steps);
+        if let Some(r) = crate::hub::lock(&b.hub.auto_paused).get_mut(&printer) {
+            r.seen_paused |= rec.seen_paused;
         }
-        let elapsed = Duration::from_millis(now.saturating_sub(rec.at_ms));
-        let step = if !rec.bed_off && elapsed >= bed_after {
-            Some(("bed_off", sx_connect::Adjustment::Bed { celsius: 0 }))
-        } else if rec.bed_off && !rec.all_off && elapsed >= all_after {
-            Some(("heaters_off", sx_connect::Adjustment::Nozzle { celsius: 0 }))
-        } else {
-            None
+        let (name, change) = match round {
+            PauseRound::Wait => continue,
+            PauseRound::Forget => {
+                crate::hub::lock(&b.hub.auto_paused).remove(&printer);
+                continue;
+            }
+            PauseRound::BedOff => ("bed_off", sx_connect::Adjustment::Bed { celsius: 0 }),
+            PauseRound::HeatersOff => ("heaters_off", sx_connect::Adjustment::Nozzle { celsius: 0 }),
         };
-        let Some((name, change)) = step else { continue };
         let out = heater_off(b, &printer, &change).await;
         b.hub.audit(json!({
             "origin": "watch", "action": "printer.adjust", "step": name, "printerId": printer,
@@ -518,6 +518,43 @@ pub(crate) async fn heater_steps(b: &Arc<Bridge>) {
                 r.all_off = true;
             }
         }
+    }
+}
+
+/// What one round of [`heater_steps`] does with a watch pause.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PauseRound {
+    Wait,
+    Forget,
+    BedOff,
+    HeatersOff,
+}
+
+/// Decides one round from the state the hub last read. A reading that does not show the pause is
+/// only an answer once a reading has shown it: the watcher's read can start before the pause and
+/// land after it, and the printer can take a moment to report paused. A pause that has still not
+/// shown by the time the bed step is due never took, and is forgotten.
+fn pause_round(
+    rec: &mut crate::hub::AutoPaused,
+    state: Option<sx_connect::PrinterState>,
+    now_ms: u64,
+    (bed_after, all_after): (Duration, Duration),
+) -> PauseRound {
+    let elapsed = Duration::from_millis(now_ms.saturating_sub(rec.at_ms));
+    if state != Some(sx_connect::PrinterState::Paused) {
+        return if rec.seen_paused || elapsed >= bed_after {
+            PauseRound::Forget
+        } else {
+            PauseRound::Wait
+        };
+    }
+    rec.seen_paused = true;
+    if !rec.bed_off && elapsed >= bed_after {
+        PauseRound::BedOff
+    } else if rec.bed_off && !rec.all_off && elapsed >= all_after {
+        PauseRound::HeatersOff
+    } else {
+        PauseRound::Wait
     }
 }
 
@@ -607,9 +644,47 @@ async fn heater_off(b: &Arc<Bridge>, printer: &str, change: &sx_connect::Adjustm
 
 #[cfg(test)]
 mod tests {
-    use super::{pause_note, sniff_image};
+    use super::{PauseRound, pause_note, pause_round, sniff_image};
+    use crate::hub::AutoPaused;
     use serde_json::json;
     use std::time::Duration;
+    use sx_connect::PrinterState;
+
+    #[test]
+    fn a_reading_from_before_the_pause_does_not_answer_it() {
+        let steps = (Duration::from_millis(600), Duration::from_millis(1500));
+        let mut rec = AutoPaused {
+            at_ms: 1000,
+            ..AutoPaused::default()
+        };
+        // The watcher's read began before the pause: it still says printing. Not an answer.
+        let printing = Some(PrinterState::Printing);
+        assert_eq!(pause_round(&mut rec, printing, 1100, steps), PauseRound::Wait);
+        assert!(!rec.seen_paused);
+        // The next reading shows the pause; the steps follow on time.
+        let paused = Some(PrinterState::Paused);
+        assert_eq!(pause_round(&mut rec, paused, 1200, steps), PauseRound::Wait);
+        assert!(rec.seen_paused);
+        assert_eq!(pause_round(&mut rec, paused, 1600, steps), PauseRound::BedOff);
+        rec.bed_off = true;
+        assert_eq!(pause_round(&mut rec, paused, 2000, steps), PauseRound::Wait);
+        assert_eq!(pause_round(&mut rec, paused, 2500, steps), PauseRound::HeatersOff);
+        // Seen paused, then printing: someone resumed it.
+        assert_eq!(pause_round(&mut rec, printing, 2600, steps), PauseRound::Forget);
+    }
+
+    #[test]
+    fn a_pause_that_never_shows_is_forgotten_when_the_bed_step_is_due() {
+        let steps = (Duration::from_millis(600), Duration::from_millis(1500));
+        let mut rec = AutoPaused {
+            at_ms: 1000,
+            ..AutoPaused::default()
+        };
+        let printing = Some(PrinterState::Printing);
+        assert_eq!(pause_round(&mut rec, printing, 1500, steps), PauseRound::Wait);
+        assert_eq!(pause_round(&mut rec, None, 1550, steps), PauseRound::Wait);
+        assert_eq!(pause_round(&mut rec, printing, 1600, steps), PauseRound::Forget);
+    }
 
     #[test]
     fn a_paused_print_with_heat_on_gets_a_note_only_where_the_firmware_keeps_it_on() {
