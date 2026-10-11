@@ -12,6 +12,8 @@
 //   engine    the engine holds every mesh (load_mesh)
 //   objects   the objects are on the plate and the 3D view has built them
 //   drawn     the 3D view has drawn a frame with them
+//   refined   a big model (a part of 200,000 triangles or more) has its creased shading and edges, made in workers
+//             after its first frame showed it smooth shaded; absent when the open had no such part
 //   repair    a mesh file's import in the engine is done (repair, unit, loose bodies); its objects showed before it
 //   settings  the project's settings are applied (the "Opened as" note is ready)
 //   gcode     its printer G-code is checked
@@ -19,7 +21,7 @@
 //   sliced    the slice that follows it is done
 // A stage that did not happen in an open (a plain STL has no printer) is absent.
 
-export type OpenStage = 'read' | 'unzip' | 'parse' | 'printer' | 'engine' | 'objects' | 'drawn' | 'repair' | 'settings' | 'gcode' | 'done' | 'sliced'
+export type OpenStage = 'read' | 'unzip' | 'parse' | 'printer' | 'engine' | 'objects' | 'drawn' | 'refined' | 'repair' | 'settings' | 'gcode' | 'done' | 'sliced'
 
 export interface OpenTiming {
   /** The file's name. */
@@ -44,16 +46,16 @@ export function openStarted(name: string, now = clock()): void {
 }
 
 /**
- * Ends a stage of the open in progress, the first time only; `drawn` and `sliced` may land after the open is over.
+ * Ends a stage of the open in progress, the first time only; `drawn`, `refined` and `sliced` may land after the open is over.
  * `now` is when it ended here (performance.now()), `at` when it ended elsewhere (a worker), as performance.timeOrigin +
  * performance.now() there.
  */
 export function openStage(stage: OpenStage, extra?: { parsedIn?: OpenTiming['parsedIn']; at?: number; now?: number }): void {
   const c = current
   if (!c || c.ms[stage] !== undefined) return
-  if (!c.open && stage !== 'drawn' && stage !== 'sliced') return
+  if (!c.open && stage !== 'drawn' && stage !== 'refined' && stage !== 'sliced') return
   // A frame drawn before the open put its objects on the plate is not theirs.
-  if (stage === 'drawn' && c.ms.objects === undefined) return
+  if ((stage === 'drawn' || stage === 'refined') && c.ms.objects === undefined) return
   const here = extra?.now ?? clock()
   const now = extra?.at !== undefined && typeof performance !== 'undefined' ? Math.min(here, extra.at - performance.timeOrigin) : here
   c.ms[stage] = Math.round(now - c.t0)
@@ -65,7 +67,7 @@ export function openStage(stage: OpenStage, extra?: { parsedIn?: OpenTiming['par
   }
 }
 
-/** The open is over (it finished or failed); only `drawn` and `sliced` are still taken. */
+/** The open is over (it finished or failed); only `drawn`, `refined` and `sliced` are still taken. */
 export function openEnded(now = clock()): void {
   if (!current || !current.open) return
   openStage('done', { now })

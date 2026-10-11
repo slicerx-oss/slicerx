@@ -124,6 +124,14 @@ export interface ViewportOptions {
    * `data-reveal` (`waiting`, `playing`, `done` or `off`). Default true.
    */
   reveal?: boolean | 'always'
+  /**
+   * Makes a worker for building big models (a part of 200,000 triangles or more) off the page's main thread: such a
+   * part shows at once with smooth normals and no edges, and gets its creased normals and feature edges when the worker
+   * has them (platerefined). The worker module is two lines (see mesh-worker.ts):
+   * `import { serveMeshBuilds } from '@slicerx/viewport/mesh-worker'; serveMeshBuilds(self)`. Without it every part is
+   * built on the main thread, as before.
+   */
+  meshWorker?: () => MeshWorkerLike
 }
 
 export interface ViewportPart {
@@ -147,6 +155,8 @@ export interface ViewportObject {
 }
 
 import type { NozzleZone } from './stage'
+import type { MeshWorkerLike } from './mesh-pool'
+export type { MeshWorkerLike }
 export type { NozzleZone }
 
 export interface ViewportPlate {
@@ -401,6 +411,8 @@ export interface ViewportEvents {
    * built and how many it kept as they were.
    */
   platedrawn: { buildMs: number; drawMs: number; frameMs: number; built: number; kept: number }
+  /** Every big part built with its stand-in (ViewportOptions.meshWorker) has its final geometry: ms since the first began. */
+  platerefined: { ms: number }
   /** WebGL context lost or the renderer failed to start. */
   error: { message: string }
   /** The viewport lowered its own quality to keep frames smooth. Show `message` as a toast. */
@@ -467,6 +479,8 @@ export interface ViewportStats {
   motionScale: number
   /** The camera is on its way to a view (a preset, a fit or a zoom), so the picture is not where it will stop. */
   cameraMoving: boolean
+  /** Big parts still showing their stand-in while the mesh workers make their final geometry. */
+  refiningParts: number
 }
 
 export interface Viewport {
