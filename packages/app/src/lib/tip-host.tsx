@@ -7,7 +7,8 @@ import { useCallback, useEffect } from 'react'
 import { useLookChoice } from '../first-run/look'
 import { useApp } from '../state/store'
 import { formatShortcut } from './keys'
-import { SETTING_TIP, TIPS, type TipEntry } from './tips'
+import type { TipEntry } from './tips'
+import { SETTING_TIP } from './tip-ids'
 
 /** Chips for a chord: "Mod+Shift+Z" is one chip, "G G" is two. */
 export function chordChips(chord: string | null | undefined): string[] {
@@ -16,11 +17,18 @@ export function chordChips(chord: string | null | undefined): string[] {
 
 type SettingTip = typeof import('./setting-tip').settingTip
 let settingTip: SettingTip | null = null
-let loading: Promise<SettingTip> | null = null
+let registry: Readonly<Record<string, TipEntry>> | null = null
+let loading: Promise<void> | null = null
 
-/** Setting tips need the settings data and figures, so they load after startup instead of with it. */
-export function loadSettingTips(): Promise<SettingTip> {
-  loading ??= import('./setting-tip').then((m) => (settingTip = m.settingTip))
+/**
+ * The tip text (the registry, and setting tips with their settings data and figures) loads right after startup
+ * instead of with it. The app starts it on mount, well before a first hover can open a tip.
+ */
+export function loadTips(): Promise<void> {
+  loading ??= Promise.all([
+    import('./tips').then((m) => (registry = m.TIPS)),
+    import('./setting-tip').then((m) => (settingTip = m.settingTip)),
+  ]).then(() => undefined)
   return loading
 }
 
@@ -28,10 +36,11 @@ export function resolveTip(el: HTMLElement, map: Readonly<Record<string, string 
   const id = el.getAttribute('data-tip')
   if (id?.startsWith(SETTING_TIP)) {
     if (settingTip) return settingTip(id.slice(SETTING_TIP.length), developer)
-    void loadSettingTips()
+    void loadTips()
     return null
   }
-  const entry: TipEntry | undefined = id ? (TIPS as Record<string, TipEntry>)[id] : undefined
+  if (id && !registry) void loadTips()
+  const entry: TipEntry | undefined = id ? registry?.[id] : undefined
   const title = entry?.title ?? el.getAttribute('data-tip-title')
   if (!title) return null
   const fixed = el.getAttribute('data-tip-key')
@@ -61,9 +70,9 @@ export function AppTooltips() {
   const tips = useApp((s) => s.tooltips)
   const developer = useApp((s) => s.settingsMode === 'developer')
   const overrides = choice.overrides?.keys
-  // fetched once the app is up; by the time a settings row is hovered it is here
+  // fetched once the app is up; by the time anything is hovered it is here
   useEffect(() => {
-    if (tips.enabled) void loadSettingTips()
+    if (tips.enabled) void loadTips()
   }, [tips.enabled])
   const resolve = useCallback((el: HTMLElement) => resolveTip(el, keymapFor(choice.id, overrides ?? {}), developer), [choice.id, overrides, developer])
   return <TooltipHost resolve={resolve} enabled={tips.enabled} media={tips.media} />

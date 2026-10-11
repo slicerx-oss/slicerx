@@ -7,6 +7,7 @@ import { ASSISTANT_NAME } from '@slicerx/pilot/name'
 import type { KeyAction } from '@slicerx/ui'
 import { appName } from '../edition'
 import { get } from '../state/store'
+import { SETTING_TIP } from './tip-ids'
 
 export interface TipEntry {
   title: string
@@ -88,8 +89,7 @@ export const TIPS = {
 
 export type TipId = keyof typeof TIPS
 
-/** Tip ids of the form `setting:<key>` show that setting's label, note and figure. */
-export const SETTING_TIP = 'setting:'
+export { SETTING_TIP }
 
 /**
  * Marks a settings row so hovering or focusing anything in it shows the setting's note. The tip sits
