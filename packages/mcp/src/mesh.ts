@@ -169,3 +169,34 @@ export function splitBodies(pos: Float32Array): Float32Array[] {
   if (bodies.length < 2) return [pos]
   return bodies.sort((a, b) => b.tris.length - a.tris.length).map((b) => soup(b.tris))
 }
+
+/** A closed box as triangles (outward), centered at `center`, for a volume a client places in an object. */
+export function boxPositions(size: [number, number, number], center: [number, number, number]): Float32Array {
+  const v = (i: number): [number, number, number] => [center[0] + (i & 1 ? 0.5 : -0.5) * size[0], center[1] + (i & 2 ? 0.5 : -0.5) * size[1], center[2] + (i & 4 ? 0.5 : -0.5) * size[2]]
+  const faces: [number, number, number][] = [
+    [0, 2, 1], [1, 2, 3], [4, 5, 6], [5, 7, 6],
+    [0, 1, 4], [1, 5, 4], [2, 6, 3], [3, 6, 7],
+    [0, 4, 2], [2, 4, 6], [1, 3, 5], [3, 7, 5],
+  ]
+  return new Float32Array(faces.flatMap((f) => f.flatMap(v)))
+}
+
+/** A closed upright cylinder as triangles (outward), centered at `center`, with `segments` sides. */
+export function cylinderPositions(diameter: number, height: number, center: [number, number, number], segments = 48): Float32Array {
+  const r = diameter / 2
+  const z0 = center[2] - height / 2
+  const z1 = center[2] + height / 2
+  const at = (k: number, z: number): number[] => {
+    const a = (2 * Math.PI * (k % segments)) / segments
+    return [center[0] + r * Math.cos(a), center[1] + r * Math.sin(a), z]
+  }
+  const out: number[] = []
+  for (let k = 0; k < segments; k++) {
+    // side, two triangles; bottom cap faces down, top cap up
+    out.push(...at(k, z0), ...at(k + 1, z0), ...at(k + 1, z1))
+    out.push(...at(k, z0), ...at(k + 1, z1), ...at(k, z1))
+    out.push(center[0], center[1], z0, ...at(k + 1, z0), ...at(k, z0))
+    out.push(center[0], center[1], z1, ...at(k, z1), ...at(k + 1, z1))
+  }
+  return new Float32Array(out)
+}
