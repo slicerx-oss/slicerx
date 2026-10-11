@@ -11,7 +11,6 @@
 // here are an upper bound for the 3MF rows.
 import { readFileSync } from 'node:fs'
 import { basename, extname } from 'node:path'
-// @ts-expect-error jsdom ships no types; the app's tests reach it through vitest's environment
 import { JSDOM } from 'jsdom'
 
 Object.assign(globalThis, { DOMParser: new JSDOM('').window.DOMParser })
