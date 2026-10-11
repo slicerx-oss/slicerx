@@ -169,7 +169,12 @@ jobs:
           [ -x "$HOME/.cargo/bin/cargo" ] || { echo "::error::no cargo in $HOME/.cargo/bin on $RUNNER_NAME: install the pinned toolchain for this runner HOME"; exit 1; }
           echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
           "$HOME/.cargo/bin/cargo" --version || { echo "::error::the pinned toolchain on $RUNNER_NAME does not run cargo (see rust-toolchain.toml)"; exit 1; }
-          echo "CARGO_TARGET_DIR=$HOME/target/$RUNNER_NAME" >> "$GITHUB_ENV"
+          # the runner's warm build directory, linked in as ./target: tests that find their binaries under the workspace's
+          # target (sx-link's real-service test runs target/debug/sx-cloud) see the same tree; checkout removes the link only
+          mkdir -p "$HOME/target/$RUNNER_NAME"
+          if [ -L "$GITHUB_WORKSPACE/target" ]; then rm "$GITHUB_WORKSPACE/target"; fi
+          [ ! -e "$GITHUB_WORKSPACE/target" ] || { echo "::error::$GITHUB_WORKSPACE/target is a directory, not the runner's link"; exit 1; }
+          ln -s "$HOME/target/$RUNNER_NAME" "$GITHUB_WORKSPACE/target"
           echo "SX_HEAVY_LOCK=/mnt/c/builds/heavy-lock/lock" >> "$GITHUB_ENV"
           echo "SX_HEAVY_WAIT=1200" >> "$GITHUB_ENV"
           echo "HEAVY=bash $GITHUB_WORKSPACE/scripts/ci/heavy.sh timeout 1500" >> "$GITHUB_ENV"
@@ -201,7 +206,7 @@ jobs:
       - if: matrix.part == 'crates'
         run: |
           pnpm install --frozen-lockfile
-          export SLICERX_TEST_SX_BIN="${CARGO_TARGET_DIR:-$GITHUB_WORKSPACE/target}/debug/sx"
+          export SLICERX_TEST_SX_BIN="$GITHUB_WORKSPACE/target/debug/sx"
           cd packages/mcp && ${HEAVY:-} bash "$GITHUB_WORKSPACE/scripts/ci/pr-test.sh"
         env:
           SLICERX_TEST_REQUIRE_SX: '1'
