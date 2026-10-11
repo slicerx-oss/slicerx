@@ -10,6 +10,7 @@ import { boxMesh } from '../src/plate/mesh-ops'
 import { compose } from '../src/plate/transform'
 import { clearProject } from '../src/project/new'
 import { openModelBytes } from '../src/state/actions'
+import { startProfileSync } from '../src/state/profile-sync'
 import { get, set, type PlateEntry } from '../src/state/store'
 
 const initial = get()
@@ -47,6 +48,17 @@ describe('sleipnir on a fresh plate', () => {
   it('goes off for an opened Bambu Studio project, and comes back on for the next fresh plate', async () => {
     await openModelBytes(host, 'benchy.3mf', projectBytes())
     expect(get().plate.length).toBe(1)
+    expect(get().easy.varyLayerHeight).toBe(false)
+    expect(get().easyTouched).not.toContain('varyLayerHeight')
+    clearProject()
+    expect(get().easy.varyLayerHeight).toBe(true)
+  })
+
+  it("is not marked as the person's choice by an opened project while the app follows the store", async () => {
+    // In the app, profile sync watches the store and marks every Easy control a change moves. The project turning
+    // sleipnir off must not count as a move, or the saved list keeps it off on every fresh plate and every start.
+    startProfileSync()
+    await openModelBytes(host, 'benchy.3mf', projectBytes())
     expect(get().easy.varyLayerHeight).toBe(false)
     expect(get().easyTouched).not.toContain('varyLayerHeight')
     clearProject()
