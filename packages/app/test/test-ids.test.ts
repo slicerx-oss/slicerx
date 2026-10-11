@@ -45,7 +45,8 @@ function sourceIds(): { exact: Set<string>; families: Set<string> } {
   const families = new Set<string>()
   for (const f of SOURCES.flatMap(files)) {
     const text = readFileSync(f, 'utf8')
-    for (const m of text.matchAll(/data-testid="([^"]+)"|testId(?:=|: )["']([^"']+)["']/g)) exact.add((m[1] ?? m[2])!)
+    // Plain attributes, the ui kit's testId prop, and props handed on as an object (`menuProps={{ 'data-testid': ... }}`).
+    for (const m of text.matchAll(/data-testid="([^"]+)"|testId(?:=|: )["']([^"']+)["']|'data-testid': '([^']+)'/g)) exact.add((m[1] ?? m[2] ?? m[3])!)
     for (const m of text.matchAll(/data-testid=\{`([^`]+)`\}/g)) families.add(family(m[1]!))
   }
   return { exact, families }
