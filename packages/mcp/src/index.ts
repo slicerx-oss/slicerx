@@ -6,6 +6,7 @@ import { homedir, tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import type { PermissionPolicy } from '@slicerx/contracts'
 import { createApprovalBroker, normalizePolicy, type ApprovalBroker, type PilotTool } from '@slicerx/pilot'
+import { createGeomCli } from '@slicerx/pilot/node'
 import { createActionLog } from './actionlog'
 import { DataStore, resolveDataPaths } from './data'
 import type { GateDeps } from './gate'
@@ -112,7 +113,17 @@ export async function createContext(opts: SlicerxMcpOptions = {}): Promise<Serve
   const profileStore = createProfileStore(resolve(opts.profilesDir ?? join(homedir(), '.config', 'slicerx', 'profiles')), localBroker)
   const loaded = opts.policy ? { policy: normalizePolicy(opts.policy), path: undefined } : loadPolicy(opts.policyFile)
   const setup = createMcpSetupHost(printers?.kind === 'link' ? (printers.host as unknown as Parameters<typeof createMcpSetupHost>[0]) : undefined, localBroker)
-  const deps = { printers: printers?.host, setup, slicer: nodeSlicer, profiles: profileStore, kb, project, today: () => new Date(now()).toISOString().slice(0, 10) }
+  const geomBin = findSxGeom(opts.sxGeomBin, sxPath)
+  const deps = {
+    printers: printers?.host,
+    setup,
+    slicer: nodeSlicer,
+    profiles: profileStore,
+    kb,
+    project,
+    ...(geomBin ? { geom: createGeomCli({ binary: geomBin, timeoutMs: 5 * 60_000 }) } : {}),
+    today: () => new Date(now()).toISOString().slice(0, 10),
+  }
   const gate: GateDeps = {
     policy: loaded.policy,
     policyPath: loaded.path,
@@ -133,7 +144,6 @@ export async function createContext(opts: SlicerxMcpOptions = {}): Promise<Serve
   }
   const registry = [...pilotTools(createCombinedPlanner(kb)), ...(await servicePluginTools(printers?.host))]
   const local = localTools({ store, profiles, slicer: nodeSlicer, policy, project })
-  const geomBin = findSxGeom(opts.sxGeomBin, sxPath)
   const geom = geomBin ? [...geomTools({ bin: geomBin, policy }), ...cadTools({ bin: geomBin, policy })] : []
   const cloud = cloudTools({ cloud: opts.cloud, store, profiles, policy })
   const locked = sxlockTools({ sxlock: opts.sxlock, policy })
