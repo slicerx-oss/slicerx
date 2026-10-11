@@ -176,6 +176,31 @@ test.describe('controls never move when pressed', () => {
     expect(moved).toEqual([])
   })
 
+  test('a control half under the sidebar\'s footer stays where it was pressed', async ({ page, isMobile }) => {
+    test.skip(isMobile, 'The sidebar is a sheet on a phone')
+    // a short window, so the settings scroll
+    await page.setViewportSize({ width: 1440, height: 700 })
+    await open(page, { settingsMode: 'simple' })
+    // The pane scrolled so Supports sits half under the bottom edge of the scroller, above the footer.
+    const body = page.locator('aside.pane[data-side="left"] .sx-rail-body')
+    const auto = page.getByRole('radiogroup', { name: 'Supports' }).getByRole('radio', { name: 'Auto' })
+    await auto.evaluate((radio) => {
+      const box = radio.closest('.sx-rail-body')!
+      const r = radio.getBoundingClientRect()
+      const b = box.getBoundingClientRect()
+      box.scrollTop = Math.round(box.scrollTop + r.top + r.height / 2 - b.bottom)
+    })
+    const before = (await auto.boundingBox())!.y
+    const scroller = (await body.boundingBox())!
+    expect(before + (await auto.boundingBox())!.height).toBeGreaterThan(scroller.y + scroller.height)
+    // the mouse, not a locator click, which would scroll the radio into view itself first
+    const r = (await auto.boundingBox())!
+    await page.mouse.click(r.x + r.width / 2, r.y + 4)
+    await expect(auto).toHaveAttribute('aria-checked', 'true')
+    await page.waitForTimeout(350)
+    expect(Math.abs((await auto.boundingBox())!.y - before)).toBeLessThanOrEqual(0.5)
+  })
+
   test('Slice in Advanced, with every setting group open', async ({ page }, info) => {
     test.slow()
     await open(page, { settingsMode: 'advanced' })

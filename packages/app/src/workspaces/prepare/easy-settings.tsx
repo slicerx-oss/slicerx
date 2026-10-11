@@ -171,7 +171,10 @@ export function EasySettingsPanel() {
         <div className="lbl" id="goal-label">
           Goal
         </div>
-        {goal === 'custom' ? (
+        {/* in the selection's scope the tiles hold the plate's goal: the reason sits where Custom would, same row */}
+        {scoped ? (
+          <span className="goal-plate sx-small sx-muted">Set on the plate</span>
+        ) : goal === 'custom' ? (
           <Chip className="goal-custom" tabIndex={0} {...tipAttrs(CUSTOM_TIP)}>
             Custom
           </Chip>
