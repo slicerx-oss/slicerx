@@ -121,7 +121,7 @@ export const normalizeId = (s: string): string => s.toLowerCase().replace(/[^a-z
 
 /**
  * Each knowledge file's parsed YAML, by path, kept with the exact text it was parsed from. Parsing the knowledge base
- * is most of what a new DataStore costs, and a process that makes several (an HTTP server's sessions, the tests) would
+ * is most of what a new DataStore costs, and a process that makes several (the tests make one per test server) would
  * otherwise parse the same files each time. A file whose text changed is parsed again, and every store gets its own
  * copy, so a store sees what it would have parsed itself and nothing one store does reaches another.
  */
