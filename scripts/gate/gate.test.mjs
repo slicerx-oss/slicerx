@@ -10,7 +10,7 @@ import { inflateRawSync } from 'node:zlib'
 import { coaster3mf } from './lib/coaster.mjs'
 import { options } from './lib/options.mjs'
 import { renderReport, runStatus } from './lib/report.mjs'
-import { isGatePrinter } from './scenarios/start.mjs'
+import { isGatePrinter, plateLoaded, waitForPlate } from './scenarios/start.mjs'
 import { STARTERS, TOWER } from './lib/starters.mjs'
 import { mask, temperatureChanges, towerCheck, waitUntil } from './lib/util.mjs'
 
@@ -55,6 +55,35 @@ describe('waitUntil', () => {
     assert.equal(r.timedOut, true)
     assert.ok(r.waitedMs >= 30)
     assert.ok(ticks.length > 0)
+  })
+})
+
+describe('the example plate before the first slice', () => {
+  const fake = (states) => {
+    let i = 0
+    return { state: async () => states[Math.min(i++, states.length - 1)] }
+  }
+  const empty = { plate: { loading: false, objects: [] } }
+  const loading = { plate: { loading: true, objects: [{ name: 'Layered X' }] } }
+  const loaded = { plate: { loading: false, objects: [{ name: 'Layered X' }] } }
+
+  it('is loaded only with its objects and nothing still loading', () => {
+    assert.equal(plateLoaded(loaded), true)
+    assert.equal(plateLoaded(empty), false)
+    assert.equal(plateLoaded(loading), false)
+    assert.equal(plateLoaded({}), false)
+  })
+
+  it('is waited for while the app is still loading it', async () => {
+    const r = await waitForPlate(fake([empty, loading, loaded]), { timeoutMs: 1000, everyMs: 1 })
+    assert.equal(r.timedOut, false)
+    assert.equal(r.state, loaded)
+  })
+
+  it('gives up with the last state when it never loads', async () => {
+    const r = await waitForPlate(fake([empty]), { timeoutMs: 30, everyMs: 5 })
+    assert.equal(r.timedOut, true)
+    assert.equal(r.state, empty)
   })
 })
 
