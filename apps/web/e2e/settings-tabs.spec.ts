@@ -24,6 +24,7 @@ async function open(page: Page, isMobile: boolean, mode = 'advanced'): Promise<v
 const tabs = (page: Page) => page.getByRole('tablist', { name: 'Setting groups' }).getByRole('tab')
 
 test('one tab per group; Color shows with two filaments and holds the atlas row', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'Desktop: a phone has Simple settings only, with no tabs')
   await open(page, isMobile)
   // The demo X prints in two filaments.
   await expect.poll(() => tabs(page).evaluateAll((els) => els.map((e) => e.getAttribute('aria-label')))).toEqual(['Quality', 'Strength', 'Speed', 'Supports', 'Adhesion', 'Color', 'Surface', 'Output and print order'])
@@ -44,6 +45,7 @@ test('one tab per group; Color shows with two filaments and holds the atlas row'
 })
 
 test('with one filament there is no Color tab, and an open Color tab falls back to Quality', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'Desktop: a phone has Simple settings only, with no tabs')
   await open(page, isMobile)
   await page.getByTestId('slice-settings-tab-multicolor').click()
   await page.evaluate(() => {
@@ -55,6 +57,7 @@ test('with one filament there is no Color tab, and an open Color tab falls back 
 })
 
 test('arrows move between tabs, and a search looks through all of them', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'Desktop: a phone has Simple settings only, with no tabs')
   await open(page, isMobile)
   await page.getByTestId('slice-settings-tab-quality').focus()
   await page.keyboard.press('ArrowRight')
@@ -71,6 +74,7 @@ test('arrows move between tabs, and a search looks through all of them', async (
 })
 
 test('in Expert, print sequence heads Output, and a search finds it there', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'Desktop: a phone has Simple settings only, with no tabs')
   await open(page, isMobile, 'expert')
   await page.getByTestId('slice-settings-tab-output').click()
   const output = page.locator('#set-tab-panel section[aria-label="Output and print order"]')
@@ -81,6 +85,7 @@ test('in Expert, print sequence heads Output, and a search finds it there', asyn
 })
 
 test('on a phone the tabs are one row of 44 px targets that scrolls sideways, stays still and keeps the open tab in view', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'Desktop: a phone has Simple settings only, with no tabs')
   test.skip(!isMobile, 'Phone only')
   await open(page, isMobile, 'expert')
   const row = page.getByRole('tablist', { name: 'Setting groups' })

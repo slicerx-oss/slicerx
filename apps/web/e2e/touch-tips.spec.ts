@@ -2,7 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 // Touch has no hover: a long press shows a control's tip above the finger, and releasing does not tap the control.
 import { type Locator } from '@playwright/test'
-import { expect, plateReady, test, viewportReady } from './fixtures'
+import { expect, openSheet, plateReady, test, viewportReady } from './fixtures'
 
 test('a long press shows the tip and the release does not press the control', async ({ page, isMobile }) => {
   test.skip(!isMobile, 'Touch project')
@@ -14,8 +14,9 @@ test('a long press shows the tip and the release does not press the control', as
   await page.goto('./')
   await plateReady(page)
   await viewportReady(page)
-  const tools = page.getByRole('toolbar', { name: 'Plate tools' })
-  const rotate = tools.getByRole('button', { name: 'Rotate' })
+  // the object's print toggle in the Slice sheet: a phone views and prints, so it has no plate tools to hold
+  await openSheet(page)
+  const print = page.getByTestId('object-row').first().getByTestId('object-printable')
   const cdp = await page.context().newCDPSession(page)
   const centerOf = async (button: Locator) => {
     const box = (await button.boundingBox())!
@@ -33,22 +34,25 @@ test('a long press shows the tip and the release does not press the control', as
     await page.waitForTimeout(60)
     await touch('touchEnd')
   }
-  // A short tap presses the tool and shows no tip. The first touches on a fresh page only wake it up: Chromium's touch hit test
-  // is stale until the page has had a mouse event, so one click on Move (already the tool) comes first, and the tap repeats
-  // while the tool is not pressed.
-  await tools.getByRole('button', { name: 'Move' }).click()
+  // A short tap presses the toggle and shows no tip. The first touches on a fresh page only wake it up: Chromium's touch
+  // hit test is stale until the page has had a mouse event, so one click on the row's name comes first, and the tap
+  // repeats while the toggle is not pressed.
+  await page.getByTestId('object-row').first().getByTestId('object-select').click()
   await expect(async () => {
-    if ((await rotate.getAttribute('aria-pressed')) !== 'true') await tap(rotate)
-    await expect(rotate).toHaveAttribute('aria-pressed', 'true', { timeout: 1500 })
+    if ((await print.getAttribute('aria-pressed')) !== 'true') await tap(print)
+    await expect(print).toHaveAttribute('aria-pressed', 'true', { timeout: 1500 })
   }).toPass({ timeout: 20_000 })
   await expect(page.locator('#sx-tip')).toHaveCount(0)
   // Put it back, then hold.
-  await tools.getByRole('button', { name: 'Move' }).click()
-  await expect(rotate).toHaveAttribute('aria-pressed', 'false')
-  const hold = touchOn(rotate)
+  await print.click()
+  await expect(print).toHaveAttribute('aria-pressed', 'false')
+  // the click leaves the mouse over the toggle; away from it, so the tip below can only come from the finger
+  await page.mouse.move(1, 1)
+  await expect(page.locator('#sx-tip')).toHaveCount(0)
+  const hold = touchOn(print)
   await hold('touchStart')
-  await expect(page.locator('#sx-tip')).toContainText('Drag a ring to turn the model around that axis.', { timeout: 3000 })
+  await expect(page.locator('#sx-tip')).toContainText('leave it out of the print', { timeout: 3000 })
   await hold('touchEnd')
   await expect(page.locator('#sx-tip')).toHaveCount(0)
-  await expect(rotate).toHaveAttribute('aria-pressed', 'false')
+  await expect(print).toHaveAttribute('aria-pressed', 'false')
 })

@@ -10,13 +10,13 @@ import { useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, type
 import { formatShortcut } from '../lib/keys'
 import { toggleDock, useDockOpen } from '../features/pilot/dock-state'
 import { watchOf } from '../features/pilot/watch'
-import { editionHasCad, useEdition } from '../edition'
 import { useFeatures, useHasFeature } from '../features'
 import { topBarTabs, useLayout, useLookChoice } from '../first-run/look'
 import { ModeSelector } from '../first-run/mode-selector'
 import { useFleet } from '../lib/queries'
 import { openSettings, set, setWorkspace, useApp } from '../state/store'
 import { ModeTabs } from './mode-tab'
+import { useCadShown } from '../state/model-mode'
 import './top-bar.css'
 
 /** The narrowing steps, in order: search as an icon, tab labels gone, Vault and Printers in More, Model and Slice labels gone. */
@@ -85,7 +85,8 @@ export function TopBar() {
   // Fleet health is a dot on the Printers tab, not a chip in the bar.
   const tabs = useMemo(() => workspaces.map((w) => (w.id === 'printers' && total > 0 ? { ...w, ...(failing ? { status: 'warn' as const } : online > 0 ? { status: 'ok' as const } : {}) } : w)), [workspaces, online, total, failing])
   // With modeling tools the first tab is the Design | Slice pair; without, a plain Slice tab.
-  const cad = editionHasCad(useEdition())
+  // A phone shows a plain Slice tab: modeling waits for the desktop.
+  const cad = useCadShown()
   const shown = useMemo(() => (cad ? tabs.filter((w) => w.id !== 'prepare') : tabs), [cad, tabs])
   const projectFile = useApp((s) => s.projectFile)
   const nameRef = useRef<HTMLDivElement>(null)

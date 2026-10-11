@@ -8,6 +8,7 @@ import { ASSISTANT_NAME } from '@slicerx/pilot/name'
 import { applyPreset, resolvePreset } from '@slicerx/ui'
 import { useEffect, useMemo } from 'react'
 import { useEdition } from '../edition'
+import { usePhoneLayout } from '../lib/phone-layout'
 import type { ActiveWorkspace } from '../features'
 import type { Appearance } from '../state/prefs'
 import { get, openSettings, set, useApp, type SettingsMode, type SetupStep } from '../state/store'
@@ -30,7 +31,17 @@ export function usePreset(): LookAndFeelPreset {
 }
 
 export function useLayout(): LayoutSpec {
-  return usePreset().layout
+  const layout = usePreset().layout
+  const phone = usePhoneLayout()
+  return useMemo(() => (phone ? phoneLayout(layout) : layout), [phone, layout])
+}
+
+/**
+ * The layout on a phone, which views and prints: Simple settings only, with no mode selector in the panes and no
+ * Global and Objects switch. The person's saved mode stays as it is, for a wider screen.
+ */
+export function phoneLayout(layout: LayoutSpec): LayoutSpec {
+  return { ...layout, modes: ['simple'], modeSelector: 'preferences-only', globalObjectSwitch: false }
 }
 
 /** The names the tabs have when a look does not rename them. */

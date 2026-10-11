@@ -32,10 +32,13 @@ test('a row is one compact line with the name, the parts and their colors, and t
   await expect(row.locator('.obj-meta')).toHaveText('2 parts')
   await expect(row.locator('.obj-swatches i')).toHaveCount(2)
   await expect(page.locator('[data-section="objects"] .objs-count')).toHaveText('1 on plate')
-  // On a fine pointer, lock and print show only on hover; on touch they always show.
+  // On a fine pointer, lock and print show only on hover. A phone views and prints: print always shows, and lock
+  // (an edit) waits for the desktop.
   const lock = row.getByTestId('object-lock')
-  if (isMobile) await expect(lock).toBeVisible()
-  else {
+  if (isMobile) {
+    await expect(row.getByTestId('object-printable')).toBeVisible()
+    await expect(lock).toHaveCount(0)
+  } else {
     await page.mouse.move(0, 0)
     await expect(lock).toBeHidden()
     await line.hover()
@@ -43,7 +46,8 @@ test('a row is one compact line with the name, the parts and their colors, and t
   }
 })
 
-test('the chevron opens the tree: parts with their filament, volumes with their role', async ({ page }) => {
+test('the chevron opens the tree: parts with their filament, volumes with their role', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'Desktop: the parts tree, which a phone doesn\'t show')
   await open(page)
   const row = rows(page).first()
   await expect(row.getByTestId('object-part-slot')).toHaveCount(0)
@@ -53,7 +57,8 @@ test('the chevron opens the tree: parts with their filament, volumes with their 
   await expect(row.getByTestId('object-part-slot').first()).toHaveAttribute('data-slot', '3')
 })
 
-test('a volume shows in the tree with its role', async ({ page }) => {
+test('a volume shows in the tree with its role', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'Desktop: the parts tree, which a phone doesn\'t show')
   await open(page, { settingsMode: 'advanced' })
   await page.locator('[data-section="volumes"]').getByRole('button', { name: 'Add' }).click()
   const row = rows(page).first()
@@ -79,7 +84,8 @@ test('a click selects, Cmd or Ctrl adds, a double-click or F2 renames in place',
   await expect(field).toHaveCount(0)
 })
 
-test('one Add button: the file dialog, and the Vault, shapes, Export, Tools and Object in its menu', async ({ page }) => {
+test('one Add button: the file dialog, and the Vault, shapes, Export, Tools and Object in its menu', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'Desktop: a phone has no shapes, tools or object actions')
   await open(page)
   const card = page.locator('[data-section="objects"]')
   await expect(card.getByTestId('objects-add-model')).toHaveText('Add')
@@ -97,6 +103,7 @@ test('one Add button: the file dialog, and the Vault, shapes, Export, Tools and 
 })
 
 test('a tool takes the card\'s place, nothing above moves, and one way out brings the list back', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'Desktop: a phone has no object tools')
   await open(page)
   const filament = page.locator('[data-section="filament"]')
   // Measured from the top of the pane's content: a phone's sheet scrolls to the tool and grows with it, which moves

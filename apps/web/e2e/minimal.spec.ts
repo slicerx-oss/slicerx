@@ -2,7 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 // Minimal UI: how many controls each workspace shows at once in Simple mode.
 import { type Page } from '@playwright/test'
-import { expect, test, viewportReady } from './fixtures'
+import { expect, openSheet, test, viewportReady } from './fixtures'
 
 const INTERACTIVE = 'button, a[href], input, select, textarea, [role=radio], [role=switch], [role=slider], [role=tab], [role=menuitem]'
 
@@ -61,6 +61,16 @@ test('The plate tab with an object selected shows 39 controls or fewer, Simple m
   // 39: the plate toolbar keeps still (static controls), so Drop to bed stays in place, disabled with nothing
   // selected, and Arrange options always shows beside Arrange all.
   expect(list.length).toBeLessThanOrEqual(39)
+})
+
+test('a phone\'s Slice, with its settings sheet open, shows 26 controls or fewer', async ({ page, isMobile }) => {
+  test.skip(!isMobile, 'Phone width')
+  await open(page, 'prepare')
+  await openSheet(page)
+  const list = await visibleControls(page)
+  console.log('phone slice', list.length, list.join(' | '))
+  // a phone views and prints: Simple settings, the objects as a list, and no plate tools or modeling
+  expect(list.length).toBeLessThanOrEqual(26)
 })
 
 test('a saved Preview tab opens Slice, with no Preview tab in the bar', async ({ page }) => {

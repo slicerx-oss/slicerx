@@ -9,7 +9,7 @@ import type { PreviewBuffers } from '@slicerx/contracts'
 import type { RenderMode, ToolChangerSpec, Viewport, ViewportPlate } from '@slicerx/viewport'
 import { onThemeChange } from '@slicerx/ui/theme'
 import { useEffect, useRef, useState } from 'react'
-import { brandAccent, editionHasCad, useEdition } from '../edition'
+import { brandAccent, useEdition } from '../edition'
 import { controlsFor, type ControlsApi } from '../first-run/controls'
 import { effectiveSlot, mapSlot, resolveSlots, slotFinish, type ResolvedSlot } from '../filament/slots'
 import { activeMeta } from '../plate/plates'
@@ -25,6 +25,8 @@ import { toGeom } from '../geom/client'
 import { useHost } from '../host'
 import { moveTower, towerMesh, towerShown, TOWER_ID, type ShownTower } from '../plate/tower'
 import { appStore, selectedIds, set, shownSlice, toast, toggledSelection, useApp, type AppState } from '../state/store'
+import { cadShown } from '../state/model-mode'
+import { isPhoneLayout, onPhoneLayout } from '../lib/phone-layout'
 import { modelReveal, type RevealMemory } from './model-reveal'
 import { webgl2Available, watchFor, withRetries } from './context-retry'
 import { createFallbackViewport } from './fallback'
@@ -65,6 +67,7 @@ export type Drive = Pick<Viewport, 'setMode' | 'setPlate' | 'setTransforms' | 's
   setTool?: Viewport['setTool']
   setRotateSpace?: Viewport['setRotateSpace']
   setMoveHandles?: Viewport['setMoveHandles']
+  setMovable?: Viewport['setMovable']
   setCutPlane?: Viewport['setCutPlane']
   setGapLines?: Viewport['setGapLines']
   setGuides?: Viewport['setGuides']
@@ -118,7 +121,7 @@ const PAINT_LAYERS = ['color', 'seam', 'support', 'fuzzy'] as const
 const VOLUME_COLOR = { negative: '#ff5555', support_blocker: '#ffb86c', support_enforcer: '#50fa7b', modifier: '#8be9fd' } as const
 
 /** Design models parts on a plain ground: no prime tower, which is print setup. */
-const designing = (s: AppState): boolean => s.workspace === 'prepare' && s.modelMode === 'design' && editionHasCad()
+const designing = (s: AppState): boolean => s.workspace === 'prepare' && s.modelMode === 'design' && cadShown()
 
 /**
  * A volume's positions in its object's space, baked once per part and placement: the viewport keeps an object built
@@ -504,7 +507,8 @@ export function ViewportHost({ layers }: { layers: boolean }) {
       // A right click on an object in Slice opens the selection's menu there; outside the selection it selects first.
       offs.push(vp.on('contextpick', (e) => {
         const st = appStore.getState()
-        if (st.workspace !== 'prepare' || st.modelMode !== 'slice' || st.objectTool !== null || !e.objectId || e.objectId === TOWER_ID) return
+        // a phone views and prints: no edit menu on the plate
+        if (isPhoneLayout() || st.workspace !== 'prepare' || st.modelMode !== 'slice' || st.objectTool !== null || !e.objectId || e.objectId === TOWER_ID) return
         if (!selectedIds(st).includes(e.objectId)) selectObject(e)
         openViewMenu(e.screen[0], e.screen[1])
       }))
@@ -590,7 +594,10 @@ export function ViewportHost({ layers }: { layers: boolean }) {
       }
       // Tools: the viewport has move, rotate and lay on face; scale works through the numeric fields.
       const applyTool = () => {
-        const t = toolStore.getState().tool
+        // A phone views and prints: a tap selects and a drag turns the view, and nothing on the plate moves.
+        const phone = isPhoneLayout()
+        const t = phone ? 'select' : toolStore.getState().tool
+        vp.setMovable?.(!phone)
         // The brim tool needs the viewport's own `brim` mode; without it the tool is a plain selection.
         vp.setTool?.(t === 'scale' || (t === 'brim' && !brimVp.setBrimEars) ? 'select' : (t as Parameters<NonNullable<typeof vp.setTool>>[0]))
         vp.setRotateSpace?.(toolStore.getState().rotateSpace)
@@ -613,6 +620,7 @@ export function ViewportHost({ layers }: { layers: boolean }) {
       offs.push(onEarSelection(() => pushEars(appStore.getState())))
       applyTool()
       offs.push(toolStore.subscribe(applyTool))
+      offs.push(onPhoneLayout(applyTool))
       if (vp.setTool) offs.push((vp as unknown as Viewport).on('facepick', (pick) => void layOnPickedFace(pick)))
       setCameraBus({
         view: (preset, o) => vp.view(preset, o),

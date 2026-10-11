@@ -15,6 +15,7 @@ import { ToolDialogHost, ToolsMenu } from './object-tools'
 import { SelectionActions } from './selection-bar'
 import { ObjectRow } from './object-row'
 import { useMore } from '../../shell/more'
+import { usePhoneLayout } from '../../lib/phone-layout'
 import './objects.css'
 
 const ObjectVolumes = lazy(() => import('./object-volumes').then((m) => ({ default: m.ObjectVolumes })))
@@ -34,7 +35,9 @@ export function onPlate(n: number): string {
 /** One Add button: the file dialog, and in its menu the Vault, shapes, Export, the tools and the object actions. */
 function AddButton() {
   const host = useHost()
-  const cad = useApp((s) => s.cadTools)
+  // a phone views and prints: no shapes, tools or object edits in the menu
+  const phone = usePhoneLayout()
+  const cad = useApp((s) => s.cadTools) && !phone
   const hasSel = useApp((s) => s.selection !== null)
   const [menu, setMenu] = useState<Sub | null>(null)
   const close = () => setMenu(null)
@@ -65,12 +68,16 @@ function AddButton() {
             <MenuItem icon="export" data-testid="export-menu" aria-haspopup="menu" onClick={open('export')}>
               Export
             </MenuItem>
-            <MenuItem icon="magic-wand" aria-haspopup="menu" onClick={open('tools')}>
-              Tools
-            </MenuItem>
-            <MenuItem icon="more" data-testid="object-menu" aria-haspopup="menu" disabled={!hasSel} onClick={open('object')}>
-              Object
-            </MenuItem>
+            {phone ? null : (
+              <>
+                <MenuItem icon="magic-wand" aria-haspopup="menu" onClick={open('tools')}>
+                  Tools
+                </MenuItem>
+                <MenuItem icon="more" data-testid="object-menu" aria-haspopup="menu" disabled={!hasSel} onClick={open('object')}>
+                  Object
+                </MenuItem>
+              </>
+            )}
           </Menu>
           <ShapeMenu open={menu === 'shape'} onClose={close} align="end" />
           <ExportMenu open={menu === 'export'} onClose={close} align="end" />
@@ -121,10 +128,11 @@ export function PrepareObjects() {
   // The CAD history list loads only for a selected object that has one (or whose step is open).
   const historyOf = useApp((s) => (s.historyEdit ? s.historyEdit.objectId : s.plate.find((p) => p.id === s.selection)?.history ? s.selection : null))
   const more = useMore('object')
+  const phone = usePhoneLayout()
   // The list's scroll position comes back with it when a tool closes.
   const scroll = useRef(0)
 
-  const panel = isCadTool(objectTool) ? (
+  const panel = phone ? null : isCadTool(objectTool) ? (
     <CadPanel key={objectTool + editKey} tool={objectTool} />
   ) : objectTool === 'cut' ? (
     <CutPanel />
@@ -197,18 +205,18 @@ export function PrepareObjects() {
           {plate.map((p, index) => (matches.has(p.id) ? <ObjectRow key={p.id} entry={p} index={index} count={plate.length} instanceOf={p.instanceOf ? names.get(p.instanceOf) : undefined} match={matches.get(p.id)!} searching={searching} /> : null))}
         </ul>
       )}
-      <SelectionActions />
-      {historyOf ? (
+      {phone ? null : <SelectionActions />}
+      {historyOf && !phone ? (
         <Suspense fallback={null}>
           <HistoryPanel objectId={historyOf} />
         </Suspense>
       ) : null}
-      {more ? (
+      {more && !phone ? (
         <Suspense fallback={null}>
           <ObjectVolumes />
         </Suspense>
       ) : null}
-      <ToolDialogHost />
+      {phone ? null : <ToolDialogHost />}
     </Block>
   )
 }
