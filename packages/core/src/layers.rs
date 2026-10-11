@@ -4,6 +4,16 @@
 
 use crate::error::{Error, Result};
 
+/// How far below the model top the last layer top may end and still count as reaching it, mm.
+///
+/// Tops are planned on the plate mesh rounded to f32 (sx-geom, in the app and in [`crate::sleipnir`]), while the
+/// model top here is the f64 transform of the f32 mesh. At printable heights (under 1 m) the two differ by at most
+/// half an f32 step, about 3e-5 mm, so a tolerance of 1e-6 mm refused plates whose tops reached the top exactly
+/// (39.350002288818 against 39.350003600121 on a real project). One micron is 30 times that rounding and 40 times
+/// under the thinnest layer a plan may have (0.04 mm), so it passes float noise and still refuses tops that stop a
+/// layer short.
+const TOP_TOLERANCE_MM: f64 = 1e-3;
+
 /// Layer heights for the whole plate. Uniform tops are computed by
 /// multiplication, not accumulation, so every shard sees the same values.
 #[derive(Debug, Clone, Default)]
@@ -80,7 +90,7 @@ impl LayerPlan {
             bottom = top;
         }
         let covered = plan.tops.last().copied().unwrap_or(0.0);
-        if covered < max_z - 1e-6 && plan.slice_z.len() == tops.len() {
+        if covered < max_z - TOP_TOLERANCE_MM && plan.slice_z.len() == tops.len() {
             return Err(bad(format!(
                 "tops end at {covered:.4} mm, below the model top at {max_z:.4} mm"
             )));
@@ -309,5 +319,17 @@ mod tests {
         assert!(LayerPlan::from_tops(1.5, &tops, 0.04, 0.8).is_err());
         assert!(LayerPlan::from_tops(1.0, &[0.2, 0.2, 1.0], 0.04, 0.8).is_err());
         assert!(LayerPlan::from_tops(1.0, &[0.2, 1.4], 0.04, 0.8).is_err());
+    }
+
+    #[test]
+    fn tops_that_end_at_the_model_top_within_float_noise_reach_it() {
+        // A real project's plan: tops planned on the f32 plate mesh end 1.3e-6 mm under the f64 model top.
+        let (top, model_top) = (39.350_002_288_818, 39.350_003_600_121);
+        let tops: Vec<f64> = (1..=196).map(|i| f64::from(i) * 0.2).chain([top]).collect();
+        let p = LayerPlan::from_tops(model_top, &tops, 0.04, 0.8).unwrap();
+        assert_eq!(p.count(), 197);
+        // Tops that stop short of the top by a layer, or by a tenth of the thinnest one, are still refused.
+        assert!(LayerPlan::from_tops(model_top + 0.2, &tops, 0.04, 0.8).is_err());
+        assert!(LayerPlan::from_tops(top + 0.004, &tops, 0.04, 0.8).is_err());
     }
 }
