@@ -24,13 +24,20 @@ export interface PreflightInput {
   collisions?: readonly Collision[]
   /** The plate's object names by id, for the collisions' words. */
   objectNames?: Readonly<Record<string, string>>
+  /** The top of each sliced layer (mm), so a print too tall for the printer can say where it gets there. */
+  layerZ?: ArrayLike<number>
 }
+
+/** Where a block can be seen in the sliced plate: a collision of the slice (its index), or a layer. */
+export type PreflightSpot = { kind: 'collision'; index: number } | { kind: 'layer'; layer: number }
 
 export interface Preflight {
   errors: string[]
   warnings: string[]
   /** Lines for the approval card. */
   facts: string[]
+  /** For an error that has a place in the slice, by the error's text: the first offending layer or collision. */
+  spots: Record<string, PreflightSpot>
 }
 
 const first = (v: SettingValue | undefined): SettingValue | undefined => (Array.isArray(v) ? v[0] : v)
@@ -64,6 +71,7 @@ const FLAVORS: Record<string, readonly string[]> = {
 export function preflight(input: PreflightInput): Preflight {
   const errors: string[] = []
   const warnings: string[] = []
+  const spots: Record<string, PreflightSpot> = {}
   // What could not be checked goes on the card as a plain fact, not as a warning the person cannot act on.
   const unchecked: string[] = []
   const { printer, status, config, plateBounds, file } = input
@@ -80,7 +88,22 @@ export function preflight(input: PreflightInput): Preflight {
     const w = vol.shape === 'rectangular' ? vol.x : vol.diameter
     const d = vol.shape === 'rectangular' ? vol.y : vol.diameter
     if (plateBounds.max[0] > w + 0.01 || plateBounds.max[1] > d + 0.01 || plateBounds.min[0] < -0.01 || plateBounds.min[1] < -0.01) errors.push(`The plate is laid out past the ${w} x ${d} mm bed of the ${model?.name}. Arrange it for this printer and slice again.`)
-    if (plateBounds.max[2] > vol.z + 0.01) errors.push(`The print is ${plateBounds.max[2].toFixed(1)} mm tall; the ${model?.name} reaches ${vol.z} mm.`)
+    if (plateBounds.max[2] > vol.z + 0.01) {
+      const tall = `The print is ${plateBounds.max[2].toFixed(1)} mm tall; the ${model?.name} reaches ${vol.z} mm.`
+      errors.push(tall)
+      // the first layer that goes higher than the printer reaches (0 based), else the top one
+      const z = input.layerZ
+      if (z && z.length) {
+        let layer = z.length - 1
+        for (let i = 0; i < z.length; i++) {
+          if (z[i]! > vol.z + 0.01) {
+            layer = i
+            break
+          }
+        }
+        spots[tall] = { kind: 'layer', layer }
+      }
+    }
     if (input.plateBed.widthMm !== w || input.plateBed.depthMm !== d) warnings.push(`Sliced for a ${input.plateBed.widthMm} x ${input.plateBed.depthMm} mm bed; this printer has ${w} x ${d} mm.`)
   } else if (!vol) {
     unchecked.push(`${appName()} does not know the bed size of the ${printer.vendor} ${printer.model}, so the plate was not checked against it`)
@@ -111,9 +134,14 @@ export function preflight(input: PreflightInput): Preflight {
 
   // heimdall: the head, gantry or tool changer would meet a printed part.
   const name = (id: string) => input.objectNames?.[id] ?? 'an object'
-  for (const c of input.collisions ?? []) {
-    if (c.severity === 'hit') errors.push(`${collisionTitle(c, name)}, layer ${c.layer + 1}. ${collisionDetail(c, name)} Fix it in Slice and slice again.`)
-    else warnings.push(closeCallNote(c, name))
+  for (const [index, c] of (input.collisions ?? []).entries()) {
+    if (c.severity !== 'hit') {
+      warnings.push(closeCallNote(c, name))
+      continue
+    }
+    const hit = `${collisionTitle(c, name)}, layer ${c.layer + 1}. ${collisionDetail(c, name)} Fix it in Slice and slice again.`
+    errors.push(hit)
+    spots[hit] ??= { kind: 'collision', index }
   }
 
   const facts = [
@@ -123,5 +151,5 @@ export function preflight(input: PreflightInput): Preflight {
     [hot !== null ? `nozzle ${degC(hot)}` : '', bed !== null ? `bed ${degC(bed)}` : '', material].filter(Boolean).join(', '),
     ...unchecked,
   ].filter(Boolean)
-  return { errors, warnings, facts }
+  return { errors, warnings, facts, spots }
 }

@@ -3,10 +3,10 @@
 import { createElement } from 'react'
 import { flushSync } from 'react-dom'
 import { createRoot } from 'react-dom/client'
-import { afterEach, beforeAll, describe, expect, it } from 'vitest'
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { PrintSheet, type PrintSheetAsk } from '../src/send/print-sheet'
 import { defaultOptions, safeJobName, supportedOptions } from '../src/send/options'
-import { set } from '../src/state/store'
+import { get, set } from '../src/state/store'
 
 beforeAll(() => {
   // jsdom has no modal dialogs.
@@ -116,6 +116,23 @@ describe('Print sheet summary', () => {
     expect(line?.querySelector('button[data-tip-click]')?.getAttribute('data-tip-body')).toBe('Wait until it is idle.')
     const go = el.ownerDocument.querySelector<HTMLButtonElement>('.ps-go-main')
     expect(go?.getAttribute('aria-disabled')).toBe('true')
+    // A block with no place in the slice has no Show me.
+    expect(line?.querySelector('[data-testid="check-show"]')).toBeNull()
+  })
+
+  it('offers Show me on a block with a place in the slice, which closes the sheet and goes there', async () => {
+    const tall = 'The print is 300.0 mm tall; the P1S reaches 256 mm.'
+    let answer: unknown = 'pending'
+    const el = open(ask({ check: { errors: [tall], warnings: [], sha256: 'abcdef0123456789', spots: { [tall]: { kind: 'layer', layer: 1 } } }, resolve: (r) => (answer = r) }))
+    set({ preview: { layerCount: 4 } as never, layerHi: 4, layerLo: 1, workspace: 'prepare', modelMode: 'slice', sliceLook: 'solid' as never })
+    const show = el.querySelector<HTMLButtonElement>('.cl-line[data-tone=bad] [data-testid="check-show"]')
+    expect(show?.textContent).toBe('Show me')
+    flushSync(() => show!.click())
+    // The sheet closes as a cancel, then Slice shows the toolpaths up to the first layer past the printer's height.
+    expect(answer).toBeNull()
+    await vi.waitFor(() => expect(get().layerHi).toBe(2))
+    expect(get().printSheet).toBeNull()
+    expect(get().sliceLook).toBe('toolpaths')
   })
 })
 

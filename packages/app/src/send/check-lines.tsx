@@ -9,6 +9,8 @@ import './check-lines.css'
 export interface CheckLine extends SheetNote {
   /** bad blocks the print; warn asks for a look and lets it go ahead. */
   tone: 'bad' | 'warn'
+  /** Goes to where the check sees the problem in the sliced plate. */
+  show?: () => void
 }
 
 /** A check worded as one long message: its first sentence is the line, the rest goes to the tooltip. */
@@ -31,6 +33,11 @@ export function CheckLines({ lines, label = 'Checks' }: { lines: readonly CheckL
         <li key={`${n.tone}:${n.text}`} className="cl-line" data-tone={n.tone} role={n.tone === 'bad' ? 'alert' : undefined}>
           <Icon name={n.tone === 'bad' ? 'alert' : 'warning'} size={18} />
           <span className="cl-text">{n.text.replace(/[.!?]$/, '')}</span>
+          {n.show ? (
+            <button type="button" className="cl-more cl-show" data-testid="check-show" {...tipAttrs({ title: 'Show me', body: 'Close this and go to where it happens in the sliced plate.' })} onClick={n.show}>
+              Show me
+            </button>
+          ) : null}
           {n.tip ? (
             <button type="button" className="cl-more" data-tip-click="" {...tipAttrs({ title: n.text, body: n.tip })}>
               Details

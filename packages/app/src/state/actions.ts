@@ -708,9 +708,9 @@ async function sendNow(host: Host, printer: PrinterInfo): Promise<void> {
   // The config the plate was sliced with, filament slots included, so the material, nozzle and flow checks see what is in the file.
   const config = plateSliceConfig(st, st.plates.find((p) => p.id === st.activePlate)) as Record<string, SettingValue | undefined>
   // Preflight: the file against the printer as it is now (docs/safety.md). Shown in the sheet before the person decides.
-  const checkFor = (name: string, hash = sha256) => preflight({ printer, status, config, plateBounds, plateBed: st.bed, file: { name, sha256: hash, layers: s.result.layerCount, timeS: s.result.stats.timeS, grams }, ...(s.result.collisions ? { collisions: s.result.collisions, objectNames: Object.fromEntries(st.plate.map((p) => [p.id, p.name])) } : {}) })
+  const checkFor = (name: string, hash = sha256) => preflight({ printer, status, config, plateBounds, plateBed: st.bed, file: { name, sha256: hash, layers: s.result.layerCount, timeS: s.result.stats.timeS, grams }, layerZ: s.result.layerZ, ...(s.result.collisions ? { collisions: s.result.collisions, objectNames: Object.fromEntries(st.plate.map((p) => [p.id, p.name])) } : {}) })
   const first = checkFor(withEnding(jobFileName(get(), s.result.fileName), ending))
-  check0 = { errors: first.errors, warnings: first.warnings.map((text) => ({ text })), sha256 }
+  check0 = { errors: first.errors, warnings: first.warnings.map((text) => ({ text })), sha256, spots: first.spots }
   // The plate's picture, from the thumbnails the engine wrote into the G-code.
   const shot = await import('../export/threemf').then((m) => m.gcodeThumbnails(new TextDecoder().decode(data.slice(0, 4_000_000)))).catch(() => [])
   const pic = shot.find((t) => t.w <= 300) ?? shot[shot.length - 1]
