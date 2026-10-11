@@ -18,7 +18,7 @@ import { ProjectReadError, unzipEntries } from './unzip'
 import type { Mat, PaintOfPart, ScannedModel, ScannedObject } from './model-scan'
 import { scanProject, type ScannedProject } from './project-scan'
 import { scanProjectInWorker } from './project-worker-client'
-import { geomMatrix, readWithGeom, type GeomProject } from './geom-project'
+import { geomMatrix, geomPaint, readWithGeom, type GeomProject } from './geom-project'
 
 export { ProjectReadError, unzipEntries, type ZipLimits } from './unzip'
 export type { PaintOfPart } from './model-scan'
@@ -530,8 +530,7 @@ async function assembleGeom(g: GeomProject): Promise<{ plateCfg: PlateCfg[]; ite
         volumes.push({ name, role, part, ...(role === 'modifier' && Object.keys(own).length ? { rawSettings: own } : {}) })
         continue
       }
-      const layers: PaintOfPart = {}
-      for (const l of ['color', 'seam', 'support', 'fuzzy'] as const) if (p.paint[l].length) layers[l] = Object.fromEntries(p.paint[l])
+      const layers: PaintOfPart = geomPaint(p.paint)
       if (Object.keys(layers).length) paint[parts.length] = layers
       // PrusaSlicer's object settings apply to each of its parts; a part's own settings win.
       const settings = prusaOverrides ? { ...raw(o.settings), ...own } : own

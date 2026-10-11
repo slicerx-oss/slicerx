@@ -629,23 +629,51 @@ pub(crate) enum MeshOut {
     Raw,
 }
 
+/// an output buffer of a call: bytes, or a mesh's positions or triangles kept as they are, so a big mesh leaves
+/// without being written out again
+pub enum OutFile {
+    Bytes(Vec<u8>),
+    Positions(Vec<[f32; 3]>),
+    Triangles(Vec<[u32; 3]>),
+}
+
+impl OutFile {
+    /// where the buffer's bytes start in memory, and how many there are
+    pub fn ptr_len(&self) -> (usize, usize) {
+        match self {
+            Self::Bytes(b) => (b.as_ptr() as usize, b.len()),
+            Self::Positions(p) => (p.as_ptr() as usize, p.len() * 12),
+            Self::Triangles(t) => (t.as_ptr() as usize, t.len() * 12),
+        }
+    }
+
+    /// the bytes, little-endian
+    pub fn to_bytes(&self) -> Vec<u8> {
+        match self {
+            Self::Bytes(b) => b.clone(),
+            Self::Positions(p) => p.iter().flatten().flat_map(|c| c.to_le_bytes()).collect(),
+            Self::Triangles(t) => t.iter().flatten().flat_map(|i| i.to_le_bytes()).collect(),
+        }
+    }
+}
+
 thread_local! {
     /// The output buffers of the current call (`MeshOut::Raw`).
-    static OUT_FILES: std::cell::RefCell<Vec<Vec<u8>>> = const { std::cell::RefCell::new(Vec::new()) };
+    static OUT_FILES: std::cell::RefCell<Vec<OutFile>> = const { std::cell::RefCell::new(Vec::new()) };
 }
 
 /// adds an output buffer to the current call and returns its number
 #[cfg(feature = "formats")]
-pub(crate) fn push_out_file(bytes: Vec<u8>) -> usize {
+pub(crate) fn push_out_file(file: OutFile) -> usize {
     OUT_FILES.with(|f| {
         let mut f = f.borrow_mut();
-        f.push(bytes);
+        f.push(file);
         f.len() - 1
     })
 }
 
 /// The output buffers the last call wrote (`meshOutput: "raw"`), in the order its answer numbers them; taken once.
-pub fn take_out_files() -> Vec<Vec<u8>> {
+pub fn take_out_files() -> Vec<OutFile> {
     OUT_FILES.with(|f| std::mem::take(&mut *f.borrow_mut()))
 }
 
@@ -689,7 +717,7 @@ impl MeshOut {
             Self::Raw => {
                 let n = OUT_FILES.with(|f| {
                     let mut f = f.borrow_mut();
-                    f.push(m.to_raw());
+                    f.push(OutFile::Bytes(m.to_raw()));
                     f.len() - 1
                 });
                 #[allow(unused_mut, reason = "faces are written only in builds with the cad feature")]
