@@ -213,3 +213,77 @@ fn each_filament_converts_with_its_own_diameter() {
         assert!((grams[i] - m.filament_g[i]).abs() < 0.01, "{grams:?}");
     }
 }
+
+#[test]
+fn a1_counts_a_tool_change_flush_inside_a_conditional_but_not_conditional_start_lines() {
+    // Two colors on the stock A1. The change block's flush sits inside a firmware conditional: it is the purge the
+    // totals exist to count, so it counts as if unconditional. A conditional push added to the start sequence (a
+    // calibration line the printer may skip) does not count.
+    let change =
+        |flush: &str| format!("M620 S[next_extruder]A\nT[next_extruder]\n{flush}M621 S[next_extruder]A\n");
+    let run = |change_gcode: String, start_extra: &str| {
+        let mut c = stock("bambu-a1", Some("bambu-lab"), &json!({}));
+        for (k, v) in [
+            ("filament_diameter", json!([1.75, 1.75])),
+            ("filament_density", json!([1.24, 1.24])),
+            ("nozzle_temperature", json!([220, 220])),
+            ("nozzle_temperature_initial_layer", json!([220, 220])),
+            ("filament_type", json!(["PLA", "PLA"])),
+            ("filament_colour", json!(["#FFFFFF", "#000000"])),
+        ] {
+            c.insert(k.into(), v);
+        }
+        c.insert("change_filament_gcode".into(), json!(change_gcode));
+        let start = format!("{}\n{start_extra}", c["machine_start_gcode"].as_str().unwrap());
+        c.insert("machine_start_gcode".into(), json!(start));
+        slice(
+            c,
+            &json!([
+                {"id": "a", "mesh": "c", "transform": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 90, 128, 0, 1]},
+                {"id": "b", "mesh": "c", "transform": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 170, 128, 0, 1],
+                 "slotOverrides": {"cube.stl": 2}},
+            ]),
+        )
+    };
+    let total = |r: &api::SliceRun| r.report.stats.filament_mm.iter().sum::<f64>();
+    let flush = "G1 E30 F300 ; test flush\n";
+    let none = run(change(""), "");
+    let open = run(change(flush), "");
+    let conditional = run(change(&format!("M622 J1\n{flush}M623\n")), "");
+    let changes = String::from_utf8_lossy(&conditional.gcode)
+        .lines()
+        .filter(|l| l.ends_with("; test flush"))
+        .count();
+    assert!(changes >= 2, "{changes} tool changes");
+    #[allow(clippy::cast_precision_loss, reason = "a few tool changes")]
+    let pushed = 30.0 * changes as f64;
+    assert!(
+        (total(&open) - total(&none) - pushed).abs() < 0.01,
+        "{} against {pushed}",
+        total(&open) - total(&none)
+    );
+    assert!(
+        (total(&conditional) - total(&open)).abs() < 0.01,
+        "conditional flush {} against {}",
+        total(&conditional),
+        total(&open)
+    );
+    // The flush is the new filament's.
+    assert!(conditional.report.stats.filament_mm[1] > open.report.stats.filament_mm[1] - 0.01);
+    // The same start with a conditional push added: nothing more counts.
+    let start_cond = run(
+        change(&format!("M622 J1\n{flush}M623\n")),
+        "M1002 judge_flag extrude_cali_flag\nM622 J1\nG1 X20 E50 F300\nM623\n",
+    );
+    assert!(
+        (total(&start_cond) - total(&conditional)).abs() < 0.01,
+        "start conditional {} against {}",
+        total(&start_cond),
+        total(&conditional)
+    );
+    // The footer states the same totals as the report.
+    let stated = footer(&conditional.gcode, "; filament used [mm] = ");
+    for (a, b) in stated.iter().zip(&conditional.report.stats.filament_mm) {
+        assert!((a - b).abs() < 0.006, "{stated:?}");
+    }
+}
