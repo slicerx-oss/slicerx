@@ -217,15 +217,18 @@ describe('PilotWorkspace', () => {
     expect(screen.getByRole('button', { name: /Thought for 3\.2s/ }).getAttribute('aria-expanded')).toBe('true')
   })
 
-  it('never offers Allow for starting prints and reports policy changes', () => {
+  it('never offers Allow for queueing or starting prints, and reports policy changes', () => {
     const pilot = new FakePilot()
     const changes: PermissionPolicy[] = []
     render(<PilotWorkspace pilot={pilot} sessionId="s" skills={SKILLS} onPolicyChange={(p) => changes.push(p)} />)
     const start = screen.getByRole('radiogroup', { name: 'Start or resume prints' })
     expect(within(start).queryByRole('radio', { name: 'Allow' })).toBeNull()
     const queue = screen.getByRole('radiogroup', { name: 'Queue jobs' })
-    fireEvent.click(within(queue).getByRole('radio', { name: 'Allow' }))
-    expect(changes.at(-1)?.classes.queue).toBe('allow')
-    expect(pilot.policy().classes.queue).toBe('allow')
+    expect(within(queue).queryByRole('radio', { name: 'Allow' })).toBeNull()
+    fireEvent.click(within(queue).getByRole('radio', { name: 'Off' }))
+    expect(changes.at(-1)?.classes.queue).toBe('off')
+    expect(pilot.policy().classes.queue).toBe('off')
+    const slice = screen.getByRole('radiogroup', { name: 'Slice and arrange' })
+    expect(within(slice).getByRole('radio', { name: 'Allow' })).toBeTruthy()
   })
 })
