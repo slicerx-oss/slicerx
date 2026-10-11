@@ -16,7 +16,7 @@ import type { DataStore, KnowledgeKind } from './data'
 import { isGcodeKey, resolveSliceConfig, SHIPPED_GCODE_SOURCES, type ExtraLayers, type SlotLayer } from './config'
 import { gcode3mf, PLATE_THUMBNAILS } from './gcode3mf'
 import { readPresetFiles } from './presets'
-import { readProjectFile } from './projectfile'
+import { importReportLines, readProjectFile } from './projectfile'
 import { listDocs, settingEntry, settingsReference } from './docs'
 import { BED_CONFIRM_NOTE, gatedCall, mcpName, resolvePending, type GateDeps, type ToolProgress } from './gate'
 import { resolveModel, ToolInputError, type ErrorCode, type PathPolicy } from './models'
@@ -85,6 +85,10 @@ const sliceInput = {
     .describe(
       "With project_settings: what to do with the project's printer G-code (start, end, layer change and the rest) when it is not the printer's stock text. review (the default): refuse with error code project_gcode_review and the diff and flagged lines in structuredContent.error.details, for the person to see. profile: slice with the printer profile's G-code instead. Stock text is always used as it is. Only a person can choose a project's own G-code, in SlicerX; no tool call can.",
     ),
+  strict_settings: z
+    .boolean()
+    .default(false)
+    .describe("With project_settings: refuse with error code project_settings_unused when the project's print settings carry keys SlicerX does not know or values it cannot read, instead of slicing without them (import_report lists them either way)"),
   allow_collisions: z
     .boolean()
     .default(false)
@@ -139,6 +143,17 @@ const summaryShape = {
   /** How the project's own printer G-code was used (project_settings). */
   project_gcode: z.array(z.object({ key: z.string(), slot: z.number().optional(), use: z.enum(['project', 'profile']), message: z.string() })).optional(),
   warnings: z.array(z.string()),
+  /** With project_settings: what the project's print settings carry that slicing did not use, by kind. */
+  import_report: z
+    .object({
+      source: z.string().optional(),
+      unknown: z.array(z.object({ key: z.string(), value: z.unknown() })),
+      retired: z.array(z.string()),
+      other_slicer: z.array(z.string()),
+      renamed: z.array(z.object({ from: z.string(), to: z.string() })),
+      invalid: z.array(z.object({ key: z.string(), value: z.unknown() })),
+    })
+    .optional(),
   /** Warnings with a code an app can act on, each also in `warnings`: `no_printer` when no printer was named. */
   notices: z.array(z.object({ code: z.enum(['no_printer']), message: z.string() })).optional(),
   note: z.string().optional(),
@@ -191,7 +206,7 @@ export function createSlicerxServer(ctx: ServerContext, opts: SlicerxServerOptio
   const { store, profiles } = ctx
 
   type SlotArg = { slot: number; profile?: string | undefined; file?: string | undefined; color?: string | undefined }
-  type SliceArgs = { model: string; plate?: number | undefined; project_settings: boolean; project_gcode: 'review' | 'profile'; allow_collisions?: boolean; profiles: string[]; profile_files: string[]; filaments?: SlotArg[] | undefined; overrides?: Record<string, unknown> | undefined; output?: 'gcode' | 'gcode.3mf'; preview?: boolean }
+  type SliceArgs = { model: string; plate?: number | undefined; project_settings: boolean; strict_settings?: boolean; project_gcode: 'review' | 'profile'; allow_collisions?: boolean; profiles: string[]; profile_files: string[]; filaments?: SlotArg[] | undefined; overrides?: Record<string, unknown> | undefined; output?: 'gcode' | 'gcode.3mf'; preview?: boolean }
 
   /** The filament of each slot entry, as a layer for resolveSliceConfig. Profiles must be prepared first. */
   const slotLayers = async (slots: SlotArg[]): Promise<SlotLayer[]> => {
@@ -232,8 +247,16 @@ export function createSlicerxServer(ctx: ServerContext, opts: SlicerxServerOptio
     const isProject = ['.3mf', '.sx3mf'].includes(extname(modelPath).toLowerCase())
     if ((args.plate !== undefined || args.project_settings) && !isProject) throw new ToolInputError(`${basename(modelPath)} is not a 3MF or .sx3mf project, so it has no plates or project settings`, 'invalid_input')
     let project: ExtraLayers['project']
+    let importReport: ReturnType<typeof readProjectFile>['summary']['import_report'] | undefined
     if (isProject && (args.project_settings || args.plate !== undefined)) {
       const read = readProjectFile(modelPath)
+      if (args.project_settings) {
+        importReport = read.summary.import_report
+        const r = importReport
+        if (args.strict_settings && (r.unknown.length || r.invalid.length)) {
+          throw new ToolInputError(`${basename(modelPath)}'s print settings carry what SlicerX cannot use (strict_settings): ${importReportLines(r).join('; ')}`, 'project_settings_unused')
+        }
+      }
       if (args.plate !== undefined && !read.summary.plates.some((p) => p.index === args.plate)) {
         throw new ToolInputError(`${basename(modelPath)} has no plate ${args.plate}. Plates: ${read.summary.plates.map((p) => p.index).join(', ')}.`, 'no_such_plate')
       }
@@ -285,9 +308,13 @@ export function createSlicerxServer(ctx: ServerContext, opts: SlicerxServerOptio
       ...(result.gcode_3mf_path ? [`G-code 3MF: ${result.gcode_3mf_path}`] : []),
       ...(result.preview_path ? [`Preview: ${result.preview_path}`] : []),
       ...result.warnings.map((w) => `Warning: ${w}`),
+      ...(importReport ? importReportLines(importReport).map((l) => `Project settings: ${l}`) : []),
       ...(result.note ? [result.note] : []),
     ]
-    return ok({ ...result, applied, ...(projectGcode.length ? { project_gcode: projectGcode } : {}), ...(notices.length ? { notices } : {}) }, [...lines, ...projectGcode.map((g) => g.message)].join('\n'))
+    return ok(
+      { ...result, applied, ...(projectGcode.length ? { project_gcode: projectGcode } : {}), ...(notices.length ? { notices } : {}), ...(importReport ? { import_report: importReport } : {}) },
+      [...lines, ...projectGcode.map((g) => g.message)].join('\n'),
+    )
   }
 
   server.registerTool(
@@ -335,6 +362,8 @@ export function createSlicerxServer(ctx: ServerContext, opts: SlicerxServerOptio
           ...(summary.presets.printer ? [`Printer preset: ${summary.presets.printer}`] : []),
           ...(summary.presets.process ? [`Process preset: ${summary.presets.process}`] : []),
           ...summary.filaments.map((f) => `Slot ${f.slot}: ${[f.type, f.color, f.preset].filter(Boolean).join(', ')}`),
+          ...(summary.import_report.source ? [`Written by ${summary.import_report.source}`] : []),
+          ...importReportLines(summary.import_report).map((l) => `Settings: ${l}`),
         ]
         return ok(summary, text.join('\n'))
       }),
