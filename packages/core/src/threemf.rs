@@ -719,7 +719,7 @@ impl Resolve<'_> {
             // The project's part list lives as long as the file; read it apart from `self`, which `place` changes.
             let meta = self.meta;
             // An older project keeps every part of an object in one mesh, each a range of its triangles.
-            if let Some(ranges) = meta.ranges.get(&id).filter(|r| !r.is_empty()) {
+            if let Some(ranges) = meta.range_parts(id) {
                 for info in ranges {
                     let Some((first, last)) = info.range else {
                         continue;
@@ -735,7 +735,7 @@ impl Resolve<'_> {
                 }
             } else {
                 let part = make_part(obj, &t, slot, name);
-                let info = meta.parts.get(&(top, id)).cloned().unwrap_or_default();
+                let info = meta.part(top, id).cloned().unwrap_or_default();
                 self.place(part, &info, top, id);
             }
         }
@@ -768,7 +768,7 @@ impl Resolve<'_> {
             ));
         }
         let meta = self.meta;
-        let object = meta.objects.get(&top);
+        let object = meta.object(top);
         // Keys the engine does not read are named once each, as a request's own object settings are.
         let unread: Vec<&String> = object
             .into_iter()
@@ -934,12 +934,34 @@ struct PartInfo {
 /// The parts, part ranges and object settings of a project.
 #[derive(Debug, Default)]
 struct ProjectParts {
-    /// By `(object id, part id)`: the build object and the mesh object a component places.
-    parts: HashMap<(u32, u32), PartInfo>,
-    /// Older projects: by object id, the parts as triangle ranges of the object's own mesh, in file order.
-    ranges: HashMap<u32, Vec<PartInfo>>,
+    /// `(object id, part id, part)`: the build object and the mesh object a component places. A project has tens
+    /// of parts, so lists do (and keep the engine's WebAssembly build small).
+    parts: Vec<(u32, u32, PartInfo)>,
+    /// Older projects: per object id, the parts as triangle ranges of the object's own mesh, in file order.
+    ranges: Vec<(u32, Vec<PartInfo>)>,
     /// Each object's own setting overrides.
-    objects: HashMap<u32, serde_json::Map<String, serde_json::Value>>,
+    objects: Vec<(u32, serde_json::Map<String, serde_json::Value>)>,
+}
+
+impl ProjectParts {
+    /// An older project's parts of object `id`, as triangle ranges of its mesh.
+    fn range_parts(&self, id: u32) -> Option<&Vec<PartInfo>> {
+        self.ranges
+            .iter()
+            .find(|(k, l)| *k == id && !l.is_empty())
+            .map(|(_, l)| l)
+    }
+
+    fn part(&self, object: u32, id: u32) -> Option<&PartInfo> {
+        self.parts
+            .iter()
+            .find(|(o, p, _)| (*o, *p) == (object, id))
+            .map(|(_, _, info)| info)
+    }
+
+    fn object(&self, id: u32) -> Option<&serde_json::Map<String, serde_json::Value>> {
+        self.objects.iter().find(|(k, _)| *k == id).map(|(_, m)| m)
+    }
 }
 
 /// Part metadata that describes the part rather than setting how it prints.
@@ -1040,10 +1062,16 @@ fn project_parts(xml: &[u8]) -> ProjectParts {
                         }
                     },
                     (None, Some(o)) if !OBJECT_KEYS.contains(&k) => {
-                        out.objects
-                            .entry(o)
-                            .or_default()
-                            .insert(k.to_owned(), serde_json::Value::String(v));
+                        let at = match out.objects.iter().position(|(k, _)| *k == o) {
+                            Some(at) => at,
+                            None => {
+                                out.objects.push((o, serde_json::Map::new()));
+                                out.objects.len() - 1
+                            }
+                        };
+                        if let Some((_, map)) = out.objects.get_mut(at) {
+                            map.insert(k.to_owned(), serde_json::Value::String(v));
+                        }
                     }
                     _ => {}
                 }
@@ -1059,9 +1087,13 @@ fn finish_part(out: &mut ProjectParts, object: Option<u32>, part: Option<(Option
         return;
     };
     if info.range.is_some() {
-        out.ranges.entry(o).or_default().push(info);
+        match out.ranges.iter_mut().find(|(k, _)| *k == o) {
+            Some((_, list)) => list.push(info),
+            None => out.ranges.push((o, vec![info])),
+        }
     } else if let Some(id) = id {
-        out.parts.insert((o, id), info);
+        out.parts.retain(|(a, b, _)| (*a, *b) != (o, id));
+        out.parts.push((o, id, info));
     }
 }
 
@@ -1405,14 +1437,15 @@ mod tests {
             [1, 3, 5],
             [3, 7, 5],
         ];
-        let vs: String = v
-            .iter()
-            .map(|p| format!(r#"<vertex x="{}" y="{}" z="{}"/>"#, p[0], p[1], p[2]))
-            .collect();
-        let ts: String = tris
-            .iter()
-            .map(|t| format!(r#"<triangle v1="{}" v2="{}" v3="{}"/>"#, t[0], t[1], t[2]))
-            .collect();
+        use std::fmt::Write as _;
+        let vs = v.iter().fold(String::new(), |mut acc, p| {
+            let _ = write!(acc, r#"<vertex x="{}" y="{}" z="{}"/>"#, p[0], p[1], p[2]);
+            acc
+        });
+        let ts = tris.iter().fold(String::new(), |mut acc, t| {
+            let _ = write!(acc, r#"<triangle v1="{}" v2="{}" v3="{}"/>"#, t[0], t[1], t[2]);
+            acc
+        });
         format!(
             r#"<object id="{id}" type="model"><mesh><vertices>{vs}</vertices><triangles>{ts}</triangles></mesh></object>"#
         )
@@ -1421,17 +1454,20 @@ mod tests {
     /// A Bambu-layout project: build object 10 made of one component per box (mesh objects 1, 2, ...), and
     /// `settings` as `Metadata/model_settings.config`.
     fn project(boxes: &[([f32; 3], [f32; 3])], settings: &str) -> Vec<u8> {
+        use std::fmt::Write as _;
         let objects: String = boxes
             .iter()
             .zip(1u32..)
             .map(|((lo, hi), id)| box_object(id, *lo, *hi))
             .collect();
         let sub = format!(r#"<model unit="millimeter"><resources>{objects}</resources></model>"#);
-        let comps: String = (1..=boxes.len())
-            .map(|id| {
-                format!(r#"<component p:path="/3D/Objects/object_1.model" objectid="{id}" transform="1 0 0 0 1 0 0 0 1 0 0 0"/>"#)
-            })
-            .collect();
+        let comps = (1..=boxes.len()).fold(String::new(), |mut acc, id| {
+            let _ = write!(
+                acc,
+                r#"<component p:path="/3D/Objects/object_1.model" objectid="{id}" transform="1 0 0 0 1 0 0 0 1 0 0 0"/>"#
+            );
+            acc
+        });
         let main = format!(
             r#"<model unit="millimeter" xmlns:p="http://schemas.microsoft.com/3dmanufacturing/production/2015/06"><resources><object id="10" type="model"><components>{comps}</components></object></resources><build><item objectid="10"/></build></model>"#
         );
@@ -1592,19 +1628,21 @@ mod tests {
         let verts =
             |s: &str| s[s.find("<vertices>").unwrap() + 10..s.find("</vertices>").unwrap()].to_owned();
         let tris = |s: &str, off: u32| -> String {
+            use std::fmt::Write as _;
             let body = &s[s.find("<triangles>").unwrap() + 11..s.find("</triangles>").unwrap()];
             body.split("/>")
                 .filter(|t| t.contains("v1"))
-                .map(|t| {
+                .fold(String::new(), |mut acc, t| {
                     let n: Vec<u32> = t.split('"').filter_map(|x| x.parse().ok()).collect();
-                    format!(
+                    let _ = write!(
+                        acc,
                         r#"<triangle v1="{}" v2="{}" v3="{}"/>"#,
                         n[0] + off,
                         n[1] + off,
                         n[2] + off
-                    )
+                    );
+                    acc
                 })
-                .collect()
         };
         let model = format!(
             r#"<model unit="millimeter"><resources><object id="1" type="model"><mesh><vertices>{}{}</vertices><triangles>{}{}</triangles></mesh></object></resources><build><item objectid="1"/></build></model>"#,
