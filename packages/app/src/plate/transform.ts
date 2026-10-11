@@ -252,7 +252,29 @@ export function mirror(parts: readonly Pick<MeshPart, 'positions'>[], m: Mat4, a
   return dropToBed(parts, multiply(f, m))
 }
 
-/** True when the bounds sit inside the bed volume, with a small tolerance. */
-export function fitsBed(b: Box, bed: Bed, tol = 0.01): boolean {
+/** How far the object's outline reaches from a point on the bed floor: the farthest vertex in X and Y. */
+export function reachFrom(parts: readonly Pick<MeshPart, 'positions'>[], m: Mat4, cx: number, cy: number): number {
+  const [m0, m1, , , m4, m5, , , m8, m9, , , m12, m13] = Array.from({ length: 16 }, (_, k) => m[k] ?? 0) as number[]
+  let far = 0
+  for (const part of parts) {
+    const p = part.positions
+    for (let i = 0; i + 2 < p.length; i += 3) {
+      const a = p[i] ?? 0
+      const b = p[i + 1] ?? 0
+      const c = p[i + 2] ?? 0
+      const d = Math.hypot(m0! * a + m4! * b + m8! * c + m12! - cx, m1! * a + m5! * b + m9! * c + m13! - cy)
+      if (d > far) far = d
+    }
+  }
+  return far
+}
+
+/**
+ * True when the bounds sit inside the bed volume, with a small tolerance. On a round bed a part is judged by its
+ * outline, not its box: pass `outlineReach`, the farthest its outline gets from the bed's center, and a long part
+ * near the rim stays on the bed where its box corner would be outside the circle.
+ */
+export function fitsBed(b: Box, bed: Bed, tol = 0.01, outlineReach?: number): boolean {
+  if (outlineReach !== undefined && bed.round) return b.min[2] >= -tol && b.max[2] <= bed.heightMm + tol && outlineReach <= Math.min(bed.widthMm, bed.depthMm) / 2 + tol
   return b.min[2] >= -tol && b.max[2] <= bed.heightMm + tol && boxInBed(bed, b.min[0], b.min[1], b.max[0], b.max[1], -tol)
 }
