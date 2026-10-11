@@ -1062,13 +1062,10 @@ fn project_parts(xml: &[u8]) -> ProjectParts {
                         }
                     },
                     (None, Some(o)) if !OBJECT_KEYS.contains(&k) => {
-                        let at = match out.objects.iter().position(|(k, _)| *k == o) {
-                            Some(at) => at,
-                            None => {
-                                out.objects.push((o, serde_json::Map::new()));
-                                out.objects.len() - 1
-                            }
-                        };
+                        let at = out.objects.iter().position(|(k, _)| *k == o).unwrap_or_else(|| {
+                            out.objects.push((o, serde_json::Map::new()));
+                            out.objects.len() - 1
+                        });
                         if let Some((_, map)) = out.objects.get_mut(at) {
                             map.insert(k.to_owned(), serde_json::Value::String(v));
                         }
