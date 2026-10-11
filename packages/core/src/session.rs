@@ -6698,17 +6698,15 @@ impl SliceSession {
             let ratio = crate::motion::raw_f(cfg, "bridge_flow").unwrap_or(1.0);
             let thick = crate::tower::flag_or(cfg, "thick_internal_bridges", true);
             let line = bridge_line_width(cfg);
-            let width = if thick {
-                line.unwrap_or(nozzle) * ratio.max(0.0).sqrt()
+            let nominal = if thick {
+                line.unwrap_or(nozzle)
             } else {
                 line.unwrap_or_else(|| cfg.solid_infill_width())
             };
+            let bead = crate::overhang::bridge_bead(nominal, self.plan.thickness(layer), ratio, thick);
+            let (thick, width) = (bead.round, bead.width);
             // `internal_bridge_density`: the strands sit 1 over the density closer than the flow's spacing.
-            let spacing = if thick {
-                width + 0.05
-            } else {
-                cfg.spacing_for(width)
-            } / bridge_density(cfg, "internal_bridge_density");
+            let spacing = bead.spacing / bridge_density(cfg, "internal_bridge_density");
             let filter = match cfg.raw.get("dont_filter_internal_bridges") {
                 Some(serde_json::Value::String(s)) => s.as_str(),
                 _ => "disabled",
@@ -6767,6 +6765,7 @@ impl SliceSession {
                 spacing,
                 thick,
                 width,
+                flow: bead.flow,
                 reference: (
                     mm(f64::midpoint(self.bounds[0], self.bounds[2])),
                     mm(f64::midpoint(self.bounds[1], self.bounds[3])),
@@ -7012,9 +7011,10 @@ impl SliceSession {
                 work.internal_bridge_paths = std::mem::take(&mut bridge_paths);
                 #[allow(clippy::cast_possible_truncation, reason = "a flow ratio and a width")]
                 {
-                    work.internal_bridge_ratio =
-                        crate::motion::raw_f(cfg, "bridge_flow").unwrap_or(1.0) as f32;
-                    work.internal_bridge_width = if b.thick { b.width as f32 } else { 0.0 };
+                    // A flat strand carries its flow against a flat bead of its (narrowed) width; a round one is
+                    // worked out from its width.
+                    work.internal_bridge_ratio = if b.thick { 0.0 } else { b.flow as f32 };
+                    work.internal_bridge_width = b.width as f32;
                 }
             }
             // `extra_solid_infills` (Orca's `discover_horizontal_shells`): the sparse infill of the layers the
@@ -7148,20 +7148,18 @@ impl SliceSession {
             // Infill over air becomes bridge strands instead of solid infill (classify.rs grows the bridges
             // into the areas beside them and picks their direction; `bridging::fill` lays the strands).
             if !cls.bridges.is_empty() {
-                // Thick bridges are round strands of the nozzle diameter; otherwise ordinary beads at the
-                // usual spacing, scaled by the bridge flow.
+                // The bridge line width (the nozzle when round, the solid infill's when unset) at the bridge flow:
+                // round threads, or flat beads whose width and spacing narrow below a flow of 1.
                 let line = bridge_line_width(cfg);
-                let d_mm = if cfg.thick_bridges {
-                    line.unwrap_or(cfg.nozzle_diameter) * cfg.bridge_flow.sqrt()
+                let nominal = if cfg.thick_bridges {
+                    line.unwrap_or(cfg.nozzle_diameter)
                 } else {
-                    line.unwrap_or(cfg.line_width)
+                    line.unwrap_or_else(|| cfg.solid_infill_width())
                 };
+                let bead =
+                    crate::overhang::bridge_bead(nominal, layer_height, cfg.bridge_flow, cfg.thick_bridges);
                 // `bridge_density` (external bridges): the strands sit 1 over the density closer.
-                let pitch = if cfg.thick_bridges {
-                    d_mm + 0.05
-                } else {
-                    cfg.spacing_for(line.unwrap_or_else(|| cfg.solid_infill_width()))
-                } / bridge_density(cfg, "bridge_density");
+                let pitch = bead.spacing / bridge_density(cfg, "bridge_density");
                 let reference = (
                     mm(f64::midpoint(self.bounds[0], self.bounds[2])),
                     mm(f64::midpoint(self.bounds[1], self.bounds[3])),
@@ -7187,15 +7185,11 @@ impl SliceSession {
                 }
                 #[allow(clippy::cast_possible_truncation, reason = "a flow ratio")]
                 {
-                    work.bridge_flat_flow = if cfg.thick_bridges {
-                        0.0
-                    } else {
-                        cfg.bridge_flow as f32
-                    };
+                    work.bridge_flat_flow = if bead.round { 0.0 } else { bead.flow as f32 };
                 }
                 #[allow(clippy::cast_possible_truncation, reason = "widths are small")]
                 {
-                    work.bridge_width = d_mm as f32;
+                    work.bridge_width = bead.width as f32;
                 }
             }
             // The top surface prints at its own line width: its area is what the layer above leaves

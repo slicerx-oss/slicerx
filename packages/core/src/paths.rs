@@ -82,7 +82,7 @@ pub(crate) struct ToolWork {
     pub(crate) bridge_width: f32,
     /// Zero for round strands; otherwise the flow of flat bridge beads against a normal bead.
     pub(crate) bridge_flat_flow: f32,
-    /// Internal bridge strands: round with this diameter (mm), or zero for normal beads at `internal_bridge_ratio`.
+    /// Internal bridge strands: this wide (mm), round unless `internal_bridge_ratio` sets a flat bead's flow.
     pub(crate) internal_bridge_width: f32,
     pub(crate) internal_bridge_ratio: f32,
     /// Set when some wall of this layer hangs over the layer below.
@@ -2235,9 +2235,14 @@ pub(crate) fn plan_layer_paths(
         let g = b.out.paths.len();
         if !w.internal_bridge.is_empty() || !w.internal_bridge_paths.is_empty() {
             let (line_width, line_flow) = (b.width_mm, b.flow);
-            // A round strand of the bridge width (thick internal bridges), else a normal bead at the bridge
-            // flow ratio.
-            if w.internal_bridge_width > 0.0 {
+            // A round strand of the bridge width (thick internal bridges), else a flat bead of that width at the
+            // bridge flow ratio.
+            if w.internal_bridge_ratio > 0.0 {
+                if w.internal_bridge_width > 0.0 {
+                    b.width_mm = w.internal_bridge_width;
+                }
+                b.flow = w.internal_bridge_ratio;
+            } else if w.internal_bridge_width > 0.0 {
                 let d = f64::from(w.internal_bridge_width);
                 let h = f64::from(b.out.height);
                 b.width_mm = w.internal_bridge_width;
@@ -2245,8 +2250,6 @@ pub(crate) fn plan_layer_paths(
                 {
                     b.flow = (std::f64::consts::PI * d * d / 4.0 / crate::gcode::bead_area(d, h)) as f32;
                 }
-            } else if w.internal_bridge_ratio > 0.0 {
-                b.flow = w.internal_bridge_ratio;
             }
             // `internal_bridge_flow` multiplies the flow of internal bridge strands, on top of the bridge flow.
             #[allow(clippy::cast_possible_truncation, reason = "a flow ratio")]

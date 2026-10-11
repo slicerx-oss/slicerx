@@ -423,22 +423,68 @@ struct Reverse {
     internal_only: bool,
 }
 
-/// Orca's `overhang_flow` (`LayerRegion::bridging_flow` for the perimeter role): with `thick_bridges` a round
-/// thread of the bridge line width (or the nozzle) shrunk by the root of `bridge_flow`, else a flat bead of the
-/// bridge line width (or the inner wall's) at `bridge_flow`. The width in mm, and the flow against a flat bead
-/// of that width at layer height `h`.
+/// A bridge strand (Orca's `bridging_flow`): its width, the spacing between strands, its flow against a flat
+/// bead of that width, and whether it is round.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct BridgeBead {
+    pub(crate) width: f64,
+    pub(crate) spacing: f64,
+    pub(crate) flow: f64,
+    pub(crate) round: bool,
+}
+
+/// The strand for a bridge of nominal width `w` at layer height `h` and `bridge_flow` `ratio`.
+/// Thick bridges are round threads `w` times the root of the flow wide, `0.05` mm apart. Flat bridges below
+/// a flow of 1 lose the missing area from their width, and their spacing follows the narrower width; one
+/// too narrow to stay flat (at or under the layer height) becomes a round thread of the same area at the
+/// flat spacing. At a flow of 1 or more a flat strand keeps its width and spacing and carries the flow.
+pub(crate) fn bridge_bead(w: f64, h: f64, ratio: f64, thick: bool) -> BridgeBead {
+    let ratio = ratio.max(0.0);
+    let spacing = |w: f64| (w - h * (1.0 - std::f64::consts::FRAC_PI_4)).max(w * 0.5);
+    let round = |d: f64, spacing: f64| BridgeBead {
+        width: d,
+        spacing,
+        flow: std::f64::consts::PI * d * d / 4.0 / crate::gcode::bead_area(d, h),
+        round: true,
+    };
+    if thick {
+        let d = w * ratio.sqrt();
+        return round(d, d + 0.05);
+    }
+    if ratio >= 1.0 {
+        return BridgeBead {
+            width: w,
+            spacing: spacing(w),
+            flow: ratio,
+            round: false,
+        };
+    }
+    let area = crate::gcode::bead_area(w, h);
+    let narrow = w - (1.0 - ratio) * area / h;
+    if narrow > h {
+        BridgeBead {
+            width: narrow,
+            spacing: spacing(narrow),
+            flow: 1.0,
+            round: false,
+        }
+    } else {
+        round((4.0 * ratio * area / std::f64::consts::PI).sqrt(), spacing(w))
+    }
+}
+
+/// Orca's `overhang_flow` (`LayerRegion::bridging_flow` for the perimeter role): the bridge strand of the
+/// bridge line width (or the nozzle, round, or the inner wall's, flat) at `bridge_flow`. The width in mm, and
+/// the flow against a flat bead of that width at layer height `h`.
 pub(crate) fn bead(cfg: &PrintConfig, h: f64) -> (f64, f64) {
     let line = crate::session::bridge_line_width(cfg);
-    if cfg.thick_bridges {
-        let d = line.unwrap_or(cfg.nozzle_diameter) * cfg.bridge_flow.sqrt();
-        (
-            d,
-            std::f64::consts::PI * d * d / 4.0 / crate::gcode::bead_area(d, h),
-        )
+    let w = if cfg.thick_bridges {
+        line.unwrap_or(cfg.nozzle_diameter)
     } else {
-        let d = line.unwrap_or_else(|| cfg.inner_wall_width());
-        (d, cfg.bridge_flow)
-    }
+        line.unwrap_or_else(|| cfg.inner_wall_width())
+    };
+    let b = bridge_bead(w, h, cfg.bridge_flow, cfg.thick_bridges);
+    (b.width, b.flow)
 }
 
 fn speed_of(v: f64) -> Option<f32> {
@@ -582,6 +628,42 @@ impl Overhang {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn flat_bridge_narrows_below_a_flow_of_one() {
+        let b = bridge_bead(0.4, 0.2, 0.95, false);
+        assert!((b.width - 0.382_146).abs() < 1e-5, "{b:?}");
+        assert!((b.spacing - 0.339_226).abs() < 1e-5, "{b:?}");
+        assert!((b.flow - 1.0).abs() < 1e-9 && !b.round);
+    }
+
+    #[test]
+    fn flat_bridge_keeps_its_spacing_above_one() {
+        let b = bridge_bead(0.4, 0.2, 1.1, false);
+        assert!(
+            (b.width - 0.4).abs() < 1e-9 && (b.spacing - 0.357_080).abs() < 1e-5,
+            "{b:?}"
+        );
+        assert!((b.flow - 1.1).abs() < 1e-9);
+    }
+
+    #[test]
+    fn thick_bridge_is_a_round_thread() {
+        let b = bridge_bead(0.4, 0.2, 0.95, true);
+        assert!(b.round && (b.width - 0.4 * 0.95_f64.sqrt()).abs() < 1e-9);
+        assert!((b.spacing - b.width - 0.05).abs() < 1e-9);
+    }
+
+    #[test]
+    fn a_flat_bridge_too_narrow_to_stay_flat_goes_round_at_the_flat_spacing() {
+        let b = bridge_bead(0.4, 0.2, 0.3, false);
+        let area = crate::gcode::bead_area(0.4, 0.2);
+        assert!(
+            b.round && (std::f64::consts::PI * b.width * b.width / 4.0 - 0.3 * area).abs() < 1e-9,
+            "{b:?}"
+        );
+        assert!((b.spacing - 0.357_080).abs() < 1e-5);
+    }
 
     fn square(x0: i32, y0: i32, x1: i32, y1: i32) -> Shapes {
         vec![vec![vec![
