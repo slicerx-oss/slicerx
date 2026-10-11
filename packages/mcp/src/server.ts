@@ -327,7 +327,7 @@ export function createSlicerxServer(ctx: ServerContext, opts: SlicerxServerOptio
     {
       title: 'Inspect a 3MF project',
       description:
-        'Read a 3MF or .sx3mf project without slicing it: its plates (with names and object counts), the printer, process and filament presets it was saved with, its filament slots (type and color) and whether it carries print settings. Use the plate numbers with slicerx_slice_file and project_settings: true to slice it as it was set up. Open a locked project (.sxlock) with slicerx_sxlock_open first.',
+        'Read a 3MF or .sx3mf project without slicing it: its plates (with names and object counts), the printer, process and filament presets it was saved with, its filament slots (type and color), its support settings (`support`: enable_support, support_* and tree_support_* as the file sets them) and whether it carries print settings. Use the plate numbers with slicerx_slice_file and project_settings: true to slice it as it was set up. Open a locked project (.sxlock) with slicerx_sxlock_open first.',
       inputSchema: { file: z.string().min(1).describe('Absolute path or http(s) URL of a .3mf or .sx3mf file') },
       annotations: { ...readOnly, openWorldHint: true },
     },
@@ -342,6 +342,9 @@ export function createSlicerxServer(ctx: ServerContext, opts: SlicerxServerOptio
           ...(summary.presets.printer ? [`Printer preset: ${summary.presets.printer}`] : []),
           ...(summary.presets.process ? [`Process preset: ${summary.presets.process}`] : []),
           ...summary.filaments.map((f) => `Slot ${f.slot}: ${[f.type, f.color, f.preset].filter(Boolean).join(', ')}`),
+          ...(Object.keys(summary.support).length > 0
+            ? [`Support: ${Object.entries(summary.support).map(([k, v]) => `${k} ${Array.isArray(v) ? v.join(';') : String(v)}`).join(', ')}`]
+            : []),
         ]
         return ok(summary, text.join('\n'))
       }),
