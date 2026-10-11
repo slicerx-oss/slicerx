@@ -3,8 +3,8 @@
 // Settings > Connected apps: services on this network that SlicerX works with, each added once. The hub
 // keeps the address; a key goes to the secrets store and only its name is kept. Spoolman moved here from
 // Printer bridge with its behavior unchanged. A printer that goes through an app (BamBuddy) can choose it
-// as its connection once the app is added. Home Assistant is experimental: its card shows only while the
-// hub's experimental connectors are on, and that switch is here, in Developer mode.
+// as its connection once the app is added. An experimental app's card shows only while the hub's experimental
+// connectors are on, and that switch is here, in Developer mode.
 import { Button, Chip, Input, Pill, Switch, tipAttrs } from '@slicerx/ui'
 import { useCallback, useEffect, useState } from 'react'
 import { useHost } from '../host'
