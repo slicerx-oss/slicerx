@@ -68,6 +68,7 @@ export default defineEditionConfig({
     login: '/login',
     creators: '/creators',
     creator: '/creators/:handle',
+    listing: '/vault/:slug',
     dashboard: '/dashboard',
     moderation: '/moderation',
   },

@@ -158,6 +158,9 @@ if (__SX_FEATURE_STORE__) {
       else toast(`Sign-in did not finish: ${r.message}`, 'error')
     })
   })
+  // Open in SlicerX on a design's page on the website (<scheme>://vault/<slug>) opens its sheet in the Vault.
+  const [{ onVaultLink }, { openVaultLink }] = await Promise.all([import('./host/vault-link'), import('../../../packages/app/src/features/store/sheets')])
+  onVaultLink((slug) => void openVaultLink(store, slug))
   // The hub signs in to the relay with a relay token minted from the account's session (never the session itself):
   // a new one on sign-in and refresh, null on sign-out, never stored.
   if (__SX_FEATURE_CONNECT__) {

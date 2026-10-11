@@ -99,6 +99,7 @@ fn main() {
         .manage(link::Bridge::default())
         .manage(opened::Pending::default())
         .manage(opened::PendingAuth::default())
+        .manage(opened::PendingVault::default())
         .manage(closing::Unsaved::default())
         .manage(menu::Shown::default())
         .manage(updates::Updates::new(updates_on))
@@ -156,6 +157,7 @@ fn main() {
             gpu::gl_renderer,
             opened::opened_take,
             opened::auth_callback_take,
+            opened::vault_link_take,
             presets::presets_scan,
             presets::presets_read,
             #[cfg(feature = "connect")]
