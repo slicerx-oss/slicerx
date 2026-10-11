@@ -47,6 +47,8 @@ export const ERROR_CODES = [
   'quota_exceeded',
   'rate_limited',
   'service_error',
+  'not_found',
+  'not_supported',
   'internal_error',
 ] as const
 /** Locked-project refusals keep the format's own reason after `sxlock_`, such as `sxlock_wrong_account`. */
