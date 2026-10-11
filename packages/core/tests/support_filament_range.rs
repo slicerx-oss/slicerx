@@ -5,6 +5,9 @@
 //! go through as it was, so the G-code changed to a tool that is not there. It now prints with the active filament
 //! and says so.
 
+// Requests are built inline and handed over whole.
+#![allow(clippy::needless_pass_by_value)]
+
 use serde_json::json;
 use std::sync::Arc;
 mod common;
@@ -44,6 +47,10 @@ fn cuboid(lo: [f32; 3], hi: [f32; 3], name: &str) -> MeshPart {
 }
 
 /// A one-color T: a 10 x 10 x 8 mm column under a 30 x 10 x 2 mm slab, so each arm overhangs 10 mm.
+#[allow(
+    clippy::needless_update,
+    reason = "a mesh is gaining fields (volumes from project files); the default keeps this test building either way"
+)]
 fn tee() -> Arc<Mesh> {
     Arc::new(Mesh {
         name: "tee".into(),
