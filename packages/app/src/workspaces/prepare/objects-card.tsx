@@ -65,7 +65,7 @@ function AddButton() {
             <MenuItem icon="export" data-testid="export-menu" aria-haspopup="menu" onClick={open('export')}>
               Export
             </MenuItem>
-            <MenuItem icon="magic-wand" aria-haspopup="menu" onClick={open('tools')}>
+            <MenuItem icon="magic-wand" data-testid="objects-tools" aria-haspopup="menu" onClick={open('tools')}>
               Tools
             </MenuItem>
             <MenuItem icon="more" data-testid="object-menu" aria-haspopup="menu" disabled={!hasSel} onClick={open('object')}>
