@@ -44,6 +44,7 @@ node scripts/gate/run.mjs --app target/agent-bridge/release/slicerx.exe --platfo
 | `--profile <dir>` | Reuse a web profile folder instead of a fresh one (Windows, Linux). |
 | `--commit <hash>` | The commit the build was made from. The default is this checkout's HEAD. |
 | `--hub-dir <dir>` | The bridge build's printer hub folder for w. The default is `<app data>/app.slicerx.desktop.agent-bridge/hub`. |
+| `--hub-port <n>` | The loopback port the app's printer hub listens on. The default is a free port picked for the run. A build older than `SX_TEST_HUB_PORT` keeps 47615; pass `--hub-port 47615` to run w on one. |
 
 The exit code is 0 when every scenario that ran passed, 1 when any of them failed (a wait that ran out counts as a
 failure), and 2 when the gate could not start.
@@ -55,8 +56,10 @@ On Linux and Windows, take the whole heavy lock (`heavy.sh --all`), not one slot
 the app has taken over half a minute just to start, and the gate's timed steps (w's heater steps, e's slices) measure
 the load instead of the app. If the app still starts slowly, raise `--wait-start`.
 
-The gate starts the app with `SX_AGENT_BRIDGE_PORT=0`, keeps the connection file (with the per-run token) in a
-temporary folder, and stops the app by its process id when it's done. It never stops a process by name. The app is
+The gate starts the app with `SX_TEST_HUB_PORT` set to the run's hub port (see
+[agent-bridge.md](agent-bridge.md#start-it)), so its printer hub never takes 47615 from an sx-link or the end-to-end
+tests on the same machine. It starts the app with `SX_AGENT_BRIDGE_PORT=0`, keeps the connection file (with the
+per-run token) in a temporary folder, and stops the app by its process id when it's done. It never stops a process by name. The app is
 single-instance, so the gate refuses to start while the same build is already running.
 
 ### Each platform

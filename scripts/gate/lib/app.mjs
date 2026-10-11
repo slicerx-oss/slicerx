@@ -6,6 +6,7 @@
 import { spawn, spawnSync } from 'node:child_process'
 import { existsSync, mkdtempSync, readdirSync, rmSync, statSync } from 'node:fs'
 import { createRequire } from 'node:module'
+import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -35,6 +36,18 @@ export function runningCopies(exe) {
   }
   const r = spawnSync('ps', ['-axo', 'pid=,command='], { encoding: 'utf8' })
   return (r.stdout ?? '').split('\n').filter((l) => l.trim().split(/\s+/)[1] === exe).length
+}
+
+/** A loopback port no one listens on right now, as the system hands one out. */
+export function freePort() {
+  return new Promise((resolve, reject) => {
+    const srv = createServer()
+    srv.once('error', reject)
+    srv.listen(0, '127.0.0.1', () => {
+      const { port } = srv.address()
+      srv.close(() => resolve(port))
+    })
+  })
 }
 
 /** How long the gate waits for a started app's connection file by default, in seconds (`--wait-start`). */
