@@ -329,13 +329,19 @@ export async function startMocks(opts: StartOptions = {}): Promise<RunningMocks>
       if (b.position) m.position = b.position
       return { json: { homed: m.homed, position: m.position } }
     }
-    // POST /slow {mock, uploadMs}: uploads take this long before the file lands.
+    // POST /slow {mock, uploadMs?, statusHoldMs?, statusWindowMs?}: uploads take uploadMs before the file lands. A
+    // Moonraker status read that starts in the next statusWindowMs answers statusHoldMs later with the state it
+    // started with, so a change made meanwhile (a pause) reaches the reader late, as on a slow printer.
     if (req.path === '/slow' && req.method === 'POST') {
-      const b = req.json() as { mock: string; uploadMs: number }
+      const b = req.json() as { mock: string; uploadMs?: number; statusHoldMs?: number; statusWindowMs?: number }
       const m = machines.get(b.mock)
       if (!m) return { status: 404 }
-      m.uploadDelayMs = Math.max(0, Number(b.uploadMs) || 0)
-      return { json: { uploadMs: m.uploadDelayMs } }
+      if (b.uploadMs !== undefined) m.uploadDelayMs = Math.max(0, Number(b.uploadMs) || 0)
+      if (b.statusHoldMs !== undefined) {
+        m.statusHoldMs = Math.max(0, Number(b.statusHoldMs) || 0)
+        m.statusHoldUntil = Date.now() + Math.max(0, Number(b.statusWindowMs) || 0)
+      }
+      return { json: { uploadMs: m.uploadDelayMs, statusHoldMs: m.statusHoldMs, statusHoldUntil: m.statusHoldUntil } }
     }
     // POST /replace {mock, name}: the file changes behind SlicerX's back (a USB stick, the
     // printer's own screen): new content, new size and time.

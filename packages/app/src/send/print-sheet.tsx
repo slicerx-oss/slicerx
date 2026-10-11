@@ -16,7 +16,7 @@ import { set, useApp } from '../state/store'
 import { startLabel, type BedState } from './bed-state'
 import { CheckLines, checkLines } from './check-lines'
 import type { SheetNote } from '../plate/lint'
-import { bareName, duplicateTargets, EXTERNAL_SLOT, optionTip, safeJobName, withEnding, type MapFilament, type MapSlot, type PrintEnding, type SendChoice, type SendOptionSpec, type SendOptions } from './options'
+import { bareName, duplicateTargets, externalSlots, optionTip, safeJobName, withEnding, type MapFilament, type MapSlot, type PrintEnding, type SendChoice, type SendOptionSpec, type SendOptions } from './options'
 import './print-sheet.css'
 
 export type PrintMode = 'start' | 'upload' | 'queue'
@@ -65,10 +65,11 @@ export interface PrintSheetAsk {
 }
 
 
-/** What a slot is called on the sheet. */
-function slotText(id: string | undefined): string {
+/** What a slot is called on the sheet; `externals` names the printer's external spools (`externalSlots`). */
+function slotText(id: string | undefined, externals: readonly { id: string; label: string }[]): string {
   if (id === undefined) return 'Not loaded'
-  if (id === EXTERNAL_SLOT) return 'External spool'
+  const ext = externals.find((e) => e.id === id)
+  if (ext) return ext.label
   return /^[A-Z]\d+$/.test(id) ? `AMS ${id}` : `Slot ${id}`
 }
 
@@ -153,7 +154,8 @@ export function PrintSheet() {
     finish({ options: value, start: true, name: fileName, bambuConnect: true })
   }
   const connectLabel = ask?.bambuConnect === 'save' ? 'Save file' : 'Open in Bambu Connect'
-  const slotName = (id: string) => (id === EXTERNAL_SLOT ? 'External spool' : id)
+  const externals = ask ? externalSlots(ask.printer.plugin, ask.slots) : []
+  const slotName = (id: string) => externals.find((e) => e.id === id)?.label ?? id
   // A warning never blocks: the button says the print goes ahead anyway. An error disables it until fixed.
   const anyway = start && errors.length === 0 && warnings.length > 0
   const go: { label: string; icon: IconName } = start ? { label: anyway ? (ask?.bed === 'clear' ? 'Start anyway' : 'Bed is clear, start anyway') : startLabel(ask?.bed ?? 'unknown'), icon: ask?.bed === 'clear' ? 'play' : 'bed-plate' } : mode === 'upload' ? { label: 'Upload only', icon: 'upload' } : { label: 'Add to queue', icon: 'queue' }
@@ -235,13 +237,17 @@ export function PrintSheet() {
                   <select id={`ps-map-${f.index}`} className="mini" value={map[f.index] ?? ''} onChange={(e) => setEdits({ ...edits, [f.index]: e.target.value })}>
                     {map[f.index] === undefined ? <option value="">Not loaded</option> : null}
                     {ask.slots
-                      .filter((s) => s.id !== EXTERNAL_SLOT)
+                      .filter((s) => !externals.some((e) => e.id === s.id))
                       .map((s) => (
                         <option key={s.id} value={s.id}>
                           {s.id} {s.material ?? ''}
                         </option>
                       ))}
-                    <option value={EXTERNAL_SLOT}>External spool</option>
+                    {externals.map((e) => (
+                      <option key={e.id} value={e.id}>
+                        {e.label}
+                      </option>
+                    ))}
                   </select>
                 </div>
               ))}
@@ -347,7 +353,7 @@ function Summary({ ask, fileName, map }: { ask: PrintSheetAsk; fileName: string;
               <i className="ps-swatch" style={{ background: f.color }} aria-hidden="true" />
               <span className="ps-fil-type">{f.type}</span>
               <span className="sx-muted">filament {f.index}</span>
-              {map ? <span className="ps-fil-slot">{slotText(map[f.index])}</span> : null}
+              {map ? <span className="ps-fil-slot">{slotText(map[f.index], externalSlots(ask.printer.plugin, ask.slots))}</span> : null}
             </li>
           ))}
         </ul>

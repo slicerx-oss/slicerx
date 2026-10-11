@@ -2,7 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 import { describe, expect, it } from 'vitest'
 import { followsSlotMap, slotMapLine } from '@slicerx/contracts'
-import { defaultOptions, mergeOptions, optionLines, optionTip, printEnding, slotMapFor, startSlotMap, supportedOptions, withoutSlotMap } from '../src/send/options'
+import { defaultOptions, externalSlots, mergeOptions, optionLines, optionTip, printEnding, slotMapFor, startSlotMap, supportedOptions, withoutSlotMap } from '../src/send/options'
 
 const ids = (v: string, m: string, plugin: string, cam = true) => supportedOptions({ vendor: v, model: m, plugin }, { cameraAvailable: cam }).map((s) => s.id)
 
@@ -126,3 +126,15 @@ describe('slot map contract', () => {
   })
 })
 
+describe('external spools', () => {
+  const spool = (id: string) => ({ id, material: 'PLA', color: '#ffffff' })
+  it('names the two of a Bambu Lab H2 printer by side, and one external spool plainly', () => {
+    expect(externalSlots('bambu-lan', [spool('A1'), spool('1'), spool('2')])).toEqual([
+      { id: '1', label: 'Left external spool' },
+      { id: '2', label: 'Right external spool' },
+    ])
+    expect(externalSlots('bambu-lan', [spool('A1'), spool('1')])).toEqual([{ id: '1', label: 'External spool' }])
+    // Slot 2 of another printer is its own slot, such as an MMU's second.
+    expect(externalSlots('prusalink', [spool('1'), spool('2')])).toEqual([{ id: '1', label: 'External spool' }])
+  })
+})
