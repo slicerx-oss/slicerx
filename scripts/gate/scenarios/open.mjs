@@ -65,7 +65,9 @@ export async function openSignedOut(s) {
   s.check('no example comes back with it', second.state.plate.objects.length >= 1 && !second.state.plate.objects.some((o) => !o.vaultListing))
   await s.shot('opened-cleared', 'Signed out: Cable clip opened on a cleared plate')
 
-  // A change: leave the object out of the print. Then another design asks first.
+  // A change: leave the object out of the print. Then another design asks first. The row's tools show on hover or
+  // focus only (with a mouse), so select the row first, as a person's pointer would reach the row before its eye.
+  await s.click('object-select')
   await s.click('object-printable')
   const changed = await waitUntil(async () => ((await s.state()).plate.objects[0]?.printable === false ? true : null), { timeoutMs: 5000, everyMs: 200 })
   s.check('changed the plate (left the object out of the print)', !changed.timedOut)

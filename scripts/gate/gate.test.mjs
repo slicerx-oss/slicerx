@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // The release gate's own rules, without an app: masking, bounded waits, the tower's G-code check, the upload model,
-// the command line, the starter list against the starters the Vault is seeded with, and the report.
+// the gate printer, the command line, the starter list against the starters the Vault is seeded with, and the report.
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -10,6 +10,7 @@ import { inflateRawSync } from 'node:zlib'
 import { coaster3mf } from './lib/coaster.mjs'
 import { options } from './lib/options.mjs'
 import { renderReport, runStatus } from './lib/report.mjs'
+import { isGatePrinter } from './scenarios/start.mjs'
 import { STARTERS, TOWER } from './lib/starters.mjs'
 import { mask, temperatureChanges, towerCheck, waitUntil } from './lib/util.mjs'
 
@@ -25,6 +26,20 @@ describe('mask', () => {
     assert.match(text, /verify\?token=\[masked\]/)
     assert.match(text, /slicerx:\/\/auth\/callback\?\[masked\]/)
     assert.match(text, /qa-win@qa\.slicerx\.app/)
+  })
+})
+
+describe('the gate printer', () => {
+  const a1 = { id: 'local-bambu-a1', vendor: 'Bambu Lab', model: 'A1', nozzleMm: 0.4 }
+  it('is the A1 at 0.4 mm, even on a profile that once skipped first-run printer setup', () => {
+    assert.equal(isGatePrinter({ printer: a1 }), true)
+    assert.equal(isGatePrinter({ printer: { ...a1, noPrinter: true } }), true)
+  })
+  it('is not another printer, another nozzle or no printer at all', () => {
+    assert.equal(isGatePrinter({ printer: { ...a1, model: 'P1S' } }), false)
+    assert.equal(isGatePrinter({ printer: { ...a1, nozzleMm: 0.6 } }), false)
+    assert.equal(isGatePrinter({ printer: { noPrinter: true } }), false)
+    assert.equal(isGatePrinter({}), false)
   })
 })
 
