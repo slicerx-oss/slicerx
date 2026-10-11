@@ -3,6 +3,7 @@
 // A flat 2D stand-in for the GPU viewport: an oblique projection of the plate
 // meshes in Prepare and of the toolpaths up to the chosen layer in Preview.
 // It exists for builds or machines without the viewport, not for looks.
+import { bedCircle } from '../plate/bed-shape'
 import { SXPV_SEGMENT, SXPV_SEGMENT_BYTES, type PreviewBuffers } from '@slicerx/contracts'
 import { readToken } from '@slicerx/ui'
 import { FEATURE_COLORS } from '@slicerx/viewport/palette'
@@ -56,6 +57,22 @@ export function createFallbackViewport(canvas: HTMLCanvasElement): Drive {
 
     ctx.strokeStyle = tokenColor('--line-soft')
     ctx.lineWidth = 1
+    // A round bed (a delta): the grid is cut to the circle, which is drawn as the outline.
+    const ring = bedCircle(bed)
+    if (ring) {
+      ctx.beginPath()
+      for (let i = 0; i <= 72; i++) {
+        const a = (i / 72) * Math.PI * 2
+        const X = px(ring.cx + ring.r * Math.cos(a), ring.cy + ring.r * Math.sin(a))
+        const Y = py(ring.cy + ring.r * Math.sin(a), 0)
+        if (i === 0) ctx.moveTo(X, Y)
+        else ctx.lineTo(X, Y)
+      }
+      ctx.closePath()
+      ctx.stroke()
+      ctx.save()
+      ctx.clip()
+    }
     for (let g = 0; g <= bed.widthMm; g += 32) {
       ctx.beginPath()
       ctx.moveTo(px(g, 0), py(0, 0))
@@ -68,6 +85,7 @@ export function createFallbackViewport(canvas: HTMLCanvasElement): Drive {
       ctx.lineTo(px(bed.widthMm, g), py(g, 0))
       ctx.stroke()
     }
+    if (ring) ctx.restore()
 
     if (mode === 'preview' && preview) {
       drawToolpaths(ctx, preview, (x, y) => px(x - origin[0], y - origin[1]), (y, z) => py(y - origin[1], z))

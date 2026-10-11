@@ -7,6 +7,7 @@
 import type { FunctionResult } from '@slicerx/pilot/functions'
 import type { MeshPart, PrinterHost, SettingValue, SliceWarning, ToolDisplay } from '@slicerx/contracts'
 import { resolveConfig } from '../adapters/config'
+import { bedSettings } from '../adapters/generic-bed'
 import { resolveSlots } from '../filament/slots'
 import type { AppState } from '../state/store'
 import { bake } from './mesh-ops'
@@ -58,7 +59,7 @@ async function plateProject(s: Inputs) {
   const resolved = resolveConfig(s.easy, s.overrides) as Record<string, SettingValue>
   const project = createMemoryProject('plate', { printer: printerName(s), material: plateMaterial(s), nozzle: s.profile?.nozzle ?? 0.4 }, objects, kb, {
     warnings: async () => freshWarnings(s),
-    config: (base) => ({ ...base, ...resolved, printable_area: [[0, 0], [s.bed.widthMm, 0], [s.bed.widthMm, s.bed.depthMm], [0, s.bed.depthMm]], printable_height: s.bed.heightMm }),
+    config: (base) => ({ ...base, ...resolved, ...bedSettings(s.bed) }),
   })
   project.setPlates([{ index: 1, items: objects.map((o) => ({ objectId: o.id, copies: 1 })) }])
   return project
