@@ -5,7 +5,7 @@ import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { KEY_ACTIONS } from '@slicerx/ui'
-import { loadSettingTips, resolveTip } from '../src/lib/tip-host'
+import { loadTips, resolveTip } from '../src/lib/tip-host'
 import { OPTION_TIPS, TIPS, type TipEntry } from '../src/lib/tips'
 
 function files(dir: string): string[] {
@@ -30,9 +30,10 @@ describe('feature tooltips', () => {
     expect(OPTION_TIPS['wall_generator.aegis']?.body).toBe('aegis varies wall width to fit the part, so thin features print solid and walls stay even, with fewer width changes than Arachne on the shapes we measured.')
   })
 
-  it('shows the key from the active keymap', () => {
+  it('shows the key from the active keymap', async () => {
     const el = document.createElement('button')
     el.setAttribute('data-tip', 'tool.move')
+    await loadTips()
     expect(resolveTip(el, { 'tool.move': 'Shift+M' })?.keys).toEqual([expect.stringMatching(/M$/)])
     expect(resolveTip(el, { 'tool.move': null })?.keys).toBeUndefined()
   })
@@ -40,7 +41,7 @@ describe('feature tooltips', () => {
   it('shows a setting tip once the settings data has loaded', async () => {
     const el = document.createElement('div')
     el.setAttribute('data-tip', 'setting:layer_height')
-    await loadSettingTips()
+    await loadTips()
     const tip = resolveTip(el, {})
     expect(tip?.title).toBeTruthy()
     expect(tip?.body).toBeTruthy()
