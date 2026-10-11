@@ -131,7 +131,8 @@ win_start() {
     "\$p = Get-Process -Id $1 -ErrorAction SilentlyContinue; if (-not \$p) { 'gone' } elseif (\$p.StartTime) { \$p.StartTime.ToFileTimeUtc() } else { 'unknown' }" \
     2> /dev/null | tr -d '\r'
 }
-wslx() { winrun wsl.exe "$@" 2> /dev/null | tr -d '\0\r'; }
+# wsl.exe with its output cleaned of NULs and carriage returns, and its own exit status (124 when it timed out).
+wslx() { local o rc; o=$(winrun wsl.exe "$@" 2> /dev/null); rc=$?; printf '%s\n' "$o" | tr -d '\0\r'; return $rc; }
 # Runs a Windows program, for at most 30 s. WSL runs it through /init, as its binfmt entry would: a distro that runs
 # systemd can lose that entry, and then a plain call fails.
 winrun() {
@@ -183,7 +184,11 @@ alive() {
 # A WSL holder seen from Windows or from another distro. A distro that is not running has no processes left, so its
 # holder is dead; wsl.exe is never asked to run anything in a distro that is not running, so it never starts one.
 wsl_alive() {
-  wslx -l -q > /dev/null || return 0
+  local installed
+  installed=$(wslx -l -q) || return 0
+  # WSL distros belong to one Windows user: from another user (a CI runner's own account) the holder's distro is not
+  # installed, so it cannot be asked about, and its holder counts as alive.
+  if [ -n "$r_distro" ]; then grep -qxF "$r_distro" <<< "$installed" || return 0; else [ -n "$installed" ] || return 0; fi
   running=$(wslx -l --running -q); rc=$?
   [ $rc -ne 124 ] || return 0
   [ $rc -eq 0 ] || running=
