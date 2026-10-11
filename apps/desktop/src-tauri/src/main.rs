@@ -101,6 +101,9 @@ fn main() {
         .on_window_event(closing::window_event)
         .manage(watch_state())
         .setup(|app| {
+            // A bridge build opens its own main window, with a web data store of its own on macOS.
+            #[cfg(feature = "agent-bridge")]
+            agent_bridge::open_main_window(app)?;
             crash::set_dir(app.handle());
             #[cfg(all(windows, not(debug_assertions)))]
             if let Some(w) = tauri::Manager::get_webview_window(app, "main") {

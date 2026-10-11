@@ -51,12 +51,22 @@ keeps its own data folder, web profile, printer hub state and single-instance lo
 SlicerX without reading or changing that copy's state, and never sees the printers paired there. That default is the
 safe choice: keep it unless a run truly needs the installed app's state.
 
+On macOS the web profile needs one more step. WebKit keeps an unbundled binary's web data (localStorage and
+IndexedDB, which hold settings, setup state and autosaves) under the executable's name, `~/Library/WebKit/slicerx`,
+not under the identifier, so every bridge and dev binary would share one profile, and runs side by side would change
+each other's settings. The bridge build gives its window a web data store of its own, named from the identifier
+(the shell opens it with Tauri's `data_store_identifier`, macOS 14 and later), which nothing else reads or
+writes. A dev run (`pnpm dev:desktop`) keeps the plain shared profile. On Windows and Linux, Tauri already keeps web
+data in the identifier's data folder.
+
 `--same-identifier` builds with the edition's own identifier instead. The test build then is the installed SlicerX as
-far as the system can tell: it reads and changes the same data folder and web profile (settings, recent and unsaved
-projects, the Vault sign-in), sees and can use the printers paired there, and shares the single-instance lock, so
-with the installed app running a launch of the test build hands its arguments to that copy and exits (and the other
-way round). Quit the installed app first, and expect whatever the run changes to be there the next time the installed
-app starts.
+far as the system can tell: it reads and changes the same data folder and, on Windows and Linux, the same web profile
+(settings, recent and unsaved projects, the Vault sign-in). On macOS an unbundled binary can't reach the installed
+app's web profile, which WebKit keeps under the app bundle's identifier, so it uses the shared dev profile
+(`~/Library/WebKit/slicerx`) instead. It sees and can use the printers paired there, and shares the single-instance
+lock, so with the installed app running a launch of the test build hands its arguments to that copy and exits (and
+the other way round). Quit the installed app first, and expect whatever the run changes to be there the next time the
+installed app starts.
 
 The edition config comes from `SLICERX_CONFIG` and the `SLICERX_*` variables as for any build. Without
 `SLICERX_SUPABASE_URL` the Vault runs on demo data and nothing reaches a backend. The script builds the geometry
