@@ -6,8 +6,8 @@
 //! the file's copy to the page before any of its scripts run (`window.__sxPrefs`); the page takes the newer copy.
 
 use std::path::PathBuf;
-use tauri::plugin::{Builder, TauriPlugin};
 use tauri::Runtime;
+use tauri::plugin::{Builder, TauriPlugin};
 
 /// Prefs are a few KB; anything far bigger is not ours and is neither read nor written.
 const MAX_BYTES: usize = 2 * 1024 * 1024;
@@ -30,9 +30,13 @@ fn dir(identifier: &str) -> Option<PathBuf> {
 
 /// The script that hands the saved prefs to the page, or nothing when there is no usable file.
 fn launch_script(saved: Option<String>) -> Option<String> {
-    let text = saved.filter(|t| t.len() <= MAX_BYTES && serde_json::from_str::<serde_json::Value>(t).is_ok())?;
+    let text =
+        saved.filter(|t| t.len() <= MAX_BYTES && serde_json::from_str::<serde_json::Value>(t).is_ok())?;
     // a JSON string literal of the text: safe to put in a script whatever the text holds
-    Some(format!("window.__sxPrefs = {};", serde_json::to_string(&text).ok()?))
+    Some(format!(
+        "window.__sxPrefs = {};",
+        serde_json::to_string(&text).ok()?
+    ))
 }
 
 /// The plugin that runs the launch script in the page, before the app's own scripts.
@@ -69,14 +73,17 @@ pub fn prefs_save(app: tauri::AppHandle, json: String) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{launch_script, write, FILE};
+    use super::{FILE, launch_script, write};
 
     #[test]
     fn hands_the_saved_prefs_to_the_page_as_a_string() {
         let s = launch_script(Some(r#"{"savedAt":5,"x":"</script>'\""}"#.into())).unwrap();
         assert!(s.starts_with("window.__sxPrefs = \""));
         let lit = s.trim_start_matches("window.__sxPrefs = ").trim_end_matches(';');
-        assert_eq!(serde_json::from_str::<String>(lit).unwrap(), r#"{"savedAt":5,"x":"</script>'\""}"#);
+        assert_eq!(
+            serde_json::from_str::<String>(lit).unwrap(),
+            r#"{"savedAt":5,"x":"</script>'\""}"#
+        );
     }
 
     #[test]
