@@ -131,6 +131,8 @@ Files, all in `scripts/ci/`:
   its issue, a test listed twice, or a leftover `flaky.txt` or `quarantine.txt`; `status <name>` prints quarantined,
   flaky or none; `report` lists both folders with ages and deadlines; `retried <file>` is the pull request check below. A name is a substring of the test
   name as the run reports it (`path/to/file.test.ts > suite > test`, a cargo test path, or a Playwright title).
+- `cargo-retry.sh <cargo test arguments>`: `cargo test --no-fail-fast` with the one rerun by exact name below, for a
+  CI job; it appends the tests that passed only on the rerun to the file in `SX_FLAKY_OUT`.
 - `require-green.sh` and `required-checks.txt`: see "Release gate".
 
 Machine runs (`run.sh`): when a step fails, only the failing tests run again, once. vitest reruns the failing files in
@@ -146,8 +148,11 @@ annotates each test that passed only on a retry, and the next step fails the job
 `quarantine.d/` lists it, so a retry cannot hide a flake: the pull request that meets one adds the entry (owner, a
 deadline a day out, an issue) or fixes the test. The e2e shards (`ci.yml`, `e2e-shard`) hold to the same rule with
 Playwright's `--retries=1`: `playwright-results.mjs` reads the JSON report, a test that passed only on the retry must be
-on either list, and a test that failed both times fails the job unless it counts as quarantined. The cargo job on pull
-requests has no retry; the machine runs rerun it.
+on either list, and a test that failed both times fails the job unless it counts as quarantined. The desktop shell's
+tests (in `rust tests (core)`) run through `cargo-retry.sh`: a failing run reruns its failing tests once by exact name,
+as the machine runs do, a test that passes only on the rerun must be on either list (`flaky-check.sh retried`), and
+quarantined failures are not rerun or failed on. The other cargo steps on pull requests have no retry; the machine
+runs rerun them.
 
 Adding an entry: open an issue for the test, add its file (for example `flaky.d/481-guard-hold-card.txt`), run
 `bash scripts/ci/flaky-check.sh lint`. Fixing one: fix the test and delete its file in the same change.
