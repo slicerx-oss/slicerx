@@ -14,6 +14,7 @@ import { fontFailures } from './scenarios/vault.mjs'
 import { options } from './lib/options.mjs'
 import { renderReport, runStatus } from './lib/report.mjs'
 import { showObjects } from './scenarios/open.mjs'
+import { exportOffers } from './scenarios/upload.mjs'
 import { isGatePrinter, plateLoaded, waitForPlate } from './scenarios/start.mjs'
 import { heaterSteps, hubDir, racePlan, WATCH_TIMINGS, watchPauseEnv } from './scenarios/watch.mjs'
 import { STARTERS, TOWER } from './lib/starters.mjs'
@@ -344,5 +345,64 @@ describe('the report', () => {
   it('fails a run with any failed scenario', () => {
     assert.equal(runStatus(run('windows', 'FAIL')), 'FAIL')
     assert.equal(runStatus(run('windows', 'PASS')), 'PASS')
+  })
+})
+
+describe('the export menus on an opened upload', () => {
+  /** A stand-in app: the Add menu holds Export, and the Print button's menu has the printer's outputs. */
+  const fake = ({ printMenu = true, exportOnTop = false } = {}) => {
+    const open = new Set(exportOnTop ? ['export-menu'] : [])
+    const shown = { 'slice-objects-add-menu': true, ...(printMenu ? { 'slice-output-menu': true } : {}) }
+    const opens = {
+      'slice-objects-add-menu': ['export-menu'],
+      'export-menu': ['export-save-project', 'export-locked-project', 'export-gcode-3mf', 'export-all-plates'],
+      'slice-output-menu': ['slice-output-export-gcode', 'slice-output-export-3mf'],
+    }
+    const text = {
+      'export-save-project': 'Save project sx3mf',
+      'export-locked-project': 'Locked SlicerX project (.sxlock)',
+      'export-gcode-3mf': 'Sliced plate as .gcode.3mf',
+      'export-all-plates': 'Every plate, sliced',
+      'slice-output-export-gcode': 'Export G-code',
+      'slice-output-export-3mf': 'Export plate 3MF',
+    }
+    const clicks = []
+    const checks = []
+    return {
+      clicks,
+      checks,
+      ids: async () => Object.fromEntries([...Object.keys(shown), ...open].map((k) => [k, 1])),
+      one: async (id) => (open.has(id) || shown[id] ? { visible: true, text: text[id] ?? '' } : null),
+      click: async (id) => {
+        if (!open.has(id) && !shown[id]) throw new Error(`not_found: ${id}`)
+        clicks.push(id)
+        if (id !== 'export-menu') open.clear()
+        for (const k of [...open]) if (k !== 'export-menu') open.delete(k)
+        for (const k of opens[id] ?? []) open.add(k)
+      },
+      waitFor: async (id) => open.has(id) || !!shown[id],
+      shot: async () => {},
+      check: (name, ok) => checks.push([name, ok]),
+      call: async (tool) => {
+        if (tool === 'app_press_key') open.clear()
+        return {}
+      },
+    }
+  }
+
+  it('opens Export from the Add menu and reads the Print menu too', async () => {
+    const s = fake()
+    const texts = await exportOffers(s)
+    assert.deepEqual(s.clicks, ['slice-objects-add-menu', 'export-menu', 'slice-output-menu'])
+    assert.ok(texts.includes('Sliced plate as .gcode.3mf'))
+    assert.ok(texts.includes('Export plate 3MF'))
+    assert.deepEqual(s.checks, [])
+  })
+
+  it('clicks Export directly where it is on screen, and skips a Print menu that is not there', async () => {
+    const s = fake({ exportOnTop: true, printMenu: false })
+    const texts = await exportOffers(s)
+    assert.deepEqual(s.clicks, ['export-menu'])
+    assert.equal(texts.length, 4)
   })
 })

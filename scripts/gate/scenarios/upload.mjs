@@ -13,9 +13,42 @@ import { signIn } from './accounts.mjs'
 
 const MESH_EXPORT = /(stl|obj)$/
 
+/**
+ * What the plate's export menus offer, as their items' texts: Export, in the Add button's menu, and the menu half of
+ * the main action (Print, or Export G-code), which has the printer's outputs since the split Print button.
+ */
+export async function exportOffers(s) {
+  const texts = []
+  const read = async (prefix, menu) => {
+    const items = Object.keys(await s.ids()).filter((k) => k.startsWith(prefix) && k !== menu)
+    for (const k of items) texts.push((await s.one(k))?.text ?? '')
+  }
+  if (!(await s.one('export-menu'))?.visible) {
+    await s.click('slice-objects-add-menu')
+    await s.waitFor('export-menu', 'visible', 5000)
+  }
+  await s.click('export-menu')
+  if (await s.waitFor('export-gcode-3mf', 'visible', 5000)) {
+    await read('export-', 'export-menu')
+    await s.shot('export-menu', 'Export menu on the opened upload')
+  } else s.check('the Add menu has Export', false, 'no export-gcode-3mf after 5 s')
+  await s.call('app_press_key', { key: 'Escape' })
+  if ((await s.ids())['slice-output-menu']) {
+    await s.click('slice-output-menu')
+    if (await s.waitFor('slice-output-export-gcode', 'visible', 5000)) {
+      await read('slice-output-export-', 'slice-output-menu')
+      await s.shot('slice-output-menu', 'Print menu on the opened upload')
+    }
+    await s.call('app_press_key', { key: 'Escape' })
+  }
+  return texts
+}
+
 /** The creator page: made on first use, otherwise its bio updated with this run's date, and saved. */
 async function creatorPage(s, account) {
   await s.feed()
+  // The Feed can show before the app has finished loading, and the account menu comes a moment later.
+  await s.waitFor('account-menu', 'visible', 60_000)
   await s.click('account-menu')
   if (!(await s.waitFor('account-creator-page', 'visible', 10_000))) s.stop('the account menu offers Your creator page', 'no account-creator-page')
   await s.click('account-creator-page')
@@ -60,6 +93,7 @@ async function uploadRow(s, title) {
 async function showUploads(s) {
   if ((await s.ids())['uploads-list']) return
   await s.feed()
+  await s.waitFor('account-menu', 'visible', 60_000)
   await s.click('account-menu')
   await s.waitFor('account-uploads', 'visible', 10_000)
   await s.click('account-uploads')
@@ -163,13 +197,8 @@ export async function upload(s, { account, out, waitSignin, waitScan, waitReview
   if (open.error) s.stop('it opens from the Vault', open.error)
   s.check('it opens from the Vault', (open.data.state.plate.objects ?? []).every((o) => o.vaultListing === listing))
   await s.click('tab-prepare')
-  await s.click('export-menu')
-  await s.waitFor('export-save-project', 'visible', 5000)
-  const items = Object.keys(await s.ids()).filter((k) => k.startsWith('export-') && k !== 'export-menu')
-  const texts = await Promise.all(items.map(async (k) => (await s.one(k))?.text ?? ''))
+  const texts = await exportOffers(s)
   const meshItem = texts.filter((t) => /\b(stl|obj)\b|\.3mf\b(?!.*gcode)/i.test(t) && !/gcode/i.test(t))
-  await s.shot('export-menu', 'Export menu on the opened upload')
-  await s.call('app_press_key', { key: 'Escape' })
   const commands = (await s.state()).exports ?? {}
   const meshOn = Object.entries(commands).filter(([id, on]) => on && MESH_EXPORT.test(id))
   s.check('sealed: the Export menu offers no mesh export', meshItem.length === 0, texts)
