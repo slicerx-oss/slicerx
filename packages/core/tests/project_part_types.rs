@@ -228,7 +228,7 @@ fn moves(run: &SliceRun) -> Vec<Move> {
             .strip_prefix(";TYPE:")
             .or_else(|| line.strip_prefix("; FEATURE: "))
         {
-            feature = f.trim().to_owned();
+            f.trim().clone_into(&mut feature);
             continue;
         }
         let code = line.split(';').next().unwrap_or("");
