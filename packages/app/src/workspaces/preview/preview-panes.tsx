@@ -11,6 +11,7 @@ import { useHost } from '../../host'
 import { formatCost, formatDuration, formatGrams, previewStats, timeRows } from '../../lib/preview-stats'
 import { Swatch } from '../../parts'
 import { printBlock } from '../../plate/heimdall'
+import { slotLabel } from '../../filament/rail'
 import { resolveSlots } from '../../filament/slots'
 import { exportGcode, recordSpoolUse } from '../../state/actions'
 import { setWorkspace, shownSlice, useApp } from '../../state/store'
@@ -200,6 +201,8 @@ export function PreviewRight() {
   const slice = useApp((s) => s.slice)
   // The swatches are the slots' colors, as the slice used them; a string, so the selector stays stable.
   const slotColors = useApp((s) => resolveSlots(s).map((r) => r.color).join())
+  // the same name the filament rail gives each slot: "1 PLA Black", or the AMS slot's own on a printer
+  const slotNames = useApp((s) => resolveSlots(s).map((r) => slotLabel(r)).join('\n'))
   const { printer } = usePrinter()
   const spools = useSpools(host)
   const links = useApp((s) => s.spoolLinks)
@@ -239,7 +242,7 @@ export function PreviewRight() {
             <li key={i}>
               <Swatch color={colors[i] ?? 'var(--dim)'} />
               <span>
-                {printer?.status.slots[i]?.id ?? `Slot ${i + 1}`} {printer?.status.slots[i]?.material ?? 'PLA Basic'}
+                {slotNames.split('\n')[i] ?? `Slot ${i + 1}`}
                 <small>tool {i + 1}</small>
               </span>
               <b>
