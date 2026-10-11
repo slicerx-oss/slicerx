@@ -2739,7 +2739,15 @@ fn motion_time(l: &LayerPaths, cfg: &PrintConfig, lim: &crate::motion::Limits) -
     let retract = cfg.retraction_length;
     let r_acc = retract_accel(cfg);
     let t_acc = travel_accel(cfg);
-    let fil_area = std::f64::consts::PI * (cfg.filament_diameter / 2.0).m_powi(2);
+    // Each path's filament has its own cross-section.
+    let top_slot = l.paths.iter().map(|p| p.tool.max(1)).max().unwrap_or(1);
+    let fil_areas: Vec<f64> = (1..=top_slot).map(|s| cfg.filament_area(s)).collect();
+    let fil_area = |slot: u8| {
+        fil_areas
+            .get(usize::from(slot.max(1) - 1))
+            .copied()
+            .unwrap_or_else(|| cfg.filament_area(slot))
+    };
     let first_layer = l.index == 0;
     let h = f64::from(l.height);
     let e_move = |de: f64| Move {
@@ -2787,7 +2795,7 @@ fn motion_time(l: &LayerPaths, cfg: &PrintConfig, lim: &crate::motion::Limits) -
         }
         let accel = feature_accel(cfg, p.feature, first_layer);
         let jerk = feature_jerk(cfg, p.feature, first_layer).unwrap_or(0.0);
-        let e_per_mm = crate::gcode::bead_area(f64::from(p.width_mm), h) / fil_area
+        let e_per_mm = crate::gcode::bead_area(f64::from(p.width_mm), h) / fil_area(p.tool)
             * cfg.flow_ratio(p.tool)
             * f64::from(p.flow);
         for w in pts.windows(2) {

@@ -137,16 +137,31 @@ pub fn emit_gcode_with(
     let mut e_total = vec![0i64; tools];
     let resume = opts.resume_from_layer.unwrap_or(0);
     let layers: Vec<&LayerPaths> = out.layers.iter().filter(|l| l.index >= resume).collect();
-    if resume == 0 {
+    // The start sequence's own extrusion (purge lines and chute purges outside firmware conditionals) counts
+    // in the totals: read from its text, written as a `;@S` line for finalize.
+    let first_slot = usize::from(crate::customgcode::first_filaments(config, out).0);
+    let start = if resume == 0 {
         if out.has_first_layer() {
-            let h = header(out, config, flavor).map_err(custom_error)?;
-            stats.bytes += h.len() as u64;
-            w.write_all(&h)?;
+            Some(header(out, config, flavor).map_err(custom_error)?)
+        } else {
+            None
         }
     } else if let Some(first) = layers.first().filter(|l| l.index == resume) {
-        let h = resume_header(out, config, flavor, first, opts.resume_z_mm)?;
-        stats.bytes += h.len() as u64;
+        Some(resume_header(out, config, flavor, first, opts.resume_z_mm)?)
+    } else {
+        None
+    };
+    if let Some(h) = start {
+        let mut seq = crate::firmware::SequenceE::default();
+        seq.feed(&h);
+        let units = seq.units(tools, first_slot);
+        let marker = crate::firmware::sequence_marker(&units);
+        for (acc, e) in e_total.iter_mut().zip(&units) {
+            *acc += e;
+        }
+        stats.bytes += (h.len() + marker.len()) as u64;
         w.write_all(&h)?;
+        w.write_all(marker.as_bytes())?;
     }
     let shared = Shared::new(out, config);
     // A layer settling already wrote is read where it is, not copied: the file's bytes are held once.
@@ -183,19 +198,38 @@ pub fn emit_gcode_with(
     }
     if out.has_last_layer() {
         let f = footer(out, config, flavor).map_err(custom_error)?;
-        stats.bytes += f.len() as u64;
+        // The end sequence's own extrusion, after what the last layer left retracted.
+        let mut seq = crate::firmware::SequenceE::with_mode(absolute_e_mode(config));
+        if let Some(last) = chunks.last() {
+            seq.feed(&last.bytes);
+        }
+        seq.restart();
+        let last_slot = out
+            .layers
+            .iter()
+            .rev()
+            .find_map(|l| l.paths.last())
+            .map_or(first_slot, |p| usize::from(p.tool.max(1) - 1));
+        seq.set_tool(last_slot);
+        seq.feed(&f);
+        let units = seq.units(tools, last_slot);
+        let marker = crate::firmware::sequence_marker(&units);
+        for (acc, e) in e_total.iter_mut().zip(&units) {
+            *acc += e;
+        }
+        stats.bytes += (f.len() + marker.len()) as u64;
+        w.write_all(marker.as_bytes())?;
         w.write_all(&f)?;
     }
     #[allow(clippy::cast_precision_loss, reason = "extrusion totals stay far below 2^52")]
     {
         stats.filament_mm = e_total.iter().map(|&e| e as f64 / 1e5).collect();
     }
-    let fil_area = std::f64::consts::PI * (config.filament_diameter / 2.0).m_powi(2);
     for (i, mm) in stats.filament_mm.iter().enumerate() {
         #[allow(clippy::cast_possible_truncation, reason = "slot index is small")]
         let slot = (i + 1) as u8;
-        // mm of filament x cross-section in mm2 = mm3; / 1000 = cm3; x g/cm3 = g.
-        let grams = mm * fil_area / 1000.0 * config.density(slot);
+        // mm of filament x the slot's own cross-section in mm2 = mm3; / 1000 = cm3; x g/cm3 = g.
+        let grams = mm * config.filament_area(slot) / 1000.0 * config.density(slot);
         stats.filament_g.push(grams);
         stats.cost += grams / 1000.0 * config.cost_per_kg(slot);
     }
@@ -287,7 +321,11 @@ fn bambu_blocks(
             .join(",")
     };
     let _ = writeln!(b, "; filament_density: {}", list(&|s| c.density(s)));
-    let _ = writeln!(b, "; filament_diameter: {}", list(&|_| c.filament_diameter));
+    let _ = writeln!(
+        b,
+        "; filament_diameter: {}",
+        list(&|s| c.filament_diameter_for(s))
+    );
     let _ = writeln!(b, "; max_z_height: {:.2}", out.plate_top_z);
     // The slots of every layer's paths, which finalize reads from the layer markers.
     let _ = writeln!(b, "{}", crate::firmware::FILAMENT_MARK);
@@ -1590,7 +1628,16 @@ fn emit_layer(
     let before = custom(base, "before_layer_change_gcode", ctx.as_ref(), &mut error);
     let b = &mut chunk.bytes;
     let h = f64::from(l.height);
-    let fil_area = std::f64::consts::PI * (c.filament_diameter / 2.0).m_powi(2);
+    // Each filament's own cross-section: E for a path is its bead's volume over the filament it prints with.
+    let fil_areas: Vec<f64> = (1..=tools)
+        .map(|s| c.filament_area(u8::try_from(s).unwrap_or(u8::MAX)))
+        .collect();
+    let fil_area = |slot: u8| {
+        fil_areas
+            .get(usize::from(slot.max(1) - 1))
+            .copied()
+            .unwrap_or_else(|| c.filament_area(slot))
+    };
     // The retraction settings of the filament in the nozzle: a filament's own `filament_` values replace the
     // printer's (Orca's `compute_filament_override_value`), so they change with each tool change.
     let mut rc = shared.filament(l.cfg, l.start_tool.max(1));
@@ -2351,13 +2398,21 @@ fn emit_layer(
                         let old = flush_from
                             .filter(|&o| o != next)
                             .and_then(|o| usize::try_from(o).ok());
-                        let held = old.map_or(0.0, |_| nozzle_volume(c, nozzle) / fil_area);
+                        // The flush is pushed with the new filament; what the nozzle held is the old one's length.
+                        let slot_of = |i: usize| u8::try_from(i + 1).unwrap_or(u8::MAX);
+                        let new_area = usize::try_from(next).map_or(fil_area(1), |n| fil_area(slot_of(n)));
+                        let held = old.map_or(0.0, |_| nozzle_volume(c, nozzle) / new_area);
                         let to_old = flushed.min(held);
                         let to_new = flushed - to_old;
                         if let Some(o) = old
                             && let Some(e) = chunk.e_units.get_mut(o)
                         {
-                            *e += e_units(to_old);
+                            let old_area = fil_area(slot_of(o));
+                            *e += e_units(if (old_area - new_area).abs() <= f64::EPSILON * new_area {
+                                to_old
+                            } else {
+                                to_old * new_area / old_area
+                            });
                         }
                         if let Some(e) = usize::try_from(next).ok().and_then(|n| chunk.e_units.get_mut(n)) {
                             *e += e_units(to_new);
@@ -2806,7 +2861,7 @@ fn emit_layer(
             speed_feed = f;
         }
         feed_mark = b.len();
-        let e_per_mm = bead_area(f64::from(p.width_mm), h) / fil_area
+        let e_per_mm = bead_area(f64::from(p.width_mm), h) / fil_area(p.tool)
             * c.flow_ratio(p.tool)
             * f64::from(p.flow)
             * role_flow.get(p.feature as usize).copied().unwrap_or(1.0);
