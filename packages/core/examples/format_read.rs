@@ -91,18 +91,29 @@ fn core_paint(part: &sx_core::MeshPart) -> Value {
 }
 
 fn core_object(mesh: &sx_core::Mesh) -> Value {
+    use sx_core::plate::VolumeRole;
     let mut ext = Extent::default();
-    let parts: Vec<Value> = mesh
+    let mut parts: Vec<Value> = mesh
         .parts
         .iter()
         .map(|p| {
             for v in &p.positions {
                 ext.add(f64::from(v[0]), f64::from(v[1]), f64::from(v[2]));
             }
-            // the core has no part types yet: every part it loads prints
             json!({ "name": p.name, "type": "normal", "slot": p.slot, "triangles": p.triangles.len(), "paint": core_paint(p) })
         })
         .collect();
+    // volumes print nothing, so they stay out of the object's size
+    parts.extend(mesh.volumes.iter().map(|v| {
+        let kind = match v.role {
+            VolumeRole::Negative => "negative",
+            VolumeRole::SupportBlocker => "support_blocker",
+            VolumeRole::SupportEnforcer => "support_enforcer",
+            VolumeRole::Modifier => "modifier",
+        };
+        let p = &v.part;
+        json!({ "name": p.name, "type": kind, "slot": p.slot, "triangles": p.triangles.len(), "paint": core_paint(p) })
+    }));
     json!({ "name": mesh.name, "extent": ext.size(), "parts": parts })
 }
 
