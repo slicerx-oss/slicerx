@@ -16,6 +16,7 @@ import { set, useApp } from '../state/store'
 import { startLabel, type BedState } from './bed-state'
 import { CheckLines, checkLines } from './check-lines'
 import type { SheetNote } from '../plate/lint'
+import type { PreflightSpot } from '../plate/preflight'
 import { bareName, duplicateTargets, externalSlots, optionTip, safeJobName, withEnding, type MapFilament, type MapSlot, type PrintEnding, type SendChoice, type SendOptionSpec, type SendOptions } from './options'
 import './print-sheet.css'
 
@@ -27,6 +28,8 @@ export interface PrintCheck {
   /** Short lines, each shown only when it matters, with the detail in a tooltip. */
   warnings: SheetNote[]
   sha256: string
+  /** Where an error can be seen in the sliced plate, by its text, for its Show me. */
+  spots?: Record<string, PreflightSpot>
 }
 
 /** Everything the sheet needs. `check` is null while the file is still being exported and checked. */
@@ -219,7 +222,11 @@ export function PrintSheet() {
             ...(ask.refusal
               ? [{ tone: 'bad' as const, text: `${ask.printer.name} did not start the print`, tip: `It said: ${ask.refusal.reason} Send as plain G-code sends the same plate as ${withEnding(name, '.gcode')} (SHA-256 ${ask.refusal.plainSha256.slice(0, 12)}). The printer then feeds filament 1 from slot 1, filament 2 from slot 2 and so on, whatever the slots below say, and its screen shows no picture or object list for skipping.` }]
               : []),
-            ...checkLines(errors, warnings),
+            ...checkLines(errors, warnings).map((line, i) => {
+              // A block with a place in the slice: Show me closes the sheet and goes there.
+              const spot = i < errors.length ? ask.check?.spots?.[errors[i]!] : undefined
+              return spot ? { ...line, show: () => { finish(null); void import('../plate/preflight-show').then((m) => m.showSpot(spot)) } } : line
+            }),
           ]}
         />
         <div className="ps-body">
