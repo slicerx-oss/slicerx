@@ -6,6 +6,7 @@
 import type { SettingValue } from '@slicerx/contracts'
 import type { AppState, PlateEntry } from '../state/store'
 import { inStep } from './history'
+import { countSettings } from './easy-groups'
 import { objectOverrides, partOverridesOf, setObjectSetting, setPartSetting, sourceId } from './object-settings'
 
 export type SettingsScope = { kind: 'plate' } | { kind: 'objects'; ids: string[] } | { kind: 'part'; id: string; part: string }
@@ -81,7 +82,7 @@ export function ownKeys(s: Pick<AppState, 'plate' | 'objectSettings'>, scope: Se
 }
 
 /** How many settings an object has of its own, its parts' included: the badge on its row. */
-export function overrideCount(s: Pick<AppState, 'plate' | 'objectSettings'>, p: PlateEntry): number {
-  const parts = Object.values(partOverridesOf(s.plate, p)).reduce((n, o) => n + Object.keys(o).length, 0)
-  return Object.keys(objectOverrides(s, p)).length + parts
+export function overrideCount(s: Pick<AppState, 'plate' | 'objectSettings'>, p: PlateEntry, groups: readonly (readonly string[])[] = []): number {
+  const parts = Object.values(partOverridesOf(s.plate, p)).reduce((n, o) => n + countSettings(Object.keys(o), groups), 0)
+  return countSettings(Object.keys(objectOverrides(s, p)), groups) + parts
 }

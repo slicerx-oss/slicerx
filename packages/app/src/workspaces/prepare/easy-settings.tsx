@@ -11,11 +11,10 @@ import { OPTION_TIPS, settingTipAttrs } from '../../lib/tips'
 import { useMore } from '../../shell/more'
 import { beginLiveEdit } from '../../state/live-edit'
 import { get, markStale, set, shownSlice, useApp, type Goal } from '../../state/store'
-import { variesPerObject } from '../../plate/plate-wide'
 import { layerHeightConflict } from '../../plate/object-settings'
 import { plateSequence } from '../../plate/plate-sequence'
 import { scopeValue, setScopedMany, type SettingsScope } from '../../plate/scope'
-import { SETTINGS } from '../../adapters/settings'
+import { easyGroups } from '../../plate/easy-groups'
 import { useScope } from './scope-bar'
 import './goal-tiles.css'
 
@@ -54,16 +53,6 @@ function update(patch: Partial<EasySettings>, goal?: EasyGoal): void {
 
 const same = (a: SettingValue | undefined, b: SettingValue | undefined) => JSON.stringify(a) === JSON.stringify(b)
 
-/** The keys an Easy control decides: those that differ between the configs its choices give. */
-function controlKeys(easy: EasySettings, patches: readonly Partial<EasySettings>[], controls: readonly string[]): string[] {
-  const cfgs = patches.map((p) => easyConfigFor({ ...easy, ...p }, controls))
-  const keys = new Set(cfgs.flatMap((c) => Object.keys(c)))
-  return [...keys].filter((k) => {
-    const def = SETTINGS.find((d) => d.key === k)
-    return def !== undefined && variesPerObject(def) && cfgs.some((c) => !same(c[k], cfgs[0]?.[k]))
-  })
-}
-
 /**
  * An Easy choice made for the selection: each key the control decides takes the value the choice gives, as the
  * selection's own, or goes back to the plate's where the two agree.
@@ -74,10 +63,6 @@ function updateScoped(scope: SettingsScope, easy: EasySettings, patch: Partial<E
   setScopedMany(get(), scope, keys.map((k) => [k, same(next[k], plate[k]) ? undefined : next[k]] as const))
 }
 
-const LAYER_PATCHES = FIXED_HEIGHTS.map((h) => choicePatch(h))
-const SUPPORT_PATCHES = SUPPORTS.map((o) => ({ supports: o.value }))
-const BRIM_PATCHES = [{ brim: true }, { brim: false }]
-const STRENGTH_PATCHES = [0, 25, 50, 75, 100].map((strength) => ({ strength }))
 
 export function EasySettingsPanel() {
   const easy = useApp((s) => s.easy)
@@ -92,10 +77,7 @@ export function EasySettingsPanel() {
   const scoped = scope.kind !== 'plate'
   const plateEntries = useApp((s) => s.plate)
   const objectSettings = useApp((s) => s.objectSettings)
-  const keys = useMemo(
-    () => ({ layer: controlKeys(easy, LAYER_PATCHES, ['detail', 'varyLayerHeight']), supports: controlKeys(easy, SUPPORT_PATCHES, ['supports']), brim: controlKeys(easy, BRIM_PATCHES, ['brim']), strength: controlKeys(easy, STRENGTH_PATCHES, ['strength']) }),
-    [easy, profile],
-  )
+  const keys = useMemo(() => easyGroups(easy), [easy, profile])
   const view = useMemo(() => {
     if (!scoped) return { cfg: plateCfg, mixed: new Set<string>() }
     const out: PrintConfig = { ...plateCfg }
