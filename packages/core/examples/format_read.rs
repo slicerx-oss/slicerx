@@ -121,6 +121,7 @@ fn geom(bytes: &[u8], name: &str, ext: &str) -> Result<Value, String> {
     use sx_geom::import::{ImportOptions, import_amf, import_obj, import_stl};
     let opts = ImportOptions::default();
     let model = match ext {
+        "3mf" | "sx3mf" => return geom_3mf(bytes),
         "stl" => import_stl(bytes, name, &opts),
         "obj" => import_obj(bytes, name, None, &opts),
         "amf" => import_amf(bytes, name, &opts),
@@ -142,6 +143,78 @@ fn geom(bytes: &[u8], name: &str, ext: &str) -> Result<Value, String> {
     let object = json!({ "name": model.name, "extent": ext.size(), "parts": parts });
     Ok(
         json!({ "plates": [{ "plate": 1, "objects": [object] }], "meta": { "bodies": model.bodies.len(), "unit": format!("{:?}", model.unit.declared) } }),
+    )
+}
+
+/// what prints of each object, as the core and the app read it: printable items with a printed part, slots and names
+/// falling back the way they do
+fn geom_3mf(bytes: &[u8]) -> Result<Value, String> {
+    use sx_geom::format::{Part, PartKind, read_3mf};
+    let project = read_3mf(bytes).map_err(|e| e.to_string())?;
+    let scale = project.unit_scale;
+    let mut plates: std::collections::BTreeMap<u32, Vec<Value>> = std::collections::BTreeMap::new();
+    for o in &project.objects {
+        if !o.printable || !o.parts.iter().any(Part::prints) {
+            continue;
+        }
+        let mut ext = Extent::default();
+        let parts: Vec<Value> = o
+            .parts
+            .iter()
+            .map(|p| {
+                if p.prints() {
+                    for v in p.placed(&o.transform, scale) {
+                        ext.add(f64::from(v[0]), f64::from(v[1]), f64::from(v[2]));
+                    }
+                }
+                let kind = match p.kind {
+                    PartKind::Normal => "normal",
+                    PartKind::Negative => "negative",
+                    PartKind::Modifier => "modifier",
+                    PartKind::SupportBlocker => "support_blocker",
+                    PartKind::SupportEnforcer => "support_enforcer",
+                };
+                let name = if p.name.is_empty() { if o.name.is_empty() { "Part" } else { &o.name } } else { &p.name };
+                let paint = &p.paint;
+                json!({ "name": name, "type": kind, "slot": p.slot.or(o.slot).unwrap_or(1),
+                        "triangles": p.triangles.len(),
+                        "paint": { "color": paint.color.len(), "seam": paint.seam.len(), "support": paint.support.len(), "fuzzy": paint.fuzzy.len() } })
+            })
+            .collect();
+        let first = o.parts.first().map_or("", |p| p.name.as_str());
+        let name = if !o.name.is_empty() {
+            o.name.as_str()
+        } else if first.is_empty() {
+            "Part"
+        } else {
+            first
+        };
+        plates
+            .entry(o.plate.unwrap_or(1))
+            .or_default()
+            .push(json!({ "name": name, "extent": ext.size(), "parts": parts }));
+    }
+    let settings = project
+        .files
+        .project_settings
+        .as_deref()
+        .and_then(|s| serde_json::from_str::<Value>(s).ok())
+        .and_then(|v| v.as_object().map(|o| o.keys().cloned().collect::<Vec<_>>()))
+        .unwrap_or_default();
+    let sx = |k: &str| {
+        project
+            .metadata
+            .iter()
+            .find(|(n, _)| n == k)
+            .map(|(_, v)| v.clone())
+            .filter(|v| !v.is_empty())
+    };
+    let plates: Vec<Value> = plates
+        .into_iter()
+        .map(|(plate, objects)| json!({ "plate": plate, "objects": objects }))
+        .collect();
+    Ok(
+        json!({ "plates": plates, "meta": { "settingsKeys": settings, "sx": { "listing": sx("sx:Listing"), "creator": sx("sx:Creator") } } }),
     )
 }
 

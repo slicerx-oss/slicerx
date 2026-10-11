@@ -53,7 +53,7 @@ thiserror = "=2.0.21"
 # offer (docs/cad-engine.md, section 2). Booleans, arrays, measure, cut, split, repair, import, orient, emboss,
 # simplify, fit check and print rescue are always there.
 [features]
-default = ["cad", "holes", "threads", "shell", "text", "svg", "nest", "calib", "hollow"]
+default = ["cad", "holes", "threads", "shell", "text", "svg", "nest", "calib", "hollow", "formats"]
 # The modeling tools: the face shape tool, free sketch, push and pull, fillet and chamfer, kept dimensions, and the
 # faces that make them work (found on meshes without them, and sent in the JSON).
 cad = ["text", "svg"]
@@ -73,3 +73,5 @@ nest = []
 calib = []
 # Hollow with drain holes.
 hollow = []
+# 3MF projects read whole: parts and their types, paint, plates and settings. Not in the WebAssembly builds yet.
+formats = []
