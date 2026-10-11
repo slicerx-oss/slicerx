@@ -43,13 +43,17 @@ if (!values['no-geom']) {
 }
 run(['tauri:config'])
 const conf = JSON.parse(readFileSync(join(desktop, 'src-tauri', 'gen', 'edition.conf.json'), 'utf8'))
+const base = JSON.parse(readFileSync(join(desktop, 'src-tauri', 'tauri.conf.json'), 'utf8'))
+// A bridge build's printer hub may listen on another loopback port (SX_TEST_HUB_PORT, src-tauri/src/link.rs), so the
+// gate and the end-to-end tests can share a machine; its page may connect to any loopback port. A release keeps 47615.
+const connectSrc = conf.app?.security?.csp?.['connect-src'] ?? base.app.security.csp['connect-src']
+conf.app = { ...conf.app, security: { ...conf.app?.security, csp: { ...conf.app?.security?.csp, 'connect-src': `${connectSrc} ws://127.0.0.1:*` } } }
 if (!values['same-identifier']) {
   conf.identifier = `${conf.identifier}.agent-bridge`
   // macOS keeps an unbundled binary's web data (localStorage, IndexedDB) under the executable's name, so every bridge
   // and dev binary called slicerx shared one store in ~/Library/WebKit/slicerx. The shell opens this build's window
   // itself, with a store of its own named from the identifier (agent_bridge/window.rs). A merge patch replaces arrays
   // whole, so the windows are written out in full.
-  const base = JSON.parse(readFileSync(join(desktop, 'src-tauri', 'tauri.conf.json'), 'utf8'))
   conf.app = { ...conf.app, windows: (conf.app?.windows ?? base.app.windows).map((w) => ({ ...w, create: false })) }
 }
 writeFileSync(join(desktop, 'src-tauri', 'gen', 'edition.bridge.conf.json'), `${JSON.stringify(conf, null, 2)}

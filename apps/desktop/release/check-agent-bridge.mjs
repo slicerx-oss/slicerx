@@ -14,8 +14,11 @@ import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { parseArgs } from 'node:util'
 
-/** Names only the shell side of the bridge has (apps/desktop/src-tauri/src/agent_bridge, and the gate's watch pause timings in src/link.rs). */
-export const SHELL_MARKERS = ['SX_AGENT_BRIDGE_PORT', 'agent_bridge_reply', 'sx-agent-bridge', 'SX_GATE_WATCH_PAUSE']
+/**
+ * Names only the shell side of the bridge has (apps/desktop/src-tauri/src/agent_bridge, and in src/link.rs the gate's
+ * watch pause timings and the test hub port).
+ */
+export const SHELL_MARKERS = ['SX_AGENT_BRIDGE_PORT', 'agent_bridge_reply', 'sx-agent-bridge', 'SX_GATE_WATCH_PAUSE', 'SX_TEST_HUB_PORT']
 /** Names only the page side has (packages/app/src/agent-bridge). */
 export const PAGE_MARKERS = ['agent_bridge_ready', 'agent_bridge_reply', 'sx-agent-bridge']
 const PAGE_FILES = /\.(m?js|html)$/i
