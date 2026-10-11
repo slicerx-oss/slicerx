@@ -187,6 +187,7 @@ fn split_projects(
         let merged = Mesh {
             name: rel.to_owned(),
             parts: items.iter().flat_map(|m| m.parts.iter().cloned()).collect(),
+            ..Mesh::default()
         };
         let at = sx_core::plate::centered_transform(&merged, bed);
         for (k, mesh) in items.into_iter().enumerate() {

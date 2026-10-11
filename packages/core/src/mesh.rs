@@ -50,7 +50,26 @@ impl MeshPart {
 #[derive(Debug, Clone, Default)]
 pub struct Mesh {
     pub name: String,
+    /// The parts that print.
     pub parts: Vec<MeshPart>,
+    /// Parts of the model that do not print themselves (cuts, modifiers, support blockers and enforcers), in the
+    /// same space as `parts`, as a project file marks them.
+    pub volumes: Vec<MeshVolume>,
+    /// Setting overrides the file gives single printed parts (the object's own settings under the part's), by part
+    /// name, in the shape of `PlateObject::part_settings`.
+    pub part_settings: Vec<(String, serde_json::Value)>,
+    /// What the loader read but changed or could not apply, one line each, for the slice's warnings.
+    pub notes: Vec<String>,
+}
+
+/// A part of a model that shapes the print without printing: see [`crate::plate::VolumeRole`].
+#[derive(Debug, Clone)]
+pub struct MeshVolume {
+    pub role: crate::plate::VolumeRole,
+    /// The geometry, in the space of the mesh's parts; its slot and paint are not used.
+    pub part: MeshPart,
+    /// A modifier's setting overrides (an object of setting keys); `Null` for the other roles.
+    pub settings: serde_json::Value,
 }
 
 impl Mesh {
@@ -133,6 +152,7 @@ impl Mesh {
         Ok(Self {
             name: file_name.to_owned(),
             parts,
+            ..Self::default()
         })
     }
 
@@ -148,24 +168,10 @@ impl Mesh {
         b.extend_from_slice(RAW_MAGIC);
         b.extend_from_slice(&u32::try_from(self.parts.len()).unwrap_or(u32::MAX).to_le_bytes());
         for p in &self.parts {
-            let name = p.name.as_bytes().get(..p.name.len().min(65_535)).unwrap_or(&[]);
-            b.push(p.slot.max(1));
-            b.extend_from_slice(&u16::try_from(name.len()).unwrap_or(u16::MAX).to_le_bytes());
-            b.extend_from_slice(name);
-            b.extend_from_slice(&u32::try_from(p.positions.len()).unwrap_or(u32::MAX).to_le_bytes());
-            for v in &p.positions {
-                for c in v {
-                    b.extend_from_slice(&c.to_le_bytes());
-                }
-            }
-            b.extend_from_slice(&u32::try_from(p.triangles.len()).unwrap_or(u32::MAX).to_le_bytes());
-            for t in &p.triangles {
-                for i in t {
-                    b.extend_from_slice(&i.to_le_bytes());
-                }
-            }
+            write_raw_part(p, &mut b);
         }
         write_raw_paint(&self.parts, &mut b);
+        write_raw_volumes(self, &mut b);
         b
     }
 
@@ -186,55 +192,24 @@ impl Mesh {
         let count = r.u32()?;
         let mut parts = Vec::new();
         for _ in 0..count {
-            let slot = r.take(1)?.first().copied().unwrap_or(1).max(1);
-            let name_len = u16::from_le_bytes(r.take(2)?.try_into().map_err(|_| r.err())?);
-            let part_name = String::from_utf8_lossy(r.take(usize::from(name_len))?).into_owned();
-            let nv = r.u32()? as usize;
-            let pos = r.take(nv.checked_mul(12).ok_or_else(|| r.err())?)?;
-            let positions = pos
-                .as_chunks::<12>()
-                .0
-                .iter()
-                .map(|c| {
-                    let f = |a: u8, b: u8, cc: u8, d: u8| f32::from_le_bytes([a, b, cc, d]);
-                    [
-                        f(c[0], c[1], c[2], c[3]),
-                        f(c[4], c[5], c[6], c[7]),
-                        f(c[8], c[9], c[10], c[11]),
-                    ]
-                })
-                .collect();
-            let nt = r.u32()? as usize;
-            let idx = r.take(nt.checked_mul(12).ok_or_else(|| r.err())?)?;
-            let flat: Vec<u32> = idx
-                .as_chunks::<4>()
-                .0
-                .iter()
-                .map(|c| u32::from_le_bytes(*c))
-                .collect();
-            let triangles = triangles_from_indices(&flat, nv, &part_name)?;
-            parts.push(MeshPart {
-                name: part_name,
-                slot,
-                color: None,
-                positions,
-                triangles,
-                paint: Vec::new(),
-                support_paint: Vec::new(),
-                seam_paint: Vec::new(),
-                fuzzy_paint: Vec::new(),
-                paint_texts: Vec::new(),
-            });
+            parts.push(read_raw_part(&mut r)?);
         }
         // An optional paint block after the parts. A reader without it stops before it.
         if r.b.get(r.at..r.at + RAW_PAINT_MAGIC.len()) == Some(RAW_PAINT_MAGIC) {
             r.at += RAW_PAINT_MAGIC.len();
             read_raw_paint(&mut r, &mut parts)?;
         }
-        Ok(Self {
+        let mut mesh = Self {
             name: name.to_owned(),
             parts,
-        })
+            ..Self::default()
+        };
+        // An optional block of the parts that do not print, after the paint block (see `write_raw_volumes`).
+        if r.b.get(r.at..r.at + RAW_VOLUME_MAGIC.len()) == Some(RAW_VOLUME_MAGIC) {
+            r.at += RAW_VOLUME_MAGIC.len();
+            read_raw_volumes(&mut r, &mut mesh)?;
+        }
+        Ok(mesh)
     }
 
     /// Total triangle count over all parts.
@@ -286,6 +261,29 @@ impl Mesh {
                 h.write(text.as_bytes());
                 h.write(&[0]);
             }
+        }
+        // Cuts, modifiers, support volumes and part settings change what prints too. A mesh without them hashes as
+        // it always has.
+        for v in &self.volumes {
+            h.write(b"volume");
+            h.write(&[v.role as u8]);
+            for p in &v.part.positions {
+                for c in p {
+                    h.write(&c.to_le_bytes());
+                }
+            }
+            for t in &v.part.triangles {
+                for i in t {
+                    h.write(&i.to_le_bytes());
+                }
+            }
+            h.write(v.settings.to_string().as_bytes());
+        }
+        for (name, s) in &self.part_settings {
+            h.write(b"part settings");
+            h.write(name.as_bytes());
+            h.write(&[0]);
+            h.write(s.to_string().as_bytes());
         }
         h.finish()
     }
@@ -375,7 +373,11 @@ impl Mesh {
                 paint_texts: Vec::new(),
             });
         }
-        Ok(Self { name, parts })
+        Ok(Self {
+            name,
+            parts,
+            ..Self::default()
+        })
     }
 
     /// Loads binary or ASCII STL as a single part on slot 1.
@@ -421,12 +423,142 @@ impl Mesh {
         Ok(Self {
             name: name.to_owned(),
             parts: vec![part],
+            ..Self::default()
         })
     }
 }
 
 const RAW_MAGIC: &[u8] = b"SXMP";
 const RAW_PAINT_MAGIC: &[u8] = b"SXPT";
+const RAW_VOLUME_MAGIC: &[u8] = b"SXVL";
+
+/// One part of the raw parts format: u8 slot, u16 name length, UTF-8 name, u32 vertex count, f32 xyz per vertex, u32
+/// triangle count, u32 index triples. Names longer than 65,535 bytes are cut.
+fn write_raw_part(p: &MeshPart, b: &mut Vec<u8>) {
+    let name = p.name.as_bytes().get(..p.name.len().min(65_535)).unwrap_or(&[]);
+    b.push(p.slot.max(1));
+    b.extend_from_slice(&u16::try_from(name.len()).unwrap_or(u16::MAX).to_le_bytes());
+    b.extend_from_slice(name);
+    b.extend_from_slice(&u32::try_from(p.positions.len()).unwrap_or(u32::MAX).to_le_bytes());
+    for v in &p.positions {
+        for c in v {
+            b.extend_from_slice(&c.to_le_bytes());
+        }
+    }
+    b.extend_from_slice(&u32::try_from(p.triangles.len()).unwrap_or(u32::MAX).to_le_bytes());
+    for t in &p.triangles {
+        for i in t {
+            b.extend_from_slice(&i.to_le_bytes());
+        }
+    }
+}
+
+/// Reads what [`write_raw_part`] writes.
+fn read_raw_part(r: &mut Reader<'_>) -> Result<MeshPart> {
+    let slot = r.take(1)?.first().copied().unwrap_or(1).max(1);
+    let name_len = u16::from_le_bytes(r.take(2)?.try_into().map_err(|_| r.err())?);
+    let part_name = String::from_utf8_lossy(r.take(usize::from(name_len))?).into_owned();
+    let nv = r.u32()? as usize;
+    let pos = r.take(nv.checked_mul(12).ok_or_else(|| r.err())?)?;
+    let positions = pos
+        .as_chunks::<12>()
+        .0
+        .iter()
+        .map(|c| {
+            let f = |a: u8, b: u8, cc: u8, d: u8| f32::from_le_bytes([a, b, cc, d]);
+            [
+                f(c[0], c[1], c[2], c[3]),
+                f(c[4], c[5], c[6], c[7]),
+                f(c[8], c[9], c[10], c[11]),
+            ]
+        })
+        .collect();
+    let nt = r.u32()? as usize;
+    let idx = r.take(nt.checked_mul(12).ok_or_else(|| r.err())?)?;
+    let flat: Vec<u32> = idx
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|c| u32::from_le_bytes(*c))
+        .collect();
+    let triangles = triangles_from_indices(&flat, nv, &part_name)?;
+    Ok(MeshPart {
+        name: part_name,
+        slot,
+        positions,
+        triangles,
+        ..MeshPart::default()
+    })
+}
+
+/// A u32 length and that many bytes of UTF-8 text.
+fn write_raw_text(text: &str, b: &mut Vec<u8>) {
+    b.extend_from_slice(&u32::try_from(text.len()).unwrap_or(u32::MAX).to_le_bytes());
+    b.extend_from_slice(text.as_bytes());
+}
+
+fn read_raw_text(r: &mut Reader<'_>) -> Result<String> {
+    let len = r.u32()? as usize;
+    Ok(String::from_utf8_lossy(r.take(len)?).into_owned())
+}
+
+/// The block of the raw parts format that carries a mesh's volumes, part settings and loader notes, after the
+/// paint block: magic `SXVL`; u32 volume count, then per volume u8 role (0 negative, 1 support blocker, 2 support
+/// enforcer, 3 modifier), the part as the parts are written and its settings as JSON text; u32 part settings
+/// count, then per entry the part name and the settings as JSON text; u32 note count and each note. Texts are a u32
+/// length and UTF-8. Nothing when the mesh has none of them, so a mesh without them writes the bytes it always has.
+fn write_raw_volumes(mesh: &Mesh, b: &mut Vec<u8>) {
+    if mesh.volumes.is_empty() && mesh.part_settings.is_empty() && mesh.notes.is_empty() {
+        return;
+    }
+    let count = |n: usize| u32::try_from(n).unwrap_or(u32::MAX).to_le_bytes();
+    b.extend_from_slice(RAW_VOLUME_MAGIC);
+    b.extend_from_slice(&count(mesh.volumes.len()));
+    for v in &mesh.volumes {
+        b.push(v.role as u8);
+        write_raw_part(&v.part, b);
+        write_raw_text(&v.settings.to_string(), b);
+    }
+    b.extend_from_slice(&count(mesh.part_settings.len()));
+    for (name, settings) in &mesh.part_settings {
+        write_raw_text(name, b);
+        write_raw_text(&settings.to_string(), b);
+    }
+    b.extend_from_slice(&count(mesh.notes.len()));
+    for n in &mesh.notes {
+        write_raw_text(n, b);
+    }
+}
+
+/// Reads the block [`write_raw_volumes`] writes into `mesh`.
+fn read_raw_volumes(r: &mut Reader<'_>, mesh: &mut Mesh) -> Result<()> {
+    let json = |r: &Reader<'_>, text: &str| -> Result<serde_json::Value> {
+        serde_json::from_str(text).map_err(|_| r.err())
+    };
+    for _ in 0..r.u32()? {
+        let role = match r.take(1)?.first() {
+            Some(0) => crate::plate::VolumeRole::Negative,
+            Some(1) => crate::plate::VolumeRole::SupportBlocker,
+            Some(2) => crate::plate::VolumeRole::SupportEnforcer,
+            Some(3) => crate::plate::VolumeRole::Modifier,
+            _ => return Err(r.err()),
+        };
+        let part = read_raw_part(r)?;
+        let text = read_raw_text(r)?;
+        let settings = json(r, &text)?;
+        mesh.volumes.push(MeshVolume { role, part, settings });
+    }
+    for _ in 0..r.u32()? {
+        let name = read_raw_text(r)?;
+        let text = read_raw_text(r)?;
+        let settings = json(r, &text)?;
+        mesh.part_settings.push((name, settings));
+    }
+    for _ in 0..r.u32()? {
+        mesh.notes.push(read_raw_text(r)?);
+    }
+    Ok(())
+}
 
 /// The paint block of the raw parts format from the parts' paint texts, grouped by part and layer; nothing when no
 /// part is painted.

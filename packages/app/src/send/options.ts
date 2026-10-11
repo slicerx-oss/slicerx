@@ -212,6 +212,24 @@ export function withEnding(name: string, ending: PrintEnding): string {
 /** The external spool as the printer drivers name it: a slot id of "1" (Bambu tray 254). */
 export const EXTERNAL_SLOT = '1'
 
+/** A Bambu Lab H2 printer's second external spool, on its right nozzle: slot "2" (Bambu tray 255). Its status lists it only while it holds a spool. */
+export const SECOND_EXTERNAL_SLOT = '2'
+
+/**
+ * The external spools a printer offers in the slot picker, by slot id and name. A Bambu Lab printer whose status lists
+ * slot 2 is an H2 with a spool on each side: slot 1 is the left nozzle's, slot 2 the right's. Anywhere else slot 2 is an
+ * ordinary slot (an MMU's second), and slot 1 is the one external spool.
+ */
+export function externalSlots(plugin: string, slots: readonly MapSlot[]): { id: string; label: string }[] {
+  if (plugin === 'bambu-lan' && slots.some((s) => s.id === SECOND_EXTERNAL_SLOT)) {
+    return [
+      { id: EXTERNAL_SLOT, label: 'Left external spool' },
+      { id: SECOND_EXTERNAL_SLOT, label: 'Right external spool' },
+    ]
+  }
+  return [{ id: EXTERNAL_SLOT, label: 'External spool' }]
+}
+
 export interface MapFilament {
   index: number
   color: string

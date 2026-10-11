@@ -223,7 +223,7 @@ export async function startMocks(opts: StartOptions = {}): Promise<RunningMocks>
       else if (b.seconds !== undefined) m.tick(Number(b.seconds))
       return { json: { state: m.state, job: m.job ?? null } }
     }
-    // POST /bambu {refuse?, model?, ams?, external?, tagged?, liveview?}: the Bambu fake refuses project starts with `refuse` (null or
+    // POST /bambu {refuse?, model?, ams?, external?, tagged?, liveview?}: the Bambu fake refuses starts (project and plain G-code) with `refuse` (null or
     // absent: accepts them); `model`, `ams` and `external` make it another printer (an A1 with an AMS lite, an A1 mini
     // with only the external spool). A connection made afterwards sees the new model. `tagged` lists the AMS
     // slots (0 based) whose spool has an RFID tag. `liveview: false` turns LAN Only Liveview off on an X1 or H2D;
@@ -234,12 +234,15 @@ export async function startMocks(opts: StartOptions = {}): Promise<RunningMocks>
     // sending frames with their connections left open. `printerType` puts a `printer_type` in its reports; `storage`
     // (`none`, `normal`, `abnormal`, `readonly`) is the SD card it reports, and `emmc: true` says it prints without one.
     // `developerMode: false` makes it a printer with Developer Mode off: status only, every command and upload refused
-    // (null: no `fun` flags in its reports, as before). `cameraFrame: 'hand'` makes its JPEG camera show a hand reaching
+    // (null: no `fun` flags in its reports, as before). `refuseControl` makes it answer pause, resume and stop with
+    // `result: fail` and that reason, changing nothing (null: accepts them again). `cameraFrame: 'hand'` makes its JPEG camera show a hand reaching
     // in (null: the placeholder again); `cameraFrameFile` sends that JPEG file instead, a photo for a capture (null: off).
     if (req.path === '/bambu' && req.method === 'POST') {
       if (!bambuExtra) return { status: 404 }
-      const b = req.json() as { refuse?: string | null; model?: string; ams?: BambuExtra['ams']; external?: BambuExtra['external'] | null; tagged?: number[]; liveview?: boolean; inBandParameterSets?: boolean; cameraCode?: string | null; digestQop?: boolean; dropPlays?: number; dropWithinMs?: number; stallCamera?: boolean; printerType?: string; storage?: BambuExtra['storage']; emmc?: boolean; developerMode?: boolean | null; cameraFrame?: 'hand' | null; cameraFrameFile?: string | null }
+      const b = req.json() as { refuse?: string | null; refuseControl?: string | null; model?: string; ams?: BambuExtra['ams']; external?: BambuExtra['external'] | null; tagged?: number[]; liveview?: boolean; inBandParameterSets?: boolean; cameraCode?: string | null; digestQop?: boolean; dropPlays?: number; dropWithinMs?: number; stallCamera?: boolean; printerType?: string; storage?: BambuExtra['storage']; emmc?: boolean; developerMode?: boolean | null; cameraFrame?: 'hand' | null; cameraFrameFile?: string | null }
       if (b.printerType !== undefined) bambuExtra.printerType = b.printerType
+      if (b.refuseControl === null) delete bambuExtra.refuseControl
+      else if (b.refuseControl !== undefined) bambuExtra.refuseControl = b.refuseControl
       if (b.storage !== undefined) bambuExtra.storage = b.storage
       if (b.emmc !== undefined) bambuExtra.emmc = b.emmc
       if (b.developerMode === null) delete bambuExtra.developerMode
@@ -326,13 +329,19 @@ export async function startMocks(opts: StartOptions = {}): Promise<RunningMocks>
       if (b.position) m.position = b.position
       return { json: { homed: m.homed, position: m.position } }
     }
-    // POST /slow {mock, uploadMs}: uploads take this long before the file lands.
+    // POST /slow {mock, uploadMs?, statusHoldMs?, statusWindowMs?}: uploads take uploadMs before the file lands. A
+    // Moonraker status read that starts in the next statusWindowMs answers statusHoldMs later with the state it
+    // started with, so a change made meanwhile (a pause) reaches the reader late, as on a slow printer.
     if (req.path === '/slow' && req.method === 'POST') {
-      const b = req.json() as { mock: string; uploadMs: number }
+      const b = req.json() as { mock: string; uploadMs?: number; statusHoldMs?: number; statusWindowMs?: number }
       const m = machines.get(b.mock)
       if (!m) return { status: 404 }
-      m.uploadDelayMs = Math.max(0, Number(b.uploadMs) || 0)
-      return { json: { uploadMs: m.uploadDelayMs } }
+      if (b.uploadMs !== undefined) m.uploadDelayMs = Math.max(0, Number(b.uploadMs) || 0)
+      if (b.statusHoldMs !== undefined) {
+        m.statusHoldMs = Math.max(0, Number(b.statusHoldMs) || 0)
+        m.statusHoldUntil = Date.now() + Math.max(0, Number(b.statusWindowMs) || 0)
+      }
+      return { json: { uploadMs: m.uploadDelayMs, statusHoldMs: m.statusHoldMs, statusHoldUntil: m.statusHoldUntil } }
     }
     // POST /replace {mock, name}: the file changes behind SlicerX's back (a USB stick, the
     // printer's own screen): new content, new size and time.

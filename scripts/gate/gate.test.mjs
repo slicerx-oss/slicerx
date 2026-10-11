@@ -1,15 +1,20 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // The release gate's own rules, without an app: masking, bounded waits, the tower's G-code check, the upload model,
-// the command line, the starter list against the starters the Vault is seeded with, and the report.
+// the gate printer, the command line, the starter list against the starters the Vault is seeded with, and the report.
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join, resolve } from 'node:path'
 import { describe, it } from 'node:test'
 import { inflateRawSync } from 'node:zlib'
+import { START_WAIT_S, waitForFile } from './lib/app.mjs'
 import { coaster3mf } from './lib/coaster.mjs'
 import { options } from './lib/options.mjs'
 import { renderReport, runStatus } from './lib/report.mjs'
+import { showObjects } from './scenarios/open.mjs'
+import { isGatePrinter, plateLoaded, waitForPlate } from './scenarios/start.mjs'
+import { heaterSteps, hubDir, racePlan, WATCH_TIMINGS, watchPauseEnv } from './scenarios/watch.mjs'
 import { STARTERS, TOWER } from './lib/starters.mjs'
 import { mask, temperatureChanges, towerCheck, waitUntil } from './lib/util.mjs'
 
@@ -28,6 +33,20 @@ describe('mask', () => {
   })
 })
 
+describe('the gate printer', () => {
+  const a1 = { id: 'local-bambu-a1', vendor: 'Bambu Lab', model: 'A1', nozzleMm: 0.4 }
+  it('is the A1 at 0.4 mm, even on a profile that once skipped first-run printer setup', () => {
+    assert.equal(isGatePrinter({ printer: a1 }), true)
+    assert.equal(isGatePrinter({ printer: { ...a1, noPrinter: true } }), true)
+  })
+  it('is not another printer, another nozzle or no printer at all', () => {
+    assert.equal(isGatePrinter({ printer: { ...a1, model: 'P1S' } }), false)
+    assert.equal(isGatePrinter({ printer: { ...a1, nozzleMm: 0.6 } }), false)
+    assert.equal(isGatePrinter({ printer: { noPrinter: true } }), false)
+    assert.equal(isGatePrinter({}), false)
+  })
+})
+
 describe('waitUntil', () => {
   it('returns the first answer', async () => {
     let n = 0
@@ -40,6 +59,88 @@ describe('waitUntil', () => {
     assert.equal(r.timedOut, true)
     assert.ok(r.waitedMs >= 30)
     assert.ok(ticks.length > 0)
+  })
+})
+
+describe('the example plate before the first slice', () => {
+  const fake = (states) => {
+    let i = 0
+    return { state: async () => states[Math.min(i++, states.length - 1)] }
+  }
+  const empty = { plate: { loading: false, objects: [] } }
+  const loading = { plate: { loading: true, objects: [{ name: 'Layered X' }] } }
+  const loaded = { plate: { loading: false, objects: [{ name: 'Layered X' }] } }
+
+  it('is loaded only with its objects and nothing still loading', () => {
+    assert.equal(plateLoaded(loaded), true)
+    assert.equal(plateLoaded(empty), false)
+    assert.equal(plateLoaded(loading), false)
+    assert.equal(plateLoaded({}), false)
+  })
+
+  it('is waited for while the app is still loading it', async () => {
+    const r = await waitForPlate(fake([empty, loading, loaded]), { timeoutMs: 1000, everyMs: 1 })
+    assert.equal(r.timedOut, false)
+    assert.equal(r.state, loaded)
+  })
+
+  it('gives up with the last state when it never loads', async () => {
+    const r = await waitForPlate(fake([empty]), { timeoutMs: 30, everyMs: 5 })
+    assert.equal(r.timedOut, true)
+    assert.equal(r.state, empty)
+  })
+})
+
+describe('the objects list', () => {
+  /**
+   * A stand-in for the gate's helpers: two panes, each open or shut, the rows in one of them (`rows`), and which panes
+   * have an edge tab (none on a build or window without them).
+   */
+  const fake = ({ right = true, left = true, rows = 'right', tabs = ['right', 'left'] } = {}) => {
+    const clicks = []
+    const open = { right, left }
+    const shown = () => open[rows]
+    return {
+      clicks,
+      open,
+      one: async (id) => {
+        if (id === 'object-select') return { index: 0, visible: shown() }
+        const side = /^edge-tab-(right|left)$/.exec(id)?.[1]
+        return side && tabs.includes(side) ? { index: 0, visible: true, expanded: open[side] } : null
+      },
+      click: async (id, index) => {
+        assert.equal(index, 0)
+        clicks.push(id)
+        const side = /^edge-tab-(right|left)$/.exec(id)?.[1]
+        if (side) open[side] = !open[side]
+      },
+      waitFor: async (id) => id === 'object-select' && shown(),
+    }
+  }
+
+  it('opens a shut right pane before the rows are clicked', async () => {
+    const s = fake({ right: false })
+    assert.deepEqual(await showObjects(s), { shown: true, opened: ['edge-tab-right'] })
+    assert.deepEqual(s.clicks, ['edge-tab-right'])
+  })
+
+  it('leaves an open pane alone', async () => {
+    const s = fake()
+    assert.deepEqual(await showObjects(s), { shown: true, opened: [] })
+    assert.deepEqual(s.clicks, [])
+  })
+
+  it('finds the rows in a shut sidebar, and shuts again the pane that did not hold them', async () => {
+    const s = fake({ right: false, left: false, rows: 'left' })
+    assert.deepEqual(await showObjects(s), { shown: true, opened: ['edge-tab-left'] })
+    assert.deepEqual(s.clicks, ['edge-tab-right', 'edge-tab-right', 'edge-tab-left'])
+    assert.deepEqual(s.open, { right: false, left: true })
+  })
+
+  it('says the rows are not on screen when no edge tab opens them', async () => {
+    const s = fake({ right: false, tabs: [] })
+    assert.deepEqual(await showObjects(s), { shown: false, opened: [] })
+    assert.deepEqual(s.clicks, [])
   })
 })
 
@@ -100,12 +201,40 @@ describe('the upload model', () => {
   })
 })
 
+describe('the wait for the app to start', () => {
+  const dir = () => mkdtempSync(join(tmpdir(), 'sx-gate-test-'))
+  it('returns once the connection file shows, however late within the limit', async () => {
+    const d = dir()
+    const file = join(d, 'agent-bridge.json')
+    setTimeout(() => writeFileSync(file, '{}'), 60)
+    assert.equal(await waitForFile(file, { timeoutMs: 2000, everyMs: 10 }), true)
+    rmSync(d, { recursive: true, force: true })
+  })
+  it('gives up when the limit runs out or the app has ended', async () => {
+    const d = dir()
+    const file = join(d, 'agent-bridge.json')
+    const started = Date.now()
+    assert.equal(await waitForFile(file, { timeoutMs: 50, everyMs: 10 }), false)
+    assert.ok(Date.now() - started >= 50)
+    assert.equal(await waitForFile(file, { timeoutMs: 60_000, everyMs: 10, gone: () => true }), false)
+    rmSync(d, { recursive: true, force: true })
+  })
+})
+
 describe('the command line', () => {
   it('runs every scenario by default and checks the account', () => {
     const o = options(['--account', 'QA-Win@qa.slicerx.app', '--platform', 'windows', '--out', 'x'])
-    assert.deepEqual(o.run, ['a', 'b', 'c', 'd', 'e'])
+    assert.deepEqual(o.run, ['a', 'b', 'c', 'd', 'e', 'w'])
     assert.equal(o.account, 'qa-win@qa.slicerx.app')
     assert.deepEqual([o.waitSignin, o.waitScan, o.waitReview], [10, 15, 60])
+    assert.equal(o.waitStart, START_WAIT_S)
+    assert.ok(START_WAIT_S >= 120, 'a loaded machine took over half a minute to start the app')
+  })
+  it('takes a longer or shorter start wait in seconds, within bounds', () => {
+    assert.equal(options(['--only', 'a', '--wait-start', '300']).waitStart, 300)
+    assert.throws(() => options(['--only', 'a', '--wait-start', '0']), /--wait-start is seconds/)
+    assert.throws(() => options(['--only', 'a', '--wait-start', 'soon']), /--wait-start is seconds/)
+    assert.throws(() => options(['--only', 'a', '--wait-start', '4000']), /--wait-start is seconds/)
   })
   it('refuses addresses outside the qa domain, unknown scenarios and c or d without an account', () => {
     assert.throws(() => options(['--account', 'someone@slicerx.app']), /not a release-gate account/)
@@ -119,7 +248,46 @@ describe('the command line', () => {
     const o = options(['--only', 'a,b,e', '--wait-signin', '1'])
     assert.deepEqual(o.run, ['a', 'b', 'e'])
     assert.equal(o.account, null)
-    assert.deepEqual(options(['--skip', 'c,d']).run, ['a', 'b', 'e'])
+    assert.deepEqual(options(['--skip', 'c,d']).run, ['a', 'b', 'e', 'w'])
+  })
+  it('runs the watch pause alone, with a hub folder of its own', () => {
+    const o = options(['--only', 'w', '--hub-dir', 'hub-here'])
+    assert.deepEqual(o.run, ['w'])
+    assert.equal(o.hubDir, resolve('hub-here'))
+    assert.equal(options(['--only', 'w']).hubDir, null)
+  })
+})
+
+describe('the watch pause', () => {
+  it("holds a read across one hub tick and reports while it is held, inside the hub's limits", () => {
+    const plan = racePlan(WATCH_TIMINGS)
+    assert.ok(plan.fireAfterMs > WATCH_TIMINGS.everyMs && plan.fireAfterMs < plan.windowMs, 'the report goes after a tick has started its read, inside the hold window')
+    assert.ok(plan.holdMs > plan.fireAfterMs, 'the read is still held when the report goes')
+    assert.ok(plan.holdMs < 10_000, "the held read answers within the hub's status limit")
+    assert.equal(watchPauseEnv(), '2000,12000,20000')
+    assert.throws(() => racePlan({ everyMs: 9000, bedMs: 60_000, heatersMs: 90_000 }), /10 s status limit/)
+    assert.throws(() => racePlan({ everyMs: 2000, bedMs: 5000, heatersMs: 9000 }), /bed step/)
+  })
+
+  it("finds the bridge build's hub folder on each platform", () => {
+    assert.equal(hubDir({ platform: 'windows', env: { APPDATA: 'C:/Users/q/AppData/Roaming' } }), join('C:/Users/q/AppData/Roaming', 'app.slicerx.desktop.agent-bridge', 'hub'))
+    assert.equal(hubDir({ platform: 'linux', env: { XDG_DATA_HOME: '/tmp/p/data' } }), join('/tmp/p/data', 'app.slicerx.desktop.agent-bridge', 'hub'))
+    assert.equal(hubDir({ platform: 'macos', env: {}, home: '/Users/q' }), join('/Users/q', 'Library', 'Application Support', 'app.slicerx.desktop.agent-bridge', 'hub'))
+    assert.throws(() => hubDir({ platform: 'windows', env: {} }), /APPDATA/)
+  })
+
+  it('passes the bed, then the nozzle, after a pause that a held read raced', () => {
+    const log = ['set printing', 'status read held', 'pause', 'status read held', 'gcode M140 S0', 'gcode M104 S0']
+    assert.deepEqual(heaterSteps(log), { ok: true, paused: true, held: true, gcode: ['gcode M140 S0', 'gcode M104 S0'], why: '' })
+  })
+
+  it('names what went wrong: no steps (the dropped pause), the wrong order, a missing nozzle step, no race', () => {
+    assert.equal(heaterSteps(['status read held', 'pause']).why, 'no heater was turned off')
+    assert.match(heaterSteps(['pause', 'gcode M104 S0', 'gcode M140 S0']).why, /first step was gcode M104 S0/)
+    assert.equal(heaterSteps(['pause', 'gcode M140 S0']).why, 'the bed went off but the nozzle never did')
+    assert.match(heaterSteps(['pause', 'gcode M140 S0', 'gcode M104 S0', 'gcode G28']).why, /unexpected G-code/)
+    assert.equal(heaterSteps(['set printing']).paused, false)
+    assert.equal(heaterSteps(['pause', 'status read held', 'gcode M140 S0', 'gcode M104 S0']).held, false)
   })
 })
 

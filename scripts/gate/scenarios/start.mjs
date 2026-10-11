@@ -19,9 +19,13 @@ export async function appUp(s) {
   return health.value
 }
 
-/** True when the app's printer is the gate's A1 with a 0.4 mm nozzle. */
+/**
+ * True when the app's printer is the gate's A1 with a 0.4 mm nozzle. It reads the chosen printer only: the state's
+ * noPrinter is first-run's "skipped the printer step" note, which stays set on a profile that skipped it once (a reused
+ * macOS profile) even after a printer is added.
+ */
 export function isGatePrinter(st) {
-  return st.printer?.model === PRINTER.name && Number(st.printer?.nozzleMm) === PRINTER.nozzleMm && !st.printer?.noPrinter
+  return Boolean(st.printer?.id) && st.printer?.model === PRINTER.name && Number(st.printer?.nozzleMm) === PRINTER.nozzleMm
 }
 
 /** Goes through setup's hand-made printer form: search, the A1, no connection, Continue, then the rest of setup. */
@@ -121,12 +125,37 @@ export async function start(s) {
 // The slice's controls, which only Slice shows: the legend's Color by menu and its filament swatches.
 const SLICE_ONLY = ['legend-color-by', 'legend-slot']
 
+/** True when the plate has its objects and is not still loading them. */
+export function plateLoaded(st) {
+  return !st?.plate?.loading && (st?.plate?.objects?.length ?? 0) > 0
+}
+
+/**
+ * Waits for the default example plate to be on the plate: the app comes up before the example has loaded, and a slice
+ * then fails with "the plate is empty". Gives the last state and whether it timed out.
+ */
+export async function waitForPlate(s, { timeoutMs = 30_000, everyMs = 500 } = {}) {
+  let last = null
+  const r = await waitUntil(async () => {
+    last = await s.state()
+    return plateLoaded(last) ? last : null
+  }, { timeoutMs, everyMs })
+  return { state: r.value ?? last, waitedMs: r.waitedMs, timedOut: r.timedOut }
+}
+
 /** Model never shows the slice: after a slice, Model has no legend or swatches, and Slice shows them again. */
 async function modelHidesTheSlice(s) {
   if (!(await s.ids())['tab-model']) {
     s.info('no Model tab in this edition; the Model and Slice check is skipped')
     return
   }
+  const plate = await waitForPlate(s)
+  if (plate.timedOut) {
+    const objects = plate.state?.plate?.objects ?? []
+    s.check('the default example plate loads before the Model and Slice check', false, `after ${Math.round(plate.waitedMs / 1000)} s the plate is ${plate.state?.plate?.loading ? 'still loading' : 'empty'} (${objects.length} objects)`)
+    return
+  }
+  if (plate.waitedMs > 0) s.info(`the example plate loaded after ${(plate.waitedMs / 1000).toFixed(1)} s`, plate.state.plate.objects.map((o) => o.name))
   const sl = await s.call('app_slice', { timeoutMs: 600_000 })
   if (sl.error || sl.data?.status !== 'done') {
     s.check('the default plate slices before the Model and Slice check', false, sl.error ?? sl.data)

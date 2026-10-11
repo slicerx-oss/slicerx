@@ -27,11 +27,14 @@ permissions:
 
 # A cancelled required check recorded after a passing one keeps a pull request out of the merge queue, so the runs of
 # one pull request never cancel each other across these cases. Adding full-ci (also right after opening: gh and the web
-# both add labels just after the opened event) starts a run in a group of its own, beside the opened or pushed one. A run
-# that adds nothing (opened with full-ci already on it, so a labeled run follows, or labeled with any other label) goes
-# in another group and skips its jobs; a skipped check counts as passed.
+# both add labels just after the opened event) starts a run beside the opened or pushed one. A run that adds nothing
+# (opened with full-ci already on it, so a labeled run follows, or labeled with any other label) skips its jobs; a
+# skipped check counts as passed. Each run started by a label, and the opened run that defers to one, has a group of
+# its own (its run id): a pull request opened with labels gets one labeled event per label, sometimes two, all in the
+# same second, and in a shared group each newer one cancelled the one waiting before it. Those cancelled checks could be
+# the newest of their name, so the pull request stayed blocked with every real check passed.
 concurrency:
-  group: ci-${{ github.event.pull_request.number || github.ref }}${{ ((github.event.action == 'opened' && contains(github.event.pull_request.labels.*.name, 'full-ci')) || (github.event.action == 'labeled' && github.event.label.name != 'full-ci')) && '-again' || (github.event.action == 'labeled' && '-full-ci') || '' }}
+  group: ci-${{ github.event.pull_request.number || github.ref }}${{ (github.event.action == 'labeled' || (github.event.action == 'opened' && contains(github.event.pull_request.labels.*.name, 'full-ci'))) && format('-label-{0}', github.run_id) || '' }}
   # Only a pull request's superseded runs are cancelled. A merge queue entry's run is never cut short: the queue rebuilds
   # the same commit on the same ref when an entry is requeued, and a cancelled run's checks there failed the new entry.
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -271,7 +274,7 @@ jobs:
       - name: The default build has no bridge
         run: node apps/desktop/release/check-agent-bridge.mjs --manifest apps/desktop/src-tauri/Cargo.toml
 
-  # The engine's WASM module and its download budget (build-wasm.sh fails over 1048 KB gzip), then the web
+  # The engine's WASM module and its download budget (build-wasm.sh fails over 1056 KB gzip), then the web
   # bundle's size gate (apps/web/scripts/bundle-size.mjs runs at the end of its build).
   wasm:
     needs: detect

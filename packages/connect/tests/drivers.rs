@@ -380,6 +380,88 @@ async fn bambu_refused_project_start_says_why() {
     session.start(&rf, opts, &t).await.unwrap();
 }
 
+// A printer that refuses pause, resume or stop answers `result: fail` with its reason, as it does
+// a project start. The command fails with `refused` and the reason instead of reading as done, and
+// the printer keeps printing; once it accepts again, the pause goes through.
+#[tokio::test]
+async fn bambu_refused_pause_says_why() {
+    use serde_json::json;
+    use sx_connect::{Action, params};
+    let gate = Arc::new(MemoryGate::new());
+    let mocks = Mocks::start("bambu", &[]).await;
+    let mut cfg = config("bay-1", "bambu-lan", mocks.port("bambu"));
+    cfg.serial = Some(mocks.str("serial"));
+    cfg.credential_ref = Some("bambu-code".to_owned());
+    let sec = secrets(&[("bambu-code", mocks.str("accessCode"))]);
+    mocks.set_state("bambu", "printing").await;
+    let session = BambuConnector::new(gate.clone())
+        .connect(&cfg, &sec)
+        .await
+        .unwrap();
+    mocks
+        .control("/bambu", json!({ "refuseControl": "the printer is busy" }))
+        .await;
+    let t = gate.mint(Action::Pause, "bay-1", &params::printer("bay-1"));
+    match session.pause(&t).await {
+        Err(e) => {
+            assert_eq!(e.code(), ErrorCode::Refused);
+            assert!(e.to_string().contains("the printer is busy"), "{e}");
+        }
+        Ok(()) => panic!("a refused pause must fail"),
+    }
+    assert_eq!(mocks.state().await["bambu"]["state"], "printing");
+
+    mocks.control("/bambu", json!({ "refuseControl": null })).await;
+    let t = gate.mint(Action::Pause, "bay-1", &params::printer("bay-1"));
+    session.pause(&t).await.unwrap();
+    assert_eq!(mocks.state().await["bambu"]["state"], "paused");
+}
+
+// A plain G-code start (`gcode_file`) reads the printer's answer as a project start does: a
+// refusal fails with `refused` and the reason and the printer stays idle; accepted, it prints.
+#[tokio::test]
+async fn bambu_refused_gcode_start_says_why() {
+    use serde_json::json;
+    use sx_connect::{Action, params};
+    let gate = Arc::new(MemoryGate::new());
+    let mocks = Mocks::start("bambu", &[]).await;
+    let mut cfg = config("bay-1", "bambu-lan", mocks.port("bambu"));
+    cfg.serial = Some(mocks.str("serial"));
+    cfg.credential_ref = Some("bambu-code".to_owned());
+    cfg.ftp_port = Some(mocks.port("bambu-ftp"));
+    let sec = secrets(&[("bambu-code", mocks.str("accessCode"))]);
+    mocks.set_state("bambu", "idle").await;
+    let session = BambuConnector::new(gate.clone())
+        .connect(&cfg, &sec)
+        .await
+        .unwrap();
+    let file = job_file("cube.gcode", JobKind::Gcode);
+    let t = gate.mint(
+        Action::Upload,
+        "bay-1",
+        &params::upload("bay-1", &file.name, &file.sha256),
+    );
+    let rf = session.upload(file, &t).await.unwrap();
+    mocks
+        .control("/bambu", json!({ "refuse": "file not found" }))
+        .await;
+    let opts = StartOptions::default();
+    let t = gate.mint(Action::Start, "bay-1", &params::start("bay-1", &rf, &opts));
+    match session.start(&rf, opts.clone(), &t).await {
+        Err(e) => {
+            assert_eq!(e.code(), ErrorCode::Refused);
+            assert!(e.to_string().contains("file not found"), "{e}");
+        }
+        Ok(()) => panic!("a refused G-code start must fail"),
+    }
+    assert_eq!(mocks.state().await["bambu"]["state"], "idle");
+
+    mocks.control("/bambu", json!({ "refuse": null })).await;
+    let t = gate.mint(Action::Start, "bay-1", &params::start("bay-1", &rf, &opts));
+    session.start(&rf, opts, &t).await.unwrap();
+    assert_ne!(mocks.state().await["bambu"]["state"], "idle");
+}
+
 /// Connects to the Bambu fake after making it another printer through `/bambu`, uploads a
 /// .gcode.3mf and starts it with `slot_map`, and returns the session and the project start line.
 async fn bambu_as(
@@ -469,6 +551,70 @@ async fn bambu_a1_mini_without_ams_prints_from_the_external_spool() {
         "{line}"
     );
     assert!(line.contains("\"use_ams\":false"), "{line}");
+}
+
+// An H2D with both external spools loaded: the left (254) is slot 1 and the right (255) slot 2,
+// after the AMS and AMS HT slots, and a plate mapped to them goes out with each spool's own id in
+// `ams_mapping2` and -1 in `ams_mapping`.
+#[tokio::test]
+async fn bambu_h2d_prints_from_both_external_spools() {
+    let spec = serde_json::json!({ "model": "O1D", "external": { "type": "PETG", "color": "#202020" } });
+    let (_mocks, s, line) = bambu_as(spec, &[(0, "2"), (1, "1")]).await;
+    let st = s.status().await.unwrap();
+    let ids: Vec<(&str, Option<&str>)> = st
+        .slots
+        .iter()
+        .map(|x| (x.id.as_str(), x.material.as_deref()))
+        .collect();
+    assert_eq!(
+        &ids[ids.len() - 2..],
+        [("1", Some("TPU for AMS")), ("2", Some("PETG"))]
+    );
+    assert!(line.contains("\"ams_mapping\":[-1,-1]"), "{line}");
+    assert!(
+        line.contains("\"ams_mapping2\":[{\"ams_id\":255,\"slot_id\":0},{\"ams_id\":254,\"slot_id\":0}]"),
+        "{line}"
+    );
+    assert!(line.contains("\"use_ams\":false"), "{line}");
+}
+
+// A printer with one external spool has no slot 2: a plate mapped to it is refused before
+// anything is sent, never passed on as the right nozzle's spool of an H2.
+#[tokio::test]
+async fn bambu_refuses_slot_2_on_a_printer_with_one_external_spool() {
+    use sx_connect::{Action, params};
+    let gate = Arc::new(MemoryGate::new());
+    let mocks = Mocks::start("bambu", &[]).await;
+    mocks
+        .control("/bambu", serde_json::json!({ "model": "N1", "ams": "none", "external": { "type": "PLA", "color": "#ffffff" } }))
+        .await;
+    mocks.set_state("bambu", "idle").await;
+    let mut cfg = config("a1", "bambu-lan", mocks.port("bambu"));
+    cfg.serial = Some(mocks.str("serial"));
+    cfg.credential_ref = Some("bambu-code".to_owned());
+    cfg.ftp_port = Some(mocks.port("bambu-ftp"));
+    let sec = secrets(&[("bambu-code", mocks.str("accessCode"))]);
+    let session = BambuConnector::new(gate.clone())
+        .connect(&cfg, &sec)
+        .await
+        .unwrap();
+    let file = job_file("cube.gcode.3mf", JobKind::Gcode3mf);
+    let t = gate.mint(
+        Action::Upload,
+        "a1",
+        &params::upload("a1", &file.name, &file.sha256),
+    );
+    let rf = session.upload(file, &t).await.unwrap();
+    let opts = StartOptions {
+        slot_map: Some([(0, "2".to_owned())].into_iter().collect()),
+        ..StartOptions::default()
+    };
+    let t = gate.mint(Action::Start, "a1", &params::start("a1", &rf, &opts));
+    let e = session.start(&rf, opts, &t).await.unwrap_err();
+    assert_eq!(e.code(), ErrorCode::NotSupported);
+    assert!(e.to_string().contains("second external spool"), "{e}");
+    let log = mocks.state().await["bambu"]["log"].clone();
+    assert!(!log.to_string().contains("project_file"), "{log}");
 }
 
 // An H2D, found by an SSDP search sent to the fake, then connected: its report fills the model,

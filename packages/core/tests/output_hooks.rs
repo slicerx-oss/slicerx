@@ -40,6 +40,7 @@ fn slice(config: &Value) -> String {
     let mesh = Arc::new(Mesh {
         name: "box".into(),
         parts: vec![cuboid()],
+        ..Mesh::default()
     });
     let mut cfg = json!({"brim_width": 0, "skirt_loops": 0, "sparse_infill_density": 15});
     cfg.as_object_mut()
@@ -125,6 +126,7 @@ fn filename_format_names_the_file_in_the_report() {
     let mesh = Arc::new(Mesh {
         name: "box".into(),
         parts: vec![cuboid()],
+        ..Mesh::default()
     });
     let run = |config: Value, options: Value| {
         let mesh = mesh.clone();

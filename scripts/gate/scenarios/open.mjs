@@ -25,6 +25,26 @@ export async function openWithProgress(s, id) {
   return { r, ms, seen, toasts }
 }
 
+/**
+ * Opens the pane that holds the plate's object rows when it is shut, so a row is on screen: a window can start with it
+ * shut (the 0.2.4 Linux run's right pane was), and a row that is not drawn cannot be clicked. Which pane holds them
+ * depends on the look (the right pane or the settings sidebar, and a look can swap the sides), so each shut pane is
+ * opened through its edge tab, as a person would, until a row shows; a pane that had no rows is shut again. Returns
+ * whether a row is visible and the edge tabs it left open.
+ */
+export async function showObjects(s) {
+  if ((await s.one('object-select'))?.visible) return { shown: true, opened: [] }
+  for (const side of ['right', 'left']) {
+    const tab = `edge-tab-${side}`
+    const edge = await s.one(tab)
+    if (!edge?.visible || edge.expanded !== false) continue
+    await s.click(tab, edge.index)
+    if (await s.waitFor('object-select', 'visible', 10_000)) return { shown: true, opened: [tab] }
+    await s.click(tab, edge.index)
+  }
+  return { shown: await s.waitFor('object-select', 'visible', 10_000), opened: [] }
+}
+
 const alone = (state, listing) => {
   const objs = state?.plate?.objects ?? []
   return objs.length > 0 && objs.every((o) => o.vaultListing === listing)
@@ -65,7 +85,12 @@ export async function openSignedOut(s) {
   s.check('no example comes back with it', second.state.plate.objects.length >= 1 && !second.state.plate.objects.some((o) => !o.vaultListing))
   await s.shot('opened-cleared', 'Signed out: Cable clip opened on a cleared plate')
 
-  // A change: leave the object out of the print. Then another design asks first.
+  // A change: leave the object out of the print. Then another design asks first. The row's tools show on hover or
+  // focus only (with a mouse), so select the row first, as a person's pointer would reach the row before its eye. The
+  // rows are in the right pane, opened first when the window has it shut.
+  const objects = await showObjects(s)
+  s.check("the plate's objects list shows", objects.shown, objects.opened.length ? { opened: objects.opened } : undefined)
+  await s.click('object-select')
   await s.click('object-printable')
   const changed = await waitUntil(async () => ((await s.state()).plate.objects[0]?.printable === false ? true : null), { timeoutMs: 5000, everyMs: 200 })
   s.check('changed the plate (left the object out of the print)', !changed.timedOut)

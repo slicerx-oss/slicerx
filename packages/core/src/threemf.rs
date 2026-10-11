@@ -12,7 +12,8 @@
 //! not read yet.
 
 use crate::error::{Error, Result};
-use crate::mesh::{Mesh, MeshPart};
+use crate::mesh::{Mesh, MeshPart, MeshVolume};
+use crate::plate::VolumeRole;
 use std::collections::HashMap;
 
 /// Largest uncompressed entry accepted (a guard against ZIP bombs).
@@ -40,13 +41,23 @@ pub(crate) fn load_plates(bytes: &[u8], name: &str) -> Result<Vec<(u32, Mesh)>> 
     Ok(load_plate_objects(bytes, name)?
         .into_iter()
         .map(|(plate, objects)| {
-            (
-                plate,
-                Mesh {
+            (plate, {
+                let mut mesh = Mesh {
                     name: name.to_owned(),
-                    parts: objects.into_iter().flat_map(|o| o.parts).collect(),
-                },
-            )
+                    ..Mesh::default()
+                };
+                for o in objects {
+                    mesh.parts.extend(o.parts);
+                    mesh.volumes.extend(o.volumes);
+                    mesh.part_settings.extend(o.part_settings);
+                    for n in o.notes {
+                        if !mesh.notes.contains(&n) {
+                            mesh.notes.push(n);
+                        }
+                    }
+                }
+                mesh
+            })
         })
         .collect())
 }
@@ -70,6 +81,7 @@ pub(crate) fn load_plate_objects(bytes: &[u8], name: &str) -> Result<Vec<(u32, V
         .map_err(|e| Error::mesh(name, refused(&root, e)))?;
     let settings = zip.read("Metadata/model_settings.config").unwrap_or_default();
     let slots = slot_map(&settings);
+    let meta = project_parts(&settings);
     let plate_of = plate_map(&settings);
     let names = object_names(&settings);
     let scale = main.unit_scale;
@@ -79,10 +91,17 @@ pub(crate) fn load_plate_objects(bytes: &[u8], name: &str) -> Result<Vec<(u32, V
     for item in &main.build {
         let plate = plate_of.get(&item.object).copied().unwrap_or(1);
         let mut parts = Vec::new();
+        let mut volumes = Vec::new();
+        let mut with_settings = Vec::new();
+        let mut notes = Vec::new();
         let mut ctx = Resolve {
             zip: &zip,
             models: &mut models,
             parts: &mut parts,
+            volumes: &mut volumes,
+            with_settings: &mut with_settings,
+            notes: &mut notes,
+            meta: &meta,
             slots: &slots,
             name,
             work: &mut work,
@@ -99,7 +118,7 @@ pub(crate) fn load_plate_objects(bytes: &[u8], name: &str) -> Result<Vec<(u32, V
         }
         if (scale - 1.0).abs() > f32::EPSILON {
             // Positions and the painted pieces decoded on them move to millimeters together.
-            for p in &mut parts {
+            for p in parts.iter_mut().chain(volumes.iter_mut().map(|v| &mut v.part)) {
                 let facets = p
                     .paint
                     .iter_mut()
@@ -120,7 +139,26 @@ pub(crate) fn load_plate_objects(bytes: &[u8], name: &str) -> Result<Vec<(u32, V
             .or_else(|| main.objects.get(&item.object).map(|o| o.name.clone()))
             .filter(|n| !n.is_empty())
             .unwrap_or_else(|| name.to_owned());
-        plates.entry(plate).or_default().push(Mesh { name: own, parts });
+        // Settings go by part name; a part sharing its name with another is named after its id as well.
+        let mut part_settings = Vec::with_capacity(with_settings.len());
+        for (k, id, settings) in with_settings {
+            let shared = parts
+                .get(k)
+                .is_some_and(|p| parts.iter().filter(|q| q.name == p.name).count() > 1);
+            if let Some(p) = parts.get_mut(k) {
+                if shared {
+                    p.name = format!("{} #{id}", p.name);
+                }
+                part_settings.push((p.name.clone(), settings));
+            }
+        }
+        plates.entry(plate).or_default().push(Mesh {
+            name: own,
+            parts,
+            volumes,
+            part_settings,
+            notes,
+        });
     }
     if plates.is_empty() {
         return Err(Error::mesh(name, "the 3MF file has no printable objects"));
@@ -589,6 +627,12 @@ struct Resolve<'a> {
     zip: &'a Zip<'a>,
     models: &'a mut HashMap<String, Model>,
     parts: &'a mut Vec<MeshPart>,
+    /// The item's parts that do not print (cuts, modifiers, support volumes).
+    volumes: &'a mut Vec<MeshVolume>,
+    /// `(index in parts, part id, settings)` of the printed parts the project gives settings.
+    with_settings: &'a mut Vec<(usize, u32, serde_json::Value)>,
+    notes: &'a mut Vec<String>,
+    meta: &'a ProjectParts,
     slots: &'a HashMap<u32, u8>,
     name: &'a str,
     /// What is left of [`MAX_WORK`] for the whole file, charged per build item before it is placed.
@@ -667,97 +711,33 @@ impl Resolve<'_> {
                 .copied()
                 .unwrap_or(1)
                 .max(1);
-            let positions: Vec<[f32; 3]> = obj.positions.iter().map(|p| apply(&t, *p)).collect();
-            let n = obj.positions.len();
-            // Painted pieces in place (the part's own paint is skipped when it is the part's filament).
-            let paint: Vec<crate::paint::PaintFacet> = obj
-                .paint
-                .iter()
-                .filter_map(|(k, code)| {
-                    let tri = obj.triangles.get(*k)?;
-                    let corners = [
-                        *positions.get(tri[0] as usize)?,
-                        *positions.get(tri[1] as usize)?,
-                        *positions.get(tri[2] as usize)?,
-                    ];
-                    Some(crate::paint::decode(code, corners))
-                })
-                .flatten()
-                .filter(|f| f.state != slot)
-                .collect();
-            let decode_all = |list: &[(usize, String)]| -> Vec<crate::paint::PaintFacet> {
-                list.iter()
-                    .filter_map(|(k, code)| {
-                        let tri = obj.triangles.get(*k)?;
-                        let corners = [
-                            *positions.get(tri[0] as usize)?,
-                            *positions.get(tri[1] as usize)?,
-                            *positions.get(tri[2] as usize)?,
-                        ];
-                        Some(crate::paint::decode(code, corners))
-                    })
-                    .flatten()
-                    .collect()
-            };
-            let seam_paint = decode_all(&obj.seam_paint);
-            let fuzzy_paint = decode_all(&obj.fuzzy_paint);
-            let support_paint: Vec<crate::paint::PaintFacet> = obj
-                .support_paint
-                .iter()
-                .filter_map(|(k, code)| {
-                    let tri = obj.triangles.get(*k)?;
-                    let corners = [
-                        *positions.get(tri[0] as usize)?,
-                        *positions.get(tri[1] as usize)?,
-                        *positions.get(tri[2] as usize)?,
-                    ];
-                    Some(crate::paint::decode(code, corners))
-                })
-                .flatten()
-                .collect();
-            let triangles: Vec<[u32; 3]> = obj
-                .triangles
-                .iter()
-                .filter(|tri| tri.iter().all(|&i| (i as usize) < n))
-                .copied()
-                .collect();
-            // The texts by the index each painted triangle keeps once triangles outside the vertices are dropped.
-            let mut kept = Vec::with_capacity(obj.triangles.len());
-            let mut next = 0u32;
-            for tri in &obj.triangles {
-                kept.push(tri.iter().all(|&i| (i as usize) < n).then_some(next));
-                next += u32::from(kept.last().copied().flatten().is_some());
-            }
-            let mut paint_texts = Vec::new();
-            for (layer, list) in [
-                (0u8, &obj.paint),
-                (1, &obj.seam_paint),
-                (2, &obj.support_paint),
-                (3, &obj.fuzzy_paint),
-            ] {
-                for (k, code) in list {
-                    if let Some(Some(t)) = kept.get(*k) {
-                        paint_texts.push((layer, *t, code.clone()));
-                    }
-                }
-            }
             let name = if obj.name.is_empty() {
-                format!("part {}", self.parts.len() + 1)
+                format!("part {}", self.parts.len() + self.volumes.len() + 1)
             } else {
                 obj.name.clone()
             };
-            self.parts.push(MeshPart {
-                name,
-                slot,
-                color: None,
-                positions,
-                triangles,
-                paint,
-                support_paint,
-                seam_paint,
-                fuzzy_paint,
-                paint_texts,
-            });
+            // The project's part list lives as long as the file; read it apart from `self`, which `place` changes.
+            let meta = self.meta;
+            // An older project keeps every part of an object in one mesh, each a range of its triangles.
+            if let Some(ranges) = meta.range_parts(id) {
+                for info in ranges {
+                    let Some((first, last)) = info.range else {
+                        continue;
+                    };
+                    let sub = obj.triangle_range(first, last);
+                    if sub.triangles.is_empty() {
+                        continue;
+                    }
+                    let part_slot = info.slot.unwrap_or(slot).max(1);
+                    let part_name = info.name.clone().unwrap_or_else(|| name.clone());
+                    let part = make_part(&sub, &t, part_slot, part_name);
+                    self.place(part, info, top, id);
+                }
+            } else {
+                let part = make_part(obj, &t, slot, name);
+                let info = meta.part(top, id).cloned().unwrap_or_default();
+                self.place(part, &info, top, id);
+            }
         }
         for (child, child_path, ct) in &obj.components {
             let t2 = compose(ct, &t);
@@ -778,6 +758,391 @@ impl Resolve<'_> {
         }
         Ok(())
     }
+
+    /// Puts a loaded part where its type says: printed parts with their settings, the rest as volumes.
+    fn place(&mut self, part: MeshPart, info: &PartInfo, top: u32, id: u32) {
+        let shown = info.name.clone().unwrap_or_else(|| part.name.clone());
+        if let Some(other) = &info.unknown_type {
+            self.notes.push(format!(
+                "{shown}: part type {other} is not one this engine knows; it prints as a normal part"
+            ));
+        }
+        let meta = self.meta;
+        let object = meta.object(top);
+        // Keys the engine does not read are named once each, as a request's own object settings are.
+        let unread: Vec<&String> = object
+            .into_iter()
+            .flat_map(|o| o.keys())
+            .chain(info.settings.keys())
+            .filter(|k| {
+                !crate::config::READ_KEYS.contains(&k.as_str())
+                    && !crate::config::FUZZY_KEYS.contains(&k.as_str())
+            })
+            .collect();
+        for k in unread {
+            let line = format!("{k} is not applied by this engine (project part or object setting)");
+            if !self.notes.contains(&line) {
+                self.notes.push(line);
+            }
+        }
+        match info.role {
+            None => {
+                // The object's settings, then the part's own on top.
+                let mut settings = object.cloned().unwrap_or_default();
+                settings.extend(info.settings.iter().map(|(k, v)| (k.clone(), v.clone())));
+                if !settings.is_empty() {
+                    self.with_settings
+                        .push((self.parts.len(), id, serde_json::Value::Object(settings)));
+                }
+                self.parts.push(part);
+            }
+            Some(role) => {
+                let settings = if role == VolumeRole::Modifier {
+                    // A modifier's region keeps the object's settings under the modifier's own.
+                    let mut s = object.cloned().unwrap_or_default();
+                    s.extend(info.settings.iter().map(|(k, v)| (k.clone(), v.clone())));
+                    serde_json::Value::Object(s)
+                } else {
+                    if !info.settings.is_empty() {
+                        self.notes.push(format!(
+                            "{shown}: settings on a {} are not used ({})",
+                            role_name(role),
+                            info.settings.keys().cloned().collect::<Vec<_>>().join(", ")
+                        ));
+                    }
+                    serde_json::Value::Null
+                };
+                self.volumes.push(MeshVolume {
+                    role,
+                    part: MeshPart { name: shown, ..part },
+                    settings,
+                });
+            }
+        }
+    }
+}
+
+/// One mesh object as a part placed by `t`, with its paint decoded in place.
+fn make_part(obj: &Object, t: &Transform, slot: u8, name: String) -> MeshPart {
+    let positions: Vec<[f32; 3]> = obj.positions.iter().map(|p| apply(t, *p)).collect();
+    let n = obj.positions.len();
+    let decode_all = |list: &[(usize, String)]| -> Vec<crate::paint::PaintFacet> {
+        list.iter()
+            .filter_map(|(k, code)| {
+                let tri = obj.triangles.get(*k)?;
+                let corners = [
+                    *positions.get(tri[0] as usize)?,
+                    *positions.get(tri[1] as usize)?,
+                    *positions.get(tri[2] as usize)?,
+                ];
+                Some(crate::paint::decode(code, corners))
+            })
+            .flatten()
+            .collect()
+    };
+    // Painted pieces in place (the part's own paint is skipped when it is the part's filament).
+    let paint: Vec<crate::paint::PaintFacet> = decode_all(&obj.paint)
+        .into_iter()
+        .filter(|f| f.state != slot)
+        .collect();
+    let seam_paint = decode_all(&obj.seam_paint);
+    let fuzzy_paint = decode_all(&obj.fuzzy_paint);
+    let support_paint = decode_all(&obj.support_paint);
+    let triangles: Vec<[u32; 3]> = obj
+        .triangles
+        .iter()
+        .filter(|tri| tri.iter().all(|&i| (i as usize) < n))
+        .copied()
+        .collect();
+    // The texts by the index each painted triangle keeps once triangles outside the vertices are dropped.
+    let mut kept = Vec::with_capacity(obj.triangles.len());
+    let mut next = 0u32;
+    for tri in &obj.triangles {
+        kept.push(tri.iter().all(|&i| (i as usize) < n).then_some(next));
+        next += u32::from(kept.last().copied().flatten().is_some());
+    }
+    let mut paint_texts = Vec::new();
+    for (layer, list) in [
+        (0u8, &obj.paint),
+        (1, &obj.seam_paint),
+        (2, &obj.support_paint),
+        (3, &obj.fuzzy_paint),
+    ] {
+        for (k, code) in list {
+            if let Some(Some(t)) = kept.get(*k) {
+                paint_texts.push((layer, *t, code.clone()));
+            }
+        }
+    }
+    MeshPart {
+        name,
+        slot,
+        color: None,
+        positions,
+        triangles,
+        paint,
+        support_paint,
+        seam_paint,
+        fuzzy_paint,
+        paint_texts,
+    }
+}
+
+impl Object {
+    /// Triangles `first..=last` of this object as an object of their own (an older project's part), with the
+    /// paint of those triangles.
+    fn triangle_range(&self, first: u32, last: u32) -> Self {
+        let (first, last) = (first as usize, last as usize);
+        let take = |list: &[(usize, String)]| -> Vec<(usize, String)> {
+            list.iter()
+                .filter(|(k, _)| (first..=last).contains(k))
+                .map(|(k, s)| (k - first, s.clone()))
+                .collect()
+        };
+        // Only the vertices these triangles use, so the part's size is its own.
+        let picked = self
+            .triangles
+            .get(first..=last.min(self.triangles.len().saturating_sub(1)))
+            .unwrap_or_default();
+        let mut index: HashMap<u32, u32> = HashMap::new();
+        let mut positions = Vec::new();
+        let mut triangles = Vec::with_capacity(picked.len());
+        for tri in picked {
+            let mut out = [0u32; 3];
+            for (o, &i) in out.iter_mut().zip(tri) {
+                *o = *index.entry(i).or_insert_with(|| {
+                    positions.push(self.positions.get(i as usize).copied().unwrap_or_default());
+                    u32::try_from(positions.len() - 1).unwrap_or(u32::MAX)
+                });
+            }
+            triangles.push(out);
+        }
+        Self {
+            positions,
+            triangles,
+            paint: take(&self.paint),
+            support_paint: take(&self.support_paint),
+            seam_paint: take(&self.seam_paint),
+            fuzzy_paint: take(&self.fuzzy_paint),
+            components: Vec::new(),
+            name: self.name.clone(),
+        }
+    }
+}
+
+/// What a project's `Metadata/model_settings.config` says about one part.
+#[derive(Debug, Clone, Default)]
+struct PartInfo {
+    /// `None` for a part that prints.
+    role: Option<VolumeRole>,
+    /// The type text when it is not one of the known ones (the part then prints).
+    unknown_type: Option<String>,
+    name: Option<String>,
+    /// The part's own setting overrides.
+    settings: serde_json::Map<String, serde_json::Value>,
+    /// An older project's part: triangles `first..=last` of its object's mesh, and its filament.
+    range: Option<(u32, u32)>,
+    slot: Option<u8>,
+}
+
+/// The parts, part ranges and object settings of a project.
+#[derive(Debug, Default)]
+struct ProjectParts {
+    /// `(object id, part id, part)`: the build object and the mesh object a component places. A project has tens
+    /// of parts, so lists do (and keep the engine's WebAssembly build small).
+    parts: Vec<(u32, u32, PartInfo)>,
+    /// Older projects: per object id, the parts as triangle ranges of the object's own mesh, in file order.
+    ranges: Vec<(u32, Vec<PartInfo>)>,
+    /// Each object's own setting overrides.
+    objects: Vec<(u32, serde_json::Map<String, serde_json::Value>)>,
+}
+
+impl ProjectParts {
+    /// An older project's parts of object `id`, as triangle ranges of its mesh.
+    fn range_parts(&self, id: u32) -> Option<&Vec<PartInfo>> {
+        self.ranges
+            .iter()
+            .find(|(k, l)| *k == id && !l.is_empty())
+            .map(|(_, l)| l)
+    }
+
+    fn part(&self, object: u32, id: u32) -> Option<&PartInfo> {
+        self.parts
+            .iter()
+            .find(|(o, p, _)| (*o, *p) == (object, id))
+            .map(|(_, _, info)| info)
+    }
+
+    fn object(&self, id: u32) -> Option<&serde_json::Map<String, serde_json::Value>> {
+        self.objects.iter().find(|(k, _)| *k == id).map(|(_, m)| m)
+    }
+}
+
+/// Part metadata that describes the part rather than setting how it prints.
+const PART_KEYS: &[&str] = &[
+    "name",
+    "matrix",
+    "mesh_shared",
+    "extruder",
+    "volume_type",
+    "part_type",
+    "source_file",
+    "source_object_id",
+    "source_volume_id",
+    "source_offset_x",
+    "source_offset_y",
+    "source_offset_z",
+    "source_in_inches",
+    "source_in_meters",
+];
+
+/// Object metadata that describes the object rather than setting how it prints.
+const OBJECT_KEYS: &[&str] = &["name", "extruder", "module"];
+
+/// The type a part's `subtype` text names: `None` prints, `Err` is a text this engine does not know.
+fn part_role(text: &str) -> std::result::Result<Option<VolumeRole>, ()> {
+    match text {
+        "" | "normal_part" => Ok(None),
+        "negative_part" => Ok(Some(VolumeRole::Negative)),
+        "modifier_part" => Ok(Some(VolumeRole::Modifier)),
+        "support_blocker" => Ok(Some(VolumeRole::SupportBlocker)),
+        "support_enforcer" => Ok(Some(VolumeRole::SupportEnforcer)),
+        _ => Err(()),
+    }
+}
+
+/// A role as people read it, for warnings.
+fn role_name(role: VolumeRole) -> &'static str {
+    match role {
+        VolumeRole::Negative => "negative part",
+        VolumeRole::Modifier => "modifier",
+        VolumeRole::SupportBlocker => "support blocker",
+        VolumeRole::SupportEnforcer => "support enforcer",
+    }
+}
+
+impl PartInfo {
+    fn set_type(&mut self, text: &str) {
+        if let Ok(role) = part_role(text) {
+            self.role = role;
+            self.unknown_type = None;
+        } else {
+            self.role = None;
+            self.unknown_type = Some(text.to_owned());
+        }
+    }
+}
+
+/// Reads part types, part settings and object settings from Bambu Studio and `OrcaSlicer` project metadata:
+/// `<object id>` with `<metadata>` and `<part id subtype>` (or an older project's `<volume firstid lastid>`)
+/// entries. A part type given as `volume_type` or `part_type` metadata replaces the `subtype` attribute.
+fn project_parts(xml: &[u8]) -> ProjectParts {
+    let mut out = ProjectParts::default();
+    let mut object: Option<u32> = None;
+    // The part being read: its id (for `<part>`) and what is known so far.
+    let mut part: Option<(Option<u32>, PartInfo)> = None;
+    for t in tags(xml) {
+        match (t.name, t.closing) {
+            ("object", false) => object = t.attr("id").and_then(|v| v.trim().parse().ok()),
+            ("object", true) => object = None,
+            ("part" | "volume", false) if object.is_some() => {
+                let mut info = PartInfo::default();
+                info.set_type(t.attr("subtype").unwrap_or(""));
+                let last = t.attr("lastid").and_then(|v| v.trim().parse::<u32>().ok());
+                let first = t.attr("firstid").and_then(|v| v.trim().parse::<u32>().ok());
+                let id = t.attr("id").and_then(|v| v.trim().parse::<u32>().ok());
+                if t.name == "volume"
+                    && let (Some(f), Some(l)) = (first, last)
+                    && l > 0
+                {
+                    info.range = Some((f, l));
+                }
+                part = Some((id, info));
+            }
+            ("part" | "volume", true) => finish_part(&mut out, object, part.take()),
+            ("metadata", false) => {
+                let (Some(k), Some(v)) = (t.attr("key"), t.attr("value")) else {
+                    continue;
+                };
+                let v = unescape(v);
+                match (&mut part, object) {
+                    (Some((_, info)), _) => match k {
+                        "name" => info.name = Some(v),
+                        "volume_type" | "part_type" => info.set_type(&v),
+                        "extruder" => info.slot = v.trim().parse().ok(),
+                        k if PART_KEYS.contains(&k) => {}
+                        k => {
+                            info.settings.insert(k.to_owned(), serde_json::Value::String(v));
+                        }
+                    },
+                    (None, Some(o)) if !OBJECT_KEYS.contains(&k) => {
+                        let at = out.objects.iter().position(|(k, _)| *k == o).unwrap_or_else(|| {
+                            out.objects.push((o, serde_json::Map::new()));
+                            out.objects.len() - 1
+                        });
+                        if let Some((_, map)) = out.objects.get_mut(at) {
+                            map.insert(k.to_owned(), serde_json::Value::String(v));
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            _ => {}
+        }
+    }
+    out
+}
+
+fn finish_part(out: &mut ProjectParts, object: Option<u32>, part: Option<(Option<u32>, PartInfo)>) {
+    let (Some(o), Some((id, info))) = (object, part) else {
+        return;
+    };
+    if info.range.is_some() {
+        match out.ranges.iter_mut().find(|(k, _)| *k == o) {
+            Some((_, list)) => list.push(info),
+            None => out.ranges.push((o, vec![info])),
+        }
+    } else if let Some(id) = id {
+        out.parts.retain(|(a, b, _)| (*a, *b) != (o, id));
+        out.parts.push((o, id, info));
+    }
+}
+
+/// XML's five named entities and numeric references, as metadata values may carry them.
+fn unescape(s: &str) -> String {
+    if !s.contains('&') {
+        return s.to_owned();
+    }
+    let mut out = String::with_capacity(s.len());
+    let mut rest = s;
+    while let Some(i) = rest.find('&') {
+        out.push_str(&rest[..i]);
+        let tail = &rest[i..];
+        let Some(end) = tail.find(';') else {
+            out.push_str(tail);
+            return out;
+        };
+        let ent = &tail[1..end];
+        let ch = match ent {
+            "amp" => Some('&'),
+            "lt" => Some('<'),
+            "gt" => Some('>'),
+            "quot" => Some('"'),
+            "apos" => Some('\''),
+            _ => ent
+                .strip_prefix("#x")
+                .and_then(|h| u32::from_str_radix(h, 16).ok())
+                .or_else(|| ent.strip_prefix('#').and_then(|d| d.parse().ok()))
+                .and_then(char::from_u32),
+        };
+        match ch {
+            Some(c) => out.push(c),
+            None => out.push_str(&tail[..=end]),
+        }
+        rest = &tail[end + 1..];
+    }
+    out.push_str(rest);
+    out
 }
 
 /// One XML tag: name, attributes and whether it closes an element.
@@ -1056,6 +1421,392 @@ mod tests {
         out.extend_from_slice(&cd_at.to_le_bytes());
         out.extend_from_slice(&[0, 0]);
         out
+    }
+
+    /// A box as a 3MF mesh object with id `id`.
+    fn box_object(id: u32, lo: [f32; 3], hi: [f32; 3]) -> String {
+        use std::fmt::Write as _;
+        let v: Vec<[f32; 3]> = (0..8)
+            .map(|i| {
+                [
+                    if i & 1 == 0 { lo[0] } else { hi[0] },
+                    if i & 2 == 0 { lo[1] } else { hi[1] },
+                    if i & 4 == 0 { lo[2] } else { hi[2] },
+                ]
+            })
+            .collect();
+        let tris = [
+            [0, 2, 1],
+            [1, 2, 3],
+            [4, 5, 6],
+            [5, 7, 6],
+            [0, 1, 4],
+            [1, 5, 4],
+            [2, 6, 3],
+            [3, 6, 7],
+            [0, 4, 2],
+            [2, 4, 6],
+            [1, 3, 5],
+            [3, 7, 5],
+        ];
+        let vs = v.iter().fold(String::new(), |mut acc, p| {
+            let _ = write!(acc, r#"<vertex x="{}" y="{}" z="{}"/>"#, p[0], p[1], p[2]);
+            acc
+        });
+        let ts = tris.iter().fold(String::new(), |mut acc, t| {
+            let _ = write!(acc, r#"<triangle v1="{}" v2="{}" v3="{}"/>"#, t[0], t[1], t[2]);
+            acc
+        });
+        format!(
+            r#"<object id="{id}" type="model"><mesh><vertices>{vs}</vertices><triangles>{ts}</triangles></mesh></object>"#
+        )
+    }
+
+    /// A Bambu-layout project: build object 10 made of one component per box (mesh objects 1, 2, ...), and
+    /// `settings` as `Metadata/model_settings.config`.
+    fn project(boxes: &[([f32; 3], [f32; 3])], settings: &str) -> Vec<u8> {
+        use std::fmt::Write as _;
+        let objects: String = boxes
+            .iter()
+            .zip(1u32..)
+            .map(|((lo, hi), id)| box_object(id, *lo, *hi))
+            .collect();
+        let sub = format!(r#"<model unit="millimeter"><resources>{objects}</resources></model>"#);
+        let comps = (1..=boxes.len()).fold(String::new(), |mut acc, id| {
+            let _ = write!(
+                acc,
+                r#"<component p:path="/3D/Objects/object_1.model" objectid="{id}" transform="1 0 0 0 1 0 0 0 1 0 0 0"/>"#
+            );
+            acc
+        });
+        let main = format!(
+            r#"<model unit="millimeter" xmlns:p="http://schemas.microsoft.com/3dmanufacturing/production/2015/06"><resources><object id="10" type="model"><components>{comps}</components></object></resources><build><item objectid="10"/></build></model>"#
+        );
+        zip(&[
+            ("3D/3dmodel.model", main.as_bytes(), true),
+            ("3D/Objects/object_1.model", sub.as_bytes(), true),
+            ("Metadata/model_settings.config", settings.as_bytes(), false),
+        ])
+    }
+
+    const BODY: ([f32; 3], [f32; 3]) = ([0.0, 0.0, 0.0], [20.0, 20.0, 10.0]);
+
+    #[test]
+    fn part_types_load_as_volumes_and_only_printed_parts_count() {
+        let settings = r#"<config><object id="10"><metadata key="name" value="subtypes"/>
+<part id="1" subtype="normal_part"><metadata key="name" value="body"/></part>
+<part id="2" subtype="negative_part"><metadata key="name" value="notch"/></part>
+<part id="3" subtype="modifier_part"><metadata key="name" value="dense"/><metadata key="sparse_infill_density" value="80%"/></part>
+<part id="4" subtype="support_blocker"><metadata key="name" value="no support"/></part>
+<part id="5" subtype="support_enforcer"/>
+</object></config>"#;
+        let bytes = project(
+            &[
+                BODY,
+                ([17.0, 17.0, 4.0], [23.0, 23.0, 10.0]),
+                ([0.0, 0.0, 0.0], [10.0, 20.0, 30.0]),
+                ([30.0, 10.0, 0.0], [36.0, 16.0, 4.0]),
+                ([30.0, 20.0, -2.0], [36.0, 26.0, 4.0]),
+            ],
+            settings,
+        );
+        let mesh = Mesh::load(&bytes, "subtypes.3mf").unwrap();
+        assert_eq!(mesh.parts.len(), 1, "only the normal part prints");
+        let roles: Vec<(VolumeRole, &str)> = mesh
+            .volumes
+            .iter()
+            .map(|v| (v.role, v.part.name.as_str()))
+            .collect();
+        assert_eq!(
+            roles,
+            [
+                (VolumeRole::Negative, "notch"),
+                (VolumeRole::Modifier, "dense"),
+                (VolumeRole::SupportBlocker, "no support"),
+                (VolumeRole::SupportEnforcer, "part 5"),
+            ]
+        );
+        assert_eq!(
+            mesh.volumes[1].settings,
+            serde_json::json!({ "sparse_infill_density": "80%" })
+        );
+        assert!(mesh.volumes[0].settings.is_null());
+        // A modifier above the top, a cut sticking out and a volume under the bed move nothing: the object is
+        // its printed part.
+        assert_eq!(mesh.bounds(), Some(([0.0, 0.0, 0.0], [20.0, 20.0, 10.0])));
+        assert!(mesh.notes.is_empty(), "{:?}", mesh.notes);
+        assert!(mesh.part_settings.is_empty());
+        // On a plate they are the object's volumes, in the object's space.
+        let plate = crate::plate::Plate::single(mesh);
+        let o = &plate.objects[0];
+        assert_eq!(o.volumes.len(), 4);
+        assert!(o.volumes.iter().all(|v| v.transform.is_none()));
+    }
+
+    #[test]
+    fn a_negative_part_listed_first_is_still_a_cut() {
+        let settings = r#"<config><object id="10"><part id="1" subtype="negative_part"/><part id="2" subtype="normal_part"/></object></config>"#;
+        let bytes = project(&[([5.0, 5.0, -1.0], [15.0, 15.0, 11.0]), BODY], settings);
+        let mesh = Mesh::load(&bytes, "first.3mf").unwrap();
+        assert_eq!(mesh.parts.len(), 1);
+        assert_eq!(mesh.volumes.len(), 1);
+        assert_eq!(mesh.volumes[0].role, VolumeRole::Negative);
+    }
+
+    #[test]
+    fn unknown_part_types_print_and_are_named() {
+        let settings = r#"<config><object id="10">
+<part id="1" subtype="banana_part"><metadata key="name" value="odd"/><metadata key="not_a_real_key" value="1"/></part>
+<part id="2" subtype=""/>
+</object></config>"#;
+        let bytes = project(&[BODY, ([30.0, 0.0, 0.0], [40.0, 10.0, 10.0])], settings);
+        let mesh = Mesh::load(&bytes, "odd.3mf").unwrap();
+        assert_eq!(mesh.parts.len(), 2, "an unknown or empty type prints");
+        assert!(mesh.volumes.is_empty());
+        assert!(
+            mesh.notes
+                .iter()
+                .any(|n| n.contains("odd") && n.contains("banana_part")),
+            "{:?}",
+            mesh.notes
+        );
+        assert!(
+            mesh.notes.iter().any(|n| n.contains("not_a_real_key")),
+            "{:?}",
+            mesh.notes
+        );
+    }
+
+    #[test]
+    fn part_type_metadata_replaces_the_subtype() {
+        for key in ["volume_type", "part_type"] {
+            let settings = format!(
+                r#"<config><object id="10"><part id="1" subtype="normal_part"/><part id="2" subtype="normal_part"><metadata key="{key}" value="support_blocker"/></part></object></config>"#
+            );
+            let bytes = project(&[BODY, ([0.0, 0.0, 10.0], [20.0, 20.0, 12.0])], &settings);
+            let mesh = Mesh::load(&bytes, "legacy.3mf").unwrap();
+            assert_eq!(mesh.parts.len(), 1, "{key}");
+            assert_eq!(mesh.volumes[0].role, VolumeRole::SupportBlocker, "{key}");
+        }
+    }
+
+    #[test]
+    fn object_settings_go_under_part_settings() {
+        // Two printed parts with the same name: the one with settings of its own gets its id in its name.
+        let settings = r#"<config><object id="10"><metadata key="name" value="obj"/><metadata key="extruder" value="1"/><metadata key="wall_loops" value="2"/><metadata key="sparse_infill_density" value="20%"/>
+<part id="1" subtype="normal_part"><metadata key="wall_loops" value="3"/><metadata key="matrix" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1"/><metadata key="source_object_id" value="0"/></part>
+<part id="2" subtype="normal_part"/>
+<part id="3" subtype="modifier_part"><metadata key="wall_loops" value="6"/></part>
+</object></config>"#;
+        let bytes = project(
+            &[
+                BODY,
+                ([30.0, 0.0, 0.0], [40.0, 10.0, 10.0]),
+                ([0.0, 0.0, 5.0], [20.0, 20.0, 10.0]),
+            ],
+            settings,
+        );
+        let mesh = Mesh::load(&bytes, "ladder.3mf").unwrap();
+        assert_eq!(mesh.parts.len(), 2);
+        // Both printed parts carry the object's settings; the first its own wall count over them.
+        assert_eq!(mesh.part_settings.len(), 2);
+        let first = &mesh.part_settings[0];
+        assert_eq!(first.0, mesh.parts[0].name);
+        assert_ne!(
+            mesh.parts[0].name, mesh.parts[1].name,
+            "settings go by name, so the names differ"
+        );
+        assert_eq!(
+            first.1,
+            serde_json::json!({ "wall_loops": "3", "sparse_infill_density": "20%" })
+        );
+        assert_eq!(
+            mesh.part_settings[1].1,
+            serde_json::json!({ "wall_loops": "2", "sparse_infill_density": "20%" })
+        );
+        // The modifier keeps the object's settings under its own.
+        assert_eq!(
+            mesh.volumes[0].settings,
+            serde_json::json!({ "wall_loops": "6", "sparse_infill_density": "20%" })
+        );
+    }
+
+    #[test]
+    fn an_older_project_splits_its_mesh_by_triangle_ranges() {
+        // One mesh object of two boxes (12 triangles each), the second a negative part.
+        let a = box_object(1, [0.0, 0.0, 0.0], [20.0, 20.0, 10.0]);
+        let b = box_object(1, [5.0, 5.0, -1.0], [15.0, 15.0, 11.0]);
+        let verts =
+            |s: &str| s[s.find("<vertices>").unwrap() + 10..s.find("</vertices>").unwrap()].to_owned();
+        let tris = |s: &str, off: u32| -> String {
+            use std::fmt::Write as _;
+            let body = &s[s.find("<triangles>").unwrap() + 11..s.find("</triangles>").unwrap()];
+            body.split("/>")
+                .filter(|t| t.contains("v1"))
+                .fold(String::new(), |mut acc, t| {
+                    let n: Vec<u32> = t.split('"').filter_map(|x| x.parse().ok()).collect();
+                    let _ = write!(
+                        acc,
+                        r#"<triangle v1="{}" v2="{}" v3="{}"/>"#,
+                        n[0] + off,
+                        n[1] + off,
+                        n[2] + off
+                    );
+                    acc
+                })
+        };
+        let model = format!(
+            r#"<model unit="millimeter"><resources><object id="1" type="model"><mesh><vertices>{}{}</vertices><triangles>{}{}</triangles></mesh></object></resources><build><item objectid="1"/></build></model>"#,
+            verts(&a),
+            verts(&b),
+            tris(&a, 0),
+            tris(&b, 8)
+        );
+        let settings = r#"<config><object id="1"><metadata key="name" value="old"/>
+<volume firstid="0" lastid="11"><metadata key="name" value="body"/><metadata key="extruder" value="2"/></volume>
+<volume firstid="12" lastid="23"><metadata key="name" value="hole"/><metadata key="volume_type" value="negative_part"/></volume>
+</object></config>"#;
+        let bytes = zip(&[
+            ("3D/3dmodel.model", model.as_bytes(), true),
+            ("Metadata/model_settings.config", settings.as_bytes(), false),
+        ]);
+        let mesh = Mesh::load(&bytes, "old.3mf").unwrap();
+        assert_eq!(mesh.parts.len(), 1);
+        assert_eq!(mesh.parts[0].name, "body");
+        assert_eq!(mesh.parts[0].slot, 2);
+        assert_eq!(mesh.parts[0].triangles.len(), 12);
+        assert_eq!(mesh.volumes.len(), 1);
+        assert_eq!(mesh.volumes[0].role, VolumeRole::Negative);
+        assert_eq!(mesh.volumes[0].part.triangles.len(), 12);
+        assert_eq!(mesh.bounds(), Some(([0.0, 0.0, 0.0], [20.0, 20.0, 10.0])));
+    }
+
+    #[test]
+    fn each_plate_keeps_its_own_part_types() {
+        // Objects 10 and 20 on plates 1 and 2, each a body with a negative part; their part ids repeat.
+        let sub = format!(
+            r#"<model unit="millimeter"><resources>{}{}</resources></model>"#,
+            box_object(1, [0.0, 0.0, 0.0], [20.0, 20.0, 10.0]),
+            box_object(2, [5.0, 5.0, -1.0], [15.0, 15.0, 11.0])
+        );
+        let comp = |id: u32| {
+            format!(
+                r#"<component p:path="/3D/Objects/object_1.model" objectid="{id}" transform="1 0 0 0 1 0 0 0 1 0 0 0"/>"#
+            )
+        };
+        let main = format!(
+            r#"<model unit="millimeter" xmlns:p="http://schemas.microsoft.com/3dmanufacturing/production/2015/06"><resources>
+<object id="10" type="model"><components>{a}{b}</components></object>
+<object id="20" type="model"><components>{a}{b}</components></object>
+</resources><build><item objectid="10"/><item objectid="20" transform="1 0 0 0 1 0 0 0 1 300 0 0"/></build></model>"#,
+            a = comp(1),
+            b = comp(2)
+        );
+        let settings = r#"<config>
+<object id="10"><part id="1" subtype="normal_part"/><part id="2" subtype="negative_part"/></object>
+<object id="20"><part id="1" subtype="normal_part"/><part id="2" subtype="modifier_part"><metadata key="wall_loops" value="5"/></part></object>
+<plate><metadata key="plater_id" value="1"/><model_instance><metadata key="object_id" value="10"/></model_instance></plate>
+<plate><metadata key="plater_id" value="2"/><model_instance><metadata key="object_id" value="20"/></model_instance></plate>
+</config>"#;
+        let bytes = zip(&[
+            ("3D/3dmodel.model", main.as_bytes(), true),
+            ("3D/Objects/object_1.model", sub.as_bytes(), true),
+            ("Metadata/model_settings.config", settings.as_bytes(), false),
+        ]);
+        let plates = load_plates(&bytes, "two.3mf").unwrap();
+        assert_eq!(plates.len(), 2);
+        let (first_plate, first) = &plates[0];
+        let (second_plate, second) = &plates[1];
+        assert_eq!((*first_plate, *second_plate), (1, 2));
+        assert_eq!(first.volumes.len(), 1);
+        assert_eq!(first.volumes[0].role, VolumeRole::Negative);
+        assert_eq!(second.volumes.len(), 1);
+        assert_eq!(second.volumes[0].role, VolumeRole::Modifier);
+        assert_eq!(
+            second.volumes[0].settings,
+            serde_json::json!({ "wall_loops": "5" })
+        );
+        // Plate 2's volume sits with its object, 300 mm along.
+        let x0 = second.volumes[0]
+            .part
+            .positions
+            .iter()
+            .map(|p| p[0])
+            .fold(f32::MAX, f32::min);
+        assert!((x0 - 305.0).abs() < 1e-3, "{x0}");
+        // One build item per mesh keeps its volumes too.
+        let items = load_plate_objects(&bytes, "two.3mf").unwrap();
+        assert_eq!(items[1].1[0].volumes.len(), 1);
+    }
+
+    #[test]
+    fn volumes_and_part_settings_are_part_of_the_content_hash() {
+        let plain = r#"<config><object id="10"><part id="1" subtype="normal_part"/><part id="2" subtype="normal_part"/></object></config>"#;
+        let cut = r#"<config><object id="10"><part id="1" subtype="normal_part"/><part id="2" subtype="negative_part"/></object></config>"#;
+        let boxes = [BODY, ([5.0, 5.0, -1.0], [15.0, 15.0, 11.0])];
+        let a = Mesh::load(&project(&boxes, plain), "a.3mf").unwrap();
+        let b = Mesh::load(&project(&boxes, cut), "b.3mf").unwrap();
+        assert_ne!(a.content_hash(), b.content_hash());
+        // Without volumes or settings the hash is the parts' alone, as before.
+        let parts_only = Mesh {
+            name: a.name.clone(),
+            parts: a.parts.clone(),
+            ..Mesh::default()
+        };
+        assert_eq!(a.content_hash(), parts_only.content_hash());
+    }
+
+    #[test]
+    fn a_raw_copy_keeps_volumes_part_settings_and_notes() {
+        // The web build hands later workers a raw copy of a loaded mesh; a copy without its volumes would print
+        // the cut solid and drop the modifier in that worker's layers.
+        let settings = r#"<config><object id="10"><metadata key="wall_loops" value="3"/>
+<part id="1" subtype="normal_part"/>
+<part id="2" subtype="negative_part"><metadata key="name" value="hole"/></part>
+<part id="3" subtype="modifier_part"><metadata key="sparse_infill_density" value="80%"/></part>
+<part id="4" subtype="banana_part"/>
+</object></config>"#;
+        let mesh = Mesh::load(
+            &project(
+                &[
+                    BODY,
+                    ([5.0, 5.0, -1.0], [15.0, 15.0, 11.0]),
+                    ([0.0, 0.0, 0.0], [10.0, 20.0, 10.0]),
+                    ([30.0, 0.0, 0.0], [40.0, 10.0, 10.0]),
+                ],
+                settings,
+            ),
+            "raw.3mf",
+        )
+        .unwrap();
+        assert_eq!(mesh.volumes.len(), 2);
+        assert!(!mesh.part_settings.is_empty() && !mesh.notes.is_empty());
+        let copy = Mesh::load(&mesh.to_raw(), "raw.3mf").unwrap();
+        assert_eq!(copy.content_hash(), mesh.content_hash());
+        assert_eq!(copy.volumes.len(), 2);
+        assert_eq!(copy.volumes[0].role, VolumeRole::Negative);
+        assert_eq!(copy.volumes[0].part.name, "hole");
+        assert_eq!(copy.volumes[0].part.positions, mesh.volumes[0].part.positions);
+        assert_eq!(copy.volumes[1].settings, mesh.volumes[1].settings);
+        assert_eq!(copy.part_settings, mesh.part_settings);
+        assert_eq!(copy.notes, mesh.notes);
+        // A mesh with none of them writes no block.
+        let bare = Mesh {
+            name: mesh.name.clone(),
+            parts: mesh.parts.clone(),
+            ..Mesh::default()
+        };
+        assert!(!bare.to_raw().windows(4).any(|w| w == b"SXVL"));
+    }
+
+    #[test]
+    fn metadata_values_are_unescaped() {
+        assert_eq!(
+            unescape("a &amp; b &lt;c&gt; &quot;d&quot; &#65;&#x42;"),
+            "a & b <c> \"d\" AB"
+        );
+        assert_eq!(unescape("no entities"), "no entities");
+        assert_eq!(unescape("broken &amp"), "broken &amp");
     }
 
     const CUBE_OBJECT: &str = r#"<object id="2" name="cube" type="model"><mesh><vertices>

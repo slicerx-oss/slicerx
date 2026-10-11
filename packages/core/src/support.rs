@@ -115,12 +115,19 @@ pub(crate) fn overhangs(
             open(&normal_overhang(here, model(i - 1), i, lower_mm, cfg), w)
         })
         .collect();
-    // Manual supports come only from enforcers; enforcers add overhangs of any angle (the
-    // underside of the part inside them), and blockers take support away.
+    // Manual supports come only from enforcers; blockers take the found overhangs away, and enforcers then add
+    // overhangs of any angle (the underside of the part inside them), so an enforcer wins where both reach.
     hang.into_iter()
         .enumerate()
         .map(|(i, h)| {
-            let mut h = if cfg.manual { Vec::new() } else { h };
+            let h = if cfg.manual { Vec::new() } else { h };
+            let mut h = match block.get(i).filter(|b| !b.is_empty()) {
+                // Normal supports take blockers grown by 0.1 mm (Orca's `SupportAnnotations`); blockers only
+                // cut the overhangs, so the grid may still reach back into them by up to a cell.
+                Some(b) if !tree => perimeters::difference(&h, &perimeters::offset(b, units(0.1))),
+                Some(b) => perimeters::difference(&h, b),
+                None => h,
+            };
             if let (Some(f), true) = (force.get(i).filter(|f| !f.is_empty()), i > 0) {
                 let under = perimeters::difference(model(i), model(i - 1));
                 // On a gentle slope the ring is thin each layer: grow it one line inward so
@@ -129,13 +136,7 @@ pub(crate) fn overhangs(
                 let forced = perimeters::intersection(&ring, f);
                 h = perimeters::union_all(&[&h, &forced]);
             }
-            match block.get(i).filter(|b| !b.is_empty()) {
-                // Normal supports take blockers grown by 0.1 mm (Orca's `SupportAnnotations`); blockers only
-                // cut the overhangs, so the grid may still reach back into them by up to a cell.
-                Some(b) if !tree => perimeters::difference(&h, &perimeters::offset(b, units(0.1))),
-                Some(b) => perimeters::difference(&h, b),
-                None => h,
-            }
+            h
         })
         .collect()
 }

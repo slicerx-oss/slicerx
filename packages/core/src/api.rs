@@ -413,17 +413,22 @@ pub fn build_plate(req: &SliceRequest, meshes: &dyn Fn(&str) -> Result<Arc<Mesh>
             o.name.clone()
         };
         let slot_overrides = o.slot_overrides.iter().map(|(k, v)| (k.clone(), *v)).collect();
-        let part_settings = o
+        // The file's part settings, with the request's for a part replacing the file's.
+        let mut part_settings: Vec<(String, serde_json::Value)> = mesh
             .part_settings
             .iter()
-            .map(|(k, v)| {
-                (
-                    k.clone(),
-                    serde_json::Value::Object(v.iter().map(|(a, b)| (a.clone(), b.clone())).collect()),
-                )
-            })
+            .filter(|(k, _)| !o.part_settings.contains_key(k))
+            .cloned()
             .collect();
-        let mut volumes = Vec::with_capacity(o.volumes.len());
+        part_settings.extend(o.part_settings.iter().map(|(k, v)| {
+            (
+                k.clone(),
+                serde_json::Value::Object(v.iter().map(|(a, b)| (a.clone(), b.clone())).collect()),
+            )
+        }));
+        // The volumes the file marks come first, then the request's own.
+        let mut volumes = crate::plate::file_volumes(&mesh);
+        volumes.reserve(o.volumes.len());
         for v in &o.volumes {
             let role = match v.role.as_str() {
                 "negative" => crate::plate::VolumeRole::Negative,
@@ -1283,6 +1288,7 @@ mod tests {
         Arc::new(Mesh {
             name: "cube".into(),
             parts: vec![part],
+            ..Mesh::default()
         })
     }
 
@@ -1407,6 +1413,7 @@ mod tests {
         Arc::new(Mesh {
             name: "house".into(),
             parts: vec![part],
+            ..Mesh::default()
         })
     }
 
@@ -1465,6 +1472,31 @@ mod tests {
                 .len(),
             195
         );
+    }
+
+    #[cfg(feature = "sleipnir")]
+    #[test]
+    fn smart_layer_slices_a_one_layer_part() {
+        // The First layer test starter: a 0.2 mm square, whose f32 top is a hair above the 0.2 mm first layer. sleipnir
+        // once planned a second layer 0.000000003 mm thick there, and the slice failed with a 0 mm layer.
+        let mesh = cube();
+        for (z, first) in [
+            ("0.02", "0.2"),
+            ("0.02", "0.16"),
+            ("0.015", "0.2"),
+            ("0.023", "0.2"),
+        ] {
+            let body = format!(
+                r#"{{"plate":{{"objects":[{{"mesh":1,"transform":[1,0,0,0,0,1,0,0,0,0,{z},0,100,100,0,1]}}]}},"config":{{"layer_height":0.2,"initial_layer_print_height":{first},"smart_layer":"quality"}},"options":{{}}}}"#
+            );
+            let req: SliceRequest = serde_json::from_str(&body).unwrap();
+            let run = run_request(&req, &|_: &str| Ok(mesh.clone()));
+            let z_list = run
+                .unwrap_or_else(|e| panic!("scale {z}, first {first}: {e}"))
+                .report
+                .layer_z;
+            assert_eq!(z_list.len(), 1, "scale {z}, first {first}: {z_list:?}");
+        }
     }
 
     #[test]

@@ -39,6 +39,7 @@ fn block(h: f32, slot: u8) -> Arc<Mesh> {
             fuzzy_paint: Vec::new(),
             paint_texts: Vec::new(),
         }],
+        ..Mesh::default()
     })
 }
 
