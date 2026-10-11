@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { ChipButton } from '../src/components/chip-button'
@@ -31,6 +33,18 @@ describe('split button', () => {
     expect(html).toContain('data-testid="danger-print"')
     expect(html).toContain('aria-label="More ways to print" aria-haspopup="menu" aria-expanded="false" data-testid="output-menu"')
     expect(html).toContain('data-full="true"')
+  })
+
+  it('is one shape: the menu half sits against the main half, with a line between them and no gap', () => {
+    const css = readFileSync(resolve(__dirname, '../src/kit.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '')
+    const menu = css.match(/\.sx-split > \.sx-btn\.sx-split-menu \{([^}]*)\}/)?.[1] ?? ''
+    const main = css.match(/\.sx-split > \.sx-btn\.sx-split-main \{([^}]*)\}/)?.[1] ?? ''
+    // Square inner corners, in a rule that outranks .sx-btn[data-size="lg"]'s own radius.
+    expect(main).toMatch(/border-top-right-radius:\s*0/)
+    expect(menu).toMatch(/border-top-left-radius:\s*0/)
+    expect(menu).not.toMatch(/margin/)
+    expect(menu).toMatch(/border-left-width:\s*0/)
+    expect(css).toMatch(/\.sx-split > \.sx-split-menu\[data-variant="primary"\] \{[^}]*box-shadow: inset 1px 0 0/)
   })
 
   it('keeps a disabled main half with a reason hoverable', () => {
