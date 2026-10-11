@@ -197,10 +197,12 @@ fn agent_role() -> crate::roles::Role {
 /// State, layer and layer count a printer last reported.
 pub(crate) type Observed = (PrinterState, Option<u32>, Option<u32>);
 
-/// A print the watch paused: when, and which heater steps followed.
+/// A print the watch paused: when, whether a reading has shown it paused yet, and which heater
+/// steps followed.
 #[derive(Debug, Clone, Copy, Default)]
 pub(crate) struct AutoPaused {
     pub at_ms: u64,
+    pub seen_paused: bool,
     pub bed_off: bool,
     pub all_off: bool,
 }

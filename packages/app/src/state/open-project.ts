@@ -176,8 +176,10 @@ async function addProjectShown(
   }
   mine(() => switchPlate(startPlate))
   // An Orca or Bambu Studio project (anything but our .sx3mf) opens with its own fixed layers, so
-  // sleipnir goes off and the layer count matches the slicer that made it.
-  if (wasEmpty && !own) mine(() => set((s) => ({ easy: { ...s.easy, varyLayerHeight: false }, goal: 'custom' as const })))
+  // sleipnir goes off and the layer count matches the slicer that made it. This is the project's, not the person's
+  // choice: the list of moved controls is passed on as it is, so profile sync does not mark sleipnir as moved, and the
+  // next fresh plate has it back (lib/sleipnir-default.ts).
+  if (wasEmpty && !own) mine(() => set((s) => ({ easy: { ...s.easy, varyLayerHeight: false }, goal: 'custom' as const, easyTouched: [...s.easyTouched] })))
   let note: string | null = null
   if (pp) {
     // Another slicer's project: its settings on top of its own printer's profile, or what suits the current printer.

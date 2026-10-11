@@ -1,7 +1,7 @@
 -- SPDX-License-Identifier: Apache-2.0
 -- Copyright (C) 2026 The SlicerX contributors
--- Removes the store module (migrations/0002_store.sql, 0005_anon_downloads.sql, 0013_creator_pages.sql, 0016_listing_colors.sql and
--- the store part of 0017_qa_accounts.sql). Leaves auth.users,
+-- Removes the store module (migrations/0002_store.sql, 0005_anon_downloads.sql, 0013_creator_pages.sql, 0016_listing_colors.sql,
+-- 0019_external_review.sql and the store part of 0017_qa_accounts.sql). Leaves auth.users,
 -- profiles, roles, the audit log, api_tokens and paired_devices untouched.
 -- Files already in the uploads-quarantine and listing-files buckets must be removed
 -- through the Storage API first; the buckets are dropped only when empty.
@@ -22,6 +22,7 @@ drop function if exists public.claim_scan(text);
 drop view if exists public.moderation_queue;
 drop view if exists public.library_listings;
 drop table if exists
+  public.external_review_posts, public.external_reviewers,
   public.download_grants, public.anon_downloads, public.anon_download_usage, public.download_secret,
   public.storage_cleanup, public.downloads, public.collection_items, public.collections,
   public.makes, public.comments, public.likes, public.creator_featured, public.print_profiles,
@@ -46,4 +47,16 @@ drop function if exists
   public.guard_creator_update(), public.guard_creator_insert(), public.promote_creator(),
   public.check_creator_link(), public.check_featured(), public.unfeature_listing(),
   public.queue_listing_cleanup(), public.guard_comment_update(), public.delete_comment(uuid),
-  public.listing_colors_ok(jsonb), public.creator_listed(uuid);
+  public.listing_colors_ok(jsonb), public.creator_listed(uuid),
+  public.review_approve(uuid, text, jsonb), public.review_send_back(uuid, text, jsonb),
+  public.external_review_queue(), public.review_listing_external(uuid, text, text, text),
+  public.external_review_posted(uuid, text), public.external_review_closed(uuid);
+-- The external reviewer's role holds nothing else once its functions are gone.
+do $$
+begin
+  if exists (select 1 from pg_roles where rolname = 'listing_reviewer') then
+    revoke usage on schema public from listing_reviewer;
+    drop role listing_reviewer;
+  end if;
+end;
+$$;

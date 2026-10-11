@@ -22,6 +22,7 @@ import { start } from './scenarios/start.mjs'
 import { starters } from './scenarios/starters.mjs'
 import { upload } from './scenarios/upload.mjs'
 import { vault } from './scenarios/vault.mjs'
+import { hubDir, watchPause, watchPauseEnv } from './scenarios/watch.mjs'
 
 function gitHead() {
   const r = spawnSync('git', ['-C', repo, 'rev-parse', 'HEAD'], { encoding: 'utf8' })
@@ -81,7 +82,8 @@ async function main() {
   })
   try {
     result.build.sha256 = await sha256File(exe).catch(() => 'unreadable')
-    app = await startApp({ app: opts.app, profile: opts.profile, log })
+    // w needs the hub's watch pause steps in seconds; a bridge build reads them from SX_GATE_WATCH_PAUSE.
+    app = await startApp({ app: opts.app, profile: opts.profile, log, extraEnv: opts.run.includes('w') ? { SX_GATE_WATCH_PAUSE: watchPauseEnv() } : {} })
     bridge = await connectBridge(app.tokenFile)
     if (opts.platform === 'macos') result.notes.push('macOS uses the bridge build\'s own data folder; start from a fresh one for first run (docs/release-gate.md).')
     const { scenario } = createContext({ bridge, out: opts.out, opts, tokenFile: app.tokenFile, log })
@@ -104,6 +106,7 @@ async function main() {
     else if (has('b')) result.notes.push('b2 (open signed in) did not run: not signed in')
     if (has('e')) add(await scenario('e', SCENARIOS.e, (s) => starters(s, { only: opts.starters })))
     if (has('d')) add(await scenario('d', SCENARIOS.d, (s) => upload(s, opts)))
+    if (has('w')) add(await scenario('w', SCENARIOS.w, (s) => watchPause(s, { hub: opts.hubDir ?? hubDir({ platform: opts.platform, env: app.env }) })))
   } catch (e) {
     result.notes.push(mask(`could not run: ${e instanceof Error ? e.message : String(e)}`))
     log(`could not run: ${e instanceof Error ? e.message : String(e)}`)

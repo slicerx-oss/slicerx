@@ -131,8 +131,9 @@ win_start() {
     "\$p = Get-Process -Id $1 -ErrorAction SilentlyContinue; if (-not \$p) { 'gone' } elseif (\$p.StartTime) { \$p.StartTime.ToFileTimeUtc() } else { 'unknown' }" \
     2> /dev/null | tr -d '\r'
 }
-# wsl.exe with its output cleaned of NULs and carriage returns, and its own exit status (124 when it timed out).
-wslx() { local o rc; o=$(winrun wsl.exe "$@" 2> /dev/null); rc=$?; printf '%s\n' "$o" | tr -d '\0\r'; return $rc; }
+# wsl.exe with its output cleaned of NULs and carriage returns, and its own exit status (124 when it timed out). The
+# NULs are stripped inside the substitution, so bash never warns that it ignored a null byte.
+wslx() { local o rc; o=$(set -o pipefail; winrun wsl.exe "$@" 2> /dev/null | tr -d '\0\r'); rc=$?; printf '%s\n' "$o"; return $rc; }
 # Runs a Windows program, for at most 30 s. WSL runs it through /init, as its binfmt entry would: a distro that runs
 # systemd can lose that entry, and then a plain call fails.
 winrun() {
