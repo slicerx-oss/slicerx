@@ -2,6 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 // Validation (types, ranges, enums) and conflict detection across keys. src/validate.rs mirrors it;
 // fixtures/validate-cases.json holds the shared cases.
+import { productName } from '@slicerx/contracts/brand'
 import type { PrintConfig, SettingDef, SettingIssue, SettingValue } from '@slicerx/contracts/settings'
 import { numberOf as numberWith, scalarOf as scalarWith, widthOf as widthWith } from './config'
 import { K } from './knowledge'
@@ -64,7 +65,7 @@ export function checkValues(config: PrintConfig): SettingIssue[] {
       }
       const missing = items.find((x) => typeof x === 'string' && def.unavailableValues?.includes(x))
       if (missing !== undefined) {
-        issues.push({ code: 'enum_value_unavailable', severity: 'warning', keys: [key], message: `${def.label}: "${String(missing)}" is not supported by the SlicerX engine yet, so it prints with the default.` })
+        issues.push({ code: 'enum_value_unavailable', severity: 'warning', keys: [key], message: `${def.label}: "${String(missing)}" is not supported by the ${productName()} engine yet, so it prints with the default.` })
       }
     }
     if ((def.min !== undefined || def.max !== undefined || def.orcaMin !== undefined || def.orcaMax !== undefined) && !isVectorType(def.type) === !Array.isArray(v)) {

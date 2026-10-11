@@ -13,12 +13,25 @@ export type ReleaseStage = 'pre-alpha' | 'alpha' | 'beta' | 'stable'
 export interface Release {
   /** How finished the SlicerX pieces are. In pre-alpha the agreement must be accepted before first use. */
   stage: ReleaseStage
-  /** Where people report bugs in the SlicerX pieces. */
-  bugReportsUrl: string
+  /** Where people report bugs in the SlicerX pieces, or null when there is no place to send them. */
+  bugReportsUrl: string | null
+}
+
+/** The edition a build was made with (`viteDefines` in @slicerx/edition-config), when there is one: its id and its own bug link. */
+declare const __SX_EDITION__: { id: string; release?: { bugReportsUrl?: string | null } } | undefined
+
+/**
+ * SlicerX's bug channel, or in a fork built with its own edition config, the fork's own link or none: a fork never
+ * sends people to SlicerX (the same rule as `bugReportsLink` in @slicerx/edition-config).
+ */
+export function defaultBugReportsUrl(edition = typeof __SX_EDITION__ === 'undefined' ? undefined : __SX_EDITION__): string | null {
+  if (!edition) return DEFAULT_BUG_REPORTS_URL
+  const own = edition.release?.bugReportsUrl ?? null
+  return own ?? (edition.id === 'slicerx' || edition.id === 'reference' ? DEFAULT_BUG_REPORTS_URL : null)
 }
 
 /** The release of the SlicerX pieces in this package. Pass it through to the agreement and your Help menu. */
-export const RELEASE: Release = { stage: 'pre-alpha', bugReportsUrl: DEFAULT_BUG_REPORTS_URL }
+export const RELEASE: Release = { stage: 'pre-alpha', bugReportsUrl: defaultBugReportsUrl() }
 
 /** Where acceptance is kept: localStorage by default, or any store with the same two methods. */
 export interface AgreementStorage {
@@ -79,7 +92,7 @@ export function Agreement({ appName, release = RELEASE, onAccept, storage, openL
   const id = useId()
   const url = release.bugReportsUrl
   const open = (e: { preventDefault(): void }) => {
-    if (!openLink) return
+    if (!openLink || !url) return
     e.preventDefault()
     openLink(url)
   }
@@ -94,11 +107,17 @@ export function Agreement({ appName, release = RELEASE, onAccept, storage, openL
       <p>Stay with your printer for the first prints. Check that it moves and extrudes the way it should and that the nozzle and bed temperatures stay in range. Be ready to stop the print or switch the printer off if anything looks wrong.</p>
       <h3>Report bugs</h3>
       <p>
-        Post bugs in the SlicerX parts on the SlicerX Discord, in the bug-reports channel:{' '}
-        <a href={url} target="_blank" rel="noreferrer" onClick={open}>
-          {url.replace(/^https:\/\//, '')}
-        </a>
-        . Problems with the rest of {appName} go to its makers.
+        {url ? (
+          <>
+            Post bugs in the SlicerX parts on the SlicerX Discord, in the bug-reports channel:{' '}
+            <a href={url} target="_blank" rel="noreferrer" onClick={open}>
+              {url.replace(/^https:\/\//, '')}
+            </a>
+            . Problems with the rest of {appName} go to its makers.
+          </>
+        ) : (
+          `Report bugs to the makers of ${appName}.`
+        )}
       </p>
       <h3>Crash reports</h3>
       <p>When a SlicerX part fails, {appName} may send a crash report with the error, the app and SlicerX versions and your operating system. Access tokens, keys, addresses and your user name are removed first. Your models are not sent.</p>

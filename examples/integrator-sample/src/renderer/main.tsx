@@ -47,9 +47,11 @@ function App() {
           <button type="button" data-testid="scheme" onClick={() => setScheme(scheme === 'dark' ? 'light' : 'dark')}>
             {scheme === 'dark' ? 'Light' : 'Dark'}
           </button>
-          <a href={RELEASE.bugReportsUrl} target="_blank" rel="noreferrer" style={{ color: 'var(--muted)' }}>
-            Report a SlicerX bug
-          </a>
+          {RELEASE.bugReportsUrl ? (
+            <a href={RELEASE.bugReportsUrl} target="_blank" rel="noreferrer" style={{ color: 'var(--muted)' }}>
+              Report a SlicerX bug
+            </a>
+          ) : null}
         </header>
         {mustAgree ? (
           <div style={{ display: 'grid', placeItems: 'center', padding: 24, overflow: 'auto' }}>

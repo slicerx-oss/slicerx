@@ -4,6 +4,7 @@
 // The printer catalog for first-run setup: brands, models, nozzles, build volumes, how each
 // machine moves, how SlicerX connects to it, and where a person reads the address and code.
 // Plain data with no dependencies, so the studio, the phone apps and Pilot all read the same file.
+import { brandCatalog } from './brand.ts'
 import { BRANDS } from './brands.ts'
 import { CONNECTION_METHODS, connectionMethod } from './methods.ts'
 import { ANYCUBIC } from './models/anycubic.ts'
@@ -48,6 +49,11 @@ export const KINEMATICS_LABELS: Readonly<Record<Kinematics, string>> = {
 }
 
 const MODELS_BY_ID = new Map(PRINTER_MODELS.map((m) => [m.id, m]))
+
+/** The app's name in the catalog's notes and steps: SlicerX, or a white-label edition's own. Set once at start. */
+export function setCatalogAppName(name: string): void {
+  brandCatalog([BRANDS, CONNECTION_METHODS, PRINTER_MODELS], name)
+}
 
 export function brandById(id: string): Brand | undefined {
   return BRANDS.find((b) => b.id === id)

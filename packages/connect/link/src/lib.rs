@@ -67,6 +67,18 @@ pub use net::{is_lan_host, origin_allowed};
 pub use pairing::PairingCode;
 pub use push::{ACCESS_TOKEN_SECRET as PUSH_ACCESS_TOKEN_SECRET, EXPO_PUSH_URL};
 
+static APP_NAME: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+
+/// Sets the app's name in the messages people read: `SlicerX`, or a white-label edition's own. Once, at start.
+pub fn set_app_name(name: &str) {
+    let _ = APP_NAME.set(name.to_owned());
+}
+
+/// The app's name in messages: `SlicerX` unless the app that runs the hub set its own.
+pub fn app_name() -> &'static str {
+    APP_NAME.get().map_or("SlicerX", String::as_str)
+}
+
 /// Default port; `sx-link --port` overrides it.
 pub const DEFAULT_PORT: u16 = 47615;
 

@@ -593,7 +593,8 @@ fn pause_note(
     }
     Some(if watch_paused {
         format!(
-            "Paused with the heaters on. This printer does not turn them off by itself while paused. If nobody answers, SlicerX turns the bed off {} after the pause and the nozzle {} after it.",
+            "Paused with the heaters on. This printer does not turn them off by itself while paused. If nobody answers, {} turns the bed off {} after the pause and the nozzle {} after it.",
+            crate::app_name(),
             span_words(steps.0),
             span_words(steps.1)
         )

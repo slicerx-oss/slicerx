@@ -192,7 +192,7 @@ async fn open(opts: &Options) -> Result<Conn, ClientError> {
     let key_b64 = B64.encode(&key);
     if opts.hub_key.as_deref().is_some_and(|pinned| pinned != key_b64) {
         return Err(ClientError::HubIdentity(
-            "this is not the SlicerX hub you paired with".into(),
+            "this is not the printer hub you paired with".into(),
         ));
     }
     let port = hello

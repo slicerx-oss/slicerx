@@ -2,6 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 // The engine refuses a malformed model file with a short code ("<file>: refused <code> <object> <element> <value>",
 // packages/core/src/threemf.rs and mesh.rs); this words it for people, with the file, object, element and value.
+import { appName } from '../edition'
 
 const REFUSED = /(\S+): refused (\S+) (\d+) (\d+) ?(.*)$/
 
@@ -11,7 +12,7 @@ function sentence(file: string, code: string, object: number, at: number, value:
     case 'unit':
       return `${file}: the unit "${value}" is not one 3MF defines.`
     case 'extension':
-      return `${file}: the file requires the 3MF extension ${value}, which SlicerX does not read.`
+      return `${file}: the file requires the 3MF extension ${value}, which ${appName()} does not read.`
     case 'id':
       return `${file}: ${object > 0 ? `a component of object ${object}` : 'an object or build item'} has no usable id ("${value}").`
     case 'vertex':

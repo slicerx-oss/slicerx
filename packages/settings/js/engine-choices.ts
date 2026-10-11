@@ -3,6 +3,7 @@
 // An opened project's settings come from the file, except a few engine choices of SlicerX, which stay ours unless the
 // person changed them in the project. The app's project open and the MCP server's project_settings both use this, so a
 // project slices the same either way.
+import { productName } from '@slicerx/contracts/brand'
 import { LEGACY_KEYS } from './import'
 
 /**
@@ -13,9 +14,13 @@ import { LEGACY_KEYS } from './import'
 export const SLICERX_KEEPS: Readonly<Record<string, string>> = {
   // aegis: wall widths fitted to the part, so thin features print solid with fewer width changes than Arachne or
   // Bambu Studio's classic walls (the app's SLICERX_PRESET_DEFAULTS sets it over every maker preset).
-  wall_generator: "Kept SlicerX's aegis walls; the project used Bambu's default.",
+  get wall_generator() {
+    return `Kept ${productName()}'s aegis walls; the project used Bambu's default.`
+  },
   // The outer wall spaced from the inner walls so that the outline, not the wall's center, lands on the model's size.
-  precise_outer_wall: "Kept SlicerX's precise outer wall; the project used Bambu's default.",
+  get precise_outer_wall() {
+    return `Kept ${productName()}'s precise outer wall; the project used Bambu's default.`
+  },
 }
 
 /**

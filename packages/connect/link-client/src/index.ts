@@ -2,6 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 // @slicerx/link-client. A PrinterHost that talks to sx-link over its
 // localhost WebSocket. The protocol is documented in packages/connect/link/README.md.
+import { productName } from '@slicerx/contracts/brand'
 import { pakeStart } from './cpace.ts'
 import type {
   ApprovalHost,
@@ -1318,7 +1319,7 @@ export async function checkHub(call: <T>(method: string, params?: Record<string,
   try {
     r = await call<{ hubKey: string; hubNonce: string; port: number; sig: string }>('hello', { nonce: bytesToBase64(clientNonce) })
   } catch {
-    throw new LinkError('hub_identity', 'The program on this port did not prove it is a SlicerX hub. Nothing was sent.')
+    throw new LinkError('hub_identity', `The program on this port did not prove it is the printer hub for ${productName()}. Nothing was sent.`)
   }
   if (pinned && r.hubKey !== pinned) {
     // Another key. When it signed this very connection, say which, so the person can compare fingerprints.
@@ -1328,7 +1329,7 @@ export async function checkHub(call: <T>(method: string, params?: Record<string,
     } catch {
       signed = false
     }
-    throw new LinkError('hub_identity', 'The program on this port is not the SlicerX hub you paired with. Nothing was sent.', signed ? r.hubKey : undefined)
+    throw new LinkError('hub_identity', 'The program on this port is not the printer hub you paired with. Nothing was sent.', signed ? r.hubKey : undefined)
   }
   const hubNonce = base64ToBytes(r.hubNonce ?? '')
   if (r.port !== port || !(await verifyHello(r.hubKey, clientNonce, hubNonce, port, r.sig))) {
@@ -1380,7 +1381,7 @@ async function runExchange<T extends { paired: boolean; clientKey?: string }>(
     answer = await call<{ pake?: Record<string, string> }>('pair', { pake: bytesToBase64(run.ya) })
   } catch (e) {
     // An older hub reads the message as a wrong code. It cannot have learned anything from it.
-    if (e instanceof LinkError && e.code === 'unauthorized') throw new LinkError('unauthorized', 'This hub is older than this app. Update SlicerX (sx-link) on the computer to pair.')
+    if (e instanceof LinkError && e.code === 'unauthorized') throw new LinkError('unauthorized', `This hub is older than this app. Update ${productName()} (sx-link) on the computer to pair.`)
     throw e
   }
   const yb: Record<string, Uint8Array> = {}
