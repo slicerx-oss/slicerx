@@ -6,8 +6,9 @@
 //! Writes the keys whose type is a percent (`percent` and `percents` in `packages/settings/schema.json`,
 //! Orca's `coPercent` and `coPercents`), one per line, so the configuration block writes them with their `%`,
 //! and the whole number keys (`int` and `ints`, Orca's `coInt` and `coInts`), which the placeholder language
-//! reads as integers, and copies `packages/settings/defaults.json` next to them, with the head shapes the
-//! collision check uses (`packages/ui/viewport/data/head-shapes.json`).
+//! reads as integers, and copies `packages/settings/defaults.json` next to them, with the `PrusaSlicer` key map
+//! (`packages/settings/prusa-map.json`) and the head shapes the collision check uses
+//! (`packages/ui/viewport/data/head-shapes.json`).
 //!
 //! The published crate has neither folder, so it reads the copies in `data/` instead.
 //! `tests/published_data.rs` checks that they match; `SX_UPDATE_CORE_DATA=1` rewrites them.
@@ -46,12 +47,14 @@ fn main() {
             &settings.join("engine-choices.json"),
             &out.join("engine-choices.json"),
         );
+        copy(&settings.join("prusa-map.json"), &out.join("prusa-map.json"));
     } else {
         for file in [
             "percent_keys.txt",
             "int_keys.txt",
             "defaults.json",
             "engine-choices.json",
+            "prusa-map.json",
         ] {
             copy(&here.join("data").join(file), &out.join(file));
         }
