@@ -273,3 +273,29 @@ fn json_operation_gives_meshes_as_buffers() {
     assert_eq!(buffers[0].to_bytes().len(), 8 * 12);
     assert_eq!(buffers[1].to_bytes().len(), 12 * 12);
 }
+
+#[test]
+fn the_cli_reads_a_project_into_stl_files() {
+    let file = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/corpus/subtypes.3mf");
+    let dir = std::env::temp_dir().join(format!("sx-geom-read3mf-{}", std::process::id()));
+    let mut child = std::process::Command::new(env!("CARGO_BIN_EXE_sx-geom"))
+        .args(["format.read3mf", "--out-dir"])
+        .arg(&dir)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .expect("runs sx-geom");
+    let request = serde_json::json!({ "data": { "path": file } }).to_string();
+    std::io::Write::write_all(child.stdin.as_mut().expect("stdin"), request.as_bytes()).expect("writes");
+    drop(child.stdin.take());
+    let out = child.wait_with_output().expect("answers");
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).expect("json");
+    let parts = v["objects"][0]["parts"].as_array().expect("parts");
+    assert_eq!(parts.len(), 5);
+    for p in parts {
+        let path = p["stlPath"].as_str().expect("an stl file");
+        let mesh = sx_geom::TriMesh::from_stl(&std::fs::read(path).expect("written"), "part").expect("reads");
+        assert_eq!(mesh.triangles.len(), 12);
+    }
+    let _ = std::fs::remove_dir_all(dir);
+}
