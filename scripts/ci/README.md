@@ -161,7 +161,10 @@ annotates each test that passed only on a retry, and the next step fails the job
 deadline a day out, an issue) or fixes the test. The e2e shards (`ci.yml`, `e2e-shard`) hold to the same rule with
 Playwright's `--retries=1`: `playwright-results.mjs` reads the JSON report, a test that passed only on the retry must be
 on either list, and a test that failed both times fails the job unless it counts as quarantined. The cargo job on pull
-requests has no retry; the machine runs rerun it.
+requests has no retry; the machine runs rerun it. A self-hosted run step whose heavy lock is not free within
+`SX_HEAVY_WAIT` ends with heavy.sh's status 75 before any test starts: `run-exit.sh` leaves `<report>.gave-up`, and the
+results step fails with "no tests ran: the run gave up waiting for the heavy lock" rather than a missing report. Rerun
+the job once the lock is free; it is not a test failure.
 
 Adding an entry: open an issue for the test, add its file (for example `flaky.d/481-guard-hold-card.txt`), run
 `bash scripts/ci/flaky-check.sh lint`. Fixing one: fix the test and delete its file in the same change.
