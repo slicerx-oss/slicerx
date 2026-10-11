@@ -654,6 +654,9 @@ importers:
         specifier: 4.6.5
         version: 4.6.5
     devDependencies:
+      '@slicerx/cad-history':
+        specifier: workspace:*
+        version: link:../cad-history
       '@slicerx/connect':
         specifier: workspace:*
         version: link:../connect/setup

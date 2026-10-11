@@ -4,6 +4,7 @@
 import { readFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
+import type { EngineCall } from '@slicerx/cad-history'
 import type { PermissionPolicy } from '@slicerx/contracts'
 import { createApprovalBroker, normalizePolicy, type ApprovalBroker, type PilotTool } from '@slicerx/pilot'
 import { createGeomCli } from '@slicerx/pilot/node'
@@ -19,7 +20,8 @@ import { createStubSlicer, type SlicerBackend } from './slicer'
 import { createNodeSlicerHost } from './slicerhost'
 import { cadTools } from './cad'
 import { cloudTools, type CloudOptions } from './cloud'
-import { geomTools, findSxGeom } from './geom'
+import { Designs, designTools } from './design'
+import { geomEngine, geomTools, findSxGeom } from './geom'
 import { createMcpSetupHost } from './setup'
 import { createSxSlicer, findSx } from './sx'
 import { sxlockTools, type SxlockOptions } from './sxlock'
@@ -33,6 +35,7 @@ export { CLOUD_NOT_CONFIGURED, cloudFromEnv, type CloudOptions } from './cloud'
 export { SXLOCK_NOT_CONFIGURED, sxlockFromEnv, type SxlockOptions } from './sxlock'
 export { DataStore, resolveDataPaths } from './data'
 export { DEFAULT_POLICY_PATH, loadPolicy } from './policy'
+export { design3mf, readDesigns, type Design } from './design'
 
 export type EngineMode = 'auto' | 'sx' | 'stub'
 
@@ -45,6 +48,8 @@ export interface SlicerxMcpOptions {
   sxBin?: string | undefined
   /** Path to sx-geom for the mesh tools (cut, split, repair and so on); default: next to sx, then PATH. */
   sxGeomBin?: string | undefined
+  /** The engine designs replay on, instead of sx-geom (embedding and tests); default: sx-geom when found. */
+  geomEngine?: EngineCall | undefined
   printers?: PrinterMode | undefined
   /** sx-link WebSocket URL and pairing code, for printers: 'link'. */
   linkUrl?: string | undefined
@@ -144,7 +149,9 @@ export async function createContext(opts: SlicerxMcpOptions = {}): Promise<Serve
   }
   const registry = [...pilotTools(createCombinedPlanner(kb)), ...(await servicePluginTools(printers?.host))]
   const local = localTools({ store, profiles, slicer: nodeSlicer, policy, project })
-  const geom = geomBin ? [...geomTools({ bin: geomBin, policy }), ...cadTools({ bin: geomBin, policy })] : []
+  const geomCall = opts.geomEngine ?? (geomBin ? geomEngine(geomBin) : undefined)
+  const designs = geomCall ? new Designs({ engine: geomCall, policy }) : undefined
+  const geom = geomBin || designs ? [...geomTools({ bin: geomBin, policy, designs }), ...cadTools({ bin: geomBin, policy, designs }), ...(designs ? designTools(designs) : [])] : []
   const cloud = cloudTools({ cloud: opts.cloud, store, profiles, policy })
   const locked = sxlockTools({ sxlock: opts.sxlock, policy })
   const localAi = localAiTools(opts.localAi)
