@@ -22,8 +22,8 @@
 #   SX_HEAVY_ORPHAN=<seconds>                  how old a lock with no holder record must be before it is cleared
 #                                              (default 60; a holder writes its record right after taking the lock)
 #   SX_HEAVY_LABEL=<text>                      who is asking, in the holder record and the history (optional)
-#   SX_HEAVY_SESSION=<text>                    the session that asks (default: any *_SESSION_ID in the environment,
-#                                              and the run and job of a GitHub Actions job)
+#   SX_HEAVY_SESSION=<text>                    the session that asks (default: the run and job of a GitHub Actions
+#                                              job; nothing else is read from the environment)
 #   SX_HEAVY_HISTORY=<file>                    the history log (default history.log beside the lock, or
 #                                              <lock>.history.log for a lock named .*; empty: none)
 #
@@ -200,13 +200,11 @@ one_line() { local s=${1//$tab/ }; s=${s//$cr/}; s=${s//$nl/ }; printf %s "$s"; 
 user=${USER:-${USERNAME:-}}
 [ -n "$user" ] || user=$(id -un 2> /dev/null)
 label=$(one_line "${SX_HEAVY_LABEL:-}")
+# The record and the history name the session only from SX_HEAVY_SESSION or the Actions run, never from the rest of
+# the environment, which can hold tokens.
 session=${SX_HEAVY_SESSION:-}
-if [ -z "$session" ]; then
-  n=0
-  for v in $(compgen -v 2> /dev/null); do
-    case $v in *_SESSION_ID) [ -n "${!v:-}" ] && [ $n -lt 3 ] && { session="$session${session:+ }$v=${!v}"; n=$((n + 1)); } ;; esac
-  done
-  [ -z "${GITHUB_RUN_ID:-}" ] || session="$session${session:+ }run ${GITHUB_REPOSITORY:-}/${GITHUB_RUN_ID}/${GITHUB_RUN_ATTEMPT:-1} job ${GITHUB_JOB:-}"
+if [ -z "$session" ] && [ -n "${GITHUB_RUN_ID:-}" ]; then
+  session="run ${GITHUB_REPOSITORY:-}/${GITHUB_RUN_ID}/${GITHUB_RUN_ATTEMPT:-1} job ${GITHUB_JOB:-}"
 fi
 session=$(one_line "$session")
 
@@ -427,7 +425,27 @@ decide() {
   esac
   return 0
 }
-cmd="$*"
+# The command as the record and the history show it, with anything that looks like a secret replaced by [redacted]:
+# the value of NAME=value when NAME has TOKEN, KEY, SECRET, PASS or AUTH in it, the argument after a --token, --key,
+# --password, --secret or --auth flag (or its =value), and the shapes of common access tokens. The command itself
+# runs with its arguments as given.
+redact() {
+  local out= a hide= q="[^[:space:]\"']"
+  for a in "$@"; do
+    if [ -n "$hide" ]; then a="[redacted]"; hide=; fi
+    case $a in --[Tt][Oo][Kk][Ee][Nn] | --[Kk][Ee][Yy] | --[Aa][Pp][Ii]-[Kk][Ee][Yy] | --[Pp][Aa][Ss][Ss] | --[Pp][Aa][Ss][Ss][Ww][Oo][Rr][Dd] | --[Ss][Ee][Cc][Rr][Ee][Tt] | --[Aa][Uu][Tt][Hh]) hide=1 ;; esac
+    out="$out${out:+ }$a"
+  done
+  printf %s "$out" | sed -E \
+    -e "s/([A-Za-z0-9_]*([Tt][Oo][Kk][Ee][Nn]|[Kk][Ee][Yy]|[Ss][Ee][Cc][Rr][Ee][Tt]|[Pp][Aa][Ss][Ss]|[Aa][Uu][Tt][Hh])[A-Za-z0-9_]*)=$q+/\1=[redacted]/g" \
+    -e "s/(--?([Tt]oken|[Kk]ey|[Aa]pi-[Kk]ey|[Pp]assword|[Ss]ecret|[Aa]uth)=)$q+/\1[redacted]/g" \
+    -e "s/(gh[pousr]_|github_pat_)[A-Za-z0-9_]+/\1[redacted]/g" \
+    -e "s/sk-[A-Za-z0-9_-]{16,}/sk-[redacted]/g" \
+    -e "s/xox[abprs]-[A-Za-z0-9-]+/xox-[redacted]/g" \
+    -e "s/AKIA[0-9A-Z]{16}/AKIA[redacted]/g" \
+    -e "s/eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]+/[redacted]/g"
+}
+cmd=$(redact "$@")
 
 t0=$SECONDS next=0 judged=0
 while :; do
