@@ -22,7 +22,7 @@ export interface BambuExtra {
   skipped: number[]
   printError: number
   lastJob?: string
-  /** When set, the next project starts are refused with this reason (`POST /bambu {refuse}`). */
+  /** When set, the next starts (`project_file` and plain `gcode_file`) are refused with this reason (`POST /bambu {refuse}`). */
   refuse?: string
   /** When set, `pause`, `resume` and `stop` are answered `result: fail` with this reason and change nothing (`POST /bambu {refuseControl}`). */
   refuseControl?: string
@@ -330,7 +330,20 @@ export async function startBambu(m: MockMachine, log: string[]): Promise<{ handl
           log.push(`ams_filament_setting ${JSON.stringify({ ams_id: pr.ams_id, slot_id: pr.slot_id, tray_id: pr.tray_id, tray_info_idx: pr.tray_info_idx, setting_id: pr.setting_id, tray_color: pr.tray_color, nozzle_temp_min: pr.nozzle_temp_min, nozzle_temp_max: pr.nozzle_temp_max, tray_type: pr.tray_type })}`)
           break
         }
-        case 'gcode_file': m.start(String(pr.param).replace(/^\/sdcard\//, '')); extra.skipped = []; extra.printError = 0; break
+        case 'gcode_file': {
+          // The printer answers a plain G-code start on the report topic too.
+          const answer = (result: string, reason: string) => {
+            const body = Buffer.from(JSON.stringify({ print: { command: 'gcode_file', sequence_id: pr.sequence_id, param: pr.param, result, reason } }))
+            for (const s of subscribers) s.write(publish(`device/${MOCK_SERIAL}/report`, body))
+          }
+          if (extra.refuse) {
+            log.push(`gcode_file refused ${extra.refuse}`)
+            answer('fail', extra.refuse)
+            return
+          }
+          answer('success', 'success')
+          m.start(String(pr.param).replace(/^\/sdcard\//, '')); extra.skipped = []; extra.printError = 0; break
+        }
         default: return
       }
       broadcast()

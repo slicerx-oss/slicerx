@@ -223,7 +223,7 @@ export async function startMocks(opts: StartOptions = {}): Promise<RunningMocks>
       else if (b.seconds !== undefined) m.tick(Number(b.seconds))
       return { json: { state: m.state, job: m.job ?? null } }
     }
-    // POST /bambu {refuse?, model?, ams?, external?, tagged?, liveview?}: the Bambu fake refuses project starts with `refuse` (null or
+    // POST /bambu {refuse?, model?, ams?, external?, tagged?, liveview?}: the Bambu fake refuses starts (project and plain G-code) with `refuse` (null or
     // absent: accepts them); `model`, `ams` and `external` make it another printer (an A1 with an AMS lite, an A1 mini
     // with only the external spool). A connection made afterwards sees the new model. `tagged` lists the AMS
     // slots (0 based) whose spool has an RFID tag. `liveview: false` turns LAN Only Liveview off on an X1 or H2D;
