@@ -899,13 +899,27 @@ impl Object {
                 .map(|(k, s)| (k - first, s.clone()))
                 .collect()
         };
+        // Only the vertices these triangles use, so the part's size is its own.
+        let picked = self
+            .triangles
+            .get(first..=last.min(self.triangles.len().saturating_sub(1)))
+            .unwrap_or_default();
+        let mut index: HashMap<u32, u32> = HashMap::new();
+        let mut positions = Vec::new();
+        let mut triangles = Vec::with_capacity(picked.len());
+        for tri in picked {
+            let mut out = [0u32; 3];
+            for (o, &i) in out.iter_mut().zip(tri) {
+                *o = *index.entry(i).or_insert_with(|| {
+                    positions.push(self.positions.get(i as usize).copied().unwrap_or_default());
+                    u32::try_from(positions.len() - 1).unwrap_or(u32::MAX)
+                });
+            }
+            triangles.push(out);
+        }
         Self {
-            positions: self.positions.clone(),
-            triangles: self
-                .triangles
-                .get(first..=last.min(self.triangles.len().saturating_sub(1)))
-                .unwrap_or_default()
-                .to_vec(),
+            positions,
+            triangles,
             paint: take(&self.paint),
             support_paint: take(&self.support_paint),
             seam_paint: take(&self.seam_paint),
