@@ -6,11 +6,16 @@ import { createHash } from 'node:crypto'
 import { copyFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { CallToolResultSchema } from '@modelcontextprotocol/sdk/types.js'
+import { resolvedProfile } from '@slicerx/settings'
 import { describe, expect, it } from 'vitest'
+import { resolveSliceConfig } from '../src/config'
 import { gcode3mf } from '../src/gcode3mf'
+import type { PresetLayer } from '../src/presets'
+import { SUPPORT_KEYS } from '../src/profiles'
+import { defaultConfig } from '../src/settings'
 import type { SliceSummary } from '../src/slicer'
 import { readZip, writeZip } from '../src/zip'
-import { connect, data, noSx, sxBin, sxTimeout, text } from './helpers'
+import { boxStl, connect, data, noSx, sxBin, sxTimeout, text } from './helpers'
 
 type Err = { error: { code: string; message: string } }
 
@@ -107,6 +112,37 @@ describe('profiles', () => {
     expect(await applied(['machine:bambu-a1'])).toEqual(['process:slicerx-default', 'machine:bambu-a1'])
     expect(await applied(['process:fine'])).toEqual(['process:fine'])
     expect(await applied(['intent:strong'])).not.toContain('process:slicerx-default')
+  })
+
+  it("gives a slice with no process the printer maker's own supports, as the app does", async () => {
+    const h = await connect()
+    const supports = async (names: string[], extra: Parameters<typeof resolveSliceConfig>[4] = {}, overrides?: Record<string, unknown>) => {
+      await h.ctx.profiles.prepare(names)
+      const { config } = resolveSliceConfig(h.ctx.store, h.ctx.profiles, names, overrides, extra)
+      return { enable_support: config['enable_support'], support_type: config['support_type'] }
+    }
+    // The default process itself sets no supports
+    const p = data<{ config: Record<string, unknown> }>(await h.call('slicerx_get_profile', { profile: 'process:slicerx-default' }))
+    expect(Object.keys(p.config).filter((k) => SUPPORT_KEYS.includes(k))).toEqual([])
+    // Bambu Lab's Standard preset sets no enable_support, so the schema's (off) applies, with the preset's own style
+    const a1 = (await resolvedProfile('bambu-a1', 'standard'))!.process as Record<string, unknown>
+    const preset = { enable_support: a1['enable_support'] ?? defaultConfig(h.ctx.store)['enable_support'], support_type: a1['support_type'] }
+    expect(preset).toEqual({ enable_support: false, support_type: 'tree(auto)' })
+    expect(await supports(['machine:bambu-a1'])).toEqual(preset)
+    expect(await supports(['machine:bambu-x1-carbon', 'stock-filament:BBL/Bambu PLA Basic @BBL A1'])).toEqual(preset)
+    expect(await supports(['printer:bambu_x1c', 'filament:pla'])).toEqual(preset)
+    const printerFile: PresetLayer = { name: 'My A1', section: 'printer', values: {}, inherits: 'Bambu Lab A1 0.4 nozzle', customGcode: false }
+    expect(await supports([], { presets: [printerFile] })).toEqual(preset)
+    // No printer, or one with no maker preset: SlicerX's Standard tier's tree supports, as on the app's plate
+    const tier = { enable_support: true, support_type: 'tree(auto)' }
+    expect(await supports([])).toEqual(tier)
+    expect(await supports(['machine:ultimaker-s5'])).toEqual(tier)
+    // Supports asked for still turn them on
+    expect((await supports(['machine:bambu-a1', 'process:standard'])).enable_support).toBe(true)
+    expect((await supports(['machine:bambu-a1', 'intent:standard'])).enable_support).toBe(true)
+    expect(await supports(['machine:bambu-a1'], {}, { enable_support: true, support_type: 'tree(auto)' })).toEqual(tier)
+    const processFile: PresetLayer = { name: 'Supported', section: 'process', values: { enable_support: true }, customGcode: false }
+    expect((await supports(['machine:bambu-a1'], { presets: [processFile] })).enable_support).toBe(true)
   })
 
   it('says when a slice names no printer, with a no_printer notice, and stays quiet when one is named', async () => {
@@ -286,6 +322,33 @@ describe.skipIf(noSx())('with the real sx CLI', { timeout: sxTimeout }, () => {
     expect(plain).toMatch(/^; layer_height = 0\.2$/m)
     expect(plain).toBe(await gcode({ profiles: ['process:standard'], overrides: { smart_layer: 'quality', wall_generator: 'aegis' } }))
     expect(plain).not.toBe(await gcode({ profiles: ['process:standard'], overrides: { wall_generator: 'classic' } }))
+  })
+
+  it("slices with the Bambu preset's supports (off) when no process is named, and with supports when asked", async () => {
+    const h = await connect({ engine: 'sx', sxBin })
+    // A T: a 6 mm stem under a 30 mm cap, so the cap's underside needs support
+    const stem = boxStl(6, 6, 12)
+    const cap = boxStl(30, 30, 3)
+    const tris = (b: Buffer, dx: number, dy: number, dz: number): Buffer => {
+      const out = Buffer.from(b.subarray(84))
+      for (let t = 0; t < out.length / 50; t++) for (let k = 0; k < 3; k++) [dx, dy, dz].forEach((d, j) => out.writeFloatLE(out.readFloatLE(t * 50 + 12 + k * 12 + j * 4) + d, t * 50 + 12 + k * 12 + j * 4))
+      return out
+    }
+    const head = Buffer.alloc(84)
+    head.writeUInt32LE(24, 80)
+    const tee = join(h.dir, 'tee.stl')
+    writeFileSync(tee, Buffer.concat([head, tris(stem, 12, 12, 0), tris(cap, 0, 0, 12)]))
+    const supported = async (args: Record<string, unknown>) => {
+      const r = await h.call('slicerx_slice_file', { model: tee, ...args })
+      expect(r.isError, text(r)).toBeFalsy()
+      const g = readFileSync(data<{ gcode_path: string }>(r).gcode_path, 'utf8')
+      const on = /^; enable_support = 1$/m.test(g)
+      expect(/^; (FEATURE: |TYPE:)Support$/m.test(g), JSON.stringify(args)).toBe(on)
+      return on
+    }
+    expect(await supported({ profiles: ['machine:bambu-a1'] })).toBe(false)
+    expect(await supported({ profiles: ['machine:bambu-a1', 'process:standard'] })).toBe(true)
+    expect(await supported({ profiles: ['machine:bambu-a1'], overrides: { enable_support: true } })).toBe(true)
   })
 
   it('plans sleipnir layers in sx for the default process, as the app does', async () => {
