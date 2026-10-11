@@ -388,7 +388,7 @@ fn check_fits(extents: &[(&str, [f64; 4], f64)], config: &PrintConfig) -> Result
         }
         if b[2] < bed[0] - TOL || b[0] > bed[2] + TOL || b[3] < bed[1] - TOL || b[1] > bed[3] + TOL {
             return Err(Error::Blocked(format!(
-                "{name} lies wholly outside the printable area; move it onto the bed"
+                "{name} lies wholly outside the printable area; move it onto the bed or arrange the plate"
             )));
         }
     }

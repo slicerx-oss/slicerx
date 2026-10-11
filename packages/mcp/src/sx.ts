@@ -13,6 +13,22 @@ import type { SlicerBackend, SliceSummary } from './slicer'
 import { formatDuration } from './slicer'
 
 /** Finds a binary by name: an explicit path, other candidates in order, then PATH. */
+/**
+ * The error for a failed `sx` run, from its exit code and the last lines it wrote. Exit codes: 1 slicing failed,
+ * 2 usage, 3 invalid input (docs/embedding.md). A plate refused because its toolpaths leave the bed carries the
+ * engine's own fix (the object to move, or arranging the plate) and names the tool that arranges a project's plate.
+ */
+export function sxFailure(code: number | null, why: string): ToolInputError {
+  if (/no plate \d+/.test(why)) return new ToolInputError(`sx exited with code ${code}: ${why}`, 'no_such_plate')
+  if (/safety preflight/.test(why)) {
+    if (/outside the printable area/.test(why)) {
+      return new ToolInputError(`sx exited with code ${code}: ${why}. In a project, slicerx_arrange places the objects on the bed.`, 'preflight_blocked', { reason: 'outside_bed', fix: 'slicerx_arrange' })
+    }
+    return new ToolInputError(`sx exited with code ${code}: ${why}`, 'preflight_blocked')
+  }
+  return new ToolInputError(`sx exited with code ${code}: ${why}`, code === 3 ? 'invalid_model' : 'slice_failed')
+}
+
 export function findBinary(name: string, explicit?: string, extra: (string | undefined)[] = []): string | undefined {
   const exe = process.platform === 'win32' ? `${name}.exe` : name
   const candidates = explicit !== undefined ? [explicit] : [...extra, ...(process.env['PATH'] ?? '').split(delimiter).filter(Boolean).map((d) => join(d, exe))]
@@ -152,8 +168,7 @@ export function createSxSlicer(bin: string, timeoutMs = 10 * 60_000): SlicerBack
         // Collisions come back as their own code, in words for a person and with the objects and layers as details.
         const collided = code === 3 ? collisionError(why, objects.map((o) => o.name)) : undefined
         if (collided) throw collided
-        // Exit codes: 1 slicing failed, 2 usage, 3 invalid input (docs/embedding.md).
-        throw new ToolInputError(`sx exited with code ${code}: ${why}`, /no plate \d+/.test(why) ? 'no_such_plate' : /safety preflight/.test(why) ? 'preflight_blocked' : code === 3 ? 'invalid_model' : 'slice_failed')
+        throw sxFailure(code, why)
       }
       const out = JSON.parse(stdout.trim()) as {
         layerCount?: number
