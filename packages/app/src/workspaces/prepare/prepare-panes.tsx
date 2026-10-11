@@ -45,6 +45,7 @@ import { useCompactLayout } from '../../lib/phone-layout'
 import { MiddleName, shortPrinterName } from '../../lib/short-name'
 import { EasySettingsPanel } from './easy-settings'
 import { ScopeBar, useScope } from './scope-bar'
+import { Loading } from '../../shell/loading'
 const ExpertSettings = lazy(() => import('./expert-settings').then((m) => ({ default: m.ExpertSettings })))
 
 
@@ -150,7 +151,7 @@ export function PrepareLeft({ layout }: { layout: LayoutSpec }) {
           {expertVisible ? (
             <Block title={tierTitle} icon="settings" expanded={expertOpen} onExpandedChange={(v) => set({ expertOpen: v })} id="expert-toggle" data-section="expert" data-scope={scoped ? 'objects' : undefined}>
               {expertOpen ? (
-                <Suspense fallback={<div className="ws-loading" aria-busy="true" />}>
+                <Suspense fallback={<Loading />}>
                   <ExpertSettings />
                 </Suspense>
               ) : null}
