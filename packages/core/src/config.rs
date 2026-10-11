@@ -702,6 +702,39 @@ impl PrintConfig {
         Ok(c)
     }
 
+    /// [`Self::apply_value`] and [`Self::check`], one key at a time where it has to be: a key whose value cannot be
+    /// read, or is out of range, is left out (the setting keeps what it had) and comes back in the list, and every
+    /// other key applies. Fails only for what no key can be blamed for (a value that is not an object, or settings
+    /// that only fail together).
+    pub fn apply_value_lenient(&mut self, v: &Value) -> Result<Vec<ConfigIssue>> {
+        let Value::Object(map) = v else {
+            return self.apply_value(v).map(|()| Vec::new());
+        };
+        let mut map = map.clone();
+        let mut issues = Vec::new();
+        loop {
+            let mut c = self.clone();
+            match c
+                .apply_value(&Value::Object(map.clone()))
+                .and_then(|()| c.check())
+            {
+                Ok(()) => {
+                    *self = c;
+                    return Ok(issues);
+                }
+                Err(Error::Config { key, reason }) if map.contains_key(key) => {
+                    let value = map.remove(key).unwrap_or_default();
+                    issues.push(ConfigIssue {
+                        key: key.to_owned(),
+                        value,
+                        reason,
+                    });
+                }
+                Err(e) => return Err(e),
+            }
+        }
+    }
+
     /// Applies the keys of a config object on top of these settings (a height
     /// range or per-object override). Keys not in the object keep their
     /// value. Does not run [`Self::check`].
@@ -1891,6 +1924,140 @@ fn flag(v: &Value) -> Option<bool> {
         Value::Array(a) => a.first().and_then(flag),
         _ => None,
     }
+}
+
+/// A config value the engine could not use: its key, the value and why. The setting kept what it had.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct ConfigIssue {
+    pub key: String,
+    pub value: Value,
+    pub reason: String,
+}
+
+/// Keys that describe a preset or project rather than set how it prints: names, ids, versions, the links between
+/// presets and what only a slicer's own window shows. They are never reported as unused.
+pub const META_KEYS: &[&str] = &[
+    "base_id",
+    "bed_custom_model",
+    "bed_custom_texture",
+    "bed_model",
+    "bed_texture",
+    "best_object_pos",
+    "compatible_printers",
+    "compatible_printers_condition",
+    "compatible_prints",
+    "compatible_prints_condition",
+    "curr_bed_type",
+    "default_filament_colour",
+    "default_filament_profile",
+    "default_materials",
+    "default_print_profile",
+    "description",
+    "different_settings_to_system",
+    "family",
+    "filament_id",
+    "filament_ids",
+    "filament_notes",
+    "filament_settings_id",
+    "filament_vendor",
+    "from",
+    "hotend_model",
+    "include",
+    "inherits",
+    "inherits_group",
+    "instantiation",
+    "is_custom_defined",
+    "machine_tech",
+    "model_id",
+    "name",
+    "nozzle_diameter_list",
+    "print_compatible_printers",
+    "print_settings_id",
+    "printer_model",
+    "printer_notes",
+    "printer_settings_id",
+    "printer_technology",
+    "printer_variant",
+    "process_notes",
+    "renamed_from",
+    "setting_id",
+    "sub_path",
+    "type",
+    "updated_time",
+    "upward_compatible_machine",
+    "user_id",
+    "version",
+];
+
+/// Every key the engine's code names (see `build.rs`): a key outside these, [`READ_KEYS`] and [`FUZZY_KEYS`] is never
+/// read, whatever its value.
+fn engine_keys() -> &'static std::collections::HashSet<&'static str> {
+    static KEYS: std::sync::OnceLock<std::collections::HashSet<&'static str>> = std::sync::OnceLock::new();
+    KEYS.once(|| {
+        include_str!(concat!(env!("OUT_DIR"), "/engine_keys.txt"))
+            .lines()
+            .collect()
+    })
+}
+
+/// True when the engine reads `key` in some way (or the key only describes the preset). False means a config that
+/// sets it prints exactly as without it.
+pub fn is_used_key(key: &str) -> bool {
+    let named = |k: &str| READ_KEYS.contains(&k) || FUZZY_KEYS.contains(&k) || engine_keys().contains(k);
+    META_KEYS.contains(&key) || named(key) || built_key(key, &named)
+}
+
+/// A key the code builds from a template (see `build.rs`): `filament_retraction_speed` from `filament_{key}` with
+/// a key it names, `cool_plate_temp_initial_layer` from `{key}_initial_layer`, `machine_max_speed_x` from
+/// `machine_max_speed_{axis}` with a short part.
+fn built_key(key: &str, named: &dyn Fn(&str) -> bool) -> bool {
+    static TEMPLATES: std::sync::OnceLock<Vec<&'static str>> = std::sync::OnceLock::new();
+    let templates = TEMPLATES.once(|| {
+        include_str!(concat!(env!("OUT_DIR"), "/engine_key_templates.txt"))
+            .lines()
+            .filter(|l| !l.is_empty())
+            .collect()
+    });
+    // The part a placeholder fills: another key the code names, or an index or axis of a few characters.
+    let fits = |part: &str| !part.is_empty() && (part.len() <= 2 || named(part));
+    templates.iter().any(|t| {
+        if let Some(tail) = t.strip_prefix('*') {
+            key.strip_suffix(tail).is_some_and(fits)
+        } else if let Some(lead) = t.strip_suffix('*') {
+            key.strip_prefix(lead).is_some_and(fits)
+        } else {
+            false
+        }
+    })
+}
+
+/// The keys custom G-code in `config` names as placeholders (`[key]`, `{key}`, `{key[0]}`): those values print even
+/// when nothing else reads them.
+pub fn placeholder_keys(config: &serde_json::Map<String, Value>) -> std::collections::HashSet<String> {
+    let mut out = std::collections::HashSet::new();
+    for (k, v) in config {
+        if !k.contains("gcode") {
+            continue;
+        }
+        let texts: Vec<&str> = match v {
+            Value::String(t) => vec![t.as_str()],
+            Value::Array(a) => a.iter().filter_map(Value::as_str).collect(),
+            _ => Vec::new(),
+        };
+        for t in texts {
+            for (i, _) in t.match_indices(['[', '{']) {
+                let name: String = t[i + 1..]
+                    .trim_start()
+                    .chars()
+                    .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
+                    .collect();
+                if !name.is_empty() {
+                    out.insert(name);
+                }
+            }
+        }
+    }
+    out
 }
 
 /// Keys the engine reads. Others in an override are reported as unsupported.

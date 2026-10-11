@@ -5,7 +5,7 @@
 import { readFileSync } from 'node:fs'
 import { basename } from 'node:path'
 import type { SettingValue } from '@slicerx/contracts'
-import { importProject, keptEngineChoices, parseXml, selectVariants } from '@slicerx/settings'
+import { importProject, keptEngineChoices, LEGACY_GROUPS, LEGACY_KEYS, parseXml, selectVariants } from '@slicerx/settings'
 import { ToolInputError } from './models'
 import { readZip } from './zip'
 
@@ -35,11 +35,53 @@ export interface ProjectSummary {
    * `support_filament` is the slot it names even when the print has fewer filaments.
    */
   support: Record<string, SettingValue>
+  /** What the file's print settings carry that slicing will not use, by kind (see `ImportReport`). */
+  import_report: ImportReport
 }
 
 /** A key of the project's support settings, as `ProjectSummary.support` lists them. */
 export function isSupportKey(key: string): boolean {
   return key === 'enable_support' || key === 'enforce_support_layers' || key.startsWith('support_') || key.startsWith('tree_support_')
+}
+
+/**
+ * The print settings a project carries that slicing will not use, by kind. Every key is listed; the text output
+ * names the first few of each kind and counts the rest.
+ */
+export interface ImportReport {
+  /** The app that wrote the file (the model's `Application` entry), when it says. */
+  source?: string
+  /** Keys SlicerX does not know, with the file's values. */
+  unknown: { key: string; value: unknown }[]
+  /** Keys the slicers retired, left out. */
+  retired: string[]
+  /** Keys only another slicer reads (a fork's own), left out. */
+  other_slicer: string[]
+  /** Old names read as their current ones. */
+  renamed: { from: string; to: string }[]
+  /** Values that could not be read, with the file's values; those settings keep the preset's. */
+  invalid: { key: string; value: unknown }[]
+}
+
+/** How many keys of each kind a text line names before it counts the rest. */
+const REPORT_NAMES = 8
+
+/** One line per kind of `report` that has keys, the first few named and the rest counted. */
+export function importReportLines(report: ImportReport): string[] {
+  const named = (keys: string[]): string => keys.slice(0, REPORT_NAMES).join(', ') + (keys.length > REPORT_NAMES ? ` and ${keys.length - REPORT_NAMES} more` : '')
+  const out: string[] = []
+  if (report.invalid.length) out.push(`${report.invalid.length} with a value SlicerX cannot read, kept from the preset: ${named(report.invalid.map((i) => i.key))}`)
+  if (report.unknown.length) out.push(`${report.unknown.length} SlicerX does not know, not used: ${named(report.unknown.map((u) => u.key))}`)
+  if (report.other_slicer.length) out.push(`${report.other_slicer.length} only another slicer reads, not used: ${named(report.other_slicer)}`)
+  if (report.retired.length) out.push(`${report.retired.length} retired, not used: ${named(report.retired)}`)
+  if (report.renamed.length) out.push(`${report.renamed.length} read under a newer name: ${named(report.renamed.map((r) => `${r.from} as ${r.to}`))}`)
+  return out
+}
+
+/** The app that wrote a 3MF, from its model's `Application` metadata. */
+function sourceApp(model: string | undefined): string | undefined {
+  const m = model?.match(/<metadata\s+name="Application"\s*>([^<]*)<\/metadata>/)
+  return m?.[1]?.trim() || undefined
 }
 
 export interface ProjectRead {
@@ -135,6 +177,22 @@ export function readProjectFile(path: string): ProjectRead {
     const value = (imported.config as unknown as Record<string, SettingValue>)[k] ?? projectValue(raw[k])
     if (value !== undefined) support[k] = value
   }
+  const renamed = Object.keys(kept)
+    .filter((k) => LEGACY_KEYS[k] !== undefined && LEGACY_KEYS[k] !== k && !(k in (imported.config as Record<string, unknown>)))
+    .sort()
+    .map((k) => ({ from: k, to: LEGACY_KEYS[k] as string }))
+  const fromOf = new Map(renamed.map((r) => [r.to, r.from]))
+  const modelPath = zip.names().find((n) => n.toLowerCase() === '3d/3dmodel.model')
+  // A project's main model only places its objects, so it is small; a plain 3MF's can be large and has no settings.
+  const source = settingsText !== undefined && modelPath ? sourceApp(zip.text(modelPath)?.slice(0, 4096)) : undefined
+  const importReport: ImportReport = {
+    ...(source ? { source } : {}),
+    unknown: imported.unknownKeys.map((k) => ({ key: k, value: raw[k] })),
+    retired: imported.ignoredKeys.filter((k) => !LEGACY_GROUPS.foreign.has(k)),
+    other_slicer: imported.ignoredKeys.filter((k) => LEGACY_GROUPS.foreign.has(k)),
+    renamed,
+    invalid: imported.invalidKeys.map((k) => ({ key: k, value: raw[k] ?? raw[fromOf.get(k) ?? ''] })),
+  }
 
   return {
     summary: {
@@ -146,6 +204,7 @@ export function readProjectFile(path: string): ProjectRead {
       unknown_keys: [...imported.unknownKeys, ...imported.invalidKeys].sort(),
       dropped_keys: dropped,
       support,
+      import_report: importReport,
     },
     config,
   }
