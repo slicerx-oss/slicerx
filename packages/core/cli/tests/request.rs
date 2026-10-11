@@ -395,3 +395,120 @@ fn a_solid_join_never_crosses_another_objects_path() {
     let collisions = v["collisions"].as_array().cloned().unwrap_or_default();
     assert!(collisions.is_empty(), "{collisions:?}");
 }
+
+/// Slices a request body (mesh paths relative to the fixtures) and gives the result.
+fn slice_body(body: &serde_json::Value) -> (std::process::ExitStatus, serde_json::Value, String) {
+    let dir = std::env::temp_dir().join(format!("sx-cli-paint-{}-{}", std::process::id(), rand_tag()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("request.json");
+    std::fs::write(&path, serde_json::to_vec(body).unwrap()).unwrap();
+    let out = sx()
+        .args(["slice", "--request"])
+        .arg(&path)
+        .arg("--out-dir")
+        .arg(dir.join("out"))
+        .output()
+        .unwrap();
+    let v = serde_json::from_slice(&out.stdout).unwrap_or(serde_json::Value::Null);
+    let _ = std::fs::remove_dir_all(dir);
+    (out.status, v, String::from_utf8_lossy(&out.stderr).into_owned())
+}
+
+fn rand_tag() -> u64 {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static N: AtomicU64 = AtomicU64::new(0);
+    N.fetch_add(1, Ordering::Relaxed)
+}
+
+/// The painted fixture's request with `paint` on its mesh entry.
+fn painted_body(paint: Option<serde_json::Value>) -> serde_json::Value {
+    let mut v: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(fixture("painted-request.json")).unwrap()).unwrap();
+    let file = fixture("painted.3mf");
+    v["meshes"]["p"] = match paint {
+        Some(p) => serde_json::json!({ "file": file, "paint": p }),
+        None => serde_json::json!(file),
+    };
+    v
+}
+
+/// The fixture's own paint, in the request's shape.
+fn fixture_paint() -> serde_json::Value {
+    let mesh =
+        sx_core::api::load_mesh(&std::fs::read(fixture("painted.3mf")).unwrap(), "painted.3mf").unwrap();
+    let mut out = serde_json::Map::new();
+    for (k, p) in mesh.parts.iter().enumerate() {
+        let mut layers = serde_json::Map::new();
+        for (layer, tri, text) in &p.paint_texts {
+            let name = sx_core::mesh::PAINT_LAYERS[usize::from(*layer)];
+            layers
+                .entry(name)
+                .or_insert_with(|| serde_json::json!({}))
+                .as_object_mut()
+                .unwrap()
+                .insert(tri.to_string(), serde_json::json!(text));
+        }
+        if !layers.is_empty() {
+            out.insert(k.to_string(), serde_json::Value::Object(layers));
+        }
+    }
+    serde_json::Value::Object(out)
+}
+
+#[test]
+fn paint_in_the_request_is_written_over_the_files_paint() {
+    let (ok, plain, err) = slice_body(&painted_body(None));
+    assert!(ok.success(), "{err}");
+    let sha = plain["gcodeSha256"].as_str().unwrap().to_owned();
+    let own = fixture_paint();
+    assert!(
+        own.as_object().is_some_and(|o| !o.is_empty()),
+        "the fixture is painted"
+    );
+
+    // The file's own paint, given again: the same G-code.
+    let (ok, again, err) = slice_body(&painted_body(Some(own.clone())));
+    assert!(ok.success(), "{err}");
+    assert_eq!(again["gcodeSha256"], sha);
+
+    // Every painted triangle cleared: other G-code, and fewer filament changes.
+    let mut cleared = own.clone();
+    for layers in cleared.as_object_mut().unwrap().values_mut() {
+        for texts in layers.as_object_mut().unwrap().values_mut() {
+            for t in texts.as_object_mut().unwrap().values_mut() {
+                *t = serde_json::json!("");
+            }
+        }
+    }
+    let (ok, bare, err) = slice_body(&painted_body(Some(cleared)));
+    assert!(ok.success(), "{err}");
+    assert_ne!(bare["gcodeSha256"], sha);
+    let changes = |v: &serde_json::Value| v["stats"]["toolChanges"].as_u64().unwrap_or(0);
+    assert!(
+        changes(&bare) < changes(&plain),
+        "{} {}",
+        changes(&bare),
+        changes(&plain)
+    );
+
+    // Bad paint is refused as bad input, by name.
+    for (bad, says) in [
+        (
+            serde_json::json!({ "99": { "color": { "0": "8" } } }),
+            "paint part 99",
+        ),
+        (serde_json::json!({ "0": { "glitter": { "0": "8" } } }), "glitter"),
+        (
+            serde_json::json!({ "0": { "color": { "999999": "8" } } }),
+            "triangle 999999",
+        ),
+        (
+            serde_json::json!({ "0": { "color": { "0": "zz" } } }),
+            "does not read",
+        ),
+    ] {
+        let (ok, _, err) = slice_body(&painted_body(Some(bad)));
+        assert_eq!(ok.code(), Some(3), "{err}");
+        assert!(err.contains(says), "{err}");
+    }
+}

@@ -28,6 +28,8 @@ export interface SliceJob {
   emitPreview?: boolean
   /** Slice even when paths cross or meet the toolhead (sx engine only); refused by default. */
   allowCollisions?: boolean
+  /** Paint written over the model's own (sx engine, one object): { part: { color | seam | support | fuzzy: { triangle: text } } }. */
+  paint?: Record<string, Record<string, Record<string, string>>>
   /** A whole plate: every object's mesh file and transform (sx engine). `modelPath` is then a combined STL for engines that take one file. */
   plate?: { bed?: { widthMm: number; depthMm: number; heightMm: number }; objects: { path: string; name: string; transform?: number[] }[] }
 }
