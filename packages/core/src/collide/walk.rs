@@ -271,7 +271,7 @@ impl Walker<'_> {
                     && let Some(c) = m.heads.get(head).and_then(|h| h.get(ci))
                     && (!above
                         || super::grid::material_in(
-                            &o.object,
+                            o.surface(),
                             [x + c.x[0], x + c.x[1], y + c.y[0], y + c.y[1]],
                             z + c.z0,
                             z + c.z1,
@@ -496,7 +496,7 @@ fn meeting(
     #[allow(clippy::cast_possible_truncation, reason = "mm")]
     let near = o.grid().contact(rect, over as f32, p);
     let shift = if push { near.map_or(0.0, |n| n.1) } else { 0.0 };
-    if let Some(q) = super::grid::meet(&o.object, rect, over, p) {
+    if let Some(q) = super::grid::meet(o.surface(), rect, over, p) {
         return Some((q, shift));
     }
     if let Some((c, _)) = near {
@@ -505,7 +505,7 @@ fn meeting(
     // The grids work in whole cells, so a contact at the edge of the box can sit up to a cell or two outside it.
     let g = 2.0 * super::grid::CELL;
     super::grid::meet(
-        &o.object,
+        o.surface(),
         [rect[0] - g, rect[1] + g, rect[2] - g, rect[3] + g],
         over,
         p,

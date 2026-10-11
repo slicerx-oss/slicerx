@@ -379,6 +379,8 @@ struct Obstacle {
     object: PlateObject,
     /// The height grid, made the first time a move comes near enough to need it.
     grid: OnceLock<Grid>,
+    /// The surface by cell, for where a move first meets the part, made on first use.
+    surface: OnceLock<grid::Surface>,
     top: f32,
     bounds: [f64; 4],
     hull: Vec<[f64; 2]>,
@@ -390,6 +392,10 @@ struct Obstacle {
 impl Obstacle {
     fn grid(&self) -> &Grid {
         crate::par::Init::once(&self.grid, || Grid::of_object(&self.object))
+    }
+
+    fn surface(&self) -> &grid::Surface {
+        crate::par::Init::once(&self.surface, || grid::Surface::of_object(&self.object))
     }
 }
 
@@ -492,6 +498,7 @@ impl Model {
             built.push(Obstacle {
                 object: (*o).clone(),
                 grid: OnceLock::new(),
+                surface: OnceLock::new(),
                 top: top as f32,
                 bounds: [
                     lo[0].floor(),
