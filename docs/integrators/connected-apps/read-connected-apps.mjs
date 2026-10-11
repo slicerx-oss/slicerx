@@ -35,7 +35,7 @@ export async function readConnectedApps(call, names) {
   }
 
   // Switching a device is never the agent's to approve: the server answers needs_person and a card
-  // waits in SlicerX and on the user's phone. Don't call slicerx_approve for it; it is refused.
+  // waits in the SlicerX app. Don't call slicerx_approve for it; it is refused.
   const plug = Array.isArray(result.switches) ? result.switches[0] : null
   if (plug && has('slicerx_home_assistant_call_service')) {
     const r = out(await call('slicerx_home_assistant_call_service', { domain: 'switch', service: 'turn_off', entityId: plug.entityId }))
@@ -59,7 +59,7 @@ async function main() {
     if (r.switches === null) console.log('Home Assistant: not added in SlicerX')
     else if (r.switches.error) console.log(`Home Assistant: ${r.switches.error}`)
     else for (const e of r.switches) console.log(`${e.entityId} is ${e.state}`)
-    if (r.plugCard?.status === 'needs_person') console.log(`Asked to turn ${r.plugCard.entityId} off. A person answers that in SlicerX or on their phone.`)
+    if (r.plugCard?.status === 'needs_person') console.log(`Asked to turn ${r.plugCard.entityId} off. A person answers that in the SlicerX app.`)
   } finally {
     await client.close()
   }
