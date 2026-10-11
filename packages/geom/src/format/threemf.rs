@@ -524,23 +524,48 @@ fn load_model(zip: &Zip<'_>, path: &str) -> Result<Model> {
     };
     let mut buf: Vec<u8> = Vec::new();
     let mut head = true;
+    // the whole tags of a piece; returns how much of it they cover
+    let run = |p: &mut ModelParser, region: &[u8]| -> Result<usize> {
+        let s =
+            std::str::from_utf8(region).map_err(|_| Error::invalid("3mf", format!("{path} is not UTF-8")))?;
+        xml::scan(s, |t| p.tag(&t)).map_err(|r| refused(path, r))
+    };
     zip.stream(path, |chunk| {
         if head {
             // a doctype sits in the prolog, before the first element
             head = false;
             p.model.doctype = chunk.windows(9).any(|w| w == b"<!DOCTYPE");
         }
-        buf.extend_from_slice(chunk);
-        let Some(end) = buf.iter().rposition(|&b| b == b'>') else {
+        let mut piece = chunk;
+        if !buf.is_empty() {
+            // finish the tag the last piece cut off, then read this one where it is, without a copy
+            let Some(gt) = piece.iter().position(|&b| b == b'>') else {
+                buf.extend_from_slice(piece);
+                return Ok(());
+            };
+            buf.extend_from_slice(piece.get(..=gt).unwrap_or_default());
+            piece = piece.get(gt + 1..).unwrap_or_default();
+            let used = run(&mut p, &buf)?;
+            if used < buf.len() {
+                // a comment holding a '>': keep it all together
+                buf.drain(..used);
+                buf.extend_from_slice(piece);
+                return Ok(());
+            }
+            buf.clear();
+        }
+        let Some(end) = piece.iter().rposition(|&b| b == b'>') else {
+            buf.extend_from_slice(piece);
             return Ok(());
         };
-        let region = buf.get(..=end).unwrap_or_default();
-        let s =
-            std::str::from_utf8(region).map_err(|_| Error::invalid("3mf", format!("{path} is not UTF-8")))?;
-        let used = xml::scan(s, |t| p.tag(&t)).map_err(|r| refused(path, r))?;
-        buf.drain(..used);
+        let used = run(&mut p, piece.get(..=end).unwrap_or_default())?;
+        buf.extend_from_slice(piece.get(used..).unwrap_or_default());
         Ok(())
     })?;
+    if !buf.is_empty() && buf.contains(&b'>') {
+        let used = run(&mut p, &buf)?;
+        buf.drain(..used);
+    }
     if let Some((id, o)) = p.current.take() {
         p.model.objects.insert(id, o);
     }
@@ -573,10 +598,7 @@ impl ModelParser {
                     "z" => 2,
                     _ => continue,
                 };
-                let f = v
-                    .trim()
-                    .parse::<f32>()
-                    .ok()
+                let f = xml::f32_of(v)
                     .filter(|f| f.is_finite())
                     .ok_or_else(|| Refused("vertex", *id, k, v.to_owned()))?;
                 if let Some(slot) = p.get_mut(c) {
@@ -612,10 +634,7 @@ impl ModelParser {
                     _ => continue,
                 };
                 if let Some(s) = slot {
-                    let i = val
-                        .trim()
-                        .parse::<u32>()
-                        .map_err(|_| Refused("triangle", *id, k, val.to_owned()))?;
+                    let i = xml::u32_of(val).ok_or_else(|| Refused("triangle", *id, k, val.to_owned()))?;
                     if let Some(c) = v.get_mut(s) {
                         *c = Some(i);
                     }
