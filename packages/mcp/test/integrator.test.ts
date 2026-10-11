@@ -73,6 +73,51 @@ describe('3MF projects', () => {
     expect(s.dropped_keys).toEqual(['post_process', 'printhost_apikey'])
   })
 
+  it("lists the project's support settings as the file sets them", async () => {
+    const h = await connect()
+    const path = join(h.dir, 'supports.3mf')
+    writeFileSync(
+      path,
+      writeZip([
+        { name: '3D/3dmodel.model', data: MODEL },
+        {
+          name: 'Metadata/project_settings.config',
+          data: JSON.stringify({
+            printer_settings_id: 'Bambu Lab A1 0.4 nozzle',
+            filament_colour: ['#FF0000', '#00AE42'],
+            layer_height: '0.2',
+            enable_support: '1',
+            support_type: 'tree(auto)',
+            support_threshold_angle: '30',
+            support_filament: '5',
+            support_interface_filament: '0',
+            tree_support_branch_angle: '45',
+            enforce_support_layers: '0',
+          }),
+        },
+      ]),
+    )
+    const r = await h.call('slicerx_inspect_project', { file: path })
+    expect(r.isError, text(r)).toBeFalsy()
+    const s = data<{ support: Record<string, unknown> }>(r)
+    expect(Object.keys(s.support)).toEqual([
+      'enable_support',
+      'enforce_support_layers',
+      'support_filament',
+      'support_interface_filament',
+      'support_threshold_angle',
+      'support_type',
+      'tree_support_branch_angle',
+    ])
+    expect(s.support['support_type']).toBe('tree(auto)')
+    // The slot the file names, even past the print's two filaments.
+    expect(Number(s.support['support_filament'])).toBe(5)
+    expect(text(r)).toMatch(/Support: enable_support /)
+    // A project without support settings lists none.
+    const plain = data<{ support: Record<string, unknown> }>(await h.call('slicerx_inspect_project', { file: projectFile(h.dir) }))
+    expect(plain.support).toEqual({})
+  })
+
   it('refuses a plate the project does not have', async () => {
     const h = await connect()
     const r = await h.call('slicerx_estimate_file', { model: projectFile(h.dir), plate: 3 })

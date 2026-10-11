@@ -29,6 +29,17 @@ export interface ProjectSummary {
   unknown_keys: string[]
   /** Keys a file may never set (scripts and secrets), left out. */
   dropped_keys: string[]
+  /**
+   * The support settings the project sets (`enable_support`, `enforce_support_layers`, `support_*` and
+   * `tree_support_*`), in the shapes slicing takes them; empty when it sets none. Values are the file's own, so
+   * `support_filament` is the slot it names even when the print has fewer filaments.
+   */
+  support: Record<string, SettingValue>
+}
+
+/** A key of the project's support settings, as `ProjectSummary.support` lists them. */
+export function isSupportKey(key: string): boolean {
+  return key === 'enable_support' || key === 'enforce_support_layers' || key.startsWith('support_') || key.startsWith('tree_support_')
 }
 
 export interface ProjectRead {
@@ -117,6 +128,14 @@ export function readProjectFile(path: string): ProjectRead {
   const config: Record<string, SettingValue> = { ...projectKeys, ...(imported.config as unknown as Record<string, SettingValue>) }
   for (const k of keptEngineChoices(raw)) delete config[k]
 
+  // The support settings as the file has them, in schema shapes where the import read them.
+  const support: Record<string, SettingValue> = {}
+  for (const k of Object.keys(raw).filter(isSupportKey).sort()) {
+    if (isNeverImported(k)) continue
+    const value = (imported.config as unknown as Record<string, SettingValue>)[k] ?? projectValue(raw[k])
+    if (value !== undefined) support[k] = value
+  }
+
   return {
     summary: {
       file: path,
@@ -126,6 +145,7 @@ export function readProjectFile(path: string): ProjectRead {
       filaments,
       unknown_keys: [...imported.unknownKeys, ...imported.invalidKeys].sort(),
       dropped_keys: dropped,
+      support,
     },
     config,
   }
