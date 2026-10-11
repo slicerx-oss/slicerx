@@ -2200,8 +2200,8 @@ fn travel_runs_at_the_profiles_speed_above_the_axis_limit() {
 
 #[test]
 fn the_layer_fan_comes_ahead_of_the_layer_change() {
-    // orca's cooling buffer writes a layer's fan at the head of its g-code, before the layer change, and
-    // `change_layer` marks the fan's place after the layer change g-code
+    // orca's cooling buffer writes a layer's fan at the head of its g-code, before the layer change, only when it
+    // changes, and `change_layer` marks the fan's place after the layer change g-code
     let c = json!({"gcode_flavor": "marlin", "printer_model": "Bambu Lab A1"});
     let g = cube(c, 1);
     let lines: Vec<&str> = g.lines().collect();
@@ -2210,10 +2210,28 @@ fn the_layer_fan_comes_ahead_of_the_layer_change() {
         .collect();
     assert!(marks.len() > 10);
     assert!(
-        marks.iter().all(|&i| lines[i - 1].starts_with("M106 S")),
-        "{:?}",
-        &lines[marks[1] - 3..=marks[1]]
+        lines[marks[0] - 1].starts_with("M106 S"),
+        "the first layer sets its fan"
     );
+    // A layer's fan line is written only when the fan runs at another speed.
+    let mut fan: Option<&str> = None;
+    let mut written = 0;
+    for (i, l) in lines.iter().enumerate().skip(marks[0] - 1) {
+        if !l.starts_with("M106 S") {
+            continue;
+        }
+        if marks.contains(&(i + 1)) {
+            assert_ne!(fan, Some(*l), "line {i} repeats the fan");
+            written += 1;
+        }
+        fan = Some(l);
+    }
+    assert!(
+        written < marks.len(),
+        "{written} layer fan lines for {} layers",
+        marks.len()
+    );
+    assert!(!g.contains(";@N"), "the marks are gone");
     assert_eq!(g.matches(";_SET_FAN_SPEED_CHANGING_LAYER\n").count(), marks.len());
 }
 
