@@ -9095,10 +9095,15 @@ fn plan_tools(
                     spans.push((*state, first, first + shells.1.saturating_sub(1)));
                 }
             } else {
-                // A painted wall shows no paint on the layer that is the part's own top or bottom.
+                // A painted wall shows no paint on the layer that is the part's own top or bottom, where an
+                // unpainted surface holds it back; a sloped face is that surface itself, so one facing down keeps
+                // its paint on the bottom layer and one facing up on the top layer.
                 let h = plan.thickness(0);
-                let lo_eff = if flo <= lo + 1e-6 { flo + h } else { flo };
-                let hi_eff = if fhi >= hi - 1e-6 { fhi - h } else { fhi };
+                let nz = crate::paint::unit_nz(tri).unwrap_or(0.0);
+                let down = nz < -crate::paint::SLOPED;
+                let up = nz > crate::paint::SLOPED;
+                let lo_eff = if flo <= lo + 1e-6 && !down { flo + h } else { flo };
+                let hi_eff = if fhi >= hi - 1e-6 && !up { fhi - h } else { fhi };
                 if let Some((a, b)) = layers_of(lo_eff, hi_eff) {
                     spans.push((*state, a, b));
                 }
