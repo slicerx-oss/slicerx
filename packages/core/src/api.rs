@@ -211,7 +211,8 @@ pub struct ThumbnailInput {
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RequestOptions {
-    /// `sx` (default) or `orca`.
+    /// The engine: `sx`, the only one, and the default. `orca` is still read so old requests get a clear refusal
+    /// (the Orca engine is not available) rather than an unknown value.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub engine: Option<String>,
     /// Overrides the config's `gcode_flavor`.
