@@ -211,6 +211,15 @@ pub struct ThumbnailInput {
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RequestOptions {
+    /// List the config keys this engine never reads in the report (`configReport.notApplied`) and a warning. Off by
+    /// default: hosts that send a whole resolved profile would see every key the engine has no use for. `sx` turns it
+    /// on unless the request says otherwise.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub config_report: Option<bool>,
+    /// Refuse the slice when the config sets a key this engine never reads or a value it cannot use, instead of
+    /// slicing without them (the report lists them either way).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub strict: Option<bool>,
     /// `sx` (default) or `orca`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub engine: Option<String>,
@@ -352,6 +361,79 @@ pub struct SliceReport {
     /// Fixes for the collisions, with what they cost.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub collision_fixes: Vec<crate::collide::CollisionFix>,
+    /// What the request's config set that this slice did not use; absent when it used everything.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub config_report: Option<ConfigReport>,
+}
+
+/// What a request's config set that the slice did not use.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConfigReport {
+    /// Keys this engine never reads, sorted; listed with `options.configReport` or `options.strict`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub not_applied: Vec<String>,
+    /// Values the engine could not use, in the order found; those settings kept their defaults.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub invalid: Vec<crate::config::ConfigIssue>,
+}
+
+/// How many keys a warning names before it counts the rest.
+const REPORT_NAMES: usize = 10;
+
+fn names_capped(names: &[String]) -> String {
+    let shown = names
+        .iter()
+        .take(REPORT_NAMES)
+        .cloned()
+        .collect::<Vec<_>>()
+        .join(", ");
+    match names.len().saturating_sub(REPORT_NAMES) {
+        0 => shown,
+        more => format!("{shown} and {more} more"),
+    }
+}
+
+impl ConfigReport {
+    pub fn is_empty(&self) -> bool {
+        self.not_applied.is_empty() && self.invalid.is_empty()
+    }
+
+    /// One line per kind, the first [`REPORT_NAMES`] keys named and the rest counted.
+    pub fn lines(&self) -> Vec<String> {
+        let mut out = Vec::new();
+        if !self.invalid.is_empty() {
+            let named: Vec<String> = self
+                .invalid
+                .iter()
+                .map(|i| format!("{} ({}: {})", i.key, i.value, i.reason))
+                .collect();
+            out.push(format!(
+                "{} setting{} had a value this engine cannot use, so {} the default: {}",
+                self.invalid.len(),
+                if self.invalid.len() == 1 { "" } else { "s" },
+                if self.invalid.len() == 1 {
+                    "it keeps"
+                } else {
+                    "they keep"
+                },
+                names_capped(&named)
+            ));
+        }
+        if !self.not_applied.is_empty() {
+            out.push(format!(
+                "{} setting{} not used by this engine: {}",
+                self.not_applied.len(),
+                if self.not_applied.len() == 1 {
+                    " is"
+                } else {
+                    "s are"
+                },
+                names_capped(&self.not_applied)
+            ));
+        }
+        out
+    }
 }
 
 /// Which extruder and nozzle print each filament (Bambu Studio's `filament_maps`).
@@ -525,6 +607,15 @@ pub fn request_config(req: &SliceRequest) -> Result<PrintConfig> {
 
 /// [`request_config`] plus the preflight's findings (clamps, as warnings).
 pub fn request_config_checked(req: &SliceRequest) -> Result<(PrintConfig, Vec<crate::preflight::Issue>)> {
+    request_config_report(req).map(|(c, i, _)| (c, i))
+}
+
+/// [`request_config_checked`] plus what the config set that the slice will not use. A value the engine cannot use
+/// leaves that one setting at its default; with `options.strict` it, or a key the engine never reads, refuses the
+/// slice instead.
+pub fn request_config_report(
+    req: &SliceRequest,
+) -> Result<(PrintConfig, Vec<crate::preflight::Issue>, ConfigReport)> {
     if let Some(v) = req.schema_version
         && v != SCHEMA_VERSION
     {
@@ -533,11 +624,29 @@ pub fn request_config_checked(req: &SliceRequest) -> Result<(PrintConfig, Vec<cr
             reason: format!("unsupported version {v}"),
         });
     }
-    let mut config = if req.config.is_null() {
-        PrintConfig::default()
-    } else {
-        PrintConfig::from_value(&req.config)?
-    };
+    let strict = req.options.strict.unwrap_or(false);
+    let mut config = PrintConfig::default();
+    let mut report = ConfigReport::default();
+    if !req.config.is_null() {
+        report.invalid = config.apply_value_lenient(&req.config)?;
+    }
+    if (strict || req.options.config_report.unwrap_or(false))
+        && let Some(map) = req.config.as_object()
+    {
+        let placeholders = crate::config::placeholder_keys(map);
+        report.not_applied = map
+            .keys()
+            .filter(|k| !crate::config::is_used_key(k) && !placeholders.contains(k.as_str()))
+            .cloned()
+            .collect();
+        report.not_applied.sort();
+    }
+    if strict && !report.is_empty() {
+        return Err(Error::Config {
+            key: "options.strict",
+            reason: report.lines().join("; "),
+        });
+    }
     if let Some(over) = object_settings(req) {
         config.apply_value(&over)?;
         config.check()?;
@@ -563,7 +672,7 @@ pub fn request_config_checked(req: &SliceRequest) -> Result<(PrintConfig, Vec<cr
         return Err(Error::Blocked(crate::preflight::blocking_text(&issues)));
     }
     match req.options.engine.as_deref() {
-        None | Some("sx") => Ok((config, issues)),
+        None | Some("sx") => Ok((config, issues, report)),
         Some("orca") => Err(Error::Unsupported("the orca engine")),
         Some(other) => Err(Error::Config {
             key: "options.engine",
@@ -949,7 +1058,7 @@ fn run_prepared_timed(
     progress: &dyn Progress,
     timer: &Timer,
 ) -> Result<SliceRun> {
-    let (config, config_issues) = request_config_checked(req)?;
+    let (config, config_issues, config_report) = request_config_report(req)?;
     let (config, config_issues) = with_lone_settings(config, config_issues, &prepared.lone_settings)?;
     let session = &prepared.session;
     let n = session.layer_count();
@@ -1082,6 +1191,17 @@ fn run_prepared_timed(
             message: i.message.clone(),
             layer: None,
         });
+    }
+    // What the config set that this slice does not use: one warning per kind, and the whole list in the report.
+    for line in config_report.lines() {
+        report.warnings.push(SliceWarning {
+            code: WarningCode::UnsupportedSetting,
+            message: line,
+            layer: None,
+        });
+    }
+    if !config_report.is_empty() {
+        report.config_report = Some(config_report);
     }
     if want_preview {
         let refs: Vec<&[u8]> = chunks.iter().map(Vec::as_slice).collect();
