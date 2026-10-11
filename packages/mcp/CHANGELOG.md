@@ -6,6 +6,8 @@ All notable changes to `@slicerx/mcp` are documented here. The format follows [K
 
 ### Added
 
+- The checks and project operations the SlicerX app runs from its panels are tools now, so a client can do what a person does there: `slicerx_gcode_inspect`, `slicerx_risk_report`, `slicerx_energy_estimate`, `slicerx_fit_check`, `slicerx_mesh_analyze`, `slicerx_printer_config_check`, `slicerx_spool_fit`, `slicerx_overnight_readiness`, `slicerx_spool_inventory`, `slicerx_printer_match`, `slicerx_fleet_overview` and `slicerx_ams_mapping` read; `slicerx_supports`, `slicerx_orientation_search`, `slicerx_mesh_repair`, `slicerx_hollow`, `slicerx_emboss`, `slicerx_scale_with_tolerance`, `slicerx_threads_and_fits`, `slicerx_smart_layer`, `slicerx_multicolor_assign` and `slicerx_region_modifiers` change the open project (class slice). The checks read the plates `slicerx_slice` sliced; the mesh tools need `sx-geom`. None of them starts a print.
+
 - Slice and estimate results carry `notices`, warnings with a code. `no_printer` says the slice named no printer, so the engine used its generic machine ("No printer chosen, so this slice used a generic 200 mm machine; times and limits are not for your printer."). The same line is in `warnings`.
 
 - Set up local AI: `slicerx_local_ai_check` (hardware, one recommended model with its reason, size and license, running Ollama or LM Studio), `slicerx_local_ai_status` (installed local models and the one set up last) and `slicerx_local_ai_setup` (an Ollama download with progress notifications, then a tool call and speed check). Setup always asks the user first. Requests go only to 127.0.0.1. An edition config turns them off (`features.localAi`) or limits the models (`ai.allowedLocalModels`).
@@ -13,6 +15,8 @@ All notable changes to `@slicerx/mcp` are documented here. The format follows [K
 
 ### Changed
 
+- A project object whose mesh a tool replaced (cut parts, a repaired or hollowed mesh) keeps its geometry and rotation, so it slices; before, the plate came out without it.
+- Project meshes are handed to the mesh tools with shared corners, so a closed STL measures watertight instead of showing every edge open.
 - License: the server code is Apache-2.0. The bundle inlines the AGPL-3.0-or-later stock profiles, so the package is `Apache-2.0 AND AGPL-3.0-or-later`, with the AGPL text in `dist/LICENSE-AGPL-profiles.txt`.
 - The published `./agents` entry is built (`dist/agents.js`), and both entries ship self-contained type declarations.
 - Starting, resuming or sending G-code to a printer can no longer be approved through MCP. Those requests return `needs_person` and wait for a person in SlicerX or on the phone; `slicerx_approve` can only decline them. Pause and cancel still follow the policy. `slicerx_approve` ignores `bed_clear`.
