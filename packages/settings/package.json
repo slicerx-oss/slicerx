@@ -10,6 +10,7 @@
     "./schema.json": "./schema.json",
     "./notes.json": "./notes.json",
     "./legacy.json": "./legacy.json",
+    "./engine-choices.json": "./engine-choices.json",
     "./knowledge.json": "./knowledge.json",
     "./printer-models.json": "./printer-models.json",
     "./defaults": "./js/defaults.ts",

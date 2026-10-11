@@ -3,20 +3,23 @@
 // An opened project's settings come from the file, except a few engine choices of SlicerX, which stay ours unless the
 // person changed them in the project. The app's project open and the MCP server's project_settings both use this, so a
 // project slices the same either way.
+import engineChoicesJson from '../engine-choices.json'
 import { LEGACY_KEYS } from './import'
+
+// The list lives in engine-choices.json, so sx-core (sx slice <project.3mf>) keeps the same ones:
+// aegis walls (wall widths fitted to the part, so thin features print solid with fewer width changes than Arachne or
+// Bambu Studio's classic walls) and the outer wall spaced from the inner ones so the outline lands on the model's size.
+const ENGINE_CHOICES = engineChoicesJson as { keeps: Record<string, { value: string | boolean | number; note: string }> }
 
 /**
  * Engine choices of SlicerX that stay when a project opens, unless the person changed them in the project (its
  * different_settings_to_system lists the key): every other value the project inherited from its presets comes from the
  * file. Each says, in the open's note, what it kept when the project's inherited value differs.
  */
-export const SLICERX_KEEPS: Readonly<Record<string, string>> = {
-  // aegis: wall widths fitted to the part, so thin features print solid with fewer width changes than Arachne or
-  // Bambu Studio's classic walls (the app's SLICERX_PRESET_DEFAULTS sets it over every maker preset).
-  wall_generator: "Kept SlicerX's aegis walls; the project used Bambu's default.",
-  // The outer wall spaced from the inner walls so that the outline, not the wall's center, lands on the model's size.
-  precise_outer_wall: "Kept SlicerX's precise outer wall; the project used Bambu's default.",
-}
+export const SLICERX_KEEPS: Readonly<Record<string, string>> = Object.fromEntries(Object.entries(ENGINE_CHOICES.keeps).map(([k, v]) => [k, v.note]))
+
+/** The value SlicerX prints each kept engine choice with. */
+export const SLICERX_KEEP_VALUES: Readonly<Record<string, string | boolean | number>> = Object.fromEntries(Object.entries(ENGINE_CHOICES.keeps).map(([k, v]) => [k, v.value]))
 
 /**
  * The keys a project lists as changed from its system presets (`different_settings_to_system`: the process, then each

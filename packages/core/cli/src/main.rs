@@ -290,7 +290,12 @@ fn cmd_request(args: &[String]) -> ExitCode {
     }
     // The settings the slice did not use, as one block on stderr (stdout carries only the result).
     if let Some(r) = &run.report.config_report {
-        print_config_report(r);
+        if let Some(w) = &r.walls {
+            eprintln!("sx: walls: {}", w.text);
+        }
+        if !r.is_empty() {
+            print_config_report(r);
+        }
     }
     let mut out = match serde_json::to_value(&run.report) {
         Ok(v) => v,
@@ -523,6 +528,7 @@ fn read_config_file(config: &mut PrintConfig, path: &str) -> Res<sx_core::api::C
         ..Default::default()
     };
     if let Some(map) = value.as_object() {
+        report.walls = Some(sx_core::api::WallsNote::of_request(map, "--config"));
         let placeholders = sx_core::config::placeholder_keys(map);
         report.not_applied = map
             .keys()
@@ -534,21 +540,40 @@ fn read_config_file(config: &mut PrintConfig, path: &str) -> Res<sx_core::api::C
     Ok(report)
 }
 
+/// Reads `--config` over `config`, says on stderr which walls run and what the file sets that the engine does not
+/// use; true when `--strict` refuses the slice over it.
+fn config_from_file(args: &[String], config: &mut PrintConfig) -> Res<bool> {
+    let report = match flag(args, "--config") {
+        Some(p) => read_config_file(config, p)?,
+        None => sx_core::api::ConfigReport {
+            walls: Some(sx_core::api::WallsNote::of_request(
+                &serde_json::Map::new(),
+                "--config",
+            )),
+            ..Default::default()
+        },
+    };
+    if let Some(w) = &report.walls {
+        eprintln!("sx: walls: {}", w.text);
+    }
+    if !report.is_empty() {
+        print_config_report(&report);
+        if has(args, "--strict") {
+            eprintln!("sx slice: --strict: {}", report.lines().join("; "));
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
 fn cmd_slice(args: &[String]) -> Res<ExitCode> {
     let model = args
         .first()
         .filter(|a| !a.starts_with('-'))
         .ok_or("missing model path")?;
     let mut config = PrintConfig::default();
-    if let Some(p) = flag(args, "--config") {
-        let report = read_config_file(&mut config, p)?;
-        if !report.is_empty() {
-            print_config_report(&report);
-            if has(args, "--strict") {
-                eprintln!("sx slice: --strict: {}", report.lines().join("; "));
-                return Ok(ExitCode::from(EXIT_INPUT));
-            }
-        }
+    if config_from_file(args, &mut config)? {
+        return Ok(ExitCode::from(EXIT_INPUT));
     }
     #[cfg(feature = "stock-gcode")]
     {
