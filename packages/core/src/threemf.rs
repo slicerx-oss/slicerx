@@ -84,7 +84,8 @@ pub(crate) fn load_plate_objects(bytes: &[u8], name: &str) -> Result<Vec<(u32, V
 }
 
 /// The engine's own 3MF reader, kept until the one in `sx-geom` has replaced it everywhere: the format corpus
-/// (`scripts/format-corpus`) holds the two to the same meshes and the same G-code.
+/// (`scripts/format-corpus`) holds the two to the same meshes and the same G-code, except on `PrusaSlicer` projects,
+/// whose volumes this one reads as a single printed mesh.
 pub(crate) fn load_plate_objects_legacy(bytes: &[u8], name: &str) -> Result<Vec<(u32, Vec<Mesh>)>> {
     let zip = Zip::open(bytes).map_err(|e| Error::mesh(name, e))?;
     let root = zip
@@ -207,10 +208,8 @@ fn from_geom(bytes: &[u8], name: &str) -> Result<Vec<(u32, Vec<Mesh>)>> {
         sx_geom::Error::Invalid { why, .. } => Error::mesh(name, why),
         other => Error::mesh(name, other.to_string()),
     })?;
-    // PrusaSlicer's volumes are read by the legacy reader as one printed mesh; this keeps that until the switch
-    if project.layout == Layout::Prusa {
-        return load_plate_objects_legacy(bytes, name);
-    }
+    // PrusaSlicer writes its own keys; they are read in Orca's, as the rest of a project's settings
+    let prusa = project.layout == Layout::Prusa;
     let scale = project.unit_scale;
     // custom G-code and keys a file may never set stay out of object and part settings, named once each
     let never = |k: &str| k.contains("gcode") || crate::preflight::is_never_imported(k);
@@ -227,6 +226,9 @@ fn from_geom(bytes: &[u8], name: &str) -> Result<Vec<(u32, Vec<Mesh>)>> {
         }
     }
     let to_map = |list: &[(String, String)]| -> serde_json::Map<String, serde_json::Value> {
+        if prusa {
+            return crate::prusa::overrides(list);
+        }
         list.iter()
             .filter(|(k, _)| !never(k))
             .map(|(k, v)| (k.clone(), serde_json::Value::String(v.clone())))
