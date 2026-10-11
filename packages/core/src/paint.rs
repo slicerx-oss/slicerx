@@ -139,8 +139,17 @@ use std::collections::BTreeMap;
 /// sloped, sets no such limit: it owns its strip in its own color.
 const TAPER: f64 = 0.8;
 const LEAD: f64 = 0.8;
-/// Paint regions lose tips thinner than twice this, mm.
+/// Color regions lose tips and slivers thinner than twice this, mm; each sliver goes to the region it borders most.
 const TIP_CUT: f64 = 0.1;
+/// Along the outline, a color run this short or shorter is absorbed by its neighbor, mm, and the most an outer
+/// wall width scales it by (a run under about half a wall width cannot print as a stripe of its own).
+const RUN_ABSORB: f64 = 0.2;
+const RUN_ABSORB_PER_WALL: f64 = 0.476;
+/// Along the outline, a gap this short or shorter inside one painted color is closed, mm, and per outer wall width.
+const RUN_CLOSE: f64 = 0.5;
+const RUN_CLOSE_PER_WALL: f64 = 1.19;
+/// A run at least this long absorbs a short run after it, mm.
+const RUN_HOLDS: f64 = 0.1;
 /// A facet whose normal is this close to vertical is a top or bottom face rather than a wall.
 const FLAT: f64 = 0.99;
 /// A facet whose normal has a vertical part above this is not a vertical wall: besides its cut on each
@@ -598,19 +607,188 @@ fn loops_to_shapes(loops: &[Vec<IntPoint<i32>>]) -> Shapes {
     perimeters::shapes_from_loops(&polys)
 }
 
-fn ring_edges(shapes: &Shapes) -> Vec<Seg> {
-    let mut out = Vec::new();
-    for shape in shapes {
-        for ring in shape {
-            let n = ring.len();
-            for k in 0..n {
-                if let (Some(&a), Some(&b)) = (ring.get(k), ring.get((k + 1) % n)) {
-                    out.push((to_mm(a), to_mm(b)));
+/// Every painted region less its tips and slivers thinner than twice [`TIP_CUT`] (the perimeter offsets spike out
+/// of sharp tips where a boundary meets the outline), each sliver given to the region it borders most, the
+/// part's own (`plain`) included, rather than always to the part's own: a painted tip goes to its neighbor, and
+/// a thin strip cut off a painted area stays with it. A sliver that borders nothing keeps its color.
+#[allow(
+    clippy::indexing_slicing,
+    reason = "island and region indexes come from the lists they index"
+)]
+fn settle_slivers(raw: Vec<(u8, Shapes)>, plain: u8) -> Vec<(u8, Shapes)> {
+    let tip = crate::geom::mm(TIP_CUT);
+    let mut out: Vec<(u8, Shapes)> = Vec::with_capacity(raw.len());
+    let mut slivers: Vec<(u8, Shapes)> = Vec::new();
+    for (state, piece) in raw {
+        // The part's own region keeps its shape: it is most of the layer, and what it borders is paint.
+        if state == plain {
+            out.push((state, piece));
+            continue;
+        }
+        let opened = perimeters::intersection(
+            &perimeters::offset(&perimeters::offset(&piece, -tip), tip),
+            &piece,
+        );
+        let rest = perimeters::difference(&piece, &opened);
+        if !rest.is_empty() {
+            slivers.push((state, rest));
+        }
+        out.push((state, opened));
+    }
+    if slivers.is_empty() {
+        out.retain(|(_, s)| !s.is_empty());
+        return out;
+    }
+    // Each sliver island, its own color, and how much of each region lies within a small reach of it.
+    let reach = (tip / 2).max(1);
+    let islands: Vec<(u8, Vec<Vec<IntPoint<i32>>>)> = slivers
+        .iter()
+        .flat_map(|(st, sh)| sh.iter().map(|shape| (*st, shape.clone())))
+        .collect();
+    let grown: Vec<Shapes> = islands
+        .iter()
+        .map(|(_, sh)| perimeters::offset(&vec![sh.clone()], reach))
+        .collect();
+    let boxes: Vec<Option<[i32; 4]>> = grown.iter().map(|g| perimeters::bounds(g)).collect();
+    let all_grown = perimeters::union_all(&grown.iter().collect::<Vec<_>>());
+    let mut touch = vec![vec![0i64; out.len()]; islands.len()];
+    for (j, (_, region)) in out.iter().enumerate() {
+        if region.is_empty() {
+            continue;
+        }
+        for piece in perimeters::intersection(&all_grown, region) {
+            let Some(outer) = piece.first() else { continue };
+            let area: i64 = piece.iter().map(|r| crate::geom::area2_int(r)).sum::<i64>().abs();
+            let Some(&p) = outer.first() else { continue };
+            // The island whose grown outline holds this piece.
+            let owner = (0..islands.len()).find(|&i| {
+                boxes[i].is_some_and(|b| p.x >= b[0] && p.y >= b[1] && p.x <= b[2] && p.y <= b[3])
+                    && grown[i]
+                        .iter()
+                        .any(|sh| sh.first().is_some_and(|r| ring_contains(r, p) || r.contains(&p)))
+            });
+            if let Some(i) = owner {
+                touch[i][j] += area;
+            }
+        }
+    }
+    for (i, (state, island)) in islands.into_iter().enumerate() {
+        let best = touch[i]
+            .iter()
+            .enumerate()
+            .filter(|(_, a)| **a > 0)
+            .max_by_key(|(_, a)| **a)
+            .map(|(j, _)| j);
+        let to = if let Some(j) = best.or_else(|| out.iter().position(|(s, _)| *s == state)) {
+            j
+        } else {
+            out.push((state, Vec::new()));
+            out.len() - 1
+        };
+        if let Some((_, have)) = out.get_mut(to) {
+            *have = perimeters::union_all(&[have, &vec![island]]);
+        }
+    }
+    out.retain(|(_, s)| !s.is_empty());
+    out
+}
+
+/// Cleans the colors of the runs around one closed outline loop, in place. `colors` and `lens` (mm) are the runs
+/// as found, in loop order; a group is a stretch of neighboring runs of one color. A gap of `close` mm or less
+/// inside one painted color closes (one group or two together), then a group of `absorb` mm or less after a group
+/// of another color takes that color (after any group at least [`RUN_HOLDS`] long, then after any painted group).
+/// `plain` is the part's own color, which never closes a gap around itself.
+#[allow(
+    clippy::indexing_slicing,
+    reason = "run indexes are taken modulo the run count, and colors and lens have the same length"
+)]
+fn clean_runs(colors: &mut [u8], lens: &[f64], plain: u8, absorb: f64, close: f64) {
+    let n = colors.len();
+    // Groups as (first run, run count, length), in loop order from a color change.
+    let groups = |colors: &[u8]| -> Vec<(usize, usize, f64)> {
+        let Some(start) = (0..n).find(|&i| colors[i] != colors[(i + n - 1) % n]) else {
+            return vec![(0, n, lens.iter().sum())];
+        };
+        let mut out: Vec<(usize, usize, f64)> = Vec::new();
+        for k in 0..n {
+            let i = (start + k) % n;
+            match out.last_mut() {
+                Some(g) if colors[g.0] == colors[i] => {
+                    g.1 += 1;
+                    g.2 += lens[i];
+                }
+                _ => out.push((i, 1, lens[i])),
+            }
+        }
+        out
+    };
+    let paint = |colors: &mut [u8], g: (usize, usize, f64), c: u8| {
+        for k in 0..g.1 {
+            colors[(g.0 + k) % n] = c;
+        }
+    };
+    // A painted gap of one group, then of two groups together.
+    for width in [1usize, 2] {
+        let gs = groups(colors);
+        let m = gs.len();
+        if m < width + 1 {
+            continue;
+        }
+        for i in 0..m {
+            let prev = colors[gs[(i + m - 1) % m].0];
+            let next = colors[gs[(i + width) % m].0];
+            let len: f64 = (0..width).map(|k| gs[(i + k) % m].2).sum();
+            if prev == next
+                && prev != plain
+                && len <= close
+                && (0..width).all(|k| colors[gs[(i + k) % m].0] != prev)
+            {
+                for k in 0..width {
+                    paint(colors, gs[(i + k) % m], prev);
                 }
             }
         }
     }
-    out
+    // Short groups after a group that holds, then after a painted group.
+    for after_painted in [false, true] {
+        let gs = groups(colors);
+        let m = gs.len();
+        if m < 2 {
+            return;
+        }
+        for i in 0..m {
+            let (g, next) = (gs[i], gs[(i + 1) % m]);
+            let c = colors[g.0];
+            let holds = if after_painted {
+                c != plain
+            } else {
+                g.2 >= RUN_HOLDS
+            };
+            if holds && colors[next.0] != c && next.2 <= absorb {
+                paint(colors, next, c);
+            }
+        }
+    }
+}
+
+/// Whether `p` (internal units) is inside the closed ring `ring` (even-odd).
+fn ring_contains(ring: &[IntPoint<i32>], p: IntPoint<i32>) -> bool {
+    let mut inside = false;
+    let n = ring.len();
+    for k in 0..n {
+        let (Some(a), Some(b)) = (ring.get(k), ring.get((k + 1) % n)) else {
+            continue;
+        };
+        if (a.y > p.y) != (b.y > p.y) {
+            let x = f64::from(a.x)
+                + (f64::from(p.y) - f64::from(a.y)) / (f64::from(b.y) - f64::from(a.y))
+                    * (f64::from(b.x) - f64::from(a.x));
+            if f64::from(p.x) < x {
+                inside = !inside;
+            }
+        }
+    }
+    inside
 }
 
 /// The piece of a triangle between the heights `lo` and `hi`, seen from above, counterclockwise in internal
@@ -674,6 +852,16 @@ impl LayerPaint<'_> {
             let below = at.checked_sub(1).and_then(|b| self.plan.slice_z.get(b).copied());
             (below.unwrap_or(f64::NEG_INFINITY), z)
         })
+    }
+
+    /// The longest color run along the outline that is absorbed, and the longest painted gap that is closed, mm:
+    /// [`RUN_ABSORB`] and [`RUN_CLOSE`] at least, more with wider outer walls.
+    fn run_limits(&self) -> (f64, f64) {
+        let wall = 4.0 * f64::from(self.small.max(0)) / SCALE;
+        (
+            RUN_ABSORB.max(RUN_ABSORB_PER_WALL * wall),
+            RUN_CLOSE.max(RUN_CLOSE_PER_WALL * wall),
+        )
     }
 
     /// The layer's outline split by color: the part's own filament where nothing is painted, and
@@ -892,26 +1080,21 @@ impl LayerPaint<'_> {
         let mut rest = self.shapes.clone();
         // Two colors on the same ground: the higher filament wins, as for overlapping parts.
         crate::sorting::sort_by_key(&mut colored, |(s, _)| *s);
-        let mut out: Vec<(u8, Shapes)> = Vec::new();
+        let mut raw: Vec<(u8, Shapes)> = Vec::new();
         for (state, shapes) in colored.into_iter().rev() {
-            // Sharp tips where a boundary meets the outline are rounded off: the perimeter offsets
-            // spike out of them otherwise.
-            let tip = crate::geom::mm(TIP_CUT);
             let piece = perimeters::intersection(&shapes, &rest);
-            let piece = perimeters::offset(&perimeters::offset(&piece, -tip), tip);
-            let piece = perimeters::intersection(&piece, &rest);
             rest = perimeters::difference(&rest, &piece);
             if !piece.is_empty() {
-                out.push((state, piece));
+                raw.push((state, piece));
             }
         }
         if !rest.is_empty() {
-            match out.iter_mut().find(|(s, _)| *s == d) {
+            match raw.iter_mut().find(|(s, _)| *s == d) {
                 Some((_, have)) => *have = perimeters::union_all(&[have, &rest]),
-                None => out.push((d, rest)),
+                None => raw.push((d, rest)),
             }
         }
-        out
+        settle_slivers(raw, d)
     }
 
     /// `area` without the pieces narrower than twice `small` (an opening) and without specks.
@@ -926,6 +1109,10 @@ impl LayerPaint<'_> {
     /// Regions painted on the walls: each cell of the layer takes the color of the nearest wall
     /// (painted or not), within the depth an unpainted top or bottom surface allows. `surfaces` holds,
     /// per direction (below, above) and shell layer, where the surface exposed there is painted.
+    #[allow(
+        clippy::indexing_slicing,
+        reason = "outline point indexes are taken modulo the point count"
+    )]
     fn voronoi(&self, walls: &BTreeMap<u8, Vec<Seg>>, surfaces: &[Vec<Shapes>; 2]) -> Vec<(u8, Shapes)> {
         let Some(b) = perimeters::bounds(self.shapes) else {
             return Vec::new();
@@ -936,46 +1123,136 @@ impl LayerPaint<'_> {
             f64::from(b[2]) / SCALE,
             f64::from(b[3]) / SCALE,
         ]);
-        // Sources: painted walls per color, and the rest of the outline for the part's own color.
-        let mut sources: BTreeMap<u8, Vec<bool>> = BTreeMap::new();
-        let mut painted = vec![false; g.len()];
+        // Sources: the outline, each stretch in the color painted on it (paint off the outline does not count),
+        // with short runs absorbed and short painted gaps closed, loop by loop.
+        // Painted segments by the grid cells they pass through, for looking up the ones near a point.
+        let mut near: std::collections::HashMap<usize, Vec<(u8, Seg)>> = std::collections::HashMap::new();
         for (state, segs) in walls {
-            let mask = sources.entry(*state).or_insert_with(|| vec![false; g.len()]);
             for &(a, e) in segs {
-                stamp(&g, mask, a, e);
-                stamp(&g, &mut painted, a, e);
+                let len = (e.0 - a.0).m_hypot(e.1 - a.1);
+                #[allow(
+                    clippy::cast_possible_truncation,
+                    clippy::cast_sign_loss,
+                    reason = "a step count"
+                )]
+                let steps = (len / (g.r * 0.5)).ceil().max(1.0) as usize;
+                let mut last = usize::MAX;
+                for k in 0..=steps {
+                    #[allow(clippy::cast_precision_loss, reason = "a step count")]
+                    let t = k as f64 / steps as f64;
+                    if let Some(c) = g.cell(a.0 + (e.0 - a.0) * t, a.1 + (e.1 - a.1) * t)
+                        && c != last
+                    {
+                        near.entry(c).or_default().push((*state, (a, e)));
+                        last = c;
+                    }
+                }
             }
         }
-        let near_painted = |x: f64, y: f64| -> bool {
-            g.cell(x, y).is_some_and(|c| {
-                let (cx, cy) = (c % g.nx, c / g.nx);
-                (cy.saturating_sub(1)..=(cy + 1).min(g.ny - 1)).any(|yy| {
-                    (cx.saturating_sub(1)..=(cx + 1).min(g.nx - 1))
-                        .any(|xx| painted.get(yy * g.nx + xx).copied().unwrap_or(false))
-                })
+        // The painted color at a point of the outline: that of the nearest painted segment the point lies along
+        // (projecting inside it, within a cell of it: the outline is simplified and closed, the cut is not), else the part's own.
+        let tol = g.r;
+        let color_at = |x: f64, y: f64| -> u8 {
+            let Some(c) = g.cell(x, y) else {
+                return self.default_slot;
+            };
+            let (cx, cy) = (c % g.nx, c / g.nx);
+            let mut best = (f64::INFINITY, self.default_slot);
+            for yy in cy.saturating_sub(1)..=(cy + 1).min(g.ny - 1) {
+                for xx in cx.saturating_sub(1)..=(cx + 1).min(g.nx - 1) {
+                    for (st, (a, e)) in near.get(&(yy * g.nx + xx)).into_iter().flatten() {
+                        let (dx, dy) = (e.0 - a.0, e.1 - a.1);
+                        let l2 = dx * dx + dy * dy;
+                        if l2 <= 0.0 {
+                            continue;
+                        }
+                        let t = ((x - a.0) * dx + (y - a.1) * dy) / l2;
+                        if !(0.0..=1.0).contains(&t) {
+                            continue;
+                        }
+                        let d = (x - a.0 - t * dx).m_hypot(y - a.1 - t * dy);
+                        if d <= tol && d < best.0 {
+                            best = (d, *st);
+                        }
+                    }
+                }
+            }
+            best.1
+        };
+        let (absorb, close) = self.run_limits();
+        let mut sources: BTreeMap<u8, Vec<bool>> = BTreeMap::new();
+        // Painted walls away from the outline (where parts of one object meet inside it) are sources as they
+        // are; on the outline, the cleaned runs below stand for them.
+        let mut on_outline = vec![false; g.len()];
+        for ring in self.shapes.iter().flatten() {
+            let n = ring.len();
+            for k in 0..n {
+                if let (Some(&a), Some(&b)) = (ring.get(k), ring.get((k + 1) % n)) {
+                    stamp(&g, &mut on_outline, to_mm(a), to_mm(b));
+                }
+            }
+        }
+        let by_outline = |c: usize| {
+            let (cx, cy) = (c % g.nx, c / g.nx);
+            (cy.saturating_sub(1)..=(cy + 1).min(g.ny - 1)).any(|yy| {
+                (cx.saturating_sub(1)..=(cx + 1).min(g.nx - 1))
+                    .any(|xx| on_outline.get(yy * g.nx + xx).copied().unwrap_or(false))
             })
         };
-        let default_mask = sources
-            .entry(self.default_slot)
-            .or_insert_with(|| vec![false; g.len()]);
-        for (a, e) in ring_edges(self.shapes) {
-            let len = (e.0 - a.0).m_hypot(e.1 - a.1);
-            #[allow(
-                clippy::cast_possible_truncation,
-                clippy::cast_sign_loss,
-                reason = "a step count"
-            )]
-            let steps = (len / (g.r * 0.5)).ceil().max(1.0) as usize;
-            for k in 0..=steps {
-                #[allow(clippy::cast_precision_loss, reason = "a step count")]
-                let t = k as f64 / steps as f64;
-                let (x, y) = (a.0 + (e.0 - a.0) * t, a.1 + (e.1 - a.1) * t);
-                if !near_painted(x, y)
-                    && let Some(c) = g.cell(x, y)
-                    && let Some(m) = default_mask.get_mut(c)
-                {
-                    *m = true;
+        for (state, segs) in walls {
+            let mut mask = vec![false; g.len()];
+            for &(a, e) in segs {
+                stamp(&g, &mut mask, a, e);
+            }
+            if mask.iter().enumerate().any(|(c, m)| *m && !by_outline(c)) {
+                let into = sources.entry(*state).or_insert_with(|| vec![false; g.len()]);
+                for (c, m) in mask.iter().enumerate() {
+                    if *m && !by_outline(c) {
+                        into[c] = true;
+                    }
                 }
+            }
+        }
+        for ring in self.shapes.iter().flatten() {
+            // Points every half cell around the loop, each with its color and the length it stands for.
+            let mut pts: Vec<(f64, f64)> = Vec::new();
+            let n = ring.len();
+            for k in 0..n {
+                let (Some(&a), Some(&b)) = (ring.get(k), ring.get((k + 1) % n)) else {
+                    continue;
+                };
+                let (a, e) = (to_mm(a), to_mm(b));
+                let len = (e.0 - a.0).m_hypot(e.1 - a.1);
+                #[allow(
+                    clippy::cast_possible_truncation,
+                    clippy::cast_sign_loss,
+                    reason = "a step count"
+                )]
+                let steps = (len / (g.r * 0.5)).ceil().max(1.0) as usize;
+                for i in 0..steps {
+                    #[allow(clippy::cast_precision_loss, reason = "a step count")]
+                    let t = i as f64 / steps as f64;
+                    pts.push((a.0 + (e.0 - a.0) * t, a.1 + (e.1 - a.1) * t));
+                }
+            }
+            let m = pts.len();
+            if m == 0 {
+                continue;
+            }
+            let mut colors: Vec<u8> = pts.iter().map(|&(x, y)| color_at(x, y)).collect();
+            let lens: Vec<f64> = (0..m)
+                .map(|i| {
+                    let (a, b) = (pts[i], pts[(i + 1) % m]);
+                    (b.0 - a.0).m_hypot(b.1 - a.1)
+                })
+                .collect();
+            clean_runs(&mut colors, &lens, self.default_slot, absorb, close);
+            let point_colors = colors;
+            for i in 0..m {
+                let mask = sources
+                    .entry(point_colors[i])
+                    .or_insert_with(|| vec![false; g.len()]);
+                stamp(&g, mask, pts[i], pts[(i + 1) % m]);
             }
         }
         // Depth limit under unpainted top and bottom surfaces: a cell takes the limit of the nearest
@@ -1273,6 +1550,116 @@ mod tests {
         assert!(at(0, &column, &none).iter().all(|(s, _)| *s == 1));
         // And none on the top layer either.
         assert!(at(49, &none, &column[..3]).iter().all(|(s, _)| *s == 1));
+    }
+
+    /// Runs as `(color, mm)` around a loop, cleaned with the part's own color 1 and the default limits.
+    fn cleaned(runs: &[(u8, f64)]) -> Vec<u8> {
+        let mut colors: Vec<u8> = runs.iter().map(|r| r.0).collect();
+        let lens: Vec<f64> = runs.iter().map(|r| r.1).collect();
+        clean_runs(&mut colors, &lens, 1, RUN_ABSORB, RUN_CLOSE);
+        colors
+    }
+
+    #[test]
+    fn short_runs_are_absorbed_and_short_painted_gaps_close() {
+        // A painted run of 0.15 mm between plain ones goes; one of 0.3 mm stays.
+        assert_eq!(cleaned(&[(1, 5.0), (2, 0.15), (1, 5.0)]), [1, 1, 1]);
+        assert_eq!(cleaned(&[(1, 5.0), (2, 0.3), (1, 5.0)]), [1, 2, 1]);
+        // A plain gap of 0.4 mm inside one painted color closes; one of 0.7 mm stays.
+        assert_eq!(cleaned(&[(2, 5.0), (1, 0.4), (2, 5.0)]), [2, 2, 2]);
+        assert_eq!(cleaned(&[(2, 5.0), (1, 0.7), (2, 5.0)]), [2, 1, 2]);
+        // Two runs together of 0.45 mm between the same painted color close.
+        assert_eq!(cleaned(&[(2, 5.0), (1, 0.2), (3, 0.25), (2, 5.0)]), [2, 2, 2, 2]);
+        // A plain run around a painted one does not close a gap: 0.4 mm of paint between plain stays.
+        assert_eq!(cleaned(&[(1, 5.0), (2, 0.4), (1, 5.0)]), [1, 2, 1]);
+        // A loop of one color, and the wrap: the short run at the start follows the long one before it.
+        assert_eq!(cleaned(&[(2, 3.0)]), [2]);
+        assert_eq!(cleaned(&[(3, 0.1), (2, 5.0), (1, 5.0)]), [1, 2, 1]);
+    }
+
+    #[test]
+    fn the_run_limits_grow_with_the_outer_wall() {
+        let plan = LayerPlan::new(1.0, 0.2, 0.2);
+        let outline = square(0.0, 0.0, 10.0, 10.0);
+        let at = |small: i32| {
+            LayerPaint {
+                default_slot: 1,
+                shapes: &outline,
+                layer: 0,
+                z: plan.slice_z[0],
+                plan: &plan,
+                above: &[],
+                below: &[],
+                facets: &[],
+                step: 0,
+                small,
+                memo: None,
+            }
+            .run_limits()
+        };
+        // No wall known, and a 0.42 mm wall: the floors.
+        assert_eq!(at(0), (RUN_ABSORB, RUN_CLOSE));
+        let (a, c) = at(1_050);
+        assert!((a - 0.2).abs() < 0.001 && (c - 0.5).abs() < 0.001, "{a} {c}");
+        // A 0.8 mm wall.
+        let (a, c) = at(2_000);
+        assert!((a - 0.381).abs() < 0.001 && (c - 0.952).abs() < 0.001, "{a} {c}");
+    }
+
+    /// A stripe painted 0.15 mm wide down a face prints no color; one 3 mm wide does.
+    #[test]
+    fn a_stripe_narrower_than_a_short_run_prints_no_color() {
+        let plan = LayerPlan::new(10.0, 0.2, 0.2);
+        let outline = square(118.0, 118.0, 138.0, 138.0);
+        let stripe = |y0: f64, y1: f64| -> Facets {
+            vec![
+                ([[138.0, y0, 0.0], [138.0, y1, 0.0], [138.0, y1, 10.0]], 2),
+                ([[138.0, y0, 0.0], [138.0, y1, 10.0], [138.0, y0, 10.0]], 2),
+            ]
+        };
+        let column = vec![outline.clone(); 3];
+        let colors = |facets: &Facets| {
+            LayerPaint {
+                default_slot: 1,
+                shapes: &outline,
+                layer: 20,
+                z: plan.slice_z[20],
+                plan: &plan,
+                above: &column,
+                below: &column,
+                facets: &[facets],
+                step: 7_970,
+                small: 1_050,
+                memo: None,
+            }
+            .split()
+        };
+        assert!(colors(&stripe(128.0, 128.15)).iter().all(|(s, _)| *s == 1));
+        let wide = colors(&stripe(126.5, 129.5));
+        let painted = wide
+            .iter()
+            .find(|(s, _)| *s == 2)
+            .map_or(0.0, |(_, s)| area_mm2(s));
+        assert!(painted > 1.0, "{painted}");
+    }
+
+    /// A painted strip thinner than a tip cut, poking into another painted color, goes to that color rather than to
+    /// the part's own filament, and no area is lost.
+    #[test]
+    fn a_painted_sliver_goes_to_the_color_it_borders_most() {
+        let strip = square(10.0, 4.95, 15.0, 5.1);
+        let two = perimeters::union_all(&[&square(0.0, 0.0, 10.0, 10.0), &strip]);
+        let three = perimeters::difference(&square(10.0, 0.0, 20.0, 10.0), &strip);
+        let out = settle_slivers(vec![(2, two), (3, three)], 1);
+        let area = |slot: u8| {
+            out.iter()
+                .filter(|(s, _)| *s == slot)
+                .map(|(_, s)| area_mm2(s))
+                .sum::<f64>()
+        };
+        assert!(area(1) < 1e-6, "{}", area(1));
+        assert!((area(2) - 100.0).abs() < 0.05, "{}", area(2));
+        assert!((area(3) - 100.0).abs() < 0.05, "{}", area(3));
     }
 
     #[test]
