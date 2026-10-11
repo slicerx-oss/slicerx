@@ -20,14 +20,15 @@ const hasGeom = existsSync(geomBin)
 type Out<T = Record<string, unknown>> = { ok: boolean; summary: string; output: T }
 
 /** One server over stdio, as a client starts it: the real sx when there is one, else the stub engine. */
-async function stdioSession(): Promise<{ call<T = Record<string, unknown>>(name: string, args?: Record<string, unknown>): Promise<Out<T>>; raw(name: string, args?: Record<string, unknown>): Promise<CallToolResult>; client: Client; dir: string; close(): Promise<void> }> {
+async function stdioSession(): Promise<{ call<T = Record<string, unknown>>(name: string, args?: Record<string, unknown>): Promise<Out<T>>; raw(name: string, args?: Record<string, unknown>): Promise<CallToolResult>; client: Client; dir: string; realSx: boolean; close(): Promise<void> }> {
   const dir = mkdtempSync(join(tmpdir(), 'slicerx-mcp-fn-'))
   writeFileSync(join(dir, 'cube.stl'), boxStl(20, 20, 20))
   // The same box with one triangle left out: a hole of three edges for the repair to close.
   const open = boxStl(20, 20, 20).subarray(0, 84 + 11 * 50)
   open.writeUInt32LE(11, 80)
   writeFileSync(join(dir, 'open-box.stl'), open)
-  const engine = noSx() ? ['--engine', 'stub'] : ['--engine', 'sx', '--sx-bin', sxBin]
+  const realSx = !noSx()
+  const engine = realSx ? ['--engine', 'sx', '--sx-bin', sxBin] : ['--engine', 'stub']
   const transport = new StdioClientTransport({
     command: process.execPath,
     args: ['--import', 'tsx', 'src/cli.ts', ...engine, ...(hasGeom ? ['--sx-geom-bin', geomBin] : []), '--allow-dir', dir, '--out-dir', join(dir, 'out'), '--profiles-dir', join(dir, 'profiles'), '--printers', 'demo', '--no-urls'],
@@ -41,6 +42,7 @@ async function stdioSession(): Promise<{ call<T = Record<string, unknown>>(name:
   return {
     client,
     dir,
+    realSx,
     raw,
     call: async <T,>(name: string, args: Record<string, unknown> = {}) => data<Out<T>>(await raw(name, args)),
     close: () => client.close(),
@@ -78,10 +80,15 @@ describe('the app functions over stdio', () => {
       const layers = sliced.output.plates[0]?.layers ?? 0
       expect(layers).toBeGreaterThan(0)
 
-      // The checks read the plate slicerx_slice just sliced.
+      // The checks read the plate slicerx_slice just sliced. The stub engine writes no real G-code, and says so.
       const g = await s.call<{ layers: number; timeS: number }>('slicerx_gcode_inspect', { plate: 1 })
-      expect(g.ok).toBe(true)
-      expect(g.output.layers).toBe(layers)
+      if (s.realSx) {
+        expect(g.ok).toBe(true)
+        expect(g.output.layers).toBe(layers)
+      } else {
+        expect(g.ok).toBe(false)
+        expect(g.summary).toMatch(/does not look like G-code/)
+      }
       const energy = await s.call<{ kwh: number; lines: { line: string }[] }>('slicerx_energy_estimate')
       expect(energy.ok).toBe(true)
       expect(energy.output.lines.map((l) => l.line)).toEqual(['plate 1'])
