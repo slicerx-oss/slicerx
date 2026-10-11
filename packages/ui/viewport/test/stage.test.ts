@@ -144,6 +144,45 @@ describe('first frame cost', () => {
   })
 })
 
+describe('a bed change', () => {
+  const materials = (stage: InstanceType<typeof Stage>) => {
+    const out = new Set<{ addEventListener(t: 'dispose', f: () => void): void }>()
+    stage.scene.traverse((o) => {
+      const m = (o as Mesh).material
+      if (m) for (const x of Array.isArray(m) ? m : [m]) out.add(x)
+    })
+    return [...out]
+  }
+
+  it('keeps the old materials until the next frame, so their shader programs carry over to the new ones', () => {
+    const { stage } = make()
+    stage.setExcludedAreas([[[0, 0], [18, 0], [18, 28], [0, 28]]])
+    const old = materials(stage)
+    let released = 0
+    for (const m of old) m.addEventListener('dispose', () => released++)
+    stage.setBed({ widthMm: 300, depthMm: 300, heightMm: 300 })
+    expect(materials(stage).some((m) => old.includes(m))).toBe(false)
+    expect(released).toBe(0)
+    stage.releaseRetired()
+    expect(released).toBe(old.length)
+    stage.dispose()
+  })
+
+  it('keeps the contact bake materials and bakes again for the new plane', () => {
+    const { stage } = make()
+    const contact = () => (stage as unknown as { contact: { mat: object; blur: object; rt: object } }).contact
+    const before = contact()
+    const baked = vi.spyOn(stage, 'bakeContact').mockImplementation(() => undefined)
+    stage.setBed({ widthMm: 300, depthMm: 300, heightMm: 300 })
+    expect(contact().mat).toBe(before.mat)
+    expect(contact().blur).toBe(before.blur)
+    expect(contact().rt).toBe(before.rt)
+    stage.bakePendingContact()
+    expect(baked).toHaveBeenCalledTimes(1)
+    stage.dispose()
+  })
+})
+
 describe('excluded bed areas', () => {
   const find = (stage: InstanceType<typeof Stage>) => {
     const out: Mesh[] = []

@@ -766,6 +766,8 @@ class ViewportImpl implements Viewport {
     const firstPreviewFrame = this.previewSetAt !== null && this.pathsShown()
     this.stage.bakePendingContact()
     this.pipeline.render(this.stage.scene, this.camera, { ao, aoMix, fast: moving, outline, silhouette: this.renderMode === 'cad' && this.mode === 'prepare', frameIndex: this.frameIdx++ })
+    // the new decor holds its programs now, so what it replaced can go without them being compiled again
+    this.stage.releaseRetired()
     if (this.swapNext) {
       // the old scene is in the drawing buffer now: copy it over the view, then swap the new one in beneath
       const swap = this.swapNext

@@ -174,6 +174,16 @@ export interface NozzleZone {
   polygon: [number, number][]
 }
 
+/** What the contact shadow bake draws with: two targets it blurs between, the depth and blur materials, the quad. */
+interface ContactBake {
+  rt: WebGLRenderTarget
+  rtb: WebGLRenderTarget
+  mat: ShaderMaterial
+  blur: ShaderMaterial
+  quad: FullScreenQuad
+  size: number
+}
+
 /** The irradiance bake ended after its stage was disposed; nothing is wrong, the result is just not wanted. */
 export class StageDisposedError extends Error {
   constructor() {
@@ -206,21 +216,16 @@ export class Stage {
   private excludeGroup = new Group()
   private excludeDisposables: { dispose(): void }[] = []
   private envTex: Texture | null = null
-  private contact: {
-    plane: Mesh
-    rt: WebGLRenderTarget
-    rtb: WebGLRenderTarget
-    cam: OrthographicCamera
-    mat: ShaderMaterial
-    blur: ShaderMaterial
-    quad: FullScreenQuad
-    size: number
-  } | null = null
+  /** The contact shadow's plane and camera, made per bed; the bake's targets and materials outlive bed changes. */
+  private contact: (ContactBake & { plane: Mesh; cam: OrthographicCamera }) | null = null
+  private bakeKit: ContactBake | null = null
   private label = 'Textured PEI'
   private plateStyle: PlateStyle = 'grid'
   private bedOutline: BedOutline = 'default'
   private colors: SceneColors = SCENE
   private disposables: { dispose(): void }[] = []
+  private contactDirty = false
+  private retired: { dispose(): void }[] = []
 
   constructor(
     private readonly renderer: WebGLRenderer,
@@ -312,7 +317,7 @@ export class Stage {
     this.bedRoot.matrix.copy(this.bedMatrix())
     this.bedRoot.matrixWorldNeedsUpdate = true
     if (same) return
-    for (const d of this.disposables) d.dispose()
+    this.retire(this.disposables)
     this.disposables = []
     this.decor.clear()
     this.buildPlate()
@@ -348,7 +353,7 @@ export class Stage {
   /** Bed and floor colors. Rebuilds the plate decor. */
   setSceneColors(colors: SceneColors): void {
     this.colors = colors
-    for (const d of this.disposables) d.dispose()
+    this.retire(this.disposables)
     this.disposables = []
     this.decor.clear()
     this.buildPlate()
@@ -359,7 +364,7 @@ export class Stage {
   /** Areas only one nozzle reaches, drawn as tinted floor patches (bed coordinates, mm, origin front left). */
   setNozzleZones(zones: readonly NozzleZone[]): void {
     this.zones = zones
-    for (const d of this.zoneDisposables) d.dispose()
+    this.retire(this.zoneDisposables)
     this.zoneDisposables = []
     this.zoneGroup.clear()
     this.zoneLabels = []
@@ -372,7 +377,7 @@ export class Stage {
    */
   setExcludedAreas(areas: readonly (readonly [number, number])[][]): void {
     this.excluded = areas
-    for (const d of this.excludeDisposables) d.dispose()
+    this.retire(this.excludeDisposables)
     this.excludeDisposables = []
     this.excludeGroup.clear()
     const { widthMm: W, depthMm: D } = this.bed
@@ -581,13 +586,10 @@ export class Stage {
   private buildContact(): void {
     const bed = this.bed
     const SZ = Math.max(bed.widthMm, bed.depthMm) + 34
-    const RES = this.weak ? 512 : 1024
-    const rt = new WebGLRenderTarget(RES, RES)
-    const rtb = new WebGLRenderTarget(RES, RES)
-    rt.texture.generateMipmaps = false
-    rtb.texture.generateMipmaps = false
+    const baked = this.bakeKit !== null
+    const kit = (this.bakeKit ??= this.makeBakeKit())
     const planeGeo = new PlaneGeometry(SZ, SZ).rotateX(Math.PI / 2)
-    const planeMat = new MeshBasicMaterial({ map: rt.texture, transparent: true, opacity: 0.95, depthWrite: false, toneMapped: false, ...FLOOR_OFFSET })
+    const planeMat = new MeshBasicMaterial({ map: kit.rt.texture, transparent: true, opacity: 0.95, depthWrite: false, toneMapped: false, ...FLOOR_OFFSET })
     const plane = new Mesh(planeGeo, planeMat)
     plane.scale.y = -1
     plane.position.y = FLOOR_Y
@@ -596,6 +598,19 @@ export class Stage {
     const cam = new OrthographicCamera(-SZ / 2, SZ / 2, SZ / 2, -SZ / 2, 0, 22)
     cam.rotation.x = Math.PI / 2
     cam.updateMatrixWorld()
+    this.contact = { ...kit, plane, cam }
+    this.disposables.push(planeGeo, planeMat)
+    // the targets hold the bake made for the old plane: bake again for this one
+    if (baked) this.contactDirty = true
+  }
+
+  /** The contact bake's targets and materials, made once per stage: nothing in them depends on the bed or the colors. */
+  private makeBakeKit(): ContactBake {
+    const RES = this.weak ? 512 : 1024
+    const rt = new WebGLRenderTarget(RES, RES)
+    const rtb = new WebGLRenderTarget(RES, RES)
+    rt.texture.generateMipmaps = false
+    rtb.texture.generateMipmaps = false
     const mat = new ShaderMaterial({ uniforms: { darkness: { value: 2.1 }, range: { value: 22 } }, vertexShader: CONTACT_DEPTH_VS, fragmentShader: CONTACT_DEPTH_FS, depthTest: false, depthWrite: false, transparent: true })
     const blur = new ShaderMaterial({
       uniforms: { tDiffuse: { value: null }, dir: { value: [0, 0] } },
@@ -604,16 +619,28 @@ export class Stage {
       depthTest: false,
       depthWrite: false,
     })
-    const quad = new FullScreenQuad(blur)
-    this.contact = { plane, rt, rtb, cam, mat, blur, quad, size: RES }
-    this.disposables.push(rt, rtb, planeGeo, planeMat, mat, blur, quad)
+    return { rt, rtb, mat, blur, quad: new FullScreenQuad(blur), size: RES }
+  }
+
+  /**
+   * Keeps what a rebuild replaced until the next frame has drawn the new decor (releaseRetired). three.js deletes a
+   * shader program once no material uses it, so releasing the old materials first made the new, identical ones compile
+   * again on the main thread, up to a second after a project changed the bed.
+   */
+  private retire(list: { dispose(): void }[]): void {
+    this.retired.push(...list)
+  }
+
+  /** Releases what earlier rebuilds replaced. The viewport calls it after each frame. */
+  releaseRetired(): void {
+    if (this.retired.length === 0) return
+    for (const d of this.retired) d.dispose()
+    this.retired = []
   }
 
   setContactVisible(on: boolean): void {
     if (this.contact) this.contact.plane.visible = on
   }
-
-  private contactDirty = false
 
   /** Objects moved: the contact shadow is baked again before the next frame, once however many moves come first. */
   requestContact(): void {
@@ -676,7 +703,11 @@ export class Stage {
     this.disposed = true
     // Released here, while the renderer is alive; the bake's own release then does nothing.
     if (this.shTarget) this.releaseShTarget(this.shTarget)
-    for (const d of [...this.disposables, ...this.zoneDisposables, ...this.excludeDisposables]) d.dispose()
+    for (const d of [...this.disposables, ...this.zoneDisposables, ...this.excludeDisposables, ...this.retired]) d.dispose()
+    const k = this.bakeKit
+    if (k) for (const d of [k.rt, k.rtb, k.mat, k.blur, k.quad]) d.dispose()
+    this.bakeKit = null
+    this.retired = []
     this.disposables = []
     this.zoneDisposables = []
     this.excludeDisposables = []
