@@ -30,6 +30,7 @@ pub fn open_main_window(app: &App) -> tauri::Result<()> {
 }
 
 /// The store's 16 bytes: the same identifier gives the same store on every build, so a run finds the last one's data.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub fn store_id(identifier: &str) -> [u8; 16] {
     // FNV-1a, twice with different bases: stable across Rust versions, unlike the standard hasher
     let fnv = |basis: u64| {
