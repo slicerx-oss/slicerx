@@ -1,0 +1,13 @@
+{
+  "comment": "Engine choices of SlicerX that stay when a project opens, unless the person changed them in the project (its different_settings_to_system lists the key). The app, the MCP server (engine-choices.ts) and sx slice <project.3mf> (sx-core, through build.rs) all read this file. value: what SlicerX prints with; note: what the open says when the project's inherited value differs.",
+  "keeps": {
+    "wall_generator": {
+      "value": "aegis",
+      "note": "Kept SlicerX's aegis walls; the project used Bambu's default."
+    },
+    "precise_outer_wall": {
+      "value": true,
+      "note": "Kept SlicerX's precise outer wall; the project used Bambu's default."
+    }
+  }
+}
