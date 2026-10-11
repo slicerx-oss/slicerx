@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { describe, it } from 'node:test'
 import { inflateRawSync } from 'node:zlib'
-import { START_WAIT_S, waitForFile } from './lib/app.mjs'
+import { freePort, START_WAIT_S, waitForFile } from './lib/app.mjs'
 import { coaster3mf } from './lib/coaster.mjs'
 import { options } from './lib/options.mjs'
 import { renderReport, runStatus } from './lib/report.mjs'
@@ -229,6 +229,13 @@ describe('the command line', () => {
     assert.deepEqual([o.waitSignin, o.waitScan, o.waitReview], [10, 15, 60])
     assert.equal(o.waitStart, START_WAIT_S)
     assert.ok(START_WAIT_S >= 120, 'a loaded machine took over half a minute to start the app')
+  })
+  it("gives the app a hub port of the run's own unless one is named", async () => {
+    assert.equal(options(['--only', 'w']).hubPort, null)
+    assert.equal(options(['--only', 'w', '--hub-port', '47715']).hubPort, 47715)
+    for (const bad of ['80', '70000', 'x', '4.5']) assert.throws(() => options(['--only', 'w', '--hub-port', bad]), /--hub-port is a port/, bad)
+    const port = await freePort()
+    assert.ok(Number.isInteger(port) && port > 0 && port < 65536, String(port))
   })
   it('takes a longer or shorter start wait in seconds, within bounds', () => {
     assert.equal(options(['--only', 'a', '--wait-start', '300']).waitStart, 300)
