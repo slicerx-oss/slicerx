@@ -1,10 +1,17 @@
 /* The selection bar under the object list, and the Transform popover it opens. */
 /* The glass makes the bar its own stacking context, so it sits above what follows it for its menu and popover. */
 .slice-selbar { position: relative; z-index: 2; margin-top: var(--s-2); }
-/* One row in the narrow card: the actions keep their row and the count gives way. */
-.slice-selbar .sx-selbar-actions { flex-wrap: nowrap; }
+/* The buttons (and the way out) keep their own width at the right and the count gives way: to the number alone in a
+   narrow pane, and in a narrower one the buttons go under it as one group. Grown to fill and lined up right, they
+   used to run back over the count. */
+.slice-selbar { container-type: inline-size; flex-wrap: wrap; row-gap: 2px; }
+.slice-selbar .sx-selbar-actions { flex: none; margin-left: auto; flex-wrap: nowrap; }
 .slice-selbar .sx-selbar-actions .sx-btn { padding-inline: 6px; }
-.slice-selbar .sx-selbar-count { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.slice-selbar .sx-selbar-count { flex: none; white-space: nowrap; }
+/* off screen, not gone: a screen reader still says "1 selected" */
+@container (max-width: 300px) { .slice-selbar .selbar-word { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; } }
+/* the narrowest pane: slimmer buttons, so the group still fits the bar's width */
+@container (max-width: 250px) { .slice-selbar .sx-selbar-actions { gap: 0; } .slice-selbar .sx-selbar-actions .sx-btn, .slice-selbar .sx-selbar-clear { width: 24px; min-width: 24px; padding-inline: 0; } }
 /* number rows read over cards behind: near opaque, still the lifted glass */
 .selbar-transform { width: 320px; max-width: calc(100vw - 24px); padding: var(--s-3); background: color-mix(in srgb, var(--ink-1) 98%, transparent); }
 .selbar-transform .tf { margin-top: 0; padding-top: 0; border-top: 0; }

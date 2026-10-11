@@ -25,12 +25,15 @@ export function SelectionBar({ count, onClear, clearLabel = 'Clear selection', c
       <span className="sx-selbar-count" aria-live="polite">
         {count}
       </span>
-      <span className="sx-selbar-actions">{children}</span>
-      {clearable ? (
-        <button type="button" className="sx-selbar-clear" aria-label={clearLabel} {...(clearTestId ? { 'data-testid': clearTestId } : {})} {...tipAttrs({ title: clearLabel, key: 'Esc' })} onClick={onClear}>
-          <Icon name="close" size={14} />
-        </button>
-      ) : null}
+      {/* the way out stays with the actions, so a bar that wraps never leaves it on a line of its own */}
+      <span className="sx-selbar-actions">
+        {children}
+        {clearable ? (
+          <button type="button" className="sx-selbar-clear" aria-label={clearLabel} {...(clearTestId ? { 'data-testid': clearTestId } : {})} {...tipAttrs({ title: clearLabel, key: 'Esc' })} onClick={onClear}>
+            <Icon name="close" size={14} />
+          </button>
+        ) : null}
+      </span>
     </div>
   )
 }
