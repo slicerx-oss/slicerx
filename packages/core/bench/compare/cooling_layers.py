@@ -41,7 +41,11 @@ def num(w, k, d):
 print('layer  T_s     fan%  S_rule  S_file')
 for i, body in enumerate(layers):
     T = 0.0; started = False
+    last = i == len(layers) - 1
     for l in body:
+        # The last layer ends where the end G-code begins: the custom block every slicer opens after the last layer.
+        if last and started and re.match(r'^(; FEATURE: Custom|;TYPE:Custom)\s*$', l):
+            break
         c = l.split(';')[0].split()
         if not c: continue
         if c[0] == 'M83': rel = True; continue
