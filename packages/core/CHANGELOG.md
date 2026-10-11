@@ -4,6 +4,45 @@ All notable changes to the `sx_core::api` module. The format follows Keep a Chan
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-10-11
+
+### Added
+
+- `sx --version` (and `-V`) and `sx-geom --version` print the version and exit.
+- Integrator kit: the pack takes the engine release's prebuilt archives (macOS universal, Windows x64, Linux x64), checks them against SHA256SUMS.txt and lays out `engine/<platform>/{bin,lib,include}`, so an app can bundle sx without building it.
+- Travels route round the printer's keep-out zones, with a nozzle-width clearance.
+- On Bambu Lab printers, narrow internal solid infill is decided per piece.
+- Solid surface lines join however long the turn between them is, and rectilinear solid surfaces print as one sweep.
+- Each path is labelled with the object it belongs to.
+- A support filament number past the project's filaments falls back to the current filament, with a warning naming the setting, the slot and the filament count.
+- Viewport: move, turn and scale a multi-selection together.
+
+### Changed
+
+- MCP: each knowledge file is parsed once per process.
+- Faster: the check for moves that pass through a printed part looks up the part by cell instead of over the whole mesh (one test plate went from 158 s to 8 s), and the viewport keeps its shader programs through a bed change.
+- MCP: a slice with no process takes its supports from the printer's own preset.
+- Embed: the viewport picks its quality from the graphics it finds.
+- The WebAssembly build's size budget is 1056 KB gzip.
+
+### Fixed
+
+- A1 with timelapse: nothing wipes or primes from the timelapse park position any more. Before, a layer whose timelapse block came at its end primed at the park and the next wipe dragged back across the part (94 such moves on one test model), and the last layer's closing wipe ran from the park across the top. The last layer now ends in the same order as Bambu Studio and OrcaSlicer.
+- Pilot and MCP policies: a policy never lets a print start without a person approving it; only pause and cancel go through on a policy alone.
+- sx-geom: smart layer heights no longer leave a sliver layer on a part one layer tall.
+- Walls no longer stop and restart where one path ends and the next begins. With "Avoid crossing walls" on, the step from the end of one wall path to the start of the next (the same point) was treated as a travel: it retracted, wiped back along the wall and lifted, then printed the next path's first move from where the wipe ended, mostly on curved outer walls where the overhang speed changes. On a 4-color figurine test model with its paint removed: classic walls went from 537 of these stops to none (short outer wall pieces 403 to 11; OrcaSlicer 13, Bambu Studio 13), Arachne-style walls from 157 to none (short open outer pieces 87 to 30; OrcaSlicer 43, Bambu Studio 37). Slice time is unchanged.
+- 3MF projects: negative parts, modifiers, support blockers and support enforcers no longer print as solid parts. Part settings apply over the object's, an older project's part keeps only its own vertices, and where an enforcer and a blocker both reach, the enforcer wins.
+- Painted side walls keep their color on the bottom layers and over overhangs, where an unpainted bottom face does not hold them back.
+- By object, the switch to the next object's filament runs the change G-code (M620/M621 on Bambu Lab printers) and counts as a tool change.
+- Layer ranges: a range over empty layers starts where the last layer with paths ended, an empty range writes neither the start nor the end of the print, every range of a by-object plate ends at the plate's top, and a range reads bridge clusters below its window the same as one range does.
+- Smart layer tops that reach the model top within float noise are accepted.
+- Border support goes to the object it holds up, not a neighbor beside it.
+- A ledge narrower than the outer wall no longer starts in mid-air.
+- A solid surface keeps its join a travel where it meets another path.
+- Bambu Studio's zig-zag reads as rectilinear in every pattern key.
+- sx-geom: an edge round coarsens only the faces it touches.
+- Web engine: encodeParts writes the parts' paint, as the engine's raw format carries it.
+
 ## [0.1.3] - 2026-10-10
 
 ### Added
