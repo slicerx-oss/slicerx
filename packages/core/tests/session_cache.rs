@@ -443,6 +443,20 @@ fn the_free_settings_changed_in_groups_keep_the_session() {
 }
 
 /// The process's resident memory in MB (`ps`).
+/// The host keys kept meshes on [`Mesh::content_hash`], which reads the paint texts: the painted tile and the same
+/// tile with no paint must hash apart, or a kept session of one would slice the other.
+#[test]
+fn the_painted_tile_and_the_plain_tile_hash_apart() {
+    let painted = common::painted_tile();
+    let mut plain = painted.clone();
+    for p in &mut plain.parts {
+        p.paint.clear();
+        p.paint_texts.clear();
+    }
+    assert!(painted.parts.iter().any(|p| !p.paint_texts.is_empty()));
+    assert_ne!(painted.content_hash(), plain.content_hash());
+}
+
 fn rss_mb() -> f64 {
     let out = std::process::Command::new("ps")
         .args(["-o", "rss=", "-p", &std::process::id().to_string()])
