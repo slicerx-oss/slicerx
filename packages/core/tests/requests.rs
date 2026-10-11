@@ -1211,17 +1211,17 @@ fn fans_follow_layer_time_and_bridges() {
     let g = text(&run(
         json!({"close_fan_the_first_x_layers": 3, "fan_min_speed": 40, "fan_max_speed": 90}),
     ));
-    // orca's cooling buffer writes a layer's fan ahead of its layer change: the last one before the mark
+    // orca's cooling buffer writes a layer's fan ahead of its layer change, only when it changes: the fan in force at
+    // the mark is the last one before it, in this stretch or an earlier one
     let parts: Vec<&str> = g.split(sx_core::extras::layer_mark(&g)).collect();
+    let mut now: Option<i64> = None;
     let fans: Vec<i64> = parts[..parts.len() - 1]
         .iter()
         .map(|l| {
-            l.lines()
-                .filter_map(|x| x.strip_prefix("M106 S"))
-                .next_back()
-                .unwrap()
-                .parse()
-                .unwrap()
+            if let Some(v) = l.lines().filter_map(|x| x.strip_prefix("M106 S")).next_back() {
+                now = Some(v.parse().unwrap());
+            }
+            now.unwrap()
         })
         .collect();
     assert!(fans[..3].iter().all(|f| *f == 0), "closed on the first layers");

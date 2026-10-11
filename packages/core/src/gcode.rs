@@ -1677,9 +1677,11 @@ fn emit_layer(
         + l.cooling_extra_s;
     let mut layer_fan_value = layer_fan(c, l.local, layer_time, crate::paths::first_slot(l));
     let mut fan_now = layer_fan_value;
-    // cura writes the fan after the layer change on an ultimaker
+    // cura writes the fan after the layer change on an ultimaker. Elsewhere the layer's fan goes before the layer
+    // change, marked: finalize drops it when the fan already runs at that speed, as Orca's cooling buffer writes a fan
+    // only when it changes. One layer cannot know the fan of the layer before it in another shard.
     if !ultimaker {
-        b.extend_from_slice(fan_cmd(flavor, fan_now).as_bytes());
+        b.extend_from_slice(crate::firmware::layer_fan_line(&fan_cmd(flavor, fan_now)).as_bytes());
     }
     // the auxiliary fan, written when it changes from the layer below (orca's cooling buffer)
     if let Some(v) = aux_fan(c, l.local, l.start_tool.max(1))
