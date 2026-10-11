@@ -78,7 +78,7 @@ fn a_bad_value_loses_only_its_own_setting() {
             "top_shell_layers": 3,
             "z_hop": 0.4
         }),
-        json!({}),
+        json!({ "configReport": true }),
     )
     .expect("slices with the good values");
     // 10 mm at 0.25 mm layers (0.2 mm first): the layer height after the bad keys applied.
@@ -98,6 +98,54 @@ fn a_bad_value_loses_only_its_own_setting() {
             .any(|w| w.starts_with("2 settings had a value this engine cannot use")
                 && w.contains("wall_loops")),
         "{w:?}"
+    );
+}
+
+#[test]
+fn without_the_report_a_bad_value_refuses_the_config_naming_its_key() {
+    // The app drops the refused key and slices again with its profile's value.
+    let err = run(json!({ "brim_width": 0, "wall_loops": "abc" }), json!({}))
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("config key wall_loops"), "{err}");
+}
+
+#[test]
+fn walls_say_which_generator_runs_and_why() {
+    let set = run(
+        json!({ "brim_width": 0, "wall_generator": "arachne" }),
+        json!({ "configReport": true }),
+    )
+    .unwrap();
+    let walls = set
+        .report
+        .config_report
+        .and_then(|r| r.walls)
+        .expect("a walls note");
+    assert_eq!(
+        (walls.generator.as_str(), walls.source.as_str()),
+        ("arachne", "request")
+    );
+    assert_eq!(walls.text, "arachne walls, set by the request");
+    // Without the tests' base settings (which name classic walls), a config that names none gets the engine's own.
+    let req: SliceRequest = serde_json::from_value(json!({
+        "plate": { "objects": [{ "id": "a", "mesh": "c", "transform": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 100, 100, 0, 1] }] },
+        "config": { "brim_width": 0 },
+        "options": { "configReport": true }
+    }))
+    .unwrap();
+    let mesh = cube();
+    let unset = sx_core::api::run_request(&req, &move |_: &str| Ok(mesh.clone())).unwrap();
+    let walls = unset
+        .report
+        .config_report
+        .and_then(|r| r.walls)
+        .expect("a walls note");
+    assert_eq!(walls.source, "default");
+    assert!(
+        walls.text.starts_with("classic walls, the engine's default"),
+        "{}",
+        walls.text
     );
 }
 

@@ -164,6 +164,39 @@ describe('3MF projects', () => {
     expect(text(strict)).toMatch(/not_a_real_key/)
   })
 
+  it('says which wall generator runs and why', async () => {
+    const h = await connect()
+    const project = (name: string, changed: string[]) => {
+      const path = join(h.dir, name)
+      writeFileSync(
+        path,
+        writeZip([
+          { name: '3D/3dmodel.model', data: MODEL.replace('<resources>', '<metadata name="Application">BambuStudio-01.10.02.73</metadata><resources>') },
+          {
+            name: 'Metadata/project_settings.config',
+            data: JSON.stringify({ printer_settings_id: 'Bambu Lab A1 0.4 nozzle', layer_height: '0.2', wall_generator: 'classic', different_settings_to_system: changed }),
+          },
+        ]),
+      )
+      return path
+    }
+    type Walls = { generator: string; source: string; text: string }
+    const walls = async (path: string) => data<{ import_report: { walls?: Walls } }>(await h.call('slicerx_inspect_project', { file: path })).import_report.walls
+    // Inherited from its presets: SlicerX keeps its own.
+    expect(await walls(project('inherited.3mf', ['layer_height', '', '']))).toEqual({
+      generator: 'aegis',
+      source: 'kept',
+      text: "aegis walls, kept by SlicerX; the project used Bambu's default classic",
+    })
+    // Listed as changed: the project's own choice.
+    expect(await walls(project('chosen.3mf', ['wall_generator;layer_height', '', '']))).toEqual({ generator: 'classic', source: 'project', text: "classic walls, the project's own choice" })
+    // A slice's overrides set it.
+    const r = await h.call('slicerx_estimate_file', { model: 'sample:cube-20', overrides: { wall_generator: 'arachne' } })
+    expect(r.isError, text(r)).toBeFalsy()
+    expect(data<{ walls: Walls }>(r).walls).toEqual({ generator: 'arachne', source: 'request', text: "arachne walls, set by the request's overrides" })
+    expect(text(r)).toMatch(/Walls: arachne walls, set by the request's overrides/)
+  })
+
   it('refuses a plate the project does not have', async () => {
     const h = await connect()
     const r = await h.call('slicerx_estimate_file', { model: projectFile(h.dir), plate: 3 })
