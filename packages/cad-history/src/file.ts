@@ -7,7 +7,7 @@
 // project reader.
 // Version 2 names faces by key (docs/cad-history.md, "Face keys"); version 1 files still open.
 export const HISTORY_FILE_VERSION = 2
-import type { History, HistoryMesh } from './model'
+import type { History, HistoryMesh, PaintTexts } from './model'
 
 /** A part of the project's zip, as the app's writer takes it. */
 export interface ZipEntry {
@@ -40,7 +40,7 @@ export function encodeMeshes(meshes: readonly HistoryMesh[]): Uint8Array {
 
 interface StoredMeshes {
   file: string
-  parts: { name: string; slot: number }[]
+  parts: { name: string; slot: number; paint?: PaintTexts }[]
 }
 
 /**
@@ -59,7 +59,8 @@ export function historyFiles(objects: readonly { id: string; history?: History; 
     const store = (meshes: readonly HistoryMesh[]): StoredMeshes => {
       const file = `Metadata/slicerx_history/${id}-${n++}.bin`
       files.push({ name: file, data: encodeMeshes(meshes) })
-      return { file, parts: meshes.map((m) => ({ name: m.name, slot: m.slot })) }
+      // Paint rides in the JSON with each part's name and slot; the binary meshes stay positions and indices.
+      return { file, parts: meshes.map((m) => ({ name: m.name, slot: m.slot, ...(m.paint && Object.keys(m.paint).length ? { paint: m.paint } : {}) })) }
     }
     const base = h.base.length ? store(h.base) : null
     const steps = h.steps.map((s) => (s.params.op === 'parts.add' ? { ...s, params: { ...s.params, parts: store(s.params.parts) } } : s))

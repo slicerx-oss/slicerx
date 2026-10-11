@@ -44,6 +44,8 @@ export function stepIcon(p: StepParams): IconName {
       return 'split'
     case 'mirror':
       return 'mirror'
+    case 'paint':
+      return p.layer === 'color' ? 'color-painting' : p.layer === 'seam' ? 'seam-painting' : p.layer === 'support' ? 'support-painting' : 'paint'
   }
 }
 
