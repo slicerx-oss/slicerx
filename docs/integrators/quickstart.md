@@ -300,7 +300,7 @@ A refused call has `isError: true`, text such as `Error: no_such_plate: Benchy.3
 | `invalid_settings` | An override names an unknown setting or a value out of range |
 | `engine_unavailable` | No slicing engine, or the stub engine was asked for something only `sx` does |
 | `slice_failed` | The engine could not slice the model; the message has its reason |
-| `preflight_blocked` | The engine's safety checks refused the settings or the custom G-code |
+| `preflight_blocked` | The engine's safety checks refused the settings, the custom G-code or toolpaths that leave the bed. For the bed, the message names the object to move, and `details` is `{"reason": "outside_bed", "fix": "slicerx_arrange"}` |
 | `project_gcode_review` | The project carries printer G-code that is not the printer's stock text; `details` has the diff and the flagged lines |
 | `sequence_clearance` | The plate prints by object, and objects sit closer than the printer's extruder clearance or one that prints before another is taller than the gantry or lid clears; the message names them |
 | `collision` | Paths cross on the plate or enter a keep-out zone; `details.collisions` has the objects and layers. `allow_collisions: true` slices it anyway, when the person asks |
