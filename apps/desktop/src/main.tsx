@@ -104,15 +104,15 @@ if (__SX_FEATURE_PILOT__) {
   onWindowTitle((title) => void getCurrentWindow().setTitle(title).catch(() => undefined))
 }
 
-// In-app updates, when this build's edition has an update feed: the feed is asked at launch, for at most two seconds
-// before the window takes input (a newer version opens the launch sheet), then daily; installed on the person's click.
+// In-app updates, when this build's edition has an update feed: the feed is asked at launch (for at most two seconds;
+// a newer version opens the launch sheet over the app when the answer comes), then daily; installed on the person's
+// click. The app renders first: the feed's answer took 170 to 500 ms, and up to two seconds on a slow network.
 {
   const [{ registerUpdater }, { createTauriUpdater, updaterMode }] = await Promise.all([import('@slicerx/app'), import('./host/updater')])
   const mode = await updaterMode()
   if (mode) {
     registerUpdater(createTauriUpdater(mode))
-    const { launchCheck } = await import('../../../packages/app/src/updates/updates')
-    await launchCheck({ stage: editionFromBuild().release.stage })
+    void import('../../../packages/app/src/updates/updates').then(({ launchCheck }) => launchCheck({ stage: editionFromBuild().release.stage }))
   }
 }
 
