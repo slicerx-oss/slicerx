@@ -13,6 +13,7 @@ import { usePhoneAccess, usePhoneState, type PhoneAccess } from '../lib/phone'
 import { PairDialog } from '../features/phone/pair-dialog'
 import { PendingRemovals, RemoteRows } from '../features/phone/remote-rows'
 import { set, useApp } from '../state/store'
+import { Loading } from './loading'
 
 const PHONE_ID = 'phone'
 const PilotSettingsSection = lazy(() => import('../pilot-connect/connect-panel').then((m) => ({ default: m.PilotSettingsSection })))
@@ -83,19 +84,19 @@ export function SettingsDialog() {
         ) : null}
         <div className="settings-body">
           {id === CONTROLS_ID ? (
-            <Suspense fallback={<div className="ws-loading" aria-busy="true" />}>
+            <Suspense fallback={<Loading />}>
               <ControlsSection />
             </Suspense>
           ) : id === BRIDGE_ID ? (
-            <Suspense fallback={<div className="ws-loading" aria-busy="true" />}>
+            <Suspense fallback={<Loading />}>
               <BridgeSection />
             </Suspense>
           ) : id === APPS_ID ? (
-            <Suspense fallback={<div className="ws-loading" aria-busy="true" />}>
+            <Suspense fallback={<Loading />}>
               <ConnectedAppsSection />
             </Suspense>
           ) : id === PRESETS_ID ? (
-            <Suspense fallback={<div className="ws-loading" aria-busy="true" />}>
+            <Suspense fallback={<Loading />}>
               <PresetsSection />
             </Suspense>
           ) : id === LOOK_ID ? (
@@ -103,13 +104,13 @@ export function SettingsDialog() {
           ) : id === SLICING_ID ? (
             <SlicingSettingsSection />
           ) : id === PILOT_ID && !settings.some((s) => s.id === PILOT_ID) ? (
-            <Suspense fallback={<div className="ws-loading" aria-busy="true" />}>
+            <Suspense fallback={<Loading />}>
               <PilotSettingsSection />
             </Suspense>
           ) : id === PHONE_ID ? (
             <PhoneAccessSection />
           ) : Feature ? (
-            <Suspense fallback={<div className="ws-loading" aria-busy="true" />}>
+            <Suspense fallback={<Loading />}>
               <Feature />
             </Suspense>
           ) : (
