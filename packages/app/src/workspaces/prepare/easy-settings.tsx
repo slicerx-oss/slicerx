@@ -6,7 +6,7 @@ import { Chip, Icon, Menu, MenuAnchor, MenuItem, MenuSeparator, Range, Seg, Swit
 import { useMemo, useState } from 'react'
 import { easyConfig, easyConfigFor, goalEasy, goalKeys, GOALS, inferEasy, matchGoal, resolveConfig } from '../../adapters/config'
 import { goalEstimate, goalSubtitle } from '../../lib/estimate-line'
-import { goalEdits, goalEditsText } from '../../lib/goal-edits'
+import { goalEdits, goalEditsTip } from '../../lib/goal-edits'
 import { choicePatch, chosenFrom, FIXED_HEIGHTS, SLEIPNIR, SLEIPNIR_LINE, type LayerChoice } from '../../lib/layer-choice'
 import { OPTION_TIPS, settingTipAttrs } from '../../lib/tips'
 import { useMore } from '../../shell/more'
@@ -148,7 +148,7 @@ export function EasySettingsPanel() {
   const edits = useMemo(() => (goal === 'custom' ? goalEdits(resolveConfig(easy, overrides), goalBase) : []), [goal, goalBase, easy, overrides, profile])
   const edited = edits.length > 0
   const baseName = GOAL_OPTIONS.find((o) => o.value === shownGoal)?.label ?? ''
-  const editTip = edited ? goalEditsText(edits, baseName) : null
+  const editTip = edited ? goalEditsTip(edits, baseName) : null
   const tiles = useMemo(
     () =>
       GOAL_OPTIONS.map((o) => ({
@@ -162,7 +162,7 @@ export function EasySettingsPanel() {
           </>
         ),
         ...(line && o.value === shownGoal && !edited ? { tip: { title: o.label, body: line === 'Updating' ? 'Updating the estimate.' : `${line} from the last slice.` } } : {}),
-        ...(editTip && o.value === shownGoal ? { tip: { title: `${o.label}, edited`, body: editTip } } : {}),
+        ...(editTip && o.value === shownGoal ? { tip: { title: `${o.label}, edited`, ...editTip } } : {}),
         // A goal is for the whole plate: in the selection's scope the tiles stay, still, so nothing below them moves.
         ...(scoped ? { disabled: true, tip: { title: o.label, reason: GOAL_PLATE } } : {}),
       })),
@@ -178,7 +178,7 @@ export function EasySettingsPanel() {
         {scoped ? (
           <span className="goal-plate sx-small sx-muted">Set on the plate</span>
         ) : edited && editTip ? (
-          <Chip className="goal-custom" tabIndex={0} {...tipAttrs({ title: `${baseName}, edited`, body: editTip })}>
+          <Chip className="goal-custom" tabIndex={0} {...tipAttrs({ title: `${baseName}, edited`, ...editTip })}>
             Edited
           </Chip>
         ) : null}

@@ -54,6 +54,17 @@ describe('feature tooltips', () => {
     expect(resolveTip(document.createElement('span'), {})).toBeNull()
   })
 
+  it('reads a list of rows, and ignores a malformed one', () => {
+    const el = document.createElement('span')
+    el.setAttribute('data-tip-title', 'Standard, edited')
+    el.setAttribute('data-tip-rows', JSON.stringify([['Layer height', '0.18 mm', '(0.2)']]))
+    expect(resolveTip(el, {})?.rows).toEqual([['Layer height', '0.18 mm', '(0.2)']])
+    el.setAttribute('data-tip-rows', '[["two", "only"]]')
+    expect(resolveTip(el, {})?.rows).toBeUndefined()
+    el.setAttribute('data-tip-rows', '{not json')
+    expect(resolveTip(el, {})?.rows).toBeUndefined()
+  })
+
   it('leaves no title attribute on an element in the app or the UI kit', () => {
     const roots = [join(__dirname, '../src'), join(__dirname, '../../ui/src')]
     const hits: string[] = []

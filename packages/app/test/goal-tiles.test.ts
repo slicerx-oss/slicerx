@@ -8,7 +8,7 @@ import { flushSync } from 'react-dom'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { goalConfig, goalEasy, resolveConfig } from '../src/adapters/config'
-import { goalEdits, goalEditsText, nearestGoal } from '../src/lib/goal-edits'
+import { goalEdits, goalEditsTip, nearestGoal } from '../src/lib/goal-edits'
 import { get, set, type AppState } from '../src/state/store'
 import { EasySettingsPanel } from '../src/workspaces/prepare/easy-settings'
 
@@ -94,10 +94,13 @@ describe('the Goal tiles', () => {
     expect(chip()?.textContent).toBe('Edited')
     // The chip is a note, not another control.
     expect(chip()?.closest('button')).toBeNull()
-    const body = tile('standard')?.getAttribute('data-tip-body') ?? ''
-    expect(body).toMatch(/^Changed from Standard: Layer height 0\.1\d mm \(Standard 0\.2 mm\)/)
-    expect(body).toMatch(/Press Standard to go back to its settings\.$/)
-    expect(chip()?.getAttribute('data-tip-body')).toBe(body)
+    const rows = JSON.parse(tile('standard')?.getAttribute('data-tip-rows') ?? '[]') as string[][]
+    expect(rows[0]?.[0]).toBe('Layer height')
+    expect(rows[0]?.[1]).toMatch(/^0\.1\d mm$/)
+    expect(rows[0]?.[2]).toBe('(0.2)')
+    expect(rows.length).toBeLessThanOrEqual(4)
+    expect(tile('standard')?.getAttribute('data-tip-body')).toMatch(/Press Standard to go back to its settings\.$/)
+    expect(chip()?.getAttribute('data-tip-rows')).toBe(tile('standard')?.getAttribute('data-tip-rows'))
   })
 
   it('go back to the stock values when the edited tile is pressed, overrides of what the goal sets included', () => {
@@ -143,10 +146,18 @@ describe('goal edits', () => {
     expect(goalEdits(goalConfig('standard'), 'standard')).toEqual([])
   })
 
-  it('say how many more past the first few', () => {
-    const e = (k: string) => ({ key: k, label: k, now: '1', goal: '2' })
-    expect(goalEditsText([e('a'), e('b')], 'Fine')).toBe('Changed from Fine: a 1 (Fine 2), b 1 (Fine 2). Press Fine to go back to its settings.')
-    expect(goalEditsText(['a', 'b', 'c', 'd', 'e', 'f'].map(e), 'Fine')).toMatch(/d 1 \(Fine 2\) and 2 more\./)
+  it('make a row per setting, the unit shown once, and say how many more past the first few', () => {
+    const e = (k: string, now = '1', goal = '2') => ({ key: k, label: k, now, goal })
+    expect(goalEditsTip([e('Layer height', '0.18 mm', '0.2 mm'), e('sleipnir', 'Off', 'Quality')], 'Fine')).toEqual({
+      rows: [
+        ['Layer height', '0.18 mm', '(0.2)'],
+        ['sleipnir', 'Off', '(Quality)'],
+      ],
+      body: 'Press Fine to go back to its settings.',
+    })
+    const six = goalEditsTip(['a', 'b', 'c', 'd', 'e', 'f'].map((k) => e(k)), 'Fine')
+    expect(six.rows).toHaveLength(4)
+    expect(six.body).toBe('And 2 more. Press Fine to go back to its settings.')
   })
 
   it('start a project that matches no goal from the nearest by layer height', () => {

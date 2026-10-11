@@ -463,6 +463,10 @@ button { cursor: pointer; }
 .sx-tip-title { flex: 1; font: var(--fw-semibold) calc(13px * var(--text-scale))/1.3 var(--f-body); color: var(--fg); }
 .sx-tip-key { font: var(--fw-medium) calc(11px * var(--text-scale))/1 var(--f-mono); padding: 2px 6px; border-radius: var(--r-xs); background: var(--ink-3); border: 1px solid var(--line); color: var(--muted); }
 .sx-tip-body { margin: 4px 0 0; font: var(--fw-regular) calc(12px * var(--text-scale))/1.4 var(--f-body); color: var(--muted); }
+.sx-tip-rows { display: grid; grid-template-columns: 1fr auto auto; column-gap: 8px; row-gap: 2px; margin: 6px 0 2px; font: var(--fw-regular) calc(12px * var(--text-scale))/1.4 var(--f-body); font-variant-numeric: tabular-nums; color: var(--muted); }
+.sx-tip-row { display: contents; }
+.sx-tip-row-value { color: var(--fg); text-align: right; white-space: nowrap; }
+.sx-tip-row-aside { color: var(--dim); text-align: right; white-space: nowrap; }
 .sx-tip-reason { margin: 6px 0 0; font: var(--fw-regular) calc(12px * var(--text-scale))/1.4 var(--f-body); color: var(--orange); }
 .sx-tip-media { margin-top: 8px; width: 224px; height: 0; overflow: hidden; border-radius: var(--r-sm); background: var(--ink-2); transition: height 160ms var(--ease); color: var(--fg); }
 .sx-tip-media[data-open] { height: 96px; }

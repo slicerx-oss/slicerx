@@ -52,7 +52,7 @@ export { motionPreference, motionReduced, resolveMotion, setMotionPreference, su
 export { useMotionReduced } from './motion-hook'
 export type { MotionPreference } from './motion'
 export type { RavenProps } from './components/raven'
-export type { TooltipHostProps, TipContent, TipSpec } from './components/tooltip'
+export type { TooltipHostProps, TipContent, TipRow, TipSpec } from './components/tooltip'
 export { Dialog } from './components/dialog'
 export type { DialogProps } from './components/dialog'
 export { CommandPalette } from './components/command-palette'

@@ -76,7 +76,8 @@ test('moving the layer height keeps Standard picked, marked edited, and pressing
   await expect(page.locator('.goal-custom')).toHaveText('Edited')
   await expect(standard).toHaveAttribute('aria-checked', 'true')
   await expect(standard.locator('.goal-edited-dot')).toBeVisible()
-  await expect(standard).toHaveAttribute('data-tip-body', /^Changed from Standard: Layer height 0\.16 mm \(Standard 0\.\d+ mm\)/)
+  await expect(standard).toHaveAttribute('data-tip-rows', /^\[\["Layer height","0\.16 mm","\(0\.\d+\)"\]/)
+  await expect(standard).toHaveAttribute('data-tip-body', 'Press Standard to go back to its settings.')
   // The mark moves nothing.
   expect(await goal.boundingBox()).toEqual(box)
   await standard.click()
@@ -104,7 +105,7 @@ test('a project that matches no goal opens on the nearest goal, marked edited', 
   const fine = page.getByTestId('slice-goal-fine')
   await expect(fine).toHaveAttribute('aria-checked', 'true')
   await expect(fine.locator('.goal-edited-dot')).toBeVisible()
-  await expect(page.locator('.goal-custom')).toHaveAttribute('data-tip-body', /^Changed from Fine: Layer height 0\.14 mm/)
+  await expect(page.locator('.goal-custom')).toHaveAttribute('data-tip-rows', /^\[\["Layer height","0\.14 mm",/)
 })
 
 // Screenshots of the tiles for review: SX_SHOTS=1, saved to SX_SHOTS_DIR (test-results/shots by default).
