@@ -1411,6 +1411,7 @@ mod tests {
 
     /// A box as a 3MF mesh object with id `id`.
     fn box_object(id: u32, lo: [f32; 3], hi: [f32; 3]) -> String {
+        use std::fmt::Write as _;
         let v: Vec<[f32; 3]> = (0..8)
             .map(|i| {
                 [
@@ -1434,7 +1435,6 @@ mod tests {
             [1, 3, 5],
             [3, 7, 5],
         ];
-        use std::fmt::Write as _;
         let vs = v.iter().fold(String::new(), |mut acc, p| {
             let _ = write!(acc, r#"<vertex x="{}" y="{}" z="{}"/>"#, p[0], p[1], p[2]);
             acc
