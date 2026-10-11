@@ -5,7 +5,7 @@
 // layer lines look switches Slice to the toolpaths, which the range applies to.
 import { tipAttrs } from '@slicerx/ui'
 import { HEAT_RAMP } from '@slicerx/viewport/palette'
-import { useMemo, useRef, type KeyboardEvent, type PointerEvent } from 'react'
+import { useLayoutEffect, useMemo, useRef, type KeyboardEvent, type PointerEvent } from 'react'
 import { get, set, shownSlice, useApp } from '../state/store'
 import { layerKeyStep, stepLayer } from './preview/layer-step'
 import { StripStrikes } from './preview/strike-slots'
@@ -25,6 +25,30 @@ export function layerHeights(z: ArrayLike<number>): number[] {
   return h
 }
 
+/**
+ * The room the strip takes at the view's right edge, as `--lstrip-room` on the view, so the plate bar along the
+ * bottom stops short of it instead of running under it (the toasts keep off it the same way).
+ */
+function useStripRoom(strip: { current: HTMLElement | null }, shown: boolean): void {
+  useLayoutEffect(() => {
+    const el = strip.current
+    const vp = el?.closest<HTMLElement>('.vp')
+    if (!el || !vp || typeof ResizeObserver === 'undefined') return
+    const measure = () => {
+      const room = vp.getBoundingClientRect().right - el.getBoundingClientRect().left + 8
+      vp.style.setProperty('--lstrip-room', `${Math.max(0, Math.round(room))}px`)
+    }
+    measure()
+    const ro = new ResizeObserver(measure)
+    ro.observe(el)
+    ro.observe(vp)
+    return () => {
+      ro.disconnect()
+      vp.style.removeProperty('--lstrip-room')
+    }
+  }, [strip, shown])
+}
+
 export function LayerStrip() {
   // The last slice's layers stay while a new slice runs, so the strip never drops out and comes back.
   const slice = useApp((s) => shownSlice(s.slice)?.result ?? null)
@@ -34,6 +58,7 @@ export function LayerStrip() {
   const layersOn = useApp((s) => s.sliceLook === 'toolpaths')
   const track = useRef<HTMLDivElement>(null)
   const drag = useRef<Handle | null>(null)
+  const strip = useRef<HTMLElement>(null)
   const data = useMemo(() => {
     if (!slice) return null
     const z = slice.layerZ
@@ -42,6 +67,7 @@ export function LayerStrip() {
     const max = Math.max(...h)
     return { h, z, min, max, top: z.reduce((a, v) => Math.max(a, v), 0) || 1 }
   }, [slice])
+  useStripRoom(strip, data !== null && data.h.length > 0)
   if (!data || data.h.length === 0) return null
   const { h, z, min, max, top } = data
   const n = h.length
@@ -137,6 +163,7 @@ export function LayerStrip() {
   }
   return (
     <figure
+      ref={strip}
       className="lstrip sx-overlay lstrip-live"
       aria-label={uniform ? `Layers of ${max.toFixed(2)} mm` : `Layer heights from ${min.toFixed(2)} to ${max.toFixed(2)} mm`}
       {...tipAttrs({ title: 'Layers', body: 'Drag the handles to show a range of layers, or click a layer to jump there.' })}
