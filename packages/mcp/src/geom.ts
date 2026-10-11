@@ -10,6 +10,8 @@ import { mkdirSync } from 'node:fs'
 import { basename, dirname, extname, join } from 'node:path'
 import { defineTool, type PilotTool } from '@slicerx/pilot'
 import { z } from 'zod'
+import { invert, stepName, type HistoryMesh, type SolidSpec, type StepParams } from '@slicerx/cad-history'
+import { designArg, designSummary, type Design, type Designs } from './design'
 import { resolveModel, ToolInputError, type PathPolicy } from './models'
 import { findBinary } from './sx'
 import { looksZipped, refuseVaultFile } from './vault'
@@ -20,9 +22,9 @@ export function findSxGeom(explicit?: string, sxPath?: string): string | undefin
   return findBinary('sx-geom', explicit, [process.env['SLICERX_SX_GEOM_BIN'], sibling])
 }
 
-function runGeom(bin: string, op: string, request: unknown, outDir: string, timeoutMs: number): Promise<unknown> {
+function runGeom(bin: string, op: string, request: unknown, outDir: string | undefined, timeoutMs: number): Promise<unknown> {
   return new Promise((resolve, reject) => {
-    const child = spawn(bin, [op, '--out-dir', outDir], { stdio: ['pipe', 'pipe', 'pipe'], timeout: timeoutMs })
+    const child = spawn(bin, outDir ? [op, '--out-dir', outDir] : [op], { stdio: ['pipe', 'pipe', 'pipe'], timeout: timeoutMs })
     let stdout = ''
     let stderr = ''
     child.stdout.setEncoding('utf8').on('data', (d: string) => (stdout += d))
@@ -70,7 +72,8 @@ function camelKeys(v: unknown): unknown {
 }
 
 export interface GeomToolDeps {
-  bin: string
+  /** The sx-geom program, for tools that read and write STL files. */
+  bin?: string | undefined
   policy: PathPolicy
   timeoutMs?: number
 }
@@ -83,14 +86,37 @@ export type GeomCall = (op: string, request: Record<string, unknown>) => Promise
 export function geomCaller(deps: GeomToolDeps): GeomCall {
   const timeout = deps.timeoutMs ?? 5 * 60_000
   return async (op, request) => {
+    if (!deps.bin) throw new ToolInputError('Working on STL files needs the sx-geom program, which this server did not find; use a design instead.', 'not_supported')
     const dir = join(deps.policy.outDir, 'geom', `${op.replace(/\W+/g, '-')}-${Date.now().toString(36)}-${counter++}`)
     mkdirSync(dir, { recursive: true })
     return (await runGeom(deps.bin, op, camelKeys(request), dir, timeout)) as Record<string, unknown>
   }
 }
 
-export function geomTools(deps: GeomToolDeps): PilotTool<never>[] {
+/** The engine as a history replay calls it: JSON in, meshes back as numbers (with their faces), no files. */
+export function geomEngine(bin: string, timeoutMs = 5 * 60_000): (op: string, request: unknown) => Promise<unknown> {
+  return (op, request) => runGeom(bin, op, request, undefined, timeoutMs)
+}
+
+type V3 = [number, number, number]
+
+const designOrModel = (i: { model?: string | undefined; design?: string | undefined }): void => {
+  if (!i.model === !i.design) throw new ToolInputError(i.model ? 'give "model" or "design", not both' : 'give "model" (an STL) or "design" (a design id)')
+}
+
+const partArg = z.number().int().min(0).optional().describe('With a design: the part to work on, from 0; absent: every part')
+
+export function geomTools(deps: GeomToolDeps & { designs?: Designs | undefined }): PilotTool<never>[] {
   const call = geomCaller(deps)
+  const designOf = (id: string): [Designs, Design] => {
+    if (!deps.designs) throw new ToolInputError('Designs need the sx-geom engine, which this server did not find.', 'not_supported')
+    return [deps.designs, deps.designs.get(id)]
+  }
+  const added = (d: Design, verb: string) => {
+    const s = d.history.steps[d.history.steps.length - 1]
+    return { summary: `${verb}: step ${d.history.steps.length}${s ? `, ${stepName(s)}` : ''}`, output: designSummary(d) }
+  }
+  const modelOpt = modelArg.optional().describe('Absolute path to an STL file, an http(s) URL, or a built-in model; or give "design" instead')
   // sx-geom reads STL only; a 3MF would be read as a binary STL with nonsense counts.
   const stlOnly = (path: string): { stlPath: string } => {
     if (extname(path).toLowerCase() !== '.stl' || looksZipped(path)) {
@@ -166,16 +192,25 @@ export function geomTools(deps: GeomToolDeps): PilotTool<never>[] {
     version: '1.0.0',
     source: 'command',
     permission: 'slice',
-    description: 'Repair a mesh: weld vertices, fix winding and normals, and close small holes. Writes a repaired STL and a report of what was fixed and what stayed open.',
+    description: 'Repair a mesh: weld vertices, fix winding and normals, and close small holes. With "design" it adds a repair step with the default options; with a model it writes a repaired STL and a report of what was fixed and what stayed open.',
     input: z.object({
-      model: modelArg,
+      model: modelOpt,
+      design: designArg.optional(),
+      part: partArg,
       close_holes: z.boolean().optional(),
       max_hole_edges: z.number().int().min(3).max(10_000).optional().describe('Holes with more boundary edges than this stay open'),
       fix_normals: z.boolean().optional(),
     }),
     async run(i) {
-      const { model, ...options } = i
-      const out = await call('repair', { mesh: await meshOut(model), options })
+      designOrModel(i)
+      const { model, design, part, ...options } = i
+      if (design) {
+        if (Object.values(options).some((v) => v !== undefined)) throw new ToolInputError('A repair step on a design takes the default options; leave close_holes, max_hole_edges and fix_normals out')
+        const [ds, d] = designOf(design)
+        await ds.add(d, part ?? -1, { op: 'repair' })
+        return added(d, 'Repaired')
+      }
+      const out = await call('repair', { mesh: await meshOut(model!), options })
       return { summary: 'Repaired the mesh', output: out }
     },
   })
@@ -185,16 +220,25 @@ export function geomTools(deps: GeomToolDeps): PilotTool<never>[] {
     version: '1.0.0',
     source: 'command',
     permission: 'slice',
-    description: 'Hollow a solid model to a shell of a given wall thickness, with optional drain holes so resin or trapped material can leave. Writes a new STL and a volume report.',
+    description: 'Hollow a solid model to a shell of a given wall thickness, with optional drain holes so resin or trapped material can leave. With "design" it adds a hollow step (wall only); with a model it writes a new STL and a volume report.',
     input: z.object({
-      model: modelArg,
+      model: modelOpt,
+      design: designArg.optional(),
+      part: partArg,
       wall_mm: z.number().min(0.4).max(50).default(2),
       voxel_mm: z.number().min(0.05).max(5).optional().describe('Grid resolution; smaller is slower and more exact'),
       drain_holes: z.array(z.record(z.string(), z.unknown())).max(8).optional().describe('sx-geom drain hole objects (see the sx-geom README)'),
     }),
     async run(i) {
-      const { model, ...options } = i
-      const out = await call('hollow', { mesh: await meshOut(model), options })
+      designOrModel(i)
+      const { model, design, part, ...options } = i
+      if (design) {
+        if (options.voxel_mm !== undefined || options.drain_holes !== undefined) throw new ToolInputError('A hollow step on a design takes the wall only; leave voxel_mm and drain_holes out')
+        const [ds, d] = designOf(design)
+        await ds.add(d, part ?? -1, { op: 'hollow', wallMm: options.wall_mm })
+        return added(d, 'Hollowed')
+      }
+      const out = await call('hollow', { mesh: await meshOut(model!), options })
       return { summary: 'Hollowed the model', output: out }
     },
   })
@@ -204,9 +248,10 @@ export function geomTools(deps: GeomToolDeps): PilotTool<never>[] {
     version: '1.0.0',
     source: 'command',
     permission: 'slice',
-    description: 'Raise (emboss) or cut in (deboss) text on a face of the model. Give the point on the surface where the text is centered, and the face normal if the point is on an edge. Writes a new STL.',
+    description: 'Raise (emboss) or cut in (deboss) text on a face of the model. Give the point on the surface where the text is centered, and the face normal if the point is on an edge. With "design" it adds a text step on the plane through the point (flat faces); with a model it writes a new STL.',
     input: z.object({
-      model: modelArg,
+      model: modelOpt,
+      design: designArg.optional(),
       text: z.string().min(1).max(200).describe('Text to place; \\n starts a new line'),
       point: vec3.describe('Center of the text on the surface, mm'),
       normal: vec3.optional(),
@@ -216,8 +261,24 @@ export function geomTools(deps: GeomToolDeps): PilotTool<never>[] {
       mode: z.enum(['emboss', 'deboss']).default('emboss'),
     }),
     async run(i) {
-      const { model, ...spec } = i
-      const out = await call('emboss', { mesh: await meshOut(model), spec })
+      designOrModel(i)
+      const { model, design, ...spec } = i
+      if (design) {
+        const [ds, d] = designOf(design)
+        const f = ds.faceAt(d, i.point, i.normal)
+        const n = f.normal
+        // Text reads upright: up along +Z, or along +Y on a face that looks up or down.
+        const up: V3 = i.up ?? (Math.abs(n[2]) > 0.9 ? [0, 1, 0] : [0, 0, 1])
+        const u: V3 = [up[1] * n[2] - up[2] * n[1], up[2] * n[0] - up[0] * n[2], up[0] * n[1] - up[1] * n[0]]
+        const l = Math.hypot(...u)
+        if (l < 1e-9) throw new ToolInputError('up: must not be along the face normal')
+        const uu: V3 = [u[0] / l, u[1] / l, u[2] / l]
+        const frame = { origin: i.point, normal: n, u: uu, v: [n[1] * uu[2] - n[2] * uu[1], n[2] * uu[0] - n[0] * uu[2], n[0] * uu[1] - n[1] * uu[0]] as V3 }
+        const params: StepParams = { op: 'shape.extrude', frame, shape: { type: 'text', text: i.text, sizeMm: i.size_mm }, spec: { distanceMm: i.depth_mm, operation: i.mode === 'deboss' ? 'cut' : 'join' } }
+        await ds.add(d, f.part, params)
+        return added(d, i.mode === 'deboss' ? 'Debossed' : 'Embossed')
+      }
+      const out = await call('emboss', { mesh: await meshOut(model!), spec })
       return { summary: `${i.mode === 'deboss' ? 'Debossed' : 'Embossed'} "${i.text.slice(0, 40)}"`, output: out }
     },
   })
@@ -289,12 +350,24 @@ export function geomTools(deps: GeomToolDeps): PilotTool<never>[] {
     version: '1.0.0',
     source: 'command',
     permission: 'slice',
-    description: `Build a new model from simple solids (boxes, cylinders, prisms), optionally cutting holes with convex cutters. Overlapping solids stay separate shells. Writes an STL and returns its volume, bounds and whether it is watertight. ${solidsHelp}`,
+    description: `Build a new model from simple solids (boxes, cylinders, prisms), optionally cutting holes with convex cutters. Overlapping solids are joined. With "design" the result is added to the design as a new part; with no design it writes an STL and returns its volume, bounds and whether it is watertight. ${solidsHelp}`,
     input: z.object({
       solids: z.array(solid).min(1).max(64),
       subtract: z.array(solid).max(64).optional().describe('Convex cutters removed from every solid: box, cylinder, prism or countersink'),
+      design: designArg.optional(),
+      name: z.string().min(1).max(120).optional().describe('With a design: the name of the new part'),
+      slot: z.number().int().min(1).max(32).optional().describe('With a design: the filament slot of the new part, from 1'),
     }),
     async run(i) {
+      if (i.design) {
+        const [ds, d] = designOf(i.design)
+        const r = (await ds.deps.engine('build', { solids: i.solids, ...(i.subtract ? { subtract: i.subtract } : {}) })) as { mesh: { positions: number[]; indices: number[] } }
+        // The mesh goes in the design's own frame, as the history keeps a part.
+        const inv = invert(d.transform)
+        const part: HistoryMesh = { name: i.name ?? `Solids ${d.parts.length + 1}`, slot: i.slot ?? 1, positions: transformPoints(r.mesh.positions, inv), indices: r.mesh.indices }
+        await ds.add(d, -1, { op: 'parts.add', parts: [part], label: `Add ${part.name}` })
+        return added(d, 'Built')
+      }
       const out = await call('build', { solids: i.solids, ...(i.subtract ? { subtract: i.subtract } : {}) })
       return { summary: `Built a model from ${i.solids.length} solid${i.solids.length === 1 ? '' : 's'}`, output: out }
     },
@@ -306,12 +379,52 @@ export function geomTools(deps: GeomToolDeps): PilotTool<never>[] {
     source: 'command',
     permission: 'slice',
     description: `Cut holes and pockets in an existing model with convex cutters, such as screw holes or a countersink: {"type":"countersink","origin":[x,y,z] on the surface,"axis":[...] into the material,"shaftDiameterMm":d,"headDiameterMm":D,"angleDeg":90,"depthMm":h}. Writes an STL and returns the removed volume. ${solidsHelp}`,
-    input: z.object({ model: modelArg, solids: z.array(solid).min(1).max(64) }),
+    input: z.object({ model: modelOpt, design: designArg.optional(), part: partArg, solids: z.array(solid).min(1).max(64), label: z.string().min(1).max(120).optional().describe('With a design: the step name') }),
     async run(i) {
-      const out = await call('subtract', { mesh: await meshOut(i.model), solids: i.solids })
+      designOrModel(i)
+      if (i.design) {
+        const [ds, d] = designOf(i.design)
+        const solids = i.solids.map(historySolid)
+        const one = solids.length === 1 ? solids[0] : undefined
+        const label = i.label ?? (one?.type === 'cylinder' ? `Hole ${Math.round(one.diameterMm * 100) / 100} mm` : `Subtract ${solids.length} solid${solids.length === 1 ? '' : 's'}`)
+        await ds.add(d, i.part ?? -1, { op: 'subtract', solids, label })
+        return added(d, 'Subtracted')
+      }
+      const out = await call('subtract', { mesh: await meshOut(i.model!), solids: i.solids })
       return { summary: `Removed ${String(out['removedVolumeMm3'] ?? '?')} mm3`, output: out }
     },
   })
 
   return [cut, split, orient, repair, hollow, emboss, calibration, resume, layers, build, subtract] as PilotTool<never>[]
+}
+
+/** A cutter as a subtract step keeps it: a box, or a cylinder with its origin, axis, diameter and height. */
+function historySolid(s: Record<string, unknown>): SolidSpec {
+  const v3 = (x: unknown): V3 | undefined => (Array.isArray(x) && x.length === 3 && x.every((c) => typeof c === 'number' && Number.isFinite(c)) ? (x as V3) : undefined)
+  if (s['type'] === 'box') {
+    const min = v3(s['min'])
+    const max = v3(s['max'])
+    if (!min || !max) throw new ToolInputError('solids: a box needs "min" and "max", [x,y,z] in mm')
+    return { type: 'box', min, max }
+  }
+  if (s['type'] === 'cylinder') {
+    const d = typeof s['diameterMm'] === 'number' ? s['diameterMm'] : typeof s['radiusMm'] === 'number' ? s['radiusMm'] * 2 : NaN
+    const h = s['heightMm']
+    if (!(d > 0) || typeof h !== 'number' || !(h > 0)) throw new ToolInputError('solids: a cylinder needs diameterMm (or radiusMm) and heightMm, more than 0')
+    return { type: 'cylinder', origin: v3(s['origin']) ?? [0, 0, 0], axis: v3(s['axis']) ?? [0, 0, 1], diameterMm: d, heightMm: h }
+  }
+  throw new ToolInputError(`solids: a design's subtract step takes boxes and cylinders; a ${String(s['type'])} cut needs a model (or build it as its own part)`)
+}
+
+function transformPoints(p: readonly number[], m: number[]): number[] {
+  const out = new Array<number>(p.length)
+  for (let i = 0; i + 2 < p.length; i += 3) {
+    const x = p[i]!
+    const y = p[i + 1]!
+    const z = p[i + 2]!
+    out[i] = m[0]! * x + m[4]! * y + m[8]! * z + m[12]!
+    out[i + 1] = m[1]! * x + m[5]! * y + m[9]! * z + m[13]!
+    out[i + 2] = m[2]! * x + m[6]! * y + m[10]! * z + m[14]!
+  }
+  return out
 }
