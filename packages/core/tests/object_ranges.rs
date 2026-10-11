@@ -49,6 +49,7 @@ fn two_boxes(right: Value, config: Value, options: Value) -> api::Result<SliceRu
     let cube = Arc::new(Mesh {
         name: "box".into(),
         parts: vec![cuboid([0.0, 20.0], [0.0, 20.0], [0.0, 6.0])],
+        ..Mesh::default()
     });
     let mut cfg = json!({"brim_width": 0, "skirt_loops": 0, "extruder_clearance_radius": 20});
     cfg.as_object_mut()
@@ -293,6 +294,7 @@ fn the_preview_names_the_object_of_every_segment() {
     let cube = Arc::new(Mesh {
         name: "box".into(),
         parts: vec![cuboid([0.0, 20.0], [0.0, 20.0], [0.0, 6.0])],
+        ..Mesh::default()
     });
     let req: SliceRequest =
         serde_json::from_value(json!({"plate": {"objects": [{"mesh": "c"}]}, "config": {}})).unwrap();

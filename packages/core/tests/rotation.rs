@@ -59,6 +59,7 @@ fn slice_turned(config: Value, deg: f64) -> String {
     let cube = Arc::new(Mesh {
         name: "box".into(),
         parts: vec![cuboid([0.0, 20.0], [0.0, 20.0], [0.0, 4.0])],
+        ..Mesh::default()
     });
     let mut cfg = json!({"brim_width": 0, "skirt_loops": 0, "sparse_infill_density": 20, "sparse_infill_pattern": "rectilinear"});
     cfg.as_object_mut()

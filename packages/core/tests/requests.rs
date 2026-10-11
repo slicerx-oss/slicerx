@@ -270,6 +270,7 @@ fn frustum(bottom: f32, top: f32, height: f32) -> Mesh {
             fuzzy_paint: Vec::new(),
             paint_texts: Vec::new(),
         }],
+        ..Mesh::default()
     }
 }
 
@@ -453,6 +454,7 @@ fn two_parts_meeting_on_a_layer_plane_cut_as_the_lower_one() {
             cuboid([5.0, 25.0], [5.0, 25.0], [0.0, 5.5], "lower"),
             cuboid([0.0, 30.0], [0.0, 30.0], [5.5, 10.0], "upper"),
         ],
+        ..Mesh::default()
     });
     let req: SliceRequest = serde_json::from_value(json!({
         "plate": {"objects": [{"mesh": "s", "transform": [1,0,0,0, 0,1,0,0, 0,0,1,0, 100,100,0,1]}]},
@@ -514,6 +516,7 @@ fn table() -> Mesh {
             cuboid([32.0, 40.0], [0.0, 20.0], [0.0, 10.0], "right"),
             cuboid([0.0, 40.0], [0.0, 20.0], [10.0, 12.0], "slab"),
         ],
+        ..Mesh::default()
     }
 }
 
@@ -755,6 +758,7 @@ fn hole_to_polyhole_turns_a_round_hole_into_a_polygon_sized_for_the_nozzle() {
             cuboid([0.0, 30.0], [0.0, 30.0], [0.0, 6.0], "block"),
             round_prism(15.0, 15.0, 3.0, 48, [-1.0, 7.0], true),
         ],
+        ..Mesh::default()
     });
     let run = |config: Value| -> (usize, Vec<(f64, f64)>) {
         let mut cfg = json!({"brim_width": 0, "skirt_loops": 0, "seam_gap": 0});
@@ -899,6 +903,7 @@ fn a_shelf_narrower_than_a_line_and_a_half_is_not_bridged() {
             cuboid([0.0, 20.0], [0.0, 20.0], [0.0, 5.0], "base"),
             cuboid([-0.5, 20.5], [-0.5, 20.5], [5.0, 8.0], "cap"),
         ],
+        ..Mesh::default()
     });
     let req: SliceRequest =
         serde_json::from_value(json!({"plate": {"objects": [{"mesh": "s"}]}, "config": {}})).unwrap();
@@ -912,6 +917,7 @@ fn seam_starts(seam: &str) -> Vec<(f64, f64)> {
     let mesh = Arc::new(Mesh {
         name: "block".into(),
         parts: vec![cuboid([0.0, 20.0], [0.0, 20.0], [0.0, 4.0], "block")],
+        ..Mesh::default()
     });
     let req: SliceRequest = serde_json::from_value(json!({
         "plate": {"objects": [{"mesh": "b", "transform": [1,0,0,0, 0,1,0,0, 0,0,1,0, 100,100,0,1]}]},
@@ -1013,6 +1019,7 @@ fn every_sparse_pattern_prints_valid_gcode_at_about_the_same_density() {
     let mesh = Arc::new(Mesh {
         name: "block".into(),
         parts: vec![cuboid([0.0, 40.0], [0.0, 40.0], [0.0, 20.0], "block")],
+        ..Mesh::default()
     });
     let run = |pattern: &str, shards: u32| {
         let req: SliceRequest = serde_json::from_value(json!({
@@ -1159,6 +1166,7 @@ fn supports_rest_on_the_part_unless_told_to_reach_the_bed() {
             cuboid([15.0, 25.0], [0.0, 20.0], [3.0, 13.0], "pillar"),
             cuboid([0.0, 40.0], [0.0, 20.0], [13.0, 15.0], "cap"),
         ],
+        ..Mesh::default()
     });
     let run = |config: Value| {
         let req: SliceRequest =
@@ -1493,6 +1501,7 @@ fn wall_order_first_layer_wall_and_shell_thickness() {
     let mesh = Arc::new(Mesh {
         name: "block".into(),
         parts: vec![cuboid([0.0, 30.0], [0.0, 30.0], [0.0, 10.0], "block")],
+        ..Mesh::default()
     });
     let run = |config: Value| {
         let mut c = json!({"wall_loops": 3, "brim_width": 0, "slow_down_for_layer_cooling": false});
@@ -1551,6 +1560,7 @@ fn thin_walls_get_a_gap_fill_bead_as_wide_as_the_gap() {
         let mesh = Arc::new(Mesh {
             name: "plate".into(),
             parts: vec![cuboid([0.0, 30.0], [0.0, mm], [0.0, 6.0], "plate")],
+            ..Mesh::default()
         });
         let req: SliceRequest = serde_json::from_value(json!({
             "plate": {"objects": [{"mesh": "p"}]},
@@ -1586,6 +1596,7 @@ fn skirt_loops_surround_the_part_on_the_first_layers() {
     let mesh = Arc::new(Mesh {
         name: "block".into(),
         parts: vec![cuboid([0.0, 20.0], [0.0, 20.0], [0.0, 4.0], "block")],
+        ..Mesh::default()
     });
     let req: SliceRequest = serde_json::from_value(json!({
         "plate": {"objects": [{"mesh": "b"}]},
@@ -1615,6 +1626,7 @@ fn block_run(config: Value, options: Value) -> api::Result<SliceRun> {
     let mesh = Arc::new(Mesh {
         name: "block".into(),
         parts: vec![cuboid([0.0, 20.0], [0.0, 20.0], [0.0, 4.0], "block")],
+        ..Mesh::default()
     });
     let req: SliceRequest = serde_json::from_value(json!({
         "plate": {"objects": [{"mesh": "b"}]}, "config": config, "options": options,
@@ -1963,6 +1975,7 @@ fn a_ledge_narrower_than_the_outer_wall_is_not_in_mid_air() {
                 cuboid([0.0, 10.0], [0.0, 10.0], [0.0, 5.0], "below"),
                 cuboid([-step, 10.0 + step], [-step, 10.0 + step], [5.0, 8.0], "band"),
             ],
+            ..Mesh::default()
         })
     };
     let config = json!({"outer_wall_line_width": width});
@@ -1998,6 +2011,7 @@ fn a_part_floating_in_the_air_is_named_when_support_is_off() {
             cuboid([0.0, 10.0], [0.0, 10.0], [0.0, 5.0], "base"),
             cuboid([20.0, 25.0], [0.0, 5.0], [3.0, 6.0], "island"),
         ],
+        ..Mesh::default()
     });
     let run = |config: Value| {
         let req: SliceRequest =
@@ -2042,6 +2056,7 @@ fn painted_fuzzy_skin_roughens_only_the_painted_side() {
     let mesh = Arc::new(Mesh {
         name: "block".into(),
         parts: vec![block],
+        ..Mesh::default()
     });
     // Outer wall points of layer 20 within 1 mm of the left and the right side.
     let sides = |config: Value| -> (usize, usize) {
@@ -2093,6 +2108,7 @@ fn a_bridge_past_the_max_bridge_length_is_named_when_support_is_off() {
             cuboid([40.0, 50.0], [0.0, 10.0], [0.0, 5.0], "right"),
             cuboid([0.0, 50.0], [0.0, 10.0], [5.0, 7.0], "slab"),
         ],
+        ..Mesh::default()
     });
     let run = |config: Value| {
         let req: SliceRequest =
@@ -2149,6 +2165,7 @@ fn bridges_past_the_shown_five_are_counted_as_bridges() {
     let mesh = Arc::new(Mesh {
         name: "arches".into(),
         parts,
+        ..Mesh::default()
     });
     let req: SliceRequest =
         serde_json::from_value(json!({"plate": {"objects": [{"mesh": "m"}]}, "config": {}})).unwrap();
@@ -2173,6 +2190,7 @@ fn tree_supports_on_the_build_plate_only_skip_branches_that_end_on_the_part() {
             cuboid([15.0, 25.0], [0.0, 20.0], [3.0, 13.0], "pillar"),
             cuboid([0.0, 40.0], [0.0, 20.0], [13.0, 15.0], "cap"),
         ],
+        ..Mesh::default()
     });
     let run = |config: Value| {
         let req: SliceRequest =
@@ -2203,6 +2221,7 @@ fn one_box(x: [f32; 2], y: [f32; 2], z: [f32; 2]) -> Mesh {
     Mesh {
         name: "box".into(),
         parts: vec![cuboid(x, y, z, "box")],
+        ..Mesh::default()
     }
 }
 
@@ -2442,6 +2461,7 @@ fn slicing_mode_decides_what_nested_loops_mean() {
         let mesh = Arc::new(Mesh {
             name: "nest".into(),
             parts: vec![cuboid([0.0, 30.0], [0.0, 30.0], [0.0, 4.0], "outer"), inner],
+            ..Mesh::default()
         });
         let req: SliceRequest = serde_json::from_value(json!({
             "plate": {"objects": [{"mesh": "n", "transform": [1,0,0,0, 0,1,0,0, 0,0,1,0, 100,100,0,1]}]},
@@ -2796,6 +2816,7 @@ fn painted_box(face_top: bool) -> Mesh {
     Mesh {
         name: "painted".into(),
         parts: vec![part],
+        ..Mesh::default()
     }
 }
 
@@ -2974,6 +2995,7 @@ fn inlays() -> Mesh {
     Mesh {
         name: "inlays".into(),
         parts: vec![cap, left, right],
+        ..Mesh::default()
     }
 }
 
@@ -3030,6 +3052,7 @@ fn a_painted_top_reaches_into_the_part_below() {
         Mesh {
             name: "two".into(),
             parts: vec![a, b],
+            ..Mesh::default()
         },
         json!({"layer_height": 0.2, "initial_layer_print_height": 0.2, "top_shell_layers": 5, "bottom_shell_layers": 3}),
     );
@@ -3056,6 +3079,7 @@ fn a_painted_top_another_part_covers_keeps_its_own_filament_there() {
         Mesh {
             name: "two".into(),
             parts: vec![a, b],
+            ..Mesh::default()
         },
         json!({"layer_height": 0.2, "initial_layer_print_height": 0.2, "top_shell_layers": 5, "bottom_shell_layers": 3}),
     );
@@ -3634,6 +3658,7 @@ fn bottom_interface_layers_turn_the_support_that_rests_on_the_part_into_interfac
             cuboid([15.0, 25.0], [0.0, 20.0], [3.0, 13.0], "pillar"),
             cuboid([0.0, 40.0], [0.0, 20.0], [13.0, 15.0], "cap"),
         ],
+        ..Mesh::default()
     });
     let interface_at = |bottom: u32| {
         let req: SliceRequest = serde_json::from_value(json!({
@@ -3664,6 +3689,7 @@ fn a_tower_is_skipped_when_tools_only_change_between_layers() {
             cuboid([0.0, 20.0], [0.0, 20.0], [0.0, 3.0], "lo"),
             cuboid([0.0, 20.0], [0.0, 20.0], [3.0, 6.0], "hi"),
         ],
+        ..Mesh::default()
     });
     let run = |extra: Value| {
         let mut cfg = json!({"brim_width": 0, "enable_prime_tower": true, "prime_volume": 5, "wipe_tower_y": 20, "prime_tower_auto_position": false});
@@ -3697,6 +3723,7 @@ fn a_change_between_layers_keeps_the_tower_when_the_infill_cannot_take_the_flush
             cuboid([0.0, 20.0], [0.0, 20.0], [0.0, 3.0], "lo"),
             cuboid([0.0, 20.0], [0.0, 20.0], [3.0, 6.0], "hi"),
         ],
+        ..Mesh::default()
     });
     let run = |extra: Value| {
         let mut cfg = json!({"brim_width": 0, "enable_prime_tower": true, "prime_volume": 5, "wipe_tower_y": 20, "prime_tower_auto_position": false});
@@ -3879,6 +3906,7 @@ fn overhang_reverse_turns_the_walls_of_an_odd_layer_that_overhangs() {
             cuboid([-10.0, 10.0], [-10.0, 10.0], [0.0, 2.2], "base"),
             cuboid([-10.0, 10.0], [-10.0, 20.0], [2.2, 4.0], "slab"),
         ],
+        ..Mesh::default()
     });
     let run = |extra: Value| {
         let mut cfg = json!({"brim_width": 0, "wall_loops": 2});
@@ -4327,6 +4355,7 @@ fn an_unpainted_seam_keeps_off_a_stretch_that_hangs_over_air() {
             cuboid([-10.0, 10.0], [-10.0, 10.0], [0.0, 2.0], "base"),
             cuboid([-10.0, 10.0], [-10.0, 20.0], [2.0, 4.0], "slab"),
         ],
+        ..Mesh::default()
     });
     let req: SliceRequest = serde_json::from_value(json!({
         "plate": {"objects": [{"mesh": "l", "transform": [1,0,0,0, 0,1,0,0, 0,0,1,0, 100,100,0,1]}]},
@@ -4505,6 +4534,7 @@ fn wedge() -> Mesh {
     Mesh {
         name: "wedge".into(),
         parts: vec![part],
+        ..Mesh::default()
     }
 }
 
@@ -4623,6 +4653,7 @@ fn only_one_wall_top_with_arachne_thins_the_walls_under_an_exposed_top_surface()
             cuboid([-15.0, 15.0], [-15.0, 15.0], [0.0, 2.0], "base"),
             cuboid([-5.0, 5.0], [-5.0, 5.0], [2.0, 4.0], "block"),
         ],
+        ..Mesh::default()
     });
     let run = |one_wall: bool| {
         let req: SliceRequest = serde_json::from_value(json!({
@@ -4787,6 +4818,7 @@ fn a_part_with_settings_of_its_own_prints_its_area_with_them() {
             cuboid([-30.0, -10.0], [-10.0, 10.0], [0.0, 4.0], "left"),
             cuboid([10.0, 30.0], [-10.0, 10.0], [0.0, 4.0], "right"),
         ],
+        ..Mesh::default()
     });
     let run = |part_settings: Value| {
         let req: SliceRequest = serde_json::from_value(json!({
@@ -4827,6 +4859,7 @@ fn vase_run(config: Value) -> String {
     let mesh = Arc::new(Mesh {
         name: "block".into(),
         parts: vec![cuboid([0.0, 20.0], [0.0, 20.0], [0.0, 4.0], "block")],
+        ..Mesh::default()
     });
     let mut cfg = json!({
         "spiral_mode": true, "brim_width": 0, "skirt_loops": 0, "bottom_shell_layers": 2,
@@ -4972,6 +5005,7 @@ fn brim_boxes(config: Value, extra: Value) -> Vec<[f64; 4]> {
     let mesh = Arc::new(Mesh {
         name: "block".into(),
         parts: vec![cuboid([0.0, 20.0], [0.0, 20.0], [0.0, 4.0], "block")],
+        ..Mesh::default()
     });
     brim_boxes_of(mesh, config, extra)
 }
@@ -5095,6 +5129,7 @@ fn two_filaments(config: Value) -> String {
     let mesh = Arc::new(Mesh {
         name: "pair".into(),
         parts: vec![a, b],
+        ..Mesh::default()
     });
     let mut cfg = json!({
         "skirt_loops": 0, "brim_width": 0, "wall_loops": 2, "sparse_infill_density": 0,
@@ -5212,6 +5247,7 @@ fn block_gcode(config: Value) -> String {
     let mesh = Arc::new(Mesh {
         name: "block".into(),
         parts: vec![cuboid([0.0, 40.0], [0.0, 40.0], [0.0, 4.0], "block")],
+        ..Mesh::default()
     });
     let mut cfg = json!({
         "brim_width": 0, "skirt_loops": 0, "layer_height": 0.2, "initial_layer_print_height": 0.2,
@@ -5720,6 +5756,7 @@ fn the_automatic_brim_is_sized_per_object_not_for_the_whole_plate() {
                 Arc::new(Mesh {
                     name: "bar".into(),
                     parts: vec![cuboid([x, x + 60.0 + k], [y, y + 10.0], [0.0, 30.0], "bar")],
+                    ..Mesh::default()
                 })
             })
             .collect();

@@ -50,6 +50,7 @@ fn prism(poly: &[[f32; 2]], h: f32) -> Arc<Mesh> {
             fuzzy_paint: Vec::new(),
             paint_texts: Vec::new(),
         }],
+        ..Mesh::default()
     })
 }
 

@@ -620,6 +620,7 @@ mod tests {
         Mesh {
             name: "two".into(),
             parts: vec![part("left", 1, 0.0), part("right", 2, 20.0)],
+            ..Mesh::default()
         }
     }
 
