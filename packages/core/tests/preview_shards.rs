@@ -262,3 +262,115 @@ fn more_ranges_than_layers_start_and_end_the_print_once() {
         );
     }
 }
+
+/// Two 20 mm squares one over the other, 1 mm thick, with 1 mm of nothing between: the layers in the gap have no
+/// paths, only their layer change and its custom G-code.
+fn gapped_mesh() -> Arc<Mesh> {
+    let corners = |z0: f32, z1: f32| {
+        [
+            [0.0, 0.0, z0],
+            [20.0, 0.0, z0],
+            [20.0, 20.0, z0],
+            [0.0, 20.0, z0],
+            [0.0, 0.0, z1],
+            [20.0, 0.0, z1],
+            [20.0, 20.0, z1],
+            [0.0, 20.0, z1],
+        ]
+    };
+    let faces: [[usize; 3]; 12] = [
+        [0, 2, 1],
+        [0, 3, 2],
+        [4, 5, 6],
+        [4, 6, 7],
+        [0, 1, 5],
+        [0, 5, 4],
+        [1, 2, 6],
+        [1, 6, 5],
+        [2, 3, 7],
+        [2, 7, 6],
+        [3, 0, 4],
+        [3, 4, 7],
+    ];
+    let mut bytes = vec![0u8; 80];
+    bytes.extend_from_slice(&24u32.to_le_bytes());
+    for box_corners in [corners(0.0, 1.0), corners(2.0, 3.0)] {
+        for f in faces {
+            bytes.extend_from_slice(&[0u8; 12]);
+            for i in f {
+                for x in box_corners[i] {
+                    bytes.extend_from_slice(&x.to_le_bytes());
+                }
+            }
+            bytes.extend_from_slice(&[0, 0]);
+        }
+    }
+    Arc::new(Mesh::load(&bytes, "gapped.stl").unwrap())
+}
+
+/// A Bambu Lab bed slinger writes its time lapse block at the end of every layer, with the lift made at once
+/// before it: a spiral round the nozzle when its place is known. On the layers with no paths that place is where
+/// the last layer with paths ended. A range that starts over such a layer must know it too, or it writes a
+/// straight lift where one range writes the spiral (and estimates the print differently).
+#[test]
+fn a_range_starting_over_empty_layers_lifts_for_the_time_lapse_as_one_range_does() {
+    let mesh = gapped_mesh();
+    let bench: Value = serde_json::from_slice(
+        &std::fs::read(format!(
+            "{}/packages/core/bench/configs/reference-0.20.json",
+            root()
+        ))
+        .unwrap(),
+    )
+    .unwrap();
+    let mut config = bench["config"].clone();
+    for (k, v) in [
+        ("printer_model", json!("Bambu Lab A1")),
+        ("printer_structure", json!("i3")),
+        ("time_lapse_gcode", json!("; time lapse\nG1 X10 Y10 F3000\n")),
+        ("z_hop", json!([0.4])),
+        ("z_hop_types", json!(["Auto Lift"])),
+        ("retract_when_changing_layer", json!([true])),
+        ("enable_support", json!(false)),
+    ] {
+        config[k] = v;
+    }
+    let req: SliceRequest = serde_json::from_value(json!({
+        "plate": {"objects": [{"id": "a", "name": "a", "mesh": "x", "transform": [
+            1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 118.0, 118.0, 0.0, 1.0]}]},
+        "config": config,
+        "options": {"flavor": "marlin2"},
+    }))
+    .unwrap();
+    let m = mesh.clone();
+    let one = api::run_request(&req, &move |_: &str| Ok(m.clone())).unwrap();
+    let layers = one.report.layer_count;
+    let text = String::from_utf8_lossy(&one.gcode);
+    assert!(
+        text.matches("; time lapse").count() >= layers as usize,
+        "a block on every layer"
+    );
+    for shards in [8, layers + 3] {
+        let (stitched, finished) = sharded_with_file(&req, &mesh, shards);
+        let (a, b) = (
+            String::from_utf8_lossy(&one.gcode),
+            String::from_utf8_lossy(&finished),
+        );
+        let first = a.lines().zip(b.lines()).position(|(x, y)| x != y).map(|i| {
+            format!(
+                "line {}: {:?} against {:?}",
+                i + 1,
+                a.lines().nth(i),
+                b.lines().nth(i)
+            )
+        });
+        assert!(
+            finished == one.gcode,
+            "{shards} ranges for {layers} layers: {first:?}"
+        );
+        assert!(
+            stitched == one.preview,
+            "{shards} ranges for {layers} layers: the preview differs"
+        );
+    }
+}
