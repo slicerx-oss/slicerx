@@ -1079,6 +1079,27 @@ mod tests {
         assert!(decode("1", TRI).is_empty());
     }
 
+    /// The mesh tools read paint texts with their own copy of this reading (`sx_geom::paint_tree`); both must give the
+    /// same pieces, so a picture or a paint target matches what slices.
+    #[cfg(feature = "import")]
+    #[test]
+    fn the_mesh_tools_read_paint_texts_alike() {
+        let tri64 = TRI.map(|p| p.map(f64::from));
+        for text in [
+            "4", "8", "0C", "1C", "2C", "481", "485", "489", "1C0C843", "88083", "0C01", "8048C4C3",
+            "4444443", "zz", "", "1", "C3",
+        ] {
+            let ours: Vec<([[f32; 3]; 3], u8)> = decode(text, TRI).iter().map(|f| (f.v, f.state)).collect();
+            let theirs: Vec<([[f32; 3]; 3], u8)> = sx_geom::paint_tree::leaves(text, tri64)
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|(_, s)| *s > 0)
+                .map(|(v, s)| (v.map(|p| p.map(|c| c as f32)), s))
+                .collect();
+            assert_eq!(ours, theirs, "{text}");
+        }
+    }
+
     #[test]
     fn one_split_side_halves_the_triangle_as_orca_prints_it() {
         // Special corner 0 splits the side opposite it: children (p0, mid, p2) then (p0, p1, mid).

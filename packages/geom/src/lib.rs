@@ -54,10 +54,13 @@ pub mod orient;
 pub mod outline;
 #[cfg(feature = "calib")]
 pub mod pa;
+pub mod paint_ops;
+pub mod paint_tree;
 pub mod poly2d;
 #[cfg(feature = "cad")]
 pub mod push;
 pub mod remesh;
+pub mod render;
 pub mod repair;
 pub mod resume;
 #[cfg(feature = "shell")]

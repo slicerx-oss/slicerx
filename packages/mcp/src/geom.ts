@@ -6,7 +6,7 @@
 // any build of it. The tools are mimir tools, so the permission gate applies:
 // analysis is a read, anything that writes a new mesh is in the slice class.
 import { spawn } from 'node:child_process'
-import { mkdirSync } from 'node:fs'
+import { mkdirSync, readFileSync } from 'node:fs'
 import { basename, dirname, extname, join } from 'node:path'
 import { defineTool, type PilotTool } from '@slicerx/pilot'
 import { z } from 'zod'
@@ -395,7 +395,63 @@ export function geomTools(deps: GeomToolDeps & { designs?: Designs | undefined }
     },
   })
 
-  return [cut, split, orient, repair, hollow, emboss, calibration, resume, layers, build, subtract] as PilotTool<never>[]
+  const render = defineTool({
+    name: 'geom.render',
+    version: '1.0.0',
+    source: 'command',
+    permission: 'read',
+    description:
+      'Draw a model to check it: a small orthographic picture (384 px on the long side unless size says otherwise) from a fixed view, the model in its filament color and painted pieces in theirs. Returns what is in view (bounds, triangles, painted area per filament slot); the PNG comes with the reply only when image is true, so ask for it when you need to look. Views: iso (front left, above), top, front, and fit (framed on the painted pieces or on focus, looking at them, so paint on an underside is seen from below). Nothing is changed.',
+    input: z.object({
+      model: modelArg,
+      view: z.enum(['iso', 'top', 'front', 'fit']).default('iso'),
+      size: z.number().int().min(64).max(2048).optional().describe('Long side of the picture in px; 384 when left out'),
+      image: z.boolean().default(false).describe('Return the PNG with the reply. Leave false to get only the text summary'),
+      colors: z.array(z.string().regex(/^#[0-9a-fA-F]{6}$/)).max(32).optional().describe('Filament colors by slot, slot 1 first, as #rrggbb'),
+      slot: z.number().int().min(1).max(32).optional().describe('Filament slot of the model (its unpainted color); 1 when left out'),
+      paint: z.record(z.string().regex(/^\d+$/), z.string().max(4096)).optional().describe('Color paint by triangle index, as the per-triangle paint text of a 3MF (state n is filament slot n)'),
+      focus: z.object({ min: vec3, max: vec3 }).optional().describe('Box the fit view frames, mm'),
+    }),
+    async run(i) {
+      const out = await call('render', {
+        mesh: await mesh(i.model),
+        view: i.view,
+        ...(i.size !== undefined ? { size: i.size } : {}),
+        ...(i.colors ? { colors: i.colors } : {}),
+        ...(i.slot !== undefined ? { slot: i.slot } : {}),
+        ...(i.paint ? { paint: i.paint } : {}),
+        ...(i.focus ? { focus: i.focus } : {}),
+      })
+      const { pngPath, ...summary } = out as { pngPath?: string } & Record<string, unknown>
+      const images = i.image && typeof pngPath === 'string' ? [{ mime: 'image/png' as const, data: readFileSync(pngPath).toString('base64') }] : undefined
+      return {
+        summary: `Drew ${basename(i.model)} from the ${i.view} view${images ? '' : ' (summary only; pass image: true for the picture)'}`,
+        output: { ...summary, ...(typeof pngPath === 'string' ? { pngPath } : {}) },
+        ...(images ? { images } : {}),
+      }
+    },
+  })
+
+  const paintRegions = defineTool({
+    name: 'geom.paint_regions',
+    version: '1.0.0',
+    source: 'command',
+    permission: 'read',
+    description:
+      'Read paint back: for one paint layer of a model (its per-triangle paint texts, as a 3MF stores them), each painted state with its area in mm2, the triangles holding it and its connected regions with their areas and bounds (largest first, at most 20 listed). For color paint, state n is filament slot n. Use it to check paint before slicing. Nothing is changed.',
+    input: z.object({
+      model: modelArg,
+      paint: z.record(z.string().regex(/^\d+$/), z.string().max(4096)).describe('Paint texts by triangle index, one layer (color, seam, support or fuzzy skin)'),
+    }),
+    async run(i) {
+      const out = (await call('paint.regions', { mesh: await mesh(i.model), paint: i.paint })) as { states?: { state: number; areaMm2: number }[]; badPaint?: number }
+      const states = out.states ?? []
+      const text = states.length ? states.map((s) => `state ${s.state} ${s.areaMm2} mm2`).join(', ') : 'nothing painted'
+      return { summary: `Paint of ${basename(i.model)}: ${text}${out.badPaint ? `; ${out.badPaint} texts did not read` : ''}`, output: out }
+    },
+  })
+
+  return [cut, split, orient, repair, hollow, emboss, calibration, resume, layers, build, subtract, render, paintRegions] as PilotTool<never>[]
 }
 
 /** A cutter as a subtract step keeps it: a box, or a cylinder with its origin, axis, diameter and height. */
