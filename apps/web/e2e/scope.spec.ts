@@ -73,7 +73,8 @@ test('Simple: the pill starts on the plate, the selection gets its own supports,
   await closeSheet(page)
 })
 
-test('in the selection\'s scope the layer height says sleipnir until the selection has its own, and the goal reads as unavailable', async ({ page }) => {
+test('in the selection\'s scope the layer height says sleipnir until the selection has its own, and the goal reads as unavailable', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'Desktop: a phone has no scope pill (its settings are the plate\'s)')
   await open(page, 'simple')
   const layer = page.locator('#easy-layer')
   await expect(layer).toContainText('sleipnir')
