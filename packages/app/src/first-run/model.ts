@@ -68,6 +68,8 @@ export interface FlowState {
   confirmLeave: boolean
   /** Set when the flow ends: finished or left. */
   closed: 'finished' | 'left' | null
+  /** Ended by Skip, use defaults. */
+  skippedAll?: boolean
 }
 
 export type FlowEvent =
@@ -106,7 +108,7 @@ export function reduceFlow(s: FlowState, e: FlowEvent): FlowState {
   switch (e.type) {
     case 'skip-all':
       // Defaults: the preset in effect, no printer, the demo plate.
-      return { ...s, printer: null, closed: 'finished' }
+      return { ...s, printer: null, closed: 'finished', skippedAll: true }
     case 'next':
     case 'skip':
       return forward(s)
@@ -160,9 +162,11 @@ export function contractStep(step: SetupStep, steps: readonly SetupStep[] = BASE
  * writes nothing new except the look, and only when the person had picked one (it was applied
  * live and stays). Returns null for the look when nothing about it should change.
  */
-export function outcome(s: FlowState, now: string, prior: FirstRunState | null): { firstRun: FirstRunState; look: LookAndFeelChoice | null; printerId: string | null; openIn: OpenIn | null } {
+export function outcome(s: FlowState, now: string, prior: FirstRunState | null): { firstRun: FirstRunState; look: LookAndFeelChoice | null; printerId: string | null; openIn: OpenIn | null; noPrinter?: true } {
   if (s.closed === 'finished') {
     return {
+      // Skip, use defaults with no printer of their own is Slice without a printer: launch stops asking for one.
+      ...(s.skippedAll && !prior?.printerId ? { noPrinter: true as const } : {}),
       firstRun: { completedAt: now, step: 'done', look: s.look, printerId: s.printer?.printerId ?? prior?.printerId ?? null, version: ONBOARDING_VERSION },
       look: s.look,
       printerId: s.printer?.printerId ?? null,
