@@ -227,6 +227,14 @@ ok eval '[ "$rc" = 0 ]'
 rm -f "$dir.gpu-slots"
 rm -f "$dir.slots"
 
+# The record and the history carry no secrets: a token in the command is redacted, the command still gets it, and
+# variables like *_SESSION_ID are not read from the environment.
+name="the record and the history redact a token in the command and leave the environment out"
+EXAMPLE_SESSION_ID=leak-me SX_HEAVY_LOCK=$lock bash "$heavy" env SX_TEST_TOKEN=ghp_heavytest0123 \
+  sh -c 'cat "$1/owner" > "$2"; printf %s "$SX_TEST_TOKEN" > "$3"' sh "$dir" "$tmp/rec" "$tmp/seen"
+ok eval '! grep -q "ghp_heavytest0123\|leak-me" "$tmp/rec" "$tmp/history.log" && grep -q "SX_TEST_TOKEN=\[redacted\]" "$tmp/rec" \
+  && [ "$(cat "$tmp/seen")" = ghp_heavytest0123 ]'
+
 if [ "${1:-}" = cross ]; then
   distro=${2:?usage: heavy-test.sh cross <distro> [<stopped distro>]} stopped=${3:-}
   [ "$side" = msys ] || { echo "cross runs from Git Bash" >&2; exit 2; }
