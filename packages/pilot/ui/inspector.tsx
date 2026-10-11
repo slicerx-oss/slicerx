@@ -50,8 +50,8 @@ const MODE_OPTIONS: SegOption<PermissionMode>[] = [
   { value: 'ask', label: <span className="v-ask">Ask</span> },
   { value: 'off', label: <span className="v-off">Off</span> },
 ]
-// Starting a print is allowed per printer only, never for the whole class.
-const START_OPTIONS = MODE_OPTIONS.filter((o) => o.value !== 'allow')
+// Queueing and starting prints always ask a person; a policy can only turn them off.
+const PRINTER_OPTIONS = MODE_OPTIONS.filter((o) => o.value !== 'allow')
 
 /** The right column: this run's meter, installed skills, plugins and the Permissions policy. */
 export function Inspector({ transcript, paused, skills, plugins, policy, onPolicy }: InspectorProps) {
@@ -151,7 +151,7 @@ export function Inspector({ transcript, paused, skills, plugins, policy, onPolic
                   <div className="n">{label.title}</div>
                   <div className="d">{label.detail}</div>
                 </div>
-                <Seg<PermissionMode> label={label.title} size="sm" value={policy.classes[c] ?? 'ask'} onChange={(v) => onPolicy(c, v)} options={c === 'start' ? START_OPTIONS : MODE_OPTIONS} />
+                <Seg<PermissionMode> label={label.title} size="sm" value={policy.classes[c] ?? 'ask'} onChange={(v) => onPolicy(c, v)} options={c === 'start' || c === 'queue' ? PRINTER_OPTIONS : MODE_OPTIONS} />
               </div>
             )
           })}

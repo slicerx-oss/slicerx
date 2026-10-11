@@ -65,8 +65,8 @@ The policy file gives each class of action one of three modes:
 | Class | Covers | Default |
 | --- | --- | --- |
 | `slice` | Orient, arrange, cut, slice and change settings inside the project | Allow |
-| `queue` | Upload a plate to a printer and start it | Ask first |
-| `start` | Heat or move a printer: start, pause, resume, cancel, temperatures, filament, G-code | Ask first |
+| `queue` | Upload a plate to a printer and start it | Ask first (ask or off only) |
+| `start` | Heat or move a printer: start, pause, resume, cancel, temperatures, filament, G-code | Ask first (ask or off only) |
 | `profile` | Write a saved printer, filament or process profile, or update Spoolman inventory | Ask first |
 
 Write it as JSON at `~/.config/slicerx/mcp-policy.json`, or pass `--policy <file>`:
@@ -74,13 +74,13 @@ Write it as JSON at `~/.config/slicerx/mcp-policy.json`, or pass `--policy <file
 ```json
 {
   "classes": { "slice": "allow", "queue": "ask", "start": "ask", "profile": "ask" },
-  "printers": { "bay-2": { "queue": "allow", "start": "allow" } }
+  "printers": { "bay-3": { "queue": "off", "start": "off" } }
 }
 ```
 
 - `allow` runs the call and logs it. `ask` asks the user first. `off` refuses.
-- `start` cannot be `allow` for every printer at once; a class-wide `allow` is treated as `ask`. Allow it per printer under `printers`, for a machine you trust to run unattended.
-- A per-printer entry can loosen `ask` to `allow`, but it cannot turn on a class that is `off`.
+- `queue` and `start` reach a printer, so a person approves each call: `allow` for them, for the class or under `printers`, is treated as `ask`. A card that starts or resumes a print always asks, whatever class the tool has.
+- A per-printer entry can turn a printer `off`, but it cannot turn on a class that is `off`.
 - Unknown or malformed entries fall back to the defaults. The server reads the file at startup, and no tool can change it, so a model cannot loosen its own permissions.
 
 ### How Ask first works

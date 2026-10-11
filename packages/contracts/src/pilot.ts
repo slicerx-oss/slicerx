@@ -11,7 +11,7 @@ export type CorePermissionClass = 'slice' | 'queue' | 'start' | 'profile'
 
 export interface PermissionPolicy {
   classes: Record<CorePermissionClass, PermissionMode> & Partial<Record<'printer_config' | 'share', PermissionMode>>
-  /** Per printer id. `start: 'allow'` is only valid here, never in `classes`. */
+  /** Per printer id: ask or off. Allow is read as ask here and in `classes`, since a person approves every print. */
   printers?: Record<string, Partial<Record<'queue' | 'start', PermissionMode>>>
 }
 
