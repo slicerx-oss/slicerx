@@ -574,3 +574,127 @@ fn a_part_prints_with_the_objects_settings_and_its_own_over_them() {
         "the object's 2 walls over the plate's 3"
     );
 }
+
+#[test]
+fn an_objects_own_settings_set_its_layer_height_and_support() {
+    let cube = || cuboid([0.0, 0.0, 0.0], [12.0, 12.0, 12.0]);
+    let plain = slice(
+        &project(&[("normal_part", cube(), "")], ""),
+        json!({ "layer_height": 0.2 }),
+    )
+    .unwrap();
+    let thick = slice(
+        &project(&[("normal_part", cube(), "")], &meta("layer_height", "0.3")),
+        json!({ "layer_height": 0.2 }),
+    )
+    .unwrap();
+    assert!(
+        thick.report.layer_count + 15 < plain.report.layer_count,
+        "the object's 0.3 mm layers: {} against {}",
+        thick.report.layer_count,
+        plain.report.layer_count
+    );
+    // Support from the object's own settings, with the plate's off.
+    let parts = tee();
+    let parts: Vec<(&str, Solid, &str)> = parts
+        .iter()
+        .map(|(s, m, x)| (*s, m.clone(), x.as_str()))
+        .collect();
+    let on = project(
+        &parts,
+        &format!(
+            "{}{}",
+            meta("enable_support", "1"),
+            meta("support_type", "normal(auto)")
+        ),
+    );
+    let (l, r) = support_sides(&slice(&on, json!({ "enable_support": false })).unwrap());
+    assert!(
+        l > 0.0 && r > 0.0,
+        "the object's support setting prints support: {l} {r}"
+    );
+}
+
+#[test]
+fn a_requests_object_settings_win_over_the_files() {
+    let cube = || cuboid([0.0, 0.0, 0.0], [12.0, 12.0, 12.0]);
+    let bytes = project(&[("normal_part", cube(), "")], &meta("layer_height", "0.3"));
+    let mesh = Arc::new(Mesh::load(&bytes, "own.3mf").unwrap());
+    let plain = slice(
+        &project(&[("normal_part", cube(), "")], ""),
+        json!({ "layer_height": 0.2 }),
+    )
+    .unwrap();
+    let req: SliceRequest = serde_json::from_value(json!({
+        "plate": { "objects": [{ "id": "a", "mesh": "x", "transform": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 100, 100, 0, 1], "settings": { "layer_height": 0.2 } }] },
+        "config": { "layer_height": 0.2, "brim_width": 0 },
+        "options": {}
+    }))
+    .unwrap();
+    let run = common::run_request(&req, &move |_: &str| Ok(mesh.clone())).unwrap();
+    assert_eq!(run.report.layer_count, plain.report.layer_count);
+}
+
+#[test]
+fn custom_gcode_in_an_objects_settings_is_left_out() {
+    let cube = cuboid([0.0, 0.0, 0.0], [12.0, 12.0, 12.0]);
+    let bytes = project(
+        &[("normal_part", cube, meta("machine_start_gcode", "M500").as_str())],
+        &format!("{}{}", meta("machine_end_gcode", "M502"), meta("wall_loops", "3")),
+    );
+    let mesh = Mesh::load(&bytes, "gcode.3mf").unwrap();
+    assert_eq!(mesh.settings, json!({ "wall_loops": "3" }));
+    assert!(
+        mesh.part_settings
+            .iter()
+            .all(|(_, s)| s.get("machine_start_gcode").is_none())
+    );
+    let run = slice(&bytes, json!({})).unwrap();
+    let text = String::from_utf8_lossy(&run.gcode).into_owned();
+    assert!(!text.lines().any(|l| l.trim() == "M500" || l.trim() == "M502"));
+    let w = warnings(&run);
+    assert!(
+        w.iter()
+            .any(|w| w.contains("machine_start_gcode") && w.contains("not used")),
+        "{w:?}"
+    );
+    assert!(
+        w.iter()
+            .any(|w| w.contains("machine_end_gcode") && w.contains("not used")),
+        "{w:?}"
+    );
+}
+
+#[test]
+fn objects_on_one_plate_keep_their_own_settings() {
+    // Object a asks for support in its file; object b does not.
+    let parts = tee();
+    let parts: Vec<(&str, Solid, &str)> = parts
+        .iter()
+        .map(|(s, m, x)| (*s, m.clone(), x.as_str()))
+        .collect();
+    let a = Arc::new(Mesh::load(&project(&parts, &meta("enable_support", "1")), "a.3mf").unwrap());
+    let b = Arc::new(Mesh::load(&project(&parts, ""), "b.3mf").unwrap());
+    let req: SliceRequest = serde_json::from_value(json!({
+        "plate": { "objects": [
+            { "id": "a", "mesh": "a", "transform": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 40, 100, 0, 1] },
+            { "id": "b", "mesh": "b", "transform": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 140, 100, 0, 1] }
+        ] },
+        "config": { "enable_support": false, "support_type": "normal(auto)", "brim_width": 0 },
+        "options": {}
+    }))
+    .unwrap();
+    let run = common::run_request(&req, &move |k: &str| {
+        Ok(if k == "a" { a.clone() } else { b.clone() })
+    })
+    .unwrap();
+    let ms = moves(&run);
+    let support_in = |x0: f64, x1: f64| {
+        ms.iter()
+            .filter(|m| is_support(m) && m.mid()[0] > x0 && m.mid()[0] < x1)
+            .map(Move::len)
+            .sum::<f64>()
+    };
+    assert!(support_in(35.0, 85.0) > 0.0, "a prints its support");
+    assert_eq!(support_in(135.0, 185.0), 0.0, "b prints none");
+}

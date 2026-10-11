@@ -465,6 +465,19 @@ pub fn build_plate(req: &SliceRequest, meshes: &dyn Fn(&str) -> Result<Arc<Mesh>
                 ),
             });
         }
+        // The object's settings from its file, with the request's over them. Without file settings, as before:
+        // the request's own when objects differ (the same ones go into the plate's config).
+        let settings = match mesh.settings.as_object().filter(|m| !m.is_empty()) {
+            Some(file) => {
+                let mut m = file.clone();
+                m.extend(o.settings.iter().map(|(k, v)| (k.clone(), v.clone())));
+                serde_json::Value::Object(m)
+            }
+            None if differing => {
+                serde_json::Value::Object(o.settings.iter().map(|(k, v)| (k.clone(), v.clone())).collect())
+            }
+            None => serde_json::Value::Null,
+        };
         objects.push(PlateObject {
             id,
             name,
@@ -474,11 +487,7 @@ pub fn build_plate(req: &SliceRequest, meshes: &dyn Fn(&str) -> Result<Arc<Mesh>
             part_settings,
             volumes,
             brim_points: o.brim_points.clone(),
-            settings: if differing {
-                serde_json::Value::Object(o.settings.iter().map(|(k, v)| (k.clone(), v.clone())).collect())
-            } else {
-                serde_json::Value::Null
-            },
+            settings,
         });
     }
     if objects.is_empty() {
@@ -870,8 +879,22 @@ pub fn run_request_with(
     progress: &dyn Progress,
 ) -> Result<SliceRun> {
     let timer = Timer::start();
-    let (config, config_issues) = request_config_checked(req)?;
+    let (mut config, mut config_issues) = request_config_checked(req)?;
     let plate = build_plate(req, meshes)?;
+    // A lone object's own settings (from its project file) are the plate's: they set what the plate prints with,
+    // layer heights and support included. Several objects each slice with their own (see `SliceSession`).
+    if let [o] = plate.objects.as_slice()
+        && !o.settings.is_null()
+    {
+        config.apply_value(&o.settings)?;
+        config.check()?;
+        let limits = config.limits;
+        let issues = crate::preflight::clamp_config(&mut config, &limits);
+        if crate::preflight::blocks(&issues) {
+            return Err(Error::Blocked(crate::preflight::blocking_text(&issues)));
+        }
+        config_issues.extend(issues);
+    }
     let session = build_session(req, &plate, &config)?;
     let n = session.layer_count();
     let shards = req.options.shards.unwrap_or(1).clamp(1, n.max(1));
