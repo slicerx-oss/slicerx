@@ -128,6 +128,8 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | `add-shape` | Add shape, in the Add menu (Design's shelf keeps its own button) |
 | `object-menu` | Object (split, merge), in the Add menu |
 | `export-menu` | Export, in the Add menu |
+| `objects-tools` | Tools, in the Add menu |
+| `objects-tool-<id>` | One tool in the Tools menu, by its shelf id (`objects-tool-cut`, `objects-tool-paint`) |
 | `slice-objects-add-menu` | The Add button's menu half |
 | `slice-object-expand` | The row's chevron: opens its tree of parts and volumes |
 | `slice-object-override-badge` | The badge for settings an object has of its own |
