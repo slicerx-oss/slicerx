@@ -1474,6 +1474,31 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "sleipnir")]
+    #[test]
+    fn smart_layer_slices_a_one_layer_part() {
+        // The First layer test starter: a 0.2 mm square, whose f32 top is a hair above the 0.2 mm first layer. sleipnir
+        // once planned a second layer 0.000000003 mm thick there, and the slice failed with a 0 mm layer.
+        let mesh = cube();
+        for (z, first) in [
+            ("0.02", "0.2"),
+            ("0.02", "0.16"),
+            ("0.015", "0.2"),
+            ("0.023", "0.2"),
+        ] {
+            let body = format!(
+                r#"{{"plate":{{"objects":[{{"mesh":1,"transform":[1,0,0,0,0,1,0,0,0,0,{z},0,100,100,0,1]}}]}},"config":{{"layer_height":0.2,"initial_layer_print_height":{first},"smart_layer":"quality"}},"options":{{}}}}"#
+            );
+            let req: SliceRequest = serde_json::from_str(&body).unwrap();
+            let run = run_request(&req, &|_: &str| Ok(mesh.clone()));
+            let z_list = run
+                .unwrap_or_else(|e| panic!("scale {z}, first {first}: {e}"))
+                .report
+                .layer_z;
+            assert_eq!(z_list.len(), 1, "scale {z}, first {first}: {z_list:?}");
+        }
+    }
+
     #[test]
     fn layer_tops_win_over_smart_layer() {
         // 0.5 mm tops up to the roof, where sleipnir would plan 0.2 mm and thinner.

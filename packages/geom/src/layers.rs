@@ -396,6 +396,11 @@ fn march(dem: &Demand, top_z: f64, bounds: LayerBounds, o: &LayerOptions) -> Vec
     tops
 }
 
+/// How far a plan may end from the model's top and still count as on it (mm). A mesh's heights come from f32, so a
+/// 0.2 mm part reads back as 0.2000000030 mm; a gap that small is rounding, not a layer. Far below any layer height
+/// and the slicer's own tolerance (1e-3 mm), and above f32 rounding up to about 600 mm.
+const TOP_EPS_MM: f64 = 1e-4;
+
 /// Ends the plan exactly on the model's top: a layer marched past it is dropped, what is left goes to the layers
 /// below while they stay within the bounds, and the rest becomes the last layer without leaving a sliver
 /// (see [`finish_top`]). The first layer is never changed.
@@ -405,7 +410,7 @@ fn reach_top(tops: &mut Vec<f64>, top_z: f64, bounds: LayerBounds, step: f64) {
     }
     let Some(&last) = tops.last() else { return };
     let mut short = top_z - last;
-    if short <= 1e-9 {
+    if short <= TOP_EPS_MM {
         if tops.len() > 1
             && let Some(t) = tops.last_mut()
         {
@@ -435,7 +440,7 @@ fn reach_top(tops: &mut Vec<f64>, top_z: f64, bounds: LayerBounds, step: f64) {
         z += h;
         *t = z;
     }
-    if short > 1e-9 {
+    if short > TOP_EPS_MM {
         finish_top(tops, short, top_z, bounds);
     } else if tops.len() > 1
         && let Some(t) = tops.last_mut()
@@ -446,23 +451,42 @@ fn reach_top(tops: &mut Vec<f64>, top_z: f64, bounds: LayerBounds, step: f64) {
 
 /// The last `short` mm up to `top_z`. A remainder of at least about three quarters of the layer below (and the
 /// least height) is its own layer. A thinner one is folded into the layer below when that stays within the
-/// greatest height; otherwise the last two layers share the height evenly.
+/// greatest height; otherwise the layers above the first share the height evenly, two of them or as few more as
+/// it takes to stay within the bounds. Over a lone first layer, which never changes, a remainder under the least
+/// height is left off: the plan is that one layer, as a uniform plan of the same first layer would be.
 fn finish_top(tops: &mut Vec<f64>, short: f64, top_z: f64, bounds: LayerBounds) {
     let n = tops.len();
-    let below = if n > 1 { tops[n - 2] } else { 0.0 };
+    if n == 1 {
+        if short >= bounds.min_mm - 1e-9 {
+            tops.push(top_z);
+        }
+        return;
+    }
+    let below = tops[n - 2];
     let h_last = tops[n - 1] - below;
-    if n == 1 || short >= (0.75 * h_last).max(bounds.min_mm) - 1e-9 {
+    if short >= (0.75 * h_last).max(bounds.min_mm) - 1e-9 {
         tops.push(top_z);
     } else if h_last + short <= bounds.max_mm + 1e-9 {
         tops[n - 1] = top_z;
     } else {
-        let half = (top_z - below) / 2.0;
-        if half >= bounds.min_mm - 1e-9 {
-            tops[n - 1] = below + half;
-            tops.push(top_z);
-        } else {
-            tops[n - 1] = top_z;
+        // The last k layers (never the first) and one more share the height from the top of layer n - 1 - k.
+        for k in 1..n {
+            let base = tops[n - 1 - k];
+            let h = (top_z - base) / (k + 1) as f64;
+            if h > bounds.max_mm + 1e-9 {
+                continue;
+            }
+            if h >= bounds.min_mm - 1e-9 {
+                for j in 0..k {
+                    tops[n - k + j] = base + h * (j + 1) as f64;
+                }
+                tops.push(top_z);
+            } else {
+                tops[n - 1] = top_z;
+            }
+            return;
         }
+        tops[n - 1] = top_z;
     }
 }
 
@@ -865,5 +889,62 @@ mod tests {
             ..opts()
         };
         assert!(plan_layers(&s, 0.4, LayerMode::Quality, &o).is_err());
+    }
+
+    /// The first layer unchanged, and every layer after it within the bounds. The one exception is a span that no
+    /// number of layers fits: over the greatest height but under twice the least (Strength's 0.12 to 0.2 mm cannot
+    /// make 0.21 mm), which stays one layer rather than becoming two too thin.
+    fn assert_plan_within(p: &LayerProfile, first: f64, what: &str) {
+        assert!(
+            (p.layer_tops_mm[0] - first).abs() < 1e-9,
+            "{what}: first layer moved: {:?}",
+            p.layer_tops_mm
+        );
+        let (lo, hi) = (p.bounds.min_mm, p.bounds.max_mm);
+        for (i, &h) in p.heights_mm.iter().enumerate().skip(1) {
+            assert!(
+                h >= lo - 1e-6 && (h <= hi + 1e-6 || h < 2.0 * lo),
+                "{what}: layer {i} is {h} mm, outside {:?}: {:?}",
+                p.bounds,
+                p.layer_tops_mm
+            );
+        }
+    }
+
+    #[test]
+    fn a_one_layer_object_is_one_layer() {
+        // The First layer test starter: 0.2 mm squares, whose top reads back from the f32 mesh a hair above 0.2.
+        for top in [0.2, f64::from(0.2_f32), 0.2 + 1e-7, 0.15, 0.05] {
+            let m = build::box_mesh([0.0, 0.0, 0.0], [20.0, 20.0, top]);
+            for mode in [LayerMode::Quality, LayerMode::Strength] {
+                let p = plan_layers(&m, 0.4, mode, &opts()).unwrap();
+                assert_eq!(p.layer_tops_mm, vec![0.2], "top {top}, {mode:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn thin_objects_never_get_a_layer_outside_the_bounds() {
+        // Every height from 0.01 to 3 mm in 0.001 mm steps, read back from f32 as a mesh is, in both modes and with
+        // a few first layers and z steps.
+        for k in 1..=3000_u32 {
+            let top = f64::from((k as f32) * 0.001_f32);
+            let m = build::box_mesh([0.0, 0.0, 0.0], [10.0, 10.0, top]);
+            for mode in [LayerMode::Quality, LayerMode::Strength] {
+                for (first, step) in [(0.2, 0.01), (0.16, 0.0), (0.28, 0.01)] {
+                    let o = LayerOptions {
+                        first_layer_mm: first,
+                        z_step_mm: step,
+                        ..opts()
+                    };
+                    let p = plan_layers(&m, 0.4, mode, &o).unwrap();
+                    assert_plan_within(
+                        &p,
+                        first,
+                        &format!("top {top}, {mode:?}, first {first}, step {step}"),
+                    );
+                }
+            }
+        }
     }
 }
