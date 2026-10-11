@@ -131,16 +131,33 @@ use crate::perimeters::{self, Shapes};
 use i_overlay::i_float::int::point::IntPoint;
 use std::collections::BTreeMap;
 
-/// How far paint reaches in from a surface per layer of distance to a top or bottom surface, mm.
-/// Under a top or bottom surface a painted region only goes `TAPER * (j - 1)` deep on the
-/// `j`th layer from it (none on the surface layer itself), so color does not show through the
-/// shell; measured on `OrcaSlicer` (0.8 mm per layer at 0.2 mm layers).
+/// How far wall paint reaches in per layer of distance to an unpainted top or bottom surface, mm.
+/// An unpainted surface owns the area it exposes in the part's own filament, carried `j - 1` layers
+/// into the shell and drawn in a step per layer, so a region painted on the walls only goes
+/// `TAPER * (j - 1)` deep on the `j`th layer from it (none on the surface layer itself) and color
+/// does not show through the shell (0.8 mm per layer at 0.2 mm layers). A painted surface, flat or
+/// sloped, sets no such limit: it owns its strip in its own color.
 const TAPER: f64 = 0.8;
 const LEAD: f64 = 0.8;
 /// Paint regions lose tips thinner than twice this, mm.
 const TIP_CUT: f64 = 0.1;
 /// A facet whose normal is this close to vertical is a top or bottom face rather than a wall.
 const FLAT: f64 = 0.99;
+/// A facet whose normal has a vertical part above this is not a vertical wall: besides its cut on each
+/// layer, it is a top or bottom surface for the strips the layers expose over or under it.
+pub(crate) const SLOPED: f64 = 1e-3;
+
+/// The vertical part of a triangle's unit normal, `None` for a degenerate triangle.
+pub(crate) fn unit_nz(tri: &[[f64; 3]; 3]) -> Option<f64> {
+    let [a, b, c] = *tri;
+    let n = [
+        (b[1] - a[1]) * (c[2] - a[2]) - (b[2] - a[2]) * (c[1] - a[1]),
+        (b[2] - a[2]) * (c[0] - a[0]) - (b[0] - a[0]) * (c[2] - a[2]),
+        (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]),
+    ];
+    let len = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt();
+    (len >= 1e-12).then(|| n[2] / len)
+}
 /// Cell size of the distance grid, mm, and the most cells one layer may use.
 const CELL: f64 = 0.1;
 const MAX_CELLS: f64 = 4.0e6;
@@ -596,7 +613,46 @@ fn ring_edges(shapes: &Shapes) -> Vec<Seg> {
     out
 }
 
-/// The depth limit in mm under a top or bottom surface `j` layers away (the surface layer is 1).
+/// The piece of a triangle between the heights `lo` and `hi`, seen from above, counterclockwise in internal
+/// units (fewer than three points when nothing of it is there).
+fn clip_slab(tri: [[f64; 3]; 3], lo: f64, hi: f64) -> Vec<IntPoint<i32>> {
+    let keep = |poly: Vec<[f64; 3]>, z: f64, above: bool| -> Vec<[f64; 3]> {
+        let inside = |p: &[f64; 3]| if above { p[2] >= z } else { p[2] <= z };
+        let mut out = Vec::with_capacity(poly.len() + 2);
+        for (k, p) in poly.iter().enumerate() {
+            let Some(q) = poly.get((k + 1) % poly.len()) else {
+                continue;
+            };
+            if inside(p) {
+                out.push(*p);
+            }
+            if inside(p) != inside(q) {
+                let t = (z - p[2]) / (q[2] - p[2]);
+                out.push([p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t, z]);
+            }
+        }
+        out
+    };
+    let mut poly = tri.to_vec();
+    if lo.is_finite() {
+        poly = keep(poly, lo, true);
+    }
+    if hi.is_finite() && poly.len() >= 3 {
+        poly = keep(poly, hi, false);
+    }
+    #[allow(clippy::cast_possible_truncation, reason = "a point inside the bed")]
+    let mut ring: Vec<IntPoint<i32>> = poly
+        .iter()
+        .map(|p| IntPoint::new((p[0] * SCALE).round() as i32, (p[1] * SCALE).round() as i32))
+        .collect();
+    ring.dedup();
+    if ring.len() >= 3 && crate::geom::area2_int(&ring) < 0 {
+        ring.reverse();
+    }
+    ring
+}
+
+/// The depth limit in mm under an unpainted top or bottom surface `j` layers away (the surface layer is 1).
 fn depth_limit(j: usize) -> f64 {
     #[allow(clippy::cast_precision_loss, reason = "shell layer counts are small")]
     let jf = j as f64;
@@ -608,11 +664,24 @@ fn depth_limit(j: usize) -> f64 {
 }
 
 impl LayerPaint<'_> {
+    /// The heights between which a surface lies that layer `at` exposes: under it, down to the plane of the
+    /// layer below (any depth for the first layer); or over it, up to the plane of the layer above.
+    fn slab(&self, at: usize, top: bool) -> Option<(f64, f64)> {
+        let z = self.plan.slice_z.get(at).copied()?;
+        Some(if top {
+            (z, self.plan.slice_z.get(at + 1).copied().unwrap_or(f64::INFINITY))
+        } else {
+            let below = at.checked_sub(1).and_then(|b| self.plan.slice_z.get(b).copied());
+            (below.unwrap_or(f64::NEG_INFINITY), z)
+        })
+    }
+
     /// The layer's outline split by color: the part's own filament where nothing is painted, and
     /// each painted filament where paint reaches. Colors come from the walls (painted surfaces
-    /// cut by the layer plane, reaching to the nearest wall of another color and, under a top
-    /// or bottom surface, only as deep as the taper allows) and from painted top and bottom
-    /// faces (their outline, drawn in a little more on each layer below or above).
+    /// cut by the layer plane, reaching to the nearest wall of another color and, under an
+    /// unpainted top or bottom surface, only as deep as the taper allows) and from painted top and
+    /// bottom surfaces, flat or sloped (the area they expose, drawn in a little more on each layer
+    /// below or above).
     pub(crate) fn split(&self) -> Vec<(u8, Shapes)> {
         let d = self.default_slot;
         let whole = || vec![(d, self.shapes.clone())];
@@ -627,16 +696,9 @@ impl LayerPaint<'_> {
         let mut flat_tris: BTreeMap<FlatKey, Vec<Vec<IntPoint<i32>>>> = BTreeMap::new();
         for (tri, state) in self.facets.iter().flat_map(|f| f.iter()) {
             let [a, b, c] = *tri;
-            let n = [
-                (b[1] - a[1]) * (c[2] - a[2]) - (b[2] - a[2]) * (c[1] - a[1]),
-                (b[2] - a[2]) * (c[0] - a[0]) - (b[0] - a[0]) * (c[2] - a[2]),
-                (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]),
-            ];
-            let len = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt();
-            if len < 1e-12 {
+            let Some(nz) = unit_nz(tri) else {
                 continue;
-            }
-            let nz = n[2] / len;
+            };
             if nz.abs() >= FLAT {
                 // The layer of the face (the last one under a top, the first one over a bottom) and how far this
                 // layer is from it.
@@ -665,6 +727,26 @@ impl LayerPaint<'_> {
                 }
                 continue;
             }
+            // A sloped face is a top or bottom surface too: on each shell layer, the strip that layer exposes over
+            // or under it is the piece of the face between that layer's plane and the next layer's.
+            if nz.abs() > SLOPED {
+                let top = nz > 0.0;
+                let l = self.layer as usize;
+                let (zlo, zhi) = (a[2].min(b[2]).min(c[2]), a[2].max(b[2]).max(c[2]));
+                for s in 0..if top { top_shell } else { bottom_shell } {
+                    let at = if top { l.checked_add(s) } else { l.checked_sub(s) };
+                    let Some((lo, hi)) = at.and_then(|at| self.slab(at, top)) else {
+                        break;
+                    };
+                    if zhi <= lo || zlo >= hi {
+                        continue;
+                    }
+                    let ring = clip_slab(*tri, lo, hi);
+                    if ring.len() >= 3 {
+                        flat_tris.entry((*state, top, s)).or_default().push(ring);
+                    }
+                }
+            }
             // A wall: the piece of the triangle the plane cuts.
             let z = self.z;
             let pts = [a, b, c];
@@ -692,6 +774,23 @@ impl LayerPaint<'_> {
         // Per direction, by distance: this layer's outline inside every outline up to that far, drawn in a step
         // at a time.
         let mut limits: [Vec<Shapes>; 2] = [vec![self.shapes.clone()], vec![self.shapes.clone()]];
+        // Per direction (below, above) and shell layer: where the surface exposed there is painted, a cell up to
+        // a grid cell away included. Wall paint has no depth limit over it.
+        let mut painted_surfaces: [Vec<Shapes>; 2] =
+            [vec![Vec::new(); bottom_shell], vec![Vec::new(); top_shell]];
+        for ((_, top, s), tris) in &flat_tris {
+            if let Some(into) = painted_surfaces
+                .get_mut(usize::from(*top))
+                .and_then(|v| v.get_mut(*s))
+            {
+                into.extend(tris.iter().map(|r| vec![r.clone()]));
+            }
+        }
+        for shapes in painted_surfaces.iter_mut().flatten() {
+            if !shapes.is_empty() {
+                *shapes = perimeters::offset(&perimeters::union_all(&[&*shapes]), crate::geom::mm(CELL));
+            }
+        }
         for ((state, top, s), tris) in flat_tris {
             let mut work = || {
                 let mut face =
@@ -772,7 +871,7 @@ impl LayerPaint<'_> {
         }
         let mut colored: Vec<(u8, Shapes)> = Vec::new();
         if !walls.is_empty() {
-            colored = self.voronoi(&walls, top_shell, bottom_shell);
+            colored = self.voronoi(&walls, &painted_surfaces);
         }
         // Painted tops and bottoms win over the colors of the walls.
         if !taken.is_empty() {
@@ -825,13 +924,9 @@ impl LayerPaint<'_> {
     }
 
     /// Regions painted on the walls: each cell of the layer takes the color of the nearest wall
-    /// (painted or not), within the depth the shell allows.
-    fn voronoi(
-        &self,
-        walls: &BTreeMap<u8, Vec<Seg>>,
-        top_shell: usize,
-        bottom_shell: usize,
-    ) -> Vec<(u8, Shapes)> {
+    /// (painted or not), within the depth an unpainted top or bottom surface allows. `surfaces` holds,
+    /// per direction (below, above) and shell layer, where the surface exposed there is painted.
+    fn voronoi(&self, walls: &BTreeMap<u8, Vec<Seg>>, surfaces: &[Vec<Shapes>; 2]) -> Vec<(u8, Shapes)> {
         let Some(b) = perimeters::bounds(self.shapes) else {
             return Vec::new();
         };
@@ -883,29 +978,37 @@ impl LayerPaint<'_> {
                 }
             }
         }
-        // Depth limit under top and bottom surfaces.
+        // Depth limit under unpainted top and bottom surfaces: a cell takes the limit of the nearest
+        // surface it is exposed to, unless that surface is painted there.
         let n = g.len();
         let mut limit = vec![f32::INFINITY; n];
-        let apply = |limit: &mut Vec<f32>, layers: &[Shapes]| {
+        let apply = |limit: &mut Vec<f32>, layers: &[Shapes], painted: &[Shapes]| {
             // Cells outside the outline count as exposed, so a region stops at the outline.
             let mut open = vec![true; n];
-            for (i, above) in layers.iter().enumerate() {
-                let here = fill(&g, above);
+            for (i, beyond) in layers.iter().enumerate() {
+                let here = fill(&g, beyond);
+                let over_paint = painted.get(i).filter(|p| !p.is_empty()).map(|p| fill(&g, p));
                 #[allow(clippy::cast_possible_truncation, reason = "a depth in mm")]
                 let dl = depth_limit(i + 1) as f32;
-                for ((o, h), l) in open.iter_mut().zip(&here).zip(limit.iter_mut()) {
+                for (c, ((o, h), l)) in open.iter_mut().zip(&here).zip(limit.iter_mut()).enumerate() {
                     if *o && !*h {
                         *o = false;
-                        *l = l.min(dl);
+                        if !over_paint
+                            .as_ref()
+                            .is_some_and(|p| p.get(c).copied().unwrap_or(false))
+                        {
+                            *l = l.min(dl);
+                        }
                     }
                 }
             }
         };
-        if top_shell > 0 {
-            apply(&mut limit, self.above);
+        let [below, above] = surfaces;
+        if !self.above.is_empty() {
+            apply(&mut limit, self.above, above);
         }
-        if bottom_shell > 0 {
-            apply(&mut limit, self.below);
+        if !self.below.is_empty() {
+            apply(&mut limit, self.below, below);
         }
         // In filament order already (a map's order), so a list: collecting a map sorts again.
         let dist: Vec<(u8, Vec<f32>)> = sources
@@ -1079,6 +1182,97 @@ mod tests {
         let b = perimeters::bounds(colored).unwrap();
         assert!(f64::from(b[2]) / SCALE <= 138.0 + 1e-3, "{b:?}");
         eprintln!("colored bounds {b:?}");
+    }
+
+    /// A painted overhang is a bottom surface in its own color: each layer's strip over it takes the paint, where
+    /// an unpainted bottom (here the bed face under a painted upright side) still holds wall paint back on the
+    /// layers over it, and a top surface still does under it.
+    #[test]
+    fn a_painted_overhang_keeps_its_color_and_an_unpainted_bottom_holds_wall_paint_back() {
+        let plan = LayerPlan::new(10.0, 0.2, 0.2);
+        // The right side leans out 2 mm per mm of height, painted filament 2: every layer overhangs the one
+        // below by about 0.4 mm there.
+        let right = |z: f64| 136.0 + 2.0 * z;
+        let outline_at = |k: usize| square(118.0, 118.0, right(plan.slice_z[k]), 138.0);
+        let leaning: Facets = vec![
+            (
+                [
+                    [136.0, 118.0, 0.0],
+                    [136.0, 138.0, 0.0],
+                    [right(10.0), 138.0, 10.0],
+                ],
+                2,
+            ),
+            (
+                [
+                    [136.0, 118.0, 0.0],
+                    [right(10.0), 138.0, 10.0],
+                    [right(10.0), 118.0, 10.0],
+                ],
+                2,
+            ),
+        ];
+        let above: Vec<Shapes> = (4..9).map(outline_at).collect();
+        let below: Vec<Shapes> = (0..3).rev().map(outline_at).collect();
+        let outline = outline_at(3);
+        let ctx = LayerPaint {
+            default_slot: 1,
+            shapes: &outline,
+            layer: 3,
+            z: plan.slice_z[3],
+            plan: &plan,
+            above: &above,
+            below: &below,
+            facets: &[&leaning],
+            step: 7_970,
+            small: 1_050,
+            memo: None,
+        };
+        let parts = ctx.split();
+        let colored = parts
+            .iter()
+            .find(|(s, _)| *s == 2)
+            .map(|(_, s)| s.clone())
+            .unwrap_or_default();
+        let edge = right(plan.slice_z[3]);
+        // The strip over the layer below, and the wedge of wall paint behind it.
+        assert!(contains(&colored, edge - 0.2, 128.0), "{parts:?}");
+        assert!(contains(&colored, edge - 0.6, 128.0) && contains(&colored, edge - 0.2, 120.0));
+        assert!(area_mm2(&colored) > 40.0, "{}", area_mm2(&colored));
+
+        // An upright painted side over an unpainted bed face: no paint on the first layer.
+        let outline = square(118.0, 118.0, 138.0, 138.0);
+        let upright: Facets = vec![
+            (
+                [[138.0, 118.0, 0.0], [138.0, 138.0, 0.0], [138.0, 138.0, 10.0]],
+                2,
+            ),
+            (
+                [[138.0, 118.0, 0.0], [138.0, 138.0, 10.0], [138.0, 118.0, 10.0]],
+                2,
+            ),
+        ];
+        let column = vec![outline.clone(); 5];
+        let none = vec![Vec::new(); 3];
+        let at = |layer: u32, above: &[Shapes], below: &[Shapes]| {
+            LayerPaint {
+                default_slot: 1,
+                shapes: &outline,
+                layer,
+                z: plan.slice_z[layer as usize],
+                plan: &plan,
+                above,
+                below,
+                facets: &[&upright],
+                step: 7_970,
+                small: 1_050,
+                memo: None,
+            }
+            .split()
+        };
+        assert!(at(0, &column, &none).iter().all(|(s, _)| *s == 1));
+        // And none on the top layer either.
+        assert!(at(49, &none, &column[..3]).iter().all(|(s, _)| *s == 1));
     }
 
     #[test]
