@@ -88,16 +88,16 @@ export function BridgeSection() {
   const connector = bridgeConnector()
   const [confirm, setConfirm] = useState(false)
   // Read on each render: pairing writes the pin, and the status change that follows redraws this section.
-  const pinned = connector !== null && !connector.automatic && hubPinned()
+  const pinned = connector !== null && !connector.automatic && hubPinned(connector.url)
   const [trust, setTrust] = useState(false)
-  const trustedKey = pinned ? pinnedHubKey() : undefined
+  const trustedKey = pinned ? pinnedHubKey(connector?.url) : undefined
   const shownKey = status.state === 'on' ? (status.hubKey ?? trustedKey) : trustedKey
   const shown = useFingerprint(shownKey)
   const presented = useFingerprint(status.state === 'error' ? status.presentedKey : undefined)
   const trustPresented = () => {
     setTrust(false)
     if (status.state !== 'error' || !status.presentedKey) return
-    trustHub(status.presentedKey)
+    trustHub(status.presentedKey, connector?.url)
     set({ bridgeStatus: { state: 'off' } })
     toast(`${appName()} now trusts this bridge. Type the pairing code to connect.`, 'info')
   }
@@ -105,7 +105,7 @@ export function BridgeSection() {
   const forget = () => {
     setConfirm(false)
     if (status.state === 'on') disconnectBridge(host)
-    toast(forgetHub() ? 'Forgot the bridge. Pair again with the code sx-link prints.' : 'No bridge was remembered.', 'info')
+    toast(forgetHub(connector.url) ? 'Forgot the bridge. Pair again with the code sx-link prints.' : 'No bridge was remembered.', 'info')
   }
   const on = status.state === 'on'
   const busy = status.state === 'connecting'

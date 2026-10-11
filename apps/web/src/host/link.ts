@@ -74,6 +74,7 @@ export function wrapLink(link: LinkHost, relay?: string | null): ConnectedBridge
 export function browserBridge(url?: string, relay?: string | null): BridgeConnector {
   return {
     automatic: false,
+    ...(url ? { url } : {}),
     async connect(code) {
       if (!code) throw new Error('Enter the pairing code sx-link printed.')
       // The first pairing pins the hub's key for this address; later connects pass it and refuse a hub that cannot sign.

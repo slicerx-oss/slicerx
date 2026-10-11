@@ -50,6 +50,8 @@ export async function sharedConfig(appDir: string, port: number, editionFile?: s
       __SX_COMMIT__: JSON.stringify(buildCommit(root, command === 'serve', env)),
       // Only the end-to-end test build sets this (apps/web/playwright.config.ts).
       __SX_E2E__: JSON.stringify(env['SLICERX_E2E'] === '1'),
+      // The printer hub port of an end-to-end run (SX_TEST_HUB_PORT); empty, so sx-link's default, in any other build.
+      __SX_TEST_HUB_PORT__: JSON.stringify(env['SLICERX_E2E'] === '1' ? (env['SX_TEST_HUB_PORT'] ?? '') : ''),
       ...viteDefines(edition, env),
     },
     server: { port, strictPort: false, fs: { allow: [root] } },
