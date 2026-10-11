@@ -53,6 +53,17 @@ function text(args: unknown[]): string {
   return redact(s.length > TEXT_MAX ? `${s.slice(0, TEXT_MAX)}...` : s)
 }
 
+/** Text as it is read out: parts marked aria-hidden (a decorative tag line) left out. */
+function spokenText(el: Element | null): string {
+  if (!el) return ''
+  let out = ''
+  for (const n of Array.from(el.childNodes)) {
+    if (n.nodeType === 3) out += n.textContent ?? ''
+    else if (n instanceof Element && n.getAttribute('aria-hidden') !== 'true') out += ` ${spokenText(n)} `
+  }
+  return out
+}
+
 /** The title a person reads on a dialog: its labelled heading, its label, or its first heading. */
 export function dialogTitle(el: Element): string {
   const by = el.getAttribute('aria-labelledby')
@@ -60,10 +71,10 @@ export function dialogTitle(el: Element): string {
   const labelled = by
     ? by
         .split(/\s+/)
-        .map((id) => doc.getElementById(id)?.textContent ?? '')
+        .map((id) => spokenText(doc.getElementById(id)))
         .join(' ')
     : ''
-  const t = labelled || el.getAttribute('aria-label') || el.querySelector('h1, h2, h3')?.textContent || ''
+  const t = labelled.trim() || el.getAttribute('aria-label') || spokenText(el.querySelector('h1, h2, h3'))
   return t.replace(/\s+/g, ' ').trim().slice(0, 200)
 }
 
