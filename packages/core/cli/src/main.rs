@@ -540,6 +540,18 @@ fn cmd_slice(args: &[String]) -> Res<ExitCode> {
         }
         None => Mesh::load(&bytes, model)?,
     };
+    // The object's own settings from a project file go over the config, as a request applies them.
+    if mesh.settings.as_object().is_some_and(|m| !m.is_empty()) {
+        config.apply_value(&mesh.settings)?;
+        config.check()?;
+        let issues = sx_core::preflight::clamp_config(&mut config, &sx_core::gcode_lint::Limits::default());
+        if sx_core::preflight::blocks(&issues) {
+            return Err(sx_core::preflight::blocking_text(&issues).into());
+        }
+        for i in &issues {
+            eprintln!("warning: {}", i.message);
+        }
+    }
     // The mesh goes to the middle of the profile's bed, as the desktop slicers do.
     let plate = Plate::single_on(mesh, config.bed_rect(), config.printable_height);
     let t = Instant::now();

@@ -466,6 +466,19 @@ pub fn build_plate(req: &SliceRequest, meshes: &dyn Fn(&str) -> Result<Arc<Mesh>
                 ),
             });
         }
+        // The object's settings from its file, with the request's over them. Without file settings, as before:
+        // the request's own when objects differ (the same ones go into the plate's config).
+        let settings = match mesh.settings.as_object().filter(|m| !m.is_empty()) {
+            Some(file) => {
+                let mut m = file.clone();
+                m.extend(o.settings.iter().map(|(k, v)| (k.clone(), v.clone())));
+                serde_json::Value::Object(m)
+            }
+            None if differing => {
+                serde_json::Value::Object(o.settings.iter().map(|(k, v)| (k.clone(), v.clone())).collect())
+            }
+            None => serde_json::Value::Null,
+        };
         objects.push(PlateObject {
             id,
             name,
@@ -475,11 +488,7 @@ pub fn build_plate(req: &SliceRequest, meshes: &dyn Fn(&str) -> Result<Arc<Mesh>
             part_settings,
             volumes,
             brim_points: o.brim_points.clone(),
-            settings: if differing {
-                serde_json::Value::Object(o.settings.iter().map(|(k, v)| (k.clone(), v.clone())).collect())
-            } else {
-                serde_json::Value::Null
-            },
+            settings,
         });
     }
     if objects.is_empty() {
@@ -879,6 +888,8 @@ pub fn run_request_with(
 /// with ([`run_prepared`]) while [`session_key`] stays the same.
 pub struct Prepared {
     session: SliceSession,
+    /// A lone object's own settings, which are the plate's (see [`with_lone_settings`]); null otherwise.
+    lone_settings: serde_json::Value,
 }
 
 impl Prepared {
@@ -890,10 +901,39 @@ impl Prepared {
 
 /// Prepares `req`'s session ([`build_plate`], then [`build_session`]).
 pub fn prepare(req: &SliceRequest, meshes: &dyn Fn(&str) -> Result<Arc<Mesh>>) -> Result<Prepared> {
-    let (config, _) = request_config_checked(req)?;
+    let (config, issues) = request_config_checked(req)?;
     let plate = build_plate(req, meshes)?;
+    let lone_settings = match plate.objects.as_slice() {
+        [o] => o.settings.clone(),
+        _ => serde_json::Value::Null,
+    };
+    let (config, _) = with_lone_settings(config, issues, &lone_settings)?;
     let session = build_session(req, &plate, &config)?;
-    Ok(Prepared { session })
+    Ok(Prepared {
+        session,
+        lone_settings,
+    })
+}
+
+/// The request's config ([`request_config_checked`]) with a lone object's own settings (from its project file) over
+/// it: they are the plate's, so they set what the plate prints with, layer heights and support included. Several
+/// objects each slice with their own (see `SliceSession`).
+fn with_lone_settings(
+    mut config: PrintConfig,
+    mut config_issues: Vec<crate::preflight::Issue>,
+    lone_settings: &serde_json::Value,
+) -> Result<(PrintConfig, Vec<crate::preflight::Issue>)> {
+    if !lone_settings.is_null() {
+        config.apply_value(lone_settings)?;
+        config.check()?;
+        let limits = config.limits;
+        let issues = crate::preflight::clamp_config(&mut config, &limits);
+        if crate::preflight::blocks(&issues) {
+            return Err(Error::Blocked(crate::preflight::blocking_text(&issues)));
+        }
+        config_issues.extend(issues);
+    }
+    Ok((config, config_issues))
 }
 
 /// [`run_request_with`] on a session prepared before ([`prepare`]), for a request with the same [`session_key`]:
@@ -910,6 +950,7 @@ fn run_prepared_timed(
     timer: &Timer,
 ) -> Result<SliceRun> {
     let (config, config_issues) = request_config_checked(req)?;
+    let (config, config_issues) = with_lone_settings(config, config_issues, &prepared.lone_settings)?;
     let session = &prepared.session;
     let n = session.layer_count();
     let shards = req.options.shards.unwrap_or(1).clamp(1, n.max(1));
