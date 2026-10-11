@@ -27,14 +27,14 @@ impl Default for Bed {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum VolumeRole {
-    /// Cut out of the object.
-    Negative,
+    /// Cut out of the object. (The numbers are what the raw parts format writes.)
+    Negative = 0,
     /// No support inside it.
-    SupportBlocker,
+    SupportBlocker = 1,
     /// Support wherever the object's underside is inside it, at any angle.
-    SupportEnforcer,
+    SupportEnforcer = 2,
     /// The object prints with other settings inside it.
-    Modifier,
+    Modifier = 3,
 }
 
 /// A volume of an object that is not part of the printed model.

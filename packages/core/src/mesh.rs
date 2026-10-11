@@ -168,22 +168,7 @@ impl Mesh {
         b.extend_from_slice(RAW_MAGIC);
         b.extend_from_slice(&u32::try_from(self.parts.len()).unwrap_or(u32::MAX).to_le_bytes());
         for p in &self.parts {
-            let name = p.name.as_bytes().get(..p.name.len().min(65_535)).unwrap_or(&[]);
-            b.push(p.slot.max(1));
-            b.extend_from_slice(&u16::try_from(name.len()).unwrap_or(u16::MAX).to_le_bytes());
-            b.extend_from_slice(name);
-            b.extend_from_slice(&u32::try_from(p.positions.len()).unwrap_or(u32::MAX).to_le_bytes());
-            for v in &p.positions {
-                for c in v {
-                    b.extend_from_slice(&c.to_le_bytes());
-                }
-            }
-            b.extend_from_slice(&u32::try_from(p.triangles.len()).unwrap_or(u32::MAX).to_le_bytes());
-            for t in &p.triangles {
-                for i in t {
-                    b.extend_from_slice(&i.to_le_bytes());
-                }
-            }
+            write_raw_part(p, &mut b);
         }
         write_raw_paint(&self.parts, &mut b);
         write_raw_volumes(self, &mut b);
@@ -207,45 +192,7 @@ impl Mesh {
         let count = r.u32()?;
         let mut parts = Vec::new();
         for _ in 0..count {
-            let slot = r.take(1)?.first().copied().unwrap_or(1).max(1);
-            let name_len = u16::from_le_bytes(r.take(2)?.try_into().map_err(|_| r.err())?);
-            let part_name = String::from_utf8_lossy(r.take(usize::from(name_len))?).into_owned();
-            let nv = r.u32()? as usize;
-            let pos = r.take(nv.checked_mul(12).ok_or_else(|| r.err())?)?;
-            let positions = pos
-                .as_chunks::<12>()
-                .0
-                .iter()
-                .map(|c| {
-                    let f = |a: u8, b: u8, cc: u8, d: u8| f32::from_le_bytes([a, b, cc, d]);
-                    [
-                        f(c[0], c[1], c[2], c[3]),
-                        f(c[4], c[5], c[6], c[7]),
-                        f(c[8], c[9], c[10], c[11]),
-                    ]
-                })
-                .collect();
-            let nt = r.u32()? as usize;
-            let idx = r.take(nt.checked_mul(12).ok_or_else(|| r.err())?)?;
-            let flat: Vec<u32> = idx
-                .as_chunks::<4>()
-                .0
-                .iter()
-                .map(|c| u32::from_le_bytes(*c))
-                .collect();
-            let triangles = triangles_from_indices(&flat, nv, &part_name)?;
-            parts.push(MeshPart {
-                name: part_name,
-                slot,
-                color: None,
-                positions,
-                triangles,
-                paint: Vec::new(),
-                support_paint: Vec::new(),
-                seam_paint: Vec::new(),
-                fuzzy_paint: Vec::new(),
-                paint_texts: Vec::new(),
-            });
+            parts.push(read_raw_part(&mut r)?);
         }
         // An optional paint block after the parts. A reader without it stops before it.
         if r.b.get(r.at..r.at + RAW_PAINT_MAGIC.len()) == Some(RAW_PAINT_MAGIC) {
@@ -485,93 +432,130 @@ const RAW_MAGIC: &[u8] = b"SXMP";
 const RAW_PAINT_MAGIC: &[u8] = b"SXPT";
 const RAW_VOLUME_MAGIC: &[u8] = b"SXVL";
 
-/// The block of the raw parts format that carries a mesh's volumes, part settings and loader notes: magic `SXVL`, u32
-/// byte length, then that many bytes of JSON, `{"volumes": [{"role", "name", "positions", "triangles", "settings"}],
-/// "partSettings": [[name, settings]], "notes": [text]}`, positions as `[x, y, z]` numbers. Nothing when the mesh has
-/// none of them, so a mesh without them writes the bytes it always has.
+/// One part of the raw parts format: u8 slot, u16 name length, UTF-8 name, u32 vertex count, f32 xyz per vertex, u32
+/// triangle count, u32 index triples. Names longer than 65,535 bytes are cut.
+fn write_raw_part(p: &MeshPart, b: &mut Vec<u8>) {
+    let name = p.name.as_bytes().get(..p.name.len().min(65_535)).unwrap_or(&[]);
+    b.push(p.slot.max(1));
+    b.extend_from_slice(&u16::try_from(name.len()).unwrap_or(u16::MAX).to_le_bytes());
+    b.extend_from_slice(name);
+    b.extend_from_slice(&u32::try_from(p.positions.len()).unwrap_or(u32::MAX).to_le_bytes());
+    for v in &p.positions {
+        for c in v {
+            b.extend_from_slice(&c.to_le_bytes());
+        }
+    }
+    b.extend_from_slice(&u32::try_from(p.triangles.len()).unwrap_or(u32::MAX).to_le_bytes());
+    for t in &p.triangles {
+        for i in t {
+            b.extend_from_slice(&i.to_le_bytes());
+        }
+    }
+}
+
+/// Reads what [`write_raw_part`] writes.
+fn read_raw_part(r: &mut Reader<'_>) -> Result<MeshPart> {
+    let slot = r.take(1)?.first().copied().unwrap_or(1).max(1);
+    let name_len = u16::from_le_bytes(r.take(2)?.try_into().map_err(|_| r.err())?);
+    let part_name = String::from_utf8_lossy(r.take(usize::from(name_len))?).into_owned();
+    let nv = r.u32()? as usize;
+    let pos = r.take(nv.checked_mul(12).ok_or_else(|| r.err())?)?;
+    let positions = pos
+        .as_chunks::<12>()
+        .0
+        .iter()
+        .map(|c| {
+            let f = |a: u8, b: u8, cc: u8, d: u8| f32::from_le_bytes([a, b, cc, d]);
+            [
+                f(c[0], c[1], c[2], c[3]),
+                f(c[4], c[5], c[6], c[7]),
+                f(c[8], c[9], c[10], c[11]),
+            ]
+        })
+        .collect();
+    let nt = r.u32()? as usize;
+    let idx = r.take(nt.checked_mul(12).ok_or_else(|| r.err())?)?;
+    let flat: Vec<u32> = idx
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|c| u32::from_le_bytes(*c))
+        .collect();
+    let triangles = triangles_from_indices(&flat, nv, &part_name)?;
+    Ok(MeshPart {
+        name: part_name,
+        slot,
+        positions,
+        triangles,
+        ..MeshPart::default()
+    })
+}
+
+/// A u32 length and that many bytes of UTF-8 text.
+fn write_raw_text(text: &str, b: &mut Vec<u8>) {
+    b.extend_from_slice(&u32::try_from(text.len()).unwrap_or(u32::MAX).to_le_bytes());
+    b.extend_from_slice(text.as_bytes());
+}
+
+fn read_raw_text(r: &mut Reader<'_>) -> Result<String> {
+    let len = r.u32()? as usize;
+    Ok(String::from_utf8_lossy(r.take(len)?).into_owned())
+}
+
+/// The block of the raw parts format that carries a mesh's volumes, part settings and loader notes, after the
+/// paint block: magic `SXVL`; u32 volume count, then per volume u8 role (0 negative, 1 support blocker, 2 support
+/// enforcer, 3 modifier), the part as the parts are written and its settings as JSON text; u32 part settings
+/// count, then per entry the part name and the settings as JSON text; u32 note count and each note. Texts are a u32
+/// length and UTF-8. Nothing when the mesh has none of them, so a mesh without them writes the bytes it always has.
 fn write_raw_volumes(mesh: &Mesh, b: &mut Vec<u8>) {
     if mesh.volumes.is_empty() && mesh.part_settings.is_empty() && mesh.notes.is_empty() {
         return;
     }
-    let volumes: Vec<serde_json::Value> = mesh
-        .volumes
-        .iter()
-        .map(|v| {
-            serde_json::json!({
-                "role": role_text(v.role),
-                "name": v.part.name,
-                "positions": v.part.positions,
-                "triangles": v.part.triangles,
-                "settings": v.settings,
-            })
-        })
-        .collect();
-    let body = serde_json::json!({
-        "volumes": volumes,
-        "partSettings": mesh.part_settings,
-        "notes": mesh.notes,
-    })
-    .to_string();
+    let count = |n: usize| u32::try_from(n).unwrap_or(u32::MAX).to_le_bytes();
     b.extend_from_slice(RAW_VOLUME_MAGIC);
-    b.extend_from_slice(&u32::try_from(body.len()).unwrap_or(u32::MAX).to_le_bytes());
-    b.extend_from_slice(body.as_bytes());
-}
-
-fn role_text(role: crate::plate::VolumeRole) -> &'static str {
-    match role {
-        crate::plate::VolumeRole::Negative => "negative",
-        crate::plate::VolumeRole::SupportBlocker => "support_blocker",
-        crate::plate::VolumeRole::SupportEnforcer => "support_enforcer",
-        crate::plate::VolumeRole::Modifier => "modifier",
+    b.extend_from_slice(&count(mesh.volumes.len()));
+    for v in &mesh.volumes {
+        b.push(v.role as u8);
+        write_raw_part(&v.part, b);
+        write_raw_text(&v.settings.to_string(), b);
+    }
+    b.extend_from_slice(&count(mesh.part_settings.len()));
+    for (name, settings) in &mesh.part_settings {
+        write_raw_text(name, b);
+        write_raw_text(&settings.to_string(), b);
+    }
+    b.extend_from_slice(&count(mesh.notes.len()));
+    for n in &mesh.notes {
+        write_raw_text(n, b);
     }
 }
 
 /// Reads the block [`write_raw_volumes`] writes into `mesh`.
 fn read_raw_volumes(r: &mut Reader<'_>, mesh: &mut Mesh) -> Result<()> {
-    let len = r.u32()? as usize;
-    let body: serde_json::Value = serde_json::from_slice(r.take(len)?).map_err(|_| r.err())?;
-    for v in body
-        .get("volumes")
-        .and_then(serde_json::Value::as_array)
-        .into_iter()
-        .flatten()
-    {
-        let role = match v.get("role").and_then(serde_json::Value::as_str) {
-            Some("negative") => crate::plate::VolumeRole::Negative,
-            Some("support_blocker") => crate::plate::VolumeRole::SupportBlocker,
-            Some("support_enforcer") => crate::plate::VolumeRole::SupportEnforcer,
-            Some("modifier") => crate::plate::VolumeRole::Modifier,
+    let json = |r: &Reader<'_>, text: &str| -> Result<serde_json::Value> {
+        serde_json::from_str(text).map_err(|_| r.err())
+    };
+    for _ in 0..r.u32()? {
+        let role = match r.take(1)?.first() {
+            Some(0) => crate::plate::VolumeRole::Negative,
+            Some(1) => crate::plate::VolumeRole::SupportBlocker,
+            Some(2) => crate::plate::VolumeRole::SupportEnforcer,
+            Some(3) => crate::plate::VolumeRole::Modifier,
             _ => return Err(r.err()),
         };
-        let positions: Vec<[f32; 3]> =
-            serde_json::from_value(v.get("positions").cloned().unwrap_or_default()).map_err(|_| r.err())?;
-        let flat: Vec<u32> =
-            serde_json::from_value::<Vec<[u32; 3]>>(v.get("triangles").cloned().unwrap_or_default())
-                .map_err(|_| r.err())?
-                .concat();
-        let name = v
-            .get("name")
-            .and_then(serde_json::Value::as_str)
-            .unwrap_or("")
-            .to_owned();
-        let triangles = triangles_from_indices(&flat, positions.len(), &name)?;
-        mesh.volumes.push(MeshVolume {
-            role,
-            part: MeshPart {
-                name,
-                slot: 1,
-                positions,
-                triangles,
-                ..MeshPart::default()
-            },
-            settings: v.get("settings").cloned().unwrap_or_default(),
-        });
+        let part = read_raw_part(r)?;
+        let text = read_raw_text(r)?;
+        let settings = json(r, &text)?;
+        mesh.volumes.push(MeshVolume { role, part, settings });
     }
-    if let Some(list) = body.get("partSettings") {
-        mesh.part_settings = serde_json::from_value(list.clone()).map_err(|_| r.err())?;
+    for _ in 0..r.u32()? {
+        let name = read_raw_text(r)?;
+        let text = read_raw_text(r)?;
+        let settings = json(r, &text)?;
+        mesh.part_settings.push((name, settings));
     }
-    if let Some(list) = body.get("notes") {
-        mesh.notes = serde_json::from_value(list.clone()).map_err(|_| r.err())?;
+    for _ in 0..r.u32()? {
+        mesh.notes.push(read_raw_text(r)?);
     }
     Ok(())
 }
