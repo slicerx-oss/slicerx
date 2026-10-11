@@ -4,8 +4,9 @@
 import type { EasyGoal, EasySettings, PrintConfig, SettingValue, SpeedPreset, SupportMode } from '@slicerx/contracts'
 import { Chip, Icon, Menu, MenuAnchor, MenuItem, MenuSeparator, Range, Seg, SwitchRow, tipAttrs, type IconName } from '@slicerx/ui'
 import { useMemo, useState } from 'react'
-import { easyConfig, easyConfigFor, goalEasy, GOALS, inferEasy, matchGoal } from '../../adapters/config'
+import { easyConfig, easyConfigFor, goalEasy, goalKeys, GOALS, inferEasy, matchGoal, resolveConfig } from '../../adapters/config'
 import { goalEstimate, goalSubtitle } from '../../lib/estimate-line'
+import { goalEdits, goalEditsText } from '../../lib/goal-edits'
 import { choicePatch, chosenFrom, FIXED_HEIGHTS, SLEIPNIR, SLEIPNIR_LINE, type LayerChoice } from '../../lib/layer-choice'
 import { OPTION_TIPS, settingTipAttrs } from '../../lib/tips'
 import { useMore } from '../../shell/more'
@@ -26,7 +27,6 @@ const GOAL_OPTIONS = [
   { value: 'strong', label: 'Strong', icon: 'preset-strong', testId: 'slice-goal-strong' },
 ] as const satisfies readonly { value: EasyGoal; label: string; icon: IconName; testId: string }[]
 
-const CUSTOM_TIP = 'You changed a setting the goal sets. Pick a goal to start over.'
 const GOAL_PLATE = 'A goal is for the whole plate. Pick Plate above to change it.'
 
 const SPEEDS: { value: SpeedPreset; label: string; pct: number }[] = [
@@ -48,9 +48,17 @@ function update(patch: Partial<EasySettings>, goal?: EasyGoal): void {
     const easy = { ...s.easy, ...patch }
     // Clicking the control a preset already shows still counts as the person's choice; picking a tier starts over.
     const touched = goal ? [] : [...new Set([...s.easyTouched, ...Object.keys(patch)])]
-    return { easy, goal: goal ?? matchGoal(easy) ?? 'custom', easyTouched: touched }
+    return { easy, goal: goal ?? matchGoal(easy) ?? 'custom', easyTouched: touched, ...(goal ? { goalBase: goal } : {}) }
   })
   markStale()
+}
+
+/** Picks a goal, or presses the edited one: its stock values, with the overrides of what a goal decides dropped. */
+function pickGoal(goal: EasyGoal): void {
+  const keys = new Set(goalKeys())
+  const overrides = get().overrides
+  if (Object.keys(overrides).some((k) => keys.has(k))) set({ overrides: Object.fromEntries(Object.entries(overrides).filter(([k]) => !keys.has(k))) })
+  update(goalEasy(goal), goal)
 }
 
 const same = (a: SettingValue | undefined, b: SettingValue | undefined) => JSON.stringify(a) === JSON.stringify(b)
@@ -69,6 +77,9 @@ function updateScoped(scope: SettingsScope, easy: EasySettings, patch: Partial<E
 export function EasySettingsPanel() {
   const easy = useApp((s) => s.easy)
   const goal = useApp((s) => s.goal)
+  const goalBase = useApp((s) => s.goalBase)
+  // The picked tile: the goal, or while the settings differ from every goal, the one they started from, marked edited.
+  const shownGoal: EasyGoal = goal === 'custom' ? goalBase : goal
   const touched = useApp((s) => s.easyTouched)
   const profile = useApp((s) => s.profile)
   const overrides = useApp((s) => s.overrides)
@@ -134,6 +145,10 @@ export function EasySettingsPanel() {
   const subtitles = useMemo(() => Object.fromEntries(GOALS.map((g) => [g, goalSubtitle(g, goalValues?.[g] ?? easyConfig(goalEasy(g)))])) as Record<EasyGoal, string>, [goalValues, profile])
   // About how long and how much from the last slice: the picked tile's tooltip says it.
   const line = useApp((s) => goalEstimate(shownSlice(s.slice)))
+  const edits = useMemo(() => (goal === 'custom' ? goalEdits(resolveConfig(easy, overrides), goalBase) : []), [goal, goalBase, easy, overrides, profile])
+  const edited = edits.length > 0
+  const baseName = GOAL_OPTIONS.find((o) => o.value === shownGoal)?.label ?? ''
+  const editTip = edited ? goalEditsText(edits, baseName) : null
   const tiles = useMemo(
     () =>
       GOAL_OPTIONS.map((o) => ({
@@ -142,13 +157,16 @@ export function EasySettingsPanel() {
           <>
             <span className="goal-name">{o.label}</span>
             <span className="goal-sub sx-mono">{subtitles[o.value]}</span>
+            {/* placed over the tile's corner, so marking it moves nothing */}
+            {edited && o.value === shownGoal ? <span className="goal-edited-dot"><span className="sr-only">edited</span></span> : null}
           </>
         ),
-        ...(line && o.value === goal ? { tip: { title: o.label, body: line === 'Updating' ? 'Updating the estimate.' : `${line} from the last slice.` } } : {}),
+        ...(line && o.value === shownGoal && !edited ? { tip: { title: o.label, body: line === 'Updating' ? 'Updating the estimate.' : `${line} from the last slice.` } } : {}),
+        ...(editTip && o.value === shownGoal ? { tip: { title: `${o.label}, edited`, body: editTip } } : {}),
         // A goal is for the whole plate: in the selection's scope the tiles stay, still, so nothing below them moves.
         ...(scoped ? { disabled: true, tip: { title: o.label, reason: GOAL_PLATE } } : {}),
       })),
-    [subtitles, line, goal, scoped],
+    [subtitles, line, shownGoal, edited, editTip, scoped],
   )
   return (
     <>
@@ -159,13 +177,13 @@ export function EasySettingsPanel() {
         {/* in the selection's scope the tiles hold the plate's goal: the reason sits where Custom would, same row */}
         {scoped ? (
           <span className="goal-plate sx-small sx-muted">Set on the plate</span>
-        ) : goal === 'custom' ? (
-          <Chip className="goal-custom" tabIndex={0} {...tipAttrs(CUSTOM_TIP)}>
-            Custom
+        ) : edited && editTip ? (
+          <Chip className="goal-custom" tabIndex={0} {...tipAttrs({ title: `${baseName}, edited`, body: editTip })}>
+            Edited
           </Chip>
         ) : null}
       </div>
-      <Seg<Goal> label="Goal" full className="mt6 goal-seg goal-tiles" value={goal} options={tiles} onChange={(g) => !scoped && g !== 'custom' && update(goalEasy(g), g)} />
+      <Seg<Goal> label="Goal" full className="mt6 goal-seg goal-tiles" value={shownGoal} options={tiles} onChange={(g) => !scoped && g !== 'custom' && pickGoal(g)} />
 
       <div className="srow" {...settingTipAttrs('layer_height', '.srow')}>
         <div className="srow-h">

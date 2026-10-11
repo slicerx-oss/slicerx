@@ -25,6 +25,8 @@ export interface Prefs {
   followNozzle?: boolean | undefined
   easy: { detail: number; strength: number; speed: 'quality' | 'balanced' | 'fast' | 'fastest' | 'gentle' | 'maximum' | 'silent' | 'standard' | 'sport' | 'ludicrous'; supports: 'off' | 'auto' | 'painted' | 'everywhere'; brim: boolean; varyLayerHeight?: boolean; smartLayer?: 'off' | 'quality' | 'strength' } | null
   goal: 'draft' | 'standard' | 'fine' | 'strong' | 'custom'
+  /** The goal the plate's settings started from: its tile stays picked, marked edited, while they differ from it. */
+  goalBase?: 'draft' | 'standard' | 'fine' | 'strong' | undefined
   printerId: string | null
   scheme: 'dark' | 'light'
   lookAndFeel?: LookAndFeelChoice | null | undefined
@@ -277,6 +279,7 @@ export function normalizePrefs(v: unknown): Prefs {
     followNozzle: or(bool(r['followNozzle']), false),
     easy: or(nullable(r['easy'], easy), null),
     goal: or(oneOf(r['goal'], ['draft', 'standard', 'fine', 'strong', 'custom'] as const), 'standard'),
+    ...opt('goalBase', oneOf(r['goalBase'], ['draft', 'standard', 'fine', 'strong'] as const)),
     printerId: or(nullable(r['printerId'], (x) => str(x, 80)), null),
     scheme: or(oneOf(r['scheme'], ['dark', 'light'] as const), 'dark'),
     lookAndFeel: or(nullable(r['lookAndFeel'], lookChoice), null),
