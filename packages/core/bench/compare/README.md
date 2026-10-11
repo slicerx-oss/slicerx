@@ -46,6 +46,16 @@ python3 paint_parity.py --sx path/to/sx --orca path/to/OrcaSlicer --bambu path/t
 
 It exits 1 when a filament's total is more than `--tol` (5 percent, 20 mm floor) from Orca's or its placement agrees with Orca's on less than `--overlap` (0.9) of the cells. The painted keychain this was first run on (a MakerWorld project, not kept here): Orca 2129, 150, 97 and 482 mm for its four filaments, SlicerX 2337, 69, 74 and 360, Bambu Studio 2302, 154, 99 and 324; placement agreeing with Orca 0.91, 0.45, 0.73 and 0.76 for SlicerX, 0.92, 0.93, 0.98 and 0.64 for Bambu Studio.
 
+## H2D filament map
+
+`filament_map_parity.py` checks which extruder SlicerX gives each filament on the H2D (`; filament_map` in the G-code) against OrcaSlicer, Bambu Studio or both, on a cube with features moved to other filaments.
+
+```
+python3 filament_map_parity.py --sx path/to/sx --orca path/to/OrcaSlicer --bambu
+```
+
+With `--bambu` (a path, or the default install) it builds a Bambu Studio project from the installed H2D presets with the same flush volumes for both slicers (`--flush`), and puts the feature filaments in the object's settings, since Bambu Studio prints plate-wide feature filaments with the object's own. Its command line fails every H2D slice unless the project names one nozzle per extruder (`extruder_nozzle_stats`). Bambu Studio gives the same map on every run.
+
 ## Limits
 
 - Bambu Studio and OrcaSlicer have a fixed startup cost that dominates the smallest models (tens of milliseconds before slicing begins). That is part of using them from a script and is reported as measured, with the phase split next to it.
