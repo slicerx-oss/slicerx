@@ -14,7 +14,7 @@ Plugin id `bambu-lan`. LAN mode with the printer's access code. X1, P1, P2S, A1 
 
 ## Normalization
 
-`gcode_state` maps to idle, printing, paused, finished, error and preparing. AMS trays become slots `A1` to `D4` (unit letter, tray number), colors `#rrggbb`, unknown remaining weight (`-1`) is omitted. H2D nozzles come from `device.extruder.info[].temp` with the current temperature in the low 16 bits and the target in the high 16. `mc_remaining_time` is read as minutes.
+`gcode_state` maps to idle, printing, paused, finished, error and preparing. AMS trays become slots `A1` to `D4` (unit letter, tray number), colors `#rrggbb`, unknown remaining weight (`-1`) is omitted. A loaded external spool is a slot after them: `1` for `vt_tray` on single nozzle printers; on H2 printers `vir_slot` 254 (the left nozzle's) is `1` and 255 (the right's) is `2`. A slot map sends them as -1 in `ams_mapping` and by those ids (254, 255) in `ams_mapping2`; slot `2` is refused on a printer whose status does not list it. H2D nozzles come from `device.extruder.info[].temp` with the current temperature in the low 16 bits and the target in the high 16. `mc_remaining_time` is read as minutes.
 
 ## Sources
 

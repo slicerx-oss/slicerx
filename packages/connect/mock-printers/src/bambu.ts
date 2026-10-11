@@ -30,7 +30,7 @@ export interface BambuExtra {
   model?: string
   /** `lite`: one AMS lite (the fixture's four slots) beside the external spool; `none`: the external spool only. Default: one AMS. */
   ams?: 'ams' | 'lite' | 'none'
-  /** What the external spool holds (`vt_tray`); none when absent. */
+  /** What the external spool holds (`vt_tray`); none when absent. On an H2D, what its right nozzle's external spool holds (`vir_slot` 255, empty in the fixture). */
   external?: { type: string; color: string }
   /** What `ams_filament_setting` wrote per AMS slot (0 based), reported back as the printer does. */
   trays?: Record<number, { info: string; min: number; max: number }>
@@ -95,7 +95,7 @@ function diff(now: Record<string, unknown>, was: Record<string, unknown>): Recor
 
 let h2d: Record<string, unknown> | undefined
 /** The H2D hardware part of a report: nozzles, AMS units and external spools. */
-function h2dHardware(m: MockMachine): Record<string, unknown> {
+function h2dHardware(m: MockMachine, x: BambuExtra): Record<string, unknown> {
   h2d ??= (JSON.parse(readFileSync(fileURLToPath(new URL('../../fixtures/bambu-h2d-pushall.json', import.meta.url)), 'utf8')) as { print: Record<string, unknown> }).print
   const { device, ams, vir_slot, nozzle_diameter, nozzle_type, fun, sdcard } = h2d
   // The first nozzle follows the machine's nozzle: current in the low 16 bits, target in the high 16.
@@ -103,7 +103,12 @@ function h2dHardware(m: MockMachine): Record<string, unknown> {
   const n = m.fx.nozzles[0]
   const first = d.extruder.info[0]
   if (n && first) first.temp = (Math.round(n.target) << 16) | Math.round(n.current)
-  return { device: d, ams, vir_slot, nozzle_diameter, nozzle_type, fun, sdcard }
+  // `external` loads the right nozzle's external spool (255), which the fixture leaves empty.
+  const ext = x.external
+  const virt = ext
+    ? (vir_slot as { id: string }[]).map((t) => (t.id === '255' ? { id: '255', tray_type: ext.type, tray_color: `${ext.color.replace('#', '').toUpperCase()}FF`, remain: -1 } : t))
+    : vir_slot
+  return { device: d, ams, vir_slot: virt, nozzle_diameter, nozzle_type, fun, sdcard }
 }
 
 /** The answer to an SSDP search, laid out as a recorded H2D answer, for the printer at `host`. */
@@ -168,8 +173,8 @@ export function reportFor(m: MockMachine, x: BambuExtra = { skipped: [], printEr
             })) }]
           : [],
       },
-      ...(x.external ? { vt_tray: { id: '254', tray_type: x.external.type, tray_color: `${x.external.color.replace('#', '').toUpperCase()}FF`, remain: -1 } } : {}),
-      ...(x.model === 'O1D' ? h2dHardware(m) : {}),
+      ...(x.external && x.model !== 'O1D' ? { vt_tray: { id: '254', tray_type: x.external.type, tray_color: `${x.external.color.replace('#', '').toUpperCase()}FF`, remain: -1 } } : {}),
+      ...(x.model === 'O1D' ? h2dHardware(m, x) : {}),
       ...(x.developerMode === undefined ? {} : { fun: x.developerMode ? FUN.on : FUN.off }),
     },
   }

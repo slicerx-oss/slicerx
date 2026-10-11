@@ -637,7 +637,11 @@ fn units_from(
                 "254" => tool_of(1),
                 _ => None,
             };
-            out.push(external_unit(format!("external-{id}"), t, tool, measured));
+            let mut unit = external_unit(format!("external-{id}"), t, tool, measured);
+            if let (Some(slot), Some(sid)) = (unit.slots.first_mut(), external_slot_id(id)) {
+                sid.clone_into(&mut slot.id);
+            }
+            out.push(unit);
         }
     }
     out
@@ -1137,10 +1141,16 @@ pub(crate) fn speed_level_percent(level: u64) -> Option<u16> {
 }
 
 /// A slot id from an AMS id and a slot number as the printer gives them (`snow`, `tray_now`). The
-/// external spools (254, 255) read as `1` when the status lists one.
+/// external spools read as their slot ids when the status lists them: 254 as `1`, 255 as `2`, and
+/// 255 as `1` on a printer that lists only one external spool.
 fn slot_id_of(ams: u64, slot: u64, slots: &[String]) -> Option<String> {
     if ams == 254 || ams == 255 {
-        return slots.iter().any(|s| s == "1").then(|| "1".to_owned());
+        let listed = |id: &str| slots.iter().any(|s| s == id).then(|| id.to_owned());
+        return if ams == 255 {
+            listed(SECOND_EXTERNAL_SLOT).or_else(|| listed(EXTERNAL_SLOT))
+        } else {
+            listed(EXTERNAL_SLOT)
+        };
     }
     let id = format!("{}{}", unit_letter(u8::try_from(ams).ok()?), slot + 1);
     slots.contains(&id).then_some(id)
@@ -1201,7 +1211,7 @@ fn parse_live(p: &Value, slots: &[String]) -> Option<Box<PrinterLive>> {
             .and_then(|t| t.trim().parse::<u64>().ok())
             .and_then(|n| match n {
                 255 => None,
-                254 => slot_id_of(255, 0, slots),
+                254 => slot_id_of(254, 0, slots),
                 0x80..=0x87 => slot_id_of(n, 0, slots),
                 _ => slot_id_of(n >> 2, n & 3, slots),
             })
@@ -1477,16 +1487,48 @@ fn parse_slots(p: &Value) -> Vec<FilamentSlot> {
             }
         }
     }
-    // The external spool is `vt_tray`, with or without an AMS (the A1's AMS lite sits beside it). It
-    // comes after the AMS slots, so a slot's position in the list stays its position in the AMS.
-    if let Some(t) = p.get("vt_tray").filter(|t| {
+    // The external spools come after the AMS slots, so a slot's position in the list stays its
+    // position in the AMS. H2 printers list theirs in `vir_slot` (254 the left nozzle's, slot `1`;
+    // 255 the right's, slot `2`); others have one, `vt_tray`, with or without an AMS (the A1's AMS
+    // lite sits beside it). Only a loaded spool is a slot.
+    let loaded = |t: &&Value| {
         t.get("tray_type")
             .and_then(Value::as_str)
-            .is_some_and(|s| !s.is_empty())
-    }) {
-        slots.push(tray_slot("1".to_owned(), t, measured));
+            .is_some_and(|s| !s.trim().is_empty())
+    };
+    let mut virt: Vec<(&'static str, &Value)> = p
+        .get("vir_slot")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|t| Some((external_slot_id(t.get("id")?.as_str()?)?, t)))
+        .collect();
+    virt.sort_by_key(|(id, _)| *id);
+    if virt.is_empty() {
+        if let Some(t) = p.get("vt_tray").filter(loaded) {
+            slots.push(tray_slot(EXTERNAL_SLOT.to_owned(), t, measured));
+        }
+    } else {
+        for (id, t) in virt.into_iter().filter(|(_, t)| loaded(t)) {
+            slots.push(tray_slot(id.to_owned(), t, measured));
+        }
     }
     slots
+}
+
+/// The slot id of the external spool on the left nozzle of an H2 printer (its `vir_slot` 254), and of
+/// the only external spool on other printers (`vt_tray`).
+const EXTERNAL_SLOT: &str = "1";
+/// The slot id of the external spool on the right nozzle of an H2 printer (its `vir_slot` 255).
+const SECOND_EXTERNAL_SLOT: &str = "2";
+
+/// The slot id of a `vir_slot` entry by its `id`.
+fn external_slot_id(id: &str) -> Option<&'static str> {
+    match id.trim() {
+        "254" => Some(EXTERNAL_SLOT),
+        "255" => Some(SECOND_EXTERNAL_SLOT),
+        _ => None,
+    }
 }
 
 fn tray_slot(id: String, tray: &Value, measured: bool) -> FilamentSlot {
@@ -2089,8 +2131,11 @@ pub(crate) fn project_refusal(v: &Value) -> Option<String> {
     })
 }
 
-/// The external spool's id in `ams_mapping2` on single nozzle printers (the `vt_tray` id).
+/// The external spool's id in `ams_mapping2`: the `vt_tray` id on single nozzle printers, and the
+/// left nozzle's `vir_slot` on H2 printers.
 const EXTERNAL_TRAY: i64 = 254;
+/// The right nozzle's external spool on H2 printers, its `vir_slot` id, as `ams_mapping2` names it.
+const SECOND_EXTERNAL_TRAY: i64 = 255;
 /// `ams_mapping2` marks a filament with no slot as 255, 255.
 const UNMAPPED: i64 = 255;
 
@@ -2115,9 +2160,9 @@ fn ams_mapping(opts: &StartOptions) -> (Vec<i64>, Vec<Value>, bool) {
     let mut any_ams = false;
     for i in 0..=max {
         match m.get(&i).and_then(|s| slot_to_tray(s)) {
-            Some(EXTERNAL_TRAY) => {
+            Some(t @ (EXTERNAL_TRAY | SECOND_EXTERNAL_TRAY)) => {
                 v0.push(-1);
-                v1.push(json!({ "ams_id": EXTERNAL_TRAY, "slot_id": 0 }));
+                v1.push(json!({ "ams_id": t, "slot_id": 0 }));
             }
             Some(tray) => {
                 any_ams = true;
@@ -2144,15 +2189,18 @@ pub(crate) fn slot_map_problem(m: &std::collections::BTreeMap<u32, String>) -> O
             u64::from(*k) + 1
         ));
     }
-    m.values()
-        .find(|s| slot_to_tray(s).is_none())
-        .map(|s| format!("slot {s:?} in the slot map (AMS slots are A1 to D4, the external spool is 1)"))
+    m.values().find(|s| slot_to_tray(s).is_none()).map(|s| {
+        format!("slot {s:?} in the slot map (AMS slots are A1 to D4, the external spools are 1 and 2)")
+    })
 }
 
-/// "A1".."D4" to the global tray index (unit * 4 + slot). "1" (external spool) is 254.
+/// "A1".."D4" to the global tray index (unit * 4 + slot). The external spools are "1" (254) and,
+/// on H2 printers, "2" (255).
 pub(crate) fn slot_to_tray(slot: &str) -> Option<i64> {
-    if slot == "1" {
-        return Some(EXTERNAL_TRAY);
+    match slot {
+        EXTERNAL_SLOT => return Some(EXTERNAL_TRAY),
+        SECOND_EXTERNAL_SLOT => return Some(SECOND_EXTERNAL_TRAY),
+        _ => {}
     }
     let mut chars = slot.chars();
     let first = chars.next()?;
@@ -2300,6 +2348,24 @@ impl PrinterSession for BambuSession {
         // refused, never sent as "unmapped", and a far-off filament number never sizes the mapping.
         if let Some(why) = opts.slot_map.as_ref().and_then(slot_map_problem) {
             return Err(Error::not_supported("bambu", &why));
+        }
+        // Slot 2 is the right nozzle's external spool of an H2 printer; it names nothing on a printer
+        // whose status does not list it.
+        if opts
+            .slot_map
+            .as_ref()
+            .is_some_and(|m| m.values().any(|s| s == SECOND_EXTERNAL_SLOT))
+            && !self
+                .shared
+                .snapshot()
+                .slots
+                .iter()
+                .any(|s| s.id == SECOND_EXTERNAL_SLOT)
+        {
+            return Err(Error::not_supported(
+                "bambu",
+                "slot \"2\" in the slot map (this printer reports no loaded second external spool)",
+            ));
         }
         let is_3mf = std::path::Path::new(&file.name)
             .extension()
@@ -2941,6 +3007,9 @@ mod tests {
             hw.filament_units[3].slots[0].material.as_deref(),
             Some("TPU for AMS")
         );
+        // The same slot ids as the status: 255 is slot 2, 254 slot 1.
+        assert_eq!(hw.filament_units[2].slots[0].id, "2");
+        assert_eq!(hw.filament_units[3].slots[0].id, "1");
     }
 
     #[test]
@@ -3402,8 +3471,9 @@ mod tests {
         assert_eq!(slot_to_tray("B3"), Some(6));
         assert_eq!(slot_to_tray("1"), Some(254));
         assert_eq!(slot_to_tray("E1"), None);
-        // Only "1" names the external spool, and a slot is one letter and one digit.
-        assert_eq!(slot_to_tray("2"), None);
+        // "1" and "2" name the external spools, and a slot is one letter and one digit.
+        assert_eq!(slot_to_tray("2"), Some(255));
+        assert_eq!(slot_to_tray("3"), None);
         assert_eq!(slot_to_tray("A+1"), None);
         assert_eq!(slot_to_tray("A01"), None);
     }
@@ -3457,6 +3527,62 @@ mod tests {
         let p = mapped(&[(0, "1"), (1, "A2")]);
         assert_eq!(p["ams_mapping"], json!([-1, 1]));
         assert_eq!(p["use_ams"], true);
+    }
+
+    // An H2 printer's two external spools go by their `vir_slot` ids, 254 for slot 1 and 255 for
+    // slot 2, as -1 in `ams_mapping`.
+    #[test]
+    fn both_h2_external_spools_map_by_their_ids() {
+        let p = mapped(&[(0, "2"), (1, "1")]);
+        assert_eq!(p["ams_mapping"], json!([-1, -1]));
+        assert_eq!(
+            p["ams_mapping2"],
+            json!([{ "ams_id": 255, "slot_id": 0 }, { "ams_id": 254, "slot_id": 0 }])
+        );
+        assert_eq!(p["use_ams"], false);
+    }
+
+    // An H2D's external spools are status slots: 254 (left) is slot 1, 255 (right) slot 2, only
+    // when loaded, after the AMS slots. The extruder feeding from one names it as the active slot.
+    // A printer with `vt_tray` keeps its one external spool as slot 1.
+    #[test]
+    fn h2_external_spools_are_slots_1_and_2() {
+        let tray = |id: &str, kind: &str, color: &str| json!({ "id": id, "tray_type": kind, "tray_color": color, "remain": -1 });
+        let p = json!({
+            "vir_slot": [tray("255", "PETG", "202020FF"), tray("254", "TPU", "C0392BFF")],
+            "device": { "extruder": { "state": 0x00, "info": [
+                { "id": 0, "temp": 0, "snow": 0xff00 },
+                { "id": 1, "temp": 0, "snow": 0xfe00 },
+            ] } },
+        });
+        let s = parse_status("h2d", &p);
+        let ids: Vec<(&str, Option<&str>)> = s
+            .slots
+            .iter()
+            .map(|x| (x.id.as_str(), x.material.as_deref()))
+            .collect();
+        assert_eq!(ids, [("1", Some("TPU")), ("2", Some("PETG"))]);
+        assert_eq!(s.live.as_ref().and_then(|l| l.active_slot.as_deref()), Some("2"));
+        let mut p1 = p.clone();
+        p1["device"]["extruder"]["state"] = json!(0x10);
+        assert_eq!(
+            parse_status("h2d", &p1)
+                .live
+                .as_ref()
+                .and_then(|l| l.active_slot.as_deref()),
+            Some("1")
+        );
+
+        // An empty right spool is not a slot; the left stays slot 1.
+        let p2 = json!({ "vir_slot": [tray("255", "", "00000000"), tray("254", "TPU", "C0392BFF")] });
+        let ids: Vec<String> = parse_status("h2d", &p2).slots.into_iter().map(|x| x.id).collect();
+        assert_eq!(ids, ["1"]);
+
+        // One external spool, `vt_tray`: slot 1, and `tray_now` 254 feeds from it.
+        let p3 = json!({ "vt_tray": tray("254", "PLA", "FFFFFFFF"), "ams": { "tray_now": "254" } });
+        let s = parse_status("a1", &p3);
+        assert_eq!(s.slots.iter().map(|x| x.id.as_str()).collect::<Vec<_>>(), ["1"]);
+        assert_eq!(s.live.as_ref().and_then(|l| l.active_slot.as_deref()), Some("1"));
     }
 
     #[test]
