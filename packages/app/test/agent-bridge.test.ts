@@ -69,6 +69,18 @@ describe('what the bridge records', () => {
     quiet.mockRestore()
   })
 
+  it('takes over the refusals a bridge window collected before it ran, with their own time, and stops that collector', () => {
+    const w = window as unknown as { __sxEarlyCsp?: { directive: string; blocked: string; at: number }[] | null }
+    const at = Date.parse('2026-10-11T10:00:00Z')
+    w.__sxEarlyCsp = [{ directive: 'font-src', blocked: 'data', at }]
+    capture = installCapture(window)
+    const [e] = capture.read('console').entries
+    expect(e).toMatchObject({ level: 'csp', text: `Refused by font-src: ${safeUrl('data', window.location.href)}`, at: '2026-10-11T10:00:00.000Z', early: true })
+    expect(w.__sxEarlyCsp).toBeNull()
+    capture.stop()
+    delete w.__sxEarlyCsp
+  })
+
   it('logs backend calls with method, address and status only', async () => {
     const real = window.fetch
     window.fetch = vi.fn(async () => new Response('{"secret":"body"}', { status: 401 })) as typeof fetch

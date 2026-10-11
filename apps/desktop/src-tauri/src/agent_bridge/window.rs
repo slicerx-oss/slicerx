@@ -22,12 +22,24 @@ pub fn open_main_window(app: &App) -> tauri::Result<()> {
     else {
         return Ok(());
     };
-    let builder = WebviewWindowBuilder::from_config(app.handle(), &conf)?;
+    let builder = WebviewWindowBuilder::from_config(app.handle(), &conf)?.initialization_script(EARLY_CSP);
     #[cfg(target_os = "macos")]
     let builder = builder.data_store_identifier(store_id(&app.config().identifier));
     builder.build()?;
     Ok(())
 }
+
+/// Collects content security refusals from the very start of every page, before its own stylesheets and scripts load:
+/// the page's recorder (packages/app/src/agent-bridge/capture.ts) attaches later, after the first stylesheet's fonts,
+/// and takes these over then. At most 500 are kept. Bridge builds only, like this whole module.
+pub const EARLY_CSP: &str = r#"(() => {
+  const kept = [];
+  window.__sxEarlyCsp = kept;
+  document.addEventListener('securitypolicyviolation', (e) => {
+    if (window.__sxEarlyCsp !== kept || kept.length >= 500) return;
+    kept.push({ directive: e.effectiveDirective || e.violatedDirective || '', blocked: e.blockedURI || '', at: Date.now() });
+  });
+})();"#;
 
 /// The store's 16 bytes: the same identifier gives the same store on every build, so a run finds the last one's data.
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]

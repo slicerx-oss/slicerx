@@ -153,6 +153,14 @@ export function installCapture(win: Window & typeof globalThis): Capture {
   win.addEventListener('error', onError, true)
   win.addEventListener('unhandledrejection', onRejection)
   win.document.addEventListener('securitypolicyviolation', onCsp as EventListener)
+  // Refusals from before this ran: a bridge build's window collects them from the very start of the page, before its
+  // own stylesheets load (apps/desktop/src-tauri/src/agent_bridge/window.rs). They join the log with their own time,
+  // and the early collector stops, since the listener above takes over.
+  const early = (win as unknown as { __sxEarlyCsp?: { directive: string; blocked: string; at: number }[] | null }).__sxEarlyCsp
+  if (Array.isArray(early)) {
+    for (const e of early) push('console', { level: 'csp', at: new Date(e.at).toISOString(), text: `Refused by ${e.directive}: ${safeUrl(e.blocked, win.location.href)}`, early: true })
+    ;(win as unknown as { __sxEarlyCsp: null }).__sxEarlyCsp = null
+  }
   undo.push(() => {
     win.removeEventListener('error', onError, true)
     win.removeEventListener('unhandledrejection', onRejection)

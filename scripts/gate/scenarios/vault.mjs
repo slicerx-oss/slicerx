@@ -18,6 +18,17 @@ async function pictures(s) {
 /** A refused eval rather than a refused address (the page side resolves the blocked "eval" against the page). */
 export const isEvalProbe = (text) => /^Refused by script-src(-elem)?: (\S*\/)?eval$/.test(text)
 
+/**
+ * The font faces that did not load, each named by family, weight, style and unicode-range with how it ended. Every face
+ * the app declares must load: one the content security policy refuses ends in error, and on an English page a face for
+ * another script (Cyrillic, say) would otherwise never be fetched, so its refusal would stay silent.
+ */
+export function fontFailures(faces) {
+  return faces
+    .filter((f) => f.status !== 'loaded')
+    .map((f) => `${f.family} ${f.weight} ${f.style}${f.unicodeRange && f.unicodeRange !== 'U+0-10FFFF' ? ` (${f.unicodeRange})` : ''}: ${f.status}${f.error ? `, ${f.error}` : ''}`)
+}
+
 const kind = (img) => (/\/logo[^/]*$/i.test(img.url) || img.in === 'vault-creator' ? 'logo' : 'cover')
 
 export async function vault(s) {
@@ -51,6 +62,12 @@ export async function vault(s) {
   s.check('no picture failed to load', lost.length === 0, lost.map((e) => e.url).slice(0, 10))
   const refused = network.filter((e) => !e.resource && (e.status === null || e.status >= 400))
   s.check('the backend answered every call', refused.length === 0, refused.map((e) => `${e.method} ${e.status ?? e.error} ${e.url}`).slice(0, 10))
+  // Every font face, loaded on purpose (app_fonts), so a refusal shows even when nothing on screen needs that face and
+  // whether or not the platform reports refusals as events (WKWebView may not).
+  const fonts = await s.call('app_fonts', {})
+  const faces = fonts.data?.faces ?? []
+  const badFaces = fontFailures(faces)
+  s.check(`every font face the app declares loads (${faces.length - badFaces.length} of ${faces.length})`, !fonts.error && faces.length > 0 && badFaces.length === 0, fonts.error ?? badFaces)
   // Content security refusals over the whole run so far, not only this scenario. A refused eval is a library probing
   // whether eval is allowed (zod does at startup, in a try); nothing fails to load, so it is reported, not failed.
   const csp = ((await s.call('app_console', { since: 0, limit: 1000 })).data?.entries ?? []).filter((e) => e.level === 'csp')
