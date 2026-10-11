@@ -210,9 +210,11 @@ pub struct ThumbnailInput {
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RequestOptions {
-    /// List the config keys this engine never reads in the report (`configReport.notApplied`) and a warning. Off by
-    /// default: hosts that send a whole resolved profile would see every key the engine has no use for. `sx` turns it
-    /// on unless the request says otherwise.
+    /// Read the config a key at a time: a value the engine cannot use leaves only that setting at its default and is
+    /// listed (`configReport.invalid`), and the keys this engine never reads are listed too (`notApplied`), with a
+    /// warning per kind. Off by default: hosts that send a whole resolved profile would see every key the engine has no
+    /// use for, and a refused value names its key so the host can drop it. `sx` turns it on unless the request says
+    /// otherwise.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub config_report: Option<bool>,
     /// Refuse the slice when the config sets a key this engine never reads or a value it cannot use, instead of
@@ -378,7 +380,11 @@ pub struct ConfigReport {
     /// Our engine choices a project's settings did not change, kept over what the project inherited.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub kept: Vec<KeptChoice>,
+    /// Which wall generator the slice runs and why.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub walls: Option<WallsNote>,
 }
+
 /// One of our engine choices a project kept, and the note that says so.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct KeptChoice {
@@ -397,6 +403,8 @@ pub struct ProjectConfig {
     pub kept: Vec<KeptChoice>,
     /// Keys left out because a file may never set them.
     pub dropped: Vec<String>,
+    /// Which wall generator the project's settings give and why, when they name one or ours is kept.
+    pub walls: Option<WallsNote>,
 }
 
 /// Our engine choices: key, the value we print with, and the note.
@@ -467,6 +475,8 @@ pub fn project_config(bytes: &[u8], name: &str) -> Result<Option<ProjectConfig>>
                 .map(str::to_owned)
                 .collect()
         });
+    let app = crate::threemf::application(bytes);
+    let walls = project_walls(&settings, changed.as_ref(), app.as_deref());
     let mut kept = Vec::new();
     if let Some(changed) = changed {
         for (key, value, note) in engine_choices() {
@@ -486,7 +496,84 @@ pub fn project_config(bytes: &[u8], name: &str) -> Result<Option<ProjectConfig>>
         settings,
         kept,
         dropped: meta.dropped_keys,
+        walls,
     }))
+}
+
+/// The walls a project's settings give, by the rule that keeps our engine choices: ours where the project inherited
+/// its generator (`different_settings_to_system` does not list it), else the project's own.
+fn project_walls(
+    settings: &serde_json::Map<String, serde_json::Value>,
+    changed: Option<&std::collections::HashSet<String>>,
+    app: Option<&str>,
+) -> Option<WallsNote> {
+    let own = WallsNote::named(settings);
+    let ours = engine_choices()
+        .iter()
+        .find(|(k, _, _)| k == "wall_generator")
+        .and_then(|(_, v, _)| v.as_str().map(str::to_owned));
+    if let (Some(changed), Some(ours)) = (changed, ours)
+        && !changed.contains("wall_generator")
+    {
+        let maker = match app {
+            Some(a) if a.starts_with("BambuStudio") => "Bambu's",
+            Some(a) if a.starts_with("OrcaSlicer") => "OrcaSlicer's",
+            _ => "its preset's",
+        };
+        let text = match &own {
+            None => format!("{ours} walls, kept by SlicerX; the project names none"),
+            Some(o) if *o == ours => format!("{ours} walls, as the project has them"),
+            Some(o) => format!("{ours} walls, kept by SlicerX; the project used {maker} default {o}"),
+        };
+        return Some(WallsNote {
+            generator: ours,
+            source: "kept".to_owned(),
+            text,
+        });
+    }
+    own.map(|o| WallsNote {
+        text: format!("{o} walls, the project's own choice"),
+        generator: o,
+        source: "project".to_owned(),
+    })
+}
+
+/// Which wall generator a slice runs, where that came from, and the sentence that says so.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct WallsNote {
+    /// `aegis`, `arachne` or `classic`, as the config names it (`classic` when it names none).
+    pub generator: String,
+    /// `request` (the config sent), `default` (the engine's, the config names none), and for a project `kept` (our
+    /// engine choice over the one the project inherited), `project` (the project's own) or `config` (`--config`).
+    pub source: String,
+    pub text: String,
+}
+
+impl WallsNote {
+    /// The generator `config` names (`wall_generator`, or the older `perimeter_generator`), if any.
+    pub fn named(config: &serde_json::Map<String, serde_json::Value>) -> Option<String> {
+        ["wall_generator", "perimeter_generator"].iter().find_map(|k| {
+            let v = config.get(*k)?;
+            let v = v.as_array().and_then(|a| a.first()).unwrap_or(v);
+            v.as_str().map(str::to_owned)
+        })
+    }
+
+    /// The note for a config sent as it is: the generator it names, or the engine's default.
+    pub fn of_request(config: &serde_json::Map<String, serde_json::Value>, who: &str) -> Self {
+        match Self::named(config) {
+            Some(g) => Self {
+                text: format!("{g} walls, set by {who}"),
+                generator: g,
+                source: "request".to_owned(),
+            },
+            None => Self {
+                generator: "classic".to_owned(),
+                source: "default".to_owned(),
+                text: format!("classic walls, the engine's default ({who} names no wall_generator)"),
+            },
+        }
+    }
 }
 
 /// How many keys a warning names before it counts the rest.
@@ -521,6 +608,9 @@ impl ConfigReport {
         self.not_applied.sort();
         self.invalid.extend(other.invalid);
         self.kept.extend(other.kept);
+        if other.walls.is_some() {
+            self.walls = other.walls;
+        }
     }
 
     /// One line per kind, the first [`REPORT_NAMES`] keys named and the rest counted.
@@ -752,12 +842,19 @@ pub fn request_config_report(
     let strict = req.options.strict.unwrap_or(false);
     let mut config = PrintConfig::default();
     let mut report = ConfigReport::default();
+    // With the report asked for, a value the engine cannot use leaves only its own setting at the default and is
+    // listed. Without it the config is refused whole, naming the key, as hosts that drop a refused key and slice
+    // again (the app, with the profile's value back) expect.
+    let listed = strict || req.options.config_report.unwrap_or(false);
     if !req.config.is_null() {
-        report.invalid = config.apply_value_lenient(&req.config)?;
+        if listed {
+            report.invalid = config.apply_value_lenient(&req.config)?;
+        } else {
+            config = PrintConfig::from_value(&req.config)?;
+        }
     }
-    if (strict || req.options.config_report.unwrap_or(false))
-        && let Some(map) = req.config.as_object()
-    {
+    if listed && let Some(map) = req.config.as_object() {
+        report.walls = Some(WallsNote::of_request(map, "the request"));
         let placeholders = crate::config::placeholder_keys(map);
         report.not_applied = map
             .keys()
@@ -1270,7 +1367,7 @@ pub fn run_request_with(
             layer: None,
         });
     }
-    if !config_report.is_empty() {
+    if !config_report.is_empty() || config_report.walls.is_some() {
         report.config_report = Some(config_report);
     }
     if want_preview {
@@ -1423,7 +1520,7 @@ pub const REQUEST_SCHEMA: &str = r#"{
     "options": {
       "type": "object",
       "properties": {
-        "configReport": { "type": "boolean", "description": "List the config keys this engine never reads in the result's configReport.notApplied, with one warning. Off by default; sx turns it on" },
+        "configReport": { "type": "boolean", "description": "Read the config a key at a time: values the engine cannot use keep their defaults and are listed in configReport.invalid, and keys it never reads in configReport.notApplied, with a warning per kind. Off by default (a bad value refuses the slice, naming the key); sx turns it on" },
         "strict": { "type": "boolean", "description": "Refuse the slice when the config sets a key this engine never reads or a value it cannot use" },
         "engine": { "enum": ["sx", "orca"] },
         "flavor": { "enum": ["marlin2", "klipper", "reprapfirmware", "bambu", "marlin", "reprap", "repetier", "teacup", "makerware", "sailfish", "mach3", "machinekit", "smoothie", "no-extrusion", "griffin", "cheetah"] },

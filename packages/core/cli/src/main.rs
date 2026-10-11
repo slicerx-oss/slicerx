@@ -297,7 +297,12 @@ fn cmd_request(args: &[String]) -> ExitCode {
     }
     // The settings the slice did not use, as one block on stderr (stdout carries only the result).
     if let Some(r) = &run.report.config_report {
-        print_config_report(r);
+        if let Some(w) = &r.walls {
+            eprintln!("sx: walls: {}", w.text);
+        }
+        if !r.is_empty() {
+            print_config_report(r);
+        }
     }
     let mut out = match serde_json::to_value(&run.report) {
         Ok(v) => v,
@@ -562,13 +567,34 @@ fn layered_config(
         report.not_applied.extend(project.dropped);
         report.not_applied.sort();
         report.kept = project.kept;
+        report.walls = project.walls;
     }
-    if mesh.settings.as_object().is_some_and(|m| !m.is_empty()) {
+    if let Some(m) = mesh.settings.as_object().filter(|m| !m.is_empty()) {
         report.merge(read_config_value(&mut config, &mesh.settings)?);
+        if let Some(g) = sx_core::api::WallsNote::named(m) {
+            report.walls = Some(sx_core::api::WallsNote {
+                text: format!("{g} walls, set by the object's own settings"),
+                generator: g,
+                source: "project".to_owned(),
+            });
+        }
     }
     if let Some(p) = flag(args, "--config") {
         let value: Value = serde_json::from_slice(&std::fs::read(p)?)?;
         report.merge(read_config_value(&mut config, &value)?);
+        if let Some(g) = value.as_object().and_then(sx_core::api::WallsNote::named) {
+            report.walls = Some(sx_core::api::WallsNote {
+                text: format!("{g} walls, set by --config"),
+                generator: g,
+                source: "config".to_owned(),
+            });
+        }
+    }
+    if report.walls.is_none() {
+        report.walls = Some(sx_core::api::WallsNote::of_request(
+            &serde_json::Map::new(),
+            "the settings",
+        ));
     }
     Ok((config, report))
 }
@@ -591,6 +617,9 @@ fn cmd_slice(args: &[String]) -> Res<ExitCode> {
         None => Mesh::load(&bytes, model)?,
     };
     let (mut config, report) = layered_config(args, model, &bytes, &mesh)?;
+    if let Some(w) = &report.walls {
+        eprintln!("sx: walls: {}", w.text);
+    }
     if !report.is_empty() || !report.kept.is_empty() {
         print_config_report(&report);
     }

@@ -421,6 +421,7 @@ fn settings_the_engine_does_not_use_are_listed_and_strict_refuses() {
     assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
     let err = String::from_utf8_lossy(&out.stderr);
     assert!(err.contains("sx: settings not used:"), "{err}");
+    assert!(err.contains("sx: walls: "), "{err}");
     assert!(err.contains("not used zz_made_up_key"), "{err}");
     assert!(err.contains("invalid wall_loops = \"abc\""), "{err}");
     let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
@@ -508,7 +509,7 @@ fn zip(entries: &[(&str, &[u8])]) -> Vec<u8> {
 
 /// A 20 x 20 x 10 mm box as a 3MF, with `settings` as its `Metadata/project_settings.config` when given.
 fn box_3mf(settings: Option<&serde_json::Value>) -> Vec<u8> {
-    let model = r#"<?xml version="1.0" encoding="UTF-8"?><model unit="millimeter" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02"><resources><object id="1" type="model"><mesh><vertices><vertex x="0" y="0" z="0"/><vertex x="20" y="0" z="0"/><vertex x="20" y="20" z="0"/><vertex x="0" y="20" z="0"/><vertex x="0" y="0" z="10"/><vertex x="20" y="0" z="10"/><vertex x="20" y="20" z="10"/><vertex x="0" y="20" z="10"/></vertices><triangles><triangle v1="0" v2="2" v3="1"/><triangle v1="0" v2="3" v3="2"/><triangle v1="4" v2="5" v3="6"/><triangle v1="4" v2="6" v3="7"/><triangle v1="0" v2="1" v3="5"/><triangle v1="0" v2="5" v3="4"/><triangle v1="1" v2="2" v3="6"/><triangle v1="1" v2="6" v3="5"/><triangle v1="2" v2="3" v3="7"/><triangle v1="2" v2="7" v3="6"/><triangle v1="3" v2="0" v3="4"/><triangle v1="3" v2="4" v3="7"/></triangles></mesh></object></resources><build><item objectid="1" transform="1 0 0 0 1 0 0 0 1 100 100 0"/></build></model>"#;
+    let model = r#"<?xml version="1.0" encoding="UTF-8"?><model unit="millimeter" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02"><metadata name="Application">BambuStudio-01.10.02.73</metadata><resources><object id="1" type="model"><mesh><vertices><vertex x="0" y="0" z="0"/><vertex x="20" y="0" z="0"/><vertex x="20" y="20" z="0"/><vertex x="0" y="20" z="0"/><vertex x="0" y="0" z="10"/><vertex x="20" y="0" z="10"/><vertex x="20" y="20" z="10"/><vertex x="0" y="20" z="10"/></vertices><triangles><triangle v1="0" v2="2" v3="1"/><triangle v1="0" v2="3" v3="2"/><triangle v1="4" v2="5" v3="6"/><triangle v1="4" v2="6" v3="7"/><triangle v1="0" v2="1" v3="5"/><triangle v1="0" v2="5" v3="4"/><triangle v1="1" v2="2" v3="6"/><triangle v1="1" v2="6" v3="5"/><triangle v1="2" v2="3" v3="7"/><triangle v1="2" v2="7" v3="6"/><triangle v1="3" v2="0" v3="4"/><triangle v1="3" v2="4" v3="7"/></triangles></mesh></object></resources><build><item objectid="1" transform="1 0 0 0 1 0 0 0 1 100 100 0"/></build></model>"#;
     let text = settings.map(ToString::to_string);
     let mut entries: Vec<(&str, &[u8])> = vec![("3D/3dmodel.model", model.as_bytes())];
     if let Some(t) = &text {
@@ -560,6 +561,10 @@ fn a_project_slices_with_its_own_settings() {
     assert_eq!(layers(&own.stderr), 33);
     let err = String::from_utf8_lossy(&own.stderr);
     assert!(err.contains("Kept SlicerX's aegis walls"), "{err}");
+    assert!(
+        err.contains("sx: walls: aegis walls, kept by SlicerX; the project used Bambu's default classic"),
+        "{err}"
+    );
     // --config goes over the project.
     let cfg = dir.join("cfg.json");
     std::fs::write(&cfg, r#"{"layer_height":0.2,"initial_layer_print_height":0.2}"#).unwrap();
@@ -571,6 +576,27 @@ fn a_project_slices_with_its_own_settings() {
     let defaults = layers(&slice(&project, &["--no-project-settings"]).stderr);
     let bare = slice(&plain, &[]);
     assert_eq!(layers(&bare.stderr), defaults);
-    assert!(!String::from_utf8_lossy(&bare.stderr).contains("settings not used"));
+    let bare_err = String::from_utf8_lossy(&bare.stderr);
+    assert!(!bare_err.contains("settings not used"), "{bare_err}");
+    assert!(
+        bare_err.contains("sx: walls: classic walls, the engine's default"),
+        "{bare_err}"
+    );
+    // The project's own choice when it lists the generator as changed, and --config over either.
+    let mut chosen = settings.clone();
+    chosen["different_settings_to_system"] = serde_json::json!(["layer_height;wall_generator", "", ""]);
+    let chosen_path = dir.join("chosen.3mf");
+    std::fs::write(&chosen_path, box_3mf(Some(&chosen))).unwrap();
+    let err = String::from_utf8_lossy(&slice(&chosen_path, &[]).stderr).into_owned();
+    assert!(
+        err.contains("sx: walls: classic walls, the project's own choice"),
+        "{err}"
+    );
+    assert!(!err.contains("Kept SlicerX's aegis walls"), "{err}");
+    let arachne = dir.join("arachne.json");
+    std::fs::write(&arachne, r#"{"wall_generator":"arachne"}"#).unwrap();
+    let err = String::from_utf8_lossy(&slice(&project, &["--config", arachne.to_str().unwrap()]).stderr)
+        .into_owned();
+    assert!(err.contains("sx: walls: arachne walls, set by --config"), "{err}");
     let _ = std::fs::remove_dir_all(dir);
 }
