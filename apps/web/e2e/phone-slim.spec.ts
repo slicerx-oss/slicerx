@@ -52,6 +52,24 @@ test.describe('the slim studio on a phone', () => {
     expect(await page.evaluate(() => JSON.parse(localStorage.getItem('slicerx.prefs.v1') ?? '{}').settingsMode)).toBe('expert')
   })
 
+  test('Supports offers Off and Auto, and a project that paints them keeps Painted, edited on the desktop', async ({ page }) => {
+    await open(page)
+    await openSheet(page)
+    const supports = page.getByRole('radiogroup', { name: 'Supports' })
+    await expect(supports.getByRole('radio')).toHaveText(['Off', 'Auto'])
+    const height = (await supports.boundingBox())!.height
+    await page.evaluate(() => {
+      const sx = (window as unknown as { __sx: { getState(): { easy: object; easyTouched: string[] }; setState(p: unknown): void } }).__sx
+      const s = sx.getState()
+      sx.setState({ easy: { ...s.easy, supports: 'painted' }, easyTouched: [...s.easyTouched, 'supports'] })
+    })
+    await expect(supports.getByRole('radio')).toHaveText(['Off', 'Auto', 'Painted'])
+    await expect(supports.getByRole('radio', { name: 'Painted' })).toHaveAttribute('aria-checked', 'true')
+    await expect(page.getByText('The painted supports are edited on the desktop.')).toBeVisible()
+    // the row keeps its height with two options or three
+    expect((await supports.boundingBox())!.height).toBe(height)
+  })
+
   test('the Add menu offers files, the Vault and printer exports only', async ({ page }) => {
     await open(page)
     await openSheet(page)
