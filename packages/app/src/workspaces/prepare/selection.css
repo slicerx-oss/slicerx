@@ -5,5 +5,6 @@
 .slice-selbar .sx-selbar-actions { flex-wrap: nowrap; }
 .slice-selbar .sx-selbar-actions .sx-btn { padding-inline: 6px; }
 .slice-selbar .sx-selbar-count { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.selbar-transform { width: 320px; max-width: calc(100vw - 24px); padding: var(--s-3); }
+/* number rows read over cards behind: near opaque, still the lifted glass */
+.selbar-transform { width: 320px; max-width: calc(100vw - 24px); padding: var(--s-3); background: color-mix(in srgb, var(--ink-1) 98%, transparent); }
 .selbar-transform .tf { margin-top: 0; padding-top: 0; border-top: 0; }

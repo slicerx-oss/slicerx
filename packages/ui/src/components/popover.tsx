@@ -32,13 +32,14 @@ export function Popover({ open, onClose, label, align = 'start', className, chil
   useEffect(() => {
     if (!open) return
     returnTo.current ??= document.activeElement instanceof HTMLElement ? document.activeElement : null
-    ref.current?.querySelector<HTMLElement>(FOCUSABLE)?.focus()
+    // without scrolling: the first render sits in the pane before it is placed, and a focus there scrolled the pane
+    ref.current?.querySelector<HTMLElement>(FOCUSABLE)?.focus({ preventScroll: true })
   }, [open, lifted])
   useEffect(() => {
     if (open) return
     const back = returnTo.current
     returnTo.current = null
-    if (back?.isConnected) back.focus()
+    if (back?.isConnected) back.focus({ preventScroll: true })
   }, [open])
   if (!open) return null
   const box = (
