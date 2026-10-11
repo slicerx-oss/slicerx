@@ -6,9 +6,13 @@
 // docs/build-on-the-engine.md describe the JSON), run like the other geom tools.
 // The engine picks faces by triangle index; a client knows points, so the
 // lookups here turn a point on a face (and its normal) into that index.
+// Given a `design` instead of a model, a modeling tool adds a step to that
+// design's editable history (design.ts) rather than writing a loose STL.
 import { readFileSync } from 'node:fs'
+import { bakeMesh, keyOfTriangle, stepName, type FaceFrame, type HistoryMesh, type StepParams } from '@slicerx/cad-history'
 import { defineTool, type PilotTool } from '@slicerx/pilot'
 import { z } from 'zod'
+import { designArg, designSummary, type Design, type Designs } from './design'
 import { geomCaller, modelArg, vec3, type GeomToolDeps } from './geom'
 import { readStlPositions } from './mesh'
 import { resolveModel, ToolInputError } from './models'
@@ -42,8 +46,7 @@ interface Tri {
   area: number
 }
 
-function triangles(stlPath: string): Tri[] {
-  const pos = readStlPositions(readFileSync(stlPath))
+function soupTriangles(pos: ArrayLike<number>): Tri[] {
   const out: Tri[] = []
   for (let t = 0; t + 9 <= pos.length; t += 9) {
     const at = (k: number): V3 => [pos[t + k] ?? 0, pos[t + k + 1] ?? 0, pos[t + k + 2] ?? 0]
@@ -52,6 +55,20 @@ function triangles(stlPath: string): Tri[] {
     out.push({ p, n: unit(c) ?? [0, 0, 0], area: len(c) / 2 })
   }
   return out
+}
+
+const triangles = (stlPath: string): Tri[] => soupTriangles(readStlPositions(readFileSync(stlPath)))
+
+/** An indexed part as triangles, in triangle order. */
+function partTriangles(m: Pick<HistoryMesh, 'positions' | 'indices'>): Tri[] {
+  const pos = new Array<number>(m.indices.length * 3)
+  for (let k = 0; k < m.indices.length; k++) {
+    const i = (m.indices[k] ?? 0) * 3
+    pos[k * 3] = m.positions[i] ?? 0
+    pos[k * 3 + 1] = m.positions[i + 1] ?? 0
+    pos[k * 3 + 2] = m.positions[i + 2] ?? 0
+  }
+  return soupTriangles(pos)
 }
 
 /** Distance from a point to a triangle (closest point on the triangle, Ericson 5.1.5). */
@@ -180,8 +197,12 @@ const faceRef = z
     at: vec3.optional().describe('A point on the face, mm (the "at" of slicerx_geom_faces, or any point on it)'),
     normal: vec3.optional().describe('Outward normal of the face; needed when "at" lies on an edge'),
     triangle: z.number().int().min(0).optional().describe('Triangle index from slicerx_geom_faces, instead of a point'),
+    part: z.number().int().min(0).optional().describe('With a design and "triangle": the part the triangle is on (slicerx_geom_faces gives it)'),
   })
   .describe('The face: {"at":[x,y,z],"normal":[x,y,z]} or {"triangle":n}')
+
+const modelOrDesign = modelArg.optional().describe('Absolute path to an STL file, an http(s) URL, or a built-in model such as sample:x-mark; or give "design" instead')
+const partArg = z.number().int().min(0).optional().describe('With a design: the part to work on, from 0 (default 0)')
 
 const frameSchema = z
   .object({ origin: vec3, normal: vec3, u: vec3.optional(), v: vec3.optional() })
@@ -226,7 +247,9 @@ const shape = z
   .describe('What to extrude, in the plane: rectangle, circle, slot, polygon or text centered on placement.center, a free sketch of closed loops (as typed), or SVG artwork scaled to widthMm')
 
 const operation = z.enum(['new', 'join', 'cut']).default('new').describe('new: a separate body; join: add to target; cut: remove from target')
-const edgeRef = z.object({ a: vec3, b: vec3, face: vec3 }).describe('An edge as slicerx_geom_edge_pick returns it: end points a and b and the normal of its first face')
+const edgeRef = z
+  .object({ a: vec3, b: vec3, face: vec3, center: vec3.optional(), keys: z.tuple([z.number(), z.number()]).optional() })
+  .describe('An edge as slicerx_geom_edge_pick returns it: end points a and b, the normal of its first face, and on a design the keys of its two faces; pass it as is')
 
 /** Drops per-triangle lists from a reply; a client never needs them and they are long. */
 function lean(v: unknown): unknown {
@@ -235,9 +258,28 @@ function lean(v: unknown): unknown {
   return v
 }
 
-export function cadTools(deps: GeomToolDeps): PilotTool<never>[] {
+/** Tool input as the plain JSON a step keeps: absent fields left out rather than undefined. */
+const plain = <T>(v: unknown): T => JSON.parse(JSON.stringify(v)) as T
+
+/** Exactly one of a model and a design. */
+function oneOf(i: { model?: string | undefined; design?: string | undefined }): void {
+  if (!i.model === !i.design) throw new ToolInputError(i.model ? 'give "model" or "design", not both' : 'give "model" (an STL) or "design" (a design id)')
+}
+
+/** What a modeling tool returns for a design: the step it added and the design as it is now. */
+function stepOut(d: Design, verb: string): { summary: string; output: Record<string, unknown> } {
+  const s = d.history.steps[d.history.steps.length - 1]
+  return { summary: `${verb}: step ${d.history.steps.length}${s ? `, ${stepName(s)}` : ''}`, output: designSummary(d) }
+}
+
+export function cadTools(deps: GeomToolDeps & { designs?: Designs | undefined }): PilotTool<never>[] {
   const call = geomCaller(deps)
   const path = (model: string): Promise<string> => resolveModel(deps.policy, model)
+  const designOf = (id: string): Design => {
+    if (!deps.designs) throw new ToolInputError('Designs need the sx-geom engine, which this server did not find.', 'not_supported')
+    return deps.designs.get(id)
+  }
+  const designs = (): Designs => deps.designs!
   const target = async (model: string | undefined, op: string): Promise<Record<string, unknown>> => {
     if (op === 'new') return {}
     if (!model) throw new ToolInputError(`target: ${op} needs a target model`)
@@ -253,48 +295,97 @@ export function cadTools(deps: GeomToolDeps): PilotTool<never>[] {
     if (!face.at) throw new ToolInputError('face: give "at" (a point on the face) or "triangle"')
     return { triangle: triangleAt(tris, face.at, face.normal), at: face.at }
   }
+  /** A face of a design: its part, triangle, a point on it, its outward normal and its key. */
+  const pickIn = (d: Design, face: z.infer<typeof faceRef>): { part: number; triangle: number; at: V3; normal: V3; key: number | undefined } => {
+    if (face.triangle !== undefined) {
+      const part = face.part ?? 0
+      const p = d.parts[part]
+      if (!p) throw new ToolInputError(`part: the design has ${d.parts.length} part${d.parts.length === 1 ? '' : 's'}`)
+      const t = partTriangles(bakeMesh(p, d.transform))[face.triangle]
+      if (!t) throw new ToolInputError(`triangle: out of range (part ${part} has ${p.indices.length / 3})`)
+      const at = face.at ?? ([0, 1, 2].map((k) => ((t.p[0][k] ?? 0) + (t.p[1][k] ?? 0) + (t.p[2][k] ?? 0)) / 3) as V3)
+      const key = keyOfTriangle(p, face.triangle)
+      return { part, triangle: face.triangle, at, normal: t.n, key: key || undefined }
+    }
+    if (!face.at) throw new ToolInputError('face: give "at" (a point on the face) or "triangle"')
+    return { ...designs().faceAt(d, face.at, face.normal), at: face.at }
+  }
   const plane = (f: z.infer<typeof frameSchema> | undefined): Record<string, unknown> => (f ? { frame: frameFor(f.origin, f.normal, f.u) } : {})
+  const frameOf = (f: z.infer<typeof frameSchema> | undefined): FaceFrame | undefined => (f ? frameFor(f.origin, f.normal, f.u) : undefined)
+  const engine = (op: string, request: unknown): Promise<Record<string, unknown>> => designs().deps.engine(op, request) as Promise<Record<string, unknown>>
 
   const faces = defineTool({
     name: 'geom.faces',
-    version: '1.0.0',
+    version: '1.1.0',
     source: 'command',
     permission: 'read',
     description:
-      'List the flat faces of a model, largest first: a point "at" on each face, its outward normal, which axis it faces (+z (top), -x and so on), its area and center. Use a face\'s "at" and "normal" with slicerx_geom_face_pick, slicerx_geom_edge_pick or slicerx_geom_push_pull. Curved surfaces show up as many small faces.',
-    input: z.object({ model: modelArg, limit: z.number().int().min(1).max(500).default(40) }),
+      'List the flat faces of a model or a design, largest first: a point "at" on each face, its outward normal, which axis it faces (+z (top), -x and so on), its area and center; for a design also its part, its face key and the step that made it. Use a face\'s "at" and "normal" with slicerx_geom_face_pick, slicerx_geom_edge_pick or slicerx_geom_push_pull. Curved surfaces show up as many small faces.',
+    input: z.object({ model: modelOrDesign, design: designArg.optional(), part: partArg, limit: z.number().int().min(1).max(500).default(40) }),
     async run(i) {
-      const all = flatFaces(triangles(await path(i.model)))
+      oneOf(i)
+      let all: (FaceSummary & { part?: number; key?: number; madeBy?: string })[]
+      if (i.design) {
+        const d = designOf(i.design)
+        const names = new Map(d.history.steps.map((s) => [s.id, stepName(s)]))
+        all = d.parts
+          .flatMap((p, part) =>
+            i.part !== undefined && i.part !== part
+              ? []
+              : flatFaces(partTriangles(bakeMesh(p, d.transform))).map((f) => {
+                  const key = keyOfTriangle(p, f.triangle)
+                  const made = key ? d.madeBy[key] : undefined
+                  return { ...f, part, ...(key ? { key } : {}), madeBy: made ? (names.get(made) ?? made) : 'base' }
+                }),
+          )
+          .sort((a, b) => b.areaMm2 - a.areaMm2)
+      } else all = flatFaces(triangles(await path(i.model!)))
       return { summary: `${all.length} flat face${all.length === 1 ? '' : 's'}${all.length > i.limit ? `, the largest ${i.limit} listed` : ''}`, output: { count: all.length, faces: all.slice(0, i.limit) } }
     },
   })
 
   const facePick = defineTool({
     name: 'geom.face_pick',
-    version: '1.0.0',
+    version: '1.1.0',
     source: 'command',
     permission: 'read',
     description:
-      'Pick a flat face of a model: returns its sketch frame (origin, normal, u, v in mm), its outline in that frame, area and bounds. Pass the frame to slicerx_geom_extrude or slicerx_geom_revolve to sketch on the face; outline points are [u, v] in it.',
-    input: z.object({ model: modelArg, face: faceRef }),
+      'Pick a flat face of a model or a design: returns its sketch frame (origin, normal, u, v in mm), its outline in that frame, area and bounds. Pass the frame to slicerx_geom_extrude or slicerx_geom_revolve to sketch on the face; outline points are [u, v] in it.',
+    input: z.object({ model: modelOrDesign, design: designArg.optional(), face: faceRef }),
     async run(i) {
-      const stlPath = await path(i.model)
-      const out = await call('face.pick', { mesh: { stlPath }, ...(await pick(stlPath, i.face)) })
+      oneOf(i)
+      let out: Record<string, unknown>
+      if (i.design) {
+        const d = designOf(i.design)
+        const f = pickIn(d, i.face)
+        out = { ...(await engine('face.pick', { mesh: designs().item(d, f.part), triangle: f.triangle, at: f.at })), part: f.part, ...(f.key ? { key: f.key } : {}) }
+      } else {
+        const stlPath = await path(i.model!)
+        out = await call('face.pick', { mesh: { stlPath }, ...(await pick(stlPath, i.face)) })
+      }
       return { summary: `Picked a face of ${Math.round(Number(out['areaMm2'] ?? 0) * 100) / 100} mm2`, output: lean(out) }
     },
   })
 
   const edgePick = defineTool({
     name: 'geom.edge_pick',
-    version: '1.0.0',
+    version: '1.1.0',
     source: 'command',
     permission: 'read',
     description:
-      'Pick an edge for a fillet or chamfer: give a point on a flat face near the edge (or on the edge) and that face\'s normal. Returns the edge (pass it to slicerx_geom_fillet or slicerx_geom_chamfer as is), its length, whether it is convex, whether it can be filleted and why not, the largest radius and bevel that fit, the tangent chain it belongs to, and the loop of every edge around that face.',
-    input: z.object({ model: modelArg, face: faceRef.describe('The face the edge bounds: {"at":[x,y,z] near the edge,"normal":[x,y,z]} or {"triangle":n}') }),
+      'Pick an edge for a fillet or chamfer on a model or a design: give a point on a flat face near the edge (or on the edge) and that face\'s normal. Returns the edge (pass it to slicerx_geom_fillet or slicerx_geom_chamfer as is), its length, whether it is convex, whether it can be filleted and why not, the largest radius and bevel that fit, the tangent chain it belongs to, and the loop of every edge around that face.',
+    input: z.object({ model: modelOrDesign, design: designArg.optional(), face: faceRef.describe('The face the edge bounds: {"at":[x,y,z] near the edge,"normal":[x,y,z]} or {"triangle":n}') }),
     async run(i) {
-      const stlPath = await path(i.model)
-      const out = await call('edge.pick', { mesh: { stlPath }, ...(await pick(stlPath, i.face)) })
+      oneOf(i)
+      let out: Record<string, unknown>
+      if (i.design) {
+        const d = designOf(i.design)
+        const f = pickIn(d, i.face)
+        out = { ...(await engine('edge.pick', { mesh: designs().item(d, f.part), triangle: f.triangle, at: f.at })), part: f.part }
+      } else {
+        const stlPath = await path(i.model!)
+        out = await call('edge.pick', { mesh: { stlPath }, ...(await pick(stlPath, i.face)) })
+      }
       return { summary: out['supported'] ? `Picked an edge of ${String(out['lengthMm'])} mm, fillet up to ${String(out['maxRadiusMm'])} mm` : `Picked an edge that cannot be filleted: ${String(out['reason'] ?? '')}`, output: lean(out) }
     },
   })
@@ -307,43 +398,55 @@ export function cadTools(deps: GeomToolDeps): PilotTool<never>[] {
     description: 'Check sketch loops before extruding or revolving: whether they close and do not cross, which loops are holes, the filled area, and each problem with the loop and segment that causes it. There is no constraint solver; positions are as typed.',
     input: z.object({ loops }),
     async run(i) {
-      const out = await call('sketch.check', { loops: i.loops })
+      const out = deps.designs && !deps.bin ? await engine('sketch.check', { loops: i.loops }) : await call('sketch.check', { loops: i.loops })
       return { ok: out['ok'] === true, summary: out['ok'] === true ? `The sketch is closed, ${String(out['areaMm2'])} mm2` : `The sketch has ${Array.isArray(out['issues']) ? out['issues'].length : 0} problem(s)`, output: out }
     },
   })
 
   const extrude = defineTool({
     name: 'geom.extrude',
-    version: '1.0.0',
+    version: '1.1.0',
     source: 'command',
     permission: 'slice',
     description:
-      'Sketch and extrude: a shape (rectangle, circle, slot, polygon, text, a free sketch of lines and arcs, or SVG artwork) on the bed, any plane or a picked face, extruded as a new body, joined to a target model, or cut from it. Writes the result as an STL ("mesh") and the extruded solid ("tool"), with volume, bounds and whether it is watertight.',
+      'Sketch and extrude: a shape (rectangle, circle, slot, polygon, text, a free sketch of lines and arcs, or SVG artwork) on the bed, any plane or a picked face, extruded as a new body, joined to a target, or cut from it. With "design" it adds a step to the design (a new body becomes a new part; join and cut work on "part") and returns the design; with a model it writes the result as an STL ("mesh") and the extruded solid ("tool"), with volume, bounds and whether it is watertight.',
     input: z.object({
       shape,
       frame: frameSchema.optional(),
       placement: z.object({ center: vec2.optional(), rotationDeg: z.number().optional() }).optional().describe('Where the shape sits in the plane: center [u, v] and rotation, degrees'),
       distance_mm: z.number().positive().max(10_000),
-      extent: z.enum(['oneSide', 'symmetric', 'twoSides']).default('oneSide'),
+      extent: z.enum(['oneSide', 'symmetric', 'twoSides']).default('oneSide').describe('oneSide: distance_mm out from the plane; symmetric: distance_mm to each side; twoSides: distance_mm and distance2_mm'),
       distance2_mm: z.number().positive().max(10_000).optional().describe('Second distance for extent twoSides'),
       flip: z.boolean().optional().describe('Reverse the direction. By default new and join go out along the plane normal and cut goes into the face'),
       taper_deg: z.number().min(-45).max(45).optional().describe('Draft angle; positive narrows away from the plane'),
       operation,
       target: modelArg.optional().describe('The model to join to or cut from'),
+      design: designArg.optional(),
+      part: partArg,
+      name: z.string().min(1).max(120).optional().describe('With a design: the name of the new part a new body makes'),
     }),
     async run(i) {
       const spec = { distanceMm: i.distance_mm, extent: i.extent, operation: i.operation, ...(i.distance2_mm !== undefined ? { distance2Mm: i.distance2_mm } : {}), ...(i.flip !== undefined ? { flip: i.flip } : {}), ...(i.taper_deg !== undefined ? { taperDeg: i.taper_deg } : {}) }
+      const verb = i.operation === 'cut' ? 'Cut' : i.operation === 'join' ? 'Joined' : 'Extruded'
+      if (i.design) {
+        if (i.target) throw new ToolInputError('target: with a design, join and cut work on its "part"')
+        const d = designOf(i.design)
+        const frame = frameOf(i.frame)
+        const params: StepParams = plain({ op: 'shape.extrude', frame, shape: i.shape, placement: i.placement, spec, name: i.name })
+        await designs().add(d, i.operation === 'new' ? d.parts.length : (i.part ?? 0), params)
+        return stepOut(d, verb)
+      }
       const out = await call('shape.extrude', { shape: i.shape, ...plane(i.frame), ...(i.placement ? { placement: i.placement } : {}), spec, ...(await target(i.target, i.operation)) })
-      return { summary: `${i.operation === 'cut' ? 'Cut' : i.operation === 'join' ? 'Joined' : 'Extruded'} a ${i.shape.type} ${i.distance_mm} mm`, output: out }
+      return { summary: `${verb} a ${i.shape.type} ${i.distance_mm} mm`, output: out }
     },
   })
 
   const revolve = defineTool({
     name: 'geom.revolve',
-    version: '1.0.0',
+    version: '1.1.0',
     source: 'command',
     permission: 'slice',
-    description: 'Revolve a sketch profile around an axis in its plane, up to 360 degrees, as a new body, joined to a target or cut from it. The profile must stay on one side of the axis. Writes the result as an STL.',
+    description: 'Revolve a sketch profile around an axis in its plane, up to 360 degrees, as a new body, joined to a target or cut from it. The profile must stay on one side of the axis. With "design" it adds a step to the design; with no design it writes the result as an STL.',
     input: z.object({
       loops,
       frame: frameSchema.optional(),
@@ -351,8 +454,19 @@ export function cadTools(deps: GeomToolDeps): PilotTool<never>[] {
       angle_deg: z.number().positive().max(360).default(360),
       operation,
       target: modelArg.optional(),
+      design: designArg.optional(),
+      part: partArg,
+      name: z.string().min(1).max(120).optional().describe('With a design: the name of the new part a new body makes'),
     }),
     async run(i) {
+      if (i.design) {
+        if (i.target) throw new ToolInputError('target: with a design, join and cut work on its "part"')
+        const d = designOf(i.design)
+        const frame = frameOf(i.frame)
+        const params: StepParams = plain({ op: 'sketch.revolve', frame, loops: i.loops, axis: i.axis, angleDeg: i.angle_deg, operation: i.operation, name: i.name })
+        await designs().add(d, i.operation === 'new' ? d.parts.length : (i.part ?? 0), params)
+        return stepOut(d, 'Revolved')
+      }
       const out = await call('sketch.revolve', { loops: i.loops, ...plane(i.frame), axis: i.axis, angleDeg: i.angle_deg, operation: i.operation, ...(await target(i.target, i.operation)) })
       return { summary: `Revolved the sketch ${i.angle_deg} degrees`, output: out }
     },
@@ -360,15 +474,23 @@ export function cadTools(deps: GeomToolDeps): PilotTool<never>[] {
 
   const push = defineTool({
     name: 'geom.push_pull',
-    version: '1.0.0',
+    version: '1.1.0',
     source: 'command',
     permission: 'slice',
-    description: 'Push or pull a flat face of a model along its normal: a positive distance pulls it out and adds material, a negative one pushes it in and cuts; pushing past the far side makes a hole. Writes the new STL and reports the volume change and the moved face.',
-    input: z.object({ model: modelArg, face: faceRef, distance_mm: z.number().min(-10_000).max(10_000).refine((d) => d !== 0, 'must not be zero') }),
+    description: 'Push or pull a flat face of a model or a design along its normal: a positive distance pulls it out and adds material, a negative one pushes it in and cuts; pushing past the far side makes a hole. With "design" it adds a step to the design; with a model it writes the new STL and reports the volume change and the moved face.',
+    input: z.object({ model: modelOrDesign, design: designArg.optional(), face: faceRef, distance_mm: z.number().min(-10_000).max(10_000).refine((d) => d !== 0, 'must not be zero') }),
     async run(i) {
-      const stlPath = await path(i.model)
+      oneOf(i)
+      const verb = i.distance_mm > 0 ? 'Pulled' : 'Pushed'
+      if (i.design) {
+        const d = designOf(i.design)
+        const f = pickIn(d, i.face)
+        await designs().add(d, f.part, { op: 'face.push', at: f.at, normal: f.normal, distanceMm: i.distance_mm, ...(f.key ? { faceKey: f.key } : {}) })
+        return stepOut(d, verb)
+      }
+      const stlPath = await path(i.model!)
       const out = await call('face.push', { mesh: { stlPath }, ...(await pick(stlPath, i.face)), distanceMm: i.distance_mm })
-      return { summary: `${i.distance_mm > 0 ? 'Pulled' : 'Pushed'} the face ${Math.abs(i.distance_mm)} mm`, output: out }
+      return { summary: `${verb} the face ${Math.abs(i.distance_mm)} mm`, output: out }
     },
   })
 
@@ -378,7 +500,7 @@ export function cadTools(deps: GeomToolDeps): PilotTool<never>[] {
     version: '1.0.0',
     source: 'command',
     permission: 'slice',
-    description: 'Union, subtract or intersect closed models: union joins "model" and every model in "with", subtract removes them from "model", intersect keeps what they share. Writes one manifold STL, or fails with a reason.',
+    description: 'Union, subtract or intersect closed models: union joins "model" and every model in "with", subtract removes them from "model", intersect keeps what they share. Writes one manifold STL, or fails with a reason. For a design, join or cut with slicerx_geom_extrude, or subtract boxes and cylinders with slicerx_geom_subtract.',
     input: z.object({ op: z.enum(['union', 'subtract', 'intersect']), model: modelArg, with: z.array(modelArg).min(1).max(32) }),
     async run(i) {
       const a = [{ stlPath: await path(i.model) }]
@@ -390,33 +512,46 @@ export function cadTools(deps: GeomToolDeps): PilotTool<never>[] {
 
   const edges = z.array(edgeRef).min(1).max(256)
   const plural = (n: number): string => `${n} edge${n === 1 ? '' : 's'}`
+  const edgePart = (d: Design, e: { edges: z.infer<typeof edges>; part?: number | undefined }): number => e.part ?? designs().partAt(d, e.edges[0]!.a)
 
   const fillet = defineTool({
     name: 'geom.fillet',
-    version: '1.0.0',
+    version: '1.1.0',
     source: 'command',
     permission: 'slice',
     description:
-      'Round straight edges where two flat faces meet, with one radius: convex edges lose material, concave edges gain it, and three filleted edges at a corner get a sphere patch. Take the edges from slicerx_geom_edge_pick (its chain or loop picks several). Writes the new STL.',
-    input: z.object({ model: modelArg, edges, radius_mm: z.number().positive().max(1000), tolerance_mm: z.number().min(0.001).max(1).optional().describe('Chord tolerance of the round, default 0.01 mm') }),
+      'Round straight edges where two flat faces meet, with one radius: convex edges lose material, concave edges gain it, and three filleted edges at a corner get a sphere patch. Take the edges from slicerx_geom_edge_pick (its chain or loop picks several). With "design" it adds a step to the design; with a model it writes the new STL.',
+    input: z.object({ model: modelOrDesign, design: designArg.optional(), part: partArg, edges, radius_mm: z.number().positive().max(1000), tolerance_mm: z.number().min(0.001).max(1).optional().describe('Chord tolerance of the round, default 0.01 mm') }),
     async run(i) {
-      const { model, ...rest } = i
-      const out = await call('edge.fillet', { mesh: { stlPath: await path(model) }, ...rest })
+      oneOf(i)
+      if (i.design) {
+        const d = designOf(i.design)
+        await designs().add(d, edgePart(d, i), { op: 'edge.fillet', edges: plain(i.edges), radiusMm: i.radius_mm, ...(i.tolerance_mm !== undefined ? { toleranceMm: i.tolerance_mm } : {}) })
+        return stepOut(d, 'Filleted')
+      }
+      const { model, design: _d, part: _p, ...rest } = i
+      const out = await call('edge.fillet', { mesh: { stlPath: await path(model!) }, ...rest })
       return { summary: `Filleted ${plural(i.edges.length)} at ${i.radius_mm} mm`, output: out }
     },
   })
 
   const chamfer = defineTool({
     name: 'geom.chamfer',
-    version: '1.0.0',
+    version: '1.1.0',
     source: 'command',
     permission: 'slice',
     description:
-      "Bevel straight edges where two flat faces meet, set back by distance_mm on each face (or distance_mm on the edge's own face and distance2_mm on the other). Take the edges from slicerx_geom_edge_pick. Writes the new STL.",
-    input: z.object({ model: modelArg, edges, distance_mm: z.number().positive().max(1000), distance2_mm: z.number().positive().max(1000).optional() }),
+      "Bevel straight edges where two flat faces meet, set back by distance_mm on each face (or distance_mm on the edge's own face and distance2_mm on the other). Take the edges from slicerx_geom_edge_pick. With \"design\" it adds a step to the design; with a model it writes the new STL.",
+    input: z.object({ model: modelOrDesign, design: designArg.optional(), part: partArg, edges, distance_mm: z.number().positive().max(1000), distance2_mm: z.number().positive().max(1000).optional() }),
     async run(i) {
-      const { model, ...rest } = i
-      const out = await call('edge.chamfer', { mesh: { stlPath: await path(model) }, ...rest })
+      oneOf(i)
+      if (i.design) {
+        const d = designOf(i.design)
+        await designs().add(d, edgePart(d, i), { op: 'edge.chamfer', edges: plain(i.edges), distanceMm: i.distance_mm, ...(i.distance2_mm !== undefined ? { distance2Mm: i.distance2_mm } : {}) })
+        return stepOut(d, 'Chamfered')
+      }
+      const { model, design: _d, part: _p, ...rest } = i
+      const out = await call('edge.chamfer', { mesh: { stlPath: await path(model!) }, ...rest })
       return { summary: `Chamfered ${plural(i.edges.length)} at ${i.distance_mm} mm`, output: out }
     },
   })
