@@ -4,7 +4,7 @@
 // printer and filament presets from knowledge/, and the Easy intent presets.
 import type { EasyGoal, SettingSection, SettingValue } from '@slicerx/contracts'
 import { EASY_GOALS } from '@slicerx/contracts'
-import { applyEasy, goalEasy, listFilamentFamilies, listPrinterProfiles, listProcessPresets, loadVendorFile, printerConfig, printerProfile, processConfig, resolveFilamentPreset, type VendorFile } from '@slicerx/settings'
+import { applyEasy, EASY_MAP, goalEasy, hasResolved, listFilamentFamilies, listPrinterProfiles, listProcessPresets, loadVendorFile, printerConfig, printerProfile, processConfig, resolvedNozzles, resolvedProfile, resolveFilamentPreset, type VendorFile } from '@slicerx/settings'
 import { normalizeId, type DataStore } from './data'
 import { defaultConfig, filamentLayer, layerConfig, printerLayer, sameValue } from './settings'
 
@@ -31,10 +31,27 @@ const STOCK_FILAMENT = 'stock-filament:'
 /**
  * A fresh SlicerX plate's process: the Standard preset (0.20 mm) with sleipnir (variable layer height, Quality) and
  * aegis walls. The default when a slice names no process. sx plans sleipnir's layers itself, with the planner the
- * app uses, so a slice through this server gets the app's layers.
+ * app uses, so a slice through this server gets the app's layers. It sets no supports: the slice takes them from the
+ * printer (`ProfileCatalog.defaultSupports`), as the app does.
  */
 export const SLICERX_DEFAULT_PROCESS = 'process:slicerx-default'
 const DEFAULT_PROCESS_KEYS = { smart_layer: 'quality', wall_generator: 'aegis' } as const
+
+/** The keys the Easy supports control writes. */
+export const SUPPORT_KEYS: readonly string[] = [...new Set(EASY_MAP.rules.filter((r) => r.control === 'supports').flatMap((r) => (r.op === 'set' ? [r.key] : r.keys)))]
+
+/** The support keys each maker's own Standard preset sets, by `<printer id>@<nozzle>`. */
+async function loadMakerSupports(): Promise<Map<string, Record<string, SettingValue>>> {
+  const out = new Map<string, Record<string, SettingValue>>()
+  for (const p of listPrinterProfiles()) {
+    if (!hasResolved(p.id)) continue
+    for (const nozzle of await resolvedNozzles(p.id)) {
+      const process = (await resolvedProfile(p.id, 'standard', nozzle))?.process as Record<string, SettingValue> | undefined
+      if (process) out.set(`${p.id}@${nozzle}`, Object.fromEntries(SUPPORT_KEYS.filter((k) => process[k] !== undefined).map((k) => [k, process[k] as SettingValue])))
+    }
+  }
+  return out
+}
 
 /** `stock-filament:BBL/Bambu PLA Basic @BBL A1` into its vendor folder, product and printer variant. */
 function stockParts(id: string): { vendor: string; family: string; variant?: string } | undefined {
@@ -51,12 +68,18 @@ export class ProfileCatalog {
   private all: ProfileSummary[] | undefined
   /** Stock filament vendor files are megabytes, so they load on first use (`prepare`). */
   private readonly vendors = new Map<string, VendorFile>()
+  /** The makers' Standard presets' supports (`loadMakerSupports`), loaded on first use (`prepare`). */
+  private makerLoad: Promise<Map<string, Record<string, SettingValue>>> | undefined
+  private maker: Map<string, Record<string, SettingValue>> | undefined
 
   constructor(store: DataStore) {
     this.store = store
   }
 
-  /** Loads what `get` needs for these profiles: the vendor files of stock filament presets. Call before `get`. */
+  /**
+   * Loads what `get` needs for these profiles, the vendor files of stock filament presets, and what `defaultSupports`
+   * needs, the makers' process presets. Call before either.
+   */
   async prepare(queries: readonly string[]): Promise<void> {
     for (const q of queries) {
       const p = this.find(q)
@@ -66,6 +89,29 @@ export class ProfileCatalog {
         if (file) this.vendors.set(parts.vendor, file)
       }
     }
+    this.makerLoad ??= loadMakerSupports()
+    this.maker = await this.makerLoad
+  }
+
+  /**
+   * The supports for a slice that names no process, as the app sets them on a fresh plate: with the maker's own Standard
+   * preset for this printer and nozzle, that preset's (the schema defaults for the keys it leaves out, so off on Bambu
+   * Lab's); with no printer, or one the makers ship no preset for, SlicerX's Standard tier's.
+   */
+  defaultSupports(printer: { printerId: string; nozzle?: number | undefined } | undefined): Record<string, SettingValue> {
+    if (!this.maker) throw new Error('ProfileCatalog.prepare must run before defaultSupports')
+    const nozzle = printer ? (printer.nozzle ?? printerProfile(printer.printerId)?.defaultNozzle) : undefined
+    const own = printer ? this.maker.get(`${printer.printerId}@${nozzle}`) : undefined
+    const from = own ? { ...defaultConfig(this.store), ...own } : (processConfig('standard') as unknown as Record<string, SettingValue>)
+    return Object.fromEntries(SUPPORT_KEYS.flatMap((k) => (from[k] === undefined ? [] : [[k, from[k] as SettingValue]])))
+  }
+
+  /** The printer model a printer profile stands for: `machine:<id>` itself, a knowledge printer by its name. */
+  printerModel(query: string): string | undefined {
+    const p = this.find(query)
+    if (p?.section !== 'printer') return undefined
+    if (p.id.startsWith('machine:')) return p.id.slice('machine:'.length)
+    return listPrinterProfiles().find((m) => `${m.vendor} ${m.model}` === p.name || m.model === p.name)?.id
   }
 
   list(): ProfileSummary[] {
@@ -130,8 +176,9 @@ export class ProfileCatalog {
       return preset ? { ...summary, config: preset.config as unknown as Record<string, SettingValue>, chain: [preset.name], unknown_keys: Object.keys(preset.extras).sort() } : undefined
     }
     if (summary.id === SLICERX_DEFAULT_PROCESS) {
-      const config = processConfig('standard')
-      return config ? { ...summary, config: { ...(config as unknown as Record<string, SettingValue>), ...DEFAULT_PROCESS_KEYS }, chain: ['Standard', summary.name], unknown_keys: [] } : undefined
+      const config = processConfig('standard') as unknown as Record<string, SettingValue> | undefined
+      const own = config ? Object.fromEntries(Object.entries(config).filter(([k]) => !SUPPORT_KEYS.includes(k))) : undefined
+      return own ? { ...summary, config: { ...own, ...DEFAULT_PROCESS_KEYS }, chain: ['Standard', summary.name], unknown_keys: [] } : undefined
     }
     if (kind === 'process') {
       const config = processConfig(id)
