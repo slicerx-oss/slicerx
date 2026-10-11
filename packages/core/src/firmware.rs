@@ -532,7 +532,8 @@ pub fn sequence_marker(e_units: &[i64]) -> String {
 /// `T255`), not filaments.
 const SEQ_SLOTS: usize = 64;
 
-/// Reads the filament a start or end sequence pushes out, from its text. The rule:
+/// Reads the filament a start or end sequence pushes out, from its text. The rule is for those two sequences
+/// only; a tool change block inside the layers counts all of its extrusion, conditional or not. The rule:
 /// - Every positive E counts, with or without XY motion: purge lines, chute purges and primes all leave the
 ///   nozzle.
 /// - A negative E (a retraction) counts nothing and is owed: the next positive E of that filament first
