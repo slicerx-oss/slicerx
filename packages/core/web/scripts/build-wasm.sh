@@ -3,7 +3,7 @@
 # Copyright (C) 2026 The SlicerX contributors
 # Builds sx-wasm and copies it to pkg/ (generated, git-ignored), where
 # createWebSlicer() looks for it by default. Fails when the module is over its
-# download budget, 1048 KB gzip.
+# download budget, 1056 KB gzip.
 set -eu
 here=$(cd "$(dirname "$0")/.." && pwd)
 root=$(cd "$here/../../.." && pwd)
@@ -49,7 +49,9 @@ fi
 # gzip level 9 in node's zlib, as apps/web/scripts/bundle-size.mjs measures it
 gz=$(node -e 'console.log(require("node:zlib").gzipSync(require("node:fs").readFileSync(process.argv[1]), { level: 9 }).length)' "$pkg/sx_wasm.wasm")
 echo "pkg/sx_wasm.wasm: $(wc -c < "$pkg/sx_wasm.wasm") bytes, $gz gzip"
-if [ "$gz" -gt $((1048 * 1024)) ]; then
-  echo "build-wasm: $gz bytes gzip is over the 1048 KB budget" >&2
+# 1056 KB (1,081,344 B): raised from 1048 KB when the browser engine's loadModel started reading a 3MF project's
+# part types (cuts, modifiers, support volumes); the owner's direction is that web size is not a constraint here.
+if [ "$gz" -gt $((1056 * 1024)) ]; then
+  echo "build-wasm: $gz bytes gzip is over the 1056 KB budget" >&2
   exit 1
 fi
