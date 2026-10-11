@@ -16,6 +16,7 @@ import { SelectionActions } from './selection-bar'
 import { ObjectRow } from './object-row'
 import { useMore } from '../../shell/more'
 import { usePhoneLayout } from '../../lib/phone-layout'
+import { Loading } from '../../shell/loading'
 import './objects.css'
 
 const ObjectVolumes = lazy(() => import('./object-volumes').then((m) => ({ default: m.ObjectVolumes })))
@@ -111,7 +112,7 @@ function ToolSlot({ children, onDone, label, footer }: { children: React.ReactNo
           Done
         </Button>
       )}
-      <Suspense fallback={<div className="ws-loading" aria-busy="true" />}>{children}</Suspense>
+      <Suspense fallback={<Loading />}>{children}</Suspense>
     </div>
   )
 }

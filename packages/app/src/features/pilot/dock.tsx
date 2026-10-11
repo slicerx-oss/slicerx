@@ -18,6 +18,7 @@ import { closeDock, toggleDock, useDockOpen } from './dock-state'
 import { watchOf, type Watch } from './watch'
 import { usePilot } from './use-pilot'
 import { ChatGptCard } from '../../pilot-connect/chatgpt-card'
+import { Loading } from '../../shell/loading'
 import './dock.css'
 
 const MODE_WORD: Record<PermissionMode, string> = { allow: 'Allow', ask: 'Ask first', off: 'Off' }
@@ -48,7 +49,7 @@ function DockBody() {
   const [announcement, setAnnouncement] = useState('')
   const [policy, setPolicyState] = useState<PermissionPolicy | null>(null)
   const watching = useWatching()
-  if (!pilot) return <div className="ws-loading" aria-busy="true" />
+  if (!pilot) return <Loading />
   return <DockRun pilot={pilot} sessionId={sessionId} onNewSession={() => setSessionId(`s_${Date.now().toString(36)}`)} prompt={prompt} showThinking={showThinking} setShowThinking={setShowThinking} more={more} setMore={setMore} announcement={announcement} setAnnouncement={setAnnouncement} policy={policy ?? pilot.policy()} setPolicy={setPolicyState} watching={watching} />
 }
 

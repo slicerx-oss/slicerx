@@ -10,12 +10,13 @@ import { signOutSession, useAccountLabel, useSession, useStore } from './queries
 import { openExternal, privacyUrl } from './routes'
 import { openEditor, openUpload } from './sheets'
 import { SignInNotice } from './signin'
+import { Loading } from '../../shell/loading'
 
 export default function Account() {
   const store = useStore()
   const { session, ready } = useSession()
   if (!store) return <p className="sx-muted">This build has no accounts.</p>
-  if (!ready) return <div className="ws-loading" aria-busy="true" />
+  if (!ready) return <Loading />
   if (!session) {
     return (
       <section className="set-sec" aria-labelledby="acct-h">

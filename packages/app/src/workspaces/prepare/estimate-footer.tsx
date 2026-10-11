@@ -17,6 +17,7 @@ import { sequenceProblem } from '../../plate/sequence-check'
 import { cancelSlice, exportGcode, sendToPrinter, slicePlate } from '../../state/actions'
 import { get, showSliced, shownSlice, toast, useApp } from '../../state/store'
 import { sliceFraction } from '../slice-progress'
+import { Loading } from '../../shell/loading'
 import './estimate-footer.css'
 
 const SliceGlide = lazy(() => import('../../ravens/waits').then((m) => ({ default: m.SliceGlide })))
@@ -155,7 +156,7 @@ export function SliceBlock({ label = 'Slice plate' }: { label?: string; compact?
             {formatDuration(r.stats.timeS)}
           </button>
           <Popover open={breakdown} onClose={() => setBreakdown(false)} label="Estimate breakdown" className="est-pop">
-            <Suspense fallback={<div className="ws-loading" aria-busy="true" />}>
+            <Suspense fallback={<Loading />}>
               <Breakdown />
             </Suspense>
           </Popover>

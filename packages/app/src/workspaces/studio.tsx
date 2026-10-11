@@ -42,6 +42,7 @@ import { SliceProgress } from './slice-progress'
 import { useOverlayOffset, type OverlaySelectors } from '../lib/overlay-offset'
 import { useCompactLayout, usePhoneLayout } from '../lib/phone-layout'
 import { ModeChip } from '../first-run/mode-chip'
+import { Loading } from '../shell/loading'
 
 const PREPARE_LEFT: PaneSection[] = [
   { id: 'printer', icon: 'section-printer', label: 'Printer' },
@@ -183,7 +184,7 @@ export function Studio() {
       ) : null}
       {design ? (
         <SidePane key={`design-${side}`} side={side} ws={railKey('prepare', 'design')} label="Model" sections={DESIGN_TREE} width={280} tab={{ panel: 'model-tree', shutFully: true }}>
-          <Suspense fallback={<div className="ws-loading" aria-busy="true" />}>
+          <Suspense fallback={<Loading />}>
             <DesignLeft />
           </Suspense>
         </SidePane>
@@ -271,7 +272,7 @@ export function Studio() {
 
       {design ? (
         <SidePane key={`design-${other}`} side={other} ws={railKey('prepare', 'design')} label="Tool and transform" sections={DESIGN_TOOL} width={312} tab={{ panel: 'model-inspector', shutFully: true }}>
-          <Suspense fallback={<div className="ws-loading" aria-busy="true" />}>
+          <Suspense fallback={<Loading />}>
             <DesignRight />
           </Suspense>
         </SidePane>

@@ -40,6 +40,7 @@ import { needsAgreement } from './first-run/agreement-check'
 import { onboardingRerun } from './first-run/onboarding'
 import { hasLegacySetupPrinters, withHandPrinters } from './lib/hand-printers'
 import './styles/fonts'
+import { Loading } from './shell/loading'
 import './styles/app.css'
 
 const CalibrationDialog = lazy(() => import('./calibration/dialog').then((m) => ({ default: m.CalibrationDialog })))
@@ -242,7 +243,7 @@ function Shell() {
       <Frame bar={<TopBar />} status={<Status />} className="app" data-workspace={workspace}>
         <WorkspaceBoundary name={current?.label ?? 'This workspace'}>
           {covered ? null : (
-            <Suspense fallback={<div className="ws-loading" aria-busy="true" />}>
+            <Suspense fallback={<Loading />}>
               {workspace === 'prepare' ? <Studio /> : null}
               {workspace === 'library' ? <Library /> : null}
               {Feature ? <Feature /> : null}

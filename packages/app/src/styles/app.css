@@ -24,7 +24,12 @@ a { color: var(--purple); }
 .display { font-family: var(--f-display); font-weight: var(--fw-semibold); letter-spacing: -.02em; }
 .mt6 { margin-top: 6px; }
 
-.ws-loading { height: 100%; background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--purple) 6%, transparent), transparent); background-size: 200% 100%; animation: shimmer 1.4s linear infinite; }
+/* A load that takes a moment reads as one: a sheen strong enough to see in both themes, and the word after 400 ms, so a
+   quick load never flashes it. With motion reduced the sheen holds still as a tint. */
+.ws-loading { height: 100%; display: grid; place-items: center; background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--purple) 16%, transparent), transparent); background-size: 200% 100%; animation: shimmer 1.4s linear infinite; }
+.ws-loading > span { font: var(--fw-medium) var(--fs-body)/1 var(--f-body); color: var(--muted); opacity: 0; animation: ws-loading-in 160ms var(--ease) 400ms forwards; }
+:root[data-motion="reduced"] .ws-loading { background: color-mix(in srgb, var(--purple) 6%, transparent); }
+@keyframes ws-loading-in { to { opacity: 1; } }
 @keyframes shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
 
 /* pane contents */
