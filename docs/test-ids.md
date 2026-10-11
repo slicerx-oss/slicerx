@@ -105,6 +105,7 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | `slice-estimate-error` | The engine's message when a slice fails |
 | `slice-estimate-held` | The footer's quiet line when Auto slice holds a big plate's slice for Slice |
 | `danger-slice-print` | Print, the footer's main action (opens the Print sheet; the bridge refuses it) |
+| `check-show` | Show me on a Print sheet check that blocks the print and has a place in the slice: closes the sheet and opens the toolpaths there |
 | `slice-estimate-export-gcode` | Export G-code, the main action for an export-only printer |
 | `slice-estimate-slice` | Slice, the main action with Auto slice off, and Slice again beside Print |
 | `slice-output-menu` | The menu half of the main action |
