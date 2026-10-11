@@ -4,6 +4,7 @@
 // first-run state. The viewport reads its own camera map by id, the app shell reads `layout`,
 // the theme reads `look`. The preset values live in @slicerx/ui (docs/look-and-feel.md), not here.
 // The other presets are described as "<name> style". No logos or artwork from those apps.
+import { productName } from './brand'
 
 export const LOOK_IDS = ['slicerx', 'bambu-studio', 'prusaslicer', 'orcaslicer'] as const
 export type LookId = (typeof LOOK_IDS)[number]
@@ -74,7 +75,13 @@ export interface LookAndFeelPreset {
 
 /** Picker labels, in the owner's order. The full preset (layout, look) comes from @slicerx/ui `resolvePreset`. */
 export const LOOK_OPTIONS: Record<LookId, { label: string; summary: string }> = {
-  slicerx: { label: 'SlicerX', summary: 'The default. Bambu Studio flow, tuned for speed and mimir.' },
+  // the default look carries the product's name, a white-label edition's own
+  slicerx: {
+    get label() {
+      return productName()
+    },
+    summary: 'The default. Bambu Studio flow, tuned for speed and mimir.',
+  },
   'bambu-studio': { label: 'Bambu Studio style', summary: 'Left settings sidebar, top tabs, Global and Objects switch.' },
   prusaslicer: { label: 'PrusaSlicer style', summary: 'Right sidebar, Simple, Advanced and Expert modes, orthographic toggle.' },
   orcaslicer: { label: 'OrcaSlicer style', summary: 'Bambu-like layout with more tuning controls and mappable mouse buttons.' },

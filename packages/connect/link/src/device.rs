@@ -323,7 +323,12 @@ async fn kept_objects(
 }
 
 /// The refusal for a print the hub did not start, on a printer that cannot list its objects.
-const NOT_OURS: &str = "this print was not sent from SlicerX, so its objects are unknown here; skip them on the printer's screen";
+fn not_ours() -> String {
+    format!(
+        "this print was not sent from {}, so its objects are unknown here; skip them on the printer's screen",
+        crate::app_name()
+    )
+}
 
 /// `objects.list {printerId}`.
 async fn list_objects(b: &Arc<Bridge>, printer: &str) -> Rpc<Vec<PrintObject>> {
@@ -338,7 +343,7 @@ async fn list_objects(b: &Arc<Bridge>, printer: &str) -> Rpc<Vec<PrintObject>> {
             let job = st.as_ref().and_then(|s| s.job_name.clone());
             match kept_objects(b, printer, s.as_ref(), job.as_deref()).await {
                 Some(v) if running => Ok(v),
-                _ => Err(RpcError::new("not_supported", NOT_OURS)),
+                _ => Err(RpcError::new("not_supported", not_ours())),
             }
         }
         Err(e) => Err(e.into()),
@@ -390,12 +395,12 @@ async fn skip(b: &Arc<Bridge>, p: &Value) -> Rpc<Value> {
         Err(e) if e.code() == ErrorCode::NotSupported => {
             let known = kept_objects(b, &printer, sess.as_ref(), st.job_name.as_deref())
                 .await
-                .ok_or_else(|| RpcError::new("not_supported", NOT_OURS))?;
+                .ok_or_else(|| RpcError::new("not_supported", not_ours()))?;
             match known.iter().find(|o| o.id == id) {
                 None => {
                     return Err(RpcError::new(
                         "not_found",
-                        "the plate SlicerX sent has no such object",
+                        format!("the plate {} sent has no such object", crate::app_name()),
                     ));
                 }
                 Some(o) if o.skipped => {
@@ -484,7 +489,10 @@ async fn start_stored_inner(
     if sha.is_none() && !unverified_ok {
         return Err(RpcError::new(
             "unverified_file",
-            "this file did not go up through SlicerX, so its content cannot be checked; confirm to print it anyway",
+            format!(
+                "this file did not go up through {}, so its content cannot be checked; confirm to print it anyway",
+                crate::app_name()
+            ),
         ));
     }
     let name = path.rsplit('/').next().unwrap_or(path).to_owned();

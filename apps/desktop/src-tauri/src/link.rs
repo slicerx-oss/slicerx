@@ -107,6 +107,8 @@ pub(crate) async fn start_bridge(
 
     let broker =
         Arc::new(ApprovalBroker::new().map_err(|e| format!("The approval service did not start: {e}"))?);
+    // the hub's messages name this edition, not SlicerX
+    sx_link::set_app_name(&crate::brand::get().name);
     // Without a state folder the hub keeps everything in memory and forgets every printer at quit.
     let cfg = LinkConfig {
         port,

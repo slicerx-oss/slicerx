@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-import { AGREEMENT_VERSION as APP_VERSION } from '@slicerx/contracts'
+import { AGREEMENT_VERSION as APP_VERSION, DEFAULT_BUG_REPORTS_URL } from '@slicerx/contracts'
 import { renderToString } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
-import { acceptAgreement, Agreement, AGREEMENT_KEY, AGREEMENT_VERSION, agreementNeeded, readAgreement, RELEASE, type AgreementStorage } from '../src/agreement'
+import { acceptAgreement, Agreement, AGREEMENT_KEY, AGREEMENT_VERSION, agreementNeeded, defaultBugReportsUrl, readAgreement, RELEASE, type AgreementStorage } from '../src/agreement'
 import { createTheme, nocturne, nocturneLight } from '../src/index'
 import { sceneFor } from '../src/theme'
 
@@ -39,8 +39,18 @@ describe('the embedded agreement', () => {
 
   it('names the host app, the bug link and the version', () => {
     const html = renderToString(<Agreement appName="Spoolhouse" onAccept={() => {}} storage={null} />)
-    for (const part of ['Spoolhouse', 'Watch your printer', RELEASE.bugReportsUrl.replace('https://', ''), `Agreement version ${AGREEMENT_VERSION}`]) expect(html).toContain(part)
+    for (const part of ['Spoolhouse', 'Watch your printer', (RELEASE.bugReportsUrl ?? '').replace('https://', ''), `Agreement version ${AGREEMENT_VERSION}`]) expect(html).toContain(part)
     expect(html).toMatch(/<button[^>]*disabled/)
+  })
+
+  it("never sends a fork's people to SlicerX: its own link, or none and a line about its makers", () => {
+    expect(defaultBugReportsUrl(undefined)).toBe(DEFAULT_BUG_REPORTS_URL)
+    expect(defaultBugReportsUrl({ id: 'slicerx' })).toBe(DEFAULT_BUG_REPORTS_URL)
+    expect(defaultBugReportsUrl({ id: 'acme' })).toBeNull()
+    expect(defaultBugReportsUrl({ id: 'acme', release: { bugReportsUrl: 'https://forum.acme.example/bugs' } })).toBe('https://forum.acme.example/bugs')
+    const html = renderToString(<Agreement appName="Acme Slicer" release={{ stage: 'pre-alpha', bugReportsUrl: null }} onAccept={() => {}} storage={null} />)
+    expect(html).toContain('Report bugs to the makers of Acme Slicer.')
+    expect(html).not.toContain('Discord')
   })
 })
 

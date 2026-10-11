@@ -515,7 +515,10 @@ async fn start_held(b: &Arc<Bridge>, p: &Value, file: &mut RemoteFile) -> Rpc<()
 fn unverified_ai_start() -> RpcError {
     RpcError::new(
         "unverified_file",
-        "SlicerX did not upload this file, so it cannot check what is in it. Upload the file through SlicerX, then start it.",
+        format!(
+            "{app} did not upload this file, so it cannot check what is in it. Upload the file through {app}, then start it.",
+            app = crate::app_name()
+        ),
     )
 }
 

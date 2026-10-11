@@ -4,6 +4,10 @@ All notable changes to `@slicerx/embed` are listed here. The format follows Keep
 
 ## [Unreleased]
 
+### Changed
+
+- `RELEASE.bugReportsUrl` can be null. A fork built with its own edition config (`viteDefines`) gets its own bug link, or none, never SlicerX's channel; `defaultBugReportsUrl(edition)` gives the same answer for a given edition. With no link, the agreement asks people to report bugs to the app's makers.
+
 ### Fixed
 
 - `Viewport` no longer forces `quality="high"`: its default is `auto`, which lets the viewport pick `low` without ambient occlusion on a weak or software GPU. A host's `quality` still overrides it.

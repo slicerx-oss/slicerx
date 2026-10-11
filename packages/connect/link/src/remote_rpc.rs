@@ -581,7 +581,10 @@ async fn decide(b: &Arc<Bridge>, ctx: &Arc<SessCtx>, pairing: &RemotePairing, p:
     if decision == "approve" && !approvable_remotely(b, &id) {
         return Err(err(
             "not_supported",
-            "approve this in the SlicerX app or at the printer; away from home a phone approves only pausing or stopping a print",
+            format!(
+                "approve this in the {} app or at the printer; away from home a phone approves only pausing or stopping a print",
+                crate::app_name()
+            ),
         ));
     }
     let device = pairing.peer.get("deviceId").cloned().unwrap_or(Value::Null);
