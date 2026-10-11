@@ -187,6 +187,7 @@ export function readStep(occt: Occt, bytes: Uint8Array, fileName: string, qualit
       indices: Uint32Array.from(m.index.array),
     }
   })
+  toLocalOrigin(bodies)
   const groups = groupByBox(bodies.map((b) => box(b.positions)), 0.01)
   const objects = groups.map((g) => ({ name: g.length === 1 ? bodies[g[0]!]!.name : base, bodies: g.map((i) => bodies[i]!) }))
   if (groups.length === 1 && bodies.length > 1) objects[0]!.name = base
@@ -195,6 +196,33 @@ export function readStep(occt: Occt, bytes: Uint8Array, fileName: string, qualit
   const unit = stepUnit(bytes)
   if (unit && unit !== 'millimeter') notes.unshift(`Converted from ${unit === 'inch' ? 'inches' : unit === 'foot' ? 'feet' : `${unit}s`} to millimeters.`)
   return { objects, unit, triangles: total, toleranceMm: tol, notes }
+}
+
+/**
+ * Moves every body by the same amount so their shared box is centered on the origin, in double precision. The meshes
+ * go on as 32-bit floats, which far from the origin lose detail (half a millimeter steps at 8 km): a model exported in
+ * a site's or an assembly's world coordinates keeps its small features. The bodies keep their places relative to one
+ * another; where the model lands on the plate is set later, as for any file.
+ */
+export function toLocalOrigin(bodies: StepBody[]): void {
+  const lo = [Infinity, Infinity, Infinity]
+  const hi = [-Infinity, -Infinity, -Infinity]
+  for (const b of bodies) {
+    const p = b.positions
+    for (let i = 0; i + 2 < p.length; i += 3) {
+      for (let k = 0; k < 3; k++) {
+        const v = p[i + k]!
+        if (v < lo[k]!) lo[k] = v
+        if (v > hi[k]!) hi[k] = v
+      }
+    }
+  }
+  if (!Number.isFinite(lo[0]!)) return
+  const c = [0, 1, 2].map((k) => (lo[k]! + hi[k]!) / 2)
+  for (const b of bodies) {
+    const p = b.positions
+    for (let i = 0; i + 2 < p.length; i += 3) for (let k = 0; k < 3; k++) p[i + k] = p[i + k]! - c[k]!
+  }
 }
 
 const num = (v: number) => {
