@@ -106,10 +106,32 @@ test('the bar skips, locks and deletes the selection, and Undo in the toast brin
   await expect(rows(page)).toHaveCount(1)
 })
 
-test('Advanced shows Arrange and Transform on the bar, and Transform opens the number rows in a popover', async ({ page }) => {
+test('Advanced shows Arrange and Transform on the bar, and Transform opens the number rows in a popover', async ({ page, isMobile }) => {
   await open(page, 'advanced')
   await select(page, 0)
   await expect(page.getByTestId('slice-selection-arrange')).toBeVisible()
+  // With two plates, Move to plate joins the bar too: the count and the buttons share the row without overlapping.
+  // (On a phone the sheet covers the plate bar's Add plate.)
+  if (!isMobile) {
+    await page.getByRole('button', { name: 'Add plate' }).first().click()
+    await page.getByRole('list', { name: 'Plates' }).locator('.plate-card', { hasText: 'Plate 1' }).click()
+    await select(page, 0)
+    await expect(page.getByTestId('slice-selection-move-plate')).toBeVisible()
+    const count = (await page.getByTestId('slice-selection-count').locator('xpath=..').boundingBox())!
+    const actions = (await bar(page).locator('.sx-selbar-actions').boundingBox())!
+    expect(count.x + count.width).toBeLessThanOrEqual(actions.x + 0.5)
+    // a narrow pane keeps the number and every button, the buttons under it when they don't fit beside it
+    await page.locator('aside.pane[data-side="right"]').evaluate((el) => Object.assign((el as HTMLElement).style, { width: '230px', flexBasis: '230px' }))
+    const c2 = (await page.getByTestId('slice-selection-count').boundingBox())!
+    const a2 = (await bar(page).locator('.sx-selbar-actions').boundingBox())!
+    expect(c2.x + c2.width).toBeLessThanOrEqual(a2.x + 0.5)
+    // and every button, Clear included, stays inside the bar
+    const b2 = (await bar(page).boundingBox())!
+    expect(a2.x + a2.width).toBeLessThanOrEqual(b2.x + b2.width + 0.5)
+    await expect(page.getByTestId('slice-selection-clear')).toBeVisible()
+    expect((await page.getByTestId('slice-selection-count').boundingBox())!.width).toBeLessThan(24)
+    await page.locator('aside.pane[data-side="right"]').evaluate((el) => Object.assign((el as HTMLElement).style, { width: '', flexBasis: '' }))
+  }
   // The number rows live in the popover now, not under the list.
   await expect(page.locator('[data-section="objects"] [data-section="transform"]')).toHaveCount(0)
   // Opening it moves nothing in the pane: its first field takes focus without scrolling the pane.

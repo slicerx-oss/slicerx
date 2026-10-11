@@ -119,7 +119,7 @@ export function SelectionActions() {
     <SelectionBar
       className="slice-selbar"
       data-testid="slice-selection-bar"
-      count={<span data-testid="slice-selection-count">{sum.count} selected</span>}
+      count={<span data-testid="slice-selection-count">{sum.count}<span className="selbar-word"> selected</span></span>}
       onClear={clearSelection}
       clearTestId="slice-selection-clear"
       clearable={!simple}
