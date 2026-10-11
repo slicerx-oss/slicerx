@@ -142,8 +142,8 @@ jobs:
 
   # The integration tests (each crate's tests/) for the merge queue and for a pull request labeled full-ci, so one that
   # breaks never lands; main runs them in the rust job. One run takes about 18 minutes, so they are split in four that
-  # run side by side: sx-core's two longest (firmware, requests), the rest of sx-core, and every other crate (with the
-  # MCP server's tests on the real core).
+  # run side by side: sx-core's two longest (firmware, requests), the rest of sx-core with the desktop shell's clippy
+  # and tests, and every other crate (with the MCP server's tests on the real core).
   rust-tests-part:
     name: rust tests (${{ matrix.part }})
     needs: detect
@@ -196,6 +196,21 @@ jobs:
             case $n in firmware | requests) ;; *) args="$args --test $n" ;; esac
           done
           ${HEAVY:-} cargo test -p sx-core $args
+      # The desktop shell (slicerx-desktop), which the workspace runs leave out: it links WebKitGTK and embeds the
+      # frontend. Its clippy and tests, bridge included, ride on the core part, the shortest one on its runner (the
+      # self-hosted runner has the system libraries; a hosted runner installs them). A placeholder page is enough to
+      # compile it. Warm, this adds about a minute and a half to core, which still ends before firmware and requests.
+      - if: matrix.part == 'core' && runner.environment == 'github-hosted'
+        name: Linux system libraries for the desktop shell
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libssl-dev libxdo-dev
+      - if: matrix.part == 'core'
+        name: Desktop shell clippy and tests
+        run: |
+          [ -f apps/desktop/dist/index.html ] || { mkdir -p apps/desktop/dist && echo '<!doctype html><title>ci</title>' > apps/desktop/dist/index.html; }
+          ${HEAVY:-} cargo clippy -p slicerx-desktop --features agent-bridge --all-targets -- -D warnings
+          ${HEAVY:-} cargo test -p slicerx-desktop --features agent-bridge
       # sx-link's real-service test runs the sx-cloud binary; it fails here, not skips, when it is missing.
       - if: matrix.part == 'crates'
         run: |
