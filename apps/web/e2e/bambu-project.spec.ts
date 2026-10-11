@@ -67,3 +67,51 @@ test('a project value the engine refuses is dropped with a note, and the plate s
   await expect(sliced(page, before)).toBeVisible({ timeout: 120_000 })
   await expect(page.getByText(/config key/)).toHaveCount(0)
 })
+
+/** A Bambu Studio project that inherited its walls, with a setting SlicerX does not have. */
+const INHERITED = {
+  layer_height: '0.2',
+  wall_generator: 'classic',
+  top_one_wall_type: 'all top',
+  different_settings_to_system: ['layer_height', '', ''],
+}
+
+type SxState = { setState(p: unknown): void }
+/** The store hook (`window.__sx`) is there with localStorage 'slicerx.debug' set. */
+const withStoreHook = (page: Page) => page.addInitScript(() => localStorage.setItem('slicerx.debug', '1'))
+const setState = (page: Page, patch: unknown) => page.evaluate((p) => (window as unknown as { __sx: SxState }).__sx.setState(p), patch)
+
+test("an opened project's import report shows in Settings > Presets", async ({ page, isMobile }) => {
+  test.skip(isMobile, 'Runs at desktop width')
+  await withStoreHook(page)
+  await open(page)
+  await openProject(page, INHERITED)
+  await expect(page.getByText(/Settings > Presets lists the 1 setting it did not carry over/)).toBeVisible({ timeout: 30_000 })
+  await setState(page, { settingsOpen: true, settingsSection: 'presets' })
+  const report = page.locator('.imp-report').filter({ hasText: 'Opened a1-mini.3mf' })
+  await expect(report.locator('.imp-sum')).toHaveText(/Opened a1-mini\.3mf: 1 setting did not carry over/)
+  await expect(report.locator('.imp-count')).toHaveText(/Project settings, 1 setting did not carry over/)
+  await report.locator('summary').click()
+  await expect(report.getByText("Walls: aegis walls, kept by SlicerX; the project used its preset's default classic.")).toBeVisible()
+})
+
+// Screenshots for review: SX_SHOTS=1, saved to SX_SHOTS_DIR (test-results/shots by default).
+test("shots: an opened project's import report, light and dark", async ({ page }, info) => {
+  test.skip(!process.env['SX_SHOTS'], 'SX_SHOTS=1 only')
+  test.slow()
+  const dir = process.env['SX_SHOTS_DIR'] ?? info.outputPath('shots')
+  const width = page.viewportSize()?.width ?? 0
+  await withStoreHook(page)
+  await open(page)
+  await openProject(page, INHERITED)
+  await setState(page, { settingsOpen: true, settingsSection: 'presets' })
+  const report = page.locator('.imp-report').filter({ hasText: 'Opened a1-mini.3mf' })
+  await report.locator('summary').click()
+  for (const scheme of ['light', 'dark'] as const) {
+    await setState(page, { scheme, themeFollowsSystem: false })
+    await report.scrollIntoViewIfNeeded()
+    await page.mouse.move(0, 0)
+    await page.waitForTimeout(400)
+    await page.locator('.settings-dialog').screenshot({ path: `${dir}/project-import-report-${scheme}-${width}.png` })
+  }
+})

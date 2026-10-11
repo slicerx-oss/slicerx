@@ -119,6 +119,7 @@ export function PresetsSection() {
     }
   }
   const sync = useApp((s) => s.presetSync)
+  const project = useApp((s) => s.projectImport)
   const [applied, setApplied] = useState<string[] | null>(null)
   const mergeFile = async () => {
     try {
@@ -141,6 +142,12 @@ export function PresetsSection() {
         <span className="sx-small sx-muted">{appName()}, OrcaSlicer, Bambu Studio and PrusaSlicer presets, and OrcaSlicer and Bambu Studio preset bundles.</span>
       </div>
       {imported ? <ImportReportView results={imported} /> : null}
+      {project ? (
+        <ImportReportView
+          results={[{ name: project.name, ok: true, skipped: project.report.items.length, report: project.report }]}
+          summary={`Opened ${project.name}: ${project.report.items.length === 0 ? 'every setting carried over' : `${project.report.items.length} ${project.report.items.length === 1 ? 'setting' : 'settings'} did not carry over`}`}
+        />
+      ) : null}
       {KINDS.map((k) => (
         <Group key={k} kind={k} />
       ))}
