@@ -63,8 +63,8 @@ fn run(args: &[String]) -> sx_geom::Result<Value> {
     };
     let mut out = json::call_value(op, &req, &loader)?;
     // meshes the call wrote as buffers (`rawOut`, a 3mf's parts) leave as stl like the rest
-    let files = json::take_out_files();
-    raw_meshes(&mut out, &files)?;
+    let mut files: Vec<Option<json::OutFile>> = json::take_out_files().into_iter().map(Some).collect();
+    raw_meshes(&mut out, &mut files)?;
     if let Some(dir) = out_dir {
         std::fs::create_dir_all(&dir)
             .map_err(|e| sx_geom::Error::invalid_arg(format!("{}: {e}", dir.display())))?;
@@ -86,21 +86,68 @@ fn run(args: &[String]) -> sx_geom::Result<Value> {
     Ok(out)
 }
 
-fn raw_meshes(v: &mut Value, files: &[Vec<u8>]) -> sx_geom::Result<()> {
+fn stl(mesh: &sx_geom::TriMesh) -> Value {
+    Value::from(json::base64_encode(&mesh.to_stl("sx-geom")))
+}
+
+/// the paint buffer (`format.read3mf`) as json: per layer, `[triangle, code]` pairs
+fn paint(bytes: &[u8]) -> Value {
+    let mut at = 0usize;
+    let u32_at = |at: &mut usize| -> u32 {
+        let v = bytes
+            .get(*at..*at + 4)
+            .and_then(|b| b.try_into().ok())
+            .map_or(0, u32::from_le_bytes);
+        *at += 4;
+        v
+    };
+    let mut out = serde_json::Map::new();
+    for layer in ["color", "seam", "support", "fuzzy"] {
+        let n = u32_at(&mut at);
+        let mut list = Vec::new();
+        for _ in 0..n {
+            let t = u32_at(&mut at);
+            let len = usize::try_from(u32_at(&mut at)).unwrap_or(0);
+            let code = bytes
+                .get(at..at + len)
+                .map(String::from_utf8_lossy)
+                .unwrap_or_default();
+            at += len;
+            list.push(serde_json::json!([t, code]));
+        }
+        out.insert(layer.to_owned(), Value::Array(list));
+    }
+    Value::Object(out)
+}
+
+fn raw_meshes(v: &mut Value, files: &mut [Option<json::OutFile>]) -> sx_geom::Result<()> {
+    let mut take = |n: Option<u64>| {
+        n.and_then(|n| usize::try_from(n).ok())
+            .and_then(|n| files.get_mut(n))
+            .and_then(Option::take)
+    };
     match v {
         Value::Object(map) => {
-            if let Some(n) = map.get("rawOut").and_then(Value::as_u64) {
-                let bytes = usize::try_from(n)
-                    .ok()
-                    .and_then(|n| files.get(n))
-                    .ok_or_else(|| sx_geom::Error::invalid_arg(format!("rawOut {n}: no such buffer")))?;
-                let mesh = sx_geom::TriMesh::from_raw(bytes, "out")?;
+            if let Some(json::OutFile::Bytes(bytes)) = take(map.get("rawOut").and_then(Value::as_u64)) {
+                let mesh = sx_geom::TriMesh::from_raw(&bytes, "out")?;
                 map.remove("rawOut");
-                map.insert(
-                    "stlBase64".to_owned(),
-                    Value::from(json::base64_encode(&mesh.to_stl("sx-geom"))),
-                );
+                map.insert("stlBase64".to_owned(), stl(&mesh));
                 return Ok(());
+            }
+            if let Some(json::OutFile::Bytes(bytes)) = take(map.get("rawBytes").and_then(Value::as_u64)) {
+                let decoded = paint(&bytes);
+                *v = decoded;
+                return Ok(());
+            }
+            let positions = take(map.get("positionsOut").and_then(Value::as_u64));
+            let triangles = take(map.get("trianglesOut").and_then(Value::as_u64));
+            if let (Some(json::OutFile::Positions(p)), Some(json::OutFile::Triangles(t))) =
+                (positions, triangles)
+            {
+                let positions = p.iter().map(|c| c.map(f64::from)).collect();
+                map.remove("positionsOut");
+                map.remove("trianglesOut");
+                map.insert("stlBase64".to_owned(), stl(&sx_geom::TriMesh::new(positions, t)));
             }
             for (_, child) in map.iter_mut() {
                 raw_meshes(child, files)?;
