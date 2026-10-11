@@ -143,7 +143,9 @@ export function createSxSlicer(bin: string, timeoutMs = 10 * 60_000): SlicerBack
           objects: objects.map((o, i) => ({ id: `o${i}`, name: o.name, mesh: `m${i}`, ...(o.transform ? { transform: o.transform } : {}) })),
         },
         config: sxConfig(job.explicitConfig),
-        options: { emitGcode: job.emitGcode, emitPreview: job.emitPreview ?? false, ...(job.trustedGcode ? { trustedGcode: true } : {}) },
+        // The config is a whole resolved profile, so the engine's list of keys it never reads would be long and say
+        // nothing about the person's file (import_report does that); a refused value names its key instead.
+        options: { emitGcode: job.emitGcode, emitPreview: job.emitPreview ?? false, configReport: false, ...(job.trustedGcode ? { trustedGcode: true } : {}) },
         meshes,
       }
       const requestPath = join(job.outDir, 'request.json')

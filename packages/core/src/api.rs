@@ -211,9 +211,11 @@ pub struct ThumbnailInput {
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RequestOptions {
-    /// List the config keys this engine never reads in the report (`configReport.notApplied`) and a warning. Off by
-    /// default: hosts that send a whole resolved profile would see every key the engine has no use for. `sx` turns it
-    /// on unless the request says otherwise.
+    /// Read the config a key at a time: a value the engine cannot use leaves only that setting at its default and is
+    /// listed (`configReport.invalid`), and the keys this engine never reads are listed too (`notApplied`), with a
+    /// warning per kind. Off by default: hosts that send a whole resolved profile would see every key the engine has no
+    /// use for, and a refused value names its key so the host can drop it. `sx` turns it on unless the request says
+    /// otherwise.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub config_report: Option<bool>,
     /// Refuse the slice when the config sets a key this engine never reads or a value it cannot use, instead of
@@ -376,6 +378,47 @@ pub struct ConfigReport {
     /// Values the engine could not use, in the order found; those settings kept their defaults.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub invalid: Vec<crate::config::ConfigIssue>,
+    /// Which wall generator the slice runs and why.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub walls: Option<WallsNote>,
+}
+
+/// Which wall generator a slice runs, where that came from, and the sentence that says so.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct WallsNote {
+    /// `aegis`, `arachne` or `classic`, as the config names it (`classic` when it names none).
+    pub generator: String,
+    /// `request` (the config sent), `default` (the engine's, the config names none), and for a project `kept` (our
+    /// engine choice over the one the project inherited), `project` (the project's own) or `config` (`--config`).
+    pub source: String,
+    pub text: String,
+}
+
+impl WallsNote {
+    /// The generator `config` names (`wall_generator`, or the older `perimeter_generator`), if any.
+    pub fn named(config: &serde_json::Map<String, serde_json::Value>) -> Option<String> {
+        ["wall_generator", "perimeter_generator"].iter().find_map(|k| {
+            let v = config.get(*k)?;
+            let v = v.as_array().and_then(|a| a.first()).unwrap_or(v);
+            v.as_str().map(str::to_owned)
+        })
+    }
+
+    /// The note for a config sent as it is: the generator it names, or the engine's default.
+    pub fn of_request(config: &serde_json::Map<String, serde_json::Value>, who: &str) -> Self {
+        match Self::named(config) {
+            Some(g) => Self {
+                text: format!("{g} walls, set by {who}"),
+                generator: g,
+                source: "request".to_owned(),
+            },
+            None => Self {
+                generator: "classic".to_owned(),
+                source: "default".to_owned(),
+                text: format!("classic walls, the engine's default ({who} names no wall_generator)"),
+            },
+        }
+    }
 }
 
 /// How many keys a warning names before it counts the rest.
@@ -627,12 +670,19 @@ pub fn request_config_report(
     let strict = req.options.strict.unwrap_or(false);
     let mut config = PrintConfig::default();
     let mut report = ConfigReport::default();
+    // With the report asked for, a value the engine cannot use leaves only its own setting at the default and is
+    // listed. Without it the config is refused whole, naming the key, as hosts that drop a refused key and slice
+    // again (the app, with the profile's value back) expect.
+    let listed = strict || req.options.config_report.unwrap_or(false);
     if !req.config.is_null() {
-        report.invalid = config.apply_value_lenient(&req.config)?;
+        if listed {
+            report.invalid = config.apply_value_lenient(&req.config)?;
+        } else {
+            config = PrintConfig::from_value(&req.config)?;
+        }
     }
-    if (strict || req.options.config_report.unwrap_or(false))
-        && let Some(map) = req.config.as_object()
-    {
+    if listed && let Some(map) = req.config.as_object() {
+        report.walls = Some(WallsNote::of_request(map, "the request"));
         let placeholders = crate::config::placeholder_keys(map);
         report.not_applied = map
             .keys()
@@ -1200,7 +1250,7 @@ fn run_prepared_timed(
             layer: None,
         });
     }
-    if !config_report.is_empty() {
+    if !config_report.is_empty() || config_report.walls.is_some() {
         report.config_report = Some(config_report);
     }
     if want_preview {
@@ -1353,7 +1403,7 @@ pub const REQUEST_SCHEMA: &str = r#"{
     "options": {
       "type": "object",
       "properties": {
-        "configReport": { "type": "boolean", "description": "List the config keys this engine never reads in the result's configReport.notApplied, with one warning. Off by default; sx turns it on" },
+        "configReport": { "type": "boolean", "description": "Read the config a key at a time: values the engine cannot use keep their defaults and are listed in configReport.invalid, and keys it never reads in configReport.notApplied, with a warning per kind. Off by default (a bad value refuses the slice, naming the key); sx turns it on" },
         "strict": { "type": "boolean", "description": "Refuse the slice when the config sets a key this engine never reads or a value it cannot use" },
         "engine": { "enum": ["sx", "orca"] },
         "flavor": { "enum": ["marlin2", "klipper", "reprapfirmware", "bambu", "marlin", "reprap", "repetier", "teacup", "makerware", "sailfish", "mach3", "machinekit", "smoothie", "no-extrusion", "griffin", "cheetah"] },
