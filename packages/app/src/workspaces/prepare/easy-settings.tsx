@@ -16,6 +16,7 @@ import { plateSequence } from '../../plate/plate-sequence'
 import { scopeValue, setScopedMany, type SettingsScope } from '../../plate/scope'
 import { easyGroups } from '../../plate/easy-groups'
 import { useScope } from './scope-bar'
+import { usePhoneLayout } from '../../lib/phone-layout'
 import './goal-tiles.css'
 
 const GOAL_OPTIONS = [
@@ -40,6 +41,7 @@ const SUPPORTS = [
   { value: 'auto', label: 'Auto' },
   { value: 'painted', label: 'Painted' },
 ] as const satisfies readonly { value: SupportMode; label: string }[]
+const SUPPORTS_PHONE = SUPPORTS.filter((o) => o.value !== 'painted')
 
 function update(patch: Partial<EasySettings>, goal?: EasyGoal): void {
   set((s) => {
@@ -126,6 +128,7 @@ export function EasySettingsPanel() {
   const brim: boolean = !scoped && (!profile || touched.includes('brim')) ? easy.brim : String(cfg['brim_type'] ?? 'no_brim') !== 'no_brim'
   // Simple shows Goal, Layer height and Supports, so the sidebar never scrolls; Advanced and up add the rest.
   const more = useMore('print')
+  const phone = usePhoneLayout()
   // What each goal gives on this printer and nozzle: the printer's own tier presets, else SlicerX's goals.
   const goalValues = profile?.goalValues
   const subtitles = useMemo(() => Object.fromEntries(GOALS.map((g) => [g, goalSubtitle(g, goalValues?.[g] ?? easyConfig(goalEasy(g)))])) as Record<EasyGoal, string>, [goalValues, profile])
@@ -253,7 +256,9 @@ export function EasySettingsPanel() {
         <div className="srow-h">
           <span className="lbl-strong">Supports</span>
         </div>
-        <Seg label="Supports" full value={scoped && mixedIn(keys.supports) ? ('' as SupportMode) : supports} options={SUPPORTS} onChange={(supports) => pick({ supports }, keys.supports)} />
+        {/* A phone can't paint supports, so it offers Off and Auto; a project that already paints them keeps Painted shown and picked. */}
+        <Seg label="Supports" full value={scoped && mixedIn(keys.supports) ? ('' as SupportMode) : supports} options={phone && supports !== 'painted' ? SUPPORTS_PHONE : SUPPORTS} onChange={(supports) => pick({ supports }, keys.supports)} />
+        {phone && supports === 'painted' ? <p className="support-line">The painted supports are edited on the desktop.</p> : null}
         {more ? <p className={supports === 'off' ? 'support-line' : 'support-line ok'}>
           <Icon name={supports === 'off' ? 'alert' : 'check'} />
           {supports === 'off'
