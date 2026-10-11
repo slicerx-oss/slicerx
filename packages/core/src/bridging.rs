@@ -99,6 +99,8 @@ pub(crate) struct Env<'a> {
 pub(crate) struct Bridged {
     pub(crate) area: Shapes,
     pub(crate) angle: f64,
+    /// The areas its strands anchor in (bridges over air; 0 where they are not counted).
+    pub(crate) anchors: u32,
 }
 
 /// Results kept while one layer's bridges are worked out.
@@ -763,6 +765,7 @@ fn compute(env: &Env<'_>, l: i64, memo: &Memo) -> Vec<Bridged> {
             done.push(Bridged {
                 area: bridging,
                 angle,
+                anchors: 0,
             });
         }
     }
@@ -955,36 +958,43 @@ pub(crate) const BRIDGE_INFILL_MARGIN_MM: f64 = 1.0;
 
 /// [`bridging_direction`] for other modules.
 pub(crate) fn direction(bridge: &Shapes, anchors: &Shapes) -> f64 {
-    bridging_direction(bridge, anchors)
+    bridging_direction(&[(bridge, anchors)])
 }
 
-/// The strand direction of a bridge (radians): the direction whose strands cross the fewest floating edges
-/// (the parts of its outline no anchor area covers), or across the shorter way of an area anchored all
-/// round (`detect_bridging_direction`).
-fn bridging_direction(bridge: &Shapes, anchors: &Shapes) -> f64 {
-    let pi = std::f64::consts::PI;
+/// The parts of a bridge's outline no anchor area covers.
+fn floating_edges(bridge: &Shapes, anchors: &Shapes) -> Vec<Line> {
     let outline = outline_lines(bridge);
-    let floating: Vec<Line> = if anchors.is_empty() {
-        outline
-    } else {
-        let grown = expand(anchors, 0.01);
-        let paths: Vec<Vec<IntPoint<i32>>> = outline.iter().map(|l| vec![l[0], l[1]]).collect();
-        grown
-            .clip_paths(
-                &paths,
-                FillRule::NonZero,
-                ClipRule {
-                    invert: true,
-                    boundary_included: true,
-                },
-            )
-            .iter()
-            .flat_map(|p| p.windows(2).map(|w| [w[0], w[1]]))
-            .collect()
-    };
+    if anchors.is_empty() {
+        return outline;
+    }
+    let grown = expand(anchors, 0.01);
+    let paths: Vec<Vec<IntPoint<i32>>> = outline.iter().map(|l| vec![l[0], l[1]]).collect();
+    grown
+        .clip_paths(
+            &paths,
+            FillRule::NonZero,
+            ClipRule {
+                invert: true,
+                boundary_included: true,
+            },
+        )
+        .iter()
+        .flat_map(|p| p.windows(2).map(|w| [w[0], w[1]]))
+        .collect()
+}
+
+/// The strand direction (radians) of bridges printed as one surface, each with its anchor areas: the direction
+/// whose strands cross the fewest floating edges (the parts of the outlines no anchor area covers), counted over
+/// every bridge of the surface, or across the shorter way of a surface anchored all round
+/// (`detect_bridging_direction`). Orca takes a merged surface's direction from its first bridge alone, so the
+/// answer hangs on the order the pieces come in; counting them all does not.
+fn bridging_direction(members: &[(&Shapes, &Shapes)]) -> f64 {
+    let pi = std::f64::consts::PI;
+    let floating: Vec<Line> = members.iter().flat_map(|(b, a)| floating_edges(b, a)).collect();
     let dir = if floating.is_empty() {
         // Anchored on all sides: across the minor axis of the area.
-        minor_axis(bridge)
+        let all: Shapes = members.iter().flat_map(|(b, _)| b.iter().cloned()).collect();
+        minor_axis(&all)
     } else {
         // The normals of the floating edges, one per direction.
         let mut dirs: Vec<(i64, (f64, f64))> = Vec::new();
@@ -1130,11 +1140,22 @@ pub(crate) fn external(
                 acc = union(&union(&acc, &o.shape), &o.grown);
             }
         }
-        let Some(h) = ones.get(head) else { continue };
-        let angle = bridging_direction(&h.shape, &h.anchors);
+        let members: Vec<(&Shapes, &Shapes)> = (head..n)
+            .filter(|&k| find(&mut group, k) == head)
+            .filter_map(|k| ones.get(k).map(|o| (&o.shape, &o.anchors)))
+            .collect();
+        if members.is_empty() {
+            continue;
+        }
+        let angle = bridging_direction(&members);
+        let held = members.iter().fold(Shapes::new(), |acc, (_, a)| union(&acc, a));
         let area = closing(&acc, closing_r);
         gone = union(&gone, &area);
-        bridges.push(Bridged { area, angle });
+        bridges.push(Bridged {
+            area,
+            angle,
+            anchors: u32::try_from(held.len()).unwrap_or(u32::MAX),
+        });
     }
     let cut = |z: &Shapes| sub(z, &gone);
     External {
@@ -1191,6 +1212,7 @@ pub(crate) fn second_internal(env: &Env<'_>, l: i64, memo: &Memo, d: f64, own: &
             (!ov.is_empty()).then_some(Bridged {
                 area: ov,
                 angle: b.angle + std::f64::consts::FRAC_PI_2,
+                anchors: 0,
             })
         })
         .collect()
@@ -1223,7 +1245,44 @@ pub(crate) fn second_external(env: &Env<'_>, l: i64, band: f64) -> Vec<Bridged> 
             (!ov.is_empty()).then_some(Bridged {
                 area: ov,
                 angle: b.angle,
+                anchors: b.anchors,
             })
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn rect(x0: f64, y0: f64, x1: f64, y1: f64) -> Shapes {
+        vec![vec![vec![
+            IntPoint::new(mm(x0), mm(y0)),
+            IntPoint::new(mm(x1), mm(y0)),
+            IntPoint::new(mm(x1), mm(y1)),
+            IntPoint::new(mm(x0), mm(y1)),
+        ]]]
+    }
+
+    /// The angle folded into [0, 180) degrees.
+    fn degrees(a: f64) -> f64 {
+        a.to_degrees().rem_euclid(180.0)
+    }
+
+    #[test]
+    fn a_merged_bridge_runs_along_the_floating_edges_of_all_its_pieces() {
+        // An L of two strips over air: an 80 mm one along the bottom, held only on its top side, and a 21 mm
+        // one up the left, held only on its right side. Alone, the short strip would run up the left.
+        let long = (rect(1.0, 0.0, 81.0, 0.5), rect(1.0, 0.5, 81.0, 5.0));
+        let short = (rect(0.0, 1.0, 0.5, 22.0), rect(0.5, 1.0, 5.0, 22.0));
+        let alone = degrees(bridging_direction(&[(&short.0, &short.1)]));
+        assert!((alone - 90.0).abs() < 0.5, "{alone}");
+        for members in [
+            [(&long.0, &long.1), (&short.0, &short.1)],
+            [(&short.0, &short.1), (&long.0, &long.1)],
+        ] {
+            let a = degrees(bridging_direction(&members));
+            assert!(a < 0.5 || a > 179.5, "{a}");
+        }
+    }
 }

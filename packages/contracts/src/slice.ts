@@ -378,6 +378,20 @@ export interface SliceResult {
   collisions?: Collision[]
   /** Fixes for the collisions. */
   collisionFixes?: CollisionFix[]
+  /** Every bridge over air, by layer (desktop and command-line engine). */
+  bridges?: BridgeInfo[]
+}
+
+/** One bridge over air: the way its strands run and what holds it. */
+export interface BridgeInfo {
+  /** The layer, 0-based, as `layerZ` counts them. */
+  layer: number
+  /** The strand direction, degrees from +X, 0 to 180. */
+  angleDeg: number
+  /** Areas of the same layer its strands anchor in; walls do not count, so 0 means held by walls only. */
+  anchors: number
+  /** The bridged area, grown into its anchors, mm2. */
+  areaMm2: number
 }
 
 export type GcodeTarget = { kind: 'blob' } | { kind: 'path'; path: string }

@@ -352,6 +352,23 @@ pub struct SliceReport {
     /// Fixes for the collisions, with what they cost.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub collision_fixes: Vec<crate::collide::CollisionFix>,
+    /// Every bridge over air, by layer: the way its strands run and what holds it.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub bridges: Vec<BridgeReport>,
+}
+
+/// One bridge over air in the slice result.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BridgeReport {
+    /// The layer, 0-based, as `layerZ` counts them.
+    pub layer: u32,
+    /// The strand direction, degrees from +X, 0 to 180.
+    pub angle_deg: f32,
+    /// The areas of the same layer its strands anchor in; walls do not count, so 0 means it is held by walls only.
+    pub anchors: u32,
+    /// The bridged area, grown into its anchors, mm2.
+    pub area_mm2: f32,
 }
 
 /// Which extruder and nozzle print each filament (Bambu Studio's `filament_maps`).
@@ -375,6 +392,21 @@ impl From<&crate::nozzles::Map> for FilamentMapReport {
             auto: m.auto,
         }
     }
+}
+
+/// The bridges over air of a layer range, for the slice result (rounded to what a reader needs).
+pub fn bridge_reports(out: &crate::output::SliceOutput) -> Vec<BridgeReport> {
+    out.layers
+        .iter()
+        .flat_map(|l| {
+            l.bridges.iter().map(|b| BridgeReport {
+                layer: l.index,
+                angle_deg: (b.angle_deg * 10.0).round() / 10.0,
+                anchors: b.anchors,
+                area_mm2: (b.area_mm2 * 100.0).round() / 100.0,
+            })
+        })
+        .collect()
 }
 
 /// A finished request: the report and the output bytes.
@@ -953,6 +985,7 @@ fn run_prepared_timed(
         let before = target.len();
         let mut out = slice_shard_paths(req, session, &config, lo..hi, progress)?;
         hits.merge(std::mem::take(&mut out.collisions));
+        report.bridges.extend(bridge_reports(&out));
         let drawing = if draw {
             let side = thumb_specs
                 .iter()
@@ -1276,6 +1309,20 @@ pub const RESULT_SCHEMA: &str = r#"{
         "extruders": { "type": "array", "items": { "type": "integer", "minimum": 1 } },
         "nozzles": { "type": "array", "items": { "type": "integer", "minimum": 0 } },
         "auto": { "type": "boolean" }
+      }
+    },
+    "bridges": {
+      "type": "array",
+      "description": "Every bridge over air, by layer",
+      "items": {
+        "type": "object",
+        "required": ["layer", "angleDeg", "anchors", "areaMm2"],
+        "properties": {
+          "layer": { "type": "integer", "minimum": 0 },
+          "angleDeg": { "type": "number", "description": "The way the strands run, degrees from +X, 0 to 180" },
+          "anchors": { "type": "integer", "minimum": 0, "description": "Areas of the same layer the strands anchor in; walls do not count" },
+          "areaMm2": { "type": "number", "description": "The bridged area grown into its anchors" }
+        }
       }
     }
   }

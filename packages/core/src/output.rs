@@ -115,6 +115,29 @@ pub struct WipeTail {
     pub width_mm: f32,
 }
 
+/// One bridge over air on a layer: the way its strands run and how firmly it is held.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct BridgeInfo {
+    /// The strand direction, degrees from +X, 0 to 180.
+    pub angle_deg: f32,
+    /// The areas of the same layer its strands anchor in (solid, sparse and top infill); walls do not count.
+    pub anchors: u32,
+    /// The bridged area, grown into its anchors, mm2.
+    pub area_mm2: f32,
+}
+
+impl BridgeInfo {
+    pub(crate) fn of(b: &crate::bridging::Bridged) -> Self {
+        let area = crate::shells::area_mm2(&b.area);
+        #[allow(clippy::cast_possible_truncation, reason = "report values are f32")]
+        Self {
+            angle_deg: (b.angle.to_degrees().rem_euclid(180.0)) as f32,
+            anchors: b.anchors,
+            area_mm2: area as f32,
+        }
+    }
+}
+
 /// The ordered toolpath of one layer. Travels are implicit: from the end of
 /// one path to the start of the next.
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -151,6 +174,8 @@ pub struct LayerPaths {
     /// Spiral vase layers and layers with scarf seams fill both; they are empty for other layers.
     pub zs: Vec<f32>,
     pub flows: Vec<f32>,
+    /// The bridges over air the layer lays.
+    pub bridges: Vec<BridgeInfo>,
     /// The layer is a spiral vase layer: it starts a layer lower and climbs along its loop.
     pub spiral: bool,
     /// The first spiral layer: the nozzle travels to the loop's start instead of continuing from the
