@@ -6,6 +6,7 @@
 // locked project is open the autosave is sealed with that file's key (project/locked-session.ts), and no copy
 // of it is kept in the clear.
 import type { Host } from '@slicerx/contracts'
+import { DEFAULT_MODEL, demoModel } from '../lib/demo-models'
 import { allPlates } from '../plate/plates'
 import { lockedSession, setLockedSession } from './locked-session'
 import { confirmDiscard, isDirty } from './unsaved'
@@ -18,6 +19,8 @@ export const MAX_RECENT = 6
 /** Bigger projects are not copied into storage. */
 export const MAX_SNAPSHOT_BYTES = 64 * 1024 * 1024
 export const AUTOSAVE_ID = 'autosave'
+/** Stamped on every autosave written from 0.2.5 on. One without it was written by an earlier version. */
+export const SNAPSHOT_VERSION = 2
 
 export interface Snapshot {
   id: string
@@ -27,6 +30,8 @@ export interface Snapshot {
   data: Uint8Array
   /** A locked project's autosave: .sxlock bytes, opened with the account like the file itself. */
   locked?: boolean
+  /** SNAPSHOT_VERSION when it was written; absent from autosaves of 0.2.4 and earlier. */
+  v?: number
 }
 
 export interface SnapshotStore {
@@ -89,10 +94,23 @@ export function snapshotStore(): SnapshotStore {
 
 const objectCount = (): number => allPlates(get()).reduce((n, p) => n + p.objects.length, 0)
 
+/** The project file name for an object's name, as Save makes it. */
+function fileNameFor(name: string): string {
+  return `${name.replace(/\.[a-z0-9]+$/i, '').replace(/[^A-Za-z0-9 _-]+/g, '').trim().replace(/\s+/g, '_') || 'project'}.sx3mf`
+}
+
 /** Names the project after its first object, as Save does. */
 function projectName(): string {
-  const first = allPlates(get()).flatMap((p) => p.objects)[0]?.name ?? 'project'
-  return `${first.replace(/\.[a-z0-9]+$/i, '').replace(/[^A-Za-z0-9 _-]+/g, '').trim().replace(/\s+/g, '_') || 'project'}.sx3mf`
+  return fileNameFor(allPlates(get()).flatMap((p) => p.objects)[0]?.name ?? 'project')
+}
+
+/**
+ * An autosave of the starting example plate left by 0.2.3 or earlier, which autosaved it untouched at every start:
+ * unstamped, one object, named after the example. It is no one's work, so it is dropped, not offered back.
+ */
+export function leftoverExample(s: Snapshot): boolean {
+  const example = demoModel(DEFAULT_MODEL)?.name
+  return s.v === undefined && !s.locked && s.objects === 1 && example !== undefined && s.name === fileNameFor(example)
 }
 
 /** What an autosave reads: every project input except slicing state. */
@@ -117,10 +135,10 @@ export async function autosaveNow(): Promise<boolean> {
   if (key) {
     const { resealSxlock } = await import('@slicerx/embed/sxlock')
     const data = await resealSxlock(plain, key)
-    await snapshotStore().put({ id: AUTOSAVE_ID, name: projectName().replace(/\.sx3mf$/, '.sxlock'), savedAt: Date.now(), objects: n, data, locked: true })
+    await snapshotStore().put({ id: AUTOSAVE_ID, name: projectName().replace(/\.sx3mf$/, '.sxlock'), savedAt: Date.now(), objects: n, data, locked: true, v: SNAPSHOT_VERSION })
     return true
   }
-  await snapshotStore().put({ id: AUTOSAVE_ID, name: projectName(), savedAt: Date.now(), objects: n, data: plain })
+  await snapshotStore().put({ id: AUTOSAVE_ID, name: projectName(), savedAt: Date.now(), objects: n, data: plain, v: SNAPSHOT_VERSION })
   return true
 }
 
@@ -162,10 +180,15 @@ export function startAutosave(delayMs = AUTOSAVE_DELAY_MS, maxWaitMs = AUTOSAVE_
   }
 }
 
-/** The autosave left from an earlier session, when there is work in it. */
+/** The autosave left from an earlier session, when there is work in it. An old one of the example plate is dropped. */
 export async function findRecovery(): Promise<Snapshot | null> {
   const rows = await snapshotStore().list().catch(() => [] as Snapshot[])
-  return rows.find((r) => r.id === AUTOSAVE_ID && r.objects > 0) ?? null
+  const found = rows.find((r) => r.id === AUTOSAVE_ID && r.objects > 0) ?? null
+  if (found && leftoverExample(found)) {
+    await discardRecovery()
+    return null
+  }
+  return found
 }
 
 /** Recent projects, newest first. */
