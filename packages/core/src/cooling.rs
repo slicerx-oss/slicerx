@@ -146,6 +146,17 @@ mod tests {
     }
 
     #[test]
+    fn indented_lines_and_millisecond_waits_count() {
+        // Orca's cooling timer skips indented G-code lines (the A1's clog detect block inside a layer) and reads a
+        // `G4 P` wait as no time (spec-cooling.md section 2a). The printer runs both, so they count here: an intended
+        // difference (on the A1 calibration cube's layer 3 we write S247 where Orca writes S252).
+        let g = "G1 X10 Y0 E1 F600\n    G0 X10 Y20 F1200\n        G4 P500\nG4 S1\n";
+        let t = layer_time(g.as_bytes());
+        let want = 10.0 / 10.0 + 20.0 / 20.0 + 0.5 + 1.0;
+        assert!((t - want).abs() < 1e-9, "{t} {want}");
+    }
+
+    #[test]
     fn a_layer_with_no_extrusion_takes_no_time() {
         assert!(layer_time(b"G1 Z1 F600\nG0 X100 F6000\nG4 S2\n").abs() < f64::EPSILON);
     }
