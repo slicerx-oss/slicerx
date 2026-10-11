@@ -21,7 +21,8 @@ export interface GeomPart {
   kindText: string | null
   slot: number | null
   settings: [string, string][]
-  paint: Record<'color' | 'seam' | 'support' | 'fuzzy', [number, string][]>
+  /** The paint codes by layer (color, seam, support, fuzzy) in the engine's buffer form; null when nothing is painted. */
+  paint: Uint8Array | null
   /** A component placing this mesh in its object names a transform. */
   transformed: boolean
   positions: Float32Array
@@ -68,4 +69,29 @@ export async function readWithGeom(bytes: Uint8Array): Promise<GeomProject> {
 export function geomMatrix(t: number[], unitScale: number): number[] {
   const v = (i: number) => t[i] ?? 0
   return [v(0), v(1), v(2), 0, v(3), v(4), v(5), 0, v(6), v(7), v(8), 0, v(9) * unitScale, v(10) * unitScale, v(11) * unitScale, 1]
+}
+
+/** A part's paint buffer as the app keeps paint: each layer's codes by triangle. */
+export function geomPaint(b: Uint8Array | null): Partial<Record<'color' | 'seam' | 'support' | 'fuzzy', Record<number, string>>> {
+  const out: Partial<Record<'color' | 'seam' | 'support' | 'fuzzy', Record<number, string>>> = {}
+  if (!b) return out
+  const view = new DataView(b.buffer, b.byteOffset, b.byteLength)
+  // One decode for the whole buffer, a character per byte, then each code is a slice of it: paint codes are ASCII,
+  // and a decoder call per painted triangle took longer than reading the project.
+  const text = new TextDecoder('latin1').decode(b)
+  let at = 0
+  for (const layer of ['color', 'seam', 'support', 'fuzzy'] as const) {
+    const n = view.getUint32(at, true)
+    at += 4
+    if (!n) continue
+    const codes: Record<number, string> = {}
+    for (let i = 0; i < n; i++) {
+      const t = view.getUint32(at, true)
+      const len = view.getUint32(at + 4, true)
+      codes[t] = text.slice(at + 8, at + 8 + len)
+      at += 8 + len
+    }
+    out[layer] = codes
+  }
+  return out
 }

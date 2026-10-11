@@ -35,17 +35,87 @@ impl<'a> Tag<'a> {
 
 /// `key="value"` pairs, quotes either way; a pair that does not parse ends the list
 pub fn attrs(s: &str) -> impl Iterator<Item = (&str, &str)> {
-    let mut rest = s;
+    // a byte loop: the values are short, and a search per quote costs more than walking them
+    let b = s.as_bytes();
+    let mut at = 0;
     std::iter::from_fn(move || {
-        let eq = rest.find('=')?;
-        let key = rest.get(..eq)?.trim();
-        let after = rest.get(eq + 1..)?.trim_start();
-        let quote = after.chars().next().filter(|q| *q == '"' || *q == '\'')?;
-        let body = after.get(1..)?;
-        let end = body.find(quote)?;
-        rest = body.get(end + 1..)?;
-        Some((key, body.get(..end)?))
+        while b.get(at).is_some_and(u8::is_ascii_whitespace) {
+            at += 1;
+        }
+        let key_from = at;
+        while b.get(at).is_some_and(|&c| c != b'=') {
+            at += 1;
+        }
+        let key = s.get(key_from..at)?.trim_ascii();
+        at += 1;
+        while b.get(at).is_some_and(u8::is_ascii_whitespace) {
+            at += 1;
+        }
+        let quote = *b.get(at).filter(|&&q| q == b'"' || q == b'\'')?;
+        at += 1;
+        let from = at;
+        while b.get(at).is_some_and(|&c| c != quote) {
+            at += 1;
+        }
+        let value = s.get(from..at)?;
+        b.get(at)?;
+        at += 1;
+        Some((key, value))
     })
+}
+
+/// `v.trim().parse::<f32>()`, the same bits: a plain decimal of up to seven digits is one exact division
+pub fn f32_of(v: &str) -> Option<f32> {
+    let t = v.trim_ascii();
+    let b = t.as_bytes();
+    let (neg, digits) = match b.first() {
+        Some(b'-') => (true, b.get(1..).unwrap_or_default()),
+        Some(b'+') => (false, b.get(1..).unwrap_or_default()),
+        _ => (false, b),
+    };
+    let mut m: u32 = 0;
+    let mut frac: Option<u32> = None;
+    let mut seen = false;
+    for &c in digits {
+        match c {
+            b'0'..=b'9' => {
+                seen = true;
+                m = match m.checked_mul(10).and_then(|x| x.checked_add(u32::from(c - b'0'))) {
+                    Some(x) if x <= 1 << 24 => x,
+                    _ => return v.trim().parse().ok(),
+                };
+                if let Some(k) = frac.as_mut() {
+                    *k += 1;
+                }
+            }
+            b'.' if frac.is_none() => frac = Some(0),
+            _ => return v.trim().parse().ok(),
+        }
+    }
+    let k = frac.unwrap_or(0);
+    if !seen || k > 10 {
+        return v.trim().parse().ok();
+    }
+    // both exact in f32, so the one rounding is the division's: the correctly rounded value
+    #[allow(clippy::cast_precision_loss, reason = "at most 2^24")]
+    let x = m as f32
+        / [1e0f32, 1e1, 1e2, 1e3, 1e4, 1e5, 1e6, 1e7, 1e8, 1e9, 1e10]
+            .get(k as usize)
+            .copied()?;
+    Some(if neg { -x } else { x })
+}
+
+/// `v.trim().parse::<u32>()`
+pub fn u32_of(v: &str) -> Option<u32> {
+    let t = v.trim_ascii();
+    let mut n: u32 = 0;
+    if t.is_empty() || !t.bytes().all(|c| c.is_ascii_digit()) {
+        return v.trim().parse().ok();
+    }
+    for c in t.bytes() {
+        n = n.checked_mul(10)?.checked_add(u32::from(c - b'0'))?;
+    }
+    Some(n)
 }
 
 /// calls `f` for every whole tag in `s`, and returns how much of `s` they cover; what is left starts mid tag
@@ -80,11 +150,13 @@ pub fn scan<E>(s: &str, mut f: impl FnMut(Tag<'_>) -> Result<(), E>) -> Result<u
         } else {
             (Kind::Open, inner)
         };
-        let name_end = inner
-            .find(|c: char| c.is_ascii_whitespace())
-            .unwrap_or(inner.len());
-        let full = inner.get(..name_end).unwrap_or("");
-        let name = full.rsplit(':').next().unwrap_or(full);
+        let b = inner.as_bytes();
+        let name_end = b.iter().position(u8::is_ascii_whitespace).unwrap_or(b.len());
+        let name_from = b
+            .get(..name_end)
+            .and_then(|n| n.iter().rposition(|&c| c == b':'))
+            .map_or(0, |c| c + 1);
+        let name = inner.get(name_from..name_end).unwrap_or("");
         f(Tag {
             name,
             attrs: inner.get(name_end..).unwrap_or(""),
@@ -130,4 +202,62 @@ pub fn unescape(s: &str) -> String {
     }
     out.push_str(rest);
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{f32_of, u32_of};
+
+    #[test]
+    fn numbers_read_as_std_reads_them() {
+        let mut texts: Vec<String> = [
+            "0",
+            "-0",
+            "+1",
+            "1.",
+            ".5",
+            "-.25",
+            " 3.25 ",
+            "16777216",
+            "16777217",
+            "0.1",
+            "1e3",
+            "inf",
+            "nan",
+            "",
+            "-",
+            "1.2.3",
+            "12345678.9",
+            "0.00000000001",
+            "99999.99",
+            "-128.0049",
+            "abc",
+        ]
+        .iter()
+        .map(|s| (*s).to_owned())
+        .collect();
+        // a sweep of decimals with up to seven digits and three to five places, as slicers write them
+        let mut x: u64 = 0x9e37_79b9_7f4a_7c15;
+        for _ in 0..200_000 {
+            x ^= x << 13;
+            x ^= x >> 7;
+            x ^= x << 17;
+            let digits = x % 10_000_000;
+            let places = 1 + (x >> 40) % 6;
+            let s = format!("{digits}");
+            let p = usize::try_from(places).unwrap_or(1).min(s.len());
+            let (a, b) = s.split_at(s.len() - p);
+            texts.push(format!(
+                "{}{}.{b}",
+                if x & 1 == 1 { "-" } else { "" },
+                if a.is_empty() { "0" } else { a }
+            ));
+        }
+        for t in &texts {
+            let want = t.trim().parse::<f32>().ok();
+            let got = f32_of(t);
+            assert_eq!(got.map(f32::to_bits), want.map(f32::to_bits), "{t}");
+            assert_eq!(u32_of(t), t.trim().parse::<u32>().ok(), "{t}");
+        }
+    }
 }
