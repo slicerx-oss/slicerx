@@ -121,6 +121,13 @@ test('Advanced shows Arrange and Transform on the bar, and Transform opens the n
   expect(Math.abs((await card.boundingBox())!.y - before)).toBeLessThanOrEqual(0.5)
   await expect(pop.getByRole('group', { name: 'Position' })).toBeVisible()
   await expect(pop.getByRole('group', { name: 'Size' })).toBeVisible()
+  // A size below the least says why it was turned down, then the field goes back.
+  const sizeX = pop.getByRole('group', { name: 'Size' }).getByRole('textbox').first()
+  const was = await sizeX.inputValue()
+  await sizeX.fill('-5')
+  await sizeX.press('Enter')
+  await expect(pop.locator('.sx-scrub-refused')).toHaveText('0.01 mm or more')
+  await expect(sizeX).toHaveValue(was)
   await page.keyboard.press('Escape')
   await expect(pop).toHaveCount(0)
   // Esc closed the popover, not the selection.
