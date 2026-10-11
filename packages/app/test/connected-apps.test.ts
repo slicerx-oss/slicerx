@@ -102,9 +102,9 @@ describe('the connection picker and connected apps', () => {
 })
 
 describe('experimental apps', () => {
-  it('Home Assistant is experimental and shows only while experimental connectors are on', () => {
-    expect(connectedApp('home-assistant')?.experimental).toBe(true)
-    expect(visibleApps(false).map((a) => a.id)).toEqual(['bambuddy', 'spoolman'])
+  it('Home Assistant passed its real check and shows whether or not experimental connectors are on', () => {
+    expect(connectedApp('home-assistant')?.experimental).toBeUndefined()
+    expect(visibleApps(false).map((a) => a.id)).toEqual(['bambuddy', 'spoolman', 'home-assistant'])
     expect(visibleApps(true).map((a) => a.id)).toEqual(['bambuddy', 'spoolman', 'home-assistant'])
     expect(EXPERIMENTAL_TIP).toMatch(/not yet tested/)
   })
