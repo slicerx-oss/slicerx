@@ -4,6 +4,11 @@ import { defineConfig } from '@playwright/test'
 
 // SX_E2E_PORT serves the app on another port, for a second run on the same machine.
 const port = Number(process.env['SX_E2E_PORT'] ?? 4317)
+// SX_TEST_HUB_PORT moves the bridge specs' sx-link off 47615, for a second run, the release gate or a running sx-link on
+// the same machine. The test build pairs with it, and the specs' hub listens on it (e2e/bridge-hub.ts); workers read
+// it from the environment set here.
+const hubPort = process.env['SX_TEST_HUB_PORT'] || '47615'
+process.env['SX_TEST_HUB_PORT'] = hubPort
 // SX_E2E_GPU=1 runs the installed Chrome with hardware WebGL, on a machine with a GPU (the project's GPU runner).
 const gpu = process.env['SX_E2E_GPU'] === '1'
 
@@ -36,5 +41,5 @@ export default defineConfig({
     { name: 'phone', use: { browserName: 'chromium', viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true } },
   ],
   // Always build and serve a fresh bundle with the test environment. A server left running from an earlier build hides changes (and lacks the relay URL the phone pairing tests need).
-  webServer: { command: `pnpm exec vite build && pnpm exec vite preview --port ${port} --strictPort --host 127.0.0.1`, url: `http://127.0.0.1:${port}/studio/`, reuseExistingServer: false, timeout: 120_000, env: { SLICERX_E2E: '1', SLICERX_SUPABASE_URL: '', SLICERX_SUPABASE_ANON_KEY: '', SLICERX_RELAY_URL: 'https://relay.example.invalid' } },
+  webServer: { command: `pnpm exec vite build && pnpm exec vite preview --port ${port} --strictPort --host 127.0.0.1`, url: `http://127.0.0.1:${port}/studio/`, reuseExistingServer: false, timeout: 120_000, env: { SLICERX_E2E: '1', SX_TEST_HUB_PORT: hubPort, SLICERX_SUPABASE_URL: '', SLICERX_SUPABASE_ANON_KEY: '', SLICERX_RELAY_URL: 'https://relay.example.invalid' } },
 })

@@ -10,7 +10,7 @@ import { type Page } from '@playwright/test'
 import { expect, plateReady, sliceCount, sliced, test } from './fixtures'
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { bridgeOn, connectApp, ctl, hub, mockLog, reportHand, resumeFromCard, sawToast, seed, sheetFor, start, useBridge } from './bridge-hub'
+import { bridgeOn, connectApp, ctl, hub, HUB_ROUTE, mockLog, reportHand, resumeFromCard, sawToast, seed, sheetFor, start, useBridge } from './bridge-hub'
 
 /** The describe the Bambu Lab printers belong to. addBambu refuses to run outside it. */
 const BAMBU = 'Bambu Lab'
@@ -50,7 +50,7 @@ test('pairs with the bridge and lists its printer', async ({ page }) => {
 test('printer setup asks the bridge to search the network only when Search my network is pressed', async ({ page }) => {
   // Every call the app makes on the hub, read on the way through.
   const calls: string[] = []
-  await page.routeWebSocket(/127\.0\.0\.1:47615/, (ws) => {
+  await page.routeWebSocket(HUB_ROUTE, (ws) => {
     const server = ws.connectToServer()
     ws.onMessage((m) => {
       if (typeof m === 'string') {
