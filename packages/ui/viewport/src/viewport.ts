@@ -58,11 +58,12 @@ import { GapLines, type GapLine } from './gaps'
 import { GuideLines, type Guides } from './guides'
 import { applyInsets, CameraRig, NO_INSETS, reducedMotion, type Insets } from './camera'
 import { cadLook, edgeLook, MaterialCache, setEdgeResolution, setSharedBandColors, setSharedLayerTops, setSharedSceneColors, shared, sharedMaterials } from './materials'
-import { buildObject, disposeObject, wideEdges, type ObjectEntry, type PartEntry } from './model'
+import { buildObject, disposeObject, wideEdges, type AsyncPartBuild, type ObjectEntry, type PartEntry } from './model'
 import { Pipeline } from './post'
 import { Stage } from './stage'
 import { FrameProbe, probeRequested, type ProbeStats } from './probe'
 import { CompileClock, emptyStartup, markSpan } from './startup'
+import { MeshBuildPool } from './mesh-pool'
 import { Toolpaths, warmupBuffers } from './toolpaths'
 import { Strikes, type StrikeMark } from './strikes'
 import type { GantryHit, GantrySpec } from './gantry'
@@ -92,6 +93,7 @@ import type {
   ViewportEvents,
   ViewportMode,
   ViewportOptions,
+  ViewportObject,
   ViewportPlate,
   ViewportStats,
   ToolpathFinish,
@@ -101,6 +103,11 @@ import type {
 
 /** How long the camera takes to reach a newly opened model from the old one's framing. */
 const SWAP_REFRAME_MS = 250
+/**
+ * A part this big (triangles) gets its creased normals and feature edges from the mesh workers, when there are some:
+ * about a quarter of a second of main thread work on a fast desktop, seconds on a big scan or sculpt.
+ */
+const ASYNC_BUILD_TRIANGLES = 200_000
 /** How long a model added beside the others takes to fade in. */
 const FADE_IN_MS = 220
 
@@ -362,9 +369,15 @@ class ViewportImpl implements Viewport {
   private sketchDrag: { handle: number } | null = null
   private readonly dims = new DimensionLayer()
   private readonly tmpRay = new Raycaster()
+  /** Workers for big parts' creased normals and edges (ViewportOptions.meshWorker), or null: built on the page. */
+  private readonly meshPool: MeshBuildPool | null
+  /** Parts showing their stand-in while their final geometry is made, and when the first of them started. */
+  private refining = 0
+  private refineStart = 0
 
   constructor(canvas: HTMLCanvasElement, opts: ViewportOptions) {
     this.canvas = canvas
+    this.meshPool = opts.meshWorker ? new MeshBuildPool(opts.meshWorker) : null
     const constructStart = performance.now()
     let renderer: WebGLRenderer
     try {
@@ -1104,7 +1117,7 @@ class ViewportImpl implements Viewport {
         kept++
         continue
       }
-      const entry = buildObject(obj, (p) => this.mats.get(this.renderMode, { color: p.color, finish: p.finish ?? 'basic' }), this.renderMode === 'xray' ? sh.edgeXray : this.renderMode === 'cad' ? sh.edgeCad : sh.edgeDark)
+      const entry = buildObject(obj, (p) => this.mats.get(this.renderMode, { color: p.color, finish: p.finish ?? 'basic' }), this.renderMode === 'xray' ? sh.edgeXray : this.renderMode === 'cad' ? sh.edgeCad : sh.edgeDark, this.asyncBuild(obj))
       this.builtFrom.set(obj.id, obj.parts.map((p) => [p.positions, p.indices]))
       this.objects.set(obj.id, entry)
       this.stage.objectsRoot.add(entry.group)
@@ -1142,6 +1155,33 @@ class ViewportImpl implements Viewport {
     // a new model swapping in for the old one eases the camera to it from the swap frame (at once under reduced motion)
     if (!opts.keepCamera) this.view('plate', this.swapping ? { animate: true, durationMs: SWAP_REFRAME_MS } : {})
     this.plateSet = { at: t0, buildMs: performance.now() - t0, built, kept }
+  }
+
+  /**
+   * How setPlate builds this object's big parts: with the mesh workers when there are some, the stand-in first and the
+   * final geometry when it comes (platerefined once every part has it).
+   */
+  private asyncBuild(obj: ViewportObject): AsyncPartBuild | undefined {
+    const pool = this.meshPool
+    if (!pool) return undefined
+    const big = obj.parts.filter((p) => p.indices.length / 3 >= ASYNC_BUILD_TRIANGLES).length
+    if (big === 0) return undefined
+    if (this.refining === 0) this.refineStart = performance.now()
+    this.refining += big
+    return {
+      pool,
+      minTriangles: ASYNC_BUILD_TRIANGLES,
+      done: (entry) => {
+        this.refining--
+        if (this.disposed) return
+        // its box may have moved by a hair (the creased vertices are the same points); shadows and the frame follow
+        if (!entry.disposed) {
+          this.shadowDirty = true
+          this.invalidate()
+        }
+        if (this.refining === 0) this.emit('platerefined', { ms: performance.now() - this.refineStart })
+      },
+    }
   }
 
   /** Objects fading in, with the stand-in materials they wear until they are whole. */
@@ -3749,6 +3789,7 @@ class ViewportImpl implements Viewport {
       aoOn: this.aoOn,
       motionScale: this.pipeline.motionScale,
       cameraMoving: this.rig.move !== null,
+      refiningParts: this.refining,
     }
   }
 
@@ -3791,6 +3832,7 @@ class ViewportImpl implements Viewport {
       disposeObject(p.entry)
     }
     this.parked.clear()
+    this.meshPool?.dispose()
     this.strikes.dispose()
     this.painter.dispose()
     this.gizmo.dispose()
