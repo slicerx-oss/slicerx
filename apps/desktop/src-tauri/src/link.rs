@@ -46,7 +46,6 @@ pub async fn link_start(app: tauri::AppHandle, state: State<'_, Bridge>) -> Resu
     use std::sync::Arc;
 
     use sx_connect::KeychainSecrets;
-    use sx_link::DEFAULT_PORT;
     use tauri::Manager;
 
     let mut slot = state.0.lock().await;
@@ -65,11 +64,31 @@ pub async fn link_start(app: tauri::AppHandle, state: State<'_, Bridge>) -> Resu
     // The printers, fleets and settings added through the bridge live in the app's own data folder, so
     // they are there at the next start. A standalone sx-link keeps its own (%APPDATA%\SlicerX\hub).
     let state = data.map(|d| d.join("hub"));
-    let link = start_bridge(DEFAULT_PORT, secrets, state).await?;
+    let link = start_bridge(hub_port(), secrets, state).await?;
     let out = info(&link);
     crate::watch::start(&app, &out.url);
     *slot = Some(link);
     Ok(out)
+}
+
+/// The hub's port: sx-link's DEFAULT_PORT. A bridge test build takes another from `SX_TEST_HUB_PORT`, so the release
+/// gate and the end-to-end tests can run next to each other, or next to an sx-link, on one machine.
+#[cfg(feature = "connect")]
+fn hub_port() -> u16 {
+    #[cfg(feature = "agent-bridge")]
+    return test_hub_port(std::env::var("SX_TEST_HUB_PORT").ok().as_deref());
+    #[cfg(not(feature = "agent-bridge"))]
+    sx_link::DEFAULT_PORT
+}
+
+/// `SX_TEST_HUB_PORT` as a port of 1024 or above; anything else is sx-link's DEFAULT_PORT. Compiled into bridge builds
+/// only; a release binary never reads the variable (apps/desktop/release/check-agent-bridge.mjs looks for its name).
+#[cfg(all(feature = "connect", feature = "agent-bridge"))]
+pub(crate) fn test_hub_port(value: Option<&str>) -> u16 {
+    value
+        .and_then(|v| v.trim().parse::<u16>().ok())
+        .filter(|p| *p >= 1024)
+        .unwrap_or(sx_link::DEFAULT_PORT)
 }
 
 /// Starts the hub on `port` and nowhere else. Clients connect to 47615 with no way to tell a
@@ -144,7 +163,16 @@ fn info(link: &sx_link::Link) -> LinkInfo {
 mod gate_tests {
     use std::time::Duration;
 
-    use super::gate_watch_pause;
+    use super::{gate_watch_pause, test_hub_port};
+
+    #[test]
+    fn a_test_build_takes_its_hub_port_from_the_environment_and_nothing_else_moves_it() {
+        assert_eq!(test_hub_port(Some("47715")), 47715);
+        assert_eq!(test_hub_port(Some(" 50000 ")), 50000);
+        for bad in [None, Some(""), Some("0"), Some("80"), Some("70000"), Some("port")] {
+            assert_eq!(test_hub_port(bad), sx_link::DEFAULT_PORT, "{bad:?}");
+        }
+    }
 
     #[test]
     fn the_gate_shortens_the_watch_pause_steps_and_nothing_else_changes_them() {

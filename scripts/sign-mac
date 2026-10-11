@@ -113,7 +113,7 @@ submit() { # file
 # file is checked with apps/desktop/release/check-agent-bridge.mjs from the SlicerX checkout this script or the target
 # sits in. An installed copy signing something outside a checkout (an Electron app, say) looks for the same names
 # itself; keep this list in step with SHELL_MARKERS in that check (apps/desktop/test/check-agent-bridge.test.ts does).
-bridge_markers=(SX_AGENT_BRIDGE_PORT agent_bridge_reply sx-agent-bridge SX_GATE_WATCH_PAUSE)
+bridge_markers=(SX_AGENT_BRIDGE_PORT agent_bridge_reply sx-agent-bridge SX_GATE_WATCH_PAUSE SX_TEST_HUB_PORT)
 bridge_check() { # the SlicerX checkout's check, found by walking up from a folder
   local d=${1:A}
   while [[ $d != / && -n $d ]]; do
