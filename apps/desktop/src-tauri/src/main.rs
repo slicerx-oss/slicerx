@@ -48,7 +48,8 @@ fn main() {
     // The edition's name and link scheme, from the config this build was made with; the menu and links read it.
     let context = tauri::generate_context!();
     brand::init(context.config());
-    let has_feed = updates::configured(context.config());
+    // A test build (debug, or with the agent bridge) has the feed's config but never uses it (updates::TEST_BUILD).
+    let updates_on = updates::checks(updates::configured(context.config()), updates::TEST_BUILD);
     let builder = tauri::Builder::default();
     // A web view whose content process died is reported and loaded again (macOS only reports this).
     #[cfg(target_os = "macos")]
@@ -81,8 +82,8 @@ fn main() {
         .menu(menu::initial)
         .on_menu_event(menu::on_event)
         .plugin(tauri_plugin_deep_link::init());
-    // The updater runs only in a build whose edition has an update feed; without one the plugin has no config to start from.
-    let builder = if has_feed {
+    // The updater runs only in a release build whose edition has an update feed; without one the plugin has no config to start from.
+    let builder = if updates_on {
         builder.plugin(tauri_plugin_updater::Builder::new().build())
     } else {
         builder
@@ -97,7 +98,7 @@ fn main() {
         .manage(opened::PendingAuth::default())
         .manage(closing::Unsaved::default())
         .manage(menu::Shown::default())
-        .manage(updates::Updates::new(has_feed))
+        .manage(updates::Updates::new(updates_on))
         .on_window_event(closing::window_event)
         .manage(watch_state())
         .setup(|app| {

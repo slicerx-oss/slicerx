@@ -51,6 +51,10 @@ keeps its own data folder, web profile, printer hub state and single-instance lo
 SlicerX without reading or changing that copy's state, and never sees the printers paired there. That default is the
 safe choice: keep it unless a run truly needs the installed app's state.
 
+A bridge build, like any debug build, never checks for updates, whatever version it reports: the shell does not start
+the updater (`updates::TEST_BUILD` in `src-tauri/src/updates.rs`), so no update sheet opens at launch and Help has no
+Check for updates.
+
 `--same-identifier` builds with the edition's own identifier instead. The test build then is the installed SlicerX as
 far as the system can tell: it reads and changes the same data folder and web profile (settings, recent and unsaved
 projects, the Vault sign-in), sees and can use the printers paired there, and shares the single-instance lock, so

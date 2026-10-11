@@ -4,6 +4,8 @@
 //! after the person clicks Restart to update, installs and restarts; nothing here restarts on its own. Every download
 //! is checked against the edition's update key, and its signature must name the version the feed announced.
 //! A build whose edition has no update feed (dev builds, forks without one) never registers the plugin: mode "off".
+//! Neither does a test build (a debug build, or one with the agent bridge), whatever its version says: it never asks
+//! the feed, and the page shows no update sheet and no Check for updates.
 //! A .deb or .rpm install is left to the package manager: mode "download" shows the release instead.
 use std::sync::Mutex;
 
@@ -48,6 +50,15 @@ pub fn mode_for(configured: bool, os: &str, bundle: Option<BundleType>, appimage
 /// Whether this build's config has an update feed (the edition's `release.updates`, apps/desktop/package.json build:app).
 pub fn configured(config: &tauri::Config) -> bool {
     config.plugins.0.contains_key("updater")
+}
+
+/// A debug build (`tauri dev`, a `--debug` build) or a build with the agent bridge (scripts/bridge-build.mjs): builds
+/// for testing, which are not what the feed's versions describe. Keyed on how the build was made, never its version.
+pub const TEST_BUILD: bool = cfg!(debug_assertions) || cfg!(feature = "agent-bridge");
+
+/// Whether this build asks the update feed: only a build that is not a test build and whose config has a feed.
+pub fn checks(configured: bool, test_build: bool) -> bool {
+    configured && !test_build
 }
 
 pub struct Updates {
@@ -291,6 +302,14 @@ mod tests {
         // a pre-release tag counts as its version; a min_version that does not parse requires nothing
         assert!(below_min("0.2.1-rc.1", Some("0.2.2")));
         assert!(!below_min("0.2.1", Some("soon")));
+    }
+
+    #[test]
+    fn a_release_build_with_a_feed_checks_and_a_test_build_never_does() {
+        assert!(checks(true, false));
+        assert!(!checks(true, true));
+        assert!(!checks(false, false));
+        assert!(!checks(false, true));
     }
 
     #[test]
