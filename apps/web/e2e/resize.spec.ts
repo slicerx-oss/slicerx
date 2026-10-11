@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // Pane edges: drag to resize, keys, collapse by drag and double-click, sizes kept per look.
-import { type Page } from '@playwright/test'
+import { type Locator, type Page } from '@playwright/test'
 import { expect, plateReady, sliceCount, sliced, test } from './fixtures'
 
 async function prepare(page: Page): Promise<void> {
@@ -16,6 +16,25 @@ async function prepare(page: Page): Promise<void> {
 
 const width = (page: Page) => page.locator('aside.pane').first().evaluate((el) => Math.round(el.getBoundingClientRect().width))
 
+/**
+ * The box of `el` once it has stopped moving. A pane slides its width (160 ms, longer on a busy runner), so a check
+ * that the width passed a bound can pass mid-slide, and a box read then is not where the edge comes to rest: a drag
+ * started there misses the 8 px edge and moves nothing.
+ */
+async function settledBox(el: Locator): Promise<{ x: number; y: number; width: number; height: number }> {
+  const seen: { box: { x: number; y: number; width: number; height: number } | null; last: string } = { box: null, last: '' }
+  await expect
+    .poll(async () => {
+      seen.box = await el.boundingBox()
+      const now = JSON.stringify(seen.box)
+      const still = seen.box !== null && now === seen.last
+      seen.last = now
+      return still
+    }, { intervals: [100] })
+    .toBe(true)
+  return seen.box!
+}
+
 test.describe('resizable panes', () => {
   test.skip(({ isMobile }) => isMobile, 'Panes stack on a phone')
 
@@ -23,8 +42,8 @@ test.describe('resizable panes', () => {
     await prepare(page)
     const edge = page.getByRole('separator', { name: /Resize printer and settings/i })
     await expect(edge).toHaveAttribute('aria-orientation', 'vertical')
+    const box = await settledBox(edge)
     const w0 = await width(page)
-    const box = (await edge.boundingBox())!
     await page.mouse.move(box.x + box.width / 2, box.y + 200)
     await page.mouse.down()
     await page.mouse.move(box.x + box.width / 2 + 80, box.y + 200, { steps: 6 })
@@ -37,7 +56,7 @@ test.describe('resizable panes', () => {
     await page.keyboard.press('Home')
     await expect.poll(() => width(page)).toBeLessThanOrEqual(250)
     // Dragging well past the minimum collapses to the rail, and a double-click opens it again.
-    const b2 = (await edge.boundingBox())!
+    const b2 = await settledBox(edge)
     await page.mouse.move(b2.x + b2.width / 2, b2.y + 200)
     await page.mouse.down()
     await page.mouse.move(b2.x - 150, b2.y + 200, { steps: 8 })
