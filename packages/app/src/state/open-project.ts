@@ -205,6 +205,11 @@ async function addProjectShown(
     await (await import('./project-gcode')).reviewOpenedGcode(name, project.settings)
     markOpenStage('gcode')
   }
+  // Settings that match no goal start from the nearest one by layer height, its tile marked edited.
+  if (wasEmpty && get().goal === 'custom') {
+    const { nearestGoal } = await import('../lib/goal-edits')
+    mine(() => set((s) => ({ goalBase: nearestGoal(resolveConfig(s.easy, s.overrides), s.profile?.goalValues) })))
+  }
   if (!geometryOnly && (await import('../plate/layer-ranges')).layerHeightsDiffer(get().plate)) {
     note = `${note ? `${note} ` : ''}Per-object layer heights are not imported yet: its objects change layer height at different heights, so the plate uses one layer height.`
   }

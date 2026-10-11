@@ -272,6 +272,8 @@ export interface AppState {
   zoneHover: string | null
   easy: EasySettings
   goal: Goal
+  /** The goal the settings started from: picked on the Goal tiles, and the tier of the maker's presets while edited. */
+  goalBase: EasyGoal
   overrides: Record<string, SettingValue>
   expertOpen: boolean
   look: PrepareLook
@@ -635,6 +637,7 @@ export const appStore = createStore<AppState>()(() => ({
   // Every start is a fresh plate: sleipnir is on unless the person chose otherwise (lib/sleipnir-default.ts).
   easy: freshEasy(normalizeEasy(prefs.easy ? { ...EASY_DEFAULTS, ...prefs.easy } : EASY_DEFAULTS)),
   goal: prefs.goal,
+  goalBase: prefs.goalBase ?? (prefs.goal === 'custom' ? 'standard' : prefs.goal),
   overrides: {},
   expertOpen: false,
   look: 'studio',
@@ -780,7 +783,7 @@ function alwaysAutoSliceDefault(): boolean {
 }
 
 
-const PERSISTED = ['workspace', 'modelModeDefault', 'sliceLook', 'rails', 'recents', 'appearance', 'sidebarFolds', 'showToolhead', 'playbackSpeed', 'followNozzle', 'easy', 'goal', 'printerId', 'scheme', 'lookAndFeel', 'themeFollowsSystem', 'themeIds', 'userThemes', 'themeCache', 'fonts', 'settingsMode', 'tooltips', 'autoSlice', 'autoSliceBySize', 'cadTools', 'electricity', 'printerNozzles', 'printerExtruders', 'handPrinters', 'bays', 'printerBays', 'printersView', 'easyTouched', 'paneSizes', 'queue', 'spoolLinks', 'presetSync', 'firstRun', 'crashReports', 'motion', 'agreement', 'installId', 'setupPilotOff', 'noPrinter', 'pilot', 'sendChoices', 'dryMarks', 'activePresets'] as const satisfies readonly (keyof AppState)[]
+const PERSISTED = ['workspace', 'modelModeDefault', 'sliceLook', 'rails', 'recents', 'appearance', 'sidebarFolds', 'showToolhead', 'playbackSpeed', 'followNozzle', 'easy', 'goal', 'goalBase', 'printerId', 'scheme', 'lookAndFeel', 'themeFollowsSystem', 'themeIds', 'userThemes', 'themeCache', 'fonts', 'settingsMode', 'tooltips', 'autoSlice', 'autoSliceBySize', 'cadTools', 'electricity', 'printerNozzles', 'printerExtruders', 'handPrinters', 'bays', 'printerBays', 'printersView', 'easyTouched', 'paneSizes', 'queue', 'spoolLinks', 'presetSync', 'firstRun', 'crashReports', 'motion', 'agreement', 'installId', 'setupPilotOff', 'noPrinter', 'pilot', 'sendChoices', 'dryMarks', 'activePresets'] as const satisfies readonly (keyof AppState)[]
 
 appStore.subscribe((s, prev) => {
   if (PERSISTED.some((k) => s[k] !== prev[k])) {
@@ -797,6 +800,7 @@ appStore.subscribe((s, prev) => {
       followNozzle: s.followNozzle,
       easy: s.easy,
       goal: s.goal,
+      goalBase: s.goalBase,
       printerId: s.printerId,
       scheme: s.scheme,
       lookAndFeel: s.lookAndFeel as Prefs['lookAndFeel'],
