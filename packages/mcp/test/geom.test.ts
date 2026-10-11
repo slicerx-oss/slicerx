@@ -35,7 +35,7 @@ describe.skipIf(!existsSync(geomBin))('mesh tools with the real sx-geom', () => 
   it('lists the tools', async () => {
     const h = await connect({ sxGeomBin: geomBin })
     const names = (await h.client.listTools()).tools.map((t) => t.name)
-    for (const n of ['cut', 'split', 'orient', 'repair', 'hollow', 'emboss', 'calibration_model', 'resume_plan', 'layers_plan', 'build', 'subtract']) expect(names).toContain(`slicerx_geom_${n}`)
+    for (const n of ['cut', 'split', 'orient', 'repair', 'hollow', 'emboss', 'calibration_model', 'resume_plan', 'layers_plan', 'build', 'subtract', 'render']) expect(names).toContain(`slicerx_geom_${n}`)
   })
 
   it('cuts a cube in two and writes both parts', async () => {
@@ -77,6 +77,28 @@ describe.skipIf(!existsSync(geomBin))('mesh tools with the real sx-geom', () => 
     expect(c.isError, JSON.stringify(c.content)).toBeFalsy()
     const bad = await h.call('slicerx_geom_cut', { model: 'sample:nope', plane: { axis: 'z', at: 5 } })
     expect(bad.isError).toBe(true)
+  })
+
+  it('draws a model: a short summary by default, the PNG only when asked', async () => {
+    const h = await connect({ sxGeomBin: geomBin })
+    const plain = await h.call('slicerx_geom_render', { model: 'sample:x-mark' })
+    expect(plain.isError, JSON.stringify(plain.content)).toBeFalsy()
+    expect(plain.content.every((c) => c.type === 'text')).toBe(true)
+    const s = data<{ output: { view: string; widthPx: number; heightPx: number; triangles: number } }>(plain).output
+    expect(s.view).toBe('iso')
+    expect(Math.max(s.widthPx, s.heightPx)).toBe(384)
+    expect(s.triangles).toBeGreaterThan(1000)
+    const shown = await h.call('slicerx_geom_render', { model: 'sample:x-mark', view: 'top', size: 128, image: true })
+    expect(shown.isError, JSON.stringify(shown.content)).toBeFalsy()
+    const img = shown.content.find((c) => c.type === 'image') as { data: string; mimeType: string } | undefined
+    expect(img?.mimeType).toBe('image/png')
+    const png = Buffer.from(img?.data ?? '', 'base64')
+    expect(png.subarray(1, 4).toString()).toBe('PNG')
+    expect(Math.max(png.readUInt32BE(16), png.readUInt32BE(20))).toBe(128)
+    // Paint is drawn and counted: one whole triangle of the cube painted slot 2.
+    const painted = await h.call('slicerx_geom_render', { model: 'sample:cube-20', paint: { '0': '8' }, colors: ['#ff8000', '#ffff80'] })
+    const area = data<{ output: { paintedAreaMm2: Record<string, number> } }>(painted).output.paintedAreaMm2
+    expect(area['2']).toBeCloseTo(200, 1)
   })
 
   it('follows the permission policy for mesh-writing tools', async () => {
