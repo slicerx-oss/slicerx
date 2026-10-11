@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // A slice in progress takes the big button's place in the Estimate block in a track of the button's own height, so
-// the block does not move when a slice starts or ends, and muninn rides the bar inside the track, clear of the text
+// the block does not move when a slice starts or ends, and muninn lays the slicing line inside the track, clear of the text
 // above it.
 import { expect, plateReady, test } from './fixtures'
 

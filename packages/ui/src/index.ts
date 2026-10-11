@@ -47,7 +47,7 @@ export type { ContextMenuProps, ContextMenuBind, MenuEntry, MenuIconProps, MenuP
 export { ResizeEdge } from './components/resize-edge'
 export type { ResizeEdgeProps } from './components/resize-edge'
 export { TooltipHost, tipAttrs, TIP_TIMING } from './components/tooltip'
-export { Raven, RAVEN_BODY, RAVEN_WING, RAVEN_EYE } from './components/raven'
+export { Raven, RAVEN_BODY, RAVEN_WING, RAVEN_EYE, RuneRing } from './components/raven'
 export { motionPreference, motionReduced, resolveMotion, setMotionPreference, subscribeMotion, systemReducesMotion } from './motion'
 export { useMotionReduced } from './motion-hook'
 export type { MotionPreference } from './motion'

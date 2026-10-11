@@ -290,6 +290,7 @@
 :root[data-motion="reduced"] .sx-pilot .cur { animation:none;opacity:.8 }
 :root[data-motion="reduced"] .sx-pilot .dot-p, :root[data-motion="reduced"] .sx-pilot .sx-pill[data-state=run]::before { animation:none }
 :root[data-motion="reduced"] .sx-pilot .appr-t { transition:none }
+:root[data-motion="reduced"] .sx-pilot .raven-wait-cue, :root[data-motion="reduced"] .sx-pilot .raven-wait-bird { animation-duration:0s }
 /* A tool group folds to one quiet line; the rows show on click. */
 .sx-pilot .tfold{width:100%;display:grid;grid-template-columns:18px minmax(0,1fr) 14px;align-items:center;column-gap:10px;border:0;background:none;padding:8px 14px;text-align:left;cursor:pointer;color:var(--t-mute);font:inherit;font-size:13.5px}
 .sx-pilot .tfold .st{display:inline-flex;color:var(--t-mute)}
@@ -298,10 +299,15 @@
 .sx-pilot .tfold .chev{transition:transform .15s ease}
 .sx-pilot .tools.open .tfold .chev{transform:rotate(180deg)}
 .sx-pilot .tools.open .tfold{border-bottom:1px solid var(--line-soft)}
-/* A wait over 1.2 s: the plain cue gives way to huginn or muninn beating a wing. */
+/* A wait over 1.2 s: the plain cue gives way to huginn or muninn in a turning rune ring, 34 px across over the cue's
+   slot, so the row keeps its size. */
 .sx-pilot .raven-wait{display:inline-grid;place-items:center;flex:none}
 .sx-pilot .raven-wait>*{grid-area:1/1}
 .sx-pilot .raven-wait-cue{display:inline-grid;place-items:center;animation:sxp-raven-out .2s 1.2s both}
-.sx-pilot .raven-wait-bird{color:var(--t-sub);animation:sxp-raven-in .2s 1.2s both}
+.sx-pilot .raven-wait-bird{position:relative;display:grid;place-items:center;width:100%;height:100%;color:var(--t-sub);animation:sxp-raven-in .2s 1.2s both}
+.sx-pilot .raven-wait-bird>*{grid-area:1/1}
+.sx-pilot .raven-wait-bird .sx-rune-ring{position:absolute;left:50%;top:50%;margin:-17px 0 0 -17px}
+/* by Thinking the ring would touch the label and the dock's edge: room on both sides, there from the start */
+.sx-pilot .think-h .raven-wait{margin:0 4px 0 8px}
 @keyframes sxp-raven-out{to{opacity:0}}
 @keyframes sxp-raven-in{from{opacity:0}to{opacity:1}}
