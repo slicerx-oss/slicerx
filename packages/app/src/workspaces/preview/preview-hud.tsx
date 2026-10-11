@@ -69,6 +69,9 @@ export function Legend() {
   const vision = useApp((s) => s.appearance.colorVision)
   // The slots' colors, which the filament view draws with; a string, so the selector stays stable.
   const slotColors = useApp((s) => resolveSlots(s).map((r) => r.color).join())
+  // Each slot reads the filament it uses, as Filament use does, so the two agree; the toolpath length is the fallback
+  // for a slice that reports no filament.
+  const filamentMm = useApp((s) => shownSlice(s.slice)?.result.stats.filamentMm)
   if (!preview) return null
   const stats = colorMode === 'feature' ? previewStats(preview) : null
   const tools = colorMode === 'tool' ? previewStats(preview).toolLengthM : null
@@ -84,7 +87,11 @@ export function Legend() {
               <li key={i} data-testid="legend-slot" data-slot={i + 1}>
                 <Swatch color={colors[i] ?? 'var(--dim)'} size="sm" />
                 <span>Slot {i + 1}</span>
-                <b>{lengthLabel(m)}</b>
+                {filamentMm?.[i] ? (
+                  <b {...tipAttrs({ title: 'Filament used', body: `${lengthLabel(m)} of toolpaths` })}>{`${(filamentMm[i]! / 1000).toFixed(2)} m`}</b>
+                ) : (
+                  <b {...tipAttrs({ title: 'Toolpath length' })}>{lengthLabel(m)}</b>
+                )}
               </li>,
             ]
           : [],
