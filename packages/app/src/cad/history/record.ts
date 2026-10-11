@@ -4,7 +4,7 @@
 // was before the tool changed it, for the tool's own store update. Ending a history (a split) keeps a
 // note and makes the new parts the base. No engine calls in here.
 import { setKeySalt } from '../../geom/client'
-import { HISTORY_VERSION, direction, followField, followFor, followed, followsOf, invert, mainNumber, multiply, onFlatFace, point, refPoints, stepId, stepSalt, type FlatFace, type Follow, type History, type Step, type StepParams } from '@slicerx/cad-history'
+import { HISTORY_VERSION, appendStep, direction, followField, followFor, followed, followsOf, invert, mainNumber, multiply, onFlatFace, point, refPoints, settle, stepId, stepSalt, type FlatFace, type Follow, type History, type Step, type StepParams } from '@slicerx/cad-history'
 import type { MeshPart } from '@slicerx/contracts'
 import type { PlateEntry } from '../../state/store'
 import { bindFor } from '../values'
@@ -59,22 +59,12 @@ export function historyOf(e: Pick<PlateEntry, 'parts' | 'history'>): History {
   return e.history ?? { version: HISTORY_VERSION, base: e.parts, steps: [] }
 }
 
-/** Steps that broke, and everything after the first one, did not run; a new step after them suppresses them so the history matches the mesh. */
-export function settle(steps: readonly Step[]): Step[] {
-  const first = steps.findIndex((s) => s.broken !== undefined && !s.suppressed)
-  return first < 0 ? [...steps] : steps.map((s, i) => (i >= first && !s.suppressed ? { ...s, suppressed: true } : s))
-}
-
 /**
  * The history after a tool ran `params` on part `part` (-1 for every part) of `before`, the entry
  * as it was. `transform` is the object's transform the params were given in (world values).
  */
 export function withStep(before: Pick<PlateEntry, 'parts' | 'history' | 'transform'>, part: number, params: StepParams, transform: number[] = before.transform): History {
-  const h = historyOf(before)
-  const steps = settle(h.steps)
-  const step: Step = { id: takeId(), part, transform: [...transform], params, ...takeBind(params) }
-  const follow = followFor(steps, step)
-  return { ...h, steps: [...steps, follow ? { ...step, follow } : step] }
+  return appendStep(historyOf(before), { id: takeId(), part, transform: [...transform], params, ...takeBind(params) })
 }
 
 /** A new body made by a step: empty base, the step first. `transform` is the new object's transform. */

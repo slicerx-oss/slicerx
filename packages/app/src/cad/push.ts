@@ -12,9 +12,9 @@ import { fromGeom, toGeom } from '../geom/client'
 import { applyMat } from './cad-ops'
 import { commitMade } from './commit'
 import { followPush } from './dimensions'
-import { findTriangle, followed, followsOf, keyOfTriangle, onFlatFace, stepName, type StepParams } from '@slicerx/cad-history'
+import { findTriangle, followed, followsOf, keyOfTriangle, onFlatFace, settle, stepName, type StepParams } from '@slicerx/cad-history'
 import { applyHistory, nowOf, runReplay } from './history/ops'
-import { reserveStepId, settle, withPushBefore, withStep } from './history/record'
+import { reserveStepId, withPushBefore, withStep } from './history/record'
 import { get, markStale, type PlateEntry } from '../state/store'
 
 type Loader = { loadParts(name: string, parts: MeshPart[]): Promise<MeshHandle> }

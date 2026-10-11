@@ -4,6 +4,7 @@
 // each face, and how a project file stores it. Shared by the app, its geometry worker and the MCP server.
 export * from './types'
 export * from './model'
+export * from './edit'
 export * from './replay'
 export * from './provenance'
 export * from './salt'
