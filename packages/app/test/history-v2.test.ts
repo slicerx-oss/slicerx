@@ -8,7 +8,7 @@
 // (live wasm when built, recorded replies otherwise).
 import { describe, expect, it } from 'vitest'
 import { geom } from '../src/geom/client'
-import { HISTORY_VERSION, clearReplayCache, faceKeyAt, historyFiles, historyNewer, parseHistories, replayHistory, stepSalt, type History, type HistoryMesh, type Step, type StepParams } from '@slicerx/cad-history'
+import { HISTORY_VERSION, clearReplayCache, faceKeyAt, historyFiles, historyLost, historyNewer, parseHistories, replayHistory, stepSalt, type History, type HistoryMesh, type Step, type StepParams } from '@slicerx/cad-history'
 import { reserveStepId, withStep } from '../src/cad/history/record'
 import { setGeomProvider } from '../src/geom/client'
 import { boxMesh } from '../src/plate/mesh-ops'
@@ -125,6 +125,28 @@ describe('the history file, version 2', () => {
     v3.set('Metadata/slicerx_history.json', new TextEncoder().encode(JSON.stringify({ ...j, version: 3 })))
     expect(parseHistories(v3, new Set(['1'])).size).toBe(0)
     expect(historyNewer(v3)).toMatch(/saved by a newer SlicerX.*open without their history/)
+    // A newer file is historyNewer's to explain, not a damaged one.
+    expect(historyLost(v3, new Set(['1']), parseHistories(v3, new Set(['1'])))).toBeNull()
+  })
+
+  it('says when saved history does not read, instead of opening the objects without it silently', () => {
+    const ok = files(history(boss(0), pull(12345)))
+    const ids = new Set(['1'])
+    expect(historyLost(ok, ids, parseHistories(ok, ids))).toBeNull()
+    // The whole file damaged.
+    const cut = new Map(ok)
+    cut.set('Metadata/slicerx_history.json', ok.get('Metadata/slicerx_history.json')!.slice(0, 40))
+    expect(parseHistories(cut, ids).size).toBe(0)
+    expect(historyLost(cut, ids, parseHistories(cut, ids))).toBe("This project's CAD history could not be read, so its objects open without it.")
+    // One object's steps damaged: that object opens without its history and the note counts it.
+    const j = JSON.parse(new TextDecoder().decode(ok.get('Metadata/slicerx_history.json')!))
+    j.objects[0].steps[0].transform = 'not a matrix'
+    const bad = new Map(ok)
+    bad.set('Metadata/slicerx_history.json', new TextEncoder().encode(JSON.stringify(j)))
+    expect(parseHistories(bad, ids).size).toBe(0)
+    expect(historyLost(bad, ids, parseHistories(bad, ids))).toBe('The CAD history of 1 object could not be read, so it opens without it.')
+    // A history for an object the project no longer has is not counted.
+    expect(historyLost(bad, new Set(['2']), parseHistories(bad, new Set(['2'])))).toBeNull()
   })
 })
 
