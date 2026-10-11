@@ -19,9 +19,13 @@ export async function appUp(s) {
   return health.value
 }
 
-/** True when the app's printer is the gate's A1 with a 0.4 mm nozzle. */
+/**
+ * True when the app's printer is the gate's A1 with a 0.4 mm nozzle. It reads the chosen printer only: the state's
+ * noPrinter is first-run's "skipped the printer step" note, which stays set on a profile that skipped it once (a reused
+ * macOS profile) even after a printer is added.
+ */
 export function isGatePrinter(st) {
-  return st.printer?.model === PRINTER.name && Number(st.printer?.nozzleMm) === PRINTER.nozzleMm && !st.printer?.noPrinter
+  return Boolean(st.printer?.id) && st.printer?.model === PRINTER.name && Number(st.printer?.nozzleMm) === PRINTER.nozzleMm
 }
 
 /** Goes through setup's hand-made printer form: search, the A1, no connection, Continue, then the rest of setup. */
