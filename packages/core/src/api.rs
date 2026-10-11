@@ -66,6 +66,13 @@ pub fn load_3mf_plate_objects(bytes: &[u8], file_name: &str) -> Result<Vec<(u32,
     crate::threemf::load_plate_objects(bytes, file_name)
 }
 
+/// [`load_3mf_plate_objects`] with the engine's own 3MF reader, for the format corpus while the readers are
+/// compared.
+#[doc(hidden)]
+pub fn load_3mf_plate_objects_legacy(bytes: &[u8], file_name: &str) -> Result<Vec<(u32, Vec<Mesh>)>> {
+    crate::threemf::load_plate_objects_legacy(bytes, file_name)
+}
+
 /// A slice request, mirroring `SliceRequest` in `packages/contracts/src/slice.ts`.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
