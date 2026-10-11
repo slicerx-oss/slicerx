@@ -200,5 +200,6 @@ pub fn painted_tile() -> Mesh {
                 ..api::MeshPart::default()
             },
         ],
+        ..Mesh::default()
     }
 }

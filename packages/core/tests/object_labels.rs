@@ -51,6 +51,7 @@ fn object(boxes: &[[f32; 6]]) -> Arc<Mesh> {
     Arc::new(Mesh {
         name: "boxes".into(),
         parts: boxes.iter().map(|&b| cuboid(b, 1)).collect(),
+        ..Mesh::default()
     })
 }
 
@@ -304,6 +305,7 @@ fn stacked_objects_with_one_footprint_keep_their_own_labels() {
     let merged = Mesh {
         name: "x".into(),
         parts: items.iter().flat_map(|m| m.parts.iter().cloned()).collect(),
+        ..Mesh::default()
     };
     let at = sx_core::plate::centered_transform(&merged, sx_core::api::Bed::default());
     let objects: Vec<Value> = items

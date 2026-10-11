@@ -25,6 +25,7 @@ impl Default for Bed {
 
 /// What a volume of an object does, as in `OrcaSlicer`'s volume types.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
 pub enum VolumeRole {
     /// Cut out of the object.
     Negative,
@@ -139,14 +140,16 @@ impl Plate {
             transform[12] = c[0] - f32::midpoint(lo[0], hi[0]);
             transform[13] = c[1] - f32::midpoint(lo[1], hi[1]);
         }
+        let volumes = file_volumes(&mesh);
+        let part_settings = mesh.part_settings.clone();
         let object = PlateObject {
             id: "object-1".to_owned(),
             name: mesh.name.clone(),
             mesh: Arc::new(mesh),
             transform,
             slot_overrides: Vec::new(),
-            part_settings: Vec::new(),
-            volumes: Vec::new(),
+            part_settings,
+            volumes,
             settings: serde_json::Value::Null,
             brim_points: Vec::new(),
         };
@@ -155,6 +158,25 @@ impl Plate {
             objects: vec![object],
         }
     }
+}
+
+/// The cuts, modifiers and support volumes a loaded file marks in `mesh`, as volumes of the object that holds it:
+/// they share the object's transform, as they share the space of its parts.
+pub fn file_volumes(mesh: &Mesh) -> Vec<PlateVolume> {
+    mesh.volumes
+        .iter()
+        .map(|v| PlateVolume {
+            name: v.part.name.clone(),
+            role: v.role,
+            mesh: Arc::new(Mesh {
+                name: v.part.name.clone(),
+                parts: vec![v.part.clone()],
+                ..Mesh::default()
+            }),
+            transform: None,
+            settings: v.settings.clone(),
+        })
+        .collect()
 }
 
 /// A translation that centers the mesh on the bed and drops it to z = 0.

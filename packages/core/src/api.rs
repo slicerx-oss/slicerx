@@ -413,17 +413,22 @@ pub fn build_plate(req: &SliceRequest, meshes: &dyn Fn(&str) -> Result<Arc<Mesh>
             o.name.clone()
         };
         let slot_overrides = o.slot_overrides.iter().map(|(k, v)| (k.clone(), *v)).collect();
-        let part_settings = o
+        // The file's part settings, with the request's for a part replacing the file's.
+        let mut part_settings: Vec<(String, serde_json::Value)> = mesh
             .part_settings
             .iter()
-            .map(|(k, v)| {
-                (
-                    k.clone(),
-                    serde_json::Value::Object(v.iter().map(|(a, b)| (a.clone(), b.clone())).collect()),
-                )
-            })
+            .filter(|(k, _)| !o.part_settings.contains_key(k))
+            .cloned()
             .collect();
-        let mut volumes = Vec::with_capacity(o.volumes.len());
+        part_settings.extend(o.part_settings.iter().map(|(k, v)| {
+            (
+                k.clone(),
+                serde_json::Value::Object(v.iter().map(|(a, b)| (a.clone(), b.clone())).collect()),
+            )
+        }));
+        // The volumes the file marks come first, then the request's own.
+        let mut volumes = crate::plate::file_volumes(&mesh);
+        volumes.reserve(o.volumes.len());
         for v in &o.volumes {
             let role = match v.role.as_str() {
                 "negative" => crate::plate::VolumeRole::Negative,
@@ -1283,6 +1288,7 @@ mod tests {
         Arc::new(Mesh {
             name: "cube".into(),
             parts: vec![part],
+            ..Mesh::default()
         })
     }
 
@@ -1407,6 +1413,7 @@ mod tests {
         Arc::new(Mesh {
             name: "house".into(),
             parts: vec![part],
+            ..Mesh::default()
         })
     }
 
