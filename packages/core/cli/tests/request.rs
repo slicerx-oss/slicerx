@@ -512,3 +512,59 @@ fn paint_in_the_request_is_written_over_the_files_paint() {
         assert!(err.contains(says), "{err}");
     }
 }
+
+#[test]
+fn settings_the_engine_does_not_use_are_listed_and_strict_refuses() {
+    let body = std::fs::read_to_string(fixture("cube-request.json"))
+        .unwrap()
+        .replace("\"cube.stl\"", &format!("{:?}", fixture("cube.stl")));
+    let mut req: serde_json::Value = serde_json::from_str(&body).unwrap();
+    req["config"]["zz_made_up_key"] = serde_json::json!(1);
+    req["config"]["wall_loops"] = serde_json::json!("abc");
+    let text = req.to_string();
+    let run = |extra: &[&str]| {
+        let mut child = sx()
+            .args(["slice", "--request", "-"])
+            .args(extra)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        child.stdin.take().unwrap().write_all(text.as_bytes()).unwrap();
+        child.wait_with_output().unwrap()
+    };
+    let out = run(&[]);
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(err.contains("sx: settings not used:"), "{err}");
+    assert!(err.contains("not used zz_made_up_key"), "{err}");
+    assert!(err.contains("invalid wall_loops = \"abc\""), "{err}");
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(
+        v["configReport"]["notApplied"],
+        serde_json::json!(["zz_made_up_key"])
+    );
+    assert_eq!(v["configReport"]["invalid"][0]["key"], "wall_loops");
+    let out = run(&["--strict"]);
+    assert_eq!(out.status.code(), Some(3));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("zz_made_up_key"));
+    // The plain path reads a config file the same way.
+    let dir = std::env::temp_dir().join(format!("sx-cli-strict-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let cfg = dir.join("cfg.json");
+    std::fs::write(&cfg, req["config"].to_string()).unwrap();
+    let out = sx()
+        .args(["slice", &fixture("cube.stl"), "--config"])
+        .arg(&cfg)
+        .args(["-o", "-", "--strict"])
+        .output()
+        .unwrap();
+    assert_eq!(
+        out.status.code(),
+        Some(3),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let _ = std::fs::remove_dir_all(dir);
+}

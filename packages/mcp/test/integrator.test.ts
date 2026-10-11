@@ -11,6 +11,7 @@ import { describe, expect, it } from 'vitest'
 import { resolveSliceConfig } from '../src/config'
 import { gcode3mf } from '../src/gcode3mf'
 import type { PresetLayer } from '../src/presets'
+import { readProjectFile } from '../src/projectfile'
 import { SUPPORT_KEYS } from '../src/profiles'
 import { defaultConfig } from '../src/settings'
 import type { SliceSummary } from '../src/slicer'
@@ -116,6 +117,51 @@ describe('3MF projects', () => {
     // A project without support settings lists none.
     const plain = data<{ support: Record<string, unknown> }>(await h.call('slicerx_inspect_project', { file: projectFile(h.dir) }))
     expect(plain.support).toEqual({})
+  })
+
+
+  it("reports what the project's print settings carry that slicing will not use, by kind", async () => {
+    const h = await connect()
+    const path = join(h.dir, 'unused-keys.3mf')
+    writeFileSync(
+      path,
+      writeZip([
+        { name: '3D/3dmodel.model', data: MODEL.replace('<resources>', '<metadata name="Application">BambuStudio-01.10.02.73</metadata><resources>') },
+        {
+          name: 'Metadata/project_settings.config',
+          data: JSON.stringify({
+            printer_settings_id: 'Bambu Lab A1 0.4 nozzle',
+            layer_height: '0.24',
+            not_a_real_key: '1',
+            spaghetti_detector: '1',
+            ai_infill: '1',
+            support_material_extruder: '2',
+            wall_loops: 'abc',
+            wall_sequence: 'inner wall/outer wall',
+            z_hop: '0.4',
+          }),
+        },
+      ]),
+    )
+    const r = await h.call('slicerx_inspect_project', { file: path })
+    expect(r.isError, text(r)).toBeFalsy()
+    type Report = { source?: string; unknown: { key: string; value: unknown }[]; retired: string[]; other_slicer: string[]; renamed: { from: string; to: string }[]; invalid: { key: string; value: unknown }[] }
+    const rep = data<{ import_report: Report }>(r).import_report
+    expect(rep.source).toBe('BambuStudio-01.10.02.73')
+    expect(rep.unknown).toEqual([{ key: 'not_a_real_key', value: '1' }])
+    expect(rep.retired).toEqual(['spaghetti_detector'])
+    expect(rep.other_slicer).toEqual(['ai_infill'])
+    expect(rep.renamed).toEqual([{ from: 'support_material_extruder', to: 'support_filament' }])
+    expect(rep.invalid).toEqual([{ key: 'wall_loops', value: 'abc' }])
+    expect(text(r)).toMatch(/Settings: 1 SlicerX does not know, not used: not_a_real_key/)
+    // The keys around the bad one still come through.
+    const read = readProjectFile(path)
+    expect(read.config['z_hop']).toEqual([0.4])
+    expect(read.config['support_filament']).toBe(2)
+    // strict_settings refuses before slicing; without it the slice goes ahead.
+    const strict = await h.call('slicerx_slice_file', { model: path, project_settings: true, project_gcode: 'profile', strict_settings: true })
+    expect(data<Err>(strict).error.code).toBe('project_settings_unused')
+    expect(text(strict)).toMatch(/not_a_real_key/)
   })
 
   it('refuses a plate the project does not have', async () => {
