@@ -32,6 +32,11 @@ export function creatorUrl(edition: EditionConfig, handle: string): string {
   return join(edition, edition.routes.creator.replace(':handle', encodeURIComponent(handle)))
 }
 
+/** A Vault design's page, with the slug filled into the route's :slug segment. */
+export function listingUrl(edition: EditionConfig, slug: string): string {
+  return join(edition, edition.routes.listing.replace(':slug', encodeURIComponent(slug)))
+}
+
 export type RouteName = keyof Routes
 
 /** A new tab on the web; the system browser through the host on desktop. */

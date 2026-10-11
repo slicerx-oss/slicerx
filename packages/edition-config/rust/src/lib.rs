@@ -265,6 +265,9 @@ pub struct Routes {
     pub login: String,
     pub creators: String,
     pub creator: String,
+    /// A Vault design's page. Configs resolved before it existed get `/vault/:slug`.
+    #[serde(default = "listing_route")]
+    pub listing: String,
     pub dashboard: String,
     pub moderation: String,
 }
@@ -282,6 +285,10 @@ pub struct FirstRun {
 
 fn full_motion() -> String {
     "full".to_owned()
+}
+
+fn listing_route() -> String {
+    "/vault/:slug".to_owned()
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

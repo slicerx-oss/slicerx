@@ -84,6 +84,7 @@ export const NEUTRAL_PARSED: EditionConfig = {
     "login": "/login",
     "creators": "/creators",
     "creator": "/creators/:handle",
+    "listing": "/vault/:slug",
     "dashboard": "/dashboard",
     "moderation": "/moderation"
   },

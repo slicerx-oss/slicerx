@@ -189,6 +189,8 @@ export const routesSchema = z.object({
   login: routePath.default('/login'),
   creators: routePath.default('/creators'),
   creator: routePath.default('/creators/:handle'),
+  /** A Vault design's page, by slug. */
+  listing: routePath.default('/vault/:slug'),
   dashboard: routePath.default('/dashboard'),
   moderation: routePath.default('/moderation'),
 })
