@@ -71,6 +71,22 @@ export function rawOut(x: GeomExports, v: unknown): unknown {
   if (Array.isArray(v)) return v.length && typeof v[0] === 'object' ? v.map((e) => rawOut(x, e)) : v
   if (v === null || typeof v !== 'object') return v
   const o = v as Record<string, unknown>
+  // A buffer of bytes the answer names (`rawBytes: N`), such as a project's paint codes.
+  if (typeof o['rawBytes'] === 'number') {
+    const n = o['rawBytes']
+    const at = x.geom_out_file_ptr!(n)
+    return new Uint8Array(x.memory.buffer.slice(at, at + x.geom_out_file_len!(n)))
+  }
+  // A mesh as two buffers, its positions and its triangles, kept as the engine holds them.
+  if (typeof o['positionsOut'] === 'number' && typeof o['trianglesOut'] === 'number') {
+    const take = (n: number) => {
+      const at = x.geom_out_file_ptr!(n)
+      return x.memory.buffer.slice(at, at + x.geom_out_file_len!(n))
+    }
+    const { positionsOut, trianglesOut, ...rest } = o
+    // The part's other buffers (its paint) are read too.
+    return { ...(rawOut(x, rest) as Record<string, unknown>), positions: new Float32Array(take(positionsOut as number)), indices: new Uint32Array(take(trianglesOut as number)) }
+  }
   if (typeof o['rawOut'] === 'number') {
     const n = o['rawOut']
     const at = x.geom_out_file_ptr!(n)

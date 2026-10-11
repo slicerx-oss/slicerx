@@ -28,7 +28,7 @@ struct State {
     /// Buffers for the next call's `mem:N` paths.
     files: Vec<Vec<u8>>,
     /// The last call's output buffers (`rawOut: N`).
-    out_files: Vec<Vec<u8>>,
+    out_files: Vec<sx_geom::json::OutFile>,
 }
 
 thread_local! {
@@ -85,12 +85,20 @@ pub extern "C" fn geom_out_files() -> u32 {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn geom_out_file_ptr(n: u32) -> u32 {
-    with(|s| s.out_files.get(n as usize).map_or(0, |f| ptr(f)))
+    with(|s| {
+        s.out_files
+            .get(n as usize)
+            .map_or(0, |f| u32::try_from(f.ptr_len().0).unwrap_or(0))
+    })
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn geom_out_file_len(n: u32) -> u32 {
-    with(|s| s.out_files.get(n as usize).map_or(0, |f| len(f)))
+    with(|s| {
+        s.out_files
+            .get(n as usize)
+            .map_or(0, |f| u32::try_from(f.ptr_len().1).unwrap_or(0))
+    })
 }
 
 #[unsafe(no_mangle)]
@@ -240,8 +248,11 @@ mod tests {
         assert!(out.contains("\"rawOut\":0"), "{out}");
         assert!(!out.contains("\"positions\""), "{out}");
         assert_eq!(geom_out_files(), 1);
-        let raw = with(|s| s.out_files[0].clone());
-        assert_eq!(geom_out_file_ptr(0), with(|s| ptr(&s.out_files[0])));
+        let raw = with(|s| s.out_files[0].to_bytes());
+        assert_eq!(
+            geom_out_file_ptr(0),
+            with(|s| u32::try_from(s.out_files[0].ptr_len().0).unwrap_or(0))
+        );
         assert_eq!(geom_out_file_len(0) as usize, raw.len());
         // The buffer is the mesh the flat answer gives.
         let (_, flat) = call("build", &format!("{box_}}}"));
