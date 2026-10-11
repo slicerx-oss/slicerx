@@ -103,25 +103,25 @@ fn cuboid(lo: [f32; 3], hi: [f32; 3]) -> Solid {
 
 /// An upright prism of `n` sides about (cx, cy), radius `r`, from z0 to z1.
 fn cylinder(cx: f32, cy: f32, r: f32, z0: f32, z1: f32, n: u32) -> Solid {
-    let mut v = Vec::new();
+    let mut verts = Vec::new();
     for z in [z0, z1] {
-        for k in 0..n {
-            let a = std::f32::consts::TAU * k as f32 / n as f32;
-            v.push([cx + r * a.cos(), cy + r * a.sin(), z]);
+        for side in 0..n {
+            let angle = std::f32::consts::TAU * side as f32 / n as f32;
+            verts.push([cx + r * angle.cos(), cy + r * angle.sin(), z]);
         }
     }
-    v.push([cx, cy, z0]);
-    v.push([cx, cy, z1]);
-    let (bc, tc) = (2 * n, 2 * n + 1);
-    let mut t = Vec::new();
-    for k in 0..n {
-        let k1 = (k + 1) % n;
-        t.push([bc, k1, k]);
-        t.push([tc, n + k, n + k1]);
-        t.push([k, k1, n + k1]);
-        t.push([k, n + k1, n + k]);
+    verts.push([cx, cy, z0]);
+    verts.push([cx, cy, z1]);
+    let (bottom, top) = (2 * n, 2 * n + 1);
+    let mut tris = Vec::new();
+    for side in 0..n {
+        let next = (side + 1) % n;
+        tris.push([bottom, next, side]);
+        tris.push([top, n + side, n + next]);
+        tris.push([side, next, n + next]);
+        tris.push([side, n + next, n + side]);
     }
-    (v, t)
+    (verts, tris)
 }
 
 /// A Bambu-layout project of one object (id 100) whose parts are `parts` in order, each `(subtype, solid,
@@ -130,15 +130,15 @@ fn project(parts: &[(&str, Solid, &str)], object_meta: &str) -> Vec<u8> {
     let mut objects = String::new();
     let mut comps = String::new();
     let mut settings = String::new();
-    for (i, (subtype, (v, t), meta)) in parts.iter().enumerate() {
+    for (i, (subtype, (verts, tris), meta)) in parts.iter().enumerate() {
         let id = i + 1;
-        let vs: String = v
+        let vs: String = verts
             .iter()
             .map(|p| format!(r#"<vertex x="{}" y="{}" z="{}"/>"#, p[0], p[1], p[2]))
             .collect();
-        let ts: String = t
+        let ts: String = tris
             .iter()
-            .map(|t| format!(r#"<triangle v1="{}" v2="{}" v3="{}"/>"#, t[0], t[1], t[2]))
+            .map(|tri| format!(r#"<triangle v1="{}" v2="{}" v3="{}"/>"#, tri[0], tri[1], tri[2]))
             .collect();
         objects.push_str(&format!(
             r#"<object id="{id}" type="model"><mesh><vertices>{vs}</vertices><triangles>{ts}</triangles></mesh></object>"#
@@ -222,23 +222,23 @@ fn moves(run: &SliceRun) -> Vec<Move> {
         }
         let code = line.split(';').next().unwrap_or("");
         let mut words = code.split_whitespace();
-        let Some(g) = words.next() else { continue };
-        if g != "G1" && g != "G0" {
+        let Some(cmd) = words.next() else { continue };
+        if cmd != "G1" && cmd != "G0" {
             continue;
         }
-        let (mut nx, mut ny, mut nz, mut e) = (x, y, z, 0.0);
-        for w in words {
-            let (k, v) = w.split_at(1);
-            let Ok(v) = v.parse::<f64>() else { continue };
-            match k {
-                "X" => nx = v,
-                "Y" => ny = v,
-                "Z" => nz = v,
-                "E" => e = v,
+        let (mut nx, mut ny, mut nz, mut extruded) = (x, y, z, 0.0);
+        for word in words {
+            let (axis, val) = word.split_at(1);
+            let Ok(val) = val.parse::<f64>() else { continue };
+            match axis {
+                "X" => nx = val,
+                "Y" => ny = val,
+                "Z" => nz = val,
+                "E" => extruded = val,
                 _ => {}
             }
         }
-        if e > 0.0 && feature != "Custom" && !feature.is_empty() && (nx - x).hypot(ny - y) > 0.0 {
+        if extruded > 0.0 && feature != "Custom" && !feature.is_empty() && (nx - x).hypot(ny - y) > 0.0 {
             out.push(Move {
                 feature: feature.clone(),
                 z: nz,

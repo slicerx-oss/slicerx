@@ -718,28 +718,25 @@ impl Resolve<'_> {
             };
             // The project's part list lives as long as the file; read it apart from `self`, which `place` changes.
             let meta = self.meta;
-            match meta.ranges.get(&id).filter(|r| !r.is_empty()) {
-                // An older project keeps every part of an object in one mesh, each a range of its triangles.
-                Some(ranges) => {
-                    for info in ranges {
-                        let Some((first, last)) = info.range else {
-                            continue;
-                        };
-                        let sub = obj.triangle_range(first, last);
-                        if sub.triangles.is_empty() {
-                            continue;
-                        }
-                        let part_slot = info.slot.unwrap_or(slot).max(1);
-                        let part_name = info.name.clone().unwrap_or_else(|| name.clone());
-                        let part = make_part(&sub, &t, part_slot, part_name);
-                        self.place(part, info, top, id);
+            // An older project keeps every part of an object in one mesh, each a range of its triangles.
+            if let Some(ranges) = meta.ranges.get(&id).filter(|r| !r.is_empty()) {
+                for info in ranges {
+                    let Some((first, last)) = info.range else {
+                        continue;
+                    };
+                    let sub = obj.triangle_range(first, last);
+                    if sub.triangles.is_empty() {
+                        continue;
                     }
+                    let part_slot = info.slot.unwrap_or(slot).max(1);
+                    let part_name = info.name.clone().unwrap_or_else(|| name.clone());
+                    let part = make_part(&sub, &t, part_slot, part_name);
+                    self.place(part, info, top, id);
                 }
-                None => {
-                    let part = make_part(obj, &t, slot, name);
-                    let info = meta.parts.get(&(top, id)).cloned().unwrap_or_default();
-                    self.place(part, &info, top, id);
-                }
+            } else {
+                let part = make_part(obj, &t, slot, name);
+                let info = meta.parts.get(&(top, id)).cloned().unwrap_or_default();
+                self.place(part, &info, top, id);
             }
         }
         for (child, child_path, ct) in &obj.components {
@@ -990,15 +987,12 @@ fn role_name(role: VolumeRole) -> &'static str {
 
 impl PartInfo {
     fn set_type(&mut self, text: &str) {
-        match part_role(text) {
-            Ok(role) => {
-                self.role = role;
-                self.unknown_type = None;
-            }
-            Err(()) => {
-                self.role = None;
-                self.unknown_type = Some(text.to_owned());
-            }
+        if let Ok(role) = part_role(text) {
+            self.role = role;
+            self.unknown_type = None;
+        } else {
+            self.role = None;
+            self.unknown_type = Some(text.to_owned());
         }
     }
 }
@@ -1672,16 +1666,19 @@ mod tests {
         ]);
         let plates = load_plates(&bytes, "two.3mf").unwrap();
         assert_eq!(plates.len(), 2);
-        let (n1, p1) = &plates[0];
-        let (n2, p2) = &plates[1];
-        assert_eq!((*n1, *n2), (1, 2));
-        assert_eq!(p1.volumes.len(), 1);
-        assert_eq!(p1.volumes[0].role, VolumeRole::Negative);
-        assert_eq!(p2.volumes.len(), 1);
-        assert_eq!(p2.volumes[0].role, VolumeRole::Modifier);
-        assert_eq!(p2.volumes[0].settings, serde_json::json!({ "wall_loops": "5" }));
+        let (first_plate, first) = &plates[0];
+        let (second_plate, second) = &plates[1];
+        assert_eq!((*first_plate, *second_plate), (1, 2));
+        assert_eq!(first.volumes.len(), 1);
+        assert_eq!(first.volumes[0].role, VolumeRole::Negative);
+        assert_eq!(second.volumes.len(), 1);
+        assert_eq!(second.volumes[0].role, VolumeRole::Modifier);
+        assert_eq!(
+            second.volumes[0].settings,
+            serde_json::json!({ "wall_loops": "5" })
+        );
         // Plate 2's volume sits with its object, 300 mm along.
-        let x0 = p2.volumes[0]
+        let x0 = second.volumes[0]
             .part
             .positions
             .iter()
