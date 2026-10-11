@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import type { ApprovalRequest } from '@slicerx/contracts'
 import { canonicalJson, hashParams } from '@slicerx/contracts'
 import { describe, expect, it } from 'vitest'
-import { decide, normalizePolicy } from '../src/gate'
+import { decide, normalizePolicy, startsPrint } from '../src/gate'
 import { createApprovalBroker } from '../src/permit/broker'
 
 const fixtures = join(import.meta.dirname, '..', '..', 'contracts', 'fixtures')
@@ -128,11 +128,28 @@ describe('permission gate', () => {
     expect(decide({ classes: { ...p.classes, start: 'allow' } }, 'start')).toBe('ask')
   })
 
-  it('honors per-printer start allow, but not over a class set to off', () => {
-    const p = normalizePolicy({ classes: { start: 'ask', queue: 'off' }, printers: { 'bay-2': { start: 'allow', queue: 'allow' } } })
-    expect(decide(p, 'start', 'bay-2')).toBe('allow')
-    expect(decide(p, 'start', 'bay-3')).toBe('ask')
+  it('never allows queue or start, for the class or per printer', () => {
+    const p = normalizePolicy({ classes: { start: 'allow', queue: 'allow' }, printers: { 'bay-2': { start: 'allow', queue: 'allow' }, 'bay-3': { start: 'off' } } })
+    expect(p.classes.queue).toBe('ask')
+    expect(p.printers?.['bay-2']).toEqual({ start: 'ask', queue: 'ask' })
+    for (const c of ['queue', 'start'] as const) {
+      expect(decide(p, c)).toBe('ask')
+      expect(decide(p, c, 'bay-2')).toBe('ask')
+      // A policy built without normalizePolicy gets the same answer.
+      expect(decide({ classes: { slice: 'allow', queue: 'allow', start: 'allow', profile: 'ask' }, printers: { 'bay-2': { [c]: 'allow' } } }, c, 'bay-2')).toBe('ask')
+    }
+    expect(decide(p, 'start', 'bay-3')).toBe('off')
+  })
+
+  it('keeps a class set to off over a per-printer setting', () => {
+    const p = normalizePolicy({ classes: { start: 'ask', queue: 'off' }, printers: { 'bay-2': { start: 'ask', queue: 'ask' } } })
     expect(decide(p, 'queue', 'bay-2')).toBe('off')
+  })
+
+  it('tells a card that starts or resumes a print', () => {
+    expect(startsPrint({ actions: [{ action: 'printer.upload', target: 'b', paramsHash: 'h' }, { action: 'printer.start', target: 'b', paramsHash: 'h' }] })).toBe(true)
+    expect(startsPrint({ actions: [{ action: 'printer.resume', target: 'b', paramsHash: 'h' }] })).toBe(true)
+    expect(startsPrint({ actions: [{ action: 'printer.pause', target: 'b', paramsHash: 'h' }] })).toBe(false)
   })
 
   it('falls back to defaults for garbage', () => {

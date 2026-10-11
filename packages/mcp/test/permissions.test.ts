@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-import { readFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { ApprovalRequest } from '@slicerx/contracts'
 import { hashParams } from '@slicerx/contracts'
@@ -234,13 +235,28 @@ describe('policy', () => {
     expect(log(h).at(-1)).toMatchObject({ decision: 'off', by: 'policy' })
   })
 
-  it('never allows start for every printer, only per printer', async () => {
+  it('never allows start, for every printer or per printer', async () => {
     const all = await connect({ policy: { classes: { slice: 'allow', queue: 'ask', start: 'allow', profile: 'ask' } } })
     expect(data<{ status: string }>(await all.call('slicerx_printer_pause', pause)).status).toBe('approval_required')
     const one = await connect({ policy: { classes: { slice: 'allow', queue: 'ask', start: 'ask', profile: 'ask' }, printers: { 'bay-1': { start: 'allow' } } } })
-    const r = await one.call('slicerx_printer_pause', pause)
-    expect(r.isError, text(r)).toBeFalsy()
-    expect(log(one).at(-1)).toMatchObject({ decision: 'allowed', by: 'policy' })
+    expect(data<{ status: string }>(await one.call('slicerx_printer_pause', pause)).status).toBe('approval_required')
+    expect(log(one).some((e) => e.by === 'policy' && e.decision === 'allowed')).toBe(false)
+  })
+
+  it('a policy file that allows queueing and starting everywhere still sends a print to a person', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'slicerx-policy-'))
+    const file = join(dir, 'mcp-policy.json')
+    writeFileSync(file, JSON.stringify({ classes: { slice: 'allow', queue: 'allow', start: 'allow', profile: 'ask' }, printers: { 'bay-2': { queue: 'allow', start: 'allow' } } }))
+    const h = await connect({ policy: undefined, policyFile: file })
+    const p = data<{ classes: Record<string, { mode: string }> }>(await h.call('slicerx_get_policy'))
+    expect(p.classes['queue']?.mode).toBe('ask')
+    expect(p.classes['start']?.mode).toBe('ask')
+    await h.call('slicerx_project_open', { name: 'Brackets', printer: 'bambu_p1s', filament: 'pla' })
+    await h.call('slicerx_project_add_model', { model: join(h.dir, 'cube.stl'), copies: 1 })
+    await h.call('slicerx_slice', {})
+    const q = data<{ status: string }>(await h.call('slicerx_printer_queue', { printerId: 'bay-2', plate: 1 }))
+    expect(q.status).toBe('needs_person')
+    expect(log(h).some((e) => e.by === 'policy' && e.decision === 'allowed')).toBe(false)
   })
 
   it('shows the policy and has no tool to change it', async () => {

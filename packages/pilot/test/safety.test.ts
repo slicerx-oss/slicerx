@@ -153,6 +153,38 @@ describe('printer side effects', () => {
     expect(env.audit.sideEffects).toEqual([])
   })
 
+  it('a policy that allows queueing and starting, for every printer and per printer, still asks before a print starts', async () => {
+    const { env, events } = await drive([{ calls: [{ name: 'slice', args: {} }] }, { calls: [{ name: 'printer.queue', args: { printerId: 'bay-2', plate: 1 } }] }, { text: 'x' }], {
+      approve: () => false,
+      policy: { classes: { slice: 'allow', queue: 'allow', start: 'allow', profile: 'ask' }, printers: { 'bay-2': { queue: 'allow', start: 'allow' } } },
+    })
+    expect(types(events)).toContain('approval_request')
+    expect(events.some((e) => e.type === 'approval_resolved' && e.by === 'policy')).toBe(false)
+    expect(env.audit.sideEffects).toEqual([])
+  })
+
+  it('a tool of another class whose card starts a print still asks a person', async () => {
+    let ran = false
+    const start = defineTool({
+      name: 'test.slice_then_start',
+      version: '1.0.0',
+      source: 'plugin',
+      permission: 'slice',
+      description: 'test',
+      input: z.object({}),
+      async approval() {
+        return { title: 'Start on Bay 2?', lines: [], printerId: 'bay-2', actions: [{ action: 'printer.start', target: 'bay-2', params: { printerId: 'bay-2' } }] }
+      },
+      async run() {
+        ran = true
+        return { summary: 'started' }
+      },
+    }) as PilotTool<never>
+    const { events } = await drive([{ calls: [{ name: 'test.slice_then_start', args: {} }] }, { text: 'x' }], { approve: () => false, tools: [start] })
+    expect(types(events)).toContain('approval_request')
+    expect(ran).toBe(false)
+  })
+
   it('an unanswered approval expires and nothing runs', async () => {
     const { env, events } = await drive([{ calls: [{ name: 'printer.pause', args: { printerId: 'bay-1' } }] }], { timeoutMs: 20 })
     expect(events.some((e) => e.type === 'approval_resolved' && e.by === 'expiry')).toBe(true)
