@@ -6,7 +6,7 @@ import { setMotionPreference, TIP_TIMING, TooltipHost } from '@slicerx/ui'
 import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
-import { loadSettingTips, resolveTip } from '../src/lib/tip-host'
+import { loadTips, resolveTip } from '../src/lib/tip-host'
 import { settingTipAttrs } from '../src/lib/tips'
 
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -26,7 +26,7 @@ let reduce = false
 
 // the app fetches setting tips once it is up; the tests start after that
 beforeAll(async () => {
-  await loadSettingTips()
+  await loadTips()
 })
 
 beforeEach(() => {
