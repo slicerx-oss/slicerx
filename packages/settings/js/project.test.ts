@@ -3,6 +3,7 @@
 import { describe, expect, it } from 'vitest'
 import { exportOrcaProfile, mergeConfigs } from './import'
 import { importProject, parseXml } from './project'
+import { projectReport, reportText } from './report'
 import { loadProfile } from './testkit'
 
 const printer = loadProfile('demo', 'Demo Printer 0.4 nozzle')
@@ -132,5 +133,37 @@ describe('parseXml', () => {
     expect(a?.attrs).toEqual({ x: '1 < 2' })
     expect(a?.children.map((c) => c.name)).toEqual(['b', 'c'])
     expect(a?.children[1]).toMatchObject({ attrs: { k: 'v' }, text: 'hi & bye' })
+  })
+})
+
+describe('projectReport', () => {
+  // A Bambu Studio project that inherited its walls and its outer wall spacing, with a key SlicerX does not have and a
+  // value it cannot use.
+  const raw = {
+    layer_height: '0.2',
+    wall_generator: 'classic',
+    precise_outer_wall: '0',
+    top_one_wall_type: 'all top',
+    sparse_infill_density: 'lots',
+    different_settings_to_system: ['layer_height', '', ''],
+  }
+
+  it("lists what did not carry over, SlicerX's kept choices and the walls", () => {
+    const r = projectReport('dragon.3mf', raw, { source: 'BambuStudio-01.10.02.73' })
+    expect(r.project).toBe(true)
+    expect(r.items.map((i) => [i.key, i.reason])).toEqual([
+      ['sparse_infill_density', 'invalid'],
+      ['top_one_wall_type', 'unsupported'],
+    ])
+    expect(r.notes).toEqual([
+      "Kept SlicerX's precise outer wall; the project used Bambu's default.",
+      "Walls: aegis walls, kept by SlicerX; the project used Bambu's default classic.",
+    ])
+    expect(reportText([r])).toContain('dragon.3mf (project settings)')
+  })
+
+  it("names the project's own walls when it changed them", () => {
+    const r = projectReport('dragon.3mf', { ...raw, different_settings_to_system: ['wall_generator;precise_outer_wall', '', ''] })
+    expect(r.notes).toEqual(["Walls: classic walls, the project's own choice."])
   })
 })

@@ -5,7 +5,7 @@
 import { readFileSync } from 'node:fs'
 import { basename } from 'node:path'
 import type { SettingValue } from '@slicerx/contracts'
-import { changedKeys, importProject, keptEngineChoices, LEGACY_GROUPS, LEGACY_KEYS, parseXml, selectVariants, SLICERX_KEEP_VALUES } from '@slicerx/settings'
+import { importProject, keptEngineChoices, LEGACY_GROUPS, LEGACY_KEYS, parseXml, projectWalls, selectVariants, SLICERX_KEEP_VALUES, type WallsNote } from '@slicerx/settings'
 import { ToolInputError } from './models'
 import { readZip } from './zip'
 
@@ -65,32 +65,10 @@ export interface ImportReport {
   walls?: WallsNote
 }
 
-/**
- * Which wall generator a slice runs, where it came from, and the sentence that says so: `kept` (SlicerX's choice
- * over the one the project inherited, as engine-choices.ts keeps it), `project` (the project's own, listed as
- * changed), `request` (the call's overrides) or `profile` (the printer profile).
- */
-export interface WallsNote {
-  generator: string
-  source: 'kept' | 'project' | 'request' | 'profile'
-  text: string
-}
+export type { WallsNote } from '@slicerx/settings'
 
 /** A setting value as one string: `"classic"`, `["classic"]`. */
 const oneText = (v: unknown): string | undefined => (typeof v === 'string' ? v : Array.isArray(v) && typeof v[0] === 'string' ? v[0] : undefined)
-
-/** The walls a project slices with, by the rule that keeps SlicerX's engine choices. */
-export function projectWalls(raw: Record<string, unknown>, source: string | undefined): WallsNote | undefined {
-  const own = oneText(raw['wall_generator'])
-  const ours = String(SLICERX_KEEP_VALUES['wall_generator'] ?? 'aegis')
-  const changed = changedKeys(raw)
-  if (changed && !changed.has('wall_generator')) {
-    const maker = source?.startsWith('OrcaSlicer') ? "OrcaSlicer's" : source?.startsWith('BambuStudio') ? "Bambu's" : "its preset's"
-    const text = own === undefined ? `${ours} walls, kept by SlicerX; the project names none` : own === ours ? `${ours} walls, as the project has them` : `${ours} walls, kept by SlicerX; the project used ${maker} default ${own}`
-    return { generator: ours, source: 'kept', text }
-  }
-  return own === undefined ? undefined : { generator: own, source: 'project', text: `${own} walls, the project's own choice` }
-}
 
 /**
  * The walls a slice ran with: `generator` is the resolved config's; the request's overrides win, then the project's
