@@ -271,7 +271,15 @@ jobs:
           [ -f apps/desktop/dist/index.html ] || { mkdir -p apps/desktop/dist && echo '<!doctype html><title>ci</title>' > apps/desktop/dist/index.html; }
           eval "$SX_GROUP_CHECK"
           ${HEAVY:-} cargo clippy -p slicerx-desktop --features agent-bridge --all-targets -- -D warnings
-          ${HEAVY:-} cargo test -p slicerx-desktop --features agent-bridge
+          ${HEAVY:-} bash scripts/ci/cargo-retry.sh -p slicerx-desktop --features agent-bridge
+        env:
+          SX_FLAKY_OUT: ${{ runner.temp }}/retried.txt
+      # A failing desktop test gets one rerun by exact name (cargo-retry.sh); one that passes only on the rerun fails
+      # here unless scripts/ci/flaky.d or quarantine.d lists it ("Flaky tests" in scripts/ci/README.md).
+      - if: always() && matrix.part == 'core'
+        run: bash scripts/ci/flaky-check.sh retried "$SX_FLAKY_OUT"
+        env:
+          SX_FLAKY_OUT: ${{ runner.temp }}/retried.txt
       # sx-link's real-service test runs the sx-cloud binary; it fails here, not skips, when it is missing.
       - if: matrix.part == 'crates'
         run: |
