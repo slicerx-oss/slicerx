@@ -1,0 +1,150 @@
+{
+  "packages/core/bench/models/x-mark.stl": [],
+  "packages/core/cli/tests/fixtures/cube.stl": [],
+  "packages/geom/tests/fixtures/weld-edge-cases.stl": [
+    "plate 1 object 1 extent",
+    "plate 1 object 1 part 1 triangles"
+  ],
+  "packages/geom/tests/corpus/box-ascii.stl": [],
+  "packages/geom/tests/corpus/two-colors.obj": [],
+  "packages/geom/tests/corpus/two-materials.amf": [],
+  "packages/geom/tests/corpus/subtypes.3mf": [
+    "plate 1 object 1 extent",
+    "plate 1 object 1 part 1 name",
+    "plate 1 object 1 part 2 name",
+    "plate 1 object 1 part 2 type",
+    "plate 1 object 1 part 3 name",
+    "plate 1 object 1 part 3 type",
+    "plate 1 object 1 part 4 name",
+    "plate 1 object 1 part 4 type",
+    "plate 1 object 1 part 5 name",
+    "plate 1 object 1 part 5 type",
+    "plate 1 object 1 part types"
+  ],
+  "packages/geom/tests/corpus/bambu-subtypes.3mf": [
+    "plate 1 object 1 extent",
+    "plate 1 object 1 part 1 name",
+    "plate 1 object 1 part 2 name",
+    "plate 1 object 1 part 2 type",
+    "plate 1 object 1 part 3 name",
+    "plate 1 object 1 part 3 type",
+    "plate 1 object 1 part 4 name",
+    "plate 1 object 1 part 4 type",
+    "plate 1 object 1 part 5 name",
+    "plate 1 object 1 part 5 type",
+    "plate 1 object 1 part types",
+    "settings keys"
+  ],
+  "packages/geom/tests/corpus/orca-subtypes.3mf": [
+    "plate 1 object 1 extent",
+    "plate 1 object 1 part 1 name",
+    "plate 1 object 1 part 2 name",
+    "plate 1 object 1 part 2 type",
+    "plate 1 object 1 part 3 name",
+    "plate 1 object 1 part 3 type",
+    "plate 1 object 1 part 4 name",
+    "plate 1 object 1 part 4 type",
+    "plate 1 object 1 part 5 name",
+    "plate 1 object 1 part 5 type",
+    "plate 1 object 1 part types",
+    "settings keys"
+  ],
+  "packages/geom/tests/corpus/prusa-subtypes.3mf": [
+    "plate 1 object 1 name",
+    "plate 1 object 1 part 1 name",
+    "plate 1 object 2 name",
+    "plate 1 object 2 part 1 name",
+    "plate 1 object 3 name",
+    "plate 1 object 3 part 1 name",
+    "plate 1 object 4 name",
+    "plate 1 object 4 part 1 name",
+    "plate 1 object 5 name",
+    "plate 1 object 5 part 1 name"
+  ],
+  "packages/core/cli/tests/fixtures/painted.3mf": [],
+  "packages/geom/tests/corpus/bambu-painted.3mf": [
+    "plate 1 object 1 part 1 name",
+    "settings keys"
+  ],
+  "packages/geom/tests/corpus/orca-painted.3mf": [
+    "plate 1 object 1 part 1 name",
+    "settings keys"
+  ],
+  "packages/geom/tests/corpus/prusa-painted.3mf": [
+    "plate 1 object 1 name",
+    "plate 1 object 1 painted color",
+    "plate 1 object 1 part 1 name",
+    "plate 1 object 1 part 1 paint color"
+  ],
+  "packages/core/bench/models/x-mark-2color.3mf": [],
+  "packages/core/bench/models/x-mark-2color-orca.3mf": [
+    "plate 1 object 1 part 1 name",
+    "plate 1 object 1 part 2 name",
+    "settings keys"
+  ],
+  "packages/geom/tests/corpus/bambu-x-mark-2color.3mf": [
+    "plate 1 object 1 name",
+    "plate 1 object 1 part 1 name",
+    "plate 1 object 2 name",
+    "plate 1 object 2 part 1 name",
+    "settings keys"
+  ],
+  "packages/geom/tests/corpus/orca-x-mark-2color.3mf": [
+    "plate 1 object 1 name",
+    "plate 1 object 1 part 1 name",
+    "plate 1 object 2 name",
+    "plate 1 object 2 part 1 name",
+    "settings keys"
+  ],
+  "packages/geom/tests/corpus/prusa-x-mark-2color.3mf": [
+    "plate 1 object 1 name",
+    "plate 1 object 1 part 1 name",
+    "plate 1 object 2 name",
+    "plate 1 object 2 part 1 name"
+  ],
+  "packages/geom/tests/corpus/prusa-two-colors.3mf": [
+    "plate 1 object 1 name",
+    "plate 1 object 1 part 1 name"
+  ],
+  "packages/settings/fixtures/preset-files/prusaslicer-2.9.6.3mf": [
+    "plate 1 object 1 name",
+    "plate 1 object 1 part 1 name",
+    "plate 1 object 1 part 1 triangles",
+    "plate 1 object 1 part 2 name",
+    "plate 1 object 1 part 2 slot",
+    "plate 1 object 1 part 2 triangles",
+    "plate 1 object 1 part 2 type",
+    "plate 1 object 1 part types",
+    "plate 1 object 1 parts",
+    "settings keys"
+  ],
+  "packages/core/cli/tests/fixtures/bambu-auto.3mf": [],
+  "packages/core/cli/tests/fixtures/two-boxes.3mf": [
+    "sx3mf fails"
+  ],
+  "apps/web/e2e/fixtures/eight-colors.3mf": [
+    "plate 1 object 1 part 1 name",
+    "plate 1 object 1 part 2 name",
+    "plate 1 object 2 part 1 name",
+    "plate 1 object 3 part 1 name",
+    "plate 1 object 4 part 1 name",
+    "plate 1 object 5 part 1 name"
+  ],
+  "apps/desktop/src-tauri/src/testdata/painted-cube.3mf": [
+    "plate 1 object 1 part 1 name"
+  ],
+  "apps/desktop/src-tauri/src/testdata/seam-cube-xp.3mf": [
+    "plate 1 object 1 part 1 name"
+  ],
+  "packages/core/bench/models/x-mark-showcase-2color.3mf": [
+    "plate 1 object 1 part 1 name",
+    "plate 1 object 1 part 2 name"
+  ],
+  "packages/core/bench/models/x-mark-showcase.sx3mf": [
+    "plate 1 object 1 part 1 name"
+  ],
+  "apps/web/e2e/fixtures/loose-clip.sx3mf": [
+    "plate 1 object 1 part 1 name",
+    "plate 1 object 1 part 2 name"
+  ]
+}
