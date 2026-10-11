@@ -657,16 +657,21 @@ fn settle_slivers(raw: Vec<(u8, Shapes)>, plain: u8) -> Vec<(u8, Shapes)> {
             continue;
         }
         for piece in perimeters::intersection(&all_grown, region) {
-            let Some(outer) = piece.first() else { continue };
             let area: i64 = piece.iter().map(|r| crate::geom::area2_int(r)).sum::<i64>().abs();
-            let Some(&p) = outer.first() else { continue };
-            // The island whose grown outline holds this piece.
-            let owner = (0..islands.len()).find(|&i| {
-                boxes[i].is_some_and(|b| p.x >= b[0] && p.y >= b[1] && p.x <= b[2] && p.y <= b[3])
-                    && grown[i]
-                        .iter()
-                        .any(|sh| sh.first().is_some_and(|r| ring_contains(r, p) || r.contains(&p)))
-            });
+            let Some(pb) = perimeters::bounds(std::slice::from_ref(&piece)) else {
+                continue;
+            };
+            // The island whose grown outline holds this piece: the smallest grown box around the piece's box (a
+            // point of the piece can lie on the island's own outline, where a point-in-ring test is undecided).
+            let owner = (0..islands.len())
+                .filter(|&i| {
+                    boxes[i].is_some_and(|b| pb[0] >= b[0] && pb[1] >= b[1] && pb[2] <= b[2] && pb[3] <= b[3])
+                })
+                .min_by_key(|&i| {
+                    boxes[i].map_or(i64::MAX, |b| {
+                        (i64::from(b[2]) - i64::from(b[0])) * (i64::from(b[3]) - i64::from(b[1]))
+                    })
+                });
             if let Some(i) = owner {
                 touch[i][j] += area;
             }
@@ -769,26 +774,6 @@ fn clean_runs(colors: &mut [u8], lens: &[f64], plain: u8, absorb: f64, close: f6
             }
         }
     }
-}
-
-/// Whether `p` (internal units) is inside the closed ring `ring` (even-odd).
-fn ring_contains(ring: &[IntPoint<i32>], p: IntPoint<i32>) -> bool {
-    let mut inside = false;
-    let n = ring.len();
-    for k in 0..n {
-        let (Some(a), Some(b)) = (ring.get(k), ring.get((k + 1) % n)) else {
-            continue;
-        };
-        if (a.y > p.y) != (b.y > p.y) {
-            let x = f64::from(a.x)
-                + (f64::from(p.y) - f64::from(a.y)) / (f64::from(b.y) - f64::from(a.y))
-                    * (f64::from(b.x) - f64::from(a.x));
-            if f64::from(p.x) < x {
-                inside = !inside;
-            }
-        }
-    }
-    inside
 }
 
 /// The piece of a triangle between the heights `lo` and `hi`, seen from above, counterclockwise in internal
@@ -1312,7 +1297,19 @@ impl LayerPaint<'_> {
                     closer.min(if reach.is_finite() { reach } else { 1.0 })
                 })
                 .collect();
-            let shapes = loops_to_shapes(&contour(&g, &field));
+            // The traced boundary follows the grid's cells; straightened within half a cell, it keeps no ripple
+            // for the walls to pinch small pockets off.
+            #[allow(
+                clippy::cast_possible_truncation,
+                reason = "half a grid cell in internal units"
+            )]
+            let tol = (g.r * SCALE) as i64;
+            let loops: Vec<Vec<IntPoint<i32>>> = contour(&g, &field)
+                .iter()
+                .map(|l| perimeters::simplify_ring(l, tol))
+                .filter(|l| l.len() >= 3)
+                .collect();
+            let shapes = loops_to_shapes(&loops);
             if !shapes.is_empty() {
                 out.push((state, shapes));
             }
@@ -1660,6 +1657,92 @@ mod tests {
         assert!(area(1) < 1e-6, "{}", area(1));
         assert!((area(2) - 100.0).abs() < 0.05, "{}", area(2));
         assert!((area(3) - 100.0).abs() < 0.05, "{}", area(3));
+    }
+
+    /// The pieces where a sliver meets its neighbors are found for the sliver they belong to even when their points lie
+    /// on the sliver's grown outline (a point-in-ring test is undecided there): thin strips of filament 2 at many
+    /// positions and slants, poking into filament 3, each go to filament 3 whole.
+    #[test]
+    fn every_sliver_finds_the_region_it_borders() {
+        for k in 0..24 {
+            let off = f64::from(k) * 0.0137;
+            let tilt = f64::from(k % 5) * 0.003;
+            let p = |x: f64, y: f64| IntPoint::new((x * SCALE).round() as i32, (y * SCALE).round() as i32);
+            let strip: Shapes = vec![vec![vec![
+                p(10.0, 4.9 + off),
+                p(15.0, 4.9 + off + tilt),
+                p(15.0, 5.05 + off + tilt),
+                p(10.0, 5.05 + off),
+            ]]];
+            let two = perimeters::union_all(&[&square(0.0, 0.0, 10.0, 10.0), &strip]);
+            let three = perimeters::difference(&square(10.0, 0.0, 20.0, 10.0), &strip);
+            let strip_area = area_mm2(&strip);
+            let out = settle_slivers(vec![(2, two), (3, three)], 1);
+            let area = |slot: u8| {
+                out.iter()
+                    .filter(|(s, _)| *s == slot)
+                    .map(|(_, s)| area_mm2(s))
+                    .sum::<f64>()
+            };
+            assert!(
+                (area(3) - 100.0).abs() < 0.05,
+                "case {k}: {} (strip {strip_area})",
+                area(3)
+            );
+            assert!((area(2) - 100.0).abs() < 0.05, "case {k}: {}", area(2));
+        }
+    }
+
+    /// A color boundary traced on the grid is straightened within a cell: half the side of a round column painted
+    /// gives a boundary across it of a few straight edges, not a point per cell (walls pinch small pockets off the
+    /// cell ripples).
+    #[test]
+    fn a_traced_color_boundary_is_straight() {
+        use crate::fm::Fm as _;
+        let plan = LayerPlan::new(10.0, 0.2, 0.2);
+        let n = 48;
+        let at = |k: usize| {
+            let a = std::f64::consts::TAU * (k % n) as f64 / n as f64;
+            let (s, c) = a.m_sin_cos();
+            (128.0 + 10.0 * c, 128.0 + 10.0 * s)
+        };
+        let ring: Vec<IntPoint<i32>> = (0..n)
+            .map(|k| {
+                let (x, y) = at(k);
+                IntPoint::new((x * SCALE).round() as i32, (y * SCALE).round() as i32)
+            })
+            .collect();
+        let outline: Shapes = vec![vec![ring]];
+        // The side from -80 to +80 degrees painted filament 2.
+        let mut facets: Facets = Vec::new();
+        for k in 0..n {
+            let deg = 360.0 * k as f64 / n as f64;
+            if !(deg < 80.0 || deg >= 280.0) {
+                continue;
+            }
+            let ((x0, y0), (x1, y1)) = (at(k), at(k + 1));
+            facets.push(([[x0, y0, 0.0], [x1, y1, 0.0], [x1, y1, 10.0]], 2));
+            facets.push(([[x0, y0, 0.0], [x1, y1, 10.0], [x0, y0, 10.0]], 2));
+        }
+        let column = vec![outline.clone(); 3];
+        let parts = LayerPaint {
+            default_slot: 1,
+            shapes: &outline,
+            layer: 20,
+            z: plan.slice_z[20],
+            plan: &plan,
+            above: &column,
+            below: &column,
+            facets: &[&facets],
+            step: 7_970,
+            small: 1_050,
+            memo: None,
+        }
+        .split();
+        let plain = parts.iter().find(|(s, _)| *s == 1).map(|(_, s)| s).unwrap();
+        let points: usize = plain.iter().flatten().map(Vec::len).sum();
+        // About 80 with the boundary straightened (21 of them on the outline), over 300 traced cell by cell.
+        assert!(points <= 120, "{points} points");
     }
 
     #[test]
