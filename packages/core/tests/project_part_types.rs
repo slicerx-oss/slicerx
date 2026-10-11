@@ -9,10 +9,14 @@
 #![allow(
     clippy::cast_possible_truncation,
     clippy::cast_precision_loss,
-    reason = "test archives and meshes are tiny"
+    clippy::float_cmp,
+    reason = "test archives and meshes are tiny, and none means exactly none"
 )]
+// Test meshes use the standard math functions; the engine's own rounding rule (clippy.toml) is for G-code.
+#![allow(clippy::disallowed_methods)]
 
 use serde_json::json;
+use std::fmt::Write as _;
 use std::sync::Arc;
 mod common;
 
@@ -132,23 +136,30 @@ fn project(parts: &[(&str, Solid, &str)], object_meta: &str) -> Vec<u8> {
     let mut settings = String::new();
     for (i, (subtype, (verts, tris), meta)) in parts.iter().enumerate() {
         let id = i + 1;
-        let vs: String = verts
-            .iter()
-            .map(|p| format!(r#"<vertex x="{}" y="{}" z="{}"/>"#, p[0], p[1], p[2]))
-            .collect();
-        let ts: String = tris
-            .iter()
-            .map(|tri| format!(r#"<triangle v1="{}" v2="{}" v3="{}"/>"#, tri[0], tri[1], tri[2]))
-            .collect();
-        objects.push_str(&format!(
+        let vs = verts.iter().fold(String::new(), |mut acc, p| {
+            let _ = write!(acc, r#"<vertex x="{}" y="{}" z="{}"/>"#, p[0], p[1], p[2]);
+            acc
+        });
+        let ts = tris.iter().fold(String::new(), |mut acc, tri| {
+            let _ = write!(
+                acc,
+                r#"<triangle v1="{}" v2="{}" v3="{}"/>"#,
+                tri[0], tri[1], tri[2]
+            );
+            acc
+        });
+        let _ = write!(
+            objects,
             r#"<object id="{id}" type="model"><mesh><vertices>{vs}</vertices><triangles>{ts}</triangles></mesh></object>"#
-        ));
-        comps.push_str(&format!(
+        );
+        let _ = write!(
+            comps,
             r#"<component p:path="/3D/Objects/object_1.model" objectid="{id}" transform="1 0 0 0 1 0 0 0 1 0 0 0"/>"#
-        ));
-        settings.push_str(&format!(
+        );
+        let _ = write!(
+            settings,
             r#"<part id="{id}" subtype="{subtype}"><metadata key="name" value="p{id}"/>{meta}</part>"#
-        ));
+        );
     }
     let sub = format!(r#"<model unit="millimeter"><resources>{objects}</resources></model>"#);
     let main = format!(
