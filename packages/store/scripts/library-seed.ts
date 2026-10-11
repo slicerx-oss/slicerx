@@ -70,6 +70,26 @@ export const manifestSchema = z.object({
 })
 export type SeedManifest = z.infer<typeof manifestSchema>
 
+/** A version's colors as the Vault stores them (listing_versions.colors), read from a 3MF's project settings. */
+export interface SeedColors { colors: { hex: string }[]; parts: never[] }
+
+/**
+ * The filament colors a 3MF prints in, from its Metadata/project_settings.config (JSON, as SlicerX, OrcaSlicer
+ * and Bambu Studio write it): each `filament_colour` once, lowercase, in slot order. Null when it names none.
+ */
+export function projectColors(settings: string): SeedColors | null {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(settings)
+  } catch {
+    return null
+  }
+  const list = (parsed as { filament_colour?: unknown }).filament_colour
+  if (!Array.isArray(list)) return null
+  const hexes = [...new Set(list.filter((c): c is string => typeof c === 'string').map((c) => c.toLowerCase().slice(0, 7)).filter((c) => /^#[0-9a-f]{6}$/.test(c)))]
+  return hexes.length ? { colors: hexes.slice(0, 32).map((hex) => ({ hex })), parts: [] } : null
+}
+
 /** Entry names an archive must not contain, by extension. */
 const BLOCKED_EXT = /\.(exe|dll|so|dylib|bat|cmd|com|scr|msi|app|sh|bash|zsh|ps1|psm1|vbs|js|mjs|py|rb|pl|php|jar|class|lnk|reg|docm|xlsm|apk|dmg|pkg|deb|rpm)$/i
 
