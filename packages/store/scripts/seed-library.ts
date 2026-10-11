@@ -3,7 +3,7 @@
 // Seeds the hosted library from model files kept outside git.
 //
 //   SLICERX_SUPABASE_URL=... SLICERX_SERVICE_ROLE_KEY=... \
-//     pnpm --filter @slicerx/store library:seed --models <folder> [--manifest <file>] [--dry-run] [--update]
+//     pnpm --filter @slicerx/store library:seed --models <folder> [--manifest <file>] [--dry-run] [--update | --facts]
 //
 // The folder holds the model files and a manifest.json (see seed-manifest.example.json
 // for the shape). It must not be inside a git work tree. Creators are created as
@@ -18,13 +18,17 @@
 // the manifest's version with its changelog, file and cover, approved and scan-marked as the seed
 // does. The listing keeps its id, stats and likes. With --dry-run it reads the library and lists what
 // would change, writing nothing.
+//
+// --facts fills in what a listing's live version says about itself, for files that did not change: its colors (read
+// from the file) where the version has none, and the manifest's print profiles where the version has none. The
+// file, version and listing stay as they are. With --dry-run it lists what it would write, writing nothing.
 import { execFileSync, spawnSync } from 'node:child_process'
 import { existsSync, readFileSync, statSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { createClient } from '@supabase/supabase-js'
 import { latestVersion } from '../src/map'
 import {
-  checkModelBytes, fileFormat, manifestProblems, manifestSchema, newId, objectName, resolveModelPath, sha256Hex,
+  checkModelBytes, fileFormat, manifestProblems, manifestSchema, newId, objectName, projectColors, resolveModelPath, sha256Hex,
   type SeedManifest,
 } from './library-seed'
 
@@ -35,8 +39,9 @@ const flag = (name: string): string | undefined => {
 }
 const dryRun = args.includes('--dry-run')
 const update = args.includes('--update')
+const facts = args.includes('--facts')
 const modelsDir = flag('--models')
-if (!modelsDir) fail('usage: library:seed --models <folder> [--manifest <file>] [--dry-run]')
+if (!modelsDir) fail('usage: library:seed --models <folder> [--manifest <file>] [--dry-run] [--update | --facts]')
 const root = resolve(modelsDir)
 if (!existsSync(root) || !statSync(root).isDirectory()) fail(`${root} is not a folder`)
 
@@ -76,7 +81,8 @@ for (const [owner, f] of [...manifest.creators.flatMap((c) => [c.logo, c.banner]
 if (problems.length > 0) fail(`the manifest has problems:\n  ${problems.join('\n  ')}`)
 
 console.log(`${manifest.creators.length} creators, ${prepared.length} models (${(prepared.reduce((n, p) => n + p.bytes.length, 0) / 1048576).toFixed(1)} MB)`)
-if (dryRun && !update) {
+if (update && facts) fail('--update and --facts are separate runs; pick one')
+if (dryRun && !update && !facts) {
   for (const p of prepared) console.log(`  ${p.listing.creator}/${p.listing.slug}  ${p.format}  ${p.sha256.slice(0, 12)}`)
   console.log('dry run: nothing written')
   process.exit(0)
@@ -95,6 +101,15 @@ async function must<T = { id: string }>(what: string, q: PromiseLike<Res>): Prom
   return r.data as T
 }
 
+/** One file from a 3MF archive as text, or '' when it is not there. */
+function readZipEntry(path: string, entry: string): string {
+  try {
+    return execFileSync('unzip', ['-p', path, entry], { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 })
+  } catch {
+    return ''
+  }
+}
+
 const IMAGE_TYPES: Record<string, string> = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', gif: 'image/gif' }
 /** Uploads an image from the models folder to the owner's creator-media folder and returns its public URL. */
 async function uploadImage(ownerId: string, file: string): Promise<string> {
@@ -104,6 +119,47 @@ async function uploadImage(ownerId: string, file: string): Promise<string> {
   const up = await sb.storage.from('creator-media').upload(object, readFileSync(path), { contentType: IMAGE_TYPES[ext] ?? 'image/png', upsert: true })
   if (up.error) fail(`upload ${object}: ${up.error.message}`)
   return sb.storage.from('creator-media').getPublicUrl(object).data.publicUrl
+}
+
+if (facts) {
+  let planned = 0
+  for (const p of prepared) {
+    const l = p.listing
+    const listing = await must<{ id: string } | null>('find listing', sb.from('listings').select('id').eq('slug', l.slug).maybeSingle())
+    if (!listing) {
+      console.log(`listing ${l.slug}: not in the library; seed it first`)
+      continue
+    }
+    const versions = await must<{ id: string; version: string; sha256: string; review_status: string; scan_status: string; colors: unknown }[]>('find versions', sb.from('listing_versions').select('id, version, sha256, review_status, scan_status, colors').eq('listing_id', listing.id))
+    const live = latestVersion(versions.filter((v) => v.review_status === 'approved' && v.scan_status === 'clean'))
+    if (!live || live.sha256 !== p.sha256) {
+      console.log(`listing ${l.slug}: the live version (${live?.version ?? 'none'}) is not this file; run --update first`)
+      continue
+    }
+    const colors = p.format === 'stl' ? null : projectColors(readZipEntry(resolveModelPath(root, l.file), 'Metadata/project_settings.config'))
+    const setColors = live.colors == null && colors != null
+    const have = await must<{ printer_model: string; process: string }[]>('find print profiles', sb.from('print_profiles').select('printer_model, process').eq('version_id', live.id))
+    const add = have.length ? [] : l.printProfiles
+    if (!setColors && add.length === 0) {
+      console.log(`listing ${l.slug} ${live.version}: nothing to fill in`)
+      continue
+    }
+    planned += 1
+    if (setColors) console.log(`listing ${l.slug} ${live.version}: colors ${JSON.stringify(colors)}`)
+    for (const pp of add) console.log(`listing ${l.slug} ${live.version}: print profile ${pp.printerModel}, ${pp.process}, ${pp.filament}${pp.timeS != null ? `, ${pp.timeS} s` : ''}${pp.grams != null ? `, ${pp.grams} g` : ''}`)
+    if (dryRun) continue
+    if (setColors) await must('set colors', sb.from('listing_versions').update({ colors }).eq('id', live.id).select('id'))
+    if (add.length) {
+      await must('create print profiles', sb.from('print_profiles').insert(add.map((pp) => ({
+        version_id: live.id, printer_model: pp.printerModel, process: pp.process, filament: pp.filament,
+        layer_height_mm: pp.layerHeightMm ?? null, nozzle_mm: pp.nozzleMm ?? null, time_s: pp.timeS ?? null,
+        grams: pp.grams ?? null, plates: pp.plates ?? null, notes: pp.notes ?? null,
+      }))).select('id'))
+    }
+    await must('audit', sb.from('audit_log').insert({ action: 'seed_facts', target_kind: 'listing', target_id: listing.id, detail: { slug: l.slug, version: live.version, colors: setColors, printProfiles: add.length } }).select('id'))
+  }
+  console.log(dryRun ? `dry run: ${planned} listings would change, nothing written` : `${planned} listings filled in`)
+  process.exit(0)
 }
 
 if (update) {
