@@ -29,7 +29,7 @@ export function useScope(): { scope: SettingsScope; name: string } {
   }, [which, ids, part, plate])
 }
 
-/** The pill: Plate, or the selection with how many settings it has of its own. Absent with nothing selected. */
+/** The switch, flat in the card like the other segmented controls: Plate, or the selection with how many settings it has of its own. Absent with nothing selected. */
 export function ScopeBar() {
   const ids = useApp((s) => selectedIds(s).length)
   const { scope, name } = useScope()
@@ -59,7 +59,7 @@ export function ScopeBar() {
         label="Settings apply to"
         full
         size="sm"
-        className="scope-seg sx-overlay"
+        className="scope-seg"
         value={scope.kind === 'plate' ? 'plate' : 'objects'}
         onChange={(v) => set({ settingsScope: v })}
         options={[

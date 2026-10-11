@@ -1,6 +1,5 @@
 /* The scope pill over Print settings, and the accent edge of the settings while they edit the selection. */
 .scope-bar { margin-bottom: var(--s-3); }
-.scope-seg { border-radius: var(--r-md); }
 .scope-label { display: inline-flex; align-items: center; gap: 4px; min-width: 0; max-width: 100%; }
 .scope-label .scope-obj, .scope-label .scope-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .scope-label .scope-obj { color: var(--muted); }
