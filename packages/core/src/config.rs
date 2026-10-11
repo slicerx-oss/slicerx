@@ -317,7 +317,7 @@ impl Default for TreeSupportConfig {
     reason = "one field per boolean setting of the profile"
 )]
 pub struct SupportConfig {
-    /// `normal` or `tree`; tree supports are drawn as normal ones for now.
+    /// A tree support type (`support_type` `tree(auto)` or `tree(manual)`); `style` says which kind of tree.
     pub tree: bool,
     pub style: SupportStyle,
     pub tree_settings: TreeSupportConfig,
@@ -329,7 +329,7 @@ pub struct SupportConfig {
     pub object_first_layer_gap: f64,
     /// Grow the support area by this much, mm.
     pub expansion: f64,
-    /// Manual types print supports only where enforcers ask; none can be given yet.
+    /// A manual support type: supports print only where enforcers ask (enforcer volumes and painted support).
     pub manual: bool,
     /// Slope from horizontal below which an overhang gets support, degrees.
     pub threshold_angle: f64,
