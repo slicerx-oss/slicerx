@@ -11,7 +11,7 @@ import type { Host } from '@slicerx/contracts'
 import init from '../../vendor/occt-import-js/lib/occt-import-js.mjs'
 import type { StepConverter } from '../src/state/import-step'
 import { addAutoImport, autoFormatOf, toBase64 } from '../src/state/import-auto'
-import { readStep, STEP_MAX_MB, StepError, stepToObj, stepUnit, type Occt, type StepQuality } from '../src/state/step-read'
+import { readStep, STEP_MAX_MB, StepError, stepToObj, stepUnit, toLocalOrigin, type Occt, type StepQuality } from '../src/state/step-read'
 import { bounds, decompose, sizeOf } from '../src/plate/transform'
 import { appStore, get, set } from '../src/state/store'
 import { useGeomEngine } from './geom-engine'
@@ -151,5 +151,25 @@ describe('adding STEP files to the plate', () => {
   it('adds nothing when the file cannot be read', async () => {
     await expect(addAutoImport(host, 'empty.step', buffer(file('empty.step')), undefined, convert)).rejects.toThrow(/^empty\.step has no solids/)
     expect(get().plate).toHaveLength(0)
+  })
+})
+
+describe('a STEP model far from the origin', () => {
+  it('keeps its small features once its meshes are 32-bit floats', () => {
+    // A 0.01 mm step on a body 8 km out, and a second body 25 mm beside it: one 32-bit float there is half a millimeter.
+    const far = 8_000_000
+    const a = { name: 'a', positions: Float64Array.from([far, far, 0, far + 10, far, 0, far + 10.01, far + 10, 0]), indices: Uint32Array.from([0, 1, 2]) }
+    const b = { name: 'b', positions: Float64Array.from([far + 25, far, 0, far + 35, far, 0, far + 35, far + 10, 5]), indices: Uint32Array.from([0, 1, 2]) }
+    toLocalOrigin([a, b])
+    const fa = Float32Array.from(a.positions)
+    const fb = Float32Array.from(b.positions)
+    expect(fa[6]! - fa[3]!).toBeCloseTo(0.01, 4)
+    expect(fb[0]! - fa[0]!).toBeCloseTo(25, 4)
+    // The shared box is centered on the origin.
+    expect(Math.min(fa[0]!, fb[0]!) + Math.max(fa[6]!, fb[6]!)).toBeCloseTo(0, 4)
+    expect(Math.min(...fa.filter((_, i) => i % 3 === 2), ...fb.filter((_, i) => i % 3 === 2)) + Math.max(...fb.filter((_, i) => i % 3 === 2))).toBeCloseTo(0, 4)
+    // Without it the step is gone.
+    const raw = Float32Array.from([far + 10, far + 10.01])
+    expect(raw[1]! - raw[0]!).toBe(0)
   })
 })
