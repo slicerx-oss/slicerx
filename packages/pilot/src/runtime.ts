@@ -24,7 +24,7 @@ import type {
 import { DEFAULT_POLICY, PERMISSION_LABELS, grantApproval, hashParams } from '@slicerx/contracts'
 import { Channel } from './channel'
 import { ASSISTANT_NAME } from './name'
-import { decide, normalizePolicy } from './gate'
+import { decide, normalizePolicy, startsPrint } from './gate'
 import { EMPTY_KB_INDEX, createKnowledgeBase, type KbSkill, type KnowledgeBase } from './kb/kb'
 import type { SettingsPlanner } from './planner'
 import type { PilotProject } from './project'
@@ -277,6 +277,8 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     }
     const request: ApprovalRequest = { ...(await buildApprovalRequest(tool, input, ctx, { id: `apr_${newId()}`, sessionId, expiresAt: new Date(now() + approvalTimeout).toISOString() })), origin: 'pilot' }
     if (askReasons.length) request.lines = [...request.lines, ...askReasons]
+    // A print starts only on a person's approval, whatever class the tool has and whatever the policy says.
+    if (mode === 'allow' && startsPrint(request)) mode = 'ask'
     await opts.host.approvals.register(request)
     if (mode === 'allow') {
       emit({ type: 'permission_note', permission, mode: 'allow', tool: tool.name, message: `${label} is set to Allow in Permissions, so ${ASSISTANT_NAME} continued without asking.` })
