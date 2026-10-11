@@ -1436,6 +1436,37 @@ mod tests {
         assert!((z.last().unwrap() - 12.0).abs() < 1e-3, "reaches the roof, {z:?}");
     }
 
+    #[cfg(feature = "sleipnir")]
+    #[test]
+    fn smart_layer_tops_reach_a_model_top_that_f32_rounds_down() {
+        // A 10 mm cube stretched to 39.000051 mm: the f64 top is 39.00005102157593, the f32 plate mesh sleipnir
+        // plans on tops out at 39.00004959106445, 1.4e-6 mm lower. The plan must count as reaching the top.
+        let mesh = cube();
+        let body = r#"{"plate":{"objects":[{"mesh":1,"transform":[1,0,0,0,0,1,0,0,0,0,3.9000051021575928,0,100,100,0,1]}]},"config":{"layer_height":0.2,"smart_layer":"quality"},"options":{}}"#;
+        let req: SliceRequest = serde_json::from_str(body).unwrap();
+        let run = run_request(&req, &|_: &str| Ok(mesh.clone())).unwrap();
+        let z = run.report.layer_z;
+        assert!((f64::from(*z.last().unwrap()) - 39.0).abs() < 1e-3, "{z:?}");
+        // The same tops sent by a host, as the app sends them, are taken too.
+        let tops: Vec<String> = (1..=194)
+            .map(|i| format!("{:.1}", f64::from(i) * 0.2))
+            .chain([String::from("39.00004959106445")])
+            .collect();
+        let body = body.replace(
+            r#""options":{}"#,
+            &format!(r#""options":{{"layerTopsMm":[{}]}}"#, tops.join(",")),
+        );
+        let req: SliceRequest = serde_json::from_str(&body).unwrap();
+        assert_eq!(
+            run_request(&req, &|_: &str| Ok(mesh.clone()))
+                .unwrap()
+                .report
+                .layer_z
+                .len(),
+            195
+        );
+    }
+
     #[test]
     fn layer_tops_win_over_smart_layer() {
         // 0.5 mm tops up to the roof, where sleipnir would plan 0.2 mm and thinner.
