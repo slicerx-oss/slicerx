@@ -75,11 +75,16 @@ Units: millimeters in the API. Inside the crate, 2D geometry uses `i32` coordina
 
 Works:
 
-- Loading 3MF (core specification, Bambu Studio and OrcaSlicer project files with component files, per-part filament slots, plates and ZIP64), binary and ASCII STL, a quantized JSON model format and raw geometry buffers.
-- The full pipeline with walls, top and bottom shells, rectilinear and grid infill, brim, multi-filament plates with tool changes, and G-code for Marlin 2, Klipper and RepRapFirmware (Bambu printers get plain G-code; packaging it as `.gcode.3mf` is up to the host).
-- Filament length, grams and cost per slot, and a print time estimate.
+- Loading 3MF (core specification, Bambu Studio and OrcaSlicer projects with component files, per-part filament slots, part types, plates and ZIP64; malformed files are refused, not guessed), binary and ASCII STL, a quantized JSON model format and raw geometry buffers.
+- Walls (classic, Arachne-style variable width, and aegis), gap fill, top and bottom shells with vertical shell thickness, internal bridges over sparse infill, the sparse and solid infill patterns, ironing, fuzzy skin, seams (planned, painted, scarf), spiral vase, skirt, brim and raft.
+- Normal and tree supports, with painted and volume enforcers and blockers.
+- Painted multi-material from 3MF (color, support, seam and fuzzy skin paint), and multi-filament plates with tool changes, a prime tower and flushing.
+- By-layer and by-object print sequence, with clearance and collision checks before the file is written.
+- G-code for Marlin 2, Klipper, RepRapFirmware, Bambu Lab printers, Prusa (plain and binary `.bgcode`), Ultimaker and other flavors, with arc fitting, object labels, thumbnails and custom G-code templates. Bambu printers get plain G-code; packaging it as `.gcode.3mf` is up to the host.
+- A time estimate that reads the finished file with the printer's motion limits, and filament length, grams and cost per slot.
+- A safety preflight that refuses toolpaths off the bed, in an excluded area or over the height.
 - Identical output for any split into layer ranges, and between native and WebAssembly builds (same G-code SHA-256).
 
 Speed on the reference model (`bench/models/x-mark.stl`, 0.20 mm, reference machine Apple M3 Pro with 11 cores): measured numbers are in `bench/README.md` and every hill-climb step is in `bench/LOG.md`.
 
-Not yet: supports, variable-width walls, gap fill, bridges over sparse infill, floating vertical shells, ironing, painted multi-material in 3MF, acceleration in the time estimate, and per-stage caching for re-slicing (a kept `SliceSession` skips mesh preparation only). Contour chains that do not close on an open mesh are dropped and reported as a warning.
+The feature list by area, with the slicer each one follows, is in `docs/core-features.md`. Not yet: re-slicing reuses only the prepared mesh of a kept `SliceSession`, not later stages. Contour chains that do not close on an open mesh are dropped and reported as a warning.

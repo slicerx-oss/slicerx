@@ -28,9 +28,9 @@ members = [
 # The vendored forks build as path dependencies of sx-core and sx-geom, outside the workspace's
 # lints and formatting, and are published on their own (packages/vendor/*/SOURCE.md).
 exclude = ["packages/vendor"]
-# `cargo build` and `cargo test` at the root skip the WASM wrapper, the Orca
-# bridge (needs the prebuilt libslic3r prefix) and the Tauri app. CI passes
-# --workspace and must install what those three need or exclude them.
+# `cargo build` and `cargo test` at the root skip the two WASM wrappers, the Tauri
+# app and the cloud services. CI passes --workspace and must install what those
+# need or exclude them.
 default-members = [
   "packages/edition-config/rust",
   "packages/core",
