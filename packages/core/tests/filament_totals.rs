@@ -194,9 +194,13 @@ fn each_filament_converts_with_its_own_diameter() {
         );
     }
     assert!((m.cost - s.cost).abs() < s.cost * 1e-3);
-    // The file states the same: its header lists both diameters and its footer the volumes and weights.
+    // The file states the same: its configuration block lists both diameters and its footer the volumes and
+    // weights.
     let g = String::from_utf8_lossy(&mixed.gcode);
-    assert!(g.contains("; filament_diameter: 1.75,2.85\n"), "header");
+    assert!(
+        g.contains("; filament_diameter = 1.75,2.85\n"),
+        "configuration block"
+    );
     let (mm, cm3, grams) = (
         footer(&mixed.gcode, "; filament used [mm] = "),
         footer(&mixed.gcode, "; filament used [cm3] = "),
