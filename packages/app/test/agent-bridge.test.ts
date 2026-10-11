@@ -313,3 +313,13 @@ describe('the state an agent reads', () => {
     await expect(bridge.handle('export_info', {})).rejects.toMatchObject({ code: 'refused', message: expect.stringMatching(/changed after the last slice/) })
   })
 })
+
+describe('dialog titles', () => {
+  it('read as spoken: a tag line marked aria-hidden stays out', async () => {
+    const { dialogTitle } = await import('../src/agent-bridge/capture')
+    const d = document.createElement('div')
+    d.setAttribute('role', 'dialog')
+    d.innerHTML = '<h2><span aria-hidden="true">SlicerX | A slicer for the gods</span><span>SlicerX 0.2.3 is out</span></h2>'
+    expect(dialogTitle(d)).toBe('SlicerX 0.2.3 is out')
+  })
+})
