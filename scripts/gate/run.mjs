@@ -83,7 +83,7 @@ async function main() {
   try {
     result.build.sha256 = await sha256File(exe).catch(() => 'unreadable')
     // w needs the hub's watch pause steps in seconds; a bridge build reads them from SX_GATE_WATCH_PAUSE.
-    app = await startApp({ app: opts.app, profile: opts.profile, log, extraEnv: opts.run.includes('w') ? { SX_GATE_WATCH_PAUSE: watchPauseEnv() } : {} })
+    app = await startApp({ app: opts.app, profile: opts.profile, waitS: opts.waitStart, log, extraEnv: opts.run.includes('w') ? { SX_GATE_WATCH_PAUSE: watchPauseEnv() } : {} })
     bridge = await connectBridge(app.tokenFile)
     if (opts.platform === 'macos') result.notes.push('macOS uses the bridge build\'s own data folder; start from a fresh one for first run (docs/release-gate.md).')
     const { scenario } = createContext({ bridge, out: opts.out, opts, tokenFile: app.tokenFile, log })

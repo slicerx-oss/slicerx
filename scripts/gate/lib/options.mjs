@@ -4,7 +4,7 @@
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { parseArgs } from 'node:util'
-import { repo } from './app.mjs'
+import { repo, START_WAIT_S } from './app.mjs'
 import { STARTERS } from './starters.mjs'
 import { QA_ACCOUNT } from './util.mjs'
 
@@ -26,6 +26,7 @@ export const HELP = `node scripts/gate/run.mjs --app <bridge build> [options]
   --only <list>         Scenarios to run, for example a,b,e (default: all, a b c d e w)
   --skip <list>         Scenarios to leave out
   --starters <list>     Starter slugs for e (default: every starter)
+  --wait-start <s>      How long to wait for the started app's connection file (default ${START_WAIT_S})
   --wait-signin <min>   How long to wait for the operator at each sign-in link (default 10)
   --wait-scan <min>     How long to wait for the malware scan (default 15)
   --wait-review <min>   How long to wait for review approval (default 60)
@@ -53,6 +54,7 @@ export function options(argv) {
       only: { type: 'string' },
       skip: { type: 'string' },
       starters: { type: 'string' },
+      'wait-start': { type: 'string' },
       'wait-signin': { type: 'string' },
       'wait-scan': { type: 'string' },
       'wait-review': { type: 'string' },
@@ -81,6 +83,8 @@ export function options(argv) {
     if (!Number.isFinite(n) || n <= 0 || n > 240) throw new Error(`${name} is minutes between 0 and 240`)
     return n
   }
+  const waitStart = values['wait-start'] === undefined ? START_WAIT_S : Number(values['wait-start'])
+  if (!Number.isFinite(waitStart) || waitStart <= 0 || waitStart > 1800) throw new Error('--wait-start is seconds between 0 and 1800')
   const startersList = list(values.starters)
   for (const st of startersList) if (!STARTERS.includes(st)) throw new Error(`no starter ${st}; the starters are ${STARTERS.join(', ')}`)
   const win = process.platform === 'win32'
@@ -91,6 +95,7 @@ export function options(argv) {
     out: resolve(values.out ?? join(tmpdir(), `sx-gate-${platform}-${new Date().toISOString().replace(/[:.]/g, '-')}`)),
     run,
     starters: startersList.length ? startersList : null,
+    waitStart,
     waitSignin: minutes(values['wait-signin'], 10, '--wait-signin'),
     waitScan: minutes(values['wait-scan'], 15, '--wait-scan'),
     waitReview: minutes(values['wait-review'], 60, '--wait-review'),
