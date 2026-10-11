@@ -39,12 +39,16 @@ export function goalEdits(cfg: PrintConfig, base: EasyGoal): GoalEdit[] {
     })
 }
 
-/** The tip body for an edited goal: the first few settings with both values, then how many more. */
-export function goalEditsText(edits: readonly GoalEdit[], goalName: string, shown = 4): string {
-  const parts = edits.slice(0, shown).map((e) => `${e.label} ${e.now} (${goalName} ${e.goal})`)
+/** The tip for an edited goal: a row per setting (its name, the plate's value, the goal's), then how to go back. */
+export function goalEditsTip(edits: readonly GoalEdit[], goalName: string, shown = 4): { rows: [string, string, string][]; body: string } {
+  const rows = edits.slice(0, shown).map((e): [string, string, string] => {
+    // the goal's value drops the unit the plate's already shows: "0.18 mm (0.2)"
+    const unit = / [^\d\s]+$/.exec(e.now)?.[0]
+    const goal = unit && e.goal.endsWith(unit) ? e.goal.slice(0, -unit.length) : e.goal
+    return [e.label, e.now, `(${goal})`]
+  })
   const more = edits.length - shown
-  const list = more > 0 ? `${parts.join(', ')} and ${more} more` : parts.join(', ')
-  return `Changed from ${goalName}: ${list}. Press ${goalName} to go back to its settings.`
+  return { rows, body: `${more > 0 ? `And ${more} more. ` : ''}Press ${goalName} to go back to its settings.` }
 }
 
 const num = (v: SettingValue | undefined): number => Number(Array.isArray(v) ? v[0] : v)

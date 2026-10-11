@@ -17,10 +17,15 @@ export interface TipContent {
   figure?: ReactNode
   /** A quiet monospace line under the body, such as a setting's key in developer mode. */
   meta?: string
+  /** Short rows over the body, one per item: a name, a value and a second value, in aligned columns. */
+  rows?: readonly TipRow[]
 }
 
+/** One row of a tip's list: a name, a value, and a quieter value beside it. */
+export type TipRow = readonly [name: string, value: string, aside: string]
+
 /** A registry id, or text for a one-off tip. */
-export type TipSpec = string | { title: string; body?: string; key?: string; reason?: string }
+export type TipSpec = string | { title: string; body?: string; key?: string; reason?: string; rows?: readonly TipRow[] }
 
 /** The data attributes that mark an element as having a tip. Spread onto any element. */
 export function tipAttrs(tip: TipSpec | undefined): Record<string, string> {
@@ -31,6 +36,7 @@ export function tipAttrs(tip: TipSpec | undefined): Record<string, string> {
     ...(tip.body ? { 'data-tip-body': tip.body } : {}),
     ...(tip.key ? { 'data-tip-key': tip.key } : {}),
     ...(tip.reason ? { 'data-tip-reason': tip.reason } : {}),
+    ...(tip.rows?.length ? { 'data-tip-rows': JSON.stringify(tip.rows) } : {}),
   }
 }
 
@@ -409,6 +415,17 @@ export function TooltipHost({ resolve, enabled = true, media = true, summonKey =
           </kbd>
         ))}
       </div>
+      {content.rows?.length ? (
+        <div className="sx-tip-rows" role="list">
+          {content.rows.map(([name, value, aside], i) => (
+            <div key={i} role="listitem" className="sx-tip-row">
+              <span>{name}</span>
+              <span className="sx-tip-row-value">{value}</span>
+              <span className="sx-tip-row-aside">{aside}</span>
+            </div>
+          ))}
+        </div>
+      ) : null}
       {content.body ? <p className="sx-tip-body">{content.body}</p> : null}
       {content.figure ? (
         <div className="sx-tip-fig" aria-hidden="true">

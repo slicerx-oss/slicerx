@@ -2,7 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 // The app's one tooltip: resolves an anchor's data attributes to copy from the registry (or the
 // one-off text on the element), with the key chip taken from the active look's keymap.
-import { keymapFor, TooltipHost, type KeyAction, type TipContent } from '@slicerx/ui'
+import { keymapFor, TooltipHost, type KeyAction, type TipContent, type TipRow } from '@slicerx/ui'
 import { useCallback, useEffect } from 'react'
 import { useLookChoice } from '../first-run/look'
 import { useApp } from '../state/store'
@@ -39,7 +39,21 @@ export function resolveTip(el: HTMLElement, map: Readonly<Record<string, string 
   const body = entry?.body ?? el.getAttribute('data-tip-body') ?? undefined
   const reason = entry?.reason ?? el.getAttribute('data-tip-reason') ?? undefined
   const keys = chordChips(chord)
-  return { title, ...(body ? { body } : {}), ...(keys.length ? { keys } : {}), ...(reason ? { reason } : {}) }
+  const rows = tipRows(el.getAttribute('data-tip-rows'))
+  return { title, ...(body ? { body } : {}), ...(keys.length ? { keys } : {}), ...(reason ? { reason } : {}), ...(rows ? { rows } : {}) }
+}
+
+/** A tip's rows from its attribute: three strings each, or none when the attribute is missing or malformed. */
+function tipRows(raw: string | null): TipRow[] | null {
+  if (!raw) return null
+  try {
+    const v: unknown = JSON.parse(raw)
+    if (!Array.isArray(v)) return null
+    const rows = v.filter((r): r is TipRow => Array.isArray(r) && r.length === 3 && r.every((x) => typeof x === 'string'))
+    return rows.length ? rows : null
+  } catch {
+    return null
+  }
 }
 
 export function AppTooltips() {
