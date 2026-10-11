@@ -78,6 +78,7 @@ const ALL_OPERATIONS: &[(&str, &str)] = &[
     ("nest.start", "nest"),
     ("nest.step", "nest"),
     ("nest.end", "nest"),
+    ("format.read3mf", "formats"),
 ];
 
 /// Whether this build has the feature.
@@ -97,6 +98,7 @@ fn has(feature: &str) -> bool {
         "nest" => cfg!(feature = "nest"),
         "calib" => cfg!(feature = "calib"),
         "hollow" => cfg!(feature = "hollow"),
+        "formats" => cfg!(feature = "formats"),
         _ => false,
     }
 }
@@ -464,6 +466,8 @@ fn run(op: &str, req: &Value, files: FileLoader<'_>) -> Result<Value> {
                 "bounds": if b.is_empty() { Value::Null } else { json!({ "min": b.min, "max": b.max }) },
             }))
         }
+        #[cfg(feature = "formats")]
+        "format.read3mf" => crate::format::json::read(req, files),
         #[cfg(feature = "nest")]
         "nest.arrange" => to_value(&crate::nest::nest(parse(req)?)?),
         #[cfg(feature = "nest")]
@@ -628,6 +632,16 @@ pub(crate) enum MeshOut {
 thread_local! {
     /// The output buffers of the current call (`MeshOut::Raw`).
     static OUT_FILES: std::cell::RefCell<Vec<Vec<u8>>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// adds an output buffer to the current call and returns its number
+#[cfg(feature = "formats")]
+pub(crate) fn push_out_file(bytes: Vec<u8>) -> usize {
+    OUT_FILES.with(|f| {
+        let mut f = f.borrow_mut();
+        f.push(bytes);
+        f.len() - 1
+    })
 }
 
 /// The output buffers the last call wrote (`meshOutput: "raw"`), in the order its answer numbers them; taken once.

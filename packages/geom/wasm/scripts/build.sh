@@ -26,7 +26,7 @@ if [ "${SX_GEOM_FEATURES+set}" = set ]; then
   cp "$out" "$here/pkg/sx_geom_wasm.wasm"
   cp "$out" "$here/pkg/sx_geom_core.wasm"
 else
-  build --no-default-features --features "${SX_GEOM_CORE_FEATURES-text,svg,nest,calib,hollow}"
+  build --no-default-features --features "${SX_GEOM_CORE_FEATURES-text,svg,nest,calib,hollow,formats}"
   cp "$out" "$here/pkg/sx_geom_core.wasm"
   build
   cp "$out" "$here/pkg/sx_geom_wasm.wasm"

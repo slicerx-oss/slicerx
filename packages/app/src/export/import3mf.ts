@@ -18,6 +18,7 @@ import { ProjectReadError, unzipEntries } from './unzip'
 import type { Mat, PaintOfPart, ScannedModel, ScannedObject } from './model-scan'
 import { scanProject, type ScannedProject } from './project-scan'
 import { scanProjectInWorker } from './project-worker-client'
+import { geomMatrix, readWithGeom, type GeomProject } from './geom-project'
 
 export { ProjectReadError, unzipEntries, type ZipLimits } from './unzip'
 export type { PaintOfPart } from './model-scan'
@@ -421,9 +422,48 @@ function settleOnBed(o: { parts: MeshPart[]; transform: number[] }): void {
  * Inflates and scans a 3MF project: in the project worker when the page can start one, else here. The caller keeps
  * its bytes (the worker gets a copy).
  */
-export function scanProjectFile(bytes: Uint8Array): Promise<ScannedProject & { parsedIn: 'worker' | 'page' }> {
+export async function scanProjectFile(bytes: Uint8Array): Promise<ScannedProject & { parsedIn: 'geom' | 'worker' | 'page' }> {
+  const viaGeom = await scanWithGeom(bytes)
+  if (viaGeom) return { ...viaGeom, parsedIn: 'geom' as const }
   if (typeof Worker === 'undefined') return scanProject(bytes).then((p) => ({ ...p, parsedIn: 'page' as const }))
   return scanProjectInWorker(bytes).then((p) => ({ ...p, parsedIn: 'worker' as const }))
+}
+
+/** Whether projects are read by the geometry engine when it is there (tests turn it off to read them in TypeScript). */
+let geomReads = true
+
+export function readProjectsWithGeom(on: boolean): void {
+  geomReads = on
+}
+
+/**
+ * A project read by the geometry engine, with the archive's other entries (settings, history, thumbnails) inflated
+ * here. Undefined when there is no engine or it could not read the file: the TypeScript reader then reads it, and
+ * words any refusal the way it always has.
+ */
+async function scanWithGeom(bytes: Uint8Array): Promise<ScannedProject | undefined> {
+  if (!geomReads) return undefined
+  let g: GeomProject
+  try {
+    g = await readWithGeom(bytes)
+  } catch {
+    return undefined
+  }
+  // A provider that is not the engine (a test's stand-in) answers something else.
+  if (!g || !Array.isArray(g.objects) || !Array.isArray(g.plates)) return undefined
+  const unzippedAt = performance.timeOrigin + performance.now()
+  const files = await unzipEntries(bytes, undefined, (name) => !/\.model$/i.test(name))
+  const meta = new Map(g.metadata)
+  const marks: VaultMark = { ...(meta.get('sx:Listing') ? { listing: meta.get('sx:Listing')! } : {}), ...(meta.get('sx:Creator') ? { creator: meta.get('sx:Creator')! } : {}) }
+  return {
+    files,
+    models: new Map(),
+    marks,
+    ...(g.doctype ? { markError: 'The 3MF declares a DTD, which is unsafe and not allowed in a 3MF package.' } : {}),
+    geom: g,
+    unzippedAt,
+    scannedAt: performance.timeOrigin + performance.now(),
+  }
 }
 
 export async function readProject(bytes: Uint8Array, bed: { widthMm: number; depthMm: number }): Promise<ImportedProject> {
@@ -435,9 +475,88 @@ export async function readProject(bytes: Uint8Array, bed: { widthMm: number; dep
  * plates laid out by the bed's size. Cheap next to the scan, so a project is laid out again for another bed without
  * reading it again.
  */
-export async function projectOf(scanned: ScannedProject, bed: { widthMm: number; depthMm: number }): Promise<ImportedProject> {
+/** One build item's object as a reader put it together, before it is laid out on its plate. */
+interface Assembled {
+  objectId: string
+  itemIndex: number
+  name: string
+  parts: MeshPart[]
+  paint: Record<number, PaintOfPart>
+  volumes: ImportedVolume[]
+  rawPartSettings: Record<string, Record<string, string>>
+  transform: Mat | null
+  printable: boolean
+  /** Components placed its parts, which may then sit far from the object's origin (centerObject). */
+  placed: boolean
+}
+
+interface PlateCfg {
+  name: string
+  sequence?: 'by-layer' | 'by-object'
+  nozzleMap?: number[]
+  objectIds: string[]
+}
+
+/** A plate's settings from Bambu Studio and Orca's model_settings.config, as both readers give them. */
+function plateCfgOf(name: string, index: number, m: Record<string, string>, objectIds: string[]): PlateCfg {
+  // Bambu Studio's per plate filament map: kept when it was set by hand; an automatic one the slicer picks again.
+  const maps = (m['filament_maps'] ?? '').split(/[\s,]+/).map(Number).filter((n) => n === 1 || n === 2)
+  const manual = (m['filament_map_mode'] === 'Manual' || m['filament_map_mode'] === 'Nozzle Manual') && maps.length > 0
+  return { name: name || `Plate ${index + 1}`, ...(m['print_sequence'] === 'by object' ? { sequence: 'by-object' as const } : m['print_sequence'] === 'by layer' ? { sequence: 'by-layer' as const } : {}), ...(manual ? { nozzleMap: maps } : {}), objectIds }
+}
+
+/**
+ * The objects of a project the geometry engine read (geom-project.ts). The engine gives part types, slots, settings and
+ * paint as the file has them, for Bambu Studio, Orca and PrusaSlicer alike; PrusaSlicer's settings are mapped to Orca's
+ * keys here, as the app reads them everywhere else. A part type the app does not know is left out, as before.
+ */
+async function assembleGeom(g: GeomProject): Promise<{ plateCfg: PlateCfg[]; items: Assembled[] }> {
+  const plateCfg = g.plates.map((p, i) => plateCfgOf(p.name, i, Object.fromEntries(p.settings), p.objects.map(String)))
+  const prusaOverrides = g.layout === 'prusa' ? (await import('@slicerx/settings')).prusaOverrides : null
+  const raw = (list: [string, string][]): Record<string, string> => (prusaOverrides ? prusaOverrides(Object.fromEntries(list)) : Object.fromEntries(list))
+  const items: Assembled[] = []
+  for (const [itemIndex, o] of g.objects.entries()) {
+    const parts: MeshPart[] = []
+    const paint: Record<number, PaintOfPart> = {}
+    const volumes: ImportedVolume[] = []
+    const rawPartSettings: Record<string, Record<string, string>> = {}
+    for (const p of o.parts) {
+      if (p.kindText !== null) continue
+      const name = p.name || o.name || 'Part'
+      const part: MeshPart = { name, slot: p.slot ?? o.slot ?? 1, positions: p.positions, indices: p.indices }
+      const own = raw(p.settings)
+      if (p.kind !== 'normal') {
+        const role: VolumeRole = p.kind
+        volumes.push({ name, role, part, ...(role === 'modifier' && Object.keys(own).length ? { rawSettings: own } : {}) })
+        continue
+      }
+      const layers: PaintOfPart = {}
+      for (const l of ['color', 'seam', 'support', 'fuzzy'] as const) if (p.paint[l].length) layers[l] = Object.fromEntries(p.paint[l])
+      if (Object.keys(layers).length) paint[parts.length] = layers
+      // PrusaSlicer's object settings apply to each of its parts; a part's own settings win.
+      const settings = prusaOverrides ? { ...raw(o.settings), ...own } : own
+      if (Object.keys(settings).length) rawPartSettings[name] = settings
+      parts.push(part)
+    }
+    items.push({
+      objectId: String(o.id),
+      itemIndex,
+      name: o.name || parts[0]?.name || 'Part',
+      parts,
+      paint,
+      volumes,
+      rawPartSettings,
+      transform: geomMatrix(o.transform, g.unitScale),
+      printable: o.printable,
+      placed: o.parts.some((p) => p.transformed),
+    })
+  }
+  return { plateCfg, items }
+}
+
+/** The objects of a project scanned in TypeScript (project-scan.ts), for hosts without the geometry engine. */
+async function assembleScanned(scanned: ScannedProject): Promise<{ plateCfg: PlateCfg[]; items: Assembled[] }> {
   const { files } = scanned
-  if (scanned.markError) throw new ProjectReadError(scanned.markError)
   const modelOf = (key: string): ScannedModel => {
     const m = scanned.models.get(key)
     if (!m) throw new ProjectReadError(key === '3D/3dmodel.model' ? 'The 3MF has no model file.' : `The 3MF points at ${key}, which is not in the file.`)
@@ -446,9 +565,6 @@ export async function projectOf(scanned: ScannedProject, bed: { widthMm: number;
   }
   const main = modelOf('3D/3dmodel.model')
   const dec = new TextDecoder()
-  // The library stamps sx:Listing and sx:Creator on the root model; they apply to every object without its own.
-  const marks = vaultMarksOf(files, scanned.marks)
-  const rootSource = sourceOf(marks.root)
   // Bambu Studio and Orca keep each object's mesh in its own file, named by the component's p:path.
   // A component without a path points into the model part it is in.
   const modelAt = (path: string | undefined, from: ScannedModel = main): ScannedModel => (path ? modelOf(path.replace(/^\/+/, '')) : from)
@@ -462,7 +578,7 @@ export async function projectOf(scanned: ScannedProject, bed: { widthMm: number;
     raw?: Record<string, string>
   }
   const meta = new Map<string, { name?: string; extruder?: number; parts: Map<string, PartInfo> }>()
-  const plateCfg: { name: string; sequence?: 'by-layer' | 'by-object'; nozzleMap?: number[]; objectIds: string[] }[] = []
+  const plateCfg: PlateCfg[] = []
   if (settingsText) {
     const cfg = xml(dec.decode(settingsText)).documentElement
     const md = (el: Element) => Object.fromEntries(kids(el, 'metadata').map((m) => [m.getAttribute('key') ?? '', m.getAttribute('value') ?? '']))
@@ -481,10 +597,7 @@ export async function projectOf(scanned: ScannedProject, bed: { widthMm: number;
     }
     for (const p of kids(cfg, 'plate')) {
       const m = md(p)
-      // Bambu Studio's per plate filament map: kept when it was set by hand; an automatic one the slicer picks again.
-      const maps = (m['filament_maps'] ?? '').split(/[\s,]+/).map(Number).filter((n) => n === 1 || n === 2)
-      const manual = (m['filament_map_mode'] === 'Manual' || m['filament_map_mode'] === 'Nozzle Manual') && maps.length > 0
-      plateCfg.push({ name: m['plater_name'] || `Plate ${plateCfg.length + 1}`, ...(m['print_sequence'] === 'by object' ? { sequence: 'by-object' as const } : m['print_sequence'] === 'by layer' ? { sequence: 'by-layer' as const } : {}), ...(manual ? { nozzleMap: maps } : {}), objectIds: kids(p, 'model_instance').map((i) => md(i)['object_id'] ?? '') })
+      plateCfg.push(plateCfgOf(m['plater_name'] ?? '', plateCfg.length, m, kids(p, 'model_instance').map((i) => md(i)['object_id'] ?? '')))
     }
   }
 
@@ -513,13 +626,7 @@ export async function projectOf(scanned: ScannedProject, bed: { widthMm: number;
     }
   }
 
-  const plateOf = (objectId: string): number => Math.max(0, plateCfg.findIndex((p) => p.objectIds.includes(objectId)))
-  const plates: ImportedPlate[] = (plateCfg.length ? plateCfg : [{ name: 'Plate 1', objectIds: [] }]).map((p) => ({ name: p.name, ...(p.sequence ? { sequence: p.sequence } : {}), ...(p.nozzleMap ? { nozzleMap: p.nozzleMap } : {}), objects: [] }))
-  const ears = parseBrimEars(files.get('Metadata/brim_ear_points.txt'))
-  // Orca places objects on the machine; the plate counts from the printable area's front left corner.
-  const [ax, ay] = projectOrigin(files.get('Metadata/project_settings.config'))
-  // Plates after the first sit to the side of it by the size of the bed the project was laid out on.
-  const layoutBed = areaSize(projectArea(files.get('Metadata/project_settings.config'))) ?? bed
+  const items: Assembled[] = []
   for (const [itemIndex, item] of main.items.entries()) {
     const obj = main.objects.get(item.objectId)
     if (!obj) continue
@@ -565,17 +672,44 @@ export async function projectOf(scanned: ScannedProject, bed: { widthMm: number;
         parts.push(baked)
       }
     }
+    items.push({ objectId: item.objectId, itemIndex, name: info?.name ?? pz?.name ?? obj.name ?? parts[0]?.name ?? 'Part', parts, paint: paintByPart, volumes, rawPartSettings, transform: item.transform, printable: item.printable, placed: sources.some((s) => s.matrix) })
+  }
+  return { plateCfg, items }
+}
+
+/**
+ * Puts a scanned project together for a bed: objects, parts and volumes from the model parts with the settings files,
+ * plates laid out by the bed's size. Cheap next to the scan, so a project is laid out again for another bed without
+ * reading it again.
+ */
+export async function projectOf(scanned: ScannedProject, bed: { widthMm: number; depthMm: number }): Promise<ImportedProject> {
+  const { files } = scanned
+  if (scanned.markError) throw new ProjectReadError(scanned.markError)
+  const dec = new TextDecoder()
+  // The library stamps sx:Listing and sx:Creator on the root model; they apply to every object without its own.
+  const marks = vaultMarksOf(files, scanned.marks)
+  const rootSource = sourceOf(marks.root)
+  const { plateCfg, items } = scanned.geom ? await assembleGeom(scanned.geom) : await assembleScanned(scanned)
+  const plateOf = (objectId: string): number => Math.max(0, plateCfg.findIndex((p) => p.objectIds.includes(objectId)))
+  const plates: ImportedPlate[] = (plateCfg.length ? plateCfg : [{ name: 'Plate 1', objectIds: [] }]).map((p) => ({ name: p.name, ...(p.sequence ? { sequence: p.sequence } : {}), ...(p.nozzleMap ? { nozzleMap: p.nozzleMap } : {}), objects: [] }))
+  const ears = parseBrimEars(files.get('Metadata/brim_ear_points.txt'))
+  // Orca places objects on the machine; the plate counts from the printable area's front left corner.
+  const [ax, ay] = projectOrigin(files.get('Metadata/project_settings.config'))
+  // Plates after the first sit to the side of it by the size of the bed the project was laid out on.
+  const layoutBed = areaSize(projectArea(files.get('Metadata/project_settings.config'))) ?? bed
+  for (const a of items) {
+    const { parts, volumes } = a
     if (parts.length === 0) continue
-    const pIndex = plateOf(item.objectId)
+    const pIndex = plateOf(a.objectId)
     const [ox, oy] = plateOffset(pIndex, plates.length, layoutBed)
-    const t = item.transform ? [...item.transform] : [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
+    const t = a.transform ? [...a.transform] : [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
     t[12] = t[12]! - ox - ax
     t[13] = t[13]! - oy - ay
-    const itemEars = ears.get(itemIndex + 1)?.map((e) => [...e] as [number, number, number, number])
-    if (sources.some((s) => s.matrix)) centerObject(parts, volumes, t, itemEars)
-    const own = marks.objects.get(item.objectId)
+    const itemEars = ears.get(a.itemIndex + 1)?.map((e) => [...e] as [number, number, number, number])
+    if (a.placed) centerObject(parts, volumes, t, itemEars)
+    const own = marks.objects.get(a.objectId)
     const source = own ? sourceOf({ ...marks.root, ...own }) : rootSource
-    ;(plates[pIndex] ?? plates[0]!).objects.push({ name: info?.name ?? pz?.name ?? obj.name ?? parts[0]!.name, parts, volumes, transform: t, ...(Object.keys(rawPartSettings).length ? { rawPartSettings } : {}), ...(Object.keys(paintByPart).length ? { paint: paintByPart } : {}), ...(item.printable ? {} : { printable: false }), ...(itemEars ? { brimPoints: itemEars } : {}), ...(source ? { source } : {}), fileId: item.objectId })
+    ;(plates[pIndex] ?? plates[0]!).objects.push({ name: a.name, parts, volumes, transform: t, ...(Object.keys(a.rawPartSettings).length ? { rawPartSettings: a.rawPartSettings } : {}), ...(Object.keys(a.paint).length ? { paint: a.paint } : {}), ...(a.printable ? {} : { printable: false }), ...(itemEars ? { brimPoints: itemEars } : {}), ...(source ? { source } : {}), fileId: a.objectId })
   }
   // Marks from Orca and Bambu Studio's layer slider: color change 0, pause 1, custom 4 (other types are not carried over).
   const marksText = files.get('Metadata/custom_gcode_per_layer.xml')
@@ -609,7 +743,7 @@ export async function projectOf(scanned: ScannedProject, bed: { widthMm: number;
       const { importProject } = await import('@slicerx/settings')
       const ranges = importProject({ projectSettings: {}, layerRanges: dec.decode(rangesText) }).layerRanges
       // The file numbers objects from 1 in the order the build first places them, not by their ids.
-      const order = [...new Set(main.items.map((i) => i.objectId))]
+      const order = [...new Set(items.map((i) => i.objectId))]
       for (const pl of plates) {
         for (const o of pl.objects) {
           const index = String(order.indexOf(o.fileId) + 1)

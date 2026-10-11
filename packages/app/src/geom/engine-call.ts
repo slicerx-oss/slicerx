@@ -52,6 +52,17 @@ export function rawMeshes(x: GeomExports, v: unknown, files = { n: 0 }): unknown
   return out
 }
 
+/** A file sent as its bytes (`data.bytes`) written into an engine buffer and named by `data.path`, so it is neither JSON nor base64. */
+export function rawData(x: GeomExports, v: unknown, files: { n: number }): unknown {
+  if (v === null || typeof v !== 'object' || Array.isArray(v)) return v
+  const data = (v as { data?: { bytes?: unknown } }).data
+  const bytes = data?.bytes
+  if (!(bytes instanceof Uint8Array)) return v
+  const at = x.geom_file(bytes.length)
+  new Uint8Array(x.memory.buffer, at, bytes.length).set(bytes)
+  return { ...v, data: { path: `mem:${files.n++}` } }
+}
+
 /**
  * The answer with each mesh the engine wrote to an output buffer (`rawOut: N`, a request's `meshOutput: "raw"`) as
  * typed arrays read from that buffer, so a big mesh never becomes JSON on its way out either.
@@ -107,7 +118,8 @@ function plainArrays(v: unknown): unknown {
  * buffers read back as typed arrays. Throws the engine's message when the call fails.
  */
 export function callEngine(x: GeomExports, op: string, request: unknown): unknown {
-  const bytes = new TextEncoder().encode(`${op}\0${JSON.stringify(askFaces(plainArrays(rawMeshes(x, request))))}`)
+  const files = { n: 0 }
+  const bytes = new TextEncoder().encode(`${op}\0${JSON.stringify(askFaces(plainArrays(rawMeshes(x, rawData(x, request, files), files))))}`)
   const at = x.geom_input(bytes.length)
   new Uint8Array(x.memory.buffer, at, bytes.length).set(bytes)
   const code = x.geom_call()
