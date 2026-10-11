@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // @vitest-environment jsdom
-// huginn beats a wing while mimir reasons, muninn while it reads the knowledge base or the project.
+// huginn in a rune ring turning with the clock while mimir reasons, muninn in one turning back while it reads the
+// knowledge base or the project.
 import { cleanup, render } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
 import type { ToolRowModel } from '../ui/reduce'
@@ -23,6 +24,7 @@ describe('ravens while mimir works', () => {
   it('puts huginn by a streaming thought and nothing by a finished one', () => {
     const live = render(<Think text="" ms={null} showThinking={false} />)
     expect(live.container.querySelector('.raven-wait[title="huginn, thinking"] .sx-raven[data-flap]')).toBeTruthy()
+    expect(live.container.querySelector('.raven-wait[title="huginn, thinking"] .sx-rune-ring:not([data-reverse])')).toBeTruthy()
     cleanup()
     const done = render(<Think text="" ms={1200} showThinking={false} />)
     expect(done.container.querySelector('.raven-wait')).toBeNull()
@@ -31,6 +33,7 @@ describe('ravens while mimir works', () => {
   it('puts muninn on a running recall, the spinner on other tools', () => {
     const kb = render(<ToolGroup rows={[row('kb.search', 'running')]} />)
     expect(kb.container.querySelector('.tfold .raven-wait[title="muninn, recalling"]')).toBeTruthy()
+    expect(kb.container.querySelector('.tfold .raven-wait[title="muninn, recalling"] .sx-rune-ring[data-reverse]')).toBeTruthy()
     cleanup()
     const other = render(<ToolGroup rows={[row('printer.status', 'running')]} />)
     expect(other.container.querySelector('.raven-wait')).toBeNull()
