@@ -9,8 +9,9 @@
 //   node scripts/ci/playwright-results.mjs <report.json> <retried file> <failed file>
 //
 // Exits 1 when the report is missing or unreadable, or the run had errors outside any test (a web server that did
-// not start, a spec that did not load): those are real failures that no list can excuse.
-import { readFileSync, writeFileSync } from 'node:fs'
+// not start, a spec that did not load): those are real failures that no list can excuse. A run step that gave up
+// waiting for the machine's heavy lock leaves <report.json>.gave-up instead of a report, and this says so plainly.
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { pathToFileURL } from 'node:url'
 
 /** The retried and failed test names in a parsed report, and the run's own errors. */
@@ -44,7 +45,10 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   try {
     report = JSON.parse(readFileSync(file, 'utf8'))
   } catch (e) {
-    console.error(`playwright-results: no readable report at ${file}: ${e.message}`)
+    if (existsSync(`${file}.gave-up`)) {
+      console.error('playwright-results: no tests ran: the run gave up waiting for the heavy lock (see the heavy.sh lines in the step above)')
+      console.log('::error title=Heavy lock::No tests ran: the run gave up waiting for the heavy lock. Rerun the job once the lock is free.')
+    } else console.error(`playwright-results: no readable report at ${file}: ${e.message}`)
     process.exit(1)
   }
   const { retried, failed, errors } = results(report)

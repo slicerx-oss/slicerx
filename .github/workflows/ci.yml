@@ -473,7 +473,7 @@ jobs:
           if [ "$RUNNER_ENVIRONMENT" != self-hosted ]; then
             ( while :; do cut -d ' ' -f1 /proc/loadavg; sleep 10; done ) > "$RUNNER_TEMP/load.txt" & sampler=$!
           fi
-          $run pnpm --filter @slicerx/web exec playwright test --project=${{ matrix.project }} --shard=${{ matrix.shard }} ${{ (matrix.project == 'desktop' && vars.E2E_ON_PC != 'true' && vars.E2E_GPU_LANE != 'false') && '--grep-invert @gpu' || '' }} --fully-parallel --workers=${{ runner.environment == 'self-hosted' && 5 || 1 }} --retries=1 --reporter=blob,list,json --trace=retain-on-failure || echo "playwright exited $?"
+          $run pnpm --filter @slicerx/web exec playwright test --project=${{ matrix.project }} --shard=${{ matrix.shard }} ${{ (matrix.project == 'desktop' && vars.E2E_ON_PC != 'true' && vars.E2E_GPU_LANE != 'false') && '--grep-invert @gpu' || '' }} --fully-parallel --workers=${{ runner.environment == 'self-hosted' && 5 || 1 }} --retries=1 --reporter=blob,list,json --trace=retain-on-failure || bash scripts/ci/run-exit.sh $? "$PLAYWRIGHT_JSON_OUTPUT_FILE"
           if [ -n "$sampler" ]; then
             kill "$sampler"
             sort -n "$RUNNER_TEMP/load.txt" | awk -v c="$(nproc)" '{a[NR]=$1} END {if (NR) print "runner load (1 min average, every 10 s, " c " cores): max " a[NR] ", median " a[int((NR+1)/2)] ", " NR " samples"}'
@@ -602,7 +602,7 @@ jobs:
       # One retry per failing test; the next step decides from the results, as in e2e-shard. The runner's port comes
       # from its .env (4317 is the default on a developer's machine, 4417 and 4418 are the WSL runners'), 4419 when it
       # sets none.
-      - run: SX_E2E_PORT=${SX_E2E_PORT:-4419} bash scripts/ci/heavy.sh --gpu timeout 900 pnpm --filter @slicerx/web exec playwright test --project=desktop --grep @gpu --grep-invert @gpu-timing --fully-parallel --workers=6 --retries=1 --reporter=blob,list,json --trace=retain-on-failure || echo "playwright exited $?"
+      - run: SX_E2E_PORT=${SX_E2E_PORT:-4419} bash scripts/ci/heavy.sh --gpu timeout 900 pnpm --filter @slicerx/web exec playwright test --project=desktop --grep @gpu --grep-invert @gpu-timing --fully-parallel --workers=6 --retries=1 --reporter=blob,list,json --trace=retain-on-failure || bash scripts/ci/run-exit.sh $? "$PLAYWRIGHT_JSON_OUTPUT_FILE"
         env:
           SX_HEAVY_LOCK: C:/builds/heavy-lock/lock
           SX_HEAVY_WAIT: 1200
@@ -611,7 +611,7 @@ jobs:
           PLAYWRIGHT_JSON_OUTPUT_FILE: ${{ runner.temp }}/e2e-results.json
       # The frame timing specs, alone on the machine: they measure frame gaps, which another suite's load would skew.
       # Their blob joins the first run's (PWTEST_BLOB_DO_NOT_REMOVE) and their failures go to their own folder.
-      - run: SX_E2E_PORT=${SX_E2E_PORT:-4419} bash scripts/ci/heavy.sh --e2e timeout 300 pnpm --filter @slicerx/web exec playwright test --project=desktop --grep @gpu-timing --workers=6 --retries=1 --reporter=blob,list,json --trace=retain-on-failure --output=test-results/timing || echo "playwright exited $?"
+      - run: SX_E2E_PORT=${SX_E2E_PORT:-4419} bash scripts/ci/heavy.sh --e2e timeout 300 pnpm --filter @slicerx/web exec playwright test --project=desktop --grep @gpu-timing --workers=6 --retries=1 --reporter=blob,list,json --trace=retain-on-failure --output=test-results/timing || bash scripts/ci/run-exit.sh $? "$PLAYWRIGHT_JSON_OUTPUT_FILE"
         env:
           SX_HEAVY_LOCK: C:/builds/heavy-lock/lock
           SX_HEAVY_WAIT: 1200
