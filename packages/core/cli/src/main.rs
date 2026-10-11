@@ -57,7 +57,7 @@ fn main() -> ExitCode {
         Some("time") => cmd_time(&args[1..]),
         _ => {
             eprintln!(
-                "usage: sx metadata <project.3mf>\n       sx slice <model> [--plate N] [--config <json>] [-o out.gcode] [--preview out.sxpv]\n       sx slice --request <req.json | -> [--out-dir <dir>] [--allow-collisions]\n       sx schema [request | result]\n       sx bench --config <bench.json> [--runs N] [--warmup N] [--threads N] [--append file] [--change text] [--ab <baseline sx>] [--write-baseline] [--json]\n       sx time <file.gcode> --config <json> [--trace [--at <line prefix>]]"
+                "usage: sx metadata <project.3mf>\n       sx slice <model> [--plate N] [--config <json>] [-o out.gcode] [--preview out.sxpv] [--strict]\n       sx slice --request <req.json | -> [--out-dir <dir>] [--allow-collisions] [--strict]\n       sx schema [request | result]\n       sx bench --config <bench.json> [--runs N] [--warmup N] [--threads N] [--append file] [--change text] [--ab <baseline sx>] [--write-baseline] [--json]\n       sx time <file.gcode> --config <json> [--trace [--at <line prefix>]]"
             );
             return ExitCode::from(2);
         }
@@ -205,6 +205,32 @@ fn split_projects(
     Ok(cache)
 }
 
+/// The request's text, from a file or stdin (`-`), and the folder its mesh paths are relative to.
+fn read_request(src: &str) -> Result<(String, PathBuf), String> {
+    if src == "-" {
+        let mut buf = String::new();
+        std::io::Read::read_to_string(&mut std::io::stdin(), &mut buf)
+            .map_err(|e| format!("reading stdin: {e}"))?;
+        return Ok((buf, PathBuf::from(".")));
+    }
+    let text = std::fs::read_to_string(src).map_err(|e| format!("reading {src}: {e}"))?;
+    let base = Path::new(src)
+        .parent()
+        .map_or_else(|| PathBuf::from("."), Path::to_path_buf);
+    Ok((text, base))
+}
+
+/// The command line lists the keys the engine does not use unless the request says not to; `--strict` refuses the
+/// slice over them.
+fn report_options(req: &mut sx_core::api::SliceRequest, args: &[String]) {
+    if req.options.config_report.is_none() {
+        req.options.config_report = Some(true);
+    }
+    if has(args, "--strict") {
+        req.options.strict = Some(true);
+    }
+}
+
 fn cmd_request(args: &[String]) -> ExitCode {
     use std::sync::Arc;
     use sx_core::api;
@@ -215,22 +241,9 @@ fn cmd_request(args: &[String]) -> ExitCode {
     let Some(src) = flag(args, "--request") else {
         return fail(EXIT_USAGE, "--request needs a path or -".into());
     };
-    let (text, base) = if src == "-" {
-        let mut buf = String::new();
-        if let Err(e) = std::io::Read::read_to_string(&mut std::io::stdin(), &mut buf) {
-            return fail(EXIT_INPUT, format!("reading stdin: {e}"));
-        }
-        (buf, PathBuf::from("."))
-    } else {
-        match std::fs::read_to_string(src) {
-            Ok(t) => (
-                t,
-                Path::new(src)
-                    .parent()
-                    .map_or_else(|| PathBuf::from("."), Path::to_path_buf),
-            ),
-            Err(e) => return fail(EXIT_INPUT, format!("reading {src}: {e}")),
-        }
+    let (text, base) = match read_request(src) {
+        Ok(r) => r,
+        Err(e) => return fail(EXIT_INPUT, e),
     };
     let raw: Value = match serde_json::from_str(&text) {
         Ok(v) => v,
@@ -244,6 +257,7 @@ fn cmd_request(args: &[String]) -> ExitCode {
     if let Some(config) = req.config.as_object() {
         req.options.stock_gcode_keys = stock::stock_keys(config);
     }
+    report_options(&mut req, args);
     let paths = mesh_paths(&raw);
     let cache = match split_projects(&mut req, &base, &paths) {
         Ok(split) => std::sync::Mutex::new(split),
@@ -273,6 +287,10 @@ fn cmd_request(args: &[String]) -> ExitCode {
     };
     if let Some(why) = collision_refusal(&run.report, &req.plate.objects, args) {
         return fail(EXIT_INPUT, why);
+    }
+    // The settings the slice did not use, as one block on stderr (stdout carries only the result).
+    if let Some(r) = &run.report.config_report {
+        print_config_report(r);
     }
     let mut out = match serde_json::to_value(&run.report) {
         Ok(v) => v,
@@ -307,6 +325,32 @@ fn cmd_request(args: &[String]) -> ExitCode {
     println!("{out}");
     ExitCode::SUCCESS
 }
+
+/// The config report as one block on stderr: a line per kind, then every key, so a script can read the whole list.
+fn print_config_report(r: &sx_core::api::ConfigReport) {
+    eprintln!("sx: settings not used:");
+    for line in r.lines() {
+        eprintln!("  {line}");
+    }
+    let all: Vec<String> = r
+        .invalid
+        .iter()
+        .map(|i| format!("invalid {} = {} ({})", i.key, i.value, i.reason))
+        .chain(r.not_applied.iter().map(|k| format!("not used {k}")))
+        .collect();
+    for line in all.iter().take(REPORT_LINES) {
+        eprintln!("  {line}");
+    }
+    if all.len() > REPORT_LINES {
+        eprintln!(
+            "  and {} more (the result's configReport lists them all)",
+            all.len() - REPORT_LINES
+        );
+    }
+}
+
+/// How many keys the stderr block lists one per line.
+const REPORT_LINES: usize = 50;
 
 /// Why a slice is refused when its head, gantry or tool changer would meet a printed part, two objects' paths cross,
 /// or a path enters a zone the printer keeps clear, unless `--allow-collisions` asks for it anyway. The engine reports
@@ -471,15 +515,41 @@ fn cmd_time(args: &[String]) -> Res<ExitCode> {
     Ok(ExitCode::SUCCESS)
 }
 
+/// Reads a config file over `config` a key at a time, and what it set that the engine does not use.
+fn read_config_file(config: &mut PrintConfig, path: &str) -> Res<sx_core::api::ConfigReport> {
+    let value: Value = serde_json::from_slice(&std::fs::read(path)?)?;
+    let mut report = sx_core::api::ConfigReport {
+        invalid: config.apply_value_lenient(&value)?,
+        ..Default::default()
+    };
+    if let Some(map) = value.as_object() {
+        let placeholders = sx_core::config::placeholder_keys(map);
+        report.not_applied = map
+            .keys()
+            .filter(|k| !sx_core::config::is_used_key(k) && !placeholders.contains(k.as_str()))
+            .cloned()
+            .collect();
+        report.not_applied.sort();
+    }
+    Ok(report)
+}
+
 fn cmd_slice(args: &[String]) -> Res<ExitCode> {
     let model = args
         .first()
         .filter(|a| !a.starts_with('-'))
         .ok_or("missing model path")?;
-    let mut config = match flag(args, "--config") {
-        Some(p) => PrintConfig::from_json(&std::fs::read(p)?)?,
-        None => PrintConfig::default(),
-    };
+    let mut config = PrintConfig::default();
+    if let Some(p) = flag(args, "--config") {
+        let report = read_config_file(&mut config, p)?;
+        if !report.is_empty() {
+            print_config_report(&report);
+            if has(args, "--strict") {
+                eprintln!("sx slice: --strict: {}", report.lines().join("; "));
+                return Ok(ExitCode::from(EXIT_INPUT));
+            }
+        }
+    }
     #[cfg(feature = "stock-gcode")]
     {
         config.trusted_gcode_keys = stock::stock_keys(&config.raw);

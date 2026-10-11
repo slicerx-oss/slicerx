@@ -302,6 +302,7 @@ A refused call has `isError: true`, text such as `Error: no_such_plate: Benchy.3
 | `slice_failed` | The engine could not slice the model; the message has its reason |
 | `preflight_blocked` | The engine's safety checks refused the settings or the custom G-code |
 | `project_gcode_review` | The project carries printer G-code that is not the printer's stock text; `details` has the diff and the flagged lines |
+| `project_settings_unused` | With `strict_settings`, the project's print settings carry keys SlicerX does not know or values it cannot read; the message lists them, and `slicerx_inspect_project`'s `import_report` has them all |
 | `sequence_clearance` | The plate prints by object, and objects sit closer than the printer's extruder clearance or one that prints before another is taller than the gantry or lid clears; the message names them |
 | `collision` | Paths cross on the plate or enter a keep-out zone; `details.collisions` has the objects and layers. `allow_collisions: true` slices it anyway, when the person asks |
 | `not_configured` | The feature needs a cloud API or an account service the server does not have |
