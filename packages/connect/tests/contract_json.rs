@@ -64,6 +64,7 @@ fn status() -> PrinterStatus {
                 material: Some("PLA".into()),
                 color: Some("#f2f2f2".into()),
                 remaining_pct: Some(82.0),
+                remaining_g: None,
                 spoolman_id: Some(1),
                 spool_uid: None,
             },

@@ -34,6 +34,8 @@ export interface BambuExtra {
   trays?: Record<number, { info: string; min: number; max: number }>
   /** AMS slots (0 based) holding a spool with a Bambu Lab RFID tag, reported with a `tray_uuid`. */
   tagged?: number[]
+  /** Exact grams left per AMS slot (0 based), reported as `remain_g` the way newer firmware does; absent elsewhere. */
+  grams?: Record<number, number>
   /** The chamber light as `ledctrl` last set it (`lights_report`); on when never set. */
   light?: boolean
   /** The speed level `print_speed` last set (`spd_lvl`, 1 to 4); 2, standard, when never set. */
@@ -162,6 +164,7 @@ export function reportFor(m: MockMachine, x: BambuExtra = { skipped: [], printEr
           ? [{ id: '0', tray: m.fx.slots.slice(0, 4).map((s, i) => ({
               id: String(i), tray_type: s.material ?? '', tray_color: s.color ? `${s.color.replace('#', '').toUpperCase()}FF` : '', remain: s.remainingPct ?? -1,
               ...(x.trays?.[i] ? { tray_info_idx: x.trays[i].info, nozzle_temp_min: String(x.trays[i].min), nozzle_temp_max: String(x.trays[i].max) } : {}),
+              ...(x.grams?.[i] !== undefined ? { remain_g: x.grams[i] } : {}),
               ...(x.tagged?.includes(i) ? { tray_uuid: `A1B2C3D4E5F6071829304A5B6C7D8E${String(i).padStart(2, '0')}` } : {}),
             })) }]
           : [],

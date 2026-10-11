@@ -226,6 +226,7 @@ pub(crate) fn prusalink_hardware(v: &Value, version: Option<&Value>) -> PrinterH
                         material: None,
                         color: None,
                         remaining_pct: None,
+                        remaining_g: None,
                         spoolman_id: None,
                         spool_uid: None,
                     })

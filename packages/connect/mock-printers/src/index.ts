@@ -226,7 +226,8 @@ export async function startMocks(opts: StartOptions = {}): Promise<RunningMocks>
     // POST /bambu {refuse?, model?, ams?, external?, tagged?, liveview?}: the Bambu fake refuses project starts with `refuse` (null or
     // absent: accepts them); `model`, `ams` and `external` make it another printer (an A1 with an AMS lite, an A1 mini
     // with only the external spool). A connection made afterwards sees the new model. `tagged` lists the AMS
-    // slots (0 based) whose spool has an RFID tag. `liveview: false` turns LAN Only Liveview off on an X1 or H2D;
+    // slots (0 based) whose spool has an RFID tag, and `grams` the exact grams per AMS slot (`remain_g`).
+    // `liveview: false` turns LAN Only Liveview off on an X1 or H2D;
     // `inBandParameterSets: true` makes its stream send SPS and PPS in band only; `cameraCode` makes its camera
     // want another code (null: the access code again); `digestQop: true` makes its Digest challenge offer qop;
     // `dropPlays: n` makes its camera drop the next n PLAY requests; `dropWithinMs` makes it drop a PLAY that
@@ -238,7 +239,7 @@ export async function startMocks(opts: StartOptions = {}): Promise<RunningMocks>
     // in (null: the placeholder again); `cameraFrameFile` sends that JPEG file instead, a photo for a capture (null: off).
     if (req.path === '/bambu' && req.method === 'POST') {
       if (!bambuExtra) return { status: 404 }
-      const b = req.json() as { refuse?: string | null; model?: string; ams?: BambuExtra['ams']; external?: BambuExtra['external'] | null; tagged?: number[]; liveview?: boolean; inBandParameterSets?: boolean; cameraCode?: string | null; digestQop?: boolean; dropPlays?: number; dropWithinMs?: number; stallCamera?: boolean; printerType?: string; storage?: BambuExtra['storage']; emmc?: boolean; developerMode?: boolean | null; cameraFrame?: 'hand' | null; cameraFrameFile?: string | null }
+      const b = req.json() as { refuse?: string | null; model?: string; ams?: BambuExtra['ams']; external?: BambuExtra['external'] | null; tagged?: number[]; grams?: Record<number, number>; liveview?: boolean; inBandParameterSets?: boolean; cameraCode?: string | null; digestQop?: boolean; dropPlays?: number; dropWithinMs?: number; stallCamera?: boolean; printerType?: string; storage?: BambuExtra['storage']; emmc?: boolean; developerMode?: boolean | null; cameraFrame?: 'hand' | null; cameraFrameFile?: string | null }
       if (b.printerType !== undefined) bambuExtra.printerType = b.printerType
       if (b.storage !== undefined) bambuExtra.storage = b.storage
       if (b.emmc !== undefined) bambuExtra.emmc = b.emmc
@@ -260,6 +261,7 @@ export async function startMocks(opts: StartOptions = {}): Promise<RunningMocks>
       if (b.dropWithinMs !== undefined) bambuExtra.dropWithinMs = b.dropWithinMs
       if (b.stallCamera) bambuExtra.stalledAt = Date.now()
       if (b.tagged) bambuExtra.tagged = b.tagged
+      if (b.grams) bambuExtra.grams = b.grams
       if (b.refuse) bambuExtra.refuse = b.refuse
       else delete bambuExtra.refuse
       if (b.model) bambuExtra.model = b.model

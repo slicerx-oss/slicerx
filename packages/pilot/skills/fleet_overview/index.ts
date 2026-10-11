@@ -37,7 +37,7 @@ function slotText(s: PrinterStatus['slots'][number], spools: SpoolRec[]): string
   if (!s.material) return `${s.id} empty`
   const g = slotGrams(s, spools)
   const left = s.remainingPct !== undefined ? ` ${s.remainingPct}%` : ''
-  return `${s.id} ${s.material}${s.color ? ` ${s.color}` : ''}${left}${g?.source === 'spoolman' ? ` (${Math.round(g.grams)} g)` : ''}`
+  return `${s.id} ${s.material}${s.color ? ` ${s.color}` : ''}${left}${g && g.source !== 'estimated' ? ` (${Math.round(g.grams)} g)` : ''}`
 }
 
 export function createFleetOverview() {

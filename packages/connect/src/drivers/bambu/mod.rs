@@ -1519,6 +1519,9 @@ fn tray_slot(id: String, tray: &Value, measured: bool) -> FilamentSlot {
         .get("remain")
         .and_then(Value::as_f64)
         .filter(|r| measured && fetched && *r > 0.0 && *r <= 100.0);
+    // The exact grams left, when the printer has them (newer firmware, or set in Bambu Studio's
+    // filament manager); -1 means none, and Bambu Studio reads 0 as none too.
+    let grams = tray.get("remain_g").and_then(Value::as_f64).filter(|g| *g > 0.0);
     // A spool without a tag reports zeros.
     let uid = ["tray_uuid", "tag_uid"]
         .into_iter()
@@ -1528,6 +1531,7 @@ fn tray_slot(id: String, tray: &Value, measured: bool) -> FilamentSlot {
         id,
         color: material.as_ref().and(color),
         remaining_pct: material.as_ref().and(remain),
+        remaining_g: material.as_ref().and(grams),
         spool_uid: material.as_ref().and(uid),
         material,
         spoolman_id: None,
@@ -3237,6 +3241,19 @@ mod tests {
         );
         assert_eq!(slots[3].remaining_pct, None, "-1 means the printer does not know");
         assert_eq!(slots[4].color.as_deref(), Some("#000000"));
+    }
+
+    #[test]
+    fn exact_grams_come_through_when_the_printer_reports_them() {
+        let p = json!({ "ams": { "ams": [ { "id": "0", "tray": [
+            { "id": "0", "tray_type": "PLA", "remain": 40, "remain_g": 312 },
+            { "id": "1", "tray_type": "PLA", "remain": 40, "remain_g": -1 },
+            { "id": "2", "tray_type": "PLA", "remain_g": 0 },
+            { "id": "3", "tray_type": "", "remain_g": 500 } ] } ] },
+            "vt_tray": { "id": "254", "tray_type": "PETG", "remain_g": 820 } });
+        let grams: Vec<Option<f64>> = parse_slots(&p).iter().map(|s| s.remaining_g).collect();
+        // -1 and 0 are no reading, and an empty slot has nothing left to count.
+        assert_eq!(grams, vec![Some(312.0), None, None, None, Some(820.0)]);
     }
 
     #[test]
