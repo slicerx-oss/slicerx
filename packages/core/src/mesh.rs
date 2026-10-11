@@ -60,6 +60,9 @@ pub struct Mesh {
     pub part_settings: Vec<(String, serde_json::Value)>,
     /// What the loader read but changed or could not apply, one line each, for the slice's warnings.
     pub notes: Vec<String>,
+    /// The object's own setting overrides from a project file (an object of setting keys), `Null` when it has none:
+    /// the settings it prints with over the plate's.
+    pub settings: serde_json::Value,
 }
 
 /// A part of a model that shapes the print without printing: see [`crate::plate::VolumeRole`].
@@ -285,6 +288,10 @@ impl Mesh {
             h.write(&[0]);
             h.write(s.to_string().as_bytes());
         }
+        if !self.settings.is_null() {
+            h.write(b"object settings");
+            h.write(self.settings.to_string().as_bytes());
+        }
         h.finish()
     }
 
@@ -502,13 +509,18 @@ fn read_raw_text(r: &mut Reader<'_>) -> Result<String> {
     Ok(String::from_utf8_lossy(r.take(len)?).into_owned())
 }
 
-/// The block of the raw parts format that carries a mesh's volumes, part settings and loader notes, after the
+/// The block of the raw parts format that carries a mesh's volumes, part settings, loader notes and object settings, after the
 /// paint block: magic `SXVL`; u32 volume count, then per volume u8 role (0 negative, 1 support blocker, 2 support
 /// enforcer, 3 modifier), the part as the parts are written and its settings as JSON text; u32 part settings
-/// count, then per entry the part name and the settings as JSON text; u32 note count and each note. Texts are a u32
+/// count, then per entry the part name and the settings as JSON text; u32 note count and each note; the object's
+/// settings as JSON text (`null` for none; a block without them ends before). Texts are a u32
 /// length and UTF-8. Nothing when the mesh has none of them, so a mesh without them writes the bytes it always has.
 fn write_raw_volumes(mesh: &Mesh, b: &mut Vec<u8>) {
-    if mesh.volumes.is_empty() && mesh.part_settings.is_empty() && mesh.notes.is_empty() {
+    if mesh.volumes.is_empty()
+        && mesh.part_settings.is_empty()
+        && mesh.notes.is_empty()
+        && mesh.settings.is_null()
+    {
         return;
     }
     let count = |n: usize| u32::try_from(n).unwrap_or(u32::MAX).to_le_bytes();
@@ -528,6 +540,8 @@ fn write_raw_volumes(mesh: &Mesh, b: &mut Vec<u8>) {
     for n in &mesh.notes {
         write_raw_text(n, b);
     }
+    // The object's settings last, so a reader of the block without them stops before them.
+    write_raw_text(&mesh.settings.to_string(), b);
 }
 
 /// Reads the block [`write_raw_volumes`] writes into `mesh`.
@@ -556,6 +570,10 @@ fn read_raw_volumes(r: &mut Reader<'_>, mesh: &mut Mesh) -> Result<()> {
     }
     for _ in 0..r.u32()? {
         mesh.notes.push(read_raw_text(r)?);
+    }
+    if r.at < r.b.len() {
+        let text = read_raw_text(r)?;
+        mesh.settings = json(r, &text)?;
     }
     Ok(())
 }
