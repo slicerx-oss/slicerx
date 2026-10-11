@@ -541,13 +541,19 @@ fn first_layer_bed(c: &PrintConfig) -> f64 {
 /// than `slow_down_layer_time` run at the maximum, those up to `fan_cooling_layer_time` between the two
 /// in whole percents, and slower ones stop the fan unless `reduce_fan_stop_start_freq` (per filament)
 /// keeps it at the minimum.
+///
+/// One difference from Orca, on purpose: its slowdown stretches a short layer to 1.001 times
+/// `slow_down_layer_time`, which is then not under that time, so a layer slowed all the way gets the maximum less
+/// one percent. A layer at or under the slowdown's target is a short layer and gets the maximum here.
 fn layer_fan(c: &PrintConfig, index: u32, time_s: f32, slot: u8) -> i64 {
     if index < c.close_fan_the_first_x_layers {
         return 0;
     }
     let t = f64::from(time_s);
     let (lo, hi) = (c.slow_down_layer_time, c.fan_cooling_layer_time);
-    let pct = if t < lo {
+    // The slowdown's own target (paths.rs, `slow_down`), with room for the time's float rounding.
+    let slowed = c.slow_down_for_layer_cooling && t <= lo * 1.001 + 1e-4;
+    let pct = if t < lo || slowed {
         c.fan_max_speed
     } else if t < hi {
         // orca floors the blend as is, so equal ends can lose a percent to rounding noise; we don't
@@ -4500,6 +4506,12 @@ mod tests {
         assert_eq!(layer_fan(&c, 3, 21.0, 1), 158);
         // slower layers stop the fan unless the filament keeps it on
         assert_eq!(layer_fan(&c, 3, 60.0, 1), 0);
+        // A layer the slowdown stretched to its target (1.001 x 2 s) is a short layer: the maximum, where Orca
+        // writes the maximum less one percent (89 %, S227), as it still does with the slowdown off.
+        assert_eq!(layer_fan(&c, 3, 2.002, 1), 229);
+        c.slow_down_for_layer_cooling = false;
+        assert_eq!(layer_fan(&c, 3, 2.002, 1), 227);
+        c.slow_down_for_layer_cooling = true;
         c.raw.insert(
             "reduce_fan_stop_start_freq".into(),
             serde_json::json!([false, true]),
