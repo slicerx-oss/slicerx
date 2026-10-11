@@ -16,6 +16,7 @@ The schema is split into module migrations so the store and cloud can be removed
 | `migrations/0013_creator_pages.sql` | store | Creator page banners (`creators.banner_url`), the public `creator-media` bucket for banners and logos (writes only under the member's own id), the private Saved list (`collections.kind = 'saved'`, `set_saved`, `saved_listings`), and the library rows: `trending_listings`, `new_creators` and `recommended_listings` |
 | `migrations/0016_listing_colors.sql` | store | `listing_versions.colors`: the filament colors a version prints in and which parts need the AMS, checked by `listing_colors_ok`; editable by the creator without a new review |
 | `migrations/0017_qa_accounts.sql` | auth, store | `qa_accounts`, the flag on the release gate's test accounts (see "QA accounts"), set by a trigger on `auth.users` and by `backfill_qa_accounts`; the `library_listings` view and the counts and rankings without QA activity |
+| `migrations/0019_external_review.sql` | store | `listing_reviewer`, a database role for a reviewer outside the app (such as a chat bot), with the `external_reviewers` allowlist, `external_review_posts` and the four `external_review` functions (see "External review") |
 | `migrations/0004_cloud.sql` | cloud | devices, synced profiles, printers and fleets, the `cloud_jobs` queue, deliveries, and the private `cloud-inputs` and `cloud-results` buckets |
 | `migrations/0012_bug_reports.sql` | bug reports | `bug_reports`, written only through `submit_bug_report` (10 an hour per install, 200 an hour overall), read by the Discord poller with the service key, and the private `bug-reports` bucket (docs/bug-intake.md) |
 
@@ -53,6 +54,16 @@ The moderation mode lives in `library_settings` and comes from the edition confi
 | `moderators` | Owner and moderators. |
 | `trusted-creators` | Owner and moderators; a clean upload from a creator the owner marked trusted is approved at once. |
 | `auto-after-scan` | Every clean upload is approved at once; staff review afterwards and can remove it. |
+
+### External review
+
+A deployment can let someone review uploads from outside the app, for example with buttons in a chat channel. The reviewer service signs in as the database role `listing_reviewer`. The migration creates it without login and with no table privileges. It can run four functions and nothing else:
+
+- `external_review_queue()` lists every waiting listing whose files passed the scan, with what a reviewer needs to decide (cover, creator, license, tags, format, size, part and plate counts, scan report, whether the uploader is a QA account). It also returns listings decided in the app while their message is still open, so the service can update that message.
+- `review_listing_external(listing, 'approve' | 'send_back', note, actor)` runs the same checks as `approve_listing` and `reject_listing`. The actor (such as `discord:<user id>`) must be in `external_reviewers`, which only the service role fills. The audit row has no profile actor and records the actor in `detail.actor`.
+- `external_review_posted(listing, message id)` and `external_review_closed(listing)` record the message for each review round, so a restart never posts twice.
+
+To turn it on, set a password (`alter role listing_reviewer with login password '...'`, never in a migration) and add the actor to `external_reviewers`. The service connects through the session pooler as `listing_reviewer.<project ref>`. To turn it off, run `alter role listing_reviewer nologin`.
 
 ## Uploads
 

@@ -217,9 +217,10 @@ insert into storage.objects (bucket_id, name, owner) select 'uploads-quarantine'
 select public.submit_version((select v4 from ids));
 
 select pg_temp.as_service();
+-- Both were queued in this transaction with the same created_at, so either may be claimed first.
+select id from public.claim_scan('w');
 select id from public.claim_scan('w');
 select public.finish_scan((select v3 from ids), true, '{}'::jsonb, null, null, '[]'::jsonb);
-select id from public.claim_scan('w');
 select public.finish_scan((select v4 from ids), true, '{}'::jsonb, null, null, '[]'::jsonb);
 select is((select status from public.listings where id = (select l3 from ids)), 'approved', 'a clean upload from a trusted creator is approved at once');
 select is((select review_status from public.listing_versions where id = (select v3 from ids)), 'approved', 'with its version');
