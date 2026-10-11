@@ -260,7 +260,15 @@ pub fn read_3mf(bytes: &[u8]) -> Result<Project> {
             Error::invalid("3mf", "3MF components repeat their meshes too many times to load")
         })?;
         let mut leaves = Vec::new();
-        leaves_of(&models, &root, item.object, &mut Vec::new(), false, 0, &mut leaves)?;
+        leaves_of(
+            &models,
+            &root,
+            item.object,
+            &mut Vec::new(),
+            false,
+            0,
+            &mut leaves,
+        )?;
         placed.push(leaves);
     }
     let mut notes = Vec::new();
