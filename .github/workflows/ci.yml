@@ -151,9 +151,10 @@ jobs:
         part: [firmware, requests, core, crates]
     # In the merge queue the two longest parts run on the self-hosted Linux runners (sx-pc), whose build directory stays
     # warm between runs: there they take about 2 minutes, against 8 to 11 on a fresh hosted runner, and they leave the
-    # hosted job limit to the e2e shards. A pull request always runs them hosted. Setting the repository variable
-    # RUST_TESTS_ON_PC to false sends them back to hosted runners at once.
-    runs-on: ${{ (((github.event_name == 'merge_group' && vars.RUST_TESTS_ON_PC != 'false') || (github.event_name == 'workflow_dispatch' && inputs.rust_tests_on_pc)) && (matrix.part == 'core' || matrix.part == 'crates')) && fromJSON('["self-hosted","sx-pc"]') || 'ubuntu-latest' }}
+    # hosted job limit to the e2e shards. Each part has a runner of its own (labels sx-pc-core and sx-pc-crates), so
+    # each build directory only ever builds one part. A pull request always runs them hosted. Setting the repository
+    # variable RUST_TESTS_ON_PC to false sends them back to hosted runners at once.
+    runs-on: ${{ (((github.event_name == 'merge_group' && vars.RUST_TESTS_ON_PC != 'false') || (github.event_name == 'workflow_dispatch' && inputs.rust_tests_on_pc)) && (matrix.part == 'core' || matrix.part == 'crates')) && fromJSON(format('["self-hosted","sx-pc-{0}"]', matrix.part)) || 'ubuntu-latest' }}
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
