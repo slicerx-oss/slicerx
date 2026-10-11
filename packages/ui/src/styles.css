@@ -177,6 +177,9 @@ button { cursor: pointer; }
 .sx-seg[data-full] > button { flex: 1; }
 .sx-seg > button { height: 28px; padding: 0 11px; border: 0; border-radius: 7px; background: none; color: var(--muted); font: var(--fw-semibold) var(--fs-sm) var(--f-body); white-space: nowrap; display: inline-flex; align-items: center; justify-content: center; gap: 6px; transition: color var(--t-fast) var(--ease), background var(--t-fast) var(--ease); }
 .sx-seg > button:hover { color: var(--fg); }
+/* an option that can't be picked here reads as such; its tip says why */
+.sx-seg > button:disabled { opacity: 0.45; cursor: not-allowed; }
+.sx-seg > button:disabled:hover { color: var(--muted); }
 .sx-seg > button:focus-visible { outline-offset: var(--focus-offset-inset); }
 .sx-seg > button[aria-checked="true"] { background: var(--ink-4); color: var(--fg); box-shadow: inset 0 0 0 1px var(--line); }
 .sx-seg > button[aria-checked="true"] .sx-ic { color: var(--accent); }
