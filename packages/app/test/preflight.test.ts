@@ -42,6 +42,15 @@ describe('preflight', () => {
     expect(preflight(input({ config: { gcode_flavor: 'klipper' } })).errors[0]).toMatch(/klipper firmware/)
   })
 
+  it('says where a block can be seen: the first layer above the printer, and a collision by its index', () => {
+    const r = preflight(input({ plateBounds: { min: [10, 10, 0], max: [60, 60, 260] }, layerZ: [100, 200, 255, 256.5, 260] }))
+    expect(r.spots[r.errors[0]!]).toEqual({ kind: 'layer', layer: 3 })
+    expect(preflight(input()).spots).toEqual({})
+    // The busy printer has no place in the slice.
+    const busy = preflight(input({ status: { ...idle, state: 'printing' } }))
+    expect(busy.spots[busy.errors[0]!]).toBeUndefined()
+  })
+
   it('warns about material and nozzle, and states an unknown bed as a fact', () => {
     const r = preflight(input({ config: { filament_type: ['PETG'], nozzle_diameter: [0.5], gcode_flavor: 'marlin' } }))
     expect(r.warnings.join(' ')).toMatch(/Sliced for PETG; Bay 2 has PLA Basic loaded/)
