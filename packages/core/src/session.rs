@@ -3092,6 +3092,27 @@ impl SliceSession {
         out
     }
 
+    /// Where the print stands under layer `top`: the last point and wipe tail of the highest layer below it that
+    /// has paths, as one range from the first layer carries them past empty layers. Looked for a few layers at a
+    /// time; each look starts its own range, which takes the same end from below it when its layers are empty.
+    fn end_below(
+        &self,
+        config: &PrintConfig,
+        top: u32,
+    ) -> Result<(Option<crate::geom::Point>, crate::output::WipeTail)> {
+        const STEP: u32 = 8;
+        let lo = top.saturating_sub(STEP);
+        let out = self.slice_object_range_now(config, lo..top, &crate::NoProgress)?;
+        if let Some(l) = out.layers.iter().rev().find(|l| !l.paths.is_empty()) {
+            return Ok((l.points.last().copied(), l.wipe_tail()));
+        }
+        Ok(out
+            .layers
+            .first()
+            .map(|l| (l.enter_from, l.below_wipe.clone()))
+            .unwrap_or_default())
+    }
+
     /// Slices layers of this object alone (stages 2 to 6).
     pub(crate) fn slice_object_range(
         &self,
@@ -3468,6 +3489,11 @@ impl SliceSession {
             let below = out_layers.remove(0);
             below_end = below.points.last().copied();
             below_wipe = below.wipe_tail();
+            // An empty layer below leaves the nozzle where the last layer with paths ended, as one range over
+            // the whole plate carries it up.
+            if below.paths.is_empty() && layers.start > 0 {
+                (below_end, below_wipe) = self.end_below(config, layers.start)?;
+            }
         }
         for l in &mut out_layers {
             l.enter_from = below_end;
