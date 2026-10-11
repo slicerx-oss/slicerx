@@ -10,7 +10,7 @@ import { callEngine, type GeomExports } from '../../../packages/app/src/geom/eng
 
 declare global {
   interface Window {
-    sxBench?: { times: number[]; objects: number; parts: number; error?: string }
+    sxBench?: { times: number[]; scans?: number[]; engines?: number[]; objects: number; parts: number; error?: string }
   }
 }
 
@@ -33,18 +33,23 @@ async function run(): Promise<void> {
   }
   readProjectsWithGeom(reader === 'geom')
   const times: number[] = []
+  const scans: number[] = []
+  const engines: number[] = []
   let objects = 0
   let parts = 0
   for (let i = 0; i < repeats; i++) {
     const t = performance.now()
     const scanned = reader === 'geom' ? await scanProjectFile(bytes) : await scanProject(bytes)
     if (reader === 'geom' && !('geom' in scanned && scanned.geom)) throw new Error('the engine did not read it')
+    scans.push(performance.now() - t)
+    // the geometry engine's answer arrives just before the archive's other entries are inflated (scanWithGeom)
+    if (reader === 'geom') engines.push(scanned.unzippedAt - performance.timeOrigin - t)
     const project = await projectOf(scanned, BED)
     times.push(performance.now() - t)
     objects = project.plates.reduce((n, p) => n + p.objects.length, 0)
     parts = project.plates.reduce((n, p) => n + p.objects.reduce((m, o) => m + o.parts.length + o.volumes.length, 0), 0)
   }
-  window.sxBench = { times, objects, parts }
+  window.sxBench = { times, scans, engines, objects, parts }
 }
 
 run().catch((e: unknown) => {
