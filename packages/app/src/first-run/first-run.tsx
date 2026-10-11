@@ -95,6 +95,7 @@ export function FirstRun() {
     // The theme stays as picked: it applied live and is the person's choice either way.
     else Object.assign(patch, { lookAndFeel: atOpen.current.look })
     if (o.printerId) Object.assign(patch, { printerId: o.printerId })
+    if (o.noPrinter) Object.assign(patch, { noPrinter: true })
     if (flow.closed === 'finished') {
       if (flow.printer) {
         const bed = bedOf(ctl.form)
