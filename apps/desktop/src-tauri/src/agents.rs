@@ -345,13 +345,10 @@ mod hub {
 
         use super::*;
 
+        // Port 0: the bridge binds a port the system picks and keeps it, so no test beside this one can take it
+        // first (probing a free port and letting it go before the bridge binds raced). Tests read it from addr().
         async fn bridge() -> sx_link::Link {
-            let port = std::net::TcpListener::bind("127.0.0.1:0")
-                .unwrap()
-                .local_addr()
-                .unwrap()
-                .port();
-            crate::link::start_bridge(port, Arc::new(sx_connect::MemorySecrets::new()), None)
+            crate::link::start_bridge(0, Arc::new(sx_connect::MemorySecrets::new()), None)
                 .await
                 .unwrap()
         }
