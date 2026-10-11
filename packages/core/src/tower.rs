@@ -119,7 +119,8 @@ pub(crate) struct ChangePurge {
 ///   ramming when the filament asks for it.
 /// - One nozzle: [`purge_volume`].
 pub(crate) fn change_purge(cfg: &PrintConfig, tools: u8, from: u8, to: u8) -> ChangePurge {
-    let area = std::f64::consts::PI * (cfg.filament_diameter / 2.0).m_powi(2);
+    // The ramming length is the outgoing filament's.
+    let area = cfg.filament_area(from);
     if crate::nozzles::shared(cfg) {
         let slot_of = |key: &str, s: u8, fallback: f64| per_slot_raw(cfg, key, s, fallback).round();
         let (ef, et) = (
@@ -1624,7 +1625,8 @@ pub(crate) fn tool_change_vars(
     on_tower: bool,
 ) {
     let slot = |i: i64| u8::try_from(i.max(0) + 1).unwrap_or(1);
-    let area = std::f64::consts::PI * (cfg.filament_diameter / 2.0).m_powi(2);
+    // Each filament's own cross-section: the flush is pushed with the new one.
+    let area = |i: i64| cfg.filament_area(slot(i));
     // Feed rate that melts filament at the filament's volumetric limit, mm/min, in whole units as Bambu Studio
     // writes it (`;VG1 E... F623` for 25 mm3/s), 100 when that is 0; 200 for the old filament before the first.
     let feed = |i: i64| {
@@ -1632,7 +1634,7 @@ pub(crate) fn tool_change_vars(
             return 200.0;
         }
         let v = per_slot_raw(cfg, "filament_max_volumetric_speed", slot(i), 15.0);
-        let f = (v / area * 60.0).floor();
+        let f = (v / area(i) * 60.0).floor();
         if f > 0.0 { f } else { 100.0 }
     };
     for (k, i) in [("old_filament_temp", prev), ("new_filament_temp", next)] {
@@ -1663,7 +1665,7 @@ pub(crate) fn tool_change_vars(
     if on_tower && type1(cfg) && volume > 1e-4 {
         volume = volume.max(100.0);
     }
-    let length = volume / area;
+    let length = volume / area(next);
     ctx.set_num("flush_length", length);
     #[allow(
         clippy::cast_possible_truncation,

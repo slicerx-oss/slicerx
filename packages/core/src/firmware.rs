@@ -517,6 +517,193 @@ pub fn layer_marker(time_s: f32, e_units: &[i64], tools: &[u8]) -> String {
     format!(";@L {time_s:.3} {} {}\n", e.join(","), t.join(","))
 }
 
+/// Filament the start or end sequence pushes out, per slot in 1e-5 mm (index 0 is slot 1): a `;@S` line.
+/// The writer counts it from the sequence's text ([`SequenceE`]); [`finalize`] adds every `;@S` line to the
+/// totals with the layers' `;@L` extrusion and removes it. Nothing when the sequence pushes nothing.
+pub fn sequence_marker(e_units: &[i64]) -> String {
+    if e_units.iter().all(|&e| e == 0) {
+        return String::new();
+    }
+    let e: Vec<String> = e_units.iter().map(i64::to_string).collect();
+    format!(";@S {}\n", e.join(","))
+}
+
+/// The tool numbers a sequence may select; higher `T` numbers are printer commands (Bambu Lab's `T1000`,
+/// `T255`), not filaments.
+const SEQ_SLOTS: usize = 64;
+
+/// Reads the filament a start or end sequence pushes out, from its text. The rule:
+/// - Every positive E counts, with or without XY motion: purge lines, chute purges and primes all leave the
+///   nozzle.
+/// - A negative E (a retraction) counts nothing and is owed: the next positive E of that filament first
+///   restores it, and only the rest counts. A retraction and its prime therefore count once, and an extra
+///   length on the prime counts.
+/// - Lines inside firmware conditionals (`M622` to `M623`, which the printer may skip, such as calibration
+///   lines) count nothing and owe nothing. A nested `M622` deepens the block, an `M623` without one is
+///   ignored.
+/// - `M82` and `M83` set absolute or relative E (absolute until told, as firmware starts), `G92` sets the
+///   position, and `T<n>` selects the filament. E before any `T` belongs to the filament the print starts with.
+#[derive(Debug, Clone)]
+pub(crate) struct SequenceE {
+    absolute: bool,
+    pos: f64,
+    depth: u32,
+    tool: Option<usize>,
+    /// The first filament the text selects, which E before it belongs to.
+    first: Option<usize>,
+    /// Retracted and not yet restored, mm, per slot; the last entry is for E before any tool select.
+    debt: Vec<f64>,
+    /// Counted, mm, per slot, with the same last entry.
+    mm: Vec<f64>,
+}
+
+impl Default for SequenceE {
+    fn default() -> Self {
+        Self {
+            absolute: true,
+            pos: 0.0,
+            depth: 0,
+            tool: None,
+            first: None,
+            debt: vec![0.0; SEQ_SLOTS + 1],
+            mm: vec![0.0; SEQ_SLOTS + 1],
+        }
+    }
+}
+
+/// The number after a command letter (`T12` gives 12), when the word is just the letter and digits.
+fn word_number(word: &[u8]) -> Option<usize> {
+    let digits = word.get(1..)?;
+    if digits.is_empty() || !digits.iter().all(u8::is_ascii_digit) {
+        return None;
+    }
+    std::str::from_utf8(digits).ok()?.parse().ok()
+}
+
+impl SequenceE {
+    /// A reader that starts in absolute (`M82`) or relative (`M83`) E.
+    pub(crate) fn with_mode(absolute: bool) -> Self {
+        Self {
+            absolute,
+            ..Self::default()
+        }
+    }
+
+    /// Reads every line of `text`.
+    pub(crate) fn feed(&mut self, text: &[u8]) {
+        for line in text.split(|&b| b == b'\n') {
+            self.line(line);
+        }
+    }
+
+    /// Forgets what was counted so far and closes any open conditional, keeping the position, the
+    /// filament and what is owed: the start of a new region.
+    pub(crate) fn restart(&mut self) {
+        self.mm.iter_mut().for_each(|v| *v = 0.0);
+        self.depth = 0;
+    }
+
+    /// The filament in the nozzle (0-based), as when the text before selected it.
+    pub(crate) fn set_tool(&mut self, slot: usize) {
+        self.select(slot);
+    }
+
+    fn select(&mut self, slot: usize) {
+        if slot >= SEQ_SLOTS {
+            return;
+        }
+        if self.tool.is_none() {
+            // What was owed before any tool select is the first filament's.
+            let owed = self.debt.get_mut(SEQ_SLOTS).map_or(0.0, std::mem::take);
+            if let Some(d) = self.debt.get_mut(slot) {
+                *d += owed;
+            }
+            self.first = Some(slot);
+        }
+        self.tool = Some(slot);
+    }
+
+    fn line(&mut self, line: &[u8]) {
+        let code = line.split(|&b| b == b';').next().unwrap_or_default();
+        let mut words = code.split(u8::is_ascii_whitespace).filter(|w| !w.is_empty());
+        let Some(cmd) = words.next() else { return };
+        match cmd {
+            b"M82" => self.absolute = true,
+            b"M83" => self.absolute = false,
+            b"M622" => self.depth += 1,
+            b"M623" => self.depth = self.depth.saturating_sub(1),
+            b"G92" => {
+                let mut any = false;
+                for w in words {
+                    any = true;
+                    if let (Some(b'E'), Some(v)) = (w.first(), parse_f64(w.get(1..))) {
+                        self.pos = v;
+                    }
+                }
+                if !any {
+                    self.pos = 0.0;
+                }
+            }
+            b"G0" | b"G1" | b"G2" | b"G3" => {
+                let Some(v) = words
+                    .find(|w| w.first() == Some(&b'E'))
+                    .and_then(|w| parse_f64(w.get(1..)))
+                else {
+                    return;
+                };
+                let de = if self.absolute {
+                    let d = v - self.pos;
+                    self.pos = v;
+                    d
+                } else {
+                    v
+                };
+                if self.depth > 0 || !de.is_finite() {
+                    return;
+                }
+                let i = self.tool.unwrap_or(SEQ_SLOTS);
+                let (Some(debt), Some(mm)) = (self.debt.get_mut(i), self.mm.get_mut(i)) else {
+                    return;
+                };
+                if de < 0.0 {
+                    *debt -= de;
+                } else {
+                    let paid = de.min(*debt);
+                    *debt -= paid;
+                    *mm += de - paid;
+                }
+            }
+            _ if cmd.first() == Some(&b'T') => {
+                if let Some(n) = word_number(cmd) {
+                    self.select(n);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// What was counted, in 1e-5 mm for `slots` slots. E before any tool select goes to the first filament
+    /// the text selected, or to `first` (0-based, the filament the print starts with) when it selected none.
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "a sequence pushes far less than 2^63 hundred-thousandths of a mm"
+    )]
+    pub(crate) fn units(&self, slots: usize, first: usize) -> Vec<i64> {
+        let mut mm: Vec<f64> = self.mm.iter().take(SEQ_SLOTS).copied().collect();
+        if let (Some(v), Some(&before)) = (mm.get_mut(self.first.unwrap_or(first)), self.mm.get(SEQ_SLOTS)) {
+            *v += before;
+        }
+        mm.iter()
+            .take(slots.max(1))
+            .map(|v| (v * 1e5).round() as i64)
+            .collect()
+    }
+}
+
+fn parse_f64(s: Option<&[u8]>) -> Option<f64> {
+    std::str::from_utf8(s?).ok()?.parse().ok()
+}
+
 /// Where the thumbnails go: `;@T` with the sizes the profile asks for. Nothing when it asks for none.
 pub fn thumbnail_marker(cfg: &PrintConfig) -> String {
     let (ok, _) = crate::thumbnail::specs(cfg);
@@ -563,7 +750,7 @@ pub fn footer_marker(cfg: &PrintConfig, tools: u8, layer_count: u32, flavor: Gco
         );
     format!(
         ";@F diam={} density={} cost={} layers={layer_count} m73={}{}{}\n",
-        cfg.filament_diameter,
+        list(&|s| cfg.filament_diameter_for(s)),
         list(&|s| cfg.density(s)),
         list(&|s| cfg.cost_per_kg(s)),
         u8::from(m73),
@@ -702,7 +889,8 @@ pub fn format_time(total_s: f64) -> String {
 }
 
 struct Footer {
-    diameter: f64,
+    /// Per slot; the last entry repeats for higher slots.
+    diameter: Vec<f64>,
     density: Vec<f64>,
     cost: Vec<f64>,
     m73: bool,
@@ -717,7 +905,7 @@ fn num_list(v: &str) -> Vec<f64> {
 
 fn parse_footer(line: &str) -> Footer {
     let mut f = Footer {
-        diameter: 1.75,
+        diameter: Vec::new(),
         density: Vec::new(),
         cost: Vec::new(),
         m73: false,
@@ -726,7 +914,12 @@ fn parse_footer(line: &str) -> Footer {
     };
     for kv in line.split_ascii_whitespace().skip(1) {
         match kv.split_once('=') {
-            Some(("diam", v)) => f.diameter = v.parse().unwrap_or(1.75),
+            Some(("diam", v)) => {
+                f.diameter = num_list(v)
+                    .into_iter()
+                    .filter(|d| d.is_finite() && *d > 0.0)
+                    .collect();
+            }
             Some(("density", v)) => f.density = num_list(v),
             Some(("cost", v)) => f.cost = num_list(v),
             Some(("m73", v)) => f.m73 = v == "1",
@@ -736,6 +929,31 @@ fn parse_footer(line: &str) -> Footer {
         }
     }
     f
+}
+
+impl Footer {
+    /// Cross-section of slot index `i`'s filament, mm2.
+    fn area(&self, i: usize) -> f64 {
+        let d = self
+            .diameter
+            .get(i)
+            .or(self.diameter.last())
+            .copied()
+            .unwrap_or(1.75);
+        std::f64::consts::PI * (d / 2.0).m_powi(2)
+    }
+
+    fn density(&self, i: usize) -> f64 {
+        self.density
+            .get(i)
+            .or(self.density.last())
+            .copied()
+            .unwrap_or(crate::config::DEFAULT_DENSITY)
+    }
+
+    fn cost(&self, i: usize) -> f64 {
+        self.cost.get(i).or(self.cost.last()).copied().unwrap_or(0.0)
+    }
 }
 
 /// Writes `M73` progress and the statistics footer from the markers in a whole
@@ -832,8 +1050,23 @@ pub fn finalize_timed(
     let mut per_layer: Vec<Vec<i64>> = Vec::new();
     let mut used = std::collections::BTreeSet::new();
     let mut footer: Option<Footer> = None;
+    // The start and end sequences' own extrusion (`;@S`).
+    let mut sequence: Vec<i64> = Vec::new();
+    let add = |acc: &mut Vec<i64>, i: usize, v: i64| {
+        if acc.len() <= i {
+            acc.resize(i + 1, 0);
+        }
+        if let Some(a) = acc.get_mut(i) {
+            *a += v;
+        }
+    };
     for line in gcode.split(|&b| b == b'\n') {
-        if let Some(rest) = line.strip_prefix(b";@L ") {
+        if let Some(rest) = line.strip_prefix(b";@S ") {
+            for (i, e) in String::from_utf8_lossy(rest).trim().split(',').enumerate() {
+                let v: i64 = e.parse().unwrap_or(0);
+                add(&mut sequence, i, v);
+            }
+        } else if let Some(rest) = line.strip_prefix(b";@L ") {
             let text = String::from_utf8_lossy(rest);
             let mut it = text.split_ascii_whitespace();
             times.push(it.next().and_then(|t| t.parse().ok()).unwrap_or(0.0));
@@ -861,6 +1094,9 @@ pub fn finalize_timed(
     }
     if times.is_empty() && footer.is_none() {
         return (gcode.to_vec(), Timing::default());
+    }
+    for (i, &v) in sequence.iter().enumerate() {
+        add(&mut extruded, i, v);
     }
     // With the settings at hand, the times come from reading the whole file the way Orca's G-code
     // processor does (`printtime`); the layer markers' own times are the fallback.
@@ -902,7 +1138,7 @@ pub fn finalize_timed(
             .collect(),
     };
     let footer = footer.unwrap_or(Footer {
-        diameter: 1.75,
+        diameter: Vec::new(),
         density: Vec::new(),
         cost: Vec::new(),
         m73: false,
@@ -918,12 +1154,15 @@ pub fn finalize_timed(
     };
     // Ultimaker's header: the print time, filament volumes, extent and slice id only the whole file knows.
     let griffin = crate::griffin::has_header(gcode).then(|| {
-        let area = std::f64::consts::PI * (footer.diameter / 2.0).m_powi(2);
         let (min, max) = crate::griffin::extent(gcode);
         #[allow(clippy::cast_precision_loss, reason = "extrusion totals stay far below 2^52")]
         crate::griffin::Totals {
             time_s: total,
-            volume: extruded.iter().map(|&e| e as f64 / 1e5 * area).collect(),
+            volume: extruded
+                .iter()
+                .enumerate()
+                .map(|(i, &e)| e as f64 / 1e5 * footer.area(i))
+                .collect(),
             used: used.clone(),
             min,
             max,
@@ -951,7 +1190,7 @@ pub fn finalize_timed(
     while let Some((li, line)) = lines.next() {
         // The piece after the final newline has none of its own.
         let newline = lines.peek().is_some();
-        if line.starts_with(b";@L ") {
+        if line.starts_with(b";@L ") || line.starts_with(b";@S ") {
             continue;
         }
         if let Some(t) = griffin.as_ref().filter(|_| in_head) {
@@ -1011,22 +1250,15 @@ pub fn finalize_timed(
         if let Some(doc) = line.strip_prefix(crate::weight::MARKER) {
             // Filament used before this layer: the layers counted so far, less the one just opened.
             let before = layer.saturating_sub(1);
-            let area = std::f64::consts::PI * (footer.diameter / 2.0).m_powi(2);
             let slots = per_layer.iter().map(Vec::len).max().unwrap_or(0);
             let (mut weight, mut volume) = (vec![0.0; slots], vec![0.0; slots]);
             for l in per_layer.iter().take(before) {
                 for (i, &e) in l.iter().enumerate() {
                     #[allow(clippy::cast_precision_loss, reason = "extrusion totals stay far below 2^52")]
-                    let v = e as f64 / 1e5 * area;
-                    let density = footer
-                        .density
-                        .get(i)
-                        .or(footer.density.last())
-                        .copied()
-                        .unwrap_or(crate::config::DEFAULT_DENSITY);
+                    let v = e as f64 / 1e5 * footer.area(i);
                     if let (Some(w), Some(vol)) = (weight.get_mut(i), volume.get_mut(i)) {
                         *vol += v;
-                        *w += v * density * 0.001;
+                        *w += v * footer.density(i) * 0.001;
                     }
                 }
             }
@@ -1187,19 +1419,14 @@ fn write_line(out: &mut Vec<u8>, s: &str) {
 }
 
 fn stats_block(extruded: &[i64], f: &Footer, layers: usize, total: f64, first: f64) -> String {
-    let area = std::f64::consts::PI * (f.diameter / 2.0).m_powi(2);
     let (mut mm, mut cm3, mut grams, mut cost) = (Vec::new(), Vec::new(), Vec::new(), 0.0);
     for (i, &e) in extruded.iter().enumerate() {
         #[allow(clippy::cast_precision_loss, reason = "extrusion totals stay far below 2^52")]
         let len = e as f64 / 1e5;
-        let volume = len * area / 1000.0;
-        let g = volume
-            * f.density
-                .get(i)
-                .or(f.density.last())
-                .copied()
-                .unwrap_or(crate::config::DEFAULT_DENSITY);
-        cost += g / 1000.0 * f.cost.get(i).or(f.cost.last()).copied().unwrap_or(0.0);
+        // Each filament's own diameter.
+        let volume = len * f.area(i) / 1000.0;
+        let g = volume * f.density(i);
+        cost += g / 1000.0 * f.cost(i);
         mm.push(len);
         cm3.push(volume);
         grams.push(g);
@@ -1228,6 +1455,101 @@ fn stats_block(extruded: &[i64], f: &Footer, layers: usize, total: f64, first: f
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// What a sequence reader counts in `text`, mm per slot, for `slots` slots starting on slot index 0.
+    #[allow(clippy::cast_precision_loss, reason = "small test totals")]
+    fn sequence_mm(text: &str, slots: usize) -> Vec<f64> {
+        let mut s = SequenceE::default();
+        s.feed(text.as_bytes());
+        s.units(slots, 0).iter().map(|&u| u as f64 / 1e5).collect()
+    }
+
+    #[test]
+    fn sequences_count_every_push_outside_firmware_conditionals() {
+        // An E-only purge counts as much as a purge line; a comment's E is not a word.
+        assert_eq!(
+            sequence_mm("M83\nG1 E50 F200\nG1 X10 E5\nG1 X1 ; E7\n", 1),
+            [55.0]
+        );
+        // Nested conditionals: only depth 0 counts; a stray M623 is ignored; M622.1 is not a conditional.
+        let text = "M83\nM623\nG1 X1 E1\nM622 J1\nG1 X2 E5\n  M622 J0\n  G1 E3\n  M623\nG1 E4\nM623\n\
+                    M622.1 S1\nG1 X3 E2\n";
+        assert_eq!(sequence_mm(text, 1), [3.0]);
+        // Nothing inside a block is owed either: its retraction is not paid back by the push after it.
+        assert_eq!(sequence_mm("M83\nM622 J1\nG1 E-2\nM623\nG1 X1 E2\n", 1), [2.0]);
+    }
+
+    #[test]
+    fn a_retraction_is_owed_and_its_extra_prime_counts() {
+        assert_eq!(sequence_mm("M83\nG1 X1 E5\nG1 E-0.8\nG1 E0.8\n", 1), [5.0]);
+        let extra = sequence_mm("M83\nG1 X1 E5\nG1 E-0.8\nG1 E1\n", 1);
+        assert!((extra[0] - 5.2).abs() < 1e-9, "{extra:?}");
+        // A retraction made before the first tool select is the first filament's.
+        assert_eq!(sequence_mm("M83\nG1 E-0.5\nT0\nG1 E10\n", 1), [9.5]);
+    }
+
+    #[test]
+    fn absolute_and_relative_e_read_the_same() {
+        let absolute = "M82\nG92 E0\nG1 X1 E10\nG1 X2 E12\nG1 E11\nG1 X3 E14\nG92 E0\nG1 E5\nG92\nG1 X4 E1\n";
+        let relative = "M83\nG1 X1 E10\nG1 X2 E2\nG1 E-1\nG1 X3 E3\nG1 E5\nG1 X4 E1\n";
+        assert_eq!(sequence_mm(absolute, 1), [20.0]);
+        assert_eq!(sequence_mm(relative, 1), [20.0]);
+        // Firmware starts absolute: with no M82 or M83 the first E is a position.
+        assert_eq!(sequence_mm("G92 E0\nG1 E50\nG1 X1 E52\n", 1), [52.0]);
+    }
+
+    #[test]
+    fn sequences_follow_the_tool_select() {
+        // E before the first select is the first selected filament's; T1000 and TIMELAPSE are not selects.
+        let text = "M83\nG1 E1\nT1\nG1 X1 E2\nT1000\nTIMELAPSE_TAKE_FRAME\nG1 X2 E3\n  T0 ; back\nG1 E4\n";
+        assert_eq!(sequence_mm(text, 2), [4.0, 6.0]);
+        // No select at all: the filament the print starts with.
+        let mut s = SequenceE::default();
+        s.feed(b"M83\nG1 X1 E2\n");
+        assert_eq!(s.units(3, 2), [0, 0, 200_000]);
+        // An end sequence starts after what the last layer left retracted, with the last layer's filament.
+        let mut end = SequenceE::with_mode(false);
+        end.feed(b";LAYER_CHANGE\nG1 X1 E3\nG1 E-0.8\n;@L 1.000 300000 1\n");
+        end.restart();
+        end.set_tool(1);
+        end.feed(b"G1 E-1\nG1 E2.3\n");
+        assert_eq!(end.units(2, 0), [0, 50_000]);
+    }
+
+    #[test]
+    fn finalize_adds_the_sequences_and_converts_each_filament_with_its_own_diameter() {
+        let mut cfg = PrintConfig::default();
+        cfg.raw
+            .insert("filament_diameter".into(), serde_json::json!([1.75, 2.85]));
+        cfg.raw
+            .insert("filament_density".into(), serde_json::json!([1.24, 1.24]));
+        cfg.filament_density = vec![1.24, 1.24];
+        let mut g = String::from("; header\n");
+        g += &sequence_marker(&[50_000, 0]);
+        g += ";LAYER_CHANGE\n;Z:0.2\nG1 X1 Y1 E1\n";
+        g += &layer_marker(10.0, &[100_000, 100_000], &[1, 2]);
+        g += &sequence_marker(&[0, 25_000]);
+        g += &footer_marker(&cfg, 2, 1, GcodeFlavor::Marlin2);
+        let out = String::from_utf8(finalize(g.as_bytes())).unwrap();
+        assert!(!out.contains(";@"), "{out}");
+        assert!(out.contains("; filament used [mm] = 1.50, 1.25\n"), "{out}");
+        let area = |d: f64| std::f64::consts::PI * d * d / 4.0;
+        let cm3 = format!(
+            "; filament used [cm3] = {:.2}, {:.2}\n",
+            1.5 * area(1.75) / 1000.0,
+            1.25 * area(2.85) / 1000.0
+        );
+        assert!(out.contains(&cm3), "{cm3} in {out}");
+        // A marker from before per-filament diameters (one number) still reads.
+        let old = g.replace("diam=1.75,2.85", "diam=1.75");
+        assert!(old.contains("diam=1.75 "), "{old}");
+        let out = String::from_utf8(finalize(old.as_bytes())).unwrap();
+        assert!(out.contains(&format!(
+            "; filament used [cm3] = {:.2}, {:.2}\n",
+            1.5 * area(1.75) / 1000.0,
+            1.25 * area(1.75) / 1000.0
+        )));
+    }
 
     #[test]
     fn time_reads_like_a_slicer_footer() {
