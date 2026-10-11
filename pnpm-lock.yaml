@@ -494,6 +494,10 @@ importers:
         version: link:../mcp
 
   packages/connect/catalog:
+    dependencies:
+      '@slicerx/contracts':
+        specifier: workspace:*
+        version: link:../../contracts
     devDependencies:
       '@types/node':
         specifier: 24.19.0
@@ -7548,7 +7552,9 @@ snapshots:
       metro-runtime: 0.84.6
     transitivePeerDependencies:
       - '@babel/core'
+      - bufferutil
       - supports-color
+      - utf-8-validate
 
   '@react-native/normalize-colors@0.74.89': {}
 
