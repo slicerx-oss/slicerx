@@ -26,7 +26,7 @@ const playReveal = (page: Page, motion?: 'reduced') =>
   }, motion)
 
 /** The picture on screen now: a recording starts with it, so a short one is a snapshot. */
-async function snapshot(page: Page): Promise<Frame> {
+async function frameNow(page: Page): Promise<Frame> {
   const stop = await recordFrames(page)
   // two frames painted after the call, so a change made just before it (a hidden toast) is on screen
   await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))))
@@ -35,11 +35,30 @@ async function snapshot(page: Page): Promise<Frame> {
 }
 
 /**
+ * The view at rest, with only the plate and model in it: the camera on the same view each time (a view framed while
+ * the panes around it still settled sits a few pixels off, which is not the reveal), the controls over the view (the
+ * plate bar, the toolbar, a toast, the sheet's tab) hidden, and a picture that counts once the next one taken matches
+ * it, so a frame from while something still moved (a note sliding out on a loaded runner) is not compared.
+ */
+async function snapshot(page: Page, cells: number[] | null = null): Promise<Frame> {
+  await page.evaluate(() => {
+    ;(window as unknown as { __vp?: { view(p: string, o?: { animate?: boolean }): void } }).__vp?.view('iso', { animate: false })
+    for (const el of document.querySelectorAll<HTMLElement>('.sx-toasts, .vp > :not(.vp-stage), .sheet-tab')) el.style.visibility = 'hidden'
+  })
+  let last = await frameNow(page)
+  for (let i = 0; i < 6; i++) {
+    const next = await frameNow(page)
+    if (alike(last, next, cells ?? next.gray.map((_, c) => c)) > 0.995) return next
+    last = next
+  }
+  return last
+}
+
+/**
  * The plate as the printer's profile draws it: its excluded areas come with the profile, which a loaded machine can
- * still be reading when the view is up. Toasts are hidden too; they are not the plate.
+ * still be reading when the view is up.
  */
 async function plateDrawn(page: Page): Promise<void> {
-  await page.addStyleTag({ content: '.sx-toasts { display: none !important; }' })
   await page.waitForFunction(() => (window as unknown as { __sx?: { getState(): { profile: unknown } } }).__sx?.getState().profile != null)
 }
 
@@ -48,7 +67,7 @@ test('the plate reveal plays once and ends on the fully drawn plate', async ({ p
   await playReveal(page)
   await page.goto('./')
   await viewportReady(page)
-  // the software graphics note, which a remounted view posts again, and the profile's excluded areas
+  // the profile's excluded areas
   await plateDrawn(page)
   const canvas = page.locator('.vp-canvas')
   // It plays: the overlay with the crackles is up while the outline is traced, and gone once the reveal ends.
@@ -65,7 +84,8 @@ test('the plate reveal plays once and ends on the fully drawn plate', async ({ p
   await tab(page, 'feed').click()
   await expect(page.locator('.vp-canvas')).toHaveCount(0)
   await tab(page, 'prepare').click()
-  await expect(page.locator('.vp-canvas')).toHaveAttribute('data-reveal', 'off')
+  // a new 3D view on a loaded runner's software graphics can take a while to come up
+  await expect(page.locator('.vp-canvas')).toHaveAttribute('data-reveal', 'off', { timeout: 20_000 })
   await page.waitForTimeout(2500)
   const again = await snapshot(page)
   await expect(page.locator('canvas[data-reveal="overlay"]')).toHaveCount(0)
