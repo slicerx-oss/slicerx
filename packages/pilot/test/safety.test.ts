@@ -185,6 +185,39 @@ describe('printer side effects', () => {
     expect(ran).toBe(false)
   })
 
+  it('a per-printer start allow lets pause and cancel through, and asks a person for everything else on that printer', async () => {
+    const policy: Parameters<typeof createEvalEnv>[0]['policy'] = { classes: { slice: 'allow', queue: 'ask', start: 'ask', profile: 'ask' }, printers: { 'bay-2': { start: 'allow' } } }
+    const tool = (name: string, action: string) =>
+      defineTool({
+        name: `test.${name}`,
+        version: '1.0.0',
+        source: 'plugin',
+        permission: 'start',
+        description: 'test',
+        input: z.object({}),
+        printerFor: () => 'bay-2',
+        async approval() {
+          return { title: name, lines: [], printerId: 'bay-2', actions: [{ action: action as 'printer.pause', target: 'bay-2', params: { printerId: 'bay-2' } }] }
+        },
+        async run() {
+          return { summary: 'ran' }
+        },
+      }) as PilotTool<never>
+    const cases: [string, string, boolean][] = [
+      ['pause', 'printer.pause', true],
+      ['cancel', 'printer.cancel', true],
+      ['resume', 'printer.resume', false],
+      ['start', 'printer.start', false],
+      ['gcode', 'printer.gcode', false],
+      ['adjust', 'printer.adjust', false],
+    ]
+    for (const [name, action, byPolicy] of cases) {
+      const { events } = await drive([{ calls: [{ name: `test.${name}`, args: {} }] }, { text: 'x' }], { approve: () => false, tools: [tool(name, action)], policy })
+      expect(types(events).includes('approval_request'), action).toBe(!byPolicy)
+      expect(events.some((e) => e.type === 'approval_resolved' && e.by === 'policy'), action).toBe(byPolicy)
+    }
+  })
+
   it('an unanswered approval expires and nothing runs', async () => {
     const { env, events } = await drive([{ calls: [{ name: 'printer.pause', args: { printerId: 'bay-1' } }] }], { timeoutMs: 20 })
     expect(events.some((e) => e.type === 'approval_resolved' && e.by === 'expiry')).toBe(true)

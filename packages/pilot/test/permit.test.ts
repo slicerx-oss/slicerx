@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import type { ApprovalRequest } from '@slicerx/contracts'
 import { canonicalJson, hashParams } from '@slicerx/contracts'
 import { describe, expect, it } from 'vitest'
-import { decide, normalizePolicy, startsPrint } from '../src/gate'
+import { decide, normalizePolicy, policyMayGrant } from '../src/gate'
 import { createApprovalBroker } from '../src/permit/broker'
 
 const fixtures = join(import.meta.dirname, '..', '..', 'contracts', 'fixtures')
@@ -128,28 +128,29 @@ describe('permission gate', () => {
     expect(decide({ classes: { ...p.classes, start: 'allow' } }, 'start')).toBe('ask')
   })
 
-  it('never allows queue or start, for the class or per printer', () => {
+  it('never allows queue; allows start only per printer, and not over a class set to off', () => {
     const p = normalizePolicy({ classes: { start: 'allow', queue: 'allow' }, printers: { 'bay-2': { start: 'allow', queue: 'allow' }, 'bay-3': { start: 'off' } } })
     expect(p.classes.queue).toBe('ask')
-    expect(p.printers?.['bay-2']).toEqual({ start: 'ask', queue: 'ask' })
-    for (const c of ['queue', 'start'] as const) {
-      expect(decide(p, c)).toBe('ask')
-      expect(decide(p, c, 'bay-2')).toBe('ask')
-      // A policy built without normalizePolicy gets the same answer.
-      expect(decide({ classes: { slice: 'allow', queue: 'allow', start: 'allow', profile: 'ask' }, printers: { 'bay-2': { [c]: 'allow' } } }, c, 'bay-2')).toBe('ask')
-    }
+    expect(p.classes.start).toBe('ask')
+    expect(p.printers?.['bay-2']).toEqual({ start: 'allow', queue: 'ask' })
+    expect(decide(p, 'queue', 'bay-2')).toBe('ask')
+    expect(decide(p, 'start', 'bay-2')).toBe('allow')
+    expect(decide(p, 'start', 'bay-4')).toBe('ask')
     expect(decide(p, 'start', 'bay-3')).toBe('off')
+    // A policy built without normalizePolicy gets the same answer for queue.
+    expect(decide({ classes: { slice: 'allow', queue: 'allow', start: 'ask', profile: 'ask' }, printers: { 'bay-2': { queue: 'allow' } } }, 'queue', 'bay-2')).toBe('ask')
+    const off = normalizePolicy({ classes: { start: 'ask', queue: 'off' }, printers: { 'bay-2': { start: 'allow', queue: 'allow' } } })
+    expect(decide(off, 'queue', 'bay-2')).toBe('off')
   })
 
-  it('keeps a class set to off over a per-printer setting', () => {
-    const p = normalizePolicy({ classes: { start: 'ask', queue: 'off' }, printers: { 'bay-2': { start: 'ask', queue: 'ask' } } })
-    expect(decide(p, 'queue', 'bay-2')).toBe('off')
-  })
-
-  it('tells a card that starts or resumes a print', () => {
-    expect(startsPrint({ actions: [{ action: 'printer.upload', target: 'b', paramsHash: 'h' }, { action: 'printer.start', target: 'b', paramsHash: 'h' }] })).toBe(true)
-    expect(startsPrint({ actions: [{ action: 'printer.resume', target: 'b', paramsHash: 'h' }] })).toBe(true)
-    expect(startsPrint({ actions: [{ action: 'printer.pause', target: 'b', paramsHash: 'h' }] })).toBe(false)
+  it('lets a policy grant only pause and cancel among printer actions', () => {
+    const card = (...actions: string[]) => ({ actions: actions.map((action) => ({ action, target: 'b', paramsHash: 'h' })) }) as Pick<ApprovalRequest, 'actions'>
+    expect(policyMayGrant(card('printer.pause'))).toBe(true)
+    expect(policyMayGrant(card('printer.cancel'))).toBe(true)
+    for (const a of ['printer.start', 'printer.resume', 'printer.gcode', 'printer.adjust', 'printer.upload']) expect(policyMayGrant(card(a)), a).toBe(false)
+    expect(policyMayGrant(card('printer.upload', 'printer.start'))).toBe(false)
+    expect(policyMayGrant({ actions: [{ action: 'plugin.call', target: 'home-assistant', paramsHash: 'h' }] })).toBe(false)
+    expect(policyMayGrant(card('profile.write'))).toBe(true)
   })
 
   it('falls back to defaults for garbage', () => {

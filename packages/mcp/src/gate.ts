@@ -11,7 +11,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 import type { ApprovalRequest, ApprovalToken, PermissionClass, PermissionPolicy } from '@slicerx/contracts'
 import { grantApproval, hashParams, PERMISSION_LABELS } from '@slicerx/contracts'
-import { buildApprovalRequest, decide, TOKEN_TTL_MS, toolMessage, type AgentWork, type ApprovalBroker, type PilotTool, type ToolContext, type ToolOutput } from '@slicerx/pilot'
+import { buildApprovalRequest, decide, policyMayGrant, TOKEN_TTL_MS, toolMessage, type AgentWork, type ApprovalBroker, type PilotTool, type ToolContext, type ToolOutput } from '@slicerx/pilot'
 import type { ActionLog } from './actionlog'
 
 export interface PendingCall {
@@ -224,6 +224,8 @@ export async function gatedCall(server: McpServer, deps: GateDeps, tool: PilotTo
   } catch (e) {
     return failFrom(e)
   }
+  // Only pause and cancel reach a printer on the policy alone.
+  if (mode === 'allow' && !policyMayGrant(request)) mode = 'ask'
   if (needsPerson(request) || (deps.handOff?.partner && forHub(request) && !onlyStops(request))) {
     // The card goes to SlicerX with its work; the hub runs the work once a person approves.
     // With no hub (demo printers) nothing can approve it, and the request only waits.

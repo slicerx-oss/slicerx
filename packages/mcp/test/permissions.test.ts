@@ -235,12 +235,13 @@ describe('policy', () => {
     expect(log(h).at(-1)).toMatchObject({ decision: 'off', by: 'policy' })
   })
 
-  it('never allows start, for every printer or per printer', async () => {
+  it('never allows start for every printer, only per printer', async () => {
     const all = await connect({ policy: { classes: { slice: 'allow', queue: 'ask', start: 'allow', profile: 'ask' } } })
     expect(data<{ status: string }>(await all.call('slicerx_printer_pause', pause)).status).toBe('approval_required')
     const one = await connect({ policy: { classes: { slice: 'allow', queue: 'ask', start: 'ask', profile: 'ask' }, printers: { 'bay-1': { start: 'allow' } } } })
-    expect(data<{ status: string }>(await one.call('slicerx_printer_pause', pause)).status).toBe('approval_required')
-    expect(log(one).some((e) => e.by === 'policy' && e.decision === 'allowed')).toBe(false)
+    const r = await one.call('slicerx_printer_pause', pause)
+    expect(r.isError, text(r)).toBeFalsy()
+    expect(log(one).at(-1)).toMatchObject({ decision: 'allowed', by: 'policy' })
   })
 
   it('a policy file that allows queueing and starting everywhere still sends a print to a person', async () => {
@@ -256,7 +257,11 @@ describe('policy', () => {
     await h.call('slicerx_slice', {})
     const q = data<{ status: string }>(await h.call('slicerx_printer_queue', { printerId: 'bay-2', plate: 1 }))
     expect(q.status).toBe('needs_person')
-    expect(log(h).some((e) => e.tool.startsWith('printer.') && e.by === 'policy' && e.decision === 'allowed')).toBe(false)
+    expect(log(h).some((e) => e.tool === 'printer.queue' && e.by === 'policy')).toBe(false)
+    // The same file still lets pause and cancel through on that printer, and nothing else that reaches it.
+    expect(data<{ status: string }>(await h.call('slicerx_printer_resume', { printerId: 'bay-2' })).status).toBe('needs_person')
+    expect(data<{ status: string }>(await h.call('slicerx_printer_gcode', { printerId: 'bay-2', line: 'G28' })).status).toBe('needs_person')
+    expect(data<{ status: string }>(await h.call('slicerx_printer_set_temperature', { ...temp, printerId: 'bay-2' })).status).toBe('needs_person')
   })
 
   it('shows the policy and has no tool to change it', async () => {
