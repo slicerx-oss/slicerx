@@ -199,7 +199,13 @@ export function readProjectFile(path: string): ProjectRead {
   // The file's values, except SlicerX's engine choices the person left as the presets had them (the app's project
   // open keeps the same ones, engine-choices.ts in @slicerx/settings).
   const config: Record<string, SettingValue> = { ...projectKeys, ...(imported.config as unknown as Record<string, SettingValue>) }
-  for (const k of keptEngineChoices(raw)) delete config[k]
+  // SlicerX's engine choices the project did not change print with SlicerX's own values (engine-choices.json), as
+  // sx slice <project.3mf> does, rather than whatever a lower settings layer holds.
+  for (const k of keptEngineChoices(raw)) {
+    const ours = SLICERX_KEEP_VALUES[k]
+    if (ours === undefined) delete config[k]
+    else config[k] = ours
+  }
 
   const renamed = Object.keys(kept)
     .filter((k) => LEGACY_KEYS[k] !== undefined && LEGACY_KEYS[k] !== k && !(k in (imported.config as Record<string, unknown>)))

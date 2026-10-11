@@ -691,6 +691,8 @@
   "wave_overhang_min_length": "Wave rings shorter than this are skipped, in mm. 0 keeps them all.",
   "wave_overhang_min_new_area": "Wave rings stop when a ring adds less area than this, in mm2.",
   "wave_overhang_max_iterations": "The most wave rings an overhang may get. 0 sets no limit.",
-  "printer_plugin_config_overrides": "Plugin capability overrides as raw JSON. SlicerX keeps this for profile exchange and does not use it."
+  "printer_plugin_config_overrides": "Plugin capability overrides as raw JSON. SlicerX keeps this for profile exchange and does not use it.",
+  "top_color_penetration_layers": "How many layers a painted top surface colors, counting down from the top surface; 0 follows the top shell layers. Bambu Studio projects carry it.",
+  "bottom_color_penetration_layers": "How many layers a painted bottom surface colors, counting up from the bottom surface; 0 follows the bottom shell layers. Bambu Studio projects carry it."
  }
 }
