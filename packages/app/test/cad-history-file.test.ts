@@ -4,7 +4,7 @@
 // object id. SX_HISTORY_SAMPLE=<path> also writes the sample project for driving the app.
 import type { MeshHandle, MeshPart } from '@slicerx/contracts'
 import { describe, expect, it } from 'vitest'
-import type { History, StepParams } from '../src/cad/history/model'
+import type { History, StepParams } from '@slicerx/cad-history'
 import { runReplay } from '../src/cad/history/ops'
 import { withStep } from '../src/cad/history/record'
 import { readProject } from '../src/export/import3mf'

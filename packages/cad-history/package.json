@@ -1,0 +1,16 @@
+{
+  "name": "@slicerx/cad-history",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The CAD history of an object: its steps, their replay on the sx-geom engine, face provenance and the project file parts",
+  "license": "Apache-2.0",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts",
+    "./*": "./src/*.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  }
+}

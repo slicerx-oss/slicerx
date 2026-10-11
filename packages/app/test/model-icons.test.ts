@@ -4,7 +4,7 @@
 // icon of the tool that made it, so a sketch, an extrude, a revolve, a repair and an array never look alike.
 import { describe, expect, it } from 'vitest'
 import { stepIcon, stepSketch } from '../src/cad/history/step-icon'
-import type { StepParams } from '../src/cad/history/model'
+import type { StepParams } from '@slicerx/cad-history'
 import { SHELF_TOOLS } from '../src/workspaces/design/shelf-tools'
 
 const step = (p: object) => p as StepParams

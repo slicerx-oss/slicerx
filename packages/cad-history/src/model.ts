@@ -5,23 +5,10 @@
 // they were when it ran, plus the object's transform at that moment; replaying it with the current
 // local mesh and that transform gives the same result wherever the object has moved since. No
 // React, no store and no engine calls in here, so the geometry worker can load it too.
-import { copyCount, type Pattern } from '../pattern'
-import type { ArraySpec, ExtrudeSpec, FaceFrame, FreeShape, Hole, HoleSpec, MovedFace, OpenFace, Placement, Polygon, Shape, SketchLoop, ThreadPlace, ThreadSpec, Vec2, Vec3 } from '../../geom/cad'
+import { copyCount, type Pattern } from './pattern'
+import type { ArraySpec, EdgeRef, ExtrudeSpec, FaceFrame, FreeShape, Hole, HoleSpec, Mat4, MovedFace, OpenFace, Placement, Polygon, Shape, SketchLoop, ThreadPlace, ThreadSpec, Vec2, Vec3 } from './types'
 
-export type Mat4 = number[]
-
-/** An edge as edge.pick returns it (docs/cad-fillet.md): straight between two flat faces, or round where a flat face meets a cylinder. World at the step's transform. */
-export interface EdgeRef {
-  a: Vec3
-  b: Vec3
-  face: Vec3
-  /** Set on a replay when an end moved with a face it lies on; the engine then finds the edge along its line. */
-  moved?: boolean
-  /** A round edge: the center of its circle; `a` is a corner of it and `b` the same. */
-  center?: Vec3
-  /** The keys of the two faces either side, the one `face` faces first (docs/cad-history.md, "Face keys"). */
-  keys?: [number, number]
-}
+export type { EdgeRef, Mat4 }
 
 /** A mesh in the engine's flat form, with the part's name and filament slot. */
 export interface HistoryMesh {
@@ -111,7 +98,7 @@ export interface ReplayResult {
   /** The face keys steps found their faces by on this replay, by step id, for steps to keep (a step saved
    * without them, from a version 1 file, gets them this way). */
   found?: Record<string, { faceKey?: number; openKeys?: number[]; edgeKeys?: ([number, number] | null)[] }>
-  /** The step that made each face of the result, by face key (cad/history/provenance.ts); base faces are left out. */
+  /** The step that made each face of the result, by face key (provenance.ts); base faces are left out. */
   madeBy?: Record<number, string>
 }
 

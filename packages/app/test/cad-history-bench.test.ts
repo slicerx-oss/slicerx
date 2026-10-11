@@ -6,9 +6,8 @@
 import { describe, expect, it } from 'vitest'
 import { wasmGeom, liveEngine } from './geom-engine'
 import type { MeshPart } from '@slicerx/contracts'
-import type { History, StepParams } from '../src/cad/history/model'
+import { clearReplayCache, replayHistory, type EngineCall, type History, type StepParams } from '@slicerx/cad-history'
 import { withStep } from '../src/cad/history/record'
-import { clearReplayCache, replayHistory, type EngineCall } from '../src/cad/history/replay'
 import { boxMesh } from '../src/plate/mesh-ops'
 
 const on = process.env['SX_HISTORY_BENCH'] === '1' && liveEngine

@@ -7,11 +7,9 @@
 // otherwise).
 import type { MeshHandle, MeshPart } from '@slicerx/contracts'
 import { beforeEach, describe, expect, it } from 'vitest'
-import type { History, HistoryMesh, StepParams } from '../src/cad/history/model'
+import { historyFiles, parseHistories, type History, type HistoryMesh, type StepParams } from '@slicerx/cad-history'
 import { bindNext, withStep } from '../src/cad/history/record'
 import { refreshBound, removeValue, setValue } from '../src/cad/value-ops'
-import { historyFiles } from '../src/export/history-file'
-import { parseHistories } from '../src/export/history-read'
 import { parseValues, valuesJson } from '../src/export/values-file'
 import { boxMesh } from '../src/plate/mesh-ops'
 import { compose } from '../src/plate/transform'

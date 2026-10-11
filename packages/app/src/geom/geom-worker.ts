@@ -3,10 +3,10 @@
 // Runs sx-geom (packages/geom/wasm) off the main thread: one request in, one response out. The
 // calling convention mirrors packages/geom/wasm/geom.mjs: write "op\0json" into the module's input
 // buffer, call geom_call, read the JSON output or the error. history.replay runs in TypeScript here
-// (cad/history/replay.ts) so meshes stay in the worker between steps; it yields between steps, so other
+// (@slicerx/cad-history replay.ts) so meshes stay in the worker between steps; it yields between steps, so other
 // requests still get answers meanwhile, and stops when its caller cancels. The engine is two builds (modules.ts):
 // the core loads first, the full engine the first time a call needs it.
-import { replayHistory, type ReplayRequest } from '../cad/history/replay'
+import { replayHistory, type ReplayRequest } from '@slicerx/cad-history'
 import { engineModules, type EngineModule } from './modules'
 import { callEngine, transferables, type GeomExports } from './engine-call'
 

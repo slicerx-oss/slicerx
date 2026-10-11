@@ -1,11 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // Every kind of history step the tools record comes back from the project file, so a project with a hole, a
-// thread or a shell opens with its whole history (export/history-read.ts checks each step's parameters).
+// thread or a shell opens with its whole history (@slicerx/cad-history read.ts checks each step's parameters).
 import { describe, expect, it } from 'vitest'
-import type { History, StepParams } from '../src/cad/history/model'
-import { historyFiles } from '../src/export/history-file'
-import { parseHistories } from '../src/export/history-read'
+import { historyFiles, parseHistories, type History, type StepParams } from '@slicerx/cad-history'
 import { boxMesh } from '../src/plate/mesh-ops'
 
 const T = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
@@ -45,7 +43,7 @@ describe('history steps in the project file', () => {
 
 describe('a shell step', () => {
   it('is named by its wall and open faces, and its wall is the number a person changes', async () => {
-    const { mainNumber, stepName, withNumber } = await import('../src/cad/history/model')
+    const { mainNumber, stepName, withNumber } = await import('@slicerx/cad-history')
     const step = { id: 's', part: 0, transform: T, params: STEPS[2]! }
     expect(stepName(step)).toBe('Shell, 2 mm walls, 1 open face')
     expect(mainNumber(step.params)).toMatchObject({ label: 'Wall', value: 2, unit: 'mm' })
@@ -56,7 +54,7 @@ describe('a shell step', () => {
 
 describe('a patterned step', () => {
   it('names its copies', async () => {
-    const { stepName } = await import('../src/cad/history/model')
+    const { stepName } = await import('@slicerx/cad-history')
     expect(stepName({ params: STEPS[3]! })).toBe('Hole 4 mm, 6 copies')
   })
 })

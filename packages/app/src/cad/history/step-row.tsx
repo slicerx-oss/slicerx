@@ -7,7 +7,7 @@
 import { Button, Icon, useContextMenu } from '@slicerx/ui'
 import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react'
 import type { PlateEntry } from '../../state/store'
-import { mainNumber, stepName, type Step } from './model'
+import { mainNumber, stepName, type Step } from '@slicerx/cad-history'
 import { toolFor } from './ops'
 import { DeleteStepDialog, StepMenu } from './step-menu'
 import { stepIcon, stepSketch } from './step-icon'

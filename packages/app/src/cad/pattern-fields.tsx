@@ -6,7 +6,7 @@
 // reads the fields.
 import { Seg } from '@slicerx/ui'
 import { Num } from './panel-kit'
-import { copyCount, type Pattern, type PatternFields } from './pattern'
+import { copyCount, type Pattern, type PatternFields } from '@slicerx/cad-history'
 
 const DEFAULTS: Record<Exclude<PatternFields['kind'], 'points'>, PatternFields> = {
   none: { kind: 'none' },

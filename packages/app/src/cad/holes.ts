@@ -7,7 +7,7 @@ import { holeApply, shellBody, threadApply, type MeshItem } from '../geom/cad'
 import { fromGeom, toGeom, type GeomMesh } from '../geom/client'
 import { get, markStale } from '../state/store'
 import { commitMade } from './commit'
-import { stepName, type StepParams } from './history/model'
+import { stepName, type StepParams } from '@slicerx/cad-history'
 import { reserveStepId, withStep } from './history/record'
 
 type Loader = { loadParts(name: string, parts: MeshPart[]): Promise<MeshHandle> }

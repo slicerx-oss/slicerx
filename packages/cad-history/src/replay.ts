@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // Replays an object's history on its base (docs/cad-history.md). Runs in the geometry worker
-// (geom-worker.ts, op history.replay) with the engine called directly, and in tests with any engine
+// (the app's geom-worker.ts, op history.replay) with the engine called directly, and in tests with any engine
 // provider. Steps run in order; the first one that fails is marked broken with the engine's sentence,
 // every later one is skipped, and the parts are the result just before it. The parts after each step
 // are kept from the last replays, so an edit of step k starts at k.
-import type { EdgeRef, MovedFace } from '../../geom/cad'
+import type { EdgeRef, MovedFace } from './types'
 import { bakeMesh, findByKey, findTriangle, followed, followsOf, hasFaceOn, invert, keyOfTriangle, type History, type HistoryMesh, type ReplayResult, type Step, type StepStatus } from './model'
 import { madeBy } from './provenance'
 import { stepSalt } from './salt'

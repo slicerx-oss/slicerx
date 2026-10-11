@@ -8,13 +8,9 @@
 // (live wasm when built, recorded replies otherwise).
 import { describe, expect, it } from 'vitest'
 import { geom } from '../src/geom/client'
-import { faceKeyAt, HISTORY_VERSION, type History, type HistoryMesh, type Step, type StepParams } from '../src/cad/history/model'
-import { clearReplayCache, replayHistory } from '../src/cad/history/replay'
+import { HISTORY_VERSION, clearReplayCache, faceKeyAt, historyFiles, historyNewer, parseHistories, replayHistory, stepSalt, type History, type HistoryMesh, type Step, type StepParams } from '@slicerx/cad-history'
 import { reserveStepId, withStep } from '../src/cad/history/record'
-import { stepSalt } from '../src/cad/history/salt'
 import { setGeomProvider } from '../src/geom/client'
-import { historyFiles } from '../src/export/history-file'
-import { historyNewer, parseHistories } from '../src/export/history-read'
 import { boxMesh } from '../src/plate/mesh-ops'
 import { useGeomEngine } from './geom-engine'
 

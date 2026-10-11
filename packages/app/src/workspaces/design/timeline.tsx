@@ -5,7 +5,7 @@
 // and dragging the marker steps through the history. Every action is an existing history operation (cad/history/ops.ts).
 import { Button, Icon } from '@slicerx/ui'
 import { useRef, useState } from 'react'
-import { mainNumber, stepName, type Step } from '../../cad/history/model'
+import { mainNumber, stepName, type Step } from '@slicerx/cad-history'
 import { beginEdit, cancelEdit, moveStep, toolFor, viewStep } from '../../cad/history/ops'
 import { stepIcon, stepSketch } from '../../cad/history/step-icon'
 import { useHost } from '../../host'

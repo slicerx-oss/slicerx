@@ -3,8 +3,7 @@
 // Looking at the part after an earlier history step, and moving steps earlier or later.
 import type { MeshHandle, MeshPart } from '@slicerx/contracts'
 import { beforeEach, describe, expect, it } from 'vitest'
-import { followsOf, type History, type HistoryMesh, type Step, type StepParams } from '../src/cad/history/model'
-import { clearReplayCache } from '../src/cad/history/replay'
+import { clearReplayCache, followsOf, type History, type HistoryMesh, type Step, type StepParams } from '@slicerx/cad-history'
 import { withStep } from '../src/cad/history/record'
 import { allPlates } from '../src/plate/plates'
 import { beginEdit, cancelEdit, movedSteps, moveStep, runReplay, viewStep } from '../src/cad/history/ops'

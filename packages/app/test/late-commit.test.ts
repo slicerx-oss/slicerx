@@ -5,8 +5,7 @@
 // recolor during the wait is kept, and an object deleted meanwhile takes nothing, nor do others get duplicated.
 import { afterEach, expect, it } from 'vitest'
 import type { MeshHandle, MeshPart } from '@slicerx/contracts'
-import { IDENTITY, type HistoryMesh } from '../src/cad/history/model'
-import { clearReplayCache } from '../src/cad/history/replay'
+import { IDENTITY, clearReplayCache, type HistoryMesh } from '@slicerx/cad-history'
 import { applyHistory } from '../src/cad/history/ops'
 import { setGeomProvider } from '../src/geom/client'
 import { cutSelected, repairSelected } from '../src/plate/geom-ops'

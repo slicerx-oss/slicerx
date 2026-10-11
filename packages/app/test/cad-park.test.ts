@@ -6,7 +6,7 @@ import type { MeshHandle, MeshPart } from '@slicerx/contracts'
 import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { History } from '../src/cad/history/model'
+import type { History } from '@slicerx/cad-history'
 import { fullPlate, get, set, setModelMode, type PlateEntry } from '../src/state/store'
 
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true

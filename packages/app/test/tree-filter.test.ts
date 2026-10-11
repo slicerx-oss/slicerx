@@ -3,7 +3,7 @@
 // The Model tree's filter: object names keep the whole object, step names keep the matching steps, and a few words
 // find a kind of step or object.
 import { describe, expect, it } from 'vitest'
-import type { Step, StepParams } from '../src/cad/history/model'
+import type { Step, StepParams } from '@slicerx/cad-history'
 import { filterTree, startsFilter } from '../src/workspaces/design/tree-filter'
 
 const I = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]

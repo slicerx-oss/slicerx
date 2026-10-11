@@ -3,7 +3,7 @@
 // The modeling tools that work in the 3D view, shown in the sidebar while one is on: a shape or text on a
 // face or the bed, arrays, and measure. The view is in probe mode meanwhile: a click is the tool's input
 // and nothing is selected or dragged. This file and everything it imports load on first use.
-import { patternCopies, patternFromFields, patternProblem, type Pattern, type PatternFields } from './pattern'
+import { patternCopies, patternFromFields, patternProblem, type Pattern, type PatternFields } from '@slicerx/cad-history'
 import { fieldsOf, PatternSection } from './pattern-fields'
 import type { PickEvent } from '@slicerx/viewport'
 import { Button, Field, Icon, Input, Seg, Select, Switch } from '@slicerx/ui'

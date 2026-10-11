@@ -4,7 +4,7 @@
 // the step menu's Select its faces.
 import { useEffect, useState } from 'react'
 import { faceSource, facesMadeBy } from '../../cad/history/made-by'
-import { point } from '../../cad/history/model'
+import { point } from '@slicerx/cad-history'
 import { setPickKind } from '../../plate/sub-pick'
 import { get, set, toast, useApp } from '../../state/store'
 

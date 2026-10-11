@@ -4,7 +4,7 @@
 // face.rs, Pattern). The engine makes the copies; this places them for the preview the same way, counts them,
 // reads the panel's fields (with the panel's number reader, so the geometry worker never loads the panels) and says what is wrong with a pattern in words. Positions are face coordinates (u, v),
 // mm, and the shape itself is always the first copy.
-import type { Vec2 } from '../geom/cad'
+import type { Vec2 } from './types'
 
 export type Pattern =
   | { kind: 'linear'; count: number; stepMm: Vec2; count2?: number; step2Mm?: Vec2 }

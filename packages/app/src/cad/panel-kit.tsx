@@ -7,7 +7,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { takePicks } from '../plate/sub-pick'
 import { cameraBus, setProbeHandler, setTool, toolStore } from '../plate/tools'
 import { set, useApp } from '../state/store'
-import { stepName } from './history/model'
+import { stepName } from '@slicerx/cad-history'
 import { typedNumber } from './value-table'
 
 /** A typed number: plain, or arithmetic over the project's named values (`wall * 2`). NaN when it does not read. */

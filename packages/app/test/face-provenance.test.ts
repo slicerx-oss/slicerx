@@ -1,16 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// The step that made a face, found from the replays alone (cad/history/provenance.ts). With a built engine this
+// The step that made a face, found from the replays alone (@slicerx/cad-history provenance.ts). With a built engine this
 // pins the base keys worked out in TypeScript to the ones the engine makes.
 import type { MeshPart } from '@slicerx/contracts'
 import { beforeEach, describe, expect, it } from 'vitest'
-import { faceKeyAt, keyOfTriangle, type History, type HistoryMesh, type StepParams } from '../src/cad/history/model'
-import { clearReplayCache } from '../src/cad/history/replay'
+import { baseKeys, clearReplayCache, faceKeyAt, keyOfTriangle, madeBy, usedBy, type History, type HistoryMesh, type StepParams } from '@slicerx/cad-history'
 import { withStep } from '../src/cad/history/record'
 import { runReplay } from '../src/cad/history/ops'
 import { boxMesh } from '../src/plate/mesh-ops'
 import { compose } from '../src/plate/transform'
-import { baseKeys, madeBy, usedBy } from '../src/cad/history/provenance'
 import { faceMadeBy } from '../src/cad/history/made-by'
 import type { PlateEntry } from '../src/state/store'
 import { useGeomEngine } from './geom-engine'

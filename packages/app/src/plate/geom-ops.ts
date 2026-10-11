@@ -39,7 +39,7 @@ function standUp(parts: MeshPart[]): { parts: MeshPart[]; transform: Mat4 } {
   return { parts: local, transform: dropToBed(local, t) }
 }
 
-type StepParams = import('../cad/history/model').StepParams
+type StepParams = import('@slicerx/cad-history').StepParams
 
 /**
  * Puts new parts on the object in one store update. With `step`, the edit is a step of the object's
@@ -235,7 +235,7 @@ export async function subtractFromSelected(host: Loader, spec: HoleSpec): Promis
   const cy = (b.min[1] + b.max[1]) / 2 + spec.offset[1]
   const top = b.max[2] + 0.5
   const h = spec.depthMm + 0.5
-  const solid: import('../cad/history/model').SolidSpec =
+  const solid: import('@slicerx/cad-history').SolidSpec =
     spec.shape === 'cylinder'
       ? { type: 'cylinder', origin: [cx, cy, top - h], axis: [0, 0, 1], diameterMm: spec.sizeMm, heightMm: h }
       : { type: 'box', min: [cx - spec.sizeMm / 2, cy - spec.sizeMm / 2, top - h], max: [cx + spec.sizeMm / 2, cy + spec.sizeMm / 2, top] }
