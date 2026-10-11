@@ -690,6 +690,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # Every file has its copyright and license, from its own header or REUSE.toml (docs/licensing.md). pipx comes
+      # with the runner; the pinned release keeps the result from changing under us.
+      - name: reuse lint
+        run: pipx run reuse==5.0.2 lint
       # cargo-deny as its pinned release, checked against the sum below on every run. The action ran in a container
       # pulled from Docker Hub without logging in, and its rate limit for that failed this check.
       - if: needs.detect.outputs.rust == 'true'
