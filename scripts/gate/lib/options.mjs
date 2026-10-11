@@ -14,6 +14,7 @@ export const SCENARIOS = {
   c: 'Accounts: sign-in link, sign out, old link, Send again',
   d: 'Creator page, upload, scan, review, Feed, sealed',
   e: 'Every starter on the A1, 0.4 mm, PLA',
+  w: 'Watch pause on a fake printer: paused, then the bed and the nozzle off',
 }
 
 export const HELP = `node scripts/gate/run.mjs --app <bridge build> [options]
@@ -22,7 +23,7 @@ export const HELP = `node scripts/gate/run.mjs --app <bridge build> [options]
   --platform <name>     windows, macos or linux (default: this machine's)
   --account <address>   The @qa.slicerx.app account for c and d (and the signed-in half of b)
   --out <dir>           Where the report, screenshots and results.json go (default: a new temp folder)
-  --only <list>         Scenarios to run, for example a,b,e (default: all, a b c d e)
+  --only <list>         Scenarios to run, for example a,b,e (default: all, a b c d e w)
   --skip <list>         Scenarios to leave out
   --starters <list>     Starter slugs for e (default: every starter)
   --wait-signin <min>   How long to wait for the operator at each sign-in link (default 10)
@@ -30,6 +31,7 @@ export const HELP = `node scripts/gate/run.mjs --app <bridge build> [options]
   --wait-review <min>   How long to wait for review approval (default 60)
   --profile <dir>       Reuse this web profile folder instead of a fresh one (Windows, Linux)
   --commit <hash>       The commit the build was made from (default: git HEAD of this checkout)
+  --hub-dir <dir>       The bridge build's printer hub folder for w (default: <app data>/app.slicerx.desktop.agent-bridge/hub)
 
 Scenarios:
 ${Object.entries(SCENARIOS).map(([k, v]) => `  ${k}  ${v}`).join('\n')}
@@ -56,6 +58,7 @@ export function options(argv) {
       'wait-review': { type: 'string' },
       profile: { type: 'string' },
       commit: { type: 'string' },
+      'hub-dir': { type: 'string' },
       help: { type: 'boolean', short: 'h' },
     },
     strict: true,
@@ -93,5 +96,6 @@ export function options(argv) {
     waitReview: minutes(values['wait-review'], 60, '--wait-review'),
     profile: values.profile ?? null,
     commit: values.commit ?? null,
+    hubDir: values['hub-dir'] ? resolve(values['hub-dir']) : null,
   }
 }

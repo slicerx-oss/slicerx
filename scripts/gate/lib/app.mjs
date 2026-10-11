@@ -39,15 +39,16 @@ export function runningCopies(exe) {
 
 /**
  * Starts the app with the bridge on a free port and a fresh web profile (unless `profile` names one to reuse), and
- * waits for its connection file. Returns { pid, tokenFile, stop, stderr }.
+ * waits for its connection file. `extraEnv` adds variables for the app (scenario w's watch timings). Returns
+ * { pid, tokenFile, env, stop, stderr }, where `env` is the environment the app got, without the token file's path.
  */
-export async function startApp({ app, profile, log }) {
+export async function startApp({ app, profile, log, extraEnv = {} }) {
   const exe = appExecutable(app)
   if (!existsSync(exe)) throw new Error(`no app at ${exe}; build it with pnpm --filter @slicerx/desktop build:bridge`)
   if (runningCopies(exe) > 0) throw new Error(`${exe} is already running; quit it first (the app is single-instance)`)
   const work = mkdtempSync(join(tmpdir(), 'sx-gate-'))
   const tokenFile = join(work, 'agent-bridge.json')
-  const env = { ...process.env, SX_AGENT_BRIDGE_PORT: '0', SX_AGENT_BRIDGE_TOKEN_FILE: tokenFile }
+  const env = { ...process.env, ...extraEnv, SX_AGENT_BRIDGE_PORT: '0', SX_AGENT_BRIDGE_TOKEN_FILE: tokenFile }
   const fresh = profile ? resolve(profile) : join(work, 'profile')
   // A fresh profile shows first run and reads nothing of anyone's own app state. Windows keeps the web profile where
   // WEBVIEW2_USER_DATA_FOLDER says; Linux keeps the app's data and WebKitGTK's under the XDG folders. macOS has no
@@ -83,7 +84,8 @@ export async function startApp({ app, profile, log }) {
     await stop()
     throw new Error(`the app wrote no connection file (exit ${child.exitCode}); its last output: ${stderr.slice(-400)}`)
   }
-  return { pid: child.pid, exe, tokenFile, stop, stderr: () => stderr }
+  const { SX_AGENT_BRIDGE_TOKEN_FILE: _token, ...seen } = env
+  return { pid: child.pid, exe, tokenFile, env: seen, stop, stderr: () => stderr }
 }
 
 /** The MCP SDK as packages/app-bridge resolves it, so the gate adds no dependency of its own. */
