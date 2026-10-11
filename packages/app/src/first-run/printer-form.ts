@@ -470,12 +470,12 @@ export function bedOf(form: PrinterForm): Bed | null {
   const model = currentModel(form)
   if (model) {
     const v = model.buildVolume
-    return v.shape === 'rectangular' ? { widthMm: v.x, depthMm: v.y, heightMm: v.z } : { widthMm: v.diameter, depthMm: v.diameter, heightMm: v.z }
+    return v.shape === 'rectangular' ? { widthMm: v.x, depthMm: v.y, heightMm: v.z } : { widthMm: v.diameter, depthMm: v.diameter, heightMm: v.z, round: true }
   }
   if (form.modelId !== 'custom' || Object.keys(customErrors(form.custom)).length) return null
   const n = (t: string) => Number(t.replace(',', '.'))
   const c = form.custom
-  return c.shape === 'rectangular' ? { widthMm: n(c.width), depthMm: n(c.depth), heightMm: n(c.height) } : { widthMm: n(c.diameter), depthMm: n(c.diameter), heightMm: n(c.height) }
+  return c.shape === 'rectangular' ? { widthMm: n(c.width), depthMm: n(c.depth), heightMm: n(c.height) } : { widthMm: n(c.diameter), depthMm: n(c.diameter), heightMm: n(c.height), round: true }
 }
 
 export function nozzleText(form: PrinterForm): string {

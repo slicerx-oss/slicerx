@@ -8,7 +8,7 @@ import type { PlateObject, PrimeTowerPlacement } from '@slicerx/contracts'
 
 export type Origin = readonly [number, number]
 
-function point(v: unknown): [number, number] | null {
+export function point(v: unknown): [number, number] | null {
   if (Array.isArray(v) && v.length >= 2) {
     const x = Number(v[0])
     const y = Number(v[1])

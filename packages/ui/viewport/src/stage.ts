@@ -88,12 +88,14 @@ varying float vH;
 void main(){ vec4 w = modelMatrix * vec4(position, 1.0); vH = w.y; gl_Position = projectionMatrix * viewMatrix * w; }`
 
 const PLATE_OUTLINE_FS = /* glsl */ `
-uniform vec3 edge; uniform vec3 edgeAlt; uniform float alert; uniform float ground; uniform float surface; uniform float subtle; uniform vec3 grid; uniform vec2 hb; uniform vec3 reveal; varying vec2 vP;
+uniform vec3 edge; uniform vec3 edgeAlt; uniform float alert; uniform float ground; uniform float surface; uniform float subtle; uniform vec3 grid; uniform vec2 hb; uniform float rnd; uniform vec3 reveal; varying vec2 vP;
 float lines(vec2 p, float s){ vec2 q = p / s; vec2 w = fwidth(q); vec2 g = abs(fract(q - 0.5) - 0.5) / max(w, vec2(1e-4)); return (1.0 - min(min(g.x, g.y), 1.0)) * (1.0 - smoothstep(0.3, 0.7, max(w.x, w.y))); }
 // the first plate reveal (reveal.ts): x is how far the outline is traced, 0 to 1 from the front middle round each side
 // to the back middle; y is ms since the grid started laying, back to front, a row overshooting as it lands; z is the
 // accent wash. On the ground the grid lays the same way and the outline shows only while it runs.
 float traced(vec2 p){
+  // a round bed traces by angle: 0 at the front middle, 1 at the back middle
+  if (rnd > 0.5) return atan(abs(p.x), -p.y) / 3.14159265;
   vec2 q = abs(p) - hb;
   float s = q.x > q.y ? hb.x + p.y + hb.y : p.y < 0.0 ? abs(p.x) : 2.0 * hb.x + 2.0 * hb.y - abs(p.x);
   return s / (2.0 * hb.x + 2.0 * hb.y);
@@ -104,7 +106,8 @@ float rowIn(float y){
 }
 void main(){
   vec2 q = abs(vP) - hb;
-  float d = length(max(q, 0.0)) + min(max(q.x, q.y), 0.0);
+  // A round bed (a delta) is a circle of radius hb.x; any other is the box.
+  float d = rnd > 0.5 ? length(vP) - hb.x : length(max(q, 0.0)) + min(max(q.x, q.y), 0.0);
   float shown = step(traced(vP), reveal.x);
   float row = rowIn(vP.y);
   // On the ground the traced outline only shows while the reveal runs: through the trace, then fading with the wash.
@@ -117,11 +120,12 @@ void main(){
   float inset = 1.1, th = 0.8, len = 14.0;
   float bx = (1.0 - smoothstep(th, th + px, abs(c.y - inset))) * step(0.0, c.x) * (1.0 - smoothstep(len, len + px, c.x));
   float by = (1.0 - smoothstep(th, th + px, abs(c.x - inset))) * step(0.0, c.y) * (1.0 - smoothstep(len, len + px, c.y));
-  float br = max(bx, by);
+  float br = rnd > 0.5 ? 0.0 : max(bx, by);
   vec2 r = abs(vP) / hb;
+  float edgeR = rnd > 0.5 ? length(vP) / hb.x : max(r.x, r.y);
   // ground: no outline or corner marks, the grid runs to the quad's edge and fades out there. On the bed the grid
   // keeps most of its strength to the far edge, so the whole plate reads from the default camera.
-  float fade = mix(1.0 - 0.3 * smoothstep(0.7, 1.0, max(r.x, r.y)), 1.0 - smoothstep(0.35, 1.0, max(r.x, r.y)), ground);
+  float fade = mix(1.0 - 0.3 * smoothstep(0.7, 1.0, edgeR), 1.0 - smoothstep(0.35, 1.0, edgeR), ground);
   float inside = mix(1.0 - smoothstep(-0.4, 0.0, d), 1.0, ground);
   // 10 mm minor lines and brighter 50 mm major lines. On a plate surface the grid is a fainter guide over the sheet.
   float gl = (lines(vP + hb, 10.0) * 0.16 + lines(vP + hb, 50.0) * 0.4) * fade * inside * (1.0 - 0.7 * surface) * row;
@@ -306,7 +310,7 @@ export class Stage {
   }
 
   setBed(bed: Bed, label?: string): void {
-    const same = bed.widthMm === this.bed.widthMm && bed.depthMm === this.bed.depthMm && (label ?? this.label) === this.label && this.decor.children.length > 0
+    const same = bed.widthMm === this.bed.widthMm && bed.depthMm === this.bed.depthMm && !bed.round === !this.bed.round && (label ?? this.label) === this.label && this.decor.children.length > 0
     this.bed = { ...bed }
     if (label !== undefined) this.label = label
     this.bedRoot.matrix.copy(this.bedMatrix())
@@ -534,7 +538,7 @@ export class Stage {
     const half = new Vector2(bed.widthMm / 2, bed.depthMm / 2)
     const pad = 24
     const mat = new ShaderMaterial({
-      uniforms: { edge: { value: new Color(this.colors.selection) }, edgeAlt: { value: new Color(this.colors.overhangAmber) }, alert: { value: this.alert ? 1 : 0 }, ground: { value: this.ground ? 1 : 0 }, surface: { value: this.plateStyle === 'grid' ? 0 : 1 }, subtle: { value: this.bedOutline === 'subtle' ? 1 : 0 }, grid: { value: new Color(this.colors.floorGrid) }, hb: { value: half }, reveal: this.revealU },
+      uniforms: { edge: { value: new Color(this.colors.selection) }, edgeAlt: { value: new Color(this.colors.overhangAmber) }, alert: { value: this.alert ? 1 : 0 }, ground: { value: this.ground ? 1 : 0 }, surface: { value: this.plateStyle === 'grid' ? 0 : 1 }, subtle: { value: this.bedOutline === 'subtle' ? 1 : 0 }, grid: { value: new Color(this.colors.floorGrid) }, hb: { value: half }, rnd: { value: bed.round ? 1 : 0 }, reveal: this.revealU },
       transparent: true,
       depthWrite: false,
       vertexShader: 'varying vec2 vP; void main(){ vP = position.xy; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
