@@ -4,6 +4,7 @@
 // client): SlicerX, or a white-label edition's name, which the app sets once at start.
 
 let name = 'SlicerX'
+const listeners = new Set<(name: string) => void>()
 
 /** The name an app shows for itself. */
 export function productName(): string {
@@ -13,4 +14,10 @@ export function productName(): string {
 /** Sets the name, from the edition's brand. The app calls it when it learns its edition. */
 export function setProductName(next: string): void {
   name = next
+  for (const l of listeners) l(next)
+}
+
+/** Calls `fn` with each new name, for data written once that names the app (the printer catalog). */
+export function onProductName(fn: (name: string) => void): void {
+  listeners.add(fn)
 }
