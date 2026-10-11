@@ -34,10 +34,11 @@ test('names the tests that passed only on a retry and the ones that failed, with
   })
 })
 
-function run(json) {
+function run(json, { gaveUp = false } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'pw-results-'))
   const file = join(dir, 'report.json')
   if (json !== undefined) writeFileSync(file, json)
+  if (gaveUp) writeFileSync(`${file}.gave-up`, '75\n')
   const out = spawnSync(process.execPath, [script, file, join(dir, 'retried.txt'), join(dir, 'failed.txt')], { encoding: 'utf8' })
   const read = (name) => (existsSync(join(dir, name)) ? readFileSync(join(dir, name), 'utf8') : null)
   return { status: out.status, stdout: out.stdout, stderr: out.stderr, retried: read('retried.txt'), failed: read('failed.txt') }
@@ -58,5 +59,15 @@ test('fails on an error outside any test, such as a web server that did not star
 })
 
 test('fails when there is no report', () => {
-  assert.equal(run(undefined).status, 1)
+  const r = run(undefined)
+  assert.equal(r.status, 1)
+  assert.match(r.stderr, /no readable report at /)
+})
+
+test('says no tests ran when the run step gave up waiting for the heavy lock', () => {
+  const r = run(undefined, { gaveUp: true })
+  assert.equal(r.status, 1)
+  assert.match(r.stderr, /no tests ran: the run gave up waiting for the heavy lock/)
+  assert.match(r.stdout, /::error title=Heavy lock::/)
+  assert.doesNotMatch(r.stderr, /no readable report/)
 })
