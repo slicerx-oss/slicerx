@@ -30,6 +30,20 @@ through the command in `SX_CI_NOTIFY`. A green run records its sha in `state/las
 
 A failing test is rerun once; flaky and quarantined tests are tracked as one file per entry in `flaky.d/` and `quarantine.d/` (see "Flaky tests").
 
+## GitHub Actions
+
+The hosted workflow (`.github/workflows/ci.yml`) runs beside this. Pull requests and the merge queue share one pool of
+hosted runners, so a pull request runs only the quick checks and, when it touches the app, one browser smoke job
+(`e2e-smoke`). The browser suite's full matrix (`e2e-shard`, twelve desktop and four phone shards) and the @gpu lane
+run in the merge queue. A pull request labeled `full-ci`, or one that changes the browser suite's own harness, runs
+the suite on half the shards (six desktop, two phone), every test still included. The required check names do not
+change: `e2e` and `rust-tests` pass when what they gather was not needed. When to add the label is in CONTRIBUTING.md,
+"What CI runs".
+
+A label event starts its own run (the concurrency comment in `ci.yml`). A run for a label that adds nothing (any label
+but `full-ci`, or `full-ci` already on the pull request when it opened) skips every job except `rust`, which starts
+and skips its steps, so its required matrix name `rust (ubuntu-latest)` still reports, as passed.
+
 ## Setup
 
     sh scripts/ci/install.sh        # ~/ci: bare repo, hook, bin/, ci.env to fill in
