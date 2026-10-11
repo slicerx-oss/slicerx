@@ -103,7 +103,10 @@ impl Params {
         if slope <= 0.0 {
             return None;
         }
-        let area = |_: u8| 0.25 * std::f64::consts::PI * cfg.filament_diameter * cfg.filament_diameter;
+        let area = |s: u8| {
+            let d = cfg.filament_diameter_for(s);
+            0.25 * std::f64::consts::PI * d * d
+        };
         Some(Self {
             slope: slope * 3600.0,
             segment: cfg

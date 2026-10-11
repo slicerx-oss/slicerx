@@ -1753,6 +1753,31 @@ impl PrintConfig {
         }
     }
 
+    /// Filament diameter for a slot, mm: the slot's own entry of the `filament_diameter` list (the last
+    /// entry for slots past its end), or the first filament's when that entry is missing or outside the
+    /// accepted 0.5 to 5 mm.
+    pub fn filament_diameter_for(&self, slot: u8) -> f64 {
+        let num = |v: &Value| {
+            v.as_f64()
+                .or_else(|| v.as_str().and_then(|t| t.trim().parse().ok()))
+        };
+        let own = match self.raw.get("filament_diameter") {
+            Some(Value::Array(a)) => a
+                .get(usize::from(slot.max(1) - 1))
+                .or_else(|| a.last())
+                .and_then(num),
+            _ => None,
+        };
+        own.filter(|d| (0.5..=5.0).contains(d))
+            .unwrap_or(self.filament_diameter)
+    }
+
+    /// Cross-section of a slot's filament, mm2 ([`Self::filament_diameter_for`]).
+    pub fn filament_area(&self, slot: u8) -> f64 {
+        use crate::fm::Fm as _;
+        std::f64::consts::PI * (self.filament_diameter_for(slot) / 2.0).m_powi(2)
+    }
+
     /// Filament price for a slot, money per kg; 0 when unset.
     pub fn cost_per_kg(&self, slot: u8) -> f64 {
         let c = Self::per_slot(&self.filament_cost, slot, 0.0);
