@@ -4,11 +4,13 @@
 //! JSON match what the WASM worker speaks, so the TypeScript side of both
 //! hosts builds the same `SliceResult`. Preview and G-code bytes return raw
 //! (`tauri::ipc::Response`), never as JSON arrays.
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-use sx_core::api::{Cancellable, Progress, SliceRequest, Stage, run_request_with};
+use sx_core::api::{
+    Cancellable, Prepared, Progress, SliceRequest, Stage, prepare, run_prepared, session_key,
+};
 use sx_core::{Error, Mesh};
 use tauri::State;
 use tauri::ipc::{Channel, InvokeBody, Request, Response};
@@ -20,7 +22,25 @@ pub struct Slicer {
     /// The cancel flag of each slice running, by the job number the page gave it.
     jobs: Mutex<HashMap<u32, Arc<AtomicBool>>>,
     next: AtomicU32,
+    kept: Kept,
 }
+
+/// The sessions of the last slices, newest first, by `session_key` (at most [`KEPT_SESSIONS`]): slicing the same
+/// plate again, or after a change only to G-code or preview settings, starts from the session it left. Shared with
+/// the slice running off the main thread.
+#[derive(Default, Clone)]
+struct Kept {
+    sessions: Arc<Mutex<VecDeque<KeptSession>>>,
+    /// Each mesh's content hash, worked out when a slice first needs it.
+    hashes: Arc<Mutex<HashMap<u32, u64>>>,
+}
+
+/// A kept session and its `session_key`.
+type KeptSession = (u64, Arc<Prepared>);
+
+/// How many prepared sessions the desktop keeps. Each holds its plate's sliced layers, so the count is small; two
+/// cover going back and forth between two plates or two settings.
+const KEPT_SESSIONS: usize = 2;
 
 struct Output {
     gcode: Vec<u8>,
@@ -149,7 +169,9 @@ impl<F: Fn(SliceStep) + Sync> Progress for SendProgress<F> {
 
 /// Runs a request through the engine's own request path (the one the CLI, MCP and WebAssembly builds use), so
 /// sleipnir plans, height ranges, safety limits, object settings, volumes, thumbnails and G-code
-/// substitution all behave the same here. Meshes are named by their numeric id.
+/// substitution all behave the same here. Meshes are named by their numeric id. The slice command runs it on a kept
+/// session ([`run_slice_kept`]); this fresh run is what the tests compare that with.
+#[cfg(test)]
 fn run_slice(
     req: &SliceRequest,
     meshes: &HashMap<u32, Arc<Mesh>>,
@@ -169,7 +191,69 @@ fn run_slice(
         progress,
         flag: cancel,
     };
-    let run = run_request_with(req, &lookup, &progress).map_err(|e| e.to_string())?;
+    let run = sx_core::api::run_request_with(req, &lookup, &progress).map_err(|e| e.to_string())?;
+    let info = serde_json::to_value(&run.report).map_err(|e| e.to_string())?;
+    Ok((
+        info,
+        Output {
+            gcode: run.gcode,
+            sxpv: run.preview,
+        },
+    ))
+}
+
+/// [`run_slice`] on a session the slicer kept when the request's [`session_key`] matches one, else on a new one it
+/// keeps after a run that finishes (a canceled or failed run keeps none). The same bytes either way.
+fn run_slice_kept(
+    req: &SliceRequest,
+    meshes: &HashMap<u32, Arc<Mesh>>,
+    kept: &Kept,
+    cancel: &AtomicBool,
+    progress: &dyn Progress,
+) -> Result<(serde_json::Value, Output), String> {
+    let lookup = |r: &str| -> sx_core::Result<Arc<Mesh>> {
+        r.parse::<u32>()
+            .ok()
+            .and_then(|k| meshes.get(&k).cloned())
+            .ok_or_else(|| Error::Config {
+                key: "plate.objects.mesh",
+                reason: format!("unknown mesh {r}"),
+            })
+    };
+    let hash = |r: &str| -> Option<u64> {
+        let k = r.parse::<u32>().ok()?;
+        if let Some(h) = lock(&kept.hashes).get(&k) {
+            return Some(*h);
+        }
+        let h = meshes.get(&k)?.content_hash();
+        lock(&kept.hashes).insert(k, h);
+        Some(h)
+    };
+    let key = session_key(req, &hash);
+    let hit = key.and_then(|k| {
+        let mut list = lock(&kept.sessions);
+        let at = list.iter().position(|(have, _)| *have == k)?;
+        let hit = list.remove(at)?;
+        let p = hit.1.clone();
+        list.push_front(hit);
+        Some(p)
+    });
+    let fresh = hit.is_none();
+    let prepared = match hit {
+        Some(p) => p,
+        None => Arc::new(prepare(req, &lookup).map_err(|e| e.to_string())?),
+    };
+    let progress = Cancellable {
+        progress,
+        flag: cancel,
+    };
+    let run = run_prepared(req, &prepared, &progress).map_err(|e| e.to_string())?;
+    if let (true, Some(k)) = (fresh, key) {
+        let mut list = lock(&kept.sessions);
+        list.retain(|(have, _)| *have != k);
+        list.push_front((k, prepared));
+        list.truncate(KEPT_SESSIONS);
+    }
     let info = serde_json::to_value(&run.report).map_err(|e| e.to_string())?;
     Ok((
         info,
@@ -198,11 +282,12 @@ pub async fn slice(
         lock(&state.jobs).insert(j, flag.clone());
     }
     let run_flag = flag.clone();
+    let kept = state.kept.clone();
     let ran = tauri::async_runtime::spawn_blocking(move || {
         let progress = SendProgress::new(move |step| {
             let _ = on_progress.send(step);
         });
-        run_slice(&req, &meshes, &run_flag, &progress)
+        run_slice_kept(&req, &meshes, &kept, &run_flag, &progress)
     })
     .await
     .map_err(|e| e.to_string());
@@ -311,11 +396,20 @@ fn line_starts(text: &[u8]) -> Vec<u8> {
     out
 }
 
-/// Drops a mesh or a slice result.
+/// Drops a mesh or a slice result. Dropping a mesh drops the kept sessions too, which may hold its layers.
 #[tauri::command]
 pub fn release(id: u32, state: State<'_, Slicer>) {
-    lock(&state.meshes).remove(&id);
-    lock(&state.results).remove(&id);
+    state.release(id);
+}
+
+impl Slicer {
+    fn release(&self, id: u32) {
+        if lock(&self.meshes).remove(&id).is_some() {
+            lock(&self.kept.hashes).remove(&id);
+            lock(&self.kept.sessions).clear();
+        }
+        lock(&self.results).remove(&id);
+    }
 }
 
 #[cfg(test)]
@@ -422,6 +516,82 @@ mod tests {
             serde_json::from_str(&request.to_string()).map_err(|e| format!("request: {e}"))?;
         let meshes = lock(&state.meshes).clone();
         run_slice(&req, &meshes, &AtomicBool::new(false), &NoProgress)
+    }
+
+    /// [`run`] through the kept sessions, as the slice command runs.
+    fn run_kept(
+        state: &Slicer,
+        request: &serde_json::Value,
+        cancel: bool,
+    ) -> Result<(serde_json::Value, Output), String> {
+        let req: SliceRequest =
+            serde_json::from_str(&request.to_string()).map_err(|e| format!("request: {e}"))?;
+        let meshes = lock(&state.meshes).clone();
+        run_slice_kept(&req, &meshes, &state.kept, &AtomicBool::new(cancel), &NoProgress)
+    }
+
+    fn kept_count(state: &Slicer) -> usize {
+        lock(&state.kept.sessions).len()
+    }
+
+    #[test]
+    fn a_kept_session_slices_again_to_the_same_bytes_and_stays_small() {
+        let state = Slicer::default();
+        let cube = add(&state, "cube.stl", &cube_stl(20.0, 20.0, 10.0));
+        let object = serde_json::json!({ "id": "a", "name": "cube", "mesh": cube, "transform": at(100.0, 100.0, 0.0) });
+        let with = |config: serde_json::Value, now: i64| {
+            serde_json::json!({ "plate": { "bed": { "widthMm": 256, "depthMm": 256, "heightMm": 256 }, "objects": [object.clone()] },
+                "config": config, "options": { "nowUnix": now, "nowOffsetMinutes": 0 } })
+        };
+        let base = serde_json::json!({});
+        let same = |a: &(serde_json::Value, Output), b: &(serde_json::Value, Output)| {
+            let strip = |v: &serde_json::Value| {
+                let mut v = v.clone();
+                if let Some(m) = v.as_object_mut() {
+                    m.remove("wallMs");
+                    m.remove("stageMicros");
+                }
+                v
+            };
+            a.1.gcode == b.1.gcode && a.1.sxpv == b.1.sxpv && strip(&a.0) == strip(&b.0)
+        };
+        // A canceled slice keeps no session.
+        assert!(run_kept(&state, &with(base.clone(), 1), true).is_err());
+        assert_eq!(kept_count(&state), 0);
+        let first = run_kept(&state, &with(base.clone(), 1), false).expect("it slices");
+        assert_eq!(kept_count(&state), 1);
+        // Again a second later: the kept session, the bytes of a fresh one.
+        let again = run_kept(&state, &with(base.clone(), 2), false).expect("it slices");
+        assert_eq!(kept_count(&state), 1);
+        assert!(same(
+            &again,
+            &run(&state, with(base.clone(), 2)).expect("it slices")
+        ));
+        assert!(same(&again, &first) || first.1.gcode != again.1.gcode);
+        // A fan setting is G-code only: the same session.
+        let fan = serde_json::json!({ "close_fan_the_first_x_layers": [3] });
+        assert!(sx_core::api::SESSION_FREE_KEYS.contains(&"close_fan_the_first_x_layers"));
+        let fanned = run_kept(&state, &with(fan.clone(), 3), false).expect("it slices");
+        assert_eq!(kept_count(&state), 1);
+        assert!(same(&fanned, &run(&state, with(fan, 3)).expect("it slices")));
+        // Another layer height is another session; a third pushes out the oldest.
+        run_kept(
+            &state,
+            &with(serde_json::json!({ "layer_height": 0.12 }), 4),
+            false,
+        )
+        .expect("it slices");
+        assert_eq!(kept_count(&state), 2);
+        run_kept(
+            &state,
+            &with(serde_json::json!({ "layer_height": 0.28 }), 5),
+            false,
+        )
+        .expect("it slices");
+        assert_eq!(kept_count(&state), KEPT_SESSIONS);
+        // Releasing a mesh lets go of the sessions.
+        state.release(cube);
+        assert_eq!(kept_count(&state), 0);
     }
 
     fn plate(object: serde_json::Value) -> serde_json::Value {

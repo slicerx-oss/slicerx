@@ -7,6 +7,8 @@
 //! Bambu Studio and PrusaSlicer do not check.
 
 /// What the inbound rules for the app say for private networks, where printers are.
+// Off Windows only `Unsupported` is ever answered; the rest is read and tested everywhere.
+#[cfg_attr(not(windows), allow(dead_code))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Inbound {
@@ -23,6 +25,7 @@ pub enum Inbound {
 
 /// The verdict from `Action|Profile` pairs, `;` between rules, as `query_script` prints the enabled inbound rules.
 /// Windows applies a Block rule over an Allow rule.
+#[cfg_attr(not(windows), allow(dead_code))]
 fn verdict(rules: &str) -> Inbound {
     let private = |profile: &str| {
         profile
@@ -49,6 +52,7 @@ fn verdict(rules: &str) -> Inbound {
 
 /// The PowerShell that prints the enabled inbound rules for `program` as `Action|Profile` pairs. The cmdlets' enum
 /// names are not translated, unlike `netsh` output, and reading rules needs no admin rights.
+#[cfg_attr(not(windows), allow(dead_code))]
 fn query_script(program: &str) -> String {
     let quoted = program.replace('\'', "''");
     format!(
@@ -61,6 +65,7 @@ fn query_script(program: &str) -> String {
 }
 
 /// `script` as PowerShell's `-EncodedCommand` takes it: base64 of its UTF-16LE text.
+#[cfg_attr(not(windows), allow(dead_code))]
 fn encode_command(script: &str) -> String {
     let bytes: Vec<u8> = script.encode_utf16().flat_map(u16::to_le_bytes).collect();
     sx_core::thumbnail::base64_encode(&bytes)

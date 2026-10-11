@@ -251,6 +251,17 @@ export function createAppBridgeServer(client: AppClient): McpServer {
     },
     forward('auth_callback'),
   )
+  server.registerTool(
+    'app_fonts',
+    {
+      title: 'Load the fonts',
+      description:
+        'Loads every font face the page declares (or only those of the given families) and says how each one ended: loaded, error (refused by the content security policy, or broken) or loading (not done in 15 s), with its family, weight, style and unicode-range. A face with a unicode-range is fetched here even when no text on screen needs it, so a refusal that would otherwise stay silent shows.',
+      inputSchema: { families: z.array(z.string()).optional() },
+      annotations: read,
+    },
+    forward('fonts'),
+  )
   return server
 }
 
@@ -276,4 +287,5 @@ export const TOOL_NAMES = [
   'app_slice',
   'app_export_gcode',
   'app_auth_callback',
+  'app_fonts',
 ] as const

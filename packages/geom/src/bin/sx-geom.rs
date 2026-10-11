@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-//! `sx-geom <operation> [--out-dir DIR] < request.json > response.json`
+//! `sx-geom <operation> [--out-dir DIR] < request.json > response.json`; `sx-geom --version` prints the version.
 
 use serde_json::Value;
 use std::io::{Read, Write};
@@ -9,6 +9,11 @@ use sx_geom::json;
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    // Which build this is, for a host checking the binary it ships or finds: a plain line, not JSON.
+    if matches!(args.first().map(String::as_str), Some("--version" | "-V")) {
+        println!("sx-geom {}", env!("CARGO_PKG_VERSION"));
+        return;
+    }
     let code = match run(&args) {
         Ok(out) => {
             println!("{out}");
