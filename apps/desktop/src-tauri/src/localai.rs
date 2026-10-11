@@ -62,6 +62,7 @@ fn read_hardware() -> Hardware {
 
 /// Apple Silicon: the GPU may wire about two thirds of memory up to 36 GB and three quarters
 /// above, as Metal's recommended working set reports, unless `iogpu.wired_limit_mb` was raised.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub fn apple_gpu_budget_mb(ram_mb: u64, wired_limit_mb: u64) -> u64 {
     if wired_limit_mb > 0 {
         return wired_limit_mb.min(ram_mb);

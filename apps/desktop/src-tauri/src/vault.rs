@@ -169,12 +169,15 @@ mod tests {
     use sx_connect::{MemorySecrets, SecretStore, Secrets};
 
     /// A keychain that refuses every write, as Windows Credential Manager did for a user (error 8).
+    #[cfg(windows)]
     struct Refusing;
+    #[cfg(windows)]
     impl Secrets for Refusing {
         fn get(&self, _: &str) -> Option<String> {
             None
         }
     }
+    #[cfg(windows)]
     impl SecretStore for Refusing {
         fn set(&self, _: &str, _: &str) -> sx_connect::Result<()> {
             Err(sx_connect::Error::Config(
