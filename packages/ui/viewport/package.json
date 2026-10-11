@@ -23,7 +23,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./palette": "./src/palette.ts",
-    "./summary": "./src/summary.ts"
+    "./summary": "./src/summary.ts",
+    "./mesh-worker": "./src/mesh-worker.ts"
   },
   "files": [
     "dist",
@@ -57,12 +58,16 @@
         "types": "./dist/summary.d.ts",
         "import": "./dist/summary.js"
       },
+      "./mesh-worker": {
+        "types": "./dist/mesh-worker.d.ts",
+        "import": "./dist/mesh-worker.js"
+      },
       "./package.json": "./package.json"
     }
   },
   "scripts": {
     "dev": "vite demo --port 5190",
-    "build": "vite build -c vite.lib.config.mjs && node ../../../scripts/emit-types.mjs . index=src/index.ts palette=src/palette.ts summary=src/summary.ts",
+    "build": "vite build -c vite.lib.config.mjs && node ../../../scripts/emit-types.mjs . index=src/index.ts palette=src/palette.ts summary=src/summary.ts mesh-worker=src/mesh-worker.ts",
     "build:demo": "vite build demo",
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run",

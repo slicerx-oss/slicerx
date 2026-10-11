@@ -204,6 +204,15 @@ function revealOption(): boolean | 'always' {
 }
 
 /**
+ * Big models build in workers (viewport ViewportOptions.meshWorker), so a model of millions of triangles shows without
+ * holding the page for seconds. None where the page has no workers (tests); the viewport then builds on the page.
+ */
+function meshWorkerOption(): { meshWorker?: () => Worker } {
+  if (typeof Worker === 'undefined') return {}
+  return { meshWorker: () => new Worker(new URL('./mesh-build-worker.ts', import.meta.url), { type: 'module', name: 'mesh-build' }) }
+}
+
+/**
  * The canvases live in a stage element React never renders into, because a
  * canvas that failed to get a WebGL context cannot give a 2D one either. Each try
  * gets a canvas of its own. `late3d` is called when the 2D fallback finds that a
@@ -215,7 +224,7 @@ async function start(stage: HTMLElement, webgpu: boolean, label: string, late3d:
     const vp = await withRetries(() => {
       const canvas = makeCanvas(stage, label)
       try {
-        return createViewport(canvas, { backend: webgpu ? 'auto' : 'webgl2', label, gpuRenderer, reveal: revealOption() })
+        return createViewport(canvas, { backend: webgpu ? 'auto' : 'webgl2', label, gpuRenderer, reveal: revealOption(), ...meshWorkerOption() })
       } catch (e) {
         canvas.remove()
         throw e
@@ -491,6 +500,8 @@ export function ViewportHost({ layers }: { layers: boolean }) {
         markViewDrawn(mountedAt, stats?.().firstDrawMs ?? null, () => ({ ...(stats?.().startup ?? {}) }))
         if (e.built + e.kept > 0) markOpenStage('drawn')
       }))
+      // A big model's creased shading and edges, made in the mesh workers after it first showed.
+      offs.push(vp.on('platerefined', () => markOpenStage('refined')))
       offs.push(vp.on('pick', (e) => {
         // A modeling tool is listening: the click is its input and the selection stays.
         if (toolStore.getState().tool === 'probe') return void probeHandler()?.(e)
