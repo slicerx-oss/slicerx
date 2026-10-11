@@ -15,6 +15,15 @@ const RANK: Record<WallKind, number> = { need: 0, print: 1, ready: 2, off: 3, ex
 
 /** A slot under this share of its spool counts as low. */
 export const LOW_FILAMENT_PCT = 25
+/** Or, where the printer reports exact grams, under this much: a quarter of a 1 kg spool. */
+export const LOW_FILAMENT_G = 250
+
+/** Whether a slot is low: by its exact grams when the printer reports them, as its row shows, else by its percentage. */
+function lowSlot(s: FleetRow['status']['slots'][number]): boolean {
+  if (!s.material) return false
+  if (s.remainingG !== undefined) return s.remainingG < LOW_FILAMENT_G
+  return s.remainingPct !== undefined && s.remainingPct < LOW_FILAMENT_PCT
+}
 
 export function wallKind(r: FleetRow): WallKind {
   if (isExportOnly(r)) return 'export'
@@ -55,7 +64,7 @@ function names(rows: readonly FleetRow[]): string {
 /** Slots that report under a quarter of their spool left, on printers that are reachable. */
 export function lowSlots(rows: readonly FleetRow[]): { printer: FleetRow; slot: FleetRow['status']['slots'][number] }[] {
   return rows.flatMap((r) =>
-    wallKind(r) === 'off' || wallKind(r) === 'export' ? [] : r.status.slots.filter((s) => s.material && s.remainingPct !== undefined && s.remainingPct < LOW_FILAMENT_PCT).map((slot) => ({ printer: r, slot })),
+    wallKind(r) === 'off' || wallKind(r) === 'export' ? [] : r.status.slots.filter(lowSlot).map((slot) => ({ printer: r, slot })),
   )
 }
 
@@ -75,7 +84,7 @@ export function wallCounts(rows: readonly FleetRow[], now: number): WallCount[] 
     { id: 'need', label: 'Needs you', value: need.length, sub: first ? `${first.name}: ${needText(first)}` : 'All clear' },
     { id: 'ready', label: 'Ready', value: ready.length, sub: ready.length ? names(ready) : 'None free' },
     { id: 'off', label: 'Offline', value: off.length, sub: off.length ? names(off) : 'All reachable' },
-    { id: 'low', label: 'Filament low', value: low.length, sub: `Slots under ${LOW_FILAMENT_PCT}%` },
+    { id: 'low', label: 'Filament low', value: low.length, sub: `Slots under ${LOW_FILAMENT_PCT}% or ${LOW_FILAMENT_G} g` },
   ]
 }
 
