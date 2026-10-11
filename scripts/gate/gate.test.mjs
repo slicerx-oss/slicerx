@@ -90,30 +90,54 @@ describe('the example plate before the first slice', () => {
 })
 
 describe('the objects list', () => {
-  /** A stand-in for the gate's helpers, with the right pane open or shut. */
-  const fake = (expanded) => {
+  /**
+   * A stand-in for the gate's helpers: two panes, each open or shut, the rows in one of them (`rows`), and which panes
+   * have an edge tab (none on a build or window without them).
+   */
+  const fake = ({ right = true, left = true, rows = 'right', tabs = ['right', 'left'] } = {}) => {
     const clicks = []
-    let open = expanded
+    const open = { right, left }
+    const shown = () => open[rows]
     return {
       clicks,
-      one: async (id) => (id === 'edge-tab-right' ? { visible: true, expanded: open } : null),
-      click: async (id) => {
-        clicks.push(id)
-        if (id === 'edge-tab-right') open = !open
+      open,
+      one: async (id) => {
+        if (id === 'object-select') return { index: 0, visible: shown() }
+        const side = /^edge-tab-(right|left)$/.exec(id)?.[1]
+        return side && tabs.includes(side) ? { index: 0, visible: true, expanded: open[side] } : null
       },
-      waitFor: async (id) => id === 'object-select' && open,
+      click: async (id, index) => {
+        assert.equal(index, 0)
+        clicks.push(id)
+        const side = /^edge-tab-(right|left)$/.exec(id)?.[1]
+        if (side) open[side] = !open[side]
+      },
+      waitFor: async (id) => id === 'object-select' && shown(),
     }
   }
 
   it('opens a shut right pane before the rows are clicked', async () => {
-    const s = fake(false)
-    assert.equal(await showObjects(s), true)
+    const s = fake({ right: false })
+    assert.deepEqual(await showObjects(s), { shown: true, opened: ['edge-tab-right'] })
     assert.deepEqual(s.clicks, ['edge-tab-right'])
   })
 
-  it('leaves an open right pane alone', async () => {
-    const s = fake(true)
-    assert.equal(await showObjects(s), true)
+  it('leaves an open pane alone', async () => {
+    const s = fake()
+    assert.deepEqual(await showObjects(s), { shown: true, opened: [] })
+    assert.deepEqual(s.clicks, [])
+  })
+
+  it('finds the rows in a shut sidebar, and shuts again the pane that did not hold them', async () => {
+    const s = fake({ right: false, left: false, rows: 'left' })
+    assert.deepEqual(await showObjects(s), { shown: true, opened: ['edge-tab-left'] })
+    assert.deepEqual(s.clicks, ['edge-tab-right', 'edge-tab-right', 'edge-tab-left'])
+    assert.deepEqual(s.open, { right: false, left: true })
+  })
+
+  it('says the rows are not on screen when no edge tab opens them', async () => {
+    const s = fake({ right: false, tabs: [] })
+    assert.deepEqual(await showObjects(s), { shown: false, opened: [] })
     assert.deepEqual(s.clicks, [])
   })
 })
