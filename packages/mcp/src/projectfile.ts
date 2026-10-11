@@ -5,7 +5,7 @@
 import { readFileSync } from 'node:fs'
 import { basename } from 'node:path'
 import type { SettingValue } from '@slicerx/contracts'
-import { importProject, keptEngineChoices, LEGACY_GROUPS, LEGACY_KEYS, parseXml, selectVariants } from '@slicerx/settings'
+import { changedKeys, importProject, keptEngineChoices, LEGACY_GROUPS, LEGACY_KEYS, parseXml, selectVariants, SLICERX_KEEP_VALUES } from '@slicerx/settings'
 import { ToolInputError } from './models'
 import { readZip } from './zip'
 
@@ -61,13 +61,54 @@ export interface ImportReport {
   renamed: { from: string; to: string }[]
   /** Values that could not be read, with the file's values; those settings keep the preset's. */
   invalid: { key: string; value: unknown }[]
+  /** Which wall generator the project slices with and why, when it names one or SlicerX keeps its own. */
+  walls?: WallsNote
+}
+
+/**
+ * Which wall generator a slice runs, where it came from, and the sentence that says so: `kept` (SlicerX's choice
+ * over the one the project inherited, as engine-choices.ts keeps it), `project` (the project's own, listed as
+ * changed), `request` (the call's overrides) or `profile` (the printer profile).
+ */
+export interface WallsNote {
+  generator: string
+  source: 'kept' | 'project' | 'request' | 'profile'
+  text: string
+}
+
+/** A setting value as one string: `"classic"`, `["classic"]`. */
+const oneText = (v: unknown): string | undefined => (typeof v === 'string' ? v : Array.isArray(v) && typeof v[0] === 'string' ? v[0] : undefined)
+
+/** The walls a project slices with, by the rule that keeps SlicerX's engine choices. */
+export function projectWalls(raw: Record<string, unknown>, source: string | undefined): WallsNote | undefined {
+  const own = oneText(raw['wall_generator'])
+  const ours = String(SLICERX_KEEP_VALUES['wall_generator'] ?? 'aegis')
+  const changed = changedKeys(raw)
+  if (changed && !changed.has('wall_generator')) {
+    const maker = source?.startsWith('OrcaSlicer') ? "OrcaSlicer's" : source?.startsWith('BambuStudio') ? "Bambu's" : "its preset's"
+    const text = own === undefined ? `${ours} walls, kept by SlicerX; the project names none` : own === ours ? `${ours} walls, as the project has them` : `${ours} walls, kept by SlicerX; the project used ${maker} default ${own}`
+    return { generator: ours, source: 'kept', text }
+  }
+  return own === undefined ? undefined : { generator: own, source: 'project', text: `${own} walls, the project's own choice` }
+}
+
+/**
+ * The walls a slice ran with: `generator` is the resolved config's; the request's overrides win, then the project's
+ * note when it is what ran, else the printer profile (or the engine's default when nothing names one).
+ */
+export function sliceWalls(generator: unknown, overrides: Record<string, unknown> | undefined, project: WallsNote | undefined): WallsNote {
+  const g = oneText(generator)
+  if (g !== undefined && overrides && 'wall_generator' in overrides) return { generator: g, source: 'request', text: `${g} walls, set by the request's overrides` }
+  if (project && (g === undefined || g === project.generator)) return project
+  if (g === undefined) return { generator: 'classic', source: 'profile', text: "classic walls, the engine's default (nothing names a wall generator)" }
+  return { generator: g, source: 'profile', text: `${g} walls, from the printer profile` }
 }
 
 /** How many keys of each kind a text line names before it counts the rest. */
 const REPORT_NAMES = 8
 
 /** One line per kind of `report` that has keys, the first few named and the rest counted. */
-export function importReportLines(report: ImportReport): string[] {
+export function importReportLines(report: ImportReport, withWalls = true): string[] {
   const named = (keys: string[]): string => keys.slice(0, REPORT_NAMES).join(', ') + (keys.length > REPORT_NAMES ? ` and ${keys.length - REPORT_NAMES} more` : '')
   const out: string[] = []
   if (report.invalid.length) out.push(`${report.invalid.length} with a value SlicerX cannot read, kept from the preset: ${named(report.invalid.map((i) => i.key))}`)
@@ -75,6 +116,7 @@ export function importReportLines(report: ImportReport): string[] {
   if (report.other_slicer.length) out.push(`${report.other_slicer.length} only another slicer reads, not used: ${named(report.other_slicer)}`)
   if (report.retired.length) out.push(`${report.retired.length} retired, not used: ${named(report.retired)}`)
   if (report.renamed.length) out.push(`${report.renamed.length} read under a newer name: ${named(report.renamed.map((r) => `${r.from} as ${r.to}`))}`)
+  if (withWalls && report.walls) out.push(`Walls: ${report.walls.text}`)
   return out
 }
 
@@ -193,6 +235,8 @@ export function readProjectFile(path: string): ProjectRead {
     renamed,
     invalid: imported.invalidKeys.map((k) => ({ key: k, value: raw[k] ?? raw[fromOf.get(k) ?? ''] })),
   }
+  const walls = settingsText !== undefined ? projectWalls(raw, source) : undefined
+  if (walls) importReport.walls = walls
 
   return {
     summary: {

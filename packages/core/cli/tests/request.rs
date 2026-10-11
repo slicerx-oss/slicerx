@@ -538,6 +538,7 @@ fn settings_the_engine_does_not_use_are_listed_and_strict_refuses() {
     assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
     let err = String::from_utf8_lossy(&out.stderr);
     assert!(err.contains("sx: settings not used:"), "{err}");
+    assert!(err.contains("sx: walls: "), "{err}");
     assert!(err.contains("not used zz_made_up_key"), "{err}");
     assert!(err.contains("invalid wall_loops = \"abc\""), "{err}");
     let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
