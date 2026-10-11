@@ -7,7 +7,7 @@ import { setCurrentEdition, SlicerXApp } from '@slicerx/app'
 import { editionFromBuild } from '@slicerx/edition-config'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
-import { createWebHost } from './host'
+import { createWebHost, EngineStartError } from './host'
 
 declare const __SX_FEATURE_STORE__: boolean
 declare const __SX_FEATURE_PILOT__: boolean
@@ -71,8 +71,24 @@ if (__SX_E2E__) {
 
 const el = document.getElementById('root')
 if (!el) throw new Error('index.html is missing #root')
+const root = el
 const config = editionFromBuild()
-const [host, list] = await Promise.all([createWebHost(), features()])
+
+/** The host, once its slicing engine starts. A failed start says why and offers to try again, until one works. */
+async function startHost(): Promise<Awaited<ReturnType<typeof createWebHost>>> {
+  for (;;) {
+    try {
+      return await createWebHost()
+    } catch (e) {
+      if (!(e instanceof EngineStartError)) throw e
+      console.error('The slicing engine failed to start', e)
+      await (await import('./engine-error')).showEngineError(root, e)
+    }
+  }
+}
+
+const [host, list] = await Promise.all([startHost(), features()])
+root.replaceChildren()
 if (__SX_FEATURE_STORE__) {
   // Edition members: the store client and sign-in plumbing, loaded on first use.
   const { lazyStore } = await import('./host/store')
@@ -132,7 +148,7 @@ if (__SX_FEATURE_STORE__) {
     void edition.store.completeSignIn(location.href).finally(() => history.replaceState(null, '', location.pathname.replace(/auth\/callback$/, '')))
   }
 }
-createRoot(el).render(
+createRoot(root).render(
   <StrictMode>
     <SlicerXApp host={host} features={list} edition={config} />
   </StrictMode>,
