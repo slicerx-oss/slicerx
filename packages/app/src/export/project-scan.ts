@@ -17,6 +17,8 @@ export interface ScannedProject {
   marks: VaultMark
   /** A model part declares a DTD: the whole file is refused. */
   markError?: string
+  /** The objects as the geometry engine read them (geom-project.ts), when it read the file; `models` is then empty. */
+  geom?: import('./geom-project').GeomProject
   /** performance.timeOrigin + performance.now() when the archive was inflated and when the parts were scanned. */
   unzippedAt: number
   scannedAt: number
