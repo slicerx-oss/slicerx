@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 //! `sx-geom <operation> [--out-dir DIR] < request.json > response.json`
+//!
+//! meshes come back as base64 stl (`stlBase64`), or with `--out-dir` as stl files (`stlPath`). `format.read3mf`
+//! reads a 3mf named by `{"data":{"path":"file.3mf"}}` this way: each part's mesh in its object's space.
 
 use serde_json::Value;
 use std::io::{Read, Write};
@@ -50,6 +53,9 @@ fn run(args: &[String]) -> sx_geom::Result<Value> {
         std::fs::read(p).map_err(|e| sx_geom::Error::invalid_arg(format!("{p}: {e}")))
     };
     let mut out = json::call_value(op, &req, &loader)?;
+    // meshes the call wrote as buffers (`rawOut`, a 3mf's parts) leave as stl like the rest
+    let files = json::take_out_files();
+    raw_meshes(&mut out, &files)?;
     if let Some(dir) = out_dir {
         std::fs::create_dir_all(&dir)
             .map_err(|e| sx_geom::Error::invalid_arg(format!("{}: {e}", dir.display())))?;
@@ -57,6 +63,36 @@ fn run(args: &[String]) -> sx_geom::Result<Value> {
         write_meshes(&mut out, &dir, op, &mut n)?;
     }
     Ok(out)
+}
+
+fn raw_meshes(v: &mut Value, files: &[Vec<u8>]) -> sx_geom::Result<()> {
+    match v {
+        Value::Object(map) => {
+            if let Some(n) = map.get("rawOut").and_then(Value::as_u64) {
+                let bytes = usize::try_from(n)
+                    .ok()
+                    .and_then(|n| files.get(n))
+                    .ok_or_else(|| sx_geom::Error::invalid_arg(format!("rawOut {n}: no such buffer")))?;
+                let mesh = sx_geom::TriMesh::from_raw(bytes, "out")?;
+                map.remove("rawOut");
+                map.insert(
+                    "stlBase64".to_owned(),
+                    Value::from(json::base64_encode(&mesh.to_stl("sx-geom"))),
+                );
+                return Ok(());
+            }
+            for (_, child) in map.iter_mut() {
+                raw_meshes(child, files)?;
+            }
+        }
+        Value::Array(items) => {
+            for child in items {
+                raw_meshes(child, files)?;
+            }
+        }
+        _ => {}
+    }
+    Ok(())
 }
 
 fn write_meshes(v: &mut Value, dir: &Path, op: &str, n: &mut usize) -> sx_geom::Result<()> {
