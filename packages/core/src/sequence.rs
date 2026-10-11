@@ -9,8 +9,8 @@
 
 use crate::config::PrintConfig;
 use crate::error::Result;
-use crate::output::{PathInfo, SliceOutput, StageMicros};
-use crate::session::SliceSession;
+use crate::output::{LayerPaths, PathInfo, SliceOutput, StageMicros};
+use crate::session::{HandOver, SliceSession};
 use crate::{Progress, Stage};
 use std::ops::Range;
 
@@ -49,6 +49,7 @@ pub(crate) fn slice_range(
             for l in &mut out.layers {
                 crate::owners::to_plate(l, sub.plate_index());
             }
+            take_over(&incoming(session, k), sub, &mut out.layers);
             // Layers outside a height range are written with the plate's settings: the object's own flow
             // goes into its paths.
             if session.has_object_settings(k) {
@@ -153,6 +154,65 @@ pub(crate) fn slice_range(
 }
 
 /// The settings of config index `cfg` (0 is `base`, `k` is `configs[k - 1]`).
+/// What the objects before the `k`th leave it, from their plans: the filament the last of them that prints
+/// ends on, the tools they print with, their tool changes and the changes between them, and what each
+/// nozzle holds. Plans alone, so a layer range that starts at the `k`th object gets the same as one that
+/// printed the objects before it.
+fn incoming(session: &SliceSession, k: usize) -> HandOver {
+    let mut came = HandOver::default();
+    for h in session.sequence().take(k).map(SliceSession::hand_over) {
+        if h.first == 0 {
+            continue;
+        }
+        came.changes += h.changes + u32::from(came.last != 0 && h.first != came.last);
+        came.tools |= h.tools;
+        if came.held.len() < h.held.len() {
+            came.held.resize(h.held.len(), 0);
+        }
+        for (c, &n) in came.held.iter_mut().zip(&h.held) {
+            if n != 0 {
+                *c = n;
+            }
+        }
+        if came.first == 0 {
+            came.first = h.first;
+        }
+        came.last = h.last;
+    }
+    came
+}
+
+/// An object's own session starts as if nothing printed before it, and one of a single filament plans no
+/// tool order, so its layers start on no known filament: the writer then selects the filament with a bare
+/// `T` instead of the profile's change G-code, at the object's first layer and at every layer after. Its
+/// layers start on what the objects before it ended on (`came`), and later on the filament the object
+/// itself holds, and count the tools and changes before them.
+fn take_over(came: &HandOver, sub: &SliceSession, layers: &mut [LayerPaths]) {
+    let own = sub.hand_over();
+    let switch = u32::from(came.last != 0 && own.first != 0 && own.first != came.last);
+    for l in layers {
+        if l.start_tool == 0 {
+            l.start_tool = if l.local == 0 {
+                came.last
+            } else {
+                sub.tool_after(l.local)
+            };
+        }
+        l.tools_before |= came.tools;
+        l.changes_before += came.changes + if l.local > 0 { switch } else { 0 };
+        if !came.held.is_empty() {
+            if l.held_before.len() < came.held.len() {
+                l.held_before.resize(came.held.len(), 0);
+            }
+            for (h, &c) in l.held_before.iter_mut().zip(&came.held) {
+                if *h == 0 {
+                    *h = c;
+                }
+            }
+        }
+    }
+}
+
 fn config_of<'a>(configs: &'a [PrintConfig], base: &'a PrintConfig, cfg: u16) -> &'a PrintConfig {
     usize::from(cfg)
         .checked_sub(1)

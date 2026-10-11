@@ -2477,6 +2477,46 @@ impl SliceSession {
             .fold(0, |m, &t| m | 1u64 << u32::from(t.max(1) - 1).min(63))
     }
 
+    /// By object: the filament this object holds once its first `p` print layers are printed, from its plan
+    /// alone (0 before it prints anything). An object of one filament plans no tool order; it holds that one.
+    pub(crate) fn tool_after(&self, p: u32) -> u8 {
+        let planned = self.tool_order.iter().take(p as usize).flatten().last().copied();
+        match (planned, self.slots.as_slice()) {
+            (Some(t), _) => t,
+            (None, [one]) if p > 0 => *one,
+            _ => 0,
+        }
+    }
+
+    /// By object: what printing this whole object hands to the next one, from its plan alone, so a layer
+    /// range that starts at a later object knows it without slicing the objects before.
+    pub(crate) fn hand_over(&self) -> HandOver {
+        let n = self.plan_count();
+        let first = self.tool_order.iter().flatten().next().copied();
+        let (first, last) = match (first, self.slots.as_slice()) {
+            (Some(f), _) => (f, self.tool_after(n)),
+            (None, [one]) => (*one, *one),
+            _ => (0, 0),
+        };
+        let mut tools = self.tools_before(n);
+        let mut held = self.held_before(n);
+        if first != 0 && tools == 0 {
+            tools = 1u64 << u32::from(first.max(1) - 1).min(63);
+            if let Some(map) = &self.nozzle_map
+                && let Some(h) = held.get_mut(map.nozzle_of(first))
+            {
+                *h = first;
+            }
+        }
+        HandOver {
+            first,
+            last,
+            tools,
+            changes: self.changes_before(n),
+            held,
+        }
+    }
+
     /// The filament print layer `p` starts on: the one the print layer under it ended on.
     fn print_start<'a>(
         &self,
@@ -8966,6 +9006,21 @@ fn keep_color_bands(
     let (p, o) = out.unwrap_or((plan, first_order));
     let c = cost(&o);
     Ok((p, Some(c)))
+}
+
+/// By object: what an object's plan leaves for the objects after it ([`SliceSession::hand_over`]).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct HandOver {
+    /// The filament it starts on, 0 when it prints none.
+    pub first: u8,
+    /// The filament it ends on, 0 when it prints none.
+    pub last: u8,
+    /// The tools it prints with (bit per 0-based tool, as `LayerPaths::tools_before`).
+    pub tools: u64,
+    /// The tool changes it makes.
+    pub changes: u32,
+    /// With a filament map: what each nozzle holds at its end. Empty without a map.
+    pub held: Vec<u8>,
 }
 
 #[allow(
