@@ -6,9 +6,10 @@
 // was dropped; `buildReport` turns that into the report. src/report.rs mirrors both.
 import type { PrintConfig, SettingDef, SettingSection, SettingValue } from '@slicerx/contracts/settings'
 import nearestJson from '../import-nearest.json'
+import { keptEngineChoices, projectWalls, sameChoice, SLICERX_KEEP_VALUES, SLICERX_KEEPS } from './engine-choices'
 import { formatValue } from './diff'
 import { importFlat, LEGACY_GROUPS, LEGACY_KEYS } from './import'
-import { settingDef, SETTINGS } from './schema'
+import { PROJECT_KEYS, settingDef, SETTINGS } from './schema'
 import { NIL, toOrca } from './value'
 
 interface NearestFile {
@@ -71,6 +72,10 @@ export interface ImportReport {
   items: ReportItem[]
   /** Settings the old preset never had a value for, which take the printer profile's defaults. */
   defaulted: number
+  /** A project's settings rather than a preset (`projectReport`). */
+  project?: boolean
+  /** Lines about what SlicerX chose for the project: its engine choices kept, the walls it slices with. */
+  notes?: string[]
 }
 
 /** One preset in an inherits chain: its own values in the file's form, or a profile SlicerX already holds as a config. */
@@ -314,13 +319,53 @@ export function parentText(r: ImportReport): string {
   return r.parent.found ? `Settings it does not change come from SlicerX's copy of ${r.parent.name}.` : `It inherits from ${r.parent.name}, which SlicerX does not have.`
 }
 
+/** Keys a project's settings file carries about its presets rather than how it prints. */
+const PROJECT_BOOKKEEPING: ReadonlySet<string> = new Set([
+  'different_settings_to_system',
+  'inherits_group',
+  'compatible_printers',
+  'compatible_printers_condition',
+  'compatible_prints',
+  'compatible_prints_condition',
+  'print_compatible_printers',
+  'default_print_profile',
+  'default_filament_profile',
+  'upward_compatible_machine',
+  'process_notes',
+  'filament_notes',
+  'printer_notes',
+])
+
+/**
+ * The report of a project's settings (another slicer's `project_settings.config`): every setting that did not carry
+ * over, as a preset's report has them, and notes on SlicerX's engine choices it kept and the walls it slices with.
+ * `source` is the app that wrote the file, when known.
+ */
+export function projectReport(name: string, raw: Record<string, unknown>, opts: { source?: string; printer?: { name: string; config: PrintConfig } } = {}): ImportReport {
+  // Project level values (flush volumes, the tower's spot) and what only describes the presets are not settings.
+  const settings = Object.fromEntries(Object.entries(raw).filter(([k]) => !PROJECT_KEYS.has(k) && !PROJECT_BOOKKEEPING.has(k)))
+  const { config, dropped } = importValues(settings)
+  const notes: string[] = []
+  // The walls line says what happened to the wall generator; the other kept choices get their own note.
+  for (const k of keptEngineChoices(raw)) {
+    if (k === 'wall_generator' || raw[k] === undefined || sameChoice(raw[k], SLICERX_KEEP_VALUES[k])) continue
+    const note = SLICERX_KEEPS[k]
+    if (note) notes.push(note)
+  }
+  const walls = projectWalls(raw, opts.source)
+  if (walls) notes.push(`Walls: ${walls.text}.`)
+  const report = buildReport({ name, section: 'process', family: 'orca', dropped, config, origin: {}, ...(opts.printer ? { printer: opts.printer } : {}), defaulted: 0 })
+  return { ...report, project: true, ...(notes.length ? { notes } : {}) }
+}
+
 /** The reports as plain text, for saving or pasting. Keys appear only when `keys` is set (developer mode). */
 export function reportText(reports: readonly ImportReport[], opts: { keys?: boolean; source?: string } = {}): string {
   const out: string[] = ['SlicerX import report' + (opts.source ? `: ${opts.source}` : ''), '']
   for (const r of reports) {
-    out.push(`${r.name} (${KIND_WORD[r.section]} preset)`)
+    out.push(`${r.name} (${r.project ? 'project settings' : `${KIND_WORD[r.section]} preset`})`)
     const p = parentText(r)
     if (p) out.push(p)
+    for (const n of r.notes ?? []) out.push(n)
     if (r.items.length === 0) out.push('Every setting carried over.')
     else out.push(`${r.items.length} ${r.items.length === 1 ? 'setting' : 'settings'} did not carry over:`)
     for (const it of r.items) {

@@ -185,11 +185,18 @@ async function addProjectShown(
     markOpenStage('settings')
     for (const k of r.keys) brought.add(k)
     note = r.note
+    // What its settings did not carry over, with the engine choices and walls SlicerX used: Settings > Presets shows it.
+    const { projectReport } = await import('@slicerx/settings')
+    const report = projectReport(name, project.settings)
+    mine(() => set({ projectImport: { name, report } }))
+    const left = report.items.length
+    if (left) note = `${note} Settings > Presets lists the ${left} ${left === 1 ? 'setting' : 'settings'} it did not carry over.`
     // the file's flush volumes and tower spot, as Bambu Studio opens them
     const { keepProjectFlushAndTower } = await import('../filament/project-kept')
     const kept = mine(() => keepProjectFlushAndTower(project.settings))
     if (kept) note = `${note} ${kept}`
   } else if (wasEmpty && hasSettings) {
+    mine(() => set({ projectImport: null }))
     // Our own project, or a PrusaSlicer one: its print and filament settings on the current printer.
     const { projectSettingChanges } = await import('../export/project-settings')
     const { values } = projectSettingChanges(project.settings, resolveConfig(get().easy, get().overrides))
