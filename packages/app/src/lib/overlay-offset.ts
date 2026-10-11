@@ -45,7 +45,8 @@ export function toastPlace(viewport: DOMRectReadOnly, boxes: OverlayBoxes, windo
   const lefts = (boxes.left ?? []).filter(shown)
   const left = lefts.length ? Math.max(...lefts.map((r) => r.right)) + OVERLAY_GAP : viewport.left + OVERLAY_GAP
   const right = side.length ? Math.min(...side.map((r) => r.left)) - OVERLAY_GAP : viewport.right - OVERLAY_GAP
-  const lane = side.length || lefts.length ? { center: Math.round((left + right) / 2), width: Math.max(0, Math.round(right - left)) } : { center: Math.round(viewport.left + viewport.width / 2) }
+  // the lane always has a width: a long toast wraps inside the viewport, never past the window edge or over a pane
+  const lane = { center: Math.round((left + right) / 2), width: Math.max(0, Math.round(right - left)) }
   if (floor - ceiling - 2 * OVERLAY_GAP >= TOAST_ROOM) return { bottom: Math.max(0, Math.round(windowHeight - floor + OVERLAY_GAP)), ...lane }
   return { top: Math.round(ceiling + OVERLAY_GAP), ...lane }
 }
