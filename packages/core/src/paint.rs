@@ -1088,7 +1088,10 @@ impl LayerPaint<'_> {
             };
             // The last color's distances are not read again: its field takes their place.
             let field: Vec<f32> = if Some(k) == last {
-                let mut own = dist.get_mut(k).map(|d| std::mem::take(&mut d.1)).unwrap_or_default();
+                let mut own = dist
+                    .get_mut(k)
+                    .map(|d| std::mem::take(&mut d.1))
+                    .unwrap_or_default();
                 for (c, v) in own.iter_mut().enumerate() {
                     *v = value(c, *v, &dist);
                 }
