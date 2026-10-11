@@ -83,6 +83,39 @@ describe('Print sheet summary', () => {
     expect(el.textContent).toContain('Pick a slot for each filament')
   })
 
+  it('offers both external spools of an H2 printer whose status lists slot 2, by side', () => {
+    const slots = [
+      { id: 'A1', material: 'PLA', color: '#ff0000' },
+      { id: '1', material: 'TPU', color: '#c0392b' },
+      { id: '2', material: 'PETG', color: '#ffffff' },
+    ]
+    // Mapped to the right one: the summary names the side.
+    const sum = open(ask({ slots, auto: { 1: 'A1', 2: '2' } }))
+    expect([...sum.querySelectorAll('.ps-fil')].map((f) => f.textContent)[1]).toContain('Right external spool')
+    // A filament with no slot opens the picker, which lists both spools by side and slot 2 only once.
+    const el = open(ask({ slots, auto: { 1: 'A1' } }))
+    const options = [...el.querySelectorAll<HTMLSelectElement>('select')[1]!.options].map((o) => [o.value, o.textContent])
+    expect(options).toEqual([
+      ['', 'Not loaded'],
+      ['A1', 'A1 PLA'],
+      ['1', 'Left external spool'],
+      ['2', 'Right external spool'],
+    ])
+  })
+
+  it('keeps slot 2 an ordinary slot on a printer that is not a Bambu Lab one', () => {
+    const slots = [
+      { id: '1', material: 'PLA', color: '#ff0000' },
+      { id: '2', material: 'PETG', color: '#ffffff' },
+    ]
+    const printer = { id: 'mk4', name: 'MK4', vendor: 'Prusa', model: 'MK4S', plugin: 'prusalink' } as PrintSheetAsk['printer']
+    const el = open(ask({ printer, slots, auto: { 1: '1', 2: '2' } }))
+    const fils = [...el.querySelectorAll('.ps-fil')].map((f) => f.textContent)
+    expect(fils[0]).toContain('External spool')
+    expect(fils[1]).toContain('Slot 2')
+    expect(fils.join(' ')).not.toContain('Right external spool')
+  })
+
   it('makes a file name the printer would refuse fit, instead of asking for one', () => {
     expect(safeJobName('a/b:c ')).toBe('a-b-c')
     expect(safeJobName('  ')).toBe('plate')
