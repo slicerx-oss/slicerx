@@ -46,6 +46,17 @@ pub(crate) fn load_plates(bytes: &[u8], name: &str) -> Result<Vec<(u32, Mesh)>> 
                     name: name.to_owned(),
                     ..Mesh::default()
                 };
+                // One mesh holds one object's settings: they stay when every object has the same, and are
+                // noted otherwise (each object's printed parts still take its region settings).
+                let first = objects.first().map(|o| o.settings.clone()).unwrap_or_default();
+                if objects.iter().all(|o| o.settings == first) {
+                    mesh.settings = first;
+                } else {
+                    mesh.notes.push(
+                        "objects on this plate have different object settings; settings beyond walls, infill and speeds apply only when each object is sliced as its own (a request without a transform does that)"
+                            .to_owned(),
+                    );
+                }
                 for o in objects {
                     mesh.parts.extend(o.parts);
                     mesh.volumes.extend(o.volumes);
@@ -152,12 +163,22 @@ pub(crate) fn load_plate_objects(bytes: &[u8], name: &str) -> Result<Vec<(u32, V
                 part_settings.push((p.name.clone(), settings));
             }
         }
+        for k in &meta.dropped {
+            notes.push(format!(
+                "{k} in the project's object or part settings is not used (custom G-code and scripts come from the printer settings)"
+            ));
+        }
+        let settings = meta
+            .object(item.object)
+            .filter(|m| !m.is_empty())
+            .map_or(serde_json::Value::Null, |m| serde_json::Value::Object(m.clone()));
         plates.entry(plate).or_default().push(Mesh {
             name: own,
             parts,
             volumes,
             part_settings,
             notes,
+            settings,
         });
     }
     if plates.is_empty() {
@@ -955,6 +976,8 @@ struct ProjectParts {
     ranges: Vec<(u32, Vec<PartInfo>)>,
     /// Each object's own setting overrides.
     objects: Vec<(u32, serde_json::Map<String, serde_json::Value>)>,
+    /// Setting keys left out of object and part settings: custom G-code and keys a file may never set.
+    dropped: Vec<String>,
 }
 
 impl ProjectParts {
@@ -1065,6 +1088,18 @@ fn project_parts(xml: &[u8]) -> ProjectParts {
                     continue;
                 };
                 let v = unescape(v);
+                // A file's object and part settings never carry custom G-code or scripts and secrets: those go
+                // through the printer's own checks, which per-object settings would get round.
+                if (part.is_some() || object.is_some())
+                    && !PART_KEYS.contains(&k)
+                    && !OBJECT_KEYS.contains(&k)
+                    && (k.contains("gcode") || crate::preflight::is_never_imported(k))
+                {
+                    if !out.dropped.iter().any(|d| d == k) {
+                        out.dropped.push(k.to_owned());
+                    }
+                    continue;
+                }
                 match (&mut part, object) {
                     (Some((_, info)), _) => match k {
                         "name" => info.name = Some(v),
@@ -1790,6 +1825,8 @@ mod tests {
         assert_eq!(copy.volumes[1].settings, mesh.volumes[1].settings);
         assert_eq!(copy.part_settings, mesh.part_settings);
         assert_eq!(copy.notes, mesh.notes);
+        assert_eq!(mesh.settings, serde_json::json!({ "wall_loops": "3" }));
+        assert_eq!(copy.settings, mesh.settings);
         // A mesh with none of them writes no block.
         let bare = Mesh {
             name: mesh.name.clone(),
