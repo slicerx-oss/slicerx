@@ -29,7 +29,7 @@ export interface OpenTiming {
   /** Milliseconds from the start of the open to the end of each stage. */
   ms: Partial<Record<OpenStage, number>>
   /** Where the meshes were parsed. */
-  parsedIn?: 'worker' | 'page'
+  parsedIn?: 'geom' | 'worker' | 'page'
 }
 
 let current: (OpenTiming & { t0: number; open: boolean }) | null = null

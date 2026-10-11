@@ -33,7 +33,7 @@ export function viteDefines(config: EditionConfig, env: Record<string, string | 
  * It includes the printer bridge the app starts on 127.0.0.1 (sx-link's DEFAULT_PORT), which the page connects to.
  */
 /** Every optional part of the geometry engine (sx-geom's cargo features). */
-export const GEOM_FEATURES = ['cad', 'holes', 'threads', 'shell', 'text', 'svg', 'nest', 'calib', 'hollow'] as const
+export const GEOM_FEATURES = ['cad', 'holes', 'threads', 'shell', 'text', 'svg', 'nest', 'calib', 'hollow', 'formats'] as const
 
 /**
  * The geometry engine's cargo features for an edition, or null for the default build with all of them. An edition

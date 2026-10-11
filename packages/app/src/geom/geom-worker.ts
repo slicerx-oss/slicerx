@@ -73,7 +73,8 @@ self.onmessage = async (e: MessageEvent<{ id: number; op: string; request: unkno
       self.postMessage({ id, result: await engine.full(), memoryBytes: memoryBytes() })
       return
     }
-    const result = await engine.run(op, bytesAsBase64(request))
+    // A project goes to the engine as its bytes (engine-call.ts, rawData), other files as base64.
+    const result = await engine.run(op, op === 'format.read3mf' ? request : bytesAsBase64(request))
     self.postMessage({ id, result, memoryBytes: memoryBytes() }, { transfer: transferables(result) })
   } catch (err) {
     canceled.delete(id)

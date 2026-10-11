@@ -80,6 +80,8 @@ pub struct Part {
     pub settings: Vec<(String, String)>,
     /// component transforms from the object down to this mesh, outermost first
     pub chain: Vec<Transform>,
+    /// a component on the way names a transform, rather than leaving it out
+    pub transformed: bool,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -143,6 +145,8 @@ pub struct Project {
     pub unit_scale: f32,
     /// `<metadata>` of the root model (title, application, sx: marks)
     pub metadata: Vec<(String, String)>,
+    /// a model part declares a document type, which a 3mf never needs
+    pub doctype: bool,
     pub files: Files,
     pub entries: Vec<String>,
     pub notes: Vec<String>,
@@ -256,10 +260,11 @@ pub fn read_3mf(bytes: &[u8]) -> Result<Project> {
             Error::invalid("3mf", "3MF components repeat their meshes too many times to load")
         })?;
         let mut leaves = Vec::new();
-        leaves_of(&models, &root, item.object, &mut Vec::new(), 0, &mut leaves)?;
+        leaves_of(&models, &root, item.object, &mut Vec::new(), false, 0, &mut leaves)?;
         placed.push(leaves);
     }
     let mut notes = Vec::new();
+    let doctype = models.values().any(|m| m.doctype);
     let objects = objects_of(&build, placed, &mut models, &root, &meta, &mut notes);
     Ok(Project {
         objects,
@@ -267,6 +272,7 @@ pub fn read_3mf(bytes: &[u8]) -> Result<Project> {
         layout,
         unit_scale,
         metadata,
+        doctype,
         files,
         entries: zip.names().map(str::to_owned).collect(),
         notes,
@@ -327,6 +333,7 @@ fn objects_of(
                     part.id = leaf.id;
                     part.range = Some((first, last));
                     part.chain.clone_from(&leaf.chain);
+                    part.transformed = leaf.transformed;
                     info.fill(&mut part, notes);
                     parts.push(part);
                 }
@@ -335,6 +342,7 @@ fn objects_of(
             let mut part = if last { mesh.take() } else { mesh.copy() };
             part.id = leaf.id;
             part.chain = leaf.chain;
+            part.transformed = leaf.transformed;
             if let Some(info) = own.and_then(|o| o.parts.get(&leaf.id)) {
                 info.fill(&mut part, notes);
             }
@@ -385,7 +393,7 @@ struct MeshObject {
     triangles: Vec<[u32; 3]>,
     paint: Paint,
     /// (object id, model path, transform); an empty path is this model
-    components: Vec<(u32, String, Transform)>,
+    components: Vec<(u32, String, Transform, bool)>,
     metadata: Vec<(String, String)>,
 }
 
@@ -455,6 +463,7 @@ struct Model {
     build: Vec<Item>,
     unit_scale: f32,
     metadata: Vec<(String, String)>,
+    doctype: bool,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -506,7 +515,13 @@ fn load_model(zip: &Zip<'_>, path: &str) -> Result<Model> {
         meta_name: None,
     };
     let mut buf: Vec<u8> = Vec::new();
+    let mut head = true;
     zip.stream(path, |chunk| {
+        if head {
+            // a doctype sits in the prolog, before the first element
+            head = false;
+            p.model.doctype = chunk.windows(9).any(|w| w == b"<!DOCTYPE");
+        }
         buf.extend_from_slice(chunk);
         let Some(end) = buf.iter().rposition(|&b| b == b'>') else {
             return Ok(());
@@ -650,7 +665,7 @@ impl ModelParser {
                     let id = id_of(t, "objectid", *owner)?;
                     let path = t.attr("p:path").unwrap_or("").trim_start_matches('/').to_owned();
                     let tr = transform(t.attr("transform"), *owner, o.components.len())?;
-                    o.components.push((id, path, tr));
+                    o.components.push((id, path, tr, t.attr("transform").is_some()));
                 }
             }
             "item" if t.opens() => {
@@ -713,6 +728,7 @@ struct Leaf {
     path: String,
     id: u32,
     chain: Vec<Transform>,
+    transformed: bool,
 }
 
 fn model_of(zip: &Zip<'_>, models: &mut HashMap<String, Model>, path: &str) -> Result<()> {
@@ -746,7 +762,7 @@ fn cost(
         let children: Vec<(u32, String)> = obj
             .components
             .iter()
-            .map(|(c, p, _)| (*c, if p.is_empty() { path.to_owned() } else { p.clone() }))
+            .map(|(c, p, _, _)| (*c, if p.is_empty() { path.to_owned() } else { p.clone() }))
             .collect();
         (1 + (obj.positions.len() + obj.triangles.len()) as u64, children)
     };
@@ -763,6 +779,7 @@ fn leaves_of(
     path: &str,
     id: u32,
     chain: &mut Vec<Transform>,
+    transformed: bool,
     depth: u32,
     out: &mut Vec<Leaf>,
 ) -> Result<()> {
@@ -778,16 +795,17 @@ fn leaves_of(
             path: path.to_owned(),
             id,
             chain: chain.clone(),
+            transformed,
         });
     }
-    for (child, child_path, t) in &obj.components {
+    for (child, child_path, t, set) in &obj.components {
         chain.push(*t);
         let p = if child_path.is_empty() {
             path
         } else {
             child_path.as_str()
         };
-        leaves_of(models, p, *child, chain, depth + 1, out)?;
+        leaves_of(models, p, *child, chain, transformed || *set, depth + 1, out)?;
         chain.pop();
     }
     Ok(())

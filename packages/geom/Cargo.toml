@@ -73,5 +73,5 @@ nest = []
 calib = []
 # Hollow with drain holes.
 hollow = []
-# 3MF projects read whole: parts and their types, paint, plates and settings. Not in the WebAssembly builds yet.
+# 3MF projects read whole: parts and their types, paint, plates and settings.
 formats = []

@@ -242,3 +242,32 @@ fn components_place_shared_meshes_twice() {
     // the mesh is still there for the second item after the first took copies
     assert_eq!(p.objects[1].parts[0].triangles.len(), 1);
 }
+
+#[test]
+fn json_operation_gives_meshes_as_buffers() {
+    let bytes = file("tests/corpus/subtypes.3mf");
+    let load = |p: &str| -> sx_geom::Result<Vec<u8>> {
+        assert_eq!(p, "mem:0");
+        Ok(bytes.clone())
+    };
+    let out = sx_geom::json::call_with_files("format.read3mf", r#"{"data":{"path":"mem:0"}}"#, &load)
+        .expect("reads");
+    let v: serde_json::Value = serde_json::from_str(&out).expect("json");
+    assert_eq!(v["layout"], "bambu");
+    let parts = v["objects"][0]["parts"].as_array().expect("parts");
+    let kinds: Vec<&str> = parts.iter().filter_map(|p| p["kind"].as_str()).collect();
+    assert_eq!(
+        kinds,
+        [
+            "normal",
+            "negative",
+            "modifier",
+            "support_blocker",
+            "support_enforcer"
+        ]
+    );
+    let buffers = sx_geom::json::take_out_files();
+    assert_eq!(buffers.len(), 5);
+    // 8 corners and 12 triangles of a box, in the raw mesh form
+    assert_eq!(buffers[0].len(), 8 + 12 * 8 + 12 * 12);
+}
