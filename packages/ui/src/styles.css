@@ -590,3 +590,9 @@ button { cursor: pointer; }
 .sx-raven[data-flap] .sx-raven-wing { animation: sx-raven-flap 0.5s ease-in-out infinite; }
 @keyframes sx-raven-flap { 0%, 100% { transform: none; } 40% { transform: rotate(-32deg); } }
 :root[data-motion="reduced"] .sx-raven[data-flap] .sx-raven-wing { animation: none; }
+.sx-rune-ring { flex: none; display: block; fill: none; stroke: color-mix(in srgb, var(--dim) 55%, transparent); stroke-width: 1; stroke-linecap: round; animation: sx-rune-spin 12s linear infinite; }
+.sx-rune-ring > circle { stroke-width: 0.6; }
+.sx-rune-ring .sx-rune-sep { fill: color-mix(in srgb, var(--dim) 55%, transparent); stroke: none; }
+.sx-rune-ring[data-reverse] { animation-direction: reverse; }
+@keyframes sx-rune-spin { to { transform: rotate(360deg); } }
+:root[data-motion="reduced"] .sx-rune-ring { animation: none; }
