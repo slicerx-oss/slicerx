@@ -25,6 +25,16 @@ export async function openWithProgress(s, id) {
   return { r, ms, seen, toasts }
 }
 
+/**
+ * Opens the right pane when it is shut, so the plate's object rows are on screen: a window can start with it shut (the
+ * 0.2.4 Linux run did), and a row that is not drawn cannot be clicked. True once a row is visible.
+ */
+export async function showObjects(s) {
+  const edge = await s.one('edge-tab-right')
+  if (edge?.expanded === false) await s.click('edge-tab-right')
+  return s.waitFor('object-select', 'visible', 10_000)
+}
+
 const alone = (state, listing) => {
   const objs = state?.plate?.objects ?? []
   return objs.length > 0 && objs.every((o) => o.vaultListing === listing)
@@ -66,7 +76,9 @@ export async function openSignedOut(s) {
   await s.shot('opened-cleared', 'Signed out: Cable clip opened on a cleared plate')
 
   // A change: leave the object out of the print. Then another design asks first. The row's tools show on hover or
-  // focus only (with a mouse), so select the row first, as a person's pointer would reach the row before its eye.
+  // focus only (with a mouse), so select the row first, as a person's pointer would reach the row before its eye. The
+  // rows are in the right pane, opened first when the window has it shut.
+  s.check("the plate's objects list shows", await showObjects(s))
   await s.click('object-select')
   await s.click('object-printable')
   const changed = await waitUntil(async () => ((await s.state()).plate.objects[0]?.printable === false ? true : null), { timeoutMs: 5000, everyMs: 200 })

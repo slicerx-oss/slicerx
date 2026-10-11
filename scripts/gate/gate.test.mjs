@@ -10,6 +10,7 @@ import { inflateRawSync } from 'node:zlib'
 import { coaster3mf } from './lib/coaster.mjs'
 import { options } from './lib/options.mjs'
 import { renderReport, runStatus } from './lib/report.mjs'
+import { showObjects } from './scenarios/open.mjs'
 import { isGatePrinter, plateLoaded, waitForPlate } from './scenarios/start.mjs'
 import { STARTERS, TOWER } from './lib/starters.mjs'
 import { mask, temperatureChanges, towerCheck, waitUntil } from './lib/util.mjs'
@@ -84,6 +85,35 @@ describe('the example plate before the first slice', () => {
     const r = await waitForPlate(fake([empty]), { timeoutMs: 30, everyMs: 5 })
     assert.equal(r.timedOut, true)
     assert.equal(r.state, empty)
+  })
+})
+
+describe('the objects list', () => {
+  /** A stand-in for the gate's helpers, with the right pane open or shut. */
+  const fake = (expanded) => {
+    const clicks = []
+    let open = expanded
+    return {
+      clicks,
+      one: async (id) => (id === 'edge-tab-right' ? { visible: true, expanded: open } : null),
+      click: async (id) => {
+        clicks.push(id)
+        if (id === 'edge-tab-right') open = !open
+      },
+      waitFor: async (id) => id === 'object-select' && open,
+    }
+  }
+
+  it('opens a shut right pane before the rows are clicked', async () => {
+    const s = fake(false)
+    assert.equal(await showObjects(s), true)
+    assert.deepEqual(s.clicks, ['edge-tab-right'])
+  })
+
+  it('leaves an open right pane alone', async () => {
+    const s = fake(true)
+    assert.equal(await showObjects(s), true)
+    assert.deepEqual(s.clicks, [])
   })
 })
 
