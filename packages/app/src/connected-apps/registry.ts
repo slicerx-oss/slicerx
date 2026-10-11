@@ -57,7 +57,6 @@ export const CONNECTED_APPS: readonly ConnectedApp[] = [
     https: false,
     addressPlaceholder: 'Address, like 192.168.1.60',
     key: { label: 'Long-lived access token', placeholder: 'From your Home Assistant profile, Security' },
-    experimental: true,
     counts: { one: 'switch, light or fan', many: 'switches, lights and fans' },
   },
 ]

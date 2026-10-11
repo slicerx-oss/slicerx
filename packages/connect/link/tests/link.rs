@@ -213,7 +213,8 @@ async fn paired_client_drives_a_printer_with_approval_tokens() {
             "octoprint",
             "elegoo",
             "bambuddy",
-            "spoolman"
+            "spoolman",
+            "home-assistant"
         ]
     );
     let all = call(&mut ws, 2, "plugins", json!({ "includeExperimental": true })).await;
@@ -223,14 +224,7 @@ async fn paired_client_drives_a_printer_with_approval_tokens() {
         all.iter()
             .filter(|m| m["experimental"] == true)
             .map(|m| m["id"].as_str().unwrap())
-            .eq([
-                "duet",
-                "creality",
-                "snapmaker",
-                "ultimaker",
-                "anycubic",
-                "home-assistant"
-            ])
+            .eq(["duet", "creality", "snapmaker", "ultimaker", "anycubic"])
     );
 
     // Printers outside the local network are refused.
