@@ -11,7 +11,7 @@ import { askContext, askPrompt, navEntries, rankCommands, readsAsQuestion, setti
 import { scoreCommand } from '../commands/fuzzy'
 import { getCommand, isEnabled, runCommand, searchCommands, useCommands } from '../commands/registry'
 import { useFleet } from '../lib/queries'
-import { selectObject } from '../plate/edit'
+import { selectObject } from '../plate/select'
 import { allPlates, switchPlate } from '../plate/plates'
 import { isMac } from '../lib/keys'
 import { useFeatures, type ActiveWorkspace } from '../features'

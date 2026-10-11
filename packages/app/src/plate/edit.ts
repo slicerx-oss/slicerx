@@ -8,9 +8,12 @@ import { bake, mergeParts, primitive, splitPieces, splitToObjects, type Primitiv
 import { arrange, ARRANGE_DEFAULTS, fillCount, type ArrangeOptions, type ArrangeResult } from './arrange'
 import { NEST_STEP_DEFAULT, nestArrange, nestFill, type NestRun } from './nest'
 import { quietly } from './history'
-import { rangeSelect } from './selection'
+import { selectedEntry } from './select'
 import { bounds, centerOnBed, compose, dropToBed, identity, layOnFace, mirror, scaleToSize, setScale, withTrs, type Mat4, type Trs, type Vec3 } from './transform'
 import { brandAccent, objectPalette } from '../edition'
+
+// selection lives in ./select (light, loads with the shell); these names stay importable from here
+export { clearSelection, selectAll, selectedEntry, selectObject, type SelectMode } from './select'
 
 function updateObject(id: string | null, fn: (p: PlateEntry) => Mat4): boolean {
   if (!id) return false
@@ -29,11 +32,6 @@ function updateObject(id: string | null, fn: (p: PlateEntry) => Mat4): boolean {
 }
 
 const selected = () => get().selection
-
-export function selectedEntry(): PlateEntry | undefined {
-  const { plate, selection } = get()
-  return plate.find((p) => p.id === selection)
-}
 
 /** Position, rotation or scale from the numeric fields. Position is exact; rotation and scale keep the object on the bed. */
 export function setTrs(patch: Partial<Trs>, id: string | null = selected()): boolean {
@@ -94,48 +92,7 @@ export function commitTransforms(transforms: Record<string, number[]>): void {
 }
 
 // ---------------------------------------------------------------------------
-// Selection, arrange, instances
-
-export type SelectMode = 'set' | 'toggle' | 'range'
-
-/** The last object clicked without Shift: where a Shift range starts. */
-let anchor: string | null = null
-/** The selection the list's last click left, to tell when the view or Select all changed it since. */
-let mine: string[] | null = null
-
-/**
- * Click in the object list: `set` replaces, `toggle` (Mod) adds or removes, `range` (Shift) selects from the anchor
- * to `id` in list order. `true` and `false` are toggle and set.
- */
-export function selectObject(id: string, mode: SelectMode | boolean): void {
-  const how: SelectMode = mode === true ? 'toggle' : mode === false ? 'set' : mode
-  const s = get()
-  const pick = (selection: string | null, ids: string[]) => {
-    mine = ids
-    set({ selection, selectedIds: ids })
-  }
-  if (how === 'range') {
-    // A selection made elsewhere (the view, Select all) since the last click starts the range at its primary.
-    const from = anchor !== null && s.selectedIds === mine && s.plate.some((p) => p.id === anchor) ? anchor : s.selection
-    pick(id, rangeSelect(s.plate.map((p) => p.id), from, id))
-    return
-  }
-  anchor = id
-  if (how === 'set') return pick(id, [id])
-  const cur = selectedIds(s)
-  const next = cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]
-  pick(next.includes(s.selection ?? '') ? s.selection : (next[next.length - 1] ?? null), next)
-}
-
-/** Nothing selected. */
-export function clearSelection(): void {
-  set({ selection: null, selectedIds: [], settingsScope: 'plate', scopePart: null })
-}
-
-export function selectAll(): void {
-  const ids = get().plate.map((p) => p.id)
-  set({ selection: ids[0] ?? null, selectedIds: ids })
-}
+// Arrange, instances
 
 let arrangeOptions: ArrangeOptions = { ...ARRANGE_DEFAULTS, rotate: true, stepDeg: NEST_STEP_DEFAULT }
 

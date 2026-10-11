@@ -6,7 +6,7 @@
 // settings wait on the slicer.
 import type { MeshHandle, MeshPart, PlateVolume, SettingValue } from '@slicerx/contracts'
 import { get, markStale, set, type PlateEntry, type PlateVolumeEntry, type VolumeRole } from '../state/store'
-import { selectedEntry } from './edit'
+import { selectedEntry } from './select'
 import { bake } from './mesh-ops'
 import { primitive, type PrimitiveShape } from './mesh-ops'
 import { bounds, compose, decompose, identity, multiply, type Mat4, type Trs, type Vec3 } from './transform'
