@@ -119,6 +119,22 @@ function isRecord(v: unknown): v is Record<string, unknown> {
 
 export const normalizeId = (s: string): string => s.toLowerCase().replace(/[^a-z0-9]+/g, '')
 
+/**
+ * Each knowledge file's parsed YAML, by path, kept with the exact text it was parsed from. Parsing the knowledge base
+ * is most of what a new DataStore costs, and a process that makes several (an HTTP server's sessions, the tests) would
+ * otherwise parse the same files each time. A file whose text changed is parsed again, and every store gets its own
+ * copy, so a store sees what it would have parsed itself and nothing one store does reaches another.
+ */
+const parsedYaml = new Map<string, { text: string; data: unknown }>()
+
+function parseYamlFile(file: string, text: string): unknown {
+  const hit = parsedYaml.get(file)
+  if (hit?.text === text) return structuredClone(hit.data)
+  const data: unknown = parseYaml(text)
+  parsedYaml.set(file, { text, data: structuredClone(data) })
+  return data
+}
+
 /** Everything the tools read, loaded once and kept in memory (a few MB at most). */
 export class DataStore {
   readonly paths: DataPaths
@@ -136,7 +152,7 @@ export class DataStore {
     const entries: KnowledgeEntry[] = []
     for (const file of listYaml(this.paths.knowledgeDir)) {
       const text = readFileSync(file, 'utf8')
-      const data: unknown = parseYaml(text)
+      const data = parseYamlFile(file, text)
       if (!isRecord(data)) continue
       const kind = typeof data['kind'] === 'string' ? (data['kind'] as KnowledgeKind) : undefined
       if (kind === undefined) continue
