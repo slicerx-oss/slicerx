@@ -37,12 +37,28 @@ export function runningCopies(exe) {
   return (r.stdout ?? '').split('\n').filter((l) => l.trim().split(/\s+/)[1] === exe).length
 }
 
+/** How long the gate waits for a started app's connection file by default, in seconds (`--wait-start`). */
+export const START_WAIT_S = 180
+
+/**
+ * Waits until `file` exists, `gone()` says the process has ended, or `timeoutMs` runs out. True when the file is there.
+ * A loaded machine (a CI run sharing it, the page drawn on the processor) can take half a minute or more to start.
+ */
+export async function waitForFile(file, { timeoutMs, gone = () => false, everyMs = 250 }) {
+  const until = Date.now() + timeoutMs
+  for (;;) {
+    if (existsSync(file)) return true
+    if (gone() || Date.now() >= until) return existsSync(file)
+    await sleep(everyMs)
+  }
+}
+
 /**
  * Starts the app with the bridge on a free port and a fresh web profile (unless `profile` names one to reuse), and
- * waits for its connection file. `extraEnv` adds variables for the app (scenario w's watch timings). Returns
+ * waits up to `waitS` seconds for its connection file. `extraEnv` adds variables for the app (scenario w's watch timings). Returns
  * { pid, tokenFile, env, stop, stderr }, where `env` is the environment the app got, without the token file's path.
  */
-export async function startApp({ app, profile, log, extraEnv = {} }) {
+export async function startApp({ app, profile, log, extraEnv = {}, waitS = START_WAIT_S }) {
   const exe = appExecutable(app)
   if (!existsSync(exe)) throw new Error(`no app at ${exe}; build it with pnpm --filter @slicerx/desktop build:bridge`)
   if (runningCopies(exe) > 0) throw new Error(`${exe} is already running; quit it first (the app is single-instance)`)
@@ -63,7 +79,8 @@ export async function startApp({ app, profile, log, extraEnv = {} }) {
   let stderr = ''
   child.stderr.on('data', (d) => (stderr = (stderr + d).slice(-8000)))
   log?.(`started ${exe} as pid ${child.pid}`)
-  for (let i = 0; i < 240 && !existsSync(tokenFile) && child.exitCode === null; i++) await sleep(250)
+  const started = Date.now()
+  await waitForFile(tokenFile, { timeoutMs: waitS * 1000, gone: () => child.exitCode !== null || child.signalCode !== null })
   const stop = async () => {
     // Stopped by its own process id, never by name.
     if (child.exitCode === null && child.signalCode === null) {
@@ -82,7 +99,7 @@ export async function startApp({ app, profile, log, extraEnv = {} }) {
   }
   if (!existsSync(tokenFile)) {
     await stop()
-    throw new Error(`the app wrote no connection file (exit ${child.exitCode}); its last output: ${stderr.slice(-400)}`)
+    throw new Error(`the app wrote no connection file in ${Math.round((Date.now() - started) / 1000)} s (exit ${child.exitCode}; --wait-start sets the limit, ${waitS} s now); its last output: ${stderr.slice(-400)}`)
   }
   const { SX_AGENT_BRIDGE_TOKEN_FILE: _token, ...seen } = env
   return { pid: child.pid, exe, tokenFile, env: seen, stop, stderr: () => stderr }

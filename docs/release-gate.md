@@ -37,6 +37,7 @@ node scripts/gate/run.mjs --app target/agent-bridge/release/slicerx.exe --platfo
 | `--out <dir>` | Where `report.html`, `results.json` and `shots/` go. |
 | `--only a,b,e`, `--skip c,d` | Run some of the scenarios. |
 | `--starters <slugs>` | Slice only these starters in e. |
+| `--wait-start <s>` | How long to wait for the started app to write its connection file. The default is 180. |
 | `--wait-signin <min>` | How long to wait for the operator at each sign-in link. The default is 10. |
 | `--wait-scan <min>` | How long to wait for the malware scan. The default is 15. |
 | `--wait-review <min>` | How long to wait for review approval. The default is 60. |
@@ -49,6 +50,10 @@ failure), and 2 when the gate could not start.
 
 Run it under the machine's heavy lock, with a time limit. Slicing every starter takes a while. A full run with an
 operator takes about 20 minutes plus the review wait.
+
+On Linux and Windows, take the whole heavy lock (`heavy.sh --all`), not one slot: with a CI job sharing the machine
+the app has taken over half a minute just to start, and the gate's timed steps (w's heater steps, e's slices) measure
+the load instead of the app. If the app still starts slowly, raise `--wait-start`.
 
 The gate starts the app with `SX_AGENT_BRIDGE_PORT=0`, keeps the connection file (with the per-run token) in a
 temporary folder, and stops the app by its process id when it's done. It never stops a process by name. The app is
