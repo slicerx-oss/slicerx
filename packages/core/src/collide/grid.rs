@@ -43,38 +43,10 @@ impl Grid {
 
     /// The tallest point of `obj` over each cell. A triangle that spans a few cells raises them to its top; a larger
     /// one is clipped to each cell's column, so a long sloped or vertical face raises a cell only as high as it is there.
-    pub(crate) fn of_object(obj: &PlateObject) -> Self {
-        let mut tris: Vec<[[f64; 3]; 3]> = Vec::new();
-        let (mut lo, mut hi) = ([f64::MAX; 2], [f64::MIN; 2]);
-        for part in &obj.mesh.parts {
-            let mut pts = Vec::with_capacity(part.positions.len());
-            for &p in &part.positions {
-                pts.push(obj.apply(p));
-            }
-            for t in &part.triangles {
-                let (Some(a), Some(b), Some(c)) = (
-                    pts.get(t[0] as usize),
-                    pts.get(t[1] as usize),
-                    pts.get(t[2] as usize),
-                ) else {
-                    continue;
-                };
-                for p in [a, b, c] {
-                    lo = [lo[0].min(p[0]), lo[1].min(p[1])];
-                    hi = [hi[0].max(p[0]), hi[1].max(p[1])];
-                }
-                tris.push([*a, *b, *c]);
-            }
-        }
-        if tris.is_empty() {
-            return Self::default();
-        }
-        let (x0, y0) = (cell(lo[0]), cell(lo[1]));
-        let w = usize::try_from(cell(hi[0]) - x0 + 1).unwrap_or(0);
-        let h = usize::try_from(cell(hi[1]) - y0 + 1).unwrap_or(0);
-        let mut g = Self::new(x0, y0, w, h);
-        for t in &tris {
-            g.raise(t);
+    pub(crate) fn of_surface(obj: &Surface) -> Self {
+        let mut g = Self::new(obj.x0, obj.y0, obj.w, obj.h);
+        for t in obj.tris.iter().filter_map(|t| obj.corners(t)) {
+            g.raise(&t);
         }
         g
     }
@@ -333,53 +305,42 @@ impl Surface {
         self.corners(self.tris.get(i as usize)?)
     }
 
-    /// Calls `f` with the triangles listed in the cells the box `[x0, x1] x [y0, y1]` covers (a triangle may come
-    /// more than once) until it returns true.
-    fn each_over(&self, rect: [f64; 4], f: &mut dyn FnMut(&[[f64; 3]; 3]) -> bool) {
-        let (cx0, cx1) = (cell(rect[0] - 1e-9).max(self.x0), cell(rect[1] + 1e-9));
-        let (cy0, cy1) = (cell(rect[2] - 1e-9).max(self.y0), cell(rect[3] + 1e-9));
-        let (cx1, cy1) = (
-            cx1.min(self.x0 + i32::try_from(self.w).unwrap_or(0) - 1),
-            cy1.min(self.y0 + i32::try_from(self.h).unwrap_or(0) - 1),
+    /// Calls `f` with the triangles listed in the cells the box `[x0, x1] x [y0, y1]` covers, a triangle once per
+    /// cell it is in, until it returns true; true when it did. A box edge on a cell boundary takes the cells on both
+    /// sides, so no triangle that meets the box is left out.
+    fn each(&self, rect: [f64; 4], f: &mut dyn FnMut(u32) -> bool) -> bool {
+        let (w, h) = (
+            i32::try_from(self.w).unwrap_or(0),
+            i32::try_from(self.h).unwrap_or(0),
         );
-        for cy in cy0..=cy1 {
-            for cx in cx0..=cx1 {
-                let (Ok(x), Ok(y)) = (usize::try_from(cx - self.x0), usize::try_from(cy - self.y0)) else {
-                    continue;
-                };
-                for &i in self.cells.get(y * self.w + x).map_or(&[][..], Vec::as_slice) {
-                    if let Some(t) = self.tri(i)
-                        && f(&t)
-                    {
-                        return;
+        let (x0, x1) = (
+            (cell(rect[0] - 1e-9) - self.x0).max(0),
+            (cell(rect[1] + 1e-9) - self.x0).min(w - 1),
+        );
+        let (y0, y1) = (
+            (cell(rect[2] - 1e-9) - self.y0).max(0),
+            (cell(rect[3] + 1e-9) - self.y0).min(h - 1),
+        );
+        for y in y0..=y1 {
+            for x in x0..=x1 {
+                let at = usize::try_from(y * w + x).unwrap_or(usize::MAX);
+                for &i in self.cells.get(at).map_or(&[][..], Vec::as_slice) {
+                    if f(i) {
+                        return true;
                     }
                 }
             }
         }
+        false
     }
 
-    /// The triangles whose footprint may reach the box `[x0, x1] x [y0, y1]` or hold the point `p`, ascending, each
-    /// once. A cell takes every triangle whose footprint's box touches it, and a point on a cell edge looks in both
-    /// cells, so no triangle that meets the box or covers `p` is left out.
-    fn near(&self, rect: [f64; 4], p: [f64; 2]) -> Vec<u32> {
+    /// [`Self::each`]'s triangles each once, ascending: mesh order.
+    fn near(&self, rect: [f64; 4]) -> Vec<u32> {
         let mut out = Vec::new();
-        let mut add = |cx0: i32, cx1: i32, cy0: i32, cy1: i32| {
-            for cy in cy0.max(self.y0)..=cy1.min(self.y0 + i32::try_from(self.h).unwrap_or(0) - 1) {
-                for cx in cx0.max(self.x0)..=cx1.min(self.x0 + i32::try_from(self.w).unwrap_or(0) - 1) {
-                    let (Ok(x), Ok(y)) = (usize::try_from(cx - self.x0), usize::try_from(cy - self.y0))
-                    else {
-                        continue;
-                    };
-                    if let Some(c) = self.cells.get(y * self.w + x) {
-                        out.extend_from_slice(c);
-                    }
-                }
-            }
-        };
-        // A box edge or a point that falls on a cell boundary belongs to the cells on both sides.
-        let edge = |v: f64| (cell(v - 1e-9), cell(v + 1e-9));
-        add(edge(rect[0]).0, edge(rect[1]).1, edge(rect[2]).0, edge(rect[3]).1);
-        add(edge(p[0]).0, edge(p[0]).1, edge(p[1]).0, edge(p[1]).1);
+        self.each(rect, &mut |i| {
+            out.push(i);
+            false
+        });
         out.sort_unstable();
         out.dedup();
         out
@@ -391,28 +352,38 @@ impl Surface {
 /// material at the height the piece reaches it, not the top of a column of the height grid. None when the box holds
 /// no material above `over`.
 pub(crate) fn meet(obj: &Surface, rect: [f64; 4], over: f64, p: [f64; 2]) -> Option<[f64; 3]> {
-    probe(obj, rect, over, f64::INFINITY, p).0
+    let near = |r: [f64; 3]| (r[0] - p[0]) * (r[0] - p[0]) + (r[1] - p[1]) * (r[1] - p[1]);
+    let mut best: Option<[f64; 3]> = None;
+    // Every triangle that may reach the box, in mesh order, so a tie goes to the same corner as before.
+    for i in obj.near(rect) {
+        let Some(t) = obj.tri(i) else {
+            continue;
+        };
+        // The triangle clipped to the box; its lowest corner is where it is first met.
+        for q in clipped(&t, rect, over, f64::INFINITY).unwrap_or_default() {
+            if best.is_none_or(|b| q[2] < b[2] - 1e-6 || (q[2] < b[2] + 1e-6 && near(q) < near(b))) {
+                best = Some(q);
+            }
+        }
+    }
+    best
 }
 
 /// True when `obj` has material inside the box between `lo` and `hi`: a piece of its surface there, or `p` (inside the
 /// box) at `lo` lying within the solid.
 pub(crate) fn material_in(obj: &Surface, rect: [f64; 4], lo: f64, hi: f64, p: [f64; 2]) -> bool {
-    // Any triangle with a piece inside the box answers it; only when none has does the ray from p decide.
-    let mut found = false;
-    obj.each_over(rect, &mut |t| {
-        found = found || clipped(t, rect, lo, hi).is_some_and(|poly| !poly.is_empty());
-        found
-    });
-    found || inside(obj, lo, p)
-}
-
-/// Whether `p` at `lo` lies within the solid: a vertical ray up from it crosses the surface an odd number of times.
-fn inside(obj: &Surface, lo: f64, p: [f64; 2]) -> bool {
+    // Any triangle with a piece inside the box answers it; only when none has does the ray up from p decide (the
+    // triangles over p, each once: the count of crossings is odd inside the solid).
+    if obj.each(rect, &mut |i| {
+        obj.tri(i)
+            .and_then(|t| clipped(&t, rect, lo, hi))
+            .is_some_and(|poly| !poly.is_empty())
+    }) {
+        return true;
+    }
     let mut crossings = 0u32;
-    for i in obj.near([p[0], p[0], p[1], p[1]], p) {
-        if let Some(t) = obj.tri(i)
-            && crosses(&t, lo, p)
-        {
+    for i in obj.near([p[0], p[0], p[1], p[1]]) {
+        if obj.tri(i).is_some_and(|t| crosses(&t, lo, p)) {
             crossings += 1;
         }
     }
@@ -460,27 +431,6 @@ fn clipped(&[a, b, c]: &[[f64; 3]; 3], rect: [f64; 4], lo: f64, hi: f64) -> Opti
         }
     }
     Some(poly)
-}
-
-/// One pass over the surface for the box `rect` between `lo` and `hi`: the lowest point of the surface in it (the
-/// one nearest `p` among the lowest), and whether `p` at `lo` is inside the solid (a vertical ray up from it crosses
-/// the surface an odd number of times). Only the triangles over the box or over `p` can count for either, so only
-/// those are looked at, in mesh order.
-fn probe(obj: &Surface, rect: [f64; 4], lo: f64, hi: f64, p: [f64; 2]) -> (Option<[f64; 3]>, bool) {
-    let mut best: Option<[f64; 3]> = None;
-    let near = |r: [f64; 3]| (r[0] - p[0]) * (r[0] - p[0]) + (r[1] - p[1]) * (r[1] - p[1]);
-    for i in obj.near(rect, p) {
-        let Some(t) = obj.tri(i) else {
-            continue;
-        };
-        // The triangle clipped to the box; its lowest corner is where it is first met.
-        for q in clipped(&t, rect, lo, hi).unwrap_or_default() {
-            if best.is_none_or(|b| q[2] < b[2] - 1e-6 || (q[2] < b[2] + 1e-6 && near(q) < near(b))) {
-                best = Some(q);
-            }
-        }
-    }
-    (best, inside(obj, lo, p))
 }
 
 /// A grid reduced to one value per row of cells (cells `y0..`).
