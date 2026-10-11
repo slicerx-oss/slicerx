@@ -1811,13 +1811,14 @@ impl BambuSession {
         }
     }
 
-    /// Sends `pause`, `resume` or `stop` and waits for the printer's answer on the report topic, as
-    /// a project start does: a `result` of "fail" comes back as [`Error::Refused`] with the printer's
-    /// reason, so a refused command never reads as done. The report showing a state in `done` also
-    /// settles it, and with neither in [`CONTROL_ANSWER_WAIT`] the command stands as sent.
-    async fn control(&self, command: &str, done: &[&str]) -> Result<()> {
+    /// Sends `pause`, `resume`, `stop` or a plain G-code start (`gcode_file`) with `param` and waits
+    /// for the printer's answer on the report topic, as a project start does: a `result` of "fail"
+    /// comes back as [`Error::Refused`] with the printer's reason, so a refused command never reads as
+    /// done. The report showing a state in `done` also settles it, and with neither in
+    /// [`CONTROL_ANSWER_WAIT`] the command stands as sent.
+    async fn control(&self, command: &str, param: &str, done: &[&str]) -> Result<()> {
         let seq = self.next_seq();
-        self.command(json!({ "print": { "sequence_id": seq, "command": command, "param": "" } }))
+        self.command(json!({ "print": { "sequence_id": seq, "command": command, "param": param } }))
             .await?;
         let end = tokio::time::Instant::now() + CONTROL_ANSWER_WAIT;
         loop {
@@ -2042,8 +2043,8 @@ const PROJECT_ANSWER_WAIT: Duration = Duration::from_secs(10);
 /// How long a slot write waits for the printer's answer.
 const SLOT_ANSWER_WAIT: Duration = Duration::from_secs(5);
 
-/// How long pause, resume and stop wait for the printer's answer or for the report to show the
-/// change, whichever comes first.
+/// How long pause, resume, stop and a plain G-code start wait for the printer's answer or for the
+/// report to show the change, whichever comes first.
 const CONTROL_ANSWER_WAIT: Duration = Duration::from_secs(3);
 
 /// Where a slot id from [`parse_slots`] sits in Bambu Studio's terms: `ams_id`, `slot_id` and
@@ -2389,18 +2390,17 @@ impl PrinterSession for BambuSession {
             "start a job",
             &[PrinterState::Idle, PrinterState::Finished, PrinterState::Error],
         )?;
+        if !is_3mf {
+            let path = format!("/sdcard/{}", file.path);
+            return self
+                .control("gcode_file", &path, &["PREPARE", "SLICING", "RUNNING"])
+                .await;
+        }
         let seq = self.next_seq();
-        let body = if is_3mf {
-            project_file_command(&seq, file, &opts, self.reported_model().as_deref())
-        } else {
-            json!({ "print": { "sequence_id": seq, "command": "gcode_file", "param": format!("/sdcard/{}", file.path) } })
-        };
+        let body = project_file_command(&seq, file, &opts, self.reported_model().as_deref());
         let error_before = self.print_error();
         self.command(body).await?;
-        if is_3mf {
-            self.await_project_start(&seq, error_before).await?;
-        }
-        Ok(())
+        self.await_project_start(&seq, error_before).await
     }
 
     async fn pause(&self, token: &ApprovalToken) -> Result<()> {
@@ -2408,7 +2408,7 @@ impl PrinterSession for BambuSession {
             .check(token, Action::Pause, self.id(), &params::printer(self.id()))?;
         self.require_control()?;
         self.require_state("pause", &[PrinterState::Printing])?;
-        self.control("pause", &["PAUSE"]).await
+        self.control("pause", "", &["PAUSE"]).await
     }
 
     async fn resume(&self, token: &ApprovalToken) -> Result<()> {
@@ -2416,7 +2416,7 @@ impl PrinterSession for BambuSession {
             .check(token, Action::Resume, self.id(), &params::printer(self.id()))?;
         self.require_control()?;
         self.require_state("resume", &[PrinterState::Paused])?;
-        self.control("resume", &["RUNNING"]).await
+        self.control("resume", "", &["RUNNING"]).await
     }
 
     async fn cancel(&self, token: &ApprovalToken) -> Result<()> {
@@ -2431,7 +2431,7 @@ impl PrinterSession for BambuSession {
                 PrinterState::Preparing,
             ],
         )?;
-        self.control("stop", &["IDLE", "FINISH", "FAILED"]).await
+        self.control("stop", "", &["IDLE", "FINISH", "FAILED"]).await
     }
 
     /// Reads one frame from the port 6000 JPEG stream (A1, P1). X1 and H2 printers serve H.264

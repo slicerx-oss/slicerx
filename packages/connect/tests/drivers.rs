@@ -417,6 +417,51 @@ async fn bambu_refused_pause_says_why() {
     assert_eq!(mocks.state().await["bambu"]["state"], "paused");
 }
 
+// A plain G-code start (`gcode_file`) reads the printer's answer as a project start does: a
+// refusal fails with `refused` and the reason and the printer stays idle; accepted, it prints.
+#[tokio::test]
+async fn bambu_refused_gcode_start_says_why() {
+    use serde_json::json;
+    use sx_connect::{Action, params};
+    let gate = Arc::new(MemoryGate::new());
+    let mocks = Mocks::start("bambu", &[]).await;
+    let mut cfg = config("bay-1", "bambu-lan", mocks.port("bambu"));
+    cfg.serial = Some(mocks.str("serial"));
+    cfg.credential_ref = Some("bambu-code".to_owned());
+    cfg.ftp_port = Some(mocks.port("bambu-ftp"));
+    let sec = secrets(&[("bambu-code", mocks.str("accessCode"))]);
+    mocks.set_state("bambu", "idle").await;
+    let session = BambuConnector::new(gate.clone())
+        .connect(&cfg, &sec)
+        .await
+        .unwrap();
+    let file = job_file("cube.gcode", JobKind::Gcode);
+    let t = gate.mint(
+        Action::Upload,
+        "bay-1",
+        &params::upload("bay-1", &file.name, &file.sha256),
+    );
+    let rf = session.upload(file, &t).await.unwrap();
+    mocks
+        .control("/bambu", json!({ "refuse": "file not found" }))
+        .await;
+    let opts = StartOptions::default();
+    let t = gate.mint(Action::Start, "bay-1", &params::start("bay-1", &rf, &opts));
+    match session.start(&rf, opts.clone(), &t).await {
+        Err(e) => {
+            assert_eq!(e.code(), ErrorCode::Refused);
+            assert!(e.to_string().contains("file not found"), "{e}");
+        }
+        Ok(()) => panic!("a refused G-code start must fail"),
+    }
+    assert_eq!(mocks.state().await["bambu"]["state"], "idle");
+
+    mocks.control("/bambu", json!({ "refuse": null })).await;
+    let t = gate.mint(Action::Start, "bay-1", &params::start("bay-1", &rf, &opts));
+    session.start(&rf, opts, &t).await.unwrap();
+    assert_ne!(mocks.state().await["bambu"]["state"], "idle");
+}
+
 /// Connects to the Bambu fake after making it another printer through `/bambu`, uploads a
 /// .gcode.3mf and starts it with `slot_map`, and returns the session and the project start line.
 async fn bambu_as(
