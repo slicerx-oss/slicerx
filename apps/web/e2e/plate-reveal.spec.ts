@@ -27,11 +27,16 @@ const playReveal = (page: Page, motion?: 'reduced') =>
 
 /** The picture on screen now: a recording starts with it, so a short one is a snapshot. */
 async function frameNow(page: Page): Promise<Frame> {
-  const stop = await recordFrames(page)
-  // two frames painted after the call, so a change made just before it (a hidden toast) is on screen
-  await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))))
-  await page.waitForTimeout(300)
-  return (await stop()).at(-1)!
+  // A loaded runner's screencast can send nothing for a page at rest; such a recording is taken again.
+  for (let i = 0; i < 3; i++) {
+    const stop = await recordFrames(page)
+    // two frames painted after the call, so a change made just before it (a hidden toast) is on screen
+    await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))))
+    await page.waitForTimeout(300)
+    const last = (await stop()).at(-1)
+    if (last) return last
+  }
+  throw new Error('the screencast sent no frame of the page in three recordings')
 }
 
 /**
